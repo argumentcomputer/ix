@@ -227,32 +227,27 @@ def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
   | _ => lines := lines.push s!"{label}: no published string name; the forged case is skipped"
   return (errors, lines)
 
-/-- The role table's bindings in a compile's result (Route A, B5a): every role whose
-Lean name the input declares is published at the default table's address for it
-(`Ix.Cert.Roles.rolesBound`). Also counted, not checked (B5c, on hold): the published
-names that are not a role's but sit at a role-bound address. -/
+/-- The role table's bindings in a compile's result (Route A, B5a), decided by ingress
+name over every published name (`publishedCases`: `Ix.Cert.publishedRolesBound`). Also
+counted, not checked: the roles whose Lean name the input declares, and (B5c, on hold)
+the published names that are not a role's but sit at a role-bound address. -/
 def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
     IO (Array String × Array String) := do
   let .ok t := Ix.Kernel.Reader.defaultTable
     | return (#[s!"{label}: the default role table does not read"], #[])
   let roles := Ix.Kernel.Role.all
-  let declared := roles.filter fun r => env.consts.contains (Ix.Cert.Roles.roleName r)
+  let inputNames : Std.HashSet Ix.Kernel.Name :=
+    env.consts.fold (fun s n _ => s.insert (Ix.LeanIngress.ingressName n)) {}
+  let declared := roles.filter fun r => inputNames.contains r.leanName
   let boundAt := t.bound.foldl (init := ({} : Std.HashMap Address Ix.Kernel.Role))
     fun m (r, a) => m.insert a r
   let aliases := ixe.named.toList.filter fun (n, named) =>
     match boundAt.get? named.addr with
-    | some r => n != Ix.Cert.Roles.roleName r
+    | some r => Ix.LeanIngress.ingressName n != r.leanName
     | none => false
-  let (published, publishedLines) := publishedCases label t ixe
-  if Ix.Cert.Roles.rolesBound t ixe env then
-    return (published, #[s!"{label}: rolesBound holds: {declared.length} of {roles.length} role names \
-      declared, each published at the default table's address; {aliases.length} other published \
-      names at a role-bound address (B5c, counted)"] ++ publishedLines)
-  else
-    let bad := declared.filter fun r =>
-      (ixe.named.get? (Ix.Cert.Roles.roleName r)).map (·.addr) != t.addressOf? r
-    return (#[s!"{label}: rolesBound fails: {bad.length} role(s) not at the table's address; \
-      first: {(bad.take 5).map Ix.Cert.Roles.roleName}"] ++ published, publishedLines)
+  let (errors, lines) := publishedCases label t ixe
+  return (errors, #[s!"{label}: {declared.length} of {roles.length} role names declared by the \
+    input; {aliases.length} other published names at a role-bound address (B5c, counted)"] ++ lines)
 
 /-- N-READS N4 (a): no constructor of a family occurs in the family's type or in
 its constructors' types (`InductiveReading.NoCtorIn`, through its check
@@ -481,28 +476,33 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
     lines := lines.push s!"no constant of the closure failed (NoFailure, decided)"
   else
     errors := errors.push "a constant of the closure failed (NoFailure is false)"
-  -- the role bindings over the whole input (B5a, whole-input form): a role-name collision
-  -- planted outside the closure is caught by the whole-input check, not by the closure's
+  -- the role bindings over every published name (B5a, by ingress name,
+  -- `Ix.Cert.publishedRolesBound`): a role-name collision planted outside the closure is caught
   match Ix.Kernel.Reader.defaultTable with
   | .error e => errors := errors.push s!"the default role table does not read: {e}"
   | .ok t =>
-    unless Ix.Cert.Roles.rolesBound t ixe env do
-      errors := errors.push "rolesBound fails on the whole input"
-    let outside := Ix.Kernel.Role.all.filter fun r =>
-      env.consts.contains (Ix.Cert.Roles.roleName r) && !sub.consts.contains (Ix.Cert.Roles.roleName r)
-    match outside, Ix.Kernel.Role.all.find? (fun s => outside.head? != some s && (t.addressOf? s).isSome) with
-    | r :: _, some s =>
-      let n := Ix.Cert.Roles.roleName r
-      let some named := ixe.named.get? n
-        | errors := errors.push s!"{n} is not published"
-      let some other := t.addressOf? s | errors := errors.push s!"{repr s} is not bound"
-      let planted := { ixe with named := ixe.named.insert n { named with addr := other } }
-      if Ix.Cert.Roles.rolesBound t planted sub && !Ix.Cert.Roles.rolesBound t planted env then
-        lines := lines.push s!"roles: {n} (outside the closure) planted at {repr s}'s address: the \
-          closure's check passes, the whole input's catches it"
-      else
-        errors := errors.push s!"roles: the planted collision at {n} is not caught by the whole-input check"
-    | _, _ => errors := errors.push "roles: no role name outside the closure to plant a collision at"
+    unless Ix.Cert.publishedRolesBound t ixe do
+      errors := errors.push "publishedRolesBound fails on the artifact"
+    let subNames : Std.HashSet Ix.Kernel.Name :=
+      sub.consts.fold (fun s n _ => s.insert (Ix.LeanIngress.ingressName n)) {}
+    let outside := ixe.named.toList.filterMap fun (m, d) =>
+      let n := Ix.LeanIngress.ingressName m
+      if subNames.contains n then none
+      else (Ix.Kernel.Role.all.find? (·.leanName == n)).map fun r => (m, d, r)
+    match outside with
+    | (m, d, r) :: _ =>
+      match Ix.Kernel.Role.all.find? (fun s => s != r && (t.addressOf? s).isSome &&
+          t.addressOf? s != some d.addr) with
+      | some s =>
+        let some other := t.addressOf? s | errors := errors.push s!"{repr s} is not bound"
+        let planted := { ixe with named := ixe.named.insert m { d with addr := other } }
+        if Ix.Cert.publishedRolesBound t planted then
+          errors := errors.push s!"roles: the planted collision at {m} is not caught"
+        else
+          lines := lines.push s!"roles: {m} (outside the closure) planted at {repr s}'s address: \
+            publishedRolesBound catches it"
+      | none => errors := errors.push "roles: no other bound role to plant a collision at"
+    | [] => errors := errors.push "roles: no role name outside the closure to plant a collision at"
   let unpublished := sub.consts.toList.filter fun (n, _) => !ixe.named.contains n
   unless unpublished.isEmpty do
     errors := errors.push s!"{unpublished.length} constants of the closure are not published: \

@@ -8,7 +8,6 @@ import Ix.Cert.Hybrid
 import Ix.Cert.Stream
 import Ix.Cert.Order
 import Ix.Cert.Evidence
-import Ix.Cert.Roles
 import Ix.Cert.Admits
 import Ix.Cert.BlockStart
 import Ix.Cert.RoleClosure
@@ -3835,10 +3834,14 @@ theorems of the checked environment against the role table's synthesized
 records). IxC's checker reads evidence only at `checkDecl`'s two gates, so an
 acceptance moves to any evidence that passes every gate the first passes, with
 the same environment (`Ix.Cert.Evidence.acceptsRef_covers`). The roles agree
-on `sub` when every role whose Lean name `sub` declares is published at the
-role table's address for it (`Ix.Cert.Roles.RolesBound`, decided by
-`rolesBound`); `cert-statement`, `cert-compile-parity-init` and
-`cert-roles-initstd` run it on the fixtures, `Init` and Init+Std. -/
+when every published name whose ingress name is a role's Lean name sits at the
+role table's address for that role (`Ix.Cert.PublishedRolesBound`, decided by
+`publishedRolesBound`; the reading of a role's constant is then at the table's
+address, `Ix.Cert.publishedAddress_role`); `cert-statement`,
+`cert-compile-parity-init` and `cert-roles-initstd` run it on the fixtures, `Init`
+and Init+Std. Re-frozen (push 77's follow-up): B5a's `RolesBound` and
+`RolesBound.of_closure` are removed; `RolesBound` trusts stored name hashes and is
+superseded by `PublishedRolesBound` (push 77). -/
 
 /-- info: [cert-audit] evidence: 5 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -3850,7 +3853,7 @@ run_cmd do
     (#[`natNames_disjoint, `checkDecl_covers, `foldlM_covers, `checkDeclsPure_covers,
       `acceptsRef_covers].map (`Ix.Cert.Evidence ++ ·))
   checkRoots (tag := "cert-audit") "roles"
-    #[``Ix.Cert.Roles.rolesBound_iff, ``Ix.Cert.Roles.RolesBound.of_closure]
+    #[``Ix.Cert.publishedRolesBound_iff, ``Ix.Cert.publishedAddress_role]
 
 /-- info: structure Ix.Cert.Evidence.Covers {md : Ix.Kernel.Mode} (ops : Ix.Kernel.CheckerOps md (Ix.Kernel.CheckM md))
   (ev ev' : Ix.Kernel.Evidences md) : Prop
@@ -3881,14 +3884,13 @@ constructor:
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Evidence.acceptsRef_covers
 
-/-- info: def Ix.Cert.Roles.RolesBound : Ix.Kernel.RoleTable → Ixon.Env → Ix.Environment → Prop :=
-fun t ixe sub =>
-  ∀ (r : Ix.Kernel.Role),
-    r ∈ Ix.Kernel.Role.all →
-      sub.consts.contains (Ix.Cert.Roles.roleName r) = true →
-        Option.map (fun x => x.addr) (ixe.named.get? (Ix.Cert.Roles.roleName r)) = t.addressOf? r -/
+/-- info: def Ix.Cert.PublishedRolesBound : Ix.Kernel.RoleTable → Ixon.Env → Prop :=
+fun t ixe =>
+  ∀ (m : Ix.Name) (d : Ixon.Named),
+    (m, d) ∈ ixe.named.toList →
+      ∀ (r : Ix.Kernel.Role), Ix.LeanIngress.ingressName m = r.leanName → t.addressOf? r = some d.addr -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.Roles.RolesBound
+#print Ix.Cert.PublishedRolesBound
 
 /-! ## N-READS, N1: Source acceptance admits every inductive block
 
@@ -4038,40 +4040,48 @@ run_cmd do
 /-! ## Quotient Source and S4 (`ALPHA-COLLAPSE.md` §8; owner, 2026-10-20)
 
 `SourceAcceptsQ` is Source acceptance on the artifact's alias fibers, every fiber
-renamed onto one representative and its duplicates dropped, at the pinned bundle
-evidence renamed onto the representatives; the executed check gives it. S4,
-`NominalQuotientAgree`, is a named assumption, not an axiom: no theorem uses it,
-and a corollary that does will take it as a hypothesis. -/
+renamed onto one representative and its duplicates dropped, the role read off the
+role table (the table rule), the prepared stream checked to be a renaming onto the
+artifact's keys, at the pinned bundle evidence renamed onto the representatives; the
+executed check gives it. S4, `NominalQuotientAgree`, is a named assumption, not an
+axiom: no theorem uses it, and a corollary that does will take it as a hypothesis.
+Re-frozen (the …At restatement): one restatement, the table rule, the QRep check and
+the evidence checks (`Ix.LeanIngress.prepareSourceCollapsedAt`,
+`checkSourceCollapsedBundledAt`); S4 strengthened, measured gap 0. -/
 
 /-- info: def Ix.Cert.SourceAcceptsQ : (Ix.Environment → Ix.CondensedBlocks) →
-  Ix.Environment → List Ix.Name → Ix.Environment → Ixon.Env → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
-fun condense env roots sub ixe envS =>
+  Ix.Environment →
+    List Ix.Name → Ix.Environment → Ixon.Env → Ix.Kernel.RoleTable → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
+fun condense env roots sub ixe t envS =>
   Ix.Cert.IsClosure env roots sub ∧
     ∃ pre ds,
       Ix.Kernel.Reader.builtinPrelude = Except.ok pre ∧
-        Ix.LeanIngress.prepareSourceCollapsed (Ix.LeanIngress.fiberAlias ixe)
-              (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub (condense sub) =
+        Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
+              (condense sub) =
             Except.ok ds ∧
           Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
-            (Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAlias ixe) (Ix.RoleEvidence.bundleEvidence ())) ds.toList
-            envS -/
+            (Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
+              (Ix.RoleEvidence.bundleEvidence ()))
+            ds.toList envS -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.SourceAcceptsQ
 
 /-- info: def Ix.Cert.NominalQuotientAgree : Prop :=
 ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source)
-  (ixe : Ixon.Env),
+  (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable),
   Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
-    Ix.Cert.compile env = Except.ok ixe → ∃ envQ, Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe envQ -/
+    Ix.Cert.compile env = Except.ok ixe →
+      Ix.Kernel.Reader.defaultTable = Except.ok t →
+        ∃ envQ, Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.NominalQuotientAgree
 
 /-- info: Ix.Cert.sourceAcceptsQ_of_check : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
   {condense : Ix.Environment → Ix.CondensedBlocks} {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
-  {ixe : Ixon.Env} {envS : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} {envS : Ix.Kernel.Env Ix.Kernel.Mode.source},
   Ix.Cert.IsClosure env roots sub →
-    Ix.LeanIngress.checkSourceCollapsedBundled ixe sub (condense sub) = Except.ok envS →
-      Ix.Cert.SourceAcceptsQ condense env roots sub ixe envS -/
+    Ix.LeanIngress.checkSourceCollapsedBundledAt ixe t sub (condense sub) = Except.ok envS →
+      Ix.Cert.SourceAcceptsQ condense env roots sub ixe t envS -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.sourceAcceptsQ_of_check
 
@@ -4081,27 +4091,19 @@ fun condense env roots sub ixe envS =>
 
 /-! ## Quotient Source at the artifact's addresses (step 7.3 (iv), statements' side)
 
-IxC renames a quotient accept from fiber representatives to their published
-addresses (`Ix.LeanIngress.acceptsRef_addrOf`, and its table-rule form). The table
-rule's premise `TableBound` follows from an admitted role table and an artifact-wide
-check that every published role name sits at its role's address
-(`Ix.Cert.tableBound_of`). The same check gives B5a's agreement by ingress name: the
-statements' published address of a role's constant is the table's
-(`Ix.Cert.publishedAddress_role`). B5a's `RolesBound` looks the declared roles' names up
-by their stored hashes, so it gives neither on an artifact whose names' hashes are not
-their own. The statements' published address of an input name is the renamed one when
-every published name agrees with the address map (`Ix.Cert.publishedAddress_id`,
+IxC renames a checked quotient accept to the artifact's addresses by the joined map
+(`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`, `evAddr`). The table rule's
+premise `TableBound` follows from an admitted role table and an artifact-wide check
+that every published role name sits at its role's address (`Ix.Cert.tableBound_of`),
+so a quotient accept at such a table is a reference accept at the artifact's
+addresses (`Ix.Cert.sourceAcceptsQ_addrAt`, without unfolding the committed bundle).
+The statements' published address of an input name is the renamed one when every
+published name agrees with the address map (`Ix.Cert.publishedAddress_id`,
 `Ix.Cert.reading_id`). Both checks are decided and run on the fixtures, `Init` and
 Init+Std, with a planted failure of each. Value models pull back along the renaming's
-relation (`Ix.Cert.ValueModel.pullback`). -/
-
-/-- info: def Ix.Cert.PublishedRolesBound : Ix.Kernel.RoleTable → Ixon.Env → Prop :=
-fun t ixe =>
-  ∀ (m : Ix.Name) (d : Ixon.Named),
-    (m, d) ∈ ixe.named.toList →
-      ∀ (r : Ix.Kernel.Role), Ix.LeanIngress.ingressName m = r.leanName → t.addressOf? r = some d.addr -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.PublishedRolesBound
+relation (`Ix.Cert.ValueModel.pullback`). Re-frozen (the …At restatement):
+`sourceAcceptsQ_addrAt` added; `PublishedRolesBound`'s print moved to the roles
+section. -/
 
 /-- info: def Ix.Cert.PublishedAgree : Ixon.Env → Prop :=
 fun ixe =>
@@ -4132,11 +4134,32 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.publishedAddress_id
 
-/-- info: [cert-audit] quotient addresses: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: @Ix.Cert.sourceAcceptsQ_addrAt : ∀ {condense : Ix.Environment → Ix.CondensedBlocks} {env : Ix.Environment}
+  {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable}
+  {envS : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.SourceAcceptsQ condense env roots sub ixe t envS →
+    t.check = Except.ok () →
+      Ix.Cert.PublishedRolesBound t ixe →
+        ∃ b,
+          Ix.RoleEvidence.committedBundle () = Except.ok b ∧
+            ∃ ds envA,
+              Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
+                  (Ix.Kernel.Evidences.mapKeys (Ix.LeanIngress.evAddr ixe b)
+                    (Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
+                      (Ix.RoleEvidence.bundleEvidence ())))
+                  (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) envA ∧
+                Ix.Kernel.EnvRel
+                  (fun n =>
+                    Ix.LeanIngress.QRepAt ixe (Ix.LeanIngress.roleAtMap t) n ∨ Ix.LeanIngress.BundleOnly ixe b n)
+                  (Ix.LeanIngress.evAddr ixe b) envS envA -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.sourceAcceptsQ_addrAt
+
+/-- info: [cert-audit] quotient addresses: 11 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "quotient addresses"
     (#[`ValueModel.pullback, `publishedRolesBound_iff, `byLeanName_foldl, `roleOf_leanName,
       `tableBound_of, `publishedAgree_iff, `nameIsName_iff, `publishedAddress_role, `publishedAddress_id,
-      `reading_id].map (`Ix.Cert ++ ·))
+      `reading_id, `sourceAcceptsQ_addrAt].map (`Ix.Cert ++ ·))

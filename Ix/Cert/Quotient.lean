@@ -5,25 +5,30 @@ import IxC.Kernel.Ixon.ReaderSpec
 
 /-! # Quotient Source at the artifact's addresses: the statements' side (step 7.3 (iv))
 
-IxC renames a quotient Source accept to the artifact's addresses
-(`Ix.LeanIngress.acceptsRef_addrOf`, and its table-rule form at `fiberAliasAt`), with the
+IxC renames a checked quotient Source accept to the artifact's addresses
+(`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`, by the joined map `evAddr`: a
+published name to its address, a bundle-only name to its bundle address), with the
 two environments related key by key (`Ix.Kernel.EnvRel`). This module supplies what
 the statements need around it:
 
 * `ValueModel.pullback`: a value model of the renamed environment is one of the
   quotient environment (IxC's `Model.pullback` and `defn_value_pullback`);
-* `tableBound_of`: the table rule's premise `Ix.LeanIngress.TableBound` at the admitted
-  table's inverse (`roleAtMap`), from a decidable check of the artifact,
-  `PublishedRolesBound` (every published name whose ingress name is a role's Lean name
-  sits at the table's address for that role). B5a's `RolesBound` does not give it: it
-  looks names up by their stored hashes (`Ix.Name`'s `==`) and covers the roles the
-  input declares, while a fiber is made of every published name, compared by ingress
-  name;
+* `PublishedRolesBound`, decided: every published name whose ingress name is a role's
+  Lean name sits at the table's address for that role. It is B5a's role binding, by
+  ingress name over every published name, so no stored name hash is trusted. It gives
+  the table rule's premise `Ix.LeanIngress.TableBound` (`tableBound_of`) and the
+  agreement of Source's by-name and Ixon's by-table role binding
+  (`publishedAddress_role`);
 * `publishedAddress_id`, `reading_id`: the address the statements read a source name
   at (`publishedAddress`) is the one IxC renames it to (`addrOf`), when every
   published name agrees with the artifact's address map (`PublishedAgree`, decided);
   and its reading is the role key the table binds there or the address itself
-  (`Ix.Kernel.Reader.Ctx.keyAt_ok`). -/
+  (`Ix.Kernel.Reader.Ctx.keyAt_ok`);
+* `sourceAcceptsQ_addrAt`: `SourceAcceptsQ` at an admitted table the artifact's role
+  names sit at is a reference accept at the artifact's addresses. Its evidence is the
+  bundle's renamed by `evAddr` (a bundle-only name goes to the bundle's address for it,
+  a name hash, not a content address), not the Ixon run's; only injectivity is used,
+  and moving acceptance between evidences is `Ix.Cert.Evidence.acceptsRef_covers`'s. -/
 
 namespace Ix.Cert
 
@@ -48,7 +53,7 @@ def ValueModel.pullback {md md' : Ix.Kernel.Mode} {V : Type w} [SetTheory V]
 /-- **Every published role name sits at its role's address**: a published name whose
 ingress name is a role's Lean name is published at the address the table binds that
 role to. Over every published name and by ingress name, so no stored name hash is
-trusted (B5a's `RolesBound` looks the declared roles' names up by their hashes). -/
+trusted. -/
 def PublishedRolesBound (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) : Prop :=
   ∀ m d, (m, d) ∈ ixe.named.toList → ∀ r : Ix.Kernel.Role, ingressName m = r.leanName →
     t.addressOf? r = some d.addr
@@ -233,5 +238,33 @@ theorem reading_id {ixe : Ixon.Env} (agree : PublishedAgree ixe) (cx : Ix.Kernel
     · exact .inl bound
     · simp only [Ix.Kernel.Mode.addressId?, Option.some.injEq] at hi
       exact .inr ⟨free, by rw [hi]⟩
+
+/-! ## Quotient Source at the artifact's addresses -/
+
+/-- **Quotient Source acceptance at the artifact's addresses**: a quotient accept at an
+admitted table that every published role name sits at, renamed by the joined map
+(`Ix.LeanIngress.evAddr`: a published name to its address, a bundle-only name to its
+bundle address), is a reference accept at the same fuel, at the renamed bundle
+evidence, of the renamed declarations, installing an environment related key by key to
+the quotient one (`Ix.Kernel.EnvRel`); every value model of it pulls back
+(`ValueModel.pullback`). From IxC's `acceptsRef_prepareSourceCollapsedAt`; the
+committed bundle is not unfolded. -/
+theorem sourceAcceptsQ_addrAt {condense : Ix.Environment → Ix.CondensedBlocks} {env : Ix.Environment}
+    {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable}
+    {envS : Env .source} (accepted : SourceAcceptsQ condense env roots sub ixe t envS)
+    (checked : t.check = .ok ()) (bound : PublishedRolesBound t ixe) :
+    ∃ b, Ix.RoleEvidence.committedBundle () = .ok b ∧
+      ∃ (ds : Array (Ix.Kernel.Declaration .source)) (envA : Env .anon),
+        Ix.Kernel.Cached.AcceptsRef .verified
+          ((Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
+            (Ix.RoleEvidence.bundleEvidence ())).mapKeys (Ix.LeanIngress.evAddr ixe b))
+          (ds.toList.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b))) envA ∧
+        Ix.Kernel.EnvRel
+          (fun n => Ix.LeanIngress.QRepAt ixe (Ix.LeanIngress.roleAtMap t) n ∨ Ix.LeanIngress.BundleOnly ixe b n)
+          (Ix.LeanIngress.evAddr ixe b) envS envA := by
+  obtain ⟨_, _, ds, _, prepared, run⟩ := accepted
+  obtain ⟨b, hb, envA, runA, rel⟩ :=
+    Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt .verified (tableBound_of checked bound) prepared run
+  exact ⟨b, hb, ds, envA, runA, rel⟩
 
 end Ix.Cert
