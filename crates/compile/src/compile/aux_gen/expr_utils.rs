@@ -114,6 +114,9 @@ pub(super) struct IndRecInfo {
 /// `build_rec_type`) can reference the same FVars throughout the
 /// recursor's binder chain.
 ///
+/// `lean_env` is the generator's Lean environment: its scope is the
+/// recursor generator's ([`TcScope::with_source_defs`], Lean's F1).
+///
 /// # Errors
 ///
 /// - `InvalidMutualBlock` if the type has fewer Pi binders than
@@ -130,6 +133,7 @@ pub(super) fn decompose_inductive_type(
   ind: &ix_common::env::InductiveVal,
   ind_univs: &[Level],
   param_fvars: &[LocalDecl],
+  lean_env: &ix_common::env::Env,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<IndRecInfo, ixon::CompileError> {
@@ -143,7 +147,8 @@ pub(super) fn decompose_inductive_type(
   // see them as locals (required for correctness when index domains
   // reference earlier indices, or when WHNF needs to look through a
   // `Var` bound to a `let` binding — rare but possible in principle).
-  let mut scope = TcScope::new(param_fvars, &ind.cnst.level_params, stt, kctx)?;
+  let mut scope = TcScope::new(param_fvars, &ind.cnst.level_params, stt, kctx)?
+    .with_source_defs(lean_env);
 
   // **Syntactic-first peeling.** The stored inductive type for a
   // Lean-generated `inductive` declaration is already a forall telescope
@@ -2100,6 +2105,10 @@ pub(super) struct TcScope<'a> {
   source_names: &'a mut crate::compile::SourceNames,
   /// How many extra locals are currently pushed above base_depth.
   extra_locals: usize,
+  /// The recursor generator's Lean definitions, set by
+  /// [`TcScope::with_source_defs`]: `whnf_lean` then names a real reduction
+  /// by the named replay where it reaches the kernel's reduct.
+  source_defs: Option<&'a ix_common::env::Env>,
 }
 
 impl<'a> TcScope<'a> {
@@ -2155,7 +2164,21 @@ impl<'a> TcScope<'a> {
       tc,
       source_names,
       extra_locals: 0,
+      source_defs: None,
     })
+  }
+
+  /// The scope as the recursor generator opens it (Lean: an `AuxScope` on
+  /// the `.recursor` route, AuxGen M4): `whnf_lean` names a real reduction
+  /// by the named replay over `defs` ([`named_replay`]) where the replay
+  /// reaches the kernel's reduct. `defs` is the generator's Lean
+  /// environment, never `stt.lean_env`, which a deserialized state lacks.
+  pub(super) fn with_source_defs(
+    mut self,
+    defs: &'a ix_common::env::Env,
+  ) -> Self {
+    self.source_defs = Some(defs);
+    self
   }
 
   fn depth(&self) -> usize {
@@ -2640,18 +2663,39 @@ impl<'a> TcScope<'a> {
     // equality: a reduct rebuilt content-equal without interning carries a
     // fresh uid, and the Lean mirror's test (`Ix/AuxGen/Kernel.lean`,
     // `whnfLean`) compares content addresses.
-    Ok(if whnfed == kexpr {
-      restore_source_names_same_content(&out, ty, self.stt)
-    } else {
-      source_name_hints::restore(
-        &out,
-        ty,
+    if whnfed == kexpr {
+      return Ok(restore_source_names_same_content(&out, ty, self.stt));
+    }
+    // A real reduction on the recursor generator's scope: the names are the
+    // named replay's (Lean's production route since AuxGen M4,
+    // `Ix.AuxGen.Ixc.Scope.whnfNamedExpr`), accepted only where the replay
+    // reaches the kernel's reduct. The kernel's own names can be an
+    // α-twin's (`Id' D` printed `Nat` once the cache has met `Nat`), and an
+    // address alone cannot tell an argument-derived `D` from a value-derived
+    // twin `T` (`G _ := T`, `G D` ⇝ `T`); the replay follows the source's
+    // own definitions, so it names what Lean names. Where it stops short or
+    // disagrees, the kernel's reduct keeps today's hints.
+    if let Some(defs) = self.source_defs
+      && let Some(rep) = named_replay(ty, defs, NAMED_REPLAY_FUEL)
+      && let Ok(krep) = to_kexpr_static(
+        &rep,
         &self.fvar_levels,
         depth,
         self.param_names,
         self.stt,
       )
-    })
+      && krep == whnfed
+    {
+      return Ok(restore_source_names_same_content(&out, &rep, self.stt));
+    }
+    Ok(source_name_hints::restore(
+      &out,
+      ty,
+      &self.fvar_levels,
+      depth,
+      self.param_names,
+      self.stt,
+    ))
   }
 
   /// Check whether two `LeanExpr` types are definitionally equal in the
@@ -2870,6 +2914,71 @@ fn kexpr_to_lean_cached(
     .fold(inner, |acc, kvs| LeanExpr::mdata(kvs.clone(), acc));
   cache.insert(key, result.clone());
   Ok(result)
+}
+
+/// The fuel of one named replay, in head steps (Lean
+/// `Ix.AuxGen.Ixc.replayFuel`).
+const NAMED_REPLAY_FUEL: usize = 256;
+
+/// **The named replay** (AuxGen M4; Lean `Ix.AuxGen.Ixc.replay`, step for
+/// step): head steps on the Lean term until none applies, at most `fuel`:
+/// β; `let` (ζ); delta with the head constant's Lean definition, its levels
+/// substituted; a projection of a structure value that replays to a
+/// constructor application (the field). Anything else (a recursor, a literal
+/// operation, a theorem, an opaque, an inductive) stops it, with the term as
+/// it stands. `None` when the fuel runs out.
+fn named_replay(
+  e: &LeanExpr,
+  defs: &ix_common::env::Env,
+  fuel: usize,
+) -> Option<LeanExpr> {
+  use ix_common::env::ConstantInfo as CI;
+  let fuel = fuel.checked_sub(1)?;
+  let (head, args) = decompose_apps(strip_mdata_ref(e));
+  match strip_mdata_ref(&head).as_data() {
+    ExprData::Lam(_, _, body, _, _) => match args.split_first() {
+      Some((a, rest)) => {
+        named_replay(&mk_app_n(instantiate1(body, a), rest), defs, fuel)
+      },
+      None => Some(e.clone()),
+    },
+    ExprData::LetE(_, _, val, body, _, _) => {
+      named_replay(&mk_app_n(instantiate1(body, val), &args), defs, fuel)
+    },
+    ExprData::Const(c, us, _) => match defs.get(c).as_deref() {
+      Some(CI::DefnInfo(d)) => named_replay(
+        &mk_app_n(subst_levels(&d.value, &d.cnst.level_params, us), &args),
+        defs,
+        fuel,
+      ),
+      _ => Some(e.clone()),
+    },
+    ExprData::Proj(_, i, x, _) => {
+      let x = named_replay(x, defs, fuel)?;
+      match named_replay_field(strip_mdata_ref(&x), i, defs) {
+        Some(field) => named_replay(&mk_app_n(field, &args), defs, fuel),
+        None => Some(e.clone()),
+      }
+    },
+    _ => Some(e.clone()),
+  }
+}
+
+/// Field `i` of a constructor application (Lean `replay.replayField`).
+fn named_replay_field(
+  x: &LeanExpr,
+  i: &Nat,
+  defs: &ix_common::env::Env,
+) -> Option<LeanExpr> {
+  use ix_common::env::ConstantInfo as CI;
+  let (head, args) = decompose_apps(x);
+  let ExprData::Const(c, _, _) = strip_mdata_ref(&head).as_data() else {
+    return None;
+  };
+  let entry = defs.get(c)?;
+  let CI::CtorInfo(cv) = &*entry else { return None };
+  let at = cv.num_params.to_u64()?.checked_add(i.to_u64()?)?;
+  args.get(usize::try_from(at).ok()?).cloned()
 }
 
 /// Restore source-side display names after a WHNF roundtrip that did not

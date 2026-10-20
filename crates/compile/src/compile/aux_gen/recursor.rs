@@ -766,6 +766,7 @@ pub fn generate_canonical_recursors_with_layout(
         &c.ind,
         &ind_univs,
         &shared_param_decls,
+        lean_env,
         stt,
         kctx,
       )
@@ -1143,6 +1144,7 @@ fn build_rec_type(
       "idx",
       param_decls,
       rec_level_params,
+      lean_env,
       stt,
       kctx,
     )?;
@@ -1232,6 +1234,7 @@ fn peel_aux_indices(
   prefix: &str,
   param_decls: &[LocalDecl],
   level_params: &[Name],
+  lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(Vec<LeanExpr>, Vec<LocalDecl>, LeanExpr), CompileError> {
@@ -1243,7 +1246,8 @@ fn peel_aux_indices(
   let outer: Vec<LocalDecl> =
     param_decls.iter().chain(decls.iter()).cloned().collect();
   let mut scope =
-    super::expr_utils::TcScope::new(&outer, level_params, stt, kctx)?;
+    super::expr_utils::TcScope::new(&outer, level_params, stt, kctx)?
+      .with_source_defs(lean_env);
   for i in decls.len()..n {
     cur = strip_mdata_ref(&cur).clone();
     if !matches!(cur.as_data(), ExprData::ForallE(..)) {
@@ -1347,6 +1351,7 @@ fn build_motive_type_aux(
     "ma_idx",
     param_decls,
     rec_level_params,
+    lean_env,
     stt,
     kctx,
   )?;
@@ -1496,7 +1501,8 @@ fn build_minor_type(
 
   let unfold = kctx.unfold_rec_targets;
   let mut scope =
-    super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx)?;
+    super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx)?
+      .with_source_defs(lean_env);
 
   for fi in 0..n_fields {
     cur = strip_mdata_ref(&cur).clone();
@@ -1781,7 +1787,8 @@ fn build_rec_rules(
   // fields hidden under a definition (`reduceCtorParam` family).
   let unfold = kctx.unfold_rec_targets;
   let mut scope =
-    super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx)?;
+    super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx)?
+      .with_source_defs(lean_env);
 
   let mut rules = Vec::new();
 
@@ -2231,11 +2238,12 @@ fn find_rec_target(
     return Ok(Some(ci));
   }
 
-  // Phase 3 (decompile only, `KernelCtx::unfold_rec_targets`): Phase 2's
-  // reduct can name an alpha-twin of the member it reached (`Id' D` gives
-  // `D`, printed `Nat` when `D` and `Nat` share an address), so its by-name
-  // match misses. The compile, which never sets the flag, only traces what
-  // this phase would decide, under `IX_LOG_AUX_NAMES`.
+  // Phase 3 (decompile only, `KernelCtx::unfold_rec_targets`): where the
+  // named replay does not reach the kernel's reduct (`whnf_lean`), Phase 2's
+  // reduct can still name an alpha-twin of the member it reached (`Id' D`
+  // gives `D`, printed `Nat` when `D` and `Nat` share an address), so its
+  // by-name match misses. The compile, which never sets the flag, only
+  // traces what this phase would decide, under `IX_LOG_AUX_NAMES`.
   let (lean_env, unfold) = unfold;
   if !unfold && !*crate::compile::IX_LOG_AUX_NAMES {
     return Ok(None);
@@ -5828,41 +5836,44 @@ mod tests {
     // environments where these constants exist.
   }
 
-  /// `C.a : Id' D → C` with `D` an alpha-twin of `T` (`Nat`'s shape), the
-  /// fixture `SourceIngressReducedDefs.C`/`D`: once the kernel has met `T`,
-  /// Phase 2's reduct of `Id' D` names `T`, and only the decompile's Phase 3
-  /// finds `D`, so `C.rec`'s minor for `a` gets its inductive hypothesis.
-  /// The control is the compile's path (flag unset), unchanged.
-  #[test]
-  fn test_rec_target_behind_alias_of_twin() {
+  /// The fixture `SourceIngressReducedDefs.C`/`D`: block `{C, D}` with `D`
+  /// an alpha-twin of `T` (`Nat`'s shape; one address), `Id' := λ α. α`,
+  /// `G := λ _. T`, and `C.a : field → C`. Returns the arity of `C.rec`'s
+  /// minor for `a`: 2 when the field is recursive (the field and its
+  /// hypothesis), else 1. `warm_t`: the kernel meets `T` before the block;
+  /// `unfold`: the decompile's Phase 3 is on.
+  fn twin_block_minor_a_arity(
+    field: &LeanExpr,
+    warm_t: bool,
+    unfold: bool,
+  ) -> usize {
     use ix_common::env::{DefinitionSafety, DefinitionVal, ReducibilityHints};
     let (mut env, t) = build_type_nat_env();
-    let (id, c, d) = (n("Id'"), n("C"), n("D"));
+    let (c, d) = (n("C"), n("D"));
     let ty0 = LeanExpr::sort(Level::succ(Level::zero()));
     let k = |x: &Name| LeanExpr::cnst(x.clone(), vec![]);
-    env.insert(
-      id.clone(),
-      ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: id.clone(),
-          level_params: vec![],
-          typ: epi(n("α"), ty0.clone(), ty0.clone()),
-        },
-        value: LeanExpr::lam(
-          n("α"),
-          ty0.clone(),
-          LeanExpr::bvar(Nat::from(0u64)),
-          BinderInfo::Default,
-        ),
-        hints: ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
-        all: vec![id.clone()],
-      }),
-    );
+    for (def, body) in
+      [(n("Id'"), LeanExpr::bvar(Nat::from(0u64))), (n("G"), k(&t))]
+    {
+      env.insert(
+        def.clone(),
+        ConstantInfo::DefnInfo(DefinitionVal {
+          cnst: ConstantVal {
+            name: def.clone(),
+            level_params: vec![],
+            typ: epi(n("α"), ty0.clone(), ty0.clone()),
+          },
+          value: LeanExpr::lam(n("α"), ty0.clone(), body, BinderInfo::Default),
+          hints: ReducibilityHints::Abbrev,
+          safety: DefinitionSafety::Safe,
+          all: vec![def],
+        }),
+      );
+    }
     // (inductive, ctor, type, cidx = fields)
     let ctors = [
       (&c, "nil", k(&c), 0u64),
-      (&c, "a", epi(n("x"), LeanExpr::app(k(&id), k(&d)), k(&c)), 1),
+      (&c, "a", epi(n("x"), field.clone(), k(&c)), 1),
       (&d, "nil", k(&d), 0),
       (&d, "b", epi(n("x"), k(&d), k(&d)), 1),
     ];
@@ -5905,29 +5916,57 @@ mod tests {
     let twin = ix_common::address::Address::hash(b"twin");
     stt.name_to_addr.insert(t.clone(), twin.clone());
     stt.name_to_addr.insert(d.clone(), twin);
-    let minor_a_arity = |unfold: bool| {
-      let mut kctx = crate::compile::KernelCtx::new();
-      kctx.unfold_rec_targets = unfold;
+    let mut kctx = crate::compile::KernelCtx::new();
+    kctx.unfold_rec_targets = unfold;
+    if warm_t {
       let _ =
         generate_canonical_recursors(&[vec![t.clone()]], &env, &stt, &mut kctx)
           .unwrap();
-      let classes = [vec![c.clone()], vec![d.clone()]];
-      let (recs, _) =
-        generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
-      // C.rec : ∀ motive_1 motive_2 (nil : …) (a : ∀ x, [motive_2 x →] …), …
-      let mut ty = recs[0].1.cnst.typ.clone();
-      for _ in 0..3 {
-        let ExprData::ForallE(_, _, b, _, _) = ty.as_data() else { panic!() };
-        ty = b.clone();
-      }
-      let ExprData::ForallE(_, minor, _, _, _) = ty.as_data() else { panic!() };
-      let (mut arity, mut cur) = (0, minor.clone());
-      while let ExprData::ForallE(_, _, b, _, _) = cur.clone().as_data() {
-        (arity, cur) = (arity + 1, b.clone());
-      }
-      arity
-    };
-    assert_eq!(minor_a_arity(true), 2, "the field and its hypothesis");
-    assert_eq!(minor_a_arity(false), 1, "control: Phase 2 alone misses it");
+    }
+    let classes = [vec![c.clone()], vec![d.clone()]];
+    let (recs, _) =
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
+    // C.rec : ∀ motive_1 motive_2 (nil : …) (a : ∀ x, [motive_2 x →] …), …
+    let mut ty = recs[0].1.cnst.typ.clone();
+    for _ in 0..3 {
+      let ExprData::ForallE(_, _, b, _, _) = ty.as_data() else { panic!() };
+      ty = b.clone();
+    }
+    let ExprData::ForallE(_, minor, _, _, _) = ty.as_data() else { panic!() };
+    let (mut arity, mut cur) = (0, minor.clone());
+    while let ExprData::ForallE(_, _, b, _, _) = cur.clone().as_data() {
+      (arity, cur) = (arity + 1, b.clone());
+    }
+    arity
+  }
+
+  /// `C.a : Id' D → C`: once the kernel has met `T`, its reduct of `Id' D`
+  /// is printed `T`. The named replay (Lean's production route since AuxGen
+  /// M4) names it `D`, so Phase 2 finds the member on both paths, as Lean's
+  /// Phase 2 does; the decompile's Phase 3 agrees. Before the named replay
+  /// the compile's path (Phase 2 alone, arity 1) missed it.
+  #[test]
+  fn test_rec_target_behind_alias_of_twin() {
+    let k = |s: &str| LeanExpr::cnst(n(s), vec![]);
+    let field = LeanExpr::app(k("Id'"), k("D"));
+    assert_eq!(twin_block_minor_a_arity(&field, true, true), 2, "decompile");
+    assert_eq!(twin_block_minor_a_arity(&field, true, false), 2, "compile");
+  }
+
+  /// `C.a : G D → C` with `G := λ _. T`: Lean's reduct is `T`, no member of
+  /// the block, so the field is not recursive, though `T` shares `D`'s
+  /// address and the kernel, having met `D` first, prints its reduct `D`.
+  /// Restoring a reduct's names by address alone would decide it recursive.
+  #[test]
+  fn test_rec_target_value_twin_is_not_recursive() {
+    let k = |s: &str| LeanExpr::cnst(n(s), vec![]);
+    let field = LeanExpr::app(k("G"), k("D"));
+    for unfold in [false, true] {
+      assert_eq!(
+        twin_block_minor_a_arity(&field, false, unfold),
+        1,
+        "{unfold}"
+      );
+    }
   }
 }

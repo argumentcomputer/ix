@@ -1095,3 +1095,196 @@ fn provenance_refuses_a_changed_source_address() {
     "bridge fault: source address changed for Wanted",
   );
 }
+
+// =========================================================================
+// Named whnf on the recursor generator's scopes (AuxGen M4's named replay)
+// =========================================================================
+
+/// Axioms `T` and `D : Type` at one address (α-twins, as `Nat` and the
+/// fixture `SourceIngressReducedDefs.D`), `Id' := λ α. α` and `G := λ _. T`.
+fn named_whnf_fixture() -> (CompileState, ix_common::env::Env) {
+  use ix_common::env::{AxiomVal, ConstantVal};
+  let stt = CompileState::new_empty();
+  let twin = Address::hash(b"named-whnf-twin");
+  let ty0 = LeanExpr::sort(Level::succ(Level::zero()));
+  let arrow =
+    LeanExpr::all(name("α"), ty0.clone(), ty0.clone(), BinderInfo::Default);
+  let lam =
+    |b: LeanExpr| LeanExpr::lam(name("α"), ty0.clone(), b, BinderInfo::Default);
+  let mut env = ix_common::env::Env::default();
+  for n in ["T", "D"] {
+    env.insert(
+      name(n),
+      ConstantInfo::AxiomInfo(AxiomVal {
+        cnst: ConstantVal {
+          name: name(n),
+          level_params: vec![],
+          typ: ty0.clone(),
+        },
+        is_unsafe: false,
+      }),
+    );
+    stt.name_to_addr.insert(name(n), twin.clone());
+  }
+  for (n, ci) in [
+    loader_def("Id'", &[], arrow.clone(), lam(LeanExpr::bvar(Nat::from(0u64)))),
+    loader_def("G", &[], arrow, lam(LeanExpr::cnst(name("T"), vec![]))),
+  ] {
+    env.insert(n, ci);
+  }
+  (stt, env)
+}
+
+fn named_whnf_app(f: &str, a: &str) -> LeanExpr {
+  LeanExpr::app(
+    LeanExpr::cnst(name(f), vec![]),
+    LeanExpr::cnst(name(a), vec![]),
+  )
+}
+
+/// `Id' D` once the kernel has met `T`, `D`'s twin: the kernel's reduct is
+/// printed `T`; on a recursor-generator scope the named replay names it `D`,
+/// as Lean's production route (IxC's named replay, AuxGen M4) does.
+#[test]
+fn named_whnf_names_an_argument_twin_by_the_source() {
+  let (stt, env) = named_whnf_fixture();
+  let mut kctx = crate::compile::KernelCtx::new();
+  for n in ["T", "D", "Id'"] {
+    ensure_in_kenv_of(&name(n), &env, &stt, &mut kctx).unwrap();
+  }
+  let t = LeanExpr::cnst(name("T"), vec![]);
+  {
+    let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+    assert_same_lean(
+      &scope.whnf_lean(&named_whnf_app("Id'", "T")).unwrap(),
+      &t,
+    );
+    // The kernel's own spelling: the twin it met first.
+    assert_same_lean(
+      &scope.whnf_lean(&named_whnf_app("Id'", "D")).unwrap(),
+      &t,
+    );
+  }
+  let mut scope =
+    TcScope::new(&[], &[], &stt, &mut kctx).unwrap().with_source_defs(&env);
+  assert_same_lean(
+    &scope.whnf_lean(&named_whnf_app("Id'", "D")).unwrap(),
+    &LeanExpr::cnst(name("D"), vec![]),
+  );
+}
+
+/// `G D` with `G := λ _. T`: Lean's reduct is `T`. Once the kernel has met
+/// `D` before `T`, it prints the reduct `D` (one address); the named replay
+/// keeps `T`. A restoration by address alone cannot tell this `T` from the
+/// argument-derived `D` above.
+#[test]
+fn named_whnf_keeps_a_value_twin() {
+  let (stt, env) = named_whnf_fixture();
+  let mut kctx = crate::compile::KernelCtx::new();
+  let d = LeanExpr::cnst(name("D"), vec![]);
+  for n in ["T", "D", "Id'"] {
+    ensure_in_kenv_of(&name(n), &env, &stt, &mut kctx).unwrap();
+  }
+  {
+    let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+    assert_same_lean(
+      &scope.whnf_lean(&named_whnf_app("Id'", "D")).unwrap(),
+      &d,
+    );
+  }
+  ensure_in_kenv_of(&name("G"), &env, &stt, &mut kctx).unwrap();
+  {
+    let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+    // The kernel's own spelling: the twin it met first.
+    assert_same_lean(&scope.whnf_lean(&named_whnf_app("G", "D")).unwrap(), &d);
+  }
+  let mut scope =
+    TcScope::new(&[], &[], &stt, &mut kctx).unwrap().with_source_defs(&env);
+  assert_same_lean(
+    &scope.whnf_lean(&named_whnf_app("G", "D")).unwrap(),
+    &LeanExpr::cnst(name("T"), vec![]),
+  );
+}
+
+/// The named replay step for step as Lean's `Ix.AuxGen.Ixc.replay`: delta
+/// with the levels substituted, β, ζ, mdata, a projection of a constructor
+/// application; it stops at an axiom, a theorem or an unapplied λ, and runs
+/// out of fuel on a loop.
+#[test]
+fn named_replay_follows_the_lean_replay() {
+  use ix_common::env::{ConstantVal, ConstructorVal, TheoremVal};
+  let (_, mut env) = named_whnf_fixture();
+  let c = |s: &str| LeanExpr::cnst(name(s), vec![]);
+  let ty0 = LeanExpr::sort(Level::succ(Level::zero()));
+  let u = name("u");
+  for (n, ci) in [
+    loader_def(
+      "Lv",
+      std::slice::from_ref(&u),
+      ty0.clone(),
+      LeanExpr::sort(Level::param(u.clone())),
+    ),
+    loader_def("Loop", &[], ty0.clone(), c("Loop")),
+  ] {
+    env.insert(n, ci);
+  }
+  env.insert(
+    name("Th"),
+    ConstantInfo::ThmInfo(TheoremVal {
+      cnst: ConstantVal {
+        name: name("Th"),
+        level_params: vec![],
+        typ: ty0.clone(),
+      },
+      value: c("T"),
+      all: vec![],
+    }),
+  );
+  // `P.mk : (α : Type) → α → α → P α`: one parameter, two fields.
+  env.insert(
+    name("P.mk"),
+    ConstantInfo::CtorInfo(ConstructorVal {
+      cnst: ConstantVal {
+        name: name("P.mk"),
+        level_params: vec![],
+        typ: ty0.clone(),
+      },
+      induct: name("P"),
+      cidx: Nat::from(0u64),
+      num_params: Nat::from(1u64),
+      num_fields: Nat::from(2u64),
+      is_unsafe: false,
+    }),
+  );
+  let replay = |e: &LeanExpr| named_replay(e, &env, NAMED_REPLAY_FUEL);
+  let one = Level::succ(Level::zero());
+  assert_same_lean(
+    &replay(&LeanExpr::cnst(name("Lv"), vec![one.clone()])).unwrap(),
+    &LeanExpr::sort(one),
+  );
+  let mdata_head =
+    LeanExpr::app(LeanExpr::mdata(metadata("head"), c("Id'")), c("D"));
+  assert_same_lean(&replay(&mdata_head).unwrap(), &c("D"));
+  let zeta = LeanExpr::letE(
+    name("x"),
+    ty0.clone(),
+    c("D"),
+    LeanExpr::bvar(Nat::from(0u64)),
+    false,
+  );
+  assert_same_lean(&replay(&zeta).unwrap(), &c("D"));
+  let mk = [c("P.mk"), c("T"), c("D"), c("T")]
+    .into_iter()
+    .reduce(LeanExpr::app)
+    .unwrap();
+  let field1 = LeanExpr::proj(name("P"), Nat::from(1u64), mk);
+  assert_same_lean(&replay(&field1).unwrap(), &c("T"));
+  for stuck in [
+    c("Th"),
+    c("T"),
+    LeanExpr::lam(name("α"), ty0.clone(), c("D"), BinderInfo::Default),
+  ] {
+    assert_same_lean(&replay(&stuck).unwrap(), &stuck);
+  }
+  assert!(replay(&c("Loop")).is_none(), "out of fuel");
+}
