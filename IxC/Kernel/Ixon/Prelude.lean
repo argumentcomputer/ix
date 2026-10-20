@@ -151,9 +151,31 @@ def readPrelude (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Cons
   | .error (e, i) => throw s!"prelude record {i}: {e}"
 
 /-- The committed prelude, read under the role table `t`, with the default
-evidence backing the store. -/
-def preludeFor (t : Ix.Kernel.RoleTable) : Except String (Prelude md) := do
+evidence backing the store (unchecked; `preludeFor` checks its shape). -/
+def preludeRead (t : Ix.Kernel.RoleTable) : Except String (Prelude md) := do
   readPrelude t (← preludeRecords) (← evidenceRecords) (← evidenceBlobs)
+
+/-- **The prelude's shape, checked**: its declarations name the pinned
+prelude roles (`Ix.Kernel.preludeShape`), declaration by declaration, in
+order. A table that binds a prelude role anywhere but at the prelude's own
+record leaves that record under an input key, and fails here. -/
+def checkPreludeShape (pre : Prelude md) : Except String Unit :=
+  let names := pre.ix.decls.toList.map (·.names)
+  let pinned := Ix.Kernel.preludeShape.map (·.map (Ix.Kernel.Key.role (md := md)))
+  if names == pinned then pure ()
+  else
+    let i := ((List.range (max names.length pinned.length)).find?
+      (fun i => names[i]? != pinned[i]?)).getD 0
+    throw s!"the prelude's declaration {i} does not name its pinned prelude roles"
+
+/-- The committed prelude, read under the role table `t`, with the default
+evidence backing the store, its shape checked (`checkPreludeShape`): every
+prelude declaration names its pinned prelude roles, so the prelude read under
+any table it passes for is keyed as under the default table. -/
+def preludeFor (t : Ix.Kernel.RoleTable) : Except String (Prelude md) := do
+  let pre ← preludeRead t
+  checkPreludeShape pre
+  pure pre
 
 /-- The committed prelude under the default table. A failure is a corrupted
 committed file; the entry reports it rather than running with an empty

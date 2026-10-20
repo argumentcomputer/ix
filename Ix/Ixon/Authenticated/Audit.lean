@@ -60,11 +60,12 @@ end Ixon.Authenticated.Audit
 -- `IxC/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's recursive
 -- fields from 5961, likewise (9 more); the rest-only hoist and the decided units
 -- check (S1) from 5970, by the generic entries' change (117 in,
--- `IxC/Kernel/Audit/Roots.lean`).
+-- `IxC/Kernel/Audit/Roots.lean`); the prelude's
+-- shape check (S1, fact (ii)) from 6087, likewise (12 in).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 6087 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
+ Address.admissionHash]: 6099 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -224,9 +225,10 @@ specialisations gone), and (A) (`ALPHA-COLLAPSE.md` §8.2) from 5975, likewise (
 out: the compiler-trust roles and their checks), and the `.indDecl` shape guard from
 5853, likewise (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled),
 and the mutual modeller's reading of Lean's recursive fields from 5897, likewise (9 more),
-and the rest-only hoist and the decided units check (S1) from 5906, likewise (117 in). -/
+and the rest-only hoist and the decided units check (S1) from 5906, likewise (117 in),
+and the prelude's shape check (S1, fact (ii)) from 6023, likewise (12 in). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6023 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6035 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

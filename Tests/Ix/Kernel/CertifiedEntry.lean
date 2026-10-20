@@ -259,4 +259,32 @@ example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Record
     Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytesBlockOrder_has_model V h
 
+/-! ## The prelude's shape (S1, fact (ii))
+
+`preludeFor` checks that the prelude it reads names the pinned prelude roles,
+declaration by declaration. A table `RoleTable.check` admits but that binds a
+prelude role elsewhere (here `And`, at an address no record has) leaves the
+prelude's `And` record under an input key, and the prelude fails, naming the
+declaration. -/
+
+/-- The default table with `And` bound at another address. -/
+def andElsewhere : Except String Ix.Kernel.RoleTable := do
+  let t ← Ix.Kernel.Reader.defaultTable
+  pure { t with bound := t.bound.map fun (r, a) => if r == .and then (r, address 99) else (r, a) }
+
+-- admitted by the table check
+#guard match andElsewhere with
+  | .ok t => t.check.isOk
+  | .error _ => false
+-- its prelude fails the shape check at `And`, declaration 10
+#guard match andElsewhere with
+  | .ok t =>
+    match (Ix.Kernel.Reader.preludeFor t : Except String (Ix.Kernel.Reader.Prelude .anon)) with
+    | .error e => (e.splitOn "pinned prelude roles").length > 1 && (e.splitOn "declaration 10").length > 1
+    | .ok _ => false
+  | .error _ => false
+-- the default table's prelude passes, at both modes
+#guard (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .anon)).isOk
+#guard (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)).isOk
+
 end Tests.Ix.Kernel.CertifiedEntry
