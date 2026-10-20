@@ -109,12 +109,6 @@ pub struct KernelCtx {
   /// aliases or a reverse scan. Fresh with the context and cleared with
   /// `kenv`.
   pub source_names: SourceNames,
-  /// Set by the decompile's Pass 2 only (Lean: the decompile driver's
-  /// provenance-only `BlockEnv`): the recursor builders may decide a
-  /// field recursive by unfolding its head in the source
-  /// (`find_rec_target`'s Phase 3). The compile never sets it, so its
-  /// recursors do not depend on that step.
-  pub unfold_rec_targets: bool,
 }
 
 /// Forward source provenance: ingress address → the source names
@@ -133,7 +127,6 @@ impl KernelCtx {
       kenv: ix_kernel::env::KEnv::new(),
       aux_ingress_seen: FxHashSet::default(),
       source_names: FxHashMap::default(),
-      unfold_rec_targets: false,
     }
   }
 }

@@ -1499,7 +1499,6 @@ fn build_minor_type(
   let mut field_fvars: Vec<LeanExpr> = Vec::new();
   let mut rec_fields: Vec<(usize, usize)> = Vec::new(); // (field_idx, target_class)
 
-  let unfold = kctx.unfold_rec_targets;
   let mut scope =
     super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx)?
       .with_source_defs(lean_env);
@@ -1525,7 +1524,6 @@ fn build_minor_type(
           n_params,
           &mut scope,
           stt,
-          (lean_env, unfold),
         )?;
         if let Some(ci) = rec_ci {
           rec_fields.push((fi, ci));
@@ -1785,7 +1783,6 @@ fn build_rec_rules(
   // of constructor-field domains. Same rationale as `build_minor_type`:
   // delta-unfolding reducible-alias heads matters for recognizing recursive
   // fields hidden under a definition (`reduceCtorParam` family).
-  let unfold = kctx.unfold_rec_targets;
   let mut scope =
     super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx)?
       .with_source_defs(lean_env);
@@ -1872,7 +1869,6 @@ fn build_rec_rules(
               n_params,
               &mut scope,
               stt,
-              (lean_env, unfold),
             )? {
               rec_field_data.push((fv.clone(), target_ci));
             }
@@ -2168,8 +2164,8 @@ fn has_deeper_str(n: &Name) -> bool {
 /// `build_ih_type_fvar`'s subsequent WHNF on the same field_dom would be
 /// cold, and the cumulative cold-cache cost dominates wall-clock time
 /// on mathlib-scale runs (hundreds of seconds in Phase 5 Pass 2).
-/// Phase 3, the decompile's only, runs when Phase 2 matches nothing too
-/// ([`rec_target_by_unfolding`]).
+/// Phase 2's reduct carries the source's names (`whnf_lean`'s named
+/// replay, Lean's M4 rule), so an alpha-twin of a member does not hide it.
 ///
 /// Mirrors Lean's `kernel/inductive.cpp::is_rec_argument`. The TcScope
 /// is left balanced on return — every local pushed during peeling is
@@ -2181,7 +2177,6 @@ fn find_rec_target(
   n_params: usize,
   scope: &mut super::expr_utils::TcScope<'_>,
   _stt: &crate::compile::CompileState,
-  unfold: (&LeanEnv, bool),
 ) -> Result<Option<usize>, CompileError> {
   // Phase 1: syntactic peel + match.
   let mut ty = dom.clone();
@@ -2232,83 +2227,7 @@ fn find_rec_target(
     ty = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
   scope.pop_locals(&pushed)?;
-  if let Some(ci) =
-    match_classes_against_app(&ty, classes, param_fvars, n_params)
-  {
-    return Ok(Some(ci));
-  }
-
-  // Phase 3 (decompile only, `KernelCtx::unfold_rec_targets`): where the
-  // named replay does not reach the kernel's reduct (`whnf_lean`), Phase 2's
-  // reduct can still name an alpha-twin of the member it reached (`Id' D`
-  // gives `D`, printed `Nat` when `D` and `Nat` share an address), so its
-  // by-name match misses. The compile, which never sets the flag, only
-  // traces what this phase would decide, under `IX_LOG_AUX_NAMES`.
-  let (lean_env, unfold) = unfold;
-  if !unfold && !*crate::compile::IX_LOG_AUX_NAMES {
-    return Ok(None);
-  }
-  let found =
-    rec_target_by_unfolding(dom, classes, param_fvars, n_params, lean_env);
-  if let Some(ci) = found
-    && *crate::compile::IX_LOG_AUX_NAMES
-  {
-    let head = match decompose_apps(dom).0.as_data() {
-      ExprData::Const(n, _, _) => n.pretty(),
-      _ => "-".to_string(),
-    };
-    eprintln!(
-      "[aux-names] rec-target-fallback {} field-head={head} target={}",
-      if unfold { "applied" } else { "compile-not-applied" },
-      classes[ci].ind.cnst.name.pretty()
-    );
-  }
-  Ok(found.filter(|_| unfold))
-}
-
-/// Phase 3 of [`find_rec_target`]: the field's head unfolded in the source
-/// itself, with each definition's own value from `lean_env` and the field's
-/// own arguments (head beta, delta, foralls peeled), so a member's name
-/// survives where the kernel's name-erased reduct loses it. Every step is a
-/// head step of the kernel's `whnf`, so a member reached is the one Lean's
-/// `is_rec_argument` finds; anything else (a stuck head, `let`, `match`)
-/// stays undecided.
-fn rec_target_by_unfolding(
-  dom: &LeanExpr,
-  classes: &[FlatInfo],
-  param_fvars: &[LeanExpr],
-  n_params: usize,
-  lean_env: &LeanEnv,
-) -> Option<usize> {
-  let mut ty = dom.clone();
-  for step in 0..64 {
-    ty = strip_mdata_ref(&ty).clone();
-    if let Some(ci) =
-      match_classes_against_app(&ty, classes, param_fvars, n_params)
-    {
-      return Some(ci);
-    }
-    if let ExprData::ForallE(_, _, body, _, _) = ty.as_data() {
-      ty = instantiate1(body, &fresh_fvar("frt_unfold", step).1);
-      continue;
-    }
-    let (head, args) = decompose_apps(&ty);
-    let head = match head.as_data() {
-      ExprData::Lam(..) if !args.is_empty() => head,
-      ExprData::Const(name, levels, _) => match lean_env.get(name).as_deref() {
-        Some(ConstantInfo::DefnInfo(d))
-          if d.cnst.level_params.len() == levels.len() =>
-        {
-          subst_levels(&d.value, &d.cnst.level_params, levels)
-        },
-        _ => return None,
-      },
-      _ => return None,
-    };
-    ty =
-      super::expr_utils::beta_reduce(&super::expr_utils::mk_app_n(head, &args));
-  }
-  None
+  Ok(match_classes_against_app(&ty, classes, param_fvars, n_params))
 }
 
 /// Helper for [`find_rec_target`]: match an `App`-spine against the
@@ -5840,13 +5759,8 @@ mod tests {
   /// an alpha-twin of `T` (`Nat`'s shape; one address), `Id' := λ α. α`,
   /// `G := λ _. T`, and `C.a : field → C`. Returns the arity of `C.rec`'s
   /// minor for `a`: 2 when the field is recursive (the field and its
-  /// hypothesis), else 1. `warm_t`: the kernel meets `T` before the block;
-  /// `unfold`: the decompile's Phase 3 is on.
-  fn twin_block_minor_a_arity(
-    field: &LeanExpr,
-    warm_t: bool,
-    unfold: bool,
-  ) -> usize {
+  /// hypothesis), else 1. `warm_t`: the kernel meets `T` before the block.
+  fn twin_block_minor_a_arity(field: &LeanExpr, warm_t: bool) -> usize {
     use ix_common::env::{DefinitionSafety, DefinitionVal, ReducibilityHints};
     let (mut env, t) = build_type_nat_env();
     let (c, d) = (n("C"), n("D"));
@@ -5917,7 +5831,6 @@ mod tests {
     stt.name_to_addr.insert(t.clone(), twin.clone());
     stt.name_to_addr.insert(d.clone(), twin);
     let mut kctx = crate::compile::KernelCtx::new();
-    kctx.unfold_rec_targets = unfold;
     if warm_t {
       let _ =
         generate_canonical_recursors(&[vec![t.clone()]], &env, &stt, &mut kctx)
@@ -5942,15 +5855,15 @@ mod tests {
 
   /// `C.a : Id' D → C`: once the kernel has met `T`, its reduct of `Id' D`
   /// is printed `T`. The named replay (Lean's production route since AuxGen
-  /// M4) names it `D`, so Phase 2 finds the member on both paths, as Lean's
-  /// Phase 2 does; the decompile's Phase 3 agrees. Before the named replay
-  /// the compile's path (Phase 2 alone, arity 1) missed it.
+  /// M4) names it `D`, so Phase 2 finds the member, as Lean's Phase 2 does,
+  /// on the compile's and the decompile's path alike. Before the named
+  /// replay the compile missed it (arity 1) and the decompile needed an
+  /// unfolding of its own (Q2's Phase 3, retired).
   #[test]
   fn test_rec_target_behind_alias_of_twin() {
     let k = |s: &str| LeanExpr::cnst(n(s), vec![]);
     let field = LeanExpr::app(k("Id'"), k("D"));
-    assert_eq!(twin_block_minor_a_arity(&field, true, true), 2, "decompile");
-    assert_eq!(twin_block_minor_a_arity(&field, true, false), 2, "compile");
+    assert_eq!(twin_block_minor_a_arity(&field, true), 2);
   }
 
   /// `C.a : G D → C` with `G := λ _. T`: Lean's reduct is `T`, no member of
@@ -5961,12 +5874,6 @@ mod tests {
   fn test_rec_target_value_twin_is_not_recursive() {
     let k = |s: &str| LeanExpr::cnst(n(s), vec![]);
     let field = LeanExpr::app(k("G"), k("D"));
-    for unfold in [false, true] {
-      assert_eq!(
-        twin_block_minor_a_arity(&field, false, unfold),
-        1,
-        "{unfold}"
-      );
-    }
+    assert_eq!(twin_block_minor_a_arity(&field, false), 1);
   }
 }

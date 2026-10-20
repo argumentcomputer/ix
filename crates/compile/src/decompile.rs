@@ -6008,7 +6008,6 @@ pub fn decompile_env(
   // is to verify we can regenerate auxiliaries from the Ixon env alone,
   // independent of the compile phase's state).
   let mut kctx = KernelCtx::new();
-  kctx.unfold_rec_targets = true;
   expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);
 
   // Snapshot dstt.env (DashMap) into work_env (FxHashMap) for aux_gen lookups.
