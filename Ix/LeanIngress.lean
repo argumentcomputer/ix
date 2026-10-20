@@ -1008,12 +1008,136 @@ def checkSourceCollapsedAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.
   checkSourceCollapsedUsing Ix.Kernel.Reader.builtinPrelude (fiberAliasAt ixe (roleAtMap t))
     (hints[·]?) env blocks
 
-/-- `checkSourceCollapsedBundled`, the role read off the table `t`. -/
+/-! ## The bundle's evidence at the artifact's addresses
+
+Quotient Source checks with the committed bundle's evidence
+(`Ix.RoleEvidence.bundleEvidence`), whose proofs name the bundle's constants:
+the certificate theorems and the lemmas they cite, some of which the artifact
+does not publish. Their ids are renamed to their bundle (RoleData) addresses,
+the artifact's to its own (`addrOf`). One decided fact makes that a renaming: no
+bundle-only name sits at an address the artifact publishes (`bundleDisjointB`,
+the injectivity, checked by `collapsedChecks`). Whether every bundle name the
+artifact publishes is published at its bundle address (`bundleAgreesB`,
+agreement with the Ixon run's evidence) is reported, not checked: on Init+Std,
+161 of the bundle's 179 names are published by the artifact at another address. -/
+
+/-- **The bundle's addresses by Source name.** -/
+def bundleAddrs (b : Ix.RoleEvidence.Bundle) : Std.HashMap Ix.Kernel.Name Address :=
+  b.names.fold (fun m a n => m.insert (Ix.Kernel.Name.ofLeanName n) a) {}
+
+/-- The addresses an artifact publishes. -/
+def publishedAddrs (ixe : Ixon.Env) : Std.HashSet Address :=
+  (sourceAddrs ixe).fold (fun s _ a => s.insert a) {}
+
+/-- **No bundle-only name sits at an address the artifact publishes** (decided). -/
+def bundleDisjointB (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) : Bool :=
+  let pub := publishedAddrs ixe
+  let src := sourceAddrs ixe
+  (bundleAddrs b).toList.all fun (n, a) => src.contains n || !pub.contains a
+
+/-- **Every bundle name the artifact publishes is published at its bundle
+address** (decided). -/
+def bundleAgreesB (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) : Bool :=
+  let src := sourceAddrs ixe
+  (bundleAddrs b).toList.all fun (n, a) =>
+    match src[n]? with
+    | some a' => a' == a
+    | none => true
+
+/-- **Is `n` a representative of the artifact**: no role's name, published
+(`src`, the artifact's `sourceAddrs`), and fixed by the fiber map `ρ`. -/
+def qRepAtB (src : Std.HashMap Ix.Kernel.Name Address) (ρ : FiberMap) (n : Ix.Kernel.Name) : Bool :=
+  roleOf n == none && src.contains n && Key.subst ρ (.id n) == .id n
+
+/-- **Is `n` a representative or a bundle-only name** (no role's name, not
+published, and among the bundle's names `ba`). -/
+def qEvB (src : Std.HashMap Ix.Kernel.Name Address) (ρ : FiberMap)
+    (ba : Std.HashMap Ix.Kernel.Name Address) (n : Ix.Kernel.Name) : Bool :=
+  qRepAtB src ρ n || (roleOf n == none && !src.contains n && ba.contains n)
+
+/-- **The checks that make quotient Source's prepared stream `ds` a renaming onto
+a compiled artifact's keys**, the role read off the table `t`:
+* every key of `ds` is a representative (`qRepAtB`);
+* the bundle is disjoint from the artifact: no bundle-only name sits at an
+  address the artifact publishes (`bundleDisjointB`);
+* every key of the bundle's evidence, renamed onto the representatives, is a
+  representative or a bundle-only name (`qEvB`).
+A failure is a decline (`SourceError.collapse`). Whether every bundle name the
+artifact publishes is published at its bundle address (`bundleAgreesB`) is a
+reported fact, not a check: on Init+Std it does not hold (see the harness). -/
+def collapsedChecksWith (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (b : Ix.RoleEvidence.Bundle)
+    (ev : Ix.Kernel.Evidences .source) (ds : Array (CDecl .source)) : Option CollapseError :=
+  let ρ := fiberAliasAt ixe (roleAtMap t)
+  let src := sourceAddrs ixe
+  if !declsGoodB (qRepAtB src ρ) ds then some .notRepresentative
+  else if !bundleDisjointB ixe b then some .bundleAlias
+  else if !evidenceGoodB (qEvB src ρ (bundleAddrs b)) (evidenceSubst ρ ev) then some .evidence
+  else none
+
+/-- `collapsedChecksWith` over a bundle source and its evidence (the committed
+ones in `prepareSourceCollapsedAt`; parameters here, as the prelude is in the
+`…Using` checks, so that statements about the checks never unfold the
+committed data). -/
+def collapsedChecksUsing (bundle : Except String Ix.RoleEvidence.Bundle)
+    (ev : Ix.Kernel.Evidences .source) (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable)
+    (ds : Array (CDecl .source)) : Except SourceError Unit :=
+  match bundle with
+  | .error e => .error (.prelude e)
+  | .ok b =>
+    match collapsedChecksWith ixe t b ev ds with
+    | some e => .error (.collapse e)
+    | none => .ok ()
+
+/-- **Quotient Source's prepared stream at a compiled artifact**, over a bundle
+source and its evidence: the table rule's collapse (`fiberAliasAt`), then the
+checks that make it a renaming onto the artifact's keys (`collapsedChecksWith`). -/
+def prepareSourceCollapsedAtUsing (bundle : Except String Ix.RoleEvidence.Bundle)
+    (ev : Ix.Kernel.Evidences .source) (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable)
+    (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (pre : Ix.Kernel.Reader.Prelude .source) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Array (CDecl .source)) :=
+  match prepareSourceCollapsed (fiberAliasAt ixe (roleAtMap t)) hints pre env blocks with
+  | .error e => .error e
+  | .ok ds =>
+    match collapsedChecksUsing bundle ev ixe t ds with
+    | .error e => .error e
+    | .ok () => .ok ds
+
+/-- **Quotient Source's prepared stream at a compiled artifact**, the role read
+off the table `t`, at the committed bundle and its evidence
+(`prepareSourceCollapsedAtUsing`). -/
+def prepareSourceCollapsedAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable)
+    (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (pre : Ix.Kernel.Reader.Prelude .source) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Array (CDecl .source)) :=
+  prepareSourceCollapsedAtUsing (Ix.RoleEvidence.committedBundle ()) (Ix.RoleEvidence.bundleEvidence ())
+    ixe t hints pre env blocks
+
+/-- `checkSourceCollapsedBundledAt` over explicit sources: the prelude, the
+bundle and its evidence. -/
+def checkSourceCollapsedBundledAtUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source))
+    (bundle : Except String Ix.RoleEvidence.Bundle) (ev : Ix.Kernel.Evidences .source)
+    (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except SourceError (Ix.Kernel.Env .source) :=
+  match prelude with
+  | .error e => .error (.prelude e)
+  | .ok pre =>
+    let hints := fiberHintsMap ixe
+    match prepareSourceCollapsedAtUsing bundle ev ixe t (hints[·]?) pre env blocks with
+    | .error e => .error e
+    | .ok decls =>
+      match Ix.Kernel.Cached.checkDecls .verified
+          (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev) decls with
+      | .error (e, i) => .error (.kernel e i)
+      | .ok kenv => .ok kenv
+
+/-- `checkSourceCollapsedBundled`, the role read off the table `t`, on the
+checked prepared stream (`prepareSourceCollapsedAt`): at the committed prelude,
+bundle and evidence. -/
 def checkSourceCollapsedBundledAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) :=
-  let hints := fiberHintsMap ixe
-  checkSourceCollapsedBundledUsing Ix.Kernel.Reader.builtinPrelude (fiberAliasAt ixe (roleAtMap t))
-    (hints[·]?) env blocks
+  checkSourceCollapsedBundledAtUsing Ix.Kernel.Reader.builtinPrelude (Ix.RoleEvidence.committedBundle ())
+    (Ix.RoleEvidence.bundleEvidence ()) ixe t env blocks
 
 /-! ## The typing tier: partial and unsafe declarations
 

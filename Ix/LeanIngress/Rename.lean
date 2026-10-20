@@ -22,6 +22,8 @@ namespace Ix.LeanIngress
 
 open Ix.Kernel
 
+universe w
+
 variable {ixe : Ixon.Env}
 
 /-! ## Representatives and their addresses -/
@@ -551,4 +553,696 @@ theorem roleAtMap_spec {t : Ix.Kernel.RoleTable} (h : t.check = .ok ()) {a : Add
     simp only at hq1 hqa
     subst hq1 hqa
     exact hqm
+
+/-! ## The bundle's evidence at the artifact's addresses -/
+
+section Bundle
+
+variable {b : Ix.RoleEvidence.Bundle}
+
+theorem bundleAddrs_foldl :
+    ∀ (l : List (Address × Lean.Name)) (init : Std.HashMap Ix.Kernel.Name Address)
+      {n : Ix.Kernel.Name} {a : Address},
+      (l.foldl (fun m p => m.insert (Ix.Kernel.Name.ofLeanName p.2) p.1) init)[n]? = some a →
+        init[n]? = some a ∨ ∃ p ∈ l, Ix.Kernel.Name.ofLeanName p.2 = n ∧ p.1 = a
+  | [], _, _, _, h => Or.inl h
+  | p :: l, init, n, a, h => by
+    rw [List.foldl_cons] at h
+    rcases bundleAddrs_foldl l _ h with h | ⟨q, hq, h1, h2⟩
+    · rw [Std.HashMap.getElem?_insert] at h
+      split at h
+      · rename_i he
+        cases h
+        exact Or.inr ⟨p, List.mem_cons_self, beq_iff_eq.mp he, rfl⟩
+      · exact Or.inl h
+    · exact Or.inr ⟨q, List.mem_cons_of_mem _ hq, h1, h2⟩
+
+/-- **A bundle address is a bundle name's**. -/
+theorem bundleAddrs_spec {n : Ix.Kernel.Name} {a : Address} (h : (bundleAddrs b)[n]? = some a) :
+    ∃ m, b.names[a]? = some m ∧ Ix.Kernel.Name.ofLeanName m = n := by
+  unfold bundleAddrs at h
+  rw [Std.HashMap.fold_eq_foldl_toList] at h
+  rcases bundleAddrs_foldl _ _ h with h | ⟨⟨a', m⟩, hm, h1, h2⟩
+  · simp at h
+  · simp only at h1 h2
+    subst h2
+    exact ⟨m, Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hm, h1⟩
+
+/-- **Two bundle names at one bundle address are one name.** -/
+theorem bundleAddrs_inj {i j : Ix.Kernel.Name} {a : Address} (hi : (bundleAddrs b)[i]? = some a)
+    (hj : (bundleAddrs b)[j]? = some a) : i = j := by
+  obtain ⟨m, hm, rfl⟩ := bundleAddrs_spec hi
+  obtain ⟨m', hm', rfl⟩ := bundleAddrs_spec hj
+  rw [hm] at hm'
+  cases hm'
+  rfl
+
+theorem publishedAddrs_foldl :
+    ∀ (l : List (Ix.Kernel.Name × Address)) (init : Std.HashSet Address) {a : Address},
+      (l.foldl (fun s p => s.insert p.2) init).contains a = true →
+        init.contains a = true ∨ ∃ p ∈ l, p.2 = a
+  | [], _, _, h => Or.inl h
+  | p :: l, init, a, h => by
+    rw [List.foldl_cons] at h
+    rcases publishedAddrs_foldl l _ h with h | ⟨q, hq, h1⟩
+    · rw [Std.HashSet.contains_insert, Bool.or_eq_true] at h
+      rcases h with h | h
+      · exact Or.inr ⟨p, List.mem_cons_self, beq_iff_eq.mp h⟩
+      · exact Or.inl h
+    · exact Or.inr ⟨q, List.mem_cons_of_mem _ hq, h1⟩
+
+/-- An address the artifact publishes is a published name's. -/
+theorem publishedAddrs_spec {a : Address} (h : (publishedAddrs ixe).contains a = true) :
+    ∃ m : Ix.Kernel.Name, (sourceAddrs ixe)[m]? = some a := by
+  unfold publishedAddrs at h
+  rw [Std.HashMap.fold_eq_foldl_toList] at h
+  rcases publishedAddrs_foldl _ _ h with h | ⟨⟨m, a'⟩, hm, h1⟩
+  · simp at h
+  · simp only at h1
+    subst h1
+    exact ⟨m, Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hm⟩
+
+theorem publishedAddrs_foldl_of :
+    ∀ (l : List (Ix.Kernel.Name × Address)) (init : Std.HashSet Address) {a : Address}
+      {m : Ix.Kernel.Name}, (init.contains a = true ∨ (m, a) ∈ l) →
+        (l.foldl (fun s p => s.insert p.2) init).contains a = true
+  | [], _, _, _, h => by
+    rcases h with h | h
+    · exact h
+    · cases h
+  | p :: l, init, a, m, h => by
+    rw [List.foldl_cons]
+    apply publishedAddrs_foldl_of l _ (m := m)
+    rcases h with h | h
+    · left
+      rw [Std.HashSet.contains_insert]
+      simp [h]
+    · rcases List.mem_cons.mp h with h | h
+      · left
+        rw [Std.HashSet.contains_insert, ← h]
+        simp
+      · exact Or.inr h
+
+theorem publishedAddrs_of {m : Ix.Kernel.Name} {a : Address} (h : (sourceAddrs ixe)[m]? = some a) :
+    (publishedAddrs ixe).contains a = true := by
+  unfold publishedAddrs
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  exact publishedAddrs_foldl_of _ _ (m := m)
+    (Or.inr (Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr h))
+
+/-- **A bundle-only name**: no role's, unpublished, and in the bundle. -/
+def BundleOnly (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) (n : Ix.Kernel.Mode.Id .source) : Prop :=
+  roleOf n = none ∧ (sourceAddrs ixe)[n]? = none ∧ ((bundleAddrs b)[n]?).isSome
+
+/-- **The joined renaming**: a published name to its address, a bundle name
+the artifact does not publish to its bundle address. -/
+def evAddr (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) :
+    Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon :=
+  fun n => match (sourceAddrs ixe)[n]? with
+    | some a => a
+    | none => ((bundleAddrs b)[n]?).getD default
+
+/-- `bundleDisjointB`, read: a bundle-only name's address is no published name's. -/
+theorem bundleDisjointB_spec (h : bundleDisjointB ixe b = true) {n : Ix.Kernel.Name} {a : Address}
+    (hn : (sourceAddrs ixe)[n]? = none) (ha : (bundleAddrs b)[n]? = some a) :
+    ∀ m : Ix.Kernel.Name, (sourceAddrs ixe)[m]? ≠ some a := by
+  intro m hm
+  unfold bundleDisjointB at h
+  have hmem : (n, a) ∈ (bundleAddrs b).toList := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr ha
+  have := List.all_eq_true.mp h _ hmem
+  simp only [Std.HashMap.contains_eq_isSome_getElem?, hn, Option.isSome_none, Bool.false_or,
+    Bool.not_eq_true'] at this
+  rw [publishedAddrs_of hm] at this
+  cases this
+
+/-- **The joined renaming is injective** on representatives and bundle-only
+names, when every published role name sits at its role's bound address and the
+bundle is disjoint from the artifact. -/
+theorem evAddr_injOn {roles : Std.HashMap Address Ix.Kernel.Role} (hb : TableBound ixe roles)
+    (hd : bundleDisjointB ixe b = true) :
+    Ix.Kernel.InjOn (md := .source) (md' := .anon) (evAddr ixe b)
+      (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n) := by
+  intro i j hi hj hij
+  have hq : ∀ {n}, QRepAt ixe roles n → ∃ a, (sourceAddrs ixe)[n]? = some a ∧ evAddr ixe b n = a :=
+    fun {n} hn => by
+      obtain ⟨⟨_, han⟩, _⟩ := hn
+      obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp han
+      exact ⟨a, ha, by simp [evAddr, ha]⟩
+  have hbo : ∀ {n}, BundleOnly ixe b n →
+      ∃ a, (sourceAddrs ixe)[n]? = none ∧ (bundleAddrs b)[n]? = some a ∧ evAddr ixe b n = a :=
+    fun {n} hn => by
+      obtain ⟨_, hns, hnb⟩ := hn
+      obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp hnb
+      exact ⟨a, hns, ha, by simp [evAddr, hns, ha]⟩
+  rcases hi with hi | hi <;> rcases hj with hj | hj
+  · exact addrOf_injOnAt hb hi hj (by
+      obtain ⟨a, ha, hia⟩ := hq hi
+      obtain ⟨a', ha', hja⟩ := hq hj
+      rw [addrOf_eq ha, addrOf_eq ha']
+      rw [hia, hja] at hij
+      exact hij)
+  · obtain ⟨a, ha, hia⟩ := hq hi
+    obtain ⟨a', hns, hb', hja⟩ := hbo hj
+    rw [hia, hja] at hij
+    subst hij
+    exact absurd ha (bundleDisjointB_spec hd hns hb' i)
+  · obtain ⟨a, hns, hb', hia⟩ := hbo hi
+    obtain ⟨a', ha', hja⟩ := hq hj
+    rw [hia, hja] at hij
+    subst hij
+    exact absurd ha' (bundleDisjointB_spec hd hns hb' j)
+  · obtain ⟨a, _, hia', hia⟩ := hbo hi
+    obtain ⟨a', _, hja', hja⟩ := hbo hj
+    rw [hia, hja] at hij
+    subst hij
+    exact bundleAddrs_inj hia' hja'
+
+/-- **Reference acceptance at the joined renaming**, the evidence explicit:
+a quotient run whose declarations name representatives and whose evidence names
+representatives or bundle-only names, renamed by `evAddr`, is accepted at the
+same fuel, with a related environment. -/
+theorem acceptsRef_evAddr (μ : Ix.Kernel.CheckMode) {roles : Std.HashMap Address Ix.Kernel.Role}
+    (hb : TableBound ixe roles) (hd : bundleDisjointB ixe b = true)
+    {ev : Ix.Kernel.Evidences .source}
+    (hev : ev.Good (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n))
+    {ds : List (Ix.Kernel.Declaration .source)}
+    (hds : ∀ d ∈ ds, d.Good (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n))
+    {envS : Ix.Kernel.Env .source} (h : Ix.Kernel.Cached.AcceptsRef μ ev ds envS) :
+    ∃ envA, Ix.Kernel.Cached.AcceptsRef μ (ev.mapKeys (evAddr ixe b))
+        (ds.map (Ix.Kernel.Declaration.mapKeys (evAddr ixe b))) envA ∧
+      Ix.Kernel.EnvRel (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n) (evAddr ixe b) envS envA :=
+  Ix.Kernel.Cached.AcceptsRef.rename μ (evAddr_injOn hb hd) hev hds h
+
+/-- `bundleAgreesB`, read: the joined renaming sends every bundle name to its
+bundle address (the Ixon run's evidence key). -/
+theorem evAddr_bundle (h : bundleAgreesB ixe b = true) {n : Ix.Kernel.Name} {a : Address}
+    (ha : (bundleAddrs b)[n]? = some a) : evAddr ixe b n = a := by
+  cases hs : (sourceAddrs ixe)[n]? with
+  | none => simp [evAddr, hs, ha]
+  | some a' =>
+    unfold bundleAgreesB at h
+    have hmem : (n, a) ∈ (bundleAddrs b).toList := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr ha
+    have := List.all_eq_true.mp h _ hmem
+    simp only [hs, beq_iff_eq] at this
+    simp [evAddr, hs, this]
+
+end Bundle
+
+/-! ## The decided goodness of a stream -/
+
+section Decided
+
+variable {q : Ix.Kernel.Name → Bool}
+
+theorem Key.goodB_spec : ∀ {k : Ix.Kernel.Key .source}, Key.goodB q k = true →
+    k.Good (fun n => q n = true)
+  | .id _, h => h
+  | .role _, _ => trivial
+  | .aux k _, h => Key.goodB_spec (k := k) h
+
+/-- The memo's invariant: every recorded subterm is good. -/
+def GoodSeen (Q : Ix.Kernel.Name → Prop) (seen : Std.HashSet (Ix.Kernel.Expr .source)) : Prop :=
+  ∀ e, seen.contains e = true → e.Good Q
+
+theorem GoodSeen.empty {Q : Ix.Kernel.Name → Prop} : GoodSeen Q {} := by
+  intro e h
+  simp at h
+
+theorem GoodSeen.insert {Q : Ix.Kernel.Name → Prop} {seen : Std.HashSet (Ix.Kernel.Expr .source)}
+    (h : GoodSeen Q seen) {e : Ix.Kernel.Expr .source} (he : e.Good Q) : GoodSeen Q (seen.insert e) := by
+  intro x hx
+  rw [Std.HashSet.contains_insert, Bool.or_eq_true] at hx
+  rcases hx with hx | hx
+  · rw [← eq_of_beq hx]
+    exact he
+  · exact h x hx
+
+theorem goodBGo_finish {Q : Ix.Kernel.Name → Prop} {seen : Std.HashSet (Ix.Kernel.Expr .source)}
+    {e : Ix.Kernel.Expr .source} {ok : Bool} (hs : GoodSeen Q seen) (he : ok = true → e.Good Q) :
+    GoodSeen Q (if ok = true then (true, seen.insert e) else (false, seen)).2 ∧
+      ((if ok = true then (true, seen.insert e) else (false, seen)).1 = true → e.Good Q) := by
+  cases ok with
+  | false => exact ⟨hs, by simp⟩
+  | true => exact ⟨hs.insert (he rfl), fun _ => he rfl⟩
+
+/-- **The memoised walk decides goodness.** -/
+theorem Expr.goodBGo_spec : ∀ (e : Ix.Kernel.Expr .source) {seen : Std.HashSet (Ix.Kernel.Expr .source)},
+    GoodSeen (fun n => q n = true) seen →
+      GoodSeen (fun n => q n = true) (Expr.goodBGo q seen e).2 ∧
+        ((Expr.goodBGo q seen e).1 = true → e.Good (fun n => q n = true)) := by
+  intro e
+  induction e with
+  | bvar => intro seen hs; exact ⟨hs, fun _ => trivial⟩
+  | sort => intro seen hs; exact ⟨hs, fun _ => trivial⟩
+  | lit => intro seen hs; exact ⟨hs, fun _ => trivial⟩
+  | const n us => intro seen hs; exact ⟨hs, fun h => Key.goodB_spec h⟩
+  | fvar i ty ih =>
+    intro seen hs
+    rw [Expr.goodBGo]
+    split
+    · rename_i hc
+      exact ⟨hs, fun _ => hs _ hc⟩
+    · dsimp only
+      obtain ⟨h1, h2⟩ := ih hs
+      exact goodBGo_finish h1 h2
+  | app a b iha ihb =>
+    intro seen hs
+    rw [Expr.goodBGo]
+    split
+    · rename_i hc
+      exact ⟨hs, fun _ => hs _ hc⟩
+    · dsimp only
+      obtain ⟨h1, h2⟩ := iha hs
+      by_cases ha : (Expr.goodBGo q seen a).1 = true
+      · simp only [ha, ↓reduceIte]
+        obtain ⟨h3, h4⟩ := ihb h1
+        exact goodBGo_finish h3 (fun h => ⟨h2 ha, h4 h⟩)
+      · simp only [ha, Bool.false_eq_true, ↓reduceIte]
+        exact ⟨h1, False.elim⟩
+  | lam ty body m iht ihb =>
+    intro seen hs
+    rw [Expr.goodBGo]
+    split
+    · rename_i hc
+      exact ⟨hs, fun _ => hs _ hc⟩
+    · dsimp only
+      obtain ⟨h1, h2⟩ := iht hs
+      by_cases ha : (Expr.goodBGo q seen ty).1 = true
+      · simp only [ha, ↓reduceIte]
+        obtain ⟨h3, h4⟩ := ihb h1
+        exact goodBGo_finish h3 (fun h => ⟨h2 ha, h4 h⟩)
+      · simp only [ha, Bool.false_eq_true, ↓reduceIte]
+        exact ⟨h1, False.elim⟩
+  | forallE ty body m iht ihb =>
+    intro seen hs
+    rw [Expr.goodBGo]
+    split
+    · rename_i hc
+      exact ⟨hs, fun _ => hs _ hc⟩
+    · dsimp only
+      obtain ⟨h1, h2⟩ := iht hs
+      by_cases ha : (Expr.goodBGo q seen ty).1 = true
+      · simp only [ha, ↓reduceIte]
+        obtain ⟨h3, h4⟩ := ihb h1
+        exact goodBGo_finish h3 (fun h => ⟨h2 ha, h4 h⟩)
+      · simp only [ha, Bool.false_eq_true, ↓reduceIte]
+        exact ⟨h1, False.elim⟩
+  | letE ty v body l iht ihv ihb =>
+    intro seen hs
+    rw [Expr.goodBGo]
+    split
+    · rename_i hc
+      exact ⟨hs, fun _ => hs _ hc⟩
+    · dsimp only
+      obtain ⟨h1, h2⟩ := iht hs
+      by_cases ha : (Expr.goodBGo q seen ty).1 = true
+      · simp only [ha, ↓reduceIte]
+        obtain ⟨h3, h4⟩ := ihv h1
+        by_cases hv : (Expr.goodBGo q (Expr.goodBGo q seen ty).2 v).1 = true
+        · simp only [hv, ↓reduceIte]
+          obtain ⟨h5, h6⟩ := ihb h3
+          exact goodBGo_finish h5 (fun h => ⟨h2 ha, h4 hv, h6 h⟩)
+        · simp only [hv, Bool.false_eq_true, ↓reduceIte]
+          exact ⟨h3, False.elim⟩
+      · simp only [ha, Bool.false_eq_true, ↓reduceIte]
+        exact ⟨h1, False.elim⟩
+  | proj s i sub ih =>
+    intro seen hs
+    rw [Expr.goodBGo]
+    split
+    · rename_i hc
+      exact ⟨hs, fun _ => hs _ hc⟩
+    · dsimp only
+      by_cases hk : Key.goodB q s = true
+      · simp only [hk, ↓reduceIte]
+        obtain ⟨h1, h2⟩ := ih hs
+        exact goodBGo_finish h1 (fun h => ⟨Key.goodB_spec hk, h2 h⟩)
+      · simp only [hk, Bool.false_eq_true, ↓reduceIte]
+        exact ⟨hs, False.elim⟩
+
+
+theorem exprsGoodB_spec : ∀ (es : List (Ix.Kernel.Expr .source))
+    {seen : Std.HashSet (Ix.Kernel.Expr .source)}, GoodSeen (fun n => q n = true) seen →
+      GoodSeen (fun n => q n = true) (exprsGoodB q seen es).2 ∧
+        ((exprsGoodB q seen es).1 = true → ∀ e ∈ es, e.Good (fun n => q n = true))
+  | [], _, hs => ⟨hs, fun _ _ he => nomatch he⟩
+  | e :: es, seen, hs => by
+    obtain ⟨h1, h2⟩ := Expr.goodBGo_spec e hs
+    rcases hb : Expr.goodBGo q seen e with ⟨b, s⟩
+    rw [hb] at h1 h2
+    cases b with
+    | false =>
+      simp only [exprsGoodB, hb]
+      exact ⟨h1, fun h => by cases h⟩
+    | true =>
+      simp only [exprsGoodB, hb]
+      obtain ⟨h3, h4⟩ := exprsGoodB_spec es h1
+      refine ⟨h3, fun h x hx => ?_⟩
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact h2 rfl
+      · exact h4 h x hx
+
+/-- A constant whose parts are good is good. -/
+theorem ConstantInfo.good_of_parts {P : Ix.Kernel.Name → Prop} {c : Ix.Kernel.ConstantInfo .source}
+    (hk : ∀ k ∈ (ConstantInfo.parts c).1, k.Good P) (he : ∀ e ∈ (ConstantInfo.parts c).2, e.Good P) :
+    c.Good P := by
+  cases c with
+  | axiomInfo v => exact ⟨hk _ (by simp [ConstantInfo.parts]), he _ (by simp [ConstantInfo.parts])⟩
+  | defnInfo v e _ =>
+    exact ⟨⟨hk _ (by simp [ConstantInfo.parts]), he _ (by simp [ConstantInfo.parts])⟩,
+      he _ (by simp [ConstantInfo.parts])⟩
+  | thmInfo v e =>
+    exact ⟨⟨hk _ (by simp [ConstantInfo.parts]), he _ (by simp [ConstantInfo.parts])⟩,
+      he _ (by simp [ConstantInfo.parts])⟩
+  | indInfo v caps =>
+    refine ⟨⟨hk _ (by simp [ConstantInfo.parts]), he _ (by simp [ConstantInfo.parts])⟩, ?_⟩
+    intro k hk'
+    exact hk k (by simp [ConstantInfo.parts, Option.mem_toList.mpr hk'])
+  | ctorInfo v _ _ => exact ⟨hk _ (by simp [ConstantInfo.parts]), he _ (by simp [ConstantInfo.parts])⟩
+  | recInfo v _ _ rules =>
+    refine ⟨⟨hk _ (by simp [ConstantInfo.parts]), he _ (by simp [ConstantInfo.parts])⟩, ?_⟩
+    intro r hr
+    refine ⟨hk _ (by simp only [ConstantInfo.parts, List.mem_cons, List.mem_map]; exact Or.inr ⟨r, hr, rfl⟩),
+      ?_, he _ (by
+        simp only [ConstantInfo.parts, List.mem_cons, List.mem_flatMap]
+        exact Or.inr ⟨r, hr, Or.inl rfl⟩)⟩
+    cases hf : r.fire with
+    | inert => trivial
+    | plain => trivial
+    | nested _ ps =>
+      intro x hx
+      exact he _ (by
+        simp only [ConstantInfo.parts, List.mem_cons, List.mem_flatMap]
+        exact Or.inr ⟨r, hr, Or.inr (by rw [hf]; exact hx)⟩)
+  | projInfo t =>
+    refine ⟨hk _ (by simp [ConstantInfo.parts]), hk _ (by simp [ConstantInfo.parts]), ?_⟩
+    intro x hx
+    exact he _ (by simpa [ConstantInfo.parts] using hx)
+
+/-- A declaration whose parts are good is good. -/
+theorem Declaration.good_of_parts {P : Ix.Kernel.Name → Prop} {d : Ix.Kernel.Declaration .source}
+    (hk : ∀ k ∈ (Declaration.parts d).1, k.Good P) (he : ∀ e ∈ (Declaration.parts d).2, e.Good P) :
+    d.Good P := by
+  cases d with
+  | axiomDecl v => exact ⟨hk _ (by simp [Declaration.parts]), he _ (by simp [Declaration.parts])⟩
+  | defnDecl v e _ =>
+    exact ⟨⟨hk _ (by simp [Declaration.parts]), he _ (by simp [Declaration.parts])⟩,
+      he _ (by simp [Declaration.parts])⟩
+  | thmDecl v e =>
+    exact ⟨⟨hk _ (by simp [Declaration.parts]), he _ (by simp [Declaration.parts])⟩,
+      he _ (by simp [Declaration.parts])⟩
+  | opaqueDecl v e =>
+    exact ⟨⟨hk _ (by simp [Declaration.parts]), he _ (by simp [Declaration.parts])⟩,
+      he _ (by simp [Declaration.parts])⟩
+  | basisDecl _ => trivial
+  | indDecl block _ =>
+    intro c hc
+    exact ConstantInfo.good_of_parts
+      (fun k hk' => hk k (by simp only [Declaration.parts, List.mem_flatMap]; exact ⟨c, hc, hk'⟩))
+      (fun e he' => he e (by simp only [Declaration.parts, List.mem_flatMap]; exact ⟨c, hc, he'⟩))
+  | quotDecl _ v => exact ⟨hk _ (by simp [Declaration.parts]), he _ (by simp [Declaration.parts])⟩
+
+/-- **The decided goodness of a stream**: every declaration's parts pass `q`. -/
+theorem declsGoodB_spec {ds : Array (Ix.Kernel.Declaration .source)} (h : declsGoodB q ds = true) :
+    ∀ d ∈ ds, (∀ k ∈ (Declaration.parts d).1, k.Good (fun n => q n = true)) ∧
+      (∀ e ∈ (Declaration.parts d).2, e.Good (fun n => q n = true)) := by
+  unfold declsGoodB at h
+  rw [← Array.foldl_toList] at h
+  intro d hd
+  have hd' := Array.mem_toList_iff.mpr hd
+  generalize ds.toList = l at h hd'
+  suffices ∀ (l : List (Ix.Kernel.Declaration .source)) (acc : Bool × Std.HashSet (Ix.Kernel.Expr .source)),
+      GoodSeen (fun n => q n = true) acc.2 →
+      (l.foldl (fun (acc : Bool × Std.HashSet (Ix.Kernel.Expr .source)) d =>
+        if acc.1 then
+          if (Declaration.parts d).1.all (Key.goodB q) then exprsGoodB q acc.2 (Declaration.parts d).2
+          else (false, acc.2)
+        else acc) acc).1 = true →
+      acc.1 = true ∧ ∀ d ∈ l, (∀ k ∈ (Declaration.parts d).1, k.Good (fun n => q n = true)) ∧
+        (∀ e ∈ (Declaration.parts d).2, e.Good (fun n => q n = true)) from
+    (this l (true, {}) GoodSeen.empty h).2 d hd'
+  intro l
+  induction l with
+  | nil => intro acc _ h; exact ⟨h, fun _ hd => nomatch hd⟩
+  | cons x xs ih =>
+    intro acc hs h
+    rw [List.foldl_cons] at h
+    by_cases ha : acc.1 = true
+    · simp only [ha, ↓reduceIte] at h
+      by_cases hk : (Declaration.parts x).1.all (Key.goodB q) = true
+      · simp only [hk, ↓reduceIte] at h
+        obtain ⟨h1, h2⟩ := exprsGoodB_spec (Declaration.parts x).2 hs
+        obtain ⟨h3, h4⟩ := ih _ h1 h
+        refine ⟨ha, fun d hd => ?_⟩
+        rcases List.mem_cons.mp hd with rfl | hd
+        · exact ⟨fun k hk' => Key.goodB_spec (List.all_eq_true.mp hk k hk'), h2 h3⟩
+        · exact h4 d hd
+      · simp only [hk, Bool.false_eq_true, ↓reduceIte] at h
+        have := (ih (false, acc.2) hs h).1
+        cases this
+    · simp only [ha, Bool.false_eq_true, ↓reduceIte] at h
+      exact absurd (ih acc hs h).1 ha
+
+/-- The decided goodness of a stream, read: every declaration is good. -/
+theorem declsGoodB_good {ds : Array (Ix.Kernel.Declaration .source)} (h : declsGoodB q ds = true) :
+    ∀ d ∈ ds, d.Good (fun n => q n = true) := fun d hd =>
+  Declaration.good_of_parts (declsGoodB_spec h d hd).1 (declsGoodB_spec h d hd).2
+
+/-- **The decided goodness of an evidence table.** -/
+theorem evidenceGoodB_good {ev : Ix.Kernel.Evidences .source} (h : evidenceGoodB q ev = true) :
+    ev.Good (fun n => q n = true) := by
+  unfold evidenceGoodB at h
+  rw [Bool.and_eq_true] at h
+  obtain ⟨hk, he⟩ := h
+  have he' := (exprsGoodB_spec (evidenceParts ev).2 GoodSeen.empty).2 he
+  intro p hp e hpe
+  cases e with
+  | defeq => trivial
+  | proof kv =>
+    obtain ⟨k, v⟩ := kv
+    refine ⟨Key.goodB_spec (List.all_eq_true.mp hk k ?_), he' v ?_⟩
+    · simp only [evidenceParts, List.mem_flatMap]
+      exact ⟨p, hp, .proof (k, v), hpe, List.mem_singleton_self _⟩
+    · simp only [evidenceParts, List.mem_flatMap]
+      exact ⟨p, hp, .proof (k, v), hpe, List.mem_singleton_self _⟩
+end Decided
+
+/-! ## Quotient Source at a compiled artifact (`prepareSourceCollapsedAt`) -/
+
+section At
+
+variable {t : Ix.Kernel.RoleTable}
+
+/-- `qRepAtB`, read: a representative of the artifact under the table rule. -/
+theorem qRepAtB_spec {roles : Std.HashMap Address Ix.Kernel.Role} {n : Ix.Kernel.Name}
+    (h : qRepAtB (sourceAddrs ixe) (fiberAliasAt ixe roles) n = true) : QRepAt ixe roles n := by
+  simp only [qRepAtB, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨hr, hc⟩, hf⟩ := h
+  refine ⟨⟨hr, ?_⟩, hf⟩
+  rw [Std.HashMap.contains_eq_isSome_getElem?] at hc
+  exact hc
+
+/-- `qEvB`, read: a representative or a bundle-only name. -/
+theorem qEvB_spec {roles : Std.HashMap Address Ix.Kernel.Role} {b : Ix.RoleEvidence.Bundle}
+    {n : Ix.Kernel.Name}
+    (h : qEvB (sourceAddrs ixe) (fiberAliasAt ixe roles) (bundleAddrs b) n = true) :
+    QRepAt ixe roles n ∨ BundleOnly ixe b n := by
+  simp only [qEvB, Bool.or_eq_true] at h
+  rcases h with h | h
+  · exact Or.inl (qRepAtB_spec h)
+  · simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
+    obtain ⟨⟨hr, hs⟩, hb⟩ := h
+    refine Or.inr ⟨hr, ?_, ?_⟩
+    · rw [Std.HashMap.contains_eq_isSome_getElem?] at hs
+      cases h' : (sourceAddrs ixe)[n]? with
+      | none => rfl
+      | some _ => rw [h'] at hs; cases hs
+    · rw [Std.HashMap.contains_eq_isSome_getElem?] at hb
+      exact hb
+
+/-- **What the checks give**, at a bundle `b` and evidence `ev`. -/
+theorem collapsedChecksWith_spec {b : Ix.RoleEvidence.Bundle} {ev : Ix.Kernel.Evidences .source}
+    {ds : Array (Ix.Kernel.Declaration .source)} (h : collapsedChecksWith ixe t b ev ds = none) :
+    (∀ d ∈ ds, d.Good (QRepAt ixe (roleAtMap t))) ∧
+      (∀ d ∈ ds, d.Good (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n)) ∧
+      bundleDisjointB ixe b = true ∧
+      (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev).Good
+        (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) := by
+  unfold collapsedChecksWith at h
+  dsimp only at h
+  split at h
+  · cases h
+  rename_i h1
+  split at h
+  · cases h
+  rename_i h2
+  split at h
+  · cases h
+  rename_i h3
+  simp only [Bool.not_eq_true', Bool.not_eq_false] at h1 h2 h3
+  refine ⟨fun d hd => ?_, fun d hd => ?_, h2, ?_⟩
+  · have hp := declsGoodB_spec h1 d hd
+    exact Declaration.good_of_parts
+      (fun k hk => Ix.Kernel.Key.Good.mono (fun _ hn => qRepAtB_spec hn) (hp.1 k hk))
+      (fun e he => Ix.Kernel.Expr.Good.mono (fun _ hn => qRepAtB_spec hn) (hp.2 e he))
+  · have hp := declsGoodB_spec h1 d hd
+    exact Declaration.good_of_parts
+      (fun k hk => Ix.Kernel.Key.Good.mono (fun _ hn => Or.inl (qRepAtB_spec hn)) (hp.1 k hk))
+      (fun e he => Ix.Kernel.Expr.Good.mono (fun _ hn => Or.inl (qRepAtB_spec hn)) (hp.2 e he))
+  · intro p hp e he
+    have := evidenceGoodB_good h3 p hp e he
+    cases e with
+    | defeq => trivial
+    | proof kv =>
+      obtain ⟨k, v⟩ := kv
+      exact ⟨Ix.Kernel.Key.Good.mono (fun _ hn => qEvB_spec hn) this.1,
+        Ix.Kernel.Expr.Good.mono (fun _ hn => qEvB_spec hn) this.2⟩
+
+theorem collapsedChecksUsing_spec {bundle : Except String Ix.RoleEvidence.Bundle}
+    {ev : Ix.Kernel.Evidences .source} {ds : Array (Ix.Kernel.Declaration .source)}
+    (h : collapsedChecksUsing bundle ev ixe t ds = .ok ()) :
+    ∃ b, bundle = .ok b ∧ collapsedChecksWith ixe t b ev ds = none := by
+  unfold collapsedChecksUsing at h
+  cases bundle with
+  | error e => cases h
+  | ok b =>
+    refine ⟨b, rfl, ?_⟩
+    dsimp only at h
+    cases hc : collapsedChecksWith ixe t b ev ds with
+    | none => rfl
+    | some e => rw [hc] at h; cases h
+
+/-- **Quotient Source's prepared stream at an artifact is checked**, over any
+bundle source and evidence. -/
+theorem prepareSourceCollapsedAtUsing_good {bundle : Except String Ix.RoleEvidence.Bundle}
+    {ev : Ix.Kernel.Evidences .source}
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+    {pre : Ix.Kernel.Reader.Prelude .source} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {ds : Array (Ix.Kernel.Declaration .source)}
+    (h : prepareSourceCollapsedAtUsing bundle ev ixe t hints pre env blocks = .ok ds) :
+    prepareSourceCollapsed (fiberAliasAt ixe (roleAtMap t)) hints pre env blocks = .ok ds ∧
+      ∃ b, bundle = .ok b ∧
+        (∀ d ∈ ds, d.Good (QRepAt ixe (roleAtMap t))) ∧
+        (∀ d ∈ ds, d.Good (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n)) ∧
+        bundleDisjointB ixe b = true ∧
+        (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev).Good
+          (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) := by
+  unfold prepareSourceCollapsedAtUsing at h
+  cases hp : prepareSourceCollapsed (fiberAliasAt ixe (roleAtMap t)) hints pre env blocks with
+  | error e => rw [hp] at h; cases h
+  | ok ds' =>
+    rw [hp] at h
+    dsimp only at h
+    cases hc : collapsedChecksUsing bundle ev ixe t ds' with
+    | error e => rw [hc] at h; cases h
+    | ok u =>
+      rw [hc] at h
+      cases h
+      obtain ⟨b, hb, hw⟩ := collapsedChecksUsing_spec hc
+      exact ⟨rfl, b, hb, collapsedChecksWith_spec hw⟩
+
+/-- **Quotient Source's prepared stream at a compiled artifact is checked**:
+whenever `prepareSourceCollapsedAt` succeeds, its declarations name
+representatives, the committed bundle is disjoint from the artifact, and the
+renamed bundle evidence names representatives or bundle-only names.
+Unconditional: the statements' `CollapsedGood`. -/
+theorem prepareSourceCollapsedAt_good
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+    {pre : Ix.Kernel.Reader.Prelude .source} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {ds : Array (Ix.Kernel.Declaration .source)}
+    (h : prepareSourceCollapsedAt ixe t hints pre env blocks = .ok ds) :
+    prepareSourceCollapsed (fiberAliasAt ixe (roleAtMap t)) hints pre env blocks = .ok ds ∧
+      ∃ b, Ix.RoleEvidence.committedBundle () = .ok b ∧
+        (∀ d ∈ ds, d.Good (QRepAt ixe (roleAtMap t))) ∧
+        (∀ d ∈ ds, d.Good (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n)) ∧
+        bundleDisjointB ixe b = true ∧
+        (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ())).Good
+          (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) :=
+  prepareSourceCollapsedAtUsing_good h
+
+/-- **Reference acceptance of checked quotient Source at the artifact's
+addresses**, over any bundle source and evidence: a reference accept of the
+checked stream at the renamed evidence, renamed by the joined map (`evAddr`),
+is accepted at the same fuel, with a related environment. -/
+theorem acceptsRef_prepareSourceCollapsedAtUsing (μ : Ix.Kernel.CheckMode)
+    (hb : TableBound ixe (roleAtMap t)) {bundle : Except String Ix.RoleEvidence.Bundle}
+    {ev : Ix.Kernel.Evidences .source}
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+    {pre : Ix.Kernel.Reader.Prelude .source} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {ds : Array (Ix.Kernel.Declaration .source)}
+    (h : prepareSourceCollapsedAtUsing bundle ev ixe t hints pre env blocks = .ok ds)
+    {envS : Ix.Kernel.Env .source}
+    (hacc : Ix.Kernel.Cached.AcceptsRef μ (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev)
+      ds.toList envS) :
+    ∃ b, bundle = .ok b ∧ ∃ envA,
+      Ix.Kernel.Cached.AcceptsRef μ
+        ((evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev).mapKeys (evAddr ixe b))
+        (ds.toList.map (Ix.Kernel.Declaration.mapKeys (evAddr ixe b))) envA ∧
+      Ix.Kernel.EnvRel (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) (evAddr ixe b)
+        envS envA := by
+  obtain ⟨_, b, hbun, _, hds, hd, hev⟩ := prepareSourceCollapsedAtUsing_good h
+  exact ⟨b, hbun, acceptsRef_evAddr μ hb hd hev (fun d hd' => hds d (Array.mem_toList_iff.mp hd')) hacc⟩
+
+/-- `acceptsRef_prepareSourceCollapsedAtUsing` at the committed bundle and
+evidence (`prepareSourceCollapsedAt`). -/
+theorem acceptsRef_prepareSourceCollapsedAt (μ : Ix.Kernel.CheckMode)
+    (hb : TableBound ixe (roleAtMap t))
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+    {pre : Ix.Kernel.Reader.Prelude .source} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {ds : Array (Ix.Kernel.Declaration .source)}
+    (h : prepareSourceCollapsedAt ixe t hints pre env blocks = .ok ds)
+    {envS : Ix.Kernel.Env .source}
+    (hacc : Ix.Kernel.Cached.AcceptsRef μ
+      (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ()))
+      ds.toList envS) :
+    ∃ b, Ix.RoleEvidence.committedBundle () = .ok b ∧ ∃ envA,
+      Ix.Kernel.Cached.AcceptsRef μ
+        ((evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ())).mapKeys
+          (evAddr ixe b))
+        (ds.toList.map (Ix.Kernel.Declaration.mapKeys (evAddr ixe b))) envA ∧
+      Ix.Kernel.EnvRel (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) (evAddr ixe b)
+        envS envA :=
+  acceptsRef_prepareSourceCollapsedAtUsing μ hb h hacc
+
+/-- **The executed check gives the reference accept** (the shape of the
+statements' `sourceAcceptsQ_of_check`), over explicit sources. -/
+theorem checkSourceCollapsedBundledAtUsing_ref (V : Type w) [SetTheory V]
+    {prelude : Except String (Ix.Kernel.Reader.Prelude .source)}
+    {bundle : Except String Ix.RoleEvidence.Bundle} {ev : Ix.Kernel.Evidences .source}
+    {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {envS : Ix.Kernel.Env .source}
+    (h : checkSourceCollapsedBundledAtUsing prelude bundle ev ixe t env blocks = .ok envS) :
+    ∃ pre ds, prelude = .ok pre ∧
+      prepareSourceCollapsedAtUsing bundle ev ixe t ((fiberHintsMap ixe)[·]?) pre env blocks = .ok ds ∧
+      Ix.Kernel.Cached.AcceptsRef .verified (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev)
+        ds.toList envS := by
+  unfold checkSourceCollapsedBundledAtUsing at h
+  cases prelude with
+  | error e => cases h
+  | ok pre =>
+    dsimp only at h
+    cases hp : prepareSourceCollapsedAtUsing bundle ev ixe t ((fiberHintsMap ixe)[·]?) pre env blocks with
+    | error e => rw [hp] at h; cases h
+    | ok ds =>
+      rw [hp] at h
+      dsimp only at h
+      cases hc : Ix.Kernel.Cached.checkDecls .verified
+          (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev) ds with
+      | error e => rw [hc] at h; cases h
+      | ok kenv =>
+        rw [hc] at h
+        cases h
+        exact ⟨pre, ds, rfl, hp, Ix.Kernel.Cached.checkDecls_refines_ref V rfl hc⟩
+
+/-- `checkSourceCollapsedBundledAtUsing_ref` at the committed sources
+(`checkSourceCollapsedBundledAt`). -/
+theorem checkSourceCollapsedBundledAt_ref (V : Type w) [SetTheory V]
+    {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {envS : Ix.Kernel.Env .source}
+    (h : checkSourceCollapsedBundledAt ixe t env blocks = .ok envS) :
+    ∃ pre ds, Ix.Kernel.Reader.builtinPrelude = .ok pre ∧
+      prepareSourceCollapsedAt ixe t ((fiberHintsMap ixe)[·]?) pre env blocks = .ok ds ∧
+      Ix.Kernel.Cached.AcceptsRef .verified
+        (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ()))
+        ds.toList envS :=
+  checkSourceCollapsedBundledAtUsing_ref V h
+end At
 end Ix.LeanIngress

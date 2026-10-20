@@ -406,14 +406,28 @@ theorem Declaration.beqF_eq (a b : Ix.Kernel.Declaration .source) : Declaration.
 /-! ## Collapsing -/
 
 /-- Why a collapse refuses: a declaration whose renamed form declares a name an
-earlier declaration declares, without being that declaration. -/
+earlier declaration declares, without being that declaration; and, at an
+artifact (`prepareSourceCollapsedAt`), a prepared stream or evidence that names
+a key the artifact does not represent. -/
 inductive CollapseError where
   | mismatch (name : Ix.Kernel.Key .source) (representative : Ix.Kernel.Key .source)
+  /-- a prepared declaration names a key that is not a representative of the artifact's
+  (`prepareSourceCollapsedAt`'s check) -/
+  | notRepresentative
+  /-- the bundle's evidence names a key that is neither a representative nor a
+  bundle-only name -/
+  | evidence
+  /-- a bundle name the artifact does not publish sits at an address it does
+  (an α-equal copy under another name) -/
+  | bundleAlias
   deriving Repr
 
 instance : ToString CollapseError where
   toString
     | .mismatch n r => s!"alias fiber mismatch: {n} renames to {r}, which an unequal declaration declares"
+    | .notRepresentative => "a prepared declaration names a key that is not a representative"
+    | .evidence => "the bundle's evidence names a key that is neither a representative nor bundle-only"
+    | .bundleAlias => "a bundle-only name sits at an address the artifact publishes"
 
 /-- What a collapse keeps: the renamed declarations, one per fiber, and for every
 dropped declaration's names their representatives. -/
@@ -821,7 +835,11 @@ def fiberAliasAt (ixe : Ixon.Env) (roles : Std.HashMap Address Ix.Kernel.Role) :
   Std.HashMap.ofList (addrs.toList.filterMap (aliasEntryAt roles reps))
 
 /-- **Every published role name sits at an address the table binds to its
-role** (what B5a's `RolesBound` and a well-formed table give). -/
+role**, by ingress name (the names `sourceAddrs` recomputes, never a stored
+`Ix.Name` hash). This is what the statements' decided `PublishedRolesBound`
+checks, over every published name (`tableBound_of`, with a well-formed table);
+B5a's `RolesBound` does not give it: it reads names by their stored hashes and
+covers only the roles the input declares. -/
 def TableBound (ixe : Ixon.Env) (roles : Std.HashMap Address Ix.Kernel.Role) : Prop :=
   ∀ x r a, (sourceAddrs ixe)[x]? = some a → roleOf x = some r → roles[a]? = some r
 
@@ -1015,4 +1033,108 @@ theorem fiberAliasAt_rep_addr {ixe : Ixon.Env} {roles : Std.HashMap Address Ix.K
       · exact Or.inl ⟨k, mem_fiberMembers.mp hk, hkr⟩
       · exact Or.inr hrole
     · cases hpe
+
+/-! ## Deciding that a prepared stream's keys are representatives'
+
+`Key.goodB q` decides that every input id of a key passes `q`; `Expr.goodBGo` is
+the memoised walk over a term's distinct subterms (a stream's terms share
+subterms, as `Expr.substKeysGo`'s walk does), and `declsGoodB` the walk over a
+stream, the memo shared across its declarations. -/
+
+/-- Every input id of a key passes `q`. -/
+def Key.goodB (q : Ix.Kernel.Name → Bool) : Ix.Kernel.Key .source → Bool
+  | .id n => q n
+  | .role _ => true
+  | .aux k _ => Key.goodB q k
+
+/-- **Memoised: every key of a term's subterms passes `q`**; `seen` holds the
+subterms already found good. -/
+def Expr.goodBGo (q : Ix.Kernel.Name → Bool) (seen : Std.HashSet (Ix.Kernel.Expr .source)) :
+    Ix.Kernel.Expr .source → Bool × Std.HashSet (Ix.Kernel.Expr .source)
+  | .bvar _ => (true, seen)
+  | .sort _ => (true, seen)
+  | .lit _ => (true, seen)
+  | .const n _ => (Key.goodB q n, seen)
+  | e =>
+    if seen.contains e then (true, seen)
+    else
+      let r : Bool × Std.HashSet (Ix.Kernel.Expr .source) :=
+        match e with
+        | .fvar _ ty => Expr.goodBGo q seen ty
+        | .app a b =>
+          let ra := Expr.goodBGo q seen a
+          if ra.1 then Expr.goodBGo q ra.2 b else ra
+        | .lam ty body _ =>
+          let rt := Expr.goodBGo q seen ty
+          if rt.1 then Expr.goodBGo q rt.2 body else rt
+        | .forallE ty body _ =>
+          let rt := Expr.goodBGo q seen ty
+          if rt.1 then Expr.goodBGo q rt.2 body else rt
+        | .letE ty v body _ =>
+          let rt := Expr.goodBGo q seen ty
+          if rt.1 then
+            let rv := Expr.goodBGo q rt.2 v
+            if rv.1 then Expr.goodBGo q rv.2 body else rv
+          else rt
+        | .proj s _ sub => if Key.goodB q s then Expr.goodBGo q seen sub else (false, seen)
+        | _ => (true, seen)
+      if r.1 then (true, r.2.insert e) else (false, r.2)
+
+/-- The memoised walk over a list of terms. -/
+def exprsGoodB (q : Ix.Kernel.Name → Bool) :
+    Std.HashSet (Ix.Kernel.Expr .source) → List (Ix.Kernel.Expr .source) →
+      Bool × Std.HashSet (Ix.Kernel.Expr .source)
+  | seen, [] => (true, seen)
+  | seen, e :: es =>
+    match Expr.goodBGo q seen e with
+    | (true, seen) => exprsGoodB q seen es
+    | r => r
+
+/-- A constant's keys outside its terms, and its terms. -/
+def ConstantInfo.parts : Ix.Kernel.ConstantInfo .source →
+    List (Ix.Kernel.Key .source) × List (Ix.Kernel.Expr .source)
+  | .axiomInfo v => ([v.name], [v.type])
+  | .defnInfo v e _ => ([v.name], [v.type, e])
+  | .thmInfo v e => ([v.name], [v.type, e])
+  | .indInfo v caps => (v.name :: caps.etaCtor.toList, [v.type])
+  | .ctorInfo v _ _ => ([v.name], [v.type])
+  | .recInfo v _ _ rules =>
+    (v.name :: rules.map (·.ctor), v.type :: rules.flatMap fun r => r.rhs :: match r.fire with
+      | .nested _ ps => ps
+      | _ => [])
+  | .projInfo t => ([t.structName, t.ctor], t.bodies.toList)
+
+/-- A declaration's keys outside its terms, and its terms. -/
+def Declaration.parts : Ix.Kernel.Declaration .source →
+    List (Ix.Kernel.Key .source) × List (Ix.Kernel.Expr .source)
+  | .axiomDecl v => ([v.name], [v.type])
+  | .defnDecl v e _ => ([v.name], [v.type, e])
+  | .thmDecl v e => ([v.name], [v.type, e])
+  | .opaqueDecl v e => ([v.name], [v.type, e])
+  | .basisDecl _ => ([], [])
+  | .indDecl block _ => (block.flatMap fun c => (ConstantInfo.parts c).1,
+      block.flatMap fun c => (ConstantInfo.parts c).2)
+  | .quotDecl _ v => ([v.name], [v.type])
+
+/-- **Every key of a stream passes `q`**, decided (one memo across the stream). -/
+def declsGoodB (q : Ix.Kernel.Name → Bool) (ds : Array (Ix.Kernel.Declaration .source)) : Bool :=
+  (ds.foldl (fun (acc : Bool × Std.HashSet (Ix.Kernel.Expr .source)) d =>
+    if acc.1 then
+      if (Declaration.parts d).1.all (Key.goodB q) then exprsGoodB q acc.2 (Declaration.parts d).2
+      else (false, acc.2)
+    else acc) (true, {})).1
+
+/-- An evidence table's keys and terms. -/
+def evidenceParts (ev : Ix.Kernel.Evidences .source) :
+    List (Ix.Kernel.Key .source) × List (Ix.Kernel.Expr .source) :=
+  (ev.flatMap fun p => p.2.flatMap fun
+    | .proof (k, _) => [k]
+    | .defeq => [],
+   ev.flatMap fun p => p.2.flatMap fun
+    | .proof (_, v) => [v]
+    | .defeq => [])
+
+/-- **Every key of an evidence table passes `q`**, decided. -/
+def evidenceGoodB (q : Ix.Kernel.Name → Bool) (ev : Ix.Kernel.Evidences .source) : Bool :=
+  (evidenceParts ev).1.all (Key.goodB q) && (exprsGoodB q {} (evidenceParts ev).2).1
 end Ix.LeanIngress

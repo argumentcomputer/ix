@@ -102,6 +102,9 @@ structure Run where
   well-founded operation without evidence has none -/
   evidence : Ix.Kernel.Evidences .source := []
   evidenceErrors : List String := []
+  /-- the prepared stream the step check ran (`preparePrelude` over the lowered,
+  collapsed groups) -/
+  prepared : Array (Ix.Kernel.Declaration .source) := #[]
   /-- quotient Source: the groups that were an earlier group's alias -/
   aliases : Nat := 0
 
@@ -299,6 +302,7 @@ def run (pre : Prelude .source) (env : Ix.Environment)
   let rows' := rowsQ.zipIdx.map fun (r, gi) => r.getD
     ⟨gi, names[gi]!, kindOf groups[gi]!, "accept", "", micros[gi]!⟩
   return { graph := g, order := sched.map (·.1), rows := rows', decls := prepared.size, generated,
+           prepared,
            projRewrites := rewrites,
            times := #[("group", t1 - t0), ("convert", t2 - t1), ("order", t3 - t2),
              ("lower", t4 - t3), ("evidence", t4e - t4), ("check", t4t - t4e), ("tier", t5 - t4t)],

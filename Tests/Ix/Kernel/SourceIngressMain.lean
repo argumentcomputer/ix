@@ -120,6 +120,59 @@ def main (args : List String) : IO UInt32 := do
     (collapse := collapse)
   if a.collapse then
     IO.println s!"collapse: {r.aliases} groups were an earlier group's alias"
+  -- quotient Source's checks at the artifact (`Ix.LeanIngress.collapsedChecksUsing`, as
+  -- `prepareSourceCollapsedAt` runs them) on the prepared stream the step check ran: its keys
+  -- are representatives, the bundle is disjoint from the artifact, and the
+  -- bundle's evidence names representatives or bundle-only names (with `--bundle-evidence`: the
+  -- configuration `checkSourceCollapsedBundledAt` runs; without it the cert theorems are the
+  -- input's, which no Init+Std artifact publishes)
+  let mut checksFailed := false
+  if a.collapse && a.bundle then
+    if let some ixon := artifact then
+      -- reported, not checked: the bundle names the artifact publishes at another address
+      match Ix.RoleEvidence.committedBundle () with
+      | .ok b =>
+        let src := Ix.LeanIngress.sourceAddrs ixon
+        let moved := (Ix.LeanIngress.bundleAddrs b).toList.filterMap fun (n, a') =>
+          match src[n]? with
+          | some a => if a == a' then none else some n
+          | none => none
+        IO.println s!"bundle agreement (reported, `bundleAgreesB`): {moved.length} of \
+          {(Ix.LeanIngress.bundleAddrs b).size} bundle names published by the artifact at another \
+          address, e.g. {moved.take 12}"
+      | .error e => IO.println s!"bundle: {e}"
+      let tC ← IO.monoMsNow
+      match Ix.LeanIngress.collapsedChecksUsing (Ix.RoleEvidence.committedBundle ())
+          (Ix.RoleEvidence.bundleEvidence ()) ixon table r.prepared with
+      | .ok () =>
+        IO.println s!"collapse checks: passed on {r.prepared.size} prepared declarations \
+          (representatives, bundle disjoint, evidence) in {(← IO.monoMsNow) - tC} ms"
+      | .error e =>
+        IO.println s!"collapse checks: FAILED: {e}"
+        checksFailed := true
+        -- diagnosis: the ids of the prepared stream that are not representatives, by reason
+        let ρ := Ix.LeanIngress.fiberAliasAt ixon (Ix.LeanIngress.roleAtMap table)
+        let src := Ix.LeanIngress.sourceAddrs ixon
+        let rec baseId : Ix.Kernel.Key .source → Option Ix.Kernel.Name
+          | .id n => some n
+          | .role _ => none
+          | .aux k _ => baseId k
+        let mut why : Std.HashMap String (Nat × List String) := {}
+        let mut seenIds : Std.HashSet Ix.Kernel.Name := {}
+        for d in r.prepared do
+          let (ks, es) := Ix.LeanIngress.Declaration.parts d
+          for k in ks ++ Ix.Kernel.constKeysOf es do
+            if let some n := baseId k then
+              unless seenIds.contains n do
+                seenIds := seenIds.insert n
+                unless Ix.LeanIngress.qRepAtB src ρ n do
+                  let reason := if Ix.LeanIngress.roleOf n != none then "a role's name"
+                    else if !src.contains n then "not published"
+                    else "not its fiber's representative"
+                  let (c, ex) := why.getD reason (0, [])
+                  why := why.insert reason (c + 1, if ex.length < 12 then toString n :: ex else ex)
+        for (reason, (c, ex)) in why.toList do
+          IO.println s!"  not a representative ({reason}): {c}, e.g. {ex}"
   let withEvidence := r.evidence.filter fun (_, es) => es.any fun
     | .proof _ => true | .defeq => false
   IO.println s!"evidence: {withEvidence.length} well-founded operations with proof evidence: \
@@ -176,7 +229,8 @@ def main (args : List String) : IO UInt32 := do
       pairReasons := pairReasons.insert key (pairReasons.getD key 0 + 1)
     for (k, n) in (pairReasons.toArray.qsort fun a b => a.2 > b.2).extract 0 30 do
       IO.println s!"  {n}: {k}"
-  -- exit without tearing the environments down
+  -- exit without tearing the environments down (status 1 when quotient Source's checks failed)
+  if checksFailed then IO.Process.exit 1
   IO.Process.exit 0
 
 end Tests.Ix.Kernel.SourceIngressMain

@@ -465,6 +465,26 @@ def evaluateQuotient : IO (Array String × Array String) := do
     lines := lines.push s!"quotient: table rule: Flag without Bool is Bool's role alias, accepted, \
       {kenv.consts.length} kernel constants"
   | .error e => errors := errors.push s!"quotient: table rule: {e}"
+  -- the checks at an artifact (`collapsedChecksWith`): a table binding the same addresses,
+  -- an empty bundle; `Flag`'s prepared stream names representatives only, and a stream
+  -- naming a constant the artifact does not publish is refused
+  let bound4 : Array (Ix.Kernel.Role × Address) := (flag.map fun (_, r, i) => (r, addr i)).toArray
+  let t4 : Ix.Kernel.RoleTable := { version := 0, bound := bound4, evidence := #[] }
+  match prepareSourceCollapsed (fiberAliasAt ixe4 (roleAtMap t4)) (fun _ => none) pre env4
+      (condense env4) with
+  | .error e => errors := errors.push s!"quotient: checks: prepare: {e}"
+  | .ok ds =>
+    match collapsedChecksWith ixe4 t4 {} [] ds with
+    | none => lines := lines.push s!"quotient: checks: Flag's {ds.size} prepared declarations pass"
+    | some e => errors := errors.push s!"quotient: checks: Flag refused: {e}"
+  match prepareSourceCollapsed (fiberAliasAt ixe4 (roleAtMap t4)) (fun _ => none) pre env
+      (condense env) with
+  | .error e => errors := errors.push s!"quotient: checks: prepare (unpublished): {e}"
+  | .ok ds =>
+    match collapsedChecksWith ixe4 t4 {} [] ds with
+    | some .notRepresentative =>
+      lines := lines.push "quotient: checks: unpublished constants refused (not representatives)"
+    | r => errors := errors.push s!"quotient: checks: unpublished constants not refused: {r.map toString}"
   return (errors, lines)
 
 def quotient : TestSeq :=
