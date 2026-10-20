@@ -4,6 +4,7 @@ public import Ix.Ixon
 public import Ix.LeanIngress.Expr
 public import IxC.Kernel.Env
 public import IxC.Kernel.Tier.Basic
+import IxC.Kernel.Ingress.Records
 
 @[expose] public section
 
@@ -30,6 +31,11 @@ role's Lean name is represented by the role's key (`.role r`), so Source runs
 the role's validation on every alias of a role constant, exactly as Ixon does
 for an address its role table binds. A fiber holding two roles' names is not
 collapsed (no Init+Std fiber does; collapsing it would identify two roles).
+The rule is by name: a fiber holding a role's content but not the role's name
+(a closure without `Bool` that holds an enum ≅ `Bool`) keeps a user key where
+Ixon's table binds the role, which leaves such a closure outside the renaming
+(coverage, not soundness); a content rule (meets role r's spec ⇒ `.role r`)
+would close it.
 
 **Grouping is unchanged**: the ingress still groups definitions by strongly
 connected component (`Ix.LeanIngress.componentGroup`); a fiber may span
@@ -439,35 +445,337 @@ def collapseDecls (ρ : FiberMap) (ds : Array (Ix.Kernel.Declaration .source)) :
       dropped := dropped ++ (d.names.zip ns).toArray
   return { decls := kept, dropped }
 
-/-! ## The artifact's fibers -/
+/-! ## The artifact's fibers
+
+The fibers of a compiled artifact are its address classes: the published
+names (as Source names) at each address. `fiberAliasMap` is built in four
+steps that each say one thing (`sourceAddrs`, `fiberMembers`, `fiberRep`,
+`aliasEntry`), so that its one property the statements need — **two names at
+one address are renamed to one key** (`fiberAlias_addr_inj`), i.e. distinct
+representatives have distinct addresses — is a lemma rather than a check. -/
+
+/-- **The address of each published name**, keyed by its Source name. -/
+def sourceAddrs (ixe : Ixon.Env) : Std.HashMap Ix.Kernel.Name Address :=
+  ixe.named.fold (fun m n d => m.insert (ingressName n) d.addr) {}
+
+/-- One step of `fiberMembers`: file a name under its address. -/
+def fiberMembersStep (m : Std.HashMap Address (List Ix.Kernel.Name))
+    (p : Ix.Kernel.Name × Address) : Std.HashMap Address (List Ix.Kernel.Name) :=
+  m.insert p.2 (p.1 :: m.getD p.2 [])
+
+/-- **The fibers**: the names at each address. -/
+def fiberMembers (addrs : Std.HashMap Ix.Kernel.Name Address) :
+    Std.HashMap Address (List Ix.Kernel.Name) :=
+  addrs.toList.foldl fiberMembersStep {}
+
+/-- The role a Source name is bound to (`Key.ofName`), if any. -/
+def roleOf (i : Ix.Kernel.Name) : Option Ix.Kernel.Role :=
+  match Ix.Kernel.Key.ofName i with
+  | .role r => some r
+  | _ => none
+
+/-- The least of a list of names by spelling (only for determinism). -/
+def leastName : Ix.Kernel.Name → List Ix.Kernel.Name → Ix.Kernel.Name
+  | b, [] => b
+  | b, x :: xs => leastName (if toString x < toString b then x else b) xs
+
+/-- **A fiber's representative**: the key of the role whose name it holds,
+else the key of its least name; none for a fiber holding two roles' names. -/
+def fiberRep : List Ix.Kernel.Name → Option (Ix.Kernel.Key .source)
+  | [] => none
+  | n :: ns =>
+    match (n :: ns).filterMap roleOf with
+    | [] => some (.id (leastName n ns))
+    | r :: rs => if rs.all (fun r' => decide (r' = r)) then some (.role r) else none
+
+/-- A name's entry in the fiber map: its fiber's representative, unless the
+name is a role's (a role key is never renamed) or is the representative. -/
+def aliasEntry (reps : Std.HashMap Address (Option (Ix.Kernel.Key .source)))
+    (p : Ix.Kernel.Name × Address) : Option (Ix.Kernel.Name × Ix.Kernel.Key .source) :=
+  match reps[p.2]? with
+  | some (some rep) =>
+    if roleOf p.1 = none ∧ Ix.Kernel.Key.ofName p.1 ≠ rep then some (p.1, rep) else none
+  | _ => none
 
 /-- **The alias fibers of a compiled artifact**, role-aware: the published
 names sharing an address form a fiber; its representative is the key of the
-role whose Lean name it holds, or else the key of its least name (Lean's name
-order of their spellings, for determinism); a fiber holding two roles' names is left
-alone. Every member that is
-not its own representative is mapped. -/
-def fiberAliasMap (ixe : Ixon.Env) : FiberMap := Id.run do
-  let mut byAddr : Std.HashMap Address (Array Ix.Name) := {}
-  for (n, named) in ixe.named.toList do
-    byAddr := byAddr.insert named.addr ((byAddr.getD named.addr #[]).push n)
-  let mut m : Std.HashMap Ix.Kernel.Name (Ix.Kernel.Key .source) := {}
-  for (_, names) in byAddr.toList do
-    if names.size < 2 then continue
-    let keys := names.map ingressKey
-    let roles := keys.filter fun k => match k with | .role _ => true | _ => false
-    if roles.size > 1 then continue
-    let least := (names.qsort fun a b => toString (ingressName a) < toString (ingressName b))[0]!
-    let rep := roles[0]?.getD (ingressKey least)
-    for n in names do
-      let k := ingressKey n
-      if k != rep then
-        match k with
-        | .id i => m := m.insert i rep
-        | _ => pure ()
-  return m
+role whose Lean name it holds, or else the key of its least name (by
+spelling, for determinism); a fiber holding two roles' names is left alone.
+Every member that is not its own representative is mapped. -/
+def fiberAliasMap (ixe : Ixon.Env) : FiberMap :=
+  let addrs := sourceAddrs ixe
+  let reps := (fiberMembers addrs).map fun _ ns => fiberRep ns
+  Std.HashMap.ofList (addrs.toList.filterMap (aliasEntry reps))
 
 /-- The fiber map of an artifact (`fiberAliasMap`). -/
 def fiberAlias (ixe : Ixon.Env) : FiberMap := fiberAliasMap ixe
+
+/-! ### Distinct representatives have distinct addresses -/
+
+theorem fiberMembers_foldl_mem {k : Ix.Kernel.Name} {a : Address} :
+    ∀ (l : List (Ix.Kernel.Name × Address)) (init : Std.HashMap Address (List Ix.Kernel.Name)),
+      k ∈ (l.foldl fiberMembersStep init).getD a [] ↔ k ∈ init.getD a [] ∨ (k, a) ∈ l
+  | [], init => by simp
+  | (i, b) :: l, init => by
+    rw [List.foldl_cons, fiberMembers_foldl_mem l]
+    simp only [fiberMembersStep, Std.HashMap.getD_insert, List.mem_cons, Prod.mk.injEq]
+    by_cases h : b = a
+    · subst h
+      simp only [beq_self_eq_true, ite_true, List.mem_cons, and_true]
+      constructor
+      · rintro ((h | h) | h)
+        · exact Or.inr (Or.inl h)
+        · exact Or.inl h
+        · exact Or.inr (Or.inr h)
+      · rintro (h | h | h)
+        · exact Or.inl (Or.inr h)
+        · exact Or.inl (Or.inl h)
+        · exact Or.inr h
+    · have hb : (b == a) = false := by simpa using h
+      simp only [hb, Bool.false_eq_true, ite_false]
+      constructor
+      · rintro (h | h)
+        · exact Or.inl h
+        · exact Or.inr (Or.inr h)
+      · rintro (h | ⟨_, h'⟩ | h)
+        · exact Or.inl h
+        · exact absurd h'.symm h
+        · exact Or.inr h
+
+/-- A name is in its address's fiber, and only there. -/
+theorem mem_fiberMembers {addrs : Std.HashMap Ix.Kernel.Name Address} {k : Ix.Kernel.Name}
+    {a : Address} : k ∈ (fiberMembers addrs).getD a [] ↔ addrs[k]? = some a := by
+  rw [fiberMembers, fiberMembers_foldl_mem, Std.HashMap.getD_empty,
+    Std.HashMap.mem_toList_iff_getElem?_eq_some]
+  simp
+
+theorem roleOf_eq_none {i : Ix.Kernel.Name} (h : roleOf i = none) :
+    Ix.Kernel.Key.ofName i = .id i := by
+  unfold roleOf at h
+  unfold Ix.Kernel.Key.ofName at h ⊢
+  cases hb : Ix.Kernel.Role.byLeanName[i]? <;> simp_all
+
+theorem roleOf_eq_some {i : Ix.Kernel.Name} {r : Ix.Kernel.Role} (h : roleOf i = some r) :
+    Ix.Kernel.Key.ofName i = .role r := by
+  unfold roleOf at h
+  unfold Ix.Kernel.Key.ofName at h ⊢
+  cases hb : Ix.Kernel.Role.byLeanName[i]? <;> simp_all
+
+theorem leastName_mem : ∀ (b : Ix.Kernel.Name) (xs : List Ix.Kernel.Name),
+    leastName b xs ∈ b :: xs
+  | b, [] => by simp [leastName]
+  | b, x :: xs => by
+    show leastName (if toString x < toString b then x else b) xs ∈ b :: x :: xs
+    by_cases hc : toString x < toString b
+    · have ih := leastName_mem x xs
+      rw [ite_eq_left hc]
+      rcases List.mem_cons.mp ih with h | h
+      · rw [h]; exact List.mem_cons_of_mem _ List.mem_cons_self
+      · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h)
+    · have ih := leastName_mem b xs
+      rw [ite_eq_right hc]
+      rcases List.mem_cons.mp ih with h | h
+      · rw [h]; exact List.mem_cons_self
+      · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h)
+
+/-- A fiber whose role names all name one role has a representative. -/
+theorem fiberRep_isSome {l : List Ix.Kernel.Name} (hne : l ≠ [])
+    (hroles : ∀ x y r₁ r₂, x ∈ l → y ∈ l → roleOf x = some r₁ → roleOf y = some r₂ → r₁ = r₂) :
+    ∃ rep, fiberRep l = some rep := by
+  match l, hne with
+  | n :: ns, _ =>
+    simp only [fiberRep]
+    split
+    · exact ⟨_, rfl⟩
+    · next r rs hf =>
+      have hr : r ∈ (n :: ns).filterMap roleOf := hf ▸ List.mem_cons_self ..
+      obtain ⟨x, hx, hxr⟩ := List.mem_filterMap.mp hr
+      have hall : (rs.all fun r' => decide (r' = r)) = true := by
+        refine List.all_eq_true.mpr fun r' hr' => decide_eq_true ?_
+        have hr'' : r' ∈ (n :: ns).filterMap roleOf := hf ▸ List.mem_cons_of_mem _ hr'
+        obtain ⟨y, hy, hyr⟩ := List.mem_filterMap.mp hr''
+        exact hroles y x r' r hy hx hyr hxr
+      exact ⟨_, ite_eq_left hall⟩
+
+/-- A role name in a fiber with a representative: the representative is that
+role's key. -/
+theorem fiberRep_role {l : List Ix.Kernel.Name} {x : Ix.Kernel.Name} {r : Ix.Kernel.Role}
+    {rep : Ix.Kernel.Key .source} (hx : x ∈ l) (hxr : roleOf x = some r)
+    (h : fiberRep l = some rep) : rep = .role r := by
+  have hm : r ∈ l.filterMap roleOf := List.mem_filterMap.mpr ⟨x, hx, hxr⟩
+  match l, hx with
+  | n :: ns, _ =>
+    simp only [fiberRep] at h
+    split at h
+    · next hf => rw [hf] at hm; cases hm
+    · next r₀ rs hf =>
+      rw [hf] at hm
+      split at h
+      · next hall =>
+        cases h
+        rcases List.mem_cons.mp hm with rfl | hm'
+        · rfl
+        · have := List.all_eq_true.mp hall _ hm'
+          simp only [decide_eq_true_eq] at this
+          rw [this]
+      · cases h
+
+/-- A fiber's representative is the key of one of its names. -/
+theorem fiberRep_mem {l : List Ix.Kernel.Name} {rep : Ix.Kernel.Key .source}
+    (h : fiberRep l = some rep) : ∃ k ∈ l, Ix.Kernel.Key.ofName k = rep := by
+  match l with
+  | [] => simp [fiberRep] at h
+  | n :: ns =>
+    simp only [fiberRep] at h
+    split at h
+    · next hf =>
+      cases h
+      refine ⟨leastName n ns, leastName_mem n ns, roleOf_eq_none ?_⟩
+      have := List.filterMap_eq_nil_iff.mp hf _ (leastName_mem n ns)
+      exact this
+    · next r rs hf =>
+      split at h
+      · cases h
+        have hr : r ∈ (n :: ns).filterMap roleOf := hf ▸ List.mem_cons_self ..
+        obtain ⟨x, hx, hxr⟩ := List.mem_filterMap.mp hr
+        exact ⟨x, hx, roleOf_eq_some hxr⟩
+      · cases h
+
+theorem aliasEntry_fst {reps : Std.HashMap Address (Option (Ix.Kernel.Key .source))}
+    {p : Ix.Kernel.Name × Address} {e : Ix.Kernel.Name × Ix.Kernel.Key .source}
+    (h : aliasEntry reps p = some e) : e.1 = p.1 := by
+  unfold aliasEntry at h
+  split at h
+  · split at h
+    · cases h; rfl
+    · cases h
+  · cases h
+
+/-- The fiber map's entries have distinct names. -/
+theorem fiberAliasMap_distinct (ixe : Ixon.Env) (reps : Std.HashMap Address (Option (Ix.Kernel.Key .source))) :
+    ((sourceAddrs ixe).toList.filterMap (aliasEntry reps)).Pairwise
+      (fun a b => (a.1 == b.1) = false) :=
+  Std.HashMap.distinct_keys_toList.filterMap _ fun p q hpq e he e' he' => by
+    rw [aliasEntry_fst he, aliasEntry_fst he']
+    exact hpq
+
+/-- The representatives' table at an address of a fiber. -/
+theorem fiberReps_at {ixe : Ixon.Env} {i : Ix.Kernel.Name} {a : Address}
+    (hi : (sourceAddrs ixe)[i]? = some a) :
+    ((fiberMembers (sourceAddrs ixe)).map fun _ ns => fiberRep ns)[a]? =
+      some (fiberRep ((fiberMembers (sourceAddrs ixe)).getD a [])) := by
+  have hm := mem_fiberMembers.mpr hi
+  rw [Std.HashMap.getElem?_map]
+  rw [Std.HashMap.getD_eq_getD_getElem?] at hm ⊢
+  cases h : (fiberMembers (sourceAddrs ixe))[a]? with
+  | none => rw [h] at hm; cases hm
+  | some l => rfl
+
+/-- **Every name of a fiber with a representative is renamed to it.** -/
+theorem fiberAlias_subst {ixe : Ixon.Env} {i : Ix.Kernel.Name} {a : Address}
+    {rep : Ix.Kernel.Key .source} (hi : (sourceAddrs ixe)[i]? = some a)
+    (hrep : fiberRep ((fiberMembers (sourceAddrs ixe)).getD a []) = some rep) :
+    Key.subst (fiberAlias ixe) (Ix.Kernel.Key.ofName i) = rep := by
+  have hreps := fiberReps_at hi
+  rw [hrep] at hreps
+  have hmem : (i, a) ∈ (sourceAddrs ixe).toList :=
+    Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hi
+  cases hr : roleOf i with
+  | some r =>
+    rw [roleOf_eq_some hr, fiberRep_role (mem_fiberMembers.mpr hi) hr hrep]
+    rfl
+  | none =>
+    rw [roleOf_eq_none hr]
+    simp only [Key.subst, fiberAlias, fiberAliasMap]
+    by_cases heq : (Ix.Kernel.Key.id i : Ix.Kernel.Key .source) = rep
+    · rw [Std.HashMap.getElem?_ofList_of_contains_eq_false]
+      · exact heq
+      · refine Bool.eq_false_iff.mpr fun hc => ?_
+        obtain ⟨e, he, he1⟩ : ∃ e ∈ (sourceAddrs ixe).toList.filterMap
+            (aliasEntry ((fiberMembers (sourceAddrs ixe)).map fun _ ns => fiberRep ns)), e.1 = i := by
+          simpa using hc
+        obtain ⟨p, hp, hpe⟩ := List.mem_filterMap.mp he
+        have hp1 : p.1 = i := (aliasEntry_fst hpe).symm.trans he1
+        obtain ⟨pi, pa⟩ := p
+        simp only at hp1
+        subst hp1
+        have hpa : pa = a := by
+          have := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hp
+          rw [hi] at this
+          exact (Option.some.inj this).symm
+        subst hpa
+        unfold aliasEntry at hpe
+        simp only [hreps, roleOf_eq_none hr, heq, ne_eq, not_true_eq_false, and_false,
+          ite_false] at hpe
+        cases hpe
+    · rw [Std.HashMap.getElem?_ofList_of_mem (k := i) (v := rep) (BEq.refl i)
+        (fiberAliasMap_distinct ixe _)]
+      · rfl
+      · refine List.mem_filterMap.mpr ⟨(i, a), hmem, ?_⟩
+        unfold aliasEntry
+        simp only [hreps, hr, roleOf_eq_none hr, true_and]
+        rw [ite_eq_left heq]
+
+/-- **Two names at one address are renamed to one key** (unless their fiber
+holds two roles' names): so distinct representatives have distinct
+addresses. -/
+theorem fiberAlias_addr_inj {ixe : Ixon.Env} {i j : Ix.Kernel.Name} {a : Address}
+    (hi : (sourceAddrs ixe)[i]? = some a) (hj : (sourceAddrs ixe)[j]? = some a)
+    (hroles : ∀ x y r₁ r₂, (sourceAddrs ixe)[x]? = some a → (sourceAddrs ixe)[y]? = some a →
+      roleOf x = some r₁ → roleOf y = some r₂ → r₁ = r₂) :
+    Key.subst (fiberAlias ixe) (Ix.Kernel.Key.ofName i) =
+      Key.subst (fiberAlias ixe) (Ix.Kernel.Key.ofName j) := by
+  have hne : (fiberMembers (sourceAddrs ixe)).getD a [] ≠ [] := by
+    intro h
+    have := mem_fiberMembers.mpr hi
+    rw [h] at this
+    cases this
+  obtain ⟨rep, hrep⟩ := fiberRep_isSome hne fun x y r₁ r₂ hx hy =>
+    hroles x y r₁ r₂ (mem_fiberMembers.mp hx) (mem_fiberMembers.mp hy)
+  rw [fiberAlias_subst hi hrep, fiberAlias_subst hj hrep]
+
+/-- **A representative is at its fiber's address**: a renamed name's
+representative is the key of a name at the same address. -/
+theorem fiberAlias_rep_addr {ixe : Ixon.Env} {i : Ix.Kernel.Name} {a : Address}
+    {rep : Ix.Kernel.Key .source} (hi : (sourceAddrs ixe)[i]? = some a)
+    (h : (fiberAlias ixe)[i]? = some rep) :
+    ∃ k, (sourceAddrs ixe)[k]? = some a ∧ Ix.Kernel.Key.ofName k = rep := by
+  have hreps := fiberReps_at hi
+  simp only [fiberAlias, fiberAliasMap] at h
+  have hc : List.contains (List.map Prod.fst ((sourceAddrs ixe).toList.filterMap
+      (aliasEntry ((fiberMembers (sourceAddrs ixe)).map fun _ ns => fiberRep ns)))) i = true := by
+    refine Classical.byContradiction fun hne => ?_
+    rw [Std.HashMap.getElem?_ofList_of_contains_eq_false (Bool.eq_false_iff.mpr hne)] at h
+    cases h
+  obtain ⟨e, he, he1⟩ : ∃ e ∈ (sourceAddrs ixe).toList.filterMap
+      (aliasEntry ((fiberMembers (sourceAddrs ixe)).map fun _ ns => fiberRep ns)), e.1 = i := by
+    simpa using hc
+  obtain ⟨p, hp, hpe⟩ := List.mem_filterMap.mp he
+  have hp1 : p.1 = i := (aliasEntry_fst hpe).symm.trans he1
+  obtain ⟨pi, pa⟩ := p
+  simp only at hp1
+  subst hp1
+  have hpa : pa = a := by
+    have := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hp
+    rw [hi] at this
+    exact (Option.some.inj this).symm
+  subst hpa
+  rw [Std.HashMap.getElem?_ofList_of_mem (k := e.1) (k' := pi) (v := e.2)
+    (by rw [he1]; exact BEq.refl pi) (fiberAliasMap_distinct ixe _) he] at h
+  cases hfr : fiberRep ((fiberMembers (sourceAddrs ixe)).getD pa []) with
+  | none =>
+    unfold aliasEntry at hpe
+    simp only [hreps, hfr] at hpe
+    cases hpe
+  | some rep' =>
+    unfold aliasEntry at hpe
+    simp only [hreps, hfr] at hpe
+    split at hpe
+    · cases hpe
+      have hr : rep' = rep := Option.some.inj h
+      subst hr
+      obtain ⟨k, hk, hkr⟩ := fiberRep_mem hfr
+      exact ⟨k, mem_fiberMembers.mp hk, hkr⟩
+    · cases hpe
 
 end Ix.LeanIngress
