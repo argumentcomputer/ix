@@ -41,15 +41,34 @@
      back from their bytes (`Ixon.rsDeEnv`), so the stored-file and
      in-process modes compare one representation;
   5. every constant of the closure is in the closure's output;
+  6. **introduced references**: every closure carries the compiler's
+     introduced references (`Ix.EnvScope.introducedSupport`, read from the
+     image generator's own declaration `Ix.Compile.Image.imageSupport`:
+     the Pass 3 images' packing and rule constants), and, derived from the
+     output, every constant the closure's output references that the
+     closure without them does not account for is carried (the set observed
+     is printed);
+  7. **local scope** of a collapse fixture
+     (`Tests/Ix/Compile/Fixtures/LocalCollapse.lean`): its selected closure
+     (the `--local` scope) compiles with no refusal, the Rust compile is
+     byte-identical, it decompiles to the source, its derived references
+     are carried, and `ix validate-lean --ns LocalCollapse` passes its
+     phases 1–3 and 5 (phase 4 is excluded, see `localCollapse`); the same
+     closure without the introduced references is refused naming one of
+     them (negative control);
   8. **the Rust compiler**: the Rust compile of every closure
      (`rsCompileEnvBytesFFI`) is the Lean compile's artifact, byte for
      byte.
 
   Ported from 940e4fe6 and a9cf3607 `Tests/Ix/Compile/ClosureWhole.lean`:
   - The donor's numbering is kept.
-  - Checks 6 and 7 are dropped: the introduced references
-    (`introducedSupport`) and the local scope of the `LocalCollapse`
-    fixture with `ix validate-lean --local` are LC-15b (CQ4.3).
+  - Checks 6 and 7 (`1a20574b`) came with the flip, whose images reference
+    the support constants: without the transport prerequisites (batch 5),
+    with `ix validate-lean --ns` for the donor's `--local` (this tree's
+    validate-lean has no `--local`), judged per phase from its report with
+    phase 4 excluded (the donor's validate-lean routes collapsed blocks
+    around `Ix.Tc`'s meta mode, this tree's does not), and with the Rust
+    parity of check 8 on the local scope too.
   - The `mode` loop is gone, and `CLOSURE_WHOLE_ON` is renamed to
     `CLOSURE_WHOLE_IXE` (R11-16).
   - Pass 3 is replaced by the closure harness.
@@ -114,6 +133,137 @@ def loadOrCompile (env : Environment) (whole : List (Name × ConstantInfo)) : IO
     throw (IO.userError s!"whole: {out.cenv.ungrounded.size} refusals")
   IO.ofExcept (Ixon.rsDeEnv out.bytes)
 
+/-- The references of the constant at `addr` (a projection's are its block's). -/
+def constRefs (env : Ixon.Env) (addr : Address) : Array Address :=
+  let blockRefs := fun (b : Address) => ((env.getConst? b).map (·.refs)).getD #[]
+  match env.getConst? addr with
+  | none => #[]
+  | some c => match c.info with
+    | .dPrj p => blockRefs p.block
+    | .rPrj p => blockRefs p.block
+    | .iPrj p => blockRefs p.block
+    | .cPrj p => blockRefs p.block
+    | _ => c.refs
+
+/-- 6. The references the closure's output makes that no constant of the
+closure *without* the compiler's introduced references (`base`) accounts
+for: derived from the output, not from a list. Every such reference must be
+carried by the producer's closure (`full`). `_ix` names (the compiler's own
+canonical constants) are not references into the input. -/
+def introducedRefs (out : Ixon.Env) (base full : Std.HashSet Name) :
+    Std.HashSet Name × Array String := Id.run do
+  let names : Std.HashMap Address (Array Name) := out.named.fold (init := {}) fun m n nd =>
+    m.insert nd.addr ((m.getD nd.addr #[]).push (toLeanName n))
+  let isIx (n : Name) : Bool := n.components.contains `_ix
+  let mut seen : Std.HashSet Address := {}
+  let mut intro : Std.HashSet Name := {}
+  let mut bad : Array String := #[]
+  for (n0, nd) in out.named do
+    -- only the references of constants the closure has without the introduced
+    -- references (and of the compiler's own `_ix` constants): what a pass put there
+    let ln0 := toLeanName n0
+    unless base.contains ln0 || isIx ln0 do continue
+    if seen.contains nd.addr then continue
+    seen := seen.insert nd.addr
+    for x in constRefs out nd.addr do
+      let ns := names.getD x #[]
+      if ns.isEmpty || ns.any base.contains || ns.any isIx then continue
+      for n in ns do intro := intro.insert n
+      unless ns.any full.contains do bad := bad.push s!"{ns} is referenced but not carried"
+  return (intro, bad)
+
+/-- A name set, sorted, for printing. -/
+def sortedNames (s : Std.HashSet Name) : Array String :=
+  s.toList.map toString |>.toArray.qsort (· < ·)
+
+/-- 7. The local scope of a collapse fixture: the selected closure of the
+file's own constants (`ix compile --local`) compiles with no refusal, the Rust
+compile is byte-identical, it decompiles to the source, the references its
+output introduces are carried, and `ix validate-lean --ns LocalCollapse`
+passes its phases 1–3 and 5 (compile, serde, kernel anon roundtrip,
+decompile), read from its `--report`. Negative control: the same closure
+without the compiler's introduced references (recursors only, the scope
+`--local` had before them) is refused, naming one of them.
+
+validate-lean's phase 4, the kernel meta roundtrip, is excluded, and its
+verdict is printed. `Ix.Tc`'s meta ingress registers one inductive per class of
+a `Muts` block (the class's first name), so the members a block-internal
+collapse merges into another (`TB` with its constructors, `PB.b`) are absent
+from its kernel environment, and a reference to one egresses as the class's
+first member (`TA.a`'s type). That is BB-F7 (`COMPILER-QUEUE.md`: it goes when
+`Ix.Tc` is deleted), and the fixture exists to collapse. It predates Pass 3:
+validate-lean at `d76a8890` reports the same 8 phase 4 errors on this file. -/
+def localCollapse (dir : System.FilePath) : IO (Array String) := do
+  let file := "Tests/Ix/Compile/Fixtures/LocalCollapse.lean"
+  let env ← getFileEnv file
+  let own := ownConstants env
+  let full := Ix.EnvScope.collectSelectedDeps env own
+  let noSupport := Ix.EnvScope.collectDeps env own { recursors := true }
+  let mut errors : Array String := #[]
+  let out ← compileClosure env full
+  unless out.cenv.ungrounded.isEmpty do
+    errors := errors.push s!"local collapse: {out.cenv.ungrounded.size} refusals, first \
+      {out.cenv.ungrounded.toList.head?.map (·.1.pretty)}"
+  if let some e ← rustCheck "local collapse" env full out (dir / "local-collapse.ixe") then
+    errors := errors.push e
+  let (de, summary) ← decompileCheck env full out
+  errors := errors ++ de.map (s!"local collapse: {·}")
+  let outEnv ← IO.ofExcept (Ixon.rsDeEnv out.bytes)
+  let base := nameSet (Ix.EnvScope.collectDeps env own .selected)
+  let (intro, bad) := introducedRefs outEnv base (nameSet full)
+  errors := errors ++ bad.map (s!"local collapse: {·}")
+  say s!"local collapse: references introduced by the output (derived): {sortedNames intro}"
+  say s!"local collapse: closure {full.length} (without the introduced references \
+    {noSupport.length}); {out.cenv.ungrounded.size} refusals; {summary}"
+  let neg : List (String × String) ← try
+      let o ← compileClosure env noSupport
+      pure (o.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+    catch e => pure [("compile", toString e)]
+  let support := ["True", "And", "PProd", "PUnit", "Eq"]
+  if neg.isEmpty then
+    errors := errors.push "local collapse: the negative control compiled (the fixture does not \
+      exercise the scope)"
+  else unless neg.any (fun (_, m) =>
+      support.any fun s => (m.splitOn s!"missingConstant: {s}").length > 1) do
+    errors := errors.push s!"local collapse: the negative control fails for another reason: \
+      {neg.head?}"
+  say s!"local collapse negative control (recursors only): {neg.length} refusal(s), first \
+    {neg.head?}"
+  let exe ← IO.FS.realPath (".lake" / "build" / "bin" / "ix")
+  let report := dir / "local-collapse-validate-lean.json"
+  let r ← IO.Process.output
+    { cmd := exe.toString
+      args := #["validate-lean", "--ns", "LocalCollapse", "--workers", "8",
+        "--report", report.toString, file] }
+  say s!"local collapse: ix validate-lean --ns LocalCollapse: exit {r.exitCode}"
+  -- the phase table: (name, result, detail) per phase
+  let phases : Except String (Array (String × String × String)) ← try
+      let j ← IO.ofExcept (Json.parse (← IO.FS.readFile report))
+      let rows ← IO.ofExcept (j.getObjValAs? (Array Json) "phases")
+      let ps ← rows.mapM fun row => IO.ofExcept do
+        return (← row.getObjValAs? String "name", ← row.getObjValAs? String "result",
+          ← row.getObjValAs? String "detail")
+      pure (.ok ps)
+    catch e => pure (.error (toString e))
+  match phases with
+  | .error e =>
+    errors := errors.push s!"local collapse: validate-lean (exit {r.exitCode}) wrote no report: \
+      {e}; stderr ends {((r.stderr.splitOn "\n").filter (!·.isEmpty)).getLast?}"
+  | .ok ps =>
+    for key in ["1.", "2.", "3.", "5."] do
+      match ps.find? (·.1.startsWith key) with
+      | none => errors := errors.push s!"local collapse: validate-lean reports no phase {key}"
+      | some (name, result, detail) =>
+        say s!"local collapse: validate-lean {name}: {result}"
+        unless result == "pass" do
+          errors := errors.push s!"local collapse: validate-lean {name}: {result}: {detail}"
+    for (name, result, detail) in ps.filter (·.1.startsWith "4.") do
+      say s!"local collapse: validate-lean {name}: {result} — EXCLUDED, known failure \
+        BB-F7 (pre-existing: Ix.Tc's meta ingress registers one inductive per class, so a \
+        block that collapses inside loses its other members; the same with the pre-flip \
+        compiler; reassess at M7, when Ix.Tc goes): {(detail.splitOn "\n").headD ""}"
+  return errors
+
 def run : IO UInt32 := do
   let env ← getFileEnv "Benchmarks/Compile/CompileInitStd.lean"
   let whole := env.constants.toList
@@ -128,8 +278,10 @@ def run : IO UInt32 := do
   say s!"Init+Std: {whole.length} constants; {roots.length} roots: {roots}"
   -- 1, 2: the closures and their units (one unit index for every check)
   let units := Ix.EnvScope.unitIndex env.constants
-  let mut closures : Array (Name × List (Name × ConstantInfo)) := #[]
+  let mut closures : Array (Name × List (Name × ConstantInfo) × Std.HashSet Name) := #[]
   let mut unitChecks := 0
+  -- 6: the compiler's introduced references
+  let support := Ix.EnvScope.introducedSupport env
   for r in roots do
     let c := Ix.EnvScope.collectSelectedDeps env [r]
     let cn := nameSet c
@@ -139,8 +291,13 @@ def run : IO UInt32 := do
       for u in Ix.EnvScope.unitMembers env.constants units n do
         unitChecks := unitChecks + 1
         unless cn.contains u do errors := errors.push s!"{r}: {n} is carried without {u} of its unit"
-    closures := closures.push (r, c)
-  say s!"closures: {closures.foldl (· + ·.2.length) 0} constants over {roots.length} roots; \
+    for s in support do
+      unless cn.contains s do errors := errors.push s!"{r}: the introduced reference {s} is not carried"
+    -- the closure without the introduced references, for the derived check
+    let base := nameSet (Ix.EnvScope.collectDeps env [r] .selected)
+    closures := closures.push (r, c, base)
+  say s!"introduced references carried by every closure: {support}"
+  say s!"closures: {closures.foldl (· + ·.2.1.length) 0} constants over {roots.length} roots; \
     {unitChecks} unit memberships checked"
   -- 3, 4, 5, 8: each closure compiled, against the whole compile
   let ref ← loadOrCompile env whole
@@ -151,7 +308,8 @@ def run : IO UInt32 := do
   let mut classes : Std.HashMap String Nat := {}
   let mut missing := 0
   let mut rustSame := 0
-  for (r, c) in closures do
+  let mut introduced : Std.HashSet Name := {}
+  for (r, c, base) in closures do
     let out ← compileClosure env c
     -- 3. no refusal
     unless out.cenv.ungrounded.isEmpty do
@@ -188,6 +346,10 @@ def run : IO UInt32 := do
             {w} in the whole compile"
     if a > 5 then errors := errors.push s!"{r}: … {a - 5} more address differences"
     if m > 5 then errors := errors.push s!"{r}: … {m - 5} more metadata differences"
+    -- 6. the references the output introduces are carried
+    let (intro, bad) := introducedRefs outEnv base (nameSet c)
+    introduced := intro.fold (·.insert ·) introduced
+    errors := errors ++ bad.map (s!"{r}: {·}")
     addrDiffs := addrDiffs + a
     metaDiffs := metaDiffs + m
     say s!"{r}: closure {c.length}, output {outEnv.named.size} names; {a} address, \
@@ -198,6 +360,9 @@ def run : IO UInt32 := do
     {missing} closure constants missing from the output"
   say s!"Rust compiler on the same closures: {rustSame}/{closures.size} byte-identical with the \
     Lean compile"
+  say s!"references introduced by the outputs (derived): {sortedNames introduced}"
+  -- 7. the local scope of a collapse fixture
+  errors := errors ++ (← localCollapse dir)
   for e in errors do say s!"FAIL {e}"
   say s!"{if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}"
   IO.FS.removeDirAll dir

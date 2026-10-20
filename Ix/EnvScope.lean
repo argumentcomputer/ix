@@ -9,6 +9,9 @@
 -/
 module
 public import Ix.Meta
+-- the image generator's declaration of the references its output introduces
+-- (`introducedSupport`)
+public import Ix.Compile.Image.Expr
 -- The checker-support ground is derived from the kernel's role table
 -- (CQX.3): host → kernel is the layering fence's allowed direction
 -- (`Ix/SpecDigest.lean` does the same). This links `IxC.Kernel.Roles`'s
@@ -293,13 +296,29 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
             worklist := r :: worklist
   env.constants.toList.filter fun (n, _) => needed.contains n
 
+/-- The library constants the compiler's output may reference although the
+selected declarations' Lean terms do not (design document §6.3, obligation 2
+of a pass whose output adds a reference: every closure producer carries the
+target): the Pass 3 images' packing and rule constants
+(`Ix.Compile.Image.imageSupport`: `And`/`True` for a Prop block's family,
+`PProd`/`PUnit` for a Type block's, `Eq` for the computation rules). Read
+from the compiler's own declaration, so a constant a pass starts to introduce
+is carried once it is declared there. Only the ones the environment has. -/
+def introducedSupport (env : Lean.Environment) : List Lean.Name :=
+  let rec toLean : Ix.Name → Lean.Name
+    | .anonymous _ => .anonymous
+    | .str p s _ => .str (toLean p) s
+    | .num p i _ => .num (toLean p) i
+  (Ix.Compile.Image.imageSupport.toList.map toLean).eraseDups.filter env.contains
+
 /-- The closure of a selected compiler/checker input: `collectDeps` with
 `ClosureOptions.selected`, so recursors, whole logical units and
 checker-support ground close to the same fixed point as ordinary
-references, mutual `all` members and auxiliary-family siblings. -/
+references, mutual `all` members and auxiliary-family siblings, seeded with
+the compiler's introduced references (`introducedSupport`) and their units. -/
 def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
     List (Lean.Name × Lean.ConstantInfo) :=
-  collectDeps env seeds .selected
+  collectDeps env (seeds ++ introducedSupport env) .selected
 
 /-- Default (unfiltered) constant list for a file env. Classic files keep the
 historical whole-import-env behavior (byte-identical artifacts). Module-mode
