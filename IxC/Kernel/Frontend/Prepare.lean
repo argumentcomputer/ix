@@ -36,11 +36,14 @@ record of the stream is dropped, rewritten or retagged**:
    `pins/<toolchain>.prelude.ndjson`.  A stream that declares the
    toolchain's `Bool` is therefore CHECKED on its own `Bool` record,
    not on a copy of ours;
-2. **the ground hoist** (`IxC/Kernel/Frontend/NatOpGround.lean`): a
-   pinned `Nat` operation's stream-certified structural ground
-   (`Nat.ble`, `Nat.sub`, `Nat.mul`) is moved ahead of it when the
+2. **the ground hoist** (`IxC/Kernel/Frontend/NatOpGround.lean`), over the
+   rest only: a pinned `Nat` operation's stream-certified structural
+   ground (`Nat.ble`, `Nat.sub`, `Nat.mul`) is moved ahead of it when the
    stream declares it later.  A dependency-closed set moved earlier is
-   still a valid stream.
+   still a valid stream.  The front is not hoisted over (no prelude
+   declaration is a `Nat` operation), so the prepared stream is the front
+   followed by the hoisted rest by construction (S1, the union's common
+   front).
 
 **Moving a record earlier can only reject, never accept.**  The
 prelude's declarations depend on nothing but each other (`Quot`'s
@@ -159,7 +162,8 @@ structure Prepared (md : Mode) where
 /-- **`preparePrelude`, with its receipts.** -/
 def prepareD (pre : PreludeIx md) (ds : Array (Declaration md)) : Prepared md :=
   let (front, rest) := frontOf #[] pre.decls.toList ds
-  let (decls, hoisted) := hoistNatOpGround (front ++ rest)
+  let (rest, hoisted) := hoistNatOpGround rest
+  let decls := front ++ rest
   ⟨decls, decls.size - ds.size, hoisted⟩
 
 /-- **`preparePrelude`**: the parsed stream, prepared for the fold —

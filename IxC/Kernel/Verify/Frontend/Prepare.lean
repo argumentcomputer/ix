@@ -154,6 +154,12 @@ theorem hoistNatOpGround_perm (ds : Array (Declaration md)) :
 
 /-! ## The prepared stream -/
 
+/-- **The prepared stream is the front, then the hoisted rest** (fact (i) of
+S1's union, by construction: the ground hoist runs over the rest only). -/
+theorem preparePrelude_front (pre : PreludeIx md) (ds : Array (Declaration md)) :
+    preparePrelude pre ds = (frontOf #[] pre.decls.toList ds).1 ++
+      (hoistNatOpGround (frontOf #[] pre.decls.toList ds).2).1 := rfl
+
 /-- **THE SPEC** (maintainer, task #293): *"it is a permutation of the
 input plus additional declarations, but nothing missing"* — and the
 additional declarations are the built-in prelude's own records. -/
@@ -163,9 +169,9 @@ theorem preparePrelude_perm (pre : PreludeIx md) (ds : Array (Declaration md)) :
   obtain ⟨extra, hextra, hperm⟩ := frontSpec_perm pre.decls.toList ds.toList
   refine ⟨extra, hextra, ?_⟩
   obtain ⟨h₁, h₂⟩ := frontOf_toList pre.decls.toList #[] ds
-  simp only [preparePrelude, prepareD]
-  refine (hoistNatOpGround_perm _).trans ?_
-  rw [Array.toList_append, h₁, h₂]
+  rw [preparePrelude_front, Array.toList_append]
+  refine (List.Perm.append_left _ (hoistNatOpGround_perm _)).trans ?_
+  rw [h₁, h₂]
   simpa using hperm
 
 /-- **The pass-through**: every record of the file is a record of the
