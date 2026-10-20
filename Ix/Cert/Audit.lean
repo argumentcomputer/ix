@@ -906,12 +906,22 @@ constructor:
 -- the queue drivers `compileEnvAux` (sequential, live state) and
 -- `compileEnvParallelAux` (waves applied in completion order) go. Only the
 -- driver's name changes in this body; its arguments are the same.
+--
+-- D14 (owner; after Q2): re-frozen. Reserved input is refused before the fold
+-- (`Ix.Cert.reservedRefusal`): a grounded input constant with a reserved
+-- metadata key, then a grounded input name with a reserved component, each by
+-- its least message, as the IO pipeline (`compileDecoratedConsts`) and the Rust
+-- compiler (`compile_env`) refuse it. The condensation is named once (`blocks`)
+-- and passed to the refusal and to the driver; the driver's arguments are the
+-- same. `compile-reserved-mdata` checks all three compilers name the same input.
 /-- info: def Ix.Cert.compileUnchecked : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
 fun env =>
   have env := { consts := env.consts };
   have split := Ix.Cert.groundSplit env;
+  have blocks := Ix.CondenseM.run split.fst;
   do
-  let __x ← Ix.CompileM.compileEnvFold env (Ix.CondenseM.run split.fst)
+  Ix.Cert.reservedRefusal env split.snd blocks
+  let __x ← Ix.CompileM.compileEnvFold env blocks
   match __x with
     | (ixe, fst, cenv) =>
       have ungrounded :=
@@ -919,6 +929,26 @@ fun env =>
       pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compileUnchecked
+
+/-- info: def Ix.Cert.reservedRefusal : Ix.Environment →
+  Ix.Map Ix.Name Ix.GroundError → Ix.CondensedBlocks → Except String Unit :=
+fun env ungrounded blocks =>
+  have reservedMetadata :=
+    Std.HashMap.fold
+      (fun acc n ci =>
+        if (!Std.HashMap.contains ungrounded n && Ix.Cert.constHasReservedMetadata ci) = true then acc.push n else acc)
+      #[] env.consts;
+  have __do_jp := fun __r =>
+    match Ix.CompileM.reservedInputRefusal? blocks with
+    | some msg => throw msg
+    | x => pure ();
+  match Ix.CompileM.reservedMetadataRefusal? reservedMetadata with
+  | some msg => do
+    let __r ← throw msg
+    __do_jp __r
+  | x => __do_jp () -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.reservedRefusal
 
 /-- info: def Ix.Cert.uncovered : Ix.Environment → Ixon.Env → Ix.Cert.Failures → List Ix.Name :=
 fun env ixe failures => List.filter (fun n => ixe.named.contains n == failures.failed n) env.consts.keys -/

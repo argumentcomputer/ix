@@ -118,14 +118,63 @@ structure Failures where
 @[expose] def Failures.isEmpty (f : Failures) : Bool :=
   f.ungrounded.isEmpty && f.blocks.isEmpty
 
+/-! ### Reserved input (D14)
+
+`_ix` names Pass 3's auxiliaries and images, and `_ix.inline`/`_ix.inline_meta`
+its placeholders and decompile records (`Ix.Compile.Pass.Names`). The compile
+refuses, before the fold, a grounded input constant with a metadata key that has
+a reserved component, then a grounded input name with one, each by its least
+message (`reservedRefusal`): the IO pipeline's refusals
+(`Ix.CompileM.reservedMetadataRefusal?` and `reservedInputRefusal?`, in
+`compileDecoratedConsts`) and the Rust compiler's (`compile_env`), so all three
+name the same input. The metadata keys are read from the expressions the
+reference graph walks (`Ix.CompileM.sourceHasReservedMetadata`'s, here on the
+canonical constants). -/
+
+/-- Some metadata key in `e` has a reserved component. -/
+@[expose] def exprHasReservedMetadata : Ix.Expr → Bool
+  | .mdata data e _ => data.any (Ix.Compile.Pass.hasReserved ·.1) || exprHasReservedMetadata e
+  | .app f a _ => exprHasReservedMetadata f || exprHasReservedMetadata a
+  | .lam _ t b _ _ => exprHasReservedMetadata t || exprHasReservedMetadata b
+  | .forallE _ t b _ _ => exprHasReservedMetadata t || exprHasReservedMetadata b
+  | .letE _ t v b _ _ =>
+    exprHasReservedMetadata t || exprHasReservedMetadata v || exprHasReservedMetadata b
+  | .proj _ _ e _ => exprHasReservedMetadata e
+  | _ => false
+
+/-- Some expression of the constant has a metadata key with a reserved
+component: its type, a definition's, theorem's or opaque's value, and a
+recursor's rule right-hand sides. -/
+@[expose] def constHasReservedMetadata (ci : Ix.ConstantInfo) : Bool :=
+  exprHasReservedMetadata ci.getCnst.type ||
+    match ci with
+    | .defnInfo v => exprHasReservedMetadata v.value
+    | .thmInfo v => exprHasReservedMetadata v.value
+    | .opaqueInfo v => exprHasReservedMetadata v.value
+    | .recInfo v => v.rules.any (exprHasReservedMetadata ·.rhs)
+    | _ => false
+
+/-- **The refusal of reserved input**, before the fold: a grounded input
+constant with a reserved metadata key, then a grounded input name with a
+reserved component (the names of `blocks`), each by its least message. -/
+@[expose] def reservedRefusal (env : Ix.Environment) (ungrounded : Ix.Map Ix.Name Ix.GroundError)
+    (blocks : Ix.CondensedBlocks) : Except String Unit := do
+  let reservedMetadata : Array Ix.Name := env.consts.fold (init := #[]) fun acc n ci =>
+    if !ungrounded.contains n && constHasReservedMetadata ci then acc.push n else acc
+  if let some msg := Ix.CompileM.reservedMetadataRefusal? reservedMetadata then throw msg
+  if let some msg := Ix.CompileM.reservedInputRefusal? blocks then throw msg
+
 /-- The compile and its failures, before `compileReport`'s checks. A block
 that fails to compile is recorded, with its dependents, and left out of the
 environment; the result is an error only when the driver itself fails (a
-refused input, or a condensation it cannot schedule). -/
+refused input, or a condensation it cannot schedule), or the input is
+reserved (`reservedRefusal`). -/
 @[expose] def compileUnchecked (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
   let env : Ix.Environment := { consts := env.consts }
   let split := groundSplit env
-  let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env (Ix.CondenseM.run split.1)
+  let blocks := Ix.CondenseM.run split.1
+  reservedRefusal env split.2 blocks
+  let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env blocks
   let ungrounded := split.2.fold (init := {}) fun m n e =>
     m.insert n (e.refusal split.2.contains)
   pure (ixe, { ungrounded, blocks := cenv.ungrounded })

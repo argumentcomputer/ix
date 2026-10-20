@@ -1,8 +1,8 @@
 /-
-  compile-reserved-mdata: both compilers refuse reserved input (
+  compile-reserved-mdata: all three compilers refuse reserved input (
   `Ix.Compile.Pass.Names`): an input constant whose metadata key has the
   reserved component `_ix` (Rust `compile_env`, Lean
-  `Ix.CompileM.reservedMetadataRefusal?`), and an input name with that
+  `Ix.CompileM.reservedMetadataRefusal?`, `Ix.Cert.reservedRefusal`), and an input name with that
   component (Rust `pass3::names::reserved_input_in`, Lean
   `Ix.CompileM.reservedInputRefusal?`). Otherwise source metadata could
   impersonate a Pass 3 placeholder (`[(_ix.inline, n)]`) or decompile record
@@ -12,14 +12,16 @@
   Cases, each the closure of one definition `d` (with the aux-gen seeds,
   `IndFlags.closureOf`): `d`'s value wrapped in the placeholder form and in
   the record form; `d` renamed `Fixture._ix.d`; and both at once, where the
-  metadata refusal comes first in both compilers. The valid neighbour, an
-  ordinary key, compiles in both, byte-identically. The legs are the Rust
-  compiler (`ix compile`'s FFI) and the IO pipeline (`compile-lean`).
+  metadata refusal comes first in every compiler. The valid neighbour, an
+  ordinary key, compiles in all three, byte-identically. The legs are the
+  Rust compiler (`ix compile`'s FFI), the IO pipeline (`compile-lean`) and
+  the pure compiler the statements are about (`Ix.Cert.compile`, whose
+  refusal is `Ix.Cert.reservedRefusal`, before the fold).
 
   The drivers' case of `reserved-input` (D14, ported from the donor's
   `pass3` unit `ReservedIx`): three definitions renamed `Fixture._ix.f`,
   `Fixture.Z._ix.h` and `Fixture.A._ix.g` (the last declared is the least
-  by its text); both drivers refuse naming exactly the least, as
+  by its text); all three compilers refuse naming exactly the least, as
   `reserved-input` checks of `reservedInputRefusal?` on synthetic
   condensations.
 
@@ -103,24 +105,26 @@ def run : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   let mut failures := 0
   try
-    -- valid neighbour: an ordinary key compiles in both, byte-identically
+    -- valid neighbour: an ordinary key compiles in all three, byte-identically
     let good ← IO.ofExcept (closure env [(`userKey, .ofNat 0)])
-    match ← IndFlags.rust env good (dir / "good.ixe"), ← IndFlags.lean env good with
-    | .ok r, .ok l =>
-      if r == l then
-        IO.println s!"[reserved-mdata] ordinary key: both compile, byte-identical ({r.size} bytes)"
+    match ← IndFlags.rust env good (dir / "good.ixe"), ← IndFlags.lean env good,
+        IndFlags.pure good with
+    | .ok r, .ok l, .ok p =>
+      if r == l && l == p then
+        IO.println s!"[reserved-mdata] ordinary key: all three compile, byte-identical \
+({r.size} bytes)"
       else
         failures := failures + 1
         IO.println s!"[reserved-mdata] ordinary key: FAIL: outputs differ \
-(rust {r.size}, lean {l.size} bytes)"
-    | r, l =>
+(rust {r.size}, lean {l.size}, cert {p.size} bytes)"
+    | r, l, p =>
       failures := failures + 1
       IO.println s!"[reserved-mdata] ordinary key: FAIL: rust {IndFlags.showLeg r}; \
-lean {IndFlags.showLeg l}"
+lean {IndFlags.showLeg l}; cert {IndFlags.showLeg p}"
     for (label, kvs, name, message) in cases do
       let bad ← IO.ofExcept (closure env kvs name)
       let legs := [("rust", ← IndFlags.rust env bad (dir / s!"{label}.ixe")),
-        ("lean", ← IndFlags.lean env bad)]
+        ("lean", ← IndFlags.lean env bad), ("cert", IndFlags.pure bad)]
       for (leg, result) in legs do
         match result with
         | .ok _ =>
@@ -132,12 +136,12 @@ lean {IndFlags.showLeg l}"
           else
             failures := failures + 1
             IO.println s!"[reserved-mdata] {label}: {leg}: FAIL: other refusal: {e}"
-    -- several reserved names: both drivers name exactly the least
+    -- several reserved names: all three compilers name exactly the least
     let several := severalReserved env
     let message := nameMessage leastReserved
     let others := (severalRenames.map (·.2)).filter (· != leastReserved)
     let legs := [("rust", ← IndFlags.rust env several (dir / "several.ixe")),
-      ("lean", ← IndFlags.lean env several)]
+      ("lean", ← IndFlags.lean env several), ("cert", IndFlags.pure several)]
     for (leg, result) in legs do
       match result with
       | .ok _ =>
