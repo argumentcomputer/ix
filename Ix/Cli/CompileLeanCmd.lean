@@ -24,6 +24,7 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.Compile.ChangedSet
 public import Ix.CompileResource
 public import Ix.Cli.DriverOptions
 public import Ix.AuxGen.LiteralSupport
@@ -107,6 +108,12 @@ serialize the grounded subset)"
       for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.println s!"  {n.pretty}: {e.take 200}"
 
+    if p.hasFlag "changed-set" then
+      let tC ← IO.monoMsNow
+      let cs := Ix.Compile.ChangedSet.ofCompile out.cenv.env out.env
+      IO.println s!"[compile-lean] changed set: {cs.counts.summary} \
+({(← IO.monoMsNow) - tC}ms)"
+
     if p.hasFlag "rust-check" then
       IO.println "[compile-lean] --rust-check: compiling via Rust FFI..."
       let tR ← IO.monoMsNow
@@ -141,6 +148,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
+    "changed-set" ;        "Print the changed set's counts by cause (`Ix.Compile.ChangedSet`): the input constants whose compiled form is not a renaming of their source. Reads the output only; writes nothing."
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env. --rust-check compiles the same list."
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."

@@ -22,6 +22,7 @@ import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.Pass3RustParity
+import Tests.Ix.Compile.ChangedSet
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -448,6 +449,12 @@ def registry : List Entry := [
   -- nested order on the same fixture corpus, the port fixes' neutrality, and
   -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
   .env "canon-pass1" .landing Tests.Ix.Compile.Canon.run,
+  -- The changed set (H1): the change predicate's causes, the set on the
+  -- fixture corpus against both compilers' call-site plan registrations, and
+  -- Init+Std empty (Tests.Ix.Compile.ChangedSet).
+  .env "changed-set" (.ci .compilePipeline) Tests.Ix.Compile.ChangedSet.run,
+  .runner "changed-set-initstd" .landing Tests.Ix.Compile.ChangedSet.runInitStd,
+  .env "changed-set-testenv" (.manual "two Rust compiles of the whole test environment; the calibration of the change predicate against Rust's plan registrations") Tests.Ix.Compile.ChangedSet.runTestEnv,
   .env "decompile-diff" (.ci .compilePipeline) Tests.Compile.DecompileDiff.run,
   -- Non-canonical stored inductive flags: refused by both compilers
   -- (Tests.Ix.Compile.IndFlags).
