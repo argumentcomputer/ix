@@ -6,6 +6,7 @@ import Ix.CanonM
 import Ix.GraphM
 import Ix.CondenseM
 import Ix.LeanIngress
+import Ix.Cert.RoleClosurePrepare
 
 /-! # The default role table, its evidence and the Ixon prelude, from Ixon (untrusted)
 
@@ -86,7 +87,8 @@ def regenerate : List String :=
    s!"lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --out .lake/envs/certs.ixe --consts \\\n      \
     {",".intercalate (Ix.RoleEvidence.certTheorems.flatMap (·.2) |>.map toString)}",
    "lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \\\n      \
-    IxC/Kernel/Ixon/RoleData.lean"]
+    IxC/Kernel/Ixon/RoleData.lean",
+   "lake exe IxTests cert-statement   # then: RoleEvidenceChecks on the committed file"]
 
 def sha256 (path : System.FilePath) : IO String := do
   let out ← IO.Process.output { cmd := "sha256sum", args := #["--", path.toString] }
@@ -481,6 +483,59 @@ def run (args : List String) : IO UInt32 := do
     let a := ((refOfRole[r]?).map (·.block)).getD default
     let micros := ((rows.find? (·.address == a)).map (·.micros)).getD 0
     IO.eprintln s!"pin-gen: {repr r}: accepted with the generated evidence, {micros} µs"
+  -- 4c: the well-founded operations' dependency closure, pinned for
+  -- `Ix.Cert.RoleClosure.RoleEvidenceChecks` (with the blobs its literals
+  -- reference and its definitions' hints), and checked as that statement
+  -- reads it: the Ixon entry's reading behind the prelude, the verified fold
+  let preludeSet : Std.HashSet Address := preRecords.foldl (fun m (a, _) => m.insert a) {}
+  let wfRoots : Array Address := Ix.RoleEvidence.certTheorems.toArray.filterMap fun (r, _) =>
+    (refOfRole[r]?).map (·.block)
+  -- the reader needs every block's projection records (the entry reconstructs
+  -- none) and every inductive block's recursors (their records, closed over in
+  -- turn): `closure` keeps owners only, so both are added to a fixpoint
+  let mut projectionsOf : Std.HashMap Address (Array Address) := {}
+  for (a, c) in s.store.toList do
+    let o := owner a c
+    if o != a then projectionsOf := projectionsOf.insert o ((projectionsOf.getD o #[]).push a)
+  let mut closureRoots := wfRoots
+  let mut closureOrder : Array Address := #[]
+  repeat
+    closureOrder := closure s.store s.extra closureRoots
+    let have_ : Std.HashSet Address := closureOrder.foldl (fun m a => m.insert a) {}
+    let mut more : Array Address := #[]
+    for a in closureOrder do
+      if let some shape := s.cx.index.blocks[a]? then
+        for r in shape.recs do
+          unless have_.contains r.block || more.contains r.block do more := more.push r.block
+    if more.isEmpty then break
+    closureRoots := closureRoots ++ more
+  let withProjections : Array Address := closureOrder.foldl (init := #[]) fun acc a =>
+    (acc.push a) ++ ((projectionsOf.getD a #[]).qsort fun x y => toString x < toString y)
+  let closureRecords : Array (Address × Ixon.Constant) :=
+    (withProjections.filter (!preludeSet.contains ·)).filterMap fun a => (s.store[a]?).map (a, ·)
+  for (a, c) in closureRecords do
+    let bytes := Ixon.serConstant c
+    match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
+    | .ok c' => unless c' == c do fail s!"closure record {a} does not round-trip"
+    | .error e => fail s!"closure record {a}: {e}"
+  let mut closureBlobs : Array (Address × ByteArray) := #[]
+  for (_, c) in closureRecords do
+    for x in c.refs do
+      if let some b := env.blobs[x]? then
+        unless closureBlobs.any (·.1 == x) do closureBlobs := closureBlobs.push (x, b)
+  let closureHints : Array (Address × Ix.Kernel.ReducibilityHint) := closureRecords.filterMap fun (a, _) =>
+    (env.anonHints[a]?).map fun
+      | .opaque => (a, .opaque)
+      | .abbrev => (a, .abbrev)
+      | .regular h => (a, .regular h.toNat)
+  let prepared := Ix.Cert.RoleClosure.prepareClosure table pre closureRecords closureBlobs.toList
+    closureHints
+  unless Ix.Cert.RoleClosure.closureCheck prepared do
+    fail s!"the well-founded operations' closure does not check: \
+      {match prepared with | .ok _ => "the fold refuses it or an operation is not defined" | .error e => e}"
+  IO.eprintln s!"pin-gen: closure: {closureRecords.size} records (bytes \
+    {closureRecords.foldl (fun n (_, c) => n + (Ixon.serConstant c).size) 0}), {closureBlobs.size} blobs, \
+    {closureHints.size} hints; it defines every well-founded operation and the verified fold accepts it"
   -- 4b: Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`): the
   -- certificate theorems closed in Source mode over the certificate module's
   -- own environment, written as theorem records whose references are names
@@ -582,7 +637,17 @@ Source mode over the certificate module's own environment, as theorem records
 (address, canonical bytes) whose references are names: `sourceNames` names
 each reference's address (the generator's `nameAddress`) and each record (its theorem), and
 a literal's blob is in `blobs` or `sourceBlobs`. These were read back as the
-closed proofs when this file was generated. -/
+closed proofs when this file was generated.
+
+`closure`: the well-founded `Nat` operations' dependency closure in the
+compiled Init, less the prelude (record address, canonical record bytes), in
+check order; `closureBlobs`: the blobs its literals reference; `closureHints`:
+its definitions' hints (record address, `opaque`, `abbrev` or a height). Read
+by the Ixon entry's reader behind the prelude, it defines every well-founded
+operation and the verified fold accepts it under this table's evidence
+(`Ix.Cert.RoleClosure.RoleEvidenceChecks`): checked when this file was
+generated, and by `lake exe IxTests cert-statement` (`roleEvidenceCheck`) after
+every regeneration. -/
 
 @[expose] public section
 
@@ -612,12 +677,22 @@ def sourceNames : Array (String × Lean.Name) := #[
 def sourceBlobs : Array (String × String) := #[
 {rowsOf srcBlobs}]
 
+def closure : Array (String × String) := #[
+{rowsOf (closureRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
+
+def closureBlobs : Array (String × String) := #[
+{rowsOf closureBlobs}]
+
+def closureHints : Array (String × String) := #[
+{",\n".intercalate (closureHints.toList.map fun (a, h) =>
+    s!"  ({(toString a).quote}, {(Ix.Cert.RoleClosure.hintString h).quote})")}]
+
 end Ix.Kernel.Reader.RoleData
 "
   IO.FS.writeFile output text
   IO.eprintln s!"pin-gen: wrote {output}: {bound.size} roles, {evRecords.size} evidence records, \
     {evBlobs.size} blobs, {preRecords.size} prelude records, {srcRecords.size} Source \
-    evidence records, {srcNameRows.size} names"
+    evidence records, {srcNameRows.size} names, {closureRecords.size} closure records"
   return 0
 
 end Benchmarks.Kernel.PinGen

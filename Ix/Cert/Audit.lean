@@ -11,6 +11,7 @@ import Ix.Cert.Evidence
 import Ix.Cert.Roles
 import Ix.Cert.Admits
 import Ix.Cert.BlockStart
+import Ix.Cert.RoleClosure
 
 /-! # The certification statements, frozen
 
@@ -3883,3 +3884,28 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "block start"
     (#[`clean_empty, `wire_empty].map (`Ix.Cert.BlockStart ++ ·))
+
+/-! ## Route A, B6b: the role table's certificates on their pinned closure
+
+`kernel-pin-gen` pins the well-founded `Nat` operations' dependency closure in
+RoleData. On it, under the default table and its committed prelude, every
+operation is defined and the pure fold accepts
+(`Ix.Cert.RoleClosure.RoleEvidenceChecks`): a closed proposition about the
+verifier's pinned configuration, not yet a premise of any statement.
+`cert-statement` checks it after every regeneration through the executed fold
+(`roleEvidenceCheck`, `roleEvidenceChecks_of_check`). -/
+
+/-- info: def Ix.Cert.RoleClosure.RoleEvidenceChecks : Prop :=
+∃ ev ds env,
+  Ix.Cert.RoleClosure.preparedDefault = Except.ok (ev, ds) ∧
+    Ix.Cert.RoleClosure.DefinesAll ds ∧ Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified ev ds env -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RoleClosure.RoleEvidenceChecks
+
+/-- info: [cert-audit] role closure: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "role closure"
+    (#[`definesAll_iff, `checks_of_closureCheck, `roleEvidenceChecks_of_check].map
+      (`Ix.Cert.RoleClosure ++ ·))

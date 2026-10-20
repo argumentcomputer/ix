@@ -573,6 +573,24 @@ def contractAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
     same contracts on both sides ({contracted.size} keep one; `localLet`'s is a `let`'s)"
   return (errors, lines)
 
+/-- Route A, B6b: `Ix.Cert.RoleClosure.RoleEvidenceChecks` on the committed RoleData, through
+its executed check (`roleEvidenceCheck`, `roleEvidenceChecks_of_check`): the pinned closure
+defines every well-founded `Nat` operation and the verified fold accepts it under the default
+table's evidence. Run after every regeneration (RoleData's header recipe). -/
+def roleEvidenceCase : IO (Array String × Array String) := do
+  match Ix.Cert.RoleClosure.preparedDefault with
+  | .error e => return (#[s!"the committed role closure does not prepare: {e}"], #[])
+  | .ok (ev, ds) =>
+    if Ix.Cert.RoleClosure.roleEvidenceCheck then
+      return (#[], #[s!"role evidence: the pinned closure ({ds.length} declarations, \
+        {ev.length} evidence entries) defines every well-founded operation and the verified fold \
+        accepts it: RoleEvidenceChecks holds"])
+    else
+      let defines := Ix.Cert.RoleClosure.definesAll ds
+      let run := match Ix.Kernel.Cached.checkDecls .verified ev ds.toArray with
+        | .ok _ => "accepts" | .error (e, i) => s!"refuses at {i}: {e}"
+      return (#[s!"role evidence: defines every operation: {defines}; the fold {run}"], #[])
+
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
     let (errors, lines) ← action
@@ -587,7 +605,9 @@ def suite : List TestSeq := [
   report "the statements' hypotheses and conclusion, per root, on the accepted fixtures" (do
     perRoot (← getCompileEnv #[defsModule, ownModule])) 1,
   report "binder contracts on both sides, on the resolved source-contract syntax fixtures" (do
-    contractAgreement (← getCompileEnv #[syntaxModule])) 1]
+    contractAgreement (← getCompileEnv #[syntaxModule])) 1,
+  report "the shipped role table's certificates check on their pinned closure (Route A, B6b)"
+    roleEvidenceCase 1]
 
 /-- `cert-compile-parity-init` (ignored): the parity on `Init`. -/
 def initSuite : List TestSeq := [
