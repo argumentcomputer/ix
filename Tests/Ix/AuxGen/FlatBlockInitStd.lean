@@ -1,4 +1,5 @@
 import Tests.Ix.AuxGen.FlatBlockSource
+import Tests.Ix.AuxGen.BelowIxc
 
 /-! # The drivers' Source service on Init+Std (`lake exe IxTests --ignored auxgen-flat-initstd`)
 
@@ -44,7 +45,7 @@ def evaluate : IO (Array String × Array String) := do
   let env ← IO.lazyPure fun _ => canon consts workers
   let blocks ← IO.lazyPure fun _ => condense env (parallel := true)
   let t1 ← IO.monoMsNow
-  let ((_, _, cenv), report) ← match ← IO.lazyPure fun _ =>
+  let ((ixe, _, cenv), report) ← match ← IO.lazyPure fun _ =>
       Ix.CompileM.compileEnvFoldWithSource env blocks (width := 4 * workers) with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"compile: {e}")
@@ -175,6 +176,15 @@ def evaluate : IO (Array String × Array String) := do
       this test needs {needed}"
   if canonical.leanSame == 0 then
     errors := errors.push "production recorded no Lean-layout canonical verdict"
+  -- AuxGen M5: production's acceptance table. Init+Std regenerates nothing
+  -- (`auxgen-m5.md` §0), so no row is late, and the table agrees with the
+  -- artifact's addresses
+  let table := cenv.auxReport.table
+  for l in Tests.Ix.AuxGen.BelowIxc.acceptanceLines table do lines := lines.push l
+  let (accErrors, accInfo) := Tests.Ix.AuxGen.BelowIxc.acceptanceErrors ixe table
+    (cenv.p3Heads.contains ·) (allowLate := false)
+  for l in accInfo do lines := lines.push l
+  for e in accErrors do errors := errors.push e
   return (errors, lines)
 
 def run : IO UInt32 := do

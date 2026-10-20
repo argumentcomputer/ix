@@ -524,6 +524,24 @@ def admitGeneratedIn (svc : Service) (decls : Array GeneratedDecl) :
         for (v, _) in types do out := out.push (v.cnst.name, some why)
   return (svc, out)
 
+/-- **Why a block's own groups are not accepted in Source mode**, if they are
+not (AuxGen M5b, `AuxOracle.blockStatus`): `Source.Run.blockReason?`, with a
+blocking group's own reason, so the reason names the root cause (e.g.
+`blocked behind BEq (ingress: declined: inductive block without a recursor in
+the input)`). -/
+def blockStatus? (svc : Service) (members : Array Name) : Option String :=
+  members.findSome? fun n => match svc.statusOf? n with
+    | some (.refused why) => some s!"refused ({why})"
+    | some (.blocked root) =>
+      let entry := svc.entries[root]?
+      let rootName := (entry.map (·.name)).getD (.id .anonymous)
+      let rootWhy := match entry.map (·.status) with
+        | some (.refused why) => s!" ({why})"
+        | _ => ""
+      some s!"blocked behind {rootName}{rootWhy}"
+    | some .pending => some "not folded"
+    | _ => none
+
 /-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
 the first question; the drivers' snapshot is a task), in `mode` (tracing the
 tail's counts under `trace`), with `fuel` installs left (the flat block, the
@@ -536,6 +554,7 @@ def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts) :
       facts.recursors facts.asked
       (fun _ locals => ofLazy facts.lookup scopeFuel locals (Thunk.pure (.error "oracle fuel exhausted")))
       (fun _ => .error "oracle fuel exhausted")
+      (fun _ => some "oracle fuel exhausted")
   | n + 1, svc =>
     .mk mode trace
       (fun lps locals => do
@@ -563,6 +582,9 @@ def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts) :
       (fun decls => do
         let (s', verdicts) := admitGeneratedIn (← svc ()) decls
         pure (oracleOf mode trace facts n fun _ => .ok s', verdicts))
+      (fun _ => match svc () with
+        | .ok s => blockStatus? s facts.members
+        | .error e => some s!"no service: {e}")
 
 /-- **One block's oracle over the snapshot `run`** (a run of the drivers'
 service), with the block's `members` folded first (`Service.ensureNames`): a

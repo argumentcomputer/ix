@@ -233,6 +233,135 @@ def foldModes : Array (String × Ix.CompileM.AuxIxcOptions × Bool) :=
       { recursors := false, asks := .below }, true),
     ("failClosed, recursors on Ix.Tc", { mode := .failClosed, recursors := false }, true)]
 
+/-- AuxGen M5: the acceptance table's lines (its counts, by kind and verdict,
+and the first refusals). -/
+def acceptanceLines (t : Ix.AuxGen.AuxTable) : Array String := Id.run do
+  let mut lines := #[s!"production's acceptance table: {t.rows.size} rows: \
+    {t.counts.line}"]
+  for l in t.byKind do lines := lines.push s!"  {l}"
+  for l in t.refusals 8 do lines := lines.push s!"  refused: {l.take 300}"
+  return lines
+
+/-- AuxGen M5: what production's acceptance table satisfies against its
+artifact `ixe`:
+* it is not empty, and no regenerated auxiliary is refused by Source mode
+  (the stop rule), nor left unchecked as late unless `allowLate`;
+* every published name with an original form has a row (the classifier's
+  domain), except Pass 3's images (`isImage`: a changed block's image-kind
+  heads, published by Pass 3's image blocks, not by an aux tail's promotion),
+  which are counted apart;
+* each row is `identical` exactly when its original form's address is its
+  published address (today's address rule; identity is decided on bytes).
+The errors, and information lines. -/
+def acceptanceErrors (ixe : Ixon.Env) (t : Ix.AuxGen.AuxTable) (isImage : Ix.Name → Bool)
+    (allowLate : Bool) : Array String × Array String := Id.run do
+  let mut errors : Array String := #[]
+  let c := t.counts
+  if t.rows.isEmpty then errors := errors.push "the acceptance table is empty"
+  if c.refused - c.late != 0 then
+    errors := errors.push s!"{c.refused - c.late} regenerated auxiliaries refused by Source mode \
+      (stop rule): {", ".intercalate (t.refusals 4).toList}"
+  if !allowLate && c.late != 0 then
+    errors := errors.push s!"{c.late} regenerated auxiliaries not checked at generation (late)"
+  let mut missing : Array String := #[]
+  let mut images := 0
+  let mut imagesSameAddr := 0
+  let mut imagesWithRow := 0
+  for (n, named) in ixe.named do
+    if named.original.isSome then
+      if isImage n then
+        images := images + 1
+        if named.original.any (·.1 == named.addr) then imagesSameAddr := imagesSameAddr + 1
+        if (t.verdict? n).isSome then imagesWithRow := imagesWithRow + 1
+      else if (t.verdict? n).isNone then missing := missing.push n.pretty
+  if !missing.isEmpty then
+    errors := errors.push s!"{missing.size} published names with an original form, not Pass 3 \
+      images, have no row: {", ".intercalate (missing.extract 0 4).toList}"
+  let info := #[s!"Pass 3 images with an original form: {images} ({imagesSameAddr} at their \
+    original's address, {imagesWithRow} with a row)"]
+  let mut disagree : Array String := #[]
+  for r in t.rows do
+    match ixe.named.get? r.name with
+    | some named =>
+      let sameAddr := named.original.any (·.1 == named.addr)
+      if sameAddr != (r.verdict == .identical) then disagree := disagree.push r.name.pretty
+    | none => disagree := disagree.push s!"{r.name.pretty} (not published)"
+  if !disagree.isEmpty then
+    errors := errors.push s!"{disagree.size} rows whose identity disagrees with the addresses: \
+      {", ".intercalate (disagree.extract 0 4).toList}"
+  return (errors, info)
+
+/-- AuxGen M5: every tail verdict reaches a row of the table: the generated
+name's own (promoted: the verdict, unless its bytes are identical), or each
+display name it was published at (the verdict itself). -/
+def admissionRowErrors (r : Ix.AuxGen.CompileReport) (t : Ix.AuxGen.AuxTable) :
+    Array String := Id.run do
+  let mut unreached : Array String := #[]
+  let mut wrong : Array String := #[]
+  for (n, v) in r.admitted do
+    let displays := r.display.filter fun (g, _) => Ix.Compile.ExactKey.nameEq g n
+    match t.verdict? n with
+    | some w =>
+      if w != .identical && w != v then wrong := wrong.push s!"{n.pretty} (row {repr w})"
+    | none =>
+      if displays.isEmpty then unreached := unreached.push n.pretty
+    for (_, d) in displays do
+      match t.verdict? d with
+      | some w => if w != v then wrong := wrong.push s!"{d.pretty} (row {repr w})"
+      | none => unreached := unreached.push s!"{n.pretty} as {d.pretty}"
+  let mut errors : Array String := #[]
+  if !unreached.isEmpty then
+    errors := errors.push s!"{unreached.size} tail verdicts reach no row: \
+      {", ".intercalate (unreached.extract 0 4).toList}"
+  if !wrong.isEmpty then
+    errors := errors.push s!"{wrong.size} rows do not carry their tail verdict: \
+      {", ".intercalate (wrong.extract 0 4).toList}"
+  return errors
+
+/-- AuxGen M5: the table's rule on constructed facts (`AuxTable.ofFacts`). A
+refusal is a refused row on both routes (promoted, and under a display name);
+identical bytes win over the tail's verdict; a promoted name the tail did not
+check is refused as late; a name without a row is not identical. -/
+def tableRuleErrors : Array String := Id.run do
+  let nm (s : String) : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon s
+  let t := Ix.AuxGen.AuxTable.ofFacts
+    (identity := #[(nm "p", false), (nm "q", true), (nm "late", false)])
+    (generated := #[(nm "p", .casesOnDef), (nm "g", .brecOnDef)])
+    (admitted := #[(nm "p", .refused "no"), (nm "q", .refused "no"), (nm "g", .refused "bad")])
+    (exempt := #[])
+    (display := #[(nm "g", nm "g_ix")])
+  let mut errors : Array String := #[]
+  unless t.verdict? (nm "p") == some (.refused "no") do
+    errors := errors.push "the table: a promoted refusal is not a refused row"
+  unless t.verdict? (nm "g_ix") == some (.refused "bad") do
+    errors := errors.push "the table: a displayed refusal is not a refused row"
+  unless t.identical (nm "q") do
+    errors := errors.push "the table: identical bytes are not identical"
+  unless t.verdict? (nm "late") == some (.refused Ix.AuxGen.AuxTable.lateReason) do
+    errors := errors.push "the table: an unchecked promoted name is not late"
+  if t.identical (nm "g") || (t.verdict? (nm "g")).isSome then
+    errors := errors.push "the table: a moved generated name has a row of its own"
+  unless t.counts.refused == 3 && t.counts.late == 1 && t.counts.identical == 1 do
+    errors := errors.push s!"the table's counts: {repr t.counts}"
+  -- AuxGen M5b: a block's Source status (`AuxTable.withBlockStatus`). On a block
+  -- Source accepts, a refusal stays a refusal (the stop rule applies there); on
+  -- one it does not accept, every generated name is exempt with the status
+  let refusedOnAccepted := Ix.AuxGen.AuxTable.withBlockStatus none #[nm "p"]
+    #[(nm "p", .refused "no")]
+  unless refusedOnAccepted == #[(nm "p", .refused "no")] do
+    errors := errors.push "the block-status rule: an accepted block's refusal is not kept"
+  let why := "blocked behind BEq (ingress: declined: inductive block without a recursor)"
+  let onNotAccepted := Ix.AuxGen.AuxTable.withBlockStatus (some why) #[nm "p", nm "q"]
+    #[(nm "p", .refused "no")]
+  let reason := s!"{Ix.AuxGen.AuxTable.notAcceptedPrefix}{why}"
+  unless onNotAccepted == #[(nm "p", .exempt reason), (nm "q", .exempt reason)] do
+    errors := errors.push "the block-status rule: a non-accepted block's names are not exempt"
+  let t2 := Ix.AuxGen.AuxTable.ofFacts (identity := #[(nm "p", false), (nm "q", false)])
+    (generated := #[]) (admitted := onNotAccepted) (exempt := #[])
+  unless t2.counts.notAccepted == 2 && t2.counts.refused == 0 do
+    errors := errors.push s!"the block-status counts: {repr t2.counts}"
+  return errors
+
 /-- Everything but the timing of the service alone, on one input. -/
 def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (width : Nat) :
     IO (Array String × Array String) := do
@@ -311,6 +440,44 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
   if !dropped.isEmpty then
     errors := errors.push s!"{dropped.size} blocks production compiled with their own tail have no \
       recorded verdict: {", ".intercalate ((dropped.extract 0 4).map (·.1.pretty)).toList}"
+  -- AuxGen M5: production's acceptance table (`CompileEnv.auxReport.table`)
+  let (pe, _, _) ← IO.ofExcept prod
+  let table := cenv.auxReport.table
+  for l in acceptanceLines table do lines := lines.push l
+  let (accErrors, accInfo) :=
+    acceptanceErrors pe table (cenv.p3Heads.contains ·) (allowLate := true)
+  for l in accInfo do lines := lines.push l
+  for e in accErrors do errors := errors.push e
+  -- the tails' Source verdicts themselves (a changed block's regenerated
+  -- auxiliaries are published under display names, so not every verdict is a
+  -- row): none refused (the stop rule)
+  let adm := cenv.auxReport.admitted
+  let admRefused := adm.filter fun (_, v) => match v with | .refused _ => true | _ => false
+  let admExempt := adm.filter fun (_, v) => match v with | .exempt _ => true | _ => false
+  lines := lines.push s!"tail admissions: {adm.size}: \
+    {adm.size - admRefused.size - admExempt.size} accepted, {admExempt.size} exempt, \
+    {admRefused.size} refused"
+  if !admRefused.isEmpty then
+    errors := errors.push s!"{admRefused.size} generated auxiliaries refused by Source mode in \
+      their tails (stop rule): {", ".intercalate ((admRefused.extract 0 4).map fun (n, v) =>
+        s!"{n.pretty}: {(repr v).pretty.take 200}").toList}"
+  if label == "fixtures" && adm.isEmpty then
+    errors := errors.push "no generated auxiliary was admitted in a tail"
+  -- every tail verdict reaches a row: its own (promoted) or its display
+  -- name's, with that verdict unless the bytes are identical
+  for e in admissionRowErrors cenv.auxReport table do errors := errors.push e
+  -- AuxGen M5b: this corpus is closed over recursors, so Source accepts every
+  -- block and no row is exempt for its block's Source status
+  lines := lines.push s!"rows exempt for their block's Source status: {table.counts.notAccepted}"
+  if table.counts.notAccepted != 0 then
+    errors := errors.push s!"{table.counts.notAccepted} rows exempt for their block's Source \
+      status on a corpus Source accepts whole"
+  lines := lines.push s!"displayed auxiliaries (rows under `_ix` names): \
+    {cenv.auxReport.display.size}"
+  if label == "fixtures" && cenv.auxReport.display.isEmpty then
+    errors := errors.push "no changed block's auxiliary was displayed"
+  -- the table's rule on constructed facts: a refusal is a refused row on both routes
+  for e in tableRuleErrors do errors := errors.push e
   if st.recWhnf == 0 || st.elim == 0 then
     errors := errors.push "no recursor question was asked"
   if label == "fixtures" && st.recReplayed == 0 then

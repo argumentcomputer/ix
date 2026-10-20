@@ -277,6 +277,15 @@ structure AuxKernelCtx where
       (`AuxKernel.checkCanonicalBlock`), when it ran; the driver records it in
       the block's state (`Ix.CompileM.BlockState.auxReport`). -/
   canonical : Option CanonicalVerdict := none
+  /-- AuxGen M5: the oracle after the canonical flat block's install, when the
+      check installed one; the tail admits the block's other auxiliaries over
+      it (`admitGenerated`). -/
+  canonicalOracle : Option AuxOracle := none
+  /-- AuxGen M5: the auxiliaries the tail generated, with their kinds, and the
+      verdicts on those it checked (`accepted`, `refused`, `exempt`); the
+      driver records them in the block's report. -/
+  generated : Array (Name × GeneratedKind) := #[]
+  admitted : Array (Name × AuxVerdict) := #[]
 
 /-- Fresh bridge context: empty Meta kenv, canonical prim addresses with
     no resolver (prim KIds get synthetic display names; the accelerations

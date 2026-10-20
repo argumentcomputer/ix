@@ -656,7 +656,7 @@ def brecOnToMutConst (d : BRecOnDef) : MutConst :=
     instead of at its Rust source position after it; no semantic
     difference.) -/
 def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
-    : KBridgeM (Array (Name × RecursorVal)) := do
+    : KBridgeM (Array (Name × RecursorVal) × Array MutConst) := do
   -- Overlay with just the .below inductives + ctors (mutual.rs:1063-1077).
   let mut overlay : Std.HashMap Name ConstantInfo := {}
   for c in belowIndcs do
@@ -687,7 +687,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
     | _ => none
 
   if classes.isEmpty then
-    return #[]
+    return (#[], #[])
 
   -- AuxGen M4a: the generated Prop-level `.below` family is not in IxC's
   -- environment (nothing admits it), so its recursors ask `Ix.Tc`.
@@ -761,7 +761,8 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
             all := #[] })
   if !belowCases.isEmpty then
     compileAuxComponents belowCases kernel none
-  return recs
+  -- AuxGen M5: the regenerated `.below.casesOn` too, for the acceptance table
+  return (recs, belowCases)
 
 /-- The canonical recursors one aux tail generated (Pass 2), returned for
     Pass 3 (`Ix.Compile.Pass.editBlock`, the image generator's input
@@ -772,6 +773,154 @@ structure AuxTailRecs where
   recs : Array (Name × RecursorVal) := #[]
   belowRecs : Array (Name × RecursorVal) := #[]
   deriving Inhabited
+
+/-! ## Source acceptance of the generated auxiliaries (AuxGen M5) -/
+
+/-- A generated patch's kind. -/
+def patchKind (n : Name) : PatchedConstant → GeneratedKind
+  | .recr _ => .recursor
+  | .casesOnDef _ => .casesOnDef
+  | .recOnDef _ => .recOnDef
+  | .belowDef _ => .belowDef
+  | .belowIndc _ => .belowFamily
+  | .brecOnDef _ => match n with
+    | .str _ "go" _ => .brecOnGo
+    | .str _ "eq" _ => .brecOnEq
+    | _ => .brecOnDef
+
+/-- The generation order of a block's patches as Source mode admits them:
+`casesOn`, `recOn`, the `.below` definitions, the Prop family, then `go`,
+`brecOn`, `eq` (the recursors are checked by the canonical flat block). -/
+def admitOrder : PatchedConstant → Nat
+  | .casesOnDef _ => 0
+  | .recOnDef _ => 1
+  | .belowDef _ => 2
+  | .belowIndc _ => 3
+  | .brecOnDef d => match d.name with
+    | .str _ "go" _ => 4
+    | .str _ "eq" _ => 6
+    | _ => 5
+  | .recr _ => 7
+
+/-- A Prop-level `.below` family as Source mode installs it: its inductives
+with their constructors (`belowIndcToMutConst`'s, as CompileAux compiles
+them). -/
+def belowFamilyOf (belowIndcs : Array MutConst) : Array (InductiveVal × Array ConstructorVal) :=
+  belowIndcs.filterMap fun
+    | .indc ind => some ({
+        cnst := { name := ind.name, levelParams := ind.levelParams, type := ind.type }
+        numParams := ind.numParams, numIndices := ind.numIndices, all := ind.all
+        ctors := ind.ctors.map (·.cnst.name), numNested := ind.numNested
+        isRec := ind.isRec, isUnsafe := ind.isUnsafe, isReflexive := ind.isReflexive },
+        ind.ctors)
+    | _ => none
+
+/-- An admission's verdict as the acceptance table records it. -/
+def admissionVerdict : Option String → AuxVerdict
+  | none => .accepted
+  | some "blocked" => .exempt "blocked behind an unsafe constant"
+  | some why => .refused why
+
+/-- **Source acceptance of a block's generated auxiliaries** (AuxGen M5,
+`auxgen-m5.md` §13), after the tail compiled them. It never fails the block:
+the verdicts go into the bridge context (`AuxKernelCtx.generated`, `admitted`)
+for the compile report.
+* Every block: each patch's kind, with the Prop family's constructors and
+  generated recursors.
+* On IxC with the recursors (`AuxOracle.recursors`): the recursors take the
+  canonical-block check's verdict (a flat block installed, or a Lean layout's
+  recursors equal to Lean's: accepted).
+* A block whose canonical flat block was installed, and a nested block: every
+  other patch admitted in generation order (`admitOrder`) over the oracle after
+  the install (`AuxOracle.admit`; theorems as theorems; the Prop family as a
+  block with its recursors). A Lean-layout block's other patches are left to
+  the identity verdict (option (a)). -/
+def admitGenerated (cs : Array MutConst) (patches : Std.HashMap Name PatchedConstant)
+    (belowIndcs : Array MutConst) (belowRecs : Array (Name × RecursorVal))
+    (belowCases : Array MutConst)
+    (kernel : AuxKernel) : KBridgeM Unit := do
+  let mut generated : Array (Name × GeneratedKind) := #[]
+  for (n, p) in patches do
+    generated := generated.push (n, patchKind n p)
+    if let .belowIndc bi := p then
+      for c in bi.ctors do generated := generated.push (c.name, .belowFamily)
+  for (n, _) in belowRecs do generated := generated.push (n, .belowRecursor)
+  for c in belowCases do generated := generated.push (c.name, .casesOnDef)
+  modify fun c => { c with generated }
+  let .ixc _ o := kernel | return
+  if !o.recursors then return
+  let ctx ← get
+  -- the recursors: the canonical-block check's verdict
+  let recVerdict? : Option AuxVerdict := match ctx.canonical with
+    | some .installed | some (.leanSame _) => some .accepted
+    | some (.refused why) => some (.refused s!"canonical flat block refused: {why}")
+    | some (.leanDiffer first) => some (.refused s!"recursor differs from Lean's: {first}")
+    | none => none
+  let mut admitted : Array (Name × AuxVerdict) := #[]
+  if let some v := recVerdict? then
+    for (n, p) in patches do
+      if let .recr _ := p then admitted := admitted.push (n, v)
+  -- the other patches: a flat block installed, or a nested block
+  let nested := cs.any fun | .indc ind => ind.numNested > 0 | _ => false
+  let oracle? : Option AuxOracle := match ctx.canonical with
+    | some .installed => ctx.canonicalOracle
+    | some (.refused _) => none
+    | _ => if nested then some o else none
+  let others := (patches.toArray.filter fun (_, p) => !(p matches .recr _)).qsort
+    fun (a, p) (b, q) => admitOrder p < admitOrder q
+      || (admitOrder p == admitOrder q && Name.cmpRaw a b == .lt)
+  match ctx.canonical, oracle? with
+  | some (.refused why), _ =>
+    for n in others.map (·.1) ++ belowCases.map (·.name) do
+      admitted := admitted.push (n, .refused s!"canonical flat block refused: {why}")
+  | _, none => pure ()
+  | _, some oracle =>
+    let family := belowFamilyOf belowIndcs
+    let mut decls : Array GeneratedDecl := #[]
+    let mut familyDone := false
+    for (n, p) in others do
+      match p with
+      | .recr _ => pure ()
+      | .casesOnDef d | .recOnDef d =>
+        decls := decls.push (.defn n d.levelParams d.typ d.value false)
+      | .belowDef d => decls := decls.push (.defn n d.levelParams d.typ d.value false)
+      | .belowIndc _ =>
+        if !familyDone then
+          decls := decls.push (.family family belowRecs)
+          -- the family's regenerated `.casesOn`, over its recursors
+          for c in belowCases do
+            if let .defn d := c then
+              decls := decls.push (.defn d.name d.levelParams d.type d.value false)
+          familyDone := true
+      | .brecOnDef d =>
+        let thm := !d.isUnsafe && (d.isProp || (match n with | .str _ "eq" _ => true | _ => false))
+        decls := decls.push (.defn n d.levelParams d.typ d.value thm)
+    match oracle.admit decls with
+    | .error e =>
+      for n in others.map (·.1) ++ belowCases.map (·.name) do
+        admitted := admitted.push (n, .refused s!"no service: {e}")
+    | .ok (_, verdicts) =>
+      for (n, why) in verdicts do
+        let v := admissionVerdict why
+        admitted := admitted.push (n, v)
+        -- a family's verdict, reported per inductive, is its constructors' and
+        -- generated recursors' too
+        if let some (_, ctors) := family.find? (Ix.Compile.ExactKey.nameEq ·.1.cnst.name n) then
+          for c in ctors do admitted := admitted.push (c.cnst.name, v)
+          let recName := Name.mkStr n "rec"
+          for (r, _) in belowRecs do
+            if Ix.Compile.ExactKey.nameEq r recName then admitted := admitted.push (r, v)
+  -- a block Source mode does not accept: its input is outside `SourceAccepts`,
+  -- so every generated auxiliary of the block is exempt with the status
+  -- (`AuxOracle.blockStatus`); an accepted block's verdicts stand. Asked only
+  -- where the tail already took the service (a block whose patches it admitted,
+  -- or whose canonical flat block was refused): asking a Lean-layout block's
+  -- status would fold the block on its own copy of the snapshot, the cost the
+  -- lazy scopes avoid (Init+Std's compile phase 46 s → 157 s)
+  let tookService := oracle?.isSome || (ctx.canonical matches some (.refused _))
+  if tookService then
+    admitted := AuxTable.withBlockStatus (o.blockStatus ()) (generated.map (·.1)) admitted
+  modify fun c => { c with admitted }
 
 /-! ## generateAndCompileAuxRecursors (mutual.rs:511) -/
 
@@ -1057,7 +1206,7 @@ source-indexed aux name")
 
   -- Phase 5: Compile .below.rec for Prop-level .below inductives
   -- (mutual.rs:847-852).
-  let belowRecs ← if belowIndcs.isEmpty then pure #[]
+  let (belowRecs, belowCases) ← if belowIndcs.isEmpty then pure (#[], #[])
     else compileBelowRecursors belowIndcs kernel
 
   -- Phase 6: Compile .brecOn in 3 batches: .go, main, .eq
@@ -1081,6 +1230,11 @@ source-indexed aux name")
   -- `.casesOn` (never `.rec`), whose public binder arity is invariant
   -- under alpha collapse — the original Lean values compile to correct
   -- Ixon as-is (mutual.rs:881-889).
+
+  -- AuxGen M5: Source acceptance of the generated auxiliaries, for the
+  -- compile report's acceptance table (never fails the block; no byte
+  -- depends on it).
+  admitGenerated cs patches belowIndcs belowRecs belowCases kernel
 
   -- Rust's IX_TIMING report (mutual.rs:891-906) is not ported.
   -- The canonical recursors for Pass 3: those `patches` holds (Lean exports

@@ -17,7 +17,8 @@
     or the Source ingress: the kernel would make every IxC edit rebuild the
     compiler, and `Ix.LeanIngress.Expr` would enter the compiled-code
     audit's scope (`IxSharingVerify/Audit/CompiledCode.lean`). This module
-    imports only `Ix.Environment`.
+    imports only `Ix.Environment` and AuxGen's data (`Ix.AuxGen.Types`, and
+    `Ix.AuxGen.Report`, which imports only `Ix.Environment`).
   * **AuxGen asks no more than these.** AuxGen's IxC arm
     (`Ix.AuxGen.AuxKernel.ixc`) only calls the closures; the fold builds
     them (`Ix.AuxGen.Ixc.oracleOfRun`), so `Ix.Cert.compile` reaches IxC's
@@ -44,6 +45,7 @@
 module
 public import Ix.Environment
 public import Ix.AuxGen.Types
+public import Ix.AuxGen.Report
 public section
 
 namespace Ix.AuxGen
@@ -178,25 +180,62 @@ structure BlockReport where
   /-- the canonical-block check's verdict (`AuxKernel.checkCanonicalBlock`),
   when it ran -/
   canonical : Option CanonicalVerdict := none
+  /-- AuxGen M5: the auxiliaries the tail generated, with their kinds -/
+  generated : Array (Name × GeneratedKind) := #[]
+  /-- AuxGen M5: the verdict on each auxiliary the tail checked: `accepted`,
+  `refused` with Source mode's reason, or `exempt` (blocked behind an unsafe
+  constant) -/
+  admitted : Array (Name × AuxVerdict) := #[]
+  /-- AuxGen M5: why the tail's auxiliaries are outside every statement (an
+  unsafe block), if they are -/
+  exempt : Option String := none
+  /-- AuxGen M5: the generated auxiliaries Pass 3 moved to display names (a
+  changed block's), with the names they are published at -/
+  display : Array (Name × Name) := #[]
   deriving Inhabited
 
-/-- **AuxGen's part of the compile report** (AuxGen M4c), merged from the
-blocks that compile, in the fold's order (`Ix.CompileM.CompileEnv.auxReport`,
-`mergeCompiledBlock`). Not serialized: no byte depends on it. -/
+/-- **AuxGen's part of the compile report** (AuxGen M4c and M5), merged from
+the blocks that compile, in the fold's order (`Ix.CompileM.CompileEnv.auxReport`,
+`mergeCompiledBlock`), and from the driver's original-form promotions
+(`addIdentity`). Not serialized: no byte depends on it. -/
 structure CompileReport where
   /-- each block's canonical-block verdict, by the block's canonical key -/
   canonical : Array (Name × CanonicalVerdict) := #[]
+  /-- AuxGen M5: the facts of the acceptance table (`AuxTable.ofFacts`) -/
+  generated : Array (Name × GeneratedKind) := #[]
+  admitted : Array (Name × AuxVerdict) := #[]
+  exempt : Array (Name × String) := #[]
+  identity : Array (Name × Bool) := #[]
+  display : Array (Name × Name) := #[]
   deriving Inhabited
 
 /-- A compiled block's report merged in, under the block's canonical key. -/
 def CompileReport.addBlock (r : CompileReport) (key : Name) (b : BlockReport) : CompileReport :=
-  match b.canonical with
-  | some verdict => { r with canonical := r.canonical.push (key, verdict) }
+  let r := match b.canonical with
+    | some verdict => { r with canonical := r.canonical.push (key, verdict) }
+    | none => r
+  let r := if b.generated.isEmpty then r else { r with generated := r.generated ++ b.generated }
+  let r := if b.admitted.isEmpty then r else { r with admitted := r.admitted ++ b.admitted }
+  let r := if b.display.isEmpty then r else { r with display := r.display ++ b.display }
+  match b.exempt with
+  | some why => { r with exempt := r.exempt ++ b.generated.map fun (n, _) => (n, why) }
   | none => r
+
+/-- AuxGen M5: the driver's byte comparisons at an original-form promotion
+merged in. -/
+def CompileReport.addIdentity (r : CompileReport) (same : Array (Name × Bool)) : CompileReport :=
+  if same.isEmpty then r else { r with identity := r.identity ++ same }
 
 /-- The canonical-block verdicts in summary. -/
 def CompileReport.canonicalSummary (r : CompileReport) : CanonicalSummary :=
   CanonicalSummary.ofArray r.canonical
+
+/-- **The acceptance table** (AuxGen M5, `Ix.AuxGen.AuxTable`): one row per
+promoted name and per displayed auxiliary of a changed block, sorted by
+`Ix.Name.cmpRaw` (Pass 3's images under Lean names have none, by design).
+Computed from the gathered facts; a consumer computes it once. -/
+def CompileReport.table (r : CompileReport) : AuxTable :=
+  AuxTable.ofFacts r.identity r.generated r.admitted r.exempt r.display
 
 /-- **A local context IxC answers in**, as an object: each operation returns
 the context after it. Free variables are named by their `LocalDecl.fvarName`
@@ -267,7 +306,7 @@ inductive GeneratedDecl where
 
 /-- **One block's IxC oracle** (AuxGen M2a).
 
-`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope admit`:
+`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope admit blockStatus`:
 * `mode`: how AuxGen uses the answers;
 * `trace`: whether the tail traces its counts (the measurement modes);
 * `newScope lps locals`: a context over the level parameters `lps` and the
@@ -293,7 +332,11 @@ inductive GeneratedDecl where
   order, each later one seeing the earlier ones through σ (AuxGen M5): the
   oracle after them, and each declaration's verdict (`none` accepted, `some`
   the reason it was refused; a refused declaration is not installed); an
-  error when the oracle has no service. -/
+  error when the oracle has no service.
+* `blockStatus ()`: why the block's own groups are not accepted in Source
+  mode, if they are not (refused, blocked behind a refused group with that
+  group's reason, or not folded; AuxGen M5b): the block's input is then outside
+  `SourceAccepts`, so its auxiliaries are exempt. -/
 inductive AuxOracle where
   | mk (mode : IxcMode) (trace : Bool)
       (newScope : Array Name → Array (Name × Expr) → Except String OracleScope)
@@ -303,36 +346,40 @@ inductive AuxOracle where
       (recursors asked : Bool)
       (newLazyScope : Array Name → Array (Name × Expr) → OracleScope)
       (admit : Array GeneratedDecl → Except String (AuxOracle × Array (Name × Option String)))
+      (blockStatus : Unit → Option String)
 
 namespace AuxOracle
 
 def mode : AuxOracle → IxcMode
-  | .mk m _ _ _ _ _ _ _ _ => m
+  | .mk m _ _ _ _ _ _ _ _ _ => m
 
 def trace : AuxOracle → Bool
-  | .mk _ t _ _ _ _ _ _ _ => t
+  | .mk _ t _ _ _ _ _ _ _ _ => t
 
 def newScope : AuxOracle → Array Name → Array (Name × Expr) → Except String OracleScope
-  | .mk _ _ f _ _ _ _ _ _ => f
+  | .mk _ _ f _ _ _ _ _ _ _ => f
 
 def withFlat : AuxOracle → Array (Array Name) → Array Name → Array (Name × RecursorVal) →
     Except String (Option AuxOracle)
-  | .mk _ _ _ f _ _ _ _ _ => f
+  | .mk _ _ _ f _ _ _ _ _ _ => f
 
 def admitBelow : AuxOracle → Array BelowDef → Except String (AuxOracle × Nat × Nat)
-  | .mk _ _ _ _ f _ _ _ _ => f
+  | .mk _ _ _ _ f _ _ _ _ _ => f
 
 def recursors : AuxOracle → Bool
-  | .mk _ _ _ _ _ r _ _ _ => r
+  | .mk _ _ _ _ _ r _ _ _ _ => r
 
 def asked : AuxOracle → Bool
-  | .mk _ _ _ _ _ _ a _ _ => a
+  | .mk _ _ _ _ _ _ a _ _ _ => a
 
 def newLazyScope : AuxOracle → Array Name → Array (Name × Expr) → OracleScope
-  | .mk _ _ _ _ _ _ _ f _ => f
+  | .mk _ _ _ _ _ _ _ f _ _ => f
 
 def admit : AuxOracle → Array GeneratedDecl → Except String (AuxOracle × Array (Name × Option String))
-  | .mk _ _ _ _ _ _ _ _ f => f
+  | .mk _ _ _ _ _ _ _ _ f _ => f
+
+def blockStatus : AuxOracle → Unit → Option String
+  | .mk _ _ _ _ _ _ _ _ _ f => f
 
 end AuxOracle
 

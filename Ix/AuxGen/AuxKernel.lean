@@ -910,7 +910,10 @@ def checkCanonicalBlock (k : AuxKernel) (classes : Array (Array Name))
       | none => pure 0
     if Flat.needed classes originalAll auxNames leanNested then
       let (k', verdict) ← k.withFlatBlockVerdict classes originalAll canonicalRecs
-      modify fun c => { c with canonical := verdict }
+      let installed : Option AuxOracle := match verdict, k' with
+        | some .installed, .ixc _ o' => some o'
+        | _, _ => none
+      modify fun c => { c with canonical := verdict, canonicalOracle := installed }
       return (k', true)
     let mut same := 0
     let mut differ : Option String := none

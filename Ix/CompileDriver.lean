@@ -75,6 +75,57 @@ def canonicalKey (dflt : Name) (names : Array Name) : Name :=
 def blockKey (lo : Name) (all : Set Name) : Name :=
   canonicalKey lo all.toArray
 
+/-- **AuxGen M5: the generated auxiliaries Pass 3's hook 1 moved to display
+    names** (a changed block's, `Ix.Compile.Pass.moveToDisplay`), each with the
+    reserved names registered after the hook at its former aux address
+    (`before`: each generated auxiliary's aux address before the hook). Read
+    off the block's registrations, not recomputed, so it follows whatever the
+    hook did. An alias moved with its representative maps to the same
+    generated name. -/
+def movedToDisplay (before : Array (Name × Address))
+    (after : Std.HashMap Ix.Compile.ExactKey.ExactName Address) : Array (Name × Name) := Id.run do
+  let moved := before.filter fun (n, _) => !after.contains n
+  if moved.isEmpty then return #[]
+  let mut byAddr : Std.HashMap Address (Array Name) := {}
+  for (d, a) in after do
+    if Ix.Compile.Pass.hasReserved d then
+      byAddr := byAddr.insert a ((byAddr.getD a #[]).push d)
+  let mut out : Array (Name × Name) := #[]
+  for (n, a) in moved do
+    for d in byAddr.getD a #[] do out := out.push (n, d)
+  return out
+
+/-- **AuxGen M4c and M5: the aux tail's report into the block's state**
+    (`BlockState.auxReport`, merged by `mergeCompiledBlock`): the
+    canonical-block check's verdict, the generated auxiliaries with the tail's
+    verdicts on them, and why they are exempt for an unsafe block. No byte
+    depends on it. -/
+def recordTailReport (kctx : Ix.AuxGen.AuxKernelCtx) (safe : Bool) : CompileM Unit :=
+  if kctx.canonical.isSome || !kctx.generated.isEmpty then
+    modifyBlockState fun st =>
+      { st with auxReport := { canonical := kctx.canonical, generated := kctx.generated
+                               admitted := kctx.admitted
+                               exempt := if safe then none
+                                 else some "an unsafe block (its aux tail keeps Ix.Tc)" } }
+  else pure ()
+
+/-- AuxGen M5: each generated auxiliary's aux address in the block's state now
+    (before Pass 3's hook 1; `movedToDisplay`'s `before`). -/
+def generatedAddrs (generated : Array (Name × Ix.AuxGen.GeneratedKind)) :
+    CompileM (Array (Name × Address)) := do
+  let n2a := (← getBlockState).auxNameToAddr
+  return generated.filterMap fun (n, _) => (n2a.get? n).map (n, ·)
+
+/-- AuxGen M5: after Pass 3's hook 1, the moved auxiliaries' display names
+    into the block's report (`Ix.AuxGen.BlockReport.display`), for their
+    acceptance rows. -/
+def recordDisplay (before : Array (Name × Address)) : CompileM Unit := do
+  if before.isEmpty then return
+  let display := movedToDisplay before (← getBlockState).auxNameToAddr
+  if !display.isEmpty then
+    modifyBlockState fun st =>
+      { st with auxReport := { st.auxReport with display := display } }
+
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
     singleton non-inductive constants take the plain single-constant
@@ -152,14 +203,17 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
       let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0 }
       dbg_trace s!"{Ix.AuxGen.IxcStats.line lo st}"
       pure ()
-  -- AuxGen M4c: the canonical-block check's verdict, for the compile report
-  -- (`CompileEnv.auxReport`, merged by `mergeCompiledBlock`).
-  if let some verdict := kctx.canonical then
-    modifyBlockState fun st =>
-      { st with auxReport := { st.auxReport with canonical := some verdict } }
+  -- AuxGen M4c and M5: the tail's report (`recordTailReport`), and each
+  -- generated auxiliary's aux address before Pass 3's hook 1, to find the ones
+  -- it moves to their display names (`recordDisplay`). Each is one call, so
+  -- the block's do-block keeps its shape for the proofs that walk it
+  -- (`Ix.Cert.PassHooks.compileBlockWithAux_result`).
+  recordTailReport kctx safe
+  let before ← generatedAddrs kctx.generated
   -- Pass 3, hook 1: a changed block's Ix auxiliaries to their display names
   let published ← Ix.Compile.Pass.editBlock cs blockResult.classNames auxLayout?
     recs.recs recs.belowRecs
+  recordDisplay before
   return (blockResult, auxLayout?, published)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the
@@ -689,19 +743,42 @@ def checkOriginalPromotion (cenv : CompileEnv) (lo : Name) (result : BlockResult
   for (name, _, origMeta) in originalPromotions lo result do
     checkPromoteAux cenv name origMeta
 
+/-- **AuxGen M5: identity on bytes.** For each member the original-form
+    promotion grafts an original into (a published `Named` entry), whether its
+    published record (the record at its `Named` address) is byte-identical to
+    the original-form compile's: for a lone constant, the block's bytes; for a
+    projection, the projection's bytes, and the original-form block's bytes
+    equal to the record stored at that block's address. No hash equality
+    decides it. The acceptance table's `identical` (`Ix.AuxGen.AuxTable`). -/
+def originalIdentities (cenv : CompileEnv) (lo : Name) (result : BlockResult) :
+    Array (Name × Bool) :=
+  let published (n : Name) : Option (Option ByteArray) :=
+    (cenv.nameToNamed.get? n).map fun named => cenv.constants.get? named.addr
+  if result.projections.isEmpty then
+    match published lo with
+    | some stored => #[(lo, stored == some result.blockBytes)]
+    | none => #[]
+  else
+    let blockSame := cenv.constants.get? result.blockAddr == some result.blockBytes
+    result.projections.filterMap fun (name, proj, _) =>
+      (published name).map fun stored => (name, blockSame && stored == some (Ixon.ser proj))
+
 /-- The writes of the original-form promotion, after its checks: each
     member's `promoteAuxDriver` writes, then the ephemeral compile's blobs,
     name components and hints (Rust `store_string`, `compile_name` and
     `def_hints` are unconditional; only constant and `Named` stores are
-    aux-gated). -/
+    aux-gated). AuxGen M5: the members' byte identities go into the compile
+    report (`originalIdentities`; no byte depends on them). -/
 def promoteOriginalWrites (acc : DriverAcc) (lo : Name) (result : BlockResult)
     (cache : BlockState) : DriverAcc := Id.run do
+  let identities := originalIdentities acc.cenv lo result
   let mut acc := acc
   for (name, origAddr, origMeta) in originalPromotions lo result do
     acc := { acc with cenv := promoteAuxWrites acc.cenv name origAddr origMeta }
   return { acc with
     cenv := { acc.cenv with
-      blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs }
+      blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs
+      auxReport := acc.cenv.auxReport.addIdentity identities }
     blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
     defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints }
 
@@ -1863,6 +1940,14 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
       IO.println s!"  [compile-lean] canonical blocks: {canonical.line}"
       for (k, why) in canonical.findings.extract 0 8 do
         IO.println s!"    canonical block, {k.pretty}: {why.take 160}"
+      -- AuxGen M5: the acceptance table (`Ix.AuxGen.AuxTable`)
+      let table := cenv.auxReport.table
+      IO.println s!"  [compile-lean] acceptance table: {table.rows.size} rows: \
+        {table.counts.line}"
+      for line in table.byKind do
+        IO.println s!"    acceptance table, {line}"
+      for line in table.refusals 8 do
+        IO.println s!"    acceptance table, refused: {line.take 200}"
     if dbg then
       if let some read := opts.memory then
         IO.println s!"  [compile-lean] rss after the compile phase: {← read}"
