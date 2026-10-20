@@ -1,9 +1,9 @@
 # BLS and BN254 PLONK wrapper implementation status
 
-Updated 2026-10-17. Complete BLS12-381 and BN254 PLONK wrappers around the
+Updated 2026-10-19. Complete BLS12-381 and BN254 PLONK wrappers around the
 actual Init KZG packets now prove and verify natively. The BN254 proof also
 passes Solidity verification on Anvil with a constants-only SP1 adaptation.
-The optional CUDA backend reaches 11.352 s median core proving versus 53.895 s
+The October 17 CUDA benchmark reaches 11.352 s median core proving versus 53.895 s
 for its matched CPU baseline; stage profiling identifies the remaining CPU
 work and transfer costs below. These measurements
 supersede the earlier incomplete-proving status. The original BLS implementation
@@ -16,6 +16,49 @@ covers BLS/BN254 KZG, Ignition provisioning and cache operation; the
 [helper README](../tools/bls-plonk-wrapper/README.md) gives PLONK build/run/verifying key
 controls; and the [contract README](../contracts/plonk/README.md) gives EVM replay
 instructions. Sections after **Original implementation checkpoint** are historical.
+
+## Optimized Init fixture refresh, October 19
+
+The saved Ignition recursive packet after the opening-reduction, lazy-byte-
+nibble and 20-bit range-limb optimizations now has a matching PLONK proof,
+verifying key and Solidity fixture. Its inner verifying-key BLAKE3 is
+`1c613f8cfb94399f75687735cbb07e4e91bd4d23e7a58c35388fdfafc67f50e6`;
+the PLONK verifying-key SHA-256 is
+`32b357a1090e6508aae17b2925af2162079a2d133c1702516618a24705da2fac`.
+The wrapper still has 14,689,440 constraints, two public inputs, one extra
+commitment and domain `2^24`, retaining both pairing checks.
+
+| Measurement | Optimized Init, BN254 CUDA |
+| --- | ---: |
+| One-time key preparation | 495.843 s |
+| Core `plonk.Prove` | 11.557 s |
+| Complete fresh prover process | 33.872 s |
+| Peak prover RSS | 20.64 GiB |
+| Native pool reservation peak, excluding driver allocations | 18.59 GiB |
+| Native / envelope / Solidity proof bytes | 584 / 624 / 864 |
+| Complete verification transaction through ix adapter | 320,091 gas |
+
+These are single-run measurements on 32 logical Xeon Platinum 8559C CPUs,
+249 GiB host RAM and one RTX PRO 6000 Blackwell. Key preparation is excluded
+from proof timings. Two-second device sampling missed the short VRAM peak;
+the native allocation-pool high-water mark is reported above.
+
+The compiled witness diagnostic passed. A separately built CPU helper
+verified the GPU proof against its pinned key and Ignition anchors, and
+rejected a changed claim and corrupted proof. All 47 existing Anvil
+acceptance/rejection checks passed with the refreshed contract and fixture.
+Relative to the pinned SP1 source, only the same 23 key constants differ;
+the verifier algorithm is unchanged.
+
+The generalized Rust exporter now includes the zero-anchor row alongside
+the 22 recursive public values. A focused small-proof regression covers the
+complete exported claim schema and rejection of a changed expected claim.
+
+See the [machine-readable refresh record](benchmarks/bn254-plonk-optimized-init-2026-10-19.json)
+and [Solidity replay instructions](../contracts/plonk/README.md#actual-bn254-init-proof-on-anvil).
+The local bundle is `/opt/dlami/nvme/ix-bn254/plonk/optimized-init-20261019/`;
+the raw stage and Anvil records are under `target/plonk-refresh-20261019/`.
+The following October 17 measurements describe the previous circuit key.
 
 ## Full Init benchmark
 

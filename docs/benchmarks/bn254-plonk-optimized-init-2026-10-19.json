@@ -1,0 +1,195 @@
+{
+  "format": "ix-bn254-plonk-optimized-init-v1",
+  "date": "2026-10-19",
+  "scope": "One fresh-process GPU PLONK proof over the optimized Init recursive KZG packet, independently verified on CPU and on an isolated Anvil chain. Key preparation is separate. No production verifier catalog is activated.",
+  "host": {
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8559C",
+    "logical_cpus": 32,
+    "host_ram_gib": 249.68650436401367,
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    "gpu_memory_mib": 97887
+  },
+  "input": {
+    "inner_vk_path": "/opt/dlami/nvme/ix-retune/runs/ignition-lazy/final/vk.bin",
+    "inner_vk_blake3": "1c613f8cfb94399f75687735cbb07e4e91bd4d23e7a58c35388fdfafc67f50e6",
+    "inner_vk_sha256": "0dc7fdc9de3c8612167d36f923d88b659106fd7ea29b6eee1c1617b79b98c459",
+    "claim_digest": "c019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80",
+    "worker_sha256": "df6e9ebeffd1ee3e89ed13dc24aa37d9152cf91db0a90a3a305166feb8007aa3",
+    "helper_source_revision": "dd2511fc29966aa13df8351ff62e9f840d39e0e0",
+    "helper_snapshot_files_verified": 90,
+    "worker_source_revision": "7d69f01787ac6aae7fabf45212ede36503a18ce2",
+    "worker_source_patch": "exporter-fix.patch",
+    "exporter_patch_sha256": "8361804f676a152cb99291efe4fe92c9e40d90ed0eabe11954209890988331f6"
+  },
+  "setup": {
+    "class": "ignition",
+    "setup_id": "07f80d0dc28ec7865299e8dcb795bf17f53de459d315416fd3c55fed475cd90b",
+    "public_max_degree": 100799999,
+    "admission_blake3": "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46",
+    "srs_export_blake3": "a71cd91e2cf082700740aa25a37896d8f68fafa4bec07b927720dea881705e0a"
+  },
+  "circuit": {
+    "constraints": 14689440,
+    "domain": 16777216,
+    "public_inputs": 2,
+    "extra_commitments": 1,
+    "sha256": "82c8473b89526488c06cac26606bb8f3e6544beca916ffa48163b1b7ab604e36",
+    "verifying_key_sha256": "32b357a1090e6508aae17b2925af2162079a2d133c1702516618a24705da2fac",
+    "helper_sha256": "f6bc8b1bac015df09444473544be42bd634d576991055913b0196b3ec2dbf0b6"
+  },
+  "proving": {
+    "backend": "cuda",
+    "samples": 1,
+    "default_parallelism": true,
+    "compile_process_seconds": 12.88173196400021,
+    "compiled_witness_check_seconds": 2.3655292470029963,
+    "srs_export_process_seconds": 3.4637055290004355,
+    "key_preparation_process_seconds": 495.8426779399997,
+    "key_preparation_peak_rss_gib": 12.529003143310547,
+    "core_prove_seconds": 11.556649976,
+    "prover_process_seconds": 33.871929478998936,
+    "backend_setup_seconds": 0.354594798,
+    "in_memory_verify_seconds": 0.001341492,
+    "prover_peak_rss_gib": 20.638118743896484,
+    "sampled_peak_gpu_memory_mib": {
+      "0": 2829
+    },
+    "cuda_pool_reserved_peak_gib": 18.59375,
+    "cuda_accounted_peak_gib": 18.58419418334961,
+    "gpu_memory_note": "Two-second device polling missed the short peak. Native pool/accounting peaks exclude allocations outside the pool.",
+    "independent_cpu_verify_process_seconds": 0.0226896480016876
+  },
+  "proof_files": {
+    "proof.bin": {
+      "bytes": 584,
+      "sha256": "7dc47b6f1bd26d31c64cf5ca7abc7a469d90c1ac0294f2c90d050a29546f7751"
+    },
+    "proof.solidity.bin": {
+      "bytes": 864,
+      "sha256": "0944e5b3bb3cb51b4fb8b1bca7e0d16cb48f2d729e9fcf05a64fe2539c5790b7"
+    },
+    "proof.envelope.bin": {
+      "bytes": 624,
+      "sha256": "16abcf0a041e8f7bf9d00ea22bf3f9d16d85b83572121aa1d769f46b95a84655"
+    }
+  },
+  "validation": {
+    "exporter_anchor_row_regression": "passed",
+    "compiled_witness_check": "passed",
+    "independent_cpu_verification": "passed",
+    "cpu_verifier_sha256": "b19338ff6c09d8810cce79eba1225e2eda565deae186da5e2ff14f94059f6ab1",
+    "native_negative_checks": {
+      "wrong-claim": {
+        "rejected": true,
+        "exit_status": 1,
+        "output": "algebraic relation does not hold\n"
+      },
+      "corrupt-proof": {
+        "rejected": true,
+        "exit_status": 1,
+        "output": "point decompression failed\n"
+      }
+    },
+    "anvil_checks_passed": 47,
+    "verifier_algorithm_unchanged": true
+  },
+  "solidity": {
+    "toolchain": {
+      "solc": "solc, the solidity compiler commandline interface\nVersion: 0.8.37+commit.f401782d.Linux.g++",
+      "anvil": "anvil Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:18:54.332175693Z (1791220734)\nBuild Profile: dist",
+      "cast": "cast Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:18:54.332175693Z (1791220734)\nBuild Profile: dist"
+    },
+    "compiler_settings": {
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "viaIR": true,
+      "evmVersion": "prague",
+      "outputSelection": {
+        "*": {
+          "*": [
+            "abi",
+            "evm.bytecode.object",
+            "evm.deployedBytecode.object"
+          ]
+        }
+      }
+    },
+    "execution_hardfork": "osaka",
+    "transactions": {
+      "adapted-sp1-verify": {
+        "transaction_hash": "0xd45355bfc1743c06c08500c7dcbd69bbdc00d8d70e2f636e4b77bb7b07cc9301",
+        "gas_used": 315991,
+        "calldata_bytes": 1060,
+        "intrinsic_calldata_gas": 36076,
+        "eip7623_floor_gas": 58690,
+        "execution_gas": 279915
+      },
+      "ix-adapter-verify": {
+        "transaction_hash": "0x7e804b7ee4c9c5a2204f204bc60a5776a8ef46c925b18b1b8c13c8649306156b",
+        "gas_used": 320091,
+        "calldata_bytes": 964,
+        "intrinsic_calldata_gas": 35656,
+        "eip7623_floor_gas": 57640,
+        "execution_gas": 284435
+      }
+    },
+    "deployments": {
+      "stock-sp1": {
+        "transaction_hash": "0x46d1a0a830020a24498a37e26e7f0e9c36c266707e95243fd8d90476ffba33da",
+        "gas_used": 1682087,
+        "calldata_bytes": 7560,
+        "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+        "initcode_bytes": 7560,
+        "runtime_bytes": 7534,
+        "runtime_sha256": "558958eb95cb5429b49f7a5c3b1be1128c1056f8eacd9f9be74c0346ae367771"
+      },
+      "stock-sp1-facade": {
+        "transaction_hash": "0xccd99a181a33228d7e35ea14de3b738c4553d5d0d4438549937ca6c91672b9e2",
+        "gas_used": 1991649,
+        "calldata_bytes": 8993,
+        "address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+        "initcode_bytes": 8993,
+        "runtime_bytes": 8967,
+        "runtime_sha256": "c6b7db252e79dc6c1fe2ab981153d6d128dcff74e14a20321dedae9d24c758b1"
+      },
+      "adapted-sp1": {
+        "transaction_hash": "0x6155128741602c0f4f731ef539227118e871bb97321f74dbd451feb40f6b6669",
+        "gas_used": 1681703,
+        "calldata_bytes": 7559,
+        "address": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+        "initcode_bytes": 7559,
+        "runtime_bytes": 7533,
+        "runtime_sha256": "89bcf8e22b3dbf3d16557c6df0fe650b321d97e7172195051b5a1153e1cf32b9"
+      },
+      "ix-adapter": {
+        "transaction_hash": "0x280a194e7b4a42f11a4f30c89d070b9e1dcb4425606f6cd8e4116dc64572f45a",
+        "gas_used": 255356,
+        "calldata_bytes": 1159,
+        "address": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+        "initcode_bytes": 1159,
+        "runtime_bytes": 913,
+        "runtime_sha256": "f63dc4f9ef3ec5691e2b0d43aed3257f968017c96f080ec413dd236a0a4ac8ac"
+      }
+    },
+    "fixture_sha256": "13f469ab83f3eaf285e87dc201dd5c8d2b538137f6646dae2fa8400afc33ab39",
+    "generated_source_sha256": "62634b3b8a0944462778fc745d28168008b34ab36cc7716739dbd0ef07bf7a13",
+    "adapted_source_sha256": "cd4096aa71fcf21aea567b9e700ed12903625ba9df9a2733daa4f652ced458f8"
+  },
+  "records": {
+    "proof_report": {
+      "path": "target/plonk-refresh-20261019/proof-report.json",
+      "sha256": "6851a9f4d8f83164a9ff9c2c88b05f6b4be2aaa3136ebd6fd9ac2407c4f2bfa8"
+    },
+    "anvil_report": {
+      "path": "target/plonk-refresh-20261019/anvil/report.json",
+      "sha256": "21972ee1fae090a849f32f7c61a3de6eb34a41503faaaf53d45143daf0070b5c"
+    },
+    "exporter_regression_log": {
+      "path": "target/plonk-refresh-20261019/logs/export-regression.log",
+      "sha256": "ac18bb4aef4f5f7a06fac08aa0371a459fa9e1314096ea84c66f8178d3dff63b"
+    },
+    "artifacts": "/opt/dlami/nvme/ix-bn254/plonk/optimized-init-20261019"
+  }
+}

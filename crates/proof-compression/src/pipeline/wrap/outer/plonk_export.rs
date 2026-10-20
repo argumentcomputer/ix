@@ -139,13 +139,13 @@ pub(super) fn write_export(
   if check_pairings(deferred_bytes, &vk.keys()?).is_ok() != valid_pairing {
     return Err("unexpected deferred pairing result".into());
   }
-  // The recursive statement: 23 rows `[94, 1, i, public_i]` whose public
-  // scalars are the constant prefix, the claim digest and the deferred
-  // pairing operands.
-  if claims.len() != RECURSIVE_PUBLIC_VALUES {
+  // The zero-anchor row precedes the public prefix, claim digest and
+  // deferred pairing operands in the recursive statement.
+  let claim_count = RECURSIVE_PUBLIC_VALUES + 1;
+  if claims.len() != claim_count {
     return Err("recursive packet claim count".into());
   }
-  let slots = (0..RECURSIVE_PUBLIC_VALUES)
+  let slots = (0..claim_count)
     .map(|i| {
       vec![
         ir::ClaimSlot::Constant(Scalar::from_u8(94)),
