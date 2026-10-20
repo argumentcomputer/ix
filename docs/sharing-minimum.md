@@ -531,7 +531,8 @@ not imply that the combined anonymous-plus-metadata artifact has globally minimu
 
 The extended index space for `Share` inside metadata expressions (a metadata `Share(i)` with
 `i < p` is a primary entry, `i ≥ p` is `metaSharing[i − p]`) and its construction are specified
-in §13; collapsed call-site indices keep addressing `metaSharing` directly.
+in §13; collapsed call-site indices keep addressing `metaSharing` directly. (CQ3.6 retired the
+call-site metadata; Pass 3 records index `metaSharing` the same way.)
 
 ### 8.3 Version and address migration
 
@@ -1098,9 +1099,9 @@ primary bytes decode.
 
 Well-foundedness: entry `metaSharing[j]` may reference every primary entry and the metadata
 entries before it (`p ≤ i < p + j`); a reader expands `metaSharing` in order, each entry against
-`sharing ++ metaSharing[0..j)`. Call-site references are unchanged: `CallSiteEntry.collapsed
-sharingIdx` and `origHead = some (sharingIdx, …)` index `metaSharing` directly
-(`metaSharing[sharingIdx]`, no offset by `p`), as in §8.2.
+`sharing ++ metaSharing[0..j)`. Record references are unchanged: a Pass 3 record's `_ix.inline`
+indexes `metaSharing` directly (no offset by `p`), as the call-site `sharingIdx` and `origHead`
+did before CQ3.6 retired them (§8.2).
 
 Readers. Only the two decompilers read `metaSharing` contents, and both implement the rule:
 Lean `Ix.DecompileM` (`ShareScope`, `resolveShareIn`; also the semantic-contract scan
@@ -1113,7 +1114,7 @@ whole table is checked first (`validateMetaSharing`, Rust `validate_meta_sharing
 the first violation in entry order and then left-to-right pre-order. Kernel ingress
 (`Ix/Tc/IngressMeta.lean`, Rust `crates/kernel/src/ingress.rs`), the IxVM circuit and the
 resource validators do not read `metaSharing` contents. Two gaps of the readers predate this
-rule and are not addressed by it: a call site nested inside a metadata expression may reference
+rule and are not addressed by it: a record nested inside a metadata expression may reference
 any `metaSharing` entry, including its own, and neither the decompilers nor kernel ingress check
 that primary table entries reference only earlier entries. A malformed table of either kind can
 therefore make them loop instead of failing; hardening the readers is follow-up work.

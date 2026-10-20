@@ -8,7 +8,8 @@ implementations; `docs/Ixon.md`, "ExprMeta Arena", is its normative description.
 Hash-consing (§5) is not implemented; it is designed here for a stacked PR. §1–§5 were
 measured on v3 files (header `0xE3`, `Tag0` integers, heuristic sharing tables); §6 and §7
 on files with TagN integers everywhere but still the header `0xE3`, heuristic sharing and
-no 4-byte TagN rung; §7 ends with the sizes of the final v4 files.
+no 4-byte TagN rung; §7 ends with the sizes of the final v4 files. The call-site kinds
+(10 `callSite`, 11 `etaCallSite`) measured here were retired from the format in CQ3.6.
 
 **Answer.** Yes, for the encoding; no, for deduplication.
 

@@ -979,12 +979,12 @@ rung end, so v3's integer codes would write the same bytes for this table.
 
 Metadata expressions are the entries of `ConstantMeta.metaSharing`: the
 source occurrences of Pass 3's decompile records
-([Pass 3 decompile records](#pass-3-decompile-records)), and, in files the
-call-site surgery wrote, the compiled call-site arguments it collapsed and
-rewritten call-site heads. A `Share(i)` inside them is read in an extended index
-space. This is a reader rule; it adds no bytes. Let `p` be the size of the
-primary `sharing` table (for a projection, the table of its `Muts` block)
-and `q` the size of `metaSharing`.
+([Pass 3 decompile records](#pass-3-decompile-records)). (Before CQ3.6 they
+also held the call-site surgery's collapsed arguments and rewritten heads.)
+A `Share(i)` inside them is read in an extended index space. This is a
+reader rule; it adds no bytes. Let `p` be the size of the primary `sharing`
+table (for a projection, the table of its `Muts` block) and `q` the size of
+`metaSharing`.
 
 - **Primary expressions** (roots and primary entries): `Share(i)` is
   `sharing[i]` and needs `i < p`. Metadata never changes how primary bytes
@@ -999,10 +999,8 @@ and `q` the size of `metaSharing`.
 
   Every metadata-to-metadata step goes to a lower entry, so expansion
   terminates.
-- **Call-site references and records.** `CallSiteEntry.collapsed sharingIdx`,
-  `origHead = some (sharingIdx, _)` and a decompile record's `_ix.inline`
-  index `metaSharing` directly, not offset by `p`, and read that entry in its
-  own scope.
+- **Records.** A decompile record's `_ix.inline` indexes `metaSharing`
+  directly, not offset by `p`, and reads that entry in its own scope.
 
 Both decompilers implement the rule: Lean `Ix.DecompileM` (`ShareScope`,
 `resolveShareIn`) and Rust `ix_compile::decompile` (`ShareScope`). When a
@@ -1011,12 +1009,13 @@ constant's metadata is loaded, they check the whole table first
 occurring in `metaSharing[j]` must have `i < p + j`. The first violation, in
 entry order and then left-to-right pre-order, is reported as
 `invalidMetaShareIndex` (Rust `DecompileError::InvalidMetaShareIndex`,
-error tag 11). An out-of-range index in a primary expression, or an
-out-of-range call-site `sharingIdx`, is `invalidShareIndex`. The
-semantic-contract scan (`Ix.SemanticContract.containsIxon`, Rust
-`semantic_contract::contains_ixon`) expands Shares with the same scopes.
+error tag 11). An out-of-range index in a primary expression is
+`invalidShareIndex`; a record whose `_ix.inline` or arena root is out of
+range is a bad constant format. The semantic-contract scan
+(`Ix.SemanticContract.containsIxon`, Rust `semantic_contract::contains_ixon`)
+expands Shares with the same scopes.
 Kernel ingress, the IxVM circuit and the resource validators do not read
-`metaSharing` contents. Two older gaps remain: a call site nested inside a
+`metaSharing` contents. Two older gaps remain: a record nested inside a
 metadata expression may reference any `metaSharing` entry, including its own,
 and neither the decompilers nor kernel ingress check that primary entries
 reference only earlier entries. A malformed table of either kind can make
@@ -1070,8 +1069,9 @@ follow in declaration order:
 | 7 | Ref | name_idx | — |
 | 8 | Prj | struct_name_idx, child? | child |
 | 9 | Mdata | kvmap_count + kvmaps, child? | child |
-| 10 | CallSite | name_idx, entries, canon_meta, orig_head | — |
-| 11 | EtaCallSite | n_synth, name_idx, entries, canon_meta, wrapper_meta | — |
+
+Kinds 10 (`CallSite`) and 11 (`EtaCallSite`), the call-site surgery's
+metadata, are retired (CQ3.6, a format break): both readers refuse them.
 
 Child references are never absolute indices:
 
@@ -1085,15 +1085,14 @@ Child references are never absolute indices:
   post-order, so an unshared subtree costs one tag byte per App and no
   child bytes at all.
 - **Explicit references.** A structural slot whose bit is clear (a shared
-  node: an expression-cache hit, or any other position), and every
-  call-site reference (entry `meta`, `canon_meta`, `orig_head` meta,
-  `wrapper_meta`), is `N0` of the backward delta `(i − 1 − c) mod 2^64`.
-  Forward references are representable (they wrap), so every arena of
-  `u64` indices has an encoding.
+  node: an expression-cache hit, or any other position) is `N0` of the
+  backward delta `(i − 1 − c) mod 2^64`. Forward references are
+  representable (they wrap), so every arena of `u64` indices has an
+  encoding.
 - **One encoding per arena.** The writer marks a slot implicit exactly
   when its child is `top − 1`; the reader rejects an explicit slot equal to
   `top − 1`, an implicit slot with `top = 0`, mask bits beyond the kind's
-  slot count, and kinds above 11.
+  slot count, and kinds above 9.
 
 The decoded arena (absolute `u64` indices) is identical to the one the
 compiler built, so readers of `ExprMeta` see no difference.
@@ -1117,8 +1116,7 @@ four extension vectors appended after it (the wrapper):
 ```rust
 pub struct ConstantMeta {
     pub info: ConstantMetaInfo,        // variant payload (below)
-    pub meta_sharing: Vec<Arc<Expr>>,  // record sources (Pass 3); collapsed
-                                       // call-site args (surgery files)
+    pub meta_sharing: Vec<Arc<Expr>>,  // record sources (Pass 3)
     pub meta_refs: Vec<Address>,       // refs-table extension (virtual space)
     pub meta_univs: Vec<Arc<Univ>>,    // univs-table extension (virtual space)
     pub univ_patches: Vec<UnivPatch>,  // original level spellings (§10.6)
@@ -1135,8 +1133,7 @@ Each wrapper vector serializes as an `N0` count + entries and is
 empty (one zero byte) on most constants. `meta_univs`/`univ_patches`
 restore source level spellings the §10.6 canonicalization displaced
 from content; `meta_sharing` holds the source occurrences of Pass 3's
-decompile records (in files the call-site surgery wrote, its collapsed
-arguments), whose `Share` references use the extended index space of
+decompile records, whose `Share` references use the extended index space of
 [Sharing in metadata expressions](#sharing-in-metadata-expressions), and
 `meta_refs` the references of those occurrences outside the primary table
 (virtual index `refs.len() + j`). Each `ConstantMetaInfo` variant stores a name, universe
@@ -1187,8 +1184,8 @@ only, never entering any content hash):
 The three vectors always serialize together (one unified format), and
 `evaporated` always carries `perm.len()` flags — a flag set means the
 block owns the evaporation of that source position (its alias resolves
-to an external head's generic recursor; call-site surgery keys
-head-rewrite plans off these flags alone). Writers normalize
+to an external head's generic recursor; the retired call-site surgery
+keyed its head-rewrite plans off these flags alone). Writers normalize
 legacy-constructed values with defaulted-empty `evaporated` to
 all-zero flags, so Lean and Rust serializers agree byte-for-byte.
 

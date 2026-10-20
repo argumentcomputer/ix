@@ -445,7 +445,7 @@ Lean, through δ, β and instantiation:
   `nameExprs`, after `ingressExprs`; `nameExprs_eq` proves the result is the
   conversion), and `.meta` from the `.ixe`'s metadata arenas
   (`Ix/KernelDisplay/MetaNames.lean`, `nameRead`, after the reader): binder,
-  let, application, projection, call-site and η call-site nodes, followed as
+  let, application and projection nodes, followed as
   `Ix.Tc`'s meta ingress follows them. Missing or inconsistent metadata adds
   nothing and is never an error;
 - a failure carries the terms it is about and the binders it was thrown under

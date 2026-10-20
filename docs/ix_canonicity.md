@@ -249,7 +249,7 @@ Everything needed to round-trip back to a source-faithful Lean
 | `Expr.mdata` KVMaps                     | `ExprMetaData::Mdata`                                |
 | Reference names (per `Const` / `Rec`)   | `ExprMetaData::Ref`; name choice at alias occurrences: §10.5 |
 | Projection struct name                  | `ExprMetaData::Prj`                                  |
-| Call-site source/canonical metadata     | `ExprMetaData::CallSite { entries, canon_meta }`     |
+| Pass 3 call-site source occurrence      | `_ix.inline` record (`Mdata`) + `ConstantMeta.meta_sharing` |
 | Level-parameter names                   | `ConstantMetaInfo::*.lvls`                           |
 | `InductiveVal.all` (Lean source order)  | `ConstantMetaInfo::{Def,Indc,Rec}.all`               |
 | `ReducibilityHints`                     | `Named.hints` (`.ixe` §5 header, exact per name) + merged `Env::anon_hints` (§3) |
@@ -770,9 +770,9 @@ other stored form can check. Concretely:
   with `adapt_split_minor` synthesizing IHs consumed from dropped
   motives (via the target's source recursor — including AUX targets,
   which recurse through their own head-rewrite plans). The ORIGINAL
-  head (source name + source levels) is preserved in `meta_sharing`,
-  pointed at by `ExprMetaData::CallSite::orig_head`, and restored by
-  decompile.
+  head (source name + source levels) was preserved in `meta_sharing`,
+  pointed at by `ExprMetaData::CallSite::orig_head` (retired, CQ3.6),
+  and restored by decompile.
 - `.below_N` / `.brecOn_N[.go|.eq]` of evaporated auxes have no
   canonical regeneration: they compile as **surgered originals**
   (source telescopes kept, embedded `rec_N` spines rewritten), exactly
@@ -992,8 +992,9 @@ written:
 > before Pass 3. Since the flip to Pass 3 no compile registers a plan:
 > the callers of a changed block are rewritten through Pass 3 images
 > instead, and the surgery was deleted from both compilers (CQ3.5,
-> 2026-10-20). The `CallSite` metadata below remains only for decoding
-> artifacts written before Pass 3, until CQ3.6 retires it.
+> 2026-10-20). The `CallSite` metadata below was kept for decoding
+> artifacts written before Pass 3 until CQ3.6 retired it from the format:
+> kinds 10 and 11 are now refused, so such artifacts no longer decode.
 
 User code — and Lean-auto-generated constants like `_sizeOf_N`,
 `_ctorIdx`, `.noConfusion` — reference aux constants by applying them

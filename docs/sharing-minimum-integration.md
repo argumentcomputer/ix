@@ -67,9 +67,9 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
    circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`, `Ix/IxVM/IxonSerialize.lean`),
    generated into `crates/ixvm-codegen/src/aiur_ixvm.rs` by `lake exe ix codegen`. CI runs
    `lake exe ix codegen --check`.
-5. **Metadata does not depend on the primary table's shape.** `CallSiteEntry.collapsed
-   sharingIdx` and `callSite.origHead` index `ConstantMeta.metaSharing` directly, arena roots
-   follow the unshared logical tree, and every consumer expands `Share` transparently.
+5. **Metadata does not depend on the primary table's shape.** A Pass 3 record's `_ix.inline`
+   indexes `ConstantMeta.metaSharing` directly (before CQ3.6 the call-site `sharingIdx` and
+   `origHead` did the same), arena roots follow the unshared logical tree, and every consumer expands `Share` transparently.
    Re-sharing a constant leaves its metadata valid (§5).
 6. **The compiler's sharing builder theorems are stated over the tiered construction.**
    `Ix.Sharing.Verify.Tiered.canonicalSharingTiered_format` (`TieredWire.lean`) gives
@@ -281,19 +281,18 @@ codec, is retired ([kernel](kernel.md), "Removal ledger").
 
 ### 5.1 Index spaces
 
-- **Separate namespaces.** `CallSiteEntry.collapsed sharingIdx` indexes
-  `ConstantMeta.metaSharing`. Both compilers start it at 0 per constant: Lean `buildCallSite`
-  numbers collapsed arguments from the current surgery table, which `takeSurgerySharing` drains
-  into `metaSharing` per constant; Rust `compile.rs` drains its `surgery_sharing` into
-  `meta.meta_sharing` the same way. `callSite.origHead.0` also indexes `metaSharing`.
-- **No offset.** Collapsed and `origHead` indices are never offset by the primary table length.
+- **Separate namespaces.** A Pass 3 decompile record's `_ix.inline` indexes
+  `ConstantMeta.metaSharing`, which both compilers start at 0 per constant. (Before CQ3.6 the
+  call-site surgery's `CallSiteEntry.collapsed sharingIdx` and `callSite.origHead.0` indexed it
+  too.)
+- **No offset.** Record indices are never offset by the primary table length.
 - **Kernel ingress ignores it.** `Ix/Tc/IngressMeta.lean` and Rust `crates/kernel/src/ingress.rs`
   do not read `metaSharing`.
 
 ### 5.2 Metadata payloads contain no primary Share references
 
-`metaSharing` entries are raw compiled expressions (Lean `compileExprSurgical`, Rust
-`compile_expr`). Share is produced only by the sharing construction, which runs on the roots
+`metaSharing` entries are raw compiled expressions (the source occurrences of Pass 3 records,
+compiled by Lean `Ix.CompileM` and Rust `compile_expr`). Share is produced only by the sharing construction, which runs on the roots
 after metadata is built. Their Ref/univ indices point into the block's primary `refs`/`univs`
 tables, which the construction does not change, so no remapping is needed when the primary table
 changes.
@@ -304,8 +303,8 @@ The rule is `sharing-minimum.md` §13.1. With `p` primary entries (for a project
 `Muts` block) and `q` metadata entries, a `Share(i)` inside `metaSharing[j]` denotes primary
 entry `i` when `i < p` (shares nested in that entry stay primary) and `metaSharing[i − p]` when
 `p ≤ i < p + j`; anything else is rejected. A `Share` in a primary expression always denotes a
-primary entry. `CallSiteEntry.collapsed sharingIdx` and `origHead = some (sharingIdx, _)` index
-`metaSharing` directly and read that entry in its own scope.
+primary entry. A record's `_ix.inline` indexes `metaSharing` directly and reads that entry in its
+own scope.
 
 | | Lean | Rust |
 |---|---|---|
@@ -316,10 +315,11 @@ primary entry. `CallSiteEntry.collapsed sharingIdx` and `origHead = some (sharin
 
 The error has tag 11 in both languages. The table check is iterative, does not expand shares and
 reports the first violation in entry order, then left-to-right pre-order. A malformed primary
-`Share` found by the semantic-contract scan is reported as `InvalidShareIndex`. The IxVM circuit,
+`Share` found by the semantic-contract scan is reported as `InvalidShareIndex`; the record replay
+uses the scan to refuse a record over a compiled term that carries a contract. The IxVM circuit,
 kernel ingress and egress, `diff.rs` and the resource validators do not read `metaSharing`
 contents, and no writer emits a metadata `Share`. The table check is linear in the DAG size of
-the table: each shared node is visited once. Two pre-existing gaps remain: a call site nested inside
+the table: each shared node is visited once. Two pre-existing gaps remain: a record nested inside
 a metadata expression may reference any `metaSharing` entry, including its own, and neither the
 decompilers nor kernel ingress check that primary entries reference only earlier entries, so a
 malformed table of either kind can make them loop instead of failing. Hardening the readers
@@ -329,13 +329,10 @@ against malformed input is follow-up work.
 
 Arena nodes mirror the **unshared** logical tree; a Share is transparent and keeps the same
 arena index (`Ix/Tc/IngressMeta.lean`, `Ix/DecompileM.lean`, Rust `decompile.rs`,
-`ingress.rs`). Call-site `canonMeta` is distributed over the canonical App telescope after
-expanding Shares along the spine (Lean `collectIxonTelescopeExpandingShares`; the Rust
-decompiler and kernel ingress do the same), and eta call sites strip `nSynth` lambdas,
-expanding Shares at each step. Universe patches are keyed by arena index. Root indices
+`ingress.rs`). Universe patches are keyed by arena index. Root indices
 (`typeRoot`, `valueRoot`, `ruleRoots`) are arena indices. So any change of which subterms are
-shared, or of where a Share cuts a telescope, leaves arena roots, binder data, call-site
-surgery, universe patches and `Named.original` valid, and a metadata-only edit cannot change
+shared, or of where a Share cuts a telescope, leaves arena roots, binder data, Pass 3
+records, universe patches and `Named.original` valid, and a metadata-only edit cannot change
 anonymous bytes (metadata is not part of `Constant`).
 
 ## 6. Version, identifiers, fixtures and caches
@@ -421,7 +418,7 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
 6. **Header aliasing** (finding 10), kept by decision.
 7. **Stale artifacts.** Caches are keyed by the format version (§6). Artifacts pinned by hash
    from outside the repository (the FLT benchmark) must be regenerated by their owners.
-8. **Reader gaps** (§5.3): cyclic sharing tables, metadata or call-site references can make the
+8. **Reader gaps** (§5.3): cyclic sharing tables, metadata or record references can make the
    decompilers and kernel ingress loop. They predate this work and affect only malformed input;
    reader hardening is follow-up work.
 9. **Length range.** Rust's phase 1 uses 128-bit lengths and fails closed (`format bound:
