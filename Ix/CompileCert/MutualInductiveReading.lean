@@ -60,4 +60,75 @@ theorem mutConsts_indc (d : Ix.Ind) {context : CompileEnv × BlockEnv} {before a
   cases wrapRan
   exact ⟨_, outRan, rfl, rfl⟩
 
+/-! ## A one-member inductive class -/
+
+section Blocks
+
+variable {md : Mode} (cx : Ctx md) (param : Nat → LevelParam) (self : Nat → Option (ReadM (CName md)))
+  (names : Ix.Name → CName md → Prop) (σ : Ix.Name → LevelParam) (bindings : Bindings)
+
+local notation "reader" => ExpressionRead.blockReader cx param self
+
+/-- **A one-member inductive class reads back as its source** through
+`compileMutualBlock`: `EmissionBlocks.familyBlock_correct`'s conclusions, with
+the mutual path's projections (`buildMutualProjections`) and the member run in
+the class's mutual context (`mutContext`). -/
+theorem singletonBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
+    (external : BindingsCorrect context.1 bindings cx names) (d : Ix.Ind)
+    (scope : ConstsSatisfy (SelfName (mutContext [[.indc d]] context).2 self names) d.type)
+    (ctorScope : ∀ ctor ∈ d.ctors.toList,
+      ConstsSatisfy (SelfName (mutContext [[.indc d]] context).2 self names) ctor.cnst.type)
+    {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
+    (ran : rawRun (compileMutualBlock [[.indc d]]) context before = (.ok output, after)) :
+    Emission.Clean bindings after ∧ ExpressionRead.Extends (reader before).ecx (reader after).ecx ∧
+      (∃ metas, output = BlockResult.mk' output.block .empty
+        (buildMutualProjections [[.indc d]] (Address.admissionHash (Ixon.ser output.block)) metas)) ∧
+      SharingRoots.erase output.block.info = SharingRoots.erase (EmissionBlocks.inductiveSkeleton d) ∧
+      SharingRoots.RootsRead (EmissionBlocks.recordReader cx param self after output.block)
+        (Emission.related param names σ
+          (Emission.inner d.name d.levelParams.toList (mutContext [[.indc d]] context)))
+        (d.type :: d.ctors.toList.map (·.cnst.type))
+        (constantInfoRootExprs output.block.info).toList := by
+  unfold compileMutualBlock at ran
+  obtain ⟨_, audited, auditRan, rest⟩ := bind_ok ran
+  rw [EmissionDispatch.auditClasses_free context free] at auditRan
+  cases auditRan
+  dsimp only at rest
+  unfold withMutCtx at rest
+  rw [rawRun_withBlockEnv] at rest
+  obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok rest
+  have kept := EmissionBlocks.preseed_then cx param self bindings
+    (related := Emission.related param names σ
+      (Emission.inner d.name d.levelParams.toList (mutContext [[.indc d]] context)))
+    (context := mutContext [[.indc d]] context) aligned (clean.good cx param self _) seeded
+  unfold compileMutualPayload at compiled
+  obtain ⟨payload, middle, payloadRan, finished⟩ := bind_ok compiled
+  obtain ⟨out, outRan, members, metas⟩ := mutConsts_indc d payloadRan
+  obtain ⟨ind, indMeta, pairs, exprs⟩ := out
+  obtain ⟨cleanD, growth, shape, ctorShapes, _, roots⟩ := Emission.inductiveData_correct cx param self names σ
+    bindings (Emission.current d.name (mutContext [[.indc d]] context)) free aligned external d scope ctorScope
+    kept.1 outRan
+  obtain ⟨same, _, built⟩ := ProjectionLayout.finish_mutual_ok _ _ _ _ finished
+  subst same
+  obtain ⟨members', roots', metadata'⟩ := payload
+  dsimp only at members metas built
+  subst members
+  unfold buildCompiledMutualBlock at built
+  have standalone : standaloneMutConstInfo? #[Ixon.MutConst.indc ind] = none := rfl
+  simp only [standalone] at built
+  obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+  cases Except.ok.inj returned
+  dsimp only at shape ctorShapes roots
+  have rootsList := EmissionBlocks.family_roots ind
+  rw [← rootsList] at roots
+  obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits
+    (.muts #[.indc ind]) block hb roots
+  refine ⟨cleanD, extends_trans kept.2 growth, ⟨_, rfl⟩, ?_, read⟩
+  change SharingRoots.erase block.info = _
+  rw [erased, shape]
+  exact EmissionBlocks.inductive_erase _ _ _ ctorShapes
+
+end Blocks
+
 end Ix.CompileCert.MutualInductiveReading
