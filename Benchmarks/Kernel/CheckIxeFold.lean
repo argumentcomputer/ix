@@ -203,6 +203,13 @@ def run (args : List String) : IO UInt32 := do
   let prepared ← IO.lazyPure fun _ => Ix.Kernel.Frontend.preparePrelude pre.ix decls
   let r1 ← IO.monoNanosNow
   IO.eprintln s!"fold: read {decls.size} declarations ({prepared.size} prepared) in {(r1 - r0) / 1000000} ms"
+  let (moved, guarded) := Ix.Kernel.Frontend.prepareReport pre.ix decls
+  IO.eprintln s!"fold: hoist would move {moved} records; guard fired: {guarded}"
+  let u0 ← IO.monoNanosNow
+  let units ← IO.lazyPure fun _ => Ix.Kernel.checkUnits prepared
+  match units with
+  | .ok () => IO.eprintln s!"fold: units check passed in {((← IO.monoNanosNow) - u0) / 1000000} ms"
+  | .error (e, i) => IO.eprintln s!"fold: units check FAILED at {i}: {e}"
   let prepared ← if (← IO.getEnv "FOLD_SHARE") == some "1" then do
       let s0 ← IO.monoNanosNow
       let shared ← IO.lazyPure fun _ => ShareCommon.shareCommon' prepared

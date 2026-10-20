@@ -201,6 +201,11 @@ def run (pre : Prelude .source) (env : Ix.Environment)
   let t4 ← IO.monoMsNow
   if progress then IO.eprintln s!"source-ingress: lowered {lowered.size} declarations in {t4 - t3} ms ({aliasOf.size} alias groups)"
   let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
+  let (hoistMoved, hoistGuarded) := Ix.Kernel.Frontend.prepareReport pre.ix lowered
+  IO.println s!"source-ingress: hoist would move {hoistMoved} records; guard fired: {hoistGuarded}"
+  match Ix.Kernel.checkUnits prepared with
+  | .ok () => IO.println "source-ingress: units check passed on the prepared stream"
+  | .error (e, i) => IO.println s!"source-ingress: units check FAILED at {i}: {e}"
   let (ev, evErrors) ← match evidence with
     | some ev => pure (ev, [])
     | none => IO.lazyPure fun _ => Ix.LeanIngress.sourceEvidenceReport prepared

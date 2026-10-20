@@ -2,6 +2,7 @@ module
 
 public import Std.Data.HashSet.Basic
 public import IxC.Kernel.Core
+public import IxC.Kernel.Units
 
 @[expose] public section
 
@@ -161,11 +162,30 @@ def applyHoist (ds : Array (Declaration md)) (target : Std.HashMap Nat Nat) :
   let moved := (Array.range ds.size).filter (target.contains ·)
   ((order.map (ds[·]!)).toArray, moved.flatMap fun k => (ds[k]!.names).toArray)
 
+/-- **Would the hoist split a unit?**  A record it would move is a generated
+record (`Declaration.isGenerated`, a mutual or nested block's model record)
+or the declaration right after one (the block's own), or it would land
+inside such a lowering (the record before its target is a generated one): a
+lowering of several declarations is what the fold's units check needs whole
+and in order (`IxC/Kernel/Units.lean`). -/
+def splitsUnit (ds : Array (Declaration md)) (target : Std.HashMap Nat Nat) : Bool :=
+  target.toList.any fun (k, t) =>
+    ds[k]!.isGenerated || (k > 0 && ds[k - 1]!.isGenerated) || (t > 0 && ds[t - 1]!.isGenerated)
+
 /-- **The hoist.**  Returns the reordered records and the names of the
 records moved (empty, and the array untouched, when no operation's
-ground is declared after it). -/
+ground is declared after it, or when moving it would split a mutual or
+nested block's lowering, `splitsUnit`: the stream is then left as it is,
+and the fold meets the operation before its ground, as it would have met
+the block's model records left behind). -/
 def hoistNatOpGround (ds : Array (Declaration md)) : Array (Declaration md) × Array (Key md) :=
   let target := hoistTargets ds
-  if target.isEmpty then (ds, #[]) else applyHoist ds target
+  if target.isEmpty || splitsUnit ds target then (ds, #[]) else applyHoist ds target
+
+/-- **The hoist's receipt**, for the drivers' reports: how many records it would
+move, and whether the guard (`splitsUnit`) keeps them where they are. -/
+def hoistReport (ds : Array (Declaration md)) : Nat × Bool :=
+  let target := hoistTargets ds
+  (target.size, !target.isEmpty && splitsUnit ds target)
 
 end Ix.Kernel.Frontend

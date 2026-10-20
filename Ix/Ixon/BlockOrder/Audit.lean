@@ -67,10 +67,11 @@ entry's change (44 in: the guard, its memoized walk and their specialisations; o
 recursive fields from 5942, by the entry's change (9 more); the rest-only hoist and the
 decided units check (S1) from 5951, by the entry's change (117 in,
 `IxC/Kernel/Audit/Roots.lean`); the prelude's shape check (S1, fact
-(ii)) from 6068, by the entry's change (12 in). -/
+(ii)) from 6068, by the entry's change (12 in); the hoist guard (S1) from 6080, by
+the entry's change (4 in). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 6080 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ixon.BlockOrder.compareExpr]: 6084 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

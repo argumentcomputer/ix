@@ -93,7 +93,10 @@ terms of the check's two messages; the reader is unchanged, and no extern,
 check (S1, fact (ii): `preludeFor` checks that the prelude it reads names the pinned
 `preludeShape`) moved the entry and the tiered entries from 5909 and 6013, 12 functions
 in each: `preludeRead`, `checkPreludeShape` and their closed terms and
-specialisations; the fold and the reader are unchanged. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
+specialisations; the fold and the reader are unchanged. The hoist guard (S1:
+the ground hoist leaves the rest as it is when it would split a lowering of
+several declarations, `splitsUnit`) moved them from 5921 and 6025, 4 functions in
+each; the fold and the reader are unchanged. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
 is Lean with its three standard axioms) moved the fold from 3434, the reader
 from 2150, the entry from 5861 and the tiered entries from 5965: the five
 compiler-trust roles left `Role` (its case tables shrink, which the reader's
@@ -608,7 +611,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5921 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5925 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -641,7 +644,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- docstring). The mutual modeller's reading of Lean's recursive fields moved it
 -- from 5887 by the entry's change (9 more; see the module docstring).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6025 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6029 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

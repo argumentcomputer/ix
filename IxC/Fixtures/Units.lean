@@ -1,4 +1,5 @@
 import IxC.Kernel.Units
+import IxC.Kernel.Frontend.NatOpGround
 
 /-! # The units check on hand-built declaration lists
 
@@ -76,5 +77,41 @@ def front12 : List (Declaration .source) := (List.range preludeSize).map fun n =
 #guard declinedAt (front12 ++ [ax (.role .andIntro)]) 12 ["units:", "prelude role", "past the front"]
 -- The same role in the front passes.
 #guard passes (ax (.role .andIntro) :: front12)
+
+/-! ## The ground hoist keeps units whole
+
+The hoist (`Ix.Kernel.Frontend.hoistNatOpGround`) moves a pinned `Nat`
+operation's ground ahead of it. When a record it would move belongs to a
+lowering of several declarations (here `Nat.pred`'s, a generated record then
+the declaration), it leaves the stream as it is (`splitsUnit`): the fold then
+meets `Nat.sub` before its ground `Nat.pred` and declines at it (its ground is
+not installed), where the hoisted stream would have declined at `Nat.pred`'s
+lowering, its generated record left behind: a decline either way, now with the
+unit whole and in order. -/
+
+open Ix.Kernel.Frontend in
+/-- A definition named `k`, of type and value `Prop`. -/
+def defn (k : Key .source) : Declaration .source := .defnDecl ⟨k, [], .sort .zero⟩ (.sort .zero) .opaque
+
+/-- `Nat.sub`, then `Nat.pred`'s lowering: a generated record and its declaration. -/
+def splitCase : List (Declaration .source) :=
+  [defn natSubName, ax (.aux natPredName .model), defn natPredName]
+
+-- the hoist would move `Nat.pred` (one record) out of its unit: the guard fires
+#guard Ix.Kernel.Frontend.hoistReport splitCase.toArray == (1, true)
+-- and the stream stays as it was
+#guard (Ix.Kernel.Frontend.hoistNatOpGround splitCase.toArray).1.toList == splitCase
+-- without the guard the move would split the unit
+#guard (Ix.Kernel.Frontend.applyHoist splitCase.toArray
+  (Ix.Kernel.Frontend.hoistTargets splitCase.toArray)).1.toList ==
+  [defn natPredName, defn natSubName, ax (.aux natPredName .model)]
+
+/-- `Nat.sub`, then an unrelated declaration, then `Nat.pred` alone. -/
+def moveCase : List (Declaration .source) := [defn natSubName, ax (key "A"), defn natPredName]
+
+-- a single-declaration unit moves as before
+#guard Ix.Kernel.Frontend.hoistReport moveCase.toArray == (1, false)
+#guard (Ix.Kernel.Frontend.hoistNatOpGround moveCase.toArray).1.toList ==
+  [defn natPredName, defn natSubName, ax (key "A")]
 
 end Tests.Ix.Kernel.UnitsFixtures

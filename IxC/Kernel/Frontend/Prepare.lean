@@ -175,4 +175,9 @@ returns and the fold consumes. -/
 def preparePrelude (pre : PreludeIx md) (ds : Array (Declaration md)) : Array (Declaration md) :=
   (prepareD pre ds).decls
 
+/-- **The hoist's receipt** over the rest of the stream `preparePrelude` prepares
+(`hoistReport`): the records it would move, and whether the guard keeps them. -/
+def prepareReport (pre : PreludeIx md) (ds : Array (Declaration md)) : Nat × Bool :=
+  hoistReport (frontOf #[] pre.decls.toList ds).2
+
 end Ix.Kernel.Frontend
