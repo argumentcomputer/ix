@@ -2955,8 +2955,10 @@ comparison cache by `ExactName` keys, the address map by `ExactName`), so no
 hypothesis on stored hashes is needed. So the compiler's classes agree in
 shape (`MutualProjections.sort_classes`), which discharges
 `mutual_correct`'s class premises for the driver's two steps
-(`MutualArtifact.mutual_sorted_correct`). Every lemma behind them is audited
-in `Ix.CompileCert.ReadingAudit`. -/
+(`MutualArtifact.mutual_sorted_correct`) and for its three, with the
+recursor-family order between them (`MutualArtifact.mutual_ordered_correct`,
+N-READS N5 a: `orderRecursorFamily` permutes the classes). Every lemma behind
+them is audited in `Ix.CompileCert.ReadingAudit`. -/
 
 /-- info: def Ix.CompileCert.Canon.KeysDistinct : List Ix.MutConst → Prop :=
 fun ms => (List.flatMap Ix.CompileCert.Canon.keysOf ms).Nodup -/
@@ -3026,6 +3028,30 @@ fun addr? P =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.MutualArtifact.mutual_sorted_correct
 
+/-- info: Ix.CompileCert.MutualArtifact.mutual_ordered_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    ∀ (members : List Ix.MutConst) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+      Ix.Sharing.Verify.BlockWireTablesWF before →
+        Ix.CompileCert.Canon.KeysDistinct members →
+          (∀ (member : Ix.MutConst), member ∈ members → Ix.CompileCert.MutualProjections.ConstructorPositions member) →
+            Ix.CompileCert.rawRun
+                  (do
+                    let sorted ← Ix.CompileM.sortConsts members
+                    Ix.CompileM.compileMutualBlock (Ix.CompileM.orderRecursorFamily sorted))
+                  context before =
+                (Except.ok output, after) →
+              ∃ classes,
+                Ix.CompileCert.Canon.Partition classes members ∧
+                  Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                    Ix.CompileCert.MutualProjections.ProjectionWire output ∧
+                      ∀ (store : Ix.Kernel.Reader.Store),
+                        store output.blockAddr = some output.block →
+                          Ix.CompileCert.MutualProjections.readRows store
+                              (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
+                            Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr classes -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.MutualArtifact.mutual_ordered_correct
+
 /-- info: 'Ix.CompileCert.Canon.constOrd_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.Canon.constOrd_total
@@ -3053,6 +3079,10 @@ fun addr? P =>
 /-- info: 'Ix.CompileCert.MutualArtifact.mutual_sorted_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.MutualArtifact.mutual_sorted_correct
+
+/-- info: 'Ix.CompileCert.MutualArtifact.mutual_ordered_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.MutualArtifact.mutual_ordered_correct
 
 /-! ## Component theorems: the reader's recursor index
 

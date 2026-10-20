@@ -14,7 +14,10 @@ call-site plans, a successful mutual block from a state whose tables are on
 the wire decodes exactly, its projections decode exactly, and its rows read
 as `expectedReferences`. `mutual_sorted_correct` (R9b) is the driver's two
 steps, `sortConsts` then `compileMutualBlock`, with `mutual_correct`'s class
-premises (non-empty classes, `ClassesAgree`) discharged by the sort.
+premises (non-empty classes, `ClassesAgree`) discharged by the sort;
+`mutual_ordered_correct` (N-READS N5 a) is the driver's actual three, with
+`orderRecursorFamily` between them, a permutation of the classes
+(`orderRecursorFamily_perm`) that keeps those premises.
 
 Adapted: `Address.admissionHash`, the write-back through `erase`
 (`writeback_standalone`), the mutual finisher's inversion, `surgeryFree`
@@ -265,4 +268,78 @@ theorem mutual_sorted_correct (context : CompileEnv × BlockEnv) (free : context
     classes middle sorted
   refine ⟨classes, partition, mutual_correct context free classes wire partition.2 agree
     (fun source present => positions source (partition.1.mem_iff.1 present)) compiled⟩
+
+/-! ## The driver's recursor-family order (N-READS, N5 a) -/
+
+/-- Sorting the classes decorated with a key and their index, then dropping
+the decoration, permutes them. -/
+private theorem keyed_perm (key : List MutConst → UInt64) (classes : List (List MutConst))
+    (lt : UInt64 × Nat × List MutConst → UInt64 × Nat × List MutConst → Bool) :
+    (((classes.toArray.zipIdx.map fun (cls, i) => (key cls, i, cls)).qsort lt).map
+        (·.2.2)).toList.Perm classes := by
+  have sorted := Canon.qsort_perm (classes.toArray.zipIdx.map fun (cls, i) => (key cls, i, cls)) lt
+  have mapped := (Array.perm_iff_toList_perm.1 sorted).map (fun entry => entry.2.2)
+  rw [← Array.toList_map, ← Array.toList_map, Array.map_map] at mapped
+  refine mapped.trans ?_
+  have same : ((fun entry : UInt64 × Nat × List MutConst => entry.2.2) ∘
+      fun (pair : List MutConst × Nat) => (key pair.1, pair.2, pair.1)) = Prod.fst := by
+    funext pair; rfl
+  rw [same, Array.zipIdx_map_fst, List.toList_toArray]
+
+/-- **`orderRecursorFamily` permutes the classes**: it returns them unchanged
+unless every class is a recursor class, and otherwise sorts them by their
+family position (`Canon.qsort_perm`). -/
+theorem orderRecursorFamily_perm (classes : List (List MutConst)) :
+    (orderRecursorFamily classes).Perm classes := by
+  unfold orderRecursorFamily
+  split
+  · exact List.Perm.refl _
+  · exact keyed_perm _ classes _
+
+/-- The reordered classes partition the members the sorted classes did. -/
+theorem ordered_partition {classes : List (List MutConst)} {members : List MutConst}
+    (partition : Canon.Partition classes members) :
+    Canon.Partition (orderRecursorFamily classes) members :=
+  have perm := orderRecursorFamily_perm classes
+  ⟨perm.flatten.trans partition.1, fun members present => partition.2 members (perm.mem_iff.1 present)⟩
+
+/-- The reordered classes agree in shape where the sorted classes did. -/
+theorem ordered_agree {classes : List (List MutConst)} (agree : MutualProjections.ClassesAgree classes) :
+    MutualProjections.ClassesAgree (orderRecursorFamily classes) :=
+  fun members present => agree members ((orderRecursorFamily_perm classes).mem_iff.1 present)
+
+/-- **A sorted, family-ordered and compiled mutual block is a correct
+artifact, with no class premise** (N-READS, N5 a): the driver's steps for a
+mutual block, `sortConsts`, `orderRecursorFamily` and `compileMutualBlock`
+(`Ix.CompileDriver.compileBlockWithAux`), under an environment without
+call-site plans and from a state whose tables are on the wire, return classes
+that partition the members and a block that decodes exactly, whose
+projections decode exactly, and whose rows read, in any store holding the
+block, as the classes' source-indexed references; given members whose member
+and constructor names are pairwise distinct and whose constructors declare
+their positions. The classes are the family-ordered ones, a permutation of
+the sorted ones (`orderRecursorFamily_perm`), so `mutual_correct`'s premises
+carry over from `sort_classes`. The Pass 3 hooks (CQ4.2 d) act before the
+block (`prepareBlock`, the identity on a block that references no image head)
+and after its aux tail (`editChangedBlock`, on a changed block only); this is
+the step between them. -/
+theorem mutual_ordered_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (members : List MutConst) {before after : BlockState} {output : BlockResult}
+    (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
+    (keys : Canon.KeysDistinct members)
+    (positions : ∀ member ∈ members, MutualProjections.ConstructorPositions member)
+    (ran : rawRun (sortConsts members >>= fun sorted => compileMutualBlock (orderRecursorFamily sorted))
+      context before = (.ok output, after)) :
+    ∃ classes, Canon.Partition classes members ∧
+      Ix.Sharing.Verify.BlockResultCodecWF output ∧ MutualProjections.ProjectionWire output ∧
+      ∀ store : Store, store output.blockAddr = some output.block →
+        readRows store (logicalRows output.projections) = expectedReferences output.blockAddr classes := by
+  obtain ⟨sorted, middle, sortRan, compiled⟩ := bind_ok ran
+  obtain ⟨rfl, -⟩ := ProjectionLayout.sort_run members sortRan
+  obtain ⟨partition, agree⟩ := MutualProjections.sort_classes members keys context middle
+    sorted middle sortRan
+  have ordered := ordered_partition partition
+  refine ⟨orderRecursorFamily sorted, ordered, mutual_correct context free _ wire ordered.2
+    (ordered_agree agree) (fun source present => positions source (ordered.1.mem_iff.1 present)) compiled⟩
+
 end Ix.CompileCert.MutualArtifact

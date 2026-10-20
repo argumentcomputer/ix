@@ -29,9 +29,10 @@ Ported from the donor `a9cf3607`, adapted: `Emission.Yields` for the
 donor's `DeclarationHeaders.Returns`, `Address.admissionHash` for
 `Address.blake3`, the write-back facts through `erase` (R07-17), no
 `timedC`/`PhaseTimers`, and the mutual block's plan-head audit passed over
-(a successful run passed it). Not ported: the donor's `ordered_nonempty`,
-whose subject `orderRecursorFamily` is not on this tree (batch 3). Since
-CQ2.18 the class sort is `Ix.Compile.Canon.sortClasses Rules.compiler`,
+(a successful run passed it). The donor's `ordered_nonempty` (about
+`orderRecursorFamily`) is `MutualArtifact.ordered_partition`, from the
+family order being a permutation (`orderRecursorFamily_perm`, N-READS N5 a).
+Since CQ2.18 the class sort is `Ix.Compile.Canon.sortClasses Rules.compiler`,
 whose guard is what `sorted_nonempty` reads. -/
 
 namespace Ix.CompileCert.ProjectionLayout

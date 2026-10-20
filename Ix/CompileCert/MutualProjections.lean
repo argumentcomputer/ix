@@ -28,8 +28,10 @@ R9b discharges `ClassesAgree` for the compiler's classes (`sort_classes`):
 the donor's comparator lemmas (`ctor_compare_index` … `production_classes`)
 become `match_shape` over `Canon.ConstMatch` and `sorted_classes_agree` over
 `Canon.sortClasses_match` (CS-01's coarsest partition and `eq` soundness,
-re-derived for `Ix.Compile.Canon.sortClasses` since CQ2.18). The donor's
-`orderRecursorFamily` step has no subject on this tree. -/
+re-derived for `Ix.Compile.Canon.sortClasses` since CQ2.18). The driver's
+`orderRecursorFamily` step between the sort and the compile permutes the
+classes, so the premises carry over (`MutualArtifact.mutual_ordered_correct`,
+N-READS N5 a). -/
 
 namespace Ix.CompileCert.MutualProjections
 

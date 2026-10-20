@@ -370,12 +370,14 @@ def projectionRoots : Array Lean.Name :=
 /-- The compiler's classes agree (R9b): its sort is `sortClasses
 Rules.compiler` on an address map of the unchanged state, two members of one
 class match and so have one shape, and a sorted and compiled mutual block is
-a correct artifact with no class premise. -/
+a correct artifact with no class premise, also in the driver's recursor-family
+order (N5 a). -/
 def mutualClassRoots : Array Lean.Name :=
   (#[`constAddrLookup_run, `sort_run].map (`Ix.CompileCert.ProjectionLayout ++ ·)) ++
   (#[`ctor_match_indices, `match_shape, `sorted_classes_agree,
     `sort_classes].map (`Ix.CompileCert.MutualProjections ++ ·)) ++
-  (#[`mutual_sorted_correct].map (`Ix.CompileCert.MutualArtifact ++ ·))
+  (#[`mutual_sorted_correct, `orderRecursorFamily_perm, `ordered_partition, `ordered_agree,
+    `mutual_ordered_correct].map (`Ix.CompileCert.MutualArtifact ++ ·))
 
 /-- The reader's recursor index (CT-16, R10a, re-derived for D8): the
 builder's two loops and one candidate inversion, validated block shapes,
