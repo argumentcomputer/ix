@@ -91,4 +91,56 @@ theorem readDefinition_key {cx : Ctx md} {st : State md} {heights : CName md →
         simp only [hv] at h
         exact ⟨k, rfl, lowerDefinition_names h⟩
 
+
+/-! ## The inductive block's lowering -/
+
+/-- An accepted branch of an `if` in `ReadM` is an accepted branch. -/
+theorem ite_ok {α : Type} {c : Prop} [Decidable c] {x y : ReadM α} {r : α}
+    (h : (if c then x else y) = .ok r) : x = .ok r ∨ y = .ok r := by
+  by_cases hc : c
+  · exact .inl (by simpa [hc] using h)
+  · exact .inr (by simpa [hc] using h)
+
+/-- **A lowered inductive block ends in its own declaration**: the modeller's
+records (as many as `generated` says), then the block's `indDecl`, which
+declares the block's types', constructors' and recursors' names, in that
+order. -/
+theorem lowerInductive_decls {st : State md} {rb : BlockRead md} {r : Read md}
+    (h : lowerInductive st rb = .ok r) :
+    ∃ gens d, r.decls.toList = gens ++ [d] ∧ r.generated = gens.length ∧
+      d.names = rb.types.toList.map (·.1.name) ++ rb.ctors.toList.map (·.1.name) ++
+        rb.recs.toList.map (·.1.name) := by
+  obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
+  have names : ∀ (block : List (Ix.Kernel.ConstantInfo md)),
+      block = types.toList.map (fun x => Ix.Kernel.ConstantInfo.indInfo x.1 {}) ++
+        ctors.toList.map (fun x => Ix.Kernel.ConstantInfo.ctorInfo x.1 x.2.1 x.2.2) ++
+        recs.toList.map (fun x => Ix.Kernel.ConstantInfo.recInfo x.1
+          (x.2.1.params + x.2.1.motives + x.2.1.minors + x.2.1.indices)
+          (x.2.1.params + x.2.1.motives + x.2.1.minors) x.2.2) →
+      (Ix.Kernel.Declaration.indDecl block nPd).names =
+        types.toList.map (·.1.name) ++ ctors.toList.map (·.1.name) ++ recs.toList.map (·.1.name) := by
+    intro block hb
+    subst hb
+    simp only [Ix.Kernel.Declaration.names, List.map_append, List.map_map]
+    rfl
+  unfold lowerInductive at h
+  simp only [ite_not, bne_iff_ne, ne_eq] at h
+  split at h
+  all_goals
+    rcases ite_ok h with h | h
+    all_goals first
+      | (obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h)
+      | skip
+    all_goals
+      rcases ite_ok h with h | h
+      · split at h
+        · simp [declined, throw, throwThe, MonadExceptOf.throw] at h
+        · rename_i gen _
+          simp only [pure, Except.pure, Except.ok.injEq] at h
+          subst h
+          exact ⟨gen, _, by simp, rfl, names _ rfl⟩
+      · simp only [pure, Except.pure, Except.ok.injEq] at h
+        subst h
+        exact ⟨[], _, rfl, rfl, names _ rfl⟩
+
 end Ix.Cert.ReaderUnits
