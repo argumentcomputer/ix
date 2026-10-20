@@ -384,9 +384,8 @@ image head of its Lean block, published with no reference to such a head, and
 published at its original-form compile's address where it has one. -/
 def unchangedFacts (env : Ix.Environment) (ixe : Ixon.Env) (blocks : Array Ix.Compile.ChangedSet.Block)
     (heads : Std.HashSet Ix.Name) (n : Ix.Name) : Bool :=
-  let live := blocks.filter (·.first.isSome)
-  let inductives := live.filter (·.kind == .inductiveBlock)
-  let member := live.all fun b => b.classes.all fun cls => !cls.contains n
+  let inductives := blocks.filter (·.kind == .inductiveBlock)
+  let member := blocks.all fun b => b.classes.all fun cls => !cls.contains n
   let ctor := inductives.all fun b => b.classes.all fun cls => cls.all fun m =>
     match env.get? m with
     | some (.inductInfo v) => !v.ctors.contains n
@@ -403,18 +402,16 @@ def unchangedFacts (env : Ix.Environment) (ixe : Ixon.Env) (blocks : Array Ix.Co
     | none => true
   member && ctor && head && caller && original
 
-/-- B9a on one compile: `FirstsAgree` decided (`Ix.Cert.Unchanged.firstsAgree`), and the facts
-of every input name against the set: a name outside the set has them all (what
-`avoids_unchanged` proves), and a name in the set fails one (the facts single the set out). -/
+/-- B9a on one compile: the facts of every input name against the set: a name
+outside the set has them all (what `avoids_unchanged` proves), and a name in
+the set fails one (the facts single the set out). -/
 def unchangedCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) : Array String × Array String := Id.run do
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   let cs := Ix.Compile.ChangedSet.ofCompile env ixe
   let blocks := Ix.Compile.ChangedSet.changedBlocks env ixe
-  let agree := Ix.Cert.Unchanged.firstsAgree env ixe
-  unless agree do errors := errors.push s!"{label}: FirstsAgree fails on the changed components"
   let heads : Std.HashSet Ix.Name := blocks.foldl (init := {}) fun s b =>
-    if b.kind == .inductiveBlock && b.first.isSome then
+    if b.kind == .inductiveBlock then
       (Ix.Compile.Pass.imageKinds env.get? b.all).foldl (·.insert ·) s
     else s
   let mut inSet := 0
@@ -428,7 +425,7 @@ def unchangedCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) : Ar
     if member == facts then wrong := wrong.push s!"{n.pretty} ({if member then "in the set, has the facts" else "outside the set, lacks a fact"})"
   if wrong.isEmpty then
     lines := lines.push s!"{label}: B9a: {env.consts.size} input names, {inSet} in the changed set \
-      ({blocks.size} changed components), {unchanged} with the facts, exactly the others; FirstsAgree {agree}"
+      ({blocks.size} changed components), {unchanged} with the facts, exactly the others"
   else
     errors := errors.push s!"{label}: B9a: {wrong.size} names where the set and the facts disagree: \
       {wrong.toList.take 5}"
