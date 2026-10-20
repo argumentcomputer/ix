@@ -15,6 +15,7 @@ import Ix.Cert.NoCtor
 import Ix.Cert.Quotient
 import Ix.Cert.LiteralOrder
 import Ix.Cert.Unchanged
+import Ix.Cert.ReaderUnits
 
 /-! # The certification statements, frozen
 
@@ -4388,3 +4389,28 @@ fun ixe =>
     ixe.named.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.mutsMismatch
+
+/-! ## S1's units, (R1): each record's and each group's lowering
+
+`Ix.Cert.ReaderUnits`: the stream the Ixon reader decodes is its records'
+lowerings concatenated, one per record (`readRecords_units`), and the Source
+ingress's is its scheduled groups' lowerings (`leanIngress_units`). Each
+lowering is the modeller's records then one declaration, or only
+declarations, and every declaration past the modeller's names only the
+record's member keys (`MemberKeyOf`) or the group's ingress keys
+(`GroupKeyOf`). Neither is ever derived, so each lowering is empty or ends in
+a declaration that is not generated (`Lowering.closed`, `LoweringBy.closed`):
+what IxC's units check needs of each side to read the units as the lowerings'
+pieces. Nothing about `InModel.generate`'s output is used. -/
+
+/-- info: [cert-audit] reader units: 25 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "reader units"
+    (#[`stream_lowerings, `readRecords_lowerings, `readDefinition_key, `lowerInductive_decls,
+      `readInductive_lowering, `readRecord_lowering, `readRecords_units, `bindingsOf_keyed,
+      `contextWith_keyed, `memberKey_role_or_id, `MemberKeyOf.not_derived, `LoweringBy.closed,
+      `Lowering.closed, `LoweringBy.map, `defOrder_lt, `convertInductive_keys, `convertDefinitions_keys,
+      `convert_keys, `lower_lowering, `canonDecl_names, `lowerAll_lowerings, `scheduleOf_ok,
+      `graph_converted_ok, `leanIngress_units, `GroupKeyOf.not_derived].map (`Ix.Cert.ReaderUnits ++ ·))
