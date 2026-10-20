@@ -34,12 +34,15 @@ the block (`Admits`: the block's group converts). `mkIndc_positions` gives
 R9a's `MutualProjections.ConstructorPositions` for the compiler's mutual
 members.
 
-**What remains** (N-READS): the self references (`scope`, `ctorScope`):
-that the family's name reads as its key (`names`, R13's published maps),
-and that no constructor of the family occurs in the family's own types. The
-ingress does not check the latter; the fold does, when it types the
-inductive before its constructors exist, so it is a fact of Source
-acceptance through `Ix.Kernel.Cached.checkDecls`, not of the ingress. And
+**What remains** (N-READS): the self references: that the family's name
+is related to its key (`selfKey`, R13's published maps), and that no
+constructor of the family occurs in the family's own types
+(`InductiveReading.NoCtorIn`, N4). The ingress does not check the latter; the
+fold does, on the native route (the former is typed before, and each
+constructor against, an environment with no constructor), and on the modeled
+route for the former, while a modeled constructor's type is typed with the
+earlier constructors installed (IxC lane: a guard is queued; then N4 (b)
+proves `NoCtorIn` from Source acceptance). And
 Source acceptance (`checkSource … = .ok _`) reaches a group's conversion
 only through the schedule (`Ix.LeanIngress.scheduleOf`), whose order
 (`orderOf`) is a `while` loop and so has no unfolding: `Admits` is the
@@ -925,7 +928,8 @@ position and telescope premises discharged): the inductive is a member of a
 block Source mode admits (`Admits`), the compile environment resolves its
 constructor names as Source's input does, and the rest is
 `inductive_reads`' (the self references stay premises: the family's own
-name read as its key, and no constructor of the family in its types). -/
+name related to its key, `selfKey`, and no constructor of the family in its
+types, `NoCtorIn`). -/
 theorem inductive_reads_source (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names)
@@ -940,10 +944,8 @@ theorem inductive_reads_source (context : CompileEnv × BlockEnv) (free : contex
     (order : shape.order = #[0]) {key : CName md} (keyed : cx.memberKey (.member output.blockAddr 0) = .ok key)
     (ctorKey : Nat → CName md)
     (ctorKeyed : ∀ j, j < constructors.size → cx.memberKey (.ctor output.blockAddr 0 j) = .ok (ctorKey j))
-    (scope : ConstsSatisfy (SelfName (familyBlock source constructors context)
-      (inductiveSelf cx output.blockAddr) names) source.cnst.type)
-    (ctorScope : ∀ ctor ∈ constructors.toList, ConstsSatisfy (SelfName (familyBlock source constructors context)
-      (inductiveSelf cx output.blockAddr) names) ctor.cnst.type)
+    (selfKey : names source.cnst.name key) (typeNoCtor : NoCtorIn constructors source.cnst.type)
+    (ctorNoCtor : ∀ ctor ∈ constructors.toList, NoCtorIn constructors ctor.cnst.type)
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.inductInfo source)) context before = (.ok output, after)) :
     BlockResultCodecWF output ∧ ProjectionLayout.InductiveLayout source constructors output ∧
@@ -956,7 +958,7 @@ theorem inductive_reads_source (context : CompileEnv × BlockEnv) (free : contex
   obtain ⟨safe, ctorSafe, positions, arity⟩ :=
     source_premises context free admits member sourceFound agree found
   exact inductive_reads cx names σ bindings context free aligned external source constructors found state indexed
-    order keyed ctorKey ctorKeyed scope ctorScope safe ctorSafe positions arity clean wire ran
+    order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor safe ctorSafe positions arity clean wire ran
 
 end Reading
 

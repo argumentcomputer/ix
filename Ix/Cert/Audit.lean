@@ -3159,8 +3159,11 @@ keys with related types, and the recursors the reader reads from their own
 records (`readRecursors`, whose correspondence with the compiled recursors
 is R10b); given the index shaping the block at member 0 (derived from the
 reader's own index in `inductive_reads_indexed`), the keys reading, the
-self references in scope, and a well-formed source. Without a recursor in
-the input the block declines. Every lemma behind them is audited in
+self references (the family's name related to its key, R13's half, and no
+constructor of the family in its types, `NoCtorIn`, N-READS N4 a: tested on
+Init+Std by `cert-noctor-initstd` until N4 b proves it), and a well-formed
+source. Without a recursor in the input the block declines. Every lemma
+behind them is audited in
 `Ix.CompileCert.ReadingAudit`. -/
 
 /-- info: def Ix.CompileCert.InductiveReading.sourceBlock : {md : Ix.Kernel.Mode} →
@@ -3185,6 +3188,13 @@ fun {md} key ctorKey type ctorTypes source constructors recs =>
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.InductiveReading.sourceBlock
 
+/-- info: def Ix.CompileCert.InductiveReading.NoCtorIn : Array Ix.ConstructorVal → Ix.Expr → Prop :=
+fun constructors =>
+  Ix.CompileCert.ExpressionState.ConstsSatisfy fun name =>
+    ∀ (ctor : Ix.ConstructorVal), ctor ∈ constructors.toList → name ≠ ctor.cnst.name -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.InductiveReading.NoCtorIn
+
 /-- info: @Ix.CompileCert.InductiveReading.inductive_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
@@ -3205,55 +3215,48 @@ fun {md} key ctorKey type ctorTypes source constructors recs =>
                         (∀ (j : Nat),
                             j < constructors.size →
                               cx.memberKey (Ix.Kernel.ConstRef.ctor output.blockAddr 0 j) = Except.ok (ctorKey j)) →
-                          Ix.CompileCert.ExpressionState.ConstsSatisfy
-                              (Ix.CompileCert.ExpressionState.SelfName
-                                (Ix.CompileCert.InductiveReading.familyBlock source constructors context)
-                                (Ix.CompileCert.InductiveReading.inductiveSelf cx output.blockAddr) names)
-                              source.cnst.type →
-                            (∀ (ctor : Ix.ConstructorVal),
-                                ctor ∈ constructors.toList →
-                                  Ix.CompileCert.ExpressionState.ConstsSatisfy
-                                    (Ix.CompileCert.ExpressionState.SelfName
-                                      (Ix.CompileCert.InductiveReading.familyBlock source constructors context)
-                                      (Ix.CompileCert.InductiveReading.inductiveSelf cx output.blockAddr) names)
-                                    ctor.cnst.type) →
-                              source.isUnsafe = false →
-                                (∀ (ctor : Ix.ConstructorVal), ctor ∈ constructors.toList → ctor.isUnsafe = false) →
-                                  (∀ (j : Nat) (inside : j < constructors.size), constructors[j].cidx = j) →
-                                    (∀ (ctor : Ix.ConstructorVal),
-                                        ctor ∈ constructors.toList →
-                                          ∃ types body,
-                                            Ix.CompileCert.ReaderSourceSpines.sourceStrip
-                                                  (source.numParams + ctor.numFields) ctor.cnst.type =
-                                                some (types, body) ∧
-                                              Ix.CompileCert.ReaderSourceSpines.SourceNonForall body) →
-                                      Ix.CompileCert.Emission.Clean bindings before →
-                                        Ix.Sharing.Verify.BlockWireTablesWF before →
-                                          Ix.CompileCert.rawRun
-                                                (Ix.CompileM.compileConstantInfo (Ix.ConstantInfo.inductInfo source))
-                                                context before =
-                                              (Except.ok output, after) →
-                                            Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                                              Ix.CompileCert.ProjectionLayout.InductiveLayout source constructors
-                                                  output ∧
-                                                ∃ type ctorTypes,
-                                                  Ix.CompileCert.InductiveReading.related names σ source
-                                                      source.cnst.type type ∧
-                                                    List.Forall₂
-                                                        (Ix.CompileCert.InductiveReading.related names σ source)
-                                                        (List.map (fun x => x.cnst.type) constructors.toList)
-                                                        ctorTypes ∧
-                                                      Ix.Kernel.Reader.readRecord
-                                                          (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after) state
-                                                          output.blockAddr output.block =
-                                                        do
-                                                        let recs ←
-                                                          Ix.CompileCert.InductiveReading.readRecursors
-                                                              (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
-                                                              (List.range source.cnst.levelParams.size) shape.recs
-                                                        Ix.Kernel.Reader.lowerInductive state
-                                                            (Ix.CompileCert.InductiveReading.sourceBlock key ctorKey
-                                                              type ctorTypes source constructors recs) -/
+                          names source.cnst.name key →
+                            Ix.CompileCert.InductiveReading.NoCtorIn constructors source.cnst.type →
+                              (∀ (ctor : Ix.ConstructorVal),
+                                  ctor ∈ constructors.toList →
+                                    Ix.CompileCert.InductiveReading.NoCtorIn constructors ctor.cnst.type) →
+                                source.isUnsafe = false →
+                                  (∀ (ctor : Ix.ConstructorVal), ctor ∈ constructors.toList → ctor.isUnsafe = false) →
+                                    (∀ (j : Nat) (inside : j < constructors.size), constructors[j].cidx = j) →
+                                      (∀ (ctor : Ix.ConstructorVal),
+                                          ctor ∈ constructors.toList →
+                                            ∃ types body,
+                                              Ix.CompileCert.ReaderSourceSpines.sourceStrip
+                                                    (source.numParams + ctor.numFields) ctor.cnst.type =
+                                                  some (types, body) ∧
+                                                Ix.CompileCert.ReaderSourceSpines.SourceNonForall body) →
+                                        Ix.CompileCert.Emission.Clean bindings before →
+                                          Ix.Sharing.Verify.BlockWireTablesWF before →
+                                            Ix.CompileCert.rawRun
+                                                  (Ix.CompileM.compileConstantInfo (Ix.ConstantInfo.inductInfo source))
+                                                  context before =
+                                                (Except.ok output, after) →
+                                              Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                                                Ix.CompileCert.ProjectionLayout.InductiveLayout source constructors
+                                                    output ∧
+                                                  ∃ type ctorTypes,
+                                                    Ix.CompileCert.InductiveReading.related names σ source
+                                                        source.cnst.type type ∧
+                                                      List.Forall₂
+                                                          (Ix.CompileCert.InductiveReading.related names σ source)
+                                                          (List.map (fun x => x.cnst.type) constructors.toList)
+                                                          ctorTypes ∧
+                                                        Ix.Kernel.Reader.readRecord
+                                                            (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
+                                                            state output.blockAddr output.block =
+                                                          do
+                                                          let recs ←
+                                                            Ix.CompileCert.InductiveReading.readRecursors
+                                                                (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
+                                                                (List.range source.cnst.levelParams.size) shape.recs
+                                                          Ix.Kernel.Reader.lowerInductive state
+                                                              (Ix.CompileCert.InductiveReading.sourceBlock key ctorKey
+                                                                type ctorTypes source constructors recs) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.InductiveReading.inductive_reads
 

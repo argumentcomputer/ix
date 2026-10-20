@@ -185,6 +185,11 @@ theorem constsSatisfy_of_forall {P : Ix.Name → Prop} (all : ∀ name, P name) 
   intro e
   induction e <;> simp_all [ConstsSatisfy]
 
+theorem constsSatisfy_mono {P Q : Ix.Name → Prop} (implies : ∀ name, P name → Q name) :
+    ∀ e, ConstsSatisfy P e → ConstsSatisfy Q e := by
+  intro e
+  induction e <;> simp_all [ConstsSatisfy]
+
 /-! ## The state invariant -/
 
 /-- The universe invariants, the reference index, and the binding view of

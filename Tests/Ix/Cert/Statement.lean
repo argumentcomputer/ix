@@ -205,6 +205,40 @@ def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
     return (#[s!"{label}: rolesBound fails: {bad.length} role(s) not at the table's address; \
       first: {(bad.take 5).map Ix.Cert.Roles.roleName}"], #[])
 
+/-- N-READS N4 (a): no constructor of a family occurs in the family's type or in
+its constructors' types (`InductiveReading.NoCtorIn`, through its check
+`noCtorIn` and `noCtorIn_iff`), for every inductive of `env`. It is
+`inductive_reads`' premise, tested here until N4 (b) proves it from Source
+acceptance. The check is not vacuous: a constructor's own constant is refused. -/
+def noCtorCases (label : String) (env : Ix.Environment) : IO (Array String × Array String) := do
+  let mut errors : Array String := #[]
+  let mut families := 0
+  let mut constructors := 0
+  let mut refused := false
+  for (_, ci) in env.consts.toArray do
+    let .inductInfo v := ci | continue
+    let ctors : Array Ix.ConstructorVal := v.ctors.filterMap fun n =>
+      match env.consts.get? n with
+      | some (.ctorInfo c) => some c
+      | _ => none
+    if ctors.size != v.ctors.size then
+      errors := errors.push s!"{v.cnst.name}: a constructor is not in the environment"
+      continue
+    families := families + 1
+    constructors := constructors + ctors.size
+    unless Ix.CompileCert.InductiveReading.noCtorIn ctors v.cnst.type &&
+        ctors.all (fun c => Ix.CompileCert.InductiveReading.noCtorIn ctors c.cnst.type) do
+      errors := errors.push s!"{v.cnst.name}: a constructor of the family occurs in its types"
+    if let some c := ctors[0]? then
+      refused := refused || !Ix.CompileCert.InductiveReading.noCtorIn ctors (Ix.Expr.mkConst c.cnst.name #[])
+  unless refused do errors := errors.push "the check refuses no constructor's own constant"
+  let shown := (errors.toList.take 5).map (s!"{label}: " ++ ·)
+  if errors.isEmpty then
+    return (#[], #[s!"{label}: NoCtorIn holds for all {families} inductives and their {constructors} \
+      constructors; a constructor's own constant is refused"])
+  else
+    return (shown.toArray.push s!"{label}: {errors.size} failure(s)", #[])
+
 /-- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on
 `consts`: errors, and lines for the report. `compile` is `compileReport`'s
 first component (`Ix.Cert.compile_eq_ok`); the report's failures are checked
@@ -576,5 +610,14 @@ def rolesInitStdSuite : List TestSeq := [
         IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
       finally IO.FS.removeDirAll dir
     rolesCases "Init+Std" env ixe) 1]
+
+/-- `cert-noctor-initstd` (ignored): N-READS N4 (a)'s premise `NoCtorIn` on every inductive of
+Init+Std. -/
+def noCtorInitStdSuite : List TestSeq := [
+  report "no constructor of a family in its types, on Init+Std (N-READS N4 a)" (do
+    let leanEnv ← getCompileEnv #[`Init, `Std]
+    let env ← IO.lazyPure fun _ =>
+      Tests.Ix.Kernel.SourceIngressStep.canon leanEnv.constants.toList.toArray 16
+    noCtorCases "Init+Std" env) 1]
 
 end Tests.Ix.Cert.Statement

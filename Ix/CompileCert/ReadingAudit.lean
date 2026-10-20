@@ -175,6 +175,7 @@ effects, one step per constructor, the spine's fold, the memo and the top
 induction, and the correspondence with Source mode's reading. -/
 def expressionRoots : Array Lean.Name :=
   #[`lookupConstAddr_run, `lookupConstAddr_state, `lookupConstAddr_correct, `constsSatisfy_of_forall,
+    `constsSatisfy_mono,
     `internRef_frame, `natural_go, `natural_toBytes, `string_toBytes, `extends_trans, `checked_error,
     `meaning_grows, `read_grows, `withoutExprMetadata_reader, `good_metadata, `checked_metadata,
     `internRef_good, `good_namesBlobs, `storeBlob_good, `compileName_good, `compileKVMap_good,
@@ -401,13 +402,15 @@ def indexRoots : Array Lean.Name :=
 R10a): the reader's inductive block as named steps, its loops on a
 one-member block, what the compiled family keeps of the source, and public
 dispatch composed with `readRecord` = `lowerInductive` of the source's
-`BlockRead`. -/
+`BlockRead`, its self references from `NoCtorIn` and the family's name related
+to its key (N-READS N4 a). -/
 def inductiveReadRoots : Array Lean.Name :=
   #[`readInductive_eq, `blockSelf_blobs, `readRecord_inductive, `indcs_singleton, `typeLoop, `ctorStep_ok,
     `ctorLoop_ok, `ctorClassLoop, `readRecord_singleton, `blockSelf_singleton, `erase_singleton,
     `headers_transfer, `family_headers, `familyInfo_headers, `erase_family, `piTeleLen_of_piTypes,
     `arity_of_related, `rootsRead_split, `ctorFacts_of, `ctorReads_source, `forall₂_map_left, `rootsRead_cons,
-    `inductive_reads, `inductive_reads_indexed,
+    `noCtorIn_iff, `familyCtx_lookup, `scope_of_noCtor, `inductive_reads,
+    `inductive_reads_indexed,
     `inductive_declines_unindexed].map (`Ix.CompileCert.InductiveReading ++ ·)
 
 /-- The shared loop lemmas (`Ix.CompileCert.Loop`): folds in `Id`, loops

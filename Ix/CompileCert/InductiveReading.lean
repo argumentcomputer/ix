@@ -1,6 +1,7 @@
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.DefinitionReading
 import Ix.CompileCert.ReaderSourceSpines
+import Ix.CompileCert.Canon.Ref
 
 /-! # Compiled standalone inductives are read back as their sources
 
@@ -541,6 +542,95 @@ theorem rootsRead_cons {reader : MemberReader md} {related : Ix.Expr → CExpr m
       SharingRoots.RootsRead reader related sources roots :=
   List.forall₂_cons.mp holds
 
+/-! ## No constructor of the family occurs (N-READS, N4)
+
+The reader reads a standalone family's types with only the inductive as its
+self (`inductiveSelf`), so a constructor of the family occurring in them
+would not read. `NoCtorIn` says none occurs; with the family's own name
+related to its key (R13's half), it gives `inductive_reads`' self-reference
+condition (`scope_of_noCtor`). -/
+
+/-- No constructor of the family occurs as a constant of `e`. -/
+def NoCtorIn (constructors : Array ConstructorVal) : Ix.Expr → Prop :=
+  ConstsSatisfy fun name => ∀ ctor ∈ constructors.toList, name ≠ ctor.cnst.name
+
+/-- `NoCtorIn` as a check (names compared structurally). -/
+def noCtorIn (constructors : Array ConstructorVal) : Ix.Expr → Bool
+  | .const name _ _ => constructors.all fun ctor => Ix.nameCompareExact name ctor.cnst.name != .eq
+  | .app f a _ => noCtorIn constructors f && noCtorIn constructors a
+  | .lam _ t b _ _ | .forallE _ t b _ _ => noCtorIn constructors t && noCtorIn constructors b
+  | .letE _ t v b _ _ => noCtorIn constructors t && noCtorIn constructors v && noCtorIn constructors b
+  | .proj _ _ e _ => noCtorIn constructors e
+  | .mdata _ e _ => noCtorIn constructors e
+  | _ => true
+
+theorem noCtorIn_iff (constructors : Array ConstructorVal) :
+    ∀ e, noCtorIn constructors e = true ↔ NoCtorIn constructors e := by
+  intro e
+  induction e with
+  | const name _ _ =>
+    show (constructors.all fun ctor => Ix.nameCompareExact name ctor.cnst.name != .eq) = true ↔
+      ∀ ctor ∈ constructors.toList, name ≠ ctor.cnst.name
+    rw [Array.all_eq_true_iff_forall_mem]
+    constructor
+    · intro absent ctor present same
+      have h := absent ctor (Array.mem_toList_iff.1 present)
+      rw [same, Std.ReflCmp.compare_self (cmp := Ix.nameCompareExact)] at h
+      exact absurd h (by decide)
+    · intro absent ctor present
+      apply bne_iff_ne.2
+      intro same
+      exact absent ctor (Array.mem_toList_iff.2 present) (Std.LawfulEqCmp.eq_of_compare same)
+  | app f a _ ihf iha =>
+    simp only [noCtorIn, NoCtorIn, ConstsSatisfy, Bool.and_eq_true] at ihf iha ⊢
+    rw [ihf, iha]
+  | lam _ t b _ _ iht ihb =>
+    simp only [noCtorIn, NoCtorIn, ConstsSatisfy, Bool.and_eq_true] at iht ihb ⊢
+    rw [iht, ihb]
+  | forallE _ t b _ _ iht ihb =>
+    simp only [noCtorIn, NoCtorIn, ConstsSatisfy, Bool.and_eq_true] at iht ihb ⊢
+    rw [iht, ihb]
+  | letE _ t v b _ _ iht ihv ihb =>
+    simp only [noCtorIn, NoCtorIn, ConstsSatisfy, Bool.and_eq_true] at iht ihv ihb ⊢
+    rw [iht, ihv, ihb, and_assoc]
+  | proj _ _ e _ ih => simpa only [noCtorIn, NoCtorIn, ConstsSatisfy] using ih
+  | mdata _ e _ ih => simpa only [noCtorIn, NoCtorIn, ConstsSatisfy] using ih
+  | _ => simp [noCtorIn, NoCtorIn, ConstsSatisfy]
+
+/-- A name the family's mutual context maps, other than a constructor's, is
+the inductive's, at slot 0. -/
+theorem familyCtx_lookup (source : InductiveVal) (constructors : Array ConstructorVal) {query : Ix.Name}
+    {index : Nat} (absent : ∀ ctor ∈ constructors.toList, query ≠ ctor.cnst.name)
+    (found : (buildInductiveMutCtx source constructors).get? query = some index) :
+    query = source.cnst.name ∧ index = 0 := by
+  have step : ∀ (entries : List (ConstructorVal × Nat)) (ctx : Ix.MutCtx),
+      (∀ entry ∈ entries, query ≠ entry.1.cnst.name) →
+      (entries.foldl (fun ctx entry => ctx.insert entry.1.cnst.name (entry.2 + 1)) ctx).get? query =
+        ctx.get? query := by
+    intro entries
+    induction entries with
+    | nil => intro ctx _; rfl
+    | cons entry rest ih =>
+      intro ctx outside
+      rw [List.foldl_cons, ih _ (fun e present => outside e (List.mem_cons_of_mem _ present))]
+      rw [Std.TreeMap.get?_eq_getElem?, Std.TreeMap.get?_eq_getElem?, Std.TreeMap.getElem?_insert]
+      have different : Ix.nameCompareExact entry.1.cnst.name query ≠ .eq := by
+        intro same
+        exact outside entry List.mem_cons_self (Std.LawfulEqCmp.eq_of_compare same).symm
+      simp only [different, ↓reduceIte]
+  have unfolded : buildInductiveMutCtx source constructors =
+      constructors.zipIdx.foldl (fun ctx entry => ctx.insert entry.1.cnst.name (entry.2 + 1))
+        ((Std.TreeMap.empty : Ix.MutCtx).insert source.cnst.name 0) := by
+    simp [buildInductiveMutCtx]
+  rw [unfolded, ← Array.foldl_toList, step _ _ (fun entry present => by
+    rw [Array.mem_toList_iff] at present
+    have member : entry.1 ∈ constructors := by
+      have mapped := Array.mem_map_of_mem (f := Prod.fst) present
+      rwa [Array.zipIdx_map_fst] at mapped
+    exact absent entry.1 (Array.mem_toList_iff.2 member))] at found
+  exact DefinitionReading.singleton_lookup source.cnst.name query index found |>.imp
+    Std.LawfulEqCmp.eq_of_compare id
+
 /-! ## Compiled inductives read back -/
 
 section Reading
@@ -558,6 +648,20 @@ abbrev familyBlock (source : InductiveVal) (constructors : Array ConstructorVal)
     (context : CompileEnv × BlockEnv) : BlockEnv :=
   (EmissionDispatch.familyContext source constructors (EmissionDispatch.singletonContext source.cnst.name context)).2
 
+/-- **The self references are in scope** when no constructor of the family
+occurs (`NoCtorIn`) and the family's own name is related to its key (R13's
+half): the only other name the family's mutual context maps is the
+inductive's, at the slot `inductiveSelf` reads as the key
+(`familyCtx_lookup`). -/
+theorem scope_of_noCtor (source : InductiveVal) (constructors : Array ConstructorVal)
+    (context : CompileEnv × BlockEnv) (owner : Address) {key : CName md}
+    (keyed : cx.memberKey (.member owner 0) = .ok key) (selfKey : names source.cnst.name key)
+    {e : Ix.Expr} (noCtor : NoCtorIn constructors e) :
+    ConstsSatisfy (SelfName (familyBlock source constructors context) (inductiveSelf cx owner) names) e :=
+  constsSatisfy_mono (fun _ absent index found => by
+      obtain ⟨rfl, rfl⟩ := familyCtx_lookup source constructors absent found
+      exact ⟨key, by simp [inductiveSelf, keyed], selfKey⟩) e noCtor
+
 /-- **A compiled standalone inductive is read back as its source**: public
 dispatch of an inductive, under an environment without call-site plans,
 from a clean state whose tables are on the wire, returns a block that decodes
@@ -568,10 +672,12 @@ constructors' types are readings related to the sources', and its
 recursors are what the reader's own loop reads from their records
 (`readRecursors`). Given: the constructors the dispatch resolves; the
 index shaping the block at member 0 (`inductive_reads_indexed` derives it
-from the reader's index); the keys reading; the self references in scope
-(the names the compiler resolves as the block's member read as its key,
-and no constructor of the family occurs in the types); and a well-formed
-source (safe, constructors at their positions, each constructor's type a
+from the reader's index); the keys reading; the self references: the
+family's own name related to its key (`selfKey`, R13's half) and no
+constructor of the family occurring in the types (`NoCtorIn`; N-READS N4:
+proved from Source acceptance once IxC's modeled route checks constructor
+types before the block's constructors exist, until then tested); and a
+well-formed source (safe, constructors at their positions, each constructor's type a
 telescope of the parameters and its fields). -/
 theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
@@ -583,10 +689,8 @@ theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.sur
     (order : shape.order = #[0]) {key : CName md} (keyed : cx.memberKey (.member output.blockAddr 0) = .ok key)
     (ctorKey : Nat → CName md)
     (ctorKeyed : ∀ j, j < constructors.size → cx.memberKey (.ctor output.blockAddr 0 j) = .ok (ctorKey j))
-    (scope : ConstsSatisfy (SelfName (familyBlock source constructors context)
-      (inductiveSelf cx output.blockAddr) names) source.cnst.type)
-    (ctorScope : ∀ ctor ∈ constructors.toList, ConstsSatisfy (SelfName (familyBlock source constructors context)
-      (inductiveSelf cx output.blockAddr) names) ctor.cnst.type)
+    (selfKey : names source.cnst.name key) (typeNoCtor : NoCtorIn constructors source.cnst.type)
+    (ctorNoCtor : ∀ ctor ∈ constructors.toList, NoCtorIn constructors ctor.cnst.type)
     (safe : source.isUnsafe = false) (ctorSafe : ∀ ctor ∈ constructors.toList, ctor.isUnsafe = false)
     (positions : ∀ j (inside : j < constructors.size), constructors[j].cidx = j)
     (arity : ∀ ctor ∈ constructors.toList, ∃ types body,
@@ -617,7 +721,10 @@ theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.sur
   obtain ⟨_, _, _, erased, roots⟩ := EmissionBlocks.familyInfo_correct cx id (inductiveSelf cx output.blockAddr)
     names σ bindings
     (EmissionDispatch.familyContext source constructors (EmissionDispatch.singletonContext source.cnst.name context))
-    free aligned external source constructors scope ctorScope clean compiled
+    free aligned external source constructors
+    (scope_of_noCtor cx names source constructors context output.blockAddr keyed selfKey typeNoCtor)
+    (fun ctor present => scope_of_noCtor cx names source constructors context output.blockAddr keyed selfKey
+      (ctorNoCtor ctor present)) clean compiled
   obtain ⟨target, info, indHeader, ctorHeaders⟩ :=
     familyInfo_headers source constructors _ before output after compiled
   obtain ⟨target', info', unsafeEq, ctorUnsafe⟩ := erase_family erased
@@ -671,10 +778,8 @@ theorem inductive_reads_indexed (context : CompileEnv × BlockEnv) (free : conte
     {key : CName md} (keyed : cx.memberKey (.member output.blockAddr 0) = .ok key)
     (ctorKey : Nat → CName md)
     (ctorKeyed : ∀ j, j < constructors.size → cx.memberKey (.ctor output.blockAddr 0 j) = .ok (ctorKey j))
-    (scope : ConstsSatisfy (SelfName (familyBlock source constructors context)
-      (inductiveSelf cx output.blockAddr) names) source.cnst.type)
-    (ctorScope : ∀ ctor ∈ constructors.toList, ConstsSatisfy (SelfName (familyBlock source constructors context)
-      (inductiveSelf cx output.blockAddr) names) ctor.cnst.type)
+    (selfKey : names source.cnst.name key) (typeNoCtor : NoCtorIn constructors source.cnst.type)
+    (ctorNoCtor : ∀ ctor ∈ constructors.toList, NoCtorIn constructors ctor.cnst.type)
     (safe : source.isUnsafe = false) (ctorSafe : ∀ ctor ∈ constructors.toList, ctor.isUnsafe = false)
     (positions : ∀ j (inside : j < constructors.size), constructors[j].cidx = j)
     (arity : ∀ ctor ∈ constructors.toList, ∃ types body,
@@ -692,7 +797,7 @@ theorem inductive_reads_indexed (context : CompileEnv × BlockEnv) (free : conte
   have order := ReaderIndex.compiled_order context free source ran cx.store records shape stored
     (indexBuilt ▸ indexed)
   exact inductive_reads cx names σ bindings context free aligned external source constructors found state indexed
-    order keyed ctorKey ctorKeyed scope ctorScope safe ctorSafe positions arity clean wire ran
+    order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor safe ctorSafe positions arity clean wire ran
 
 /-- **A compiled inductive with no recursor in the input declines.** -/
 theorem inductive_declines_unindexed (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
