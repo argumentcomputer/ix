@@ -3,6 +3,7 @@ import IxC.Kernel.MainTheorem
 import IxC.Kernel.Verify.Cached.MainC
 import IxC.Kernel.Verify.Tier
 import IxC.Kernel.Ixon.Values
+import Ix.LeanIngress.Rename
 
 /-! # The theorems of the Source-mode check
 

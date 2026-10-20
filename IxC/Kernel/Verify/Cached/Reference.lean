@@ -93,6 +93,11 @@ def AcceptsRef (μ : CheckMode) (ev : Evidences md) (ds : List (Declaration md))
     Prop :=
   ∃ F, checkDeclsPure μ (fueledOps μ F) ev ds = .ok env
 
+/-- Reference acceptance, unfolded (for modules that cannot see its body). -/
+theorem AcceptsRef.iff {ds : List (Declaration md)} {env : Env md} :
+    AcceptsRef μ ev ds env ↔ ∃ F, checkDeclsPure μ (fueledOps μ F) ev ds = .ok env :=
+  Iff.rfl
+
 /-- **A reference accept determines its environment.** -/
 theorem AcceptsRef.unique {ds : List (Declaration md)} {env₁ env₂ : Env md}
     (h₁ : AcceptsRef μ ev ds env₁) (h₂ : AcceptsRef μ ev ds env₂) : env₁ = env₂ := by

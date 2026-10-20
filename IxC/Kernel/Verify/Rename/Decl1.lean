@@ -107,16 +107,11 @@ theorem EnvRel.push {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
     {c : ConstantInfo md} (hc : c.Good P) :
     EnvRel P f ⟨c :: env.consts⟩ ⟨c.mapKeys f :: env'.consts⟩ where
   inj := hE.inj
-  find k hk := by
-    have h := hE.find k hk
-    simp only [Env.find?] at h ⊢
-    simp only [List.find?_cons, ConstantInfo.mapKeys_name, Key.map_beq hE.inj hc.name hk]
-    cases (c.name == k) <;> simp [h]
-  good k d hk hd := by
-    simp only [Env.find?, List.find?_cons] at hd
-    cases hck : (c.name == k)
-    · rw [hck] at hd; exact hE.good k d hk hd
-    · rw [hck] at hd; cases hd; exact hc
+  all d hd := by
+    rcases List.mem_cons.mp hd with rfl | hd
+    · exact hc
+    · exact hE.all d hd
+  eq := by rw [hE.eq]; rfl
 
 /-! ## Telescope views of good terms -/
 

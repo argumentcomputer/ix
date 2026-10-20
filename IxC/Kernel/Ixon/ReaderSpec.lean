@@ -367,6 +367,30 @@ theorem Ctx.keyAt_eq_ok {cx : Ctx md} {a : Address} {k : CName md} :
         | some i => simp [hrole, pure, Except.pure, eq_comm]
         | none => simp [hrole, declined, throw, throwThe, MonadExceptOf.throw]
 
+/-- **The key a reference reads as, case by case**: the role's key where the
+table binds the reference the address resolves to, otherwise the input key of
+the address itself (`.id a` in the Ixon modes). -/
+theorem Ctx.keyAt_ok {cx : Ctx md} {a : Address} {k : CName md} (h : cx.keyAt a = .ok k) :
+    ∃ r, resolve cx.store a = some r ∧
+      (cx.roles.names[r]? = some k ∨
+        (cx.roles.names[r]? = none ∧ ∃ i, Mode.addressId? md a = some i ∧ k = .id i)) := by
+  rw [Ctx.keyAt_eq_ok] at h
+  unfold keyOfAddress at h
+  cases hr : resolve cx.store a with
+  | none => simp [hr] at h
+  | some r =>
+    refine ⟨r, rfl, ?_⟩
+    cases hrole : cx.roles.names[r]? with
+    | some k' =>
+      simp [hr, hrole] at h
+      exact Or.inl (by rw [h])
+    | none =>
+      cases hid : Mode.addressId? md a with
+      | some i =>
+        simp [hr, hrole, hid] at h
+        exact Or.inr ⟨rfl, i, rfl, h.symm⟩
+      | none => simp [hr, hrole, hid] at h
+
 /-- A member reference the role table binds is keyed by its role. -/
 theorem Ctx.memberKey_of_role {cx : Ctx md} {r : ConstRef Address} {k : CName md}
     (hrole : cx.roles.names[r]? = some k) : cx.memberKey r = .ok k := by

@@ -145,22 +145,54 @@ macro "shape_match" : tactic =>
 
 /-! ## Related environments -/
 
-/-- **The renamed run's environment**: on good keys it answers as `env`
-does, renamed, and `env`'s constants at good keys are good; `f` is injective
-on `P`. -/
+/-- **The renamed run's environment**: the renaming of a good environment
+(`env' = env.mapKeys f`, every constant of `env` good), `f` injective on `P`.
+So it answers every lookup `env` answers, renamed (`EnvRel.find`,
+`EnvRel.find_some`), and holds the renaming of each of `env`'s constants
+(`EnvRel.mem`). -/
 structure EnvRel (P : md.Id → Prop) (f : md.Id → md'.Id) (env : Env md) (env' : Env md') :
     Prop where
   inj : InjOn f P
-  find : ∀ k : Key md, k.Good P → env'.find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f)
-  good : ∀ (k : Key md) (c : ConstantInfo md), k.Good P → env.find? k = some c → c.Good P
+  all : env.Good P
+  eq : env' = env.mapKeys f
+
+/-- On good keys a related environment answers as `env` does, renamed. -/
+theorem EnvRel.find {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (k : Key md)
+    (hk : k.Good P) : env'.find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f) := by
+  rw [h.eq]
+  exact Env.find?_mapKeys h.inj h.all hk
+
+/-- `env`'s constants are good. -/
+theorem EnvRel.good {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (k : Key md)
+    (c : ConstantInfo md) (_ : k.Good P) (hc : env.find? k = some c) : c.Good P :=
+  h.all.find? hc
 
 /-- A good environment and its renaming are related. -/
 theorem EnvRel.mapKeys {env : Env md} (hf : InjOn f P) (henv : env.Good P) :
-    EnvRel P f env (env.mapKeys f) where
-  inj := hf
-  find _ hk := Env.find?_mapKeys hf henv hk
-  good _ _ _ h := henv.find? h
+    EnvRel P f env (env.mapKeys f) :=
+  ⟨hf, henv, rfl⟩
 
+/-- **Every constant of `env` is renamed into `env'`.** -/
+theorem EnvRel.mem {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {c : ConstantInfo md}
+    (hc : c ∈ env.consts) : c.mapKeys f ∈ env'.consts := by
+  rw [h.eq]
+  exact List.mem_map_of_mem hc
+
+/-- **Every key `env` answers is answered by `env'`, renamed** (whatever the
+key: an input, derived or role key). -/
+theorem EnvRel.find_some {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {k : Key md}
+    {c : ConstantInfo md} (hc : env.find? k = some c) :
+    env'.find? (k.map f) = some (c.mapKeys f) := by
+  have hk : k.Good P := by
+    obtain ⟨cs⟩ := env
+    simp only [Env.find?] at hc
+    have hname := List.find?_some hc
+    have hmem := List.mem_of_find?_eq_some hc
+    rw [beq_iff_eq] at hname
+    rw [← hname]
+    exact (h.all c hmem).name
+  rw [h.find k hk, hc]
+  rfl
 /-- A role's lookup, renamed. -/
 theorem EnvRel.find_role {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (r : Role) :
     env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
