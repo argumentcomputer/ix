@@ -289,24 +289,25 @@ docstring). -/
 def ofCompile (env : Ix.Environment) (ixe : Ixon.Env) : ChangedSet := Id.run do
   let blocks := changedBlocks env ixe
   let mut entries : Array Entry := #[]
-  -- members of the changed components, and the Lean blocks of the inductive ones
-  let mut leanAll : Std.HashMap Name (Array Name) := {}
+  -- members of the changed components (with an inductive component's
+  -- constructors), every component, whether or not it has a `first`
   for b in blocks do
-    let some first := b.first | continue
-    if b.kind == .inductiveBlock then leanAll := leanAll.insert first b.all
     for cls in b.classes do
       for m in cls do
-        entries := entries.push { name := m, cause := .member, ref := some first }
+        entries := entries.push { name := m, cause := .member, ref := b.first }
         if b.kind == .inductiveBlock then
           if let some (.inductInfo v) := env.get? m then
             for c in v.ctors do
-              entries := entries.push { name := c, cause := .member, ref := some first }
-  -- the image heads of those Lean blocks
+              entries := entries.push { name := c, cause := .member, ref := b.first }
+  -- the image heads of each changed inductive component's Lean block, read
+  -- off the component itself (two components of one Lean block push the same
+  -- entries, which the sort drops), not through a map keyed by first name
   let mut heads : Std.HashSet Name := {}
-  for (all0, all) in leanAll do
-    for h in Ix.Compile.Pass.imageKinds env.get? all do
-      heads := heads.insert h
-      entries := entries.push { name := h, cause := .imageHead, ref := some all0 }
+  for b in blocks do
+    if b.kind == .inductiveBlock then
+      for h in Ix.Compile.Pass.imageKinds env.get? b.all do
+        heads := heads.insert h
+        entries := entries.push { name := h, cause := .imageHead, ref := b.first }
   -- callers and regenerated auxiliaries, over the published names
   for (n, named) in ixe.named do
     if !heads.isEmpty && !heads.contains n then
