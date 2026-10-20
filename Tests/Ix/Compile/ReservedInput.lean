@@ -9,7 +9,9 @@
   Rust compiler does (`pass3::names::reserved_input_in`), not the first in
   the blocks' iteration order: two synthetic condensations of forty reserved
   names each, and a neighbour with none. The Rust twins are `pass3::names`'
-  unit tests; `compile-reserved-mdata` runs both compilers.
+  unit tests. The drivers' cases are `compile-reserved-mdata`'s (both
+  compilers end to end): a reserved name, a reserved metadata key, and
+  three reserved names of which both name exactly the least.
 -/
 import LSpec
 import Ix.Compile.Pass.Names

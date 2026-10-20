@@ -14,8 +14,14 @@
   the record form; `d` renamed `Fixture._ix.d`; and both at once, where the
   metadata refusal comes first in both compilers. The valid neighbour, an
   ordinary key, compiles in both, byte-identically. The legs are the Rust
-  compiler (`ix compile`'s FFI) and the IO pipeline (`compile-lean`); the
-  pure compiler (`Ix.Cert.compile`) takes the refusals with Pass 3's wiring.
+  compiler (`ix compile`'s FFI) and the IO pipeline (`compile-lean`).
+
+  The drivers' case of `reserved-input` (D14, ported from the donor's
+  `pass3` unit `ReservedIx`): three definitions renamed `Fixture._ix.f`,
+  `Fixture.Z._ix.h` and `Fixture.A._ix.g` (the last declared is the least
+  by its text); both drivers refuse naming exactly the least, as
+  `reserved-input` checks of `reservedInputRefusal?` on synthetic
+  condensations.
 
   Run with: `lake test -- --ignored compile-reserved-mdata`.
 -/
@@ -29,6 +35,11 @@ namespace Fixture
 
 /-- The definition whose value carries the metadata. -/
 def d : Nat := 0
+
+/-- Definitions that `severalReserved` renames to reserved names. -/
+def r1 : Nat := 1
+def r2 : Nat := 2
+def r3 : Nat := 3
 
 end Fixture
 
@@ -64,6 +75,21 @@ def nameMessage (n : Name) : String :=
 def placeholder : List (Name × DataValue) := [(`_ix.inline, .ofNat 0)]
 
 def record : List (Name × DataValue) := [(`_ix.inline, .ofNat 0), (`_ix.inline_meta, .ofNat 0)]
+
+/-- `r1`, `r2`, `r3` and their reserved names, in declaration order. -/
+def severalRenames : List (Name × Name) :=
+  let p := dName.getPrefix
+  [(p ++ `r1, p ++ `_ix.f), (p ++ `r2, p ++ `Z._ix.h), (p ++ `r3, p ++ `A._ix.g)]
+
+/-- The least of `severalRenames`' reserved names by their text. -/
+def leastReserved : Name := dName.getPrefix ++ `A._ix.g
+
+/-- The closure of `r1`, `r2`, `r3`, each renamed by `severalRenames`. -/
+def severalReserved (env : Environment) : List (Name × ConstantInfo) :=
+  (IndFlags.closureOf env (severalRenames.map (·.1))).map fun (n, ci) =>
+    match severalRenames.lookup n, ci with
+    | some m, .defnInfo v => (m, .defnInfo { v with name := m, all := [m] })
+    | _, _ => (n, ci)
 
 /-- Label, metadata, name, expected refusal. -/
 def cases : List (String × List (Name × DataValue) × Name × String) :=
@@ -106,6 +132,25 @@ lean {IndFlags.showLeg l}"
           else
             failures := failures + 1
             IO.println s!"[reserved-mdata] {label}: {leg}: FAIL: other refusal: {e}"
+    -- several reserved names: both drivers name exactly the least
+    let several := severalReserved env
+    let message := nameMessage leastReserved
+    let others := (severalRenames.map (·.2)).filter (· != leastReserved)
+    let legs := [("rust", ← IndFlags.rust env several (dir / "several.ixe")),
+      ("lean", ← IndFlags.lean env several)]
+    for (leg, result) in legs do
+      match result with
+      | .ok _ =>
+        failures := failures + 1
+        IO.println s!"[reserved-mdata] several reserved names: {leg}: FAIL: compiled"
+      | .error e =>
+        let named := others.filter fun n => (e.splitOn s!"'{pretty n}'").length > 1
+        if (e.splitOn message).length > 1 && named.isEmpty then
+          IO.println s!"[reserved-mdata] several reserved names: {leg} names the least: {message}"
+        else
+          failures := failures + 1
+          IO.println s!"[reserved-mdata] several reserved names: {leg}: FAIL: not exactly the \
+least ({pretty leastReserved}): {e}"
   finally
     IO.FS.removeDirAll dir
   IO.println s!"[reserved-mdata] {if failures == 0 then "PASS" else s!"FAIL ({failures})"}"

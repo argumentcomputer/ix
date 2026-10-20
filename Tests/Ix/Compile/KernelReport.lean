@@ -66,4 +66,38 @@ def checkCoverage (report : Report) (expected : Array (String × String)) : Exce
     throw s!"certified checker omitted {missing.size} requested name(s): \
       {String.intercalate ", " (missing.toList.map fun (n, a) => s!"{n}@{a}")}"
 
+/-- The address of an anonymous diagnostic label: `#<hex>` or `<hex>`,
+optionally followed by a display name (`check-rs --anon`'s fail-out rows). -/
+def anonymousAddress? (label : String) : Option String := do
+  let token ← (label.trimAscii.toString.splitOn " ").head?
+  let address := if token.startsWith "#" then (token.drop 1).toString else token
+  if isAddress address then some address else none
+
+/-- `(label, message)` of every record of a FailureLog file (the `--fail-out`
+of `check-rs`): a `# message` comment, then the record's label lines. The
+header and trailer comments are not messages. -/
+def failOutRows (content : String) : Array (String × String) := Id.run do
+  let mut out : Array (String × String) := #[]
+  let mut msg := ""
+  for raw in content.splitOn "\n" do
+    let l := raw.trimAscii.toString
+    if l.isEmpty || l == "#" then continue
+    if l.startsWith "# " then
+      let c := (l.drop 2).toString
+      if c.startsWith "ix check" || c.startsWith "env: " || c.startsWith "seeds: "
+          || c.startsWith "total failures: " then continue
+      msg := c
+    else out := out.push (l, msg)
+  return out
+
+/-- The number of constants `check-rs` reports it checked (`[check] P/N passed`). -/
+def rsChecked (out : String) : Option Nat :=
+  (out.splitOn "\n").findSome? fun line =>
+    let l := line.trimAscii.toString
+    if l.startsWith "[check] " && l.endsWith " passed" then
+      match ((l.drop 8).toString.dropEnd 7).toString.splitOn "/" with
+      | [_, n] => n.toNat?
+      | _ => none
+    else none
+
 end Tests.Ix.Compile.KernelReport

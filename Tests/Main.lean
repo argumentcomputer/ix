@@ -37,6 +37,10 @@ import Tests.Ix.Compile.ExactKey
 import Tests.Ix.Compile.UniverseCache
 import Tests.Ix.Compile.RewriteRetry
 import Tests.Ix.Compile.Pass3Core
+import Tests.Ix.Compile.HeadLookup
+import Tests.Ix.Compile.KernelReportTests
+import Tests.Ix.Compile.Pass3
+import Tests.Ix.Compile.Pass3Tools
 import Tests.Ix.Compile.DriverInput
 import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
@@ -199,6 +203,11 @@ def registry : List Entry := [
   -- the Pass 3 core without the driver: the call-site rewrite, the side-car, the memo
   -- shape and the views' equality (Ix.Compile.Pass)
   .suite "pass3-core-unit" .primary Tests.Ix.Compile.Pass3Core.suite,
+  -- Pass 3's head table confirms the full name: a different name with a head's
+  -- stored hash takes no route of the hooks (Tests.Ix.Compile.HeadLookup)
+  .suite "image-head-lookup" .primary Tests.Ix.Compile.HeadLookup.suite,
+  -- the strict readers of the checkers' reports (Tests.Ix.Compile.KernelReport)
+  .suite "compiler-reports" .primary Tests.Ix.Compile.KernelReportTests.suite,
   -- auxiliary dump inputs keyed by the canonical member, not the Tarjan representative
   .suite "aux-dump-inputs" .primary Tests.Compile.AuxGenDiff.suite,
   -- the compile drivers refuse a condensation block without a reference set
@@ -461,7 +470,8 @@ def registry : List Entry := [
   -- (Tests.Ix.Compile.IndFlags).
   .runner "compile-ind-flags" (.ci .compilePipeline) Tests.Ix.Compile.IndFlags.run,
   -- Reserved input: a metadata key or an input name with the reserved component `_ix`,
-  -- refused by both compilers (Tests.Ix.Compile.ReservedMetadata).
+  -- refused by both compilers, which name the least of several reserved names
+  -- (Tests.Ix.Compile.ReservedMetadata).
   .runner "compile-reserved-mdata" (.ci .compilePipeline) Tests.Ix.Compile.ReservedMetadata.run,
   -- Recognition of source auxiliaries against the generators run on the
   -- source recursors: ordinary casesOn/recOn recognized, custom bodies with
@@ -487,6 +497,12 @@ def registry : List Entry := [
   -- Canonicity over twin presentations, exact against the non-canonical
   -- record under the records policy (Tests.Ix.Compile.Twins).
   .runner "twins" .landing Tests.Ix.Compile.Twins.run,
+  -- Pass 3 on every fixture family: names, decompile, the certified checker and the
+  -- Rust kernel against the kernel-failure record, the images' computation rules,
+  -- display names, block failures against the record (Tests.Ix.Compile.Pass3)
+  .env "pass3" .landing Tests.Ix.Compile.Pass3.run,
+  -- Its evidence and diagnostic tools, one per variable (Tests.Ix.Compile.Pass3Tools)
+  .runner "pass3-tools" (.manual "one evidence or diagnostic tool of `pass3`, selected by exactly one PASS3_* variable; records nothing by itself and approves nothing") Tests.Ix.Compile.Pass3Tools.tools,
   -- Lean's own auxiliaries against the ones Ix regenerates, over the twin
   -- families with a canonical reference: the nested-order and packaging
   -- classes fail (Tests.Ix.Compile.Oracle).
