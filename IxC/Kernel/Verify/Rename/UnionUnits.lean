@@ -66,6 +66,36 @@ theorem unitsOf_append_front : ∀ (front rest : List (Declaration md)),
     rw [List.cons_append, unitsGo, if_neg (by rw [hd]; exact Bool.false_ne_true), ih]
     rfl
 
+/-- **A lowering**: generated records, then one declaration that is not
+(a record's lowering: a mutual or nested block's model records and its
+`indDecl`; any other record's one declaration). -/
+def IsLowering (l : List (Declaration md)) : Prop :=
+  ∃ gs d, l = gs ++ [d] ∧ (∀ g ∈ gs, g.isGenerated = true) ∧ d.isGenerated = false
+
+theorem unitsGo_lowering : ∀ (acc gs : List (Declaration md)) (d : Declaration md)
+    (rest : List (Declaration md)), (∀ g ∈ gs, g.isGenerated = true) → d.isGenerated = false →
+      unitsGo acc (gs ++ d :: rest) = (acc.reverse ++ gs ++ [d]) :: unitsGo [] rest
+  | acc, [], d, rest, _, hd => by
+    rw [List.nil_append, unitsGo, if_neg (by rw [hd]; exact Bool.false_ne_true)]
+    simp
+  | acc, g :: gs, d, rest, hg, hd => by
+    rw [List.cons_append, unitsGo, if_pos (hg g List.mem_cons_self),
+      unitsGo_lowering (g :: acc) gs d rest (fun g' h => hg g' (List.mem_cons_of_mem _ h)) hd]
+    simp
+
+/-- **Lowerings are their own units**: the units of a concatenation of
+lowerings are the lowerings. -/
+theorem unitsOf_lowerings : ∀ ls : List (List (Declaration md)), (∀ l ∈ ls, IsLowering l) →
+    unitsOf ls.flatten = ls
+  | [], _ => rfl
+  | l :: ls, h => by
+    obtain ⟨gs, d, rfl, hg, hd⟩ := h l List.mem_cons_self
+    have ih := unitsOf_lowerings ls (fun l' h' => h l' (List.mem_cons_of_mem _ h'))
+    unfold unitsOf at ih ⊢
+    rw [List.flatten_cons, List.append_assoc, List.singleton_append,
+      unitsGo_lowering [] gs d _ hg hd, ih]
+    simp
+
 /-! ## The check, decided -/
 
 theorem contains_foldl_insert (i : Nat) : ∀ (l : List (Key md)) (m : Std.HashMap (Key md) Nat)
