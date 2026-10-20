@@ -151,7 +151,8 @@ pub enum RevealConstantInfo {
 /// recover leaves or membership evidence according to the proof protocol.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Claim {
-  /// `input` evaluates to `output`, optionally modulo `assumptions`.
+  /// The checked input declaration's body normalizes to the erased expression
+  /// in the output ExprObj. Assumptions concern input dependencies only.
   Eval { input: Address, output: Address, assumptions: Option<Address> },
   /// The constant at `const_addr` is well-typed, optionally modulo
   /// `assumptions`.
@@ -209,11 +210,12 @@ pub struct Proof {
 /// - 9: Resource claim (`E8 01`)
 ///
 /// The `.ixe` header also uses flag 0xE, with the format version as the
-/// value (`Env::VERSION`): version 4 is the byte `0xE4`, the same byte as
-/// the Check claim tag. Readers know which object they read; nothing
+/// value (`Env::VERSION`): version 5 is the byte `0xE5`, the same byte as
+/// the CheckEnv claim tag. Readers know which object they read; nothing
 /// dispatches on the first byte.
 pub const FLAG_CLAIM: u8 = 0xE;
 
+// VARIANT 0 = ExprObj (handled in expr_obj.rs)
 // VARIANT 1 = Comm (handled in comm.rs)
 pub const VARIANT_ASSUMPTION_TREE: u64 = 2;
 pub const VARIANT_EVAL_CLAIM: u64 = 3;
@@ -1524,7 +1526,7 @@ mod tests {
       assumptions: Some(asm.clone()),
     };
     let (addr, bytes) = claim.commit();
-    let mut expected = vec![0xE8, 0x00, 4, 1];
+    let mut expected = vec![0xE8, 0x00, Env::OBJECT_FORMAT, 1];
     expected.extend_from_slice(members.as_bytes());
     expected.extend_from_slice(content.as_bytes());
     expected.push(0x01);
@@ -1536,7 +1538,7 @@ mod tests {
     // two serializers cannot drift on the large-tag path unnoticed.
     assert_eq!(
       addr.hex(),
-      "8c4fa4fa2e88fc73c72fbb624696485ec252c6685247541b40a59b221f83dbf4",
+      "4e3240eb1c5cadbbff832fa1f6703f3745b6408f5d7bc6be8d4c68bac94861f3",
       "catalog claim digest drifted"
     );
     // Unconditional form: trailing 0x00, same 2-byte tag.
@@ -2182,9 +2184,9 @@ mod tests {
     }
   }
   #[test]
-  fn v4_claim_fixtures_and_strict_scope() {
+  fn v5_claim_fixtures_and_strict_scope() {
     for line in
-      include_str!("../../../Tests/Fixtures/ixon-v4/claims.tsv").lines()
+      include_str!("../../../Tests/Fixtures/ixon-v5/claims.tsv").lines()
     {
       if line.starts_with('#') || line.is_empty() {
         continue;
@@ -2211,10 +2213,14 @@ mod tests {
       assert!(Claim::from_bytes(&trailing).is_err());
       let header = if claim.proof_variant_size() + 3 >= 8 { 2 } else { 1 };
       let mut old_format = bytes.clone();
-      old_format[header] = 3;
+      old_format[header] = Env::OBJECT_FORMAT - 1;
       let err = Claim::from_bytes(&old_format).unwrap_err();
       assert!(
-        err.starts_with("claim: unsupported object format 3, expected 4"),
+        err.starts_with(&format!(
+          "claim: unsupported object format {}, expected {}",
+          Env::OBJECT_FORMAT - 1,
+          Env::OBJECT_FORMAT
+        )),
         "{err}"
       );
       let mut wrong_validator = bytes.clone();

@@ -1,4 +1,4 @@
-# Compilatrix handoff: Ixon v4
+# Compilatrix handoff: Ixon v5
 
 This package describes the Ix producer and its checked fragment. Compilatrix
 has not been changed or tested by this work. Consume the versioned data and
@@ -8,9 +8,12 @@ contract model.)
 
 ## Breaking format
 
-- **Environment format: 4.** The `.ixe` header byte is `0xE4`, and the
-  protocol identity is **`ixon-v4`**. Version-3 files and objects are
+- **Environment format: 5.** The `.ixe` header byte is `0xE5`, and the
+  protocol identity is **`ixon-v5`**. Earlier-version files and scoped objects are
   rejected.
+- **Standalone expressions.** `ExprObj` (`E0 05`) carries evaluation outputs
+  with their own sharing, reference, and universe tables. Constant and
+  expression encodings are unchanged from v4.
 - **One integer code, TagN.** TagN replaces Tag0, Tag2 and Tag4 everywhere
   ([Ixon](Ixon.md#integer-encoding-tagn)). Values below 128, 32 or 8 (for
   flag widths 0, 2 or 4) encode to the same single byte as in v3. Larger
@@ -26,15 +29,15 @@ contract model.)
   `0xA`) encode `nonDep` in bit 0 and `borrowShared` in bit 1. A binder byte
   precedes its type, initializer, and body.
 - **Catalogs.** Catalog manifests use version **2**, with object-format byte
-  `4` and validator byte `1` after the flags. They describe erased-typing
+  `5` and validator byte `1` after the flags. They describe erased-typing
   claims.
 - **Claims and proofs.** Their payloads include format and validator bytes
   after the header. The Catalog and Resource claim headers are `E8 00` and
   `E8 01`.
-- **Primitive addresses** have changed. Do not reuse v3 pins or infer an
+- **Primitive addresses** are unchanged from v4. Do not reuse v3 pins or infer an
   object's version from raw constant bytes.
 
-See the [schema](Ixon-v4.md), [wire format](Ixon.md),
+See the [v5 additions](Ixon-v5.md), [constant schema](Ixon-v4.md), [wire format](Ixon.md),
 [text syntax](ixon-text-v3.md), and [source frontend](source-contracts.md).
 
 ## Validation contract
@@ -48,12 +51,13 @@ Optional metadata and cached materializations grant no semantic facts.
 
 | Interface | Status |
 | --- | --- |
-| Lean/Rust codecs, equality, hashing, sharing, FFI, text | V4 (TagN, canonical sharing); text grammar version 3 |
+| Lean/Rust codecs, equality, hashing, sharing, FFI, text | V5 (TagN, canonical sharing, ExprObj); text grammar version 3 |
 | Lean/Rust source compilation | Resource-checked annotated definitions and admitted interfaces |
 | Decompilation | Reconstructs committed contracts; unsupported metadata rewrites reject |
 | Native resource admission and Resource claims | Implemented with explicit profiles |
-| IxVM codecs and structural revelation | Read and write v4 (TagN); preserve every contract field |
+| IxVM codecs and structural revelation | Read and write v5 (TagN); preserve every contract field |
 | IxVM Check/CheckEnv | Erased-lean-v1; contracts do not strengthen that statement |
+| IxVM Eval | Checked input body normalizes to the erased ExprObj output |
 | IxVM Resource proofs | Explicitly unsupported |
 | Compilatrix backend | External migration required; support not inferred from these fixtures |
 
@@ -64,7 +68,11 @@ for higher-order capture, recursion, loan, and normalization limits.
 
 ## Fixture package
 
-The [fixture directory](../Tests/Fixtures/ixon-v4/) contains:
+The [fixture directory](../Tests/Fixtures/ixon-v5/) contains:
+
+The directory, commands, scratch paths, and handoff manifest schema use v5
+names. The manifest's `objectFormat` and `validator` fields identify the
+current v5 artifacts.
 
 | File | Purpose |
 | --- | --- |
@@ -73,7 +81,7 @@ The [fixture directory](../Tests/Fixtures/ixon-v4/) contains:
 | `resource.tsv` | Accepted and rejected resource programs |
 | `addressed.tsv` | Addressed declarations and a canonical profile |
 | `claims.tsv` | Claim bytes and BLAKE3 digests for every variant |
-| `primitives.tsv` | Regenerated v4 primitive identities |
+| `primitives.tsv` | Canonical primitive identities, unchanged from v4 |
 | `handoff/accepted.ixe` | Complete anonymous closure with a linear local identity |
 | `handoff/rejected-local-escape.ixe` | Type-correct closure whose local input escapes |
 | `handoff/profile.bin` | Canonical resource profile with no external assumptions |
@@ -85,17 +93,17 @@ must accept the first and reject the second. Changing any committed contract,
 subject, or profile must invalidate the associated identity. Reading the claim
 is not validation, and its bytes are not an IxVM resource proof.
 
-Run `lake exe ixon-v4-tests` from the repository root for codec, FFI, source,
+Run `lake exe ixon-v5-tests` from the repository root for codec, FFI, source,
 resource, decompiler, catalog, and VM checks. The generated files (the handoff
 set, `claims.tsv`, `addressed.tsv` and `resource.tsv`) must equal their
-producers' output byte for byte. Scratch files live in `$IX_IXON_V4_DIR`
+producers' output byte for byte. Scratch files live in `$IX_IXON_V5_DIR`
 (default `/tmp`; set it when two checkouts run these executables at the same
-time). `lake exe ixon-v4-primitives` writes the primitive closure there
-(`ixon-v4-primitives.ixe`) and fails if `primitives.tsv` differs from the live
-addresses; `ixon-v4-tests --primitives` then validates that closure.
-`--export-handoff` writes the deterministic handoff files to `ixon-v4-handoff/`
+time). `lake exe ixon-v5-primitives` writes the primitive closure there
+(`ixon-v5-primitives.ixe`) and fails if `primitives.tsv` differs from the live
+addresses; `ixon-v5-tests --primitives` then validates that closure.
+`--export-handoff` writes the deterministic handoff files to `ixon-v5-handoff/`
 in the scratch directory, and `--export-fixtures` writes `claims.tsv`,
-`addressed.tsv` and `resource.tsv` to `ixon-v4-fixtures/`; copy them into the
+`addressed.tsv` and `resource.tsv` to `ixon-v5-fixtures/`; copy them into the
 fixture directory only after validation.
 
 The formal gates are `lake build Ix.Resource.Audit` (the resource-state

@@ -559,6 +559,13 @@ def ixonSerialize := ⟦
     put_tagn0(len, put_univ_list(list, rest))
   }
 
+  fn put_expr_obj(obj: ExprObj, rest: ByteStream) -> ByteStream {
+    let ExprObj.Mk(lvls, root, sharing, refs, univs) = obj;
+    let tables = put_sharing(sharing, put_refs(refs, put_univs(univs, rest)));
+    let body = put_tagn0(lvls, put_expr(load(root), tables));
+    put_tagn4(0xE, [0u8; 8], store(ListNode.Cons(5u8, body)))
+  }
+
   fn put_constant(cnst: Constant, rest: ByteStream) -> ByteStream {
     match cnst {
       Constant.Mk(info, sharing, refs, univs) =>

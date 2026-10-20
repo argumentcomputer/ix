@@ -1,4 +1,4 @@
-# name	expected	type (ixon-v4 hex)	body (ixon-v4 hex)
+# name	expected	type (ixon-v5 hex)	body (ixon-v5 hex)
 ordinary identity	ok	911720002000	8107200010
 linear identity	ok	911520002000	8105200010
 unused erased	ok	911420002000	8104200060

@@ -268,13 +268,13 @@ def fixtureLine (test : Case) : String :=
   s!"{test.name}\t{test.expected}\t{hexOfBytes (runPut (putExpr test.type))}\t{hexOfBytes (runPut (putExpr test.value))}"
 
 /-- The shared `resource.tsv` fixture, also read by the Rust resource checker.
-`lake exe ixon-v4-tests --export-fixtures` writes it. -/
+`lake exe ixon-v5-tests --export-fixtures` writes it. -/
 def fixtureText : String :=
   allCases.foldl (fun text test => text ++ fixtureLine test ++ "\n")
     s!"# name\texpected\ttype ({Ixon.wireFormatId} hex)\tbody ({Ixon.wireFormatId} hex)\n"
 
 def runFixtureCases : IO Nat := do
-  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v4/resource.tsv"
+  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v5/resource.tsv"
   let lines := file.splitOn "\n"
   for test in allCases do
     let actual := runCase test.type test.value
@@ -285,7 +285,7 @@ def runFixtureCases : IO Nat := do
       throw <| IO.userError s!"resource fixture bytes differ: {test.name}"
   unless file == fixtureText do
     throw <| IO.userError "resource fixture differs from its producer; regenerate it with \
-      `lake exe ixon-v4-tests --export-fixtures`"
+      `lake exe ixon-v5-tests --export-fixtures`"
   return allCases.size
 
 def runContractMatrix : IO Nat := do

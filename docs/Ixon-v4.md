@@ -1,5 +1,9 @@
 # Ixon v4: contracts, TagN integers, and canonical sharing
 
+For the current format, see [the v5 additions](Ixon-v5.md). The v4 constant
+and expression encodings below remain unchanged; v5 adds ExprObj and changes
+the version carried by scoped artifacts.
+
 This specification describes the Ixon v4 format and the admitted Ix source
 fragment.
 

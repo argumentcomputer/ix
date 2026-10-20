@@ -142,7 +142,7 @@ def exprRejects (bytes : Array UInt8) : Bool :=
   | .ok _ => false
 
 /-- Directed malformed vectors for the maximal-telescope grammar. Reserved
-    binder, forall and let codes are covered by `Tests.IxonV4.rejectedExprCases`. -/
+    binder, forall and let codes are covered by `Tests.IxonV5.rejectedExprCases`. -/
 def strictExprUnits : TestSeq :=
   test "rejects empty app spine" (exprRejects #[0x70]) ++
   test "rejects nested app base"
@@ -616,7 +616,7 @@ def envMerkleRootUnitTests : TestSeq :=
   test "(a,b) and (b,a) same root"
     (raw_ab.merkleRoot == raw_ba.merkleRoot)
 
-/-! ## Format version 4: header byte and version rejection -/
+/-! ## Format version 5: header byte and version rejection -/
 
 /-- The empty env's bytes, with the header byte replaced by `header`. -/
 private def emptyEnvWithHeader (header : UInt8) : ByteArray :=
@@ -633,10 +633,16 @@ private def versionRejected {α : Type} (r : Except String α) (got : Nat) : Boo
 
 def envHeaderUnits : TestSeq :=
   let bytes := match serEnv ({} : Env) with | .ok b => b | .error _ => .empty
-  test "env header is TagN(4, 0xE, 4) = 0xE4" (bytes.data[0]? == some 0xE4)
-  ++ test "wireFormatId is ixon-v4" (wireFormatId == "ixon-v4")
-  ++ test "object-format byte is the version" (Env.OBJECT_FORMAT == 4)
-  ++ test "Lean reader accepts the version 4 header" ((deEnv bytes).toOption.isSome)
+  test "env header is TagN(4, 0xE, 5) = 0xE5" (bytes.data[0]? == some 0xE5)
+  ++ test "wireFormatId is ixon-v5" (wireFormatId == "ixon-v5")
+  ++ test "object-format byte is the version" (Env.OBJECT_FORMAT == 5)
+  ++ test "Lean reader accepts the version 5 header" ((deEnv bytes).toOption.isSome)
+  ++ test "Lean reader rejects a version 4 header"
+      (versionRejected (deEnv (emptyEnvWithHeader 0xE4)) 4)
+  ++ test "Lean streaming reader rejects a version 4 header"
+      (versionRejected (deEnvVerifiedLazy (emptyEnvWithHeader 0xE4)) 4)
+  ++ test "Rust reader rejects a version 4 header"
+      (versionRejected (deEnvAnon (emptyEnvWithHeader 0xE4)) 4)
   ++ test "Lean reader rejects a version 3 header"
       (versionRejected (deEnv (emptyEnvWithHeader 0xE3)) 3)
   ++ test "Lean streaming reader rejects a version 3 header"

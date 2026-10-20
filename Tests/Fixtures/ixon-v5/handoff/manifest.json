@@ -1,0 +1,16 @@
+{"validator": "ixon-v5/resource-v1",
+ "subject": "f0e971f93ae7a7aa0fbf87df16a2445afdbb8d89dc0c20934cb9ae7901958269",
+ "schema": "ixon-v5-handoff-1",
+ "profile": "4e4d7bfaa1571fed76372ffca69d5209aacccb42db755f2e4d41c455b299aa4a",
+ "objectFormat": "ixon-v5",
+ "ixvmResourceProof": false,
+ "files":
+ {"rejected-local-escape.ixe":
+  "6fa7f3320adec64a6a5d79eeb411e7be1aea4c19fc6a300cce9b5a7a36593307",
+  "profile.bin":
+  "4e4d7bfaa1571fed76372ffca69d5209aacccb42db755f2e4d41c455b299aa4a",
+  "accepted.ixe":
+  "6512a543fa4951e37b3224c7d44389b49829e1e3bce862743bc046f947e17f5e",
+  "accepted.claim":
+  "94f2a5651512fd10caaf37cbe68ff12612c240e0bbb444e94094068555a0768b"},
+ "claim": "94f2a5651512fd10caaf37cbe68ff12612c240e0bbb444e94094068555a0768b"}

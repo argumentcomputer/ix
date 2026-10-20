@@ -166,16 +166,41 @@ def commitDef (compileEnv : CompileM.CompileEnv) (leanEnv : Lean.Environment)
 -- Build claims
 -- ============================================================================
 
+/-- Compile a standalone expression through the existing anonymous-definition
+compiler, retaining its expression tables but no declaration fields.
+`type` is compiler context only; it is not an asserted output type. -/
+def compileExprObj (compileEnv : CompileM.CompileEnv)
+    (lvls : List Lean.Name) (type value : Lean.Expr)
+    : Except String (Address × CompileM.CompileEnv) := do
+  let (addr, compiled) ← compileDef compileEnv lvls type value
+  let some bytes := compiled.constants[addr]?
+    | throw "compileExprObj: missing compiled definition"
+  let c : Ixon.Constant ← Ixon.de bytes
+  let .defn d := c.info
+    | throw "compileExprObj: expected a standalone definition"
+  let obj : Ixon.ExprObj := ⟨d.lvls, d.value, c.sharing, c.refs, c.univs⟩
+  obj.validate
+  let bytes := obj.ser
+  let addr := Address.blake3 bytes
+  return (addr, { compileEnv with blobs := compiled.blobs.insert addr bytes })
+
+/-- Build an evaluation claim and retain its input and ExprObj output bytes.
+The output object is carried in `CompileEnv.blobs`. -/
+def evalClaimWithEnv (compileEnv : CompileM.CompileEnv)
+    (lvls : List Lean.Name) (input output type : Lean.Expr)
+    : Except String (Claim × CompileM.CompileEnv) := do
+  let (inputAddr, compileEnv') ← compileDef compileEnv lvls type input
+  let (outputAddr, compileEnv') ← compileExprObj compileEnv' lvls type output
+  return (.eval inputAddr outputAddr none, compileEnv')
+
 /-- Build an unconditional evaluation claim from input and output
-    expressions. Compiles both to get their content addresses. The
+    expressions. Output is an ExprObj, not a declaration. The
     `assumptions` field is `none`; higher-level builders can compute
     transitive-dep assumptions when available. -/
 def evalClaim (compileEnv : CompileM.CompileEnv)
     (lvls : List Lean.Name) (input output type : Lean.Expr)
     : Except String Claim := do
-  let (inputAddr, compileEnv') ← compileDef compileEnv lvls type input
-  let (outputAddr, _) ← compileDef compileEnv' lvls type output
-  return .eval inputAddr outputAddr none
+  return (← evalClaimWithEnv compileEnv lvls input output type).1
 
 /-- Build an unconditional check claim: asserts that the compiled
     definition is well-typed. -/

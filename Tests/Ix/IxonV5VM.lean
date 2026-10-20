@@ -1,5 +1,5 @@
 module
-public import Tests.Ix.IxonV4
+public import Tests.Ix.IxonV5
 public import Tests.Aiur.Common
 public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
@@ -7,7 +7,7 @@ public import Ix.Resource.Claim
 public import Tests.Ix.ResourceAddressed
 
 public section
-namespace Tests.IxonV4
+namespace Tests.IxonV5
 
 def codecEntrypoints := ⟦
   pub fn ixon_expr_decode() {
@@ -246,4 +246,4 @@ def runVM (cases : List ExprCase) : IO Nat := do
   -- Execute and prove the actual production claim boundary as well.
   return checks + 2 + (← runVMClaims)
 
-end Tests.IxonV4
+end Tests.IxonV5

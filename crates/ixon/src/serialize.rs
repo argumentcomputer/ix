@@ -1025,6 +1025,53 @@ fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
   Ok(univs)
 }
 
+impl crate::ExprObj {
+  pub fn put(&self, buf: &mut Vec<u8>) {
+    TagN::put(4, 0xE, 0, buf);
+    buf.push(5);
+    put_u64(self.lvls, buf);
+    put_expr(&self.root, buf);
+    put_sharing(&self.sharing, buf);
+    put_refs(&self.refs, buf);
+    put_univs(&self.univs, buf);
+  }
+
+  pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    let tag = TagN::get(4, buf)?;
+    if tag.flag != 0xE || tag.value != 0 {
+      return Err("ExprObj: wrong tag".into());
+    }
+    if buf.first() != Some(&5) {
+      return Err("ExprObj: unsupported object format".into());
+    }
+    *buf = &buf[1..];
+    let obj = Self {
+      lvls: get_u64(buf)?,
+      root: get_expr(buf)?,
+      sharing: get_sharing(buf)?,
+      refs: get_refs(buf)?,
+      univs: get_univs(buf)?,
+    };
+    obj.validate()?;
+    Ok(obj)
+  }
+
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    let mut rest = bytes;
+    let obj = Self::get(&mut rest)?;
+    if !rest.is_empty() {
+      return Err("ExprObj: trailing bytes".into());
+    }
+    Ok(obj)
+  }
+
+  pub fn commit(&self) -> (Address, Vec<u8>) {
+    let mut bytes = Vec::new();
+    self.put(&mut bytes);
+    (Address::hash(&bytes), bytes)
+  }
+}
+
 impl Constant {
   pub fn put(&self, buf: &mut Vec<u8>) {
     match &self.info {
@@ -1546,10 +1593,10 @@ impl Env {
   /// (versions < 8 cost zero extra bytes). Any change to serialized
   /// bytes bumps this. Readers reject a mismatch; there is no
   /// back-compat reading of old versions — `.ixe` files are
-  /// regenerated artifacts. Version 4 is the TagN format; its header
-  /// is the single byte `0xE4`. Mirrors `Ixon.Env.VERSION` in
+  /// regenerated artifacts. Version 5 adds ExprObj; its header
+  /// is the single byte `0xE5`. Mirrors `Ixon.Env.VERSION` in
   /// `Ix/Ixon.lean`.
-  pub const VERSION: u64 = 4;
+  pub const VERSION: u64 = 5;
 
   /// Object-format byte bound by claim, proof and catalog scopes: the
   /// format version as one byte, so an object produced under another
@@ -3290,7 +3337,7 @@ mod tests {
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
 
-  fn v4_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
+  fn v5_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
     use crate::contract::LetKind;
     use crate::expr::Uses;
     let binder = |uses, value| BinderContract { uses, value };
@@ -3415,15 +3462,15 @@ mod tests {
   }
 
   #[test]
-  fn v4_independent_golden_expressions() {
-    let file = include_str!("../../../Tests/Fixtures/ixon-v4/expressions.txt");
+  fn v5_independent_golden_expressions() {
+    let file = include_str!("../../../Tests/Fixtures/ixon-v5/expressions.txt");
     // Every row of the file is a case here (and in the Lean golden test).
     let rows = file
       .lines()
       .filter(|line| !line.is_empty() && !line.starts_with('#'))
       .count();
-    assert_eq!(rows, v4_fixture_exprs().len(), "fixture rows without a case");
-    for (name, expr) in v4_fixture_exprs() {
+    assert_eq!(rows, v5_fixture_exprs().len(), "fixture rows without a case");
+    for (name, expr) in v5_fixture_exprs() {
       let line = file
         .lines()
         .find(|line| line.starts_with(&format!("{name} ")))
@@ -3722,11 +3769,11 @@ mod tests {
     env.put(&mut buf).unwrap();
     // Versions < 8 encode inline in the TagN head byte.
     assert_eq!(buf[0], (Env::FLAG << 4) | (Env::VERSION as u8));
-    assert_eq!(buf[0], 0xE4, "the version 4 header is the byte 0xE4");
-    // A pre-versioning header (size 0), the previous version (3) and a
+    assert_eq!(buf[0], 0xE5, "the version 5 header is the byte 0xE5");
+    // A pre-versioning header (size 0), the previous version and a
     // future version must all be rejected, with an error naming the
     // versions, on every reader path through `read_env_header`.
-    for wrong in [0u8, 3, Env::VERSION as u8 + 1] {
+    for wrong in [0u8, Env::VERSION as u8 - 1, Env::VERSION as u8 + 1] {
       let mut bad = buf.clone();
       bad[0] = (Env::FLAG << 4) | wrong;
       for err in [

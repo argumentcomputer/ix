@@ -21,6 +21,7 @@ public import Ix.IxVM.Kernel.Infer
 public import Ix.IxVM.Kernel.CanonicalCheck
 public import Ix.IxVM.Kernel.Check
 public import Ix.IxVM.Kernel.Claim
+public import Ix.IxVM.Kernel.Eval
 
 public section
 
@@ -66,6 +67,15 @@ def entrypoints := ⟦
           "ixon round-trip: re-serialized bytes differ from the input");
         ixon_serde_test(n_minus_1),
     }
+  }
+
+  pub fn expr_obj_serde_test() {
+    let (idx, len) = io_get_info(6, [0]);
+    let bytes = read_finite_byte_stream(6, idx, len);
+    let (obj, rest) = get_expr_obj(bytes);
+    assert_eq!(load(rest), ListNode.Nil, "ExprObj: trailing bytes");
+    assert_eq!(bytes, put_expr_obj(obj, store(ListNode.Nil)),
+      "ExprObj round-trip: re-serialized bytes differ");
   }
 
   fn level_cmp_tests() {
@@ -169,7 +179,7 @@ def entrypoints := ⟦
   -- Claim-discipline entrypoint — the only production entrypoint. Loads
   -- the claim bytes at ch 0 keyed by `claim_digest`, blake3-binds them
   -- against that key (so the public input pins which claim was proved),
-  -- then dispatches on the claim variant: Check, CheckEnv, Reveal, and
+  -- then dispatches on the claim variant: Eval, Check, CheckEnv, Reveal, and
   -- Contains. See `run_claim` for the per-variant discipline.
   -- The digest is public input as 8 field elements of 4 packed LE bytes
   -- (injective in Goldilocks; 8 input columns instead of 32) — the same
@@ -207,6 +217,7 @@ def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge canonicalCheck
   let vm ← vm.merge check
   let vm ← vm.merge claim
+  let vm ← vm.merge eval
   vm.merge entrypoints
 
 /-- Pruned production toplevel: `verify_claim` and nothing else.

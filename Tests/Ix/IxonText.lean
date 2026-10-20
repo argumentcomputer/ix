@@ -18,7 +18,7 @@ def textContractKey : Term → Option (String × Nat × Nat)
   | _ => none
 
 def runText : IO Nat := do
-  let bytes ← IO.FS.readFile "Tests/Fixtures/ixon-v4/text.tsv"
+  let bytes ← IO.FS.readFile "Tests/Fixtures/ixon-v5/text.tsv"
   let mut count := 0
   for line in bytes.splitOn "\n" do
     if line.isEmpty then continue

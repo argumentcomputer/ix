@@ -215,6 +215,17 @@ structure Constant where
   univs : Array Univ
   deriving BEq, Repr, Inhabited
 
+/-- A standalone closed expression with its own tables. Its type is inherited
+from a checked input by an Eval claim, rather than declared in the object.
+Universe parameters are positional; block-local `Rec` is forbidden. -/
+structure ExprObj where
+  lvls : UInt64
+  root : Expr
+  sharing : Array Expr := #[]
+  refs : Array Address := #[]
+  univs : Array Univ := #[]
+  deriving BEq, Repr, Inhabited
+
 namespace Constant
   def FLAG_MUTS : UInt8 := 0xC
   def FLAG : UInt8 := 0xD

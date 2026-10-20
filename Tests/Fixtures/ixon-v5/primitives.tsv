@@ -1,4 +1,4 @@
-# Ixon v4 canonical primitive addresses
+# Ixon v5 canonical primitive addresses
 Nat	35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc
 Nat.zero	eeb2e6268ff6d0e6b2e9764d9940b81bb64b9f8f4b1358d294ff9817e6941a46
 Nat.succ	42d6ed31536f0958176f1dc973383808ac8583223746ebca78dbe389b65321a6

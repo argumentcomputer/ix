@@ -146,14 +146,14 @@ def runClaimEval (p : Cli.Parsed) : IO UInt32 := do
 
 def claimEvalCmd : Cli.Cmd := `[Cli|
   eval VIA runClaimEval;
-  "Build and persist an `Eval` claim: <input-hex> evaluates to <output-hex> (optionally modulo an assumption tree). NOTE: the IxVM `verify_claim` `run_eval` arm is currently a placeholder (`assert_eq!(0, 1)`); proving an Eval claim will fail at execution time until the kernel implements eval semantics."
+  "Build and persist an Eval claim: typecheck the input declaration and recursively normalize its body to the output ExprObj, optionally assuming input dependencies are well-typed."
 
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already live in `~/.ix/store/`."
 
   ARGS:
     input  : String; "32-byte hex address of the input constant."
-    output : String; "32-byte hex address of the output constant."
+    output : String; "32-byte hex address of the output ExprObj, carried in the environment's blobs."
 ]
 
 /-! ## `ix claim catalog` -/

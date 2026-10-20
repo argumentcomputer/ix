@@ -169,17 +169,17 @@ lean_exe «source-contract-tests» where
   root := `Tests.SourceContractMain
   supportInterpreter := true
 
-/-- Focused Ixon v4 codec, locality, and cross-language transport checks;
+/-- Focused Ixon v5 codec, locality, and cross-language transport checks;
 `--export-fixtures` and `--export-handoff` regenerate the generated fixtures.
-Scratch files live in `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
-lean_exe «ixon-v4-tests» where
-  root := `Tests.IxonV4Main
+Scratch files live in `$IX_IXON_V5_DIR` (default `/tmp`); see `--help`. -/
+lean_exe «ixon-v5-tests» where
+  root := `Tests.IxonV5Main
   moreLinkObjs := #[ix_rs_test]
 
 /-- Regenerate format-specific primitive identities from the installed Lean
-environment, into `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
-lean_exe «ixon-v4-primitives» where
-  root := `Tests.IxonV4Primitives
+environment, into `$IX_IXON_V5_DIR` (default `/tmp`); see `--help`. -/
+lean_exe «ixon-v5-primitives» where
+  root := `Tests.IxonV5Primitives
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 

@@ -69,7 +69,7 @@ def claimUnits : TestSeq :=
 /-! ## Byte-level encoding tests
 
   Claim variants 3..=7 are single-byte TagN (`f = 4`) headers
-  `0xE3`..`0xE7`, followed by the scope bytes (object format 4, then the
+  `0xE3`..`0xE7`, followed by the scope bytes (object format 5, then the
   validator). Each claim has an opt byte (`0x00` for `none`,
   `0x01`+32-byte address for `some`).
 -/
@@ -87,8 +87,8 @@ def claimEncodingTests : TestSeq :=
     (.defn (some .defn) (some .safe) (some 3) (some addr2) (some addr3)))
   -- Two scope bytes follow each claim tag. Eval = 68 bytes; with asm = 100
   test "Eval tag byte is 0xE3" (evalBytes.data[0]! == 0xE3)
-  ++ test "Eval scope is object format 4, erased-lean-v1"
-       (evalBytes.data[1]! == 4 && evalBytes.data[2]! == 1)
+  ++ test "Eval scope is object format 5, erased-lean-v1"
+       (evalBytes.data[1]! == Ixon.Env.OBJECT_FORMAT && evalBytes.data[2]! == 1)
   ++ test "Eval no-asm size is 68" (evalBytes.size == 68)
   ++ test "Eval with-asm size is 100" (evalWithAsm.size == 100)
   -- Check: tag + scope + 32 + option = 36 bytes; with asm = 68
@@ -124,7 +124,7 @@ private def catAsm : Address := Address.blake3 "assumptions".toUTF8
 
 /-- Must equal the Rust pin in `proof.rs::catalog_claim_wire_bytes_pinned`. -/
 private def catalogDigestPin : String :=
-  "8c4fa4fa2e88fc73c72fbb624696485ec252c6685247541b40a59b221f83dbf4"
+  "4e3240eb1c5cadbbff832fa1f6703f3745b6408f5d7bc6be8d4c68bac94861f3"
 
 def catalogClaimTests : TestSeq :=
   let someBytes := Claim.ser (.catalog catMembers catContent (some catAsm))
@@ -137,8 +137,8 @@ def catalogClaimTests : TestSeq :=
     | .error _ => false
   test "Catalog tag is 2 bytes 0xE8 0x00 (TagN 4 0xE 8)"
     (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x00)
-  ++ test "Catalog scope is object format 4, erased-lean-v1"
-       (someBytes.data[2]! == 4 && someBytes.data[3]! == 1)
+  ++ test "Catalog scope is object format 5, erased-lean-v1"
+       (someBytes.data[2]! == Ixon.Env.OBJECT_FORMAT && someBytes.data[3]! == 1)
   ++ test "Catalog no-asm size is 69" (noneBytes.size == 4 + 64 + 1)
   ++ test "Catalog with-asm size is 101" (someBytes.size == 4 + 64 + 33)
   ++ test "Catalog digest parity with Rust pin"

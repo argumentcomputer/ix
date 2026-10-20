@@ -457,7 +457,7 @@ The records Ix's compiler produces for `Tests.Ix.Kernel.EntryCaseDefs.LTree`
 environment check order with the projections last: the records
 `kernel-entry-cases` submits for its `nested-through-nested` case, as
 `lake exe kernel-entry-cases --records nested-through-nested` prints them
-(Ixon v4):
+(Ixon v5):
 
     inductive LNode (α : Type) where
       | node : List (LNode α) → LNode α
@@ -625,7 +625,7 @@ def lTreeNames : List String :=
 The records Ix's compiler produces for
 `Tests.Ix.Kernel.EntryCaseDefs.levelCanon` (with `Subtype.rec` and `True.rec`),
 in the check order with the projections last, without the prelude's `Eq`
-records: `lake exe kernel-entry-cases --records level-comparison` (Ixon v4):
+records: `lake exe kernel-entry-cases --records level-comparison` (Ixon v5):
 
     theorem levelCanon.{w, x} {a b : {_f : (K : Type w) → (P : Sort x) → P // True}}
         (h : a = b) : a = b := h

@@ -486,26 +486,26 @@ interleaved:
    `IxC/Ixon/Audit.lean` list them; the byte stage's theorems in
    `IxC/Kernel/Admission/Bytes/Theorems.lean` must then build unchanged).
    `lake -d IxC build --wfail IxC` is the acceptance.
-2. **Primitive addresses.** `lake exe ixon-v4-primitives` compiles the
-   primitive closure into `$IX_IXON_V4_DIR` and fails if
-   `Tests/Fixtures/ixon-v4/primitives.tsv` differs from the live addresses;
+2. **Primitive addresses.** `lake exe ixon-v5-primitives` compiles the
+   primitive closure into `$IX_IXON_V5_DIR` and fails if
+   `Tests/Fixtures/ixon-v5/primitives.tsv` differs from the live addresses;
    copy the file it names over the fixture. Mirror every changed address
    into `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`),
    `Ix/Tc/Primitive.lean` and the IxVM literals in `Ix/IxVM/Kernel/*.lean`
    (search each old address in hex and in 32-byte array form). The suites
    `prim-addrs` and `primitive-address-parity` and
-   `lake exe ixon-v4-tests --primitives` must pass.
+   `lake exe ixon-v5-tests --primitives` must pass.
 3. **Generated IxVM Rust.** `lake exe ix codegen` regenerates
    `crates/ixvm-codegen/src/*.rs` from the IxVM sources (the literals of step
    2 among them); `lake exe ix codegen --check` must pass.
-4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
+4. **Fixtures.** `lake exe ixon-v5-tests --export-fixtures --export-handoff`
    writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
-   to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
-   `lake exe ixon-v4-tests` validates them. If they moved, so did the
+   to `$IX_IXON_V5_DIR`; copy them into `Tests/Fixtures/ixon-v5/` after
+   `lake exe ixon-v5-tests` validates them. If they moved, so did the
    catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`)
    and the environment-bytes hash (`crates/compile/src/graph.rs`); re-pin
    them from the serializers' output. The independent expression vectors
-   (`Tests/Fixtures/ixon-v4/expressions.txt`) are written by hand from the
+   (`Tests/Fixtures/ixon-v5/expressions.txt`) are written by hand from the
    specification.
 5. **Pin tables**, as step 2 of a toolchain bump: the three commands under
    "Regeneration" above. Write the two environments to fresh files, never
@@ -529,7 +529,7 @@ interleaved:
    `CompileMathlib.lean`), and compare environment-check rows with the
    previous format's by name, not by address.
 10. **Gate.** `lake run check-kernel --with-model`, `lake test --wfail`, and
-    `lake exe ixon-v4-primitives && lake exe ixon-v4-tests --primitives`.
+    `lake exe ixon-v5-primitives && lake exe ixon-v5-tests --primitives`.
 
 Version-pinned external artifacts (a benchmark artifact pinned by hash, a
 dated proof fixture) cannot be regenerated without their inputs; they stay

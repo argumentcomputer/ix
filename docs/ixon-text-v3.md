@@ -104,7 +104,7 @@ In particular, the text grammar can represent every wire-level let
 combination; the resource checker is responsible for rejecting a borrow
 view whose contract is not shared and local.
 
-The shared [contract fixtures](../Tests/Fixtures/ixon-v4/text.tsv) cover
+The shared [contract fixtures](../Tests/Fixtures/ixon-v5/text.tsv) cover
 all 16 lambda inputs, 64 dependent arrow input/result pairs, four
 non-dependent arrow results, and 64 let flag/contract combinations.
 Both implementations check the parsed fields and canonical text.

@@ -6,7 +6,7 @@ public import Tests.Ix.Claim
 
 public section
 
-namespace Tests.ClaimsV4
+namespace Tests.ClaimsV5
 
 def fixtures : Array (String × Ix.Claim) :=
   let a := Address.blake3 "a".toUTF8
@@ -24,10 +24,10 @@ def fixtureText : String := Id.run do
   return text
 
 def run : IO Unit := do
-  let expected ← IO.FS.readFile "Tests/Fixtures/ixon-v4/claims.tsv"
+  let expected ← IO.FS.readFile "Tests/Fixtures/ixon-v5/claims.tsv"
   unless expected == fixtureText do
     throw <| IO.userError "claim fixture differs from its producer; regenerate it with \
-      `lake exe ixon-v4-tests --export-fixtures`"
+      `lake exe ixon-v5-tests --export-fixtures`"
   for (_, claim) in fixtures do
     let bytes := Ix.Claim.ser claim
     unless (Ix.Claim.de bytes).toOption == some claim do throw <| IO.userError "claim roundtrip"
@@ -36,11 +36,11 @@ def run : IO Unit := do
         throw <| IO.userError "truncated claim accepted"
     unless (Ix.Claim.de (bytes.push 0)).toOption.isNone do throw <| IO.userError "trailing claim accepted"
     let header := if Ix.Claim.variantOf claim >= 8 then 2 else 1
-    match Ix.Claim.de (bytes.set! header 3) with
-    | .ok _ => throw <| IO.userError "version 3 object format accepted"
+    match Ix.Claim.de (bytes.set! header (Ixon.Env.OBJECT_FORMAT - 1)) with
+    | .ok _ => throw <| IO.userError "previous object format accepted"
     | .error e =>
-      unless e.startsWith "claim: unsupported object format 3, expected 4" do
-        throw <| IO.userError s!"version 3 object format: unexpected error {e}"
+      unless e.startsWith s!"claim: unsupported object format {Ixon.Env.OBJECT_FORMAT - 1}, expected {Ixon.Env.OBJECT_FORMAT}" do
+        throw <| IO.userError s!"previous object format: unexpected error {e}"
     unless (Ix.Claim.de (bytes.set! (header + 1) 255)).toOption.isNone do throw <| IO.userError "wrong validator accepted"
     let proof : Ixon.Proof := { claim, proof := ⟨#[1, 2, 3]⟩ }
     let proofBytes := Ixon.Proof.ser proof
@@ -50,8 +50,8 @@ def run : IO Unit := do
     -- Every proof variant is below 8 (a one-byte header), so the proof's
     -- object-format byte is byte 1.
     unless proofBytes[1]! == Ixon.Env.OBJECT_FORMAT do throw <| IO.userError "proof scope offset"
-    unless (Ixon.Proof.de (proofBytes.set! 1 3)).toOption.isNone do
-      throw <| IO.userError "proof with version 3 object format accepted"
+    unless (Ixon.Proof.de (proofBytes.set! 1 (Ixon.Env.OBJECT_FORMAT - 1))).toOption.isNone do
+      throw <| IO.userError "proof with previous object format accepted"
   let (base, unit) := Tests.ResourceAddressed.unitEnv
   let (env, _) := Tests.ResourceAddressed.store base (Tests.ResourceAddressed.identity unit)
   let profile : Ix.Resource.Profile := {}
@@ -67,6 +67,6 @@ def run : IO Unit := do
   unless result == 0 do throw <| IO.userError "existing claim tests failed"
   IO.println s!"Ixon v{Ixon.Env.VERSION} claims: fixtures, strict envelopes, proof wrappers, subjects, and profiles passed"
 
-end Tests.ClaimsV4
+end Tests.ClaimsV5
 
 end

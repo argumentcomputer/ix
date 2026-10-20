@@ -108,7 +108,7 @@
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               cargoSource
-              ./Tests/Fixtures/ixon-v4
+              ./Tests/Fixtures/ixon-v5
             ];
           };
           # Rust code generation for the sandboxed builds. `.cargo/config.toml`

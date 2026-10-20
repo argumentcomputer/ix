@@ -2,6 +2,9 @@
 
 Ixon is a content-addressed, alpha-invariant binary serialization format for Lean kernel types. It is designed for the Ix platform's cryptographic verification and zero-knowledge proof systems.
 
+The current format is v5. See [ExprObj and evaluation claims](Ixon-v5.md)
+for the standalone expression envelope and IxVM evaluation semantics.
+
 ## Design Goals
 
 1. **Alpha-invariance**: Structurally identical terms have identical serializations, regardless of variable names. The expression `fun (x : Nat) => x` and `fun (y : Nat) => y` serialize to the same bytes.
@@ -1276,9 +1279,9 @@ The .ixe layout is an `N4(0xE, VERSION)` header byte followed by a
 32-byte canonical merkle root, the bundle header fields, and then 6
 sections (hot data first, metadata last).
 
-The format has the stable identifier `ixon-v4`. The header value is the
-numeric **format version** (`Env::VERSION`, currently `4`, so the first byte
-of a v4 file is `0xE4`). Any change
+The format has the stable identifier `ixon-v5`. The header value is the
+numeric **format version** (`Env::VERSION`, currently `5`, so the first byte
+of a v5 file is `0xE5`). Any change
 to serialized bytes bumps the version; every reader
 (`read_env_header` on the Rust side, `Ixon.getEnv` /
 `getEnvVerifiedLazy` on the Lean side) rejects a mismatch with an
@@ -1287,22 +1290,22 @@ back-compat reading of old versions — `.ixe` files are regenerated
 artifacts. Versions 0–7 fit in the header byte; later versions use the
 multi-byte TagN rungs.
 
-Format version 4 also sets the object-format byte of claims, proofs and
+Format version 5 also sets the object-format byte of claims, proofs and
 catalog manifests (`Ixon.Env.OBJECT_FORMAT`, Rust `Env::OBJECT_FORMAT`, equal
 to the version). Artifacts that cache `.ixe` files key them by the version:
 the TruthMines piece cache includes `ixe=<VERSION>` in its key, and the test
 environment `tc-parity.ixe` is recompiled when its header carries another
 version.
 
-The version-4 header byte `0xE4` is the same byte as the Check claim tag
-`N4(0xE, 4)` (see [Proofs and Claims](#proofs-and-claims)), just as
-version 3's `0xE3` was the same byte as the Eval claim tag. Readers decide
+The version-5 header byte `0xE5` is the same byte as the CheckEnv claim tag
+`N4(0xE, 5)` (see [Proofs and Claims](#proofs-and-claims)), just as
+version 4's `0xE4` was the same byte as the Check claim tag. Readers decide
 what the byte means from context: an `.ixe` reader expects an environment
 header and a claim reader expects a claim. The byte alone does not identify
 the object kind.
 
 ```
-Header:      N4(0xE, VERSION)            -- 0xE4 for version 4
+Header:      N4(0xE, VERSION)            -- 0xE5 for version 5
 Root:        32 bytes                     -- canonical merkle root over
                                             consts.keys(); for empty
                                             const sets this is the
@@ -1572,7 +1575,7 @@ fixed-width little-endian like `.ixes`; source of truth
 magic    b"IXC\0\0\0\0\0"            (8)
 version  u32 = 2
 flags    u32                          # bit0: storage profile (0 = fat, 1 = chunked)
-object_format     u8 = 4              # ixon-v4
+object_format     u8 = 5              # ixon-v5
 validator         u8 = 1              # erased-lean-v1 catalog claims
 members_root      32 bytes
 content_root      32 bytes
@@ -1611,29 +1614,30 @@ source of truth). The `Catalog` claim (below) binds both roots.
 
 ## Proofs and Claims
 
-Envs, commitments, the AssumptionTree data type, and all claims share
+Envs, ExprObj, commitments, the AssumptionTree data type, and all claims share
 the `f = 4` flag 0xE. Proofs (opaque ZK bytes) share flag 0xF. Values
 0..=7 fit in single-byte headers. Catalog (variant 8) and Resource
 (variant 9) are in TagN's two-byte rung: `0xE8 0x00` and `0xE8 0x01`.
-Environment headers are interpreted in the `.ixe` context: the v4
-environment header is `0xE4`, the same byte as the Check claim tag. The
+Environment headers are interpreted in the `.ixe` context: the v5
+environment header is `0xE5`, the same byte as the CheckEnv claim tag. The
 enclosing protocol must identify the object kind.
 
 Every claim and proof payload starts with two bytes immediately after its
-header: object format `4`, then validator `0` (structural-v1),
+header: object format `5`, then validator `0` (structural-v1),
 `1` (erased-lean-v1), or `2` (resource-v1). Readers require the validator
 assigned to that variant. Whole-object readers reject trailing bytes and
 earlier unscoped encodings. These bytes are included in the claim digest
 and proof statement. A claim with another object format is rejected with
-`claim: unsupported object format N, expected 4 — regenerate the claim`
+`claim: unsupported object format N, expected 5 — regenerate the claim`
 (catalog manifests likewise: `catalog: unsupported object format N, expected
-4 — regenerate the catalog`).
+5 — regenerate the catalog`).
 
-### Flag 0xE Variant Layout (Env + Comm + AssumptionTree + Claims)
+### Flag 0xE Variant Layout (Env + ExprObj + Comm + AssumptionTree + Claims)
 
 | Value | Bytes | Type | Payload |
 |------|------|------|---------|
-| 4 (format) | `0xE4` | Environment (`.ixe` context) | 32-byte merkle root + main/assumptions + 6 sections |
+| 5 (format) | `0xE5` | Environment (`.ixe` context) | 32-byte merkle root + main/assumptions + 6 sections |
+| 0 | `0xE0` | ExprObj | format byte + universe parameter count + expression and tables |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
 | 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |
@@ -1675,7 +1679,7 @@ the multi-byte-tag path.
 Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
 and NOT transmitted on the wire. Wrapper decoding alone proves nothing.
-IxVM supports Check, CheckEnv, Reveal, and Contains; Resource is currently
+IxVM supports Eval, Check, CheckEnv, Reveal, and Contains; Resource is currently
 validated by the native Lean/Rust boundary and is explicitly rejected as an
 IxVM proof request. Catalog proofs compose erased CheckEnv claims.
 
@@ -1683,7 +1687,8 @@ IxVM proof request. Catalog proofs compose erased CheckEnv claims.
 
 ```rust
 pub enum Claim {
-    /// `input` evaluates to `output`, optionally modulo `assumptions`.
+    /// The checked input declaration's body normalizes to the output ExprObj.
+    /// Assumptions concern input dependencies only.
     Eval { input: Address, output: Address, assumptions: Option<Address> },
     /// The constant at `const_addr` is well-typed, optionally modulo
     /// `assumptions`.
@@ -1764,18 +1769,18 @@ pub struct Proof {
 **Eval claim** (0xE3, 2 addresses + opt assumptions byte):
 ```
 E3                    -- N4(0xE, 3) (Eval)
-04 01                 -- object format 4, erased-lean-v1
+05 01                 -- object format 5, erased-lean-v1
 [32 bytes]            -- input address
-[32 bytes]            -- output address
+[32 bytes]            -- output ExprObj address
 00                    -- assumptions = None (or 01 + [32 bytes] for Some)
 ```
 
 **Eval proof** (0xF0, claim payload + opaque ZK bytes):
 ```
 F0                    -- N4(0xF, 0) (Eval proof)
-04 01                 -- object format 4, erased-lean-v1
+05 01                 -- object format 5, erased-lean-v1
 [32 bytes]            -- input address
-[32 bytes]            -- output address
+[32 bytes]            -- output ExprObj address
 00                    -- assumptions = None
 04                    -- proof.len = 4 (N0)
 01 02 03 04           -- opaque ZK proof bytes
@@ -1784,7 +1789,7 @@ F0                    -- N4(0xF, 0) (Eval proof)
 **Check claim** (0xE4, 1 address + opt assumptions byte):
 ```
 E4                    -- N4(0xE, 4) (Check)
-04 01                 -- object format 4, erased-lean-v1
+05 01                 -- object format 5, erased-lean-v1
 [32 bytes]            -- const address
 00                    -- assumptions = None
 ```
@@ -1792,7 +1797,7 @@ E4                    -- N4(0xE, 4) (Check)
 **Reveal claim** — reveal that a committed Definition has `safety = Safe`:
 ```
 E6                    -- N4(0xE, 6) (Reveal)
-04 00                 -- object format 4, structural-v1
+05 00                 -- object format 5, structural-v1
 [32 bytes]            -- comm_addr
 00                    -- variant: Definition
 02                    -- mask: bit 1 (safety) [N0]
@@ -1803,7 +1808,7 @@ Total: 38 bytes.
 **Contains claim** (0xE7, 2 addresses):
 ```
 E7                    -- N4(0xE, 7) (Contains)
-04 00                 -- object format 4, structural-v1
+05 00                 -- object format 5, structural-v1
 [32 bytes]            -- tree (merkle root)
 [32 bytes]            -- const address (asserted leaf)
 ```
@@ -1812,18 +1817,22 @@ Total: 67 bytes.
 **Resource claim** (`0xE8 0x01`, 2 addresses):
 ```
 E8 01                 -- N4(0xE, 9) (Resource): two-byte TagN rung
-04 02                 -- object format 4, resource-v1
+05 02                 -- object format 5, resource-v1
 [32 bytes]            -- complete env root
 [32 bytes]            -- resource profile address
 ```
 Total: 68 bytes.
 
-The claims fixture `Tests/Fixtures/ixon-v4/claims.tsv` holds the canonical
+The claims fixture `Tests/Fixtures/ixon-v5/claims.tsv` holds the canonical
 bytes and BLAKE3 digest of one claim of every variant; its headers and scope
-bytes match the claim examples above. `lake exe ixon-v4-tests` compares the file
+bytes match the claim examples above. `lake exe ixon-v5-tests` compares the file
 with the serializers' output, and `--export-fixtures` regenerates it under
-`ixon-v4-fixtures/` in the scratch directory `$IX_IXON_V4_DIR` (default
+`ixon-v5-fixtures/` in the scratch directory `$IX_IXON_V5_DIR` (default
 `/tmp`).
+
+The fixture directory and test commands retain their historical v4 names;
+their scoped artifacts track the current format. Constant and expression
+bytes, including primitive addresses, are unchanged between v4 and v5.
 
 
 ---

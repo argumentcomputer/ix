@@ -219,7 +219,7 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
 /-! ## IxVM IOBuffer interface
 
 This section is the normative description of the host↔kernel interface.
-The host seeds payloads on channels 0–5; the Aiur kernel consumes
+The host seeds payloads on channels 0–6; the Aiur kernel consumes
 them via `io_get_info` + `#read_byte_stream`. Each channel carries one
 value shape and each key is the content address of the value it maps to
 — no overloading, no in-band discriminators.
@@ -232,6 +232,7 @@ value shape and each key is the content address of the value it maps to
 | 3       | Defn reducibility hint | Defn addr             | single G     |
 | 4       | blob raw bytes         | blob addr             | raw bytes    |
 | 5       | resource profile       | profile addr          | profile bytes |
+| 6       | ExprObj output         | expression object addr | ExprObj bytes |
 
 Channel 5 reserves the native resource-claim witness layout. IxVM currently
 rejects `resource-v1` claims explicitly: a native validation result cannot be
@@ -249,7 +250,7 @@ the first time the check touches its address, and the reducibility hint
 and blob payload follow from that same fault. Nothing is walked up
 front, so what actually gets read is a subset of what the host seeds.
 
-Binding. On channels 0, 2, and 4 the kernel re-hashes the bytes it read
+Binding. On channels 0, 2, 4, and 6 the kernel re-hashes the bytes it read
 and asserts blake3 equality against the key, so the host cannot
 substitute a payload. Channel 1 is bound the same way in effect but by a
 different derivation: the kernel parses the tree and recomputes its
@@ -279,7 +280,8 @@ address lacking it is a constant that must be walked.
 
 Channel numbers MUST stay in sync with the inlined `io_get_info` /
 `#read_byte_stream` literals in `Ix/IxVM/Ingress.lean` and
-`Ix/IxVM/Kernel/Claim.lean`. Channel 0 is reused with a different key
+`Ix/IxVM/Kernel/Claim.lean` and `Ix/IxVM/Kernel/Eval.lean`.
+Channel 0 is reused with a different key
 shape by the test and benchmark entrypoints (`blake3_test`,
 `ixon_serde_test`, …); those never run in the same execution as
 `verify_claim`, so the one-shape-per-channel rule holds for every
@@ -386,9 +388,15 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer ← seedAsm asm ioBuffer
   | .eval input output asm =>
     let inputClosure := closureFrom env input
-    let outputClosure := closureFrom env output
+    let some bytes := env.blobs[output]?
+      | throw s!"no ExprObj bytes supplied for {output}"
+    unless Address.blake3 bytes == output do throw "ExprObj hash mismatch"
+    let obj ← Ixon.ExprObj.de bytes
+    -- The input closure already includes the synthesized primitives.
+    let outputClosure := closureFromRoots env obj.refs
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
+    ioBuffer := ioBuffer.extend 6 (addrKey output) (bytes.data.map .ofUInt8)
     ioBuffer ← seedAsm asm ioBuffer
   | .checkEnv root asm =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer

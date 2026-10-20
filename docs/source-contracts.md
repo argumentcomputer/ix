@@ -197,6 +197,6 @@ The focused `source-contract-tests` target checks source identity, distinct
 occurrences of equal terms, every arrow contract, syntax, imported interfaces,
 native metadata, result placement, both let kinds, and rejection of unadmitted
 external interfaces before artifacts are written. Syntax fixtures also reject accidental
-`sorryAx` insertion. The `ixon-v4-tests` target separately exercises binary
+`sorryAx` insertion. The `ixon-v5-tests` target separately exercises binary
 representations, FFI, accepted compilation and decompilation,
 resource admission, VM execution, interpretation, and proving.

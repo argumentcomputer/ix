@@ -12,7 +12,7 @@ public import IxC.Ixon.Types
 
 public section
 
-/-! Pure production Ixon v4 codecs. Anonymous encodings and decoder
+/-! Pure production Ixon v5 codecs. Anonymous encodings and decoder
 behavior are shared with the host; metadata, environments, hashing,
 and lazy transport remain in `Ix.Ixon`. -/
 
@@ -20,9 +20,9 @@ namespace Ixon
 
 open Ix (DefKind DefinitionSafety QuotKind)
 
-/-- Stable identifier for the Ixon wire format, version 4 (`Env.VERSION`).
+/-- Stable identifier for the Ixon wire format, version 5 (`Env.VERSION`).
 Mirrors Rust `WIRE_FORMAT_ID`. -/
-def wireFormatId : String := "ixon-v4"
+def wireFormatId : String := "ixon-v5"
 
 /-! ## Serialization Monad and Typeclass -/
 
@@ -1082,6 +1082,85 @@ def getConstant : GetM Constant := getConstantWithUnivs (getArray getUniv)
 instance : Serialize Constant where
   put := putConstant
   get := getConstant
+
+/-! ## Standalone expression objects (v5)
+
+Tag E0, format 05, universe parameter count, root, sharing, refs, univs.
+Validation is linear in the encoded DAG: a sharing entry carries its loose
+bound-variable requirement instead of being expanded at each occurrence. -/
+namespace ExprObj
+
+private def checkIndex (i : UInt64) (n : Nat) : Except String Unit :=
+  unless i.toNat < n do throw "ExprObj: table index out of bounds"
+
+private def checkUniv (bound : UInt64) : Univ → Except String Unit
+  | .zero => pure ()
+  | .succ u => checkUniv bound u
+  | .max a b | .imax a b => checkUniv bound a *> checkUniv bound b
+  | .var i => unless i < bound do throw "ExprObj: universe parameter out of bounds"
+
+private def loose (shares : Array Nat) (refs univs : Nat) : Expr → Except String Nat
+  | .sort i => checkIndex i univs *> pure 0
+  | .var i => pure (i.toNat + 1)
+  | .ref i us => do
+    checkIndex i refs
+    for u in us do checkIndex u univs
+    pure 0
+  | .recur .. => throw "ExprObj: block-local Rec is forbidden"
+  | .prj i _ e => checkIndex i refs *> loose shares refs univs e
+  | .str i | .nat i => checkIndex i refs *> pure 0
+  | .app f a => return max (← loose shares refs univs f) (← loose shares refs univs a)
+  | .lam _ t b | .all _ _ t b =>
+    return max (← loose shares refs univs t) ((← loose shares refs univs b) - 1)
+  | .letE _ t v b =>
+    return max (max (← loose shares refs univs t) (← loose shares refs univs v))
+      ((← loose shares refs univs b) - 1)
+  | .share i => do
+    checkIndex i shares.size
+    pure shares[i.toNat]!
+
+def validate (o : ExprObj) : Except String Unit := do
+  for u in o.univs do checkUniv o.lvls u
+  let mut shares := #[]
+  for e in o.sharing do
+    shares := shares.push (← loose shares o.refs.size o.univs.size e)
+  unless (← loose shares o.refs.size o.univs.size o.root) == 0 do
+    throw "ExprObj: free term variable"
+
+def put (o : ExprObj) : PutM Unit := do
+  putTagN 4 0xE 0
+  putU8 5
+  putTagN 0 0 o.lvls
+  putExpr o.root
+  putTagN 0 0 o.sharing.size.toUInt64
+  for e in o.sharing do putExpr e
+  putTagN 0 0 o.refs.size.toUInt64
+  for a in o.refs do Serialize.put a
+  putTagN 0 0 o.univs.size.toUInt64
+  for u in o.univs do putUniv u
+
+def get : GetM ExprObj := do
+  let tag ← getTagN 4
+  unless tag.flag == 0xE && tag.value == 0 do throw "ExprObj: wrong tag"
+  unless (← getU8) == 5 do throw "ExprObj: unsupported object format"
+  let lvls := (← getTagN 0).value
+  let root ← getExpr
+  let sharing ← getArray getExpr (← getTagN 0).value.toNat
+  let refs ← getArray Serialize.get (← getTagN 0).value.toNat
+  let univs ← getArray getUniv (← getTagN 0).value.toNat
+  let o : ExprObj := ⟨lvls, root, sharing, refs, univs⟩
+  match o.validate with
+  | .error e => throw e
+  | .ok () => pure o
+
+def ser (o : ExprObj) : ByteArray := runPut (put o)
+def de (bytes : ByteArray) : Except String ExprObj := runGetExact get bytes
+
+end ExprObj
+
+instance : Serialize ExprObj where
+  put := ExprObj.put
+  get := ExprObj.get
 
 /-! ## Convenience functions for serialization -/
 

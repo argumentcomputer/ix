@@ -148,6 +148,9 @@ Verified by composition of per-piece `checkEnv` claims with set
 discharge — there is deliberately no whole-catalog interpreter arm.
 -/
 inductive Claim where
+  /-- The checked input declaration's body recursively normalizes to the
+  erased expression in `output` (an ExprObj address). Assumptions concern
+  input dependencies only. No output declaration or resource contract is certified. -/
   | eval     (input output : Address) (assumptions : Option Address)
   | check    (const : Address) (assumptions : Option Address)
   | checkEnv (root : Address) (assumptions : Option Address)
@@ -464,11 +467,11 @@ end RevealConstantInfo
 namespace Claim
 
 -- TagN (`f = 4`) value dispatch (mirrors crates/ixon/src/proof.rs).
--- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
+-- Flag 0xE holds ExprObj (0), Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,
 -- so catalog is `E8 00` and resource `E8 01` on the wire. The `.ixe`
 -- header also uses flag 0xE, with the format version as the value
--- (`0xE4` for version 4, the same byte as the check claim tag).
+-- (`0xE5` for version 5, the same byte as the check-env claim tag).
 -- Flag 0xF holds proofs (single-byte tags 0xF0–0xF6).
 
 def FLAG_CLAIM : UInt8 := 0xE

@@ -152,6 +152,10 @@ def ixon := ⟦
     Mk(ConstantInfo, List‹&Expr›, List‹Addr›, List‹&Univ›)
   }
 
+  enum ExprObj {
+    Mk(U64, &Expr, List‹&Expr›, List‹Addr›, List‹&Univ›)
+  }
+
   -- Blob: decoded literal value associated with a content address
   enum BlobEntry {
     Mk(Addr, U64)

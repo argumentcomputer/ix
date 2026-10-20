@@ -59,7 +59,7 @@ def fixtureLine (label : String) (constant : Constant) : String :=
   s!"{label}\t{Addressed.commit constant}\t{hexOfBytes (serConstant constant)}"
 
 /-- The shared `addressed.tsv` fixture, also read by the Rust resource
-validator. `lake exe ixon-v4-tests --export-fixtures` writes it. -/
+validator. `lake exe ixon-v5-tests --export-fixtures` writes it. -/
 def fixtureText : Except String String := do
   let profileAddress ← fixtureProfile.address
   let rows := fixtures.map fun (label, constant) => fixtureLine label constant
@@ -69,7 +69,7 @@ def fixtureText : Except String String := do
 def run : IO Unit := do
   let (base, unit) := unitEnv
   let profile := fixtureProfile
-  let fixture ← IO.FS.readFile "Tests/Fixtures/ixon-v4/addressed.tsv"
+  let fixture ← IO.FS.readFile "Tests/Fixtures/ixon-v5/addressed.tsv"
   let lines := fixture.splitOn "\n"
   for (label, constant) in fixtures do
     unless lines.contains (fixtureLine label constant) do
@@ -79,7 +79,7 @@ def run : IO Unit := do
     throw <| IO.userError "addressed profile fixture differs"
   unless fixture == (← get "fixture text" fixtureText) do
     throw <| IO.userError "addressed fixture differs from its producer; regenerate it with \
-      `lake exe ixon-v4-tests --export-fixtures`"
+      `lake exe ixon-v5-tests --export-fixtures`"
   let decoded ← get "profile roundtrip" (Profile.ofBytes profile.bytes)
   unless decoded.bytes == profile.bytes do throw <| IO.userError "profile roundtrip differs"
   for length in [:profile.bytes.size] do

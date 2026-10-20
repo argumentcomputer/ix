@@ -424,7 +424,7 @@ def compressedApp : Ixon.Expr :=
 #guard resourceExpr compressedApp
 -- `18 00`, which Ixon v3 rejected as a nonminimal Tag4 spelling of `var 0`,
 -- is in v4 the unique encoding of `var 8` (the first value of rung 2 of
--- `f = 4`; `tagn4_rung2_first` in `Tests/Fixtures/ixon-v4/expressions.txt`).
+-- `f = 4`; `tagn4_rung2_first` in `Tests/Fixtures/ixon-v5/expressions.txt`).
 #guard match Ixon.deExpr ⟨#[0x18, 0]⟩ with
   | .ok value => value == .var 8 && Ixon.serExpr value == ⟨#[0x18, 0]⟩
   | .error _ => false
@@ -469,7 +469,7 @@ example (bytes : ByteArray) (value : Ixon.Constant)
 end Tests.Ix.Kernel.Codec
 
 /-- Independently specified Ixon v4 expression bytes, every vector of
-`Tests/Fixtures/ixon-v4/expressions.txt`: the binder, result and let contract
+`Tests/Fixtures/ixon-v5/expressions.txt`: the binder, result and let contract
 cases (all integers in rung 1, so byte-identical to Ixon v3), and the
 multi-byte TagN cases (the first and last value of every rung of `f = 4` and
 `f = 0`, a count of 8 and a rung-3 `Share`), checked for the codec's exact

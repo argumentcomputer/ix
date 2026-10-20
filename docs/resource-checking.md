@@ -120,7 +120,7 @@ its resource result is never cached by expression identity alone.
 ## Profiles, claims, and consumers
 
 A canonical profile begins with the UTF-8 bytes
-`ixon-v4/resource-v1/profile` and a zero byte, followed by:
+`ixon-v5/resource-v1/profile` and a zero byte, followed by:
 
 1. Assumptions, shareable type addresses, and selection primitive addresses:
    each list has a TagN (`f = 0`) count and strictly increasing 32-byte addresses.
@@ -171,7 +171,7 @@ These are executable-check and transition invariants. They do not replace the
 ordinary typechecking prerequisite or claim a proof of a machine backend's
 allocation behavior.
 
-[Shared resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
+[Shared resource fixtures](../Tests/Fixtures/ixon-v5/resource.tsv) exercise
 accepted and rejected terms in both implementations. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic

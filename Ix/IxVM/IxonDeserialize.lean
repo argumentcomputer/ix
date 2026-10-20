@@ -770,6 +770,21 @@ def ixonDeserialize := ⟦
     let (univs, s5) = @get_univs(s4);
     (Constant.Mk(info, sharing, refs, univs), s5)
   }
+
+  fn get_expr_obj(stream: ByteStream) -> (ExprObj, ByteStream) {
+    let (tag, s) = get_tagn4(stream);
+    let (flag, value) = tag;
+    assert_eq!(flag, 0xE, "ExprObj: wrong tag flag");
+    assert_eq!(value, [0u8; 8], "ExprObj: wrong tag value");
+    let (format, s) = read_byte(s);
+    assert_eq!(format, 5u8, "ExprObj: unsupported object format");
+    let (lvls, s) = get_tagn0(s);
+    let (root, s) = get_expr(s);
+    let (sharing, s) = get_sharing(s);
+    let (refs, s) = get_refs(s);
+    let (univs, s) = get_univs(s);
+    (ExprObj.Mk(lvls, root, sharing, refs, univs), s)
+  }
 ⟧
 
 end IxVM

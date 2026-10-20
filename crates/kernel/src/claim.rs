@@ -10,8 +10,6 @@
 //! opaque Merkle commitment and already accepts free-form roots produced by
 //! recursive `merkle_join`; there is no canonical-root validator on claims.
 
-use rustc_hash::FxHashSet;
-
 use ix_common::address::Address;
 use ixon::constant::ConstantInfo;
 use ixon::env::Env;
@@ -40,17 +38,10 @@ pub fn build_check_claim(env: &Env, const_addr: Address) -> Claim {
 
 /// Build an eval claim for the pair `(input, output)` in `env`.
 ///
-/// Assumptions = canonical merkle root over `transitive_deps(input) ∪
-/// transitive_deps(output) \ {input, output}`. `None` if that set is
-/// empty.
+/// The output names an ExprObj, not a constant. Only the input's dependency
+/// closure needs typing assumptions; output typing follows from evaluation.
 pub fn build_eval_claim(env: &Env, input: Address, output: Address) -> Claim {
-  let mut set: FxHashSet<Address> =
-    env.transitive_deps_excl(&input).into_iter().collect();
-  set.extend(env.transitive_deps_excl(&output));
-  set.remove(&input);
-  set.remove(&output);
-  let mut deps: Vec<Address> = set.into_iter().collect();
-  deps.sort_unstable();
+  let deps = env.transitive_deps_excl(&input);
   let assumptions = merkle_root_canonical(&deps);
   Claim::Eval { input, output, assumptions }
 }
@@ -204,7 +195,7 @@ mod tests {
     let i = Address::hash(b"i");
     let o = Address::hash(b"o");
     env.store_const(i.clone(), defn_const(vec![]));
-    env.store_const(o.clone(), defn_const(vec![]));
+    env.blobs.insert(o.clone(), vec![]);
     match build_eval_claim(&env, i.clone(), o.clone()) {
       Claim::Eval { input, output, assumptions: None } => {
         assert_eq!(input, i);
@@ -215,14 +206,14 @@ mod tests {
   }
 
   #[test]
-  fn eval_excludes_both_endpoints_from_assumptions() {
-    // i -> d, o -> d. The set is {d}, not containing i or o.
+  fn eval_assumptions_come_only_from_input() {
+    // Even a constant stored at the output address is not a typing target.
     let env = Env::new();
     let i = Address::hash(b"i");
     let o = Address::hash(b"o");
     let d = Address::hash(b"d");
     env.store_const(i.clone(), defn_const(vec![d.clone()]));
-    env.store_const(o.clone(), defn_const(vec![d.clone()]));
+    env.store_const(o.clone(), defn_const(vec![Address::hash(b"output-only")]));
     env.store_const(d.clone(), defn_const(vec![]));
     match build_eval_claim(&env, i.clone(), o.clone()) {
       Claim::Eval { input, output, assumptions: Some(asm) } => {

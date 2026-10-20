@@ -17,6 +17,7 @@ pub mod diff;
 pub mod env;
 pub mod error;
 pub mod expr;
+pub mod expr_obj;
 pub mod lazy;
 pub mod map;
 pub mod merkle;
@@ -30,9 +31,9 @@ pub mod syntax;
 pub mod tag;
 pub mod univ;
 
-/// Stable identifier for the Ixon wire format, version 4
+/// Stable identifier for the Ixon wire format, version 5
 /// (`Env::VERSION`). Mirrors `Ixon.wireFormatId`.
-pub const WIRE_FORMAT_ID: &str = "ixon-v4";
+pub const WIRE_FORMAT_ID: &str = "ixon-v5";
 
 // Re-export main types
 pub use comm::Comm;
@@ -49,6 +50,7 @@ pub use diff::{
 pub use env::{Env, Named};
 pub use error::{CompileError, DecompileError, SerializeError};
 pub use expr::Expr;
+pub use expr_obj::ExprObj;
 pub use lazy::LazyConstant;
 pub use metadata::{
   ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap, NameIndex,
@@ -454,7 +456,7 @@ mod doc_examples {
 
   #[test]
   fn env_tag() {
-    // Env -> TagN(4, 0xE, VERSION) -> 0xE4 for version 4
+    // Env -> TagN(4, 0xE, VERSION) -> 0xE5 for version 5
     let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();

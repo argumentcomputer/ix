@@ -227,6 +227,21 @@ def claimConstructorTests : TestSeq :=
   ++ test "openConstantInfo result serde roundtrips" openConstantInfoRoundtrips
   ++ test "revealClaim wraps correctly" revealClaimWrapper
 
+private def evalObjectsRetained : Bool := Id.run do
+  let .ok (.eval input output none, env) :=
+      Ix.Commit.evalClaimWithEnv emptyCompileEnv [] simpleValue simpleValue simpleType
+    | return false
+  let some inputBytes := env.constants[input]? | return false
+  let some outputBytes := env.blobs[output]? | return false
+  let .ok (_ : Ixon.Constant) := Ixon.de inputBytes | return false
+  let .ok obj := Ixon.ExprObj.de outputBytes | return false
+  return input != output && !env.constants.contains output &&
+    Address.blake3 outputBytes == output && obj.lvls == 0 &&
+    (Ixon.de (α := Ixon.Constant) outputBytes).toOption.isNone
+
+def evalObjectTests : TestSeq :=
+  test "evalClaimWithEnv retains a declaration input and an ExprObj output" evalObjectsRetained
+
 /-! ## IO tests for commitConst -/
 
 def commitConstIOTest : TestSeq :=
@@ -244,6 +259,7 @@ public def Tests.Commit.suite : List TestSeq := [
   fieldCombinationTests,
   compileDefTests,
   claimConstructorTests,
+  evalObjectTests,
 ]
 
 public def Tests.Commit.suiteIO : List TestSeq := [

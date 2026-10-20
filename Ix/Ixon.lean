@@ -1175,6 +1175,12 @@ def storeBlob (env : Env) (bytes : ByteArray) : Env × Address :=
 def getBlob? (env : Env) (addr : Address) : Option ByteArray :=
   env.blobs.get? addr
 
+/-- ExprObj uses blob transport, not the constant environment. Its tag and
+the Eval witness channel identify its object kind. -/
+def storeExprObj (env : Env) (obj : ExprObj) : Except String (Env × Address) := do
+  obj.validate
+  pure (env.storeBlob obj.ser)
+
 /-- Store a commitment. -/
 def storeComm (env : Env) (addr : Address) (comm : Comm) : Env :=
   { env with comms := env.comms.insert addr comm }
@@ -1510,10 +1516,10 @@ def FLAG : UInt8 := 0xE
 /-- `.ixe` format version, carried in the header's TagN value field.
     Any change to serialized bytes bumps this; readers reject a
     mismatch and there is no back-compat reading of old versions —
-    `.ixe` files are regenerated artifacts. Version 4 is the TagN
-    format; its header is the single byte `0xE4`. Mirrors Rust
+    `.ixe` files are regenerated artifacts. Version 5 adds ExprObj;
+    its header is the single byte `0xE5`. Mirrors Rust
     `Env::VERSION` in `crates/ixon/src/serialize.rs`. -/
-def VERSION : UInt64 := 4
+def VERSION : UInt64 := 5
 
 /-- Object-format byte bound by claim, proof and catalog scopes: the
     format version as one byte, so an object produced under another

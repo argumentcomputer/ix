@@ -18,7 +18,7 @@ namespace Ix.Resource
 
 open Ixon
 
-/-- The resource validator's identifier, `"ixon-v4/resource-v1"`: the wire
+/-- The resource validator's identifier, `"ixon-v5/resource-v1"`: the wire
 format (`Ixon.wireFormatId`) it reads, so a format version bump moves profile
 addresses to a new domain. Mirrors Rust `VALIDATOR_ID`. -/
 def validatorId : String := wireFormatId ++ "/resource-v1"
