@@ -122,11 +122,19 @@ theorem internRef_sound (state : BlockState) (address : Address)
   · exact sound.insert address room
 
 /-- The unchecked pure helper wraps a fresh slot at the wire limit to zero.
-This symbolic statement does not allocate an enormous native array. -/
+This symbolic statement does not allocate an enormous native array.
+The proof states the index by `show` after the miss, so its term carries
+the state update of `BlockState.internRef` once, not inside `simp`'s
+congruence proofs: the compilers' exact sharing search on the larger term
+takes minutes (365 s in Rust at `BlockState`'s 24 fields), this one under a
+second. -/
 theorem internRef_limit_wraps (state : BlockState) (address : Address)
     (full : state.refs.size = UInt64.size) (miss : state.refsIndex.get? address = none) :
     (state.internRef address).2 = 0 := by
-  simp only [BlockState.internRef, miss, full]
+  unfold BlockState.internRef
+  rw [miss]
+  show state.refs.size.toUInt64 = 0
+  rw [full]
   rfl
 
 theorem internUniv_lookup (state : BlockState) (univ : Ixon.Univ)
