@@ -932,17 +932,6 @@ theorem checkDivModEvidence_datF (env env2 : Env md) (c : Key md) (F : Nat) :
     | rfl
     | (simp only [FueledM.atF_pure, FueledM.atF_throw]))
 
-theorem checkReduceIdentity_datF (env env2 : Env md) (c : Key md) (value : Expr md)
-    (F : Nat) :
-    (checkReduceIdentity (fueledOpsM mode) env env2 c value).val F =
-      checkReduceIdentity (fueledOps mode F) env env2 c value := by
-  unfold checkReduceIdentity
-  repeat (first
-    | split
-    | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
-    | rfl
-    | (simp only [FueledM.atF_pure, FueledM.atF_throw]))
-
 /-- The pinned-block install at a fuel datum.  Three of `checkDecl`'s
 arms share this body since task #293. -/
 theorem checkBasisDecl_datF (env : Env md) (kind : BasisKind) (F : Nat) :
@@ -992,19 +981,12 @@ theorem checkDecl_datF (env : Env md) (d : Declaration md) (F : Nat) :
     funext cv'
     rw [checkThmVal_datF]
   | opaqueDecl cv value =>
-    dsimp only
+    show ((checkConstantVal (fueledOpsM mode) env cv >>= fun cv =>
+      checkOpaqueVal (fueledOpsM mode) env cv value : FueledM md _)).val F = _
     rw [FueledM.atF_bind, checkConstantVal_datF]
     congr 1
     funext cv'
-    rw [FueledM.atF_bind, checkOpaqueVal_datF]
-    congr 1
-    funext env2
-    repeat (first
-      | (rw [checkReduceIdentity_datF])
-      | split
-      | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
-      | rfl
-      | (simp only [FueledM.atF_pure, FueledM.atF_throw]))
+    rw [checkOpaqueVal_datF]
   | axiomDecl cv =>
     dsimp only
     -- the `Quot.sound` comparison (task #293) is a pure guard

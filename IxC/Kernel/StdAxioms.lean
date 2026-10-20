@@ -120,8 +120,8 @@ def ConstantVal.matchesPin (cv pin : ConstantVal md) : Bool :=
 /-! ### The lockstep comparison (task #226)
 
 `matchesPin` above is the SPECIFICATION, and every proof about a pin
-hit consumes it (`Verify/StdAxiomPin.lean`, `Verify/OfReducePin.lean`,
-`Verify/ReducePinInv.lean`, `Model/DivMod.lean`).  What it says to do
+hit consumes it (`Verify/StdAxiomPin.lean`, the model's axiom branch),
+and what it says to do
 — build `erasePw` of BOTH sides, then compare — is `O(tree)` on the
 side that comes from the stream: `Expr.erasePw` rebuilds every node,
 so a DAG-shared type unfolds.  `tests/e2e/tower_axiom_pin.ndjson`

@@ -20,7 +20,7 @@ P fold stores `denoteMeta`-numeraled leaves and so can never supply the
 denoteAnnot-currency fields, which the P surface never reads.)
 
 **The laws the fields are stated over live in `Model/Annot/Laws.lean`**
-since task #305 closing — `NatOps`, `DivMod`, `EqLaw`, `ReduceOps`, the
+since task #305 closing — `NatOps`, `DivMod`, `EqLaw`, the
 caps kit, the iota kit and the tower kit were in this file until then,
 and were moved out (unchanged, docstrings included) so that the rules
 tier's inputs can name them without importing the establishment
@@ -129,12 +129,6 @@ structure EnvModelM (μ : CheckMode) (env : Env md) where
   soundness (`Model/Rules/IotaSound.lean`, through
   `RulesInputs.rec_rules`) -/
   rec_rules : ∀ φ : LevelParam → Nat, RecRules base2 φ
-  /-- every stored compiler-trust opaque is the identity on its
-  element type (`EnvS.reduce_ops`'s mirror; an *environment law* for
-  the same reason `eq_law` is — the opaque's leaf is fixed by its own
-  install's identity certificate and by nothing else, so the supplier
-  is `harvestOpaque`.  Consumed by the `ofReduce*` axiom branch) -/
-  reduce_ops : ReduceOps base2
   /-- the stored tower-backed projection entries' typing and iota
   laws (task #175 wiring W5; an *environment law* for the same reason
   `rec_rules` is — a direct structure's entries are fixed by its
@@ -265,9 +259,6 @@ binder. -/
         exact nomatch hf
   rec_rules := fun _ n _ _ _ _ hf => by
     rw [show Env.empty.find? n = none from rfl] at hf
-    exact nomatch hf
-  reduce_ops := fun c _ cv hf => by
-    rw [show Env.empty.find? c = none from rfl] at hf
     exact nomatch hf
   tower_ok := fun _ T i entry hf => by
     have : Env.empty.findProj? T i = none := rfl

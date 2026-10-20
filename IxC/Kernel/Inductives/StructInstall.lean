@@ -1,7 +1,6 @@
 module
 
 public import IxC.Kernel.Inductives.Modeled
-public import IxC.Kernel.TrustAxioms
 
 @[expose] public section
 

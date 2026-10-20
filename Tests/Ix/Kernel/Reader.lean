@@ -149,7 +149,7 @@ def quotLift := bound .quotLift
 #guard defaultTable.isOk && (builtinPrelude (md := .anon)).isOk && defaultBinding.isOk
 -- the default table: every role bound, well formed, its section canonical and
 -- committed under its BLAKE3 hash
-#guard builtinTable.bound.size == 64 && builtinTable.check.isOk
+#guard builtinTable.bound.size == 59 && builtinTable.check.isOk
 #guard (Ix.Kernel.RoleTable.ofBytes builtinTable.toBytes).isSome
 #guard match defaultBinding with
   | .ok b => hash b.bytes == b.address && b.bytes == builtinTable.toBytes
@@ -907,7 +907,7 @@ def refuses (t : Ix.Kernel.RoleTable) (why : String) : Bool :=
   | .error e => (e.splitOn why).length > 1
   | .ok () => false
 
-#guard refuses { builtinTable with version := 2 } "version 2"
+#guard refuses { builtinTable with version := 3 } "version 3"
 #guard refuses { builtinTable with bound := builtinTable.bound.push (.nat, address 1) } "bound twice"
 #guard refuses (rebind [(.natAdd, bound .natSub)]) "bound to two roles"
 #guard refuses (drop builtinTable [.eqRefl]) "its block's"
@@ -938,7 +938,7 @@ formed (`admitBinding`), before it reads any record. -/
 #guard match checkBytesWith hash ⟨address 1, builtinTable.toBytes⟩ builtinPre limits [] [] with
   | .error (.binding (.mismatch a)) => a == address 1
   | _ => false
-#guard match checkBytesWith hash (bindingOf { builtinTable with version := 2 }) builtinPre limits [] [] with
+#guard match checkBytesWith hash (bindingOf { builtinTable with version := 3 }) builtinPre limits [] [] with
   | .error (.binding (.malformed _)) => true
   | _ => false
 #guard match checkBytesWith hash ⟨hash ⟨#[0xe8]⟩, ⟨#[0xe8]⟩⟩ builtinPre limits [] [] with

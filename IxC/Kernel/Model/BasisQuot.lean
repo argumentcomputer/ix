@@ -181,7 +181,7 @@ theorem extendQuot (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT quotA.name ψ
@@ -219,7 +219,7 @@ theorem extendQuotMk (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT quotMkA.name ψ
@@ -772,7 +772,7 @@ theorem extendQuotInd (mp : EnvModelM V μ env)
     (A := fun ψ => AnnotTerm.const .quotInd [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
-    (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT quotIndA.name ψ
@@ -1143,7 +1143,7 @@ theorem extendQuotSound (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by (cases md <;> decide))) (Or.inr (by (cases md <;> decide)))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT quotSoundA.name ψ
@@ -2238,7 +2238,7 @@ theorem extendQuotLift (mp : EnvModelM V μ env)
     (A := fun ψ => AnnotTerm.const .quotLift [ψ uN, ψ vN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
-    (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT quotLiftA.name ψ

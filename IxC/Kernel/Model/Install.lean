@@ -337,8 +337,6 @@ theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
         ((coreCons mp.base2 A hfresh hh hAclosed hAparams hAok) : EnvModel V _))
     (hrec_rules : ∀ φ : LevelParam → Nat,
       RecRules (V := V) ((coreCons mp.base2 A hfresh hh hAclosed hAparams hAok) : EnvModel V _) φ)
-    (hreduce_ops : ReduceOps (V := V)
-        ((coreCons mp.base2 A hfresh hh hAclosed hAparams hAok) : EnvModel V _))
     (htower_ok : ∀ φ : LevelParam → Nat,
       TowerOk (V := V) ((coreCons mp.base2 A hfresh hh hAclosed hAparams hAok) : EnvModel V _) φ) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
@@ -436,7 +434,6 @@ theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
     eq_law := heq_law
     caps_ok := hcaps_ok
     rec_rules := hrec_rules
-    reduce_ops := hreduce_ops
     tower_ok := htower_ok }, rfl⟩
 
 
@@ -485,14 +482,12 @@ theorem declStep_preserves_of_cons (mp : EnvModelM V μ env)
         ((coreCons mp.base2 A hfresh hh hAclosed hAparams hAok) : EnvModel V _))
     (hrec_rules : ∀ φ : LevelParam → Nat,
       RecRules (V := V) ((coreCons mp.base2 A hfresh hh hAclosed hAparams hAok) : EnvModel V _) φ)
-    (hreduce_ops : ReduceOps (V := V)
-        ((coreCons mp.base2 A hfresh hh hAclosed hAparams hAok) : EnvModel V _))
     (htower_ok : ∀ φ : LevelParam → Nat,
       TowerOk (V := V) ((coreCons mp.base2 A hfresh hh hAclosed hAparams hAok) : EnvModel V _) φ) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A :=
   declStep_preserves_of_cons_guarded mp hfresh hh hAclosed hAparams hAok hAvalid htyReads htyOk
-    hmemNew hvalReads hnh hnat_ops hdiv_mod heq_law hcaps_ok hrec_rules hreduce_ops
+    hmemNew hvalReads hnh hnat_ops hdiv_mod heq_law hcaps_ok hrec_rules
     htower_ok
 
 end Ix.Kernel.Model

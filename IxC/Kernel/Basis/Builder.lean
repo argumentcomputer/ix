@@ -34,7 +34,7 @@ namespace Ix.Kernel
 
 /-! The raw-pin builder: `Expr` constructors under the raw binder
 annotations.  Opened by the pin modules (`IxC/Kernel/Basis/*`,
-`IxC/Kernel/StdAxioms.lean`, `IxC/Kernel/TrustAxioms.lean`). -/
+`IxC/Kernel/StdAxioms.lean`). -/
 
 namespace BasisDSL
 

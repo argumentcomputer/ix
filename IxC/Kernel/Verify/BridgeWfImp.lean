@@ -2172,54 +2172,6 @@ theorem checkDivModEvidence_wfimp {env env2 : Env md} (henv : EnvWF env) {F : Na
           | false => intro h; exact absurd h atF_throw
         | error e => intro h; exact absurd h atF_throw
 
-/-- The compiler-trust identity gate, `wfOpsM mode` run to pure run (the
-raw witness value's scoping comes from the preceding opaque check). -/
-theorem checkReduceIdentity_wfimp {env env2 : Env md} (henv : EnvWF env)
-    {F : Nat} {c : Key md} {value : Expr md}
-    (hvf : value.hasFvar = false)
-    {u : Unit}
-    (h : (checkReduceIdentity (wfOpsM mode) env env2 c value).val F = .ok u) :
-    checkReduceIdentity (fueledOps mode F) env env2 c value = .ok u := by
-  unfold checkReduceIdentity at h ⊢
-  by_cases h1 : (reduceStoredOk env2 c && reduceElemOk env c) = true
-  case neg =>
-    rw [if_neg h1] at h
-    exact absurd h atF_throw
-  rw [if_pos h1] at h ⊢
-  rw [wfOpsM_annotate henv (wscopedB_of_not_hasFvar hvf)] at h
-  obtain ⟨valA, hannv, h⟩ := atF_bind_ok h
-  have hannv' : annotateCore mode env F 0 value = .ok valA := hannv
-  show (annotateCore mode env F 0 value >>= _) = _
-  rw [hannv']
-  simp only [Bind.bind, Except.bind]
-  have hvalAW : WScoped 0 valA :=
-    annotateCore_WScoped F value hannv' (WScoped.of_not_hasFvar hvf)
-  have hxW : WScoped 1 (reduceCertVar c) := by
-    unfold reduceCertVar
-    simp only [WScoped]
-    refine ⟨Nat.zero_lt_one, ?_⟩
-    unfold reduceElemTy
-    split <;> simp only [WScoped]
-  have happW : WScoped 1 (Expr.app valA (reduceCertVar c)) := by
-    simp only [WScoped]
-    exact ⟨WScoped.mono (Nat.zero_le 1) hvalAW, hxW⟩
-  dsimp only at h
-  rw [wfOpsM_isDefEq henv happW.to_wscopedB hxW.to_wscopedB] at h
-  obtain ⟨b2, hde2, h⟩ := atF_bind_ok h
-  have hde2' : isDefEqCore mode env F 1 (.app valA (reduceCertVar c))
-      (reduceCertVar c) = .ok b2 := hde2
-  show (isDefEqCore mode env F 1 (.app valA (reduceCertVar c))
-      (reduceCertVar c) >>= _) = _
-  rw [hde2']
-  simp only [Bind.bind, Except.bind]
-  cases b2 with
-  | false =>
-    simp only [Bool.false_eq_true, ↓reduceIte] at h
-    exact absurd h atF_throw
-  | true =>
-    simp only [↓reduceIte] at h ⊢
-    exact h
-
 /-! ## The direct simple-structure path (task #82)
 
 Run-level implications for the checks `checkStruct` composes.

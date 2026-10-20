@@ -62,17 +62,17 @@ def Role.ofIdx? (i : Nat) : Option Role := Role.all[i]?
 theorem Role.ofIdx?_idx (r : Role) : Role.ofIdx? r.idx = some r := by
   cases r <;> rfl
 
-theorem Role.idx_lt (r : Role) : r.idx < 64 := by
+theorem Role.idx_lt (r : Role) : r.idx < 59 := by
   cases r <;> decide
 
-/-- Every index below 64 names a role whose index it is (checked). -/
+/-- Every index below 59 names a role whose index it is (checked). -/
 theorem Role.ofIdx?_idx_below :
-    ∀ i, i < 64 → (match Role.ofIdx? i with | some r => r.idx == i | none => Bool.false) = Bool.true := by
+    ∀ i, i < 59 → (match Role.ofIdx? i with | some r => r.idx == i | none => Bool.false) = Bool.true := by
   decide
 
 theorem Role.idx_ofIdx? {i : Nat} {r : Role} (h : Role.ofIdx? i = some r) : r.idx = i := by
-  have hi : i < 64 := by
-    rcases Nat.lt_or_ge i 64 with hlt | hge
+  have hi : i < 59 := by
+    rcases Nat.lt_or_ge i 59 with hlt | hge
     · exact hlt
     · have : Role.all.length ≤ i := by simpa [Role.all] using hge
       simp [Role.ofIdx?, List.getElem?_eq_none this] at h

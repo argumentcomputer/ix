@@ -89,23 +89,6 @@ theorem stdAxiomOkF_eq (env : Env md) (cvA : ConstantVal md) :
     stdAxiomOkF (mkFEnv env) cvA = stdAxiomOk env cvA := by
   simp only [stdAxiomOkF, stdAxiomOk, mkFEnv_find?] <;> rfl
 
-theorem trustCompilerOkF_eq (env : Env md) (cvA : ConstantVal md) :
-    trustCompilerOkF (mkFEnv env) cvA = trustCompilerOk env cvA := by
-  simp only [trustCompilerOkF, trustCompilerOk, mkFEnv_find?] <;> rfl
-
-theorem reduceStoredOkF_eq (env : Env md) (c : Key md) :
-    reduceStoredOkF (mkFEnv env) c = reduceStoredOk env c := by
-  simp only [reduceStoredOkF, reduceStoredOk, mkFEnv_find?] <;> rfl
-
-theorem reduceElemOkF_eq (env : Env md) (c : Key md) :
-    reduceElemOkF (mkFEnv env) c = reduceElemOk env c := by
-  simp only [reduceElemOkF, reduceElemOk, mkFEnv_find?] <;> rfl
-
-theorem ofReduceAxOkF_eq (env : Env md) (cvA : ConstantVal md) :
-    ofReduceAxOkF (mkFEnv env) cvA = ofReduceAxOk env cvA := by
-  simp only [ofReduceAxOkF, ofReduceAxOk, mkFEnv_find?,
-    reduceElemOkF_eq, reduceStoredOkF_eq] <;> rfl
-
 theorem natOpStoredOkF_eq_fun (env : Env md) :
     natOpStoredOkF (mkFEnv env) = natOpStoredOk env :=
   funext (natOpStoredOkF_eq env)
@@ -332,13 +315,6 @@ theorem checkDivModEvidenceF_eq (ops : (CheckerOps md) m) (env env2 : Env md)
       = checkDivModEvidence ops ev env env2 c := by
   simp only [checkDivModEvidenceF, checkDivModEvidence, mkFEnv_find?, mkFEnv_find?_fun,
     divModEnvGuardF_eq, divModCertsGuardF_eq, checkDivModCertsF_eq] <;> rfl
-
-theorem checkReduceIdentityF_eq (ops : (CheckerOps md) m) (env env2 : Env md)
-    (c : Key md) (value : Expr md) :
-    checkReduceIdentityF ops (mkFEnv env) (mkFEnv env2) c value
-      = checkReduceIdentity ops env env2 c value := by
-  simp only [checkReduceIdentityF, checkReduceIdentity, mkFEnv_env,
-    reduceStoredOkF_eq, reduceElemOkF_eq] <;> rfl
 
 end Monadic
 

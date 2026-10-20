@@ -635,16 +635,8 @@ theorem checkDeclC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
     refine Yields.bind' (checkConstantValC_fresh mode fe cv) fun p hp => ?_
     obtain ⟨cvA, jty⟩ := p
     obtain ⟨hp, hfr⟩ := hp
-    simp only []
-    have key : Yields (checkOpaqueValC mode fe cvA jty value)
-        (fun fe' => PushChain env fe') :=
-      checkOpaqueValC_push mode h
-        (by show fe.find? cvA.name = none; rw [hp]; exact hfr) jty value
-    split
-    · refine Yields.bind' key fun fe2 h2 => ?_
-      yields
-      all_goals (apply Yields.pure; exact h2)
-    · exact key
+    exact checkOpaqueValC_push mode h
+      (by show fe.find? cvA.name = none; rw [hp]; exact hfr) jty value
   | axiomDecl cv =>
     simp only []
     -- task #293: `Quot.sound` is compared with the pin and pushes
@@ -660,7 +652,6 @@ theorem checkDeclC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
     have hfrA : fe.find? cvA.name = none := by rw [hp]; exact hfr
     by_cases ht : cvA.name = sorryAxName
     · rw [if_neg (by rw [tolerated_not_std fe cvA ht]; exact Bool.false_ne_true),
-        if_neg (tolerated_ne_trust ht), if_neg (tolerated_ne_ofReduce ht),
         if_neg (tolerated_ne_std ht), if_pos ht]
       exact Yields.pure h
     · rw [if_neg ht]
@@ -730,13 +721,11 @@ theorem annotStepC_push (mode : CheckMode) (i : Nat) {env : Env md} {fe : FEnv m
       Array.toList_push⟩
   | opaqueDecl cv value =>
     simp only []
-    split
-    · exact hord _
-    · refine Yields.bind' (annotValueC_fresh mode fe cv value) fun r hr => ?_
-      obtain ⟨cvA, jty, jv⟩ := r
-      obtain ⟨hp, hfr⟩ := hr
-      exact Yields.pure ⟨h.push (by show fe.find? cvA.name = none; rw [hp]; exact hfr), _,
-        Array.toList_push⟩
+    refine Yields.bind' (annotValueC_fresh mode fe cv value) fun r hr => ?_
+    obtain ⟨cvA, jty, jv⟩ := r
+    obtain ⟨hp, hfr⟩ := hr
+    exact Yields.pure ⟨h.push (by show fe.find? cvA.name = none; rw [hp]; exact hfr), _,
+      Array.toList_push⟩
   | axiomDecl cv => exact hord _
   | basisDecl kind => exact hord _
   | quotDecl k cv => exact hord _

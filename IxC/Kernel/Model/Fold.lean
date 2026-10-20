@@ -1,6 +1,6 @@
 module
 
-public import IxC.Kernel.Model.AxiomReduce
+public import IxC.Kernel.Model.AxiomPin
 import IxC.Kernel.Model.DeclInd
 import IxC.Kernel.Model.Inductives.DeclStruct
 import IxC.Kernel.Semantics.IndBlockFacts
@@ -61,35 +61,30 @@ variable {ev : Ix.Kernel.Evidences md}
 
 /-- The axiom kind's whole step — **no longer routed** (ENDGAME D):
 `axiomStepPB_of` below discharges it.  The definition is kept because
-the pin tier's four branches are stated against it and the census is
+the pin tier's branches are stated against it and the census is
 read off these signatures. -/
 def AxiomStepPB (V : Type w) [SetTheory V] (μ : CheckMode) : Prop :=
   -- task #161 S4: the relation premise is now the run projection
   -- (`DeclAxiomRun`), which names no valuation — so the carrier `_mp`
   -- no longer appears in the premise's *type*.  It stays as the
-  -- invariant the four branches consume.
+  -- invariant the branches consume.
   ∀ {F : Nat} {env : Env md} (_mp : EnvModelM V μ env)
     {cv : ConstantVal md} {env₂ : Env md},
     DeclAxiomRun μ F env cv env₂ →
     Nonempty (EnvModelM V μ env₂)
 
-/-- **`AxiomStepPB`, discharged — THE PIN BUNDLE IS CLOSED.**  All four
-`DeclAxiomR` branches: the two standard axioms (`axiomStd`, ENDGAME
-C), `Lean.trustCompiler` (`axiomTrustCompiler`, ENDGAME A part 2),
-`ofReduceNat`/`ofReduceBool` (`axiomOfReduce`, ENDGAME D, on the new
-`ReduceOps` field), and the tolerated skip (`axiomSkip`, which stores
-nothing). -/
+/-- **`AxiomStepPB`, discharged — THE PIN BUNDLE IS CLOSED.**  Both
+`DeclAxiomRun` branches: the two standard axioms (`axiomStd`, ENDGAME C)
+and the tolerated skip (`axiomSkip`, which stores nothing).  Since
+`ALPHA-COLLAPSE.md` §8.2 there is no compiler-trust branch. -/
 theorem axiomStepPB_of (hμ : μ.verifiedChecks = true) : (AxiomStepPB (md := md)) V μ := by
   intro _F _env mp _cv _env₂ hR
   -- the `Quot.sound` arm (task #293) installs nothing
   rcases hR with ⟨-, rfl⟩ | hR
   · exact ⟨mp⟩
   obtain ⟨type', hcv, hbranch⟩ := hR
-  rcases hbranch with ⟨hok, rfl⟩ | ⟨hname, hok, rfl⟩ |
-    ⟨hor, hok, rfl⟩ | ⟨-, -, -, -, -, -, -, rfl⟩
+  rcases hbranch with ⟨hok, rfl⟩ | ⟨-, -, -, -, rfl⟩
   · exact axiomStd hμ mp hcv hok
-  · exact axiomTrustCompiler hμ mp hcv hname hok
-  · exact axiomOfReduce hμ mp hcv hor hok
   · exact axiomSkip mp
 
 /-- The basis kind's whole step, routed (basis tier). -/
@@ -191,7 +186,7 @@ theorem declStep_preserves (hμ : μ.verifiedChecks = true) {F : Nat} {env env�
     exact harvestThm hμ mp hrun
   | opaqueDecl cv value =>
     have hsh := hrun
-    obtain ⟨type', value', hcv, -, henv2, -⟩ := hsh
+    obtain ⟨type', value', hcv, -, henv2⟩ := hsh
     subst henv2
     exact harvestOpaque hμ mp hrun
   | axiomDecl cv => exact axiomStepPB_of hμ mp hrun

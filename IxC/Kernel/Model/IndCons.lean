@@ -105,9 +105,8 @@ theorem declStep_preserves_of_ind_cons (mp : EnvModelM V μ env)
     -- the name: `ConstantValR`'s second conjunct at a member,
     -- `projFnName_ne_reserved` at a projection slot
     (hnres : Ix.Kernel.reservedBasisNames.contains c₀.name = false)
-    -- the kind: an inductive block installs no value kind and no axiom
+    -- the kind: an inductive block installs no value kind
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
-    (hnotax : ∀ cv, c₀ ≠ .axiomInfo cv)
     -- the head's own obligations (task #161 S7)
     (hh : ConsHead env c₀ A)
     -- the annotated tower
@@ -144,7 +143,7 @@ theorem declStep_preserves_of_ind_cons (mp : EnvModelM V μ env)
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh hh
     hAclosed hAparams hAok hAvalid htyReads htyOk hmemNew
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · -- `hvalReads`: an inductive cons is never a definition
     intro _ψ cv2 value2 hmem
     obtain ⟨hint2, hdt⟩ := hmem
@@ -163,8 +162,6 @@ theorem declStep_preserves_of_ind_cons (mp : EnvModelM V μ env)
       (fun h => ne_of_notReserved hnres reserved_eqName h.symm) _ rfl
   · exact hcaps _ rfl
   · exact fun φ => hrec _ rfl φ
-  · exact reduceOps_cons_fresh mp.reduce_ops hfresh
-      (Or.inl hnotax) _ rfl
   · -- `tower_ok` (task #175 wiring W5): an ind-tier cons is never a
     -- tower entry (`hh.projTower`)
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
@@ -205,13 +202,11 @@ theorem declStep_preserves_of_ind_member_cons (mp : EnvModelM V μ env)
       m₂.acval = acvalWith mp.base2.acval c₀.name A → CapsOk m₂) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
-  refine declStep_preserves_of_ind_cons mp hfresh hnres ?_ ?_ hh
+  refine declStep_preserves_of_ind_cons mp hfresh hnres ?_ hh
     hAclosed hAparams hAok hAvalid htyReads htyOk hmemNew
     hcaps ?_ ?_
   · rcases hknd with ⟨cv, caps, rfl⟩ | ⟨cv, nP, nF, rfl⟩ <;>
       intro _ _ _ h <;> exact nomatch h
-  · rcases hknd with ⟨cv, caps, rfl⟩ | ⟨cv, nP, nF, rfl⟩ <;>
-      intro _ h <;> exact nomatch h
   · refine fun m₂ hac φ => recRules_cons_fresh mp hfresh hh.projTower ?_ m₂ hac φ
     rcases hknd with ⟨cv, caps, rfl⟩ | ⟨cv, nP, nF, rfl⟩ <;>
       intro _ _ _ _ h <;> exact nomatch h
@@ -256,7 +251,7 @@ theorem declStep_preserves_of_ind_rec_cons (mp : EnvModelM V μ env)
   obtain ⟨cv, mI, rP, rules, rfl⟩ := hknd
   exact declStep_preserves_of_ind_cons mp hfresh hnres
     (fun _ _ _ h => nomatch h)
-    (fun _ h => nomatch h) hh hAclosed hAparams hAok
+    hh hAclosed hAparams hAok
     hAvalid htyReads htyOk hmemNew hcaps hrec (fun _ h => nomatch h)
 
 end Ix.Kernel.Model

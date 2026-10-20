@@ -50,7 +50,7 @@ def topLevel : List (String × Part) := [
   ("FEnv", .checker), ("Inductives", .checker), ("Key", .checker), ("Level", .checker),
   ("LevelGeran", .checker), ("Name", .checker),
   ("PropRead", .checker), ("PropWhen", .checker), ("Roles", .checker),
-  ("StdAxioms", .checker), ("TrustAxioms", .checker),
+  ("StdAxioms", .checker),
   ("TypeChecker", .checker),
   -- the checker: con-leche's cached checker and frontend, and Ix's typing
   -- tier (its data and its fold over the cached checker's functions)

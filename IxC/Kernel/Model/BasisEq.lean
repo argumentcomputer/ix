@@ -220,7 +220,6 @@ theorem extendEq (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h) (by (cases md <;> decide))
-    (Or.inl (fun _ h => nomatch h))
     (ConsHead.ofBasis hwf
       (fun ψ => by rw [eqValAV_erase ψ]; exact eqValT_closed ψ)
       rfl
@@ -265,7 +264,7 @@ theorem extendEqRefl (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf
       (fun ψ => by rw [eqReflValAV_erase ψ]; exact eqReflValT_closed ψ)
       rfl
@@ -1179,7 +1178,7 @@ theorem extendEqRec (mp : EnvModelM V μ env)
   refine declStep_preserves_of_basis_rec_cons mp (A := eqRecValAV) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
-    (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide))
     (ConsHead.ofBasis hwf
       (fun ψ => by rw [eqRecValAV_erase ψ]; exact eqRecValT_closed ψ)
       rfl

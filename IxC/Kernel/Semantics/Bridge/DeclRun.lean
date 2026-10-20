@@ -2,7 +2,6 @@ module
 
 public import IxC.Kernel.Semantics.DeclRun
 import IxC.Kernel.Semantics.Bridge.Decl
-import IxC.Kernel.Verify.ReducePinInv
 import IxC.Kernel.Verify.DivModInv
 
 @[expose] public section
@@ -15,7 +14,7 @@ whose per-kind records carry *two* kinds of conjunct: guards/runs and
 derivations (the trailing `∀ φ, ∃ …, denote … ∧ Infer … ∧ DefEq …`).
 Every one of those bridges therefore **welds** two independent proofs:
 
-* a checker inversion — `checkConstantVal_inv`, `checkReduceIdentity_inv`,
+* a checker inversion — `checkConstantVal_inv`,
   `checkDivModEvidence_inv` and the branch's own control-flow inversion,
   all relation-free;
 * a derivation construction — `checkBridge`, which is where
@@ -92,17 +91,6 @@ theorem valueFrontRun_of {env : Env md} {μ : CheckMode} {F : Nat}
   ⟨hlbv, hivf, hannv, hvp, hvr, ⟨vtype, hvt, hde⟩⟩
 
 /-! ## The conditional evidence packs, run half -/
-
-/-- **`checkReduceIdentity`, run half.**  `checkReduceIdentity_inv`'s
-output re-associated: `ReduceIdentityRun` is exactly the inversion,
-without the identity's `DefEq` transport. -/
-theorem reduceIdentityRun_of {env env' : Env md} {μ : CheckMode} {F : Nat}
-    {c : Key md} {value : Expr md}
-    (h : checkReduceIdentity (m := CheckM md) (fueledOps μ F) env env' c value
-      = .ok ()) :
-    ReduceIdentityRun μ F env env' c value := by
-  obtain ⟨hstored, helem, valA, hva, hp2⟩ := checkReduceIdentity_inv h
-  exact ⟨hstored, helem, valA, hva, hp2⟩
 
 /-- **`checkDivModEvidence`, run half**: the environment guard, and the
 evidence's proofs with their guards and checked certificates (the
@@ -232,24 +220,6 @@ theorem declAxiomRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
   rw [if_neg hstd] at h
   have hstdF : stdAxiomOk env { cv with type := type } = false := by
     revert hstd; cases stdAxiomOk env { cv with type := type } <;> simp
-  by_cases htc : cv.name = trustCompilerName
-  · rw [if_pos htc] at h
-    by_cases htco : trustCompilerOk env { cv with type := type } = true
-    · rw [if_pos htco] at h
-      simp only [pure, Except.pure, Except.ok.injEq] at h
-      exact Or.inr (Or.inl ⟨htc, htco, h.symm⟩)
-    · rw [if_neg htco] at h
-      simp [throw, throwThe, MonadExceptOf.throw] at h
-  rw [if_neg htc] at h
-  by_cases hofr : cv.name = ofReduceNatName ∨ cv.name = ofReduceBoolName
-  · rw [if_pos hofr] at h
-    by_cases hofro : ofReduceAxOk env { cv with type := type } = true
-    · rw [if_pos hofro] at h
-      simp only [pure, Except.pure, Except.ok.injEq] at h
-      exact Or.inr (Or.inr (Or.inl ⟨hofr, hofro, h.symm⟩))
-    · rw [if_neg hofro] at h
-      simp [throw, throwThe, MonadExceptOf.throw] at h
-  rw [if_neg hofr] at h
   by_cases hpc : cv.name = propextName ∨ cv.name = choiceName
   · rw [if_pos hpc] at h
     simp [throw, throwThe, MonadExceptOf.throw] at h
@@ -257,17 +227,13 @@ theorem declAxiomRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
   by_cases htol : cv.name = sorryAxName
   · rw [if_pos htol] at h
     simp only [pure, Except.pure, Except.ok.injEq] at h
-    refine Or.inr (Or.inr (Or.inr ⟨hstdF, htc, ?_, ?_, ?_, ?_, htol,
-      h.symm⟩))
-    · exact fun hh => hofr (Or.inl hh)
-    · exact fun hh => hofr (Or.inr hh)
+    refine Or.inr ⟨hstdF, ?_, ?_, htol, h.symm⟩
     · exact fun hh => hpc (Or.inl hh)
     · exact fun hh => hpc (Or.inr hh)
   · rw [if_neg htol] at h
     simp [throw, throwThe, MonadExceptOf.throw] at h
 
-/-- **`opaqueDecl`, run half**, with the compiler-trust pin's run
-inversion in place of the pin bridge. -/
+/-- **`opaqueDecl`, run half.** -/
 theorem declOpaqueRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
     {cv : ConstantVal md} {value : Expr md}
     (h : checkDecl μ (fueledOps μ F) ev env (.opaqueDecl cv value)
@@ -314,32 +280,8 @@ theorem declOpaqueRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
   | false => exact nomatch h
   | true =>
   simp only [Bool.false_eq_true, ↓reduceIte] at h
-  refine ⟨type, value', hcv,
-    valueFrontRun_of hlbv hivf' hannv hvp hvr hvt hde, ?_, ?_⟩
-  · by_cases hro : reduceOpNames.contains cv.name = true
-    · rw [if_pos hro] at h
-      cases hrpin : checkReduceIdentity (m := CheckM md) (fueledOps μ F) env
-          ⟨.axiomInfo { cv with type := type } :: env.consts⟩ cv.name
-          value with
-      | error e => rw [hrpin] at h; exact nomatch h
-      | ok u =>
-        rw [hrpin] at h
-        simp only [Except.ok.injEq] at h
-        exact h.symm
-    · rw [if_neg hro] at h
-      simp only [Except.ok.injEq] at h
-      exact h.symm
-  · intro hro
-    rw [if_pos hro] at h
-    cases hrpin : checkReduceIdentity (m := CheckM md) (fueledOps μ F) env
-        ⟨.axiomInfo { cv with type := type } :: env.consts⟩ cv.name
-        value with
-    | error e => rw [hrpin] at h; exact nomatch h
-    | ok u =>
-      rw [hrpin] at h
-      simp only [Except.ok.injEq] at h
-      subst h
-      exact reduceIdentityRun_of hrpin
+  simp only [Except.ok.injEq] at h
+  exact ⟨type, value', hcv, valueFrontRun_of hlbv hivf' hannv hvp hvr hvt hde, h.symm⟩
 
 /-- **`defnDecl`, run half**, with the two `Nat`-operation run
 inversions (`natEqsRun_of_certs`, `divModCertRun_of`) in place of the

@@ -60,10 +60,12 @@ own compiler-generated lambdas (the new `thenM` continuation after the body and
 the renumbering of the existing ones); `Bool.toNat` was already in the closure
 (`compareMember`); no extern, unsafe or ruled construct moved; CQX.8's field test
 in the in-model generator from 6024, by the entry's change (4 of `genNested`'s
-specialisations gone, `IxC/Kernel/Audit/Roots.lean`). -/
+specialisations gone, `IxC/Kernel/Audit/Roots.lean`); (A) (`ALPHA-COLLAPSE.md`
+§8.2) from 6020, by the entry's change (122 out: the compiler-trust roles and
+their checks, `IxC/Kernel/Audit/Roots.lean`). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 6020 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ixon.BlockOrder.compareExpr]: 5898 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

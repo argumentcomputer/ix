@@ -248,7 +248,6 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env md}
             eq_law := ?_
             caps_ok := ?_
             rec_rules := hrecP _ rfl
-            reduce_ops := ?_
             tower_ok := ?_ },
           rfl, rfl⟩
   · -- `type_reads`
@@ -334,12 +333,6 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env md}
           (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf) hcap
           hres φ' us hus
       exact ⟨TVa, by rw [← hde]; exact hTVa, hokT, hlaw⟩
-  · -- `reduce_ops`
-    intro c hc cv hf hpin
-    obtain ⟨hs, hlaw⟩ := mp.reduce_ops c hc cv
-      ((hsame _ _ (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf)
-      hpin
-    exact ⟨by rw [← hcg.isSomeEq]; exact hs, hlaw⟩
   · -- `tower_ok` (task #175 wiring W5): a table entry, a former and a
     -- constructor are never recursors, so every lookup the law reads
     -- is unchanged by the swap, and the readings are `hde`

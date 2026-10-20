@@ -1206,15 +1206,6 @@ theorem tolerated_not_std (fe : FEnv md) (cvA : ConstantVal md)
     stdAxiomOkF fe cvA = false := by
   rw [stdAxiomOkF, if_neg, if_neg] <;> rw [ht] <;> (cases md <;> decide)
 
-theorem tolerated_ne_trust {n : Key md}
-    (ht : n = sorryAxName) : n ≠ trustCompilerName := by
-  rw [ht]; (cases md <;> decide)
-
-theorem tolerated_ne_ofReduce {n : Key md}
-    (ht : n = sorryAxName) :
-    ¬(n = ofReduceNatName ∨ n = ofReduceBoolName) := by
-  rw [ht]; (cases md <;> decide)
-
 theorem tolerated_ne_std {n : Key md}
     (ht : n = sorryAxName) :
     ¬(n = propextName ∨ n = choiceName) := by
@@ -1270,15 +1261,8 @@ theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv md}
     simp only []
     refine Yields.bind' (checkConstantValC_name mode fe cv) fun p hp => ?_
     obtain ⟨cvA, jty⟩ := p
-    simp only []
-    have key : Yields (checkOpaqueValC mode fe cvA jty value)
-        (fun fe' => SkelIs fe' (.ax cv.name :: sk)) := by
-      rw [← hp]; exact checkOpaqueValC_skels mode h cvA jty value
-    split
-    · refine Yields.bind' key fun fe2 h2 => ?_
-      yields
-      all_goals (apply Yields.pure; exact h2)
-    · exact key
+    rw [← hp]
+    exact checkOpaqueValC_skels mode h cvA jty value
   | axiomDecl cv =>
     simp only []
     -- task #293: `Quot.sound` is compared with the pin and installs
@@ -1296,7 +1280,6 @@ theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv md}
       by_cases ht : cvA.name = sorryAxName
       · rw [if_pos (Or.inl ht),
           if_neg (by rw [tolerated_not_std fe cvA ht]; exact Bool.false_ne_true),
-          if_neg (tolerated_ne_trust ht), if_neg (tolerated_ne_ofReduce ht),
           if_neg (tolerated_ne_std ht), if_pos ht]
         exact Yields.pure h
       · have hne : ¬(cvA.name = sorryAxName ∨ cvA.name = quotSoundName) := by
@@ -1398,13 +1381,11 @@ theorem annotStepC_skels (mode : CheckMode) (i : Nat) {fe : FEnv md}
     rw [← hr.1]; exact h.push _
   | opaqueDecl cv value =>
     simp only []
-    split
-    · exact hord _
-    · refine Yields.bind' (annotValueC_fresh mode fe cv value) fun r hr => ?_
-      obtain ⟨cvA, jty, jv⟩ := r
-      apply Yields.pure
-      show SkelIs (fe.push (.axiomInfo cvA)) (.ax cv.name :: sk)
-      rw [← hr.1]; exact h.push _
+    refine Yields.bind' (annotValueC_fresh mode fe cv value) fun r hr => ?_
+    obtain ⟨cvA, jty, jv⟩ := r
+    apply Yields.pure
+    show SkelIs (fe.push (.axiomInfo cvA)) (.ax cv.name :: sk)
+    rw [← hr.1]; exact h.push _
   | axiomDecl cv => exact hord _
   | basisDecl kind => exact hord _
   | quotDecl k cv => exact hord _

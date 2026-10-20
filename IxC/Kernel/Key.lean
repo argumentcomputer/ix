@@ -55,12 +55,16 @@ namespace Ix.Kernel
 /-! ## Roles -/
 
 /-- The constants the checker names: the pinned basis blocks and their
-recursors, the standard and trust axioms with the families they quantify
-over, the literal support and the certified `Nat` operations. Closed: a
-constant outside it is an input or a derived key. `ofReduceBoolAx` and
-`ofReduceNatAx` are `Lean.ofReduceBool` and `Lean.ofReduceNat`: the trust-surface
-fence (`Tests/Ix/Kernel/TrustSurface.lean`) reserves the bare words for uses
-of those axioms. -/
+recursors, the standard axioms with the families they quantify over, the
+literal support and the certified `Nat` operations. Closed: a constant
+outside it is an input or a derived key.
+
+The certified theory is Lean with its three standard axioms
+(`ALPHA-COLLAPSE.md` §8, owner 2026-10-20): native evaluation
+(`Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`,
+`Lean.ofReduceNat`, `Lean.trustCompiler`) is outside it, so none of those
+constants is a role; their Lean names key ordinary input constants, and the
+three axioms among them are non-standard axioms. -/
 inductive Role where
   | nat | natZero | natSucc | natRec | bool | boolFalse | boolTrue | boolRec
   | eq | eqRefl | eqRec | punit | punitUnit | punitRec | empty | emptyRec | false | falseRec
@@ -71,7 +75,6 @@ inductive Role where
   | natPred | natAdd | natSub | natMul | natPow | natBeq | natBle
   | natDiv | natMod | natGcd | natLand | natLor | natXor | natShiftLeft | natShiftRight
   | propext | choice | sorryAx
-  | trustCompiler | reduceBool | reduceNat | ofReduceBoolAx | ofReduceNatAx
   deriving DecidableEq, Hashable, Ord, Repr, Inhabited
 
 namespace Role
@@ -144,11 +147,6 @@ role key's rendering. -/
   | .propext => topName "propext"
   | .choice => subName "Classical" "choice"
   | .sorryAx => topName "sorryAx"
-  | .trustCompiler => subName "Lean" "trustCompiler"
-  | .reduceBool => subName "Lean" "reduceBool"
-  | .reduceNat => subName "Lean" "reduceNat"
-  | .ofReduceBoolAx => subName "Lean" "ofReduceBool"
-  | .ofReduceNatAx => subName "Lean" "ofReduceNat"
 
 /-- Every role, in declaration order. -/
 def all : List Role :=
@@ -159,8 +157,7 @@ def all : List Role :=
    .quot, .quotMk, .quotLift, .quotInd, .quotSound, .string, .stringOfList, .char, .charOfNat,
    .natPred, .natAdd, .natSub, .natMul, .natPow, .natBeq, .natBle,
    .natDiv, .natMod, .natGcd, .natLand, .natLor, .natXor, .natShiftLeft, .natShiftRight,
-   .propext, .choice, .sorryAx,
-   .trustCompiler, .reduceBool, .reduceNat, .ofReduceBoolAx, .ofReduceNatAx]
+   .propext, .choice, .sorryAx]
 
 theorem mem_all (r : Role) : r ∈ all := by cases r <;> decide
 

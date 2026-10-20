@@ -468,7 +468,7 @@ theorem extendPUnit (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT punitA.name ψ
@@ -504,7 +504,7 @@ theorem extendPUnitUnit (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT punitUnitA.name ψ
@@ -541,7 +541,7 @@ theorem extendPUnitRec (mp : EnvModelM V μ env)
     (A := fun ψ => AnnotTerm.const .punitRec [ψ uN, ψ u1N]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
-    (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT punitRecA.name ψ
@@ -877,7 +877,7 @@ theorem extendNat (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons_gen mp
     (A := fun _ => AnnotTerm.const .nat []) hfresh
     (fun _ _ _ h => nomatch h)
-    (by (cases md <;> decide)) (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide)) (by (cases md <;> decide))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT natA.name ψ
@@ -916,7 +916,7 @@ theorem extendNatZero (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons_gen mp
     (A := fun _ => AnnotTerm.const .natZero []) hfresh
     (fun _ _ _ h => nomatch h)
-    (by (cases md <;> decide)) (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide)) (by (cases md <;> decide))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT natZeroA.name ψ
@@ -957,7 +957,7 @@ theorem extendNatSucc (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons_gen mp
     (A := fun _ => AnnotTerm.const .natSucc []) hfresh
     (fun _ _ _ h => nomatch h)
-    (by (cases md <;> decide)) (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide)) (by (cases md <;> decide))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT natSuccA.name ψ
@@ -1856,7 +1856,7 @@ theorem extendNatRec (mp : EnvModelM V μ env)
     (A := fun ψ => AnnotTerm.const .natRec [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
-    (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT natRecA.name ψ

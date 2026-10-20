@@ -94,43 +94,6 @@ theorem checkConstantValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF e
     (fun s₃ u u' hs₃ hP₃ => ?_)
   exact SimC.pure hs₃ ⟨rfl, hwty⟩
 
-/-- `checkReduceIdentity` at the cached shared operations. -/
-theorem checkReduceIdentityS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
-    {env2 : Env md} {c : Key md}
-    {value : Expr md} (hvf : value.hasFvar = false)
-    (hs : CSOK mode env s₀) :
-    SimC mode env s₀ RelVC
-      (checkReduceIdentity (sharedOpsC mode (mkFEnv env)) env env2 c value)
-      (checkReduceIdentity (fueledOpsM mode) env env2 c value) := by
-  unfold checkReduceIdentity
-  dsimp only [sharedOpsC]
-  by_cases h1 : (reduceStoredOk env2 c && reduceElemOk env c) = true
-  case neg => simp only [if_neg h1]; exact SimC.throw
-  simp only [if_pos h1]
-  refine SimC.bind (opE_annotate_sim hμ henv hs
-      (Expr.WScoped.of_not_hasFvar hvf))
-    (fun s₁ valA valA' hs₁ hP => ?_)
-  obtain ⟨rfl, hwval⟩ := hP
-  have hxW : Expr.WScoped 1 (reduceCertVar c) := by
-    unfold reduceCertVar
-    simp only [Expr.WScoped]
-    refine ⟨Nat.zero_lt_one, ?_⟩
-    unfold reduceElemTy
-    split <;> simp only [Expr.WScoped]
-  have happW : Expr.WScoped 1 (Expr.app valA (reduceCertVar c)) := by
-    simp only [Expr.WScoped]
-    exact ⟨Expr.WScoped.mono (Nat.zero_le 1) hwval, hxW⟩
-  refine SimC.bind (opB_sim hμ henv hs₁ happW hxW)
-    (fun s₂ b2 b2' hs₂ hP₂ => ?_)
-  obtain rfl : b2 = b2' := hP₂
-  cases b2 with
-  | false =>
-    simp only [Bool.false_eq_true, ↓reduceIte]
-    exact SimC.throw
-  | true =>
-    simp only [↓reduceIte]
-    exact SimC.pure hs₂ rfl
-
 /-- `certifyNatEqs` at the cached shared operations. -/
 theorem certifyNatEqsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) :
     ∀ {eqs : List (Expr md × Expr md)},

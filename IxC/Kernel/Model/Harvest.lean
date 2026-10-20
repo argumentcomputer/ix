@@ -3,9 +3,11 @@ module
 import IxC.Kernel.Model.Capstone
 import IxC.Kernel.Model.NatEqs
 public import IxC.Kernel.Model.DivModCert
+public import IxC.Kernel.Model.NatEqs
+public import IxC.Kernel.Model.ErasePwInv
+import IxC.Kernel.Model.DivMod
 import IxC.Kernel.Model.Caps
 import IxC.Kernel.Model.RecRulesCons
-public import IxC.Kernel.Model.ReduceOps
 import IxC.Kernel.Semantics.DeclRun
 import IxC.Kernel.Model.Annot.BitLevels
 
@@ -328,7 +330,7 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
         (denoteMeta_erase mp.base2.acval_erase 0 value' (hA ψ)))
       hnres (fun _ heq => nomatch heq)
       (fun _ _ _ _ heq => nomatch heq)) hAclosed
-    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
+    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
   · -- `htyReads`
     intro ψ
     show ∃ ta, denoteMeta (acvalWith mp.base2.acval cv.name A)
@@ -502,12 +504,6 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
       (c₀ := .defnInfo ⟨cv.name, cv.levelParams, type'⟩ value' hint)
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
-  · -- `reduce_ops` at the extension: a definition is not an
-    -- `axiomInfo`, so no reduce operation can be this cons
-    exact reduceOps_cons_fresh mp.reduce_ops
-      (c₀ := .defnInfo ⟨cv.name, cv.levelParams, type'⟩ value' hint)
-      (A := A) hfresh
-      (Or.inl (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))) _ rfl
   · -- `tower_ok` (task #175 wiring W5): a value-kind cons is never a
     -- tower entry
     exact fun φ => towerOk_cons_fresh mp
@@ -704,7 +700,7 @@ theorem harvestThm (hμ : μ.verifiedChecks = true)
         (denoteMeta_erase mp.base2.acval_erase 0 value' (hA ψ)))
       hnres (fun _ heq => nomatch heq)
       (fun _ _ _ _ heq => nomatch heq)) hAclosed
-    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
+    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
   · -- `htyReads`
     intro ψ
     show ∃ ta, denoteMeta (acvalWith mp.base2.acval cv.name A)
@@ -770,11 +766,6 @@ theorem harvestThm (hμ : μ.verifiedChecks = true)
       (c₀ := .thmInfo ⟨cv.name, cv.levelParams, type'⟩ value)
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
-  · -- `reduce_ops` at the extension: a theorem is not an `axiomInfo`
-    exact reduceOps_cons_fresh mp.reduce_ops
-      (c₀ := .thmInfo ⟨cv.name, cv.levelParams, type'⟩ value)
-      (A := A) hfresh
-      (Or.inl (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))) _ rfl
   · -- `tower_ok` (task #175 wiring W5): a value-kind cons is never a
     -- tower entry
     exact fun φ => towerOk_cons_fresh mp
@@ -877,13 +868,7 @@ theorem harvestAxiom (hμ : μ.verifiedChecks = true)
       AnnotValid V ρ (A ψ))
     (hmemA : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval env ψ 0 type' = some ta →
-      ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
-    -- an axiom cons *is* an `axiomInfo`, so `reduce_ops`' preservation
-    -- cannot go through the kind; it goes through the name.  Every
-    -- `DeclAxiomR` branch pins `cv.name` (`matchesPin` compares it on
-    -- the nose), and none of the pinned names is a reduce operation —
-    -- the operations are installed as `opaque`s, never as axioms.
-    (hnotreduce : cv.name ∉ Ix.Kernel.reduceOpNames) :
+      ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta) :
     Nonempty (EnvModelM V μ
       ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩) := by
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
@@ -958,7 +943,7 @@ theorem harvestAxiom (hμ : μ.verifiedChecks = true)
       hAvclosed hnres (fun _ heq => nomatch heq)
       (fun _ _ _ _ heq => nomatch heq))
     hAclosed
-    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
+    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
   · -- `htyReads`
     intro ψ
     show ∃ ta, denoteMeta (acvalWith mp.base2.acval cv.name A)
@@ -1022,12 +1007,6 @@ theorem harvestAxiom (hμ : μ.verifiedChecks = true)
       (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
-  · -- `reduce_ops` at the extension: the cons *is* an `axiomInfo`, so
-    -- the preservation goes through the pinned name (the branch's
-    -- hypothesis), not the kind
-    exact reduceOps_cons_fresh mp.reduce_ops
-      (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)
-      (A := A) hfresh (Or.inr hnotreduce) _ rfl
   · -- `tower_ok` (task #175 wiring W5): a value-kind cons is never a
     -- tower entry
     exact fun φ => towerOk_cons_fresh mp
@@ -1050,7 +1029,7 @@ theorem harvestOpaque (hμ : μ.verifiedChecks = true)
     {cv : ConstantVal md} {value : Expr md} {env₂ : Env md}
     (hR : DeclOpaqueRun μ F env cv value env₂) :
     Nonempty (EnvModelM V μ env₂) := by
-  obtain ⟨type', value', hcv, hvfr, rfl, hred⟩ := hR
+  obtain ⟨type', value', hcv, hvfr, rfl⟩ := hR
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
     hrunT⟩ := hcv
   obtain ⟨hvlb, hvhf, hannv, hvp, hvr, ⟨vtype, hvrun, hvde⟩⟩ := hvfr
@@ -1210,7 +1189,7 @@ theorem harvestOpaque (hμ : μ.verifiedChecks = true)
       hnres (fun _ heq => nomatch heq)
       (fun _ _ _ _ heq => nomatch heq))
     hAclosed
-    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
+    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
   · -- `htyReads`
     intro ψ
     show ∃ ta, denoteMeta (acvalWith mp.base2.acval cv.name A)
@@ -1275,17 +1254,6 @@ theorem harvestOpaque (hμ : μ.verifiedChecks = true)
       (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
-  · -- `reduce_ops` at the extension: **this is the establishment**.
-    -- An `opaque` cons is the only place a compiler-trust operation is
-    -- ever stored, and `ReducePinR`'s recorded identity-certificate run
-    -- is what makes the law true of it (`Interp/ReduceOps.lean`);
-    -- every *other* stored operation crosses by the transport inside.
-    exact reduceOps_install hμ mp hfresh hvf' hbv' hannv hA hAclosed
-      hAok hAvalid hTa
-      (fun ψ ρ => by
-        obtain ⟨sta, hsta, htE, -, -⟩ := hrowsT ψ
-        exact htE ρ (Sat_nil V ρ))
-      hmemA hred _ rfl
   · -- `tower_ok` (task #175 wiring W5): a value-kind cons is never a
     -- tower entry
     exact fun φ => towerOk_cons_fresh mp

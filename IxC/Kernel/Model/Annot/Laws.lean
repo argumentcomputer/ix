@@ -130,40 +130,6 @@ tower is made of (the literal-tier seal II finding 1).  See the task
         interp V ρ (.app (.app (.app (m.acval eqName ψ) Aa) la) ra)
           ∈ˢ (univZero : V)
 
-/-- **The compiler-trust opaques are the identity, at `interp`** —
-`EnvS.reduce_ops` (`ReduceOpsV`, `SetR/EnvS.lean:138`) one currency
-over, with `interp`/`cval` replaced by `interp`/`acval`.  The stored
-`Lean.reduceNat`/`Lean.reduceBool` leaf, applied to a member of its
-element type's reading, *is* that member.
-
-**This is an environment law, exactly as `eq_law` is**: the opaque's
-leaf value is fixed by its own install (`checkReduceIdentity`'s
-identity certificate) and by nothing else, so the only possible supplier is
-that install.  The v1 field cannot be imported — the transfer would
-be an erasure factoring of `interp` through `interp`, refuted at
-exactly the λ-nodes the operation's leaf is made of (the literal-tier
-seal II finding 1, the same refutation that makes `EqLaw` a field).
-
-**Establishment**: `reduceOps_install` (`Interp/ReduceOps.lean`),
-at the opaque cons, from `ReducePinR`'s *recorded* identity-certificate
-run (`isDefEqCore μ env F 1 (.app valA (reduceCertVar c))
-(reduceCertVar c) = .ok true`) through `DefEqClaim` at the
-one-entry element context — the run-certificate route's fifth
-execution.  **Preservation**: `reduceOps_cons_fresh` at every other
-fresh cons (the law mentions two stored leaves, so it crosses).
-**Consumer**: the `ofReduceNat`/`ofReduceBool` axiom branch
-(`Interp/AxiomReduceP.lean`), whose innermost membership obligation
-is exactly `op a = a`. -/
-@[expose] def ReduceOps {V : Type w} [SetTheory V] {env : Env md}
-    (m : EnvModel V env) : Prop :=
-  ∀ c ∈ Ix.Kernel.reduceOpNames, ∀ cv : ConstantVal md,
-    env.find? c = some (.axiomInfo cv) →
-    ConstantVal.matchesPin cv (Ix.Kernel.reduceOpCvA c) = true →
-    (env.find? (Ix.Kernel.reduceElemName c)).isSome = true ∧
-    ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (x : V),
-      x ∈ˢ interp V ρ (m.acval (Ix.Kernel.reduceElemName c) ψ) →
-      SetTheory.app (interp V ρ (m.acval c ψ)) x = x
-
 /-! ## The structure-capability laws (task #161, caps tier)
 
 `CapsOkV`'s mirror at the validated-annotation currency: the stored

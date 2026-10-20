@@ -98,10 +98,12 @@ from 5829 (30 more, one more ruled csimp); the reader's conversion to Lean `modu
 5859, by the entry's change (28 more: the module's own specialisations,
 `instBEqAddress.beq` and `Std.Format.defWidth` called); CQX.8's field test in the
 in-model generator from 5887, by the entry's change (4 of `genNested`'s
-specialisations gone, `IxC/Kernel/Audit/Roots.lean`). -/
+specialisations gone, `IxC/Kernel/Audit/Roots.lean`); (A) (`ALPHA-COLLAPSE.md`
+§8.2) from 5883, by the entry's change (122 out: the compiler-trust roles and
+their checks, `IxC/Kernel/Audit/Roots.lean`). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5883 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ixon.Projection.checkBytes]: 5761 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

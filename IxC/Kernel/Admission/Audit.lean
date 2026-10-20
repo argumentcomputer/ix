@@ -95,12 +95,14 @@ ruled csimp: `Msg.withTerms`). The reader's and its tables' conversion to Lean
 28 more: the module's own specialisations, `instBEqAddress.beq` and
 `Std.Format.defWidth` called). CQX.8's field test in the in-model generator moved
 it from 5862 by the entry's change (`IxC/Kernel/Audit/Roots.lean`, 4 of `genNested`'s
-specialisations gone). -/
+specialisations gone). (A) (`ALPHA-COLLAPSE.md` §8.2) moved it from 5858 by the
+entry's change (`IxC/Kernel/Audit/Roots.lean`, 122 out: the compiler-trust roles
+and their checks). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5858 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5736 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

@@ -1,6 +1,7 @@
 module
 
-public import IxC.Kernel.TrustAxioms
+public import IxC.Kernel.StdAxioms
+public import IxC.Kernel.Core
 public import Std.Data.HashSet
 
 @[expose] public section
@@ -27,8 +28,7 @@ taken from where it lives (`Role.spec_*` below are `rfl`):
 | `block` | the basis blocks `Eq`, `Nat`, `PUnit`, `Empty`, `False`, `Quot` (every member) | `basisPinHit`/`quotPinHit`: the stream's declarations equal these up to `ConstantInfo.canon`; the block installed is their annotation (`BasisKind.declsA`) |
 | `anchor` | the literal support (`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat`), the standard axioms' families (`Iff`, `Nonempty` and their constructors and recursors), `True`, `True.intro`, `Bool`, `Bool.false`, `Bool.true` | the constant's type, up to binder data and level-parameter names (`listTyOk` …, `ConstantVal.matchesPin`) |
 | `ops` | the certified `Nat` operations | the type (`natOpTyPinned`) and the characterizing equations (`natOpEquations`, `divModCertStmts`), each certified by its evidence in the pre-insertion environment with the operation's self-references replaced by its value |
-| `axiom` | `propext`, `Classical.choice`, `Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`; `sorryAx` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); an inert axiom installs nothing and has no type constraint |
-| `identity` | `Lean.reduceBool`, `Lean.reduceNat` | the stored type, and the value certified to be the identity, `value x ≡ x` |
+| `axiom` | `propext`, `Classical.choice`; `sorryAx` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); an inert axiom installs nothing and has no type constraint |
 
 Four anchors have no use site that validates them: `Bool.rec`, `And`,
 `And.intro` and `And.rec` (the `And` rescue relies on `And`'s projection
@@ -75,13 +75,11 @@ inductive Spec (md : Mode) where
   /-- An axiom of the given type; `none` is an inert axiom (`sorryAx`): it is
   tolerated as a declaration, installs nothing, and any use declines. -/
   | axiom (levels : Nat) (type : Option (Expr md))
-  /-- An opaque whose value is the identity, `value x ≡ x`, at this type. -/
-  | identity (type : Expr md)
   deriving Repr, Inhabited
 
 /-- The specification kinds, for summaries and the table's checks. -/
 inductive SpecKind where
-  | block | anchor | ops | axiom | identity
+  | block | anchor | ops | axiom
   deriving DecidableEq, Repr, Inhabited
 
 def Spec.kind : Spec md → SpecKind
@@ -89,7 +87,6 @@ def Spec.kind : Spec md → SpecKind
   | .anchor .. => .anchor
   | .ops .. => .ops
   | .axiom .. => .axiom
-  | .identity _ => .identity
 
 /-- The evidence an operation's equations take, in order: `true` for an
 unconditional equation (definitional equality), `false` for a conditional one
@@ -294,6 +291,21 @@ def natOpsSpec (ty : Expr md) (c : Key md) : Spec md :=
 def divModSpec (c : Key md) : Spec md :=
   .ops natBinSpecTy ((divModCertStmts c).map fun (hs, e) => (hs, (eqSides e).1, (eqSides e).2))
 
+/-- The name `True`. -/
+abbrev trueName : Key md := roleKey .true
+
+/-- The name `True.intro`. -/
+abbrev trueIntroName : Key md := roleKey .trueIntro
+
+/-- `True : Prop` (shape only; capabilities are not specified). -/
+def trueCvA : ConstantVal md := ⟨trueName, [], .sort .zero⟩
+
+/-- `True.intro : True`. -/
+def trueIntroCvA : ConstantVal md := ⟨trueIntroName, [], .const trueName []⟩
+
+/-- `Bool : Type` (shape only). -/
+def boolCvA : ConstantVal md := ⟨boolName, [], .sort (.succ .zero)⟩
+
 /-! ## The specification of every role -/
 
 /-- **The specification set.** -/
@@ -344,11 +356,6 @@ def Role.spec : Role → Spec md
   | .propext => .axiom 0 (some propextRaw.type)
   | .choice => .axiom 1 (some choiceRaw.type)
   | .sorryAx => .axiom 1 none
-  | .trustCompiler => .axiom 0 (some trustCompilerA.type)
-  | .ofReduceBoolAx => .axiom 0 (some (ofReduceRaw ofReduceBoolName).type)
-  | .ofReduceNatAx => .axiom 0 (some (ofReduceRaw ofReduceNatName).type)
-  | .reduceBool => .identity (reduceOpRaw reduceBoolName).type
-  | .reduceNat => .identity (reduceOpRaw reduceNatName).type
 
 /-- **The roles bound together with `r`**: the members of its block (itself
 included), in the block's order. A role table binds all of them or none. -/
@@ -392,18 +399,17 @@ def Role.deps : Role → List Role
   | .natShiftRight => [.nat, .natSub, .natBle, .natDiv, .bool, .eq]
   | .propext => [.iff, .eq]
   | .choice => [.nonempty]
-  | .trustCompiler => [.true]
-  | .reduceBool => [.bool]
-  | .reduceNat => [.nat]
-  | .ofReduceBoolAx => [.reduceBool, .bool, .eq]
-  | .ofReduceNatAx => [.reduceNat, .nat, .eq]
   | _ => []
 
 /-- **The version of the specification set.** It changes exactly when
 `Role`, `Role.spec`, `Role.block` or `Role.deps` change, together with the
 specification digest (`Ix.SpecDigest.specDigest`), which the root library
-freezes (`Ix/SpecDigest.lean`). -/
-def specVersion : Nat := 1
+freezes (`Ix/SpecDigest.lean`). Version 2 (2026-10-20, `ALPHA-COLLAPSE.md` §8.2):
+the five compiler-trust roles (`Lean.trustCompiler`, `Lean.reduceBool`,
+`Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) and the `identity`
+specification kind are gone; the certified theory is Lean with its three
+standard axioms. -/
+def specVersion : Nat := 2
 
 /-! ## The evidence of an operation, as the fold reads it -/
 

@@ -233,35 +233,6 @@ def checkDivModEvidence (ops : (CheckerOps md) m) (ev : Evidences md)
   else throw (.notImplemented
     msg!"unsupported Nat.div/mod environment ({c})")
 
-/-- **The `Lean.reduceNat`/`Lean.reduceBool` install gate** (their
-specification is `identity`), run after the ordinary opaque check (`env2`
-is the already-extended environment, `env` the pre-insertion one the
-certificate runs in; `value` the declaration's raw witness value,
-annotated again here — the stored constant is an `axiomInfo`, which
-carries no value):
-
-* the stored constant must carry the pinned type, over the element
-  inductive's pinned shape;
-* the *identity certificate*: `value x ≡ x` over an opened `fvar` at
-  the element type.  This is what the model consumes
-  (`EnvModel.reduce_ops`): with the operation interpreted as the
-  identity, the `ofReduce*` axioms' types are trivially inhabited.
-
-There is no comparison with a toolchain's defining expression any more
-(the pin `fun b => b` and `checkReducePin` are retired): the certificate
-is the specification, and a value that is not the identity declines. -/
-def checkReduceIdentity (ops : (CheckerOps md) m) (env env2 : Env md) (c : Key md)
-    (value : Expr md) : m Unit := do
-  if reduceStoredOk env2 c && reduceElemOk env c then do
-    let valA ← ops.annotate env 0 value
-    let x := reduceCertVar c
-    let ok ← ops.isDefEq env 1 (.app valA x) x
-    if ok then pure ()
-    else throw (.notImplemented
-      msg!"unsupported compiler-trust opaque ({c}: the value is not the identity)")
-  else throw (.notImplemented
-    msg!"unsupported compiler-trust opaque declaration ({c})")
-
 /-- **Install the pinned (pre-annotated) basis block.**  The three
 records that install one — the fold's own `basisDecl` kind, a stream
 block `basisPinHit` recognises and a quotient record `quotPinHit`
@@ -327,27 +298,19 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
   | .thmDecl cv value =>
     let cv ← checkConstantVal ops env cv
     checkThmVal ops env cv value
-  | .opaqueDecl cv value => do
+  | .opaqueDecl cv value =>
     let cv ← checkConstantVal ops env cv
-    let env2 ← checkOpaqueVal ops env cv value
-    -- Compiler-trust opaques (`Lean.reduceNat`/`Lean.reduceBool`,
-    -- task #95): their specification is `identity`, so the stored value
-    -- is certified to be the identity function — the gate that lets the
-    -- `ofReduce*` axioms' identity certificates never fail on an
-    -- accepted environment.
-    if reduceOpNames.contains cv.name then
-      checkReduceIdentity ops env env2 cv.name value
-    pure env2
+    checkOpaqueVal ops env cv value
   | .axiomDecl cv =>
     -- Pinned axioms are *installed*: the two standard axioms
     -- (`propext` via the stored `Iff` recursor and extensionality of
     -- propositions, `Classical.choice` via the stored `Nonempty`
-    -- recursor and global choice) and the `Init` compiler-trust
-    -- family (task #95: `Lean.trustCompiler` as an opaque with value
-    -- `True.intro`; `Lean.ofReduceNat`/`Lean.ofReduceBool` over the
-    -- pinned identity opaques, trivially true).  All types and the
-    -- shapes of the inductives they quantify over are pinned (up to
-    -- the exporter's unstable hygienic binder names).  `sorryAx` — the
+    -- recursor and global choice).  Their types and the shapes of the
+    -- inductives they quantify over are pinned (up to the exporter's
+    -- unstable hygienic binder names).  The certified theory is Lean
+    -- with its three standard axioms (`ALPHA-COLLAPSE.md` §8): the
+    -- compiler-trust axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`,
+    -- `Lean.ofReduceNat`) are non-standard axioms here.  `sorryAx` — the
     -- one axiom the checker tolerates as a DECLARATION (user ruling) —
     -- is well-formedness-checked but installs NOTHING: an export
     -- declares it whenever its module mentions `sorry`, whether or not
@@ -378,26 +341,6 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
       let cvA ← checkConstantVal ops env cv
       if stdAxiomOk env cvA then
         pure ⟨.axiomInfo cvA :: env.consts⟩
-      else if cvA.name = trustCompilerName then
-        -- `Lean.trustCompiler : True` is trivially realizable (task
-        -- #95): installed exactly like a checked `opaque` with witness
-        -- value `True.intro` over the pinned `True` family — the pin
-        -- guarantees everything the ordinary opaque check would have
-        -- checked for that value, and the model interprets the constant
-        -- by `True.intro`'s interpretation.
-        if trustCompilerOk env cvA then
-          pure ⟨.axiomInfo cvA :: env.consts⟩
-        else throw (.notImplemented
-          msg!"unsupported Lean.trustCompiler shape ({cv.name})")
-      else if cvA.name = ofReduceNatName ∨ cvA.name = ofReduceBoolName then
-        -- The pinned `ofReduce*` axioms (task #95): over the pinned
-        -- `Eq` basis, the element inductive and the identity-certified
-        -- reduce opaque, `∀ a b, reduce a = b → a = b` interprets to an
-        -- inhabited proposition (the hypothesis *is* the conclusion).
-        if ofReduceAxOk env cvA then
-          pure ⟨.axiomInfo cvA :: env.consts⟩
-        else throw (.notImplemented
-          msg!"unsupported compiler-trust axiom environment ({cv.name})")
       else if cvA.name = propextName ∨ cvA.name = choiceName then
         throw (.notImplemented msg!"standard axiom shape mismatch ({cv.name})")
       else if cvA.name = sorryAxName then

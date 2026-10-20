@@ -184,17 +184,7 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
     checkThmValC mode fe cvA jty value
   | .opaqueDecl cv value => do
     let (cvA, jty) ← checkConstantValC mode fe cv
-    -- RC linearity (cf. the parser-state rule): with `fe` still live
-    -- after the push — the `reduceOpNames` branch reads it —
-    -- `checkOpaqueValC`'s `fe.push` copied the whole index on EVERY
-    -- opaque install.  Branch first, so the common arm hands `fe` to
-    -- the push unshared.
-    if reduceOpNames.contains cvA.name then do
-      let fe2 ← checkOpaqueValC mode fe cvA jty value
-      checkReduceIdentityF (sharedOpsC mode fe) fe fe2 cvA.name value
-      pure fe2
-    else
-      checkOpaqueValC mode fe cvA jty value
+    checkOpaqueValC mode fe cvA jty value
   | .axiomDecl cv =>
     -- `checkDecl`'s twin (task #293): `Quot.sound` is the pinned
     -- quotient block's own record — compared with the pin, installing
@@ -208,16 +198,6 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
       let (cvA, _) ← checkConstantValC mode fe cv
       if stdAxiomOkF fe cvA then
         pure (fe.push (.axiomInfo cvA))
-      else if cvA.name = trustCompilerName then
-        if trustCompilerOkF fe cvA then
-          pure (fe.push (.axiomInfo cvA))
-        else throw (.notImplemented
-          msg!"unsupported Lean.trustCompiler shape ({cv.name})")
-      else if cvA.name = ofReduceNatName ∨ cvA.name = ofReduceBoolName then
-        if ofReduceAxOkF fe cvA then
-          pure (fe.push (.axiomInfo cvA))
-        else throw (.notImplemented
-          msg!"unsupported compiler-trust axiom environment ({cv.name})")
       else if cvA.name = propextName ∨ cvA.name = choiceName then
         throw (.notImplemented msg!"standard axiom shape mismatch ({cv.name})")
       else if cvA.name = sorryAxName then

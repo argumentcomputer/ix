@@ -28,7 +28,6 @@ closedness it relies on. Level parameters are positions; binder data are the
                | 01 N0(levels) expr                          anchor
                | 02 expr N0(#eqs) (N0(#hyps) expr* expr expr)*   ops
                | 03 N0(levels) (00 | 01 expr)                axiom (inert | typed)
-               | 04 expr                                     identity
     info      := 00 val | 01 val expr hint | 02 val expr | 03 val caps
                | 04 val N0 N0 | 05 val N0 N0 N0(#rules) rule* | 06 table
     val       := key N0(#lps) N0* expr
@@ -160,7 +159,6 @@ def spec : Spec md → EncM Unit
     match type with
     | none => byte 0
     | some t => do byte 1; expr t
-  | .identity type => do byte 4; expr type
 
 /-- **The specification set's canonical bytes.** -/
 def specBytes : Except String ByteArray := do
@@ -182,16 +180,18 @@ end Ix.SpecDigest
 
 /-! ## The frozen value
 
-`specVersion` 1. A change to the specification set changes these lines; it
+`specVersion` 2 (re-frozen 2026-10-20, `ALPHA-COLLAPSE.md` §8.2: the five
+compiler-trust roles and the `identity` kind removed). A change to the
+specification set changes these lines; it
 is made on purpose, with `specVersion` (`IxC/Kernel/Audit/Roles.lean`). -/
 
-/-- info: "8863 bytes" -/
+/-- info: "8696 bytes" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specBytes with
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "70fedb021efa660e13618a7dbaa8f76ee0a91ac95fbd353ce05100248872e1ec" -/
+/-- info: "52049b9d09530c92cd2b02115a00ef79f64d99e8b279ee14c42b8b3dc9a94b3f" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a

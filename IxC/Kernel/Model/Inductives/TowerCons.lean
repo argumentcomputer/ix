@@ -159,7 +159,7 @@ theorem declStep_preserves_of_tower_cons (mp : EnvModelM V μ env)
     (fun ψ ta hta ρ => by
       obtain rfl := Option.some.inj ((hreads ψ).symm.trans hta)
       exact interp_sort_mem V ρ 0)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · -- `hvalReads`: a table is not a definition
     intro _ψ cv2 value2 hmem
     obtain ⟨_, hdt⟩ := hmem
@@ -180,8 +180,6 @@ theorem declStep_preserves_of_tower_cons (mp : EnvModelM V μ env)
       (fun _ _ _ _ h => nomatch h) _ rfl
   · exact fun φ => recRules_cons_fresh mp hfresh hh.projTower
       (fun _ _ _ _ h => nomatch h) _ rfl φ
-  · exact reduceOps_cons_fresh mp.reduce_ops hfresh
-      (Or.inl fun _ h => nomatch h) _ rfl
   · exact fun φ => towerOk_cons_tower mp hfresh hh.projTower _ rfl
       (hlaw _ rfl) φ
 

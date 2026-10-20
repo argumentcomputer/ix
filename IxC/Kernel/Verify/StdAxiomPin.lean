@@ -1,7 +1,8 @@
 module
 
 import IxC.Kernel.Checker
-public import IxC.Kernel.Verify.OfReducePin
+public import IxC.Kernel.Verify.NatOpFrag
+import IxC.Kernel.Verify.EnvGuards
 
 public section
 
@@ -31,6 +32,14 @@ exactly as the un-erased one did.
 namespace Ix.Kernel.Verify
 
 variable {mode : CheckMode}
+
+/-- Name and level-parameter components of a `matchesPin` hit. -/
+theorem matchesPin_invT {cv pin : ConstantVal md}
+    (h : ConstantVal.matchesPin cv pin = true) :
+    cv.name = pin.name ∧ cv.levelParams = pin.levelParams := by
+  simp only [ConstantVal.matchesPin, Bool.and_eq_true,
+    decide_eq_true_eq] at h
+  exact ⟨h.1.1, h.1.2⟩
 
 /-- The pinned `Iff` family, extracted. -/
 theorem iff_shapes {env : Env md} {cvA : ConstantVal md}

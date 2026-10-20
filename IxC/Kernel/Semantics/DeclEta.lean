@@ -118,7 +118,7 @@ theorem declEtaStepRun {μ : CheckMode} {F : Nat}
     exact EtaFamiliesClosed.cons_nonind hE
       (Option.isNone_iff_eq_none.mp hcv.1) (fun _ _ heq => nomatch heq)
   | opaqueDecl cv value =>
-    obtain ⟨type', value', hcv, -, rfl, -⟩ := h
+    obtain ⟨type', value', hcv, -, rfl⟩ := h
     exact EtaFamiliesClosed.cons_nonind hE
       (Option.isNone_iff_eq_none.mp hcv.1) (fun _ _ heq => nomatch heq)
   | axiomDecl cv =>
@@ -128,12 +128,7 @@ theorem declEtaStepRun {μ : CheckMode} {F : Nat}
     obtain ⟨type', hcv, harm⟩ := h
     have hfresh : env.find? cv.name = none :=
       Option.isNone_iff_eq_none.mp hcv.1
-    rcases harm with ⟨-, rfl⟩ | ⟨-, -, rfl⟩ | ⟨-, -, rfl⟩ |
-      ⟨-, -, -, -, -, -, -, rfl⟩
-    · exact EtaFamiliesClosed.cons_nonind hE hfresh
-        (fun _ _ heq => nomatch heq)
-    · exact EtaFamiliesClosed.cons_nonind hE hfresh
-        (fun _ _ heq => nomatch heq)
+    rcases harm with ⟨-, rfl⟩ | ⟨-, -, -, -, rfl⟩
     · exact EtaFamiliesClosed.cons_nonind hE hfresh
         (fun _ _ heq => nomatch heq)
     · exact hE

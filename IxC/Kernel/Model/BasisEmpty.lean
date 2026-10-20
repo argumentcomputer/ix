@@ -92,7 +92,7 @@ theorem extendEmpty (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT emptyA.name ψ
@@ -236,7 +236,7 @@ theorem extendEmptyRec (mp : EnvModelM V μ env)
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => by injection h with _ _ _ h4; exact h4 ▸ rfl)
-    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT emptyRecA.name ψ

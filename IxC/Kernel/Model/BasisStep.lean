@@ -30,12 +30,11 @@ The rows, and where each comes from:
 | `eq_law` | `eqLaw_cons_fresh` (the `Eq` block supplies its own — `eqLaw_of_tower`) |
 | `caps_ok` | `capsOk_cons_basis` at a reserved name, `capsOk_cons_fresh` at the pair's two `projInfo`s |
 | `rec_rules` | `recRules_cons_fresh`, on `EnvS.rec_ctors` (ENDGAME D §3a) |
-| `reduce_ops` | `reduceOps_cons_fresh`, `Or.inl` except at `Quot.sound`, where the name decides |
 
-Three of the eight vary across the twenty-two conses and are therefore
-**disjunctive premises** rather than fixed proofs — `caps_ok`'s
-(reserved name vs. the pair projections' kind) and `reduce_ops`'s
-(not-an-axiom vs. `Quot.sound`'s name).  The two genuinely bespoke rows
+One of the seven varies across the twenty-two conses and is therefore a
+**disjunctive premise** rather than a fixed proof — `caps_ok`'s
+(reserved name vs. the pair projections' kind; the compiler-trust law
+`reduce_ops` went with `ALPHA-COLLAPSE.md` §8.2).  The two genuinely bespoke rows
 — `nat_heads` at the `Nat` block, where the literal guard *becomes*
 true, and `eq_law` at the `Eq` block, where `eqLaw_cons_fresh` is
 structurally unavailable — are excluded by this lemma's side conditions
@@ -92,9 +91,6 @@ theorem declStep_preserves_of_basis_cons (mp : EnvModelM V μ env)
       ((∀ cv caps, c₀ ≠ .indInfo cv caps) ∧
         (∀ cv np nf, c₀ ≠ .ctorInfo cv np nf) ∧
         (∀ cv mI rP rules, c₀ ≠ .recInfo cv mI rP rules)))
-    -- `reduce_ops`: not an axiom, or not a trusted operation's name
-    (hred : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
-      c₀.name ∉ Ix.Kernel.reduceOpNames)
     -- the head's own obligations (task #161 S7: what the v1 base at
     -- the extension used to supply)
     (hh : ConsHead env c₀ A)
@@ -123,7 +119,7 @@ theorem declStep_preserves_of_basis_cons (mp : EnvModelM V μ env)
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh hh hAclosed hAparams hAok hAvalid htyReads htyOk hmemNew
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · -- `hvalReads`: a basis cons is never a definition
     intro _ψ cv2 value2 hmem
     obtain ⟨hint2, hdt⟩ := hmem
@@ -145,8 +141,6 @@ theorem declStep_preserves_of_basis_cons (mp : EnvModelM V μ env)
   · -- `rec_rules`: `EnvS.rec_ctors` supplies the constructor
     -- disequality, so freshness is enough (ENDGAME D §3a)
     exact fun φ => recRules_cons_fresh mp hfresh hh.projTower hnotrec _ rfl φ
-  · -- `reduce_ops`
-    exact reduceOps_cons_fresh mp.reduce_ops hfresh hred _ rfl
   · -- `tower_ok` (task #175 wiring W5): no tower entry is a basis cons
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 
@@ -168,8 +162,6 @@ theorem declStep_preserves_of_basis_rec_cons (mp : EnvModelM V μ env)
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
     (hnS : c₀.name ≠ natSuccName) (hnEq : eqName ≠ c₀.name)
     (hres : Ix.Kernel.reservedBasisNames.contains c₀.name = true)
-    (hred : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
-      c₀.name ∉ Ix.Kernel.reduceOpNames)
     (hh : ConsHead env c₀ A)
     (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
     (hAparams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
@@ -198,7 +190,7 @@ theorem declStep_preserves_of_basis_rec_cons (mp : EnvModelM V μ env)
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh hh hAclosed hAparams hAok hAvalid htyReads htyOk hmemNew
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · intro _ψ cv2 value2 hmem
     obtain ⟨hint2, hdt⟩ := hmem
     exact absurd hdt.symm (hnotdefn cv2 value2 hint2)
@@ -210,7 +202,6 @@ theorem declStep_preserves_of_basis_rec_cons (mp : EnvModelM V μ env)
   · exact eqLaw_cons_fresh mp.eq_law hnEq _ rfl
   · exact capsOk_cons_basis mp mp.caps_ok hfresh hh.projTower hres _ rfl
   · exact fun φ => hrec _ rfl φ
-  · exact reduceOps_cons_fresh mp.reduce_ops hfresh hred _ rfl
   · -- `tower_ok` (task #175 wiring W5): no tower entry is a basis cons
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 
@@ -219,7 +210,7 @@ its `eq_law` row traded for the row itself.  `eqLaw_cons_fresh`'s
 side condition is `eqName ≠ c₀.name`, and at this cons the constant
 *is* `Eq`, so the row is structurally unavailable and the block
 supplies it from its own tower (`eqLaw_of_tower`).  Seven of the
-eight rows still collapse. -/
+seven rows still collapse. -/
 theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V μ env)
     {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
@@ -229,8 +220,6 @@ theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V μ env)
     (hnotrec : ∀ cv mI rP rules, c₀ = .recInfo cv mI rP rules →
       rules = [])
     (hres : Ix.Kernel.reservedBasisNames.contains c₀.name = true)
-    (hred : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
-      c₀.name ∉ Ix.Kernel.reduceOpNames)
     (hh : ConsHead env c₀ A)
     (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
     (hAparams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
@@ -258,7 +247,7 @@ theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V μ env)
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh hh hAclosed hAparams hAok hAvalid htyReads htyOk hmemNew
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · intro _ψ cv2 value2 hmem
     obtain ⟨hint2, hdt⟩ := hmem
     exact absurd hdt.symm (hnotdefn cv2 value2 hint2)
@@ -270,7 +259,6 @@ theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V μ env)
   · exact heq _ rfl
   · exact capsOk_cons_basis mp mp.caps_ok hfresh hh.projTower hres _ rfl
   · exact fun φ => recRules_cons_fresh mp hfresh hh.projTower hnotrec _ rfl φ
-  · exact reduceOps_cons_fresh mp.reduce_ops hfresh hred _ rfl
   · -- `tower_ok` (task #175 wiring W5): no tower entry is a basis cons
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 
@@ -285,8 +273,6 @@ theorem declStep_preserves_of_basis_cons_gen (mp : EnvModelM V μ env)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnEq : eqName ≠ c₀.name)
     (hres : Ix.Kernel.reservedBasisNames.contains c₀.name = true)
-    (hred : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
-      c₀.name ∉ Ix.Kernel.reduceOpNames)
     (hh : ConsHead env c₀ A)
     (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
     (hAparams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
@@ -318,7 +304,7 @@ theorem declStep_preserves_of_basis_cons_gen (mp : EnvModelM V μ env)
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval c₀.name A := by
   refine declStep_preserves_of_cons mp (c₀ := c₀) (A := A) hfresh hh hAclosed hAparams hAok hAvalid htyReads htyOk hmemNew
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · intro _ψ cv2 value2 hmem
     obtain ⟨hint2, hdt⟩ := hmem
     exact absurd hdt.symm (hnotdefn cv2 value2 hint2)
@@ -330,7 +316,6 @@ theorem declStep_preserves_of_basis_cons_gen (mp : EnvModelM V μ env)
   · exact eqLaw_cons_fresh mp.eq_law hnEq _ rfl
   · exact capsOk_cons_basis mp mp.caps_ok hfresh hh.projTower hres _ rfl
   · exact fun φ => hrec _ rfl φ
-  · exact reduceOps_cons_fresh mp.reduce_ops hfresh hred _ rfl
   · -- `tower_ok` (task #175 wiring W5): no tower entry is a basis cons
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 

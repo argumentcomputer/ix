@@ -269,38 +269,6 @@ def stdAxiomOkF (fe : FEnv md) (cvA : ConstantVal md) : Bool :=
     ConstantVal.matchesPin cvA choiceA
   else false
 
-/-- `trustCompilerOk` through the index. -/
-def trustCompilerOkF (fe : FEnv md) (cvA : ConstantVal md) : Bool :=
-  (match fe.find? trueName with
-   | some (.indInfo cvT _) => ConstantVal.matchesPin cvT trueCvA
-   | _ => false) &&
-  (match fe.find? trueIntroName with
-   | some (.ctorInfo cvTi 0 0) => ConstantVal.matchesPin cvTi trueIntroCvA
-   | _ => false) &&
-  ConstantVal.matchesPin cvA trustCompilerA
-
-/-- `reduceStoredOk` through the index. -/
-def reduceStoredOkF (fe : FEnv md) (c : Key md) : Bool :=
-  match fe.find? c with
-  | some (.axiomInfo cvR) => ConstantVal.matchesPin cvR (reduceOpCvA c)
-  | _ => false
-
-/-- `reduceElemOk` through the index. -/
-def reduceElemOkF (fe : FEnv md) (c : Key md) : Bool :=
-  if c = reduceNatName then decide (fe.find? natName = some natA)
-  else
-    match fe.find? boolName with
-    | some (.indInfo cvB _) => ConstantVal.matchesPin cvB boolCvA
-    | _ => false
-
-/-- `ofReduceAxOk` through the index. -/
-def ofReduceAxOkF (fe : FEnv md) (cvA : ConstantVal md) : Bool :=
-  let c := ofReduceOp cvA.name
-  decide (fe.find? eqName = some eqA) &&
-  reduceElemOkF fe c &&
-  reduceStoredOkF fe c &&
-  ConstantVal.matchesPin cvA (ofReducePinA cvA.name)
-
 /-- `divModEnvGuard` through the index. -/
 def divModEnvGuardF (fe2 : FEnv md) (c : Key md) : Bool :=
   natOpGuardF fe2 c && (natOpDeps c).all (natOpStoredOkF fe2) &&
@@ -880,19 +848,6 @@ def checkDivModEvidenceF (ops : (CheckerOps md) m) (ev : Evidences md)
     | _ => throw (.internal msg!"Nat.div/mod operation not stored ({c})")
   else throw (.notImplemented
     msg!"unsupported Nat.div/mod environment ({c})")
-
-/-- `checkReduceIdentity` through the index. -/
-def checkReduceIdentityF (ops : (CheckerOps md) m) (fe fe2 : FEnv md) (c : Key md)
-    (value : Expr md) : m Unit := do
-  if reduceStoredOkF fe2 c && reduceElemOkF fe c then do
-    let valA ← ops.annotate fe.env 0 value
-    let x := reduceCertVar c
-    let ok ← ops.isDefEq fe.env 1 (.app valA x) x
-    if ok then pure ()
-    else throw (.notImplemented
-      msg!"unsupported compiler-trust opaque ({c}: the value is not the identity)")
-  else throw (.notImplemented
-    msg!"unsupported compiler-trust opaque declaration ({c})")
 
 end Mirrors
 

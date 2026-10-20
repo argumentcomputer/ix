@@ -410,25 +410,21 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
     | opaqueDecl cv val =>
       unfold annotStepC at hstepC
       simp only [] at hstepC
-      split at hstepC
-      · exact ordinary _ hstepC
-      · rename_i hred
-        obtain ⟨r, s₁', hval, hp⟩ := bindC_ok hstepC
-        obtain ⟨cvA, jty, jv⟩ := r
-        obtain ⟨hv, rfl⟩ := pureC_ok hp
-        simp only [Prod.mk.injEq] at hv
-        obtain ⟨rfl, rfl⟩ := hv
-        rw [hfe] at hval
-        obtain ⟨hres₁, hcvA, hwty, hwv, F₁, hI, hV⟩ := annotValueC_run hμ henv hval
-        refine value .opaque (fun cvA _ => .axiomInfo cvA) (.opaqueDecl cv val)
-          cvA jv rfl
-          hres₁ rfl rfl (by rw [hcvA]; exact hwty) (fun _ => hwv) ?_
-        intro F hC
-        have hred' : reduceOpNames.contains cv.name = false := Bool.not_eq_true _ ▸ hred
-        exact ⟨max F₁ F, checkDecl_of_split_opaque hred' rfl
-          (installConstantVal_mono (Nat.le_max_left _ _) hI)
-          (installValue_mono (Nat.le_max_left _ _) hV)
-          (checkValueGroup_mono (Nat.le_max_right _ _) hC)⟩
+      obtain ⟨r, s₁', hval, hp⟩ := bindC_ok hstepC
+      obtain ⟨cvA, jty, jv⟩ := r
+      obtain ⟨hv, rfl⟩ := pureC_ok hp
+      simp only [Prod.mk.injEq] at hv
+      obtain ⟨rfl, rfl⟩ := hv
+      rw [hfe] at hval
+      obtain ⟨hres₁, hcvA, hwty, hwv, F₁, hI, hV⟩ := annotValueC_run hμ henv hval
+      refine value .opaque (fun cvA _ => .axiomInfo cvA) (.opaqueDecl cv val)
+        cvA jv rfl
+        hres₁ rfl rfl (by rw [hcvA]; exact hwty) (fun _ => hwv) ?_
+      intro F hC
+      exact ⟨max F₁ F, checkDecl_of_split_opaque rfl
+        (installConstantVal_mono (Nat.le_max_left _ _) hI)
+        (installValue_mono (Nat.le_max_left _ _) hV)
+        (checkValueGroup_mono (Nat.le_max_right _ _) hC)⟩
     | axiomDecl cv => unfold annotStepC at hstepC; exact ordinary _ hstepC
     | basisDecl kind => unfold annotStepC at hstepC; exact ordinary _ hstepC
     | quotDecl k cv => unfold annotStepC at hstepC; exact ordinary _ hstepC

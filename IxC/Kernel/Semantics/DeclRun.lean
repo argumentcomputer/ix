@@ -42,9 +42,8 @@ statement is frozen before a consumer has exercised it):
 | `ValueFrontR` | the `∀ φ, ∃ Tv Vv tv, …` front door | the value's two syntactic guards, its annotate output, its two resolution guards, and H1's run **pair** `∃ vtype, inferTypeCore … ∧ isDefEqCore …` (the leaf's reading, and the membership crossing) |
 | `NatEqsR` | **the whole relation** | replaced by its twin `NatEqsRun`, which `DeclDefnR` already carries beside it (H1); `natOps_install` consumes the runs |
 | `DivModPinR` | nothing — it was already valuation-free | re-stated as `DivModCertRun` (since step 4 over the evidence's proofs, no pin); `divMod_install` consumes the guards and the certificate verdict |
-| `ReducePinR` | the `∀ φ, ∃ E V, … DefEq …` identity | as `ReduceIdentityRun`: the two storage guards, the value's annotate output and the recorded identity-certificate run (since step 4 no pin); `reduceOps_install` consumes exactly these |
 | `DeclThmR` | the `∀ φ, ∃ Tv sT, … DefEq … (.sort 0)` is-a-proposition front | H1's prop-check run triple (`inferTypeCore` + `ensureSortCore` + `Level.isEquiv`) |
-| `DeclAxiomR` | (via `ConstantValR`) | the four-way branch disjunction verbatim — pure stored-data guards |
+| `DeclAxiomR` | (via `ConstantValR`) | the branch disjunction verbatim (the standard axioms, the tolerated `sorryAx`; since `ALPHA-COLLAPSE.md` §8.2 no compiler-trust branch) — pure stored-data guards |
 | `DeclBasisRun` | nothing | re-used **verbatim**: it is already guards only |
 | `DeclIndRun` | — | **not projected here.**  See the `Ind` parameter below. |
 
@@ -133,18 +132,6 @@ def DivModCertRun (μ : CheckMode) (F : Nat) (env env₂ : Env md)
     checkDivModCerts (m := CheckM md) (fueledOps μ F) env c value'
       (divModCertStmts c) proofs = .ok true
 
-/-- **A compiler-trust opaque's install, run half**: the storage guards,
-the value's annotation and the recorded identity-certificate run, without
-the derivation the identity carries beside it. -/
-def ReduceIdentityRun (μ : CheckMode) (F : Nat) (env env₂ : Env md)
-    (c : Key md) (value : Expr md) : Prop :=
-  reduceStoredOk env₂ c = true ∧
-  reduceElemOk env c = true ∧
-  ∃ valA,
-    annotateCore μ env F 0 value = .ok valA ∧
-    isDefEqCore μ env F 1 (.app valA (reduceCertVar c))
-      (reduceCertVar c) = .ok true
-
 /-! ## The value kinds, run half -/
 
 /-- `DeclDefnR`'s run/guard half. -/
@@ -186,9 +173,7 @@ def DeclOpaqueRun (μ : CheckMode) (F : Nat) (env : Env md)
   ∃ type' value',
     ConstantValRun μ F env cv type' ∧
     ValueFrontRun μ F env cv value type' value' ∧
-    env₂ = ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩ ∧
-    (reduceOpNames.contains cv.name = true →
-      ReduceIdentityRun μ F env env₂ cv.name value)
+    env₂ = ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩
 
 /-- `DeclAxiomR`'s run/guard half: the branch disjunction is pure
 stored-data guards and is carried verbatim. -/
@@ -205,14 +190,7 @@ def DeclAxiomRun (μ : CheckMode) (F : Nat) (env : Env md)
     (let cvA : ConstantVal md := ⟨cv.name, cv.levelParams, type'⟩
      (stdAxiomOk env cvA = true ∧
         env₂ = ⟨.axiomInfo cvA :: env.consts⟩) ∨
-     (cvA.name = trustCompilerName ∧ trustCompilerOk env cvA = true ∧
-        env₂ = ⟨.axiomInfo cvA :: env.consts⟩) ∨
-     ((cvA.name = ofReduceNatName ∨ cvA.name = ofReduceBoolName) ∧
-        ofReduceAxOk env cvA = true ∧
-        env₂ = ⟨.axiomInfo cvA :: env.consts⟩) ∨
      (stdAxiomOk env cvA = false ∧
-        cvA.name ≠ trustCompilerName ∧
-        cvA.name ≠ ofReduceNatName ∧ cvA.name ≠ ofReduceBoolName ∧
         cvA.name ≠ propextName ∧ cvA.name ≠ choiceName ∧
         cvA.name = sorryAxName ∧
         env₂ = env))

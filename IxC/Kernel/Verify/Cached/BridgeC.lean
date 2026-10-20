@@ -419,37 +419,20 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
     obtain ⟨cvR, jty⟩ := pr
     obtain ⟨rfl, hname, hwty, -⟩ := hP
     dsimp only
-    simp only [stdAxiomOkF_eq, trustCompilerOkF_eq, ofReduceAxOkF_eq]
+    simp only [stdAxiomOkF_eq]
     by_cases h1 : stdAxiomOk env cvR = true
     · simp only [if_pos h1]
       exact SimC.pure hs₁ ⟨rfl, push_mkFEnv env _⟩
     · simp only [if_neg h1]
-      by_cases htc : cvR.name = trustCompilerName
-      · simp only [if_pos htc]
-        by_cases htok : trustCompilerOk env cvR = true
-        · simp only [if_pos htok]
-          exact SimC.pure hs₁ ⟨rfl, push_mkFEnv env _⟩
-        · simp only [if_neg htok]
+      by_cases h2 : cvR.name = propextName ∨ cvR.name = choiceName
+      · simp only [if_pos h2]
+        exact SimC.throw
+      · simp only [if_neg h2]
+        by_cases h3 : cvR.name = sorryAxName
+        · simp only [if_pos h3]
+          exact SimC.pure hs₁ ⟨rfl, rfl⟩
+        · simp only [if_neg h3]
           exact SimC.throw
-      · simp only [if_neg htc]
-        by_cases hor : cvR.name = ofReduceNatName ∨
-            cvR.name = ofReduceBoolName
-        · simp only [if_pos hor]
-          by_cases hoo : ofReduceAxOk env cvR = true
-          · simp only [if_pos hoo]
-            exact SimC.pure hs₁ ⟨rfl, push_mkFEnv env _⟩
-          · simp only [if_neg hoo]
-            exact SimC.throw
-        · simp only [if_neg hor]
-          by_cases h2 : cvR.name = propextName ∨ cvR.name = choiceName
-          · simp only [if_pos h2]
-            exact SimC.throw
-          · simp only [if_neg h2]
-            by_cases h3 : cvR.name = sorryAxName
-            · simp only [if_pos h3]
-              exact SimC.pure hs₁ ⟨rfl, rfl⟩
-            · simp only [if_neg h3]
-              exact SimC.throw
   | thmDecl cv value =>
     unfold checkDeclC checkDecl
     dsimp only
@@ -468,30 +451,8 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
     obtain ⟨cvR, jty⟩ := pr
     obtain ⟨rfl, hname, hwty, hjty⟩ := hP
     dsimp only at hjty ⊢
-    -- the cached arm branches BEFORE the push (RC linearity), the spec
-    -- after it: the case split comes first on both sides
-    by_cases hred : reduceOpNames.contains cvR.name = true
-    case neg =>
-      simp only [if_neg hred]
-      rw [← bind_pure (checkOpaqueValC mode (mkFEnv env) _ jty _)]
-      refine SimC.bind (checkOpaqueValC_sim hμ henv hwty hjty rfl hs₁)
-        (fun s₂ fe2 env2 hs₂ hP₂ => ?_)
-      obtain ⟨⟨henvEq, hmk⟩, hvf⟩ := hP₂
-      subst henvEq
-      rw [hmk]
-      simp only [mkFEnv_env]
-      exact SimC.pure hs₂ ⟨rfl, hmk ▸ hmk⟩
-    simp only [if_pos hred]
-    refine SimC.bind (checkOpaqueValC_sim hμ henv hwty hjty rfl hs₁)
-      (fun s₂ fe2 env2 hs₂ hP₂ => ?_)
-    obtain ⟨⟨henvEq, hmk⟩, hvf⟩ := hP₂
-    subst henvEq
-    rw [hmk]
-    simp only [mkFEnv_env]
-    rw [checkReduceIdentityF_eq]
-    refine SimC.bind (checkReduceIdentityS_sim hμ henv hvf hs₂)
-      (fun s₄ u u' hs₄ hP₄ => ?_)
-    exact SimC.pure hs₄ ⟨rfl, hmk ▸ hmk⟩
+    exact SimC.mono (fun v w h => h.1)
+      (checkOpaqueValC_sim hμ henv hwty hjty rfl hs₁)
   | defnDecl cv value hint =>
     unfold checkDeclC checkDecl
     dsimp only

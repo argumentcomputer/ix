@@ -10,7 +10,12 @@ count and evidence kinds, its block and its dependencies, and the version.
 The terms themselves are frozen by their digest, which the root library
 computes and freezes (`Ix.SpecDigest`, `Ix/SpecDigest.lean`): the kernel
 admits no hasher. A change to either output is a change to the specification
-set, and bumps `specVersion` and the digest together. -/
+set, and bumps `specVersion` and the digest together.
+
+Re-frozen at version 2 (2026-10-20, `ALPHA-COLLAPSE.md` §8.2, owner's
+approval): the five compiler-trust roles (`Lean.trustCompiler`,
+`Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`,
+formerly 59–63) and the `identity` kind are gone; roles 0–58 are unchanged. -/
 
 namespace Ix.Kernel.Audit
 
@@ -24,7 +29,6 @@ def roleLine (r : Role) : String :=
     | .anchor levels _ => s!"anchor {levels}"
     | .ops _ eqs => s!"ops {eqs.length}"
     | .axiom levels type => s!"axiom {levels}{if type.isNone then " inert" else ""}"
-    | .identity _ => "identity"
   let ev := String.ofList ((r.spec (md := .anon)).evidenceKinds.map fun b => if b then 'd' else 'p')
   let names (rs : List Role) := ",".intercalate (rs.map fun s => s!"{s.idx}")
   s!"{r.idx} {r.leanName}: {shape}{if ev.isEmpty then "" else " " ++ ev} block [{names r.block}] \
@@ -32,7 +36,7 @@ def roleLine (r : Role) : String :=
 
 end Ix.Kernel.Audit
 
-/-- info: 1 -/
+/-- info: 2 -/
 #guard_msgs in #eval Ix.Kernel.specVersion
 
 /--
@@ -95,10 +99,5 @@ info: 0 Nat: block 4 block [0,1,2,3] deps []
 56 propext: axiom 0 block [56] deps [23,8]
 57 Classical.choice: axiom 1 block [57] deps [26]
 58 sorryAx: axiom 1 inert block [58] deps []
-59 Lean.trustCompiler: axiom 0 block [59] deps [18]
-60 Lean.reduceBool: identity block [60] deps [4]
-61 Lean.reduceNat: identity block [61] deps [0]
-62 Lean.ofReduceBool: axiom 0 block [62] deps [60,4,8]
-63 Lean.ofReduceNat: axiom 0 block [63] deps [61,0,8]
 -/
 #guard_msgs in #eval IO.println ("\n".intercalate (Ix.Kernel.Role.all.map Ix.Kernel.Audit.roleLine))

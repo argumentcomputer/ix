@@ -169,14 +169,11 @@ def annotStepC (ev : Evidences md) (i : Nat) (fe : FEnv md)
     let vis := fe.visibleBelow
     pure (fe.push (.thmInfo r.1 value),
       pend.push ⟨⟨.thm, r.1, value⟩, i, vis⟩)
-  | .opaqueDecl cv value =>
-    if reduceOpNames.contains cv.name then do
-      pure (← checkDeclStepC mode ev fe (.opaqueDecl cv value), pend)
-    else do
-      let r ← annotValueC mode fe cv value
-      let vis := fe.visibleBelow
-      pure (fe.push (.axiomInfo r.1),
-        pend.push ⟨⟨.opaque, r.1, r.2.2⟩, i, vis⟩)
+  | .opaqueDecl cv value => do
+    let r ← annotValueC mode fe cv value
+    let vis := fe.visibleBelow
+    pure (fe.push (.axiomInfo r.1),
+      pend.push ⟨⟨.opaque, r.1, r.2.2⟩, i, vis⟩)
   | pd => do
     pure (← checkDeclStepC mode ev fe pd, pend)
 
