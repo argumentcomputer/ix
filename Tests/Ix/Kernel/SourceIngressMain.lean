@@ -129,18 +129,6 @@ def main (args : List String) : IO UInt32 := do
   let mut checksFailed := false
   if a.collapse && a.bundle then
     if let some ixon := artifact then
-      -- reported, not checked: the bundle names the artifact publishes at another address
-      match Ix.RoleEvidence.committedBundle () with
-      | .ok b =>
-        let src := Ix.LeanIngress.sourceAddrs ixon
-        let moved := (Ix.LeanIngress.bundleAddrs b).toList.filterMap fun (n, a') =>
-          match src[n]? with
-          | some a => if a == a' then none else some n
-          | none => none
-        IO.println s!"bundle agreement (reported, `bundleAgreesB`): {moved.length} of \
-          {(Ix.LeanIngress.bundleAddrs b).size} bundle names published by the artifact at another \
-          address, e.g. {moved.take 12}"
-      | .error e => IO.println s!"bundle: {e}"
       let tC ← IO.monoMsNow
       match Ix.LeanIngress.collapsedChecksUsing (Ix.RoleEvidence.committedBundle ())
           (Ix.RoleEvidence.bundleEvidence ()) ixon table r.prepared with

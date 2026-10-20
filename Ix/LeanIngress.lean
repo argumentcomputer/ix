@@ -1013,15 +1013,21 @@ def checkSourceCollapsedAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.
 Quotient Source checks with the committed bundle's evidence
 (`Ix.RoleEvidence.bundleEvidence`), whose proofs name the bundle's constants:
 the certificate theorems and the lemmas they cite, some of which the artifact
-does not publish. Their ids are renamed to their bundle (RoleData) addresses,
-the artifact's to its own (`addrOf`). One decided fact makes that a renaming: no
-bundle-only name sits at an address the artifact publishes (`bundleDisjointB`,
-the injectivity, checked by `collapsedChecks`). Whether every bundle name the
-artifact publishes is published at its bundle address (`bundleAgreesB`,
-agreement with the Ixon run's evidence) is reported, not checked: on Init+Std,
-161 of the bundle's 179 names are published by the artifact at another address. -/
+does not publish. The bundle is a Source-mode artifact: its records reference
+constants by name, and the address its names table (`RoleData.sourceNames`)
+gives a name is the generator's **name hash** (`nameAddress`,
+`Benchmarks/Kernel/PinGen.lean`), not the constant's content address. The
+renaming onto the artifact's keys sends a published name to its content address
+(`addrOf`) and a bundle-only name to its name hash. Two facts make that
+injective: the names table is a map from addresses to names, so two names never
+share a name hash in it (`bundleAddrs_inj`, proved from the table, no collision
+resistance assumed); and no bundle-only name's hash is an address the artifact
+publishes (`bundleDisjointB`, decided, checked by `collapsedChecks`). Equality
+with the Ixon run's evidence keys (content addresses) is not claimed: it would
+need the bundle's names with their content addresses, a table the generator
+does not write. -/
 
-/-- **The bundle's addresses by Source name.** -/
+/-- **The bundle's name hashes by Source name** (the names table, inverted). -/
 def bundleAddrs (b : Ix.RoleEvidence.Bundle) : Std.HashMap Ix.Kernel.Name Address :=
   b.names.fold (fun m a n => m.insert (Ix.Kernel.Name.ofLeanName n) a) {}
 
@@ -1029,20 +1035,11 @@ def bundleAddrs (b : Ix.RoleEvidence.Bundle) : Std.HashMap Ix.Kernel.Name Addres
 def publishedAddrs (ixe : Ixon.Env) : Std.HashSet Address :=
   (sourceAddrs ixe).fold (fun s _ a => s.insert a) {}
 
-/-- **No bundle-only name sits at an address the artifact publishes** (decided). -/
+/-- **No bundle-only name's hash is an address the artifact publishes** (decided). -/
 def bundleDisjointB (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) : Bool :=
   let pub := publishedAddrs ixe
   let src := sourceAddrs ixe
   (bundleAddrs b).toList.all fun (n, a) => src.contains n || !pub.contains a
-
-/-- **Every bundle name the artifact publishes is published at its bundle
-address** (decided). -/
-def bundleAgreesB (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) : Bool :=
-  let src := sourceAddrs ixe
-  (bundleAddrs b).toList.all fun (n, a) =>
-    match src[n]? with
-    | some a' => a' == a
-    | none => true
 
 /-- **Is `n` a representative of the artifact**: no role's name, published
 (`src`, the artifact's `sourceAddrs`), and fixed by the fiber map `ρ`. -/
@@ -1058,13 +1055,11 @@ def qEvB (src : Std.HashMap Ix.Kernel.Name Address) (ρ : FiberMap)
 /-- **The checks that make quotient Source's prepared stream `ds` a renaming onto
 a compiled artifact's keys**, the role read off the table `t`:
 * every key of `ds` is a representative (`qRepAtB`);
-* the bundle is disjoint from the artifact: no bundle-only name sits at an
+* the bundle is disjoint from the artifact: no bundle-only name's hash is an
   address the artifact publishes (`bundleDisjointB`);
 * every key of the bundle's evidence, renamed onto the representatives, is a
   representative or a bundle-only name (`qEvB`).
-A failure is a decline (`SourceError.collapse`). Whether every bundle name the
-artifact publishes is published at its bundle address (`bundleAgreesB`) is a
-reported fact, not a check: on Init+Std it does not hold (see the harness). -/
+A failure is a decline (`SourceError.collapse`). -/
 def collapsedChecksWith (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (b : Ix.RoleEvidence.Bundle)
     (ev : Ix.Kernel.Evidences .source) (ds : Array (CDecl .source)) : Option CollapseError :=
   let ρ := fiberAliasAt ixe (roleAtMap t)

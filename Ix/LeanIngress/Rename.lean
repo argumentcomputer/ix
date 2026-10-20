@@ -577,7 +577,7 @@ theorem bundleAddrs_foldl :
       · exact Or.inl h
     · exact Or.inr ⟨q, List.mem_cons_of_mem _ hq, h1, h2⟩
 
-/-- **A bundle address is a bundle name's**. -/
+/-- **A bundle name hash is a bundle name's**. -/
 theorem bundleAddrs_spec {n : Ix.Kernel.Name} {a : Address} (h : (bundleAddrs b)[n]? = some a) :
     ∃ m, b.names[a]? = some m ∧ Ix.Kernel.Name.ofLeanName m = n := by
   unfold bundleAddrs at h
@@ -588,7 +588,8 @@ theorem bundleAddrs_spec {n : Ix.Kernel.Name} {a : Address} (h : (bundleAddrs b)
     subst h2
     exact ⟨m, Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hm, h1⟩
 
-/-- **Two bundle names at one bundle address are one name.** -/
+/-- **Two bundle names at one name hash are one name**: the names table maps each
+address to one name (no collision resistance assumed). -/
 theorem bundleAddrs_inj {i j : Ix.Kernel.Name} {a : Address} (hi : (bundleAddrs b)[i]? = some a)
     (hj : (bundleAddrs b)[j]? = some a) : i = j := by
   obtain ⟨m, hm, rfl⟩ := bundleAddrs_spec hi
@@ -655,7 +656,7 @@ def BundleOnly (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) (n : Ix.Kernel.Mode
   roleOf n = none ∧ (sourceAddrs ixe)[n]? = none ∧ ((bundleAddrs b)[n]?).isSome
 
 /-- **The joined renaming**: a published name to its address, a bundle name
-the artifact does not publish to its bundle address. -/
+the artifact does not publish to its bundle name hash. -/
 def evAddr (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) :
     Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon :=
   fun n => match (sourceAddrs ixe)[n]? with
@@ -732,19 +733,6 @@ theorem acceptsRef_evAddr (μ : Ix.Kernel.CheckMode) {roles : Std.HashMap Addres
         (ds.map (Ix.Kernel.Declaration.mapKeys (evAddr ixe b))) envA ∧
       Ix.Kernel.EnvRel (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n) (evAddr ixe b) envS envA :=
   Ix.Kernel.Cached.AcceptsRef.rename μ (evAddr_injOn hb hd) hev hds h
-
-/-- `bundleAgreesB`, read: the joined renaming sends every bundle name to its
-bundle address (the Ixon run's evidence key). -/
-theorem evAddr_bundle (h : bundleAgreesB ixe b = true) {n : Ix.Kernel.Name} {a : Address}
-    (ha : (bundleAddrs b)[n]? = some a) : evAddr ixe b n = a := by
-  cases hs : (sourceAddrs ixe)[n]? with
-  | none => simp [evAddr, hs, ha]
-  | some a' =>
-    unfold bundleAgreesB at h
-    have hmem : (n, a) ∈ (bundleAddrs b).toList := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr ha
-    have := List.all_eq_true.mp h _ hmem
-    simp only [hs, beq_iff_eq] at this
-    simp [evAddr, hs, this]
 
 end Bundle
 
