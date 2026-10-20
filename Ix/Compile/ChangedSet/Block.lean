@@ -12,12 +12,10 @@ block's `Muts` record stores it (`Ixon.ConstantMetaInfo.muts`):
 
 Output: the change predicate `isChanged` (Def 3.1 under the compiler's
 rules): fewer classes than Lean's `all`, a class representative out of `all`
-order, or a nested auxiliary moved or evaporated. It is the predicate under
-which both compilers register call-site plans today, which they still write
-inline (`compileMutualAuxTail`'s `userLayoutChanged || auxLayoutChanged`,
-Rust's `user_layout_changed || aux_layout_changed` in `compile_mutual`, the
-decompile dual `installDecompileCallSitePlans`); the `changed-set` suite
-checks it against both compilers' registrations. Pass 3's hook
+order, or a nested auxiliary moved or evaporated. It was the predicate under
+which both compilers registered call-site plans, until the surgery's
+deletion (CQ3.5); the `changed-set` suite checks it against both compilers'
+artifacts. Pass 3's hook
 `editChangedBlock` and the changed set (`Ix.Compile.ChangedSet`) read this
 definition. `blockCauses` says why, with typed causes (`BlockCause`), and
 refines it exactly: no cause exactly when the component is unchanged

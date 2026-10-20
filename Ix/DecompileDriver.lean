@@ -22,7 +22,7 @@ public import Ix.Ixon
 public import Ix.DecompileM
 public import Ix.CompileM
 public import Ix.AuxGen.Nested
-public import Ix.AuxGen.Surgery
+public import Ix.CallSiteSurgery
 public import Ix.AuxGen.Kernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.CasesOn
@@ -60,8 +60,7 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
   let mut result := decompiled
   for (key, all) in groups do
     let blockEnv : Ix.CompileM.BlockEnv :=
-      { all := {}, current := key, mutCtx := default, univCtx := [],
-        provenanceOnly := true }
+      { all := {}, current := key, mutCtx := default, univCtx := [] }
     match Ix.CompileM.CompileM.run cenv blockEnv {}
         (Ix.AuxGen.computeLeanIndFlags all) with
     | .error e =>
@@ -74,197 +73,6 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
             isRec := flags.isRec
             isReflexive := flags.isReflexive })
   return .ok result
-
-/-! ## Plan rehydration — decompile.rs:3682-4087
-
-A DESERIALIZED env has empty in-memory plan state (`aux_perms` and the
-call-site plan maps were compile-time only). Pass 2's regeneration and
-any roundtrip recompiles need them back, reconstructed from what DID
-survive serialization: the `Muts` metadata entries' class lists and
-`AuxLayout` payloads. -/
-
-/-- One `Muts`-tagged Named entry, class addresses resolved to names.
-    Mirrors Rust `MutsIndexEntry` (decompile.rs). -/
-structure MutsIndexEntry where
-  classNames : Array (Array Ix.Name)
-  flatNames : Array Ix.Name
-  auxLayout : Option Ixon.AuxLayout
-  deriving Inhabited
-
-/-- Index of every Muts-tagged Named entry, plus a member-name → entry
-    index for candidate lookup. Mirrors Rust `MutsPlanIndex`
-    (`build_muts_plan_index`, decompile.rs:3839). -/
-structure MutsPlanIndex where
-  entries : Array MutsIndexEntry
-  byMember : Std.HashMap Ix.Name (Array Nat)
-  deriving Inhabited
-
-/-- Resolve an address list through the env names table; `none` if any
-    address is unnamed (Rust `names_from_addrs`, decompile.rs:3885). -/
-private def namesFromAddrs (ixonEnv : Ixon.Env) (addrs : Array Address)
-    : Option (Array Ix.Name) := Id.run do
-  let mut out : Array Ix.Name := #[]
-  for addr in addrs do
-    match ixonEnv.names.get? addr with
-    | some n => out := out.push n
-    | none => return none
-  return some out
-
-/-- Mirrors Rust `build_muts_plan_index` (decompile.rs:3839): one scan
-    over the named table collecting Muts metadata (sequential here;
-    Rust parallelizes the same per-entry filter_map). -/
-def buildMutsPlanIndex (ixonEnv : Ixon.Env) : MutsPlanIndex := Id.run do
-  let mut entries : Array MutsIndexEntry := #[]
-  for (_, named) in ixonEnv.named do
-    if let .muts all auxLayout := named.constMeta.info then
-      let mut classNames : Array (Array Ix.Name) := #[]
-      let mut flatNames : Array Ix.Name := #[]
-      let mut ok := true
-      for cls in all do
-        if !ok then continue
-        match namesFromAddrs ixonEnv cls with
-        | some names =>
-          if names.isEmpty then
-            ok := false
-          else
-            flatNames := flatNames ++ names
-            classNames := classNames.push names
-        | none => ok := false
-      if ok && !flatNames.isEmpty then
-        entries := entries.push { classNames, flatNames, auxLayout }
-  let mut byMember : Std.HashMap Ix.Name (Array Nat) := {}
-  for h : i in [:entries.size] do
-    for name in entries[i].flatNames do
-      byMember := byMember.alter name fun
-        | some arr => some (arr.push i)
-        | none => some #[i]
-  return { entries, byMember }
-
-/-- Source-order `all` (as names) from a member's Indc metadata
-    (Rust `indc_source_all`, decompile.rs:3892). -/
-private def indcSourceAll (ixonEnv : Ixon.Env) (name : Ix.Name)
-    : Option (Array Ix.Name) := do
-  let named ← ixonEnv.named.get? name
-  match named.constMeta.info with
-  | .indc _ _ _ all .. => namesFromAddrs ixonEnv all
-  | _ => none
-
-/-- Rehydrated aux layouts keyed by the SOURCE block's first name (Rust
-    `stt.aux_perms` after `rehydrate_aux_perms_from_env`,
-    decompile.rs:3682): for each Muts entry carrying a stored
-    `AuxLayout`, the source-order `all` is read off the first canonical
-    class representative's Indc metadata, and the layout is registered
-    under `all[0]` (first entry wins — matching Rust's
-    populate-if-absent). -/
-def rehydrateAuxPerms (ixonEnv : Ixon.Env) (index : MutsPlanIndex)
-    : Std.HashMap Ix.Name Ixon.AuxLayout := Id.run do
-  let mut auxPerms : Std.HashMap Ix.Name Ixon.AuxLayout := {}
-  for entry in index.entries do
-    let some auxLayout := entry.auxLayout | continue
-    let some firstClass := entry.classNames[0]? | continue
-    let some firstRep := firstClass[0]? | continue
-    let some repNamed := ixonEnv.named.get? firstRep | continue
-    let sourceAllAddrs := match repNamed.constMeta.info with
-      | .indc _ _ _ all .. => all
-      | _ => #[]
-    if sourceAllAddrs.isEmpty then continue
-    let some sourceFirst := ixonEnv.names.get? sourceAllAddrs[0]! | continue
-    if !auxPerms.contains sourceFirst then
-      auxPerms := auxPerms.insert sourceFirst auxLayout
-  return auxPerms
-
-/-- A candidate plan block: canonical class layout + stored aux layout.
-    Mirrors Rust `StoredPlanBlock` (decompile.rs:3781). -/
-structure StoredPlanBlock where
-  classNames : Array (Array Ix.Name)
-  auxLayout : Option Ixon.AuxLayout
-  flatNames : Array Ix.Name
-  deriving Inhabited
-
-/-- Persisted plan blocks whose members all belong to `originalAll` and
-    whose Indc metadata confirms the same source block. Prefers minimal
-    SCCs: a candidate that strictly contains a smaller candidate is
-    dropped (a stale full-source block would recreate an over-merged
-    plan). Mirrors Rust `stored_plan_blocks_for_original_all`
-    (decompile.rs:3900). -/
-def storedPlanBlocksForOriginalAll (ixonEnv : Ixon.Env)
-    (index : MutsPlanIndex) (originalAll : Array Ix.Name)
-    : Array StoredPlanBlock := Id.run do
-  let originalSet : Ix.Set Ix.Name :=
-    originalAll.foldl (fun s n => s.insert n) {}
-  -- Candidate ids via the by-member index, sorted + deduped.
-  let mut candidateIds : Array Nat := #[]
-  for n in originalAll do
-    if let some ids := index.byMember.get? n then
-      candidateIds := candidateIds ++ ids
-  let sortedIds := candidateIds.qsort (· < ·)
-  let mut dedupIds : Array Nat := #[]
-  for id in sortedIds do
-    if dedupIds.back? != some id then
-      dedupIds := dedupIds.push id
-  let mut candidates : Array StoredPlanBlock := #[]
-  let mut seen : Std.HashSet (List Ix.Name) := {}
-  for id in dedupIds do
-    let some entry := index.entries[id]? | continue
-    if !entry.flatNames.all (originalSet.contains ·) then
-      continue
-    let sameSourceAll := entry.flatNames.any fun name =>
-      match indcSourceAll ixonEnv name with
-      | some sourceAll => sourceAll == originalAll
-      | none => false
-    if !sameSourceAll then
-      continue
-    let key := entry.flatNames.toList
-    if seen.contains key then
-      continue
-    seen := seen.insert key
-    candidates := candidates.push
-      { classNames := entry.classNames
-        auxLayout := entry.auxLayout
-        flatNames := entry.flatNames }
-  -- Minimal-SCC preference.
-  return candidates.filter fun candidate => Id.run do
-    let candidateSet : Ix.Set Ix.Name :=
-      candidate.flatNames.foldl (fun s n => s.insert n) {}
-    for other in candidates do
-      if other.flatNames.size < candidate.flatNames.size
-          && other.flatNames.all (candidateSet.contains ·) then
-        return false
-    return true
-
-/-- Fallback when no persisted block matched: re-derive the canonical
-    classes by running `sortConsts` over the block's (decompiled)
-    inductives, pairing with the rehydrated aux layout. Mirrors Rust
-    `fallback_plan_blocks_from_sort` (decompile.rs:3960) +
-    `block_mut_consts_from_env` (decompile.rs:3742). -/
-def fallbackPlanBlocksFromSort
-    (decompiledView : Std.HashMap Ix.Name Ix.ConstantInfo)
-    (auxPerms : Std.HashMap Ix.Name Ixon.AuxLayout)
-    (allNames : Array Ix.Name)
-    : Except String (Array StoredPlanBlock) := do
-  let cenv := Ix.CompileM.CompileEnv.new { consts := decompiledView }
-  let lo := allNames[0]?.getD Ix.Name.mkAnon
-  let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [],
-        provenanceOnly := true }
-  let sorted ← match Ix.CompileM.CompileM.run cenv blockEnv {} (do
-      let mut cs : Array Ix.MutConst := #[]
-      for n in allNames do
-        match ← Ix.CompileM.findConst n with
-        | .inductInfo val => cs := cs.push (← Ix.CompileM.MutConst.mkIndc val)
-        | other =>
-          throw (.invalidMutualBlock s!"decompile aux plan: block member \
-'{n.pretty}' is not an inductive ({other.getCnst.name.pretty})")
-      Ix.CompileM.sortConsts cs.toList) with
-    | .ok (sorted, _) => pure sorted
-    | .error e => throw s!"decompile aux plan sort_consts: {e}"
-  if sorted.isEmpty then
-    return #[]
-  let classNames : Array (Array Ix.Name) :=
-    sorted.toArray.map fun cls => cls.toArray.map (·.name)
-  let auxLayout := allNames[0]?.bind (auxPerms.get? ·)
-  let flatNames := classNames.flatten
-  return #[{ classNames, auxLayout, flatNames }]
 
 /-- Group aux_gen constants (named entries with `original` set) by
     source mutual block, keyed on the decompiled root inductive's
@@ -293,166 +101,6 @@ def collectAuxBlocks (ixonEnv : Ixon.Env)
       | none => some (allNames, #[(kind, name)])
   return blocks
 
-/-- Install call-site plans for a decompiled aux block: persisted plan
-    blocks (or the sort fallback), the layout-changed guards, and
-    `computeCallSitePlans` over the decompiled env — inserting each
-    plan (and the derived `.brecOn`/`.below` plans) only if absent.
-    Mirrors Rust `install_decompile_call_site_plans`
-    (decompile.rs:3991). Returns the updated plan maps. -/
-def installDecompileCallSitePlans
-    (ixonEnv : Ixon.Env) (index : MutsPlanIndex)
-    (decompiledView : Std.HashMap Ix.Name Ix.ConstantInfo)
-    (auxPerms : Std.HashMap Ix.Name Ixon.AuxLayout)
-    (allNames : Array Ix.Name) (auxMemberNames : Ix.Set Ix.Name)
-    (callSitePlans : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan)
-    (brecOnPlans belowPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan)
-    : Except String
-        ((Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan
-          × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan
-          × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan)
-          × (Array (Ix.Name × Ix.AuxGen.CallSitePlan)
-          × Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan)
-          × Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan))) := do
-  if allNames.isEmpty then
-    return ((callSitePlans, brecOnPlans, belowPlans), (#[], #[], #[]))
-  let originalAll := allNames
-  -- Same existence rule as the compile side (A0, WB-B1/A5): derived
-  -- `.brecOn`/`.below` plans only for families Lean generates.
-  let belowLean := Ix.AuxGen.belowFamilyLeanExists (decompiledView.get? ·) originalAll
-  let mut planBlocks := storedPlanBlocksForOriginalAll ixonEnv index originalAll
-  if planBlocks.isEmpty then
-    planBlocks ← fallbackPlanBlocksFromSort decompiledView auxPerms allNames
-  let mut callSitePlans := callSitePlans
-  let mut brecOnPlans := brecOnPlans
-  let mut belowPlans := belowPlans
-  let mut newCs : Array (Ix.Name × Ix.AuxGen.CallSitePlan) := #[]
-  let mut newBrec : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
-  let mut newBelow : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
-  for block in planBlocks do
-    if block.classNames.isEmpty then
-      continue
-    let userLayoutChanged := block.classNames.size < originalAll.size
-      || (block.classNames.size == originalAll.size
-        && (block.classNames.zip originalAll).any fun (cls, orig) =>
-          cls[0]? != some orig)
-    let auxLayoutChanged := match block.auxLayout with
-      | some layout =>
-        -- Keep identical to the compile-side predicate — evaporated
-        -- positions need their head-rewrite plans even when no
-        -- canonical slot moved.
-        layout.evaporated.any (· != 0)
-          || layout.perm.zipIdx.any fun (canonicalI, sourceJ) =>
-            canonicalI.toNat != Ix.AuxGen.PERM_OUT_OF_SCC
-              && canonicalI.toNat != sourceJ
-      | none => false
-    if !userLayoutChanged && !auxLayoutChanged then
-      continue
-    let cenv := Ix.CompileM.CompileEnv.new { consts := decompiledView }
-    let blockEnv : Ix.CompileM.BlockEnv :=
-      { all := {}, current := originalAll[0]!, mutCtx := default, univCtx := [],
-        provenanceOnly := true }
-    let plans ← match Ix.CompileM.CompileM.run cenv blockEnv {}
-        (Ix.AuxGen.computeCallSitePlans block.classNames originalAll
-          block.auxLayout) with
-      | .ok (plans, _) => pure plans
-      | .error e => throw s!"decompile aux plan compute_call_site_plans: {e}"
-    -- A nested auxiliary's `<all0>.below_N` has the auxiliary's
-    -- constructors: those of its external inductive (decompile.rs, same
-    -- place).
-    let auxHeads : Array Ix.Name :=
-      match Ix.CompileM.CompileM.run cenv blockEnv {}
-          (Ix.AuxGen.sourceAuxOrder originalAll) with
-      | .ok (order, _) => order.map (·.1)
-      | .error _ => #[]
-    -- First-wins per name, but a DIFFERING later plan means two stored
-    -- blocks claim one source-indexed aux name — the same collision
-    -- class the compile side rejects; surface it rather than
-    -- decompiling with whichever block's plan happened to install first
-    -- (decompile.rs conflict-checked installs;
-    -- plans/aux-recursor-alias-collision.md §2.4).
-    for (name, plan) in plans do
-      if let some breconName := Ix.AuxGen.recNameToBreconName name then
-        if belowLean && (auxMemberNames.contains breconName
-            || decompiledView.contains breconName) then
-          let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
-          -- Mirror the compile side: Type-level `.brecOn.go` /
-          -- `.brecOn.eq` share `.brecOn`'s telescope and are referenced
-          -- directly by equation-lemma proofs, so they carry the same
-          -- plan keys (decompile.rs `install_decompile_call_site_plans`).
-          let mut planKeys : Array Ix.Name := #[breconName]
-          for sub in ["go", "eq"] do
-            let subName := Ix.Name.mkStr breconName sub
-            if auxMemberNames.contains subName
-                || decompiledView.contains subName then
-              planKeys := planKeys.push subName
-          for key in planKeys do
-            match brecOnPlans.get? key with
-            | some existing =>
-              if existing != newPlan then
-                throw s!"conflicting brecOn call-site plans for \
-'{key.pretty}' across stored blocks"
-            | none =>
-              brecOnPlans := brecOnPlans.insert key newPlan
-              newBrec := newBrec.push (key, newPlan)
-      if let some belowName := Ix.AuxGen.recNameToBelowName name then
-        if belowLean && (auxMemberNames.contains belowName
-            || decompiledView.contains belowName) then
-          let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
-          -- Prop-level (IndPredBelow) `.below` families additionally
-          -- expose constructors and a `.casesOn` wrapper to user code —
-          -- mirror the compile side's family registration (same map;
-          -- the apply site discriminates the telescope shape via
-          -- `belowPlanKeyIsHead`). The below inductive itself is
-          -- regenerated later, so its ctor names are derived from the
-          -- PARENT inductive's ctors via the same suffix transplant
-          -- `buildPropBelowFamily` uses. Prop-ness is signalled by the
-          -- presence of a `.below.rec` aux member (Type-level `.below`
-          -- is a definition and has no recursor).
-          let isPropBelow :=
-            auxMemberNames.contains (Ix.Name.mkStr belowName "rec")
-          let parentName? : Option Ix.Name :=
-            match Ix.AuxGen.auxRecSuffixIdx name, belowName with
-            | some n, _ => if n == 0 then none else auxHeads[n - 1]?
-            | none, .str p _ _ => some p
-            | none, _ => none
-          let familyNames : Array Ix.Name := Id.run do
-            let some parentName := parentName? | return #[]
-            let some (.inductInfo pv) := decompiledView.get? parentName
-              | return #[]
-            let mut out : Array Ix.Name := pv.ctors.map fun ctorName =>
-              let suffix := (Ix.AuxGen.nameStripPrefix ctorName parentName).getD
-                (Ix.AuxGen.nameComponents ctorName)
-              Ix.AuxGen.nameAppendComponents belowName suffix
-            out := out.push (Ix.Name.mkStr belowName "casesOn")
-            return out
-          if isPropBelow then
-            for member in familyNames do
-              match belowPlans.get? member with
-              | some existing =>
-                if existing != newPlan then
-                  throw s!"conflicting below call-site plans for \
-'{member.pretty}' across stored blocks"
-              | none =>
-                belowPlans := belowPlans.insert member newPlan
-                newBelow := newBelow.push (member, newPlan)
-          match belowPlans.get? belowName with
-          | some existing =>
-            if existing != newPlan then
-              throw s!"conflicting below call-site plans for \
-'{belowName.pretty}' across stored blocks"
-          | none =>
-            belowPlans := belowPlans.insert belowName newPlan
-            newBelow := newBelow.push (belowName, newPlan)
-      match callSitePlans.get? name with
-      | some existing =>
-        if existing != plan then
-          throw s!"conflicting call-site plans for '{name.pretty}' \
-across stored blocks"
-      | none =>
-        callSitePlans := callSitePlans.insert name plan
-        newCs := newCs.push (name, plan)
-  return ((callSitePlans, brecOnPlans, belowPlans), (newCs, newBrec, newBelow))
-
 /-! ## Pass 2 — aux regeneration + original recovery
 
 Mirror of `decompile_block_aux_gen` (decompile.rs:4128-4972) and the
@@ -476,7 +124,6 @@ Deliberate deviations, none output-visible:
 /-- Immutable context of a Pass-2 run. -/
 structure Pass2Ctx where
   ixonEnv : Ixon.Env
-  mutsIndex : MutsPlanIndex
   /-- `name → addr` view of `ixonEnv.named` (Rust `resolve_addr`'s
       first hop on a deserialized state), precomputed once. -/
   nameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address
@@ -485,19 +132,6 @@ structure Pass2Ctx where
   /-- Sharing limits of every recompile in the run (Rust
       `stt.sharing_limits`). -/
   sharingLimits : Ix.Sharing.Exact.Limits
-  /-- The environment was compiled by Pass 3 (`pass3Env`): no call site
-      was surgered, so no call-site plan is installed and every
-      verification recompile runs without surgery, as the compiler's
-      original-form compile did. Rust `MutsPlanIndex.pass3`. -/
-  pass3 : Bool := false
-
-/-- Was this environment compiled by Pass 3? A changed block's Ix
-    auxiliaries carry reserved `_ix` display names (a source name with a
-    reserved component is refused as compiler input), and no compile since
-    Pass 3 registers a call-site plan; an environment without a changed
-    block has no layout-changed block to plan for either. Rust `pass3_env`. -/
-def pass3Env (ixonEnv : Ixon.Env) : Bool :=
-  ixonEnv.named.fold (init := false) fun acc n _ => acc || Ix.Compile.Pass.hasReserved n
 
 /-- Mutable state threaded through Pass 2. -/
 structure Pass2St where
@@ -507,30 +141,22 @@ structure Pass2St where
   dstt : Std.HashMap Ix.Name Ix.ConstantInfo
   /-- Kernel bridge context, accumulated across blocks (cold start). -/
   kctx : Ix.AuxGen.AuxKernelCtx
-  auxPerms : Std.HashMap Ix.Name Ixon.AuxLayout
-  callSitePlans : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {}
-  brecOnPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
-  belowPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
   ingressed : Ix.Set Ix.Name := {}
   errors : Array (Ix.Name × String) := #[]
-  /-- Wave-driver deltas: every insert into `dstt`/`workEnv`/the plan
-      maps while processing the CURRENT block, so the parallel Pass-2
-      driver can ship exactly one block's outputs from a worker to the
-      merge loop. Reset per block by both drivers; content is otherwise
-      redundant with the maps. -/
+  /-- Wave-driver deltas: every insert into `dstt`/`workEnv` while
+      processing the CURRENT block, so the parallel Pass-2 driver can ship
+      exactly one block's outputs from a worker to the merge loop. Reset
+      per block by both drivers; content is otherwise redundant with the
+      maps. -/
   deltaDstt : Array (Ix.Name × Ix.ConstantInfo) := #[]
   deltaWork : Array (Ix.Name × Ix.ConstantInfo) := #[]
-  deltaCs : Array (Ix.Name × Ix.AuxGen.CallSitePlan) := #[]
-  deltaBrec : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
-  deltaBelow : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
 
 instance : Inhabited Pass2St :=
-  ⟨{ workEnv := {}, dstt := {}, kctx := Ix.AuxGen.AuxKernelCtx.new
-     auxPerms := {} }⟩
+  ⟨{ workEnv := {}, dstt := {}, kctx := Ix.AuxGen.AuxKernelCtx.new }⟩
 
 /-- One block's outputs, as shipped from a wave worker to the merge
     loop of the parallel Pass-2 driver. Deliberately SLIM: the worker's
-    grown kernel context, ingress set, and full env/plan maps stay
+    grown kernel context, ingress set, and full env maps stay
     task-local and are dropped when the worker's closure returns —
     shipping whole `Pass2St`s kept every in-flight worker's kernel env
     alive through the result channel (~100 GiB peak on the whole-env
@@ -538,9 +164,6 @@ instance : Inhabited Pass2St :=
 structure Pass2BlockOut where
   dsttD : Array (Ix.Name × Ix.ConstantInfo) := #[]
   workD : Array (Ix.Name × Ix.ConstantInfo) := #[]
-  csD : Array (Ix.Name × Ix.AuxGen.CallSitePlan) := #[]
-  brecD : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
-  belowD : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
   errors : Array (Ix.Name × String) := #[]
   deriving Inhabited
 
@@ -566,8 +189,7 @@ private def runK (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
   let cenv := ctx.cenvFor (view?.getD st.workEnv)
   let kernel : Ix.AuxGen.AuxKernel := .tc (Ix.AuxGen.AddrMaps.ofCompileEnv cenv)
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [],
-        provenanceOnly := true }
+    { all := {}, current := lo, mutCtx := default, univCtx := [] }
   match Ix.CompileM.CompileM.run cenv blockEnv {} ((act kernel).run st.kctx) with
   | .ok ((a, kctx'), _) => .ok (a, kctx')
   | .error e => .error (toString e)
@@ -577,8 +199,7 @@ private def runC (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
     (act : Ix.CompileM.CompileM α) : Except String α :=
   let cenv := ctx.cenvFor st.workEnv
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [],
-        provenanceOnly := true }
+    { all := {}, current := lo, mutCtx := default, univCtx := [] }
   match Ix.CompileM.CompileM.run cenv blockEnv {} act with
   | .ok (a, _) => .ok a
   | .error e => .error (toString e)
@@ -684,7 +305,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
     let recMutConsts : List Ix.MutConst :=
       (canonicalRecs.map fun (_, rv) => Ix.MutConst.recr rv).toList
     match roundtripBlock recMutConsts generatedConsts ctx.origEnv?
-        st.workEnv ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
+        st.workEnv ctx.ixonEnv ctx.sharingLimits with
     | .ok roundtripped =>
       for (n, ci) in roundtripped do
         if recMembers.contains n || st.workEnv.contains n then
@@ -706,22 +327,6 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         st := stPut st n ci
     return st
   st := sync st generatedConsts
-
-  -- Install call-site plans against the post-rec work env (:4320-4327) —
-  -- this is where nested/collapsed-member plans become computable.
-  let auxMemberNames : Ix.Set Ix.Name :=
-    auxMembers.foldl (fun s (_, n) => s.insert n) {}
-  -- A Pass 3 environment carries no surgery: no plan is installed.
-  if !ctx.pass3 then
-    match installDecompileCallSitePlans ctx.ixonEnv ctx.mutsIndex st.workEnv
-        st.auxPerms allNames auxMemberNames
-        st.callSitePlans st.brecOnPlans st.belowPlans with
-    | .ok ((cs, brec, below), (newCs, newBrec, newBelow)) =>
-      st := { st with callSitePlans := cs, brecOnPlans := brec, belowPlans := below
-                      deltaCs := st.deltaCs ++ newCs
-                      deltaBrec := st.deltaBrec ++ newBrec
-                      deltaBelow := st.deltaBelow ++ newBelow }
-    | .error e => st := recordErr st lo e
 
   -- Phases 1b/1c: .casesOn / .recOn wrappers (:4330-4520). Shared arm.
   let wrapPhase (st₀ : Pass2St)
@@ -779,7 +384,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         all := #[auxDef.name] }
       let allGen := baseGen.fold (fun m k v => m.insert k v) newGen
       match roundtripBlock [mc] allGen ctx.origEnv? st.workEnv ctx.ixonEnv
-          ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
+          ctx.sharingLimits with
       | .ok roundtripped =>
         if roundtripped.isEmpty then
           st := recoverOr ctx st auxDef.name allGen
@@ -844,7 +449,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
       belowIndcMcs := []
     if !belowIndcMcs.isEmpty then
       match roundtripBlock belowIndcMcs generatedConsts ctx.origEnv?
-          st.workEnv ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
+          st.workEnv ctx.ixonEnv ctx.sharingLimits with
       | .ok roundtripped => st := insertAll st roundtripped
       | .error e =>
         for bc in belowConsts do
@@ -862,7 +467,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         safety := if d.isUnsafe then .unsaf else .safe
         all := #[d.name] }
       match roundtripBlock [mc] generatedConsts ctx.origEnv? st.workEnv
-          ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
+          ctx.ixonEnv ctx.sharingLimits with
       | .ok roundtripped => st := insertAll st roundtripped
       | .error e =>
         st := recoverOr ctx st d.name generatedConsts
@@ -891,7 +496,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
           if belowRecMembers.contains n then some (Ix.MutConst.recr rv)
           else none).toList
         match roundtripBlock mcs generatedConsts ctx.origEnv? st.workEnv
-            ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
+            ctx.ixonEnv ctx.sharingLimits with
         | .ok roundtripped => st := insertAll st roundtripped
         | .error e =>
           for (n, rv) in belowRecs do
@@ -959,7 +564,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
           safety := if d.isUnsafe then .unsaf else .safe
           all := #[d.name] }
         match roundtripBlock [mc] generatedConsts ctx.origEnv? st.workEnv
-            ctx.ixonEnv ctx.sharingLimits st.callSitePlans st.brecOnPlans st.belowPlans with
+            ctx.ixonEnv ctx.sharingLimits with
         | .ok roundtripped =>
           if roundtripped.isEmpty then
             match recoverAuxFromOriginal d.name ctx.ixonEnv st.workEnv
@@ -993,14 +598,12 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
     (sharingLimits : Ix.Sharing.Exact.Limits)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     : Pass2St := Id.run do
-  let mutsIndex := buildMutsPlanIndex ixonEnv
-  let auxPerms := rehydrateAuxPerms ixonEnv mutsIndex
   let blocks := collectAuxBlocks ixonEnv pass1
   let ctx : Pass2Ctx := {
-    ixonEnv, mutsIndex
+    ixonEnv
     nameToAddr := ixonEnv.named.fold (init := {})
       fun m n named => m.insert n named.addr
-    origEnv?, sharingLimits, pass3 := pass3Env ixonEnv }
+    origEnv?, sharingLimits }
   -- name → block key (members + their ctors), then block deps
   -- (decompile.rs:5096-5133).
   let mut nameToBlock : Std.HashMap Ix.Name Ix.Name := {}
@@ -1061,8 +664,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
   let mut st : Pass2St := {
     workEnv := pass1
     dstt := pass1
-    kctx := Ix.AuxGen.AuxKernelCtx.new
-    auxPerms }
+    kctx := Ix.AuxGen.AuxKernelCtx.new }
   -- Cold-start kernel prelude (decompile.rs:5140-5142).
   match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun kernel =>
       kernel.admitPrelude) with
@@ -1075,8 +677,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
     let some (allNames, auxMembers) := blocks.get? blockKey | continue
     -- Per-block delta reset (bounded memory; the sequential driver
     -- doesn't read the deltas).
-    st := { st with deltaDstt := #[], deltaWork := #[]
-                    deltaCs := #[], deltaBrec := #[], deltaBelow := #[] }
+    st := { st with deltaDstt := #[], deltaWork := #[] }
     -- Transitive BFS ingress with global dedup (decompile.rs:5171-5186).
     let mut stack : Array Ix.Name := allNames
     let mut toIngress : Array Ix.Name := #[]
@@ -1129,14 +730,12 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     (numWorkers : Nat := 16)
     : IO Pass2St := do
-  let mutsIndex := buildMutsPlanIndex ixonEnv
-  let auxPerms := rehydrateAuxPerms ixonEnv mutsIndex
   let blocks := collectAuxBlocks ixonEnv pass1
   let ctx : Pass2Ctx := {
-    ixonEnv, mutsIndex
+    ixonEnv
     nameToAddr := ixonEnv.named.fold (init := {})
       fun m n named => m.insert n named.addr
-    origEnv?, sharingLimits, pass3 := pass3Env ixonEnv }
+    origEnv?, sharingLimits }
   -- name → block key + block deps, exactly as the sequential driver.
   let mut nameToBlock : Std.HashMap Ix.Name Ix.Name := {}
   for (blockKey, (allNames, _)) in blocks do
@@ -1171,8 +770,7 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
   let mut st : Pass2St := {
     workEnv := pass1
     dstt := pass1
-    kctx := Ix.AuxGen.AuxKernelCtx.new
-    auxPerms }
+    kctx := Ix.AuxGen.AuxKernelCtx.new }
   match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun kernel =>
       kernel.admitPrelude) with
   | .ok (_, kctx') => st := { st with kctx := kctx' }
@@ -1215,12 +813,10 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
       (auxMembers : Array (Ix.AuxGen.AuxKind × Ix.Name))
       : Pass2BlockOut :=
     let st := { snapshot with
-      errors := #[], deltaDstt := #[], deltaWork := #[]
-      deltaCs := #[], deltaBrec := #[], deltaBelow := #[] }
+      errors := #[], deltaDstt := #[], deltaWork := #[] }
     let st := ingressBlock st blockKey allNames
     let st := decompileBlockAuxGen ctx st allNames auxMembers
-    { dsttD := st.deltaDstt, workD := st.deltaWork, csD := st.deltaCs
-      brecD := st.deltaBrec, belowD := st.deltaBelow, errors := st.errors }
+    { dsttD := st.deltaDstt, workD := st.deltaWork, errors := st.errors }
 
   -- Apply a completed block's deltas to the master state and replay its
   -- ingress into the master kernel context. Map merges are
@@ -1235,15 +831,6 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
         st := { st with workEnv := st.workEnv.insert n ci }
     for (n, ci) in out.dsttD do
       st := { st with dstt := st.dstt.insert n ci }
-    for (n, p) in out.csD do
-      if !st.callSitePlans.contains n then
-        st := { st with callSitePlans := st.callSitePlans.insert n p }
-    for (n, p) in out.brecD do
-      if !st.brecOnPlans.contains n then
-        st := { st with brecOnPlans := st.brecOnPlans.insert n p }
-    for (n, p) in out.belowD do
-      if !st.belowPlans.contains n then
-        st := { st with belowPlans := st.belowPlans.insert n p }
     return ingressBlock st blockKey allNames
 
   let workChan ← Std.CloseableChannel.Sync.new

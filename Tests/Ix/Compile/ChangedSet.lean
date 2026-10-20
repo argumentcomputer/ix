@@ -11,8 +11,8 @@
      (`rsCompilePhasesFFI`) and by the Lean fold (`compileEnvFold`):
      a. the set read off the two artifacts is the same;
      b. **the Pass 3 hooks**. No call-site plan is registered (Rust's dump
-        has no `plan`/`bplan`/`wplan` line, the Lean fold's
-        `CompileEnv.callSitePlans` is empty). The components the first hook
+        has no `plan`/`bplan`/`wplan` line; the Lean fold has no plan map
+        since the surgery's deletion, CQ3.5). The components the first hook
         edits (`editChangedBlock`) are exactly the changed inductive
         components by the plan predicate (`isChanged`, not
         `componentChanged`): on both artifacts a member `m` of a component
@@ -305,8 +305,6 @@ def corpusProblems (rawEnv : _root_.Ix.Environment) (rustEnv leanEnv : Ixon.Env)
   unless planLines.isEmpty do
     ps := ps.push s!"the Rust compile registered {planLines.length} call-site plan(s): \
 {planLines.take 3}"
-  unless cenv.callSitePlans.isEmpty do
-    ps := ps.push s!"the Lean fold registered {cenv.callSitePlans.size} call-site plan(s)"
   let comps := components rawEnv leanEnv
   let regenerated (i : Nat) : Bool := match comps[i]? with
     | some (_, classes, _, _) => classes.any (·.any cenv.auxGenExtraNames.contains)

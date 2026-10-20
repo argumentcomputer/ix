@@ -64,7 +64,6 @@ import Tests.Ix.Compile.SourceFamily
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
-import Tests.Ix.AuxGen.SurgeryTests
 import Tests.Ix.AuxGen.AuxKernelTests
 import Tests.Ix.AuxGen.ElimRuleTests
 import Tests.Ix.AuxGen.FlatBlockTests
@@ -182,7 +181,7 @@ def registry : List Entry := [
   -- display names, prefixes by components, the drivers' refusals by their least message
   .suite "reserved-input" .primary Tests.Ix.Compile.ReservedInput.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
-  .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
+  .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite
     ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.FlatBlock.suite
     ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.Components.suite),
   -- source-body recognition of casesOn/recOn: the comparison controls (Ix.AuxGen.SourceIdentity)

@@ -776,9 +776,8 @@ end InlineRecord
 
 The full driver's Pass 1 skips names with a reserved `_ix` component
 (compiler support, refused as compiler input, so never a source
-declaration), and `pass3Env` (no call-site plan installed) holds exactly
-when such a name is present. No compiler writes one before Pass 3 is
-wired, so a hand-built env holds `RS.src : Sort 0` and, with `support`,
+declaration). No compiler writes one before Pass 3 is wired, so a
+hand-built env holds `RS.src : Sort 0` and, with `support`,
 `RS._ix.helper : Sort 1`. -/
 
 section ReservedSupport
@@ -798,10 +797,6 @@ private def nRsHelper : Ix.Name := Ix.Name.fromLeanName `RS._ix.helper
 private def rsEnv (support : Bool) : Ixon.Env :=
   let env := rsAxiom {} nRsSrc .zero
   if support then rsAxiom env nRsHelper (.succ .zero) else env
-
-/-- `pass3Env` is the presence of a reserved name. -/
-private def rsPass3Env : Bool :=
-  pass3Env (rsEnv true) && !pass3Env (rsEnv false)
 
 /-- The full driver decompiles the source axiom and skips the support. The
     input is read through a reference, so the driver (whose recompiles call
@@ -860,7 +855,6 @@ public def unitSuite : List TestSeq := [
     ++ test "inline record: compiledTerms reads the compiled term"
       irCompiledTerms
     ++ test "inline record: whole constant decompiles" irAxiom,
-  test "reserved support: pass3Env is its presence" rsPass3Env,
   rsSupportSkipped,
   irParity
 ]

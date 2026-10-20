@@ -41,7 +41,7 @@ def controls : List (String × Bool) := Id.run do
   let (parentResult, parentAfter) := raw (compileName (Name.fromLeanName `new.child)) poisoned
   let literal := Expr.mkLit (.strVal "new")
   let (direct, directAfter) := raw (compileExprNoSurgery literal) poisoned
-  let (surgical, surgicalAfter) := raw (compileExprSurgical literal) poisoned
+  let (driver, driverAfter) := raw (compileExpr literal) poisoned
   let (structural, structuralAfter) :=
     raw (collectExprTablesStructural default default [] literal (#[], #[], {})) poisoned
   let (runtime, runtimeAfter) := raw (collectExprTables literal default (#[], #[], {})) poisoned
@@ -79,8 +79,8 @@ def controls : List (String × Bool) := Id.run do
       conflict parentResult && parentAfter.blockNames.isEmpty && parentAfter.blockBlobs.size == 1),
     ("ordinary expression compiler preserves the conflicting payload",
       conflict direct && directAfter.blockBlobs.get? address == some old),
-    ("surgical expression compiler also refuses",
-      conflict surgical && surgicalAfter.blockBlobs.get? address == some old),
+    ("dispatching expression compiler also refuses",
+      conflict driver && driverAfter.blockBlobs.get? address == some old),
     ("failed literal is not cached or allocated",
       directAfter.exprCache.isEmpty && directAfter.arena.nodes.isEmpty),
     ("structural preseed walk refuses",

@@ -62,7 +62,6 @@ public import Ix.AuxGen.Nested
 public import Ix.AuxGen.AuxKernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.Patches
-public import Ix.AuxGen.Surgery
 public import Ix.Compile.Canon.Graph
 public section
 

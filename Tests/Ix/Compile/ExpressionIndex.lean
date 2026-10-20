@@ -4,9 +4,10 @@ import Ix.CompileM
 /-! Finite controls for expression wire indices (`Ix.CompileM.checkedTableIndex`).
 Oversized source indices and mutual contexts are supplied directly; no huge
 term or table is allocated. Every expression compiler is checked: the
-ordinary one (`compileExprNoSurgery`), the call-site surgery one
-(`compileExprSurgical`), the dispatching entry (`compileExpr`) and the
-constant-head entry (`compileConstExprRaw`). -/
+ordinary one (`compileExprNoSurgery`), the dispatching entry (`compileExpr`)
+and the constant-head entry (`compileConstExprRaw`). The call-site surgery
+compiler these controls also covered is deleted (CQ3.5); its legs now check
+the dispatching entry. -/
 
 namespace Tests.Ix.Compile.ExpressionIndex
 
@@ -35,20 +36,19 @@ def controls : List (String × Bool) := Id.run do
   let bigger := Expr.mkBVar (UInt64.size + 7)
   let edge := Expr.mkBVar last
   let (bad, badAfter) := raw (compileExprNoSurgery big)
-  let (badSurg, surgAfter) := raw (compileExprSurgical big)
   let (badDriver, driverAfter) := raw (compileExpr big)
   let (biggerResult, _) := raw (compileExprNoSurgery bigger)
   let (edgeResult, _) := raw (compileExprNoSurgery edge)
-  let (edgeSurg, _) := raw (compileExprSurgical edge)
+  let (edgeDriver, _) := raw (compileExpr edge)
   let (zeroResult, _) := raw (compileExprNoSurgery (Expr.mkBVar 0))
   let projection := Expr.mkProj structName UInt64.size (Expr.mkBVar 0)
   let (projResult, projAfter) := raw (compileExprNoSurgery projection)
-  let (projSurg, projSurgAfter) := raw (compileExprSurgical projection)
+  let (projDriver, projDriverAfter) := raw (compileExpr projection)
   let edgeProjection := Expr.mkProj structName last (Expr.mkBVar 0)
   let (edgeProj, _) := raw (compileExprNoSurgery edgeProjection)
   let recursive := Expr.mkConst recursiveName #[]
   let (recResult, recAfter) := raw (compileExprNoSurgery recursive) UInt64.size
-  let (recSurg, recSurgAfter) := raw (compileExprSurgical recursive) UInt64.size
+  let (recDriver, recDriverAfter) := raw (compileExpr recursive) UInt64.size
   let (rawRec, rawRecAfter) := raw (compileConstExprRaw recursiveName #[]) UInt64.size
   let (edgeRec, _) := raw (compileExprNoSurgery recursive) last
   let first := Expr.mkBVar 0
@@ -57,31 +57,30 @@ def controls : List (String × Bool) := Id.run do
   return [
     ("first oversized bound variable is refused", overflow bad),
     ("larger bound variable does not alias its residue", overflow biggerResult),
-    ("surgery compiler refuses the same bound variable", overflow badSurg),
     ("driver entry refuses the same bound variable", overflow badDriver),
     ("bound-variable refusal precedes allocation", badAfter.arena.nodes.isEmpty &&
-      surgAfter.arena.nodes.isEmpty && driverAfter.arena.nodes.isEmpty),
+      driverAfter.arena.nodes.isEmpty),
     ("refused bound variable is not cached", badAfter.exprCache.isEmpty &&
-      surgAfter.exprCache.isEmpty && driverAfter.exprCache.isEmpty),
+      driverAfter.exprCache.isEmpty),
     ("last representable bound variable is exact",
       edgeResult.toOption == some (.var last.toUInt64, 0) &&
-        edgeSurg.toOption == some (.var last.toUInt64, 0)),
+        edgeDriver.toOption == some (.var last.toUInt64, 0)),
     ("bound variable zero is unchanged", zeroResult.toOption == some (.var 0, 0)),
-    ("oversized projection field is refused in both compilers",
-      overflow projResult && overflow projSurg),
+    ("oversized projection field is refused by both entries",
+      overflow projResult && overflow projDriver),
     ("projection refusal precedes name reference and child writes",
       projAfter.blockNames.isEmpty && projAfter.refs.isEmpty &&
         projAfter.arena.nodes.isEmpty && projAfter.exprCache.isEmpty &&
-        projSurgAfter.blockNames.isEmpty && projSurgAfter.arena.nodes.isEmpty),
+        projDriverAfter.blockNames.isEmpty && projDriverAfter.arena.nodes.isEmpty),
     ("last representable projection field is exact",
       edgeProj.toOption == some (.prj 0 last.toUInt64 (.var 0), 1)),
-    ("oversized mutual reference is refused in both compilers",
-      overflow recResult && overflow recSurg),
+    ("oversized mutual reference is refused by both entries",
+      overflow recResult && overflow recDriver),
     ("raw constant entry also refuses mutual overflow", overflow rawRec),
     ("mutual refusal allocates no expression arena node", recAfter.arena.nodes.isEmpty &&
-      recSurgAfter.arena.nodes.isEmpty && rawRecAfter.arena.nodes.isEmpty),
+      recDriverAfter.arena.nodes.isEmpty && rawRecAfter.arena.nodes.isEmpty),
     ("mutual refusal does not cache the source expression",
-      recAfter.exprCache.isEmpty && recSurgAfter.exprCache.isEmpty),
+      recAfter.exprCache.isEmpty && recDriverAfter.exprCache.isEmpty),
     ("last representable mutual slot is exact",
       edgeRec.toOption == some (.recur last.toUInt64 #[], 0)),
     ("parent propagates overflow while retaining completed children", overflow appResult &&
