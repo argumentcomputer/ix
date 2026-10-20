@@ -11,8 +11,9 @@
   backend, `Ix.Tc` through the bridge (`Ix.AuxGen.Kernel`), constructed at
   `compileMutualAuxTail`'s caller and the decompile driver's `runK`. AuxGen
   M2a adds IxC's Source mode beside it for `.below`'s scopes (the `ixc` arm,
-  in the modes `shadow`, `fallback`, `failClosed`; below); since M2b the
-  compile driver gives a safe block's tail the `ixc` arm in `fallback`.
+  in the modes `shadow`, `fallback`, `failClosed`, `fallbackEager`; below);
+  since M2b the compile driver gives a safe block's tail the `ixc` arm in
+  `fallback`, and since M3 `.brecOn`'s scopes ask it too.
 
   ## The contract
 
@@ -76,27 +77,32 @@
   ## The IxC arm (AuxGen M2a; the compile driver's since M2b)
 
   `ixc maps oracle` is `Ix.Tc` over `maps` for every generator, except the
-  scopes a generator opens with `route := .below` (`.below`'s two scopes),
-  which ask IxC Source mode through `oracle` (`Ix.AuxGen.Oracle`), in the
-  oracle's mode (`IxcMode`):
+  scopes a generator opens with `route := .below` (`.below`'s two scopes) or
+  `route := .brecOn` (`.brecOn`'s three, AuxGen M3), which ask IxC Source
+  mode through `oracle` (`Ix.AuxGen.Oracle`), in the oracle's mode
+  (`IxcMode`):
   * `shadow`: both kernels answer every question; `Ix.Tc`'s answer is used.
-  * `fallback`: both answer; IxC's answer is used where it answers
-    (production's mode).
+  * `fallback` (production's mode; lazy since AuxGen M3): IxC first;
+    `Ix.Tc` is asked only where IxC refuses (its scope is still opened,
+    pushed and popped).
   * `failClosed`: IxC alone; a refusal fails the block.
+  * `fallbackEager` (M2b's production mode, a measurement since M3): both
+    answer; IxC's answer is used where it answers.
 
   The arm only calls the oracle's closures (`Ix.AuxGen.Oracle`'s
-  docstring). Under `shadow` and
-  `fallback` the `Ix.Tc` scope is opened, pushed, popped and asked exactly as
-  on the `Ix.Tc` arm, so `Ix.Tc`'s environment evolves as in production. Each
-  question is counted in `AuxKernelCtx.ixcStats`.
+  docstring). Under `shadow` and `fallbackEager` the `Ix.Tc` scope is opened,
+  pushed, popped and asked exactly as on the `Ix.Tc` arm, so `Ix.Tc`'s
+  environment evolves as there; under `fallback` it is asked only behind a
+  refusal. Each question is counted in `AuxKernelCtx.ixcStats`.
 
   Before `.below`, the tail asks the kernel to install the block's own
   canonical flat block (`withFlatBlock`): `Ix.Tc` needs nothing; IxC
   installs it when the block's layout is not Lean's, so `.below`'s terms
   read through σ.
 
-  An IxC-only scope (`failClosed`) answers `getLevel`; it gives no answer to
-  `whnf?`, `isDefEq?` and `inferType?` (`.below` asks none of them).
+  An IxC scope answers `getLevel`, `isDefEq?`, and (decision-grade: the
+  result's binder names are anonymous, AuxGen M3) `whnf?` and `inferType?`;
+  `.brecOn.eq`'s unit-like test is their only reader on these scopes.
 -/
 module
 public import Ix.AuxGen.Kernel
@@ -121,11 +127,13 @@ def AuxKernel.maps : AuxKernel → AddrMaps
   | .tc maps => maps
   | .ixc maps _ => maps
 
-/-- Which generator opens a scope (AuxGen M2a): `.below`'s scopes ask IxC on
-    the `ixc` arm. -/
+/-- Which generator opens a scope: `.below`'s (AuxGen M2) and `.brecOn`'s
+    (AuxGen M3) scopes ask IxC on the `ixc` arm. -/
 inductive AuxRoute where
   | tc
   | below
+  /-- `.brecOn`'s scopes (AuxGen M3) -/
+  | brecOn
   deriving BEq, Inhabited
 
 /-- How `admitSource` loads a source constant. -/
@@ -151,8 +159,8 @@ inductive AuxScopeBackend where
   | tc (ref : TcScopeRef)
   /-- IxC alone (`failClosed`). -/
   | ixc (scope : OracleScope)
-  /-- `Ix.Tc`, and IxC beside it (`shadow`, `fallback`); `none` once IxC
-      refused the scope. -/
+  /-- `Ix.Tc`, and IxC beside it (`shadow`, `fallback`, `fallbackEager`);
+      `none` once IxC refused the scope. -/
   | both (ref : TcScopeRef) (scope : Option OracleScope)
 
 /-- A local context as a value. It denotes `(levelParams, locals)`. -/
@@ -238,7 +246,7 @@ private def ixcNew (o : AuxOracle) (ctx : Array LocalDecl) (lps : Array Name) :
 def new (k : AuxKernel) (ctx : Array LocalDecl) (lps : Array Name)
     (route : AuxRoute := .tc) : KBridgeM AuxScope := do
   match k, route with
-  | .ixc maps o, .below =>
+  | .ixc maps o, .below | .ixc maps o, .brecOn =>
     if o.mode == .failClosed then
       checkScopeNames ctx lps
       match ← ixcNew o ctx lps with
@@ -324,6 +332,19 @@ def getLevel (s : AuxScope) (ty : Expr) : KBridgeM Level := do
         { st with refused := st.refused + 1 }
       throwBridge (.kernel (.ixc "getLevel") e)
   | .both r o? =>
+    if s.kernel.ixcMode? == some .fallback then
+      bumpIxc fun st => { st with queries := st.queries + 1 }
+      if let some o := o? then
+        match o.getLevel ty with
+        | .ok (l, fast, _) =>
+          bumpIxc fun st => { st with answered := st.answered + 1,
+                                      ixcFast := st.ixcFast + (if fast then 1 else 0) }
+          return l
+        | .error e =>
+          bumpIxc fun st => (st.sample s!"getLevel refused: {e}") |> fun st =>
+            { st with refused := st.refused + 1 }
+      else bumpIxc fun st => { st with refused := st.refused + 1 }
+      return ← (← tcLive r "getLevel").getLevel ty
     let view ← tcLive r "getLevel"
     let tcFast := (← view.tryInferAppSortLevel ty).isSome
     let t ← view.getLevel ty
@@ -343,32 +364,115 @@ def getLevel (s : AuxScope) (ty : Expr) : KBridgeM Level := do
         if same then st else
           st.sample s!"differ (tcFast {tcFast}, ixcFast {fast}): Ix.Tc {levelText t}, \
             IxC {levelText l}"
-      return if s.kernel.ixcMode? == some .fallback then l else t
+      return if s.kernel.ixcMode? == some .fallbackEager then l else t
     | .error e =>
       bumpIxc fun st => (st.sample s!"getLevel refused: {e}") |> fun st =>
         { st with refused := st.refused + 1 }
       return t
 
+/-- IxC's answer to an expression question (`inferType?`, `whnf?`) on a
+    `both` scope, counted: `none` when IxC refuses (or refused the scope). -/
+private def ixcExprAnswer (op : String) (o? : Option OracleScope)
+    (ask : OracleScope → Except String (Expr × OracleScope)) : KBridgeM (Option Expr) := do
+  bumpIxc fun st => { st with exprQueries := st.exprQueries + 1 }
+  let some o := o? | do
+    bumpIxc fun st => { st with refused := st.refused + 1 }
+    return none
+  match ask o with
+  | .ok (e, _) =>
+    bumpIxc fun st => { st with exprAnswered := st.exprAnswered + 1 }
+    return some e
+  | .error err =>
+    bumpIxc fun st => (st.sample s!"{op} refused: {err}") |> fun st =>
+      { st with refused := st.refused + 1 }
+    return none
+
+/-- An IxC-only scope's answer to an expression question (`failClosed`): a
+    refusal fails the block. -/
+private def ixcExprOnly (op : String) (o : OracleScope)
+    (ask : OracleScope → Except String (Expr × OracleScope)) : KBridgeM (Option Expr) := do
+  bumpIxc fun st => { st with exprQueries := st.exprQueries + 1 }
+  match ask o with
+  | .ok (e, _) =>
+    bumpIxc fun st => { st with exprAnswered := st.exprAnswered + 1 }
+    return some e
+  | .error err =>
+    bumpIxc fun st => (st.sample s!"{op} refused: {err}") |> fun st =>
+      { st with refused := st.refused + 1 }
+    throwBridge (.kernel (.ixc op) err)
+
 /-- The weak head normal form in the scope; `none` when the kernel gives no
-    answer (clause 4). An IxC-only scope gives none. -/
+    answer (clause 4). IxC's answer is decision-grade (AuxGen M3: its binder
+    names are anonymous; only `.brecOn.eq`'s unit-like test reads it). -/
 def whnf? (s : AuxScope) (e : Expr) : KBridgeM (Option Expr) := do
   match s.backend with
-  | .tc r | .both r _ => (← tcLive r "whnf").whnf? e
-  | .ixc _ => return none
+  | .tc r => (← tcLive r "whnf").whnf? e
+  | .ixc o => ixcExprOnly "whnf" o (·.whnf e)
+  | .both r o? =>
+    if s.kernel.ixcMode? == some .fallback then
+      if let some w ← ixcExprAnswer "whnf" o? (·.whnf e) then return some w
+      return ← (← tcLive r "whnf").whnf? e
+    let t ← (← tcLive r "whnf").whnf? e
+    let i? ← ixcExprAnswer "whnf" o? (·.whnf e)
+    return if s.kernel.ixcMode? == some .fallbackEager then i?.orElse fun _ => t else t
 
 /-- Definitional equality in the scope; `none` when the kernel gives no
-    answer (clause 5). An IxC-only scope gives none. -/
+    answer (clause 5). On a `both` scope the two kernels' answers are
+    compared (AuxGen M3). -/
 def isDefEq? (s : AuxScope) (a b : Expr) : KBridgeM (Option Bool) := do
   match s.backend with
-  | .tc r | .both r _ => (← tcLive r "isDefEq").isDefEq? a b
-  | .ixc _ => return none
+  | .tc r => (← tcLive r "isDefEq").isDefEq? a b
+  | .ixc o =>
+    bumpIxc fun st => { st with decisions := st.decisions + 1 }
+    match o.isDefEq a b with
+    | .ok (q, _) => return some q
+    | .error err =>
+      bumpIxc fun st => (st.sample s!"isDefEq refused: {err}") |> fun st =>
+        { st with refused := st.refused + 1 }
+      throwBridge (.kernel (.ixc "isDefEq") err)
+  | .both r o? =>
+    if s.kernel.ixcMode? == some .fallback then
+      bumpIxc fun st => { st with decisions := st.decisions + 1 }
+      if let some o := o? then
+        match o.isDefEq a b with
+        | .ok (q, _) => return some q
+        | .error err =>
+          bumpIxc fun st => (st.sample s!"isDefEq refused: {err}") |> fun st =>
+            { st with refused := st.refused + 1 }
+      else bumpIxc fun st => { st with refused := st.refused + 1 }
+      return ← (← tcLive r "isDefEq").isDefEq? a b
+    let t ← (← tcLive r "isDefEq").isDefEq? a b
+    bumpIxc fun st => { st with decisions := st.decisions + 1 }
+    let some o := o? | do
+      bumpIxc fun st => { st with refused := st.refused + 1 }
+      return t
+    match o.isDefEq a b with
+    | .ok (q, _) =>
+      let same := t == some q
+      bumpIxc fun st =>
+        let st := { st with decisionsEqual := st.decisionsEqual + (if same then 1 else 0),
+                            decisionsDiffer := st.decisionsDiffer + (if same then 0 else 1) }
+        if same then st else st.sample s!"isDefEq differ: Ix.Tc {t}, IxC {q}"
+      return if s.kernel.ixcMode? == some .fallbackEager then some q else t
+    | .error err =>
+      bumpIxc fun st => (st.sample s!"isDefEq refused: {err}") |> fun st =>
+        { st with refused := st.refused + 1 }
+      return t
 
 /-- The type of a term in the scope, for decisions only; `none` when the
-    kernel gives no answer (clause 6). An IxC-only scope gives none. -/
+    kernel gives no answer (clause 6). IxC's answer is decision-grade, as
+    `whnf?`'s. -/
 def inferType? (s : AuxScope) (e : Expr) : KBridgeM (Option Expr) := do
   match s.backend with
-  | .tc r | .both r _ => (← tcLive r "inferType").inferLean e
-  | .ixc _ => return none
+  | .tc r => (← tcLive r "inferType").inferLean e
+  | .ixc o => ixcExprOnly "inferType" o (·.infer e)
+  | .both r o? =>
+    if s.kernel.ixcMode? == some .fallback then
+      if let some t ← ixcExprAnswer "inferType" o? (·.infer e) then return some t
+      return ← (← tcLive r "inferType").inferLean e
+    let t ← (← tcLive r "inferType").inferLean e
+    let i? ← ixcExprAnswer "inferType" o? (·.infer e)
+    return if s.kernel.ixcMode? == some .fallbackEager then i?.orElse fun _ => t else t
 
 /-- D-12's fail-open default for `whnf?`, named at each call site: the
     input when the kernel gives no answer (kept for parity; M3 and M4
@@ -406,10 +510,30 @@ def admitSource (k : AuxKernel) (names : Array Name) (mode : AdmitMode := .full)
     | .prewarm => ensureInKenvOfPrewarm name maps
 
 /-- Admit generated constants (canonical `.below` families), so later
-    queries naming them see the generated declarations (clause 9). `Ix.Tc`'s
-    on both arms (IxC's inductive half is AuxGen M2b's). -/
-def admitGenerated (k : AuxKernel) (consts : Array BelowConstant) : KBridgeM Unit :=
+    queries naming them see the generated declarations (clause 9): `Ix.Tc`'s
+    kenv on both arms, and on the `ixc` arm IxC's environment too (AuxGen M3,
+    `AuxOracle.admitBelow`), whose result is the kernel the later generators
+    ask (`.brecOn`). IxC takes the Type-level definitions only: the
+    Prop-level `.brecOn` asks the kernel nothing, so a Prop-level family
+    would only cost its block a fold of the service. An IxC refusal is
+    counted; its questions then refuse, and `fallback` answers them by
+    `Ix.Tc`. -/
+def admitGenerated (k : AuxKernel) (consts : Array BelowConstant) : KBridgeM AuxKernel := do
   tcAdmitBelow consts k.maps
+  match k with
+  | .tc _ => return k
+  | .ixc maps o =>
+    let defs := consts.filterMap fun | .defn d => some d | .indc _ => none
+    if defs.isEmpty then return k
+    match o.admitBelow defs with
+    | .ok (o', ok, bad) =>
+      bumpIxc fun st => { st with belowAdmitted := st.belowAdmitted + ok,
+                                  belowRefused := st.belowRefused + bad }
+      return .ixc maps o'
+    | .error e =>
+      bumpIxc fun st => (st.sample s!"admit .below: {e}") |> fun st =>
+        { st with belowRefused := st.belowRefused + defs.size }
+      return k
 
 /-- **The block's own canonical flat block**, from its canonical classes
     (restricted to Lean's `all`), Lean's `all` and its canonical recursors,

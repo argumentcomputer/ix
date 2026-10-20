@@ -14,9 +14,9 @@ the options here:
   construction's limits;
 - `IX_COMPILE_DBG`: phase timings and the per-wave trace;
 - `IX_AUXGEN_IXC` (AuxGen's measurement modes, never needed otherwise;
-  `Ix.CompileM.AuxIxcOptions`): `shadow`, `fallback` or `failClosed` runs the
-  wave fold with its aux tails asking IxC in that mode (production's is
-  `fallback`), each tail tracing its counts; `measure` times the Source
+  `Ix.CompileM.AuxIxcOptions`): `shadow`, `fallback`, `failClosed` or
+  `fallbackEager` runs the wave fold with its aux tails asking IxC in that mode
+  (production's is `fallback`), each tail tracing its counts; `measure` times the Source
   service's work alone and compiles nothing: the pipeline prints the
   measurement and returns an error ("nothing compiled"), so `ix compile-lean`
   exits 1 by design. A further `,asks=inductive` makes the service ask for
@@ -49,7 +49,7 @@ def auxIxcOptionsOf (value : String) : Except String Ix.CompileM.AuxIxcOptions :
       if w == "measure" then opts := { opts with measureOnly := true }
       else match Ix.AuxGen.IxcMode.ofString? w with
         | some mode => opts := { opts with mode }
-        | none => throw s!"IX_AUXGEN_IXC: unknown mode '{w}' (shadow, fallback, failClosed, measure)"
+        | none => throw s!"IX_AUXGEN_IXC: unknown mode '{w}' (shadow, fallback, failClosed, fallbackEager, measure)"
     else if w == "asks=below" then opts := { opts with asks := .below }
     else if w == "asks=inductive" then opts := { opts with asks := .inductive }
     else throw s!"IX_AUXGEN_IXC: unknown option '{w}' (asks=below, asks=inductive)"

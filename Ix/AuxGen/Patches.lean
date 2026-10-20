@@ -58,7 +58,7 @@ def belowFamilyLeanExistsM (originalAll : Array Name) : CompileM Bool := do
     at its Rust source position after it; no semantic difference.) -/
 def populateCanonKenvWithBelow (belowConsts : Array BelowConstant)
     (sortedClasses : Array (Array Name)) (kernel : AuxKernel)
-    : KBridgeM Unit := do
+    : KBridgeM AuxKernel := do
   -- Ensure PUnit and PProd are in kenv.
   kernel.admitPrelude
 
@@ -68,7 +68,8 @@ def populateCanonKenvWithBelow (belowConsts : Array BelowConstant)
     let rep ← arrIdx cls 0 "populateCanonKenvWithBelow: class representative"
     kernel.admitSource #[rep]
 
-  -- Insert canonical .below definitions/inductives.
+  -- Insert canonical .below definitions/inductives; IxC's environment too on
+  -- the `ixc` arm (AuxGen M3), whose kernel Phase 3 asks.
   kernel.admitGenerated belowConsts
 
 /-- Alias-target lookup for original-order `_N` aux aliases. Mirrors the
@@ -357,7 +358,9 @@ refusing to synthesize canonical-indexed _N names")
     -- during brecOn generation — uses the SAME renamed belowConsts that
     -- `patches` got, keeping hash addressing consistent end-to-end
     -- (aux_gen.rs:646-657).
-    populateCanonKenvWithBelow belowConsts sortedClasses kernel
+    -- AuxGen M3: Phase 3 asks the kernel after them (the flat block's σ and the
+    -- admitted `.below` on the IxC arm; `Ix.Tc`'s is unchanged).
+    let brecKernel ← populateCanonKenvWithBelow belowConsts sortedClasses belowKernel
 
     -- Phase 3: Generate .brecOn constants (if originals exist)
     -- (aux_gen.rs:659-702).
@@ -369,7 +372,7 @@ refusing to synthesize canonical-indexed _N names")
     let emitEq ← familyExported "brecOn" (some "eq")
     if emitGo || emitMain || emitEq then
       let breconConsts ← generateBreconConstants sortedClasses
-        canonicalRecs belowConsts isProp kernel (allAux := true)
+        canonicalRecs belowConsts isProp brecKernel (allAux := true)
       -- Emit per family (the `.go` / main / `.eq` batch the name falls
       -- in, as CompileAux's `breconBatch` splits them), not per name, in
       -- batch order so each batch can resolve the ones before it. `BRecOn`

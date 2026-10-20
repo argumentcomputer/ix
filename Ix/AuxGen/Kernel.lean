@@ -166,6 +166,18 @@ structure IxcStats where
   /-- the block's own flat block installed, and refused -/
   flatInstalled : Nat := 0
   flatRefused : Nat := 0
+  /-- AuxGen M3: `isDefEq?` on a scope routed to IxC; of those answered by
+  both kernels, alike and different -/
+  decisions : Nat := 0
+  decisionsEqual : Nat := 0
+  decisionsDiffer : Nat := 0
+  /-- AuxGen M3: `inferType?` and `whnf?` on a scope routed to IxC, and IxC
+  answered -/
+  exprQueries : Nat := 0
+  exprAnswered : Nat := 0
+  /-- AuxGen M3: the generated `.below` constants admitted to IxC, and refused -/
+  belowAdmitted : Nat := 0
+  belowRefused : Nat := 0
   /-- the first disagreements and refusals, as text -/
   samples : Array String := #[]
   deriving Inhabited
@@ -182,7 +194,10 @@ def sample (st : IxcStats) (msg : String) : IxcStats :=
 def line (key : Name) (st : IxcStats) : String :=
   s!"[auxgen-ixc] {key.pretty}: queries {st.queries} tcFast {st.tcFast} ixcFast {st.ixcFast} \
     answered {st.answered} equal {st.equal} differ {st.differ} refused {st.refused} \
-    scopesRefused {st.scopesRefused} flat {st.flatInstalled}/{st.flatRefused}\
+    scopesRefused {st.scopesRefused} flat {st.flatInstalled}/{st.flatRefused} \
+    decisions {st.decisions} decisionsEqual {st.decisionsEqual} decisionsDiffer {st.decisionsDiffer} \
+    exprQueries {st.exprQueries} exprAnswered {st.exprAnswered} \
+    below {st.belowAdmitted}/{st.belowRefused}\
     {String.join (st.samples.toList.map fun s => s!"\n[auxgen-ixc]   {s.take 400}")}"
 
 end IxcStats

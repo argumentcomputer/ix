@@ -1194,9 +1194,10 @@ runs IxC's Source-mode environment over its input **ahead of the waves**
 level of the schedule (`scheduleLevels`), it folds the declaration groups of
 the blocks with a Type-level `.below`, with everything they depend on, and
 publishes the run after each level. Each such block's aux tail asks
-`.below`'s level questions of IxC over its level's run (`CompileEnv.auxOracle`,
-`AuxIxcOptions`: `fallback`, so IxC's answers are the compile's wherever IxC
-answers; a safe block only, an unsafe block's tail keeps `Ix.Tc`). `compileEnvFoldWithSource`
+`.below`'s and `.brecOn`'s questions of IxC over its level's run
+(`CompileEnv.auxOracle`, `AuxIxcOptions`: `fallback`, so IxC's answers are
+the compile's wherever IxC answers; a safe block only, an unsafe block's tail
+keeps `Ix.Tc`). `compileEnvFoldWithSource`
 waits for the run-ahead at the end and returns what Source mode accepted
 (`Ix.AuxGen.Source.Report`). -/
 
@@ -1434,14 +1435,16 @@ def ServiceSupport.of (consts : List (Lean.Name × Lean.ConstantInfo)) : Service
   return { get? := map.get?, blocks := Ix.CondenseM.run refs }
 
 /-- **How the fold's aux tails ask IxC** (AuxGen M2). The defaults are
-production's: `fallback` (IxC's answers to `.below`'s level questions are the
-compile's wherever IxC answers; `Ix.Tc` answers behind a refusal, which a
-selected closure without what Source mode needs can meet), no trace, and the
+production's: `fallback` (IxC's answers to `.below`'s and `.brecOn`'s questions
+are the compile's wherever IxC answers; `Ix.Tc` answers behind a refusal,
+which a selected closure without what Source mode needs can meet; lazy since
+AuxGen M3), no trace, and the
 Source service asks only for the blocks with a Type-level `.below`
 (`Asks.below`, lever P2). Other settings are AuxGen's measurement modes (the
 CLI's `IX_AUXGEN_IXC`, which also traces each tail's counts): `shadow`
-(`Ix.Tc`'s answers, compared), `failClosed`, the asks of every block that
-holds an inductive, and `measureOnly` (the service's work timed alone,
+(`Ix.Tc`'s answers, compared), `failClosed`, `fallbackEager` (M2b's
+production: both kernels asked), the asks of every block that holds an
+inductive, and `measureOnly` (the service's work timed alone,
 `Ix.AuxGen.Source.measure`; the pipeline then compiles nothing). Whatever the
 setting, an unsafe block's tail asks `Ix.Tc` (`compileBlockWithAux`). -/
 structure AuxIxcOptions where

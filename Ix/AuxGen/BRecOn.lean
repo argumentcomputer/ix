@@ -716,7 +716,7 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
   -- (`refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`): `metaDefeq`
   -- (kernel def-eq + the elaborator's unit-like rule) on the outer and
   -- new index types decides — Eq if defEq, HEq otherwise.
-  let eqTc ← AuxScope.new kernel allDecls recLevelParams
+  let eqTc ← AuxScope.new kernel allDecls recLevelParams (route := .brecOn)
   -- The compared "new" types mention the generalized index fvars
   -- (`newIdxDecls`), which are not part of `allDecls` — push them so
   -- inference inside `metaDefeq` (the unit-like check) can type them.
@@ -1250,7 +1250,7 @@ below constants for {nMotives} recursor motives")
   -- dependency (see the Rust comment at brecon.rs:717-737).
   let ilvls : Array Level ← do
     let ilvlCtx : Array LocalDecl := paramDecls ++ motiveDecls
-    let mut ilvlTc ← AuxScope.new kernel ilvlCtx recLevelParams
+    let mut ilvlTc ← AuxScope.new kernel ilvlCtx recLevelParams (route := .brecOn)
     let mut out : Array Level := #[]
     for md in motiveDecls do
       -- Peel foralls from the motive type to find the major domain,
@@ -1332,7 +1332,7 @@ TcScope::get_level on major domain returned {e}. This typically means \
   -- motives; push/pop indices/major/F-binders as needed (matches Lean's
   -- mkPProd/mkPProdMk which infer levels via getLevel).
   let baseCtx : Array LocalDecl := paramDecls ++ motiveDecls
-  let mut rtc ← AuxScope.new kernel baseCtx recLevelParams
+  let mut rtc ← AuxScope.new kernel baseCtx recLevelParams (route := .brecOn)
 
   -- go return type:
   -- PProd (motive_ci indices major) (below_ci params motives indices major)

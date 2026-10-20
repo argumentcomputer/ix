@@ -43,6 +43,7 @@
 -/
 module
 public import Ix.Environment
+public import Ix.AuxGen.Types
 public section
 
 namespace Ix.AuxGen
@@ -53,17 +54,24 @@ inductive IxcMode where
   /-- Both kernels answer; `Ix.Tc`'s answer is used, and the two are
   compared. The compile is `Ix.Tc`'s, by construction. -/
   | shadow
-  /-- Both kernels answer; IxC's answer is used where IxC answers, `Ix.Tc`'s
-  where it refuses. `Ix.Tc` still answers every query, so its environment
-  evolves as in production (`Ix.Tc`'s later answers depend on what it has
-  faulted in). Production's mode (AuxGen M2b), for safe blocks: IxC's answers
-  are the compile's wherever IxC answers, and a Source coverage gap (a
-  selected closure without what Source mode needs) still compiles. -/
+  /-- IxC answers first; `Ix.Tc` is asked a question only where IxC refuses it,
+  and its answer is used there. Production's mode, for safe blocks: IxC's
+  answers are the compile's wherever IxC answers, and a Source coverage gap
+  (a selected closure without what Source mode needs) still compiles. Lazy
+  since AuxGen M3 (`fallbackEager` was M2b's): `Ix.Tc`'s scopes are still
+  opened, pushed and popped, but it faults in only what its answers behind a
+  refusal need. Adopted on equal bytes with `fallbackEager` on the fixtures,
+  Init+Std and Mathlib (`auxgen-m3.md` §11). -/
   | fallback
-  /-- IxC alone answers `.below`'s questions; a refusal fails the block.
+  /-- IxC alone answers the routed questions; a refusal fails the block.
   `Ix.Tc` is not asked them. Not production's until Source mode covers every
   input the compiler takes (closures included). -/
   | failClosed
+  /-- Both kernels answer every question; IxC's answer is used where IxC
+  answers, `Ix.Tc`'s where it refuses (AuxGen M2b's production mode; a
+  measurement since M3). `Ix.Tc`'s environment evolves as on the `Ix.Tc`
+  arm. -/
+  | fallbackEager
   deriving BEq, Inhabited, Repr
 
 namespace IxcMode
@@ -71,6 +79,7 @@ namespace IxcMode
 def ofString? : String → Option IxcMode
   | "shadow" => some .shadow
   | "fallback" => some .fallback
+  | "fallbackEager" => some .fallbackEager
   | "failClosed" => some .failClosed
   | _ => none
 
@@ -78,6 +87,7 @@ instance : ToString IxcMode where
   toString
     | .shadow => "shadow"
     | .fallback => "fallback"
+    | .fallbackEager => "fallbackEager"
     | .failClosed => "failClosed"
 
 end IxcMode
@@ -86,34 +96,52 @@ end IxcMode
 the context after it. Free variables are named by their `LocalDecl.fvarName`
 (`Ix.AuxGen.LocalDecl`), level parameters by their names.
 
-`mk getLevel push pop`:
+`mk getLevel push pop infer whnf isDefEq`:
 * `getLevel ty`: the sort level of the type `ty` in the context, spelled as
   `Ix.Tc` builds levels; whether the `inferAppType` fast path gave it; the
   context after the query;
 * `push locals`: the context with a telescope pushed, `(fvarName, domain)`,
   outermost first, each domain over the context before it;
-* `pop n`: the context with the most recently pushed `n` locals popped. -/
+* `pop n`: the context with the most recently pushed `n` locals popped;
+* `infer e`, `whnf e`: the type, the weak head normal form of `e` in the
+  context, **decision-grade** (AuxGen M3): the result denotes the right
+  term over the context, but its binder names are anonymous; AuxGen reads
+  such results only to decide (`.brecOn.eq`'s unit-like test), never emits
+  them;
+* `isDefEq a b`: definitional equality in the context. -/
 inductive OracleScope where
   | mk (getLevel : Expr → Except String (Level × Bool × OracleScope))
       (push : Array (Name × Expr) → Except String OracleScope)
       (pop : Nat → Except String OracleScope)
+      (infer : Expr → Except String (Expr × OracleScope))
+      (whnf : Expr → Except String (Expr × OracleScope))
+      (isDefEq : Expr → Expr → Except String (Bool × OracleScope))
 
 namespace OracleScope
 
 def getLevel : OracleScope → Expr → Except String (Level × Bool × OracleScope)
-  | .mk f _ _ => f
+  | .mk f _ _ _ _ _ => f
 
 def push : OracleScope → Array (Name × Expr) → Except String OracleScope
-  | .mk _ f _ => f
+  | .mk _ f _ _ _ _ => f
 
 def pop : OracleScope → Nat → Except String OracleScope
-  | .mk _ _ f => f
+  | .mk _ _ f _ _ _ => f
+
+def infer : OracleScope → Expr → Except String (Expr × OracleScope)
+  | .mk _ _ _ f _ _ => f
+
+def whnf : OracleScope → Expr → Except String (Expr × OracleScope)
+  | .mk _ _ _ _ f _ => f
+
+def isDefEq : OracleScope → Expr → Expr → Except String (Bool × OracleScope)
+  | .mk _ _ _ _ _ f => f
 
 end OracleScope
 
 /-- **One block's IxC oracle** (AuxGen M2a).
 
-`mk mode trace newScope withFlat`:
+`mk mode trace newScope withFlat admitBelow`:
 * `mode`: how AuxGen uses the answers;
 * `trace`: whether the tail traces its counts (the measurement modes);
 * `newScope lps locals`: a context over the level parameters `lps` and the
@@ -121,27 +149,36 @@ end OracleScope
 * `withFlat classes originalAll canonicalRecs`: the block's own canonical
   flat block installed, from its canonical classes (restricted to Lean's
   `all`), Lean's `all` and its canonical recursors: the oracle after it, or
-  `none` when the block's layout is Lean's and nothing is installed. -/
+  `none` when the block's layout is Lean's and nothing is installed;
+* `admitBelow defs`: the block's generated Type-level `.below` definitions
+  made visible to later questions (AuxGen M3; the `AuxKernel` contract's
+  clause 9), each admitted through σ under its fresh name: the oracle after
+  them, and how many were admitted and refused. (A Prop-level family is not
+  admitted: the Prop-level `.brecOn` asks the kernel nothing.) -/
 inductive AuxOracle where
   | mk (mode : IxcMode) (trace : Bool)
       (newScope : Array Name → Array (Name × Expr) → Except String OracleScope)
       (withFlat : Array (Array Name) → Array Name → Array (Name × RecursorVal) →
         Except String (Option AuxOracle))
+      (admitBelow : Array BelowDef → Except String (AuxOracle × Nat × Nat))
 
 namespace AuxOracle
 
 def mode : AuxOracle → IxcMode
-  | .mk m _ _ _ => m
+  | .mk m _ _ _ _ => m
 
 def trace : AuxOracle → Bool
-  | .mk _ t _ _ => t
+  | .mk _ t _ _ _ => t
 
 def newScope : AuxOracle → Array Name → Array (Name × Expr) → Except String OracleScope
-  | .mk _ _ f _ => f
+  | .mk _ _ f _ _ => f
 
 def withFlat : AuxOracle → Array (Array Name) → Array Name → Array (Name × RecursorVal) →
     Except String (Option AuxOracle)
-  | .mk _ _ _ f => f
+  | .mk _ _ _ f _ => f
+
+def admitBelow : AuxOracle → Array BelowDef → Except String (AuxOracle × Nat × Nat)
+  | .mk _ _ _ _ f => f
 
 end AuxOracle
 

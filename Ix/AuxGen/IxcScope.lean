@@ -131,6 +131,8 @@ structure Scope where
   lps : Array Name
   fvarLevels : Std.HashMap Name Nat := {}
   locals : Array (Ix.Kernel.Expr .source) := #[]
+  /-- each local's name, by level (the egress's free variables) -/
+  names : Array Name := #[]
   cs : Ix.Kernel.Cached.CState .source := {}
 
 namespace Scope
@@ -165,7 +167,8 @@ def push1 (s : Scope) (loc : Name × Expr) : Except String Scope := do
   let i := s.depth
   let ty ← s.term domain
   let (ty', s) ← s.run fun r => r.annotate i ty
-  pure { s with fvarLevels := s.fvarLevels.insert name i, locals := s.locals.push (.fvar i ty') }
+  pure { s with fvarLevels := s.fvarLevels.insert name i, locals := s.locals.push (.fvar i ty'),
+                names := s.names.push name }
 
 /-- Push a telescope, outermost first. -/
 def push (s : Scope) (locals : Array (Name × Expr)) : Except String Scope :=
@@ -177,7 +180,7 @@ def pop (s : Scope) (k : Nat) : Except String Scope := do
   let keep := s.depth - k
   let fvarLevels := s.fvarLevels.fold (init := {}) fun m name i =>
     if i < keep then m.insert name i else m
-  pure { s with fvarLevels, locals := s.locals.extract 0 keep }
+  pure { s with fvarLevels, locals := s.locals.extract 0 keep, names := s.names.extract 0 keep }
 
 /-- A context over `lps` with no locals; duplicate level parameters are
 refused. -/
@@ -209,18 +212,101 @@ def getLevel (get? : Name → Option ConstantInfo) (s : Scope) (ty : Expr) :
   let (l, s) ← s.slowLevel ty
   return (l, false, s)
 
+/-! ### Terms out, decision-grade (AuxGen M3)
+
+`.brecOn.eq`'s unit-like test reads `inferType?` and `whnf?` results to
+decide between `Eq` and `HEq`, and never emits them (the `AuxKernel`
+contract's clause 6). So an IxC result goes out as a term that denotes the
+same value over the context, and nothing more:
+- a free variable is its local's name;
+- a constant is its Source key's Lean name (`.id n` as `n`, `.role r` as
+  `r`'s Lean name), a fresh name (`Flat.fresh n`: a flat block's member, an
+  admitted `.below`) as the `n` it is fresh for, which `term` sends back
+  through σ; so the generator's lookups (`lookupConst?` on the head) see the
+  names `Ix.Tc` gives; a derived key (`.aux`) is refused;
+- levels are spelled as `Ix.Tc` builds them (`Egress.egressLevel`);
+- binder names are anonymous, binder information default.
+The result re-enters through `term`, as the generator passes `inferType?`'s
+answer back to `whnf?` and `isDefEq?`. -/
+
+/-- An IxC name as an `Ix.Name`: `ingressName`'s inverse, with a fresh name's
+reserved root dropped (`Flat.fresh`'s inverse; no input name has the root). -/
+def egressName : Ix.Kernel.Name → Name
+  | .anonymous => Name.mkAnon
+  | .str .anonymous s => if s == Flat.freshRoot then Name.mkAnon else Name.mkStr Name.mkAnon s
+  | .str p s => Name.mkStr (egressName p) s
+  | .num p n => Name.mkNat (egressName p) n
+
+/-- A Source key's Lean name. -/
+def egressKey : Ix.Kernel.Key .source → Except String Name
+  | .id n => pure (egressName n)
+  | .role r => pure (egressName r.leanName)
+  | .aux _ _ => throw "egress: a derived key has no Lean name"
+
+/-- **An IxC term over the context as a Lean term**, decision-grade. -/
+def egress (s : Scope) : Ix.Kernel.Expr .source → Except String Expr
+  | .bvar i => pure (Expr.mkBVar i)
+  | .fvar i _ =>
+    match s.names[i]? with
+    | some n => pure (Expr.mkFVar n)
+    | none => throw s!"egress: free variable {i} beyond the context's {s.names.size}"
+  | .sort u => return Expr.mkSort (← (Egress.egressLevel s.lps u).mapError toString)
+  | .const k us => do
+    let us ← us.toArray.mapM fun u => (Egress.egressLevel s.lps u).mapError toString
+    return Expr.mkConst (← egressKey k) us
+  | .app f a => return Expr.mkApp (← s.egress f) (← s.egress a)
+  | .lam t b _ => return Expr.mkLam Name.mkAnon (← s.egress t) (← s.egress b) .default
+  | .forallE t b _ => return Expr.mkForallE Name.mkAnon (← s.egress t) (← s.egress b) .default
+  | .letE t v b _ =>
+    return Expr.mkLetE Name.mkAnon (← s.egress t) (← s.egress v) (← s.egress b) false
+  | .lit (.natVal n) => pure (Expr.mkLit (.natVal n))
+  | .lit (.strVal str) => pure (Expr.mkLit (.strVal str))
+  | .proj k i e => return Expr.mkProj (← egressKey k) i (← s.egress e)
+
+/-- The type of a term, decision-grade: `annotate`, `infer`, out. -/
+def inferExpr (s : Scope) (e : Expr) : Except String (Expr × Scope) := do
+  let d := s.depth
+  let k ← s.term e
+  let (t, s) ← s.run fun r => do
+    let k' ← r.annotate d k
+    r.infer d k'
+  return (← s.egress t, s)
+
+/-- The weak head normal form of a term, decision-grade: `annotate`, `whnf`,
+out. -/
+def whnfExpr (s : Scope) (e : Expr) : Except String (Expr × Scope) := do
+  let d := s.depth
+  let k ← s.term e
+  let (w, s) ← s.run fun r => do
+    let k' ← r.annotate d k
+    r.whnf d k'
+  return (← s.egress w, s)
+
+/-- Definitional equality of two terms: both annotated, then IxC's `defeq`. -/
+def defEq (s : Scope) (a b : Expr) : Except String (Bool × Scope) := do
+  let d := s.depth
+  let ka ← s.term a
+  let kb ← s.term b
+  s.run fun r => do
+    let a' ← r.annotate d ka
+    let b' ← r.annotate d kb
+    r.defeq d a' b'
+
 end Scope
 
 /-- **The scope as an `OracleScope`**, with `fuel` operations left. -/
 def ofScope (get? : Name → Option ConstantInfo) : Nat → Scope → OracleScope
   | 0, _ =>
-    .mk (fun _ => .error "scope fuel exhausted") (fun _ => .error "scope fuel exhausted")
-      (fun _ => .error "scope fuel exhausted")
+    let out {α} : Except String α := .error "scope fuel exhausted"
+    .mk (fun _ => out) (fun _ => out) (fun _ => out) (fun _ => out) (fun _ => out) (fun _ _ => out)
   | n + 1, s =>
     .mk
       (fun ty => (s.getLevel get? ty).map fun (l, fast, s') => (l, fast, ofScope get? n s'))
       (fun locals => (s.push locals).map (ofScope get? n))
       (fun k => (s.pop k).map (ofScope get? n))
+      (fun e => (s.inferExpr e).map fun (t, s') => (t, ofScope get? n s'))
+      (fun e => (s.whnfExpr e).map fun (w, s') => (w, ofScope get? n s'))
+      (fun a b => (s.defEq a b).map fun (q, s') => (q, ofScope get? n s'))
 
 /-! ## The oracle -/
 
@@ -244,13 +330,30 @@ def installOwnFlat (svc : Service) (classes : Array (Array Name)) (originalAll :
   | some (.refused why) => throw s!"flat block refused: {why}"
   | _ => throw "flat block not recorded"
 
+/-- The block's generated Type-level `.below` definitions made visible
+(AuxGen M3, the `AuxKernel` contract's clause 9), on the block's copy of
+the service: each admitted through σ under its fresh name
+(`Service.admitDefinition`), as `Ix.Tc`'s kenv takes the generated
+definition at its name. The service after them, and how many were admitted
+and refused. -/
+def admitBelowIn (svc : Service) (defs : Array BelowDef) : Service × Nat × Nat := Id.run do
+  let mut svc := svc
+  let mut ok := 0
+  let mut bad := 0
+  for d in defs do
+    let (svc', st) := svc.admitDefinition d.name d.levelParams d.typ d.value (thm := false)
+    svc := svc'
+    if st.isAccepted then ok := ok + 1 else bad := bad + 1
+  return (svc, ok, bad)
+
 /-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
 the first question; the drivers' snapshot is a task), in `mode` (tracing the
-tail's counts under `trace`), with `fuel` flat-block installs left. -/
+tail's counts under `trace`), with `fuel` installs left (the flat block, the
+generated `.below`). -/
 def oracleOf (mode : IxcMode) (trace : Bool) : Nat → (Unit → Except String Service) → AuxOracle
   | 0, _ =>
     .mk mode trace (fun _ _ => .error "oracle fuel exhausted")
-      (fun _ _ _ => .error "oracle fuel exhausted")
+      (fun _ _ _ => .error "oracle fuel exhausted") (fun _ => .error "oracle fuel exhausted")
   | n + 1, svc =>
     .mk mode trace
       (fun lps locals => do
@@ -263,15 +366,23 @@ def oracleOf (mode : IxcMode) (trace : Bool) : Nat → (Unit → Except String S
         match ← installOwnFlat svc classes originalAll canonicalRecs with
         | none => pure none
         | some svc' => pure (some (oracleOf mode trace n fun _ => .ok svc')))
+      (fun defs => do
+        let svc ← svc ()
+        let (svc', ok, bad) := admitBelowIn svc defs
+        pure (oracleOf mode trace n fun _ => .ok svc', ok, bad))
 
 /-- **One block's oracle over the snapshot `run`** (a run of the drivers'
 service), with the block's `members` folded first (`Service.ensureNames`): a
 no-op when the run asked for the block, and otherwise its groups and what they
 depend on, folded on this block's copy of the snapshot, so a block the asks
-did not select is still answered. `trace`: the tail traces its counts. -/
+did not select is still answered. The service is taken once, at the first
+question, and shared by the block's scopes. `trace`: the tail traces its
+counts. -/
 def oracleOfRun (mode : IxcMode) (trace : Bool) (run : Unit → Source.Run) (members : Array Name) :
     AuxOracle :=
-  oracleOf mode trace oracleFuel fun _ => (run ()).service.map (·.ensureNames members)
+  let svc : Thunk (Except String Service) :=
+    Thunk.mk fun _ => (run ()).service.map (·.ensureNames members)
+  oracleOf mode trace oracleFuel fun _ => svc.get
 
 end Ix.AuxGen.Ixc
 

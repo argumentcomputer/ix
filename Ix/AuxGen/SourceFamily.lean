@@ -161,7 +161,7 @@ def reconstruct (env : Environment) (all : Array Name) (includeBRecOn : Bool := 
     let isProp := propFormer ind.cnst.type
     let below ← generateBelowConstants classes recs isProp kernel (allAux := true)
     let brecon ← if includeBRecOn then do
-        populateCanonKenvWithBelow below classes kernel
+        let _ ← populateCanonKenvWithBelow below classes kernel
         generateBreconConstants classes recs below isProp kernel (allAux := true)
       else pure #[]
     let belowAll := below.filterMap fun b => match b with
