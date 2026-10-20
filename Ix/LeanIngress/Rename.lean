@@ -1,5 +1,6 @@
 import Ix.LeanIngress
 import IxC.Kernel.Verify.Rename.Fold
+import IxC.Kernel.Verify.Frontend.Prepare
 
 /-! # Quotient Source under the artifact's addresses (step 7.3, chunk (iv))
 
@@ -238,4 +239,111 @@ theorem evidenceSubst_good {ev : Ix.Kernel.Evidences .source} (h : ev.Good P) :
 
 end Structural
 
+
+/-! ## The collapse -/
+
+/-- An invariant of a `for` loop in `Except`: preserved by every step whose
+element satisfies `Q`, it holds of the loop's result. -/
+theorem forIn_except_inv {α σ ε : Type} (I : σ → Prop) (Q : α → Prop)
+    (f : α → σ → Except ε (ForInStep σ))
+    (hf : ∀ a s r, Q a → I s → f a s = .ok r →
+      I (match r with | .done b => b | .yield b => b)) :
+    ∀ (l : List α) (init : σ), (∀ a ∈ l, Q a) → I init → ∀ s, forIn l init f = .ok s → I s
+  | [], init, _, hi, s, h => by
+    simp only [List.forIn_nil] at h
+    cases h
+    exact hi
+  | a :: l, init, hl, hi, s, h => by
+    rw [List.forIn_cons] at h
+    cases hfa : f a init with
+    | error e =>
+      rw [hfa] at h
+      cases h
+    | ok r =>
+      rw [hfa] at h
+      have hr := hf a init r (hl a List.mem_cons_self) hi hfa
+      cases r with
+      | done b =>
+        cases h
+        exact hr
+      | yield b =>
+        exact forIn_except_inv I Q f hf l b (fun x hx => hl x (List.mem_cons_of_mem _ hx)) hr s h
+
+/-- **The collapse keeps renamed inputs**: every kept declaration is an
+input declaration with its keys renamed. -/
+theorem collapseDecls_kept {ρ : FiberMap} {ds : Array (Ix.Kernel.Declaration .source)}
+    {c : Collapsed} (h : collapseDecls ρ ds = .ok c) :
+    ∀ d' ∈ c.decls, ∃ d ∈ ds, d' = Declaration.substKeys ρ d := by
+  unfold collapseDecls at h
+  dsimp only at h
+  generalize hloop : forIn (m := Except CollapseError) ds _ _ = r at h
+  cases r with
+  | error e => cases h
+  | ok s =>
+    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    rw [← Array.forIn_toList] at hloop
+    refine forIn_except_inv
+      (fun s : Array (Ix.Kernel.Declaration .source) × Std.HashMap (Ix.Kernel.Key .source) Nat ×
+        Array (Ix.Kernel.Key .source × Ix.Kernel.Key .source) =>
+        ∀ x ∈ s.1, ∃ d ∈ ds, x = Declaration.substKeys ρ d)
+      (fun d => d ∈ ds) _ ?_ ds.toList _ (fun d hd => Array.mem_toList_iff.mp hd)
+      (by intro x hx; simp at hx) s hloop
+    intro a st r ha hst hr
+    obtain ⟨kept, owner, dropped⟩ := st
+    dsimp only at hr hst
+    split at hr
+    · cases hin : forIn (m := Except CollapseError) (Declaration.substKeys ρ a).names owner _ with
+      | error e =>
+        rw [hin] at hr
+        cases hr
+      | ok o =>
+        rw [hin] at hr
+        cases hr
+        intro x hx
+        rcases Array.mem_push.mp hx with hx | rfl
+        · exact hst x hx
+        · exact ⟨a, ha, rfl⟩
+    · split at hr
+      · cases hr
+        exact hst
+      · cases hr
+
+/-- **The collapse at the artifact's fibers renames input keys onto
+representatives**: declarations whose keys name input names (`QIn`) collapse
+to declarations whose keys are representatives (`QRep`). -/
+theorem collapseDecls_good (hroles : FibersRoleFree ixe) {ds : Array (Ix.Kernel.Declaration .source)}
+    {c : Collapsed} (h : collapseDecls (fiberAlias ixe) ds = .ok c)
+    (hds : ∀ d ∈ ds, d.Good (QIn ixe)) : ∀ d ∈ c.decls, d.Good (QRep ixe) := by
+  intro d' hd'
+  obtain ⟨d, hd, rfl⟩ := collapseDecls_kept h d' hd'
+  exact Declaration.substKeys_good (fun _ hk => Key.subst_good hroles hk) (hds d hd)
+
+/-- **Quotient Source's prepared declarations are representatives'**: the
+ingress's declarations naming input names, and the prelude's naming
+representatives (role keys, in Source mode), the prepared stream's do. -/
+theorem prepareSourceCollapsed_good (hroles : FibersRoleFree ixe)
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+    {pre : Ix.Kernel.Reader.Prelude .source} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {ds : Array (Ix.Kernel.Declaration .source)}
+    (h : prepareSourceCollapsed (fiberAlias ixe) hints pre env blocks = .ok ds)
+    (hin : ∀ decls, leanIngressHinted hints env blocks pre.state = .ok decls →
+      ∀ d ∈ decls, d.Good (QIn ixe))
+    (hpre : ∀ d ∈ pre.ix.decls, d.Good (QRep ixe)) : ∀ d ∈ ds, d.Good (QRep ixe) := by
+  unfold prepareSourceCollapsed at h
+  cases hi : leanIngressHinted hints env blocks pre.state with
+  | error e => simp [hi, bind, Except.bind, Except.mapError] at h
+  | ok decls =>
+    cases hc : collapseDecls (fiberAlias ixe) decls with
+    | error e => simp [hi, hc, bind, Except.bind, Except.mapError] at h
+    | ok c =>
+      simp only [hi, hc, bind, Except.bind, Except.mapError, pure, Except.pure,
+        Except.ok.injEq] at h
+      subst h
+      intro d hd
+      obtain ⟨extra, hextra, hperm⟩ := Ix.Kernel.Frontend.preparePrelude_perm pre.ix c.decls
+      have hd' := hperm.mem_iff.mp (Array.mem_toList_iff.mpr hd)
+      rcases List.mem_append.mp hd' with hd' | hd'
+      · exact collapseDecls_good hroles hc (hin decls hi) d (Array.mem_toList_iff.mp hd')
+      · exact hpre d (Array.mem_toList_iff.mp (hextra d hd'))
 end Ix.LeanIngress
