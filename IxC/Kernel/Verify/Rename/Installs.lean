@@ -34,10 +34,18 @@ def Key.base : Key md → Key md
 @[simp] theorem Key.base_aux (k : Key md) (d : Derived) : (Key.aux k d).base = k.base := rfl
 @[simp] theorem Key.base_auxKey (k : Key md) (d : Derived) : (auxKey k d).base = k.base := rfl
 
+/-- A lookup missing from `new ++ env` is missing from `env`. -/
+theorem Env.find?_none_of_append {new : List (ConstantInfo md)} {env : Env md} {k : Key md}
+    (h : (⟨new ++ env.consts⟩ : Env md).find? k = none) : env.find? k = none := by
+  simp only [Env.find?, List.find?_append, Option.or_eq_none_iff] at h
+  exact h.2
+
 /-- **Growth**: `env'` is `env` with constants in front, each named by a key
-satisfying `Q`. -/
+satisfying `Q` and missing from `env` (so `env`'s lookups persist,
+`Grows.persist`). -/
 def Grows (Q : Key md → Prop) (env env' : Env md) : Prop :=
-  ∃ new : List (ConstantInfo md), env'.consts = new ++ env.consts ∧ ∀ c ∈ new, Q c.name
+  ∃ new : List (ConstantInfo md), env'.consts = new ++ env.consts ∧
+    ∀ c ∈ new, Q c.name ∧ env.find? c.name = none
 
 theorem Grows.refl (Q : Key md → Prop) (env : Env md) : Grows Q env env :=
   ⟨[], rfl, fun _ h => nomatch h⟩
@@ -48,16 +56,38 @@ theorem Grows.trans {Q : Key md → Prop} {e₁ e₂ e₃ : Env md} (h₁ : Grow
   obtain ⟨n₂, h₂, q₂⟩ := h₂
   refine ⟨n₂ ++ n₁, by rw [h₂, h₁, List.append_assoc], fun c hc => ?_⟩
   rcases List.mem_append.mp hc with hc | hc
-  · exact q₂ c hc
+  · refine ⟨(q₂ c hc).1, ?_⟩
+    have h := (q₂ c hc).2
+    obtain ⟨cs₂⟩ := e₂
+    simp only at h₁
+    subst h₁
+    exact Env.find?_none_of_append h
   · exact q₁ c hc
 
-theorem Grows.push {Q : Key md → Prop} {env : Env md} {c : ConstantInfo md} (hc : Q c.name) :
-    Grows Q env ⟨c :: env.consts⟩ :=
-  ⟨[c], rfl, fun c' h => by rcases List.mem_singleton.mp h with rfl; exact hc⟩
+theorem Grows.push {Q : Key md → Prop} {env : Env md} {c : ConstantInfo md} (hc : Q c.name)
+    (hf : env.find? c.name = none) : Grows Q env ⟨c :: env.consts⟩ :=
+  ⟨[c], rfl, fun c' h => by rcases List.mem_singleton.mp h with rfl; exact ⟨hc, hf⟩⟩
 
 theorem Grows.mono {Q Q' : Key md → Prop} (hQ : ∀ k, Q k → Q' k) {env env' : Env md}
     (h : Grows Q env env') : Grows Q' env env' :=
-  let ⟨n, h, q⟩ := h; ⟨n, h, fun c hc => hQ _ (q c hc)⟩
+  let ⟨n, h, q⟩ := h; ⟨n, h, fun c hc => ⟨hQ _ (q c hc).1, (q c hc).2⟩⟩
+
+/-- **Growth keeps every lookup** of the old environment. -/
+theorem Grows.persist {Q : Key md → Prop} {env env' : Env md} (h : Grows Q env env')
+    {k : Key md} {c : ConstantInfo md} (hk : env.find? k = some c) : env'.find? k = some c := by
+  obtain ⟨n, h, q⟩ := h
+  obtain ⟨cs'⟩ := env'
+  simp only at h
+  subst h
+  simp only [Env.find?, List.find?_append]
+  have hn : n.find? (·.name == k) = none := by
+    rw [List.find?_eq_none]
+    intro c' hc' he
+    have hf := (q c' hc').2
+    rw [beq_iff_eq.mp he, hk] at hf
+    exact nomatch hf
+  rw [hn]
+  exact hk
 
 /-- **A lookup outside the growth** is unchanged. -/
 theorem Grows.find_eq {Q : Key md → Prop} {env env' : Env md} (h : Grows Q env env') {k : Key md}
@@ -75,7 +105,7 @@ theorem Grows.find_eq {Q : Key md → Prop} {env env' : Env md} (h : Grows Q env
     have hc : (c.name == k) = false := by
       cases hck : (c.name == k)
       · rfl
-      · exact absurd (beq_iff_eq.mp hck ▸ q c List.mem_cons_self) hk
+      · exact absurd (beq_iff_eq.mp hck ▸ (q c List.mem_cons_self).1) hk
     rw [hc]
     exact ih (fun c' hc' => q c' (List.mem_cons_of_mem _ hc'))
 
@@ -150,8 +180,12 @@ theorem checkDefnVal_post (env : Env md) (cv : ConstantVal md) (value : Expr md)
   simp [checkDefnVal]
 
 theorem checkConstantVal_post (env : Env md) (cv : ConstantVal md) :
-    ExPost (checkConstantVal ops env cv) (fun cv' => cv'.name = cv.name) := by
-  simp [checkConstantVal]
+    ExPost (checkConstantVal ops env cv) (fun cv' => cv'.name = cv.name ∧ env.find? cv.name = none) := by
+  unfold checkConstantVal
+  by_cases hf : (env.find? cv.name).isSome = true
+  · simp [hf]
+  · have hn : env.find? cv.name = none := by simpa using hf
+    simp [hn]
 
 theorem checkThmVal_post (env : Env md) (cv : ConstantVal md) (value : Expr md) :
     ExPost (checkThmVal ops env cv value)
@@ -174,15 +208,16 @@ theorem checkSumInd_post (env : Env md) (p : InductiveShape md)
     (capsOf : InductiveShape md → IndCaps md) :
     ExPost (checkSumInd ops env p capsOf) (fun r =>
       r.1 = ⟨.indInfo r.2.1 (capsOf r.2.2) :: env.consts⟩ ∧ r.2.1.name = p.cvT.name ∧
-        r.2.2.cvT = p.cvT ∧ r.2.2.ctors = p.ctors ∧ r.2.2.cvR = p.cvR) := by
+        r.2.2.cvT = p.cvT ∧ r.2.2.ctors = p.ctors ∧ r.2.2.cvR = p.cvR ∧
+        env.find? p.cvT.name = none) := by
   unfold checkSumInd
   rw [ExPost.post_bind]
   refine ExPost.mono (fun cvTa₀ h₀ => ?_) (checkConstantVal_post env p.cvT)
   rw [ExPost.post_bind]
-  refine ExPost.mono (fun r h₁ => ?_) (checkSumTele_post env p.cvT _ cvTa₀ h₀)
+  refine ExPost.mono (fun r h₁ => ?_) (checkSumTele_post env p.cvT _ cvTa₀ h₀.1)
   obtain ⟨cvTa, s⟩ := r
   simp only at h₁
-  simp [h₁, InductiveShape.withSort]
+  simp [h₁, h₀.2, InductiveShape.withSort]
 
 theorem normCtorVal_post (env : Env md) (T : Key md) (nP nF : Nat) (cvC cvCa : ConstantVal md)
     (h₀ : cvCa.name = cvC.name) :
@@ -193,19 +228,19 @@ theorem checkSumCtor_post (env₀ env : Env md) (T : Key md) (lps : List LevelPa
     (nP nIdx : Nat) (resSort : Level) (isProp large : Bool) (cvC : ConstantVal md) (nF : Nat)
     (cvTa : ConstantVal md) :
     ExPost (checkSumCtor ops env₀ env T lps nP nIdx resSort isProp large cvC nF cvTa)
-      (fun r => r.1.name = cvC.name) := by
+      (fun r => r.1.name = cvC.name ∧ env.find? cvC.name = none) := by
   unfold checkSumCtor
   rw [ExPost.post_bind]
   refine ExPost.mono (fun cvCa₀ h₀ => ?_) (checkConstantVal_post env cvC)
   rw [ExPost.post_bind]
-  refine ExPost.mono (fun cvCa h₁ => ?_) (normCtorVal_post env T nP nF cvC cvCa₀ h₀)
-  simp [h₁]
+  refine ExPost.mono (fun cvCa h₁ => ?_) (normCtorVal_post env T nP nF cvC cvCa₀ h₀.1)
+  simp [h₁, h₀.2]
 
 theorem checkSumCtors_post (env₀ env : Env md) (T : Key md) (lps : List LevelParam)
     (nP nIdx : Nat) (resSort : Level) (isProp large : Bool) (cvTa : ConstantVal md) :
     ∀ cs : List (ConstantVal md × Nat),
     ExPost (checkSumCtors ops env₀ env T lps nP nIdx resSort isProp large cvTa cs)
-      (fun r => r.1.map (·.1.name) = cs.map (·.1.name))
+      (fun r => r.1.map (·.1.name) = cs.map (·.1.name) ∧ ∀ c ∈ r.1, env.find? c.1.name = none)
   | [] => by simp [checkSumCtors]
   | c :: cs => by
     unfold checkSumCtors
@@ -218,22 +253,32 @@ theorem checkSumCtors_post (env₀ env : Env md) (T : Key md) (lps : List LevelP
       (checkSumCtors_post env₀ env T lps nP nIdx resSort isProp large cvTa cs)
     obtain ⟨rest, srest⟩ := r
     simp only at h₁ h₂
-    simp [h₁, h₂]
+    refine (ExPost.post_pure).mpr ⟨by simp [h₁.1, h₂.1], fun c hc => ?_⟩
+    rcases List.mem_cons.mp hc with rfl | hc
+    · simpa [h₁.1] using h₁.2
+    · exact h₂.2 c hc
 
 theorem checkNativeRec_post (env : Env md) (p : NativeParts md) (cvTa : ConstantVal md)
     (ctorsA : List (ConstantVal md × Nat)) :
-    ExPost (checkNativeRec ops env p cvTa ctorsA) (fun r => r.1.name = p.cvR.name) := by
-  simp [checkNativeRec]
+    ExPost (checkNativeRec ops env p cvTa ctorsA)
+      (fun r => r.1.name = p.cvR.name ∧ env.find? p.cvR.name = none) := by
+  unfold checkNativeRec
+  simp only [ExPost.post_bind, ExPost.post_ite, ExPost.post_throw, imp_true_iff, and_true]
+  intro _ _
+  refine ExPost.mono (fun cvRi h => ?_) (checkConstantVal_post env p.cvR)
+  simp [h.2]
 
 theorem checkStructProjTable_post (T C : Key md) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md) (env : Env md) :
     ExPost (checkStructProjTable T C lps nP nF resSort guards off cvCa env : CheckM md (Env md))
-      (fun e => ∃ tbl : ProjTable md, tbl.structName = T ∧ e = ⟨.projInfo tbl :: env.consts⟩) := by
-  simp [checkStructProjTable]
+      (fun e => ∃ tbl : ProjTable md, tbl.structName = T ∧ e = ⟨.projInfo tbl :: env.consts⟩ ∧
+        env.find? (projTableName T) = none) := by
+  simp (config := { contextual := true }) [checkStructProjTable]
 
-/-- **Over a list of names**: a key whose base is one of theirs, or a role. -/
+/-- **Over a list of names**: a key whose base is one of theirs, or a prelude role
+(the pinned basis blocks' installs). -/
 def Over (ns : List (Key md)) (k : Key md) : Prop :=
-  k.base ∈ ns.map Key.base ∨ ∃ r, k.base = .role r
+  k.base ∈ ns.map Key.base ∨ ∃ r ∈ preludeRoles, k.base = .role r
 
 theorem Over.of_mem {ns : List (Key md)} {k : Key md} (h : k ∈ ns) : Over ns k :=
   Or.inl (List.mem_map_of_mem h)
@@ -249,14 +294,25 @@ theorem Over.mono {ns ns' : List (Key md)} (hs : ∀ k ∈ ns, k ∈ ns') {k : K
     exact Or.inl (List.mem_map.mpr ⟨k', hs k' hk', he⟩)
   · exact Or.inr h
 
+theorem Env.find?_cons_ne {env : Env md} {c : ConstantInfo md} {k : Key md} (h : c.name ≠ k) :
+    (⟨c :: env.consts⟩ : Env md).find? k = env.find? k := by
+  simp [Env.find?, List.find?_cons, h]
+
 theorem consSumCtors_grows {Q : Key md → Prop} (nP : Nat) :
-    ∀ (cs : List (ConstantVal md × Nat)) (env : Env md), (∀ c ∈ cs, Q c.1.name) →
+    ∀ (cs : List (ConstantVal md × Nat)) (env : Env md),
+      (∀ c ∈ cs, Q c.1.name ∧ env.find? c.1.name = none) → (cs.map (·.1.name)).Nodup →
       Grows Q env (consSumCtors nP cs env)
-  | [], env, _ => Grows.refl Q env
-  | c :: cs, env, h => by
+  | [], env, _, _ => Grows.refl Q env
+  | c :: cs, env, h, hnd => by
     simp only [consSumCtors]
-    exact (Grows.push (c := .ctorInfo c.1 nP c.2) (h c List.mem_cons_self)).trans
-      (consSumCtors_grows nP cs _ fun c' hc' => h c' (List.mem_cons_of_mem _ hc'))
+    simp only [List.map_cons, List.nodup_cons, List.mem_map] at hnd
+    refine (Grows.push (c := .ctorInfo c.1 nP c.2) (h c List.mem_cons_self).1
+      (h c List.mem_cons_self).2).trans (consSumCtors_grows nP cs _ (fun c' hc' => ?_) hnd.2)
+    refine ⟨(h c' (List.mem_cons_of_mem _ hc')).1, ?_⟩
+    rw [Env.find?_cons_ne]
+    · exact (h c' (List.mem_cons_of_mem _ hc')).2
+    · intro he
+      exact hnd.1 ⟨c', hc', he.symm⟩
 
 theorem checkNativeTable_post {Q : Key md → Prop} (p : NativeParts md)
     (ctorsA : List (ConstantVal md × Nat)) (sortss : List (List Level)) (env : Env md)
@@ -266,16 +322,16 @@ theorem checkNativeTable_post {Q : Key md → Prop} (p : NativeParts md)
   split
   · split
     · refine ExPost.mono (fun e he => ?_) (checkStructProjTable_post _ _ _ _ _ _ _ _ _ env)
-      obtain ⟨tbl, htbl, rfl⟩ := he
-      refine Grows.push ?_
-      rw [show (ConstantInfo.projInfo tbl).name = projTableName tbl.structName from rfl, htbl]
-      exact hT
+      obtain ⟨tbl, htbl, rfl, hf⟩ := he
+      have hn : (ConstantInfo.projInfo tbl).name = projTableName p.cvT.name := by
+        rw [show (ConstantInfo.projInfo tbl).name = projTableName tbl.structName from rfl, htbl]
+      exact Grows.push (by rw [hn]; exact hT) (by rw [hn]; exact hf)
     · simp [Grows.refl]
   · simp [Grows.refl]
 
 theorem checkNativeTail_post {Q : Key md → Prop} (env : Env md) (q : NativePass md (Env md))
-    (hR : Q q.p.cvR.name) (hC : ∀ c ∈ q.ctorsA, Q c.1.name)
-    (hT : Q (projTableName q.p.cvT.name)) :
+    (hR : Q q.p.cvR.name) (hC : ∀ c ∈ q.ctorsA, Q c.1.name ∧ q.env₁.find? c.1.name = none)
+    (hnd : (q.ctorsA.map (·.1.name)).Nodup) (hT : Q (projTableName q.p.cvT.name)) :
     ExPost (checkNativeTail ops env q) (Grows Q q.env₁) := by
   unfold checkNativeTail
   simp only [ExPost.post_bind, ExPost.post_ite, ExPost.post_throw, true_and, imp_true_iff]
@@ -284,22 +340,26 @@ theorem checkNativeTail_post {Q : Key md → Prop} (env : Env md) (q : NativePas
     ⟨fun _ => ⟨fun _ => ?_, trivial⟩, trivial⟩
   refine ExPost.mono (fun r hr => ?_) (checkNativeRec_post _ _ _ _)
   refine ExPost.mono (fun e he => ?_) (checkNativeTable_post _ _ _ _ hT)
-  refine (consSumCtors_grows _ _ _ hC).trans ((Grows.push ?_).trans he)
-  show Q r.1.name
-  rw [hr]
-  exact hR
+  refine (consSumCtors_grows _ _ _ hC hnd).trans ((Grows.push ?_ ?_).trans he)
+  · show Q r.1.name
+    rw [hr.1]
+    exact hR
+  · show Env.find? _ r.1.name = none
+    rw [hr.1]
+    exact hr.2
 
 theorem checkNativePass_post {Q : Key md → Prop} (env : Env md) (p₀ : NativeParts md)
     (isRec : Bool) (hT : Q p₀.cvT.name) :
     ExPost (checkNativePass ops env p₀ isRec) (fun r =>
       Grows Q env r.1.env₁ ∧ r.1.p.cvT = p₀.cvT ∧ r.1.p.cvR = p₀.cvR ∧ r.1.p.ctors = p₀.ctors ∧
-        r.1.ctorsA.map (·.1.name) = p₀.ctors.map (·.1.name)) := by
+        r.1.ctorsA.map (·.1.name) = p₀.ctors.map (·.1.name) ∧
+        ∀ c ∈ r.1.ctorsA, r.1.env₁.find? c.1.name = none) := by
   unfold checkNativePass
   rw [ExPost.post_bind]
   refine ExPost.mono (fun r hr => ?_) (checkSumInd_post env p₀.toInductiveShape _)
   obtain ⟨env₁, cvTa, p₁⟩ := r
-  obtain ⟨h₁, h₂, h₃, h₄, h₅⟩ := hr
-  dsimp only at h₁ h₂ h₃ h₄ h₅ ⊢
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, h₆⟩ := hr
+  dsimp only at h₁ h₂ h₃ h₄ h₅ h₆ ⊢
   rw [ExPost.post_bind]
   refine ExPost.mono (fun r hr => ?_) (checkSumCtors_post _ _ _ _ _ _ _ _ _ _ _)
   obtain ⟨ctorsA, sortss⟩ := r
@@ -307,34 +367,38 @@ theorem checkNativePass_post {Q : Key md → Prop} (env : Env md) (p₀ : Native
   rw [ExPost.post_bind]
   refine ExPost.of_forall fun kinds => ?_
   simp only [ExPost.post_pure]
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · rw [h₁]; exact Grows.push (by show Q cvTa.name; rw [h₂]; exact hT)
+  refine ⟨?_, ?_, ?_, ?_, ?_, hr.2⟩
+  · rw [h₁]
+    exact Grows.push (by show Q cvTa.name; rw [h₂]; exact hT)
+      (by show env.find? cvTa.name = none; rw [h₂]; exact h₆)
   · simpa [NativeParts.withKinds, NativeParts.complete] using h₃
   · simpa [NativeParts.withKinds, NativeParts.complete] using h₅
   · simpa [NativeParts.withKinds, NativeParts.complete] using h₄
-  · simpa [NativeParts.withKinds, NativeParts.complete, h₄] using hr
+  · simpa [NativeParts.withKinds, NativeParts.complete, h₄] using hr.1
 
 theorem checkNative_post {Q : Key md → Prop} (env : Env md) (p₀ : NativeParts md)
     (hT : Q p₀.cvT.name) (hR : Q p₀.cvR.name) (hC : ∀ c ∈ p₀.ctors, Q c.1.name)
     (hPT : Q (projTableName p₀.cvT.name)) :
     ExPost (checkNative ops env p₀) (Grows Q env) := by
-  have tail : ∀ q : NativePass md (Env md), (Grows Q env q.env₁ ∧ q.p.cvT = p₀.cvT ∧
-      q.p.cvR = p₀.cvR ∧ q.p.ctors = p₀.ctors ∧
-      q.ctorsA.map (·.1.name) = p₀.ctors.map (·.1.name)) →
+  have tail : (p₀.ctors.map (·.1.name)).Nodup → ∀ q : NativePass md (Env md),
+      (Grows Q env q.env₁ ∧ q.p.cvT = p₀.cvT ∧ q.p.cvR = p₀.cvR ∧ q.p.ctors = p₀.ctors ∧
+        q.ctorsA.map (·.1.name) = p₀.ctors.map (·.1.name) ∧
+        ∀ c ∈ q.ctorsA, q.env₁.find? c.1.name = none) →
       ExPost (checkNativeTail ops env q) (Grows Q env) := by
-    intro q ⟨hg, h₁, h₂, _, h₄⟩
-    refine ExPost.mono (fun e he => hg.trans he) (checkNativeTail_post env q ?_ ?_ ?_)
+    intro hnd q ⟨hg, h₁, h₂, _, h₄, h₅⟩
+    refine ExPost.mono (fun e he => hg.trans he) (checkNativeTail_post env q ?_ ?_ (h₄ ▸ hnd) ?_)
     · rw [h₂]; exact hR
     · intro c hc
       have hm : c.1.name ∈ p₀.ctors.map (·.1.name) := h₄ ▸ List.mem_map_of_mem hc
       obtain ⟨c', hc', he⟩ := List.mem_map.mp hm
-      rw [← he]; exact hC c' hc'
+      exact ⟨by rw [← he]; exact hC c' hc', h₅ c hc⟩
     · rw [h₁]; exact hPT
   unfold checkNative
   simp only [ExPost.post_bind, ExPost.post_ite, ExPost.post_throw, imp_true_iff]
-  refine ⟨fun _ => ExPost.mono (fun r hr => ⟨fun _ => tail r.1 hr, fun _ => ?_⟩)
+  refine ⟨fun hnd => ExPost.mono (fun r hr => ⟨fun _ => tail hnd r.1 hr, fun _ => ?_⟩)
     (checkNativePass_post env p₀ _ hT), trivial⟩
-  exact ExPost.mono (fun r hr => ⟨fun _ => tail r.1 hr, trivial⟩) (checkNativePass_post env p₀ _ hT)
+  exact ExPost.mono (fun r hr => ⟨fun _ => tail hnd r.1 hr, trivial⟩)
+    (checkNativePass_post env p₀ _ hT)
 
 /-! ### The modeled route -/
 
@@ -348,8 +412,45 @@ theorem foldlM_grows {α : Type} {Q : Key md → Prop} (step : Env md → α →
     exact ExPost.mono (fun e' he' => he.trans he')
       (foldlM_grows step l e fun e' y hy => h e' y (List.mem_cons_of_mem _ hy))
 
+theorem Env.find?_cons_none {env : Env md} {c : ConstantInfo md} {k : Key md}
+    (h : (⟨c :: env.consts⟩ : Env md).find? k = none) : c.name ≠ k ∧ env.find? k = none := by
+  by_cases hc : c.name = k
+  · subst hc
+    simp [Env.find?] at h
+  · rw [Env.find?_cons_ne hc] at h
+    exact ⟨hc, h⟩
+
+/-- **A fold of named pushes**: each step leaves the environment or pushes
+one constant named by the item, the names fresh and pairwise distinct. -/
+theorem foldlM_push_grows {α : Type} {Q : Key md → Prop} (step : Env md → α → CheckM md (Env md))
+    (nm : α → Key md)
+    (hstep : ∀ e x, ExPost (step e x)
+      (fun e' => e' = e ∨ ∃ c : ConstantInfo md, c.name = nm x ∧ e' = ⟨c :: e.consts⟩)) :
+    ∀ (l : List α) (env : Env md), (∀ x ∈ l, Q (nm x) ∧ env.find? (nm x) = none) →
+      (l.map nm).Nodup → ExPost (l.foldlM step env) (Grows Q env)
+  | [], env, _, _ => by simp [Grows.refl]
+  | x :: l, env, h, hnd => by
+    simp only [List.map_cons, List.nodup_cons, List.mem_map] at hnd
+    simp only [List.foldlM_cons, ExPost.post_bind]
+    refine ExPost.mono (fun e he => ?_) (hstep env x)
+    have hrest : ∀ y ∈ l, Q (nm y) ∧ e.find? (nm y) = none := by
+      intro y hy
+      refine ⟨(h y (List.mem_cons_of_mem _ hy)).1, ?_⟩
+      rcases he with rfl | ⟨c, hc, rfl⟩
+      · exact (h y (List.mem_cons_of_mem _ hy)).2
+      · rw [Env.find?_cons_ne]
+        · exact (h y (List.mem_cons_of_mem _ hy)).2
+        · rw [hc]; intro he'; exact hnd.1 ⟨y, hy, he'.symm⟩
+    have hg : Grows Q env e := by
+      rcases he with rfl | ⟨c, hc, rfl⟩
+      · exact Grows.refl Q _
+      · exact Grows.push (by rw [hc]; exact (h x List.mem_cons_self).1)
+          (by rw [hc]; exact (h x List.mem_cons_self).2)
+    exact ExPost.mono (fun e' he' => hg.trans he') (foldlM_push_grows step nm hstep l e hrest hnd.2)
+
 theorem checkMemberVal_post (blockNames : List (Key md)) (env' : Env md) (cv : ConstantVal md) :
-    ExPost (checkMemberVal ops blockNames env' cv) (fun r => r.name = cv.name) := by
+    ExPost (checkMemberVal ops blockNames env' cv)
+      (fun r => r.name = cv.name ∧ env'.find? cv.name = none) := by
   unfold checkMemberVal
   rw [ExPost.post_bind]
   refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env' cv)
@@ -368,15 +469,18 @@ theorem checkIndMember_post {Q : Key md → Prop} (blockNames : List (Key md)) (
   refine ExPost.mono (fun cvA h => ?_) (checkMemberVal_post blockNames env' ci.toConstantVal)
   cases ci with
   | indInfo cv c =>
-    exact (ExPost.post_pure).mpr (Grows.push (by show Q cvA.name; rw [h]; exact hQ))
+    exact (ExPost.post_pure).mpr (Grows.push (by show Q cvA.name; rw [h.1]; exact hQ)
+      (by show env'.find? cvA.name = none; rw [h.1]; exact h.2))
   | ctorInfo cv a b =>
-    exact (ExPost.post_pure).mpr (Grows.push (by show Q cvA.name; rw [h]; exact hQ))
+    exact (ExPost.post_pure).mpr (Grows.push (by show Q cvA.name; rw [h.1]; exact hQ)
+      (by show env'.find? cvA.name = none; rw [h.1]; exact h.2))
   | _ => simp
 
 theorem provisionRecs_post (blockNames : List (Key md)) :
     ∀ (envAcc : Env md) (recs : List (ConstantInfo md)),
       ExPost (provisionRecs ops blockNames envAcc recs)
-        (fun r => ∀ c ∈ r.2, c.1.name ∈ recs.map (·.name))
+        (fun r => (∀ c ∈ r.2, c.1.name ∈ recs.map (·.name) ∧ envAcc.find? c.1.name = none) ∧
+          (r.2.map (·.1.name)).Nodup)
   | envAcc, [] => by simp [provisionRecs]
   | envAcc, ci :: rest => by
     unfold provisionRecs
@@ -388,10 +492,16 @@ theorem provisionRecs_post (blockNames : List (Key md)) :
       rw [ExPost.post_bind]
       refine ExPost.mono (fun r hr => ?_) (provisionRecs_post blockNames _ rest)
       obtain ⟨envSelf, others⟩ := r
-      simp only [ExPost.post_pure, List.mem_cons, List.map_cons]
-      rintro c (rfl | hc)
-      · exact Or.inl h
-      · exact Or.inr (hr c hc)
+      simp only [ExPost.post_pure, List.mem_cons, List.map_cons, List.nodup_cons]
+      have hfr : ∀ c ∈ others, cvA.name ≠ c.1.name ∧ envAcc.find? c.1.name = none :=
+        fun c hc => Env.find?_cons_none (hr.1 c hc).2
+      refine ⟨?_, ?_, hr.2⟩
+      · rintro c (rfl | hc)
+        · exact ⟨Or.inl h.1, by rw [h.1]; exact h.2⟩
+        · exact ⟨Or.inr (hr.1 c hc).1, (hfr c hc).2⟩
+      · intro hm
+        obtain ⟨c, hc, he⟩ := List.mem_map.mp hm
+        exact (hfr c hc).1 he.symm
     | _ => simp
 
 theorem checkIndRecs_post {Q : Key md → Prop} (blockNames : List (Key md)) (env₂ : Env md)
@@ -406,14 +516,14 @@ theorem checkIndRecs_post {Q : Key md → Prop} (blockNames : List (Key md)) (en
   refine ExPost.mono (fun r hr => ?_) (provisionRecs_post blockNames env₂ recs)
   obtain ⟨envSelf, checked⟩ := r
   dsimp only at hr ⊢
-  refine foldlM_grows _ checked env₂ fun e c hc => ?_
-  rw [ExPost.post_bind]
-  refine ExPost.of_forall fun rules' => ?_
-  simp only [ExPost.post_pure]
-  refine Grows.push ?_
-  obtain ⟨ci, hci, he⟩ := List.mem_map.mp (hr c hc)
-  show Q c.1.name
-  rw [← he]; exact hQ ci hci
+  refine foldlM_push_grows _ (fun c => c.1.name) (fun e c => ?_) checked env₂ (fun c hc => ?_) hr.2
+  · rw [ExPost.post_bind]
+    refine ExPost.of_forall fun rules' => ?_
+    simp only [ExPost.post_pure]
+    exact Or.inr ⟨_, rfl, rfl⟩
+  · obtain ⟨hm, hf⟩ := hr.1 c hc
+    obtain ⟨ci, hci, he⟩ := List.mem_map.mp hm
+    exact ⟨by rw [← he]; exact hQ ci hci, hf⟩
 
 theorem checkProjFn_post (env' : Env md) (T ctorName : Key md) (lps : List LevelParam)
     (nP nF i : Nat) :
@@ -421,15 +531,14 @@ theorem checkProjFn_post (env' : Env md) (T ctorName : Key md) (lps : List Level
       (fun e => ∃ c : ConstantInfo md, c.name = projFnName T i ∧ e = ⟨c :: env'.consts⟩) := by
   simp [checkProjFn, ConstantInfo.name, ConstantInfo.toConstantVal]
 
-theorem installProjFnStep_post {Q : Key md → Prop} (T ctorName : Key md)
-    (lps : List LevelParam) (nP nF : Nat) (e : Env md) (i : Nat) (hQ : Q (projFnName T i)) :
-    ExPost (installProjFnStep mode ops T ctorName lps nP nF e i) (Grows Q e) := by
+theorem installProjFnStep_post (T ctorName : Key md) (lps : List LevelParam) (nP nF : Nat)
+    (e : Env md) (i : Nat) :
+    ExPost (installProjFnStep mode ops T ctorName lps nP nF e i)
+      (fun e' => e' = e ∨ ∃ c : ConstantInfo md, c.name = projFnName T i ∧ e' = ⟨c :: e.consts⟩) := by
   unfold installProjFnStep
   split
-  · refine ExPost.mono (fun e' he' => ?_) (checkProjFn_post e T ctorName lps nP nF i)
-    obtain ⟨c, hc, rfl⟩ := he'
-    exact Grows.push (by rw [hc]; exact hQ)
-  · simp [Grows.refl]
+  · exact ExPost.mono (fun e' he' => Or.inr he') (checkProjFn_post e T ctorName lps nP nF i)
+  · simp
 
 theorem checkModeled_post {Q : Key md → Prop} (env : Env md) (block : List (ConstantInfo md))
     (hQ : ∀ ci ∈ block, Q ci.name) (hP : ∀ ci ∈ block, ∀ i, Q (projFnName ci.name i)) :
@@ -453,10 +562,14 @@ theorem checkModeled_post {Q : Key md → Prop} (env : Env md) (block : List (Co
       (checkIndRecs_post (mode := mode) (ops := ops) _ env₂ _ fun ci hci => hQ ci (hmem hci))
     simp only [ExPost.post_bind, ExPost.post_ite, ExPost.post_throw, ExPost.post_pure,
       imp_true_iff, and_true]
-    intro _ _
-    exact ⟨fun _ => ExPost.mono (fun e he => h₂.trans (h₃.trans he))
-      (foldlM_grows _ _ env₃ fun e i _ => installProjFnStep_post _ _ _ _ _ e i (hP _ hT i)),
-      fun _ => h₂.trans h₃⟩
+    intro _ hfree
+    refine ⟨fun _ => ExPost.mono (fun e he => h₂.trans (h₃.trans he))
+      (foldlM_push_grows _ (projFnName cvT.name) (installProjFnStep_post _ _ _ _ _)
+        (List.range nF) env₃ (fun i hi => ⟨hP _ hT i, ?_⟩) ?_), fun _ => h₂.trans h₃⟩
+    · have := List.all_eq_true.mp hfree i hi
+      simpa using this
+    · exact List.pairwise_map.mpr
+        (List.Pairwise.imp (fun hne heq => hne (projFnName_inj heq).2) List.nodup_range)
   · simp only [ExPost.post_bind]
     refine ExPost.mono (fun env₂ h₂ => ?_) (foldlM_grows _ _ env fun e ci hci =>
       checkIndMember_post _ _ e ci (hQ ci (hmem hci)))
@@ -525,9 +638,10 @@ theorem nativeParts?_names {nP : Nat} {block : List (ConstantInfo md)} {p : Nati
 
 /-! ### The pinned basis -/
 
-theorem Key.pinIn_base {rs : List Role} : ∀ {k : Key md}, k.pinIn rs = true → ∃ r, k.base = .role r
+theorem Key.pinIn_base {rs : List Role} : ∀ {k : Key md}, k.pinIn rs = true →
+    ∃ r ∈ rs, k.base = .role r
   | .id _, h => nomatch h
-  | .role r, _ => ⟨r, rfl⟩
+  | .role r, h => ⟨r, List.contains_iff_mem.mp h, rfl⟩
   | .aux k _, h => Key.pinIn_base (k := k) h
 
 theorem ConstantInfo.pinIn_name {rs : List Role} {c : ConstantInfo md} (h : c.pinIn rs = true) :
@@ -541,9 +655,10 @@ theorem checkBasisDecl_post (ns : List (Key md)) (env : Env md) (kind : BasisKin
       ExPost (installBasisDecl e ci : CheckM md (Env md)) (Grows (Over ns) e) := by
     intro e ci hci
     have hp := List.all_eq_true.mp (declsA_pinIn (md := md) kind) ci hci
-    obtain ⟨r, hr⟩ := Key.pinIn_base (ConstantInfo.pinIn_name hp)
-    have hg : Grows (Over ns) e ⟨ci :: e.consts⟩ := Grows.push (Or.inr ⟨r, hr⟩)
-    simp [installBasisDecl, hg]
+    obtain ⟨r, hrm, hr⟩ := Key.pinIn_base (ConstantInfo.pinIn_name hp)
+    unfold installBasisDecl
+    simp only [ExPost.post_ite, ExPost.post_throw, ExPost.post_pure, imp_true_iff, and_true]
+    exact ⟨fun hf' => Grows.push (Or.inr ⟨r, hrm, hr⟩) (by simpa using hf'), fun _ => by simp⟩
   unfold checkBasisDecl
   simp only [ExPost.post_bind, ExPost.post_ite, ExPost.post_throw, imp_true_iff, and_true,
     ExPost.post_pure]
@@ -570,6 +685,7 @@ theorem checkDecl_post (mode : CheckMode) (ops : (CheckerOps md) (CheckM md))
         ⟨.defnInfo cvA v hint :: env.consts⟩ :=
       Grows.push (Over.of_mem (by simp [Declaration.names, ConstantInfo.name,
         ConstantInfo.toConstantVal, h]))
+        (by simp [ConstantInfo.name, ConstantInfo.toConstantVal, h])
     simp [hg]
     intro _ _ _ _
     split <;> simp [hg]
@@ -581,6 +697,7 @@ theorem checkDecl_post (mode : CheckMode) (ops : (CheckerOps md) (CheckM md))
     obtain ⟨v, rfl⟩ := he
     exact Grows.push (Over.of_mem (by simp [Declaration.names, ConstantInfo.name,
       ConstantInfo.toConstantVal, h]))
+      (by simp [ConstantInfo.name, ConstantInfo.toConstantVal, h])
   | opaqueDecl cv value =>
     unfold checkDecl
     rw [ExPost.post_bind]
@@ -589,6 +706,7 @@ theorem checkDecl_post (mode : CheckMode) (ops : (CheckerOps md) (CheckM md))
     subst he
     exact Grows.push (Over.of_mem (by simp [Declaration.names, ConstantInfo.name,
       ConstantInfo.toConstantVal, h]))
+      (by simp [ConstantInfo.name, ConstantInfo.toConstantVal, h])
   | axiomDecl cv =>
     unfold checkDecl
     simp only [ExPost.post_ite, ExPost.post_pure, ExPost.post_throw, imp_true_iff, and_true,
@@ -599,6 +717,7 @@ theorem checkDecl_post (mode : CheckMode) (ops : (CheckerOps md) (CheckM md))
         ⟨.axiomInfo cvA :: env.consts⟩ :=
       Grows.push (Over.of_mem (by simp [Declaration.names, ConstantInfo.name,
         ConstantInfo.toConstantVal, h]))
+        (by simp [ConstantInfo.name, ConstantInfo.toConstantVal, h])
     simp [hg, Grows.refl]
   | basisDecl kind =>
     unfold checkDecl
