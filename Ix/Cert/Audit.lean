@@ -9,6 +9,7 @@ import Ix.Cert.Stream
 import Ix.Cert.Order
 import Ix.Cert.Evidence
 import Ix.Cert.Roles
+import Ix.Cert.Admits
 
 /-! # The certification statements, frozen
 
@@ -3794,3 +3795,29 @@ fun t ixe sub =>
         Option.map (fun x => x.addr) (ixe.named.get? (Ix.Cert.Roles.roleName r)) = t.addressOf? r -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Roles.RolesBound
+
+/-! ## N-READS, N1: Source acceptance admits every inductive block
+
+R12 reads `inductive_reads`' Source premises and R9a's `ConstructorPositions`
+off `Admits` (the block's group converts). An accepted Source check admits
+every inductive block stored under its first member: the block's group is one
+of the ingress's groups, and every one of those converts
+(`Ix.LeanIngress.checkSource_converts`). -/
+
+/-- info: [cert-audit] admits: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "admits"
+    (#[`mem_forIn_of_mem, `mem_forIn_of_step, `mem_groupsOf, `admits_of_checkSource,
+      `admits_of_sourceAccepts, `source_premises_of_sourceAccepts,
+      `mkIndc_positions_of_sourceAccepts].map (`Ix.Cert.Admits ++ ·))
+
+/-- info: @Ix.Cert.Admits.admits_of_sourceAccepts : ∀ {condense : Ix.Environment → Ix.CondensedBlocks} {env : Ix.Environment}
+  {roots : List Ix.Name} {sub : Ix.Environment} {envS : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.SourceAccepts condense env roots sub envS →
+    ∀ {n : Ix.Name} {first : Ix.InductiveVal},
+      (n, Ix.ConstantInfo.inductInfo first) ∈ sub.consts.toList →
+        first.all[0]? = some n → Ix.CompileCert.SourceConstructorPositions.Admits sub first -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Admits.admits_of_sourceAccepts
