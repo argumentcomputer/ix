@@ -152,6 +152,11 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
       let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0 }
       dbg_trace s!"{Ix.AuxGen.IxcStats.line lo st}"
       pure ()
+  -- AuxGen M4c: the canonical-block check's verdict, for the compile report
+  -- (`CompileEnv.auxReport`, merged by `mergeCompiledBlock`).
+  if let some verdict := kctx.canonical then
+    modifyBlockState fun st =>
+      { st with auxReport := { st.auxReport with canonical := some verdict } }
   -- Pass 3, hook 1: a changed block's Ix auxiliaries to their display names
   let published ← Ix.Compile.Pass.editBlock cs blockResult.classNames auxLayout?
     recs.recs recs.belowRecs
@@ -526,6 +531,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       cenv.auxNameToAddr
     auxGenExtraNames := cache.auxGenExtraNames.fold (fun s n => s.insert n)
       cenv.auxGenExtraNames
+    auxReport := cenv.auxReport.addBlock lo cache.auxReport
     p3Heads := published.heads.foldl (fun m (k, v) => m.insert k v) cenv.p3Heads
     p3Blocks := published.blocks.foldl (fun m (k, v) => m.insert k v) cenv.p3Blocks
     p3CanonRecs := published.canonRecs.foldl (fun m (k, v) => m.insert k v)
@@ -1852,6 +1858,11 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         IO.println s!"    source service, block not accepted: {k.pretty}: {why.take 160}"
       for (g, why) in source.refused.extract 0 8 do
         IO.println s!"    source service, group refused: {g}: {why.take 160}"
+      -- AuxGen M4c: the canonical-block verdicts (`CompileEnv.auxReport`)
+      let canonical := cenv.auxReport.canonicalSummary
+      IO.println s!"  [compile-lean] canonical blocks: {canonical.line}"
+      for (k, why) in canonical.findings.extract 0 8 do
+        IO.println s!"    canonical block, {k.pretty}: {why.take 160}"
     if dbg then
       if let some read := opts.memory then
         IO.println s!"  [compile-lean] rss after the compile phase: {← read}"

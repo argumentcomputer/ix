@@ -161,6 +161,20 @@ def evaluate : IO (Array String × Array String) := do
     errors := errors.push s!"the service alone disagrees: {aloneBelow.summary}"
   unless viewed == aloneBelow do
     errors := errors.push s!"the service over the IO pipeline's view disagrees: {viewed.summary}"
+  -- AuxGen M4c: production's recorded canonical-block verdicts
+  -- (`CompileEnv.auxReport`): every flat block this test needs is installed
+  -- there too, and nothing is refused or differs
+  let canonical := cenv.auxReport.canonicalSummary
+  lines := lines.push s!"production's canonical verdicts: {canonical.line}"
+  for (k, why) in canonical.findings.extract 0 4 do
+    lines := lines.push s!"  {k.pretty}: {why.take 300}"
+  unless canonical.refused == 0 && canonical.leanDiffer == 0 do
+    errors := errors.push s!"production's canonical verdicts: {canonical.line}"
+  unless canonical.installed == needed do
+    errors := errors.push s!"production installed {canonical.installed} canonical flat blocks, \
+      this test needs {needed}"
+  if canonical.leanSame == 0 then
+    errors := errors.push "production recorded no Lean-layout canonical verdict"
   return (errors, lines)
 
 def run : IO UInt32 := do

@@ -101,6 +101,11 @@ structure CompileEnv where
       by the block's canonical key (`Ix.AuxGen.Oracle`), set by the wave fold
       (`compileEnvFoldWithSource`); `none` outside it. -/
   auxOracle : Option (Name → Option Ix.AuxGen.AuxOracle) := none
+  /-- AuxGen M4c: AuxGen's part of the compile report (`Ix.AuxGen.CompileReport`:
+      each block's canonical-block verdict, by the block's canonical key),
+      merged from the blocks that compile (`BlockState.auxReport`,
+      `mergeCompiledBlock`). No byte depends on it. -/
+  auxReport : Ix.AuxGen.CompileReport := {}
   /-- Pass 3: each image-kind auxiliary of a changed Lean block that source
       recognition admits (`Ix.Compile.Pass.sourceImageHeads`) ↦ the block's
       key, Lean's first member. Insert-once, merged from the blocks that
@@ -261,6 +266,10 @@ structure BlockState where
   auxNamed : Array (Name × Ixon.Named) := #[]
   /-- `stt.aux_gen_extra_names` membership (Rust mutual.rs). -/
   auxGenExtraNames : Std.HashSet Name := {}
+  /-- AuxGen M4c: what the block's aux tail reports (`Ix.AuxGen.BlockReport`:
+      the canonical-block verdict, when the check ran); the driver merges it
+      into `CompileEnv.auxReport`. No byte depends on it. -/
+  auxReport : Ix.AuxGen.BlockReport := {}
   /-- Compiled Ixon expressions for collapsed call-site args, accumulated
       by surgered `compileExpr` calls within the current constant and
       drained into `ConstantMeta.metaSharing` when the constant's

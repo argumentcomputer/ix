@@ -273,6 +273,10 @@ structure AuxKernelCtx where
   /-- AuxGen M2a: what the IxC arm saw (`AuxKernel.ixc`); empty on the
       `Ix.Tc` arm. -/
   ixcStats : IxcStats := {}
+  /-- AuxGen M4c: the canonical-block check's verdict
+      (`AuxKernel.checkCanonicalBlock`), when it ran; the driver records it in
+      the block's state (`Ix.CompileM.BlockState.auxReport`). -/
+  canonical : Option CanonicalVerdict := none
 
 /-- Fresh bridge context: empty Meta kenv, canonical prim addresses with
     no resolver (prim KIds get synthetic display names; the accelerations

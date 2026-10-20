@@ -107,13 +107,15 @@ def statsLine (st : Ix.AuxGen.IxcStats) : String :=
 
 /-- **One block's aux tail with the IxC arm**, as the driver's tail generates
 the patches (`sortConsts`, the classes restricted to Lean's `all`,
-`generateAuxPatches`), over `oracle`: the tail's counts; `none` for a block
-with no inductive class. -/
+`generateAuxPatches`), over `oracle`: the tail's counts and its canonical-block
+verdict (AuxGen M4c); `none` for a block with no inductive class. -/
 def tailStats (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Name)
-    (oracle : Ix.AuxGen.AuxOracle) : Except String (Option Ix.AuxGen.IxcStats) :=
+    (oracle : Ix.AuxGen.AuxOracle) :
+    Except String (Option (Ix.AuxGen.IxcStats × Option Ix.AuxGen.CanonicalVerdict)) :=
   let blockEnv : Ix.CompileM.BlockEnv :=
     { all := {}, current := lo, mutCtx := default, univCtx := [] }
-  let act : Ix.CompileM.CompileM (Option Ix.AuxGen.IxcStats) := do
+  let act : Ix.CompileM.CompileM
+      (Option (Ix.AuxGen.IxcStats × Option Ix.AuxGen.CanonicalVerdict)) := do
     let mut cs : Array Ix.MutConst := #[]
     for n in all do
       match (← Ix.AuxGen.lookupConst? n) with
@@ -142,19 +144,23 @@ def tailStats (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Nam
     let maps := Ix.AuxGen.AddrMaps.ofCompileEnv (← Ix.CompileM.getCompileEnv)
     let (_, ctx) ← (Ix.AuxGen.generateAuxPatches classes originalAll maps (.ixc maps oracle)).run
       Ix.AuxGen.AuxKernelCtx.new
-    return some ctx.ixcStats
+    return some (ctx.ixcStats, ctx.canonical)
   match Ix.CompileM.CompileM.run cenv blockEnv {} act with
   | .ok (r, _) => .ok r
   | .error e => .error (toString e)
 
 /-- **Shadow agreement** over every block that holds an inductive, each over
-its level's snapshot of a run-ahead over the input with production's asks: the counts summed, and
-the blocks whose tail failed. -/
+its level's snapshot of a run-ahead over the input with production's asks: the
+counts summed, each block's canonical-block verdict by its canonical key (as
+the fold keys it), and the blocks whose tail failed. The harness runs a tail
+for every such block, including the ones production promotes without running
+their own tail (a family a parent's tail compiled). -/
 def shadow (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv : Ix.CompileM.CompileEnv) :
-    IO (Ix.AuxGen.IxcStats × Array String) := do
+    IO (Ix.AuxGen.IxcStats × Array (Ix.Name × Ix.AuxGen.CanonicalVerdict) × Array String) := do
   let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
   let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels ({} : Ix.CompileM.AuxIxcOptions).asks
   let mut total : Ix.AuxGen.IxcStats := {}
+  let mut verdicts : Array (Ix.Name × Ix.AuxGen.CanonicalVerdict) := #[]
   let mut errors : Array String := #[]
   for (lo, members) in inductiveBlocks env blocks do
     let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
@@ -165,8 +171,10 @@ def shadow (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv : Ix.Compi
     match ← IO.lazyPure fun _ => tailStats cenv lo members oracle with
     | .error e => errors := errors.push s!"{lo.pretty}: aux generation: {e.take 200}"
     | .ok none => pure ()
-    | .ok (some st) => total := addStats total st
-  return (total, errors)
+    | .ok (some (st, v?)) =>
+      total := addStats total st
+      if let some v := v? then verdicts := verdicts.push (key, v)
+  return (total, verdicts, errors)
 
 /-- A fold's serialized environment. -/
 def serialized (r : Except String (Ixon.Env × Nat × Ix.CompileM.CompileEnv)) : Except String ByteArray := do
@@ -244,7 +252,7 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
       run-ahead: {report}"
     if asserted && !same then errors := errors.push s!"{name}: the fold's bytes differ from production"
   let t2 ← IO.monoMsNow
-  let (st, tailErrors) ← shadow env blocks cenv
+  let (st, shadowVerdicts, tailErrors) ← shadow env blocks cenv
   let t3 ← IO.monoMsNow
   lines := lines.push s!"shadow, per block ({t3 - t2} ms): {statsLine st}"
   for s in st.samples do lines := lines.push s!"  {s.take 300}"
@@ -263,6 +271,46 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
     errors := errors.push s!"{st.elimDiffer} elimination decisions differ from Ix.Tc's (stop rule)"
   if st.leanRecDiffer != 0 then
     errors := errors.push s!"{st.leanRecDiffer} Lean-layout canonical recursors differ from Lean's"
+  -- AuxGen M4c: production records each block's canonical-block verdict
+  -- (`CompileEnv.auxReport`). Every recorded verdict is the shadow harness's
+  -- for the same block, none is a refusal or a difference, and production
+  -- records a verdict for exactly the harness's blocks it did not promote: a
+  -- block whose key a parent's aux tail compiled (`CompileEnv.auxGenExtraNames`)
+  -- is promoted without its own tail, so it has no verdict of its own; every
+  -- other block has one. No block drops out silently.
+  let canonical := cenv.auxReport.canonicalSummary
+  lines := lines.push s!"production's canonical verdicts: {canonical.line}"
+  for (k, why) in canonical.findings.extract 0 4 do
+    lines := lines.push s!"  {k.pretty}: {why.take 300}"
+  if canonical.refused + canonical.leanDiffer != 0 then
+    errors := errors.push s!"production recorded {canonical.refused} refused canonical flat blocks \
+      and {canonical.leanDiffer} Lean-layout blocks whose recursors differ from Lean's"
+  if canonical.installed + canonical.leanSame == 0 then
+    errors := errors.push "production recorded no canonical verdict"
+  let sameKey (a b : Ix.Name) : Bool := Ix.Compile.ExactKey.nameEq a b
+  let mut disagree : Array String := #[]
+  for (key, v) in cenv.auxReport.canonical do
+    match shadowVerdicts.find? (sameKey ·.1 key) with
+    | some (_, w) =>
+      if v != w then disagree := disagree.push s!"{key.pretty} ({repr v} vs {repr w})"
+    | none => disagree := disagree.push s!"{key.pretty} (not checked by the harness)"
+  if !disagree.isEmpty then
+    errors := errors.push s!"{disagree.size} production canonical verdicts are not the shadow \
+      harness's: {", ".intercalate (disagree.extract 0 4).toList}"
+  let recordedKey (k : Ix.Name) : Bool := cenv.auxReport.canonical.any (sameKey ·.1 k)
+  let promoted (k : Ix.Name) : Bool := cenv.auxGenExtraNames.contains k
+  let unrecorded := shadowVerdicts.filter fun (k, _) => !recordedKey k
+  let promotedRecorded := shadowVerdicts.filter fun (k, _) => recordedKey k && promoted k
+  let dropped := shadowVerdicts.filter fun (k, _) => !recordedKey k && !promoted k
+  lines := lines.push s!"canonical verdicts: production records {cenv.auxReport.canonical.size}, \
+    the harness has {shadowVerdicts.size}; {unrecorded.size} harness-only, all promoted without \
+    their own tail: {", ".intercalate ((unrecorded.extract 0 8).map (·.1.pretty)).toList}"
+  if !promotedRecorded.isEmpty then
+    errors := errors.push s!"{promotedRecorded.size} promoted blocks have a verdict of their own: \
+      {", ".intercalate ((promotedRecorded.extract 0 4).map (·.1.pretty)).toList}"
+  if !dropped.isEmpty then
+    errors := errors.push s!"{dropped.size} blocks production compiled with their own tail have no \
+      recorded verdict: {", ".intercalate ((dropped.extract 0 4).map (·.1.pretty)).toList}"
   if st.recWhnf == 0 || st.elim == 0 then
     errors := errors.push "no recursor question was asked"
   if label == "fixtures" && st.recReplayed == 0 then

@@ -847,22 +847,30 @@ def admitGenerated (k : AuxKernel) (consts : Array BelowConstant) : KBridgeM Aux
     before `.below` asks (AuxGen M2a): `Ix.Tc` needs nothing; the IxC arm
     installs it when the block's layout is not Lean's, and its scopes then
     read terms through σ. A refusal is counted, and fails the block under
-    `failClosed`. -/
-def withFlatBlock (k : AuxKernel) (classes : Array (Array Name)) (originalAll : Array Name)
-    (canonicalRecs : Array (Name × RecursorVal)) : KBridgeM AuxKernel := do
+    `failClosed`. With the kernel after it, what Source mode said (AuxGen
+    M4c): `installed`, `refused` with IxC's reason, or `none` when there was
+    nothing to install (the `Ix.Tc` arm, or Lean's layout). -/
+def withFlatBlockVerdict (k : AuxKernel) (classes : Array (Array Name)) (originalAll : Array Name)
+    (canonicalRecs : Array (Name × RecursorVal)) :
+    KBridgeM (AuxKernel × Option CanonicalVerdict) := do
   match k with
-  | .tc _ => return k
+  | .tc _ => return (k, none)
   | .ixc maps o =>
     match o.withFlat classes originalAll canonicalRecs with
-    | .ok none => return k
+    | .ok none => return (k, none)
     | .ok (some o') =>
       bumpIxc fun st => { st with flatInstalled := st.flatInstalled + 1 }
-      return .ixc maps o'
+      return (.ixc maps o', some .installed)
     | .error e =>
       bumpIxc fun st => (st.sample s!"flat block: {e}") |> fun st =>
         { st with flatRefused := st.flatRefused + 1 }
       if o.mode == .failClosed then throwBridge (.kernel (.ixc "flat block") e)
-      return k
+      return (k, some (.refused e))
+
+/-- `withFlatBlockVerdict`'s kernel. -/
+def withFlatBlock (k : AuxKernel) (classes : Array (Array Name)) (originalAll : Array Name)
+    (canonicalRecs : Array (Name × RecursorVal)) : KBridgeM AuxKernel :=
+  Prod.fst <$> k.withFlatBlockVerdict classes originalAll canonicalRecs
 
 /-- Two recursors equal as declarations, names and binder data included. -/
 def sameRecursor (a b : RecursorVal) : Bool :=
@@ -883,7 +891,8 @@ IxC's install is the check, counted as `flat` installed or refused); for a
 block whose layout is Lean's, each generated recursor compared with Lean's
 own (`leanRecSame`, `leanRecDiffer`), whose acceptance is the input's. The
 kernel after it, and whether the check ran (then `.below` needs no second
-install). -/
+install). The verdict is left in the bridge context (`AuxKernelCtx.canonical`,
+AuxGen M4c) for the driver to record. -/
 def checkCanonicalBlock (k : AuxKernel) (classes : Array (Array Name))
     (originalAll : Array Name) (canonicalRecs : Array (Name × RecursorVal)) :
     KBridgeM (AuxKernel × Bool) := do
@@ -900,18 +909,29 @@ def checkCanonicalBlock (k : AuxKernel) (classes : Array (Array Name))
         | _ => pure 0
       | none => pure 0
     if Flat.needed classes originalAll auxNames leanNested then
-      return (← k.withFlatBlock classes originalAll canonicalRecs, true)
+      let (k', verdict) ← k.withFlatBlockVerdict classes originalAll canonicalRecs
+      modify fun c => { c with canonical := verdict }
+      return (k', true)
+    let mut same := 0
+    let mut differ : Option String := none
     for (n, rv) in canonicalRecs do
       match ← lookupConst? n with
       | some (.recInfo lean) =>
         if sameRecursor rv lean then
+          same := same + 1
           bumpIxc fun st => { st with leanRecSame := st.leanRecSame + 1 }
         else
+          differ := differ.orElse fun _ => some n.pretty
           bumpIxc fun st => (st.sample s!"canonical recursor differs from Lean's: {n.pretty}") |>
             fun st => { st with leanRecDiffer := st.leanRecDiffer + 1 }
       | _ =>
+        differ := differ.orElse fun _ => some s!"{n.pretty} (no Lean recursor)"
         bumpIxc fun st => (st.sample s!"no Lean recursor: {n.pretty}") |>
           fun st => { st with leanRecDiffer := st.leanRecDiffer + 1 }
+    let verdict : CanonicalVerdict := match differ with
+      | some first => .leanDiffer first
+      | none => .leanSame same
+    modify fun c => { c with canonical := some verdict }
     return (k, true)
 
 end AuxKernel

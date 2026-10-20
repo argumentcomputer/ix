@@ -104,6 +104,100 @@ inductive WhnfHow where
   | replayed
   deriving BEq, Inhabited, Repr
 
+/-- **What Source mode said of a block's canonical recursors** (AuxGen M4c):
+the verdict of `AuxKernel.checkCanonicalBlock`, which a safe block's aux tail
+runs right after generating its recursors when they are on IxC. The wave fold
+records it per block, by the block's canonical key
+(`Ix.CompileM.CompileEnv.auxReport`). -/
+inductive CanonicalVerdict where
+  /-- the block's layout is not Lean's: its canonical flat block, the generated
+  recursors included, installed in Source mode (IxC's install is the check) -/
+  | installed
+  /-- the canonical flat block refused by Source mode, and why (`fallback`
+  then keeps `Ix.Tc`'s answers for the block's tail) -/
+  | refused (why : String)
+  /-- the block's layout is Lean's: each of its `n` generated recursors equals
+  Lean's own, whose acceptance is the input's -/
+  | leanSame (n : Nat)
+  /-- the block's layout is Lean's, and a generated recursor differs from
+  Lean's own (the first one, named) -/
+  | leanDiffer (first : String)
+  deriving BEq, Inhabited, Repr
+
+/-- **The canonical verdicts in summary** (AuxGen M4c), as the compile report
+prints them. -/
+structure CanonicalSummary where
+  /-- non-Lean layouts: canonical flat blocks installed, and refused -/
+  installed : Nat := 0
+  refused : Nat := 0
+  /-- Lean layouts: the blocks whose generated recursors all equal Lean's own,
+  those recursors, and the blocks with one that differs -/
+  leanSame : Nat := 0
+  leanRecursors : Nat := 0
+  leanDiffer : Nat := 0
+  /-- the refusals and differences by block key, in `Ix.nameCompare` order:
+  the first `CanonicalSummary.cap` -/
+  findings : Array (Name × String) := #[]
+  deriving Inhabited, BEq
+
+namespace CanonicalSummary
+
+/-- How many findings a summary names. -/
+def cap : Nat := 64
+
+/-- The summary of the verdicts, by block key. -/
+def ofArray (verdicts : Array (Name × CanonicalVerdict)) : CanonicalSummary := Id.run do
+  let mut s : CanonicalSummary := {}
+  let mut findings : Array (Name × String) := #[]
+  for (key, v) in verdicts do
+    match v with
+    | .installed => s := { s with installed := s.installed + 1 }
+    | .refused why =>
+      s := { s with refused := s.refused + 1 }
+      findings := findings.push (key, s!"flat block refused: {why}")
+    | .leanSame n =>
+      s := { s with leanSame := s.leanSame + 1, leanRecursors := s.leanRecursors + n }
+    | .leanDiffer first =>
+      s := { s with leanDiffer := s.leanDiffer + 1 }
+      findings := findings.push (key, s!"recursor differs from Lean's: {first}")
+  let sorted := findings.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
+  return { s with findings := sorted.extract 0 cap }
+
+/-- One line. -/
+def line (s : CanonicalSummary) : String :=
+  s!"{s.installed} flat blocks installed, {s.refused} refused; {s.leanSame} Lean-layout blocks \
+    with all {s.leanRecursors} recursors equal to Lean's, {s.leanDiffer} with one that differs"
+
+end CanonicalSummary
+
+/-- **What a block's aux tail reports** (AuxGen M4c; M5 adds its generated
+auxiliaries' acceptance), carried in the block's state
+(`Ix.CompileM.BlockState.auxReport`) and merged into the compile's
+(`CompileReport.addBlock`). No byte depends on it. -/
+structure BlockReport where
+  /-- the canonical-block check's verdict (`AuxKernel.checkCanonicalBlock`),
+  when it ran -/
+  canonical : Option CanonicalVerdict := none
+  deriving Inhabited
+
+/-- **AuxGen's part of the compile report** (AuxGen M4c), merged from the
+blocks that compile, in the fold's order (`Ix.CompileM.CompileEnv.auxReport`,
+`mergeCompiledBlock`). Not serialized: no byte depends on it. -/
+structure CompileReport where
+  /-- each block's canonical-block verdict, by the block's canonical key -/
+  canonical : Array (Name × CanonicalVerdict) := #[]
+  deriving Inhabited
+
+/-- A compiled block's report merged in, under the block's canonical key. -/
+def CompileReport.addBlock (r : CompileReport) (key : Name) (b : BlockReport) : CompileReport :=
+  match b.canonical with
+  | some verdict => { r with canonical := r.canonical.push (key, verdict) }
+  | none => r
+
+/-- The canonical-block verdicts in summary. -/
+def CompileReport.canonicalSummary (r : CompileReport) : CanonicalSummary :=
+  CanonicalSummary.ofArray r.canonical
+
 /-- **A local context IxC answers in**, as an object: each operation returns
 the context after it. Free variables are named by their `LocalDecl.fvarName`
 (`Ix.AuxGen.LocalDecl`), level parameters by their names.
