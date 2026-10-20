@@ -373,6 +373,80 @@ def fixtures : TestSeq :=
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
     return (errors.isEmpty, expected.length, 0, msg)) .done
 
-def suite : List TestSeq := [refusals, erasure, contractFrames, numbering, canonical, sharing, fixtures]
+/-! ## Quotient Source (`ALPHA-COLLAPSE.md` §8.4)
+
+Hand-made fiber maps over the module's alias fixtures: an α-equal pair is
+collapsed to its first member and the result accepted, with exactly the alias's
+declaration dropped; a map identifying unequal declarations is refused; and a
+`Bool`-shaped inductive mapped onto `Bool`'s role keys is that role's alias. -/
+
+def kname (n : Lean.Name) : Ix.Kernel.Name := Ix.Kernel.Name.ofLeanName n
+
+def kkey (n : Lean.Name) : Ix.Kernel.Key .source := ingressKey (Ix.Name.fromLeanName n)
+
+def mapOf (pairs : List (Lean.Name × Ix.Kernel.Key .source)) : FiberMap :=
+  pairs.foldl (fun m (n, k) => m.insert (kname n) k) {}
+
+def evaluateQuotient : IO (Array String × Array String) := do
+  let leanEnv ← getCompileEnv #[ownModule]
+  let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  -- an α-equal pair
+  let env ← envOf leanEnv #[own "aliasOne", own "aliasTwo", own "aliasUser"]
+  let blocks := condense env
+  let ρ := mapOf [(own "aliasTwo", kkey (own "aliasOne"))]
+  match leanIngress env blocks pre.state with
+  | .error e => errors := errors.push s!"quotient: ingress: {e}"
+  | .ok ds =>
+    match collapseDecls ρ ds with
+    | .error e => errors := errors.push s!"quotient: the α-equal pair: {e}"
+    | .ok c =>
+      lines := lines.push s!"quotient: {ds.size} declarations, {c.decls.size} kept, dropped \
+        {c.dropped.toList}"
+      unless c.decls.size + 1 == ds.size && c.dropped.size == 1 do
+        errors := errors.push s!"quotient: expected exactly one declaration dropped, got {c.dropped.toList}"
+  match checkSourceCollapsedUsing Ix.Kernel.Reader.builtinPrelude ρ (fun _ => none) env blocks with
+  | .ok kenv =>
+    lines := lines.push s!"quotient: checkSourceCollapsed accepted, {kenv.consts.length} kernel constants"
+    if kenv.consts.any (·.name == kkey (own "aliasTwo")) then
+      errors := errors.push "quotient: the dropped alias is installed"
+  | .error e => errors := errors.push s!"quotient: checkSourceCollapsed on the α-equal pair: {e}"
+  -- unequal declarations identified
+  let env2 ← envOf leanEnv #[own "aliasOne", own "aliasOther"]
+  let ρ2 := mapOf [(own "aliasOther", kkey (own "aliasOne"))]
+  match checkSourceCollapsedUsing Ix.Kernel.Reader.builtinPrelude ρ2 (fun _ => none) env2
+      (condense env2) with
+  | .error (.collapse e) => lines := lines.push s!"quotient: unequal declarations refused: {e}"
+  | .error e => errors := errors.push s!"quotient: unequal declarations: another failure: {e}"
+  | .ok _ => errors := errors.push "quotient: unequal declarations collapsed"
+  -- a role alias: `Flag` onto `Bool`'s role keys
+  let env3 ← envOf leanEnv #[own "Flag", `Bool]
+  let ρ3 := mapOf [(own "Flag", .role .bool), (own "Flag.off", .role .boolFalse),
+    (own "Flag.on", .role .boolTrue), (own "Flag.rec", .role .boolRec)]
+  match leanIngress env3 (condense env3) pre.state with
+  | .error e => errors := errors.push s!"quotient: role alias: ingress: {e}"
+  | .ok ds =>
+    match collapseDecls ρ3 ds with
+    | .error e => errors := errors.push s!"quotient: role alias: {e}"
+    | .ok c =>
+      lines := lines.push s!"quotient: role alias: {ds.size} declarations, {c.decls.size} kept"
+      unless c.decls.size + 1 == ds.size do
+        errors := errors.push s!"quotient: role alias: expected Flag's block dropped"
+  match checkSourceCollapsedUsing Ix.Kernel.Reader.builtinPrelude ρ3 (fun _ => none) env3
+      (condense env3) with
+  | .ok kenv => lines := lines.push s!"quotient: role alias accepted, {kenv.consts.length} kernel constants"
+  | .error e => errors := errors.push s!"quotient: role alias: {e}"
+  return (errors, lines)
+
+def quotient : TestSeq :=
+  .individualIO "quotient source: alias fibers collapsed, mismatches refused, role aliases" none (do
+    let (errors, lines) ← evaluateQuotient
+    for l in lines do IO.println l
+    let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
+    return (errors.isEmpty, 3, 0, msg)) .done
+
+def suite : List TestSeq := [refusals, erasure, contractFrames, numbering, canonical, sharing, fixtures,
+  quotient]
 
 end Tests.Ix.Kernel.SourceIngress

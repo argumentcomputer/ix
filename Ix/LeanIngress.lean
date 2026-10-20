@@ -4,6 +4,7 @@ public import Ix.CondenseM
 public import Ix.LeanIngress.Expr
 public import Ix.LeanIngress.Names
 public import Ix.LeanIngress.Order
+public import Ix.LeanIngress.Collapse
 public import IxC.Kernel.Ixon.Prelude
 public import IxC.Kernel.Cached.Installed
 public import Ix.RoleEvidence
@@ -725,12 +726,16 @@ inductive SourceError where
   /-- the committed prelude does not load (a corrupted file) -/
   | prelude (reason : String)
   | kernel (error : Ix.Kernel.CheckError .source) (position : Nat)
+  /-- quotient Source: a declaration meets an alias fiber's representative without
+  being its declaration (`collapseDecls`) -/
+  | collapse (error : CollapseError)
 
 instance : ToString SourceError where
   toString
     | .ingress e => s!"ingress: {e}"
     | .prelude r => s!"prelude: {r}"
     | .kernel e p => s!"kernel at {p}: {e}"
+    | .collapse e => s!"collapse: {e}"
 
 /-- The fold's input: the ingress from the prelude's reader state, prepared by
 `Frontend.preparePrelude` with the prelude's declarations. -/
@@ -909,6 +914,46 @@ address it publishes for `k`'s name, so the two sides run one hint per alias
 fiber. -/
 def fiberHints (ixe : Ixon.Env) (k : CName .source) : Option Ix.Kernel.ReducibilityHint :=
   (fiberHintsMap ixe)[k]?
+
+/-! ## Quotient Source (`ALPHA-COLLAPSE.md` §8.4)
+
+The Source-mode check with every alias fiber collapsed to its representative
+(`Ix.LeanIngress.Collapse`): the ingress lowers every group as `leanIngress`
+does, at the given hints; the lowered declarations are renamed to their fibers'
+representatives and each fiber's declaration is kept once, every dropped one
+checked equal to it (`collapseDecls`, `FiberHyp` decided); then the prelude is
+prepared and the verified fold runs, at Source mode's evidence over the
+collapsed declarations. The fibers and the hints are data: at an artifact,
+its alias fibers (`fiberAlias`, role-aware) and its per-fiber hints
+(`fiberHints`), so that the two sides run one declaration and one hint per
+address. Grouping is the ingress's own (components, `componentGroup`). -/
+
+/-- **Quotient Source's fold input**: the ingress at `hints`, collapsed by `ρ`,
+then prepared behind the prelude. -/
+def prepareSourceCollapsed (ρ : FiberMap) (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (pre : Ix.Kernel.Reader.Prelude .source) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Array (CDecl .source)) := do
+  let decls ← (leanIngressHinted hints env blocks pre.state).mapError .ingress
+  let c ← (collapseDecls ρ decls).mapError .collapse
+  pure (Ix.Kernel.Frontend.preparePrelude pre.ix c.decls)
+
+/-- Quotient Source over an explicit prelude, fiber map and hints. -/
+def checkSourceCollapsedUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source))
+    (ρ : FiberMap) (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except SourceError (Ix.Kernel.Env .source) := do
+  let pre ← prelude.mapError .prelude
+  let decls ← prepareSourceCollapsed ρ hints pre env blocks
+  (Ix.Kernel.Cached.checkDecls .verified (sourceEvidence decls) decls).mapError
+    fun (e, i) => .kernel e i
+
+/-- **Quotient Source at a compiled artifact**: the committed prelude, the
+artifact's alias fibers (`fiberAlias`, role-aware) and its per-fiber hints
+(`fiberHints`). -/
+def checkSourceCollapsed (ixe : Ixon.Env) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except SourceError (Ix.Kernel.Env .source) :=
+  let hints := fiberHintsMap ixe
+  checkSourceCollapsedUsing Ix.Kernel.Reader.builtinPrelude (fiberAlias ixe) (hints[·]?) env blocks
 
 /-! ## The typing tier: partial and unsafe declarations
 

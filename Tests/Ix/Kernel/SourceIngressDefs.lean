@@ -23,3 +23,25 @@ theorem BoolQ.const_eq (q : BoolQ) : q.const = 0 :=
   Quot.ind (β := fun q : BoolQ => q.const = 0) (fun _ => rfl) q
 
 end Tests.Ix.Kernel.SourceIngressDefs
+
+/-! ## Alias fibers (quotient Source, `ALPHA-COLLAPSE.md` §8.4)
+
+`aliasOne` and `aliasTwo` are α-equal, so they are one fiber; `aliasUser`
+references the second, and after the collapse the first. `aliasOther` is not
+equal to them. `Flag` is `Bool` up to names: its block is a role alias. -/
+
+namespace Tests.Ix.Kernel.SourceIngressDefs
+
+def aliasOne : Nat := Nat.succ Nat.zero
+
+def aliasTwo : Nat := Nat.succ Nat.zero
+
+def aliasUser : Nat := Nat.succ aliasTwo
+
+def aliasOther : Nat := Nat.zero
+
+inductive Flag where
+  | off
+  | on
+
+end Tests.Ix.Kernel.SourceIngressDefs

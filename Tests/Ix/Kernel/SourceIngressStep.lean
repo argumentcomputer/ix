@@ -28,6 +28,12 @@ environment check does for Ixon records (`Benchmarks.Kernel.CheckIxeStep`):
   (`typed`, reason its safety; a failure declines, `tier (<safety>): …`); a
   logical group that references one is declined (`fence: …`).
 
+With a fiber map (`collapse`), the run is quotient Source's (`Ix.LeanIngress.checkSourceCollapsed`):
+each lowered group is renamed to its fibers' representatives, and a group whose
+renamed declarations are an earlier kept group's is that group's alias, not
+checked again, with its verdict; one that meets a kept name otherwise
+declines (`collapse: alias fiber mismatch`).
+
 None of this is a certified verdict; `checkSource` is. -/
 
 namespace Tests.Ix.Kernel.SourceIngressStep
@@ -96,6 +102,8 @@ structure Run where
   well-founded operation without evidence has none -/
   evidence : Ix.Kernel.Evidences .source := []
   evidenceErrors : List String := []
+  /-- quotient Source: the groups that were an earlier group's alias -/
+  aliases : Nat := 0
 
 /-- **The run.** The evidence is Source mode's, from the prepared declarations
 (`Ix.LeanIngress.sourceEvidenceReport`): the environment's certificate theorems,
@@ -104,7 +112,8 @@ maps runs that hint instead of Lean's (`Ix.LeanIngress.checkSourceHinted`). -/
 def run (pre : Prelude .source) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) (workers : Nat := 1) (progress : Bool := false)
     (evidence : Option (Ix.Kernel.Evidences .source) := none)
-    (hints : Option (Std.HashMap (CName .source) Ix.Kernel.ReducibilityHint) := none) : IO Run := do
+    (hints : Option (Std.HashMap (CName .source) Ix.Kernel.ReducibilityHint) := none)
+    (collapse : Option FiberMap := none) : IO Run := do
   let t0 ← IO.monoMsNow
   let groups ← IO.lazyPure fun _ => groupsOf env blocks
   let t1 ← IO.monoMsNow
@@ -130,6 +139,8 @@ def run (pre : Prelude .source) (env : Ix.Environment)
   let mut st : State .source := pre.state
   let mut lowered : Array (CDecl .source) := #[]
   let mut owner : Std.HashMap (CName .source) Nat := {}
+  let mut keptBy : Std.HashMap (CName .source) (Nat × CDecl .source) := {}
+  let mut aliasOf : Std.HashMap Nat Nat := {}
   let mut generated := 0
   let mut rewrites := 0
   let mut tierQueue : Array (Nat × TierDecl .source) := #[]
@@ -153,10 +164,39 @@ def run (pre : Prelude .source) (env : Ix.Environment)
       st := st.commit r
       generated := generated + r.generated
       rewrites := rewrites + r.projRewrites
-      for d in r.decls do
-        for n in d.names do owner := owner.insert n gi
-      lowered := lowered ++ r.decls.map canonDecl
+      let ds := r.decls.map canonDecl
+      match collapse with
+      | none =>
+        for d in r.decls do
+          for n in d.names do owner := owner.insert n gi
+        lowered := lowered ++ ds
+      | some ρ =>
+        -- quotient Source (`Ix.LeanIngress.collapseDecls`, group by group): a
+        -- group whose renamed declarations meet no kept name is kept; one each
+        -- of whose renamed declarations is the kept declaration of its names,
+        -- all of one kept group, is that group's alias; anything else declines
+        let ds' := ds.map (Ix.LeanIngress.Declaration.substKeys ρ)
+        let met := ds'.toList.flatMap (·.names) |>.filter keptBy.contains
+        if met.isEmpty then
+          for d in ds' do
+            for n in d.names do
+              owner := owner.insert n gi
+              keptBy := keptBy.insert n (gi, d)
+          lowered := lowered ++ ds'
+        else
+          let kgi? := (keptBy[met.head!]?).map (·.1)
+          let same := ds'.all fun d => d.names.all fun n =>
+            match keptBy[n]? with
+            | some (k, dk) => some k == kgi? && Ix.LeanIngress.Declaration.beqF d dk
+            | none => false
+          match kgi?, same with
+          | some kgi, true =>
+            aliasOf := aliasOf.insert gi kgi
+          | _, _ =>
+            rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "decline",
+              s!"collapse: alias fiber mismatch at {met.head!}", 0⟩)
   let t4 ← IO.monoMsNow
+  if progress then IO.eprintln s!"source-ingress: lowered {lowered.size} declarations in {t4 - t3} ms ({aliasOf.size} alias groups)"
   let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
   let (ev, evErrors) ← match evidence with
     | some ev => pure (ev, [])
@@ -179,8 +219,9 @@ def run (pre : Prelude .source) (env : Ix.Environment)
       if failed.contains gi then continue
       unless started.contains gi do
         started := started.insert gi
-        if let some blocker := g.hard[gi]!.find? failed.contains then
-          let root := failed.getD blocker blocker
+        let resolve (j : Nat) : Nat := aliasOf.getD j j
+        if let some blocker := g.hard[gi]!.find? (fun j => failed.contains (resolve j)) then
+          let root := failed.getD (resolve blocker) (resolve blocker)
           failed := failed.insert gi root
           rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "blocked",
             s!"{(names[root]!)[0]?.getD (.id .anonymous)}", 0⟩)
@@ -212,13 +253,31 @@ def run (pre : Prelude .source) (env : Ix.Environment)
   let t4t ← IO.monoMsNow
   let logical := checker.fe
   let fe ← IO.mkRef logical
-  for (gi, d) in Benchmarks.Kernel.CheckIxeStep.stageDeferred (·.2) tierQueue do
-    if let some blocker := g.hard[gi]!.find? failed.contains then
-      let root := failed.getD blocker blocker
+  let mut tierKept : Std.HashMap (CName .source) (Nat × TierDecl .source) := {}
+  for (gi, d₀) in Benchmarks.Kernel.CheckIxeStep.stageDeferred (·.2) tierQueue do
+    let resolve (j : Nat) : Nat := aliasOf.getD j j
+    if let some blocker := g.hard[gi]!.find? (fun j => failed.contains (resolve j)) then
+      let root := failed.getD (resolve blocker) (resolve blocker)
       failed := failed.insert gi root
       rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "blocked",
         s!"{(names[root]!)[0]?.getD (.id .anonymous)}", 0⟩)
       continue
+    -- quotient Source: the tier group renamed to its fibers' representatives; a
+    -- group that is an earlier tier group once renamed is that group's alias
+    let d := match collapse with
+      | some ρ => Ix.LeanIngress.TierDecl.substKeys ρ d₀
+      | none => d₀
+    if collapse.isSome then
+      let ns := Ix.LeanIngress.TierDecl.names d
+      if let some (k, dk) := ns.head?.bind (tierKept[·]?) then
+        if Ix.LeanIngress.TierDecl.beqF d dk then
+          aliasOf := aliasOf.insert gi k
+        else
+          failed := failed.insert gi gi
+          rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "decline",
+            s!"collapse: alias fiber mismatch at {ns.head!}", 0⟩)
+        continue
+      for n in ns do tierKept := tierKept.insert n (gi, d)
     let s0 ← IO.monoNanosNow
     let fe₀ ← fe.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
     let (fe₁, err) ← IO.lazyPure fun _ => Benchmarks.Kernel.CheckIxeStep.stepTier logical fe₀ d
@@ -232,13 +291,18 @@ def run (pre : Prelude .source) (env : Ix.Environment)
       failed := failed.insert gi gi
       rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, o, why, us⟩)
   let t5 ← IO.monoMsNow
-  let rows' := rows.zipIdx.map fun (r, gi) => r.getD
+  let rowsQ := rows.zipIdx.map fun (r, gi) =>
+    match aliasOf[gi]? with
+    | some kgi => (rows[kgi]!).map fun (k : Row) =>
+        { k with group := gi, names := names[gi]!, kind := kindOf groups[gi]! }
+    | none => r
+  let rows' := rowsQ.zipIdx.map fun (r, gi) => r.getD
     ⟨gi, names[gi]!, kindOf groups[gi]!, "accept", "", micros[gi]!⟩
   return { graph := g, order := sched.map (·.1), rows := rows', decls := prepared.size, generated,
            projRewrites := rewrites,
            times := #[("group", t1 - t0), ("convert", t2 - t1), ("order", t3 - t2),
              ("lower", t4 - t3), ("evidence", t4e - t4), ("check", t4t - t4e), ("tier", t5 - t4t)],
-           evidence := ev, evidenceErrors := evErrors }
+           evidence := ev, evidenceErrors := evErrors, aliases := aliasOf.size }
 
 /-- Counts by outcome (constants and groups) and by outcome and reason
 (constants). -/

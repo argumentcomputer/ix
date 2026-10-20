@@ -7,7 +7,7 @@ import Tests.Ix.Kernel.SourceIngressCompare
 
 * `kernel-source-ingress --fixture`: the `lake test` suite
   `kernel-source-ingress` (`Tests.Ix.Kernel.SourceIngress`).
-* `kernel-source-ingress [--workers n] [--rows path] [--ixe path] [--no-certs] [--fiber-hints]
+* `kernel-source-ingress [--workers n] [--rows path] [--ixe path] [--no-certs] [--fiber-hints] [--collapse]
   [--bundle-evidence] Module…`: the modules' environment (default `Init`), with
   `IxC.Kernel.PinGen.Certs` (the certificate theorems Source mode's evidence
   is made of, `Ix.LeanIngress.sourceEvidence`; not with `--no-certs`), loaded
@@ -30,7 +30,10 @@ import Tests.Ix.Kernel.SourceIngressCompare
   `path.diff`, and the Ixon verdicts, one line per Lean name sorted by name,
   `name<TAB>outcome<TAB>reason`, to `path.rows`. With `--fiber-hints`, Source
   runs the artifact's hints, one per alias fiber (`Ix.LeanIngress.fiberHints`,
-  `checkSourceHinted`), instead of Lean's per name. -/
+  `checkSourceHinted`), instead of Lean's per name. With `--collapse` (which implies
+  `--fiber-hints`), the run is quotient Source's: the artifact's alias fibers
+  (`Ix.LeanIngress.fiberAlias`, role-aware) collapsed group by group, an alias
+  group reported with its representative group's verdict. -/
 
 namespace Tests.Ix.Kernel.SourceIngressMain
 
@@ -46,6 +49,7 @@ structure Args where
   certs : Bool := true
   bundle : Bool := false
   fiberHints : Bool := false
+  collapse : Bool := false
   modules : Array Lean.Name := #[]
 
 partial def parse (a : Args) : List String → Except String Args
@@ -58,6 +62,7 @@ partial def parse (a : Args) : List String → Except String Args
   | "--no-certs" :: rest => parse { a with certs := false } rest
   | "--bundle-evidence" :: rest => parse { a with bundle := true } rest
   | "--fiber-hints" :: rest => parse { a with fiberHints := true } rest
+  | "--collapse" :: rest => parse { a with collapse := true, fiberHints := true } rest
   | m :: rest =>
     if m.startsWith "--" then throw s!"unknown option {m}"
     else parse { a with modules := a.modules.push m.toName } rest
@@ -85,18 +90,28 @@ def main (args : List String) : IO UInt32 := do
       for why in whys do IO.println s!"  bundle: {why}"
       pure (some ev)
     else pure none
-  let hints ← if a.fiberHints then do
-      let some path := a.ixe | throw (IO.userError "--fiber-hints needs --ixe")
+  let artifact ← if a.fiberHints then do
+      let some path := a.ixe | throw (IO.userError "--fiber-hints and --collapse need --ixe")
       unless ← path.pathExists do
         let t ← IO.monoMsNow
         let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
         IO.println s!"compiled {path} in {(← IO.monoMsNow) - t} ms"
-      let ixon ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
-      let m := Ix.LeanIngress.fiberHintsMap ixon
-      IO.println s!"hints: the artifact's per alias fiber (`Ix.LeanIngress.fiberHints`), {m.size} keys"
-      pure (some m)
+      pure (some (← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))))
     else pure none
+  let hints := artifact.map fun ixon => Ix.LeanIngress.fiberHintsMap ixon
+  if let some m := hints then
+    IO.println s!"hints: the artifact's per alias fiber (`Ix.LeanIngress.fiberHints`), {m.size} keys"
+  let tA ← IO.monoMsNow
+  let collapse := if a.collapse then artifact.map Ix.LeanIngress.fiberAlias else none
+  if let some ixon := artifact then
+    if a.collapse then
+      IO.eprintln s!"collapse: quotient Source at the artifact's alias fibers \
+        (`Ix.LeanIngress.fiberAlias`, role-aware), {(Ix.LeanIngress.fiberAliasMap ixon).size} \
+        names mapped to a representative ({(← IO.monoMsNow) - tA} ms)"
   let r ← run pre env blocks a.workers (progress := true) (evidence := bundled) (hints := hints)
+    (collapse := collapse)
+  if a.collapse then
+    IO.println s!"collapse: {r.aliases} groups were an earlier group's alias"
   let withEvidence := r.evidence.filter fun (_, es) => es.any fun
     | .proof _ => true | .defeq => false
   IO.println s!"evidence: {withEvidence.length} well-founded operations with proof evidence: \
