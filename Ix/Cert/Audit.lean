@@ -14,6 +14,7 @@ import Ix.Cert.RoleClosure
 import Ix.Cert.NoCtor
 import Ix.Cert.Quotient
 import Ix.Cert.LiteralOrder
+import Ix.Cert.Unchanged
 
 /-! # The certification statements, frozen
 
@@ -4251,3 +4252,36 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "string literal order"
     (#[`recordOk_iff, `orderedFrom_iff, `stringSupportOrdered_iff].map (`Ix.Cert.LiteralOrder ++ ·))
+
+/-! ## Route A, B9a: a constant outside the changed set
+
+`Ix.Cert.Unchanged.avoids_unchanged`: a constant of a closure that avoids the
+compile's changed set (`ChangedSet.Avoids`, H1's hypothesis) is in no class
+of a changed component and no constructor of a member of a changed inductive
+one, is no image head of a changed inductive component's Lean block and
+references none (given `FirstsAgree`, decided by `firstsAgree`), and is
+published at its original-form compile's address where it has one. The proofs
+read `ofCompile` through its three loops, identified with it by `rfl`
+(`ofCompile_eq`). `cert-unchanged` checks on the changed-set corpus, and
+`cert-statement`/`cert-compile-parity-init` on the fixtures and `Init`, that
+these facts single the set out and that `FirstsAgree` holds. -/
+
+/-- info: [cert-audit] unchanged: 49 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] unchanged: 5 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "unchanged"
+    (#[`forIn_grow, `forIn_hit, `ofCompile_eq, `forIn_grow_array, `forIn_hit_array, `Grows.refl,
+      `Grows.trans, `Grows.push, `memberStage_eq, `headStage_eq, `namedStage_eq, `kind_beq,
+      `ctorLoop_grows, `ctorLoop_hit, `memberBody_step, `memberBody_lands, `classBody_step, `classes_hit,
+      `Grows₁.refl, `Grows₁.trans, `blockBody_step, `member_entry, `leanAll_key, `leanAll_inv, `Grows₂.refl,
+      `Grows₂.trans, `headBody_step, `leanBody_step, `headStage_grows, `heads_inv, `head_entry,
+      `regenStep_step, `namedBody_step, `regenStep_lands, `namedStage_grows, `caller_entry,
+      `regenerated_entry, `sortEntries_eq, `dedupStep_spec, `dedup_keeps, `sortEntries_keeps,
+      `names_contains, `contains_of_entry, `leastName_none, `leanAll_entry, `unchanged_of_not_contains,
+      `avoids_unchanged, `namesEq_iff, `firstsAgree_iff].map (`Ix.Cert.Unchanged ++ ·))
+  checkRuntime (tag := "cert-audit") "unchanged"
+    #[``Ix.Compile.ChangedSet.ofCompile, ``Ix.Compile.ChangedSet.sortEntries, ``Ix.Compile.ChangedSet.leastName,
+      ``Ix.Compile.ChangedSet.ChangedSet.contains, ``Ix.Compile.ChangedSet.Entry.beq]

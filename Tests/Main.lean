@@ -463,6 +463,10 @@ def registry : List Entry := [
   -- first hook edits, the published heads, the decompile records' carriers),
   -- and Init+Std empty (Tests.Ix.Compile.ChangedSet).
   .env "changed-set" (.ci .compilePipeline) Tests.Ix.Compile.ChangedSet.run,
+  -- Route A B9a: on the same corpus, compiled by `Ix.Cert.compileReport`, the
+  -- facts `avoids_unchanged` proves single the set out, and `FirstsAgree` holds
+  -- (Tests.Ix.Cert.Statement).
+  .env "cert-unchanged" (.ci .compilePipeline) Tests.Ix.Cert.Statement.unchangedCorpus,
   .runner "changed-set-initstd" .landing Tests.Ix.Compile.ChangedSet.runInitStd,
   .env "changed-set-testenv" (.manual "two Rust compiles of the whole test environment; the calibration of the change predicate against the Rust artifact's Pass 3 edits") Tests.Ix.Compile.ChangedSet.runTestEnv,
   .env "decompile-diff" (.ci .compilePipeline) Tests.Compile.DecompileDiff.run,

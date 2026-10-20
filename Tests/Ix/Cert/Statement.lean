@@ -3,6 +3,7 @@ import Ix.Meta
 import Ix.Cert.Audit
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.SourceContract.SyntaxFixture
+import Tests.Ix.Compile.ValidateAux
 
 /-! # The certification statements on the Source-mode fixtures (`lake test -- cert-statement`)
 
@@ -352,6 +353,65 @@ def noCtorCases (label : String) (env : Ix.Environment) : IO (Array String × Ar
   else
     return (shown.toArray.push s!"{label}: {errors.size} failure(s)", #[])
 
+/-! ## A constant outside the changed set (Route A, B9a) -/
+
+/-- B9a's facts (`Ix.Cert.Unchanged.Unchanged`), decided for one input name,
+reading names with `Ix.Name`'s `==` (stored hashes) as the set does: in no
+class of a changed component, no constructor of an inductive one's members, no
+image head of its Lean block, published with no reference to such a head, and
+published at its original-form compile's address where it has one. -/
+def unchangedFacts (env : Ix.Environment) (ixe : Ixon.Env) (blocks : Array Ix.Compile.ChangedSet.Block)
+    (heads : Std.HashSet Ix.Name) (n : Ix.Name) : Bool :=
+  let live := blocks.filter (·.first.isSome)
+  let inductives := live.filter (·.kind == .inductiveBlock)
+  let member := live.all fun b => b.classes.all fun cls => !cls.contains n
+  let ctor := inductives.all fun b => b.classes.all fun cls => cls.all fun m =>
+    match env.get? m with
+    | some (.inductInfo v) => !v.ctors.contains n
+    | _ => true
+  let head := !heads.contains n
+  let published := ixe.named.get? n
+  let caller := match published, env.get? n with
+    | some _, some ci => (Ix.Compile.Canon.refsConst ci).toList.all fun r => !heads.contains r
+    | _, _ => true
+  let original := match published with
+    | some named => match named.original with
+      | some (orig, _) => !(env.get? n).isSome || orig == named.addr
+      | none => true
+    | none => true
+  member && ctor && head && caller && original
+
+/-- B9a on one compile: `FirstsAgree` decided (`Ix.Cert.Unchanged.firstsAgree`), and the facts
+of every input name against the set: a name outside the set has them all (what
+`avoids_unchanged` proves), and a name in the set fails one (the facts single the set out). -/
+def unchangedCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) : Array String × Array String := Id.run do
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  let cs := Ix.Compile.ChangedSet.ofCompile env ixe
+  let blocks := Ix.Compile.ChangedSet.changedBlocks env ixe
+  let agree := Ix.Cert.Unchanged.firstsAgree env ixe
+  unless agree do errors := errors.push s!"{label}: FirstsAgree fails on the changed components"
+  let heads : Std.HashSet Ix.Name := blocks.foldl (init := {}) fun s b =>
+    if b.kind == .inductiveBlock && b.first.isSome then
+      (Ix.Compile.Pass.imageKinds env.get? b.all).foldl (·.insert ·) s
+    else s
+  let mut inSet := 0
+  let mut unchanged := 0
+  let mut wrong : Array String := #[]
+  for (n, _) in env.consts do
+    let member := cs.contains n
+    let facts := unchangedFacts env ixe blocks heads n
+    if member then inSet := inSet + 1
+    if facts then unchanged := unchanged + 1
+    if member == facts then wrong := wrong.push s!"{n.pretty} ({if member then "in the set, has the facts" else "outside the set, lacks a fact"})"
+  if wrong.isEmpty then
+    lines := lines.push s!"{label}: B9a: {env.consts.size} input names, {inSet} in the changed set \
+      ({blocks.size} changed components), {unchanged} with the facts, exactly the others; FirstsAgree {agree}"
+  else
+    errors := errors.push s!"{label}: B9a: {wrong.size} names where the set and the facts disagree: \
+      {wrong.toList.take 5}"
+  return (errors, lines)
+
 /-- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on
 `consts`: errors, and lines for the report. `compile` is `compileReport`'s
 first component (`Ix.Cert.compile_eq_ok`); the report's failures are checked
@@ -404,6 +464,10 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   let (roleErrors, roleLines) ← rolesCases label env ixe
   errors := errors ++ roleErrors
   lines := lines ++ roleLines
+  -- a constant outside the changed set (Route A, B9a)
+  let (unchangedErrors, unchangedLines) := unchangedCases label env ixe
+  errors := errors ++ unchangedErrors
+  lines := lines ++ unchangedLines
   -- the IO pipeline
   let t3 ← IO.monoMsNow
   match ← Ix.CompileM.compileLeanConsts consts (numWorkers := workers) with
@@ -805,5 +869,18 @@ def noCtorInitStdSuite : List TestSeq := [
     let env ← IO.lazyPure fun _ =>
       Tests.Ix.Kernel.SourceIngressStep.canon leanEnv.constants.toList.toArray 16
     noCtorCases "Init+Std" env) 1]
+
+
+/-- `cert-unchanged`: B9a on the aux-heavy fixture corpus (`validateAuxClosure`, the
+`changed-set` corpus, which has changed components), compiled by `Ix.Cert.compileReport`. -/
+def unchangedCorpus (leanEnv : Lean.Environment) : IO UInt32 := do
+  let filtered := validateAuxClosure leanEnv
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon filtered.toArray 8
+  let (ixe, failures) ← IO.ofExcept (← IO.lazyPure fun _ => Ix.Cert.compileReport env)
+  IO.println s!"[cert-unchanged] corpus: {filtered.length} constants, {failures.toMap.size} failures"
+  let (errors, lines) := unchangedCases "corpus" env ixe
+  for l in lines do IO.println s!"[cert-unchanged] {l}"
+  for e in errors do IO.eprintln s!"[cert-unchanged] FAIL {e}"
+  return if errors.isEmpty then 0 else 1
 
 end Tests.Ix.Cert.Statement

@@ -1,6 +1,7 @@
 import Ix.Cert.Statement
 import Ix.Compile.ChangedSet
 import Ix.CompileCert.Canon.QSort
+import Ix.CompileCert.Canon.Ref
 
 /-! # A constant outside the changed set (Route A, H1, B9a)
 
@@ -156,13 +157,6 @@ theorem Grows.trans {a b c : Array Entry} (h₁ : Grows a b) (h₂ : Grows b c) 
   fun e h => h₂ e (h₁ e h)
 theorem Grows.push (a : Array Entry) (e : Entry) : Grows a (a.push e) :=
   fun _ h => Array.mem_push_of_mem _ h
-
-/-- The constructor loop of the first stage pushes, and only pushes. -/
-theorem ctors_grow (first : Name) (ctors : Array Name) (entries : Array Entry) :
-    Grows entries (forIn (m := Id) ctors entries fun c (r : Array Entry) =>
-      ForInStep.yield (r.push { name := c, cause := .member, ref := some first })) :=
-  forIn_grow_array Grows Grows.refl Grows.trans _ ctors
-    (fun _ _ s => ⟨_, rfl, Grows.push s _⟩) entries
 
 /-! ## The loops' bodies, named -/
 
@@ -802,5 +796,51 @@ theorem avoids_unchanged {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Envir
     (avoids : (ofCompile env ixe).Avoids sub) {n : Name} {ci : ConstantInfo}
     (found : sub.consts.get? n = some ci) : Unchanged env ixe n :=
   unchanged_of_not_contains env ixe (avoids n ci found)
+
+
+/-! ## `FirstsAgree`, decided -/
+
+/-- Structural equality of name lists, by `Ix.nameCompareExact` (whose `eq`
+is equality; `Ix.Name`'s `==` compares hashes only). -/
+def namesEq : List Name → List Name → Bool
+  | [], [] => true
+  | x :: xs, y :: ys => (Ix.nameCompareExact x y == .eq) && namesEq xs ys
+  | _, _ => false
+
+theorem namesEq_iff : ∀ {a b : List Name}, namesEq a b = true ↔ a = b
+  | [], [] => by simp [namesEq]
+  | [], _ :: _ => by simp [namesEq]
+  | _ :: _, [] => by simp [namesEq]
+  | x :: xs, y :: ys => by
+    simp only [namesEq, Bool.and_eq_true, beq_iff_eq, Ix.CompileCert.Canon.nameCompareExact_eq_iff,
+      namesEq_iff, List.cons.injEq]
+
+/-- `FirstsAgree`, decided over the changed components. -/
+def firstsAgree (env : Ix.Environment) (ixe : Ixon.Env) : Bool :=
+  let bs := changedBlocks env ixe
+  bs.all fun b => bs.all fun b' =>
+    match b.kind, b'.kind, b.first, b'.first with
+    | .inductiveBlock, .inductiveBlock, some f, some f' => !(f == f') || namesEq b.all.toList b'.all.toList
+    | _, _, _, _ => true
+
+theorem firstsAgree_iff (env : Ix.Environment) (ixe : Ixon.Env) :
+    firstsAgree env ixe = true ↔ FirstsAgree env ixe := by
+  unfold firstsAgree FirstsAgree
+  simp only [Array.all_eq_true_iff_forall_mem]
+  constructor
+  · intro h b hb b' hb' ind ind' f f' hf hf' same
+    have := h b hb b' hb'
+    rw [ind, ind', hf, hf'] at this
+    simp only [same, Bool.not_true, Bool.false_or, namesEq_iff] at this
+    exact Array.toList_inj.mp this
+  · intro h b hb b' hb'
+    split
+    · rename_i f f' ind ind' hf hf'
+      cases same : (f == f') with
+      | false => rfl
+      | true =>
+        rw [Bool.not_true, Bool.false_or, namesEq_iff]
+        exact congrArg Array.toList (h b hb b' hb' ind ind' f f' hf hf' same)
+    · rfl
 
 end Ix.Cert.Unchanged
