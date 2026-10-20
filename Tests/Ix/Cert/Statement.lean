@@ -110,7 +110,14 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     | _ => return (errors.push s!"{label}: fewer than two records", lines)
   let some (b, bytes) := ixe.blobs.toList.head?
     | return (errors.push s!"{label}: no blob", lines)
+  let some named := ixe.named.get? n
+    | return (errors.push s!"{label}: a published input constant has no entry", lines)
+  -- a different name with `n`'s stored hash (`Ix.Name`'s `==` compares hashes, so the
+  -- map takes it as `n`'s key: coverage still holds, the name check does not)
+  let twin : Ix.Name := .str Ix.Name.mkAnon "planted-name-hash-collision" n.getHash
   let tampered : List (String × Ixon.Env × Ix.Cert.Failures) := [
+    ("a published name replaced by a different name with its name hash",
+      { ixe with named := ixe.named.insert twin named }, failures),
     ("a published input constant dropped from `named`",
       { ixe with named := ixe.named.erase n }, failures),
     ("a published input constant also listed as failed", ixe,
@@ -128,6 +135,21 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a tampered report: {what}"
     | .error _ => refused := refused + 1
   lines := lines.push s!"{label}: checkReport refuses {refused} of {tampered.length} tampered reports"
+  -- the name check (distinct name hashes), timed alone on the compile's result, then
+  -- refusing the planted twin by its own message
+  let h0 ← IO.monoMsNow
+  let collision? ← IO.lazyPure fun _ => Ix.Cert.nameHashCollision env ixe
+  let h1 ← IO.monoMsNow
+  match collision? with
+  | none => lines := lines.push s!"{label}: nameHashCollision finds no two names with one hash \
+      ({env.consts.size} input and {ixe.named.size} published names, {h1 - h0} ms)"
+  | some (x, y) => errors := errors.push s!"{label}: nameHashCollision finds {x.pretty} and \
+      {y.pretty} in the compile's result"
+  match Ix.Cert.checkReport env ({ ixe with named := ixe.named.insert twin named }, failures) with
+  | .error e =>
+    unless (e.splitOn "name check failed").length > 1 do
+      errors := errors.push s!"{label}: the planted name-hash twin is refused, but not by the name check: {e}"
+  | .ok () => pure ()
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find

@@ -3,6 +3,7 @@ import Ix.LeanIngress.Theorems
 import Ix.Ixon.Authenticated.Theorems
 import IxC.Kernel.Ixon.Values
 import Ix.Cert.SourceBundled
+import Ix.CompileCert.Canon.Ref
 
 /-! # The certification statements, in terms of IxC
 
@@ -589,13 +590,16 @@ theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
       exact ⟨rfl, hc⟩
 
 /-- `checkReport` passes exactly when nothing is uncovered, nothing is
-unauthentic and no stored record is on a reference cycle. -/
+unauthentic, no stored record is on a reference cycle and no two different
+names share a name hash. -/
 theorem checkReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
     (h : checkReport env out = .ok ()) :
-    uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none := by
+    uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
+      nameHashCollision env out.1 = none := by
   unfold checkReport at h
   revert h
-  cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;> simp
+  cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;>
+    cases nameHashCollision env out.1 <;> simp
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
 constant exactly when it does not report it as failed. -/
@@ -631,6 +635,97 @@ theorem compileAuthentic : CompileAuthentic := by
     simpa [Address.admissionHash_eq] using this
   · have := hb (a, bytes) (Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hblob)
     simpa [Address.admissionHash_eq] using this
+
+/-- `nameHashCollision`'s step, from a state with no collision found: the
+map keeps every entry it had, and records each name of the list under its
+hash, unless a collision is found. -/
+theorem nameHash_fold : ∀ (l : List Ix.Name) (acc : Std.HashMap Address Ix.Name × Option (Ix.Name × Ix.Name)),
+    (l.foldl (fun acc n =>
+      match acc.2 with
+      | some _ => acc
+      | none =>
+        match acc.1.get? n.getHash with
+        | some m => if Ix.nameCompareExact m n == .eq then acc else (acc.1, some (m, n))
+        | none => (acc.1.insert n.getHash n, none)) acc).2 = none →
+      acc.2 = none ∧
+        (∀ (k : Address) (v : Ix.Name), acc.1[k]? = some v → (l.foldl (fun acc n =>
+          match acc.2 with
+          | some _ => acc
+          | none =>
+            match acc.1.get? n.getHash with
+            | some m => if Ix.nameCompareExact m n == .eq then acc else (acc.1, some (m, n))
+            | none => (acc.1.insert n.getHash n, none)) acc).1[k]? = some v) ∧
+        ∀ x ∈ l, (l.foldl (fun acc n =>
+          match acc.2 with
+          | some _ => acc
+          | none =>
+            match acc.1.get? n.getHash with
+            | some m => if Ix.nameCompareExact m n == .eq then acc else (acc.1, some (m, n))
+            | none => (acc.1.insert n.getHash n, none)) acc).1[x.getHash]? = some x := by
+  intro l
+  induction l with
+  | nil => intro acc h; exact ⟨h, fun _ _ hk => hk, fun _ hx => by cases hx⟩
+  | cons y l ih =>
+    intro acc h
+    rw [List.foldl_cons] at h ⊢
+    obtain ⟨none', keeps, recorded⟩ := ih _ h
+    -- the step at `y` found no collision
+    cases found : acc.2 with
+    | some p =>
+      simp only [found] at none'
+      cases none'
+    | none =>
+      simp only [found] at none' keeps recorded ⊢
+      cases seen : acc.1.get? y.getHash with
+      | some m =>
+        simp only [seen] at none' keeps recorded ⊢
+        cases same : (Ix.nameCompareExact m y == .eq) with
+        | false => simp only [same, Bool.false_eq_true, ↓reduceIte] at none'; cases none'
+        | true =>
+          simp only [same, ↓reduceIte] at keeps recorded ⊢
+          have hm : m = y := Ix.CompileCert.Canon.nameCompareExact_eq_iff.mp (beq_iff_eq.mp same)
+          subst hm
+          refine ⟨trivial, keeps, fun x hx => ?_⟩
+          rcases List.mem_cons.mp hx with rfl | hx
+          · exact keeps _ _ (by rw [← Std.HashMap.get?_eq_getElem?]; exact seen)
+          · exact recorded x hx
+      | none =>
+        simp only [seen] at none' keeps recorded ⊢
+        refine ⟨trivial, fun k v hk => keeps k v ?_, fun x hx => ?_⟩
+        · rw [Std.HashMap.getElem?_insert]
+          split
+          · rename_i same
+            have := beq_iff_eq.mp same
+            subst this
+            rw [← Std.HashMap.get?_eq_getElem?, seen] at hk
+            cases hk
+          · exact hk
+        · rcases List.mem_cons.mp hx with rfl | hx
+          · exact keeps _ _ (by rw [Std.HashMap.getElem?_insert_self])
+          · exact recorded x hx
+
+/-- **Distinct name hashes**: where `nameHashCollision` finds nothing, two of
+the input's constants' and the published names with one name hash are one
+name. -/
+theorem nameHashCollision_none {env : Ix.Environment} {ixe : Ixon.Env}
+    (h : nameHashCollision env ixe = none) :
+    ∀ a ∈ env.consts.keys ++ ixe.named.keys, ∀ b ∈ env.consts.keys ++ ixe.named.keys,
+      a.getHash = b.getHash → a = b := by
+  unfold nameHashCollision at h
+  obtain ⟨-, -, recorded⟩ := nameHash_fold _ _ h
+  intro a ha b hb same
+  have ra := recorded a ha
+  have rb := recorded b hb
+  rw [same, rb] at ra
+  exact (Option.some.inj ra).symm
+
+/-- **The compile's names have distinct hashes**: `compileReport` checks it
+(`checkReport`'s fourth check). -/
+theorem nameHashes_distinct {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∀ a ∈ env.consts.keys ++ ixe.named.keys, ∀ b ∈ env.consts.keys ++ ixe.named.keys,
+      a.getHash = b.getHash → a = b :=
+  nameHashCollision_none (checkReport_ok (compileReport_ok h).2).2.2.2
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`

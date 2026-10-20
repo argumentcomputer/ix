@@ -1107,7 +1107,14 @@ fun env out =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
   | [], [] =>
     match Ix.Cert.referenceCycle out.fst with
-    | none => Except.ok ()
+    | none =>
+      match Ix.Cert.nameHashCollision env out.fst with
+      | none => Except.ok ()
+      | some (a, b) =>
+        Except.error
+          (toString "compileReport: name check failed: " ++ toString a.pretty ++ toString " and " ++
+              toString b.pretty ++
+            toString " are different names with one name hash")
     | some cycle =>
       Except.error
         (toString "compileReport: reference check failed: " ++ toString cycle.length ++
@@ -1253,7 +1260,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
   Ix.Cert.checkReport env out = Except.ok () →
     Ix.Cert.uncovered env out.fst out.snd = [] ∧
-      Ix.Cert.unauthentic out.fst = [] ∧ Ix.Cert.referenceCycle out.fst = none -/
+      Ix.Cert.unauthentic out.fst = [] ∧
+        Ix.Cert.referenceCycle out.fst = none ∧ Ix.Cert.nameHashCollision env out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4285,3 +4293,38 @@ run_cmd do
   checkRuntime (tag := "cert-audit") "unchanged"
     #[``Ix.Compile.ChangedSet.ofCompile, ``Ix.Compile.ChangedSet.sortEntries, ``Ix.Compile.ChangedSet.leastName,
       ``Ix.Compile.ChangedSet.ChangedSet.contains, ``Ix.Compile.ChangedSet.Entry.beq]
+
+/-! ## Distinct name hashes (B9's name keys; owner-approved check, 2026-10-20)
+
+`Ix.Name`'s `==` compares stored name hashes, and every map keyed by name (the
+input's constants, the artifact's published names, the changed set's tables)
+identifies two names with one hash. `compileReport` now refuses a result in
+which two different names among the input's constants and the published names
+share a hash (`checkReport`'s fourth check, `nameHashCollision`), so on its
+result names may be read structurally (`nameHashes_distinct`). Re-frozen with
+it: `checkReport`'s print (the fourth check) and `checkReport_ok` (a fourth
+conjunct). On a consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] name hashes: 3 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] name hashes: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "name hashes"
+    (#[`nameHash_fold, `nameHashCollision_none, `nameHashes_distinct].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "name hashes" #[``Ix.Cert.nameHashCollision]
+
+/-- info: def Ix.Cert.nameHashCollision : Ix.Environment → Ixon.Env → Option (Ix.Name × Ix.Name) :=
+fun env ixe =>
+  (List.foldl
+      (fun acc n =>
+        match acc.snd with
+        | some val => acc
+        | none =>
+          match acc.fst.get? n.getHash with
+          | some m => if (Ix.nameCompareExact m n == Ordering.eq) = true then acc else (acc.fst, some (m, n))
+          | none => (acc.fst.insert n.getHash n, none))
+      (∅, none) (env.consts.keys ++ ixe.named.keys)).snd -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.nameHashCollision

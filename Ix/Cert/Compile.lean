@@ -557,18 +557,41 @@ the references are acyclic. (`condensation` always returns,
   | none => some []
   | some C => (C.comps.toList.find? cyclic).map fun c => c.toList.filterMap (addrs[·]?)
 
-/-- `compileReport`'s three checks on a compile's result, each an error on
+/-- Two different names with one stored hash among the input's constants and
+the artifact's published names, the first such pair met, if any.
+`Ix.Name`'s `==` compares stored hashes, so every map keyed by name (the
+input's, the artifact's, the changed set's) identifies two such names; the
+statements read names structurally (`Ix.nameCompareExact`). -/
+@[expose] def nameHashCollision (env : Ix.Environment) (ixe : Ixon.Env) : Option (Ix.Name × Ix.Name) :=
+  ((env.consts.keys ++ ixe.named.keys).foldl
+    (init := ((∅ : Std.HashMap Address Ix.Name), (none : Option (Ix.Name × Ix.Name))))
+    fun acc n =>
+      match acc.2 with
+      | some _ => acc
+      | none =>
+        match acc.1.get? n.getHash with
+        | some m => if Ix.nameCompareExact m n == .eq then acc else (acc.1, some (m, n))
+        | none => (acc.1.insert n.getHash n, none)).2
+
+/-- `compileReport`'s four checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
 record is on a reference cycle (`referenceCycle`), so the records have an
-order in which none precedes a record it references. -/
+order in which none precedes a record it references. **Distinct name
+hashes:** no two different names among the input's constants and the
+published names share a stored hash (`nameHashCollision`). -/
 @[expose] def checkReport (env : Ix.Environment) (out : Ixon.Env × Failures) :
     Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
   | [], [] =>
     match referenceCycle out.1 with
-    | none => .ok ()
+    | none =>
+      match nameHashCollision env out.1 with
+      | none => .ok ()
+      | some (a, b) =>
+        .error s!"compileReport: name check failed: {a.pretty} and {b.pretty} are different \
+          names with one name hash"
     | some cycle =>
       .error s!"compileReport: reference check failed: {cycle.length} stored record(s) on a \
         reference cycle; first: {cycle.take 5}"
@@ -583,14 +606,15 @@ order in which none precedes a record it references. -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with three checks (`checkReport`):
+condensation it cannot schedule). It ends with four checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
-two; every record and blob is stored at the admission hash of its bytes; and
-no stored record is on a reference cycle. Any inconsistency is an
-error, and no artifact is returned. So coverage, authenticity and an order of
-the records in which none precedes a record it references hold by
-construction (`Ix.Cert.compileCovers`, `Ix.Cert.compileAuthentic`,
-`Ix.Cert.ClosureOrder`'s existence); on a consistent run the result is
+two; every record and blob is stored at the admission hash of its bytes; no
+stored record is on a reference cycle; and no two different input or
+published names share a name hash. Any inconsistency is an
+error, and no artifact is returned. So coverage, authenticity, an order of
+the records in which none precedes a record it references, and distinct name
+hashes hold by construction (`Ix.Cert.compileCovers`, `Ix.Cert.compileAuthentic`,
+`Ix.Cert.ClosureOrder`'s existence, `Ix.Cert.nameHashes_distinct`); on a consistent run the result is
 `compileUnchecked`'s, byte for byte. -/
 @[expose] def compileReport (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
   let out ← compileUnchecked env
