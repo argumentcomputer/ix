@@ -107,6 +107,9 @@
 module
 public import Ix.AuxGen.Kernel
 public import Ix.AuxGen.Oracle
+public import Ix.AuxGen.FlatBlock
+public import Ix.AuxGen.LevelEgress
+public import Ix.AuxGen.FastPaths
 public section
 
 namespace Ix.AuxGen
@@ -128,12 +131,17 @@ def AuxKernel.maps : AuxKernel → AddrMaps
   | .ixc maps _ => maps
 
 /-- Which generator opens a scope: `.below`'s (AuxGen M2) and `.brecOn`'s
-    (AuxGen M3) scopes ask IxC on the `ixc` arm. -/
+    (AuxGen M3) scopes ask IxC on the `ixc` arm; the recursor generator's
+    (AuxGen M4a) do when the oracle says so (`AuxOracle.recursors`, the
+    measurement modes). -/
 inductive AuxRoute where
   | tc
   | below
   /-- `.brecOn`'s scopes (AuxGen M3) -/
   | brecOn
+  /-- the recursor generator's scopes (AuxGen M4): lazy, and `whnf` with
+      names (`OracleScope.whnfNamed`) -/
+  | recursor
   deriving BEq, Inhabited
 
 /-- How `admitSource` loads a source constant. -/
@@ -172,6 +180,8 @@ structure AuxScope where
   /-- The locals from `new`; `pop` cannot remove them. -/
   nOuter : Nat
   backend : AuxScopeBackend
+  /-- the generator that opened it -/
+  route : AuxRoute := .tc
 
 /-! ## The IxC arm's bookkeeping -/
 
@@ -258,6 +268,21 @@ def new (k : AuxKernel) (ctx : Array LocalDecl) (lps : Array Name)
     let (s?, _) ← ixcNew o ctx lps
     return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
              backend := .both (← tcRef view) s? }
+  | .ixc maps o, .recursor =>
+    if o.recursors then
+      -- AuxGen M4: a lazy IxC scope; nothing is asked until a question
+      -- escapes the fast paths, and a refusal surfaces there.
+      checkScopeNames ctx lps
+      let s := o.newLazyScope lps (oracleLocals ctx)
+      if o.mode == .failClosed then
+        return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
+                 backend := .ixc s, route := .recursor }
+      let view ← TcScopeSt.new ctx lps maps
+      return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
+               backend := .both (← tcRef view) (some s), route := .recursor }
+    let view ← TcScopeSt.new ctx lps maps
+    return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
+             backend := .tc (← tcRef view) }
   | k, _ =>
     let view ← TcScopeSt.new ctx lps k.maps
     return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
@@ -401,10 +426,138 @@ private def ixcExprOnly (op : String) (o : OracleScope)
       { st with refused := st.refused + 1 }
     throwBridge (.kernel (.ixc op) err)
 
+/-- A term head, for a sample line. -/
+def headLabel : Expr → String
+  | .const n _ _ => n.pretty
+  | .fvar n _ => s!"fvar {n.pretty}"
+  | .sort .. => "sort"
+  | .forallE .. => "forall"
+  | .lam .. => "lambda"
+  | .letE .. => "let"
+  | .proj n i _ _ => s!"proj {n.pretty}.{i}"
+  | .lit .. => "literal"
+  | .mdata .. => "mdata"
+  | _ => "other"
+
+/-- The first difference between two terms, by kind (AuxGen M4's shadow):
+`"binder name"`, `"binder info"`, `"level"`, `"constant"` or `"shape"`;
+`none` when they are equal. -/
+def diffKind (a b : Expr) : Option String :=
+  if Ix.Compile.ExactKey.exprEq a b then none else
+  match a, b with
+  | .forallE n t c bi _, .forallE m u d bj _ | .lam n t c bi _, .lam m u d bj _ =>
+    if !Ix.Compile.ExactKey.nameEq n m then some "binder name"
+    else if bi != bj then some "binder info"
+    else (diffKind t u).orElse fun _ => diffKind c d
+  | .letE n t v c _ _, .letE m u w d _ _ =>
+    if !Ix.Compile.ExactKey.nameEq n m then some "binder name"
+    else ((diffKind t u).orElse fun _ => diffKind v w).orElse fun _ => diffKind c d
+  | .app f x _, .app g y _ => (diffKind f g).orElse fun _ => diffKind x y
+  | .sort _ _, .sort _ _ => some "level"
+  | .const n us _, .const m vs _ =>
+    if !Ix.Compile.ExactKey.nameEq n m then some "constant"
+    else if us.size != vs.size then some "shape" else some "level"
+  | .proj n i x _, .proj m j y _ =>
+    if !Ix.Compile.ExactKey.nameEq n m || i != j then some "constant" else diffKind x y
+  | _, _ => some "shape"
+
+/-- Count how IxC answered a named `whnf` (AuxGen M4). -/
+private def bumpHow (how : WhnfHow) : KBridgeM Unit :=
+  bumpIxc fun st => match how with
+    | .stuck => { st with recStuck := st.recStuck + 1 }
+    | .same => { st with recSame := st.recSame + 1, recForced := st.recForced + 1 }
+    | .replayed => { st with recReplayed := st.recReplayed + 1, recForced := st.recForced + 1 }
+
+/-- An IxC refusal of a named `whnf`, counted. -/
+private def bumpRecRefused (err : String) : KBridgeM Unit :=
+  bumpIxc fun st => (st.sample s!"rec whnf refused: {err}") |> fun st =>
+    { st with recRefused := st.recRefused + 1, recForced := st.recForced + 1 }
+
+/-- **The recursor generator's `whnf`** on a `recursor` scope (AuxGen M4): IxC's
+named answer (`OracleScope.whnfNamed`); against `Ix.Tc`'s restored answer
+under `shadow` and `fallbackEager` (`named`: the result reaches generated
+binders; otherwise a decision site's); IxC first and `Ix.Tc` behind a
+refusal under `fallback`; IxC alone under `failClosed`. -/
+def whnfRec? (s : AuxScope) (e : Expr) (named : Bool) : KBridgeM (Option Expr) := do
+  match s.backend with
+  | .tc r => (← tcLive r "whnf").whnf? e
+  | .ixc o =>
+    bumpIxc fun st => { st with recWhnf := st.recWhnf + 1 }
+    match o.whnfNamed e with
+    | .ok (w, how, _) =>
+      bumpHow how
+      return some w
+    | .error err =>
+      bumpRecRefused err
+      throwBridge (.kernel (.ixc "whnf") err)
+  | .both r o? =>
+    bumpIxc fun st => { st with recWhnf := st.recWhnf + 1 }
+    if s.kernel.ixcMode? == some .fallback then
+      if let some o := o? then
+        match o.whnfNamed e with
+        | .ok (w, how, _) =>
+          bumpHow how
+          return some w
+        | .error err => bumpRecRefused err
+      else bumpRecRefused "no scope"
+      return ← (← tcLive r "whnf").whnf? e
+    let t ← (← tcLive r "whnf").whnf? e
+    let some o := o? | do
+      bumpRecRefused "no scope"
+      return t
+    match o.whnfNamed e with
+    | .ok (w, how, _) =>
+      bumpHow how
+      let kind := match t with
+        | some t => diffKind t w
+        | none => some "Ix.Tc gave no answer"
+      match kind with
+      | none => bumpIxc fun st => { st with recEqual := st.recEqual + 1 }
+      | some k =>
+        bumpIxc fun st =>
+          let st := { st with recDiffer := st.recDiffer + 1 }
+          let st := if !named then { st with recDecisionDiffer := st.recDecisionDiffer + 1 }
+            else if k == "binder name" then { st with recDiffName := st.recDiffName + 1 }
+            else if k == "binder info" then { st with recDiffInfo := st.recDiffInfo + 1 }
+            else if k == "level" then { st with recDiffLevel := st.recDiffLevel + 1 }
+            else { st with recDiffOther := st.recDiffOther + 1 }
+          st.sample s!"rec whnf differ ({k}, {repr how}, {if named then "named" else "decision"} \
+            site): head {headLabel (decomposeApps (stripMdataRef e)).1}"
+      return if s.kernel.ixcMode? == some .fallbackEager then some w else t
+    | .error err =>
+      bumpRecRefused err
+      return t
+
+/-- AuxGen M4: a `recursor` scope on IxC, where `findRecTarget` skips the
+    Phase 2 of a field that names no member of the block's classes. -/
+def skipsUnmentioned (s : AuxScope) : Bool :=
+  s.route == .recursor && !(s.backend matches .tc _)
+
+/-- AuxGen M4: whether `Ix.Tc` still decides a skipped field (`shadow`,
+    `fallbackEager`), so a disagreement is counted. -/
+def checksSkips (s : AuxScope) : Bool :=
+  s.skipsUnmentioned && (s.kernel.ixcMode? == some .shadow || s.kernel.ixcMode? == some .fallbackEager)
+
+/-- `Ix.Tc`'s `whnf` alone, the input when it gives no answer (AuxGen M4's
+    check of a skipped field); the input on an IxC-only scope. -/
+def whnfTcOrInput (s : AuxScope) (e : Expr) : KBridgeM Expr := do
+  match s.backend with
+  | .tc r | .both r _ => return ((← (← tcLive r "whnf").whnf? e).getD e)
+  | .ixc _ => return e
+
+/-- `Ix.Tc`'s cache warmed with `whnf e`, the result discarded
+    (`findRecTarget`'s pre-warm, which only `Ix.Tc`'s display-name aliasing
+    needs); nothing on IxC. -/
+def warm (s : AuxScope) (e : Expr) : KBridgeM Unit := do
+  match s.backend with
+  | .tc r | .both r _ => discard <| (← tcLive r "whnf").whnf? e
+  | .ixc _ => pure ()
+
 /-- The weak head normal form in the scope; `none` when the kernel gives no
     answer (clause 4). IxC's answer is decision-grade (AuxGen M3: its binder
     names are anonymous; only `.brecOn.eq`'s unit-like test reads it). -/
 def whnf? (s : AuxScope) (e : Expr) : KBridgeM (Option Expr) := do
+  if s.route == .recursor then return ← s.whnfRec? e true
   match s.backend with
   | .tc r => (← tcLive r "whnf").whnf? e
   | .ixc o => ixcExprOnly "whnf" o (·.whnf e)
@@ -476,8 +629,11 @@ def inferType? (s : AuxScope) (e : Expr) : KBridgeM (Option Expr) := do
 
 /-- D-12's fail-open default for `whnf?`, named at each call site: the
     input when the kernel gives no answer (kept for parity; M3 and M4
-    decide it per site). -/
-def whnfOrInput (s : AuxScope) (e : Expr) : KBridgeM Expr :=
+    decide it per site). On a `recursor` scope, `named` says whether the
+    result reaches generated binders (AuxGen M4's shadow counts a decision
+    site's differences apart). -/
+def whnfOrInput (s : AuxScope) (e : Expr) (named : Bool := true) : KBridgeM Expr := do
+  if s.route == .recursor then return (← s.whnfRec? e named).getD e
   return (← s.whnf? e).getD e
 
 /-- D-12's fail-open default for `isDefEq?`: `false` when the kernel gives
@@ -489,12 +645,163 @@ end AuxScope
 
 namespace AuxKernel
 
+/-! ### The elimination decision on IxC (AuxGen M4)
+
+`Ix.Tc`'s `RecM.getResultSortLevel` and `RecM.isLargeEliminator` (Lean's
+`elim_only_at_universe_zero`), ported onto an IxC lazy scope: telescopes
+peeled syntactically, through `whnf` where a head is stuck; levels by
+`getLevel` (its `inferAppType` fast path first). IxC's acceptance of the
+generated recursor (the canonical block, M4) validates the decision; the
+shadow compares it with `Ix.Tc`'s. -/
+
+/-- Always zero, whatever the parameters (`Ix.Tc`'s `isSemanticZero`, and
+`univEq _ zero`). -/
+def levelAlwaysZero : Level → Bool
+  | .zero _ => true
+  | .max a b _ => levelAlwaysZero a && levelAlwaysZero b
+  | .imax _ b _ => levelAlwaysZero b
+  | _ => false
+
+/-- Never zero (`Ix.Tc`'s `KUniv.isNeverZero`). -/
+def levelNeverZero : Level → Bool
+  | .succ _ _ => true
+  | .max a b _ => levelNeverZero a || levelNeverZero b
+  | .imax _ b _ => levelNeverZero b
+  | _ => false
+
+/-- The decision's fresh local names. -/
+private def elimLocal (s : String) (i : Nat) : Name :=
+  Name.mkNat (Name.mkStr (Name.mkStr Name.mkAnon "_ixelim") s) i
+
+/-- Peel one `∀` of `ty` into `sc` (through `whnf` when the head is not a
+`∀`): the scope with the binder pushed, the body instantiated, the domain,
+whether the service was needed; `none` when there is no `∀`. -/
+private def elimPeel (sc : OracleScope) (ty : Expr) (name : Name) :
+    Except String (Option (OracleScope × Expr × Expr × Bool)) := do
+  let (w, forced) ← match ty with
+    | .forallE .. => pure (ty, false)
+    | _ => do
+      let (w, how, _) ← sc.whnfNamed ty
+      pure (w, how != .stuck)
+  match w with
+  | .forallE _ dom body _ _ =>
+    let sc ← sc.push #[(name, dom)]
+    return some (sc, instantiate1 body (Expr.mkFVar name), dom, forced)
+  | _ => return none
+
+/-- **The elimination decision from IxC's services**, and whether the
+service was needed (a question escaped the fast paths). -/
+def ixcElimDecision (o : AuxOracle) (originals : Array (InductiveVal × Array ConstructorVal))
+    (nParams nFlat : Nat) : Except String (ElimDecision × Bool) := do
+  let some (first, ctors0) := originals[0]? | throw "elimination: no class"
+  let lps := first.cnst.levelParams
+  let mut forced := false
+  -- the result sort, after the parameters and indices
+  let mut sc := o.newLazyScope lps #[]
+  let mut ty := first.cnst.type
+  for i in [0:nParams + first.numIndices] do
+    match ← elimPeel sc ty (elimLocal "r" i) with
+    | some (sc', body, _, f) =>
+      sc := sc'
+      ty := body
+      forced := forced || f
+    | none => throw s!"get_result_sort_level: expected {nParams + first.numIndices} foralls, \
+        only found {i}"
+  let w ← match ty with
+    | .sort .. => pure ty
+    | _ => do
+      let (w, how, _) ← sc.whnfNamed ty
+      forced := forced || how != .stuck
+      pure w
+  let .sort u _ := w | throw "get_result_sort_level: not a sort"
+  let resultLevel := Egress.normalize u
+  let isProp := levelAlwaysZero resultLevel
+  if !levelNeverZero resultLevel && nFlat != 1 then
+    return ({ isLarge := false, isProp }, forced)
+  -- `isLargeEliminator`
+  if levelNeverZero resultLevel then return ({ isLarge := true, isProp }, forced)
+  if originals.size != 1 then return ({ isLarge := false, isProp }, forced)
+  match ctors0.size with
+  | 0 => return ({ isLarge := true, isProp }, forced)
+  | 1 =>
+    let some ctor := ctors0[0]? | throw "elimination: constructor"
+    if ctor.numFields == 0 then return ({ isLarge := true, isProp }, forced)
+    sc := o.newLazyScope lps #[]
+    ty := ctor.cnst.type
+    let mut nonTrivial : Array Nat := #[]
+    let mut fields : Array Name := #[]
+    for i in [0:nParams + ctor.numFields] do
+      let name := elimLocal "f" i
+      match ← elimPeel sc ty name with
+      | some (sc', body, dom, f) =>
+        forced := forced || f
+        if i ≥ nParams then
+          let (lvl, fast, _) ← sc.getLevel dom
+          forced := forced || !fast
+          if !levelAlwaysZero lvl then nonTrivial := nonTrivial.push (i - nParams)
+          fields := fields.push name
+        sc := sc'
+        ty := body
+      | none => break
+    let (_, retArgs) := decomposeApps ty
+    let isLarge := nonTrivial.all fun fi =>
+      match fields[fi]? with
+      | some target => retArgs.any fun arg => match arg with
+        | .fvar n _ => Ix.Compile.ExactKey.nameEq n target
+        | _ => false
+      | none => false
+    return ({ isLarge, isProp }, forced)
+  | _ => return ({ isLarge := false, isProp }, forced)
+
 /-- The elimination decision for a block's original classes, in an expanded
-    block of `nFlat` members (clause 8). `Ix.Tc`'s on both arms. -/
+    block of `nFlat` members (clause 8). `Ix.Tc`'s, except on the `ixc` arm
+    with `AuxOracle.recursors` (AuxGen M4a, the measurement modes): IxC's
+    (`ixcElimDecision`), compared with `Ix.Tc`'s under `shadow` and
+    `fallbackEager`, `Ix.Tc`'s behind a refusal under `fallback`, alone under
+    `failClosed`. -/
 def elimDecision (k : AuxKernel)
     (originals : Array (InductiveVal × Array ConstructorVal)) (nParams nFlat : Nat) :
-    KBridgeM ElimDecision :=
-  tcElimDecision originals nParams nFlat k.maps
+    KBridgeM ElimDecision := do
+  match k with
+  | .ixc maps o =>
+    if !o.recursors then return ← tcElimDecision originals nParams nFlat maps
+    bumpIxc fun st => { st with elim := st.elim + 1 }
+    let ixc := ixcElimDecision o originals nParams nFlat
+    if let .ok (_, forced) := ixc then
+      if forced then bumpIxc fun st => { st with recForced := st.recForced + 1 }
+    let refused (e : String) : KBridgeM Unit :=
+      bumpIxc fun st => (st.sample s!"elimination refused: {e}") |> fun st =>
+        { st with elimRefused := st.elimRefused + 1 }
+    -- `Ix.Tc`'s later users of the block read the kenv inserts its decision
+    -- makes; keep them where `Ix.Tc` does not decide.
+    if o.mode == .failClosed || o.mode == .fallback then
+      discard <| tcElimAdmit originals nParams maps
+    match o.mode with
+    | .failClosed =>
+      match ixc with
+      | .ok (d, _) => return d
+      | .error e =>
+        refused e
+        throwBridge (.kernel (.ixc "elimination") e)
+    | .fallback =>
+      match ixc with
+      | .ok (d, _) => return d
+      | .error e =>
+        refused e
+        tcElimDecision originals nParams nFlat maps
+    | _ =>
+      let t ← tcElimDecision originals nParams nFlat maps
+      match ixc with
+      | .ok (d, _) =>
+        if d == t then bumpIxc fun st => { st with elimEqual := st.elimEqual + 1 }
+        else bumpIxc fun st => (st.sample s!"elimination differ: Ix.Tc \
+            (large {t.isLarge}, prop {t.isProp}), IxC (large {d.isLarge}, prop {d.isProp})") |>
+          fun st => { st with elimDiffer := st.elimDiffer + 1 }
+        return if o.mode == .fallbackEager then d else t
+      | .error e =>
+        refused e
+        return t
+  | .tc maps => tcElimDecision originals nParams nFlat maps
 
 /-- Admit the prelude constants the generators name (`PUnit`, `PProd`). -/
 def admitPrelude (k : AuxKernel) : KBridgeM Unit :=
@@ -556,6 +863,56 @@ def withFlatBlock (k : AuxKernel) (classes : Array (Array Name)) (originalAll : 
         { st with flatRefused := st.flatRefused + 1 }
       if o.mode == .failClosed then throwBridge (.kernel (.ixc "flat block") e)
       return k
+
+/-- Two recursors equal as declarations, names and binder data included. -/
+def sameRecursor (a b : RecursorVal) : Bool :=
+  open Ix.Compile.ExactKey in
+  nameEq a.cnst.name b.cnst.name && a.cnst.levelParams.isEqv b.cnst.levelParams nameEq
+    && exprEq a.cnst.type b.cnst.type && a.all.isEqv b.all nameEq
+    && a.numParams == b.numParams && a.numIndices == b.numIndices
+    && a.numMotives == b.numMotives && a.numMinors == b.numMinors
+    && a.k == b.k && a.isUnsafe == b.isUnsafe && a.rules.size == b.rules.size
+    && (a.rules.zip b.rules).all fun (r, s) =>
+      nameEq r.ctor s.ctor && r.nfields == s.nfields && exprEq r.rhs s.rhs
+
+/-- **The canonical block checked by Source mode** (AuxGen M4a; the
+measurement modes, `AuxOracle.recursors`), right after the recursors are
+generated: for a block whose layout is not Lean's, its canonical flat block,
+the generated recursors included, installed through σ (`withFlatBlock`;
+IxC's install is the check, counted as `flat` installed or refused); for a
+block whose layout is Lean's, each generated recursor compared with Lean's
+own (`leanRecSame`, `leanRecDiffer`), whose acceptance is the input's. The
+kernel after it, and whether the check ran (then `.below` needs no second
+install). -/
+def checkCanonicalBlock (k : AuxKernel) (classes : Array (Array Name))
+    (originalAll : Array Name) (canonicalRecs : Array (Name × RecursorVal)) :
+    KBridgeM (AuxKernel × Bool) := do
+  match k with
+  | .tc _ => return (k, false)
+  | .ixc _ o =>
+    if !o.recursors then return (k, false)
+    let nClasses := classes.size
+    let auxNames := (canonicalRecs.extract nClasses canonicalRecs.size).map (·.1)
+    let leanNested ← match originalAll[0]? with
+      | some n => do
+        match ← lookupConst? n with
+        | some (.inductInfo v) => pure v.numNested
+        | _ => pure 0
+      | none => pure 0
+    if Flat.needed classes originalAll auxNames leanNested then
+      return (← k.withFlatBlock classes originalAll canonicalRecs, true)
+    for (n, rv) in canonicalRecs do
+      match ← lookupConst? n with
+      | some (.recInfo lean) =>
+        if sameRecursor rv lean then
+          bumpIxc fun st => { st with leanRecSame := st.leanRecSame + 1 }
+        else
+          bumpIxc fun st => (st.sample s!"canonical recursor differs from Lean's: {n.pretty}") |>
+            fun st => { st with leanRecDiffer := st.leanRecDiffer + 1 }
+      | _ =>
+        bumpIxc fun st => (st.sample s!"no Lean recursor: {n.pretty}") |>
+          fun st => { st with leanRecDiffer := st.leanRecDiffer + 1 }
+    return (k, true)
 
 end AuxKernel
 

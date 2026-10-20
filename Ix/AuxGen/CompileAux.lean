@@ -689,8 +689,10 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
   if classes.isEmpty then
     return ()
 
+  -- AuxGen M4a: the generated Prop-level `.below` family is not in IxC's
+  -- environment (nothing admits it), so its recursors ask `Ix.Tc`.
   let (recs, _) ← generateCanonicalRecursorsWithOverlay classes
-    (some overlay) none kernel
+    (some overlay) none (.tc kernel.maps)
   let mut belowRecs : Array MutConst := #[]
   for (_, rv) in recs do
     belowRecs := belowRecs.push (.recr rv)

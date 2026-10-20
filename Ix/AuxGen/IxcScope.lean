@@ -52,6 +52,7 @@ public import Ix.AuxGen.Oracle
 public import Ix.AuxGen.SourceService
 public import Ix.AuxGen.LevelEgress
 public import Ix.AuxGen.Levels
+public import Ix.AuxGen.FastPaths
 public section
 
 namespace Ix.AuxGen.Ixc
@@ -65,61 +66,74 @@ def scopeFuel : Nat := 1000000
 /-- The fuel of one oracle chain: flat-block installs. -/
 def oracleFuel : Nat := 4
 
-/-! ## The fast path -/
+/-! ## Named `whnf` (AuxGen M4)
 
-/-- `Ix.Tc`'s `isNotZeroLevel`. -/
-def isNotZero : Level → Bool
-  | .succ _ _ => true
-  | .max a b _ => isNotZero a || isNotZero b
-  | .imax _ b _ => isNotZero b
-  | _ => false
+The recursor generator's `whnf` results reach generated binder names
+(`AUXGEN-IXC.md` §1.3, F1–F3), so its answers are spelled as `Ix.Tc`'s
+`whnf?` spells them, not decision-grade:
+* **nothing reduces** (IxC's result is its input): the input, as `Ix.Tc`'s
+  same-content restoration returns it (the source's names and infos, mdata
+  dropped, levels as `Ix.Tc`'s ingress builds them: `tcSpelling`);
+* **a reduction**: the **named replay** (`replay`), the same head
+  reduction redone on the Lean term (delta with the head constant's Lean
+  definition, β, `let`), so the definition's own binder names survive;
+  accepted only when it ingresses to IxC's result, else refused.
+A syntactically stuck head (`stuckHead`) answers without the service. -/
 
-/-- `Ix.Tc`'s `kunivToLevelWithConstLevels` on a Lean level in `Ix.Tc`'s
-shape (`Egress.normalize`): the head constant's level parameter `cLps[i]` is
-its argument `us[i]`, `max` through `levelMax`, `imax` by Lean's `mk_imax`
-rules. A parameter that is not the head's, or has no argument, is refused. -/
-def constLevelSubst (cLps : Array Name) (us : Array Level) : Level → Except String Level
-  | .zero _ => pure Level.mkZero
-  | .succ u _ => return Level.mkSucc (← constLevelSubst cLps us u)
-  | .max a b _ => return levelMax (← constLevelSubst cLps us a) (← constLevelSubst cLps us b)
-  | .imax a b _ => do
-    let la ← constLevelSubst cLps us a
-    let lb ← constLevelSubst cLps us b
-    return if isNotZero lb then levelMax la lb
-      else if lb matches .zero _ then lb
-      else if la matches .zero _ then lb
-      else if la matches .succ (.zero _) _ then lb
-      else if la == lb then la
-      else Level.mkIMax la lb
-  | .param n _ =>
-    match cLps.findIdx? (· == n) with
-    | some i =>
-      match us[i]? with
-      | some l => pure l
-      | none => throw s!"fast path: constant universe argument index {i} out of range"
-    | none => throw s!"fast path: level parameter {n.pretty} is not the head constant's"
-  | .mvar _ _ => throw "fast path: level metavariable"
-
-/-- A term with its metadata wrappers removed. -/
-def stripMData : Expr → Expr
-  | .mdata _ e _ => stripMData e
+/-- A term as `Ix.Tc`'s `whnf` spells it back: mdata dropped, each level
+rebuilt as `Ix.Tc`'s ingress builds it (`Egress.normalize`). -/
+def tcSpelling : Expr → Expr
+  | .mdata _ e _ => tcSpelling e
+  | .sort u _ => Expr.mkSort (Egress.normalize u)
+  | .const n us _ => Expr.mkConst n (us.map Egress.normalize)
+  | .app f a _ => Expr.mkApp (tcSpelling f) (tcSpelling a)
+  | .lam n t b bi _ => Expr.mkLam n (tcSpelling t) (tcSpelling b) bi
+  | .forallE n t b bi _ => Expr.mkForallE n (tcSpelling t) (tcSpelling b) bi
+  | .letE n t v b nd _ => Expr.mkLetE n (tcSpelling t) (tcSpelling v) (tcSpelling b) nd
+  | .proj n i e _ => Expr.mkProj n i (tcSpelling e)
   | e => e
 
-/-- **The `inferAppType` fast path** on the head's Lean type: `some` level
-when `ty` is a constant applied to as many arguments as its type has leading
-∀s and the body is a sort. -/
-def fastLevel (get? : Name → Option ConstantInfo) (ty : Expr) : Except String (Option Level) := do
-  let (head, args) := decomposeApps ty
-  let .const name us _ := head | return none
-  let some ci := get? name | return none
-  let cv := ci.getCnst
-  let mut cur := stripMData cv.type
-  for _ in [0:args.size] do
-    match cur with
-    | .forallE _ _ body _ _ => cur := stripMData body
-    | _ => return none
-  let .sort u _ := cur | return none
-  return some (← constLevelSubst cv.levelParams us (Egress.normalize u))
+/-- The fuel of one named replay (head steps). -/
+def replayFuel : Nat := 256
+
+/-- **The named replay**: head steps until none applies, at most `fuel`:
+β; `let` (ζ); delta with the head constant's Lean definition, its levels
+substituted; a projection of a structure value that replays to a
+constructor application (the field). Anything else (a recursor, a literal
+operation, a theorem) stops it: `whnfNamedExpr` then finds IxC's result
+different and refuses. `none` when the fuel runs out. -/
+def replay (get? : Name → Option ConstantInfo) : Nat → Expr → Option Expr
+  | 0, _ => none
+  | n + 1, e =>
+    let (head, args) := decomposeApps (stripMData e)
+    match stripMData head with
+    | .lam _ _ body _ _ =>
+      match args[0]? with
+      | some a => replay get? n (mkAppN (instantiate1 body a) (args.extract 1 args.size))
+      | none => some e
+    | .letE _ _ v b _ _ => replay get? n (mkAppN (instantiate1 b v) args)
+    | .const c us _ =>
+      match get? c with
+      | some (.defnInfo d) => replay get? n (mkAppN (substLevels d.value d.cnst.levelParams us) args)
+      | _ => some e
+    | .proj _ i x _ =>
+      match replay get? n x with
+      | some x' =>
+        match replayField get? (stripMData x') i with
+        | some fld => replay get? n (mkAppN fld args)
+        | none => some e
+      | none => none
+    | _ => some e
+where
+  /-- Field `i` of a constructor application. -/
+  replayField (get? : Name → Option ConstantInfo) (x : Expr) (i : Nat) : Option Expr :=
+    let (h, xs) := decomposeApps x
+    match stripMData h with
+    | .const c _ _ =>
+      match get? c with
+      | some (.ctorInfo cv) => xs[cv.numParams + i]?
+      | _ => none
+    | _ => none
 
 /-! ## The scope -/
 
@@ -292,6 +306,46 @@ def defEq (s : Scope) (a b : Expr) : Except String (Bool × Scope) := do
     let b' ← r.annotate d kb
     r.defeq d a' b'
 
+/-- **The weak head normal form with names** (AuxGen M4, `OracleScope.whnfNamed`):
+the input when IxC does not reduce it, else the named replay when it
+ingresses to IxC's result; both spelled as `Ix.Tc` spells its answer. -/
+def whnfNamedExpr (get? : Name → Option ConstantInfo) (s : Scope) (e : Expr) :
+    Except String (Expr × WhnfHow × Scope) := do
+  let d := s.depth
+  let k ← s.term e
+  let ((k', w), s) ← s.run fun r => do
+    let k' ← r.annotate d k
+    let w ← r.whnf d k'
+    pure (k', w)
+  let some rep := replay get? replayFuel e | throw "replay: out of fuel"
+  -- No head step applies: IxC must have left the head as it was. (Annotation
+  -- ζ-reduces `let`s, so the head's own `let` is a replay step, not this.)
+  let unreduced := Ix.Compile.ExactKey.exprEq rep e
+  if unreduced && k' == w then return (tcSpelling e, .same, s)
+  let (kr', s) ← if unreduced then pure (k', s) else do
+    let kr ← s.term rep
+    s.run fun r => r.annotate d kr
+  if !unreduced && kr' == w then return (tcSpelling rep, .replayed, s)
+  let label (x : Expr) : String :=
+    match (decomposeApps (stripMData x)).1 with
+    | .const n _ _ => n.pretty
+    | .fvar n _ => s!"fvar {n.pretty}"
+    | .forallE .. => "forall"
+    | .lam .. => "lambda"
+    | .sort .. => "sort"
+    | .proj n i _ _ => s!"proj {n.pretty}.{i}"
+    | .letE .. => "let"
+    | .lit .. => "literal"
+    | _ => "other"
+  let ixcHead := match s.egress w with
+    | .ok x => label x
+    | .error err => s!"(egress: {err})"
+  let sameModMeta := match s.egress w, s.egress kr' with
+    | .ok a, .ok b => Ix.Compile.ExactKey.exprEq a b
+    | _, _ => false
+  throw s!"replay: the replayed term is not IxC's whnf (input head {label e}, replay head \
+    {label rep}, IxC head {ixcHead}, equal after egress {sameModMeta})"
+
 end Scope
 
 /-- **The scope as an `OracleScope`**, with `fuel` operations left. -/
@@ -299,6 +353,7 @@ def ofScope (get? : Name → Option ConstantInfo) : Nat → Scope → OracleScop
   | 0, _ =>
     let out {α} : Except String α := .error "scope fuel exhausted"
     .mk (fun _ => out) (fun _ => out) (fun _ => out) (fun _ => out) (fun _ => out) (fun _ _ => out)
+      (fun _ => out)
   | n + 1, s =>
     .mk
       (fun ty => (s.getLevel get? ty).map fun (l, fast, s') => (l, fast, ofScope get? n s'))
@@ -307,6 +362,64 @@ def ofScope (get? : Name → Option ConstantInfo) : Nat → Scope → OracleScop
       (fun e => (s.inferExpr e).map fun (t, s') => (t, ofScope get? n s'))
       (fun e => (s.whnfExpr e).map fun (w, s') => (w, ofScope get? n s'))
       (fun a b => (s.defEq a b).map fun (q, s') => (q, ofScope get? n s'))
+      (fun e => (s.whnfNamedExpr get? e).map fun (w, how, s') => (w, how, ofScope get? n s'))
+
+/-- The level of a local's type read off its declared domain: `some u` when
+`ty` is a local whose domain is syntactically `Sort u` (spelled as `Ix.Tc`
+spells it), as `Ix.Tc` infers it. -/
+def localLevel (locals : Array (Name × Expr)) (ty : Expr) : Option Level :=
+  match stripMData ty with
+  | .fvar x _ =>
+    match locals.findRev? (Ix.Compile.ExactKey.nameEq ·.1 x) with
+    | some (_, d) =>
+      match stripMData d with
+      | .sort u _ => some (Egress.normalize u)
+      | _ => none
+    | none => none
+  | _ => none
+
+/-- **A lazy scope** (AuxGen M4): the scope a thunk gives, built only when a
+question escapes the fast paths, which need only the input's declarations
+(`get?`): the `inferAppType` level (`fastLevel`) and a syntactically stuck
+`whnf` (`stuckHead`). A local whose domain is syntactically a sort has
+that sort's level (`localLevel`; `ls`: the locals pushed so far, outermost
+first). Pushes and pops compose the thunk. A refusal (the
+service's, or a local's annotation) surfaces at the question that forces
+it. -/
+def ofLazy (get? : Name → Option ConstantInfo) :
+    Nat → Array (Name × Expr) → Thunk (Except String Scope) → OracleScope
+  | 0, _, _ =>
+    let out {α} : Except String α := .error "scope fuel exhausted"
+    .mk (fun _ => out) (fun _ => out) (fun _ => out) (fun _ => out) (fun _ => out) (fun _ _ => out)
+      (fun _ => out)
+  | n + 1, ls, t =>
+    .mk
+      (fun ty => match fastLevel get? ty with
+        | .ok (some l) => .ok (l, true, ofLazy get? n ls t)
+        | _ =>
+          match localLevel ls ty with
+          | some l => .ok (l, true, ofLazy get? n ls t)
+          | none => do
+            let (l, fast, s') ← (← t.get).getLevel get? ty
+            pure (l, fast, ofScope get? n s'))
+      (fun locals => .ok (ofLazy get? n (ls ++ locals) (Thunk.mk fun _ => do (← t.get).push locals)))
+      (fun k => .ok (ofLazy get? n (ls.extract 0 (ls.size - k)) (Thunk.mk fun _ => do (← t.get).pop k)))
+      (fun e => do
+        let (ty, s') ← (← t.get).inferExpr e
+        pure (ty, ofScope get? n s'))
+      (fun e =>
+        if stuckHead get? e then .ok (e, ofLazy get? n ls t)
+        else do
+          let (w, s') ← (← t.get).whnfExpr e
+          pure (w, ofScope get? n s'))
+      (fun a b => do
+        let (q, s') ← (← t.get).defEq a b
+        pure (q, ofScope get? n s'))
+      (fun e =>
+        if stuckHead get? e then .ok (tcSpelling e, .stuck, ofLazy get? n ls t)
+        else do
+          let (w, how, s') ← (← t.get).whnfNamedExpr get? e
+          pure (w, how, ofScope get? n s'))
 
 /-! ## The oracle -/
 
@@ -346,14 +459,31 @@ def admitBelowIn (svc : Service) (defs : Array BelowDef) : Service × Nat × Nat
     if st.isAccepted then ok := ok + 1 else bad := bad + 1
   return (svc, ok, bad)
 
+/-- **The block's facts the oracle carries besides its service** (AuxGen
+M4): whether the recursor generator asks IxC (`recursors`), whether the
+run-ahead asked for the block (`asked`), and the input's declarations
+(`lookup`), which the lazy scopes' fast paths read without the service. -/
+structure OracleFacts where
+  recursors : Bool := false
+  asked : Bool := true
+  lookup : Name → Option ConstantInfo := fun _ => none
+  /-- the block's members: a lazy scope over a block the service did not
+  accept says why -/
+  members : Array Name := #[]
+
+instance : Inhabited OracleFacts := ⟨{}⟩
+
 /-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
 the first question; the drivers' snapshot is a task), in `mode` (tracing the
 tail's counts under `trace`), with `fuel` installs left (the flat block, the
 generated `.below`). -/
-def oracleOf (mode : IxcMode) (trace : Bool) : Nat → (Unit → Except String Service) → AuxOracle
+def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts) :
+    Nat → (Unit → Except String Service) → AuxOracle
   | 0, _ =>
     .mk mode trace (fun _ _ => .error "oracle fuel exhausted")
       (fun _ _ _ => .error "oracle fuel exhausted") (fun _ => .error "oracle fuel exhausted")
+      facts.recursors facts.asked
+      (fun _ locals => ofLazy facts.lookup scopeFuel locals (Thunk.pure (.error "oracle fuel exhausted")))
   | n + 1, svc =>
     .mk mode trace
       (fun lps locals => do
@@ -365,11 +495,19 @@ def oracleOf (mode : IxcMode) (trace : Bool) : Nat → (Unit → Except String S
         let svc ← svc ()
         match ← installOwnFlat svc classes originalAll canonicalRecs with
         | none => pure none
-        | some svc' => pure (some (oracleOf mode trace n fun _ => .ok svc')))
+        | some svc' => pure (some (oracleOf mode trace facts n fun _ => .ok svc')))
       (fun defs => do
         let svc ← svc ()
         let (svc', ok, bad) := admitBelowIn svc defs
-        pure (oracleOf mode trace n fun _ => .ok svc', ok, bad))
+        pure (oracleOf mode trace facts n fun _ => .ok svc', ok, bad))
+      facts.recursors facts.asked
+      (fun lps locals =>
+        ofLazy facts.lookup scopeFuel locals (Thunk.mk fun _ => do
+          let svc ← svc ()
+          if let some why := Source.Run.blockReason? svc facts.members then
+            throw s!"the block is not accepted in Source mode: {why}"
+          let s ← Scope.new svc.env lps
+          s.push locals))
 
 /-- **One block's oracle over the snapshot `run`** (a run of the drivers'
 service), with the block's `members` folded first (`Service.ensureNames`): a
@@ -377,12 +515,12 @@ no-op when the run asked for the block, and otherwise its groups and what they
 depend on, folded on this block's copy of the snapshot, so a block the asks
 did not select is still answered. The service is taken once, at the first
 question, and shared by the block's scopes. `trace`: the tail traces its
-counts. -/
-def oracleOfRun (mode : IxcMode) (trace : Bool) (run : Unit → Source.Run) (members : Array Name) :
-    AuxOracle :=
+counts; `facts`: AuxGen M4's (production: recursors on `Ix.Tc`). -/
+def oracleOfRun (mode : IxcMode) (trace : Bool) (run : Unit → Source.Run) (members : Array Name)
+    (facts : OracleFacts := {}) : AuxOracle :=
   let svc : Thunk (Except String Service) :=
     Thunk.mk fun _ => (run ()).service.map (·.ensureNames members)
-  oracleOf mode trace oracleFuel fun _ => svc.get
+  oracleOf mode trace { facts with members } oracleFuel fun _ => svc.get
 
 end Ix.AuxGen.Ixc
 

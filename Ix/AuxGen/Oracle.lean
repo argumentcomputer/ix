@@ -92,11 +92,23 @@ instance : ToString IxcMode where
 
 end IxcMode
 
+/-- **How a named `whnf` was answered** (AuxGen M4). -/
+inductive WhnfHow where
+  /-- the head is syntactically stuck (a free variable, a sort, a `∀`, a
+  literal, an unapplied `λ`, or an inductive, constructor, axiom, opaque or
+  `Quot` head): its own whnf, and the service is not asked -/
+  | stuck
+  /-- IxC did not reduce it -/
+  | same
+  /-- IxC reduced it, and the named replay reproduced IxC's result -/
+  | replayed
+  deriving BEq, Inhabited, Repr
+
 /-- **A local context IxC answers in**, as an object: each operation returns
 the context after it. Free variables are named by their `LocalDecl.fvarName`
 (`Ix.AuxGen.LocalDecl`), level parameters by their names.
 
-`mk getLevel push pop infer whnf isDefEq`:
+`mk getLevel push pop infer whnf isDefEq whnfNamed`:
 * `getLevel ty`: the sort level of the type `ty` in the context, spelled as
   `Ix.Tc` builds levels; whether the `inferAppType` fast path gave it; the
   context after the query;
@@ -108,7 +120,13 @@ the context after it. Free variables are named by their `LocalDecl.fvarName`
   term over the context, but its binder names are anonymous; AuxGen reads
   such results only to decide (`.brecOn.eq`'s unit-like test), never emits
   them;
-* `isDefEq a b`: definitional equality in the context. -/
+* `isDefEq a b`: definitional equality in the context;
+* `whnfNamed e`: the weak head normal form of `e` **with names** (AuxGen
+  M4), for the recursor generator, whose `whnf` results reach generated
+  binder names: the input itself, mdata dropped and levels spelled as
+  `Ix.Tc` builds them, when nothing reduces; otherwise the **named
+  replay** (delta with the Lean definition, β, `let`, the same spelling),
+  accepted only when it ingresses to IxC's result; how it was answered. -/
 inductive OracleScope where
   | mk (getLevel : Expr → Except String (Level × Bool × OracleScope))
       (push : Array (Name × Expr) → Except String OracleScope)
@@ -116,32 +134,36 @@ inductive OracleScope where
       (infer : Expr → Except String (Expr × OracleScope))
       (whnf : Expr → Except String (Expr × OracleScope))
       (isDefEq : Expr → Expr → Except String (Bool × OracleScope))
+      (whnfNamed : Expr → Except String (Expr × WhnfHow × OracleScope))
 
 namespace OracleScope
 
 def getLevel : OracleScope → Expr → Except String (Level × Bool × OracleScope)
-  | .mk f _ _ _ _ _ => f
+  | .mk f _ _ _ _ _ _ => f
 
 def push : OracleScope → Array (Name × Expr) → Except String OracleScope
-  | .mk _ f _ _ _ _ => f
+  | .mk _ f _ _ _ _ _ => f
 
 def pop : OracleScope → Nat → Except String OracleScope
-  | .mk _ _ f _ _ _ => f
+  | .mk _ _ f _ _ _ _ => f
 
 def infer : OracleScope → Expr → Except String (Expr × OracleScope)
-  | .mk _ _ _ f _ _ => f
+  | .mk _ _ _ f _ _ _ => f
 
 def whnf : OracleScope → Expr → Except String (Expr × OracleScope)
-  | .mk _ _ _ _ f _ => f
+  | .mk _ _ _ _ f _ _ => f
 
 def isDefEq : OracleScope → Expr → Expr → Except String (Bool × OracleScope)
-  | .mk _ _ _ _ _ f => f
+  | .mk _ _ _ _ _ f _ => f
+
+def whnfNamed : OracleScope → Expr → Except String (Expr × WhnfHow × OracleScope)
+  | .mk _ _ _ _ _ _ f => f
 
 end OracleScope
 
 /-- **One block's IxC oracle** (AuxGen M2a).
 
-`mk mode trace newScope withFlat admitBelow`:
+`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope`:
 * `mode`: how AuxGen uses the answers;
 * `trace`: whether the tail traces its counts (the measurement modes);
 * `newScope lps locals`: a context over the level parameters `lps` and the
@@ -154,31 +176,51 @@ end OracleScope
   made visible to later questions (AuxGen M3; the `AuxKernel` contract's
   clause 9), each admitted through σ under its fresh name: the oracle after
   them, and how many were admitted and refused. (A Prop-level family is not
-  admitted: the Prop-level `.brecOn` asks the kernel nothing.) -/
+  admitted: the Prop-level `.brecOn` asks the kernel nothing.)
+* `recursors`: whether the recursor generator and the elimination decision
+  ask IxC (AuxGen M4a: the measurement modes only; production keeps
+  `Ix.Tc` there);
+* `asked`: whether the drivers' run-ahead asked for the block (a block it
+  did not ask for folds its groups on its own copy at its first question);
+* `newLazyScope lps locals`: `newScope`, lazily (AuxGen M4): nothing is
+  asked of the service until a question escapes the fast paths (the
+  `inferAppType` level, a syntactically stuck `whnf`), and a refusal
+  surfaces at that question. -/
 inductive AuxOracle where
   | mk (mode : IxcMode) (trace : Bool)
       (newScope : Array Name → Array (Name × Expr) → Except String OracleScope)
       (withFlat : Array (Array Name) → Array Name → Array (Name × RecursorVal) →
         Except String (Option AuxOracle))
       (admitBelow : Array BelowDef → Except String (AuxOracle × Nat × Nat))
+      (recursors asked : Bool)
+      (newLazyScope : Array Name → Array (Name × Expr) → OracleScope)
 
 namespace AuxOracle
 
 def mode : AuxOracle → IxcMode
-  | .mk m _ _ _ _ => m
+  | .mk m _ _ _ _ _ _ _ => m
 
 def trace : AuxOracle → Bool
-  | .mk _ t _ _ _ => t
+  | .mk _ t _ _ _ _ _ _ => t
 
 def newScope : AuxOracle → Array Name → Array (Name × Expr) → Except String OracleScope
-  | .mk _ _ f _ _ => f
+  | .mk _ _ f _ _ _ _ _ => f
 
 def withFlat : AuxOracle → Array (Array Name) → Array Name → Array (Name × RecursorVal) →
     Except String (Option AuxOracle)
-  | .mk _ _ _ f _ => f
+  | .mk _ _ _ f _ _ _ _ => f
 
 def admitBelow : AuxOracle → Array BelowDef → Except String (AuxOracle × Nat × Nat)
-  | .mk _ _ _ _ f => f
+  | .mk _ _ _ _ f _ _ _ => f
+
+def recursors : AuxOracle → Bool
+  | .mk _ _ _ _ _ r _ _ => r
+
+def asked : AuxOracle → Bool
+  | .mk _ _ _ _ _ _ a _ => a
+
+def newLazyScope : AuxOracle → Array Name → Array (Name × Expr) → OracleScope
+  | .mk _ _ _ _ _ _ _ f => f
 
 end AuxOracle
 

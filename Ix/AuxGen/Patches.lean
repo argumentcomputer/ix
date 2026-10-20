@@ -278,6 +278,10 @@ refusing to synthesize canonical-indexed _N names")
     for (recName, recVal) in canonicalRecs do
       patches := patches.insert recName (.recr recVal)
 
+  -- AuxGen M4a: the canonical block checked by Source mode right after its
+  -- recursors (the measurement modes only; `AuxKernel.checkCanonicalBlock`).
+  let (kernel, canonChecked) ← kernel.checkCanonicalBlock sortedClasses originalAll canonicalRecs
+
   -- Phase 1b: Generate `.casesOn` definitions (aux_gen.rs:560-583).
   -- `.casesOn` is a definition that wraps `.rec`, stripping IH fields
   -- from minors and replacing non-target motives with PUnit. Needed by
@@ -340,7 +344,7 @@ refusing to synthesize canonical-indexed _N names")
     -- AuxGen M2a: a Type-level `.below` asks its kernel for levels; an IxC
     -- oracle first installs the block's own canonical flat block
     -- (`AuxKernel.withFlatBlock`; `Ix.Tc` needs nothing).
-    let belowKernel ← if isProp then pure kernel
+    let belowKernel ← if isProp || canonChecked then pure kernel
       else kernel.withFlatBlock sortedClasses originalAll canonicalRecs
     let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
       isProp belowKernel (allAux := true)

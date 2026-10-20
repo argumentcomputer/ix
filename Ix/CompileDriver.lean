@@ -152,7 +152,8 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
       maps kernel).run Ix.AuxGen.AuxKernelCtx.new
   if let .ixc _ oracle := kernel then
     if oracle.trace then
-      dbg_trace s!"{Ix.AuxGen.IxcStats.line lo kctx.ixcStats}"
+      let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0 }
+      dbg_trace s!"{Ix.AuxGen.IxcStats.line lo st}"
       pure ()
   return (blockResult, auxLayout?, plans, brecPlans, belowPlans)
 
@@ -1455,7 +1456,27 @@ structure AuxIxcOptions where
   /-- the literal support the input lacks (`ServiceSupport`); the IO pipeline
   sets it from `DriverOptions.serviceSupport` -/
   support : Option ServiceSupport := none
+  /-- AuxGen M4a: the recursor generator and the elimination decision ask IxC
+  (a measurement; production keeps `Ix.Tc` there) -/
+  recursors : Bool := false
   deriving Inhabited
+
+/-- **A block's IxC oracle** over the run-ahead `ra`, by the block's canonical
+key, in `aux`'s setting (`Ix.AuxGen.Ixc.oracleOfRun`): with AuxGen M4a's
+facts: whether the recursor generator asks IxC (`recursors`, the
+measurement modes only), whether the run-ahead asked for the block, and the
+input's declarations (`get?`) for the lazy scopes' fast paths. -/
+def AuxIxcOptions.oracleFor (aux : AuxIxcOptions) (ra : Ix.AuxGen.Source.RunAhead)
+    (get? : Name → Option ConstantInfo) (key : Name) : Option Ix.AuxGen.AuxOracle :=
+  (ra.runFor key).map fun t =>
+    let members := ra.membersFor key
+    let facts : Ix.AuxGen.Ixc.OracleFacts :=
+      { recursors := aux.recursors
+        -- read by the trace only, so computed only when tracing
+        asked := !aux.trace || (Ix.AuxGen.Source.holdsInductive get? members
+          && aux.asks.selects get? members)
+        lookup := get? }
+    Ix.AuxGen.Ixc.oracleOfRun aux.mode aux.trace (fun _ => t.get) members facts
 
 /-- **The Source service's input**: the fold's lookups and condensation, with
 the literal support beside them when the input lacks it (generation side
@@ -1511,9 +1532,7 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks
-  let oracle : Name → Option Ix.AuxGen.AuxOracle := fun key =>
-    (ra.runFor key).map fun t => Ix.AuxGen.Ixc.oracleOfRun aux.mode aux.trace (fun _ => t.get)
-      (ra.membersFor key)
+  let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
   let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)

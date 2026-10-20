@@ -84,7 +84,7 @@ def decomposeInductiveType (ind : InductiveVal) (indUnivs : Array Level)
   -- TcScope pre-populated with the caller's param FVars. As we peel
   -- indices, each is pushed into the scope so subsequent `whnfLean` calls
   -- see them as locals.
-  let mut scope ← AuxScope.new kernel paramFvars ind.cnst.levelParams
+  let mut scope ← AuxScope.new kernel paramFvars ind.cnst.levelParams (route := .recursor)
 
   let mut cur := ty
   if !(cur matches .forallE ..) then
@@ -745,26 +745,47 @@ def findRecTarget (dom : Expr) (classes : Array FlatInfo)
     | _ => break
 
   -- Pre-warm the kernel cache for `dom` (result discarded; see Rust doc).
-  discard <| scope.whnfOrInput dom
+  scope.warm dom
 
   if let some ci := phase1Match then
     return (some ci, scope)
 
   -- Phase 2: WHNF fallback for reducible-alias heads.
-  let mut ty2 ← scope.whnfOrInput dom
-  let mut pushed : Array LocalDecl := #[]
-  repeat
-    match ty2 with
-    | .forallE name d body bi _ =>
-      let (fvName, fv) := freshFVar "frt" pushed.size
-      let decl : LocalDecl :=
-        { fvarName := fvName, binderName := name, domain := d, info := bi }
-      scope ← scope.push #[decl]
-      pushed := pushed.push decl
-      ty2 ← scope.whnfOrInput (instantiate1 body fv)
-    | _ => break
-  scope ← scope.pop pushed
-  return (matchClassesAgainstApp ty2 classes paramFvars nParams, scope)
+  let phase2 (scope : AuxScope) (whnf : AuxScope → Expr → KBridgeM Expr) :
+      KBridgeM (Option Nat × AuxScope) := do
+    let mut scope := scope
+    let mut ty2 ← whnf scope dom
+    let mut pushed : Array LocalDecl := #[]
+    repeat
+      match ty2 with
+      | .forallE name d body bi _ =>
+        let (fvName, fv) := freshFVar "frt" pushed.size
+        let decl : LocalDecl :=
+          { fvarName := fvName, binderName := name, domain := d, info := bi }
+        scope ← scope.push #[decl]
+        pushed := pushed.push decl
+        ty2 ← whnf scope (instantiate1 body fv)
+      | _ => break
+    scope ← scope.pop pushed
+    return (matchClassesAgainstApp ty2 classes paramFvars nParams, scope)
+
+  -- AuxGen M4: with the recursor generator on IxC, a field whose type names
+  -- no member of the block's classes cannot reduce to one of them (the
+  -- environment's definitions precede the block), so it is not recursive
+  -- and its Phase 2 asks nothing. Under `shadow` and `fallbackEager`,
+  -- `Ix.Tc` still decides it as before, and a disagreement is counted.
+  if scope.skipsUnmentioned then
+    if !Ixc.mentionsConst dom (fun n => classes.any (·.allNames.any (· == n))) then
+      if scope.checksSkips then
+        let (tc?, scope') ← phase2 scope fun s e => s.whnfTcOrInput e
+        scope := scope'
+        if tc?.isSome then
+          bumpIxc fun st => (st.sample s!"skipped field decided recursive by Ix.Tc") |>
+            fun st => { st with recSkipDiffer := st.recSkipDiffer + 1 }
+      bumpIxc fun st => { st with recSkipped := st.recSkipped + 1 }
+      return (none, scope)
+
+  phase2 scope fun s e => s.whnfOrInput e (named := false)
 
 /-! ## Motive types (recursor.rs:1194) -/
 
@@ -792,7 +813,7 @@ def peelAuxIndices (ty : Expr) (n : Nat) (pfx : String)
   let (fvars, decls, rest) := forallTelescope ty n pfx 0
   if decls.size == n then return (fvars, decls, rest)
   let start := decls.size
-  let mut scope ← AuxScope.new kernel (paramDecls ++ decls) levelParams
+  let mut scope ← AuxScope.new kernel (paramDecls ++ decls) levelParams (route := .recursor)
   let mut fvars := fvars
   let mut decls := decls
   let mut cur := rest
@@ -1004,7 +1025,7 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
   let mut fieldFvars : Array Expr := #[]
   let mut recFields : Array (Nat × Nat) := #[] -- (field_idx, target_class)
 
-  let mut scope ← AuxScope.new kernel paramDecls recLevelParams
+  let mut scope ← AuxScope.new kernel paramDecls recLevelParams (route := .recursor)
 
   for fi in [0:nFields] do
     cur := stripMdataRef cur
@@ -1354,7 +1375,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
 
   -- TcScope seeded with params+motives+minors (delta-unfolding of
   -- reducible-alias heads during recursive-field detection).
-  let mut scope ← AuxScope.new kernel pmmDecls recLevelParams
+  let mut scope ← AuxScope.new kernel pmmDecls recLevelParams (route := .recursor)
 
   let mut rules : Array RecursorRule := #[]
 

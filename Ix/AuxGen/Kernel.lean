@@ -178,6 +178,41 @@ structure IxcStats where
   /-- AuxGen M3: the generated `.below` constants admitted to IxC, and refused -/
   belowAdmitted : Nat := 0
   belowRefused : Nat := 0
+  /-- AuxGen M4: the recursor generator's `whnf`s on IxC (named): answered by
+  the stuck fast path, unreduced, replayed, refused; against `Ix.Tc`'s
+  restored answer (shadow, `fallbackEager`): equal, different (by the first
+  difference's kind: a binder name, a binder info, a level spelling,
+  anything else); at a decision site (`findRecTarget`), different -/
+  recWhnf : Nat := 0
+  recStuck : Nat := 0
+  recSame : Nat := 0
+  recReplayed : Nat := 0
+  recRefused : Nat := 0
+  recEqual : Nat := 0
+  recDiffer : Nat := 0
+  recDiffName : Nat := 0
+  recDiffInfo : Nat := 0
+  recDiffLevel : Nat := 0
+  recDiffOther : Nat := 0
+  recDecisionDiffer : Nat := 0
+  /-- AuxGen M4: `findRecTarget` fields skipped (they name no member of the
+  block), and those `Ix.Tc` decided recursive (shadow) -/
+  recSkipped : Nat := 0
+  recSkipDiffer : Nat := 0
+  /-- AuxGen M4: questions that needed the service (escaped the fast paths) -/
+  recForced : Nat := 0
+  /-- AuxGen M4: the elimination decision on IxC: asked, equal to `Ix.Tc`'s,
+  different, refused -/
+  elim : Nat := 0
+  elimEqual : Nat := 0
+  elimDiffer : Nat := 0
+  elimRefused : Nat := 0
+  /-- AuxGen M4: for a block whose layout is Lean's, its canonical recursors
+  equal to Lean's own, and not -/
+  leanRecSame : Nat := 0
+  leanRecDiffer : Nat := 0
+  /-- AuxGen M4: 1 when the run-ahead asked for the block -/
+  asked : Nat := 0
   /-- the first disagreements and refusals, as text -/
   samples : Array String := #[]
   deriving Inhabited
@@ -197,7 +232,15 @@ def line (key : Name) (st : IxcStats) : String :=
     scopesRefused {st.scopesRefused} flat {st.flatInstalled}/{st.flatRefused} \
     decisions {st.decisions} decisionsEqual {st.decisionsEqual} decisionsDiffer {st.decisionsDiffer} \
     exprQueries {st.exprQueries} exprAnswered {st.exprAnswered} \
-    below {st.belowAdmitted}/{st.belowRefused}\
+    below {st.belowAdmitted}/{st.belowRefused} \
+    recWhnf {st.recWhnf} recStuck {st.recStuck} recSame {st.recSame} recReplayed {st.recReplayed} \
+    recRefused {st.recRefused} recEqual {st.recEqual} recDiffer {st.recDiffer} \
+    recDiffName {st.recDiffName} recDiffInfo {st.recDiffInfo} recDiffLevel {st.recDiffLevel} \
+    recDiffOther {st.recDiffOther} recDecisionDiffer {st.recDecisionDiffer} \
+    recSkipped {st.recSkipped} recSkipDiffer {st.recSkipDiffer} \
+    recForced {st.recForced} elim {st.elim} elimEqual {st.elimEqual} elimDiffer {st.elimDiffer} \
+    elimRefused {st.elimRefused} leanRecSame {st.leanRecSame} leanRecDiffer {st.leanRecDiffer} \
+    asked {st.asked}\
     {String.join (st.samples.toList.map fun s => s!"\n[auxgen-ixc]   {s.take 400}")}"
 
 end IxcStats
@@ -1203,30 +1246,14 @@ structure ElimDecision where
   isProp : Bool
   deriving BEq, Inhabited, Repr
 
-/-- The kernel half of Rust `compute_is_large_and_k` (recursor.rs:2328),
-    over the block's ORIGINAL classes (inductive with constructors), in an
-    expanded block of `nFlat` members (the originals and the nested
-    auxiliaries):
-    - ephemeral `KConst.indc`/`KConst.ctor` entries for all of them go into
-      the bridge kenv (provisional addresses), so the kernel sees the full
-      mutual block and can apply the "mutual Prop → small" rule;
-    - `getResultSortLevel` WHNF-peels params+indices (crucial for
-      reducible-alias targets like `Set σ := σ → Prop`);
-    - the kernels' rule decides (Lean's `elim_only_at_universe_zero`, which
-      counts the expanded block): a result level that may be zero
-      eliminates small when the expanded block is not a singleton, decided
-      before any field is probed, since the original classes' fields can
-      name an auxiliary this kenv does not hold (WB-A7); otherwise
-      `isLargeEliminator` decides over the originals. No override (A0,
-      WB-B8): a former override forced large elimination whenever the level
-      was not semantically zero, so a `Sort u` inductive (reachable through
-      `addDecl`) got a large recursor both kernels reject.
-    It runs on a fresh `TcState` over the persistent kenv (Rust
-    `TypeChecker::new(&mut kctx.kenv)`). TC failures are hard
-    `invalidMutualBlock` refusals (no syntactic fallback). K stays with the
-    caller (`Recursor.computeIsLargeAndK`). -/
-def tcElimDecision (originals : Array (InductiveVal × Array ConstructorVal))
-    (nParams nFlat : Nat) (maps : AddrMaps) : KBridgeM ElimDecision := do
+/-- The bridge kenv's half of the elimination decision: the block's original
+    classes (with their constructors) inserted under their provisional
+    addresses, with the dependencies their target types and fields need;
+    the `RecM` view of them. Later `Ix.Tc` users of the block rely on these
+    inserts, so AuxGen M4's IxC decision runs this half too. -/
+def tcElimAdmit (originals : Array (InductiveVal × Array ConstructorVal))
+    (nParams : Nat) (maps : AddrMaps) :
+    KBridgeM (Array (MKId × UInt64 × UInt64 × Array MKId × MKExpr)) := do
   let mut indInfos : Array (MKId × UInt64 × UInt64 × Array MKId × MKExpr) := #[]
 
   -- The first class's block KId is the shared block reference.
@@ -1270,6 +1297,34 @@ def tcElimDecision (originals : Array (InductiveVal × Array ConstructorVal))
     indInfos := indInfos.push
       (clsZid, UInt64.ofNat nParams, clsNIndices, clsCtorZids, clsTyZ)
 
+  return indInfos
+
+/-- The kernel half of Rust `compute_is_large_and_k` (recursor.rs:2328),
+    over the block's ORIGINAL classes (inductive with constructors), in an
+    expanded block of `nFlat` members (the originals and the nested
+    auxiliaries):
+    - ephemeral `KConst.indc`/`KConst.ctor` entries for all of them go into
+      the bridge kenv (provisional addresses), so the kernel sees the full
+      mutual block and can apply the "mutual Prop → small" rule;
+    - `getResultSortLevel` WHNF-peels params+indices (crucial for
+      reducible-alias targets like `Set σ := σ → Prop`);
+    - the kernels' rule decides (Lean's `elim_only_at_universe_zero`, which
+      counts the expanded block): a result level that may be zero
+      eliminates small when the expanded block is not a singleton, decided
+      before any field is probed, since the original classes' fields can
+      name an auxiliary this kenv does not hold (WB-A7); otherwise
+      `isLargeEliminator` decides over the originals. No override (A0,
+      WB-B8): a former override forced large elimination whenever the level
+      was not semantically zero, so a `Sort u` inductive (reachable through
+      `addDecl`) got a large recursor both kernels reject.
+    It runs on a fresh `TcState` over the persistent kenv (Rust
+    `TypeChecker::new(&mut kctx.kenv)`). TC failures are hard
+    `invalidMutualBlock` refusals (no syntactic fallback). K stays with the
+    caller (`Recursor.computeIsLargeAndK`). -/
+def tcElimDecision (originals : Array (InductiveVal × Array ConstructorVal))
+    (nParams nFlat : Nat) (maps : AddrMaps) : KBridgeM ElimDecision := do
+  let indInfos ← tcElimAdmit originals nParams maps
+  let (firstInd, _) ← Ix.CompileM.arrIdx originals 0 "computeIsLargeAndK: first class"
   let (_, _, firstNIndices, _, firstTyZ) ←
     Ix.CompileM.arrIdx indInfos 0 "computeIsLargeAndK: first class info"
 

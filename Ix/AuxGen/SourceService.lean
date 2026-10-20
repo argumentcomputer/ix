@@ -2,6 +2,7 @@ module
 public import Ix.LeanIngress
 public import Ix.AuxGen.SourceEnv
 public import Ix.AuxGen.ExprUtils
+public import Ix.AuxGen.FastPaths
 public section
 
 /-! # The Source service environment (AuxGen on IxC, M1; AUXGEN-IXC §3.2)
@@ -807,6 +808,10 @@ inductive Asks where
   /-- the blocks with a Type-level `.below` family, the ones M2's IxC arm asks
   about (lever P2) -/
   | below
+  /-- AuxGen M4: the blocks with a Type-level `.below`, and those the recursor
+  generator or the elimination decision can ask past the fast paths
+  (`Ix.AuxGen.Ixc.recursorsMayAsk`) -/
+  | recursors
   deriving BEq, Inhabited, Repr
 
 /-- Whether a block has a Type-level `.below` family in the input: a member
@@ -818,16 +823,25 @@ def holdsTypeBelow (get? : Ix.Name → Option Ix.ConstantInfo) (members : Array 
     | _ => false
   members.any fun n => isDefn (Ix.Name.mkStr n "below") || isDefn (Ix.Name.mkStr n "below_1")
 
+/-- **Whether `asks` selects a block** (`members` sorted by name), beyond holding
+an inductive. -/
+def Asks.selects (asks : Asks) (get? : Ix.Name → Option Ix.ConstantInfo)
+    (members : Array Ix.Name) : Bool :=
+  match asks with
+  | .inductive => true
+  | .below => holdsTypeBelow get? members
+  | .recursors => holdsTypeBelow get? members || Ixc.recursorsMayAsk get? members
+
 namespace Run
 
 /-- `ask`, asking only for the blocks `asks` selects. -/
 def askWhere (asks : Asks) (r : Run) (ready : Array (Ix.Name × Ix.Name × Ix.Set Ix.Name)) : Run :=
   match asks, r.service with
   | .inductive, _ => r.ask ready
-  | .below, .ok svc =>
+  | _, .ok svc =>
     r.ask (ready.filter fun (_, _, all) =>
-      holdsTypeBelow svc.input.get? (all.toArray.qsort (nameCmp · · == .lt)))
-  | .below, .error _ => r
+      asks.selects svc.input.get? (all.toArray.qsort (nameCmp · · == .lt)))
+  | _, .error _ => r
 
 end Run
 
@@ -941,8 +955,7 @@ def askedMembers (get? : Ix.Name → Option Ix.ConstantInfo) (asks : Asks)
   levels.foldl (init := #[]) fun out level =>
     level.foldl (init := out) fun out (_, _, all) =>
       let members := all.toArray.qsort (nameCmp · · == .lt)
-      let take := holdsInductive get? members &&
-        (asks == .inductive || holdsTypeBelow get? members)
+      let take := holdsInductive get? members && asks.selects get? members
       if take then out.push members else out
 
 /-- **The service's work timed** on this thread (AuxGen M2a; P1, P2): one
@@ -984,6 +997,14 @@ def measure (get? : Ix.Name → Option Ix.ConstantInfo) (blocks : Ix.CondensedBl
   let t₁ ← IO.monoMsNow
   out := out.push s!"[auxgen-ixc] measure: as it runs, the {below.size} blocks with a \
     Type-level .below: {t₁ - t₀} ms; {summary s}"
+  -- AuxGen M4: the recursors' asks
+  let recs := askedMembers get? .recursors levels
+  let s₀ ← fresh
+  let t₀ ← IO.monoMsNow
+  let s ← IO.lazyPure fun _ => recs.foldl (init := s₀) fun s ms => s.ensureNames ms
+  let t₁ ← IO.monoMsNow
+  out := out.push s!"[auxgen-ixc] measure: as it runs, the {recs.size} blocks of the \
+    recursors' asks (M4): {t₁ - t₀} ms; {summary s}"
   return out
 
 end Ix.AuxGen.Source

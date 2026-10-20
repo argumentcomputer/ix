@@ -21,7 +21,11 @@ the options here:
   measurement and returns an error ("nothing compiled"), so `ix compile-lean`
   exits 1 by design. A further `,asks=inductive` makes the service ask for
   every block that holds an inductive (production asks only for the blocks
-  with a Type-level `.below`).
+  with a Type-level `.below`). The measurement modes also put the recursor
+  generator and the elimination decision on IxC (AuxGen M4a; production
+  keeps `Ix.Tc` there); `,rec=off` leaves them on `Ix.Tc`, and
+  `,asks=recursors` asks also for the blocks they can ask past the fast
+  paths (`Ix.AuxGen.Ixc.recursorsMayAsk`).
 
 Under `IX_COMPILE_DBG` the pipeline prints the process's resident set size
 after the compile phase, read here.
@@ -43,7 +47,7 @@ def residentSetSize : IO String := do
     docstring); an unknown word is an error naming it. -/
 def auxIxcOptionsOf (value : String) : Except String Ix.CompileM.AuxIxcOptions := do
   let words := (value.splitOn ",").map (·.trimAscii.toString)
-  let mut opts : Ix.CompileM.AuxIxcOptions := { trace := true }
+  let mut opts : Ix.CompileM.AuxIxcOptions := { trace := true, recursors := true }
   for (w, i) in words.zipIdx do
     if i == 0 then
       if w == "measure" then opts := { opts with measureOnly := true }
@@ -52,7 +56,9 @@ def auxIxcOptionsOf (value : String) : Except String Ix.CompileM.AuxIxcOptions :
         | none => throw s!"IX_AUXGEN_IXC: unknown mode '{w}' (shadow, fallback, failClosed, fallbackEager, measure)"
     else if w == "asks=below" then opts := { opts with asks := .below }
     else if w == "asks=inductive" then opts := { opts with asks := .inductive }
-    else throw s!"IX_AUXGEN_IXC: unknown option '{w}' (asks=below, asks=inductive)"
+    else if w == "asks=recursors" then opts := { opts with asks := .recursors }
+    else if w == "rec=off" then opts := { opts with recursors := false }
+    else throw s!"IX_AUXGEN_IXC: unknown option '{w}' (asks=below, asks=inductive, asks=recursors, rec=off)"
   return opts
 
 /-- The drivers' options from the environment; `dbg` forces the debug
