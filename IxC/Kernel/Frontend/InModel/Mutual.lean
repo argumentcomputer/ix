@@ -383,7 +383,7 @@ def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
     for j in List.range t.nIdx do
       let ctxJ := (pbs ++ idxBs.take j).reverse
       let dom := idxBs.getD j default
-      let some ℓj := idxSort ctx.tbl ctxJ dom
+      let some ℓj ← idxSort ctx.tbl ctxJ dom
         | throw s!"cannot bound the sort of index {j} of {t.cv.name} (the tag's universe)"
       W := .max W ℓj
   let tagTy ← need "tag type" (Expr.replacePiBody nP t0.cv.type (.sort W))
@@ -562,7 +562,7 @@ def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         -- the field's sort, at the constructor frame
         let ctxI := ((cbs.take (nP + i)).map (·.1)).reverse
         let dom := (cbs.getD (nP + i) default).1
-        let some ℓi := sortOf tbl' ctxI dom | stop := true; continue
+        let some ℓi ← sortOf tbl' ctxI dom | stop := true; continue
         -- the projection type `∀ p⃗ (x : T._model p⃗), F_i[f_j := proj_j p⃗ x]`
         let args := structProjPs nP ++ (List.range i).map fun j =>
           Expr.mkAppN (constP (projModelName t.cv.name j) lps) (structProjPs nP ++ [.bvar 0])

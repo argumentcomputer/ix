@@ -62,11 +62,13 @@ end Ixon.Authenticated.Audit
 -- check (S1) from 5970, by the generic entries' change (117 in,
 -- `IxC/Kernel/Audit/Roots.lean`); the prelude's
 -- shape check (S1, fact (ii)) from 6087, likewise (12 in); the hoist guard
--- (S1) from 6099, likewise (4 in).
+-- (S1) from 6099, likewise (4 in); the in-model generator's totality (S1)
+-- from 6103, likewise (15 more; its nine ruled `partial` definitions are total,
+-- and the ruling is gone).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 6103 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
+ Address.admissionHash]: 6118 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -228,9 +230,11 @@ out: the compiler-trust roles and their checks), and the `.indDecl` shape guard 
 and the mutual modeller's reading of Lean's recursive fields from 5897, likewise (9 more),
 and the rest-only hoist and the decided units check (S1) from 5906, likewise (117 in),
 and the prelude's shape check (S1, fact (ii)) from 6023, likewise (12 in),
-and the hoist guard (S1) from 6035, likewise (4 in). -/
+and the hoist guard (S1) from 6035, likewise (4 in),
+and the in-model generator's totality (S1) from 6039, likewise (15 more; its nine ruled
+`partial` definitions are total, and the ruling is gone). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6039 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6054 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

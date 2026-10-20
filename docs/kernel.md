@@ -703,7 +703,6 @@ Project-level execution constructs are admitted only as named by
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
 | `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxC/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
 | elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen` | elaboration only; compiled code cannot reach them |
-| `partial` | `Ix.Kernel.Frontend.InModel*` | the in-process modeller, as upstream con-leche has it |
 | `Address.admissionHash` `implemented_by` `Address.blake3`, with its three Rust externs | `Ix/Address/Admission.lean` (root library; `assumedSubstitutions`, for `Ixon.Authenticated` only) | an explicit, owner-approved assumption that the Rust BLAKE3 equals pure BLAKE3 |
 
 Import allowlists (`IxC/Kernel/Audit/Roots.lean`):

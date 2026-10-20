@@ -96,7 +96,7 @@ in each: `preludeRead`, `checkPreludeShape` and their closed terms and
 specialisations; the fold and the reader are unchanged. The hoist guard (S1:
 the ground hoist leaves the rest as it is when it would split a lowering of
 several declarations, `splitsUnit`) moved them from 5921 and 6025, 4 functions in
-each; the fold and the reader are unchanged. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
+each; the fold and the reader are unchanged. The in-model generator's totality (S1, the prerequisite of the generator's parametricity proof: its nine `partial` definitions are total, the memoized DAG walks `specFamGo`, `specAllGo`, `substParams` and `congrChain` by well-founded recursion on the term or the position, the syntactic inferer `betaHead`/`inferTy` at a fuel, `inferFuel`, whose end is a named failure) moved the reader from 2147, the entry from 5925 and the tiered entries from 6029, 15 functions each: 27 in (`betaHeadF`, `betaHeadE`, `inferTyF`, `sortOfF`, `sortOf`, `mapMemo.go` with its arity-reduced form, the lambdas `specFamGo` and `specAllGo` hand to `mapMemo` with their boxed forms, `readCtors`'s `List.mapM` loop, and 15 closed terms of the inferer, `betaHeadE` and the fuel-out message), 12 out (`betaHead`, `inferTy.sortOf`, `specFamGoList`, `specAllGoList`, `readCtors`'s `List.mapTR` loop with its closed term, and `inferTy`'s 6 closed terms), and the hash map's specialisations at `specFamGo` and `specAllGo` renumbered (12). The `partial` ruling (`partialModules`, the in-model generator's) is gone: the closures reach no `partial` definition, and one reached anywhere now fails the audit. The externs, `implemented_by`, `unsafe` constants and csimps are unchanged. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
 is Lean with its three standard axioms) moved the fold from 3434, the reader
 from 2150, the entry from 5861 and the tiered entries from 5965: the five
 compiler-trust roles left `Role` (its case tables shrink, which the reader's
@@ -420,9 +420,10 @@ surface"). Each names exactly what it admits:
   whose type carries the obligation `k true = k false`;
 * elaboration-time `meta` code in `BasisGen`
   (`unsafe evalTerm` wrappers paired by `implemented_by`), which compiled
-  non-`meta` code cannot call;
-* `partial` definitions of the in-model generator,
-  `IxC/Kernel/Frontend/InModel*`.
+  non-`meta` code cannot call.
+
+No `partial` definition is admitted (the in-model generator's were, until
+its walks became total).
 
 No substitution is admitted on an assumption (`assumed` is empty): the
 kernel's closures take their content hash as a parameter. -/
@@ -433,7 +434,6 @@ def runtimeRulings : RuntimeRulings where
     ``withPtrAddrUnsafe, ``ptrEq, ``ptrAddrUnsafe, ``isExclusiveUnsafe]
   implementations := #[(`Ix.Kernel.withExclusive, `Ix.Kernel.withExclusiveUnsafe)]
   elaborationModules := #[`IxC.Kernel.BasisGen]
-  partialModules := #[`IxC.Kernel.Frontend.InModel]
 
 /-- The one execution substitution admitted on an assumption rather than a
 proof (owner, 2026-10-13; `docs/kernel.md`, "Trust surface"): the root
@@ -604,14 +604,14 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2147 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2162 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5925 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5940 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -644,7 +644,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- docstring). The mutual modeller's reading of Lean's recursive fields moved it
 -- from 5887 by the entry's change (9 more; see the module docstring).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6029 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6044 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

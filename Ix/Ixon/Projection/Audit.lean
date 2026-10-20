@@ -106,10 +106,12 @@ recursive fields from 5805, by the entry's change (9 more); the rest-only hoist 
 decided units check (S1) from 5814, by the entry's change (117 in,
 `IxC/Kernel/Audit/Roots.lean`); the prelude's shape check (S1, fact
 (ii)) from 5931, by the entry's change (12 in); the hoist guard (S1) from 5943, by
-the entry's change (4 in). -/
+the entry's change (4 in); the in-model generator's totality (S1) from
+5947, by the entry's change (15 more; its nine ruled `partial` definitions are total,
+and the ruling is gone). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5947 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ixon.Projection.checkBytes]: 5962 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

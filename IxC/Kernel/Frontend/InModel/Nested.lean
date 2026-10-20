@@ -182,7 +182,28 @@ def matchCarrier (fam : Family md) (o : Nat) (e : Expr md) : Option (Nat × List
       else none
   | _ => none
 
-mutual
+/-- A carrier occurrence's index arguments are the occurrence's arguments. -/
+theorem matchCarrier_args {fam : Family md} {o : Nat} {e : Expr md} {tag : Nat}
+    {idx : List (Expr md)} (h : matchCarrier fam o e = some (tag, idx)) :
+    ∀ y ∈ idx, y ∈ e.getAppArgs := by
+  unfold matchCarrier at h
+  split at h
+  · obtain ⟨mem, -, hm⟩ := List.exists_of_findSome?_eq_some h
+    split at hm
+    · split at hm
+      · split at hm
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hm
+          obtain ⟨-, rfl⟩ := hm
+          exact fun y hy => List.mem_of_mem_drop hy
+        · exact nomatch hm
+      · dsimp only at hm
+        split at hm
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hm
+          obtain ⟨-, rfl⟩ := hm
+          exact fun y hy => List.mem_of_mem_drop hy
+        · exact nomatch hm
+    · exact nomatch hm
+  · exact nomatch h
 
 /-- Rewrite every whole carrier occurrence into the auxiliary family
 (`o` binders below the parameter frame at entry).
@@ -192,12 +213,15 @@ One memoized DAG walk, keyed by the node and the binder offset `o`
 the node alone), and dropped after each call.  No spec lemma, as in
 `InModel.mentionsAnyGo`: the modeller is untrusted and what it emits
 is checked at install.  Without the memo the rebuild runs once per
-path — `tests/e2e/tower_nested.ndjson`. -/
-partial def specAllGo (fam : Family md) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+path — `tests/e2e/tower_nested.ndjson`.  Total: every recursive call is on
+a proper subterm (an occurrence's index argument, or a node's child). -/
+def specAllGo (fam : Family md) (memo : Std.HashMap (Expr md × Nat) (Expr md))
     (o : Nat) (e : Expr md) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
-  match matchCarrier fam o e with
+  match hc : matchCarrier fam o e with
   | some (tag, idx) =>
-    let (idx', memo) := specAllGoList fam memo o idx
+    let (idx', memo) := mapMemo idx (fun y hy memo =>
+      have : sizeOf y < sizeOf e := sizeOf_lt_of_mem_getAppArgs (matchCarrier_args hc y hy)
+      specAllGo fam memo o y) memo
     (auxAt fam tag o idx', memo)
   | none =>
     match e with
@@ -234,17 +258,13 @@ partial def specAllGo (fam : Family md) (memo : Std.HashMap (Expr md × Nat) (Ex
             (.proj s i x', memo)
           | e => (e, memo)
         (r, memo.insert (e, o) r)
-
-@[inherit_doc specAllGo]
-partial def specAllGoList (fam : Family md) (memo : Std.HashMap (Expr md × Nat) (Expr md))
-    (o : Nat) : List (Expr md) → List (Expr md) × Std.HashMap (Expr md × Nat) (Expr md)
-  | [] => ([], memo)
-  | x :: xs =>
-    let (y, memo) := specAllGo fam memo o x
-    let (ys, memo) := specAllGoList fam memo o xs
-    (y :: ys, memo)
-
-end
+termination_by sizeOf e
+decreasing_by
+  all_goals first
+    | assumption
+    | (subst_vars; simp only [Expr.app.sizeOf_spec, Expr.lam.sizeOf_spec,
+        Expr.forallE.sizeOf_spec, Expr.letE.sizeOf_spec, Expr.proj.sizeOf_spec] at *; omega)
+    | omega
 
 @[inherit_doc specAllGo]
 def specAll (fam : Family md) (o : Nat) (e : Expr md) : Expr md :=
@@ -327,9 +347,9 @@ def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
     -- and earlier minors sit between the parameters and the fields)
     -- (head-β-reduced: a container at a dependent pin `I α (fun _ => T α)`
     -- leaves `(fun _ => T α) k` in the kernel's minor)
-    let doms : List (Expr md) := (List.range nF).map fun i =>
+    let doms : List (Expr md) ← (List.range nF).mapM fun i =>
       let (d, _) := bs.getD i default
-      betaHead (d.lowerBVars (M + J) i)
+      betaHeadE (d.lowerBVars (M + J) i)
     -- the kinds, by the carrier match at each field's frame
     let kinds : List (Option Nat) := (List.range nF).map fun i =>
       (matchCarrier fam i (doms.getD i default)).map (·.1)
@@ -381,12 +401,12 @@ unmoved positions), the moved positions with their equations
 `S'_{k-1}` from `S'_k` by `Eq.rec` on `e_k` (motive
 `λ z _, F l⃗ = F (r_1..r_{k-1}, z, l_{k+1}..)`).  `α`/`ℓα` are the
 spine's type and its sort. -/
-partial def congrChain (ℓα : Level) (α : Expr md) (F : Nat → List (Expr md) → Expr md) (ls rs : List (Expr md))
+def congrChain (ℓα : Level) (α : Expr md) (F : Nat → List (Expr md) → Expr md) (ls rs : List (Expr md))
     (moved : List (Nat × Expr md × Expr md × Level)) : Expr md :=
   go 0
 where
   go (k : Nat) : Expr md :=
-    match moved[k]? with
+    match h : moved[k]? with
     | none => mkRefl ℓα α (F 0 ls)
     | some (pos, e, ty, ℓty) =>
       -- the motive over `z` at position `pos`: positions of earlier
@@ -403,6 +423,10 @@ where
             (F 2 (liftAll 2 ls))
             (F 2 ((liftAll 2 mid).set pos (.bvar 1)))) bm) bm
       mkEqRec .zero ℓty ty (ls.getD pos default) motive (go (k + 1)) (rs.getD pos default) e
+  termination_by moved.length - k
+  decreasing_by
+    have := (List.getElem?_eq_some_iff.mp h).1
+    omega
 
 /-! ## The nested rung -/
 
@@ -596,7 +620,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
     for j in List.range mem.nIdx do
       let ctxJ := (pbs ++ (mem.idxBs.take j)).reverse
       let dom := (mem.idxBs.getD j default)
-      let some ℓj := idxSort ctx.tbl ctxJ (dom.renameConsts rnF)
+      let some ℓj ← idxSort ctx.tbl ctxJ (dom.renameConsts rnF)
         | throw s!"cannot bound the sort of index {j} of member {mem.tag} (the tag's universe)"
       W := .max W ℓj
   let tagTy ← need "tag type" (Expr.replacePiBody nP t0.cv.type (.sort W))
@@ -1272,7 +1296,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         if stop then continue
         let ctxI := ((cbs.take (nP + i)).map (·.1)).reverse
         let dom := (cbs.getD (nP + i) default).1
-        let some ℓi := sortOf tbl' ctxI dom | stop := true; continue
+        let some ℓi ← sortOf tbl' ctxI dom | stop := true; continue
         let args := structProjPs nP ++ (List.range i).map fun j =>
           Expr.mkAppN (constP (projModelName t.cv.name j) lps) (structProjPs nP ++ [.bvar 0])
         let some (.forallE fdom _ _) := Expr.instPisAtLift args cty | stop := true; continue

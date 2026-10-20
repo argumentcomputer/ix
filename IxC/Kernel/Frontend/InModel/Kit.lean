@@ -119,9 +119,44 @@ ill-typed and the fold rejects it). -/
 def overFirstParams (nP : Nat) (former ty : Expr md) : Option (Expr md) :=
   (ty.stripPis nP).bind fun q => Expr.replacePiBody nP former q.2
 
-/-! ## Family occurrences -/
+/-! ## Sizes, for the walks' termination -/
 
-mutual
+theorem sizeOf_getAppFn_le (e : Expr md) : sizeOf e.getAppFn ≤ sizeOf e := by
+  induction e with
+  | app f a ihf _ => simp only [Expr.getAppFn, Expr.app.sizeOf_spec]; omega
+  | _ => simp [Expr.getAppFn]
+
+theorem sizeOf_getAppFn_app (f a : Expr md) :
+    sizeOf (Expr.app f a).getAppFn < sizeOf (Expr.app f a) := by
+  have := sizeOf_getAppFn_le f
+  simp only [Expr.getAppFn, Expr.app.sizeOf_spec]; omega
+
+theorem sizeOf_lt_of_mem_getAppArgs : ∀ {e x : Expr md}, x ∈ e.getAppArgs → sizeOf x < sizeOf e := by
+  intro e
+  induction e with
+  | app f a ihf _ =>
+    intro x hx
+    simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at hx
+    rcases hx with hx | rfl
+    · have := ihf hx; simp only [Expr.app.sizeOf_spec]; omega
+    · simp only [Expr.app.sizeOf_spec]; omega
+  | _ => intro x hx; simp [Expr.getAppArgs] at hx
+
+/-- **Thread a memo through a list**, each element's call told that it is
+one (what a walk's termination reads off a recursive call on an argument). -/
+def mapMemo {α β M : Type} (l : List α) (f : (x : α) → x ∈ l → M → β × M) (memo : M) :
+    List β × M :=
+  go l (fun _ h => h) memo
+where
+  /-- `mapMemo` over a sublist's elements. -/
+  go : (l' : List α) → (∀ x ∈ l', x ∈ l) → M → List β × M
+    | [], _, memo => ([], memo)
+    | x :: xs, h, memo =>
+      let (y, memo) := f x (h x List.mem_cons_self) memo
+      let (ys, memo) := go xs (fun z hz => h z (List.mem_cons_of_mem _ hz)) memo
+      (y :: ys, memo)
+
+/-! ## Family occurrences -/
 
 /-- Rewrite every occurrence `T_m a⃗` (exactly `nP + nIdx_m` arguments)
 of a member of the block into `aux a⃗_P (tag.m a⃗_P a⃗_I)` — the
@@ -133,8 +168,9 @@ such blocks).
 One memoized DAG walk (keyed by the node — the rewrite reads no binder
 cursor), and, like `mentionsAnyGo`, with no spec lemma: the modeller
 is untrusted.  Without it the rebuild runs once per path, which is what
-`tests/e2e/tower_mutual.ndjson` exposes. -/
-partial def specFamGo (T : Key md) (lps : List LevelParam) (nP : Nat)
+`tests/e2e/tower_mutual.ndjson` exposes.  Total: every recursive call is on
+a proper subterm (the spine's head or one of its arguments). -/
+def specFamGo (T : Key md) (lps : List LevelParam) (nP : Nat)
     (members : List (Key md × Nat × Nat)) (memo : Std.HashMap (Expr md) (Expr md)) :
     (Expr md) → Expr md × Std.HashMap (Expr md) (Expr md)
   | .bvar i => (.bvar i, memo)
@@ -154,28 +190,35 @@ partial def specFamGo (T : Key md) (lps : List LevelParam) (nP : Nat)
     | none =>
       let (r, memo) : Expr md × Std.HashMap (Expr md) (Expr md) :=
         match e with
-        | e@(.app _ _) =>
-          let f := e.getAppFn
-          let args := e.getAppArgs
+        | .app g x =>
+          let f := (Expr.app g x).getAppFn
+          let args := (Expr.app g x).getAppArgs
+          let walkArgs (as : List (Expr md)) (has : ∀ y ∈ as, y ∈ args)
+              (memo : Std.HashMap (Expr md) (Expr md)) :=
+            mapMemo as (fun y hy memo =>
+              have : sizeOf y < sizeOf (Expr.app g x) := sizeOf_lt_of_mem_getAppArgs (has y hy)
+              specFamGo T lps nP members memo y) memo
           match f with
           | .const n us =>
             match members.find? (·.1 == n) with
             | some (_, m, nIdx) =>
               if args.length == nP + nIdx && us == lps.map .param then
-                let (ps, memo) := specFamGoList T lps nP members memo (args.take nP)
-                let (is, memo) := specFamGoList T lps nP members memo (args.drop nP)
+                let (ps, memo) := walkArgs (args.take nP) (fun _ h => List.mem_of_mem_take h) memo
+                let (is, memo) := walkArgs (args.drop nP) (fun _ h => List.mem_of_mem_drop h) memo
                 (Expr.mkAppN (constP (auxName T) lps)
                   (ps ++ [Expr.mkAppN (constP (tagCtorName T m) lps) (ps ++ is)]), memo)
               else
+                have : sizeOf f < sizeOf (Expr.app g x) := sizeOf_getAppFn_app g x
                 let (f', memo) := specFamGo T lps nP members memo f
-                let (as, memo) := specFamGoList T lps nP members memo args
+                let (as, memo) := walkArgs args (fun _ h => h) memo
                 (Expr.mkAppN f' as, memo)
             | none =>
-              let (as, memo) := specFamGoList T lps nP members memo args
+              let (as, memo) := walkArgs args (fun _ h => h) memo
               (Expr.mkAppN f as, memo)
           | _ =>
+            have : sizeOf f < sizeOf (Expr.app g x) := sizeOf_getAppFn_app g x
             let (f', memo) := specFamGo T lps nP members memo f
-            let (as, memo) := specFamGoList T lps nP members memo args
+            let (as, memo) := walkArgs args (fun _ h => h) memo
             (Expr.mkAppN f' as, memo)
         | .lam d b m =>
           let (d', memo) := specFamGo T lps nP members memo d
@@ -195,18 +238,13 @@ partial def specFamGo (T : Key md) (lps : List LevelParam) (nP : Nat)
           (.proj s i x', memo)
         | e => (e, memo)
       (r, memo.insert e r)
-
-@[inherit_doc specFamGo]
-partial def specFamGoList (T : Key md) (lps : List LevelParam) (nP : Nat)
-    (members : List (Key md × Nat × Nat)) (memo : Std.HashMap (Expr md) (Expr md)) :
-    List (Expr md) → List (Expr md) × Std.HashMap (Expr md) (Expr md)
-  | [] => ([], memo)
-  | x :: xs =>
-    let (y, memo) := specFamGo T lps nP members memo x
-    let (ys, memo) := specFamGoList T lps nP members memo xs
-    (y :: ys, memo)
-
-end
+termination_by e => sizeOf e
+decreasing_by
+  all_goals first
+    | (subst_vars; simp only [Expr.app.sizeOf_spec, Expr.lam.sizeOf_spec,
+        Expr.forallE.sizeOf_spec, Expr.letE.sizeOf_spec, Expr.proj.sizeOf_spec] at *; omega)
+    | (subst_vars; assumption)
+    | omega
 
 @[inherit_doc specFamGo]
 def specFam (T : Key md) (lps : List LevelParam) (nP : Nat)
@@ -220,7 +258,7 @@ block's, lifted past the binders passed on the way), and every loose
 `bvar ≥ d + n` is lowered by `n`.  Unlike `instantiateList` the
 replacements are never re-traversed, so they may mention variables of
 the surrounding frame. -/
-partial def substParams (d n : Nat) (vals : List (Expr md)) (e : Expr md) : Expr md :=
+def substParams (d n : Nat) (vals : List (Expr md)) (e : Expr md) : Expr md :=
   (go {} 0 e).1
 where
   /-- The memoized rebuild, keyed by the node and the binder cursor
@@ -356,49 +394,103 @@ context (`ctx`, innermost first, each spelled at its own frame),
 β-reducing only what instantiating a `∀` produces.  No `whnf`, no
 definitional unfolding: an application whose function type is not
 syntactically a `∀` after instantiation fails.  `sortOf` reads the
-result as a sort. -/
+result as a sort.
+
+**Fuel.** Head β-reduction need not terminate on an untrusted stream
+(`(fun x => x x) (fun x => x x)` in a declared type), and the inferer's
+`let` case instantiates, so both walks run at a fuel (`inferFuel`): the
+depth of their recursion, one unit per recursive call.  A fuel-out is a
+named failure (`inferFuelMsg`), the decline of the block whose model was
+being generated (`InModel.generate`), never an answer; no real stream
+comes near it (the fixtures and Init+Std: none), and the depth stays
+inside the native stack. -/
 
 /-- The declared type of a constant: its level parameters and type. -/
 abbrev ConstTable (md : Mode) := Key md → Option (List LevelParam × Expr md)
 
-/-- Head β-reduction only. -/
-partial def betaHead : Expr md → Expr md
-  | .app f a =>
-    match betaHead f with
-    | .lam _ b _ => betaHead (b.instantiate1 a)
-    | f' => .app f' a
-  | e => e
+/-- The syntactic inferer's fuel: the depth of its recursion. -/
+def inferFuel : Nat := 4096
 
-partial def inferTy (tbl : ConstTable md) (ctx : List (Expr md)) : Expr md → Option (Expr md)
-  | .bvar i => (ctx[i]?).map (·.liftLooseBVars (i + 1) 0)
-  | .sort u => some (.sort (.succ u))
-  | .const n us =>
-    (tbl n).bind fun (lps, ty) =>
-      if lps.length == us.length then some (ty.instantiateLevelParams lps us) else none
-  | .app f a =>
-    (inferTy tbl ctx f).bind fun ft =>
-      match betaHead ft with
-      | .forallE _ b _ => some (b.instantiate1 a)
-      | _ => none
-  | .lam d b m => (inferTy tbl (d :: ctx) b).map fun bt => .forallE d bt m
-  | .forallE d b _ =>
-    (sortOf tbl ctx d).bind fun u =>
-      (sortOf tbl (d :: ctx) b).map fun v => .sort (.imax u v)
-  | .letE _ v b _ => inferTy tbl ctx (b.instantiate1 v)
-  | .lit (.natVal _) => some (.const natName [])
-  | .lit (.strVal _) => some (.const stringName [])
-  | _ => none
-where
-  /-- The sort of a type. -/
-  sortOf (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) : Option Level :=
-    (inferTy tbl ctx e).bind fun t =>
-      match betaHead t with
-      | .sort u => some u
-      | _ => none
+/-- The syntactic inferer's failure at the end of its fuel. -/
+def inferFuelMsg : String :=
+  s!"the syntactic type inferer ran out of fuel (depth {inferFuel}): a head β-reduction that does not terminate, or a term deeper than the fuel"
 
-/-- The sort of a type at a context. -/
-def sortOf (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) : Option Level :=
-  inferTy.sortOf tbl ctx e
+/-- Head β-reduction only, at most `fuel` deep (`none` when the fuel runs
+out). -/
+def betaHeadF : Nat → Expr md → Option (Expr md)
+  | 0, _ => none
+  | fuel + 1, .app f a =>
+    match betaHeadF fuel f with
+    | some (.lam _ b _) => betaHeadF fuel (b.instantiate1 a)
+    | some f' => some (.app f' a)
+    | none => none
+  | _ + 1, e => some e
+
+/-- Head β-reduction at `inferFuel`, or the fuel-out failure. -/
+def betaHeadE (e : Expr md) : Except String (Expr md) :=
+  match betaHeadF inferFuel e with
+  | some r => .ok r
+  | none => .error inferFuelMsg
+
+/-- Head β-reduction at `inferFuel`, the term itself where the fuel runs
+out.  The modeller reads `betaHeadE`, whose fuel-out is a failure; this
+reading is the AuxGen agreement test's (`Tests/Ix/Compile/NestedAgreement.lean`),
+which only real streams reach. -/
+def betaHead (e : Expr md) : Expr md :=
+  (betaHeadF inferFuel e).getD e
+
+mutual
+/-- The type of `e` at `ctx`, at `fuel`: `none` where the syntactic
+reading fails, the fuel-out failure where the fuel runs out. -/
+def inferTyF (tbl : ConstTable md) :
+    Nat → List (Expr md) → Expr md → Except String (Option (Expr md))
+  | 0, _, _ => .error inferFuelMsg
+  | fuel + 1, ctx, e =>
+    match e with
+    | .bvar i => .ok ((ctx[i]?).map (·.liftLooseBVars (i + 1) 0))
+    | .sort u => .ok (some (.sort (.succ u)))
+    | .const n us =>
+      .ok ((tbl n).bind fun (lps, ty) =>
+        if lps.length == us.length then some (ty.instantiateLevelParams lps us) else none)
+    | .app f a => do
+      let some ft ← inferTyF tbl fuel ctx f | pure none
+      let some ft := betaHeadF fuel ft | throw inferFuelMsg
+      match ft with
+      | .forallE _ b _ => pure (some (b.instantiate1 a))
+      | _ => pure none
+    | .lam d b m => do
+      let some bt ← inferTyF tbl fuel (d :: ctx) b | pure none
+      pure (some (.forallE d bt m))
+    | .forallE d b _ => do
+      let some u ← sortOfF tbl fuel ctx d | pure none
+      let some v ← sortOfF tbl fuel (d :: ctx) b | pure none
+      pure (some (.sort (.imax u v)))
+    | .letE _ v b _ => inferTyF tbl fuel ctx (b.instantiate1 v)
+    | .lit (.natVal _) => .ok (some (.const natName []))
+    | .lit (.strVal _) => .ok (some (.const stringName []))
+    | _ => .ok none
+
+/-- The sort of the type `e` at `ctx`, at `fuel` (`inferTyF`'s reading). -/
+def sortOfF (tbl : ConstTable md) :
+    Nat → List (Expr md) → Expr md → Except String (Option Level)
+  | 0, _, _ => .error inferFuelMsg
+  | fuel + 1, ctx, e => do
+    let some t ← inferTyF tbl fuel ctx e | pure none
+    let some t := betaHeadF fuel t | throw inferFuelMsg
+    match t with
+    | .sort u => pure (some u)
+    | _ => pure none
+end
+
+/-- The type of a term at a context, at `inferFuel`. -/
+def inferTy (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) :
+    Except String (Option (Expr md)) :=
+  inferTyF tbl inferFuel ctx e
+
+/-- The sort of a type at a context, at `inferFuel`. -/
+def sortOf (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) :
+    Except String (Option Level) :=
+  sortOfF tbl inferFuel ctx e
 
 /-! ### The sort ceiling (task #227)
 
@@ -437,30 +529,33 @@ Nothing here is trusted: a ceiling for an ill-sorted domain (a "type"
 that is not one) is a level like any other, and the tag family the
 modeller then emits fails the fold's own type check.  `fuel` bounds the
 walk — up the type tower and down a `∀` telescope — and only keeps the
-function total. -/
-def sortCeil (tbl : ConstTable md) : Nat → List (Expr md) → Expr md → Option Level
-  | 0, _, _ => none
-  | fuel + 1, ctx, d =>
-    match inferTy tbl ctx d with
+function total (its end is `none`, no ceiling, which the modeller
+declines as such); the inferer's own fuel-out is its failure. -/
+def sortCeil (tbl : ConstTable md) : Nat → List (Expr md) → Expr md → Except String (Option Level)
+  | 0, _, _ => pure none
+  | fuel + 1, ctx, d => do
+    match ← inferTy tbl ctx d with
     | some t =>
-      match betaHead t with
-      | .sort u => some u
+      match ← betaHeadE t with
+      | .sort u => pure (some u)
       | t' => sortCeil tbl fuel ctx t'
     | none =>
-      match betaHead d with
+      match ← betaHeadE d with
       | .forallE dom body _ =>
-        (sortCeil tbl fuel ctx dom).bind fun a =>
-          (sortCeil tbl fuel (dom :: ctx) body).map fun b => .max a b
+        let some a ← sortCeil tbl fuel ctx dom | pure none
+        let some b ← sortCeil tbl fuel (dom :: ctx) body | pure none
+        pure (some (.max a b))
       | .letE _ v b _ => sortCeil tbl fuel ctx (b.instantiate1 v)
       | d' =>
-        match inferTy tbl ctx d'.getAppFn with
+        match ← inferTy tbl ctx d'.getAppFn with
         | some f => sortCeil tbl fuel ctx f
-        | none => none
+        | none => pure none
 
 /-- A ceiling for the sort of an index domain at a context
 (`sortCeil`), at a fuel no `∀` telescope or type tower of a real stream
 reaches. -/
-def idxSort (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) : Option Level :=
+def idxSort (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) :
+    Except String (Option Level) :=
   sortCeil tbl 128 ctx e
 
 /-! ## Definitional heights -/

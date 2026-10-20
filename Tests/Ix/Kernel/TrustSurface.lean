@@ -103,8 +103,8 @@ list fails just as loudly as one in a bare file.
 
 Not policed, as upstream: `partial`, `@[csimp]`, `withPtrEq`/`withPtrAddr`,
 `opaque`, `noncomputable`. The Lean runtime audit polices the compiled
-form of the first two (`partial` only in `IxC/Kernel/Frontend/InModel*`,
-`csimp` only with a theorem on the standard axioms).
+form of the first two (no `partial` definition at all, `csimp` only with a
+theorem on the standard axioms).
 
 Changes from upstream: the scanned files come from the repository's own
 layout, and a file under `IxC/Kernel/` that the layout does not classify

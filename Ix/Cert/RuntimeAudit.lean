@@ -34,7 +34,7 @@ dead code since Pass 3: no compile registers a call-site plan).
 
 **AuxGen M1** (the drivers' Source service, `Ix.AuxGen.Source.Chain`): the
 wave fold carries IxC's verified fold over the Source ingress of its input,
-so `compile` now reaches IxC's executable kernel, and with it 55 entries,
+so `compile` now reaches IxC's executable kernel, and with it 46 entries,
 each one of the replacements IxC's own runtime audit rules on
 (`Ix.Kernel.Audit.runtimeRulings`, `IxC/Kernel/Audit/Roots.lean`): the
 `@[computed_field]` overrides of the kernel's `Expr`, `Level`, `Name` and
@@ -44,9 +44,10 @@ each one of the replacements IxC's own runtime audit rules on
 `Expr`'s operations; 24: the 17th, `Expr.constsResolveBy`, is the IxC lane's
 `.indDecl` shape guard's walk, 2026-10-20) and the Ixon codec's `getTagN`
 (`getTagN_eq_fast`, reading the committed prelude and evidence bundle; 1),
-each on the standard axioms; and the `partial` definitions of the in-model generator
-(`IxC/Kernel/Frontend/InModel*`, 9). Nothing the service computes reaches
-`compile`'s result.
+each on the standard axioms. The in-model generator's nine `partial` definitions
+(`IxC/Kernel/Frontend/InModel*`) left the list when its walks became total (IxC, S1:
+the prerequisite of the generator's parametricity proof). Nothing the service
+computes reaches `compile`'s result.
 
 `lake run check-kernel` builds this module with the other root audits. No
 executable imports it: the runtime audit's controls declare an `@[extern]`
@@ -155,12 +156,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.Expr.lit._override,
  Ix.Kernel.Expr.proj._override,
  Ix.Kernel.Expr.sort._override,
- Ix.Kernel.Frontend.InModel.betaHead,
- Ix.Kernel.Frontend.InModel.inferTy,
- Ix.Kernel.Frontend.InModel.specAllGo,
- Ix.Kernel.Frontend.InModel.specAllGoList,
- Ix.Kernel.Frontend.InModel.specFamGo,
- Ix.Kernel.Frontend.InModel.specFamGoList,
  Ix.Kernel.Key.aux._override,
  Ix.Kernel.Key.id._override,
  Ix.Kernel.Key.role._override,
@@ -171,9 +166,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.Level.succ._override,
  Ix.Kernel.Name.hashData._override,
  Ix.Kernel.Name.num._override,
- Ix.Kernel.Name.str._override,
- Ix.Kernel.Frontend.InModel.congrChain.go,
- Ix.Kernel.Frontend.InModel.inferTy.sortOf,
- Ix.Kernel.Frontend.InModel.substParams.go] -/
+ Ix.Kernel.Name.str._override] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { csimpModules := #[`Ix] }
