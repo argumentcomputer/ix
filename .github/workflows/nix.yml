@@ -37,7 +37,7 @@ jobs:
       # the wrapper nor the network, and rely on Cachix instead. The dev
       # shell inherits RUSTC_WRAPPER and keeps the outer PATH, so the
       # binary the sccache action installs resolves there (see ci.yml).
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@17b59092eb37ebfdbb034460892887c09100eaa3 # v2.5.0
         with:
           sccache: s3
           sticky_cache: |
