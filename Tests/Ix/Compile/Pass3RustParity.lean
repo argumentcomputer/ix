@@ -1,8 +1,9 @@
 /-
-  pass3-rust-parity: the Rust Pass 3 core against the Lean one, on the images.
+  pass3-rust-parity: the Rust Pass 3 core against the Lean one, on the images
+  (part 1) and on the callers the compilers rewrite through them (part 2).
 
-  The Rust core (`crates/compile/src/compile/pass3`) is not called by the
-  compiler yet; this suite holds it to `Ix.Compile.Image` on what it computes,
+  The Rust core (`crates/compile/src/compile/pass3`) is the compiler's Pass 3
+  since the flip; part 1 holds it to `Ix.Compile.Image` on what it computes,
   the image of a Lean recursor. Per case of image-gen's fixtures
   (`Tests.Ix.Compile.Image.files`, without the two ablations, whose options
   are Lean-only test switches), in the fixture's environment grown with
@@ -26,7 +27,25 @@
   Verdicts: `SAME` (universe parameters, arity, type and value raw-exact
   equal), `ALPHA` (type and value equal up to binder names and binder info
   only), `DIFF`, `LEAN-ERR`, `RUST-ERR`, `BOTH-ERR`, `ERROR` (the case did not
-  run). The run passes iff every image is `SAME` and there are image-gen's 38.
+  run).
+
+  Part 2, the callers (the flip's lockstep): per case, the source namespace
+  `Ck.Src` (the changed block, its users, their auxiliaries) with the aux-gen
+  seeds, closed under dependencies, compiled by the Lean pipeline
+  (`compileLeanInput`, one worker) and by the Rust compiler (`rs_compile_env`,
+  the bytes `ix compile` writes), partial output allowed: the two outputs must
+  be byte-identical (`compile-lean --rust-check`'s ALIGNED, in process), which
+  covers every caller's rewrite and its `_ix.inline` decompile records. A
+  difference names the first `Named` entries that differ. Where the input is
+  refused (`C4b`'s evaporation), the two must refuse exactly the same
+  constants (`REFUSED`); their grounded subsets are not in the contract
+  (`ix compile` is fail-closed) and differ before Pass 3 already. (Q1's part
+  1 never compiled a caller; the Rust rewrite's memo once ignored the
+  definition site, so a `T.below …` occurrence in a structural recursion
+  functional's type and value shared one record in Rust and had two in Lean.)
+
+  The run passes iff every image is `SAME`, there are image-gen's 38, and
+  every case's callers are `ALIGNED` or `REFUSED` alike.
 
   Invoked as `lake test -- pass3-rust-parity` (tier `ci:compile-pipeline`).
 -/
@@ -36,6 +55,8 @@ import Ix.Compile.Image
 import Ix.Meta
 import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.ImageProto
+import Ix.CompileDriver
+import Ix.EnvScope
 
 open Lean
 
@@ -166,14 +187,83 @@ def runCase (c : Case) : CoreM (Array Row) := do
       let (verdict, msg) := compare (imageOf {} const? spec r) ri
       { case := c.name, recName := r.pretty, verdict, msg }
 
+/-! ## Part 2: the callers, both compilers -/
+
+/-- The case's compile input: the constants of `Ck.Src` and the aux-gen seeds
+(`Ix.CompileM.auxGenSeedNames`), closed under dependencies. -/
+def callerInput (env : Environment) (c : Case) :
+    Except String _root_.Ix.Compile.CompileInput :=
+  let src := c.ns ++ `Src
+  let own := env.constants.toList.filterMap fun (n, _) =>
+    if src.isPrefixOf n then some n else none
+  let seeds := (_root_.Ix.CompileM.auxGenSeedNames.map toLeanName).toList
+  (_root_.Ix.Compile.CompileInput.fromAnnotations
+    (_root_.Ix.EnvScope.collectDeps env (own ++ seeds))).mapError toString
+
+/-- The verdict of one case's callers: `ALIGNED` (byte-identical outputs),
+`REFUSED` (both compilers refuse exactly the same constants), else the
+difference. -/
+inductive CallerVerdict where
+  | aligned
+  | refused (count : Nat)
+  | diverged (why : String)
+
+/-- The Lean pipeline and the Rust compiler on one case's callers. A refused
+input writes nothing by default (`ix compile` is fail-closed), so for one the
+two compilers must refuse the same constants; their grounded subsets are not
+compared (they differ before Pass 3 already: Rust keeps a failed block's
+stored constants, e.g. on `C4b`). -/
+def callerParity (env : Environment) (c : Case) : IO CallerVerdict := do
+  let input ← match callerInput env c with
+    | .ok i => pure i
+    | .error e => return .diverged s!"input: {e}"
+  let lean ← match ← _root_.Ix.CompileM.compileLeanInput input (numWorkers := 1) with
+    | .ok out => pure out
+    | .error e => return .diverged s!"lean pipeline: {e}"
+  let constants ← match input.prepare with
+    | .ok cs => pure cs
+    | .error e => return .diverged s!"prepare: {e}"
+  let dir ← IO.FS.createTempDir
+  let path := dir / "rust.ixe"
+  let status ← _root_.Ix.CompileM.rsCompileEnvBytesFFI constants path.toString true
+  let rustBytes ← IO.FS.readBinFile path
+  IO.FS.removeDirAll dir
+  let leanRefused := (lean.cenv.ungrounded.toArray.map (·.1.pretty)).qsort (· < ·)
+  let rustRefused := (status.ungrounded.map (·.1)).qsort (· < ·)
+  if !leanRefused.isEmpty || !rustRefused.isEmpty then
+    if leanRefused == rustRefused then return .refused leanRefused.size
+    let leanOnly := leanRefused.filter (!rustRefused.contains ·)
+    let rustOnly := rustRefused.filter (!leanRefused.contains ·)
+    return .diverged s!"refusals differ: lean {leanRefused.size}, rust {rustRefused.size}; \
+lean only {leanOnly.toList.take 5}, rust only {rustOnly.toList.take 5}"
+  if rustBytes == lean.bytes then return .aligned
+  let differing : Array String := match _root_.Ixon.rsDeEnv rustBytes with
+    | .error e => #[s!"(the Rust output does not decode: {e})"]
+    | .ok rust => (lean.env.named.toArray.filterMap fun (n, l) =>
+        match rust.named.get? n with
+        | some r => if r == l then none else some n.pretty
+        | none => some s!"{n.pretty} (not in the Rust output)").qsort (· < ·)
+  return .diverged s!"bytes differ: lean {lean.bytes.size} B, rust {rustBytes.size} B; named \
+entries that differ: {differing.toList.take 5}"
+
 /-! ## The suite -/
 
 def run : IO UInt32 := do
   let mut rows : Array Row := #[]
   let mut failures : Array String := #[]
+  let mut aligned := 0
+  let mut refusedAlike := 0
+  let mut callerCases := 0
   for (path, cases) in files do
     try
       let env ← getFileEnv path
+      -- part 2 on the file's own environment (part 1 grows a copy)
+      for c in cases.filter (·.ablationOf.isNone) do
+        callerCases := callerCases + 1
+        match ← callerParity env c with
+        | .aligned => aligned := aligned + 1
+        | .refused _ => refusedAlike := refusedAlike + 1
+        | .diverged why => failures := failures.push s!"{c.name} callers: DIVERGED: {why}"
       let ctx : Core.Context := { fileName := path, fileMap := default, maxHeartbeats := 0 }
       let (rs, _) ← (do
           let mut acc : Array Row := #[]
@@ -195,6 +285,8 @@ def run : IO UInt32 := do
       failures := failures.push s!"{r.case} {r.recName}: {r.verdict} {(r.msg.take 400).toString}"
   unless rows.size == 38 do
     failures := failures.push s!"{rows.size} images, want image-gen's 38"
+  IO.println s!"[pass3-rust-parity] callers: {callerCases} cases, {aligned} ALIGNED, \
+{refusedAlike} REFUSED alike"
   for f in failures do IO.println s!"[pass3-rust-parity] FAIL {f}"
   IO.println s!"[pass3-rust-parity] {failures.size} failures"
   return if failures.isEmpty then 0 else 1

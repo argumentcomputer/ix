@@ -657,24 +657,14 @@ exists")
           if claimedElsewhere then
             -- The spec SCC compiled first (scheduler dependency) and
             -- registered the name as its canonical patch/alias. Nothing
-            -- to do here — but the registration must actually exist, or
-            -- the probe and the compiled state disagree. Full optional
-            -- resolve chain (CompileAux.resolveAddr? is downstream of
-            -- this module): primary overlay, global names, block-local
-            -- aux, merged prior-block aux. `AddrMaps.resolve`'s
-            -- name-hash fallback would make this check vacuous.
-            let cenvGlobal ← liftM (Ix.CompileM.getCompileEnv : CompileM _)
-            let bst ← liftM (Ix.CompileM.getBlockState : CompileM _)
-            let registered :=
-              bst.blockNameToAddr.contains sourceName
-                || cenvGlobal.nameToAddr.contains sourceName
-                || bst.auxNameToAddr.contains sourceName
-                || cenvGlobal.auxNameToAddr.contains sourceName
-            if !registered then
-              throw (.invalidMutualBlock
-                s!"aux position {sourceJ} ('{sourceName.pretty}') is \
-canonically owned by its spec members' SCC, but that SCC registered no \
-address for the name")
+            -- to do here. (Until Pass 3 the registration under the Lean
+            -- name was checked here. Pass 3 moves a changed SCC's Ix
+            -- auxiliaries to their `_ix` display names when its tail ends
+            -- (`Ix.Compile.Pass.editChangedBlock`): the Lean name then
+            -- denotes an image, or a constant of Lean's own block, compiled
+            -- when that block comes up, so it can be absent here by design.
+            -- The check went with the flip in both compilers (donor
+            -- `42cb9848`; Rust under `driver_prepared`).)
             continue
           -- Target guard mirrors the head-rewrite plan registration in
           -- surgery (driven by the same `evaporated` flags) —

@@ -350,6 +350,12 @@ def roundtripBlock (consts : List Ix.MutConst)
           | none => allMetas.get? name
         | none => allMetas.get? name
       let some origMeta := origMeta? | continue
+      -- The name's stored constant is not the source form restored here (a
+      -- canonical auxiliary, or since Pass 3 its image), so its
+      -- `Named.hints` are not the source's either.
+      let restoresOriginal : Bool := match ixonEnv.named.get? name with
+        | some named => named.original.isSome
+        | none => false
 
       -- Per-member fresh decompile run over the block tables + original
       -- meta. The Lean per-kind decompilers internally rebuild Rust's
@@ -397,7 +403,19 @@ def roundtripBlock (consts : List Ix.MutConst)
           -- Debug-gated trace (:3426-3431) omitted; the error propagates
           -- (:3432) — callers recover via `recoverAuxFromOriginal`.
           throw e
-      for (n, ci) in entries do
+      for (n, decompiledCi) in entries do
+        -- Restoring the source form from `Named.original`: the regenerated
+        -- definition carries the hints of Lean's construction for its kind
+        -- and safety (`breconDefToLean` and the other aux phases), and those
+        -- are the source's. `Named.hints` belongs to the stored constant,
+        -- since Pass 3 the auxiliary's image (`.abbrev`): an unsafe
+        -- `.brecOn.eq` is `.opaque` in Lean. Rust `roundtrip_block` does the
+        -- same.
+        let ci : Ix.ConstantInfo := match decompiledCi, cnst with
+          | .defnInfo dv, .defn d =>
+            if restoresOriginal && n == d.name then .defnInfo { dv with hints := d.hints }
+            else decompiledCi
+          | _, _ => decompiledCi
         -- Debug-track Lean-level hash validation against the original
         -- environment (:3239-3327). `==` on Ix.ConstantInfo is full
         -- structural equality over hash-based leaves (Rust get_hash).

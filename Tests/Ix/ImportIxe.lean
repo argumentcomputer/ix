@@ -10,17 +10,32 @@
   string/bool/nat/name payloads, `Expr.proj`), theorems, axioms with
   max/imax level polymorphism, and opaques.
 
+  The alpha-collapsed mutual pair (a changed block: Pass 3 stores its
+  canonical recursors as `TIxImp.A._ix.rec`/`TIxImp.B._ix.rec` and images
+  under the Lean names) is checked with Pass 3's declared image-support
+  closure (`Ix.Compile.Image.imageSupport`) replayed into the empty
+  environment first. The ordinary fixture's distinct pair is its
+  support-free neighbour.
+
   Gates:
   - C6 parity: `rs_decompile_env_consts` output matches the original
     constants field-for-field (types, values, level params, hints,
     recursor rules — the round trip is exact on this fixture).
-  - Root equality: recompiling the materialized constants reproduces
-    the original canonical root — compile ∘ materialize ∘ compile is a
-    fixed point, so every computed field (hashes, cached flags) the
-    Rust side produced is byte-faithful under re-reading.
-  - Fresh kernel replay: `Ix.Replay.planDeclarations` over the
-    materialized map replays clean into an empty kernel env — the
-    non-elaborator core of `import_ixe`.
+  - Root equality: recompiling the complete materialized source output
+    reproduces the original canonical root — compile ∘ materialize ∘
+    compile is a fixed point, so every computed field (hashes, cached
+    flags) the Rust side produced is byte-faithful under re-reading. The
+    collapsed case restores exactly 42 source constants, with all fields
+    checked. Generated private support stays in Ixon, and explicitly
+    requesting it for source import is rejected. The ordinary neighbour has
+    the same source-only contract.
+  - Fresh kernel replay: `Ix.Replay.planDeclarations` consumes the
+    complete materialized source map and replays clean into an empty
+    kernel env (the non-elaborator core of `import_ixe`); every source
+    constant is present and exact after replay. A separate certified
+    artifact check (`kernel-check-ixe`) covers every record, the canonical
+    recursors included, by owning record, with only the fixture's two
+    non-standard axioms permitted to decline.
   - Closure scoping: `only [TIxImp.dbl]` returns the reference closure
     and nothing else.
   - Source-only materialization: on a hand-built artifact that holds
@@ -45,6 +60,9 @@ public import Ix.Replay
 public import Ix.CompileM
 public import Ix.Commit
 public import Ix.Meta
+public import Ix.EnvScope
+public import Ix.Compile.Image.Expr
+public import Tests.Ix.Compile.KernelReport
 
 public section
 
@@ -68,7 +86,7 @@ private def arrow (a b : Lean.Expr) : Lean.Expr :=
   .forallE `a a b .default
 
 /-- The fixture declarations, in dependency order. -/
-private def fixtureDecls : List Lean.Declaration := [
+private def fixtureDecls (collapsed : Bool := false) : List Lean.Declaration := [
   -- Plain inductive with a recursive constructor (recursor exercised).
   .inductDecl [] 0 [{
     name := nN
@@ -89,14 +107,19 @@ private def fixtureDecls : List Lean.Declaration := [
     ctors := [{
       name := `TIxImp.P.mk
       type := arrow cN (arrow cN (.const `TIxImp.P [])) }] }] false,
-  -- Mutual inductive pair (grouped inductDecl, mutual recursors).
+  -- Mutual inductive pair (grouped inductDecl, mutual recursors). The minimal
+  -- Init-free fixture has distinct members. The collapsed variant keeps the
+  -- alpha-equivalent pair, with Pass 3's declared image support replayed into
+  -- the otherwise empty environment before these declarations.
   .inductDecl [] 0 [
     { name := `TIxImp.A, type := type1
       ctors := [{ name := `TIxImp.A.mk
                   type := arrow (.const `TIxImp.B []) (.const `TIxImp.A []) }] },
     { name := `TIxImp.B, type := type1
       ctors := [{ name := `TIxImp.B.mk
-                  type := arrow (.const `TIxImp.A []) (.const `TIxImp.B []) }] }]
+                  type := arrow (.const `TIxImp.A [])
+                    (if collapsed then .const `TIxImp.B []
+                     else arrow cN (.const `TIxImp.B [])) }] }]
     false,
   -- Doubling via the recursor: const-with-levels, app spine, lambdas.
   .defnDecl {
@@ -187,11 +210,32 @@ private def fixtureDecls : List Lean.Declaration := [
 
 /-- Kernel-replay the fixture into an empty environment and return its
     constants. -/
-private def buildFixtureConsts :
+private def buildFixtureConsts (collapsed : Bool := false) :
     IO (Array (Lean.Name × Lean.ConstantInfo)) := do
   let env ← Lean.mkEmptyEnvironment
   let mut kenv := env.toKernelEnv
-  for decl in fixtureDecls do
+  if collapsed then
+    -- The image generator's declared support (`imageSupport`) and its
+    -- closure with recursors, replayed from Init; importing Init wholesale
+    -- would lose this fixture's empty-environment replay check.
+    Lean.initSearchPath (← Lean.findSysroot)
+    let supportEnv ← Lean.importModules #[{ module := `Init }] {}
+    let rec toLean : Ix.Name → Lean.Name
+      | .anonymous _ => .anonymous
+      | .str p s _ => .str (toLean p) s
+      | .num p i _ => .num (toLean p) i
+    let support := Ix.EnvScope.collectDeps supportEnv
+      (Ix.Compile.Image.imageSupport.toList.map toLean) { recursors := true }
+    let supportMap := support.foldl (fun m (n, ci) => m.insert n ci)
+      ({} : Lean.NameMap Lean.ConstantInfo)
+    let supportPlan ← IO.ofExcept (Ix.Replay.planDeclarations supportMap supportMap.find?)
+    for (key, decl) in supportPlan do
+      match kenv.addDecl {} decl with
+      | .ok kenv' => kenv := kenv'
+      | .error e =>
+        throw <| IO.userError
+          s!"fixture support replay failed at {key}: {Ix.Replay.renderKernelException e}"
+  for decl in fixtureDecls collapsed do
     match kenv.addDecl {} decl with
     | .ok kenv' => kenv := kenv'
     | .error _ =>
@@ -260,32 +304,117 @@ private def compareCI (name : Lean.Name) (a b : Lean.ConstantInfo) :
 
 /-! ### The tests -/
 
-private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
+/-- The certified checker (`kernel-check-ixe`, a `needs` of `IxTests`) on the
+    collapsed artifact: every record is covered by its owning record's row
+    (`KernelReport.checkCoverage`), the private support records in `extra`
+    are accepted, and only the fixture's two non-standard axioms decline.
+    The replay planner regenerates source recursors; this check covers the
+    retained private support. `CHECK_IXE_ROOTS` and `LD_LIBRARY_PATH` are
+    unset, as for every spawned checker (`ClosureHarness.certify`). -/
+private def checkCollapsedArtifact (path : String) (dir : System.FilePath)
+    (extra : Array Lean.Name) : IO (Option String) := do
+  let exe ← IO.FS.realPath (".lake" / "build" / "bin" / "kernel-check-ixe")
+  let reportPath := dir / "certified.jsonl"
+  let out ← IO.Process.output {
+    cmd := exe.toString
+    args := #[path, reportPath.toString, "--jobs", "8"]
+    env := #[("CHECK_IXE_ROOTS", none), ("LD_LIBRARY_PATH", none)] }
+  unless ← reportPath.pathExists do
+    return some s!"kernel-check-ixe wrote no rows (exit {out.exitCode}): {out.stderr}"
+  let report ← match Tests.Ix.Compile.KernelReport.parse
+      (← IO.FS.readFile reportPath) out.exitCode with
+    | .ok report => pure report
+    | .error e => return some s!"certified artifact report: {e}; {out.stderr}"
+  let compiled ← IO.ofExcept (Ixon.rsDeEnv (← IO.FS.readBinFile path))
+  let owner (addr : Address) : Address :=
+    match (compiled.consts.get? addr).bind (·.get?) with
+    | some c => match c.info with
+      | .dPrj p => p.block
+      | .iPrj p => p.block
+      | .rPrj p => p.block
+      | .cPrj p => p.block
+      | _ => addr
+    | none => addr
+  let expected := compiled.named.toArray.map fun (n, entry) =>
+    (toString n, toString (owner entry.addr))
+  if let .error e := Tests.Ix.Compile.KernelReport.checkCoverage report expected then
+    return some s!"certified artifact coverage: {e}"
+  for n in extra do
+    let some named := compiled.named.get? (Ix.Name.fromLeanName n)
+      | return some s!"artifact lacks private support {n}"
+    let address := toString (owner named.addr)
+    let some verdict := report.get? address
+      | return some s!"certified checker omitted private support {n}@{address}"
+    unless verdict.outcome == "accept" do
+      return some s!"certified private support {n}: {verdict.outcome}: {verdict.reason}"
+  let axiomNames := #["TIxImp.axm", "TIxImp.axi"]
+  let mut declined : Array String := #[]
+  for (address, verdict) in report do
+    if verdict.outcome == "accept" then continue
+    let names := (expected.filter (·.2 == address)).map (·.1)
+    unless verdict.outcome == "decline" &&
+        verdict.reason.startsWith "non-standard axiom (" &&
+        !names.isEmpty && names.all axiomNames.contains do
+      return some s!"unexpected certified outcome {address} {names}: {verdict.outcome}: {verdict.reason}"
+    declined := declined ++ names
+  unless declined.size == 2 && axiomNames.all declined.contains do
+    return some s!"certified fixture axiom declines: {declined}, expected {axiomNames}"
+  IO.println s!"[import-ixe] certified artifact: {expected.size} names covered; \
+{report.size} records; exactly two non-standard fixture axioms declined; private support accepted"
+  return none
+
+/-- C6 parity, source root equality and fresh replay; `collapsed` adds the
+    exact source count (42), the collapse itself, the refusal of private
+    support requests and the certified artifact check. -/
+private def roundtripTest (collapsed : Bool := false) : IO (Bool × Nat × Nat × Option String) := do
   let dir ← IO.FS.createTempDir
   let path := (dir / "fixture.ixe").toString
   try
-    let original ← buildFixtureConsts
+    let original ← buildFixtureConsts collapsed
     let status ← Ix.CompileM.rsCompileEnvBytesFFI original.toList path false
     if status.ungrounded.size > 0 then
       return (false, 0, 0,
         some s!"fixture compile ungrounded: {status.ungrounded}")
-    -- C6 parity: materialize everything and compare per constant.
+    if collapsed then
+      unless original.size == 42 do
+        return (false, 0, 0, some s!"collapsed source fixture has {original.size} constants, expected 42")
+      let compiled ← IO.ofExcept (Ixon.rsDeEnv (← IO.FS.readBinFile path))
+      let address (n : Lean.Name) :=
+        (compiled.named.get? (Ix.Name.fromLeanName n)).map (·.addr)
+      unless (address `TIxImp.A).isSome && address `TIxImp.A == address `TIxImp.B do
+        return (false, 0, 0, some "alpha-equivalent mutual members did not collapse")
+    -- C6 parity: materialize everything and compare per constant. Source
+    -- import restores the complete original declaration set; the private
+    -- support records stay in the artifact (checked below).
     let materialized ← Ix.ImportIxe.materializeIxe path
-    if materialized.size != original.size then
-      return (false, 0, 0, some s!"constant count: original \
-{original.size}, materialized {materialized.size}")
+    let privateSupport : Array Lean.Name :=
+      if collapsed then #[`TIxImp.A._ix.rec, `TIxImp.B._ix.rec] else #[]
+    let extra := materialized.filter fun (n, _) => !original.any (·.1 == n)
+    let missing := original.filter fun (n, _) => !materialized.any (·.1 == n)
+    if materialized.size != original.size || !missing.isEmpty || !extra.isEmpty then
+      return (false, 0, 0, some s!"materialized names: original \
+{original.size}, materialized {materialized.size}; extra {extra.map (·.1)}, missing {missing.map (·.1)}")
     let mut origMap : Lean.NameMap Lean.ConstantInfo := {}
     for (n, ci) in original do
       origMap := origMap.insert n ci
     let mut matMap : Lean.NameMap Lean.ConstantInfo := {}
     for (n, ci) in materialized do
       let some oci := origMap.find? n
-        | return (false, 0, 0, some s!"unexpected constant {n}")
+        | return (false, 0, 0, some s!"unexpected source constant {n}")
       if let some e := compareCI n oci ci then
         return (false, 0, 0, some e)
       matMap := matMap.insert n ci
-    -- Root equality: recompiling the materialized constants is a fixed
-    -- point of the canonical root.
+    -- Recursor and definition support names stay outside source import: an
+    -- explicit refusal, not a silent omission of a requested root.
+    if collapsed then
+      for name in #[`TIxImp.A._ix.rec, `TIxImp.A._ix.casesOn] do
+        match ← (Ix.ImportIxe.materializeIxe path #[name]).toBaseIO with
+        | .ok _ => return (false, 0, 0, some s!"source import unexpectedly exposed {name}")
+        | .error e =>
+          unless (e.toString.splitOn "generated compiler support").length > 1 do
+            return (false, 0, 0, some s!"private support import refused for the wrong reason: {e}")
+    -- Root equality: recompiling the complete materialized source output is
+    -- a fixed point of the canonical root.
     let path2 := (dir / "rebuilt.ixe").toString
     let status2 ← Ix.CompileM.rsCompileEnvBytesFFI materialized.toList
       path2 false
@@ -305,8 +434,14 @@ private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
       | .ok kenv' => kenv := kenv'
       | .error _ =>
         return (false, 0, 0, some s!"fresh kernel replay rejected {key}")
-    unless kenv.constants.contains `TIxImp.dbl do
-      return (false, 0, 0, some "fresh replay lost TIxImp.dbl")
+    for (n, expected) in original do
+      let some actual := kenv.constants.find? n
+        | return (false, 0, 0, some s!"fresh replay lost source constant {n}")
+      if let some e := compareCI n expected actual then
+        return (false, 0, 0, some s!"fresh replay: {e}")
+    if collapsed then
+      if let some e ← checkCollapsedArtifact path dir privateSupport then
+        return (false, 0, 0, some e)
     return (true, original.size, 0, none)
   finally
     IO.FS.removeDirAll dir
@@ -514,7 +649,9 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
 
 def suite : List TestSeq := [
   .individualIO "materialize ∘ compile is exact and root-stable" none
-    roundtripTest .done,
+    (roundtripTest false) .done,
+  .individualIO "alpha-collapsed mutual materialization is exact and root-stable" none
+    (roundtripTest true) .done,
   .individualIO "only-scoped materialization returns the closure" none
     closureTest .done,
   .individualIO "materialization restores only source declarations" none

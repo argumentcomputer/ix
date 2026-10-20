@@ -32,7 +32,7 @@ theorem free_parts {environment : CompileEnv} (free : environment.surgeryFree = 
     environment.callSitePlans.isEmpty = true ∧ environment.belowCallSitePlans.isEmpty = true ∧
       environment.brecOnCallSitePlans.isEmpty = true := by
   simp only [CompileEnv.surgeryFree, Bool.and_eq_true] at free
-  exact ⟨free.1.1, free.2, free.1.2⟩
+  exact ⟨free.1.1.1, free.1.2, free.1.1.2⟩
 
 /-- **Without call-site plans the plan-head audit is a no-op.** -/
 theorem audit_free (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)

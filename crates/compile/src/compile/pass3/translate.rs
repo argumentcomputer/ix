@@ -7,6 +7,11 @@
 //! Every outermost rewritten occurrence is wrapped in the placeholder
 //! `[(_ix.inline, n)]` and the source occurrence is returned as source `n`;
 //! the compiler turns the placeholder into the decompile record.
+//!
+//! The memo is keyed by the term, its record mode and the definition site
+//! (Lean `RwKey`): an occurrence in a definition's value never shares a
+//! placeholder with the same occurrence in a type, an expansion or another
+//! member's value, so both compilers write the same records.
 
 use rustc_hash::FxHashMap;
 
@@ -32,9 +37,15 @@ pub struct RwState {
   pub sources: Vec<Expr>,
   /// Rewritten expansions.
   pub exps: FxHashMap<Name, Expansion>,
-  /// Rewritten subterms, each entry retaining its input: a hit is confirmed
-  /// by raw equality (the key's hash is only its fast path).
-  cache: FxHashMap<(Hash, bool), (Expr, Expr)>,
+  /// The definition whose value is being rewritten (Lean `RwConfig.site`):
+  /// `Some` only inside a definition's value (`rewrite_const`), `None` in
+  /// types, other roots and expansions. Part of the memo key, as in Lean's
+  /// `RwKey` and the donor (`a9cf3607`); no pass reads it here.
+  site: Option<Name>,
+  /// Rewritten subterms by (term, record mode, site), each entry retaining
+  /// its input: a hit is confirmed by raw equality (the key's hash is only
+  /// its fast path).
+  cache: FxHashMap<(Hash, bool, Option<Name>), (Expr, Expr)>,
   /// An expansion's value at universe arguments, by the head and the
   /// arguments' hashes, each entry retaining its levels (confirmed raw).
   level_cache: FxHashMap<(Name, Vec<Hash>), (Vec<Level>, Expr)>,
@@ -57,8 +68,11 @@ impl RwState {
     }
     let Some(x) = lookup(n)? else { return Ok(None) };
     let x = if x.needs_rewrite {
-      let v = self.rw(lookup, fuel, false, &x.value)?;
-      Expansion { value: v, needs_rewrite: false, ..x }
+      // an expansion is shared by every site (Lean: `site := none`)
+      let site = self.site.take();
+      let v = self.rw(lookup, fuel, false, &x.value);
+      self.site = site;
+      Expansion { value: v?, needs_rewrite: false, ..x }
     } else {
       x
     };
@@ -97,7 +111,7 @@ impl RwState {
       return Err("Pass 3 rewrite: recursion bound exhausted".into());
     }
     let fuel = fuel - 1;
-    let ck = (key(e), record);
+    let ck = (key(e), record, self.site.clone());
     if let Some((input, r)) = self.cache.get(&ck)
       && input.same_raw(e)
     {
@@ -206,7 +220,11 @@ impl RwState {
       ConstantInfo::DefnInfo(v) => {
         let mut v = v.clone();
         v.cnst.typ = go(self, &v.cnst.typ)?;
-        v.value = go(self, &v.value)?;
+        // a definition's value is its own site (Lean `rewriteConstM`)
+        self.site = Some(v.cnst.name.clone());
+        let value = go(self, &v.value);
+        self.site = None;
+        v.value = value?;
         ConstantInfo::DefnInfo(v)
       },
       ConstantInfo::ThmInfo(v) => {
@@ -308,7 +326,10 @@ pub fn image_decl_with(
 mod tests {
   use super::*;
   use crate::compile::pass3::expr::root_name;
-  use ix_common::env::{AxiomVal, BinderInfo, ConstantVal};
+  use ix_common::env::{
+    AxiomVal, BinderInfo, ConstantVal, DefinitionSafety, DefinitionVal,
+    ReducibilityHints,
+  };
 
   fn term(s: &str) -> Expr {
     Expr::cnst(root_name(s), vec![])
@@ -367,6 +388,64 @@ mod tests {
     assert_eq!(rw.overlay.len(), 1);
     assert_eq!(rw.overlay[0].0, root_name("c"));
     assert_eq!(rw.sources.len(), 1);
+  }
+
+  /// The placeholder of each `head` occurrence in a rewritten term, in order.
+  fn placeholders(e: &Expr, out: &mut Vec<u64>) {
+    match e.as_data() {
+      ExprData::Mdata(md, x, _) => {
+        for (k, v) in md {
+          if *k == inline_key()
+            && let DataValue::OfNat(n) = v
+          {
+            out.push(n.to_u64().unwrap());
+          }
+        }
+        placeholders(x, out);
+      },
+      ExprData::App(f, a, _) => {
+        placeholders(f, out);
+        placeholders(a, out);
+      },
+      _ => {},
+    }
+  }
+
+  fn defn(n: &str, typ: Expr, value: Expr) -> ConstantInfo {
+    ConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal { name: root_name(n), level_params: vec![], typ },
+      value,
+      hints: ReducibilityHints::Abbrev,
+      safety: DefinitionSafety::Safe,
+      all: vec![root_name(n)],
+    })
+  }
+
+  /// The memo is keyed by the definition site (Lean `RwKey`): one occurrence
+  /// in a definition's type and its value gets two placeholders (the
+  /// type's is never the value's record), as does one occurrence in two
+  /// members' values; the members' types share one. The structural
+  /// recursion functional `T.size._f : (x : T) → T.below … x → Nat :=
+  /// fun x (f : T.below … x) => …` has this shape (the lockstep divergence
+  /// on `ReaderFidelityDefs`).
+  #[test]
+  fn definition_value_is_its_own_site() {
+    let occ = Expr::app(term("head"), term("a"));
+    let typ = Expr::app(term("f"), occ.clone());
+    let members = vec![
+      (root_name("m1"), defn("m1", typ.clone(), typ.clone())),
+      (root_name("m2"), defn("m2", typ.clone(), typ.clone())),
+    ];
+    let rw = rewrite_block(&mut |n| Ok(head(n)), &members).unwrap();
+    assert_eq!(rw.sources, vec![occ.clone(), occ.clone(), occ]);
+    let mut got = Vec::new();
+    for (_, ci) in &rw.overlay {
+      let ConstantInfo::DefnInfo(v) = ci else { panic!("not a definition") };
+      placeholders(&v.cnst.typ, &mut got);
+      placeholders(&v.value, &mut got);
+    }
+    // m1: type 0, value 1; m2: type 0 (shared with m1's type), value 2
+    assert_eq!(got, vec![0, 1, 0, 2]);
   }
 
   #[test]

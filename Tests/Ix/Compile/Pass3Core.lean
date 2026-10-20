@@ -6,7 +6,9 @@
     arguments stay applied; an unchanged term is returned as given; an
     exhausted bound is the error naming it; the memo is keyed exactly (a
     term that only shares a digest with a cached one is rewritten for
-    itself); `rewriteBlock`'s overlay is exactly the changed members;
+    itself) and by the definition site (one occurrence in a definition's
+    type and value is two records, as in Rust); `rewriteBlock`'s overlay is
+    exactly the changed members;
   * the side-car (`SideCar`): every registration with a display name moves
     to it, with its metadata renamed;
   * the memo shape (`Memo`): hit, miss, check mode, first entry wins;
@@ -111,6 +113,29 @@ def overlayExact : Bool :=
        | _ => false)
   | .error _ => false
 
+/-- The memo is keyed by the definition site (`RwKey`): one occurrence in a
+definition's type and value gets two placeholders (the type's is never the
+value's record), as does one occurrence in two members' values; the members'
+types share one. The Rust rewrite pins the same (`pass3::translate`'s
+`definition_value_is_its_own_site`); a structural recursion functional
+`T.size._f : (x : T) → T.below … x → Nat := fun x (f : T.below … x) => …` has
+this shape. -/
+def siteKeyed : Bool :=
+  let ty := Expr.mkApp (cst "f") fullApp
+  let member (n : String) : Name × ConstantInfo :=
+    (nm n, .defnInfo { cnst := { name := nm n, levelParams := #[], type := ty }, value := ty,
+                       hints := .abbrev, safety := .safe, all := #[nm n] })
+  let ph (k : Nat) : Expr := Expr.mkApp (cst "f") (Expr.mkMData #[(inlineKey, .ofNat k)] (cst "a"))
+  match rewriteBlock lookup #[member "m1", member "m2"] with
+  | .ok r =>
+    r.sources.size == 3 && r.sources.all (exprEq · fullApp) &&
+      (match r.overlay with
+       | #[(_, .defnInfo v1), (_, .defnInfo v2)] =>
+         exprEq v1.cnst.type (ph 0) && exprEq v1.value (ph 1) &&
+           exprEq v2.cnst.type (ph 0) && exprEq v2.value (ph 2)
+       | _ => false)
+  | .error _ => false
+
 /-! ### The side-car -/
 
 def leanRec : Name := Name.mkStr (nm "A") "rec"
@@ -186,6 +211,7 @@ def suite : List TestSeq := [
   test "an exhausted bound is the error naming it" exhausted,
   test "the rewrite memo is keyed exactly" exactMemo,
   test "the overlay is exactly the changed members" overlayExact,
+  test "the rewrite memo is keyed by the definition site" siteKeyed,
   test "the side-car moves every registration with a display name" sideCarMoves,
   test "memo lookup, check mode and merge" memoShape,
   test "views compare every field but the spec's naming" viewEq]

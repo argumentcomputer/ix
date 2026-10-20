@@ -436,6 +436,9 @@ structure DiffRec where
 
 structure Compiled where
   addr : Name → Option String
+  /-- Whether a Lean name is an image-kind head of a changed block in this
+      compile (`CompileEnv.p3Heads`): the name holds the head's image. -/
+  isHead : Name → Bool := fun _ => false
 
 def nonCanonicalFor (record : List NonCanonicalEntry) (f : Family) (a b : Pres) :
     List NonCanonicalEntry :=
@@ -459,11 +462,12 @@ def lastStr : Name → String
   | .anonymous => ""
 
 /-- The suggested cause and role of a new difference, from its name, class
-    and family, for the re-record's `unreviewed` entries. These are the rules
-    of the call-site surgery's record (the old branch's legacy record, which
-    this compiler's differences follow); every suggestion is reviewed against
-    the dumped terms before it becomes a cause. -/
-def suggest (f : Family) (d : DiffRec) : NonCanonicalCause × String := Id.run do
+    and family, for the re-record's `unreviewed` entries: an inherited
+    difference, an image-kind head of a changed block (`IMAGE`), then by the
+    constant's role; every suggestion is reviewed against the dumped terms
+    before it becomes a cause. -/
+def suggest (f : Family) (d : DiffRec) (head : Bool := false) :
+    NonCanonicalCause × String := Id.run do
   let s := lastStr d.constant
   let parent := lastStr d.constant.getPrefix
   let isEq := s == "eq_def" || s == "eq_unfold" || s.startsWith "eq_"
@@ -474,6 +478,8 @@ def suggest (f : Family) (d : DiffRec) : NonCanonicalCause × String := Id.run d
   let isSizeOf := s.startsWith "_sizeOf_" || s == "sizeOf_spec"
   let oneSided := d.cls == .onlyA || d.cls == .onlyB
   if let .inherited _ := d.cls then return (.inherited, "user constant")
+  if head then
+    return (.image, "image-kind head of a changed block (its Lean name holds the image)")
   if Name.isPrefixOf `Tests.Ix.Compile.Fixtures.NestedLevels f.fixture then
     return (.pendingLevels, "block member or auxiliary")
   match f.kind with
@@ -489,7 +495,7 @@ def suggest (f : Family) (d : DiffRec) : NonCanonicalCause × String := Id.run d
     if isSizeOf then return (.o11aPending, "sizeOf family")
     if s == "noConfusion" || s == "noConfusionType" then return (.pendingNoConfusion, "noConfusion")
     if isAux && oneSided then return (.pendingSplitAux, "block auxiliary")
-    return (.pendingSurgery, "user constant over the block")
+    return (.pendingPasses, "caller of a changed block")
 
 /-- Check one compiler's block failures against the expected refusals of the
     constants in `scope`: every failure must be an expected refusal with its
@@ -721,7 +727,8 @@ structure PairOutcome where
 /-- One pair's differences against its recorded entries, under the records
     policy: exact keys, reviewed causes, pinned evidence. -/
 def checkPair (f : Family) (a b : Pres) (ds : Array DiffRec)
-    (es : List NonCanonicalEntry) : PairOutcome := Id.run do
+    (es : List NonCanonicalEntry) (head : Name → Bool := fun _ => false) :
+    PairOutcome := Id.run do
   let key := s!"{f.fixture} {a.id}/{b.id}"
   let mut out : PairOutcome := {}
   for d in ds do
@@ -733,10 +740,20 @@ def checkPair (f : Family) (a b : Pres) (ds : Array DiffRec)
         out := { out with problems := out.problems.push (
           s!"MOVED {key} {d.constant} ({e.cause.tag}): recorded {e.cls.tag} {e.addrA}/{e.addrB} \
 {e.firstDiff}, run {d.cls.tag} {d.addrA}/{d.addrB} {d.firstDiff}") }
+      -- `IMAGE` is exactly the image-kind heads (the compile's `p3Heads`) whose
+      -- terms differ: a head recorded with another cause, or `IMAGE` on a
+      -- constant that is no head, is a problem; the re-record suggests again
+      let wantImage := head d.constant && !(d.cls matches .inherited _)
+      let mismatch := wantImage != (e.cause == .image) && !(e.cause matches .unreviewed _)
+      if mismatch then
+        out := { out with problems := out.problems.push (
+          s!"CAUSE {key} {d.constant}: recorded {e.cause.tag}, but it is \
+{if wantImage then "" else "not "}an image-kind head with differing terms") }
+      let cause := if mismatch then .unreviewed (suggest f d (head d.constant)).1.syntax else e.cause
       out := { out with entries := out.entries.push (
-        { e with cls := d.cls, addrA := d.addrA, addrB := d.addrB, firstDiff := d.firstDiff }) }
+        { e with cause, cls := d.cls, addrA := d.addrA, addrB := d.addrB, firstDiff := d.firstDiff }) }
     | none =>
-      let (cause, role) := suggest f d
+      let (cause, role) := suggest f d (head d.constant)
       let entry : NonCanonicalEntry :=
         { fixture := f.fixture, presA := a.id, presB := b.id, constant := d.constant, role,
           cause := .unreviewed cause.syntax, cls := d.cls, addrA := d.addrA, addrB := d.addrB,
@@ -768,7 +785,12 @@ def pairsGate (env : Environment) (families : List Family) (lean : Compiled)
       let ds := ds.qsort (·.constant.toString < ·.constant.toString)
       totalDiffs := totalDiffs + ds.size
       let es := nonCanonicalFor record f a b
-      let o := checkPair f a b ds es
+      -- a constant whose Lean name (in A, or its counterpart in B) holds the
+      -- image of an image-kind head
+      let bHeads : Std.HashSet Name := (presConsts env b).foldl (init := {}) fun s (n, _) =>
+        if lean.isHead n then s.insert (mapInto a b n) else s
+      let head (c : Name) : Bool := lean.isHead (a.ns ++ c) || bHeads.contains (a.ns ++ c)
+      let o := checkPair f a b ds es head
       problems := problems ++ o.problems
       rerecorded := rerecorded.insert f.fixture ((rerecorded.getD f.fixture #[]) ++ o.entries)
       let nInh := (ds.filter fun d => d.cls matches .inherited _).size
@@ -846,7 +868,10 @@ constants, {closure.length} in the closure (environment and closure {t1 - t0} ms
   -- 3. the pairs against the record
   let record := Tests.Ix.Compile.NonCanonicalDefault.nonCanonical
   let (problems, rerecorded) ←
-    pairsGate env families { addr := leanAddr } record refusedSet dumpDir
+    pairsGate env families
+      { addr := leanAddr
+        isHead := fun n => leanOut.cenv.p3Heads.contains (_root_.Ix.Name.fromLeanName n) }
+      record refusedSet dumpDir
   failures := failures + problems
   if let some path := (← IO.getEnv "IX_TWINS_RECORD") then
     IO.FS.writeFile path (rerecordFile record families rerecorded)

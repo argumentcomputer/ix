@@ -5,6 +5,7 @@ public import Ix.Tc.IngressMeta
 public import Ix.Tc.ParCheck
 public import Ix.Tc.EgressLean
 public import Ix.CanonM
+public import Ix.Compile.Pass.Names
 
 /-!
 Whole-env validation drivers for the pure-Lean `Ix.Tc` pipeline — the
@@ -131,7 +132,10 @@ inductive MetaVerdict where
     the kernel-direct comparison skips them with a count. Identity-kept
     call sites (every source arg kept in place, head unchanged) are NOT
     altering and stay in the comparison. Their anon-structural fidelity is
-    covered by the anon roundtrip either way. -/
+    covered by the anon roundtrip either way. A Pass 3 decompile record
+    (an `mdata` node with the key `_ix.inline`) is altering too: the stored
+    term is the rewritten call site, and its source occurrence lives in
+    `metaSharing`, read only by the decompilers' replay. -/
 def metaHasAlteringSurgery (cm : Ixon.ConstantMeta) : Bool :=
   let arena := match cm.info with
     | .defn _ _ _ _ a _ _ => a
@@ -148,6 +152,8 @@ def metaHasAlteringSurgery (cm : Ixon.ConstantMeta) : Bool :=
         | .collapsed .. => true
         | .kept canonIdx _ => canonIdx.toNat != i)
     | .etaCallSite .. => true
+    | .mdata kvmaps _ => kvmaps.any fun kv => kv.any fun (k, _) =>
+      k == Ix.Compile.Pass.inlineKey.getHash
     | _ => false
 
 /-- Meta roundtrip summary counts. -/

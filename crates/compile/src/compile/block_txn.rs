@@ -55,6 +55,12 @@ pub struct BlockTxn {
   pub plans: Vec<Name>,
   pub brec_on_plans: Vec<Name>,
   pub below_plans: Vec<Name>,
+  /// Pass 3 records newly entered (image-kind heads, Lean blocks, canonical
+  /// recursors, component records).
+  pub p3_heads: Vec<Name>,
+  pub p3_blocks: Vec<Name>,
+  pub p3_canon_recs: Vec<Name>,
+  pub p3_components: Vec<Name>,
   /// Names the block would have released to the scheduler early.
   pub pending: Vec<Name>,
 }
@@ -190,6 +196,22 @@ pub fn log_below_plan(n: &Name) {
   with(|x| x.below_plans.push(n.clone()));
 }
 
+pub fn log_p3_head(n: &Name) {
+  with(|x| x.p3_heads.push(n.clone()));
+}
+
+pub fn log_p3_block(n: &Name) {
+  with(|x| x.p3_blocks.push(n.clone()));
+}
+
+pub fn log_p3_canon_rec(n: &Name) {
+  with(|x| x.p3_canon_recs.push(n.clone()));
+}
+
+pub fn log_p3_component(n: &Name) {
+  with(|x| x.p3_components.push(n.clone()));
+}
+
 /// Defer the release of `names` to the end of the block while logging;
 /// returns them back when no log is active (release now).
 pub fn defer_pending(names: Vec<Name>) -> Option<Vec<Name>> {
@@ -233,6 +255,18 @@ pub fn rollback(stt: &CompileState, txn: &BlockTxn) {
   }
   for n in &txn.below_plans {
     stt.below_call_site_plans.remove(n);
+  }
+  for n in &txn.p3_heads {
+    stt.p3.heads.remove(n);
+  }
+  for n in &txn.p3_blocks {
+    stt.p3.blocks.remove(n);
+  }
+  for n in &txn.p3_canon_recs {
+    stt.p3.canon_recs.remove(n);
+  }
+  for n in &txn.p3_components {
+    stt.p3.components.remove(n);
   }
 }
 

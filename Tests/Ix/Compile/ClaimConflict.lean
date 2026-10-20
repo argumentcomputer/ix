@@ -15,9 +15,11 @@
      driver's merge, with two blocks of one wave claiming one name) and
      through `promoteRemaining`: a primary name over an aux claim, an aux
      claim over a compiled name, over an earlier aux claim and over itself
-     within one block, an identical re-claim (accepted), a conflicting plan
-     of each of the three kinds, and a second compiled claim at another
-     address. The messages must be Rust's, character for character. An
+     within one block, an identical re-claim (accepted), a conflicting Pass 3
+     record of each kind (a display name, an image-kind head, a Lean block,
+     a canonical recursor compared whole), Pass 3 over a failed block (a
+     missing-constant cascade, not an image error), and a second compiled
+     claim at another address. The messages must be Rust's, character for character. An
      alias of a promoted target does not borrow the target's `original`
      (its own promotion supplies one), so its metadata does not depend on
      promotion order. An identical re-claim of a name an earlier block owns
@@ -101,26 +103,19 @@ private def auxCache (claims : List (Ix.Name × Address)) : BlockState := Id.run
 /-- What every driver does with a compiled block: `checkBlockClaims`, then
     `mergeCompiledBlock` if the check passes. -/
 private def merge (acc : DriverAcc) (lo : Ix.Name) (result : BlockResult) (cache : BlockState)
-    (plans : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan)
-    (brecPlans belowPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan) :
-    Except CompileError DriverAcc := do
-  checkBlockClaims acc.cenv (primaryClaims lo result) cache plans brecPlans belowPlans
-  pure (mergeCompiledBlock acc lo result cache plans brecPlans belowPlans)
+    (published : Ix.Compile.Pass.Published := {}) : Except CompileError DriverAcc := do
+  checkBlockClaims acc.cenv (primaryClaims lo result) cache published
+  pure (mergeCompiledBlock acc lo result cache published)
 
 private def errOf : Except CompileError DriverAcc → Option String
   | .error (.invalidMutualBlock r) => some r
   | .error e => some s!"(another error) {e}"
   | .ok _ => none
 
-private def bplan (k : Nat) : Ix.AuxGen.BRecOnCallSitePlan :=
-  { nParams := k, nSourceMotives := 2, nIndices := 0, motiveKeep := #[true, false],
-    sourceToCanonMotive := #[0, 0], sourceInBlock := #[true, true] }
-
-private def cplan (k : Nat) : Ix.AuxGen.CallSitePlan :=
-  { nParams := k, nSourceMotives := 2, nSourceMinors := 0, nIndices := 0,
-    motiveKeep := #[true, false], minorKeep := #[], sourceToCanonMotive := #[0, 0],
-    sourceToCanonMinor := #[], sourceInBlock := #[true, true], minorInBlock := #[],
-    headRewrite := none }
+private def recursor (n : Ix.Name) (k : Bool) : Ix.RecursorVal :=
+  { cnst := { name := n, levelParams := #[], type := Ix.Expr.mkSort Ix.Level.mkZero }
+    all := #[n], numParams := 0, numIndices := 0, numMotives := 1, numMinors := 0,
+    rules := #[], k, isUnsafe := false }
 
 /-- The driver-API cases: (label, expected message or `none` for accepted,
     actual). -/
@@ -133,59 +128,80 @@ def driverCases : List (String × Option String × Option String) := Id.run do
     { cenv := { (default : CompileEnv) with nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x } }
   let withClaimed : DriverAcc :=
     { cenv := { (default : CompileEnv) with auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x } }
-  let none₀ : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {}
-  let noneB : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
   let mut cases : List (String × Option String × Option String) := []
   -- claim_compiled_name: a primary name aux-gen has claimed elsewhere
   cases := cases ++ [("primary name over an aux claim", some (rustConflict n x y),
-    errOf (merge withClaimed n (loneResult y) default none₀ noneB noneB))]
+    errOf (merge withClaimed n (loneResult y) default))]
   -- claim_aux_name over name_to_addr
   cases := cases ++ [("aux claim over a compiled name", some (rustConflict n x y),
-    errOf (merge withCompiled lo (loneResult (addr "t")) (auxCache [(n, y)])
-      none₀ noneB noneB))]
+    errOf (merge withCompiled lo (loneResult (addr "t")) (auxCache [(n, y)])))]
   -- claim_aux_name over the block's own primary name
   cases := cases ++ [("aux claim over the block's own primary name", some (rustConflict n y x),
-    errOf (merge emptyAcc n (loneResult y) (auxCache [(n, x)]) none₀ noneB noneB))]
+    errOf (merge emptyAcc n (loneResult y) (auxCache [(n, x)])))]
   -- claim_aux_name over an earlier aux claim
   cases := cases ++ [("aux claim over an earlier aux claim", some (rustConflict n x y),
-    errOf (merge withClaimed lo (loneResult (addr "t")) (auxCache [(n, y)])
-      none₀ noneB noneB))]
+    errOf (merge withClaimed lo (loneResult (addr "t")) (auxCache [(n, y)])))]
   -- claim_aux_name twice in one block
   cases := cases ++ [("two aux claims in one block", some (rustConflict n x y),
-    errOf (merge emptyAcc lo (loneResult (addr "t")) (auxCache [(n, x), (n, y)])
-      none₀ noneB noneB))]
+    errOf (merge emptyAcc lo (loneResult (addr "t")) (auxCache [(n, x), (n, y)])))]
   -- identical re-claims are no-ops
   cases := cases ++ [("identical re-claim", none,
-    errOf (merge withClaimed lo (loneResult (addr "t")) (auxCache [(n, x), (n, x)])
-      none₀ noneB noneB))]
+    errOf (merge withClaimed lo (loneResult (addr "t")) (auxCache [(n, x), (n, x)])))]
   cases := cases ++ [("identical compiled name and aux claim", none,
-    errOf (merge withCompiled lo (loneResult (addr "t")) (auxCache [(n, x)])
-      none₀ noneB noneB))]
+    errOf (merge withCompiled lo (loneResult (addr "t")) (auxCache [(n, x)])))]
   -- a second compiled claim at another address
   cases := cases ++ [("second compiled claim", some (rustConflict n x y),
-    errOf (merge withCompiled n (loneResult y) default none₀ noneB noneB))]
+    errOf (merge withCompiled n (loneResult y) default))]
   cases := cases ++ [("identical second compiled claim", none,
-    errOf (merge withCompiled n (loneResult x) default none₀ noneB noneB))]
-  -- plans
+    errOf (merge withCompiled n (loneResult x) default))]
+  -- Pass 3's records (Rust `insert_once`, `move_to_display`): a display
+  -- name, an image-kind head, a Lean block and a canonical recursor are
+  -- insert-once against the live state and within the block
   let k := ixName "Fx.A.rec"
-  let withPlans : DriverAcc := { cenv := { (default : CompileEnv) with
-    callSitePlans := ({} : Std.HashMap _ _).insert k (cplan 1)
-    brecOnCallSitePlans := ({} : Std.HashMap _ _).insert k (bplan 1)
-    belowCallSitePlans := ({} : Std.HashMap _ _).insert k (bplan 1) } }
-  let one (p : Ix.AuxGen.BRecOnCallSitePlan) := ({} : Std.HashMap Ix.Name _).insert k p
-  cases := cases ++ [("conflicting call-site plan",
-    some s!"conflicting call-site plans for '{k.pretty}' — two blocks claim one source-indexed aux name",
-    errOf (merge withPlans lo (loneResult (addr "t")) default
-      (({} : Std.HashMap Ix.Name _).insert k (cplan 2)) noneB noneB))]
-  cases := cases ++ [("conflicting brecOn call-site plan",
-    some s!"conflicting brecOn call-site plans for '{k.pretty}' — two blocks claim one source-indexed aux name",
-    errOf (merge withPlans lo (loneResult (addr "t")) default none₀ (one (bplan 2)) noneB))]
-  cases := cases ++ [("conflicting below call-site plan",
-    some s!"conflicting below call-site plans for '{k.pretty}' — two blocks claim one source-indexed aux name",
-    errOf (merge withPlans lo (loneResult (addr "t")) default none₀ noneB (one (bplan 2))))]
-  cases := cases ++ [("equal plans", none,
-    errOf (merge withPlans lo (loneResult (addr "t")) default
-      (({} : Std.HashMap Ix.Name _).insert k (cplan 1)) (one (bplan 1)) (one (bplan 1))))]
+  let d := ixName "Fx.A._ix.rec"
+  let lo₃ := ixName "Fx.B"
+  let rec₁ := recursor k false
+  let rec₂ := recursor k true
+  let withP3 : DriverAcc := { cenv := { (default : CompileEnv) with
+    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert d x
+    p3Heads := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert k lo
+    p3Blocks := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert lo #[lo]
+    p3CanonRecs := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert k rec₁ } }
+  let display (a : Address) : BlockState :=
+    { (default : BlockState) with
+      auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert d a }
+  cases := cases ++ [("conflicting display name", some (rustConflict d x y),
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) (display y)))]
+  cases := cases ++ [("conflicting image-kind head",
+    some s!"Pass 3: conflicting image-kind head '{k.pretty}'",
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { heads := #[(k, lo₃)] }))]
+  cases := cases ++ [("conflicting image-kind head in one block",
+    some s!"Pass 3: conflicting image-kind head '{d.pretty}'",
+    errOf (merge emptyAcc lo₃ (loneResult (addr "t")) default
+      { heads := #[(d, lo), (d, lo₃)] }))]
+  cases := cases ++ [("conflicting Lean block",
+    some s!"Pass 3: conflicting Lean block '{lo.pretty}'",
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { blocks := #[(lo, #[lo, lo₃])] }))]
+  cases := cases ++ [("conflicting canonical recursor (same type, other fields)",
+    some s!"Pass 3: conflicting canonical recursor '{k.pretty}'",
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { canonRecs := #[(k, rec₂)] }))]
+  cases := cases ++ [("equal Pass 3 records", none,
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) (display x)
+      { heads := #[(k, lo)], blocks := #[(lo, #[lo])], canonRecs := #[(k, rec₁)] }))]
+  -- the cascade rule (`Ix.Compile.Pass.pass3Failure`): an image block whose
+  -- Lean block has a member that did not compile fails as that member's
+  -- missing constant, like every other dependent of a failed block
+  let h := ixName "Fx.C.rec"
+  let key := ixName "Fx.C"
+  let failedBlock : CompileEnv := { (default : CompileEnv) with
+    p3Heads := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert h key
+    p3Blocks := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert key #[key] }
+  let cascade : Option String :=
+    match runBlock failedBlock (({} : Ix.Set Ix.Name).insert h) h with
+    | .ok _ => none
+    | .error e => some (toString e)
+  cases := cases ++ [("Pass 3 over a failed block: its cascade",
+    some s!"missingConstant: {key}", cascade)]
   -- the wave driver: two blocks of one wave, computed on one snapshot,
   -- claim `n` at different addresses; the second merge is refused and the
   -- block is reported failed (its dependents are released as failed)
@@ -193,9 +209,9 @@ def driverCases : List (String × Option String × Option String) := Id.run do
   let all₁ : Ix.Set Ix.Name := ({} : Ix.Set Ix.Name).insert lo
   let all₂ : Ix.Set Ix.Name := ({} : Ix.Set Ix.Name).insert lo₂
   let (acc₁, _, failed₁) := applyAuxBlockOutcome emptyAcc lo all₁
-    (.compiled (loneResult (addr "t")) (auxCache [(n, x)]) none₀ noneB noneB)
+    (.compiled (loneResult (addr "t")) (auxCache [(n, x)]) {})
   let (acc₂, names₂, failed₂) := applyAuxBlockOutcome acc₁ lo₂ all₂
-    (.compiled (loneResult (addr "u")) (auxCache [(n, y)]) none₀ noneB noneB)
+    (.compiled (loneResult (addr "u")) (auxCache [(n, y)]) {})
   let waveMsg : Option String :=
     if failed₁ || !failed₂ || !names₂.isEmpty || acc₂.cenv.auxNameToAddr.get? n != some x then
       some s!"wrong outcome: failed {failed₁}/{failed₂}, registered {names₂.size}, \
@@ -267,23 +283,20 @@ def ownerNamedCheck : Except String Unit := do
   let owner : Ixon.Named :=
     { addr := x, constMeta := tag "owner", original := some (addr "owner-original", .empty),
       hints := some .abbrev }
-  let none₀ : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {}
-  let noneB : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
   -- an aux claim over an earlier block's aux claim of `n` at `x`
   let claimed : DriverAcc := { cenv := { (default : CompileEnv) with
     auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x
     nameToNamed := ({} : Std.HashMap _ _).insert n owner } }
   let later : BlockState :=
     { auxCache [(n, x)] with auxNamed := #[(n, { addr := x, constMeta := tag "later" })] }
-  let acc ← (merge claimed lo (loneResult (addr "t")) later none₀ noneB noneB).mapError toString
+  let acc ← (merge claimed lo (loneResult (addr "t")) later).mapError toString
   if acc.cenv.nameToNamed.get? n != some owner then
     throw "an identical aux re-claim replaced the owner's Named"
   -- a primary name over an earlier block's compiled claim of `n` at `x`
   let compiled : DriverAcc := { cenv := { (default : CompileEnv) with
     nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x
     nameToNamed := ({} : Std.HashMap _ _).insert n owner } }
-  let acc ← (merge compiled n { loneResult x with blockMeta := tag "later" } default
-    none₀ noneB noneB).mapError toString
+  let acc ← (merge compiled n { loneResult x with blockMeta := tag "later" } default).mapError toString
   if acc.cenv.nameToNamed.get? n != some owner then
     throw "an identical primary re-claim replaced the owner's Named"
   -- one block claiming `n` twice keeps its own last entry
@@ -291,7 +304,7 @@ def ownerNamedCheck : Except String Unit := do
     { auxCache [(n, x), (n, x)] with
       auxNamed := #[(n, { addr := x, constMeta := tag "first" }),
         (n, { addr := x, constMeta := tag "second" })] }
-  let acc ← (merge emptyAcc lo (loneResult (addr "t")) twice none₀ noneB noneB).mapError toString
+  let acc ← (merge emptyAcc lo (loneResult (addr "t")) twice).mapError toString
   if (acc.cenv.nameToNamed.get? n).map (·.constMeta) != some (tag "second") then
     throw "a block's own second registration was dropped"
 
@@ -372,7 +385,7 @@ end DriverApi
 /-- The aux-gen seed names (`Ix.CompileM.auxGenSeedNames`), as Lean names. -/
 def auxSeeds : List Name :=
   [``PUnit, ``PProd, ``Eq, ``Eq.refl, ``Eq.symm, ``Eq.ndrec, ``rfl, ``HEq, ``HEq.refl,
-    ``eq_of_heq, ``True]
+    ``eq_of_heq, ``True, ``And]
 
 /-- A closure with the recursors of its inductives (`X.rec`, `X.rec_N`) and
     their own closures. -/

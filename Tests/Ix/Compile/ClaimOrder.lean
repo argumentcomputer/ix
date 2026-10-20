@@ -15,7 +15,9 @@
   3. **Legitimate claims.** The split and evaporating nested fixtures
      (`Tests.Ix.Compile.Mutual.AuxOwnership.{Evap,SplitSpecs}`) compile with
      no refusal, and the evaporation control still shares `List.rec`'s
-     content.
+     content: under Pass 3 the evaporated `M.rec_2` of the changed component
+     `{M}` is stored under its display name `M._ix.rec_2`, the one name of
+     the fixture at `List.rec`'s address, and `M.rec_2` holds its image.
 
   Run with: `lake test -- --ignored compile-claim-order`.
 -/
@@ -106,15 +108,29 @@ def run : IO UInt32 := do
   for (name, why) in positiveEnv.ungrounded.toList do
     failures := failures + 1
     IO.println s!"[claim-order] FAIL legitimate source claim {name.pretty}: {why}"
-  let sourceAlias := Ix.Name.fromLeanName `Tests.Ix.Compile.Mutual.AuxOwnership.Evap.M.rec_2
+  -- Pass 3: `{M}` is a changed component (Lean's block `[M, B]` splits), so
+  -- the evaporated nested recursor it claims moves to its `_ix` display name
+  -- and the Lean name `M.rec_2` holds its image (Lean's own type, with the
+  -- motives of the whole Lean block): exactly one source-owned name of the
+  -- fixture, the display name, shares `List.rec`'s content, and the Lean
+  -- name holds a constant of its own.
+  let sourceName := Ix.Name.fromLeanName `Tests.Ix.Compile.Mutual.AuxOwnership.Evap.M.rec_2
+  let ixAlias := Ix.Name.fromLeanName `Tests.Ix.Compile.Mutual.AuxOwnership.Evap.M._ix.rec_2
   let externalRec := Ix.Name.fromLeanName `List.rec
-  match output.named[sourceAlias]?, output.named[externalRec]? with
-  | some source, some target => unless source.addr == target.addr do
+  let evapPrefix := "Tests.Ix.Compile.Mutual.AuxOwnership.Evap."
+  match output.named[ixAlias]?, output.named[externalRec]?, output.named[sourceName]? with
+  | some ixEntry, some target, some source =>
+    let sharing := output.named.fold (init := #[]) fun acc n e =>
+      if n != externalRec && n.pretty.startsWith evapPrefix && e.addr == target.addr then
+        acc.push n.pretty else acc
+    IO.println s!"[claim-order] evaporation control: {sharing.size} source-owned name(s) at \
+List.rec's address: {sharing}"
+    unless ixEntry.addr == target.addr && sharing.size == 1 && source.addr != target.addr do
       failures := failures + 1
       IO.println "[claim-order] FAIL evaporation control no longer shares List.rec content"
-  | _, _ =>
+  | _, _, _ =>
     failures := failures + 1
-    IO.println "[claim-order] FAIL evaporation control source or target missing"
+    IO.println "[claim-order] FAIL evaporation control: source name, display name or target missing"
   return if failures == 0 then 0 else 1
 
 end Tests.Ix.Compile.ClaimOrder

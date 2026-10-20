@@ -450,11 +450,12 @@ def registry : List Entry := [
   -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
   .env "canon-pass1" .landing Tests.Ix.Compile.Canon.run,
   -- The changed set (H1): the change predicate's causes, the set on the
-  -- fixture corpus against both compilers' call-site plan registrations, and
-  -- Init+Std empty (Tests.Ix.Compile.ChangedSet).
+  -- fixture corpus against both compilers' Pass 3 edits (the components the
+  -- first hook edits, the published heads, the decompile records' carriers),
+  -- and Init+Std empty (Tests.Ix.Compile.ChangedSet).
   .env "changed-set" (.ci .compilePipeline) Tests.Ix.Compile.ChangedSet.run,
   .runner "changed-set-initstd" .landing Tests.Ix.Compile.ChangedSet.runInitStd,
-  .env "changed-set-testenv" (.manual "two Rust compiles of the whole test environment; the calibration of the change predicate against Rust's plan registrations") Tests.Ix.Compile.ChangedSet.runTestEnv,
+  .env "changed-set-testenv" (.manual "two Rust compiles of the whole test environment; the calibration of the change predicate against the Rust artifact's Pass 3 edits") Tests.Ix.Compile.ChangedSet.runTestEnv,
   .env "decompile-diff" (.ci .compilePipeline) Tests.Compile.DecompileDiff.run,
   -- Non-canonical stored inductive flags: refused by both compilers
   -- (Tests.Ix.Compile.IndFlags).
@@ -471,8 +472,8 @@ def registry : List Entry := [
   -- Single ownership of compiled names: conflicting claims refused by both
   -- compilers (Tests.Ix.Compile.ClaimConflict).
   .runner "compile-claim-conflict" (.ci .compilePipeline) Tests.Ix.Compile.ClaimConflict.run,
-  -- The Rust Pass 3 core (not wired yet) against Ix.Compile.Image: the images of
-  -- image-gen's fixtures through the test-only FFI (Tests.Ix.Compile.Pass3RustParity).
+  -- The Rust Pass 3 core against Ix.Compile.Image (the images of image-gen's
+  -- fixtures, test-only FFI) and against the Lean compiler on their callers (bytes)
   .runner "pass3-rust-parity" (.ci .compilePipeline) Tests.Ix.Compile.Pass3RustParity.run,
   -- Source ownership of auxiliary claims, independent of arrival order
   -- (Tests.Ix.Compile.ClaimOrder).

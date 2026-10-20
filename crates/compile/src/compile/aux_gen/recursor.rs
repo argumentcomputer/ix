@@ -845,6 +845,7 @@ pub fn generate_canonical_recursors_with_layout(
       &rec_level_params,
       &rec_type,
       source_of_canonical,
+      lean_env,
       stt,
       kctx,
       block_nested_rewrite.as_mut(),
@@ -1045,6 +1046,7 @@ fn build_rec_type(
         &motive_fvars,
         ind_univs,
         rec_level_params,
+        lean_env,
         stt,
         kctx,
         nested_rewrite.as_deref_mut(),
@@ -1415,6 +1417,7 @@ fn build_minor_type(
   motive_fvars: &[LeanExpr],
   ind_univs: &[Level],
   rec_level_params: &[Name],
+  lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
   // Shared scratch for nested-aux level rewrites across every ctor in
@@ -1491,6 +1494,7 @@ fn build_minor_type(
   let mut field_fvars: Vec<LeanExpr> = Vec::new();
   let mut rec_fields: Vec<(usize, usize)> = Vec::new(); // (field_idx, target_class)
 
+  let unfold = kctx.unfold_rec_targets;
   let mut scope =
     super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx)?;
 
@@ -1515,6 +1519,7 @@ fn build_minor_type(
           n_params,
           &mut scope,
           stt,
+          (lean_env, unfold),
         )?;
         if let Some(ci) = rec_ci {
           rec_fields.push((fi, ci));
@@ -1698,6 +1703,7 @@ fn build_rec_rules(
   // Lean-source-indexed aux naming (see caller doc). `None` falls back
   // to `canonical_i + 1`.
   source_of_canonical: Option<&[usize]>,
+  lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
   nested_rewrite: Option<&mut NestedRewriteCtx>,
@@ -1773,6 +1779,7 @@ fn build_rec_rules(
   // of constructor-field domains. Same rationale as `build_minor_type`:
   // delta-unfolding reducible-alias heads matters for recognizing recursive
   // fields hidden under a definition (`reduceCtorParam` family).
+  let unfold = kctx.unfold_rec_targets;
   let mut scope =
     super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx)?;
 
@@ -1858,6 +1865,7 @@ fn build_rec_rules(
               n_params,
               &mut scope,
               stt,
+              (lean_env, unfold),
             )? {
               rec_field_data.push((fv.clone(), target_ci));
             }
@@ -2153,6 +2161,8 @@ fn has_deeper_str(n: &Name) -> bool {
 /// `build_ih_type_fvar`'s subsequent WHNF on the same field_dom would be
 /// cold, and the cumulative cold-cache cost dominates wall-clock time
 /// on mathlib-scale runs (hundreds of seconds in Phase 5 Pass 2).
+/// Phase 3, the decompile's only, runs when Phase 2 matches nothing too
+/// ([`rec_target_by_unfolding`]).
 ///
 /// Mirrors Lean's `kernel/inductive.cpp::is_rec_argument`. The TcScope
 /// is left balanced on return — every local pushed during peeling is
@@ -2164,6 +2174,7 @@ fn find_rec_target(
   n_params: usize,
   scope: &mut super::expr_utils::TcScope<'_>,
   _stt: &crate::compile::CompileState,
+  unfold: (&LeanEnv, bool),
 ) -> Result<Option<usize>, CompileError> {
   // Phase 1: syntactic peel + match.
   let mut ty = dom.clone();
@@ -2214,7 +2225,82 @@ fn find_rec_target(
     ty = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
   scope.pop_locals(&pushed)?;
-  Ok(match_classes_against_app(&ty, classes, param_fvars, n_params))
+  if let Some(ci) =
+    match_classes_against_app(&ty, classes, param_fvars, n_params)
+  {
+    return Ok(Some(ci));
+  }
+
+  // Phase 3 (decompile only, `KernelCtx::unfold_rec_targets`): Phase 2's
+  // reduct can name an alpha-twin of the member it reached (`Id' D` gives
+  // `D`, printed `Nat` when `D` and `Nat` share an address), so its by-name
+  // match misses. The compile, which never sets the flag, only traces what
+  // this phase would decide, under `IX_LOG_AUX_NAMES`.
+  let (lean_env, unfold) = unfold;
+  if !unfold && !*crate::compile::IX_LOG_AUX_NAMES {
+    return Ok(None);
+  }
+  let found =
+    rec_target_by_unfolding(dom, classes, param_fvars, n_params, lean_env);
+  if let Some(ci) = found
+    && *crate::compile::IX_LOG_AUX_NAMES
+  {
+    let head = match decompose_apps(dom).0.as_data() {
+      ExprData::Const(n, _, _) => n.pretty(),
+      _ => "-".to_string(),
+    };
+    eprintln!(
+      "[aux-names] rec-target-fallback {} field-head={head} target={}",
+      if unfold { "applied" } else { "compile-not-applied" },
+      classes[ci].ind.cnst.name.pretty()
+    );
+  }
+  Ok(found.filter(|_| unfold))
+}
+
+/// Phase 3 of [`find_rec_target`]: the field's head unfolded in the source
+/// itself, with each definition's own value from `lean_env` and the field's
+/// own arguments (head beta, delta, foralls peeled), so a member's name
+/// survives where the kernel's name-erased reduct loses it. Every step is a
+/// head step of the kernel's `whnf`, so a member reached is the one Lean's
+/// `is_rec_argument` finds; anything else (a stuck head, `let`, `match`)
+/// stays undecided.
+fn rec_target_by_unfolding(
+  dom: &LeanExpr,
+  classes: &[FlatInfo],
+  param_fvars: &[LeanExpr],
+  n_params: usize,
+  lean_env: &LeanEnv,
+) -> Option<usize> {
+  let mut ty = dom.clone();
+  for step in 0..64 {
+    ty = strip_mdata_ref(&ty).clone();
+    if let Some(ci) =
+      match_classes_against_app(&ty, classes, param_fvars, n_params)
+    {
+      return Some(ci);
+    }
+    if let ExprData::ForallE(_, _, body, _, _) = ty.as_data() {
+      ty = instantiate1(body, &fresh_fvar("frt_unfold", step).1);
+      continue;
+    }
+    let (head, args) = decompose_apps(&ty);
+    let head = match head.as_data() {
+      ExprData::Lam(..) if !args.is_empty() => head,
+      ExprData::Const(name, levels, _) => match lean_env.get(name).as_deref() {
+        Some(ConstantInfo::DefnInfo(d))
+          if d.cnst.level_params.len() == levels.len() =>
+        {
+          subst_levels(&d.value, &d.cnst.level_params, levels)
+        },
+        _ => return None,
+      },
+      _ => return None,
+    };
+    ty =
+      super::expr_utils::beta_reduce(&super::expr_utils::mk_app_n(head, &args));
+  }
+  None
 }
 
 /// Helper for [`find_rec_target`]: match an `App`-spine against the
@@ -3963,6 +4049,77 @@ mod tests {
     );
   }
 
+  /// Valid image-packing support for compile_env fixtures. Pass 3 uses
+  /// And/True for Prop motives and PProd for Type motives; these are source
+  /// declarations, not generated placeholders or trusted kernel entries.
+  fn add_image_support(env: &mut LeanEnv) {
+    add_punit_pprod(env);
+    let prop = LeanExpr::sort(Level::zero());
+    let and = n("And");
+    let intro = Name::str(and.clone(), "intro".into());
+    let bv = |i: u64| LeanExpr::bvar(Nat::from(i));
+    let and_ty =
+      epi(n("a"), prop.clone(), epi(n("b"), prop.clone(), prop.clone()));
+    let intro_ty = LeanExpr::all(
+      n("a"),
+      prop.clone(),
+      LeanExpr::all(
+        n("b"),
+        prop.clone(),
+        epi(
+          n("left"),
+          bv(1),
+          epi(
+            n("right"),
+            bv(1),
+            LeanExpr::app(
+              LeanExpr::app(LeanExpr::cnst(and.clone(), vec![]), bv(3)),
+              bv(2),
+            ),
+          ),
+        ),
+        BinderInfo::Implicit,
+      ),
+      BinderInfo::Implicit,
+    );
+    for (name, ctor, typ, ctor_typ, params, fields) in [
+      (and, intro, and_ty, intro_ty, 2u64, 2u64),
+      (
+        n("True"),
+        Name::str(n("True"), "intro".into()),
+        prop,
+        LeanExpr::cnst(n("True"), vec![]),
+        0,
+        0,
+      ),
+    ] {
+      env.insert(
+        name.clone(),
+        ConstantInfo::InductInfo(InductiveVal {
+          cnst: ConstantVal { name: name.clone(), level_params: vec![], typ },
+          num_params: Nat::from(params),
+          num_indices: Nat::from(0u64),
+          all: vec![name.clone()],
+          ctors: vec![ctor.clone()],
+          num_nested: Nat::from(0u64),
+          is_rec: false,
+          is_unsafe: false,
+          is_reflexive: false,
+        }),
+      );
+      env.insert(
+        ctor.clone(),
+        ConstantInfo::CtorInfo(ConstructorVal {
+          cnst: ConstantVal { name: ctor, level_params: vec![], typ: ctor_typ },
+          induct: name,
+          cidx: Nat::from(0u64),
+          num_params: Nat::from(params),
+          num_fields: Nat::from(fields),
+          is_unsafe: false,
+        }),
+      );
+    }
+  }
   /// Build a Prop mutual with drec eligibility (single ctor, all-Prop fields).
   /// This is is_prop=true BUT is_large=true (drec).
   /// P : Prop, P | mk : P → P  (single ctor with one Prop field)
@@ -4577,7 +4734,8 @@ mod tests {
     use crate::graph::NameSet;
     use std::sync::Arc;
 
-    let (source, a, b) = build_alpha_collapse_env_with_recursors();
+    let (mut source, a, b) = build_alpha_collapse_env_with_recursors();
+    add_image_support(&mut source);
     let source = Arc::new(source);
     let a_rec = Name::str(a.clone(), "rec".into());
     let b_rec = Name::str(b.clone(), "rec".into());
@@ -4650,7 +4808,7 @@ mod tests {
     use ix_kernel::{
       env::KEnv,
       id::KId,
-      ingress::ixon_ingress,
+      ingress::{ixon_ingress, lean_ingress},
       mode::{Anon, Meta},
       tc::TypeChecker,
     };
@@ -4658,13 +4816,29 @@ mod tests {
 
     let (flat, _, _) = build_alpha_collapse_env_with_recursors();
     let (nested, _) = build_nested_source_recursors();
-    for source in [flat, nested] {
+    for mut source in [flat, nested] {
+      add_image_support(&mut source);
+      // Check the complete input, including support declarations, before
+      // compiling it. An invalid prelude cannot make this test pass.
+      let mut source_kernel = lean_ingress(&source).unwrap();
+      let source_ids: Vec<_> = source_kernel.consts.keys().cloned().collect();
+      for id in source_ids {
+        TypeChecker::new(&mut source_kernel).check_const(&id).unwrap_or_else(
+          |e| panic!("source fixture {}: {e}", id.name.pretty()),
+        );
+      }
       let source = Arc::new(source);
       let stt = compile_env(&source).unwrap();
       assert!(stt.ungrounded.is_empty(), "{:?}", stt.ungrounded);
       let (mut meta_env, _intern) = ixon_ingress::<Meta>(&stt.env).unwrap();
       let mut anon_env = KEnv::<Anon>::new();
-      for (name, _) in source.iter() {
+      // Retain every source target and also check canonical auxiliary
+      // records moved to reserved names by Pass 3.
+      let mut names: Vec<_> = source.iter().map(|(n, _)| n.clone()).collect();
+      names.extend(stt.aux_name_to_addr.iter().map(|e| e.key().clone()));
+      names.sort_by_key(Name::pretty);
+      names.dedup();
+      for name in &names {
         let addr = stt.resolve_addr(name).unwrap();
         // Meta ingress stores canonical representatives, not every source
         // alias. Use the actual ingressed KId for this canonical address.
@@ -4753,8 +4927,10 @@ mod tests {
 
   /// 3h. Full compile pipeline for alpha-collapsed recursor aliases.
   ///
-  /// Compile genuine uncollapsed recursors and check their canonical content,
-  /// not just alias equality (two compiled placeholders could compare equal).
+  /// Compile genuine uncollapsed source recursors into Pass 3 images, keeping
+  /// their source telescopes. The exact reserved canonical recursors must
+  /// alias and carry the collapsed content; placeholders cannot satisfy the
+  /// shape and kernel assertions. Both contracts hold with 1 and 4 workers.
   #[test]
   fn test_aux_gen_compile_roundtrip() {
     use crate::compile::{CompileOptions, env::compile_env_with_options};
@@ -4762,10 +4938,13 @@ mod tests {
     use ixon::constant::ConstantInfo as IxonCI;
     use std::sync::Arc;
 
-    let (env, a, b) = build_alpha_collapse_env_with_recursors();
+    let (mut env, a, b) = build_alpha_collapse_env_with_recursors();
+    add_image_support(&mut env);
     let lean_env = Arc::new(env);
     let a_rec = Name::str(a.clone(), "rec".into());
     let b_rec = Name::str(b.clone(), "rec".into());
+    let a_canon = Name::str(Name::str(a.clone(), "_ix".into()), "rec".into());
+    let b_canon = Name::str(Name::str(b.clone(), "_ix".into()), "rec".into());
     let mut canonical_addrs = Vec::new();
 
     for max_workers in [1, 4] {
@@ -4780,11 +4959,55 @@ mod tests {
         stt.ungrounded,
       );
 
-      let a_addr = stt.resolve_addr(&a_rec).expect("A.rec should be compiled");
-      let b_addr = stt.resolve_addr(&b_rec).expect("B.rec should be compiled");
-      assert_eq!(a_addr, b_addr, "alpha-equivalent recursors must alias");
-      assert!(stt.aux_gen_extra_names.contains(&a_rec));
-      assert!(stt.aux_gen_extra_names.contains(&b_rec));
+      assert_eq!(
+        stt.resolve_addr(&a).unwrap(),
+        stt.resolve_addr(&b).unwrap(),
+        "the supported fixture must still alpha-collapse"
+      );
+      let a_addr = stt.resolve_addr(&a_canon).expect("A._ix.rec must exist");
+      let b_addr = stt.resolve_addr(&b_canon).expect("B._ix.rec must exist");
+      assert_eq!(
+        a_addr, b_addr,
+        "alpha-equivalent canonical recursors must alias"
+      );
+      assert!(stt.aux_name_to_addr.contains_key(&a_canon));
+      assert!(stt.aux_name_to_addr.contains_key(&b_canon));
+      let recovered = crate::decompile::decompile_env(&stt).unwrap();
+      for name in [&a_rec, &b_rec] {
+        let source_addr =
+          stt.resolve_addr(name).expect("source image must exist");
+        assert_ne!(
+          source_addr, a_addr,
+          "a source image is not the canonical recursor"
+        );
+        assert!(
+          matches!(
+            &stt.env.get_const(&source_addr).unwrap().info,
+            IxonCI::Defn(_)
+          ),
+          "{} must compile as a source image",
+          name.pretty()
+        );
+        assert!(
+          !stt.aux_gen_extra_names.contains(name),
+          "the source image must be released from auxiliary ownership"
+        );
+        let original = lean_env.get(name).unwrap();
+        let ConstantInfo::RecInfo(original) = &*original else {
+          unreachable!()
+        };
+        assert_eq!(original.num_motives, Nat::from(2u64));
+        assert_eq!(original.num_minors, Nat::from(2u64));
+        let restored =
+          recovered.env.get(name).expect("source recursor must materialize");
+        let ConstantInfo::RecInfo(restored) = &*restored else {
+          panic!("{} must materialize as its source recursor", name.pretty());
+        };
+        assert_eq!(
+          restored, original,
+          "every source recursor field must roundtrip"
+        );
+      }
 
       // The collapsed singleton is a standalone recursor with 1+1 binders,
       // not the original mutual's 2+2, nor the old stub's 0+0.
@@ -4810,12 +5033,238 @@ mod tests {
           panic!("compiled fixture {}: {e}", name.pretty())
         });
       }
+      for name in [&a_canon, &b_canon] {
+        let addr = stt.resolve_addr(name).unwrap();
+        tc.check_const(&KId::new(addr, ())).unwrap_or_else(|e| {
+          panic!("compiled canonical recursor {}: {e}", name.pretty())
+        });
+      }
       canonical_addrs.push(a_addr);
     }
 
     assert_eq!(
       canonical_addrs[0], canonical_addrs[1],
       "canonical recursor content must not depend on worker count",
+    );
+  }
+
+  /// Pass 3 end to end on the alpha-collapsed fixture: a caller's full
+  /// application of a source recursor is rewritten to the recursor's image
+  /// (one `_ix.inline` decompile record, the source occurrence in
+  /// `meta_sharing`), a bare occurrence keeps the Lean name, which denotes
+  /// the stored image, and both callers type-check in the kernel. The
+  /// compiled bytes do not depend on the worker count. The decompiler, on
+  /// the state and on the serialized environment, restores every source
+  /// declaration (`f` from its record, `A.rec` from the image's original),
+  /// and the canonical recursors stay out of the source view.
+  #[test]
+  fn test_pass3_rewrites_callers_through_images() {
+    use crate::compile::pass3::names::has_reserved;
+    use crate::compile::{
+      CompileOptions, CompileState, env::compile_env_with_options,
+    };
+    use crate::decompile::{
+      check_decompile, decompile_env, materialized_source_names,
+    };
+    use ix_common::env::{DefinitionSafety, DefinitionVal, ReducibilityHints};
+    use ix_kernel::{
+      env::KEnv,
+      id::KId,
+      ingress::ixon_ingress,
+      mode::{Anon, Meta},
+      tc::TypeChecker,
+    };
+    use std::sync::Arc;
+
+    let (mut env, a, b) = build_alpha_collapse_env_with_recursors();
+    add_image_support(&mut env);
+    let a_rec = Name::str(a.clone(), "rec".into());
+    let a_c = LeanExpr::cnst(a.clone(), vec![]);
+    let b_c = LeanExpr::cnst(b.clone(), vec![]);
+    let true_c = LeanExpr::cnst(n("True"), vec![]);
+    let intro = LeanExpr::cnst(Name::str(n("True"), "intro".into()), vec![]);
+    let lam = |name: &str, ty: LeanExpr, body: LeanExpr| {
+      LeanExpr::lam(n(name), ty, body, BinderInfo::Default)
+    };
+    let def = |name: &Name, typ: LeanExpr, value: LeanExpr| {
+      ConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal { name: name.clone(), level_params: vec![], typ },
+        value,
+        hints: ReducibilityHints::Regular(1),
+        safety: DefinitionSafety::Safe,
+        all: vec![name.clone()],
+      })
+    };
+    // f : A → True := fun t => @A.rec (fun _ => True) (fun _ => True)
+    //   (fun _ _ => True.intro) (fun _ _ => True.intro) t
+    let full = [
+      lam("x", a_c.clone(), true_c.clone()),
+      lam("x", b_c.clone(), true_c.clone()),
+      lam("x", b_c.clone(), lam("ih", true_c.clone(), intro.clone())),
+      lam("x", a_c.clone(), lam("ih", true_c.clone(), intro)),
+      LeanExpr::bvar(Nat::from(0u64)),
+    ]
+    .into_iter()
+    .fold(LeanExpr::cnst(a_rec.clone(), vec![]), LeanExpr::app);
+    let f = n("f");
+    env.insert(
+      f.clone(),
+      def(&f, epi(n("t"), a_c.clone(), true_c), lam("t", a_c, full)),
+    );
+    // g := @A.rec, a bare occurrence
+    let rec_ty = env.get(&a_rec).unwrap().get_type().clone();
+    let g = n("g");
+    env.insert(
+      g.clone(),
+      def(&g, rec_ty, LeanExpr::cnst(a_rec.clone(), vec![])),
+    );
+    let lean_env = Arc::new(env);
+
+    let mut f_addrs = Vec::new();
+    for max_workers in [1, 4] {
+      let stt = compile_env_with_options(
+        &lean_env,
+        CompileOptions { max_workers: Some(max_workers) },
+      )
+      .unwrap();
+      assert!(stt.ungrounded.is_empty(), "{:?}", stt.ungrounded);
+      assert_eq!(stt.p3.heads.get(&a_rec).map(|k| k.clone()), Some(a.clone()));
+      let image = stt.resolve_addr(&a_rec).unwrap();
+      let f_named = stt.env.named.get(&f).unwrap().clone();
+      assert_eq!(f_named.meta().meta_sharing.len(), 1, "one record");
+      let g_named = stt.env.named.get(&g).unwrap().clone();
+      assert!(g_named.meta().meta_sharing.is_empty(), "no record");
+      let g_const = stt.env.get_const(&g_named.addr).unwrap();
+      assert!(g_const.refs.contains(&image), "g refers to the stored image");
+      let mut kenv = KEnv::<Anon>::new();
+      let mut tc = TypeChecker::new_with_lazy_anon(&mut kenv, &stt.env);
+      for name in [&f, &g, &a_rec] {
+        let addr = stt.resolve_addr(name).unwrap();
+        tc.check_const(&KId::new(addr, ()))
+          .unwrap_or_else(|e| panic!("compiled {}: {e}", name.pretty()));
+      }
+      // the Meta ingress reads the records' metadata
+      let (mut meta_env, _intern) = ixon_ingress::<Meta>(&stt.env).unwrap();
+      for name in [&f, &g] {
+        let addr = stt.resolve_addr(name).unwrap();
+        let id = meta_env
+          .consts
+          .keys()
+          .find(|id| id.addr == addr)
+          .unwrap_or_else(|| panic!("no Meta target for {}", name.pretty()))
+          .clone();
+        TypeChecker::new(&mut meta_env)
+          .check_const(&id)
+          .unwrap_or_else(|e| panic!("compiled Meta {}: {e}", name.pretty()));
+      }
+      // decompile: on the state, and on the serialized environment (the
+      // `.ixe` path of `import_ixe` and `rust-compile`)
+      let mut bytes = Vec::new();
+      stt.env.put(&mut bytes).unwrap();
+      let mut buf: &[u8] = &bytes;
+      let fresh = CompileState {
+        env: ixon::env::Env::get(&mut buf).unwrap(),
+        ..Default::default()
+      };
+      for e in fresh.env.named.iter() {
+        fresh.name_to_addr.insert(e.key().clone(), e.value().addr.clone());
+      }
+      let a_canon = Name::str(Name::str(a.clone(), "_ix".into()), "rec".into());
+      for (label, state) in [("state", &stt), ("serialized", &fresh)] {
+        let dstt = decompile_env(state).unwrap();
+        for name in [&f, &g, &a_rec] {
+          assert_eq!(
+            dstt.env.get(name).unwrap().get_hash(),
+            lean_env.get(name).unwrap().get_hash(),
+            "{label}: {} decompiles to its source",
+            name.pretty()
+          );
+        }
+        let check = check_decompile(lean_env.as_ref(), state, &dstt).unwrap();
+        assert_eq!((check.mismatches, check.missing), (0, 0), "{label}");
+        let source = materialized_source_names(&dstt.env, &[]).unwrap();
+        assert!(source.contains(&f) && source.contains(&a_rec), "{label}");
+        assert!(
+          !source.iter().any(has_reserved),
+          "{label}: compiler support is no source declaration"
+        );
+        assert!(
+          materialized_source_names(&dstt.env, std::slice::from_ref(&a_canon))
+            .unwrap_err()
+            .contains("generated compiler support"),
+          "{label}"
+        );
+      }
+      f_addrs.push((f_named.addr.clone(), f_named.meta()));
+    }
+    assert_eq!(f_addrs[0], f_addrs[1], "independent of the worker count");
+  }
+
+  /// Hook 1 on the collapsed fixture's own block: in a driver-prepared state
+  /// the aux tail's recursors move to their `_ix` display names and the
+  /// block records its heads; in a hand-built state the same changed block's
+  /// aux tail is refused (its Ix auxiliaries would keep Lean's names with no
+  /// caller rewritten).
+  #[test]
+  fn test_changed_block_tail_needs_a_prepared_state() {
+    use crate::compile::{BlockCache, CompileState, KernelCtx, compile_const};
+    use crate::graph::NameSet;
+    use std::sync::Arc;
+
+    let (env, a, b) = build_alpha_collapse_env_with_recursors();
+    let env = Arc::new(env);
+    let all: NameSet = [
+      a.clone(),
+      b.clone(),
+      Name::str(a.clone(), "a".into()),
+      Name::str(b.clone(), "b".into()),
+    ]
+    .into_iter()
+    .collect();
+    let a_rec = Name::str(a.clone(), "rec".into());
+    let display = Name::str(Name::str(a.clone(), "_ix".into()), "rec".into());
+
+    let prepared = CompileState {
+      lean_env: Some(env.clone()),
+      driver_prepared: true,
+      ..Default::default()
+    };
+    compile_const(
+      &a,
+      &all,
+      &env,
+      &mut BlockCache::default(),
+      &prepared,
+      &mut KernelCtx::new(),
+    )
+    .unwrap();
+    assert!(prepared.resolve_addr(&a_rec).is_none(), "A.rec left Lean's name");
+    assert!(prepared.resolve_addr(&display).is_some(), "A._ix.rec registered");
+    assert!(prepared.p3.blocks.contains_key(&a));
+    assert!(prepared.p3.components.contains_key(&a));
+    assert_eq!(
+      prepared.p3.heads.get(&a_rec).map(|k| k.clone()),
+      Some(a.clone())
+    );
+
+    let hand_built =
+      CompileState { lean_env: Some(env.clone()), ..Default::default() };
+    let err = compile_const(
+      &a,
+      &all,
+      &env,
+      &mut BlockCache::default(),
+      &hand_built,
+      &mut KernelCtx::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+      err.contains(
+        "changed block 'A' compiled with its aux tail outside a \
+         driver-prepared environment"
+      ),
+      "{err}"
     );
   }
 
@@ -5377,5 +5826,108 @@ mod tests {
     // generated if they existed in the original Lean env.
     // The full pipeline test (lake test -- rust-compile) exercises real
     // environments where these constants exist.
+  }
+
+  /// `C.a : Id' D → C` with `D` an alpha-twin of `T` (`Nat`'s shape), the
+  /// fixture `SourceIngressReducedDefs.C`/`D`: once the kernel has met `T`,
+  /// Phase 2's reduct of `Id' D` names `T`, and only the decompile's Phase 3
+  /// finds `D`, so `C.rec`'s minor for `a` gets its inductive hypothesis.
+  /// The control is the compile's path (flag unset), unchanged.
+  #[test]
+  fn test_rec_target_behind_alias_of_twin() {
+    use ix_common::env::{DefinitionSafety, DefinitionVal, ReducibilityHints};
+    let (mut env, t) = build_type_nat_env();
+    let (id, c, d) = (n("Id'"), n("C"), n("D"));
+    let ty0 = LeanExpr::sort(Level::succ(Level::zero()));
+    let k = |x: &Name| LeanExpr::cnst(x.clone(), vec![]);
+    env.insert(
+      id.clone(),
+      ConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal {
+          name: id.clone(),
+          level_params: vec![],
+          typ: epi(n("α"), ty0.clone(), ty0.clone()),
+        },
+        value: LeanExpr::lam(
+          n("α"),
+          ty0.clone(),
+          LeanExpr::bvar(Nat::from(0u64)),
+          BinderInfo::Default,
+        ),
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![id.clone()],
+      }),
+    );
+    // (inductive, ctor, type, cidx = fields)
+    let ctors = [
+      (&c, "nil", k(&c), 0u64),
+      (&c, "a", epi(n("x"), LeanExpr::app(k(&id), k(&d)), k(&c)), 1),
+      (&d, "nil", k(&d), 0),
+      (&d, "b", epi(n("x"), k(&d), k(&d)), 1),
+    ];
+    for ind in [&c, &d] {
+      let names = ctors.iter().filter(|x| x.0 == ind);
+      env.insert(
+        ind.clone(),
+        ConstantInfo::InductInfo(InductiveVal {
+          cnst: ConstantVal {
+            name: ind.clone(),
+            level_params: vec![],
+            typ: ty0.clone(),
+          },
+          num_params: Nat::from(0u64),
+          num_indices: Nat::from(0u64),
+          all: vec![c.clone(), d.clone()],
+          ctors: names.map(|x| Name::str(ind.clone(), x.1.into())).collect(),
+          num_nested: Nat::from(0u64),
+          is_rec: true,
+          is_unsafe: false,
+          is_reflexive: false,
+        }),
+      );
+    }
+    for (ind, s, typ, i) in ctors {
+      let name = Name::str(ind.clone(), s.into());
+      env.insert(
+        name.clone(),
+        ConstantInfo::CtorInfo(ConstructorVal {
+          cnst: ConstantVal { name, level_params: vec![], typ },
+          induct: ind.clone(),
+          cidx: Nat::from(i),
+          num_params: Nat::from(0u64),
+          num_fields: Nat::from(i),
+          is_unsafe: false,
+        }),
+      );
+    }
+    let stt = crate::compile::CompileState::default();
+    let twin = ix_common::address::Address::hash(b"twin");
+    stt.name_to_addr.insert(t.clone(), twin.clone());
+    stt.name_to_addr.insert(d.clone(), twin);
+    let minor_a_arity = |unfold: bool| {
+      let mut kctx = crate::compile::KernelCtx::new();
+      kctx.unfold_rec_targets = unfold;
+      let _ =
+        generate_canonical_recursors(&[vec![t.clone()]], &env, &stt, &mut kctx)
+          .unwrap();
+      let classes = [vec![c.clone()], vec![d.clone()]];
+      let (recs, _) =
+        generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
+      // C.rec : ∀ motive_1 motive_2 (nil : …) (a : ∀ x, [motive_2 x →] …), …
+      let mut ty = recs[0].1.cnst.typ.clone();
+      for _ in 0..3 {
+        let ExprData::ForallE(_, _, b, _, _) = ty.as_data() else { panic!() };
+        ty = b.clone();
+      }
+      let ExprData::ForallE(_, minor, _, _, _) = ty.as_data() else { panic!() };
+      let (mut arity, mut cur) = (0, minor.clone());
+      while let ExprData::ForallE(_, _, b, _, _) = cur.clone().as_data() {
+        (arity, cur) = (arity + 1, b.clone());
+      }
+      arity
+    };
+    assert_eq!(minor_a_arity(true), 2, "the field and its hypothesis");
+    assert_eq!(minor_a_arity(false), 1, "control: Phase 2 alone misses it");
   }
 }

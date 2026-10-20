@@ -221,6 +221,9 @@ fn fail_aux_promotion(stt: &CompileState, all: &NameSet, msg: &str) {
     stt.aux_gen_extra_names.remove(n);
     stt.blocks.remove(n);
     stt.def_hints.remove(n);
+    stt.p3.heads.remove(n);
+    stt.p3.canon_recs.remove(n);
+    stt.p3.non_canonical.remove(n);
     stt.ungrounded.insert(n.clone(), msg.to_owned());
   }
   stt.aux_gen_pending.lock().unwrap().retain(|n| !all.contains(n));
@@ -453,10 +456,13 @@ pub fn compile_env_with_profile(
     );
   }
 
+  // Pass 3's hooks run in every whole-environment compile (no mode, no
+  // switch): the state is driver-prepared.
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
+    driver_prepared: true,
     ..Default::default()
   };
 
@@ -857,9 +863,10 @@ pub fn compile_env_with_profile(
                         &cross_name,
                         "compile_const(cross-SCC)",
                         || {
-                          compile_const(
+                          crate::compile::pass3::driver::compile_block(
                             &cross_name,
                             &unresolved_set,
+                            None,
                             lean_env,
                             &mut cache,
                             stt_ref,
@@ -867,6 +874,9 @@ pub fn compile_env_with_profile(
                           )
                         },
                       );
+                      // a panic inside the aux tail can leave the Pass 3
+                      // journal open on this thread
+                      let _ = crate::compile::pass3::journal_take();
                       let res = crate::compile::block_txn::finish(
                         stt_ref,
                         res.is_err(),
@@ -993,13 +1003,19 @@ pub fn compile_env_with_profile(
                 // entries are logged and removed on failure, and the names
                 // it releases early wait for its end
                 crate::compile::block_txn::start();
+                // Pass 3 (`pass3::driver::compile_block`): an image block
+                // compiles to its images, any other block after the
+                // call-site rewrite of its members; the block's references
+                // (the scheduler's, unchanged after setup) prefilter it
+                let block_refs = block_info_ref.get(&lo);
                 let res = run_compile_catching_panic(
                   &lo,
                   "compile_const",
                   || {
-                    compile_const(
+                    crate::compile::pass3::driver::compile_block(
                       &lo,
                       &all,
+                      block_refs.as_ref().map(|e| &e.value().1),
                       lean_env,
                       &mut cache,
                       stt_ref,
@@ -1007,6 +1023,10 @@ pub fn compile_env_with_profile(
                     )
                   },
                 );
+                drop(block_refs);
+                // a panic inside the aux tail can leave the Pass 3 journal
+                // open on this thread
+                let _ = crate::compile::pass3::journal_take();
                 // the staged promotions and hints are committed only if the
                 // block compiled; a failed commit fails the block
                 let res =
@@ -1349,7 +1369,10 @@ fn aux_gen_seed_names() -> Vec<Name> {
     // (used in the indexed-eq path's major-continuation discharge)
     Name::str(root.clone(), "eq_of_heq".into()),
     // .brecOn.eq dummy motive
-    Name::str(root, "True".into()),
+    Name::str(root.clone(), "True".into()),
+    // Pass 3: the images pack Prop motives with `And` (`PProd` and `True`
+    // are seeds already; Lean `auxGenSeedNames`)
+    Name::str(root, "And".into()),
   ]
 }
 

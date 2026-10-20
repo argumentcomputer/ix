@@ -14,7 +14,11 @@
 
   - `lean(t)`: Lean's own form of `t` compiled by the Lean compiler, i.e.
     `Named.original` when the compiler regenerated `t`, else `t`'s address;
-  - `ix(o)`: the auxiliary Ix regenerated for `O`.
+  - `ix(o)`: the auxiliary Ix regenerated for `O`. Under Pass 3 a changed
+    block's Ix auxiliaries are stored under their reserved display names
+    and the Lean names hold the images (`Ix.Compile.Pass.ixAuxName`), so
+    `ix(o)` is read at `o`'s display name when it has one (`displayOf`),
+    else at `o`. `ix(t)` likewise.
 
   The oracle requires `ix(o) = lean(t)` byte for byte. Every exception is
   classified, and the suite passes when every exception is in an accepted
@@ -43,6 +47,18 @@
     auxiliaries in an order other than Lean's (a non-identity `AuxLayout`),
     so Lean's forms of its recursors and their users differ from Ix's (the
     discovery order of the canonical expansion).
+
+  Two more classes, both bounded by records that are exact elsewhere:
+  - `(nc) <cause>`: a constant Ix does not regenerate (no display name: the
+    users of the images, `ctorIdx`, `ctorElim`, `.elim`, `.inj`, `noConfusion`,
+    …) is Lean's own term over the presentation's images, so it differs
+    where the twins gate records it: accepted only when the twins record
+    (`NonCanonicalDefault.nonCanonical`, exact in both directions against
+    the same compiler) has the constant for this family and pair, with a
+    reviewed cause and the same two addresses;
+  - `NOT-IMAGE` (fails): an auxiliary whose Ix form is under its display
+    name, but whose Lean name does not hold an image (a definition with
+    `Named.original`, Lean's own form, which `lean(t)` reads).
 
   Anything else is `UNEXPECTED` and fails. Also checked: that `T` is in Ix's
   canonical order (in every Lean block of `T` the `iPrj` indices of the
@@ -128,7 +144,94 @@ def classify (env : Environment) (t o : Option Name) (sameIx packaged : Bool) : 
 
 /-- The classes that fail the suite. -/
 def failing (cls : String) : Bool :=
-  cls == "UNEXPECTED" || cls == "PACKAGING" || cls == "NESTED-ORDER"
+  cls == "UNEXPECTED" || cls == "PACKAGING" || cls == "NESTED-ORDER" || cls == "NOT-IMAGE"
+
+/-- The Lean blocks (`all`) of the inductive prefixes of `n`, outermost first
+    (`A.below.rec` has two: `A`'s block, and the `below` family's). -/
+def blocksOf (env : Environment) (n : Name) : List (List Name) :=
+  go n []
+where
+  go : Name → List (List Name) → List (List Name)
+    | .anonymous, acc => acc
+    | .num q _, acc => go q acc
+    | p@(.str q _), acc => match env.find? p with
+      | some (.inductInfo v) => go q (v.all :: acc)
+      | _ => go q acc
+
+/-- Whether `n` hangs off Lean's own `below` family of a Prop block: its
+    innermost inductive prefix is an `X.below` (or `X.below_N`) inductive
+    under another inductive (Lean's `IndPredBelow` family, a block of its
+    own). -/
+def underOwnBelow (env : Environment) (n : Name) : Bool :=
+  go n
+where
+  go : Name → Bool
+    | .anonymous => false
+    | .num q _ => go q
+    | p@(.str q s) => match env.find? p with
+      | some (.inductInfo _) =>
+        (s == "below" || s.startsWith "below_") && !(blocksOf env q).isEmpty
+      | _ => go q
+
+/-- The output's `Muts` entries: each component's classes (name addresses)
+    and its nested layout (`perm[j] = some i`, `none` for `PERM_OUT_OF_SCC`). -/
+def mutsEntries (ixon : Ixon.Env) : Array (Array (Array Address) × Array (Option Nat)) :=
+  ixon.named.fold (init := #[]) fun acc _ nd => match nd.constMeta.info with
+    | .muts classes lay? =>
+      acc.push (classes, match lay? with
+        | some l => l.perm.map fun p => if p == 0xFFFFFFFFFFFFFFFF then none else some p.toNat
+        | none => #[])
+    | _ => acc
+
+/-- `displayOf` in one Lean block (`all`). -/
+def displayIn (ixon : Ixon.Env) (muts : Array (Array (Array Address) × Array (Option Nat)))
+    (ixn : _root_.Ix.Name) (all : List Name) : Option _root_.Ix.Name := Id.run do
+  let members : Array _root_.Ix.Name := all.toArray.map _root_.Ix.Name.fromLeanName
+  let nameOf : Std.HashMap Address _root_.Ix.Name :=
+    members.foldl (fun m x => m.insert x.getHash x) {}
+  -- the default (no component places a nested position): `x._ix.S`
+  let some fallback := _root_.Ix.Compile.Pass.ixAuxName members (members[0]?.getD ixn) #[] ixn
+    | return none
+  let mut owned : Option _root_.Ix.Name := none
+  for (classes, perm) in muts do
+    let some rep0 := (classes[0]? >>= (·[0]?)) >>= nameOf.get? | continue
+    if let some d := _root_.Ix.Compile.Pass.ixAuxName members rep0 perm ixn then
+      if d != fallback then owned := some d
+  let d := owned.getD fallback
+  return if ixon.named.contains d then some d else none
+
+/-- The display name of the Ix auxiliary Lean calls `n`, when Pass 3 moved it
+    there (`n`'s block changed; `Ix.Compile.Pass.ixAuxName`), read off the
+    output, relative to a Lean block of an inductive prefix of `n`: the
+    outermost block whose display name the output has (so Lean's
+    `A.below.rec` of a changed Prop block is read at `A._ix.below.rec`, the
+    canonical family's recursor, and only an unchanged parent leaves it to
+    the `below` family's own block, `A.below._ix.rec`, A3V-IPB). The
+    components of a block are its `Muts` entries whose classes hold a member.
+    A nested auxiliary `all₀.kind_j…` is named by the component whose layout
+    places Lean's position `j` (exactly one does, or none for an evaporated
+    position, whose display name is `all₀._ix.kind_j…`); any other auxiliary
+    `x.S` is `x._ix.S`. `none` when the output has no such name: no block of
+    `n` changed and `n` holds the Ix auxiliary itself. -/
+def displayOf (env : Environment) (ixon : Ixon.Env)
+    (muts : Array (Array (Array Address) × Array (Option Nat))) (n : Name) :
+    Option _root_.Ix.Name :=
+  (blocksOf env n).findSome? (displayIn ixon muts (_root_.Ix.Name.fromLeanName n))
+
+
+/-- The twins gate's record of a non-canonical constant (`NonCanonicalDefault`,
+    exact in both directions against the same compiler): its reviewed cause,
+    when it lists `t` (relative to `A`'s namespace) for this family and pair
+    with the same addresses. `pinB` is false when several constants of `B`
+    map to `t` (a collapsed twin): the gate keeps one entry per constant of
+    `A`, pinned to the first of them, so only `A`'s address is pinned. -/
+def recordedCause (fixture : Name) (a b : String) (t : Name) (addrA addrB : Option Address)
+    (pinB : Bool := true) : Option String :=
+  let hex (x : Option Address) : String := (x.map toString).getD "-"
+  (Tests.Ix.Compile.NonCanonicalDefault.nonCanonical.find? fun x =>
+    x.fixture == fixture && x.presA == a && x.presB == b && x.constant == t &&
+      x.addrA == hex addrA && (!pinB || x.addrB == hex addrB) &&
+      !(x.cause matches .unreviewed _)).map fun x => s!"(nc) {x.cause.tag}"
 
 structure Row where
   family : Name
@@ -140,7 +243,15 @@ structure Row where
 def oracleFamily (env : Environment) (ixon : Ixon.Env) (f : Family) : IO (Nat × Array Row) := do
   let some a := f.pres.head? | return (0, #[])
   let some b := f.pres[1]? | return (0, #[])
-  let addr (n : Name) : Option Address := ixon.getAddr? (_root_.Ix.Name.fromLeanName n)
+  let muts := mutsEntries ixon
+  let display (n : Name) : Option _root_.Ix.Name := displayOf env ixon muts n
+  -- the address of the Lean name itself (an image, when its block changed)
+  let leanName (n : Name) : Option Address := ixon.getAddr? (_root_.Ix.Name.fromLeanName n)
+  -- the Ix auxiliary Lean calls `n`: at its display name when its block
+  -- changed (Pass 3), else under `n`
+  let addr (n : Name) : Option Address := match display n with
+    | some d => ixon.getAddr? d
+    | none => leanName n
   let named (n : Name) := ixon.named.get? (_root_.Ix.Name.fromLeanName n)
   let lean (n : Name) : Option Address := match named n with
     | some nm => some (nm.original.map (·.1) |>.getD nm.addr)
@@ -162,6 +273,23 @@ def oracleFamily (env : Environment) (ixon : Ixon.Env) (f : Family) : IO (Nat ×
           all.any (·.any tInds.contains)
       | _ => false
   let mut rows : Array Row := #[]
+  -- every auxiliary moved to its display name leaves its image under the
+  -- Lean name: a definition with `Named.original` (Lean's own form). An
+  -- auxiliary of Lean's own `below` family of a Prop block (a block of its
+  -- own, whose canonical form is the parent's `_ix.below…`) may hold that
+  -- family's own constant instead, as validate-aux allows for `.below`.
+  for (x, _) in ca ++ cb do
+    if (display x).isNone then continue
+    let isImage := match named x with
+      | some nm => kindOf ixon nm.addr == "defn" && nm.original.isSome
+      | none => false
+    let ownBelow := underOwnBelow env x && (named x).isSome
+    unless isImage || ownBelow do
+      let k := ((named x).map (kindOf ixon ·.addr)).getD "absent"
+      rows := rows.push
+        { family := f.fixture, aux := x, cls := "NOT-IMAGE",
+          detail := s!"its Ix form is at {(display x).map (·.pretty) |>.getD "-"}, but the Lean \
+name holds {k}{if ((named x).bind (·.original)).isSome then "" else " without Named.original"}" }
   let mut n := 0
   let mut hit : Std.HashSet Name := {}
   for (o, _) in cb do
@@ -186,6 +314,11 @@ def oracleFamily (env : Environment) (ixon : Ixon.Env) (f : Family) : IO (Nat ×
     -- Lean's forms of its recursors and their users differ
     let cls := if sameIx && nestedMoved && (cls == "UNEXPECTED" || cls == "PACKAGING")
       then "NESTED-ORDER" else cls
+    -- a constant Ix does not regenerate (on both sides): Lean's own term over
+    -- the images, accepted where the twins record pins the same difference
+    let cls := if cls != "UNEXPECTED" || (display o).isSome || (display t).isSome then cls
+      else (recordedCause f.fixture a.id b.id (rel t) (leanName t) (leanName o)
+        (pinB := (cb.filter (mapB ·.1 == t)).size == 1)).getD cls
     let k (x : Option Address) : String := (x.map (kindOf ixon)).getD "-"
     rows := rows.push
       { family := f.fixture, aux := rel t, cls,

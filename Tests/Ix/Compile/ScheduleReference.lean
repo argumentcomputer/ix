@@ -69,14 +69,14 @@ in reverse-topological order starting from the aux_gen seed names, so \
 all transitive deps should be compiled before this — if you're hitting \
 this, a dep relationship isn't captured in the ref graph, or the source \
 env is inconsistent."
-    match runBlockWithAux acc.cenv all rep with
+    match runBlock acc.cenv all rep with
     | .error e => return .error (failed e)
-    | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
+    | .ok (result, cache, _, published) =>
       -- A conflicting claim fails the pre-compile like a block error (Rust's
       -- claims raise inside `compile_const`).
-      match checkCompiledBlock acc.cenv rep result cache plans brecPlans belowPlans with
+      match checkCompiledBlock acc.cenv rep result cache published with
       | .error e => return .error (failed e)
-      | .ok () => acc := mergeCompiledBlock acc rep result cache plans brecPlans belowPlans
+      | .ok () => acc := mergeCompiledBlock acc rep result cache published
       -- Move compiled names → auxNameToAddr (env.rs:1119-1137). At this
       -- stage `nameToAddr` contains exactly the prereq registrations.
       let moved := acc.cenv.nameToAddr
@@ -88,7 +88,7 @@ env is inconsistent."
 
 /-- Compile an entire environment with the FULL production pipeline
     semantics: aux-gen prereq pre-compilation, per-block aux tails
-    (regeneration + call-site plans), the scheduler promotion pass with
+    (regeneration and Pass 3's hooks), the scheduler promotion pass with
     the no-aux original-form second compile (`Named.original`), and
     pending-aux dependency release. Sequential mirror of Rust
     `compile_env_with_options`' scheduler (env.rs:146-990; grounding and
@@ -191,14 +191,13 @@ missing canonical aliases: {missing}"
               acc := { acc with cenv := { acc.cenv with
                 ungrounded := acc.cenv.ungrounded.insert n msg } }
             return acc
-          match runBlockWithAux acc.cenv crossAll clo with
+          match runBlock acc.cenv crossAll clo with
           | .error e => acc := crossFailed acc e
-          | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-            match checkCompiledBlock acc.cenv clo result cache plans brecPlans
-                belowPlans with
+          | .ok (result, cache, _, published) =>
+            match checkCompiledBlock acc.cenv clo result cache published with
             | .error e => acc := crossFailed acc e
             | .ok () =>
-              acc := mergeCompiledBlock acc clo result cache plans brecPlans belowPlans
+              acc := mergeCompiledBlock acc clo result cache published
               for n in unresolvedNames do
                 acc := { acc with
                   cenv := { acc.cenv with
@@ -228,14 +227,14 @@ missing canonical aliases: {missing}"
           acc := { acc with cenv := { acc.cenv with
             ungrounded := acc.cenv.ungrounded.insert m msg } }
         return acc
-      match runBlockWithAux acc.cenv all lo with
+      match runBlock acc.cenv all lo with
       | .error e => acc := fail acc e
-      | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
+      | .ok (result, cache, _, published) =>
         -- A conflicting claim is a failure of this block (Rust raises it
         -- inside `compile_const`): nothing of it is merged.
-        match checkCompiledBlock acc.cenv lo result cache plans brecPlans belowPlans with
+        match checkCompiledBlock acc.cenv lo result cache published with
         | .error e => acc := fail acc e
-        | .ok () => acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
+        | .ok () => acc := mergeCompiledBlock acc lo result cache published
 
     -- Release dependents: block members plus drained pending-aux names
     -- (env.rs:838-870).

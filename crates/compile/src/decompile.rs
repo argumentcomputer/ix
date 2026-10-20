@@ -92,6 +92,13 @@ pub struct DecompileState {
   /// ([`Self::insert_interned`]); `decompile_env` drops the table
   /// before returning, since `env` keeps the canonical `Arc`s alive.
   expr_intern: DashMap<[u8; 32], LeanExpr>,
+  /// Pass 2's regeneration errors (`"<name>: <error>"`), in Pass 2's order.
+  /// `decompile_env` still returns the environment, with each failed
+  /// auxiliary recovered from its original where possible, so that the
+  /// Lean-facing view stays populated for diagnosis; a check of the
+  /// round trip must fail on any of them (`check_decompile`,
+  /// `CheckResult::aux_gen_errors`).
+  pub aux_gen_errors: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -3698,6 +3705,10 @@ fn roundtrip_block(
 
       // Look up original metadata from compile_const_no_aux. If not
       // available, fall back to Phase A metadata from the current compilation.
+      // `restores_original`: the name's stored constant is not the source
+      // form restored here (a canonical auxiliary, or since Pass 3 its
+      // image), so its `Named.hints` are not the source's either.
+      let mut restores_original = false;
       let orig_meta = match stt.env.named.get(&name) {
         Some(ref named) if named.has_original() => {
           let (orig_addr, orig_meta) = named.original().unwrap();
@@ -3708,6 +3719,7 @@ fn roundtrip_block(
               orig_addr.hex(),
             );
           }
+          restores_original = true;
           (*orig_meta).clone()
         },
         s => {
@@ -3805,7 +3817,22 @@ fn roundtrip_block(
 
       match decompiled {
         Ok(entries) => {
-          for (n, ci) in entries {
+          for (n, mut ci) in entries {
+            // Restoring the source form from `Named.original`: the
+            // regenerated definition carries the hints of Lean's
+            // construction for its kind and safety (the aux phases'
+            // matrix, e.g. `brecon_to_mut_const`), and those are the
+            // source's. `Named.hints` belongs to the stored constant,
+            // which since Pass 3 is the auxiliary's image (`Abbrev`):
+            // an unsafe `.brecOn.eq` is `Opaque` in Lean. Lean
+            // `Ix.DecompileM.roundtripBlock` does the same.
+            if restores_original
+              && let (LeanConstantInfo::DefnInfo(dv), LeanMutConst::Defn(def)) =
+                (&mut ci, cnst)
+              && n == def.name
+            {
+              dv.hints = def.hints;
+            }
             // Validate Lean-level hash against the original environment.
             // Only possible when the original is available (debug path).
             if let Some(orig) = orig_env
@@ -5981,6 +6008,7 @@ pub fn decompile_env(
   // is to verify we can regenerate auxiliaries from the Ixon env alone,
   // independent of the compile phase's state).
   let mut kctx = KernelCtx::new();
+  kctx.unfold_rec_targets = true;
   expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);
 
   // Snapshot dstt.env (DashMap) into work_env (FxHashMap) for aux_gen lookups.
@@ -6189,6 +6217,10 @@ pub fn decompile_env(
   // `Arc`s alive, and consumers only read `env`.
   let mut dstt = dstt;
   dstt.expr_intern = DashMap::new();
+  dstt.aux_gen_errors = aux_gen_errors
+    .iter()
+    .map(|(name, e)| format!("{}: {e}", name.pretty()))
+    .collect();
 
   Ok(dstt)
 }
@@ -6292,6 +6324,33 @@ pub struct CheckResult {
   /// name with such a component is refused as compiler input), counted here
   /// and neither in `missing` nor in `extra_names`.
   pub introduced: usize,
+  /// Constants of the original absent from the decompiled environment,
+  /// sorted by pretty name. Expected only for inputs the compile left
+  /// ungrounded; any other is a failure (`failures`).
+  pub absent: Vec<Name>,
+  /// Pass 2's regeneration errors (`DecompileState::aux_gen_errors`).
+  pub aux_gen_errors: Vec<String>,
+}
+
+impl CheckResult {
+  /// The round trip's failures: mismatches, names not in the original,
+  /// Pass 2 regeneration errors, and original constants absent from the
+  /// decompiled environment other than those `expected_absent` accepts
+  /// (the compile's ungrounded inputs). Each is printed.
+  pub fn failures(&self, expected_absent: impl Fn(&Name) -> bool) -> usize {
+    let unexpected: Vec<&Name> =
+      self.absent.iter().filter(|n| !expected_absent(n)).collect();
+    for e in &self.aux_gen_errors {
+      eprintln!("check_decompile: FAIL aux_gen roundtrip error: {e}");
+    }
+    for n in &unexpected {
+      eprintln!("check_decompile: FAIL absent from decompiled: {}", n.pretty());
+    }
+    self.mismatches
+      + self.missing
+      + self.aux_gen_errors.len()
+      + unexpected.len()
+  }
 }
 
 /// Check that decompiled environment matches the original.
@@ -6364,21 +6423,19 @@ pub fn check_decompile(
   })?;
 
   // Report constants in original but missing from decompiled.
-  {
-    let mut missing_names: Vec<String> = original
-      .iter()
-      .filter(|(name, _)| !dstt.env.contains_key(*name))
-      .map(|(name, _)| name.pretty())
-      .collect();
-    missing_names.sort();
-    if !missing_names.is_empty() {
-      eprintln!(
-        "check_decompile: {} constants missing from decompiled:",
-        missing_names.len()
-      );
-      for name in &missing_names {
-        eprintln!("  missing: {name}");
-      }
+  let mut absent: Vec<Name> = original
+    .iter()
+    .filter(|(name, _)| !dstt.env.contains_key(*name))
+    .map(|(name, _)| name.clone())
+    .collect();
+  absent.sort_by_key(Name::pretty);
+  if !absent.is_empty() {
+    eprintln!(
+      "check_decompile: {} constants missing from decompiled:",
+      absent.len()
+    );
+    for name in &absent {
+      eprintln!("  missing: {}", name.pretty());
     }
   }
 
@@ -6408,11 +6465,18 @@ pub fn check_decompile(
     missing: missing.load(Ordering::Relaxed),
     extra_names,
     introduced: introduced.load(Ordering::Relaxed),
+    absent,
+    aux_gen_errors: dstt.aux_gen_errors.clone(),
   };
   eprintln!(
     "check_decompile: {} matches, {} mismatches, {} not in original, {} \
-     introduced by Pass 3 (reserved names)",
-    result.matches, result.mismatches, result.missing, result.introduced
+     introduced by Pass 3 (reserved names), {} absent, {} aux_gen errors",
+    result.matches,
+    result.mismatches,
+    result.missing,
+    result.introduced,
+    result.absent.len(),
+    result.aux_gen_errors.len()
   );
 
   Ok(result)
@@ -6654,6 +6718,105 @@ mod tests {
       decompile_kenv_clear_entries_from(Some("invalid")),
       Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES),
     );
+  }
+
+  /// Restoring a source definition from `Named.original` keeps the
+  /// regenerated form's hints, not the name's `Named.hints`. Since Pass 3
+  /// the stored constant under a Lean auxiliary's name is its image, with
+  /// `Abbrev` hints, while Lean's unsafe `.brecOn.eq` is an `Opaque`
+  /// definition: the name's entry here is such an image's (hints `Abbrev`)
+  /// over the source's original pair.
+  #[test]
+  fn roundtrip_restores_the_source_hints_not_the_images() {
+    use crate::compile::{CompileOptions, compile_env_with_options};
+    let name = Name::str(Name::str(Name::anon(), "RT".into()), "eq".into());
+    let sort0 = LeanExpr::sort(Level::zero());
+    let typ = LeanExpr::all(
+      Name::anon(),
+      sort0.clone(),
+      sort0.clone(),
+      BinderInfo::Default,
+    );
+    let value = LeanExpr::lam(
+      Name::anon(),
+      sort0,
+      LeanExpr::bvar(Nat::from(0u64)),
+      BinderInfo::Default,
+    );
+    let source = LeanConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal {
+        name: name.clone(),
+        level_params: vec![],
+        typ: typ.clone(),
+      },
+      value: value.clone(),
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Unsafe,
+      all: vec![name.clone()],
+    });
+    let mut lean_env = LeanEnv::default();
+    lean_env.insert(name.clone(), source.clone());
+    let lean_env = Arc::new(lean_env);
+    let stt =
+      compile_env_with_options(&lean_env, CompileOptions::default()).unwrap();
+    let named = stt.env.named.get(&name).unwrap().clone();
+    // the image's entry: another address, `Abbrev`, the source as original
+    let mut image =
+      Named::new(Address::hash(b"image"), (*named.meta()).clone());
+    image.set_hints(Some(ReducibilityHints::Abbrev));
+    image.set_original(named.addr.clone(), (*named.meta()).clone());
+    stt.env.register_name(name.clone(), image);
+    let regenerated = LeanMutConst::Defn(Def {
+      name: name.clone(),
+      level_params: vec![],
+      typ,
+      kind: DefKind::Definition,
+      value,
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Unsafe,
+      all: vec![name.clone()],
+    });
+    let restored = roundtrip_block(
+      &[regenerated],
+      &FxHashMap::default(),
+      Some(lean_env.as_ref()),
+      &stt,
+      &DecompileState::default(),
+    )
+    .unwrap_or_else(|e| panic!("restores the source: {e}"));
+    assert_eq!(
+      restored.get(&name).map(LeanConstantInfo::get_hash),
+      Some(source.get_hash()),
+      "the source definition, Opaque hints included"
+    );
+  }
+
+  /// `CheckResult::failures` counts Pass 2 errors and every absent original
+  /// the caller does not expect, besides mismatches and extra names.
+  #[test]
+  fn check_failures_count_aux_errors_and_unexpected_absences() {
+    let expected = Name::str(Name::anon(), "Ungrounded".into());
+    let unexpected = Name::str(Name::anon(), "Lost".into());
+    let result = CheckResult {
+      matches: 3,
+      mismatches: 1,
+      missing: 1,
+      extra_names: vec!["Extra".into()],
+      introduced: 2,
+      absent: vec![expected.clone(), unexpected],
+      aux_gen_errors: vec!["X.brecOn.eq: roundtrip hash mismatch".into()],
+    };
+    assert_eq!(result.failures(|n| *n == expected), 4);
+    let clean = CheckResult {
+      matches: 3,
+      mismatches: 0,
+      missing: 0,
+      extra_names: vec![],
+      introduced: 2,
+      absent: vec![expected.clone()],
+      aux_gen_errors: vec![],
+    };
+    assert_eq!(clean.failures(|n| *n == expected), 0);
   }
 
   /// The recompile of `roundtrip_block` shares under the state's limits, and

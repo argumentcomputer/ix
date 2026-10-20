@@ -75,7 +75,7 @@ def tName : Name := ``Fixture.T
 /-- The aux-gen seed names (`Ix.CompileM.auxGenSeedNames`), as Lean names. -/
 def auxSeeds : List Name :=
   [``PUnit, ``PProd, ``Eq, ``Eq.refl, ``Eq.symm, ``Eq.ndrec, ``rfl, ``HEq,
-    ``HEq.refl, ``eq_of_heq, ``True]
+    ``HEq.refl, ``eq_of_heq, ``True, ``And]
 
 /-- The closure of `T`, with `T`'s stored `isRec` replaced by `isRec`. -/
 def closure (env : Environment) (isRec : Bool) :

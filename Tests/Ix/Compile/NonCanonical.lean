@@ -18,10 +18,11 @@
   addresses, new differences (`unreviewed` until a cause is assigned) and
   removed ones.
 
-  Causes. The compiler on this line is the call-site surgery's (no Pass 3,
-  no clique transport, today's canonical layout). A `pending*` cause names
-  the queue entry expected to remove the difference; its re-record must then
-  show the entry gone. The other causes are permanent: the presentations'
+  Causes. The compiler on this line is Pass 3's faithful rewrite (images of a
+  changed block's auxiliaries; no definitional pass, no clique transport,
+  today's canonical layout; the call-site surgery is gone since the flip). A
+  `pending*` cause names the queue entry expected to remove the difference;
+  its re-record must then show the entry gone, or give it a permanent cause. The other causes are permanent: the presentations'
   Lean terms differ in a way no canonical form removes.
 -/
 import Lean
@@ -50,6 +51,13 @@ inductive NonCanonicalCause where
   | noSpec
   /-- A lazily realised equation lemma. -/
   | lazy
+  /-- Pass 3: the Lean name of an image-kind head of a changed block (`rec`,
+      `casesOn`, `recOn`, `below*`, `brecOn*`, `.go`, `.eq`) holds its image,
+      Lean's own form over the canonical constants, so it follows the
+      presentation (its motive and minor order, the member it eliminates
+      into) by design; the canonical constant is under its `_ix` display name
+      (`Ix.Compile.Pass.ixAuxName`). -/
+  | image
   /-- The constant's own term is identical under the name map; it differs
       only because it references a differing constant (its class lists them). -/
   | inherited
@@ -58,15 +66,31 @@ inductive NonCanonicalCause where
       functionals, the projection paths into them, the fixed-parameter
       telescope). -/
   | pendingTransport
-  /-- Pending batch 3 (CQ3.3 A2, CQ3.4 D6) and CQ4.2 (Pass 3): `below`/`brecOn`
-      generated (or not) by the member's Lean block rather than its Ix block. -/
+  /-- A Lean auxiliary (`below`, `brecOn`, `rec_N`, …) that Lean generates
+      (or not) by the member's Lean block rather than its Ix block, so one
+      presentation has it and the other does not. Batch 3 (CQ3.3 A2, CQ3.4
+      D6) and CQ4.2 (Pass 3) are done: the canonical constants are equal
+      under their `_ix` display names, while the Lean names exist on one side
+      only, which no canonical form removes; the name stays for the record's
+      history. -/
   | pendingSplitAux
   /-- Pending CQ5.3 (O11b): Lean's `noConfusion` in enumeration form. -/
   | pendingNoConfusion
-  /-- Pending CQ3.5 and CQ4.2 (the surgery's deletion, Pass 3's images): the
-      call-site surgery's leftover reference and sharing entries, or a wrong
-      IH projection or universe. -/
-  | pendingSurgery
+  /-- Pending CQ5.1 (O2–O6, the definitional passes): a caller of a changed
+      block, compiled faithfully over the images. Either its Lean term follows
+      its presentation (the motive order and `PProd` packing of its structural
+      recursion over Lean's `below`/`brecOn`, a matcher's arms), or its terms
+      are equal under the name map but Pass 3 develops a head's image at the
+      occurrence in one presentation and keeps the call in the other (an
+      unchanged presentation has no image, its head is the canonical
+      auxiliary itself: class `UNEXPLAINED`, explained by this cause; the
+      users of `casesOn`: `ctorIdx`, matchers, `noConfusionType`). The passes
+      write the canonical call; CQ5.1's re-record gives a permanent cause to
+      the differences they leave (the donor's record after its passes keeps
+      the structural recursions of `Proto.C2`, `C4`, `C9`, `Repro.DQMut`,
+      `DQSplit` and `SurgSplit`). (Until the flip these differences were the
+      call-site surgery's to remove, `pendingSurgery`, deleted with it.) -/
+  | pendingPasses
   /-- Pending CQ5.3 (O7–O12): the collapse passes. -/
   | pendingCollapse
   /-- Pending CQ5.3 (O11a): Lean's mutual `_sizeOf_N` over a split block. -/
@@ -75,7 +99,7 @@ inductive NonCanonicalCause where
       differ in spelling only (`Fixtures.NestedLevels`). -/
   | pendingLevels
   /-- Written by the re-record mode for a new difference: the suggested cause
-      (Lean syntax, e.g. `".pendingSurgery"`), to be reviewed against the dumped
+      (Lean syntax, e.g. `".pendingPasses"`), to be reviewed against the dumped
       terms (`IX_TWINS_DUMP`) and replaced by a cause. The gate fails while any
       entry has it. -/
   | unreviewed (suggested : String)
@@ -87,9 +111,10 @@ def NonCanonicalCause.tag : NonCanonicalCause → String
   | .collapseArms => "COLLAPSE-ARMS" | .indPredBelow => "INDPRED-BELOW"
   | .noSpec => "NOSPEC" | .lazy => "LAZY" | .inherited => "INHERITED"
   | .pendingTransport => "PENDING-TRANSPORT" | .pendingSplitAux => "PENDING-SPLIT-AUX"
-  | .pendingNoConfusion => "PENDING-NOCONFUSION" | .pendingSurgery => "PENDING-SURGERY"
+  | .pendingNoConfusion => "PENDING-NOCONFUSION"
   | .pendingCollapse => "PENDING-COLLAPSE" | .o11aPending => "O11A-PENDING"
-  | .pendingLevels => "PENDING-LEVELS"
+  | .pendingLevels => "PENDING-LEVELS" | .image => "IMAGE"
+  | .pendingPasses => "PENDING-PASSES"
   | .unreviewed s => s!"UNREVIEWED({s})"
 
 /-- The cause as Lean syntax, for the re-recorded data file. -/
@@ -99,9 +124,10 @@ def NonCanonicalCause.syntax : NonCanonicalCause → String
   | .collapseArms => ".collapseArms" | .indPredBelow => ".indPredBelow"
   | .noSpec => ".noSpec" | .lazy => ".lazy" | .inherited => ".inherited"
   | .pendingTransport => ".pendingTransport" | .pendingSplitAux => ".pendingSplitAux"
-  | .pendingNoConfusion => ".pendingNoConfusion" | .pendingSurgery => ".pendingSurgery"
+  | .pendingNoConfusion => ".pendingNoConfusion"
   | .pendingCollapse => ".pendingCollapse" | .o11aPending => ".o11aPending"
-  | .pendingLevels => ".pendingLevels"
+  | .pendingLevels => ".pendingLevels" | .image => ".image"
+  | .pendingPasses => ".pendingPasses"
   | .unreviewed s => s!"(.unreviewed {s.quote})"
 
 /-- How a difference shows in the two presentations' Lean terms under the
@@ -173,7 +199,7 @@ def e (fixture : Lean.Name) (presA presB : String) (constant : Lean.Name)
     (addrA addrB firstDiff : String) (note : String := "") : NonCanonicalEntry :=
   { fixture, presA, presB, constant, role, cause, cls, addrA, addrB, firstDiff, note }
 
-/-- The data file's text up to its list's opening bracket (kept equal to
+/-- The data file's text up to its first part (kept equal to
     `Tests/Ix/Compile/NonCanonicalDefault.lean`'s, so a re-record changes
     only entries). -/
 def recordHeader : String :=
@@ -197,8 +223,6 @@ namespace Tests.Ix.Compile.NonCanonicalDefault
 
 open Tests.Ix.Compile.NonCanonical
 
-/-- The measured non-canonical set. -/
-def nonCanonical : List NonCanonicalEntry := [
 "
 
 /-- The entry as one item of the data file's list (two lines; the writer
@@ -209,11 +233,25 @@ def NonCanonicalEntry.syntax (x : NonCanonicalEntry) : String :=
   s!"    {x.addrA.quote} {x.addrB.quote} {x.firstDiff.quote}" ++
   (if x.note.isEmpty then "" else s!" {x.note.quote}")
 
+/-- Entries per list literal of the data file: a literal of a few hundred
+    entries compiles within the code generator's recursion bound, the whole
+    post-flip record (1883) does not, so the file holds the record in parts. -/
+def recordChunk : Nat := 200
+
 /-- The record's data file (`Tests/Ix/Compile/NonCanonicalDefault.lean`) with
-    these entries, in the given order. -/
-def recordFile (entries : List NonCanonicalEntry) : String :=
-  recordHeader ++ ",\n".intercalate (entries.map (·.syntax)) ++
-  (if entries.isEmpty then "" else "\n") ++ "]\n\nend Tests.Ix.Compile.NonCanonicalDefault\n"
+    these entries, in the given order, in parts of `recordChunk`. -/
+def recordFile (entries : List NonCanonicalEntry) : String := Id.run do
+  let arr := entries.toArray
+  let n := (arr.size + recordChunk - 1) / recordChunk
+  let mut out := recordHeader
+  for i in [0:n] do
+    let part := (arr.extract (i * recordChunk) ((i + 1) * recordChunk)).toList
+    out := out ++ s!"/-- Entries {i * recordChunk} to {i * recordChunk + part.length - 1}. -/\n\
+def part{i} : List NonCanonicalEntry := [\n" ++ ",\n".intercalate (part.map (·.syntax)) ++
+      "\n]\n\n"
+  let parts := if n == 0 then "[]" else " ++ ".intercalate ((List.range n).map fun i => s!"part{i}")
+  return out ++ s!"/-- The measured non-canonical set. -/\ndef nonCanonical : List NonCanonicalEntry :=\n  \
+{parts}\n\nend Tests.Ix.Compile.NonCanonicalDefault\n"
 
 /-- A constant of a twin presentation that the compilers refuse on purpose,
     with a fragment of the expected message (both compilers' spellings contain
@@ -225,34 +263,12 @@ structure ExpectedRefusal where
   message : String
   reason : String
 
-private def rr (c : Lean.Name) (m r : String) : ExpectedRefusal := ⟨c, m, r⟩
-
-private def dropsDistinct : String := "collapse call site drops distinct arguments"
-
-/-- The call-site surgery's safety refusals (WB-B4, D-01, CQ1.1) on the twin
-    presentations, and the users they cascade to (a dependent of a failed
-    block fails as a missing constant in both compilers: Lean
-    `missingConstant: …`, Rust `circular dependency or missing constant`).
-    They go with the surgery (CQ3.5): its re-record removes them. -/
-def expectedRefusals : List ExpectedRefusal := [
-  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.f dropsDistinct
-    "raw `A.rec` user with different minors for the collapsed A and B (WB-B4)",
-  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.A.f dropsDistinct
-    "structural recursion with different arms over the collapsed pair (WB-B4)",
-  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.B.g dropsDistinct
-    "structural recursion with different arms over the collapsed pair (WB-B4)",
-  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.f_ab "missing" "user of the refused `f`",
-  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.fg_ab "missing" "user of the refused `A.f`",
-  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.A.f._sunfold "missing" "user of the refused `B.g`",
-  rr `Tests.Ix.Compile.Twins.Repro.Orig.SurgCollapse.B.g._sunfold "missing" "user of the refused `A.f`",
-  rr `Tests.Ix.Compile.Twins.Repro.Orig.F4.r "collapse call site is a partial application"
-    "bare `@A.rec` over the collapsed nested pair (eta-wrapped bare recursor)",
-  rr `Tests.Ix.Compile.Twins.Proto.C7.Src.P.toQ.match_2 dropsDistinct
-    "IndPred \"below\" matcher over the collapsed P/Q: distinct motives for the two members",
-  rr `Tests.Ix.Compile.Twins.Proto.C7.Src.Q.toP.match_2 dropsDistinct
-    "IndPred \"below\" matcher over the collapsed P/Q: distinct motives for the two members",
-  rr `Tests.Ix.Compile.Twins.Proto.C7.Src.P.toQ "missing" "user of the refused `P.toQ.match_2`",
-  rr `Tests.Ix.Compile.Twins.Proto.C7.Src.Q.toP "missing" "user of the refused `P.toQ.match_2`"
-]
+/-- The constants of the twin presentations the compilers refuse on purpose.
+    None since Pass 3 is wired: the call-site surgery's safety refusals
+    (WB-B4, D-01, CQ1.1: "collapse call site drops distinct arguments", "… is
+    a partial application") went with the surgery's plans, and the collapsed
+    blocks' callers compile through images (Pass 3's faithful rewrite), so
+    every twin constant is compared and checked. -/
+def expectedRefusals : List ExpectedRefusal := []
 
 end Tests.Ix.Compile.NonCanonical

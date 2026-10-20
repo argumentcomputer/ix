@@ -43,9 +43,11 @@
      which live in `Tests/Ix/Compile/Fixtures/`): every record holding a
      fixture name is accepted by the certified checker (no decline at all,
      documented or not); names that must share one compiled address (the
-     two presentations of a block, its collapsed members, every source
-     `rec_N` of one canonical auxiliary); and recursor blocks of an exact
-     size (one class and one canonical auxiliary).
+     two presentations of a block, its collapsed members, the canonical
+     recursors and auxiliary under their `_ix` display names when the block
+     changed); recursor blocks of an exact size (one class and one
+     canonical auxiliary); and the Lean names that must hold Pass 3 images
+     (a definition with `Named.original`).
 
   The output's names are read from its own named section (all of them):
   the required and forbidden names, the constants handed to `check-lean`, and
@@ -114,6 +116,11 @@ structure Fixture where
   /-- `(name, n)`: the name is a projection into a block of exactly `n`
       members. -/
   blockSizes : List (String × Nat) := []
+  /-- Names that must hold Pass 3 images: a definition carrying
+      `Named.original` (Lean's own form of the auxiliary), the Lean name of an
+      auxiliary of a changed block whose Ix form is under its `_ix` display
+      name. -/
+  images : List String := []
   deriving Inhabited
 
 /-- Substring test (independent of the `String` pattern API). -/
@@ -135,40 +142,61 @@ def nestedLevelsName (family p m : String) : String :=
   s!"Tests.Ix.Compile.Fixtures.NestedLevels.{family}.{p}.{m}"
 
 /-- `NestedLevels`, per family: the two presentations' members (one class:
-    `Left` and `Right` collapse), their constructors and their recursors
-    share one address each, and every source `rec_N` of both presentations
-    is the one canonical auxiliary's recursor (Lean numbers `Mixed`'s three
-    occurrences and `Neighbour`'s two; `B` lists `Right` first, so its
-    `rec_N` hang off `Right`). -/
+    `Left` and `Right` collapse), their constructors and their canonical
+    recursors share one address each, and the canonical auxiliary is one.
+    The block is changed (its class collapses two members), so Pass 3
+    stores its Ix recursors under their `_ix` display names
+    (`Ix.Compile.Pass.ixAuxName`): each member's `x._ix.rec`, and the one
+    canonical auxiliary at its canonical position under the component's
+    first class representative (`Mixed`: `A.Right._ix.rec_1`,
+    `B.Left._ix.rec_1`; `Neighbour`: `A.Right._ix.rec_1`, `B.Right._ix.rec_1`;
+    every source `rec_N` of both presentations is displayed there; Lean
+    numbers `Mixed`'s three occurrences and `Neighbour`'s two). The Lean
+    names hold the images (`nestedLevelsImages`), which follow the
+    presentation's member order, so they are compared by the twins record
+    (`NonCanonicalDefault`, `IMAGE`), not here. -/
 def nestedLevelsSame : List (List String) :=
-  [("Mixed", 3), ("Neighbour", 2)].flatMap fun (family, nAux) =>
+  [("Mixed", "Left"), ("Neighbour", "Right")].flatMap fun (family, repB) =>
     let both := fun (suffix : String) =>
       ["A", "B"].flatMap fun p =>
         ["Left", "Right"].map fun m => nestedLevelsName family p (m ++ suffix)
-    [both "", both ".mk", both ".rec",
-     (List.range nAux).flatMap fun j =>
-       [nestedLevelsName family "A" s!"Left.rec_{j + 1}",
-        nestedLevelsName family "B" s!"Right.rec_{j + 1}"]]
+    [both "", both ".mk", both "._ix.rec",
+     [nestedLevelsName family "A" "Right._ix.rec_1", nestedLevelsName family "B" s!"{repB}._ix.rec_1"]]
 
-/-- `NestedLevels`' recursor blocks: one class and one canonical auxiliary. -/
+/-- `NestedLevels`' canonical recursor blocks: one class and one canonical
+    auxiliary. -/
 def nestedLevelsBlocks : List (String × Nat) :=
   ["Mixed", "Neighbour"].flatMap fun family =>
-    ["A", "B"].map fun p => (nestedLevelsName family p "Left.rec", 2)
+    ["A", "B"].map fun p => (nestedLevelsName family p "Left._ix.rec", 2)
+
+/-- `NestedLevels`' Lean recursors, every one an image: both members' `rec`,
+    and the source `rec_N` (hanging off the first member Lean lists: `Left`
+    in `A`, `Right` in `B`). -/
+def nestedLevelsImages : List String :=
+  [("Mixed", 3), ("Neighbour", 2)].flatMap fun (family, nAux) =>
+    (["A", "B"].flatMap fun p => ["Left", "Right"].map fun m => nestedLevelsName family p (m ++ ".rec")) ++
+    (List.range nAux).flatMap fun j =>
+      [nestedLevelsName family "A" s!"Left.rec_{j + 1}",
+       nestedLevelsName family "B" s!"Right.rec_{j + 1}"]
 
 -- The fixture record (filled from the A0 survey on 2026-10-03, Lean
 -- 4.34.1; expected behaviours from `plans/replan/D-evidence-digest.md` §2,
 -- `audit-whitebox-5.md` and `audit-blackbox-final.md`).
 def fixtures : List Fixture := [
   -- A0 item 1 (WB-B4): the collapse refusal, its equal-arms neighbour, and
-  -- the eta-wrapped partial applications of collapsed recursors.
+  -- the eta-wrapped partial applications of collapsed recursors. Until Pass 3
+  -- the call-site surgery refused `SurgCollapse` ("collapse call site drops
+  -- distinct arguments") and the eta-wrapped two ("collapse call site is a
+  -- partial application"); Pass 3 rewrites the callers through images
+  -- instead, so all four compile (the donor's record after its flip).
   { stem := "SurgCollapse", ns := ["SurgCollapse"]
-    expect := .refuses "collapse call site drops distinct arguments" },
+    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
   { stem := "SurgCollapseEq", ns := ["SurgCollapseEq"]
     knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
   { stem := "F4FlatAlphaUsers", ns := ["F4FlatAlphaUsers"]
-    expect := .refuses "collapse call site is a partial application" },
+    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
   { stem := "F4_NestedAlphaUsers", ns := ["A", "B", "r", "t", "sizeL", "sizeLA"]
-    expect := .refuses "collapse call site is a partial application" },
+    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
   -- A0 item 2 (WB-B1, A5/C3, C1): the user's names stay the user's.
   { stem := "FieldBelow", ns := ["FieldBelow"] },
   { stem := "FieldBelowRace", ns := ["FieldBelowRace"] },
@@ -242,42 +270,26 @@ def fixtures : List Fixture := [
       ["NestShapes.R", "NestShapes.R.*"] },
   -- Compiled, with constants a checker rejects: totality defects outside
   -- A0, recorded by id.
-  { stem := "Coind", ns := ["Coind"]
-    knownFails :=
-      kf "rs" "WB-B2" ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn",
-        "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] ++
-      kf "lean" "WB-B2" ["Coind.CA._functor.existential_equiv", "Coind.CA.casesOn",
-        "Coind.CB._functor.existential_equiv", "Coind.CB.casesOn"] ++
-      kf "cert" "WB-B2" ["Coind.CA._functor.existential_equiv",
-        "Coind.CB._functor.existential_equiv", "Coind.CA.functor_unfold",
-        "Coind.CB.functor_unfold", "Coind.CA.mk", "Coind.CB.mk", "Coind.CA.casesOn",
-        "Coind.CB.casesOn"] },
-  { stem := "PropSplit", ns := ["PropSplit"]
-    knownFails := ["rs", "lean", "cert"].flatMap fun leg =>
-      kf leg "WB-B2" ["PropSplit.p1", "PropSplit.p2", "PropSplit.q1", "PropSplit.q2"] },
+  -- The call-site surgery's defects (WB-B2 on `Coind`, `PropSplit`,
+  -- `L2_PropSplit` and `PropCollapse.p_cases`; WB-B3 on `SurgSplit`; WB-B5 on
+  -- `SurgAlias`) went with it: Pass 3's output passes every checker there.
+  -- WB-B5 was the split-minor adapter's syntactic test for a recursive field,
+  -- which missed `Id' B` and so mis-adapted `A.rec`'s calls in `SurgAlias.f`,
+  -- `f1` and the `sizeOf` family (`A._sizeOf_1`, `_sizeOf_inst`,
+  -- `a.sizeOf_spec`, `nil.sizeOf_spec`); Pass 3 develops `A.rec`'s image
+  -- instead, with no syntactic test, and every leg accepts them (the box's
+  -- run of the flip, 2026-10-20; the donor kept the `sizeOf` rows).
+  { stem := "Coind", ns := ["Coind"] },
+  { stem := "PropSplit", ns := ["PropSplit"] },
   { stem := "PropCollapse", ns := ["PropCollapse"]
-    knownFails := kf "rs" "WB-B2" ["PropCollapse.p_cases"] ++
-      kf "cert" "WB-B2" ["PropCollapse.p_cases"] ++
-      kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress), WB-B2" ["*"] },
-  { stem := "L2_PropSplit", ns := ["A", "B", "ua"]
-    knownFails := ["rs", "lean", "cert"].flatMap fun leg => kf leg "BB-L2 (= WB-B2)" ["ua"] },
+    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress), WB-B2" ["*"] },
+  { stem := "L2_PropSplit", ns := ["A", "B", "ua"] },
   -- WB-B6: a recursive field behind a reducible alias (`Id' (PA n)`, and
   -- `Branches Higher`, an alias of a function telescope). The Prop `.below`
   -- family is built from the recursor's minor premises, so every leg accepts.
   { stem := "RecAlias", ns := ["RecAlias"] },
-  { stem := "SurgAlias", ns := ["SurgAlias"]
-    knownFails :=
-      kf "rs" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.f",
-        "SurgAlias.f1"] ++
-      kf "lean" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.f",
-        "SurgAlias.f1"] ++
-      kf "cert" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.f", "SurgAlias.f1",
-        "SurgAlias.A._sizeOf_inst", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.A.nil.sizeOf_spec"] },
-  { stem := "SurgSplit", ns := ["SurgSplit"]
-    knownFails := kf "rs" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.len2"] ++
-      kf "lean" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.len2"] ++
-      kf "cert" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.A.len", "SurgSplit.len2",
-        "SurgSplit.A.len._sunfold"] },
+  { stem := "SurgAlias", ns := ["SurgAlias"] },
+  { stem := "SurgSplit", ns := ["SurgSplit"] },
   -- WB-A3: the nested auxiliary's index sits behind a reducible alias;
   -- both recursor generators peel it through `whnf`.
   { stem := "AliasIdx", ns := ["AliasIdx"] },
@@ -290,7 +302,8 @@ def fixtures : List Fixture := [
   -- occurrences of the members of an external mutual group.
   { stem := "NestedLevels", ns := ["Tests.Ix.Compile.Fixtures.NestedLevels"]
     src := some "Tests/Ix/Compile/Fixtures/NestedLevels.lean"
-    certAccepts := true, sameAddress := nestedLevelsSame, blockSizes := nestedLevelsBlocks },
+    certAccepts := true, sameAddress := nestedLevelsSame, blockSizes := nestedLevelsBlocks
+    images := nestedLevelsImages },
   { stem := "CanonSiblingNest", ns := ["CanonSiblingNest"]
     src := some "Tests/Ix/Compile/Fixtures/CanonSiblingNest.lean"
     certAccepts := true },
@@ -315,18 +328,14 @@ def fixtures : List Fixture := [
     knownFails :=
       kf "cert" "IxC modeller: nested under a definition (SP5 §3.5; decline)"
         ["KernelSpec.T", "KernelSpec.T.*"] },
-  -- Expected compile failures outside A0 (totality defects).
-  { stem := "SurgIdx", ns := ["SurgIdx", "SurgIdx2"]
-    expect := .xfail "WB-A2" "found no residual Pi binders" },
-  { stem := "F6_OrderIdxBrecOn", ns := ["A", "B"]
-    expect := .xfail "BB-F6 (= WB-A2)" "found no residual Pi binders" },
-  -- BB-F8: `B.below` reads `A.below_1` from the other SCC (root failure).
-  -- Since the one readiness rule (CQ2.6) its dependents fail with it, so
-  -- `A.brecOn_1`'s head-rewrite failure ("source recursor has no
-  -- elimination level") is no longer reached; the bounded listing shows
-  -- `A.below`'s missing `A.below_1` (see the fixture's docstring).
-  { stem := "F8_PropSplitNested", ns := ["A", "B", "PBox"]
-    expect := .xfail "BB-F8" "missing constant: A.below_1" },
+  -- Until Pass 3 these failed in the call-site surgery: WB-A2 (`SurgIdx`,
+  -- BB-F6 `F6_OrderIdxBrecOn`: the eta adapter "found no residual Pi
+  -- binders") and BB-F8 (`F8_PropSplitNested`: `B.below` read `A.below_1`
+  -- from the other SCC). Pass 3 rewrites the callers through images; all
+  -- three compile (the donor's record after its flip).
+  { stem := "SurgIdx", ns := ["SurgIdx", "SurgIdx2"] },
+  { stem := "F6_OrderIdxBrecOn", ns := ["A", "B"] },
+  { stem := "F8_PropSplitNested", ns := ["A", "B", "PBox"] },
   -- Reproducers Lean itself rejects (audit notes; kept so the record is
   -- complete): nothing reaches either compiler.
   { stem := "PropEvap", ns := ["PropEvap"]
@@ -412,6 +421,51 @@ def recordOf (env : Ixon.Env) (addr : Address) : Address :=
     | .cPrj p => p.block
     | _ => addr
   | none => addr
+
+/-- The output's layout against the fixture's record: names that share one
+    address (`sameAddress`), projections into blocks of an exact size
+    (`blockSizes`), and Lean names that hold Pass 3 images (`images`: a
+    definition with `Named.original`). Pure, so the same check runs on any
+    compiler's output. -/
+def layoutProblems (f : Fixture) (outEnv : Ixon.Env) : Array String := Id.run do
+  let mut problems : Array String := #[]
+  let namedOf : Std.HashMap String Ixon.Named :=
+    outEnv.named.fold (fun m n named => m.insert (toString n) named) {}
+  let addrOf (n : String) : Option Address := (namedOf.get? n).map (·.addr)
+  for group in f.sameAddress do
+    for n in group do
+      unless namedOf.contains n do problems := problems.push s!"output lacks {n}"
+    match group.filterMap addrOf with
+    | a :: rest =>
+      unless rest.all (· == a) do problems := problems.push s!"addresses differ within {group}"
+    | [] => pure ()
+  for (n, size) in f.blockSizes do
+    match addrOf n with
+    | none => problems := problems.push s!"output lacks {n}"
+    | some a =>
+      let block := recordOf outEnv a
+      let members : Option Nat := if block == a then none else
+        match (outEnv.consts.get? block).bind (·.get?) with
+        | some c => match c.info with
+          | .muts ms => some ms.size
+          | _ => none
+        | none => none
+      unless members == some size do
+        problems := problems.push
+          s!"{n}: block of {(members.map toString).getD "no"} members, expected {size}"
+  -- Pass 3 images: a definition with `Named.original` under the Lean name
+  for n in f.images do
+    match namedOf.get? n with
+    | none => problems := problems.push s!"output lacks {n}"
+    | some named =>
+      let isDefn := match (outEnv.consts.get? named.addr).bind (·.get?) with
+        | some c => (c.info matches .defn _)
+        | none => false
+      unless isDefn && named.original.isSome do
+        problems := problems.push
+          s!"{n}: not an image (a definition with Named.original; it holds \
+{if isDefn then "a definition without Named.original" else "no definition"})"
+  return problems
 
 /-- The bridge between the two scopes (`AUX_CERT_WHOLE=1`): `ix compile
     --local` must succeed, every named entry of its output (address,
@@ -524,7 +578,8 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       unless allNames.contains n do problems := problems.push s!"output lacks {n}"
     for n in f.forbidNames do
       if allNames.contains n then problems := problems.push s!"output has {n}"
-    -- Every record of the fixture accepted, shared addresses, block sizes.
+    -- Every record of the fixture accepted, shared addresses, block sizes,
+    -- images.
     if f.certAccepts then
       let accepted : Std.HashSet String := rows.foldl (init := {}) fun s (address, _, outcome, _) =>
         if outcome == "accept" then s.insert address else s
@@ -532,29 +587,7 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
         unless accepted.contains record do
           problems := problems.push
             s!"cert: record {record.take 12} ({names.toList.take 3}) is not accepted"
-    let addrOf : Std.HashMap String Address :=
-      outEnv.named.fold (fun m n named => m.insert (toString n) named.addr) {}
-    for group in f.sameAddress do
-      for n in group do
-        unless addrOf.contains n do problems := problems.push s!"output lacks {n}"
-      match group.filterMap addrOf.get? with
-      | a :: rest =>
-        unless rest.all (· == a) do problems := problems.push s!"addresses differ within {group}"
-      | [] => pure ()
-    for (n, size) in f.blockSizes do
-      match addrOf.get? n with
-      | none => problems := problems.push s!"output lacks {n}"
-      | some a =>
-        let block := recordOf outEnv a
-        let members : Option Nat := if block == a then none else
-          match (outEnv.consts.get? block).bind (·.get?) with
-          | some c => match c.info with
-            | .muts ms => some ms.size
-            | _ => none
-          | none => none
-        unless members == some size do
-          problems := problems.push
-            s!"{n}: block of {(members.map toString).getD "no"} members, expected {size}"
+    problems := problems ++ layoutProblems f outEnv
     -- Observed failures per leg.
     let mut failed : Array (String × String × String) := #[]
     for (address, names, outcome, reason) in rows do

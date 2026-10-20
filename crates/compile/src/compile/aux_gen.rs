@@ -1222,8 +1222,12 @@ pub fn generate_aux_patches(
         // The spec SCC compiled first (scheduler dependency) and
         // registered the name as its canonical patch/alias. Nothing to
         // do here — but the registration must actually exist, or the
-        // probe and the compiled state disagree.
-        if stt.resolve_addr(&source_name).is_none() {
+        // probe and the compiled state disagree. (In a driver-prepared
+        // state Pass 3 moves the Lean names of a changed block's
+        // auxiliaries to their images and the Ix auxiliary to its `_ix`
+        // display name, so the Lean-named registration is absent by
+        // design: Lean `Ix.AuxGen.Patches`, the same exemption.)
+        if !stt.driver_prepared && stt.resolve_addr(&source_name).is_none() {
           return Err(CompileError::InvalidMutualBlock {
             reason: format!(
               "aux position {source_j} ('{}') is canonically owned by its \
@@ -1245,9 +1249,9 @@ pub fn generate_aux_patches(
         }
         continue;
       }
-      // Target guard mirrors the head-rewrite plan registration in
-      // `surgery::compute_call_site_plans` (now driven by the same
-      // `evaporated` flags). Multi-motive external targets
+      // Target guard (it mirrored the call-site surgery's head-rewrite
+      // plan, driven by the same `evaporated` flags; Pass 3 rewrites the
+      // callers through the images). Multi-motive external targets
       // (mutual/nested external families) are outside the supported
       // rewrite domain, and so is a target the environment lacks (a slice
       // without the external container's recursor). Both are refused,

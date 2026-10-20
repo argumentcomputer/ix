@@ -10,18 +10,26 @@
      `validate-aux` and `aux-gen-diff` compile), compiled by Rust
      (`rsCompilePhasesFFI`) and by the Lean fold (`compileEnvFold`):
      a. the set read off the two artifacts is the same;
-     b. **the plan registrations**: the changed inductive components are
-        exactly the components that own a call-site plan, Rust's
-        (`rs_aux_gen_dump_plans`, plan keys by their printed name) and the
-        Lean fold's (`CompileEnv.callSitePlans`, by name). A key `X.rec`
-        belongs to `X`'s component; `all₀.rec_N` to the component of Lean's
-        block that holds nested position `N - 1` (canonical there, or
-        evaporated there). The components of regenerated families (members
-        compiled by an aux tail) register no plan and are listed apart. On
-        every inductive component the set's predicate is the plan predicate;
-     c. every constant whose metadata records a surgered call site is in the
-        set (the callers of the planned heads), except the callers of a
-        regenerated `IndPredBelow` family, which are in its cone;
+     b. **the Pass 3 hooks**. No call-site plan is registered (Rust's dump
+        has no `plan`/`bplan`/`wplan` line, the Lean fold's
+        `CompileEnv.callSitePlans` is empty). The components the first hook
+        edits (`editChangedBlock`) are exactly the changed inductive
+        components by the plan predicate (`isChanged`, not
+        `componentChanged`): on both artifacts a member `m` of a component
+        is displayed `m._ix.rec` (the side-car edit moved its auxiliaries)
+        iff the component is changed, except that a regenerated
+        `IndPredBelow` family (members compiled by an aux tail) is edited
+        (A3V-IPB, `editPermutedBelowFamily`) iff it is only permuted. The
+        Lean fold's tables agree: `p3Blocks` holds exactly the Lean blocks of
+        the edited components, with their `all`, and every published head
+        (`p3Heads`) is an `imageHead` entry of the set whose key is in
+        `p3Blocks`. A Lean recursor stored as a definition (its image) is an
+        `imageHead` entry; these are the same names on both artifacts, and on
+        the Lean side exactly the recursor heads of `p3Heads`. On every
+        inductive component the set's predicate is the plan predicate;
+     c. every constant whose metadata carries an `_ix.inline` decompile
+        record is a `caller` entry of the set (the same names on both
+        artifacts), and no constant carries surgered call-site metadata;
      d. pinned fixtures with their causes (`pinned`);
      e. the definition components that collapse inside are exactly
         `pinnedDefinitions`, each `collapsed`.
@@ -30,9 +38,11 @@
      definition components of `initStdDefinitions` (none), and the fibers
      with two names in one Lean `all` (`initStdLeanMutualFibers`) out of the
      set. `changed-set-testenv` (manual): the whole test environment,
-     compiled by Rust (`rs_compile_env_to_ixon`), against Rust's plan
-     registrations (the `IX_LOG_AUX_NAMES` calibration of batch 4: 124
-     changed components in 90 Lean blocks).
+     compiled by Rust (`rs_compile_env_to_ixon`): 2b's edited components and
+     image recursors and 2c's record carriers on Rust's artifact. (Before
+     the flip it compared with Rust's plan registrations: 124 changed
+     components in 90 Lean blocks, the `IX_LOG_AUX_NAMES` calibration of
+     batch 4.)
 
   Run with: `lake test -- changed-set` (and `changed-set-initstd`,
   `changed-set-testenv`).
@@ -127,34 +137,101 @@ def components (env : _root_.Ix.Environment) (ixe : Ixon.Env) :
     let (all, classes, layout?) ← componentOf lean r
     pure (all, classes, layout?, isChanged all classes layout?)
 
-/-- The plan keys a component owns: `X.rec` for its members of `all`, and
-`all₀.rec_N` for the nested positions it holds (canonical or evaporated). -/
-def ownedKeys (all : Array IxName) (classes : Array (Array IxName))
-    (layout? : Option Ixon.AuxLayout) : Array IxName := Id.run do
-  let mut keys := #[]
-  for m in (planClasses all classes).flatten do
-    keys := keys.push (m.mkStr "rec")
-  if let (some all0, some l) := (all[0]?, layout?) then
-    for (p, j) in l.perm.zipIdx do
-      let evap := (l.evaporated[j]?).getD 0 != 0
-      if p != permOut || evap then
-        keys := keys.push (all0.mkStr s!"rec_{j + 1}")
-  return keys
-
 /-- A component of a regenerated family: an aux tail compiled its members, so
 the promotion route recorded their original form (`Named.original`). -/
 def regeneratedFamily (ixe : Ixon.Env) (classes : Array (Array IxName)) : Bool :=
   classes.any (·.any fun m => ((ixe.named.get? m).bind (·.original)).isSome)
 
-/-- Whether a constant's metadata records a surgered call site. -/
-def hasCallSite (cm : Ixon.ConstantMeta) : Bool :=
-  let surgered (a : Ixon.ExprMetaArena) := a.nodes.any fun
-    | .callSite .. | .etaCallSite .. => true
-    | _ => false
+/-- The first Pass 3 hook edited the component: the side-car edit moved a
+member's recursor to its display name, `m.rec ↦ m._ix.rec`
+(`Ix.Compile.Pass.ixAuxName`; an unchanged component's tail keeps `m.rec`). -/
+def edited (ixe : Ixon.Env) (all : Array IxName) (classes : Array (Array IxName)) : Bool :=
+  (planClasses all classes).any (·.any fun m =>
+    ixe.named.contains ((m.mkStr _root_.Ix.Compile.Pass.ixComponent).mkStr "rec"))
+
+/-- Whether the first hook edits the component: a changed component (the plan
+predicate), but of a regenerated `IndPredBelow` family only one that is
+permuted and nothing else (A3V-IPB leaves a family that collapses or splits as
+it is). -/
+def editExpected (ixe : Ixon.Env) (all : Array IxName) (classes : Array (Array IxName))
+    (layout? : Option Ixon.AuxLayout) : Bool :=
+  isChanged all classes layout? &&
+    (!regeneratedFamily ixe classes || blockCauses all classes layout? == #[.permuted])
+
+/-- The expression metadata of a constant. -/
+def arenaOf (cm : Ixon.ConstantMeta) : Option Ixon.ExprMetaArena :=
   match cm.info with
   | .defn _ _ _ _ a _ _ | .axio _ _ a _ | .quot _ _ a _ | .indc _ _ _ _ _ a _
-  | .ctor _ _ _ a _ | .recr _ _ _ _ _ a _ _ => surgered a
-  | _ => false
+  | .ctor _ _ _ a _ | .recr _ _ _ _ _ a _ _ => some a
+  | _ => none
+
+/-- Whether a constant's metadata records a surgered call site. -/
+def hasCallSite (cm : Ixon.ConstantMeta) : Bool :=
+  match arenaOf cm with
+  | some a => a.nodes.any fun
+    | .callSite .. | .etaCallSite .. => true
+    | _ => false
+  | none => false
+
+/-- Whether a constant's metadata carries a Pass 3 decompile record: a KV map
+with the key `_ix.inline` (`Ix.Compile.Pass.inlineKey`). -/
+def hasRecord (cm : Ixon.ConstantMeta) : Bool :=
+  match arenaOf cm with
+  | some a => a.nodes.any fun
+    | .mdata kvmaps _ => kvmaps.any (·.any fun (k, _) => k == _root_.Ix.Compile.Pass.inlineKey.getHash)
+    | _ => false
+  | none => false
+
+/-- The names whose metadata carries a decompile record, by printed name. -/
+def recordCarriers (ixe : Ixon.Env) : Array IxName :=
+  (ixe.named.fold (init := #[]) fun acc n named =>
+    if hasRecord named.constMeta then acc.push n else acc).qsort (·.pretty < ·.pretty)
+
+/-- The input recursors an artifact stores as definitions (their images), by
+printed name. -/
+def imageRecursors (rawEnv : _root_.Ix.Environment) (ixe : Ixon.Env) : Array IxName :=
+  (ixe.named.fold (init := #[]) fun acc n named =>
+    match rawEnv.get? n, ixe.getConst? named.addr with
+    | some (.recInfo _), some c => match c.info with
+      | .defn _ | .dPrj _ => acc.push n
+      | _ => acc
+    | _, _ => acc).qsort (·.pretty < ·.pretty)
+
+/-- The names of the set's entries with one cause. -/
+def entriesWith (cs : ChangedSet) (cause : Cause) : Std.HashSet IxName :=
+  cs.entries.foldl (init := {}) fun s e => if e.cause == cause then s.insert e.name else s
+
+/-- A component, for messages: Lean's first member and the classes. -/
+def showComponent (all : Array IxName) (classes : Array (Array IxName)) : String :=
+  s!"{((all[0]?).map (·.pretty)).getD "?"} \
+[{", ".intercalate (classes.toList.map fun c => "/".intercalate (c.toList.map (·.pretty)))}]"
+
+/-- The components the first hook edited, against the expected ones, on one
+artifact: the problems, the edited components (by index) and the first
+members of their Lean blocks. -/
+def editProblems (what : String) (ixe : Ixon.Env)
+    (comps : Array (Array IxName × Array (Array IxName) × Option Ixon.AuxLayout × Bool)) :
+    Array String × Array Nat × Std.HashSet IxName := Id.run do
+  let mut ps : Array String := #[]
+  let mut done : Array Nat := #[]
+  let mut alls : Std.HashSet IxName := {}
+  for ((all, classes, layout?, _), i) in comps.zipIdx do
+    let got := edited ixe all classes
+    if got then
+      done := done.push i
+      if let some a := all[0]? then alls := alls.insert a
+    if got && !editExpected ixe all classes layout? then
+      ps := ps.push s!"{what}: component {showComponent all classes} was edited by the first \
+hook, but is not changed (or is a family that is not only permuted)"
+    if !got && editExpected ixe all classes layout? then
+      ps := ps.push s!"{what}: changed component {showComponent all classes} was not edited by \
+the first hook"
+  return (ps, done, alls)
+
+/-- `xs ⊆ s`: one problem per name of `xs` outside `s`. -/
+def subsetProblems (what : String) (xs : Array IxName) (s : Std.HashSet IxName) :
+    Array String :=
+  xs.filterMap fun n => if s.contains n then none else some s!"{n.pretty} {what}"
 
 /-- Fixtures of the corpus and their changed components' causes, by the
 first member of Lean's block (recorded at push 47; components in `ofCompile`'s order). -/
@@ -177,7 +254,7 @@ def pinned : List (Lean.Name × Array (Array BlockCause)) :=
    -- finding 23's block: three components, the owner's evaporating both positions
    (.mkNum `_private.Tests.Ix.Compile.Mutual 0 ++ fx `AuxDedup1.A,
      #[#[.split], #[.split], #[.split, .nestedEvaporated 0, .nestedEvaporated 1]]),
-   -- a regenerated `IndPredBelow` family out of Lean's order (no plan)
+   -- a regenerated `IndPredBelow` family out of Lean's order (edited by A3V-IPB since the flip)
    (fx `BelowPredicate.EvenP.below, #[#[.permuted]])]
 
 /-- Up to twelve names, in parentheses; nothing for none. -/
@@ -222,84 +299,96 @@ def corpusProblems (rawEnv : _root_.Ix.Environment) (rustEnv leanEnv : Ixon.Env)
     ps := ps.push "the sets read off the Rust and the Lean artifacts differ"
   if rustSet.blocks.size != leanSet.blocks.size then
     ps := ps.push "the changed components of the Rust and the Lean artifacts differ"
-  -- b. the plan registrations
+  -- b. the Pass 3 hooks: no plan; the edited components; the Lean fold's tables
+  let planLines := (rustDump.splitOn "\n").filter fun l =>
+    l.startsWith "plan " || l.startsWith "bplan " || l.startsWith "wplan "
+  unless planLines.isEmpty do
+    ps := ps.push s!"the Rust compile registered {planLines.length} call-site plan(s): \
+{planLines.take 3}"
+  unless cenv.callSitePlans.isEmpty do
+    ps := ps.push s!"the Lean fold registered {cenv.callSitePlans.size} call-site plan(s)"
   let comps := components rawEnv leanEnv
-  let mut owner : Std.HashMap IxName Nat := {}
-  let mut ownerPretty : Std.HashMap String Nat := {}
-  for ((all, classes, layout?, _), i) in comps.zipIdx do
-    for k in ownedKeys all classes layout? do
-      if let some j := owner.get? k then
-        if j != i then ps := ps.push s!"plan key {k.pretty} has two owners"
-      owner := owner.insert k i
-      ownerPretty := ownerPretty.insert k.pretty i
   let regenerated (i : Nat) : Bool := match comps[i]? with
     | some (_, classes, _, _) => classes.any (·.any cenv.auxGenExtraNames.contains)
     | none => false
   for ((_, classes, _, _), i) in comps.zipIdx do
     if regeneratedFamily leanEnv classes != regenerated i then
       ps := ps.push s!"component #{i}: the artifact and the driver disagree on a regenerated family"
-  let changed : Std.HashSet Nat := comps.zipIdx.foldl (init := {}) fun s ((_, _, _, ch), i) =>
-    if ch && !regenerated i then s.insert i else s
-  let familyChanged := comps.zipIdx.filter fun ((_, _, _, ch), i) => ch && regenerated i
-  let mut leanOwners : Std.HashSet Nat := {}
-  for (k, _) in cenv.callSitePlans do
-    match owner.get? k with
-    | some i => leanOwners := leanOwners.insert i
-    | none => ps := ps.push s!"Lean plan {k.pretty}: no component owns it"
-  let mut rustOwners : Std.HashSet Nat := {}
-  let mut rustPlans := 0
-  for line in rustDump.splitOn "\n" do
-    if let some rest := line.dropPrefix? "plan " then
-      rustPlans := rustPlans + 1
-      let key := (rest.toString.splitOn " ").headD ""
-      match ownerPretty.get? key with
-      | some i => rustOwners := rustOwners.insert i
-      | none => ps := ps.push s!"Rust plan {key}: no component owns it"
-  let blocksOf (s : Std.HashSet Nat) : Std.HashSet IxName := s.fold (init := {}) fun acc i =>
-    match comps[i]? with
-    | some (all, _, _, _) => match all[0]? with
-      | some a => acc.insert a
-      | none => acc
-    | none => acc
-  let showComp (i : Nat) : String := match comps[i]? with
-    | some (all, classes, _, _) =>
-      s!"{((all[0]?).map (·.pretty)).getD "?"} \
-[{", ".intercalate (classes.toList.map fun c => "/".intercalate (c.toList.map (·.pretty)))}]"
-    | none => s!"#{i}"
-  for (what, owners) in [("Rust", rustOwners), ("Lean", leanOwners)] do
-    for i in changed do
-      unless owners.contains i do
-        ps := ps.push s!"changed component {showComp i} owns no {what} plan"
-    for i in owners do
-      unless changed.contains i do
-        ps := ps.push s!"{what} plan from a component that is not changed: {showComp i}"
-  say s!"plan registrations: {rustPlans} Rust plans from {rustOwners.size} components in \
-{(blocksOf rustOwners).size} Lean blocks; {cenv.callSitePlans.size} Lean plans from \
-{leanOwners.size} components; {changed.size} changed components in \
-{(blocksOf changed).size} Lean blocks"
-  for ((_, _, _, _), i) in familyChanged do
-    say s!"regenerated family out of Lean's order (no plan): {showComp i}"
+  let changed := comps.filter (·.2.2.2)
+  let (leanEdit, leanDone, leanAlls) := editProblems "Lean" leanEnv comps
+  let rustComps := components rawEnv rustEnv
+  let (rustEdit, rustDone, rustAlls) := editProblems "Rust" rustEnv rustComps
+  ps := ps ++ leanEdit ++ rustEdit
+  if rustComps.size != comps.size || rustDone.size != leanDone.size then
+    ps := ps.push s!"the Rust and the Lean artifacts differ in their components \
+({rustComps.size}/{comps.size}) or edited components ({rustDone.size}/{leanDone.size})"
+  -- the Lean fold's tables: the edited components' Lean blocks, with their `all`
+  let mut blockAll : Std.HashMap IxName (Array IxName) := {}
+  for i in leanDone do
+    if let some (all, _, _, _) := comps[i]? then
+      if let some a := all[0]? then blockAll := blockAll.insert a all
+  for (k, all) in cenv.p3Blocks do
+    let k : IxName := k
+    match blockAll.get? k with
+    | some want => if all != want then ps := ps.push s!"p3Blocks: {k.pretty} has another `all`"
+    | none => ps := ps.push s!"p3Blocks: {k.pretty} is the Lean block of no edited component"
+  for a in leanAlls do
+    unless cenv.p3Blocks.contains a do
+      ps := ps.push s!"p3Blocks: the Lean block {a.pretty} of an edited component is missing"
+  -- the heads: entries of the set, keyed by a changed Lean block; the recursor
+  -- heads are the input recursors stored as definitions (their images)
+  let heads := entriesWith leanSet .imageHead
+  let mut recHeads : Array IxName := #[]
+  for (h, key) in cenv.p3Heads do
+    let h : IxName := h
+    unless heads.contains h do ps := ps.push s!"published head {h.pretty} is no imageHead entry"
+    unless cenv.p3Blocks.contains key do
+      ps := ps.push s!"published head {h.pretty}: its key {key.pretty} is not in p3Blocks"
+    if let some (.recInfo _) := rawEnv.get? h then recHeads := recHeads.push h
+  let recHeadsSorted := recHeads.qsort (·.pretty < ·.pretty)
+  let leanImages := imageRecursors rawEnv leanEnv
+  let rustImages := imageRecursors rawEnv rustEnv
+  ps := ps ++ subsetProblems "is stored as an image (Lean), but is no imageHead entry" leanImages heads
+  ps := ps ++ subsetProblems "is stored as an image (Rust), but is no imageHead entry" rustImages heads
+  if leanImages.map (·.pretty) != recHeadsSorted.map (·.pretty) then
+    ps := ps.push s!"the Lean recursors stored as images ({leanImages.size}) are not the published \
+recursor heads ({recHeads.size})"
+  if rustImages.map (·.pretty) != leanImages.map (·.pretty) then
+    ps := ps.push s!"the Rust and the Lean artifacts store different recursors as images \
+({rustImages.size}/{leanImages.size})"
+  let familyEdited := leanDone.filter regenerated
+  say s!"Pass 3 hooks: no call-site plan; {leanDone.size} of {comps.size} inductive components \
+edited ({changed.size} changed by the plan predicate, {familyEdited.size} regenerated families \
+edited) in {leanAlls.size} Lean blocks (Rust: {rustDone.size} in {rustAlls.size}); \
+{cenv.p3Blocks.size} blocks and {cenv.p3Heads.size} heads published ({recHeads.size} recursors), \
+{leanImages.size} recursors stored as images"
+  for ((all, classes, _, ch), i) in comps.zipIdx do
+    if regenerated i && ch then
+      say s!"regenerated family out of Lean's order: {showComponent all classes} \
+({if leanDone.contains i then "edited" else "not edited"})"
   -- the set's predicate adds nothing on inductive components: collapse inside
   -- an inductive component is a plan change already
-  for ((all, classes, layout?, ch), i) in comps.zipIdx do
+  for (all, classes, layout?, ch) in comps do
     if componentChanged all classes layout? != ch then
-      ps := ps.push s!"inductive component {showComp i}: componentChanged differs from isChanged"
-  -- c. surgered call sites: in the set, or (the callers of a regenerated
-  -- family's inductives, which keep their names) in the cone of a member
-  let mut surgered := 0
-  let mut cone : Array IxName := #[]
-  for (n, named) in leanEnv.named do
-    if hasCallSite named.constMeta then
-      surgered := surgered + 1
-      unless leanSet.contains n do
-        let near := match rawEnv.get? n with
-          | some ci => (_root_.Ix.Compile.Canon.refsConst ci).toList.any leanSet.contains
-          | none => false
-        if near then cone := cone.push n
-        else ps := ps.push s!"{n.pretty} has surgered call sites, and is neither in the set \
-nor next to it"
-  say s!"{surgered} constants with surgered call sites; outside the set, next to a member: \
-{cone.size}{sample cone}"
+      ps := ps.push s!"inductive component {showComponent all classes}: componentChanged differs \
+from isChanged"
+  -- c. decompile records only on callers; no surgered call site
+  let callers := entriesWith leanSet .caller
+  let leanCarriers := recordCarriers leanEnv
+  let rustCarriers := recordCarriers rustEnv
+  ps := ps ++ subsetProblems "carries an `_ix.inline` record (Lean), but is no caller entry"
+    leanCarriers callers
+  ps := ps ++ subsetProblems "carries an `_ix.inline` record (Rust), but is no caller entry"
+    rustCarriers callers
+  if rustCarriers.map (·.pretty) != leanCarriers.map (·.pretty) then
+    ps := ps.push s!"the Rust and the Lean artifacts carry records on different constants \
+({rustCarriers.size}/{leanCarriers.size})"
+  for (what, ixe) in [("Lean", leanEnv), ("Rust", rustEnv)] do
+    for (n, named) in ixe.named do
+      if hasCallSite named.constMeta then
+        ps := ps.push s!"{n.pretty} carries surgered call-site metadata ({what})"
+  say s!"decompile records on {leanCarriers.size} constants (Rust {rustCarriers.size}), of \
+{callers.size} caller entries"
   -- regenerated auxiliaries outside the changed blocks' members and heads
   let byName : Std.HashMap IxName (Array Cause) := leanSet.entries.foldl (init := {}) fun m e =>
     m.insert e.name ((m.getD e.name #[]).push e.cause)
@@ -424,7 +513,9 @@ set {t2 - t1} ms): {cs.counts.summary}"
   return if ps.isEmpty then 0 else 1
 
 /-- The whole test environment, compiled by Rust: the set read off Rust's
-artifact against Rust's plan registrations. The constants of
+artifact, and against it the components the first Pass 3 hook edited, the
+recursors stored as images and the constants carrying decompile records (the
+checks of `run`'s 2b and 2c that need no Lean compile). The constants of
 `Tests.Ix.SourceContract.*` are left out, as `rust-compile` leaves them out
 (their source binder annotations are refused for the whole input). -/
 def runTestEnv (env : Lean.Environment) : IO UInt32 := do
@@ -442,41 +533,29 @@ def runTestEnv (env : Lean.Environment) : IO UInt32 := do
   let rustDump ← Tests.Compile.AuxGenDiff.rsAuxGenDumpPlansFFI consts
   let cs := ofCompile rawEnv rustEnv
   say s!"Rust artifact: {cs.counts.summary}"
-  let comps := components rawEnv rustEnv
-  let mut ownerPretty : Std.HashMap String Nat := {}
-  for ((all, classes, layout?, _), i) in comps.zipIdx do
-    for k in ownedKeys all classes layout? do
-      ownerPretty := ownerPretty.insert k.pretty i
   let mut ps : Array String := #[]
-  let mut owners : Std.HashSet Nat := {}
-  for line in rustDump.splitOn "\n" do
-    if let some rest := line.dropPrefix? "plan " then
-      let key := (rest.toString.splitOn " ").headD ""
-      match ownerPretty.get? key with
-      | some i => owners := owners.insert i
-      | none => ps := ps.push s!"Rust plan {key}: no component owns it"
-  let changed : Std.HashSet Nat := comps.zipIdx.foldl (init := {}) fun s ((_, classes, _, ch), i) =>
-    if ch && !regeneratedFamily rustEnv classes then s.insert i else s
-  let first (i : Nat) : String := match comps[i]? with
-    | some (all, classes, _, _) =>
-      let rep := ((classes[0]?).bind (·[0]?)).map (·.pretty)
-      s!"{((all[0]?).map (·.pretty)).getD "?"} ({rep.getD "?"})"
-    | none => s!"#{i}"
-  let alls (s : Std.HashSet Nat) : Nat := (s.fold (init := ({} : Std.HashSet IxName)) fun acc i =>
-    match comps[i]? with
-    | some (all, _, _, _) => match all[0]? with
-      | some a => acc.insert a
-      | none => acc
-    | none => acc).size
-  say s!"Rust plans from {owners.size} components in {alls owners} Lean blocks; \
-{changed.size} changed components in {alls changed} Lean blocks"
-  for i in changed do
-    unless owners.contains i do ps := ps.push s!"changed component {first i} owns no Rust plan"
-  for i in owners do
-    unless changed.contains i do ps := ps.push s!"Rust plan from component {first i}, not changed"
-  for ((all, classes, layout?, ch), i) in comps.zipIdx do
+  let planLines := (rustDump.splitOn "\n").filter fun l =>
+    l.startsWith "plan " || l.startsWith "bplan " || l.startsWith "wplan "
+  unless planLines.isEmpty do
+    ps := ps.push s!"the Rust compile registered {planLines.length} call-site plan(s): \
+{planLines.take 3}"
+  let comps := components rawEnv rustEnv
+  let (edit, done, alls) := editProblems "Rust" rustEnv comps
+  ps := ps ++ edit
+  let changed := comps.filter (·.2.2.2)
+  let images := imageRecursors rawEnv rustEnv
+  let carriers := recordCarriers rustEnv
+  ps := ps ++ subsetProblems "is stored as an image, but is no imageHead entry" images
+    (entriesWith cs .imageHead)
+  ps := ps ++ subsetProblems "carries an `_ix.inline` record, but is no caller entry" carriers
+    (entriesWith cs .caller)
+  say s!"{done.size} of {comps.size} inductive components edited by the first hook \
+({changed.size} changed by the plan predicate) in {alls.size} Lean blocks; {images.size} \
+recursors stored as images; decompile records on {carriers.size} constants"
+  for (all, classes, layout?, ch) in comps do
     if componentChanged all classes layout? != ch then
-      ps := ps.push s!"inductive component {first i}: componentChanged differs from isChanged"
+      ps := ps.push s!"inductive component {showComponent all classes}: componentChanged differs \
+from isChanged"
   for b in cs.blocks.filter (·.kind == .definitions) do
     say s!"  definitions {memberSet b.classes} {showCauses b.causes}"
   for p in ps.toList.take 40 do IO.eprintln s!"[changed-set] FAIL {p}"
