@@ -20,12 +20,12 @@ the options here:
   service's work alone and compiles nothing: the pipeline prints the
   measurement and returns an error ("nothing compiled"), so `ix compile-lean`
   exits 1 by design. A further `,asks=inductive` makes the service ask for
-  every block that holds an inductive (production asks only for the blocks
-  with a Type-level `.below`). The measurement modes also put the recursor
-  generator and the elimination decision on IxC (AuxGen M4a; production
-  keeps `Ix.Tc` there); `,rec=off` leaves them on `Ix.Tc`, and
-  `,asks=recursors` asks also for the blocks they can ask past the fast
-  paths (`Ix.AuxGen.Ixc.recursorsMayAsk`).
+  every block that holds an inductive, `,asks=below` only for the blocks with
+  a Type-level `.below` (M2b's production); production asks also for the
+  blocks the recursor generator can ask past the fast paths
+  (`,asks=recursors`, `Ix.AuxGen.Ixc.recursorsMayAsk`; AuxGen M4b). The
+  recursor generator and the elimination decision ask IxC as in production;
+  `,rec=off` leaves them on `Ix.Tc` (M3's production).
 
 Under `IX_COMPILE_DBG` the pipeline prints the process's resident set size
 after the compile phase, read here.

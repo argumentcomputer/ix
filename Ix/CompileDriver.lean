@@ -1221,9 +1221,11 @@ runs IxC's Source-mode environment over its input **ahead of the waves**
 (`Ix.AuxGen.Source.RunAhead`), read through the same lookups as the blocks
 (`get?`) and at the committed bundle's evidence: from the start, level by
 level of the schedule (`scheduleLevels`), it folds the declaration groups of
-the blocks with a Type-level `.below`, with everything they depend on, and
-publishes the run after each level. Each such block's aux tail asks
-`.below`'s and `.brecOn`'s questions of IxC over its level's run
+the blocks production's asks select (a Type-level `.below`, M2b; a question
+the recursor generator can ask past the fast paths, M4b), with everything
+they depend on, and publishes the run after each level. Each block's aux tail
+asks `.below`'s, `.brecOn`'s and the recursor generator's questions of IxC
+over its level's run
 (`CompileEnv.auxOracle`, `AuxIxcOptions`: `fallback`, so IxC's answers are
 the compile's wherever IxC answers; a safe block only, an unsafe block's tail
 keeps `Ix.Tc`). `compileEnvFoldWithSource`
@@ -1469,36 +1471,37 @@ def ServiceSupport.of (consts : List (Lean.Name × Lean.ConstantInfo)) : Service
     refs := refs.insert ci.getCnst.name r
   return { get? := map.get?, blocks := Ix.CondenseM.run refs }
 
-/-- **How the fold's aux tails ask IxC** (AuxGen M2). The defaults are
-production's: `fallback` (IxC's answers to `.below`'s and `.brecOn`'s questions
-are the compile's wherever IxC answers; `Ix.Tc` answers behind a refusal,
-which a selected closure without what Source mode needs can meet; lazy since
-AuxGen M3), no trace, and the
-Source service asks only for the blocks with a Type-level `.below`
-(`Asks.below`, lever P2). Other settings are AuxGen's measurement modes (the
-CLI's `IX_AUXGEN_IXC`, which also traces each tail's counts): `shadow`
-(`Ix.Tc`'s answers, compared), `failClosed`, `fallbackEager` (M2b's
-production: both kernels asked), the asks of every block that holds an
-inductive, and `measureOnly` (the service's work timed alone,
+/-- **How the fold's aux tails ask IxC** (AuxGen M2–M4). The defaults are
+production's: `fallback` (IxC's answers to `.below`'s, `.brecOn`'s and, since
+AuxGen M4b, the recursor generator's and the elimination decision's questions
+are the compile's wherever IxC answers; `Ix.Tc` answers behind a refusal;
+lazy since AuxGen M3), no trace, and the Source service asks for the blocks
+with a Type-level `.below` and those the recursor generator can ask past the
+fast paths (`Asks.recursors`, M4b; M2b's `Asks.below` before). Other settings
+are AuxGen's measurement modes (the CLI's `IX_AUXGEN_IXC`, which also traces
+each tail's counts): `shadow` (`Ix.Tc`'s answers, compared), `failClosed`,
+`fallbackEager` (M2b's production: both kernels asked), other asks, the
+recursors on `Ix.Tc` (`recursors := false`, M3's production), and
+`measureOnly` (the service's work timed alone,
 `Ix.AuxGen.Source.measure`; the pipeline then compiles nothing). Whatever the
 setting, an unsafe block's tail asks `Ix.Tc` (`compileBlockWithAux`). -/
 structure AuxIxcOptions where
   mode : Ix.AuxGen.IxcMode := .fallback
-  asks : Ix.AuxGen.Source.Asks := .below
+  asks : Ix.AuxGen.Source.Asks := .recursors
   trace : Bool := false
   measureOnly : Bool := false
   /-- the literal support the input lacks (`ServiceSupport`); the IO pipeline
   sets it from `DriverOptions.serviceSupport` -/
   support : Option ServiceSupport := none
-  /-- AuxGen M4a: the recursor generator and the elimination decision ask IxC
-  (a measurement; production keeps `Ix.Tc` there) -/
-  recursors : Bool := false
+  /-- the recursor generator and the elimination decision ask IxC (AuxGen M4a
+  as a measurement; production since M4b) -/
+  recursors : Bool := true
   deriving Inhabited
 
 /-- **A block's IxC oracle** over the run-ahead `ra`, by the block's canonical
 key, in `aux`'s setting (`Ix.AuxGen.Ixc.oracleOfRun`): with AuxGen M4a's
-facts: whether the recursor generator asks IxC (`recursors`, the
-measurement modes only), whether the run-ahead asked for the block, and the
+facts: whether the recursor generator asks IxC (`recursors`, production's
+since M4b), whether the run-ahead asked for the block, and the
 input's declarations (`get?`) for the lazy scopes' fast paths. -/
 def AuxIxcOptions.oracleFor (aux : AuxIxcOptions) (ra : Ix.AuxGen.Source.RunAhead)
     (get? : Name → Option ConstantInfo) (key : Name) : Option Ix.AuxGen.AuxOracle :=

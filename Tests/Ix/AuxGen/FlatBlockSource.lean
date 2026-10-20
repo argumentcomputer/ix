@@ -306,8 +306,9 @@ def fixtures : TestSeq :=
 /-! ## The drivers' Source service (AuxGen M1, step 4; M2b)
 
 The wave fold runs its Source service ahead of the waves and asks it for every
-block with a Type-level `.below` (AuxGen M2b's asks, lever P2), whose aux tail
-asks IxC (`Ix.CompileM.compileEnvFoldWithSource`). On the
+block with a Type-level `.below` (AuxGen M2b's asks, lever P2) and, since M4b,
+every block the recursor generator can ask past the fast paths
+(`Asks.recursors`), whose aux tail asks IxC (`Ix.CompileM.compileEnvFoldWithSource`). On the
 fixtures' closure, compiled by both paths: the pure compiler's
 (`Ix.Cert.compileUnchecked`'s call: the materialized environment, `blocksOf`)
 and the IO pipeline (`compileLeanConsts`: theorem and opaque bodies
@@ -315,7 +316,7 @@ canonicalized on demand). Asserted: both reports are equal (the service reads
 the input through lookups only, so the two environments give one service);
 the service started; the blocks asked for are exactly the condensation's
 blocks that hold an inductive (by kind, against the `T.rec` probe the drivers
-use, `holdsInductive`) and have a Type-level `.below` (`holdsTypeBelow`);
+use, `holdsInductive`) and production's asks select (`Asks.selects`);
 every one is accepted or named with its reason. -/
 
 def driverEvaluate : IO (Array String × Array String) := do
@@ -339,13 +340,14 @@ def driverEvaluate : IO (Array String × Array String) := do
     | _ => false
   let nInd := blocks.blocks.fold (init := 0) fun k _ members =>
     if members.toArray.any isInd then k + 1 else k
+  let prodAsks := ({} : Ix.CompileM.AuxIxcOptions).asks
   let nBelow := blocks.blocks.fold (init := 0) fun k _ members =>
-    if members.toArray.any isInd && Ix.AuxGen.Source.holdsTypeBelow env.get? members.toArray
+    if members.toArray.any isInd && prodAsks.selects env.get? members.toArray
     then k + 1 else k
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   lines := lines.push s!"closure: {env.consts.size} constants, {blocks.blocks.size} blocks, \
-    {nInd} holding an inductive, {nBelow} of them with a Type-level .below; pure compile \
+    {nInd} holding an inductive, {nBelow} of them asked for (production's asks); pure compile \
     with the service {t1 - t0} ms, IO pipeline \
     {t2 - t1} ms"
   lines := lines.push s!"pure path: {cert.summary}"
@@ -358,14 +360,14 @@ def driverEvaluate : IO (Array String × Array String) := do
   unless cert == io.source do
     errors := errors.push s!"the two paths' reports differ: {cert.summary} / {io.source.summary}"
   unless cert.blocks == nBelow do
-    errors := errors.push s!"{cert.blocks} blocks asked for, {nBelow} hold an inductive and a Type-level .below"
+    errors := errors.push s!"{cert.blocks} blocks asked for, {nBelow} hold an inductive and production's asks select them"
   unless cert.notAccepted.size ≥ Ix.AuxGen.Source.Report.cap ||
       cert.accepted + cert.notAccepted.size == cert.blocks do
     errors := errors.push "a block neither accepted nor named"
   return (errors, lines)
 
 def driverService : TestSeq :=
-  .individualIO "the drivers' Source service: asked for every block with a Type-level .below, one report on both paths"
+  .individualIO "the drivers' Source service: asked for every block production's asks select, one report on both paths"
     none (do
       let (errors, lines) ← driverEvaluate
       for l in lines do IO.println l

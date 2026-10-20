@@ -278,8 +278,8 @@ refusing to synthesize canonical-indexed _N names")
     for (recName, recVal) in canonicalRecs do
       patches := patches.insert recName (.recr recVal)
 
-  -- AuxGen M4a: the canonical block checked by Source mode right after its
-  -- recursors (the measurement modes only; `AuxKernel.checkCanonicalBlock`).
+  -- AuxGen M4: the canonical block checked by Source mode right after its
+  -- recursors (with the recursors on IxC; `AuxKernel.checkCanonicalBlock`).
   let (kernel, canonChecked) ← kernel.checkCanonicalBlock sortedClasses originalAll canonicalRecs
 
   -- Phase 1b: Generate `.casesOn` definitions (aux_gen.rs:560-583).

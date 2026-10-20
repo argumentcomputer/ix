@@ -30,7 +30,8 @@ Lean's (`AuxKernel.withFlatBlock`).
    the generated `.below` admitted.
 2. **The fold's bytes in each mode.** `compileEnvFoldWithSource` under each
    measurement setting (`AuxIxcOptions`), against production's
-   (`compileEnvFold`: `fallback`, the `.below` asks), by their serialized
+   (`compileEnvFold`: `fallback`, the recursors on IxC, the recursors' asks
+   since AuxGen M4b), by their serialized
    environments. All asserted equal: `shadow` (`Ix.Tc`'s answers: production
    gives the bytes `Ix.Tc` gives), `failClosed` (IxC alone: no refusal on
    these corpora), both again with every inductive block asked, and
@@ -218,9 +219,11 @@ def foldModes : Array (String × Ix.CompileM.AuxIxcOptions × Bool) :=
       { mode := .failClosed, asks := .inductive, recursors := true }, true),
     -- M2b's production (both kernels asked); production is lazy since AuxGen M3
     ("fallbackEager", { mode := .fallbackEager, recursors := true }, true),
-    -- AuxGen M4a: production's mode with the recursors on IxC
-    ("fallback, recursors on IxC", { recursors := true }, true),
-    ("failClosed, recursors on Ix.Tc", { mode := .failClosed }, true)]
+    -- M3's production: the recursors on Ix.Tc, the `.below` asks (production
+    -- puts the recursors on IxC since AuxGen M4b)
+    ("M3's production (recursors on Ix.Tc, the .below asks)",
+      { recursors := false, asks := .below }, true),
+    ("failClosed, recursors on Ix.Tc", { mode := .failClosed, recursors := false }, true)]
 
 /-- Everything but the timing of the service alone, on one input. -/
 def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (width : Nat) :

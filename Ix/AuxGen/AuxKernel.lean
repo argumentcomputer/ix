@@ -132,8 +132,8 @@ def AuxKernel.maps : AuxKernel → AddrMaps
 
 /-- Which generator opens a scope: `.below`'s (AuxGen M2) and `.brecOn`'s
     (AuxGen M3) scopes ask IxC on the `ixc` arm; the recursor generator's
-    (AuxGen M4a) do when the oracle says so (`AuxOracle.recursors`, the
-    measurement modes). -/
+    (AuxGen M4) do when the oracle says so (`AuxOracle.recursors`,
+    production's since M4b). -/
 inductive AuxRoute where
   | tc
   | below
@@ -755,7 +755,7 @@ def ixcElimDecision (o : AuxOracle) (originals : Array (InductiveVal × Array Co
 
 /-- The elimination decision for a block's original classes, in an expanded
     block of `nFlat` members (clause 8). `Ix.Tc`'s, except on the `ixc` arm
-    with `AuxOracle.recursors` (AuxGen M4a, the measurement modes): IxC's
+    with `AuxOracle.recursors` (production's since AuxGen M4b): IxC's
     (`ixcElimDecision`), compared with `Ix.Tc`'s under `shadow` and
     `fallbackEager`, `Ix.Tc`'s behind a refusal under `fallback`, alone under
     `failClosed`. -/
@@ -875,8 +875,8 @@ def sameRecursor (a b : RecursorVal) : Bool :=
     && (a.rules.zip b.rules).all fun (r, s) =>
       nameEq r.ctor s.ctor && r.nfields == s.nfields && exprEq r.rhs s.rhs
 
-/-- **The canonical block checked by Source mode** (AuxGen M4a; the
-measurement modes, `AuxOracle.recursors`), right after the recursors are
+/-- **The canonical block checked by Source mode** (AuxGen M4a; production's
+since M4b, with `AuxOracle.recursors`), right after the recursors are
 generated: for a block whose layout is not Lean's, its canonical flat block,
 the generated recursors included, installed through σ (`withFlatBlock`;
 IxC's install is the check, counted as `flat` installed or refused); for a

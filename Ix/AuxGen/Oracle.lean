@@ -178,8 +178,7 @@ end OracleScope
   them, and how many were admitted and refused. (A Prop-level family is not
   admitted: the Prop-level `.brecOn` asks the kernel nothing.)
 * `recursors`: whether the recursor generator and the elimination decision
-  ask IxC (AuxGen M4a: the measurement modes only; production keeps
-  `Ix.Tc` there);
+  ask IxC (AuxGen M4a as a measurement; production's since M4b);
 * `asked`: whether the drivers' run-ahead asked for the block (a block it
   did not ask for folds its groups on its own copy at its first question);
 * `newLazyScope lps locals`: `newScope`, lazily (AuxGen M4): nothing is
