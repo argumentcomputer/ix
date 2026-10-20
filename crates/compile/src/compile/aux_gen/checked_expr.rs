@@ -846,7 +846,8 @@ mod tests {
       for amount in 0..3 {
         for cutoff in 0..3 {
           assert_eq!(
-            main::shift_vars(e, amount, cutoff),
+            shift_vars(e, amount, cutoff, false, &Checkpoint::default())
+              .unwrap(),
             old::shift_vars(e, amount, cutoff)
           );
           assert_eq!(
@@ -890,7 +891,7 @@ mod tests {
     let abstracted = main::batch_abstract(&instantiated, &vars, 1, 0);
     assert_eq!(abstracted.get_hash(), e.get_hash());
     assert_eq!(unique_nodes(&abstracted), 41);
-    let shifted = main::shift_vars(&e, 2, 0);
+    let shifted = shift_vars(&e, 2, 0, false, &Checkpoint::default()).unwrap();
     assert_eq!(shifted.get_hash(), diamond(b(2)).get_hash());
     assert_eq!(unique_nodes(&shifted), 41);
     let replaced = main::subst_fvar(&instantiated, &name("f"), &b(1));

@@ -742,7 +742,7 @@ pub fn generate_and_compile_aux_recursors(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) -> Result<Option<crate::compile::surgery::AuxLayout>, CompileError> {
+) -> Result<Option<ixon::env::AuxLayout>, CompileError> {
   // Guard: aux_gen canonical generation only runs for blocks containing
   // inductives. Non-inductive blocks (plain defs, recursor-only SCCs,
   // etc.) have no canonical auxiliaries to generate.
@@ -842,8 +842,8 @@ pub fn generate_and_compile_aux_recursors(
   // block's aux section and returns `perm[source_j] = canonical_i` via
   // `AuxPatchesOutput.perm`. We record it here keyed by
   // `InductiveVal.all[0]` for:
-  //   1. Call-site surgery plans (built below in compile.rs:compile_mutual)
-  //      so they can permute source-order aux motives/minors to canonical.
+  //   1. The `Muts` metadata (`aux_layout`) stored with the block, which
+  //      maps source-order aux positions to canonical ones.
   //   2. Compile_aux_block, to register Lean-source aux names at the
   //      permuted block projection index (so user code calling `X.rec_1`
   //      resolves to whatever aux Lean originally numbered `_1`, not
@@ -852,16 +852,16 @@ pub fn generate_and_compile_aux_recursors(
   // `original_all` (= `source_all` above) is hoisted to the enclosing
   // scope so the aux-name rename map construction below can reuse it.
   let original_all: Vec<Name> = source_all;
-  let mut aux_layout: Option<crate::compile::surgery::AuxLayout> = None;
+  let mut aux_layout: Option<ixon::env::AuxLayout> = None;
   if !original_all.is_empty()
     && let Some(perm) = aux_out.perm.clone()
     && !perm.is_empty()
   {
     // Also compute per-source-aux ctor counts: for each source aux position j,
     // look up the external inductive's constructor count. If this metadata is
-    // unavailable, fail closed: silently dropping `perm` makes call-site
-    // surgery fall back to identity, which is wrong precisely for the
-    // alpha-collapse / reordered cases that need the permutation.
+    // unavailable, fail closed: silently dropping `perm` would store an
+    // identity layout, which is wrong precisely for the alpha-collapse /
+    // reordered cases that need the permutation.
     let src_order = aux_gen::nested::source_aux_order(&original_all, lean_env)?;
     let mut source_ctor_counts: Vec<usize> =
       Vec::with_capacity(src_order.len());
@@ -888,8 +888,8 @@ pub fn generate_and_compile_aux_recursors(
       });
     }
     // Fail closed if the evaporation flags don't line up with the perm —
-    // surgery keys head-rewrite plans off them, so a silent mismatch
-    // would desynchronize aliases and call-site rewrites.
+    // aliases are keyed off them, so a silent mismatch would desynchronize
+    // the aliases and the stored layout.
     let evaporated = match aux_out.evaporated.clone() {
       Some(flags) if flags.len() == perm.len() => flags,
       Some(flags) => {
@@ -904,11 +904,8 @@ pub fn generate_and_compile_aux_recursors(
       },
       None => vec![false; perm.len()],
     };
-    aux_layout = Some(crate::compile::surgery::AuxLayout {
-      perm,
-      source_ctor_counts,
-      evaporated,
-    });
+    aux_layout =
+      Some(ixon::env::AuxLayout { perm, source_ctor_counts, evaporated });
   }
 
   // NOTE: Historically, a canonical→source rename map was built here

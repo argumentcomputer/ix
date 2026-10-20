@@ -2412,12 +2412,7 @@ pub extern "C" fn rs_aux_gen_dump_patches(
   LeanIOResult::ok(LeanString::new(&out))
 }
 
-/// Render bool-vec keep masks / usize perms compactly for the plans dump.
-#[cfg(feature = "test-ffi")]
-fn aux_dump_bits(bits: &[bool]) -> String {
-  bits.iter().map(|&b| if b { '1' } else { '0' }).collect()
-}
-
+/// Render a usize perm compactly for the dump (`usize::MAX` as `out`).
 #[cfg(feature = "test-ffi")]
 fn aux_dump_usizes(xs: &[usize]) -> String {
   xs.iter()
@@ -2426,15 +2421,9 @@ fn aux_dump_usizes(xs: &[usize]) -> String {
     .join(",")
 }
 
-/// FFI: deterministic text dump of the post-compile surgery plans,
-/// AuxLayouts, and synthetic `Muts` named entries — the orchestration
-/// parity gate's medium. Lines:
-///   plan <name> params=<n> smotives=<n> sminors=<n> indices=<n>
-///        mkeep=<bits> nkeep=<bits> m2c=<csv> n2c=<csv> inblock=<bits>
-///        head=<target>@<pos>|none
-///   bplan <name> params=<n> smotives=<n> indices=<n> mkeep=<bits> m2c=<csv>
-///   wplan <name> ...                    (below plans, same shape as bplan)
-///   layout <all0> perm=<csv> counts=<csv>
+/// FFI: deterministic text dump of the post-compile synthetic `Muts` named
+/// entries — the orchestration parity gate's medium (the call-site plan and
+/// layout lines went with the surgery, CQ3.5). Lines:
 ///   muts <name> addr=<hex> all=<h,h;h|...> layout=<perm csv>/<counts csv>|none
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
@@ -2457,74 +2446,6 @@ pub extern "C" fn rs_aux_gen_dump_plans(
   };
 
   let mut out = String::new();
-
-  let mut plans: Vec<(String, ix_compile::compile::surgery::CallSitePlan)> =
-    stt
-      .call_site_plans
-      .iter()
-      .map(|e| (e.key().pretty(), e.value().clone()))
-      .collect();
-  plans.sort_by(|(a, _), (b, _)| a.cmp(b));
-  for (name, p) in &plans {
-    let head = match &p.head_rewrite {
-      Some(h) => format!("{}@{}", h.target_rec.pretty(), h.target_motive_pos),
-      None => "none".to_string(),
-    };
-    let _ = writeln!(
-      out,
-      "plan {name} params={} smotives={} sminors={} indices={} mkeep={} nkeep={} m2c={} n2c={} inblock={} head={head}",
-      p.n_params,
-      p.n_source_motives,
-      p.n_source_minors,
-      p.n_indices,
-      aux_dump_bits(&p.motive_keep),
-      aux_dump_bits(&p.minor_keep),
-      aux_dump_usizes(&p.source_to_canon_motive),
-      aux_dump_usizes(&p.source_to_canon_minor),
-      aux_dump_bits(&p.source_in_block),
-    );
-  }
-
-  for (tag, map) in [
-    ("bplan", &stt.brec_on_call_site_plans),
-    ("wplan", &stt.below_call_site_plans),
-  ] {
-    let mut bplans: Vec<(
-      String,
-      ix_compile::compile::surgery::BRecOnCallSitePlan,
-    )> = map.iter().map(|e| (e.key().pretty(), e.value().clone())).collect();
-    bplans.sort_by(|(a, _), (b, _)| a.cmp(b));
-    for (name, p) in &bplans {
-      let _ = writeln!(
-        out,
-        "{tag} {name} params={} smotives={} indices={} mkeep={} m2c={}",
-        p.n_params,
-        p.n_source_motives,
-        p.n_indices,
-        aux_dump_bits(&p.motive_keep),
-        aux_dump_usizes(&p.source_to_canon_motive),
-      );
-    }
-  }
-
-  let mut layouts: Vec<(String, ix_compile::compile::surgery::AuxLayout)> = stt
-    .aux_perms
-    .iter()
-    .map(|e| (e.key().pretty(), e.value().clone()))
-    .collect();
-  layouts.sort_by(|(a, _), (b, _)| a.cmp(b));
-  for (name, l) in &layouts {
-    let _ = writeln!(
-      out,
-      "layout {name} perm={} counts={}",
-      aux_dump_usizes(&l.perm),
-      l.source_ctor_counts
-        .iter()
-        .map(|c| c.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
-    );
-  }
 
   // Synthetic Muts named entries (kernel ingress discovery points).
   let mut muts: Vec<(String, String, String, String)> = stt

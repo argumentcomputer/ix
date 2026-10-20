@@ -51,10 +51,6 @@ pub struct BlockTxn {
   pub compiled: Vec<Name>,
   /// Names newly entered into `aux_name_to_addr`.
   pub aux: Vec<Name>,
-  /// Keys newly entered into the call-site plan maps.
-  pub plans: Vec<Name>,
-  pub brec_on_plans: Vec<Name>,
-  pub below_plans: Vec<Name>,
   /// Pass 3 records newly entered (image-kind heads, Lean blocks, canonical
   /// recursors, component records).
   pub p3_heads: Vec<Name>,
@@ -184,18 +180,6 @@ pub fn holds_aux_claim(n: &Name) -> bool {
   TXN.with(|t| t.borrow().as_ref().is_some_and(|x| x.aux.contains(n)))
 }
 
-pub fn log_plan(n: &Name) {
-  with(|x| x.plans.push(n.clone()));
-}
-
-pub fn log_brec_on_plan(n: &Name) {
-  with(|x| x.brec_on_plans.push(n.clone()));
-}
-
-pub fn log_below_plan(n: &Name) {
-  with(|x| x.below_plans.push(n.clone()));
-}
-
 pub fn log_p3_head(n: &Name) {
   with(|x| x.p3_heads.push(n.clone()));
 }
@@ -246,15 +230,6 @@ pub fn rollback(stt: &CompileState, txn: &BlockTxn) {
     stt.aux_name_to_addr.remove(n);
     stt.aux_gen_extra_names.remove(n);
     stt.blocks.remove(n);
-  }
-  for n in &txn.plans {
-    stt.call_site_plans.remove(n);
-  }
-  for n in &txn.brec_on_plans {
-    stt.brec_on_call_site_plans.remove(n);
-  }
-  for n in &txn.below_plans {
-    stt.below_call_site_plans.remove(n);
   }
   for n in &txn.p3_heads {
     stt.p3.heads.remove(n);

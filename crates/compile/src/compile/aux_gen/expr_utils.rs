@@ -604,37 +604,6 @@ pub fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
     .expect("disabled cancellation checkpoint")
 }
 
-/// Peel `n` forall binders and substitute their variables with `args`.
-///
-/// Matches Lean C++ `instantiate_pi_params` (`inductive.cpp:954-960`):
-/// peel n foralls (taking just the body), then substitute all at once.
-///
-/// Each peeled argument is instantiated with [`instantiate_rev`] so loose
-/// BVars in the argument are lifted beneath any binders that remain in the
-/// telescope. Closed arguments behave exactly as with [`instantiate1`].
-pub(crate) fn instantiate_pi_params(
-  typ: &LeanExpr,
-  n: usize,
-  args: &[LeanExpr],
-) -> LeanExpr {
-  debug_assert!(
-    args.len() >= n,
-    "instantiate_pi_params: args.len()={} < n={}",
-    args.len(),
-    n
-  );
-  let mut cur = typ.clone();
-  for arg in args.iter().take(n) {
-    match cur.as_data() {
-      ExprData::ForallE(_, _, body, _, _) => {
-        cur = instantiate_rev(body, std::slice::from_ref(arg));
-      },
-      _ => break,
-    }
-  }
-  cur
-}
-
 /// Convert spec_params from BVar form to FVar form.
 ///
 /// Spec_params use BVars relative to the param context: BVar(0) is the
@@ -670,28 +639,9 @@ pub(super) fn instantiate_spec_with_fvars(
 // BVar shifting
 // =========================================================================
 
-/// Shift BVars UP by `amount` for BVars >= cutoff.
-///
-/// Used when substituting args under
-/// inner binders (each args element is re-shifted by the current depth).
-pub(crate) fn shift_vars(
-  expr: &LeanExpr,
-  amount: usize,
-  cutoff: usize,
-) -> LeanExpr {
-  super::checked_expr::shift_vars(
-    expr,
-    amount,
-    cutoff,
-    false,
-    &Default::default(),
-  )
-  .expect("disabled cancellation checkpoint")
-}
-
-/// Inverse of [`shift_vars`] for an expression known to have been lifted by
-/// `amount`: lower loose BVars while leaving variables bound inside the
-/// expression untouched.
+/// Lower loose BVars by `amount` for an expression known to have been
+/// lifted by `amount` (the inverse of a lift), leaving variables bound inside
+/// the expression untouched.
 pub(crate) fn lower_vars(
   expr: &LeanExpr,
   amount: usize,
@@ -3621,29 +3571,18 @@ mod tests {
   }
 
   #[test]
-  fn instantiate_pi_params_lifts_loose_argument_under_residual_binder() {
-    // In an ambient context, instantiate
-    //   (forall (p : Sort 0) (x : Sort 0), p)
-    // with loose BVar(2). Under the residual `x` binder that argument must
-    // become BVar(3), rather than being captured as BVar(2).
-    let typ = LeanExpr::all(
-      mk_name_for("p"),
-      sort0(),
-      LeanExpr::all(mk_name_for("x"), sort0(), bvar_at(1), BinderInfo::Default),
-      BinderInfo::Default,
-    );
-    let got = instantiate_pi_params(&typ, 1, &[bvar_at(2)]);
-    let expected =
-      LeanExpr::all(mk_name_for("x"), sort0(), bvar_at(3), BinderInfo::Default);
-    assert_eq!(got.get_hash(), expected.get_hash());
-  }
-
-  #[test]
   fn lower_vars_inverts_lift_for_loose_bvars_under_binders() {
     // The lambda binds BVar(0); BVar(2) in its body is loose at index 1.
     let expr =
       LeanExpr::lam(mk_name_for("x"), sort0(), bvar_at(2), BinderInfo::Default);
-    let lifted = shift_vars(&expr, 3, 0);
+    let lifted = super::super::checked_expr::shift_vars(
+      &expr,
+      3,
+      0,
+      false,
+      &Default::default(),
+    )
+    .unwrap();
     let lowered = lower_vars(&lifted, 3, 0);
     assert_eq!(lowered.get_hash(), expr.get_hash());
   }

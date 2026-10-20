@@ -136,8 +136,8 @@ pub struct AuxDef {
 /// Output of [`generate_aux_patches`].
 ///
 /// In addition to the patch map, carries the canonical hash-sort permutation
-/// so callers can reuse it — both during compile (to build the
-/// `CallSitePlan` / surgery layout) and during decompile / validation
+/// so callers can reuse it — both during compile (the stored `Muts`
+/// `aux_layout`) and during decompile / validation
 /// (to canonicalize Lean-source-order originals before structural
 /// comparison).
 #[derive(Clone, Default)]
@@ -158,9 +158,8 @@ pub struct AuxPatchesOutput {
   /// pipeline didn't reach the hash-sort step, e.g. empty `original_all`).
   pub perm: Option<Vec<usize>>,
   /// `evaporated[source_j]`: this block registered the evaporation alias
-  /// `all0.rec_{source_j+1} → <ext>.rec` for the position (and surgery
-  /// must register the matching head-rewrite plan). `Some` exactly when
-  /// `perm` is; positions that are canonical here or owned by another
+  /// `all0.rec_{source_j+1} → <ext>.rec` for the position (Pass 3 rewrites
+  /// its callers through the images). `Some` exactly when `perm` is; positions that are canonical here or owned by another
   /// SCC are `false`. Travels into `AuxLayout.evaporated`.
   pub evaporated: Option<Vec<bool>>,
   /// Number of canonical aux members (== length of the hash-sorted aux
@@ -452,10 +451,10 @@ pub fn generate_aux_patches(
     //     this SCC (e.g. `mutual A | mk : List B → A; B | leaf end`
     //     splits into {A},{B} and `List B` stops being nested for {A}).
     //     The source walk still has aux positions; the perm is all
-    //     `PERM_OUT_OF_SCC`, which drives call-site surgery drops and the
-    //     evaporated-aux `<ext>.rec` aliases below. Falling back to
-    //     `perm = None` would make surgery treat the evaporated auxes as
-    //     identity-mapped canonical slots that don't exist.
+    //     `PERM_OUT_OF_SCC`, which drives the evaporated-aux `<ext>.rec`
+    //     aliases below. Falling back to `perm = None` would treat the
+    //     evaporated auxes as identity-mapped canonical slots that don't
+    //     exist.
     //
     //   * structural-only: the detector finds auxes where Lean's metadata
     //     says zero (parameterized nested blocks); extra Lean aux names
@@ -1142,10 +1141,9 @@ pub fn generate_aux_patches(
   // the canonical constant instead of falling back to an original-form
   // compile — the kernel rejects a standalone specialized recursor block,
   // since it regenerates the generic signature from the external
-  // inductive's block. Call sites are rewritten onto the external
-  // telescope by the surgery head-rewrite plan, keyed off the SAME
-  // per-position `evaporated` flags recorded here (alias and rewrite fire
-  // together or not at all).
+  // inductive's block. Pass 3 rewrites the call sites through the images,
+  // keyed off the SAME per-position `evaporated` flags recorded here (alias
+  // and rewrite fire together or not at all).
   //
   // Two gates make the decision global and deterministic
   // (plans/aux-recursor-alias-collision.md §2, §13):
