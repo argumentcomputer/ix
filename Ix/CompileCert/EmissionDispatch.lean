@@ -12,8 +12,7 @@ the inductive kinds resolve their constructors without touching the state
 
 * the dispatch equations, for every `ConstantInfo` kind;
 * `constant_codec`: for every kind, a successful compile from a state whose
-  tables are on the wire and whose declaration prefix resolves names to
-  32-byte addresses returns a block that decodes exactly (CT-15's
+  tables are on the wire returns a block that decodes exactly (CT-15's
   `FamilyWire.constant_codec`);
 * the mutual payload's count guards (`PayloadArrays`: the outer and nested
   array counts the wire format needs) and `mutualBlock_codec` (CT-15's
@@ -237,46 +236,45 @@ theorem family_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryF
 
 theorem inductive_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : InductiveVal) {before after : BlockState} {output : BlockResult}
-    (wire : BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
+    (wire : BlockWireTablesWF before)
     (ran : rawRun (compileInductiveInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   obtain ⟨constructors, _, compiled⟩ := family_run context free source ran
   exact EmissionBlocks.familyInfo_codec (familyContext source constructors context) free source constructors
-    wire widths compiled
+    wire compiled
 
 /-- **Every public dispatch kind's block decodes exactly**: a successful
 compile, under an environment without call-site plans, from a state whose
-tables are on the wire and whose declaration prefix resolves names to
-32-byte addresses, returns a wire-valid block whose stored bytes decode to
+tables are on the wire, returns a wire-valid block whose stored bytes decode to
 it. No source semantics, projection correspondence or admission is
 claimed here. -/
 theorem constant_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (info : ConstantInfo) {before after : BlockState} {output : BlockResult}
-    (wire : BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
+    (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo info) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   cases info with
   | defnInfo value =>
     rw [definition_run context free _ (definitionValData value) rfl] at ran
-    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire widths ran
+    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire ran
   | thmInfo value =>
     rw [definition_run context free _ (theoremValData value) rfl] at ran
-    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire widths ran
+    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire ran
   | opaqueInfo value =>
     rw [definition_run context free _ (opaqueValData value) rfl] at ran
-    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire widths ran
+    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire ran
   | axiomInfo value =>
     rw [axiom_run context free] at ran
-    exact EmissionBlocks.axiomInfo_codec (singletonContext value.cnst.name context) free _ wire widths ran
+    exact EmissionBlocks.axiomInfo_codec (singletonContext value.cnst.name context) free _ wire ran
   | quotInfo value =>
     rw [quotient_run context free] at ran
-    exact EmissionBlocks.quotientInfo_codec (singletonContext value.cnst.name context) free _ wire widths ran
+    exact EmissionBlocks.quotientInfo_codec (singletonContext value.cnst.name context) free _ wire ran
   | recInfo value =>
     rw [recursor_run context free] at ran
-    exact EmissionBlocks.recursorInfo_codec (singletonContext value.cnst.name context) free _ wire widths ran
+    exact EmissionBlocks.recursorInfo_codec (singletonContext value.cnst.name context) free _ wire ran
   | inductInfo value =>
     rw [inductive_run context free] at ran
-    exact inductive_codec (singletonContext value.cnst.name context) free value wire widths ran
+    exact inductive_codec (singletonContext value.cnst.name context) free value wire ran
   | ctorInfo value =>
     rw [constructor_run context free] at ran
     unfold compileConstructorInfo at ran
@@ -286,7 +284,7 @@ theorem constant_codec (context : CompileEnv × BlockEnv) (free : context.1.surg
     subst same
     cases parent
     all_goals try (cases compiled)
-    exact inductive_codec (singletonContext value.cnst.name context) free _ wire widths compiled
+    exact inductive_codec (singletonContext value.cnst.name context) free _ wire compiled
 
 /-! ## Mutual payload counts (CT-15's `PayloadArrays`) -/
 
@@ -426,12 +424,12 @@ theorem finish_mutual_codec (context : CompileEnv × BlockEnv) (classes : List (
 
 /-- **A mutual block decodes exactly**: under an environment without
 call-site plans, a successful compile from a state whose tables are on the
-wire and whose declaration prefix resolves names to 32-byte addresses
+wire 
 returns a block that decodes exactly; the mutual guard supplies the nested
 array counts. -/
 theorem mutualBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (classes : List (List MutConst)) {before after : BlockState} {output : BlockResult}
-    (wire : BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
+    (wire : BlockWireTablesWF before)
     (ran : rawRun (compileMutualBlock classes) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileMutualBlock at ran
@@ -443,11 +441,11 @@ theorem mutualBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.s
   rw [rawRun_withBlockEnv] at rest
   obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok rest
   have valid := EmissionWire.seeded_valid _ (context.1, { context.2 with mutCtx := MutConst.ctx classes }) wire
-    widths seeded
+    seeded
   unfold compileMutualPayload at compiled
   obtain ⟨payload, middle, payloadRan, finished⟩ := bind_ok compiled
   have tables := (EmissionWire.Safe.mutConsts classes (context.1, { context.2 with mutCtx := MutConst.ctx classes })
-    free _ payload middle valid payloadRan).1.2.1
+    free _ payload middle valid payloadRan).1.1
   obtain ⟨members, roots, metadata⟩ := payload
   dsimp only at finished
   exact (finish_mutual_codec _ classes members metadata tables finished).2

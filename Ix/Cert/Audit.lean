@@ -2118,8 +2118,8 @@ Ix.CompileCert.ExpressionState.Related.contract : ∀ {md : Ix.Kernel.Mode}
 Every run of `preseedExprTables` keeps the expression invariant and extends
 the in-flight reader (`PreseedState.preseed_good`), so the expression
 compiler's correctness applies after it (`preseed_compileExpr_read`); a
-successful run keeps the primary tables on the wire when names resolve to
-32-byte addresses (`PreseedWire.preseed_wire`) and leaves the universe
+successful run keeps the primary tables on the wire (`PreseedWire.preseed_wire`;
+the reference interner refuses an address that is not 32 bytes) and leaves the universe
 table final, after which universe compilation does not grow it
 (`FinalUniverses.compile_no_growth`). Every lemma behind them is audited in
 `Ix.CompileCert.ReadingAudit`. -/
@@ -2161,9 +2161,8 @@ table final, after which universe compilation does not grow it
 /-- info: Ix.CompileCert.PreseedWire.preseed_wire : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
   (roots : Array (Ix.Expr × List Ix.Name)) {before after : Ix.CompileM.BlockState},
   Ix.Sharing.Verify.BlockWireTablesWF before →
-    Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-      Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), after) →
-        Ix.Sharing.Verify.BlockWireTablesWF after -/
+    Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), after) →
+      Ix.Sharing.Verify.BlockWireTablesWF after -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.PreseedWire.preseed_wire
 
@@ -2218,17 +2217,14 @@ A successful run of the production expression compiler, under an
 environment without call-site plans, or of any payload emitter (definition,
 axiom, quotient, recursor, constructor, inductive, mutual members and
 classes) keeps the primary reference and universe tables representable by
-the constant wire format, from a state where the declaration prefix
-resolves names to 32-byte addresses and the universe table is final
-(`EmissionWire.Valid`); a successful preseed establishes that state
+the constant wire format, from a state whose tables are on the wire and
+whose universe table is final (`EmissionWire.Valid`); a successful preseed establishes that state
 (`EmissionWire.seeded_valid`). Success-only: a refused universe miss may
 write before its guard fires. Every lemma behind them is audited in
 `Ix.CompileCert.ReadingAudit`. -/
 
-/-- info: def Ix.CompileCert.EmissionWire.Valid : Ix.CompileM.CompileEnv → Ix.CompileM.BlockState → Prop :=
-fun environment state =>
-  Ix.CompileCert.PreseedWire.LookupWidths environment state ∧
-    Ix.Sharing.Verify.BlockWireTablesWF state ∧ state.univsFinal = true -/
+/-- info: def Ix.CompileCert.EmissionWire.Valid : Ix.CompileM.BlockState → Prop :=
+fun state => Ix.Sharing.Verify.BlockWireTablesWF state ∧ state.univsFinal = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.EmissionWire.Valid
 
@@ -2238,9 +2234,9 @@ fun {α} action post =>
   ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
     context.fst.surgeryFree = true →
       ∀ (before : Ix.CompileM.BlockState) (value : α) (after : Ix.CompileM.BlockState),
-        Ix.CompileCert.EmissionWire.Valid context.fst before →
+        Ix.CompileCert.EmissionWire.Valid before →
           Ix.CompileCert.rawRun action context before = (Except.ok value, after) →
-            Ix.CompileCert.EmissionWire.Valid context.fst after ∧ post value -/
+            Ix.CompileCert.EmissionWire.Valid after ∧ post value -/
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.EmissionWire.Safe
 
@@ -2257,9 +2253,8 @@ fun {α} action post =>
 /-- info: Ix.CompileCert.EmissionWire.seeded_valid : ∀ (roots : Array (Ix.Expr × List Ix.Name))
   (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) {before after : Ix.CompileM.BlockState},
   Ix.Sharing.Verify.BlockWireTablesWF before →
-    Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-      Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), after) →
-        Ix.CompileCert.EmissionWire.Valid context.fst after -/
+    Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), after) →
+      Ix.CompileCert.EmissionWire.Valid after -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionWire.seeded_valid
 
@@ -2472,8 +2467,8 @@ environment without call-site plans, return on success a block whose
 payload keeps the source's skeleton (`SharingRoots.erase`: every field but
 the expression roots) and whose actual member reader (the block's blobs
 overlaid on the context's) reads the roots as terms `Related` to the
-source's, in order; and, from tables on the wire and a declaration prefix
-of 32-byte addresses, a block that decodes exactly
+source's, in order; and, from tables on the wire, a block that decodes
+exactly
 (`Ix.Sharing.Verify.BlockResultCodecWF`). Every lemma behind them is
 audited in `Ix.CompileCert.ReadingAudit`. -/
 
@@ -2519,10 +2514,9 @@ fun source =>
   context.fst.surgeryFree = true →
     ∀ (source : Ix.Def) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
       Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-          Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source) context before =
-              (Except.ok output, after) →
-            Ix.Sharing.Verify.BlockResultCodecWF output -/
+        Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source) context before =
+            (Except.ok output, after) →
+          Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionBlocks.definitionInfo_codec
 
@@ -2555,18 +2549,16 @@ fun source =>
 Without call-site plans the plan-head audits are no-ops, so public dispatch
 (`Ix.CompileM.compileConstantInfo`) is the kind's preseeded block compiler
 in the singleton mutual context (`EmissionDispatch.*_run`); for every kind,
-and for a mutual block, a successful compile from tables on the wire and a
-declaration prefix of 32-byte addresses returns a block that decodes
-exactly. Every lemma behind them is audited in
+and for a mutual block, a successful compile from tables on the wire returns a
+block that decodes exactly. Every lemma behind them is audited in
 `Ix.CompileCert.ReadingAudit`. -/
 
 /-- info: Ix.CompileCert.EmissionDispatch.constant_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
   context.fst.surgeryFree = true →
     ∀ (info : Ix.ConstantInfo) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
       Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-          Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before = (Except.ok output, after) →
-            Ix.Sharing.Verify.BlockResultCodecWF output -/
+        Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before = (Except.ok output, after) →
+          Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionDispatch.constant_codec
 
@@ -2574,9 +2566,8 @@ exactly. Every lemma behind them is audited in
   context.fst.surgeryFree = true →
     ∀ (classes : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
       Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-          Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
-            Ix.Sharing.Verify.BlockResultCodecWF output -/
+        Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
+          Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionDispatch.mutualBlock_codec
 
@@ -2603,8 +2594,7 @@ exactly. Every lemma behind them is audited in
 
 Public dispatch of a definition, theorem, opaque, axiom or quotient, under
 an environment without call-site plans, from a clean state whose tables
-are on the wire and whose declaration prefix resolves names to 32-byte
-addresses, returns a block that decodes exactly and that the certified
+are on the wire returns a block that decodes exactly and that the certified
 reader's `readRecord` (over the block's blobs overlaid on the context's)
 reads as exactly the declaration the source describes: under the record's
 key, with the level parameters `0, …, n - 1`, and with a type (and a
@@ -2628,28 +2618,27 @@ declined. Every lemma behind them is audited in
                 Ix.CompileCert.DefinitionReading.SelfAliases source.name key names →
                   Ix.CompileCert.Emission.Clean bindings before →
                     Ix.Sharing.Verify.BlockWireTablesWF before →
-                      Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-                        Ix.Kernel.Reader.safetyDeclineOf source.kind source.safety = none →
-                          Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before =
-                              (Except.ok output, after) →
-                            Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                              (∃ blockMeta, output = Ix.CompileM.BlockResult.mk' output.block blockMeta) ∧
-                                ∃ result declaration type value,
-                                  Ix.Kernel.Reader.readRecord (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
-                                        state output.blockAddr output.block =
-                                      Except.ok result ∧
-                                    result.decls = #[declaration] ∧
-                                      Ix.CompileCert.DefinitionReading.related names σ source source.type type ∧
-                                        Ix.CompileCert.DefinitionReading.related names σ source source.value value ∧
-                                          Ix.Kernel.Reader.DefinitionDecl
+                      Ix.Kernel.Reader.safetyDeclineOf source.kind source.safety = none →
+                        Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before =
+                            (Except.ok output, after) →
+                          Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                            (∃ blockMeta, output = Ix.CompileM.BlockResult.mk' output.block blockMeta) ∧
+                              ∃ result declaration type value,
+                                Ix.Kernel.Reader.readRecord (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
+                                      state output.blockAddr output.block =
+                                    Except.ok result ∧
+                                  result.decls = #[declaration] ∧
+                                    Ix.CompileCert.DefinitionReading.related names σ source source.type type ∧
+                                      Ix.CompileCert.DefinitionReading.related names σ source source.value value ∧
+                                        Ix.Kernel.Reader.DefinitionDecl
+                                          { name := key, levelParams := List.range source.levelParams.size,
+                                            type := type }
+                                          value
+                                          (Ix.Kernel.Reader.projRewrite state
                                             { name := key, levelParams := List.range source.levelParams.size,
                                               type := type }
-                                            value
-                                            (Ix.Kernel.Reader.projRewrite state
-                                              { name := key, levelParams := List.range source.levelParams.size,
-                                                type := type }
-                                              value)
-                                            source.kind declaration -/
+                                            value)
+                                          source.kind declaration -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.DefinitionReading.constant_reads
 
@@ -2668,25 +2657,24 @@ declined. Every lemma behind them is audited in
                 source.cnst.type →
               Ix.CompileCert.Emission.Clean bindings before →
                 Ix.Sharing.Verify.BlockWireTablesWF before →
-                  Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-                    source.isUnsafe = false →
-                      Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo (Ix.ConstantInfo.axiomInfo source)) context
-                            before =
-                          (Except.ok output, after) →
-                        Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                          (∃ blockMeta, output = Ix.CompileM.BlockResult.mk' output.block blockMeta) ∧
-                            ∃ type,
-                              Ix.CompileCert.ExpressionState.Related names
-                                  (Ix.CompileCert.UniversePipeline.LevelMeaning source.cnst.levelParams.toList σ id)
-                                  source.cnst.type type ∧
-                                Ix.Kernel.Reader.readRecord (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
-                                    state output.blockAddr output.block =
-                                  Except.ok
-                                    {
-                                      decls :=
-                                        #[Ix.Kernel.Declaration.axiomDecl
-                                            { name := key, levelParams := List.range source.cnst.levelParams.size,
-                                              type := type }] } -/
+                  source.isUnsafe = false →
+                    Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo (Ix.ConstantInfo.axiomInfo source)) context
+                          before =
+                        (Except.ok output, after) →
+                      Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                        (∃ blockMeta, output = Ix.CompileM.BlockResult.mk' output.block blockMeta) ∧
+                          ∃ type,
+                            Ix.CompileCert.ExpressionState.Related names
+                                (Ix.CompileCert.UniversePipeline.LevelMeaning source.cnst.levelParams.toList σ id)
+                                source.cnst.type type ∧
+                              Ix.Kernel.Reader.readRecord (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after) state
+                                  output.blockAddr output.block =
+                                Except.ok
+                                  {
+                                    decls :=
+                                      #[Ix.Kernel.Declaration.axiomDecl
+                                          { name := key, levelParams := List.range source.cnst.levelParams.size,
+                                            type := type }] } -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.HeaderReading.axiom_reads
 
@@ -2916,20 +2904,19 @@ fun sources =>
   context.fst.surgeryFree = true →
     ∀ (sources : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
       Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-          (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
-            Ix.CompileCert.MutualProjections.ClassesAgree sources →
-              (∀ (source : Ix.MutConst),
-                  source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
-                Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before =
-                    (Except.ok output, after) →
-                  Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                    Ix.CompileCert.MutualProjections.ProjectionWire output ∧
-                      ∀ (store : Ix.Kernel.Reader.Store),
-                        store output.blockAddr = some output.block →
-                          Ix.CompileCert.MutualProjections.readRows store
-                              (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
-                            Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr sources -/
+        (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
+          Ix.CompileCert.MutualProjections.ClassesAgree sources →
+            (∀ (source : Ix.MutConst),
+                source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
+              Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before =
+                  (Except.ok output, after) →
+                Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                  Ix.CompileCert.MutualProjections.ProjectionWire output ∧
+                    ∀ (store : Ix.Kernel.Reader.Store),
+                      store output.blockAddr = some output.block →
+                        Ix.CompileCert.MutualProjections.readRows store
+                            (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
+                          Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr sources -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.MutualArtifact.mutual_correct
 
@@ -3023,21 +3010,19 @@ fun addr? P =>
   context.fst.surgeryFree = true →
     ∀ (members : List Ix.MutConst) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
       Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-          Ix.CompileCert.Canon.KeysDistinct members →
-            (∀ (member : Ix.MutConst),
-                member ∈ members → Ix.CompileCert.MutualProjections.ConstructorPositions member) →
-              Ix.CompileCert.rawRun (Ix.CompileM.sortConsts members >>= Ix.CompileM.compileMutualBlock) context before =
-                  (Except.ok output, after) →
-                ∃ classes,
-                  Ix.CompileCert.Canon.Partition classes members ∧
-                    Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                      Ix.CompileCert.MutualProjections.ProjectionWire output ∧
-                        ∀ (store : Ix.Kernel.Reader.Store),
-                          store output.blockAddr = some output.block →
-                            Ix.CompileCert.MutualProjections.readRows store
-                                (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
-                              Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr classes -/
+        Ix.CompileCert.Canon.KeysDistinct members →
+          (∀ (member : Ix.MutConst), member ∈ members → Ix.CompileCert.MutualProjections.ConstructorPositions member) →
+            Ix.CompileCert.rawRun (Ix.CompileM.sortConsts members >>= Ix.CompileM.compileMutualBlock) context before =
+                (Except.ok output, after) →
+              ∃ classes,
+                Ix.CompileCert.Canon.Partition classes members ∧
+                  Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                    Ix.CompileCert.MutualProjections.ProjectionWire output ∧
+                      ∀ (store : Ix.Kernel.Reader.Store),
+                        store output.blockAddr = some output.block →
+                          Ix.CompileCert.MutualProjections.readRows store
+                              (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
+                            Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr classes -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.MutualArtifact.mutual_sorted_correct
 
@@ -3134,8 +3119,7 @@ and the index holds one recursor per block and motive
 /-! ## Component theorems: compiled standalone inductives are read back as their sources
 
 Public dispatch of an inductive, under an environment without call-site
-plans, from a clean state whose tables are on the wire and whose
-declaration prefix resolves names to 32-byte addresses, returns a block
+plans, from a clean state whose tables are on the wire, returns a block
 that decodes exactly and that the certified reader's `readRecord` (over the
 block's blobs overlaid on the context's) reads as `lowerInductive` of the
 `BlockRead` the source describes (`InductiveReading.sourceBlock`): the
@@ -3215,32 +3199,31 @@ fun {md} key ctorKey type ctorTypes source constructors recs =>
                                               Ix.CompileCert.ReaderSourceSpines.SourceNonForall body) →
                                       Ix.CompileCert.Emission.Clean bindings before →
                                         Ix.Sharing.Verify.BlockWireTablesWF before →
-                                          Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
-                                            Ix.CompileCert.rawRun
-                                                  (Ix.CompileM.compileConstantInfo (Ix.ConstantInfo.inductInfo source))
-                                                  context before =
-                                                (Except.ok output, after) →
-                                              Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                                                Ix.CompileCert.ProjectionLayout.InductiveLayout source constructors
-                                                    output ∧
-                                                  ∃ type ctorTypes,
-                                                    Ix.CompileCert.InductiveReading.related names σ source
-                                                        source.cnst.type type ∧
-                                                      List.Forall₂
-                                                          (Ix.CompileCert.InductiveReading.related names σ source)
-                                                          (List.map (fun x => x.cnst.type) constructors.toList)
-                                                          ctorTypes ∧
-                                                        Ix.Kernel.Reader.readRecord
-                                                            (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
-                                                            state output.blockAddr output.block =
-                                                          do
-                                                          let recs ←
-                                                            Ix.CompileCert.InductiveReading.readRecursors
-                                                                (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
-                                                                (List.range source.cnst.levelParams.size) shape.recs
-                                                          Ix.Kernel.Reader.lowerInductive state
-                                                              (Ix.CompileCert.InductiveReading.sourceBlock key ctorKey
-                                                                type ctorTypes source constructors recs) -/
+                                          Ix.CompileCert.rawRun
+                                                (Ix.CompileM.compileConstantInfo (Ix.ConstantInfo.inductInfo source))
+                                                context before =
+                                              (Except.ok output, after) →
+                                            Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                                              Ix.CompileCert.ProjectionLayout.InductiveLayout source constructors
+                                                  output ∧
+                                                ∃ type ctorTypes,
+                                                  Ix.CompileCert.InductiveReading.related names σ source
+                                                      source.cnst.type type ∧
+                                                    List.Forall₂
+                                                        (Ix.CompileCert.InductiveReading.related names σ source)
+                                                        (List.map (fun x => x.cnst.type) constructors.toList)
+                                                        ctorTypes ∧
+                                                      Ix.Kernel.Reader.readRecord
+                                                          (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after) state
+                                                          output.blockAddr output.block =
+                                                        do
+                                                        let recs ←
+                                                          Ix.CompileCert.InductiveReading.readRecursors
+                                                              (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
+                                                              (List.range source.cnst.levelParams.size) shape.recs
+                                                        Ix.Kernel.Reader.lowerInductive state
+                                                            (Ix.CompileCert.InductiveReading.sourceBlock key ctorKey
+                                                              type ctorTypes source constructors recs) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.InductiveReading.inductive_reads
 
@@ -3858,12 +3841,12 @@ reader's parameter map is the constant's level parameters; roots in
 
 /-! ## N-READS, N3 (a): the state every block starts from
 
-The driver compiles every block from the empty `BlockState`; it is clean, its
-wire tables are well formed, and its lookups' widths are the environment's. -/
+The driver compiles every block from the empty `BlockState`; it is clean and
+its wire tables are well formed. -/
 
-/-- info: [cert-audit] block start: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] block start: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "block start"
-    (#[`clean_empty, `wire_empty, `lookupWidths_empty].map (`Ix.Cert.BlockStart ++ ·))
+    (#[`clean_empty, `wire_empty].map (`Ix.Cert.BlockStart ++ ·))

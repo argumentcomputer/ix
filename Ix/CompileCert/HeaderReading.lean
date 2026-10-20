@@ -139,8 +139,7 @@ variable (cx : Ctx md) (names : Ix.Name → CName md → Prop) (σ : Ix.Name →
 
 /-- **A compiled axiom is read back as its source**: public dispatch, under
 an environment without call-site plans, from a clean state whose tables are
-on the wire and whose declaration prefix resolves names to 32-byte
-addresses, returns a block that decodes exactly and that `readRecord` reads
+on the wire, returns a block that decodes exactly and that `readRecord` reads
 as exactly the axiom declaration of the record's key, the level parameters
 `0, …, n - 1` and a type related to the source's; given that the type does
 not mention the declaration itself, that the record's key reads, and that
@@ -153,13 +152,13 @@ theorem axiom_reads (context : CompileEnv × BlockEnv) (free : context.1.surgery
     (scope : ConstsSatisfy (SelfName (EmissionDispatch.singletonContext source.cnst.name context).2
       (fun _ => none) names) source.cnst.type)
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before) (safe : source.isUnsafe = false)
+    (safe : source.isUnsafe = false)
     (ran : rawRun (compileConstantInfo (.axiomInfo source)) context before = (.ok output, after)) :
     BlockResultCodecWF output ∧ (∃ blockMeta, output = BlockResult.mk' output.block blockMeta) ∧
       ∃ type, Related names (LevelMeaning source.cnst.levelParams.toList σ id) source.cnst.type type ∧
         readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
           .ok { decls := #[.axiomDecl ⟨key, List.range source.cnst.levelParams.size, type⟩] } := by
-  have codec := EmissionDispatch.constant_codec context free _ wire widths ran
+  have codec := EmissionDispatch.constant_codec context free _ wire ran
   rw [EmissionDispatch.axiom_run context free] at ran
   have levels := axiomInfo_levels source _ before output after ran
   obtain ⟨_, _, wrapped, erased, roots⟩ := EmissionBlocks.axiomInfo_correct cx id (fun _ => none) names σ bindings
@@ -222,14 +221,13 @@ theorem quotient_reads (context : CompileEnv × BlockEnv) (free : context.1.surg
     (scope : ConstsSatisfy (SelfName (EmissionDispatch.singletonContext source.cnst.name context).2
       (fun _ => none) names) source.cnst.type)
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before)
     (ran : rawRun (compileConstantInfo (.quotInfo source)) context before = (.ok output, after)) :
     BlockResultCodecWF output ∧ (∃ blockMeta, output = BlockResult.mk' output.block blockMeta) ∧
       ∃ type, Related names (LevelMeaning source.cnst.levelParams.toList σ id) source.cnst.type type ∧
         readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
           .ok { decls := #[.quotDecl (quotKind (convertQuotKind source.kind))
             ⟨key, List.range source.cnst.levelParams.size, type⟩] } := by
-  have codec := EmissionDispatch.constant_codec context free _ wire widths ran
+  have codec := EmissionDispatch.constant_codec context free _ wire ran
   rw [EmissionDispatch.quotient_run context free] at ran
   have levels := quotientInfo_levels source _ before output after ran
   obtain ⟨_, _, wrapped, erased, roots⟩ := EmissionBlocks.quotientInfo_correct cx id (fun _ => none) names σ bindings

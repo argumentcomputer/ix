@@ -221,21 +221,20 @@ theorem mutual_references (sources : List (List MutConst))
 
 /-- **A compiled mutual block is a correct artifact**: under an environment
 without call-site plans, a successful compile from a state whose tables are
-on the wire and whose declaration prefix resolves names to 32-byte
-addresses returns a block that decodes exactly, projections that decode
+on the wire returns a block that decodes exactly, projections that decode
 exactly, and rows that read, in any store holding the block, as the
 source-indexed references; given non-empty classes whose members agree in
 shape and source constructors that declare their positions. -/
 theorem mutual_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (sources : List (List MutConst)) {before after : BlockState} {output : BlockResult}
-    (wire : Ix.Sharing.Verify.BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
+    (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
     (nonempty : ∀ members ∈ sources, members ≠ []) (agree : MutualProjections.ClassesAgree sources)
     (positions : ∀ source ∈ sources.flatten, MutualProjections.ConstructorPositions source)
     (ran : rawRun (compileMutualBlock sources) context before = (.ok output, after)) :
     Ix.Sharing.Verify.BlockResultCodecWF output ∧ MutualProjections.ProjectionWire output ∧
       ∀ store : Store, store output.blockAddr = some output.block →
         readRows store (logicalRows output.projections) = expectedReferences output.blockAddr sources := by
-  have codec := MutualProjections.mutual_codec context free sources wire widths ran
+  have codec := MutualProjections.mutual_codec context free sources wire ran
   exact ⟨codec.1, codec.2.1, fun store stored =>
     mutual_references sources nonempty agree positions context before output after ran store stored codec.1.1⟩
 
@@ -252,7 +251,7 @@ their positions. `mutual_correct`'s `nonempty` and `ClassesAgree` premises are
 discharged by the sort (`MutualProjections.sort_classes`). -/
 theorem mutual_sorted_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (members : List MutConst) {before after : BlockState} {output : BlockResult}
-    (wire : Ix.Sharing.Verify.BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
+    (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
     (keys : Canon.KeysDistinct members)
     (positions : ∀ member ∈ members, MutualProjections.ConstructorPositions member)
     (ran : rawRun (sortConsts members >>= compileMutualBlock) context before = (.ok output, after)) :
@@ -264,6 +263,6 @@ theorem mutual_sorted_correct (context : CompileEnv × BlockEnv) (free : context
   obtain ⟨rfl, -⟩ := ProjectionLayout.sort_run members sorted
   obtain ⟨partition, agree⟩ := MutualProjections.sort_classes members keys context middle
     classes middle sorted
-  refine ⟨classes, partition, mutual_correct context free classes wire widths partition.2 agree
+  refine ⟨classes, partition, mutual_correct context free classes wire partition.2 agree
     (fun source present => positions source (partition.1.mem_iff.1 present)) compiled⟩
 end Ix.CompileCert.MutualArtifact

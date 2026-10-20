@@ -176,8 +176,7 @@ abbrev related (source : Ix.Def) : Ix.Expr → CExpr md → Prop :=
 
 /-- **A compiled definition is read back as its source**: public dispatch of
 a definition, theorem or opaque, under an environment without call-site
-plans, from a clean state whose tables are on the wire and whose
-declaration prefix resolves names to 32-byte addresses, returns a block
+plans, from a clean state whose tables are on the wire, returns a block
 that decodes exactly and that `readRecord` (over the block's blobs overlaid
 on the context's) reads as exactly one declaration: the one the kind makes
 of the record's key, the level parameters `0, …, n - 1`, and the readings
@@ -191,7 +190,7 @@ theorem constant_reads (context : CompileEnv × BlockEnv) (free : context.1.surg
     (view : EmissionDispatch.sourceData info = some source) {before after : BlockState} {output : BlockResult}
     (state : State md) {key : CName md} (keyed : cx.memberKey (.member output.blockAddr 0) = .ok key)
     (aliases : SelfAliases source.name key names) (clean : Emission.Clean bindings before)
-    (wire : BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
+    (wire : BlockWireTablesWF before)
     (safe : safetyDeclineOf source.kind source.safety = none)
     (ran : rawRun (compileConstantInfo info) context before = (.ok output, after)) :
     BlockResultCodecWF output ∧ (∃ blockMeta, output = BlockResult.mk' output.block blockMeta) ∧
@@ -201,7 +200,7 @@ theorem constant_reads (context : CompileEnv × BlockEnv) (free : context.1.surg
         related names σ source source.type type ∧ related names σ source source.value value ∧
         DefinitionDecl ⟨key, List.range source.levelParams.size, type⟩ value
           (projRewrite state ⟨key, List.range source.levelParams.size, type⟩ value) source.kind declaration := by
-  have codec := EmissionDispatch.constant_codec context free info wire widths ran
+  have codec := EmissionDispatch.constant_codec context free info wire ran
   rw [EmissionDispatch.definition_run context free info source view] at ran
   have levels := definitionInfo_levels source _ before output after ran
   have selfSound := singleton_self cx output.blockAddr source.name context names keyed aliases

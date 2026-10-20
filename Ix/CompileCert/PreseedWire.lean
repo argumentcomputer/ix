@@ -6,34 +6,18 @@ import Ix.CompileCert.Canon.QSort
 
 A successful `preseedExprTables` leaves the primary tables representable by
 the constant wire format (`Ix.Sharing.Verify.BlockWireTablesWF`) when they
-were before and the declaration prefix resolves names to 32-byte addresses
-(`LookupWidths`): the collector writes neither table nor binding
-(`collection_frame`); every reference it collects is 32 bytes (a resolved
-name's, or a blob's admission hash: `collect_widths`); the universe guard
+were before: the collector writes neither table nor binding
+(`collection_frame`); the reference interner refuses an address that is not
+32 bytes (`Interning.internRef_narrow`); the universe guard
 `checkPreseedUnivs` admits only wire-valid canonical universes; and the
 interners keep the tables on the wire given those facts
-(`Ix.CompileCert.WireTables`). The binding view, hence `LookupWidths`, is
-untouched by every run (`preseed_widths`). CT-14's `PreseedWire` and
-`ReferenceWidths`. -/
+(`Ix.CompileCert.WireTables`). The binding view is untouched by every run
+(`preseed_binding`). CT-14's `PreseedWire`. -/
 
 namespace Ix.CompileCert.PreseedWire
 
 open Ix.CompileM Ix.CompileCert Ix.CompileCert.ExpressionState
 open Ix.Sharing.Verify (BlockWireTablesWF)
-
-/-- The declaration prefix resolves every name to a 32-byte address. -/
-def LookupWidths (environment : CompileEnv) (state : BlockState) : Prop :=
-  ∀ name address, lookupBinding environment (bindingView state) name = some address →
-    address.hash.size = 32
-
-def AllWidths (refs : Array Address) : Prop := ∀ address ∈ refs, address.hash.size = 32
-
-theorem AllWidths.push {refs : Array Address} {address : Address}
-    (prior : AllWidths refs) (added : address.hash.size = 32) : AllWidths (refs.push address) := by
-  intro query member
-  rcases Array.mem_push.mp member with old | same
-  · exact prior query old
-  · exact same ▸ added
 
 /-! ## The collector writes neither table nor binding -/
 
@@ -107,141 +91,6 @@ theorem collection_frame (roots : List (Ix.Expr × List Ix.Name)) (initial : Exp
     rw [collectPreseedExprs]
     exact Preserves.bind (frame_withUnivCtx params (frame_collect expr _ initial)) (fun next => ih next)
 
-/-! ## Collected references are 32 bytes -/
-
-/-- A successful run under `LookupWidths` returns a value satisfying `post`;
-`LookupWidths` itself is kept by the frame. -/
-def Widths (action : CompileM α) (post : α → Prop) : Prop :=
-  ∀ context before value after, LookupWidths context.1 before →
-    rawRun action context before = (.ok value, after) → post value
-
-theorem Widths.pure {value : α} {post : α → Prop} (good : post value) : Widths (pure value) post := by
-  intro context before result after _ ran
-  cases ran
-  exact good
-
-theorem Widths.throw (error : CompileError) (post : α → Prop) : Widths (throw error : CompileM α) post := by
-  intro context before result after _ ran
-  cases ran
-
-theorem Widths.forget {action : CompileM α} : Widths action (fun _ => True) :=
-  fun _ _ _ _ _ _ => trivial
-
-theorem Widths.bind {action : CompileM α} {next : α → CompileM β} {first : α → Prop} {last : β → Prop}
-    (framed : Preserves collectionView action) (head : Widths action first)
-    (tail : ∀ value, first value → Widths (next value) last) : Widths (action >>= next) last := by
-  intro context before result after widths ran
-  obtain ⟨value, middle, firstRan, nextRan⟩ := bind_ok ran
-  have kept : LookupWidths context.1 middle := by
-    have same := framed context before
-    rw [firstRan] at same
-    have binding : bindingView middle = bindingView before := by
-      have view := congrArg (fun view => view.2.2.1) same
-      exact view
-    intro name address found
-    rw [binding] at found
-    exact widths name address found
-  exact tail value (head context before value middle widths firstRan) context middle result after kept nextRan
-
-theorem Widths.lookup (name : Ix.Name) : Widths (lookupConstAddr name) (fun address => address.hash.size = 32) := by
-  intro context before address after widths ran
-  rw [lookupConstAddr_run] at ran
-  cases found : lookupBinding context.1 (bindingView before) name with
-  | none => rw [found] at ran; cases ran
-  | some actual =>
-    rw [found] at ran
-    cases ran
-    exact widths name address found
-
-theorem Widths.blob (bytes : ByteArray) : Widths (storeBlob bytes) (fun address => address.hash.size = 32) := by
-  intro context before address after _ ran
-  rw [BlobWrites.storeBlob_run] at ran
-  cases wrote : before.storeBlob context.1.blobs (Address.admissionHash bytes) bytes
-  all_goals rw [wrote] at ran
-  · cases ran
-  · have same := Except.ok.inj (Prod.mk.inj ran).1
-    rw [← same]
-    exact Ixon.Authenticated.admissionHash_width bytes
-
-theorem widths_structural (context : Address) (mutualContext : MutCtx) (params : List Ix.Name)
-    (expr : Ix.Expr) (initial : ExprTableCollection) (prior : AllWidths initial.1) :
-    Widths (collectExprTablesStructural context mutualContext params expr initial)
-      (fun result => AllWidths result.1) := by
-  induction expr generalizing initial
-  all_goals
-    rcases initial with ⟨refs, univs, seen⟩
-    rw [collectExprTablesStructural]
-    split
-    · exact Widths.pure prior
-    dsimp only
-  case bvar => exact Widths.pure prior
-  case fvar => exact Widths.throw _ _
-  case mvar => exact Widths.throw _ _
-  case sort level hash _ =>
-    exact Widths.bind (frame_compileUniv level) Widths.forget (fun _ _ => Widths.pure prior)
-  case const name levels hash _ =>
-    intro ctx state value final widths ran
-    obtain ⟨values, middle, levelsRan, rest⟩ := bind_ok ran
-    have kept : LookupWidths ctx.1 middle := by
-      have same := frame_collectUnivs levels.toList univs ctx state
-      rw [levelsRan] at same
-      have binding : bindingView middle = bindingView state := by
-        have view := congrArg (fun view => view.2.2.1) same; exact view
-      intro other address found
-      rw [binding] at found
-      exact widths other address found
-    split at rest
-    · obtain ⟨address, looked, lookRan, pureRan⟩ := bind_ok rest
-      have width := Widths.lookup name ctx middle address looked kept lookRan
-      cases pureRan
-      exact prior.push width
-    · cases rest
-      exact prior
-  case app first last hash firstIH lastIH _ =>
-    exact Widths.bind (frame_structural _ _ _ first _) (firstIH _ prior) (fun result valid => lastIH result valid)
-  case lam name type body info hash firstIH lastIH _ =>
-    exact Widths.bind (frame_structural _ _ _ type _) (firstIH _ prior) (fun result valid => lastIH result valid)
-  case forallE name type body info hash firstIH lastIH _ =>
-    exact Widths.bind (frame_structural _ _ _ type _) (firstIH _ prior) (fun result valid => lastIH result valid)
-  case letE name type value body nonDep hash firstIH middleIH lastIH _ =>
-    exact Widths.bind (frame_structural _ _ _ type _) (firstIH _ prior) (fun result valid =>
-      Widths.bind (frame_structural _ _ _ value _) (middleIH result valid) (fun result valid => lastIH result valid))
-  case lit literal hash _ =>
-    cases literal
-    all_goals exact Widths.bind (frame_blob _) (Widths.blob _) (fun _ width => Widths.pure (prior.push width))
-  case mdata metadata child hash childIH _ => exact childIH _ prior
-  case proj name index child hash childIH _ =>
-    exact Widths.bind (frame_lookup name) (Widths.lookup name) (fun _ width => childIH _ (prior.push width))
-
-theorem widths_collect (expr : Ix.Expr) (params : List Ix.Name) (initial : ExprTableCollection)
-    (prior : AllWidths initial.1) :
-    Widths (withUnivCtx params (collectExprTables expr (univParamsKey params) initial))
-      (fun result => AllWidths result.1) := by
-  intro context before value after widths ran
-  unfold Ix.CompileM.withUnivCtx at ran
-  obtain ⟨_, reset, resetRan, collected⟩ := bind_ok ran
-  rw [rawRun_modify] at resetRan
-  cases resetRan
-  rw [rawRun_withBlockEnv] at collected
-  unfold collectExprTables at collected
-  obtain ⟨block, same, blockRan, structural⟩ := bind_ok collected
-  rw [rawRun_readBlock] at blockRan
-  cases blockRan
-  exact widths_structural (univParamsKey params) _ _ expr initial prior _ _ value after
-    (by intro name address found; exact widths name address found) structural
-
-/-- **Every collected reference is 32 bytes.** -/
-theorem collect_widths (roots : List (Ix.Expr × List Ix.Name)) (initial : ExprTableCollection)
-    (prior : AllWidths initial.1) :
-    Widths (collectPreseedExprs roots initial) (fun result => AllWidths result.1) := by
-  induction roots generalizing initial with
-  | nil => exact Widths.pure prior
-  | cons root rest ih =>
-    rcases root with ⟨expr, params⟩
-    rw [collectPreseedExprs]
-    exact Widths.bind (frame_withUnivCtx params (frame_collect expr _ initial))
-      (widths_collect expr params initial prior) (fun next valid => ih next valid)
-
 /-! ## The inserters and the whole preseed -/
 
 /-- The primary tables stay on the wire, on every run. -/
@@ -275,16 +124,16 @@ theorem Wire.discard {action : CompileM α} (inner : Wire action) : Wire (Functo
   unfold Functor.discard
   exact Wire.bind inner (fun _ => Wire.pure ())
 
-theorem internRefs_wire (refs : List Address) (previous : Option Address)
-    (widths : ∀ address ∈ refs, address.hash.size = 32) : Wire (internPreseedRefs refs previous) := by
+theorem internRefs_wire (refs : List Address) (previous : Option Address) :
+    Wire (internPreseedRefs refs previous) := by
   induction refs generalizing previous with
   | nil => exact Wire.pure ()
   | cons address rest ih =>
     unfold internPreseedRefs
-    have tail := ih (some address) (fun item member => widths item (by simp [member]))
+    have tail := ih (some address)
     split
     · exact Wire.bind (Wire.discard (fun context before wire =>
-        WireTables.internRef_preserves context before address wire (widths _ (by simp)))) (fun _ => tail)
+        WireTables.internRef_preserves context before address wire)) (fun _ => tail)
     · exact tail
 
 theorem internUnivs_wire (entries : List (ByteArray × Ixon.Univ)) (previous : Option ByteArray)
@@ -312,10 +161,9 @@ theorem canonUnivs_wire (values : List Ixon.Univ) (initial : Array Ixon.Univ) :
     cases before.canonUnivCache.get? value
     all_goals exact WireTables.of_same wire rfl rfl
 
-/-- **A successful preseed keeps the primary tables on the wire** when the
-declaration prefix resolves names to 32-byte addresses. -/
+/-- **A successful preseed keeps the primary tables on the wire.** -/
 theorem preseed_wire (context : CompileEnv × BlockEnv) (roots : Array (Ix.Expr × List Ix.Name))
-    {before after : BlockState} (wire : BlockWireTablesWF before) (widths : LookupWidths context.1 before)
+    {before after : BlockState} (wire : BlockWireTablesWF before)
     (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) : BlockWireTablesWF after := by
   rw [preseedExprTables] at ran
   obtain ⟨collection, collectedState, collected, tail⟩ := bind_ok ran
@@ -327,15 +175,8 @@ theorem preseed_wire (context : CompileEnv × BlockEnv) (roots : Array (Ix.Expr 
   obtain ⟨_, univState, univsRan, flagRan⟩ := bind_ok finish
   have collectedWire := Wire.of_frame (collection_frame roots.toList (#[], #[], {})) context before wire
   rw [collected] at collectedWire
-  have refWidths := collect_widths roots.toList (#[], #[], {}) (by intro address member; simp at member)
-    context before _ collectedState widths collected
-  have sortedWidths : ∀ address ∈ (refs.qsort (fun a b => a.cmpBytes b == .lt)).toList,
-      address.hash.size = 32 := by
-    intro address member
-    apply refWidths address
-    rw [Array.mem_toList_iff, Canon.mem_qsort] at member
-    exact member
-  have refWire := internRefs_wire _ none sortedWidths context collectedState collectedWire
+  have refWire := internRefs_wire (refs.qsort (fun a b => a.cmpBytes b == .lt)).toList none context
+    collectedState collectedWire
   rw [refsRan] at refWire
   have canonWire := canonUnivs_wire univs.toList (Array.mkEmpty univs.size) context refState refWire
   rw [canonRan] at canonWire
@@ -412,13 +253,5 @@ theorem preseed_binding (roots : Array (Ix.Expr × List Ix.Name)) :
   apply Preserves.bind (binding_internUnivs _ none)
   intro _
   exact Preserves.modify _ _ (fun _ => rfl)
-
-/-- The preseed keeps `LookupWidths`, on every run. -/
-theorem preseed_widths (context : CompileEnv × BlockEnv) (roots : Array (Ix.Expr × List Ix.Name))
-    (before : BlockState) (widths : LookupWidths context.1 before) :
-    LookupWidths context.1 (rawRun (preseedExprTables roots) context before).2 := by
-  intro name address found
-  rw [preseed_binding roots context before] at found
-  exact widths name address found
 
 end Ix.CompileCert.PreseedWire

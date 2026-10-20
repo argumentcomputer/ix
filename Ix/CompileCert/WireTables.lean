@@ -30,9 +30,16 @@ theorem empty (state : BlockState) :
   exact ⟨by change 0 < UInt64.size; decide, by simp,
     by change 0 < UInt64.size; decide, by simp⟩
 
+/-- The reference interner keeps the tables on the wire: it refuses an address
+that is not 32 bytes wide (`internRef_narrow`), so whatever it adds is. -/
 theorem internRef_preserves (context : CompileEnv × BlockEnv) (state : BlockState) (address : Address)
-    (wire : BlockWireTablesWF state) (width : address.hash.size = 32) :
+    (wire : BlockWireTablesWF state) :
     BlockWireTablesWF (rawRun (internRef address) context state).2 := by
+  by_cases width : address.hash.size = 32
+  case neg =>
+    obtain ⟨e, h⟩ := internRef_narrow address context state width
+    rw [h]
+    exact wire
   cases found : state.refsIndex.get? address with
   | some index => rw [internRef_hit address context state width found]; exact wire
   | none =>
@@ -93,6 +100,6 @@ theorem internUniv_count_failure (context : CompileEnv × BlockEnv) (state : Blo
 theorem internAdmission_preserves (context : CompileEnv × BlockEnv) (state : BlockState) (bytes : ByteArray)
     (wire : BlockWireTablesWF state) :
     BlockWireTablesWF (rawRun (internRef (Address.admissionHash bytes)) context state).2 :=
-  internRef_preserves context state (Address.admissionHash bytes) wire (Ixon.Authenticated.admissionHash_width bytes)
+  internRef_preserves context state (Address.admissionHash bytes) wire
 
 end Ix.CompileCert.WireTables

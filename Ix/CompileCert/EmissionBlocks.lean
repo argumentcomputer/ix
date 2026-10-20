@@ -19,8 +19,7 @@ axiom, quotient, recursor and standalone inductive-family blocks:
   (`PreseedState.preseed_good`), so every block theorem holds from a clean
   state;
 * the codec: a successful block from a state whose tables are on the wire
-  and whose declaration prefix resolves names to 32-byte addresses decodes
-  exactly (`Ix.Sharing.Verify.BlockResultCodecWF`), through the
+  decodes exactly (`Ix.Sharing.Verify.BlockResultCodecWF`), through the
   success-only wire traversal (`EmissionWire`) and the builder's
   `buildConstantWithSharing_wireWF_headers` (R07-10).
 
@@ -245,13 +244,13 @@ theorem definitionBlock_correct (context : CompileEnv × BlockEnv) (free : conte
 
 theorem definitionBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : Ix.Def) {before after : BlockState} {output : BlockResult}
-    (valid : EmissionWire.Valid context.1 before)
+    (valid : EmissionWire.Valid before)
     (ran : rawRun (compileDefinitionDataBlock source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileDefinitionDataBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .defn payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _, _⟩ := payload; rfl) ran
-  have tables := (EmissionWire.Safe.definitionData source context free before payload after valid compiled).1.2.1
+  have tables := (EmissionWire.Safe.definitionData source context free before payload after valid compiled).1.1
   rw [wrapped]
   exact block_codec (info := .defn payload.1) trivial tables built _ _
 
@@ -281,12 +280,11 @@ theorem definitionInfo_correct (context : CompileEnv × BlockEnv) (free : contex
 
 theorem definitionInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : Ix.Def) {before after : BlockState} {output : BlockResult} (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before)
     (ran : rawRun (compileDefinitionDataInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileDefinitionDataInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact definitionBlock_codec context free source (EmissionWire.seeded_valid _ context wire widths seeded) compiled
+  exact definitionBlock_codec context free source (EmissionWire.seeded_valid _ context wire seeded) compiled
 
 /-! ### Axiom and quotient blocks -/
 
@@ -318,13 +316,13 @@ theorem axiomBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.
 
 theorem axiomBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : AxiomVal) {before after : BlockState} {output : BlockResult}
-    (valid : EmissionWire.Valid context.1 before)
+    (valid : EmissionWire.Valid before)
     (ran : rawRun (compileAxiomBlock source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileAxiomBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .axio payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
-  have tables := (EmissionWire.Safe.axiomPayload source context free before payload after valid compiled).1.2.1
+  have tables := (EmissionWire.Safe.axiomPayload source context free before payload after valid compiled).1.1
   rw [wrapped]
   exact block_codec (info := .axio payload.1) trivial tables built _ _
 
@@ -351,12 +349,11 @@ theorem axiomInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.s
 
 theorem axiomInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : AxiomVal) {before after : BlockState} {output : BlockResult} (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before)
     (ran : rawRun (compileAxiomInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileAxiomInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact axiomBlock_codec context free source (EmissionWire.seeded_valid _ context wire widths seeded) compiled
+  exact axiomBlock_codec context free source (EmissionWire.seeded_valid _ context wire seeded) compiled
 
 theorem quotientBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
@@ -386,13 +383,13 @@ theorem quotientBlock_correct (context : CompileEnv × BlockEnv) (free : context
 
 theorem quotientBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : QuotVal) {before after : BlockState} {output : BlockResult}
-    (valid : EmissionWire.Valid context.1 before)
+    (valid : EmissionWire.Valid before)
     (ran : rawRun (compileQuotientBlock source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileQuotientBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .quot payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
-  have tables := (EmissionWire.Safe.quotientPayload source context free before payload after valid compiled).1.2.1
+  have tables := (EmissionWire.Safe.quotientPayload source context free before payload after valid compiled).1.1
   rw [wrapped]
   exact block_codec (info := .quot payload.1) trivial tables built _ _
 
@@ -419,12 +416,11 @@ theorem quotientInfo_correct (context : CompileEnv × BlockEnv) (free : context.
 
 theorem quotientInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : QuotVal) {before after : BlockState} {output : BlockResult} (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before)
     (ran : rawRun (compileQuotientInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileQuotientInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact quotientBlock_codec context free source (EmissionWire.seeded_valid _ context wire widths seeded) compiled
+  exact quotientBlock_codec context free source (EmissionWire.seeded_valid _ context wire seeded) compiled
 
 /-! ### Recursor blocks -/
 
@@ -468,13 +464,13 @@ theorem recursorBlock_correct (context : CompileEnv × BlockEnv) (free : context
 
 theorem recursorBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : RecursorVal) {before after : BlockState} {output : BlockResult}
-    (valid : EmissionWire.Valid context.1 before)
+    (valid : EmissionWire.Valid before)
     (ran : rawRun (compileRecursorBlock source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileRecursorBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .recr payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
-  have tables := (EmissionWire.Safe.recursorPayload source context free before payload after valid compiled).1.2.1
+  have tables := (EmissionWire.Safe.recursorPayload source context free before payload after valid compiled).1.1
   have header := recursorPayload_rules source context before payload after compiled
   rw [wrapped]
   exact block_codec (info := .recr payload.1) header tables built _ _
@@ -503,12 +499,11 @@ theorem recursorInfo_correct (context : CompileEnv × BlockEnv) (free : context.
 
 theorem recursorInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : RecursorVal) {before after : BlockState} {output : BlockResult} (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before)
     (ran : rawRun (compileRecursorInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileRecursorInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact recursorBlock_codec context free source (EmissionWire.seeded_valid _ context wire widths seeded) compiled
+  exact recursorBlock_codec context free source (EmissionWire.seeded_valid _ context wire seeded) compiled
 
 /-! ### Standalone inductive-family blocks -/
 
@@ -605,13 +600,13 @@ theorem familyBlock_correct (context : CompileEnv × BlockEnv) (free : context.1
 
 theorem familyBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : InductiveVal) (constructors : Array ConstructorVal) {before after : BlockState}
-    {output : BlockResult} (valid : EmissionWire.Valid context.1 before)
+    {output : BlockResult} (valid : EmissionWire.Valid before)
     (ran : rawRun (compileInductiveFamilyBlock source constructors) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileInductiveFamilyBlock at ran
   obtain ⟨payload, middle, compiled, finished⟩ := bind_ok ran
   have tables := (EmissionWire.Safe.inductivePayload source constructors context free before payload middle valid
-    compiled).1.2.1
+    compiled).1.1
   rw [Emission.compileInductive_eq] at compiled
   have bounded := inductiveData_ctors (Emission.sourceData source constructors) context before payload middle compiled
   obtain ⟨ind, indMeta, pairs, exprs⟩ := payload
@@ -655,12 +650,12 @@ theorem familyInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.
 
 theorem familyInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : InductiveVal) (constructors : Array ConstructorVal) {before after : BlockState}
-    {output : BlockResult} (wire : BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
+    {output : BlockResult} (wire : BlockWireTablesWF before)
     (ran : rawRun (compileInductiveFamilyInfo source constructors) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileInductiveFamilyInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact familyBlock_codec context free source constructors (EmissionWire.seeded_valid _ context wire widths seeded)
+  exact familyBlock_codec context free source constructors (EmissionWire.seeded_valid _ context wire seeded)
     compiled
 
 end Blocks

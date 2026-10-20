@@ -945,7 +945,6 @@ theorem inductive_reads_source (context : CompileEnv × BlockEnv) (free : contex
     (ctorScope : ∀ ctor ∈ constructors.toList, ConstsSatisfy (SelfName (familyBlock source constructors context)
       (inductiveSelf cx output.blockAddr) names) ctor.cnst.type)
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before)
     (ran : rawRun (compileConstantInfo (.inductInfo source)) context before = (.ok output, after)) :
     BlockResultCodecWF output ∧ ProjectionLayout.InductiveLayout source constructors output ∧
       ∃ type ctorTypes, related names σ source source.cnst.type type ∧
@@ -957,7 +956,7 @@ theorem inductive_reads_source (context : CompileEnv × BlockEnv) (free : contex
   obtain ⟨safe, ctorSafe, positions, arity⟩ :=
     source_premises context free admits member sourceFound agree found
   exact inductive_reads cx names σ bindings context free aligned external source constructors found state indexed
-    order keyed ctorKey ctorKeyed scope ctorScope safe ctorSafe positions arity clean wire widths ran
+    order keyed ctorKey ctorKeyed scope ctorScope safe ctorSafe positions arity clean wire ran
 
 end Reading
 

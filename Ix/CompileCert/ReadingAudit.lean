@@ -107,7 +107,8 @@ def internRoots : Array Lean.Name :=
     `internUniv_lookup, `internUniv_sound,
     `checkedTableIndex_state, `checkedTableIndex_value, `checkedTableCount_state,
     `checkedTableCount_value,
-    `internRef_hit, `internRef_miss, `internRef_correct, `internRef_tables, `internRef_reading,
+    `internRef_narrow, `internRef_hit, `internRef_miss, `internRef_correct, `internRef_tables,
+    `internRef_reading,
     `internRef_cache_sound,
     `internUniv_hit, `internUniv_miss, `internUniv_correct, `internUniv_tables,
     `internUniv_reading, `internUniv_cache_sound,
@@ -204,13 +205,11 @@ def preseedStateRoots : Array Lean.Name :=
     `GoodStep.collectStructural, `GoodStep.collect, `GoodStep.collectRoots, `GoodStep.internRefs,
     `GoodStep.canonUnivs, `GoodStep.internUnivs, `preseed_good, `preseed_final,
     `preseed_compileExpr_read].map (`Ix.CompileCert.PreseedState ++ ·)) ++
-  (#[`AllWidths.push, `frame_compileUniv, `frame_lookup, `frame_blob, `frame_collectUnivs,
-    `frame_structural, `frame_collect, `frame_withUnivCtx, `collection_frame, `Widths.pure,
-    `Widths.throw, `Widths.forget, `Widths.bind, `Widths.lookup, `Widths.blob, `widths_structural,
-    `widths_collect, `collect_widths, `Wire.pure, `Wire.bind, `Wire.of_frame, `Wire.discard,
-    `internRefs_wire, `internUnivs_wire, `canonUnivs_wire, `preseed_wire, `binding_internRefs,
-    `binding_internUnivs, `binding_canonUnivs, `preseed_binding,
-    `preseed_widths].map (`Ix.CompileCert.PreseedWire ++ ·)) ++
+  (#[`frame_compileUniv, `frame_lookup, `frame_blob, `frame_collectUnivs, `frame_structural,
+    `frame_collect, `frame_withUnivCtx, `collection_frame, `Wire.pure, `Wire.bind, `Wire.of_frame,
+    `Wire.discard, `internRefs_wire, `internUnivs_wire, `canonUnivs_wire, `preseed_wire,
+    `binding_internRefs, `binding_internUnivs, `binding_canonUnivs,
+    `preseed_binding].map (`Ix.CompileCert.PreseedWire ++ ·)) ++
   (#[`internMetaUniv_univs, `finishSpelling_univs, `internCanonical_no_growth,
     `compile_no_growth].map (`Ix.CompileCert.FinalUniverses ++ ·))
 

@@ -6,14 +6,13 @@ import Ix.CompileCert.PreseedWire
 The primary reference and universe tables of a block are representable by
 the constant wire format (`Ix.Sharing.Verify.BlockWireTablesWF`) after every
 successful run of the expression compiler and of every payload emitter,
-when they were before, the declaration prefix resolves names to 32-byte
-addresses (`PreseedWire.LookupWidths`) and the preseed has finalized the
-universe table (`Valid`):
+when they were before and the preseed has finalized the universe table
+(`Valid`):
 
 * a universe compile after the final flag leaves the universe table as it
   was (`FinalUniverses.compile_no_growth`, the production guard);
-* every reference the compiler interns is 32 bytes: a resolved name's
-  (`LookupWidths`) or a blob's admission hash;
+* every reference the compiler interns is 32 bytes: the interner refuses
+  any other width (`Interning.internRef_narrow`);
 * the serializers, the metadata arena and the drains touch neither table.
 
 The facts are success-only (`Safe`): a failing universe miss may write its
@@ -33,30 +32,26 @@ open Ix.Sharing.Verify (BlockWireTablesWF)
 
 
 
-/-- The primary tables are on the wire, the declaration prefix resolves
-names to 32-byte addresses, and the universe table is final. -/
-def Valid (environment : CompileEnv) (state : BlockState) : Prop :=
-  PreseedWire.LookupWidths environment state ∧ BlockWireTablesWF state ∧ state.univsFinal = true
+/-- The primary tables are on the wire and the universe table is final. -/
+def Valid (state : BlockState) : Prop :=
+  BlockWireTablesWF state ∧ state.univsFinal = true
 
 /-- The fields `Valid` reads. -/
 def view (state : BlockState) :=
-  (ExpressionState.bindingView state, state.refs, state.univs, state.univsFinal)
+  (state.refs, state.univs, state.univsFinal)
 
-theorem Valid.of_view {environment : CompileEnv} {before after : BlockState}
-    (valid : Valid environment before) (same : view after = view before) : Valid environment after := by
+theorem Valid.of_view {before after : BlockState}
+    (valid : Valid before) (same : view after = view before) : Valid after := by
   simp only [view, Prod.mk.injEq] at same
-  obtain ⟨bindings, refs, univs, flag⟩ := same
-  refine ⟨?_, WireTables.of_same valid.2.1 refs univs, flag.trans valid.2.2⟩
-  intro name address found
-  rw [bindings] at found
-  exact valid.1 name address found
+  obtain ⟨refs, univs, flag⟩ := same
+  exact ⟨WireTables.of_same valid.1 refs univs, flag.trans valid.2⟩
 
 /-- Every successful run under a surgery-free environment from a `Valid`
 state ends `Valid` and returns a value satisfying `post`. -/
 def Safe (action : CompileM α) (post : α → Prop := fun _ => True) : Prop :=
   ∀ context : CompileEnv × BlockEnv, context.1.surgeryFree = true →
-    ∀ before value after, Valid context.1 before →
-      rawRun action context before = (.ok value, after) → Valid context.1 after ∧ post value
+    ∀ before value after, Valid before →
+      rawRun action context before = (.ok value, after) → Valid after ∧ post value
 
 /-! ## Combinators -/
 
@@ -175,52 +170,40 @@ theorem Safe.forIn_array (items : Array α) (initial : β) (body : α → β →
 guard), the bindings and the reference table. -/
 theorem Safe.compileLevel (source : Ix.Level) : Safe (compileAndInternUnivCanon source) := by
   intro context _ before output after valid ran
-  have frozen := FinalUniverses.compile_no_growth source context valid.2.2 ran
+  have frozen := FinalUniverses.compile_no_growth source context valid.2 ran
   have frame := UniversePipeline.compileAndInternUnivCanon_frame source context before
   rw [ran] at frame
-  have binding : ExpressionState.bindingView after = ExpressionState.bindingView before :=
-    by have same := congrArg ExpressionState.bindingView frame; exact same
   have refs : after.refs = before.refs := by have same := congrArg BlockState.refs frame; exact same
-  refine ⟨⟨?_, WireTables.of_same valid.2.1 refs frozen.1, frozen.2⟩, trivial⟩
-  intro name address found
-  rw [binding] at found
-  exact valid.1 name address found
+  exact ⟨⟨WireTables.of_same valid.1 refs frozen.1, frozen.2⟩, trivial⟩
 
-/-- Interning a 32-byte address keeps the tables on the wire. -/
-theorem Safe.internRef (address : Address) (width : address.hash.size = 32) : Safe (internRef address) := by
+/-- Interning an address keeps the tables on the wire (the interner refuses
+an address that is not 32 bytes). -/
+theorem Safe.internRef (address : Address) : Safe (internRef address) := by
   intro context _ before output after valid ran
-  have wire := WireTables.internRef_preserves context before address valid.2.1 width
+  have wire := WireTables.internRef_preserves context before address valid.1
   have frame := ExpressionState.internRef_frame address context before
   rw [ran] at wire frame
-  have binding : ExpressionState.bindingView after = ExpressionState.bindingView before :=
-    by have same := congrArg ExpressionState.bindingView frame; exact same
   have flag : after.univsFinal = before.univsFinal := by
     have same := congrArg BlockState.univsFinal frame; exact same
-  refine ⟨⟨?_, wire, flag.trans valid.2.2⟩, trivial⟩
-  intro name found_address found
-  rw [binding] at found
-  exact valid.1 name found_address found
+  exact ⟨⟨wire, flag.trans valid.2⟩, trivial⟩
 
-/-- A resolved name's address is 32 bytes. -/
-theorem Safe.lookup (name : Ix.Name) :
-    Safe (lookupConstAddr name) (fun address => address.hash.size = 32) := by
+/-- Resolving a name leaves the state as it was. -/
+theorem Safe.lookup (name : Ix.Name) : Safe (lookupConstAddr name) := by
   intro context _ before output after valid ran
   have same : after = before := by
     have state := ExpressionState.lookupConstAddr_state name context before
     rw [ran] at state
     exact state
-  have width := PreseedWire.Widths.lookup name context before output after valid.1 ran
   rw [same]
-  exact ⟨valid, width⟩
+  exact ⟨valid, trivial⟩
 
-/-- A stored blob's address is its 32-byte admission hash. -/
-theorem Safe.blob (bytes : ByteArray) : Safe (storeBlob bytes) (fun address => address.hash.size = 32) := by
+/-- Storing a blob writes neither table. -/
+theorem Safe.blob (bytes : ByteArray) : Safe (storeBlob bytes) := by
   intro context _ before output after valid ran
   have frame := (BlobWrites.storeBlob_preserves bytes context before).1
   rw [ran] at frame
-  have width := PreseedWire.Widths.blob bytes context before output after valid.1 ran
   have same := congrArg view frame
-  exact ⟨valid.of_view same, width⟩
+  exact ⟨valid.of_view same, trivial⟩
 
 /-- A step that writes only names and blobs. -/
 theorem Safe.namesBlobs {action : CompileM α} (framed : Serializers.NamesBlobs action) : Safe action :=
@@ -281,8 +264,8 @@ theorem Safe.step (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
     unfold ExpressionState.constBody
     split
     · exact Safe.seq (Safe.checkedIndex _ _) fun _ => Safe.finishReference _ _ _
-    · exact Safe.bind (Safe.lookup _) fun address width =>
-        Safe.seq (Safe.internRef address width) fun _ => Safe.finishReference _ _ _
+    · exact Safe.bind (Safe.lookup _) fun address _ =>
+        Safe.seq (Safe.internRef address) fun _ => Safe.finishReference _ _ _
   | app fn arg hash =>
     rw [ExpressionState.app_step_eq]
     refine Safe.seq (each _ (Ix.AuxGen.decomposeApps_app_head_lt fn arg hash)) (fun head => ?_)
@@ -313,17 +296,17 @@ theorem Safe.step (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
     cases literal
     · rw [ExpressionState.nat_step_eq]
       unfold ExpressionState.compileLiteral ExpressionState.finishLiteral
-      exact Safe.bind (Safe.blob _) fun address width => Safe.seq (Safe.internRef address width) fun _ =>
+      exact Safe.bind (Safe.blob _) fun address _ => Safe.seq (Safe.internRef address) fun _ =>
         Safe.seq (Safe.alloc _) fun _ => Safe.pure _
     · rw [ExpressionState.string_step_eq]
       unfold ExpressionState.compileLiteral ExpressionState.finishLiteral
-      exact Safe.bind (Safe.blob _) fun address width => Safe.seq (Safe.internRef address width) fun _ =>
+      exact Safe.bind (Safe.blob _) fun address _ => Safe.seq (Safe.internRef address) fun _ =>
         Safe.seq (Safe.alloc _) fun _ => Safe.pure _
   | proj name field value hash =>
     rw [ExpressionState.projection_step_eq]
     unfold ExpressionState.finishProjection
     exact Safe.seq (Safe.checkedIndex _ _) fun _ => Safe.seq (Safe.compileName _) fun _ =>
-      Safe.bind (Safe.lookup _) fun address width => Safe.seq (Safe.internRef address width) fun _ =>
+      Safe.bind (Safe.lookup _) fun address _ => Safe.seq (Safe.internRef address) fun _ =>
         Safe.seq (each value (by simp; omega)) fun _ => Safe.seq (Safe.alloc _) fun _ => Safe.pure _
   | mdata data value hash =>
     unfold ExpressionState.step compileExprNoSurgeryStep
@@ -558,12 +541,10 @@ theorem Safe.mutConsts (sources : List (List MutConst)) : Safe (compileMutConsts
 /-! ## The preseed establishes `Valid` -/
 
 /-- **A successful preseed leaves a `Valid` state** when the tables were on
-the wire and the declaration prefix resolves names to 32-byte addresses. -/
+the wire. -/
 theorem seeded_valid (roots : Array (Ix.Expr × List Ix.Name)) (context : CompileEnv × BlockEnv)
-    {before after : BlockState} (wire : BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
-    (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) : Valid context.1 after := by
-  have kept := PreseedWire.preseed_widths context roots before widths
-  rw [ran] at kept
-  exact ⟨kept, PreseedWire.preseed_wire context roots wire widths ran, PreseedState.preseed_final roots context ran⟩
+    {before after : BlockState} (wire : BlockWireTablesWF before)
+    (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) : Valid after :=
+  ⟨PreseedWire.preseed_wire context roots wire ran, PreseedState.preseed_final roots context ran⟩
 
 end Ix.CompileCert.EmissionWire

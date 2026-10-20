@@ -302,15 +302,14 @@ theorem mutual_projection_wire (sources : List (List MutConst)) :
 
 /-- **A mutual block and all its projections decode exactly**: under an
 environment without call-site plans, a successful compile from a state
-whose tables are on the wire and whose declaration prefix resolves names to
-32-byte addresses. -/
+whose tables are on the wire. -/
 theorem mutual_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (sources : List (List MutConst)) {before after : BlockState} {output : BlockResult}
-    (wire : Ix.Sharing.Verify.BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
+    (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
     (ran : rawRun (compileMutualBlock sources) context before = (.ok output, after)) :
     Ix.Sharing.Verify.BlockResultCodecWF output ∧ ProjectionWire output ∧
       ∀ row ∈ output.projections, Ixon.deConstant (Ixon.ser row.2.1) = .ok row.2.1 := by
-  have main := EmissionDispatch.mutualBlock_codec context free sources wire widths ran
+  have main := EmissionDispatch.mutualBlock_codec context free sources wire ran
   have projections := mutual_projection_wire sources context before output after ran main.1
   exact ⟨main, projections, fun row present => Ixon.Verify.deConstant_serConstant row.2.1 (projections row present)⟩
 

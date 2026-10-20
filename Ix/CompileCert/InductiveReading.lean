@@ -560,8 +560,7 @@ abbrev familyBlock (source : InductiveVal) (constructors : Array ConstructorVal)
 
 /-- **A compiled standalone inductive is read back as its source**: public
 dispatch of an inductive, under an environment without call-site plans,
-from a clean state whose tables are on the wire and whose declaration
-prefix resolves names to 32-byte addresses, returns a block that decodes
+from a clean state whose tables are on the wire, returns a block that decodes
 exactly, whose projections are the family's layout, and that `readRecord`
 (over the block's blobs overlaid on the context's) reads as `lowerInductive`
 of the `BlockRead` the source describes (`sourceBlock`): its type and its
@@ -594,7 +593,6 @@ theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.sur
       ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields) ctor.cnst.type = some (types, body) ∧
         ReaderSourceSpines.SourceNonForall body)
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before)
     (ran : rawRun (compileConstantInfo (.inductInfo source)) context before = (.ok output, after)) :
     BlockResultCodecWF output ∧ ProjectionLayout.InductiveLayout source constructors output ∧
       ∃ type ctorTypes, related names σ source source.cnst.type type ∧
@@ -603,7 +601,7 @@ theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.sur
           readRecursors (ExpressionRead.withBlockBlobs cx after) (List.range source.cnst.levelParams.size)
               shape.recs >>= fun recs =>
             lowerInductive state (sourceBlock key ctorKey type ctorTypes source constructors recs) := by
-  have codec := EmissionDispatch.constant_codec context free _ wire widths ran
+  have codec := EmissionDispatch.constant_codec context free _ wire ran
   have sameCtors : ∀ other, rawRun (lookupInductiveConstructors source)
       (EmissionDispatch.singletonContext source.cnst.name context) before = (.ok other, before) →
       other = constructors := by
@@ -683,7 +681,6 @@ theorem inductive_reads_indexed (context : CompileEnv × BlockEnv) (free : conte
       ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields) ctor.cnst.type = some (types, body) ∧
         ReaderSourceSpines.SourceNonForall body)
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
-    (widths : PreseedWire.LookupWidths context.1 before)
     (ran : rawRun (compileConstantInfo (.inductInfo source)) context before = (.ok output, after)) :
     BlockResultCodecWF output ∧ ProjectionLayout.InductiveLayout source constructors output ∧
       ∃ type ctorTypes, related names σ source source.cnst.type type ∧
@@ -695,7 +692,7 @@ theorem inductive_reads_indexed (context : CompileEnv × BlockEnv) (free : conte
   have order := ReaderIndex.compiled_order context free source ran cx.store records shape stored
     (indexBuilt ▸ indexed)
   exact inductive_reads cx names σ bindings context free aligned external source constructors found state indexed
-    order keyed ctorKey ctorKeyed scope ctorScope safe ctorSafe positions arity clean wire widths ran
+    order keyed ctorKey ctorKeyed scope ctorScope safe ctorSafe positions arity clean wire ran
 
 /-- **A compiled inductive with no recursor in the input declines.** -/
 theorem inductive_declines_unindexed (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
