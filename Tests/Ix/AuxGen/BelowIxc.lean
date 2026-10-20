@@ -43,6 +43,16 @@ Lean's (`AuxKernel.withFlatBlock`).
 4. **Terms out of IxC** (fixtures, AuxGen M3): the decision-grade egress
    round-trips, and IxC's `infer`, `whnf` and `isDefEq` agree with the
    declarations (`egressFixtures`).
+5. **Recursors on IxC** (AuxGen M4a, measurement modes): the shadow also
+   runs the recursor generator's `whnf`s (named: the input when unreduced,
+   the named replay when reduced) and the elimination decision on IxC, and
+   checks the canonical block (flat install, or Lean-layout recursors equal
+   to Lean's). A field that names no member of the block skips
+   `findRecTarget`'s Phase 2; `Ix.Tc` still decides it in the shadow. Asserted:
+   no difference from `Ix.Tc` (`auxgen-m4.md` §3's stop rule; a skipped field
+   `Ix.Tc` finds recursive counts), no refusal, the replay exercised on the
+   fixtures; every measurement fold (recursors on IxC) has production's
+   bytes, and a fold that does not says where it differs (`foldDiff`).
 
 Asserted besides: no IxC refusal on these corpora (`failClosed` would fail a
 block on one; production falls back to `Ix.Tc`). -/
@@ -64,6 +74,18 @@ def addStats (a b : Ix.AuxGen.IxcStats) : Ix.AuxGen.IxcStats :=
     decisionsDiffer := a.decisionsDiffer + b.decisionsDiffer
     exprQueries := a.exprQueries + b.exprQueries, exprAnswered := a.exprAnswered + b.exprAnswered
     belowAdmitted := a.belowAdmitted + b.belowAdmitted, belowRefused := a.belowRefused + b.belowRefused
+    recWhnf := a.recWhnf + b.recWhnf, recStuck := a.recStuck + b.recStuck
+    recSame := a.recSame + b.recSame, recReplayed := a.recReplayed + b.recReplayed
+    recRefused := a.recRefused + b.recRefused, recEqual := a.recEqual + b.recEqual
+    recDiffer := a.recDiffer + b.recDiffer, recDiffName := a.recDiffName + b.recDiffName
+    recDiffInfo := a.recDiffInfo + b.recDiffInfo, recDiffLevel := a.recDiffLevel + b.recDiffLevel
+    recDiffOther := a.recDiffOther + b.recDiffOther
+    recDecisionDiffer := a.recDecisionDiffer + b.recDecisionDiffer
+    recSkipped := a.recSkipped + b.recSkipped, recSkipDiffer := a.recSkipDiffer + b.recSkipDiffer
+    recForced := a.recForced + b.recForced, elim := a.elim + b.elim
+    elimEqual := a.elimEqual + b.elimEqual, elimDiffer := a.elimDiffer + b.elimDiffer
+    elimRefused := a.elimRefused + b.elimRefused, leanRecSame := a.leanRecSame + b.leanRecSame
+    leanRecDiffer := a.leanRecDiffer + b.leanRecDiffer, asked := a.asked + b.asked
     samples := (a.samples ++ b.samples).extract 0 24 }
 
 def statsLine (st : Ix.AuxGen.IxcStats) : String :=
@@ -72,7 +94,15 @@ def statsLine (st : Ix.AuxGen.IxcStats) : String :=
     scopes refused {st.scopesRefused}; flat blocks installed {st.flatInstalled}, \
     refused {st.flatRefused}; isDefEq decisions {st.decisions}: equal {st.decisionsEqual}, \
     differ {st.decisionsDiffer}; inferType/whnf {st.exprQueries}, IxC answered \
-    {st.exprAnswered}; generated .below admitted {st.belowAdmitted}, refused {st.belowRefused}"
+    {st.exprAnswered}; generated .below admitted {st.belowAdmitted}, refused {st.belowRefused}; \
+    recursor whnf {st.recWhnf} (stuck {st.recStuck}, unreduced {st.recSame}, replayed \
+    {st.recReplayed}, refused {st.recRefused}): equal {st.recEqual}, differ {st.recDiffer} \
+    (binder name {st.recDiffName}, info {st.recDiffInfo}, level {st.recDiffLevel}, other \
+    {st.recDiffOther}, at decision sites {st.recDecisionDiffer}); fields skipped {st.recSkipped} \
+    (decided recursive by Ix.Tc {st.recSkipDiffer}); elimination {st.elim}: equal \
+    {st.elimEqual}, differ {st.elimDiffer}, refused {st.elimRefused}; questions needing the \
+    service {st.recForced}; Lean-layout recursors equal to Lean's {st.leanRecSame}, not \
+    {st.leanRecDiffer}"
 
 /-- **One block's aux tail with the IxC arm**, as the driver's tail generates
 the patches (`sortConsts`, the classes restricted to Lean's `all`,
@@ -130,6 +160,7 @@ def shadow (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv : Ix.Compi
     let some t := ra.runFor key
       | do errors := errors.push s!"{lo.pretty}: in no level of the schedule"; continue
     let oracle := Ix.AuxGen.Ixc.oracleOfRun .shadow false (fun _ => t.get) (ra.membersFor key)
+      { recursors := true, lookup := env.get? }
     match ← IO.lazyPure fun _ => tailStats cenv lo members oracle with
     | .error e => errors := errors.push s!"{lo.pretty}: aux generation: {e.take 200}"
     | .ok none => pure ()
@@ -141,10 +172,28 @@ def serialized (r : Except String (Ixon.Env × Nat × Ix.CompileM.CompileEnv)) :
   let (ixe, _, _) ← r
   Ixon.serEnv ixe
 
+/-- Where two folds' environments differ: the names whose address differs
+(at most five shown), and the block failures. -/
+def foldDiff (prod out : Ixon.Env × Nat × Ix.CompileM.CompileEnv) : String := Id.run do
+  let (pe, _, _) := prod
+  let (oe, _, oc) := out
+  let mut addr : Array String := #[]
+  for (n, a) in pe.named do
+    match oe.named.get? n with
+    | some b =>
+      if a.addr != b.addr then addr := addr.push n.pretty
+    | none => addr := addr.push s!"{n.pretty} (missing)"
+  let msgs := oc.ungrounded.fold (init := ({} : Std.HashMap String Nat)) fun m _ e =>
+    m.insert (e.take 400).toString ((m.getD (e.take 400).toString 0) + 1)
+  s!"{addr.size} names with another address ({", ".intercalate (addr.extract 0 5).toList}), \
+    {oc.ungrounded.size} block failures, by message: \
+    {" / ".intercalate (msgs.toList.map fun (e, k) => s!"{k}x {e}")}"
+
 /-- The measurement fold in `opts`, against the production fold's bytes
 `expected`: whether they are equal, the run-ahead's report line, the time. -/
 def foldIxc (opts : Ix.CompileM.AuxIxcOptions) (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (expected : ByteArray) (width : Nat) : IO (Bool × String × Nat) := do
+    (expected : ByteArray) (width : Nat) (prod : Ixon.Env × Nat × Ix.CompileM.CompileEnv) :
+    IO (Bool × String × Nat) := do
   let t0 ← IO.monoMsNow
   let r ← IO.lazyPure fun _ =>
     Ix.CompileM.compileEnvFoldWithSource env blocks (width := width) (aux := opts)
@@ -154,16 +203,24 @@ def foldIxc (opts : Ix.CompileM.AuxIxcOptions) (env : Ix.Environment) (blocks : 
   | .ok (out, report) =>
     match serialized (.ok out) with
     | .error e => return (false, s!"serialization failed: {e}", t1 - t0)
-    | .ok bytes => return (bytes == expected, report.summary, t1 - t0)
+    | .ok bytes =>
+      let same := bytes == expected
+      return (same, if same then report.summary else s!"{report.summary}; {foldDiff prod out}",
+        t1 - t0)
 
 /-- The modes the folds are compared in, with whether equality is asserted. -/
 def foldModes : Array (String × Ix.CompileM.AuxIxcOptions × Bool) :=
-  #[("shadow", { mode := .shadow }, true),
-    ("failClosed", { mode := .failClosed }, true),
-    ("shadow, every inductive block asked", { mode := .shadow, asks := .inductive }, true),
-    ("failClosed, every inductive block asked", { mode := .failClosed, asks := .inductive }, true),
+  #[("shadow", { mode := .shadow, recursors := true }, true),
+    ("failClosed", { mode := .failClosed, recursors := true }, true),
+    ("shadow, every inductive block asked",
+      { mode := .shadow, asks := .inductive, recursors := true }, true),
+    ("failClosed, every inductive block asked",
+      { mode := .failClosed, asks := .inductive, recursors := true }, true),
     -- M2b's production (both kernels asked); production is lazy since AuxGen M3
-    ("fallbackEager", { mode := .fallbackEager }, true)]
+    ("fallbackEager", { mode := .fallbackEager, recursors := true }, true),
+    -- AuxGen M4a: production's mode with the recursors on IxC
+    ("fallback, recursors on IxC", { recursors := true }, true),
+    ("failClosed, recursors on Ix.Tc", { mode := .failClosed }, true)]
 
 /-- Everything but the timing of the service alone, on one input. -/
 def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (width : Nat) :
@@ -178,7 +235,7 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
   lines := lines.push s!"{label}: {env.consts.size} constants, {blocks.blocks.size} blocks; \
     production fold {t1 - t0} ms, {expected.size} bytes"
   for (name, opts, asserted) in foldModes do
-    let (same, report, ms) ← foldIxc opts env blocks expected width
+    let (same, report, ms) ← foldIxc opts env blocks expected width (← IO.ofExcept prod)
     lines := lines.push s!"fold, {name}: {ms} ms; \
       {if same then "bytes equal to production" else "bytes DIFFER from production"}; \
       run-ahead: {report}"
@@ -194,6 +251,22 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
   if st.queries == 0 then errors := errors.push "no level question was asked"
   if st.decisionsDiffer != 0 then
     errors := errors.push s!"{st.decisionsDiffer} isDefEq decisions differ from Ix.Tc's"
+  -- AuxGen M4a's stop rule (auxgen-m4.md §3)
+  if st.recDiffer != 0 then
+    errors := errors.push s!"{st.recDiffer} recursor whnf answers differ from Ix.Tc's (stop rule)"
+  if st.recSkipDiffer != 0 then
+    errors := errors.push s!"{st.recSkipDiffer} skipped fields Ix.Tc decided recursive (stop rule)"
+  if st.elimDiffer != 0 then
+    errors := errors.push s!"{st.elimDiffer} elimination decisions differ from Ix.Tc's (stop rule)"
+  if st.leanRecDiffer != 0 then
+    errors := errors.push s!"{st.leanRecDiffer} Lean-layout canonical recursors differ from Lean's"
+  if st.recWhnf == 0 || st.elim == 0 then
+    errors := errors.push "no recursor question was asked"
+  if label == "fixtures" && st.recReplayed == 0 then
+    errors := errors.push "the named replay was never exercised (the alias fixtures)"
+  if st.recRefused + st.elimRefused != 0 then
+    errors := errors.push s!"IxC refused {st.recRefused} recursor whnfs, {st.elimRefused} \
+      elimination decisions"
   if st.refused + st.scopesRefused + st.flatRefused + st.belowRefused != 0 then
     errors := errors.push s!"IxC refused {st.refused} queries, {st.scopesRefused} scopes, \
       {st.flatRefused} flat blocks, {st.belowRefused} generated .below (failClosed fails a \
