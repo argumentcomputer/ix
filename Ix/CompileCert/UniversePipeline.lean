@@ -517,6 +517,10 @@ structure LevelMeaning (params : List Ix.Name) (σ : Ix.Name → LevelParam)
       Kernel.Level.eval φ target = Kernel.Level.eval ψ level
   defined : ∀ allowed : List LevelParam, (∀ index, index < params.length → param index ∈ allowed) →
     Kernel.Level.allParamsDefined allowed level = true
+  /-- The level is the reading of the canonical form of the source level's exact
+  lowering (N2: with `CanonLevelReading.canonLevelIn_ingress`, the Source level
+  in the compiler's canonical form). -/
+  exact : ∃ raw, lower params source = some raw ∧ level = Kernel.Reader.convUniv param (Ixon.canonUniv raw)
 
 /-- The reading of the canonical form of an exact lowering means the source
 level. -/
@@ -524,7 +528,7 @@ theorem levelMeaning_of_lower {params : List Ix.Name} {source : Ix.Level} {raw :
     (lowered : lower params source = some raw) (σ : Ix.Name → LevelParam) (param : Nat → LevelParam) :
     LevelMeaning params σ param source (Kernel.Reader.convUniv param (Ixon.canonUniv raw)) := by
   obtain ⟨target, ingress, meaning⟩ := UniverseMeaning.lower_eval params σ lowered
-  refine ⟨⟨target, ingress, fun φ ψ aligned => ?_⟩, fun allowed inside => ?_⟩
+  refine ⟨⟨target, ingress, fun φ ψ aligned => ?_⟩, fun allowed inside => ?_, raw, lowered, rfl⟩
   · rw [CanonUnivScope.convCanon_eval]
     apply meaning φ (fun index => ψ (param index.toNat))
     intro name index found bounded

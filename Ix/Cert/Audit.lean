@@ -1829,6 +1829,9 @@ in `Ix.CompileCert.ReadingAudit`. -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.UniverseMeaning.lower.eq_def
 
+-- N2 (2026-10-20): `LevelMeaning` gained `exact` (the level is the reading of the
+-- canonical form of the exact lowering), from which `CanonLevelReading` reads the
+-- level syntactically; re-frozen.
 /-- info: structure Ix.CompileCert.UniversePipeline.LevelMeaning (params : List Ix.Name) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (param : Nat → Ix.Kernel.LevelParam) (source : Ix.Level) (level : Ix.Kernel.Level) : Prop
 number of parameters: 5
@@ -1842,6 +1845,9 @@ fields:
   Ix.CompileCert.UniversePipeline.LevelMeaning.defined : ∀ (allowed : List Ix.Kernel.LevelParam),
       (∀ (index : Nat), index < params.length → param index ∈ allowed) →
         Ix.Kernel.Level.allParamsDefined allowed level = true
+  Ix.CompileCert.UniversePipeline.LevelMeaning.exact : ∃ raw,
+      Ix.CompileCert.UniverseMeaning.lower params source = some raw ∧
+        level = Ix.Kernel.Reader.convUniv param (Ixon.canonUniv raw)
 constructor:
   Ix.CompileCert.UniversePipeline.LevelMeaning.mk {params : List Ix.Name} {σ : Ix.Name → Ix.Kernel.LevelParam}
     {param : Nat → Ix.Kernel.LevelParam} {source : Ix.Level} {level : Ix.Kernel.Level}
@@ -1855,7 +1861,11 @@ constructor:
     (defined :
       ∀ (allowed : List Ix.Kernel.LevelParam),
         (∀ (index : Nat), index < params.length → param index ∈ allowed) →
-          Ix.Kernel.Level.allParamsDefined allowed level = true) :
+          Ix.Kernel.Level.allParamsDefined allowed level = true)
+    (exact :
+      ∃ raw,
+        Ix.CompileCert.UniverseMeaning.lower params source = some raw ∧
+          level = Ix.Kernel.Reader.convUniv param (Ixon.canonUniv raw)) :
     Ix.CompileCert.UniversePipeline.LevelMeaning params σ param source level -/
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.UniversePipeline.LevelMeaning
@@ -3821,3 +3831,26 @@ run_cmd do
         first.all[0]? = some n → Ix.CompileCert.SourceConstructorPositions.Admits sub first -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Admits.admits_of_sourceAccepts
+
+/-! ## N-READS, N2: levels read syntactically
+
+The reader's level is the Source level in the compiler's canonical form
+(`Ix.LeanIngress.canonLevelIn`, what IxC's U lowers Source levels to), when the
+reader's parameter map is the constant's level parameters; roots in
+`Ix.CompileCert.ReadingAudit` ("levels canonically"). -/
+
+/-- info: @Ix.CompileCert.CanonLevelReading.related_ingress_canon : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {params : List Ix.Name} {σ : Ix.Name → Ix.Kernel.LevelParam}
+  {param : Nat → Ix.Kernel.LevelParam},
+  (∀ (a : Ix.Name), a ∈ params → ∀ (b : Ix.Name), b ∈ params → σ a = σ b → a = b) →
+    (∀ (i : Nat) (h : i < params.length), param i = σ params[i]) →
+      ∀ {source : Ix.Expr} {target : Ix.Kernel.Reader.CExpr md},
+        Ix.CompileCert.ExpressionState.Related names (Ix.CompileCert.UniversePipeline.LevelMeaning params σ param)
+            source target →
+          ∃ converted,
+            Ix.LeanIngress.ingressExpr σ source = Except.ok converted ∧
+              Ix.CompileCert.ExpressionState.Matches
+                (fun key key' => ∃ name, key = Ix.LeanIngress.ingressKey name ∧ names name key')
+                (fun level level' => Ix.LeanIngress.canonLevelIn (List.map σ params) level = level') converted target -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.CanonLevelReading.related_ingress_canon

@@ -22,6 +22,7 @@ import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.SourceConstructorPositions
 import Ix.CompileCert.Canon.EqSound
+import Ix.CompileCert.CanonLevelReading
 
 /-! # Audit of the reading-chain proofs
 
@@ -693,3 +694,18 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRuntime
   checkRuntime (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRuntime
   checkRuntime (tag := "reading-audit") "canon" Ix.CompileCert.ReadingAudit.canonRuntime
+
+/-! ## N-READS, N2: levels read syntactically
+
+Since IxC's U lowers Source levels to the compiler's canonical form
+(`Ix.LeanIngress.canonLevelIn`), the reader's level is the Source level in that
+form, not only equal to it in value (`CanonLevelReading.related_ingress_canon`). -/
+
+def Ix.CompileCert.ReadingAudit.levelCanonRoots : Array Lean.Name :=
+  #[`idxIn_map, `univOfLevel_ingress, `levelOfUniv_eq_convUniv, `canonLevelIn_ingress,
+    `levelMeaning_canon, `related_ingress_canon].map (`Ix.CompileCert.CanonLevelReading ++ ·)
+
+/-- info: [reading-audit] levels canonically: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd checkRoots (tag := "reading-audit") "levels canonically" Ix.CompileCert.ReadingAudit.levelCanonRoots
