@@ -16,9 +16,12 @@ and the install-time rule bits.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-! ## Pinned shapes of a stored constant -/
 
@@ -122,17 +125,17 @@ theorem stringOfListTyOk_map (o : Option (ConstantInfo md)) :
 
 variable {env : Env md} {env' : Env md'}
 
-theorem natLitSupported_ren (hE : EnvRel P f env env') :
+theorem natLitSupported_ren (hE : EnvRelG P f L env env') :
     natLitSupported env' = natLitSupported env := by
   simp only [natLitSupported, hE.find_role, natIndOk_map, natZeroOk_map, natSuccOk_map]
 
-theorem strLitSupported_ren (hE : EnvRel P f env env') :
+theorem strLitSupported_ren (hE : EnvRelG P f L env env') :
     strLitSupported env' = strLitSupported env := by
   simp only [strLitSupported, natLitSupported_ren hE, hE.find_role, stringTyOk_map,
     stringOfListTyOk_map, listTyOk_map, listNilTyOk_map, listConsTyOk_map, charTyOk_map,
     charOfNatTyOk_map]
 
-theorem isCtorApp_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) :
+theorem isCtorApp_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
     isCtorApp env' (e.mapKeys f) = isCtorApp env e := by
   unfold isCtorApp
   rw [← Expr.mapKeys_getAppFn]
@@ -147,7 +150,7 @@ theorem isCtorApp_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) :
     | some ci => cases ci <;> rfl
   | _ => rfl
 
-theorem unfoldDefinition_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) :
+theorem unfoldDefinition_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
     unfoldDefinition env' (e.mapKeys f) = (unfoldDefinition env e).map (Expr.mapKeys f) := by
   unfold unfoldDefinition
   rw [← Expr.mapKeys_getAppFn, Expr.getAppArgs_mapKeys]
@@ -167,7 +170,7 @@ theorem unfoldDefinition_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Go
       | _ => rfl
   | _ => rfl
 
-theorem unfoldDefinition_good (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P)
+theorem unfoldDefinition_good (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P)
     {e' : Expr md} (h : unfoldDefinition env e = some e') : e'.Good P := by
   unfold unfoldDefinition at h
   have hg := Expr.Good.getAppFn he
@@ -189,7 +192,7 @@ theorem unfoldDefinition_good (hE : EnvRel P f env env') {e : Expr md} (he : e.G
       | _ => simp [hc] at h
   | _ => exact nomatch h
 
-theorem unfoldableHead_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) :
+theorem unfoldableHead_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
     unfoldableHead env' (e.mapKeys f) = unfoldableHead env e := by
   unfold unfoldableHead
   rw [← Expr.mapKeys_getAppFn]
@@ -204,7 +207,7 @@ theorem unfoldableHead_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good
     | some ci => cases ci <;> rfl
   | _ => rfl
 
-theorem headHint_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) :
+theorem headHint_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
     headHint env' (e.mapKeys f) = headHint env e := by
   unfold headHint
   rw [← Expr.mapKeys_getAppFn]
@@ -235,7 +238,7 @@ theorem sameConstHeads_ren (hf : InjOn f P) {a b : Expr md} (ha : a.Good P) (hb 
     (natLitToConstructor n : Expr md).mapKeys f = natLitToConstructor n := by
   cases n <;> rfl
 
-theorem constsResolve_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) :
+theorem constsResolve_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
     (e.mapKeys f).constsResolve env' = e.constsResolve env := by
   induction e with
   | lit l =>
@@ -249,7 +252,7 @@ theorem constsResolve_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good 
     rw [hE.find_isSome he.1, ih he.2]
   | _ => simp_all [Expr.constsResolve]
 
-theorem litToCtorIfNat_ren (hE : EnvRel P f env env') (e : Expr md) :
+theorem litToCtorIfNat_ren (hE : EnvRelG P f L env env') (e : Expr md) :
     litToCtorIfNat env' (e.mapKeys f) = (litToCtorIfNat env e).mapKeys f := by
   rcases e with _ | _ | _ | _ | _ | _ | _ | _ | ⟨_ | _⟩ | _ <;>
     simp [litToCtorIfNat, natLitSupported_ren hE] <;> split <;> simp
@@ -327,7 +330,7 @@ theorem natOpDeps_good (k : Key md) : ∀ n ∈ natOpDeps k, n.Good P := by
   simp only [natOpResult, Key.map_eq_role_iff, apply_ite (Option.map (Expr.mapKeys f)),
     Option.map_some, Option.map_none, Expr.mapKeys, apply_ite (Key.map f), Key.map_role]
 
-theorem natOpGuard_ren (hE : EnvRel P f env env') (k : Key md) :
+theorem natOpGuard_ren (hE : EnvRelG P f L env env') (k : Key md) :
     natOpGuard env' (k.map f) = natOpGuard env k := by
   unfold natOpGuard
   rw [natLitSupported_ren hE, natOpDeps_map, List.all_map]
@@ -345,7 +348,7 @@ theorem natOpGuard_ren (hE : EnvRel P f env env') (k : Key md) :
     · cases env.find? boolTrueName <;> cases env.find? boolFalseName <;> simp
     · rfl
 
-@[simp] theorem natOpStored_ren (hE : EnvRel P f env env') {k : Key md} (hk : k.Good P) :
+@[simp] theorem natOpStored_ren (hE : EnvRelG P f L env env') {k : Key md} (hk : k.Good P) :
     natOpStored env' (k.map f) = natOpStored env k := by
   unfold natOpStored
   rw [hE.find k hk]
@@ -353,7 +356,7 @@ theorem natOpGuard_ren (hE : EnvRel P f env env') (k : Key md) :
   | none => rfl
   | some ci => cases ci <;> rfl
 
-theorem natOpCod_ren (hE : EnvRel P f env env') (k : Key md) (e : Expr md) :
+theorem natOpCod_ren (hE : EnvRelG P f L env env') (k : Key md) (e : Expr md) :
     natOpCod env' (k.map f) (e.mapKeys f) = natOpCod env k e := by
   unfold natOpCod
   simp only [Key.map_eq_role_iff, hE.find_role, Expr.mapKeys_beq_const_role]
@@ -369,7 +372,7 @@ theorem natOpCod_ren (hE : EnvRel P f env env') (k : Key md) (e : Expr md) :
       exact Expr.mapKeys_eq_sort_iff
   · rfl
 
-theorem natOpTyPinned_ren (hE : EnvRel P f env env') (k : Key md) (ty : Expr md) :
+theorem natOpTyPinned_ren (hE : EnvRelG P f L env env') (k : Key md) (ty : Expr md) :
     natOpTyPinned env' (k.map f) (ty.mapKeys f) = natOpTyPinned env k ty := by
   unfold natOpTyPinned
   simp only [Key.map_eq_role_iff]
@@ -380,7 +383,7 @@ theorem natOpTyPinned_ren (hE : EnvRel P f env env') (k : Key md) (ty : Expr md)
       ⟨dom, _ | _ | _ | _ | _ | _ | ⟨dom2, body, mb2⟩ | _ | _ | _, mb⟩ | _ | _ | _ <;> try rfl
     simp only [Expr.mapKeys, Expr.mapKeys_beq_const_role, natOpCod_ren hE]
 
-theorem natOpStoredOk_ren (hE : EnvRel P f env env') {k : Key md} (hk : k.Good P) :
+theorem natOpStoredOk_ren (hE : EnvRelG P f L env env') {k : Key md} (hk : k.Good P) :
     natOpStoredOk env' (k.map f) = natOpStoredOk env k := by
   unfold natOpStoredOk
   rw [hE.find k hk]
@@ -464,7 +467,7 @@ theorem piResidual_good {e : Expr md} {as : List (Expr md)} (he : e.Good P)
     | forallE t b m => exact ih (Expr.Good.instantiate1 he.2 has.1 0) has.2 h
     | _ => exact nomatch h
 
-theorem towerSlotsAll_ren (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P) (nF : Nat) :
+theorem towerSlotsAll_ren (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P) (nF : Nat) :
     towerSlotsAll env' (T.map f) nF = towerSlotsAll env T nF := by
   unfold towerSlotsAll
   congr 1
@@ -472,7 +475,7 @@ theorem towerSlotsAll_ren (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P
   rw [hE.findProj? hT j]
   cases env.findProj? T j <;> rfl
 
-theorem recSlotsAll_ren (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P) (nF : Nat) :
+theorem recSlotsAll_ren (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P) (nF : Nat) :
     recSlotsAll env' (T.map f) nF = recSlotsAll env T nF := by
   unfold recSlotsAll
   congr 1
@@ -484,7 +487,7 @@ theorem recSlotsAll_ren (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P) 
   | none => rfl
   | some ci => cases ci <;> rfl
 
-theorem etaProjs_ren (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P) (us : List Level)
+theorem etaProjs_ren (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P) (us : List Level)
     (targs : List (Expr md)) (b : Expr md) (nF : Nat) :
     etaProjs env' (T.map f) us (targs.map (Expr.mapKeys f)) (b.mapKeys f) nF =
       (etaProjs env T us targs b nF).map (Expr.mapKeys f) := by
@@ -503,7 +506,7 @@ theorem etaProjs_good {T : Key md} (hT : T.Good P) {us : List Level} {targs : Li
     obtain ⟨_, _, rfl⟩ := hx
     exact Expr.Good.mkAppN hT (by simp [Expr.goodList_append, ht, hb])
 
-theorem etaCtorShape_ren (hE : EnvRel P f env env') {a : Expr md} (ha : a.Good P) :
+theorem etaCtorShape_ren (hE : EnvRelG P f L env env') {a : Expr md} (ha : a.Good P) :
     etaCtorShape env' (a.mapKeys f) = etaCtorShape env a := by
   unfold etaCtorShape
   rw [← Expr.mapKeys_getAppFn, Expr.getAppArgs_mapKeys, List.length_map]
@@ -524,7 +527,7 @@ theorem etaCtorShape_ren (hE : EnvRel P f env env') {a : Expr md} (ha : a.Good P
       (etaFabArgs T ust targs major nF).map (Expr.mapKeys f) := by
   simp [etaFabArgs, List.map_map, Function.comp_def, projFnName, auxKey]
 
-theorem etaFabArgsE_ren (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P)
+theorem etaFabArgsE_ren (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P)
     (ust : List Level) (targs : List (Expr md)) (major : Expr md) (nF : Nat) :
     etaFabArgsE env' (T.map f) ust (targs.map (Expr.mapKeys f)) (major.mapKeys f) nF =
       (etaFabArgsE env T ust targs major nF).map (Expr.mapKeys f) := by
@@ -533,7 +536,7 @@ theorem etaFabArgsE_ren (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P)
 @[simp] theorem ProjEntry.fireOk_mapKeys (e : ProjEntry md) (us : List Level) :
     (e.mapKeys f).fireOk us = e.fireOk us := rfl
 
-theorem andRescueSlots_ren (hE : EnvRel P f env env') {ctor : Key md} (hc : ctor.Good P)
+theorem andRescueSlots_ren (hE : EnvRelG P f L env env') {ctor : Key md} (hc : ctor.Good P)
     (nP : Nat) (ust : List Level) :
     andRescueSlots env' (ctor.map f) nP ust = andRescueSlots env ctor nP ust := by
   unfold andRescueSlots andRescueSlotsOf
@@ -550,7 +553,7 @@ theorem andRescueSlots_ren (hE : EnvRel P f env env') {ctor : Key md} (hc : ctor
     rw [Key.map_beq hE.inj hg.2.1 hc]
     rfl
 
-theorem recRuleKOf_ren (hE : EnvRel P f env env') {ctor : Key md} (hc : ctor.Good P) :
+theorem recRuleKOf_ren (hE : EnvRelG P f L env env') {ctor : Key md} (hc : ctor.Good P) :
     recRuleKOf env'.find? (ctor.map f) = recRuleKOf env.find? ctor := by
   unfold recRuleKOf
   rw [hE.find ctor hc]
@@ -574,7 +577,7 @@ theorem recRuleKOf_ren (hE : EnvRel P f env env') {ctor : Key md} (hc : ctor.Goo
       | _ => rfl
     | _ => rfl
 
-theorem recRuleEtaOf_ren (hE : EnvRel P f env env') {recName ctor : Key md}
+theorem recRuleEtaOf_ren (hE : EnvRelG P f L env env') {recName ctor : Key md}
     (hc : ctor.Good P) :
     recRuleEtaOf env'.find? (recName.map f) (ctor.map f) = recRuleEtaOf env.find? recName ctor := by
   unfold recRuleEtaOf
@@ -615,7 +618,7 @@ theorem recRuleEtaOf_ren (hE : EnvRel P f env env') {recName ctor : Key md}
       | _ => rfl
     | _ => rfl
 
-theorem recRuleBits_ren (hE : EnvRel P f env env') {recName : Key md} {rl : RecRule md}
+theorem recRuleBits_ren (hE : EnvRelG P f L env env') {recName : Key md} {rl : RecRule md}
     (hrl : rl.Good P) :
     recRuleBits env'.find? (recName.map f) (rl.mapKeys f) =
       (recRuleBits env.find? recName rl).mapKeys f := by

@@ -21,6 +21,8 @@ term.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
@@ -193,23 +195,75 @@ theorem EnvRel.find_some {env : Env md} {env' : Env md'} (h : EnvRel P f env env
     exact (h.all c hmem).name
   rw [h.find k hk, hc]
   rfl
+
+/-! ### The relation the simulations carry
+
+The simulations of the renaming walk use four facts of the relation they
+thread: `f` is injective on `P`, lookups at good keys answer renamed, the
+constants at good keys are good, and a push of a good constant keeps the
+relation. So they are stated over `EnvRelG P f L`: those facts, plus a *link*
+`L` that pushes keep (`LinkPush`). At the literal link (`LitLink`: `env` good,
+`env' = env.mapKeys f`) it is `EnvRel` (`EnvRel.toG`, `EnvRelG.toLit`); at the
+trivial link it is the frame relation the locality corollaries use (`f = id`,
+`env'` answering as `env` does on good keys). -/
+
+/-- **Related environments, with a link** (see above). -/
+structure EnvRelG (P : md.Id → Prop) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
+    (env : Env md) (env' : Env md') : Prop where
+  inj : InjOn f P
+  find : ∀ k : Key md, k.Good P → env'.find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f)
+  good : ∀ (k : Key md) (c : ConstantInfo md), k.Good P → env.find? k = some c → c.Good P
+  link : L env env'
+
+/-- **A link a push of a good constant keeps.** -/
+class LinkPush (P : md.Id → Prop) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop) : Prop where
+  push : ∀ {env : Env md} {env' : Env md'} {c : ConstantInfo md}, L env env' → c.Good P →
+    L ⟨c :: env.consts⟩ ⟨c.mapKeys f :: env'.consts⟩
+
+/-- **The literal link**: `env` good, `env'` its renaming. -/
+def LitLink (P : md.Id → Prop) (f : md.Id → md'.Id) (env : Env md) (env' : Env md') : Prop :=
+  env.Good P ∧ env' = env.mapKeys f
+
+instance : LinkPush P f (LitLink P f) where
+  push h hc := ⟨fun d hd => by
+      rcases List.mem_cons.mp hd with rfl | hd
+      · exact hc
+      · exact h.1 d hd,
+    by rw [h.2]; rfl⟩
+
+/-- **The trivial link** (the frame relation's). -/
+def TrueLink : Env md → Env md' → Prop := fun _ _ => True
+
+instance : LinkPush P f (TrueLink (md := md) (md' := md')) where
+  push _ _ := trivial
+
+theorem EnvRel.toG {env : Env md} {env' : Env md'} (h : EnvRel P f env env') :
+    EnvRelG P f (LitLink P f) env env' :=
+  ⟨h.inj, h.find, h.good, h.all, h.eq⟩
+
+theorem EnvRelG.toLit {env : Env md} {env' : Env md'} (h : EnvRelG P f (LitLink P f) env env') :
+    EnvRel P f env env' :=
+  ⟨h.inj, h.link.1, h.link.2⟩
+
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
+
 /-- A role's lookup, renamed. -/
-theorem EnvRel.find_role {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (r : Role) :
+theorem EnvRelG.find_role {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') (r : Role) :
     env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
   h.find (roleKey r) trivial
 
 /-- The good constant at a good key. -/
-theorem EnvRel.good_of {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {k : Key md}
+theorem EnvRelG.good_of {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {k : Key md}
     (hk : k.Good P) {c : ConstantInfo md} (hc : env.find? k = some c) : c.Good P :=
   h.good k c hk hc
 
 /-- `isSome` of a lookup at a good key. -/
-theorem EnvRel.find_isSome {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
+theorem EnvRelG.find_isSome {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
     {k : Key md} (hk : k.Good P) : (env'.find? (k.map f)).isSome = (env.find? k).isSome := by
   rw [h.find k hk]; cases env.find? k <;> rfl
 
 /-- The projection-table lookup, renamed. -/
-theorem EnvRel.findProj? {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
+theorem EnvRelG.findProj? {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
     {T : Key md} (hT : T.Good P) (i : Nat) :
     env'.findProj? (T.map f) i = (env.findProj? T i).map (ProjEntry.mapKeys f) := by
   unfold Env.findProj?
@@ -230,7 +284,7 @@ theorem EnvRel.findProj? {env : Env md} {env' : Env md'} (h : EnvRel P f env env
     | _ => rfl
 
 /-- A projection-table entry at a good key is good. -/
-theorem EnvRel.findProj?_good {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
+theorem EnvRelG.findProj?_good {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
     {T : Key md} (hT : T.Good P) {i : Nat} {e : ProjEntry md}
     (he : env.findProj? T i = some e) : e.Good P := by
   unfold Env.findProj? at he
@@ -247,4 +301,21 @@ theorem EnvRel.findProj?_good {env : Env md} {env' : Env md'} (h : EnvRel P f en
       · exact nomatch he
     | _ => exact nomatch he
 
+
+/-- `EnvRelG.findProj?` at the literal relation. -/
+theorem EnvRel.findProj? {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
+    {T : Key md} (hT : T.Good P) (i : Nat) :
+    env'.findProj? (T.map f) i = (env.findProj? T i).map (ProjEntry.mapKeys f) :=
+  h.toG.findProj? hT i
+
+/-- `EnvRelG.findProj?_good` at the literal relation. -/
+theorem EnvRel.findProj?_good {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
+    {T : Key md} (hT : T.Good P) {i : Nat} {e : ProjEntry md}
+    (he : env.findProj? T i = some e) : e.Good P :=
+  h.toG.findProj?_good hT he
+
+/-- `EnvRelG.find_role` at the literal relation. -/
+theorem EnvRel.find_role {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (r : Role) :
+    env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
+  h.toG.find_role r
 end Ix.Kernel

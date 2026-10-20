@@ -17,9 +17,12 @@ certificate, and the pinned basis installs likewise.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-- The recurrence equations name role keys, fvars and the operation. -/
 theorem natOpEquations_good (d : Nat) (k : Key md) :
@@ -32,8 +35,8 @@ section Vals
 
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
-theorem certifyNatEqs_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') :
+theorem certifyNatEqs_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') :
     ∀ (eqs : List (Expr md × Expr md)), (∀ p ∈ eqs, p.1.Good P ∧ p.2.Good P) →
       SimV (certifyNatEqs ops env eqs)
         (certifyNatEqs ops' env' (eqs.map fun p => (p.1.mapKeys f, p.2.mapKeys f)))
@@ -45,10 +48,10 @@ theorem certifyNatEqs_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : En
     refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimV.pureT false)
     exact certifyNatEqs_sim hops hE eqs h.2
 
-theorem checkDefnVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {cv : ConstantVal md} (hcv : cv.Good P) {value : Expr md}
+theorem checkDefnVal_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {cv : ConstantVal md} (hcv : cv.Good P) {value : Expr md}
     (hv : value.Good P) (hint : ReducibilityHint) :
-    SimR (EnvRel P f) (checkDefnVal ops env cv value hint)
+    SimR (EnvRelG P f L) (checkDefnVal ops env cv value hint)
       (checkDefnVal ops' env' (cv.mapKeys f) (value.mapKeys f) hint) := by
   unfold checkDefnVal
   simp only [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
@@ -63,10 +66,10 @@ theorem checkDefnVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env
   refine SimR.ite Iff.rfl (fun _ => ?_) (fun _ => SimR.throw_bind)
   exact SimR.pure' (hE.push (c := .defnInfo cv v hint) ⟨hcv, hvA⟩)
 
-theorem checkThmVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {cv : ConstantVal md} (hcv : cv.Good P) {value : Expr md}
+theorem checkThmVal_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {cv : ConstantVal md} (hcv : cv.Good P) {value : Expr md}
     (hv : value.Good P) :
-    SimR (EnvRel P f) (checkThmVal ops env cv value)
+    SimR (EnvRelG P f L) (checkThmVal ops env cv value)
       (checkThmVal ops' env' (cv.mapKeys f) (value.mapKeys f)) := by
   unfold checkThmVal
   simp only [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
@@ -85,10 +88,10 @@ theorem checkThmVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env 
   refine SimR.ite Iff.rfl (fun _ => ?_) (fun _ => SimR.throw_bind)
   exact SimR.pure' (hE.push (c := .thmInfo cv value) ⟨hcv, hv⟩)
 
-theorem checkOpaqueVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {cv : ConstantVal md} (hcv : cv.Good P) {value : Expr md}
+theorem checkOpaqueVal_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {cv : ConstantVal md} (hcv : cv.Good P) {value : Expr md}
     (hv : value.Good P) :
-    SimR (EnvRel P f) (checkOpaqueVal ops env cv value)
+    SimR (EnvRelG P f L) (checkOpaqueVal ops env cv value)
       (checkOpaqueVal ops' env' (cv.mapKeys f) (value.mapKeys f)) := by
   unfold checkOpaqueVal
   simp only [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
@@ -103,9 +106,9 @@ theorem checkOpaqueVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : E
   refine SimR.ite Iff.rfl (fun _ => ?_) (fun _ => SimR.throw_bind)
   exact SimR.pure' (hE.push (c := .axiomInfo cv) hcv)
 
-theorem installBasisDecl_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem installBasisDecl_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {ci : ConstantInfo md} (hci : ci.Good P) :
-    SimR (EnvRel P f) (installBasisDecl env ci : CheckM md (Env md))
+    SimR (EnvRelG P f L) (installBasisDecl env ci : CheckM md (Env md))
       (installBasisDecl env' (ci.mapKeys f) : CheckM md' (Env md')) := by
   unfold installBasisDecl
   rw [ConstantInfo.mapKeys_name, hE.find _ hci.name, Option.isNone_map]
@@ -113,9 +116,9 @@ theorem installBasisDecl_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f en
   exact SimR.pure' (hE.push hci)
 
 theorem foldlM_installBasisDecl_sim :
-    ∀ (cs : List (ConstantInfo md)) {env : Env md} {env' : Env md'}, EnvRel P f env env' →
+    ∀ (cs : List (ConstantInfo md)) {env : Env md} {env' : Env md'}, EnvRelG P f L env env' →
       (∀ c ∈ cs, c.Good P) →
-      SimR (EnvRel P f) (cs.foldlM installBasisDecl env : CheckM md (Env md))
+      SimR (EnvRelG P f L) (cs.foldlM installBasisDecl env : CheckM md (Env md))
         ((cs.map (ConstantInfo.mapKeys f)).foldlM installBasisDecl env' : CheckM md' (Env md'))
   | [], _, _, hE, _ => SimR.pure' hE
   | c :: cs, _, _, hE, h => by
@@ -124,9 +127,9 @@ theorem foldlM_installBasisDecl_sim :
     exact SimR.bind (installBasisDecl_sim hE h.1)
       (fun _ _ hR => foldlM_installBasisDecl_sim cs hR h.2)
 
-theorem checkBasisDecl_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem checkBasisDecl_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     (kind : BasisKind) :
-    SimR (EnvRel P f) (checkBasisDecl env kind : CheckM md (Env md))
+    SimR (EnvRelG P f L) (checkBasisDecl env kind : CheckM md (Env md))
       (checkBasisDecl env' kind : CheckM md' (Env md')) := by
   have hq : (env'.find? eqName = some eqA) ↔ (env.find? eqName = some eqA) := by
     have h := find_eq_pin_ren hE (k := eqName) (pin := eqA) trivial rfl

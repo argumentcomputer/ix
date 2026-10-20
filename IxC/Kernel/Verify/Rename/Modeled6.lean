@@ -15,12 +15,15 @@ environments: they answer alike.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-- A lookup at a key given in its renamed spelling. -/
-theorem EnvRel.find_of {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {k : Key md}
+theorem EnvRelG.find_of {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {k : Key md}
     (hk : k.Good P) {k' : Key md'} (hk' : k' = k.map f) :
     env'.find? k' = (env.find? k).map (ConstantInfo.mapKeys f) :=
   hk' ▸ h.find k hk
@@ -74,7 +77,7 @@ theorem etaRhs_good {T C : Key md} (hT : T.Good P) (hC : C.Good P) (us : List Le
 
 /-- **The eta theorem's check at a renamed structure** answers alike. -/
 theorem checkEtaThm_map (mode : CheckMode) {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {T C : Key md} (hT : T.Good P) (hC : C.Good P)
+    (hE : EnvRelG P f L env env') {T C : Key md} (hT : T.Good P) (hC : C.Good P)
     (lps : List LevelParam) (nP nF : Nat) :
     checkEtaThm mode env' (T.map f) (C.map f) lps nP nF = checkEtaThm mode env T C lps nP nF := by
   have hf := hE.inj
@@ -172,7 +175,7 @@ theorem checkEtaThm_map (mode : CheckMode) {env : Env md} {env' : Env md'}
 
 /-- **The unit-likeness theorem's check at a renamed family** answers alike. -/
 theorem checkUnitThm_map (mode : CheckMode) {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P) (lps : List LevelParam) (nP : Nat) :
+    (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P) (lps : List LevelParam) (nP : Nat) :
     checkUnitThm mode env' (T.map f) lps nP = checkUnitThm mode env T lps nP := by
   have hf := hE.inj
   unfold checkUnitThm
@@ -273,7 +276,7 @@ theorem piResultZ_mapKeys (e : Expr md) : piResultZ (e.mapKeys f) = piResultZ e 
 
 /-- **The capability record at a renamed block** is the renamed record. -/
 theorem indBlockCaps_map (mode : CheckMode) {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {cvT cvC : ConstantVal md} (hT : cvT.Good P) (hC : cvC.Good P)
+    (hE : EnvRelG P f L env env') {cvT cvC : ConstantVal md} (hT : cvT.Good P) (hC : cvC.Good P)
     (nP nF : Nat) :
     indBlockCaps mode env' (cvT.mapKeys f) (cvC.mapKeys f) nP nF =
       (indBlockCaps mode env cvT cvC nP nF).mapKeys f := by
@@ -291,7 +294,7 @@ theorem indBlockCaps_good (mode : CheckMode) (env : Env md) {cvT cvC : ConstantV
 
 /-- **The eta constructor's residual gate at a renamed block** answers alike. -/
 theorem ctorResidualOk_map (mode : CheckMode) {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {T C : Key md} (hT : T.Good P) (hC : C.Good P)
+    (hE : EnvRelG P f L env env') {T C : Key md} (hT : T.Good P) (hC : C.Good P)
     (lps : List LevelParam) (nP nF : Nat) (eta : Bool) :
     ctorResidualOk mode env' (T.map f) (C.map f) lps nP nF eta =
       ctorResidualOk mode env T C lps nP nF eta := by
@@ -330,7 +333,7 @@ theorem ctorTargetsFam_map (hf : InjOn f P) {ty : Expr md} (hty : ty.Good P) {T 
     rw [structFam_map, Expr.mapKeys_beq hf hcb (structFam_good hT lps nP nF)]
 
 /-- The projection name family's freeness at a renamed family. -/
-theorem projFamFree_map {env : Env md} {env' : Env md'} (hE : EnvRel P f env env') {T : Key md}
+theorem projFamFree_map {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') {T : Key md}
     (hT : T.Good P) (nF : Nat) :
     ((List.range nF).all fun j => (env'.find? (projFnName (T.map f) j)).isNone) =
       ((List.range nF).all fun j => (env.find? (projFnName T j)).isNone) := by

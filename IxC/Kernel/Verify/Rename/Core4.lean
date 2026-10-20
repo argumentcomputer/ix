@@ -15,13 +15,16 @@ environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
 
-theorem projCert_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat) (lic : Bool)
+theorem projCert_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat) (lic : Bool)
     {c : Key md} (hc : c.Good P) (us : List Level) {args : List (Expr md)}
     (hargs : Expr.GoodList P args) :
     SimV (projCert r env d lic c us args)
@@ -39,7 +42,7 @@ theorem projCert_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat
       exact iotaCerts_sim' hr d lic (Expr.Good.instantiateLevelParams hg.2 _ _) hargs (by simp) rfl
     | _ => exact SimV.pureT false
 
-theorem projCertAt_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem projCertAt_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     (verified lic : Bool) {c : Key md} (hc : c.Good P) (us : List Level)
     {args : List (Expr md)} (hargs : Expr.GoodList P args) :
     SimV (projCertAt r env d verified lic c us args)
@@ -49,7 +52,7 @@ theorem projCertAt_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : N
 
 /-! ## Head normalization -/
 
-theorem whnfCoreBody_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem whnfCoreBody_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) {e : Expr md} (he : e.Good P) :
     SimX P f (whnfCoreBody mode r env d e) (whnfCoreBody mode r' env' d (e.mapKeys f)) := by
   cases e with
@@ -113,7 +116,7 @@ theorem whnfCoreBody_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : Cor
 
 /-! ## The reduction loop -/
 
-theorem whnfStep_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem whnfStep_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {k : Expr md → CheckM md (Expr md)} {k' : Expr md' → CheckM md' (Expr md')}
     (hk : ∀ e, e.Good P → SimX P f (k e) (k' (e.mapKeys f))) {e : Expr md} (he : e.Good P) :
     SimX P f (whnfStep r env d k e) (whnfStep r' env' d k' (e.mapKeys f)) := by
@@ -129,7 +132,7 @@ theorem whnfStep_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat
     | none => exact SimE.pure' he₁ rfl
     | some e₂ => exact hk e₂ (unfoldDefinition_good hE he₁ hu)
 
-theorem whnfLoop_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat) :
+theorem whnfLoop_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat) :
     ∀ (n : Nat) {e : Expr md}, e.Good P →
       SimX P f (whnfLoop r env d n e) (whnfLoop r' env' d n (e.mapKeys f))
   | 0, _, _ => SimE.throw'
@@ -137,7 +140,7 @@ theorem whnfLoop_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat
     simp only [whnfLoop]
     exact whnfStep_sim hE hr d (fun e he => whnfLoop_sim hE hr d n he) he
 
-theorem whnfBody_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem whnfBody_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {e : Expr md} (he : e.Good P) :
     SimX P f (whnfBody r env d e) (whnfBody r' env' d (e.mapKeys f)) :=
   whnfLoop_sim hE hr d _ he

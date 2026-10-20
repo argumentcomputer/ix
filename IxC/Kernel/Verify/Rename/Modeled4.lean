@@ -15,9 +15,12 @@ environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 /-- A left fold whose steps are simulated, over a list and its image. -/
@@ -35,9 +38,9 @@ theorem SimR.foldlM_map {ε ε' α α' β β' : Type} {R : α → α' → Prop} 
 /-! ## The rules -/
 
 /-- **One modeled rule at a renamed recursor.** -/
-theorem checkIotaRule_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
-    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRel P f env₁ env₁')
-    (hES : EnvRel P f envS envS') {ρ : Key md → Key md} {ρ' : Key md' → Key md'}
+theorem checkIotaRule_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
+    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRelG P f L env₁ env₁')
+    (hES : EnvRelG P f L envS envS') {ρ : Key md → Key md} {ρ' : Key md' → Key md'}
     (hρ : ∀ k : Key md, k.Good P → (ρ k).map f = ρ' (k.map f))
     (hρg : ∀ k : Key md, k.Good P → (ρ k).Good P)
     {cvName : Key md} (hn : cvName.Good P) (lps : List LevelParam) {tyA : Expr md}
@@ -98,9 +101,9 @@ theorem checkIotaRule_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
         exact hfinal fire hfire
     | _ => exact SimE.throw'
 
-theorem checkIotaRules_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
-    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRel P f env₁ env₁')
-    (hES : EnvRel P f envS envS') {ρ : Key md → Key md} {ρ' : Key md' → Key md'}
+theorem checkIotaRules_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
+    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRelG P f L env₁ env₁')
+    (hES : EnvRelG P f L envS envS') {ρ : Key md → Key md} {ρ' : Key md' → Key md'}
     (hρ : ∀ k : Key md, k.Good P → (ρ k).map f = ρ' (k.map f))
     (hρg : ∀ k : Key md, k.Good P → (ρ k).Good P)
     {cvName : Key md} (hn : cvName.Good P) (lps : List LevelParam) {tyA : Expr md}
@@ -127,8 +130,8 @@ theorem checkIotaRules_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
 /-! ## The members -/
 
 /-- **A member's check against its model, at a renamed member.** -/
-theorem checkMemberVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {blockNames : List (Key md)} (hb : ∀ k ∈ blockNames, k.Good P)
+theorem checkMemberVal_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {blockNames : List (Key md)} (hb : ∀ k ∈ blockNames, k.Good P)
     {cv : ConstantVal md} (hcv : cv.Good P) :
     SimE (ConstantVal.Good P) (ConstantVal.mapKeys f)
       (checkMemberVal ops blockNames env cv)
@@ -167,11 +170,11 @@ theorem blockNames_map (block : List (ConstantInfo md)) :
   simp [List.map_map, Function.comp_def]
 
 /-- One non-recursor member, at a renamed member. -/
-theorem checkIndMember_sim (hops : OpsSim P f ops ops') {blockNames : List (Key md)}
+theorem checkIndMember_sim (hops : OpsSim P f L ops ops') {blockNames : List (Key md)}
     (hb : ∀ k ∈ blockNames, k.Good P) {caps : IndCaps md} (hcaps : caps.Good P)
-    {env : Env md} {env' : Env md'} (hE : EnvRel P f env env') {ci : ConstantInfo md}
+    {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') {ci : ConstantInfo md}
     (hci : ci.Good P) :
-    SimR (EnvRel P f) (checkIndMember ops blockNames caps env ci)
+    SimR (EnvRelG P f L) (checkIndMember ops blockNames caps env ci)
       (checkIndMember ops' (blockNames.map (Key.map f)) (caps.mapKeys f) env'
         (ci.mapKeys f)) := by
   unfold checkIndMember
@@ -195,13 +198,13 @@ def provMap (f : md.Id → md'.Id) (c : ConstantVal md × Nat × Nat × List (Re
 def provGood (P : md.Id → Prop) (c : ConstantVal md × Nat × Nat × List (RecRule md)) : Prop :=
   c.1.Good P ∧ ∀ r ∈ c.2.2.2, r.Good P
 
-theorem provisionRecs_sim (hops : OpsSim P f ops ops') {blockNames : List (Key md)}
+theorem provisionRecs_sim (hops : OpsSim P f L ops ops') {blockNames : List (Key md)}
     (hb : ∀ k ∈ blockNames, k.Good P) :
     ∀ (recs : List (ConstantInfo md)), (∀ c ∈ recs, c.Good P) →
-      ∀ {envAcc : Env md} {envAcc' : Env md'}, EnvRel P f envAcc envAcc' →
+      ∀ {envAcc : Env md} {envAcc' : Env md'}, EnvRelG P f L envAcc envAcc' →
         SimR (fun (r : Env md × List (ConstantVal md × Nat × Nat × List (RecRule md)))
             (r' : Env md' × List (ConstantVal md' × Nat × Nat × List (RecRule md'))) =>
-            EnvRel P f r.1 r'.1 ∧ (∀ c ∈ r.2, provGood P c) ∧ r'.2 = r.2.map (provMap f))
+            EnvRelG P f L r.1 r'.1 ∧ (∀ c ∈ r.2, provGood P c) ∧ r'.2 = r.2.map (provMap f))
           (provisionRecs ops blockNames envAcc recs)
           (provisionRecs ops' (blockNames.map (Key.map f)) envAcc'
             (recs.map (ConstantInfo.mapKeys f)))
@@ -229,11 +232,11 @@ theorem provisionRecs_sim (hops : OpsSim P f ops ops') {blockNames : List (Key m
     | _ => exact SimR.throw'
 
 /-- **The recursor group at a renamed block.** -/
-theorem checkIndRecs_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
+theorem checkIndRecs_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
     {blockNames : List (Key md)} (hb : ∀ k ∈ blockNames, k.Good P) {env₂ : Env md}
-    {env₂' : Env md'} (hE₂ : EnvRel P f env₂ env₂') {recs : List (ConstantInfo md)}
+    {env₂' : Env md'} (hE₂ : EnvRelG P f L env₂ env₂') {recs : List (ConstantInfo md)}
     (hrs : ∀ c ∈ recs, c.Good P) :
-    SimR (EnvRel P f) (checkIndRecs mode ops blockNames env₂ recs)
+    SimR (EnvRelG P f L) (checkIndRecs mode ops blockNames env₂ recs)
       (checkIndRecs mode ops' (blockNames.map (Key.map f)) env₂'
         (recs.map (ConstantInfo.mapKeys f))) := by
   unfold checkIndRecs

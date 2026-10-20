@@ -15,9 +15,12 @@ environments: they answer alike.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-! ## Small tests at renamed terms -/
 
@@ -39,7 +42,7 @@ theorem take_map_beq_map (hf : InjOn f P) {args : List (Expr md)} (ha : Expr.Goo
   rw [← List.map_take]
   exact list_beq_mapKeys hf (ha.take n) hl
 
-theorem all_constsResolve_map {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem all_constsResolve_map {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {l : List (Expr md)} (hl : Expr.GoodList P l) :
     (l.map (Expr.mapKeys f)).all (fun e => e.constsResolve env') =
       l.all (fun e => e.constsResolve env) := by
@@ -47,7 +50,7 @@ theorem all_constsResolve_map {env : Env md} {env' : Env md'} (hE : EnvRel P f e
   exact List.all_congr_mem' fun x hx => constsResolve_ren hE (hl x hx)
 
 theorem all_fvarTypeD_constsResolve_map {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {l : List (Expr md)} (hl : Expr.GoodList P l) :
+    (hE : EnvRelG P f L env env') {l : List (Expr md)} (hl : Expr.GoodList P l) :
     (l.map (Expr.mapKeys f)).all (fun e => e.fvarTypeD.constsResolve env') =
       l.all (fun e => e.fvarTypeD.constsResolve env) := by
   rw [List.all_map]
@@ -66,7 +69,7 @@ theorem any_mentionsFvar_map (l : List (Expr md)) (q : Nat) :
 /-! ## The kinds, re-checked -/
 
 /-- **The kinds' re-check at a renamed constructor** answers alike. -/
-theorem nativeOpenedOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRel P f env₀ env₀')
+theorem nativeOpenedOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRelG P f L env₀ env₀')
     {T : Key md} (hT : T.Good P) (lps : List LevelParam) (nP nIdx : Nat) {cty : Expr md}
     (hc : cty.Good P) (nF : Nat) (ks : List RecFieldKind) :
     nativeOpenedOk env₀' (T.map f) lps nP nIdx (cty.mapKeys f) nF ks =
@@ -126,7 +129,7 @@ theorem nativeOpenedOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRel
         | negative => rfl
         | unsupported => rfl
 
-theorem nativeFieldsOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRel P f env₀ env₀')
+theorem nativeFieldsOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRelG P f L env₀ env₀')
     {T : Key md} (hT : T.Good P) (lps : List LevelParam) (nP nIdx : Nat)
     {ctorsA : List (ConstantVal md × Nat)} (hcs : ∀ c ∈ ctorsA, c.1.Good P)
     (kinds : List (List RecFieldKind)) :

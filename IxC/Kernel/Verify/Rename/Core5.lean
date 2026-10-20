@@ -15,9 +15,12 @@ compile to conditionals whose failing branch is `throw e >>= k`
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
 
@@ -31,7 +34,7 @@ theorem ProjEntry.typeAt_good {e : ProjEntry md} (he : e.Good P) (us : List Leve
 
 /-- The cases shared by both inference bodies: everything but `λ` and the
 application. -/
-theorem inferBody_const_sim (hE : EnvRel P f env env') {n : Key md} (hn : n.Good P)
+theorem inferBody_const_sim (hE : EnvRelG P f L env env') {n : Key md} (hn : n.Good P)
     (us : List Level) :
     SimX P f
       (match env.find? n with
@@ -64,7 +67,7 @@ theorem inferBody_const_sim (hE : EnvRel P f env env') {n : Key md} (hn : n.Good
     refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
     exact SimE.pure' (Expr.Good.instantiateLevelParams hg.toConstantVal.2 _ _) (by simp)
 
-theorem inferBody_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem inferBody_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) {e : Expr md} (he : e.Good P) :
     SimX P f (inferBody mode r env d e) (inferBody mode r' env' d (e.mapKeys f)) := by
   cases e with
@@ -163,7 +166,7 @@ theorem inferBody_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSi
   | letE t v b l => exact SimE.throw'
   | bvar i => exact SimE.throw'
 
-theorem inferBodyIO_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem inferBodyIO_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) {e : Expr md} (he : e.Good P) :
     SimX P f (inferBodyIO mode r env d e) (inferBodyIO mode r' env' d (e.mapKeys f)) := by
   cases e with

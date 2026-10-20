@@ -16,9 +16,12 @@ and environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
 
@@ -88,7 +91,7 @@ theorem fvarLeaves_all_contains_ren (hf : InjOn f P) {fab major : Expr md} (hfab
 
 /-! ## The stuck-major rescues -/
 
-theorem majorToCtor_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem majorToCtor_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) (recName : Key md) {rules : List (RecRule md)} (hrules : ∀ rl ∈ rules, rl.Good P)
     {major : Expr md} (hmaj : major.Good P) :
     SimX P f (majorToCtor mode r env d recName rules major)
@@ -280,7 +283,7 @@ theorem projLitToCtor_of_ne {e : Expr md} (h : ∀ s, e ≠ .lit (.strVal s)) :
     projLitToCtor r env d e = pure e := by
   rcases e with _ | _ | _ | _ | _ | _ | _ | _ | ⟨_ | s⟩ | _ <;> first | rfl | exact absurd rfl (h _)
 
-theorem litMajorToCtor_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem litMajorToCtor_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {e : Expr md} (he : e.Good P) :
     SimX P f (litMajorToCtor r env d e) (litMajorToCtor r' env' d (e.mapKeys f)) := by
   by_cases hs : ∃ s, e = .lit (.strVal s)
@@ -294,7 +297,7 @@ theorem litMajorToCtor_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d
     rw [litMajorToCtor_of_ne h₁, litMajorToCtor_of_ne h₂]
     exact SimE.pure' (litToCtorIfNat_good he) (litToCtorIfNat_ren hE e)
 
-theorem projLitToCtor_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem projLitToCtor_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {e : Expr md} (he : e.Good P) :
     SimX P f (projLitToCtor r env d e) (projLitToCtor r' env' d (e.mapKeys f)) := by
   by_cases hs : ∃ s, e = .lit (.strVal s)
@@ -308,7 +311,7 @@ theorem projLitToCtor_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d 
     rw [projLitToCtor_of_ne h₁, projLitToCtor_of_ne h₂]
     exact SimE.pure' he rfl
 
-theorem prepareMajor_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem prepareMajor_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) (recName : Key md) {rules : List (RecRule md)} (hrules : ∀ rl ∈ rules, rl.Good P)
     {major : Expr md} (hmaj : major.Good P) :
     SimX P f (prepareMajor mode r env d recName rules major)
@@ -380,7 +383,7 @@ theorem Expr.GoodList.getD {l : List (Expr md)} (h : Expr.GoodList P l) (n : Nat
   | none => trivial
   | some x => exact h x (List.mem_of_getElem? hn)
 
-theorem iotaRec_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem iotaRec_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) {e : Expr md} (he : e.Good P) :
     SimO P f (iotaRec mode r env d e) (iotaRec mode r' env' d (e.mapKeys f)) := by
   unfold iotaRec

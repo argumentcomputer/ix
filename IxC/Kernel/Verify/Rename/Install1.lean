@@ -17,9 +17,12 @@ walk (`checkStructFieldSortsI`) of `IxC/Kernel/Inductives/SumInstall.lean` and
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 /-- `unwrapOr` at a renamed option. -/
@@ -31,8 +34,8 @@ theorem SimE.unwrapOr' {α α' : Type} {G : α → Prop} {g : α → α'} {o : O
   | some a => exact SimE.pure' (hG a h) rfl
 
 /-- The binder-domain pins at renamed telescopes. -/
-theorem checkStructDomsAt_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') (off : Nat) {fvs doms : List (Expr md)}
+theorem checkStructDomsAt_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') (off : Nat) {fvs doms : List (Expr md)}
     (hfvs : Expr.GoodList P fvs) (hdoms : Expr.GoodList P doms) :
     ∀ n, SimV (checkStructDomsAt ops env off fvs doms n)
       (checkStructDomsAt ops' env' off (fvs.map (Expr.mapKeys f)) (doms.map (Expr.mapKeys f)) n)
@@ -51,8 +54,8 @@ theorem checkStructDomsAt_sim (hops : OpsSim P f ops ops') {env : Env md} {env' 
 /-! ## The former's telescope -/
 
 /-- Official's telescope loop at a renamed type. -/
-theorem whnfTelescope_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') :
+theorem whnfTelescope_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') :
     ∀ (i n : Nat) {e : Expr md}, e.Good P →
       SimE (fun r : List (Expr md × BinderMeta) × Level => Expr.BindersGood P r.1)
         (fun r => (Expr.mapBinders f r.1, r.2))
@@ -105,8 +108,8 @@ theorem ConstantVal.mapKeys_withType (cv : ConstantVal md) (t : Expr md) :
   rfl
 
 /-- The former's telescope stage at a renamed former. -/
-theorem checkSumTele_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {cv cvTa₀ : ConstantVal md} (hcv : cv.Good P)
+theorem checkSumTele_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {cv cvTa₀ : ConstantVal md} (hcv : cv.Good P)
     (hTa : cvTa₀.Good P) (n : Nat) :
     SimE (fun r : ConstantVal md × Level => r.1.Good P) (fun r => (r.1.mapKeys f, r.2))
       (checkSumTele ops env cv n cvTa₀)
@@ -144,14 +147,14 @@ theorem checkSumTele_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env
 
 /-- **The former's stage at a renamed shape**: the environments it returns
 stay related, its constant and shape are the renamed ones. -/
-theorem checkSumInd_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {p : InductiveShape md} (hp : p.Good P)
+theorem checkSumInd_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {p : InductiveShape md} (hp : p.Good P)
     {capsOf : InductiveShape md → IndCaps md} {capsOf' : InductiveShape md' → IndCaps md'}
     (hcaps : ∀ q : InductiveShape md, q.Good P →
       capsOf' (q.mapKeys f) = (capsOf q).mapKeys f ∧ (capsOf q).Good P) :
     SimR (fun (r : Env md × ConstantVal md × InductiveShape md)
         (r' : Env md' × ConstantVal md' × InductiveShape md') =>
-        EnvRel P f r.1 r'.1 ∧ r.2.1.Good P ∧ r'.2.1 = r.2.1.mapKeys f ∧ r.2.2.Good P ∧
+        EnvRelG P f L r.1 r'.1 ∧ r.2.1.Good P ∧ r'.2.1 = r.2.1.mapKeys f ∧ r.2.2.Good P ∧
           r'.2.2 = r.2.2.mapKeys f)
       (checkSumInd ops env p capsOf) (checkSumInd ops' env' (p.mapKeys f) capsOf') := by
   unfold checkSumInd
@@ -189,8 +192,8 @@ theorem contains_mapKeys_ren (hf : InjOn f P) : ∀ {l : List (Expr md)}, Expr.G
       contains_mapKeys_ren hf hl.2 he]
 
 /-- The field-sort walk at renamed fields. -/
-theorem checkStructFieldSortsI_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') (isProp large : Bool) (s : Level) (nP : Nat)
+theorem checkStructFieldSortsI_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') (isProp large : Bool) (s : Level) (nP : Nat)
     {fvs idxArgs : List (Expr md)} (hfvs : Expr.GoodList P fvs) (hidx : Expr.GoodList P idxArgs) :
     ∀ n, SimV (checkStructFieldSortsI ops env isProp large s nP fvs idxArgs n)
       (checkStructFieldSortsI ops' env' isProp large s nP (fvs.map (Expr.mapKeys f))

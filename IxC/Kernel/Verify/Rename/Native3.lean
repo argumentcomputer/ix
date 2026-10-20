@@ -16,9 +16,12 @@ the route (`checkNative`), at renamed arguments over related environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 /-! ## The projection table -/
@@ -107,11 +110,11 @@ theorem projFnName_map (T : Key md) (j : Nat) : (projFnName T j).map f = projFnN
 theorem projTableName_map (T : Key md) : (projTableName T).map f = projTableName (T.map f) := rfl
 
 /-- **The projection table's stage at a renamed structure.** -/
-theorem checkStructProjTable_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem checkStructProjTable_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {T C : Key md} (hT : T.Good P) (hC : C.Good P) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) {cvCa : ConstantVal md}
     (hCa : cvCa.Good P) :
-    SimR (EnvRel P f) (checkStructProjTable (m := CheckM md) T C lps nP nF resSort guards off cvCa env)
+    SimR (EnvRelG P f L) (checkStructProjTable (m := CheckM md) T C lps nP nF resSort guards off cvCa env)
       (checkStructProjTable (m := CheckM md') (T.map f) (C.map f) lps nP nF resSort guards off
         (cvCa.mapKeys f) env') := by
   unfold checkStructProjTable
@@ -147,10 +150,10 @@ theorem checkStructProjTable_sim {env : Env md} {env' : Env md'} (hE : EnvRel P 
   exact hE.push (c := .projInfo ⟨T, lps, nP, C, nF, resSort, bodies, guards, off⟩) ⟨hT, hC, hb⟩
 
 /-- **The fixpoint route's table stage** at a renamed block. -/
-theorem checkNativeTable_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem checkNativeTable_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {p : NativeParts md} (hp : p.Good P) {ctorsA : List (ConstantVal md × Nat)}
     (hcs : ∀ c ∈ ctorsA, c.1.Good P) (sortss : List (List Level)) :
-    SimR (EnvRel P f) (checkNativeTable (m := CheckM md) p ctorsA sortss env)
+    SimR (EnvRelG P f L) (checkNativeTable (m := CheckM md) p ctorsA sortss env)
       (checkNativeTable (m := CheckM md') (p.mapKeys f)
         (ctorsA.map fun c => (c.1.mapKeys f, c.2)) sortss env') := by
   unfold checkNativeTable
@@ -158,7 +161,7 @@ theorem checkNativeTable_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f en
   | [cA], [sorts], hcs =>
     have hcA : cA.1.Good P := hcs cA List.mem_cons_self
     simp only [List.map_cons, List.map_nil]
-    show SimR (EnvRel P f)
+    show SimR (EnvRelG P f L)
       (if p.nIdx == 0 then checkStructProjTable p.cvT.name cA.1.name p.cvT.levelParams p.nP cA.2
           p.resSort (structProjGuards cA.1.type p.nP cA.2 sorts) 1 cA.1 env else pure env)
       (if p.nIdx == 0 then checkStructProjTable (p.cvT.name.map f) (cA.1.name.map f)

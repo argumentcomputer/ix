@@ -837,9 +837,8 @@ def fiberAliasAt (ixe : Ixon.Env) (roles : Std.HashMap Address Ix.Kernel.Role) :
 /-- **Every published role name sits at an address the table binds to its
 role**, by ingress name (the names `sourceAddrs` recomputes, never a stored
 `Ix.Name` hash). This is what the statements' decided `PublishedRolesBound`
-checks, over every published name (`tableBound_of`, with a well-formed table);
-B5a's `RolesBound` does not give it: it reads names by their stored hashes and
-covers only the roles the input declares. -/
+checks, over every published name (`Ix.Cert.tableBound_of`, with a well-formed
+table); no check that reads names by their stored hashes could give it. -/
 def TableBound (ixe : Ixon.Env) (roles : Std.HashMap Address Ix.Kernel.Role) : Prop :=
   ∀ x r a, (sourceAddrs ixe)[x]? = some a → roleOf x = some r → roles[a]? = some r
 

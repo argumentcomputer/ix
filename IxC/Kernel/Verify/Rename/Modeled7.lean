@@ -16,9 +16,12 @@ simulated by the lemmas of `Modeled4`–`Modeled6`.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 /-- A tag filter (a predicate given at every mode that the renaming does not
@@ -74,10 +77,10 @@ theorem map_eq_ctor_singleton {Cs : List (ConstantInfo md)} {cvC' : ConstantVal 
   · simp at h
 
 /-- **The modeled route at a renamed block.** -/
-theorem checkModeled_sim (mode : CheckMode) (hops : OpsSim P f ops ops') {env : Env md}
-    {env' : Env md'} (hE : EnvRel P f env env') {block : List (ConstantInfo md)}
+theorem checkModeled_sim (mode : CheckMode) (hops : OpsSim P f L ops ops') {env : Env md}
+    {env' : Env md'} (hE : EnvRelG P f L env env') {block : List (ConstantInfo md)}
     (hb : ∀ c ∈ block, c.Good P) :
-    SimR (EnvRel P f) (checkModeled mode ops env block)
+    SimR (EnvRelG P f L) (checkModeled mode ops env block)
       (checkModeled mode ops' env' (block.map (ConstantInfo.mapKeys f))) := by
   have hf := hE.inj
   unfold checkModeled
@@ -118,7 +121,7 @@ theorem checkModeled_sim (mode : CheckMode) (hops : OpsSim P f ops ops') {env : 
     refine SimR.bindE (G := IndCaps.Good P) (m := IndCaps.mapKeys f)
       (SimE.pure' (indBlockCaps_good mode env hC nP nF) (indBlockCaps_map mode hE hT hC nP nF))
       (fun caps hcaps => ?_)
-    have hstep := fun (a : Env md) (a' : Env md') (b : ConstantInfo md) (ha : EnvRel P f a a')
+    have hstep := fun (a : Env md) (a' : Env md') (b : ConstantInfo md) (ha : EnvRelG P f L a a')
       (hb' : b.Good P) => checkIndMember_sim (ops := ops) (ops' := ops') hops hbn hcaps ha hb'
     have hfold := SimR.foldlM_map hstep _ hN hE
     refine SimR.bind hfold (fun env₂ env₂' hE₂ => ?_)
@@ -145,7 +148,7 @@ theorem checkModeled_sim (mode : CheckMode) (hops : OpsSim P f ops ops') {env : 
       obtain ⟨cvC, nP, nF, rfl⟩ := map_eq_ctor_singleton hC'
       exact (hne _ _ _ _ _ rfl rfl).elim
     · simp only [blockNames_map]
-      have hstep := fun (a : Env md) (a' : Env md') (b : ConstantInfo md) (ha : EnvRel P f a a')
+      have hstep := fun (a : Env md) (a' : Env md') (b : ConstantInfo md) (ha : EnvRelG P f L a a')
         (hb' : b.Good P) => checkIndMember_sim (ops := ops) (ops' := ops') (caps := {}) hops hbn
           (by intro k hk; cases hk) ha hb'
       have hfold := SimR.foldlM_map hstep _ hN hE

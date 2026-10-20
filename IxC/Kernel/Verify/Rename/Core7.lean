@@ -17,9 +17,12 @@ entry points and the declaration checker's operation record
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
 
@@ -31,7 +34,7 @@ theorem isPropType_sim (hr : CoreSim P f r r') (d : Nat) {ty : Expr md} (hty : t
   refine SimE.bind (ensureSort_sim (env := env) (env' := env') hr d ht) (fun s _ => ?_)
   exact SimE.liftFueled _ _
 
-theorem annotPwPi_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem annotPwPi_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {body : Expr md} (hb : body.Good P) :
     SimV (annotPwPi r env d body) (annotPwPi r' env' d (body.mapKeys f)) := by
   unfold annotPwPi
@@ -43,7 +46,7 @@ theorem annotPwPi_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Na
     refine SimE.bind (ensureSort_sim (env := env) (env' := env') hr d ht) (fun v _ => ?_)
     exact SimV.pureT _
 
-theorem annotPwLam_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem annotPwLam_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {body : Expr md} (hb : body.Good P) :
     SimV (annotPwLam r env d body) (annotPwLam r' env' d (body.mapKeys f)) := by
   unfold annotPwLam
@@ -56,7 +59,7 @@ theorem annotPwLam_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : N
     refine SimE.bind (ensureSort_sim (env := env) (env' := env') hr d ht) (fun v _ => ?_)
     exact SimV.pureT _
 
-theorem annotateBody_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem annotateBody_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {e : Expr md} (he : e.Good P) :
     SimX P f (annotateBody r env d e) (annotateBody r' env' d (e.mapKeys f)) := by
   cases e with
@@ -136,7 +139,7 @@ theorem annotateBody_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d :
 
 /-- **The core records at every fuel**, over related environments, are
 related. -/
-theorem coreKnot_sim (mode : CheckMode) (hE : EnvRel P f env env') :
+theorem coreKnot_sim (mode : CheckMode) (hE : EnvRelG P f L env env') :
     ∀ F, CoreSim P f (coreKnot mode env id F) (coreKnot mode env' id F)
   | 0 => CoreSim.zero mode env env'
   | F + 1 =>
@@ -155,18 +158,19 @@ theorem coreKnot_sim (mode : CheckMode) (hE : EnvRel P f env env') :
 /-- **Two operation records of the declaration checker, one the renaming of
 the other**: at related environments, every entry's success is the renamed
 entry's; `orElse` runs related attempts and fallbacks. -/
-structure OpsSim (P : md.Id → Prop) (f : md.Id → md'.Id) (ops : (CheckerOps md) (CheckM md))
+structure OpsSim (P : md.Id → Prop) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
+    (ops : (CheckerOps md) (CheckM md))
     (ops' : (CheckerOps md') (CheckM md')) : Prop where
-  annotate : ∀ {env : Env md} {env' : Env md'}, EnvRel P f env env' → ∀ d (e : Expr md), e.Good P →
+  annotate : ∀ {env : Env md} {env' : Env md'}, EnvRelG P f L env env' → ∀ d (e : Expr md), e.Good P →
     SimX P f (ops.annotate env d e) (ops'.annotate env' d (e.mapKeys f))
-  inferType : ∀ {env : Env md} {env' : Env md'}, EnvRel P f env env' → ∀ d (e : Expr md),
+  inferType : ∀ {env : Env md} {env' : Env md'}, EnvRelG P f L env env' → ∀ d (e : Expr md),
     e.Good P → SimX P f (ops.inferType env d e) (ops'.inferType env' d (e.mapKeys f))
-  isDefEq : ∀ {env : Env md} {env' : Env md'}, EnvRel P f env env' → ∀ d (a b : Expr md),
+  isDefEq : ∀ {env : Env md} {env' : Env md'}, EnvRelG P f L env env' → ∀ d (a b : Expr md),
     a.Good P → b.Good P →
       SimV (ops.isDefEq env d a b) (ops'.isDefEq env' d (a.mapKeys f) (b.mapKeys f))
-  ensureSort : ∀ {env : Env md} {env' : Env md'}, EnvRel P f env env' → ∀ d (e : Expr md),
+  ensureSort : ∀ {env : Env md} {env' : Env md'}, EnvRelG P f L env env' → ∀ d (e : Expr md),
     e.Good P → SimV (ops.ensureSort env d e) (ops'.ensureSort env' d (e.mapKeys f))
-  whnf : ∀ {env : Env md} {env' : Env md'}, EnvRel P f env env' → ∀ d (e : Expr md), e.Good P →
+  whnf : ∀ {env : Env md} {env' : Env md'}, EnvRelG P f L env env' → ∀ d (e : Expr md), e.Good P →
     SimX P f (ops.whnf env d e) (ops'.whnf env' d (e.mapKeys f))
   orElse : ∀ (x : CheckM md Bool) (x' : CheckM md' Bool)
     (k : Option (CheckError md) → CheckM md Unit) (k' : Option (CheckError md') → CheckM md' Unit),
@@ -175,7 +179,7 @@ structure OpsSim (P : md.Id → Prop) (f : md.Id → md'.Id) (ops : (CheckerOps 
 /-- **The pure operation record at any fuel** is related to itself across
 the renaming. -/
 theorem fueledOps_sim (mode : CheckMode) (F : Nat) :
-    OpsSim P f (fueledOps mode F) (fueledOps mode F) where
+    OpsSim P f L (fueledOps mode F) (fueledOps mode F) where
   annotate hE d _ he := (coreKnot_sim mode hE F).annotate d _ he
   inferType hE d _ he := (coreKnot_sim mode hE F).infer d _ he
   isDefEq hE d _ _ ha hb := (coreKnot_sim mode hE F).defeq d _ _ ha hb

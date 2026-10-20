@@ -13,7 +13,7 @@ environment is not a function of the original's alone (it extends the renamed
 starting environment), so the declaration-level walk is relational:
 `SimR R x x'` says every success of `x` is matched by a success of `x'`
 related by `R`. The environments are related by `EnvRel`, which a push of a
-good constant (and its renaming) preserves (`EnvRel.push`).
+good constant (and its renaming) preserves (`EnvRelG.push`).
 
 Then the telescope views' goodness, the evidence the fold receives at renamed
 keys, and the helpers of `IxC/Kernel/CheckerBase.lean` at renamed arguments,
@@ -23,9 +23,12 @@ is, `fueledOps_sim`).
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-! ## Relational success simulation -/
 
@@ -103,15 +106,27 @@ end SimR
 
 /-- **A push of a good constant** (and of its renaming) keeps two related
 environments related. -/
+theorem EnvRelG.push {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
+    {c : ConstantInfo md} (hc : c.Good P) :
+    EnvRelG P f L ⟨c :: env.consts⟩ ⟨c.mapKeys f :: env'.consts⟩ where
+  inj := hE.inj
+  find k hk := by
+    have h := hE.find k hk
+    simp only [Env.find?] at h ⊢
+    simp only [List.find?_cons, ConstantInfo.mapKeys_name, Key.map_beq hE.inj hc.name hk]
+    cases (c.name == k) <;> simp [h]
+  good k d hk hd := by
+    simp only [Env.find?, List.find?_cons] at hd
+    cases hck : (c.name == k)
+    · rw [hck] at hd; exact hE.good k d hk hd
+    · rw [hck] at hd; cases hd; exact hc
+  link := LinkPush.push hE.link hc
+
+/-- `EnvRelG.push` at the literal relation. -/
 theorem EnvRel.push {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
     {c : ConstantInfo md} (hc : c.Good P) :
-    EnvRel P f ⟨c :: env.consts⟩ ⟨c.mapKeys f :: env'.consts⟩ where
-  inj := hE.inj
-  all d hd := by
-    rcases List.mem_cons.mp hd with rfl | hd
-    · exact hc
-    · exact hE.all d hd
-  eq := by rw [hE.eq]; rfl
+    EnvRel P f ⟨c :: env.consts⟩ ⟨c.mapKeys f :: env'.consts⟩ :=
+  (hE.toG.push hc).toLit
 
 /-! ## Telescope views of good terms -/
 
@@ -344,8 +359,8 @@ section Helpers
 
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
-theorem checkConstantVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {cv : ConstantVal md} (hcv : cv.Good P) :
+theorem checkConstantVal_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {cv : ConstantVal md} (hcv : cv.Good P) :
     SimE (ConstantVal.Good P) (ConstantVal.mapKeys f) (checkConstantVal ops env cv)
       (checkConstantVal ops' env' (cv.mapKeys f)) := by
   unfold checkConstantVal
@@ -387,8 +402,8 @@ theorem domsMatchAux_ren {g : Nat → Expr md → Expr md} {g' : Nat → Expr md
       simp only [Option.map_some]
       rw [← hg i b₂.1 g₂, Expr.mapKeys_beq hf g₁ (hgg i _ g₂)]
 
-theorem checkTypedList_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') (d : Nat) :
+theorem checkTypedList_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') (d : Nat) :
     ∀ (as ts : List (Expr md)), Expr.GoodList P as → Expr.GoodList P ts →
       SimV (checkTypedList ops env d as ts)
         (checkTypedList ops' env' d (as.map (Expr.mapKeys f)) (ts.map (Expr.mapKeys f)))
@@ -403,8 +418,8 @@ theorem checkTypedList_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : E
     refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
     exact checkTypedList_sim hops hE d as ts has.2 hts.2
 
-theorem checkAnnotList_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') (d : Nat) :
+theorem checkAnnotList_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') (d : Nat) :
     ∀ (as : List (Expr md)), Expr.GoodList P as →
       SimV (checkAnnotList ops env d as) (checkAnnotList ops' env' d (as.map (Expr.mapKeys f)))
   | [], _ => SimV.pureT ()
@@ -416,8 +431,8 @@ theorem checkAnnotList_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : E
       (fun _ => SimE.throw_bind)
     exact checkAnnotList_sim hops hE d as has.2
 
-theorem checkDefEqList_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') (d : Nat) :
+theorem checkDefEqList_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') (d : Nat) :
     ∀ (as bs : List (Expr md)), Expr.GoodList P as → Expr.GoodList P bs →
       SimV (checkDefEqList ops env d as bs)
         (checkDefEqList ops' env' d (as.map (Expr.mapKeys f)) (bs.map (Expr.mapKeys f)))
@@ -466,8 +481,8 @@ theorem Expr.GoodList.map_fvarTypeD {as : List (Expr md)} (h : Expr.GoodList P a
     simp only [Expr.goodList_cons] at h
     simp [h.1.fvarTypeD, ih h.2]
 
-theorem checkProjRule_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {pty : Expr md} (hp : pty.Good P) {cvj : ConstantVal md}
+theorem checkProjRule_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {pty : Expr md} (hp : pty.Good P) {cvj : ConstantVal md}
     (hcv : cvj.Good P) (lps : List LevelParam) (nP nF i : Nat) :
     SimX P f (checkProjRule ops env pty cvj lps nP nF i)
       (checkProjRule ops' env' (pty.mapKeys f) (cvj.mapKeys f) lps nP nF i) := by

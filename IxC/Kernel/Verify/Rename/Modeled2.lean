@@ -14,9 +14,12 @@ the input renaming on good keys.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 theorem mapKeys_const_beq (hf : InjOn f P) {e : Expr md} (he : e.Good P) {k : Key md}
@@ -29,9 +32,9 @@ theorem map_append_mapKeys (as bs : List (Expr md)) :
   simp
 
 /-- **The canonical rule's `iota_j` check at a renamed rule.** -/
-theorem checkIotaThm_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
-    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRel P f env₁ env₁')
-    (hES : EnvRel P f envS envS') {ρ : Key md → Key md} {ρ' : Key md' → Key md'}
+theorem checkIotaThm_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
+    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRelG P f L env₁ env₁')
+    (hES : EnvRelG P f L envS envS') {ρ : Key md → Key md} {ρ' : Key md' → Key md'}
     (hρ : ∀ k : Key md, k.Good P → (ρ k).map f = ρ' (k.map f))
     (hρg : ∀ k : Key md, k.Good P → (ρ k).Good P)
     {cvName : Key md} (hn : cvName.Good P) (lps : List LevelParam) {tyA : Expr md}

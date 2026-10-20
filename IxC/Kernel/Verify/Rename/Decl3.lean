@@ -16,9 +16,12 @@ related environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-! ## The sets of the walks -/
 
@@ -238,7 +241,7 @@ theorem ConstantInfo.refExprs_good {c : ConstantInfo md} (hc : c.Good P) :
     simp only [ConstantInfo.refExprs, Array.mem_toList_iff] at he
     exact hc.2.2 e he
 
-theorem refClosureGo_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env') :
+theorem refClosureGo_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') :
     ∀ (n : Nat) (todo : List (Key md)) {seen : Std.HashSet (Key md)}
       {seen' : Std.HashSet (Key md')}, (∀ k ∈ todo, k.Good P) → KeySetRel P f seen seen' →
       KeySetRel P f (refClosureGo env.find? n todo seen)
@@ -289,7 +292,7 @@ theorem evidenceDepKeys_good (c : Key md) : ∀ k ∈ evidenceDepKeys c, k.Good 
 
 /-- **The evidence closure condition answers alike** at renamed inputs over
 related environments. -/
-theorem evidenceLocal_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem evidenceLocal_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {c : Key md} (hc : c.Good P) {annVal : Expr md} (ha : annVal.Good P)
     {proofs : List (Expr md)} (hps : Expr.GoodList P proofs) :
     evidenceLocal env'.find? (c.map f) (annVal.mapKeys f) (proofs.map (Expr.mapKeys f)) =

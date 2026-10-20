@@ -15,9 +15,12 @@ constructors' conses, the stored rules (`sumRules`) and the projection table
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 /-! ## Lists of terms -/
@@ -32,8 +35,8 @@ theorem list_beq_mapKeys (hf : InjOn f P) {as bs : List (Expr md)} (ha : Expr.Go
 /-! ## Official's positivity walk -/
 
 /-- The positivity normalisation at a renamed domain. -/
-theorem normPosDom_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P) :
+theorem normPosDom_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P) :
     ∀ (d fuel : Nat) {e : Expr md}, e.Good P →
       SimX P f (normPosDom ops env T d fuel e) (normPosDom ops' env' (T.map f) d fuel (e.mapKeys f))
   | _, 0, _, _ => SimE.throw'
@@ -56,8 +59,8 @@ theorem normPosDom_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env m
     | _ => exact SimE.pure' hw rfl
 
 /-- The fields' normalisation at a renamed telescope. -/
-theorem normFieldDoms_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P) :
+theorem normFieldDoms_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P) :
     ∀ (i n : Nat) {e : Expr md}, e.Good P →
       SimE (fun r : List (Expr md × BinderMeta) × Expr md => Expr.BindersGood P r.1 ∧ r.2.Good P)
         (Expr.mapTele f)
@@ -119,8 +122,8 @@ theorem Expr.mapBinders_append (as bs : List (Expr md × BinderMeta)) :
   simp [Expr.mapBinders]
 
 /-- The constructor with its field domains normalised, at a renamed constructor. -/
-theorem normCtorVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P) (nP nF : Nat)
+theorem normCtorVal_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P) (nP nF : Nat)
     {cvC cvCa : ConstantVal md} (hC : cvC.Good P) (hCa : cvCa.Good P) :
     SimE (ConstantVal.Good P) (ConstantVal.mapKeys f) (normCtorVal ops env T nP nF cvC cvCa)
       (normCtorVal ops' env' (T.map f) nP nF (cvC.mapKeys f) (cvCa.mapKeys f)) := by
@@ -154,8 +157,8 @@ theorem normCtorVal_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env 
 
 /-- **One constructor's stage at a renamed constructor**: over the related
 pre-block environments and the related environments holding the former. -/
-theorem checkSumCtor_sim (hops : OpsSim P f ops ops') {env₀ env : Env md} {env₀' env' : Env md'}
-    (hE₀ : EnvRel P f env₀ env₀') (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P)
+theorem checkSumCtor_sim (hops : OpsSim P f L ops ops') {env₀ env : Env md} {env₀' env' : Env md'}
+    (hE₀ : EnvRelG P f L env₀ env₀') (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P)
     (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     {cvC : ConstantVal md} (hC : cvC.Good P) (nF : Nat) {cvTa : ConstantVal md}
     (hTa : cvTa.Good P) :
@@ -217,8 +220,8 @@ theorem checkSumCtor_sim (hops : OpsSim P f ops ops') {env₀ env : Env md} {env
   exact SimE.pure' hCa rfl
 
 /-- All constructors' stages at renamed constructors. -/
-theorem checkSumCtors_sim (hops : OpsSim P f ops ops') {env₀ env : Env md} {env₀' env' : Env md'}
-    (hE₀ : EnvRel P f env₀ env₀') (hE : EnvRel P f env env') {T : Key md} (hT : T.Good P)
+theorem checkSumCtors_sim (hops : OpsSim P f L ops ops') {env₀ env : Env md} {env₀' env' : Env md'}
+    (hE₀ : EnvRelG P f L env₀ env₀') (hE : EnvRelG P f L env env') {T : Key md} (hT : T.Good P)
     (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     {cvTa : ConstantVal md} (hTa : cvTa.Good P) :
     ∀ (cs : List (ConstantVal md × Nat)), (∀ c ∈ cs, c.1.Good P) →
@@ -246,8 +249,8 @@ theorem checkSumCtors_sim (hops : OpsSim P f ops ops') {env₀ env : Env md} {en
 /-- The constructors' conses keep related environments related. -/
 theorem consSumCtors_rel (nP : Nat) :
     ∀ (cs : List (ConstantVal md × Nat)), (∀ c ∈ cs, c.1.Good P) →
-      ∀ {env : Env md} {env' : Env md'}, EnvRel P f env env' →
-        EnvRel P f (consSumCtors nP cs env)
+      ∀ {env : Env md} {env' : Env md'}, EnvRelG P f L env env' →
+        EnvRelG P f L (consSumCtors nP cs env)
           (consSumCtors nP (cs.map fun c => (c.1.mapKeys f, c.2)) env')
   | [], _, _, _, hE => hE
   | c :: cs, hcs, env, env', hE => by
@@ -257,7 +260,7 @@ theorem consSumCtors_rel (nP : Nat) :
 
 /-! ## The stored rules -/
 
-theorem sumRules_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env') {recName : Key md}
+theorem sumRules_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') {recName : Key md}
     (hrn : recName.Good P) (nP mI rP : Nat) (recTy : Expr md) :
     ∀ (cs : List (ConstantVal md × Nat)) (rhss : List (Expr md)), (∀ c ∈ cs, c.1.Good P) →
       Expr.GoodList P rhss →

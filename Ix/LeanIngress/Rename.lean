@@ -355,7 +355,8 @@ theorem prepareSourceCollapsed_good (hroles : FibersRoleFree ixe)
 The same results with the role read off the table (`fiberAliasAt ixe roles`,
 `roles` the table's inverse `roleAtMap t`): injectivity needs only that every
 published role name sits at its role's bound address (`TableBound`), which a
-well-formed table gives together with B5a's `RolesBound` (`roleAtMap_spec`). -/
+well-formed table gives together with the statements' decided
+`PublishedRolesBound` (`Ix.Cert.tableBound_of`, through `roleAtMap_spec`). -/
 
 section TableRule
 

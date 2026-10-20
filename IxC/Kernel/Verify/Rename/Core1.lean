@@ -16,9 +16,12 @@ renamed argument, over related core records (`CoreSim`) and environments
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
 
@@ -41,7 +44,7 @@ theorem SimV.pureT {α : Type} (a : α) : SimV (pure a : CheckM md α) (pure a :
 
 /-! ## Readers -/
 
-theorem isUnitLikeTy_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) :
+theorem isUnitLikeTy_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
     isUnitLikeTy env' (e.mapKeys f) = isUnitLikeTy env e := by
   cases e with
   | const c us =>
@@ -85,7 +88,7 @@ theorem natOpResult_good (c : Key md) (a b : Nat) : ∀ e ∈ natOpResult c a b,
 
 /-! ## Literal acceleration -/
 
-theorem reduceNat_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem reduceNat_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {e : Expr md} (he : e.Good P) :
     SimO P f (reduceNat r env d e) (reduceNat r' env' d (e.mapKeys f)) := by
   unfold reduceNat
@@ -194,7 +197,7 @@ theorem iotaIndexOk_sim (hr : CoreSim P f r r') (d mI rP cnP : Nat) {tyCtor : Ex
 
 /-! ## Proof irrelevance -/
 
-theorem proofIrrel_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem proofIrrel_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {a b : Expr md} (ha : a.Good P) (hb : b.Good P) :
     SimV (proofIrrel r env d a b) (proofIrrel r' env' d (a.mapKeys f) (b.mapKeys f)) := by
   unfold proofIrrel
@@ -221,7 +224,7 @@ theorem proofIrrel_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : N
       | _ => exact SimV.pureT false
     | _ => exact SimV.pureT false
 
-theorem propIrrel_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem propIrrel_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {a b : Expr md} (ha : a.Good P) (hb : b.Good P) :
     SimV (propIrrel r env d a b) (propIrrel r' env' d (a.mapKeys f) (b.mapKeys f)) := by
   unfold propIrrel

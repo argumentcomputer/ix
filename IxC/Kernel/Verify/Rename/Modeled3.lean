@@ -14,9 +14,12 @@ at a renamed recursor over related environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 theorem map_lowerBVars_mapKeys (l : List (Expr md)) (n c : Nat) :
@@ -44,7 +47,7 @@ theorem Expr.GoodList.map_liftLooseBVars {l : List (Expr md)} (h : Expr.GoodList
   exact (h y hy).liftLooseBVars n c
 
 /-- The guard on a nested rule's stored instantiations, at renamed pins. -/
-theorem pins_all_map {envS : Env md} {envS' : Env md'} (hES : EnvRel P f envS envS')
+theorem pins_all_map {envS : Env md} {envS' : Env md'} (hES : EnvRelG P f L envS envS')
     {pins : List (Expr md)} (hp : Expr.GoodList P pins) (rP : Nat) (lps : List LevelParam) :
     (pins.map (Expr.mapKeys f)).all (fun p => !p.hasFvar && p.looseBVarsBounded rP &&
         p.constsResolve envS' && p.allLevelParamsDefined lps) =
@@ -57,7 +60,7 @@ theorem pins_all_map {envS : Env md} {envS' : Env md'} (hES : EnvRel P f envS en
 
 /-- **A nested rule's shape at a renamed recursor**: the renamed shape. -/
 theorem nestedRuleShape_map {env₁ envS : Env md} {env₁' envS' : Env md'}
-    (hE₁ : EnvRel P f env₁ env₁') (hES : EnvRel P f envS envS') {cvName : Key md}
+    (hE₁ : EnvRelG P f L env₁ env₁') (hES : EnvRelG P f L envS envS') {cvName : Key md}
     (hn : cvName.Good P) (lps : List LevelParam) {tyA : Expr md} (hty : tyA.Good P)
     (mI rP cnP j : Nat) :
     nestedRuleShape env₁' envS' (cvName.map f) lps (tyA.mapKeys f) mI rP cnP j =
@@ -135,9 +138,9 @@ theorem map_instSpine_mapKeys (as : List (Expr md)) (t : Nat) (pins : List (Expr
   simp [List.map_map, Function.comp_def, Expr.mapKeys_instSpine]
 
 /-- **The nested rule's `iota_j` check at a renamed rule.** -/
-theorem checkIotaThmN_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
-    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRel P f env₁ env₁')
-    (hES : EnvRel P f envS envS') {ρ : Key md → Key md} {ρ' : Key md' → Key md'}
+theorem checkIotaThmN_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
+    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRelG P f L env₁ env₁')
+    (hES : EnvRelG P f L envS envS') {ρ : Key md → Key md} {ρ' : Key md' → Key md'}
     (hρ : ∀ k : Key md, k.Good P → (ρ k).map f = ρ' (k.map f))
     (hρg : ∀ k : Key md, k.Good P → (ρ k).Good P)
     {cvName : Key md} (hn : cvName.Good P) (lps : List LevelParam) {tyA : Expr md}

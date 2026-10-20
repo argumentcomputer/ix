@@ -18,19 +18,22 @@ equality-head tests, and the canonical rule's `iota_j` check (`checkIotaThm`).
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 /-! ## Lookups and small tests -/
 
-theorem EnvRel.findCV? {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {k : Key md}
+theorem EnvRelG.findCV? {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {k : Key md}
     (hk : k.Good P) : env'.findCV? (k.map f) = (env.findCV? k).map (ConstantVal.mapKeys f) := by
   simp only [Env.findCV?, h.find k hk]
   cases env.find? k <;> simp
 
-theorem EnvRel.findCV?_good {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {k : Key md}
+theorem EnvRelG.findCV?_good {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {k : Key md}
     (hk : k.Good P) {cv : ConstantVal md} (hcv : env.findCV? k = some cv) : cv.Good P := by
   simp only [Env.findCV?, Option.map_eq_some_iff] at hcv
   obtain ⟨c, hc, rfl⟩ := hcv
@@ -112,8 +115,8 @@ theorem modelRen_good {blockNames : List (Key md)} :
 
 /-! ## The iota theorems -/
 
-theorem checkIotaSidesTy_sim (mode : CheckMode) (hops : OpsSim P f ops ops') {envS : Env md}
-    {envS' : Env md'} (hE : EnvRel P f envS envS') (depth : Nat) {alphaS lhsS rhsS : Expr md}
+theorem checkIotaSidesTy_sim (mode : CheckMode) (hops : OpsSim P f L ops ops') {envS : Env md}
+    {envS' : Env md'} (hE : EnvRelG P f L envS envS') (depth : Nat) {alphaS lhsS rhsS : Expr md}
     (ha : alphaS.Good P) (hl : lhsS.Good P) (hr : rhsS.Good P) (ℓA : Level) (cvName : Key md) :
     SimV (checkIotaSidesTy mode ops envS depth alphaS lhsS rhsS ℓA cvName)
       (checkIotaSidesTy mode ops' envS' depth (alphaS.mapKeys f) (lhsS.mapKeys f) (rhsS.mapKeys f) ℓA

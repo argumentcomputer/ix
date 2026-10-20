@@ -16,9 +16,12 @@ blocks, the parameter count and both routes, quotient records) is simulated.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 /-! ## The routes' recognisers -/
@@ -106,7 +109,7 @@ theorem quotSoundPin_ren (hf : InjOn f P) {cv : ConstantVal md} (hcv : cv.Good P
   rw [hg, show (ConstantInfo.axiomInfo (cv.mapKeys f)) = (ConstantInfo.axiomInfo cv).mapKeys f
     from rfl, ConstantInfo.canonEq_ren hf (a := .axiomInfo cv) hcv hpin]
 
-theorem natOpEnv_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env') (k : Key md) :
+theorem natOpEnv_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') (k : Key md) :
     (natOpGuard env' (k.map f) && (natOpDeps (k.map f)).all (natOpStoredOk env')) =
       (natOpGuard env k && (natOpDeps k).all (natOpStoredOk env)) := by
   rw [natOpGuard_ren hE k, natOpDeps_map, List.all_map]
@@ -141,10 +144,10 @@ theorem natOpEqsSubst_good {k : Key md} {value' : Expr md} (hv : value'.Good P) 
 /-! ## One declaration -/
 
 /-- **One declaration at its renaming.** -/
-theorem checkDecl_sim (mode : CheckMode) (hops : OpsSim P f ops ops') {ev : Evidences md}
-    (hev : ev.Good P) {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem checkDecl_sim (mode : CheckMode) (hops : OpsSim P f L ops ops') {ev : Evidences md}
+    (hev : ev.Good P) {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {d : Declaration md} (hd : d.Good P) :
-    SimR (EnvRel P f) (checkDecl mode ops ev env d)
+    SimR (EnvRelG P f L) (checkDecl mode ops ev env d)
       (checkDecl mode ops' (ev.mapKeys f) env' (d.mapKeys f)) := by
   have hf := hE.inj
   cases d with
@@ -154,7 +157,7 @@ theorem checkDecl_sim (mode : CheckMode) (hops : OpsSim P f ops ops') {ev : Evid
     refine SimR.bindE (checkConstantVal_sim hops hE hcv) (fun cvA hcvA => ?_)
     refine SimR.bind (checkDefnVal_sim hops hE hcvA hv hint) (fun env2 env2' hE2 => ?_)
     simp only [ConstantVal.mapKeys_name, natOpNames_contains_map, natDivModNames_contains_map]
-    have htail := SimR.ite (R := EnvRel P f) (c := natDivModNames.contains cvA.name = true)
+    have htail := SimR.ite (R := EnvRelG P f L) (c := natDivModNames.contains cvA.name = true)
       Iff.rfl
       (fun _ => SimR.bindE (k := fun _ => pure env2) (k' := fun _ => pure env2')
         (checkDivModEvidence_sim hops hE hE2 hev hcvA.1)

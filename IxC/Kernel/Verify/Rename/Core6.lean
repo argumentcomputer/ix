@@ -17,9 +17,12 @@ answering alike.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
 
@@ -29,7 +32,7 @@ theorem boolTrueShortcut_sim (hr : CoreSim P f r r') (d : Nat) {a : Expr md} (ha
   refine SimE.bind (hr.whnf d a ha) (fun w _ => ?_)
   exact SimE.pure' trivial (by simp)
 
-theorem defeqSpine_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem defeqSpine_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {a b : Expr md} (ha : a.Good P) (hb : b.Good P) :
     SimV (defeqSpine r env d a b) (defeqSpine r' env' d (a.mapKeys f) (b.mapKeys f)) := by
   unfold defeqSpine
@@ -56,7 +59,7 @@ theorem defeqSpine_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : N
     | _ => exact SimV.pureT false
   | _ => exact SimV.pureT false
 
-theorem defeqStep_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem defeqStep_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) {k : Bool → Expr md → Expr md → CheckM md Bool}
     {k' : Bool → Expr md' → Expr md' → CheckM md' Bool}
     (hk : ∀ pi (a b : Expr md), a.Good P → b.Good P → SimV (k pi a b) (k' pi (a.mapKeys f) (b.mapKeys f)))
@@ -215,7 +218,7 @@ theorem defeqStep_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSi
     refine SimE.bind (defeqSpine_sim hE hr d ha' hb') (fun ok _ => ?_)
     exact SimE.ite Iff.rfl (fun _ => SimV.pureT true) (fun _ => hboth)
 
-theorem defeqLoop_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem defeqLoop_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) :
     ∀ (n : Nat) (pi : Bool) {a b : Expr md}, a.Good P → b.Good P →
       SimV (defeqLoop mode r env d n pi a b)
@@ -226,7 +229,7 @@ theorem defeqLoop_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSi
     exact defeqStep_sim mode hE hr d
       (fun pi _ _ ha hb => defeqLoop_sim mode hE hr d n pi ha hb) pi ha hb
 
-theorem defeqBody_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem defeqBody_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) {a b : Expr md} (ha : a.Good P) (hb : b.Good P) :
     SimV (defeqBody mode r env d a b) (defeqBody mode r' env' d (a.mapKeys f) (b.mapKeys f)) :=
   defeqLoop_sim mode hE hr d _ true ha hb

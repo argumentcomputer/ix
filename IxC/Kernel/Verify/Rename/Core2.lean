@@ -15,9 +15,12 @@ over related core records and environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
 
@@ -51,7 +54,7 @@ theorem defEqList_sim' (hr : CoreSim P f r r') (d : Nat) {as bs : List (Expr md)
 
 /-! ## Structure η -/
 
-theorem structEtaProjCerts_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem structEtaProjCerts_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {T : Key md} (hT : T.Good P) (us' : List Level) {targs : List (Expr md)}
     (ht : Expr.GoodList P targs) {b : Expr md} (hb : b.Good P) (lpsT : List LevelParam) :
     ∀ is : List Nat,
@@ -80,7 +83,7 @@ theorem structEtaProjCerts_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r'
           (fun _ => SimV.pureT false)
       | _ => exact SimV.pureT false
 
-theorem structEtaCertWith_sim (mode : CheckMode) (hE : EnvRel P f env env')
+theorem structEtaCertWith_sim (mode : CheckMode) (hE : EnvRelG P f L env env')
     (hr : CoreSim P f r r') (d : Nat) {a b wtb : Expr md} (ha : a.Good P) (hb : b.Good P)
     (hw : wtb.Good P) :
     SimV (structEtaCertWith mode r env d a b wtb)
@@ -148,7 +151,7 @@ theorem structEtaCertWith_sim (mode : CheckMode) (hE : EnvRel P f env env')
       | _ => exact SimV.pureT false
   | _ => exact SimV.pureT false
 
-theorem structEtaCert_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem structEtaCert_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) {a b : Expr md} (ha : a.Good P) (hb : b.Good P) :
     SimV (structEtaCert mode r env d a b)
       (structEtaCert mode r' env' d (a.mapKeys f) (b.mapKeys f)) := by
@@ -159,7 +162,7 @@ theorem structEtaCert_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : Co
   refine SimE.bind (hr.whnf d tb htb) (fun wtb hwtb => ?_)
   exact structEtaCertWith_sim mode hE hr d ha hb hwtb
 
-theorem structUnitCert_sim (hE : EnvRel P f env env') (hr : CoreSim P f r r') (d : Nat)
+theorem structUnitCert_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {a b : Expr md} (ha : a.Good P) (hb : b.Good P) :
     SimV (structUnitCert r env d a b) (structUnitCert r' env' d (a.mapKeys f) (b.mapKeys f)) := by
   unfold structUnitCert
@@ -215,7 +218,7 @@ theorem etaCert_sim (mode : CheckMode) (hr : CoreSim P f r r') (d : Nat)
     · exact SimV.pureT false
   | _ => exact SimV.pureT false
 
-theorem stuckIrrel_sim (mode : CheckMode) (hE : EnvRel P f env env') (hr : CoreSim P f r r')
+theorem stuckIrrel_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     (d : Nat) {a b : Expr md} (ha : a.Good P) (hb : b.Good P) :
     SimV (stuckIrrel mode r env d a b)
       (stuckIrrel mode r' env' d (a.mapKeys f) (b.mapKeys f)) := by

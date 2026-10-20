@@ -15,9 +15,12 @@ environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-- The certificate statements name role keys, fvars and the operation. -/
 theorem divModCertStmts_good {c : Key md} (hc : c.Good P) :
@@ -55,7 +58,7 @@ theorem map_substConst0_ren (hf : InjOn f P) {n : Key md} (hn : n.Good P) (r : E
   intro e he
   exact substConst0_ren hf hn r (h e he)
 
-theorem divModCertGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem divModCertGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {c : Key md} (hc : c.Good P) {annVal : Expr md} (ha : annVal.Good P) {hyps : List (Expr md)}
     (hh : Expr.GoodList P hyps) {eqE proof : Expr md} (he : eqE.Good P) (hp : proof.Good P) :
     divModCertGuard env' (c.map f) (annVal.mapKeys f) (hyps.map (Expr.mapKeys f))
@@ -76,7 +79,7 @@ theorem divModCertGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env
   obtain ⟨x₀, h₀, rfl⟩ := hx
   exact constsResolve_ren hE (substConst0_good ha (hh x₀ h₀))
 
-theorem divModCertsGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem divModCertsGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {c : Key md} (hc : c.Good P) {annVal : Expr md} (ha : annVal.Good P)
     {proofs : List (Expr md)} (hps : Expr.GoodList P proofs) :
     divModCertsGuard (proofs.map (Expr.mapKeys f)) env' (c.map f) (annVal.mapKeys f) =
@@ -94,8 +97,8 @@ section Ops
 
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
-theorem checkDivModCerts_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {c : Key md} (hc : c.Good P) {annVal : Expr md}
+theorem checkDivModCerts_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {c : Key md} (hc : c.Good P) {annVal : Expr md}
     (ha : annVal.Good P) :
     ∀ (stmts : List (List (Expr md) × Expr md)) (proofs : List (Expr md)),
       (∀ p ∈ stmts, Expr.GoodList P p.1 ∧ p.2.Good P) → Expr.GoodList P proofs →
@@ -124,7 +127,7 @@ theorem checkDivModCerts_sim (hops : OpsSim P f ops ops') {env : Env md} {env' :
     refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimV.pureT false)
     exact checkDivModCerts_sim hops hE hc ha srest prest hs hp.2
 
-theorem find_beq_pin_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env') {k : Key md}
+theorem find_beq_pin_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') {k : Key md}
     (hk : k.Good P) {pin : ConstantInfo md} (hpin : pin.noIds = true) :
     (env'.find? (k.map f) == some (pin.mapKeys f)) = (env.find? k == some pin) := by
   have h := find_eq_pin_ren hE hk hpin
@@ -132,7 +135,7 @@ theorem find_beq_pin_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env en
   rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
   exact h
 
-theorem divModEnvGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem divModEnvGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     (c : Key md) :
     divModEnvGuard env' (c.map f) = divModEnvGuard env c := by
   unfold divModEnvGuard
@@ -156,8 +159,8 @@ theorem divModEnvGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env 
       simp only [Option.map_some, ConstantInfo.mapKeys_toConstantVal, ConstantVal.mapKeys_type]
       exact Expr.mapKeys_beq_const_role
 
-theorem checkDivModEvidence_sim (hops : OpsSim P f ops ops') {env env₂ : Env md}
-    {env' env₂' : Env md'} (hE : EnvRel P f env env') (hE₂ : EnvRel P f env₂ env₂')
+theorem checkDivModEvidence_sim (hops : OpsSim P f L ops ops') {env env₂ : Env md}
+    {env' env₂' : Env md'} (hE : EnvRelG P f L env env') (hE₂ : EnvRelG P f L env₂ env₂')
     {ev : Evidences md} (hev : ev.Good P) {c : Key md} (hc : c.Good P) :
     SimV (checkDivModEvidence ops ev env env₂ c)
       (checkDivModEvidence ops' (ev.mapKeys f) env' env₂' (c.map f)) := by

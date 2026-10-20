@@ -16,9 +16,12 @@ exactly when it throws on the original, and passes otherwise (`checkIndShape_sim
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-- **`constsResolveBy`, renamed**: over lookups that answer alike on good keys. -/
 theorem constsResolveBy_ren {has : Key md → Bool} {has' : Key md' → Bool}
@@ -122,7 +125,7 @@ theorem List.all_congr_mem' {α : Type} {l : List α} {p q : α → Bool} (h : �
 
 /-- **The shape guard, renamed**: it answers alike on a good block over
 related environments. -/
-theorem indShapeOk_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem indShapeOk_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {block : List (ConstantInfo md)} (hb : ∀ c ∈ block, c.Good P) :
     indShapeOk env'.find? (block.map (ConstantInfo.mapKeys f)) = indShapeOk env.find? block := by
   have hf := hE.inj
@@ -156,7 +159,7 @@ theorem indShapeOk_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env'
 
 /-- **`checkIndShape`, renamed**: a pass on a good block is a pass on the
 renamed block over related environments. -/
-theorem checkIndShape_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem checkIndShape_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {block : List (ConstantInfo md)} (hb : ∀ c ∈ block, c.Good P) :
     SimE (fun _ => True) id (checkIndShape (m := CheckM md) env.find? block)
       (checkIndShape (m := CheckM md') env'.find? (block.map (ConstantInfo.mapKeys f))) := by

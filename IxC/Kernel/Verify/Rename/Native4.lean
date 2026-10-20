@@ -16,9 +16,12 @@ run, with related environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 theorem IndCaps.mapKeys_beq (hf : InjOn f P) {a b : IndCaps md} (ha : a.Good P) (hb : b.Good P) :
@@ -39,7 +42,7 @@ theorem IndCaps.mapKeys_beq (hf : InjOn f P) {a b : IndCaps md} (ha : a.Good P) 
 
 /-! ## The recursor -/
 
-theorem checkNativeRules_sim {envR : Env md} {envR' : Env md'} (hE : EnvRel P f envR envR')
+theorem checkNativeRules_sim {envR : Env md} {envR' : Env md'} (hE : EnvRelG P f L envR envR')
     (rlps : List LevelParam) {T : Key md} (hT : T.Good P) (lps : List LevelParam)
     (elim : LevelParam) (large : Bool) (nP nIdx : Nat) {tty : Expr md} (ht : tty.Good P)
     {ctors : List (Key md × Nat × Expr md × List Nat)} (hcs : ctors4Good P ctors)
@@ -61,8 +64,8 @@ theorem checkNativeRules_sim {envR : Env md} {envR' : Env md'} (hE : EnvRel P f 
     exact SimE.pure' (by simp [hrhs, hrest]) rfl
 
 /-- **The recursor's stage at a renamed block.** -/
-theorem checkNativeRec_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {p : NativeParts md} (hp : p.Good P) {cvTa : ConstantVal md}
+theorem checkNativeRec_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {p : NativeParts md} (hp : p.Good P) {cvTa : ConstantVal md}
     (hTa : cvTa.Good P) {ctorsA : List (ConstantVal md × Nat)} (hcs : ∀ c ∈ ctorsA, c.1.Good P) :
     SimE (fun r : ConstantVal md × List (Expr md) => r.1.Good P ∧ Expr.GoodList P r.2)
       (fun r => (r.1.mapKeys f, r.2.map (Expr.mapKeys f)))
@@ -106,9 +109,10 @@ theorem checkNativeRec_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : E
 /-! ## One pass over the former and the constructors -/
 
 /-- Two passes' records, one the renaming of the other. -/
-structure NativePassRel (P : md.Id → Prop) (f : md.Id → md'.Id) (q : (NativePass md) (Env md))
+structure NativePassRel (P : md.Id → Prop) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
+    (q : (NativePass md) (Env md))
     (q' : (NativePass md') (Env md')) : Prop where
-  env : EnvRel P f q.env₁ q'.env₁
+  env : EnvRelG P f L q.env₁ q'.env₁
   cvTa : q.cvTa.Good P
   cvTa' : q'.cvTa = q.cvTa.mapKeys f
   p : q.p.Good P
@@ -117,10 +121,10 @@ structure NativePassRel (P : md.Id → Prop) (f : md.Id → md'.Id) (q : (Native
   ctors' : q'.ctorsA = q.ctorsA.map fun c => (c.1.mapKeys f, c.2)
   sortss : q'.sortss = q.sortss
 
-theorem checkNativePass_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {p₀ : NativeParts md} (hp₀ : p₀.Good P) (isRec : Bool) :
+theorem checkNativePass_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {p₀ : NativeParts md} (hp₀ : p₀.Good P) (isRec : Bool) :
     SimR (fun (r : (NativePass md) (Env md) × Bool) (r' : (NativePass md') (Env md') × Bool) =>
-        NativePassRel P f r.1 r'.1 ∧ r'.2 = r.2)
+        NativePassRel P f L r.1 r'.1 ∧ r'.2 = r.2)
       (checkNativePass ops env p₀ isRec) (checkNativePass ops' env' (p₀.mapKeys f) isRec) := by
   unfold checkNativePass
   rw [NativeParts.mapKeys_toInductiveShape]
@@ -154,10 +158,10 @@ theorem checkNativePass_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : 
 
 /-! ## The install after the pass, and the route -/
 
-theorem checkNativeTail_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {q : (NativePass md) (Env md)} {q' : (NativePass md') (Env md')}
-    (hq : NativePassRel P f q q') :
-    SimR (EnvRel P f) (checkNativeTail ops env q) (checkNativeTail ops' env' q') := by
+theorem checkNativeTail_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {q : (NativePass md) (Env md)} {q' : (NativePass md') (Env md')}
+    (hq : NativePassRel P f L q q') :
+    SimR (EnvRelG P f L) (checkNativeTail ops env q) (checkNativeTail ops' env' q') := by
   obtain ⟨env₁, cvTa, p, ctorsA, sortss⟩ := q
   obtain ⟨env₁', cvTa', p', ctorsA', sortss'⟩ := q'
   obtain ⟨hE₁, hTa, hTa', hp, hp', hcs, hcs', hss⟩ := hq
@@ -206,9 +210,9 @@ theorem checkNativeTail_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : 
   exact checkNativeTable_sim hE₃ hp hcs _
 
 /-- **The fixpoint route at a renamed block.** -/
-theorem checkNative_sim (hops : OpsSim P f ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRel P f env env') {p₀ : NativeParts md} (hp₀ : p₀.Good P) :
-    SimR (EnvRel P f) (checkNative ops env p₀) (checkNative ops' env' (p₀.mapKeys f)) := by
+theorem checkNative_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {p₀ : NativeParts md} (hp₀ : p₀.Good P) :
+    SimR (EnvRelG P f L) (checkNative ops env p₀) (checkNative ops' env' (p₀.mapKeys f)) := by
   unfold checkNative
   have hnames : ((p₀.mapKeys f).ctors.map (·.1.name)) = (p₀.ctors.map (·.1.name)).map (Key.map f) := by
     simp [NativeParts.mapKeys, InductiveShape.mapKeys, List.map_map, Function.comp_def]

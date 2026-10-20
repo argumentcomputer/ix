@@ -14,9 +14,12 @@ through `find?` and the binder data, which renaming keeps.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 
 @[simp] theorem Expr.peelNeverPis_mapKeys (n : Nat) (e : Expr md) :
@@ -54,7 +57,7 @@ theorem Expr.Good.peelNeverPis {e : Expr md} (he : e.Good P) {n : Nat} {r : Expr
     (c.mapKeys f).isTowerEntry = c.isTowerEntry := by
   cases c <;> rfl
 
-theorem headTypePW_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) (n : Nat) :
+theorem headTypePW_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) (n : Nat) :
     headTypePW env'.find? (e.mapKeys f) n = headTypePW env.find? e n := by
   cases e with
   | const I us =>
@@ -75,7 +78,7 @@ theorem typeSortPW_eq_head {find? : Key md → Option (ConstantInfo md)} {e : Ex
     typeSortPW find? e = headTypePW find? e.getAppFn e.numArgs := by
   cases e <;> first | rfl | (exact absurd rfl (h1 _ _ _)) | (exact absurd rfl (h2 _))
 
-theorem typeSortPW_ren (hE : EnvRel P f env env') {T : Expr md} (hT : T.Good P) :
+theorem typeSortPW_ren (hE : EnvRelG P f L env env') {T : Expr md} (hT : T.Good P) :
     typeSortPW env'.find? (T.mapKeys f) = typeSortPW env.find? T := by
   by_cases h1 : ∃ t b m, T = .forallE t b m
   · obtain ⟨t, b, m, rfl⟩ := h1; rfl
@@ -92,7 +95,7 @@ theorem typeSortPW_ren (hE : EnvRel P f env env') {T : Expr md} (hT : T.Good P) 
   rw [typeSortPW_eq_head h1'' h2'', typeSortPW_eq_head h1' h2', ← Expr.mapKeys_getAppFn,
     headTypePW_ren hE (Expr.Good.getAppFn hT), Expr.numArgs_mapKeys]
 
-theorem headProofPW_ren (hE : EnvRel P f env env') {e : Expr md} (he : e.Good P) :
+theorem headProofPW_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
     headProofPW env'.find? (e.mapKeys f) = headProofPW env.find? e := by
   cases e with
   | const c us =>
@@ -114,7 +117,7 @@ theorem proofPW_eq_head {find? : Key md → Option (ConstantInfo md)} {e : Expr 
     (h1 : ∀ t b m, e ≠ .lam t b m) : proofPW find? e = headProofPW find? e.getAppFn := by
   cases e <;> first | rfl | (exact absurd rfl (h1 _ _ _))
 
-theorem proofPW_ren (hE : EnvRel P f env env') {a : Expr md} (ha : a.Good P) :
+theorem proofPW_ren (hE : EnvRelG P f L env env') {a : Expr md} (ha : a.Good P) :
     proofPW env'.find? (a.mapKeys f) = proofPW env.find? a := by
   by_cases h1 : ∃ t b m, a = .lam t b m
   · obtain ⟨t, b, m, rfl⟩ := h1; rfl
@@ -127,11 +130,11 @@ theorem proofPW_ren (hE : EnvRel P f env env') {a : Expr md} (ha : a.Good P) :
   rw [proofPW_eq_head h1'', proofPW_eq_head h1', ← Expr.mapKeys_getAppFn,
     headProofPW_ren hE (Expr.Good.getAppFn ha)]
 
-theorem notProofFast_ren (hE : EnvRel P f env env') {a : Expr md} (ha : a.Good P) :
+theorem notProofFast_ren (hE : EnvRelG P f L env env') {a : Expr md} (ha : a.Good P) :
     notProofFast env'.find? (a.mapKeys f) = notProofFast env.find? a := by
   simp only [notProofFast, proofPW_ren hE ha]
 
-theorem isProofFast_ren (hE : EnvRel P f env env') {a : Expr md} (ha : a.Good P) :
+theorem isProofFast_ren (hE : EnvRelG P f L env env') {a : Expr md} (ha : a.Good P) :
     isProofFast env'.find? (a.mapKeys f) = isProofFast env.find? a := by
   simp only [isProofFast, proofPW_ren hE ha]
 

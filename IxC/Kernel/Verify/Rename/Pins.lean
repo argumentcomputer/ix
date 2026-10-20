@@ -20,9 +20,12 @@ standard axioms answer alike at renamed arguments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-! ## Data naming no input id -/
 
@@ -305,7 +308,7 @@ theorem ConstantVal.matchesPin_ren (hf : InjOn f P) {cv pin : ConstantVal md} (h
     simp [h, h']
 
 /-- A lookup compared with a pinned constant. -/
-theorem find_eq_pin_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env') {k : Key md}
+theorem find_eq_pin_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') {k : Key md}
     (hk : k.Good P) {pin : ConstantInfo md} (hpin : pin.noIds = true) :
     decide (env'.find? (k.map f) = some (pin.mapKeys f)) = decide (env.find? k = some pin) := by
   rw [hE.find k hk]
@@ -323,7 +326,7 @@ theorem matchesPin_pin_ren (hf : InjOn f P) {cv : ConstantVal md} (hcv : cv.Good
     ConstantVal.matchesPin (cv.mapKeys f) pin' = ConstantVal.matchesPin cv pin := by
   rw [← he]; exact ConstantVal.matchesPin_ren hf hcv (ConstantVal.good_of_noIds hpin)
 
-theorem EnvRel.good_role {env : Env md} {env' : Env md'} (hE : EnvRel P f env env') (r : Role) :
+theorem EnvRelG.good_role {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') (r : Role) :
     ∀ c, env.find? (roleKey r) = some c → c.Good P :=
   fun c hc => hE.good (roleKey r) c trivial hc
 
@@ -341,7 +344,7 @@ macro "pin_find " hrw:term ", " disc:term ", " hgood:term : tactic => `(tactic| 
         ConstantInfo.mapKeys.eq_6, ConstantInfo.mapKeys.eq_7] <;>
       first
       | rfl
-      | exact matchesPin_pin_ren (EnvRel.inj ‹_›) (ConstantInfo.Good.toConstantVal hgc) rfl rfl))
+      | exact matchesPin_pin_ren (EnvRelG.inj ‹_›) (ConstantInfo.Good.toConstantVal hgc) rfl rfl))
 
 /-- `pin_find` where the pattern also fixes two numerals. -/
 macro "pin_find " hrw:term ", " disc:term ", " hgood:term ", " p:term ", " q:term : tactic =>
@@ -359,14 +362,14 @@ macro "pin_find " hrw:term ", " disc:term ", " hgood:term ", " p:term ", " q:ter
       | (by_cases ha : a = $p <;> by_cases hb : b = $q
          · subst ha hb
            simp only
-           exact matchesPin_pin_ren (EnvRel.inj ‹_›) (ConstantInfo.Good.toConstantVal hgc) rfl rfl
+           exact matchesPin_pin_ren (EnvRelG.inj ‹_›) (ConstantInfo.Good.toConstantVal hgc) rfl rfl
          all_goals simp [ha, hb])))
 
 /-- Conjunctions with equal conjuncts. -/
 theorem andC {a a' b b' : Bool} (h₁ : a = a') (h₂ : b = b') : (a && b) = (a' && b') := by
   rw [h₁, h₂]
 
-theorem stdAxiomOk_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem stdAxiomOk_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {cvA : ConstantVal md} (hcv : cvA.Good P) :
     stdAxiomOk env' (cvA.mapKeys f) = stdAxiomOk env cvA := by
   unfold stdAxiomOk

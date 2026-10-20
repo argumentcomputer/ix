@@ -16,9 +16,12 @@ structure over related environments.
 
 set_option linter.unusedSimpArgs false
 
+set_option linter.unusedSectionVars false
+
 namespace Ix.Kernel
 
 variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 /-! ## The public↔model renamings -/
@@ -94,7 +97,7 @@ theorem projFwd_good {T ctor : Key md} (hT : T.Good P) (hc : ctor.Good P) (nF : 
 
 /-! ## The projection function's checks -/
 
-theorem checkProjLookups_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem checkProjLookups_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {T ctorName : Key md} (hT : T.Good P) (hc : ctorName.Good P) (lps : List LevelParam)
     (nP nF i : Nat) :
     SimE (fun r : ConstantVal md × ConstantVal md => r.1.Good P ∧ r.2.Good P)
@@ -137,7 +140,7 @@ theorem checkProjLookups_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f en
         | _ => exact SimE.throw'
     | _ => exact SimE.throw'
 
-theorem checkProjTy_sim {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem checkProjTy_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {T ctorName : Key md} (hT : T.Good P) (hc : ctorName.Good P) (lps : List LevelParam)
     {mty : Expr md} (hm : mty.Good P) (nP nF : Nat) :
     SimX P f (checkProjTy (m := CheckM md) env T ctorName lps mty nP nF)
@@ -207,9 +210,9 @@ theorem projIotaLhs_good {T ctorName : Key md} (hT : T.Good P) (hc : ctorName.Go
     · exact bvarList_good nF _ y hy
 
 /-- **The projection iota theorem's check at a renamed structure.** -/
-theorem checkProjIota_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
-    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRel P f env₁ env₁')
-    (hES : EnvRel P f envS envS') {T ctorName : Key md} (hT : T.Good P) (hc : ctorName.Good P)
+theorem checkProjIota_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
+    {env₁ envS : Env md} {env₁' envS' : Env md'} (hE₁ : EnvRelG P f L env₁ env₁')
+    (hES : EnvRelG P f L envS envS') {T ctorName : Key md} (hT : T.Good P) (hc : ctorName.Good P)
     (lps : List LevelParam) {cvj : ConstantVal md} (hcvj : cvj.Good P) (nP nF i : Nat) :
     SimV (checkProjIota mode ops env₁ envS T ctorName lps cvj nP nF i)
       (checkProjIota mode ops' env₁' envS' (T.map f) (ctorName.map f) lps (cvj.mapKeys f)
@@ -285,7 +288,7 @@ theorem checkProjIota_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
           | _ => first | exact SimE.throw_bind | exact SimE.throw'
     | _ => exact SimE.throw'
 
-theorem projFnRule_ren {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+theorem projFnRule_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
     {T ctorName : Key md} (hc : ctorName.Good P) (pty : Expr md) (nP nF i : Nat)
     {rhsA : Expr md} (hr : rhsA.Good P) :
     projFnRule env'.find? (T.map f) (ctorName.map f) (pty.mapKeys f) nP nF i (rhsA.mapKeys f) =
@@ -311,10 +314,10 @@ theorem projFnRule_good {find? : Key md → Option (ConstantInfo md)} {T ctorNam
   split <;> trivial
 
 /-- **A projection function's install at a renamed structure.** -/
-theorem checkProjFn_sim (mode : CheckMode) (hops : OpsSim P f ops ops') {env : Env md}
-    {env' : Env md'} (hE : EnvRel P f env env') {T ctorName : Key md} (hT : T.Good P)
+theorem checkProjFn_sim (mode : CheckMode) (hops : OpsSim P f L ops ops') {env : Env md}
+    {env' : Env md'} (hE : EnvRelG P f L env env') {T ctorName : Key md} (hT : T.Good P)
     (hc : ctorName.Good P) (lps : List LevelParam) (nP nF i : Nat) :
-    SimR (EnvRel P f) (checkProjFn mode ops env T ctorName lps nP nF i)
+    SimR (EnvRelG P f L) (checkProjFn mode ops env T ctorName lps nP nF i)
       (checkProjFn mode ops' env' (T.map f) (ctorName.map f) lps nP nF i) := by
   unfold checkProjFn
   refine SimR.bindE (checkProjLookups_sim hE hT hc lps nP nF i) (fun r hr => ?_)
@@ -334,10 +337,10 @@ theorem checkProjFn_sim (mode : CheckMode) (hops : OpsSim P f ops ops') {env : E
   subst hr
   exact projFnRule_good hc hrhsA nP nF i
 
-theorem installProjFnStep_sim (mode : CheckMode) (hops : OpsSim P f ops ops')
+theorem installProjFnStep_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
     {T ctorName : Key md} (hT : T.Good P) (hc : ctorName.Good P) (lps : List LevelParam)
-    (nP nF : Nat) {e : Env md} {e' : Env md'} (hE : EnvRel P f e e') (i : Nat) :
-    SimR (EnvRel P f) (installProjFnStep mode ops T ctorName lps nP nF e i)
+    (nP nF : Nat) {e : Env md} {e' : Env md'} (hE : EnvRelG P f L e e') (i : Nat) :
+    SimR (EnvRelG P f L) (installProjFnStep mode ops T ctorName lps nP nF e i)
       (installProjFnStep mode ops' (T.map f) (ctorName.map f) lps nP nF e' i) := by
   unfold installProjFnStep
   have hk : (projModelName T i).Good P := hT
