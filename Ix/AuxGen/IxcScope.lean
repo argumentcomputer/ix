@@ -64,7 +64,7 @@ returns. -/
 def scopeFuel : Nat := 1000000
 
 /-- The fuel of one oracle chain: flat-block installs. -/
-def oracleFuel : Nat := 4
+def oracleFuel : Nat := 8
 
 /-! ## Named `whnf` (AuxGen M4)
 
@@ -473,6 +473,57 @@ structure OracleFacts where
 
 instance : Inhabited OracleFacts := ⟨{}⟩
 
+/-- A generated family of inductives (with constructors and generated
+recursors) installed as a block under fresh names through σ (AuxGen M5: a
+regenerated Prop-level `.below` family): built as a canonical flat block is
+(`Flat.build`, over the family's own declarations and the input's), so
+IxC's install checks it, recursors included. The service after it, or the
+reason it was refused. -/
+def installFamily (svc : Service) (types : Array (InductiveVal × Array ConstructorVal))
+    (recs : Array (Name × RecursorVal)) : Except String Service := do
+  let own (n : Name) : Option ConstantInfo :=
+    match types.find? (fun (v, _) => Ix.Compile.ExactKey.nameEq v.cnst.name n) with
+    | some (v, _) => some (.inductInfo v)
+    | none => (types.findSome? fun (_, cs) =>
+        cs.find? fun c => Ix.Compile.ExactKey.nameEq c.cnst.name n).map .ctorInfo
+  let lookup (n : Name) : Option ConstantInfo := (own n).orElse fun _ => svc.input.get? n
+  let classes := types.map fun (v, _) => #[v.cnst.name]
+  let fb ← (Flat.build lookup classes recs svc.sigma).mapError (·.render)
+  let svc := svc.installFlat fb
+  match svc.flatStatus? (fb.firstName.getD default) with
+  | some .accepted => return svc
+  | some (.refused why) => throw s!"family refused: {why}"
+  | _ => throw "family not recorded"
+
+/-- **Generated declarations accepted by Source mode**, in order, each later one
+seeing the earlier ones through σ (AuxGen M5): a definition or theorem
+through `Service.admitDefinition` under its fresh name, a family through
+`installFamily`. The service after them, and each declaration's verdict
+(`none` accepted, `some` the reason). -/
+def admitGeneratedIn (svc : Service) (decls : Array GeneratedDecl) :
+    Service × Array (Name × Option String) := Id.run do
+  let mut svc := svc
+  let mut out : Array (Name × Option String) := #[]
+  for d in decls do
+    match d with
+    | .defn name lps ty v thm =>
+      let (svc', st) := svc.admitDefinition name lps ty v thm
+      svc := svc'
+      let why : Option String := match st with
+        | .accepted => none
+        | .refused r => some r
+        | .blocked _ => some "blocked"
+        | .pending => some "pending"
+      out := out.push (name, why)
+    | .family types recs =>
+      match installFamily svc types recs with
+      | .ok svc' =>
+        svc := svc'
+        for (v, _) in types do out := out.push (v.cnst.name, none)
+      | .error why =>
+        for (v, _) in types do out := out.push (v.cnst.name, some why)
+  return (svc, out)
+
 /-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
 the first question; the drivers' snapshot is a task), in `mode` (tracing the
 tail's counts under `trace`), with `fuel` installs left (the flat block, the
@@ -484,6 +535,7 @@ def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts) :
       (fun _ _ _ => .error "oracle fuel exhausted") (fun _ => .error "oracle fuel exhausted")
       facts.recursors facts.asked
       (fun _ locals => ofLazy facts.lookup scopeFuel locals (Thunk.pure (.error "oracle fuel exhausted")))
+      (fun _ => .error "oracle fuel exhausted")
   | n + 1, svc =>
     .mk mode trace
       (fun lps locals => do
@@ -508,6 +560,9 @@ def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts) :
             throw s!"the block is not accepted in Source mode: {why}"
           let s ← Scope.new svc.env lps
           s.push locals))
+      (fun decls => do
+        let (s', verdicts) := admitGeneratedIn (← svc ()) decls
+        pure (oracleOf mode trace facts n fun _ => .ok s', verdicts))
 
 /-- **One block's oracle over the snapshot `run`** (a run of the drivers'
 service), with the block's `members` folded first (`Service.ensureNames`): a

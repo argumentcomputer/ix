@@ -255,9 +255,19 @@ def whnfNamed : OracleScope → Expr → Except String (Expr × WhnfHow × Oracl
 
 end OracleScope
 
+/-- **A generated declaration for Source acceptance** (AuxGen M5): a definition
+or a theorem (`thm`), checked under its fresh name through σ; or a family of
+inductives with their constructors and their generated recursors, installed
+as a block under fresh names (a regenerated Prop-level `.below` family). -/
+inductive GeneratedDecl where
+  | defn (name : Name) (levelParams : Array Name) (type value : Expr) (thm : Bool)
+  | family (types : Array (InductiveVal × Array ConstructorVal))
+      (recs : Array (Name × RecursorVal))
+  deriving Inhabited
+
 /-- **One block's IxC oracle** (AuxGen M2a).
 
-`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope`:
+`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope admit`:
 * `mode`: how AuxGen uses the answers;
 * `trace`: whether the tail traces its counts (the measurement modes);
 * `newScope lps locals`: a context over the level parameters `lps` and the
@@ -278,7 +288,12 @@ end OracleScope
 * `newLazyScope lps locals`: `newScope`, lazily (AuxGen M4): nothing is
   asked of the service until a question escapes the fast paths (the
   `inferAppType` level, a syntactically stuck `whnf`), and a refusal
-  surfaces at that question. -/
+  surfaces at that question. 
+* `admit decls`: the generated declarations accepted by Source mode in
+  order, each later one seeing the earlier ones through σ (AuxGen M5): the
+  oracle after them, and each declaration's verdict (`none` accepted, `some`
+  the reason it was refused; a refused declaration is not installed); an
+  error when the oracle has no service. -/
 inductive AuxOracle where
   | mk (mode : IxcMode) (trace : Bool)
       (newScope : Array Name → Array (Name × Expr) → Except String OracleScope)
@@ -287,33 +302,37 @@ inductive AuxOracle where
       (admitBelow : Array BelowDef → Except String (AuxOracle × Nat × Nat))
       (recursors asked : Bool)
       (newLazyScope : Array Name → Array (Name × Expr) → OracleScope)
+      (admit : Array GeneratedDecl → Except String (AuxOracle × Array (Name × Option String)))
 
 namespace AuxOracle
 
 def mode : AuxOracle → IxcMode
-  | .mk m _ _ _ _ _ _ _ => m
+  | .mk m _ _ _ _ _ _ _ _ => m
 
 def trace : AuxOracle → Bool
-  | .mk _ t _ _ _ _ _ _ => t
+  | .mk _ t _ _ _ _ _ _ _ => t
 
 def newScope : AuxOracle → Array Name → Array (Name × Expr) → Except String OracleScope
-  | .mk _ _ f _ _ _ _ _ => f
+  | .mk _ _ f _ _ _ _ _ _ => f
 
 def withFlat : AuxOracle → Array (Array Name) → Array Name → Array (Name × RecursorVal) →
     Except String (Option AuxOracle)
-  | .mk _ _ _ f _ _ _ _ => f
+  | .mk _ _ _ f _ _ _ _ _ => f
 
 def admitBelow : AuxOracle → Array BelowDef → Except String (AuxOracle × Nat × Nat)
-  | .mk _ _ _ _ f _ _ _ => f
+  | .mk _ _ _ _ f _ _ _ _ => f
 
 def recursors : AuxOracle → Bool
-  | .mk _ _ _ _ _ r _ _ => r
+  | .mk _ _ _ _ _ r _ _ _ => r
 
 def asked : AuxOracle → Bool
-  | .mk _ _ _ _ _ _ a _ => a
+  | .mk _ _ _ _ _ _ a _ _ => a
 
 def newLazyScope : AuxOracle → Array Name → Array (Name × Expr) → OracleScope
-  | .mk _ _ _ _ _ _ _ f => f
+  | .mk _ _ _ _ _ _ _ f _ => f
+
+def admit : AuxOracle → Array GeneratedDecl → Except String (AuxOracle × Array (Name × Option String))
+  | .mk _ _ _ _ _ _ _ _ f => f
 
 end AuxOracle
 
