@@ -967,10 +967,9 @@ pipeline (`compileDecoratedConsts`) refuses, before compiling, an input
 constant with a metadata key that has a reserved component, then an input
 name with one, each by its least message, as the Rust compiler does
 (`compile_env`): with several reserved inputs both compilers name the same
-one. `Ix.Cert.compile` does not refuse reserved input: a reserved input
-name there meets Pass 3's `_ix` names in the insert-once claims, which
-refuse the second claim (fail closed); the same least-message refusal is to
-be added to `Ix.Cert.compile`, outside the fold. -/
+one. `Ix.Cert.compile` refuses the same input, before its fold, by the same
+least messages (`Ix.Cert.reservedRefusal`, over the grounded input), so all
+three name the same input (`compile-reserved-mdata`). -/
 
 /-- Some component of the Lean name `n` is reserved
     (`Ix.Compile.Pass.hasReserved` on Lean names). -/
