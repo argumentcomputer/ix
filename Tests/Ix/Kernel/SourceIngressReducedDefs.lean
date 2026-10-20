@@ -156,3 +156,33 @@ theorem a_rec (x : A) : True :=
 theorem s_rec (x : S) : True := S.rec (motive := fun _ => True) (fun _ => trivial) x
 
 end Tests.Ix.Kernel.SourceIngressReducedDefs
+
+/-! ## A field whose recursive occurrence whnf reveals
+
+The converse case (aux-cert's `SurgAlias`, AuxGen M3): `C.a : Id' D → C`
+mentions the mutual member `D` only behind a reducible alias, which Lean's
+kernel unfolds before it tests positivity, so the field is recursive and
+Lean's `C.rec` gives it an inductive hypothesis. The modeller's mutual rung
+classified the field syntactically, as ordinary, and the fold rejected the
+block ("recursor rules are not the generated ones"); the rung now reads the
+recursive fields off Lean's minor premises. -/
+
+namespace Tests.Ix.Kernel.SourceIngressReducedDefs
+
+abbrev Id' (α : Type) : Type := α
+
+mutual
+inductive C
+  | nil : C
+  | a : Id' D → C
+inductive D
+  | nil : D
+  | b : D → D
+end
+
+noncomputable def c_rec : C → Nat :=
+  @C.rec (fun _ => Nat) (fun _ => Nat) 0 (fun _ ih => ih + 1) 0 (fun _ ih => ih + 1)
+
+theorem c_rec_a : c_rec (.a (.b .nil)) = 2 := rfl
+
+end Tests.Ix.Kernel.SourceIngressReducedDefs

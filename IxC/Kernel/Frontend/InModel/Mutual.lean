@@ -46,6 +46,14 @@ the field's own block-free binders (a nested or non-positive
 occurrence), a `Prop` block with a large eliminator (the auxiliary
 family has ≥ 2 constructors, so it eliminates into `Prop` only).
 
+**Recursive fields are Lean's** (AuxGen M3, aux-cert's `SurgAlias`): Lean's
+kernel tests positivity after whnf, so a field whose member occurrence a
+reducible alias hides (`Id' B` with `Id' α := α`) is recursive and its
+minor premise carries a hypothesis. The rung reads such fields off the
+first recursor's minor premises (`minorIH?`) and builds the auxiliary
+constructor and the iota hypotheses over the normal form the hypothesis
+names (`MCtor.nty`); the public models keep the declared types.
+
 **Reflexive members are this rung's** (2026-09-21).  The export's
 `isReflexive` flag used to be a decline here, a shortcut of the port:
 lean-inductive-models never looked at the flag — it handed the
@@ -131,7 +139,54 @@ structure MCtor (md : Mode) where
   j : Nat
   c : IndCtorRec md
   recFields : List (Nat × Nat)
+  /-- the constructor's type with each recursive field Lean recognises only
+  after whnf (`minorIH?`) at its normal form `T_{m'} p⃗ e⃗`: the auxiliary
+  constructor and the iota hypotheses are built over it; the public models
+  keep the declared type (definitionally equal) -/
+  nty : Expr md
   deriving Repr, Inhabited
+
+/-- Replace the domain of the `n`-th leading `∀` binder. -/
+def replacePiDomAt : Nat → Expr md → Expr md → Option (Expr md)
+  | 0, .forallE _ b mt, d => some (.forallE d b mt)
+  | n + 1, .forallE t b mt, d => (replacePiDomAt n b d).map (.forallE t · mt)
+  | _, _, _ => none
+
+/-- No loose `bvar` in `[lo, lo + n)`: the `lowerBVars`/`liftLooseBVars`
+roundtrip (`IxC/Kernel/ExprOps.lean`). -/
+def noBVarsIn (e : Expr md) (lo n : Nat) : Bool :=
+  (e.lowerBVars n lo).liftLooseBVars n lo == e
+
+/-- **Lean's own verdict on a constructor field** (Lean's kernel tests
+positivity after whnf, so a recursive occurrence behind a reducible alias,
+`Id' B`, is one; `mk_rec_infos` then gives it an inductive hypothesis).
+`minor` is the constructor's minor premise in the block's first recursor
+(at its binder: the parameters, the `k` motives and the `J` earlier minors
+above it), `∀ f⃗ ih⃗, motive …`: if one hypothesis is `motive_{m'} e⃗ f_i`
+(a finitary one, no telescope), field `i` is recursive into member `m'`,
+and its index expressions `e⃗` are returned at the field's frame (the
+parameters and the `i` earlier fields), or none if they mention anything
+else. -/
+def minorIH? (k J nF i : Nat) (minor : Expr md) : Option (Nat × List (Expr md)) :=
+  let (bs, _) := minor.piBinders
+  if bs.length < nF || i ≥ nF then none else
+  (bs.drop nF).zipIdx.findSome? fun ((ty, _), k') =>
+    let (tele, body) := ty.piBinders
+    if !tele.isEmpty then none else
+    match body.getAppFn, body.getAppArgs.getLast? with
+    | .bvar mv, some (.bvar fv) =>
+      if fv != k' + (nF - 1 - i) then none
+      else if mv < k' + nF + J || mv ≥ k' + nF + J + k then none
+      else
+        let m' := k - 1 - (mv - k' - nF - J)
+        let idx := body.getAppArgs.take (body.getAppArgs.length - 1)
+        -- the index expressions mention neither a hypothesis, nor field `i`
+        -- or a later one, nor a motive or minor
+        if idx.all fun e => noBVarsIn e 0 (k' + nF - i) && noBVarsIn e (k' + nF) (k + J) then
+          some (m', idx.map fun e =>
+            ((e.lowerBVars k' 0).lowerBVars (nF - i) 0).lowerBVars (k + J) i)
+        else none
+    | _, _ => none
 
 /-- Is `e` member `m'` of the block applied to the parameter variables
 (`o` binders below the parameter frame) and `nIdx_{m'}` index
@@ -159,15 +214,21 @@ parameters and some index expressions (`∀ a⃗, T_{m'} p⃗ e⃗`) — officia
 not this rung's (nested, non-positive).  `members` lists
 `(T, m, nIdx)`.  A recursive field is recorded by position and target
 member; its telescope is read off the constructor's type again where it
-is needed (`structFieldTeleOf`, the iota right-hand sides). -/
+is needed (`structFieldTeleOf`, the iota right-hand sides).  A field that
+is not syntactically a member application but that Lean's recursor gives
+an inductive hypothesis (`minorIH?`: a member behind a reducible alias,
+which Lean's kernel sees after whnf) is recursive too, at the normal form
+the hypothesis names (`MCtor.nty`). -/
 def classifyCtor (T : Key md) (members : List (Key md × Nat × Nat)) (lps : List LevelParam)
-    (nP : Nat) (m j : Nat) (c : IndCtorRec md) : Except String (MCtor md) := do
+    (nP k J : Nat) (minor : Option (Expr md)) (m j : Nat) (c : IndCtorRec md) :
+    Except String (MCtor md) := do
   let memberNames := members.map (·.1)
   let some (bs, resid) := c.cv.type.stripPis (nP + c.nF)
     | throw s!"constructor {c.cv.name} is not a telescope"
   unless memberApp? members lps nP c.nF resid == some m do
     throw s!"constructor {c.cv.name} does not return its member at the parameters"
   let mut recFields : List (Nat × Nat) := []
+  let mut nty := c.cv.type
   for i in List.range c.nF do
     let d := (bs.getD (nP + i) default).1
     if mentionsAny memberNames d then
@@ -179,17 +240,33 @@ def classifyCtor (T : Key md) (members : List (Key md × Nat × Nat)) (lps : Lis
       match memberApp? members lps nP (i + tele.length) body with
       | some m' => recFields := recFields ++ [(i, m')]
       | none =>
-        -- not a recursive field: an ordinary one if the auxiliary rewrite of
-        -- its member applications (`specFam`, as the auxiliary
-        -- constructors' types are rewritten) leaves no member. Lean's kernel
-        -- tests positivity after whnf, so an occurrence that reduces away
-        -- (`K True T` with `K a _ := a`) is not one, and the fold's install
-        -- of the auxiliary family tests the field after whnf (CQX.8)
+        -- not syntactically a recursive field: an ordinary one if the
+        -- auxiliary rewrite of its member applications (`specFam`, as the
+        -- auxiliary constructors' types are rewritten) leaves no member.
+        -- Lean's kernel tests positivity after whnf, so an occurrence that
+        -- reduces away (`K True T` with `K a _ := a`) is not one, and the
+        -- fold's install of the auxiliary family tests the field after whnf
+        -- (CQX.8)
         if mentionsAny memberNames (specFam T lps nP members d) then
           throw s!"field {i} of {c.cv.name} mentions the block other than as a plain \
             member application under the field's own binders (nested or non-positive \
             occurrence)"
-  pure ⟨m, j, c, recFields⟩
+        -- ... and one that whnf turns INTO a member application (`Id' B`
+        -- with `Id' α := α`) is recursive: Lean's recursor says so with an
+        -- inductive hypothesis, whose motive and index expressions give the
+        -- field's normal form, the domain the auxiliary constructor takes
+        -- (the fold's install of the auxiliary family generates the
+        -- hypothesis from it, as Lean's `mk_rec_infos` does after whnf)
+        if tele.isEmpty then
+          if let some (m', idx) := minor.bind (minorIH? k J c.nF i) then
+            let some (x, _, _) := members[m']?
+              | throw s!"field {i} of {c.cv.name}: hypothesis on no member"
+            let dom := Expr.mkAppN (.const x (lps.map .param)) (varsAt i nP ++ idx)
+            let some nty' := replacePiDomAt (nP + i) nty dom
+              | throw s!"constructor {c.cv.name} is not a telescope"
+            nty := nty'
+            recFields := recFields ++ [(i, m')]
+  pure ⟨m, j, c, recFields, nty⟩
 
 /-- Unwrap a generator step that cannot fail on a well-formed block. -/
 def need (what : String) : Option α → Except String α
@@ -226,6 +303,16 @@ def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   let members : List (Key md × Nat × Nat) :=
     b.types.zipIdx.map fun (t, m) => (t.cv.name, m, t.nIdx)
   let nIdxOf : Nat → Nat := fun m => (b.types.getD m default).nIdx
+  -- Lean's minor premises, off the first recursor's type, in constructor
+  -- order (members in block order, each member's constructors in order):
+  -- `classifyCtor` reads Lean's own recursive fields off them
+  let minors : List (Expr md) :=
+    match b.recs.head? with
+    | some r =>
+      match r.cv.type.stripPis (nP + k + b.ctors.length) with
+      | some (rbs, _) => (rbs.drop (nP + k)).map (·.1)
+      | none => []
+    | none => []
   -- the constructors, per member, classified
   let mut mctors : List (MCtor md) := []
   for m in List.range k do
@@ -235,7 +322,8 @@ def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         | throw s!"constructor {cn} of {t.cv.name} is not in the block"
       unless c.nP == nP && c.cv.levelParams == lps do
         throw s!"constructor {cn}: parameter count or level parameters differ"
-      mctors := mctors ++ [← classifyCtor T members lps nP m j c]
+      let J := mctors.length
+      mctors := mctors ++ [← classifyCtor T members lps nP k J minors[J]? m j c]
   let n := mctors.length
   unless b.ctors.length == n do throw "constructors not all owned by a member"
   -- the recursors: one per member, `k` motives, `n` minors, no indices,
@@ -327,7 +415,7 @@ def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   -- occurrence rewritten to the auxiliary family
   let auxCtors : List (Key md × Nat × Expr md × List Nat) ← mctors.mapM fun mc => do
     let ty ← need "aux constructor type"
-      (overFirstParams nP t0.cv.type (specFam T lps nP members mc.c.cv.type))
+      (overFirstParams nP t0.cv.type (specFam T lps nP members mc.nty))
     pure (auxCtorName T mc.m mc.j, mc.c.nF, ty, mc.recFields.map (·.1))
   let auxRecTy ← need "aux recursor type" (recTy aux lps elim large nP 1 auxTy auxCtors)
   let auxRules ← (List.range n).mapM fun j => do
@@ -406,7 +494,13 @@ def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       -- sit above the `k + n` motive and minor binders
       let some (fieldBs, cresid) := (ctele.liftLooseBVars (k + n) 0).stripPis nF
         | throw s!"constructor {mc.c.cv.name}: field telescope"
-      let doms := fieldBs.map (·.1)
+      -- the recursive fields' domains at their normal form (`MCtor.nty`;
+      -- the statement's binders keep the declared ones)
+      let some (_, nctele) := (rn mc.nty).stripPis nP
+        | throw s!"constructor {mc.c.cv.name}: type is not a telescope"
+      let some (nfieldBs, _) := (nctele.liftLooseBVars (k + n) 0).stripPis nF
+        | throw s!"constructor {mc.c.cv.name}: field telescope"
+      let doms := nfieldBs.map (·.1)
       let fields := (List.range nF).map fun i => Expr.bvar (nF - 1 - i)
       let prefixVars := varsAt (nF + k + n) nP ++ varsAt (nF + n) k ++ varsAt nF n
       let ctorApp := Expr.mkAppN (constP (modelName mc.c.cv.name) lps) (varsAt (nF + k + n) nP ++ fields)

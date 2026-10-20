@@ -95,6 +95,11 @@ def expected : List (Lean.Name × String) := [
   (reduced "A", "accept"), (reduced "A.mk", "accept"), (reduced "B.rec", "accept"),
   (reduced "a_rec", "accept"),
   (reduced "S", "accept"), (reduced "S.mk", "accept"), (reduced "s_rec", "accept"),
+  -- the converse: a mutual field whose recursive occurrence whnf reveals
+  -- (`C.a : Id' D → C`, aux-cert's `SurgAlias`; Lean's `C.rec` gives it a
+  -- hypothesis)
+  (reduced "C", "accept"), (reduced "C.a", "accept"), (reduced "D.rec", "accept"),
+  (reduced "c_rec", "accept"), (reduced "c_rec_a", "accept"),
   (reduced "T", "decline"), (reduced "T.rec_1", "decline"), (reduced "t_rec", "blocked"),
   (reduced "U", "decline"), (reduced "U.mk", "decline"),
   -- the reader's fixture quotient divides (`parity`): `Nat.mod` is accepted
@@ -133,7 +138,7 @@ def acceptedSeeds : Array Lean.Name := #[defs "Color", defs "Point3", defs "Vec.
 whole by `checkSource`, apart from `acceptedSeeds`, which `cert-statement`
 also compiles. -/
 def reducedSeeds : Array Lean.Name := #[reduced "v_rec", reduced "W", reduced "a_rec",
-  reduced "s_rec"]
+  reduced "s_rec", reduced "c_rec_a"]
 
 /-! ## Terms -/
 

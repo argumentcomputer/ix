@@ -45,8 +45,8 @@ The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
 reaches 3377 compiled functions with 67 inherited externs, with the
 computed-field overrides of `Level`, `Expr` and `Key` and 23 proved
 csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
-2138, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5783 with
+2147, adding the in-model generator's 9 `partial` definitions and the codec's
+TagN writer twin; the entry (the four `publicOperations`) reaches 5792 with
 113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
@@ -70,7 +70,16 @@ its message sites' closed terms) and the code generator's specialisations,
 lambdas and boxed forms of them (`List.all`, `List.filterMap`,
 `List.findSome?`, the `Nodup` decision); the reader is unchanged, and the
 externs, `implemented_by`, `unsafe` constants and `partial` definitions are
-unchanged. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
+unchanged. The mutual modeller's reading of Lean's own recursive fields (AuxGen
+M3, aux-cert's `SurgAlias`: a field whose member occurrence a reducible alias
+hides is recursive, read off Lean's minor premises) moved the reader from 2138,
+the entry from 5783 and the tiered entries from 5887, 12 functions in and 3
+out: `minorIH?`, `noBVarsIn`, `replacePiDomAt` with its arity-reduced form, the
+code generator's specialisations of `List.all`, `List.findSome?` and
+`List.mapTR` at `minorIH?` and three closed terms of `classifyCtor`'s new
+messages in; three closed terms of `classifyCtor`'s and `memberApp?`'s out,
+and `genMutual`'s specialisations renumbered; no extern, `unsafe` constant,
+csimp, `partial` definition or ruling moved. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
 is Lean with its three standard axioms) moved the fold from 3434, the reader
 from 2150, the entry from 5861 and the tiered entries from 5965: the five
 compiler-trust roles left `Role` (its case tables shrink, which the reader's
@@ -578,14 +587,14 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2138 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2147 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5783 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5792 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -615,9 +624,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- entry's change (4 out; see the module docstring). (A) moved it from 5965 by the
 -- entry's change (122 out; see the module docstring). The `.indDecl` shape
 -- guard moved it from 5843 by the entry's change (44 in, one more csimp; see the module
--- docstring).
+-- docstring). The mutual modeller's reading of Lean's recursive fields moved it
+-- from 5887 by the entry's change (9 more; see the module docstring).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5887 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 5896 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

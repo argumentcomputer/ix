@@ -63,10 +63,11 @@ in the in-model generator from 6024, by the entry's change (4 of `genNested`'s
 specialisations gone, `IxC/Kernel/Audit/Roots.lean`); (A) (`ALPHA-COLLAPSE.md`
 §8.2) from 6020, by the entry's change (122 out: the compiler-trust roles and
 their checks, `IxC/Kernel/Audit/Roots.lean`); the `.indDecl` shape guard from 5898, by the
-entry's change (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled, `IxC/Kernel/Audit/Roots.lean`). -/
+entry's change (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled, `IxC/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's
+recursive fields from 5942, by the entry's change (9 more). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 5942 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ixon.BlockOrder.compareExpr]: 5951 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
