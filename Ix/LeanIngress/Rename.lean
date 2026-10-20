@@ -1,6 +1,7 @@
 import Ix.LeanIngress
 import IxC.Kernel.Verify.Rename.Fold
 import IxC.Kernel.Verify.Frontend.Prepare
+import IxC.Kernel.Ixon.RoleTableInj
 
 /-! # Quotient Source under the artifact's addresses (step 7.3, chunk (iv))
 
@@ -346,4 +347,208 @@ theorem prepareSourceCollapsed_good (hroles : FibersRoleFree ixe)
       rcases List.mem_append.mp hd' with hd' | hd'
       · exact collapseDecls_good hroles hc (hin decls hi) d (Array.mem_toList_iff.mp hd')
       · exact hpre d (Array.mem_toList_iff.mp (hextra d hd'))
+
+/-! ## The table rule (`fiberAliasAt`)
+
+The same results with the role read off the table (`fiberAliasAt ixe roles`,
+`roles` the table's inverse `roleAtMap t`): injectivity needs only that every
+published role name sits at its role's bound address (`TableBound`), which a
+well-formed table gives together with B5a's `RolesBound` (`roleAtMap_spec`). -/
+
+section TableRule
+
+variable {roles : Std.HashMap Address Ix.Kernel.Role}
+
+/-- **A representative under the table rule**: an input name its fiber map
+fixes. -/
+def QRepAt (ixe : Ixon.Env) (roles : Std.HashMap Address Ix.Kernel.Role)
+    (n : Ix.Kernel.Mode.Id .source) : Prop :=
+  QIn ixe n ∧ Key.subst (fiberAliasAt ixe roles) (.id n) = .id n
+
+/-- **Renaming representatives to their addresses is injective** under the
+table rule. -/
+theorem addrOf_injOnAt (hb : TableBound ixe roles) :
+    Ix.Kernel.InjOn (md := .source) (md' := .anon) (addrOf ixe) (QRepAt ixe roles) := by
+  intro i j hi hj hij
+  obtain ⟨⟨hri, hai⟩, hfi⟩ := hi
+  obtain ⟨⟨hrj, haj⟩, hfj⟩ := hj
+  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp hai
+  obtain ⟨b, hb'⟩ := Option.isSome_iff_exists.mp haj
+  have hab : a = b := by simpa [addrOf, ha, hb'] using hij
+  subst hab
+  have h := fiberAliasAt_addr_inj hb ha hb'
+  rw [roleOf_eq_none hri, roleOf_eq_none hrj, hfi, hfj] at h
+  cases h
+  rfl
+
+/-- **Reference acceptance at the artifact's addresses**, under the table rule. -/
+theorem acceptsRef_addrOfAt (μ : Ix.Kernel.CheckMode) (hb : TableBound ixe roles)
+    {ev : Ix.Kernel.Evidences .source} (hev : ev.Good (QRepAt ixe roles))
+    {ds : List (Ix.Kernel.Declaration .source)} (hds : ∀ d ∈ ds, d.Good (QRepAt ixe roles))
+    {envS : Ix.Kernel.Env .source} (h : Ix.Kernel.Cached.AcceptsRef μ ev ds envS) :
+    ∃ envA, Ix.Kernel.Cached.AcceptsRef μ (ev.mapKeys (addrOf ixe))
+        (ds.map (Ix.Kernel.Declaration.mapKeys (addrOf ixe))) envA ∧
+      Ix.Kernel.EnvRel (QRepAt ixe roles) (addrOf ixe) envS envA :=
+  Ix.Kernel.Cached.AcceptsRef.rename μ (addrOf_injOnAt hb) hev hds h
+
+/-- **An input key renames onto representatives** under the table rule. -/
+theorem Key.subst_goodAt (hb : TableBound ixe roles) :
+    ∀ {k : Ix.Kernel.Key .source}, k.Good (QIn ixe) →
+      (Key.subst (fiberAliasAt ixe roles) k).Good (QRepAt ixe roles)
+  | .id n, hk => by
+    obtain ⟨hrn, han⟩ := hk
+    obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp han
+    cases hfa : (fiberAliasAt ixe roles)[n]? with
+    | none =>
+      have hfix : Key.subst (fiberAliasAt ixe roles) (.id n) = .id n := by
+        simp only [Key.subst, hfa, Option.getD_none]
+      rw [hfix]
+      exact ⟨⟨hrn, han⟩, hfix⟩
+    | some rep =>
+      have hsub : Key.subst (fiberAliasAt ixe roles) (.id n) = rep := by
+        simp only [Key.subst, hfa, Option.getD_some]
+      rw [hsub]
+      rcases fiberAliasAt_rep_addr ha hfa with ⟨m, hm, hmrep⟩ | ⟨r, rfl⟩
+      · cases hrm : roleOf m with
+        | some r =>
+          rw [roleOf_eq_some hrm] at hmrep
+          subst hmrep
+          trivial
+        | none =>
+          rw [roleOf_eq_none hrm] at hmrep
+          subst hmrep
+          have h := fiberAliasAt_addr_inj hb hm ha
+          rw [roleOf_eq_none hrm, roleOf_eq_none hrn, hsub] at h
+          exact ⟨⟨hrm, by rw [hm]; rfl⟩, h⟩
+      · trivial
+  | .role _, _ => trivial
+  | .aux k _, hk => Key.subst_goodAt hb (k := k) hk
+
+/-- The collapse at the table rule's fibers renames input keys onto
+representatives. -/
+theorem collapseDecls_goodAt (hb : TableBound ixe roles)
+    {ds : Array (Ix.Kernel.Declaration .source)} {c : Collapsed}
+    (h : collapseDecls (fiberAliasAt ixe roles) ds = .ok c)
+    (hds : ∀ d ∈ ds, d.Good (QIn ixe)) : ∀ d ∈ c.decls, d.Good (QRepAt ixe roles) := by
+  intro d' hd'
+  obtain ⟨d, hd, rfl⟩ := collapseDecls_kept h d' hd'
+  exact Declaration.substKeys_good (fun _ hk => Key.subst_goodAt hb hk) (hds d hd)
+
+/-- Quotient Source's prepared declarations under the table rule are
+representatives'. -/
+theorem prepareSourceCollapsed_goodAt (hb : TableBound ixe roles)
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+    {pre : Ix.Kernel.Reader.Prelude .source} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {ds : Array (Ix.Kernel.Declaration .source)}
+    (h : prepareSourceCollapsed (fiberAliasAt ixe roles) hints pre env blocks = .ok ds)
+    (hin : ∀ decls, leanIngressHinted hints env blocks pre.state = .ok decls →
+      ∀ d ∈ decls, d.Good (QIn ixe))
+    (hpre : ∀ d ∈ pre.ix.decls, d.Good (QRepAt ixe roles)) :
+    ∀ d ∈ ds, d.Good (QRepAt ixe roles) := by
+  unfold prepareSourceCollapsed at h
+  cases hi : leanIngressHinted hints env blocks pre.state with
+  | error e => simp [hi, bind, Except.bind, Except.mapError] at h
+  | ok decls =>
+    cases hc : collapseDecls (fiberAliasAt ixe roles) decls with
+    | error e => simp [hi, hc, bind, Except.bind, Except.mapError] at h
+    | ok c =>
+      simp only [hi, hc, bind, Except.bind, Except.mapError, pure, Except.pure,
+        Except.ok.injEq] at h
+      subst h
+      intro d hd
+      obtain ⟨extra, hextra, hperm⟩ := Ix.Kernel.Frontend.preparePrelude_perm pre.ix c.decls
+      have hd' := hperm.mem_iff.mp (Array.mem_toList_iff.mpr hd)
+      rcases List.mem_append.mp hd' with hd' | hd'
+      · exact collapseDecls_goodAt hb hc (hin decls hi) d (Array.mem_toList_iff.mp hd')
+      · exact hpre d (Array.mem_toList_iff.mp (hextra d hd'))
+
+end TableRule
+
+/-! ### The table's inverse -/
+
+theorem foldl_insert_snd_of_mem :
+    ∀ (l : List (Ix.Kernel.Role × Address)) (m : Std.HashMap Address Ix.Kernel.Role) {a : Address}
+      {r : Ix.Kernel.Role},
+      (l.foldl (fun m p => m.insert p.2 p.1) m)[a]? = some r → (r, a) ∈ l ∨ m[a]? = some r
+  | [], _, _, _, h => Or.inr h
+  | p :: l, m, a, r, h => by
+    rw [List.foldl_cons] at h
+    rcases foldl_insert_snd_of_mem l _ h with h | h
+    · exact Or.inl (List.mem_cons_of_mem _ h)
+    · rw [Std.HashMap.getElem?_insert] at h
+      split at h
+      · rename_i he
+        cases h
+        obtain ⟨p1, p2⟩ := p
+        simp only [beq_iff_eq] at he
+        subst he
+        exact Or.inl List.mem_cons_self
+      · exact Or.inr h
+
+theorem foldl_insert_snd_not_mem :
+    ∀ (l : List (Ix.Kernel.Role × Address)) (m : Std.HashMap Address Ix.Kernel.Role) {a : Address},
+      a ∉ l.map (·.2) → (l.foldl (fun m p => m.insert p.2 p.1) m)[a]? = m[a]?
+  | [], _, _, _ => rfl
+  | p :: l, m, a, h => by
+    rw [List.foldl_cons, foldl_insert_snd_not_mem l _ (fun hm => h (List.mem_cons_of_mem _ hm)),
+      Std.HashMap.getElem?_insert]
+    have hne : (p.2 == a) = false := by
+      rw [beq_eq_false_iff_ne]
+      intro he
+      exact h (he ▸ List.mem_cons_self)
+    simp [hne]
+
+theorem foldl_insert_snd_of_mem' :
+    ∀ (l : List (Ix.Kernel.Role × Address)) (m : Std.HashMap Address Ix.Kernel.Role) {a : Address}
+      {r : Ix.Kernel.Role}, (l.map (·.2)).Nodup → (r, a) ∈ l →
+      (l.foldl (fun m p => m.insert p.2 p.1) m)[a]? = some r
+  | [], _, _, _, _, h => nomatch h
+  | p :: l, m, a, r, hn, h => by
+    simp only [List.map_cons, List.nodup_cons] at hn
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp h with rfl | h
+    · rw [foldl_insert_snd_not_mem l _ hn.1, Std.HashMap.getElem?_insert_self]
+    · exact foldl_insert_snd_of_mem' l _ hn.2 h
+
+/-- **The table's inverse is its binding**: under a well-formed table, the role
+`roleAtMap t` gives an address is the role the table binds there. -/
+theorem roleAtMap_spec {t : Ix.Kernel.RoleTable} (h : t.check = .ok ()) {a : Address}
+    {r : Ix.Kernel.Role} : (roleAtMap t)[a]? = some r ↔ t.addressOf? r = some a := by
+  obtain ⟨hroles, haddrs⟩ := Ix.Kernel.RoleTable.check_nodup h
+  have hmem : (roleAtMap t)[a]? = some r ↔ (r, a) ∈ t.bound.toList := by
+    unfold roleAtMap
+    rw [← Array.foldl_toList]
+    constructor
+    · intro hr
+      rcases foldl_insert_snd_of_mem _ _ hr with hr | hr
+      · exact hr
+      · simp at hr
+    · exact foldl_insert_snd_of_mem' _ _ haddrs
+  rw [hmem]
+  unfold Ix.Kernel.RoleTable.addressOf?
+  constructor
+  · intro hm
+    cases hf : t.bound.find? (·.1 == r) with
+    | none =>
+      have := Array.find?_eq_none.mp hf (r, a) (Array.mem_toList_iff.mp hm)
+      simp at this
+    | some q =>
+      have hq1 : q.1 = r := by simpa using Array.find?_some hf
+      have hqm := Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some hf)
+      have heq : q = (r, a) := by
+        have := Ix.Kernel.RoleTable.eq_of_nodup_map_snd (l := t.bound.toList.map fun p => (p.2, p.1))
+          (p := (q.2, q.1)) (q := (a, r)) (by simpa [List.map_map, Function.comp_def] using hroles)
+          (List.mem_map.mpr ⟨q, hqm, rfl⟩) (List.mem_map.mpr ⟨(r, a), hm, rfl⟩) hq1
+        obtain ⟨q1, q2⟩ := q
+        simp only [Prod.mk.injEq] at this
+        rw [this.1, this.2]
+      simp [heq]
+  · intro hf
+    obtain ⟨q, hq, hqa⟩ := Option.map_eq_some_iff.mp hf
+    have hq1 : q.1 = r := by simpa using Array.find?_some hq
+    have hqm := Array.mem_toList_iff.mpr (Array.mem_of_find?_eq_some hq)
+    obtain ⟨q1, q2⟩ := q
+    simp only at hq1 hqa
+    subst hq1 hqa
+    exact hqm
 end Ix.LeanIngress

@@ -383,7 +383,8 @@ def fixtures : TestSeq :=
 Hand-made fiber maps over the module's alias fixtures: an α-equal pair is
 collapsed to its first member and the result accepted, with exactly the alias's
 declaration dropped; a map identifying unequal declarations is refused; and a
-`Bool`-shaped inductive mapped onto `Bool`'s role keys is that role's alias. -/
+`Bool`-shaped inductive mapped onto `Bool`'s role keys is that role's alias, by name
+or, without `Bool` in the closure, by the role table's address (`fiberAliasAt`). -/
 
 def kname (n : Lean.Name) : Ix.Kernel.Name := Ix.Kernel.Name.ofLeanName n
 
@@ -442,6 +443,28 @@ def evaluateQuotient : IO (Array String × Array String) := do
       (condense env3) with
   | .ok kenv => lines := lines.push s!"quotient: role alias accepted, {kenv.consts.length} kernel constants"
   | .error e => errors := errors.push s!"quotient: role alias: {e}"
+  -- the table rule (`fiberAliasAt`): `Flag` in a closure without `Bool`, at
+  -- addresses the role table binds to `Bool`'s roles. The name rule leaves it
+  -- an input key; the table rule makes it `Bool`'s role alias, accepted.
+  let env4 ← envOf leanEnv #[own "Flag"]
+  let flag : List (Lean.Name × Ix.Kernel.Role × UInt8) := [(own "Flag", .bool, 1),
+    (own "Flag.off", .boolFalse, 2), (own "Flag.on", .boolTrue, 3), (own "Flag.rec", .boolRec, 4)]
+  let addr (i : UInt8) : Address := ⟨⟨#[i]⟩⟩
+  let ixe4 : Ixon.Env := { named := flag.foldl (fun m (n, _, i) =>
+    m.insert (Ix.Name.fromLeanName n) { addr := addr i }) {} }
+  let roles4 : Std.HashMap Address Ix.Kernel.Role :=
+    flag.foldl (fun m (_, r, i) => m.insert (addr i) r) {}
+  unless (fiberAlias ixe4).size == 0 do
+    errors := errors.push "quotient: table rule: the name rule mapped a name"
+  for (n, r, _) in flag do
+    unless (fiberAliasAt ixe4 roles4)[kname n]? == some (.role r) do
+      errors := errors.push s!"quotient: table rule: {n} is not mapped to {repr r}"
+  match checkSourceCollapsedUsing Ix.Kernel.Reader.builtinPrelude (fiberAliasAt ixe4 roles4)
+      (fun _ => none) env4 (condense env4) with
+  | .ok kenv =>
+    lines := lines.push s!"quotient: table rule: Flag without Bool is Bool's role alias, accepted, \
+      {kenv.consts.length} kernel constants"
+  | .error e => errors := errors.push s!"quotient: table rule: {e}"
   return (errors, lines)
 
 def quotient : TestSeq :=

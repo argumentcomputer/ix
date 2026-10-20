@@ -999,6 +999,22 @@ def checkSourceCollapsedBundled (ixe : Ixon.Env) (env : Ix.Environment) (blocks 
   let hints := fiberHintsMap ixe
   checkSourceCollapsedBundledUsing Ix.Kernel.Reader.builtinPrelude (fiberAlias ixe) (hints[·]?) env blocks
 
+/-- **Quotient Source at a compiled artifact, the role read off the table** `t`
+(`fiberAliasAt` at `roleAtMap t`): an alias of a role's content is that role's
+even where its fiber holds no role name. -/
+def checkSourceCollapsedAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) :=
+  let hints := fiberHintsMap ixe
+  checkSourceCollapsedUsing Ix.Kernel.Reader.builtinPrelude (fiberAliasAt ixe (roleAtMap t))
+    (hints[·]?) env blocks
+
+/-- `checkSourceCollapsedBundled`, the role read off the table `t`. -/
+def checkSourceCollapsedBundledAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) :=
+  let hints := fiberHintsMap ixe
+  checkSourceCollapsedBundledUsing Ix.Kernel.Reader.builtinPrelude (fiberAliasAt ixe (roleAtMap t))
+    (hints[·]?) env blocks
+
 /-! ## The typing tier: partial and unsafe declarations
 
 `checkSource` declines every group with a member that is not safe. The

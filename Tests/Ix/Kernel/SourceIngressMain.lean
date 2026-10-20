@@ -32,8 +32,8 @@ import Tests.Ix.Kernel.SourceIngressCompare
   runs the artifact's hints, one per alias fiber (`Ix.LeanIngress.fiberHints`,
   `checkSourceHinted`), instead of Lean's per name. With `--collapse` (which implies
   `--fiber-hints`), the run is quotient Source's: the artifact's alias fibers
-  (`Ix.LeanIngress.fiberAlias`, role-aware) collapsed group by group, an alias
-  group reported with its representative group's verdict. -/
+  (`Ix.LeanIngress.fiberAliasAt`, the role read off the default table) collapsed group by
+  group, an alias group reported with its representative group's verdict. -/
 
 namespace Tests.Ix.Kernel.SourceIngressMain
 
@@ -102,12 +102,15 @@ def main (args : List String) : IO UInt32 := do
   if let some m := hints then
     IO.println s!"hints: the artifact's per alias fiber (`Ix.LeanIngress.fiberHints`), {m.size} keys"
   let tA ← IO.monoMsNow
-  let collapse := if a.collapse then artifact.map Ix.LeanIngress.fiberAlias else none
+  let table ← IO.ofExcept (Ix.Kernel.Reader.defaultTable.mapError IO.userError)
+  let roles := Ix.LeanIngress.roleAtMap table
+  let collapse := if a.collapse then artifact.map (Ix.LeanIngress.fiberAliasAt · roles) else none
   if let some ixon := artifact then
     if a.collapse then
       IO.eprintln s!"collapse: quotient Source at the artifact's alias fibers \
-        (`Ix.LeanIngress.fiberAlias`, role-aware), {(Ix.LeanIngress.fiberAlias ixon).size} \
-        names mapped to a representative ({(← IO.monoMsNow) - tA} ms)"
+        (`Ix.LeanIngress.fiberAliasAt`, the role read off the default table), \
+        {(Ix.LeanIngress.fiberAliasAt ixon roles).size} names mapped to a representative \
+        ({(← IO.monoMsNow) - tA} ms)"
   -- the bundle's evidence mentions input keys, which quotient Source renames onto the fiber
   -- representatives (`Ix.LeanIngress.evidenceSubst`, as `checkSourceCollapsedBundled` runs it)
   let evidence := match collapse with
