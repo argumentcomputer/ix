@@ -988,6 +988,13 @@ written:
 
 ## 8. Call-Site Surgery
 
+> **History.** This section describes the call-site surgery as it ran
+> before Pass 3. Since the flip to Pass 3 no compile registers a plan:
+> the callers of a changed block are rewritten through Pass 3 images
+> instead, and the surgery was deleted from both compilers (CQ3.5,
+> 2026-10-20). The `CallSite` metadata below remains only for decoding
+> artifacts written before Pass 3, until CQ3.6 retires it.
+
 User code — and Lean-auto-generated constants like `_sizeOf_N`,
 `_ctorIdx`, `.noConfusion` — reference aux constants by applying them
 to source-order argument lists:
