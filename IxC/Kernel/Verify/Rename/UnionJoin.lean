@@ -113,6 +113,18 @@ theorem over_extend {front : List (Declaration md)} {xs : List (List (Declaratio
     Over (namesOf front ++ namesOf xs.flatten ++ namesOf u) k :=
   h.mono fun _ hn => List.mem_append_left _ hn
 
+/-- Over names and more, outside the more's bases: over the names. -/
+theorem over_drop {ns ns' : List (Key md)} {k : Key md} (h : Over (ns ++ ns') k)
+    (hk : k.base ∉ ns'.map Key.base) : Over ns k := by
+  rcases h with h | h
+  · rw [List.map_append, List.mem_append] at h
+    exact Or.inl (h.resolve_right hk)
+  · exact Or.inr h
+
+theorem namesOf_flatten_snoc (xs : List (List (Declaration md))) (u : List (Declaration md)) :
+    namesOf (xs ++ [u]).flatten = namesOf xs.flatten ++ namesOf u := by
+  rw [List.flatten_append, List.flatten_singleton, namesOf_append]
+
 namespace RunSide
 
 variable {μ : CheckMode} {F : Nat} {ev : Evidences md} {front : List (Declaration md)}
@@ -319,6 +331,182 @@ theorem shared (hs : UnionSetting μ F ev₁ ev₂ front us₁ us₂ E env₁ en
     (hv₂ : v ∈ us₂) (hv₁ : v ∈ us₁) : ∀ j ∈ basesOf v, AgreeOn env₂ env₁ j :=
   hs.shared_from us₂ [] rfl (fun _ h => nomatch h) v hv₂ hv₁
 
+/-- **The union fold**, along the second list: from a split `us₂ = xs ++ ys`
+where the union's `U` (the first list's environment, then the second's units
+among `xs` it lacks) answers as the second run's `B` over every name of the
+front and of `xs`, the union runs the rest of the second's units it lacks,
+ending where it answers as the second run's final environment over every
+name of the second list. -/
+theorem union_from (hs : UnionSetting μ F ev₁ ev₂ front us₁ us₂ E env₁ env₂)
+    (hops : ∀ u ∈ us₂, (∃ d ∈ u, ¬ d.NoOp) → u ∈ us₁) :
+    ∀ (ys xs : List (List (Declaration md))) (B U : Env md), us₂ = xs ++ ys →
+      xs.flatten.foldlM (checkDecl μ (fueledOps μ F) ev₂) E = .ok B →
+      (xs.filter (· ∉ us₁)).flatten.foldlM (checkDecl μ (fueledOps μ F) ev₁) env₁ = .ok U →
+      (∀ k, Over (namesOf front ++ namesOf xs.flatten) k → U.find? k = B.find? k) →
+      FindOver (namesOf front ++ namesOf us₁.flatten ++
+        namesOf (xs.filter (· ∉ us₁)).flatten) U →
+      ∃ U', (ys.filter (· ∉ us₁)).flatten.foldlM (checkDecl μ (fueledOps μ F) ev₁) U = .ok U' ∧
+        ∀ k, Over (namesOf front ++ namesOf us₂.flatten) k → U'.find? k = env₂.find? k
+  | [], xs, B, U, h, hB, _, hinv, _ => by
+    have hx : us₂ = xs := by rw [h, List.append_nil]
+    have hrun := hs.side₂.run
+    rw [hx, hB] at hrun
+    cases Except.ok.inj hrun
+    rw [hx]
+    exact ⟨U, rfl, hinv⟩
+  | u :: ys, xs, B, U, h, hB, hU, hinv, hkeys => by
+    obtain ⟨B₀, B', sB⟩ := hs.side₂.at_ h
+    have hB₀ : B = B₀ := by
+      have := sB.pre
+      rw [hB] at this
+      exact Except.ok.inj this
+    subst hB₀
+    have hu₂ : u ∈ us₂ := SideAt.mem_u h
+    have hsplit := hs.side₂.units.split h
+    have heq : us₂ = (xs ++ [u]) ++ ys := by rw [h]; simp
+    have hpre' : (xs ++ [u]).flatten.foldlM (checkDecl μ (fueledOps μ F) ev₂) E = .ok B' := by
+      rw [List.flatten_append, List.flatten_singleton]
+      exact foldlM_append_of_ok sB.pre sB.step
+    have hxs : ∀ v ∈ xs.filter (· ∉ us₁), v ∈ us₂ := fun v hv => by
+      rw [h]; exact List.mem_append_left _ (List.mem_filter.mp hv).1
+    by_cases hu₁ : u ∈ us₁
+    · -- a shared unit: the union holds it already
+      have hf : (xs ++ [u]).filter (· ∉ us₁) = xs.filter (· ∉ us₁) := by
+        simp [List.filter_append, hu₁]
+      have hfc : (u :: ys).filter (· ∉ us₁) = ys.filter (· ∉ us₁) := by
+        simp [hu₁]
+      rw [hfc]
+      refine union_from hs hops ys (xs ++ [u]) B' U heq hpre' (by rw [hf]; exact hU) ?_
+        (by rw [hf]; exact hkeys)
+      intro k hk
+      rw [namesOf_flatten_snoc, ← List.append_assoc] at hk
+      by_cases hku : k.base ∈ basesOf u
+      · have hU₁ : U.find? k = env₁.find? k := by
+          refine (run_free μ _ ev₁ _ (fun d hd => ?_) env₁ U hU).keep fun hm => ?_
+          · obtain ⟨v, hv, hdv⟩ := List.mem_flatten.mp hd
+            exact hs.side₂.units.free v (hxs v hv) d hdv
+          · obtain ⟨v, hv, hjv⟩ := mem_basesOf_flatten.mp hm
+            exact hsplit.1 _ hku
+              (mem_basesOf_flatten.mpr ⟨v, (List.mem_filter.mp hv).1, hjv⟩)
+        rw [hU₁, hs.shared hu₂ hu₁ k.base hku k rfl, sB.env_u hs.side₂ h hku]
+      · rw [sB.B'_out hku]
+        exact hinv k (over_drop hk hku)
+    · -- a unit the union lacks: framed from the second run into the union
+      have hfc : (u :: ys).filter (· ∉ us₁) = u :: ys.filter (· ∉ us₁) := by
+        simp [hu₁]
+      have hf : (xs ++ [u]).filter (· ∉ us₁) = xs.filter (· ∉ us₁) ++ [u] := by
+        simp [List.filter_append, hu₁]
+      have hop : ∀ d ∈ u, d.NoOp := fun d hd =>
+        Classical.byContradiction fun hnd => hu₁ (hops u hu₂ ⟨d, hd, hnd⟩)
+      have hUnone : ∀ k, k.base ∈ basesOf u → U.find? k = none := by
+        intro k hku
+        cases hUk : U.find? k with
+        | none => rfl
+        | some c =>
+          exfalso
+          rcases hkeys k c hUk with hm | hp
+          · simp only [List.map_append, List.mem_append] at hm
+            rcases hm with (hm | hm) | hm
+            · exact hs.side₂.units.front u hu₂ _ hku hm
+            · obtain ⟨v, hv, hjv⟩ := mem_basesOf_flatten.mp hm
+              have := hs.agree v hv u hu₂ ⟨k.base, hjv, hku⟩
+              rw [this] at hv
+              exact hu₁ hv
+            · obtain ⟨v, hv, hjv⟩ := mem_basesOf_flatten.mp hm
+              exact hsplit.1 _ hku
+                (mem_basesOf_flatten.mpr ⟨v, (List.mem_filter.mp hv).1, hjv⟩)
+          · exact hs.side₂.units.pre u hu₂ _ hku hp
+      have fBU : EnvFrame (nameScope (namesOf front ++ namesOf xs.flatten ++ namesOf u)) B U :=
+        EnvFrame.mk
+          (fun k hk => by
+            by_cases hku : k.base ∈ basesOf u
+            · rw [hUnone k hku, sB.none_u hs.side₂ h hku]
+            · exact hinv k (over_drop (Key.good_nameScope.mp hk) hku))
+          (fun k c _ hc => ConstantInfo.Good.mono
+            (nameScope_le fun _ hn => List.mem_append_left _ hn) (sB.good k c hc))
+          (fun _ hr => (sB.keys.mono fun _ hn => List.mem_append_left _ hn).absent hr)
+          (nameScope_pre _)
+      obtain ⟨U₁, hU₁, hr⟩ := foldlM_frame_noop μ F ev₂ ev₁ u fBU
+        (fun d hd => ⟨sB.ugood d hd, hop d hd⟩) sB.step
+      have hkeys' : FindOver (namesOf front ++ namesOf us₁.flatten ++
+          namesOf ((xs ++ [u]).filter (· ∉ us₁)).flatten) U₁ := by
+        rw [hf, namesOf_flatten_snoc]
+        intro k c hk
+        rcases (foldlM_checkDecl_post μ _ ev₁ u U U₁ hU₁).find_cases hk with hk | ⟨hk, -⟩
+        · refine (hkeys k c hk).mono fun n hn => ?_
+          rw [List.mem_append] at hn ⊢
+          rcases hn with hn | hn
+          · exact Or.inl hn
+          · exact Or.inr (List.mem_append_left _ hn)
+        · exact hk.mono fun _ hn => List.mem_append_right _ (List.mem_append_right _ hn)
+      obtain ⟨U', hU', hfin⟩ := union_from hs hops ys (xs ++ [u]) B' U₁ heq hpre'
+        (by
+          rw [hf, List.flatten_append, List.flatten_singleton]
+          exact foldlM_append_of_ok hU hU₁)
+        (fun k hk => by
+          rw [namesOf_flatten_snoc, ← List.append_assoc] at hk
+          exact hr.find_eq (Key.good_nameScope.mpr hk))
+        hkeys'
+      refine ⟨U', ?_, hfin⟩
+      rw [hfc, List.flatten_cons]
+      exact foldlM_append_of_ok hU₁ hU'
+
 end UnionSetting
+
+/-! ## The union -/
+
+/-- **S1, the union of two accepted lists** (reference level). Two lists
+sharing one front — each accepted under its own evidence, its units well
+formed after the front (`UnitsOk`), closed in order — whose units agree
+wherever they share a base (`UnitsAgree`), and whose second list's
+operations are the first's: the first list, then the second's units it
+lacks, is accepted under the first list's evidence, and its environment
+answers every lookup either list's environment answers, as it does. -/
+theorem Cached.AcceptsRef.union {μ : CheckMode} {ev₁ ev₂ : Evidences md}
+    {front : List (Declaration md)} {us₁ us₂ : List (List (Declaration md))} {env₁ env₂ : Env md}
+    (h₁ : Cached.AcceptsRef μ ev₁ (front ++ us₁.flatten) env₁)
+    (h₂ : Cached.AcceptsRef μ ev₂ (front ++ us₂.flatten) env₂)
+    (hu₁ : UnitsOk front us₁) (hu₂ : UnitsOk front us₂) (hagree : UnitsAgree us₁ us₂)
+    (hc₁ : Closed (front ++ us₁.flatten)) (hc₂ : Closed (front ++ us₂.flatten))
+    (hops : ∀ u ∈ us₂, (∃ d ∈ u, ¬ d.NoOp) → u ∈ us₁) :
+    ∃ env, Cached.AcceptsRef μ ev₁ (front ++ us₁.flatten ++ (us₂.filter (· ∉ us₁)).flatten) env ∧
+      (∀ k c, env₁.find? k = some c → env.find? k = some c) ∧
+      (∀ k c, env₂.find? k = some c → env.find? k = some c) := by
+  rw [Cached.AcceptsRef.iff] at h₁ h₂
+  obtain ⟨F₁, hF₁⟩ := h₁
+  obtain ⟨F₂, hF₂⟩ := h₂
+  unfold checkDeclsPure at hF₁ hF₂
+  have r₁ := checkDeclsFrom_mono (Nat.le_max_left F₁ F₂) hF₁
+  have r₂ := checkDeclsFrom_mono (Nat.le_max_right F₁ F₂) hF₂
+  obtain ⟨E₁, hE₁, hr₁⟩ := foldlM_append_ok r₁
+  obtain ⟨E₂, hE₂, hr₂⟩ := foldlM_append_ok r₂
+  have hE := foldlM_det μ _ ev₂ ev₁ front hE₂ hE₁
+  subst hE
+  obtain ⟨hcf, hcl₁⟩ := ClosedFrom.append hc₁
+  obtain ⟨-, hcl₂⟩ := ClosedFrom.append hc₂
+  have hg₀ : FindGood (nameScope []) (Env.empty : Env md) := fun _ _ h => by
+    simp [Env.empty, Env.find?] at h
+  have ho₀ : FindOver [] (Env.empty : Env md) := fun _ _ h => by
+    simp [Env.empty, Env.find?] at h
+  obtain ⟨hgE, hoE⟩ := run_good μ _ ev₁ [] front Env.empty E₂ hg₀ ho₀ hcf hE₁
+  simp only [List.nil_append] at hgE hoE hcl₁ hcl₂
+  have hs : UnionSetting μ (max F₁ F₂) ev₁ ev₂ front us₁ us₂ E₂ env₁ env₂ :=
+    ⟨⟨hgE, hoE, hr₁, hu₁, hcl₁⟩, ⟨hgE, hoE, hr₂, hu₂, hcl₂⟩, hagree⟩
+  obtain ⟨U', hU', hfin⟩ := hs.union_from hops us₂ [] E₂ env₁ rfl rfl rfl
+    (fun k hk => by
+      rcases over_split' (xs := []) hk with hf | hx
+      · exact hs.side₁.front_env hf
+      · simp at hx)
+    (by simpa using hs.side₁.final.2)
+  refine ⟨U', ?_, ?_, ?_⟩
+  · rw [Cached.AcceptsRef.iff]
+    refine ⟨max F₁ F₂, ?_⟩
+    unfold checkDeclsPure
+    exact foldlM_append_of_ok r₁ hU'
+  · intro k c hk
+    exact (foldlM_checkDecl_post μ _ ev₁ _ env₁ U' hU').persist hk
+  · intro k c hk
+    rw [hfin k (hs.side₂.final.2 k c hk)]
+    exact hk
 
 end Ix.Kernel
