@@ -23,8 +23,7 @@ with an ungenerated declaration whose bases cover the run's
 * `memberKey_role_or_id`, `Lowering.closed`: under a table that keys only
   roles (`RolesKeyed`, `contextWith_keyed`) a member key is a role or input
   key, never derived, so each lowering is empty or ends in a declaration that
-  is not generated (`isGenerated`, a stand-in for IxC's until
-  `IxC/Kernel/Units.lean` is on the branch).
+  is not generated (IxC's `Declaration.isGenerated`, `IxC/Kernel/Units.lean`).
 
 The ingress side, the same facts over a Lean group's keys (`GroupKeyOf`: the
 ingress keys of its constants):
@@ -513,36 +512,25 @@ theorem MemberKeyOf.role_or_id {cx : Ctx md} (hr : RolesKeyed cx) {owner : Addre
   let ⟨_, _, hk⟩ := h
   memberKey_role_or_id hr hk
 
-/-- A derived key (stand-in for IxC's `Key.isAux`, `IxC/Kernel/Units.lean`,
-not yet on the branch; the same definition). -/
-def isDerived : Ix.Kernel.Key md → Bool
-  | .aux _ _ => true
-  | _ => false
-
-/-- A generated declaration: it declares names, all derived (stand-in for
-IxC's `Declaration.isGenerated`; the same definition). -/
-def isGenerated (d : CDecl md) : Bool :=
-  !d.names.isEmpty && d.names.all isDerived
-
 /-- A declaration naming no derived key is not generated. -/
-theorem isGenerated_false {d : CDecl md} (h : ∀ k ∈ d.names, isDerived k = false) :
-    isGenerated d = false := by
-  unfold isGenerated
+theorem isGenerated_false {d : CDecl md} (h : ∀ k ∈ d.names, Ix.Kernel.Key.isAux k = false) :
+    Ix.Kernel.Declaration.isGenerated d = false := by
+  unfold Ix.Kernel.Declaration.isGenerated
   cases hn : d.names with
   | nil => rfl
   | cons k ks => simp [h k (by simp [hn])]
 
 /-- A member key is not derived. -/
 theorem MemberKeyOf.not_derived {cx : Ctx md} (hr : RolesKeyed cx) {owner : Address} {k : CName md}
-    (h : MemberKeyOf cx owner k) : isDerived k = false := by
+    (h : MemberKeyOf cx owner k) : Ix.Kernel.Key.isAux k = false := by
   rcases h.role_or_id hr with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
 
 /-- **Each lowering is empty or ends in a declaration that is not generated**,
 whose names are `K`-keys, when no `K`-key is derived (what IxC's units need
 of a record or a group). -/
-theorem LoweringBy.closed {K : CName md → Prop} (hK : ∀ k, K k → isDerived k = false) {r : Read md}
+theorem LoweringBy.closed {K : CName md → Prop} (hK : ∀ k, K k → Ix.Kernel.Key.isAux k = false) {r : Read md}
     (h : LoweringBy K r) :
-    r.decls.toList = [] ∨ ∃ ds d, r.decls.toList = ds ++ [d] ∧ isGenerated d = false ∧
+    r.decls.toList = [] ∨ ∃ ds d, r.decls.toList = ds ++ [d] ∧ Ix.Kernel.Declaration.isGenerated d = false ∧
       ∀ k ∈ d.names, K k := by
   rcases h with ⟨-, hall⟩ | ⟨gens, d, hd, -, hk⟩
   · rcases List.eq_nil_or_concat r.decls.toList with he | ⟨ds, d, hd⟩
@@ -555,7 +543,7 @@ theorem LoweringBy.closed {K : CName md → Prop} (hK : ∀ k, K k → isDerived
 /-- `LoweringBy.closed` for a record, under `RolesKeyed`. -/
 theorem Lowering.closed {cx : Ctx md} (hr : RolesKeyed cx) {owner : Address} {r : Read md}
     (h : Lowering cx owner r) :
-    r.decls.toList = [] ∨ ∃ ds d, r.decls.toList = ds ++ [d] ∧ isGenerated d = false ∧
+    r.decls.toList = [] ∨ ∃ ds d, r.decls.toList = ds ++ [d] ∧ Ix.Kernel.Declaration.isGenerated d = false ∧
       ∀ k ∈ d.names, MemberKeyOf cx owner k :=
   LoweringBy.closed (fun _ h => h.not_derived hr) h
 
@@ -1056,13 +1044,13 @@ theorem leanIngress_units {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {
 open Ix.LeanIngress in
 /-- An ingress key is not derived: Source mode's fixed binding gives a role key
 or the name itself. -/
-theorem ingressKey_not_derived (n : Ix.Name) : isDerived (ingressKey n) = false := by
+theorem ingressKey_not_derived (n : Ix.Name) : Ix.Kernel.Key.isAux (ingressKey n) = false := by
   unfold ingressKey Ix.Kernel.Key.ofName
   split <;> rfl
 
 /-- A group's key is not derived. -/
 theorem GroupKeyOf.not_derived {gr : Ix.LeanIngress.Group} {k : CName .source} (h : GroupKeyOf gr k) :
-    isDerived k = false := by
+    Ix.Kernel.Key.isAux k = false := by
   obtain ⟨n, -, rfl⟩ := h
   exact ingressKey_not_derived n
 
