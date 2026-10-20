@@ -26,6 +26,7 @@ public import Ix.CompileM
 public import Ix.CompileDriver
 public import Ix.CompileResource
 public import Ix.Cli.DriverOptions
+public import Ix.AuxGen.LiteralSupport
 public import Ix.Cli.ValidateCmd
 public import Ix.Cli.CompileCmd
 public section
@@ -74,6 +75,9 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let t0 ← IO.monoMsNow
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
+  -- AuxGen M3: the literal support the input lacks, for the Source service only
+  -- (generation side; nothing compiled or certified reads it).
+  let opts := { opts with serviceSupport := Ix.AuxGen.literalSupportFor fe.env constList }
   -- The compile, then the resource post-step (an input with semantic
   -- contracts is emitted only if its resources validate).
   match ← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers)

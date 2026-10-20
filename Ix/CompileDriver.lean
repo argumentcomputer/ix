@@ -1409,6 +1409,30 @@ def scheduleLevels (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) :
     current := next
   return out
 
+/-- **The literal support a selected closure lacks**, for the Source service
+only (AuxGen M3; `Ix.AuxGen.literalSupportFor`): its constants by name and
+their condensation. Generation side only: nothing compiled or certified
+reads it. -/
+structure ServiceSupport where
+  get? : Name → Option ConstantInfo
+  blocks : Ix.CondensedBlocks
+
+instance : Inhabited ServiceSupport := ⟨{ get? := fun _ => none, blocks := default }⟩
+
+/-- The support constants canonicalized and condensed, as the IO pipeline
+canonicalizes and condenses its input. -/
+def ServiceSupport.of (consts : List (Lean.Name × Lean.ConstantInfo)) : ServiceSupport := Id.run do
+  let mut state : Ix.CanonM.CanonState := {}
+  let mut map : Std.HashMap Name ConstantInfo := {}
+  let mut refs : Ix.Map Name (Set Name) := {}
+  for (_, lci) in consts do
+    let (ci, state') := StateT.run (Ix.CanonM.canonConst lci) state
+    state := state'
+    let (r, _) := Ix.GraphM.run { consts := {} } .init (Ix.graphConst ci)
+    map := map.insert ci.getCnst.name ci
+    refs := refs.insert ci.getCnst.name r
+  return { get? := map.get?, blocks := Ix.CondenseM.run refs }
+
 /-- **How the fold's aux tails ask IxC** (AuxGen M2). The defaults are
 production's: `fallback` (IxC's answers to `.below`'s level questions are the
 compile's wherever IxC answers; `Ix.Tc` answers behind a refusal, which a
@@ -1425,7 +1449,24 @@ structure AuxIxcOptions where
   asks : Ix.AuxGen.Source.Asks := .below
   trace : Bool := false
   measureOnly : Bool := false
+  /-- the literal support the input lacks (`ServiceSupport`); the IO pipeline
+  sets it from `DriverOptions.serviceSupport` -/
+  support : Option ServiceSupport := none
   deriving Inhabited
+
+/-- **The Source service's input**: the fold's lookups and condensation, with
+the literal support beside them when the input lacks it (generation side
+only: the fold itself reads `get?` and `blocks` alone). -/
+def AuxIxcOptions.serviceInput (aux : AuxIxcOptions) (get? : Name → Option ConstantInfo)
+    (blocks : Ix.CondensedBlocks) : (Name → Option ConstantInfo) × Ix.CondensedBlocks :=
+  match aux.support with
+  | none => (get?, blocks)
+  | some s =>
+    let union {α} (a b : Ix.Map Name α) : Ix.Map Name α := b.fold (init := a) fun m k v => m.insert k v
+    (fun n => (get? n).orElse fun _ => s.get? n,
+      { lowLinks := union blocks.lowLinks s.blocks.lowLinks
+        blocks := union blocks.blocks s.blocks.blocks
+        blockRefs := union blocks.blockRefs s.blocks.blockRefs })
 
 /-- **The driver.** Compile an environment's condensation with the full
     production semantics (per-block aux tails with their call-site plans, the
@@ -1464,7 +1505,9 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   validateMutualSafety env blocks
   let sched := FoldSchedule.of blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
-  let ra := Ix.AuxGen.Source.RunAhead.start view.get? blocks (scheduleLevels blocks sched) aux.asks
+  let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
+  let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
+    aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := fun key =>
     (ra.runFor key).map fun t => Ix.AuxGen.Ixc.oracleOfRun aux.mode aux.trace (fun _ => t.get)
       (ra.membersFor key)
@@ -1515,6 +1558,11 @@ structure DriverOptions where
   /-- AuxGen's measurement modes (`AuxIxcOptions`; the CLI's
       `IX_AUXGEN_IXC`); `none`, production's setting, by default. -/
   auxIxc : Option AuxIxcOptions := none
+  /-- The literal support the input lacks, from the Lean environment it was
+      taken from (`Ix.AuxGen.literalSupportFor`; the CLI sets it). For the
+      Source service only (`AuxIxcOptions.support`): generation side, never
+      compiled or certified. -/
+  serviceSupport : List (Lean.Name × Lean.ConstantInfo) := []
 
 
 /-! ## The full pure-Lean pipeline
@@ -1731,7 +1779,9 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     compileEnvFoldWithSource ixEnv condensed (dbg := dbg)
       (unmaterialized := leanByIx.size - codeConsts.size)
       (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
-      (aux := opts.auxIxc.getD {})
+      (aux := { opts.auxIxc.getD {} with
+        support := if opts.serviceSupport.isEmpty then none
+          else some (ServiceSupport.of opts.serviceSupport) })
   match folded with
   | .error e => return .error e
   | .ok ((ixonEnv, _, cenv), source) =>

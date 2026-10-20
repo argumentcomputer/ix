@@ -38,6 +38,7 @@ import Ix.EnvScope
 import Ix.CompileM
 import Ix.CompileDriver
 import Ix.DecompileDriver
+import Ix.AuxGen.LiteralSupport
 import Ix.Ixon
 import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.KernelReport
@@ -83,7 +84,11 @@ in `out.cenv.ungrounded`; the caller decides what to do with them. -/
 def compileClosure (env : Environment) (closure : List (Name × ConstantInfo))
     (workers : Nat := 32) : IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
-  let opts : Ix.CompileM.DriverOptions := { sharingLimits := (← compilerLimits) }
+  -- AuxGen M3: the literal support the closure lacks, for the drivers' Source
+  -- service only, as `ix compile-lean` gives it (generation side).
+  let opts : Ix.CompileM.DriverOptions :=
+    { sharingLimits := (← compilerLimits)
+      serviceSupport := Ix.AuxGen.literalSupportFor env closure }
   match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (opts := opts) with
   | .ok o => pure o
   | .error e => throw (IO.userError s!"Lean compile failed: {e}")

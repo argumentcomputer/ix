@@ -239,7 +239,9 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
   let sched := FoldSchedule.of blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
   let aux : AuxIxcOptions := {}
-  let ra := Ix.AuxGen.Source.RunAhead.start view.get? blocks (scheduleLevels blocks sched) aux.asks
+  let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
+  let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
+    aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := fun key =>
     (ra.runFor key).map fun t => Ix.AuxGen.Ixc.oracleOfRun aux.mode aux.trace (fun _ => t.get)
       (ra.membersFor key)
