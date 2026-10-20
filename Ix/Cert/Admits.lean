@@ -102,6 +102,16 @@ theorem admits_of_checkSource {env : Ix.Environment} {blocks : Ix.CondensedBlock
   obtain ⟨converted, ok⟩ := checkSource_converts accepted _ mem
   exact ⟨cands, converted, ok⟩
 
+/-- **An accepted bundled check admits every inductive block** stored under its
+first member (`checkSourceBundled_converts`). -/
+theorem admits_of_checkSourceBundled {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {kenv : Ix.Kernel.Env .source} (accepted : checkSourceBundled env blocks = .ok kenv) {n : Ix.Name}
+    {first : Ix.InductiveVal} (stored : (n, Ix.ConstantInfo.inductInfo first) ∈ env.consts.toList)
+    (head : first.all[0]? = some n) : Admits env first := by
+  obtain ⟨cands, mem⟩ := mem_groupsOf env blocks stored head
+  obtain ⟨converted, ok⟩ := checkSourceBundled_converts accepted _ mem
+  exact ⟨cands, converted, ok⟩
+
 /-- **Source acceptance admits every inductive block of `sub`** stored under
 its first member. -/
 theorem admits_of_sourceAccepts {condense : Ix.Environment → Ix.CondensedBlocks}
@@ -109,7 +119,7 @@ theorem admits_of_sourceAccepts {condense : Ix.Environment → Ix.CondensedBlock
     {envS : Ix.Kernel.Env .source} (accepted : SourceAccepts condense env roots sub envS) {n : Ix.Name}
     {first : Ix.InductiveVal} (stored : (n, Ix.ConstantInfo.inductInfo first) ∈ sub.consts.toList)
     (head : first.all[0]? = some n) : Admits sub first :=
-  admits_of_checkSource accepted.2 stored head
+  admits_of_checkSourceBundled accepted.2 stored head
 
 open Ix.CompileM in
 /-- **R12's Source premises of `inductive_reads`, from Source acceptance**:

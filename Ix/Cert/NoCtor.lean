@@ -19,7 +19,7 @@ sources' constants to their keys:
 * `noCtorIn_of_ingress`: a conversion that mentions no constructor key has a
   source that mentions no constructor (no injectivity: a source name equal to a
   constructor's has its key);
-* `noCtor_of_checkSource`, `inductive_reads_sourceAccepts`: so `inductive_reads`
+* `noCtor_of_checkSourceWith`, `inductive_reads_sourceAccepts`: so `inductive_reads`
   holds of a Source-accepted closure with its `NoCtorIn` premises discharged;
   the family's name related to its key (R13's half) stays. -/
 
@@ -496,9 +496,10 @@ key occurs in a former's or constructor's type, and so, through the
 conversion, no constructor in the source's types (`noCtorIn_of_ingress`). The
 set theory is a hypothesis of the fold's refinement, not of the statement's
 meaning. -/
-theorem noCtor_of_checkSource (V : Type w) [Ix.Kernel.SetTheory V] {sub : Ix.Environment}
+theorem noCtor_of_checkSourceWith (V : Type w) [Ix.Kernel.SetTheory V] {pre : Ix.Kernel.Reader.Prelude .source}
+    {ev : Ix.Kernel.Evidences .source} {sub : Ix.Environment}
     {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
-    (accepted : checkSource sub blocks = .ok kenv) {n : Ix.Name} {first : Ix.InductiveVal}
+    (accepted : checkSourceWith pre ev sub blocks = .ok kenv) {n : Ix.Name} {first : Ix.InductiveVal}
     (stored : (n, Ix.ConstantInfo.inductInfo first) ∈ sub.consts.toList) (head : first.all[0]? = some n)
     {source : Ix.InductiveVal} (member : source.cnst.name ∈ first.all.toList)
     (found : sub.consts.get? source.cnst.name = some (.inductInfo source))
@@ -506,7 +507,8 @@ theorem noCtor_of_checkSource (V : Type w) [Ix.Kernel.SetTheory V] {sub : Ix.Env
     (looked : List.Forall₂ (fun n c => sub.consts.get? n = some (.ctorInfo c)) source.ctors.toList
       constructors.toList) :
     NoCtorIn constructors source.cnst.type ∧ ∀ ctor ∈ constructors.toList, NoCtorIn constructors ctor.cnst.type := by
-  obtain ⟨pre, decls, _, hingress, href⟩ := checkSource_refines_ref V accepted
+  obtain ⟨decls, hingress, hc⟩ := checkSourceWith_reading accepted
+  have href := Ix.Kernel.Cached.checkDecls_refines_ref V rfl hc
   obtain ⟨cands, memG⟩ := Ix.Cert.Admits.mem_groupsOf sub blocks stored head
   obtain ⟨gi, hlt, hgi⟩ := Array.getElem_of_mem memG
   have hlt' : gi < (graph sub blocks).groups.size := by rw [graph_groups]; exact hlt
@@ -590,7 +592,7 @@ variable {md : Mode} (cx : Ctx md) (names : Ix.Name → CName md → Prop) (σ :
 /-- **A compiled standalone inductive of a Source-accepted closure is read back
 as its source** (N-READS, N4 (b)): `inductive_reads` with its Source premises
 (safety, constructor positions, telescopes: R12, through N1's admission) and
-its "no constructor occurs" premises (`noCtor_of_checkSource`) discharged by
+its "no constructor occurs" premises (`noCtor_of_checkSourceWith`) discharged by
 Source acceptance of `sub`. What stays: the family's own name related to its
 key (`selfKey`, R13's half), the reader's index and keys, the compile
 context's agreement with `sub` on the constructor names, and the state the
@@ -628,8 +630,9 @@ theorem inductive_reads_sourceAccepts (V : Type w) [Ix.Kernel.SetTheory V]
   have looked' : List.Forall₂ (fun n c => sub.consts.get? n = some (.ctorInfo c)) source.ctors.toList
       (#[] ++ cs.toArray).toList := by
     simpa using forall₂_mono_mem looked fun n inside c resolved => (agree n inside).symm.trans resolved
+  obtain ⟨_, _, bundled⟩ := checkSourceBundled_with accepted.2
   obtain ⟨typeNoCtor, ctorNoCtor⟩ :=
-    noCtor_of_checkSource V accepted.2 stored head member sourceFound _ looked'
+    noCtor_of_checkSourceWith V bundled stored head member sourceFound _ looked'
   exact inductive_reads_source cx names σ bindings context free aligned external
     (Ix.Cert.Admits.admits_of_sourceAccepts accepted stored head) source member sourceFound agree _ found state
     indexed order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor clean wire ran

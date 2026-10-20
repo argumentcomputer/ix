@@ -2,17 +2,19 @@ import Ix.Cert.Compile
 import Ix.LeanIngress.Theorems
 import Ix.Ixon.Authenticated.Theorems
 import IxC.Kernel.Ixon.Values
+import Ix.Cert.SourceBundled
 
 /-! # The certification statements, in terms of IxC
 
 One checker, two front ends:
 
 * **Source mode.** `Ix.CanonM` turns a Lean environment into an
-  `Ix.Environment`, the compiler's input. `Ix.LeanIngress.checkSource` hands
-  its constants, under Lean's own names, to IxC's verified fold
+  `Ix.Environment`, the compiler's input. `Ix.LeanIngress.checkSourceBundled`
+  hands its constants, under Lean's own names, to IxC's verified fold
   `Ix.Kernel.Cached.checkDecls`, under the fixed Source role table (each
-  role bound to its Lean name) with the evidence the environment's certificate
-  theorems give (`Ix.LeanIngress.sourceEvidence`). IxC's model of the result
+  role bound to its Lean name) with the committed bundle's evidence
+  (`Ix.RoleEvidence.bundleEvidence`, RoleData's `sourceEvidence`; owner,
+  2026-10-20), whatever the input carries. IxC's model of the result
   is the source semantics.
 * **Ixon mode.** The compiled artifact's records, as the bytes their
   addresses are computed over, go through the certified entry at BLAKE3,
@@ -21,7 +23,7 @@ One checker, two front ends:
   one).
 
 `compile` (`Ix.Cert.Compile`) relates them. Every statement is per root:
-`checkSource` is all or nothing, and every real environment has `partial` or
+the Source check is all or nothing, and every real environment has `partial` or
 `unsafe` constants, which decline, so a statement about a whole Init or
 Mathlib would be vacuous. A statement is about the closure of a list of roots
 under `DependsOn` (`IsClosure`), and on the Ixon side about the records that
@@ -113,7 +115,7 @@ grouping is a function of the environment, never a free input: the
 compiler's is `blocksOf`. -/
 def SourceAccepts (condense : Ix.Environment → Ix.CondensedBlocks) (env : Ix.Environment)
     (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source) : Prop :=
-  IsClosure env roots sub ∧ Ix.LeanIngress.checkSource sub (condense sub) = .ok envS
+  IsClosure env roots sub ∧ Ix.LeanIngress.checkSourceBundled sub (condense sub) = .ok envS
 
 /-- Structural equality of names. `Ix.Name`'s `==` compares the stored hashes
 only, so two names with one hash field are `==` without being equal. -/
@@ -641,7 +643,7 @@ def IxonValueSound : Prop :=
 
 theorem sourceConsistent : SourceConsistent.{w} := by
   intro _ V _ _ _ _ _ h
-  exact Ix.LeanIngress.checkSource_no_proof_of_False V h.2
+  exact Ix.LeanIngress.checkSourceBundled_no_proof_of_False V h.2
 
 theorem ixonConsistent : IxonConsistent.{w} := by
   intro V _ _ _ _ _ _ _ h
@@ -655,7 +657,7 @@ theorem ixonAuthentic : IxonAuthentic := by
 
 theorem sourceValueSound : SourceValueSound.{w} := by
   intro _ _ _ _ envS h V _
-  obtain ⟨_, _, _, _, hc⟩ := Ix.LeanIngress.checkSource_reading h.2
+  obtain ⟨_, _, _, _, hc⟩ := Ix.LeanIngress.checkSourceBundled_reading h.2
   obtain ⟨M, hM⟩ := Ix.Kernel.Cached.checkDecls_model_defn_values V _ _ envS hc
   exact ⟨{ M with defn_value := hM }⟩
 

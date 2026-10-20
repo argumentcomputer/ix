@@ -209,7 +209,7 @@ def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
 its constructors' types (`InductiveReading.NoCtorIn`, through its check
 `noCtorIn` and `noCtorIn_iff`), for every inductive of `env`. It is
 `inductive_reads`' premise, proved from Source acceptance since N4 (b)
-(`Ix.Cert.NoCtor.noCtor_of_checkSource`); the check keeps it observed on Init+Std.
+(`Ix.Cert.NoCtor.noCtor_of_checkSourceWith`); the check keeps it observed on Init+Std.
 The check is not vacuous: a constructor's own constant is refused. -/
 def noCtorCases (label : String) (env : Ix.Environment) : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
@@ -420,7 +420,7 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   lines := lines.push s!"closure of {roots.length} roots in {env.consts.size} constants: \
     {sub.consts.size} constants, closed under DependsOn"
   -- Source acceptance
-  let some envS := (Ix.LeanIngress.checkSource sub (Ix.Cert.blocksOf sub)).toOption
+  let some envS := (Ix.LeanIngress.checkSourceBundled sub (Ix.Cert.blocksOf sub)).toOption
     | return (errors.push "Source mode refuses the closure under Ix.Cert.blocksOf", lines)
   lines := lines.push s!"Source accepts the closure: {envS.consts.length} kernel constants"
   -- no constant of the closure failed (`NoFailure`, decided on the report),
@@ -592,6 +592,26 @@ def roleEvidenceCase : IO (Array String × Array String) := do
         | .ok _ => "accepts" | .error (e, i) => s!"refuses at {i}: {e}"
       return (#[s!"role evidence: defines every operation: {defines}; the fold {run}"], #[])
 
+/-- Source at the pinned bundle evidence (owner, 2026-10-20): the statement closure of
+`Nat.div`, a well-founded `Nat` operation whose evidence the closure does not carry, is
+accepted by `checkSourceBundled` (`SourceAccepts`' check); `checkSource`, at the input's own
+evidence, declines it. -/
+def natDivClosure (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[`Nat.div])
+  let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
+  let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
+  let sub := Ix.Cert.closure env [Ix.Name.fromLeanName `Nat.div]
+  match Ix.LeanIngress.checkSourceBundled sub (Ix.Cert.blocksOf sub) with
+  | .error e => return (#[s!"Nat.div's closure ({sub.consts.size} constants) is declined at the \
+      bundle evidence: {e}"], #[])
+  | .ok envS =>
+    let own := match Ix.LeanIngress.checkSource sub (Ix.Cert.blocksOf sub) with
+      | .ok _ => "accepts it too"
+      | .error _ => "declines it"
+    return (#[], #[s!"Nat.div's statement closure: {sub.consts.size} constants; Source at the bundle \
+      evidence accepts it ({envS.consts.length} kernel constants); at the input's own evidence, Source \
+      {own}"])
+
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
     let (errors, lines) ← action
@@ -608,7 +628,9 @@ def suite : List TestSeq := [
   report "binder contracts on both sides, on the resolved source-contract syntax fixtures" (do
     contractAgreement (← getCompileEnv #[syntaxModule])) 1,
   report "the shipped role table's certificates check on their pinned closure (Route A, B6b)"
-    roleEvidenceCase 1]
+    roleEvidenceCase 1,
+  report "a closure with a well-founded Nat operation, at the bundle evidence (Nat.div)" (do
+    natDivClosure (← getCompileEnv #[defsModule, ownModule])) 1]
 
 /-- `cert-compile-parity-init` (ignored): the parity on `Init`. -/
 def initSuite : List TestSeq := [

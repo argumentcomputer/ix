@@ -108,7 +108,12 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"collapse: quotient Source at the artifact's alias fibers \
         (`Ix.LeanIngress.fiberAlias`, role-aware), {(Ix.LeanIngress.fiberAlias ixon).size} \
         names mapped to a representative ({(← IO.monoMsNow) - tA} ms)"
-  let r ← run pre env blocks a.workers (progress := true) (evidence := bundled) (hints := hints)
+  -- the bundle's evidence mentions input keys, which quotient Source renames onto the fiber
+  -- representatives (`Ix.LeanIngress.evidenceSubst`, as `checkSourceCollapsedBundled` runs it)
+  let evidence := match collapse with
+    | some ρ => bundled.map (Ix.LeanIngress.evidenceSubst ρ)
+    | none => bundled
+  let r ← run pre env blocks a.workers (progress := true) (evidence := evidence) (hints := hints)
     (collapse := collapse)
   if a.collapse then
     IO.println s!"collapse: {r.aliases} groups were an earlier group's alias"

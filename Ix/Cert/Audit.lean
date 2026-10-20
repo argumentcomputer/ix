@@ -91,7 +91,7 @@ fun env roots sub =>
 /-- info: def Ix.Cert.SourceAccepts : (Ix.Environment → Ix.CondensedBlocks) →
   Ix.Environment → List Ix.Name → Ix.Environment → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
 fun condense env roots sub envS =>
-  Ix.Cert.IsClosure env roots sub ∧ Ix.LeanIngress.checkSource sub (condense sub) = Except.ok envS -/
+  Ix.Cert.IsClosure env roots sub ∧ Ix.LeanIngress.checkSourceBundled sub (condense sub) = Except.ok envS -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.SourceAccepts
 
@@ -3882,15 +3882,15 @@ R12 reads `inductive_reads`' Source premises and R9a's `ConstructorPositions`
 off `Admits` (the block's group converts). An accepted Source check admits
 every inductive block stored under its first member: the block's group is one
 of the ingress's groups, and every one of those converts
-(`Ix.LeanIngress.checkSource_converts`). -/
+(`Ix.LeanIngress.checkSource_converts`, `checkSourceBundled_converts`). -/
 
-/-- info: [cert-audit] admits: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] admits: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "admits"
     (#[`mem_forIn_of_mem, `mem_forIn_of_step, `mem_groupsOf, `admits_of_checkSource,
-      `admits_of_sourceAccepts, `source_premises_of_sourceAccepts,
+      `admits_of_checkSourceBundled, `admits_of_sourceAccepts, `source_premises_of_sourceAccepts,
       `mkIndc_positions_of_sourceAccepts].map (`Ix.Cert.Admits ++ ·))
 
 /-- info: @Ix.Cert.Admits.admits_of_sourceAccepts : ∀ {condense : Ix.Environment → Ix.CondensedBlocks} {env : Ix.Environment}
@@ -3967,14 +3967,15 @@ run_cmd do
 IxC checks every accepted `.indDecl`'s declared shape before its route
 (`Ix.Kernel.Semantics.checkDecl_noCtor`). The ingress carries the sources'
 constants to their keys, so no constructor of a Source-accepted family occurs
-in the family's types (`Ix.Cert.NoCtor.noCtor_of_checkSource`), and
+in the family's types (`Ix.Cert.NoCtor.noCtor_of_checkSourceWith`), and
 `inductive_reads` holds of a Source-accepted closure with only the family's
 name related to its key (R13's half) left of its self references
 (`inductive_reads_sourceAccepts`). -/
 
-/-- info: Ix.Cert.NoCtor.noCtor_of_checkSource : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {sub : Ix.Environment}
-  {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env Ix.Kernel.Mode.source},
-  Ix.LeanIngress.checkSource sub blocks = Except.ok kenv →
+/-- info: Ix.Cert.NoCtor.noCtor_of_checkSourceWith : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
+  {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.source} {ev : Ix.Kernel.Evidences Ix.Kernel.Mode.source}
+  {sub : Ix.Environment} {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.LeanIngress.checkSourceWith pre ev sub blocks = Except.ok kenv →
     ∀ {n : Ix.Name} {first : Ix.InductiveVal},
       (n, Ix.ConstantInfo.inductInfo first) ∈ sub.consts.toList →
         first.all[0]? = some n →
@@ -3989,7 +3990,7 @@ name related to its key (R13's half) left of its self references
                         ctor ∈ constructors.toList →
                           Ix.CompileCert.InductiveReading.NoCtorIn constructors ctor.cnst.type -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.NoCtor.noCtor_of_checkSource
+#check @Ix.Cert.NoCtor.noCtor_of_checkSourceWith
 
 /-- info: [cert-audit] no constructor: 20 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -3999,5 +4000,23 @@ run_cmd do
     (#[`converts_left, `drop_left_items, `items_facts, `convertInductive_entries, `foldlM_step_ok,
       `acceptsRef_decl, `mentionsConst_mapLevels, `canonExprM_run, `canonInfo_ind, `canonInfo_ctor,
       `withContract_mentions, `ingressMData_mentions, `noCtorIn_of_ingress, `mem_blockOf_type,
-      `mem_blockOf_ctor, `lowerInductive_decl, `forIn_kept, `lowerAll_mem, `noCtor_of_checkSource,
+      `mem_blockOf_ctor, `lowerInductive_decl, `forIn_kept, `lowerAll_mem, `noCtor_of_checkSourceWith,
       `inductive_reads_sourceAccepts].map (`Ix.Cert.NoCtor ++ ·))
+
+/-! ## Source mode at the pinned bundle evidence (owner, 2026-10-20)
+
+`SourceAccepts` runs `Ix.LeanIngress.checkSourceBundled`: the committed prelude
+and the committed bundle's evidence (`Ix.RoleEvidence.bundleEvidence`), whatever
+the input carries, so a closure with a well-founded `Nat` operation is not
+declined for want of the certificate theorems. Its readings are the
+explicit-evidence entry's (`checkSourceWith_reading`). -/
+
+/-- info: [cert-audit] source at the bundle: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "source at the bundle"
+    (#[`checkSourceBundledUsing_with, `checkSourceBundled_with, `checkSourceBundled_reading,
+      `checkSourceBundled_refines_ref, `checkSourceBundled_no_proof_of_False,
+      `checkSourceBundled_converts].map (`Ix.LeanIngress ++ ·) ++
+      #[``Ix.Cert.Admits.admits_of_checkSourceBundled])

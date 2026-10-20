@@ -805,6 +805,23 @@ def checkSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Except SourceError (Ix.Kernel.Env .source) :=
   checkSourceUsing Ix.Kernel.Reader.builtinPrelude env blocks
 
+/-- The Source-mode check at the pinned bundle evidence, over a source of preludes. -/
+def checkSourceBundledUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source))
+    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) := do
+  let pre ← prelude.mapError .prelude
+  checkSourceWith pre (Ix.RoleEvidence.bundleEvidence ()) env blocks
+
+/-- **The Source-mode check at the pinned bundle evidence** (owner, 2026-10-20):
+the committed prelude, and the committed bundle's evidence
+(`Ix.RoleEvidence.bundleEvidence`, RoleData's `sourceEvidence`: the verifier's
+configuration, the Source twin of the role table's evidence), whatever the
+input carries. `checkSource` takes its evidence from the certificate theorems
+the input carries, which a closure of user roots never does, so it declines
+every closure with a well-founded `Nat` operation; this check does not. -/
+def checkSourceBundled (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except SourceError (Ix.Kernel.Env .source) :=
+  checkSourceBundledUsing Ix.Kernel.Reader.builtinPrelude env blocks
+
 /-! ## Hint overrides
 
 A definition's hint orders δ-unfolding only: the fold's soundness holds at
@@ -954,6 +971,33 @@ def checkSourceCollapsed (ixe : Ixon.Env) (env : Ix.Environment) (blocks : Ix.Co
     Except SourceError (Ix.Kernel.Env .source) :=
   let hints := fiberHintsMap ixe
   checkSourceCollapsedUsing Ix.Kernel.Reader.builtinPrelude (fiberAlias ixe) (hints[·]?) env blocks
+
+/-- Evidence renamed onto the fiber representatives (`Key.subst`, `Expr.substKeys`): the
+bundle's certificate theorems mention constants by their input keys, which quotient
+Source renames. -/
+def evidenceSubst (ρ : FiberMap) (ev : Ix.Kernel.Evidences .source) : Ix.Kernel.Evidences .source :=
+  ev.map fun (r, es) => (r, es.map fun
+    | .defeq => .defeq
+    | .proof (k, p) => .proof (Key.subst ρ k, Expr.substKeys ρ p))
+
+/-- Quotient Source at the pinned bundle evidence, over an explicit prelude source,
+fiber map and hints. -/
+def checkSourceCollapsedBundledUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source))
+    (ρ : FiberMap) (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except SourceError (Ix.Kernel.Env .source) := do
+  let pre ← prelude.mapError .prelude
+  let decls ← prepareSourceCollapsed ρ hints pre env blocks
+  (Ix.Kernel.Cached.checkDecls .verified (evidenceSubst ρ (Ix.RoleEvidence.bundleEvidence ())) decls).mapError
+    fun (e, i) => .kernel e i
+
+/-- **Quotient Source at a compiled artifact, at the pinned bundle evidence**
+(`checkSourceCollapsed` at `Ix.RoleEvidence.bundleEvidence` renamed onto the fiber
+representatives, as `checkSourceBundled` is `checkSource` at it). -/
+def checkSourceCollapsedBundled (ixe : Ixon.Env) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except SourceError (Ix.Kernel.Env .source) :=
+  let hints := fiberHintsMap ixe
+  checkSourceCollapsedBundledUsing Ix.Kernel.Reader.builtinPrelude (fiberAlias ixe) (hints[·]?) env blocks
 
 /-! ## The typing tier: partial and unsafe declarations
 

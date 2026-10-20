@@ -675,7 +675,7 @@ index shaping the block at member 0 (`inductive_reads_indexed` derives it
 from the reader's index); the keys reading; the self references: the
 family's own name related to its key (`selfKey`, R13's half) and no
 constructor of the family occurring in the types (`NoCtorIn`; N-READS N4: proved
-from Source acceptance by `Ix.Cert.NoCtor.noCtor_of_checkSource`); and a
+from Source acceptance by `Ix.Cert.NoCtor.noCtor_of_checkSourceWith`); and a
 well-formed source (safe, constructors at their positions, each constructor's type a
 telescope of the parameters and its fields). -/
 theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
