@@ -491,6 +491,46 @@ fun ixe sub envS =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.IxonValueSound
 
+-- Route A, B10: the reference-level twins of Ixon acceptance, consistency and value soundness
+-- (the pure fold at some fuel), and every executed accept is a reference accept.
+/-- info: def Ix.Cert.IxonAcceptsRef : Ix.Kernel.Admission.Binding →
+  Ix.Kernel.Admission.Limits → Ixon.Env → (Address → Prop) → List Address → Ix.Kernel.Env Ix.Kernel.Mode.anon → Prop :=
+fun binding limits ixe S order envA =>
+  Ix.Cert.ClosureOrder ixe S order ∧
+    ∃ t pre ev ds,
+      Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok t ∧
+        Ix.Kernel.Reader.preludeFor t = Except.ok pre ∧
+          Ix.Kernel.Admission.prepareWith Address.admissionHash binding pre limits (Ix.Cert.recordsOf ixe order)
+                (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe) =
+              Except.ok (ev, ds) ∧
+            Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified ev ds.toList envA -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.IxonAcceptsRef
+
+/-- info: def Ix.Cert.IxonConsistentRef.{w} : Prop :=
+∀ (V : Type w) [Ix.Kernel.SetTheory V] (binding : Ix.Kernel.Admission.Binding) (limits : Ix.Kernel.Admission.Limits)
+  (ixe : Ixon.Env) (S : Address → Prop) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon),
+  Ix.Cert.IxonAcceptsRef binding limits ixe S order envA →
+    ∀ (ci : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.anon),
+      ci ∈ envA.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const Ix.Kernel.falseName [] → False -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.IxonConsistentRef
+
+/-- info: def Ix.Cert.IxonValueSoundRef.{w} : Prop :=
+∀ (binding : Ix.Kernel.Admission.Binding) (limits : Ix.Kernel.Admission.Limits) (ixe : Ixon.Env) (S : Address → Prop)
+  (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon),
+  Ix.Cert.IxonAcceptsRef binding limits ixe S order envA →
+    ∀ (V : Type w) [inst : Ix.Kernel.SetTheory V], Nonempty (Ix.Cert.ValueModel V envA) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.IxonValueSoundRef
+
+/-- info: Ix.Cert.ixonAccepts_ref : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {binding : Ix.Kernel.Admission.Binding}
+  {limits : Ix.Kernel.Admission.Limits} {ixe : Ixon.Env} {S : Address → Prop} {order : List Address}
+  {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Cert.IxonAccepts binding limits ixe S order envA → Ix.Cert.IxonAcceptsRef binding limits ixe S order envA -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.ixonAccepts_ref
+
 -- Step 5a (typed keys) re-froze the renaming lemma's definitions over
 -- `Ix.Kernel.Key`: `σ : Key → Key`, the key lists are `List Key`, `Pinned` is
 -- the role keys (the basis blocks' reserved keys are role keys,
@@ -1209,6 +1249,18 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: 'Ix.Cert.ixonValueSound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.ixonValueSound
+
+/-- info: 'Ix.Cert.ixonConsistentRef' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.ixonConsistentRef
+
+/-- info: 'Ix.Cert.ixonValueSoundRef' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.ixonValueSoundRef
+
+/-- info: 'Ix.Cert.ixonAccepts_ref' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.ixonAccepts_ref
 
 /-- info: 'Ix.Cert.Commutes.alias' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

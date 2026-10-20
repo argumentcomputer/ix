@@ -664,6 +664,71 @@ theorem ixonValueSound : IxonValueSound.{w} := by
   obtain ⟨M, hM⟩ := Ix.Kernel.Admission.checkBytes_has_model_values (hash := Address.blake3Pure) V h.2
   exact ⟨{ M with defn_value := hM }⟩
 
+/-! ## The reference level (Route A, B10)
+
+The bridge for unchanged blocks (`ROUTE-A.md` §3.1) reaches Ixon acceptance at
+the reference level: the pure fold at some fuel (`Ix.Kernel.Cached.AcceptsRef`),
+where neither the caches nor a fixed fuel appear. Consistency and value
+soundness hold there as well, from the pure soundness tower
+(`AcceptsRef.no_proof_of_False`, `AcceptsRef.model_values`), and every executed
+accept is a reference accept of the same environment (`ixonAccepts_ref`). The
+composition from per-block reference acceptance to the closure (locality) waits
+for step 7.3's corollaries. -/
+
+/-- **Ixon acceptance at the reference level** of the compiled closure of `S`:
+the certified entry's preparation at BLAKE3 (the batch limits, key uniqueness,
+authentication, the role table `binding`'s admission, canonical decoding and
+reading behind the committed prelude read under the admitted table) gives
+evidence and declarations that the pure fold accepts at some fuel, installing
+`envA`. `limits` are resource bounds only. -/
+def IxonAcceptsRef (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
+    (order : List Address) (envA : Env .anon) : Prop :=
+  ClosureOrder ixe S order ∧
+    ∃ t pre ev ds, Ix.Kernel.Admission.admitBinding Address.admissionHash binding = .ok t ∧
+      Ix.Kernel.Reader.preludeFor t = .ok pre ∧
+      Ix.Kernel.Admission.prepareWith Address.admissionHash binding pre limits (recordsOf ixe order)
+        (blobsOf ixe order) (hintsOf ixe) = .ok (ev, ds) ∧
+      Ix.Kernel.Cached.AcceptsRef .verified ev ds.toList envA
+
+/-- **Ixon consistency at the reference level**: under every role table,
+nothing Ixon accepts at the reference level has `False`'s role key as its
+type. -/
+def IxonConsistentRef : Prop :=
+  ∀ (V : Type w) [SetTheory V] (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
+    (order : List Address) (envA : Env .anon), IxonAcceptsRef binding limits ixe S order envA →
+      ∀ ci ∈ envA.consts, ci.toConstantVal.type = .const falseName [] → False
+
+/-- **Ixon value soundness at the reference level**: every environment Ixon
+accepts at the reference level has a value model, under every role table. -/
+def IxonValueSoundRef : Prop :=
+  ∀ (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
+    (order : List Address) (envA : Env .anon),
+    IxonAcceptsRef binding limits ixe S order envA → ∀ (V : Type w) [SetTheory V], Nonempty (ValueModel V envA)
+
+theorem ixonConsistentRef : IxonConsistentRef.{w} := by
+  intro V _ _ _ _ _ _ _ h
+  obtain ⟨_, _, _, _, _, _, _, _, ref⟩ := h
+  exact ref.no_proof_of_False V
+
+theorem ixonValueSoundRef : IxonValueSoundRef.{w} := by
+  intro _ _ _ _ _ _ h V _
+  obtain ⟨_, _, _, _, _, _, _, _, ref⟩ := h
+  obtain ⟨M, hM⟩ := ref.model_values V
+  exact ⟨{ M with defn_value := hM.1 }⟩
+
+/-- **Every Ixon accept is a reference accept** of the same environment
+(`Ix.Kernel.Cached.checkDecls_refines_ref`; the set theory is a hypothesis of
+that walk, not of the statement's meaning), so `IxonConsistent` and
+`IxonValueSound` follow from their reference-level twins. -/
+theorem ixonAccepts_ref (V : Type w) [SetTheory V] {binding : Binding} {limits : Limits} {ixe : Ixon.Env}
+    {S : Address → Prop} {order : List Address} {envA : Env .anon}
+    (h : IxonAccepts binding limits ixe S order envA) : IxonAcceptsRef binding limits ixe S order envA := by
+  obtain ⟨closure, accepted⟩ := h
+  obtain ⟨t, pre, admitted, prelude, run⟩ := Ix.Kernel.Admission.checkBytes_with accepted
+  obtain ⟨ev, ds, prepared, checked⟩ := Ix.Kernel.Admission.checkBytesWith_checkDecls run
+  exact ⟨closure, t, pre, ev, ds, admitted, prelude, prepared,
+    Ix.Kernel.Cached.checkDecls_refines_ref V rfl checked⟩
+
 /-! The Source theorems hold for every grouping function, which is stronger
 than for the compiler's. At the compiler's own grouping, `blocksOf` (the one
 `CompileCorrect` names), they stand on the three standard axioms as well:
