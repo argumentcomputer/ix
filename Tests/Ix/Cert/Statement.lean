@@ -208,8 +208,9 @@ def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
 /-- N-READS N4 (a): no constructor of a family occurs in the family's type or in
 its constructors' types (`InductiveReading.NoCtorIn`, through its check
 `noCtorIn` and `noCtorIn_iff`), for every inductive of `env`. It is
-`inductive_reads`' premise, tested here until N4 (b) proves it from Source
-acceptance. The check is not vacuous: a constructor's own constant is refused. -/
+`inductive_reads`' premise, proved from Source acceptance since N4 (b)
+(`Ix.Cert.NoCtor.noCtor_of_checkSource`); the check keeps it observed on Init+Std.
+The check is not vacuous: a constructor's own constant is refused. -/
 def noCtorCases (label : String) (env : Ix.Environment) : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
   let mut families := 0

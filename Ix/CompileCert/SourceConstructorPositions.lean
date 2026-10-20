@@ -38,11 +38,9 @@ members.
 is related to its key (`selfKey`, R13's published maps), and that no
 constructor of the family occurs in the family's own types
 (`InductiveReading.NoCtorIn`, N4). The ingress does not check the latter; the
-fold does, on the native route (the former is typed before, and each
-constructor against, an environment with no constructor), and on the modeled
-route for the former, while a modeled constructor's type is typed with the
-earlier constructors installed (IxC lane: a guard is queued; then N4 (b)
-proves `NoCtorIn` from Source acceptance). And
+fold does, through IxC's route-independent shape guard on every accepted
+`.indDecl`, and `Ix.Cert.NoCtor.inductive_reads_sourceAccepts` discharges it
+from Source acceptance (N4 (b)). And
 Source acceptance (`checkSource … = .ok _`) reaches a group's conversion
 only through the schedule (`Ix.LeanIngress.scheduleOf`), whose order
 (`orderOf`) is a `while` loop and so has no unfolding: `Admits` is the

@@ -12,6 +12,7 @@ import Ix.Cert.Roles
 import Ix.Cert.Admits
 import Ix.Cert.BlockStart
 import Ix.Cert.RoleClosure
+import Ix.Cert.NoCtor
 
 /-! # The certification statements, frozen
 
@@ -3213,11 +3214,10 @@ records (`readRecursors`, whose correspondence with the compiled recursors
 is R10b); given the index shaping the block at member 0 (derived from the
 reader's own index in `inductive_reads_indexed`), the keys reading, the
 self references (the family's name related to its key, R13's half, and no
-constructor of the family in its types, `NoCtorIn`, N-READS N4 a: tested on
-Init+Std by `cert-noctor-initstd` until N4 b proves it), and a well-formed
-source. Without a recursor in the input the block declines. Every lemma
-behind them is audited in
-`Ix.CompileCert.ReadingAudit`. -/
+constructor of the family in its types, `NoCtorIn`, N-READS N4: proved from
+Source acceptance by `Ix.Cert.NoCtor.inductive_reads_sourceAccepts`), and a
+well-formed source. Without a recursor in the input the block declines.
+Every lemma behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
 
 /-- info: def Ix.CompileCert.InductiveReading.sourceBlock : {md : Ix.Kernel.Mode} →
   Ix.Kernel.Reader.CName md →
@@ -3961,3 +3961,43 @@ run_cmd do
   checkRoots (tag := "cert-audit") "role closure"
     (#[`definesAll_iff, `checks_of_closureCheck, `roleEvidenceChecks_of_check].map
       (`Ix.Cert.RoleClosure ++ ·))
+
+/-! ## N-READS, N4 (b): no constructor of a Source-accepted family in its types
+
+IxC checks every accepted `.indDecl`'s declared shape before its route
+(`Ix.Kernel.Semantics.checkDecl_noCtor`). The ingress carries the sources'
+constants to their keys, so no constructor of a Source-accepted family occurs
+in the family's types (`Ix.Cert.NoCtor.noCtor_of_checkSource`), and
+`inductive_reads` holds of a Source-accepted closure with only the family's
+name related to its key (R13's half) left of its self references
+(`inductive_reads_sourceAccepts`). -/
+
+/-- info: Ix.Cert.NoCtor.noCtor_of_checkSource : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {sub : Ix.Environment}
+  {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.LeanIngress.checkSource sub blocks = Except.ok kenv →
+    ∀ {n : Ix.Name} {first : Ix.InductiveVal},
+      (n, Ix.ConstantInfo.inductInfo first) ∈ sub.consts.toList →
+        first.all[0]? = some n →
+          ∀ {source : Ix.InductiveVal},
+            source.cnst.name ∈ first.all.toList →
+              sub.consts.get? source.cnst.name = some (Ix.ConstantInfo.inductInfo source) →
+                ∀ (constructors : Array Ix.ConstructorVal),
+                  List.Forall₂ (fun n c => sub.consts.get? n = some (Ix.ConstantInfo.ctorInfo c)) source.ctors.toList
+                      constructors.toList →
+                    Ix.CompileCert.InductiveReading.NoCtorIn constructors source.cnst.type ∧
+                      ∀ (ctor : Ix.ConstructorVal),
+                        ctor ∈ constructors.toList →
+                          Ix.CompileCert.InductiveReading.NoCtorIn constructors ctor.cnst.type -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.NoCtor.noCtor_of_checkSource
+
+/-- info: [cert-audit] no constructor: 20 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "no constructor"
+    (#[`converts_left, `drop_left_items, `items_facts, `convertInductive_entries, `foldlM_step_ok,
+      `acceptsRef_decl, `mentionsConst_mapLevels, `canonExprM_run, `canonInfo_ind, `canonInfo_ctor,
+      `withContract_mentions, `ingressMData_mentions, `noCtorIn_of_ingress, `mem_blockOf_type,
+      `mem_blockOf_ctor, `lowerInductive_decl, `forIn_kept, `lowerAll_mem, `noCtor_of_checkSource,
+      `inductive_reads_sourceAccepts].map (`Ix.Cert.NoCtor ++ ·))
