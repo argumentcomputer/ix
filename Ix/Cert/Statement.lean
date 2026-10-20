@@ -84,14 +84,55 @@ recursor's rule constructors and right-hand sides. -/
 def refsOf (ci : Ix.ConstantInfo) : Ix.Set Ix.Name :=
   (Ix.GraphM.run { consts := {} } .init (Ix.graphConst ci)).1
 
+/-- Whether a term has a `String` literal. -/
+def hasStrLit : Ix.Expr → Bool
+  | .lit (.strVal _) _ => true
+  | .app f a _ => hasStrLit f || hasStrLit a
+  | .lam _ t b _ _ | .forallE _ t b _ _ => hasStrLit t || hasStrLit b
+  | .letE _ t v b _ _ => hasStrLit t || hasStrLit v || hasStrLit b
+  | .mdata _ e _ | .proj _ _ e _ => hasStrLit e
+  | _ => false
+
+/-- Whether a term has a `Nat` literal. -/
+def hasNatLit : Ix.Expr → Bool
+  | .lit (.natVal _) _ => true
+  | .app f a _ => hasNatLit f || hasNatLit a
+  | .lam _ t b _ _ | .forallE _ t b _ _ => hasNatLit t || hasNatLit b
+  | .letE _ t v b _ _ => hasNatLit t || hasNatLit v || hasNatLit b
+  | .mdata _ e _ | .proj _ _ e _ => hasNatLit e
+  | _ => false
+
+/-- A constant's terms: its type, its value, its recursor rules' right-hand sides. -/
+def termsOf : Ix.ConstantInfo → List Ix.Expr
+  | .defnInfo v => [v.cnst.type, v.value]
+  | .thmInfo v => [v.cnst.type, v.value]
+  | .opaqueInfo v => [v.cnst.type, v.value]
+  | .recInfo v => v.cnst.type :: v.rules.toList.map (·.rhs)
+  | ci => [ci.getCnst.type]
+
+/-- The Lean names of IxC's literal support (`Ix.Kernel.Reader.strLitSupportNames`,
+`natLitSupportNames`): the constants it checks a literal against. -/
+def supportNames (keys : List (Ix.Kernel.Key .source)) : Array Ix.Name :=
+  keys.toArray.map fun k => Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName k)
+
+/-- **The constants a constant's literals depend on** (owner, 2026-10-20): a
+`String` literal references no constant, but IxC checks it against `String`,
+`String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat` and the `Nat`
+basis (`Expr.constsResolve`), and a `Nat` literal against the `Nat` basis. -/
+def literalSupport (ci : Ix.ConstantInfo) : Array Ix.Name :=
+  if (termsOf ci).any hasStrLit then supportNames Ix.Kernel.Reader.strLitSupportNames
+  else if (termsOf ci).any hasNatLit then supportNames Ix.Kernel.Reader.natLitSupportNames
+  else #[]
+
 /-- **The closure relation**: the constant `a` of `env` needs `b`. These are
-the reference graph's edges and the edges the ingress's grouping needs
+the reference graph's edges, the constants its literals are checked against
+(`literalSupport`), and the edges the ingress's grouping needs
 (`Ix.LeanIngress.groupsOf`): an inductive needs its whole block and every
 recursor whose block starts at the same first member, and a recursor needs
 its block. -/
 def DependsOn (env : Ix.Environment) (a b : Ix.Name) : Prop :=
   ∃ ci, env.consts.get? a = some ci ∧
-    ((refsOf ci).contains b = true ∨
+    ((refsOf ci).contains b = true ∨ (literalSupport ci).contains b = true ∨
       match ci with
       | .inductInfo v => v.all.contains b = true ∨ ∃ first rv, v.all[0]? = some first ∧
           env.consts.get? b = some (.recInfo rv) ∧ rv.all[0]? = some first
@@ -142,7 +183,7 @@ compared structurally (`nameEq`) as `DependsOn` compares them; the map's
 lookup compares the hash fields only. -/
 def dependencies (recursors : Ix.Map Ix.Name (Array (Ix.Name × Ix.Name)))
     (ci : Ix.ConstantInfo) : Array Ix.Name :=
-  (refsOf ci).toArray ++
+  (refsOf ci).toArray ++ literalSupport ci ++
     match ci with
     | .inductInfo v =>
       v.all ++ match v.all[0]? with

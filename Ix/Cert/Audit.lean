@@ -60,15 +60,27 @@ fun env a b =>
   ∃ ci,
     env.consts.get? a = some ci ∧
       (Std.HashSet.contains (Ix.Cert.refsOf ci) b = true ∨
-        match ci with
-        | Ix.ConstantInfo.inductInfo v =>
-          v.all.contains b = true ∨
-            ∃ first rv,
-              v.all[0]? = some first ∧ env.consts.get? b = some (Ix.ConstantInfo.recInfo rv) ∧ rv.all[0]? = some first
-        | Ix.ConstantInfo.recInfo rv => rv.all.contains b = true
-        | x => False) -/
+        (Ix.Cert.literalSupport ci).contains b = true ∨
+          match ci with
+          | Ix.ConstantInfo.inductInfo v =>
+            v.all.contains b = true ∨
+              ∃ first rv,
+                v.all[0]? = some first ∧ env.consts.get? b = some (Ix.ConstantInfo.recInfo rv) ∧ rv.all[0]? = some first
+          | Ix.ConstantInfo.recInfo rv => rv.all.contains b = true
+          | x => False) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.DependsOn
+
+-- The literal support (owner, 2026-10-20): a constant's literals depend on the constants IxC
+-- checks them against.
+/-- info: def Ix.Cert.literalSupport : Ix.ConstantInfo → Array Ix.Name :=
+fun ci =>
+  if (Ix.Cert.termsOf ci).any Ix.Cert.hasStrLit = true then Ix.Cert.supportNames Ix.Kernel.Reader.strLitSupportNames
+  else
+    if (Ix.Cert.termsOf ci).any Ix.Cert.hasNatLit = true then Ix.Cert.supportNames Ix.Kernel.Reader.natLitSupportNames
+    else #[] -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.literalSupport
 
 /-- info: inductive Ix.Cert.Reaches : Ix.Environment → List Ix.Name → Ix.Name → Prop
 number of parameters: 2
@@ -128,7 +140,7 @@ fun env =>
 
 /-- info: def Ix.Cert.dependencies : Ix.Map Ix.Name (Array (Ix.Name × Ix.Name)) → Ix.ConstantInfo → Array Ix.Name :=
 fun recursors ci =>
-  Std.HashSet.toArray (Ix.Cert.refsOf ci) ++
+  Std.HashSet.toArray (Ix.Cert.refsOf ci) ++ Ix.Cert.literalSupport ci ++
     match ci with
     | Ix.ConstantInfo.inductInfo v =>
       v.all ++

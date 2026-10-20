@@ -612,6 +612,27 @@ def natDivClosure (leanEnv : Lean.Environment) : IO (Array String × Array Strin
       evidence accepts it ({envS.consts.length} kernel constants); at the input's own evidence, Source \
       {own}"])
 
+/-- Literal support in `DependsOn` (owner, 2026-10-20): the statement closure of a root
+with a `String` literal (`outOfBounds`, a `panic!` message) holds the constants IxC checks
+the literal against (`Ix.Cert.literalSupport`), and Source at the bundle evidence accepts it. -/
+def literalClosure (leanEnv : Lean.Environment) (root : Lean.Name) : IO (Array String × Array String) := do
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[root])
+  let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
+  let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
+  let sub := Ix.Cert.closure env [Ix.Name.fromLeanName root]
+  let literal := sub.consts.toList.filter fun (_, ci) => (Ix.Cert.termsOf ci).any Ix.Cert.hasStrLit
+  if literal.isEmpty then return (#[s!"{root}: no string literal in its closure"], #[])
+  let support := Ix.Cert.supportNames Ix.Kernel.Reader.strLitSupportNames
+  let missing := support.filter fun n => !sub.consts.contains n
+  unless missing.isEmpty do
+    return (#[s!"{root}: the closure lacks the literal support {missing}"], #[])
+  match Ix.LeanIngress.checkSourceBundled sub (Ix.Cert.blocksOf sub) with
+  | .error e => return (#[s!"{root}: the closure ({sub.consts.size} constants) is declined: {e}"], #[])
+  | .ok envS =>
+    return (#[], #[s!"{root}: statement closure {sub.consts.size} constants, {literal.length} with a \
+      string literal, all {support.size} support constants; Source at the bundle evidence accepts it \
+      ({envS.consts.length} kernel constants)"])
+
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
     let (errors, lines) ← action
@@ -630,7 +651,9 @@ def suite : List TestSeq := [
   report "the shipped role table's certificates check on their pinned closure (Route A, B6b)"
     roleEvidenceCase 1,
   report "a closure with a well-founded Nat operation, at the bundle evidence (Nat.div)" (do
-    natDivClosure (← getCompileEnv #[defsModule, ownModule])) 1]
+    natDivClosure (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "a closure with a string literal holds its literal support (outOfBounds)" (do
+    literalClosure (← getCompileEnv #[defsModule, ownModule]) `outOfBounds) 1]
 
 /-- `cert-compile-parity-init` (ignored): the parity on `Init`. -/
 def initSuite : List TestSeq := [

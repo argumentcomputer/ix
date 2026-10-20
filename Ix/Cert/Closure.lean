@@ -60,9 +60,10 @@ theorem dependsOn_congr {env : Ix.Environment} {a b b' : Ix.Name} (h : DependsOn
     (hb : (b == b') = true) : DependsOn env a b' := by
   obtain ⟨ci, hci, hd⟩ := h
   refine ⟨ci, hci, ?_⟩
-  rcases hd with hr | hm
+  rcases hd with hr | hl | hm
   · exact .inl (by rw [← Std.HashSet.contains_congr (m := refsOf ci) hb]; exact hr)
-  · right
+  · exact .inr (.inl (array_contains_of_beq hb hl))
+  · right; right
     cases ci with
     | inductInfo v =>
       rcases hm with hall | ⟨first, rv, h0, hrec, h0'⟩
@@ -186,11 +187,13 @@ theorem dependencies_sound {env : Ix.Environment} {a : Ix.Name} {ci : Ix.Constan
     (ha : env.consts.get? a = some ci) {d : Ix.Name}
     (hd : d ∈ dependencies (recursorsByBlock env) ci) : DependsOn env a d := by
   unfold dependencies at hd
-  rcases Array.mem_append.mp hd with hr | hm
-  · refine ⟨ci, ha, .inl ?_⟩
-    rw [← Std.HashSet.contains_toArray]
-    exact Array.contains_eq_true_of_mem hr
-  · refine ⟨ci, ha, .inr ?_⟩
+  rcases Array.mem_append.mp hd with hrl | hm
+  · rcases Array.mem_append.mp hrl with hr | hl
+    · refine ⟨ci, ha, .inl ?_⟩
+      rw [← Std.HashSet.contains_toArray]
+      exact Array.contains_eq_true_of_mem hr
+    · exact ⟨ci, ha, .inr (.inl (Array.contains_eq_true_of_mem hl))⟩
+  · refine ⟨ci, ha, .inr (.inr ?_)⟩
     cases ci with
     | inductInfo v =>
       rcases Array.mem_append.mp hm with hall | hrec
@@ -214,10 +217,12 @@ theorem dependencies_complete {env : Ix.Environment} {a b : Ix.Name} {ci : Ix.Co
   rw [ha] at ha'
   cases ha'
   unfold dependencies
-  rcases hd with hr | hm
+  rcases hd with hr | hl | hm
   · rw [← Std.HashSet.contains_toArray] at hr
     obtain ⟨d, hd, hbd⟩ := Array.contains_iff_exists_mem_beq.mp hr
-    exact ⟨d, Array.mem_append.mpr (.inl hd), hbd⟩
+    exact ⟨d, Array.mem_append.mpr (.inl (Array.mem_append.mpr (.inl hd))), hbd⟩
+  · obtain ⟨d, hd, hbd⟩ := Array.contains_iff_exists_mem_beq.mp hl
+    exact ⟨d, Array.mem_append.mpr (.inl (Array.mem_append.mpr (.inr hd))), hbd⟩
   · cases ci with
     | inductInfo v =>
       rcases hm with hall | ⟨first, rv, h0, hrec, h0'⟩
