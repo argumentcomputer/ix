@@ -3,36 +3,46 @@ import Ix.Meta
 import Ix.CompileDriver
 import Tests.Ix.AuxGen.FlatBlockSource
 
-/-! # `.below`'s levels from IxC Source mode (AuxGen M2a, M2b)
+/-! # `.below` and `.brecOn` from IxC Source mode (AuxGen M2a, M2b, M3)
 
 `lake exe IxTests --ignored auxgen-below-ixc` (the fixtures) and
-`--ignored auxgen-below-initstd` (Init+Std, a measurement). The plan is
-`auxgen-m2.md`.
+`--ignored auxgen-below-initstd` (Init+Std, a measurement). The plans are
+`auxgen-m2.md` and `auxgen-m3.md`.
 
 AuxGen's `.below` asks its kernel the sort levels it emits into every
-Type-level `.below` value. Since AuxGen M2b the compile driver answers them in
-IxC Source mode (`fallback`, safe blocks), over the Source service run ahead
-of the waves (`Ix.AuxGen.Source.RunAhead`,
-one snapshot per level of the schedule), with each block's own canonical flat
-block installed when its layout is not Lean's (`AuxKernel.withFlatBlock`).
+Type-level `.below` value; `.brecOn` asks levels too, and its `.eq`'s unit-like
+test asks `inferType?`, `whnf?` and `isDefEq?`. Since AuxGen M2b (`.below`)
+and M3 (`.brecOn`, after the generated `.below` is admitted to IxC,
+`AuxOracle.admitBelow`) the compile driver answers them in IxC Source mode
+(`fallback`, safe blocks), over the Source service run ahead of the waves
+(`Ix.AuxGen.Source.RunAhead`, one snapshot per level of the schedule), with
+each block's own canonical flat block installed when its layout is not
+Lean's (`AuxKernel.withFlatBlock`).
 
 1. **Shadow agreement.** Each block that holds an inductive has its aux
    patches generated as the driver's tail generates them, with the IxC arm in
    `shadow` mode over its level's snapshot: every IxC answer is compared with
-   `Ix.Tc`'s, spelling included (`Ix.Compile.ExactKey.levelEq`). Asserted: no
-   answer differs (the stop rule of `auxgen-m2.md` §3: a spelling change
-   would move Lean's output without a Rust mirror). The counts are printed:
-   queries, fast-path hits on each side, answered, refused, flat blocks.
+   `Ix.Tc`'s, spelling included (`Ix.Compile.ExactKey.levelEq`), each `isDefEq?`
+   decision exactly. Asserted: no answer or decision differs (the stop rule
+   of `auxgen-m2.md` §3: a spelling change would move Lean's output without
+   a Rust mirror). The counts are printed: queries, fast-path hits on each
+   side, answered, refused, flat blocks, decisions, expression questions,
+   the generated `.below` admitted.
 2. **The fold's bytes in each mode.** `compileEnvFoldWithSource` under each
    measurement setting (`AuxIxcOptions`), against production's
    (`compileEnvFold`: `fallback`, the `.below` asks), by their serialized
    environments. All asserted equal: `shadow` (`Ix.Tc`'s answers: production
    gives the bytes `Ix.Tc` gives), `failClosed` (IxC alone: no refusal on
-   these corpora), and both again with every inductive block asked.
+   these corpora), both again with every inductive block asked, and
+   `fallbackEager` (M2b's production, both kernels asked; production's
+   `fallback` is lazy since M3).
 3. **Init+Std only, timed**: the production fold and the measurement fold's
    compile phases, and the service's work alone
    (`Ix.AuxGen.Source.measure`: as it runs; lowering, then folding (lever
    P1); the `.below`-only asks (lever P2)).
+4. **Terms out of IxC** (fixtures, AuxGen M3): the decision-grade egress
+   round-trips, and IxC's `infer`, `whnf` and `isDefEq` agree with the
+   declarations (`egressFixtures`).
 
 Asserted besides: no IxC refusal on these corpora (`failClosed` would fail a
 block on one; production falls back to `Ix.Tc`). -/
@@ -50,13 +60,19 @@ def addStats (a b : Ix.AuxGen.IxcStats) : Ix.AuxGen.IxcStats :=
     refused := a.refused + b.refused, scopesRefused := a.scopesRefused + b.scopesRefused
     flatInstalled := a.flatInstalled + b.flatInstalled
     flatRefused := a.flatRefused + b.flatRefused
+    decisions := a.decisions + b.decisions, decisionsEqual := a.decisionsEqual + b.decisionsEqual
+    decisionsDiffer := a.decisionsDiffer + b.decisionsDiffer
+    exprQueries := a.exprQueries + b.exprQueries, exprAnswered := a.exprAnswered + b.exprAnswered
+    belowAdmitted := a.belowAdmitted + b.belowAdmitted, belowRefused := a.belowRefused + b.belowRefused
     samples := (a.samples ++ b.samples).extract 0 24 }
 
 def statsLine (st : Ix.AuxGen.IxcStats) : String :=
   s!"queries {st.queries} (fast path: Ix.Tc {st.tcFast}, IxC {st.ixcFast}); \
     IxC answered {st.answered}: equal {st.equal}, differ {st.differ}; refused {st.refused}, \
     scopes refused {st.scopesRefused}; flat blocks installed {st.flatInstalled}, \
-    refused {st.flatRefused}"
+    refused {st.flatRefused}; isDefEq decisions {st.decisions}: equal {st.decisionsEqual}, \
+    differ {st.decisionsDiffer}; inferType/whnf {st.exprQueries}, IxC answered \
+    {st.exprAnswered}; generated .below admitted {st.belowAdmitted}, refused {st.belowRefused}"
 
 /-- **One block's aux tail with the IxC arm**, as the driver's tail generates
 the patches (`sortConsts`, the classes restricted to Lean's `all`,
@@ -145,7 +161,9 @@ def foldModes : Array (String × Ix.CompileM.AuxIxcOptions × Bool) :=
   #[("shadow", { mode := .shadow }, true),
     ("failClosed", { mode := .failClosed }, true),
     ("shadow, every inductive block asked", { mode := .shadow, asks := .inductive }, true),
-    ("failClosed, every inductive block asked", { mode := .failClosed, asks := .inductive }, true)]
+    ("failClosed, every inductive block asked", { mode := .failClosed, asks := .inductive }, true),
+    -- M2b's production (both kernels asked); production is lazy since AuxGen M3
+    ("fallbackEager", { mode := .fallbackEager }, true)]
 
 /-- Everything but the timing of the service alone, on one input. -/
 def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (width : Nat) :
@@ -174,9 +192,12 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
   if st.differ != 0 then
     errors := errors.push s!"{st.differ} IxC answers spelled differently from Ix.Tc's (stop rule)"
   if st.queries == 0 then errors := errors.push "no level question was asked"
-  if st.refused + st.scopesRefused + st.flatRefused != 0 then
+  if st.decisionsDiffer != 0 then
+    errors := errors.push s!"{st.decisionsDiffer} isDefEq decisions differ from Ix.Tc's"
+  if st.refused + st.scopesRefused + st.flatRefused + st.belowRefused != 0 then
     errors := errors.push s!"IxC refused {st.refused} queries, {st.scopesRefused} scopes, \
-      {st.flatRefused} flat blocks (failClosed fails a block on one)"
+      {st.flatRefused} flat blocks, {st.belowRefused} generated .below (failClosed fails a \
+      block on one)"
   return (errors, lines)
 
 def report (errors lines : Array String) : IO (Bool × Nat × Nat × Option String) := do
@@ -205,7 +226,100 @@ def fixtures : TestSeq :=
       let (errors, lines) ← evaluate "fixtures" env blocks 16
       report errors lines) .done
 
-def suite : List TestSeq := [fixtures]
+/-! ## Terms out of IxC (AuxGen M3)
+
+`.brecOn.eq`'s unit-like test reads IxC's `inferType?` and `whnf?` answers
+(decision-grade egress, `Ix.AuxGen.Ixc.Scope.egress`). Per inductive of the
+fixtures' safe blocks, over its parameters as locals (free variables
+included): the egress round-trips (an annotated IxC term, out and back in,
+is the same term); the type IxC infers for the applied inductive and for
+each applied constructor is definitionally equal to the declared one; the
+weak head normal form of the applied inductive is equal to it; and the
+applied inductive is not a sort (a negative). -/
+
+/-- Instantiate the leading `n` binders of `ty` with `args`. -/
+def instantiateParams (ty : Ix.Expr) (args : Array Ix.Expr) : Ix.Expr := Id.run do
+  let mut cur := ty
+  for a in args do
+    match cur with
+    | .forallE _ _ body _ _ => cur := Ix.AuxGen.instantiate1 body a
+    | _ => pure ()
+  return cur
+
+/-- One inductive's checks over a scope of the service: how many, and the
+failures. -/
+def egressChecks (svc : Ix.AuxGen.Source.Service) (env : Ix.Environment) (iv : Ix.InductiveVal) :
+    Except String (Nat × Array String) := do
+  let lps := iv.cnst.levelParams
+  let lvls := lps.map Ix.Level.mkParam
+  let (fvars, decls, body) := Ix.AuxGen.forallTelescope iv.cnst.type iv.numParams "egress" 0
+  let s ← Ix.AuxGen.Ixc.Scope.new svc.env lps
+  let s ← s.push (decls.map fun d => (d.fvarName, d.domain))
+  let mut checks := 0
+  let mut bad : Array String := #[]
+  let what := iv.cnst.name.pretty
+  -- the round trip
+  let k ← s.term body
+  let (k1, s) ← s.run fun r => r.annotate s.depth k
+  let e ← s.egress k1
+  let k' ← s.term e
+  let (k2, s) ← s.run fun r => r.annotate s.depth k'
+  checks := checks + 1
+  if !(k1 == k2) then bad := bad.push s!"{what}: the egress does not round-trip"
+  -- infer, whnf and a negative on the applied inductive
+  let app := Ix.AuxGen.mkAppN (Ix.Expr.mkConst iv.cnst.name lvls) fvars
+  let (ty, s) ← s.inferExpr app
+  let (q, s) ← s.defEq ty body
+  checks := checks + 1
+  if !q then bad := bad.push s!"{what}: the inferred type is not the declared one"
+  let (w, s) ← s.whnfExpr app
+  let (q, s) ← s.defEq w app
+  checks := checks + 1
+  if !q then bad := bad.push s!"{what}: the weak head normal form is not equal to the term"
+  let (q, s) ← s.defEq app (Ix.Expr.mkSort Ix.Level.mkZero)
+  checks := checks + 1
+  if q then bad := bad.push s!"{what}: equal to Prop"
+  -- each constructor's inferred type
+  let mut s := s
+  for c in iv.ctors do
+    let some (.ctorInfo cv) := env.consts.get? c | do
+      bad := bad.push s!"{c.pretty}: not a constructor of the environment"; continue
+    let (ty, s') ← s.inferExpr (Ix.AuxGen.mkAppN (Ix.Expr.mkConst c lvls) fvars)
+    let (q, s') ← s'.defEq ty (instantiateParams cv.cnst.type fvars)
+    s := s'
+    checks := checks + 1
+    if !q then bad := bad.push s!"{c.pretty}: the inferred type is not the declared one"
+  return (checks, bad)
+
+def egressFixtures : TestSeq :=
+  .individualIO "AuxGen M3: IxC's terms out (decision-grade egress, infer, whnf, isDefEq)"
+    none (do
+      let (env, blocks) ← fixtureInput
+      let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
+      let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels .inductive
+      let mut checks := 0
+      let mut inductives := 0
+      let mut errors : Array String := #[]
+      for (lo, members) in inductiveBlocks env blocks do
+        let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
+        let some t := ra.runFor key
+          | do errors := errors.push s!"{lo.pretty}: in no level of the schedule"; continue
+        let svc ← match t.get.service with
+          | .ok svc => pure (svc.ensureNames members)
+          | .error e => do errors := errors.push s!"{lo.pretty}: service: {e}"; continue
+        for n in members do
+          let some (.inductInfo iv) := env.consts.get? n | continue
+          if iv.isUnsafe then continue
+          inductives := inductives + 1
+          match egressChecks svc env iv with
+          | .error e => errors := errors.push s!"{n.pretty}: refused: {e.take 300}"
+          | .ok (c, bad) =>
+            checks := checks + c
+            errors := errors ++ bad
+      if checks == 0 then errors := errors.push "nothing was checked"
+      report errors #[s!"egress: {inductives} inductives, {checks} checks, {errors.size} failures"]) .done
+
+def suite : List TestSeq := [fixtures, egressFixtures]
 
 /-! ## Init+Std, timed -/
 

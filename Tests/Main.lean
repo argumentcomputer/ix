@@ -68,6 +68,7 @@ import Tests.Ix.AuxGen.ComponentsTests
 import Tests.Ix.AuxGen.FlatBlockSource
 import Tests.Ix.AuxGen.FlatBlockInitStd
 import Tests.Ix.AuxGen.BelowIxc
+import Tests.Ix.AuxGen.ClosureProbe
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -492,6 +493,7 @@ def registry : List Entry := [
   -- bytes in each mode, on the fixtures; the same on Init+Std, timed, with the service measured
   .suite "auxgen-below-ixc" .landing Tests.Ix.AuxGen.BelowIxc.suite,
   .suite "auxgen-below-initstd" (.manual "the AuxGen lane's M2a measurement on Init+Std (about 10 min): shadow agreement, the measurement fold in each mode, the Source service timed") Tests.Ix.AuxGen.BelowIxc.initStdSuite,
+  .runner "auxgen-closure-probe" (.manual "AuxGen M3's coverage probe: the Source service on selected closures of Init+Std, in shadow mode, traced") Tests.Ix.AuxGen.ClosureProbe.run,
   -- Source evidence from the committed bundle unblocks the service's inductive blocks
   .runner "bundle-evidence-initstd" (.manual "AuxGen's Source service on Init+Std without the certificate module, at the input's evidence and at the committed bundle's (about 2 min)") Tests.Ix.Kernel.BundleEvidence.runInitStd,
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
