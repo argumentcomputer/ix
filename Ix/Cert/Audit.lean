@@ -1123,7 +1123,13 @@ fun env resolved out =>
         match Ix.Cert.mutsMismatch out.fst with
         | none =>
           match Ix.Cert.resolutionMismatch resolved out.fst with
-          | none => Except.ok ()
+          | none =>
+            match Ix.Cert.unseenInductive env out.fst with
+            | none => Except.ok ()
+            | some n =>
+              Except.error
+                (toString "compileReport: component check failed: the input inductive " ++ toString n.pretty ++
+                  toString " is not published at an inductive projection of a block with a Muts entry")
           | some (n, a, published) =>
             have found :=
               match published with
@@ -1300,7 +1306,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
       Ix.Cert.unauthentic out.fst = [] ∧
         Ix.Cert.referenceCycle out.fst = none ∧
           Ix.Cert.nameHashCollision env out.fst = none ∧
-            Ix.Cert.mutsMismatch out.fst = none ∧ Ix.Cert.resolutionMismatch resolved out.fst = none -/
+            Ix.Cert.mutsMismatch out.fst = none ∧
+              Ix.Cert.resolutionMismatch resolved out.fst = none ∧ Ix.Cert.unseenInductive env out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4456,6 +4463,63 @@ fun resolved ixe =>
     resolved.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.resolutionMismatch
+
+/-! ## Every inductive component is seen (B9b's (c3); coordinator decision, 2026-10-20)
+
+The changed set reads an inductive component only through its block's `Muts`
+entry (`Ix.Compile.ChangedSet.mutsRecords`), which the aux tail registers
+before AuxGen's `partial` code, and a later `Named` entry may override, so a
+component could escape the classifier. `compileReport` now refuses a result in
+which a published input inductive is not published at an inductive projection
+of a block with a `Muts` entry at its address (`checkReport`'s seventh check,
+`unseenInductive`). It reads the published input inductives' records, not every
+stored record: finding the stored inductive blocks among the records would mean
+decoding every mutual block record, and the changed set is about the input's
+names. Re-frozen with it: `checkReport`'s print (the seventh check) and
+`checkReport_ok` (a seventh conjunct). On a consistent run the result is
+unchanged. -/
+
+/-- info: [cert-audit] inductive components: 3 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] inductive components: 2 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "inductive components"
+    (#[`mutsAddrs_contains, `unseenInductive_none, `inductivesSeen].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "inductive components"
+    #[``Ix.Cert.mutsAddrs, ``Ix.Cert.unseenInductive]
+
+/-- info: def Ix.Cert.mutsAddrs : Ixon.Env → Std.HashSet Address :=
+fun ixe =>
+  Std.HashMap.fold
+    (fun s x named =>
+      match named.constMeta.info with
+      | Ixon.ConstantMetaInfo.muts all auxLayout => s.insert named.addr
+      | x => s)
+    ∅ ixe.named -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.mutsAddrs
+
+/-- info: def Ix.Cert.unseenInductive : Ix.Environment → Ixon.Env → Option Ix.Name :=
+fun env ixe =>
+  have muts := Ix.Cert.mutsAddrs ixe;
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, ci) =>
+        match ci with
+        | Ix.ConstantInfo.inductInfo v =>
+          match ixe.named.get? n with
+          | none => none
+          | some named =>
+            match Option.map (fun x => x.info) (Ix.Cert.storedRecord ixe named.addr) with
+            | some (Ixon.ConstantInfo.iPrj p) => if muts.contains p.block = true then none else some n
+            | x => some n
+        | x => none)
+    env.consts.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.unseenInductive
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

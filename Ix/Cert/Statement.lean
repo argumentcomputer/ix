@@ -597,19 +597,20 @@ theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
 
 /-- `checkReport` passes exactly when nothing is uncovered, nothing is
 unauthentic, no stored record is on a reference cycle, no two different
-names share a name hash, every `Muts` entry agrees with its block and every
-resolved name is published where it resolves. -/
+names share a name hash, every `Muts` entry agrees with its block, every
+resolved name is published where it resolves and every published input
+inductive's component is seen. -/
 theorem checkReport_ok {env : Ix.Environment}
     {resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address} {out : Ixon.Env × Failures}
     (h : checkReport env resolved out = .ok ()) :
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none ∧
-      resolutionMismatch resolved out.1 = none := by
+      resolutionMismatch resolved out.1 = none ∧ unseenInductive env out.1 = none := by
   unfold checkReport at h
   revert h
   cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;>
     cases nameHashCollision env out.1 <;> cases mutsMismatch out.1 <;>
-    cases resolutionMismatch resolved out.1 <;> simp
+    cases resolutionMismatch resolved out.1 <;> cases unseenInductive env out.1 <;> simp
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -618,7 +619,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -807,7 +808,82 @@ theorem resolvedPublished {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fa
     ∃ resolved, compileUnchecked env = .ok (ixe, failures, resolved) ∧
       ∀ n a, resolved.get? n = some a → (ixe.named.get? n).map (·.addr) = some a := by
   obtain ⟨resolved, hu, hc⟩ := compileReport_ok h
-  exact ⟨resolved, hu, resolutionMismatch_none (checkReport_ok hc).2.2.2.2.2⟩
+  exact ⟨resolved, hu, resolutionMismatch_none (checkReport_ok hc).2.2.2.2.2.1⟩
+
+/-- An address of `mutsAddrs` is one at which a `Muts` entry is published. -/
+theorem mutsAddrs_contains {ixe : Ixon.Env} {a : Address} (h : (mutsAddrs ixe).contains a = true) :
+    ∃ entry e all layout, (entry, e) ∈ ixe.named.toList ∧ e.addr = a ∧
+      e.constMeta.info = .muts all layout := by
+  unfold mutsAddrs at h
+  rw [Std.HashMap.fold_eq_foldl_toList] at h
+  suffices key : ∀ (l : List (Ix.Name × Ixon.Named)) (s : Std.HashSet Address),
+      (l.foldl (fun s x => match x.2.constMeta.info with
+        | .muts .. => s.insert x.2.addr
+        | _ => s) s).contains a = true →
+      s.contains a = true ∨ ∃ entry e all layout, (entry, e) ∈ l ∧ e.addr = a ∧
+        e.constMeta.info = .muts all layout by
+    rcases key _ _ h with h | h
+    · simp at h
+    · exact h
+  intro l
+  induction l with
+  | nil => intro s h; exact .inl h
+  | cons x l ih =>
+    intro s h
+    rcases ih _ h with h | ⟨entry, e, all, layout, hm, ha, hi⟩
+    · obtain ⟨xn, xe⟩ := x
+      dsimp only at h
+      split at h
+      · rename_i all layout hinfo
+        rw [Std.HashSet.contains_insert] at h
+        rcases Bool.or_eq_true_iff.mp h with heq | hs
+        · exact .inr ⟨xn, xe, all, layout, List.mem_cons_self, beq_iff_eq.mp heq, hinfo⟩
+        · exact .inl hs
+      · exact .inl h
+    · exact .inr ⟨entry, e, all, layout, List.mem_cons_of_mem _ hm, ha, hi⟩
+
+/-- What `unseenInductive = none` says: every published input inductive is
+published at an inductive projection whose block has a `Muts` entry
+published at its address. -/
+theorem unseenInductive_none {env : Ix.Environment} {ixe : Ixon.Env}
+    (h : unseenInductive env ixe = none) :
+    ∀ n v named, (n, Ix.ConstantInfo.inductInfo v) ∈ env.consts.toList →
+      ixe.named.get? n = some named →
+      ∃ p, (storedRecord ixe named.addr).map (·.info) = some (Ixon.ConstantInfo.iPrj p) ∧
+        ∃ entry e all layout, (entry, e) ∈ ixe.named.toList ∧ e.addr = p.block ∧
+          e.constMeta.info = .muts all layout := by
+  intro n v named hn hnamed
+  unfold unseenInductive at h
+  dsimp only at h
+  rw [List.findSome?_eq_none_iff] at h
+  have hn := h (n, .inductInfo v) hn
+  dsimp only at hn
+  rw [hnamed] at hn
+  dsimp only at hn
+  split at hn
+  · rename_i p hp
+    refine ⟨p, hp, ?_⟩
+    split at hn
+    · rename_i hc
+      exact mutsAddrs_contains hc
+    · cases hn
+  · cases hn
+
+/-- **Every inductive component is seen** ((c3)): on `compileReport`'s
+result, every published input inductive is published at an inductive
+projection of a block with a `Muts` entry at its address (`checkReport`'s
+seventh check), so the changed set's classifier, which reads an inductive
+component only through its `Muts` entry, evaluates every published input
+inductive's component. -/
+theorem inductivesSeen {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∀ n v named, (n, Ix.ConstantInfo.inductInfo v) ∈ env.consts.toList →
+      ixe.named.get? n = some named →
+      ∃ p, (storedRecord ixe named.addr).map (·.info) = some (Ixon.ConstantInfo.iPrj p) ∧
+        ∃ entry e all layout, (entry, e) ∈ ixe.named.toList ∧ e.addr = p.block ∧
+          e.constMeta.info = .muts all layout := by
+  obtain ⟨_, -, hc⟩ := compileReport_ok h
+  exact unseenInductive_none (checkReport_ok hc).2.2.2.2.2.2
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`
