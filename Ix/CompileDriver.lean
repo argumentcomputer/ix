@@ -46,6 +46,7 @@ public import Ix.CompileM
 public import Ix.Compile.Publication
 public import Ix.Compile.Pass.Names
 public import Ix.Compile.Pass.Driver
+public import Ix.Compile.Pass.Clique.Table
 public import Ix.AuxGen.CompileAux
 public import Ix.AuxGen.SourceService
 public import Ix.AuxGen.IxcScope
@@ -638,7 +639,10 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     p3CanonRecs := published.canonRecs.foldl (fun m (k, v) => m.insert k v)
       cenv.p3CanonRecs
     p3Views := Ix.Compile.Pass.memoMerge cenv.p3Views published.views
-    p3ImageExps := Ix.Compile.Pass.memoMerge cenv.p3ImageExps published.imageExps }
+    p3ImageExps := Ix.Compile.Pass.memoMerge cenv.p3ImageExps published.imageExps
+    -- the plan table: the first plan computed for a clique wins
+    p3CliquePlans := cache.p3CliquePlans.foldl
+      (fun m (k, v) => if m.contains k then m else m.insert k v) cenv.p3CliquePlans }
   -- Class-ordering registry (Rust `stt.blocks`, compile.rs:4048-4057):
   -- one entry per member, all pointing at the block's full ordering.
   if !result.classNames.isEmpty then
@@ -1696,14 +1700,21 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
-  let sched := FoldSchedule.of blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  -- Pass 3's clique transport (CQ5.2): the clique table and its scheduling
+  -- edges, read through `view` (the input's lookups only). The edges only
+  -- order the blocks (the schedule); each block's own references
+  -- (`CompileEnv.p3BlockRefs`, `FoldState.init`) stay the condensation's.
+  -- With no input clique the blocks are unchanged.
+  let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
+  let sched := FoldSchedule.of sc.1
   let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
   let cenv₀ := { CompileEnv.new view with
-    unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle }
+    unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
+    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2 }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let (ixe, bytes, cenv) := assembleEnv st.acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)

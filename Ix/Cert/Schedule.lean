@@ -236,15 +236,17 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
-  let sched := FoldSchedule.of blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
+  let sched := FoldSchedule.of sc.1
   let aux : AuxIxcOptions := {}
   let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
   let cenv₀ := { CompileEnv.new view with
-    unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle }
+    unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
+    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2 }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let (ixe, bytes, cenv) := assembleEnv st.acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)

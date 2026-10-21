@@ -45,6 +45,8 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::admission::Admission;
+use crate::compile::pass3::Pass3State;
+use crate::compile::pass3::clique::table::{input_cliques, schedule_cliques};
 use crate::compile::{
   BlockCache, CompileOptions, CompileState,
   aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
@@ -402,7 +404,7 @@ pub fn compile_env_with_profile(
   };
 
   let phase_start = Instant::now();
-  let condensed = compute_sccs(&grounded_out_refs);
+  let mut condensed = compute_sccs(&grounded_out_refs);
   if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s{}",
@@ -456,6 +458,19 @@ pub fn compile_env_with_profile(
     );
   }
 
+  // Pass 3's clique transport (CQ5.2; Lean `scheduleCliques` in
+  // `compileEnvFoldWithSource`): the clique table and its scheduling edges.
+  // The edges only order the blocks; each block's own references (the refs
+  // `compile_block` reads, Lean `p3BlockRefs`) stay the condensation's, kept
+  // aside when the input has a clique.
+  let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
+  let block_refs_orig = if input_cliques(&const_of, &condensed).is_empty() {
+    None
+  } else {
+    Some(condensed.block_refs.clone())
+  };
+  let (cliques, clique_roots) = schedule_cliques(&const_of, &mut condensed);
+
   // Pass 3's hooks run in every whole-environment compile (no mode, no
   // switch): the state is driver-prepared.
   let stt = CompileState {
@@ -463,6 +478,7 @@ pub fn compile_env_with_profile(
     ungrounded: ungrounded_map,
     sharing_limits,
     driver_prepared: true,
+    p3: Pass3State { cliques, clique_roots, ..Default::default() },
     ..Default::default()
   };
 
@@ -550,9 +566,13 @@ pub fn compile_env_with_profile(
         },
       )?;
 
+      // the block's own references (without the clique edges) for its
+      // compile; the scheduling dependencies (with them) for the queue
+      let refs =
+        block_refs_orig.as_ref().and_then(|m| m.get(*lo)).unwrap_or(deps);
       block_info.insert(
         (*lo).clone(),
-        ((*all).clone(), deps.clone(), Mutex::new(deps.clone())),
+        ((*all).clone(), refs.clone(), Mutex::new(deps.clone())),
       );
 
       for dep_name in deps {

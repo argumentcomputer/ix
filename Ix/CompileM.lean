@@ -30,6 +30,7 @@ public import Ix.SOrder
 public import Ix.Compile.Canon.Classes
 public import Ix.Compile.ExactKey
 public import Ix.Compile.Pass.ImageView
+public import Ix.Compile.Pass.Clique.Plan
 public import Ix.AuxSource
 public import Ix.CanonM
 
@@ -143,6 +144,21 @@ structure CompileEnv where
       constant's `metaSharing` as its decompile record
       (`compileExprWithRecords`). Empty in every other environment. -/
   p3Sources : Std.HashMap Nat Expr := {}
+  /-- Pass 3, clique transport (CQ5.2): every member of an input clique, and
+      every carried equation lemma, ↦ (Lean's `all`, the carried lemmas), set
+      before the first wave (`Ix.Compile.Pass.Clique.scheduleCliques`). Empty
+      when the input has no clique. -/
+  p3Cliques : Std.HashMap Name (Array Name × Array Name) := {}
+  /-- Pass 3, clique transport: the encoding roots (`all₀._mutual`,
+      `all₀.mutual`, `m._f`) ↦ the clique (`scheduleCliques`). -/
+  p3CliqueRoots : Std.HashMap Name (Array Name) := {}
+  /-- Pass 3, clique transport: the plan table, a memo of `planClique` keyed
+      by the clique's first member, filled by the blocks that computed a plan
+      (first entry wins, `mergeCompiledBlock`). Never changes a byte. -/
+  p3CliquePlans : Std.HashMap Name Ix.Compile.Pass.Clique.CliqueOutcome := {}
+  /-- Pass 3, clique transport: recompute every plan the table supplies and
+      fail on a difference (`IX_PASS3_CHECK_PLANS`, the plan-cache suite). -/
+  p3CheckPlans : Bool := false
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -298,6 +314,11 @@ structure BlockState where
       compiled: a record reads the term's cache but never writes it (Rust
       `BlockCache.p3_meta_undo`). Empty between records. -/
   p3MetaCache : Std.HashMap Ix.Compile.ExactKey.ExprKey (Ixon.Expr × UInt64) := {}
+  /-- Pass 3, clique transport: the plans this block computed, by clique key,
+      for the driver's plan table (`CompileEnv.p3CliquePlans`). -/
+  p3CliquePlans : Array (Name × Ix.Compile.Pass.Clique.CliqueOutcome) := #[]
+  /-- Pass 3, clique transport: how many plans this block took from the table. -/
+  p3PlanReused : Nat := 0
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/

@@ -44,6 +44,8 @@ use dashmap::DashMap;
 
 use ix_common::env::{Expr, Name, RecursorVal};
 
+use self::clique::plan::CliqueOutcome;
+use self::clique::table::{CliqueTable, EncodingRoots};
 use self::view::{BlockView, ComponentRecord, Expansion};
 
 /// The Pass 3 records the driver carries from block to block (the Lean
@@ -73,6 +75,18 @@ pub struct Pass3State {
   /// view, and definitional heads' expansions rewritten from stable views
   /// (`compile_image_block`; Lean `CompileEnv.p3ImageExps`).
   pub image_exps: DashMap<Name, (Expansion, Expr)>,
+  /// Clique transport (CQ5.2): every member of an input clique, and every
+  /// carried equation lemma, to (Lean's `all`, the carried lemmas), set
+  /// before the schedule (`clique::table::schedule_cliques`; Lean
+  /// `CompileEnv.p3Cliques`). Empty when the input has no clique.
+  pub cliques: CliqueTable,
+  /// Clique transport: the encoding roots (`all0._mutual`, `all0.mutual`,
+  /// `m._f`) to the clique (Lean `CompileEnv.p3CliqueRoots`).
+  pub clique_roots: EncodingRoots,
+  /// Clique transport: the plan table, a memo of `plan_clique` keyed by the
+  /// clique's first member; the first plan computed wins (Lean
+  /// `CompileEnv.p3CliquePlans`). Never changes a byte.
+  pub clique_plans: DashMap<Name, CliqueOutcome>,
 }
 
 /// A record the aux tail made, journaled for the side-car edit.
