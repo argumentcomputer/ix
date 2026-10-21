@@ -17,6 +17,7 @@ import Ix.Cert.LiteralOrder
 import Ix.Cert.Unchanged
 import Ix.Cert.ReaderUnits
 import Ix.Cert.PassHooks
+import Ix.Cert.Resolution
 
 /-! # The certification statements, frozen
 
@@ -4616,3 +4617,23 @@ run_cmd do
     (#[`prepareBlock_unreferenced, `withMetaRefs_records, `runBlockWithAux_unreferenced,
       `findConst_preserves, `mkIndc_preserves, `forIn_set_state, `compileBlockWithAux_result,
       `compileBlockWithAux_records, `runBlockWithAux_records].map (`Ix.Cert.PassHooks ++ ·))
+
+/-! ## Route A, B9b piece 2: where a resolved name's record comes from
+
+`Ix.Cert.Resolution`: every entry of the driver's final resolution map is an
+aux name's or a primary claim of a block compiled during the fold, with the
+claimed record's bytes stored at its address (`compileUnchecked_provenance`);
+such a claim is one of `runBlock`'s on a subset of a condensation block's
+members, under a key, against a reached state (`compiled_runBlock`, with
+`auxBlockOutcome_cross`); the block references never change during the fold
+(`reach_p3BlockRefs`); where Pass 3's hooks are identities (`HookFree`), the
+claim is the block compile's (`hookFree_compiled`). `compileReport_claim` is
+B9b with `HookFree` as its premise. -/
+
+/-- info: [cert-audit] resolution: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "resolution"
+    (#[`reach_provenance, `compileUnchecked_provenance, `auxBlockOutcome_cross, `compiled_runBlock,
+      `reach_p3BlockRefs, `hookFree_compiled, `compileReport_claim].map (`Ix.Cert.Resolution ++ ·))
