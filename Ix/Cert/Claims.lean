@@ -845,4 +845,68 @@ theorem prepareBlock_agrees {cenv cenv' : CompileEnv} {all : Ix.Set Name} {lo : 
 
 end rewrite
 
+/-! ## The claims of a block compile, hooks or not -/
+
+section claims
+
+/-- Every constant `E` holds carries a name `==` the one it is held under. -/
+def NamedEnv (E : Ix.Environment) : Prop :=
+  ∀ x ci, E.get? x = some ci → (ci.getCnst.name == x) = true
+
+theorem Agrees.named {E E' : Ix.Environment} (ha : Agrees E E') (hn : NamedEnv E) : NamedEnv E' := by
+  intro x ci' h
+  obtain ⟨n, ci, hnx, hci, keeps⟩ := ha x ci' h
+  rw [keeps.1]
+  exact PartialEquivBEq.trans (hn n ci hci) hnx
+
+/-- `x` hashes like a member of `all`, or like a constructor an inductive
+member lists in `E`. -/
+def Owned (E : Ix.Environment) (all : Ix.Set Name) (x : Name) : Prop :=
+  (∃ m, all.contains m = true ∧ (x == m) = true) ∨
+    ∃ I iv c, all.contains I = true ∧ E.get? I = some (.inductInfo iv) ∧ c ∈ iv.ctors ∧ (x == c) = true
+
+theorem memberName_owned {E E' : Ix.Environment} {all : Ix.Set Name} {x : Name} (ha : Agrees E E')
+    (hn : NamedEnv E) (h : MemberName E' all x) : Owned E all x := by
+  have hn' := ha.named hn
+  obtain ⟨m, ⟨n, ci', hin, hci', hname, hctors⟩, hx⟩ := h
+  rcases hx with rfl | ⟨ctor, hctor, rfl⟩
+  · exact .inl ⟨n, hin, by rw [hname]; exact hn' n ci' hci'⟩
+  · obtain ⟨iv', c, rfl, hc, hcs⟩ := hctors ctor hctor
+    obtain ⟨n₀, ci₀, hn₀, hci₀, -, kind⟩ := ha n _ hci'
+    obtain ⟨iv₀, rfl, same⟩ := kind iv' rfl
+    refine .inr ⟨n₀, iv₀, c, ?_, hci₀, same ▸ hc, hn' c _ hcs⟩
+    rw [Std.HashSet.contains_congr hn₀]
+    exact hin
+
+/-- **The claims of a block compile, with Pass 3's hooks in any state**:
+every projection name of `runBlockWithAux cenv all lo` hashes like a member
+of `all` or like a constructor an inductive member lists, when every
+constant of the environment carries its name (`prepareBlock_agrees`,
+`compileBlockWithAux_names`). -/
+theorem runBlockWithAux_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
+    {cache : BlockState} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
+    (hn : NamedEnv cenv.env) (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?, pub)) :
+    ∀ row ∈ r.projections, Owned cenv.env all row.1 := by
+  unfold runBlockWithAux at h
+  obtain ⟨⟨cenv', prepared⟩, hprep, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  try dsimp only at h
+  obtain ⟨⟨⟨result, layout', published⟩, cache'⟩, hrun, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  try dsimp only at h
+  have hr : r = Ix.Compile.Pass.withMetaRefs cache'.p3MetaRefs lo result := by
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    exact h.1.symm
+  subst hr
+  have names := compileBlockWithAux_names (Ix.CompileCert.run_success hrun)
+  have same := (Ix.Cert.PassHooks.withMetaRefs_records cache'.p3MetaRefs lo result).1
+  unfold Ix.Cert.PassHooks.recordsOf at same
+  intro row hrow
+  have hmap : (row.1, row.2.1) ∈ result.projections.map (fun p => (p.1, p.2.1)) := by
+    rw [← (Prod.mk.inj (Prod.mk.inj (Prod.mk.inj same).2).2).2]
+    exact Array.mem_map_of_mem hrow
+  obtain ⟨row', hrow', he⟩ := Array.mem_map.1 hmap
+  rw [← (Prod.mk.inj he).1]
+  exact memberName_owned (prepareBlock_agrees hprep) hn (names row' hrow')
+
+end claims
+
 end Ix.Cert.Claims
