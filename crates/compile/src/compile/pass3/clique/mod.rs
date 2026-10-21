@@ -16,6 +16,8 @@
 //! | `Clique/Order.lean`; `Canon/Order.lean`, `Classes.lean`, `Clique.lean` (definitions) | [`order`] |
 //! | `Clique/Transport.lean` | [`transport`] |
 //! | `Clique/Recover.lean` | [`recover`] |
+//! | `Clique/PlanClique.lean` | [`plan_clique`] |
+//! | `Clique/Hook.lean` | [`hook`] |
 //!
 //! `Dag.lean`'s de Bruijn and locally nameless helpers are
 //! [`super::expr`]'s (re-exported by [`basic`]); [`basic`] has its walks
@@ -23,10 +25,12 @@
 
 pub mod basic;
 pub mod bounds;
+pub mod hook;
 pub mod order;
 pub mod packing;
 pub mod pf;
 pub mod plan;
+pub mod plan_clique;
 pub mod recover;
 pub mod structural;
 pub mod structural_eq;
