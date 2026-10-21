@@ -3787,10 +3787,13 @@ order of distinct addresses and the blob map, authentication from
 given that every stored record decodes to a wire-valid constant whose
 canonical encoding is its stored bytes, `StoredCanonical`), and the reader's
 stream succeeds on every record-by-record reading (`readRecords_complete`,
-the converse of IxC's `readRecords_spec`). With the fold's acceptance under
+the converse of IxC's `readRecords_spec`) whose final state keeps the
+prelude's entries (`State.keepsPrelude`, required by `readStream_complete`).
+With the fold's acceptance under
 the committed prelude that is `IxonAccepts` (`closure_accepts`).
-`StoredCanonical` (R13, from R7e's per-block codec) and the stream reading
-(N-READS) stay obligations. -/
+`StoredCanonical` (R13, from R7e's per-block codec), the stream reading
+(N-READS), and final-state preservation (`keeps`) stay obligations. Preservation
+at every earlier reader state needs its own compiled-output proof. -/
 
 /-- info: [cert-audit] stream: 22 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---

@@ -776,9 +776,10 @@ instance (a b : State md) (k : CName md) : Decidable (a.SameAt b k) :=
 
 /-- **The reader state `fin` keeps the prelude state `pre`'s entries** (decided): at
 every key `pre` holds an entry at, `fin` holds exactly `pre`'s entries
-(`State.keepsPrelude_iff`). Run on the state a stream's reading ends in, from the
-prelude's: the stream commits each of its keys once, so a stream that passes installed,
-at every prelude key it declares, exactly what the prelude installed there. -/
+(`State.keepsPrelude_iff`). This compares the final state of a stream's
+reading with its initial prelude state. Preservation at every earlier state
+requires a separate argument about the compiled stream's writes; it does not
+follow from this final-state check alone. -/
 def State.keepsPrelude (pre fin : State md) : Bool :=
   pre.keys.all fun k => decide (fin.SameAt pre k)
 

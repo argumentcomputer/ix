@@ -16,7 +16,8 @@ the preparation **succeeds** on the compiled closure.
 * `readRecords_complete`, `readStream_complete`: the reader's stream loop
   succeeds on every record-by-record reading (`StreamRead`, each record read
   against the state the records before it left), with distinct addresses:
-  the converse of IxC's `readRecords_spec`;
+  the converse of IxC's `readRecords_spec`. `readStream_complete` also requires
+  the final state to keep the prelude's entries (`State.keepsPrelude`);
 * the byte stage on the compiled closure: unique keys (`closure_unique`, from
   the order's distinctness and the blob map), authentication
   (`closure_authentic`, from `compileAuthentic`), and batch limits and
@@ -27,14 +28,18 @@ the preparation **succeeds** on the compiled closure.
 * `prepareWith_ok`: the preparation succeeds from its stages' successes;
 * **`closure_prepares`**: for a compiled artifact, an order of distinct
   addresses, `StoredCanonical`, an admitted role table and a stream reading
-  of the decoded closure, the preparation succeeds within some limits, with
+  of the decoded closure whose final state keeps the prelude's entries, the
+  preparation succeeds within some limits, with
   the table's evidence resolved against the reading and the prelude's
   declarations in front; `closure_accepts`: with the fold's acceptance and
   the committed prelude, that is `IxonAccepts`.
 
 What stays an obligation: `StoredCanonical` (R7e's per-block codec over the
-published store, R13) and the stream reading itself (every record of the
-closure reads, N-READS: R8, R10a/R10b, R13). -/
+published store, R13), the stream reading itself (every record of the
+closure reads, N-READS: R8, R10a/R10b, R13), and `keeps` (the reading's final
+state keeps the prelude's entries). The compiled-output argument that each
+earlier reader state also keeps those entries is a separate composition
+obligation; the final-state check alone does not establish it. -/
 
 namespace Ix.Cert.Stream
 
