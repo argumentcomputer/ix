@@ -23,6 +23,11 @@
   * `WFMatcher`: the declaration-checked `Nat` dispatcher the transport may
     follow;
   * `WFConjugation`: the decoder-owned well-founded transport (`transportWF`);
+  * `StructuralEq`: the regeneration of a structural member's equation proof
+    over the transported definitions;
+  * `Structural`: the structural transport (`transportStructural`), over the
+    block's authenticated `below`/`brecOn` family and the below matchers
+    recognised by their declarations;
   * `Plan`: the plan of a changed clique as data (encodings, the order's
     source, the transported members and canonical constants, the outcome),
     and its side-car record `_ix.clique`, typed data only;
@@ -44,5 +49,7 @@ public import Ix.Compile.Pass.Clique.WF
 public import Ix.Compile.Pass.Clique.WFSchema
 public import Ix.Compile.Pass.Clique.WFMatcher
 public import Ix.Compile.Pass.Clique.WFConjugation
+public import Ix.Compile.Pass.Clique.StructuralEq
+public import Ix.Compile.Pass.Clique.Structural
 public import Ix.Compile.Pass.Clique.Plan
 public import Ix.Compile.Pass.Clique.Table
