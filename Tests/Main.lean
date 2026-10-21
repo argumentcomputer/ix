@@ -17,6 +17,9 @@ import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Compile.NestedAgreement
 import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.CanonClique
+import Tests.Ix.Compile.Clique.Dag
+import Tests.Ix.Compile.Clique.Recognition
+import Tests.Ix.Compile.Clique.Transport
 import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.ReservedInput
@@ -176,6 +179,17 @@ def registry : List Entry := [
   .suite "condense-unit" .primary Tests.Ix.CondenseM.suite,
   -- Pass 1's clique order: the pinned choice compares last
   .suite "canon-clique" .primary Tests.Ix.Compile.CanonClique.suite,
+  -- The clique transport library (Ix.Compile.Pass.Clique, not yet wired into
+  -- the compiler; these are its only coverage): its DAG helpers against the
+  -- tree helpers and the memo's fuel and fresh-variable behaviour; on the
+  -- clique twins and its own fixtures (loaded with the twins at run time),
+  -- the recognisers and their adversarial negatives (encoding constants'
+  -- names on user bodies refused or ordinary), and the transport against the
+  -- twins' oracle, kernel-checked (Tests.Ix.Compile.Clique.{Dag,Recognition,
+  -- Transport}; about 2 s and 23 s)
+  .suite "clique-dag" .primary Tests.Ix.Compile.Clique.Dag.suite,
+  .runner "clique-recognition" .primary Tests.Ix.Compile.Clique.Recognition.run,
+  .runner "clique-transport" .primary Tests.Ix.Compile.Clique.Transport.run,
   -- the image generator's expression comparisons: raw-exact alpha equality, and motive
   -- matching up to canonical universes (Ix.Compile.Image)
   .suite "image-alpha-eq" .primary Tests.Ix.Compile.AlphaEq.suite,
