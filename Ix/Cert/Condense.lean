@@ -124,4 +124,97 @@ theorem groundSplit_dependsOn {env : Ix.Environment} {n r : Ix.Name} {rs : Ix.Se
   obtain ⟨ci, hci, rfl⟩ := envSerial_get h₀
   exact ⟨ci, hci, .inl (sub r hr)⟩
 
+/-! ## A block's references -/
+
+/-- `CondenseM.run`'s last loop: each block's references, the union of its
+members' references outside the block. -/
+def blockRefsOf (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) (blocks : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
+    Ix.Map Ix.Name (Ix.Set Ix.Name) := Id.run do
+  let mut blockRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
+  for (lo, all) in blocks do
+    let mut rs : Ix.Set Ix.Name := {}
+    for a in all do
+      rs := rs.union (refs.getD a {})
+    rs := rs.filter (!all.contains ·)
+    blockRefs := blockRefs.insert lo rs
+  return blockRefs
+
+theorem blockRefs_eq (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
+    (CondenseM.run refs).blockRefs = blockRefsOf refs (CondenseM.run refs).blocks := rfl
+
+/-- A fold inserting a listed entry under a key `==` to `n` ends with `n` a key. -/
+theorem foldl_insert_contains_of {α β γ : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+    (key : β → α) (val : β → γ) {n : α} {x : β} :
+    ∀ (l : List β) (m : Std.HashMap α γ), x ∈ l → (key x == n) = true →
+      (l.foldl (fun m x => m.insert (key x) (val x)) m).contains n = true := by
+  have keep : ∀ (l : List β) (m : Std.HashMap α γ), m.contains n = true →
+      (l.foldl (fun m x => m.insert (key x) (val x)) m).contains n = true := by
+    intro l
+    induction l with
+    | nil => intro m h; exact h
+    | cons y l ih =>
+      intro m h
+      exact ih _ (by rw [Std.HashMap.contains_insert, h, Bool.or_true])
+  intro l
+  induction l with
+  | nil => intro _ h; cases h
+  | cons y l ih =>
+    intro m hx hk
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact keep _ _ (by rw [Std.HashMap.contains_insert, hk, Bool.true_or])
+    · exact ih _ hx hk
+
+/-- **A block's references are its members' references**: a block of
+`blocks` at `rep` has an entry in `blockRefsOf refs blocks`, and each of its
+references is a reference of one of its members. -/
+theorem blockRefsOf_get {refs blocks : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep : Ix.Name}
+    {all : Ix.Set Ix.Name} (hb : blocks.get? rep = some all) :
+    ∃ rs, (blockRefsOf refs blocks).get? rep = some rs ∧
+      ∀ r, rs.contains r = true → ∃ a, all.contains a = true ∧ (refs.getD a {}).contains r = true := by
+  have hb' := hb
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hb'
+  obtain ⟨k, rk, hk⟩ := hb'
+  -- the union of a block's members' references, filtered
+  have union : ∀ (A : Ix.Set Ix.Name) r, (List.foldl (fun (s : Ix.Set Ix.Name) a => s.union (refs.getD a {})) {} A.toList).contains r = true →
+      ∃ a, A.contains a = true ∧ (refs.getD a {}).contains r = true := by
+    intro A r h
+    refine foldl_inv (fun s : Ix.Set Ix.Name => ∀ r, s.contains r = true →
+        ∃ a, A.contains a = true ∧ (refs.getD a {}).contains r = true) _ A.toList {}
+      (fun r h => by simp at h) (fun s a ha hs r hr => ?_) r h
+    change (s ∪ refs.getD a {}).contains r = true at hr
+    rw [Std.HashSet.contains_union] at hr
+    rcases Bool.or_eq_true_iff.mp hr with hr | hr
+    · exact hs r hr
+    · exact ⟨a, Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_of_mem_toList ha), hr⟩
+  unfold blockRefsOf
+  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, Std.HashSet.forIn_eq_forIn_toList,
+    List.forIn_pure_yield_eq_foldl, pure_bind]
+  let F : Ix.Name × Ix.Set Ix.Name → Ix.Set Ix.Name := fun a =>
+    Std.HashSet.filter (fun x => !a.snd.contains x)
+      (List.foldl (fun (b : Ix.Set Ix.Name) a => Std.HashSet.union b (refs.getD a ∅)) ∅ a.snd.toList)
+  change ∃ rs, (List.foldl (fun (m : Ix.Map Ix.Name (Ix.Set Ix.Name)) x => m.insert x.1 (F x)) ∅ blocks.toList).get? rep = some rs ∧ _
+  have hc := foldl_insert_contains_of (fun x : Ix.Name × Ix.Set Ix.Name => x.1) F blocks.toList ∅ hk
+    (BEq.symm rk)
+  obtain ⟨rs, hrs⟩ : ∃ rs, (List.foldl (fun (m : Ix.Map Ix.Name (Ix.Set Ix.Name)) x => m.insert x.1 (F x)) ∅ blocks.toList).get? rep = some rs :=
+    Option.isSome_iff_exists.mp (by
+      rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]; exact hc)
+  refine ⟨rs, hrs, ?_⟩
+  refine foldl_insert_get_of (P := fun n v => (n == rep) = true → ∀ r, v.contains r = true →
+      ∃ a, all.contains a = true ∧ (refs.getD a {}).contains r = true) (fun x => x.1) F blocks.toList ∅
+    (fun n v h => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
+    (fun x hx n hn hnr r hr => ?_) rep rs hrs (BEq.refl rep)
+  have hx2 : blocks.get? rep = some x.2 := get_of_mem_toList hx (BEq.trans hn hnr)
+  rw [hb] at hx2
+  cases Option.some.inj hx2
+  exact union _ r (Std.HashSet.contains_of_contains_filter hr)
+
+/-- **The condensation's block references are its members' references.** -/
+theorem condense_blockRefs {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep : Ix.Name} {all : Ix.Set Ix.Name}
+    (hb : (CondenseM.run refs).blocks.get? rep = some all) :
+    ∃ rs, (CondenseM.run refs).blockRefs.get? rep = some rs ∧
+      ∀ r, rs.contains r = true → ∃ a, all.contains a = true ∧ (refs.getD a {}).contains r = true := by
+  rw [blockRefs_eq]
+  exact blockRefsOf_get hb
+
 end Ix.Cert.Condense
