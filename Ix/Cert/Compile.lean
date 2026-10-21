@@ -1,6 +1,7 @@
 module
 
 public import Ix.CompileDriver
+public import Ix.Compile.ChangedSet
 
 /-! # The compiler as a pure function
 
@@ -168,8 +169,9 @@ reserved component (the names of `blocks`), each by its least message. -/
 /-- The compile and its failures, before `compileReport`'s checks, with the
 driver's compile environment at the end of the fold, whose maps the checks
 read: the resolution map (`CompileEnv.nameToAddr`: the address each name the
-compile registered resolves to), the aux map (`CompileEnv.auxNameToAddr`) and
-the extra names (`CompileEnv.auxGenExtraNames`). A block that fails to compile is recorded, with its
+compile registered resolves to), the aux map (`CompileEnv.auxNameToAddr`), the
+extra names (`CompileEnv.auxGenExtraNames`) and Pass 3's heads
+(`CompileEnv.p3Heads`). A block that fails to compile is recorded, with its
 dependents, and left out of the environment; the result is an error only when
 the driver itself fails (a refused input, or a condensation it cannot
 schedule), or the input is reserved (`reservedRefusal`). -/
@@ -701,7 +703,23 @@ name, no resolved name outside the aux map is a cross-SCC subset's claim. -/
   resolved.toList.findSome? fun (n, _) =>
     if !aux.contains n && extras.contains n then some n else none
 
-/-- `compileReport`'s ten checks on a compile's result, each an error on
+/-- The first key of the driver's final Pass 3 heads (`heads`,
+`CompileEnv.p3Heads`) that the compile's changed set
+(`Ix.Compile.ChangedSet.ofCompile env ixe`) does not contain, if any (none
+without heads, and then the changed set is not computed). A head is published
+by a block's merge from Pass 3's hook 1 (`editBlock`), whose inputs come from
+the aux tail (AuxGen's `partial` code, which no proof follows), and hook 2
+(`prepareBlock`) rewrites every block that references one. With no such key,
+no head is outside the changed set, so a block whose members and references
+avoid the set compiles with hook 2 the identity. -/
+@[expose] def foreignHead (env : Ix.Environment)
+    (heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name) (ixe : Ixon.Env) : Option Ix.Name :=
+  if heads.isEmpty then none
+  else
+    let changed := Ix.Compile.ChangedSet.ofCompile env ixe
+    heads.toList.findSome? fun (h, _) => if changed.contains h then none else some h
+
+/-- `compileReport`'s eleven checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -721,7 +739,8 @@ map (`cenv.auxNameToAddr`) is published with `Named.original`
 (`unoriginalAux`). **Published input names are resolved:** each published
 input name is in the resolution map or in the aux map (`unresolvedPublished`).
 **No cross-SCC claims:** no resolved name outside the aux map is among the
-extra names (`crossClaimed`). -/
+extra names (`crossClaimed`). **Heads are changed:** each of the driver's final
+Pass 3 heads (`cenv.p3Heads`) is in the changed set (`foreignHead`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
@@ -741,7 +760,12 @@ extra names (`crossClaimed`). -/
                 match unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 with
                 | none =>
                   match crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
-                  | none => .ok ()
+                  | none =>
+                    match foreignHead env cenv.p3Heads out.1 with
+                    | none => .ok ()
+                    | some h =>
+                      .error s!"compileReport: heads check failed: the Pass 3 head {h.pretty} is not \
+                        in the changed set"
                   | some n =>
                     .error s!"compileReport: cross-SCC check failed: the name {n.pretty} resolves \
                       outside the aux map and is among the extra names, so a cross-SCC subset claimed it"
@@ -779,7 +803,7 @@ extra names (`crossClaimed`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with ten checks (`checkReport`):
+condensation it cannot schedule). It ends with eleven checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -789,8 +813,8 @@ the driver resolves is published at the address it resolves to; every
 published input inductive is published at an inductive projection of a
 block with a `Muts` entry; and every input name of the driver's final aux map
 is published with an original-form record; every published input name is
-resolved or in the aux map; and no resolved name outside the aux map is a
-cross-SCC subset's claim. Any inconsistency is an error, and no artifact is
+resolved or in the aux map; no resolved name outside the aux map is a cross-SCC
+subset's claim; and every Pass 3 head is in the changed set. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that
 agree with their blocks, resolved names published where they resolve,

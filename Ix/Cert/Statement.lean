@@ -602,8 +602,8 @@ names share a name hash, every `Muts` entry agrees with its block, every
 resolved name is published where it resolves, every published input
 inductive's component is seen, every input name of the aux map is published
 with an original-form record, every published input name is resolved or in the
-aux map, and no resolved name outside the aux map is a cross-SCC claim, all in
-the driver's final environment `cenv`. -/
+aux map, no resolved name outside the aux map is a cross-SCC claim and every
+Pass 3 head is in the changed set, all in the driver's final environment `cenv`. -/
 theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
     (h : checkReport env cenv out = .ok ()) :
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
@@ -611,7 +611,8 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       resolutionMismatch cenv.nameToAddr out.1 = none ∧ unseenInductive env out.1 = none ∧
       unoriginalAux env cenv.auxNameToAddr out.1 = none ∧
       unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
-      crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none := by
+      crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
+      foreignHead env cenv.p3Heads out.1 = none := by
   unfold checkReport at h
   revert h
   cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;>
@@ -619,7 +620,8 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
     cases resolutionMismatch cenv.nameToAddr out.1 <;> cases unseenInductive env out.1 <;>
     cases unoriginalAux env cenv.auxNameToAddr out.1 <;>
     cases unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 <;>
-    cases crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames <;> simp
+    cases crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames <;>
+    cases foreignHead env cenv.p3Heads out.1 <;> simp
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -628,7 +630,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -995,7 +997,42 @@ theorem noCrossClaims {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
       ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         cenv.auxNameToAddr.contains n = false → cenv.auxGenExtraNames.contains n = false := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, crossClaimed_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2⟩
+  exact ⟨cenv, hu, crossClaimed_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.1⟩
+
+/-- What `foreignHead = none` says: every key of `heads` is in the changed
+set of the compile of `env` to `ixe`. -/
+theorem foreignHead_none {env : Ix.Environment}
+    {heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name} {ixe : Ixon.Env}
+    (h : foreignHead env heads ixe = none) :
+    ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), heads.get? n = some k →
+      (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
+  intro n k hn
+  unfold foreignHead at h
+  have hne : heads.isEmpty = false := by
+    rw [Std.HashMap.isEmpty_eq_false_iff_exists_contains_eq_true]
+    exact ⟨n, by rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hn]; rfl⟩
+  rw [hne] at h
+  simp only [Bool.false_eq_true, ↓reduceIte] at h
+  rw [List.findSome?_eq_none_iff] at h
+  have hmem : (n, k) ∈ heads.toList := by
+    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
+    exact hn
+  have hfind := h (n, k) hmem
+  dsimp only at hfind
+  cases hc : (Ix.Compile.ChangedSet.ofCompile env ixe).contains n
+  · simp [hc] at hfind
+  · rfl
+
+/-- **Pass 3's heads are in the changed set**: in the driver's final
+environment, which `compileUnchecked` returns, every Pass 3 head is in the
+compile's changed set (`checkReport`'s eleventh check). -/
+theorem headsChanged {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
+      ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k →
+        (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
+  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
+  exact ⟨cenv, hu, foreignHead_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2⟩
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`

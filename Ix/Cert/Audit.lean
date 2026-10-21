@@ -1130,7 +1130,13 @@ fun env cenv out =>
                 match Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst with
                 | none =>
                   match Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
-                  | none => Except.ok ()
+                  | none =>
+                    match Ix.Cert.foreignHead env cenv.p3Heads out.fst with
+                    | none => Except.ok ()
+                    | some h =>
+                      Except.error
+                        (toString "compileReport: heads check failed: the Pass 3 head " ++ toString h.pretty ++
+                          toString " is not in the changed set")
                   | some n =>
                     Except.error
                       (toString "compileReport: cross-SCC check failed: the name " ++ toString n.pretty ++
@@ -1328,7 +1334,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                 Ix.Cert.unseenInductive env out.fst = none ∧
                   Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst = none ∧
                     Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
-                      Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none -/
+                      Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
+                        Ix.Cert.foreignHead env cenv.p3Heads out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4661,6 +4668,46 @@ fun resolved aux extras =>
     resolved.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.crossClaimed
+
+/-! ## Pass 3's heads are in the changed set (B9b, `HookFree`'s discharge, (i); coordinator decision, 2026-10-21)
+
+A block's merge publishes Pass 3's heads (`CompileEnv.p3Heads`) from hook 1
+(`editBlock`), whose inputs come from the aux tail (AuxGen's `partial` code,
+which no proof follows), and hook 2 (`prepareBlock`) rewrites every block that
+references a head. `compileReport` now refuses a result in which a head of the
+driver's final environment is not in the compile's changed set
+(`checkReport`'s eleventh check, `foreignHead`, which computes the changed set
+only when there are heads; probe `ports/20261021T034341Z-hookprobe`: no heads
+on Init+Std; on Mathlib 329 heads, all among the 752 names of the changed
+set). With it, a block whose members and references avoid the changed set
+meets no head at block time (with the fold's monotonicity: a head leaves the
+heads only with its name among the failures). Re-frozen with it:
+`checkReport`'s print and `checkReport_ok` (an eleventh conjunct). On a
+consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] heads: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] heads: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "heads"
+    (#[`foreignHead_none, `headsChanged].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "heads" #[``Ix.Cert.foreignHead]
+
+/-- info: def Ix.Cert.foreignHead : Ix.Environment →
+  Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name → Ixon.Env → Option Ix.Name :=
+fun env heads ixe =>
+  if heads.isEmpty = true then none
+  else
+    have changed := Ix.Compile.ChangedSet.ofCompile env ixe;
+    List.findSome?
+      (fun x =>
+        match x with
+        | (h, snd) => if changed.contains h = true then none else some h)
+      heads.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.foreignHead
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

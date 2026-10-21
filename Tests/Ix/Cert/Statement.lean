@@ -346,6 +346,32 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           cross-SCC check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a resolved name outside the \
         aux map among the extra names"
+  -- the heads check (every Pass 3 head of the driver's final environment in
+  -- the changed set), timed alone, then refusing, by its own message, the
+  -- environment with a resolved name outside the changed set planted as a head
+  let q0 ← IO.monoMsNow
+  let foreign? ← IO.lazyPure fun _ => Ix.Cert.foreignHead env cenv.p3Heads ixe
+  let q1 ← IO.monoMsNow
+  match foreign? with
+  | none => lines := lines.push s!"{label}: foreignHead finds every Pass 3 head in the changed set \
+      ({cenv.p3Heads.size} heads, {q1 - q0} ms)"
+  | some h => errors := errors.push s!"{label}: foreignHead finds {h.pretty} in the compile's result"
+  let changed := Ix.Compile.ChangedSet.ofCompile env ixe
+  let outside := resolved.toList.findSome? fun (n, _) =>
+    if changed.contains (n : Ix.Name) then none else some (n : Ix.Name)
+  match outside with
+  | none => errors := errors.push s!"{label}: no resolved name outside the changed set"
+  | some n =>
+    let cenv' := { cenv with p3Heads := cenv.p3Heads.insert n n }
+    match Ix.Cert.checkReport env cenv' (ixe, failures) with
+    | .error e =>
+      if (e.splitOn "heads check failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses a resolved name outside the changed set \
+          planted as a Pass 3 head ({n.pretty})"
+      else
+        errors := errors.push s!"{label}: the planted head is refused, but not by the heads check: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a Pass 3 head outside the \
+        changed set"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find
