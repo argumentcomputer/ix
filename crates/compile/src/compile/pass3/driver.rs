@@ -53,7 +53,8 @@ use crate::mutual::Def;
 
 use super::Journal;
 use super::clique::hook::{CliquePrep, HookEnv, prepare_cliques};
-use super::clique::plan::CliqueOutcome;
+use super::clique::plan::{CliqueOutcome, CliquePlan};
+use super::clique::row::{row_prereqs, rows_of};
 use super::clique::table::encoding_owner;
 use super::names::{has_reserved, image_kinds, ix_aux_name, mk_str};
 use super::opt::{Occ, OptBlock, OptEnv, engine, opt_block_of};
@@ -928,6 +929,104 @@ fn compile_clique_canon(
     publish_image(stt, c, Named::new(addr, meta))?;
   }
   Ok(())
+}
+
+/// Compile a row or an `_ix.src` copy as a lone constant (no decompile
+/// record), published under its reserved name by [`publish_image`]'s claim
+/// rule (Lean `compileRowConst`).
+fn compile_row_const(
+  stt: &CompileState,
+  ci: &ConstantInfo,
+) -> Result<(), CompileError> {
+  let c = ci.get_name().clone();
+  let def = match ci {
+    ConstantInfo::DefnInfo(v) => Def::mk_defn(v),
+    ConstantInfo::ThmInfo(v) => Def::mk_theo(v),
+    _ => return Err(invalid("not a definition or theorem".into())),
+  };
+  let mut cache = BlockCache::default();
+  let (addr, meta, bytes, constant) =
+    compile_single_def_parts(&c, &def, &mut cache, stt)?;
+  stt.store_const_bytes(addr.clone(), bytes, constant)?;
+  publish_image(stt, &c, Named::new(addr, meta))
+}
+
+/// The rows of one transported plan (Lean `cliqueRows`' body): its `_ix.src`
+/// copies in rounds (each round compiles every pending copy whose compile
+/// succeeds; at most one round per copy plus one), then its rows.
+fn emit_plan_rows(
+  lean_env: &Arc<LeanEnv>,
+  stt: &CompileState,
+  plan: &CliquePlan,
+) -> Result<(), CompileError> {
+  let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
+  let (copies, rows) = rows_of(&const_of, plan).map_err(invalid)?;
+  let rounds = copies.len() + 1;
+  let mut pending = copies;
+  let mut last_err = String::new();
+  for _ in 0..rounds {
+    if pending.is_empty() {
+      break;
+    }
+    let mut rest = Vec::new();
+    for ci in pending {
+      if let Err(e) = compile_row_const(stt, &ci) {
+        last_err = format!("{}: {e}", ci.get_name().pretty());
+        rest.push(ci);
+      }
+    }
+    pending = rest;
+  }
+  if !pending.is_empty() {
+    return Err(invalid(format!("Pass 3 cliques: row copy {last_err}")));
+  }
+  for ci in rows {
+    compile_row_const(stt, &ci).map_err(|e| {
+      invalid(format!("Pass 3 cliques: row {}: {e}", ci.get_name().pretty()))
+    })?;
+  }
+  Ok(())
+}
+
+/// **The clique rows** (CQ5.2; Lean `emitRows`/`cliqueRows`), after the
+/// scheduler: for every transported plan of the plan table, by clique key in
+/// pretty-name order, whose members and rows' prerequisites all compiled,
+/// its `_ix.src` copies, then its rows, each a lone constant under its
+/// reserved name. Nothing references a row or a copy but a row, so they
+/// come last; the bytes do not depend on their order. On a thread with a
+/// large stack (the rows are deep proof terms).
+pub fn emit_rows(
+  lean_env: &Arc<LeanEnv>,
+  stt: &CompileState,
+) -> Result<(), CompileError> {
+  let mut plans: Vec<(Name, CliquePlan)> = stt
+    .p3
+    .clique_plans
+    .iter()
+    .filter_map(|e| match e.value() {
+      CliqueOutcome::Transported(p) => Some((e.key().clone(), (**p).clone())),
+      _ => None,
+    })
+    .collect();
+  if plans.is_empty() {
+    return Ok(());
+  }
+  plans.sort_by_cached_key(|(k, _)| k.pretty());
+  let prereqs = row_prereqs();
+  with_big_stack(|| {
+    for (_, plan) in &plans {
+      if !plan
+        .all
+        .iter()
+        .chain(prereqs.iter())
+        .all(|n| stt.resolve_addr(n).is_some())
+      {
+        continue;
+      }
+      emit_plan_rows(lean_env, stt, plan)?;
+    }
+    Ok(())
+  })
 }
 
 /// Every member of the block is an image-kind head (`isImageBlock`).

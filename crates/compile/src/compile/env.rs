@@ -1309,6 +1309,10 @@ pub fn compile_env_with_profile(
     });
   }
 
+  // Pass 3's clique rows (Lean `emitRows`, between the fold and the
+  // assembly): the rows and `_ix.src` copies of every transported clique
+  crate::compile::pass3::driver::emit_rows(lean_env, &stt)?;
+
   stt.finalize_hints();
 
   if !semantic_sources.is_empty() || profile.is_some() {

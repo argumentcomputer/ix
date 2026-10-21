@@ -248,7 +248,8 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
     p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2 }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
-  let (ixe, bytes, cenv) := assembleEnv st.acc
+  let acc ← emitRows st.acc
+  let (ixe, bytes, cenv) := assembleEnv acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
 
 /-- **The driver, sequentially**: `compileEnvFold` with its waves

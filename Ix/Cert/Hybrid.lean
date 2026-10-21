@@ -180,7 +180,11 @@ theorem compileEnvFold_lookups {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e�
   all_goals
     simp only [bind, Except.bind, pure, Except.pure, Functor.map, Except.map]
     generalize Schedule.foldWavesSeq _ _ _ _ = r
-    cases r <;> rfl
+    cases r
+    · rfl
+    · simp only
+      generalize emitRows _ = e
+      cases e <;> rfl
 
 /-! ## The IO pipeline's environment -/
 

@@ -1067,21 +1067,60 @@ theorem assembleEnv_consts (acc : DriverAcc) {a : Address} {b : ByteArray}
   rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
   exact h
 
+/-- **The clique rows' merge only adds aux names** (`mergeRows`,
+`insertIfNew`): every name of the aux map before it is in the aux map after. -/
+theorem mergeRows_aux_contains {acc : DriverAcc} {rows : BlockState} {n : ExactName}
+    (h : acc.cenv.auxNameToAddr.contains n = true) :
+    (mergeRows acc rows).cenv.auxNameToAddr.contains n = true := by
+  show (rows.auxNameToAddr.fold (fun m k v => m.insertIfNew k v) acc.cenv.auxNameToAddr).contains n = true
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  generalize acc.cenv.auxNameToAddr = m at h ⊢
+  induction rows.auxNameToAddr.toList generalizing m with
+  | nil => exact h
+  | cons p ps ih => exact ih _ (by rw [Std.HashMap.contains_insertIfNew]; simp [h])
+
+/-- **The clique rows' merge keeps every stored record** (`mergeRows`,
+`insertIfNew`): a record stored before it is stored after, with its bytes. -/
+theorem mergeRows_constants {acc : DriverAcc} {rows : BlockState} {a : Address} {b : ByteArray}
+    (h : acc.cenv.constants.get? a = some b) :
+    (mergeRows acc rows).cenv.constants.get? a = some b := by
+  show (rows.auxConsts.foldl (fun m (x : Address × Ixon.Constant) => m.insertIfNew x.1 (Ixon.ser x.2))
+    acc.cenv.constants).get? a = some b
+  rw [← Array.foldl_toList]
+  generalize acc.cenv.constants = m at h ⊢
+  induction rows.auxConsts.toList generalizing m with
+  | nil => exact h
+  | cons p ps ih =>
+    apply ih
+    rw [Std.HashMap.get?_eq_getElem?] at h ⊢
+    rw [Std.HashMap.getElem?_insertIfNew]
+    split
+    · rename_i hk
+      obtain ⟨hka, hkn⟩ := hk
+      simp only [beq_iff_eq] at hka
+      subst hka
+      exact absurd (Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [h])) hkn
+    · exact h
+
 /-- **The driver's final state**: a fold that returns ran its waves from an
-initial state whose resolution map is empty, and returns the environment
-assembled from the state the waves reached, with that state's resolution
-map, aux map and stored records. -/
+initial state whose resolution map is empty, then the clique rows over the
+state the waves reached (`emitRows`: `cliqueRows`, then `mergeRows`), and
+returns the environment assembled from the merged state, with the waves'
+resolution map (the rows add none) and the merged aux map and stored
+records. -/
 theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
     {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
     {bytes : Nat} {cenv : CompileEnv}
     (h : compileEnvFold env blocks dbg unmaterialized sharingLimits width = .ok (ixe, bytes, cenv)) :
-    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
+    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState) (rows : BlockState),
       cenv₀.nameToAddr = {} ∧
       (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
       foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
-      ixe = (assembleEnv st.acc).1 ∧
-      cenv.nameToAddr = st.acc.cenv.nameToAddr ∧ cenv.auxNameToAddr = st.acc.cenv.auxNameToAddr ∧
-      cenv.constants = st.acc.cenv.constants ∧ Mono st.acc.cenv cenv := by
+      Ix.Compile.Pass.cliqueRows st.acc.cenv = .ok rows ∧
+      ixe = (assembleEnv (mergeRows st.acc rows)).1 ∧
+      cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
+      cenv.auxNameToAddr = (mergeRows st.acc rows).cenv.auxNameToAddr ∧
+      cenv.constants = (mergeRows st.acc rows).cenv.constants ∧ Mono st.acc.cenv cenv := by
   rw [compileEnvFold_eq_seq] at h
   unfold compileEnvFoldSeq compileEnvFoldWithSourceSeq at h
   generalize missingBlockRefs? blocks = missing at h
@@ -1093,9 +1132,15 @@ theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks
   cases r with
   | error => cases h
   | ok st =>
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, -, rfl⟩ := h
-    exact ⟨_, _, st, rfl, rfl, hr, rfl, rfl, rfl, rfl, Mono.of_eq rfl rfl rfl⟩
+    simp only at h
+    unfold emitRows at h
+    generalize hc : Ix.Compile.Pass.cliqueRows st.acc.cenv = c at h
+    cases c with
+    | error => cases h
+    | ok rows =>
+      simp only [Functor.map, Except.map, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, -, rfl⟩ := h
+      exact ⟨_, _, st, rows, rfl, rfl, hr, hc, rfl, rfl, rfl, rfl, Mono.of_eq rfl rfl rfl⟩
 
 /-- **The driver's final resolution map has provenance**: every entry is an
 aux name's, or a primary claim of a condensation block compiled during the
@@ -1111,14 +1156,14 @@ theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedB
         cenv.nameToAddr.get? n = some a → cenv.auxNameToAddr.contains n = true ∨
           ∃ b, Compiled blocks (FoldState.init cenv₀ blocks sched).acc cenv n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
-  obtain ⟨cenv₀, sched, st, h₀, henv, hst, rfl, hmap, haux, -, hm⟩ := compileEnvFold_final h
+  obtain ⟨cenv₀, sched, st, rows, h₀, henv, hst, -, rfl, hmap, haux, -, hm⟩ := compileEnvFold_final h
   refine ⟨cenv₀, sched, henv, fun n a hn => ?_⟩
   rw [hmap] at hn
   rw [haux]
   rcases reach_provenance (provenance_of_empty ((init_nameToAddr _ _ _).trans h₀))
     (foldWavesSeq_reach _ _ _ hst Reach.init) n a hn with haux | ⟨b, hc, hb⟩
-  · exact .inl haux
-  · exact .inr ⟨b, hc.mono hm, assembleEnv_consts _ hb⟩
+  · exact .inl (mergeRows_aux_contains haux)
+  · exact .inr ⟨b, hc.mono hm, assembleEnv_consts _ (mergeRows_constants hb)⟩
 
 /-- **`compileUnchecked` returns the driver's final environment**: a
 `compileUnchecked` that returns ran the fold on the ground part's

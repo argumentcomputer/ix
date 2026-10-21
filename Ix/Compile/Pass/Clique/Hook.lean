@@ -54,6 +54,7 @@
 module
 public import Ix.Compile.Pass.Memo
 public import Ix.Compile.Pass.Clique.PlanClique
+public import Ix.Compile.Pass.Clique.Row
 @[expose] public section
 
 namespace Ix.Compile.Pass.Clique
@@ -92,16 +93,25 @@ def sortByPretty (xs : Array Name) : Array Name := xs.qsort fun a b => a.pretty 
 
 /-! ## The plan table -/
 
-/-- The outcome under decision (ii) (2026-10-21): a well-founded clique's
-transport stands (its rows have a proof recipe, `Row`); a structural or
-`partial_fixpoint` clique keeps Lean's form, with the cause recorded
-(`baseline enc .shape`, the outcome of a transport that kept Lean's form;
-the reason is for diagnostics, never a byte). Every other outcome is kept. -/
-def CliqueOutcome.wfOnly : CliqueOutcome → CliqueOutcome
+/-- The outcome under decision (ii) (2026-10-21): a transport stands only
+when its rows apply. A structural or `partial_fixpoint` clique keeps Lean's
+form (no row recipe); so does a well-founded clique whose rows do not apply
+(`rowsOf` refuses) or whose rows' prerequisites (`rowPrereqs`) are not all
+in the input (`const?`), so that every transported clique gets its rows
+after the fold (`Ix.CompileM.emitRows`). The kept form's outcome is
+`baseline enc .shape`, the outcome of a transport that kept Lean's form, with
+the reason, which is for diagnostics, never a byte. Every other outcome is
+kept. -/
+def CliqueOutcome.wfOnly (const? : Name → Option ConstantInfo) : CliqueOutcome → CliqueOutcome
   | .transported plan =>
-    if plan.encoding == .wellFounded then .transported plan
-    else .baseline plan.encoding .shape
-      s!"no row recipe for a {plan.encoding.tag} clique: rows are for well-founded cliques only"
+    let keep (why : String) : CliqueOutcome := .baseline plan.encoding .shape why
+    if plan.encoding != .wellFounded then
+      keep s!"no row recipe for a {plan.encoding.tag} clique: rows are for well-founded cliques only"
+    else if let some p := rowPrereqs.find? (const? · |>.isNone) then
+      keep s!"the rows' prerequisite {p.pretty} is not in the input"
+    else match rowsOf const? plan with
+      | .ok _ => .transported plan
+      | .error e => keep s!"the rows do not apply: {e}"
   | o => o
 
 /-- The prefix of the plan-table check's error; a driver turns a block
@@ -129,7 +139,7 @@ table) is planned directly. -/
 def cliquePlanFor (h : HookEnv) (cl carried : Array Name) : Except String (CliqueOutcome × Bool) := do
   let compute (_ : Unit) : Except String CliqueOutcome :=
     let o := planClique h.env h.addr? cl carried
-    pure (if h.wfOnly then o.wfOnly else o)
+    pure (if h.wfOnly then o.wfOnly h.env.get? else o)
   let some key := cl[0]? | return (← compute (), false)
   let what := if h.checkPlans then s!"{planCheckPrefix} the plan of the clique {cl.map (·.pretty)}"
     else planCheckPrefix

@@ -97,6 +97,20 @@ def rewriteCliqueCanon (cenv : CompileEnv) (c : Name) (ci : ConstantInfo) :
     rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) {}
   return (ci', sources, { views := newMemoViews cenv views })
 
+/-- A lone constant `c` compiled for the clique step or its rows (`r`, with
+the block state `bs` of its compile), added to the block state `st` as an
+auxiliary constant under its reserved name: its record (`auxConsts`), its
+`Named` entry (`auxNamed`), its address (`auxNameToAddr`, where later
+constants and the block's members resolve it), its blobs, names and hints. -/
+def addAuxConst (st : BlockState) (c : Name) (r : BlockResult) (bs : BlockState) : BlockState :=
+  { st with
+    auxConsts := st.auxConsts.push (r.blockAddr, r.block)
+    auxNamed := st.auxNamed.push (c, { addr := r.blockAddr, constMeta := r.blockMeta })
+    auxNameToAddr := st.auxNameToAddr.insert c r.blockAddr
+    blockBlobs := bs.blockBlobs.fold (fun m k v => m.insert k v) st.blockBlobs
+    blockNames := bs.blockNames.fold (fun m k v => m.insert k v) st.blockNames
+    defHints := bs.defHints.fold (fun m k v => m.insert k v) st.defHints }
+
 /-- The error of a canonical constant that does not compile. -/
 def cliqueCanonError (c : Name) (e : CompileError) : CompileError :=
   .invalidMutualBlock s!"Pass 3 cliques: canonical constant {c.pretty}: {e}"
@@ -121,14 +135,7 @@ def compileCliqueCanon (cenv : CompileEnv) (canon : Array (Name × ConstantInfo)
       { all := ({} : Set Name).insert c, current := c, mutCtx := default, univCtx := [] }
     let (r, bs) ← (CompileM.run { cenv with p3Sources := sources } blockEnv
       { auxNameToAddr := st.auxNameToAddr } (compileConstantInfo ci')).mapError (cliqueCanonError c)
-    let r := withMetaRefs bs.p3MetaRefs c r
-    st := { st with
-      auxConsts := st.auxConsts.push (r.blockAddr, r.block)
-      auxNamed := st.auxNamed.push (c, { addr := r.blockAddr, constMeta := r.blockMeta })
-      auxNameToAddr := st.auxNameToAddr.insert c r.blockAddr
-      blockBlobs := bs.blockBlobs.fold (fun m k v => m.insert k v) st.blockBlobs
-      blockNames := bs.blockNames.fold (fun m k v => m.insert k v) st.blockNames
-      defHints := bs.defHints.fold (fun m k v => m.insert k v) st.defHints }
+    st := addAuxConst st c (withMetaRefs bs.p3MetaRefs c r) bs
   return (st, published)
 
 /-- **The clique step**, before hook 2 (`prepareBlock`): the block's compile
@@ -163,6 +170,65 @@ def cliqueStep (cenv : CompileEnv) (all : Set Name) (lo : Name) :
     { consts := {}, fallback? := some fun n => (overlay.get? n).orElse fun _ => base.get? n }
   return ({ cenv with env, unmaterialized := cenv.unmaterialized + base.consts.size
                       p3Sources := sources }, init, published)
+
+/-! ## The rows, after the fold -/
+
+/-- Compile a row or an `_ix.src` copy `ci` as a lone constant (no decompile
+record), resolving the rows' earlier constants through `st`'s auxiliary
+names, into `st` (`addAuxConst`). -/
+def compileRowConst (cenv : CompileEnv) (st : BlockState) (ci : ConstantInfo) :
+    Except CompileError BlockState := do
+  let c := ci.getCnst.name
+  let blockEnv : BlockEnv :=
+    { all := ({} : Set Name).insert c, current := c, mutCtx := default, univCtx := [] }
+  let (r, bs) ← CompileM.run { cenv with p3Sources := {} } blockEnv
+    { auxNameToAddr := st.auxNameToAddr } (compileConstantInfo ci)
+  -- a reserved name is claimed once (`checkBlockClaims`, Rust `publish_image`)
+  if let some a := cenv.auxNameToAddr.get? c then
+    if a != r.blockAddr then
+      throw (.invalidMutualBlock s!"Pass 3 cliques: {c.pretty} is already claimed at another address")
+  return addAuxConst st c r bs
+
+/-- **The clique rows** (CQ5.2), compiled after the fold from its final
+compile environment: for every transported plan of the plan table
+(`CompileEnv.p3CliquePlans`, by clique key in pretty-name order) whose
+members and rows' prerequisites (`Clique.rowPrereqs`) all compiled, its
+`_ix.src` copies, then its rows (`Clique.rowsOf`), each as a lone constant
+under its reserved name (`compileRowConst`). Nothing references a row or a
+copy but a row, so they come last; the bytes do not depend on their order
+(content addressing, name-keyed tables).
+
+The copies reference each other (`all₀._mutual._ix.src` its proofs'
+copies): each round compiles every pending copy whose compile succeeds, the
+others wait for the next round, in their order; at most one round per copy
+plus one (a bounded `for`). A copy that never compiles, a row that does not
+compile, and a plan whose rows no longer apply (`rowsOf` accepted it when the
+plan was made, `CliqueOutcome.wfOnly`) are the compile's errors. A plan with a
+member that did not compile has no rows: its members are not published. -/
+def cliqueRows (cenv : CompileEnv) : Except String BlockState := do
+  let plans := cenv.p3CliquePlans.toArray.qsort fun a b => a.1.pretty < b.1.pretty
+  let mut st : BlockState := {}
+  for (_, outcome) in plans do
+    let .transported plan := outcome | continue
+    unless (plan.all ++ Clique.rowPrereqs).all fun n => (resolveAddr cenv n).isSome do continue
+    let (copies, rows) ← Clique.rowsOf cenv.env.get? plan
+    let mut pending := copies
+    let mut lastErr := ""
+    for _ in [0:copies.size + 1] do
+      if pending.isEmpty then break
+      let mut rest : Array ConstantInfo := #[]
+      for ci in pending do
+        match compileRowConst cenv st ci with
+        | .ok st' => st := st'
+        | .error e =>
+          lastErr := s!"{ci.getCnst.name.pretty}: {e}"
+          rest := rest.push ci
+      pending := rest
+    unless pending.isEmpty do throw s!"Pass 3 cliques: row copy {lastErr}"
+    for ci in rows do
+      st ← (compileRowConst cenv st ci).mapError fun e =>
+        s!"Pass 3 cliques: row {ci.getCnst.name.pretty}: {e}"
+  return st
 
 end Ix.Compile.Pass
 

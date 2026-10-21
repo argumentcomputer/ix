@@ -58,12 +58,15 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use ix_common::env::{ConstantInfo, DataValue, Env, Expr, Name};
 
-use super::basic::{Cause, R, arr_nat, arr_str, const_occurrences, list_str};
+use super::basic::{
+  Cause, ConstOf, R, arr_nat, arr_str, const_occurrences, list_str,
+};
 use super::order::AddrOf;
 use super::plan::{CliqueOutcome, CliquePlan, Encoding};
 use super::plan_clique::{
   canon_const, plan_clique, pop_unseen, push_stack, value_of, with_value,
 };
+use super::row::{row_prereqs, rows_of};
 use super::table::{
   CLIQUE_RECORD_BASE, CliqueTable, EncodingRoots, encoding_owner,
   is_encoding_name,
@@ -145,25 +148,39 @@ pub fn memo_lookup<K: Eq + Hash, V: Clone>(
 
 impl CliqueOutcome {
   /// `CliqueOutcome.wfOnly`: the outcome under decision (ii) (2026-10-21):
-  /// a well-founded clique's transport stands (its rows have a proof
-  /// recipe); a structural or `partial_fixpoint` clique keeps Lean's form,
-  /// with the cause recorded (`Baseline(enc, Shape, why)`, the outcome of a
-  /// transport that kept Lean's form; the reason is for diagnostics, never a
-  /// byte). Every other outcome is kept.
-  pub fn wf_only(self) -> CliqueOutcome {
+  /// a transport stands only when its rows apply. A structural or
+  /// `partial_fixpoint` clique keeps Lean's form (no row recipe); so does a
+  /// well-founded clique whose rows do not apply ([`rows_of`] refuses) or
+  /// whose rows' prerequisites ([`row_prereqs`]) are not all in the input
+  /// (`const_of`), so that every transported clique gets its rows after the
+  /// fold (`pass3::driver::emit_rows`). The kept form's outcome is
+  /// `Baseline(enc, Shape, why)`, the outcome of a transport that kept
+  /// Lean's form; the reason is for diagnostics, never a byte. Every other
+  /// outcome is kept.
+  pub fn wf_only(self, const_of: ConstOf<'_>) -> CliqueOutcome {
     match self {
-      CliqueOutcome::Transported(plan)
-        if plan.encoding != Encoding::WellFounded =>
-      {
+      CliqueOutcome::Transported(plan) => {
         let enc = plan.encoding;
-        CliqueOutcome::Baseline(
-          enc,
-          Cause::Shape,
-          format!(
+        let keep =
+          |why: String| CliqueOutcome::Baseline(enc, Cause::Shape, why);
+        if enc != Encoding::WellFounded {
+          return keep(format!(
             "no row recipe for a {} clique: rows are for well-founded cliques only",
             enc.tag()
-          ),
-        )
+          ));
+        }
+        if let Some(p) =
+          row_prereqs().into_iter().find(|p| const_of(p).is_none())
+        {
+          return keep(format!(
+            "the rows' prerequisite {} is not in the input",
+            p.pretty()
+          ));
+        }
+        match rows_of(const_of, &plan) {
+          Ok(_) => CliqueOutcome::Transported(plan),
+          Err(e) => keep(format!("the rows do not apply: {e}")),
+        }
       },
       o => o,
     }
@@ -201,7 +218,8 @@ pub fn clique_plan_for(
 ) -> R<(CliqueOutcome, bool)> {
   let compute = || {
     let o = plan_clique(h.env, h.addr, cl, carried);
-    Ok(if h.wf_only { o.wf_only() } else { o })
+    let const_of = |n: &Name| h.env.get(n).map(|e| e.cloned());
+    Ok(if h.wf_only { o.wf_only(&const_of) } else { o })
   };
   let Some(key) = cl.first() else { return Ok((compute()?, false)) };
   let what = if h.check_plans {

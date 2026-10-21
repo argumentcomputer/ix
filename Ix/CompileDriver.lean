@@ -915,6 +915,31 @@ def auxGenSeedNames : Array Name := Id.run do
     Name.mkStr root "True",
     Name.mkStr root "And"]
 
+/-- Merge the clique rows' block state (`Ix.Compile.Pass.cliqueRows`) into the
+    driver state, as `mergeCompiledBlock` merges an aux tail's constants:
+    the stored constants, the `Named` entries, the aux map, the blobs, names
+    and hints. The rows and copies are reserved names (D14) that no block
+    claims; the resolution map (`nameToAddr`) is unchanged, and the stored
+    constants, `Named` entries, aux map and blobs only gain entries
+    (`insertIfNew`: the first claim of a name stays, as Rust's `publish_image`
+    registers the first claimer's `Named`). -/
+def mergeRows (acc : DriverAcc) (st : BlockState) : DriverAcc :=
+  { acc with
+    cenv := { acc.cenv with
+      constants := st.auxConsts.foldl (fun m (a, c) => m.insertIfNew a (Ixon.ser c)) acc.cenv.constants
+      nameToNamed := st.auxNamed.foldl (fun m (n, named) => m.insertIfNew n named) acc.cenv.nameToNamed
+      auxNameToAddr := st.auxNameToAddr.fold (fun m k v => m.insertIfNew k v) acc.cenv.auxNameToAddr
+      blobs := st.blockBlobs.fold (fun m k v => m.insertIfNew k v) acc.cenv.blobs }
+    blockNames := st.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
+    defHints := st.defHints.fold (fun m k v => m.insert k v) acc.defHints }
+
+/-- **The clique rows** (CQ5.2), after the fold: the rows and `_ix.src`
+    copies of every transported clique (`Ix.Compile.Pass.cliqueRows`), merged
+    into the driver state (`mergeRows`). One bind in each driver, between the
+    fold and the assembly. -/
+def emitRows (acc : DriverAcc) : Except String DriverAcc :=
+  (mergeRows acc ·) <$> Ix.Compile.Pass.cliqueRows acc.cenv
+
 /-- Assemble the final `Ixon.Env` from the accumulated driver state
     (shared tail of both drivers: names index, name blobs, finalize_hints — the exact
     per-Named channel plus the per-address `anonHints` advisory map with
@@ -1723,7 +1748,8 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
     p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2 }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
-  let (ixe, bytes, cenv) := assembleEnv st.acc
+  let acc ← emitRows st.acc
+  let (ixe, bytes, cenv) := assembleEnv acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
 
 /-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/
