@@ -1241,6 +1241,49 @@ theorem reach_p3BlockRefs {blocks : Ix.CondensedBlocks} {init acc : DriverAcc}
   | init => rfl
   | step _ _ _ _ ih => exact (applyAuxBlockOutcome_step _ _ _ _).1.2.trans ih
 
+/-! ## Block keys -/
+
+/-- A canonical key of a nonempty array is one of its names. -/
+theorem canonicalKey_mem {dflt : Ix.Name} {names : Array Ix.Name} (h : names ≠ #[]) :
+    canonicalKey dflt names ∈ names := by
+  unfold canonicalKey
+  have h0 : names[0]?.getD dflt ∈ names := by
+    obtain ⟨x, xs, hx⟩ : ∃ x xs, names.toList = x :: xs := by
+      cases hl : names.toList with
+      | nil => exact absurd (Array.toList_eq_nil_iff.mp hl) h
+      | cons x xs => exact ⟨x, xs, rfl⟩
+    have : names[0]? = some x := by
+      rw [← Array.getElem?_toList, hx]; rfl
+    rw [this]
+    exact Array.mem_toList_iff.mp (by rw [hx]; exact List.mem_cons_self)
+  rw [← Array.foldl_toList]
+  suffices key : ∀ (l : List Ix.Name) (k : Ix.Name), (∀ x ∈ l, x ∈ names) → k ∈ names →
+      l.foldl (fun k n => if aliasPrecedes n k then n else k) k ∈ names from
+    key _ _ (fun x hx => Array.mem_toList_iff.mp hx) h0
+  intro l
+  induction l with
+  | nil => intro k _ hk; exact hk
+  | cons y l ih =>
+    intro k hl hk
+    rw [List.foldl_cons]
+    refine ih _ (fun x hx => hl x (List.mem_cons_of_mem _ hx)) ?_
+    split
+    · exact hl y List.mem_cons_self
+    · exact hk
+
+/-- The key of a nonempty block is one of its members. -/
+theorem blockKey_mem {lo : Ix.Name} {all : Ix.Set Ix.Name} (h : all.isEmpty = false) :
+    all.contains (blockKey lo all) = true := by
+  have ne : all.toArray ≠ #[] := by
+    intro e
+    have := congrArg Array.size e
+    rw [Std.HashSet.size_toArray] at this
+    rw [Std.HashSet.isEmpty_eq_size_eq_zero] at h
+    simp [this] at h
+  have hm := canonicalKey_mem (dflt := lo) ne
+  rw [← Std.HashSet.contains_toArray]
+  exact Array.contains_iff_exists_mem_beq.mpr ⟨_, hm, BEq.rfl⟩
+
 /-! ## B9b: a resolved primary name's record -/
 
 /-- **B9b, a resolved primary name's record.** For `compileReport env =
