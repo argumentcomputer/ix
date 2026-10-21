@@ -435,8 +435,8 @@ theorem definitionDataInfo_lone (source : Ix.Def) :
 /-- **A lone constant's compile returns no projections**, for every kind but
 an inductive's and a constructor's (the block compile sends those through
 the mutual compiler). -/
-theorem constantInfo_lone (const : ConstantInfo) (hi : ∀ v, const ≠ .inductInfo v)
-    (hc : ∀ v, const ≠ .ctorInfo v) :
+theorem constantInfo_lone (const : ConstantInfo) (hi : ∀ v, const = .inductInfo v → False)
+    (hc : ∀ v, const = .ctorInfo v → False) :
     Yields (compileConstantInfo const) (fun r => r.projections = #[]) := by
   cases const with
   | defnInfo v =>
@@ -477,5 +477,183 @@ theorem constantInfo_lone (const : ConstantInfo) (hi : ∀ v, const ≠ .inductI
   | ctorInfo v => exact absurd rfl (hc v)
 
 end names
+
+/-! ## The members a block compile reads -/
+
+section members
+
+open Ix.CompileCert (rawRun rawRun_pure bind_ok)
+
+variable {α β γ σ : Type}
+
+/-- Every successful run from the context `ctx` returns a value satisfying
+`P`. -/
+def RunPost (ctx : CompileEnv × BlockEnv) (P : α → Prop) (x : CompileM α) : Prop :=
+  ∀ s v s', rawRun x ctx s = (.ok v, s') → P v
+
+theorem RunPost.pure {ctx : CompileEnv × BlockEnv} {P : α → Prop} {a : α} (h : P a) :
+    RunPost ctx P (Pure.pure a) := by
+  intro s v s' hr
+  rw [rawRun_pure] at hr
+  cases hr
+  exact h
+
+theorem RunPost.bind {ctx : CompileEnv × BlockEnv} {x : CompileM α} {f : α → CompileM β} {q : α → Prop}
+    {p : β → Prop} (hx : RunPost ctx q x) (hf : ∀ a, q a → RunPost ctx p (f a)) : RunPost ctx p (x >>= f) := by
+  intro s v s' hr
+  obtain ⟨a, m, ha, hb⟩ := bind_ok hr
+  exact hf a (hx s a m ha) m v s' hb
+
+theorem RunPost.throw {ctx : CompileEnv × BlockEnv} {P : α → Prop} (e : CompileError) :
+    RunPost ctx P (throw e : CompileM α) := by
+  intro s v s' hr
+  rw [Ix.CompileCert.rawRun_throw] at hr
+  cases hr
+
+theorem RunPost.findConst (ctx : CompileEnv × BlockEnv) (n : Name) :
+    RunPost ctx (fun c => ctx.1.env.get? n = some c) (findConst n) :=
+  fun _ _ _ hr => Ix.Cert.PassHooks.findConst_ok hr
+
+/-- A loop over a list keeps an invariant its body keeps. -/
+theorem RunPost.forIn (ctx : CompileEnv × BlockEnv) (I : σ → Prop) (body : γ → σ → CompileM (ForInStep σ)) :
+    ∀ (l : List γ), (∀ x ∈ l, ∀ acc, I acc → RunPost ctx (fun st => I st.value) (body x acc)) →
+      ∀ init, I init → RunPost ctx I (forIn l init body)
+  | [], _, init, h => by rw [List.forIn_nil]; exact RunPost.pure h
+  | x :: l, hb, init, h => by
+    rw [List.forIn_cons]
+    refine RunPost.bind (hb x List.mem_cons_self init h) fun st hst => ?_
+    cases st with
+    | done b => exact RunPost.pure hst
+    | yield b =>
+      exact RunPost.forIn ctx I body l (fun y hy => hb y (List.mem_cons_of_mem _ hy)) b hst
+
+/-- The constructors `MutConst.mkIndc` collects are stored, as constructors,
+under names of the list. -/
+theorem collectCtors_post (ctx : CompileEnv × BlockEnv) (L : List Name) :
+    ∀ (names : List Name) (acc : Array ConstructorVal),
+      (∀ ctor ∈ acc, ∃ c ∈ L, ctx.1.env.get? c = some (.ctorInfo ctor)) → (∀ c ∈ names, c ∈ L) →
+      RunPost ctx (fun out => ∀ ctor ∈ out, ∃ c ∈ L, ctx.1.env.get? c = some (.ctorInfo ctor))
+        (collectMutConstConstructors names acc)
+  | [], acc, h, _ => by
+    rw [collectMutConstConstructors]
+    exact RunPost.pure h
+  | c :: rest, acc, h, hn => by
+    rw [collectMutConstConstructors]
+    refine RunPost.bind (RunPost.findConst ctx c) fun ci hci => ?_
+    split
+    · refine collectCtors_post ctx L rest _ (fun ctor hctor => ?_) (fun c' hc' => hn c' (by simp [hc']))
+      rcases Array.mem_push.1 hctor with hctor | rfl
+      · exact h ctor hctor
+      · exact ⟨c, hn c (by simp), hci⟩
+    · exact RunPost.throw _
+
+theorem mkIndc_post (ctx : CompileEnv × BlockEnv) (val : InductiveVal) :
+    RunPost ctx (fun m => m.name = val.cnst.name ∧
+        ∀ ctor ∈ m.ctors, ∃ c ∈ val.ctors.toList, ctx.1.env.get? c = some (.ctorInfo ctor))
+      (MutConst.mkIndc val) := by
+  unfold MutConst.mkIndc
+  exact RunPost.bind (collectCtors_post ctx val.ctors.toList _ #[] (by simp) fun _ h => h)
+    fun ctors h => RunPost.pure ⟨rfl, h⟩
+
+/-- A mutual source the block compile reads: the constant stored under a
+member's name, with that constant's name, and, for an inductive, the
+constructors stored under the names it lists. -/
+def Member (E : Ix.Environment) (all : Ix.Set Name) (m : MutConst) : Prop :=
+  ∃ n ci, all.contains n = true ∧ E.get? n = some ci ∧ m.name = ci.getCnst.name ∧
+    ∀ ctor ∈ m.ctors, ∃ iv c, ci = .inductInfo iv ∧ c ∈ iv.ctors ∧ E.get? c = some (.ctorInfo ctor)
+
+/-- **The block compile's members loop reads members**. -/
+theorem members_post (ctx : CompileEnv × BlockEnv) (all : Ix.Set Name) :
+    RunPost ctx (fun cs : Array MutConst => ∀ m ∈ cs, Member ctx.1.env all m)
+      (forIn all #[] fun n (acc : Array Ix.MutConst) => do
+        match ← findConst n with
+        | .inductInfo val => pure (ForInStep.yield (acc.push (← MutConst.mkIndc val)))
+        | .defnInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromDefinitionVal val)))
+        | .opaqueInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromOpaqueVal val)))
+        | .thmInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromTheoremVal val)))
+        | .recInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.recr val)))
+        | _ => pure (ForInStep.yield acc)) := by
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  refine RunPost.forIn ctx _ _ all.toList (fun n hn acc hacc => ?_) #[] (by simp)
+  have hin : all.contains n = true :=
+    Std.HashSet.mem_iff_contains.1 (Std.HashSet.mem_of_mem_toList hn)
+  have push : ∀ m, Member ctx.1.env all m → ∀ m' ∈ acc.push m, Member ctx.1.env all m' := by
+    intro m hm m' hm'
+    rcases Array.mem_push.1 hm' with hm' | rfl
+    · exact hacc m' hm'
+    · exact hm
+  refine RunPost.bind (RunPost.findConst ctx n) fun ci hci => ?_
+  split
+  · rename_i val
+    refine RunPost.bind (mkIndc_post ctx val) fun m hm => RunPost.pure (push m ?_)
+    refine ⟨n, _, hin, hci, hm.1, fun ctor hctor => ?_⟩
+    obtain ⟨c, hc, hcs⟩ := hm.2 ctor hctor
+    exact ⟨val, c, rfl, Array.mem_toList_iff.1 hc, hcs⟩
+  · exact RunPost.pure (push _ ⟨n, _, hin, hci, rfl, fun ctor h => absurd h (by
+      simp [Ix.MutConst.fromDefinitionVal, Ix.MutConst.ctors])⟩)
+  · exact RunPost.pure (push _ ⟨n, _, hin, hci, rfl, fun ctor h => absurd h (by
+      simp [Ix.MutConst.fromOpaqueVal, Ix.MutConst.ctors])⟩)
+  · exact RunPost.pure (push _ ⟨n, _, hin, hci, rfl, fun ctor h => absurd h (by
+      simp [Ix.MutConst.fromTheoremVal, Ix.MutConst.ctors])⟩)
+  · exact RunPost.pure (push _ ⟨n, _, hin, hci, rfl, fun ctor h => absurd h (by
+      simp [Ix.MutConst.ctors])⟩)
+  · exact RunPost.pure hacc
+
+/-- `x` is the name of a member the block compile reads, or of a constructor
+such a member lists. -/
+def MemberName (E : Ix.Environment) (all : Ix.Set Name) (x : Name) : Prop :=
+  ∃ m, Member E all m ∧ (x = m.name ∨ ∃ ctor ∈ m.ctors, x = ctor.cnst.name)
+
+/-- **The block compile's projections carry members' names**: a lone
+constant's compile has none (`constantInfo_lone`), and the mutual compile's
+are its sources' (`mutualBlock_names`), which the sort and the recursor
+order only regroup (`sortClasses_mem`, `orderRecursorFamily_perm`) and which
+the members loop reads (`members_post`). -/
+theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {all : Ix.Set Name}
+    {s s' : BlockState} {r : BlockResult} {layout? : Option Ixon.AuxLayout}
+    {pub : Ix.Compile.Pass.Published}
+    (h : rawRun (compileBlockWithAux lo all) ctx s = (.ok (r, layout?, pub), s')) :
+    ∀ row ∈ r.projections, MemberName ctx.1.env all row.1 := by
+  unfold compileBlockWithAux at h
+  obtain ⟨const, s₁, hc, h⟩ := bind_ok h
+  dsimp only at h
+  -- the kind test, then the lone test
+  split at h <;> split at h
+  all_goals first
+    | (rename_i hcond; simp at hcond; done)
+    | (obtain ⟨result, s₂, hr, h⟩ := bind_ok h
+       have none := constantInfo_lone _ (by assumption) (by assumption)
+         ctx s₁ result s₂ hr
+       rw [rawRun_pure] at h
+       cases h
+       intro row hrow
+       rw [none] at hrow
+       exact absurd hrow (by simp))
+    | (obtain ⟨cs, s₂, hcs, h⟩ := bind_ok h
+       obtain ⟨sorted, s₃, hsorted, h⟩ := bind_ok h
+       obtain ⟨out, s₄, hout, h⟩ := bind_ok h
+       have same : Ix.Cert.PassHooks.recordsOf r = Ix.Cert.PassHooks.recordsOf out := by
+         revert h
+         refine Ix.Cert.PassHooks.Returns.elim
+           (P := fun (x : BlockResult × Option Ixon.AuxLayout × Ix.Compile.Pass.Published) =>
+             Ix.Cert.PassHooks.recordsOf x.1 = Ix.Cert.PassHooks.recordsOf out) ?_
+         repeat returns_step
+       have members := members_post ctx all s₁ cs s₂ hcs
+       obtain ⟨-, addresses, stats, sortedRun⟩ := Ix.CompileCert.ProjectionLayout.sort_run cs.toList hsorted
+       have regrouped := sortClasses_mem sortedRun
+       have names := mutualBlock_names (orderRecursorFamily sorted) ctx s₃ out s₄ hout
+       intro row hrow
+       unfold Ix.Cert.PassHooks.recordsOf at same
+       have hmap : (row.1, row.2.1) ∈ out.projections.map (fun p => (p.1, p.2.1)) := by
+         rw [← (Prod.mk.inj (Prod.mk.inj (Prod.mk.inj same).2).2).2]
+         exact Array.mem_map_of_mem hrow
+       obtain ⟨row', hrow', he⟩ := Array.mem_map.1 hmap
+       obtain ⟨src, ⟨c, hc', hsrc⟩, hname⟩ := names row' hrow'
+       have hc'' := (Ix.CompileCert.MutualArtifact.orderRecursorFamily_perm sorted).mem_iff.1 hc'
+       have hm := members src (Array.mem_toList_iff.1 (regrouped c hc'' src hsrc))
+       rw [← (Prod.mk.inj he).1]
+       exact ⟨src, hm, hname⟩)
+
+end members
 
 end Ix.Cert.Claims
