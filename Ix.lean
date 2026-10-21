@@ -15,6 +15,7 @@ public import Ix.Compile.ChangedSet
 public import Ix.CondenseM
 public import Ix.CompileM
 public import Ix.Compile.Pass
+public import Ix.Compile.Pass.Clique
 public import Ix.DecompileM
 public import Ix.Replay
 public import Ix.Catalog
