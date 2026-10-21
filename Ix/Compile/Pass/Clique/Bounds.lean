@@ -41,12 +41,16 @@ def eqLemmaBound : Nat := 1000000
 nearest prefixes. -/
 def encodingOwnerDepth : Nat := 64
 
+/-- The depth bound of the equation row's sort computation (`Row.sortOf?`):
+the binders and variable lookups it walks. -/
+def sortDepth : Nat := 256
+
 /-- Every bound by name, for the Lean/Rust parity test. -/
 def bounds : List (String × Nat) :=
   [("transportFuel", transportFuel), ("whnfFuel", whnfFuel),
    ("eqDefConversionFuel", eqDefConversionFuel), ("searchDepth", searchDepth),
    ("wfDepth", wfDepth), ("eqLemmaBound", eqLemmaBound),
-   ("encodingOwnerDepth", encodingOwnerDepth)]
+   ("encodingOwnerDepth", encodingOwnerDepth), ("sortDepth", sortDepth)]
 
 end Ix.Compile.Pass.Clique
 

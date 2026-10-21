@@ -53,7 +53,11 @@
     (`canonConst`, `withValue`);
   * `Hook`: the hook's per-block computation as pure functions over a
     `HookEnv` (`cliquePlanFor`, `cliqueCallers`, `prepareCliques` →
-    `CliquePrep`), unwired.
+    `CliquePrep`), unwired;
+  * `Row`: the equation rows of a transported well-founded clique
+    (`rowsOf`: the faithful copies `n._ix.src` of its encoding set, then
+    the rows `f._ix.row : lhs = f`, Lean's value against the transported
+    member, with a term proof), and the rows' sort computation (`sortOf?`).
 
   Not imported by the compiler (`Ix.Compile.Pass` does not import it). No
   `MetaM`, no kernel, no `partial`.
@@ -81,3 +85,4 @@ public import Ix.Compile.Pass.Clique.Transport
 public import Ix.Compile.Pass.Clique.Recover
 public import Ix.Compile.Pass.Clique.PlanClique
 public import Ix.Compile.Pass.Clique.Hook
+public import Ix.Compile.Pass.Clique.Row
