@@ -1,6 +1,7 @@
 import Ix.Cert.Statement
 import Ix.CondenseM
 import Ix.CompileCert.Canon.SccMain
+import Ix.Cert.CondenseRoots
 
 /-! # The condensation's blocks and references (Route A, B9b, `HookFree`'s discharge, step 2)
 
@@ -551,5 +552,152 @@ theorem rootNames_get {names : Array Ix.Name} {c : Ix.Compile.Canon.Condensation
         simp [hvc]
       · exact ih _ h
   exact hit _ _ (by rw [Array.mem_toList_iff]; exact Array.mem_attach _ _)
+
+/-! ## The nodes in discovery order, and the blocks -/
+
+/-- **The discovery map holds nodes with their representatives.** -/
+theorem discOf_get {names : Array Ix.Name} {c : Ix.Compile.Canon.Condensation}
+    {rn : Vector Ix.Name names.size} {hv : ∀ v ∈ c.order, v < names.size} {key : UInt64}
+    {val : Ix.Name × Ix.Name} (h : (discOf names c rn hv).get? key = some val) :
+    ∃ (v : Nat) (hv : v < names.size), val = (names[v], rn[v]) := by
+  unfold discOf at h
+  simp only [Id.run, Array.forIn'_pure_yield_eq_foldl] at h
+  change (Array.foldl (fun b (x : {v // v ∈ c.order}) =>
+    (b.fst.insert b.snd.toUInt64 ((names[x.val]'(hv _ x.property)), rn[x.val]'(hv _ x.property)), b.snd + 1))
+      ((∅ : Std.HashMap UInt64 (Ix.Name × Ix.Name)), 0) c.order.attach).fst.get? key = some val at h
+  rw [← Array.foldl_toList] at h
+  refine foldl_inv (fun s : Std.HashMap UInt64 (Ix.Name × Ix.Name) × Nat => ∀ key val, s.1.get? key = some val →
+      ∃ (v : Nat) (hv : v < names.size), val = (names[v], rn[v])) _ _ _
+    (fun key val h => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
+    (fun s x _ hs key val h => ?_) key val h
+  dsimp only at h
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
+  split at h
+  · cases h
+    exact ⟨x.val, hv _ x.property, rfl⟩
+  · rw [← Std.HashMap.get?_eq_getElem?] at h
+    exact hs key val h
+
+/-- **A block's members come from the discovery map**: each member of the
+block at `rep` hashes like a node's name whose representative hashes like
+`rep`. -/
+theorem blocksOfDisc_mem {bd : Std.HashMap UInt64 (Ix.Name × Ix.Name)} {rep x : Ix.Name}
+    {all : Ix.Set Ix.Name} (h : (blocksOfDisc bd).get? rep = some all) (hx : all.contains x = true) :
+    ∃ key val, bd.get? key = some val ∧ (val.2 == rep) = true ∧ (val.1 == x) = true := by
+  unfold blocksOfDisc at h
+  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, List.forIn_pure_yield_eq_foldl] at h
+  change (List.foldl (fun (b : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name) a =>
+      (Std.HashMap.alter b.fst a.2.snd fun x => match x with
+        | some s => some (Std.HashSet.insert s a.2.fst)
+        | none => some {a.2.fst},
+       Std.HashMap.insert b.snd a.2.fst a.2.snd)) (∅, ∅) bd.toList).fst.get? rep = some all at h
+  refine foldl_inv (fun s : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name => ∀ rep all x,
+      s.1.get? rep = some all → all.contains x = true →
+        ∃ key val, bd.get? key = some val ∧ (val.2 == rep) = true ∧ (val.1 == x) = true) _ _ _
+    (fun rep all x h _ => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
+    (fun s e he hs rep all x h hx => ?_) rep all x h hx
+  have hbe : bd.get? e.1 = some e.2 := by
+    rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.mem_toList_iff_getElem?_eq_some]
+    exact he
+  dsimp only at h
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_alter] at h
+  split at h
+  · rename_i same
+    split at h
+    · rename_i s hs'
+      cases h
+      rw [Std.HashSet.contains_insert] at hx
+      rcases Bool.or_eq_true_iff.mp hx with e' | hx
+      · exact ⟨e.1, e.2, hbe, same, e'⟩
+      · rw [Std.HashMap.getElem?_congr same, ← Std.HashMap.get?_eq_getElem?] at hs'
+        exact hs _ _ x hs' hx
+    · cases h
+      rw [show ({e.2.1} : Ix.Set Ix.Name) = (∅ : Ix.Set Ix.Name).insert e.2.1 from rfl,
+        Std.HashSet.contains_insert, Std.HashSet.contains_empty, Bool.or_false] at hx
+      exact ⟨e.1, e.2, hbe, same, hx⟩
+  · rw [← Std.HashMap.get?_eq_getElem?] at h
+    exact hs rep all x h hx
+
+/-! ## Blocks are strongly connected -/
+
+theorem Path.congr_left {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {a b c : Ix.Name} (e : (a == b) = true)
+    (p : Path refs a c) : Path refs b c := by
+  cases p with
+  | refl h => exact Path.refl (BEq.trans (BEq.symm e) h)
+  | step h₁ h₂ h₃ p =>
+    refine Path.step ?_ h₂ h₃ p
+    rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.getElem?_congr e, ← Std.HashMap.get?_eq_getElem?]
+    exact h₁
+
+theorem Path.congr_right {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {a b c : Ix.Name} (p : Path refs a b)
+    (e : (b == c) = true) : Path refs a c := by
+  induction p with
+  | refl h => exact Path.refl (BEq.trans h e)
+  | step h₁ h₂ h₃ _ ih => exact Path.step h₁ h₂ h₃ (ih e)
+
+/-- The condensation's node names are pairwise distinct (as keys of the graph). -/
+theorem namesOf_inj {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {i j : Nat} (hi : i < (namesOf refs).size)
+    (hj : j < (namesOf refs).size) (e : ((namesOf refs)[i] == (namesOf refs)[j]) = true) : i = j := by
+  have hd := Std.HashMap.distinct_keys_toList (m := refs)
+  rw [← (nodesOf_spec refs).1, List.pairwise_iff_getElem] at hd
+  have hi' : i < (nodesOf refs).1.toList.length := by simpa [namesOf] using hi
+  have hj' : j < (nodesOf refs).1.toList.length := by simpa [namesOf] using hj
+  simp only [namesOf, Array.getElem_map] at e
+  rcases Nat.lt_trichotomy i j with h | h | h
+  · have := hd i j hi' hj' h
+    simp only [Array.getElem_toList] at this
+    rw [this] at e; cases e
+  · exact h
+  · have := hd j i hj' hi' h
+    simp only [Array.getElem_toList] at this
+    rw [BEq.comm, this] at e; cases e
+
+/-- **A block of the condensation is strongly connected**: each member
+reaches each other along the graph's references. -/
+theorem condense_scc {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep x y : Ix.Name} {all : Ix.Set Ix.Name}
+    (hb : (CondenseM.run refs).blocks.get? rep = some all) (hx : all.contains x = true)
+    (hy : all.contains y = true) : Path refs x y := by
+  obtain ⟨hr, hv, e⟩ := blocks_eq refs
+  rw [e] at hb
+  have hc := compsOf_eq refs
+  obtain ⟨_, _, hbx, hrx, hnx⟩ := blocksOfDisc_mem hb hx
+  obtain ⟨vx, hvx, rfl⟩ := discOf_get hbx
+  obtain ⟨_, _, hby, hry, hny⟩ := blocksOfDisc_mem hb hy
+  obtain ⟨vy, hvy, rfl⟩ := discOf_get hby
+  dsimp only at hrx hnx hry hny
+  -- each node's component and root
+  have comp_of : ∀ v (hv : v < (namesOf refs).size), ∃ (k : Nat) (cm : Array Nat) (r : Nat),
+      (compsOf refs).comps[k]? = some cm ∧
+      (compsOf refs).roots[k]? = some r ∧ v ∈ cm ∧ ∃ hrn : r < (namesOf refs).size,
+        (rootNames (namesOf refs) (compsOf refs) hr)[v] = (namesOf refs)[r] := by
+    intro v hv
+    obtain ⟨cm, hcm, hvc⟩ := Ix.CompileCert.Canon.condensation_cover hc v (by rw [← namesOf_size]; exact hv)
+    obtain ⟨k, hk, ek⟩ := Array.mem_iff_getElem.mp hcm
+    have hkr : k < (compsOf refs).roots.size := by
+      rw [(CondenseRoots.condensation_roots_mem hc).1]; exact hk
+    have hrn : (compsOf refs).roots[k] < (namesOf refs).size := by
+      rw [namesOf_size]
+      exact Ix.CompileCert.Canon.condensation_roots_lt hc (Array.getElem_mem hkr)
+    refine ⟨k, cm, _, by rw [Array.getElem?_eq_getElem hk, ek], Array.getElem?_eq_getElem hkr, hvc, hrn, ?_⟩
+    exact rootNames_get (Ix.CompileCert.Canon.condensation_unique hc)
+      (by rw [Array.getElem?_eq_getElem hk, ek]) (Array.getElem?_eq_getElem hkr) hvc hv hrn
+  obtain ⟨kx, cx, rx, hkx, hrkx, hvcx, hrnx, ex⟩ := comp_of vx hvx
+  obtain ⟨ky, cy, ry, hky, hrky, hvcy, hrny, ey⟩ := comp_of vy hvy
+  rw [ex] at hrx
+  rw [ey] at hry
+  have hsame : rx = ry := namesOf_inj hrnx hrny (BEq.trans hrx (BEq.symm hry))
+  subst hsame
+  have hmx := (CondenseRoots.condensation_roots_mem hc).2 kx rx cx hrkx hkx
+  have hmy := (CondenseRoots.condensation_roots_mem hc).2 ky rx cy hrky hky
+  have hk := Ix.CompileCert.Canon.condensation_unique hc kx ky cx cy rx hkx hky hmx hmy
+  subst hk
+  rw [hkx] at hky
+  cases hky
+  obtain ⟨-, -, r, -⟩ := (Ix.CompileCert.Canon.condensation_scc hc vx vy).mp
+    ⟨cx, Array.mem_of_getElem? hkx, hvcx, hvcy⟩
+  have hu : vx < (nodesOf refs).1.size := by simpa [namesOf] using hvx
+  obtain ⟨_, p⟩ := reach_path r hu
+  simp only [namesOf, Array.getElem_map] at hnx hny
+  exact (p.congr_left hnx).congr_right hny
 
 end Ix.Cert.Condense
