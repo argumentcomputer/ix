@@ -58,15 +58,13 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use ix_common::env::{ConstantInfo, DataValue, Env, Expr, Name};
 
-use super::basic::{
-  Cause, ConstOf, R, arr_nat, arr_str, const_occurrences, list_str,
-};
+use super::basic::{Cause, R, arr_nat, arr_str, const_occurrences, list_str};
 use super::order::AddrOf;
 use super::plan::{CliqueOutcome, CliquePlan, Encoding};
 use super::plan_clique::{
   canon_const, plan_clique, pop_unseen, push_stack, value_of, with_value,
 };
-use super::row::{row_prereqs, rows_of};
+use super::row::{SyncConstOf, row_prereqs, rows_of};
 use super::table::{
   CLIQUE_RECORD_BASE, CliqueTable, EncodingRoots, encoding_owner,
   is_encoding_name,
@@ -169,7 +167,7 @@ impl CliqueOutcome {
   /// table `Pass3State::clique_rows`).
   pub fn wf_only_rows(
     self,
-    const_of: ConstOf<'_>,
+    const_of: SyncConstOf<'_>,
   ) -> (CliqueOutcome, Option<Rows>) {
     match self {
       CliqueOutcome::Transported(plan) => {
@@ -201,7 +199,7 @@ impl CliqueOutcome {
 
   /// `CliqueOutcome.wfOnly`: the outcome under decision (ii)
   /// ([`CliqueOutcome::wf_only_rows`] without the rows).
-  pub fn wf_only(self, const_of: ConstOf<'_>) -> CliqueOutcome {
+  pub fn wf_only(self, const_of: SyncConstOf<'_>) -> CliqueOutcome {
     self.wf_only_rows(const_of).0
   }
 }

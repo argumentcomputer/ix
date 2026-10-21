@@ -122,6 +122,40 @@ thread_local! {
   static JOURNAL: RefCell<Option<Journal>> = const { RefCell::new(None) };
 }
 
+/// Map `f` over `items` on scoped threads with large stacks (the clique
+/// rows are deep proof terms), one contiguous chunk per thread, results in
+/// order (Lean's `Task.spawn` rounds, read back in order). Used for the rows
+/// of a plan (`clique::row::rows_of`) and for their emission and compile
+/// (`driver::emit_rows`).
+pub(crate) fn par_big_stack<T: Sync, U: Send>(
+  items: &[T],
+  f: impl Fn(&T) -> U + Sync,
+) -> Vec<U> {
+  if items.is_empty() {
+    return Vec::new();
+  }
+  let threads = std::thread::available_parallelism()
+    .map_or(4, std::num::NonZero::get)
+    .min(items.len());
+  let chunk = items.len().div_ceil(threads);
+  let f = &f;
+  std::thread::scope(|s| {
+    let handles: Vec<_> = items
+      .chunks(chunk)
+      .map(|ch| {
+        std::thread::Builder::new()
+          .stack_size(1 << 30)
+          .spawn_scoped(s, move || ch.iter().map(f).collect::<Vec<U>>())
+          .expect("Pass 3: spawn a row thread")
+      })
+      .collect();
+    handles
+      .into_iter()
+      .flat_map(|h| h.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
+      .collect()
+  })
+}
+
 /// Start journaling the aux tail's registrations on this thread.
 pub fn journal_start() {
   JOURNAL.with(|j| *j.borrow_mut() = Some(Journal::default()));

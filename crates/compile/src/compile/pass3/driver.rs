@@ -51,7 +51,6 @@ use crate::compile::{
 use crate::graph::NameSet;
 use crate::mutual::Def;
 
-use super::Journal;
 use super::clique::hook::{
   CliquePrep, HookEnv, PLAN_CHECK_PREFIX, Rows, canon_refs, prepare_cliques,
 };
@@ -66,6 +65,7 @@ use super::translate::{RwState, image_decl_with, rewrite_block};
 use super::view::{
   BlockView, ComponentRecord, Expansion, ViewInput, build_view,
 };
+use super::{Journal, par_big_stack};
 
 fn invalid(reason: String) -> CompileError {
   CompileError::InvalidMutualBlock { reason }
@@ -951,38 +951,6 @@ fn compile_row_const(
     compile_single_def_parts(&c, &def, &mut cache, stt)?;
   stt.store_const_bytes(addr.clone(), bytes, constant)?;
   publish_image(stt, &c, Named::new(addr, meta))
-}
-
-/// Map `f` over `items` on scoped threads with large stacks (the rows are
-/// deep proof terms), one contiguous chunk per thread, results in order
-/// (Lean's `Task.spawn` rounds, merged in order).
-fn par_big_stack<T: Sync, U: Send>(
-  items: &[T],
-  f: impl Fn(&T) -> U + Sync,
-) -> Vec<U> {
-  if items.is_empty() {
-    return Vec::new();
-  }
-  let threads = std::thread::available_parallelism()
-    .map_or(4, std::num::NonZero::get)
-    .min(items.len());
-  let chunk = items.len().div_ceil(threads);
-  let f = &f;
-  std::thread::scope(|s| {
-    let handles: Vec<_> = items
-      .chunks(chunk)
-      .map(|ch| {
-        std::thread::Builder::new()
-          .stack_size(1 << 30)
-          .spawn_scoped(s, move || ch.iter().map(f).collect::<Vec<U>>())
-          .expect("Pass 3: spawn a row thread")
-      })
-      .collect();
-    handles
-      .into_iter()
-      .flat_map(|h| h.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
-      .collect()
-  })
 }
 
 /// Compile the rows' constants `cs` in parallel (Lean

@@ -91,6 +91,11 @@ use crate::compile::pass3::expr::{
   get_app_fn_args, nat, strip_mdata, subst_levels,
 };
 use crate::compile::pass3::names::{Comp, IX_COMPONENT, append_comps};
+use crate::compile::pass3::par_big_stack;
+
+/// A constant lookup that threads may share: what [`rows_of`] reads, one
+/// member's row on each of its threads.
+pub type SyncConstOf<'a> = &'a (dyn Fn(&Name) -> Option<ConstantInfo> + Sync);
 
 // ---------------------------------------------------------------------------
 // Names
@@ -1188,9 +1193,12 @@ pub fn row_of(
 /// encoding set, then the rows of its transported members, each in
 /// pretty-name order of the names they get; both empty for another
 /// encoding. An encoding constant that is not a definition or a theorem is
-/// an error, and so is any member's refusal.
+/// an error, and so is any member's refusal (the first in that order). The
+/// members' rows are computed on threads with large stacks and read back in
+/// order (`par_big_stack`; Lean's `rowsOf`, a task per member), so the value
+/// is the sequential one.
 pub fn rows_of(
-  const_of: ConstOf<'_>,
+  const_of: SyncConstOf<'_>,
   plan: &CliquePlan,
 ) -> R<(Vec<ConstantInfo>, Vec<ConstantInfo>)> {
   if plan.encoding != Encoding::WellFounded {
@@ -1221,9 +1229,8 @@ pub fn rows_of(
   }
   let mut members = row_members(plan);
   members.sort_by_cached_key(|a| row_name(a).pretty());
-  let rows = members
-    .iter()
-    .map(|f| row_of_with(const_of, plan, &enc, f))
+  let rows = par_big_stack(&members, |f| row_of_with(const_of, plan, &enc, f))
+    .into_iter()
     .collect::<R<Vec<_>>>()?;
   Ok((copies, rows))
 }
