@@ -8,6 +8,8 @@
 //! | `Clique/Packing.lean`, `PackingMatch.lean` | [`packing`] |
 //! | `Clique/Telescope.lean`, `Whnf.lean` | [`telescope`] |
 //! | `Clique/WF.lean`, `WFSchema.lean`, `WFMatcher.lean`, `WFConjugation.lean` | [`wf`] |
+//! | `Clique/Structural.lean` | [`structural`] |
+//! | `Clique/StructuralEq.lean` | [`structural_eq`] |
 //! | `Clique/Plan.lean` | [`plan`] |
 //! | `Clique/Table.lean` | [`table`] |
 //!
@@ -19,6 +21,8 @@ pub mod basic;
 pub mod bounds;
 pub mod packing;
 pub mod plan;
+pub mod structural;
+pub mod structural_eq;
 pub mod table;
 pub mod telescope;
 pub mod wf;

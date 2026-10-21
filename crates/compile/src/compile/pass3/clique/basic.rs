@@ -708,14 +708,6 @@ pub fn extract<T: Clone>(xs: &[T], a: usize, b: usize) -> Vec<T> {
   xs.get(a..b.min(xs.len())).map_or_else(Vec::new, <[T]>::to_vec)
 }
 
-/// Lean's `(idPerm m).qsort fun a b => key a < key b`: the same result as
-/// any sort when the keys are distinct (callers check that they are).
-pub fn sort_idx_by_key(m: usize, key: &dyn Fn(usize) -> usize) -> Vec<usize> {
-  let mut v: Vec<usize> = (0..m).collect();
-  v.sort_by_key(|&a| key(a));
-  v
-}
-
 /// Lean's `xs == xs.qsort (· < ·)`: `xs` is sorted.
 pub fn eq_sorted(xs: &[usize]) -> bool {
   xs.is_sorted()
