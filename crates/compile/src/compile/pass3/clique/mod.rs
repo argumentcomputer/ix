@@ -7,6 +7,7 @@
 //! | `Clique/Bounds.lean` | [`bounds`] |
 //! | `Clique/Packing.lean`, `PackingMatch.lean` | [`packing`] |
 //! | `Clique/Telescope.lean`, `Whnf.lean` | [`telescope`] |
+//! | `Clique/WF.lean`, `WFSchema.lean`, `WFMatcher.lean`, `WFConjugation.lean` | [`wf`] |
 //!
 //! `Dag.lean`'s de Bruijn and locally nameless helpers are
 //! [`super::expr`]'s (re-exported by [`basic`]); [`basic`] has its walks
@@ -16,3 +17,4 @@ pub mod basic;
 pub mod bounds;
 pub mod packing;
 pub mod telescope;
+pub mod wf;
