@@ -4767,7 +4767,8 @@ changed components (`Unchanged.regenerated_entry`), so `foreignHead_none` and
 which proves them through `regeneratedNames_spec`. Re-frozen with it:
 `foreignHead`'s print and `checkReport`'s print (the heads check's message).
 The check is stronger than the changed-set test it replaces; on valid input
-every head is regenerated (see the pushes record for the probe). -/
+every head is regenerated (probe `ports/20261021T145130Z-gates-fh`: on Init+Std no
+heads; on Mathlib 329 heads, all 329 regenerated; no recorded failure on either). -/
 
 /-- info: [cert-audit] heads: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
