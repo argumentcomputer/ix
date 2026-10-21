@@ -16,7 +16,9 @@ is a member's name or the name of a constructor an inductive member lists:
 * a mutual block's projections carry its members' names and their
   constructors' (`mutualBlock_names`), and a lone constant other than an
   inductive or a constructor has none (`constantInfo_lone`);
-* whatever Pass 3's hooks return, `runBlockWithAux`'s projections carry those
+* whatever Pass 3's hooks return (the clique step and hook 2 only replace
+  constants by others with the same names and constructors, `cliqueStep_keeps`,
+  `prepareBlock_agrees`), `runBlockWithAux`'s projections carry those
   names (`runBlockWithAux_owned`), and an image block's result, the image of
   its key, has none (`runImageBlock_lone`), so every claim of `runBlock` is
   owned or the key (`runBlock_owned`). -/
@@ -849,6 +851,122 @@ theorem prepareBlock_agrees {cenv cenv' : CompileEnv} {all : Ix.Set Name} {lo : 
 
 end rewrite
 
+/-! ## The clique step keeps the environment's names -/
+
+section clique
+
+theorem Keeps.trans {a b c : ConstantInfo} (h₁ : Keeps a b) (h₂ : Keeps b c) : Keeps a c := by
+  refine ⟨h₂.1.trans h₁.1, fun iv'' hc => ?_⟩
+  obtain ⟨iv', hb, e₂⟩ := h₂.2 iv'' hc
+  obtain ⟨iv, ha, e₁⟩ := h₁.2 iv' hb
+  exact ⟨iv, ha, e₂.trans e₁⟩
+
+theorem Agrees.trans {E E' E'' : Ix.Environment} (h₁ : Agrees E E') (h₂ : Agrees E' E'') : Agrees E E'' := by
+  intro x ci'' hx
+  obtain ⟨n', ci', hn', hci', k₂⟩ := h₂ x ci'' hx
+  obtain ⟨n, ci, hn, hci, k₁⟩ := h₁ n' ci' hci'
+  exact ⟨n, ci, PartialEquivBEq.trans hn hn', hci, k₁.trans k₂⟩
+
+/-- A clique's transported value replaces a definition's or a theorem's value
+only (`Clique.withValue`): the name and an inductive's constructors stay. -/
+theorem keeps_withValue (ci : ConstantInfo) (e : Expr) : Keeps ci (Ix.Compile.Pass.Clique.withValue ci e) := by
+  refine ⟨?_, fun iv' h => ?_⟩
+  · cases ci <;> rfl
+  · cases ci <;> (try simp only [Ix.Compile.Pass.Clique.withValue] at h) <;> cases h
+    exact ⟨_, rfl, rfl⟩
+
+/-- An overlay of the clique step: each entry is a constant of the
+environment `E` under its name, with another value. -/
+def OverlayOk (E : Name → Option ConstantInfo) (ov : Array (Name × ConstantInfo)) : Prop :=
+  ∀ q ∈ ov, ∃ ci e, E q.1 = some ci ∧ q.2 = Ix.Compile.Pass.Clique.withValue ci e
+
+theorem OverlayOk.push {E : Name → Option ConstantInfo} {ov : Array (Name × ConstantInfo)}
+    (h : OverlayOk E ov) {n : Name} {ci : ConstantInfo} (hci : E n = some ci) (e : Expr) :
+    OverlayOk E (ov.push (n, Ix.Compile.Pass.Clique.withValue ci e)) := by
+  intro q hq
+  rcases Array.mem_push.1 hq with hq | rfl
+  · exact h q hq
+  · exact ⟨ci, e, hci, rfl⟩
+
+/-- **The clique hook's overlay holds input constants with other values**:
+every entry `Clique.prepareCliques` returns is a constant of the hook's
+environment under its name, with a transported value (`Clique.withValue`). -/
+theorem prepareCliques_overlay {h : Ix.Compile.Pass.Clique.HookEnv} {all refs : Ix.Set Name}
+    {p : Ix.Compile.Pass.Clique.CliquePrep} (hp : Ix.Compile.Pass.Clique.prepareCliques h all refs = .ok p) :
+    OverlayOk h.env.get? p.overlay := by
+  revert hp
+  unfold Ix.Compile.Pass.Clique.prepareCliques
+  split
+  · intro hp; cases hp; intro q hq; simp at hq
+  · intro hp
+    obtain ⟨⟨refusal?, fresh0, reused0⟩, -, hp⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hp
+    revert hp
+    dsimp only
+    split
+    · intro hp
+      obtain ⟨_, h1, -⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hp
+      cases h1
+    · intro hp
+      obtain ⟨res, hloop, hp⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hp
+      have inv : OverlayOk h.env.get? res.1 := by
+        refine Ix.CompileCert.Loop.forIn_inv_array (I := fun _ s => OverlayOk h.env.get? s.1) _ _ ?_
+          (by intro q hq; simp at hq) hloop
+        intro pre n post s r _ hI hstep
+        -- every branch yields the overlay as it is, or pushed with an input
+        -- constant under the member's name (`withValue`)
+        repeat' (first
+          | (cases hstep; done)
+          | (obtain ⟨_, _, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep)
+          | (split at hstep))
+        all_goals (cases hstep)
+        all_goals first
+          | exact ⟨_, rfl, hI⟩
+          | exact ⟨_, rfl, OverlayOk.push hI ‹_› _⟩
+      revert hp
+      split
+      · intro hp; cases hp; intro q hq; simp at hq
+      · intro hp
+        obtain ⟨order, -, hp⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hp
+        cases hp
+        exact inv
+
+/-- **The clique step keeps the environment's names**: the environment
+`cliqueStep` returns is its input's, or the input overlaid with transported
+members and carried lemmas, each an input constant with another value
+(`prepareCliques_overlay`, `keeps_withValue`). -/
+theorem cliqueStep_keeps {cenv cenv' : CompileEnv} {all : Ix.Set Name} {lo : Name} {st : BlockState}
+    {p : Ix.Compile.Pass.Published} (h : Ix.Compile.Pass.cliqueStep cenv all lo = .ok (cenv', st, p)) :
+    Agrees cenv.env cenv'.env := by
+  unfold Ix.Compile.Pass.cliqueStep at h
+  split at h
+  · cases h; exact Agrees.refl _
+  · obtain ⟨prep, hprep, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+    have ov : OverlayOk cenv.env.get? prep.overlay := prepareCliques_overlay (mapError_ok hprep)
+    try dsimp only at h
+    split at h
+    · cases h; exact Agrees.refl _
+    · obtain ⟨⟨init, published⟩, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+      cases h
+      intro x ci' hx
+      have e : (∅ : Std.HashMap Name ConstantInfo).get? x = none := by
+        rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty]
+      rw [Ix.Environment.get?] at hx
+      dsimp only at hx
+      rw [e] at hx
+      dsimp only at hx
+      unfold Option.orElse at hx
+      split at hx
+      · rename_i ci'' ho
+        cases hx
+        rw [← Array.foldl_toList] at ho
+        obtain ⟨n, hn, hnx⟩ := overlay_get prep.overlay.toList prep.overlay.toList ∅ (fun _ h => h)
+          (fun k v h => by simp at h) x _ ho
+        obtain ⟨ci, e', hci, rfl⟩ := ov (n, _) (Array.mem_toList_iff.1 hn)
+        exact ⟨n, ci, hnx, hci, keeps_withValue ci e'⟩
+      · exact ⟨x, ci', BEq.rfl, hx, rfl, fun iv' h' => ⟨iv', h', rfl⟩⟩
+
+end clique
+
 /-! ## The claims of a block compile, hooks or not -/
 
 section claims
@@ -885,13 +1003,15 @@ theorem memberName_owned {E E' : Ix.Environment} {all : Ix.Set Name} {x : Name} 
 /-- **The claims of a block compile, with Pass 3's hooks in any state**:
 every projection name of `runBlockWithAux cenv all lo` hashes like a member
 of `all` or like a constructor an inductive member lists, when every
-constant of the environment carries its name (`prepareBlock_agrees`,
-`compileBlockWithAux_names`). -/
+constant of the environment carries its name (`cliqueStep_keeps`,
+`prepareBlock_agrees`, `compileBlockWithAux_names`). -/
 theorem runBlockWithAux_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
     {cache : BlockState} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
     (hn : NamedEnv cenv.env) (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?, pub)) :
     ∀ row ∈ r.projections, Owned cenv.env all row.1 := by
   unfold runBlockWithAux at h
+  obtain ⟨⟨cenv₁, init, cliques⟩, hclq, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  try dsimp only at h
   obtain ⟨⟨cenv', prepared⟩, hprep, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
   try dsimp only at h
   obtain ⟨⟨⟨result, layout', published⟩, cache'⟩, hrun, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
@@ -909,7 +1029,7 @@ theorem runBlockWithAux_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name
     exact Array.mem_map_of_mem hrow
   obtain ⟨row', hrow', he⟩ := Array.mem_map.1 hmap
   rw [← (Prod.mk.inj he).1]
-  exact memberName_owned (prepareBlock_agrees hprep) hn (names row' hrow')
+  exact memberName_owned ((cliqueStep_keeps hclq).trans (prepareBlock_agrees hprep)) hn (names row' hrow')
 
 end claims
 

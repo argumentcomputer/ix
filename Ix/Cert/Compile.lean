@@ -186,6 +186,26 @@ schedule), or the input is reserved (`reservedRefusal`). -/
     m.insert n (e.refusal split.2.contains)
   pure (ixe, { ungrounded, blocks := cenv.ungrounded }, cenv)
 
+/-- **The compile's condensation**: the declaration groups the driver
+compiles, and their references (the strongly connected components of the
+grounded reference graph of the input's map). `compileUnchecked` compiles
+exactly these blocks (its `blocks`, by `rfl`; it computes the ground split
+once, for its failures too), and the statements pass them to the changed set
+(`Ix.Compile.ChangedSet.ofCompile`). -/
+@[expose] def compileBlocks (env : Ix.Environment) : Ix.CondensedBlocks :=
+  Ix.CondenseM.run (groundSplit { consts := env.consts }).1
+
+/-- **The compile's aux table**: the driver's verdicts, on bytes, on the
+regenerated auxiliaries (`Ix.AuxGen.AuxTable`, from the report of
+`compileUnchecked`'s final compile environment), which the changed set reads
+for its `regenerated` cause (`Ix.Compile.ChangedSet.ofCompile`); the empty
+table when the compile fails (every regenerated auxiliary then counts as not
+identical). -/
+@[expose] def compileTable (env : Ix.Environment) : Ix.AuxGen.AuxTable :=
+  match compileUnchecked env with
+  | .ok (_, _, cenv) => cenv.auxReport.table
+  | .error _ => {}
+
 /-- The compile reports `n` as failed: the ground filter removed it, or its
 block failed to compile. -/
 @[expose] def Failures.failed (failures : Failures) (n : Ix.Name) : Bool :=
@@ -716,22 +736,24 @@ resolved name outside the aux map is a cross-SCC subset's claim. -/
   resolved.toList.findSome? fun (n, _) =>
     if !aux.contains n && (extras.contains n || ctors.contains n) then some n else none
 
-/-- The published input names whose record is not their original form: a
-`Named` entry with an original-form record (`Named.original`) at another
-address than its own, of a name the input holds. These are the changed set's
-`regenerated` entries (`Ix.Compile.ChangedSet.ofCompile`'s third loop), which
-it computes from the published names alone, without the changed components. -/
-@[expose] def regeneratedNames (env : Ix.Environment) (ixe : Ixon.Env) :
+/-- The published input names whose record is not known to be their
+original form: a `Named` entry with an original-form record
+(`Named.original`), of a name the input holds, that the aux table (`table`,
+the driver's verdicts on bytes, `Ix.AuxGen.AuxTable.identical`) does not find
+identical. These are the changed set's `regenerated` entries
+(`Ix.Compile.ChangedSet.ofCompile`'s last loop, over the input's map and the
+compile's table), which it computes from the published names alone, without
+the changed components. -/
+@[expose] def regeneratedNames (env : Ix.Environment) (table : Ix.AuxGen.AuxTable) (ixe : Ixon.Env) :
     Std.HashSet Ix.Compile.ExactKey.ExactName :=
   ixe.named.fold (init := {}) fun s n named =>
-    match named.original with
-    | some (orig, _) => if (orig != named.addr && (env.consts.get? n).isSome) = true then s.insert n else s
-    | none => s
+    if (named.original.isSome && (env.consts.get? n).isSome && !table.identical n) = true then s.insert n
+    else s
 
 /-- The first key of the driver's final Pass 3 heads (`heads`,
 `CompileEnv.p3Heads`) that is not a regenerated published input name
-(`regeneratedNames`), if any (none without heads, and then nothing is
-computed). A head is published by a block's merge from Pass 3's hook 1
+(`regeneratedNames`, under the compile's aux table `table`), if any (none
+without heads, and then nothing is computed). A head is published by a block's merge from Pass 3's hook 1
 (`editBlock`), whose inputs come from the aux tail (AuxGen's `partial` code,
 which no proof follows), and hook 2 (`prepareBlock`) rewrites every block that
 references one. Every regenerated name is in the compile's changed set (its
@@ -741,11 +763,11 @@ the identity. The check reads the regenerated names, one pass over the
 published names, instead of the whole changed set, whose changed components
 and callers cost about half of Mathlib's compile phase
 (`ports/20261021T065228Z-hookprobe`). -/
-@[expose] def foreignHead (env : Ix.Environment)
+@[expose] def foreignHead (env : Ix.Environment) (table : Ix.AuxGen.AuxTable)
     (heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name) (ixe : Ixon.Env) : Option Ix.Name :=
   if heads.isEmpty then none
   else
-    let regenerated := regeneratedNames env ixe
+    let regenerated := regeneratedNames env table ixe
     heads.toList.findSome? fun (h, _) => if regenerated.contains h then none else some h
 
 /-- The first input constant whose own name (`ConstantVal.name`) does not hash
@@ -806,8 +828,8 @@ input name is in the resolution map or in the aux map (`unresolvedPublished`).
 **No cross-SCC claims:** no resolved name outside the aux map is among the
 extra names, nor a constructor of an inductive among them (`crossClaimed`).
 **Heads are changed:** each of the driver's final
-Pass 3 heads (`cenv.p3Heads`) is a regenerated published input name
-(`regeneratedNames`), so in the changed set (`foreignHead`). **Input
+Pass 3 heads (`cenv.p3Heads`) is a regenerated published input name, under
+the final aux table (`regeneratedNames`), so in the changed set (`foreignHead`). **Input
 constants carry their names:** each input constant's own name hashes like the
 name it is stored under (`misnamedInput`). **Input constructors belong to their
 inductive:** each constructor an input inductive lists is stored as a
@@ -834,7 +856,7 @@ is one the input's map holds (`strayFailure`). -/
                 | none =>
                   match crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
                   | none =>
-                    match foreignHead env cenv.p3Heads out.1 with
+                    match foreignHead env cenv.auxReport.table cenv.p3Heads out.1 with
                     | none =>
                       match misnamedInput env with
                       | none =>

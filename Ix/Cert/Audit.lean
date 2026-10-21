@@ -1132,7 +1132,7 @@ fun env cenv out =>
                 | none =>
                   match Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
                   | none =>
-                    match Ix.Cert.foreignHead env cenv.p3Heads out.fst with
+                    match Ix.Cert.foreignHead env cenv.auxReport.table cenv.p3Heads out.fst with
                     | none =>
                       match Ix.Cert.misnamedInput env with
                       | none =>
@@ -1356,7 +1356,7 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                   Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst = none ∧
                     Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
                       Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-                        Ix.Cert.foreignHead env cenv.p3Heads out.fst = none ∧
+                        Ix.Cert.foreignHead env cenv.auxReport.table cenv.p3Heads out.fst = none ∧
                           Ix.Cert.misnamedInput env = none ∧
                             Ix.Cert.strayConstructor env = none ∧ Ix.Cert.strayFailure env cenv.ungrounded = none -/
 #guard_msgs (whitespace := lax) in
@@ -4363,38 +4363,62 @@ run_cmd do
 `Ix.Cert.Unchanged.avoids_unchanged`: a constant of a closure that avoids the
 compile's changed set (`ChangedSet.Avoids`, H1's hypothesis) is in no class
 of a changed component and no constructor of a member of a changed inductive
-one, is no image head of a changed inductive component's Lean block and
-references none, and is published at its original-form compile's address
-where it has one. The proofs read `ofCompile` through its three loops,
-identified with it by `rfl` (`ofCompile_eq`). `cert-unchanged` checks on the
-changed-set corpus, and `cert-statement`/`cert-compile-parity-init` on the
-fixtures and `Init`, that these facts single the set out.
+one, is no image head of a changed inductive component's Lean block, is in no
+condensation block whose references hold one, is in no clique of the input's
+clique table and in no condensation block whose references hold one of Lean's
+encoding constants of a clique, and, published with an original-form compile,
+is found identical by the compile's aux table. The proofs read `ofCompile`
+through its stages, identified with it by `rfl` (`ofCompile_eq`).
+`cert-unchanged` checks on the changed-set corpus, and
+`cert-statement`/`cert-compile-parity-init` on the fixtures and `Init`, that
+these facts single the set out.
 
 Re-frozen (2026-10-20, after push 91): `ofCompile` takes each changed
 inductive component's image heads from the component itself and counts every
 component, not through a map keyed by first name (a flagged, report-only edit;
 the set is identical on the corpus, the fixtures and Init+Std). The head and
 caller facts hold without `FirstsAgree`, which is gone with its decider and the
-first-loop map lemmas: 49 roots → 41. -/
+first-loop map lemmas: 49 roots → 41.
 
-/-- info: [cert-audit] unchanged: 41 roots; axioms used: [propext, Classical.choice, Quot.sound]
+**Re-frozen (2026-10-21, CQ5.2 (b), flagged statement change): the changed set
+over the compile's condensation and aux table.** `ofCompile env condensed table
+ixe` (the compiler lane's commit 4) adds the clique stage (`cliqueStage`:
+`clique` entries for the clique table, `caller` entries for the members of a
+condensation block that references a clique's encoding), enters the callers
+of the heads by condensation block (`callerStage`, over `condensed.blockRefs`),
+and reads `regenerated` off the aux table (`AuxTable.identical`). So
+`Unchanged` takes `condensed` and `table`; `caller` is restated at block level;
+`clique` and `cliqueCaller` are new; `original` now says the table finds the
+record identical (a verdict on bytes; B9d reads it as bytes, with the 15th
+check). The stages are restated (`cliqueStage_eq`, `callerStage_eq`,
+`regenStage_eq`; the third loop's lemmas are replaced): 41 roots → 57, and
+the runtime list gains the two stages, the clique tables and
+`AuxTable.identical`. The statements read the set as
+`ofCompile { consts := env.consts } (compileBlocks env) (compileTable env) ixe`. -/
+
+/-- info: [cert-audit] unchanged: 57 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] unchanged: 5 safe definitions, no runtime substitution -/
+info: [cert-audit] unchanged: 9 safe definitions, no runtime substitution -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
   checkRoots (tag := "cert-audit") "unchanged"
     (#[`forIn_grow, `forIn_hit, `ofCompile_eq, `forIn_grow_array, `forIn_hit_array, `Grows.refl,
-      `Grows.trans, `Grows.push, `memberStage_eq, `headStage_eq, `namedStage_eq, `kind_beq,
-      `ctorLoop_grows, `ctorLoop_hit, `memberBody_step, `memberBody_lands, `classBody_step, `blockBody_step,
-      `member_entry, `Grows₂.refl, `Grows₂.trans, `headStep_step, `headBody_step, `headStage_grows,
-      `heads_inv, `head_entry, `regenStep_step, `namedBody_step, `regenStep_lands, `namedStage_grows,
-      `caller_entry, `regenerated_entry, `sortEntries_eq, `dedupStep_spec, `dedup_keeps, `sortEntries_keeps,
-      `names_contains, `contains_of_entry, `leastName_none, `unchanged_of_not_contains,
-      `avoids_unchanged].map (`Ix.Cert.Unchanged ++ ·))
+      `Grows.trans, `Grows.push, `memberStage_eq, `headStage_eq, `cliqueStage_eq, `callerStage_eq,
+      `regenStage_eq, `kind_beq, `ctorLoop_grows, `ctorLoop_hit, `memberBody_step, `memberBody_lands,
+      `classBody_step, `blockBody_step, `member_entry, `Grows₂.refl, `Grows₂.trans, `headStep_step,
+      `headBody_step, `headStage_grows, `heads_inv, `head_entry, `cliqueNameBody_step, `encMembers_grows,
+      `encRefBody_step, `encRefs_grows, `encBlockBody_step, `cliqueNames_grows, `encBlocks_grows,
+      `cliqueStage_grows, `clique_entry, `encCaller_entry, `callerMemberBody_step, `callerBlockBody_step,
+      `callerStage_grows, `headCaller_entry, `regenBody_step, `regenStage_grows, `regenerated_entry,
+      `sortEntries_eq, `dedupStep_spec, `dedup_keeps, `sortEntries_keeps, `names_contains,
+      `contains_of_entry, `leastName_none, `blocks_toList, `refs_getD, `toList_of_contains,
+      `unchanged_of_not_contains, `avoids_unchanged].map (`Ix.Cert.Unchanged ++ ·))
   checkRuntime (tag := "cert-audit") "unchanged"
     #[``Ix.Compile.ChangedSet.ofCompile, ``Ix.Compile.ChangedSet.sortEntries, ``Ix.Compile.ChangedSet.leastName,
-      ``Ix.Compile.ChangedSet.ChangedSet.contains, ``Ix.Compile.ChangedSet.Entry.beq]
+      ``Ix.Compile.ChangedSet.ChangedSet.contains, ``Ix.Compile.ChangedSet.Entry.beq,
+      ``Ix.Compile.ChangedSet.cliqueStage, ``Ix.Compile.ChangedSet.callerStage,
+      ``Ix.Compile.ChangedSet.cliqueTables, ``Ix.AuxGen.AuxTable.identical]
 
 /-! ## Distinct name hashes (B9's name keys; owner-approved check, 2026-10-20)
 
@@ -4756,11 +4780,11 @@ run_cmd do
   checkRuntime (tag := "cert-audit") "heads" #[``Ix.Cert.foreignHead]
 
 /-- info: def Ix.Cert.foreignHead : Ix.Environment →
-  Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name → Ixon.Env → Option Ix.Name :=
-fun env heads ixe =>
+  Ix.AuxGen.AuxTable → Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name → Ixon.Env → Option Ix.Name :=
+fun env table heads ixe =>
   if heads.isEmpty = true then none
   else
-    have regenerated := Ix.Cert.regeneratedNames env ixe;
+    have regenerated := Ix.Cert.regeneratedNames env table ixe;
     List.findSome?
       (fun x =>
         match x with
@@ -4769,16 +4793,26 @@ fun env heads ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.foreignHead
 
-/-- info: def Ix.Cert.regeneratedNames : Ix.Environment → Ixon.Env → Std.HashSet Ix.Compile.ExactKey.ExactName :=
-fun env ixe =>
+/-- info: def Ix.Cert.regeneratedNames : Ix.Environment →
+  Ix.AuxGen.AuxTable → Ixon.Env → Std.HashSet Ix.Compile.ExactKey.ExactName :=
+fun env table ixe =>
   Std.HashMap.fold
     (fun s n named =>
-      match named.original with
-      | some (orig, snd) => if (orig != named.addr && (env.consts.get? n).isSome) = true then s.insert n else s
-      | none => s)
+      if (named.original.isSome && (env.consts.get? n).isSome && !table.identical n) = true then s.insert n else s)
     ∅ ixe.named -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.regeneratedNames
+
+/-! **Re-frozen (2026-10-21, CQ5.2 (b), flagged Cert path): the heads check follows
+the changed set's `regenerated` rule.** The changed set now reads `regenerated`
+off the compile's aux table (`Ix.AuxGen.AuxTable.identical`: a published input
+name with an original-form record that the table does not find identical), so
+`regeneratedNames` takes the table and reads that rule, and `checkReport` passes
+the final compile environment's table (`cenv.auxReport.table`; the statements'
+`compileTable env`, `compileTable_eq`). `foreignHead_none` and `headsChanged` are
+restated over `ofCompile { consts := env.consts } (compileBlocks env)
+(compileTable env) ixe`. Re-frozen with it: `foreignHead`'s and
+`regeneratedNames`' prints, `checkReport`'s print and `checkReport_ok`. -/
 
 /-! ## Input constants carry their names (B9b, `HookFree`'s discharge, membership; coordinator decision, 2026-10-21)
 
@@ -4968,13 +5002,27 @@ a compiled block's claims are its members' (`Ix.Cert.Claims.runBlock_owned`,
 image blocks included); no reference or member of a block of the closure is a
 snapshot head (`hookFree_of_sub`, from the eleventh and fourteenth checks,
 `final_of_report`). `Ix.Cert.Resolution`'s fold steps now also keep the input
-environment (`reach_env`). -/
+environment (`reach_env`).
 
-/-- info: [cert-audit] hook-free: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+**Re-frozen (2026-10-21, CQ5.2 (b)): `HookFree`'s third conjunct, the clique
+step.** `runBlockWithAux` runs the clique step (`cliqueStep`) first, so
+`HookFree` also says it is the identity, and `hookFree_of_sub` proves it from
+`cliqueInert`: no member is in the clique table and no reference of the block
+holding its key is one of Lean's encoding constants of a clique
+(`Unchanged.clique`, `Unchanged.cliqueCaller` from `Avoids`), against the
+tables the fold keeps (`Resolution.reach_cliques`; `Step` keeps `p3Cliques`
+and `p3CliqueRoots`, and the fold's initial tables are `scheduleCliques`',
+`cliqueTables_eq`). A claim's ownership holds through the clique step too
+(`Claims.cliqueStep_keeps`: its overlay holds input constants with other
+values, `Claims.prepareCliques_overlay`). The heads check reads the compile's
+aux table (`compileTable_eq`). 7 roots → 12. -/
+
+/-- info: [cert-audit] hook-free: 12 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "hook-free"
     ((#[`compileReport_hookFree, `final_of_report, `hookFree_of_sub, `cross_refuted,
-      `applyAuxBlockOutcome_cross_extras].map (`Ix.Cert.HookFree ++ ·)) ++
-      #[``Ix.Cert.Claims.runBlock_owned, ``Ix.Cert.Resolution.reach_env])
+      `applyAuxBlockOutcome_cross_extras, `cliqueTables_eq].map (`Ix.Cert.HookFree ++ ·)) ++
+      #[``Ix.Cert.Claims.runBlock_owned, ``Ix.Cert.Resolution.reach_env, ``Ix.Cert.Resolution.reach_cliques,
+        ``Ix.Cert.Claims.cliqueStep_keeps, ``Ix.Cert.Claims.prepareCliques_overlay, ``Ix.Cert.compileTable_eq])

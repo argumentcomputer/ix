@@ -13,9 +13,15 @@ module reads it back as per-constant facts (`Unchanged`): a constant of `sub` is
 * in no changed component (`member`), and no constructor of a member of a
   changed inductive component (`ctor`);
 * no image head of a changed inductive component's Lean block (`head`), and
-  references none (`caller`);
-* published, if it has an original-form compile, at that compile's address
-  (`original`).
+  in no condensation block whose references hold one (`caller`, at block
+  level over the compile's condensation, as the set enters callers);
+* in no clique of the input's clique table (`clique`: no member of an input
+  clique and no equation lemma carried with one), and in no condensation
+  block whose references hold one of Lean's encoding constants of a clique
+  (`cliqueCaller`);
+* found identical by the compile's aux table, if it is published with an
+  original-form compile (`original`: the driver's verdict on bytes,
+  `Ix.AuxGen.AuxTable.identical`).
 
 The set's names are compared by `Ix.Name`'s `==`, which compares stored name
 hashes, so `Avoids` says more than structural absence: every entry's name has
@@ -23,9 +29,15 @@ a different hash. The facts here are the structural consequences. Every
 changed component counts, and each changed inductive component's Lean block
 gives its image heads directly, so no fact has a side condition.
 
-The proofs read `ofCompile` through its three loops, restated here as
-`memberStage`, `headStage` and `namedStage` and identified with it
-definitionally (`ofCompile_eq`). -/
+`original` reads the aux table's verdict, not bytes: since CQ5.2 (b) the set's
+`regenerated` cause is the table's (`identical`), so a name outside the set is
+one the table finds identical. That a verdict `identical` means the published
+record is the compared original form is B9d's part (with `compileReport`'s
+check that identity rows agree with the published addresses).
+
+The proofs read `ofCompile` through its stages, restated here as
+`memberStage`, `headStage`, `ChangedSet.cliqueStage`, `ChangedSet.callerStage`
+and `regenStage`, and identified with it definitionally (`ofCompile_eq`). -/
 
 namespace Ix.Cert.Unchanged
 
@@ -99,32 +111,33 @@ def headStage (env : Ix.Environment) (blocks : Array Block) (entries : Array Ent
         entries := entries.push { name := h, cause := .imageHead, ref := b.first }
   return (entries, heads)
 
-/-- `ofCompile`'s third loop: callers and regenerated auxiliaries, over the
-published names. -/
-def namedStage (env : Ix.Environment) (ixe : Ixon.Env) (s : Array Entry × Std.HashSet Name) :
-    Array Entry := Id.run do
-  let mut entries := s.1
-  let heads := s.2
+/-- `ofCompile`'s last loop: the regenerated auxiliaries, over the published
+names. -/
+def regenStage (env : Ix.Environment) (table : Ix.AuxGen.AuxTable) (ixe : Ixon.Env)
+    (entries : Array Entry) : Array Entry := Id.run do
+  let mut entries := entries
   for (n, named) in ixe.named do
-    if !heads.isEmpty && !heads.contains n then
-      if let some ci := env.get? n then
-        if let some h := leastName (Ix.Compile.Canon.refsConst ci) heads.contains then
-          entries := entries.push { name := n, cause := .caller, ref := some h }
-    if let some (orig, _) := named.original then
-      if orig != named.addr && (env.get? n).isSome then
-        entries := entries.push { name := n, cause := .regenerated }
+    if named.original.isSome && (env.get? n).isSome && !table.identical n then
+      entries := entries.push { name := n, cause := .regenerated }
   return entries
 
-/-- The three loops' entries, in order. -/
-abbrev stages (env : Ix.Environment) (ixe : Ixon.Env) : Array Entry :=
-  namedStage env ixe (headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe)))
+/-- The stages' entries, in order: members, image heads, the clique stage, the
+callers of the heads, the regenerated auxiliaries. -/
+abbrev stages (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (table : Ix.AuxGen.AuxTable)
+    (ixe : Ixon.Env) : Array Entry :=
+  regenStage env table ixe
+    (callerStage condensed (headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).2
+      (cliqueStage env condensed
+        (headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).1))
 
-/-- **`ofCompile` is its three loops**, then the sort and the name set. -/
-theorem ofCompile_eq (env : Ix.Environment) (ixe : Ixon.Env) :
-    ofCompile env ixe =
+/-- **`ofCompile` is its stages**, then the sort and the name set. -/
+theorem ofCompile_eq (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (table : Ix.AuxGen.AuxTable)
+    (ixe : Ixon.Env) :
+    ofCompile env condensed table ixe =
       { blocks := changedBlocks env ixe
-        entries := sortEntries (stages env ixe)
-        names := (sortEntries (stages env ixe)).foldl (fun s e => s.insert e.name) ∅ } := rfl
+        entries := sortEntries (stages env condensed table ixe)
+        names := (sortEntries (stages env condensed table ixe)).foldl (fun s e => s.insert e.name) ∅ } :=
+  rfl
 
 /-! ## Array forms -/
 
@@ -198,31 +211,75 @@ def headBody (env : Ix.Environment) :
 theorem headStage_eq (env : Ix.Environment) (blocks : Array Block) (entries : Array Entry) :
     headStage env blocks entries = forIn (m := Id) blocks (entries, ∅) (headBody env) := rfl
 
-/-- A published name's regenerated entry. -/
-def regenStep (env : Ix.Environment) (n : Name) (named : Ixon.Named) (r : Array Entry) :
-    Id (ForInStep (Array Entry)) :=
-  match named.original with
-  | some (orig, _) =>
-    if (orig != named.addr && (env.get? n).isSome) = true then .yield (r.push { name := n, cause := .regenerated })
-    else .yield r
-  | _ => .yield r
+/-- One name of the clique table: its `clique` entry. -/
+def cliqueNameBody : Name × (Array Name × Array Name) → Array Entry → Id (ForInStep (Array Entry)) :=
+  fun x r =>
+    match x with
+    | (n, cl) => .yield (r.push { name := n, cause := .clique, ref := cl.1[0]? })
 
-/-- One published name: its caller entry, then its regenerated entry. -/
-def namedBody (env : Ix.Environment) (heads : Std.HashSet Name) :
+/-- One member of a block that references a clique's encoding: its `caller`
+entry. -/
+def encMemberBody (all : Array Name) : Name → Array Entry → Id (ForInStep (Array Entry)) := fun m r =>
+  .yield (r.push { name := m, cause := .caller, ref := all[0]? })
+
+/-- One reference of a block: its members' `caller` entries when it is one of
+Lean's encoding constants of a clique. -/
+def encRefBody (roots : Std.HashMap Name (Array Name)) (mems : Ix.Set Name) :
+    Name → Array Entry → Id (ForInStep (Array Entry)) := fun r s =>
+  match Ix.Compile.Pass.Clique.encodingOwner? roots r with
+  | some all => .yield (forIn (m := Id) mems s (encMemberBody all))
+  | _ => .yield s
+
+/-- One condensation block: its references, each through `encRefBody`. -/
+def encBlockBody (condensed : Ix.CondensedBlocks) (roots : Std.HashMap Name (Array Name)) :
+    Name × Ix.Set Name → Array Entry → Id (ForInStep (Array Entry)) := fun x s =>
+  match x with
+  | (lo, mems) => .yield (forIn (m := Id) (condensed.blockRefs.getD lo {}) s (encRefBody roots mems))
+
+theorem cliqueStage_eq (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (entries : Array Entry) :
+    cliqueStage env condensed entries =
+      forIn (m := Id) condensed.blocks (forIn (m := Id) (cliqueTables env condensed).1 entries cliqueNameBody)
+        (encBlockBody condensed (cliqueTables env condensed).2) := by
+  -- the tables abstracted, so the check never evaluates them
+  unfold cliqueStage
+  generalize cliqueTables env condensed = t
+  rfl
+
+/-- One member of a block whose references hold a head: its `caller` entry,
+unless it is a head. -/
+def callerMemberBody (heads : Std.HashSet Name) (h : Name) :
+    Name → Array Entry → Id (ForInStep (Array Entry)) := fun m r =>
+  if (!heads.contains m) = true then .yield (r.push { name := m, cause := .caller, ref := some h })
+  else .yield r
+
+/-- One condensation block: its members' `caller` entries when its references
+hold a head. -/
+def callerBlockBody (condensed : Ix.CondensedBlocks) (heads : Std.HashSet Name) :
+    Name × Ix.Set Name → Array Entry → Id (ForInStep (Array Entry)) := fun x r =>
+  match x with
+  | (rep, mems) =>
+    match leastName (condensed.blockRefs.getD rep {}) heads.contains with
+    | some h => .yield (forIn (m := Id) mems r (callerMemberBody heads h))
+    | _ => .yield r
+
+theorem callerStage_eq (condensed : Ix.CondensedBlocks) (heads : Std.HashSet Name) (entries : Array Entry) :
+    callerStage condensed heads entries =
+      if heads.isEmpty = true then entries
+      else forIn (m := Id) condensed.blocks entries (callerBlockBody condensed heads) := rfl
+
+/-- One published name: its `regenerated` entry, when it has an original
+form, is an input name, and the table does not find it identical. -/
+def regenBody (env : Ix.Environment) (table : Ix.AuxGen.AuxTable) :
     Name × Ixon.Named → Array Entry → Id (ForInStep (Array Entry)) := fun x r =>
   match x with
   | (n, named) =>
-    if (!heads.isEmpty && !heads.contains n) = true then
-      match env.get? n with
-      | some ci =>
-        match leastName (Ix.Compile.Canon.refsConst ci) heads.contains with
-        | some h => regenStep env n named (r.push { name := n, cause := .caller, ref := some h })
-        | _ => regenStep env n named r
-      | _ => regenStep env n named r
-    else regenStep env n named r
+    if (named.original.isSome && (env.get? n).isSome && !table.identical n) = true then
+      .yield (r.push { name := n, cause := .regenerated })
+    else .yield r
 
-theorem namedStage_eq (env : Ix.Environment) (ixe : Ixon.Env) (s : Array Entry × Std.HashSet Name) :
-    namedStage env ixe s = forIn (m := Id) ixe.named s.1 (namedBody env s.2) := rfl
+theorem regenStage_eq (env : Ix.Environment) (table : Ix.AuxGen.AuxTable) (ixe : Ixon.Env)
+    (entries : Array Entry) :
+    regenStage env table ixe entries = forIn (m := Id) ixe.named entries (regenBody env table) := rfl
 
 /-! ## The first loop: members -/
 
@@ -385,96 +442,176 @@ theorem head_entry (env : Ix.Environment) {blocks : Array Block} {b : Block} (hb
   · rename_i no
     exact absurd (kind_beq.mpr ind) no
 
-/-! ## The third loop: callers and regenerated auxiliaries -/
+/-! ## The clique stage: clique-table names and the callers of an encoding -/
 
-theorem regenStep_step (env : Ix.Environment) (n : Name) (named : Ixon.Named) (r : Array Entry) :
-    ∃ r', regenStep env n named r = .yield r' ∧ Grows r r' := by
-  unfold regenStep
+theorem cliqueNameBody_step (x : Name × (Array Name × Array Name)) (r : Array Entry) :
+    ∃ r', cliqueNameBody x r = .yield r' ∧ Grows r r' := by
+  obtain ⟨n, cl⟩ := x
+  exact ⟨_, rfl, Grows.push _ _⟩
+
+theorem encMembers_grows (all : Array Name) (mems : Ix.Set Name) (s : Array Entry) :
+    Grows s (forIn (m := Id) mems s (encMemberBody all)) := by
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  exact forIn_grow Grows Grows.refl Grows.trans _ _ (fun _ _ s => ⟨_, rfl, Grows.push s _⟩) s
+
+theorem encRefBody_step (roots : Std.HashMap Name (Array Name)) (mems : Ix.Set Name) (r : Name)
+    (s : Array Entry) : ∃ s', encRefBody roots mems r s = .yield s' ∧ Grows s s' := by
+  unfold encRefBody
   split
-  · split
-    · exact ⟨_, rfl, Grows.push _ _⟩
-    · exact ⟨_, rfl, Grows.refl _⟩
+  · exact ⟨_, rfl, encMembers_grows _ mems s⟩
   · exact ⟨_, rfl, Grows.refl _⟩
 
-theorem namedBody_step (env : Ix.Environment) (heads : Std.HashSet Name) (x : Name × Ixon.Named)
-    (r : Array Entry) : ∃ r', namedBody env heads x r = .yield r' ∧ Grows r r' := by
-  obtain ⟨n, named⟩ := x
-  unfold namedBody
+theorem encRefs_grows (roots : Std.HashMap Name (Array Name)) (mems refs : Ix.Set Name) (s : Array Entry) :
+    Grows s (forIn (m := Id) refs s (encRefBody roots mems)) := by
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  exact forIn_grow Grows Grows.refl Grows.trans _ _ (fun r _ s => encRefBody_step roots mems r s) s
+
+theorem encBlockBody_step (condensed : Ix.CondensedBlocks) (roots : Std.HashMap Name (Array Name))
+    (x : Name × Ix.Set Name) (s : Array Entry) : ∃ s', encBlockBody condensed roots x s = .yield s' ∧ Grows s s' := by
+  obtain ⟨lo, mems⟩ := x
+  exact ⟨_, rfl, encRefs_grows roots mems _ s⟩
+
+theorem cliqueNames_grows (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (entries : Array Entry) :
+    Grows entries (forIn (m := Id) (cliqueTables env condensed).1 entries cliqueNameBody) := by
+  rw [Std.HashMap.forIn_eq_forIn_toList]
+  exact forIn_grow Grows Grows.refl Grows.trans _ _ (fun x _ r => cliqueNameBody_step x r) _
+
+theorem encBlocks_grows (condensed : Ix.CondensedBlocks) (roots : Std.HashMap Name (Array Name))
+    (s : Array Entry) : Grows s (forIn (m := Id) condensed.blocks s (encBlockBody condensed roots)) := by
+  rw [Std.HashMap.forIn_eq_forIn_toList]
+  exact forIn_grow Grows Grows.refl Grows.trans _ _ (fun x _ r => encBlockBody_step condensed roots x r) _
+
+theorem cliqueStage_grows (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (entries : Array Entry) :
+    Grows entries (cliqueStage env condensed entries) := by
+  rw [cliqueStage_eq]
+  exact (cliqueNames_grows env condensed entries).trans (encBlocks_grows condensed _ _)
+
+/-- **A name of the clique table has its `clique` entry.** -/
+theorem clique_entry (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (entries : Array Entry)
+    {n : Name} {cl : Array Name × Array Name} (hn : (n, cl) ∈ (cliqueTables env condensed).1.toList) :
+    ({ name := n, cause := .clique, ref := cl.1[0]? } : Entry) ∈ cliqueStage env condensed entries := by
+  rw [cliqueStage_eq]
+  refine encBlocks_grows condensed _ _ _ ?_
+  rw [Std.HashMap.forIn_eq_forIn_toList]
+  refine forIn_hit Grows Grows.refl Grows.trans _ (fun r => _ ∈ r) (fun g p => g _ p) (fun r r' step => ?_) _
+    (fun x _ r => cliqueNameBody_step x r) hn _
+  injection step with step
+  subst step
+  exact Array.mem_push_self
+
+/-- **A member of a condensation block whose references hold one of Lean's
+encoding constants of a clique has its `caller` entry.** -/
+theorem encCaller_entry (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (entries : Array Entry)
+    {lo : Name} {mems : Ix.Set Name} (hb : (lo, mems) ∈ condensed.blocks.toList) {r : Name}
+    (hr : r ∈ (condensed.blockRefs.getD lo {}).toList) {all : Array Name}
+    (henc : Ix.Compile.Pass.Clique.encodingOwner? (cliqueTables env condensed).2 r = some all)
+    {m : Name} (hm : m ∈ mems.toList) :
+    ({ name := m, cause := .caller, ref := all[0]? } : Entry) ∈ cliqueStage env condensed entries := by
+  rw [cliqueStage_eq, Std.HashMap.forIn_eq_forIn_toList (m := condensed.blocks)]
+  refine forIn_hit Grows Grows.refl Grows.trans _ (fun r => _ ∈ r) (fun g p => g _ p) (fun s s' step => ?_) _
+    (fun x _ r => encBlockBody_step condensed _ x r) hb _
+  injection step with step
+  subst step
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  refine forIn_hit Grows Grows.refl Grows.trans _ (fun r => _ ∈ r) (fun g p => g _ p) (fun t t' step => ?_) _
+    (fun x _ t => encRefBody_step _ mems x t) hr _
+  unfold encRefBody at step
+  rw [henc] at step
+  injection step with step
+  subst step
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  refine forIn_hit Grows Grows.refl Grows.trans _ (fun r => _ ∈ r) (fun g p => g _ p) (fun u u' step => ?_) _
+    (fun _ _ u => ⟨_, rfl, Grows.push u _⟩) hm _
+  injection step with step
+  subst step
+  exact Array.mem_push_self
+
+/-! ## The callers of the heads, by block -/
+
+theorem callerMemberBody_step (heads : Std.HashSet Name) (h m : Name) (r : Array Entry) :
+    ∃ r', callerMemberBody heads h m r = .yield r' ∧ Grows r r' := by
+  unfold callerMemberBody
+  split
+  · exact ⟨_, rfl, Grows.push _ _⟩
+  · exact ⟨_, rfl, Grows.refl _⟩
+
+theorem callerBlockBody_step (condensed : Ix.CondensedBlocks) (heads : Std.HashSet Name)
+    (x : Name × Ix.Set Name) (r : Array Entry) : ∃ r', callerBlockBody condensed heads x r = .yield r' ∧ Grows r r' := by
+  obtain ⟨rep, mems⟩ := x
+  unfold callerBlockBody
   dsimp only
   split
-  · split
-    · split
-      · obtain ⟨r', h, g⟩ := regenStep_step env n named (r.push _)
-        exact ⟨r', h, (Grows.push _ _).trans g⟩
-      · exact regenStep_step env n named r
-    · exact regenStep_step env n named r
-  · exact regenStep_step env n named r
+  · refine ⟨_, rfl, ?_⟩
+    rw [Std.HashSet.forIn_eq_forIn_toList]
+    exact forIn_grow Grows Grows.refl Grows.trans _ _ (fun m _ s => callerMemberBody_step heads _ m s) r
+  · exact ⟨_, rfl, Grows.refl _⟩
 
-/-- The regenerated entry of a published name, when its step lands one. -/
-theorem regenStep_lands (env : Ix.Environment) {n : Name} {named : Ixon.Named} {r r' : Array Entry}
-    (h : regenStep env n named r = .yield r') {orig : Address} {cmeta : Ixon.ConstantMeta}
-    (original : named.original = some (orig, cmeta)) (differs : (orig != named.addr && (env.get? n).isSome) = true) :
-    ({ name := n, cause := .regenerated } : Entry) ∈ r' := by
-  unfold regenStep at h
-  rw [original] at h
-  dsimp only at h
-  split at h
-  · injection h with h
-    subst h
-    exact Array.mem_push_self
-  · rename_i no
-    exact absurd differs no
+theorem callerStage_grows (condensed : Ix.CondensedBlocks) (heads : Std.HashSet Name) (entries : Array Entry) :
+    Grows entries (callerStage condensed heads entries) := by
+  rw [callerStage_eq]
+  split
+  · exact Grows.refl _
+  · rw [Std.HashMap.forIn_eq_forIn_toList]
+    exact forIn_grow Grows Grows.refl Grows.trans _ _ (fun x _ r => callerBlockBody_step condensed heads x r) _
 
-theorem namedStage_grows (env : Ix.Environment) (ixe : Ixon.Env) (s : Array Entry × Std.HashSet Name) :
-    Grows s.1 (namedStage env ixe s) := by
-  rw [namedStage_eq, Std.HashMap.forIn_eq_forIn_toList]
-  exact forIn_grow Grows Grows.refl Grows.trans _ _ (fun x _ r => namedBody_step env s.2 x r) _
-
-/-- **A published name's caller entry**, when it references a head and is
-none. -/
-theorem caller_entry (env : Ix.Environment) (ixe : Ixon.Env) (s : Array Entry × Std.HashSet Name)
-    {n : Name} {named : Ixon.Named} (hn : (n, named) ∈ ixe.named.toList)
-    (outside : (!s.2.isEmpty && !s.2.contains n) = true) {ci : ConstantInfo} (found : env.get? n = some ci)
-    {h : Name} (least : leastName (Ix.Compile.Canon.refsConst ci) s.2.contains = some h) :
-    ({ name := n, cause := .caller, ref := some h } : Entry) ∈ namedStage env ixe s := by
-  rw [namedStage_eq, Std.HashMap.forIn_eq_forIn_toList]
-  refine forIn_hit Grows Grows.refl Grows.trans _ (fun r => _ ∈ r) (fun g p => g _ p) (fun r r' step => ?_) _
-    (fun x _ r => namedBody_step env s.2 x r) hn _
-  unfold namedBody at step
+/-- **A member of a condensation block whose references hold a head has its
+`caller` entry**, unless it is a head. -/
+theorem headCaller_entry (condensed : Ix.CondensedBlocks) {heads : Std.HashSet Name} (entries : Array Entry)
+    (nonempty : heads.isEmpty = false) {rep : Name} {mems : Ix.Set Name}
+    (hb : (rep, mems) ∈ condensed.blocks.toList) {h : Name}
+    (least : leastName (condensed.blockRefs.getD rep {}) heads.contains = some h) {m : Name}
+    (hm : m ∈ mems.toList) (notHead : heads.contains m = false) :
+    ({ name := m, cause := .caller, ref := some h } : Entry) ∈ callerStage condensed heads entries := by
+  rw [callerStage_eq, nonempty]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [Std.HashMap.forIn_eq_forIn_toList]
+  refine forIn_hit Grows Grows.refl Grows.trans _ (fun r => _ ∈ r) (fun g p => g _ p) (fun s s' step => ?_) _
+    (fun x _ r => callerBlockBody_step condensed heads x r) hb _
+  unfold callerBlockBody at step
   dsimp only at step
-  split at step
-  · rw [found] at step
-    dsimp only at step
-    rw [least] at step
-    dsimp only at step
-    obtain ⟨r'', h'', g⟩ := regenStep_step env n named (r.push { name := n, cause := .caller, ref := some h })
-    rw [h''] at step
-    injection step with step
-    subst step
-    exact g _ Array.mem_push_self
-  · rename_i no
-    exact absurd outside no
+  rw [least] at step
+  injection step with step
+  subst step
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  refine forIn_hit Grows Grows.refl Grows.trans _ (fun r => _ ∈ r) (fun g p => g _ p) (fun t t' step => ?_) _
+    (fun x _ t => callerMemberBody_step heads h x t) hm _
+  unfold callerMemberBody at step
+  rw [notHead] at step
+  injection step with step
+  subst step
+  exact Array.mem_push_self
 
-/-- **A published name's regenerated entry**, when its original-form address
-differs from its address. -/
-theorem regenerated_entry (env : Ix.Environment) (ixe : Ixon.Env) (s : Array Entry × Std.HashSet Name)
-    {n : Name} {named : Ixon.Named} (hn : (n, named) ∈ ixe.named.toList) {orig : Address}
-    {cmeta : Ixon.ConstantMeta} (original : named.original = some (orig, cmeta))
-    (differs : (orig != named.addr && (env.get? n).isSome) = true) :
-    ({ name := n, cause := .regenerated } : Entry) ∈ namedStage env ixe s := by
-  rw [namedStage_eq, Std.HashMap.forIn_eq_forIn_toList]
+/-! ## The last loop: regenerated auxiliaries -/
+
+theorem regenBody_step (env : Ix.Environment) (table : Ix.AuxGen.AuxTable) (x : Name × Ixon.Named)
+    (r : Array Entry) : ∃ r', regenBody env table x r = .yield r' ∧ Grows r r' := by
+  obtain ⟨n, named⟩ := x
+  unfold regenBody
+  dsimp only
+  split
+  · exact ⟨_, rfl, Grows.push _ _⟩
+  · exact ⟨_, rfl, Grows.refl _⟩
+
+theorem regenStage_grows (env : Ix.Environment) (table : Ix.AuxGen.AuxTable) (ixe : Ixon.Env)
+    (entries : Array Entry) : Grows entries (regenStage env table ixe entries) := by
+  rw [regenStage_eq, Std.HashMap.forIn_eq_forIn_toList]
+  exact forIn_grow Grows Grows.refl Grows.trans _ _ (fun x _ r => regenBody_step env table x r) _
+
+/-- **A published name's regenerated entry**, when it has an original-form
+compile, is an input name, and the aux table does not find it identical. -/
+theorem regenerated_entry (env : Ix.Environment) (table : Ix.AuxGen.AuxTable) (ixe : Ixon.Env)
+    (entries : Array Entry) {n : Name} {named : Ixon.Named} (hn : (n, named) ∈ ixe.named.toList)
+    (regen : (named.original.isSome && (env.get? n).isSome && !table.identical n) = true) :
+    ({ name := n, cause := .regenerated } : Entry) ∈ regenStage env table ixe entries := by
+  rw [regenStage_eq, Std.HashMap.forIn_eq_forIn_toList]
   refine forIn_hit Grows Grows.refl Grows.trans _ (fun r => _ ∈ r) (fun g p => g _ p) (fun r r' step => ?_) _
-    (fun x _ r => namedBody_step env s.2 x r) hn _
-  unfold namedBody at step
+    (fun x _ r => regenBody_step env table x r) hn _
+  unfold regenBody at step
   dsimp only at step
-  split at step
-  · split at step
-    · split at step
-      · exact regenStep_lands env step original differs
-      · exact regenStep_lands env step original differs
-    · exact regenStep_lands env step original differs
-  · exact regenStep_lands env step original differs
-
+  simp only [regen, ↓reduceIte] at step
+  injection step with step
+  subst step
+  exact Array.mem_push_self
 
 /-! ## The set's names -/
 
@@ -543,10 +680,10 @@ theorem names_contains {n : Name} : ∀ (l : List Entry) (S : Std.HashSet Name),
       · exact .inl ⟨p, hp, same⟩
     · exact .inr (by rw [Std.HashSet.contains_insert, h, Bool.or_true])
 
-/-- **An entry of the third loop names a constant of the set**, up to hash. -/
-theorem contains_of_entry (env : Ix.Environment) (ixe : Ixon.Env) {e : Entry}
-    (he : e ∈ stages env ixe) {n : Name}
-    (same : (e.name == n) = true) : (ofCompile env ixe).contains n = true := by
+/-- **An entry of the stages names a constant of the set**, up to hash. -/
+theorem contains_of_entry (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (table : Ix.AuxGen.AuxTable)
+    (ixe : Ixon.Env) {e : Entry} (he : e ∈ stages env condensed table ixe) {n : Name}
+    (same : (e.name == n) = true) : (ofCompile env condensed table ixe).contains n = true := by
   unfold ChangedSet.contains
   rw [ofCompile_eq]
   dsimp only
@@ -590,8 +727,32 @@ theorem leastName_none {s : Std.HashSet Name} {keep : Name → Bool} (h : leastN
 
 /-! ## A constant outside the set -/
 
-/-- **What a constant outside the changed set is not** (B9a). -/
-structure Unchanged (env : Ix.Environment) (ixe : Ixon.Env) (n : Name) : Prop where
+/-- A block of a condensation, among its entries. -/
+theorem blocks_toList {condensed : Ix.CondensedBlocks} {rep : Name} {mems : Ix.Set Name}
+    (h : condensed.blocks.get? rep = some mems) :
+    ∃ k, (rep == k) = true ∧ (k, mems) ∈ condensed.blocks.toList := by
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at h
+  exact h
+
+/-- A block's references, read with a default under a `==` key. -/
+theorem refs_getD {condensed : Ix.CondensedBlocks} {rep k : Name} {refs : Ix.Set Name}
+    (h : condensed.blockRefs.get? rep = some refs) (same : (rep == k) = true) :
+    condensed.blockRefs.getD k {} = refs := by
+  rw [Std.HashMap.getD_eq_getD_getElem?, ← Std.HashMap.getElem?_congr same, ← Std.HashMap.get?_eq_getElem?, h]
+  rfl
+
+/-- A name a set contains is, up to hash, one of its elements. -/
+theorem toList_of_contains {s : Ix.Set Name} {n : Name} (h : s.contains n = true) :
+    ∃ m ∈ s.toList, (m == n) = true := by
+  rw [← Std.HashSet.contains_toList, List.contains_iff_exists_mem_beq] at h
+  obtain ⟨m, hm, beq⟩ := h
+  exact ⟨m, hm, BEq.symm beq⟩
+
+/-- **What a constant outside the changed set is not** (B9a), for the changed
+set of a compile to `ixe` with the condensation `condensed` and the aux table
+`table`. -/
+structure Unchanged (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (table : Ix.AuxGen.AuxTable)
+    (ixe : Ixon.Env) (n : Name) : Prop where
   /-- In no class of a changed component. -/
   member : ∀ b ∈ changedBlocks env ixe, ∀ cls ∈ b.classes, n ∉ cls
   /-- No constructor of a member of a changed inductive component. -/
@@ -599,28 +760,55 @@ structure Unchanged (env : Ix.Environment) (ixe : Ixon.Env) (n : Name) : Prop wh
     ∀ cls ∈ b.classes, ∀ m ∈ cls, ∀ v, env.get? m = some (.inductInfo v) → n ∉ v.ctors
   /-- No image head of a changed inductive component's Lean block. -/
   head : ∀ b ∈ changedBlocks env ixe, b.kind = .inductiveBlock → n ∉ Ix.Compile.Pass.imageKinds env.get? b.all
-  /-- Published (under a name hashing like `n`), it references no such head. -/
-  caller : ∀ n' named ci, (n', named) ∈ ixe.named.toList → (n' == n) = true →
-    env.get? n' = some ci → ∀ r, (Ix.Compile.Canon.refsConst ci).contains r = true →
+  /-- A member (up to hash) of a condensation block, its block's references
+  hold no such head. -/
+  caller : ∀ rep mems, condensed.blocks.get? rep = some mems → mems.contains n = true →
+    ∀ refs, condensed.blockRefs.get? rep = some refs → ∀ r ∈ refs.toList,
       ∀ b ∈ changedBlocks env ixe, b.kind = .inductiveBlock → r ∉ Ix.Compile.Pass.imageKinds env.get? b.all
-  /-- Published with an original-form compile, it is published at that
-  compile's address. -/
-  original : ∀ n' named orig cmeta, (n', named) ∈ ixe.named.toList → (n' == n) = true →
-    named.original = some (orig, cmeta) → (env.get? n').isSome = true → orig = named.addr
+  /-- Not in the clique table: no member of an input clique, and no equation
+  lemma carried with one. -/
+  clique : (cliqueTables env condensed).1.contains n = false
+  /-- A member (up to hash) of a condensation block, its block's references
+  hold none of Lean's encoding constants of a clique. -/
+  cliqueCaller : ∀ rep mems, condensed.blocks.get? rep = some mems → mems.contains n = true →
+    ∀ refs, condensed.blockRefs.get? rep = some refs → ∀ r ∈ refs.toList,
+      Ix.Compile.Pass.Clique.encodingOwner? (cliqueTables env condensed).2 r = none
+  /-- Published (under a name hashing like `n`) with an original-form compile,
+  the aux table finds its record identical (the driver's verdict on bytes;
+  B9d reads it as bytes). -/
+  original : ∀ n' named, (n', named) ∈ ixe.named.toList → (n' == n) = true →
+    named.original.isSome = true → (env.get? n').isSome = true → table.identical n' = true
 
 /-- **A name the set does not contain is `Unchanged`.** -/
-theorem unchanged_of_not_contains (env : Ix.Environment) (ixe : Ixon.Env) {n : Name}
-    (absent : (ofCompile env ixe).contains n = false) : Unchanged env ixe n := by
-  have avoid : ∀ e ∈ stages env ixe, (e.name == n) = false := fun e he => by
+theorem unchanged_of_not_contains (env : Ix.Environment) (condensed : Ix.CondensedBlocks)
+    (table : Ix.AuxGen.AuxTable) (ixe : Ixon.Env) {n : Name}
+    (absent : (ofCompile env condensed table ixe).contains n = false) : Unchanged env condensed table ixe n := by
+  have avoid : ∀ e ∈ stages env condensed table ixe, (e.name == n) = false := fun e he => by
     cases h : (e.name == n) with
     | false => rfl
-    | true => rw [contains_of_entry env ixe he h] at absent; cases absent
-  have g₂₃ := namedStage_grows env ixe
-    (headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe)))
-  have g₁₂ := (headStage_grows env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).1
-  have lifted : ∀ e ∈ memberStage env (changedBlocks env ixe), (e.name == n) = false :=
-    fun e he => avoid e (g₂₃ e (g₁₂ e he))
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    | true => rw [contains_of_entry env condensed table ixe he h] at absent; cases absent
+  obtain ⟨H, hH⟩ : ∃ H, headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe)) = H :=
+    ⟨_, rfl⟩
+  have avoid' : ∀ e ∈ regenStage env table ixe (callerStage condensed H.2 (cliqueStage env condensed H.1)),
+      (e.name == n) = false := by
+    rw [← hH]; exact avoid
+  have toK : ∀ e ∈ callerStage condensed H.2 (cliqueStage env condensed H.1), (e.name == n) = false :=
+    fun e he => avoid' e (regenStage_grows env table ixe _ e he)
+  have toC : ∀ e ∈ cliqueStage env condensed H.1, (e.name == n) = false :=
+    fun e he => toK e (callerStage_grows condensed H.2 _ e he)
+  have toH : ∀ e ∈ H.1, (e.name == n) = false := fun e he => toC e (cliqueStage_grows env condensed H.1 e he)
+  have lifted : ∀ e ∈ memberStage env (changedBlocks env ixe), (e.name == n) = false := fun e he =>
+    toH e (by rw [← hH]; exact (headStage_grows env _ _).1 e he)
+  have inv : HeadsInv H := by rw [← hH]; exact heads_inv env _ _
+  have notHead : ∀ m, (m == n) = true → H.2.contains m = false := fun m same => by
+    cases hc : H.2.contains m with
+    | false => rfl
+    | true =>
+      obtain ⟨e, he, beq⟩ := inv m hc
+      have := toH e he
+      rw [BEq.trans beq same] at this
+      cases this
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro b hb cls hc hm
     have := lifted _ (member_entry env hb hc hm).1
     rw [BEq.rfl] at this
@@ -630,62 +818,71 @@ theorem unchanged_of_not_contains (env : Ix.Environment) (ixe : Ixon.Env) {n : N
     rw [BEq.rfl] at this
     cases this
   · intro b hb ind hn
-    have := avoid _ (g₂₃ _ (head_entry env hb ind _ hn).1)
+    have hentry : ({ name := n, cause := .imageHead, ref := b.first } : Entry) ∈ H.1 := by
+      rw [← hH]; exact (head_entry env hb ind _ hn).1
+    have := toH _ hentry
     rw [BEq.rfl] at this
     cases this
-  · intro n' named ci hn' same found r hr b hb ind himg
-    have hhead := (head_entry env hb ind (memberStage env (changedBlocks env ixe)) himg).2
-    have nonempty : (headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).2.isEmpty =
-        false := Std.HashSet.isEmpty_eq_false_iff_exists_contains_eq_true.mpr ⟨r, hhead⟩
-    have notHead :
-        (headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).2.contains n' = false := by
-      cases hc : (headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).2.contains n' with
-      | false => rfl
-      | true =>
-        obtain ⟨e, he, beq⟩ := heads_inv env _ _ n' hc
-        have := avoid e (g₂₃ e he)
-        rw [BEq.trans beq same] at this
-        cases this
-    cases hl : leastName (Ix.Compile.Canon.refsConst ci)
-        (headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).2.contains with
+  · intro rep mems hb hn refs hr r hrr b hb' ind himg
+    have hhead : H.2.contains r = true := by rw [← hH]; exact (head_entry env hb' ind _ himg).2
+    have nonempty : H.2.isEmpty = false :=
+      Std.HashSet.isEmpty_eq_false_iff_exists_contains_eq_true.mpr ⟨r, hhead⟩
+    obtain ⟨k, rk, hk⟩ := blocks_toList hb
+    obtain ⟨m, hm, same⟩ := toList_of_contains hn
+    cases hl : leastName (condensed.blockRefs.getD k {}) H.2.contains with
     | none =>
-      rw [← Std.HashSet.contains_toList, List.contains_iff_exists_mem_beq] at hr
-      obtain ⟨x, hx, beq⟩ := hr
-      have := leastName_none hl x hx
-      rw [← Std.HashSet.contains_congr beq, hhead] at this
+      rw [refs_getD hr rk] at hl
+      have := leastName_none hl r hrr
+      rw [hhead] at this
       cases this
     | some h =>
-      have outside :
-          (!(headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).2.isEmpty &&
-            !(headStage env (changedBlocks env ixe) (memberStage env (changedBlocks env ixe))).2.contains n') =
-              true := by
-        rw [nonempty, notHead]; rfl
-      have := avoid _ (caller_entry env ixe _ hn' outside found hl)
+      have := toK _ (headCaller_entry condensed _ nonempty hk hl hm (notHead m same))
       rw [same] at this
       cases this
-  · intro n' named orig cmeta hn' same horig hsome
-    cases hb : (orig == named.addr) with
-    | true => exact Address.beq_iff_eq.mp hb
+  · cases hc : (cliqueTables env condensed).1.contains n with
+    | false => rfl
+    | true =>
+      rw [Std.HashMap.contains_eq_isSome_getElem?] at hc
+      obtain ⟨cl, hcl⟩ := Option.isSome_iff_exists.mp hc
+      rw [Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hcl
+      obtain ⟨k, nk, hk⟩ := hcl
+      have := toC _ (clique_entry env condensed H.1 hk)
+      rw [BEq.symm nk] at this
+      cases this
+  · intro rep mems hb hn refs hr r hrr
+    cases henc : Ix.Compile.Pass.Clique.encodingOwner? (cliqueTables env condensed).2 r with
+    | none => rfl
+    | some all =>
+      obtain ⟨k, rk, hk⟩ := blocks_toList hb
+      obtain ⟨m, hm, same⟩ := toList_of_contains hn
+      have hrr' : r ∈ (condensed.blockRefs.getD k {}).toList := by rw [refs_getD hr rk]; exact hrr
+      have := toC _ (encCaller_entry env condensed H.1 hk hrr' henc hm)
+      rw [same] at this
+      cases this
+  · intro n' named hn' same horig hsome
+    cases hi : table.identical n' with
+    | true => rfl
     | false =>
-      have differs : (orig != named.addr && (env.get? n').isSome) = true := by
-        simp only [bne, hb, hsome, Bool.not_false, Bool.and_self]
-      have := avoid _ (regenerated_entry env ixe _ hn' horig differs)
+      have regen : (named.original.isSome && (env.get? n').isSome && !table.identical n') = true := by
+        rw [horig, hsome, hi]; rfl
+      have := avoid' _ (regenerated_entry env table ixe _ hn' regen)
       rw [same] at this
       cases this
 
 /-- **B9a: a constant of a closure that avoids the changed set is
 `Unchanged`.** -/
-theorem avoids_unchanged {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment}
-    (avoids : (ofCompile env ixe).Avoids sub) {n : Name} {ci : ConstantInfo}
-    (found : sub.consts.get? n = some ci) : Unchanged env ixe n :=
-  unchanged_of_not_contains env ixe (avoids n ci found)
+theorem avoids_unchanged {env : Ix.Environment} {condensed : Ix.CondensedBlocks} {table : Ix.AuxGen.AuxTable}
+    {ixe : Ixon.Env} {sub : Ix.Environment} (avoids : (ofCompile env condensed table ixe).Avoids sub)
+    {n : Name} {ci : ConstantInfo} (found : sub.consts.get? n = some ci) : Unchanged env condensed table ixe n :=
+  unchanged_of_not_contains env condensed table ixe (avoids n ci found)
 
 end Ix.Cert.Unchanged
 
 /-! ## Pass 3's heads are in the changed set (`checkReport`'s eleventh check)
 
-The check reads the regenerated published input names (`Ix.Cert.regeneratedNames`),
-each of which has a `regenerated` entry in the changed set whatever its
+The check reads the regenerated published input names
+(`Ix.Cert.regeneratedNames`, under the compile's aux table), each of which has
+a `regenerated` entry in the changed set over the input's map, whatever its
 changed components (`regenerated_entry`). -/
 
 namespace Ix.Cert
@@ -700,42 +897,37 @@ theorem exact_insert_contains {s : Std.HashSet Ix.Compile.ExactKey.ExactName}
   · exact .inl (beq_iff_eq.mp h)
   · exact .inr h
 
-/-- A regenerated name is a published input name whose `Named` entry has an
-original-form record at another address. -/
-theorem regeneratedNames_spec {env : Ix.Environment} {ixe : Ixon.Env}
-    {n : Ix.Compile.ExactKey.ExactName} (h : (regeneratedNames env ixe).contains n = true) :
-    ∃ (named : Ixon.Named) (orig : Address) (cmeta : Ixon.ConstantMeta),
-      ((n : Name), named) ∈ ixe.named.toList ∧ named.original = some (orig, cmeta) ∧
-        (orig != named.addr && (env.consts.get? n).isSome) = true := by
+/-- A regenerated name is a published input name with an original-form record
+that the aux table does not find identical. -/
+theorem regeneratedNames_spec {env : Ix.Environment} {table : Ix.AuxGen.AuxTable} {ixe : Ixon.Env}
+    {n : Ix.Compile.ExactKey.ExactName} (h : (regeneratedNames env table ixe).contains n = true) :
+    ∃ named : Ixon.Named, ((n : Name), named) ∈ ixe.named.toList ∧
+      (named.original.isSome && (env.consts.get? n).isSome && !table.identical n) = true := by
   unfold regeneratedNames at h
   rw [Std.HashMap.fold_eq_foldl_toList] at h
   have key : ∀ (l : List (Name × Ixon.Named)) (s : Std.HashSet Ix.Compile.ExactKey.ExactName),
-      (l.foldl (fun s p => match p.2.original with
-        | some (orig, _) => if (orig != p.2.addr && (env.consts.get? p.1).isSome) = true then s.insert p.1 else s
-        | none => s) s).contains n = true →
-      s.contains n = true ∨ ∃ (named : Ixon.Named) (orig : Address) (cmeta : Ixon.ConstantMeta),
-        ((n : Name), named) ∈ l ∧ named.original = some (orig, cmeta) ∧
-          (orig != named.addr && (env.consts.get? n).isSome) = true := by
+      (l.foldl (fun s p =>
+        if (p.2.original.isSome && (env.consts.get? p.1).isSome && !table.identical p.1) = true then s.insert p.1
+        else s) s).contains n = true →
+      s.contains n = true ∨ ∃ named : Ixon.Named, ((n : Name), named) ∈ l ∧
+        (named.original.isSome && (env.consts.get? n).isSome && !table.identical n) = true := by
     intro l
     induction l with
     | nil => intro s hs; exact .inl hs
     | cons p l ih =>
       intro s hs
       rw [List.foldl_cons] at hs
-      rcases ih _ hs with hs | ⟨named, orig, cmeta, hmem, ho, hd⟩
+      rcases ih _ hs with hs | ⟨named, hmem, hd⟩
       · obtain ⟨k, named⟩ := p
         dsimp only at hs
         split at hs
-        · rename_i orig cmeta ho
-          split at hs
-          · rename_i hd
-            rcases exact_insert_contains (k := k) hs with hk | hs
-            · subst hk
-              exact .inr ⟨named, orig, cmeta, List.mem_cons_self, ho, hd⟩
-            · exact .inl hs
+        · rename_i hd
+          rcases exact_insert_contains (k := k) hs with hk | hs
+          · subst hk
+            exact .inr ⟨named, List.mem_cons_self, hd⟩
           · exact .inl hs
         · exact .inl hs
-      · exact .inr ⟨named, orig, cmeta, List.mem_cons_of_mem _ hmem, ho, hd⟩
+      · exact .inr ⟨named, List.mem_cons_of_mem _ hmem, hd⟩
   rcases key _ ∅ h with h | h
   · simp at h
   · exact h
@@ -748,13 +940,19 @@ theorem get?_isSome_of_consts {env : Ix.Environment} {n : Name} (h : (env.consts
   rw [hci]
   rfl
 
+/-- The input's map, as an environment, reads as the map. -/
+theorem consts_get? (consts : Std.HashMap Ix.Name Ix.ConstantInfo) (x : Ix.Name) :
+    ({ consts } : Ix.Environment).get? x = consts.get? x := by
+  unfold Ix.Environment.get?
+  split <;> simp_all
+
 /-- What `foreignHead = none` says first: every key of `heads` is a
 regenerated published input name. -/
-theorem foreignHead_regenerated {env : Ix.Environment}
+theorem foreignHead_regenerated {env : Ix.Environment} {table : Ix.AuxGen.AuxTable}
     {heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name} {ixe : Ixon.Env}
-    (h : foreignHead env heads ixe = none) :
+    (h : foreignHead env table heads ixe = none) :
     ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), heads.get? n = some k →
-      (regeneratedNames env ixe).contains n = true := by
+      (regeneratedNames env table ixe).contains n = true := by
   intro n k hn
   unfold foreignHead at h
   have hne : heads.isEmpty = false := by
@@ -768,35 +966,47 @@ theorem foreignHead_regenerated {env : Ix.Environment}
     exact hn
   have hfind := h (n, k) hmem
   dsimp only at hfind
-  cases hc : (regeneratedNames env ixe).contains n
+  cases hc : (regeneratedNames env table ixe).contains n
   · simp [hc] at hfind
   · rfl
 
 /-- What `foreignHead = none` says: every key of `heads` is in the changed
-set of the compile of `env` to `ixe` (each is a regenerated published input
-name, `foreignHead_regenerated` and `regeneratedNames_spec`, with a
-`regenerated` entry in the set, `Unchanged.regenerated_entry`). -/
-theorem foreignHead_none {env : Ix.Environment}
+set, over the input's map, of a compile to `ixe` with the aux table `table`
+and any condensation (each is a regenerated published input name,
+`foreignHead_regenerated` and `regeneratedNames_spec`, with a `regenerated`
+entry in the set, `Unchanged.regenerated_entry`). -/
+theorem foreignHead_none {env : Ix.Environment} {table : Ix.AuxGen.AuxTable}
     {heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name} {ixe : Ixon.Env}
-    (h : foreignHead env heads ixe = none) :
+    (h : foreignHead env table heads ixe = none) (condensed : Ix.CondensedBlocks) :
     ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), heads.get? n = some k →
-      (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
+      (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } condensed table ixe).contains n = true := by
   intro n k hn
-  obtain ⟨named, orig, cmeta, hnamed, ho, hd⟩ := regeneratedNames_spec (foreignHead_regenerated h n k hn)
-  rw [Bool.and_eq_true] at hd
-  exact contains_of_entry env ixe
-    (regenerated_entry env ixe _ hnamed ho (by rw [Bool.and_eq_true]; exact ⟨hd.1, get?_isSome_of_consts hd.2⟩))
-    BEq.rfl
+  obtain ⟨named, hnamed, hd⟩ := regeneratedNames_spec (foreignHead_regenerated h n k hn)
+  refine contains_of_entry _ condensed table ixe (regenerated_entry _ table ixe _ hnamed ?_) BEq.rfl
+  have e : ({ consts := env.consts } : Ix.Environment).get? (n : Name) = env.consts.get? (n : Name) :=
+    consts_get? _ _
+  rw [e]
+  exact hd
+
+/-- The compile's aux table is the final compile environment's. -/
+theorem compileTable_eq {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    {cenv : Ix.CompileM.CompileEnv} (h : compileUnchecked env = .ok (ixe, failures, cenv)) :
+    compileTable env = cenv.auxReport.table := by
+  unfold compileTable
+  rw [h]
 
 /-- **Pass 3's heads are in the changed set**: in the driver's final
 environment, which `compileUnchecked` returns, every Pass 3 head is in the
-compile's changed set (`checkReport`'s eleventh check). -/
+changed set of the compile, over the input's map, its condensation and its
+aux table (`checkReport`'s eleventh check). -/
 theorem headsChanged {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
       ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k →
-        (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
+        (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
+          ixe).contains n = true := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, foreignHead_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1⟩
+  rw [compileTable_eq hu]
+  exact ⟨cenv, hu, foreignHead_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1 _⟩
 
 end Ix.Cert

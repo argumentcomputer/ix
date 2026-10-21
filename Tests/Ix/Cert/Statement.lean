@@ -385,13 +385,14 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   -- then refusing, by its own message, the environment with a resolved name
   -- outside the changed set (so not regenerated) planted as a head
   let q0 ← IO.monoMsNow
-  let foreign? ← IO.lazyPure fun _ => Ix.Cert.foreignHead env cenv.p3Heads ixe
+  let foreign? ← IO.lazyPure fun _ => Ix.Cert.foreignHead env cenv.auxReport.table cenv.p3Heads ixe
   let q1 ← IO.monoMsNow
   match foreign? with
   | none => lines := lines.push s!"{label}: foreignHead finds every Pass 3 head among the regenerated names \
       ({cenv.p3Heads.size} heads, {q1 - q0} ms)"
   | some h => errors := errors.push s!"{label}: foreignHead finds {h.pretty} in the compile's result"
-  let changed := Ix.Compile.ChangedSet.ofCompile env ixe
+  let changed := Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (Ix.Cert.compileBlocks env)
+    cenv.auxReport.table ixe
   let outside := resolved.toList.findSome? fun (n, _) =>
     if changed.contains (n : Ix.Name) then none else some (n : Ix.Name)
   match outside with
@@ -705,13 +706,33 @@ def noCtorCases (label : String) (env : Ix.Environment) : IO (Array String × Ar
 
 /-! ## A constant outside the changed set (Route A, B9a) -/
 
+/-- The clique tables' type (`Ix.Compile.ChangedSet.cliqueTables`: the clique table and
+the encoding roots), computed once per compile for `unchangedFacts`. -/
+abbrev CliqueTables := Std.HashMap Ix.Name (Array Ix.Name × Array Ix.Name) × Std.HashMap Ix.Name (Array Ix.Name)
+
+/-- The references of the condensation blocks holding each member, keyed by
+the member (one pass over the condensation). -/
+def holdingRefs (condensed : Ix.CondensedBlocks) : Std.HashMap Ix.Name (Array (Ix.Set Ix.Name)) :=
+  condensed.blocks.fold (init := {}) fun acc rep mems =>
+    let refs := condensed.blockRefs.getD rep {}
+    mems.fold (init := acc) fun acc m =>
+      acc.alter m fun
+        | some a => some (a.push refs)
+        | none => some #[refs]
+
 /-- B9a's facts (`Ix.Cert.Unchanged.Unchanged`), decided for one input name,
 reading names with `Ix.Name`'s `==` (stored hashes) as the set does: in no
 class of a changed component, no constructor of an inductive one's members, no
-image head of its Lean block, published with no reference to such a head, and
-published at its original-form compile's address where it has one. -/
-def unchangedFacts (env : Ix.Environment) (ixe : Ixon.Env) (blocks : Array Ix.Compile.ChangedSet.Block)
-    (heads : Std.HashSet Ix.Name) (n : Ix.Name) : Bool :=
+image head of its Lean block; no condensation block holding it references such
+a head; not in the clique table, and no condensation block holding it
+references one of Lean's encoding constants of a clique; and, published with an
+original-form compile, found identical by the aux table. The clique tables
+(`tables`) and the condensation blocks' references by member (`holdingOf`,
+`holdingRefs`) are computed once per compile. -/
+def unchangedFacts (env : Ix.Environment) (table : Ix.AuxGen.AuxTable)
+    (ixe : Ixon.Env) (blocks : Array Ix.Compile.ChangedSet.Block) (heads : Std.HashSet Ix.Name)
+    (tables : CliqueTables) (holdingOf : Std.HashMap Ix.Name (Array (Ix.Set Ix.Name)))
+    (n : Ix.Name) : Bool :=
   let inductives := blocks.filter (·.kind == .inductiveBlock)
   let member := blocks.all fun b => b.classes.all fun cls => !cls.contains n
   let ctor := inductives.all fun b => b.classes.all fun cls => cls.all fun m =>
@@ -719,24 +740,30 @@ def unchangedFacts (env : Ix.Environment) (ixe : Ixon.Env) (blocks : Array Ix.Co
     | some (.inductInfo v) => !v.ctors.contains n
     | _ => true
   let head := !heads.contains n
-  let published := ixe.named.get? n
-  let caller := match published, env.get? n with
-    | some _, some ci => (Ix.Compile.Canon.refsConst ci).toList.all fun r => !heads.contains r
-    | _, _ => true
-  let original := match published with
-    | some named => match named.original with
-      | some (orig, _) => !(env.get? n).isSome || orig == named.addr
-      | none => true
+  -- the references of the condensation blocks that hold `n`
+  let holding : Array (Ix.Set Ix.Name) := holdingOf.getD n #[]
+  let caller := holding.all fun refs => refs.toList.all fun r => !heads.contains r
+  let clique := !tables.1.contains n
+  let cliqueCaller := holding.all fun refs => refs.toList.all fun r =>
+    (Ix.Compile.Pass.Clique.encodingOwner? tables.2 r).isNone
+  let original := match ixe.named.get? n with
+    | some named => !named.original.isSome || !(env.get? n).isSome || table.identical n
     | none => true
-  member && ctor && head && caller && original
+  member && ctor && head && caller && clique && cliqueCaller && original
 
-/-- B9a on one compile: the facts of every input name against the set: a name
-outside the set has them all (what `avoids_unchanged` proves), and a name in
-the set fails one (the facts single the set out). -/
-def unchangedCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) : Array String × Array String := Id.run do
+/-- B9a on one compile, with its condensation and aux table: the facts of
+every input name against the set (over the input's map, as the statements
+read it): a name outside the set has them all (what `avoids_unchanged`
+proves), and a name in the set fails one (the facts single the set out). -/
+def unchangedCases (label : String) (env : Ix.Environment) (condensed : Ix.CondensedBlocks)
+    (table : Ix.AuxGen.AuxTable) (ixe : Ixon.Env) : Array String × Array String := Id.run do
+  let env : Ix.Environment := { consts := env.consts }
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
-  let cs := Ix.Compile.ChangedSet.ofCompile env ixe
+  let cs := Ix.Compile.ChangedSet.ofCompile env condensed table ixe
+  -- computed once: the clique tables and the blocks holding each name
+  let tables := Ix.Compile.ChangedSet.cliqueTables env condensed
+  let holdingOf := holdingRefs condensed
   let blocks := Ix.Compile.ChangedSet.changedBlocks env ixe
   let heads : Std.HashSet Ix.Name := blocks.foldl (init := {}) fun s b =>
     if b.kind == .inductiveBlock then
@@ -747,7 +774,7 @@ def unchangedCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) : Ar
   let mut wrong : Array String := #[]
   for (n, _) in env.consts do
     let member := cs.contains n
-    let facts := unchangedFacts env ixe blocks heads n
+    let facts := unchangedFacts env table ixe blocks heads tables holdingOf n
     if member then inSet := inSet + 1
     if facts then unchanged := unchanged + 1
     if member == facts then wrong := wrong.push s!"{n.pretty} ({if member then "in the set, has the facts" else "outside the set, lacks a fact"})"
@@ -815,7 +842,8 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   errors := errors ++ roleErrors
   lines := lines ++ roleLines
   -- a constant outside the changed set (Route A, B9a)
-  let (unchangedErrors, unchangedLines) := unchangedCases label env ixe
+  let (unchangedErrors, unchangedLines) :=
+    unchangedCases label env (Ix.Cert.compileBlocks env) cenv.auxReport.table ixe
   errors := errors ++ unchangedErrors
   lines := lines ++ unchangedLines
   -- the IO pipeline
@@ -1222,13 +1250,16 @@ def noCtorInitStdSuite : List TestSeq := [
 
 
 /-- `cert-unchanged`: B9a on the aux-heavy fixture corpus (`validateAuxClosure`, the
-`changed-set` corpus, which has changed components), compiled by `Ix.Cert.compileReport`. -/
+`changed-set` corpus, which has changed components), compiled by `Ix.Cert.compileReport` (`compileUnchecked`, then `checkReport`: the final
+compile environment gives the aux table). -/
 def unchangedCorpus (leanEnv : Lean.Environment) : IO UInt32 := do
   let filtered := validateAuxClosure leanEnv
   let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon filtered.toArray 8
-  let (ixe, failures) ← IO.ofExcept (← IO.lazyPure fun _ => Ix.Cert.compileReport env)
+  -- `compileReport`, with the final compile environment for the aux table
+  let (ixe, failures, cenv) ← IO.ofExcept (← IO.lazyPure fun _ => Ix.Cert.compileUnchecked env)
+  IO.ofExcept (Ix.Cert.checkReport env cenv (ixe, failures))
   IO.println s!"[cert-unchanged] corpus: {filtered.length} constants, {failures.toMap.size} failures"
-  let (errors, lines) := unchangedCases "corpus" env ixe
+  let (errors, lines) := unchangedCases "corpus" env (Ix.Cert.compileBlocks env) cenv.auxReport.table ixe
   for l in lines do IO.println s!"[cert-unchanged] {l}"
   for e in errors do IO.eprintln s!"[cert-unchanged] FAIL {e}"
   return if errors.isEmpty then 0 else 1

@@ -27,7 +27,11 @@ aux map as a primary claim of a block compile, the block compile's under
   snapshot (`not_head`: a head the final environment keeps is a regenerated
   input name in the changed set, the eleventh check; one it withdrew is a
   recorded failure, an input name by the fourteenth; either is refuted for a
-  name the closure reaches). -/
+  name the closure reaches), and no member is in the clique table and no
+  reference is one of Lean's encoding constants of a clique (the changed
+  set's `clique` and `caller` entries, `Unchanged.clique` and
+  `Unchanged.cliqueCaller`, against the tables the fold keeps,
+  `Resolution.reach_cliques`), so the clique step is the identity. -/
 
 namespace Ix.Cert.HookFree
 
@@ -338,7 +342,8 @@ theorem namedEnv_view {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
 and each recorded failure is an input name (the fourteenth) and reported. -/
 structure Final (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) (cenv : CompileEnv) : Prop where
   changed : ∀ (n : ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k →
-    (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true
+    (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
+      ixe).contains n = true
   headInput : ∀ (n : ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k → (env.consts.get? n).isSome = true
   failInput : ∀ x : Ix.Name, cenv.ungrounded.contains x = true → (env.consts.get? x).isSome = true
   failed : ∀ x : Ix.Name, cenv.ungrounded.contains x = true → failures.failed x = true
@@ -356,7 +361,8 @@ environment follows. -/
 theorem not_head {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures} {roots : List Ix.Name}
     {sub : Ix.Environment} {cenv : CompileEnv} (hf : Final env ixe failures cenv)
     (hcl : IsClosure env roots sub) (nofail : NoFailure failures sub)
-    (avoids : (Ix.Compile.ChangedSet.ofCompile env ixe).Avoids sub) {c : CompileEnv} (hm : Mono c cenv)
+    (avoids : (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
+      ixe).Avoids sub) {c : CompileEnv} (hm : Mono c cenv)
     {x : Ix.Name} (hx : Reaches env roots x) : c.p3Heads.contains x = false := by
   cases hc : c.p3Heads.contains x with
   | false => rfl
@@ -382,16 +388,36 @@ theorem ground_getD_dependsOn {env : Ix.Environment} {a r : Ix.Name}
   | none => rw [hg] at h; simp at h
   | some rs => rw [hg] at h; exact groundSplit_dependsOn (env := { consts := env.consts }) hg h
 
+/-- The clique tables the changed set reads are the ones the driver installs:
+`scheduleCliques` over the driver's view of the input and the compile's
+condensation. -/
+theorem cliqueTables_eq (env : Ix.Environment) :
+    Ix.Compile.ChangedSet.cliqueTables { consts := env.consts } (compileBlocks env) =
+      (Ix.Compile.Pass.Clique.scheduleCliques
+        { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) }
+        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)).2 := by
+  unfold Ix.Compile.ChangedSet.cliqueTables compileBlocks
+  rfl
+
 /-- **`HookFree` at a block of the closure**: no reference of the block
 holding its key is a head (each is reached from the closure), and no member
-is (so it is not an image block). -/
+is (so it is not an image block); no member is in the clique table, and no
+reference is one of Lean's encoding constants of a clique (the changed set's
+`clique` and `caller` entries, against the tables the fold keeps), so the
+clique step is the identity. -/
 theorem hookFree_of_sub {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures} {roots : List Ix.Name}
     {sub : Ix.Environment} {cenv : CompileEnv} (hf : Final env ixe failures cenv)
     (hcl : IsClosure env roots sub) (nofail : NoFailure failures sub)
-    (avoids : (Ix.Compile.ChangedSet.ofCompile env ixe).Avoids sub) {cenv₀ : CompileEnv} {sched : FoldSchedule}
+    (avoids : (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
+      ixe).Avoids sub) {cenv₀ : CompileEnv} {sched : FoldSchedule}
     {snap : DriverAcc} {rep : Ix.Name} {all : Ix.Set Ix.Name}
     (hsnap : Reach (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
       (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc snap)
+    (htab : ((FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.p3Cliques,
+        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.p3CliqueRoots) =
+      (Ix.Compile.Pass.Clique.scheduleCliques
+        { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) }
+        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)).2)
     (hm : Mono snap.cenv cenv)
     (hall : (Ix.CondenseM.run (groundSplit { consts := env.consts }).1).blocks.get? rep = some all)
     (hsub : ∀ x, all.contains x = true → InSub sub x) : HookFree snap.cenv all (blockKey rep all) := by
@@ -401,8 +427,18 @@ theorem hookFree_of_sub {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fail
     init_p3BlockRefs (cenv := cenv₀) (sched := sched) hall hrs fun _ _ hb => condense_nonempty hb
   have hsub' : ∀ x, all'.contains x = true → InSub sub x := fun x hx =>
     closure_path hcl (condense_scc hall' hkey' hx) (hsub _ hkey)
+  have hun : ∀ x, InSub sub x →
+      Ix.Cert.Unchanged.Unchanged { consts := env.consts } (compileBlocks env) (compileTable env) ixe x :=
+    fun x hx => by
+      obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hx
+      exact Ix.Cert.Unchanged.avoids_unchanged avoids hci
+  have tabs : snap.cenv.p3Cliques = (Ix.Compile.ChangedSet.cliqueTables { consts := env.consts } (compileBlocks env)).1 ∧
+      snap.cenv.p3CliqueRoots =
+        (Ix.Compile.ChangedSet.cliqueTables { consts := env.consts } (compileBlocks env)).2 := by
+    rw [(reach_cliques hsnap).1, (reach_cliques hsnap).2, cliqueTables_eq, ← htab]
+    exact ⟨rfl, rfl⟩
   refine ⟨Ix.Cert.PassHooks.prepareBlock_unreferenced _ _ _ refs (by rw [reach_p3BlockRefs hsnap]; exact hinit)
-    fun r hr => ?_, ?_⟩
+    fun r hr => ?_, ?_, Ix.Cert.PassHooks.cliqueStep_inert _ _ _ ?_⟩
   · obtain ⟨rs', hrs'', hsplit⟩ := condense_blockRefs hall'
     rw [hrefs'] at hrs''
     cases hrs''
@@ -419,6 +455,26 @@ theorem hookFree_of_sub {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fail
       have := not_head hf hcl nofail avoids hm (reaches_of_sub hcl hin)
       rw [isImageBlock_heads hi a ha] at this
       cases this
+  · -- no member in the clique table (`Unchanged.clique`)
+    have hmem : all.toList.any snap.cenv.p3Cliques.contains = false := by
+      rw [List.any_eq_false]
+      intro x hx hc
+      have := (hun x (hsub x (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_of_mem_toList hx)))).clique
+      rw [← tabs.1, hc] at this
+      cases this
+    -- no reference that is an encoding constant (`Unchanged.cliqueCaller`, at the key)
+    have hrefs : ((snap.cenv.p3BlockRefs.getD (blockKey rep all) {}).toList.any fun r =>
+        (Ix.Compile.Pass.Clique.encodingOwner? snap.cenv.p3CliqueRoots r).isSome) = false := by
+      rw [List.any_eq_false]
+      intro r hr hsome
+      rw [reach_p3BlockRefs hsnap, Std.HashMap.getD_eq_getD_getElem?, ← Std.HashMap.get?_eq_getElem?,
+        hinit] at hr
+      have := (hun _ (hsub _ hkey)).cliqueCaller rep' all' hall' hkey' refs hrefs' r hr
+      rw [tabs.2, this] at hsome
+      cases hsome
+    unfold Ix.Compile.Pass.cliqueInert
+    rw [hmem, hrefs]
+    simp
 
 /-- **A cross-SCC claim of the closure is refuted** by the tenth check: its
 name, or its constructor's inductive, is an extra name or a failure. -/
@@ -472,10 +528,10 @@ theorem final_of_report {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fail
   cases hu₂
   cases hu₃
   refine ⟨hch, fun n k hk => ?_, hin, fun x hx => compileUnchecked_ungrounded hu hx⟩
-  obtain ⟨_, _, _, -, -, hd⟩ :=
+  obtain ⟨_, -, hd⟩ :=
     regeneratedNames_spec (foreignHead_regenerated (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1 n k hk)
-  rw [Bool.and_eq_true] at hd
-  exact hd.2
+  rw [Bool.and_eq_true, Bool.and_eq_true] at hd
+  exact hd.1.2
 
 /-- **B9b with `HookFree` discharged**: when `compileReport` returns, every
 resolved name `n ↦ a` outside the final aux map that a closure `sub` holds,
@@ -488,7 +544,8 @@ that compile (`HookFree`), and the claim is the block compile's
 theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {roots : List Ix.Name} {sub : Ix.Environment} (h : compileReport env = .ok (ixe, failures))
     (hcl : IsClosure env roots sub) (nofail : NoFailure failures sub)
-    (avoids : (Ix.Compile.ChangedSet.ofCompile env ixe).Avoids sub) :
+    (avoids : (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
+      ixe).Avoids sub) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
       blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
@@ -505,7 +562,7 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
           HookFree snap.cenv all (blockKey rep all) ∧ BlockCompiled snap.cenv all (blockKey rep all) n a b := by
   obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
   have hf := final_of_report h hu
-  obtain ⟨bytes, cenv₀, sched, -, henv, prov⟩ := compileUnchecked_provenance hu
+  obtain ⟨bytes, cenv₀, sched, -, henv, htab, prov⟩ := compileUnchecked_provenance hu
   refine ⟨cenv, _, cenv₀, sched, hu, rfl, fun n a hn hnaux hs => ⟨pub n a hn, ?_⟩⟩
   rcases prov n a hn with hx | ⟨b, hc, hb⟩
   · rw [hnaux] at hx; cases hx
@@ -528,7 +585,7 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
         exact ⟨m, hm, hms⟩
     have hsub : ∀ x, all.contains x = true → InSub sub x := fun x hx =>
       closure_path hcl (condense_scc hall hmA hx) hms
-    have hfree := hookFree_of_sub hf hcl nofail avoids hsnap hfinal hall hsub
+    have hfree := hookFree_of_sub hf hcl nofail avoids hsnap htab hfinal hall hsub
     exact ⟨snap, rep, all, r, c, layout, p, b, hsnap, hall, hfinal, hsub, hr, hclaim, hb, hfree,
       hookFree_compiled hfree hr hclaim⟩
   | promoted cs cn cf im na nf =>

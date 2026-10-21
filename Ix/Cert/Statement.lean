@@ -613,7 +613,7 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       unoriginalAux env cenv.auxNameToAddr out.1 = none ∧
       unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
       crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-      foreignHead env cenv.p3Heads out.1 = none ∧ misnamedInput env = none ∧
+      foreignHead env cenv.auxReport.table cenv.p3Heads out.1 = none ∧ misnamedInput env = none ∧
       strayConstructor env = none ∧ strayFailure env cenv.ungrounded = none := by
   unfold checkReport at h
   -- walk the checks in order: every failing branch is an error, so the one
