@@ -22,6 +22,7 @@ import Ix.Cert.OriginalBytes
 import Ix.Cert.HookFree
 import Ix.Cert.CtxAgree
 import Ix.Cert.CtxAgreeHints
+import Ix.Cert.SourcePrelude
 import Ix.Cert.CtxAgreeProj
 
 /-! # The certification statements, frozen
@@ -5223,3 +5224,26 @@ run_cmd do
   checkRoots (tag := "cert-audit") "projection lookup transport"
     (#[`projRewrite_mapKeys, `lowerDefinition_mapKeys,
       `lowerInductive_owners].map (`Ix.Cert.CtxAgree ++ ·))
+
+/-! ## Source prelude entries at every group boundary
+
+`SourcePrelude.prepareSourceCollapsed_prefix` extracts the actual raw/kept
+lowering trace from successful preparation and proves equality of all five
+reader maps at prelude keys at every retained-read boundary. Successful
+collapse claims names monotonically and keeps only fresh declarations;
+the raw closing declaration also claims the unfiltered side arrays' keys.
+Both modeller rungs emit no basis declarations, proved from their output
+constructors. Thus the existing final-state prelude check gives every
+boundary's equality, with no executed-checker acceptance or units premise.
+Target-prefix coverage and raw/kept reading alignment remain separate
+composition obligations. -/
+
+/-- info: [cert-audit] source prelude prefixes: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "source prelude prefixes"
+    ((#[`collapseRead_facts, `lowerAllCollapsed_trace, `collapseGroup_sideFresh,
+      `lower_noBasis, `group_frame, `lowerAllCollapsed_prefix,
+      `prepareSourceCollapsed_prefix].map (`Ix.Cert.SourcePrelude ++ ·)) ++
+      #[``Ix.Cert.SourcePrelude.Shape.generate_noBasis])
