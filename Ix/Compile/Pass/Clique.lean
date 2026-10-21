@@ -46,7 +46,14 @@
   * `Recover`: the recovered specification of a clique (each member's body
     with its recursion made explicit again, checked by re-encoding), its
     normalised form (`normalisedSpecs`) and the canonical order it gives
-    (`cliqueOrder`).
+    (`cliqueOrder`);
+  * `PlanClique`: the plan of a clique (`planClique`: the encoding, the
+    authenticated structural family, the order, the transport, the checks),
+    and the canonical constants and transported members as input constants
+    (`canonConst`, `withValue`);
+  * `Hook`: the hook's per-block computation as pure functions over a
+    `HookEnv` (`cliquePlanFor`, `cliqueCallers`, `prepareCliques` →
+    `CliquePrep`), unwired.
 
   Not imported by the compiler (`Ix.Compile.Pass` does not import it). No
   `MetaM`, no kernel, no `partial`.
@@ -72,3 +79,5 @@ public import Ix.Compile.Pass.Clique.Table
 public import Ix.Compile.Pass.Clique.Order
 public import Ix.Compile.Pass.Clique.Transport
 public import Ix.Compile.Pass.Clique.Recover
+public import Ix.Compile.Pass.Clique.PlanClique
+public import Ix.Compile.Pass.Clique.Hook
