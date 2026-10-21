@@ -917,7 +917,14 @@ constructor:
 -- compiler (`compile_env`) refuse it. The condensation is named once (`blocks`)
 -- and passed to the refusal and to the driver; the driver's arguments are the
 -- same. `compile-reserved-mdata` checks all three compilers name the same input.
-/-- info: def Ix.Cert.compileUnchecked : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
+--
+-- Route A, B9b, check 3a (coordinator decision, 2026-10-20): re-frozen.
+-- `compileUnchecked` also returns the driver's resolution map at the end of the
+-- fold (`cenv.nameToAddr`, which it used to drop), for `checkReport`'s sixth
+-- check (section "Resolved names are published where they resolve" below). The
+-- environment and failures it returns are the same.
+/-- info: def Ix.Cert.compileUnchecked : Ix.Environment →
+  Except String (Ixon.Env × Ix.Cert.Failures × Std.HashMap Ix.Compile.ExactKey.ExactName Address) :=
 fun env =>
   have env := { consts := env.consts };
   have split := Ix.Cert.groundSplit env;
@@ -929,7 +936,7 @@ fun env =>
     | (ixe, fst, cenv) =>
       have ungrounded :=
         Std.HashMap.fold (fun m n e => m.insert n (e.refusal (Std.HashMap.contains split.snd))) ∅ split.snd;
-      pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }) -/
+      pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }, cenv.nameToAddr) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compileUnchecked
 
@@ -1104,8 +1111,9 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.referenceCycle
 
-/-- info: def Ix.Cert.checkReport : Ix.Environment → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
-fun env out =>
+/-- info: def Ix.Cert.checkReport : Ix.Environment →
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
+fun env resolved out =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
   | [], [] =>
     match Ix.Cert.referenceCycle out.fst with
@@ -1113,7 +1121,19 @@ fun env out =>
       match Ix.Cert.nameHashCollision env out.fst with
       | none =>
         match Ix.Cert.mutsMismatch out.fst with
-        | none => Except.ok ()
+        | none =>
+          match Ix.Cert.resolutionMismatch resolved out.fst with
+          | none => Except.ok ()
+          | some (n, a, published) =>
+            have found :=
+              match published with
+              | some b => toString "published at " ++ toString b
+              | none => "not published";
+            Except.error
+              (toString "compileReport: resolution check failed: " ++ toString n.pretty ++ toString " resolves to " ++
+                    toString a ++
+                  toString " but is " ++
+                toString found)
         | some (entry, i, h) =>
           Except.error
             (toString "compileReport: Muts check failed: the entry " ++ toString entry.pretty ++
@@ -1150,9 +1170,11 @@ fun env out =>
 
 /-- info: def Ix.Cert.compileReport : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
 fun env => do
-  let out ← Ix.Cert.compileUnchecked env
-  Ix.Cert.checkReport env out
-  pure out -/
+  let __x ← Ix.Cert.compileUnchecked env
+  match __x with
+    | (ixe, failures, resolved) => do
+      Ix.Cert.checkReport env resolved (ixe, failures)
+      pure (ixe, failures) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compileReport
 
@@ -1265,16 +1287,20 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 -- CQ2.27: coverage and authenticity, by construction.
 /-- info: @Ix.Cert.compileReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
   Ix.Cert.compileReport env = Except.ok out →
-    Ix.Cert.compileUnchecked env = Except.ok out ∧ Ix.Cert.checkReport env out = Except.ok () -/
+    ∃ resolved,
+      Ix.Cert.compileUnchecked env = Except.ok (out.fst, out.snd, resolved) ∧
+        Ix.Cert.checkReport env resolved out = Except.ok () -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileReport_ok
 
-/-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
-  Ix.Cert.checkReport env out = Except.ok () →
+/-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
+  {out : Ixon.Env × Ix.Cert.Failures},
+  Ix.Cert.checkReport env resolved out = Except.ok () →
     Ix.Cert.uncovered env out.fst out.snd = [] ∧
       Ix.Cert.unauthentic out.fst = [] ∧
         Ix.Cert.referenceCycle out.fst = none ∧
-          Ix.Cert.nameHashCollision env out.fst = none ∧ Ix.Cert.mutsMismatch out.fst = none -/
+          Ix.Cert.nameHashCollision env out.fst = none ∧
+            Ix.Cert.mutsMismatch out.fst = none ∧ Ix.Cert.resolutionMismatch resolved out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4390,6 +4416,46 @@ fun ixe =>
     ixe.named.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.mutsMismatch
+
+/-! ## Resolved names are published where they resolve (B9b, check 3a; coordinator decision, 2026-10-20)
+
+A block's merge registers each of its names in the driver's resolution map
+(`CompileEnv.nameToAddr`) and its `Named` table at one address, but the aux
+tail's `Named` entries, registered after AuxGen's `partial` code, are merged
+after them and override a name's entry, so no proof bounds which names a later
+block's entries overwrite. `compileReport` now refuses a result in which a name
+of the resolution map at the end of the fold is not published at the address it
+resolves to (`checkReport`'s sixth check, `resolutionMismatch`); B9b's merge
+invariant is about the resolution map, and with this check it speaks of the
+published names (`resolvedPublished`). Re-frozen with it: `compileUnchecked`'s
+print (it returns the resolution map), `checkReport`'s print (its `resolved`
+argument and the sixth check), `compileReport`'s print (it passes the map),
+`compileReport_ok` (the map it was checked against) and `checkReport_ok` (a
+sixth conjunct). `compileReport_checks` gives the first five conjuncts for the
+proofs that read only the result. On a consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] resolved names: 3 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] resolved names: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "resolved names"
+    (#[`resolutionMismatch_none, `resolvedPublished, `compileReport_checks].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "resolved names" #[``Ix.Cert.resolutionMismatch]
+
+/-- info: def Ix.Cert.resolutionMismatch : Std.HashMap Ix.Compile.ExactKey.ExactName Address →
+  Ixon.Env → Option (Ix.Name × Address × Option Address) :=
+fun resolved ixe =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, a) =>
+        have published := Option.map (fun x => x.addr) (ixe.named.get? n);
+        if published = some a then none else some (n, a, published))
+    resolved.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.resolutionMismatch
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

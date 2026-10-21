@@ -57,7 +57,8 @@ failure leaves the result defined; `compileComplete` (the policy
 **Checks** (CQ2.27). `compileReport` ends by checking its own result
 (`checkReport`): every input constant is published or reported as failed,
 exactly one of the two, and every stored record and blob is at the admission
-hash of its bytes. An inconsistency is an error, with no artifact. The
+hash of its bytes; the later checks are listed at `checkReport`. An
+inconsistency is an error, with no artifact. The
 statements' coverage and authenticity (`CompileCovers`, `CompileAuthentic`)
 therefore hold by construction, without an invariant of the driver's loop.
 
@@ -164,12 +165,15 @@ reserved component (the names of `blocks`), each by its least message. -/
   if let some msg := Ix.CompileM.reservedMetadataRefusal? reservedMetadata then throw msg
   if let some msg := Ix.CompileM.reservedInputRefusal? blocks then throw msg
 
-/-- The compile and its failures, before `compileReport`'s checks. A block
-that fails to compile is recorded, with its dependents, and left out of the
-environment; the result is an error only when the driver itself fails (a
-refused input, or a condensation it cannot schedule), or the input is
-reserved (`reservedRefusal`). -/
-@[expose] def compileUnchecked (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
+/-- The compile and its failures, before `compileReport`'s checks, with the
+driver's resolution map at the end of the fold (`CompileEnv.nameToAddr`: the
+address each name the compile registered resolves to), which the resolution
+check reads. A block that fails to compile is recorded, with its dependents,
+and left out of the environment; the result is an error only when the driver
+itself fails (a refused input, or a condensation it cannot schedule), or the
+input is reserved (`reservedRefusal`). -/
+@[expose] def compileUnchecked (env : Ix.Environment) :
+    Except String (Ixon.Env × Failures × Std.HashMap Ix.Compile.ExactKey.ExactName Address) := do
   let env : Ix.Environment := { consts := env.consts }
   let split := groundSplit env
   let blocks := Ix.CondenseM.run split.1
@@ -177,7 +181,7 @@ reserved (`reservedRefusal`). -/
   let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env blocks
   let ungrounded := split.2.fold (init := {}) fun m n e =>
     m.insert n (e.refusal split.2.contains)
-  pure (ixe, { ungrounded, blocks := cenv.ungrounded })
+  pure (ixe, { ungrounded, blocks := cenv.ungrounded }, cenv.nameToAddr)
 
 /-- The compile reports `n` as failed: the ground filter removed it, or its
 block failed to compile. -/
@@ -607,7 +611,23 @@ with no mismatch they are the block's own, as its projections publish them. -/
         (cls.toList.find? fun h => !publishedAtMember ixe byHash named.addr i h).map fun h => (entry, i, h)
     | _ => none
 
-/-- `compileReport`'s five checks on a compile's result, each an error on
+/-- A name the driver resolves that the artifact does not publish at that
+address, the first met, if any: the name, the address it resolves to
+(`resolved`, the driver's resolution map at the end of the fold,
+`CompileEnv.nameToAddr`), and the address `ixe.named` publishes it at, if
+any. A block's merge registers its names in both tables at one address. The
+aux tail's `Named` entries, registered after code no proof can follow
+(AuxGen's `partial` definitions), are merged after them and override a
+name's entry, so a later block could leave a name published at another
+address than the one the compile resolved it to. With no mismatch, every
+name the compile resolves is published at that address. -/
+@[expose] def resolutionMismatch (resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
+    (ixe : Ixon.Env) : Option (Ix.Name × Address × Option Address) :=
+  resolved.toList.findSome? fun (n, a) =>
+    let published := (ixe.named.get? n).map (·.addr)
+    if published = some a then none else some (n, a, published)
+
+/-- `compileReport`'s six checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -616,8 +636,12 @@ order in which none precedes a record it references. **Distinct name
 hashes:** no two different names among the input's constants and the
 published names share a stored hash (`nameHashCollision`). **`Muts` entries
 agree with the blocks:** each name a `Muts` entry lists in class `i` is
-published at member `i`'s projection of its block (`mutsMismatch`). -/
-@[expose] def checkReport (env : Ix.Environment) (out : Ixon.Env × Failures) :
+published at member `i`'s projection of its block (`mutsMismatch`).
+**Resolved names are published where they resolve:** each name of the
+driver's resolution map `resolved` is published at the address it resolves
+to (`resolutionMismatch`). -/
+@[expose] def checkReport (env : Ix.Environment)
+    (resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (out : Ixon.Env × Failures) :
     Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
   | [], [] =>
@@ -626,7 +650,14 @@ published at member `i`'s projection of its block (`mutsMismatch`). -/
       match nameHashCollision env out.1 with
       | none =>
         match mutsMismatch out.1 with
-        | none => .ok ()
+        | none =>
+          match resolutionMismatch resolved out.1 with
+          | none => .ok ()
+          | some (n, a, published) =>
+            let found := match published with
+              | some b => s!"published at {b}"
+              | none => "not published"
+            .error s!"compileReport: resolution check failed: {n.pretty} resolves to {a} but is {found}"
         | some (entry, i, h) =>
           .error s!"compileReport: Muts check failed: the entry {entry.pretty} lists the name \
             hash {h} in class {i}, which is not published at that member's projection of its block"
@@ -647,23 +678,26 @@ published at member `i`'s projection of its block (`mutsMismatch`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with five checks (`checkReport`):
+condensation it cannot schedule). It ends with six checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
-published names share a name hash; and every `Muts` entry lists in class `i`
-only names published at member `i`'s projection of its block. Any inconsistency is an
-error, and no artifact is returned. So coverage, authenticity, an order of
-the records in which none precedes a record it references, distinct name
-hashes and `Muts` entries that agree with their blocks hold by construction
+published names share a name hash; every `Muts` entry lists in class `i`
+only names published at member `i`'s projection of its block; and every name
+the driver resolves is published at the address it resolves to. Any
+inconsistency is an error, and no artifact is returned. So coverage,
+authenticity, an order of the records in which none precedes a record it
+references, distinct name hashes, `Muts` entries that agree with their
+blocks and resolved names published where they resolve hold by construction
 (`Ix.Cert.compileCovers`, `Ix.Cert.compileAuthentic`,
 `Ix.Cert.ClosureOrder`'s existence, `Ix.Cert.nameHashes_distinct`,
-`Ix.Cert.mutsMismatch_none`); on a consistent run the result is
-`compileUnchecked`'s, byte for byte. -/
+`Ix.Cert.mutsMismatch_none`, `Ix.Cert.resolvedPublished`); on a consistent
+run the result is `compileUnchecked`'s environment and failures, byte for
+byte. -/
 @[expose] def compileReport (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
-  let out ← compileUnchecked env
-  checkReport env out
-  pure out
+  let (ixe, failures, resolved) ← compileUnchecked env
+  checkReport env resolved (ixe, failures)
+  pure (ixe, failures)
 
 /-- **The pure compiler.** `compileReport`'s environment: a block that fails
 to compile is left out of it, with its dependents (`compileReport` names

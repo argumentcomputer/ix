@@ -269,7 +269,7 @@ theorem closureOrder_of_ordered {ixe : Ixon.Env} (h : RecordsOrdered ixe) (S : A
 theorem acyclic_of_compile {env : Ix.Environment} {ixe : Ixon.Env}
     (compiled : compile env = .ok ixe) : referenceCycle ixe = none := by
   obtain ⟨_, h⟩ := compile_eq_ok.mp compiled
-  exact (checkReport_ok (compileReport_ok h).2).2.2.1
+  exact (compileReport_checks h).2.2.1
 
 /-- **The compiled records are ordered**: no record before one it references. -/
 theorem recordsOrdered {env : Ix.Environment} {ixe : Ixon.Env}
