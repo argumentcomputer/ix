@@ -47,6 +47,7 @@ public import Ix.Compile.Publication
 public import Ix.Compile.Pass.Names
 public import Ix.Compile.Pass.Driver
 public import Ix.Compile.Pass.Clique.Table
+public import Ix.Compile.Pass.CliqueStep
 public import Ix.AuxGen.CompileAux
 public import Ix.AuxGen.SourceService
 public import Ix.AuxGen.IxcScope
@@ -265,20 +266,26 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   return (blockResult, auxLayout?, published)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the
-    final block state. Pass 3, hook 2 first: a block that references an
-    image-kind head compiles from its members rewritten, with their
-    decompile records (`Ix.Compile.Pass.prepareBlock`), whose extension
-    references go into the members' metadata (`withMetaRefs`). -/
+    final block state. Pass 3's clique step first: a block with a member of
+    a transported clique compiles from the members' transported values and
+    from a block state holding the canonical constants they reach
+    (`Ix.Compile.Pass.cliqueStep`; identity on any other block). Then hook 2:
+    a block that references an image-kind head compiles from its members
+    rewritten, with their decompile records (`Ix.Compile.Pass.prepareBlock`),
+    whose extension references go into the members' metadata
+    (`withMetaRefs`). Each step is one bind, so the proofs that walk this
+    function (`Ix.Cert.PassHooks`) rewrite each by its identity. -/
 def runBlockWithAux (cenv : CompileEnv) (all : Set Name) (lo : Name)
     : Except CompileError
         (BlockResult × BlockState × Option Ixon.AuxLayout × Ix.Compile.Pass.Published) := do
+  let (cenv, init, cliques) ← Ix.Compile.Pass.cliqueStep cenv all lo
   let (cenv, prepared) ← Ix.Compile.Pass.prepareBlock cenv all lo
   let blockEnv : BlockEnv :=
     { all, current := lo, mutCtx := default, univCtx := [] }
   let ((result, layout?, published), cache) ←
-    CompileM.run cenv blockEnv {} (compileBlockWithAux lo all)
+    CompileM.run cenv blockEnv init (compileBlockWithAux lo all)
   pure (Ix.Compile.Pass.withMetaRefs cache.p3MetaRefs lo result, cache, layout?,
-    prepared ++ published)
+    cliques ++ prepared ++ published)
 
 /-! ## The no-aux (original-form) compile — compile.rs:3263-3440 -/
 

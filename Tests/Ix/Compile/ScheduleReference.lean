@@ -109,7 +109,20 @@ def sequential (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   if let some msg := missingBlockRefs? blocks then return .error msg
   if let .error e := validateInductiveFlags env then return .error e
   if let .error e := validateMutualSafety env blocks then return .error e
-  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with unmaterialized, sharingLimits } }
+  -- Pass 3's clique transport, set up as the fold sets it up
+  -- (`compileEnvFoldWithSource`): the clique table and the encoding roots in
+  -- the compile environment, the scheduling edges in the ready order below;
+  -- each block's own references (`p3BlockRefs`, keyed as `FoldState.init`
+  -- keys them) stay the condensation's
+  let sc := Ix.Compile.Pass.Clique.scheduleCliques env blocks
+  let blockRefs : Std.HashMap Name (Set Name) := blocks.blocks.fold (init := {}) fun m rep all =>
+    match blocks.blockRefs.get? rep with
+    | some refs => m.insert (blockKey rep all) refs
+    | none => m
+  let cenv₀ : CompileEnv := { CompileEnv.new env with
+    unmaterialized, sharingLimits, p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2,
+    p3BlockRefs := blockRefs }
+  let mut acc : DriverAcc := { cenv := cenv₀ }
   match precompileSeeds blocks acc with
   | .error e => return .error e
   | .ok a => acc := a
@@ -118,7 +131,7 @@ def sequential (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let mut blockInfo : Std.HashMap Name (Set Name × Nat) := {}
   let mut reverseDeps : Std.HashMap Name (Array Name) := {}
   for (lo, all) in blocks.blocks do
-    let deps := match blocks.blockRefs.get? lo with
+    let deps := match sc.1.blockRefs.get? lo with
       | some d => d
       | none => {}
     blockInfo := blockInfo.insert lo (all, deps.size)

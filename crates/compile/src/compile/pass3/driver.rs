@@ -52,6 +52,9 @@ use crate::graph::NameSet;
 use crate::mutual::Def;
 
 use super::Journal;
+use super::clique::hook::{CliquePrep, HookEnv, prepare_cliques};
+use super::clique::plan::CliqueOutcome;
+use super::clique::table::encoding_owner;
 use super::names::{has_reserved, image_kinds, ix_aux_name, mk_str};
 use super::opt::{Occ, OptBlock, OptEnv, engine, opt_block_of};
 use super::sidecar::{hash_map_of, rename_named};
@@ -701,10 +704,15 @@ struct Prepared {
 /// `heads_in`) run on the calling thread: only the rewrite, which recurses
 /// on the terms, runs on a thread with a large stack ([`with_big_stack`]),
 /// so a block that references no head spawns no thread.
+///
+/// The members are read from the clique step's overlay first (`clique`, the
+/// transported members and carried lemmas; Lean reads `cenv.env`, which
+/// carries them).
 fn prepare_block(
   ctx: &Ctx<'_>,
   all: &NameSet,
   refs: Option<&FxHashSet<Name>>,
+  clique: &FxHashMap<Name, ConstantInfo>,
 ) -> Result<Option<Prepared>, String> {
   if ctx.stt.p3.heads.is_empty() {
     return Ok(None);
@@ -723,7 +731,11 @@ fn prepare_block(
   let mut sorted: Vec<&Name> = all.iter().collect();
   sorted.sort_by_cached_key(|n| n.pretty());
   for n in sorted {
-    if let Some(ci) = ctx.lean_env.get(n).map(|e| e.cloned()) {
+    let ci = clique
+      .get(n)
+      .cloned()
+      .or_else(|| ctx.lean_env.get(n).map(|e| e.cloned()));
+    if let Some(ci) = ci {
       for h in heads_in(ctx.stt, &ci) {
         if !used.contains(&h) {
           used.push(h);
@@ -776,6 +788,148 @@ fn prepare_block_rewrite(
   })
 }
 
+/// `cliqueInert`: the clique step has nothing to do with the block `all`:
+/// the input has no clique, or no member of the block is in the clique table
+/// and none of the block's references (`refs`, the condensation's) is one of
+/// Lean's encoding constants of a clique ([`encoding_owner`]). The hook would
+/// then give the empty preparation; the test decides it on the calling
+/// thread, without the hook's large-stack thread.
+fn clique_inert(
+  stt: &CompileState,
+  all: &NameSet,
+  refs: Option<&FxHashSet<Name>>,
+) -> bool {
+  stt.p3.cliques.is_empty()
+    || (!all.iter().any(|n| stt.p3.cliques.contains_key(n))
+      && !refs.is_some_and(|rs| {
+        rs.iter().any(|r| encoding_owner(&stt.p3.clique_roots, r).is_some())
+      }))
+}
+
+/// The plan table's entries for the cliques the block may plan (its members'
+/// and the cliques whose encoding constants it references): the hook's
+/// `plans` (Lean `CompileEnv.p3CliquePlans`, the table at the block's
+/// start). An entry another block of the wave adds meanwhile is the same
+/// plan (the table is a memo, `cliquePlanFor`), so the bytes do not depend
+/// on which entries the snapshot holds.
+fn plan_snapshot(
+  stt: &CompileState,
+  all: &NameSet,
+  refs: Option<&FxHashSet<Name>>,
+) -> FxHashMap<Name, CliqueOutcome> {
+  let mut keys: Vec<&Name> = Vec::new();
+  for n in all {
+    if let Some(k) = stt.p3.cliques.get(n).and_then(|(cl, _)| cl.first()) {
+      keys.push(k);
+    }
+  }
+  for r in refs.into_iter().flatten() {
+    if let Some(k) =
+      encoding_owner(&stt.p3.clique_roots, r).and_then(|cl| cl.first())
+    {
+      keys.push(k);
+    }
+  }
+  let mut plans = FxHashMap::default();
+  for k in keys {
+    if !plans.contains_key(k)
+      && let Some(o) = stt.p3.clique_plans.get(k)
+    {
+      plans.insert(k.clone(), o.clone());
+    }
+  }
+  plans
+}
+
+/// The clique step's preparation (`cliqueStep`'s `prepareCliques`, well-
+/// founded cliques only: `HookEnv::wf_only`), on a thread with a large stack
+/// (the planning recurses on the terms). A caller that unfolds a transported
+/// clique's encoding is the block's error.
+fn clique_step(
+  ctx: &Ctx<'_>,
+  all: &NameSet,
+  refs: Option<&FxHashSet<Name>>,
+) -> Result<CliquePrep, CompileError> {
+  let plans = plan_snapshot(ctx.stt, all, refs);
+  let empty = FxHashSet::default();
+  let refs = refs.unwrap_or(&empty);
+  with_big_stack(|| {
+    let addr = |n: &Name| ctx.stt.resolve_addr(n);
+    let h = HookEnv {
+      env: ctx.lean_env,
+      addr: &addr,
+      table: &ctx.stt.p3.cliques,
+      roots: &ctx.stt.p3.clique_roots,
+      plans: &plans,
+      check_plans: false,
+      wf_only: true,
+    };
+    prepare_cliques(&h, all, refs)
+  })
+  .map_err(invalid)
+}
+
+/// The call-site rewrite of a canonical constant `c` of a clique
+/// (`rewriteCliqueCanon`): the rewrite a block's members get
+/// ([`prepare_block_rewrite`]: the views of the changed blocks it
+/// references, the definitional passes). The rewritten constant (itself when
+/// nothing changed) and its decompile sources (placeholder `i` for entry
+/// `i`).
+fn clique_canon_rewrite(
+  ctx: &Ctx<'_>,
+  c: &Name,
+  ci: &ConstantInfo,
+) -> Result<(ConstantInfo, Vec<Expr>), String> {
+  if ctx.stt.p3.heads.is_empty() {
+    return Ok((ci.clone(), Vec::new()));
+  }
+  let used: Vec<Name> = heads_in(ctx.stt, ci).into_iter().collect();
+  if used.is_empty() {
+    return Ok((ci.clone(), Vec::new()));
+  }
+  let members = [(c.clone(), ci.clone())];
+  let p = with_big_stack(|| prepare_block_rewrite(ctx, &members, used))?;
+  let ci2 = p.overlay.get(c).cloned().unwrap_or_else(|| ci.clone());
+  Ok((ci2, p.sources))
+}
+
+/// Compile the canonical constants of a block's transported cliques
+/// (`compileCliqueCanon`), in the hook's order (each after the canonical
+/// constants it references): each from its own rewrite as a lone constant,
+/// published under its reserved name in the auxiliary table
+/// ([`publish_image`]'s claim rule: insert-once, journaled for the block's
+/// rollback), where the block's members and the later canonical constants
+/// resolve it.
+fn compile_clique_canon(
+  ctx: &Ctx<'_>,
+  canon: &[(Name, ConstantInfo)],
+) -> Result<(), CompileError> {
+  let stt = ctx.stt;
+  for (c, ci) in canon {
+    let err = |e: CompileError| {
+      invalid(format!("Pass 3 cliques: canonical constant {}: {e}", c.pretty()))
+    };
+    let (ci2, sources) =
+      clique_canon_rewrite(ctx, c, ci).map_err(|e| err(invalid(e)))?;
+    let def = match &ci2 {
+      ConstantInfo::DefnInfo(v) => Def::mk_defn(v),
+      ConstantInfo::ThmInfo(v) => Def::mk_theo(v),
+      _ => {
+        return Err(err(invalid("not a definition or theorem".into())));
+      },
+    };
+    let mut cache = BlockCache {
+      p3_sources: sources.into_iter().enumerate().collect(),
+      ..Default::default()
+    };
+    let (addr, meta, bytes, constant) =
+      compile_single_def_parts(c, &def, &mut cache, stt).map_err(err)?;
+    stt.store_const_bytes(addr.clone(), bytes, constant)?;
+    publish_image(stt, c, Named::new(addr, meta))?;
+  }
+  Ok(())
+}
+
 /// Every member of the block is an image-kind head (`isImageBlock`).
 fn is_image_block(stt: &CompileState, all: &NameSet) -> bool {
   !all.is_empty() && all.iter().all(|n| stt.p3.heads.contains_key(n))
@@ -823,6 +977,8 @@ fn image_def(
 /// (insert-once; a name compiled or claimed at another address is the
 /// claim conflict). The name is not an aux-gen name: Lean's form is compiled
 /// as the original, and the promotion publishes the name at block commit.
+/// A clique's canonical constant is published by the same rule, under its
+/// reserved name ([`compile_clique_canon`]).
 fn publish_image(
   stt: &CompileState,
   a: &Name,
@@ -946,8 +1102,10 @@ fn compile_image_block(
 }
 
 /// Compile one scheduled block under Pass 3: an image block to its images,
-/// any other block after the call-site rewrite of its members (`refs`, the
-/// block's references, prefilter the rewrite).
+/// any other block after the clique step (Lean `cliqueStep`: the transported
+/// members of a changed clique and the canonical constants they reach) and
+/// the call-site rewrite of its members (`refs`, the block's references,
+/// prefilter both).
 pub fn compile_block(
   lo: &Name,
   all: &NameSet,
@@ -961,11 +1119,46 @@ pub fn compile_block(
   if is_image_block(stt, all) {
     return compile_image_block(&ctx, lo, all, kctx);
   }
-  if let Some(p) = prepare_block(&ctx, all, refs).map_err(invalid)? {
-    cache.p3_overlay = p.overlay;
-    cache.p3_sources = p.sources.into_iter().enumerate().collect();
+  // the clique step: identity on a block outside every clique (decided on
+  // this thread); otherwise the hook's preparation, then the canonical
+  // constants, before the members' rewrite reads the transported values
+  let prep = if clique_inert(stt, all, refs) {
+    CliquePrep::default()
+  } else {
+    clique_step(&ctx, all, refs)?
+  };
+  if !prep.overlay.is_empty() {
+    compile_clique_canon(&ctx, &prep.canon)?;
   }
-  compile_const(lo, all, lean_env, cache, stt, kctx)
+  let clique: FxHashMap<Name, ConstantInfo> =
+    prep.overlay.iter().cloned().collect();
+  let prepared = prepare_block(&ctx, all, refs, &clique).map_err(invalid)?;
+  if !clique.is_empty() {
+    cache.p3_sources = prep
+      .sources
+      .iter()
+      .map(|(i, e)| {
+        usize::try_from(*i).map(|i| (i, e.clone())).map_err(|err| {
+          invalid(format!("Pass 3 cliques: record index {i}: {err}"))
+        })
+      })
+      .collect::<Result<_, _>>()?;
+    cache.p3_overlay = clique;
+  }
+  if let Some(p) = prepared {
+    cache.p3_overlay.extend(p.overlay);
+    cache.p3_sources.extend(p.sources.into_iter().enumerate());
+  }
+  let res = compile_const(lo, all, lean_env, cache, stt, kctx);
+  // the plans the block computed join the plan table when the block
+  // compiles (Lean merges a block's state only then); the first plan of a
+  // clique stays
+  if res.is_ok() {
+    for (k, o) in prep.fresh {
+      stt.p3.clique_plans.entry(k).or_insert(o);
+    }
+  }
+  res
 }
 
 #[cfg(test)]

@@ -451,8 +451,10 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   if rwr.overlay.isEmpty then return (cenv, published)
   let overlay : Std.HashMap Name ConstantInfo :=
     rwr.overlay.foldl (fun m (n, ci) => m.insert n ci) {}
+  -- the decompile sources, merged with the clique step's (`cliqueStep`: its
+  -- placeholder indices start at `Clique.cliqueRecordBase`)
   let sources : Std.HashMap Nat Expr :=
-    rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) {}
+    rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) cenv.p3Sources
   -- the rewritten members over the input, read through `fallback?` (the
   -- input's materialized constants count as unmaterialized in this view, so
   -- `env.consts.size + unmaterialized`, the source-claim walk's bound, is

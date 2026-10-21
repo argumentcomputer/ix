@@ -27,10 +27,12 @@
 //! and the causes, and later the rows and `_ix.src` copies) are a pure
 //! function of the clique's plan, attached to the plan's own constants (its
 //! members, its carried lemmas, its canonical constants), never to an image
-//! expansion. The canonical constants' call-site rewrite must run under the
-//! default `RwConfig` (no decline records, not in place, as the call-site
-//! rewrite of any constant without proof-justified passes), so that it reads
-//! and publishes the image memo exactly as today. If a wiring ever records
+//! expansion. The canonical constants' call-site rewrite must record nothing
+//! (Rust's `rewrite_block` returns no records at all): the wiring
+//! (`pass3::driver::compile_block`'s clique step) rewrites them as a block's
+//! members are rewritten, with the definitional passes, so it reads the image
+//! memo as any block does (a recursor's image only, `pass_expansion_lookup`)
+//! and writes no clique data into it. If a wiring ever records
 //! clique data in `RwState`, `readsMemoable` (the Rust driver's
 //! `all_stable`) must be false for the expansions that recorded it;
 //! [`CliquePlan::touches`] is the test of a constant against a plan.
@@ -56,9 +58,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use ix_common::env::{ConstantInfo, DataValue, Env, Expr, Name};
 
-use super::basic::{R, arr_nat, arr_str, const_occurrences, list_str};
+use super::basic::{Cause, R, arr_nat, arr_str, const_occurrences, list_str};
 use super::order::AddrOf;
-use super::plan::{CliqueOutcome, CliquePlan};
+use super::plan::{CliqueOutcome, CliquePlan, Encoding};
 use super::plan_clique::{
   canon_const, plan_clique, pop_unseen, push_stack, value_of, with_value,
 };
@@ -94,6 +96,11 @@ pub struct HookEnv<'a> {
   /// Recompute every plan the table supplies and fail on a difference
   /// ([`PLAN_CHECK_PREFIX`]; Lean's default: `false`).
   pub check_plans: bool,
+  /// Transport well-founded cliques only ([`CliqueOutcome::wf_only`]): the
+  /// compile's setting (decision (ii), 2026-10-21: rows have a proof recipe
+  /// for well-founded cliques only). Off for the library's own tests, which
+  /// exercise all three transports (Lean's default: `false`).
+  pub wf_only: bool,
 }
 
 /// `sortByPretty`: names in pretty-name order (see the module note on
@@ -136,6 +143,33 @@ pub fn memo_lookup<K: Eq + Hash, V: Clone>(
   }
 }
 
+impl CliqueOutcome {
+  /// `CliqueOutcome.wfOnly`: the outcome under decision (ii) (2026-10-21):
+  /// a well-founded clique's transport stands (its rows have a proof
+  /// recipe); a structural or `partial_fixpoint` clique keeps Lean's form,
+  /// with the cause recorded (`Baseline(enc, Shape, why)`, the outcome of a
+  /// transport that kept Lean's form; the reason is for diagnostics, never a
+  /// byte). Every other outcome is kept.
+  pub fn wf_only(self) -> CliqueOutcome {
+    match self {
+      CliqueOutcome::Transported(plan)
+        if plan.encoding != Encoding::WellFounded =>
+      {
+        let enc = plan.encoding;
+        CliqueOutcome::Baseline(
+          enc,
+          Cause::Shape,
+          format!(
+            "no row recipe for a {} clique: rows are for well-founded cliques only",
+            enc.tag()
+          ),
+        )
+      },
+      o => o,
+    }
+  }
+}
+
 /// `planCheckPrefix`: the prefix of the plan-table check's error; a driver
 /// turns a block failure with this prefix into a failed compile.
 pub const PLAN_CHECK_PREFIX: &str = "Pass 3 plan cache check:";
@@ -151,8 +185,8 @@ pub const PLAN_CHECK_PREFIX: &str = "Pass 3 plan cache check:";
 /// dependencies. Every block that plans the clique (a member's block, a
 /// carried lemma's block, a caller's block) is scheduled after all of the
 /// members' references (the scheduling edges), so each computes the same
-/// plan: the table is a memo of that function, keyed by the clique's first
-/// member, filled by the first block that needs a plan and merged by the
+/// plan: the table is a memo of that function (with [`HookEnv::wf_only`]
+/// applied), keyed by the clique's first member, filled by the first block that needs a plan and merged by the
 /// driver like the other Pass 3 tables. Which block filled an entry, or
 /// whether one did, changes no byte and no record. With
 /// [`HookEnv::check_plans`], every plan the table supplies is recomputed,
@@ -165,7 +199,10 @@ pub fn clique_plan_for(
   cl: &[Name],
   carried: &[Name],
 ) -> R<(CliqueOutcome, bool)> {
-  let compute = || Ok(plan_clique(h.env, h.addr, cl, carried));
+  let compute = || {
+    let o = plan_clique(h.env, h.addr, cl, carried);
+    Ok(if h.wf_only { o.wf_only() } else { o })
+  };
   let Some(key) = cl.first() else { return Ok((compute()?, false)) };
   let what = if h.check_plans {
     let names: Vec<String> = cl.iter().map(Name::pretty).collect();
@@ -612,7 +649,15 @@ mod tests {
     plans: &'a FxHashMap<Name, CliqueOutcome>,
     check_plans: bool,
   ) -> HookEnv<'a> {
-    HookEnv { env, addr: &addr_of, table, roots, plans, check_plans }
+    HookEnv {
+      env,
+      addr: &addr_of,
+      table,
+      roots,
+      plans,
+      check_plans,
+      wf_only: false,
+    }
   }
 
   fn overlay_names(p: &CliquePrep) -> Vec<Name> {

@@ -1330,9 +1330,12 @@ theorem claimWrites_records {k : Ix.Name} {r r' : BlockResult}
 
 /-- **Pass 3's hooks are identities at a compile** of the members `A` under
 the key `k`: hook 2 returns the compile environment as it is and publishes
-nothing, and `A` is not an image block. -/
+nothing, `A` is not an image block, and the clique step returns the compile
+environment as it is, the empty block state and nothing published
+(`Ix.Cert.PassHooks.cliqueStep_inert` gives it from `cliqueInert`). -/
 def HookFree (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k : Ix.Name) : Prop :=
-  Ix.Compile.Pass.prepareBlock cenv A k = .ok (cenv, {}) ∧ Ix.Compile.Pass.isImageBlock cenv A = false
+  Ix.Compile.Pass.prepareBlock cenv A k = .ok (cenv, {}) ∧ Ix.Compile.Pass.isImageBlock cenv A = false ∧
+    Ix.Compile.Pass.cliqueStep cenv A k = .ok (cenv, {}, {})
 
 /-- **Where the hooks are identities, a block's claims are the block
 compile's**: the lone constant's `compileConstantInfo`, or `sortConsts` then
@@ -1350,8 +1353,8 @@ theorem hookFree_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {
               compileMutualBlock (orderRecursorFamily sorted))
             (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           claimWrites k r = claimWrites k out) := by
-  rw [runBlock_of_not_image hf.2] at h
-  obtain ⟨const, found, rest⟩ := Ix.Cert.PassHooks.runBlockWithAux_records hf.1 h
+  rw [runBlock_of_not_image hf.2.1] at h
+  obtain ⟨const, found, rest⟩ := Ix.Cert.PassHooks.runBlockWithAux_records hf.2.2 hf.1 h
   refine ⟨const, found, ?_⟩
   rcases rest with ⟨r', s₂, run, same⟩ | ⟨cs, out, s₄, run, same⟩
   · exact .inl ⟨r', s₂, run, claimWrites_records same⟩

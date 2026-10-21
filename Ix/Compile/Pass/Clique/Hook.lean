@@ -28,12 +28,16 @@
   the causes, and later the rows and `_ix.src` copies) are a pure function of
   the clique's plan, attached to the plan's own constants (its members, its
   carried lemmas, its canonical constants), never to an image expansion. The
-  canonical constants' call-site rewrite must run under the default
-  `RwConfig` (no decline records, not in place, as the call-site rewrite of
-  any constant without proof-justified passes), so that it reads and
-  publishes the image memo exactly as today. If a wiring ever records clique
-  data in `RwState`, `readsMemoable` must be false for the expansions that
-  recorded it; `CliquePlan.touches` is the test of a constant against a plan.
+  canonical constants' call-site rewrite must record nothing: no decline, no
+  proof-justified form, no pass's canonical constant, not in place. The
+  wiring (`Ix.Compile.Pass.cliqueStep`) rewrites them as a block's members
+  are rewritten, with the definitional passes (`passConfig`, which record
+  nothing), and refuses a rewrite that records anything
+  (`rewriteCliqueCanon`), so it reads the image memo as any block does (a
+  recursor's image only, `passExpansionLookup`) and writes no clique data
+  into it. If a wiring ever records clique data in `RwState`,
+  `readsMemoable` must be false for the expansions that recorded it;
+  `CliquePlan.touches` is the test of a constant against a plan.
 
   **Iteration order.** The block's names and its references are passed as
   hash sets (`Ix.Set`, as the compile loop holds them); everything here that
@@ -77,11 +81,28 @@ structure HookEnv where
   /-- Recompute every plan the table supplies and fail on a difference
   (`planCheckPrefix`). -/
   checkPlans : Bool := false
+  /-- Transport well-founded cliques only (`CliqueOutcome.wfOnly`): the
+  compile's setting (decision (ii), 2026-10-21: rows have a proof recipe for
+  well-founded cliques only). Off for the library's own tests, which
+  exercise all three transports. -/
+  wfOnly : Bool := false
 
 /-- Names in pretty-name order (see the module note on ties). -/
 def sortByPretty (xs : Array Name) : Array Name := xs.qsort fun a b => a.pretty < b.pretty
 
 /-! ## The plan table -/
+
+/-- The outcome under decision (ii) (2026-10-21): a well-founded clique's
+transport stands (its rows have a proof recipe, `Row`); a structural or
+`partial_fixpoint` clique keeps Lean's form, with the cause recorded
+(`baseline enc .shape`, the outcome of a transport that kept Lean's form;
+the reason is for diagnostics, never a byte). Every other outcome is kept. -/
+def CliqueOutcome.wfOnly : CliqueOutcome → CliqueOutcome
+  | .transported plan =>
+    if plan.encoding == .wellFounded then .transported plan
+    else .baseline plan.encoding .shape
+      s!"no row recipe for a {plan.encoding.tag} clique: rows are for well-founded cliques only"
+  | o => o
 
 /-- The prefix of the plan-table check's error; a driver turns a block
 failure with this prefix into a failed compile. -/
@@ -96,8 +117,8 @@ the input constants of its unit and its dependencies, and the addresses of
 those dependencies. Every block that plans the clique (a member's block, a
 carried lemma's block, a caller's block) is scheduled after all of the
 members' references (`scheduleCliques`' edges), so each computes the same
-plan: the table is a memo of that function, keyed by the clique's first
-member, filled by the first block that needs a plan and merged by the
+plan: the table is a memo of that function (with `HookEnv.wfOnly` applied), keyed
+by the clique's first member, filled by the first block that needs a plan and merged by the
 driver like the other Pass 3 tables (`memoMerge`). Which block filled an
 entry, or whether one did, changes no byte and no record. With `checkPlans`,
 every plan the table supplies is recomputed, and a difference (by
@@ -106,7 +127,9 @@ and the clique (`<prefix> the plan of the clique #[…]: the recomputed value
 differs from the table's`). A clique without a first member (never in the
 table) is planned directly. -/
 def cliquePlanFor (h : HookEnv) (cl carried : Array Name) : Except String (CliqueOutcome × Bool) := do
-  let compute (_ : Unit) : Except String CliqueOutcome := pure (planClique h.env h.addr? cl carried)
+  let compute (_ : Unit) : Except String CliqueOutcome :=
+    let o := planClique h.env h.addr? cl carried
+    pure (if h.wfOnly then o.wfOnly else o)
   let some key := cl[0]? | return (← compute (), false)
   let what := if h.checkPlans then s!"{planCheckPrefix} the plan of the clique {cl.map (·.pretty)}"
     else planCheckPrefix

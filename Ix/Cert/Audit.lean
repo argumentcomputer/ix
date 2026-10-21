@@ -4917,22 +4917,24 @@ run_cmd do
 
 /-! ## Route A, B9b piece 1: Pass 3's hooks on a block outside the changed set
 
-`Ix.Cert.PassHooks`: hook 2 (`prepareBlock`) returns the compile environment
-as it is when none of the block's condensation references is a head
-(`prepareBlock_unreferenced`); `withMetaRefs` changes no record; so the
+`Ix.Cert.PassHooks`: the clique step (`cliqueStep`) returns the compile
+environment as it is and the empty block state on a block outside every
+clique (`cliqueStep_inert`); hook 2 (`prepareBlock`) returns the compile
+environment as it is when none of the block's condensation references is a
+head (`prepareBlock_unreferenced`); `withMetaRefs` changes no record; so the
 records `runBlockWithAux` returns are the block compile's, a lone constant's
 `compileConstantInfo` or `sortConsts` then `compileMutualBlock`, run from the
 empty block state (`runBlockWithAux_records`). Hook 1 and the aux tail run
 after the `BlockResult` and return it as it is. -/
 
-/-- info: [cert-audit] pass hooks: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] pass hooks: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "pass hooks"
-    (#[`prepareBlock_unreferenced, `withMetaRefs_records, `runBlockWithAux_unreferenced,
-      `findConst_preserves, `mkIndc_preserves, `forIn_set_state, `compileBlockWithAux_result,
-      `compileBlockWithAux_records, `runBlockWithAux_records].map (`Ix.Cert.PassHooks ++ ·))
+    (#[`cliqueStep_inert, `prepareBlock_unreferenced, `withMetaRefs_records,
+      `runBlockWithAux_unreferenced, `findConst_preserves, `mkIndc_preserves, `forIn_set_state,
+      `compileBlockWithAux_result, `compileBlockWithAux_records, `runBlockWithAux_records].map (`Ix.Cert.PassHooks ++ ·))
 
 /-! ## Route A, B9b piece 2: where a resolved name's record comes from
 

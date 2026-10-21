@@ -3,13 +3,18 @@ import Ix.CompileCert.RawRun
 
 /-! # Pass 3's hooks on a block outside the changed set (Route A, B9b, piece 1)
 
-`runBlockWithAux` runs Pass 3's hooks around a block's compile: hook 2
-(`prepareBlock`) before it, which rewrites the members that reference an
-image-kind head; hook 1 (`editBlock`) after the aux tail, inside
+`runBlockWithAux` runs Pass 3's hooks around a block's compile: the clique
+step (`cliqueStep`, CQ5.2) and hook 2 (`prepareBlock`) before it, which
+transport a changed clique's members and rewrite the members that reference
+an image-kind head; hook 1 (`editBlock`) after the aux tail, inside
 `compileBlockWithAux`; and `withMetaRefs`, which writes the decompile
 records' extension references into the metadata. One lemma per hook, so a
 later pass (batch 5) adds its own:
 
+* `cliqueStep_inert`: a block with no member in the clique table and no
+  reference to a clique's encoding constant (`cliqueInert`) is compiled from
+  the compile environment as it is and the empty block state, and publishes
+  nothing from the step.
 * `prepareBlock_unreferenced`: a block none of whose references (the
   condensation's, `CompileEnv.p3BlockRefs`) is a head is compiled from the
   compile environment as it is, and publishes nothing. (`prepareBlock`'s own
@@ -57,6 +62,18 @@ theorem forIn_none_of {α : Type} (p : α → Bool) :
     simp only [ha, Bool.false_eq_true, ↓reduceIte, pure, bind]
     exact forIn_none_of p l fun b hb => h b (List.mem_cons_of_mem _ hb)
 
+/-- **The clique step on a block outside every clique is the identity**: when
+the block has no member in the clique table and no reference to a clique's
+encoding constant (`cliqueInert`), `cliqueStep` returns the compile
+environment as it is and the empty block state, and publishes nothing. -/
+theorem cliqueStep_inert (cenv : CompileEnv) (all : Ix.Set Ix.Name) (lo : Ix.Name)
+    (h : Ix.Compile.Pass.cliqueInert cenv all lo = true) :
+    Ix.Compile.Pass.cliqueStep cenv all lo = .ok (cenv, {}, {}) := by
+  unfold Ix.Compile.Pass.cliqueStep
+  split
+  · rfl
+  · contradiction
+
 /-- **Hook 2 on an unreferenced block is the identity**: when none of the
 block's references (`p3BlockRefs`) is a head, `prepareBlock` returns the
 compile environment as it is and publishes nothing. -/
@@ -86,10 +103,11 @@ theorem withMetaRefs_records (refs : Std.HashMap Ix.Compile.ExactKey.ExactName M
     · exact ⟨rfl, rfl⟩
     · simp [Array.map_map, Function.comp_def]
 
-/-- **A block hook 2 leaves alone compiles as `compileBlockWithAux`**, from
-the empty block state, with the same records and class order (the metadata
-aside). -/
+/-- **A block the clique step and hook 2 leave alone compiles as
+`compileBlockWithAux`**, from the empty block state, with the same records
+and class order (the metadata aside). -/
 theorem runBlockWithAux_unreferenced {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
+    (clq : Ix.Compile.Pass.cliqueStep cenv all lo = .ok (cenv, {}, {}))
     (prep : Ix.Compile.Pass.prepareBlock cenv all lo = .ok (cenv, {}))
     {r : BlockResult} {cache : BlockState} {layout? : Option Ixon.AuxLayout}
     {pub : Ix.Compile.Pass.Published}
@@ -98,8 +116,9 @@ theorem runBlockWithAux_unreferenced {cenv : CompileEnv} {all : Ix.Set Ix.Name} 
         (compileBlockWithAux lo all) = .ok ((r', layout?, pub'), cache) ∧
       recordsOf r = recordsOf r' ∧ r.classNames = r'.classNames := by
   unfold runBlockWithAux at h
+  simp only [clq, bind, Except.bind] at h
   rw [prep] at h
-  simp only [bind, Except.bind] at h
+  simp only at h
   split at h
   · cases h
   · rename_i v hv
@@ -289,11 +308,13 @@ theorem compileBlockWithAux_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name
     exact hout
 
 /-- **A block hook 2 leaves alone publishes the block compile's records**:
-under `prepareBlock`'s identity (`prepareBlock_unreferenced`), the records
+under the clique step's and `prepareBlock`'s identities (`cliqueStep_inert`,
+`prepareBlock_unreferenced`), the records
 `runBlockWithAux` returns are those of the lone constant's
 `compileConstantInfo`, or of `sortConsts` then `compileMutualBlock` over the
 members, each run from the empty block state in the block's environment. -/
 theorem runBlockWithAux_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
+    (clq : Ix.Compile.Pass.cliqueStep cenv all lo = .ok (cenv, {}, {}))
     (prep : Ix.Compile.Pass.prepareBlock cenv all lo = .ok (cenv, {}))
     {r : BlockResult} {cache : BlockState} {layout? : Option Ixon.AuxLayout}
     {pub : Ix.Compile.Pass.Published}
@@ -306,7 +327,7 @@ theorem runBlockWithAux_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo :
           rawRun (sortConsts cs.toList >>= fun sorted => compileMutualBlock (orderRecursorFamily sorted))
             (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
-  obtain ⟨r', pub', ran, same, -⟩ := runBlockWithAux_unreferenced prep h
+  obtain ⟨r', pub', ran, same, -⟩ := runBlockWithAux_unreferenced clq prep h
   obtain ⟨const, found, rest⟩ := compileBlockWithAux_records (Ix.CompileCert.run_success ran)
   refine ⟨const, found, ?_⟩
   rcases rest with ⟨s₂, single⟩ | ⟨cs, out, s₄, block, same₂⟩
