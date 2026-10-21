@@ -34,7 +34,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use ix_common::address::Address;
 use ix_common::env::{
   ConstantInfo, ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
-  Expr, ExprData, Name, RecursorVal, ReducibilityHints, TheoremVal,
+  Expr, ExprData, Level, Name, RecursorVal, ReducibilityHints, TheoremVal,
 };
 use ixon::CompileError;
 use ixon::env::{AuxLayout, Named};
@@ -53,6 +53,7 @@ use crate::mutual::Def;
 
 use super::Journal;
 use super::names::{has_reserved, image_kinds, ix_aux_name, mk_str};
+use super::opt::{Occ, OptBlock, OptEnv, engine, opt_block_of};
 use super::sidecar::{hash_map_of, rename_named};
 use super::spec::NestedCanon;
 use super::translate::{RwState, image_decl_with, rewrite_block};
@@ -649,6 +650,29 @@ fn expansion_lookup(
   Ok(Some(x))
 }
 
+/// The expansion lookup of a rewrite with the definitional passes (Lean
+/// `passExpansionLookup`): a recursor's image from the memo (built, never
+/// rewritten, the same under every configuration), any other head's
+/// expansion from its view, rewritten here with the passes. The memo's
+/// definitional entries were rewritten with the default configuration (the
+/// faithful form the image constants keep), so they are not read.
+fn pass_expansion_lookup(
+  ctx: &Ctx<'_>,
+  views: &mut FxHashMap<Name, Arc<BlockView>>,
+  n: &Name,
+) -> Result<Option<Expansion>, String> {
+  let Some(key) = ctx.stt.p3.heads.get(n).map(|r| r.clone()) else {
+    return Ok(None);
+  };
+  if !views.contains_key(&key) {
+    let more = views_of(ctx, std::iter::once(n.clone()))?;
+    views.extend(more);
+  }
+  let v = views.get(&key).ok_or("Pass 3: view missing")?;
+  let (x, _) = image_expansion(ctx, &key, v, n)?;
+  Ok(Some(x))
+}
+
 /// Run `f` on a thread with a large stack: the rewrite and the development
 /// recurse on the terms, which are deep proofs on a library.
 fn with_big_stack<R: Send>(f: impl FnOnce() -> R + Send) -> R {
@@ -723,9 +747,28 @@ fn prepare_block_rewrite(
   // the views of the referenced changed blocks (the lookup adds others on
   // demand)
   let mut views = views_of(ctx, used.into_iter())?;
+  // the definitional passes over the blocks of these views (Lean
+  // `passConfig`, `optBlocks` over `viewsOf`'s views): heads of a block
+  // viewed later in the rewrite keep their baseline
+  let opt_blocks: FxHashMap<Name, OptBlock> = ctx.with_input(|inp| {
+    views.iter().map(|(k, v)| (k.clone(), opt_block_of(v, inp))).collect()
+  });
+  let resolves = |n: &Name| ctx.stt.resolve_addr(n).is_some();
+  let block_of = |h: &Name| {
+    let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
+    opt_blocks.get(&key)
+  };
+  let env =
+    OptEnv { ienv: ctx.lean_env, resolves: &resolves, block_of: &block_of };
+  let opt = |n: &Name, us: &[Level], args: &[Expr]| {
+    if !permits_optimization(ctx.lean_env, n) {
+      return None;
+    }
+    engine(&env, &Occ { head: n, us, args }).map(|(_, e)| e)
+  };
   let rw = {
-    let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
-    rewrite_block(&mut lookup, members)?
+    let mut lookup = |n: &Name| pass_expansion_lookup(ctx, &mut views, n);
+    rewrite_block(&mut lookup, members, Some(&opt))?
   };
   Ok(Prepared {
     overlay: rw.overlay.into_iter().collect(),

@@ -44,8 +44,10 @@ source recognition identifies it with the generated one
 (`Ix.AuxGen.SourceIdentity`, `Ix.AuxGen.SourceFamily`).
 
 ## Canonicity
-Faithful only: no definitional pass, no clique transport and no
-proof-justified form (batch 5). The non-canonical set stays empty.
+The definitional passes O2–O6 (CQ5.1, `Opt.engine`) give canonical forms of
+the recognized occurrences; every other occurrence keeps its image
+baseline. No clique transport and no proof-justified form yet (CQ5.2,
+CQ5.3).
 
 ## Side condition and fallback
 A failure to build an image or to rewrite is a compile error of the block
@@ -64,6 +66,7 @@ public import Ix.Compile.Pass.Memo
 public import Ix.Compile.Pass.Translate
 public import Ix.Compile.Pass.ImageView
 public import Ix.Compile.Pass.SideCar
+public import Ix.Compile.Pass.Opt.Engine
 public import Ix.Compile.ChangedSet.Block
 public import Ix.AuxGen.SourceIdentity
 public import Ix.AuxGen.SourceFamily
@@ -342,6 +345,62 @@ def expansionLookup (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView
       let (x, _) ← v.expansion (viewInput cenv) n
       pure (some x)
 
+/-! ## The definitional passes (CQ5.1)
+
+At every full application of a head, the rewrite tries the passes
+(`Opt.engine`) before it inlines the image (`RwConfig.opt?`). The passes
+read the changed blocks of the block's referenced heads (`Opt.optBlockOf`
+over their views). They record nothing per rewrite (no canonical constant,
+no decline, no proof-justified form). Their rewrites differ from the image
+memo's: `compileImageBlock` publishes the heads' expansions rewritten with
+the default `RwConfig`, the faithful form the image constants keep, so a
+block that rewrites with the passes reads the memo for a recursor's image
+only (`passExpansionLookup`), never for a definitional head's expansion. -/
+
+/-- The definitional passes' blocks (`Opt.optBlockOf`) of the given views,
+computed once per rewrite. -/
+def optBlocks (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView) :
+    Std.HashMap ExactName Opt.OptBlock :=
+  let inp := viewInput cenv
+  views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
+
+/-- The passes' hook (`RwConfig.opt?`): the engine over the blocks of a
+block's referenced heads (heads of other blocks keep their baseline). A
+source-defined `casesOn`/`recOn` wrapper whose body is not the standard one
+declines (`SourceIdentity.permitsOptimization`): its actual expansion stays
+the baseline. A definitional pass references no canonical constant and is
+not proof-justified. -/
+def optLookup (cenv : CompileEnv) (blocks : Std.HashMap ExactName Opt.OptBlock) :
+    Option Name → Name → Array Ix.Level → Array Expr →
+      Option (Expr × Array ConstantInfo × Option String) :=
+  let env : Opt.OptEnv :=
+    { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
+      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
+  fun site n us args =>
+    if !Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env n then none
+    else (Opt.engine env { head := n, us, args, site }).map fun (_, e) => (e, #[], none)
+
+/-- The rewrite configuration of a block's members: the passes, nothing
+else (no decline recorded, no proof-justified pass, not in place). -/
+def passConfig (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView) : RwConfig :=
+  { opt? := optLookup cenv (optBlocks cenv views) }
+
+/-- `expansionLookup` for a rewrite with the passes: the image memo for a
+recursor's image (built, never rewritten, the same under every
+configuration), the block's view for any other head (its expansion is then
+rewritten with the passes, `Translate.expansionOf`). -/
+def passExpansionLookup (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView) :
+    Name → Except String (Option Expansion) := fun n =>
+  match cenv.p3Heads.get? n with
+  | none => pure none
+  | some key =>
+    match cenv.env.get? n, cenv.p3ImageExps.get? n with
+    | some (.recInfo _), some (x, _) => pure (some x)
+    | _, _ => do
+      let v ← viewOf cenv views key
+      let (x, _) ← v.expansion (viewInput cenv) n
+      pure (some x)
+
 /-- The first member of the changed blocks `keys` that has not compiled. -/
 def unresolvedMember (cenv : CompileEnv) (keys : Array Name) : Option Name := Id.run do
   for key in keys do
@@ -387,7 +446,7 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   let fail := pass3Failure cenv (used.filterMap fun h => cenv.p3Heads.get? h)
   let views ← (viewsOf cenv used).mapError fail
   let published : Published := { views := newMemoViews cenv views }
-  let rwr ← (rewriteBlock (expansionLookup cenv views) members).mapError fail
+  let rwr ← (rewriteBlock (passExpansionLookup cenv views) members (passConfig cenv views)).mapError fail
   -- only bare or partial occurrences: nothing rewritten
   if rwr.overlay.isEmpty then return (cenv, published)
   let overlay : Std.HashMap Name ConstantInfo :=

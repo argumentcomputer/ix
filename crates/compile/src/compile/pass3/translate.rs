@@ -31,8 +31,16 @@ pub type ExpansionLookup<'a> =
 /// A recursion bound for one rewrite.
 pub const REWRITE_FUEL: usize = 1 << 20;
 
+/// The definitional passes (Lean `RwConfig.opt?`, [`super::opt::engine`]):
+/// tried at every full application of a head, before its image is inlined;
+/// `None` keeps the baseline.
+pub type OptHook<'a> = dyn Fn(&Name, &[Level], &[Expr]) -> Option<Expr> + 'a;
+
 #[derive(Default)]
-pub struct RwState {
+pub struct RwState<'o> {
+  /// The passes of this rewrite (`None`: the default `RwConfig`, the
+  /// faithful baseline).
+  pub opt: Option<&'o OptHook<'o>>,
   /// The source occurrences, placeholder `i` for entry `i`.
   pub sources: Vec<Expr>,
   /// Rewritten expansions.
@@ -52,7 +60,7 @@ pub struct RwState {
   dev: DevState,
 }
 
-impl RwState {
+impl RwState<'_> {
   fn expansion_of(
     &mut self,
     lookup: &mut ExpansionLookup<'_>,
@@ -132,8 +140,14 @@ impl RwState {
                   // bare or partial: the Lean name denotes the stored image
                   mk_app_n(Expr::cnst(n.clone(), us.clone()), &args2)
                 } else {
-                  let f = self.at_levels(n, us, &x);
-                  let body = instantiate_with(&mut self.dev, &f, &args2)?;
+                  // the passes first (Lean `RwConfig.opt?`), else the image
+                  let body = match self.opt.and_then(|opt| opt(n, us, &args2)) {
+                    Some(e) => e,
+                    None => {
+                      let f = self.at_levels(n, us, &x);
+                      instantiate_with(&mut self.dev, &f, &args2)?
+                    },
+                  };
                   if record {
                     let k = self.sources.len();
                     self.sources.push(e.clone());
@@ -206,7 +220,7 @@ impl RwState {
     ci: &ConstantInfo,
   ) -> Result<(ConstantInfo, bool), String> {
     let mut changed = false;
-    let mut go = |st: &mut RwState, e: &Expr| -> Result<Expr, String> {
+    let mut go = |st: &mut RwState<'_>, e: &Expr| -> Result<Expr, String> {
       let r = st.rw(lookup, REWRITE_FUEL, true, e)?;
       changed |= !r.same_raw(e);
       Ok(r)
@@ -281,12 +295,13 @@ pub struct BlockRewrite {
 }
 
 /// Rewrite the members of one block; placeholder indices are block-unique
-/// (`rewriteBlock`).
+/// (`rewriteBlock`). `opt` is the passes' hook (Lean `RwConfig.opt?`).
 pub fn rewrite_block(
   lookup: &mut ExpansionLookup<'_>,
   members: &[(Name, ConstantInfo)],
+  opt: Option<&OptHook<'_>>,
 ) -> Result<BlockRewrite, String> {
-  let mut st = RwState::default();
+  let mut st = RwState { opt, ..RwState::default() };
   let mut overlay = Vec::new();
   for (n, ci) in members {
     let (ci2, changed) = st.rewrite_const(lookup, ci)?;
@@ -301,7 +316,7 @@ pub fn rewrite_block(
 /// no records (`imageDeclWith`), from a rewrite state carried across the
 /// members of an image block.
 pub fn image_decl_with(
-  st: &mut RwState,
+  st: &mut RwState<'_>,
   lookup: &mut ExpansionLookup<'_>,
   a: &Name,
   x: &Expansion,
@@ -384,7 +399,7 @@ mod tests {
       (root_name("u"), axiom("u", term("T"))),
       (root_name("c"), axiom("c", Expr::app(term("head"), term("T")))),
     ];
-    let rw = rewrite_block(&mut |n| Ok(head(n)), &members).unwrap();
+    let rw = rewrite_block(&mut |n| Ok(head(n)), &members, None).unwrap();
     assert_eq!(rw.overlay.len(), 1);
     assert_eq!(rw.overlay[0].0, root_name("c"));
     assert_eq!(rw.sources.len(), 1);
@@ -436,7 +451,7 @@ mod tests {
       (root_name("m1"), defn("m1", typ.clone(), typ.clone())),
       (root_name("m2"), defn("m2", typ.clone(), typ.clone())),
     ];
-    let rw = rewrite_block(&mut |n| Ok(head(n)), &members).unwrap();
+    let rw = rewrite_block(&mut |n| Ok(head(n)), &members, None).unwrap();
     assert_eq!(rw.sources, vec![occ.clone(), occ.clone(), occ]);
     let mut got = Vec::new();
     for (_, ci) in &rw.overlay {

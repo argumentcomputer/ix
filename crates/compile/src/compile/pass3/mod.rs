@@ -30,6 +30,7 @@ pub mod develop;
 pub mod driver;
 pub mod expr;
 pub mod names;
+pub mod opt;
 pub mod sidecar;
 pub mod spec;
 pub mod translate;
