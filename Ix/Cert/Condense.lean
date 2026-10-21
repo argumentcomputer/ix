@@ -303,4 +303,40 @@ theorem blocks_eq (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
   · rw [namesOf_size]; exact Ix.CompileCert.Canon.condensation_roots_lt (compsOf_eq refs) (Array.of_mem_zip h).2
   · rw [namesOf_size]; exact Ix.CompileCert.Canon.condensation_order_lt (compsOf_eq refs) h
 
+/-! ## Paths in the reference graph and closures -/
+
+/-- A path in the reference graph `refs` through its nodes (its keys), its
+end taken up to `Ix.Name`'s `==` (names compared by their stored hashes). -/
+inductive Path (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) : Ix.Name → Ix.Name → Prop
+  | refl {x y : Ix.Name} : (x == y) = true → Path refs x y
+  | step {x z y : Ix.Name} {rs : Ix.Set Ix.Name} : refs.get? x = some rs → rs.contains z = true →
+      (refs.get? z).isSome = true → Path refs z y → Path refs x y
+
+/-- **A closure holds every constant a path of the ground graph reaches from
+one of its constants.** -/
+theorem closure_path {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    (hcl : IsClosure env roots sub) {x y : Ix.Name}
+    (hp : Path (groundSplit { consts := env.consts }).1 x y) (hx : (sub.consts.get? x).isSome = true) :
+    (sub.consts.get? y).isSome = true := by
+  induction hp with
+  | refl e =>
+    rw [Std.HashMap.get?_eq_getElem?] at hx ⊢
+    rw [← Std.HashMap.getElem?_congr e]
+    exact hx
+  | @step x z y rs hrs hz hzk _ ih =>
+    apply ih
+    have hxr : Reaches env roots x := by
+      by_contra hr
+      rw [(hcl x).2 hr] at hx
+      cases hx
+    have hd : DependsOn { consts := env.consts } x z := groundSplit_dependsOn hrs hz
+    have hzr : Reaches env roots z := Reaches.step hxr hd
+    obtain ⟨rs', hrs'⟩ := Option.isSome_iff_exists.mp hzk
+    obtain ⟨rs₀, h₀, -⟩ := groundSplit_get hrs'
+    obtain ⟨ci, hci, -⟩ := envSerial_get h₀
+    rw [(hcl z).1 hzr]
+    change (env.consts.get? z).isSome = true
+    rw [show env.consts.get? z = some ci from hci]
+    rfl
+
 end Ix.Cert.Condense
