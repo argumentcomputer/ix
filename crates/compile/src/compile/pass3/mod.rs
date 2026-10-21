@@ -26,6 +26,7 @@
 //! The optimisation passes are not here.
 
 pub mod build;
+pub mod clique;
 pub mod develop;
 pub mod driver;
 pub mod expr;
