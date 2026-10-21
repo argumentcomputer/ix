@@ -806,7 +806,35 @@ name, so a constant of the closure, which did not fail. -/
     Option Ix.Name :=
   ungrounded.toList.findSome? fun (n, _) => if (env.consts.get? n).isSome then none else some n
 
-/-- `compileReport`'s fourteen checks on a compile's result, each an error on
+/-- A stored record's definition projection: the member it projects (its block's
+address and its index) and the record's address. -/
+@[expose] def definitionProjection (e : Address × Ixon.LazyConstant) : Option ((Address × Nat) × Address) :=
+  match e.2.get? with
+  | some c =>
+    match c.info with
+    | .dPrj p => some ((p.block, p.idx.toNat), e.1)
+    | _ => none
+  | none => none
+
+/-- A member two stored definition projection records project, if any: its
+block's address and its index. The reader takes a definition block member's
+hint at its projection record (`Ix.Cert.hintsOf`), so with none the record it
+reads the hint at is the member's one projection record
+(`Ix.Cert.CtxAgree.hintsOf_projection`'s premise). Every record's first
+projection of a member is filed, then each record is compared with its member's
+filed one. -/
+@[expose] def projectionCollision (ixe : Ixon.Env) : Option (Address × Nat) :=
+  let entries := ixe.consts.toList
+  let first : Std.HashMap (Address × Nat) Address := entries.foldl (init := {}) fun m e =>
+    match definitionProjection e with
+    | some (r, a) => if m.contains r then m else m.insert r a
+    | none => m
+  entries.findSome? fun e =>
+    match definitionProjection e with
+    | some (r, a) => if decide (first[r]? = some a) then none else some r
+    | none => none
+
+/-- `compileReport`'s fifteen checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -835,7 +863,9 @@ name it is stored under (`misnamedInput`). **Input constructors belong to their
 inductive:** each constructor an input inductive lists is stored as a
 constructor of it (`strayConstructor`). **Failures are input names:** each
 name the driver's final environment records as a failure (`cenv.ungrounded`)
-is one the input's map holds (`strayFailure`). -/
+is one the input's map holds (`strayFailure`). **One projection record per
+definition member:** no two stored definition projection records project one
+member (`projectionCollision`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
@@ -863,7 +893,12 @@ is one the input's map holds (`strayFailure`). -/
                         match strayConstructor env with
                         | none =>
                           match strayFailure env cenv.ungrounded with
-                          | none => .ok ()
+                          | none =>
+                            match projectionCollision out.1 with
+                            | none => .ok ()
+                            | some (b, i) =>
+                              .error s!"compileReport: projection check failed: member {i} of the block at \
+                                {b} has more than one stored definition projection record"
                           | some f =>
                             .error s!"compileReport: failure check failed: the driver records the name \
                               {f.pretty} as a failure, but no input constant is stored under it"
@@ -914,7 +949,7 @@ is one the input's map holds (`strayFailure`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with fourteen checks (`checkReport`):
+condensation it cannot schedule). It ends with fifteen checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -927,8 +962,9 @@ is published with an original-form record; every published input name is
 resolved or in the aux map; no resolved name outside the aux map is a cross-SCC
 subset's claim; every Pass 3 head is in the changed set; every input
 constant carries the name it is stored under; every constructor an input
-inductive lists is stored as a constructor of it; and every failure the driver
-records is an input name. Any inconsistency is an error, and no artifact is
+inductive lists is stored as a constructor of it; every failure the driver
+records is an input name; and no two stored definition projection records
+project one member. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that
 agree with their blocks, resolved names published where they resolve,

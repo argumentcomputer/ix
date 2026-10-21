@@ -1141,7 +1141,15 @@ fun env cenv out =>
                         match Ix.Cert.strayConstructor env with
                         | none =>
                           match Ix.Cert.strayFailure env cenv.ungrounded with
-                          | none => Except.ok ()
+                          | none =>
+                            match Ix.Cert.projectionCollision out.fst with
+                            | none => Except.ok ()
+                            | some (b, i) =>
+                              Except.error
+                                (toString "compileReport: projection check failed: member " ++ toString i ++
+                                      toString " of the block at " ++
+                                    toString b ++
+                                  toString " has more than one stored definition projection record")
                           | some f =>
                             Except.error
                               (toString "compileReport: failure check failed: the driver records the name " ++
@@ -1360,7 +1368,9 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                       Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
                         Ix.Cert.foreignHead env cenv.auxReport.table cenv.p3Heads out.fst = none ∧
                           Ix.Cert.misnamedInput env = none ∧
-                            Ix.Cert.strayConstructor env = none ∧ Ix.Cert.strayFailure env cenv.ungrounded = none -/
+                            Ix.Cert.strayConstructor env = none ∧
+                              Ix.Cert.strayFailure env cenv.ungrounded = none ∧
+                                Ix.Cert.projectionCollision out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4926,6 +4936,48 @@ fun env ungrounded =>
     ungrounded.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.strayFailure
+
+/-! ## One projection record per definition member (CtxAgree's hints premise; coordinator decision, 2026-10-21 ~18:20)
+
+The reader takes a definition block member's hint at the projection record of it
+it finds first (`Ix.Cert.hintsOf`), quotient Source at the address the member's
+name is published at (`Ix.LeanIngress.fiberHintsMap`). They are one hint when the
+member has one projection record (`Ix.Cert.CtxAgree.hintsOf_projection`'s
+premise). `compileReport` now refuses an artifact with two stored definition
+projection records of one member (`checkReport`'s fifteenth check,
+`projectionCollision`). The proof route not taken: from the compiler's emission,
+one projection per member (≈0.2–0.4k). Re-frozen with it: `checkReport`'s print
+and `checkReport_ok` (a fifteenth conjunct). On a consistent run the result is
+unchanged. -/
+
+/-- info: [cert-audit] projections: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] projections: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "projections"
+    (#[`projectionCollision_none, `projectionsOne].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "projections" #[``Ix.Cert.projectionCollision]
+
+/-- info: def Ix.Cert.projectionCollision : Ixon.Env → Option (Address × Nat) :=
+fun ixe =>
+  have entries := ixe.consts.toList;
+  have first :=
+    List.foldl
+      (fun m e =>
+        match Ix.Cert.definitionProjection e with
+        | some (r, a) => if m.contains r = true then m else m.insert r a
+        | none => m)
+      ∅ entries;
+  List.findSome?
+    (fun e =>
+      match Ix.Cert.definitionProjection e with
+      | some (r, a) => if decide (first[r]? = some a) = true then none else some r
+      | none => none)
+    entries -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.projectionCollision
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

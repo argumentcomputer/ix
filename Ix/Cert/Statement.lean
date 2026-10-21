@@ -614,12 +614,13 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
       crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
       foreignHead env cenv.auxReport.table cenv.p3Heads out.1 = none ∧ misnamedInput env = none ∧
-      strayConstructor env = none ∧ strayFailure env cenv.ungrounded = none := by
+      strayConstructor env = none ∧ strayFailure env cenv.ungrounded = none ∧
+      projectionCollision out.1 = none := by
   unfold checkReport at h
   -- walk the checks in order: every failing branch is an error, so the one
   -- branch that returns has each check's equation in context
   repeat' (first | (split at h) | (focus (cases h; done)))
-  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
+  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -628,7 +629,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -1144,7 +1145,37 @@ theorem failuresInput {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
     ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
       ∀ x, cenv.ungrounded.contains x = true → (env.consts.get? x).isSome = true := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+  exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+
+/-- What `projectionCollision = none` says: two stored definition projection
+records of one member are one address. -/
+theorem projectionCollision_none {ixe : Ixon.Env} (h : projectionCollision ixe = none) :
+    ∀ e ∈ ixe.consts.toList, ∀ e' ∈ ixe.consts.toList, ∀ r a a',
+      definitionProjection e = some (r, a) → definitionProjection e' = some (r, a') → a = a' := by
+  intro e he e' he' r a a' hp hp'
+  unfold projectionCollision at h
+  rw [List.findSome?_eq_none_iff] at h
+  have h1 := h e he
+  have h2 := h e' he'
+  simp only [hp, hp'] at h1 h2
+  split at h1
+  · rename_i h1'
+    split at h2
+    · rename_i h2'
+      rw [of_decide_eq_true h1'] at h2'
+      exact Option.some.inj (of_decide_eq_true h2')
+    · cases h2
+  · cases h1
+
+/-- **One projection record per definition member**: when `compileReport`
+returns, two stored definition projection records of one member are one
+address (`checkReport`'s fifteenth check). -/
+theorem projectionsOne {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∀ e ∈ ixe.consts.toList, ∀ e' ∈ ixe.consts.toList, ∀ r a a',
+      definitionProjection e = some (r, a) → definitionProjection e' = some (r, a') → a = a' := by
+  obtain ⟨cenv, -, hc⟩ := compileReport_ok h
+  exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`

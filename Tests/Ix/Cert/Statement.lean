@@ -479,6 +479,38 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     else
       errors := errors.push s!"{label}: the stray failure is refused, but not by the failure check: {e}"
   | .ok () => errors := errors.push s!"{label}: checkReport accepts a failure that is not an input name"
+  -- the projection check (one stored definition projection record per member),
+  -- timed alone, then refusing, by its own message, a second authentic record
+  -- projecting a member (an existing projection with its univs grown, stored at
+  -- the admission hash of its bytes)
+  let p0 ← IO.monoMsNow
+  let projC? ← IO.lazyPure fun _ => Ix.Cert.projectionCollision ixe
+  let p1 ← IO.monoMsNow
+  match projC? with
+  | none => lines := lines.push s!"{label}: projectionCollision finds one projection record per \
+      definition member ({ixe.consts.size} records, {p1 - p0} ms)"
+  | some (b, i) => errors := errors.push s!"{label}: projectionCollision finds member {i} of {b} \
+      projected twice"
+  let projected : Option Ixon.Constant := ixe.consts.toList.findSome? fun (a, lc) =>
+    match Ix.Cert.definitionProjection (a, lc), lc.get? with
+    | some _, some c => some c
+    | _, _ => none
+  match projected with
+  | some c =>
+    let bytes := Ixon.ser { c with univs := c.univs.push .zero }
+    let consts' := ixe.consts.insert (Address.admissionHash bytes) (Ixon.LazyConstant.ofSlice bytes 0 bytes.size)
+    let ixeP : Ixon.Env := { ixe with consts := consts' }
+    match Ix.Cert.checkReport env cenv (ixeP, failures) with
+    | .error e =>
+      if (e.splitOn "projection check failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses a second stored projection record of a \
+          definition member"
+      else
+        errors := errors.push s!"{label}: the second projection record is refused, but not by the \
+          projection check: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a second projection record of a \
+        definition member"
+  | none => lines := lines.push s!"{label}: no definition projection record to plant a second of"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find
