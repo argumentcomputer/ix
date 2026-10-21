@@ -824,8 +824,9 @@ def fakeEq : List (Address × Ixon.Constant) :=
   | _ => false
 
 /-- The same block under its own address, with its projection records and
-recursor, and a pin table that names it `Eq` in place of Init's: the reader
-names it `Eq`, and the checker rejects the reserved name. -/
+recursor, and a pin table that names it `Eq` in place of Init's: its reading
+changes the prelude's entries at `Eq`, so the prelude-copy check declines it
+before the kernel's reserved-name check. -/
 def ownEq : List (Address × Ixon.Constant) :=
   [(address 89, unitBlock), (address 88, iPrj (address 89)), (address 87, cPrj (address 89) 0),
    (address 90, unitRec (address 88) (address 87))]
@@ -834,7 +835,7 @@ def eqTable : Ix.Kernel.RoleTable :=
   rebind [(.eq, address 88), (.eqRefl, address 87), (.eqRec, address 90)]
 
 #guard match run ownEq (table := eqTable) with
-  | .error (.kernel (.invalid msg) _) => (Ix.Kernel.Msg.render toString msg).startsWith "reserved basis name"
+  | .error e@.preludeCopy => e.outcome == .declined
   | _ => false
 
 /-- `fun n m => n` pinned as `Nat.add` is not certified, so not accepted under
