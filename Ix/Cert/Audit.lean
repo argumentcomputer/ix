@@ -24,6 +24,7 @@ import Ix.Cert.CtxAgree
 import Ix.Cert.CtxAgreeHints
 import Ix.Cert.SourcePrelude
 import Ix.Cert.CtxAgreeProj
+import Ix.Cert.CtxAgreeOwners
 
 /-! # The certification statements, frozen
 
@@ -5214,8 +5215,8 @@ run_cmd do
 The actual projection rewrite and definition lowerer commute with scoped
 renaming under ProjectionAgree and height agreement. Successful inductive
 lowering exposes its exact owner array. Deriving that lookup relation from
-the two streams, and renaming the owner constructor through structPartsCore?,
-remain explicit intermediate obligations; no final premise is added. -/
+the two streams remains an intermediate obligation; the following owner
+section discharges the constructor's renaming. No final premise is added. -/
 
 /-- info: [cert-audit] projection lookup transport: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -5247,3 +5248,19 @@ run_cmd do
       `lower_noBasis, `group_frame, `lowerAllCollapsed_prefix,
       `prepareSourceCollapsed_prefix].map (`Ix.Cert.SourcePrelude ++ ·)) ++
       #[``Ix.Cert.SourcePrelude.Shape.generate_noBasis])
+
+/-! ## Projection owners: construction commutes with scoped renaming
+
+The structure-shape check and the direct recognizer's success flag are
+preserved. Together with the native recognizer, recursion flags and indexed
+candidate selection, they give ownersOf_mapKeys and the exact corresponding
+lowerInductive owner lists. This closes a local construction obligation,
+not whole-stream lookup provenance or prefix preservation. -/
+
+/-- info: [cert-audit] projection owner construction: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "projection owner construction"
+    (#[`structShape_mapKeys, `structPartsCore_isSome_mapKeys,
+      `ownersOf_mapKeys, `lowerInductive_owners_mapKeys].map (`Ix.Cert.CtxAgree ++ ·))

@@ -11,11 +11,11 @@ rewrite flag. The hint itself is the same on both sides; the compiler's
 projection-hint bridge supplies that equality under its stated conditions.
 
 `ownersOf` and `lowerInductive_owners` expose exactly the owners returned by
-a successful inductive lowering. Their renaming is a separate, outstanding
-intermediate obligation: `projRecOwners` tests `structPartsCore?`, whose
-scoped-renaming bridge is not proved here. Likewise, the actual stream must
-discharge `ProjectionAgree`; this module adds no final compiler-correctness
-premise and does not claim the stream composition is complete.
+a successful inductive lowering. Their scoped renaming is proved separately
+in `CtxAgreeOwners` (`ownersOf_mapKeys`), including the structPartsCore? gate.
+The actual stream must still discharge `ProjectionAgree`; these intermediate
+lemmas add no final compiler-correctness premise and do not claim the stream
+composition is complete.
 -/
 
 namespace Ix.Cert.CtxAgree
@@ -119,8 +119,8 @@ theorem lowerDefinition_mapKeys (hP : P.Pre) (hf : InjOn f P) {source : State md
       pure, Except.pure, Except.map, Declaration.mapKeys]
 
 /-- The projection-owner array constructed by `lowerInductive`, separated
-from its checks and generation. Renaming this constructor is a further
-obligation: in particular, `projRecOwners` tests `structPartsCore?`. -/
+from its checks and generation. Its scoped renaming is proved by
+`ownersOf_mapKeys` in CtxAgreeOwners, including the structPartsCore? gate. -/
 def ownersOf (rb : BlockRead md) : List (ProjRecOwner md) :=
   let block := rb.types.toList.map (fun (cv, _, _) => .indInfo cv {}) ++
     rb.ctors.toList.map (fun (cv, nP, nF) => .ctorInfo cv nP nF) ++
