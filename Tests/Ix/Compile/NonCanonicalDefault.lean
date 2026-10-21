@@ -85,23 +85,23 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.S3 "P0" "P2" `m2._sunfold "user constant" .inherited (.inherited [`m0])
     "a431a53139e1e5459d676fa6912c189fafecdbd8ec6bc0d6647cc342fb5a45ad" "21d4163d0aa268861745cfdc3b865fe1058e47174afe808a127d337d028aaba3" "",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo "clique member" .pendingTransport (.root false true false)
-    "afebd23516717e00faaaabc32e9a7e9e51f92c801e988ce60e5b59a9494a0667" "1d57c9d6a15dc716724c6bdd34f7b5d30a0210f3878a35c0a6d40f22eb4edd60" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
+    "e55bb46e42de613f3f698f1f256bb0c43d4d2ab4126d267ea8b2a195b5979f67" "7ecc1fcb2d7f097e778c164e9665d57efa098d9c1ebcee0d529130903d4c9630" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo._f "structural functional" .pendingTransport (.root false true false)
-    "52a987639794c1db5e7385fbb563c6a75f665679ea982622300e77922ad501d5" "ae363b9cda9638fa9686d4b381dc9a676f2d52a4ffff51c061021c19a890fb99" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@5" "path into the packed `below` motive: position of the function in its type former group (clique order)",
+    "946a04b42cf1cf5ca1420cc450facc5d4c25876b7017f5252801b58133e62e59" "670c4e32a9d88760ada44a3976269be77726d24b4da8c9de453922e1b87e0822" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@5" "path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo._sunfold "user constant" .inherited (.inherited [`cTr, `cFo])
-    "84d6687318a0390626aae0b6332afcffc528cb72c628f23a80a65adf63779da0" "c67aaa84685619f700339b0eb7b8440355902662f7211f8567addecc66fac353" "",
+    "f7082d0443c1b38239ee1cfdff4e567d258b3d696b64d7fbbe3f92de7b225e16" "239af410afc555c9c55293077a79ded46fd2e8874c6695be43156e2e18a40838" "",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr "clique member" .pendingTransport (.root false true true)
-    "f99fd1eb14be1a67d25284e9055e3b6d2cfcb8084cca9f58f34a3e9aebb8e2ce" "b5c9af1ed68ea0ba15f553099630d3ed33fdfa47d175eeb1100a3d0edea90c91" "value.λ.body.@4.λ.body.λ.body.@2.fn" "projection into the packed `brecOn` result at the clique position; packed motive order",
+    "9aa5f057ed6e7e54bad1f0149269970892b4c883a73f90ab6ca89c7301788317" "8970fd3c2912f2e862b3ee0c5c82df3eff51905ff2f40e0719b63c2176ee8516" "value.λ.body.@4.λ.body.λ.body.@2.fn" "projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr._f "structural functional" .pendingTransport (.root false true false)
-    "14aaa1ec78220ab13ef4eb9134c9260fb940dbabd9fb801f7e39ccd21b6d6be9" "f315630469a6313017fabc85531d5a356ab7e5f810c7b3592d4e66b390a31398" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
+    "4cdb47b0efb189248c0332e19a478d3aab0fcbaa323105310b68494152f6a7df" "237e78baff718f272ad46fe08fcaa9038834e3764fbc472e7c26bb96430c7d00" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr._sunfold "user constant" .inherited (.inherited [`lFo, `cFo])
-    "13329e3da51b3b9c43173b812e7d67c9f5df9597d01c65d0b2e09e0db4d9ea91" "d6c5817185198cea2e0ed69af806ae9da7afe6a90de53fe02e56057e1d2d42af" "",
+    "fb34937e88e5d7e41ee2513fd96a275d23ec6806f3d1289cd1a6749a3ffaf220" "d1af06d85247648a324db39dab8892b112e59ef91c4900e51f834cd489109a4a" "",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo "clique member" .pendingTransport (.root false true false)
-    "6a522057e328e93aa4b88592b9a4ee2cbadd188330db0f88cccb650a15f70383" "35a0dbbee311d292a99d1eecf8b45f46599e724c3d079112025c46a82c50a37f" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
+    "925800c959defb61ab59e9ca4f1d03a8569d17c91230fcb5b683510ee78ae582" "671bf000e880c2b96203922ab5521785be73b705ad390454002e10e31bce0bcd" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo._f "structural functional" .pendingTransport (.root false true false)
-    "d90b3fb84212449b28689dda72a5b33a2441536c0026aef7d0d52ea4a43f3720" "f5485ab3ad53ac26004d88c0f094a13a6e9b46c004027eb6199621f909fee63c" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
+    "15d43c0ba995e823fbbd1c7227fa5a3b5182b11eff33a35da82a4b21704b3f59" "a3b54b4648b2c97d9f1a17f4b95e1bcca4222acdae4d929574ac47cf28b500d5" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo._sunfold "user constant" .inherited (.inherited [`lFo, `cTr])
-    "1513bbdcb5cdd2a55a51482b4af3302cfd1aade1297189a3f3716e8ded3d5922" "12863ec37d5bde0e3dfe7720c820ac0b7e17ff50b969cf927b77e3a3ec9daa14" "",
+    "d27e527b120e8e2aebd09a605de7966c237b488a6220c5a6fee5eb1e110d4298" "a4769f9dc5df3bc2011170a55507983f70af0b6bfd0bbb7cc9aaa7783bca257a" "",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa "clique member" .pendingTransport (.root false true true)
     "4759d7fe47f0d21c2b99cf95bfc7d5cb7b9ca281166e4f3f92d37c8c308a06b2" "641529fc41f1f6b72045cde3fb9c20357b95df6d1e659d54b53617f145b99f36" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual "clique encoding" .pendingTransport (.root false true true)
@@ -255,13 +255,13 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.TW "P0" "P1" `wb "clique member" .pendingTransport (.root false true true)
     "5883e50b907830935e717e5aa88faf8733fa45e2442687db5aa916e51bad0cb7" "993b8c17a4ddf9cec241eef2cfb7fa4913d8bba3683caac3388dc9b7b5a88f50" "value.λ.body.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM "clique member" .pendingTransport (.root false true false)
-    "04be654a74f5e7b2d215ed31d6df2c3a94135831839e8d5db0cb3ebfd22259bd" "e600d0c3c44de06ef8144fdad20f5b81fb1633e60fe6ea29f1d73947ad82315c" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
+    "85bf0b29cbd0ae51eb6fcccec7c9fee8586402949922062961c9ae3531ab612a" "6dcbc436be70e74e5439e656b44114c10b02e09ebcb2fe1441108d2b5f3a9831" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM.match_2 "transformed matcher" .pendingTransport (.root true true false)
-    "c6811a1fabf7498b43ed04a9215d9bade1a8635f1bf3eff5477ee8e7e905a17e" "bb86122e6c18f5806837f497e2236d93bda8a9d2742582dbac273dbdba1e2fe9" "type.∀.dom.∀.body.∀.dom.fn" "IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
+    "1e1f7200e87028eca387c1d44c2e215254ade0a761a157a3e6b628a177185cb5" "8efb3c6d1d1af97d41c976418b640ec8605d679fa71ff5c4cc5ff1479daebbe8" "type.∀.dom.∀.body.∀.dom.fn" "IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `odM "clique member" .pendingTransport (.root false true false)
-    "12b8e7bd40d3b653755c49eb607e9d2219b0151389ea4cb6aeded800b844d9ff" "176f8daeff65c30c7c52f6ff6bc97e5ec990f66a128011aa08dcb1f11cc6bbef" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
+    "5af09c32f715506203cbeac80e27bc502eae94b01b2bdf563df48f41cdbd8322" "797a7574b276e948ceb2835036b98f0035a98b53882fa3d04a4c190e1f114de2" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `odM.match_2 "transformed matcher" .pendingTransport (.root true true false)
-    "ad2109b70d8bcfdd495136d20ec3129341fc3e8f7cb40ec3c12f0d9c994101f5" "36eb9a22918e8eb22c991c6c46f9b457b79b2b605a04da5d497cac78941b5b4b" "type.∀.dom.∀.body.∀.dom.fn" "IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
+    "66e611953d044882c13c3c4ff2d30aedc04e9b0923a5377368a8ede7b6adbf37" "01e46e132d415b1d954324c5401b4ac974a1965282e4d1b9314c664c4fa1ec43" "type.∀.dom.∀.body.∀.dom.fn" "IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
   e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sa "clique member" .pendingTransport (.root false true false)
     "e9d460ba7b4cd906fd0f660108b189fbfe154953883e20319d7dd6452d4ddaab" "3c2d53a05c70b77a5269ac8412b0095ed0dcca53d9ccebb753fbc6368e74d723" "value.λ.body" "projection into the packed `brecOn` result at the clique position",
   e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sa._f "structural functional" .pendingTransport (.root true true false)
@@ -475,19 +475,11 @@ def part1 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wy.eq_def "equation lemma" .lazy (.root false true true)
     "5a031c526f0532f55fb04fe46bac9ce987909707d19a3f7842cb223a007318d8" "f9a53f194d6e42939af76f7dd338862ff4c9081d9b15b7ed9a7137a63edf3e2e" "value.λ.body.@1.@0.fn",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "cd37d419d255515656933e6d23afe32bffc3622104ad299967bf429b71328188" "94a62e97c96672f915d263f7c4acf33cbf96f553aea6f06157fb39ad491176fb" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "cd37d419d255515656933e6d23afe32bffc3622104ad299967bf429b71328188" "3149caf1f58e19e0832f94972715f19a8fb484385a3ed50e37ef683a5e12fd5e" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "9f571cee8cd34435aae331146255374c3c30bd41d22263eb4d83e9487a9971d1" "16ea542df804267faa23bb4107683ca08e202828b49b22ddd8bb93b34e3e57ca" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.a.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
-    "0d513ba8e78a3c89b4da0b1d6840743a5d50e11c0ff69067aaed6dd89d7b4d29" "2bf72496f04ccd50da098a9ead68e54d21e011a905ceef3523bd3d933528e76a" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.a.inj "user constant" .inherited (.inherited [`A.a.noConfusion])
-    "3617e858203ee3d647eecb17b1de90aa88fc5f3996b1c38454ba6a6df8f273ea" "498e514b3963a4d3015589c2e4de8b6eea75361c5b4b36d14fef2418fd3367c5" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.a.injEq "user constant" .inherited (.inherited [`A.a.inj])
-    "b54352c518facc3baa803080b37ddb1c133458530083efe572f5bc8cc6d02d19" "ecb568eb121862e67f29deb80a90fe1a5f6355a30fad0fd3c4a698a9a772c586" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.a.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "1bf6befe874d4bae51d4537e3fb3bebb06c0c800b32e3829d723b7422bfa2be9" "dc0a55a255fb144a662df79a2fe6cb131a4c74a87cc9d120e97811892a669594" "",
+    "9f571cee8cd34435aae331146255374c3c30bd41d22263eb4d83e9487a9971d1" "ecb5aa3e7f9be159472b15d3af82ab2d24f88b45a0502ffcc86c00d1320e9973" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "6d49117afba347441fd9d5c801883965a81a59d32b23b89e2f613cce8ede1432" "c54a583208689e148335d6d010218544cd030b5ec6a2a5da36e6d82fe8748e07" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "6d49117afba347441fd9d5c801883965a81a59d32b23b89e2f613cce8ede1432" "5ba8df4f5c5b687425a8c97a35a5a33c0d9617049892ca7563726f89bd459959" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "6825ad81f198d5b2c2383e8f41765aa9173509839d83eca74daf8ed4250cf7f6" "edb22d889d302d4fc637bd44e88dcadb1f8a38bf305e62670e018b630cfcb4fa" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -496,32 +488,18 @@ def part1 : List NonCanonicalEntry := [
     "61409cf8593535276483244e4931eddbcfe3c128ec76ebb73f98e09c5235aa04" "162916defdace1c6bef8b2e24099f7dcd356717119fd8de74c9f49e3d71199f9" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "231dc18951ea73da5c170f4d74f2cc36c744823c7a2e5bc63d2833f57237bc90" "607b55c6ab4127543778e692744db18f9f4d0403b2f323cdde273214930d053e" "type.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.ctorElim "user constant" .inherited (.inherited [`A.ctorIdx])
-    "3ade96a931f0f9df33f1f515c479ce60d8ca24690d4cfadd44c7fd5b70a778e4" "7ac021f3ad8fa90434e367a2b458c4300be8c37f71e723cfc12d57a17cb141b1" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "c2809d9d2e483b695fa6d99877550b4e039ffd57d2213b9238d0c866570908b7" "db09c8fd38d13f2bd835b106874e4b073c257a0af22bd9144629014e482364de" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.nil.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
-    "1a3d3a60851af2763727a798a7dc00c1615232a6284a4a08c55c21aa47366692" "546a3eceb55e758bd4911558031c5ecfa084ef30defe4b81169a0e4abd221a4a" "",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "1306c44721989e0badcb92934c7b477015f0d751772f8b67a115b6124d735d07" "2501d5ca713a54950234ba373d88943b3d00b70a8d74e8e6afd58143db8b3c64" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "1afc8f389ee7ec94213ce0b743d528f9b7113e62aab67af4108c45bd7369eca6" "2343e59aefc761da079722d3afdbcde6f724bae01aa392b979188a09e1fca7af" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "5f73c471da9b5d8b7975d69a8069bb565619aeb1bf9ef216aaf11335661319c6" "45ca3e2ba0d023ed9d8789b58d8a03e67a5f230f7286cf2f396b7ce92db95f51" "",
+    "1306c44721989e0badcb92934c7b477015f0d751772f8b67a115b6124d735d07" "9c6e07355e685e9c65caeb6e041a6155e814bc3fb7618a18042c173a21a53570" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "3ccc83899f75d3c94a6f6edac10f5a968ab26ea933205cbc7ac420376c39080d" "c25c953a464d477303c1228a5d162fb91be4191770fda51ed39d0a34c7ca1524" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "d80456773bd6b4b102754a79e2c45bd6feaee3685cb0646a3b41716daddd1e02" "81a68179231d6907cae95db052b597990c7a2b1f31f5e1b6a79ff245082fe9d1" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.size "caller of a changed block" .pendingPasses (.root false true false)
-    "a079964bc4740aa5f8db3225b1cede4039647cdd6ab1f0a8b3c24454bfa9bf10" "beeb358d6276b70b8fd01028844cb379409bd296ce3b577c2f06497a4a5bb937" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+    "a079964bc4740aa5f8db3225b1cede4039647cdd6ab1f0a8b3c24454bfa9bf10" "9a7b9edc257295cf6bcc6702620bd771333f97c635fe50ad2793b611998324c3" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.size._f "caller of a changed block" .pendingPasses (.root true true false)
-    "52f668901e95777428555c59f3cfd2c3a90221269c7a3ef2c67fd4342a007d5a" "509507128ddf71301e57e0f67312e69e20972f9b96e08097a0ac24041781eef9" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.size._sunfold "user constant" .inherited (.inherited [`A.size.match_1, `B.size, `A.size])
-    "73bf83c71709837e792456ee256596e7dc4254ffca8cded759b3072af5512be0" "83024766cfafd9ca0e77350c9287035d19eaa998f34f80f4bf18997ead21c152" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.size._unsafe_rec "user constant" .inherited (.inherited [`A.size.match_1, `B.size, `A.size._unsafe_rec])
-    "ad920014303db3248d907b1a8ab3ce2f10cca2dd45f2bc80f257b5edc2c291c0" "c58aa02e75e8ab32e3256fd23464cade5e3561de91f3d2f1f9cbdde969df67ff" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.size.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "d8686b9025ae6689dc2bb0a34bc72d46ea1e0ce0f6ce6ce637cc978506ed4559" "2bc551a79701891357e9926ee03a72a7f96414fd1bee42604ac0ac8c617d79b3" "",
+    "52f668901e95777428555c59f3cfd2c3a90221269c7a3ef2c67fd4342a007d5a" "2e6a7a55c47616efd970fc5db3eef79241777a5230e2e4413014c7d02491e38d" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.size._sunfold "user constant" .inherited (.inherited [`A.size])
+    "73bf83c71709837e792456ee256596e7dc4254ffca8cded759b3072af5512be0" "cf579bb3bd210d950de95b61dd25608099935de910afe091c68830264b1df69b" "",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "a17da90a847d92e8024d980f152101a3ee8f2096baa675ddc6cb69732b2d1ebc" "f6abd9ed9fa5e1d41083e3fd94b9497f3929b8c3b57bb15bd3ecd84afea5c021" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -530,40 +508,12 @@ def part1 : List NonCanonicalEntry := [
     "ab8acb574825a6d2c00a02642757cc90d37a478525eab15ffd76f53041572b70" "f51addddeb2bda9e8d058e0b18aea15c86380b78e043b35d6ad475e6954ed292" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "597541cb7d1515de8618e8ab7f7f7e0f4f5693cfb3ea6be3dd1cb1fd8891e662" "6fee31554733eb6825e76545eec5a750f07ca2367e17928095e4e31dd46915f0" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.ctorElim "user constant" .inherited (.inherited [`B.ctorIdx])
-    "f3db120744d25a57d5535442d6bb7d0923b45b056da302e19f82067a40f3f702" "bb0d99ae86cca402f8472a2af43f9d28ca73012c424a72dfb12c8475253d05cc" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "2613f00a4d5923be077387ceeb87f0fe68cd361ae987bd818e066f6042264c17" "99c2ddaa2a310a32946ff5e6c7aff43a10d3f34da117567aa635f410b50e8196" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.nil.elim "user constant" .inherited (.inherited [`B.ctorIdx, `B.ctorElim])
-    "bbb6ffe937a7d246d1cd455b1e4f49eaae681c4fdeed60078775e57fb5a1dad9" "020fc73b74c112376cdf6a9e6503d7c118a914ab6492526ae3f0c64fab5e8b4d" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.noConfusion "user constant" .inherited (.inherited [`B.noConfusionType])
-    "567f68cba689df3ecee088d50c35c5224bc83709602c1ec997dbd49835743974" "2385f1db4bdebbb2adf0ab4ba60a69b81525887ee1d6faff61d8f4aff080632a" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "2028e58d86f9a54b9e53c4f4201b53ccac824e2a3733a06ff4c6a43d5d859b51" "a182e4bd4c6d5d25365ac60ca2d530d30bf455f5438cedfe7effa74ca153922c" "",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c8322e03d558f85a8edc7fe68524013880ad0bbcb7dc890136d247154b230992" "488ee843bd3a5db6dcaea357ec8fb7edfe5e5b79537f9417cc7b85f7ae348707" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "32038f41f6815ac7654830d5262dd2880649a594097cc8af729505ce45c84ef9" "9ac4ffee9f38aecd8787eaacb1f4c9ad3748ec11379ffd85e516843877f35f52" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.s.elim "user constant" .inherited (.inherited [`B.ctorIdx, `B.ctorElim])
-    "16107ddc18248b7ccccad13cc7b76b39febcc21962b84984ab8dd2070a21bbe0" "0156e4461afe70d1ca687424214af7f9d316610272830975133e5e4070e2ffbf" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.s.inj "user constant" .inherited (.inherited [`B.s.noConfusion])
-    "3fb46b0bb6ee82b33e855925ffa40315b616788be62d07411c4ffc45f51565a8" "be92ed1113e3653e828477b28cedc14b6e09c331e2e32160d78bf22e2d4deebe" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.s.injEq "user constant" .inherited (.inherited [`B.s.inj])
-    "1917356cd419691dc94a7a54c0ec9781350524e1244c139252f96b6e9d8c7a20" "79002c702ace448c4f930447a41a621a70ed82e33eead9d69d0b392eb5c5c223" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.s.noConfusion "user constant" .inherited (.inherited [`B.noConfusion])
-    "b0a8929138060d1c635634bdcfa7cedd7c2cfba0cc376de8c5de511d3cf8cc5b" "15b70b6899ce544ea80ccab1fb0bbbc6852edfd669f5e5286b2c8588f942b507" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.size "caller of a changed block" .pendingPasses (.root false true false)
-    "7ab66120eb546a328d7a77dc24057c2590921b439880bd534377f46929624447" "21870540e2cba122e4e1540db3e57cf9293fabef721d4662e1e4e9558d42a89c" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.size._f "caller of a changed block" .pendingPasses (.root true true false)
-    "c0ed98ee378360d330b40f22a2fd2b9a06153d051825644cec6ae0333f7250b2" "3f3d5ff8ec4dd9a4d6e391b114e9b2f9992caaf8ca3394ac410ed7f8148b54a0" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.size._sunfold "user constant" .inherited (.inherited [`B.size, `B.size.match_1])
-    "ca27ead5b84f96c21500cca4e0522c912e2547f9f9045e34b242979270809eed" "620c0bf7c379abd350db9fc3e12c058a6fd462e00b1d09f5c31da8a54ca83a77" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.size._unsafe_rec "user constant" .inherited (.inherited [`B.size._unsafe_rec, `B.size.match_1])
-    "9812e80ea5a87bfe8c706f22bcbb0088aec3f8dfdb907bbdef65aaa4271756e2" "a3d948ce8b6896f74743038b277f89ba08275dd89d7ad4d7791d4cc166b38113" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `B.size.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "8456b93a61151feea7878938feb7e719ffbef279f28f05c3e798f036ff56fa5c" "674ddde219dd2651a2205b62d3a70ecf57c352e9f674e164d3ef2c3ef449cb3a" "",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `size2 "user constant" .inherited (.inherited [`A.size])
-    "81c2c0294c78f9ec0a8639ef01410a81fe0b57486d2db8631d4d22742cb1c8d6" "8e5d0af872e0e6f168f2942ba3a56a5047adc99bfa37fc95d60885f024a3208d" "",
+    "81c2c0294c78f9ec0a8639ef01410a81fe0b57486d2db8631d4d22742cb1c8d6" "fd18761c8cf346a9d5720ee4a2533b0cd6a7a8bd878d9d20acff7ed9d8652bd0" "",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "7f763b22ab7d2313414b0863abcfd8be6d6248a894cafa3985de4aa1ee87dc76" "ebc3c6e344916a094060c73b9dbffccf4be05a447422a622d604072e21f82db9" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -572,38 +522,10 @@ def part1 : List NonCanonicalEntry := [
     "7ae45a0991d805839663d60aaa3c1a21e95d2d82884cb29bd25e4dfbce5a0609" "36db7a4a9d8402bfa9bac3644c5222f85f12c1538671e96918d01c0d5752e4a2" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "162f42113d4810a627b1428cba24770478ac759a69c93f1f6308c7046e52e791" "1cb86054c4b59b486a1ac476d135afe8752728f43713d1061c908f1b6ecd6731" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.ctorElim "user constant" .inherited (.inherited [`Even.ctorIdx])
-    "61c84c444af18e5b10eeddacf9038769c5df20c3635297aca0368a85c81c7767" "08e99a0444f4df4c1a491b461873b4763a4ce5753fe30844cc7410eab61e8e4c" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "6b41af9ed4cdeac27411e001be93c064d7d94b68cfc2387eb27edb1d12860645" "e0b9a325ad87d97e290ed0ca7616f68b606d4a5ffb9f158cf801d388f6b4a673" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.noConfusion "user constant" .inherited (.inherited [`Even.noConfusionType])
-    "a41136ce4221a23887503cb3acf7cae609d1c6fe6412c8abbcb3e31625244007" "608d719f5edd195e52a868b55989683301c242f5016920e025f4f3c83ef5a0ee" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "6be1c9c3d68f215e125ea41348db280f98b2cd824ae42e32242e7f342daf801e" "21c1b84fdac19e3ac3aadcc268e5197709461f2bbdc4f44758b0f62c9299e60b" "",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "6bb942cd82f258244933f967c95096c6f2224be3e42000044f6c48bea7494a5c" "828c49458b8195d317602ed1e50d073f750366fdd0fb2d8805ea2fb12c57e372" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "ceae26812d0993921e96c02861e907a6ebb35bf8ba2a569b93520c1b49a243b3" "dcea23ce9f3d4d3171865b8ddece321fa8b7016725e8821b11f5b4d6c464508a" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.s.elim "user constant" .inherited (.inherited [`Even.ctorIdx, `Even.ctorElim])
-    "86cf501cb076978ac197991c6f88a35a4f28e2915bae7605f9558b48e862d3a8" "33b10e945a4da1545df9353e14d5e4d0ab23189249df6d145cd325f50578bb9d" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.s.inj "user constant" .inherited (.inherited [`Even.s.noConfusion])
-    "d231031d72e12e13cced04bd0d5ae6dd40f8e20cf7a8e4f66f9347ec7456f275" "a3c29fd41fa1a8698e36a94103cfb82de3162d64fde332e285bd301fac3fb106" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.s.injEq "user constant" .inherited (.inherited [`Even.s.inj])
-    "abc7a7047558ca0a326f461e5c59eb59f9ce9da9dd55d85d3464ff5080827099" "2448b9a4d5a2ea41fcc5cf920d460df30bac780a97a074e11f50053a8c108e9a" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.s.noConfusion "user constant" .inherited (.inherited [`Even.noConfusion])
-    "fd6b519f6d0ccdc418e738e94af933bd2dd285678224df4cd75071aa61b11a8d" "6bb89cd4e3e99d1b2948cb54bac210c7a235215391ba000879ade2fb1726a256" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.toNat "caller of a changed block" .pendingPasses (.root false true false)
-    "14c008d747384a6b658c0c1e481a978ba8dc0aeaf43f66382603291dea591706" "263876896bd23b55c0483cf8c5bad31ba877fe03432f899e835a4f871d9eb58c" "value.λ.body.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.toNat._f "caller of a changed block" .pendingPasses (.root true true false)
-    "655194ed3bcd02171f46ea536300e78cf92b053d527c2070743416ed1e2bdb69" "81f93e12c74024993ba78be8217091073a60d0f1a69c5cc4851b6c325169ffc0" "type.∀.body.∀.dom.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.toNat._sunfold "user constant" .inherited (.inherited [`Even.toNat.match_1, `Odd.toNat])
-    "b026e2ce6b56bc8ab4aae8d71c3bc37463b24263df2cd485d4ad169348c28e4b" "10827ad349ba4894d553a615d54c039b5c96813a8045fea3e7952fff1316cc9c" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.toNat._unsafe_rec "user constant" .inherited (.inherited [`Even.toNat.match_1, `Odd.toNat._unsafe_rec])
-    "7732c7afdf7ff4d158242dfc661b38c50a2b3a150927f31efed49b06f995cd0b" "3921437e2f19e4522e87e25925f7e9087f57d99dc388116928cf6ecbe0f34e05" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.toNat.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "285973d99afb436f6b20ea696fd6f05570ffb65c40c59dcdc87905652bcaf672" "dcb2370fa5a38d78508941209befb90e8fccd42fe5ac70de08fda9aa4476af0e" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Even.z.elim "user constant" .inherited (.inherited [`Even.ctorIdx, `Even.ctorElim])
-    "d6178667d513bccbf91b324abaff28fdcb96b9665457dec69490e6ddff79d7a8" "c7614d70bbb3db3f37d31c830ca95b706b6dfb38d760568fbd88af6e4f8aad8e" "",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "6c1946534e24d67671f05c36dae164a239acbf49a727475b6836e00b11869cdb" "635e2c9b6b9b2b3919e4d03d5465a968917f2a818cc061f5cf71634ddd86eb17" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -612,46 +534,16 @@ def part1 : List NonCanonicalEntry := [
     "fee09fb5867ff9dbae55ae9aedbf8c3119464b44caae329e490a0286172b57d7" "7d6f949ba4fb394bafe9abbff8d1b55a99903326c2ff5c06f0442d5b71878985" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "166df2c4e8e3fe7a8b6ed7d65b3c5f2c17fc342de8c3d22bb46f54f70e4689ce" "27d3ce37d2427158d4c7b9d458ae803c555d55f579f44848054bbea895e194de" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.noConfusion "user constant" .inherited (.inherited [`Odd.noConfusionType])
-    "e264ef0bc51c3b7da9167b2eeda2477c80e46758b77f81660149ff75407cf56c" "e235cb81be4c39d557ad864eaafb78d89e496347fbfe285b371215ae8feaebff" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "df6e6c95a0c0bed5ecef8c56873ee533e15a9f09dc47f7b287c0579f60d87cea" "4edbdf765ad1e027cbca9608ea3b95664c446be15823d9dea46ee0aa8c19b229" "",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c9cce8cecf22064511a309ecf5cd00f6c87b031ed8e058eb09fd699217fa8c71" "16322604a39ee2bc2c59b6433315f3b40ddb32f55011712161bc88252942c5bf" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1527c316d83a38d43628ce583eb0dba56fdbb7a296b8a0e2e0f64f0e845a3ac4" "c3c6e9068e2b7d3a4ecb6fdc5243e5a0c8288a344a7bb8240e67e9bd8e382cb8" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.s.inj "user constant" .inherited (.inherited [`Odd.s.noConfusion])
-    "ce92aadef7eedb994d10c8131fd1eb26f9e3f2d30122f5fc0a2710169ee35112" "500fe00a16ace79e19648db1a4309450112ebd9e6c5387fc74861304a9e3e37f" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.s.injEq "user constant" .inherited (.inherited [`Odd.s.inj])
-    "38cd356185eb273408ba6421026a9034f94242e455ff6617591a48db3b7a46b8" "1136df113c8e2ab5827369eb1bcd4c2f630558e8d816a7897f1ef89f0916153e" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.s.noConfusion "user constant" .inherited (.inherited [`Odd.noConfusion])
-    "3ccc52cb2955604e7ef13afd8d7db2b5e1981f8eddd7012250695d5f78d404ff" "487e5a43f7761729420e07afafe7e20d62fcbdec11effe4ba8868e55c1a2d5f8" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.toNat "caller of a changed block" .pendingPasses (.root false true false)
-    "6083ccc0c89479a3a3a552495d925a46473543f579d241c324e4c78d73d2c2ec" "a0ab6e9d00d5e4af919ea0cafcdc513f013098e20f2208a34865008dee08ae31" "value.λ.body.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.toNat._f "caller of a changed block" .pendingPasses (.root true true false)
-    "5e277db726358ebccf819553d2429d548b12355953ce0305205e4e5b1be2e126" "6aea37f61b507f4b4e0c2d2089118db8c57bd596fbdd275ad33c7e97972d38ec" "type.∀.body.∀.dom.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.toNat._sunfold "user constant" .inherited (.inherited [`Even.toNat, `Odd.toNat.match_1])
-    "ead543ab4f3b5d2598c3223025de93eb010d3f3a53e27af0bf8b41553146a457" "0c9d62e55188afb11a76355edc14dc470e765da2abe99b3d7406c934e391adcc" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.toNat._unsafe_rec "user constant" .inherited (.inherited [`Even.toNat._unsafe_rec, `Odd.toNat.match_1])
-    "5a64c69661458a2e7bdcd85a626c0639828dc08b00915c0aa9e7bdc7750828de" "7754ef449f8aa89aff9baf7f25418a22eeaed3d6a4f50a84cceca6f37bea755e" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.toNat.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "830a13bfe81958d85007d87a73d4d9fcf860d9120355b09a145f8abacc248c79" "2a19d83dd3bd7d71f7849700303bb6cd165dbf4cf10f0530cd1d80d05f7f530b" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `two "user constant" .inherited (.inherited [`Even.toNat])
-    "0a6285ba7aa56c3f51debe49de7f1b93876c1852da1f6706657608c7bf839ce2" "7bffa0f3540416a1eb8523301ddf4d711098b592b5a7ef5c006855dfcca1b6d1" "",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "64f73e5929554af59b40bbf9d8e2abd18f1ba99399b0b911fdec6fa274c739b3" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "8213397c2ef94e997c72f414215b607d6a596692f727b2b7e92ad5c1e66271f6" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "674c201c98986446aaa3c41c2ecd087ac343df36ddd465a35ab6039a841955a5" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.a.elim "user constant" .inherited (.inherited [`A.ctorElim, `A.ctorIdx])
-    "2fe5c94bdb5c99cea736c5e6fc8a1e8d18c5442936199baf3a3855885a4da6e3" "ac1079750e498f2d1d2476c9ac8de4c595817cad40e431c9d186c2b7c7619b77" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.a.inj "user constant" .inherited (.inherited [`A.a.noConfusion])
-    "dac85c3a439cc5c559800b5997a596faa98e077f7b469b03782533a845da572b" "7ae17ca0afa411ad2d83273992a1d0d5bb46fce0167ee640832f953d98ece197" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.a.injEq "user constant" .inherited (.inherited [`A.a.inj])
-    "a6d4e7c5074c1d2b7e1263bce37b903ddd9ca894af60dc0fcd746ff6327e1ae7" "2fc72e3c4e25c32cd79dc7dc6ebae87399619f4a121c681b88bd2b2b096a4552" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.a.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "25f2aa0fec2a85138cae95219d238d035da11afe50fb56d4242fe9ec483f8988" "239550c092be430ec9a70ba710e67a3d22e3e3dd42cd8c67cc273b585e2df747" "",
+    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "dfa3b4b8edc8219901c2f579d769c771b0b1b2a025b5efee3ed2807f303fa791" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "de6bb0378364a26b8b1daecc0f1058e134c3c962c34b9a5c5d7dc5cc6ce7b96c" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "f57838f5f203e4afcf753dad2e4838d6997dcb9d63acff9466417b8f1c8d1098" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5415f5f54a992d17fec6b65e0382c4577c3c7dfeb1d4f1e16b36448e23f299cb" "17f5ea7d767f19b280e22f1194210bc852a2d9697596daa4818a050fb08d2272" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -660,40 +552,24 @@ def part1 : List NonCanonicalEntry := [
     "ae750f0205d850cbda2dc93d13b6a498c0750ccf4b91d2bb68ddc3c414937faf" "4d96be5956fca8ab6be3115d25c1fe60a2a278d7386d5854a0554ea08f562f9d" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "bdd6c50576fd96d51f72aed7ffa79736ef61ca32aa8158e3a6b51d92c1750f53" "4b75385c7045e7852c776f7feb439b030baa2eeed7fcb618c66bb16e3bd36ccd" "type.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.ctorElim "user constant" .inherited (.inherited [`A.ctorIdx])
-    "d25e34074b183a135a4f2df96f878d71ca5c64ad893d3eb9a83dff43f8f5741b" "6b3a5d7c5b824480572bcc336db942a68f9f517a69544e4ca93ef1327def398d" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "03ad90414d41ef7e006e41bbb315847d9029ed973148409cd0e7276951ff5d99" "3c8863264d334b5481afd1832013e3d1b245de3a06ddd8e99515b7a904e32dfa" "",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.len "caller of a changed block" .pendingPasses (.root false true false)
-    "a547241d523add64489dbe6d9bcffdaa0e11cee9fd2d77c1f8340fb5c5899246" "c5ff4cc37f93189b090350c0dc81abab77e562793f72da3ff480e1d94b1cf3e1" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+    "a547241d523add64489dbe6d9bcffdaa0e11cee9fd2d77c1f8340fb5c5899246" "695f5dae0bcc913038d0207d1a25720b8c04b503998d8fff8532f99ff3b575b0" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.len._f "caller of a changed block" .pendingPasses (.root true true false)
-    "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "f0138f4fad74d0c00abda006f79c12f2b300f4ae2a88998db1d94c1a438d32a9" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.len._sunfold "user constant" .inherited (.inherited [`A.len, `A.len.match_1])
-    "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "b1bfa3bdb69dae69ff83575d7b5b64f224460cfb2c72bd682c8e57945649c0a8" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.len._unsafe_rec "user constant" .inherited (.inherited [`A.len._unsafe_rec, `A.len.match_1])
-    "5dd47dd55a222477bd8d4d3358736c6bda8a716a3d224ef892ae1b0282088d95" "d6936ea943eae5d11f58fe257663c3ad868d5a97c9090b69d102e60d758cd7ea" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.len.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "6761fbb4e5f559551e69c80cb5de2b5ed45fc64bc94d91db9c6927e45d073ee6" "bc8ef32918106301c93ecae547b8fe9d825729d6255433c045c94f943ffaa1de" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.nil.elim "user constant" .inherited (.inherited [`A.ctorElim, `A.ctorIdx])
-    "b22a414f8dac147c49e118a27e58b13f01801314cb7e2c286effb532f4fc78e2" "aca4af067c9f1762dc15a022d191be56db6710b53cb857c5ce86e611f3e6f1e1" "",
+    "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "50a97cdfcaf35fef5816074e6551f227029fc2ec898d320cd5252cc6bc41631b" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.len._sunfold "user constant" .inherited (.inherited [`A.len])
+    "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "37aca8f02a0d00b79593a83338b231b9e5d09242f9c63d1bb87fb61f457b6f34" "",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "b89da649732f4728e1ea3ee6ebe0408417aa2bf5808f6d38fba2bec7be15feb0" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "28816d4a33674a5f2a109945f07cd0f2e8787609d9a602b59cc54ef05980ab68" "0b09729545c26e6d0034691a485d449e5d099ac38b733699f3cfd0a024f331fb" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "072df558b5d01b3fe91d84db848aa8512ff4bb7b2b18c8007e29c8081115b532" "ff4bc28df40d5e1109835b0fc35aad6cd4502e9708624f69ad6a9cbb704f592c" "",
+    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "2a2cdf86d8e40f14fc7ada709238857154b02786b47b3401409a8599de92e7ff" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "507879810bce736d4eaf20aa5fe5e0ff6a59641422f54f61cb7c7dee3614eb55" "bc4d5e04e34bebe33ec6ad6138a67ad9f50db6f517d43e758c0ee5217b23f322" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2ac559561fdbc297ca67c47f791c18079f104f9c745c0ab4b340dfe4fdd42b76" "7fb0e68c45047dbe22e7ab84978f97973a15c93b9c602ba55093eb18cde6f369" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.sum "caller of a changed block" .pendingPasses (.root false true false)
-    "c7129e39f7bfd2043f3378c09e6f9d5edf719f73180cd4ae03f319cc262f60fd" "9dd56734ca2e0977bddda88d55136b11d232e28ab594a63e8b75491def5667d8" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+    "c7129e39f7bfd2043f3378c09e6f9d5edf719f73180cd4ae03f319cc262f60fd" "47bc3f1e51710dca412bb6623e1a0ba191a2365592adf1fc380b153ee76e1997" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.sum._f "caller of a changed block" .pendingPasses (.root true true false)
-    "de86570efb9b22e8cf776caf80d968a5ad6fab401dadf8c32bd55dcc70c4fffa" "5f7ed53b105bf8959039d02249754b8eeda8ec6593955acdd05a2e2e1365cbfa" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.sum._sunfold "user constant" .inherited (.inherited [`A.sum, `B.val, `A.len.match_1])
-    "94b9d8b062531a4a3943a576e713f7a9dd7512501e1c51f224b970bf400aa145" "878340a13a22b4f4f2dc151ddc6d6fdf189330a1ac195e9de70395cab07c1a2c" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.sum._unsafe_rec "user constant" .inherited (.inherited [`A.sum._unsafe_rec, `B.val, `A.len.match_1])
-    "95f0d8ea5f21f9863ddbd9991ba2f9e76256905ddbb9d6c098f99b993e24b8a5" "743a0ae731b49a4fe01ad80c6a36776e830245f10c4faf5e5694d6dd4bc745c0" "",
+    "de86570efb9b22e8cf776caf80d968a5ad6fab401dadf8c32bd55dcc70c4fffa" "be6f2dc389f0b29fd4fdd7b810f119dde345541207ac51736c9d47a5572ebd0b" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.sum._sunfold "user constant" .inherited (.inherited [`A.sum])
+    "94b9d8b062531a4a3943a576e713f7a9dd7512501e1c51f224b970bf400aa145" "c935f273e7c8fcf35c367a2c8d3e8bd32d7a87a67a83c3ef9d56437679008285" "",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.below "block auxiliary" .image .onlyB
     "-" "11a02ff01639cb2e18097f2819d5aeffa7863652a43edd53dbcb6a8a0ccc5424" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.brecOn "block auxiliary" .image .onlyB
@@ -703,23 +579,19 @@ def part1 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.brecOn.go "block auxiliary" .image .onlyB
     "-" "a16b21c967e7357925412409876fd0316caeb5ccf96819e5726384bb6193cf4f" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.noConfusion "noConfusion" .pendingNoConfusion (.root false true false)
-    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "abd3af6627f5d3c14eab547715953d68eb79793adee7b6b73ad6b4b0c82581f3" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.noConfusionType "noConfusion" .pendingNoConfusion (.root false true false)
-    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "a13871a9d6c0f80bec0828b0d0bb5b706bcaf3036c0fd63791655cb1bf8a9100" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "62097ef059b0e99d2abee440f8691386cb2afd54beb68a2cf3a336a726852a0b" "f9cc97e627e1497c57d63be38890d913085305c7273ede067538078438900f73" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "dfa05d5f71d78161d48645eae61fe74366ed0196a36d361827c4b360c8af6812" "8db08eb4c7eb99558e309570ed6f1ebab46facccc9c9f247986ee5314891839a" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.val "user constant" .inherited (.inherited [`B.val.match_1])
-    "5a9809d68bd40dd0f451d95118426d4f8e8637ce156ef0cab2cc9c386662a8f5" "2423083e95f8e05fbb67b6de53be2fea58831e0cc5278de4a2e81a5942a1ac6e" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `B.val.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "b1ea810b383f4dbd7b749e796f7db68cbc10a01f96acf7709d4af3949d8bb9a0" "4129c74ecefde87ab2bff3f2904acdc49e8aec8740d1549bceb1afb47c4f0444" "",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `len2 "user constant" .inherited (.inherited [`A.len])
-    "c7de97e5d77bc5368dd7623036851ed5296ee3ad2b92c5b103e44f3ac577d806" "7cb019b07b25aebfe3a6872e06283a9faaa383bb3073a38ca3158b9c6d0c0874" "",
+    "c7de97e5d77bc5368dd7623036851ed5296ee3ad2b92c5b103e44f3ac577d806" "bdf0926212f05a88afc426a31502759e60e89b57328df753113b6b0b04297588" "",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `len_succ "user constant" .inherited (.inherited [`A.len])
-    "989a21960afdfd4c3e43ac3e8a38c11d77ce64f365deeeb593253f1358a8a82c" "5549d75a0f0166556653cf7b4429db5dcb960fa242e6da9031dfc1b0a085903d" "",
+    "989a21960afdfd4c3e43ac3e8a38c11d77ce64f365deeeb593253f1358a8a82c" "73a88720f99e6d3aeb21fd4739119feb24dedc3907953b58eb2f56b9c23fd6e9" "",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `sum1 "user constant" .inherited (.inherited [`A.sum])
-    "cb50a2624f5ad023677ab12de80a33455ead17b955e22e4d1d61e8efc413b113" "2cea65837549eac6ac340e5a197a95bf9d9981bf6aae83b5715e03947af1335c" "",
+    "cb50a2624f5ad023677ab12de80a33455ead17b955e22e4d1d61e8efc413b113" "24533728ec0d092c42e24cb48c08bf5492a36ca75b4b6df239169dd405e80c4b" "",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
     "b7026d7e4027e86fbe090ab636abd8a416c3c971b1d812279d35834decbb2206" "d21ddd05d636f844de163fe5ff3c0ae7a9fe49623a4d8044f70891ca4bf74613" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A._sizeOf_3 "sizeOf family" .o11aPending .onlyB
@@ -744,18 +616,8 @@ def part1 : List NonCanonicalEntry := [
     "-" "38199ce4669f45f08fd939f42b385bb6a6bed7b033f2adc2580b32dfab4b780a" "" "§4.7 (b): nested auxiliary of the Lean block that evaporates in the split",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.brecOn_1.go "block auxiliary" .image .onlyB
     "-" "428529884300be0c4637b83aabc365aad465da6b7e9229f32630d7323bc95690" "" "§4.7 (b): nested auxiliary of the Lean block that evaporates in the split",
-  e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.mk.inj "user constant" .inherited (.inherited [`A.mk.noConfusion])
-    "a56748a2d93254e4060a9e9cb23d30d6622e6139eda5d5e17b09d21d00d2fbcc" "f00c5f2afcddae630d6cc06ba722be8f9800500e9e952a62faef16e223d256f6" "",
-  e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.mk.injEq "user constant" .inherited (.inherited [`A.mk.inj])
-    "89791cf3e44a17692aff1bddd0e108f5b0332e2271a65c71da6594eb1cd20c34" "b304eb0bbd5e2d008befa102c50107d6782af49fc5d2d8d30f198c628dd0b44f" "",
-  e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.mk.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "8ffccbc5764cc9e8a2c4f8332fe3f4c5777b81a73fad30f4dce98b541d9979dd" "7e98cf4a6fbb82c2b04156a78f93917206131d182a6d3cf99f49c2d8e35b3f37" "",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.mk.sizeOf_spec "sizeOf family" .o11aPending (.root false true false)
     "62da2845006a89ddbf242ec098db179137bec49fd23f804e990969d2cc35c5d3" "c47e4738b2c89a7c1a32c0466f3694cfa40cda5127f84d5b82ea64e19fd5eb5f" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "e33da13f8a61384e608ac707e002e06475c9f46458d8d67683c6ac6e3ca350ee" "fa43fa46b46abd4706092b08394c6d01333002b89b0087776986ddbf4bf0cd62" "",
-  e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "030ae1156180b1ac49ed4f5eec6a82408207719c56bb8724462953ced6d7dea4" "9a49dfadf6985009d708e56ae4505210b53d0abfda8152b37dedbc7a5751f3ec" "",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "001293f7f7890c8941d95ddff31e3d9e6a4bba42204d00a8a9da983677fec23d" "c6f4c9ef77bf9bb5326f5f668dae16b86df01b495c9565c39c55678c2966f57d" "type.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -771,9 +633,9 @@ def part1 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `B.brecOn.go "block auxiliary" .image .onlyB
     "-" "f280f4cd05ec7ca01893c2aceecfe2a89b1f0a1cf31c8c06e73102cfa9d1bc1d" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `B.noConfusion "noConfusion" .pendingNoConfusion (.root false true false)
-    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "abd3af6627f5d3c14eab547715953d68eb79793adee7b6b73ad6b4b0c82581f3" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `B.noConfusionType "noConfusion" .pendingNoConfusion (.root false true false)
-    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "a13871a9d6c0f80bec0828b0d0bb5b706bcaf3036c0fd63791655cb1bf8a9100" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "62097ef059b0e99d2abee440f8691386cb2afd54beb68a2cf3a336a726852a0b" "38a0af07b0206343309225612792bd3d2c1d87b1b9b1e9c54c9dc98ee08115e1" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.EvapClosure "twin" "orig" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -823,11 +685,7 @@ def part1 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.F1_Collapse2p1 "twin" "orig" `C._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_2])
     "91fe08946a3682f5c478201ed18493e1a93b178a956790722e289a48104d1411" "2dbebfb1fac3b5d4b73ab3f78e701cc0ebaab9df52c0dac8768ea14ec05d0420" "",
   e `Tests.Ix.Compile.Twins.Repro.F1_Collapse2p1 "twin" "orig" `C.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
-    "6592d6b48818dbd9faa38a6d7a6d6605e1d1b570be9bdcfec1ecaddef860dd5f" "a0e4f22c6582e6e416d45942fc12c02fce1f00e7769072e0e22d797a30cd5857" "type.∀.body.∀.dom.∀.dom"
-]
-
-/-- Entries 400 to 599. -/
-def part2 : List NonCanonicalEntry := [
+    "6592d6b48818dbd9faa38a6d7a6d6605e1d1b570be9bdcfec1ecaddef860dd5f" "a0e4f22c6582e6e416d45942fc12c02fce1f00e7769072e0e22d797a30cd5857" "type.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.F1_Collapse2p1 "twin" "orig" `C.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "18f208088e87a88bec0c4126ca8b2dbaa72b79089e906bc4f9a20588e0f6bcf6" "912bd70b8882a0a8edcdedd4bacf227b2ee414c53361472a78a435d23014fc4d" "type.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.F1_Collapse2p1 "twin" "orig" `C.brecOn.eq "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -886,18 +744,8 @@ def part2 : List NonCanonicalEntry := [
     "-" "38199ce4669f45f08fd939f42b385bb6a6bed7b033f2adc2580b32dfab4b780a" "" "§4.7 (b): nested auxiliary of the Lean block that evaporates in the split",
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.brecOn_1.go "block auxiliary" .image .onlyB
     "-" "428529884300be0c4637b83aabc365aad465da6b7e9229f32630d7323bc95690" "" "§4.7 (b): nested auxiliary of the Lean block that evaporates in the split",
-  e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.mk.inj "user constant" .inherited (.inherited [`A.mk.noConfusion])
-    "a56748a2d93254e4060a9e9cb23d30d6622e6139eda5d5e17b09d21d00d2fbcc" "f00c5f2afcddae630d6cc06ba722be8f9800500e9e952a62faef16e223d256f6" "",
-  e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.mk.injEq "user constant" .inherited (.inherited [`A.mk.inj])
-    "89791cf3e44a17692aff1bddd0e108f5b0332e2271a65c71da6594eb1cd20c34" "b304eb0bbd5e2d008befa102c50107d6782af49fc5d2d8d30f198c628dd0b44f" "",
-  e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.mk.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "8ffccbc5764cc9e8a2c4f8332fe3f4c5777b81a73fad30f4dce98b541d9979dd" "7e98cf4a6fbb82c2b04156a78f93917206131d182a6d3cf99f49c2d8e35b3f37" "",
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.mk.sizeOf_spec "sizeOf family" .o11aPending (.root false true false)
     "62da2845006a89ddbf242ec098db179137bec49fd23f804e990969d2cc35c5d3" "c47e4738b2c89a7c1a32c0466f3694cfa40cda5127f84d5b82ea64e19fd5eb5f" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "e33da13f8a61384e608ac707e002e06475c9f46458d8d67683c6ac6e3ca350ee" "fa43fa46b46abd4706092b08394c6d01333002b89b0087776986ddbf4bf0cd62" "",
-  e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "030ae1156180b1ac49ed4f5eec6a82408207719c56bb8724462953ced6d7dea4" "9a49dfadf6985009d708e56ae4505210b53d0abfda8152b37dedbc7a5751f3ec" "",
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "001293f7f7890c8941d95ddff31e3d9e6a4bba42204d00a8a9da983677fec23d" "c6f4c9ef77bf9bb5326f5f668dae16b86df01b495c9565c39c55678c2966f57d" "type.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -913,9 +761,9 @@ def part2 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `B.brecOn.go "block auxiliary" .image .onlyB
     "-" "f280f4cd05ec7ca01893c2aceecfe2a89b1f0a1cf31c8c06e73102cfa9d1bc1d" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `B.noConfusion "noConfusion" .pendingNoConfusion (.root false true false)
-    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "abd3af6627f5d3c14eab547715953d68eb79793adee7b6b73ad6b4b0c82581f3" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `B.noConfusionType "noConfusion" .pendingNoConfusion (.root false true false)
-    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "a13871a9d6c0f80bec0828b0d0bb5b706bcaf3036c0fd63791655cb1bf8a9100" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "62097ef059b0e99d2abee440f8691386cb2afd54beb68a2cf3a336a726852a0b" "38a0af07b0206343309225612792bd3d2c1d87b1b9b1e9c54c9dc98ee08115e1" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.F2_SplitNestedClosure "twin" "orig" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -975,7 +823,11 @@ def part2 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.node.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
     "40ddd9eef32e24ee4ded078992b1037698c1ac9011878c9b630a0fdfa502fb18" "6bdc183f5e3d097a041b0ee16fb34eac0c1126681bc9bf2647b1837117b10c33" "",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.node.inj "user constant" .inherited (.inherited [`A.node.noConfusion])
-    "2cac384d7ac546c6d236663e5c81f0bfadbd463e1311d26cab8e0ee51b726791" "570ba64ccffa3d5767ccb526a4b75ab9075909142348fec3b0be643c830354f3" "",
+    "2cac384d7ac546c6d236663e5c81f0bfadbd463e1311d26cab8e0ee51b726791" "570ba64ccffa3d5767ccb526a4b75ab9075909142348fec3b0be643c830354f3" ""
+]
+
+/-- Entries 400 to 599. -/
+def part2 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.node.injEq "user constant" .inherited (.inherited [`A.node.inj])
     "0898dda0d47e92d050ab5c93d410eb4561621824d2f9b506322fd7985a67e162" "24f5ded008758deed117c7e263f75f3e4d460a6f1b1d0eed4f1647650aa2ca1c" "",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.node.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
@@ -1052,10 +904,6 @@ def part2 : List NonCanonicalEntry := [
     "d2d89c26f75ac727358474a7f94e4f3243cda39617619200efcd322e701c98d3" "233d6fa3e66563b7daa38b5edd161c4e07004ea7a57c053da9fa854ecf0ff06a" "kind",
   e `Tests.Ix.Compile.Twins.Repro.PropSplit "twin" "orig" `Q2.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "b39239fea24258438423f0a464b8cb32cacc283668fb10d77328c32e0ecd90f3" "719e3d4a07995c1f38dca4e53b2759c8dd40a1215602e62195950c377f1d86a4" "kind",
-  e `Tests.Ix.Compile.Twins.Repro.PropSplit "twin" "orig" `p1 "caller of a changed block" .pendingPasses (.root false true false)
-    "fe79fec6d1b0c2a7a6511dd85a3ae5407ce9f77705e235b76cbdab970db69667" "f05a5067cb7234e0422da400d9bd4fa2a9a6d12ac0f21212a60de263cabdf944" "value.λ.body.fn" "user of a split Prop member recursor (WB PropSplit: universe count; images, A3)",
-  e `Tests.Ix.Compile.Twins.Repro.PropSplit "twin" "orig" `q1 "caller of a changed block" .pendingPasses (.root false true false)
-    "fe79fec6d1b0c2a7a6511dd85a3ae5407ce9f77705e235b76cbdab970db69667" "f05a5067cb7234e0422da400d9bd4fa2a9a6d12ac0f21212a60de263cabdf944" "value.λ.body.fn" "user of a split Prop member recursor (WB PropSplit: universe count; images, A3)",
   e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
     "f3f9cc6a6602b8596c5bfbbc20987f4be2892697fb83368bcf1e2283b3f68a7b" "3065cd9acad534a6fd9f24cd399806c9e03b8a4aaa49b7ea7e324e3bf081fd59" "value.λ.body",
   e `Tests.Ix.Compile.Twins.Repro.SurgCollapse "twin" "orig" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
@@ -1130,10 +978,6 @@ def part2 : List NonCanonicalEntry := [
     "-" "8de6f57cd6df7e5b7325eebcc5eb42d339c21243d60d44404d391aedf6eaf542" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `A.brecOn.go "block auxiliary" .image .onlyB
     "-" "0091e04ae3b9fa1fa756f58ab14b83fd18ec411e48ae84fc081a0469eb47e450" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "4e162da1310edec1751cbd070181e6c04921240edd8d0b573d48f9d6415bcc07" "ea29d26a799c122c0386979262d2fc3a47d5694aa79f397a5235da7c152382a8" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "dc1e4d43c25244583ec3fe667f43d9a43eb6ffe610c00f04a13f1a3523509204" "551655be3a8d16d466f67bd4dbdbd543ac83a3d19cf6e76feeded6ab72d67bd6" "",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "86c5ed797f418d21ef9b78fd12e34719586d0e01ebad49793d44f877315341e2" "5896555a46e22d9da91b7d62f8fb25708ff85deafa83bb23c982a54d434664d3" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1146,24 +990,6 @@ def part2 : List NonCanonicalEntry := [
     "ab8acb574825a6d2c00a02642757cc90d37a478525eab15ffd76f53041572b70" "2fd077d4c8fa911e9f10a49d6106065b49ed513cab36c6d3341cecbc5f08b0d6" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "597541cb7d1515de8618e8ab7f7f7e0f4f5693cfb3ea6be3dd1cb1fd8891e662" "005318ef032022d814ea8e52ee7ceb47745f560fa28e11902cd5a06e97737f05" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.ctorElim "user constant" .inherited (.inherited [`B.ctorIdx])
-    "f3db120744d25a57d5535442d6bb7d0923b45b056da302e19f82067a40f3f702" "bb0d99ae86cca402f8472a2af43f9d28ca73012c424a72dfb12c8475253d05cc" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "2613f00a4d5923be077387ceeb87f0fe68cd361ae987bd818e066f6042264c17" "99c2ddaa2a310a32946ff5e6c7aff43a10d3f34da117567aa635f410b50e8196" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.leaf.elim "user constant" .inherited (.inherited [`B.ctorElim, `B.ctorIdx])
-    "bbb6ffe937a7d246d1cd455b1e4f49eaae681c4fdeed60078775e57fb5a1dad9" "020fc73b74c112376cdf6a9e6503d7c118a914ab6492526ae3f0c64fab5e8b4d" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.noConfusion "user constant" .inherited (.inherited [`B.noConfusionType])
-    "567f68cba689df3ecee088d50c35c5224bc83709602c1ec997dbd49835743974" "2385f1db4bdebbb2adf0ab4ba60a69b81525887ee1d6faff61d8f4aff080632a" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "2028e58d86f9a54b9e53c4f4201b53ccac824e2a3733a06ff4c6a43d5d859b51" "a182e4bd4c6d5d25365ac60ca2d530d30bf455f5438cedfe7effa74ca153922c" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.node.elim "user constant" .inherited (.inherited [`B.ctorElim, `B.ctorIdx])
-    "16107ddc18248b7ccccad13cc7b76b39febcc21962b84984ab8dd2070a21bbe0" "0156e4461afe70d1ca687424214af7f9d316610272830975133e5e4070e2ffbf" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.node.inj "user constant" .inherited (.inherited [`B.node.noConfusion])
-    "3fb46b0bb6ee82b33e855925ffa40315b616788be62d07411c4ffc45f51565a8" "be92ed1113e3653e828477b28cedc14b6e09c331e2e32160d78bf22e2d4deebe" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.node.injEq "user constant" .inherited (.inherited [`B.node.inj])
-    "1917356cd419691dc94a7a54c0ec9781350524e1244c139252f96b6e9d8c7a20" "79002c702ace448c4f930447a41a621a70ed82e33eead9d69d0b392eb5c5c223" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.node.noConfusion "user constant" .inherited (.inherited [`B.noConfusion])
-    "b0a8929138060d1c635634bdcfa7cedd7c2cfba0cc376de8c5de511d3cf8cc5b" "15b70b6899ce544ea80ccab1fb0bbbc6852edfd669f5e5286b2c8588f942b507" "",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c8322e03d558f85a8edc7fe68524013880ad0bbcb7dc890136d247154b230992" "b6f32918f179e32bd0049cb1297eb6572a5871926a40ed3d0a51a555429fad50" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx "twin" "orig" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1177,9 +1003,9 @@ def part2 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `A.brecOn.go "block auxiliary" .image .onlyB
     "-" "7db1fcf5ba13b618e73951b0c3f48c7ae27929cee300c048eef0009fff117f6a" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `A.noConfusion "noConfusion" .pendingNoConfusion (.root false true false)
-    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "abd3af6627f5d3c14eab547715953d68eb79793adee7b6b73ad6b4b0c82581f3" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `A.noConfusionType "noConfusion" .pendingNoConfusion (.root false true false)
-    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "a13871a9d6c0f80bec0828b0d0bb5b706bcaf3036c0fd63791655cb1bf8a9100" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "62097ef059b0e99d2abee440f8691386cb2afd54beb68a2cf3a336a726852a0b" "345109cd4d01ceb6b1a4dcf9a5391ca7731db4d5ff6ce8fd6c3b95e2dfe4bef8" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1192,58 +1018,16 @@ def part2 : List NonCanonicalEntry := [
     "67cc4696c99ea8cb3ef08a4675791fc57a3248b8bcd5fce527b5fb907562aa0d" "7d0f581123383072c6a9f09ed864869c8fc810cb674aade415b9f5f3a1868b82" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "305f40ded1e4543cfd568ecfac5f47e048a74dc59b339bc071b1eee254fd9ac4" "e20962f831bf2871ddd77e9a151e27de1f70b28704d27f9daf0170de760c3800" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.ctorElim "user constant" .inherited (.inherited [`B.ctorIdx])
-    "173a8836f585720c136243d9cc38f667cd21aaac3ab6527d326822ddef81e70b" "7b3e4f0c83960cc287bc0455e91bb6b0c38be800338a8c518fb2e4ac17ab69de" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "72298e9a550067849ced8cf1b2dcc21eef4bde7d05e32164a056200ef254a528" "718d8c03d80a917d73ada514c8f031288c29bb15aa82cd503b09adebd037a3d8" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.leaf.elim "user constant" .inherited (.inherited [`B.ctorElim, `B.ctorIdx])
-    "da4072afc5475a368ba3e798ed8752666b40520bc366dd861a12422a6cb6ad3e" "3bd7d54874a686680b52403c4062bb44ac9d297a7e29a52cf93e59d172a6009b" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.noConfusion "user constant" .inherited (.inherited [`B.noConfusionType])
-    "89c223c805f36e247f585f079e3598d323c37e33f455077b365c0658163baf0f" "ff86f6d033da8a0b103478feb94d37a9305b9b6d0dcc918795878728f2866db5" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "462938b1f98040306621f15aa7b4626eedbb5118dbcc24028ce5d9f07cd8d282" "13dac7fe8fda5593c6e70e70b5105d707e93d1d2c1b6c8a0a077b93500065073" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.node.elim "user constant" .inherited (.inherited [`B.ctorElim, `B.ctorIdx])
-    "b1160b115c64c292c49ff2b4ca4e9b8c1cc826c981c0b0e7560104992d6df9f0" "dc366f5ccb1de4cdc9dd8ab95a35ffedd37421b09e0922eacc5a7b22a18c7e9f" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.node.inj "user constant" .inherited (.inherited [`B.node.noConfusion])
-    "06d0d69db10e7e72ec16e3a0613792ff746ef08e10047e1cda39669a222e2811" "3a24cc1dc1bbffe6bda74940a5dcf5054024c71d7ac8aacf5d29a41ce79c62c1" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.node.injEq "user constant" .inherited (.inherited [`B.node.inj])
-    "4e01205b35c4b3632e3f407d9614cf0ecad94d43ed80c9b0b3b57bca00c3e43c" "bdcb93c936f9791563217a4f26992587824f8b397df99ba12c9602e0cce2f384" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.node.noConfusion "user constant" .inherited (.inherited [`B.noConfusion])
-    "30e42f3893f2746955c2e1e27546c99093d8465a50ff91a4b38ce6cf92424d1f" "7847114d8c073cdd40ef53c1305aaa634687bc8467057fcf479f2de93fadd6ed" "",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c09085185737921cb32d9f4ae87bf398174cf7c6ff37b1f84018fa1232b60565" "982b163bacf09f5d93e21edf31f66e438929df26c44e7fd4d774a104633bc674" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1ef1eab0f0ea73af40b15337444a8317d7359eeab39e3123d36624c6a3612825" "6416e95e5dbc8465b4094be3510d9b9b262131e0e367fa41a838ce7b001546e4" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.size "caller of a changed block" .pendingPasses (.root false true false)
-    "6080eafe62eb306a3fd21ce255d6bb2e851ebd04f14bf55105e5ffb01f208bb8" "e69b7e104f2ca740081015d4153b96b731d7059949ddef261a2e01d862ce420c" "value.λ.body.λ.body" "brecOn call site of a member with another index count (WB SurgIdx; images, A3)",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.size._f "caller of a changed block" .pendingPasses (.root true true false)
-    "31412935835a3fb0d46666e16bdb86dea8b23a49d0850f235f0ac7282d87c385" "ed4f5dcbcfe0e8776436bde7406b69476bd856fac783cd8dc5fe1a973946599e" "type.∀.body.∀.body.∀.dom" "brecOn call site of a member with another index count (WB SurgIdx; images, A3)",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.size._sunfold "user constant" .inherited (.inherited [`B.size, `B.size.match_1])
-    "4939f2f2890510c9c6c6b3c2e71ec76cccd617d865eec7695fa65cb5cdd17455" "1546ec53fdec2d51b3feee0de8eadcc56b47ae82def22d2213147b8e52a06d29" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.size._unsafe_rec "user constant" .inherited (.inherited [`B.size.match_1, `B.size._unsafe_rec])
-    "750177b50dc3fcae2ea0f211ed0fcb6da4d59defa9330d280bf67d1ed642e5ee" "5be97be8143f88d4c3f98afe8d7456654d48e9ab72dc3240803bc11e64ec6419" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.size.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "06677337979a84c8e121ff9d473ff304f2567ef857553172f669598662f94f0b" "7a1ccc33b482cd83a58746c7b940f8ab96f70d707e6487c5cf5b4c77fc0d3a35" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `bsize "user constant" .inherited (.inherited [`B.size])
-    "79607be1835bfd6e897fb762fcb38297ab2e0e1897c873fe478ece6235635206" "8b817d626858eaa579ca9ee1bab5d1a62b92d0d4961773b946d1fec5a15c660f" "",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "64f73e5929554af59b40bbf9d8e2abd18f1ba99399b0b911fdec6fa274c739b3" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor"
-]
-
-/-- Entries 600 to 799. -/
-def part3 : List NonCanonicalEntry := [
+    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "8213397c2ef94e997c72f414215b607d6a596692f727b2b7e92ad5c1e66271f6" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "674c201c98986446aaa3c41c2ecd087ac343df36ddd465a35ab6039a841955a5" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.a.elim "user constant" .inherited (.inherited [`A.ctorElim, `A.ctorIdx])
-    "2fe5c94bdb5c99cea736c5e6fc8a1e8d18c5442936199baf3a3855885a4da6e3" "ac1079750e498f2d1d2476c9ac8de4c595817cad40e431c9d186c2b7c7619b77" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.a.inj "user constant" .inherited (.inherited [`A.a.noConfusion])
-    "dac85c3a439cc5c559800b5997a596faa98e077f7b469b03782533a845da572b" "7ae17ca0afa411ad2d83273992a1d0d5bb46fce0167ee640832f953d98ece197" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.a.injEq "user constant" .inherited (.inherited [`A.a.inj])
-    "a6d4e7c5074c1d2b7e1263bce37b903ddd9ca894af60dc0fcd746ff6327e1ae7" "2fc72e3c4e25c32cd79dc7dc6ebae87399619f4a121c681b88bd2b2b096a4552" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.a.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "25f2aa0fec2a85138cae95219d238d035da11afe50fb56d4242fe9ec483f8988" "239550c092be430ec9a70ba710e67a3d22e3e3dd42cd8c67cc273b585e2df747" "",
+    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "dfa3b4b8edc8219901c2f579d769c771b0b1b2a025b5efee3ed2807f303fa791" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "de6bb0378364a26b8b1daecc0f1058e134c3c962c34b9a5c5d7dc5cc6ce7b96c" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "f57838f5f203e4afcf753dad2e4838d6997dcb9d63acff9466417b8f1c8d1098" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5415f5f54a992d17fec6b65e0382c4577c3c7dfeb1d4f1e16b36448e23f299cb" "17f5ea7d767f19b280e22f1194210bc852a2d9697596daa4818a050fb08d2272" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1252,28 +1036,14 @@ def part3 : List NonCanonicalEntry := [
     "ae750f0205d850cbda2dc93d13b6a498c0750ccf4b91d2bb68ddc3c414937faf" "4d96be5956fca8ab6be3115d25c1fe60a2a278d7386d5854a0554ea08f562f9d" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "bdd6c50576fd96d51f72aed7ffa79736ef61ca32aa8158e3a6b51d92c1750f53" "4b75385c7045e7852c776f7feb439b030baa2eeed7fcb618c66bb16e3bd36ccd" "type.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.ctorElim "user constant" .inherited (.inherited [`A.ctorIdx])
-    "d25e34074b183a135a4f2df96f878d71ca5c64ad893d3eb9a83dff43f8f5741b" "6b3a5d7c5b824480572bcc336db942a68f9f517a69544e4ca93ef1327def398d" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "03ad90414d41ef7e006e41bbb315847d9029ed973148409cd0e7276951ff5d99" "3c8863264d334b5481afd1832013e3d1b245de3a06ddd8e99515b7a904e32dfa" "",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.len "caller of a changed block" .pendingPasses (.root false true false)
-    "a547241d523add64489dbe6d9bcffdaa0e11cee9fd2d77c1f8340fb5c5899246" "c5ff4cc37f93189b090350c0dc81abab77e562793f72da3ff480e1d94b1cf3e1" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (WB SurgSplit)",
+    "a547241d523add64489dbe6d9bcffdaa0e11cee9fd2d77c1f8340fb5c5899246" "695f5dae0bcc913038d0207d1a25720b8c04b503998d8fff8532f99ff3b575b0" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (WB SurgSplit)",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.len._f "caller of a changed block" .pendingPasses (.root true true false)
-    "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "f0138f4fad74d0c00abda006f79c12f2b300f4ae2a88998db1d94c1a438d32a9" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (WB SurgSplit)",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.len._sunfold "user constant" .inherited (.inherited [`A.len, `A.len.match_1])
-    "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "b1bfa3bdb69dae69ff83575d7b5b64f224460cfb2c72bd682c8e57945649c0a8" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.len._unsafe_rec "user constant" .inherited (.inherited [`A.len._unsafe_rec, `A.len.match_1])
-    "5dd47dd55a222477bd8d4d3358736c6bda8a716a3d224ef892ae1b0282088d95" "d6936ea943eae5d11f58fe257663c3ad868d5a97c9090b69d102e60d758cd7ea" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.len.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "6761fbb4e5f559551e69c80cb5de2b5ed45fc64bc94d91db9c6927e45d073ee6" "bc8ef32918106301c93ecae547b8fe9d825729d6255433c045c94f943ffaa1de" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.nil.elim "user constant" .inherited (.inherited [`A.ctorElim, `A.ctorIdx])
-    "b22a414f8dac147c49e118a27e58b13f01801314cb7e2c286effb532f4fc78e2" "aca4af067c9f1762dc15a022d191be56db6710b53cb857c5ce86e611f3e6f1e1" "",
+    "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "50a97cdfcaf35fef5816074e6551f227029fc2ec898d320cd5252cc6bc41631b" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (WB SurgSplit)",
+  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.len._sunfold "user constant" .inherited (.inherited [`A.len])
+    "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "37aca8f02a0d00b79593a83338b231b9e5d09242f9c63d1bb87fb61f457b6f34" "",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "b89da649732f4728e1ea3ee6ebe0408417aa2bf5808f6d38fba2bec7be15feb0" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "28816d4a33674a5f2a109945f07cd0f2e8787609d9a602b59cc54ef05980ab68" "0b09729545c26e6d0034691a485d449e5d099ac38b733699f3cfd0a024f331fb" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "072df558b5d01b3fe91d84db848aa8512ff4bb7b2b18c8007e29c8081115b532" "ff4bc28df40d5e1109835b0fc35aad6cd4502e9708624f69ad6a9cbb704f592c" "",
+    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "2a2cdf86d8e40f14fc7ada709238857154b02786b47b3401409a8599de92e7ff" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "507879810bce736d4eaf20aa5fe5e0ff6a59641422f54f61cb7c7dee3614eb55" "bc4d5e04e34bebe33ec6ad6138a67ad9f50db6f517d43e758c0ee5217b23f322" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1287,15 +1057,15 @@ def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `B.brecOn.go "block auxiliary" .image .onlyB
     "-" "a16b21c967e7357925412409876fd0316caeb5ccf96819e5726384bb6193cf4f" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `B.noConfusion "noConfusion" .pendingNoConfusion (.root false true false)
-    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "abd3af6627f5d3c14eab547715953d68eb79793adee7b6b73ad6b4b0c82581f3" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `B.noConfusionType "noConfusion" .pendingNoConfusion (.root false true false)
-    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "a13871a9d6c0f80bec0828b0d0bb5b706bcaf3036c0fd63791655cb1bf8a9100" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "62097ef059b0e99d2abee440f8691386cb2afd54beb68a2cf3a336a726852a0b" "f9cc97e627e1497c57d63be38890d913085305c7273ede067538078438900f73" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "dfa05d5f71d78161d48645eae61fe74366ed0196a36d361827c4b360c8af6812" "8db08eb4c7eb99558e309570ed6f1ebab46facccc9c9f247986ee5314891839a" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `len2 "user constant" .inherited (.inherited [`A.len])
-    "c7de97e5d77bc5368dd7623036851ed5296ee3ad2b92c5b103e44f3ac577d806" "7cb019b07b25aebfe3a6872e06283a9faaa383bb3073a38ca3158b9c6d0c0874" "",
+    "c7de97e5d77bc5368dd7623036851ed5296ee3ad2b92c5b103e44f3ac577d806" "bdf0926212f05a88afc426a31502759e60e89b57328df753113b6b0b04297588" "",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "7f763b22ab7d2313414b0863abcfd8be6d6248a894cafa3985de4aa1ee87dc76" "ebc3c6e344916a094060c73b9dbffccf4be05a447422a622d604072e21f82db9" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1304,42 +1074,12 @@ def part3 : List NonCanonicalEntry := [
     "7ae45a0991d805839663d60aaa3c1a21e95d2d82884cb29bd25e4dfbce5a0609" "36db7a4a9d8402bfa9bac3644c5222f85f12c1538671e96918d01c0d5752e4a2" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "162f42113d4810a627b1428cba24770478ac759a69c93f1f6308c7046e52e791" "1cb86054c4b59b486a1ac476d135afe8752728f43713d1061c908f1b6ecd6731" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.ctorElim "user constant" .inherited (.inherited [`Even.ctorIdx])
-    "61c84c444af18e5b10eeddacf9038769c5df20c3635297aca0368a85c81c7767" "08e99a0444f4df4c1a491b461873b4763a4ce5753fe30844cc7410eab61e8e4c" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "6b41af9ed4cdeac27411e001be93c064d7d94b68cfc2387eb27edb1d12860645" "e0b9a325ad87d97e290ed0ca7616f68b606d4a5ffb9f158cf801d388f6b4a673" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.isZero "user constant" .inherited (.inherited [`Even.toNat.match_1])
-    "6bac7cf1cc445d6c858f970ae9032cf04ee51d101445a7712d50485a3a99b927" "8014c700093c1502d2417451c408bd31b7d2b1397b57eece90b41eef215a67fb" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.noConfusion "user constant" .inherited (.inherited [`Even.noConfusionType])
-    "a41136ce4221a23887503cb3acf7cae609d1c6fe6412c8abbcb3e31625244007" "608d719f5edd195e52a868b55989683301c242f5016920e025f4f3c83ef5a0ee" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "6be1c9c3d68f215e125ea41348db280f98b2cd824ae42e32242e7f342daf801e" "21c1b84fdac19e3ac3aadcc268e5197709461f2bbdc4f44758b0f62c9299e60b" "",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "6bb942cd82f258244933f967c95096c6f2224be3e42000044f6c48bea7494a5c" "828c49458b8195d317602ed1e50d073f750366fdd0fb2d8805ea2fb12c57e372" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "ceae26812d0993921e96c02861e907a6ebb35bf8ba2a569b93520c1b49a243b3" "dcea23ce9f3d4d3171865b8ddece321fa8b7016725e8821b11f5b4d6c464508a" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.s.elim "user constant" .inherited (.inherited [`Even.ctorElim, `Even.ctorIdx])
-    "86cf501cb076978ac197991c6f88a35a4f28e2915bae7605f9558b48e862d3a8" "33b10e945a4da1545df9353e14d5e4d0ab23189249df6d145cd325f50578bb9d" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.s.inj "user constant" .inherited (.inherited [`Even.s.noConfusion])
-    "d231031d72e12e13cced04bd0d5ae6dd40f8e20cf7a8e4f66f9347ec7456f275" "a3c29fd41fa1a8698e36a94103cfb82de3162d64fde332e285bd301fac3fb106" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.s.injEq "user constant" .inherited (.inherited [`Even.s.inj])
-    "abc7a7047558ca0a326f461e5c59eb59f9ce9da9dd55d85d3464ff5080827099" "2448b9a4d5a2ea41fcc5cf920d460df30bac780a97a074e11f50053a8c108e9a" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.s.noConfusion "user constant" .inherited (.inherited [`Even.noConfusion])
-    "fd6b519f6d0ccdc418e738e94af933bd2dd285678224df4cd75071aa61b11a8d" "6bb89cd4e3e99d1b2948cb54bac210c7a235215391ba000879ade2fb1726a256" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.toNat "caller of a changed block" .pendingPasses (.root false true false)
-    "14c008d747384a6b658c0c1e481a978ba8dc0aeaf43f66382603291dea591706" "263876896bd23b55c0483cf8c5bad31ba877fe03432f899e835a4f871d9eb58c" "value.λ.body.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.toNat._f "caller of a changed block" .pendingPasses (.root true true false)
-    "655194ed3bcd02171f46ea536300e78cf92b053d527c2070743416ed1e2bdb69" "81f93e12c74024993ba78be8217091073a60d0f1a69c5cc4851b6c325169ffc0" "type.∀.body.∀.dom.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.toNat._sunfold "user constant" .inherited (.inherited [`Even.toNat.match_1, `Odd.toNat])
-    "b026e2ce6b56bc8ab4aae8d71c3bc37463b24263df2cd485d4ad169348c28e4b" "10827ad349ba4894d553a615d54c039b5c96813a8045fea3e7952fff1316cc9c" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.toNat._unsafe_rec "user constant" .inherited (.inherited [`Odd.toNat._unsafe_rec, `Even.toNat.match_1])
-    "7732c7afdf7ff4d158242dfc661b38c50a2b3a150927f31efed49b06f995cd0b" "3921437e2f19e4522e87e25925f7e9087f57d99dc388116928cf6ecbe0f34e05" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.toNat.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "285973d99afb436f6b20ea696fd6f05570ffb65c40c59dcdc87905652bcaf672" "dcb2370fa5a38d78508941209befb90e8fccd42fe5ac70de08fda9aa4476af0e" "",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.viaRec "caller of a changed block" .bare (.root false true false)
     "5b91b50d4c4fe9b970fc85af1f8a09eb7b0012c72d86d62f07185f6b9f63bd99" "00cc400d69c397b1984d30f194f57844d20749e702925c9363727765bd20d09f" "value.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Even.zero.elim "user constant" .inherited (.inherited [`Even.ctorElim, `Even.ctorIdx])
-    "d6178667d513bccbf91b324abaff28fdcb96b9665457dec69490e6ddff79d7a8" "c7614d70bbb3db3f37d31c830ca95b706b6dfb38d760568fbd88af6e4f8aad8e" "",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "6c1946534e24d67671f05c36dae164a239acbf49a727475b6836e00b11869cdb" "635e2c9b6b9b2b3919e4d03d5465a968917f2a818cc061f5cf71634ddd86eb17" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1348,44 +1088,16 @@ def part3 : List NonCanonicalEntry := [
     "fee09fb5867ff9dbae55ae9aedbf8c3119464b44caae329e490a0286172b57d7" "7d6f949ba4fb394bafe9abbff8d1b55a99903326c2ff5c06f0442d5b71878985" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "166df2c4e8e3fe7a8b6ed7d65b3c5f2c17fc342de8c3d22bb46f54f70e4689ce" "27d3ce37d2427158d4c7b9d458ae803c555d55f579f44848054bbea895e194de" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.noConfusion "user constant" .inherited (.inherited [`Odd.noConfusionType])
-    "e264ef0bc51c3b7da9167b2eeda2477c80e46758b77f81660149ff75407cf56c" "e235cb81be4c39d557ad864eaafb78d89e496347fbfe285b371215ae8feaebff" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "df6e6c95a0c0bed5ecef8c56873ee533e15a9f09dc47f7b287c0579f60d87cea" "4edbdf765ad1e027cbca9608ea3b95664c446be15823d9dea46ee0aa8c19b229" "",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c9cce8cecf22064511a309ecf5cd00f6c87b031ed8e058eb09fd699217fa8c71" "16322604a39ee2bc2c59b6433315f3b40ddb32f55011712161bc88252942c5bf" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1527c316d83a38d43628ce583eb0dba56fdbb7a296b8a0e2e0f64f0e845a3ac4" "c3c6e9068e2b7d3a4ecb6fdc5243e5a0c8288a344a7bb8240e67e9bd8e382cb8" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.s.inj "user constant" .inherited (.inherited [`Odd.s.noConfusion])
-    "ce92aadef7eedb994d10c8131fd1eb26f9e3f2d30122f5fc0a2710169ee35112" "500fe00a16ace79e19648db1a4309450112ebd9e6c5387fc74861304a9e3e37f" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.s.injEq "user constant" .inherited (.inherited [`Odd.s.inj])
-    "38cd356185eb273408ba6421026a9034f94242e455ff6617591a48db3b7a46b8" "1136df113c8e2ab5827369eb1bcd4c2f630558e8d816a7897f1ef89f0916153e" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.s.noConfusion "user constant" .inherited (.inherited [`Odd.noConfusion])
-    "3ccc52cb2955604e7ef13afd8d7db2b5e1981f8eddd7012250695d5f78d404ff" "487e5a43f7761729420e07afafe7e20d62fcbdec11effe4ba8868e55c1a2d5f8" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.toNat "caller of a changed block" .pendingPasses (.root false true false)
-    "6083ccc0c89479a3a3a552495d925a46473543f579d241c324e4c78d73d2c2ec" "a0ab6e9d00d5e4af919ea0cafcdc513f013098e20f2208a34865008dee08ae31" "value.λ.body.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.toNat._f "caller of a changed block" .pendingPasses (.root true true false)
-    "5e277db726358ebccf819553d2429d548b12355953ce0305205e4e5b1be2e126" "6aea37f61b507f4b4e0c2d2089118db8c57bd596fbdd275ad33c7e97972d38ec" "type.∀.body.∀.dom.@0.λ.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.toNat._sunfold "user constant" .inherited (.inherited [`Odd.toNat.match_1, `Even.toNat])
-    "ead543ab4f3b5d2598c3223025de93eb010d3f3a53e27af0bf8b41553146a457" "0c9d62e55188afb11a76355edc14dc470e765da2abe99b3d7406c934e391adcc" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.toNat._unsafe_rec "user constant" .inherited (.inherited [`Odd.toNat.match_1, `Even.toNat._unsafe_rec])
-    "5a64c69661458a2e7bdcd85a626c0639828dc08b00915c0aa9e7bdc7750828de" "7754ef449f8aa89aff9baf7f25418a22eeaed3d6a4f50a84cceca6f37bea755e" "",
-  e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.toNat.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "830a13bfe81958d85007d87a73d4d9fcf860d9120355b09a145f8abacc248c79" "2a19d83dd3bd7d71f7849700303bb6cd165dbf4cf10f0530cd1d80d05f7f530b" "",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "64f73e5929554af59b40bbf9d8e2abd18f1ba99399b0b911fdec6fa274c739b3" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "8213397c2ef94e997c72f414215b607d6a596692f727b2b7e92ad5c1e66271f6" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "674c201c98986446aaa3c41c2ecd087ac343df36ddd465a35ab6039a841955a5" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.a.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
-    "2fe5c94bdb5c99cea736c5e6fc8a1e8d18c5442936199baf3a3855885a4da6e3" "ac1079750e498f2d1d2476c9ac8de4c595817cad40e431c9d186c2b7c7619b77" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.a.inj "user constant" .inherited (.inherited [`A.a.noConfusion])
-    "dac85c3a439cc5c559800b5997a596faa98e077f7b469b03782533a845da572b" "7ae17ca0afa411ad2d83273992a1d0d5bb46fce0167ee640832f953d98ece197" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.a.injEq "user constant" .inherited (.inherited [`A.a.inj])
-    "a6d4e7c5074c1d2b7e1263bce37b903ddd9ca894af60dc0fcd746ff6327e1ae7" "2fc72e3c4e25c32cd79dc7dc6ebae87399619f4a121c681b88bd2b2b096a4552" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.a.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "25f2aa0fec2a85138cae95219d238d035da11afe50fb56d4242fe9ec483f8988" "239550c092be430ec9a70ba710e67a3d22e3e3dd42cd8c67cc273b585e2df747" "",
+    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "dfa3b4b8edc8219901c2f579d769c771b0b1b2a025b5efee3ed2807f303fa791" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "de6bb0378364a26b8b1daecc0f1058e134c3c962c34b9a5c5d7dc5cc6ce7b96c" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "f57838f5f203e4afcf753dad2e4838d6997dcb9d63acff9466417b8f1c8d1098" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5415f5f54a992d17fec6b65e0382c4577c3c7dfeb1d4f1e16b36448e23f299cb" "17f5ea7d767f19b280e22f1194210bc852a2d9697596daa4818a050fb08d2272" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1395,37 +1107,19 @@ def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "bdd6c50576fd96d51f72aed7ffa79736ef61ca32aa8158e3a6b51d92c1750f53" "4b75385c7045e7852c776f7feb439b030baa2eeed7fcb618c66bb16e3bd36ccd" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.cnt "caller of a changed block" .pendingPasses (.root false true false)
-    "9d8bdb0bfbdc878f109d4e9acc712eb7e09b04a0fffcde3fd31b9495e9117212" "5eb3dd4a134d704ad48fadf6e4f93574c49876d795f2cf704eecf89bb3d8abac" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+    "9d8bdb0bfbdc878f109d4e9acc712eb7e09b04a0fffcde3fd31b9495e9117212" "59050a7372bde4f04b20180aeb6079363bddb6426d7072d707aaa198d04e3a56" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.cnt._f "caller of a changed block" .pendingPasses (.root true true false)
-    "737d9847f6255247ce5ac946c55c9a631b41f125be5e7933ab807eaeb40c54d4" "b69085bd4005624d8284ec8e3deeca9bd92db7c660f6382d0e3ed87f278116c7" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.cnt._sunfold "user constant" .inherited (.inherited [`A.len.match_1, `A.cnt, `B.cnt])
-    "c7b4b2af419c9bc6cf2285fd0b048dfaf8e422835c91f0e96ac44b85891a449a" "e23cb1e690359d19b4674c72bb2c3f63f7cc61111aa121f9e33953d537774a19" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.cnt._unsafe_rec "user constant" .inherited (.inherited [`A.len.match_1, `A.cnt._unsafe_rec, `B.cnt])
-    "57412b7f88c74026359db297b51e704457bb46dc360f1e89361ee94ea681ca5f" "79a72efbb6ef3a3263fce08e14ee37993a39e99238160026176b073b3c37c222" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.ctorElim "user constant" .inherited (.inherited [`A.ctorIdx])
-    "d25e34074b183a135a4f2df96f878d71ca5c64ad893d3eb9a83dff43f8f5741b" "6b3a5d7c5b824480572bcc336db942a68f9f517a69544e4ca93ef1327def398d" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "03ad90414d41ef7e006e41bbb315847d9029ed973148409cd0e7276951ff5d99" "3c8863264d334b5481afd1832013e3d1b245de3a06ddd8e99515b7a904e32dfa" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.isNil "user constant" .inherited (.inherited [`A.len.match_1])
-    "21a27b0eff8b2e21569a67a09e52566e0a94d719e2ba19a77d525ef0cbb1a27c" "8c35397795cd830de78d0908f05c3211b249a0ed0ec49b9bc79c1b6c6891eca6" "",
+    "737d9847f6255247ce5ac946c55c9a631b41f125be5e7933ab807eaeb40c54d4" "131ddf13c0a7382cfbb24e6f91629ec18d77ce32f956ae01b7ece26c2536cfbc" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.cnt._sunfold "user constant" .inherited (.inherited [`A.cnt])
+    "c7b4b2af419c9bc6cf2285fd0b048dfaf8e422835c91f0e96ac44b85891a449a" "d9fe21c411239138bb00b39e905cc037afb0fcf3767936bc8946d3b0bce4c75d" "",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.len "caller of a changed block" .pendingPasses (.root false true false)
-    "a547241d523add64489dbe6d9bcffdaa0e11cee9fd2d77c1f8340fb5c5899246" "c5ff4cc37f93189b090350c0dc81abab77e562793f72da3ff480e1d94b1cf3e1" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+    "a547241d523add64489dbe6d9bcffdaa0e11cee9fd2d77c1f8340fb5c5899246" "695f5dae0bcc913038d0207d1a25720b8c04b503998d8fff8532f99ff3b575b0" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.len._f "caller of a changed block" .pendingPasses (.root true true false)
-    "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "f0138f4fad74d0c00abda006f79c12f2b300f4ae2a88998db1d94c1a438d32a9" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.len._sunfold "user constant" .inherited (.inherited [`A.len.match_1, `A.len])
-    "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "b1bfa3bdb69dae69ff83575d7b5b64f224460cfb2c72bd682c8e57945649c0a8" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.len._unsafe_rec "user constant" .inherited (.inherited [`A.len._unsafe_rec, `A.len.match_1])
-    "5dd47dd55a222477bd8d4d3358736c6bda8a716a3d224ef892ae1b0282088d95" "d6936ea943eae5d11f58fe257663c3ad868d5a97c9090b69d102e60d758cd7ea" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.len.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "6761fbb4e5f559551e69c80cb5de2b5ed45fc64bc94d91db9c6927e45d073ee6" "bc8ef32918106301c93ecae547b8fe9d825729d6255433c045c94f943ffaa1de" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.nil.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
-    "b22a414f8dac147c49e118a27e58b13f01801314cb7e2c286effb532f4fc78e2" "aca4af067c9f1762dc15a022d191be56db6710b53cb857c5ce86e611f3e6f1e1" "",
+    "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "50a97cdfcaf35fef5816074e6551f227029fc2ec898d320cd5252cc6bc41631b" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.len._sunfold "user constant" .inherited (.inherited [`A.len])
+    "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "37aca8f02a0d00b79593a83338b231b9e5d09242f9c63d1bb87fb61f457b6f34" "",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "b89da649732f4728e1ea3ee6ebe0408417aa2bf5808f6d38fba2bec7be15feb0" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "28816d4a33674a5f2a109945f07cd0f2e8787609d9a602b59cc54ef05980ab68" "0b09729545c26e6d0034691a485d449e5d099ac38b733699f3cfd0a024f331fb" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "072df558b5d01b3fe91d84db848aa8512ff4bb7b2b18c8007e29c8081115b532" "ff4bc28df40d5e1109835b0fc35aad6cd4502e9708624f69ad6a9cbb704f592c" "",
+    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "2a2cdf86d8e40f14fc7ada709238857154b02786b47b3401409a8599de92e7ff" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "507879810bce736d4eaf20aa5fe5e0ff6a59641422f54f61cb7c7dee3614eb55" "bc4d5e04e34bebe33ec6ad6138a67ad9f50db6f517d43e758c0ee5217b23f322" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1440,14 +1134,10 @@ def part3 : List NonCanonicalEntry := [
     "-" "2ff628a276a05b418b962c3b16ad80d0d5893649c9d6e754a0c1a9cfd18de6a6" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `B.brecOn.go "block auxiliary" .image .onlyB
     "-" "a16b21c967e7357925412409876fd0316caeb5ccf96819e5726384bb6193cf4f" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `B.cnt "user constant" .inherited (.inherited [`B.cnt.match_1])
-    "2a65d23888976f9a8efdfa3293dfb0b5fb39a84238e9f5fd71f417841e6fb9e0" "e2aee5be6d4e757657fc2b5d8c1763aca229c85136ed26b7536f5a2612723468" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `B.cnt.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "b1ea810b383f4dbd7b749e796f7db68cbc10a01f96acf7709d4af3949d8bb9a0" "4129c74ecefde87ab2bff3f2904acdc49e8aec8740d1549bceb1afb47c4f0444" "",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `B.noConfusion "noConfusion" .pendingNoConfusion (.root false true false)
-    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "abd3af6627f5d3c14eab547715953d68eb79793adee7b6b73ad6b4b0c82581f3" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `B.noConfusionType "noConfusion" .pendingNoConfusion (.root false true false)
-    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "a13871a9d6c0f80bec0828b0d0bb5b706bcaf3036c0fd63791655cb1bf8a9100" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "62097ef059b0e99d2abee440f8691386cb2afd54beb68a2cf3a336a726852a0b" "f9cc97e627e1497c57d63be38890d913085305c7273ede067538078438900f73" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1460,34 +1150,6 @@ def part3 : List NonCanonicalEntry := [
     "ab8acb574825a6d2c00a02642757cc90d37a478525eab15ffd76f53041572b70" "b2dd5c642f9fc340d51e423d1708e58307a9ad02deb23b34a96d8a4d90eabc73" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "597541cb7d1515de8618e8ab7f7f7e0f4f5693cfb3ea6be3dd1cb1fd8891e662" "1b248444b6a8267e44e643649c03dcc7e3b5c9a1f2f34594cb47582b35626bba" "type.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.cons.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
-    "16107ddc18248b7ccccad13cc7b76b39febcc21962b84984ab8dd2070a21bbe0" "0156e4461afe70d1ca687424214af7f9d316610272830975133e5e4070e2ffbf" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.cons.inj "user constant" .inherited (.inherited [`A.cons.noConfusion])
-    "3fb46b0bb6ee82b33e855925ffa40315b616788be62d07411c4ffc45f51565a8" "be92ed1113e3653e828477b28cedc14b6e09c331e2e32160d78bf22e2d4deebe" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.cons.injEq "user constant" .inherited (.inherited [`A.cons.inj])
-    "1917356cd419691dc94a7a54c0ec9781350524e1244c139252f96b6e9d8c7a20" "79002c702ace448c4f930447a41a621a70ed82e33eead9d69d0b392eb5c5c223" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.cons.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "b0a8929138060d1c635634bdcfa7cedd7c2cfba0cc376de8c5de511d3cf8cc5b" "15b70b6899ce544ea80ccab1fb0bbbc6852edfd669f5e5286b2c8588f942b507" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.ctorElim "user constant" .inherited (.inherited [`A.ctorIdx])
-    "f3db120744d25a57d5535442d6bb7d0923b45b056da302e19f82067a40f3f702" "bb0d99ae86cca402f8472a2af43f9d28ca73012c424a72dfb12c8475253d05cc" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "2613f00a4d5923be077387ceeb87f0fe68cd361ae987bd818e066f6042264c17" "99c2ddaa2a310a32946ff5e6c7aff43a10d3f34da117567aa635f410b50e8196" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.len "caller of a changed block" .pendingPasses (.root false true false)
-    "7ab66120eb546a328d7a77dc24057c2590921b439880bd534377f46929624447" "21870540e2cba122e4e1540db3e57cf9293fabef721d4662e1e4e9558d42a89c" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (no cross field)",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.len._f "caller of a changed block" .pendingPasses (.root true true false)
-    "c0ed98ee378360d330b40f22a2fd2b9a06153d051825644cec6ae0333f7250b2" "3f3d5ff8ec4dd9a4d6e391b114e9b2f9992caaf8ca3394ac410ed7f8148b54a0" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (no cross field)",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.len._sunfold "user constant" .inherited (.inherited [`A.len, `A.len.match_1])
-    "ca27ead5b84f96c21500cca4e0522c912e2547f9f9045e34b242979270809eed" "620c0bf7c379abd350db9fc3e12c058a6fd462e00b1d09f5c31da8a54ca83a77" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.len._unsafe_rec "user constant" .inherited (.inherited [`A.len._unsafe_rec, `A.len.match_1])
-    "9812e80ea5a87bfe8c706f22bcbb0088aec3f8dfdb907bbdef65aaa4271756e2" "a3d948ce8b6896f74743038b277f89ba08275dd89d7ad4d7791d4cc166b38113" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.len.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "8456b93a61151feea7878938feb7e719ffbef279f28f05c3e798f036ff56fa5c" "674ddde219dd2651a2205b62d3a70ecf57c352e9f674e164d3ef2c3ef449cb3a" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.nil.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
-    "bbb6ffe937a7d246d1cd455b1e4f49eaae681c4fdeed60078775e57fb5a1dad9" "020fc73b74c112376cdf6a9e6503d7c118a914ab6492526ae3f0c64fab5e8b4d" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "567f68cba689df3ecee088d50c35c5224bc83709602c1ec997dbd49835743974" "2385f1db4bdebbb2adf0ab4ba60a69b81525887ee1d6faff61d8f4aff080632a" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "2028e58d86f9a54b9e53c4f4201b53ccac824e2a3733a06ff4c6a43d5d859b51" "a182e4bd4c6d5d25365ac60ca2d530d30bf455f5438cedfe7effa74ca153922c" "",
   e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c8322e03d558f85a8edc7fe68524013880ad0bbcb7dc890136d247154b230992" "3b55a957c18509c4818766ba0c5a867842d197258a19f1aa6b717108f211ca5f" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1500,38 +1162,10 @@ def part3 : List NonCanonicalEntry := [
     "e16a6ac555728d7cc0a93ad6f747afe0c1b8f5e5087ade1fdc0b08585ee535f2" "5b4770e4a9e993bcce1ea313ce657228b620b29e4ed873ceddd872b8f75c5609" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "dca1b4876dfa97c897a0067dee74cbada04bdc1e92b8e984a815999ffa7fbe40" "3f7a048f2486de5c94a198ef454077868fdd220423e6255ced8bcc205579c237" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.ctorElim "user constant" .inherited (.inherited [`B.ctorIdx])
-    "e49706a66c20b1ea8f001c4c496d74d3cafd6567677bd447fec0a3a6785dc94c" "4e5c79f9a3fece5958e95281c3f04048e52f0e9a90ef8f6f973407c409f9b987" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "87612022651d416fae1a9887e2d25b9bccc86753207748e8a6baac25593c085a" "310219cffc0ea9ce77292acc80560e8d6b846655577f668687cd61dd7145ee2d" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.leaf.elim "user constant" .inherited (.inherited [`B.ctorElim, `B.ctorIdx])
-    "1c4cef29a29248b4050b65c1775cea0387f18c215a116af5325675bcb93c53f5" "c9798f36c19c3575893adfeb66bf636e53d24ce970974ed1ac01f3e30626a073" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.noConfusion "user constant" .inherited (.inherited [`B.noConfusionType])
-    "119fc3352c30940c930472b32ac1175b1c5e12b0460974dca0897ce8885eff5c" "92c6213b7fc0728270aa55e1ead3625aa6072c0cb8fbff2732be0b56294df68c" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "28f2476a4b077da9f16152e63a6578c72b4f16917b92a9cf3261122b14ecfbec" "72438e24be71a952f07a99d8470facdc1e686366cb297059c514f844cfa342a9" "",
   e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "8506418545e3a8f96e273e6ec1054ce2a27cb455e5cf544a96d3ba1d8c4c2449" "36954ffccccd1451205a7cf2f8d4a2145398685ff143420f3f529a32ac5b9ac7" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "cc008ce1e8d15a1fc4ebf96569c3367f1236054d8fbc115679f75c1f4f329293" "ccd3ec3dcc20fc1964201f45b7bb48e92ecf3d3fcafbe655715d44a57fa59ea2" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.size "caller of a changed block" .pendingPasses (.root false true false)
-    "d1d1b84b12affbd542eb57f26314db23b6c115609bef6ca69b6eb3946907df6a" "7515c07d9c2749d1343815252ff3fd6f7d739881ade8e4af449b77149e4488b3" "value.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (no cross field)",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.size._f "caller of a changed block" .pendingPasses (.root true true false)
-    "184b08ec1c68807cffcdb3404cdb2e19df236ca302ebc5b19a11d8296b3d73ed" "49d9aa883c3b9ea8747f23e8b1c7a3c40df13599d0f2c1cd0c37eae5785ccce3" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (no cross field)",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.size._sunfold "user constant" .inherited (.inherited [`B.size, `B.size.match_1])
-    "21dbec313e8724b3d0f337a66dd05d90119f32ad96b8f488a828e8babc9fab8b" "177336a18774029db64c14e9b34c149ca33466cae75807e5c0e424d04eecad7e" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.size._unsafe_rec "user constant" .inherited (.inherited [`B.size._unsafe_rec, `B.size.match_1])
-    "10db0a8d07fbaab0a3f129cb6b2b0dac85498320237c80b1aef4954ba06e52f5" "1e852821fb28dd26913efcb09040f5f487cd8228bdcef474bd48820799376ddf" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.size.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "230d63f362114454990af83c966ef48bdee0be34b3a2a7372f21ee9d1d5cad7f" "25a096bb8af14317d74331bed32d66fea0332dfd0ae659c748acc80139291599" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.two.elim "user constant" .inherited (.inherited [`B.ctorElim, `B.ctorIdx])
-    "6dc7b0c4e784896aaa22009c69209a16c4d98a65f6d123cbc167aa22350403d3" "634c3c5c6637a8cccefe63c70a06648cdfc0e55f455d488eff7ff4a27fd62514" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.two.inj "user constant" .inherited (.inherited [`B.two.noConfusion])
-    "e29bb0e1be29d64523c3f9d32ebd3fd9ad6774daff10258cd121d33156ad0b11" "56898090ef100d43b116e51e23bff3b4c801b3593cb6110f7ed761bbd200d93c" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.two.injEq "user constant" .inherited (.inherited [`B.two.inj])
-    "b8bd7a8e7769362cf1706d1b13c1af4884f6c857f2b6e147f7f19d1df5f99dab" "e0e5820799e12a454219e7df691a5b39a26942109430551abb0003b6775bb3eb" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2b "can" "src" `B.two.noConfusion "user constant" .inherited (.inherited [`B.noConfusion])
-    "9f658f381624819d2622c9359ee320a81a06ac2435d30dd4d24ad6e9614d41da" "362d49c424f92c18d7f2641f3cea721c6792028627a9257f0d937b78dfe2d4a8" "",
   e `Tests.Ix.Compile.Twins.Proto.C3 "can" "src" `P1.casesOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2efa4bbd958d459004f3a93a7400ab7ba98da1688554df3e17a1fcbd2439a636" "757541206477da5f1aed7a4f6069168ddc96ad6897815cb4215d140048bd3c09" "kind",
   e `Tests.Ix.Compile.Twins.Proto.C3 "can" "src" `P1.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1544,8 +1178,6 @@ def part3 : List NonCanonicalEntry := [
     "02631bff3dbd7aec90361b15db1201ea59596ce01c9fdf0e8249a4f142b0c0ec" "f43bfe52374537caa6bab6039bb47e348205dd64f3ab201706bf0c920c4c6c5a" "kind",
   e `Tests.Ix.Compile.Twins.Proto.C3 "can" "src" `P2.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "df87562805b13b3da098f668c41c2e2a1fa7a34c8c6955da0a176da010716375" "7b17790983f970ed990d6887a9a66dcfdd2d2d1f3269f5d84e966d6f9afd84c8" "kind",
-  e `Tests.Ix.Compile.Twins.Proto.C3 "can" "src" `p1 "caller of a changed block" .pendingPasses (.root false true false)
-    "fe79fec6d1b0c2a7a6511dd85a3ae5407ce9f77705e235b76cbdab970db69667" "f05a5067cb7234e0422da400d9bd4fa2a9a6d12ac0f21212a60de263cabdf944" "value.λ.body.fn" "user of a split Prop member recursor (WB PropSplit: universe count; images, A3)",
   e `Tests.Ix.Compile.Twins.Proto.C3b "can" "src" `X.casesOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2efa4bbd958d459004f3a93a7400ab7ba98da1688554df3e17a1fcbd2439a636" "757541206477da5f1aed7a4f6069168ddc96ad6897815cb4215d140048bd3c09" "kind",
   e `Tests.Ix.Compile.Twins.Proto.C3b "can" "src" `X.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1553,7 +1185,7 @@ def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C3b "can" "src" `X.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "b39239fea24258438423f0a464b8cb32cacc283668fb10d77328c32e0ecd90f3" "33f4863c8256713a69dfa6a0a8444028a3702f46e37f9eee0cd6dd8398b1a1e4" "kind",
   e `Tests.Ix.Compile.Twins.Proto.C3b "can" "src" `q "user constant over the block" .pendingCollapse (.root false true false)
-    "fe79fec6d1b0c2a7a6511dd85a3ae5407ce9f77705e235b76cbdab970db69667" "f05a5067cb7234e0422da400d9bd4fa2a9a6d12ac0f21212a60de263cabdf944" "value.λ.body.fn" "theorem over a collapsed Prop pair",
+    "fe79fec6d1b0c2a7a6511dd85a3ae5407ce9f77705e235b76cbdab970db69667" "51c3ddba2dbb2ef3af1d9d7fde23619f8e39166150e8336714a58842e571262a" "value.λ.body" "theorem over a collapsed Prop pair",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
     "b7026d7e4027e86fbe090ab636abd8a416c3c971b1d812279d35834decbb2206" "d21ddd05d636f844de163fe5ff3c0ae7a9fe49623a4d8044f70891ca4bf74613" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A._sizeOf_3 "sizeOf family" .o11aPending .onlyB
@@ -1578,30 +1210,14 @@ def part3 : List NonCanonicalEntry := [
     "-" "38199ce4669f45f08fd939f42b385bb6a6bed7b033f2adc2580b32dfab4b780a" "" "§4.7 (b): nested auxiliary of the Lean block that evaporates in the split",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.brecOn_1.go "block auxiliary" .image .onlyB
     "-" "428529884300be0c4637b83aabc365aad465da6b7e9229f32630d7323bc95690" "" "§4.7 (b): nested auxiliary of the Lean block that evaporates in the split",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.isMk "user constant" .inherited (.inherited [`A.size.match_1])
-    "46fcd8066150788af73325baeda80e4f769a8e0ed4cffe6676f9210fc92c6aa7" "ac3a30bb6fe4cc1549dcb831393d3fb97a8ce3fc5f399e548e10540710b048eb" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.mk.inj "user constant" .inherited (.inherited [`A.mk.noConfusion])
-    "a56748a2d93254e4060a9e9cb23d30d6622e6139eda5d5e17b09d21d00d2fbcc" "f00c5f2afcddae630d6cc06ba722be8f9800500e9e952a62faef16e223d256f6" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.mk.injEq "user constant" .inherited (.inherited [`A.mk.inj])
-    "89791cf3e44a17692aff1bddd0e108f5b0332e2271a65c71da6594eb1cd20c34" "b304eb0bbd5e2d008befa102c50107d6782af49fc5d2d8d30f198c628dd0b44f" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.mk.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "8ffccbc5764cc9e8a2c4f8332fe3f4c5777b81a73fad30f4dce98b541d9979dd" "7e98cf4a6fbb82c2b04156a78f93917206131d182a6d3cf99f49c2d8e35b3f37" "",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.mk.sizeOf_spec "sizeOf family" .o11aPending (.root false true false)
     "62da2845006a89ddbf242ec098db179137bec49fd23f804e990969d2cc35c5d3" "c47e4738b2c89a7c1a32c0466f3694cfa40cda5127f84d5b82ea64e19fd5eb5f" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "e33da13f8a61384e608ac707e002e06475c9f46458d8d67683c6ac6e3ca350ee" "fa43fa46b46abd4706092b08394c6d01333002b89b0087776986ddbf4bf0cd62" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "030ae1156180b1ac49ed4f5eec6a82408207719c56bb8724462953ced6d7dea4" "9a49dfadf6985009d708e56ae4505210b53d0abfda8152b37dedbc7a5751f3ec" "",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "001293f7f7890c8941d95ddff31e3d9e6a4bba42204d00a8a9da983677fec23d" "c6f4c9ef77bf9bb5326f5f668dae16b86df01b495c9565c39c55678c2966f57d" "type.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1ed4553a14482ddca6bdd6edad60854958ec2a5487f219b7ea2746affb1e8b0d" "f5d32e768429ef56dcfd352f7c03888b2524947c48be691507328bf134e6bd55" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.rec_1 "block auxiliary" .image .onlyB
     "-" "c7f59215d14ef2b35ca5bbfd749f16dee94336156e2fcdfcca2525ddcca640c4" "" "§4.7 (b): nested auxiliary of the Lean block that evaporates in the split",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.size "user constant" .inherited (.inherited [`sizeL, `A.size.match_1])
-    "452680a03e8058a3e5013716db32bb59d45e11d8e1d3101e7d3faa5c959f82be" "c88da611928832fbe11b200914df7ef289814bc72e5b573a8fc040c7d254e9e6" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `A.size.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "b4bc96201e9f0fedcb358cda4055659b1a2092b713b6e8b282c96395920622b4" "1641b08d233a60d21ee92e697a83aa3fbe23d2b82df121a658cda2a9ac27c112" "",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.below "block auxiliary" .image .onlyB
     "-" "b0782747033c62bdd93ce0f6e1e54493b17cb7634107527fe80f240ae973e2fd" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.brecOn "block auxiliary" .image .onlyB
@@ -1611,31 +1227,19 @@ def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.brecOn.go "block auxiliary" .image .onlyB
     "-" "f280f4cd05ec7ca01893c2aceecfe2a89b1f0a1cf31c8c06e73102cfa9d1bc1d" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.noConfusion "noConfusion" .pendingNoConfusion (.root false true false)
-    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "abd3af6627f5d3c14eab547715953d68eb79793adee7b6b73ad6b4b0c82581f3" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block"
+]
+
+/-- Entries 600 to 799. -/
+def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.noConfusionType "noConfusion" .pendingNoConfusion (.root false true false)
-    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "a13871a9d6c0f80bec0828b0d0bb5b706bcaf3036c0fd63791655cb1bf8a9100" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
+    "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "62097ef059b0e99d2abee440f8691386cb2afd54beb68a2cf3a336a726852a0b" "38a0af07b0206343309225612792bd3d2c1d87b1b9b1e9c54c9dc98ee08115e1" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "dfa05d5f71d78161d48645eae61fe74366ed0196a36d361827c4b360c8af6812" "239c0dde0c354de1bb9ac55d18211c95299ec5562eb98e636350c6c2a02a7730" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.size "user constant" .inherited (.inherited [`B.size.match_1])
-    "c5c0c7f3ad8b6d7c3a2056d6b8a5c5a9923bae0c31f221425edbc4bfbe73573b" "cdb8234c000fdf25bc007af84894dab3409e9b68d22451d53271564233705cf4" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.size.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "b1ea810b383f4dbd7b749e796f7db68cbc10a01f96acf7709d4af3949d8bb9a0" "4129c74ecefde87ab2bff3f2904acdc49e8aec8740d1549bceb1afb47c4f0444" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `sizeL "user constant" .inherited (.inherited [`sizeL._f])
-    "57fbe43a16a1109869dcd6a6717bcb4f4e8ab73a49f60118e8ea43704ded0248" "3fd9a7f0b03ab947fc7d900914c87693ce3a943fde578cd93758d2ee8a2e7859" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `sizeL._f "user constant" .inherited (.inherited [`B.size])
-    "7c09a7fd2e15a49a6a69897e939217de66dd4ada7e2bdd5c58af911eb62ad9f7" "df5a308166245c3ac7dbe39bcbd2e1ecbfee25f251eb6916c84ff9d8a7544ad5" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `sizeL._sunfold "user constant" .inherited (.inherited [`B.size, `sizeL])
-    "4e5f0c87c518dff161c783acaf4ea4708ddaa0e3413ee820cf70797b1a3aa189" "409c92b7a0ff46312b27666c0216b4dffcc1eadffc0faeb09fef078771721c04" "",
-  e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `sizeL._unsafe_rec "user constant" .inherited (.inherited [`B.size, `sizeL._unsafe_rec])
-    "4fec5b5b9099ced16ce122212e937c4ae5e3fc74718599a5993d74282c720efa" "50d73ddbbf42db25dd68fcd0e1d10b03a4abc6c1ce886b9c275fda7743454f27" "",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `useRec "caller of a changed block" .pendingPasses (.root false true false)
-    "8f6c02851a5204712eb85557310e53ceaf31f54c90254c741312c0e780fe327d" "7aeedf4f57b16518b3a1bd77269d310bfd4a003388820b7140099f3bf0a6b60d" "value" "raw `rec` user over a block whose nested auxiliary evaporates (O2)"
-]
-
-/-- Entries 800 to 999. -/
-def part4 : List NonCanonicalEntry := [
+    "8f6c02851a5204712eb85557310e53ceaf31f54c90254c741312c0e780fe327d" "7aeedf4f57b16518b3a1bd77269d310bfd4a003388820b7140099f3bf0a6b60d" "value" "raw `rec` user over a block whose nested auxiliary evaporates (O2)",
   e `Tests.Ix.Compile.Twins.Proto.C5 "can" "src" `X._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
     "f3f9cc6a6602b8596c5bfbbc20987f4be2892697fb83368bcf1e2283b3f68a7b" "3065cd9acad534a6fd9f24cd399806c9e03b8a4aaa49b7ea7e324e3bf081fd59" "value.λ.body",
   e `Tests.Ix.Compile.Twins.Proto.C5 "can" "src" `X._sizeOf_2 "sizeOf family" .o11aPending .onlyB
@@ -1811,11 +1415,9 @@ def part4 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `EvenP.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "99fff1e46e8a41d7068aae2b7d37f92d11f8843d67b2ecd2f60d2ede7c6ee32c" "db994b737237c98cbb8f674903a30a39915695f7c26c9446b08f9a9372947fba" "type.∀.dom.∀.body.∀.dom.fn",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `EvenP.toR "user constant over the block" .indPredBelow (.root false true false)
-    "3bb054b90e0582df85c92e346ffd1d629209328e85a6d36616531ab5fcb306f2" "ef73151e365e19a06fee00d3c59dd8170c139049a553569e13a33d882adedd72" "value.λ.body.λ.body.let.body.let.body" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
-  e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `EvenP.toR.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "34ede45369464ff064e993cf08f6c7292f243260d2b78bb48c657b00eae2bd45" "22edcae78b0846e4b30ffb5a9c06f32472fc0a52c85ffb1916c2a054ac8e77da" "",
+    "3bb054b90e0582df85c92e346ffd1d629209328e85a6d36616531ab5fcb306f2" "57f0a168d63b1d32b79e42d5555990e19705308b46a8b55bcd0cf851bf72feb4" "value.λ.body.λ.body.let.body.let.body" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `EvenP.toR.match_2 "user constant over the block" .indPredBelow (.root true true false)
-    "d4fd427576f9b54f7c46c99776b0c0432d74ee8979de5a39e01c7908f4003eff" "f6cb28d164909b24d38b89c74a243fc67d1fda9079f43fc6ae4b9f751a404b50" "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
+    "d4fd427576f9b54f7c46c99776b0c0432d74ee8979de5a39e01c7908f4003eff" "e58d497a225b925ad0463e367f3ccc3aa8cf54942cb1d65a4c0a333b871ac065" "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.below "caller of a changed block" .indPredBelow (.root true false false)
     "4016a00cc584cdb48dba00fd8bb3a3d09417dc143ed5429a3d18c6cc798d8d5e" "a76c0998dfb44daff9c6534b3ea2071b808f095f78910f2e53e98d5f1e9e9b42" "type.∀.dom.∀.body.∀.dom.fn",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.below.casesOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1831,11 +1433,9 @@ def part4 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "b88f150298d041242f67e295f8732068189564960d7bac4df24672f0acb5f508" "9c387a550fe34dcc0e98ffb8a2275f6a9d89d69e3daf6e764d7931e8ce81ed25" "type.∀.dom.∀.body.∀.dom.fn",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.toR "user constant over the block" .indPredBelow (.root false true false)
-    "be619db32fe0d4ea5d256ddc9db477cc9769a6c29e9c372778aeb990a0b9bce0" "f3338fe7c772c3574e479c775b4ad53db0e2ac3d29bcb049dcf2d9c726866649" "value.λ.body.λ.body.let.body.let.body" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
-  e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.toR.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "e4b667c69875cc9ea27011ff8ec1fdfce9fbf9a7a37336f47e62e86334911555" "5b87208daeb37f912524fd911036408e8bfe6083993050e63e1c228bcd1f2b9d" "",
+    "be619db32fe0d4ea5d256ddc9db477cc9769a6c29e9c372778aeb990a0b9bce0" "de3bfe5ec6e826c1294a8bc7e4b1f1d922d694dd06e948ed511b101368974fd0" "value.λ.body.λ.body.let.body.let.body" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.toR.match_2 "user constant over the block" .indPredBelow (.root true true false)
-    "4e63421fe9885ad5f4197226213dda9164e3c1c9f129abe4abdffc5f35607998" "6fe9967e4d4ec08c59e3d9c716caeced8b838a3541e1c4071f5c95290d0c11ca" "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
+    "4e63421fe9885ad5f4197226213dda9164e3c1c9f129abe4abdffc5f35607998" "83e7e57cf112328253227ec833f8d34b9bb765d6226c0a09b93eddad1ab4928b" "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `R.below "block auxiliary" .indPredBelow .onlyB
     "-" "788ded5bd37dc690f2c95e126ecc6de3144b51e118ecb6d61e67712d0d7f4e55" "" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off; §4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `R.below.casesOn "block auxiliary" .image .onlyB
@@ -2007,19 +1607,11 @@ def part4 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C8b "can" "src" `X.z.sizeOf_spec "user constant" .inherited (.inherited [`X._sizeOf_inst])
     "a572550a6184263f6d3999ca82aa84c41b6e33ef8fa4c1ab4a4b72e95496e4be" "4d9023194f78c32bb718b1c52753039310738a9ec77333f7dc19cf133766660c" "",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "3fd79d6295e2750e0d18de5b6cd9d75489830c72a379ee3ef66ee712b6079cbc" "0568bb50f61b112ca13288f082b1920a3aff93c887ef44db92c1b3b1a20e50f7" "value.λ.body.λ.body.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "3fd79d6295e2750e0d18de5b6cd9d75489830c72a379ee3ef66ee712b6079cbc" "84f78aba9e58fc4f7ef534f4d16a3a28a83c245dc7fc5af26d49996a14aae2ca" "value.λ.body.λ.body.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "a1d896f3080d0d531fd0d0a1f3dff7f06e256f89f2a75b440d1cf5f0a4b58ac3" "4ebd977e8266bebe8e9ee7cb57c4fbca5bb5c608cc2a26fcee42353611c4f7fa" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.a.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
-    "7d07cfcf086949c41a384a6c47b563d5fc57e2e26cffca6fdcc5bf507a6d7f5e" "017199c3bb225c627baf34f09ee7cfedc1826b28aaf266b7d5bd7a9734d3d2ea" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.a.inj "user constant" .inherited (.inherited [`A.a.noConfusion])
-    "8662ba33bc9031c4513b7c06d034a79a5365ff8bb803b9ca971b6fbadf9114bf" "ae47bca13da68499d7abfce35514a85d308d25d961a2dc8397d9bc672efe4e11" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.a.injEq "user constant" .inherited (.inherited [`A.a.inj])
-    "fbbd79980458064ea5cdf3d83b56726050a86f41aca6e4477519b6a56f7300c1" "c00529cd527ece48fad2b70fc153e70b392f00f80db22d9a0543e43f5ead8dc6" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.a.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
-    "60058ce6072e4f6bc1c4c1818bd89f2d25aa8a30e7a699e8f42cb3c827df0df3" "e05710627cea5559126be3e79711021a410b185850951867a3b532aae5683a24" "",
+    "a1d896f3080d0d531fd0d0a1f3dff7f06e256f89f2a75b440d1cf5f0a4b58ac3" "2462eb84718d1b3ef26608abf899e63715c7bfac5952bffc13bee8cfcde4ebec" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "204d851c73e29e97ed79ec34676ab30109f86d80d438d3249f722938d7f5d09f" "8576e3f9b0bda46111ca555e542cec5b5c6faf4d3881e4274df0b255603dfd0f" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "204d851c73e29e97ed79ec34676ab30109f86d80d438d3249f722938d7f5d09f" "5e5494874f76ac7bc736b95584603e0175f2a761bfc4ca57fd9be1490b17bae5" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "3635caecef138b7c291e8f63192d852092f9cac21a5d58a4f8576017fa6aa6ed" "48a7790bbb69f0e5f94e8d85d74044e6d50a941716e683f167ba63c6b6d81c82" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2028,38 +1620,22 @@ def part4 : List NonCanonicalEntry := [
     "c45597871edcdf0f86bee0605379bf84d5d1cc2efcfbb16a0454d45951406eac" "d3eaa8132eb775787fb424b4a84772671a1a2469e54406d226549142a4052d4d" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "445126f1411307c03771a7219bf1400511821f4513fe3ebfb52df5d16cd0fec3" "5ba59c80129a46b3a4561edf5662fad5a6af6715b3da5704c0abcad98599cdc8" "type.∀.body.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.ctorElim "user constant" .inherited (.inherited [`A.ctorIdx])
-    "024285c94875f909fd6a91160de5b24090babcc9090e48c1517aceeb3f29e220" "b8e120283f4ae171a0b843ad1686fd517090e4b9fd8eade5a1130829b4af275c" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "bed8953c913052854591201ce10e202266883099db3fe7fee91a82886660433b" "6d7394ca5f65e9920a1c1de2bb54349e3975a196502e27d2b110948c712d45c6" "",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.depth "caller of a changed block" .pendingPasses (.root false true false)
-    "6b89d0d2e6de373c3c955e16a54e64d2a36d38bc13bbc28810893aa3515c811f" "3a4ecc5b9134ddc78e184651b4a400c800e4ca0d74aaad7275f8aa8d13c07f16" "value.λ.body.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+    "6b89d0d2e6de373c3c955e16a54e64d2a36d38bc13bbc28810893aa3515c811f" "d84c4a25e60038f053c7df40bc4661484185042e1ed1df5baa018c59c6c8c861" "value.λ.body.λ.body" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.depth._f "caller of a changed block" .pendingPasses (.root true true false)
-    "8fcb310ec4de65102343f86a9581d01f163665862a4716bd49277468697d434d" "52093855bd5b791fb0317fb12302bd34716134f6f41e7f2b20495b4e76a99033" "type.∀.body.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)"
-]
-
-/-- Entries 1000 to 1199. -/
-def part5 : List NonCanonicalEntry := [
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.depth._sunfold "user constant" .inherited (.inherited [`A.depth, `A.depth.match_1])
-    "e28d8f1382b9a037a12a52ff4416a54433b84e70baf9923a0f6fe8db63965460" "835cfae235d9b18d581069f3049093b7801c0ab6d5e4e054b899a5607eb45a22" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.depth._unsafe_rec "user constant" .inherited (.inherited [`A.depth._unsafe_rec, `A.depth.match_1])
-    "407a01dde5dd2db7163931aafbe789267268d6019b8c86c79051ade3e3574d91" "b09deeae8a5914794a71a9c3d28860328a0b65124cf00b66f211b8af351b267e" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.depth.match_1 "caller of a changed block" .pendingPasses .unexplained
-    "091a409b502f54a4a52721ddf2351f80537ef7dc995be049c85450eea801d6d8" "7f5e02ff604ba7d56141e346d304b270a4ca61dca344c00ff89b250294327df7" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.isNil "user constant" .inherited (.inherited [`A.depth.match_1])
-    "014f30f2e46aabb8a590040195401486c33b6ae8cd2b500daa13d85c6b215788" "aa72636da71385cfd6d22296ed7788092d609848ad8bbb857e8e1be338187466" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.nil.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
-    "13b28453d84cfedb93e1ceef97105ed1bbc5db6a45e72992856933be1ea64b18" "678958b8700801196c8265cf622a0666ee4e5b34504838f69e6edb46b67bb05d" "",
+    "8fcb310ec4de65102343f86a9581d01f163665862a4716bd49277468697d434d" "140a043f9fb29044818639d1621138d4e6ca9abd3e7c7c7cfe08c3375479048d" "type.∀.body.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
+  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.depth._sunfold "user constant" .inherited (.inherited [`A.depth])
+    "e28d8f1382b9a037a12a52ff4416a54433b84e70baf9923a0f6fe8db63965460" "2981633121c3b553f16b5d2e13ec763c8dbfb2f049c4de6170eb7f284c2c718d" "",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "63d898cf8525d6be264fd0d7010e8997f947bfabdc9e9e9f2fe2baf88f9105f7" "285f4ab655b4b30232718f383a7110b92a8b907818e588102c556f5b3cdb0632" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.noConfusion "user constant" .inherited (.inherited [`A.noConfusionType])
-    "f8e3d20b7f15a29c4bf3d9061d806d7d4e5c08e48c208d1127bad3400c5fba2c" "a895e10cd9538a7d52d8baca488d6f3dbc3283484e405a23b848218f64cf25df" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "aab05adc2da6d7ebb27375f2c382c16b6c99c8f0a56dfcd11c32b019d93be275" "32f08bf2de04f4276203942425feb742fdb3d5aa59a0de042dfb4478af44c27b" "",
+    "63d898cf8525d6be264fd0d7010e8997f947bfabdc9e9e9f2fe2baf88f9105f7" "4aa7bce1a4238a4f2406f8e960987c9f8f17c09ec2bc9ca24a485a6c5b3948d6" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "a01edc74ebc4071abdd7ec7f35cfc38da692245a9764e5d98f59204dd902aa86" "95cfb2f4803902b089395617c9b16ee347c8079b759aa28d9e4348baa1f27433" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
-    "6b0e9178d2044078f7ef5ed01f0c0deacd961e2aa43ae44fc31ca2eec9026e98" "561e81efbc0c1ce6c990b30966ec94db6ae98c476a0f6110fb1f0063b0184f95" "type.∀.body.∀.body.∀.dom",
+    "6b0e9178d2044078f7ef5ed01f0c0deacd961e2aa43ae44fc31ca2eec9026e98" "561e81efbc0c1ce6c990b30966ec94db6ae98c476a0f6110fb1f0063b0184f95" "type.∀.body.∀.body.∀.dom"
+]
+
+/-- Entries 800 to 999. -/
+def part4 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.below "block auxiliary" .image .onlyB
     "-" "cb6f32f746d2315981cd805fe676f0eb97ed44a21fa27ae8eddc4e00948128dc" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.brecOn "block auxiliary" .image .onlyB
@@ -2068,16 +1644,6 @@ def part5 : List NonCanonicalEntry := [
     "-" "8848be1857f85e351b18ea9190b9cc81d88fba40571252e6605a80f7c495be10" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.brecOn.go "block auxiliary" .image .onlyB
     "-" "978d0334cc26b28bc30387abccb3e498a0d21e0f60a906b896c5a1c66cb8c4e6" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.leaf.inj "user constant" .inherited (.inherited [`B.leaf.noConfusion])
-    "dcc19ca4c75834e1774f3ce896e9b41cad3dd14fa46002f8951e4bfb59194d18" "04d75c4abdddc6220c48c3cf03d218c8a2ce94657cc210db94a03f6204aa3e29" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.leaf.injEq "user constant" .inherited (.inherited [`B.leaf.inj])
-    "a44774ac6f15c185ba511dc9857e8087f05361b024b6074dfa355be79e6614e6" "227dddcc9caca9a4b31e9598169ddd7c913bdd2c6251cba341aba437846cafb0" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.leaf.noConfusion "user constant" .inherited (.inherited [`B.noConfusion])
-    "1c356838273129df95934b50a190932160a6623e0c4eb7e21f71ccfe8b244f24" "b4202149637b3ddee1f5698f0517e27c11c81d8a7b1984a84d7231c9b0275a49" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.noConfusion "user constant" .inherited (.inherited [`B.noConfusionType])
-    "96cddcc036cc224c6d5c34976ddf0c5b9cdb9c2b980c482ce130deecbd2f3a0d" "f8ee9459fa4fd9a18dc674303b4b5bf1c2382a54b386737cfd83f0b1a04b2392" "",
-  e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "e1292b7bfc5fb1088a3cb272660b8ae02d35d7a3ad8efdd4ad0ce4ec30796898" "b772d3d443e93f9a6d52725e90d3702d01d6790aac709b05bac4c006ab45623a" "",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "bfb8e5d06d05119634683715ca38516ad72168f4cd48a90e040e283fcc972d0f" "aa76e778245b7d6566c448c201f469073d89b6c7e25bceb7f059266f278c9d98" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2130,14 +1696,6 @@ def part5 : List NonCanonicalEntry := [
     "47c2cf9b529effbacb991502b5495aa849c5a885a8316c7802c72d26f04ee218" "8129c3e636d2957e3441df5bdd5ad6c1333b510f4238b23ded2fe56386e3dd9b" "type.∀.body.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C9b "can" "src" `X.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "267e1a345abac33aef84b51b4ed6ad2bda9d618b441874175b02b98471fecaea" "4e87b85cb68310a4274bce7bba8541b7c244cf1343de88993f76fdefe6a98e1c" "type.∀.body.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.alt.elim "user constant" .inherited (.inherited [`Alt.ctorIdx, `Alt.ctorElim])
-    "d6c7a7a2b870795a4e276904e4090ae93fd1a1f1c5ccc382da00511ea2f342ce" "035f155e4baeec1ae29f86e5556e9840abe151274a2198598047dc4e990bb2d9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.alt.inj "user constant" .inherited (.inherited [`Alt.alt.noConfusion])
-    "06552dd6acdbdcc49192a4727625f9aba22581bb2a74fb97179233ce456d0402" "c4e9390d878eb4d0874bc23111e1064e88ecce4bb010583d925b726a4a85ef0b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.alt.injEq "user constant" .inherited (.inherited [`Alt.alt.inj])
-    "3116f19021ca369a471e8b475ff4544b67e4dd9df0c5aae49d99acba8c6fae1b" "1b4d2cf8f152d1ddbc34352ac47480b5b773f7161936759897099421ebeeef10" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.alt.noConfusion "user constant" .inherited (.inherited [`Alt.noConfusion])
-    "7883033ff85daf66f1d820bc5c450d0feeae4746de05267d550ebdf38b2a6dbc" "fe776b33aa99444befd5f3895d5df76f0c1dab1796f3c6afdfcfc2ba8750463e" "",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "486d625b50b8ceda2ca653be4ee5686669f4694759981a0a85fc6e5e089af90d" "78231b7e1a3902c669fe380fffb0c9f9b6f85d27fb5a525bbbf3544e4fa3f667" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.below_1 "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
@@ -2162,30 +1720,6 @@ def part5 : List NonCanonicalEntry := [
     "-" "a3823b05179d27108d88f75192ada113577a6663b99e9c8f86dd7b834757a552" "",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.brecOn_2.go "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
     "-" "8288316fcf4d3ad6ed0ef295f8ced00ecd1a7523202cebd45140d618f997f07b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.ctorAlt.elim "user constant" .inherited (.inherited [`Alt.ctorIdx, `Alt.ctorElim])
-    "ceea536474277e809e900367c140788c1bf3ce070b79ea4718c3aeb8363efd7b" "702e07d04175a7067be6e06e6ef5bf58a28492238ac639e9ef3ad716017c51c5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.ctorAlt.inj "user constant" .inherited (.inherited [`Alt.ctorAlt.noConfusion])
-    "489877745fa8219e298e95f88aa0f2f64b4610f984b81791d1d4e7887f4fde8f" "c5bd19cd6bcba89e3ab4f0b1463d1005f580916a064138bd0043d26eff6ba2f3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.ctorAlt.injEq "user constant" .inherited (.inherited [`Alt.ctorAlt.inj])
-    "fddc6f115371d5a9cf1fe4c1d61649963b5172d49f447a2e2a18139904a6be28" "93e56309cb01f1e0ba060b62833cbf1d10c8842deae10cfb6ffcad5ad285ad39" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.ctorAlt.noConfusion "user constant" .inherited (.inherited [`Alt.noConfusion])
-    "d0fabff05bcaa83e62ba96e828823530d4132953da4efa57292c7389fe6fa25b" "be04f071193168de3262d8443191c6b8c4cec78372923f74b6907b56835a8a3a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.ctorElim "user constant" .inherited (.inherited [`Alt.ctorIdx])
-    "b569237bdfdbc7000b104d66743fba44582d145b51e9342310428b1b4fa868d3" "0b4466a6b1aca632ff64f44f7532702ab909350d7d41c08edcb5d6bc4df1e11f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "01a8449867f864ef198711e8409798746db0abdd92175695ad25d504756f62ef" "0ab05eac9b30d8f23f6d1adf574ce10dc9cc1ce051da9d7f7adb5940d196b836" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.default.elim "user constant" .inherited (.inherited [`Alt.ctorIdx, `Alt.ctorElim])
-    "c1dc9110f8aab676b1c8ecd159b17f5656e35ff21905370c63ccec8573e0a690" "fc8cc6e8063b324c68ba8ac0aff1517bdf04cf4dd91588baf489bb322b4f9ff5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.default.inj "user constant" .inherited (.inherited [`Alt.default.noConfusion])
-    "28858b74d797860f22bb17029e2afef0dc7580add4f053e616662e72f0618a2a" "7531a3d46989ad9dcdbeb77a3f9d3d6a2938a6e82a71d05afd530409409b3773" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.default.injEq "user constant" .inherited (.inherited [`Alt.default.inj])
-    "7a0ce085512d9b90006292d27a051d1fcdd0d0b7439ff0ed3db55e2399c71587" "d2a207826629651b921ddf538afece20dc5216b1805350744d0987549ab5cead" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.default.noConfusion "user constant" .inherited (.inherited [`Alt.noConfusion])
-    "43e4b9ea4ec038fb5c865681cc27866879c9f60a6ec038e4a3404e80c3ef209d" "f28116cd61668b778fd2f8c8755eddecb59f915166f316892c3d8bd60cc58193" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.noConfusion "user constant" .inherited (.inherited [`Alt.noConfusionType])
-    "aabcf80aebd12c70062c017077f9b90e76b0b9577072acd4168cffa88801641c" "4ede1bb2565cf28529c48a442969480a753d9871b90d283ac95912b66782b283" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.noConfusionType "user constant" .inherited (.inherited [`Alt.ctorIdx, `Alt.alt.elim, `Alt.ctorAlt.elim, `Alt.default.elim])
-    "3a6447a35a4eab05d7bed56f236832d07fe92b993a573f17bc562d9f93f43810" "3d33654c210477f13052ceed61f8171424bbc1182d2a5fe6b3c45c15712c9203" "",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5ade93d22bb6305b4d2f01727be452b898ad5eb109b332b0106424b42584317b" "e8748a750744f63964ad0e4962665ab68487308623e1525ddcee23931cf8cccb" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Alt.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2218,16 +1752,6 @@ def part5 : List NonCanonicalEntry := [
     "0adbfac62cb6971cec49b039a2773097278a3513a2c254a42b9fc7724011f957" "-" "",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Cases.brecOn_2.go "block auxiliary" .pendingSplitAux .onlyA
     "9ebdef78f8555d5bd5313629092016f93e36bbc6ad50a94c86c8495af1e9554d" "-" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Cases.mk.inj "user constant" .inherited (.inherited [`Cases.mk.noConfusion])
-    "3bf5a095fb65f5bbd343b2b7bba00ead69c3c95476872c86c3d1cef232c8e09b" "1f4fd469fa65e19e5f0d0a0244871a195d60cf3a5334a94479ac7bb11c781a64" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Cases.mk.injEq "user constant" .inherited (.inherited [`Cases.mk.inj])
-    "a0f93cac72a6271a321fa6b98aee408183e1d36bcd03dff38261ebba66702d92" "0fb1c57d1250ce3e274ef56336a1fcbad8f4e8d2a78bc290aa0f182380286a17" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Cases.mk.noConfusion "user constant" .inherited (.inherited [`Cases.noConfusion])
-    "b8aa8177dfd5c5d01f2720ebe4f9568c2f72bbabf174fcbf0884fbd3a49c0719" "2a46e9f1ae1ce7bee4bfad77ba516805a26d3144d445859ca3b2da63a977abfa" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Cases.noConfusion "user constant" .inherited (.inherited [`Cases.noConfusionType])
-    "be4149ee21346026e7ea0ac9001b7debc8a2dcad1ff82ce8fbdb3bac93811c82" "05df2da9e7714d2f651f874bb470181eda399ad96a0ebd028ca033fc4a67fd2d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Cases.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "a25c407e9797f562b2dc865c5f3001dd4a58a37aa5ed9d185555f5b962ac9f84" "823cba475b10bccfa10d76d59ab700e9c11af5fe10b3eaf6e2be931ff4ac41d3" "",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Cases.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "ad005de1965cad26a22a71124d33ca0b21b208f97dac3d09c96fa5e107b75d75" "f5c614163bfeecc45c0f9ae6c12a6cd1780beeb396c6d713a7134aaa571a1777" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Cases.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2244,130 +1768,10 @@ def part5 : List NonCanonicalEntry := [
     "87a658c6a8949d2eb5a422bae665131bce5315049c17d51ce1771ec974203196" "c672208f542e131bbfa0b3db2c936a269c0948066f229a90ca1e0a87ffbaafa2" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "0f9c0ad41ad041f5ed90306303908f8e37afd1cc62a0361bb2e9b333581d23a6" "a10574599defc56b36fef264f06b734a10076c99d4bd3c4250f15a5c7b954999" "type.∀.body.∀.dom.∀.dom.fn",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.cases.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "10e7457876fb38a2bebc206938a354da8245dfc3a51189d75912e15d70b63eae" "e6e4c2d1480a91f004daebac26621a1cf752a46995a0336c8bfc1d3f06b11911" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.cases.inj "user constant" .inherited (.inherited [`Code.cases.noConfusion])
-    "293108548d92376a3beecf4a3de95353af28d79981f5770bb1cf92af108f3c6f" "6a429379964ee0704f8d22094184f56ccb8863246ab622c186604f1c93df67f8" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.cases.injEq "user constant" .inherited (.inherited [`Code.cases.inj])
-    "8458da40ae937d67ee48198dc0d7ee0ac8a821cc7f7d86254f5ee39267c844bc" "43d9f81ee9442ffb9160296187de7fbf621e76c0ccee43222c76d55b6363f94f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.cases.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "99d7d96ded00dd0d5cd9ccea6cf6b601f4ee042e807268f832f60ba8e32dfc5d" "21eed14dbdd1dfe8fc099ae96d0025bbe81467a9e84917bb8cf218eebe292598" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.ctorElim "user constant" .inherited (.inherited [`Code.ctorIdx])
-    "ad29bb6e5eb5de851b1d58106fc6e2cb1ed01f06ea3920501810d5e5a061fc46" "d89e33897fce2dcbac964b651dc8a3ec438e94bf26a859dc4c4aff6cd41cae2f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "2ee5698be84376daeb27945c77ccc157f5e75940a28066e149f139f84327363a" "c1d8f787437f1f7db7cd66eb52d2ca5c7e1607996d21fc2546116f17aa72841e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.dec.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "850704605f32246fb9b48251d131817ed1e24dc364c04b87b8d011a10af072d7" "61354ff421f37c30638c8dca5c7b233970757970c095ae15752341ddab8a652f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.dec.inj "user constant" .inherited (.inherited [`Code.dec.noConfusion])
-    "4db9b54d0736d9adf53dae32e2e1a728dd35c90f0255a943ab77e3a32d62b411" "ad8a97a9b589ba20ce191824c352e22c45aff7c498ffa31079d82abe61b1d5fd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.dec.injEq "user constant" .inherited (.inherited [`Code.dec.inj])
-    "c51fafed3853c47449d99cf5e9dfb558d69319df31c98b0dc6e553fbca010742" "2c0507457c3313ec148af6dba1266017c0a40c78a8e39ce2226ddd68aaccde02" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.dec.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "05a3697f5e9eb4337dee74ff55ba7addd629a262d8359a48118f5e2ba96dbb76" "e2c1f9ef75353ccde8997e9e26433ea247402fa6c294fcc5d0cd7ee604a07a4d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.del.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "912b76630f6c4474e902b8f430c2e115208167ecba659fe3b6a9676bbcb5d265" "18cf87f5e1479aa51b186115bce9f71ef7adbcbd235632b2b5a7a7c71f053166" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.del.inj "user constant" .inherited (.inherited [`Code.del.noConfusion])
-    "1b8319407254ecdf36cd47a499916c7f35bdcf9fa08f980a58e14469cc458438" "a3d16c550e028d11b5280aa97d50048d5b8839b7fa3856f8ca68f258b271e639" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.del.injEq "user constant" .inherited (.inherited [`Code.del.inj])
-    "d0a010785ccce2f9ebec3133aaabf1ea8b8a7b525346c0ce6954a7e5785e99a3" "a1902eda24bd29d12eb0054262d9c35695f5d09fbb92ff4be5b07ead833e8f44" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.del.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "7e3eb4063293d85dffe1470c0215889c7938c0b9210a5d2357f67bafaab83124" "72b41b5c66cf5de646ca6fbfa2968635d7f1ca340bd0ba6b2fed49a30d3d3f1c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.fun.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "818ddfb12c342813047dc0cb599892b78f61c65d9e73ee93af3d599e764ee4e5" "383737b59b6fcd382bc508213857d9fb305b105c2181c0cdbf066cab92b526d6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.fun.inj "user constant" .inherited (.inherited [`Code.fun.noConfusion])
-    "d8d2d1b91b606d8027d6a82a1af7029a73ee82464a687dcea1159dc878637ac2" "339ee1b0e1a7dee08866c9e3a8753ceb30a933e72deb3f52935d4b0b6456d540" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.fun.injEq "user constant" .inherited (.inherited [`Code.fun.inj])
-    "d84d0883b55c2ca7ee9ac70d94928fefe783a0fc0095088c62292c3b4e783538" "4ddb6c30463050ea8946754b6fe51991f602ad633ec4cc6e1caba69dd3c38737" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.fun.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "c1f0181172f20d8c724e32ae2539cfc8a26cdb7ac4598eba81f0c3c0e720a649" "094e3f787be77ce4fa807ae550a02089e92ffb0ea3bebfd9254fa6c6d7270f34" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.inc.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "896465a26cba7bccd9f10231dc908d492eb7c9073fa6dc1d5ef9a97e509b76ce" "c49c971348c1c545ece4d2ec38a8689cbbae00aa4644a2127e06c9b95623ac51" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.inc.inj "user constant" .inherited (.inherited [`Code.inc.noConfusion])
-    "5da6d9adaa38be6f9e0c418495d2115211179c22106477f12b35e90556cf4d6a" "738da4cef5aa77e95ec57be79feb635a2766601473b1ea63788c8569683c2311" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.inc.injEq "user constant" .inherited (.inherited [`Code.inc.inj])
-    "b2859e15fef266e1c098f89ea66a85f3a81879c82d88d8619716b1ee99e0e64b" "ab833b72b22a020545fd351014753115f8e6c847fdde6c3652264282a5b1c406" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.inc.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "f782c865ef37c063d39ccc0c54a1d483cf753277b05cc0a0c86a5c9f54b89ac3" "c6b6906604a41b7f7ad422d2ee4ce02946ff232ae7ef3c1f8ae153d55bc7ef28" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.jmp.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "1dfd8041eca4aaba62adf6848661cc096ee5c302ee27cde31fc66b883fe4d003" "dd46cf4e87db65161da6a6ab2417d8eb59f895e61d5194276e3a9e530a2942ac" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.jmp.inj "user constant" .inherited (.inherited [`Code.jmp.noConfusion])
-    "aa4d1b5a751150e98d5add2a763abe37deb660cc2bf4d34b18863542dbf8adf4" "d1cab66957c2adfe623c666761ddd842fe9b1d5bc35c922208a2f9c1be2234dc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.jmp.injEq "user constant" .inherited (.inherited [`Code.jmp.inj])
-    "7dade2f0d4336535b2f9eab3c7eebe1c1f26e2519baa26f29e2ce34dffbd9d20" "a6975d10751b60372ae64ff2769ca6a440a9bb867081dda2497d89bab817967a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.jmp.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "239c121ecbcef0c3e0f3e430406eda2b717d7ad036122c7cdad31fa84d830f1c" "7c3bae44801462cf289c84e9823bd45c9de3b9cf79f4c284d739e6ef5a7e486d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.jp.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "84a2ca1123f8a51c89ad9b7687139f30219ad1399c5df27b0b0a7100204c1ead" "3e537b4da80e678718bd3d74e5305b615da24e0ecc534cb93766a47ab643f72d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.jp.inj "user constant" .inherited (.inherited [`Code.jp.noConfusion])
-    "de1221e8a9931a905e0a9e995542befa3fed5cacea9ce697c269ee8637693ae2" "3513a325a68bb12eb99b40d9deee4f99e723f4bfd0e9c06c659481f9bfe8bb92" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.jp.injEq "user constant" .inherited (.inherited [`Code.jp.inj])
-    "bd1f6be6788edb798dd8a1a68212d3e3b8f192a0b3909a309ca79796bcf54a21" "9163a598450856b520349f7d4fa13e8dcdbc56799870fa3872cdc6edd70b3dad" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.jp.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "f071097cb30b889767a1aee7d4d4e5d79ed4655b5619ab41675726a7b8b2e6fe" "68b70f37bde55f6624e00e9b27b934e0c4d2b8e83ad596e0820b3f425ea3f953" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.let.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "f7762e8719c34da3c43468d182e1f477604b00b375c723d424d19d2f82b59ed4" "38848b12fb2c43562d9828aff328f2af766fba32c83acae92c38c67b6fb537c6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.let.inj "user constant" .inherited (.inherited [`Code.let.noConfusion])
-    "19e455ec0968598f7bb3628d3cf541b9397e2283472f7cde0ce575ab1041e6cb" "7916ad8712f231562db14cd0db851b5aedbce44b8abc43a87c3057a5c818287a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.let.injEq "user constant" .inherited (.inherited [`Code.let.inj])
-    "db832ddf7a4714cd15835666664fe80321f46d98cd66124c0ec2695d7c063607" "4f2fe51deb8ff7e511ce97ec733eae73bf3f7010927cac4abe06e7067b0717c6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.let.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "14a60e3130b04f20b7ec667f725c5fb9dc39df8152a770707750930f2dbd8c6e" "3f0bfd9cb88784369440dd7b7fc6ce0d9b6786db702973382d24becefe02e040" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.noConfusion "user constant" .inherited (.inherited [`Code.noConfusionType])
-    "872dbfbe7c056cd72013412e953a6ba722f4fcb8aa674f38dc34c898e8939dc5" "ac328093e5c3dc73b90c2c51ee3912ee3b04efe48915aa436493ee008674c29c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.noConfusionType "user constant" .inherited (.inherited [`Code.jp.elim, `Code.oset.elim, `Code.del.elim, `Code.sset.elim, `Code.unreach.elim, `Code.let.elim, `Code.inc.elim, `Code.return.elim, `Code.setTag.elim, `Code.fun.elim, `Code.ctorIdx, `Code.cases.elim, `Code.jmp.elim, `Code.dec.elim, `Code.uset.elim])
-    "64e1897673f62b9b484d63be007a377fa432eef8dc9c8526e9567f1ec937a5f9" "50a3a65c953b7484aa07898cb72233de86a3b58e6e5aaf0440cd5b1421a0e70d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.oset.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "af3d80e8e727b3be029a551357870e127bb596f8578b30c7d7220caa89ad78ad" "8a4193fb9867f8dc1cb5a9bbf781cfcd2b866574228c7ee59772712183459073" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.oset.inj "user constant" .inherited (.inherited [`Code.oset.noConfusion])
-    "c8530535471db8f37d80fb11f92565e0e13ffadb078013664b0667c461dc29b2" "e8949c73044740b3f8b8e9e71e6fb2c7820b26240700cb721cf50921b907f4a2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.oset.injEq "user constant" .inherited (.inherited [`Code.oset.inj])
-    "4af737cdc23eeb4ccc10b9b6d362067ca695f0a747c59ed30ccbf425cbbf46cb" "1d91d77f86f0b8e540c0e5cd686d58a3789724cade796615b0b927865164e00f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.oset.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "5ad8307dd74a52cca68e22cb09288b0c625340fb866f18484fa41b839b9c6a3c" "e775d265e872b12e922c6e5412ec4abc6abb73bd6c18882cb243283903a595d3" "",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "41442b55e8e872dbd9d0faf5ef6f1b0b28534ce26cb6f063e838411cb6bab1ae" "ffca40a88ea9cb00a089e9a2dcd0aec1e5d73f16395937a5ce850577b0b2b7e5" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "e3094f26ecc5f43b146eb29ff7ba98bdb47931686ddb192e5671167a203309fc" "8702fee56f282365a1d7646cea1e7b603e20a0f41a76d9924c98014bf0a214da" "type.∀.body.∀.dom.∀.dom.fn",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.return.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "31287d787ad7c61688dc29ce1f832353c405e2602e9c14a4502b2b0e2e8f1628" "32275b8fec7547aed70bd33a25104a9c045a4ccae042a8dadccd827bbc44881e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.return.inj "user constant" .inherited (.inherited [`Code.return.noConfusion])
-    "c8e8a1a5cfa14f8ee68e9b793493bbf50837d6a1152e89f9c4b542a399c3695d" "45134ae2c6d22998c52856162b926a10c5c58d979e3f23a43855082ea1a1ccbd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.return.injEq "user constant" .inherited (.inherited [`Code.return.inj])
-    "58ae08fafc21e10f632c1b3084df90eb4022388c0d7eaf976ad39157502bc12c" "8a0f163bf7519d2c94ad1c2ab890bc7922ead55f16d367834453e560a7343396" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.return.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "e2b96ee32d9d5d498b8b687cd96e2097ba6edd7b0000df5dc885420418138a7a" "91fe94a5a54c1d40d3f7342fb84a5624ab92cdd5f8b9026f1f76ed2836026c00" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.setTag.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "4324d0ece479757fd030adbc79c7666ec7bb83db9a89e0720100991ef90f0fbe" "3c66e7460b457dd7a70716c4df017ae9fe5c93d0bca803c279b017a8e6f66d08" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.setTag.inj "user constant" .inherited (.inherited [`Code.setTag.noConfusion])
-    "a8c7c89f96290cbc613d89e0aca7f079b97fd0b6651a6e63db855049c9fe32e3" "38c46ed52fc37800248efee577f9df590645d1550d9a77ea38f28a1d85baa978" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.setTag.injEq "user constant" .inherited (.inherited [`Code.setTag.inj])
-    "46889f74fb0e2e4b6b58a9a1adcc1ee9f83318a752ea09dec1e99e8eed56a069" "92d120dbe44ef2fcc9f5de9be939014a7c6e7e210152ffea462e7fe4112c9b78" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.setTag.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "3a2a550e5ae74ddd7358aa07a9f8062992df7ee43da9cc5e9827290ec8e3ffa4" "a16182ea422d1da0d00f1265ef8d114b6577717ebd5cf99774c7b45377bc1c58" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.sset.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "41bd01a184c1309150f21661506df7d956150c23b49a477ecdb008976c72ce25" "54b00c177c8c7c6528aeff5e92816d96b16adb9e4862a225dc42737d670bfccb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.sset.inj "user constant" .inherited (.inherited [`Code.sset.noConfusion])
-    "5070763c6e1d53e75ced2ffa7e86044e3d34f766d639cc67896716877fdbbb80" "9d81eb0ba89c57200ba1f643f11dbecb53c433beffc8a3a49049632a7eccf62a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.sset.injEq "user constant" .inherited (.inherited [`Code.sset.inj])
-    "6672559e2b07dbf9f4614c353a1a5eac3d85c20aadac59ebc3bfedd320b4c71f" "5a94ebbe249527d98adbcbb2eaee9c07da61979de9ddc078783e1275c8c297f7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.sset.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "8b5390632dcac2e7d838bed2418c356b23114d4c33a2708bb89a487bf4f4776c" "8ea355521c504f7b19e1baa65c9895d4d301d2ecfc0a1ce5830e4833f749710f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.unreach.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "de837c385f91d3fc43755029a1f52fbada882e4d767c227c4c7872eee58beac1" "b820670a3a78de89157351a4a1584ecf618fabaef26dca7a8e79d6b48bbe79ad" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.unreach.inj "user constant" .inherited (.inherited [`Code.unreach.noConfusion])
-    "30af5808e03c73599239d2d8cfad524513cfdd153950755cf451d79c1883c27e" "b38f654e87781ab7677d74d12f291732ecffa6191b8fbc9c3c29e1c59bd00f33" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.unreach.injEq "user constant" .inherited (.inherited [`Code.unreach.inj])
-    "12f2c9125579cdebfe14464ab8f8a1b5a99f90e7ce316c850af7bf82c9601622" "744d5711583d78ab0bbaf1e7f233517d3dac87ab394cf01ff2419b8459f6e49c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.unreach.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "0bde6dc7c36f8bc80f0405db0bd7e2713f190d2c15d9121c47d5f92480fa7790" "6345aea5c7f8c0f836825ca5ef2eb4b18b23b1c604f5f8b931e5c7225347481c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.uset.elim "user constant" .inherited (.inherited [`Code.ctorIdx, `Code.ctorElim])
-    "10845caf4aa17d0a6405e2807b2ae9f34331d72c7d2af13fc386b747825ef547" "12e2e0c9a581f152375083843ffdca6772f6de075ed98c1dbae737744890f540" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.uset.inj "user constant" .inherited (.inherited [`Code.uset.noConfusion])
-    "57a46e414d8af2872fafa159a890b892a5239d80148d6cf74cb5a19bc16b67e8" "0b52292c0d799804c2b0d18e7631a4e358b66fa3dcf6174a6fdfc18b7ec5531a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.uset.injEq "user constant" .inherited (.inherited [`Code.uset.inj])
-    "65eab469d5e843b1047a38a2ef98993d834bea4c25d52fb3d4b37455477a533d" "ba55a8271d2865e9485afa36aa35bacf51e826fdd78dc33ac5700313afbfd766" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `Code.uset.noConfusion "user constant" .inherited (.inherited [`Code.noConfusion])
-    "eccd2c12fd9becd130ffa84999a0dd54d13ab85509b592da562287bc0b59b2be" "30d44d31b70c22419cebd367f5e1b234de080ddac92b208568982f8f3320ccc4" "",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "0f0e51c988f02681178841819e29317a0e09cd7d6318abd7af8224e7a5200630" "a5c030b39f7f70cafa0cd58ab1ae2d98493a5d59f118b738df2dec63de1537e9" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2376,16 +1780,6 @@ def part5 : List NonCanonicalEntry := [
     "6fea987cdf441af8b64477a6b6b65bb0189643aac9fcd87f9eeafb0259f4cee6" "8cc2a715911397bbd6f33d8d0f0bd8472c8c70a28a62c388b608200f576535e8" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "d236bddbad7f98e5b583eebac82263d2ff20bd3fe44c1f827853816ca1b94d10" "3fefa4efc285ed214c7e688d76ff323a92c8b55be91808fbd176bc406829e714" "type.∀.body.∀.dom.∀.dom.fn",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.mk.inj "user constant" .inherited (.inherited [`FunDecl.mk.noConfusion])
-    "32ada5efd79132f22ad6c0162a355c6231721a3c106081e50eda0093c8bced4f" "836bbb1920c9110d709bac7795d645e03c6462bd4e4f9d42801248deb9a7e7b5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.mk.injEq "user constant" .inherited (.inherited [`FunDecl.mk.inj])
-    "02cf13eb1d286c4f77f4634597a37412f20729ec0cb1d733e5de8174a2ec773b" "f75fad60e0d58540e87f0deb9329ab0a24e4ec4f8469befd1a58840efdece5fb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.mk.noConfusion "user constant" .inherited (.inherited [`FunDecl.noConfusion])
-    "4ad942bed7c02da235a9ec9ba83d972388220b0ff05e28035cd975d33bfbcba1" "f0e1b3218a1a2902fb693d278f449a5899a81ac9277b7de9dc25211843e76950" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.noConfusion "user constant" .inherited (.inherited [`FunDecl.noConfusionType])
-    "34cb11513daf706f7eaafdcfa40f5f778631d3b2feeb528e08236c396f4c1e58" "f14b81bcfd4664162f2cf9a2743c9a4322502e9f75382da78cd6e4afc16ccf19" "",
-  e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "02be9c3df0675a118ec0c196445de867d135d8e29c7e82c3355657b66a07a33f" "ebe42c0410a0bf49de256fdb20d1626bee2ebfc24a81889bf8142e27f1458512" "",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2439b89a0a9b40064420e3f55d08a8e2dbf4ba471564dd8e332a252a08c3657b" "14285604bd543451b3fc67465f69f8203ecab40cf8e25d08d5a896ee08a19578" "type.∀.body.∀.dom.∀.dom.fn",
   e `Tests.Ix.Compile.Oracle.Lib.LCNF "twin" "orig" `FunDecl.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2398,16 +1792,6 @@ def part5 : List NonCanonicalEntry := [
     "f02e227e9cd45742744d8677c4ce5c7927c057551a5eb74feefa68f6eaa41994" "44b03bfc86293d6843993c3153f4338c6475808fb8caf2fc961e37808ac98626" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplit.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2e2885cd1946d40bcf4a1e18590e902780384d2b8353450ad3cb0a6d19f35ee2" "d78af1510908b03fab80dc58f02a8284c9047d15622ca5f38af3018257bdae4c" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplit.mk.inj "user constant" .inherited (.inherited [`CooperSplit.mk.noConfusion])
-    "02034e1af99cdcb6a7a6cb8afeb728e705c50ca795a5ce4611929a911ec48814" "51f367e41a9e442aad0727c99caa6671a422b17e7ef2e0d81c11b437ac78e1f8" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplit.mk.injEq "user constant" .inherited (.inherited [`CooperSplit.mk.inj])
-    "4c1a48832e7be8370b9fcb2083c084ea0f106dc63a885aa12501be227d9c9919" "2e5ae9279f16ec973f08040d1bbbfcf38cab8159e9d955399f45d6a22963c75b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplit.mk.noConfusion "user constant" .inherited (.inherited [`CooperSplit.noConfusion])
-    "179b34f40d1d6064db2b484d082990e2e01e2523feb03b5d982d018a6bbdc2db" "d2afc008950ec1d1b95f2ae94598db452e4f95ef64ed08dfa77fac6d3d133a71" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplit.noConfusion "user constant" .inherited (.inherited [`CooperSplit.noConfusionType])
-    "81ab1147df388c6624d85d19477d46a3f34b34104373782c9b758b39c8f9e1e0" "d250f8e8fa5ac76c45a52e92d9198e4f004da90ca0ab6a4197fdf2969c956910" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplit.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "5d887734f9962e4dd492e1eeac6a0cac2139ff46f1024a816fbe694fc3752e99" "b494e4c87a75cd6019417039d9917beccc66a4333b7af7bffacf7abafcf0a31a" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplit.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "93c52c5450a7048c0459bbc12e6616430f505dc29a1e3abf8c4911a77ff24253" "745477a7ff233d36b6741ce300bc82d05034aaee9b025172144e2418023dbc4c" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplit.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2420,16 +1804,6 @@ def part5 : List NonCanonicalEntry := [
     "53ba03c9f509fd6c5f24fea709ae94f212de1387fae0912132ca91867ed756dd" "6b3f0fd48b725e777fff627ae50a5db8f063441253987c6ddf56f8ed9ff03830" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitPred.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "ff6f5a2cd1f996b47425866fd46ac7ee389ba13756e8f77a92262b72399d0f05" "6122ffd90cabc457eb9399ddb727a9fa7e55f2680433a0b71f474fed11345d75" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitPred.mk.inj "user constant" .inherited (.inherited [`CooperSplitPred.mk.noConfusion])
-    "b13d8c28486d6b23b9fb5b71dc6ddde80098cad7295baa0d0d9bf2e488bb61d6" "15eb3bcaae33674bc8792a0eb59e256fd775773bc188157c86c9cd3c3f5ee51a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitPred.mk.injEq "user constant" .inherited (.inherited [`CooperSplitPred.mk.inj])
-    "f7034bcc3db311eea8917db5ec60269b475feee568de2d367cc0932ea52074c9" "bfc41af90358fca8e312b758e372e1085d105722e08f75f9d940a1e5b72722ce" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitPred.mk.noConfusion "user constant" .inherited (.inherited [`CooperSplitPred.noConfusion])
-    "ac6539bdefa924e8b0757731aceaa252e1acc13d8d4396d2db6773bdc906159c" "8ea2783e0a7018e2d941578c3b623bd52e94f01d55a35b161c5cb255d4e8e94c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitPred.noConfusion "user constant" .inherited (.inherited [`CooperSplitPred.noConfusionType])
-    "2cf6b6c00302a129c11a8415ff90ced8b9471afb5fd0c0578dd28327a22db430" "a5cbca08c318d6599688db5851596869331034f14fca3483cbc99b35239b6e77" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitPred.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "e56349758f26ec1ef89803c18de16e90ac52e7f97aa6d0876ee7cd7beb27abf5" "710632c2b787ee587e921c4982e82646b47bf47eac1343862e3d416207bad675" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitPred.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "ba4f9388a1c3ba73825cdd16800b3ce735981737db877028c987605b1e4489f0" "4a2c972cfc23dccf1b281e3bf8af965727b7a7645ec57968bbc818eb902788d2" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitPred.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2439,37 +1813,9 @@ def part5 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "37269622b61335e50bdbab807dd1137214510e067ba5c76cd2bf4da2b43b6668" "2d3792c9d83505a0c6c93bdaccb2a577184b9d6eef77e72c05c2e5bdb9b76d0b" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.brecOn.eq "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
-    "056dd4cf529e7316f54ceb273de18a8d8a386ab581cc1bd307a0f34669091f25" "0a7c4be7e7c912bced588302603eba647ef251deeec83ee4160ce623be44fe29" "type.∀.dom.∀.dom"
-]
-
-/-- Entries 1200 to 1399. -/
-def part6 : List NonCanonicalEntry := [
+    "056dd4cf529e7316f54ceb273de18a8d8a386ab581cc1bd307a0f34669091f25" "0a7c4be7e7c912bced588302603eba647ef251deeec83ee4160ce623be44fe29" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1dd50a3e97f1e4eeae1956d5937d50008d26be118b14aeb456cea5df665a1b6e" "391b0cd1d90be887211ab066e4eb7ae66912bd16180c771d1816f2e53f7cd166" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.ctorElim "user constant" .inherited (.inherited [`CooperSplitProof.ctorIdx])
-    "781536b5ddfa21b8b9300b78ed0e1aff91f8431030ac4a9fb42af02fd66bf6e4" "5562d4ca1bc2c58cb912bf6603e0841bd903668381590920cee55ff6f1c7d7c1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "ac6d4ffea3103a66381483da460447e726c9ca6b1deae0f7df148a7f1c2bf44e" "10e3263c0be02bf1d44feccafcd96dd6f83718e0e9c5cf7af3e60dc57a4754c2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.dec.elim "user constant" .inherited (.inherited [`CooperSplitProof.ctorIdx, `CooperSplitProof.ctorElim])
-    "333b69b595c8ec962d7d45bd044d27789207f9c7415708ff2915a9e0f0701791" "90aebd376fbbc9c88d7495cad43f236e4353eeb64a3297754fc2a2f333288a98" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.dec.inj "user constant" .inherited (.inherited [`CooperSplitProof.dec.noConfusion])
-    "598539b1132564d7568ad735228fc7403ac3d197d93d766930ad5d66916387fe" "94c5c78dfdf63396a3e10003482cd93587405fcc9e4f100504401c9fa082c742" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.dec.injEq "user constant" .inherited (.inherited [`CooperSplitProof.dec.inj])
-    "9d3db1ca53bb762d43fe9fa3aa69022e0fd64c7986b87fc446716bf8bd1a6f28" "1bbb2ee6b01f9aa621645ac4e34a88803ddda4d7498e6292935c69041b2879e1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.dec.noConfusion "user constant" .inherited (.inherited [`CooperSplitProof.noConfusion])
-    "553e7218bacb64515e9eba6ffb2e4f4213fb58a718bcbf27e965b474748e1ef3" "012923f6466a28bce1285384f3392b8dd9008fe78baeae9d5cc0c830c8a739af" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.last.elim "user constant" .inherited (.inherited [`CooperSplitProof.ctorIdx, `CooperSplitProof.ctorElim])
-    "0ab0203ae6b57fb3d5ef858a81bb7343147b3fe3779dad495d5944d7db9830d6" "7d6738ecb868f62ffaa1026a1ab02f812834d0a0311a1bfe5f129750a3065a6c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.last.inj "user constant" .inherited (.inherited [`CooperSplitProof.last.noConfusion])
-    "e0907ee1674c13901a26c0445e71cfce8c050c5ecb5435cca62bd98eea03eab0" "3c518adbd72e04f4e9bf50e2e4ba342686e9a87569f8e5867050252552418807" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.last.injEq "user constant" .inherited (.inherited [`CooperSplitProof.last.inj])
-    "d6837e13739705f7ba2633ef98237aa2b4b953c38e794f16b5b48db56c8b7a19" "0e495ff2b0df0953c1af58f549d8c23b593453cd8361babe535ee7b6b364d588" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.last.noConfusion "user constant" .inherited (.inherited [`CooperSplitProof.noConfusion])
-    "a8ea03234096f29608083b8c6bb16c9c6f020a72231ac50d2fe624d7325e7286" "01e045b79bc8468c5409279e9acdec35e3f457e44fc4256374e4095a55b5cc4d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.noConfusion "user constant" .inherited (.inherited [`CooperSplitProof.noConfusionType])
-    "16d90689c4bbe0f5648e4b341c33ce402fbc1eb34f8dccbca7d1304323b45cd3" "2dd0681d92102b5fcc065863347a4af9b731927e3779547b7c16cc0d43b097a2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "b16fc15c920a1e8745101aa2f76d539c779cd027a5e92c25360012436748d98a" "e36a68e0fa4275516048a7db66771aa4054d93ed50727c5c1e9ad8a953b87975" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "d5692d3d88f83f61c8bdc8eeb5fc021c4d9df8f2474ce306dce2e3ae191145f6" "5a0976fa9326dbc5d83c24aac99a0b8acf492830f0ca69a27750accf1386249d" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `CooperSplitProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2554,16 +1900,6 @@ def part6 : List NonCanonicalEntry := [
     "4e4caf7d6aa6682ed1b939ee6c678722b5d36de7722cf494328a24c6eb03b49d" "-" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstr.brecOn_9.go "block auxiliary" .pendingSplitAux .onlyA
     "ed824f826c7851838ff9480a3acb67c2ec5997e2a73165df4c24640a10d326e2" "-" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstr.mk.inj "user constant" .inherited (.inherited [`DiseqCnstr.mk.noConfusion])
-    "1ced1987db5ec0657c8bbcdd99438feb24cbcd258ba85737621987662f32855a" "15a6513fda8776647ade0ef5cfacd052fa39c7c4a13ad6fbda7892a1939dcfb3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstr.mk.injEq "user constant" .inherited (.inherited [`DiseqCnstr.mk.inj])
-    "4f8c708582093ead02778811189b769343507e584ea1e50a6d5dd0ac7b6ac5bd" "61439ceb84a646cebb42ef76e965ace62aabbe38c3be3512b8657c08c8b5cf9d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstr.mk.noConfusion "user constant" .inherited (.inherited [`DiseqCnstr.noConfusion])
-    "e4a38124635f08e05f3e3be13a6a51942fe91fcdde8aea33499e6b5623058c3f" "75a8665699c8c65899ca9dd24f8c60ca0e2f0a201fdf22bd22f17c3a88d35e59" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstr.noConfusion "user constant" .inherited (.inherited [`DiseqCnstr.noConfusionType])
-    "ce45835812da6129a1aaedf3926dbccaf0d81085b8b4e914b170aa2eac0ea306" "d86ae346f5f81bc25e4b0a8c2ac006761dcaae9d6f20b8bf66cdd7c3e41d7cc0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstr.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "81104db8bf8e3ecef62baf08032615a1d93fde8ad4a14efd22e3ded763f610b1" "638294dbf7650368c371fd0d1764aa56441548bbba197911ac7e1a84b2b22018" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "ee4b75857abd70172592d291fcd6b12e0fbc5d29af66b4e880285d7ef48ed31e" "7d9d2b555734408d889ff7a827c20500ec64f4863b90a1c2a3eaf311f00e9338" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2594,90 +1930,10 @@ def part6 : List NonCanonicalEntry := [
     "6168d13fe3f404d5a6f62b2d2c106cb588ad217413388cd413567ec85b03697b" "f5f2d1063bab5387d74bdaa4cc8ce4b3f43580e4c1a182c6963e0a9ccef48974" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "38b87d091b78b9282e71138f8427db36323d2c175c89179a0b3bee67a7714ab2" "e7a13c18fdd5cfad0195effb650654ea4527720259f3ac13608ea3a34e55afdc" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.commRingNorm.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "016b1a215abadf57111911df0bf5a4b6ba30f35d64a2b4c59a5f2be870ffd927" "5d9881d22668c07efa66af0dbf96cafb900145b4d5c0e51e087d13d0e5ae3d94" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.commRingNorm.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.commRingNorm.noConfusion])
-    "b8349aaeed382ed087310c165d24f76b26d635953ef8dea99d68684c1257ff83" "722818c1bfaebebff5466b752ccf3708ecf63ad81991dbca13b2e36d72bd786a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.commRingNorm.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.commRingNorm.inj])
-    "65e3b7c2b1f4d64a7c1db4bd826f9326322c00e3a3132858e04c7da9d1387130" "8bc31a6a74c72d96906ce545bbbdf902b5a001960e8fe845c4b9fe43c0894691" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.commRingNorm.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "5cdec88bbd72aba10a11ef00b99f17a26189b1f55565969fbc00ab0814e85ca7" "245dd409e4b8b5ec90fb12a8f66e45331479f3540c3d8d0be708d559fc9a61fa" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.core.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "94a1461c31efda5937d6c09bfd71ef53253c47274272b32016cf04d416283f9c" "54cacb160897b75f5ff0b3cad31c2a877c8f9b9a47768537ad8864abd7a18f89" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.core.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.core.noConfusion])
-    "03d0283bc4aec2c11512cbcb821f5f9bf4578c8e2b5d252bbc5622eafacba1ce" "01d5d3d85e075daf59899975520a433dca2a882bd03b5973b64d9a25c07d6ed6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.core.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.core.inj])
-    "c2588043309d76e05b79aced326fe56a7019a2c6d9ce851d6f956c1838af5623" "e95b94239332f4d7db304c279d2fd3e7fda60719460691b524b3415fb4b15f3f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.core.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "653ac66e9766c4659dd4a907eed884676099b3e041af23291dfdcdf8a41ac0e3" "59c983514d7ca6ffdea701308bd1ba844892ef198ff89c070c201118293280b2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.core0.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "e200f38e3391c184f13fc7d0732ce096df8de41bf6eb64afa303eb6f0e2c1592" "333ebfc7781bea24135b3af0907691c0cdac950358be57df3b29b4f4a7a17b67" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.core0.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.core0.noConfusion])
-    "2a6a72bd1411b460131d073fe8bf429522dc3910c322306d1380cae33a398789" "db5c1db222a6376a613b84bdf8fa39ea641727e260a99916f04836f28c7b6f60" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.core0.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.core0.inj])
-    "a3550401220272d35e9a966a921b5c019619af5545c8375ff5ccc772aeb471cc" "3538afc8da2c7914f6810dc578516b97f5161b5e988525c95b3b1b5a7073f85d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.core0.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "1e1fd60ceaa1574ae368da8b562bef9a3ac894fbb2e5c5cba2eabe502f9f1d6b" "f0d178e034051e1189cbf707f922c233d30b4113586ddb775a8fb9c522193ce4" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.coreToInt.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "03d0ca9978d43d5d13df8da72e30379ff57d28bb6b5680dfa42e5e9ad2638a28" "d0b969568e73e0ef1c9decaece496d965fcc7582ef19091614614512af3c41dc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.coreToInt.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.coreToInt.noConfusion])
-    "c37f3a4e12b99d1b88801e6cfbe9698122e3498064cab6c93e164021846ccac0" "39e1caa32ff3cd5bdb039897b35d0e307074c7716ba84a6f8c4d0ad98ec46a35" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.coreToInt.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.coreToInt.inj])
-    "e5296962337058fbf342b75c2f71ce1710f9b23a68f20ed5ab47edbc483c3cf6" "8231db4f4779f2aa87691b2f7abcd4ddce4cf1f84e51f880578a50c2670f30b0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.coreToInt.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "636a998a7e741308e62ef5530e5d105e2002279ab91435c554a70df045a8f698" "d3081ba5e5b9b7e2d8d41ca7d66b34f0609fa1b5793a9621f53c34ef6f4da14a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.ctorElim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx])
-    "4407927f7cf63e0966ea25af7034e39b938b7ee22fe2b183f178f7e0a3390c9f" "680620062ad6f8d061860032c5fd9b1ee4352c9a94268186a167d9d726b0c0fa" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "683f76111caf22f8c22f19a11dbb4bd3af38419c312afd8c0a1ad2fa329262e8" "46582f0bba7367133f31218fa2459a12f0bce5f30d7549aac57b9595de55c8e0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.divCoeffs.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "a8657ffecff6327d3255926765f1e2195b719ae12f1f927fde980bfb56a15806" "2ee560c067dc3546f69f6614da2d799fdce69ad0c0caccd28c7e5978455d52a3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.divCoeffs.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.divCoeffs.noConfusion])
-    "ee3446b0b0a692a16988d47433c965419f2126f1559dc6d03f2695fd03b5a10d" "10f5dcf8414553b8263ce397b61b0b3a22ecf2a77ff9fd3f4985295c4a1d30ba" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.divCoeffs.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.divCoeffs.inj])
-    "70703143c80b39ea50f0770df766effd35902eaf5a341ed9d313d9bea7dda9a1" "79f83c6fc2393b306cb332ef9c93f667f630214479553af6e4788c4fa4a60515" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.divCoeffs.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "fb4b51fe5183494a2b0863d5f6ec192de5e1a6310f60c372ce7eea891d86c81b" "87f74a2ad3733696e4e46b654276e54fc921c694cc3c0392211a50864de5c10f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.neg.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "6c202cec7c742864270503029ff92a8093722c3415c98453ffcd96ef58fb4132" "9e4840d53dd846452840be64618771e787f5302899f4fb489db53063ce5499e2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.neg.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.neg.noConfusion])
-    "7ff74fa6a751b5163cb60845214ce1d79011a913d85156b5921b022eb9e700d5" "28ac668892cc43ffe27181c0aa15c7f6cc4d2cbb29a515d97a36f8f2bdaa42fe" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.neg.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.neg.inj])
-    "37f5ac5ac691b9c339225c819c001ac8287800ef3a3a4d779ff56b85787d913c" "e4142497365aa24928ddeffd087073ec54d97d26b42e3c4882387555ffbc21cb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.neg.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "932a88eb4dfceda107316dd9c4142bb20e353f3b1b7c935ff5366f83cbb85d31" "6063d32042b72bfb7ca527f1b7fb18b3d74e660b8189e676bdd27f1f9eb18792" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusionType])
-    "c83a936cda4c3d6668257c6e40d100d0af6de9f84998e30bf99a72f552d52de4" "8bf79134f5ee223a2271088644244efed93f0d0b4da60e9dcaa8b3a6492069a2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.noConfusionType "user constant" .inherited (.inherited [`DiseqCnstrProof.core.elim, `DiseqCnstrProof.norm.elim, `DiseqCnstrProof.subst.elim, `DiseqCnstrProof.core0.elim, `DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.commRingNorm.elim, `DiseqCnstrProof.divCoeffs.elim, `DiseqCnstrProof.neg.elim, `DiseqCnstrProof.coreToInt.elim, `DiseqCnstrProof.reorder.elim])
-    "88edf446d2a6b732a28feea3b3e0ad4fb927e19b83e8e5b6926357268d53a656" "7b0804ad6d2885eca57b9f30b6c3e3f950ded0f70065d19f9d8d2d97b0353c74" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.norm.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "2879a82743f17fd516c41806706d4e17a748a0061bc2a20022f10d0a6e539e19" "5762eebee3c54c913fe1745c112fa2c85eda442af8d0b1b437819057a7b0ab10" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.norm.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.norm.noConfusion])
-    "ea9c00e49938fc265678c64fb4e0ac9fed1c6608ba6f1b5cb62237ef279b98d9" "444ee66f859c4120f4e44378012ab5de827cc919fa752c54a151feaa02199caf" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.norm.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.norm.inj])
-    "d313f2844a8f9cfa87a241011835c33de6dd47cf8c18d4a5dde9dc16bf6804a2" "f27e67e8b8e11c502583d05952022dcfc84d8e0ec5af6e58317281dc851e4567" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.norm.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "0e8e2708bd9d10cb466f674d41095cc09925f6d4306c0234865f58c7468eac1d" "e5bdcdffc1be8bc95a1f3fe3e64fb51af873e45982c661f4a79ad19b428e0410" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "17280c4739ca677cd53ecc779a6da7d2c6384b77a0b3218caadf331936c7c10b" "45e3af2aa3b4a596e04d62f7c97840029ce990af81d81bd8b3440431d7801c2f" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "90f5648f27df98e6bc543e9136d94a135c2ceb210998a949057f577cab2b58b5" "313bc771426d8a2e24acedb9cd2d8e762febd15202a425cbc246460d7c8e0bcf" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.reorder.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "6161a9c5fd075a1588ebb1e78dd1fa86942b292d54c7f1f4b2bf25706f60107f" "eb303be93aac49b755d1f9ef77f1ba3337994df951b4021977b99003270b760b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.reorder.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.reorder.noConfusion])
-    "635dcb91f1d242447b32012e8094caeb1c45ad6533683eb008957970ee73f42e" "a4e80a0bbe06ddec145e999e5ec099c6c523e52b8de3504ba1a990630946fad0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.reorder.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.reorder.inj])
-    "1748b9b25597ff870190dd262d98226ea6e1f3d75e41fddcf095280ab0721845" "8c1c16ef6e51632b425b639b57311671921374efbcc846c6a681c817fb7d3034" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.reorder.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "336bfa961248c1c0fae230815aa76f972989d1879e8c4f3a88bfd8af4a0faff1" "783e33a7063ff112cba7476e603c46533e2c097c6ca64d1be137ffc42804d209" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.subst.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ctorElim])
-    "30ffd2838009003861fc6305e26311551000ff58798848be247f3bf539a765f1" "a86eae2849c89f3eaa82a5836f096b8d0744844b5cac73b3e38e17f495b44eea" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.subst.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.subst.noConfusion])
-    "8837e10cc3f7473c7dda27b389e47ebd5d3623e2b0a015ec7f5a981302f38eca" "cf1100535ee5e3dd6e1e38fdcd920203410bc2a84a15eb8a6b4519c125c78115" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.subst.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.subst.inj])
-    "f5055c94b47f5e302e03810861420739266cf73424873fa1a92ecefebb2f276b" "343e848533f3fc72ac002bd00c828bcac79676b20138be2341e9899dc2f91e23" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DiseqCnstrProof.subst.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "8ec74377dd4d243f3e1cd7819ebe31fdcced3ca0599cfd0d005f13a305ff9168" "1b3b22330c18942626ea37bd5ad6dddfec1f3b0d92a21502ba7ff935f8b5e461" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "ff6b72199ba6e9e31cc9ec9e87090f79d3cc16279183a215efc2b5ff43b3bb5d" "5eedebffbfb23e0440416d8d4d120a5a3dd5baa7400a628a15a3e1eb782bc68d" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2686,16 +1942,6 @@ def part6 : List NonCanonicalEntry := [
     "9da85c267d18ba51b659fb43d13cda1a3821673593da2d1c091c0b9eb243935d" "30b9476f2d5bcecadd4b116fe56dab43355f3640c629c9bc9a853727dc7d0b50" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "26c82ff8cd5eb8bb29ea7c85301fe75462c018b9c96758a30cdffcaaa5a9d1e2" "403ddfffa5c5cf4bf0cc545da86388e5ab64d362488a025ac2414158f3eace9c" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.mk.inj "user constant" .inherited (.inherited [`DvdCnstr.mk.noConfusion])
-    "417b7a47599f98dc46e244fcd6065ad9f820d7a33a2ac826f05672d04e7c83b4" "3aeb7bd8052f27f26caabe207d908d26b3efdd52a2cb6d35f15ca84db73e0990" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.mk.injEq "user constant" .inherited (.inherited [`DvdCnstr.mk.inj])
-    "71a9f0f9e5494ea5a4e1918650e60b154eb58e6ef73d5167b9d0ad7f1734cdcd" "1426c54753f6af3e0f0856775c95a1a29ab289778dca40c7b0cba16efa672511" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.mk.noConfusion "user constant" .inherited (.inherited [`DvdCnstr.noConfusion])
-    "7fb76ee99ad884d46084f4d8df3c74f9596e23a8290cc0e683f27a0ce19a2a72" "d80142be500ed3b8d8f5b6a6244cb6a7d7220c208edfcc02bb609165e5a38c21" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.noConfusion "user constant" .inherited (.inherited [`DvdCnstr.noConfusionType])
-    "4cdeec40fe07462857747506566512629539787cf611d42f0590609c5e93408a" "4f9304c087fc43d4dcf1653a4516a0e29b5d0517f6438cdf0c3c4c1552e7acdb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "d58f1f376214246d01e0e9a25a6e2d5ec42f39fdc02ddfde93d3dee00a51519a" "ad056ec6474cd8c259028313498b3691f6aa6cfe002b0b0b509501a8c4a02a69" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "7be3d552273f057b527ae139e422d1ac129ee6ae8eb74e65748ffc47d51a9143" "1f86c8572aaeb0c98602c5a4f83e394000daf2891e2100f1a17d81a7639f7b25" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2708,122 +1954,10 @@ def part6 : List NonCanonicalEntry := [
     "a815671b1358a7c73436dbb12072428be6c86c3b4138903e3f3614b2ab1050c5" "6b804cd1c6a69706acaff48a3bf1571bf2d1cccd98ad6fd769219902e07d4013" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "04a34aec95e3dfe62503bb971ec257b00e4f5227361d448798d01579d68ca404" "4b0cb8ef455570ed7e69902228707dc8490eefd0b4794323a6f2c5bdb5a3f295" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.commRingNorm.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "9084501443269e68944e469813516420dd0391f68966cbdd5ac26ffc41f8a43b" "7a415092c69626f64b8dd29b6d9d0869e340c746db3174dfccee2fa881ee88a3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.commRingNorm.inj "user constant" .inherited (.inherited [`DvdCnstrProof.commRingNorm.noConfusion])
-    "94a8e05ce3de0776c8e916a47bd2446f52624edc2286200e3e3d9b3d12e6bcce" "df283f9b522552bd308baad62ea1f2bc4282a375b1f2e1c6a48aaac01d19a9a2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.commRingNorm.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.commRingNorm.inj])
-    "c71faed0d4a355b7261766320b3d8bbe0fbab62b6f0d523676d901f3b3518758" "a93bbd329080b326c76c2328e3bf72a7dea2e24b1160257ab2d6fbc9f77bef2e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.commRingNorm.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "f50cb44c09ea742da9a80182a20d13e4e344ac36d31c30de500306afb0f3f8d8" "760db5c224a531627a78f8b7c7fbeccae8dc4e4964ca5eade57d080a6f635552" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.cooper₁.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "39087dd7da1012fa6f427ae07409f35e84585ed216582314cd8928a42c382fbb" "dd2ead17758f969f89129e9efe8c66677831166e0b44a57a4ca0acdadec595d1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.cooper₁.inj "user constant" .inherited (.inherited [`DvdCnstrProof.cooper₁.noConfusion])
-    "4b238c389791b71b7a66a83d7a16f3a5ef1e469158314ed2cd440428f6715b5a" "91b858b3a3065f57556904c5f2f0d17c69b6e9d70c1066d6e68a80b6db5fc395" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.cooper₁.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.cooper₁.inj])
-    "7867f05e55b2be05210b3822cf900b04306ea447dd8c5dada885a221ddfc0d4f" "7840ab18c17a02ab580a57c78b37c4273eb78522704d740fc19da4767825fbae" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.cooper₁.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "5fe98a29285a2038d9cf71b725d50c5d1087fcb6ddb3122f7ee466a8ec570422" "f4dbe97b6d69a9b2a95adf8cc0e07b3e4f2fe6d58f1961f8a3bb89dbf956e43c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.cooper₂.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "23a931988a9b2065a0acf25ed4ffc188621d4a19467d23af2b27df6db52e50ef" "e9b771a9a591bb6e8c6d05293af24c96f59c3987b324efefc13b0bb39d348122" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.cooper₂.inj "user constant" .inherited (.inherited [`DvdCnstrProof.cooper₂.noConfusion])
-    "d0e554c346d73c1717bf0f4af9e0d49540acc4727d58030e0f02779f14dd652e" "ed4c09aef86be6a7ceb437663310ff23ca0aa60157b7b6b05eb2b85f150ef0e7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.cooper₂.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.cooper₂.inj])
-    "b961c75460a25f8c335d19218a449372620927aaa283a98cb83f0b0f6999b205" "9f467c5cbf0be5d2eb43aa1bd455fd616c1d8016223ded2cf1ab2785d6e3039d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.cooper₂.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "1df5637f44822a94fbe5e51c1bd7094074661f88e2bf639cbd1a5ae7d2e23c65" "be66a50367610b3273b9d0110f5f4d95440b8d2833faf26c47384d88b04d377d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.core.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "419e314b07388c5346ff6f6002c58537ffe6851e2c1310b795020c5f54d0110d" "9e229828e76eb0bb657169815121e6e015b3656cf1f5bebbbe84f896aab35a16" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.core.inj "user constant" .inherited (.inherited [`DvdCnstrProof.core.noConfusion])
-    "6774691d3246149cbd1d665a856b1d71707b10ee354e9c987fd542d920f6a6e3" "9bf853482c4a0fea5e39290480374daf90591adae698ea417f49bc0fb81a9a97" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.core.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.core.inj])
-    "ee293a7afc8c6c8100176029f18843f12eda875466a4b1881d32a96765ceb8e5" "30e8a086870808d0baf5f39dbcb9bbd38df36e8874f6f435b09d94902857d409" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.core.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "e40c26e7d1432beff5a49850c6e24c07c967de254d51e04307571e5f673d37a5" "e980fe9f48658b41c4fe3264585d3f6c586c7179e2897f8e3be6f7bafb02791b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.coreOfNat.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "d339c382f78a604c9916c787a64e940e6a70fd820919f9ab11244005c4cd2a57" "5ede3764c09abf3ad1cd3f57e8efc3339f32e3fd57108a1928ead8d5e294d777" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.coreOfNat.inj "user constant" .inherited (.inherited [`DvdCnstrProof.coreOfNat.noConfusion])
-    "fd896fc48b98a9bf9fb3127ecb29fc6dc099599626ec5451ea8b2bad1a117560" "97dd02d607adb3d206770e82c7419c0eeedf5afa26e89e481c6fdbe008538188" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.coreOfNat.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.coreOfNat.inj])
-    "6d9a528ab7532350100d8cc85e7d5b52de29b9fdbcedf7a292c7a65ef2dd9d6d" "ff930ac929a2d8d9333839dd16596f7856b44056ac4ac3b758ee5a33fb8f5ed2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.coreOfNat.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "e424821752548712f529891c4dc0c4a6853b09094d9783ff7e83f0fc862a6f9d" "b15f28b5f848d177ea9f4e3045e547e7f38583aa9344f584224ba0851ad04c50" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.ctorElim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx])
-    "8131fdcea5c39ccdb829156bdb90ae2c8b0d1f50677b3374776079f82ab6a151" "924fd04b076ae1dc6e61641c7572eb8cb5d760b70a79514d48704044c90f9399" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "c5145b9dfbd0179c88a43e62e12a8adf2988e75b2cad72bee921de9b7402a199" "cc44ef82bd592d949070247b7e36d31715ff17974bcc9e861caca2d65e16afda" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.divCoeffs.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "72f66abd6bec1d25b7a85e9d2af04cf15e56393506b2a4a09c3d6d354e6444df" "412a625f60eee9209ada582eeaa714e80f2a1baae0eac3ab39787eaed95858d0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.divCoeffs.inj "user constant" .inherited (.inherited [`DvdCnstrProof.divCoeffs.noConfusion])
-    "b03d091ea9700b0c1b27687fae11e5275351a01a7fa41c602f92950c3e0cab83" "060d30fc587323528fe0380fd4d3e1a9de4e11f97c6a30b1a4cc929fb1cf0447" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.divCoeffs.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.divCoeffs.inj])
-    "a80656f92d87d2c6951c293d52ce76e85cd026f215e5aac098922344a66c61f9" "2c6336b6f825cbe50ad4740a07fa09f06039738c12d459efddefca08484e8ce4" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.divCoeffs.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "f5a359ce59e92bec42648233e8bd87abd36efd4ebdb191f9a7ea2a84de14997a" "1f08941024f302ff9b1fe73aed510a234e25f44d2f27beb22892ad31293dc770" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.elim.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "8f771096b793af3cb4699e04f6d24d173946c3b6c02842cfad80dc8955694226" "9cce64ac8119b9b67efd34e9fac1e8a98872dc5ff0495ebd6a14d9175cd5cd4d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.elim.inj "user constant" .inherited (.inherited [`DvdCnstrProof.elim.noConfusion])
-    "2c8d7ec1aea6a39acaafc98199be05a4051662a19b91fbb2020a4c5416a439ac" "4da52bb7de2f167a8550ebecb1c1a3282757ec14a96c73af379ce88f12395403" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.elim.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.elim.inj])
-    "a1a3727c21ad18ede764bc573695cdf3b114ce4d395773c5e786735294bb25c7" "ef37bd6185d0e1b3694bb93c314a9947fb0cfd368e7462c2a582a23f756cb4b2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.elim.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "fc9f0664ec9560cc1e454d15602ea02c734cab02b8c7326d3ced746662cadc29" "df71de3d5c5ba27defe26b32e6045bf020cc9d9a3fcbbdf5d3ec77cf5a1ac146" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusionType])
-    "51e20b9463bb923b14429b867e60ef3e99c6903fa61e91b575d4abdabbe30630" "a90b92c6ab07a03dba47efb19e20d9b48f86ea1a26de1a19c715eb9b4e304c00" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.noConfusionType "user constant" .inherited (.inherited [`DvdCnstrProof.elim.elim, `DvdCnstrProof.solveElim.elim, `DvdCnstrProof.coreOfNat.elim, `DvdCnstrProof.divCoeffs.elim, `DvdCnstrProof.core.elim, `DvdCnstrProof.ofEq.elim, `DvdCnstrProof.cooper₁.elim, `DvdCnstrProof.ctorIdx, `DvdCnstrProof.norm.elim, `DvdCnstrProof.cooper₂.elim, `DvdCnstrProof.reorder.elim, `DvdCnstrProof.solveCombine.elim, `DvdCnstrProof.subst.elim, `DvdCnstrProof.commRingNorm.elim])
-    "4a0eafe3fa737ee0c02cffcf0a74d87527d68132603263ddbd772b2191e61189" "7ef85bf4fe95294fb8f9ed084356456562d2fd42c0c054607421902e54051d47" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.norm.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "1202355db3bb39f84e1a09fe028f08e5c652134626163e74e8eaeca0f251feec" "e3b3cc3e12c46b035ef95449fd918417c8e13c8ef77ef5fee78aa4954c5d18a9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.norm.inj "user constant" .inherited (.inherited [`DvdCnstrProof.norm.noConfusion])
-    "f8b5176abfa53153d418949fffd6472cd5ed791238862a86ae3be13331dcd658" "cc8f54c25a72370cdb7d8be47ded9ba95a166d0f544aedbfc70f4b42f434c7cf" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.norm.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.norm.inj])
-    "f32edca4e771792f789d8bc6ab2c03472cf5ccaaf53416f3dcede90396f5566d" "758859a3ad089d46e5d75cbc750a30fad844c1c17aaa9e1d6ce07033f9d14f27" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.norm.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "90d71e9378dfca18f76f2fadfd4af6b3f4cbddcb245a10767881399bb03dc6b7" "d1e8e9114ca7f7ceadac41df59aa0a5ac8b4292f8e4ccff3b8f0e5d4abe84894" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.ofEq.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "e8088f321de7fb0e315821f91f1a8b1452e5567397214ecbda24032f5a2f49f4" "0e397eb26c892389161cb044b543a8c9b63813ef716827b84076bb64b148816d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.ofEq.inj "user constant" .inherited (.inherited [`DvdCnstrProof.ofEq.noConfusion])
-    "1ddc3be26f91696bf631d6f8b7a89c0e04b30094037d2b22cb8ecca8d100a1bc" "c41acc6daed77889581ec31e0edd82856adfcb508d892b2331029d3c3dd8a0b7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.ofEq.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.ofEq.inj])
-    "40cb9504a6e1a8503a60e1be48cbf8c194f8c53e112bd4c25814a4d903b9abb5" "2b9071e1605f565f2447e0f8c9ed6c152b9a9bc93ce0c1f2d3bb9e7024471c18" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.ofEq.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "a5a3f07fafd679fbc87465bab325894aa73b93b7a402372289723800bafbac9d" "1f94e9ded00cd86a0ba7cdf455b940b6034287eab5441fd5d055d6e1a42f0eaa" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "fb05aa5c3213d21a2767a0bd6db6a0034e5c3b8cef6ad1d08bc8b1ee9e1acd45" "27eb7b3aa2eb3db72ea55adcce2f8b0bbd54867acc9550abad2b6bebc756d57a" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "50e08503d21b7353534e822727373ba426a0e2647681dac834d03000c5c23a18" "75a6d2eef31356153cf9e368931ea699bfcf421989e157239765bd40f69aede0" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.reorder.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "c9320d5616e8b8915e929b30d99fcab1b9c2448d2d8b31c935e93c69eebfc908" "0031a07bf121d62c6093b14d0fc770196941954a87c906d357d62a5c7e48784b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.reorder.inj "user constant" .inherited (.inherited [`DvdCnstrProof.reorder.noConfusion])
-    "10a18695e8baa9010ef1b69c02da599663249c27644e84f6c0c12ce21629b428" "a0e3cc053e00e83063df4dc7b7fe5ed7f7ae40b2fa1511966dc0362550467c3c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.reorder.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.reorder.inj])
-    "19900bf04687fb41b7e0a89778e93a97dd606fc6fc5492a462cedf51cc258dc8" "9eaa958e1c4de67c95e98b3ed6ead31f31a71068069ad9adebf91fed8db2e449" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.reorder.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "a45afa03f3da12fb3a1382f2a686bd98cf0204180a1d43adc98569af485aee0f" "623b6257ccd8c76444fef44d4269dbadba8bc96928c27a6452f002693fa628e4" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.solveCombine.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "46b53f1f27a80b93f0107dccf03d27407af2f57fdfbd4583390e3f96e17e9b3c" "cea519d19dfcb2f68675a6dded42506c95bf624e5a8777e9cad9dc4053865284" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.solveCombine.inj "user constant" .inherited (.inherited [`DvdCnstrProof.solveCombine.noConfusion])
-    "6f530b6d97f4a622da4f7843c4d8e3222c7589adb1d46a955ec9378999880331" "a0c94740d5285c7e0a397a18b57d169ebcb4ef0df72a02269fd889f72443922d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.solveCombine.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.solveCombine.inj])
-    "90020a85d81ad075d1e7cb20d561635787d7a2076edaa86446f7997212da3db1" "d9e3c79be4964aaaf633fd6013cf5ab31edf0158f533e7f706fd68bea97e6682" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.solveCombine.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "5067a8c44d7bc66eab74b346016a50bc182ce64a9a71bf324714ef115d0296da" "54593469aafcf7ff4e1c77ea0c2847fcce164a6be57974b8e8fdf421b287c005" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.solveElim.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "8190171ffc611ac9ff9860699c8e88f4fdd389878d118fcbea4ec08db709e7df" "743627a417a7c92779586b9d1546676f5478a722ad22542bd2fd388479718e7f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.solveElim.inj "user constant" .inherited (.inherited [`DvdCnstrProof.solveElim.noConfusion])
-    "a607402416f3978afd1a180e6f9970268cae7c1716dcba9b3c18e43511193b50" "0fed7ab7379fffefd4de0a178511f2f73909b3eacea95c2ce70ddfb3312c000b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.solveElim.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.solveElim.inj])
-    "6acc54030490232c5f3aad2cf2e31f594398c6e51bb53a83fdbe2802ec75e434" "859763fa6500497e2cba4673d5912e62f900be4e47d02506458f4713d1b56f93" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.solveElim.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "46db4f4293c4c3d6ca60468e83758d3a381940587886d4e4171e8ae0005b0ea4" "2ca72dcc066abfa9565513550f875c4717b6f6c0c4d4110a186f128ac52ba45e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.subst.elim "user constant" .inherited (.inherited [`DvdCnstrProof.ctorIdx, `DvdCnstrProof.ctorElim])
-    "0bb20f45a52813700f1f8441c30b9aa5c6084b6e2503fb4d00d8d37879b5a611" "bda43f05e15dea002884afe4cf43855f67ebee6079f7a05fcf253b93d3885bff" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.subst.inj "user constant" .inherited (.inherited [`DvdCnstrProof.subst.noConfusion])
-    "f492f31caf4c7236606c34c27d082ff0b7a5f54abfdec8daba75fd68c6adcb09" "8045bf0683b3c731d628ed924472d097a1832e109ef38aba4a1ffa5d644dfddf" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.subst.injEq "user constant" .inherited (.inherited [`DvdCnstrProof.subst.inj])
-    "4cb8728ef8cc179af17ba41a8f968992a86495d66f39ee33d66e425cf4e48b4b" "6bb84e904d7a2918b867370ae12ff9f9fcee881cfd2d50175a694e6c9370ba73" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `DvdCnstrProof.subst.noConfusion "user constant" .inherited (.inherited [`DvdCnstrProof.noConfusion])
-    "bf0a070734f21b02f43fd662427c187b9c852daf418373840712e89936056915" "35b3e4f83aab8d6263af8c09adbbeda6f1c7f1bcceea47a2bb6345fa947ccec8" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "9feed257ec970fecf3ce6661b0fd19402bb1c466857194249a2bbb8d3197dc15" "1787d49f5d5a74d4b88861c19017d496239ff492e2893dbcbe6f4aaff3d1abbb" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.below_1 "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
@@ -2843,11 +1977,7 @@ def part6 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.below_8 "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
     "-" "fb472c3cb3a772fcb91a97dfaa6062c9d1c0b80ec0dd1c81a510c100c919f555" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.below_9 "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
-    "-" "acdcc1782c380ca9d976a38f7accda7d8936710596dc68cdeb1c4bde2039e79e" ""
-]
-
-/-- Entries 1400 to 1599. -/
-def part7 : List NonCanonicalEntry := [
+    "-" "acdcc1782c380ca9d976a38f7accda7d8936710596dc68cdeb1c4bde2039e79e" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "0fdbb54ffc99f0bde953000076dbafedf3fd1bfa19981b7f8989ffd8bea41af2" "b0faca8e0e380cfb992323e877cfe51db77f89d0f648fe947c51e7b43fa6d684" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.brecOn.eq "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2905,19 +2035,13 @@ def part7 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.brecOn_9 "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
     "-" "e3a7c68c967ef8361258c6bdefa792d2ebe13a12f6c69b65694ee524c832c788" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.brecOn_9.eq "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
-    "-" "1d27623537ca8c5da789cb376414f0f12d6c6b72c6f18dad512789a31df1e0a7" "",
+    "-" "1d27623537ca8c5da789cb376414f0f12d6c6b72c6f18dad512789a31df1e0a7" ""
+]
+
+/-- Entries 1000 to 1126. -/
+def part5 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.brecOn_9.go "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
     "-" "f6c3ae6304151d152ff091b118a39bb287e3c5fa22a5eb8f080f66b07aa5451c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.mk.inj "user constant" .inherited (.inherited [`EqCnstr.mk.noConfusion])
-    "94195dbdc5744a1dcd66b5ba5eca95813cbc7f7593aec00be12a58887232adaa" "79290c3fa96cd97a2eb5a4efc5232de7899e8d18925d991e0ac0e8aa5bc79ce5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.mk.injEq "user constant" .inherited (.inherited [`EqCnstr.mk.inj])
-    "6bbc51f9cd6df25dc2e10c649ccfdcf53c6d2b37e20140c249b78db32ce6ef3c" "b890460c165ded756a07897d6fe722631d5de6cb60498fba9f368373e117097b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.mk.noConfusion "user constant" .inherited (.inherited [`EqCnstr.noConfusion])
-    "571f9f6cde8f0d01259347c0b6bdca4bc48e9c7ff673ddc7ea4f03928080d9ae" "0a18753cf9c828ca5c9fc8fc1ed9536864ce0bc9b886b951f9d1e5b766fe18ff" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.noConfusion "user constant" .inherited (.inherited [`EqCnstr.noConfusionType])
-    "1ef2520d746367d5d27989742a63d84b16cea2720dcc32e7d0bd49cba2fc1060" "779d00694d17bfe0f7cbd434f55cd22aaa22c318110827603e5eda52ea7c3410" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "36f8e7d6b7b63339495f39fff9a174f94817337f5e6239053947e0c46cbc36a4" "0208b731307954c0dc6a2638a278d41a03e9bc6fb39697e904b5cf3366450578" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "696753c18c9cf0f2987e14cf62eb292a46a41eb41f45cd798301cc05a2e64285" "264cec92f748380480250caf30426a66c92d8fd8d5700304d7bc2ff5bd915039" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2948,162 +2072,10 @@ def part7 : List NonCanonicalEntry := [
     "03c569adbcd44c144ed9d7234efc194ece99a19c732180300e1d61eedbc45019" "8e20ce975863d6d571e44eac8b613da6d8e66d3e947c99095545820a34323420" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "78084427659295d7df7e3772d1279b1d41c3aca7aa533a6bfb2a2cfeee13c9e6" "6ae27037ef940916d531a699af57c9d7a0086d3a409de2ac6b55d557ead618fa" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.commRingNorm.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "92389931000c9f833115c4aeed5ef3d49f9cae17d0bcec808f5f1e2ed289cdf5" "f0d55075267cfa6b2b4aea4019238cb9462eb70a0e251dc3bc4e189e0c2e8a94" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.commRingNorm.inj "user constant" .inherited (.inherited [`EqCnstrProof.commRingNorm.noConfusion])
-    "a9db7b8ad1ef495c787bee9530acbc786a27e215d0569b3c2c12e65b6bd43276" "71426dcc6e82a1ef32a5ed40cb4efa8316164b486a019712c3bcebc19a89612b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.commRingNorm.injEq "user constant" .inherited (.inherited [`EqCnstrProof.commRingNorm.inj])
-    "8f083e1c844789eac5f14dac47b31f275a31bfb1ca29ab738886c7804524a7d4" "9ae3034fa057a0b99d50df32b21513e884b0b806c3d3587cc75d5e2c6bbca453" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.commRingNorm.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "8287d536bfb2275d97dced90bd131020268639baafdf2b8d7803cd18f9143c96" "528a326812a44f2202de376bacbf10926996a29bc69a142dce3f1bd8753ee4fa" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.core.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "9f53c4aecdb40f65ef2c0f69452406b843ab71544083e9fa7d8a8bce69effef6" "0350db904a7b63f738b21eca272f2188364f707ee883a40d01ab125d0b7741ec" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.core.inj "user constant" .inherited (.inherited [`EqCnstrProof.core.noConfusion])
-    "c1ceab400f28fba2edda564db4e393108d1b4296690cca1daa69174586e682cf" "aa366bc5cd5517adc5cb20b2296680a6fe498756ba0431643817a1ff7ee42ef2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.core.injEq "user constant" .inherited (.inherited [`EqCnstrProof.core.inj])
-    "bbf644fd2c36bd90d1e942487ce62a270d6adc3b794cadbb0da249f47bf10837" "512cbd3699132b5cc9584c02a2a3fb4b9efdcc38c188419b114aba4c0c6d36ed" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.core.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "164e1dd778a472cfdb5c31e2d6ef78338b32bea637bf664dc6983ce98d097b2f" "d30a3882c83ca5597e57a3cd9de5ef6cdff8006a813f3cc0622adce7703352da" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.core0.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "0230540d513ac3e398afdfe09a5d6e656e738d98ea2f8f38c65429cd67ba4fb3" "bd9f72a494480fb3ebbb26ee43fe489e31b3b1f2c6ba538772b7fdc9f2660d3e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.core0.inj "user constant" .inherited (.inherited [`EqCnstrProof.core0.noConfusion])
-    "8cef504f961677d8cdfdbb4e102762ad34bb759caff4fe44fd3232d9c914fa54" "12bc16c52865bcf42cd237dfc1ae5ab1c92f7cc0ac4737e401c943f30767fb75" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.core0.injEq "user constant" .inherited (.inherited [`EqCnstrProof.core0.inj])
-    "f10ccb6bb0e3a5bcc3957bac1422512a1034d1b3e1cbbb2c63666bf1077a0b4e" "d9362692e808bc9141e7ecb849460d0c52cc874291923c96cf4e820583383baf" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.core0.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "c0beb2175441b0cb3713db4b7c5a6932301a7aacd878975b2b0bd8a48536e37d" "a178557f6c21950a67c4ff3fe89d63625ee6a3ea7c9bd8a0d900d04f001bd15f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.coreToInt.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "3ce929a235d8483876acddf0003e9b327319a322faa3152f75a7c307708f3f38" "c43c8b9fa4f8718f81129af197ee06e38153a382de76498b63a71f8926ec33ec" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.coreToInt.inj "user constant" .inherited (.inherited [`EqCnstrProof.coreToInt.noConfusion])
-    "265d0b04ff7fc54b5c9a941a88c93a41105f3d5f8561a2b5cb674b8436267ffc" "cbaabf74b5942289707a922104f9272b663084f29c5aacd0c982e0ff964ce27a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.coreToInt.injEq "user constant" .inherited (.inherited [`EqCnstrProof.coreToInt.inj])
-    "e273b8ebc04917294aed66bf63ffc656dd098b964685df913f0e679e2608f3cb" "af5716f27890f565a2d628749cedf82571927299de6698f44640c511b6128081" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.coreToInt.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "4c251904154adacc30c3d5e282820ceb478b92453e075a14afd54c17f4bc6874" "f1bf2142cef684b92a07dcda1a3654ec09afb5a5d7c4bb54acb5a9efc8422ac5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ctorElim "user constant" .inherited (.inherited [`EqCnstrProof.ctorIdx])
-    "5d3ca9d5787592357fe32ee93dca32e0c8b63e38dfcff89386961ccc06f1d09c" "0177e627e7e09574d098cd1c48ffcf6816f86c2818f2348aa436b1bf07e0b722" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "c2a75fb83e41c2f4172b99193054859d668006ee938fa235b004666d51f85808" "b33404ccd623fb2f97aec685bc8137f47cb9788f668d749728d641b368430379" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defn.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "faa1f571e34ed0cf4ae67513842bf9f408539e5b109e5582878aeaed31a8b8d6" "5aef98f4f26b63f87edb7ee05069b84fe495b59aeafc5eb11c246d9f6f64e1e6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defn.inj "user constant" .inherited (.inherited [`EqCnstrProof.defn.noConfusion])
-    "d35a4a7381d17495a5fe264b4e8ef230299badd6fa47660e3a7f1408aca032b5" "a12db46522db8e068b242d11802374deeed2f83ebdf3e8e8fe7dcfd671318599" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defn.injEq "user constant" .inherited (.inherited [`EqCnstrProof.defn.inj])
-    "65e7b8f05dd7483a7ec64620c1d540066249fa816f746afa77c3699922e61c0f" "d4da40f778df461352799451d67473ded53d6cd24eae868c27baec738a06bf48" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defn.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "d3a5ed825a295c96b002aa51a02aacde9fef78266e7ffdd2f722d493f4ac9a62" "d062f071871be467191f826b3f095bde1a3979d37e15f10ca6317d304d7060b3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnCommRing.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "92e93f3a7307e15de956946953593dee621a2eee6e66e1ab192eb39cc1fe8df7" "854084b20266c6a6d74fccb137d16585218dd605f2bb4dc8ce502eb16e85cb24" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnCommRing.inj "user constant" .inherited (.inherited [`EqCnstrProof.defnCommRing.noConfusion])
-    "cb8503b79717d90c57c8159e5a95fa503f660218304a38fa027b8e5c8a1b027e" "acf11177ea1be80e84fdba233c4f2fa6919644976e5b7ebc0b2cd67c446c3562" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnCommRing.injEq "user constant" .inherited (.inherited [`EqCnstrProof.defnCommRing.inj])
-    "d96e905b56286474305b4b6999925e87b5de9ee813a40a8d98b780f0d93e41b0" "9cf3fe866a3b5b8c5d8b11943c9579758c2864b4fa80d4daf58d32e88bda8a9a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnCommRing.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "b2b64d3aadf4a687d4dea3eca6603d282296c470750ebc9cfd6d7139b24fced2" "65c17f7e9784fe94a6ff627510d513f6a1904c2e41917c69733c129e693e66a3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnNat.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "883d0541e0e37753fd73711ef27ab2f9559ad4a10f44fbcc3490843f73ed0074" "50ef4992fb31e4ef1a9d458c54b4c4cd83b933708cfd918161f91329a52aefd5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnNat.inj "user constant" .inherited (.inherited [`EqCnstrProof.defnNat.noConfusion])
-    "26edcc5219efe6687af72abfd5eb1a9ab2cd85b1d9bfe538e3b9aed2a9c89e39" "219043a2bc80def0dd0014e84e87579bef2b425dfa3714f6bb2987925df29dc0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnNat.injEq "user constant" .inherited (.inherited [`EqCnstrProof.defnNat.inj])
-    "eeec4b03fb3659768d44d9e3cc21050da2fbad0b29686e40cb418e2d8c69e0e9" "07a7fa31458a55360e10c9d3fdb993690f68d88b4b4422090a10fb7644a4409c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnNat.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "7da702c553ea9168fca43ec032117359eb92927f65418b6e7c1e6671d8d89e6e" "a0c67dd8023fccf30f6f90cac714700d137fa9b55a11a89c1aaba3110a4b83d2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnNatCommRing.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "5400710f315f17aa8abcbae1960764bd55340fdc7d1346dc992a2923f04dabf5" "b10f4973ac0ee783979eae7a097f3dda43a1c812211d30a3ee6e1e62c7308652" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnNatCommRing.inj "user constant" .inherited (.inherited [`EqCnstrProof.defnNatCommRing.noConfusion])
-    "ce96af532512b5d66b0305558706b8280df8dc958a2ab29864030b5379047175" "1802e7662cfc826225432ee8575eed325c37cd6e6cf9c3383279db5ced5b4126" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnNatCommRing.injEq "user constant" .inherited (.inherited [`EqCnstrProof.defnNatCommRing.inj])
-    "a91b61a76867dda73b6a5e8a7b8e48694eba2ff410c1f0ecc3f4d317f1b5c6f4" "e88c2093eb1cd5ef37d85014b4ca9b7cb044a1a49f00ae8a0deeb7a5e4e1af1c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.defnNatCommRing.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "1ab87f395c9c0787c87c6e69da1dcec4794597733d3790877b280e662d9270b4" "23e3fe3d49628e8dc48d1394418dc9092e66e98bc7fc8c7bd3df7f9880adf774" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.div.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "8a9f0c076ea77e87664075e63382bdb7b3ff57602e86dea11ce51a9adb275689" "ad36f9094c8c876d62fb4d14f706dfbb66f35f32f86b33680188cead5a66bab5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.div.inj "user constant" .inherited (.inherited [`EqCnstrProof.div.noConfusion])
-    "44bc6996ac5787f7fee046bd0802496466ae90bfa360392595bafe4fcfe1040b" "46a672f711b06e525313589ecf05fe1c1600e7dd278ebc6622bb2259d50c2197" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.div.injEq "user constant" .inherited (.inherited [`EqCnstrProof.div.inj])
-    "d118e5f0357de310ad2cfc77f6e4e986bd7e8514c79dd482f66bf436d3cd4946" "b08fbe16ef0714cd4a909819fb0953082ddb8e0921f385d2648296e3e6ee9540" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.div.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "ae5b710b040a19572493cedf80274d32fb66cca814f2abd9fd4568cab89ec328" "e1e2037ae2484b2f15d572571cc3b5945f8eb8a7b60a6f9c8354900e478ecec7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.divCoeffs.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "67f12c077b2cb2135e8a95b06bd499d98ccba622975d9ed5a90b251aee4f5a81" "a79d1bdf44069f1a911d8253051b723a8b3bb20ea7cb2f0650f9e8e704e86162" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.divCoeffs.inj "user constant" .inherited (.inherited [`EqCnstrProof.divCoeffs.noConfusion])
-    "9f17e858331804692275bf4be522ffc879cd2a9226308bcfda731c0250db1af5" "bc180e8d9760985c9f9b314e30f51c31974bc2e9ea536081b54143e2d52f1fd3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.divCoeffs.injEq "user constant" .inherited (.inherited [`EqCnstrProof.divCoeffs.inj])
-    "6ac61b76de45322823b55241a198760e56e78f8281e7c3b6b10e7566a1901950" "cd39d517fba3e416d3ed82221a2fc448f661a095acc5fda047d66955d973bfcc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.divCoeffs.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "cf263417c592fa3f3865fedf1525a019448965e8264fca2805999ed5cee3a7f3" "777cd1c8c8fad0f6422e647a593e7a8c16e9c97e2321fa9b7a4528fafcb3e572" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.mod.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "8778dc2ae360854f75ad7cc9c4c86fc0669c1ed89e4ff07b6e8d350a255a6397" "1a98514360f3984ccc381fc976d67b57e4f0503fba0512da71770e4b0409b48a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.mod.inj "user constant" .inherited (.inherited [`EqCnstrProof.mod.noConfusion])
-    "c1f0929a520922955d66327421b5b750b47b00e28cdeae70fa831beaa2035c52" "6a24d8db5643d66f736dd52882a5ab2e3b472b393d96b8909f55ae333f3ff88d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.mod.injEq "user constant" .inherited (.inherited [`EqCnstrProof.mod.inj])
-    "d48d63ac3612d080473d06b483359a3661d784e89ddb843652071c67844f5fef" "95efee74d17532800dc75381358be4fb748b84f0640dc9df1526d8dda145a926" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.mod.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "17a576e20792a956ef337174a640e7442b53fd5703aceb0043f7518d4b507f70" "cb697e78ba418d2f585bf8c36536977056bb592182565fa648699b7ca7c5a93e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.mul.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "a12adc3a26f73273b05a2d8e95ab74c4d1e643d8a55074312a88f24e729ba28f" "64c6f697defe81b14571a282ddae6788e8a30dba4e9c6a92acd054ff4ae0a10e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.mul.inj "user constant" .inherited (.inherited [`EqCnstrProof.mul.noConfusion])
-    "b7faf0ea436e8854188cf51eeb8cd5c11dcf16668a5b82767962b88176f41c5c" "3996815087b8566311dfdd6452e19464c442dc227885632d18cb93c97dd01df2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.mul.injEq "user constant" .inherited (.inherited [`EqCnstrProof.mul.inj])
-    "81afa5a06e2c493e74d7753ac86c608e61517b7652e4611fdde3696bce7ebd89" "c241e8d6f1e5a88b15ba957afdb4c4c9660f9d3fcc48f8316c4c17c3d990d1ef" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.mul.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "969d4657b2895924e0bb03bf34441ee799a7494d1abfa33b4665e4ed61c3e666" "e37b95a18432d052a963ff878a3fff2e25b63c2d510cf9174476508a42db639b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusionType])
-    "016c50dd8f79baf2025eb1565d9069f719f321a39adfccaf485888630bb18b54" "745a8d21ddac645aedca60a9bab45c730d6001eb025c2c2f39c7d9090e745633" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.noConfusionType "user constant" .inherited (.inherited [`EqCnstrProof.norm.elim, `EqCnstrProof.defnNatCommRing.elim, `EqCnstrProof.defnNat.elim, `EqCnstrProof.divCoeffs.elim, `EqCnstrProof.div.elim, `EqCnstrProof.defnCommRing.elim, `EqCnstrProof.subst.elim, `EqCnstrProof.ofLeGe.elim, `EqCnstrProof.commRingNorm.elim, `EqCnstrProof.core0.elim, `EqCnstrProof.reorder.elim, `EqCnstrProof.mul.elim, `EqCnstrProof.mod.elim, `EqCnstrProof.coreToInt.elim, `EqCnstrProof.defn.elim, `EqCnstrProof.ofZeroDvd.elim, `EqCnstrProof.core.elim, `EqCnstrProof.ctorIdx, `EqCnstrProof.pow.elim])
-    "75242a3319f03f65c8e7d55695a695ce12c9c0f5feeae95403ebeb5179a54858" "10820d7adc5e5557842934a9ecea28f1c22fe76f605d9b19bafe5f81b0232ab2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.norm.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "3b8293c83732a3d92ce559bacce29ae8247ff276ba9e0adb43db4d515b8ff0c2" "8f0bed989c01732e8ae81e5f48638036aa93bdab9d052a79bfd67597b6d40632" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.norm.inj "user constant" .inherited (.inherited [`EqCnstrProof.norm.noConfusion])
-    "b83e0fed9131dd1e5929f0f3639217b82856ffb7054cf52868b0db6eb271bbf8" "6334fd6beeda08312af36475ebf2f6488318b82d2f89b1c47b1fedf38a0e626a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.norm.injEq "user constant" .inherited (.inherited [`EqCnstrProof.norm.inj])
-    "561ede6511bd88cd3fea753fd3b794bc73f21634f4e9c9bfcd4137fe162f1be7" "1cdbaa85536c80a16dc0024f9656a8d26b358ce68309cb10853f5199af4aafe1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.norm.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "4408b35698b6688d47ce7e0aac0727a65cfa157e46ccd1d372e0f7258702a718" "a1520494f732539a154b7e83556d5dd2ed6e5bef2d58d52cf6ab7712c2cb70bf" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ofLeGe.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "f70b72e9ea8e61b4d7468a3c40d56f7b7ca2df53a7505279bac47e51bed82b9d" "e36574b09a443004b4aeda487d8b0f343c2310516b6de61db6410751998d1b05" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ofLeGe.inj "user constant" .inherited (.inherited [`EqCnstrProof.ofLeGe.noConfusion])
-    "984a9b39de87a9f4791f4717293dcad2ed73d9b02a274b154feb380e4d407367" "4a81262740c3ef39e4ffad484c1cab293eaab73d59cd2582aad072c356d0b0f3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ofLeGe.injEq "user constant" .inherited (.inherited [`EqCnstrProof.ofLeGe.inj])
-    "873ac98eec641d78fab7b03a537a6dbec32e35d722d829fa1d73bc41720f4a7b" "99fd8610c830f6be91f0924e84828efdf0af9da02518383eefa0e40ae7cc8ad8" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ofLeGe.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "9eb2d14950fcb39ff2ac5223786028fda392e22ec4a8eb768302a4dc1a8c7c53" "6d5751505900e936c43c7b0755e6d2c63a3c7ef3bfd2f3d5fa84f2559ed1c75a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ofZeroDvd.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "53a72787319d0f10d5724785aad365a5aa59f7a1440a23d3e5b622ebe0e0fad0" "c8fc11c88f9703ebbfed642c641e966a9d2de792d1f30bffbe3af836dd56f5d7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ofZeroDvd.inj "user constant" .inherited (.inherited [`EqCnstrProof.ofZeroDvd.noConfusion])
-    "88e86d7f4d6a57f97fe6f3ba863cb5f8e47500f692d5b89e45249017bbf8c60c" "3fd6e29cf5e3c5ad37cdc673536d6f14f07233b6258bc5df88584dd1598f0582" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ofZeroDvd.injEq "user constant" .inherited (.inherited [`EqCnstrProof.ofZeroDvd.inj])
-    "e21754ec5d6f5c28fe694864caf2cb4b779bdd3828dc487733471e1fcf188f8e" "8674caf8aa508fa2e9be4dea9221c9eb4ddbf6b203280abed97e092ed53de3cb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.ofZeroDvd.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "03cf12d5edeac0a341ac993cc6375c0168a30328db6029272de1adaa7330a0d8" "746a1eddd510c1b2263dbaffd65b42c4ccbccdf2d78722cce6d2b916b4acfcfd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.pow.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "3a202b812dc50704b73971f69d28fbaebbad36cff0545c1b1518ba878aaa725b" "b46e54612df1896de07b1a47b24341761181370162f4efda1fd1bb109c199385" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.pow.inj "user constant" .inherited (.inherited [`EqCnstrProof.pow.noConfusion])
-    "9ce7d9253b007510f7153dca564df7acf73f2580b3fd02fef26c5ae20d175d5c" "6e37dda65e1cbb53aefad74f26d9b5774a5ac73bf575696048072625b6eb90c6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.pow.injEq "user constant" .inherited (.inherited [`EqCnstrProof.pow.inj])
-    "67e741f43606063a5b24d200fb6e6cc45b21bd40314b4b45a72643819bdc880e" "aa1b98f594b307932429b9f7188a4d6983d5bb6ed034cdeb9c4549f5ec23cc42" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.pow.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "b1445cb388b3052ea41cd8711f67334dee13c71dbbe64f38b2157f79e6d304c6" "1f9774757dd61ed5ac84e68c855d15b4cc78e4341d6c4ec90e7d2349b528b5e8" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c3f107e62f266d0f9aa63bdceae8b7a2848b58238a77aaabf3a864ff51d1b07f" "dc5dc643273b3b954f0b23dc05318e4c12d8b35dba2f116d007d56637a096566" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "bd9bd0068f1207728c6dbf58446dbbe4d929e124b9550a990a511dc6c5094ab9" "a67c441b3a685bdccab3525a054334d3f89fd59e8c24cc3bf5f6123992425cd8" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.reorder.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "de667ae777d3229974f539869cbb160c91fbd70cee31bc7dffa1ecb5b933c459" "bbc95781991b4a5bc64abafe055e38018e90cb77ec47c1846295c245dc23f992" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.reorder.inj "user constant" .inherited (.inherited [`EqCnstrProof.reorder.noConfusion])
-    "db1b1e35ba88442987a6ca29836fafcb79aefcae50d835c5152b963a72c79a7e" "8d7b709910eea4366dfecaf27c1b7a37c8e38bdadc3d464d902d761bf039a835" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.reorder.injEq "user constant" .inherited (.inherited [`EqCnstrProof.reorder.inj])
-    "5fb59b9dc31a6eac220293addb4eb31af148e3b604db114ace17f306dc43b559" "44666b027ebf2a97aa76bc499c9ae4d4d86cf8405b380a3f7a77a6434d3627d0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.reorder.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "261c8141ffdbba66b7a36b30b2e889fddedbf4fb297fc74837254c6e8af174ad" "5b3e6fc09f686978366b814a17900640825a4582379ff87f4c6fbe323771b2bd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.subst.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorElim, `EqCnstrProof.ctorIdx])
-    "3ca950802dc1e29e9891ccc7fb71c2ee69ba74f86d33f4b30b8c9947a5d4760a" "d284d79f24cd80c16d94c63b78abd5c167af46fa79a0d2925a5f459e66bba2f5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.subst.inj "user constant" .inherited (.inherited [`EqCnstrProof.subst.noConfusion])
-    "4512cf13fc77a21ba96b5cc3d0996492ca881d71fcfccdf4d9ed266d70cc6c0e" "5903284eea6147f54c45c26adc68da312015766f595b6921df9e9b1b9197406c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.subst.injEq "user constant" .inherited (.inherited [`EqCnstrProof.subst.inj])
-    "84bccd55c06033849f9d7a0fae666c52519845a8795e91bc5e3e598ef6cd556c" "267bafcb44fd09dd3b83d8bc0d401699b3b0518b3e2770e5f45b92e9c75df4ef" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstrProof.subst.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "13cf1fe9b9f7f95a43c73410649a58dd6e373e7d66d126c42fca5733e202718b" "bf122a85cf59d6b549b059ab8c2a857cb1ee1db1cbb0b5dc3430330507c2ca53" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "ae5bf300edeabe290782f596e980ab4951052c4e212e79e3bb4b8b804ebcdf06" "f6a9babe231dc096dff36b009b226d8da8de9e612922558804a2bdeee9f42818" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3112,188 +2084,22 @@ def part7 : List NonCanonicalEntry := [
     "dc8c9ff4e0d365971ecec6cfa489b1da5edbd6a71c84a4a873863bbd3fa8db93" "65c853d1bcdfcf0f52481d9adb1c5fc916886788f273408d11fdf3e7bf4c1567" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "936a859cd6fdbfc9a968997a504affd74c22f61f804976b08b94bb0a87d7643f" "9d7f05afdf96adf04d0568c57e344312af8a5fc4929433225b4d8c9d3bc027b3" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.mk.inj "user constant" .inherited (.inherited [`LeCnstr.mk.noConfusion])
-    "9c1ebfdab63123eda9350ad8a48e8a0f493e6daeed81f8ccbf63e2abc3f2f87c" "04e8c2ab14dd365b52f7c7be1abbc1ae154064a75ab2ebbdfd9166f9720c86ea" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.mk.injEq "user constant" .inherited (.inherited [`LeCnstr.mk.inj])
-    "a4b26e20c501250ab3f6c840c3e9d010fbe0478e8799aef1eacc3e0891048022" "0aa967786641406f916ed0ee9745ee0864ada02ab22cc0b99786819d861efd0c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.mk.noConfusion "user constant" .inherited (.inherited [`LeCnstr.noConfusion])
-    "697c1904db5ae157cfd276a111c9342c215b4acdae8be4f447f93196d69db6bb" "84a05eb8b106d5cf6ba9c678948a8cb46b24e6f0ed41cbeb7a4b1e6fa3cbd9f9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.noConfusion "user constant" .inherited (.inherited [`LeCnstr.noConfusionType])
-    "f19fd42bfe0add0937351417c754a200f08279f1dad2a41d07c3c16fb206d39b" "8ccb101916054daf7b76a3dbbac7b8c3fbcc0ad82dd4979c3dba7619fd995749" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "8261ef49f3313ced056ac9b1ac4bece5c15b318829ee10ba498d82f09fd97372" "32e4688f96e61da2e42f51a00e7498874f2d693397e3ca4c12dec265c649f2d7" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "3c71f38c5595978e6023e392572780a65ba7d9b34bdcd657fcc8b82165d5f8c3" "3aa42b6a281c009fff8fea546c3588bae76abee0051cedce961b2a6fcfb040d8" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "e6ae57b9c8d89dc93a1fab841963905f3691e6a10adbb087cebb24ecf4e63f79" "c64466bfbb951ff69b0b2486d80661198ff01fcdb460455267c696cb371dc025" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "62a88a221a3f970bbb948c4f9c4da334f4b94cb8ef8e0692fd2fd11d0f537e0f" "ad44d38a9bdbbf886be503a74cfe501389dc8d2b25f828486da0dd67f8e4b362" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.bound.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "7b73df5b38576a68104342e0d9828dc84457d471a84085c3edd588413606effd" "71888a056a3573aa09f191991da3418293908779cc567127cbe0303801c52bd5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.bound.inj "user constant" .inherited (.inherited [`LeCnstrProof.bound.noConfusion])
-    "97466a2ecdd49cafa7767ddd2b1f03ad080357ef0a1c9feed94edf7a67e524ff" "db833e60a361302ec933327645ff66bada2c990bc9672325beccd02ee8be6e9e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.bound.injEq "user constant" .inherited (.inherited [`LeCnstrProof.bound.inj])
-    "f72d38f95228c1547157ffedce8a09d6270dea943501f6e1df27bd6414eafd92" "3d41a15c27458df49c7b5a2f367a231e053d61f8ab01ed1b25b70b05dbdd5599" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.bound.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "2f8caa76d3b66b85b162eed084774f519fc1e13df80b05bb69a11cafcef227e7" "159fb56f346d85cde4f5e7f97ac699f8569f662d2487f5fe2aa9edd84d76f439" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5f07e30d3ca221ed4cfa6567c20646ce348ea0677b5e6e044f9a16b68defbbd6" "2cf5bf5126a578762dcae80ac0da12e514e0d99c811105f598f7cc7a31a88e50" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.brecOn.eq "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "eef819e5b3a1f23419de8344465c75450546960adc656a1d38ab2e97b87ee488" "48e5937f9e9948c2ad7a9016f4b1127eada0f49355eedf5c7958ba339116bcb0" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "91404fbe5acdba843e4ea2006e4c902e8404d9188988b7488a1750ccff0ef42e" "6eedf7ce146d045c89554d2449ed79155f99d7bdf07f54b04088d2ca3d195219" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.combine.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "54390939b87bc88332c7d287ca006577eb9ae6a19740eb4b48a68fc693ae278c" "ad61cc241a22f2e21524650d1afcddb6ce687adb6fb0e441efe86cb8b5d9677a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.combine.inj "user constant" .inherited (.inherited [`LeCnstrProof.combine.noConfusion])
-    "8a9fb99ad65c58f3c781adced0ade7f9a17dd92a6c38a59f853611ab38c06dcc" "4fc55bbf98cf53749f6b37716d6294e27d6fdc4dcb0370ea0938273eeb110b9a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.combine.injEq "user constant" .inherited (.inherited [`LeCnstrProof.combine.inj])
-    "f9b8dd2fd4adc312be338afadbc6288603310bf64f60afa8f8920ff9e3cfd1b5" "02feb7c0352be6b62c46479c34a17a4809547cbb8a3336d34f2c20ab6aed82a1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.combine.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "f80a170d67ed60e5722ba262f4d13b070c31576adc3a793d89c2693e9c514e37" "db8208effa51d15116199e1824d10a04fb4d7de1c4678b53147f0ef8d0ad2b5d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.combineDivCoeffs.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "83798ddae0af6eede7874946f4ef2e8138bd58174433f38743fb6ddf44d10123" "550b87cfac7885f02d77cb0b8254ec89759fbb7f868caff91c1b96d76dbb42d6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.combineDivCoeffs.inj "user constant" .inherited (.inherited [`LeCnstrProof.combineDivCoeffs.noConfusion])
-    "33e6ba4e5aca8bb52f81cca7af2f80dbe4506b319fa7098f9f063d252c2ae03b" "c679630938ae49df6925fc23470f67a9527d0bedfd953f35217643d6ff1bbe4a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.combineDivCoeffs.injEq "user constant" .inherited (.inherited [`LeCnstrProof.combineDivCoeffs.inj])
-    "a60435bf4c5990927d1463a1d8d1d1787071c276fded43c10d5e90cbcd91314f" "a042c717ce095844a400fd78ccc1ea8b1f0c4a24ae48b0a255b44cbf532cacec" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.combineDivCoeffs.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "70480a0e3887577508f105a3f04cab454ef316fcb638c6282b08dd3eaab59a62" "381b46b524860763281015b2f4a29a30787b26b2d862d5c74a46fcfc9e61e7c4" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.commRingNorm.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "1faed749b00608186bbf34a8f10c8e14c12c923a7243cec00ccd4c5260e068cb" "0e2feab50e99ea34380639cbd4c60cf32db8f256c92f814988d5caaa4231ed1c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.commRingNorm.inj "user constant" .inherited (.inherited [`LeCnstrProof.commRingNorm.noConfusion])
-    "fcfe3b7021de8ce76450d88774ba950cd6c0a43206c700fa9a949a8862d0daca" "417d63aa7830417c11ee225e0cafdc84527ebf73079059cb8fbe1b47c8834bfa" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.commRingNorm.injEq "user constant" .inherited (.inherited [`LeCnstrProof.commRingNorm.inj])
-    "7868e9b7131065d2f0a1c514dcf2c52b0df6a3ac3e27d97399aba73fe43e4af3" "c070a5c746d4a62d604bcf29bc37fa296a9f35ce403aace7719baf4e44440946" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.commRingNorm.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "a243bf74377669c68e029966efe274c80a020676b21e37c4eccb4d1aba2f836c" "b42e1e3324b56448dd4711f65df229c19d75d8ddf8de17c4d74b863b0b313a53" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.cooper.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "e0253821eeceef4d2ff171d7e9f29b96f0a9ac7c744458a663afd6a34da38142" "eabfd2f50520b4f91407235f9c901cea8d394a7ad5854c6c86a9a260dc60a9c9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.cooper.inj "user constant" .inherited (.inherited [`LeCnstrProof.cooper.noConfusion])
-    "58c46fb19085a62f04a0696cbed9306f3b51659c7e77758bb07ccd66ef72436f" "7606d6fb04096cd0d12f31efb87200f66a49176497e82cacc01e5297e5566c53" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.cooper.injEq "user constant" .inherited (.inherited [`LeCnstrProof.cooper.inj])
-    "fc82ac1343aedc7cb484040c3e27abf7ea5ce2a0c5aa4bca690f5fa6e563229c" "960691bce30ee3bb98c03f83d413f8840e6997bdbedeead3b2a6cd707171b1d3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.cooper.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "262b453c7eb14f9cd461976e8937668ffd537e5da936820dc10acbc765e5e974" "127f8c08131d4f7c9060e16d1bcd84b774d2772ebbbc057d0b4c18c1f4f9aa47" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.core.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "a565006df049d0b9dce25d3c71f0bd7faf6ee52d85d7db42d8800f47415f3904" "357bb25350e9def4a24816342f5e368e1a201f38d7d72761638cee4fc2f58206" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.core.inj "user constant" .inherited (.inherited [`LeCnstrProof.core.noConfusion])
-    "2c7268bafc8740b30cb27dd700a234eda1a60bf37b3b5b19ea23df674321f52f" "17541b34dbd9786303e6718567166a985cdcc5d9a21b6a422166c10c2930dbe0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.core.injEq "user constant" .inherited (.inherited [`LeCnstrProof.core.inj])
-    "3ea6354c9fc6ad183d6f8742fae4d63f8ddde7a2013b97f7e672289f672db1a0" "2a6c1d9f0b55e5380ef8b49c3093afed8abf4990146dca2b92853330fd112f9d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.core.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "7d6887d77c4ee827a6f4f4a7f5d5381f18351e61776d379191c5448632c3582d" "2cb69a445749c298641fcf03c3a4943836a17a15abae85518b61662d1d094d2a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.coreNeg.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "438e4ed5b0611f31729143f41cd42d1003e535c69567601aef159cd43eef7429" "f1e3a3b74eed2bf0b052ffc81bcbea4552d0a03ec408af4c747348d98218ebc1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.coreNeg.inj "user constant" .inherited (.inherited [`LeCnstrProof.coreNeg.noConfusion])
-    "96b817dfa3becba3911c8eb1a1c379d8533b381ece1711adf9516ad492c44bb1" "c1a5691ca500e4ff8331a1b4367726908d66068d6a8c8d8a4d44b6ee13a76fe8" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.coreNeg.injEq "user constant" .inherited (.inherited [`LeCnstrProof.coreNeg.inj])
-    "05e7725d700cb7d4cf41d676cbba8c035b1a2eeef2f39fa278076bdf028bb557" "e279cee17e5f88a34537930950aade55038173f17f4271348aedde27c99ce214" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.coreNeg.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "c596e00db32e141ae64b08131bd566d80c7aa7edd2295bcb08dacd1649c7b654" "133ba5ca1a4843ff3498d78e4816916adfc8cf5ed4344883a97c881099df8dc7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.coreToInt.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "d0daa5cc7f033d18bea90e066e1581bae73eed33bb4ee72c9e2f7e9669c7c9fa" "153eef8324a92eddd486305d14283afd8d7ed3f6e8a21bec02c768f94c9b34ff" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.coreToInt.inj "user constant" .inherited (.inherited [`LeCnstrProof.coreToInt.noConfusion])
-    "67a0a9c55b85af1314f8e26b74f4368410b0e45596aa38b270365b21cf635fa4" "9e5b4e0d3713e178912df0a2b9267793a5a357f949cce705385694adb1497a56" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.coreToInt.injEq "user constant" .inherited (.inherited [`LeCnstrProof.coreToInt.inj])
-    "b88f2ee83e68be2bd37931546f645f032cde8dad4938c2c93a677d87cf729db0" "1ee6230c82ab8bcca501783ff87169d82b7aef46736837cceec19072f96b82b9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.coreToInt.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "957d0d39234d1175ef81c4145be40a76c17c3330bbc84a17f4c308ebff459fb2" "7e296fadb5641c91a74ce0e4379ad6c2813c712e35e99c8b58120961a49c55e7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ctorElim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx])
-    "f02fa1b3c835f958ebacb6d1c5dfadd4bd19898894dcf0983c25035267bc82be" "a1922d21e86259459225d1a431af1a31a7c43e7e0fddf143a573f9d4dd243bf5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "b4dad66f992035289db01c68563d751c08c228acdaf9e856cd66b473db702379" "e02ea5c2950148d6d912d8c8fbfc228420074cbc266cc76de0e0e5678034704a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.dec.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "5634e24e2af439138f3d7fc18a4de79490ca043864f2afc0938bb3a2acc4cc90" "5a62dd4cdede82f2d5541a0fbd49b032efb5787050613fb09ed173f1154e5e38" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.dec.inj "user constant" .inherited (.inherited [`LeCnstrProof.dec.noConfusion])
-    "fb8e2d9d5f4e21638981d04a48604416fbb7fba0c963fcaee73f7f6f7eefc4c6" "b51e777b47490a4bef2d6b6e1f7816d167d983930f22bf25aec857e636527d9a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.dec.injEq "user constant" .inherited (.inherited [`LeCnstrProof.dec.inj])
-    "60bc24c20c342eebe0bc701c61aff9f2ecde72851fba17caba7c0ceff2c8f6a2" "346c8025c1065ede25b0c780aff4d7f2cc2a51fcd1a00e0fe4507b8796972f4e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.dec.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "5075c249ed62fba5f8de54830fdb8114b8c5017be4e58a3b1348613887412e6d" "5bee6b290098484889a6e9f95802bd95e5660c37eb1f4d4c5e736a5141722338" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.divCoeffs.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "bc99d13356b95bf1481518998aca7e2dbcc017c5519d68cb661272187f9d3c4e" "1091c91b111dc36ee571378e3ef43e536dca344baf0e7c1d0fc5ef4bd2774d31" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.divCoeffs.inj "user constant" .inherited (.inherited [`LeCnstrProof.divCoeffs.noConfusion])
-    "209ca22d86d43b895a677dd73a9f3cf7910b4002a465f55b14f6930c798f6771" "e4e30e6aab738004023acdf9d1a11d69d749ba18c4f3af3b2c89150d5b55fc38" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.divCoeffs.injEq "user constant" .inherited (.inherited [`LeCnstrProof.divCoeffs.inj])
-    "38f15e7ed5d7822e296e8d88f86f77e46903bcf04fac8be00abfcd1a38e5d128" "b12c434bf122979f5b0ceebf4f3eab950cf4b089a122a4346fe3cf2b5874544c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.divCoeffs.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "06ceaa14356da8a17a5764cc16c6088f31da2be0ed19ff878db0f037f2e7ad59" "30a785a6e302bff39e33ec05b72627489fe110cc075174d8d0af104d52a16c29" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.dvdTight.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "749651f2e208fb78c0eb46ddd4518d4f0a3590e97eba2c9632a0c6ca349b65a8" "424be60c8d9347765bba22ae22c177e7fac40f0581d635418c74ed76ec50abff" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.dvdTight.inj "user constant" .inherited (.inherited [`LeCnstrProof.dvdTight.noConfusion])
-    "559c25b9e4002ea11d8ed2b23ab43d72dd0ca76cd155a52fa2ef4cd4125d9c6a" "dade45afe9f90c13fdaa7afb2c7a5633785aefa58727fc8bb3a1767ddb1fd604" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.dvdTight.injEq "user constant" .inherited (.inherited [`LeCnstrProof.dvdTight.inj])
-    "39ce8f21353c3b912b2ab97188dd4b7a9dce66a0899dc3e58d5d4753c060c521" "f8f145e4cf631b17ab59fa64513c7cd96cf0062548deb6fa86ef0db16934d7d1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.dvdTight.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "36b7c27c0f685c85437d9f6b193d377a31886eb51546c542c16f27e11f8cc8a6" "675be4640484b697cf7e9f222ebc739abfe072e739d111afb4c271e3c0a8ec18" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.negDvdTight.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "fd7734b97f77dbd0826068a0151246c861cb57256c70720c0d7371b6c530cc77" "0cd4025876cbe0d77d57a46d0ade1c9a6421927367277b91a4459916b5ba982e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.negDvdTight.inj "user constant" .inherited (.inherited [`LeCnstrProof.negDvdTight.noConfusion])
-    "9d3b3a0a208aafd3d99dc4a9778dc689b2d6298c3e03ae43821df3a89b6d8129" "b5dd5ac6951ce4451dde1743564cad6ce4aa5e396a4e6fdedecec92404b94761" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.negDvdTight.injEq "user constant" .inherited (.inherited [`LeCnstrProof.negDvdTight.inj])
-    "e8d24105ede566a7d512c509085f8ca0184ba15c464e6c236ce562ac4a096a07" "0a528f5c276db8ffdf80023c330e9446fd2a5c1b5d74a2b3b66046ca5191f2f9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.negDvdTight.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "812f6c1b1bf7d306020a0e5011d8b9a5bceeac08fa3c8d35172967cad3129572" "128787928fa3f7f341608b1582fb06121d578ac11c7c666c2f825f6bfa171287" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusionType])
-    "294733cc6dc3cf5f4c06ee21ad8cdcbd80561572265dd3bab52c1cb41b2531f4" "176c7dd1bfc906b96fa3826db15a0eeab078b296ba35a92f5865c1e8a7d48c88" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.noConfusionType "user constant" .inherited (.inherited [`LeCnstrProof.commRingNorm.elim, `LeCnstrProof.dec.elim, `LeCnstrProof.dvdTight.elim, `LeCnstrProof.norm.elim, `LeCnstrProof.ctorIdx, `LeCnstrProof.cooper.elim, `LeCnstrProof.reorder.elim, `LeCnstrProof.subst.elim, `LeCnstrProof.bound.elim, `LeCnstrProof.combine.elim, `LeCnstrProof.coreToInt.elim, `LeCnstrProof.ofLeDiseq.elim, `LeCnstrProof.ofNatNonneg.elim, `LeCnstrProof.coreNeg.elim, `LeCnstrProof.combineDivCoeffs.elim, `LeCnstrProof.divCoeffs.elim, `LeCnstrProof.ofDiseqSplit.elim, `LeCnstrProof.core.elim, `LeCnstrProof.negDvdTight.elim])
-    "7500bbd01dd486759ce7d514a2aff3cf0a6bcd899ef06ca022d46d6dda5041cb" "5af34d59fa58ee77b443297cc7a209b47e11bb06f1b1a35d42dfc10f97d75893" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.norm.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "f375055ead1ec639d54f614d75daa36bbd0084a7b0f7e6a9ccc03a436ac3ece5" "2e1803e14ecb6ec84c797130f6f5d2744f5e1a44970915bb806eb60ab247abcc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.norm.inj "user constant" .inherited (.inherited [`LeCnstrProof.norm.noConfusion])
-    "d7e2de4cb2a9b86fae373f994739e5418ebaef0814143201b1a524a75c5d5661" "31ad09ad4f1582a19915d4dee32660ab8b4e200edf558f6d649c2e0386597cac" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.norm.injEq "user constant" .inherited (.inherited [`LeCnstrProof.norm.inj])
-    "a1738ebb7c24b46d7c8475515f58babf52196e1f51615281d5ce55edabe0d7ab" "6f561296e15eea6a0908b6627962ac6c576a6c470c493b1f7c27968aa76ec1ad" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.norm.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "0963371d0f14716a219e0d35193ee35d068b40960955bad9493175483e2dc70c" "f4d2aeaffb8eba721be7cb0b03fd302b2f20dcbdc3e9cbcb163d0bd7b7efe5eb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofDiseqSplit.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "d6836d8aff26cf181ea352e0bbc07a1d50ae023579c86e642dc3cbdeea841859" "f60e4a544b5a2a481daa5092230f3c6ed61deb365190476e5805a6806e54b4b5" ""
-]
-
-/-- Entries 1600 to 1799. -/
-def part8 : List NonCanonicalEntry := [
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofDiseqSplit.inj "user constant" .inherited (.inherited [`LeCnstrProof.ofDiseqSplit.noConfusion])
-    "512dc2493727dcb59f6228941c8b9ece9f040b58c3c438da7610d4631313b6d2" "92856e814485a91d7b6a7366ef8294b3328c47cdfdde3b8ed04c9d74712b635d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofDiseqSplit.injEq "user constant" .inherited (.inherited [`LeCnstrProof.ofDiseqSplit.inj])
-    "24dca174d8b55ebcbaad6fa4357584fb12b3a443cad215472d6c6b6d27076716" "62de045a46ae9f3a4e4b3c5d3a55b57840d9ae02aa38a2c6990ddc3fa9672f87" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofDiseqSplit.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "308ac48c5e3be5fa7b2901d91fe0b69f1774e406460e69e980034749134365c3" "a11f002fbf0b6d559dcba5f7d230792a344f254c956815b565b6e29983c5ed37" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofLeDiseq.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "9760b1dc5cc5c5d1f8be8a95b951077e0bfa8a4cdd56d0d79866e311ac36b8e1" "8987d90ad304145932a7e4d46ddc248122fde46f6f3cb1d0da1b9c43cb468edc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofLeDiseq.inj "user constant" .inherited (.inherited [`LeCnstrProof.ofLeDiseq.noConfusion])
-    "ecc5dd5217a91b37c847c8a2c71096a33acebb9aaca963a749e3501e120cc259" "5d9c3cd5d271b6a57cf2670828f2bab56d3c41fe111b66e8e205b66385f9fc35" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofLeDiseq.injEq "user constant" .inherited (.inherited [`LeCnstrProof.ofLeDiseq.inj])
-    "d4798868f89f3568ec22b388df39fa1f3168487c5b1607226d46508af68ba7b5" "3562687570a979e37395c41598119bfbc6ee349f77f428f89f3db0f7ff21338b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofLeDiseq.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "178b777db77add50cef5d2b693b35221827ad67207708ddc8f4ef2fa54b4ac55" "fa38607c2e9669618c853fab368686646ad17bebb5c35740ff3dbf5666090b0e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofNatNonneg.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "e27f94b00b6ce83e852ef39374cda785d8112af41242ff073db9658e3b865700" "7ac94edb5ea78fd1e4b48e313b3d56fd9ad3f3eae75853f2e357b860765173ad" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofNatNonneg.inj "user constant" .inherited (.inherited [`LeCnstrProof.ofNatNonneg.noConfusion])
-    "d0fd60e4c70744ac72b6b2782e4d6f25f0164f34e0fe260f17cedf0c7e001970" "4bea9a88b91d3e4a7a6eef3bfbefc63450c12089b2d13eb2436e28014f289b45" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofNatNonneg.injEq "user constant" .inherited (.inherited [`LeCnstrProof.ofNatNonneg.inj])
-    "6031ac2223a89b30307d81447cee97143327842776eb3416eef54f5563f201ed" "f4a01fb384aed133798a22156489445edb69c2fc01267154f1ad5a1cf8fac89b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.ofNatNonneg.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "2003d87729aea26ed080e980bac589350a011ea004578a6dd21179190b118396" "34db86e9dbc98dd9fc8dbff177028bcf125e26bd17e454bc6ab7cc11bdbefddd" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "abf652066c9c21a5210f25b0e809e46ae54a8e0f5c1596b3e1ff2a2bd43b84a3" "343e61c7e9f3a1dcef42c55cb01e11dd62d98fc67e8c2e4497deeda8ba846965" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "255ca996c2364a0e8803608738617692020138dea759e00a2a712a9029c26ed1" "5227e4589297bcab8f9111ae638214c24d7f2d59f027d7e82b3852bb062dca08" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.reorder.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "dbca484370bb165bad683001e7204be16510154b3e3f75055dd3f61a6942bf50" "f80283ddb6ad3b8fa085b73fcffe13bf13eb75d0c3ef9e301c1a3eec65b70c98" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.reorder.inj "user constant" .inherited (.inherited [`LeCnstrProof.reorder.noConfusion])
-    "06a7dd20dd7292b5bfa6401239e7dd92493c71bb07f4c744aadb7b1a7d436ae5" "6c1ab701347b4b558d9064e10fc563d7ea762e59b2767658afb4db0bbde9b320" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.reorder.injEq "user constant" .inherited (.inherited [`LeCnstrProof.reorder.inj])
-    "325e3c7ffc03f85821a716e6752388118b640bc992f08ee80f0f5129ad070360" "9c220240fda9342943f90b54d11330a4e84814ea748051592dd49fec791efdc2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.reorder.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "054148552fcf13b8a2cefa5e4dbcfa7d3b78ede79d16aba756545ba446709e14" "14bd1b1e4156a7f6e8035ed0485e46a50532b49b7644861ce4d5aff06c3689ff" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.subst.elim "user constant" .inherited (.inherited [`LeCnstrProof.ctorIdx, `LeCnstrProof.ctorElim])
-    "fffca43055219749eb094efead6c81df4c2ae86fac01377801f06af56201e605" "19cb57f9b1d5679c21c855cd8e0c16c36ceab9f5128d8eb8e5c15cfd55991088" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.subst.inj "user constant" .inherited (.inherited [`LeCnstrProof.subst.noConfusion])
-    "982e58a5549f11961d7b3332108025585c5c3a71766081a2a8451765d725143e" "edc9bc9f92c69d651d17871604e4b0f43555d0aa8a667d7d002dc27e6268bf11" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.subst.injEq "user constant" .inherited (.inherited [`LeCnstrProof.subst.inj])
-    "001b59d0a00390aabebdf9d6fb0a388476c8897e070ef6bbd7633c02eeb0bfb0" "e80071d49ed85df7566332825b77d0c28f7841a83e66256109583ea81b67c0f5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.subst.noConfusion "user constant" .inherited (.inherited [`LeCnstrProof.noConfusion])
-    "dcb751d1110c0ef5037c64b001354302b777184fe5eb92858ba08f9c52f19321" "217710d95afd58012162e983e43ad87eaacebde6872735bbe9b29411c4f095fb" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "e35a37ebb6a0329d24019dc5812df34d604d58caa296ae02f2ecf866f172cc5e" "e420dc3c298ea3454f1fc065e750217ed05680cfac4583241f18a76f841598fd" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3302,64 +2108,16 @@ def part8 : List NonCanonicalEntry := [
     "0e95f06b9ba7c91830c16da14db0ada6a156fbf377e30b38c342673094a5464f" "9fa7ab20301e55ba12280548c460edbc43fb418affe0d96eb5efae008f5e1aaf" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "e91f8a6b8084c8fe09bb15c106a5f0cbf82fa573826c75875fafe97ee68c886f" "d4de424b5a15b597802b77a2576a6f8d978e1d53017b895d84a59265ce7fb3a8" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.cooper.elim "user constant" .inherited (.inherited [`UnsatProof.ctorIdx, `UnsatProof.ctorElim])
-    "224657a8206b681983e611023399297fe5a53052550b5c74fec0a9bcc179d974" "8d137eebe55c168bee50936500d4372dc94677b316fc5ef110f5880a9a64b3ed" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.cooper.inj "user constant" .inherited (.inherited [`UnsatProof.cooper.noConfusion])
-    "ed96fb30fc29e2c43fe489556d986190fb0696aae15fad55b60b503cf82a9d07" "3a982675109a88a8b581dc2f17df019b9e1083097803d13f374021dbd6ab9af2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.cooper.injEq "user constant" .inherited (.inherited [`UnsatProof.cooper.inj])
-    "f9cc7aa1faed096d925edf612b840278904b92dcbddcaea762ab1b425beaaab8" "e0601dc5b65f20966aaaa166624b367e4658af307bf160f84b0a3edfec1202bc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.cooper.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusion])
-    "1cf39d9ac83c38bcada017b02fb4c60932a2e440dc1eea765c0e6ce604eeba06" "fb194596cc5c2bfe7f465c303fccc36348c99674056ad65747fd1150bf5b6383" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.ctorElim "user constant" .inherited (.inherited [`UnsatProof.ctorIdx])
-    "30b0f94df54b9d4dd694f455d68339b8663bde2ce52f7642b2a2410d5eed11fc" "75d2cbec2bb65c5a949c3af2a94a8c1e9323321d63f084ea90f645a649cf2ccd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "091c818f590c1103b0855c9e66551eec11a816f04c72dd199987d29e99f4abe0" "deaac144df3c5e9d01ab9bfe9024882ca2fcea5f182616badb53e4d1a1d5aacb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.diseq.elim "user constant" .inherited (.inherited [`UnsatProof.ctorIdx, `UnsatProof.ctorElim])
-    "203ec39abfbea54d588301b749d8cb5a2da6624b7ffecaf44869c87bb614e3b4" "7ccc4f84394a91bd6691b0de13ca517fb802f59c5afb3694618cdeba8b9a70ec" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.diseq.inj "user constant" .inherited (.inherited [`UnsatProof.diseq.noConfusion])
-    "6e82d7d3802cc4dca9c14d11296c18ea96f34b0f41871966872174ea530a5dc6" "bdfc3b6b8feb43d7d9d5fdb12766f269ef5b2babcc72f52e156db2a5eb3f6d72" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.diseq.injEq "user constant" .inherited (.inherited [`UnsatProof.diseq.inj])
-    "daa4292b61186d01766ba5c737e8a79e594f951214941fbb737560e6353e861f" "7a87290970736a925692fb3de0e1b2996e5d86bfbf9f851723895018be891b58" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.diseq.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusion])
-    "c659eb3c99bbbcdcddb42c365b4e4cc610085e68689d2c59e1eb38f5da07137c" "ef37f90ab84f8c3a8dffd7f32da0b44991a381d3e16421a4799a4cd04f3b838c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.dvd.elim "user constant" .inherited (.inherited [`UnsatProof.ctorIdx, `UnsatProof.ctorElim])
-    "b40cb794e2298a5a5efcde6c603b32d52c6acc43563ce3d92ed1999e1bc49bdd" "a69d80220ad928a65db5f39d26d2793a805a866a33abd132b50e2b9c405f78ef" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.dvd.inj "user constant" .inherited (.inherited [`UnsatProof.dvd.noConfusion])
-    "4ecbbf3d22ed2cb5404095b3c56179132bcec8a6c7fa07258c2090a56906a25c" "1ff231d98a3e040ee69704180899dd6137043cdaac91aa01b09eb8ae6c220513" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.dvd.injEq "user constant" .inherited (.inherited [`UnsatProof.dvd.inj])
-    "8d524cc62676a672b7ef96c226398eaf394e0d3296dde70e660a4b20c870d16e" "a00d297b6d0f2b1f032a7e889adff006c905cde40dd3cd1aefbb8840612cebdf" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.dvd.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusion])
-    "ca840271ad02f19883bc01dde9bd8c68641de391203b3212099fe0c104f612c6" "60219bba9abf73cce906ec97c0d59f5db11ddfbb9beb4f7574dd23c47f044934" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.eq.elim "user constant" .inherited (.inherited [`UnsatProof.ctorIdx, `UnsatProof.ctorElim])
-    "a3256e404c22600694f5011bf451385dfc170e20a4299605708f209e23a0fe93" "d17f3114023c03052cb5cfd8fb4694dff3ead6a99da8c349846d79925b6fec73" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.eq.inj "user constant" .inherited (.inherited [`UnsatProof.eq.noConfusion])
-    "536ee59ecdeb5e3ac4602d5f58e84dcb05a94214847d2bc0db13ec957462a0a5" "97116d2e2bf09ccb7a3d5ba3701bcbf30e075dfff198754f0b0ebe253c167c21" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.eq.injEq "user constant" .inherited (.inherited [`UnsatProof.eq.inj])
-    "e3488203dc1aea825a0202d2ff5a62e9def3652e3262a0babaa0192d08a65cc0" "1be9dd95e4925d3a14364d4bcbf5d11bf8b0a472b15b843dc663d9e156655a96" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.eq.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusion])
-    "8886be17e33369157d61c5220a8448f455c7aabf61a7a8edd0352ea33d2bef8e" "cf3440088e92b888583325969a8cd4e54e30de6dee8caad3cb0ad84178449caf" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.le.elim "user constant" .inherited (.inherited [`UnsatProof.ctorIdx, `UnsatProof.ctorElim])
-    "741e28e800151be56440ab79e2ef0c1b70b75d9ead4757fbd5ff9fb47707bd7f" "5a77f2341fb345d8c9d4b4d889f35f3d21e08c50df7fdf5bbb75232b13047c34" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.le.inj "user constant" .inherited (.inherited [`UnsatProof.le.noConfusion])
-    "60a5280f37d19a554d3bf1257d6f33e1acc25b7f51079965c3b839319a8c7f52" "819b0890e2a80879f587a9f090211fef629d88fd31fd32e5b0d5f276f313e615" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.le.injEq "user constant" .inherited (.inherited [`UnsatProof.le.inj])
-    "f5832b0705ed92e998cd861faa14f1e55c4d73afb39f2af8a44dc8124fbfc107" "f71f79a361ad81d6106b77aa162ad903cfc901e04ec8dfb79d52b68d6212891d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.le.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusion])
-    "5f7cd6e855fa14eb76904e1dbc7e18092142e8bd8d195ba987d27f308d12b262" "0ad33a6a46f03a503a60350358782f15be003a95dfe494a5fb0fb705583d4385" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusionType])
-    "185474832af3c82ecf952566e402110c190af1d3b50f6b11d64bba6a5f6cfa39" "10994e1709e84b3166bc187875ba8497c7eb55e812bdfbf71009c0c0103684f0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.noConfusionType "user constant" .inherited (.inherited [`UnsatProof.cooper.elim, `UnsatProof.dvd.elim, `UnsatProof.le.elim, `UnsatProof.eq.elim, `UnsatProof.diseq.elim, `UnsatProof.ctorIdx])
-    "a6fbfac4230aa49485320ef6e2ef94b963e52032e8a704c9869888ee956a715e" "3d231ec4d2b6e8f0751f3183eddb72b9b719254fcda0b970de3e9f94d9075e4e" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "e1b49f51e12a215d5416dbc1d48b45425080b97430bf36e1ec07c3e783f9ae34" "2030131c7a438172ecc23809936f22ab26545083e51b34a3b645a58c5a7dee3e" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "d69e6440907a54695f07b081350a18d53ed8ba143ed58df17cedcb838cbec2a0" "0cdb34f88087601f72ef14e4d01f52b37ac899a74a2142151a45cd80d6ef42ea" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "85a24f55398a917aee85d4a010268491ccdd46c1c6c910b170a42b4b498ca41e" "fc84045f6f2c20cfcf074e0fecfc547439810c181e1c79f364bf55b7b31c33e4" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "85a24f55398a917aee85d4a010268491ccdd46c1c6c910b170a42b4b498ca41e" "2c09df2384c14d3e81a80104c783dabbb4d8f78671581c3c5eea8fd387a97e55" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_2 "sizeOf family" .o11aPending (.root false true false)
-    "e2a92f924f397ee61827e23616fd2e88e68658d4b276dc9934eefbc27bab7535" "ef3e62ae2cb6743dd4356e095b85c98650195291f8c021f892bb11412594661a" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "e2a92f924f397ee61827e23616fd2e88e68658d4b276dc9934eefbc27bab7535" "18a13d99f62f9cc40cca165aa59fdc9c0e530ec8c516dbe7d0d07b0e65e58353" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "a68dfd8ad37a0d7353c831effb9c40edcb120a99e3ed2832e29aedda3c2d11c1" "938e11308f9983cfd6b6f26b3ad3be5c16c08958cac568465667563c26306ea2" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "a68dfd8ad37a0d7353c831effb9c40edcb120a99e3ed2832e29aedda3c2d11c1" "b9b7d186c4be9795e57c3fc597a3a224a3ef7de3c0c22a98bc8002497822e858" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "767a78bfd0d31e8f4dca91a442d33430ad8c9dd4b96e0856aa348d41c75082db" "3dd9a4d1621440c44ace4ba0efc1f1b4ba42bf1d69bea4281b7427a227a1ea8a" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3368,24 +2126,14 @@ def part8 : List NonCanonicalEntry := [
     "d702ca348ec82c3cd8a702bb8e402de358ea76f34581912d20bbe1e2d217ffbc" "a4764bc7ee1ef3442a6b98a43d74f6b9c06e15e802a6cb35a75556340fd64c7b" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "f2460b7d68d84b2ff64c503aae835bbcbf3c4fd1664e57747bdbffc3b35d1d27" "7dfbea026720a178d97edd529d1cf2e1cca832e76097645eec163b7af66ef204" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.mk.inj "user constant" .inherited (.inherited [`DiseqCnstr.mk.noConfusion])
-    "a099bab77113041afea271ceca84fc73d5a7a87a2db2c04c9dcad57067986dd8" "8375aca9fe13cc3f6e83bf8fa18aa660591811f0d20125c8848cfc2761ab1dfc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.mk.injEq "user constant" .inherited (.inherited [`DiseqCnstr.mk.inj])
-    "4d6e880fe59cf688a6782b42a5e4fbf9237e67eebcb6b93c10c712f2e68748d6" "0a0e247325099dc76532cce7813794e725c5558a435a98b61f50dc03e06ce04a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.mk.noConfusion "user constant" .inherited (.inherited [`DiseqCnstr.noConfusion])
-    "524a8bab72a9e82ec078a4af6df93835c150444e3ff4c2e50da3337151ee166f" "d0dd1415cba9dd897a57687804fed35542511f8e69ac49d012f8a8f09b2d3856" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.mk.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstr._sizeOf_inst, `DiseqCnstrProof._sizeOf_inst])
-    "078ebac4ce215824bf4d84f657ee911a63ce9f4d48b014c1e9892dea048d93d9" "ca0d366d5993086983fa21afb0ab149e197d8629fd1929470b1447816135d511" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.noConfusion "user constant" .inherited (.inherited [`DiseqCnstr.noConfusionType])
-    "8fa0d777eebf2eef3a2d398e4c401bd2d4ee77e3e82ebe3c20a1c291caa837cc" "2e57275be50b81641b903efdead2f0f6bebdc02b064d753408f54f381f463498" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "c7274d0b433bbc3f48e3f0be58f93ff769726fc5aa873cd95bb96a8438210472" "640d13f956c2afaef84d6db92cb9a0490b3f87f320f080aca4e0b11eed7fd692" "",
+    "078ebac4ce215824bf4d84f657ee911a63ce9f4d48b014c1e9892dea048d93d9" "030ade7b4ce8013572eb45899592a618edb900ff9a83a5273f72b95ac1206874" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "de41580be1bcfbcba9dad929960fa2597a0137ebfd9069f5d90bf6384675c56e" "9ce9d1e69fb16cc61a4c404d5606c4502c571afda532ee17163278688dc2931e" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "9deea21239de4357d1b95f9fd6c7b57fc6e24206749e71a956455bf4c4028ab9" "5ed957a8bc64702a8694661487bde2ff9390c6019ac202df6d748fc9a7fad1d6" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "6e544b31bccfa51cc310fc586f38ed01db34a47fa05118d1cc9341ffc1f8728b" "ed1253eb46eee6440440daecab5082df52332f25da65893a3c6adaf3f0d7c5da" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "6e544b31bccfa51cc310fc586f38ed01db34a47fa05118d1cc9341ffc1f8728b" "8ccbbef4f9e8665b6b1579682c69247b860dee77a16e841690aae6f26414f218" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "a6c3871f4aeccd4f83f273d6865cfcb8347f8eea07303c600595949d1426b555" "2efa60b590d236572b0073a9f6360c4d77e18fd807b19824eac7dc5fd789c7dd" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3394,82 +2142,24 @@ def part8 : List NonCanonicalEntry := [
     "87767078c157f3869cae4cda776e6a3005ea9328a981af59d218cfbc7e1685b4" "8608c061ae2f1b02b311f574a2a8a33dd3a4377c7672a77a2d2794cce11e61d5" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "191ab7f135b63d6e256e86b7d1add71a1174809e22a97687c34dea4535f046c3" "6526eed039f32a244c037afccf215b7a3da38e28211a356470d9a0a9847ddc2c" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.core.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorElim, `DiseqCnstrProof.ctorIdx])
-    "ec01b12bc7f49edc59913658844431e8faa6370728393090b8231f1f565ee340" "7f5ac0a1f2f8fac657ffa2f2691bda502df0013c3426443041778eb4a846489a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.core.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.core.noConfusion])
-    "c88d5858ff6c213c350d1de5390de3db8a3f85daae82e35de860ae67e7bee7ea" "dc31bf3caf36d70f8874cce0da5f1f39732650870ce8530c305759ddd78f9a0f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.core.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.core.inj])
-    "ec5fbed1fab45d33f9c581357c9c89c013ea840309c20c81664cdfc7be0ea0c9" "f99625e91c0dd77c59c437ccb58a98308c0da55db9db7481f48615e878bd0444" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.core.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "ace50c2b9b5c23853814e69fdc66af7373b91e79b167b92f5fcef3b2b3c29023" "3d9f29b58401bbc00793020ae5502b5e70aaa56c1648d20fc5c2256b0d2631a0" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.core.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstrProof._sizeOf_inst])
-    "b85f2224ce8fdb1e90db7de74051355afe8a230ad0fe74dd3e509058b7d59265" "78abeb13d12c4c38b19107239d52310aa8216f6dc7131dbf67442f3c4985e32e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.coreOfNat.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorElim, `DiseqCnstrProof.ctorIdx])
-    "572e060f8401c9c2f48a0c1995a544c48eb919278dafdfe481b198c7a8bebc56" "08d3b4cef849180eaf8ac579eb9b855f7754c1556ce3325ce0fb820a5fb115bb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.coreOfNat.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.coreOfNat.noConfusion])
-    "cd6feaa330da870daa2ded6fffa429af520169e9e5957c088b37727201271984" "99d667a7458a317b64b1683749b9d3d6d30aca130b751a624f900febba503bb6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.coreOfNat.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.coreOfNat.inj])
-    "5d8d0073acdc55d55e15110f9d68bc3704b6d7769890b16ded2afcb8d098a8fb" "4fc7c2730d0ab9e95c02e4214cc79430131c037a8f3176522ed34cd7848ff88a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.coreOfNat.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "0b76b760e57053992ea3e9b77b378208f9c7a0fec5e0f96b9845dcdf34183b50" "6973241e93078a80697fda007f889c12124ec3841979d475e9bed298033370c9" "",
+    "b85f2224ce8fdb1e90db7de74051355afe8a230ad0fe74dd3e509058b7d59265" "56196a0b30bfe618f11d318afb57468f6526eb5eba04dc8cf12c758fbaeea80f" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.coreOfNat.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstrProof._sizeOf_inst])
-    "90deab7b8ec8624dddd1df088de74ed6753d9fbecd48ad87b6e9e1648b8a5e89" "460602d8e7c4c34e6dc832e6931c369f0bf139397814b2cadae78e3c565a4e69" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ctorElim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorIdx])
-    "666c38d1a5cba9de0598f839d43e78c2c13b78868281168f42173ab950570391" "9879894e7c5a68d812a383ee7d53ee2d7a643f4e8e8e308006bc9478e73f566d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "d709f3cce2f55ee1afd98395d0f525ea60fb72f2f923f0196125ef6c90a14deb" "516096b625153ac88bf988131846c960c4e4d1215c8f3f3d3f16c8875842ca02" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.neg.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorElim, `DiseqCnstrProof.ctorIdx])
-    "ac587d67af137cc26f5e2958ed800bc0a4d7190758abddb5cd81055bd1b6d88f" "2a8cd5344f582146320ffe2628b886092d6a9435ce719e8013a263a6c0f46cfb" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.neg.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.neg.noConfusion])
-    "41a0f8b251664c8f64994cceb93ed6871242fbd3c325a5e2e7a75e3c515fe933" "e1476bf39e3c10387ce8208902719bb6b052840cc66570b6757fe6d768ae4904" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.neg.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.neg.inj])
-    "e161d0f19674a1eab135827ca63fc5428bdc3131466a71dd97413198e51db5fe" "58fc408ea813601cb27400c7c30a66792b50eb7d7b3c46dd8d87bccef4eeb5ff" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.neg.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "c18bf0d6de7eb8b8a8cd969d87207143390edc744cf6e79deaa0bb5e4c478787" "a090ee377d63bdb0cca3833191684b29cbc145a2c4661735b38f5146526f5c7b" "",
+    "90deab7b8ec8624dddd1df088de74ed6753d9fbecd48ad87b6e9e1648b8a5e89" "0166ac60aa5e80656774a62fd2ab843c40bf847974f83272514a71ca79e877f6" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.neg.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstr._sizeOf_inst, `DiseqCnstrProof._sizeOf_inst])
-    "7d1085991126f6feed29521796230238703df6434cb4dbe5b55f366298221e53" "9c8b52355f9f99b0811a2d5cae8a3db1b5bb1028507b3423c1d88d42bc6c610f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusionType])
-    "4ac985bdc3b40bbac08916fc6b6bb7e25b0f09b9af6df1df4129de7647cc7e6e" "eacf6c744a5340414c0df4d8995b3480a1a8826074fe8ffcb0795d4fadb23bdd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.noConfusionType "user constant" .inherited (.inherited [`DiseqCnstrProof.oneNeZero.elim, `DiseqCnstrProof.subst.elim, `DiseqCnstrProof.neg.elim, `DiseqCnstrProof.subst1.elim, `DiseqCnstrProof.core.elim, `DiseqCnstrProof.coreOfNat.elim, `DiseqCnstrProof.ctorIdx, `DiseqCnstrProof.ring.elim])
-    "28eaf28547b30661c12bea1cf30e2eea27a5673a87e3e053c4eab19e358d1b23" "68f020771709bba6ce7cd0f8734bf4f97d315a4440f212195b733909e8c5543f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.oneNeZero.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorElim, `DiseqCnstrProof.ctorIdx])
-    "c2262753aa2c7fc134276dfcd54a2f1b0a45d29369802b50984b28931adfc2f7" "e73ee231c00f3d7ac80b3c1efb995f58ec89557bc07b5204746bbf486c12b09d" "",
+    "7d1085991126f6feed29521796230238703df6434cb4dbe5b55f366298221e53" "b4c894e1932e914f5b700f60b8fd8c6a10bb466e8dc68781efab7987adcec0dd" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.oneNeZero.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstrProof._sizeOf_inst])
-    "c1b7f56c7036d87c4688486af4d27ccdf403beacbf4e836aa9b7ea881c12591d" "9951d7880c0fd865c35b0c0443cd6beddc6c7711560d6fa8f0fdd0d08d399723" "",
+    "c1b7f56c7036d87c4688486af4d27ccdf403beacbf4e836aa9b7ea881c12591d" "152e62a2a546b0aad9ad44bc9faa63d00fffde52428c3db97d80cacac0c0525a" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "8fcd86d734867a58a6f5ba3485949ef43ce420b807a489ef957678bb7f767045" "69b4ab708e01e0bb41581133956c97469ef444f0232fd55bae9b2f1693d42151" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "3790a45d2c5493ef6300397d842682a2c1bb5539dcf4e191bc639d34a454d4be" "ae56f9710b03f3b0ceab6c55e8eb68f323a52935dbd2c29c536728870b8ab3ed" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ring.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorElim, `DiseqCnstrProof.ctorIdx])
-    "a8c7ea6ecb634b74dcb55578e5e43f47b56df53e9fd46604949da68ca5a458fe" "e4042c772bca784a1b105341a207a39fd2427c66abf8a6fbdf030ca9ebddb1c7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ring.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.ring.noConfusion])
-    "cda507472a2edc882871e71c6f4394270d09ce329f7d8c80496fd23b2065e3bb" "9477bf775e22291c4f4656cdd9d79715c56b9b5bb7ef034d212023ae5d0a7dc2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ring.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.ring.inj])
-    "d9ba191419c36b017bde05f1782f0aa85dbcac3637d6ac0f7211d432ca8fc279" "09dfbcd9c6452609fc3172215f4eb4ee43be8c7847b0545931a8386fa8e44946" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ring.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "7070fc769ee401337d301daa8c865d94f05d01ab56d5a2573fa8249f58824c6c" "9b9a79731070e7884c8a090bc25dc967422aa82321904146eddb05def9e641d7" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ring.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstrProof._sizeOf_inst])
-    "9f4deadfded52ac4e0eabcc5245b97b9552d3f6710121438e52a4221b12a387a" "1260e1c405d9efe32d2378268c2b7378715e0a8038522abfc8a7d2ab7c1b6942" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorElim, `DiseqCnstrProof.ctorIdx])
-    "ec4b7511698794bd5f6013224f1669add2b4396df4b77e585f092402fd4dc67a" "83d0e6b4788b356f745e673d2e3824c21b220fc142cb362bfcbdd0f35d05d9bd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.subst.noConfusion])
-    "9c6e1cb7c7865aa6b34ad6ceb1cfe7dac71b052d7e69fa73f185be979159ca31" "ed83c79f2c545d94d8608a1ea1f4efeb10ab3835068ed0f0ab91963ec8a33304" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.subst.inj])
-    "1b3338988d0e3a9bfe3bfc0a211ea97bd289cdd12cfc49b5bb2497bf056c16df" "4581088d3f7cee8432e2762d065dbebdde5e699401ab6981165763153b5b9b9c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "0c6276ce5ec27d08c77f9b34eea2cc32f4125ac63102e81f4f1e86c914813b2c" "3b330b73406e6e370c59d5bd99b1215ae29741f82af6cf371a8e06c44a026989" "",
+    "9f4deadfded52ac4e0eabcc5245b97b9552d3f6710121438e52a4221b12a387a" "7f1d70fd294871f0fd020356184a712f97718c59a3af31f6f4271a1098bf9eb2" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstr._sizeOf_inst, `DiseqCnstrProof._sizeOf_inst])
-    "011aaf3cb0725ee66afc6d5b53e7782008e8ea675fd94feef58ae2d685d3cee0" "20c28b50ac338547beaab9de4702dedfb0474c8d7bfc005eeff9a59419971190" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst1.elim "user constant" .inherited (.inherited [`DiseqCnstrProof.ctorElim, `DiseqCnstrProof.ctorIdx])
-    "f122a89956b51dd9f664d5083afc71ccf940dca914acb1a156345af4c76fa972" "36d99862ae98c9ba2cfb41a4af99f6e5d4906e620923bcaf7ea44003c59aa094" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst1.inj "user constant" .inherited (.inherited [`DiseqCnstrProof.subst1.noConfusion])
-    "f4d49c67b5e65a23f1263074b2434a133d4418a47360e27da48d4524ef7532fc" "1a4013c62e1bf7281f5ace561fdbbd52ae65845d9ba2de26163e16dca27f625a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst1.injEq "user constant" .inherited (.inherited [`DiseqCnstrProof.subst1.inj])
-    "25ca5ce7708beca0a2825402f1936a4b7239685d233619bd2474401b39d731cf" "775d2d57277fd8d5eae1e1551d33a54e4a61b244658f75854c29bdb8c7595482" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst1.noConfusion "user constant" .inherited (.inherited [`DiseqCnstrProof.noConfusion])
-    "5c59eef8b64a6240ac6d10e7df17f39aeb6fbb1ebdb8dcfbeac8c9ca534eaecf" "5489dcdc71ca4074994a38b9cbfafda1ddd670226549679828287a9b12490f27" "",
+    "011aaf3cb0725ee66afc6d5b53e7782008e8ea675fd94feef58ae2d685d3cee0" "41f01138973442dfccb87196627440681666c9ef8cab96a798d2649f076b718c" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst1.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstr._sizeOf_inst, `DiseqCnstrProof._sizeOf_inst])
-    "c328caba9b28bc991619d28898951e676cc9bfc2d86dd1218af90c8003d99d42" "91cbd0bf4f4a107133abf231028c1e893b3dce7afe5be99ebae49df82dbb69b1" "",
+    "c328caba9b28bc991619d28898951e676cc9bfc2d86dd1218af90c8003d99d42" "d652625999dac12f91dec772cfe880f0cc34862dc92543577064c7f414fdbb77" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "8d0514132628bc48ee7ecfb3336cecd8f76398d475ace232520fc482a25cde0b" "eae37b6b1534d392e90b8e5026a68a2fed91350a91b918dce737ca2e87ac4291" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3478,16 +2168,6 @@ def part8 : List NonCanonicalEntry := [
     "52610ea68f84e3c3e36df3a3344021ad40d7ea93831bb7971e07b566f58381eb" "72ec487b37519501ddd6aa2e1c74b9ef11784a047eb6d13235e285790e89179a" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "fc985528b9f65c1c737c5dec3c3cefdb75f3e7a1dcdace2e56165d55ebf80bbd" "c415808bbacb3bbd4a9cc02abe4d0fcab8e67c2beec8bafe0df1c8e7ad432c08" "type.∀.body.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.mk.inj "user constant" .inherited (.inherited [`EqCnstr.mk.noConfusion])
-    "3a5d66b5fdc7b3e71d4685b46e4b33fb8bc00cabcbea6ba90cf43d98ff7c7656" "19e9b7d7ac106c0cd2aff4596711e37ee042b389303c8cc4f4ca5c8b0f8ebdf1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.mk.injEq "user constant" .inherited (.inherited [`EqCnstr.mk.inj])
-    "e922d9e6fe4811da11383b23f923349644f66769166103e534ab359fb2658db9" "6f03ec6682b100ee7f4595b27a7bb5f415db12ebfdfc356f73c619eb9c343ca4" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.mk.noConfusion "user constant" .inherited (.inherited [`EqCnstr.noConfusion])
-    "8bbc4136d8e39b4c99b59d674e91da3a1abf8a07a13e98c6d2fea75ff3f972a2" "7c83101132079df44aefb0bf60602412bcdfb5bfed1d671358430ea8943f0ac2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.noConfusion "user constant" .inherited (.inherited [`EqCnstr.noConfusionType])
-    "faf8e78f57e466d7096804d14bea605c7622f435348bfb7980d2054ae5e411f6" "003ae89e0c6e03a6c1b5a2c8151cf205413d8183f2b78229d246aab91fb36005" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "8a937b3f4ba89e79d6332073c77e423ba3bfa96ab005aa140b4a711b63ccbfea" "5ec11715ddc7a5cfcc401a8f383fe048c9926300b7db7d36ccfe03bd1d64c43e" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1fea870cd4a02cac75671cc92957359402eeca8f2ccc7a9f9141d87139fbfd70" "f4a563f960a7a5a32aac40b9b14916f856e146242248ae00b6d27a305c3c4174" "type.∀.body.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3500,74 +2180,18 @@ def part8 : List NonCanonicalEntry := [
     "d2d514b55daf6d6eec4184a48f5cc832135a23356d8274e3d8d10d81c245d874" "a325af3372733f3505e45223a36d38f994eb48ca36cf1aed722b8c9161778ed5" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1da25c54fda5a938d967adaac5a7149ebc6f0c554cf49dd27bb9d181e6562041" "3bd4c3ccf08ac764809ce169d40c6680f722e38f9814496c579d044502dc51cf" "type.∀.body.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coeff.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorIdx, `EqCnstrProof.ctorElim])
-    "b33036a4af6d12cc8a772b53916bdcb7f45bc80be2a388cd55a33db8f2eaac51" "c2f025891c3ef236290ca42d17d8a4fc0114003297c0b4222c691b70814a36c8" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coeff.inj "user constant" .inherited (.inherited [`EqCnstrProof.coeff.noConfusion])
-    "c16ef1fe839793184e80f75c3b3b7e4e17f49572f24147f505f6087b12db3be8" "30dea37137bbbb2b43b4b02512b4ed0dfb55161bb1bed84922d8bb12818e0cd4" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coeff.injEq "user constant" .inherited (.inherited [`EqCnstrProof.coeff.inj])
-    "d5b35d06d53f4b5bc3fc5b85c26b0db7ccc59844b8aa986e7bba6427152a0c2c" "79f4b18a13fde3e9c3ae698869dc3507b99ca5195241d1cd240396409ef60b89" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coeff.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "b2a37218553b860dff1b23afaffe95c33b5f7e9397672dd1925d4afaed62bee3" "9d9396224284f9081a95e8d56e726c8540ad3f53e98f5b6d6f9500a032ca619f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.core.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorIdx, `EqCnstrProof.ctorElim])
-    "295dfabf2454fc8300465bfe80f8e974b32f6b5d1542f748ef50ec08e95db29d" "c2767351b38723ffbcb4f85fb0cf5256d957cd85b212b431fca3aa50911c64d1" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.core.inj "user constant" .inherited (.inherited [`EqCnstrProof.core.noConfusion])
-    "87790c8a33fa4eeffd8bdf5a35048346a1bc529c639898845af6fbc9c610446e" "784210687320ffedb49ba443e51887890967ed5d03de86c40e6f72bb04cc643a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.core.injEq "user constant" .inherited (.inherited [`EqCnstrProof.core.inj])
-    "4493fc43046143d34c53805b6e30250ae0a888c31255435d40ec4f6a6f7254b3" "d42b6c753c626cb660e2e3bee5580296a7ff200774e2dc7d3b3b577a1b4fd7d2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.core.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "58dc8e2df82a8d9d10d9a10f80c95133b175ee91b57faec2192a98ac16a9bda5" "5bcbd034b544399991a8b6cb0d402cda3e9a72b83204e6b652030f86a451f951" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreCommRing.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorIdx, `EqCnstrProof.ctorElim])
-    "e788416e4ccdd2d9df1ee196292e22c10dd14acd70c0b1506bdce11f8a142550" "7f1639665bf60fe42798e60e042d33ae9ed12573a672fb295ba11582059e00ac" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreCommRing.inj "user constant" .inherited (.inherited [`EqCnstrProof.coreCommRing.noConfusion])
-    "72e3abd339b66210ca27f45ccdbbd065a0d5848a6f28d6bdde976bb1ecd82c26" "75ad60b7ac9718f604510a7e61705a2f892eee25bc32e82b9ca920db754b22aa" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreCommRing.injEq "user constant" .inherited (.inherited [`EqCnstrProof.coreCommRing.inj])
-    "d78fcb769ea123a28adc80f4cf1ceea7411e2c98e8ca6ef7acc3962d1162c75a" "b3293d81f4ade6517176d21966eccf0be14e6debcb944453867d17dca5c5a612" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreCommRing.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "360e6bc1693eee7b9c3515381d7deb5c0ba40ce3a880575f2707d6eba11f3fc6" "bafc830d0b03642c385c1293ff49f3bc7697362daee640aaaab6eff5f60cc823" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreOfNat.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorIdx, `EqCnstrProof.ctorElim])
-    "de7c6276aa0ecb283d18ef2e62186ff352ec5c1c0e945dbf938fe8b1c7b7ced3" "cd215c3e6825cf83986bd60a60380d037e1774b8ee0062ec4972164baf2e9a0f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreOfNat.inj "user constant" .inherited (.inherited [`EqCnstrProof.coreOfNat.noConfusion])
-    "e0fc0157eda483187f0a0154db06f8337a4d532085d4b02904c0238f47171cfa" "f8f6fb37dd56495f3edb50f58404b984efcfde8e526c1ed1f6686f3249589cea" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreOfNat.injEq "user constant" .inherited (.inherited [`EqCnstrProof.coreOfNat.inj])
-    "4701359928cd7c5e48ffa8cefaa693f11f10b5d8fde1cfd382e59d6f71df8fb4" "970f651865ed2cb9daacd286bddfb1d4206b18d53ce8190f42d10bd82dbf0053" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.coreOfNat.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "f422ffeb3281aa5ebee8813f27a2abf4a93a1da8e3ee02213a4bdbd3b0f9ce70" "3806694bf799ba54a263b72082e8eec796c81a50f167ed767adcbf11d89c4b2c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.ctorElim "user constant" .inherited (.inherited [`EqCnstrProof.ctorIdx])
-    "a80a7d2f6a5f6c8ddfc872f7128be676158f10695ad77674c1995e23d08ef5c7" "05365bb55d5386fcfc5e7fb10a39bb7ad0d5ccf07ecb7a5cc8c78005dbe8768c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "f131a7e8c801e40104b2f23273275b0a42cc2630497c690b359c11095624560d" "b8924afeeb83df837d9a202137d350e605e976669379fcc86137604f825cfd61" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.neg.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorIdx, `EqCnstrProof.ctorElim])
-    "d4af4149ebfea5934c7eb2e3629d14d6c5070152732fe0f9c6c4a1189b0b7f40" "87347e122156b4a794169c1114a374c681980e0dfabce73ff69a399ef85834f4" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.neg.inj "user constant" .inherited (.inherited [`EqCnstrProof.neg.noConfusion])
-    "7b314acbb86f5f49655bb0bc468bd57dc6711faa1e067f26f0f778388217b497" "6edbb588f7da2f38fc6af7b21474fbd34ec78e43b4d3459c5d859a2bfbbe6092" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.neg.injEq "user constant" .inherited (.inherited [`EqCnstrProof.neg.inj])
-    "af2fa9bdd6dbc05d7e701f3e56008804805aab9749eb58b9dac26accf39055b1" "abce6fd473f18c40c4d182dbed56f45a4fd68d47b367e8b0a69a58cc41e9307c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.neg.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "28a875bd2b9d0d618b543cbedb9d20cfe53e88e8a8bc4698ede5a988fb9ff1ff" "885baec1efc114bc09ec9428317897ceddfad7aada4f93a67ad538dc41e74458" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusionType])
-    "3fd16647ca6e7e21ee608050a513673efdc1814735080e9d15ae5912357e9b21" "2fc522cca3c33a0dcdafbd79b82ab3c9cef88a020fd1be6d8f27123ad395dac3" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.noConfusionType "user constant" .inherited (.inherited [`EqCnstrProof.core.elim, `EqCnstrProof.subst.elim, `EqCnstrProof.ctorIdx, `EqCnstrProof.coeff.elim, `EqCnstrProof.neg.elim, `EqCnstrProof.coreCommRing.elim, `EqCnstrProof.coreOfNat.elim])
-    "b7a0b15c2e1f361b46316df1e992cf5c743189be22f8d55e3e862e846770eb83" "1ad0bfbfb6e52148427c7c156864a820f90da6de7eaf64003426a487dc4e6aad" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "8f3449025976a0959d6409e896e8cfa124a26af5c5cfa8e0e9da20b08439bcec" "fa459d0fd2fc854e252642675239669ea5f9ff1c46c4be5c743d43ff6b366599" "type.∀.body.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "8916cd2e47de8152ba1c5006f521f0d5c6e018e996b3a12b029fcd8e3e1509cb" "95f4e1bc9852bb779edede8da30dbfa07911cf32773cc641698268ca6580402a" "type.∀.body.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.subst.elim "user constant" .inherited (.inherited [`EqCnstrProof.ctorIdx, `EqCnstrProof.ctorElim])
-    "c31d1d2fa4d729465b4448ac1c89820857a88318307be2bfa676f29af909b6da" "748209ae1b59d33af4f67d68fab832b53802b271ade1b22ad069f8e3fa2e880c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.subst.inj "user constant" .inherited (.inherited [`EqCnstrProof.subst.noConfusion])
-    "c5a941a9763ce7704406a5943656794c8a8ad900a87b36e77076bead1a415db9" "bd81c72b6aa594a5072bde287b45cfcebfbc5e5b24cd7dc73ea89acde7ff5ff5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.subst.injEq "user constant" .inherited (.inherited [`EqCnstrProof.subst.inj])
-    "454b1b45398f097c82efa55152a5ba340f058a02e1ab618255e0b2bfc1ead8a8" "2642904611295d1c1e58d667434594877dd745c8df468277e2e018a81b50163a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.subst.noConfusion "user constant" .inherited (.inherited [`EqCnstrProof.noConfusion])
-    "7041dfd363a8f1ce97f2050e4c490900a4f2a98e353d7a617bf492cc367d665a" "a485f49be1ca1de5fb437ce29a8d9aafd948440d86f5f37ef59028e50e89bea7" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "4b6555393b8582bec0208dd4d4b426976f7c1b76e4b849da5969ced982d1f170" "7c6c3d3468ff7762743b43926ff902fe7352c82facc94e07b6aaf96932a2700a" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "4b6555393b8582bec0208dd4d4b426976f7c1b76e4b849da5969ced982d1f170" "b9d2c07c6731bf9cc87846259ec9066aa92e262386831c2c3aed10a32680e826" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_2 "sizeOf family" .o11aPending (.root false true false)
-    "6d3da884671a32df7f6d48437ca32ea99ef2ade30c031f2e32a88ce03865ae8a" "fa1be5b06d9ec5e53231b472b3ef5e1a63e1cf8b98abe5bf7d48aa332d2fc473" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "6d3da884671a32df7f6d48437ca32ea99ef2ade30c031f2e32a88ce03865ae8a" "91ee268e9a4f9567a40946537b3da35a1aa7bf7d51e3717092a90e231eeb9e48" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_3 "sizeOf family" .o11aPending (.root false true false)
-    "1e09f92eaa14c13b438d30e2f0b19f39086586cb9fc76cb511fe797f3c9d58ce" "2a5fd14e1f8b281472cc76300811bb72e113df16e02e599fd9c5135a0f962796" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "1e09f92eaa14c13b438d30e2f0b19f39086586cb9fc76cb511fe797f3c9d58ce" "a1bf4ef62ae7de9cf0707b58a29f40e0c03b3eb4c6a7b41573d28c1c9da92e6e" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "21a3c8f414efd691ca6bb6d32535a5dee694108fd5b93ec2ae0f398e136e34dc" "79cab55d8425b76715e56e0f80363eba8145097e076268cd879d88a428cbb723" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "21a3c8f414efd691ca6bb6d32535a5dee694108fd5b93ec2ae0f398e136e34dc" "36604e31da0f0832b159815e160e328ce311412848e5f0176dc4175ee05f8606" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "9695dec5fc6c3035432db8179f17845195a29805df318ffd4bec5951bafc9e77" "efe1aabeb0d11c3405ae229d2d9e4bb8e1fe963ec9e45c40cd818c4d9bc64316" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3576,24 +2200,14 @@ def part8 : List NonCanonicalEntry := [
     "2e35539b3419ff56e6433032f6121c9676ecdb7bd7877b1e3936062c8ef759e4" "34d4de9483a3f7d21627eee4675e329269a6f0bf7bfc161dce9360719dbe52c4" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "12b60daae001ce3d044d05aa3913b87210b0b1945162bb3b38926a9408f6a012" "ca0e37231a9d22339130c64cdbbb7eb99fdbabd7faaf05b6367d2d9cfb8d6d51" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.mk.inj "user constant" .inherited (.inherited [`IneqCnstr.mk.noConfusion])
-    "70b05bfdd3a11c2e8ed02f81aa25e8a6b89b08264272699dd3f578217d1a524e" "e37507ab17e5493bef422750aae212c29b6939fd1a2266b7a70780684a0353c2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.mk.injEq "user constant" .inherited (.inherited [`IneqCnstr.mk.inj])
-    "aba79942e12f0cb8f58cf49f847b0cc83b339ee6be4aa2d54faadb2797d5dc28" "076e8f11da6b926d1a9c356a39b7c919edc90e2f6ad30b62ad13648a7f02ad47" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.mk.noConfusion "user constant" .inherited (.inherited [`IneqCnstr.noConfusion])
-    "3d6aaf6f2d2dd7fb3b3d64f5d5c59d93202b9f4ad073b320c87c2a05361eaf46" "f08a3928e1c74fd1336409bcf25d7a01b2dc41cf12fcc54661edaa8e98b90afb" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.mk.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "4fe3cccb6ddeaa49f11cc39b7ae31d30432fb38329907e56e21ed29907b72627" "b5f0e3cc68e2f0292227a58583283d77893bd33e974aef92f4c4b3075ec9a103" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.noConfusion "user constant" .inherited (.inherited [`IneqCnstr.noConfusionType])
-    "9a037a91e8bc22e330aed86f5cfc320fb2c488bf3a9f2f721ee41a2516422bb9" "0780511fa574a46d6b0538d9944341d3d5da2f2311b8c1a815e496ed1048eaff" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "b6af9dcbc2bb37071bef93ed15794e0359e78b0e46fe272a246baf70e363424b" "86b83bce76c2115a8838c2e20c2954c218882522d882bff7d7aacf88a0e82297" "",
+    "4fe3cccb6ddeaa49f11cc39b7ae31d30432fb38329907e56e21ed29907b72627" "200052737c6856f2b2572e9438140525cfa877042e649c9a51eecce4d4656e9f" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2e8da0e2e6fda579baca7f7b18b2831e02617cab499c9b6b4027f54b5cd96b9b" "9b7ff36311afa5663ff0b7c142c0e57e5d2dae6fc5e20a2ba4313a737d5a3ce3" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "a3ac43469c10d7d49b43fcbc191c9d02d1215a7508ed310251cfaaf181da50c1" "cf23116c1bb648d794cb58afcce7ec80a292df87355f5935963ebd055e1f7ddc" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "4816bc5331a9808ef1352b97872725ebba359cdcb55544bf4cd105dd94541ca3" "73956bc4092968f1676d67ad5bf684aaf746444a7ea646465ae68fb6db92ce62" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "4816bc5331a9808ef1352b97872725ebba359cdcb55544bf4cd105dd94541ca3" "18e9e4887de2c0d7b1a297c4578e05008cb80ee0172b8b733fe4d3144bc2fd88" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "080015f9b5b0281c4942200f57865b7c2c2f02b767f064caf40b59e69aa91838" "e9b155f950b3edd405fe595a993b374ed38af322a71d2a332327a4241cfd66bf" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3602,158 +2216,40 @@ def part8 : List NonCanonicalEntry := [
     "aca34ba7665a7e007afe5dcded061b5479f9daba72942f4cd8b9ecbaaf57e42a" "e75fdfea551fa47b42cc36ecff8c5e6421929c26debf71529ad40c19f9c4326e" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "7fd866a9bfc2745f7ab0faf3e9b14bddda0fc2cbfadeb7e8a30310956f27dd2a" "247ffa92a3370c3610731318ab947d80e857051360463e14ed04be58fa2e3e7f" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.combine.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "f886a2845acd64da4ddc023242f6459a91645227cfd2027f00f9de93454886d9" "ddb0c49f05d8799032c77eb80bb9efb013878763585afe7c4f1ff4af7bd7a496" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.combine.inj "user constant" .inherited (.inherited [`IneqCnstrProof.combine.noConfusion])
-    "3accbab6e0d5c4d0b29a8492546c1e9161d46125c5ed9995c807e832c7e21aff" "4070b4744bede09a35d6c1117d5205b0d50bc804c00c58f3a3763e3bb4283e9e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.combine.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.combine.inj])
-    "d403e6b2fc61af4371e42134b5d79c7978a1503c016b0735f9b7d6a46124a10e" "da1eca79ff64c7d3e1c6c90d43136d3afe31a942b7af91c705e5b87608a45a85" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.combine.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "1331648884f39ad2afed57b7d778bc065db2ab20b12f6d54e459d506dd3f2a70" "3de7da52caf1f932462189b7d8b1685757599b736f011986fe575b0b580086ac" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.combine.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "b5cbbe20fa4f4467aa7c6759cf65222e4d4be472f4f678f3da4c2176d979daca" "9645a0aa2f1322611ca54e73895741ff1443d978a7b5bc00e87c336b229c8760" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.core.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "f5859b19b8688d009586276262ee2f626b461607765463a1f32cce0c49c2a453" "2ff30d86cdf58e6b685330150dc8aa0dee9861020bd02644de3767f989ce6300" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.core.inj "user constant" .inherited (.inherited [`IneqCnstrProof.core.noConfusion])
-    "c79c049f6c87df83825cb085361a3d8c557b367460fe498a4590ff2946028307" "1db2032452279b1e7497530dcc5fc1f795c35e2c1ef5a42aa52b02b51624cf72" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.core.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.core.inj])
-    "26dadd3bc7800caa9cf0a32fe623db50866bd9194841c5dc7312e8fe2825dc68" "f8b8d2ab784dec2a6da24fed173549d0ceef6fd27ee6cde3eba45cc001b24127" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.core.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "d09f41622bc9c67db65bb8f8077d9af9518917db9340ca7095d8569d35f58d41" "0641c1cbbb9cd9a77865f64f6fddf65dc380d0740338b0b19531f218b8dea94e" "",
+    "b5cbbe20fa4f4467aa7c6759cf65222e4d4be472f4f678f3da4c2176d979daca" "f7585b20c4077ca99d9d845e1609b38593aa6fe1195cc5da1360e67b99411aae" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.core.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "a74a60920f98ef433c60fbba9817f6fa0cc32d585a599961ceb2fdac0ce9e0d1" "d3046ef142abea885e697b71ee8b2fea67fa7114a895310b69b95d7ed2c2b8f2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.coreOfNat.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "ee5d90c9926d00472f35350939c28c64288c9f6754d83ba8a0be7e52ebac2072" "5b9f1d04ab3217c6594cc26c9650058091355e9531b68f5d95b01a988ff84414" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.coreOfNat.inj "user constant" .inherited (.inherited [`IneqCnstrProof.coreOfNat.noConfusion])
-    "908a0594ab53d9c7188f930a1c4ad4dc85e3a5c9f810b9970eae35678a7fda80" "6842abf65af9a1c44dabd5f95cf77bf63d8ef6c59aff30ece0ed1b0bded6c60b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.coreOfNat.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.coreOfNat.inj])
-    "53f1bc4b39da21f81f6a1f540940c9e6b600952b2c77ef5e68afe0ae028b445b" "529a7a43f812bea1231cd934d21c77e509b8a9ce3d18400ce5c058a13194562a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.coreOfNat.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "42852ea44696a84563a02bfde10dbd8fa037ddf9b727193817f56ed2ed0bf41a" "69c9d239f5eda1ddbf276efc5d821edcbfc60a17c09a7987fe43a6af76d74ea6" "",
+    "a74a60920f98ef433c60fbba9817f6fa0cc32d585a599961ceb2fdac0ce9e0d1" "d3c9cdd4eb55fc217267aebaff5caadf3202899273a059fbed9d62e577766da9" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.coreOfNat.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "35373a974552d40d5c66ff036d2c1f0b8b27d8e9dcf80a641654c50b2a2cb631" "23d1dea558573704469fb0ef67585e56907d5ff4b09a87629049de3ca45dcbf0" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ctorElim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorIdx])
-    "de61b9670b570432cd66368e14e779f6527b5020459a8003ac9822b1b488ee18" "c576545294ac44656a1b7133b60e33d2d7f944c7754e18655ccbda723bb4687b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "65eadcd63fed49b569a8bd8bfcaef5ec6f03f1055f05b967299a4a777116dce5" "87a75f53c03cabca7651dd3c4dc965f8346eb39db631747af329cb09e22e296c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.dec.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "893f0fa6cecc2dabe7c8389252266ae90485b890a828e566da7bf3bb48e1d53d" "c2ce2e2f032ab62cc144549007750f951d49173904e0e13875ab5cb82ba5851a" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.dec.inj "user constant" .inherited (.inherited [`IneqCnstrProof.dec.noConfusion])
-    "da240101cb2e3cfc14cc39e2d9f96a84b6c5d93defdf281dd6766df52f6abb45" "49a8d9e134417589ba8302e8c3c075428b7b73a5841ed615e019aaf716d97602" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.dec.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.dec.inj])
-    "eca19a4b87f9e726ce501d1d3547bb1dbb2179b3b27bea9e5a2e90b79681de46" "fed0f6dcea7a28587b99e29cc5d7692076b03770ed64c9ce3611d17bf1c8684e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.dec.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "0c5c9efb71d1540d03c1cf471ec3532d5c47a7cff3032dc903198e3501d535dd" "30b5cfa0921c7eff6a7031753a7dfdb1b44e9126c331c5c3574d1bec7c069839" "",
+    "35373a974552d40d5c66ff036d2c1f0b8b27d8e9dcf80a641654c50b2a2cb631" "84608a0d69e605f65eeb96a57d3850debc77096eeb163a22c0836c00fb53abb8" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.dec.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "9f757738ff82e1c612a0d153fa9909275918cce4163d15ae8e213ba858d6c7d9" "2e44a59375b47c0b63f56f08a05d1fb2f324583f3a71cd12d4cb867e2602b743" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusionType])
-    "8c9bcc3f8961bb07aa68e61037748bc2975960549a8bb35eb9edd73e1aaea6f7" "18d06e796c337320715cd1c4603b9a33e324d1c1df93bfccc5d6b61314208e5b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.noConfusionType "user constant" .inherited (.inherited [`IneqCnstrProof.notCoreOfNat.elim, `IneqCnstrProof.ofEq.elim, `IneqCnstrProof.coreOfNat.elim, `IneqCnstrProof.ring.elim, `IneqCnstrProof.subst.elim, `IneqCnstrProof.ofEqOfNat.elim, `IneqCnstrProof.norm.elim, `IneqCnstrProof.ofDiseqSplit.elim, `IneqCnstrProof.dec.elim, `IneqCnstrProof.ringEq.elim, `IneqCnstrProof.oneGtZero.elim, `IneqCnstrProof.combine.elim, `IneqCnstrProof.core.elim, `IneqCnstrProof.notCore.elim, `IneqCnstrProof.ctorIdx])
-    "ae3842a81981dd98e320e4ca1bae17823e9d25df52af21fe18061301e55ff410" "462a996581f34428ccf5218c42552b050219b0a48d87d7f9264893cf970f1b81" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.norm.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "80596ea9022106c51d8c59a8e8de62187fc8d8155e0905f9760ef3571ff17cf1" "cdcd6b565b084f4300850e50902064037119349804ae9129391505b95121ca92" ""
-]
-
-/-- Entries 1800 to 1882. -/
-def part9 : List NonCanonicalEntry := [
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.norm.inj "user constant" .inherited (.inherited [`IneqCnstrProof.norm.noConfusion])
-    "1464b6b29fa7d828d265bc97df0a0e637fdd34ac99eab57cc46a0ccb0666e784" "fcfcd240208d3ee2bb922becccd7b434680dfecd6a0c4de1d7a658aa1894698d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.norm.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.norm.inj])
-    "95969d8a74cbc2c992c5a7903dccbd9fbe2c8f9044bff95d4f4d1facb83985cd" "15607f8f9fca99eb86979d39c6e7223739df1308c5741e5c3c37d439e4c5d72b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.norm.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "fb15acb3e42646a2e65c6db44f7ab9f3c0e30cd3b91f9eb619c194116fda1f71" "276ee85a4f9edb6a20ec086fb3754cb5a8b841fd0d30a02f65c90fe2ac27448b" "",
+    "9f757738ff82e1c612a0d153fa9909275918cce4163d15ae8e213ba858d6c7d9" "7eda72879d70646dcc6a8d868a0ac5cf57fd184fee3edb419c5e4ae0020e60dc" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.norm.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "bea3ae8c8d027116b019c310417d5afd4853b2030515633d67079dcee0457dc7" "c860dce9597f77999b28ed48e0ac98fd3b16b8040f2560dbf2254cc2852747ac" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCore.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "29fefc50e752a9d4c9fb099666b468da330bc308fb383b0a192faed17bcc6b10" "d9d112bae46f6a2790afaed28eb68b03b9a0e491bbc1c19e113de413dc11d23d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCore.inj "user constant" .inherited (.inherited [`IneqCnstrProof.notCore.noConfusion])
-    "2875b422b06ee356098f3ac8ce6cde01cd84b618d063182587b8779cbde09cd2" "144d3deb956c28914d9496be2de9a392579058c8701b78379103eeab39f4ec45" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCore.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.notCore.inj])
-    "777ec58957da1dd973cf1a945a93ed452e75ff091e84f61a937b4cfd352f1e32" "3289c6b0cb4f3d84623efb066340d8eba711d6aee1ad9d92fc90544c8394711b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCore.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "5ad81d895ee54736bc266db31ae66c17ca8b2edec452f5dece23bc0617362f84" "2584de64f4919abc770c50726e886730e7de942562618c1906222756ef76f6cb" "",
+    "bea3ae8c8d027116b019c310417d5afd4853b2030515633d67079dcee0457dc7" "9552be21f36daaf95edf68bd440cb98fa76ecbda23a5986bf137dae88ab19d26" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCore.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "01a6e3b2e1158517ca0fb75bf042ca356c58bea423b5e38840bb4dbff6151c33" "a8673db404d1d868ec65a55e2f6eaa129eb6e45cb4c3c6518ff3f6c6822b8ea9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCoreOfNat.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "6c48d2eb7af8f0c331d820a8a420d652da9eadd455eb4998f1189d5ac0f405d3" "e15d0c6a701ee7180705688807f78603b81d729fc2f92b018f468c0167899fd8" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCoreOfNat.inj "user constant" .inherited (.inherited [`IneqCnstrProof.notCoreOfNat.noConfusion])
-    "063f8f454717bd16c840de925045669877a1adbe0bcebf84e30aea66a3fba37a" "acaea78f03c3f6451aa9476cec9267dc4f3fc036f401c885953216830703ecdd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCoreOfNat.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.notCoreOfNat.inj])
-    "55bd91b81e3286fd76ef728f3b2f2d98ccbb26f152a5f6f9958ad1727fb747f3" "8e7a2b128727d80a6e21ce56fc168016ab86773b10016c9e2d380932160da845" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCoreOfNat.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "54d9c8ee5123275a7d6ae76ded94027974e644d38e5666ea23ddb364b20432bb" "3a0db49c3f71f17fbbcb535ea231f09ecafdf1c93d47b5001391ba45d456f9df" "",
+    "01a6e3b2e1158517ca0fb75bf042ca356c58bea423b5e38840bb4dbff6151c33" "7f9af11aa91a7bbba72561d828ea650f04aff607303bf10fa61fc0a82b0aa227" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCoreOfNat.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "c812f8fec228bc3d0143516bf67ad5adf8a653b086ba6d4b715d07dd3c9bac7c" "e938a79fb9e303575db64bf5642da8a13a2f01840f607e6353bb8b3a009d7a72" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofDiseqSplit.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "1644513b16fc035285693c324c043867eb04178005d94adb0206c50e5afeb024" "c42eef30f655b07d8abc4a93f7cc870caf3f627b6c57c295287bc43fc87052ef" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofDiseqSplit.inj "user constant" .inherited (.inherited [`IneqCnstrProof.ofDiseqSplit.noConfusion])
-    "b7f777d5db82a149031c1c70e0e1c852d9624740158c5bac58df1935a6909809" "386ea2e7b7f23d201c28725afbccc46249b55408f45fe843f3f3db7873d32836" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofDiseqSplit.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.ofDiseqSplit.inj])
-    "67be5810dcc8c0677c5d83062fe717d1c3fd80588f602ac34b4bd2bcf4fdd42d" "c83819bf07d2b3309cdc06d981ce91a971a8207f3c8ebc6785447151c0e177bc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofDiseqSplit.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "e1ffc027178f29edf9dd771c402fcbc8f17e3c8bc3216efd193da1ec70205c69" "c748c36c665613ae1e301ebaca24ea494106575f323f7c3982de940d02650f68" "",
+    "c812f8fec228bc3d0143516bf67ad5adf8a653b086ba6d4b715d07dd3c9bac7c" "ace80c95d6c7c6c9f325f14c6ffc5c861e2c95c03618d7e4bc5fa3d55279dd74" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofDiseqSplit.sizeOf_spec "user constant" .inherited (.inherited [`UnsatProof._sizeOf_inst, `DiseqCnstr._sizeOf_inst, `IneqCnstrProof._sizeOf_inst])
-    "cfc29c7dfba8091979426e2637e589c43cbf670583d9287e67ee2d43dcf31cea" "d7e15f1873bfbc006fbfcfd403503b50b8cb129f0657e2d9255f6fbbaf1615b9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEq.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "73ca9f08dceec7207d01d0a47e42af129c8d7ef6f2dcefcfae118af6f147689e" "9a0ba4946db8d7c0c67cb61e83c99aabdbcf8e26b908814618f8553385cb7702" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEq.inj "user constant" .inherited (.inherited [`IneqCnstrProof.ofEq.noConfusion])
-    "77edccb5d332c88db0e79663e5cde203368cb5fa6ff6e495c5c3c4e8127b6a08" "af030c3c70b3033b4f9c4589737bc5e8afae4a2de5d98457f9619db79960568e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEq.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.ofEq.inj])
-    "2f817430103bffb08befe70f7ced57717fd3f90cb226dd631a64e56161dc8068" "ac6be3178b4f90fd20b637d1cda247690025c542a34a5e8f354f2f8ac2526a47" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEq.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "492be7743dacc70a8c7c17edbad84b0a2a3b77f2f67589f44238aadba70b8459" "e416c578ccac4a220a333378049cf823cb5386466beaa7ca8940162fc8b91367" "",
+    "cfc29c7dfba8091979426e2637e589c43cbf670583d9287e67ee2d43dcf31cea" "659c00c5984224026bccb9df7bb45f01f8a7f9458b17d0e836db2915f3108be9" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEq.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "4603107e6a354c19517fa39721aa1ea28c43e97de795b2f9f2ef93fdd1600664" "2ebd9e0e8cd14d9eb5f7416060f07527e0c59abf97e91fac4a3ef2d63071c74c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEqOfNat.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "e3d990d8f263c78c513ffa087c87fe2bf46d826e3401e923caa6d69543d794bf" "64ed6688f744a2ca88cbb478f5a47f10c1925e96a2ae0da388a79a7bb8d99d41" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEqOfNat.inj "user constant" .inherited (.inherited [`IneqCnstrProof.ofEqOfNat.noConfusion])
-    "7c5a0300199ffeed96eedb5f9b2b0b9cce3ebab403660d78021de617ec9d5270" "cb9dea05dbb6d2407e8f8868ce6c3c7e17cb87185e93e842a5be2c5781768e08" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEqOfNat.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.ofEqOfNat.inj])
-    "65171e14b6a1f8ae526e7ea82212fb93c5449559db455a1e0698d89282f765cb" "5709edbaba25151d8144ad611dabe7d2657fdaf43d22f2587cafbe7549d9606e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEqOfNat.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "f1be6f75d5ddae6d81eefc96ca33667fba0fec8025b69a9c3c108b0d66a59b44" "fa5b18ccf70316683258387e711f908b4c70477f02b1883266e62c9670e2ef05" "",
+    "4603107e6a354c19517fa39721aa1ea28c43e97de795b2f9f2ef93fdd1600664" "f06a5606098279c9075cacfc969e744fdd37f22951da37ec66aefc69d6b3569b" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEqOfNat.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "d06162abe66e36f46f4c3080c35613a3be5ec59a36ebc26c16f459f2d004a874" "6340c0177170a045b41b01c26ce74fdbdfddece30921fb61bd6eec1b51107c44" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.oneGtZero.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "c543f5eeba6bcde94c2cba474c04d9ec93a8a8294f6c27a8f40a40c06b9a4678" "693c45ee28dc223d1d53235d6adab097ae1931f76f2b37aa1c8e2974c0e82530" "",
+    "d06162abe66e36f46f4c3080c35613a3be5ec59a36ebc26c16f459f2d004a874" "87d0a2b30689c76ee93bb81d53423d36260cfdc9731d47cb3b97a7c6b500902c" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.oneGtZero.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "7167f92dc8816fc4ec17978ab468441c41161719340123e4035fdf6319e5cb9d" "84d24b400f3c47e78100e6173c2ac227ad225e6f0f4592d5e463ad037c8b61ae" "",
+    "7167f92dc8816fc4ec17978ab468441c41161719340123e4035fdf6319e5cb9d" "9487fc46795b525b293403ac9b6043dc35500f59a3a5dab1e24aadb96f568b0c" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2bb3e55f987b275b8b1cc2ed3dd459567635ff969f72471e914a1396b13a4056" "06b592545e16c174884278209525dcacee29811e2c9718fce2a516789788ead1" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "7396d2991fdb06838fc9d6f924b3322115c56115a72c9d5e8934e2b223498457" "08d029718ca33d416533ba123d507247868e05a1e21598b6618474336b2540d8" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ring.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "f765c9cce3737e62107112a0afae65a39fd52ecaf45f31c4243ced91c6e5eabd" "a0bf93bdcae3fc088e30ea231633fcd98ba8fb9214963a32c9149aae48eefeb7" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ring.inj "user constant" .inherited (.inherited [`IneqCnstrProof.ring.noConfusion])
-    "accbd6341d08c02e6fb849475ce6925abc5f7846945976d20fcd6919bcb2b0d6" "6e250d5a969ca0957f5562c2ab2689705023f24d6d8030ae657ed797ccc41b2b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ring.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.ring.inj])
-    "6c5c1a53a7e7b58a59bd4bb20116cb283f9c7d5ea20c2551df7ce2b44e37da1e" "71538a32eed443c9f172f5a87626a6dee398bbab3015dcdcacb8d98b1b7df587" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ring.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "45e8c4905500e871d248cf1adee81641256e7e7487552960861c942571388974" "a83abfb21423b91ff43a45bbd4c6bc7ca2358e829d4000602dd8396bb70dcd03" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ring.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "20d8f15b9079591b8cd8601a2f7152ca8364c933efd20e6fd75b21e0d2b1d02a" "6be6302c2afe490023ce7cd091969ce1d5ec84b845973135fa3c0aec1d5ba90e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ringEq.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "e11f6a1fdde353104900e8ca99d8b3f09bf63ace571df69e3de44f3f467fe03c" "96747d1e5ee65b06ffe1637fe79cee7d2e75cd7771c74eab77f8f2fcd362ed43" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ringEq.inj "user constant" .inherited (.inherited [`IneqCnstrProof.ringEq.noConfusion])
-    "031354d68c518982d45d79a0a7a3d4ceb01c3d9779d55d31f7d36cd2db689460" "517e208797114b57b8e80b4862fcb1702fdf5f9f887bb5b0f88dd26fcca27c5d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ringEq.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.ringEq.inj])
-    "408a0bfdf692fc9c029c0fd32565ea915985f583814223b7a82fc49b01d89574" "f7c574983fb7f1464297815380249e71776c8a05f1199dce302dd69c3b24ac69" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ringEq.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "117434550ba1f6c339b75c7b65fc27e3168e3ebea67b0a1e413b7bd5385f134c" "b97ac331f77d1f50baa9d13de81c418163f23c096de9fb3c1f5e9f28c91c994b" "",
+    "20d8f15b9079591b8cd8601a2f7152ca8364c933efd20e6fd75b21e0d2b1d02a" "9fb419fa2d4b2ebf71d0ac21d32f75c9b16a8ea3a20944478968183e67c5427e" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ringEq.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "3dacb1e7bed424eb8c096588d97449dfcee0876c69ee8db92e5205312b415d18" "2023896d79f60925b3c3d1839af5e0373044c4a3d4c7bb2c5d7a64b492e8aa4f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.subst.elim "user constant" .inherited (.inherited [`IneqCnstrProof.ctorElim, `IneqCnstrProof.ctorIdx])
-    "f3f6eb3e3079fab8f44879e5853111924262ccbcac76701004611c22efa865cc" "60d164262a6eb1ffa788cefe38b5e09dd20b236a7bea415182dc59653694bbc9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.subst.inj "user constant" .inherited (.inherited [`IneqCnstrProof.subst.noConfusion])
-    "675c931571df3a95d2ccd9b5c74b3541b41e5fbd1c649769160fe9b32e1736e4" "8408f90ed147f28c4f63ddb9b0a3ae6708c43ccccd11d8e7d61dfe425fb86229" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.subst.injEq "user constant" .inherited (.inherited [`IneqCnstrProof.subst.inj])
-    "4db69bb1c8b169ce0c8fdeb95558682d733b65da4ee42d08a377b62125436980" "1c3e61089a210d41a28114e869a62e23d27e5cc8c045e5fe7bfd3a9234a69a72" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.subst.noConfusion "user constant" .inherited (.inherited [`IneqCnstrProof.noConfusion])
-    "22cb70585e8c9d52346f5589bda57a691c1176d6b1f1b5968adc7a3a4e02c26d" "677d3aeae653e2cc9603e882d63dc12d556df2537fb04b3f795155639c921caf" "",
+    "3dacb1e7bed424eb8c096588d97449dfcee0876c69ee8db92e5205312b415d18" "ceea112676ee95fa15b420842a2f9201b350e7fb5c967ae04c481b77aa983ead" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.subst.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "b5083cb595f0e1ca587616cea952d75c24e55d150f6c8682b75cd133c9da67aa" "57f94ff5fea8599f78bdb015590328dc931d3233e4d579a1012ea750a9ff4197" "",
+    "b5083cb595f0e1ca587616cea952d75c24e55d150f6c8682b75cd133c9da67aa" "80c4de67e3d77b2b043098aa0d3d59dc0c9db282951e050e049274473e7eaa39" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "b56f470d7c99d75df77302315a9c774c6c697474d6008af73ed60c50f851ff8e" "02ed207daac694fc23c392c31a6b1cd6eb6cec457b9755f3b1a9373d8e0fb43d" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "b56f470d7c99d75df77302315a9c774c6c697474d6008af73ed60c50f851ff8e" "d7dd0d384ddcca4f8e3d7749d23dea2ba2dda218bae280ac7cdbdce84eae85ec" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "fb226f44ab7b006474ce6925f33a25cdf94de536110892eea3689e7a7114ae3b" "999e6430c31222308c7cb01c2892962ff79f8f36c8996a702879ad04c3b1cd0e" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3762,34 +2258,10 @@ def part9 : List NonCanonicalEntry := [
     "b2948c710f1b91bc78407e8e9581661140e7e4fb16aca2bd081cd730936cc31f" "84155b04fe96bdfc21b836543f1346828c1c5fcac040b96d854cfd00fafa3e4b" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1900a41bb7538e61b1d503b70185b3477da7ea67d6445d8100b56638181484b9" "a1035a40b074edb78499af69098da75619b4cb60c9f95711ad0f6d739ec6708f" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.ctorElim "user constant" .inherited (.inherited [`UnsatProof.ctorIdx])
-    "214bee4b812a622f06d7fcfebc4f66143fd3305def6dce32592ec6e24d2bd8d7" "72c692b34ea9f8a8cc76a87664ccc76e7283e19ac5ba9ed15d286d72080b9ef4" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.ctorIdx "caller of a changed block" .pendingPasses .unexplained
-    "8df0afbc425236eafba9f44794b38fb64f8c040db5e520264489d324bc7b4bb9" "250dafb6986225fe1508a61d144cd23090160d80741d3b9be989af293468c46f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.diseq.elim "user constant" .inherited (.inherited [`UnsatProof.ctorElim, `UnsatProof.ctorIdx])
-    "514a0514534dd7c24315ce7782b0924c1346c760d2394b2d61c3243014178d83" "fee98ea1c164c79afb37db9d4e04ddeb55511ab6e892aa885192818ca07a218d" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.diseq.inj "user constant" .inherited (.inherited [`UnsatProof.diseq.noConfusion])
-    "f2f3af5144f72327fcd6b61f4a5991c2c982266531d6aed13d4a56b071208a83" "d0b1c944a1045feadd04b50d31f8264c7723943a9bf83e719d83d6d2cc56f357" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.diseq.injEq "user constant" .inherited (.inherited [`UnsatProof.diseq.inj])
-    "14f67ea21e02cec332bc619491b032d4fc666c9f20f3a7db6e5fc9e13764ec3f" "7e0fd0b257b4be2354fe8475c2f6c496681b79a9d8a098974216dd7e88861e80" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.diseq.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusion])
-    "819145f1094eb04d27e6aa6d5a8757f1c380be738a5abdb44f1428f086cc682d" "392149fd1ece8143bf93035e6a2500f372c9f9a3f664b347f60d307bbcfbbc41" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.diseq.sizeOf_spec "user constant" .inherited (.inherited [`UnsatProof._sizeOf_inst, `DiseqCnstr._sizeOf_inst])
-    "950bd0ebc5c2b761d97af1eb27b38bbff010c3c62f16f2d7f3203f802f547988" "f13d41d3861537eedb3eb46cacbcdee5b63955c0311a5032dc5babaa159ed9b9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.lt.elim "user constant" .inherited (.inherited [`UnsatProof.ctorElim, `UnsatProof.ctorIdx])
-    "db2ed9ac3a8db09433f8674c4e275853f76b405c7e90ec65f841f73582018e5b" "d27aec358814b8a4a3f21c4700538d980777b38b248a0fbde492b800f41f90f9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.lt.inj "user constant" .inherited (.inherited [`UnsatProof.lt.noConfusion])
-    "3142a65f516c06785e3b0839a1cc8e818b652324350f8c23dbb11e66c2c61f48" "3b773f3aa6a4df631cb68cbc3c55d4c4463e557dd555ffbb48eef0eac536d215" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.lt.injEq "user constant" .inherited (.inherited [`UnsatProof.lt.inj])
-    "ccb6c44afa7575427b7ce7f6916d8ffcefc0b2e6bf3c1be9ffe0baa0d20ff6f9" "92e0e6515d5397dcb79abf3ca2e93b8ed2be79d19c2caa3636d61527236e231e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.lt.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusion])
-    "4e78f46934919f36ab4b5cc5cdd7f09a6370f9df2491b36255173a57b949ab30" "530a6d844e0c805b69636e2830461f1e45bd0b2fc57ce858423a9b80dbcfc695" "",
+    "950bd0ebc5c2b761d97af1eb27b38bbff010c3c62f16f2d7f3203f802f547988" "c0eecfe044481543199d35a3fd41d1209b18ebb8d3f2cee55c48ad2e394797ad" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.lt.sizeOf_spec "user constant" .inherited (.inherited [`UnsatProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "7db1620eb349e5e89775e44bb0d7bb373a4bcf8a39373cd6a5bf33ce5e643fa2" "eaa99e2323826c15b387e25c396202bfbf5341f2c54b50946690ce84a0ea5cd5" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.noConfusion "user constant" .inherited (.inherited [`UnsatProof.noConfusionType])
-    "7d2a53f6ec9551e754d48aae62ea6f88bd3d67a2225baccaf2a04e087e865efb" "f11a31554b74fb0068333c6d727bd118f30e7e8b209ba38fde38dc5862e3d1d9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.noConfusionType "caller of a changed block" .pendingPasses .unexplained
-    "62da1039e027cbd12eb1547c4f4ff838730a5271f1cc89edb7fd102563904218" "f42505520ceae78b75235e873bbce354b548f4e7a8c2108239f9fa5f9c62a42c" "",
+    "7db1620eb349e5e89775e44bb0d7bb373a4bcf8a39373cd6a5bf33ce5e643fa2" "ab7c3ee7a25016741a85ba51fdd9164c81428df33acf9b62d15ed6dbaf623e01" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c6d6643b2efec099db31c557dc67b897d530a6f38dbd58e06748abfdfef61850" "27984d633fdb66cda209145f9ece2f14868bed7893a3e5b7092bcb90c3bdcf38" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -3826,6 +2298,6 @@ def part9 : List NonCanonicalEntry := [
 
 /-- The measured non-canonical set. -/
 def nonCanonical : List NonCanonicalEntry :=
-  part0 ++ part1 ++ part2 ++ part3 ++ part4 ++ part5 ++ part6 ++ part7 ++ part8 ++ part9
+  part0 ++ part1 ++ part2 ++ part3 ++ part4 ++ part5
 
 end Tests.Ix.Compile.NonCanonicalDefault
