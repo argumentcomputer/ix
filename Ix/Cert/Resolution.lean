@@ -23,7 +23,11 @@ own primary claims (`mergeCompiledBlock`), a withdrawal erases names
 * `Step`: how one driver operation moves the resolution map; it composes
   (`Step.trans`), and every operation of `applyAuxBlockOutcome` is one;
 * `Provenance` and `reach_provenance`: on every reached state, every entry of
-  the resolution map is an aux name's or `Compiled`. -/
+  the resolution map is an aux name's or `Compiled`;
+* `compileEnvFold_final`, `compileEnvFold_provenance`, `compileUnchecked_fold`
+  and `compileUnchecked_provenance`: the fold starts from an empty map, and
+  `compileUnchecked`'s resolution map is the final state's, so every entry of
+  it is an aux name's (in the final aux map) or `Compiled`. -/
 
 namespace Ix.Cert.Resolution
 
@@ -620,5 +624,131 @@ theorem applyAuxBlockOutcome_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set
   | compiled r c p => exact applyAuxBlockOutcome_compiled_step acc lo all r c p
   | promoted cs cn cf im na nf => exact applyAuxBlockOutcome_promoted_step acc lo all cs cn cf im na nf
   | failed msg => exact applyAuxBlockOutcome_failed_step acc lo all msg
+
+/-! ## Where the final resolution map's entries come from -/
+
+/-- **A primary claim of a block compiled during the fold**: `n ↦ a` is one
+of the claims (`outcomeClaims`) of a condensation block's outcome, under its
+key, computed against a state the fold reached. -/
+def Compiled (blocks : Ix.CondensedBlocks) (init : DriverAcc) (n : Ix.Name) (a : Address) : Prop :=
+  ∃ snap rep all, Reach blocks init snap ∧ blocks.blocks.get? rep = some all ∧
+    outcomeClaims (blockKey rep all) (auxBlockOutcome snap.cenv (blockKey rep all) all) n a
+
+/-- Every entry of a driver state's resolution map is an aux name's, or
+`Compiled`. -/
+def Provenance (blocks : Ix.CondensedBlocks) (init acc : DriverAcc) : Prop :=
+  ∀ (n : ExactName) (a : Address), acc.cenv.nameToAddr.get? n = some a →
+    acc.cenv.auxNameToAddr.contains n = true ∨ Compiled blocks init n a
+
+theorem provenance_of_empty {blocks : Ix.CondensedBlocks} {init : DriverAcc}
+    (h : init.cenv.nameToAddr = {}) : Provenance blocks init init := by
+  intro n a hn
+  rw [h, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at hn
+  cases hn
+
+/-- **Every reached state's resolution map has provenance**, when the
+initial one has: each entry is an aux name's, or a primary claim of a block
+compiled during the fold. -/
+theorem reach_provenance {blocks : Ix.CondensedBlocks} {init acc : DriverAcc}
+    (h₀ : Provenance blocks init init) (h : Reach blocks init acc) : Provenance blocks init acc := by
+  induction h with
+  | init => exact h₀
+  | @step snap acc rep all hsnap _ hall _ ih =>
+    intro n a hn
+    rcases applyAuxBlockOutcome_step acc _ all _ n a hn with ⟨hold, keep⟩ | haux | hclaim
+    · rcases ih n a hold with haux | hc
+      · exact .inl (keep haux)
+      · exact .inr hc
+    · exact .inl haux
+    · exact .inr ⟨snap, rep, all, hsnap, hall, hclaim⟩
+
+/-- The fold's initial state keeps its compile environment's resolution map. -/
+theorem init_nameToAddr (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) :
+    (FoldState.init cenv blocks sched).acc.cenv.nameToAddr = cenv.nameToAddr := rfl
+
+/-- Assembling the environment returns the driver's compile environment. -/
+theorem assembleEnv_cenv (acc : DriverAcc) : (assembleEnv acc).2.2 = acc.cenv := rfl
+
+/-- **The driver's final state**: a fold that returns ran its waves from an
+initial state whose resolution map is empty, and returns the resolution map
+and the aux map of the state the waves reached. -/
+theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
+    {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
+    {bytes : Nat} {cenv : CompileEnv}
+    (h : compileEnvFold env blocks dbg unmaterialized sharingLimits width = .ok (ixe, bytes, cenv)) :
+    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
+      cenv₀.nameToAddr = {} ∧
+      foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
+      cenv.nameToAddr = st.acc.cenv.nameToAddr ∧ cenv.auxNameToAddr = st.acc.cenv.auxNameToAddr := by
+  rw [compileEnvFold_eq_seq] at h
+  unfold compileEnvFoldSeq compileEnvFoldWithSourceSeq at h
+  generalize missingBlockRefs? blocks = missing at h
+  generalize validateInductiveFlags env = flags at h
+  generalize validateMutualSafety env blocks = safety at h
+  cases missing <;> cases flags <;> cases safety <;>
+    simp only [bind, Except.bind, pure, Except.pure, Functor.map, Except.map] at h <;> try cases h
+  generalize hr : foldWavesSeq _ _ _ _ = r at h
+  cases r with
+  | error => cases h
+  | ok st =>
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, -, rfl⟩ := h
+    exact ⟨_, _, st, rfl, hr, rfl, rfl⟩
+
+/-- **The driver's final resolution map has provenance**: every entry is an
+aux name's, or a primary claim of a condensation block compiled during the
+fold, against a state the fold reached. -/
+theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
+    {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
+    {bytes : Nat} {cenv : CompileEnv}
+    (h : compileEnvFold env blocks dbg unmaterialized sharingLimits width = .ok (ixe, bytes, cenv)) :
+    ∃ init : DriverAcc, ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
+      cenv.auxNameToAddr.contains n = true ∨ Compiled blocks init n a := by
+  obtain ⟨cenv₀, sched, st, h₀, hst, hmap, haux⟩ := compileEnvFold_final h
+  refine ⟨(FoldState.init cenv₀ blocks sched).acc, fun n a hn => ?_⟩
+  rw [hmap] at hn
+  rw [haux]
+  exact reach_provenance (provenance_of_empty ((init_nameToAddr _ _ _).trans h₀))
+    (foldWavesSeq_reach _ _ _ hst Reach.init) n a hn
+
+/-- **`compileUnchecked`'s resolution map is the driver's final one**: a
+`compileUnchecked` that returns ran the fold on the ground part's
+condensation, and returns the resolution map of the fold's final compile
+environment. -/
+theorem compileUnchecked_fold {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    {resolved : Std.HashMap ExactName Address}
+    (h : compileUnchecked env = .ok (ixe, failures, resolved)) :
+    ∃ (bytes : Nat) (cenv : CompileEnv),
+      compileEnvFold { consts := env.consts }
+        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) = .ok (ixe, bytes, cenv) ∧
+      resolved = cenv.nameToAddr := by
+  unfold compileUnchecked at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · rename_i r hr
+      obtain ⟨ixe', bytes, cenv⟩ := r
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, -, rfl⟩ := h
+      exact ⟨bytes, cenv, hr, rfl⟩
+
+/-- **Where `compileUnchecked`'s resolution map comes from**: every entry is
+an aux name's, in the fold's final compile environment, or a primary claim
+of a condensation block compiled during the fold. -/
+theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    {resolved : Std.HashMap ExactName Address}
+    (h : compileUnchecked env = .ok (ixe, failures, resolved)) :
+    ∃ (bytes : Nat) (cenv : CompileEnv) (init : DriverAcc),
+      compileEnvFold { consts := env.consts }
+        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) = .ok (ixe, bytes, cenv) ∧
+      resolved = cenv.nameToAddr ∧
+      ∀ (n : ExactName) (a : Address), resolved.get? n = some a →
+        cenv.auxNameToAddr.contains n = true ∨
+          Compiled (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) init n a := by
+  obtain ⟨bytes, cenv, hf, rfl⟩ := compileUnchecked_fold h
+  obtain ⟨init, hp⟩ := compileEnvFold_provenance hf
+  exact ⟨bytes, cenv, init, hf, rfl, hp⟩
 
 end Ix.Cert.Resolution
