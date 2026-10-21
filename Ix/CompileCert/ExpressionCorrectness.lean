@@ -15,7 +15,7 @@ strict subterms. Its correctness is proved by strong induction on `sizeOf`
   a value the certified reader reads as a term `Related` to the source,
   under the declaration prefix's bindings (`BindingsCorrect`), the block's
   own members (`SelfCorrect`) and blobs aligned with the published store;
-* `compileExpr_surgeryFree`: when the environment has no call-site plans,
+* `compileExpr_surgeryFree`: when the environment has no Pass 3 records,
   the production entry `compileExpr` is `compileExprNoSurgery`, so
   `compileExpr_read` holds for it (until CQ3.5 deletes the surgery). -/
 
@@ -185,7 +185,7 @@ theorem compileExprNoSurgery_read {md : Mode} (cx : Ctx md) (param : Nat → Lev
   rw [ran] at checked
   exact checked.2.2 value rfl
 
-/-- **Without call-site plans, the production expression compiler is the
+/-- **Without Pass 3 records, the production expression compiler is the
 ordinary one.** -/
 theorem compileExpr_surgeryFree (source : Ix.Expr) (context : CompileEnv × BlockEnv)
     (free : context.1.surgeryFree = true) (before : BlockState) :
@@ -194,8 +194,7 @@ theorem compileExpr_surgeryFree (source : Ix.Expr) (context : CompileEnv × Bloc
   simp only [rawRun_bind, rawRun_read, free, ↓reduceIte]
 
 /-- **The production expression compiler reads back as its source** when
-the environment has no call-site plans (CQ3.5 removes the premise with the
-surgery). -/
+the environment has no Pass 3 records (`surgeryFree`). -/
 theorem compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)

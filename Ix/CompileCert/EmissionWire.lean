@@ -19,7 +19,7 @@ The facts are success-only (`Safe`): a failing universe miss may write its
 candidate before the guard refuses it, so wire validity is not an invariant
 of every run (unlike `ExpressionState.Good`), and this is a traversal of its
 own (R6, finding 6). Every `Safe` statement assumes the environment has no
-call-site plans (`CompileEnv.surgeryFree`), under which `compileExpr` is the
+Pass 3 records (`CompileEnv.surgeryFree`), under which `compileExpr` is the
 ordinary compiler (`ExpressionState.compileExpr_surgeryFree`); CQ3.5 deletes
 the surgery and the premise. A successful preseed establishes `Valid`
 (`seeded_valid`). CT-14's `EmissionWire` and CT-15's `FamilyWire` traversal,

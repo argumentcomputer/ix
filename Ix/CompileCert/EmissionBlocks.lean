@@ -23,7 +23,7 @@ axiom, quotient, recursor and standalone inductive-family blocks:
   success-only wire traversal (`EmissionWire`) and the builder's
   `buildConstantWithSharing_wireWF_headers` (R07-10).
 
-Every theorem assumes an environment without call-site plans
+Every theorem assumes an environment without Pass 3 records
 (`CompileEnv.surgeryFree`), until CQ3.5. CT-15's `DefinitionBlock`,
 `HeaderBlock`, `RecursorBlock`, `InductiveBlock` and the block half of
 `FamilyWire`. -/

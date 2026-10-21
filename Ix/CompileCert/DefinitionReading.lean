@@ -175,8 +175,8 @@ abbrev related (source : Ix.Def) : Ix.Expr → CExpr md → Prop :=
   Related names (LevelMeaning source.levelParams.toList σ id)
 
 /-- **A compiled definition is read back as its source**: public dispatch of
-a definition, theorem or opaque, under an environment without call-site
-plans, from a clean state whose tables are on the wire, returns a block
+a definition, theorem or opaque, under an environment without Pass 3
+records, from a clean state whose tables are on the wire, returns a block
 that decodes exactly and that `readRecord` (over the block's blobs overlaid
 on the context's) reads as exactly one declaration: the one the kind makes
 of the record's key, the level parameters `0, …, n - 1`, and the readings

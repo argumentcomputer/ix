@@ -663,7 +663,7 @@ theorem scope_of_noCtor (source : InductiveVal) (constructors : Array Constructo
       exact ⟨key, by simp [inductiveSelf, keyed], selfKey⟩) e noCtor
 
 /-- **A compiled standalone inductive is read back as its source**: public
-dispatch of an inductive, under an environment without call-site plans,
+dispatch of an inductive, under an environment without Pass 3 records,
 from a clean state whose tables are on the wire, returns a block that decodes
 exactly, whose projections are the family's layout, and that `readRecord`
 (over the block's blobs overlaid on the context's) reads as `lowerInductive`

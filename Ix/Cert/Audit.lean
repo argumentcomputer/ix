@@ -2119,8 +2119,8 @@ every state satisfying the expression invariant (`ExpressionState.Good`:
 the universe invariants, the reference index, the declaration prefix's
 binding view and the memo's meaning at CQ2.8's exact keys), every run keeps
 it and every earlier reading, and a successful run's value reads, through
-the certified reader, as a term `Related` to the source. Without call-site
-plans the production entry `compileExpr` is that compiler
+the certified reader, as a term `Related` to the source. Without Pass 3
+records the production entry `compileExpr` is that compiler
 (`compileExpr_read`). The relation is Source mode's own reading up to keys
 and level values (`related_ingress_value`). Every lemma behind them is
 audited in `Ix.CompileCert.ReadingAudit`. -/
@@ -2366,7 +2366,7 @@ table final, after which universe compilation does not grow it
 /-! ## Component theorems: successful compilation keeps the tables on the wire
 
 A successful run of the production expression compiler, under an
-environment without call-site plans, or of any payload emitter (definition,
+environment without Pass 3 records, or of any payload emitter (definition,
 axiom, quotient, recursor, constructor, inductive, mutual members and
 classes) keeps the primary reference and universe tables representable by
 the constant wire format, from a state whose tables are on the wire and
@@ -2504,7 +2504,7 @@ fun {md} reader related sources roots =>
 Every declaration emitter (definition-like, axiom, quotient, constructor and
 the constructor loop, inductive, recursor and the rule loop), from a state
 satisfying the expression invariant for the declaration's own relation and
-under an environment without call-site plans, returns on success the
+under an environment without Pass 3 records, returns on success the
 payload its source describes, whose expression roots the in-flight reader
 reads as terms `Related` to the source's, in order
 (`SharingRoots.RootsRead`); it ends `Emission.Clean` (the invariant's state
@@ -2615,7 +2615,7 @@ fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state â
 
 The preseeded singleton block compilers (definition-like, axiom, quotient,
 recursor, standalone inductive family), from a clean state and under an
-environment without call-site plans, return on success a block whose
+environment without Pass 3 records, return on success a block whose
 payload keeps the source's skeleton (`SharingRoots.erase`: every field but
 the expression roots) and whose actual member reader (the block's blobs
 overlaid on the context's) reads the roots as terms `Related` to the
@@ -2698,7 +2698,7 @@ fun source =>
 
 /-! ## Component theorems: every public dispatch kind decodes exactly
 
-Without call-site plans the plan-head audits are no-ops, so public dispatch
+Since the call-site surgery was deleted (CQ3.5), public dispatch
 (`Ix.CompileM.compileConstantInfo`) is the kind's preseeded block compiler
 in the singleton mutual context (`EmissionDispatch.*_run`); for every kind,
 and for a mutual block, a successful compile from tables on the wire returns a
@@ -2745,7 +2745,7 @@ block that decodes exactly. Every lemma behind them is audited in
 /-! ## Component theorems: compiled singleton records are read back as their sources
 
 Public dispatch of a definition, theorem, opaque, axiom or quotient, under
-an environment without call-site plans, from a clean state whose tables
+an environment without Pass 3 records, from a clean state whose tables
 are on the wire returns a block that decodes exactly and that the certified
 reader's `readRecord` (over the block's blobs overlaid on the context's)
 reads as exactly the declaration the source describes: under the record's
@@ -3031,8 +3031,8 @@ A compiled mutual block either keeps the mutual wrapper, whose rows are a
 member projection per source member at its class index and a constructor
 projection per constructor position, or collapses a lone definition or
 recursor, every source name registered to the block itself
-(`MutualArtifact.build_cases`). Under an environment without call-site
-plans, a successful mutual block from a state whose tables are on the wire
+(`MutualArtifact.build_cases`). Under an environment without Pass 3
+records, a successful mutual block from a state whose tables are on the wire
 decodes exactly, so do its projections, and in any store holding the block
 its rows read under the certified reader as their source-indexed references
 (`MutualArtifact.mutual_correct`), given non-empty classes whose members
@@ -3300,8 +3300,8 @@ and the index holds one recursor per block and motive
 
 /-! ## Component theorems: compiled standalone inductives are read back as their sources
 
-Public dispatch of an inductive, under an environment without call-site
-plans, from a clean state whose tables are on the wire, returns a block
+Public dispatch of an inductive, under an environment without Pass 3
+records, from a clean state whose tables are on the wire, returns a block
 that decodes exactly and that the certified reader's `readRecord` (over the
 block's blobs overlaid on the context's) reads as `lowerInductive` of the
 `BlockRead` the source describes (`InductiveReading.sourceBlock`): the

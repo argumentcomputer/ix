@@ -335,7 +335,7 @@ theorem preseed_final (roots : Array (Ix.Expr × List Ix.Name)) (context : Compi
 
 /-- **Preseed, then compile**: from a state satisfying `Good`, after a
 successful preseed of the block's roots, a successful compile of an
-expression reads back as its source (without call-site plans). -/
+expression reads back as its source (without Pass 3 records). -/
 theorem preseed_compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)

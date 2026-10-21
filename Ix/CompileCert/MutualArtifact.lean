@@ -10,7 +10,7 @@ standalone record (every source name registered to the block itself);
 read under the certified reader, in any store holding the wire-valid block,
 as the source-indexed references (`build_resolves`), and
 `mutual_correct` composes it with the codec: under an environment without
-call-site plans, a successful mutual block from a state whose tables are on
+Pass 3 records, a successful mutual block from a state whose tables are on
 the wire decodes exactly, its projections decode exactly, and its rows read
 as `expectedReferences`. `mutual_sorted_correct` (R9b) is the driver's two
 steps, `sortConsts` then `compileMutualBlock`, with `mutual_correct`'s class
@@ -223,7 +223,7 @@ theorem mutual_references (sources : List (List MutConst))
   ProjectionLayout.mutual_block _ sources (payload_references sources nonempty agree positions)
 
 /-- **A compiled mutual block is a correct artifact**: under an environment
-without call-site plans, a successful compile from a state whose tables are
+without Pass 3 records, a successful compile from a state whose tables are
 on the wire returns a block that decodes exactly, projections that decode
 exactly, and rows that read, in any store holding the block, as the
 source-indexed references; given non-empty classes whose members agree in
@@ -245,7 +245,7 @@ theorem mutual_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
 /-- **A sorted and compiled mutual block is a correct artifact, with no class
 premise** (R9b): the compiler's two steps for a mutual block, `sortConsts`
 then `compileMutualBlock` (`Ix.CompileDriver`), under an environment without
-call-site plans and from a state whose tables are on the wire, return classes
+Pass 3 records and from a state whose tables are on the wire, return classes
 that partition the members and a block that decodes exactly, whose
 projections decode exactly, and whose rows read, in any store holding the
 block, as the classes' source-indexed references; given members whose member
@@ -312,7 +312,7 @@ theorem ordered_agree {classes : List (List MutConst)} (agree : MutualProjection
 artifact, with no class premise** (N-READS, N5 a): the driver's steps for a
 mutual block, `sortConsts`, `orderRecursorFamily` and `compileMutualBlock`
 (`Ix.CompileDriver.compileBlockWithAux`), under an environment without
-call-site plans and from a state whose tables are on the wire, return classes
+Pass 3 records and from a state whose tables are on the wire, return classes
 that partition the members and a block that decodes exactly, whose
 projections decode exactly, and whose rows read, in any store holding the
 block, as the classes' source-indexed references; given members whose member

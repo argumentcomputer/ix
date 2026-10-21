@@ -649,7 +649,7 @@ theorem find_run (name : Ix.Name) (context : CompileEnv × BlockEnv) (state : Bl
   ⟨_, Prod.ext rfl (EmissionDispatch.find_state name context state)⟩
 
 /-- **The family's constructors are the compile environment's**: under an
-environment without call-site plans, `collectInductiveConstructors` returns,
+environment without Pass 3 records, `collectInductiveConstructors` returns,
 after what it started with, the constructor the environment has under each
 name, in order. -/
 theorem collect_lookups (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true) :

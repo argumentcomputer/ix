@@ -138,7 +138,7 @@ section Reading
 variable (cx : Ctx md) (names : Ix.Name → CName md → Prop) (σ : Ix.Name → LevelParam) (bindings : Bindings)
 
 /-- **A compiled axiom is read back as its source**: public dispatch, under
-an environment without call-site plans, from a clean state whose tables are
+an environment without Pass 3 records, from a clean state whose tables are
 on the wire, returns a block that decodes exactly and that `readRecord` reads
 as exactly the axiom declaration of the record's key, the level parameters
 `0, …, n - 1` and a type related to the source's; given that the type does
@@ -193,7 +193,7 @@ theorem axiom_unsafe (source : AxiomVal) :
     | refine Emission.Yields.bindAny _ (fun _ => ?_)
 
 /-- **A compiled unsafe axiom is declined**, with no premise but a
-successful compile without call-site plans. -/
+successful compile without Pass 3 records. -/
 theorem axiom_declines (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (source : AxiomVal) (unsafeSource : source.isUnsafe = true) {before after : BlockState}
     {output : BlockResult} (state : State md)

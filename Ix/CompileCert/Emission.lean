@@ -25,7 +25,7 @@ quotient, recursor, constructor and inductive emitters:
   reader. The recursor's rules keep the warm memo across the rule loop;
   the inductive's constructors start and end clean (CT-15's `*Emission`).
 
-Every theorem assumes an environment without call-site plans
+Every theorem assumes an environment without Pass 3 records
 (`CompileEnv.surgeryFree`), until CQ3.5 deletes the surgery. -/
 
 namespace Ix.CompileCert.Emission
