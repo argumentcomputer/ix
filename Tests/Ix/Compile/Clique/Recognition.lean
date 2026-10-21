@@ -643,7 +643,7 @@ encoding constant, or an encoding constant's name another body, and requires
 a refusal or an ordinary constant. -/
 
 /-- Lean's `all` of `member`, and the clique's members. -/
-private def cliqueOf (env : Environment) (member : Name) : MetaM (Array IxName × Array Decl) := do
+def cliqueOf (env : Environment) (member : Name) : MetaM (Array IxName × Array Decl) := do
   let const? := constOf env
   let some ci := const? (ixName member) | throwError "missing clique member {member}"
   let all := _root_.Ix.Compile.Pass.Clique.allOf ci
@@ -671,7 +671,7 @@ under the names `m.realF`, and every name `m._f` holds a user declaration of
 the same type with another body (`DecoyKind`). Returns the overlay (the
 rewritten members, the decoys, the copies `m.realF` and `m.otherF`), the
 rewritten members, the decoys, and the two sets of copies. -/
-private def decoyInput (const? : IxName → Option IxConst) (kind : DecoyKind) (members fs : Array Decl) :
+def decoyInput (const? : IxName → Option IxConst) (kind : DecoyKind) (members fs : Array Decl) :
     Std.HashMap IxName IxConst × Array Decl × Array Decl × Array Decl × Array Decl := Id.run do
   let copy (s : String) := fs.zipWith (fun f m => { f with name := _root_.Ix.Name.mkStr m.name s }) members
   let copies := copy "realF"

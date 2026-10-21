@@ -19,6 +19,7 @@ import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.CanonClique
 import Tests.Ix.Compile.Clique.Dag
 import Tests.Ix.Compile.Clique.Recognition
+import Tests.Ix.Compile.Clique.RustParity
 import Tests.Ix.Compile.Clique.Transport
 import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
@@ -190,6 +191,11 @@ def registry : List Entry := [
   .suite "clique-dag" .primary Tests.Ix.Compile.Clique.Dag.suite,
   .runner "clique-recognition" .primary Tests.Ix.Compile.Clique.Recognition.run,
   .runner "clique-transport" .primary Tests.Ix.Compile.Clique.Transport.run,
+  -- the Rust clique library against the Lean one (test-only FFI, Rust on the
+  -- clique's closure): the bounds tables, and every field of the plan of each
+  -- fixture clique and of the adversarial inputs, under two addresses
+  -- (Tests.Ix.Compile.Clique.RustParity)
+  .runner "clique-rust-parity" .primary Tests.Ix.Compile.Clique.RustParity.run,
   -- the image generator's expression comparisons: raw-exact alpha equality, and motive
   -- matching up to canonical universes (Ix.Compile.Image)
   .suite "image-alpha-eq" .primary Tests.Ix.Compile.AlphaEq.suite,

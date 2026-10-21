@@ -36,9 +36,13 @@ pub const EQ_LEMMA_BOUND: usize = 1_000_000;
 /// nearest prefixes.
 pub const ENCODING_OWNER_DEPTH: usize = 64;
 
+/// The depth bound of the equation row's sort computation (Lean's
+/// `Row.sortOf?`): the binders and variable lookups it walks.
+pub const SORT_DEPTH: usize = 256;
+
 /// Every bound by its Lean name, in the order of Lean's `bounds`, for the
 /// Lean/Rust parity test.
-pub fn bounds() -> [(&'static str, usize); 7] {
+pub fn bounds() -> [(&'static str, usize); 8] {
   [
     ("transportFuel", TRANSPORT_FUEL),
     ("whnfFuel", WHNF_FUEL),
@@ -47,6 +51,7 @@ pub fn bounds() -> [(&'static str, usize); 7] {
     ("wfDepth", WF_DEPTH),
     ("eqLemmaBound", EQ_LEMMA_BOUND),
     ("encodingOwnerDepth", ENCODING_OWNER_DEPTH),
+    ("sortDepth", SORT_DEPTH),
   ]
 }
 
@@ -66,6 +71,7 @@ mod tests {
         ("wfDepth", 64),
         ("eqLemmaBound", 1_000_000),
         ("encodingOwnerDepth", 64),
+        ("sortDepth", 256),
       ]
     );
   }
