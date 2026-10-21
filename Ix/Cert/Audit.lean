@@ -1129,7 +1129,7 @@ fun env cenv out =>
               | none =>
                 match Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst with
                 | none =>
-                  match Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
+                  match Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
                   | none =>
                     match Ix.Cert.foreignHead env cenv.p3Heads out.fst with
                     | none =>
@@ -1148,7 +1148,7 @@ fun env cenv out =>
                     Except.error
                       (toString "compileReport: cross-SCC check failed: the name " ++ toString n.pretty ++
                         toString
-                          " resolves outside the aux map and is among the extra names, so a cross-SCC subset claimed it")
+                          " resolves outside the aux map and is among the extra names or is a constructor of an inductive among them, so a cross-SCC subset may have claimed it")
                 | some n =>
                   Except.error
                     (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
@@ -1341,7 +1341,7 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                 Ix.Cert.unseenInductive env out.fst = none ∧
                   Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst = none ∧
                     Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
-                      Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
+                      Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
                         Ix.Cert.foreignHead env cenv.p3Heads out.fst = none ∧ Ix.Cert.misnamedInput env = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
@@ -4653,25 +4653,48 @@ driver's final environment instead of its resolution and aux maps, and
 `compileUnchecked`'s, `checkReport`'s and `compileReport`'s prints,
 `compileReport_ok` (the environment instead of the two maps) and
 `checkReport_ok` (the maps read from the environment, and a tenth conjunct).
-On a consistent run the result is unchanged. -/
+On a consistent run the result is unchanged.
 
-/-- info: [cert-audit] cross-SCC claims: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+**Amended (coordinator decision, 2026-10-21 ~05:05): constructors.** The
+subset's compile also claims the constructors of its inductives, and a
+constructor resolved before the subset compiled is not one of its members, so
+not among the extra names. The check also refuses a resolved name outside the
+aux map that is a constructor (`InductiveVal.ctors`) of an input inductive
+among the extra names (`extraCtors`, `extraCtors_contains`); it takes the input
+environment. Re-frozen with it: `crossClaimed`'s, `checkReport`'s and
+`checkReport_ok`'s prints, and this section (a third root, a second runtime
+definition, the print of `extraCtors`). -/
+
+/-- info: [cert-audit] cross-SCC claims: 3 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] cross-SCC claims: 1 safe definitions, no runtime substitution -/
+info: [cert-audit] cross-SCC claims: 2 safe definitions, no runtime substitution -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
   checkRoots (tag := "cert-audit") "cross-SCC claims"
-    (#[`crossClaimed_none, `noCrossClaims].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "cross-SCC claims" #[``Ix.Cert.crossClaimed]
+    (#[`crossClaimed_none, `extraCtors_contains, `noCrossClaims].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "cross-SCC claims" #[``Ix.Cert.crossClaimed, ``Ix.Cert.extraCtors]
 
-/-- info: def Ix.Cert.crossClaimed : Std.HashMap Ix.Compile.ExactKey.ExactName Address →
-  Std.HashMap Ix.Compile.ExactKey.ExactName Address → Std.HashSet Ix.Name → Option Ix.Name :=
-fun resolved aux extras =>
+/-- info: def Ix.Cert.extraCtors : Ix.Environment → Std.HashSet Ix.Name → Std.HashSet Ix.Name :=
+fun env extras =>
+  Std.HashSet.fold
+    (fun s e =>
+      match env.consts.get? e with
+      | some (Ix.ConstantInfo.inductInfo iv) => Array.foldl (fun s c => s.insert c) s iv.ctors
+      | x => s)
+    ∅ extras -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.extraCtors
+
+/-- info: def Ix.Cert.crossClaimed : Ix.Environment →
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address →
+    Std.HashMap Ix.Compile.ExactKey.ExactName Address → Std.HashSet Ix.Name → Option Ix.Name :=
+fun env resolved aux extras =>
+  have ctors := Ix.Cert.extraCtors env extras;
   List.findSome?
     (fun x =>
       match x with
-      | (n, snd) => if (!aux.contains n && extras.contains n) = true then some n else none)
+      | (n, snd) => if (!aux.contains n && (extras.contains n || ctors.contains n)) = true then some n else none)
     resolved.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.crossClaimed

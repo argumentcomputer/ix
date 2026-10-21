@@ -688,20 +688,33 @@ with an original-form record (`unoriginalAux`). -/
   ixe.named.toList.findSome? fun (n, _) =>
     if env.consts.contains n && !resolved.contains n && !aux.contains n then some n else none
 
+/-- The constructors (`InductiveVal.ctors`) of the input inductives among
+`extras`. -/
+@[expose] def extraCtors (env : Ix.Environment) (extras : Std.HashSet Ix.Name) : Std.HashSet Ix.Name :=
+  extras.fold (init := {}) fun s e =>
+    match env.consts.get? e with
+    | some (.inductInfo iv) => iv.ctors.foldl (fun s c => s.insert c) s
+    | _ => s
+
 /-- The first name of the driver's final resolution map (`resolved`), not in
 its final aux map (`aux`), that is among its final extra names (`extras`,
-`CompileEnv.auxGenExtraNames`), if any. A promoted block's cross-SCC subset
+`CompileEnv.auxGenExtraNames`) or is a constructor of an input inductive among
+them (`extraCtors`), if any. A promoted block's cross-SCC subset
 (`AuxBlockOutcome.promoted`'s `crossScc`) is compiled under its own key,
 which is not one of the condensation's block keys, so Pass 3's hook 2
 (`prepareBlock`) does not find the block's references (`p3BlockRefs`) and walks
-its members' terms, a loop no proof unfolds; its merge adds each of its names
+its members' terms, a loop no proof unfolds. Its merge adds each of its members
 to the extra names (`applyAuxBlockOutcome`), and only a withdrawal
-(`failAuxPromotion`) removes one, from the resolution map too. With no such
-name, no resolved name outside the aux map is a cross-SCC subset's claim. -/
-@[expose] def crossClaimed (resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
+(`failAuxPromotion`) removes one, from the resolution map too; it claims its
+members and the constructors of its inductives, and a constructor resolved
+before the subset compiled is not one of its members. With no such name, no
+resolved name outside the aux map is a cross-SCC subset's claim. -/
+@[expose] def crossClaimed (env : Ix.Environment)
+    (resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
     (extras : Std.HashSet Ix.Name) : Option Ix.Name :=
+  let ctors := extraCtors env extras
   resolved.toList.findSome? fun (n, _) =>
-    if !aux.contains n && extras.contains n then some n else none
+    if !aux.contains n && (extras.contains n || ctors.contains n) then some n else none
 
 /-- The first key of the driver's final Pass 3 heads (`heads`,
 `CompileEnv.p3Heads`) that the compile's changed set
@@ -748,7 +761,8 @@ map (`cenv.auxNameToAddr`) is published with `Named.original`
 (`unoriginalAux`). **Published input names are resolved:** each published
 input name is in the resolution map or in the aux map (`unresolvedPublished`).
 **No cross-SCC claims:** no resolved name outside the aux map is among the
-extra names (`crossClaimed`). **Heads are changed:** each of the driver's final
+extra names, nor a constructor of an inductive among them (`crossClaimed`).
+**Heads are changed:** each of the driver's final
 Pass 3 heads (`cenv.p3Heads`) is in the changed set (`foreignHead`). **Input
 constants carry their names:** each input constant's own name hashes like the
 name it is stored under (`misnamedInput`). -/
@@ -770,7 +784,7 @@ name it is stored under (`misnamedInput`). -/
               | none =>
                 match unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 with
                 | none =>
-                  match crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
+                  match crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
                   | none =>
                     match foreignHead env cenv.p3Heads out.1 with
                     | none =>
@@ -784,7 +798,8 @@ name it is stored under (`misnamedInput`). -/
                         in the changed set"
                   | some n =>
                     .error s!"compileReport: cross-SCC check failed: the name {n.pretty} resolves \
-                      outside the aux map and is among the extra names, so a cross-SCC subset claimed it"
+                      outside the aux map and is among the extra names or is a constructor of an inductive \
+                      among them, so a cross-SCC subset may have claimed it"
                 | some n =>
                   .error s!"compileReport: publication check failed: the input name {n.pretty} \
                     is published but neither resolved nor in the aux map"

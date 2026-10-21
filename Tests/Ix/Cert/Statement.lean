@@ -324,12 +324,12 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   -- names
   let c0 ← IO.monoMsNow
   let cross? ← IO.lazyPure fun _ =>
-    Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames
+    Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames
   let c1 ← IO.monoMsNow
   match cross? with
   | none => lines := lines.push s!"{label}: crossClaimed finds no resolved name outside the aux map \
-      among the extra names ({resolved.size} resolved, {cenv.auxGenExtraNames.size} extra names, \
-      {c1 - c0} ms)"
+      among the extra names or the constructors of their inductives ({resolved.size} resolved, \
+      {cenv.auxGenExtraNames.size} extra names, {c1 - c0} ms)"
   | some n => errors := errors.push s!"{label}: crossClaimed finds {n.pretty} in the compile's result"
   let primary := resolved.toList.findSome? fun (n, _) => if aux.contains n then none else some n
   match primary with
@@ -346,6 +346,40 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           cross-SCC check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a resolved name outside the \
         aux map among the extra names"
+  -- a resolved constructor outside the aux map whose inductive is planted
+  -- among the extra names: refused by the cross-SCC check; and, alone in a
+  -- resolution map without its inductive, found by `crossClaimed`
+  let ctorCase := resolved.toList.findSome? fun (n, a) =>
+    if aux.contains n then none else
+    match env.consts.get? (n : Ix.Name) with
+    | some (.ctorInfo cv) =>
+      match env.consts.get? cv.induct with
+      | some (.inductInfo iv) => if iv.ctors.contains (n : Ix.Name) then some (n, a, cv.induct) else none
+      | _ => none
+    | _ => none
+  match ctorCase with
+  | none => errors := errors.push s!"{label}: no resolved constructor outside the aux map"
+  | some (n, a, ind) =>
+    let cenv' := { cenv with auxGenExtraNames := cenv.auxGenExtraNames.insert ind }
+    match Ix.Cert.checkReport env cenv' (ixe, failures) with
+    | .error e =>
+      if (e.splitOn "cross-SCC check failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses a resolved constructor outside the aux map \
+          whose inductive is planted among the extra names ({(n : Ix.Name).pretty} of {ind.pretty})"
+      else
+        errors := errors.push s!"{label}: the planted inductive is refused, but not by the cross-SCC \
+          check: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a resolved constructor outside \
+        the aux map whose inductive is among the extra names"
+    let only : Std.HashMap Ix.Compile.ExactKey.ExactName Address := ({} : Std.HashMap _ _).insert n a
+    match Ix.Cert.crossClaimed env only {} (({} : Std.HashSet Ix.Name).insert ind) with
+    | some m =>
+      if m == (n : Ix.Name) then
+        lines := lines.push s!"{label}: crossClaimed finds the constructor {m.pretty} through its \
+          inductive {ind.pretty} among the extra names"
+      else errors := errors.push s!"{label}: crossClaimed finds {m.pretty}, not the constructor"
+    | none => errors := errors.push s!"{label}: crossClaimed misses a resolved constructor whose \
+        inductive is among the extra names"
   -- the heads check (every Pass 3 head of the driver's final environment in
   -- the changed set), timed alone, then refusing, by its own message, the
   -- environment with a resolved name outside the changed set planted as a head

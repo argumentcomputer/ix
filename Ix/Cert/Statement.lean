@@ -612,7 +612,7 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       resolutionMismatch cenv.nameToAddr out.1 = none ∧ unseenInductive env out.1 = none ∧
       unoriginalAux env cenv.auxNameToAddr out.1 = none ∧
       unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
-      crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
+      crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
       foreignHead env cenv.p3Heads out.1 = none ∧ misnamedInput env = none := by
   unfold checkReport at h
   -- walk the checks in order: every failing branch is an error, so the one
@@ -967,11 +967,12 @@ theorem publishedResolved {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fa
   exact ⟨cenv, hu, unresolvedPublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2.1⟩
 
 /-- What `crossClaimed = none` says: no name of `resolved` outside `aux` is
-among `extras`. -/
-theorem crossClaimed_none {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
-    {extras : Std.HashSet Ix.Name} (h : crossClaimed resolved aux extras = none) :
+among `extras`, or among the constructors of the input inductives among them. -/
+theorem crossClaimed_none {env : Ix.Environment}
+    {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
+    {extras : Std.HashSet Ix.Name} (h : crossClaimed env resolved aux extras = none) :
     ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), resolved.get? n = some a →
-      aux.contains n = false → extras.contains n = false := by
+      aux.contains n = false → extras.contains n = false ∧ (extraCtors env extras).contains n = false := by
   intro n a hn haux
   unfold crossClaimed at h
   rw [List.findSome?_eq_none_iff] at h
@@ -980,19 +981,81 @@ theorem crossClaimed_none {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactN
     exact hn
   have hfind := h (n, a) hmem
   dsimp only at hfind
-  cases he : extras.contains n
-  · rfl
-  · simp [haux, he] at hfind
+  cases he : extras.contains n <;> cases hc : (extraCtors env extras).contains n
+  · exact ⟨rfl, rfl⟩
+  all_goals simp [haux, he, hc] at hfind
+
+theorem set_foldl_insert_mono {l : List Ix.Name} {s : Std.HashSet Ix.Name} {n : Ix.Name}
+    (h : s.contains n = true) : (l.foldl (fun s c => s.insert c) s).contains n = true := by
+  induction l generalizing s with
+  | nil => exact h
+  | cons x l ih => exact ih (by rw [Std.HashSet.contains_insert, h, Bool.or_true])
+
+theorem set_foldl_insert_mem {l : List Ix.Name} {s : Std.HashSet Ix.Name} {c n : Ix.Name}
+    (hc : c ∈ l) (hcn : (c == n) = true) : (l.foldl (fun s c => s.insert c) s).contains n = true := by
+  induction l generalizing s with
+  | nil => cases hc
+  | cons x l ih =>
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp hc with rfl | hc
+    · exact set_foldl_insert_mono (by rw [Std.HashSet.contains_insert, hcn, Bool.true_or])
+    · exact ih hc
+
+/-- A fold over a list whose steps keep `n` in the set, and whose step at
+`e` puts it there, ends with `n` in the set when `e` is in the list. -/
+theorem foldl_contains_of {f : Std.HashSet Ix.Name → Ix.Name → Std.HashSet Ix.Name} {n e : Ix.Name}
+    (mono : ∀ s x, s.contains n = true → (f s x).contains n = true)
+    (hit : ∀ s, (f s e).contains n = true) :
+    ∀ (l : List Ix.Name) (s : Std.HashSet Ix.Name), e ∈ l → (l.foldl f s).contains n = true := by
+  have keep : ∀ (l : List Ix.Name) (s : Std.HashSet Ix.Name), s.contains n = true →
+      (l.foldl f s).contains n = true := by
+    intro l
+    induction l with
+    | nil => intro s h; exact h
+    | cons x l ih => intro s h; exact ih _ (mono s x h)
+  intro l
+  induction l with
+  | nil => intro _ h; cases h
+  | cons x l ih =>
+    intro s h
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp h with rfl | h
+    · exact keep _ _ (hit s)
+    · exact ih _ h
+
+/-- **The constructors of an inductive among the extra names are in
+`extraCtors`**: for an extra name `e` stored in the input as an inductive, a
+name that hashes like one of its constructors is in `extraCtors env extras`. -/
+theorem extraCtors_contains {env : Ix.Environment} {extras : Std.HashSet Ix.Name} {e c n : Ix.Name}
+    {iv : Ix.InductiveVal} (he : extras.contains e = true) (hi : env.consts.get? e = some (.inductInfo iv))
+    (hc : c ∈ iv.ctors) (hcn : (c == n) = true) : (extraCtors env extras).contains n = true := by
+  unfold extraCtors
+  rw [Std.HashSet.fold_eq_foldl_toList]
+  obtain ⟨e', he', ee'⟩ := List.contains_iff_exists_mem_beq.mp
+    ((Std.HashSet.contains_toList (m := extras)).trans he)
+  have hi' : env.consts.get? e' = some (.inductInfo iv) := by
+    rw [← hi, Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
+    exact (Std.HashMap.getElem?_congr ee').symm
+  refine foldl_contains_of (fun s x h => ?_) (fun s => ?_) _ _ he'
+  · split
+    · rw [← Array.foldl_toList]; exact set_foldl_insert_mono h
+    · exact h
+  · rw [hi']
+    dsimp only
+    rw [← Array.foldl_toList]
+    exact set_foldl_insert_mem (Array.mem_toList_iff.mpr hc) hcn
 
 /-- **No cross-SCC claims**: in the driver's final environment, which
 `compileUnchecked` returns, no resolved name outside the aux map is among the
-extra names (`checkReport`'s tenth check), where a cross-SCC subset's merge
-puts its names. -/
+extra names, where a cross-SCC subset's merge puts its members, or among the
+constructors of the input inductives among them (`checkReport`'s tenth
+check). -/
 theorem noCrossClaims {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
       ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-        cenv.auxNameToAddr.contains n = false → cenv.auxGenExtraNames.contains n = false := by
+        cenv.auxNameToAddr.contains n = false → cenv.auxGenExtraNames.contains n = false ∧
+          (extraCtors env cenv.auxGenExtraNames).contains n = false := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
   exact ⟨cenv, hu, crossClaimed_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.1⟩
 
