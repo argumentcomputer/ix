@@ -492,6 +492,7 @@ pub fn patch_recs(
 struct Ctx<'a> {
   lean_env: &'a Arc<LeanEnv>,
   stt: &'a CompileState,
+  o11a_blocked: FxHashMap<Name, String>,
 }
 
 impl Ctx<'_> {
@@ -776,13 +777,26 @@ fn prepare_block_rewrite(
     let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
     opt_blocks.get(&key)
   };
-  let env =
-    OptEnv { ienv: ctx.lean_env, resolves: &resolves, block_of: &block_of };
+  let reject_ref = |n: &Name| {
+    ctx.o11a_blocked.get(n).cloned().or_else(|| {
+      ctx
+        .stt
+        .ungrounded
+        .contains_key(n)
+        .then(|| format!("producer {} failed compilation", n.pretty()))
+    })
+  };
+  let env = OptEnv {
+    ienv: ctx.lean_env,
+    resolves: &resolves,
+    block_of: &block_of,
+    reject_ref: &reject_ref,
+  };
   let opt = |n: &Name, us: &[Level], args: &[Expr]| {
     if !permits_optimization(ctx.lean_env, n) {
       return None;
     }
-    engine(&env, &Occ { head: n, us, args }).map(|(_, e)| e)
+    engine(&env, &Occ { head: n, us, args }).map(|(_, e, reports)| (e, reports))
   };
   let decline = |n: &Name, us: &[Level], args: &[Expr]| {
     if !permits_optimization(ctx.lean_env, n) {
@@ -1281,7 +1295,20 @@ pub fn compile_block(
   stt: &CompileState,
   kctx: &mut KernelCtx,
 ) -> Result<Address, CompileError> {
-  let ctx = Ctx { lean_env, stt };
+  let mut o11a_blocked = FxHashMap::default();
+  for n in all {
+    for (p, why) in stt.p3.o11a_blocked.get(n).into_iter().flatten() {
+      o11a_blocked
+        .entry(p.clone())
+        .and_modify(|old: &mut String| {
+          if why.as_str() < old.as_str() {
+            *old = why.clone();
+          }
+        })
+        .or_insert_with(|| why.clone());
+    }
+  }
+  let ctx = Ctx { lean_env, stt, o11a_blocked };
   if is_image_block(stt, all) {
     return compile_image_block(&ctx, lo, all, kctx);
   }

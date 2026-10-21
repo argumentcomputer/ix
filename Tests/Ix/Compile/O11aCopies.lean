@@ -26,41 +26,43 @@ def unit : IO Tests.Ix.Compile.Harness.CUnit := do
 def causes (cenv : Ix.CompileM.CompileEnv) : Array (String × String) :=
   (cenv.p3NonCanonical.toArray.map fun (n, reason) => (n.pretty, reason)).qsort (·.1 < ·.1)
 
-def result (label : String) (env : Ixon.Env) (cenv : Ix.CompileM.CompileEnv) : IO Bool := do
-  let present := copyNames.filter fun n => env.named.contains (_root_.Ix.Name.fromLeanName n)
-  IO.println s!"[o11a-copies] {label}: {present.length}/{copyNames.length} copies present, \
+def result (label : String) (names : Array Name) (env : Ixon.Env)
+    (cenv : Ix.CompileM.CompileEnv) : IO Bool := do
+  let present := names.filter fun n => env.named.contains (_root_.Ix.Name.fromLeanName n)
+  IO.println s!"[o11a-copies] {label}: {present.size}/{names.size} roots present, \
 {cenv.ungrounded.size} failures, {cenv.p3NonCanonical.size} declines"
   for (n, why) in cenv.ungrounded.toList.take 4 do
     IO.println s!"[o11a-copies] {label}: {n.pretty}: {why}"
   (← IO.getStdout).flush
-  return present.length == copyNames.length && cenv.ungrounded.isEmpty
+  return present.size == names.size && cenv.ungrounded.isEmpty
 
-def run : IO UInt32 := do
-  let u ← unit
+/-- Identical bytes/reports and every requested root under all four schedules. -/
+def compareSchedules (u : Tests.Ix.Compile.Harness.CUnit) :
+    IO (Ix.CompileM.LeanPipelineOut × Bool) := do
   let one ← Tests.Ix.Compile.Harness.compileUnit u (workers := 1)
-  let mut ok ← result "workers=1" one.env one.cenv
+  let mut ok ← result s!"{u.name} workers=1" u.seeds one.env one.cenv
   let eight ← Tests.Ix.Compile.Harness.compileUnit u (workers := 8)
-  ok := (← result "workers=8" eight.env eight.cenv) && ok
+  ok := (← result s!"{u.name} workers=8" u.seeds eight.env eight.cenv) && ok
   if one.bytes != eight.bytes || causes one.cenv != causes eight.cenv then
     IO.println "[o11a-copies] worker counts changed bytes or decline reports"
     ok := false
-  -- The pipeline retains its canonical input view and raw condensation.
-  -- Replay that same input with each extreme ready-key policy.
   for least in [true, false] do
-    let label := if least then "least ready key" else "greatest ready key"
+    let label := s!"{u.name} {if least then "least" else "greatest"} ready key"
     let folded ← IO.lazyPure fun _ =>
       Tests.Ix.Compile.ScheduleReference.sequential one.cenv.env one.blocks
         (unmaterialized := u.closure.length) (least := least)
     match folded with
-    | .error why =>
-      IO.println s!"[o11a-copies] {label}: {why}"
-      ok := false
+    | .error why => IO.println s!"[o11a-copies] {label}: {why}"; ok := false
     | .ok (env, _, cenv) =>
-      ok := (← result label env cenv) && ok
+      ok := (← result label u.seeds env cenv) && ok
       let bytes ← IO.ofExcept (Ixon.serEnv env)
       if bytes != one.bytes || causes cenv != causes one.cenv then
-        IO.println s!"[o11a-copies] {label}: bytes or decline reports differ from workers=1"
+        IO.println s!"[o11a-copies] {label}: bytes/reports differ from workers=1"
         ok := false
+  return (one, ok)
+
+def run : IO UInt32 := do
+  let (_, ok) ← compareSchedules (← unit)
   IO.println s!"[o11a-copies] {if ok then "PASS" else "FAIL"}"
   return if ok then 0 else 1
 

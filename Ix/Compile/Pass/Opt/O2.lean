@@ -116,24 +116,24 @@ the Lean recursor of the field's type applied to the occurrence's telescope,
 the field's indices and the field (under its own binders), rewritten by the
 engine (`recur`). Mirrors the deleted legacy surgery's `synthesizeExternalIh`, with
 the inner occurrence rewritten here instead of by a second surgery. -/
-def relocatedIh (recur : Occ → Option Expr) (target : Ix.AuxGen.SourceRecTarget)
+def relocatedIh (recur : Occ → Option (Expr × Array String)) (target : Ix.AuxGen.SourceRecTarget)
     (field : Expr) (all : Array Name) (us : Array Level)
-    (ps ms mins : Array Expr) : Option Expr := do
+    (ps ms mins : Array Expr) : Option (Expr × Array String) := do
   let some all0 := all[0]? | none
   let targetRec :=
     match all[target.sourcePos]? with
     | some x => Name.mkStr x "rec"
     | none => Name.mkStr all0 s!"rec_{target.sourcePos - all.size + 1}"
   let fieldApp := target.xsFvars.foldl Expr.mkApp field
-  let inner ← recur { head := targetRec, us, args := ps ++ ms ++ mins ++ target.idxArgs ++ #[fieldApp] }
-  return Ix.AuxGen.mkLambda inner target.xsDecls
+  let (inner, causes) ← recur { head := targetRec, us, args := ps ++ ms ++ mins ++ target.idxArgs ++ #[fieldApp] }
+  return (Ix.AuxGen.mkLambda inner target.xsDecls, causes)
 
 /-- The adapted minor of Lean minor `j`: `some (some w)` for the wrapper,
 `some none` when no field of its constructor is recursive into another
 component (the minor is passed as it is), `none` on failure. -/
-def adaptMinor (recur : Occ → Option Expr) (env : Ix.Environment) (rv : RecursorVal)
+def adaptMinor (recur : Occ → Option (Expr × Array String)) (env : Ix.Environment) (rv : RecursorVal)
     (inBlock : Array Bool) (us : Array Level) (ps ms mins : Array Expr) (j : Nat) :
-    Option (Option Expr) := do
+    Option (Option (Expr × Array String)) := do
   let initial := (Ix.AuxGen.FreshFVars.protectExpr {} rv.cnst.type).protectExprs (ps ++ ms ++ mins)
   let (auxSigs, supply) := (Ix.AuxGen.auxMotiveSigsWith rv us ps ms env).run initial
   let (_, ctor) ← Ix.AuxGen.sourceCtorForMinor j rv env auxSigs
@@ -158,17 +158,19 @@ def adaptMinor (recur : Occ → Option Expr) (env : Ix.Environment) (rv : Recurs
   let mut decls := fieldDecls
   let m ← mins[j]?
   let mut body := fieldFVars.foldl Expr.mkApp m
+  let mut causes := #[]
   for ((fieldIdx, target), ihIdx) in recFields.zipIdx do
     if inBlock.getD target.sourcePos false then
       decls := decls.push ihDecls[ihIdx]!
       body := Expr.mkApp body ihFVars[ihIdx]!
     else
-      let ih ← relocatedIh recur target fieldFVars[fieldIdx]! rv.all us ps ms mins
+      let (ih, reports) ← relocatedIh recur target fieldFVars[fieldIdx]! rv.all us ps ms mins
+      causes := causes ++ reports
       body := Expr.mkApp body ih
-  return some (Ix.AuxGen.mkLambda body decls)
+  return some (Ix.AuxGen.mkLambda body decls, causes)
 
-def O2.apply (recur : Occ → Option Expr) (env : OptEnv) (o : Occ) :
-    Option Expr := do
+def O2.apply (recur : Occ → Option (Expr × Array String)) (env : OptEnv) (o : Occ) :
+    Option (Expr × Array String) := do
   let (k, r) ← classify o.head
   if k != .kRec then none
   let b ← env.blockOf o.head
@@ -186,15 +188,17 @@ def O2.apply (recur : Occ → Option Expr) (env : OptEnv) (o : Occ) :
   let inBlock : Array Bool := (Array.range s.nm).map s.motiveSrc.contains
   let ms' ← pick ms s.motiveSrc
   let mut mins' : Array Expr := #[]
+  let mut causes := #[]
   for (src?, t) in s.minorSrc.zip s.minorTerms do
     let j ← match src? with
       | some j => pure j
       | none => wrappedMinorSrc s.arity s.np s.nm s.nmin t
     match ← adaptMinor recur env.ienv rv inBlock o.us ps ms mins j with
-    | some w =>
+    | some (w, reports) =>
       -- the image relocates here too (it wraps this minor)
       if src?.isSome then none
       mins' := mins'.push w
+      causes := causes ++ reports
     | none =>
       -- the image wraps this minor (it found a field recursive into another
       -- component, through the kernel's reduction) but the syntactic reading
@@ -202,7 +206,7 @@ def O2.apply (recur : Occ → Option Expr) (env : OptEnv) (o : Occ) :
       -- the baseline is the image
       if src?.isNone then none
       mins' := mins'.push (← mins[j]?)
-  return mkAppN (Expr.mkConst s.ixRec ls) (ps ++ ms' ++ mins' ++ tail ++ a.extract n a.size)
+  return (mkAppN (Expr.mkConst s.ixRec ls) (ps ++ ms' ++ mins' ++ tail ++ a.extract n a.size), causes)
 
 end Ix.Compile.Pass.Opt
 

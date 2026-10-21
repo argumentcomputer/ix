@@ -139,8 +139,8 @@ def actualO2Capture (higher collision : Bool) : Bool := Id.run do
   let pfx := if higher then "split_xs" else "split_field"
   let m := Expr.mkFVar (freshFVar (if collision then pfx else "caller") 0).1
   let recur := fun (o : Ix.Compile.Pass.Opt.Occ) =>
-    some (mkAppN (Expr.mkConst o.head o.us) o.args)
-  let some (some actual) := Ix.Compile.Pass.Opt.adaptMinor recur env rv
+    some (mkAppN (Expr.mkConst o.head o.us) o.args, #[])
+  let some (some (actual, reports)) := Ix.Compile.Pass.Opt.adaptMinor recur env rv
     #[true, false] #[] #[] #[] #[m] 0 | return false
   let target := Expr.mkConst (nm "B") #[]
   let fieldTy := if higher then Expr.mkForallE (nm "x") sort0 target .default else target
@@ -151,7 +151,7 @@ def actualO2Capture (higher collision : Bool) : Bool := Id.run do
     else mkAppN (Expr.mkConst (Name.mkStr (nm "B") "rec") #[]) #[m, Expr.mkBVar 0]
   let expected := Expr.mkLam (nm "field") fieldTy
     (mkAppN m #[Expr.mkBVar 0, call]) .default
-  return rawSame actual expected &&
+  return reports.isEmpty && rawSame actual expected &&
     (Ix.Compile.Pass.Opt.adaptMinor (fun _ => none) env rv
       #[true, false] #[] #[] #[] #[m] 0).isNone
 

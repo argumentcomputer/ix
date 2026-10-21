@@ -34,7 +34,8 @@ pub const REWRITE_FUEL: usize = 1 << 20;
 /// The definitional passes (Lean `RwConfig.opt?`, [`super::opt::engine`]):
 /// tried at every full application of a head, before its image is inlined;
 /// `None` keeps the baseline.
-pub type OptHook<'a> = dyn Fn(&Name, &[Level], &[Expr]) -> Option<Expr> + 'a;
+pub type OptHook<'a> =
+  dyn Fn(&Name, &[Level], &[Expr]) -> Option<(Expr, Vec<String>)> + 'a;
 
 /// A recorded side-condition failure at a full occurrence (Lean decline?).
 pub type DeclineHook<'a> =
@@ -156,7 +157,10 @@ impl RwState<'_> {
                 } else {
                   // the passes first (Lean `RwConfig.opt?`), else the image
                   let body = match self.opt.and_then(|opt| opt(n, us, &args2)) {
-                    Some(e) => e,
+                    Some((e, reports)) => {
+                      self.declines.extend(reports);
+                      e
+                    },
                     None => {
                       let f = self.at_levels(n, us, &x);
                       instantiate_with(&mut self.dev, &f, &args2)?
@@ -331,11 +335,11 @@ pub fn rewrite_block(
   for (n, ci) in members {
     let before = st.declines.len();
     let (ci2, changed) = st.rewrite_const(lookup, ci)?;
-    for cause in &st.declines[before..] {
-      let row = (n.clone(), cause.clone());
-      if !declines.iter().any(|(m, c)| m.same_raw(n) && c == cause) {
-        declines.push(row);
-      }
+    let mut causes = st.declines[before..].to_vec();
+    causes.sort();
+    causes.dedup();
+    if !causes.is_empty() {
+      declines.push((n.clone(), causes.join("; ")));
     }
     if changed {
       overlay.push((n.clone(), ci2));

@@ -16,9 +16,9 @@ def lookup (n : Name) : Except String (Option Expansion) :=
   } else none)
 
 def callback (site : Option Name) (_ : Name) (_ : Array Level) (_ : Array Expr) :
-    Option (Expr × Array ConstantInfo × Option String) :=
-  some (if site.isSome then (term "pj", #[], some "O7")
-        else (term "generic-no-site", #[], none))
+    Option (Expr × Array ConstantInfo × Option String × Array String) :=
+  some (if site.isSome then (term "pj", #[], some "O7", #[])
+        else (term "generic-no-site", #[], none, #[]))
 
 def genericRetry : Bool :=
   match ((rw lookup 8 false (term "head")).run {
@@ -28,7 +28,7 @@ def genericRetry : Bool :=
   | .error _ => false
 
 def ordered (site : Option Name) (n : Name) (us : Array Level) (args : Array Expr) :
-    Option (Expr × Array ConstantInfo × Option String) :=
+    Option (Expr × Array ConstantInfo × Option String × Array String) :=
   if site.isSome then callback site n us args else none
 
 def orderedNeighbour (skipPjRetry inPlace : Bool) : Bool :=

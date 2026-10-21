@@ -468,28 +468,23 @@ pub fn compile_env_with_profile(
   // `compile_block` reads, Lean `p3BlockRefs`) stay the condensation's, kept
   // aside when the input has clique or sizeOf producer edges.
   let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
-  let size_edges = crate::compile::pass3::opt::size_of_edges(
+  let producer_heads = crate::compile::pass3::opt::size_of_producers(
     scan.ind_groups.keys(),
     &const_of,
     &|n| grounded_out_refs.get(n).cloned().unwrap_or_default(),
-    &|n| grounded_out_refs.contains_key(n),
     &condensed.low_links,
   );
   let block_refs_orig = if input_cliques(&const_of, &condensed).is_empty()
-    && size_edges.is_empty()
+    && producer_heads.is_empty()
   {
     None
   } else {
     Some(condensed.block_refs.clone())
   };
   let (cliques, clique_roots) = schedule_cliques(&const_of, &mut condensed);
-  // O11a adds only producer dependencies. The block rewrite still reads
-  // the original references saved above, including inputs with no clique.
-  for (source, target) in size_edges {
-    if let Some(lo) = condensed.low_links.get(&source).cloned() {
-      condensed.block_refs.entry(lo).or_default().insert(target);
-    }
-  }
+  // Plan after clique-owner union; retain the raw SCCs and classification refs.
+  let o11a_blocked =
+    crate::compile::pass3::opt::plan_size_of(&producer_heads, &mut condensed);
 
   // Pass 3's hooks run in every whole-environment compile (no mode, no
   // switch): the state is driver-prepared.
@@ -499,6 +494,7 @@ pub fn compile_env_with_profile(
     sharing_limits,
     driver_prepared: true,
     p3: Pass3State {
+      o11a_blocked,
       cliques,
       clique_roots,
       // Pass 3's plan-table check (Lean `DriverOptions.checkPlans`)

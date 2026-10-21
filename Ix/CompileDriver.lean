@@ -1444,11 +1444,13 @@ def sizeOfCandidates (blocks : Ix.CondensedBlocks) : Array Name := Id.run do
 reads references only of its candidate inductives and their constructors;
 all lookups are the input's, so materialized and hybrid inputs agree. The
 original condensation passed to the fold/classifier remains unchanged. -/
-def prepareSizeOfScheduling (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
-    Ix.CondensedBlocks :=
+def prepareSizeOfPlan (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Ix.CondensedBlocks × Ix.Compile.Pass.Opt.ProducerRefusals :=
   let refsOf := fun n => ((env.get? n).map Ix.Compile.Canon.refsConst).getD {}
-  Ix.Compile.Pass.Opt.addSizeOfEdges (sizeOfCandidates blocks) env.get? refsOf
-    blocks.lowLinks.contains blocks
+  Ix.Compile.Pass.Opt.planSizeOf (sizeOfCandidates blocks) env.get? refsOf blocks
+
+def prepareSizeOfScheduling (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Ix.CondensedBlocks := (prepareSizeOfPlan env blocks).1
 
 /-- The aux-gen seeds the condensation holds. -/
 def auxGenSeeds (blocks : Ix.CondensedBlocks) : Array Name :=
@@ -1796,14 +1798,16 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   -- (`CompileEnv.p3BlockRefs`, `FoldState.init`) stay the condensation's.
   -- With no input clique the blocks are unchanged.
   let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
-  let sched := FoldSchedule.of (prepareSizeOfScheduling view sc.1)
+  let sizePlan := prepareSizeOfPlan view sc.1
+  let sched := FoldSchedule.of sizePlan.1
   let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
   let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
-    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans }
+    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans
+    p3O11aPlans := sizePlan.2 }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let acc ← emitRows st.acc
   let (ixe, bytes, cenv) := assembleEnv acc

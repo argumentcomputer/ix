@@ -179,7 +179,7 @@ structure RwConfig where
   references and, when the pass is proof-justified, its name (`none` for a
   definitional pass). -/
   opt? : Option Name → Name → Array Level → Array Expr →
-      Option (Expr × Array ConstantInfo × Option String) :=
+      Option (Expr × Array ConstantInfo × Option String × Array String) :=
     fun _ _ _ _ => none
   /-- The production engine tries all site-independent definitional passes
   before any proof-justified one, so after a proof-justified hit its no-site
@@ -313,9 +313,9 @@ def rw : Nat → Bool → Expr → RwM (Expr × Bool)
               -- the occurrence stays as written (not memoized)
               return (if argsChanged then mkAppN (Expr.mkConst n us) args' else e, argsChanged)
             let res ← match cfg.opt? cfg.site n us args' with
-              | some (e, cs, none) => pure (some (e, cs))
-              | some (e, cs, some pass) =>
-                if cfg.inPlace then pure (some (e, cs))
+              | some (e, cs, none, reports) => pure (some (e, cs, reports))
+              | some (e, cs, some pass, reports) =>
+                if cfg.inPlace then pure (some (e, cs, reports))
                 else do
                   -- a Lean name keeps the faithful form: the baseline here,
                   -- the rewrite in the canonical form `c._ix`
@@ -324,10 +324,11 @@ def rw : Nat → Bool → Expr → RwM (Expr × Bool)
                     pjPasses := if st.pjPasses.contains pass then st.pjPasses
                       else st.pjPasses.push pass }
                   pure (if cfg.skipPjRetry then none else
-                    (cfg.opt? none n us args').map fun (e, cs, _) => (e, cs))
+                    (cfg.opt? none n us args').map fun (e, cs, _, reports) => (e, cs, reports))
               | none => pure none
             let body ← match res with
-              | some (e, cs) =>
+              | some (e, cs, reports) =>
+                unless reports.isEmpty do modify fun st => { st with declines := st.declines ++ reports }
                 unless cs.isEmpty do
                   let canon := cs.foldl (init := (← get).canon) fun acc c =>
                     if acc.any (fun d => nameEq d.getCnst.name c.getCnst.name) then acc
@@ -473,6 +474,15 @@ structure BlockRewrite where
   pjForms : Array (Name × Array String) := #[]
   deriving Inhabited
 
+/-- Reports do not affect the overlay; retain every distinct cause in a
+deterministic order, including recursive O2 causes. -/
+def appendMemberDeclines (rows : Array (Name × String)) (n : Name) (reports : Array String) :
+    Array (Name × String) :=
+  let causes := reports.foldl
+    (fun acc c => if acc.contains c then acc else acc.push c) (#[] : Array String)
+  if causes.isEmpty then rows
+  else rows.push (n, String.intercalate "; " (causes.qsort (· < ·)).toList)
+
 /-- Rewrite the members of one block (`base(c)` for each); placeholder
 indices start at `cfg.base` and are block-unique. A member is in the overlay
 exactly when the rewrite changed one of its terms. Everything the run
@@ -487,9 +497,7 @@ def rewriteBlock (expansion? : Name → Except String (Option Expansion))
     let before := st.declines.size
     let ((ci', changed), st') ← ((rewriteConstM expansion? ci).run cfg).run st
     st := st'
-    for c in st.declines.extract before st.declines.size do
-      unless declines.any (fun (m, d) => nameEq m n && d == c) do
-        declines := declines.push (n, c)
+    declines := appendMemberDeclines declines n (st.declines.extract before st.declines.size)
     if changed then overlay := overlay.push (n, ci')
   return { overlay, sources := st.sources, declines, canon := st.canon,
            pjForms := st.pjForms }

@@ -367,38 +367,58 @@ def optBlocks (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView) :
   let inp := viewInput cenv
   views.fold (fun m k v => m.insert k (Opt.optBlockOf inp v)) {}
 
+/-- Select one static enclosing-block plan for every rewrite path, including
+clique canonical constants and recursive O2 calls. No BlockState field. -/
+def o11aBlockPlan (cenv : CompileEnv) (all : Ix.Set Name) : Std.HashMap ExactName String :=
+  all.toArray.foldl (fun acc n =>
+    (cenv.p3O11aPlans.getD n {}).fold (fun acc p why =>
+      acc.insert p (if why < acc.getD p why then why else acc.getD p why)) acc) {}
+
+/-- Edges guarantee this producer's outcome is terminal before the caller.
+A recorded failure is a deterministic decline, never a readiness decision. -/
+def rejectO11aRef (cenv : CompileEnv) (blocked : Std.HashMap ExactName String)
+    (n : Name) : Option String :=
+  (blocked.get? n).orElse fun _ =>
+    if cenv.ungrounded.contains n then some s!"producer {n.pretty} failed compilation" else none
+
 /-- The passes' hook (`RwConfig.opt?`): the engine over the blocks of a
 block's referenced heads (heads of other blocks keep their baseline). A
 source-defined `casesOn`/`recOn` wrapper whose body is not the standard one
 declines (`SourceIdentity.permitsOptimization`): its actual expansion stays
 the baseline. A definitional pass references no canonical constant and is
 not proof-justified. -/
-def optLookup (cenv : CompileEnv) (blocks : Std.HashMap ExactName Opt.OptBlock) :
+def optLookup (cenv : CompileEnv) (blocks : Std.HashMap ExactName Opt.OptBlock)
+    (blocked : Std.HashMap ExactName String) :
     Option Name → Name → Array Ix.Level → Array Expr →
-      Option (Expr × Array ConstantInfo × Option String) :=
+      Option (Expr × Array ConstantInfo × Option String × Array String) :=
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
-      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
+      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
+      rejectRef? := rejectO11aRef cenv blocked }
   fun site n us args =>
     if !Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env n then none
-    else (Opt.engine env { head := n, us, args, site }).map fun (_, e) => (e, #[], none)
+    else (Opt.engine env { head := n, us, args, site }).map fun (_, e, reports) => (e, #[], none, reports)
 
 /-- O11a's recorded side-condition failures over the same blocks as the
 passes. A pattern miss records nothing. -/
-def declineLookup (cenv : CompileEnv) (blocks : Std.HashMap ExactName Opt.OptBlock) :
+def declineLookup (cenv : CompileEnv) (blocks : Std.HashMap ExactName Opt.OptBlock)
+    (blocked : Std.HashMap ExactName String) :
     Name → Array Ix.Level → Array Expr → Option String :=
   let env : Opt.OptEnv :=
     { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
-      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
+      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get?
+      rejectRef? := rejectO11aRef cenv blocked }
   fun n us args =>
     if !Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env n then none
     else Opt.O11a.declineCause? env { head := n, us, args }
 
 /-- The block's definitional passes and recorded declines. The views' pass
 data is computed once and shared by both hooks. No proof-justified pass. -/
-def passConfig (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView) : RwConfig :=
+def passConfig (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView)
+    (sourceAll : Ix.Set Name) : RwConfig :=
   let blocks := optBlocks cenv views
-  { opt? := optLookup cenv blocks, decline? := declineLookup cenv blocks }
+  let blocked := o11aBlockPlan cenv sourceAll
+  { opt? := optLookup cenv blocks blocked, decline? := declineLookup cenv blocks blocked }
 
 /-- `expansionLookup` for a rewrite with the passes: the image memo for a
 recursor's image (built, never rewritten, the same under every
@@ -460,7 +480,7 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   if used.isEmpty then return (cenv, {})
   let fail := pass3Failure cenv (used.filterMap fun h => cenv.p3Heads.get? h)
   let views ← (viewsOf cenv used).mapError fail
-  let rwr ← (rewriteBlock (passExpansionLookup cenv views) members (passConfig cenv views)).mapError fail
+  let rwr ← (rewriteBlock (passExpansionLookup cenv views) members (passConfig cenv views all)).mapError fail
   let published : Published := { views := newMemoViews cenv views, declines := rwr.declines }
   -- only bare or partial occurrences: nothing rewritten
   if rwr.overlay.isEmpty then return (cenv, published)

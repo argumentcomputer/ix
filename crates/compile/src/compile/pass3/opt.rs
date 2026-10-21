@@ -282,6 +282,8 @@ pub struct OptEnv<'a> {
   pub resolves: &'a dyn Fn(&Name) -> bool,
   /// The block of a Lean image-kind head, when it is a changed block's.
   pub block_of: &'a dyn Fn(&Name) -> Option<&'a OptBlock>,
+  /// Static block eligibility or a scheduled producer's terminal failure.
+  pub reject_ref: &'a dyn Fn(&Name) -> Option<String>,
 }
 
 impl OptEnv<'_> {
@@ -402,7 +404,8 @@ fn wrapped_minor_src(
 }
 
 /// The occurrence passes' recursion (`engineN`'s `recur`).
-type Recur<'r> = &'r dyn Fn(&Occ<'_>) -> Option<Expr>;
+pub type OptTerm = (Expr, Vec<String>);
+type Recur<'r> = &'r dyn Fn(&Occ<'_>) -> Option<OptTerm>;
 
 /// `Opt.relocatedIh`.
 #[allow(clippy::too_many_arguments)]
@@ -415,7 +418,7 @@ fn relocated_ih(
   ps: &[Expr],
   ms: &[Expr],
   mins: &[Expr],
-) -> Option<Expr> {
+) -> Option<OptTerm> {
   let all0 = all.first()?;
   let target_rec = match all.get(target.source_pos) {
     Some(x) => mk_str(x, "rec"),
@@ -425,8 +428,8 @@ fn relocated_ih(
     target.xs_fvars.iter().fold(field.clone(), |f, x| Expr::app(f, x.clone()));
   let mut args = cat(&[ps, ms, mins, &target.idx_args]);
   args.push(field_app);
-  let inner = recur(&Occ { head: &target_rec, us, args: &args })?;
-  Some(mk_lambda(inner, &target.xs_decls))
+  let (inner, causes) = recur(&Occ { head: &target_rec, us, args: &args })?;
+  Some((mk_lambda(inner, &target.xs_decls), causes))
 }
 
 /// The recursive fields of a minor's constructor: `(field index, target)`.
@@ -468,7 +471,7 @@ fn adapt_minor(
   ms: &[Expr],
   mins: &[Expr],
   j: usize,
-) -> Option<Option<Expr>> {
+) -> Option<Option<OptTerm>> {
   let mut supply = FreshFVars::default();
   supply.protect_expr(&rv.cnst.typ);
   supply.protect_exprs(ps);
@@ -499,12 +502,13 @@ fn adapt_minor(
   let m = mins.get(j)?;
   let mut body =
     field_fvars.iter().fold(m.clone(), |f, x| Expr::app(f, x.clone()));
+  let mut causes = Vec::new();
   for (ih_idx, (field_idx, target)) in rec_fields.iter().enumerate() {
     if inb(target.source_pos) {
       decls.push(ih_decls[ih_idx].clone());
       body = Expr::app(body, ih_fvars[ih_idx].clone());
     } else {
-      let ih = relocated_ih(
+      let (ih, reports) = relocated_ih(
         recur,
         target,
         &field_fvars[*field_idx],
@@ -514,14 +518,15 @@ fn adapt_minor(
         ms,
         mins,
       )?;
+      causes.extend(reports);
       body = Expr::app(body, ih);
     }
   }
-  Some(Some(mk_lambda(body, &decls)))
+  Some(Some((mk_lambda(body, &decls), causes)))
 }
 
 /// `O2.apply`.
-fn o2(recur: Recur<'_>, env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
+fn o2(recur: Recur<'_>, env: &OptEnv<'_>, o: &Occ<'_>) -> Option<OptTerm> {
   let (k, r) = classify(o.head)?;
   if k != AuxKind::Rec {
     return None;
@@ -546,17 +551,19 @@ fn o2(recur: Recur<'_>, env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
     (0..s.nm).map(|i| s.motive_src.contains(&i)).collect();
   let ms2 = pick(ms, &s.motive_src)?;
   let mut mins2 = Vec::new();
+  let mut causes = Vec::new();
   for (src, t) in s.minor_src.iter().zip(s.minor_terms.iter()) {
     let j = match src {
       Some(j) => *j,
       None => wrapped_minor_src(s.arity(), s.np, s.nm, s.nmin, t)?,
     };
     match adapt_minor(recur, env.ienv, &rv, &in_block, o.us, ps, ms, mins, j)? {
-      Some(w) => {
+      Some((w, reports)) => {
         if src.is_some() {
           return None;
         }
         mins2.push(w);
+        causes.extend(reports);
       },
       None => {
         // the image wraps this minor but the syntactic reading finds no
@@ -569,9 +576,9 @@ fn o2(recur: Recur<'_>, env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
       },
     }
   }
-  Some(mk_app_n(
-    mk_const(&s.ix_rec, ls),
-    &cat(&[ps, &ms2, &mins2, tail, &a[n..]]),
+  Some((
+    mk_app_n(mk_const(&s.ix_rec, ls), &cat(&[ps, &ms2, &mins2, tail, &a[n..]])),
+    causes,
   ))
 }
 
@@ -1055,7 +1062,14 @@ fn o11a_with(
         any = true;
         mins2.push(w);
       },
-      None => mins2.push(pattern(mins.get(j).cloned())?),
+      None => {
+        need(src.is_some(), || {
+          format!(
+            "minor {j} needs adaptation but its recursive fields cannot be read"
+          )
+        })?;
+        mins2.push(pattern(mins.get(j).cloned())?);
+      },
     }
   }
   if !any {
@@ -1067,9 +1081,34 @@ fn o11a_with(
   ))
 }
 
-/// `O11a.apply`.
+/// Actual producer rejections, independent of expression-set iteration.
+fn o11a_reference_cause(env: &OptEnv<'_>, e: &Expr) -> Option<String> {
+  let projection = n_size_of();
+  let mut causes = Vec::new();
+  for n in used_constants(e) {
+    if !n.same_raw(&projection)
+      && !matches!(as_str(&n), Some((_, "_sizeOf_inst")))
+    {
+      continue;
+    }
+    let cause = if env.const_of(&n).is_none() {
+      Some(format!("producer {} is absent from the input", n.pretty()))
+    } else {
+      (env.reject_ref)(&n)
+    };
+    if let Some(cause) = cause {
+      causes.push(cause);
+    }
+  }
+  causes.sort();
+  causes.dedup();
+  (!causes.is_empty()).then(|| causes.join("; "))
+}
+
+/// `O11a.apply`: readiness never determines applicability.
 pub fn o11a(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
-  o11a_with(env, &|t, tel| size_of_instance(env, t, tel), o).ok()
+  let e = o11a_with(env, &|t, tel| size_of_instance(env, t, tel), o).ok()?;
+  o11a_reference_cause(env, &e).is_none().then_some(e)
 }
 
 /// `O11a.isSizeOfOccurrence`.
@@ -1109,7 +1148,12 @@ fn is_size_of_occurrence(
 /// `O11a.declineCause?`: the recorded decline at an occurrence that is the
 /// recursion of Lean's `sizeOf` family of a split block.
 pub fn o11a_decline_cause(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<String> {
-  let cause = match o11a_with(env, &|t, tel| size_of_instance(env, t, tel), o) {
+  let verdict = o11a_with(env, &|t, tel| size_of_instance(env, t, tel), o);
+  if let Ok(e) = &verdict {
+    return o11a_reference_cause(env, e).map(|cause| format!(
+      "O11a declined: {cause}; the occurrence of {} uses the faithful fallback", o.head.pretty()));
+  }
+  let cause = match verdict {
     Ok(_) | Err(None) => return None,
     Err(Some(c)) => c,
   };
@@ -1120,10 +1164,8 @@ pub fn o11a_decline_cause(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<String> {
   if !is_size_of_occurrence(env, &rv, o, s.np + s.nm + s.nmin) {
     return None;
   }
-  let tail = format!(
-    "the occurrence of {} keeps O2's relocated-recursor form",
-    o.head.pretty()
-  );
+  let tail =
+    format!("the occurrence of {} uses the faithful fallback", o.head.pretty());
   match o11a_with(
     env,
     &|t, tel| size_of_instance_assuming_absent(env, t, tel),
@@ -1152,115 +1194,94 @@ pub fn o11a_decline_cause(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// O11a's scheduling edges (`O11a.sizeOfEdges`)
+// Static producers, including recursive O2 calls (Opt.sizeOfProducers).
 // ---------------------------------------------------------------------------
 
-/// The scheduling edges `(source, target)` of O11a: for every split Lean
-/// inductive block, `all0._sizeOf_N -> T._sizeOf_inst` for the cross targets
-/// `T` of the component its recursion is over (every component's for a
-/// nested auxiliary's), and `all0._sizeOf_N -> SizeOf.sizeOf`, when present
-/// in the input and not inside one component (`O11a.sizeOfEdges`).
-pub fn size_of_edges<'n>(
+pub fn size_of_producers<'n>(
   candidates: impl Iterator<Item = &'n Name>,
   const_of: &dyn Fn(&Name) -> Option<ConstantInfo>,
   refs_of: &dyn Fn(&Name) -> FxHashSet<Name>,
-  has_name: &dyn Fn(&Name) -> bool,
   low_links: &FxHashMap<Name, Name>,
-) -> Vec<(Name, Name)> {
-  let n_size_of = n_size_of();
+) -> FxHashMap<Name, Vec<Name>> {
   let comp = |m: &Name| low_links.get(m).cloned();
-  let mut out = Vec::new();
-  for n in candidates {
-    if !has_name(n) {
+  let mut out = FxHashMap::default();
+  let mut seen = FxHashSet::default();
+  for candidate in candidates {
+    let Some(ConstantInfo::InductInfo(member)) = const_of(candidate) else {
+      continue;
+    };
+    let Some(n) = member.all.first() else { continue };
+    if !seen.insert(n.clone()) {
       continue;
     }
     let Some(ConstantInfo::InductInfo(v)) = const_of(n) else { continue };
-    if v.all.first() != Some(n) || v.all.len() < 2 {
-      continue;
-    }
-    if v.all.iter().all(|m| comp(m) == comp(n)) {
+    if v.all.len() < 2 || v.all.iter().all(|m| comp(m) == comp(n)) {
       continue;
     }
     let members: FxHashSet<&Name> = v.all.iter().collect();
     let mut cross: FxHashMap<Option<Name>, Vec<Name>> = FxHashMap::default();
-    let mut all_targets: Vec<Name> = Vec::new();
+    let mut all_targets = FxHashSet::default();
     for y in &v.all {
       let Some(ConstantInfo::InductInfo(yv)) = const_of(y) else { continue };
       for c in std::iter::once(y).chain(yv.ctors.iter()) {
-        let rs = refs_of(c);
-        // the reference sets are hash sets: iterate in a fixed order so the
-        // edge list is deterministic (only its set matters to the scheduler)
-        let mut rs: Vec<&Name> = rs.iter().collect();
-        rs.sort_by_key(|x| x.pretty());
-        for r in rs {
-          if members.contains(r) && comp(r) != comp(y) {
+        for r in refs_of(c) {
+          if members.contains(&r) && comp(&r) != comp(y) {
             let ts = cross.entry(comp(y)).or_default();
-            if !ts.contains(r) {
+            if !ts.contains(&r) {
               ts.push(r.clone());
             }
-            if !all_targets.contains(r) {
-              all_targets.push(r.clone());
-            }
+            all_targets.insert(r);
           }
         }
       }
     }
-    if all_targets.is_empty() {
-      continue;
-    }
-    for i in 1..v.all.len() + nat_usize(&v.num_nested) + 1 {
-      let d = mk_str(n, &format!("_sizeOf_{i}"));
-      if !has_name(&d) {
+    let producers = |targets: Vec<Name>| {
+      std::iter::once(n_size_of())
+        .chain(targets.iter().map(|t| mk_str(t, "_sizeOf_inst")))
+        .collect()
+    };
+    for y in &v.all {
+      let mut targets = cross.get(&comp(y)).cloned().unwrap_or_default();
+      if targets.is_empty() {
         continue;
       }
-      let Some(ConstantInfo::DefnInfo(dv)) = const_of(&d) else { continue };
-      let (h, _) = get_app_fn_args(&lam_body(&dv.value, 64));
-      let ExprData::Const(r, _, _) = h.as_data() else { continue };
-      let targets: Vec<Name> = match as_str(r) {
-        Some((x, "rec")) => {
-          if members.contains(x) {
-            cross.get(&comp(x)).cloned().unwrap_or_default()
-          } else {
-            continue;
+      let mut visited: FxHashSet<Name> = targets.iter().cloned().collect();
+      for i in 0..v.all.len() {
+        let Some(t) = targets.get(i).cloned() else { break };
+        for next in cross.get(&comp(&t)).into_iter().flatten() {
+          if visited.insert(next.clone()) {
+            targets.push(next.clone());
           }
-        },
-        Some((_, s)) if s.starts_with("rec_") => all_targets.clone(),
-        _ => continue,
-      };
-      if has_name(&n_size_of) && comp(&d) != comp(&n_size_of) {
-        out.push((d.clone(), n_size_of.clone()));
-      }
-      for t in targets {
-        let inst = mk_str(&t, "_sizeOf_inst");
-        if has_name(&inst) && comp(&d) != comp(&inst) {
-          out.push((d.clone(), inst));
         }
+      }
+      out.insert(mk_str(y, "rec"), producers(targets));
+    }
+    if !all_targets.is_empty() {
+      for i in 1..nat_usize(&v.num_nested) + 1 {
+        out.insert(
+          mk_str(n, &format!("rec_{i}")),
+          producers(all_targets.iter().cloned().collect()),
+        );
       }
     }
   }
   out
 }
 
-/// Add O11a's scheduling edges to the condensation's block dependencies
-/// (`O11a.addSizeOfEdges`): the components and representatives do not
-/// change, only the ready order of the scheduler.
-pub fn add_size_of_edges<'n>(
-  candidates: impl Iterator<Item = &'n Name>,
-  const_of: &dyn Fn(&Name) -> Option<ConstantInfo>,
-  refs_of: &dyn Fn(&Name) -> FxHashSet<Name>,
-  has_name: &dyn Fn(&Name) -> bool,
+pub fn plan_size_of(
+  heads: &FxHashMap<Name, Vec<Name>>,
   blocks: &mut crate::condense::CondensedBlocks,
-) -> usize {
-  let edges =
-    size_of_edges(candidates, const_of, refs_of, has_name, &blocks.low_links);
-  let mut added = 0;
-  for (d, t) in edges {
-    let Some(lo) = blocks.low_links.get(&d).cloned() else { continue };
-    if blocks.block_refs.entry(lo).or_default().insert(t) {
-      added += 1;
-    }
-  }
-  added
+) -> super::producer::Refusals {
+  let seeds = blocks
+    .block_refs
+    .iter()
+    .flat_map(|(lo, refs)| {
+      refs.iter().flat_map(|r| {
+        heads.get(r).into_iter().flatten().map(|p| (lo.clone(), p.clone()))
+      })
+    })
+    .collect();
+  super::producer::plan(blocks, seeds)
 }
 
 // ---------------------------------------------------------------------------
@@ -1274,21 +1295,33 @@ fn engine_n(
   fuel: usize,
   env: &OptEnv<'_>,
   o: &Occ<'_>,
-) -> Option<(&'static str, Expr)> {
+) -> Option<(&'static str, Expr, Vec<String>)> {
   if fuel == 0 {
     return None;
   }
-  let recur = |o2: &Occ<'_>| engine_n(fuel - 1, env, o2).map(|(_, e)| e);
-  o11a(env, o)
-    .map(|e| ("O11a", e))
-    .or_else(|| o2(&recur, env, o).map(|e| ("O2", e)))
-    .or_else(|| o3(env, o).map(|e| ("O3", e)))
-    .or_else(|| o4(env, o).map(|e| ("O4", e)))
-    .or_else(|| o6(env, o).map(|e| ("O6", e)))
+  if let Some(e) = o11a(env, o) {
+    return Some(("O11a", e, Vec::new()));
+  }
+  let causes: Vec<String> = o11a_decline_cause(env, o).into_iter().collect();
+  let recur = |o2: &Occ<'_>| {
+    engine_n(fuel - 1, env, o2).map(|(_, e, reports)| (e, reports))
+  };
+  o2(&recur, env, o)
+    .map(|(e, reports)| {
+      let mut reports_out = causes.clone();
+      reports_out.extend(reports);
+      ("O2", e, reports_out)
+    })
+    .or_else(|| o3(env, o).map(|e| ("O3", e, causes.clone())))
+    .or_else(|| o4(env, o).map(|e| ("O4", e, causes.clone())))
+    .or_else(|| o6(env, o).map(|e| ("O6", e, causes)))
 }
 
-/// The engine at one occurrence (`Engine.engine`, bound 64).
-pub fn engine(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<(&'static str, Expr)> {
+/// Only effects of the selected rewrite escape; abandoned attempts discard them.
+pub fn engine(
+  env: &OptEnv<'_>,
+  o: &Occ<'_>,
+) -> Option<(&'static str, Expr, Vec<String>)> {
   engine_n(64, env, o)
 }
 

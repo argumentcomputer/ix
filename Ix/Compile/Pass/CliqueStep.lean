@@ -78,7 +78,7 @@ rewritten constant (itself when nothing changed), its decompile sources
 that records a decline returns it in Published (CQ5.3a), so no effect is
 lost. A pass-created canonical constant or proof-justified form is still an
 error: those records are not carried by this path. -/
-def rewriteCliqueCanon (cenv : CompileEnv) (c : Name) (ci : ConstantInfo) :
+def rewriteCliqueCanon (cenv : CompileEnv) (sourceAll : Set Name) (c : Name) (ci : ConstantInfo) :
     Except CompileError (ConstantInfo × Std.HashMap Nat Expr × Published) := do
   if cenv.p3Heads.isEmpty then return (ci, {}, {})
   let used := headsIn cenv.p3Heads ci
@@ -86,7 +86,7 @@ def rewriteCliqueCanon (cenv : CompileEnv) (c : Name) (ci : ConstantInfo) :
   let fail := pass3Failure cenv (used.filterMap fun h => cenv.p3Heads.get? h)
   let views ← (viewsOf cenv used).mapError fail
   let rwr ← (rewriteBlock (passExpansionLookup cenv views) #[(c, ci)]
-    (passConfig cenv views)).mapError fail
+    (passConfig cenv views sourceAll)).mapError fail
   -- Declines travel with this result and are published on block success.
   -- The default image memo still records nothing; passExpansionLookup does
   -- not reuse a definitional head rewritten under another configuration.
@@ -125,12 +125,12 @@ auxiliary names (`lookupConstAddr`), and the driver merges them like the aux
 tail's constants (`mergeCompiledBlock`; reserved names are insert-once,
 `checkBlockClaims`). Each constant resolves the earlier ones through the
 same map. -/
-def compileCliqueCanon (cenv : CompileEnv) (canon : Array (Name × ConstantInfo))
+def compileCliqueCanon (cenv : CompileEnv) (sourceAll : Set Name) (canon : Array (Name × ConstantInfo))
     (st : BlockState) : Except CompileError (BlockState × Published) := do
   let mut st := st
   let mut published : Published := {}
   for (c, ci) in canon do
-    let (ci', sources, pub) ← (rewriteCliqueCanon cenv c ci).mapError (cliqueCanonError c)
+    let (ci', sources, pub) ← (rewriteCliqueCanon cenv sourceAll c ci).mapError (cliqueCanonError c)
     published := published ++ pub
     let blockEnv : BlockEnv :=
       { all := ({} : Set Name).insert c, current := c, mutCtx := default, univCtx := [] }
@@ -159,7 +159,7 @@ def cliqueStep (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   let init : BlockState :=
     { p3CliquePlans := prep.fresh, p3CliqueRows := prep.rows, p3PlanReused := prep.reused }
   if prep.overlay.isEmpty then return (cenv, init, {})
-  let (init, published) ← compileCliqueCanon cenv prep.canon init
+  let (init, published) ← compileCliqueCanon cenv all prep.canon init
   let overlay : Std.HashMap Name ConstantInfo :=
     prep.overlay.foldl (fun m (n, ci) => m.insert n ci) {}
   let sources : Std.HashMap Nat Expr :=

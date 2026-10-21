@@ -111,6 +111,9 @@ structure CompileEnv where
       and the constant whose rewrite recorded it. Report-only; merged from
       successful block publications and erased when a source name is withdrawn. -/
   p3NonCanonical : Std.HashMap Ix.Compile.ExactKey.ExactName String := {}
+  /-- Static producer-cycle/groundedness plan, by enclosing source member. -/
+  p3O11aPlans : Std.HashMap Ix.Compile.ExactKey.ExactName
+    (Std.HashMap Ix.Compile.ExactKey.ExactName String) := {}
   /-- Pass 3: each image-kind auxiliary of a changed Lean block that source
       recognition admits (`Ix.Compile.Pass.sourceImageHeads`) ↦ the block's
       key, Lean's first member. Insert-once, merged from the blocks that

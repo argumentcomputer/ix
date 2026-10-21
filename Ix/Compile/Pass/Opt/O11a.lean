@@ -8,10 +8,10 @@ references the input constant does not have; the scheduler orders blocks by
 the input's reference graph, so without help `_sizeOf_N` could compile
 before the instance (measured by A4: `missingConstant …IneqCnstr._sizeOf_inst`),
 and gating the pass on "already compiled" would make the bytes depend on the
-schedule (§6). `sizeOfEdges` below adds exactly those references to the
+schedule (§6). `planSizeOf` below adds acyclic producer references to the
 scheduler's input (the condensation's block dependencies, `addSizeOfEdges`,
-called by the Lean pipeline after `CondenseM.run`), so the instance is
-always compiled first and O11a runs in `Engine.passes`, before O2.
+called by the Lean pipeline after `CondenseM.run`), so an available producer is
+compiled first; a blocked producer records a decline. O11a runs in `Engine.passes`, before O2.
 
 ## Contract
 Input: an occurrence `r.{us} ps ms mins is t e` of a Lean recursor `r` of a
@@ -85,7 +85,7 @@ recorded.
 obligations of a pass whose output adds a reference):
 1. *visible*: `T._sizeOf_inst` is an auxiliary of the same Lean declaration
    as `all₀._sizeOf_N` (one logical unit, §6.3's table of allowed cases);
-2. *declared*: `sizeOfEdges` gives the scheduler the edge
+2. *declared*: `planSizeOf` gives the scheduler the edge
    `all₀._sizeOf_N → T._sizeOf_inst` when the instance is in the input, and
    every closure producer carries it: the selected producers carry the whole
    unit of every block they reach (`Lean.unitMembers`, M1-d) and, before
@@ -121,6 +121,7 @@ public import Ix.Compile.Pass.Opt.O2
 public import Ix.Compile.Pass.Opt.O5
 public import Ix.Compile.Image.Expr
 public import Ix.CondenseM
+public import Ix.Compile.Pass.Opt.ProducerPlan
 public section
 
 namespace Ix.Compile.Pass.Opt
@@ -300,7 +301,9 @@ def O11a.applyWithE (env : OptEnv) (inst? : Name → Array Expr → O11aM (Name 
       need src?.isNone s!"minor {j} has a cross field but O2 passes it unadapted"
       any := true
       mins' := mins'.push w
-    | none => mins' := mins'.push (← pattern mins[j]?)
+    | none =>
+      need src?.isSome s!"minor {j} needs adaptation but its recursive fields cannot be read"
+      mins' := mins'.push (← pattern mins[j]?)
   -- no cross field into another component: O2's output is already the
   -- separately declared component's term
   if !any then throw none
@@ -310,10 +313,28 @@ def O11a.applyWith (env : OptEnv) (inst? : Name → Array Expr → O11aM (Name �
     (o : Occ) : Option Expr :=
   (O11a.applyWithE env inst? o).toOption
 
+/-- All actual producer failures, sorted and deduplicated independently of
+expression-set traversal. This also covers copied values outside the input's
+numbered sizeOf family, so it is not filtered by isSizeOfOccurrence. -/
+def O11a.referenceCause? (env : OptEnv) (e : Expr) : Option String := Id.run do
+  let mut causes : Array String := #[]
+  for n in Ix.Compile.Image.usedConstants e do
+    if n != nSizeOf && !(match n with | .str _ "_sizeOf_inst" _ => true | _ => false) then
+      continue
+    let cause := if (env.const? n).isNone then
+        some s!"producer {n.pretty} is absent from the input"
+      else env.rejectRef? n
+    if let some why := cause then
+      unless causes.contains why do causes := causes.push why
+  return if causes.isEmpty then none
+    else some (String.intercalate "; " (causes.qsort (· < ·)).toList)
+
 /-- O11a at an occurrence: the instances are read from the input
 (`sizeOfInstanceE`). -/
 def O11a.apply (env : OptEnv) (o : Occ) : Option Expr :=
-  O11a.applyWith env (sizeOfInstanceE env) o
+  do
+    let e ← O11a.applyWith env (sizeOfInstanceE env) o
+    if (O11a.referenceCause? env e).isSome then none else some e
 
 /-- The instance lookup of `declineCause?`: as `sizeOfInstanceE`, except that
 an instance `T._sizeOf_inst` **absent from the input** (for a cross target
@@ -370,8 +391,7 @@ constructor and minor type of minor `j` cannot be read", which is the
 split-minor helpers `sourceCtorForMinor`/`sourceMinorType`/`peelBinders`
 failing to place minor `j`, as on a split block with an evaporated nested
 auxiliary). One occurrence gives one cause; a constant with several
-recorded occurrences keeps the last distinct cause in traversal order
-(the block collector deduplicates identical member/cause pairs) in the compile's map
+recorded occurrences keeps every distinct cause in sorted order in the compile's map
 (`CompileEnv.p3NonCanonical`). A failing
 side condition takes precedence over absence (O11a would decline with the
 instances present too).
@@ -380,6 +400,9 @@ instances present too).
 minor has a cross field (O2's output is already canonical), and when the
 occurrence is not the `sizeOf` recursion. -/
 def O11a.declineCause? (env : OptEnv) (o : Occ) : Option String := do
+  if let .ok e := O11a.applyWithE env (sizeOfInstanceE env) o then
+    let cause ← O11a.referenceCause? env e
+    return s!"O11a declined: {cause}; the occurrence of {o.head.pretty} uses the faithful fallback"
   let cause ← match O11a.applyWithE env (sizeOfInstanceE env) o with
     | .ok _ | .error none => none
     | .error (some c) => some c
@@ -388,7 +411,7 @@ def O11a.declineCause? (env : OptEnv) (o : Occ) : Option String := do
   let s ← b.shapes.get? r
   let some (.recInfo rv) := env.const? r | none
   if !isSizeOfOccurrence env rv o (s.np + s.nm + s.nmin) then none
-  let tail := s!"the occurrence of {o.head.pretty} keeps O2's relocated-recursor form"
+  let tail := s!"the occurrence of {o.head.pretty} uses the faithful fallback"
   match O11a.applyWithE env (sizeOfInstanceAssumingAbsent env) o with
   | .ok e =>
     let missing := (Ix.Compile.Image.usedConstants e).filter fun n =>
@@ -402,78 +425,39 @@ def O11a.declineCause? (env : OptEnv) (o : Occ) : Option String := do
   | .error (some c) => return s!"O11a declined: {c}; {tail}"
   | .error none => return s!"O11a declined: {cause}; {tail}"
 
-/-! ## The scheduling edges O11a's rewrite needs
+/-! ## Static producer dependencies
 
-O11a's output for Lean's `all₀._sizeOf_N` of a split block references
-`T._sizeOf_inst` for a cross field into another component `T`, and
-`SizeOf.sizeOf`. The scheduler orders blocks by the input's references
-(`CondensedBlocks.blockRefs`), so these references are added to it.
+Every potentially matching recursor head requires SizeOf.sizeOf and the size
+instances of all transitively lower components. The latter includes X→Y→Z
+when Y's instance is absent: O2 can still recursively apply O11a at Y and
+introduce Z's instance. Candidate families are discovered from sizeOf names,
+normalizing any member to all[0]; only inductives and constructors are read.
 
-**Which edges.** For every Lean inductive block `all` (keyed by `all₀`, at
-least two members) whose members the condensation puts in more than one
-component (a split block), the *cross targets of a component* `C` are the
-members `T` of another component that a member `Y ∈ C` references (in `Y`'s
-type or a constructor type: a cross field into `T`). For every
-`all₀._sizeOf_N` of the input whose value is `λ … . r …`:
-- `r = X.rec` for a member `X`: add `all₀._sizeOf_N → T._sizeOf_inst` for
-  every cross target `T` of `X`'s component (the fields O11a can rewrite);
-- `r = all₀.rec_j` (a nested auxiliary's `sizeOf`): the same for the cross
-  targets of every component (a superset, which only delays the schedule);
-and `all₀._sizeOf_N → SizeOf.sizeOf` when it is in the input. Only targets
-present in the input, never inside one component.
+ProducerPlan propagates those requirements through the existing references,
+after clique-owner union. It removes all cyclic additions simultaneously and
+returns the same static rejection plan to every member of the enclosing
+source block. An otherwise applicable rewrite requiring a blocked, missing,
+ungrounded, or already failed producer takes O2 and reports that reason.
+No readiness lookup decides whether O11a fires. -/
 
-**No cycle** (A6f learnt this the hard way: edges to *every* cross target
-from *every* `_sizeOf_N` close the cycle `T._sizeOf_k → T._sizeOf_inst →
-T._sizeOf_k`, measured as "Circular dependency detected"). In the input,
-`T._sizeOf_inst := SizeOf.mk T T._sizeOf_k` references exactly one member
-`_sizeOf` (`T`'s own), and the member `_sizeOf`s are non-recursive
-definitions over Lean's recursor whose motives and minors mention the
-block's inductives and constructors, `Nat` and the `SizeOf` instances of
-*external* field types (in-block fields use the induction hypotheses), so in
-the input no `_sizeOf` of the block reaches another one, and nothing reaches
-a nested auxiliary's `_sizeOf`. An added path therefore alternates
-`X._sizeOf → T._sizeOf_inst → T._sizeOf → U._sizeOf_inst → …` with each
-target's component a cross target of the previous member's component: a
-direct reference between two components of one block, which descends
-strictly in the condensation DAG. It ends, so there is no cycle (nested
-`_sizeOf`s have no incoming path at all). `SizeOf.sizeOf` is a projection of
-Init's `SizeOf`, below every user block. The condensation of the augmented
-graph is the input's with these extra block dependencies: the components
-and representatives do not change (`addSizeOfEdges` adds to `blockRefs`
-only; Tarjan is not re-run, so the presentation of design document §6.1 is
-untouched). Were the argument wrong, the fold would stop with its
-"circular dependency" error, never compile out of order.
-
-**Bytes.** Only the scheduling dependencies change. The source SCC partition,
-its representatives and the references used for classification stay as they
-were. The common fold uses a scheduling copy after the clique edges are
-added; Rust uses the same edges. The schedule-identity gate checks that the
-ready order changes no record.
-
-The interface takes candidate family heads, the input lookup, original
-references of inductives and constructors, and input-name membership. This
-lets a streaming driver inspect the sizeOf families without decoding theorem
-bodies. A candidate set may over-approximate; every family with an input
-`all₀._sizeOf_N` must be represented.
--/
-
-/-- The scheduling edges `(source, target)` of O11a (see the section
-docstring); `refsOf` reads the original input references. -/
-def sizeOfEdges (candidates : Array Name) (const? : Name → Option ConstantInfo)
-    (refsOf : Name → Ix.Set Name) (hasName : Name → Bool)
-    (lowLinks : Ix.Map Name Name) : Array (Name × Name) := Id.run do
-  let mut out : Array (Name × Name) := #[]
-  for n in candidates do
-    if !hasName n then continue
+/-- Potential producers of each recursor head, including recursive O2 calls. -/
+def sizeOfProducers (candidates : Array Name) (const? : Name → Option ConstantInfo)
+    (refsOf : Name → Ix.Set Name) (lowLinks : Ix.Map Name Name) :
+    Std.HashMap Ix.Compile.ExactKey.ExactName (Array Name) := Id.run do
+  let mut out := {}
+  let mut seen : ProducerSet := {}
+  for candidate in candidates do
+    let some (.inductInfo member) := const? candidate | continue
+    let some n := member.all[0]? | continue
+    if seen.contains n then continue
+    seen := seen.insert n
     let some (.inductInfo v) := const? n | continue
-    if v.all[0]? != some n || v.all.size < 2 then continue
-    let comp := fun (m : Name) => lowLinks.get? m
+    if v.all.size < 2 then continue
+    let comp := fun m => lowLinks.get? m
     if v.all.all (comp · == comp n) then continue
     let members : Ix.Set Name := v.all.foldl (·.insert ·) {}
-    -- the cross targets of each component: members of another component
-    -- that a member of it references
     let mut cross : Std.HashMap (Option Name) (Array Name) := {}
-    let mut allTargets : Array Name := #[]
+    let mut allTargets : ProducerSet := {}
     for y in v.all do
       let some (.inductInfo yv) := const? y | continue
       for c in #[y] ++ yv.ctors do
@@ -481,39 +465,42 @@ def sizeOfEdges (candidates : Array Name) (const? : Name → Option ConstantInfo
           if members.contains r && comp r != comp y then
             let ts := cross.getD (comp y) #[]
             if !ts.contains r then cross := cross.insert (comp y) (ts.push r)
-            if !allTargets.contains r then allTargets := allTargets.push r
-    if allTargets.isEmpty then continue
-    -- the block's sizeOf family `all₀._sizeOf_N`
-    for i in [1:v.all.size + v.numNested + 1] do
-      let d := Name.mkStr n s!"_sizeOf_{i}"
-      if !hasName d then continue
-      let some (.defnInfo dv) := const? d | continue
-      -- the recursor the value applies, under its λs
-      let (h, _) := getAppFnArgs (lamBody dv.value 64)
-      let .const r _ _ := h | continue
-      let mut targets : Array Name := #[]
-      match r with
-      | .str x "rec" _ =>
-        if members.contains x then targets := cross.getD (comp x) #[] else continue
-      | .str _ s _ => if s.startsWith "rec_" then targets := allTargets else continue
-      | _ => continue
-      if hasName nSizeOf && comp d != comp nSizeOf then out := out.push (d, nSizeOf)
-      for t in targets do
-        let inst := Name.mkStr t "_sizeOf_inst"
-        if hasName inst && comp d != comp inst then out := out.push (d, inst)
+            allTargets := allTargets.insert r
+    let producers (targets : Array Name) := #[nSizeOf] ++
+      targets.map (Name.mkStr · "_sizeOf_inst")
+    for y in v.all do
+      let mut targets := cross.getD (comp y) #[]
+      if targets.isEmpty then continue
+      let mut visited : ProducerSet := targets.foldl (·.insert ·) {}
+      for i in [0:v.all.size] do
+        if i ≥ targets.size then break
+        for t in cross.getD (comp targets[i]!) #[] do
+          unless visited.contains t do
+            visited := visited.insert t
+            targets := targets.push t
+      out := out.insert (Name.mkStr y "rec") (producers targets)
+    unless allTargets.isEmpty do
+      for i in [1:v.numNested + 1] do
+        out := out.insert (Name.mkStr n s!"rec_{i}") (producers allTargets.toArray)
   return out
 
-/-- Add O11a's scheduling edges to the condensation's block dependencies. -/
+/-- Plan O11a dependencies after the clique dependency union. -/
+def planSizeOf (candidates : Array Name) (const? : Name → Option ConstantInfo)
+    (refsOf : Name → Ix.Set Name) (blocks : Ix.CondensedBlocks) :
+    Ix.CondensedBlocks × ProducerRefusals := Id.run do
+  let heads := sizeOfProducers candidates const? refsOf blocks.lowLinks
+  if heads.isEmpty then return (blocks, {})
+  let mut seeds := #[]
+  for (lo, refs) in blocks.blockRefs do
+    for r in refs do
+      for p in heads.getD r #[] do seeds := seeds.push (lo, p)
+  return planProducerDeps blocks seeds
+
+/-- The scheduling copy, for callers that only inspect the edges. -/
 def addSizeOfEdges (candidates : Array Name) (const? : Name → Option ConstantInfo)
-    (refsOf : Name → Ix.Set Name) (hasName : Name → Bool)
-    (blocks : Ix.CondensedBlocks) : Ix.CondensedBlocks := Id.run do
-  let mut blockRefs := blocks.blockRefs
-  for (d, t) in sizeOfEdges candidates const? refsOf hasName blocks.lowLinks do
-    let some lo := blocks.lowLinks.get? d | continue
-    blockRefs := blockRefs.alter lo fun
-      | some s => some (s.insert t)
-      | none => some (({} : Ix.Set Name).insert t)
-  return { blocks with blockRefs }
+    (refsOf : Name → Ix.Set Name) (_hasName : Name → Bool)
+    (blocks : Ix.CondensedBlocks) : Ix.CondensedBlocks :=
+  (planSizeOf candidates const? refsOf blocks).1
 
 end Ix.Compile.Pass.Opt
 
