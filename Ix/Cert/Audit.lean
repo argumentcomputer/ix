@@ -18,6 +18,7 @@ import Ix.Cert.Unchanged
 import Ix.Cert.ReaderUnits
 import Ix.Cert.PassHooks
 import Ix.Cert.Resolution
+import Ix.Cert.HookFree
 
 /-! # The certification statements, frozen
 
@@ -4952,3 +4953,26 @@ run_cmd do
   checkRoots (tag := "cert-audit") "resolution"
     (#[`reach_provenance, `compileUnchecked_provenance, `auxBlockOutcome_cross, `compiled_runBlock,
       `reach_p3BlockRefs, `hookFree_compiled, `compileReport_claim].map (`Ix.Cert.Resolution ++ ·))
+
+/-! ## Route A, B9b step 4: `HookFree` discharged
+
+`Ix.Cert.HookFree`: for a closure that avoids the changed set and has no
+failure, every resolved name of it outside the final aux map is a claim of a
+whole condensation block of the closure, compiled under its key against a
+reached state, with Pass 3's hooks identities there (`HookFree`), so the
+block compile's (`compileReport_hookFree`). A cross-SCC subset's claim is
+refuted by the tenth check (`cross_refuted`, `applyAuxBlockOutcome_cross_extras`);
+a compiled block's claims are its members' (`Ix.Cert.Claims.runBlock_owned`,
+image blocks included); no reference or member of a block of the closure is a
+snapshot head (`hookFree_of_sub`, from the eleventh and fourteenth checks,
+`final_of_report`). `Ix.Cert.Resolution`'s fold steps now also keep the input
+environment (`reach_env`). -/
+
+/-- info: [cert-audit] hook-free: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "hook-free"
+    ((#[`compileReport_hookFree, `final_of_report, `hookFree_of_sub, `cross_refuted,
+      `applyAuxBlockOutcome_cross_extras].map (`Ix.Cert.HookFree ++ ·)) ++
+      #[``Ix.Cert.Claims.runBlock_owned, ``Ix.Cert.Resolution.reach_env])
