@@ -3,25 +3,28 @@
 //! `RwConfig.opt?`). A port of `Ix/Compile/Pass/Opt/{Core,Engine,O2,O3,O4,
 //! O5,O6}.lean`; the Lean modules are the specification of each pass
 //! (contract, faithfulness, side condition), cited per function. O1 is never
-//! ported (O6 builds the identical term); O11a and the proof-justified
-//! passes come with CQ5.3. Donor: `jcb/ix-certify-compile` `a9cf3607`,
+//! ported (O6 builds the identical term). CQ5.3a adds the O11a library
+//! and producer-edge primitives; its wiring is the next change. Donor: `jcb/ix-certify-compile` `a9cf3607`,
 //! `crates/compile/src/compile/pass3/opt.rs`.
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use ix_common::env::{
   ConstantInfo, Env as LeanEnv, Expr, ExprData, Level, LevelData, Name,
   NameData, RecursorVal,
 };
 
-use crate::compile::aux_gen::expr_utils::{LocalDecl, mk_lambda};
+use crate::compile::aux_gen::expr_utils::{LocalDecl, instantiate1, mk_lambda};
 use crate::compile::aux_source::{
   AuxMotiveSig, FreshFVars, SourceRecTarget, aux_motive_sigs,
-  find_source_rec_target, peel_binders, source_ctor_for_minor,
+  find_source_rec_target, fvar_index, peel_binders, source_ctor_for_minor,
   source_minor_type,
 };
 
-use super::expr::{get_app_fn_args, mk_app_n, nat_usize, subst_level};
+use super::expr::{
+  alpha_eq, dotted, get_app_fn_args, mk_app_n, nat_usize, subst_level,
+  used_constants,
+};
 use super::names::mk_str;
 use super::spec::BlockChange;
 
@@ -713,6 +716,551 @@ fn o6(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
       &cat(&[ps, &ms, tail, &mins, extra]),
     ))
   }
+}
+
+// ---------------------------------------------------------------------------
+// O11a (`Opt/O11a.lean`)
+// ---------------------------------------------------------------------------
+
+/// O11a's verdict while it reads an occurrence (`O11aM`): `Err(None)` not its
+/// pattern, `Err(Some c)` a failing side condition `c`.
+type O11aRes<T> = Result<T, Option<String>>;
+
+fn pattern<T>(x: Option<T>) -> O11aRes<T> {
+  x.ok_or(None)
+}
+
+fn side<T>(x: Option<T>, cause: impl FnOnce() -> String) -> O11aRes<T> {
+  x.ok_or_else(|| Some(cause()))
+}
+
+fn need(b: bool, cause: impl FnOnce() -> String) -> O11aRes<()> {
+  if b { Ok(()) } else { Err(Some(cause())) }
+}
+
+fn n_size_of_mk() -> Name {
+  dotted("SizeOf.mk")
+}
+
+fn n_size_of() -> Name {
+  dotted("SizeOf.sizeOf")
+}
+
+/// The body under at most `k` leading lambdas (`O11a.lamBody`).
+fn lam_body(e: &Expr, k: usize) -> Expr {
+  let mut cur = e.clone();
+  for _ in 0..k {
+    let next = match cur.as_data() {
+      ExprData::Lam(_, _, b, _, _) => b.clone(),
+      _ => break,
+    };
+    cur = next;
+  }
+  cur
+}
+
+/// `sizeOfTargetE`.
+fn size_of_target(env: &OptEnv<'_>, t: &Name) -> O11aRes<()> {
+  let tv = side(
+    match env.const_of(t) {
+      Some(ConstantInfo::InductInfo(tv)) => Some(tv),
+      _ => None,
+    },
+    || {
+      format!(
+        "the cross target {} is not an inductive type of the input",
+        t.pretty()
+      )
+    },
+  )?;
+  let np = nat_usize(&tv.num_params);
+  need(np == 0, || {
+    format!("the cross target {} has {np} parameter(s)", t.pretty())
+  })?;
+  let ni = nat_usize(&tv.num_indices);
+  need(ni == 0, || {
+    format!("the cross target {} has {ni} index(es)", t.pretty())
+  })?;
+  need(tv.cnst.level_params.is_empty(), || {
+    format!("the cross target {} has universe parameters", t.pretty())
+  })
+}
+
+/// An instance lookup (`sizeOfInstanceE` or `sizeOfInstanceAssumingAbsent`).
+type InstLookup<'r> = &'r dyn Fn(&Name, &[Expr]) -> O11aRes<(Name, Level)>;
+
+/// `sizeOfInstanceE`.
+fn size_of_instance(
+  env: &OptEnv<'_>,
+  t: &Name,
+  telescope: &[Expr],
+) -> O11aRes<(Name, Level)> {
+  size_of_target(env, t)?;
+  let inst = mk_str(t, "_sizeOf_inst");
+  let ip = inst.pretty();
+  let ici = side(env.const_of(&inst), || {
+    format!(
+      "the size instance {ip} of a lower component is absent from the input"
+    )
+  })?;
+  let iv = side(
+    match ici {
+      ConstantInfo::DefnInfo(iv) => Some(iv),
+      _ => None,
+    },
+    || format!("the size instance {ip} is not a definition"),
+  )?;
+  need(iv.cnst.level_params.is_empty(), || {
+    format!("the size instance {ip} has universe parameters")
+  })?;
+  let shape =
+    || format!("the size instance {ip} is not `@SizeOf.mk {} k`", t.pretty());
+  let (h, args) = get_app_fn_args(&iv.value);
+  let (mk, ls) = side(
+    match h.as_data() {
+      ExprData::Const(mk, ls, _) => Some((mk.clone(), ls.clone())),
+      _ => None,
+    },
+    shape,
+  )?;
+  need(mk == n_size_of_mk() && args.len() == 2, shape)?;
+  let l = side(ls.first().cloned(), shape)?;
+  need(
+    matches!(args[0].as_data(), ExprData::Const(ty, _, _) if ty == t),
+    shape,
+  )?;
+  let k = side(
+    match args[1].as_data() {
+      ExprData::Const(k, _, _) => Some(k.clone()),
+      ExprData::Lam(_, _, b, _, _) => match b.as_data() {
+        ExprData::App(f, x, _) => match (f.as_data(), x.as_data()) {
+          (ExprData::Const(k, _, _), ExprData::Bvar(z, _))
+            if nat_usize(z) == 0 =>
+          {
+            Some(k.clone())
+          },
+          _ => None,
+        },
+        _ => None,
+      },
+      _ => None,
+    },
+    shape,
+  )?;
+  let kshape = || {
+    format!(
+      "the size function {} of {ip} is not `λ t. {}.rec … t`",
+      k.pretty(),
+      t.pretty()
+    )
+  };
+  let kv = side(
+    match env.const_of(&k) {
+      Some(ConstantInfo::DefnInfo(kv)) => Some(kv),
+      _ => None,
+    },
+    kshape,
+  )?;
+  let body = side(
+    match kv.value.as_data() {
+      ExprData::Lam(_, _, b, _, _) => Some(b.clone()),
+      _ => None,
+    },
+    kshape,
+  )?;
+  let (rh, rargs) = get_app_fn_args(&body);
+  need(
+    matches!(rh.as_data(), ExprData::Const(rn, _, _) if *rn == mk_str(t, "rec")),
+    kshape,
+  )?;
+  need(
+    matches!(rargs.last().map(|e| e.as_data()), Some(ExprData::Bvar(z, _)) if nat_usize(z) == 0),
+    kshape,
+  )?;
+  let tel = || {
+    format!(
+      "the recursor telescope of {} is not the occurrence's (one mutual size family)",
+      k.pretty()
+    )
+  };
+  need(rargs.len() == telescope.len() + 1, tel)?;
+  for (x, y) in rargs.iter().zip(telescope.iter()) {
+    need(alpha_eq(x, y), tel)?;
+  }
+  Ok((inst, l))
+}
+
+/// `sizeOfInstanceAssumingAbsent`.
+fn size_of_instance_assuming_absent(
+  env: &OptEnv<'_>,
+  t: &Name,
+  telescope: &[Expr],
+) -> O11aRes<(Name, Level)> {
+  size_of_target(env, t)?;
+  let inst = mk_str(t, "_sizeOf_inst");
+  match env.const_of(&inst) {
+    None => Ok((inst, Level::zero())),
+    Some(_) => size_of_instance(env, t, telescope),
+  }
+}
+
+/// `sizeOfMinorWith`.
+#[allow(clippy::too_many_arguments)]
+fn size_of_minor_with(
+  env: &OptEnv<'_>,
+  inst: InstLookup<'_>,
+  rv: &RecursorVal,
+  in_block: &[bool],
+  us: &[Level],
+  ps: &[Expr],
+  ms: &[Expr],
+  mins: &[Expr],
+  j: usize,
+) -> O11aRes<Option<Expr>> {
+  let ienv = env.ienv;
+  let mut supply = FreshFVars::default();
+  supply.protect_expr(&rv.cnst.typ);
+  supply.protect_exprs(ps);
+  supply.protect_exprs(ms);
+  supply.protect_exprs(mins);
+  let aux_sigs = aux_motive_sigs(rv, us, ps, ms, ienv, &mut supply);
+  let unread =
+    || format!("the constructor and minor type of minor {j} cannot be read");
+  let (_, ctor) = side(source_ctor_for_minor(j, rv, ienv, &aux_sigs), unread)?;
+  let minor_ty = side(source_minor_type(rv, us, ps, ms, mins, j), unread)?;
+  let num_fields = nat_usize(&ctor.num_fields);
+  let (field_decls, _, _) = side(
+    peel_binders(minor_ty, num_fields, "split_field", 0, &mut supply),
+    unread,
+  )?;
+  let rec_fields =
+    rec_fields_of(ienv, rv, &field_decls, ps, &aux_sigs, &mut supply);
+  let inb = |p: usize| in_block.get(p).copied().unwrap_or(false);
+  if !rec_fields.iter().any(|(_, t)| !inb(t.source_pos)) {
+    return Ok(None);
+  }
+  let m = side(mins.get(j).cloned(), unread)?;
+  let nb = num_fields + rec_fields.len();
+  let telescope = cat(&[ps, ms, mins]);
+  let mut cur = m;
+  let mut decls: Vec<LocalDecl> = Vec::new();
+  let mut fvars: Vec<Expr> = Vec::new();
+  for i in 0..nb {
+    let (bn, dom, b, bi) = side(
+      match cur.as_data() {
+        ExprData::Lam(bn, dom, b, bi, _) => {
+          Some((bn.clone(), dom.clone(), b.clone(), bi.clone()))
+        },
+        _ => None,
+      },
+      || {
+        format!(
+          "minor {j} is not a λ over its {num_fields} field(s) and {} induction hypothesis(es)",
+          rec_fields.len()
+        )
+      },
+    )?;
+    let (fv_name, fv) = supply.fresh("o11a", &fvar_index(i, 1, 0));
+    if i < num_fields {
+      decls.push(LocalDecl {
+        fvar_name: fv_name,
+        binder_name: bn,
+        domain: dom,
+        info: bi,
+      });
+      fvars.push(fv.clone());
+      cur = instantiate1(&b, &fv);
+    } else {
+      let (field_idx, target) = &rec_fields[i - num_fields];
+      if inb(target.source_pos) {
+        decls.push(LocalDecl {
+          fvar_name: fv_name,
+          binder_name: bn,
+          domain: dom,
+          info: bi,
+        });
+        cur = instantiate1(&b, &fv);
+      } else {
+        let t = side(rv.all.get(target.source_pos).cloned(), unread)?;
+        need(target.xs_fvars.is_empty(), || {
+          format!(
+            "field {field_idx} of minor {j} is reflexive (a function into the cross target {})",
+            t.pretty()
+          )
+        })?;
+        need(target.idx_args.is_empty(), || {
+          format!(
+            "field {field_idx} of minor {j} has index arguments (its cross target {} is indexed)",
+            t.pretty()
+          )
+        })?;
+        let (inst_n, l) = inst(&t, &telescope)?;
+        let field = side(fvars.get(*field_idx).cloned(), unread)?;
+        let sz = mk_app_n(
+          mk_const(&n_size_of(), vec![l]),
+          &[mk_const(&t, vec![]), mk_const(&inst_n, vec![]), field],
+        );
+        cur = instantiate1(&b, &sz);
+      }
+    }
+  }
+  Ok(Some(mk_lambda(cur, &decls)))
+}
+
+/// `O11a.applyWithE`.
+fn o11a_with(
+  env: &OptEnv<'_>,
+  inst: InstLookup<'_>,
+  o: &Occ<'_>,
+) -> O11aRes<Expr> {
+  let (k, r) = pattern(classify(o.head))?;
+  if k != AuxKind::Rec {
+    return Err(None);
+  }
+  let b = pattern((env.block_of)(o.head))?;
+  if !b.change.split || b.change.collapse {
+    return Err(None);
+  }
+  let s = pattern(b.shapes.get(&r))?;
+  let rv = pattern(match env.const_of(&r) {
+    Some(ConstantInfo::RecInfo(rv)) => Some(rv),
+    _ => None,
+  })?;
+  let n = pattern(standard_telescope(env, s, AuxKind::Rec, o.head, 0))?;
+  if o.args.len() < n {
+    return Err(None);
+  }
+  let ls = pattern(o5_levels(s, o.us))?;
+  let a = o.args;
+  let ps = &a[..s.np];
+  let ms = &a[s.np..s.np + s.nm];
+  let mins = &a[s.np + s.nm..s.np + s.nm + s.nmin];
+  let tail = &a[s.np + s.nm + s.nmin..n];
+  let in_block: Vec<bool> =
+    (0..s.nm).map(|i| s.motive_src.contains(&i)).collect();
+  let ms2 = pattern(pick(ms, &s.motive_src))?;
+  let mut mins2 = Vec::new();
+  let mut any = false;
+  for (src, t) in s.minor_src.iter().zip(s.minor_terms.iter()) {
+    let j = match src {
+      Some(j) => *j,
+      None => pattern(wrapped_minor_src(s.arity(), s.np, s.nm, s.nmin, t))?,
+    };
+    match size_of_minor_with(env, inst, &rv, &in_block, o.us, ps, ms, mins, j)?
+    {
+      Some(w) => {
+        need(src.is_none(), || {
+          format!("minor {j} has a cross field but O2 passes it unadapted")
+        })?;
+        any = true;
+        mins2.push(w);
+      },
+      None => mins2.push(pattern(mins.get(j).cloned())?),
+    }
+  }
+  if !any {
+    return Err(None);
+  }
+  Ok(mk_app_n(
+    mk_const(&s.ix_rec, ls),
+    &cat(&[ps, &ms2, &mins2, tail, &a[n..]]),
+  ))
+}
+
+/// `O11a.apply`.
+pub fn o11a(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
+  o11a_with(env, &|t, tel| size_of_instance(env, t, tel), o).ok()
+}
+
+/// `O11a.isSizeOfOccurrence`.
+fn is_size_of_occurrence(
+  env: &OptEnv<'_>,
+  rv: &RecursorVal,
+  o: &Occ<'_>,
+  k: usize,
+) -> bool {
+  let Some(all0) = rv.all.first() else { return false };
+  let Some(ConstantInfo::InductInfo(v)) = env.const_of(all0) else {
+    return false;
+  };
+  if o.args.len() < k {
+    return false;
+  }
+  for i in 1..v.all.len() + nat_usize(&v.num_nested) + 1 {
+    let Some(ConstantInfo::DefnInfo(dv)) =
+      env.const_of(&mk_str(all0, &format!("_sizeOf_{i}")))
+    else {
+      continue;
+    };
+    let (h, args) = get_app_fn_args(&lam_body(&dv.value, 64));
+    if !matches!(h.as_data(), ExprData::Const(..)) {
+      continue;
+    }
+    if args.len() < k {
+      continue;
+    }
+    if (0..k).all(|j| alpha_eq(&args[j], &o.args[j])) {
+      return true;
+    }
+  }
+  false
+}
+
+/// `O11a.declineCause?`: the recorded decline at an occurrence that is the
+/// recursion of Lean's `sizeOf` family of a split block.
+pub fn o11a_decline_cause(env: &OptEnv<'_>, o: &Occ<'_>) -> Option<String> {
+  let cause = match o11a_with(env, &|t, tel| size_of_instance(env, t, tel), o) {
+    Ok(_) | Err(None) => return None,
+    Err(Some(c)) => c,
+  };
+  let (_, r) = classify(o.head)?;
+  let b = (env.block_of)(o.head)?;
+  let s = b.shapes.get(&r)?;
+  let Some(ConstantInfo::RecInfo(rv)) = env.const_of(&r) else { return None };
+  if !is_size_of_occurrence(env, &rv, o, s.np + s.nm + s.nmin) {
+    return None;
+  }
+  let tail = format!(
+    "the occurrence of {} keeps O2's relocated-recursor form",
+    o.head.pretty()
+  );
+  match o11a_with(
+    env,
+    &|t, tel| size_of_instance_assuming_absent(env, t, tel),
+    o,
+  ) {
+    Ok(e) => {
+      let missing: Vec<Name> = used_constants(&e)
+        .into_iter()
+        .filter(|n| {
+          matches!(n.as_data(), NameData::Str(_, s, _) if s == "_sizeOf_inst")
+            && env.const_of(n).is_none()
+        })
+        .collect();
+      if missing.is_empty() {
+        return Some(format!("O11a declined: {cause}; {tail}"));
+      }
+      let names: Vec<String> = missing.iter().map(|n| n.pretty()).collect();
+      Some(format!(
+        "O11a declined: the size instance {} of a lower component is absent from the input; {tail}",
+        names.join(", ")
+      ))
+    },
+    Err(Some(c)) => Some(format!("O11a declined: {c}; {tail}")),
+    Err(None) => Some(format!("O11a declined: {cause}; {tail}")),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// O11a's scheduling edges (`O11a.sizeOfEdges`)
+// ---------------------------------------------------------------------------
+
+/// The scheduling edges `(source, target)` of O11a: for every split Lean
+/// inductive block, `all0._sizeOf_N -> T._sizeOf_inst` for the cross targets
+/// `T` of the component its recursion is over (every component's for a
+/// nested auxiliary's), and `all0._sizeOf_N -> SizeOf.sizeOf`, when present
+/// in the input and not inside one component (`O11a.sizeOfEdges`).
+pub fn size_of_edges<'n>(
+  candidates: impl Iterator<Item = &'n Name>,
+  const_of: &dyn Fn(&Name) -> Option<ConstantInfo>,
+  refs_of: &dyn Fn(&Name) -> FxHashSet<Name>,
+  has_name: &dyn Fn(&Name) -> bool,
+  low_links: &FxHashMap<Name, Name>,
+) -> Vec<(Name, Name)> {
+  let n_size_of = n_size_of();
+  let comp = |m: &Name| low_links.get(m).cloned();
+  let mut out = Vec::new();
+  for n in candidates {
+    if !has_name(n) {
+      continue;
+    }
+    let Some(ConstantInfo::InductInfo(v)) = const_of(n) else { continue };
+    if v.all.first() != Some(n) || v.all.len() < 2 {
+      continue;
+    }
+    if v.all.iter().all(|m| comp(m) == comp(n)) {
+      continue;
+    }
+    let members: FxHashSet<&Name> = v.all.iter().collect();
+    let mut cross: FxHashMap<Option<Name>, Vec<Name>> = FxHashMap::default();
+    let mut all_targets: Vec<Name> = Vec::new();
+    for y in &v.all {
+      let Some(ConstantInfo::InductInfo(yv)) = const_of(y) else { continue };
+      for c in std::iter::once(y).chain(yv.ctors.iter()) {
+        let rs = refs_of(c);
+        // the reference sets are hash sets: iterate in a fixed order so the
+        // edge list is deterministic (only its set matters to the scheduler)
+        let mut rs: Vec<&Name> = rs.iter().collect();
+        rs.sort_by_key(|x| x.pretty());
+        for r in rs {
+          if members.contains(r) && comp(r) != comp(y) {
+            let ts = cross.entry(comp(y)).or_default();
+            if !ts.contains(r) {
+              ts.push(r.clone());
+            }
+            if !all_targets.contains(r) {
+              all_targets.push(r.clone());
+            }
+          }
+        }
+      }
+    }
+    if all_targets.is_empty() {
+      continue;
+    }
+    for i in 1..v.all.len() + nat_usize(&v.num_nested) + 1 {
+      let d = mk_str(n, &format!("_sizeOf_{i}"));
+      if !has_name(&d) {
+        continue;
+      }
+      let Some(ConstantInfo::DefnInfo(dv)) = const_of(&d) else { continue };
+      let (h, _) = get_app_fn_args(&lam_body(&dv.value, 64));
+      let ExprData::Const(r, _, _) = h.as_data() else { continue };
+      let targets: Vec<Name> = match as_str(r) {
+        Some((x, "rec")) => {
+          if members.contains(x) {
+            cross.get(&comp(x)).cloned().unwrap_or_default()
+          } else {
+            continue;
+          }
+        },
+        Some((_, s)) if s.starts_with("rec_") => all_targets.clone(),
+        _ => continue,
+      };
+      if has_name(&n_size_of) && comp(&d) != comp(&n_size_of) {
+        out.push((d.clone(), n_size_of.clone()));
+      }
+      for t in targets {
+        let inst = mk_str(&t, "_sizeOf_inst");
+        if has_name(&inst) && comp(&d) != comp(&inst) {
+          out.push((d.clone(), inst));
+        }
+      }
+    }
+  }
+  out
+}
+
+/// Add O11a's scheduling edges to the condensation's block dependencies
+/// (`O11a.addSizeOfEdges`): the components and representatives do not
+/// change, only the ready order of the scheduler.
+pub fn add_size_of_edges<'n>(
+  candidates: impl Iterator<Item = &'n Name>,
+  const_of: &dyn Fn(&Name) -> Option<ConstantInfo>,
+  refs_of: &dyn Fn(&Name) -> FxHashSet<Name>,
+  has_name: &dyn Fn(&Name) -> bool,
+  blocks: &mut crate::condense::CondensedBlocks,
+) -> usize {
+  let edges =
+    size_of_edges(candidates, const_of, refs_of, has_name, &blocks.low_links);
+  let mut added = 0;
+  for (d, t) in edges {
+    let Some(lo) = blocks.low_links.get(&d).cloned() else { continue };
+    if blocks.block_refs.entry(lo).or_default().insert(t) {
+      added += 1;
+    }
+  }
+  added
 }
 
 // ---------------------------------------------------------------------------
