@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Verify.Frontend.InModelMemo
 public import IxC.Kernel.Verify.Rename.ExprOps
+public import IxC.Kernel.Verify.Rename.Ind3
 
 public section
 
@@ -141,5 +142,116 @@ theorem sortOf_mapKeys {tbl : ConstTable md} {tbl' : ConstTable md'} (htbl : Tbl
     (ctx : List (Expr md)) (e : Expr md) :
     sortOf tbl' (ctx.map (Expr.mapKeys f)) (e.mapKeys f) = sortOf tbl ctx e :=
   (inferTyF_sortOfF_mapKeys f htbl inferFuel).2 ctx e
+
+/-- `sortCeil`'s last branch: a ceiling for the type of the head. -/
+def ceilByHead (tbl : ConstTable md) (fuel : Nat) (ctx : List (Expr md)) (d : Expr md) :
+    Except String (Option Level) := do
+  match ← inferTy tbl ctx d.getAppFn with
+  | some g => sortCeil tbl fuel ctx g
+  | none => pure none
+
+theorem sortCeil_mapKeys {tbl : ConstTable md} {tbl' : ConstTable md'} (htbl : TblAgree f tbl tbl')
+    (fuel : Nat) : ∀ (ctx : List (Expr md)) (d : Expr md),
+      sortCeil tbl' fuel (ctx.map (Expr.mapKeys f)) (d.mapKeys f) = sortCeil tbl fuel ctx d := by
+  induction fuel with
+  | zero => intro ctx d; rfl
+  | succ fuel ih =>
+    intro ctx d
+    have byHead : ∀ d' : Expr md, ceilByHead tbl' fuel (ctx.map (Expr.mapKeys f)) (d'.mapKeys f) =
+        ceilByHead tbl fuel ctx d' := fun d' => by
+      simp only [ceilByHead, ← Expr.mapKeys_getAppFn, inferTy_mapKeys f htbl]
+      cases inferTy tbl ctx d'.getAppFn with
+      | error err => rfl
+      | ok r => cases r <;> simp [Except.map, bind, Except.bind, ih]
+    simp only [sortCeil, inferTy_mapKeys f htbl]
+    cases inferTy tbl ctx d with
+    | error err => rfl
+    | ok r =>
+      cases r with
+      | some t =>
+        simp only [Except.map, Option.map_some, bind, Except.bind, betaHeadE_mapKeys]
+        cases betaHeadE t with
+        | error err => rfl
+        | ok t' =>
+          have h := ih ctx t'
+          cases t' <;> first | rfl | exact h
+      | none =>
+        simp only [Except.map, Option.map_none, bind, Except.bind, betaHeadE_mapKeys]
+        cases betaHeadE d with
+        | error err => rfl
+        | ok d' =>
+          have hd := byHead d'
+          cases d' with
+          | forallE dom body m =>
+            have hb := ih (dom :: ctx) body
+            simp only [List.map_cons] at hb
+            simp only [Expr.mapKeys, ih ctx dom, hb]
+          | letE t v b l =>
+            simp only [Expr.mapKeys, ← Expr.mapKeys_instantiate1, ih]
+          | _ => exact hd
+
+theorem idxSort_mapKeys {tbl : ConstTable md} {tbl' : ConstTable md'} (htbl : TblAgree f tbl tbl')
+    (ctx : List (Expr md)) (e : Expr md) :
+    idxSort tbl' (ctx.map (Expr.mapKeys f)) (e.mapKeys f) = idxSort tbl ctx e :=
+  sortCeil_mapKeys f htbl 128 ctx e
+
+/-! ## Derived names and small builders -/
+
+section Names
+variable {f : md.Id → md'.Id}
+
+@[simp] theorem implKey_map (T : Key md) : (implKey T).map f = implKey (T.map f) := rfl
+@[simp] theorem tagName_map (T : Key md) : (tagName T).map f = tagName (T.map f) := rfl
+@[simp] theorem tagCtorName_map (T : Key md) (k : Nat) :
+    (tagCtorName T k).map f = tagCtorName (T.map f) k := rfl
+@[simp] theorem auxName_map (T : Key md) : (auxName T).map f = auxName (T.map f) := rfl
+@[simp] theorem auxCtorName_map (T : Key md) (k j : Nat) :
+    (auxCtorName T k j).map f = auxCtorName (T.map f) k j := rfl
+@[simp] theorem modelName_map (n : Key md) : (modelName n).map f = modelName (n.map f) := rfl
+@[simp] theorem projModelName_map (T : Key md) (i : Nat) :
+    (projModelName T i).map f = projModelName (T.map f) i := rfl
+@[simp] theorem auxKey_map (k : Key md) (d : Derived) : (auxKey k d).map f = auxKey (k.map f) d := rfl
+
+@[simp] theorem constP_mapKeys (n : Key md) (lps : List LevelParam) :
+    (constP n lps).mapKeys f = constP (n.map f) lps := rfl
+
+@[simp] theorem varsAt_mapKeys (o n : Nat) :
+    (varsAt o n : List (Expr md)).map (Expr.mapKeys f) = varsAt o n := by
+  simp [varsAt, structPsAt, Expr.mapKeys]
+
+@[simp] theorem structProjPs_mapKeys (nP : Nat) :
+    (structProjPs nP : List (Expr md)).map (Expr.mapKeys f) = structProjPs nP := by
+  simp [structProjPs, Expr.mapKeys]
+
+@[simp] theorem mkPis_mapKeys (bs : List (Expr md)) (body : Expr md) :
+    (mkPis bs body).mapKeys f = mkPis (bs.map (Expr.mapKeys f)) (body.mapKeys f) := by
+  induction bs <;> simp_all [mkPis, Expr.mapKeys]
+
+@[simp] theorem mkLams_mapKeys (bs : List (Expr md)) (body : Expr md) :
+    (mkLams bs body).mapKeys f = mkLams (bs.map (Expr.mapKeys f)) (body.mapKeys f) := by
+  induction bs <;> simp_all [mkLams, Expr.mapKeys]
+
+@[simp] theorem piBinders_mapBinders (bs : List (Expr md × BinderMeta)) :
+    piBinders (bs.map fun p => (p.1.mapKeys f, p.2)) = (piBinders bs).map (Expr.mapKeys f) := by
+  simp [piBinders]
+
+end Names
+
+/-! ## The recursor builders (the checker's own, renamed in `Rename/Ind3.lean`) -/
+
+theorem recTy_map {f : md.Id → md'.Id} (T : Key md) (lps : List LevelParam) (elim : LevelParam)
+    (large : Bool) (nP nIdx : Nat) (tty : Expr md) (ctors : List (Key md × Nat × Expr md × List Nat)) :
+    recTy (T.map f) lps elim large nP nIdx (tty.mapKeys f) (ctors4Map f ctors) =
+      (recTy T lps elim large nP nIdx tty ctors).map (Expr.mapKeys f) :=
+  structRecTyR_map T lps elim large nP nIdx tty ctors
+
+theorem recRhs_map {f : md.Id → md'.Id} (T : Key md) (lps : List LevelParam) (elim : LevelParam)
+    (large : Bool) (nP nIdx : Nat) (tty : Expr md) (ctors : List (Key md × Nat × Expr md × List Nat))
+    (recC : Key md) (rlvls : List Level) (j : Nat) :
+    recRhs (T.map f) lps elim large nP nIdx (tty.mapKeys f) (ctors4Map f ctors) (recC.map f) rlvls j =
+      (recRhs T lps elim large nP nIdx tty ctors recC rlvls j).map (Expr.mapKeys f) := by
+  simp only [recRhs, structRecRhsR_map, Option.map_map]
+  cases structRecRhsR T lps elim large nP nIdx tty ctors recC rlvls j <;>
+    simp [Expr.mapKeys_resetMeta]
 
 end Ix.Kernel.Frontend.InModel
