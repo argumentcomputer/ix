@@ -4,7 +4,7 @@ public import IxC.Kernel.Verify.Frontend.InModelMemo
 public import IxC.Kernel.Verify.Rename.ExprOps
 public import IxC.Kernel.Verify.Rename.Ind3
 
-public section
+@[expose] public section
 
 /-!
 # The in-model generator commutes with renaming keys (parametricity, step 3)

@@ -2,7 +2,7 @@ module
 
 public import IxC.Kernel.Frontend.InModel
 
-public section
+@[expose] public section
 
 /-!
 # The in-model generator's memos are transparent (parametricity, step 2)
