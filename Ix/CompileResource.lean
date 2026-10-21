@@ -8,7 +8,7 @@ public section
 
 `Ix.CompileM.compileLeanInput` compiles and serializes; it does not validate
 resources, so the compiler does not import `Ix.Resource.Validate` (and with it
-the `Ix.Tc` environment checker). An input that carries semantic contracts, or
+the validator's typing half, `Ix.Resource.typeCheck`). An input that carries semantic contracts, or
 a compile against a resource profile, is emitted only after this post-step:
 the requested closure must be complete (no recorded failure), and the
 compiled environment must validate (`Ix.Resource.validate`, against the given

@@ -19,10 +19,27 @@ def unitBlock : Constant := {
     #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩]⟩]
   sharing := #[], refs := #[], univs := #[.zero] }
 
+/-- `U.rec`, the recursor of `unitBlock`'s type at `refs = [U, U.mk]`:
+`{motive : U → Sort u} → motive U.mk → (t : U) → motive t`, the `k`-like
+large eliminator of a `Prop` with one constructor and no fields, with the
+rule `fun motive mk => mk`. Every Lean inductive comes with its recursor,
+and the typing half (IxC's tiered entry) declines a block without one. -/
+def unitRec (type ctor : Address) : Constant :=
+  let motive := Expr.leanAll (.ref 0 #[]) (.sort 0)
+  let typ := Expr.leanAll motive (Expr.leanAll (.app (.var 0) (.ref 1 #[]))
+    (Expr.leanAll (.ref 0 #[]) (.app (.var 2) (.var 0))))
+  { info := .recr ⟨true, false, 1, 0, 0, 1, 1, typ,
+      #[⟨0, Expr.leanLam motive (Expr.leanLam (.app (.var 0) (.ref 1 #[])) (.var 0))⟩]⟩
+    sharing := #[], refs := #[type, ctor], univs := #[.var 0] }
+
+/-- The unit type's block, its projection and constructor records, and its
+recursor (a separate record: the block's and the projections' addresses do
+not depend on it). -/
 def unitEnv : Ixon.Env × Address := Id.run do
   let (env, block) := store {} unitBlock
   let (env, type) := store env (Addressed.wrapper (.iPrj ⟨0, block⟩))
-  let (env, _) := store env (Addressed.constructorWrapper block 0 0)
+  let (env, ctor) := store env (Addressed.constructorWrapper block 0 0)
+  let (env, _) := store env (unitRec type ctor)
   return (env, type)
 
 def linearLocal : Ixon.BinderContract := ⟨.linear, .localShared⟩
@@ -88,7 +105,8 @@ def run : IO Unit := do
   check "wrong validator" (Profile.ofBytes (profile.bytes.set! 0 0)) false
   let (env, id) := store base (identity unit)
   let prepared ← get "valid identity" (Addressed.checkResources env profile)
-  unless prepared.program.declarations.size == 3 && prepared.program.groups.size == 1 do
+  -- the unit type, its constructor, its recursor and the identity
+  unless prepared.program.declarations.size == 4 && prepared.program.groups.size == 1 do
     throw <| IO.userError "addressed resource: nominal block flattening"
   check "unrestricted result cannot hide local input"
     (Addressed.checkResources (store base (identity unit linearLocal .shared)).1 profile) false

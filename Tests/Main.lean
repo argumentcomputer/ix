@@ -102,6 +102,7 @@ import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.BundleEvidence
 import Tests.Ix.Cert.Statement
+import Tests.Ix.ResourceHints
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
@@ -273,6 +274,9 @@ def registry : List Entry := [
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
   -- the typing tier's inductive install and its answer view (M7 Q1)
   .suite "kernel-tier-ind" .primary Tests.Ix.Kernel.TierInd.suite,
+  -- the resource validator's typing input (IxC's tiered entry, step 10c): its hints agree with
+  -- `Ix.Cert.hintsOf`, every record is submitted once, and the compiled fixtures validate
+  .suite "resource-hints" .primary Tests.ResourceHints.suite,
   -- Source mode's evidence from the committed bundle (`Ix.RoleEvidence.bundleEvidence`), on
   -- the well-founded operations' Init closure without the certificate theorems
   .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,

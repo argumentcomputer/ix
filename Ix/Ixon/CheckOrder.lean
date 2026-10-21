@@ -2,6 +2,7 @@ module
 
 public import Ix.Ixon
 public import IxC.Kernel.Ixon.Reader
+public import IxC.Kernel.Ixon.Prelude
 
 /-!
 # An Ixon environment's check order (executable; not a statement)
@@ -12,9 +13,9 @@ iterative depth-first postorder over table references and the extra edges
 (the `Nat` operations' certificate ground, `groundEdges`, and the literal
 edges), with a given prefix first (the prelude's owners). Moved verbatim
 from the environment-check harness (`Benchmarks.Kernel.CheckIxeStep`, which
-re-exports these names) for the resource validator's adapter (step 10).
-Nothing here is trusted: a wrong order is a decline at the entry, never an
-acceptance.
+re-exports these names) for the resource validator's adapter (step 10),
+which submits a whole environment in the order `wholeEnv` gives. Nothing here
+is trusted: a wrong order is a decline at the entry, never an acceptance.
 -/
 
 public section
@@ -127,6 +128,49 @@ def groundEdges (roles : Std.HashMap (ConstRef Address) (CName .anon)) : Std.Has
 /-- The union of two edge maps. -/
 def mergeEdges (a b : Std.HashMap Address (Array Address)) : Std.HashMap Address (Array Address) :=
   b.fold (fun m k vs => m.insert k ((m.getD k #[]) ++ vs.filter (!(m.getD k #[]).contains ·))) a
+
+/-- **A whole environment's records in check order**, as the environment-check
+harness submits the records it selects (`Benchmarks.Kernel.CheckIxeStep.setup`
+and `CheckIxeFold.acceptedRecords`, without the reading filter): every primary
+record in `order` (the prelude's owners first, then a dependency order over
+table references, the certified `Nat` operations' certificate ground and the
+literal edges), each followed by its block's recursor records, then every
+projection record, by address. The store is backed by the prelude's records
+and its evidence, as the entry's reader is. The result holds the addresses of
+`constants` only, each once: a prelude record the input lacks is the entry's
+own. -/
+def wholeEnv (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : Array (Address × Ixon.Constant)) : Array Address := Id.run do
+  let input : RecordStore := constants.foldl (fun m (a, c) => m.insert a c) {}
+  let mut store := input
+  for (a, c) in pre.records do
+    unless store.contains a do store := store.insert a c
+  let evidence : RecordStore := pre.evidence.foldl
+    (fun m (a, c) => if store.contains a then m else m.insert a c) {}
+  let records := store.toArray
+  let look : Store := fun a => store[a]? <|> evidence[a]?
+  let roles : Bindings .anon := bindingsOf look t
+  let index := buildIndex look records
+  let extra := mergeEdges (groundEdges roles.names) (literalEdges roles.names records)
+  let first := pre.records.foldl (fun acc (a, c) =>
+    let o := owner a c
+    if acc.contains o then acc else acc.push o) #[]
+  let mut seen : Std.HashSet Address := {}
+  let mut out : Array Address := #[]
+  for address in order store extra first do
+    if seen.contains address then continue
+    seen := seen.insert address
+    out := out.push address
+    for r in recursorRecords index address do
+      unless seen.contains r || !store.contains r do
+        seen := seen.insert r
+        out := out.push r
+  let mut projections : Array Address := #[]
+  for (a, c) in records do
+    let o := owner a c
+    if o != a && seen.contains o && !seen.contains a then projections := projections.push a
+  projections := projections.qsort (fun x y => x.cmpBytes y == .lt)
+  return (out ++ projections).filter input.contains
 
 end Ixon.CheckOrder
 
