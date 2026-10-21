@@ -339,4 +339,121 @@ theorem closure_path {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Env
     rw [show env.consts.get? z = some ci from hci]
     rfl
 
+/-! ## The nodes and the edges -/
+
+/-- The first loop's step. -/
+def nodeStep (b : Array (Ix.Name × Ix.Set Ix.Name) × Std.HashMap Ix.Name Nat × Nat) (a : Ix.Name × Ix.Set Ix.Name) :
+    Array (Ix.Name × Ix.Set Ix.Name) × Std.HashMap Ix.Name Nat × Nat :=
+  (b.fst.push (a.fst, a.snd), b.snd.fst.insert a.fst b.fst.size, b.snd.snd)
+
+/-- Every position a name has is a node of that name. -/
+def Positions (b : Array (Ix.Name × Ix.Set Ix.Name) × Std.HashMap Ix.Name Nat × Nat) : Prop :=
+  ∀ n j, b.2.1.get? n = some j → ∃ hj : j < b.1.size, (b.1[j].1 == n) = true
+
+theorem nodeStep_foldl : ∀ (l : List (Ix.Name × Ix.Set Ix.Name)) b,
+    (l.foldl nodeStep b).1.toList = b.1.toList ++ l ∧ (Positions b → Positions (l.foldl nodeStep b)) := by
+  intro l
+  induction l with
+  | nil => intro b; exact ⟨by simp, id⟩
+  | cons a l ih =>
+    intro b
+    rw [List.foldl_cons]
+    refine ⟨by rw [(ih _).1]; simp [nodeStep], fun hb => (ih _).2 ?_⟩
+    intro n j h
+    simp only [nodeStep] at h ⊢
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
+    split at h
+    · rename_i same
+      cases h
+      exact ⟨by simp, by simpa using same⟩
+    · rw [← Std.HashMap.get?_eq_getElem?] at h
+      obtain ⟨hj, e⟩ := hb n j h
+      exact ⟨by simp; omega, by rw [Array.getElem_push_lt hj]; exact e⟩
+
+/-- **The condensation's nodes**: the graph's entries in its iteration order,
+each name's position a node of that name. -/
+theorem nodesOf_spec (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
+    (nodesOf refs).1.toList = refs.toList ∧
+      ∀ n j, (nodesOf refs).2.get? n = some j →
+        ∃ hj : j < (nodesOf refs).1.size, ((nodesOf refs).1[j].1 == n) = true := by
+  have key := nodeStep_foldl refs.toList (#[], ∅, 0)
+  have e : nodesOf refs = ((refs.toList.foldl nodeStep (#[], ∅, 0)).1, (refs.toList.foldl nodeStep (#[], ∅, 0)).2.1) := by
+    unfold nodesOf
+    simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, List.forIn_pure_yield_eq_foldl, Bool.false_and,
+      Bool.false_eq_true, ↓reduceIte]
+    rfl
+  rw [e]
+  exact ⟨by simpa using key.1, key.2 fun n j h => by
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h⟩
+
+/-- A loop in `Id` keeps an invariant of its state that each step keeps. -/
+theorem forIn_inv {α σ : Type} (I : σ → Prop) (f : α → σ → Id (ForInStep σ)) :
+    ∀ (l : List α), (∀ x ∈ l, ∀ s, I s → I (f x s).value) → ∀ s, I s → I (forIn (m := Id) l s f) := by
+  intro l
+  induction l with
+  | nil => intro _ s hs; exact hs
+  | cons x l ih =>
+    intro hstep s hs
+    rw [List.forIn_cons]
+    have hx := hstep x List.mem_cons_self s hs
+    cases hf : f x s with
+    | done s' => rw [hf] at hx; exact hx
+    | yield s' =>
+      rw [hf] at hx
+      exact ih (fun y hy => hstep y (List.mem_cons_of_mem _ hy)) s' hx
+
+/-- **An edge of the condensation's graph is a reference**: a successor `j`
+of node `i` is the position of a reference of node `i`'s entry. -/
+theorem adjOf_mem {E : Array (Ix.Name × Ix.Set Ix.Name)} {I : Std.HashMap Ix.Name Nat} {i j : Nat}
+    (hi : i < E.size) (hj : j ∈ (adjOf E I)[i]?.getD #[]) :
+    ∃ ref, E[i].2.contains ref = true ∧ I.get? ref = some j := by
+  unfold adjOf at hj
+  rw [Array.getElem?_map, Array.getElem?_eq_getElem hi] at hj
+  simp only [Option.map_some, Option.getD_some, Id.run, Std.HashSet.forIn_eq_forIn_toList] at hj
+  refine forIn_inv (fun s : Array Nat => ∀ j ∈ s, ∃ ref, E[i].2.contains ref = true ∧ I.get? ref = some j)
+    _ _ (fun ref href s hs => ?_) #[] (fun _ h => by simp at h) j hj
+  have hc : E[i].2.contains ref = true := Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_of_mem_toList href)
+  split
+  · rename_i k hk
+    intro j hj
+    rcases Array.mem_push.mp hj with hj | rfl
+    · exact hs j hj
+    · exact ⟨ref, hc, hk⟩
+  · exact hs
+
+/-- A path extended by an edge. -/
+theorem Path.snoc {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {x y y' z : Ix.Name} {rs : Ix.Set Ix.Name}
+    (p : Path refs x y) (hy : (y == y') = true) (hrs : refs.get? y' = some rs) (hz : rs.contains z = true)
+    (hzk : (refs.get? z).isSome = true) : Path refs x z := by
+  induction p with
+  | refl e =>
+    refine Path.step ?_ hz hzk (Path.refl (BEq.refl z))
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_congr (BEq.trans e hy), ← Std.HashMap.get?_eq_getElem?]
+    exact hrs
+  | step h₁ h₂ h₃ _ ih => exact Path.step h₁ h₂ h₃ (ih hy)
+
+/-- A node is an entry of the graph. -/
+theorem node_get {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {v : Nat} (hv : v < (nodesOf refs).1.size) :
+    refs.get? (nodesOf refs).1[v].1 = some (nodesOf refs).1[v].2 := by
+  have hm : ((nodesOf refs).1[v].1, (nodesOf refs).1[v].2) ∈ refs.toList := by
+    rw [← (nodesOf_spec refs).1]
+    exact Array.getElem_mem_toList hv
+  exact get_of_mem_toList hm (BEq.refl _)
+
+/-- **Reachability in the condensation's graph is a path of references.** -/
+theorem reach_path {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {u w : Nat}
+    (r : Ix.CompileCert.Canon.Reach (Ix.CompileCert.Canon.filt (edgesOf refs)) u w)
+    (hu : u < (nodesOf refs).1.size) :
+    ∃ hw : w < (nodesOf refs).1.size, Path refs (nodesOf refs).1[u].1 (nodesOf refs).1[w].1 := by
+  induction r with
+  | refl => exact ⟨hu, Path.refl (BEq.refl _)⟩
+  | @tail v w _ e ih =>
+    obtain ⟨hv, p⟩ := ih
+    obtain ⟨hw₁, -⟩ := Ix.CompileCert.Canon.edge_filt.mp e
+    obtain ⟨ref, href, hidx⟩ := adjOf_mem hv hw₁
+    obtain ⟨hw, hname⟩ := (nodesOf_spec refs).2 ref w hidx
+    refine ⟨hw, p.snoc (BEq.refl _) (node_get hv) ?_ (by rw [node_get hw]; rfl)⟩
+    rw [← Std.HashSet.contains_congr (BEq.symm hname)]
+    exact href
+
 end Ix.Cert.Condense
