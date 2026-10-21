@@ -684,15 +684,26 @@ def closeWithRecursors (env : Environment) (closure : List (Name × ConstantInfo
   if extra.isEmpty then return closure
   Ix.EnvScope.collectDeps env (closure.map (·.1) ++ extra.toList)
 
+/-- The prerequisites of the clique rows (`Ix.Compile.Pass.Clique.rowPrereqs`:
+    `Eq`, `funext`, `WellFounded.fix_eq`, …) as Lean names, those `env`
+    holds. A well-founded clique is transported only when they are in the
+    compile's input (`CliqueOutcome.wfOnly`, CQ5.2 (b)), so the twins'
+    closures carry them; a library compile has them anyway. -/
+def rowPrereqNames (env : Environment) : List Name :=
+  (Ix.Compile.Pass.Clique.rowPrereqs.toList.map
+    Tests.Ix.Compile.ClosureHarness.toLeanName).filter env.contains
+
 /-- The fixture constants of the families and the union of their closures
-    (with recursors, `closeWithRecursors`). -/
+    (with recursors, `closeWithRecursors`, and the clique rows' prerequisites,
+    `rowPrereqNames`). -/
 def familyClosure (env : Environment) (families : List Family) :
     Array Name × List (Name × ConstantInfo) := Id.run do
   let mut seeds : Array Name := #[]
   for f in families do
     for p in f.pres do
       seeds := seeds ++ (presConsts env p).map (·.1)
-  return (seeds, closeWithRecursors env (Ix.EnvScope.collectDeps env seeds.toList))
+  return (seeds, closeWithRecursors env
+    (Ix.EnvScope.collectDeps env (seeds.toList ++ rowPrereqNames env)))
 
 /-! ## The fixtures' environment and the compiles -/
 

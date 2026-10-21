@@ -52,7 +52,9 @@ use crate::graph::NameSet;
 use crate::mutual::Def;
 
 use super::Journal;
-use super::clique::hook::{CliquePrep, HookEnv, canon_refs, prepare_cliques};
+use super::clique::hook::{
+  CliquePrep, HookEnv, PLAN_CHECK_PREFIX, Rows, canon_refs, prepare_cliques,
+};
 use super::clique::plan::{CliqueOutcome, CliquePlan};
 use super::clique::row::{row_prereqs, rows_of};
 use super::clique::table::encoding_owner;
@@ -862,7 +864,7 @@ fn clique_step(
       table: &ctx.stt.p3.cliques,
       roots: &ctx.stt.p3.clique_roots,
       plans: &plans,
-      check_plans: false,
+      check_plans: ctx.stt.p3.check_plans,
       wf_only: true,
     };
     prepare_cliques(&h, all, refs)
@@ -998,6 +1000,33 @@ fn compile_rows_parallel(
   Ok(())
 }
 
+/// Two row sets are the same records (by content hash, in order): the
+/// rows table's check (Lean `memoLookup` under `p3CheckPlans`).
+fn same_rows(a: &Rows, b: &Rows) -> bool {
+  let same = |x: &[ConstantInfo], y: &[ConstantInfo]| {
+    x.len() == y.len()
+      && x.iter().zip(y).all(|(c, d)| c.get_hash() == d.get_hash())
+  };
+  same(&a.0, &b.0) && same(&a.1, &b.1)
+}
+
+/// The plan-table check fails the compile, not only a block (Lean
+/// `planCheckFailure?`): when the check is on (`Pass3State::check_plans`),
+/// the first (by name) block failure that carries [`PLAN_CHECK_PREFIX`],
+/// as `<name>: <message>`.
+pub fn plan_check_failure(stt: &CompileState) -> Option<String> {
+  if !stt.p3.check_plans {
+    return None;
+  }
+  stt
+    .ungrounded
+    .iter()
+    .filter(|e| e.value().contains(PLAN_CHECK_PREFIX))
+    .map(|e| (e.key().pretty(), e.value().clone()))
+    .min_by(|a, b| a.0.cmp(&b.0))
+    .map(|(n, m)| format!("{n}: {m}"))
+}
+
 /// **The clique rows** (CQ5.2; Lean `emitRows`/`cliqueRows`), after the
 /// scheduler: for every transported plan of the plan table, by clique key in
 /// pretty-name order, whose members and rows' prerequisites all compiled,
@@ -1034,8 +1063,19 @@ pub fn emit_rows(
     })
     .collect();
   let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
+  let check = stt.p3.check_plans;
   let parts = par_big_stack(&plans, |(k, p)| match stt.p3.clique_rows.get(k) {
-    Some(r) => Ok(r.value().clone()),
+    Some(r) => {
+      let stored: Rows = r.value().clone();
+      if check && !same_rows(&stored, &rows_of(&const_of, p)?) {
+        return Err(format!(
+          "{PLAN_CHECK_PREFIX} the rows of the clique {}: the recomputed value \
+           differs from the table's",
+          k.pretty()
+        ));
+      }
+      Ok(stored)
+    },
     None => rows_of(&const_of, p),
   });
   let mut copies: Vec<ConstantInfo> = Vec::new();

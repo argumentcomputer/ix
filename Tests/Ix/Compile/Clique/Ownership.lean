@@ -48,18 +48,19 @@
   exactly as the canonical `SC0`'s, with the original refusal kept for every
   unsupported replacement (`equationRegenerationChecks`).
 
-  **Left for the wiring step** (the donor's sections that compile through the
-  compiler pipeline: `compileUnit`, `Tests.Ix.Compile.Pass3.closureOf`,
-  `cliqueAddr cenv`, the clique table's carried lemmas, the three kernels on
-  the compiled file, and the Rust leg `rsCompileEnvBytesFFI`): the compile
-  units (every well-founded case without its equation lemmas, WF8's caller
-  refused by name and its neighbour compiled, the clique's addresses
-  independent of its callers) and the carried-lemma units (each `Lem` clique
-  compiled with its `eq_def`s, the clique table carrying them, the plan as
-  the compiler orders it over compiled addresses, the three kernels and the
-  Rust leg on every compiled name, and the control `lemmaControl`: the
-  lemmas transported by `Φ_σ` as before the refusal are rejected by Lean's
-  kernel exactly where the compiler's `σ` repacks a group).
+  **The donor's sections that compile through the pipeline** are wired
+  since CQ5.2 (b): the compile units (every well-founded case without its
+  equation lemmas, WF8's caller refused by name and its neighbour compiled,
+  the clique's addresses independent of its callers) and the carried-lemma
+  units (each `Lem` clique compiled with its `eq_def`s, the clique table
+  carrying them, the plan the compiler made, the kernels and the Rust leg on
+  every compiled name) are `clique-ownership-units`
+  (`Tests.Ix.Compile.Clique.OwnershipUnits`), and every case compiled by both
+  compilers is `pass3-rust-parity`'s `co-*` units. Under decision (ii) the
+  compiler keeps a structural clique in Lean's form, so the donor's control
+  `lemmaControl` (lemmas transported by `Φ_σ` as before the refusal,
+  rejected where `σ` repacks a group) has no compiled counterpart; the plan
+  with the lemmas transported is checked here (`runLemmaPlan`).
 
   Invoked as `lake test -- clique-ownership`.
 -/

@@ -31,6 +31,10 @@
 //!   term (FLT: +13 GiB for −8 % wall; Mathlib needs a large-memory
 //!   machine) to shave the last few percent on hardware with RAM to
 //!   spare.
+//!
+//! And one check, which changes no byte: `IX_PASS3_CHECK_PLANS=1`
+//! recomputes every clique plan and row set Pass 3's tables supply and
+//! fails the compile on a difference (Lean `DriverOptions.checkPlans`).
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -478,7 +482,14 @@ pub fn compile_env_with_profile(
     ungrounded: ungrounded_map,
     sharing_limits,
     driver_prepared: true,
-    p3: Pass3State { cliques, clique_roots, ..Default::default() },
+    p3: Pass3State {
+      cliques,
+      clique_roots,
+      // Pass 3's plan-table check (Lean `DriverOptions.checkPlans`)
+      check_plans: std::env::var("IX_PASS3_CHECK_PLANS")
+        .is_ok_and(|v| v == "1"),
+      ..Default::default()
+    },
     ..Default::default()
   };
 
@@ -1312,6 +1323,13 @@ pub fn compile_env_with_profile(
   // Pass 3's clique rows (Lean `emitRows`, between the fold and the
   // assembly): the rows and `_ix.src` copies of every transported clique
   crate::compile::pass3::driver::emit_rows(lean_env, &stt)?;
+
+  // Pass 3's plan-table check fails the compile, not only a block (Lean
+  // `planCheckFailure?`, after the fold): the first (by name) block failure
+  // that carries the check's prefix, when the check is on
+  if let Some(msg) = crate::compile::pass3::driver::plan_check_failure(&stt) {
+    return Err(CompileError::InvalidMutualBlock { reason: msg });
+  }
 
   stt.finalize_hints();
 

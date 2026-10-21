@@ -44,8 +44,17 @@
   definition site, so a `T.below …` occurrence in a structural recursion
   functional's type and value shared one record in Rust and had two in Lean.)
 
+  Part 3, the clique-ownership units (`co-*`, CQ5.2 (b)): each case of
+  `Tests.Ix.Compile.Clique.Ownership` compiled whole as a unit (its clique's
+  members with their closure and the rows' prerequisites; `WF8` with its
+  caller and neighbour), by the Lean pipeline and the Rust compiler, with
+  part 2's verdicts: the clique step, the plans, the rows and `_ix.src`
+  copies of a transported well-founded clique, and a caller's refusal, in
+  both compilers.
+
   The run passes iff every image is `SAME`, there are image-gen's 38, and
-  every case's callers are `ALIGNED` or `REFUSED` alike.
+  every case's callers and every `co-*` unit are `ALIGNED` or `REFUSED`
+  alike.
 
   Invoked as `lake test -- pass3-rust-parity` (tier `ci:compile-pipeline`).
 -/
@@ -57,6 +66,8 @@ import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.ImageProto
 import Ix.CompileDriver
 import Ix.EnvScope
+import Tests.Ix.Compile.Harness.Units
+import Tests.Ix.Compile.Clique.Ownership
 
 open Lean
 
@@ -208,16 +219,13 @@ inductive CallerVerdict where
   | refused (count : Nat)
   | diverged (why : String)
 
-/-- The Lean pipeline and the Rust compiler on one case's callers. A refused
-input writes nothing by default (`ix compile` is fail-closed), so for one the
-two compilers must refuse the same constants; their grounded subsets are not
-compared (they differ before Pass 3 already: Rust keeps a failed block's
-stored constants, e.g. on `C4b`). -/
-def callerParity (env : Environment) (c : Case) : IO CallerVerdict := do
-  let input ← match callerInput env c with
-    | .ok i => pure i
-    | .error e => return .diverged s!"input: {e}"
-  let lean ← match ← _root_.Ix.CompileM.compileLeanInput input (numWorkers := 1) with
+/-- The Lean pipeline (`workers` workers) and the Rust compiler on one
+compile input. A refused input writes nothing by default (`ix compile` is
+fail-closed), so for one the two compilers must refuse the same constants;
+their grounded subsets are not compared (they differ before Pass 3 already:
+Rust keeps a failed block's stored constants, e.g. on `C4b`). -/
+def inputParity (input : _root_.Ix.Compile.CompileInput) (workers : Nat := 1) : IO CallerVerdict := do
+  let lean ← match ← _root_.Ix.CompileM.compileLeanInput input (numWorkers := workers) with
     | .ok out => pure out
     | .error e => return .diverged s!"lean pipeline: {e}"
   let constants ← match input.prepare with
@@ -245,6 +253,42 @@ lean only {leanOnly.toList.take 5}, rust only {rustOnly.toList.take 5}"
         | none => some s!"{n.pretty} (not in the Rust output)").qsort (· < ·)
   return .diverged s!"bytes differ: lean {lean.bytes.size} B, rust {rustBytes.size} B; named \
 entries that differ: {differing.toList.take 5}"
+
+/-- The Lean pipeline (one worker) and the Rust compiler on one case's
+callers (`inputParity`). -/
+def callerParity (env : Environment) (c : Case) : IO CallerVerdict := do
+  match callerInput env c with
+  | .ok input => inputParity input
+  | .error e => return .diverged s!"input: {e}"
+
+/-! ## Part 3: the clique-ownership units, both compilers
+
+The `co-*` units (CQ5.2 (b), from the donor's `pass3-rust-parity`): each
+clique-ownership case (`Tests.Ix.Compile.Clique.Ownership.cases`, without an
+alteration, once per name) compiled whole, as a unit: its members' closure
+with the rows' prerequisites (`Twins.rowPrereqNames`, so a well-founded clique
+can be transported and its rows emitted), and for `WF8` its caller and
+neighbour (the caller refused by name on both sides when the clique is
+transported). Both compilers must give the same bytes (`ALIGNED`), or refuse
+the same constants (`REFUSED`). -/
+
+/-- The `co-*` units: label and compile input. -/
+def ownershipUnits (env : Environment) :
+    Array (String × Except String _root_.Ix.Compile.CompileInput) := Id.run do
+  let eqn := Tests.Ix.Compile.Clique.Transport.eqnCliques env
+  let prereqs := Tests.Ix.Compile.Twins.rowPrereqNames env
+  let mut seen : Std.HashSet String := {}
+  let mut out := #[]
+  for c in Tests.Ix.Compile.Clique.Ownership.cases do
+    if c.alter.isSome || seen.contains c.name then continue
+    seen := seen.insert c.name
+    let ns := Tests.Ix.Compile.Clique.Ownership.srcNs ++ c.name.toName
+    let label := s!"co-{c.name}"
+    let some (_, ms) := eqn.get? (ns ++ `first) | out := out.push (label, .error "no clique recorded"); continue
+    let extra := if c.name.startsWith "WF8" then #[ns ++ `caller, ns ++ `neighbour] else #[]
+    let closure := Tests.Ix.Compile.Harness.closureOf env ((ms ++ extra).toList ++ prereqs)
+    out := out.push (label, (_root_.Ix.Compile.compileInputFromEnv env closure).mapError toString)
+  return out
 
 /-! ## The suite -/
 
@@ -287,6 +331,22 @@ def run : IO UInt32 := do
     failures := failures.push s!"{rows.size} images, want image-gen's 38"
   IO.println s!"[pass3-rust-parity] callers: {callerCases} cases, {aligned} ALIGNED, \
 {refusedAlike} REFUSED alike"
+  -- part 3: the clique-ownership units (`co-*`)
+  let mut unitsAligned := 0
+  let mut unitsRefused := 0
+  let units := ownershipUnits (← Tests.Ix.Compile.Twins.fixturesEnv)
+  for (label, input?) in units do
+    match input? with
+    | .error e => failures := failures.push s!"{label}: input: {e}"
+    | .ok input =>
+      try
+        match ← inputParity input (workers := 8) with
+        | .aligned => unitsAligned := unitsAligned + 1
+        | .refused _ => unitsRefused := unitsRefused + 1
+        | .diverged why => failures := failures.push s!"{label}: DIVERGED: {why}"
+      catch e => failures := failures.push s!"{label}: {e}"
+  IO.println s!"[pass3-rust-parity] clique-ownership units: {units.size}, {unitsAligned} ALIGNED, \
+{unitsRefused} REFUSED alike"
   for f in failures do IO.println s!"[pass3-rust-parity] FAIL {f}"
   IO.println s!"[pass3-rust-parity] {failures.size} failures"
   return if failures.isEmpty then 0 else 1

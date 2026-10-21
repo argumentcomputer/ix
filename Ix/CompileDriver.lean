@@ -943,6 +943,20 @@ def mergeRows (acc : DriverAcc) (st : BlockState) : DriverAcc :=
 def emitRows (acc : DriverAcc) : Except String DriverAcc :=
   (mergeRows acc ·) <$> Ix.Compile.Pass.cliqueRows acc.cenv
 
+/-- The plan-table check (`CompileEnv.p3CheckPlans`, the CLI's
+    `IX_PASS3_CHECK_PLANS=1`) fails the compile, not only a block: the first
+    (by name) recorded block failure that carries
+    `Ix.Compile.Pass.Clique.planCheckPrefix`, when the check is on. The IO
+    pipeline returns it as the compile's error (Rust: `compile_env`, after the
+    scheduler). -/
+def planCheckFailure? (cenv : CompileEnv) : Option String :=
+  if !cenv.p3CheckPlans then none else
+  let hits := cenv.ungrounded.toArray.filter fun (_, msg) =>
+    (msg.splitOn Ix.Compile.Pass.Clique.planCheckPrefix).length > 1
+  match (hits.qsort fun a b => a.1.pretty < b.1.pretty)[0]? with
+  | some (n, msg) => some s!"{n.pretty}: {msg}"
+  | none => none
+
 /-- Assemble the final `Ixon.Env` from the accumulated driver state
     (shared tail of both drivers: names index, name blobs, finalize_hints — the exact
     per-Named channel plus the per-address `anonHints` advisory map with
@@ -1724,13 +1738,18 @@ def AuxIxcOptions.serviceInput (aux : AuxIxcOptions) (get? : Name → Option Con
     the blocks it was asked for (AuxGen M2b, see the section docstring). The
     service reads the input through the same view's `get?`. `aux` is the
     production setting by default (`failClosed`, the recursors' asks); other
-    settings are AuxGen's measurement modes (`IX_AUXGEN_IXC`). -/
+    settings are AuxGen's measurement modes (`IX_AUXGEN_IXC`). `checkPlans`
+    turns on Pass 3's plan-table check (`CompileEnv.p3CheckPlans`, the
+    CLI's `IX_PASS3_CHECK_PLANS`; off in `compileEnvFold`): a table entry
+    that differs from its recomputation is a block failure, which the IO
+    pipeline turns into the compile's error (`planCheckFailure?`). -/
 def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
     (unmaterialized : Nat := 0)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     (width : Nat := foldWaveTasks)
     (aux : AuxIxcOptions := {})
+    (checkPlans : Bool := false)
     : Except String ((Ixon.Env × Nat × CompileEnv) × Ix.AuxGen.Source.Report) := do
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
@@ -1749,7 +1768,7 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
   let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
-    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2 }
+    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let acc ← emitRows st.acc
   let (ixe, bytes, cenv) := assembleEnv acc
@@ -1801,6 +1820,11 @@ structure DriverOptions where
       Source service only (`AuxIxcOptions.support`): generation side, never
       compiled or certified. -/
   serviceSupport : List (Lean.Name × Lean.ConstantInfo) := []
+  /-- Pass 3's plan-table check (the CLI's `IX_PASS3_CHECK_PLANS=1`;
+      `CompileEnv.p3CheckPlans`): every clique plan and row set a table
+      supplies is recomputed and compared, and a difference fails the
+      compile (`planCheckFailure?`). Changes no byte. -/
+  checkPlans : Bool := false
 
 
 /-! ## The full pure-Lean pipeline
@@ -2023,10 +2047,16 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
       (aux := { opts.auxIxc.getD {} with
         support := if opts.serviceSupport.isEmpty then none
           else some (ServiceSupport.of opts.serviceSupport) })
+      (checkPlans := opts.checkPlans)
   match folded with
   | .error e => return .error e
   | .ok ((ixonEnv, _, cenv), source) =>
     let t ← tick "compile" t
+    if let some msg := planCheckFailure? cenv then return .error msg
+    if opts.checkPlans then
+      IO.println s!"  [compile-lean] plan table: {cenv.p3CliquePlans.size} plans, \
+{cenv.p3CliqueRows.size} row sets, each taken from the table recomputed and equal \
+(IX_PASS3_CHECK_PLANS)"
     if dbg then
       IO.println s!"  [compile-lean] source service: {source.summary}"
       IO.println s!"  [compile-lean] pass 3: {cenv.p3Blocks.size} changed blocks, \

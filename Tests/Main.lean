@@ -19,6 +19,7 @@ import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.CanonClique
 import Tests.Ix.Compile.Clique.Dag
 import Tests.Ix.Compile.Clique.Ownership
+import Tests.Ix.Compile.Clique.OwnershipUnits
 import Tests.Ix.Compile.Clique.Recognition
 import Tests.Ix.Compile.Clique.Rows
 import Tests.Ix.Compile.Clique.RustParity
@@ -28,6 +29,8 @@ import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.Pass3RustParity
+import Tests.Ix.Compile.PlanCache
+import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.ChangedSet
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
@@ -545,6 +548,17 @@ def registry : List Entry := [
   -- Canonicity over twin presentations, exact against the non-canonical
   -- record under the records policy (Tests.Ix.Compile.Twins).
   .runner "twins" .landing Tests.Ix.Compile.Twins.run,
+  -- Pass 3's clique tables (plans, rows) are memos: the check mode
+  -- (`IX_PASS3_CHECK_PLANS`) at 1, 4 and 32 workers writes the reference's
+  -- bytes, with negative controls (Tests.Ix.Compile.PlanCache)
+  .runner "pass3-plan-cache" .landing Tests.Ix.Compile.PlanCache.run,
+  -- The clique transport wired: every plan of the twins unit, and its rows and
+  -- `_ix.src` copies published exactly (Tests.Ix.Compile.Pass3Cliques)
+  .runner "pass3-cliques" .landing Tests.Ix.Compile.Pass3Cliques.run,
+  -- The clique-ownership cases compiled as units: plans over compiled addresses,
+  -- WF8's caller refused by name, values, kernels, the Rust leg; the carried-lemma
+  -- units (Tests.Ix.Compile.Clique.OwnershipUnits)
+  .runner "clique-ownership-units" .landing Tests.Ix.Compile.Clique.OwnershipUnits.run,
   -- Pass 3 on every fixture family: names, decompile, the certified checker and the
   -- Rust kernel against the kernel-failure record, the images' computation rules,
   -- display names, block failures against the record (Tests.Ix.Compile.Pass3)

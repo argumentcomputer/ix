@@ -91,7 +91,11 @@ in the `TwinsFixtures` environment. -/
 def twinsUnit : IO CUnit := do
   let env ← Tests.Ix.Compile.Twins.fixturesEnv
   let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env Tests.Ix.Compile.Twins.allFamilies
-  pure { name := "twins", env, seeds, closure := closureOf env seeds.toList }
+  -- with the clique rows' prerequisites, so the well-founded clique twins are
+  -- transported and their rows and `_ix.src` copies published (CQ5.2 (b)): the
+  -- kernels then check every row (row admission in the wired compile)
+  pure { name := "twins", env, seeds,
+         closure := closureOf env (seeds.toList ++ Tests.Ix.Compile.Twins.rowPrereqNames env) }
 
 /-- The aux corpus unit: the closure of `validateAuxClosure`. -/
 def corpusUnit (env : Environment) : IO CUnit := do

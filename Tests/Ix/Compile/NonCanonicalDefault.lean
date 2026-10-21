@@ -102,8 +102,6 @@ def part0 : List NonCanonicalEntry := [
     "15d43c0ba995e823fbbd1c7227fa5a3b5182b11eff33a35da82a4b21704b3f59" "a3b54b4648b2c97d9f1a17f4b95e1bcca4222acdae4d929574ac47cf28b500d5" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo._sunfold "user constant" .inherited (.inherited [`lFo, `cTr])
     "d27e527b120e8e2aebd09a605de7966c237b488a6220c5a6fee5eb1e110d4298" "a4769f9dc5df3bc2011170a55507983f70af0b6bfd0bbb7cc9aaa7783bca257a" "",
-  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa "clique member" .pendingTransport (.root false true true)
-    "4759d7fe47f0d21c2b99cf95bfc7d5cb7b9ca281166e4f3f92d37c8c308a06b2" "641529fc41f1f6b72045cde3fb9c20357b95df6d1e659d54b53617f145b99f36" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual "clique encoding" .pendingTransport (.root false true true)
     "dbc695fb29a7ce1669949b7525a305fbd4d1f11b5f1fbc352801a21aa7831447" "3427ae546dcec334c124360ff8d7484e7c97bbf7da70a47e61947ad058875f4e" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "`PSum` summand order of domain, motive, case trees and measure tree; per-function measures equal; equal under packKey",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual._proof_1 "encoding obligation" .pendingTransport (.root true true true)
@@ -113,13 +111,9 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "2b874d7adcde67692447fa1de16691fb35bd9efae63943a64358f346f5832fee" "cc2a2148e21ce32e46eff6a75dfd00a1b67f9a0dadbf91639b57c0d4948cf459" "type.∀.body.@2.@4.λ.body.@1" "statement over the packed `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa.eq_def "equation lemma" .lazy (.root false true true)
-    "3f7017a98ae057bd3f51728c1078b8151be63f88e3e40dead4719de56ac6e964" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wb "clique member" .pendingTransport (.root false true true)
-    "c485a2c9367144d0f6cef0490348f437998387316f56f259b2524484428b862e" "fae38748a4ee68cdd161650cc02b0ab89db1a0b4bc97c2f9f6a4f25fbbed84de" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "a4849b8f9007bb82f7548defe994fa90a5f1b3a825edecdd90256f3aedcec357" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wb.eq_def "equation lemma" .lazy (.root false true true)
-    "e59e349deb22c46e57c0e71786433574411b8dd1522d2e8e69249cc61321ac8c" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa "clique member" .pendingTransport (.root false true true)
-    "4759d7fe47f0d21c2b99cf95bfc7d5cb7b9ca281166e4f3f92d37c8c308a06b2" "641529fc41f1f6b72045cde3fb9c20357b95df6d1e659d54b53617f145b99f36" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "535d005dd5d7910de6d9d74062cb083527322f115c06b9bc78cf1852c593c53e" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa._mutual "clique encoding" .pendingTransport (.root false true true)
     "dbc695fb29a7ce1669949b7525a305fbd4d1f11b5f1fbc352801a21aa7831447" "3427ae546dcec334c124360ff8d7484e7c97bbf7da70a47e61947ad058875f4e" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "`PSum` summand order of domain, motive, case trees and measure tree; per-function measures equal; equal under packKey",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa._mutual._proof_1 "encoding obligation" .pendingTransport (.root true true true)
@@ -129,13 +123,9 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "2b874d7adcde67692447fa1de16691fb35bd9efae63943a64358f346f5832fee" "cc2a2148e21ce32e46eff6a75dfd00a1b67f9a0dadbf91639b57c0d4948cf459" "type.∀.body.@2.@4.λ.body.@1" "statement over the packed `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wa.eq_def "equation lemma" .lazy (.root false true true)
-    "3f7017a98ae057bd3f51728c1078b8151be63f88e3e40dead4719de56ac6e964" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wb "clique member" .pendingTransport (.root false true true)
-    "c485a2c9367144d0f6cef0490348f437998387316f56f259b2524484428b862e" "fae38748a4ee68cdd161650cc02b0ab89db1a0b4bc97c2f9f6a4f25fbbed84de" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "a4849b8f9007bb82f7548defe994fa90a5f1b3a825edecdd90256f3aedcec357" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P2" `wb.eq_def "equation lemma" .lazy (.root false true true)
-    "e59e349deb22c46e57c0e71786433574411b8dd1522d2e8e69249cc61321ac8c" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga "clique member" .pendingTransport (.root false true true)
-    "f565ce3d9ce8ac675ba4e535eddbb0fa48b4e91e7b507e1385056a070b2f971e" "8a34e4cd993fb7d9b189ce7b0b75f2670b21b46a029b433f76a82ed106a27bb8" "value.λ.body.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "535d005dd5d7910de6d9d74062cb083527322f115c06b9bc78cf1852c593c53e" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga._mutual "clique encoding" .pendingTransport (.root false true true)
     "0e27ba25c79dc7793a8ba162691f785ee152ec1f68d31f4f597d4b09db0a5ef5" "9cc2b3854a5c3cc7cdb261fadd317f19800a7d2a2f1eb5c1bed9d698f9f2cc70" "value.@4.λ.body.λ.body.@4.λ.body.λ.body.@4.λ.body.λ.body.λ.body.@3.λ.body" "`PSum` summand order of domain, motive, case trees and measure tree; per-function measures equal; equal under packKey",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga._mutual._proof_2 "encoding obligation" .pendingTransport (.root true true true)
@@ -147,17 +137,11 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "205423647ec0cfd85f0923b6927f8ea21ec2aeb2caecd718dd3ee0ef039b3991" "d0f98e93be3e30d814cb45b26997053706c312d701e191eedcdfa0a5b6cf2ff5" "type.∀.body.@2.@4.λ.body.@4.λ.body.λ.body.@3.λ.body" "statement over the packed `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `ga.eq_def "equation lemma" .lazy (.root false true true)
-    "f8c18f7082d58145f2a39a644c001fb69d3a99ad05e83f00add2273c7fe17e59" "f710ebdcf62e60f8399a516774451ac201a75910363716906bc87bfd428e2bd7" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `gb "clique member" .pendingTransport (.root false true true)
-    "f7787b8d0cd56368b87bb53196fe36fc0b9c2839a10ff3b0fd5e8092369be486" "c5e76ac756f4686274196cd37fcc1b8cceeb217a4adf50296aabb36d04303c48" "value.λ.body.λ.body.@0.@2.fn" "`PSum` injection at the clique position (A)",
+    "f35827b4c84b6f70580a8b6912fd4b3da4501c1225357921aacb8a390e8bcf48" "5c2804a821ded475222bcbd1e8a33804e12ce6020fecc37b81cebfba71147408" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `gb.eq_def "equation lemma" .lazy (.root false true true)
-    "80a975c58a9c3458b4cc9fd6107a93d37c686fab90119ba3332ae55995c99cc6" "eda78c77eafd830877efe20d1b014da7d7f284b706a579c2de8f5b6c15126dc7" "value.λ.body.λ.body.@1.@0.@2.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `gc "clique member" .pendingTransport (.root false true true)
-    "b6c20f5e441e355d2c4c0af88c436faa414c952532edf32cec404f23e1442de1" "2e11e2833c410ba92b2b10f39e2a9aeac6101a2c43c10d352ab60925fea5fe9e" "value.λ.body.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "663b6353b44257a43edf91bae9c44925f0e4acedf1067f072d5bb02dc3cbf04b" "fc2ee9f81c98e1b6112357b83f5717dee461c1d558e9a440fa4c502f05b01b41" "value.λ.body.λ.body.@1.@0.@2.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P1" `gc.eq_def "equation lemma" .lazy (.root false true true)
-    "3bba15edc4fcd75ef0851890fa2fb1fdab78f716f53725e64a2feb572e97cb77" "9246d7d2b9b39b3a602201240eb94a7f71f84d46ff77138221fd398073a3405b" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga "clique member" .pendingTransport (.root false true true)
-    "f565ce3d9ce8ac675ba4e535eddbb0fa48b4e91e7b507e1385056a070b2f971e" "2c41be0e21fc26c4193b3acf79ff54ebe9db6c51435930697eb2dc2662ede79f" "value.λ.body.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "8e0fbe1b5a5d406f26ff7cf750803c576da84e9386e8612ade88af5c8adcd6b5" "2382710c48945868893b5c14b79bdc5684139f27f99564acb2c72140d172bd5f" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga._mutual "clique encoding" .pendingTransport (.root false true true)
     "0e27ba25c79dc7793a8ba162691f785ee152ec1f68d31f4f597d4b09db0a5ef5" "43efb240d50538091e93d4cdf2ffa2140037e6df0cda820c120ab0c46dc3b447" "value.@4.λ.body.λ.body.@4.λ.body.λ.body.@4.λ.body.λ.body.λ.body.@1.@1" "`PSum` summand order of domain, motive, case trees and measure tree; per-function measures equal; equal under packKey",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga._mutual._proof_2 "encoding obligation" .pendingTransport (.root true true true)
@@ -169,29 +153,23 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "205423647ec0cfd85f0923b6927f8ea21ec2aeb2caecd718dd3ee0ef039b3991" "554d9601db74da49f2f7e6e581f9e461b0cfacf16cb79a7fbb58cf49060aebc3" "type.∀.body.@2.@4.λ.body.@4.λ.body.λ.body.@1.@1" "statement over the packed `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `ga.eq_def "equation lemma" .lazy (.root false true true)
-    "f8c18f7082d58145f2a39a644c001fb69d3a99ad05e83f00add2273c7fe17e59" "4801b23753ad6cf3a56f04dee9d12fe507df470f09436510af9c550f57aa10a8" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `gb "clique member" .pendingTransport (.root false true true)
-    "f7787b8d0cd56368b87bb53196fe36fc0b9c2839a10ff3b0fd5e8092369be486" "05ba5aaf6cc1a11fe2b70b8a352d383eac701c8c8664fd79f55dcc56fed95b28" "value.λ.body.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "f35827b4c84b6f70580a8b6912fd4b3da4501c1225357921aacb8a390e8bcf48" "0c4d2f04b89b366281ee0e7e5de8c2ede32a9bfcde6cbba7f38960ea1f4da6b2" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `gb.eq_def "equation lemma" .lazy (.root false true true)
-    "80a975c58a9c3458b4cc9fd6107a93d37c686fab90119ba3332ae55995c99cc6" "b33c695be2db8daff75040287be55e02c3af085aad7a3c578c0a91af7ee46f79" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `gc "clique member" .pendingTransport (.root false true true)
-    "b6c20f5e441e355d2c4c0af88c436faa414c952532edf32cec404f23e1442de1" "1645a1d44ec15056218e26836cee53bb5734275d598fede262d1bfa0a0aa6124" "value.λ.body.λ.body.@0.@2.fn" "`PSum` injection at the clique position (A)",
+    "663b6353b44257a43edf91bae9c44925f0e4acedf1067f072d5bb02dc3cbf04b" "fd9070ea53ccdc65142d822ef5a8d6a137254e55661212ce314a6ec546de63b6" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.W3 "P0" "P2" `gc.eq_def "equation lemma" .lazy (.root false true true)
-    "3bba15edc4fcd75ef0851890fa2fb1fdab78f716f53725e64a2feb572e97cb77" "2019c99986595cfc25a562b82c729700a516e8df62dcb1cf92bee249feddf9cc" "value.λ.body.λ.body.@1.@0.@2.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
+    "8e0fbe1b5a5d406f26ff7cf750803c576da84e9386e8612ade88af5c8adcd6b5" "b5f74e9a149a8afab9eef2365af9473a23ac4c0c7e47bc3d2c521b6366cbcea8" "value.λ.body.λ.body.@1.@0.@2.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `ga "clique member" .guessLex (.root false true true)
-    "242e5c784fb1c56336cfb8bd9be95aae375a3e029bb6787da7e3802667cd64df" "a54529c0d974aef16d4b2a61a038a49491a2f2640bb4451ae4d13b0d18d273d5" "value.λ.body.λ.body.@0.fn" "`PSum` injection, over the GUESSLEX-differing `_mutual`",
+    "242e5c784fb1c56336cfb8bd9be95aae375a3e029bb6787da7e3802667cd64df" "40ad1a3600d87fbeb7553899424e3cb97d0dde6d38b7b6f30bf8f152ff5ecd71" "value.λ.body.λ.body.@0.fn" "`PSum` injection, over the GUESSLEX-differing `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `ga._mutual "clique encoding" .guessLex (.root false true true)
     "9505e594f820630cddb3e20b6708419abb613c308ad91953d41372120ec19313" "f1b52679b1aa1207b01b494315252882f78493caaab7a40793cd0837c62a17aa" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@4.λ.body.λ.body.λ.body.@3.λ.body.@1" "GuessLex measure: (ga.x, gb.y) under P0, (gb.x, ga.y) under P1 (non-uniform combinations enumerated in function order, first that works); the canonical functional differs",
   e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `ga._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "04e8346072b66c68dde386ff5a5a1ce9144a185d226fc9099d8865ad22cc3c9f" "1dffc78b59df95be2ef948f52dd2c2138e3c7c9fe8f05aa4c808f72a2d0c359f" "type.∀.body.@2.@4.λ.body.@4.λ.body.λ.body.@3.λ.body.@1" "statement over the packed `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `ga.eq_def "equation lemma" .lazy (.root false true true)
-    "725de1dc9e6a16cbe621aefb2d4196d823e049f91cb1bb290f8d48051de49a7e" "338a400d2f57837f41c97d82d4cab4732b0b4490a5304a9d3143bd5be77cf6e5" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
+    "725de1dc9e6a16cbe621aefb2d4196d823e049f91cb1bb290f8d48051de49a7e" "a9292482c171cd3066ac7aa7856915e420df9ce7f79ba77ba1c8ae773c8a5e2b" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `gb "clique member" .guessLex (.root false true true)
-    "978a66e918dbcc26dee988dbbd25fd28f5f613c3482a5c14e1e32951b0bbccd9" "b0865eadcc8365b3b3d27419f53a0779d72ca275dd90978551c382b52fcf3f49" "value.λ.body.λ.body.@0.fn" "`PSum` injection, over the GUESSLEX-differing `_mutual`",
+    "978a66e918dbcc26dee988dbbd25fd28f5f613c3482a5c14e1e32951b0bbccd9" "5337df8a3848071b3fa1fe71fb801aa7ea2f63c159b27860d51da14d3ada7232" "value.λ.body.λ.body.@0.fn" "`PSum` injection, over the GUESSLEX-differing `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.WG "P0" "P1" `gb.eq_def "equation lemma" .lazy (.root false true true)
-    "8c620db260db49063de075bc9839f00b2d732c0468bb8b87f896facb9385a128" "40f2789bf7efed9f6c15d43fedf77c2d9d497674c59a312cecac7bd3f8082943" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta "clique member" .pendingTransport (.root false true true)
-    "4759d7fe47f0d21c2b99cf95bfc7d5cb7b9ca281166e4f3f92d37c8c308a06b2" "641529fc41f1f6b72045cde3fb9c20357b95df6d1e659d54b53617f145b99f36" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "8c620db260db49063de075bc9839f00b2d732c0468bb8b87f896facb9385a128" "6b29941a4ca276f9086b024a8b7d7d5d8efed6e1751b656dd7e9c805da987c4d" "value.λ.body.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta._mutual "clique encoding" .pendingTransport (.root false true true)
     "dbc695fb29a7ce1669949b7525a305fbd4d1f11b5f1fbc352801a21aa7831447" "3427ae546dcec334c124360ff8d7484e7c97bbf7da70a47e61947ad058875f4e" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "`PSum` summand order of domain, motive, case trees and measure tree; per-function measures equal; equal under packKey",
   e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta._mutual._proof_1 "encoding obligation" .pendingTransport (.root true true true)
@@ -201,13 +179,9 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "2b874d7adcde67692447fa1de16691fb35bd9efae63943a64358f346f5832fee" "cc2a2148e21ce32e46eff6a75dfd00a1b67f9a0dadbf91639b57c0d4948cf459" "type.∀.body.@2.@4.λ.body.@1" "statement over the packed `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `ta.eq_def "equation lemma" .lazy (.root false true true)
-    "3f7017a98ae057bd3f51728c1078b8151be63f88e3e40dead4719de56ac6e964" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `tb "clique member" .pendingTransport (.root false true true)
-    "c485a2c9367144d0f6cef0490348f437998387316f56f259b2524484428b862e" "fae38748a4ee68cdd161650cc02b0ab89db1a0b4bc97c2f9f6a4f25fbbed84de" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "a4849b8f9007bb82f7548defe994fa90a5f1b3a825edecdd90256f3aedcec357" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WT "P0" "P1" `tb.eq_def "equation lemma" .lazy (.root false true true)
-    "e59e349deb22c46e57c0e71786433574411b8dd1522d2e8e69249cc61321ac8c" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba "clique member" .pendingTransport (.root false true true)
-    "4759d7fe47f0d21c2b99cf95bfc7d5cb7b9ca281166e4f3f92d37c8c308a06b2" "641529fc41f1f6b72045cde3fb9c20357b95df6d1e659d54b53617f145b99f36" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "535d005dd5d7910de6d9d74062cb083527322f115c06b9bc78cf1852c593c53e" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba._mutual "clique encoding" .pendingTransport (.root false true true)
     "dbc695fb29a7ce1669949b7525a305fbd4d1f11b5f1fbc352801a21aa7831447" "3427ae546dcec334c124360ff8d7484e7c97bbf7da70a47e61947ad058875f4e" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "`PSum` summand order of domain, motive, case trees and measure tree; per-function measures equal; equal under packKey",
   e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba._mutual._proof_1 "encoding obligation" .pendingTransport (.root true true true)
@@ -217,11 +191,9 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "2b874d7adcde67692447fa1de16691fb35bd9efae63943a64358f346f5832fee" "cc2a2148e21ce32e46eff6a75dfd00a1b67f9a0dadbf91639b57c0d4948cf459" "type.∀.body.@2.@4.λ.body.@1" "statement over the packed `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `ba.eq_def "equation lemma" .lazy (.root false true true)
-    "3f7017a98ae057bd3f51728c1078b8151be63f88e3e40dead4719de56ac6e964" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `bb "clique member" .pendingTransport (.root false true true)
-    "c485a2c9367144d0f6cef0490348f437998387316f56f259b2524484428b862e" "fae38748a4ee68cdd161650cc02b0ab89db1a0b4bc97c2f9f6a4f25fbbed84de" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
+    "a4849b8f9007bb82f7548defe994fa90a5f1b3a825edecdd90256f3aedcec357" "311ecc3184b86b232a250a4ca678b70b6e40b57a267e1cdc54ea5c32a98fb21f" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WB "P0" "P1" `bb.eq_def "equation lemma" .lazy (.root false true true)
-    "e59e349deb22c46e57c0e71786433574411b8dd1522d2e8e69249cc61321ac8c" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
+    "535d005dd5d7910de6d9d74062cb083527322f115c06b9bc78cf1852c593c53e" "327144d5b893ee7f5d24097c8fa728d6c7eb81225d9bf0c8fd1f3f3503bbf103" "value.λ.body.@1.@0.fn" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.PF "P0" "P1" `pa "clique member" .pendingTransport (.root false true false)
     "dade135fc1eaa15b37cbf0b182a8b0c752f54bf12eb02840b88f106f4e7fe67a" "9911ee6af0f00d2ed01c598fd0263f8aa08491b8d21f22986127f92488458dd3" "value.proj0" "`PProdN.proj` at the factor position",
   e `Tests.Ix.Compile.Twins.Cliques.PF "P0" "P1" `pa.mutual "clique encoding" .pendingTransport (.root false true true)
@@ -242,18 +214,10 @@ def part0 : List NonCanonicalEntry := [
     "fc4304ee5143837aac1bbe637884c0babff4d7acc1eaf5bd92d3f92185d32bda" "4fbec683f761044ed4c47df9efa8b70e609f9da8ae9ea45976bc75181dfa8735" "value.proj0" "`PProdN.proj` at the factor position",
   e `Tests.Ix.Compile.Twins.Cliques.PF "P0" "P2" `pc "clique member" .pendingTransport (.root false true false)
     "0c0ebc4460fee8cd928f746e7f2582faa54239b60a439fdff41096a5285ed27a" "78ddb333047b376621b3023a40c92677d0a73f7fb9525e3cf8b5ae94cfba9955" "value" "`PProdN.proj` at the factor position",
-  e `Tests.Ix.Compile.Twins.Cliques.TS "P0" "P1" `evT "clique member" .pendingTransport (.root false true true)
-    "bb7f9eb5c1eee2076d608222ae2e59b3bec450945e57240aec1971bc7f4b8402" "e968d779096bf66ed8060322ad076feb752b84c1de9c494355ebbe36d7e3e4b8" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
   e `Tests.Ix.Compile.Twins.Cliques.TS "P0" "P1" `evT._mutual "clique encoding" .pendingTransport (.root true true true)
     "78a3577514987bc92d9a2729706e613221b268472784a8d1d7e53287ba4814fa" "38b13258377b659e92f44c3b92385ec4029f9fa33836e6f6fb498d9441e0818e" "type.∀.body.@4.λ.body.@1.@0.fn" "theorem clique by well-founded recursion (not structural: odT (n+1) calls evT (n+1)); GuessLex `(n, funIdx)` literals travel with each function; `PSum` order; inline decreasing proofs equal up to the packing",
-  e `Tests.Ix.Compile.Twins.Cliques.TS "P0" "P1" `odT "clique member" .pendingTransport (.root false true true)
-    "6795d98ab1593083c24882a9ef2d0fd34e1ca351fa107ea677c78781d5c25666" "79c0ad141956a442d22eba6ea4f4f0045595168ae83fd0cad44774a3599088b9" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
-  e `Tests.Ix.Compile.Twins.Cliques.TW "P0" "P1" `wa "clique member" .pendingTransport (.root false true true)
-    "5ddf195d3f8e7cbe8820d6db12a14b2472f47e6aa4952f1975ca3f02aa0ec075" "44e227a443b047e91bbd536284c16c6bc79fa1f3c2ebb8101a96bcae0b0a8025" "value.λ.body.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
   e `Tests.Ix.Compile.Twins.Cliques.TW "P0" "P1" `wa._mutual "clique encoding" .pendingTransport (.root true true true)
     "f4215cec1c7e681c3804e51a25357202c2d500c4acc04ffa3f8ddc9c58a9c012" "09a6c8908407175fda86ab1e581780f564eb41fc1fd79ae3ea11581474cfe582" "type.∀.dom.@0.@1.λ.body.@2.@1" "theorem clique by well-founded recursion; `PSum` order of the `PSigma` domains (hypothesis carried)",
-  e `Tests.Ix.Compile.Twins.Cliques.TW "P0" "P1" `wb "clique member" .pendingTransport (.root false true true)
-    "5883e50b907830935e717e5aa88faf8733fa45e2442687db5aa916e51bad0cb7" "993b8c17a4ddf9cec241eef2cfb7fa4913d8bba3683caac3388dc9b7b5a88f50" "value.λ.body.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM "clique member" .pendingTransport (.root false true false)
     "85bf0b29cbd0ae51eb6fcccec7c9fee8586402949922062961c9ae3531ab612a" "6dcbc436be70e74e5439e656b44114c10b02e09ebcb2fe1441108d2b5f3a9831" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM.match_2 "transformed matcher" .pendingTransport (.root true true false)
@@ -282,8 +246,6 @@ def part0 : List NonCanonicalEntry := [
     "4755dc9f98893af601cf942a679f3239403d4ae45ab03eafd0be03414a48816b" "9c564d42d27f9d5a1b58a4befaa82a883e5c438577317f2931ecf4e43078305c" "type.∀.dom" "fixed-parameter telescope in the first function order (O13b), plus the path into the packed `below` motive",
   e `Tests.Ix.Compile.Twins.Cliques.SP "P0" "P1" `fb._sunfold "user constant" .inherited (.inherited [`fa])
     "5964fafa5cc2ed01ffbd65046721bbd87504094c6adf3baf1c9622221c98f6fe" "7c5ce3d71009032d8d428b9402e0fdf231689095fd78f0e053dc33bef2a285a2" "",
-  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha "clique member" .pendingTransport (.root false true false)
-    "96439b5e84d57a74ff0dcacd08017d631b47efee00bacc29669b08843b53440e" "97dfbfe76350192cf901c5d92e8c6ea1cb22b69d49e90a4cdd7aae657bab95a8" "value.λ.body.λ.body.λ.body.@0" "fixed-parameter telescope in the first function order (O13b), plus the `PSum` injection",
   e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual "clique encoding" .pendingTransport (.root true true false)
     "e5b17bdb3751da6746ae4ef84d225c3586b1d87a412334584fed79217c9c33ba" "5a1b5db06609153eba1fec84761e1e7f3a2c91adc473ac9b6322cea011795fd4" "type.∀.dom" "fixed-parameter telescope in the first function order (O13b), plus the `PSum` summand order",
   e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual._proof_1 "encoding obligation" .pendingTransport (.root true true true)
@@ -293,13 +255,9 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "304abeedf1bd87f73382bcfc024dedb0aac1a01ea5f7ccb92efa730fb2732633" "89a8772f25d96b69de96009004693da023d46169108c225c9aab72ecc40a9aa7" "type.∀.dom" "statement over the packed `_mutual`",
   e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `ha.eq_def "equation lemma" .lazy (.root false true false)
-    "57a59c6c6683b306cca70ca5a92e04b85385414bff173296c04667216610c387" "7024839b94a5786e1512be86fd721d95f38cbda1035ea692508c8b4206f3c6bf" "value.λ.body.λ.body.λ.body.@1.@0" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `hb "clique member" .pendingTransport (.root false true false)
-    "b71ab54eb93bd5f8e5cac47b1a83061f3fb5e05e1855139378d94d4a29516b4f" "a58ab00877da16960b0d732d2fe021fa9f40fbf5e58b3c84e8bbd53e98fbb9bb" "value.λ.body.λ.body.λ.body.@0" "fixed-parameter telescope in the first function order (O13b), plus the `PSum` injection",
+    "57a59c6c6683b306cca70ca5a92e04b85385414bff173296c04667216610c387" "cb5f235989f467ebd96d4fee6eea8f7bc1c24969a0e62d0befc0683b3389eefc" "value.λ.body.λ.body.λ.body.@1.@0" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WP "P0" "P1" `hb.eq_def "equation lemma" .lazy (.root false true false)
-    "ba50c991443c66700984e2ebd7e783f68e71b5a574b26685aff7feb82265f671" "d3e27bed829407376d4cb0c7da14671d63e7994196c558c340f953fa0f4aec1b" "value.λ.body.λ.body.λ.body.@1.@0" "lazily realised equation lemma; its proof unfolds the clique encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta "clique member" .pendingTransport (.root false true true)
-    "deec05de7b347d76dbf742d9a27ff97653086ffdbf18a8b5de4c7a3580d26992" "88be839c49a3224cd64a80ef9852bd686dc4a12851e7a7b0d51832972c1fcb8e" "value.λ.body.@0.fn" "member injection at its clique position",
+    "ba50c991443c66700984e2ebd7e783f68e71b5a574b26685aff7feb82265f671" "700677378b746dc65a716f210944057af20396166589a38f969e873b859a7080" "value.λ.body.λ.body.λ.body.@1.@0" "lazily realised equation lemma; its proof unfolds the clique encoding",
   e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual "clique encoding" .pendingTransport (.root false true true)
     "77072c5e6560d1be6a9bc9685b5e7c79aa56f2065994f84d86c4c2d6b749b28a" "3b0e15526feeeacadb93a1a5eef651ad56ddc066b50212431324a6a92bdb4779" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "PSum order of the domain, motive, case trees and measure tree; the transport reproduces it (clique-transport)",
   e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual._proof_1 "encoding obligation" .pendingTransport (.root true true true)
@@ -313,15 +271,11 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "1fe0c2bdbc40ee7e7b51cc3ecc79ab82366db41efd0e90e30c51105e045001c3" "106e35daeb35e4579cc1bfa0610afaf7705543552ea524d2e4d8c483a1fdb629" "type.∀.body.@2.@4.λ.body.@1" "statement over the packed _mutual",
   e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `ta.eq_def "equation lemma" .lazy (.root false true true)
-    "cf825df0fcdc215d96592a72d56d9a67d42e587d49464fee89ff21aca5cc0271" "1b2f24b1a260bd9002ac4e0541802782dd493f452e46cabb20fa6dd5bca61acf" "value.λ.body.@1.@0.fn" "proof unfolds the encoding",
-  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tb "user constant" .inherited (.inherited [`ta._mutual])
-    "060e9defd68316c2b6f13f719ad81b2e08737319aaa3f6745331aaed4d080f78" "5b8df7a16a1ca945d6443430cad1d45195909c1cbdb777ee86a9990143597d1a" "",
-  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tb.eq_def "user constant" .inherited (.inherited [`ta._mutual.eq_def, `tb, `ta])
-    "087b311976df8ed12f1184ecba573e5665c896d2dd105c72ccf174b047c297a7" "aa747436471a140a76269da1c4ec0f7f2442ee9dd52c899a3b8dc852cf9d0dfa" "",
-  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tc "clique member" .pendingTransport (.root false true true)
-    "41bcc27da9f28ffd1eaca4151a3064ca03fce76cfe4e5d7286446563d1038a12" "f519ad6711975650e15ca602b08522ed1a9207d7d59977fe3462f06214227260" "value.λ.body.@0.fn" "member injection at its clique position",
+    "b54c8cd37a0a2fae100d92e29ecc88aa73098d1b6a0831b60a2f084e30c5aaf0" "42d3af4361d9bb629204e234341576b19e79cc86be1aa7c1a55b90d37ec1c80d" "value.λ.body.@1.@0.fn" "proof unfolds the encoding",
+  e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tb.eq_def "user constant" .inherited (.inherited [`ta._mutual.eq_def])
+    "8045fb2714463d5f507803c8f11719736d5d682267259d79a86a90f935f5e534" "d9f2efb0b94dae865d19bbaf6933db69604de6ae0e89d95276c5f94d1fe5b425" "",
   e `Tests.Ix.Compile.Twins.Cliques.WA "P0" "P1" `tc.eq_def "equation lemma" .lazy (.root false true true)
-    "2cba5fe7547104f0b93943b1c609b25d54c43287149b3e9987d643ab8a2d23d8" "cf4fc56bc13c1093ff201d3d1de52a259243c01ede0dceaef0b563abea4bccd5" "value.λ.body.@1.@0.fn" "proof unfolds the encoding",
+    "883d9d49e5f48fd84bd3ff3ee96b7f736be600a4a919cfb10791b88244ec0c15" "97a7ea7346e26e1e2d9a28da11c782d267ed3a990e5732ad10f18be206cb7091" "value.λ.body.@1.@0.fn" "proof unfolds the encoding",
   e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na "clique member" .pendingTransport (.root false true false)
     "6acfa58679ee85cdf1aaccdf61558625f8a41cd5f83c6ff584bf28e956a95b31" "95c284613996b282c88299bcd6c4028256be8388656282563cdef3a0ceb2ce27" "value.λ.body" "identical statements (na of P0 is nb of P1 byte for byte); the recovered specifications tie in one class, ordered by Pass 1's seed order (Q6, A5f); the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.TN "P0" "P1" `na._f "structural functional" .pendingTransport (.root false true false)
@@ -419,11 +373,7 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.PU "P0" "P1" `ub "clique member" .pendingTransport (.root false true false)
     "95b8e93dbb6bf28a4ac287b7b37ddd209f005d9ce94001abb50af0fec2500de1" "f382cb3d3db3db3d41ff4548771c3e6a09c409d50346a7c712d880b496b55e83" "value" "PProd factor order of the fixpoint and the members' paths; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra "clique member" .recArg (.root false true false)
-    "2e382f44b64ef0d59ad37730359abdb14ab33271ebd7b616a348302c555198fc" "36c4cfebb52faba910bfe2269aa5c77b87d855eab9e47eb07f8d4982f50ca86c" "value.λ.body.λ.body.fn" "Lean's allCombinations picked (ra.x, rb.y) under P0 and (rb.x, ra.y) under P1: brecOn over different arguments (clique-transport (f))"
-]
-
-/-- Entries 200 to 399. -/
-def part1 : List NonCanonicalEntry := [
+    "2e382f44b64ef0d59ad37730359abdb14ab33271ebd7b616a348302c555198fc" "36c4cfebb52faba910bfe2269aa5c77b87d855eab9e47eb07f8d4982f50ca86c" "value.λ.body.λ.body.fn" "Lean's allCombinations picked (ra.x, rb.y) under P0 and (rb.x, ra.y) under P1: brecOn over different arguments (clique-transport (f))",
   e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra._f "structural functional" .recArg (.root false true false)
     "a4ca7ec36d6d47cba1a964f929947892dcaa354e1cda9c8f43b169ce83a4e220" "bcaa8bdad6fddf93d4d61cb14fed4674b79cc401f7f900fd7a556e715b984a50" "value.λ.body.λ.body.λ.body.@0.λ.body.λ.body.∀.dom.@1" "Lean's allCombinations picked (ra.x, rb.y) under P0 and (rb.x, ra.y) under P1: brecOn over different arguments (clique-transport (f))",
   e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `ra._sparseCasesOn_1 "clique auxiliary" .recArg .onlyA
@@ -437,17 +387,17 @@ def part1 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.RA "P0" "P1" `rb._sunfold "user constant" .inherited (.inherited [`ra])
     "dd1cadd5effc2fc02b6642e09ed35b19d7ec83d85bd2b0e09a478f3a4abea61b" "3dd5a6e4da52f7619e1b99a75ee18e22599a4748509a9abb410ce9e28531d17a" "",
   e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha "clique member" .pendingTransport (.root false true false)
-    "81a1116c189347bb57bfeed4fdc7502c5269315582c04aa9815485162ea27be0" "15ec7af204f1cc5615f11aa34dc0d3d54c919fabc00fe81d8781292884bbdca3" "value.λ.body.λ.body.λ.body.λ.body.@1" "PSum order of the encoding and the fixed telescope; the transport reproduces it",
+    "81a1116c189347bb57bfeed4fdc7502c5269315582c04aa9815485162ea27be0" "a3d4bf350e02c3df5c332a74663309c3a562cf9785a743ad1b8492818731900e" "value.λ.body.λ.body.λ.body.λ.body.@1" "PSum order of the encoding and the fixed telescope; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha._mutual "clique encoding" .tacticAsym (.root false true true)
     "a7bf3d2955497f278338733e61cc5d3dc811eb0b4f52a132982b9ee267ca1cfa" "533939407aa6db690941e7c604843562fb5b16c7ca42c09118038d78f3bef142" "value.λ.body.λ.body.λ.body.@3.λ.body.λ.body.@4.λ.body.λ.body.@3.λ.body.@1" "decreasing_by `assumption` takes the most recent `1 < k` in the packed function's context, whose fixed parameters follow the first function: _proof_k k h₂ under P0, k h₁ under P1 (Lean.Elab.Tactic.assumption, FixedParams.lean); the rest of the encoding transports exactly",
   e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "713e343c7260eec8f36e0df24ebae7be003ad5f43c0913868cc6f35bccc135aa" "c5647bc6499224213d33344f77cdf7498457ba83c22144acbc3b14dc3c4268a4" "type.∀.body.∀.body.∀.body.∀.body.@2.@4.λ.body.@3.λ.body.@1",
   e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `ha.eq_def "equation lemma" .lazy (.root false true false)
-    "c8a926c0b15ac771de190bb1bb38887a9b14e03df3a51e239cb1954d3bf52183" "479546722f8190cc7f83279478c11b5521d4d706f1d04b861b57e927cba53a2b" "value.λ.body.λ.body.λ.body.λ.body.@1.@1",
+    "c8a926c0b15ac771de190bb1bb38887a9b14e03df3a51e239cb1954d3bf52183" "3f714a171c8fe686035698d5059d24711603a6e7322cd0404ac0cd3a91e9f925" "value.λ.body.λ.body.λ.body.λ.body.@1.@1",
   e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `hb "clique member" .pendingTransport (.root false true false)
-    "afc03d9f741d843fe9590666f7f260990cc457cc68a552ed117eff1ae1561f7c" "5b029055e35a1a6ca14149c622e343b185991dfd6fae99026eb71cae6e73e90e" "value.λ.body.λ.body.λ.body.λ.body.@1" "PSum order of the encoding and the fixed telescope; the transport reproduces it",
+    "afc03d9f741d843fe9590666f7f260990cc457cc68a552ed117eff1ae1561f7c" "1a794d1bcf32e34b8b35d62c10c55913dd2c3b995b1e7c2208a769f0c5f65d67" "value.λ.body.λ.body.λ.body.λ.body.@1" "PSum order of the encoding and the fixed telescope; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.WH "P0" "P1" `hb.eq_def "equation lemma" .lazy (.root false true false)
-    "895d6edfc2e83439b104aeb6f8a2e044351f4dd4a6dc95f9867ed343ae8edc7d" "5190c7ce167080fce7857892a64aceaa792805a9c69f5615a0f01730fd508310" "value.λ.body.λ.body.λ.body.λ.body.@1.@1",
+    "895d6edfc2e83439b104aeb6f8a2e044351f4dd4a6dc95f9867ed343ae8edc7d" "7c65a19c46d3a23e5d597c67c694523f4f33df1014a337d3a8be85424afce8f2" "value.λ.body.λ.body.λ.body.λ.body.@1.@1",
   e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `ra "clique member" .pendingTransport (.root false true false)
     "f515069851bec772c86c3429da59017111da4e12fec7a2c50f55a4dc3ba2e7dd" "c57bf565c6293ef91fd9162550ed5e87273fc22950125916325790cf69473b83" "value.λ.body" "identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `ra._f "structural functional" .pendingTransport (.root false true false)
@@ -456,28 +406,24 @@ def part1 : List NonCanonicalEntry := [
     "7085cfdfb166749435e0c1d59f22e1796877dcb83ecfa64a8b3d05bf7362406d" "55e412c17212dd415e079e198e94f2d0e5ee81ae9a232371140af0052f959767" "value.λ.body" "identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.TR "P0" "P1" `rb._f "structural functional" .pendingTransport (.root false true false)
     "98108fcdcffe277bf9fdce4b8af643b1b785867304c24a149d4b775f5160a4ab" "cb12be024d8ab4425c89facd16419aa4416f8a35a02dc910c309e29fb3d6a16a" "value.λ.body.λ.body.@4.λ.body.λ.body.let.val" "identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
-  e `Tests.Ix.Compile.Twins.Cliques.TQ "P0" "P1" `qa "clique member" .pendingTransport (.root false true true)
-    "b54f2593059f634aacbc338c3a6a9f1d174e9c878602a973ccb39b94a1da691b" "808cbd7f9bf7daab6785c7cf800175ac51255af01e73840ef56b4f111b1da16d" "value.λ.body.@0.fn" "identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.TQ "P0" "P1" `qa._mutual "clique encoding" .pendingTransport (.root false true true)
     "e221ec86aeb3fe776065dda776611fdc22c24a263d0fcf3e070a8d5bd1b4c39c" "71fe3265b59618938cb2faf2c8de64ba2c21e021af3bc308451210711fa2af30" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@1" "identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
-  e `Tests.Ix.Compile.Twins.Cliques.TQ "P0" "P1" `qb "clique member" .pendingTransport (.root false true true)
-    "5ff24256028f491cffba1917f580101010c8cd13ec8c2b5eb46b8a31c85be8a6" "77b89a107f331e04c153051103491879bb066e16f5a60ed7614aaad2dd3a8e3c" "value.λ.body.@0.fn" "identical statements; ordered by the recovered specification (Q6, second source); the transport reproduces it",
-  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx "clique member" .pendingTransport (.root false true true)
-    "d4453beb9378ad0545d57b3921bd3679fc92382e9a8278fef1183e3c8247c289" "1ae9cccb49d7220eb4d0e94e465b26444c563356f14ce8d6ba9ee97ca9248b90" "value.λ.body.@0.fn" "PSum order of the encoding; the user values of type PSum Nat Nat stay (the position restriction); the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx._mutual "clique encoding" .pendingTransport (.root false true true)
     "29ade7866807a108f74e5e7af9dd2d16e97e0bc0ec70d8c0348e2f72461a77e2" "ea34c5fded17085a9976c048f5b01246fb7ace26452defea241709934aee40d1" "value.@3.λ.body.λ.body.@4.λ.body.λ.body.@3.λ.body" "PSum order of the encoding; the user values of type PSum Nat Nat stay (the position restriction); the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx._mutual.eq_def "encoding equation" .orderStmt (.root true true false)
     "a3574f238552c2f40c8328764184166dd04daa2832607300df5528398e21d223" "d80a2ec1dea3ed3a5569755bacc357727c3092c1b2f37454047f9f1ab969f2c7" "type.∀.body.@2.@4.λ.body.@3.λ.body",
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx.eq_def "equation lemma" .lazy (.root false true true)
-    "578298758d13c63deba908d0afe1e68292db2343eb7f5587f4b2e701cb291b2a" "1369d30019bbd8c870ac4a620feece8eaaf1963ade3dc8a01d756f4370422d97" "value.λ.body.@1.@0.fn",
-  e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wy "clique member" .pendingTransport (.root false true true)
-    "92a70374d60266f75c22cc5167b08c23ecd199f5e0fc61dbc36ee39e069dfee2" "c65c287d359b894044850482f45c4d64856e31f7561d672d368ff84b6d7120a3" "value.λ.body.@0.fn" "PSum order of the encoding; the user values of type PSum Nat Nat stay (the position restriction); the transport reproduces it",
+    "536a0ccd00e89fc090179b723a25ddb1fce68a1257b05169f75c5122c36d9874" "1369d30019bbd8c870ac4a620feece8eaaf1963ade3dc8a01d756f4370422d97" "value.λ.body.@1.@0.fn",
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wy.eq_def "equation lemma" .lazy (.root false true true)
-    "5a031c526f0532f55fb04fe46bac9ce987909707d19a3f7842cb223a007318d8" "f9a53f194d6e42939af76f7dd338862ff4c9081d9b15b7ed9a7137a63edf3e2e" "value.λ.body.@1.@0.fn",
+    "b6f0f0613e648619e747a56663db0f844a5bf3d8d1829ad5642c3b099e3ea2ef" "f9a53f194d6e42939af76f7dd338862ff4c9081d9b15b7ed9a7137a63edf3e2e" "value.λ.body.@1.@0.fn",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
     "cd37d419d255515656933e6d23afe32bffc3622104ad299967bf429b71328188" "3149caf1f58e19e0832f94972715f19a8fb484385a3ed50e37ef683a5e12fd5e" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "9f571cee8cd34435aae331146255374c3c30bd41d22263eb4d83e9487a9971d1" "ecb5aa3e7f9be159472b15d3af82ab2d24f88b45a0502ffcc86c00d1320e9973" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
+    "9f571cee8cd34435aae331146255374c3c30bd41d22263eb4d83e9487a9971d1" "ecb5aa3e7f9be159472b15d3af82ab2d24f88b45a0502ffcc86c00d1320e9973" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor"
+]
+
+/-- Entries 200 to 399. -/
+def part1 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
     "6d49117afba347441fd9d5c801883965a81a59d32b23b89e2f613cce8ede1432" "5ba8df4f5c5b687425a8c97a35a5a33c0d9617049892ca7563726f89bd459959" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -823,11 +769,7 @@ def part1 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.node.elim "user constant" .inherited (.inherited [`A.ctorIdx, `A.ctorElim])
     "40ddd9eef32e24ee4ded078992b1037698c1ac9011878c9b630a0fdfa502fb18" "6bdc183f5e3d097a041b0ee16fb34eac0c1126681bc9bf2647b1837117b10c33" "",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.node.inj "user constant" .inherited (.inherited [`A.node.noConfusion])
-    "2cac384d7ac546c6d236663e5c81f0bfadbd463e1311d26cab8e0ee51b726791" "570ba64ccffa3d5767ccb526a4b75ab9075909142348fec3b0be643c830354f3" ""
-]
-
-/-- Entries 400 to 599. -/
-def part2 : List NonCanonicalEntry := [
+    "2cac384d7ac546c6d236663e5c81f0bfadbd463e1311d26cab8e0ee51b726791" "570ba64ccffa3d5767ccb526a4b75ab9075909142348fec3b0be643c830354f3" "",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.node.injEq "user constant" .inherited (.inherited [`A.node.inj])
     "0898dda0d47e92d050ab5c93d410eb4561621824d2f9b506322fd7985a67e162" "24f5ded008758deed117c7e263f75f3e4d460a6f1b1d0eed4f1647650aa2ca1c" "",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.node.noConfusion "user constant" .inherited (.inherited [`A.noConfusion])
@@ -881,7 +823,11 @@ def part2 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.PropCollapse "twin" "orig" `p_cases "user constant over the block" .pendingCollapse (.root false true false)
     "6a99811d2992052ed277106b72cc898e60dcd6a850b6bdcbd9bd9c8945cac093" "9c4d1367e40ad5a1bac4b8dfe5790e00a0f9de37a8fc3676c912ef37a71f096a" "value.λ.body.fn" "`cases` on a collapsed Prop pair (O8)",
   e `Tests.Ix.Compile.Twins.Repro.PropSplit "twin" "orig" `P1.casesOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
-    "2efa4bbd958d459004f3a93a7400ab7ba98da1688554df3e17a1fcbd2439a636" "757541206477da5f1aed7a4f6069168ddc96ad6897815cb4215d140048bd3c09" "kind",
+    "2efa4bbd958d459004f3a93a7400ab7ba98da1688554df3e17a1fcbd2439a636" "757541206477da5f1aed7a4f6069168ddc96ad6897815cb4215d140048bd3c09" "kind"
+]
+
+/-- Entries 400 to 599. -/
+def part2 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.PropSplit "twin" "orig" `P1.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "d2d89c26f75ac727358474a7f94e4f3243cda39617619200efcd322e701c98d3" "a0d6a9f7105a2e25f72767aa82e60b9102aa3a36dc698a74ffa13f4644e264d2" "kind",
   e `Tests.Ix.Compile.Twins.Repro.PropSplit "twin" "orig" `P1.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1227,11 +1173,7 @@ def part2 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.brecOn.go "block auxiliary" .image .onlyB
     "-" "f280f4cd05ec7ca01893c2aceecfe2a89b1f0a1cf31c8c06e73102cfa9d1bc1d" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.noConfusion "noConfusion" .pendingNoConfusion (.root false true false)
-    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block"
-]
-
-/-- Entries 600 to 799. -/
-def part3 : List NonCanonicalEntry := [
+    "dfbfaadea389bff0586dfc8c2c339acf7f1456c3a9272829c78b3197a1cb84d6" "6df4cee531b34c717442d6aac4c8322da1ef93049d47389322376dce62db20d8" "value.λ.body.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.noConfusionType "noConfusion" .pendingNoConfusion (.root false true false)
     "f94f909903c277574adf722ccb7c246bc717b773cb367fde035da90b4a779ac0" "c9112b5c2daafef397038049d0868a990d355d00ec702d62fe2c23f08c26f9f4" "value.λ.body.λ.body.λ.body" "§4.7 (c): enumeration form depends on the Lean block",
   e `Tests.Ix.Compile.Twins.Proto.C4 "can" "src" `B.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1285,7 +1227,11 @@ def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C5 "can" "src" `X.nil.elim "user constant" .inherited (.inherited [`X.ctorIdx, `X.ctorElim])
     "bbb6ffe937a7d246d1cd455b1e4f49eaae681c4fdeed60078775e57fb5a1dad9" "885aeba0ee1276695f887830b870ba5f30bc5939f7d81c67e04143ce9985139c" "",
   e `Tests.Ix.Compile.Twins.Proto.C5 "can" "src" `X.nil.sizeOf_spec "user constant" .inherited (.inherited [`X._sizeOf_inst])
-    "a572550a6184263f6d3999ca82aa84c41b6e33ef8fa4c1ab4a4b72e95496e4be" "54b4288db5d14dfa34199cb58d10ca65aa4ba1ce70d219649534ee53b4644389" "",
+    "a572550a6184263f6d3999ca82aa84c41b6e33ef8fa4c1ab4a4b72e95496e4be" "54b4288db5d14dfa34199cb58d10ca65aa4ba1ce70d219649534ee53b4644389" ""
+]
+
+/-- Entries 600 to 799. -/
+def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C5 "can" "src" `X.noConfusion "user constant" .inherited (.inherited [`X.casesOn, `X.noConfusionType])
     "567f68cba689df3ecee088d50c35c5224bc83709602c1ec997dbd49835743974" "ad1f01e0b43bcddb903a7578e07b8dc94139187e04452c5398f67da4f4423972" "",
   e `Tests.Ix.Compile.Twins.Proto.C5 "can" "src" `X.noConfusionType "user constant" .inherited (.inherited [`X.casesOn])
@@ -1631,11 +1577,7 @@ def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "a01edc74ebc4071abdd7ec7f35cfc38da692245a9764e5d98f59204dd902aa86" "95cfb2f4803902b089395617c9b16ee347c8079b759aa28d9e4348baa1f27433" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
-    "6b0e9178d2044078f7ef5ed01f0c0deacd961e2aa43ae44fc31ca2eec9026e98" "561e81efbc0c1ce6c990b30966ec94db6ae98c476a0f6110fb1f0063b0184f95" "type.∀.body.∀.body.∀.dom"
-]
-
-/-- Entries 800 to 999. -/
-def part4 : List NonCanonicalEntry := [
+    "6b0e9178d2044078f7ef5ed01f0c0deacd961e2aa43ae44fc31ca2eec9026e98" "561e81efbc0c1ce6c990b30966ec94db6ae98c476a0f6110fb1f0063b0184f95" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.below "block auxiliary" .image .onlyB
     "-" "cb6f32f746d2315981cd805fe676f0eb97ed44a21fa27ae8eddc4e00948128dc" "" "§4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C9 "can" "src" `B.brecOn "block auxiliary" .image .onlyB
@@ -1689,7 +1631,11 @@ def part4 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C9b "can" "src" `X.nil.sizeOf_spec "user constant" .inherited (.inherited [`X._sizeOf_inst])
     "7f27967002282d98122b4ab8f3603c84aca94a250420f59807b493cc2c732bfd" "841dbece80fef8ec1b3dc0f8218ced76da5fe23d8038fa54897ac27da18399bd" "",
   e `Tests.Ix.Compile.Twins.Proto.C9b "can" "src" `X.noConfusion "user constant" .inherited (.inherited [`X.casesOn, `X.noConfusionType])
-    "63650d74af08a8656ea58d1d8908d5d9dcbfced02f395196cbf03442b517f5d7" "14377b0b5664d5233dfbd0e8403b28b65db10299f6689c5a35fada7b113a771c" "",
+    "63650d74af08a8656ea58d1d8908d5d9dcbfced02f395196cbf03442b517f5d7" "14377b0b5664d5233dfbd0e8403b28b65db10299f6689c5a35fada7b113a771c" ""
+]
+
+/-- Entries 800 to 999. -/
+def part4 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C9b "can" "src" `X.noConfusionType "user constant" .inherited (.inherited [`X.casesOn])
     "9cd4d7eeda28cb6ac9b9d9d313c7c6961c9a1c0836fdc0d5d20b994d646e365a" "8e05cd1a3cd533559c4d44cb56126e6ff53d81ed239c7c9031f4f9360de0cd46" "",
   e `Tests.Ix.Compile.Twins.Proto.C9b "can" "src" `X.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2035,11 +1981,7 @@ def part4 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.brecOn_9 "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
     "-" "e3a7c68c967ef8361258c6bdefa792d2ebe13a12f6c69b65694ee524c832c788" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.brecOn_9.eq "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
-    "-" "1d27623537ca8c5da789cb376414f0f12d6c6b72c6f18dad512789a31df1e0a7" ""
-]
-
-/-- Entries 1000 to 1126. -/
-def part5 : List NonCanonicalEntry := [
+    "-" "1d27623537ca8c5da789cb376414f0f12d6c6b72c6f18dad512789a31df1e0a7" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.brecOn_9.go "image-kind head of a changed block (its Lean name holds the image)" .image .onlyB
     "-" "f6c3ae6304151d152ff091b118a39bb287e3c5fa22a5eb8f080f66b07aa5451c" "",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `EqCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2093,7 +2035,11 @@ def part5 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5f07e30d3ca221ed4cfa6567c20646ce348ea0677b5e6e044f9a16b68defbbd6" "2cf5bf5126a578762dcae80ac0da12e514e0d99c811105f598f7cc7a31a88e50" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.brecOn.eq "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
-    "eef819e5b3a1f23419de8344465c75450546960adc656a1d38ab2e97b87ee488" "48e5937f9e9948c2ad7a9016f4b1127eada0f49355eedf5c7958ba339116bcb0" "type.∀.dom.∀.dom",
+    "eef819e5b3a1f23419de8344465c75450546960adc656a1d38ab2e97b87ee488" "48e5937f9e9948c2ad7a9016f4b1127eada0f49355eedf5c7958ba339116bcb0" "type.∀.dom.∀.dom"
+]
+
+/-- Entries 1000 to 1099. -/
+def part5 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "91404fbe5acdba843e4ea2006e4c902e8404d9188988b7488a1750ccff0ef42e" "6eedf7ce146d045c89554d2449ed79155f99d7bdf07f54b04088d2ca3d195219" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)

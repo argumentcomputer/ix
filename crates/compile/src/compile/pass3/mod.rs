@@ -95,6 +95,10 @@ pub struct Pass3State {
   /// scheduler (`driver::emit_rows`, which computes a missing entry). Never
   /// changes a byte.
   pub clique_rows: DashMap<Name, Rows>,
+  /// Clique transport: recompute every plan and row set the tables supply
+  /// and fail on a difference (`IX_PASS3_CHECK_PLANS=1`, read by
+  /// `compile_env`; Lean `CompileEnv.p3CheckPlans`). Changes no byte.
+  pub check_plans: bool,
 }
 
 /// A record the aux tail made, journaled for the side-car edit.

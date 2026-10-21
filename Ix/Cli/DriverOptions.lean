@@ -13,6 +13,9 @@ the options here:
 - `IX_SHARING_LIMITS` (set by `--sharing-limits`, or directly): the sharing
   construction's limits;
 - `IX_COMPILE_DBG`: phase timings and the per-wave trace;
+- `IX_PASS3_CHECK_PLANS=1`: Pass 3's plan-table check
+  (`DriverOptions.checkPlans`): every clique plan and row set a table
+  supplies is recomputed and compared, and a difference fails the compile;
 - `IX_AUXGEN_IXC` (AuxGen's measurement modes, never needed otherwise;
   `Ix.CompileM.AuxIxcOptions`): `shadow`, `fallback`, `failClosed` or
   `fallbackEager` runs the wave fold with its aux tails asking IxC in that mode
@@ -75,7 +78,8 @@ def driverOptionsFromEnv (dbg : Bool := false) :
       | some v => match auxIxcOptionsOf v with
         | .ok o => pure (some o)
         | .error e => return .error e
-    return .ok { sharingLimits, dbg, auxIxc
+    let checkPlans := (← IO.getEnv "IX_PASS3_CHECK_PLANS") == some "1"
+    return .ok { sharingLimits, dbg, auxIxc, checkPlans
                  memory := if dbg then some residentSetSize else none }
 
 end Ix.Cli

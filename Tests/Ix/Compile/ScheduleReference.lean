@@ -14,7 +14,8 @@
 
   The two definitions are `Ix.CompileM.precompileAuxGenPrereqs` and
   `Ix.CompileM.compileEnvAux` as of CQ2.13/CQ2.24, renamed, with the
-  `least` switch on the ready queue.
+  `least` switch on the ready queue, and the clique rows emitted after the
+  loop (`emitRows`, CQ5.2 (b)), as in both drivers of the fold.
 -/
 import Ix.CompileDriver
 
@@ -283,7 +284,8 @@ missing canonical aliases: {missing}"
     return .error s!"Only compiled {blocksCompleted}/{totalBlocks} blocks \
 - circular dependency?"
 
-  return .ok (assembleEnv acc)
+  -- the clique rows after the loop, as the fold does (`emitRows`, CQ5.2 (b))
+  return assembleEnv <$> emitRows acc
 
 
 end Tests.Ix.Compile.ScheduleReference

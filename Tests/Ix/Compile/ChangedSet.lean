@@ -450,6 +450,14 @@ two fibers of `initStdLeanMutualFibers`, whose members are each a component of
 their own. -/
 def initStdDefinitions : List (Array Lean.Name) := []
 
+/-- Init+Std's clique-stage entries (CQ5.2 (b), recorded at the series gate
+`batch2/20261021T160313Z-cq52b-gate`): `(clique, caller)` entry counts. Every
+input clique of the table (`cliqueTables`, whatever its plan: the stage
+over-approximates the clique step) enters with its members and carried
+lemmas (`clique`), and every member of a condensation block that references
+one of Lean's encoding constants of a clique enters as a `caller`. -/
+def initStdCliqueEntries : Nat × Nat := (24, 32)
+
 /-- A name of each Init+Std fiber with two names in one Lean `all` (recorded
 at push 47): the `partial` `Std.Http.Protocol.H1.Machine` handlers, opaques of
 one value, each its own component, so each fiber spans Source's groups and
@@ -501,8 +509,24 @@ set {t2 - t1} ms): {cs.counts.summary}"
     ps := ps.push s!"definition components collapsing inside: {gotDefs}, expected {wantDefs}"
   for b in cs.blocks.filter (·.kind == .inductiveBlock) do
     ps := ps.push s!"changed inductive component {(b.first.map (·.pretty)).getD "?"}"
+  -- besides the collapsing definition components' members, only the clique
+  -- stage's entries: `clique` exactly at the clique table's names, `caller`
+  -- for the blocks referencing an encoding constant (CQ5.2 (b))
   for e in cs.entries do
-    unless e.cause == .member do ps := ps.push s!"{e.name.pretty}: {e.cause.tag}"
+    unless e.cause == .member || e.cause == .clique || e.cause == .caller do
+      ps := ps.push s!"{e.name.pretty}: {e.cause.tag}"
+  let tables := cliqueTables env (_root_.Ix.Cert.compileBlocks env)
+  let cliqueNames := (cs.entries.filterMap fun e =>
+    if e.cause == .clique then some e.name.pretty else none).qsort (· < ·)
+  let tableNames := (tables.1.toArray.map (·.1.pretty)).qsort (· < ·)
+  unless cliqueNames == tableNames do
+    ps := ps.push s!"clique entries {cliqueNames.size} ≠ the clique table's {tableNames.size} names"
+  let callers := (cs.entries.filter (·.cause == .caller)).size
+  say s!"clique stage: {cliqueNames.size} clique entries (the table's {tableNames.size} names), \
+{callers} caller entries"
+  unless (cliqueNames.size, callers) == initStdCliqueEntries do
+    ps := ps.push s!"clique stage: {cliqueNames.size} clique and {callers} caller entries, recorded \
+{initStdCliqueEntries}"
   let fibers := leanMutualFibers env ixe
   say s!"fibers with two names in one Lean `all`: {fibers.size}, of them in the set: \
 {(fibers.filter (·.any cs.contains)).size}"
