@@ -430,6 +430,33 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           invariant: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a misnamed input constant"
   | _ => errors := errors.push s!"{label}: fewer than two input definitions"
+  -- the constructor check (every constructor an input inductive lists is
+  -- stored as a constructor of it), timed alone, then refusing, by its own
+  -- message, the input with one constructor's inductive renamed to itself
+  let s0 ← IO.monoMsNow
+  let stray? ← IO.lazyPure fun _ => Ix.Cert.strayConstructor env
+  let s1 ← IO.monoMsNow
+  match stray? with
+  | none => lines := lines.push s!"{label}: strayConstructor finds every constructor of an input \
+      inductive stored as its constructor ({env.consts.size} constants, {s1 - s0} ms)"
+  | some c => errors := errors.push s!"{label}: strayConstructor finds {c.pretty} in the input"
+  let ctorVals := env.consts.toList.filterMap fun (n, ci) => match ci with
+    | .ctorInfo cv => some (n, cv)
+    | _ => none
+  match ctorVals with
+  | (n, cv) :: _ =>
+    let env' : Ix.Environment :=
+      { env with consts := env.consts.insert n (.ctorInfo { cv with induct := n }) }
+    match Ix.Cert.checkReport env' cenv (ixe, failures) with
+    | .error e =>
+      if (e.splitOn "constructor check failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses an input constructor stored with another \
+          inductive ({n.pretty})"
+      else
+        errors := errors.push s!"{label}: the stray constructor is refused, but not by the \
+          constructor check: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a stray input constructor"
+  | [] => errors := errors.push s!"{label}: no input constructor"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find

@@ -1134,7 +1134,13 @@ fun env cenv out =>
                     match Ix.Cert.foreignHead env cenv.p3Heads out.fst with
                     | none =>
                       match Ix.Cert.misnamedInput env with
-                      | none => Except.ok ()
+                      | none =>
+                        match Ix.Cert.strayConstructor env with
+                        | none => Except.ok ()
+                        | some c =>
+                          Except.error
+                            (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
+                              toString ", a constructor of an input inductive, is not stored as a constructor of it")
                       | some n =>
                         Except.error
                           (toString "compileReport: name invariant failed: the input constant stored under " ++
@@ -1342,7 +1348,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                   Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst = none ∧
                     Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
                       Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-                        Ix.Cert.foreignHead env cenv.p3Heads out.fst = none ∧ Ix.Cert.misnamedInput env = none -/
+                        Ix.Cert.foreignHead env cenv.p3Heads out.fst = none ∧
+                          Ix.Cert.misnamedInput env = none ∧ Ix.Cert.strayConstructor env = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4773,6 +4780,47 @@ fun env =>
     env.consts.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.misnamedInput
+
+/-! ## Input constructors belong to their inductive (B9b, `HookFree`'s discharge, membership; coordinator decision, 2026-10-21 ~05:20)
+
+A block's compile claims its inductives' constructors, looked up by the names
+the inductive lists (`InductiveVal.ctors`); a claimed constructor is in the
+inductive's component, and in every closure that holds it, only if it
+references the inductive. `compileReport` now refuses an input in which a
+constructor an input inductive lists is not stored as a constructor of it
+(`ConstructorVal.induct` hashing like the name the inductive is stored under;
+`checkReport`'s thirteenth check, `strayConstructor`). Re-frozen with it:
+`checkReport`'s print and `checkReport_ok` (a thirteenth conjunct). On a
+consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] input constructors: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] input constructors: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "input constructors"
+    (#[`strayConstructor_none, `ctorsBelong].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "input constructors" #[``Ix.Cert.strayConstructor]
+
+/-- info: def Ix.Cert.strayConstructor : Ix.Environment → Option Ix.Name :=
+fun env =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, ci) =>
+        match ci with
+        | Ix.ConstantInfo.inductInfo iv =>
+          List.find?
+            (fun c =>
+              match env.consts.get? c with
+              | some (Ix.ConstantInfo.ctorInfo cv) => !cv.induct == n
+              | x => true)
+            iv.ctors.toList
+        | x => none)
+    env.consts.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.strayConstructor
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

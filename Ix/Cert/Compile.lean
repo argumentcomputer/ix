@@ -741,7 +741,23 @@ member's constructor's. -/
 @[expose] def misnamedInput (env : Ix.Environment) : Option Ix.Name :=
   env.consts.toList.findSome? fun (n, ci) => if ci.getCnst.name == n then none else some n
 
-/-- `compileReport`'s twelve checks on a compile's result, each an error on
+/-- The first constructor name (`InductiveVal.ctors`) of an input inductive
+that the input does not store as a constructor of that inductive
+(`ConstructorVal.induct` hashing like the name the inductive is stored under),
+if any. A block's compile claims its inductives' constructors, looked up by
+those names; with no such name, each claimed constructor references its
+inductive (`Ix.graphConst`), so it is in the inductive's component and in
+every closure that holds it. -/
+@[expose] def strayConstructor (env : Ix.Environment) : Option Ix.Name :=
+  env.consts.toList.findSome? fun (n, ci) =>
+    match ci with
+    | .inductInfo iv => iv.ctors.toList.find? fun c =>
+        match env.consts.get? c with
+        | some (.ctorInfo cv) => !(cv.induct == n)
+        | _ => true
+    | _ => none
+
+/-- `compileReport`'s thirteen checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -765,7 +781,9 @@ extra names, nor a constructor of an inductive among them (`crossClaimed`).
 **Heads are changed:** each of the driver's final
 Pass 3 heads (`cenv.p3Heads`) is in the changed set (`foreignHead`). **Input
 constants carry their names:** each input constant's own name hashes like the
-name it is stored under (`misnamedInput`). -/
+name it is stored under (`misnamedInput`). **Input constructors belong to their
+inductive:** each constructor an input inductive lists is stored as a
+constructor of it (`strayConstructor`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
@@ -789,7 +807,12 @@ name it is stored under (`misnamedInput`). -/
                     match foreignHead env cenv.p3Heads out.1 with
                     | none =>
                       match misnamedInput env with
-                      | none => .ok ()
+                      | none =>
+                        match strayConstructor env with
+                        | none => .ok ()
+                        | some c =>
+                          .error s!"compileReport: constructor check failed: the name {c.pretty}, a \
+                            constructor of an input inductive, is not stored as a constructor of it"
                       | some n =>
                         .error s!"compileReport: name invariant failed: the input constant stored \
                           under {n.pretty} carries another name"
@@ -834,7 +857,7 @@ name it is stored under (`misnamedInput`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with twelve checks (`checkReport`):
+condensation it cannot schedule). It ends with thirteen checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -845,8 +868,9 @@ published input inductive is published at an inductive projection of a
 block with a `Muts` entry; and every input name of the driver's final aux map
 is published with an original-form record; every published input name is
 resolved or in the aux map; no resolved name outside the aux map is a cross-SCC
-subset's claim; every Pass 3 head is in the changed set; and every input
-constant carries the name it is stored under. Any inconsistency is an error, and no artifact is
+subset's claim; every Pass 3 head is in the changed set; every input
+constant carries the name it is stored under; and every constructor an input
+inductive lists is stored as a constructor of it. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that
 agree with their blocks, resolved names published where they resolve,
