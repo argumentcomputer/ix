@@ -1,6 +1,8 @@
-import IxC.Ixon.Canonical
-import IxC.Kernel.Ingress.Records
-import Std.Data.HashSet.Basic
+module
+
+public import IxC.Ixon.Canonical
+public import IxC.Kernel.Ingress.Records
+public import Std.Data.HashSet.Basic
 
 /-! # The byte stage of admission
 
@@ -21,6 +23,8 @@ no hasher (`Ix.Kernel.Audit.kernelImportAllowlist`); the root library
 instantiates it at BLAKE3. Blobs retain their exact supplied bytes. No host
 decoder or verdict participates in this path.
 -/
+
+@[expose] public section
 
 namespace Ix.Kernel.Admission
 
@@ -143,3 +147,7 @@ def decodeLoop (limits : Limits) : Nat → Records → Ingress.Constants →
 preflight is part of `checkBytes`, not this independently useful operation. -/
 def decodeRecords (limits : Limits) (records : Records) : Except ByteError Ingress.Constants :=
   decodeLoop limits 0 records []
+
+end Ix.Kernel.Admission
+
+end

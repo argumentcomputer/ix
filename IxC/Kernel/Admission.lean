@@ -1,7 +1,9 @@
-import IxC.Kernel.Admission.Bytes
-import IxC.Kernel.Ixon.Prelude
-import IxC.Kernel.Cached.Installed
-import IxC.Kernel.Egress.Projection
+module
+
+public import IxC.Kernel.Admission.Bytes
+public import IxC.Kernel.Ixon.Prelude
+public import IxC.Kernel.Cached.Installed
+public import IxC.Kernel.Egress.Projection
 
 /-! # Admission from ordered Ixon record bytes
 
@@ -54,6 +56,8 @@ ground, and the constants its literals reference (`Reader.literalEdges`; the
 checker declines a string literal before the string-support declarations), as
 the environment-check driver's order is.
 -/
+
+@[expose] public section
 
 namespace Ix.Kernel.Admission
 
@@ -294,3 +298,5 @@ def ByteError.outcome : ByteError → Outcome
   | .decode .. => .rejected
 
 end Ix.Kernel.Admission
+
+end

@@ -1,5 +1,7 @@
-import IxC.Kernel.Admission
-import IxC.Kernel.Tier.Check
+module
+
+public import IxC.Kernel.Admission
+public import IxC.Kernel.Tier.Check
 
 /-! # The tiered Ixon entry: the logical check, then the typing tier
 
@@ -44,6 +46,8 @@ records, against the accepted logical environment:
 The existing entries (`checkBytes`, `checkConstantsWith`) are unchanged and
 still decline every tier record: they remain the entries whose accept is
 model-backed in full. -/
+
+@[expose] public section
 
 namespace Ix.Kernel.Admission
 
@@ -238,3 +242,5 @@ def checkBytesTiered (hash : ByteArray → Address) (binding : Binding) (limits 
   checkBytesTieredUsing preludeFor hash binding limits records blobs hint
 
 end Ix.Kernel.Admission
+
+end

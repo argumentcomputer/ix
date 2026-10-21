@@ -1,6 +1,8 @@
-import IxC.Kernel.Ref
-import IxC.Kernel.Search
-import IxC.Kernel.Ingress.Records
+module
+
+public import IxC.Kernel.Ref
+public import IxC.Kernel.Search
+public import IxC.Kernel.Ingress.Records
 
 /-! # Projection records from kernel references
 
@@ -8,6 +10,8 @@ The exact projection-record reading and writer that projection
 reconstruction (`Ixon.Projection`) and canonical block order
 (`Ixon.BlockOrder`) run: a projection record is its variant and the
 member/constructor position of its owner block, with empty tables. -/
+
+@[expose] public section
 
 namespace Ix.Kernel.Egress
 
@@ -63,7 +67,7 @@ theorem readProjection_reading {source : Ixon.Constant} {value : ProjectionLayou
   obtain ⟨reading, _, same⟩ := Except.map_eq_ok h
   exact same ▸ reading.property
 
-private def wordC (n : Nat) : Search { value : UInt64 // value.toNat = n } :=
+def wordC (n : Nat) : Search { value : UInt64 // value.toNat = n } :=
   if h : (UInt64.ofNat n).toNat = n then .ok ⟨UInt64.ofNat n, h⟩
   else .error (.malformed "projection index exceeds UInt64")
 
@@ -109,3 +113,5 @@ theorem writeProjection_roundtrip {source : Ixon.Constant} {value : ProjectionLa
   writeProjection_of_reading (readProjection_reading h)
 
 end Ix.Kernel.Egress
+
+end

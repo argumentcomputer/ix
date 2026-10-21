@@ -232,9 +232,12 @@ and the rest-only hoist and the decided units check (S1) from 5906, likewise (11
 and the prelude's shape check (S1, fact (ii)) from 6023, likewise (12 in),
 and the hoist guard (S1) from 6035, likewise (4 in),
 and the in-model generator's totality (S1) from 6039, likewise (15 more; its nine ruled
-`partial` definitions are total, and the ruling is gone). -/
+`partial` definitions are total, and the ruling is gone),
+and the admission chain's conversion to Lean `module`s (step 10c) from 6054, likewise
+(codegen only: the partition's `HashSet` specialisations, 7 in and 1 out, and `wordC`
+under its public name; externs, `unsafe` and csimp unchanged). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6054 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6060 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

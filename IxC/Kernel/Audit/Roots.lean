@@ -642,9 +642,19 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- entry's change (122 out; see the module docstring). The `.indDecl` shape
 -- guard moved it from 5843 by the entry's change (44 in, one more csimp; see the module
 -- docstring). The mutual modeller's reading of Lean's recursive fields moved it
--- from 5887 by the entry's change (9 more; see the module docstring).
+-- from 5887 by the entry's change (9 more; see the module docstring). The
+-- admission chain's conversion to modules (step 10c: `Search`,
+-- `Egress/Projection`, `Admission/Bytes`, `Admission`, `Admission/Tier`,
+-- headers only) moved it from 6044, codegen only, as the reader's conversion
+-- did (push 30): the partition's `HashSet` `insert` and `contains` are
+-- specialised in the module (`Raw₀.insertIfNew`, `expand`, `expand.go`,
+-- `AssocList.foldlM`, `AssocList.contains`, `Raw₀.contains` and the loop at
+-- `partitionTier`), 7 in and 1 out (the loop's former specialisation), and
+-- `wordC`, now public (an exposed body may not name a private declaration),
+-- is the same 4 functions under its public name. Externs 113,
+-- implemented_by 0, unsafe 26 and csimp 7 are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6044 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6050 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
