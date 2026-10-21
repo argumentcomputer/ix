@@ -25,6 +25,7 @@ import Ix.Cert.CtxAgreeHints
 import Ix.Cert.SourcePrelude
 import Ix.Cert.CtxAgreeProj
 import Ix.Cert.CtxAgreeOwners
+import Ix.Cert.CtxAgreeProjFields
 
 /-! # The certification statements, frozen
 
@@ -5264,3 +5265,20 @@ run_cmd do
   checkRoots (tag := "cert-audit") "projection owner construction"
     (#[`structShape_mapKeys, `structPartsCore_isSome_mapKeys,
       `ownersOf_mapKeys, `lowerInductive_owners_mapKeys].map (`Ix.Cert.CtxAgree ++ ·))
+
+/-! ## Projection fields: exact ordered writes and paired-read transport
+
+Owners retain the producing block's scope. Projection-level recognition
+commutes with arbitrary key renaming; exact commit/fold formulas retain the
+update order. Entry-list transport assumes already-paired reads, not an
+unproved actual stream correspondence. Raw/kept generated-index alignment
+and dropped-generated level consistency remain separate obligations. -/
+
+/-- info: [cert-audit] projection field entries: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "projection field entries"
+    (#[`ownersOf_good, `lowerInductive_owners_good, `projLevelEntry_mapKeys,
+      `noteGenerated_projLevels, `fold_projection_fields,
+      `UnitAgree.projection_entries].map (`Ix.Cert.CtxAgree ++ ·))
