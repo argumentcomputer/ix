@@ -504,6 +504,33 @@ def suite : List LSpec.TestSeq := Id.run do
         && selected.any (fun (_, _, ns) => ns.contains eq && ns.contains refl)
         && selected.any (fun (_, _, ns) => ns.contains nat && ns.contains zero))]
 
+/-- **AuxGen M5b: the acceptance table equals the patch table.** Every Lean
+patch (each `patch <name> kind=…` line of the Lean patches dump, the table the
+patches gate compares with Rust's) has a verdict in production's acceptance
+table under the name it is published at: its own row (the promotion route), or
+the row of each `_ix` display name Pass 3 moved it to (a changed block's
+regenerated auxiliary). No verdict is a refusal. Names are compared as
+`Ix.Name.pretty` prints them, the dump's own spelling. The counts are printed. -/
+def acceptanceGate (leanPatchDump : String) (report : Ix.AuxGen.CompileReport) : IO Bool := do
+  let table := report.table
+  let mut covered : Std.HashSet String := {}
+  for r in table.rows do covered := covered.insert r.name.pretty
+  for (g, d) in report.display do
+    if (table.verdict? d).isSome then covered := covered.insert g.pretty
+  let patchNames : Array String :=
+    ((leanPatchDump.splitOn "\n").filter (·.startsWith "patch ")).toArray.map fun l =>
+      ((l.drop 6).toString.splitOn " kind=").headD ""
+  let uncovered := patchNames.filter (!covered.contains ·)
+  let c := table.counts
+  IO.println s!"[aux-gen-diff] acceptance table: {table.rows.size} rows ({c.line}); \
+    {patchNames.size} Lean patches, {patchNames.size - uncovered.size} with a verdict, \
+    {uncovered.size} without"
+  for n in uncovered.extract 0 8 do IO.println s!"[aux-gen-diff]   no verdict: {n}"
+  for l in table.refusals 8 do IO.println s!"[aux-gen-diff]   refused: {l.take 200}"
+  let ok := uncovered.isEmpty && c.refused == 0 && !patchNames.isEmpty
+  IO.println s!"[aux-gen-diff] acceptance-table gate: {if ok then "PASS" else "FAIL"}"
+  return ok
+
 /-- Compare the two dumps line-by-line; report the first divergence with
     surrounding context. Returns true iff identical. -/
 def compareDumps (rust lean : String) : IO Bool := do
@@ -770,8 +797,18 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[aux-gen-diff] patches gate ({", ".intercalate kinds}): {if patchesOk then "PASS" else "FAIL"} ({recCount} patches compared)"
 
   -- The Lean driver over the corpus, once: the plans gate reads its `Muts`
-  -- entries, the driver gate below compares it with Rust's whole.
-  let folded := Ix.CompileM.compileEnvFold rawEnv condensed
+  -- entries, the driver gate below compares it with Rust's whole. With its
+  -- Source service's report (`compileEnvFold` is its first component), which
+  -- names why a block is not accepted (AuxGen M5b: an acceptance refusal that
+  -- references such a block).
+  let foldedWithSource := Ix.CompileM.compileEnvFoldWithSource rawEnv condensed
+  let folded := Prod.fst <$> foldedWithSource
+  if let .ok (_, source) := foldedWithSource then
+    IO.println s!"[aux-gen-diff] source service: {source.summary}"
+    for (k, why) in source.notAccepted.extract 0 12 do
+      IO.println s!"[aux-gen-diff]   block not accepted: {k.pretty}: {why.take 240}"
+    for (g, why) in source.refused.extract 0 12 do
+      IO.println s!"[aux-gen-diff]   group refused: {g}: {why.take 240}"
   -- Plans gate: orchestration AuxLayout / Muts entries.
   IO.println "[aux-gen-diff] plans dump (Rust)..."
   let rustPlansDump ← rsAuxGenDumpPlansFFI filtered
@@ -928,6 +965,13 @@ def run (env : Lean.Environment) : IO UInt32 := do
     pure ok
   IO.println s!"[aux-gen-diff] reference-schedule gate: {if parOk then "PASS" else "FAIL"}"
 
-  return if gateOk && dumpOk && patchesOk && plansOk && driverOk && parOk then 0 else 1
+  -- AuxGen M5b: the acceptance table equals the patch table (`acceptanceGate`)
+  let tableOk ← match folded with
+    | .ok (_, _, cenv') => acceptanceGate leanPatchDump cenv'.auxReport
+    | .error e => do
+      IO.println s!"[aux-gen-diff] acceptance-table gate: Lean driver ERROR: {e}"
+      pure false
+
+  return if gateOk && dumpOk && patchesOk && plansOk && driverOk && parOk && tableOk then 0 else 1
 
 end Tests.Compile.AuxGenDiff
