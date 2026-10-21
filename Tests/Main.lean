@@ -18,6 +18,7 @@ import Tests.Ix.Compile.NestedAgreement
 import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.CanonClique
 import Tests.Ix.Compile.Clique.Dag
+import Tests.Ix.Compile.Clique.Ownership
 import Tests.Ix.Compile.Clique.Recognition
 import Tests.Ix.Compile.Clique.RustParity
 import Tests.Ix.Compile.Clique.Transport
@@ -191,6 +192,13 @@ def registry : List Entry := [
   .suite "clique-dag" .primary Tests.Ix.Compile.Clique.Dag.suite,
   .runner "clique-recognition" .primary Tests.Ix.Compile.Clique.Recognition.run,
   .runner "clique-transport" .primary Tests.Ix.Compile.Clique.Transport.run,
+  -- the transport and the plan on cliques whose user values have the shape of
+  -- their own encoding (both member orders): kernel-checked, every member
+  -- evaluated against Lean's (one fixpoint unfolding deep), the controls
+  -- transported; the carried-lemma plans, eq_def regeneration and the memo
+  -- by ownership mode (Tests.Ix.Compile.Clique.Ownership, library cases; the
+  -- compile units are the wiring step's; about 4 s)
+  .runner "clique-ownership" .primary Tests.Ix.Compile.Clique.Ownership.run,
   -- the Rust clique library against the Lean one (test-only FFI, Rust on the
   -- clique's closure): the bounds tables, and every field of the plan of each
   -- fixture clique and of the adversarial inputs, under two addresses

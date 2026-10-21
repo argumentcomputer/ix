@@ -14,7 +14,10 @@
   It also carries the clique library's fixtures
   (`Tests.Ix.Compile.Clique.Fixtures`), which the suites `clique-recognition`
   and `clique-transport` load with the twins, for the same reason: some of
-  them are named like encoding constants on purpose.
+  them are named like encoding constants on purpose. And the sources of the
+  `clique-ownership` suite (`Tests.Ix.Compile.Clique.Ownership.{Sources,
+  Lemmas}`), cliques whose user values have the shape of their own encoding,
+  loaded the same way, as the library's other suites load theirs.
 -/
 import Tests.Ix.Compile.Twins.Cliques
 import Tests.Ix.Compile.Twins.Repro
@@ -23,3 +26,5 @@ import Tests.Ix.Compile.Oracle.Lib
 import Tests.Ix.Compile.Fixtures.LetNonDep
 import Tests.Ix.Compile.Fixtures.NestedLevels
 import Tests.Ix.Compile.Clique.Fixtures
+import Tests.Ix.Compile.Clique.Ownership.Sources
+import Tests.Ix.Compile.Clique.Ownership.Lemmas
