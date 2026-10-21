@@ -376,8 +376,8 @@ private def sha256 (path : System.FilePath) : IO String := do
   return (out.stdout.splitOn " ").headD ""
 
 /-- The counts of a traced compile's `[auxgen-ixc]` lines (`IX_AUXGEN_IXC`;
-    `Ix.AuxGen.IxcStats.line`, one line per safe block's tail, keyed by the
-    block), summed by name over the tails whose block `skip` does not hold,
+    `Ix.AuxGen.IxcStats.line`, one line per tail on the IxC arm, a safe or
+    (AuxGen T3) an unsafe block's, keyed by the block), summed by name over the tails whose block `skip` does not hold,
     and how many tails were summed; a pair `a/b` (`flat`, `below`) as
     `<name>Installed`/`<name>Admitted` and `<name>Refused`. -/
 def tailCounts (out : String) (skip : String → Bool := fun _ => false) :
@@ -407,22 +407,25 @@ def tailCounts (out : String) (skip : String → Bool := fun _ => false) :
     M5c; `auxgen-below-ixc`'s assertions): an IxC answer, decision, recursor
     `whnf` or elimination decision different from `Ix.Tc`'s, a skipped field
     `Ix.Tc` finds recursive, a Lean-layout block whose canonical recursors are
-    not Lean's, and every refusal. -/
+    not Lean's, and every refusal (AuxGen T3: a Prop-level `.below` family's
+    install too, `familyRefused`). -/
 def shadowStopCounts : List String :=
   ["differ", "decisionsDiffer", "recDiffer", "recSkipDiffer", "elimDiffer", "leanRecDiffer",
-   "refused", "scopesRefused", "flatRefused", "belowRefused", "recRefused", "elimRefused"]
+   "refused", "scopesRefused", "flatRefused", "belowRefused", "recRefused", "elimRefused",
+   "familyRefused"]
 
 /-- **AuxGen M5c's shadow leg** on a compiled fixture: `ix compile-lean` again
     with every safe block's tail asking both kernels and using `Ix.Tc`'s
     answers (`IX_AUXGEN_IXC=shadow`). Its output must be production's byte for
     byte (production is `failClosed`: IxC's answers alone), and its traced
     counts must hold the stop rule (`shadowStopCounts` at 0: every IxC answer
-    equal to `Ix.Tc`'s, nothing refused) on every block Source mode accepts. A
-    block it does not accept re-runs on `fallback` in production (M5c's retry,
-    its rows exempt unless identical), so its tail is left out; the compile
-    lists those blocks (`source service, block not accepted: <block>: <why>`,
-    at most 8: a ninth's refusals would count, failing closed). The problems,
-    and a summary. -/
+    equal to `Ix.Tc`'s, nothing refused) on every block Source mode accepts,
+    and (AuxGen T3) on every unsafe block the tier installed, whose tail asks
+    IxC over the tier's answer view. Any other block it does not accept re-runs
+    on `fallback` in production (M5c's retry, its rows exempt unless identical),
+    so its tail is left out; the compile lists those blocks (`source service,
+    block not accepted: <block>: <why>`, at most 8: a ninth's refusals would
+    count, failing closed). The problems, and a summary. -/
 def shadowCheck (sh : IO.Process.Output) (shadowOut leanOut : System.FilePath) :
     IO (Array String × String) := do
   let text := sh.stdout ++ sh.stderr
@@ -434,9 +437,14 @@ def shadowCheck (sh : IO.Process.Output) (shadowOut leanOut : System.FilePath) :
     problems := problems.push "shadow compile's output differs from production's"
   let lines := text.splitOn "\n"
   let marker := "source service, block not accepted: "
+  -- a tier-installed block (`tier-installed (…)`) stays in: T3 routes it to IxC
   let notAccepted : List String := lines.filterMap fun l =>
     let l := l.trimAscii.toString
-    if l.startsWith marker then ((l.drop marker.length).toString.splitOn ": ").head? else none
+    if l.startsWith marker then
+      match (l.drop marker.length).toString.splitOn ": " with
+      | block :: why :: _ => if why.startsWith "tier-installed" then none else some block
+      | _ => none
+    else none
   let (c, tails) := tailCounts text (notAccepted.contains ·)
   for k in shadowStopCounts do
     let v := c.getD k 0
@@ -446,7 +454,9 @@ def shadowCheck (sh : IO.Process.Output) (shadowOut leanOut : System.FilePath) :
       problems := problems.push s!"shadow sample: {(l.drop 15).toString.take 300}"
   return (problems, s!"shadow over {tails} tails ({notAccepted.length} of blocks Source does \
     not accept left out): recursor whnf {c.getD "recWhnf" 0} (stuck after β \
-    {c.getD "recBeta" 0}), elimination {c.getD "elim" 0}, levels {c.getD "queries" 0}")
+    {c.getD "recBeta" 0}), elimination {c.getD "elim" 0}, levels {c.getD "queries" 0}, \
+    Prop-level .below families {c.getD "familyAdmitted" 0}, unsafe tails {c.getD "unsafe" 0} \
+    (tier-installed {c.getD "tier" 0})")
 
 private def owns (f : Fixture) (name : String) : Bool :=
   f.ns.any fun p => name == p || name.startsWith (p ++ ".")

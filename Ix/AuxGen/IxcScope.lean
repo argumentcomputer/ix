@@ -604,7 +604,7 @@ blocking group's own reason, so the reason names the root cause (e.g.
 `blocked behind BEq (ingress: declined: inductive block without a recursor in
 the input)`). An unsafe block the tier installed is that (M7 Q1). -/
 def blockStatus? (svc : Service) (members : Array Name) : Option String :=
-  if svc.tierBlock members then some "an unsafe block (tier-installed)" else
+  if svc.tierBlock members then some AuxOracle.tierBlockStatus else
   members.findSome? fun n => match svc.statusOf? n with
     | some (.refused why) => some s!"refused ({why})"
     | some (.blocked root) =>

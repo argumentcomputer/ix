@@ -88,6 +88,9 @@ def addStats (a b : Ix.AuxGen.IxcStats) : Ix.AuxGen.IxcStats :=
     elimEqual := a.elimEqual + b.elimEqual, elimDiffer := a.elimDiffer + b.elimDiffer
     elimRefused := a.elimRefused + b.elimRefused, leanRecSame := a.leanRecSame + b.leanRecSame
     leanRecDiffer := a.leanRecDiffer + b.leanRecDiffer, asked := a.asked + b.asked
+    familyInstalled := a.familyInstalled + b.familyInstalled
+    familyRefused := a.familyRefused + b.familyRefused
+    unsafeBlock := a.unsafeBlock + b.unsafeBlock, tier := a.tier + b.tier
     samples := (a.samples ++ b.samples).extract 0 24 }
 
 def statsLine (st : Ix.AuxGen.IxcStats) : String :=
@@ -105,7 +108,8 @@ def statsLine (st : Ix.AuxGen.IxcStats) : String :=
     (decided recursive by Ix.Tc {st.recSkipDiffer}); elimination {st.elim}: equal \
     {st.elimEqual}, differ {st.elimDiffer}, refused {st.elimRefused}; questions needing the \
     service {st.recForced}; Lean-layout recursors equal to Lean's {st.leanRecSame}, not \
-    {st.leanRecDiffer}"
+    {st.leanRecDiffer}; Prop-level .below families installed {st.familyInstalled}, refused \
+    {st.familyRefused}; unsafe blocks {st.unsafeBlock} (tier-installed {st.tier})"
 
 /-- **One block's aux tail with the IxC arm**, as the driver's tail generates
 the patches (`sortConsts`, the classes restricted to Lean's `all`,
@@ -134,12 +138,8 @@ def tailStats (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Nam
         if let .indc ind := c then return ind.all
       return #[]
     if originalAll.isEmpty then return none
-    -- an unsafe block's tail keeps `Ix.Tc`, as in the driver (`compileBlockWithAux`)
-    let unsafeBlock := cs.any fun
-      | .indc ind => ind.isUnsafe
-      | .recr rv => rv.isUnsafe
-      | .defn d => d.safety == .unsaf
-    if unsafeBlock then return none
+    -- an unsafe block's tail is on the IxC arm too, as in the driver since
+    -- AuxGen T3 (`compileBlockWithAux`; until T3 it kept `Ix.Tc` and was skipped)
     let inAll (n : Ix.Name) := originalAll.any (Ix.Compile.ExactKey.nameEq · n)
     let classes := (classNames.map (·.filter inAll)).filter (!·.isEmpty)
     if classes.isEmpty then return none
@@ -572,10 +572,10 @@ def fixtures : TestSeq :=
       let (errors, lines) ← evaluate "fixtures" env blocks 16
       report errors lines) .done
 
-/-! ## failClosed's retry, its named failure, the deferred `Ix.Tc` bookkeeping (AuxGen M5c)
+/-! ## failClosed's retry and its named failure (AuxGen M5c); the Prop family on IxC (T3)
 
-Production runs a safe block's tail under `failClosed` (`Ix.CompileM.runAuxTail`).
-Over the fixtures' safe inductive blocks, through the driver's own tail:
+Production runs a block's tail under `failClosed` (`Ix.CompileM.runAuxTail`).
+Over the fixtures' inductive blocks, through the driver's own tail:
 1. **A refusal on an accepted block fails it, named.** An oracle whose every
    question IxC refuses (planted), on a block Source mode accepts: the tail fails,
    and the failure names the block, the scope, the question and IxC's reason.
@@ -585,10 +585,15 @@ Over the fixtures' safe inductive blocks, through the driver's own tail:
    generated auxiliary is exempt with the status, and the block state after it is
    the state a `fallback` tail leaves from the same start (so the failed
    attempt's writes are all rolled back).
-3. **The deferred bookkeeping is the eager one.** For each block with a
-   Prop-level `.below` family, the `Ix.Tc` kenv its recursor generation finds
-   under `failClosed` (the bookkeeping logged, then replayed) equals the kenv of
-   the same tail with the bookkeeping run eagerly (`AuxKernelCtx.deferTc`). -/
+3. **The Prop-level `.below` family's recursors on IxC** (AuxGen T3). For each
+   block with a Prop-level `.below` family, the driver's own tail over the
+   block's oracle in `shadow` (both kernels, every answer compared): the family
+   installs (`AuxKernel.withFamily`), no answer differs from `Ix.Tc`'s and none
+   is refused, and the block state it leaves is the state production's
+   `failClosed` tail leaves from the same start (IxC alone; the same records).
+   Until T3 this item checked M5c's replay instead (the deferred `Ix.Tc`
+   bookkeeping, replayed before the family's `Ix.Tc` generation, left the eager
+   kenv); T3 deletes the replay with that generation. -/
 
 /-- A block's aux-tail arguments as `compileBlockWithAux` makes them (its
 prologue, in the same block state): the members, their classes, the block's
@@ -641,28 +646,6 @@ def stateKey (st : Ix.CompileM.BlockState) : String :=
   s!"{consts} {named} {aux} {primary} {refs} {st.univs.size} {st.metaUnivs.size} \
     {st.blockBlobs.size} {st.auxGenExtraNames.size} {st.exprCache.size}"
 
-/-- Two kenv constants alike: the constructor, the type, the level count, and
-the value, constructors or inductive they carry. -/
-def kconstKey : Ix.AuxGen.MKConst → String
-  | .defn _ _ _ _ _ l t v _ b => s!"defn {l} {t.addr} {v.addr} {b.addr}"
-  | .recr _ _ k u l p i m n b j t rs _ =>
-    s!"recr {k} {u} {l} {p} {i} {m} {n} {b.addr} {j} {t.addr} {rs.size}"
-  | .axio _ _ u l t => s!"axio {u} {l} {t.addr}"
-  | .quot _ _ _ l t => s!"quot {l} {t.addr}"
-  | .indc _ _ l p i u b j t cs _ =>
-    s!"indc {l} {p} {i} {u} {b.addr} {j} {t.addr} {cs.map (·.addr)}"
-  | .ctor _ _ u l ind c p f t => s!"ctor {u} {l} {ind.addr} {c} {p} {f} {t.addr}"
-
-/-- Where two kenvs differ (at most three entries), or `none`. -/
-def kenvDiff (a b : Std.HashMap Ix.AuxGen.MKId Ix.AuxGen.MKConst) : Option String := Id.run do
-  if a.size != b.size then return some s!"{a.size} entries against {b.size}"
-  let mut out : Array String := #[]
-  for (k, v) in a do
-    match b.get? k with
-    | some w => if kconstKey v != kconstKey w then out := out.push s!"{k.addr} differs"
-    | none => out := out.push s!"{k.addr} missing"
-  return if out.isEmpty then none else some (", ".intercalate (out.extract 0 3).toList)
-
 /-- `act` in a fresh block state of block `lo` over `cenv`. -/
 def runIn (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (act : Ix.CompileM.CompileM α) :
     Except String (α × Ix.CompileM.BlockState) :=
@@ -681,38 +664,49 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
   let mut named := 0
   let mut retried := 0
   let mut families := 0
+  let mut familyStats : Ix.AuxGen.IxcStats := {}
   let mut notStandalone := 0
+  let shadowOpts : Ix.CompileM.AuxIxcOptions := { opts with mode := .shadow }
   for (lo, members) in inductiveBlocks env blocks do
     let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
     let some real := opts.oracleFor ra env.get? key | continue
     let some fb := real.retry | do errors := errors.push s!"{lo.pretty}: no retry oracle"; continue
-    -- 3. the replayed kenv against the eager one, at the family's generation
-    let famKenv (defer : Bool) :
-        Ix.CompileM.CompileM (Option (Std.HashMap Ix.AuxGen.MKId Ix.AuxGen.MKConst)) := do
+    -- 3. the Prop-level `.below` family's recursors on IxC (T3): the driver's
+    -- tail in `shadow` (every answer compared with `Ix.Tc`'s) and in production's
+    -- `failClosed`, from the same block state
+    let some shadowO := shadowOpts.oracleFor ra env.get? key
+      | do errors := errors.push s!"{lo.pretty}: no shadow oracle"; continue
+    let famTail (o : Ix.AuxGen.AuxOracle) :
+        Ix.CompileM.CompileM (Option Ix.AuxGen.AuxKernelCtx) := do
       let some (cs, sorted, addr, maps) ← tailArgs lo members | return none
-      let (_, kctx) ← (Ix.AuxGen.compileMutualAuxTail cs sorted addr maps (.ixc maps real)).run
-        { Ix.AuxGen.AuxKernelCtx.new with deferTc := defer, captureFamilyKenv := true }
-      return kctx.familyKenv
-    match ← IO.lazyPure fun _ => runIn cenv lo (famKenv true) with
-    | .error e =>
+      return some (← (Ix.AuxGen.compileMutualAuxTail cs sorted addr maps (.ixc maps o)).run
+        Ix.AuxGen.AuxKernelCtx.new).2
+    match ← IO.lazyPure fun _ => runIn cenv lo (famTail shadowO),
+        ← IO.lazyPure fun _ => runIn cenv lo (famTail real) with
+    | .error e, .error e' =>
       -- a block this harness cannot re-run on its own over the production fold's
       -- environment (a family another block's tail compiled: its claims are
       -- taken) fails before the family's generation in both runs, alike
-      match ← IO.lazyPure fun _ => runIn cenv lo (famKenv false) with
-      | .error e' =>
-        if e == e' then notStandalone := notStandalone + 1
-        else errors := errors.push s!"{lo.pretty}: the tails fail differently: {e.take 160} / \
-          {e'.take 160}"
-      | .ok _ => errors := errors.push s!"{lo.pretty}: only the deferred tail fails: {e.take 200}"
-    | .ok (none, _) => pure ()
-    | .ok (some deferred, _) =>
-      match ← IO.lazyPure fun _ => runIn cenv lo (famKenv false) with
-      | .ok (some eager, _) =>
+      if e == e' then notStandalone := notStandalone + 1
+      else errors := errors.push s!"{lo.pretty}: the tails fail differently: {e.take 160} / \
+        {e'.take 160}"
+    | .error e, .ok _ => errors := errors.push s!"{lo.pretty}: only the shadow tail fails: {e.take 200}"
+    | .ok _, .error e => errors := errors.push s!"{lo.pretty}: only the failClosed tail fails: \
+        {e.take 200}"
+    | .ok (none, _), _ | _, .ok (none, _) => pure ()
+    | .ok (some sk, sst), .ok (some _, pst) =>
+      let st := sk.ixcStats
+      if st.familyInstalled + st.familyRefused > 0 then
         families := families + 1
-        if let some d := kenvDiff deferred eager then
-          errors := errors.push s!"{lo.pretty}: the replayed kenv is not the eager one: {d}"
-      | .ok (none, _) => errors := errors.push s!"{lo.pretty}: the eager tail reached no family"
-      | .error e => errors := errors.push s!"{lo.pretty}: eager tail: {e.take 200}"
+        familyStats := addStats familyStats st
+        let bad := st.familyRefused + st.differ + st.refused + st.decisionsDiffer + st.recDiffer
+          + st.recRefused + st.recDecisionDiffer + st.elimDiffer + st.elimRefused
+        if bad != 0 then
+          errors := errors.push s!"{lo.pretty}: the tail with a Prop-level .below family, in \
+            shadow, differs from Ix.Tc or is refused: {statsLine st} {st.samples}"
+        if stateKey { sst with auxReport := {} } != stateKey { pst with auxReport := {} } then
+          errors := errors.push s!"{lo.pretty}: the shadow and failClosed tails leave different \
+            block states"
     -- 1 and 2 on the first blocks Source mode accepts
     if real.blockStatus () != none || named ≥ 8 then continue
     let tail (k : Ix.AuxGen.AddrMaps → Ix.AuxGen.AuxKernel) (viaDriver : Bool) :
@@ -747,16 +741,19 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     | .error e, _ => errors := errors.push s!"{lo.pretty}: the retry failed: {e.take 200}"
     | _, .error e => errors := errors.push s!"{lo.pretty}: the fallback tail failed: {e.take 200}"
     | _, _ => errors := errors.push s!"{lo.pretty}: a tail ran on one side only"
-  lines := lines.push s!"M5c: named failures {named}, retries {retried}, Prop families with \
-    the replayed kenv compared {families} (blocks this harness cannot re-run alone, failing \
-    alike both ways: {notStandalone})"
+  lines := lines.push s!"M5c: named failures {named}, retries {retried}; T3: blocks with a \
+    Prop-level .below family on IxC in shadow {families} (blocks this harness cannot re-run \
+    alone, failing alike both ways: {notStandalone})"
+  lines := lines.push s!"T3, those tails in shadow: {statsLine familyStats}"
   if named == 0 then errors := errors.push "no planted refusal failed a block"
   if retried == 0 then errors := errors.push "no planted retry ran"
   if families == 0 then errors := errors.push "no Prop-level .below family was compared"
+  if familyStats.familyInstalled == 0 then
+    errors := errors.push "no Prop-level .below family was installed in IxC"
   return (errors, lines)
 
 def m5c : TestSeq :=
-  .individualIO "AuxGen M5c: failClosed's named failure, its exact retry, the replayed kenv"
+  .individualIO "AuxGen M5c and T3: failClosed's named failure, its exact retry, the Prop family on IxC"
     none (do
       let (env, blocks) ← fixtureInput
       let (errors, lines) ← m5cEvaluate env blocks

@@ -453,6 +453,10 @@ def retry : AuxOracle → Option AuxOracle
 def withFamily : AuxOracle → Array (InductiveVal × Array ConstructorVal) → Except String AuxOracle
   | .mk _ _ _ _ _ _ _ _ _ _ _ f => f
 
+/-- The block status of an unsafe block whose groups the service's tier
+installed (M7 Q1; `Ix.AuxGen.Ixc.blockStatus?`). -/
+def tierBlockStatus : String := "an unsafe block (tier-installed)"
+
 end AuxOracle
 
 end Ix.AuxGen

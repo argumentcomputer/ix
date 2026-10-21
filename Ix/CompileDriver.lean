@@ -109,7 +109,7 @@ def recordTailReport (kctx : Ix.AuxGen.AuxKernelCtx) (safe : Bool) : CompileM Un
                                canonical := kctx.canonical, generated := kctx.generated
                                admitted := kctx.admitted
                                exempt := if safe then none
-                                 else some "an unsafe block (its aux tail keeps Ix.Tc)" } }
+                                 else some "an unsafe block (outside every statement)" } }
   else pure ()
 
 /-- AuxGen M5: each generated auxiliary's aux address in the block's state now
@@ -229,17 +229,19 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   let bstate ← getBlockState
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
     (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
-  -- The kernel AuxGen asks: `Ix.Tc` over the bridge (AuxGen M0), and for a
-  -- safe block's `.below` IxC Source mode through the fold's oracle (AuxGen
-  -- M2b, `CompileEnv.auxOracle`). An unsafe block is outside every statement
-  -- and Source mode declines unsafe inductives, so its tail keeps `Ix.Tc`.
-  -- Under a measurement mode (`IX_AUXGEN_IXC`) the tail's counts are traced.
+  -- The kernel AuxGen asks: IxC Source mode through the fold's oracle (AuxGen
+  -- M2b–M5c, `CompileEnv.auxOracle`), `Ix.Tc` over the bridge without one
+  -- (AuxGen M0). Since AuxGen T3 an unsafe block's tail asks it too: the
+  -- service's tier installs the block's groups typing only (M7 Q1), and its
+  -- oracle answers over the tier's answer view; its auxiliaries stay outside
+  -- every statement (`recordTailReport`). Under a measurement mode
+  -- (`IX_AUXGEN_IXC`) the tail's counts are traced.
   let safe := cs.all fun
     | .indc ind => !ind.isUnsafe
     | .recr rv => !rv.isUnsafe
     | .defn d => d.safety != .unsaf
   let kernel : Ix.AuxGen.AuxKernel :=
-    match if safe then cenv.auxOracle.bind (· lo) else none with
+    match cenv.auxOracle.bind (· lo) with
     | some oracle => .ixc maps oracle
     | none => .tc maps
   -- AuxGen M5c: under `failClosed` (production), a block Source mode does
@@ -249,7 +251,10 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     runAuxTail lo cs sortedClasses blockResult.blockAddr maps kernel
   if let .ixc _ oracle := kernel then
     if oracle.trace then
-      let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0 }
+      let tier := !safe && oracle.blockStatus () == some Ix.AuxGen.AuxOracle.tierBlockStatus
+      let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0
+                                     unsafeBlock := if safe then 0 else 1
+                                     tier := if tier then 1 else 0 }
       dbg_trace s!"{Ix.AuxGen.IxcStats.line lo st}"
       pure ()
   -- AuxGen M4c and M5: the tail's report (`recordTailReport`), and each

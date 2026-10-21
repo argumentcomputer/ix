@@ -88,9 +88,11 @@
   * `failClosed` (production's since AuxGen M5c): IxC alone; a refusal fails
     the block with a named cause (`refuseIxc`), unless Source mode does not
     accept the block, which then re-runs on `fallback`
-    (`Ix.CompileM.runAuxTail`). The tail's `Ix.Tc` bookkeeping is logged, not
-    run (`defersTc`), and replayed only before the Prop-level `.below`
-    family's recursors, the one `Ix.Tc` reader left (`replayTc`).
+    (`Ix.CompileM.runAuxTail`). With the recursors on IxC nothing in the tail
+    reads `Ix.Tc` (the Prop-level `.below` family's recursors too, over
+    `withFamily`, AuxGen T3), so the tail's `Ix.Tc` bookkeeping is skipped
+    (`skipsTc`). An unsafe block's tail is on this arm too (AuxGen T3), over its
+    tier-installed groups (M7 Q1).
   * `fallbackEager` (M2b's production mode, a measurement since M3): both
     answer; IxC's answer is used where it answers.
 
@@ -304,13 +306,13 @@ def new (k : AuxKernel) (ctx : Array LocalDecl) (lps : Array Name)
       match ← ixcNew o ctx lps with
       | (some s, _) =>
         return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
-                 backend := .ixc s }
+                 backend := .ixc s, route }
       | (none, e) =>
         refuseIxc route.label s!"the scope over {ctx.size} locals" (e.getD "")
     let view ← TcScopeSt.new ctx lps maps
     let (s?, _) ← ixcNew o ctx lps
     return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
-             backend := .both (← tcRef view) s? }
+             backend := .both (← tcRef view) s?, route }
   | .ixc maps o, .recursor =>
     if o.recursors then
       -- AuxGen M4: a lazy IxC scope; nothing is asked until a question
@@ -800,38 +802,45 @@ def ixcElimDecision (o : AuxOracle) (originals : Array (InductiveVal × Array Co
     return ({ isLarge, isProp }, forced)
   | _ => return ({ isLarge := false, isProp }, forced)
 
-/-- **Whether the tail's `Ix.Tc` bookkeeping is deferred** (AuxGen M5c): on
-the IxC arm under `failClosed` with the recursors on IxC, where every generator
-scope is IxC's, so the one `Ix.Tc` reader left in the tail is the Prop-level
-`.below` family's recursor generation (`compileBelowRecursors`), before which
-the log is replayed (`replayTc`). The bookkeeping is logged in call order
-instead of run (`AuxKernelCtx.tcLog`). -/
-def defersTc (k : AuxKernel) : KBridgeM Bool := do
+/-- **Whether the tail skips its `Ix.Tc` bookkeeping** (AuxGen T3; M5c logged
+and replayed it): on the IxC arm under `failClosed` with the recursors on IxC.
+There every generator scope is IxC's, and so is the Prop-level `.below`
+family's recursor generation (`withFamily`), so nothing in the tail reads
+`Ix.Tc`'s environment: the prelude, the source constants, the elimination
+decision's kenv half and the generated `.below` constants are not ingressed.
+Every other mode keeps them, in order, as before (`Ix.Tc` answers there). -/
+def skipsTc (k : AuxKernel) : Bool :=
   match k with
-  | .ixc _ o => return o.mode == .failClosed && o.recursors && (← get).deferTc
-  | .tc _ => return false
+  | .ixc _ o => o.mode == .failClosed && o.recursors
+  | .tc _ => false
 
-/-- Log one deferred bookkeeping call. -/
-private def logTc (b : TcBookkeeping) : KBridgeM Unit :=
-  modify fun c => { c with tcLog := c.tcLog.push b }
-
-/-- **The deferred `Ix.Tc` bookkeeping, run in call order** and cleared
-(AuxGen M5c): the kenv as the eager tail leaves it before the Prop-level
-`.below` family's `Ix.Tc` generation. The calls, their order and their
-arguments are the eager tail's; `maps` and the Lean environment are fixed for
-the tail and the bridge context is the block's own, and under `failClosed`
-nothing else writes the kenv before this point, so the kenv is the eager one.
-A no-op when nothing was deferred. -/
-def replayTc (maps : AddrMaps) : KBridgeM Unit := do
-  let log := (← get).tcLog
-  modify fun c => { c with tcLog := #[] }
-  for b in log do
-    match b with
-    | .prelude => ensurePreludeInKenvOf maps
-    | .source name prewarm =>
-      if prewarm then ensureInKenvOfPrewarm name maps else ensureInKenvOf name maps
-    | .elimAdmit originals nParams => discard <| tcElimAdmit originals nParams maps
-    | .below consts => tcAdmitBelow consts maps
+/-- **The kernel a Prop-level `.below` family's recursors are generated over**
+(AuxGen T3, M7 Q1): on the IxC arm with the recursors on IxC
+(`AuxOracle.recursors`, production's), the oracle with the family's inductives
+and constructors installed typing only, without recursors
+(`AuxOracle.withFamily`), so IxC generates their recursors and answers with the
+family in view. Otherwise `Ix.Tc` over `maps`, as before T3: the `Ix.Tc` arm, and
+a measurement that keeps the recursor generator on `Ix.Tc` (its kenv took the
+family, `admitGenerated`). An install IxC refuses is counted; under
+`failClosed` it is a refusal of the block (`refuseIxc`), and in a measurement
+mode `Ix.Tc` answers the family. -/
+def withFamily (k : AuxKernel) (types : Array (InductiveVal × Array ConstructorVal)) :
+    KBridgeM AuxKernel := do
+  match k with
+  | .tc _ => return k
+  | .ixc maps o =>
+    if !o.recursors then return .tc maps
+    match o.withFamily types with
+    | .ok o' =>
+      bumpIxc fun st => { st with familyInstalled := st.familyInstalled + 1 }
+      return .ixc maps o'
+    | .error e =>
+      bumpIxc fun st => (st.sample s!"Prop-level .below family refused: {e}") |> fun st =>
+        { st with familyRefused := st.familyRefused + 1 }
+      if o.mode == .failClosed then
+        refuseIxc "the Prop-level .below family's install" s!"the family of \
+          {((types[0]?).map (·.1.cnst.name.pretty)).getD "[no member]"}" e
+      return .tc maps
 
 /-- The elimination decision for a block's original classes, in an expanded
     block of `nFlat` members (clause 8). `Ix.Tc`'s, except on the `ixc` arm
@@ -853,10 +862,9 @@ def elimDecision (k : AuxKernel)
       bumpIxc fun st => (st.sample s!"elimination refused: {e}") |> fun st =>
         { st with elimRefused := st.elimRefused + 1 }
     -- `Ix.Tc`'s later users of the block read the kenv inserts its decision
-    -- makes; keep them where `Ix.Tc` does not decide (logged under
-    -- `failClosed`, AuxGen M5c).
-    if ← k.defersTc then logTc (.elimAdmit originals nParams)
-    else if o.mode == .failClosed || o.mode == .fallback then
+    -- makes; keep them where `Ix.Tc` does not decide and still answers later
+    -- (`fallback`; skipped under `failClosed`, where nothing reads them, T3).
+    if !k.skipsTc && (o.mode == .failClosed || o.mode == .fallback) then
       discard <| tcElimAdmit originals nParams maps
     match o.mode with
     | .failClosed =>
@@ -886,16 +894,16 @@ def elimDecision (k : AuxKernel)
         return t
   | .tc maps => tcElimDecision originals nParams nFlat maps
 
-/-- Admit the prelude constants the generators name (`PUnit`, `PProd`). -/
+/-- Admit the prelude constants the generators name (`PUnit`, `PProd`) to
+    `Ix.Tc`'s kenv (skipped where nothing reads it, `skipsTc`). -/
 def admitPrelude (k : AuxKernel) : KBridgeM Unit := do
-  if ← k.defersTc then logTc .prelude else ensurePreludeInKenvOf k.maps
+  unless k.skipsTc do ensurePreludeInKenvOf k.maps
 
-/-- Admit source constants, in order. -/
+/-- Admit source constants to `Ix.Tc`'s kenv, in order (skipped where nothing
+    reads it, `skipsTc`). -/
 def admitSource (k : AuxKernel) (names : Array Name) (mode : AdmitMode := .full) :
     KBridgeM Unit := do
-  if ← k.defersTc then
-    for name in names do logTc (.source name (mode == .prewarm))
-    return
+  if k.skipsTc then return
   let maps := k.maps
   for name in names do
     match mode with
@@ -910,9 +918,10 @@ def admitSource (k : AuxKernel) (names : Array Name) (mode : AdmitMode := .full)
     Prop-level `.brecOn` asks the kernel nothing, so a Prop-level family
     would only cost its block a fold of the service. An IxC refusal is
     counted; its questions then refuse, and `fallback` answers them by
-    `Ix.Tc`. -/
+    `Ix.Tc`. `Ix.Tc`'s kenv half is skipped where nothing reads it
+    (`skipsTc`). -/
 def admitGenerated (k : AuxKernel) (consts : Array BelowConstant) : KBridgeM AuxKernel := do
-  if ← k.defersTc then logTc (.below consts) else tcAdmitBelow consts k.maps
+  unless k.skipsTc do tcAdmitBelow consts k.maps
   match k with
   | .tc _ => return k
   | .ixc maps o =>

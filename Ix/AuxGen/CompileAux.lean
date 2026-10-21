@@ -657,8 +657,10 @@ def brecOnToMutConst (d : BRecOnDef) : MutConst :=
     difference.) -/
 def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
     : KBridgeM (Array (Name × RecursorVal) × Array MutConst) := do
-  -- Overlay with just the .below inductives + ctors (mutual.rs:1063-1077).
+  -- Overlay with just the .below inductives + ctors (mutual.rs:1063-1077),
+  -- and the same family as IxC's install takes it (`AuxKernel.withFamily`).
   let mut overlay : Std.HashMap Name ConstantInfo := {}
+  let mut family : Array (InductiveVal × Array ConstructorVal) := #[]
   for c in belowIndcs do
     if let .indc ind := c then
       let indVal : InductiveVal :=
@@ -673,6 +675,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
           isUnsafe := ind.isUnsafe
           isReflexive := ind.isReflexive }
       overlay := overlay.insert ind.name (.inductInfo indVal)
+      family := family.push (indVal, ind.ctors)
       for ctor in ind.ctors do
         overlay := overlay.insert ctor.cnst.name (.ctorInfo ctor)
 
@@ -689,17 +692,23 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
   if classes.isEmpty then
     return (#[], #[])
 
-  -- AuxGen M4a: the generated Prop-level `.below` family is not in IxC's
-  -- environment (IxC installs an inductive block only with its recursor
-  -- records), so its recursors ask `Ix.Tc`: the one `Ix.Tc` reader left in a
-  -- safe tail under `failClosed` (AuxGen M5c), so the bookkeeping deferred until
-  -- now is run first, in order (`replayTc`; a no-op otherwise). M7 moves it to
-  -- IxC's tier (`auxgen-m5.md` §17, "Amendment").
-  AuxKernel.replayTc kernel.maps
-  if (← get).captureFamilyKenv then
-    modify fun c => { c with familyKenv := some c.tcState.env.consts }
+  -- AuxGen T3 (M7 Q1): the generated Prop-level `.below` family is in no
+  -- environment IxC checked (IxC installs an inductive block only with its
+  -- recursor records), so its recursors are generated over the oracle with the
+  -- family installed typing only, without recursors (`AuxKernel.withFamily`;
+  -- IxC generates their recursors to answer). The oracle is the one after the
+  -- block's canonical flat block was installed, when it was (as M5a's
+  -- `admitGenerated` admits the family): a collapsed or nested block's family
+  -- names its classes and synthetic auxiliaries through that install's σ. Until
+  -- T3 they asked `Ix.Tc`, after a replay of the tail's deferred `Ix.Tc`
+  -- bookkeeping (AuxGen M5c).
+  let ctx ← get
+  let base : AuxKernel := match kernel, ctx.canonical, ctx.canonicalOracle with
+    | .ixc maps _, some .installed, some o' => .ixc maps o'
+    | k, _, _ => k
+  let familyKernel ← base.withFamily family
   let (recs, _) ← generateCanonicalRecursorsWithOverlay classes
-    (some overlay) none (.tc kernel.maps)
+    (some overlay) none familyKernel
   let mut belowRecs : Array MutConst := #[]
   for (_, rv) in recs do
     belowRecs := belowRecs.push (.recr rv)
