@@ -372,6 +372,30 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
         errors := errors.push s!"{label}: the planted head is refused, but not by the heads check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a Pass 3 head outside the \
         changed set"
+  -- the name invariant (every input constant carries the name it is stored
+  -- under), timed alone, then refusing, by its own message, the input with one
+  -- definition stored under another definition's name
+  let m0 ← IO.monoMsNow
+  let misnamed? ← IO.lazyPure fun _ => Ix.Cert.misnamedInput env
+  let m1 ← IO.monoMsNow
+  match misnamed? with
+  | none => lines := lines.push s!"{label}: misnamedInput finds every input constant carrying its \
+      name ({env.consts.size} constants, {m1 - m0} ms)"
+  | some n => errors := errors.push s!"{label}: misnamedInput finds {n.pretty} in the input"
+  let defs := env.consts.toList.filter fun (_, ci) => ci matches .defnInfo _
+  match defs with
+  | (n, _) :: (_, ci') :: _ =>
+    let env' : Ix.Environment := { env with consts := env.consts.insert n ci' }
+    match Ix.Cert.checkReport env' cenv (ixe, failures) with
+    | .error e =>
+      if (e.splitOn "name invariant failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses an input definition stored under another \
+          definition's name ({n.pretty})"
+      else
+        errors := errors.push s!"{label}: the misnamed input is refused, but not by the name \
+          invariant: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a misnamed input constant"
+  | _ => errors := errors.push s!"{label}: fewer than two input definitions"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find

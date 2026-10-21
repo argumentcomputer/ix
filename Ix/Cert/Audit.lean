@@ -1132,7 +1132,14 @@ fun env cenv out =>
                   match Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
                   | none =>
                     match Ix.Cert.foreignHead env cenv.p3Heads out.fst with
-                    | none => Except.ok ()
+                    | none =>
+                      match Ix.Cert.misnamedInput env with
+                      | none => Except.ok ()
+                      | some n =>
+                        Except.error
+                          (toString "compileReport: name invariant failed: the input constant stored under " ++
+                              toString n.pretty ++
+                            toString " carries another name")
                     | some h =>
                       Except.error
                         (toString "compileReport: heads check failed: the Pass 3 head " ++ toString h.pretty ++
@@ -1335,7 +1342,7 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                   Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst = none ∧
                     Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
                       Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-                        Ix.Cert.foreignHead env cenv.p3Heads out.fst = none -/
+                        Ix.Cert.foreignHead env cenv.p3Heads out.fst = none ∧ Ix.Cert.misnamedInput env = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4708,6 +4715,41 @@ fun env heads ixe =>
       heads.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.foreignHead
+
+/-! ## Input constants carry their names (B9b, `HookFree`'s discharge, membership; coordinator decision, 2026-10-21)
+
+The block compile names its projections by its members' own names
+(`ConstantVal.name`, through `MutConst`), while the condensation and the
+driver group and look them up by the names they are stored under; no
+statement relates the two. `compileReport` now refuses an input in which a
+constant's own name does not hash like the name it is stored under
+(`checkReport`'s twelfth check, `misnamedInput`; probe
+`ports/20261021T034341Z-hookprobe`: 0 on the materialized constants of
+Init+Std, 36,870, and Mathlib, 237,499). With it, every name a block's
+compile claims is a member's or a member's constructor's. Re-frozen with it:
+`checkReport`'s print and `checkReport_ok` (a twelfth conjunct; its proof now
+walks the checks' branches instead of splitting every check's result). On a
+consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] input names: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] input names: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "input names"
+    (#[`misnamedInput_none, `inputsNamed].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "input names" #[``Ix.Cert.misnamedInput]
+
+/-- info: def Ix.Cert.misnamedInput : Ix.Environment → Option Ix.Name :=
+fun env =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, ci) => if (ci.getCnst.name == n) = true then none else some n)
+    env.consts.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.misnamedInput
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

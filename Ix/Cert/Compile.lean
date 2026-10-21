@@ -719,7 +719,16 @@ avoid the set compiles with hook 2 the identity. -/
     let changed := Ix.Compile.ChangedSet.ofCompile env ixe
     heads.toList.findSome? fun (h, _) => if changed.contains h then none else some h
 
-/-- `compileReport`'s eleven checks on a compile's result, each an error on
+/-- The first input constant whose own name (`ConstantVal.name`) does not hash
+like the name it is stored under, if any. The block compile names its
+projections by its members' own names (`MutConst`), while the condensation
+and the driver group and look them up by the names they are stored under. With
+no such constant, every name a block's compile claims is a member's or a
+member's constructor's. -/
+@[expose] def misnamedInput (env : Ix.Environment) : Option Ix.Name :=
+  env.consts.toList.findSome? fun (n, ci) => if ci.getCnst.name == n then none else some n
+
+/-- `compileReport`'s twelve checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -740,7 +749,9 @@ map (`cenv.auxNameToAddr`) is published with `Named.original`
 input name is in the resolution map or in the aux map (`unresolvedPublished`).
 **No cross-SCC claims:** no resolved name outside the aux map is among the
 extra names (`crossClaimed`). **Heads are changed:** each of the driver's final
-Pass 3 heads (`cenv.p3Heads`) is in the changed set (`foreignHead`). -/
+Pass 3 heads (`cenv.p3Heads`) is in the changed set (`foreignHead`). **Input
+constants carry their names:** each input constant's own name hashes like the
+name it is stored under (`misnamedInput`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
@@ -762,7 +773,12 @@ Pass 3 heads (`cenv.p3Heads`) is in the changed set (`foreignHead`). -/
                   match crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
                   | none =>
                     match foreignHead env cenv.p3Heads out.1 with
-                    | none => .ok ()
+                    | none =>
+                      match misnamedInput env with
+                      | none => .ok ()
+                      | some n =>
+                        .error s!"compileReport: name invariant failed: the input constant stored \
+                          under {n.pretty} carries another name"
                     | some h =>
                       .error s!"compileReport: heads check failed: the Pass 3 head {h.pretty} is not \
                         in the changed set"
@@ -803,7 +819,7 @@ Pass 3 heads (`cenv.p3Heads`) is in the changed set (`foreignHead`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with eleven checks (`checkReport`):
+condensation it cannot schedule). It ends with twelve checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -814,7 +830,8 @@ published input inductive is published at an inductive projection of a
 block with a `Muts` entry; and every input name of the driver's final aux map
 is published with an original-form record; every published input name is
 resolved or in the aux map; no resolved name outside the aux map is a cross-SCC
-subset's claim; and every Pass 3 head is in the changed set. Any inconsistency is an error, and no artifact is
+subset's claim; every Pass 3 head is in the changed set; and every input
+constant carries the name it is stored under. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that
 agree with their blocks, resolved names published where they resolve,

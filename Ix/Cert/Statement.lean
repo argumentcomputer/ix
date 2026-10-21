@@ -602,8 +602,9 @@ names share a name hash, every `Muts` entry agrees with its block, every
 resolved name is published where it resolves, every published input
 inductive's component is seen, every input name of the aux map is published
 with an original-form record, every published input name is resolved or in the
-aux map, no resolved name outside the aux map is a cross-SCC claim and every
-Pass 3 head is in the changed set, all in the driver's final environment `cenv`. -/
+aux map, no resolved name outside the aux map is a cross-SCC claim, every Pass 3
+head is in the changed set, all in the driver's final environment `cenv`, and
+every input constant carries the name it is stored under. -/
 theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
     (h : checkReport env cenv out = .ok ()) :
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
@@ -612,16 +613,12 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       unoriginalAux env cenv.auxNameToAddr out.1 = none ∧
       unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
       crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-      foreignHead env cenv.p3Heads out.1 = none := by
+      foreignHead env cenv.p3Heads out.1 = none ∧ misnamedInput env = none := by
   unfold checkReport at h
-  revert h
-  cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;>
-    cases nameHashCollision env out.1 <;> cases mutsMismatch out.1 <;>
-    cases resolutionMismatch cenv.nameToAddr out.1 <;> cases unseenInductive env out.1 <;>
-    cases unoriginalAux env cenv.auxNameToAddr out.1 <;>
-    cases unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 <;>
-    cases crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames <;>
-    cases foreignHead env cenv.p3Heads out.1 <;> simp
+  -- walk the checks in order: every failing branch is an error, so the one
+  -- branch that returns has each check's equation in context
+  repeat' (first | (split at h) | (focus (cases h; done)))
+  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -630,7 +627,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -1032,7 +1029,29 @@ theorem headsChanged {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failure
       ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k →
         (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, foreignHead_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2⟩
+  exact ⟨cenv, hu, foreignHead_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1⟩
+
+/-- What `misnamedInput = none` says: every input constant's own name hashes
+like the name it is stored under. -/
+theorem misnamedInput_none {env : Ix.Environment} (h : misnamedInput env = none) :
+    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → (ci.getCnst.name == n) = true := by
+  intro n ci hmem
+  unfold misnamedInput at h
+  rw [List.findSome?_eq_none_iff] at h
+  have hfind := h (n, ci) hmem
+  dsimp only at hfind
+  cases hb : (ci.getCnst.name == n)
+  · simp [hb] at hfind
+  · rfl
+
+/-- **Input constants carry their names**: when `compileReport` returns,
+every input constant's own name hashes like the name it is stored under
+(`checkReport`'s twelfth check). -/
+theorem inputsNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → (ci.getCnst.name == n) = true := by
+  obtain ⟨cenv, -, hc⟩ := compileReport_ok h
+  exact misnamedInput_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`
