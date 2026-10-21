@@ -28,11 +28,15 @@ environment check does for Ixon records (`Benchmarks.Kernel.CheckIxeStep`):
   (`typed`, reason its safety; a failure declines, `tier (<safety>): …`); a
   logical group that references one is declined (`fence: …`).
 
-With a fiber map (`collapse`), the run is quotient Source's (`Ix.LeanIngress.checkSourceCollapsed`):
-each lowered group is renamed to its fibers' representatives, and a group whose
-renamed declarations are an earlier kept group's is that group's alias, not
-checked again, with its verdict; one that meets a kept name otherwise
-declines (`collapse: alias fiber mismatch`).
+With a fiber map (`collapse`), the run is quotient Source's (`Ix.LeanIngress.checkSourceCollapsed`),
+step for step as `Ix.LeanIngress.lowerAllCollapsed` runs it: each group is renamed
+to its fibers' representatives before it is lowered (`graphCollapsed`'s renaming),
+and taken by `Ix.LeanIngress.collapseGroup`. An inductive group that is a kept
+block is that group's alias, not lowered or checked, with its verdict; a lowered
+group's declarations equal to kept ones are dropped (a group all of whose
+declarations are dropped is their group's alias; one with some dropped is
+blocked behind their groups); a group that meets a kept name otherwise declines
+(`collapse: alias fiber mismatch`).
 
 None of this is a certified verdict; `checkSource` is. -/
 
@@ -107,16 +111,22 @@ structure Run where
   prepared : Array (Ix.Kernel.Declaration .source) := #[]
   /-- quotient Source: the groups that were an earlier group's alias -/
   aliases : Nat := 0
+  /-- quotient Source: the lowered groups with some declarations kept and some
+  dropped, and those whose dropped declarations are several groups' -/
+  partialDrops : Nat := 0
+  multiDrops : Nat := 0
 
 /-- **The run.** The evidence is Source mode's, from the prepared declarations
 (`Ix.LeanIngress.sourceEvidenceReport`): the environment's certificate theorems,
 closed, unless `evidence` is given. With `hints`, a definition whose key it
-maps runs that hint instead of Lean's (`Ix.LeanIngress.checkSourceHinted`). -/
+maps runs that hint instead of Lean's (`Ix.LeanIngress.checkSourceHinted`).
+With `lowerOnly`, the run stops after the lowering: its rows are the lowering's
+refusals and its prepared stream is complete; nothing is checked. -/
 def run (pre : Prelude .source) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) (workers : Nat := 1) (progress : Bool := false)
     (evidence : Option (Ix.Kernel.Evidences .source) := none)
     (hints : Option (Std.HashMap (CName .source) Ix.Kernel.ReducibilityHint) := none)
-    (collapse : Option FiberMap := none) : IO Run := do
+    (collapse : Option FiberMap := none) (lowerOnly : Bool := false) : IO Run := do
   let t0 ← IO.monoMsNow
   let groups ← IO.lazyPure fun _ => groupsOf env blocks
   let t1 ← IO.monoMsNow
@@ -126,6 +136,11 @@ def run (pre : Prelude .source) (env : Ix.Environment)
     | none => converted
   let t2 ← IO.monoMsNow
   let g ← IO.lazyPure fun _ => graphOf blocks groups converted
+  -- quotient Source: every conversion renamed to its fibers' representatives after
+  -- the hint override, before lowering (`Ix.LeanIngress.graphCollapsed`)
+  let g : Graph := match collapse with
+    | some ρ => { g with converted := g.converted.map fun c => c.map (Converted.substKeys ρ) }
+    | none => g
   -- the tier groups (`isTierGroup`): the tier's conversion; their slots pass
   -- the logical conversion, so that the schedule's verdict on them is the
   -- placement checks alone (`leanIngressTieredOf`); the order is unchanged
@@ -142,13 +157,20 @@ def run (pre : Prelude .source) (env : Ix.Environment)
   let mut st : State .source := pre.state
   let mut lowered : Array (CDecl .source) := #[]
   let mut owner : Std.HashMap (CName .source) Nat := {}
-  let mut keptBy : Std.HashMap (CName .source) (Nat × CDecl .source) := {}
   let mut aliasOf : Std.HashMap Nat Nat := {}
+  -- quotient Source: the collapse's state and kept blocks (`lowerAllCollapsed`'s), the
+  -- group of each kept block, and the groups a partly dropped group's drops belong to
+  let mut cs : CollapseState := {}
+  let mut kb : KeptBlocks := {}
+  let mut blockGroup : Array Nat := #[]
+  let mut dropDeps : Std.HashMap Nat (Array Nat) := {}
+  let mut partialDrops := 0
+  let mut multiDrops := 0
   let mut generated := 0
   let mut rewrites := 0
   let mut tierQueue : Array (Nat × TierDecl .source) := #[]
   let mut tierSet : Std.HashSet Nat := {}
-  for (gi, c) in sched do
+  for ((gi, c), i) in sched.zipIdx do
     if let some t := tierConv[gi]! then
       match c >>= fun _ => t with
       | .error e =>
@@ -158,49 +180,64 @@ def run (pre : Prelude .source) (env : Ix.Environment)
         tierQueue := tierQueue.push (gi, d)
         tierSet := tierSet.insert gi
       continue
-    let r := c >>= fun c => lower st c
-    match r with
-    | .error e =>
-      let (o, why) := readOutcome e
-      rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, o, why, 0⟩)
-    | .ok r =>
-      st := st.commit r
-      generated := generated + r.generated
-      rewrites := rewrites + r.projRewrites
-      let ds := r.decls.map canonDecl
-      match collapse with
-      | none =>
+    match collapse with
+    | none =>
+      match c >>= fun c => lower st c with
+      | .error e =>
+        let (o, why) := readOutcome e
+        rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, o, why, 0⟩)
+      | .ok r =>
+        st := st.commit r
+        generated := generated + r.generated
+        rewrites := rewrites + r.projRewrites
         for d in r.decls do
           for n in d.names do owner := owner.insert n gi
-        lowered := lowered ++ ds
-      | some ρ =>
-        -- quotient Source (`Ix.LeanIngress.collapseDecls`, group by group): a
-        -- group whose renamed declarations meet no kept name is kept; one each
-        -- of whose renamed declarations is the kept declaration of its names,
-        -- all of one kept group, is that group's alias; anything else declines
-        let ds' := ds.map (Ix.LeanIngress.Declaration.substKeys ρ)
-        let met := ds'.toList.flatMap (·.names) |>.filter keptBy.contains
-        if met.isEmpty then
-          for d in ds' do
-            for n in d.names do
-              owner := owner.insert n gi
-              keptBy := keptBy.insert n (gi, d)
-          lowered := lowered ++ ds'
-        else
-          let kgi? := (keptBy[met.head!]?).map (·.1)
-          let same := ds'.all fun d => d.names.all fun n =>
-            match keptBy[n]? with
-            | some (k, dk) => some k == kgi? && Ix.LeanIngress.Declaration.beqF d dk
-            | none => false
-          match kgi?, same with
-          | some kgi, true =>
-            aliasOf := aliasOf.insert gi kgi
-          | _, _ =>
-            rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "decline",
-              s!"collapse: alias fiber mismatch at {met.head!}", 0⟩)
+        lowered := lowered ++ r.decls.map canonDecl
+    | some _ =>
+      -- quotient Source, step for step as `lowerAllCollapsed` (`collapseGroup`)
+      -- (the collapse's state is threaded: nothing here holds the old one past the call)
+      let nb := kb.blocks.size
+      match collapseGroup st cs kb groups[gi]!.name i c with
+      | .refused e cs' kb' =>
+        cs := cs'
+        kb := kb'
+        let (o, why) := match e with
+          | .ingress e => readOutcome e.error
+          | e => ("decline", s!"{e}")
+        rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, o, why, 0⟩)
+      | .alias k cs' kb' =>
+        cs := cs'
+        kb := kb'
+        aliasOf := aliasOf.insert gi blockGroup[k]!
+      | .lowered cs' kb' r dropped =>
+        if kb'.blocks.size > nb then blockGroup := blockGroup.push gi
+        cs := cs'
+        kb := kb'
+        st := st.commit r
+        generated := generated + r.generated
+        rewrites := rewrites + r.projRewrites
+        for d in r.decls do
+          for n in d.names do owner := owner.insert n gi
+        -- the groups whose kept declarations the dropped ones are (not this one)
+        let dropGroups := dropped.foldl (fun acc n => match owner[n]? with
+          | some k => if k == gi || acc.contains k then acc else acc.push k
+          | none => acc) #[]
+        unless dropGroups.isEmpty do
+          if r.decls.isEmpty then
+            if let some k := dropGroups[0]? then aliasOf := aliasOf.insert gi k
+            if dropGroups.size > 1 then multiDrops := multiDrops + 1
+          else
+            partialDrops := partialDrops + 1
+            dropDeps := dropDeps.insert gi dropGroups
+  if collapse.isSome then lowered := cs.kept
   let t4 ← IO.monoMsNow
-  if progress then IO.eprintln s!"source-ingress: lowered {lowered.size} declarations in {t4 - t3} ms ({aliasOf.size} alias groups)"
+  if progress then IO.eprintln s!"source-ingress: lowered {lowered.size} declarations in {t4 - t3} ms ({aliasOf.size} alias groups, {partialDrops} partly dropped, {multiDrops} dropped onto several groups)"
   let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
+  if lowerOnly then
+    let rows' := rows.zipIdx.map fun (r, gi) => r.getD ⟨gi, names[gi]!, kindOf groups[gi]!, "accept", "", 0⟩
+    return { graph := g, order := sched.map (·.1), rows := rows', decls := prepared.size, generated,
+             prepared, projRewrites := rewrites, times := #[("lower", t4 - t3)],
+             aliases := aliasOf.size, partialDrops, multiDrops }
   let (hoistMoved, hoistGuarded) := Ix.Kernel.Frontend.prepareReport pre.ix lowered
   IO.println s!"source-ingress: hoist would move {hoistMoved} records; guard fired: {hoistGuarded}"
   match Ix.Kernel.checkUnits prepared with
@@ -228,7 +265,8 @@ def run (pre : Prelude .source) (env : Ix.Environment)
       unless started.contains gi do
         started := started.insert gi
         let resolve (j : Nat) : Nat := aliasOf.getD j j
-        if let some blocker := g.hard[gi]!.find? (fun j => failed.contains (resolve j)) then
+        if let some blocker := (g.hard[gi]! ++ dropDeps.getD gi #[]).find?
+            (fun j => failed.contains (resolve j)) then
           let root := failed.getD (resolve blocker) (resolve blocker)
           failed := failed.insert gi root
           rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "blocked",
@@ -311,7 +349,8 @@ def run (pre : Prelude .source) (env : Ix.Environment)
            projRewrites := rewrites,
            times := #[("group", t1 - t0), ("convert", t2 - t1), ("order", t3 - t2),
              ("lower", t4 - t3), ("evidence", t4e - t4), ("check", t4t - t4e), ("tier", t5 - t4t)],
-           evidence := ev, evidenceErrors := evErrors, aliases := aliasOf.size }
+           evidence := ev, evidenceErrors := evErrors, aliases := aliasOf.size, partialDrops,
+           multiDrops }
 
 /-- Counts by outcome (constants and groups) and by outcome and reason
 (constants). -/

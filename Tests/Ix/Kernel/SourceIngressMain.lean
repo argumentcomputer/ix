@@ -33,7 +33,9 @@ import Tests.Ix.Kernel.SourceIngressCompare
   `checkSourceHinted`), instead of Lean's per name. With `--collapse` (which implies
   `--fiber-hints`), the run is quotient Source's: the artifact's alias fibers
   (`Ix.LeanIngress.fiberAliasAt`, the role read off the default table) collapsed group by
-  group, an alias group reported with its representative group's verdict. -/
+  group before lowering, an alias group reported with its representative group's verdict.
+  With `--compare-prepared` (and `--collapse`), the harness's prepared stream is compared with
+  production's (`Ix.LeanIngress.prepareSourceCollapsedAt`) on the accepted groups' constants. -/
 
 namespace Tests.Ix.Kernel.SourceIngressMain
 
@@ -50,6 +52,7 @@ structure Args where
   bundle : Bool := false
   fiberHints : Bool := false
   collapse : Bool := false
+  comparePrepared : Bool := false
   modules : Array Lean.Name := #[]
 
 partial def parse (a : Args) : List String → Except String Args
@@ -63,6 +66,7 @@ partial def parse (a : Args) : List String → Except String Args
   | "--bundle-evidence" :: rest => parse { a with bundle := true } rest
   | "--fiber-hints" :: rest => parse { a with fiberHints := true } rest
   | "--collapse" :: rest => parse { a with collapse := true, fiberHints := true } rest
+  | "--compare-prepared" :: rest => parse { a with comparePrepared := true } rest
   | m :: rest =>
     if m.startsWith "--" then throw s!"unknown option {m}"
     else parse { a with modules := a.modules.push m.toName } rest
@@ -161,6 +165,43 @@ def main (args : List String) : IO UInt32 := do
                   why := why.insert reason (c + 1, if ex.length < 12 then toString n :: ex else ex)
         for (reason, (c, ex)) in why.toList do
           IO.println s!"  not a representative ({reason}): {c}, e.g. {ex}"
+  if a.collapse then
+    IO.println s!"collapse: {r.partialDrops} groups partly dropped, {r.multiDrops} dropped onto \
+      several groups"
+  -- the harness's prepared stream against production's (`prepareSourceCollapsedAt`), on the
+  -- accepted groups' constants: production's lowering is all or nothing, so the whole input,
+  -- with its declined and tier groups, has no production stream
+  if a.collapse && a.comparePrepared then
+    if let some ixon := artifact then
+      let tP ← IO.monoMsNow
+      let mut keep : Std.HashSet Ix.Name := {}
+      for row in r.rows do
+        if row.outcome == "accept" then
+          for n in r.graph.groups[row.group]!.names do keep := keep.insert n
+      let sub : Ix.Environment := { consts := env.consts.filter fun n _ => keep.contains n }
+      let subBlocks ← IO.lazyPure fun _ => condense sub (parallel := a.workers > 1)
+      let rs ← run pre sub subBlocks a.workers (hints := hints) (collapse := collapse)
+        (lowerOnly := true)
+      let hm := hints.getD {}
+      match Ix.LeanIngress.prepareSourceCollapsedAt ixon table (hm[·]?) pre sub subBlocks with
+      | .error e =>
+        IO.println s!"prepared stream: production FAILED on the {sub.consts.size} accepted constants: {e}"
+        checksFailed := true
+      | .ok ds =>
+        let refusals := (rs.rows.filter (·.outcome != "accept")).size
+        let firstDiff := (List.range (min ds.size rs.prepared.size)).find? fun j =>
+          !Ix.LeanIngress.Declaration.beqF ds[j]! rs.prepared[j]!
+        if ds.size == rs.prepared.size && firstDiff.isNone && refusals == 0 then
+          IO.println s!"prepared stream: harness = production (`prepareSourceCollapsedAt`) on the \
+            {sub.consts.size} accepted constants, {ds.size} declarations equal \
+            ({(← IO.monoMsNow) - tP} ms)"
+        else
+          let at? := firstDiff.map fun j =>
+            s!"{(ds[j]!.names.head?.map toString).getD "?"} / \
+              {(rs.prepared[j]!.names.head?.map toString).getD "?"}"
+          IO.println s!"prepared stream: harness ≠ production: {rs.prepared.size} / {ds.size} \
+            declarations, {refusals} harness refusals, first difference at {firstDiff} ({at?})"
+          checksFailed := true
   let withEvidence := r.evidence.filter fun (_, es) => es.any fun
     | .proof _ => true | .defeq => false
   IO.println s!"evidence: {withEvidence.length} well-founded operations with proof evidence: \

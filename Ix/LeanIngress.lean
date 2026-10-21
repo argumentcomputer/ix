@@ -727,8 +727,8 @@ inductive SourceError where
   /-- the committed prelude does not load (a corrupted file) -/
   | prelude (reason : String)
   | kernel (error : Ix.Kernel.CheckError .source) (position : Nat)
-  /-- quotient Source: a declaration meets an alias fiber's representative without
-  being its declaration (`collapseDecls`) -/
+  /-- quotient Source: a declaration (or an inductive group's block) meets an
+  alias fiber's representative without being its declaration (`lowerAllCollapsed`) -/
   | collapse (error : CollapseError)
 
 instance : ToString SourceError where
@@ -936,24 +936,267 @@ def fiberHints (ixe : Ixon.Env) (k : CName .source) : Option Ix.Kernel.Reducibil
 /-! ## Quotient Source (`ALPHA-COLLAPSE.md` §8.4)
 
 The Source-mode check with every alias fiber collapsed to its representative
-(`Ix.LeanIngress.Collapse`): the ingress lowers every group as `leanIngress`
-does, at the given hints; the lowered declarations are renamed to their fibers'
-representatives and each fiber's declaration is kept once, every dropped one
-checked equal to it (`collapseDecls`, `FiberHyp` decided); then the prelude is
-prepared and the verified fold runs, at Source mode's evidence over the
-collapsed declarations. The fibers and the hints are data: at an artifact,
-its alias fibers (`fiberAlias`, role-aware) and its per-fiber hints
-(`fiberHints`), so that the two sides run one declaration and one hint per
-address. Grouping is the ingress's own (components, `componentGroup`). -/
+(`Ix.LeanIngress.Collapse`), **before lowering**: every group, converted with
+its hints overridden as `leanIngressHinted` overrides them (so hints are looked
+up by the input's names), is renamed to its fibers' representatives
+(`Converted.substKeys`, `graphCollapsed`), and only then lowered
+(`lowerAllCollapsed`), so the reader's state and the in-process modeller see
+representatives only:
+* an inductive group whose renamed block is a kept group's (every name of it
+  that group's, the block equal with canonical levels: `BlockRead.canon`,
+  `BlockRead.beqF`) is that group's alias, never lowered or committed, so the
+  modeller never runs on it; one that meets a kept name otherwise is refused;
+* every other group is lowered, and its declarations are collapsed one by one
+  (`CollapseState.step`: kept, dropped when equal to the kept declaration of
+  their names, `FiberHyp` decided, or refused) before the reader's state
+  learns the kept ones.
+Then the prelude is prepared and the verified fold runs, at Source mode's
+evidence over the collapsed declarations. The fibers and the hints are data: at
+an artifact, its alias fibers (`fiberAlias`, role-aware) and its per-fiber
+hints (`fiberHints`), so that the two sides run one declaration and one hint
+per address. Grouping and order are the ingress's own (components,
+`componentGroup`; `scheduleOf` on the input's names). -/
 
-/-- **Quotient Source's fold input**: the ingress at `hints`, collapsed by `ρ`,
+/-- A definition member renamed to its fibers' representatives. -/
+def DefMember.substKeys (ρ : FiberMap) (m : DefMember) : DefMember :=
+  { m with cv := ConstantVal.substKeys ρ m.cv, value := Expr.substKeys ρ m.value }
+
+/-- An inductive block, as read, renamed to its fibers' representatives. -/
+def BlockRead.substKeys (ρ : FiberMap) (rb : BlockRead .source) : BlockRead .source :=
+  { rb with
+    types := rb.types.map fun (cv, p, i) => (ConstantVal.substKeys ρ cv, p, i)
+    ctors := rb.ctors.map fun (cv, p, f) => (ConstantVal.substKeys ρ cv, p, f)
+    ctorNames := rb.ctorNames.map (·.map (Key.subst ρ))
+    recs := rb.recs.map fun (cv, rc, rules) =>
+      (ConstantVal.substKeys ρ cv, rc, rules.map (RecRule.substKeys ρ)) }
+
+/-- **A converted group renamed to its fibers' representatives** (`Key.subst`
+at every key it declares or mentions). -/
+def Converted.substKeys (ρ : FiberMap) : Converted → Converted
+  | .inductive rb => .inductive (BlockRead.substKeys ρ rb)
+  | .definitions ms => .definitions (ms.map (DefMember.substKeys ρ))
+  | .axiom cv => .axiom (ConstantVal.substKeys ρ cv)
+  | .quot k cv => .quot k (ConstantVal.substKeys ρ cv)
+
+/-- **Quotient Source's graph**: `graphHinted`'s, every conversion renamed to its
+fibers' representatives after the hint override. The groups, edges and order
+are the input's. -/
+def graphCollapsed (ρ : FiberMap) (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Graph :=
+  let g := graphHinted hints env blocks
+  { g with converted := g.converted.map fun c => c.map (Converted.substKeys ρ) }
+
+/-- The names a block declares: its types', constructors' and recursors', in the
+order its `indDecl` declares them. -/
+def BlockRead.names (rb : BlockRead .source) : List (CName .source) :=
+  rb.types.toList.map (·.1.name) ++ rb.ctors.toList.map (·.1.name) ++
+    rb.recs.toList.map (·.1.name)
+
+/-- A block's levels in the compiler's canonical form, each constant's over its
+own level parameters, as `canonDecl` puts its `indDecl`'s (`canonInfo`). -/
+def BlockRead.canon (rb : BlockRead .source) : BlockRead .source :=
+  let cv (c : CVal .source) : CVal .source := (canonValM c).run' {}
+  { rb with
+    types := rb.types.map fun (c, p, i) => (cv c, p, i)
+    ctors := rb.ctors.map fun (c, p, f) => (cv c, p, f)
+    recs := rb.recs.map fun (c, rc, rules) =>
+      match canonInfo (.recInfo c 0 0 rules) with
+      | .recInfo c' _ _ rules' => (c', rc, rules')
+      | _ => (c, rc, rules) }
+
+/-- Two blocks' types or constructors are equal (the memoised term comparison). -/
+def headsBeqF : List (CVal .source × Nat × Nat) → List (CVal .source × Nat × Nat) → Bool
+  | [], [] => true
+  | (c, p, i) :: as, (c', p', i') :: bs =>
+    ConstantVal.beqF c c' && p == p' && i == i' && headsBeqF as bs
+  | _, _ => false
+
+/-- Two recursors' declared counts are equal. -/
+def RecCounts.beqF (a b : RecCounts) : Bool :=
+  a.params == b.params && a.motives == b.motives && a.minors == b.minors &&
+    a.indices == b.indices && a.k == b.k && a.motive == b.motive
+
+/-- Two blocks' recursors are equal (the memoised term comparison). -/
+def recsBeqF : List (CVal .source × RecCounts × List (Ix.Kernel.RecRule .source)) →
+    List (CVal .source × RecCounts × List (Ix.Kernel.RecRule .source)) → Bool
+  | [], [] => true
+  | (c, rc, rs) :: as, (c', rc', rs') :: bs =>
+    ConstantVal.beqF c c' && RecCounts.beqF rc rc' && RecRule.listBeqF rs rs' && recsBeqF as bs
+  | _, _ => false
+
+/-- **Two blocks are equal**, deciding `a = b` with the memoised term comparison
+(`BlockRead.beqF_eq_true`). -/
+def BlockRead.beqF (a b : BlockRead .source) : Bool :=
+  a.numParams == b.numParams && headsBeqF a.types.toList b.types.toList &&
+    headsBeqF a.ctors.toList b.ctors.toList && decide (a.ctorNames = b.ctorNames) &&
+    recsBeqF a.recs.toList b.recs.toList
+
+theorem headsBeqF_eq_true : ∀ {as bs : List (CVal .source × Nat × Nat)},
+    headsBeqF as bs = true → as = bs
+  | [], [], _ => rfl
+  | (c, p, i) :: as, (c', p', i') :: bs, h => by
+    simp only [headsBeqF, ConstantVal.beqF_eq, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at h
+    obtain ⟨⟨⟨rfl, rfl⟩, rfl⟩, h⟩ := h
+    rw [headsBeqF_eq_true h]
+
+theorem RecCounts.beqF_eq_true {a b : RecCounts} (h : RecCounts.beqF a b = true) : a = b := by
+  obtain ⟨_, _, _, _, _, _⟩ := a
+  obtain ⟨_, _, _, _, _, _⟩ := b
+  simp only [RecCounts.beqF, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, rfl⟩, rfl⟩ := h
+  rfl
+
+theorem recsBeqF_eq_true :
+    ∀ {as bs : List (CVal .source × RecCounts × List (Ix.Kernel.RecRule .source))},
+      recsBeqF as bs = true → as = bs
+  | [], [], _ => rfl
+  | (c, rc, rs) :: as, (c', rc', rs') :: bs, h => by
+    simp only [recsBeqF, ConstantVal.beqF_eq, RecRule.listBeqF_eq, Bool.and_eq_true,
+      decide_eq_true_eq] at h
+    obtain ⟨⟨⟨rfl, hrc⟩, rfl⟩, h⟩ := h
+    rw [RecCounts.beqF_eq_true hrc, recsBeqF_eq_true h]
+
+/-- **`BlockRead.beqF` decides equality.** -/
+theorem BlockRead.beqF_eq_true {a b : BlockRead .source} (h : BlockRead.beqF a b = true) :
+    a = b := by
+  obtain ⟨n, ts, cs, cn, rs⟩ := a
+  obtain ⟨n', ts', cs', cn', rs'⟩ := b
+  simp only [BlockRead.beqF, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨rfl, hts⟩, hcs⟩, rfl⟩, hrs⟩ := h
+  rw [Array.toList_inj.mp (headsBeqF_eq_true hts), Array.toList_inj.mp (headsBeqF_eq_true hcs),
+    Array.toList_inj.mp (recsBeqF_eq_true hrs)]
+
+/-- The inductive groups quotient Source's lowering kept: each one's block
+(renamed, canonical levels), and the kept block each of their names belongs
+to. -/
+structure KeptBlocks where
+  blocks : Array (BlockRead .source) := #[]
+  blockOf : Std.HashMap (CName .source) Nat := {}
+
+/-- A kept inductive group's block recorded. -/
+def KeptBlocks.push (kb : KeptBlocks) (rb : BlockRead .source) : KeptBlocks :=
+  let ⟨blocks, blockOf⟩ := kb
+  let i := blocks.size
+  { blocks := blocks.push (BlockRead.canon rb),
+    blockOf := (BlockRead.names rb).foldl (fun m n => m.insert n i) blockOf }
+
+/-- **A renamed inductive group against the kept ones** (`FiberHyp` at the
+block, decided): `none` when none of its names is kept yet (it is lowered);
+`some k` when every name of it is kept block `k`'s, and its block is `k`'s with
+canonical levels (it is `k`'s alias, not lowered); otherwise refused, reported
+at `first`. -/
+def KeptBlocks.alias (kb : KeptBlocks) (s : CollapseState) (first : CName .source)
+    (rb : BlockRead .source) : Except CollapseError (Option Nat) :=
+  let ns := BlockRead.names rb
+  let refuse : CollapseError := .mismatch first (ns.head?.getD (.id .anonymous))
+  if !ns.any s.owner.contains then .ok none
+  else match ns.head?.bind (kb.blockOf[·]?) with
+    | some k =>
+      if ns.all (kb.blockOf[·]? == some k) &&
+          (kb.blocks[k]?.any (BlockRead.beqF (BlockRead.canon rb))) then
+        .ok (some k)
+      else .error refuse
+    | none => .error refuse
+
+/-- A lowered group's declarations, with canonical levels (`canonDecl`), collapsed
+one by one (`CollapseState.step`, refusals reported at `first`): the collapse's
+new state, and the reading's kept part (its declarations as lowered, with how
+many of them the modeller generated: what the reader's state learns) with the
+names of the dropped ones. A refusal comes back with the state as it was before
+the group (`CollapseState.restore`). -/
+def collapseRead (s : CollapseState) (first : CName .source) (r : Read .source) :
+    CollapseState × Except CollapseError (Read .source × Array (CName .source)) := Id.run do
+  let n := s.kept.size
+  let mut s := s
+  let mut keep : Array (CDecl .source) := #[]
+  let mut gen := 0
+  let mut dropped : Array (CName .source) := #[]
+  for (d, j) in r.decls.zipIdx do
+    let d' := canonDecl d
+    let (s', res) := s.step first d'
+    s := s'
+    match res with
+    | .error e => return (s.restore n, .error e)
+    | .ok true =>
+      keep := keep.push d
+      if j < r.generated then gen := gen + 1
+    | .ok false => dropped := dropped.push (d'.names.head?.getD (.id .anonymous))
+  return (s, .ok ({ r with decls := keep, generated := gen }, dropped))
+
+/-- What one renamed group does in quotient Source's lowering. Every outcome
+carries the collapse's state and kept blocks on (a caller that threads them
+never holds the old ones, so they are updated in place). -/
+inductive CollapseStep where
+  /-- kept block `k`'s alias: not lowered, nothing learned -/
+  | alias (k : Nat) (s : CollapseState) (kb : KeptBlocks)
+  /-- lowered and collapsed: the collapse's new state and kept blocks, the kept
+  part of the reading (what the reader's state learns), and the names of the
+  dropped declarations -/
+  | lowered (s : CollapseState) (kb : KeptBlocks) (r : Read .source) (dropped : Array (CName .source))
+  /-- refused (an ingress failure or a collapse mismatch), the state as it was -/
+  | refused (e : SourceError) (s : CollapseState) (kb : KeptBlocks)
+
+/-- **One renamed group of quotient Source's lowering** (`c`, at `position` in
+the order, reported under the input's name `first`), from the reader's state
+`st`: an inductive group that is a kept block's alias is not lowered
+(`KeptBlocks.alias`); any other group is lowered (`lower`) and its declarations
+collapsed (`collapseRead`). A refusal is an ingress failure or a collapse
+mismatch. -/
+def collapseGroup (st : State .source) (s : CollapseState) (kb : KeptBlocks)
+    (first : CName .source) (position : Nat) (c : Except ReadError Converted) : CollapseStep :=
+  let fail (e : ReadError) : SourceError := .ingress ⟨first, position, e⟩
+  match c with
+  | .error e => .refused (fail e) s kb
+  | .ok c =>
+    let blockAlias : Except CollapseError (Option Nat) := match c with
+      | .inductive rb => kb.alias s first rb
+      | _ => .ok none
+    match blockAlias with
+    | .error e => .refused (.collapse e) s kb
+    | .ok (some k) => .alias k s kb
+    | .ok none =>
+      match lower st c with
+      | .error e => .refused (fail e) s kb
+      | .ok r =>
+        match collapseRead s first r with
+        | (s, .error e) => .refused (.collapse e) s kb
+        | (s, .ok (r, dropped)) =>
+          let kb := match c with
+            | .inductive rb => kb.push rb
+            | _ => kb
+          .lowered s kb r dropped
+
+/-- **Quotient Source's lowering**: the scheduled groups of a renamed graph
+(`graphCollapsed`) from `st`, one by one (`collapseGroup`), threading the
+reader's state, which learns only the kept declarations; the first refusal ends
+it. The kept declarations, in order, with canonical levels. -/
+def lowerAllCollapsed (st : State .source) (g : Graph)
+    (scheduled : Array (Nat × Except ReadError Converted)) :
+    Except SourceError (State .source × Array (CDecl .source)) := do
+  let mut st := st
+  let mut s : CollapseState := {}
+  let mut kb : KeptBlocks := {}
+  for ((gi, c), i) in scheduled.zipIdx do
+    match collapseGroup st s kb g.groups[gi]!.name i c with
+    | .refused e _ _ => throw e
+    | .alias _ s' kb' =>
+      s := s'
+      kb := kb'
+    | .lowered s' kb' r _ =>
+      s := s'
+      kb := kb'
+      st := st.commit r
+  return (st, s.kept)
+
+/-- **Quotient Source's fold input**: the groups at `hints`, renamed by `ρ`
+before they are lowered and collapsed (`graphCollapsed`, `lowerAllCollapsed`),
 then prepared behind the prelude. -/
 def prepareSourceCollapsed (ρ : FiberMap) (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
     (pre : Ix.Kernel.Reader.Prelude .source) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) : Except SourceError (Array (CDecl .source)) := do
-  let decls ← (leanIngressHinted hints env blocks pre.state).mapError .ingress
-  let c ← (collapseDecls ρ decls).mapError .collapse
-  pure (Ix.Kernel.Frontend.preparePrelude pre.ix c.decls)
+  let g := graphCollapsed ρ hints env blocks
+  let (_, decls) ← lowerAllCollapsed pre.state g (scheduleOf g)
+  pure (Ix.Kernel.Frontend.preparePrelude pre.ix decls)
 
 /-- Quotient Source over an explicit prelude, fiber map and hints. -/
 def checkSourceCollapsedUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source))

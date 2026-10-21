@@ -14,14 +14,16 @@ import IxC.Kernel.Ingress.Records
 Lean names constants; Ix addresses them by content. Two Lean constants whose
 content agrees once their references are identified (an *alias fiber*) are one
 constant to Ixon. **Quotient Source** checks a Lean environment with every
-fiber collapsed to one representative: the lowered declarations are renamed so
-that every key of a fiber becomes the fiber's representative (`substKeys`),
-and of the declarations that become equal only the first is kept
-(`collapseDecls`, one `CollapseState.step` per declaration). A dropped
-declaration must be the kept one after renaming
+fiber collapsed to one representative: every group is renamed so that every key
+of a fiber becomes the fiber's representative (`substKeys`) **before** it is
+lowered (`Ix.LeanIngress.lowerAllCollapsed`), so the in-process modeller runs
+on representatives; of the declarations that become equal only the first is
+kept (`CollapseState.step`; an inductive group that is a kept group's block is
+not lowered at all). A dropped declaration must be the kept one after renaming
 — `FiberHyp`, checked here decidably (`Declaration.beqF`) for every drop; a
 declaration whose renamed form meets an earlier declaration without equalling
 it is refused (`CollapseError.mismatch`), so no fiber is ever trusted.
+`collapseDecls` takes the same step over already-lowered declarations.
 
 **The fibers** are data, and verified: any fiber map may be given, since a
 wrong one only produces a refusal. `fiberAlias` reads them off a compiled
@@ -407,7 +409,9 @@ theorem Declaration.beqF_eq (a b : Ix.Kernel.Declaration .source) : Declaration.
 /-! ## Collapsing -/
 
 /-- Why a collapse refuses: a declaration whose renamed form declares a name an
-earlier declaration declares, without being that declaration; and, at an
+earlier declaration declares, without being that declaration (or a renamed
+inductive group that meets a kept name without being a kept group's block,
+`Ix.LeanIngress.lowerAllCollapsed`); and, at an
 artifact (`prepareSourceCollapsedAt`), a prepared stream or evidence that names
 a key the artifact does not represent. -/
 inductive CollapseError where
@@ -449,7 +453,8 @@ declaration `k` declares, and which is that declaration, is dropped (`false`);
 anything else is refused, reported at `first` (the input's name for it). The
 new state comes back on every path (a drop or a refusal leaves it as it was),
 so a caller that threads it never holds the old one and the state is updated
-in place. -/
+in place. Quotient Source's lowering (`Ix.LeanIngress.lowerAllCollapsed`) and
+`collapseDecls` both take this step. -/
 def CollapseState.step (s : CollapseState) (first : Ix.Kernel.Key .source)
     (d' : Ix.Kernel.Declaration .source) : CollapseState × Except CollapseError Bool :=
   let ns := d'.names
@@ -474,6 +479,14 @@ theorem CollapseState.step_kept {s s' : CollapseState} {first : Ix.Kernel.Key .s
   · split at h
     · cases h; simp
     · cases h
+
+/-- The state with the declarations kept after the first `n` undone. Their names
+are owned by nothing again: a kept declaration's names were all unowned when it
+was kept. -/
+def CollapseState.restore (s : CollapseState) (n : Nat) : CollapseState :=
+  let ⟨kept, owner⟩ := s
+  let undone := kept.extract n kept.size
+  { kept := kept.extract 0 n, owner := undone.foldl (fun o d => d.names.foldl (·.erase ·) o) owner }
 
 /-- **The collapse** (`FiberHyp`, decided): rename every declaration by `ρ`, in
 order, and take the collapse's step (`CollapseState.step`): a renamed

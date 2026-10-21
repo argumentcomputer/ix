@@ -384,7 +384,10 @@ Hand-made fiber maps over the module's alias fixtures: an α-equal pair is
 collapsed to its first member and the result accepted, with exactly the alias's
 declaration dropped; a map identifying unequal declarations is refused; and a
 `Bool`-shaped inductive mapped onto `Bool`'s role keys is that role's alias, by name
-or, without `Bool` in the closure, by the role table's address (`fiberAliasAt`). -/
+or, without `Bool` in the closure, by the role table's address (`fiberAliasAt`).
+Quotient Source renames before lowering (`lowerAllCollapsed`): an alias block is
+never lowered, and a block that meets a kept block's names without being it is
+refused. -/
 
 def kname (n : Lean.Name) : Ix.Kernel.Name := Ix.Kernel.Name.ofLeanName n
 
@@ -443,6 +446,27 @@ def evaluateQuotient : IO (Array String × Array String) := do
       (condense env3) with
   | .ok kenv => lines := lines.push s!"quotient: role alias accepted, {kenv.consts.length} kernel constants"
   | .error e => errors := errors.push s!"quotient: role alias: {e}"
+  -- collapse before lowering (`lowerAllCollapsed`): the alias's group is renamed before it is
+  -- lowered; `Flag`'s block is `Bool`'s, so it is never lowered, and the prepared stream is the
+  -- nominal one without it; `aliasTwo` likewise
+  for (what, e, m, gone) in [("role alias", env3, ρ3, own "Flag"),
+      ("the α-equal pair", env, ρ, own "aliasTwo")] do
+    match prepareSource pre e (condense e), prepareSourceCollapsed m (fun _ => none) pre e (condense e) with
+    | .ok ds, .ok qs =>
+      lines := lines.push s!"quotient: {what}: prepared {qs.size} of the nominal {ds.size} declarations"
+      unless qs.size + 1 == ds.size do
+        errors := errors.push s!"quotient: {what}: expected one declaration fewer, got {qs.size} of {ds.size}"
+      if qs.any (·.names.any (· == kkey gone)) then
+        errors := errors.push s!"quotient: {what}: {gone} is in the prepared stream"
+    | .error err, _ | _, .error err => errors := errors.push s!"quotient: {what}: prepare: {err}"
+  -- a block that meets a kept block's names without being that block (`Flag` with only its type
+  -- and first constructor onto `Bool`'s roles) is refused before it is lowered
+  let ρ5 := mapOf [(own "Flag", .role .bool), (own "Flag.off", .role .boolFalse)]
+  match prepareSourceCollapsed ρ5 (fun _ => none) pre env3 (condense env3) with
+  | .error (.collapse (.mismatch n r)) =>
+    lines := lines.push s!"quotient: a partly mapped block refused: {n} renames to {r}"
+  | .error e => errors := errors.push s!"quotient: a partly mapped block: another failure: {e}"
+  | .ok _ => errors := errors.push "quotient: a partly mapped block was collapsed"
   -- the table rule (`fiberAliasAt`): `Flag` in a closure without `Bool`, at
   -- addresses the role table binds to `Bool`'s roles. The name rule leaves it
   -- an input key; the table rule makes it `Bool`'s role alias, accepted.
@@ -492,7 +516,7 @@ def quotient : TestSeq :=
     let (errors, lines) ← evaluateQuotient
     for l in lines do IO.println l
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
-    return (errors.isEmpty, 3, 0, msg)) .done
+    return (errors.isEmpty, 6, 0, msg)) .done
 
 
 /-! ## The `.indDecl` shape guard
