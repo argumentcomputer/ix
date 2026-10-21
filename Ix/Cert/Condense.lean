@@ -456,4 +456,100 @@ theorem reach_path {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {u w : Nat}
     rw [← Std.HashSet.contains_congr (BEq.symm hname)]
     exact href
 
+/-! ## Each node's representative -/
+
+theorem setIfInBounds_foldl_get {n : Nat} {w : Ix.Name} {v : Nat} (hv : v < n) :
+    ∀ (l : List Nat) (s : Vector Ix.Name n),
+      (l.foldl (fun b a => b.setIfInBounds a w) s)[v] = if v ∈ l then w else s[v] := by
+  intro l
+  induction l with
+  | nil => intro s; simp
+  | cons a l ih =>
+    intro s
+    rw [List.foldl_cons, ih]
+    by_cases hl : v ∈ l
+    · simp [hl]
+    · by_cases ha : a = v
+      · subst ha; simp [hl]
+      · simp [hl, ha, Ne.symm ha]
+
+/-- **Each node's representative is its component's root's name.** -/
+theorem rootNames_get {names : Array Ix.Name} {c : Ix.Compile.Canon.Condensation}
+    {hr : ∀ p ∈ c.comps.zip c.roots, p.2 < names.size}
+    (huniq : ∀ (k k' : Nat) (c₁ c₂ : Array Nat) (v : Nat),
+      c.comps[k]? = some c₁ → c.comps[k']? = some c₂ → v ∈ c₁ → v ∈ c₂ → k = k')
+    {k r v : Nat} {comp : Array Nat} (hk : c.comps[k]? = some comp) (hrk : c.roots[k]? = some r)
+    (hvc : v ∈ comp) (hv : v < names.size) (hrn : r < names.size) :
+    (rootNames names c hr)[v] = names[r] := by
+  unfold rootNames
+  simp only [Id.run, Array.forIn_pure_yield_eq_foldl, pure_bind, Array.forIn'_pure_yield_eq_foldl]
+  -- the pairs of the zip that hold `v` all name `r`
+  have good : ∀ p ∈ c.comps.zip c.roots, v ∈ p.1 → p.2 = r := by
+    intro p hp hvp
+    obtain ⟨i, hi, e⟩ := Array.mem_iff_getElem.mp hp
+    rw [Array.getElem_zip] at e
+    subst e
+    have hi₁ : i < c.comps.size := by rw [Array.size_zip] at hi; omega
+    have hi₂ : i < c.roots.size := by rw [Array.size_zip] at hi; omega
+    have := huniq i k _ comp v (Array.getElem?_eq_getElem hi₁) hk hvp hvc
+    subst this
+    rw [Array.getElem?_eq_getElem hi₂] at hrk
+    exact Option.some.inj hrk
+  have hk₁ : k < c.comps.size := by
+    rcases Nat.lt_or_ge k c.comps.size with h | h
+    · exact h
+    · rw [Array.getElem?_eq_none h] at hk; cases hk
+  have hk₂ : k < c.roots.size := by
+    rcases Nat.lt_or_ge k c.roots.size with h | h
+    · exact h
+    · rw [Array.getElem?_eq_none h] at hrk; cases hrk
+  have hmem : (comp, r) ∈ c.comps.zip c.roots := by
+    rw [Array.mem_iff_getElem]
+    refine ⟨k, by rw [Array.size_zip]; omega, ?_⟩
+    rw [Array.getElem_zip, Option.some.inj ((Array.getElem?_eq_getElem hk₁).symm.trans hk),
+      Option.some.inj ((Array.getElem?_eq_getElem hk₂).symm.trans hrk)]
+  change (Array.foldl (fun b (x : {p // p ∈ c.comps.zip c.roots}) =>
+      Array.foldl (fun b a => b.setIfInBounds a (names[x.val.snd]'(hr _ x.property))) b x.val.fst) names.toVector
+      (c.comps.zip c.roots).attach)[v] = names[r]
+  rw [← Array.foldl_toList]
+  -- along the list: a step on a pair holding `v` writes `names[r]`, the others leave it
+  have step : ∀ (x : {p // p ∈ c.comps.zip c.roots}) (s : Vector Ix.Name names.size),
+      (Array.foldl (fun b a => b.setIfInBounds a (names[x.val.snd]'(hr _ x.property))) s x.val.fst)[v] =
+        if v ∈ x.val.fst then names[r] else s[v] := by
+    intro x s
+    rw [← Array.foldl_toList, setIfInBounds_foldl_get hv]
+    by_cases hx : v ∈ x.val.fst
+    · have e := good x.val x.property hx
+      simp only [Array.mem_toList_iff, hx, ↓reduceIte]
+      congr 1
+    · simp [hx]
+  have keep : ∀ (l : List {p // p ∈ c.comps.zip c.roots}) (s : Vector Ix.Name names.size), s[v] = names[r] →
+      (l.foldl (fun b x => Array.foldl (fun b a => b.setIfInBounds a (names[x.val.snd]'(hr _ x.property))) b x.val.fst) s)[v] =
+        names[r] := by
+    intro l
+    induction l with
+    | nil => intro s h; exact h
+    | cons x l ih =>
+      intro s h
+      rw [List.foldl_cons]
+      refine ih _ ?_
+      rw [step]
+      split <;> simp_all
+  have hit : ∀ (l : List {p // p ∈ c.comps.zip c.roots}) (s : Vector Ix.Name names.size),
+      ⟨(comp, r), hmem⟩ ∈ l →
+      (l.foldl (fun b x => Array.foldl (fun b a => b.setIfInBounds a (names[x.val.snd]'(hr _ x.property))) b x.val.fst) s)[v] =
+        names[r] := by
+    intro l
+    induction l with
+    | nil => intro _ h; cases h
+    | cons x l ih =>
+      intro s h
+      rw [List.foldl_cons]
+      rcases List.mem_cons.mp h with rfl | h
+      · refine keep _ _ ?_
+        rw [step]
+        simp [hvc]
+      · exact ih _ h
+  exact hit _ _ (by rw [Array.mem_toList_iff]; exact Array.mem_attach _ _)
+
 end Ix.Cert.Condense
