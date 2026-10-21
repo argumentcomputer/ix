@@ -347,7 +347,7 @@ theorem sortClasses_mem {rules : Rules} {addr? : Name → Option Address} {sourc
     obtain ⟨⟨⟨cl, rounds⟩, st⟩, hrun, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
     have post := sortLoop_post addr? (· ∈ sources) (sources.length + 1) 0 _
       (fun l hl x hx => by simp at hl; subst hl; exact seed x hx) {} _ _ hrun
-    dsimp only at h
+    try dsimp only at h
     repeat' (first | (cases h; done) | (split at h <;> try dsimp only at h))
     simp only [pure, Except.pure] at h
     injections
@@ -655,5 +655,194 @@ theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {al
        exact ⟨src, hm, hname⟩)
 
 end members
+
+/-! ## Pass 3's rewrite keeps names -/
+
+section rewrite
+
+open Ix.Compile.Pass (RwM RwConfig RwState)
+
+variable {α β : Type}
+
+/-- Every successful rewrite run returns a value satisfying `P`. -/
+def RwPost (P : α → Prop) (x : RwM α) : Prop :=
+  ∀ cfg st v st', (x.run cfg).run st = .ok (v, st') → P v
+
+theorem RwPost.pure {P : α → Prop} {a : α} (h : P a) : RwPost P (Pure.pure a : RwM α) := by
+  intro cfg st v st' hr
+  cases hr
+  exact h
+
+theorem RwPost.bind {x : RwM α} {f : α → RwM β} {q : α → Prop} {p : β → Prop}
+    (hx : RwPost q x) (hf : ∀ a, q a → RwPost p (f a)) : RwPost p (x >>= f) := by
+  intro cfg st v st' hr
+  rw [ReaderT.run_bind, StateT.run_bind] at hr
+  cases h : (x.run cfg).run st with
+  | error e => rw [h] at hr; cases hr
+  | ok r => rw [h] at hr; exact hf r.1 (hx cfg st r.1 r.2 h) cfg r.2 v st' hr
+
+theorem RwPost.bindAny {x : RwM α} {f : α → RwM β} {p : β → Prop} (hf : ∀ a, RwPost p (f a)) :
+    RwPost p (x >>= f) :=
+  RwPost.bind (q := fun _ => True) (fun _ _ _ _ _ => trivial) fun a _ => hf a
+
+theorem RwPost.ite {p : α → Prop} {c : Prop} [Decidable c] {a b : RwM α} (ha : RwPost p a)
+    (hb : RwPost p b) : RwPost p (if c then a else b) := by
+  by_cases hc : c
+  · simpa [hc] using ha
+  · simpa [hc] using hb
+
+/-- The rewrite keeps a constant's name and an inductive's constructors. -/
+def Keeps (ci ci' : ConstantInfo) : Prop :=
+  ci'.getCnst.name = ci.getCnst.name ∧
+    ∀ iv', ci' = .inductInfo iv' → ∃ iv, ci = .inductInfo iv ∧ iv'.ctors = iv.ctors
+
+/-- **Pass 3's rewrite of a constant keeps its name and an inductive's
+constructors**: it rewrites the terms only (`Ix.Compile.Pass.rewriteConstM`). -/
+theorem rewriteConstM_keeps (expansion? : Name → Except String (Option Ix.Compile.Pass.Expansion))
+    (ci : ConstantInfo) :
+    RwPost (fun r => Keeps ci r.1) (Ix.Compile.Pass.rewriteConstM expansion? ci) := by
+  have cnst : ∀ c : Ix.ConstantVal, RwPost (fun r : Ix.ConstantVal × Bool => r.1.name = c.name)
+      (do let (t, ch) ← Ix.Compile.Pass.rw expansion? Ix.Compile.Pass.rewriteFuel true c.type
+          pure ({ c with type := t }, ch)) := fun c =>
+    RwPost.bindAny fun _ => RwPost.pure rfl
+  unfold Ix.Compile.Pass.rewriteConstM
+  cases ci <;>
+  · refine RwPost.bind (cnst _) fun r hr => ?_
+    repeat (first
+      | (with_reducible apply RwPost.bindAny); intro _
+      | (with_reducible apply RwPost.ite)
+      | split)
+    all_goals ((try dsimp only); exact RwPost.pure ⟨hr, fun iv' h => by
+      first | (cases h; done) | (cases h; exact ⟨_, rfl, rfl⟩)⟩)
+
+
+/-- **A block rewrite's overlay holds rewrites of its members**: each entry
+is a member's name with the rewrite of that member's constant. -/
+theorem rewriteBlock_overlay {expansion? : Name → Except String (Option Ix.Compile.Pass.Expansion)}
+    {members : Array (Name × ConstantInfo)} {cfg : RwConfig} {rwr : Ix.Compile.Pass.BlockRewrite}
+    (h : Ix.Compile.Pass.rewriteBlock expansion? members cfg = .ok rwr) :
+    ∀ p ∈ rwr.overlay, ∃ ci, (p.1, ci) ∈ members ∧ Keeps ci p.2 := by
+  unfold Ix.Compile.Pass.rewriteBlock at h
+  obtain ⟨res, hloop, hret⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  have inv := Ix.CompileCert.Loop.forIn_inv_array
+    (I := fun _ (s : RwState × Array (Name × ConstantInfo) × Array (Name × String)) =>
+      ∀ p ∈ s.2.1, ∃ ci, (p.1, ci) ∈ members ∧ Keeps ci p.2) _ members ?_ (by simp) hloop
+  · dsimp only at hret
+    cases hret
+    exact inv
+  · intro pre x post s r hx hI hstep
+    obtain ⟨n, ci⟩ := x
+    dsimp only at hstep
+    obtain ⟨⟨⟨ci', changed⟩, st'⟩, hrun, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep
+    have keeps : Keeps ci ci' := rewriteConstM_keeps expansion? ci cfg s.1 _ st' hrun
+    have hmem : (n, ci) ∈ members := Array.mem_toList_iff.1 (by rw [← hx]; simp)
+    dsimp only at hstep
+    obtain ⟨decl, -, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep
+    split at hstep
+    · cases hstep
+      refine ⟨_, rfl, fun p hp => ?_⟩
+      rcases Array.mem_push.1 hp with hp | rfl
+      · exact hI p hp
+      · exact ⟨ci, hmem, keeps⟩
+    · cases hstep
+      exact ⟨_, rfl, hI⟩
+
+
+/-- `E'` holds, under each name, the rewrite of a constant `E` holds under a
+`==` name. -/
+def Agrees (E E' : Ix.Environment) : Prop :=
+  ∀ x ci', E'.get? x = some ci' → ∃ n ci, (n == x) = true ∧ E.get? n = some ci ∧ Keeps ci ci'
+
+theorem Agrees.refl (E : Ix.Environment) : Agrees E E :=
+  fun x ci h => ⟨x, ci, BEq.rfl, h, rfl, fun iv' h' => ⟨iv', h', rfl⟩⟩
+
+theorem mapError_ok {ε ε' α : Type} {f : ε → ε'} {x : Except ε α} {v : α} (h : x.mapError f = .ok v) :
+    x = .ok v := by
+  cases x with
+  | error e => cases h
+  | ok a => cases h; rfl
+
+/-- A lookup in the overlay map finds an entry under a `==` name. -/
+theorem overlay_get (L : List (Name × ConstantInfo)) :
+    ∀ (l : List (Name × ConstantInfo)) (m : Std.HashMap Name ConstantInfo), (∀ y ∈ l, y ∈ L) →
+      (∀ k v, m.get? k = some v → ∃ n, (n, v) ∈ L ∧ (n == k) = true) →
+      ∀ k v, (l.foldl (fun m x => match x with | (n, ci) => m.insert n ci) m).get? k = some v →
+        ∃ n, (n, v) ∈ L ∧ (n == k) = true
+  | [], _, _, hm => hm
+  | (yn, yci) :: l, m, hl, hm => by
+    rw [List.foldl_cons]
+    refine overlay_get L l _ (fun y hy => hl y (List.mem_cons_of_mem _ hy)) (fun k v h => ?_)
+    rw [Std.HashMap.get?_insert] at h
+    split at h
+    · rename_i hy
+      cases h
+      exact ⟨yn, hl _ List.mem_cons_self, hy⟩
+    · exact hm k v h
+
+/-- **Hook 2 keeps the environment's names**: the environment `prepareBlock`
+returns is its input's, or the input overlaid with rewrites of members'
+constants (`rewriteBlock_overlay`). -/
+theorem prepareBlock_agrees {cenv cenv' : CompileEnv} {all : Ix.Set Name} {lo : Name}
+    {p : Ix.Compile.Pass.Published} (h : Ix.Compile.Pass.prepareBlock cenv all lo = .ok (cenv', p)) :
+    Agrees cenv.env cenv'.env := by
+  unfold Ix.Compile.Pass.prepareBlock at h
+  repeat' (first
+    | (cases h; exact Agrees.refl _)
+    | (dsimp only at h; split at h)
+    | split at h)
+  all_goals
+    obtain ⟨res, hloop, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+    have members : ∀ q ∈ res.1, cenv.env.get? q.1 = some q.2 := by
+      rw [Std.HashSet.forIn_eq_forIn_toList] at hloop
+      refine Ix.CompileCert.Loop.forIn_inv
+        (I := fun _ (s : Array (Name × ConstantInfo) × Array Name) => ∀ q ∈ s.1, cenv.env.get? q.1 = some q.2)
+        _ all.toList ?_ all.toList [] _ res rfl (by simp) hloop
+      intro pre x post s r _ hI hstep
+      try dsimp only at hstep
+      split at hstep
+      · rename_i ci hci
+        obtain ⟨used', -, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep
+        cases hstep
+        refine ⟨_, rfl, fun q hq => ?_⟩
+        rcases Array.mem_push.1 hq with hq | rfl
+        · exact hI q hq
+        · exact hci
+      · cases hstep
+        exact ⟨_, rfl, hI⟩
+    try dsimp only at h
+    split at h
+    · cases h
+      exact Agrees.refl _
+    · obtain ⟨views, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+      try dsimp only at h
+      obtain ⟨rwr, hrw, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+      have overlay := rewriteBlock_overlay (mapError_ok hrw)
+      split at h
+      · cases h
+        exact Agrees.refl _
+      · try dsimp only at h
+        cases h
+        intro x ci' hx
+        have e : (∅ : Std.HashMap Name ConstantInfo).get? x = none := by
+          rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty]
+        rw [Ix.Environment.get?] at hx
+        dsimp only at hx
+        rw [e] at hx
+        dsimp only at hx
+        cases ho : (rwr.overlay.foldl (fun m x => match x with | (n, ci) => m.insert n ci)
+            (∅ : Std.HashMap Name ConstantInfo)).get? x with
+        | none =>
+          rw [ho] at hx
+          exact ⟨x, ci', BEq.rfl, hx, rfl, fun iv' h' => ⟨iv', h', rfl⟩⟩
+        | some ci'' =>
+          rw [ho] at hx
+          cases hx
+          rw [← Array.foldl_toList] at ho
+          obtain ⟨n, hn, hnx⟩ := overlay_get rwr.overlay.toList rwr.overlay.toList ∅ (fun _ h => h)
+            (fun k v h => by simp at h) x ci' ho
+          obtain ⟨ci, hci, keeps⟩ := overlay (n, ci') (Array.mem_toList_iff.1 hn)
+          exact ⟨n, ci, hnx, members (n, ci) hci, keeps⟩
+
+end rewrite
 
 end Ix.Cert.Claims
