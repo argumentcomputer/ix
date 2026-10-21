@@ -3841,6 +3841,7 @@ fun ixe order =>
                     (Ix.Kernel.Admission.streamContext Address.admissionHash t pre (Ix.Cert.Stream.decodedOf ixe order)
                       (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe))
                     pre.state (Ix.Cert.Stream.decodedOf ixe order) st' decls →
+                  pre.state.keepsPrelude st' = true →
                   ∃ limits,
                     Ix.Kernel.Admission.prepareWith Address.admissionHash binding pre limits
                         (Ix.Cert.recordsOf ixe order) (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe) =
@@ -3868,6 +3869,7 @@ fun ixe order =>
                         (Ix.Kernel.Admission.streamContext Address.admissionHash t pre
                           (Ix.Cert.Stream.decodedOf ixe order) (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe))
                         pre.state (Ix.Cert.Stream.decodedOf ixe order) st' decls →
+                      pre.state.keepsPrelude st' = true →
                       ∀ {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon},
                         Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified
                               (Ix.Kernel.Reader.evidenceOf

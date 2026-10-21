@@ -123,21 +123,21 @@ theorem readRecords_complete {md : Ix.Kernel.Mode} {cx : Ctx md} {st st' : State
   simp [hx, hr, pure, Except.pure]
 
 /-- **The reading of decoded records succeeds** on every record-by-record
-reading from the prelude's state, with the table's evidence resolved against
-it. -/
+reading from the prelude's state whose final state keeps the prelude's entries
+(`State.keepsPrelude`), with the table's evidence resolved against it. -/
 theorem readStream_complete {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {st' : State .anon} {decls : Array (CDecl .anon)}
     (reads : StreamRead (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) pre.state
       constants st' decls)
-    (keys : (constants.map Prod.fst).Nodup) :
+    (keys : (constants.map Prod.fst).Nodup) (keeps : State.keepsPrelude pre.state st' = true) :
     Ix.Kernel.Admission.readStream hash t pre constants blobs hint =
       .ok (evidenceOf (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) st' t, decls) := by
   unfold Ix.Kernel.Admission.readStream
   dsimp only
   rw [readRecords_complete reads keys]
-  rfl
+  simp [keeps, pure, Except.pure]
 
 /-! ## The byte stage on the compiled closure -/
 
@@ -296,7 +296,8 @@ theorem closure_decodes (ixe : Ixon.Env) {order : List Address} (canonical : Sto
 
 /-- **The preparation succeeds from its stages' successes**: batch limits,
 unique keys, authentication, the role table's admission, canonical decoding
-and a record-by-record reading of the decoded records. -/
+and a record-by-record reading of the decoded records that keeps the prelude's
+entries (`State.keepsPrelude`). -/
 theorem prepareWith_ok {hash : ByteArray → Address} {binding : Binding} {pre : Prelude .anon}
     {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {t : Ix.Kernel.RoleTable}
@@ -307,7 +308,7 @@ theorem prepareWith_ok {hash : ByteArray → Address} {binding : Binding} {pre :
     (admitted : Ix.Kernel.Admission.admitBinding hash binding = .ok t)
     (decoded : Ix.Kernel.Admission.RecordsRead limits records constants)
     (reads : StreamRead (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) pre.state
-      constants st' decls) :
+      constants st' decls) (keeps : State.keepsPrelude pre.state st' = true) :
     Ix.Kernel.Admission.prepareWith hash binding pre limits records blobs hint =
       .ok (evidenceOf (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) st' t,
         Ix.Kernel.Frontend.preparePrelude pre.ix decls) := by
@@ -316,14 +317,15 @@ theorem prepareWith_ok {hash : ByteArray → Address} {binding : Binding} {pre :
   have ha := (Ix.Kernel.Admission.authenticate_ok_iff hash records blobs).mpr authentic
   have hd := (Ix.Kernel.Admission.decodeRecords_ok_iff limits records constants).mpr decoded
   have keys : (constants.map Prod.fst).Nodup := decoded.keys ▸ unique.1
-  have hs := readStream_complete reads keys
+  have hs := readStream_complete reads keys keeps
   unfold Ix.Kernel.Admission.prepareWith
   simp only [hp, hu, ha, admitted, hd, hs, Except.mapError, bind, Except.bind, pure, Except.pure]
 
 /-- **The reader succeeds over the compiled closure's stream** (Route A,
 B3): for the artifact `compile` returns, an order of distinct addresses
 whose stored records decode canonically, an admitted role table and a
-record-by-record reading of the decoded closure from the prelude's state,
+record-by-record reading of the decoded closure from the prelude's state that keeps
+the prelude's entries (`State.keepsPrelude`),
 the entry's preparation succeeds within some limits, with the table's
 evidence resolved against the reading and the prelude's declarations in
 front. -/
@@ -333,7 +335,8 @@ theorem closure_prepares {env : Ix.Environment} {ixe : Ixon.Env} (compiled : com
     (admitted : Ix.Kernel.Admission.admitBinding Address.admissionHash binding = .ok t)
     (pre : Prelude .anon) {st' : State .anon} {decls : Array (CDecl .anon)}
     (reads : StreamRead (Ix.Kernel.Admission.streamContext Address.admissionHash t pre (decodedOf ixe order)
-      (blobsOf ixe order) (hintsOf ixe)) pre.state (decodedOf ixe order) st' decls) :
+      (blobsOf ixe order) (hintsOf ixe)) pre.state (decodedOf ixe order) st' decls)
+    (keeps : State.keepsPrelude pre.state st' = true) :
     ∃ limits, Ix.Kernel.Admission.prepareWith Address.admissionHash binding pre limits (recordsOf ixe order)
         (blobsOf ixe order) (hintsOf ixe) =
       .ok (evidenceOf (Ix.Kernel.Admission.streamContext Address.admissionHash t pre (decodedOf ixe order)
@@ -341,7 +344,7 @@ theorem closure_prepares {env : Ix.Environment} {ixe : Ixon.Env} (compiled : com
         Ix.Kernel.Frontend.preparePrelude pre.ix decls) := by
   obtain ⟨limits, batch, decoded⟩ := closure_decodes ixe canonical
   exact ⟨limits, prepareWith_ok batch (closure_unique ixe nodup) (closure_authentic compiled order) admitted
-    decoded reads⟩
+    decoded reads keeps⟩
 
 /-- The entry over a source of preludes succeeds from the prelude, the
 preparation and the fold. -/
@@ -369,13 +372,14 @@ theorem closure_accepts {env : Ix.Environment} {ixe : Ixon.Env} (compiled : comp
     {st' : State .anon} {decls : Array (CDecl .anon)}
     (reads : StreamRead (Ix.Kernel.Admission.streamContext Address.admissionHash t pre (decodedOf ixe order)
       (blobsOf ixe order) (hintsOf ixe)) pre.state (decodedOf ixe order) st' decls)
+    (keeps : State.keepsPrelude pre.state st' = true)
     {envA : Ix.Kernel.Env .anon}
     (checked : Ix.Kernel.Cached.checkDecls .verified
       (evidenceOf (Ix.Kernel.Admission.streamContext Address.admissionHash t pre (decodedOf ixe order)
         (blobsOf ixe order) (hintsOf ixe)) st' t)
       (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok envA) :
     ∃ limits, IxonAccepts binding limits ixe S order envA := by
-  obtain ⟨limits, prepared⟩ := closure_prepares compiled closure.nodup canonical admitted pre reads
+  obtain ⟨limits, prepared⟩ := closure_prepares compiled closure.nodup canonical admitted pre reads keeps
   exact ⟨limits, closure, checkBytesUsing_ok admitted prelude prepared checked⟩
 
 end Ix.Cert.Stream

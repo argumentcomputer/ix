@@ -95,14 +95,14 @@ structure IndTypeRec (md : Mode) where
   isRec : Bool
   isReflexive : Bool
   numNested : Nat
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- One constructor of a parsed block. -/
 structure IndCtorRec (md : Mode) where
   cv : ConstantVal md
   nP : Nat
   nF : Nat
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- One recursor of a parsed block (`numParams`, `numMotives`,
 `numMinors`, `numIndices` as exported). -/
@@ -113,14 +113,14 @@ structure IndRecRec (md : Mode) where
   nm : Nat
   nI : Nat
   rules : List (RecRule md)
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- A parsed inductive block. -/
 structure BlockRec (md : Mode) where
   types : List (IndTypeRec md)
   ctors : List (IndCtorRec md)
   recs : List (IndRecRec md)
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- What the generator reads besides the block: the declared types of
 the constants so far, and the definitional heights. -/

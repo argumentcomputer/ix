@@ -731,6 +731,10 @@ inductive SourceError where
   /-- quotient Source: a declaration (or an inductive group's block) meets an
   alias fiber's representative without being its declaration (`lowerAllCollapsed`) -/
   | collapse (error : CollapseError)
+  /-- quotient Source: the reader state after the lowering holds, at a key the prelude's
+  state holds, another entry than the prelude's (`State.keepsPrelude`): a stream's copy
+  of a prelude declaration installs other state than the prelude's -/
+  | preludeCopy
 
 instance : ToString SourceError where
   toString
@@ -738,6 +742,7 @@ instance : ToString SourceError where
     | .prelude r => s!"prelude: {r}"
     | .kernel e p => s!"kernel at {p}: {e}"
     | .collapse e => s!"collapse: {e}"
+    | .preludeCopy => "prelude copy: the stream's lowering leaves other reader entries than the prelude's at a prelude key"
 
 /-- The fold's input: the ingress from the prelude's reader state, prepared by
 `Frontend.preparePrelude` with the prelude's declarations. -/
@@ -1214,13 +1219,43 @@ def lowerAllCollapsed (st : State .source) (g : Graph)
 
 /-- **Quotient Source's fold input**: the groups at `hints`, renamed by `ρ`
 with canonical levels before they are lowered and collapsed (`graphCollapsed`,
-`lowerAllCollapsed`), then prepared behind the prelude. -/
+`lowerAllCollapsed`), then prepared behind the prelude. The reader state the
+lowering ends in must keep the prelude's entries (`State.keepsPrelude`): the
+stream's own copies of the prelude's declarations (Lean's `Nat` at `.role nat`)
+install exactly what the prelude installed there, or the stream is refused
+(`SourceError.preludeCopy`). -/
 def prepareSourceCollapsed (ρ : FiberMap) (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
     (pre : Ix.Kernel.Reader.Prelude .source) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) : Except SourceError (Array (CDecl .source)) := do
   let g := graphCollapsed ρ hints env blocks
-  let (_, decls) ← lowerAllCollapsed pre.state g (scheduleOf g)
-  pure (Ix.Kernel.Frontend.preparePrelude pre.ix decls)
+  let (st, decls) ← lowerAllCollapsed pre.state g (scheduleOf g)
+  if Ix.Kernel.Reader.State.keepsPrelude pre.state st then
+    pure (Ix.Kernel.Frontend.preparePrelude pre.ix decls)
+  else throw .preludeCopy
+
+/-- **Quotient Source's fold input is a lowering that keeps the prelude**: the
+lowering succeeded, its final reader state keeps the prelude's entries
+(`State.keepsPrelude_iff`), and the input is its declarations prepared. -/
+theorem prepareSourceCollapsed_keepsPrelude {ρ : FiberMap}
+    {hints : CName .source → Option Ix.Kernel.ReducibilityHint}
+    {pre : Ix.Kernel.Reader.Prelude .source} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {ds : Array (CDecl .source)} (h : prepareSourceCollapsed ρ hints pre env blocks = .ok ds) :
+    ∃ st decls, lowerAllCollapsed pre.state (graphCollapsed ρ hints env blocks)
+        (scheduleOf (graphCollapsed ρ hints env blocks)) = .ok (st, decls) ∧
+      Ix.Kernel.Reader.State.keepsPrelude pre.state st = true ∧
+      ds = Ix.Kernel.Frontend.preparePrelude pre.ix decls := by
+  unfold prepareSourceCollapsed at h
+  cases hl : lowerAllCollapsed pre.state (graphCollapsed ρ hints env blocks)
+      (scheduleOf (graphCollapsed ρ hints env blocks)) with
+  | error e => simp [hl, bind, Except.bind] at h
+  | ok p =>
+    obtain ⟨st, decls⟩ := p
+    simp only [hl, bind, Except.bind] at h
+    split at h
+    · rename_i hk
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      exact ⟨st, decls, rfl, hk, h.symm⟩
+    · simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- Quotient Source over an explicit prelude, fiber map and hints. -/
 def checkSourceCollapsedUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source))

@@ -759,6 +759,33 @@ def State.commit (st : State md) (r : Read md) : State md := Id.run do
     st := if i < r.generated then st.noteGenerated d else st.note d
   return { st with projRewrites := st.projRewrites + r.projRewrites }
 
+/-- The keys a reader state holds an entry at. -/
+def State.keys (st : State md) : List (CName md) :=
+  st.constTypes.keys ++ st.heights.keys ++ st.indBlocks.keys ++ st.projOwners.keys ++
+    st.projLevels.keys
+
+/-- Two reader states hold the same entries at `k`: declared type, definitional height,
+parsed block, projection owner and projection level. -/
+def State.SameAt (a b : State md) (k : CName md) : Prop :=
+  a.constTypes[k]? = b.constTypes[k]? ∧ a.heights[k]? = b.heights[k]? ∧
+    a.indBlocks[k]? = b.indBlocks[k]? ∧ a.projOwners[k]? = b.projOwners[k]? ∧
+    a.projLevels[k]? = b.projLevels[k]?
+
+instance (a b : State md) (k : CName md) : Decidable (a.SameAt b k) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ _ ∧ _))
+
+/-- **The reader state `fin` keeps the prelude state `pre`'s entries** (decided): at
+every key `pre` holds an entry at, `fin` holds exactly `pre`'s entries
+(`State.keepsPrelude_iff`). Run on the state a stream's reading ends in, from the
+prelude's: the stream commits each of its keys once, so a stream that passes installed,
+at every prelude key it declares, exactly what the prelude installed there. -/
+def State.keepsPrelude (pre fin : State md) : Bool :=
+  pre.keys.all fun k => decide (fin.SameAt pre k)
+
+theorem State.keepsPrelude_iff {pre fin : State md} :
+    State.keepsPrelude pre fin = true ↔ ∀ k ∈ pre.keys, fin.SameAt pre k := by
+  simp [State.keepsPrelude, List.all_eq_true]
+
 /-- The syntactic Π-telescope length (`ExportC.indPiTeleLen`). -/
 def piTeleLen : CExpr md → Nat
   | .forallE _ b _ => piTeleLen b + 1

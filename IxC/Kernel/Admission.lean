@@ -101,6 +101,10 @@ inductive Error where
   /-- the committed prelude does not load (a corrupted file) -/
   | prelude (reason : String)
   | read (position : Nat) (error : ReadError)
+  /-- the reader's state after the stream holds, at a key the prelude's state holds,
+  another entry than the prelude's (`State.keepsPrelude`): a stream's copy of a
+  prelude record does not read to what the prelude read -/
+  | preludeCopy
   | kernel (error : Ix.Kernel.CheckError .anon) (position : Nat)
 
 instance : ToString Error where
@@ -114,6 +118,7 @@ instance : ToString Error where
     | .binding (.malformed r) => s!"binding: {r}"
     | .prelude r => s!"prelude: {r}"
     | .read p e => s!"read at {p}: {e}"
+    | .preludeCopy => "prelude copy: the stream's reading leaves other entries than the prelude's at a prelude key"
     | .kernel e p => s!"kernel at {p}: {e}"
 
 /-- The byte stage's failures, unchanged. -/
@@ -154,14 +159,18 @@ def streamContext (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre 
 /-- The reading of decoded records under a role table: the prelude's state
 continues into the stream, and the prelude's records back the store. The
 result is the table's evidence resolved against the reading
-(`evidenceOf`), and the declarations. -/
+(`evidenceOf`), and the declarations. A reading whose final state holds other entries
+than the prelude's at a prelude key (`State.keepsPrelude`: the stream's copy of a prelude
+record read differently) is refused. -/
 def readStream (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Error (Ix.Kernel.Evidences .anon × Array (Ix.Kernel.Declaration .anon)) := do
   let cx := streamContext hash t pre constants blobs hint
   match readRecords cx pre.state constants.toArray with
-  | .ok (st, decls) => pure (evidenceOf cx st t, decls)
+  | .ok (st, decls) =>
+    -- the stream's own copies of the prelude's records read to what the prelude read
+    if State.keepsPrelude pre.state st then pure (evidenceOf cx st t, decls) else throw .preludeCopy
   | .error (e, i) => throw (.read i e)
 
 /-- The evidence and the declarations the fold runs over, from the bytes. -/
@@ -284,6 +293,7 @@ def Error.outcome : Error → Outcome
   | .prelude _ => .declined
   | .read _ (.malformed _) => .rejected
   | .read _ (.declined _) => .declined
+  | .preludeCopy => .declined
   | .kernel _ _ => .declined
 
 /-- The classification of a byte-stage failure, as `Error.outcome` makes it:

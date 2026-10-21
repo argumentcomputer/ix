@@ -536,6 +536,24 @@ def evaluateQuotient : IO (Array String × Array String) := do
     if ds.any (!isCanon ·) then
       errors := errors.push "quotient: canonical levels: a nominal declaration is not canonical"
   | .error err, _ | _, .error err => errors := errors.push s!"quotient: canonical levels: prepare: {err}"
+  -- the prelude check (`State.keepsPrelude`): the stream's own `Bool` (Lean's, at `.role bool`)
+  -- installs exactly the prelude's entries; under a prelude whose state differs there (the
+  -- declared type, or the parsed block's index count), the stream is refused
+  let boolKey : Ix.Kernel.Key .source := .role .bool
+  let preT : Ix.Kernel.Reader.Prelude .source := { pre with state := { pre.state with
+    constTypes := pre.state.constTypes.insert boolKey ([], .sort .zero) } }
+  let preB : Ix.Kernel.Reader.Prelude .source := { pre with state := { pre.state with
+    indBlocks := match pre.state.indBlocks[boolKey]? with
+      | some b => pre.state.indBlocks.insert boolKey
+          { b with types := b.types.map fun t => { t with nIdx := t.nIdx + 1 } }
+      | none => pre.state.indBlocks } }
+  for (what, p, refused) in [("the prelude", pre, false), ("a type planted at Bool", preT, true),
+      ("a parsed block planted at Bool", preB, true)] do
+    match prepareSourceCollapsed {} (fun _ => none) p env3 (condense env3), refused with
+    | .ok _, false => lines := lines.push s!"quotient: prelude check: {what}: kept"
+    | .error .preludeCopy, true => lines := lines.push s!"quotient: prelude check: {what}: refused"
+    | .ok _, true => errors := errors.push s!"quotient: prelude check: {what}: not refused"
+    | .error e, _ => errors := errors.push s!"quotient: prelude check: {what}: {e}"
   return (errors, lines)
 
 def quotient : TestSeq :=

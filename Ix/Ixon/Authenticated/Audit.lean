@@ -64,11 +64,13 @@ end Ixon.Authenticated.Audit
 -- shape check (S1, fact (ii)) from 6087, likewise (12 in); the hoist guard
 -- (S1) from 6099, likewise (4 in); the in-model generator's totality (S1)
 -- from 6103, likewise (15 more; its nine ruled `partial` definitions are total,
--- and the ruling is gone).
+-- and the ruling is gone); the prelude-copy check ((b), `State.keepsPrelude` in
+-- `readStream`) from 6118, likewise (38 in: the check, the state's keys and the derived
+-- `DecidableEq` it compares with; externs, `unsafe` and csimp unchanged).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 6118 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+ Address.admissionHash]: 6156 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -235,9 +237,11 @@ and the in-model generator's totality (S1) from 6039, likewise (15 more; its nin
 `partial` definitions are total, and the ruling is gone),
 and the admission chain's conversion to Lean `module`s (step 10c) from 6054, likewise
 (codegen only: the partition's `HashSet` specialisations, 7 in and 1 out, and `wordC`
-under its public name; externs, `unsafe` and csimp unchanged). -/
+under its public name; externs, `unsafe` and csimp unchanged),
+and the prelude-copy check ((b), `State.keepsPrelude` in `readStream`) from 6060, likewise
+(38 in: the check, the state's keys and the derived `DecidableEq` it compares with). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6060 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6098 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

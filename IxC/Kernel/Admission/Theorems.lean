@@ -264,24 +264,29 @@ theorem checkConstants_with {hash : ByteArray → Address} {t : Ix.Kernel.RoleTa
   checkConstantsUsing_with h
 
 /-- An accepted reading of decoded records is a record-by-record reading
-from the prelude's state, and the evidence is the table's, resolved against
-the reading's final state. -/
+from the prelude's state, the evidence is the table's, resolved against
+the reading's final state, and that state keeps the prelude's entries
+(`State.keepsPrelude`). -/
 theorem readStream_spec {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {ev : Ix.Kernel.Evidences .anon} {decls : Array (Ix.Kernel.Declaration .anon)}
     (h : readStream hash t pre constants blobs hint = .ok (ev, decls)) :
     ∃ st', StreamRead (streamContext hash t pre constants blobs hint) pre.state constants st' decls ∧
-      ev = evidenceOf (streamContext hash t pre constants blobs hint) st' t := by
+      ev = evidenceOf (streamContext hash t pre constants blobs hint) st' t ∧
+      State.keepsPrelude pre.state st' = true := by
   unfold readStream at h
   dsimp only at h
   split at h
   · rename_i st' out hr
-    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, rfl⟩ := h
-    have hs := readRecords_spec hr
-    rw [List.toList_toArray] at hs
-    exact ⟨st', hs, rfl⟩
+    split at h
+    · rename_i hk
+      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      have hs := readRecords_spec hr
+      rw [List.toList_toArray] at hs
+      exact ⟨st', hs, rfl, hk⟩
+    · simp [throw, throwThe, MonadExceptOf.throw] at h
   · simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- An accepted reading of decoded records has no two records under one
@@ -335,7 +340,7 @@ theorem checkConstantsWith_installed {hash : ByteArray → Address} {t : Ix.Kern
     | ok env' =>
       simp only [hc, Except.mapError, Except.ok.injEq] at h
       subst h
-      obtain ⟨st', hs, rfl⟩ := readStream_spec hr
+      obtain ⟨st', hs, rfl, -⟩ := readStream_spec hr
       exact ⟨⟨decls, st', hs, hc⟩, readStream_nodup hr⟩
 
 /-- The installed environment has exactly the install skeletons of the

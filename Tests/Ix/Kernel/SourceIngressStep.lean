@@ -231,7 +231,18 @@ def run (pre : Prelude .source) (env : Ix.Environment)
           else
             partialDrops := partialDrops + 1
             dropDeps := dropDeps.insert gi dropGroups
-  if collapse.isSome then lowered := cs.kept
+  if collapse.isSome then
+    lowered := cs.kept
+    -- quotient Source's prelude check (`prepareSourceCollapsed`: `State.keepsPrelude`): a group
+    -- whose commit left other entries than the prelude's at a prelude key declines
+    let bad := pre.state.keys.filter fun k => !decide (st.SameAt pre.state k)
+    for k in bad do
+      if let some gi := owner[k]? then
+        if rows[gi]!.isNone then
+          rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "decline",
+            toString SourceError.preludeCopy, 0⟩)
+    IO.println s!"source-ingress: the lowering keeps the prelude's entries: {bad.isEmpty} \
+      ({bad.length} prelude keys differ, of {pre.state.keys.length})"
   let t4 ← IO.monoMsNow
   if progress then IO.eprintln s!"source-ingress: lowered {lowered.size} declarations in {t4 - t3} ms ({aliasOf.size} alias groups, {partialDrops} partly dropped, {multiDrops} dropped onto several groups)"
   let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix lowered

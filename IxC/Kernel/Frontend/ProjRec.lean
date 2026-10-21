@@ -101,7 +101,7 @@ structure ProjRecOwner (md : Mode) where
   /-- the recursor's motive and minor counts (the export's own) -/
   numMotives : Nat
   numMinors : Nat
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- The name of the model family's constructor-reduction theorem for
 field `i` of `T`: `T._model.proj_i.iota` (emitted by the in-process

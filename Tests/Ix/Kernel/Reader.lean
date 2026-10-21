@@ -173,6 +173,29 @@ def quotLift := bound .quotLift
   ["Eq", "Nat", "PUnit", "Empty", "False", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
    "And", "Bool"].map some
 #guard [eq, eqRefl, nat, natZero, natSucc, quotMk, quotLift].all (· != address 0)
+-- the stream's copies of the prelude's records read to what the prelude read
+-- (`State.keepsPrelude`): the prelude's own records as a stream pass; under a prelude
+-- whose state differs at `Nat`'s key (the declared type, or the parsed block's index
+-- count), they are refused
+#guard match readStream hash builtinTable builtinPre builtinPre.records.toList [] with
+  | .ok _ => true
+  | .error _ => false
+#guard
+  let tampered : Prelude .anon := { builtinPre with state := { builtinPre.state with
+    constTypes := builtinPre.state.constTypes.insert (.role .nat) ([], .sort .zero) } }
+  match readStream hash builtinTable tampered builtinPre.records.toList [] with
+  | .error .preludeCopy => true
+  | _ => false
+#guard
+  let natKey : Ix.Kernel.Key .anon := .role .nat
+  let tampered : Prelude .anon := { builtinPre with state := { builtinPre.state with
+    indBlocks := match builtinPre.state.indBlocks[natKey]? with
+      | some b => builtinPre.state.indBlocks.insert natKey
+          { b with types := b.types.map fun t => { t with nIdx := t.nIdx + 1 } }
+      | none => builtinPre.state.indBlocks } }
+  match readStream hash builtinTable tampered builtinPre.records.toList [] with
+  | .error .preludeCopy => true
+  | _ => false
 -- the empty stream: the prelude alone
 #guard (namesOf []).length == 27 && (namesOf []).contains "Eq.rec" && (namesOf []).contains "Bool.true"
 

@@ -70,10 +70,12 @@ decided units check (S1) from 5951, by the entry's change (117 in,
 (ii)) from 6068, by the entry's change (12 in); the hoist guard (S1) from 6080, by
 the entry's change (4 in); the in-model generator's totality (S1) from
 6084, by the entry's change (15 more; its nine ruled `partial` definitions are total,
-and the ruling is gone). -/
+and the ruling is gone); the prelude-copy check ((b), `State.keepsPrelude` in `readStream`)
+from 6099, by the entry's change (38 in: the check, the state's keys and the derived
+`DecidableEq` it compares with; externs, `unsafe` and csimp unchanged). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 6099 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ixon.BlockOrder.compareExpr]: 6137 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
