@@ -924,7 +924,10 @@ constructor:
 -- check (section "Resolved names are published where they resolve" below). The
 -- environment and failures it returns are the same.
 /-- info: def Ix.Cert.compileUnchecked : Ix.Environment →
-  Except String (Ixon.Env × Ix.Cert.Failures × Std.HashMap Ix.Compile.ExactKey.ExactName Address) :=
+  Except String
+    (Ixon.Env ×
+      Ix.Cert.Failures ×
+        Std.HashMap Ix.Compile.ExactKey.ExactName Address × Std.HashMap Ix.Compile.ExactKey.ExactName Address) :=
 fun env =>
   have env := { consts := env.consts };
   have split := Ix.Cert.groundSplit env;
@@ -936,7 +939,7 @@ fun env =>
     | (ixe, fst, cenv) =>
       have ungrounded :=
         Std.HashMap.fold (fun m n e => m.insert n (e.refusal (Std.HashMap.contains split.snd))) ∅ split.snd;
-      pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }, cenv.nameToAddr) -/
+      pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }, cenv.nameToAddr, cenv.auxNameToAddr) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compileUnchecked
 
@@ -1112,8 +1115,9 @@ fun ixe =>
 #print Ix.Cert.referenceCycle
 
 /-- info: def Ix.Cert.checkReport : Ix.Environment →
-  Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
-fun env resolved out =>
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address →
+    Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
+fun env resolved aux out =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
   | [], [] =>
     match Ix.Cert.referenceCycle out.fst with
@@ -1125,7 +1129,13 @@ fun env resolved out =>
           match Ix.Cert.resolutionMismatch resolved out.fst with
           | none =>
             match Ix.Cert.unseenInductive env out.fst with
-            | none => Except.ok ()
+            | none =>
+              match Ix.Cert.unoriginalAux env aux out.fst with
+              | none => Except.ok ()
+              | some n =>
+                Except.error
+                  (toString "compileReport: original-form check failed: the input name " ++ toString n.pretty ++
+                    toString " resolves through the aux map but is not published with an original-form record")
             | some n =>
               Except.error
                 (toString "compileReport: component check failed: the input inductive " ++ toString n.pretty ++
@@ -1178,8 +1188,8 @@ fun env resolved out =>
 fun env => do
   let __x ← Ix.Cert.compileUnchecked env
   match __x with
-    | (ixe, failures, resolved) => do
-      Ix.Cert.checkReport env resolved (ixe, failures)
+    | (ixe, failures, resolved, aux) => do
+      Ix.Cert.checkReport env resolved aux (ixe, failures)
       pure (ixe, failures) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compileReport
@@ -1293,21 +1303,22 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 -- CQ2.27: coverage and authenticity, by construction.
 /-- info: @Ix.Cert.compileReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
   Ix.Cert.compileReport env = Except.ok out →
-    ∃ resolved,
-      Ix.Cert.compileUnchecked env = Except.ok (out.fst, out.snd, resolved) ∧
-        Ix.Cert.checkReport env resolved out = Except.ok () -/
+    ∃ resolved aux,
+      Ix.Cert.compileUnchecked env = Except.ok (out.fst, out.snd, resolved, aux) ∧
+        Ix.Cert.checkReport env resolved aux out = Except.ok () -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileReport_ok
 
-/-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
+/-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
   {out : Ixon.Env × Ix.Cert.Failures},
-  Ix.Cert.checkReport env resolved out = Except.ok () →
+  Ix.Cert.checkReport env resolved aux out = Except.ok () →
     Ix.Cert.uncovered env out.fst out.snd = [] ∧
       Ix.Cert.unauthentic out.fst = [] ∧
         Ix.Cert.referenceCycle out.fst = none ∧
           Ix.Cert.nameHashCollision env out.fst = none ∧
             Ix.Cert.mutsMismatch out.fst = none ∧
-              Ix.Cert.resolutionMismatch resolved out.fst = none ∧ Ix.Cert.unseenInductive env out.fst = none -/
+              Ix.Cert.resolutionMismatch resolved out.fst = none ∧
+                Ix.Cert.unseenInductive env out.fst = none ∧ Ix.Cert.unoriginalAux env aux out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4520,6 +4531,47 @@ fun env ixe =>
     env.consts.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unseenInductive
+
+/-! ## Aux-resolved input names have original-form records (B9b's gap 2; coordinator decision, 2026-10-21)
+
+The driver resolves a name through its aux map (`CompileEnv.auxNameToAddr`)
+when another block's aux tail compiled it, AuxGen's `partial` code, which no
+proof follows. Its promotion grafts the original-form compile's record onto
+the name's entry (`promoteAuxWrites`), but the remaining members of a promoted
+block (`promoteRemainingWrites`) get none, so such an input name would be
+neither a primary claim of its own block's compile (B9b) nor a name the
+classifier's regenerated rule reads (B9d). `compileReport` now refuses a result
+in which an input name of the driver's final aux map is not published with
+`Named.original` (`checkReport`'s eighth check, `unoriginalAux`; on Init+Std,
+3,428 aux names, all input, all with one; on Mathlib, 22,842 aux names, 22,513
+input, all with one). `compileUnchecked` also returns the final aux map.
+Re-frozen with it: `compileUnchecked`'s, `checkReport`'s and `compileReport`'s
+prints, `compileReport_ok` (the aux map beside the resolution map) and
+`checkReport_ok` (an eighth conjunct). On a consistent run the result is
+unchanged. -/
+
+/-- info: [cert-audit] original-form records: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] original-form records: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "original-form records"
+    (#[`unoriginalAux_none, `auxOriginal].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "original-form records" #[``Ix.Cert.unoriginalAux]
+
+/-- info: def Ix.Cert.unoriginalAux : Ix.Environment →
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env → Option Ix.Name :=
+fun env aux ixe =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, snd) =>
+        if (env.consts.contains n && !Option.any (fun x => x.original.isSome) (ixe.named.get? n)) = true then some n
+        else none)
+    aux.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.unoriginalAux
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 
