@@ -217,4 +217,90 @@ theorem condense_blockRefs {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep : Ix.Na
   rw [blockRefs_eq]
   exact blockRefsOf_get hb
 
+/-! ## The condensation, stage by stage
+
+`CondenseM.run` as the composition of its loops (`blocks_eq`, by `rfl`): the
+nodes and their positions (`nodesOf`), the edges (`adjOf`), Tarjan's
+components, each node's representative (`rootNames`), the nodes in discovery
+order (`discOf`), and the blocks (`blocksOfDisc`). -/
+
+/-- `CondenseM.run`'s first loop. -/
+def nodesOf (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) : Array (Ix.Name × Ix.Set Ix.Name) × Std.HashMap Ix.Name Nat := Id.run do
+  let mut entries : Array (Ix.Name × Ix.Set Ix.Name) := #[]
+  let mut idx : Std.HashMap Ix.Name Nat := {}
+  let mut lastPct : Nat := 0
+  for (name, rs) in refs do
+    idx := idx.insert name entries.size
+    entries := entries.push (name, rs)
+    if false && (0 : Nat) > 0 then
+      let pct := (entries.size * 100) / 0
+      if pct >= lastPct + 10 then
+        lastPct := pct
+  return (entries, idx)
+
+def adjOf (entries : Array (Ix.Name × Ix.Set Ix.Name)) (idx : Std.HashMap Ix.Name Nat) : Array (Array Nat) :=
+  entries.map fun (_, rs) => Id.run do
+    let mut succs : Array Nat := #[]
+    for ref in rs do
+      if let some j := idx.get? ref then
+        succs := succs.push j
+    return succs
+
+def rootNames (names : Array Ix.Name) (c : Ix.Compile.Canon.Condensation)
+    (hr : ∀ p ∈ c.comps.zip c.roots, p.2 < names.size) : Vector Ix.Name names.size := Id.run do
+  let mut rootName : Vector Ix.Name names.size := names.toVector
+  for h : p in c.comps.zip c.roots do
+    have hr : p.2 < names.size := hr p h
+    let rn := names[p.2]
+    for v in p.1 do
+      rootName := rootName.setIfInBounds v rn
+  return rootName
+
+def discOf (names : Array Ix.Name) (c : Ix.Compile.Canon.Condensation) (rootName : Vector Ix.Name names.size)
+    (hv : ∀ v ∈ c.order, v < names.size) : Std.HashMap UInt64 (Ix.Name × Ix.Name) := Id.run do
+  let mut byDiscovery : Std.HashMap UInt64 (Ix.Name × Ix.Name) := {}
+  let mut d : Nat := 0
+  for h : v in c.order do
+    have hv : v < names.size := hv v h
+    byDiscovery := byDiscovery.insert d.toUInt64 (names[v], rootName[v])
+    d := d + 1
+  return byDiscovery
+
+def blocksOfDisc (byDiscovery : Std.HashMap UInt64 (Ix.Name × Ix.Name)) : Ix.Map Ix.Name (Ix.Set Ix.Name) := Id.run do
+  let mut blocks : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
+  let mut lowLinks : Map Ix.Name Ix.Name := {}
+  for (_, (name, lowName)) in byDiscovery do
+    lowLinks := lowLinks.insert name lowName
+    blocks := blocks.alter lowName fun x => match x with
+      | .some s => .some (s.insert name)
+      | .none => .some {name}
+  return blocks
+
+/-- The condensation's nodes, as names. -/
+def namesOf (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) : Array Ix.Name := (nodesOf refs).1.map (·.1)
+
+/-- The condensation's edges. -/
+def edgesOf (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) : Array (Array Nat) :=
+  adjOf (nodesOf refs).1 (nodesOf refs).2
+
+/-- Tarjan's components of the condensation's graph. -/
+def compsOf (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) : Ix.Compile.Canon.Condensation :=
+  (Ix.Compile.Canon.condensation (edgesOf refs)).get (Ix.CompileCert.Canon.condensation_isSome _)
+
+theorem compsOf_eq (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
+    Ix.Compile.Canon.condensation (edgesOf refs) = some (compsOf refs) :=
+  (Option.some_get _).symm
+
+theorem namesOf_size (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
+    (namesOf refs).size = (edgesOf refs).size := by
+  simp only [namesOf, edgesOf, adjOf, Array.size_map]
+
+/-- **`CondenseM.run`'s blocks, stage by stage.** -/
+theorem blocks_eq (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
+    ∃ hr hv, (CondenseM.run refs).blocks =
+      blocksOfDisc (discOf (namesOf refs) (compsOf refs) (rootNames (namesOf refs) (compsOf refs) hr) hv) := by
+  refine ⟨fun p h => ?_, fun v h => ?_, rfl⟩
+  · rw [namesOf_size]; exact Ix.CompileCert.Canon.condensation_roots_lt (compsOf_eq refs) (Array.of_mem_zip h).2
+  · rw [namesOf_size]; exact Ix.CompileCert.Canon.condensation_order_lt (compsOf_eq refs) h
+
 end Ix.Cert.Condense
