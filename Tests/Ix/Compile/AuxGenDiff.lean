@@ -510,8 +510,13 @@ patches gate compares with Rust's) has a verdict in production's acceptance
 table under the name it is published at: its own row (the promotion route), or
 the row of each `_ix` display name Pass 3 moved it to (a changed block's
 regenerated auxiliary). No verdict is a refusal. Names are compared as
-`Ix.Name.pretty` prints them, the dump's own spelling. The counts are printed. -/
-def acceptanceGate (leanPatchDump : String) (report : Ix.AuxGen.CompileReport) : IO Bool := do
+`Ix.Name.pretty` prints them, the dump's own spelling. The counts are printed.
+AuxGen M5c: every block that re-ran on `fallback` (`CompileReport.retried`,
+printed) has every generated auxiliary exempt with its status, and every block
+the run-ahead reports not Source-accepted (`source`) either re-ran or compiled
+(no failure in `ungrounded`: under `failClosed`, without a refusal). -/
+def acceptanceGate (leanPatchDump : String) (report : Ix.AuxGen.CompileReport)
+    (source : Ix.AuxGen.Source.Report) (ungrounded : Std.HashMap Ix.Name String) : IO Bool := do
   let table := report.table
   let mut covered : Std.HashSet String := {}
   for r in table.rows do covered := covered.insert r.name.pretty
@@ -527,7 +532,36 @@ def acceptanceGate (leanPatchDump : String) (report : Ix.AuxGen.CompileReport) :
     {uncovered.size} without"
   for n in uncovered.extract 0 8 do IO.println s!"[aux-gen-diff]   no verdict: {n}"
   for l in table.refusals 8 do IO.println s!"[aux-gen-diff]   refused: {l.take 200}"
-  let ok := uncovered.isEmpty && c.refused == 0 && !patchNames.isEmpty
+  -- AuxGen M5c: production is `failClosed`. This corpus has blocks Source mode
+  -- does not accept (its `validateAuxClosure` leaves some recursors out). Such a
+  -- block's tail either stops on an IxC refusal and re-runs on `fallback`
+  -- (`runAuxTail`), its auxiliaries exempt with the status, or never asks the
+  -- service (the fast paths) and compiles without a refusal. The bytes are the
+  -- reference-schedule gate's (= Rust).
+  let mut retryErrors : Array String := #[]
+  let notAccepted := source.notAccepted.map (·.1)
+  IO.println s!"[aux-gen-diff] failClosed retries: {report.retried.size} blocks; \
+    {source.notAccepted.size} blocks not Source-accepted in the run-ahead's report"
+  for (k, why, names) in report.retried do
+    let listed := notAccepted.contains k
+    IO.println s!"[aux-gen-diff]   retried on fallback: {k.pretty} ({names.size} auxiliaries\
+      {if listed then "" else "; not in the run-ahead's report, status from its own copy"}): \
+      {why.take 200}"
+    if why.isEmpty then retryErrors := retryErrors.push s!"{k.pretty}: retried with no status"
+    let want := s!"{Ix.AuxGen.AuxTable.notAcceptedPrefix}{why}"
+    for n in names do
+      let verdicts := report.admitted.filter (·.1 == n)
+      unless !verdicts.isEmpty && verdicts.all (fun (_, v) => v == .exempt want) do
+        retryErrors := retryErrors.push s!"{k.pretty}: {n.pretty} is not exempt with the status"
+  for (k, why) in source.notAccepted do
+    let retried := report.retried.any (·.1 == k)
+    let failed := ungrounded.contains k
+    unless retried do
+      IO.println s!"[aux-gen-diff]   not accepted, compiled without a retry: {k.pretty}\
+        {if failed then " (FAILED)" else ""}: {why.take 160}"
+    if failed then retryErrors := retryErrors.push s!"{k.pretty}: a block not Source-accepted failed"
+  for e in retryErrors.extract 0 8 do IO.println s!"[aux-gen-diff]   retry: {e.take 200}"
+  let ok := uncovered.isEmpty && c.refused == 0 && !patchNames.isEmpty && retryErrors.isEmpty
   IO.println s!"[aux-gen-diff] acceptance-table gate: {if ok then "PASS" else "FAIL"}"
   return ok
 
@@ -966,8 +1000,9 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[aux-gen-diff] reference-schedule gate: {if parOk then "PASS" else "FAIL"}"
 
   -- AuxGen M5b: the acceptance table equals the patch table (`acceptanceGate`)
-  let tableOk ← match folded with
-    | .ok (_, _, cenv') => acceptanceGate leanPatchDump cenv'.auxReport
+  let tableOk ← match foldedWithSource with
+    | .ok ((_, _, cenv'), source) =>
+      acceptanceGate leanPatchDump cenv'.auxReport source cenv'.ungrounded
     | .error e => do
       IO.println s!"[aux-gen-diff] acceptance-table gate: Lean driver ERROR: {e}"
       pure false

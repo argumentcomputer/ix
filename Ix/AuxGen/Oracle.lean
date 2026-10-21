@@ -104,6 +104,10 @@ inductive WhnfHow where
   | same
   /-- IxC reduced it, and the named replay reproduced IxC's result -/
   | replayed
+  /-- a `λ` applied at the head whose syntactic β-reduct has a stuck head
+  (AuxGen M5c): that reduct, spelled as the named replay spells it, and the
+  service is not asked -/
+  | beta
   deriving BEq, Inhabited, Repr
 
 /-- **What Source mode said of a block's canonical recursors** (AuxGen M4c):
@@ -172,6 +176,19 @@ def line (s : CanonicalSummary) : String :=
 
 end CanonicalSummary
 
+/-- **An IxC refusal that stopped a tail under `failClosed`** (AuxGen M5c): the
+generator's scope (its route and depth, or the install), the question asked in
+it, and IxC's reason. The driver names the block (`Ix.CompileM.runAuxTail`). -/
+structure IxcRefusal where
+  scope : String
+  question : String
+  reason : String
+  deriving Inhabited, BEq
+
+/-- The refusal as the failure report names it. -/
+def IxcRefusal.render (r : IxcRefusal) : String :=
+  s!"IxC refused {r.question} in {r.scope}: {r.reason}"
+
 /-- **What a block's aux tail reports** (AuxGen M4c; M5 adds its generated
 auxiliaries' acceptance), carried in the block's state
 (`Ix.CompileM.BlockState.auxReport`) and merged into the compile's
@@ -192,6 +209,13 @@ structure BlockReport where
   /-- AuxGen M5: the generated auxiliaries Pass 3 moved to display names (a
   changed block's), with the names they are published at -/
   display : Array (Name × Name) := #[]
+  /-- AuxGen M5c: the IxC refusal that stopped the tail under `failClosed`,
+  written where IxC refused, before the throw (the block state survives it), so
+  the driver tells an IxC refusal from any other failure -/
+  refusal : Option IxcRefusal := none
+  /-- AuxGen M5c: why Source mode does not accept the block, when its tail
+  stopped on an IxC refusal and re-ran on `fallback` (`AuxOracle.retry`) -/
+  retried : Option String := none
   deriving Inhabited
 
 /-- **AuxGen's part of the compile report** (AuxGen M4c and M5), merged from
@@ -207,12 +231,19 @@ structure CompileReport where
   exempt : Array (Name × String) := #[]
   identity : Array (Name × Bool) := #[]
   display : Array (Name × Name) := #[]
+  /-- AuxGen M5c: the blocks whose tail re-ran on `fallback` (not accepted by
+  Source mode), by canonical key, with the reason and the block's generated
+  auxiliaries -/
+  retried : Array (Name × String × Array Name) := #[]
   deriving Inhabited
 
 /-- A compiled block's report merged in, under the block's canonical key. -/
 def CompileReport.addBlock (r : CompileReport) (key : Name) (b : BlockReport) : CompileReport :=
   let r := match b.canonical with
     | some verdict => { r with canonical := r.canonical.push (key, verdict) }
+    | none => r
+  let r := match b.retried with
+    | some why => { r with retried := r.retried.push (key, why, b.generated.map (·.1)) }
     | none => r
   let r := if b.generated.isEmpty then r else { r with generated := r.generated ++ b.generated }
   let r := if b.admitted.isEmpty then r else { r with admitted := r.admitted ++ b.admitted }
@@ -306,7 +337,7 @@ inductive GeneratedDecl where
 
 /-- **One block's IxC oracle** (AuxGen M2a).
 
-`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope admit blockStatus`:
+`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope admit blockStatus retry`:
 * `mode`: how AuxGen uses the answers;
 * `trace`: whether the tail traces its counts (the measurement modes);
 * `newScope lps locals`: a context over the level parameters `lps` and the
@@ -324,10 +355,14 @@ inductive GeneratedDecl where
   ask IxC (AuxGen M4a as a measurement; production's since M4b);
 * `asked`: whether the drivers' run-ahead asked for the block (a block it
   did not ask for folds its groups on its own copy at its first question);
-* `newLazyScope lps locals`: `newScope`, lazily (AuxGen M4): nothing is
-  asked of the service until a question escapes the fast paths (the
-  `inferAppType` level, a syntactically stuck `whnf`), and a refusal
-  surfaces at that question. 
+* `newLazyScope overlay lps locals`: `newScope`, lazily (AuxGen M4): nothing
+  is asked of the service until a question escapes the fast paths (the
+  `inferAppType` level, a syntactically stuck `whnf`, after syntactic β-steps
+  at the head), and a refusal surfaces at that question. The fast paths read
+  `overlay` before the input's declarations (AuxGen M5c): the recursor
+  generator's overlay, where a nested block's synthetic auxiliaries
+  (`<all0>._nested.<Ext>_N`) live, so they are stuck inductives there, as
+  for `Ix.Tc`; the service never sees them.
 * `admit decls`: the generated declarations accepted by Source mode in
   order, each later one seeing the earlier ones through σ (AuxGen M5): the
   oracle after them, and each declaration's verdict (`none` accepted, `some`
@@ -336,7 +371,11 @@ inductive GeneratedDecl where
 * `blockStatus ()`: why the block's own groups are not accepted in Source
   mode, if they are not (refused, blocked behind a refused group with that
   group's reason, or not folded; AuxGen M5b): the block's input is then outside
-  `SourceAccepts`, so its auxiliaries are exempt. -/
+  `SourceAccepts`, so its auxiliaries are exempt.
+* `retry`: the block's oracle in `fallback` over the same service (AuxGen
+  M5c): a block Source mode does not accept, whose tail stopped on an IxC
+  refusal under `failClosed`, re-runs over it. `none` on the oracles an install
+  returns. -/
 inductive AuxOracle where
   | mk (mode : IxcMode) (trace : Bool)
       (newScope : Array Name → Array (Name × Expr) → Except String OracleScope)
@@ -344,42 +383,48 @@ inductive AuxOracle where
         Except String (Option AuxOracle))
       (admitBelow : Array BelowDef → Except String (AuxOracle × Nat × Nat))
       (recursors asked : Bool)
-      (newLazyScope : Array Name → Array (Name × Expr) → OracleScope)
+      (newLazyScope : (Name → Option ConstantInfo) → Array Name → Array (Name × Expr) →
+        OracleScope)
       (admit : Array GeneratedDecl → Except String (AuxOracle × Array (Name × Option String)))
       (blockStatus : Unit → Option String)
+      (retry : Option AuxOracle)
 
 namespace AuxOracle
 
 def mode : AuxOracle → IxcMode
-  | .mk m _ _ _ _ _ _ _ _ _ => m
+  | .mk m _ _ _ _ _ _ _ _ _ _ => m
 
 def trace : AuxOracle → Bool
-  | .mk _ t _ _ _ _ _ _ _ _ => t
+  | .mk _ t _ _ _ _ _ _ _ _ _ => t
 
 def newScope : AuxOracle → Array Name → Array (Name × Expr) → Except String OracleScope
-  | .mk _ _ f _ _ _ _ _ _ _ => f
+  | .mk _ _ f _ _ _ _ _ _ _ _ => f
 
 def withFlat : AuxOracle → Array (Array Name) → Array Name → Array (Name × RecursorVal) →
     Except String (Option AuxOracle)
-  | .mk _ _ _ f _ _ _ _ _ _ => f
+  | .mk _ _ _ f _ _ _ _ _ _ _ => f
 
 def admitBelow : AuxOracle → Array BelowDef → Except String (AuxOracle × Nat × Nat)
-  | .mk _ _ _ _ f _ _ _ _ _ => f
+  | .mk _ _ _ _ f _ _ _ _ _ _ => f
 
 def recursors : AuxOracle → Bool
-  | .mk _ _ _ _ _ r _ _ _ _ => r
+  | .mk _ _ _ _ _ r _ _ _ _ _ => r
 
 def asked : AuxOracle → Bool
-  | .mk _ _ _ _ _ _ a _ _ _ => a
+  | .mk _ _ _ _ _ _ a _ _ _ _ => a
 
-def newLazyScope : AuxOracle → Array Name → Array (Name × Expr) → OracleScope
-  | .mk _ _ _ _ _ _ _ f _ _ => f
+def newLazyScope : AuxOracle → (Name → Option ConstantInfo) → Array Name →
+    Array (Name × Expr) → OracleScope
+  | .mk _ _ _ _ _ _ _ f _ _ _ => f
 
 def admit : AuxOracle → Array GeneratedDecl → Except String (AuxOracle × Array (Name × Option String))
-  | .mk _ _ _ _ _ _ _ _ f _ => f
+  | .mk _ _ _ _ _ _ _ _ f _ _ => f
 
 def blockStatus : AuxOracle → Unit → Option String
-  | .mk _ _ _ _ _ _ _ _ _ f => f
+  | .mk _ _ _ _ _ _ _ _ _ f _ => f
+
+def retry : AuxOracle → Option AuxOracle
+  | .mk _ _ _ _ _ _ _ _ _ _ f => f
 
 end AuxOracle
 

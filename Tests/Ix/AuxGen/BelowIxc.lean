@@ -77,6 +77,7 @@ def addStats (a b : Ix.AuxGen.IxcStats) : Ix.AuxGen.IxcStats :=
     belowAdmitted := a.belowAdmitted + b.belowAdmitted, belowRefused := a.belowRefused + b.belowRefused
     recWhnf := a.recWhnf + b.recWhnf, recStuck := a.recStuck + b.recStuck
     recSame := a.recSame + b.recSame, recReplayed := a.recReplayed + b.recReplayed
+    recBeta := a.recBeta + b.recBeta
     recRefused := a.recRefused + b.recRefused, recEqual := a.recEqual + b.recEqual
     recDiffer := a.recDiffer + b.recDiffer, recDiffName := a.recDiffName + b.recDiffName
     recDiffInfo := a.recDiffInfo + b.recDiffInfo, recDiffLevel := a.recDiffLevel + b.recDiffLevel
@@ -96,7 +97,8 @@ def statsLine (st : Ix.AuxGen.IxcStats) : String :=
     refused {st.flatRefused}; isDefEq decisions {st.decisions}: equal {st.decisionsEqual}, \
     differ {st.decisionsDiffer}; inferType/whnf {st.exprQueries}, IxC answered \
     {st.exprAnswered}; generated .below admitted {st.belowAdmitted}, refused {st.belowRefused}; \
-    recursor whnf {st.recWhnf} (stuck {st.recStuck}, unreduced {st.recSame}, replayed \
+    recursor whnf {st.recWhnf} (stuck {st.recStuck}, stuck after β {st.recBeta}, unreduced \
+    {st.recSame}, replayed \
     {st.recReplayed}, refused {st.recRefused}): equal {st.recEqual}, differ {st.recDiffer} \
     (binder name {st.recDiffName}, info {st.recDiffInfo}, level {st.recDiffLevel}, other \
     {st.recDiffOther}, at decision sites {st.recDecisionDiffer}); fields skipped {st.recSkipped} \
@@ -220,7 +222,9 @@ def foldIxc (opts : Ix.CompileM.AuxIxcOptions) (env : Ix.Environment) (blocks : 
 /-- The modes the folds are compared in, with whether equality is asserted. -/
 def foldModes : Array (String × Ix.CompileM.AuxIxcOptions × Bool) :=
   #[("shadow", { mode := .shadow, recursors := true }, true),
-    ("failClosed", { mode := .failClosed, recursors := true }, true),
+    -- M4b–M5b's production (IxC first, `Ix.Tc` behind a refusal); production
+    -- is `failClosed` since AuxGen M5c
+    ("fallback", { mode := .fallback, recursors := true }, true),
     ("shadow, every inductive block asked",
       { mode := .shadow, asks := .inductive, recursors := true }, true),
     ("failClosed, every inductive block asked",
@@ -230,7 +234,7 @@ def foldModes : Array (String × Ix.CompileM.AuxIxcOptions × Bool) :=
     -- M3's production: the recursors on Ix.Tc, the `.below` asks (production
     -- puts the recursors on IxC since AuxGen M4b)
     ("M3's production (recursors on Ix.Tc, the .below asks)",
-      { recursors := false, asks := .below }, true),
+      { mode := .fallback, recursors := false, asks := .below }, true),
     ("failClosed, recursors on Ix.Tc", { mode := .failClosed, recursors := false }, true)]
 
 /-- AuxGen M5: the acceptance table's lines (its counts, by kind and verdict,
@@ -517,6 +521,196 @@ def fixtures : TestSeq :=
       let (errors, lines) ← evaluate "fixtures" env blocks 16
       report errors lines) .done
 
+/-! ## failClosed's retry, its named failure, the deferred `Ix.Tc` bookkeeping (AuxGen M5c)
+
+Production runs a safe block's tail under `failClosed` (`Ix.CompileM.runAuxTail`).
+Over the fixtures' safe inductive blocks, through the driver's own tail:
+1. **A refusal on an accepted block fails it, named.** An oracle whose every
+   question IxC refuses (planted), on a block Source mode accepts: the tail fails,
+   and the failure names the block, the scope, the question and IxC's reason.
+2. **A block Source mode does not accept re-runs on `fallback`, rolled back
+   exactly.** The same planted oracle, with a status saying the block is not
+   accepted: the tail succeeds by its retry, the report records it, every
+   generated auxiliary is exempt with the status, and the block state after it is
+   the state a `fallback` tail leaves from the same start (so the failed
+   attempt's writes are all rolled back).
+3. **The deferred bookkeeping is the eager one.** For each block with a
+   Prop-level `.below` family, the `Ix.Tc` kenv its recursor generation finds
+   under `failClosed` (the bookkeeping logged, then replayed) equals the kenv of
+   the same tail with the bookkeeping run eagerly (`AuxKernelCtx.deferTc`). -/
+
+/-- A block's aux-tail arguments as `compileBlockWithAux` makes them (its
+prologue, in the same block state): the members, their classes, the block's
+address, the address maps; `none` for a block with no tail. -/
+def tailArgs (lo : Ix.Name) (members : Array Ix.Name) : Ix.CompileM.CompileM
+    (Option (Array Ix.MutConst × List (List Ix.MutConst) × Address × Ix.AuxGen.AddrMaps)) := do
+  let const ← Ix.CompileM.findConst lo
+  unless members.size != 1 || const matches .inductInfo _ do return none
+  let mut cs : Array Ix.MutConst := #[]
+  for n in members do
+    match ← Ix.CompileM.findConst n with
+    | .inductInfo val => cs := cs.push (← Ix.CompileM.MutConst.mkIndc val)
+    | .defnInfo val => cs := cs.push (Ix.MutConst.fromDefinitionVal val)
+    | .opaqueInfo val => cs := cs.push (Ix.MutConst.fromOpaqueVal val)
+    | .thmInfo val => cs := cs.push (Ix.MutConst.fromTheoremVal val)
+    | .recInfo val => cs := cs.push (.recr val)
+    | _ => continue
+  let sortedClasses := Ix.CompileM.orderRecursorFamily (← Ix.CompileM.sortConsts cs.toList)
+  let blockResult ← Ix.CompileM.compileMutualBlock sortedClasses
+  unless blockResult.block.info matches .muts _ do return none
+  for (name, proj, _) in blockResult.projections do
+    let projAddr := Address.admissionHash (Ixon.ser proj)
+    Ix.CompileM.modifyBlockState fun st =>
+      { st with blockNameToAddr := st.blockNameToAddr.insert name projAddr }
+  let bstate ← Ix.CompileM.getBlockState
+  let maps := Ix.AuxGen.AddrMaps.ofCompileEnv (← Ix.CompileM.getCompileEnv)
+    (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
+  return some (cs, sortedClasses, blockResult.blockAddr, maps)
+
+/-- `o` with every question refused (planted) and `status` as its block status,
+in `failClosed`; its installs and its retry are `o`'s. -/
+def planted (o : Ix.AuxGen.AuxOracle) (status : Option String) : Ix.AuxGen.AuxOracle :=
+  let bad {α} : Except String α := .error "planted refusal (AuxGen M5c test)"
+  let scope : Ix.AuxGen.OracleScope :=
+    .mk (fun _ => bad) (fun _ => bad) (fun _ => bad) (fun _ => bad) (fun _ => bad)
+      (fun _ _ => bad) (fun _ => bad)
+  match o with
+  | .mk _ trace _ withFlat admitBelow recursors asked _ admit _ retry =>
+    .mk .failClosed trace (fun _ _ => bad) withFlat admitBelow recursors asked
+      (fun _ _ _ => scope) admit (fun _ => status) retry
+
+/-- A block state as the tests compare it: the aux constants, named entries and
+name addresses, the block's own registrations, and the sizes of its tables. -/
+def stateKey (st : Ix.CompileM.BlockState) : String :=
+  let consts := st.auxConsts.map fun (a, _) => toString a
+  let named := st.auxNamed.map fun (n, nd) => s!"{n.pretty}@{nd.addr}"
+  let aux := (st.auxNameToAddr.toArray.map fun (_, a) => toString a).qsort (· < ·)
+  let primary := (st.blockNameToAddr.toArray.map fun (_, a) => toString a).qsort (· < ·)
+  let refs := st.refs.map toString
+  s!"{consts} {named} {aux} {primary} {refs} {st.univs.size} {st.metaUnivs.size} \
+    {st.blockBlobs.size} {st.auxGenExtraNames.size} {st.exprCache.size}"
+
+/-- Two kenv constants alike: the constructor, the type, the level count, and
+the value, constructors or inductive they carry. -/
+def kconstKey : Ix.AuxGen.MKConst → String
+  | .defn _ _ _ _ _ l t v _ b => s!"defn {l} {t.addr} {v.addr} {b.addr}"
+  | .recr _ _ k u l p i m n b j t rs _ =>
+    s!"recr {k} {u} {l} {p} {i} {m} {n} {b.addr} {j} {t.addr} {rs.size}"
+  | .axio _ _ u l t => s!"axio {u} {l} {t.addr}"
+  | .quot _ _ _ l t => s!"quot {l} {t.addr}"
+  | .indc _ _ l p i u b j t cs _ =>
+    s!"indc {l} {p} {i} {u} {b.addr} {j} {t.addr} {cs.map (·.addr)}"
+  | .ctor _ _ u l ind c p f t => s!"ctor {u} {l} {ind.addr} {c} {p} {f} {t.addr}"
+
+/-- Where two kenvs differ (at most three entries), or `none`. -/
+def kenvDiff (a b : Std.HashMap Ix.AuxGen.MKId Ix.AuxGen.MKConst) : Option String := Id.run do
+  if a.size != b.size then return some s!"{a.size} entries against {b.size}"
+  let mut out : Array String := #[]
+  for (k, v) in a do
+    match b.get? k with
+    | some w => if kconstKey v != kconstKey w then out := out.push s!"{k.addr} differs"
+    | none => out := out.push s!"{k.addr} missing"
+  return if out.isEmpty then none else some (", ".intercalate (out.extract 0 3).toList)
+
+/-- `act` in a fresh block state of block `lo` over `cenv`. -/
+def runIn (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (act : Ix.CompileM.CompileM α) :
+    Except String (α × Ix.CompileM.BlockState) :=
+  let blockEnv : Ix.CompileM.BlockEnv := { all := {}, current := lo, mutCtx := default, univCtx := [] }
+  (Ix.CompileM.CompileM.run cenv blockEnv {} act).mapError toString
+
+def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    IO (Array String × Array String) := do
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  let prod ← IO.lazyPure fun _ => Ix.CompileM.compileEnvFold env blocks (width := 16)
+  let (_, _, cenv) ← IO.ofExcept prod
+  let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
+  let opts : Ix.CompileM.AuxIxcOptions := {}
+  let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels opts.asks
+  let mut named := 0
+  let mut retried := 0
+  let mut families := 0
+  let mut notStandalone := 0
+  for (lo, members) in inductiveBlocks env blocks do
+    let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
+    let some real := opts.oracleFor ra env.get? key | continue
+    let some fb := real.retry | do errors := errors.push s!"{lo.pretty}: no retry oracle"; continue
+    -- 3. the replayed kenv against the eager one, at the family's generation
+    let famKenv (defer : Bool) :
+        Ix.CompileM.CompileM (Option (Std.HashMap Ix.AuxGen.MKId Ix.AuxGen.MKConst)) := do
+      let some (cs, sorted, addr, maps) ← tailArgs lo members | return none
+      let (_, kctx) ← (Ix.AuxGen.compileMutualAuxTail cs sorted addr maps (.ixc maps real)).run
+        { Ix.AuxGen.AuxKernelCtx.new with deferTc := defer, captureFamilyKenv := true }
+      return kctx.familyKenv
+    match ← IO.lazyPure fun _ => runIn cenv lo (famKenv true) with
+    | .error e =>
+      -- a block this harness cannot re-run on its own over the production fold's
+      -- environment (a family another block's tail compiled: its claims are
+      -- taken) fails before the family's generation in both runs, alike
+      match ← IO.lazyPure fun _ => runIn cenv lo (famKenv false) with
+      | .error e' =>
+        if e == e' then notStandalone := notStandalone + 1
+        else errors := errors.push s!"{lo.pretty}: the tails fail differently: {e.take 160} / \
+          {e'.take 160}"
+      | .ok _ => errors := errors.push s!"{lo.pretty}: only the deferred tail fails: {e.take 200}"
+    | .ok (none, _) => pure ()
+    | .ok (some deferred, _) =>
+      match ← IO.lazyPure fun _ => runIn cenv lo (famKenv false) with
+      | .ok (some eager, _) =>
+        families := families + 1
+        if let some d := kenvDiff deferred eager then
+          errors := errors.push s!"{lo.pretty}: the replayed kenv is not the eager one: {d}"
+      | .ok (none, _) => errors := errors.push s!"{lo.pretty}: the eager tail reached no family"
+      | .error e => errors := errors.push s!"{lo.pretty}: eager tail: {e.take 200}"
+    -- 1 and 2 on the first blocks Source mode accepts
+    if real.blockStatus () != none || named ≥ 8 then continue
+    let tail (k : Ix.AuxGen.AddrMaps → Ix.AuxGen.AuxKernel) (viaDriver : Bool) :
+        Ix.CompileM.CompileM (Option Ix.AuxGen.AuxKernelCtx) := do
+      let some (cs, sorted, addr, maps) ← tailArgs lo members | return none
+      if viaDriver then
+        return some (← Ix.CompileM.runAuxTail lo cs sorted addr maps (k maps)).2
+      return some (← (Ix.AuxGen.compileMutualAuxTail cs sorted addr maps (k maps)).run
+        Ix.AuxGen.AuxKernelCtx.new).2
+    match ← IO.lazyPure fun _ => runIn cenv lo (tail (.ixc · (planted real none)) true) with
+    | .ok (none, _) => continue
+    | .ok (some _, _) => errors := errors.push s!"{lo.pretty}: a planted refusal did not fail the block"
+    | .error e =>
+      named := named + 1
+      for part in [lo.pretty, "accepted by Source mode", "IxC refused", " in ",
+          "planted refusal (AuxGen M5c test)"] do
+        unless (e.splitOn part).length > 1 do
+          errors := errors.push s!"{lo.pretty}: the failure does not name {part}: {e.take 300}"
+    let why := "planted: not accepted (AuxGen M5c test)"
+    match ← IO.lazyPure fun _ => runIn cenv lo (tail (.ixc · (planted real (some why))) true),
+        ← IO.lazyPure fun _ => runIn cenv lo (tail (.ixc · fb) false) with
+    | .ok (some kctx, st), .ok (some _, st') =>
+      retried := retried + 1
+      if st.auxReport.retried != some why then
+        errors := errors.push s!"{lo.pretty}: the retry is not recorded"
+      if stateKey { st with auxReport := {} } != stateKey { st' with auxReport := {} } then
+        errors := errors.push s!"{lo.pretty}: the retried block state is not the fallback tail's"
+      let exempt := kctx.admitted.filter fun (_, v) => v matches .exempt _
+      unless exempt.size == kctx.generated.size && kctx.admitted.size == kctx.generated.size do
+        errors := errors.push s!"{lo.pretty}: {exempt.size} of {kctx.generated.size} generated \
+          auxiliaries exempt after the retry"
+    | .error e, _ => errors := errors.push s!"{lo.pretty}: the retry failed: {e.take 200}"
+    | _, .error e => errors := errors.push s!"{lo.pretty}: the fallback tail failed: {e.take 200}"
+    | _, _ => errors := errors.push s!"{lo.pretty}: a tail ran on one side only"
+  lines := lines.push s!"M5c: named failures {named}, retries {retried}, Prop families with \
+    the replayed kenv compared {families} (blocks this harness cannot re-run alone, failing \
+    alike both ways: {notStandalone})"
+  if named == 0 then errors := errors.push "no planted refusal failed a block"
+  if retried == 0 then errors := errors.push "no planted retry ran"
+  if families == 0 then errors := errors.push "no Prop-level .below family was compared"
+  return (errors, lines)
+
+def m5c : TestSeq :=
+  .individualIO "AuxGen M5c: failClosed's named failure, its exact retry, the replayed kenv"
+    none (do
+      let (env, blocks) ← fixtureInput
+      let (errors, lines) ← m5cEvaluate env blocks
+      report errors lines) .done
+
 /-! ## Terms out of IxC (AuxGen M3)
 
 `.brecOn.eq`'s unit-like test reads IxC's `inferType?` and `whnf?` answers
@@ -610,7 +804,7 @@ def egressFixtures : TestSeq :=
       if checks == 0 then errors := errors.push "nothing was checked"
       report errors #[s!"egress: {inductives} inductives, {checks} checks, {errors.size} failures"]) .done
 
-def suite : List TestSeq := [fixtures, egressFixtures]
+def suite : List TestSeq := [fixtures, egressFixtures, m5c]
 
 /-! ## Init+Std, timed -/
 

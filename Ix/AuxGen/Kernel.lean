@@ -179,7 +179,8 @@ structure IxcStats where
   belowAdmitted : Nat := 0
   belowRefused : Nat := 0
   /-- AuxGen M4: the recursor generator's `whnf`s on IxC (named): answered by
-  the stuck fast path, unreduced, replayed, refused; against `Ix.Tc`'s
+  the stuck fast path, unreduced, replayed, refused (and, AuxGen M5c, by the
+  stuck fast path after syntactic β, `recBeta`); against `Ix.Tc`'s
   restored answer (shadow, `fallbackEager`): equal, different (by the first
   difference's kind: a binder name, a binder info, a level spelling,
   anything else); at a decision site (`findRecTarget`), different -/
@@ -187,6 +188,7 @@ structure IxcStats where
   recStuck : Nat := 0
   recSame : Nat := 0
   recReplayed : Nat := 0
+  recBeta : Nat := 0
   recRefused : Nat := 0
   recEqual : Nat := 0
   recDiffer : Nat := 0
@@ -234,6 +236,7 @@ def line (key : Name) (st : IxcStats) : String :=
     exprQueries {st.exprQueries} exprAnswered {st.exprAnswered} \
     below {st.belowAdmitted}/{st.belowRefused} \
     recWhnf {st.recWhnf} recStuck {st.recStuck} recSame {st.recSame} recReplayed {st.recReplayed} \
+    recBeta {st.recBeta} \
     recRefused {st.recRefused} recEqual {st.recEqual} recDiffer {st.recDiffer} \
     recDiffName {st.recDiffName} recDiffInfo {st.recDiffInfo} recDiffLevel {st.recDiffLevel} \
     recDiffOther {st.recDiffOther} recDecisionDiffer {st.recDecisionDiffer} \
@@ -244,6 +247,19 @@ def line (key : Name) (st : IxcStats) : String :=
     {String.join (st.samples.toList.map fun s => s!"\n[auxgen-ixc]   {s.take 400}")}"
 
 end IxcStats
+
+/-- **One call of the tail's `Ix.Tc` bookkeeping** (AuxGen M5c), deferred under
+`failClosed` (`AuxKernel.defersTc`) and replayed in order before the one
+`Ix.Tc` reader left in a safe tail (`AuxKernel.replayTc`): the prelude
+(`ensurePreludeInKenvOf`), a source constant (`ensureInKenvOf`, or
+`ensureInKenvOfPrewarm` when `prewarm`), the elimination decision's kenv half
+(`tcElimAdmit`), the generated `.below` constants (`tcAdmitBelow`). -/
+inductive TcBookkeeping where
+  | prelude
+  | source (name : Name) (prewarm : Bool)
+  | elimAdmit (originals : Array (InductiveVal × Array ConstructorVal)) (nParams : Nat)
+  | below (consts : Array BelowConstant)
+  deriving Inhabited
 
 /-- Rust `KernelCtx` + `KEnv.ingress_cache`. The cache key is
     `(expr contentHash, paramNamesHash)` — Rust ingress.rs:2216. -/
@@ -286,6 +302,16 @@ structure AuxKernelCtx where
       driver records them in the block's report. -/
   generated : Array (Name × GeneratedKind) := #[]
   admitted : Array (Name × AuxVerdict) := #[]
+  /-- AuxGen M5c: the `Ix.Tc` bookkeeping deferred under `failClosed`, in call
+      order (`AuxKernel.replayTc` runs and clears it). -/
+  tcLog : Array TcBookkeeping := #[]
+  /-- AuxGen M5c, a test control: `false` runs the bookkeeping eagerly under
+      `failClosed` too (the replay's comparison, `auxgen-below-ixc`). -/
+  deferTc : Bool := true
+  /-- AuxGen M5c, a test control: keep the kenv as the Prop-level `.below`
+      family's `Ix.Tc` generation finds it (`familyKenv`). -/
+  captureFamilyKenv : Bool := false
+  familyKenv : Option (Std.HashMap MKId MKConst) := none
 
 /-- Fresh bridge context: empty Meta kenv, canonical prim addresses with
     no resolver (prim KIds get synthetic display names; the accelerations

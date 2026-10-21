@@ -690,7 +690,14 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
     return (#[], #[])
 
   -- AuxGen M4a: the generated Prop-level `.below` family is not in IxC's
-  -- environment (nothing admits it), so its recursors ask `Ix.Tc`.
+  -- environment (IxC installs an inductive block only with its recursor
+  -- records), so its recursors ask `Ix.Tc`: the one `Ix.Tc` reader left in a
+  -- safe tail under `failClosed` (AuxGen M5c), so the bookkeeping deferred until
+  -- now is run first, in order (`replayTc`; a no-op otherwise). M7 moves it to
+  -- IxC's tier (`auxgen-m5.md` §17, "Amendment").
+  AuxKernel.replayTc kernel.maps
+  if (← get).captureFamilyKenv then
+    modify fun c => { c with familyKenv := some c.tcState.env.consts }
   let (recs, _) ← generateCanonicalRecursorsWithOverlay classes
     (some overlay) none (.tc kernel.maps)
   let mut belowRecs : Array MutConst := #[]

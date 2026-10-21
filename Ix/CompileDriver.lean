@@ -103,7 +103,8 @@ def movedToDisplay (before : Array (Name × Address))
 def recordTailReport (kctx : Ix.AuxGen.AuxKernelCtx) (safe : Bool) : CompileM Unit :=
   if kctx.canonical.isSome || !kctx.generated.isEmpty then
     modifyBlockState fun st =>
-      { st with auxReport := { canonical := kctx.canonical, generated := kctx.generated
+      { st with auxReport := { st.auxReport with
+                               canonical := kctx.canonical, generated := kctx.generated
                                admitted := kctx.admitted
                                exempt := if safe then none
                                  else some "an unsafe block (its aux tail keeps Ix.Tc)" } }
@@ -125,6 +126,50 @@ def recordDisplay (before : Array (Name × Address)) : CompileM Unit := do
   if !display.isEmpty then
     modifyBlockState fun st =>
       { st with auxReport := { st.auxReport with display := display } }
+
+/-- **The aux tail, with AuxGen M5c's one retry.** Production runs a safe
+    block's tail under `failClosed`: IxC alone answers. When the tail stops on
+    an IxC refusal (`BlockReport.refusal`, written where IxC refused; the
+    block state survives the throw), Source mode's status of the block is
+    asked, and only then (`AuxOracle.blockStatus`):
+    * a block Source mode does not accept (refused, blocked, or not folded: its
+      input is outside `SourceAccepts`) re-runs on `fallback` (`AuxOracle.retry`)
+      from the block state its tail started in, restored whole (the block
+      state is `CompileM`'s only state, and the bridge context is fresh per
+      run). Its generated auxiliaries are exempt with the status
+      (`AuxTable.withBlockStatus`), and its report records the retry
+      (`BlockReport.retried`);
+    * a block Source mode accepts fails, with the cause named: the block, the
+      scope, the question and IxC's reason, as an ordinary block failure
+      (`ungrounded`). This is the stop rule, enforced by construction.
+
+    Any other failure, and a tail in any other mode, is as before. Called once
+    by `compileBlockWithAux`, whose do-block keeps its shape for the proofs that
+    walk it (`Ix.Cert.PassHooks.compileBlockWithAux_result`). -/
+def runAuxTail (lo : Name) (cs : Array MutConst) (sortedClasses : List (List MutConst))
+    (blockAddr : Address) (maps : Ix.AuxGen.AddrMaps) (kernel : Ix.AuxGen.AuxKernel) :
+    CompileM ((Option Ixon.AuxLayout × Ix.AuxGen.AuxTailRecs) × Ix.AuxGen.AuxKernelCtx) := do
+  let run (k : Ix.AuxGen.AuxKernel) :=
+    (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockAddr maps k).run
+      Ix.AuxGen.AuxKernelCtx.new
+  let .ixc _ oracle := kernel | run kernel
+  if oracle.mode != .failClosed then return ← run kernel
+  let saved ← getBlockState
+  try run kernel
+  catch e => do
+    let some refusal := (← getBlockState).auxReport.refusal | throw e
+    match oracle.blockStatus () with
+    | none =>
+      throw (.unsupportedExpr s!"AuxGen (failClosed): block {lo.pretty}, accepted by Source \
+        mode: {refusal.render}")
+    | some why =>
+      let some fallback := oracle.retry | throw e
+      modifyBlockState fun _ => saved
+      let (out, kctx) ← run (.ixc maps fallback)
+      modifyBlockState fun st => { st with auxReport := { st.auxReport with retried := some why } }
+      let admitted :=
+        Ix.AuxGen.AuxTable.withBlockStatus (some why) (kctx.generated.map (·.1)) kctx.admitted
+      return (out, { kctx with admitted })
 
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
@@ -195,9 +240,11 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     match if safe then cenv.auxOracle.bind (· lo) else none with
     | some oracle => .ixc maps oracle
     | none => .tc maps
+  -- AuxGen M5c: under `failClosed` (production), a block Source mode does
+  -- not accept re-runs on `fallback`; an IxC refusal on any other fails it
+  -- (`runAuxTail`).
   let ((auxLayout?, recs), kctx) ←
-    (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
-      maps kernel).run Ix.AuxGen.AuxKernelCtx.new
+    runAuxTail lo cs sortedClasses blockResult.blockAddr maps kernel
   if let .ixc _ oracle := kernel then
     if oracle.trace then
       let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0 }
@@ -1308,9 +1355,10 @@ the recursor generator can ask past the fast paths, M4b), with everything
 they depend on, and publishes the run after each level. Each block's aux tail
 asks `.below`'s, `.brecOn`'s and the recursor generator's questions of IxC
 over its level's run
-(`CompileEnv.auxOracle`, `AuxIxcOptions`: `fallback`, so IxC's answers are
-the compile's wherever IxC answers; a safe block only, an unsafe block's tail
-keeps `Ix.Tc`). `compileEnvFoldWithSource`
+(`CompileEnv.auxOracle`, `AuxIxcOptions`: `failClosed` since AuxGen M5c, so IxC's
+answers are the compile's and a refusal fails the block, except for a block
+Source mode does not accept, which re-runs on `fallback`; a safe block only, an
+unsafe block's tail keeps `Ix.Tc`). `compileEnvFoldWithSource`
 waits for the run-ahead at the end and returns what Source mode accepted
 (`Ix.AuxGen.Source.Report`). -/
 
@@ -1553,22 +1601,24 @@ def ServiceSupport.of (consts : List (Lean.Name × Lean.ConstantInfo)) : Service
     refs := refs.insert ci.getCnst.name r
   return { get? := map.get?, blocks := Ix.CondenseM.run refs }
 
-/-- **How the fold's aux tails ask IxC** (AuxGen M2–M4). The defaults are
-production's: `fallback` (IxC's answers to `.below`'s, `.brecOn`'s and, since
-AuxGen M4b, the recursor generator's and the elimination decision's questions
-are the compile's wherever IxC answers; `Ix.Tc` answers behind a refusal;
-lazy since AuxGen M3), no trace, and the Source service asks for the blocks
+/-- **How the fold's aux tails ask IxC** (AuxGen M2–M5c). The defaults are
+production's: `failClosed` since AuxGen M5c (IxC alone answers `.below`'s,
+`.brecOn`'s, the recursor generator's and the elimination decision's questions;
+a refusal fails the block, except that a block Source mode does not accept
+re-runs on `fallback`, `runAuxTail`; the Prop-level `.below` family's recursors
+still ask `Ix.Tc`, until M7), no trace, and the Source service asks for the blocks
 with a Type-level `.below` and those the recursor generator can ask past the
 fast paths (`Asks.recursors`, M4b; M2b's `Asks.below` before). Other settings
 are AuxGen's measurement modes (the CLI's `IX_AUXGEN_IXC`, which also traces
-each tail's counts): `shadow` (`Ix.Tc`'s answers, compared), `failClosed`,
+each tail's counts): `shadow` (`Ix.Tc`'s answers, compared), `fallback` (M4b–M5b's
+production: IxC first, `Ix.Tc` behind a refusal, lazy since M3),
 `fallbackEager` (M2b's production: both kernels asked), other asks, the
 recursors on `Ix.Tc` (`recursors := false`, M3's production), and
 `measureOnly` (the service's work timed alone,
 `Ix.AuxGen.Source.measure`; the pipeline then compiles nothing). Whatever the
 setting, an unsafe block's tail asks `Ix.Tc` (`compileBlockWithAux`). -/
 structure AuxIxcOptions where
-  mode : Ix.AuxGen.IxcMode := .fallback
+  mode : Ix.AuxGen.IxcMode := .failClosed
   asks : Ix.AuxGen.Source.Asks := .recursors
   trace : Bool := false
   measureOnly : Bool := false
@@ -1634,7 +1684,7 @@ def AuxIxcOptions.serviceInput (aux : AuxIxcOptions) (get? : Name → Option Con
     With the compiled environment it returns what the Source service said of
     the blocks it was asked for (AuxGen M2b, see the section docstring). The
     service reads the input through the same view's `get?`. `aux` is the
-    production setting by default (`fallback`, the `.below` asks); other
+    production setting by default (`failClosed`, the recursors' asks); other
     settings are AuxGen's measurement modes (`IX_AUXGEN_IXC`). -/
 def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)

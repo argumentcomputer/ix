@@ -78,7 +78,8 @@ The recursor generator's `whnf` results reach generated binder names
   reduction redone on the Lean term (delta with the head constant's Lean
   definition, β, `let`), so the definition's own binder names survive;
   accepted only when it ingresses to IxC's result, else refused.
-A syntactically stuck head (`stuckHead`) answers without the service. -/
+A syntactically stuck head (`stuckHead`), also one after syntactic β-steps
+(`betaHead`, AuxGen M5c), answers without the service. -/
 
 /-- A term as `Ix.Tc`'s `whnf` spells it back: mdata dropped, each level
 rebuilt as `Ix.Tc`'s ingress builds it (`Egress.normalize`). -/
@@ -378,13 +379,21 @@ def localLevel (locals : Array (Name × Expr)) (ty : Expr) : Option Level :=
     | none => none
   | _ => none
 
+/-- A lookup that reads `overlay` before `get?` (AuxGen M5c: the recursor
+generator's overlay before the input, as the generator's own `envGet`). -/
+def overlaid (overlay get? : Name → Option ConstantInfo) (n : Name) : Option ConstantInfo :=
+  (overlay n).orElse fun _ => get? n
+
 /-- **A lazy scope** (AuxGen M4): the scope a thunk gives, built only when a
 question escapes the fast paths, which need only the input's declarations
-(`get?`): the `inferAppType` level (`fastLevel`) and a syntactically stuck
-`whnf` (`stuckHead`). A local whose domain is syntactically a sort has
-that sort's level (`localLevel`; `ls`: the locals pushed so far, outermost
-first). Pushes and pops compose the thunk. A refusal (the
-service's, or a local's annotation) surfaces at the question that forces
+(`get?`; on the recursor route the generator's overlay first, `overlaid`):
+the `inferAppType` level (`fastLevel`) and a syntactically stuck `whnf`
+(`stuckHead`), also after syntactic β-steps at the head (`betaHead`, AuxGen
+M5c: a β-redex whose reduct has a stuck head is answered by that reduct,
+spelled as the named replay spells it, `WhnfHow.beta`). A local whose domain
+is syntactically a sort has that sort's level (`localLevel`; `ls`: the locals
+pushed so far, outermost first). Pushes and pops compose the thunk. A refusal
+(the service's, or a local's annotation) surfaces at the question that forces
 it. -/
 def ofLazy (get? : Name → Option ConstantInfo) :
     Nat → Array (Name × Expr) → Thunk (Except String Scope) → OracleScope
@@ -409,17 +418,25 @@ def ofLazy (get? : Name → Option ConstantInfo) :
         pure (ty, ofScope get? n s'))
       (fun e =>
         if stuckHead get? e then .ok (e, ofLazy get? n ls t)
-        else do
-          let (w, s') ← (← t.get).whnfExpr e
-          pure (w, ofScope get? n s'))
+        else
+          let r := betaHead betaFuel e
+          if stuckHead get? r then .ok (r, ofLazy get? n ls t)
+          else do
+            let (w, s') ← (← t.get).whnfExpr e
+            pure (w, ofScope get? n s'))
       (fun a b => do
         let (q, s') ← (← t.get).defEq a b
         pure (q, ofScope get? n s'))
       (fun e =>
         if stuckHead get? e then .ok (tcSpelling e, .stuck, ofLazy get? n ls t)
-        else do
-          let (w, how, s') ← (← t.get).whnfNamedExpr get? e
-          pure (w, how, ofScope get? n s'))
+        else
+          -- the named replay's first steps (`replay`): β, then a stuck head
+          -- stops it, so its answer is the reduct's spelling
+          let r := betaHead betaFuel e
+          if stuckHead get? r then .ok (tcSpelling r, .beta, ofLazy get? n ls t)
+          else do
+            let (w, how, s') ← (← t.get).whnfNamedExpr get? e
+            pure (w, how, ofScope get? n s'))
 
 /-! ## The oracle -/
 
@@ -545,16 +562,18 @@ def blockStatus? (svc : Service) (members : Array Name) : Option String :=
 /-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
 the first question; the drivers' snapshot is a task), in `mode` (tracing the
 tail's counts under `trace`), with `fuel` installs left (the flat block, the
-generated `.below`). -/
-def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts) :
-    Nat → (Unit → Except String Service) → AuxOracle
+generated `.below`). `retry` is the block's oracle in `fallback` (AuxGen M5c,
+`AuxOracle.retry`): `none` on the oracles an install returns. -/
+def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts)
+    (retry : Option AuxOracle) : Nat → (Unit → Except String Service) → AuxOracle
   | 0, _ =>
     .mk mode trace (fun _ _ => .error "oracle fuel exhausted")
       (fun _ _ _ => .error "oracle fuel exhausted") (fun _ => .error "oracle fuel exhausted")
       facts.recursors facts.asked
-      (fun _ locals => ofLazy facts.lookup scopeFuel locals (Thunk.pure (.error "oracle fuel exhausted")))
+      (fun overlay _ locals =>
+        ofLazy (overlaid overlay facts.lookup) scopeFuel locals (Thunk.pure (.error "oracle fuel exhausted")))
       (fun _ => .error "oracle fuel exhausted")
-      (fun _ => some "oracle fuel exhausted")
+      (fun _ => some "oracle fuel exhausted") retry
   | n + 1, svc =>
     .mk mode trace
       (fun lps locals => do
@@ -566,14 +585,14 @@ def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts) :
         let svc ← svc ()
         match ← installOwnFlat svc classes originalAll canonicalRecs with
         | none => pure none
-        | some svc' => pure (some (oracleOf mode trace facts n fun _ => .ok svc')))
+        | some svc' => pure (some (oracleOf mode trace facts none n fun _ => .ok svc')))
       (fun defs => do
         let svc ← svc ()
         let (svc', ok, bad) := admitBelowIn svc defs
-        pure (oracleOf mode trace facts n fun _ => .ok svc', ok, bad))
+        pure (oracleOf mode trace facts none n fun _ => .ok svc', ok, bad))
       facts.recursors facts.asked
-      (fun lps locals =>
-        ofLazy facts.lookup scopeFuel locals (Thunk.mk fun _ => do
+      (fun overlay lps locals =>
+        ofLazy (overlaid overlay facts.lookup) scopeFuel locals (Thunk.mk fun _ => do
           let svc ← svc ()
           if let some why := Source.Run.blockReason? svc facts.members then
             throw s!"the block is not accepted in Source mode: {why}"
@@ -581,10 +600,11 @@ def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts) :
           s.push locals))
       (fun decls => do
         let (s', verdicts) := admitGeneratedIn (← svc ()) decls
-        pure (oracleOf mode trace facts n fun _ => .ok s', verdicts))
+        pure (oracleOf mode trace facts none n fun _ => .ok s', verdicts))
       (fun _ => match svc () with
         | .ok s => blockStatus? s facts.members
         | .error e => some s!"no service: {e}")
+      retry
 
 /-- **One block's oracle over the snapshot `run`** (a run of the drivers'
 service), with the block's `members` folded first (`Service.ensureNames`): a
@@ -592,12 +612,17 @@ no-op when the run asked for the block, and otherwise its groups and what they
 depend on, folded on this block's copy of the snapshot, so a block the asks
 did not select is still answered. The service is taken once, at the first
 question, and shared by the block's scopes. `trace`: the tail traces its
-counts; `facts`: AuxGen M4's (production: recursors on `Ix.Tc`). -/
+counts; `facts`: AuxGen M4's (production: recursors on `Ix.Tc`). Its `retry`
+(AuxGen M5c) is the same block's oracle in `fallback` over the same service
+value (built as closures; nothing is asked unless the tail re-runs), so a
+re-run costs no second fold. -/
 def oracleOfRun (mode : IxcMode) (trace : Bool) (run : Unit → Source.Run) (members : Array Name)
     (facts : OracleFacts := {}) : AuxOracle :=
   let svc : Thunk (Except String Service) :=
     Thunk.mk fun _ => (run ()).service.map (·.ensureNames members)
-  oracleOf mode trace { facts with members } oracleFuel fun _ => svc.get
+  let facts := { facts with members }
+  let retry := oracleOf .fallback trace facts none oracleFuel fun _ => svc.get
+  oracleOf mode trace facts (some retry) oracleFuel fun _ => svc.get
 
 end Ix.AuxGen.Ixc
 

@@ -82,10 +82,15 @@
   mode through `oracle` (`Ix.AuxGen.Oracle`), in the oracle's mode
   (`IxcMode`):
   * `shadow`: both kernels answer every question; `Ix.Tc`'s answer is used.
-  * `fallback` (production's mode; lazy since AuxGen M3): IxC first;
+  * `fallback` (M3–M5b's production; lazy since AuxGen M3): IxC first;
     `Ix.Tc` is asked only where IxC refuses (its scope is still opened,
     pushed and popped).
-  * `failClosed`: IxC alone; a refusal fails the block.
+  * `failClosed` (production's since AuxGen M5c): IxC alone; a refusal fails
+    the block with a named cause (`refuseIxc`), unless Source mode does not
+    accept the block, which then re-runs on `fallback`
+    (`Ix.CompileM.runAuxTail`). The tail's `Ix.Tc` bookkeeping is logged, not
+    run (`defersTc`), and replayed only before the Prop-level `.below`
+    family's recursors, the one `Ix.Tc` reader left (`replayTc`).
   * `fallbackEager` (M2b's production mode, a measurement since M3): both
     answer; IxC's answer is used where it answers.
 
@@ -144,6 +149,13 @@ inductive AuxRoute where
   | recursor
   deriving BEq, Inhabited
 
+/-- A route's scopes, for a refusal's cause (AuxGen M5c). -/
+def AuxRoute.label : AuxRoute → String
+  | .tc => "an Ix.Tc scope"
+  | .below => ".below's scope"
+  | .brecOn => ".brecOn's scope"
+  | .recursor => "the recursor generator's scope"
+
 /-- How `admitSource` loads a source constant. -/
 inductive AdmitMode where
   /-- The constant as it is (`ensureInKenvOf`). -/
@@ -189,6 +201,30 @@ structure AuxScope where
 def bumpIxc (f : IxcStats → IxcStats) : KBridgeM Unit :=
   modify fun k => { k with ixcStats := f k.ixcStats }
 
+/-- **An IxC refusal under `failClosed`** (AuxGen M5c), with a named cause:
+the generator's scope (`scope`: its route and depth, or the install), the
+question (`question`) and IxC's reason. The cause goes into the block's state
+(`BlockReport.refusal`), which the throw keeps, so the driver can tell an IxC
+refusal from any other failure and name the block
+(`Ix.CompileM.runAuxTail`); then the refusal is thrown as before. -/
+def refuseIxc (scope question reason : String) : KBridgeM α := do
+  Ix.CompileM.modifyBlockState fun st =>
+    { st with auxReport := { st.auxReport with refusal := some { scope, question, reason } } }
+  throwBridge (.kernel (.ixc s!"{question} in {scope}") reason)
+
+/-- A term's head, for a refusal's question. -/
+def headOf (e : Expr) : String :=
+  match (decomposeApps (stripMdataRef e)).1 with
+  | .const n _ _ => n.pretty
+  | .fvar n _ => s!"local {n.pretty}"
+  | .sort .. => "a sort"
+  | .forallE .. => "a ∀"
+  | .lam .. => "a λ"
+  | .letE .. => "a let"
+  | .proj n i _ _ => s!"projection {n.pretty}.{i}"
+  | .lit .. => "a literal"
+  | _ => "a term"
+
 /-- A telescope as the oracle takes it. -/
 def oracleLocals (decls : Array LocalDecl) : Array (Name × Expr) :=
   decls.map fun d => (d.fvarName, d.domain)
@@ -202,6 +238,9 @@ namespace AuxScope
 
 /-- The scope's depth: its number of locals. -/
 def depth (s : AuxScope) : Nat := s.locals.size
+
+/-- The scope, for a refusal's cause (AuxGen M5c). -/
+def label (s : AuxScope) : String := s!"{s.route.label} at depth {s.depth}"
 
 /-- The current `Ix.Tc` reference for `view`. -/
 private def tcRef (view : TcScopeSt) : KBridgeM TcScopeRef := do
@@ -252,9 +291,12 @@ private def ixcNew (o : AuxOracle) (ctx : Array LocalDecl) (lps : Array Name) :
     return (none, some e)
 
 /-- Open a scope over `ctx` with level parameters `lps`, for the generator
-    `route`. -/
+    `route`. On the `recursor` route, IxC's lazy scope reads `overlay` (the
+    recursor generator's overlay: a nested block's synthetic auxiliaries)
+    before the input's declarations (AuxGen M5c); other routes ignore it. -/
 def new (k : AuxKernel) (ctx : Array LocalDecl) (lps : Array Name)
-    (route : AuxRoute := .tc) : KBridgeM AuxScope := do
+    (route : AuxRoute := .tc) (overlay : Name → Option ConstantInfo := fun _ => none) :
+    KBridgeM AuxScope := do
   match k, route with
   | .ixc maps o, .below | .ixc maps o, .brecOn =>
     if o.mode == .failClosed then
@@ -263,7 +305,8 @@ def new (k : AuxKernel) (ctx : Array LocalDecl) (lps : Array Name)
       | (some s, _) =>
         return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
                  backend := .ixc s }
-      | (none, e) => throwBridge (.kernel (.ixc "scope") (e.getD ""))
+      | (none, e) =>
+        refuseIxc route.label s!"the scope over {ctx.size} locals" (e.getD "")
     let view ← TcScopeSt.new ctx lps maps
     let (s?, _) ← ixcNew o ctx lps
     return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
@@ -273,7 +316,7 @@ def new (k : AuxKernel) (ctx : Array LocalDecl) (lps : Array Name)
       -- AuxGen M4: a lazy IxC scope; nothing is asked until a question
       -- escapes the fast paths, and a refusal surfaces there.
       checkScopeNames ctx lps
-      let s := o.newLazyScope lps (oracleLocals ctx)
+      let s := o.newLazyScope overlay lps (oracleLocals ctx)
       if o.mode == .failClosed then
         return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
                  backend := .ixc s, route := .recursor }
@@ -312,7 +355,9 @@ def push (s : AuxScope) (decls : Array LocalDecl) : KBridgeM AuxScope := do
         throwBridge (.duplicatePushedFVar decl.fvarName)
     match o.push (oracleLocals decls) with
     | .ok o' => return { s with locals := s.locals ++ decls, backend := .ixc o' }
-    | .error e => throwBridge (.kernel (.ixc "push") e)
+    | .error e =>
+      refuseIxc s.label s!"the push of {decls.size} locals \
+        ({", ".intercalate (decls.toList.map (·.fvarName.pretty))})" e
   | .both r o? =>
     let view ← (← tcLive r "push").pushLocals decls
     let o' ← ixcStep "push" o? (·.push (oracleLocals decls))
@@ -335,7 +380,7 @@ def pop (s : AuxScope) (decls : Array LocalDecl) : KBridgeM AuxScope := do
         throwBridge (.popNotLifo decl.fvarName)
     match o.pop decls.size with
     | .ok o' => return { s with locals := s.locals.extract 0 keep, backend := .ixc o' }
-    | .error e => throwBridge (.kernel (.ixc "pop") e)
+    | .error e => refuseIxc s.label s!"the pop of {decls.size} locals" e
   | .both r o? =>
     let view ← (← tcLive r "pop").popLocals decls
     let o' ← ixcStep "pop" o? (·.pop decls.size)
@@ -355,7 +400,7 @@ def getLevel (s : AuxScope) (ty : Expr) : KBridgeM Level := do
     | .error e =>
       bumpIxc fun st => (st.sample s!"getLevel refused: {e}") |> fun st =>
         { st with refused := st.refused + 1 }
-      throwBridge (.kernel (.ixc "getLevel") e)
+      refuseIxc s.label s!"getLevel of a type headed by {headOf ty}" e
   | .both r o? =>
     if s.kernel.ixcMode? == some .fallback then
       bumpIxc fun st => { st with queries := st.queries + 1 }
@@ -414,7 +459,7 @@ private def ixcExprAnswer (op : String) (o? : Option OracleScope)
 
 /-- An IxC-only scope's answer to an expression question (`failClosed`): a
     refusal fails the block. -/
-private def ixcExprOnly (op : String) (o : OracleScope)
+private def ixcExprOnly (op : String) (scope question : String) (o : OracleScope)
     (ask : OracleScope → Except String (Expr × OracleScope)) : KBridgeM (Option Expr) := do
   bumpIxc fun st => { st with exprQueries := st.exprQueries + 1 }
   match ask o with
@@ -424,7 +469,7 @@ private def ixcExprOnly (op : String) (o : OracleScope)
   | .error err =>
     bumpIxc fun st => (st.sample s!"{op} refused: {err}") |> fun st =>
       { st with refused := st.refused + 1 }
-    throwBridge (.kernel (.ixc op) err)
+    refuseIxc scope question err
 
 /-- A term head, for a sample line. -/
 def headLabel : Expr → String
@@ -467,6 +512,7 @@ private def bumpHow (how : WhnfHow) : KBridgeM Unit :=
     | .stuck => { st with recStuck := st.recStuck + 1 }
     | .same => { st with recSame := st.recSame + 1, recForced := st.recForced + 1 }
     | .replayed => { st with recReplayed := st.recReplayed + 1, recForced := st.recForced + 1 }
+    | .beta => { st with recBeta := st.recBeta + 1 }
 
 /-- An IxC refusal of a named `whnf`, counted. -/
 private def bumpRecRefused (err : String) : KBridgeM Unit :=
@@ -489,7 +535,7 @@ def whnfRec? (s : AuxScope) (e : Expr) (named : Bool) : KBridgeM (Option Expr) :
       return some w
     | .error err =>
       bumpRecRefused err
-      throwBridge (.kernel (.ixc "whnf") err)
+      refuseIxc s.label s!"whnf of a term headed by {headOf e}" err
   | .both r o? =>
     bumpIxc fun st => { st with recWhnf := st.recWhnf + 1 }
     if s.kernel.ixcMode? == some .fallback then
@@ -560,7 +606,7 @@ def whnf? (s : AuxScope) (e : Expr) : KBridgeM (Option Expr) := do
   if s.route == .recursor then return ← s.whnfRec? e true
   match s.backend with
   | .tc r => (← tcLive r "whnf").whnf? e
-  | .ixc o => ixcExprOnly "whnf" o (·.whnf e)
+  | .ixc o => ixcExprOnly "whnf" s.label s!"whnf of a term headed by {headOf e}" o (·.whnf e)
   | .both r o? =>
     if s.kernel.ixcMode? == some .fallback then
       if let some w ← ixcExprAnswer "whnf" o? (·.whnf e) then return some w
@@ -582,7 +628,7 @@ def isDefEq? (s : AuxScope) (a b : Expr) : KBridgeM (Option Bool) := do
     | .error err =>
       bumpIxc fun st => (st.sample s!"isDefEq refused: {err}") |> fun st =>
         { st with refused := st.refused + 1 }
-      throwBridge (.kernel (.ixc "isDefEq") err)
+      refuseIxc s.label s!"isDefEq of terms headed by {headOf a} and {headOf b}" err
   | .both r o? =>
     if s.kernel.ixcMode? == some .fallback then
       bumpIxc fun st => { st with decisions := st.decisions + 1 }
@@ -618,7 +664,8 @@ def isDefEq? (s : AuxScope) (a b : Expr) : KBridgeM (Option Bool) := do
 def inferType? (s : AuxScope) (e : Expr) : KBridgeM (Option Expr) := do
   match s.backend with
   | .tc r => (← tcLive r "inferType").inferLean e
-  | .ixc o => ixcExprOnly "inferType" o (·.infer e)
+  | .ixc o =>
+    ixcExprOnly "inferType" s.label s!"inferType of a term headed by {headOf e}" o (·.infer e)
   | .both r o? =>
     if s.kernel.ixcMode? == some .fallback then
       if let some t ← ixcExprAnswer "inferType" o? (·.infer e) then return some t
@@ -682,7 +729,7 @@ private def elimPeel (sc : OracleScope) (ty : Expr) (name : Name) :
     | .forallE .. => pure (ty, false)
     | _ => do
       let (w, how, _) ← sc.whnfNamed ty
-      pure (w, how != .stuck)
+      pure (w, !(how matches .stuck | .beta))
   match w with
   | .forallE _ dom body _ _ =>
     let sc ← sc.push #[(name, dom)]
@@ -697,7 +744,7 @@ def ixcElimDecision (o : AuxOracle) (originals : Array (InductiveVal × Array Co
   let lps := first.cnst.levelParams
   let mut forced := false
   -- the result sort, after the parameters and indices
-  let mut sc := o.newLazyScope lps #[]
+  let mut sc := o.newLazyScope (fun _ => none) lps #[]
   let mut ty := first.cnst.type
   for i in [0:nParams + first.numIndices] do
     match ← elimPeel sc ty (elimLocal "r" i) with
@@ -711,7 +758,7 @@ def ixcElimDecision (o : AuxOracle) (originals : Array (InductiveVal × Array Co
     | .sort .. => pure ty
     | _ => do
       let (w, how, _) ← sc.whnfNamed ty
-      forced := forced || how != .stuck
+      forced := forced || !(how matches .stuck | .beta)
       pure w
   let .sort u _ := w | throw "get_result_sort_level: not a sort"
   let resultLevel := Egress.normalize u
@@ -726,7 +773,7 @@ def ixcElimDecision (o : AuxOracle) (originals : Array (InductiveVal × Array Co
   | 1 =>
     let some ctor := ctors0[0]? | throw "elimination: constructor"
     if ctor.numFields == 0 then return ({ isLarge := true, isProp }, forced)
-    sc := o.newLazyScope lps #[]
+    sc := o.newLazyScope (fun _ => none) lps #[]
     ty := ctor.cnst.type
     let mut nonTrivial : Array Nat := #[]
     let mut fields : Array Name := #[]
@@ -753,6 +800,39 @@ def ixcElimDecision (o : AuxOracle) (originals : Array (InductiveVal × Array Co
     return ({ isLarge, isProp }, forced)
   | _ => return ({ isLarge := false, isProp }, forced)
 
+/-- **Whether the tail's `Ix.Tc` bookkeeping is deferred** (AuxGen M5c): on
+the IxC arm under `failClosed` with the recursors on IxC, where every generator
+scope is IxC's, so the one `Ix.Tc` reader left in the tail is the Prop-level
+`.below` family's recursor generation (`compileBelowRecursors`), before which
+the log is replayed (`replayTc`). The bookkeeping is logged in call order
+instead of run (`AuxKernelCtx.tcLog`). -/
+def defersTc (k : AuxKernel) : KBridgeM Bool := do
+  match k with
+  | .ixc _ o => return o.mode == .failClosed && o.recursors && (← get).deferTc
+  | .tc _ => return false
+
+/-- Log one deferred bookkeeping call. -/
+private def logTc (b : TcBookkeeping) : KBridgeM Unit :=
+  modify fun c => { c with tcLog := c.tcLog.push b }
+
+/-- **The deferred `Ix.Tc` bookkeeping, run in call order** and cleared
+(AuxGen M5c): the kenv as the eager tail leaves it before the Prop-level
+`.below` family's `Ix.Tc` generation. The calls, their order and their
+arguments are the eager tail's; `maps` and the Lean environment are fixed for
+the tail and the bridge context is the block's own, and under `failClosed`
+nothing else writes the kenv before this point, so the kenv is the eager one.
+A no-op when nothing was deferred. -/
+def replayTc (maps : AddrMaps) : KBridgeM Unit := do
+  let log := (← get).tcLog
+  modify fun c => { c with tcLog := #[] }
+  for b in log do
+    match b with
+    | .prelude => ensurePreludeInKenvOf maps
+    | .source name prewarm =>
+      if prewarm then ensureInKenvOfPrewarm name maps else ensureInKenvOf name maps
+    | .elimAdmit originals nParams => discard <| tcElimAdmit originals nParams maps
+    | .below consts => tcAdmitBelow consts maps
+
 /-- The elimination decision for a block's original classes, in an expanded
     block of `nFlat` members (clause 8). `Ix.Tc`'s, except on the `ixc` arm
     with `AuxOracle.recursors` (production's since AuxGen M4b): IxC's
@@ -773,8 +853,10 @@ def elimDecision (k : AuxKernel)
       bumpIxc fun st => (st.sample s!"elimination refused: {e}") |> fun st =>
         { st with elimRefused := st.elimRefused + 1 }
     -- `Ix.Tc`'s later users of the block read the kenv inserts its decision
-    -- makes; keep them where `Ix.Tc` does not decide.
-    if o.mode == .failClosed || o.mode == .fallback then
+    -- makes; keep them where `Ix.Tc` does not decide (logged under
+    -- `failClosed`, AuxGen M5c).
+    if ← k.defersTc then logTc (.elimAdmit originals nParams)
+    else if o.mode == .failClosed || o.mode == .fallback then
       discard <| tcElimAdmit originals nParams maps
     match o.mode with
     | .failClosed =>
@@ -782,7 +864,8 @@ def elimDecision (k : AuxKernel)
       | .ok (d, _) => return d
       | .error e =>
         refused e
-        throwBridge (.kernel (.ixc "elimination") e)
+        refuseIxc "the block's elimination decision" s!"the elimination decision of \
+          {((originals[0]?).map (·.1.cnst.name.pretty)).getD "[no class]"}" e
     | .fallback =>
       match ixc with
       | .ok (d, _) => return d
@@ -804,12 +887,15 @@ def elimDecision (k : AuxKernel)
   | .tc maps => tcElimDecision originals nParams nFlat maps
 
 /-- Admit the prelude constants the generators name (`PUnit`, `PProd`). -/
-def admitPrelude (k : AuxKernel) : KBridgeM Unit :=
-  ensurePreludeInKenvOf k.maps
+def admitPrelude (k : AuxKernel) : KBridgeM Unit := do
+  if ← k.defersTc then logTc .prelude else ensurePreludeInKenvOf k.maps
 
 /-- Admit source constants, in order. -/
 def admitSource (k : AuxKernel) (names : Array Name) (mode : AdmitMode := .full) :
     KBridgeM Unit := do
+  if ← k.defersTc then
+    for name in names do logTc (.source name (mode == .prewarm))
+    return
   let maps := k.maps
   for name in names do
     match mode with
@@ -826,7 +912,7 @@ def admitSource (k : AuxKernel) (names : Array Name) (mode : AdmitMode := .full)
     counted; its questions then refuse, and `fallback` answers them by
     `Ix.Tc`. -/
 def admitGenerated (k : AuxKernel) (consts : Array BelowConstant) : KBridgeM AuxKernel := do
-  tcAdmitBelow consts k.maps
+  if ← k.defersTc then logTc (.below consts) else tcAdmitBelow consts k.maps
   match k with
   | .tc _ => return k
   | .ixc maps o =>
@@ -864,7 +950,9 @@ def withFlatBlockVerdict (k : AuxKernel) (classes : Array (Array Name)) (origina
     | .error e =>
       bumpIxc fun st => (st.sample s!"flat block: {e}") |> fun st =>
         { st with flatRefused := st.flatRefused + 1 }
-      if o.mode == .failClosed then throwBridge (.kernel (.ixc "flat block") e)
+      if o.mode == .failClosed then
+        refuseIxc "the canonical flat block's install" s!"the install of the flat block of \
+          {((classes[0]?.bind (·[0]?)).map (·.pretty)).getD "[no class]"}" e
       return (k, some (.refused e))
 
 /-- `withFlatBlockVerdict`'s kernel. -/

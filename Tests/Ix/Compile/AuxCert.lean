@@ -48,6 +48,14 @@
      changed); recursor blocks of an exact size (one class and one
      canonical auxiliary); and the Lean names that must hold Pass 3 images
      (a definition with `Named.original`).
+  5. AuxGen M5c's shadow leg, on a compiled fixture: `ix compile-lean` again
+     under `IX_AUXGEN_IXC=shadow` (each safe block's aux tail asks both
+     kernels and uses `Ix.Tc`'s answers), after the production compile and
+     alongside the checks. Its output must equal production's byte for byte
+     (production is `failClosed`, IxC's answers alone), and its traced counts
+     must show no IxC answer, decision or recursor `whnf` different from
+     `Ix.Tc`'s and no refusal on a block Source mode accepts: the stop rule
+     (`shadowCheck`; a block it does not accept retries on `fallback`).
 
   The output's names are read from its own named section (all of them):
   the required and forbidden names, the constants handed to `check-lean`, and
@@ -358,13 +366,87 @@ private def certExe : System.FilePath := ".lake" / "build" / "bin" / "kernel-che
     the toolchain's `LD_LIBRARY_PATH` (see `Tests.Cli.spawnEnv`). -/
 private def spawnEnv : Array (String × Option String) := #[("LD_LIBRARY_PATH", none)]
 
-private def run (cmd : System.FilePath) (args : Array String) : IO IO.Process.Output := do
+private def run (cmd : System.FilePath) (args : Array String)
+    (env : Array (String × Option String) := #[]) : IO IO.Process.Output := do
   let exe ← IO.FS.realPath cmd
-  IO.Process.output { cmd := exe.toString, args, env := spawnEnv }
+  IO.Process.output { cmd := exe.toString, args, env := spawnEnv ++ env }
 
 private def sha256 (path : System.FilePath) : IO String := do
   let out ← IO.Process.output { cmd := "sha256sum", args := #[path.toString] }
   return (out.stdout.splitOn " ").headD ""
+
+/-- The counts of a traced compile's `[auxgen-ixc]` lines (`IX_AUXGEN_IXC`;
+    `Ix.AuxGen.IxcStats.line`, one line per safe block's tail, keyed by the
+    block), summed by name over the tails whose block `skip` does not hold,
+    and how many tails were summed; a pair `a/b` (`flat`, `below`) as
+    `<name>Installed`/`<name>Admitted` and `<name>Refused`. -/
+def tailCounts (out : String) (skip : String → Bool := fun _ => false) :
+    Std.HashMap String Nat × Nat := Id.run do
+  let mut m : Std.HashMap String Nat := {}
+  let mut tails := 0
+  for line in out.splitOn "\n" do
+    unless line.startsWith "[auxgen-ixc] " do continue
+    let some head := (line.splitOn ": ")[0]? | continue
+    let some body := (line.splitOn ": ")[1]? | continue
+    unless body.startsWith "queries " do continue
+    if skip (head.drop "[auxgen-ixc] ".length).toString then continue
+    tails := tails + 1
+    let words := (body.splitOn " ").filter (· != "") |>.toArray
+    for i in [0:words.size / 2] do
+      let some k := words[2 * i]? | continue
+      let some v := words[2 * i + 1]? | continue
+      match v.splitOn "/" with
+      | [a, b] =>
+        let first := if k == "flat" then "flatInstalled" else s!"{k}Admitted"
+        m := m.insert first (m.getD first 0 + a.toNat!)
+        m := m.insert s!"{k}Refused" (m.getD s!"{k}Refused" 0 + b.toNat!)
+      | _ => m := m.insert k (m.getD k 0 + v.toNat!)
+  return (m, tails)
+
+/-- The traced counts the stop rule holds at 0 on a shadow compile (AuxGen
+    M5c; `auxgen-below-ixc`'s assertions): an IxC answer, decision, recursor
+    `whnf` or elimination decision different from `Ix.Tc`'s, a skipped field
+    `Ix.Tc` finds recursive, a Lean-layout block whose canonical recursors are
+    not Lean's, and every refusal. -/
+def shadowStopCounts : List String :=
+  ["differ", "decisionsDiffer", "recDiffer", "recSkipDiffer", "elimDiffer", "leanRecDiffer",
+   "refused", "scopesRefused", "flatRefused", "belowRefused", "recRefused", "elimRefused"]
+
+/-- **AuxGen M5c's shadow leg** on a compiled fixture: `ix compile-lean` again
+    with every safe block's tail asking both kernels and using `Ix.Tc`'s
+    answers (`IX_AUXGEN_IXC=shadow`). Its output must be production's byte for
+    byte (production is `failClosed`: IxC's answers alone), and its traced
+    counts must hold the stop rule (`shadowStopCounts` at 0: every IxC answer
+    equal to `Ix.Tc`'s, nothing refused) on every block Source mode accepts. A
+    block it does not accept re-runs on `fallback` in production (M5c's retry,
+    its rows exempt unless identical), so its tail is left out; the compile
+    lists those blocks (`source service, block not accepted: <block>: <why>`,
+    at most 8: a ninth's refusals would count, failing closed). The problems,
+    and a summary. -/
+def shadowCheck (sh : IO.Process.Output) (shadowOut leanOut : System.FilePath) :
+    IO (Array String × String) := do
+  let text := sh.stdout ++ sh.stderr
+  if sh.exitCode != 0 then
+    return (#[s!"shadow compile (IX_AUXGEN_IXC=shadow): exit {sh.exitCode}: \
+      {(text.takeEnd 400).toString}"], "shadow failed")
+  let mut problems : Array String := #[]
+  if (← sha256 shadowOut) != (← sha256 leanOut) then
+    problems := problems.push "shadow compile's output differs from production's"
+  let lines := text.splitOn "\n"
+  let marker := "source service, block not accepted: "
+  let notAccepted : List String := lines.filterMap fun l =>
+    let l := l.trimAscii.toString
+    if l.startsWith marker then ((l.drop marker.length).toString.splitOn ": ").head? else none
+  let (c, tails) := tailCounts text (notAccepted.contains ·)
+  for k in shadowStopCounts do
+    let v := c.getD k 0
+    if v != 0 then problems := problems.push s!"shadow: {k} {v} (stop rule)"
+  if !problems.isEmpty then
+    for l in (lines.filter (·.startsWith "[auxgen-ixc]   ")).take 4 do
+      problems := problems.push s!"shadow sample: {(l.drop 15).toString.take 300}"
+  return (problems, s!"shadow over {tails} tails ({notAccepted.length} of blocks Source does \
+    not accept left out): recursor whnf {c.getD "recWhnf" 0} (stuck after β \
+    {c.getD "recBeta" 0}), elimination {c.getD "elim" 0}, levels {c.getD "queries" 0}")
 
 private def owns (f : Fixture) (name : String) : Bool :=
   f.ns.any fun p => name == p || name.startsWith (p ++ ".")
@@ -548,6 +630,14 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       problems := problems.push s!"ix compile-lean --rust-check: exit {ln.exitCode}, no ALIGNED: {(lnText.takeEnd 400).toString}"
     else if (← sha256 rsOut) != (← sha256 leanOut) then
       problems := problems.push "two compiles differ: ix compile vs ix compile-lean --rust-check outputs"
+    -- AuxGen M5c's shadow leg (`shadowCheck`), alongside the checks below: the
+    -- fixture's module is built by now, so its nested `lake build` races nothing.
+    let shadowOut := dir / "shadow.ixe"
+    let shadowTask ← if lnCode == 0 then
+        some <$> IO.asTask (prio := .dedicated) (run ixExe
+          (#["compile-lean", src, "--out", shadowOut.toString] ++ scope)
+          #[("IX_AUXGEN_IXC", some "shadow")])
+      else pure none
     -- `check-rs` needs only the output: run it alongside the certified checker.
     let rsCheckTask ← IO.asTask (prio := .dedicated)
       (run ixExe #["check-rs", rsOut.toString, "--ns", ",".intercalate f.ns])
@@ -617,7 +707,13 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       unless isPattern n || failed.any (fun (l, m, _) => l == leg && m == n) do
         problems := problems.push s!"{leg}: {n} recorded as failing ({d}) but passes"
     let nKnown := failed.size
-    return (problems, s!"compiled, ALIGNED, {mine.length} names, {nKnown} recorded failure(s)")
+    let mut shadowSummary := ""
+    if let some t := shadowTask then
+      let (shProblems, summary) ← shadowCheck (← IO.ofExcept (← IO.wait t)) shadowOut leanOut
+      problems := problems ++ shProblems
+      shadowSummary := s!"; {summary}"
+    return (problems, s!"compiled, ALIGNED, {mine.length} names, {nKnown} recorded \
+      failure(s){shadowSummary}")
   finally
     IO.FS.removeDirAll dir
 

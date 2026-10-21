@@ -57,6 +57,14 @@ def envGet (overlay : Option (Std.HashMap Name ConstantInfo)) (name : Name) :
   | some ci => return some ci
   | none => lookupConst? name
 
+/-- The overlay alone, as a lookup: what the recursor route's IxC scopes read
+    before the input's declarations (AuxGen M5c, `AuxScope.new`'s
+    `overlay`), so a nested block's synthetic auxiliaries are stuck
+    inductives for the fast paths, as for `Ix.Tc`. -/
+def overlayGet (overlay : Option (Std.HashMap Name ConstantInfo)) (name : Name) :
+    Option ConstantInfo :=
+  overlay.bind (·.get? name)
+
 /-! ## Inductive recursor-structural decomposition (kernel-backed) -/
 
 /-- Mirrors Rust `decompose_inductive_type` (aux_gen/expr_utils.rs:121).
@@ -77,7 +85,8 @@ def envGet (overlay : Option (Std.HashMap Name ConstantInfo)) (name : Name) :
     - fewer Pi binders than `paramFvars.size` (even after WHNF);
     - the final body isn't a `Sort` after peeling every leading Pi. -/
 def decomposeInductiveType (ind : InductiveVal) (indUnivs : Array Level)
-    (paramFvars : Array LocalDecl) (kernel : AuxKernel) : KBridgeM IndRecInfo := do
+    (paramFvars : Array LocalDecl) (kernel : AuxKernel)
+    (overlay : Option (Std.HashMap Name ConstantInfo) := none) : KBridgeM IndRecInfo := do
   let nParams := paramFvars.size
   let ty := substLevels ind.cnst.type ind.cnst.levelParams indUnivs
 
@@ -85,6 +94,7 @@ def decomposeInductiveType (ind : InductiveVal) (indUnivs : Array Level)
   -- indices, each is pushed into the scope so subsequent `whnfLean` calls
   -- see them as locals.
   let mut scope ← AuxScope.new kernel paramFvars ind.cnst.levelParams (route := .recursor)
+    (overlay := overlayGet overlay)
 
   let mut cur := ty
   if !(cur matches .forallE ..) then
@@ -808,12 +818,14 @@ def buildMotiveType (indInfo : IndRecInfo) (elimLevel : Level) : Expr :=
     head is stuck, so a syntactic telescope costs no kernel call and gives
     exactly `forallTelescope`'s binders. Mirrors Rust `peel_aux_indices`. -/
 def peelAuxIndices (ty : Expr) (n : Nat) (pfx : String)
-    (paramDecls : Array LocalDecl) (levelParams : Array Name) (kernel : AuxKernel) :
+    (paramDecls : Array LocalDecl) (levelParams : Array Name) (kernel : AuxKernel)
+    (overlay : Option (Std.HashMap Name ConstantInfo) := none) :
     KBridgeM (Array Expr × Array LocalDecl × Expr) := do
   let (fvars, decls, rest) := forallTelescope ty n pfx 0
   if decls.size == n then return (fvars, decls, rest)
   let start := decls.size
   let mut scope ← AuxScope.new kernel (paramDecls ++ decls) levelParams (route := .recursor)
+    (overlay := overlayGet overlay)
   let mut fvars := fvars
   let mut decls := decls
   let mut cur := rest
@@ -874,7 +886,7 @@ def buildMotiveTypeAux (member : FlatInfo) (_nParams : Nat) (elimLevel : Level)
   cur := betaReduce cur
   -- Peel index binders using FVars (through `whnf` where stuck).
   let (indexFvars, indexDecls, _) ←
-    peelAuxIndices cur nExtIndices "ma_idx" paramDecls levelParams kernel
+    peelAuxIndices cur nExtIndices "ma_idx" paramDecls levelParams kernel overlay
 
   -- Major type: `J.{occurrence_us} spec_params index_fvars`.
   let majorUnivs :=
@@ -980,7 +992,8 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
     (paramFvars : Array Expr) (paramDecls : Array LocalDecl)
     (motiveFvars : Array Expr) (indUnivs : Array Level)
     (recLevelParams : Array Name) (kernel : AuxKernel)
-    (nestedRewrite : Option NestedRewriteCtx) :
+    (nestedRewrite : Option NestedRewriteCtx)
+    (overlay : Option (Std.HashMap Name ConstantInfo) := none) :
     KBridgeM (Expr × Option NestedRewriteCtx) := do
   let member ← arrIdx classes classIdx "buildMinorType: class"
   -- Aux members substitute occurrence levels; originals the block univs.
@@ -1026,6 +1039,7 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
   let mut recFields : Array (Nat × Nat) := #[] -- (field_idx, target_class)
 
   let mut scope ← AuxScope.new kernel paramDecls recLevelParams (route := .recursor)
+    (overlay := overlayGet overlay)
 
   for fi in [0:nFields] do
     cur := stripMdataRef cur
@@ -1162,7 +1176,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
     for ctor in memberCtors do
       let (minorTy, nr') ← buildMinorType j ctor classes nParams nClasses
         paramFvars paramDecls motiveFvars indUnivs recLevelParams kernel
-        nestedRewrite
+        nestedRewrite overlay
       nestedRewrite := nr'
       -- Minor binder name: ctor name with the inductive prefix stripped.
       let minorName :=
@@ -1221,7 +1235,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
     -- Peel nIndices leading Pi's, through `whnf` where the head is stuck
     -- (an index behind a reducible alias, WB-A3).
     let (auxIndexFvars, indexDecls, _) ←
-      peelAuxIndices ity diMember.nIndices "idx" paramDecls recLevelParams kernel
+      peelAuxIndices ity diMember.nIndices "idx" paramDecls recLevelParams kernel overlay
     indexFvars := indexFvars ++ auxIndexFvars
     allDecls := allDecls ++ indexDecls
 
@@ -1323,7 +1337,8 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
     (nParams nClasses : Nat) (indUnivs : Array Level)
     (recLevelParams : Array Name) (recType : Expr)
     (sourceOfCanonical : Option (Array Nat)) (kernel : AuxKernel)
-    (nestedRewrite : Option NestedRewriteCtx) :
+    (nestedRewrite : Option NestedRewriteCtx)
+    (overlay : Option (Std.HashMap Name ConstantInfo) := none) :
     KBridgeM (Array RecursorRule × Option NestedRewriteCtx) := do
   let nFlat := classes.size
   let nMotives := nFlat
@@ -1376,6 +1391,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
   -- TcScope seeded with params+motives+minors (delta-unfolding of
   -- reducible-alias heads during recursive-field detection).
   let mut scope ← AuxScope.new kernel pmmDecls recLevelParams (route := .recursor)
+    (overlay := overlayGet overlay)
 
   let mut rules : Array RecursorRule := #[]
 
@@ -1776,7 +1792,8 @@ aux members")
   let mut classInfos : Array IndRecInfo := #[]
   for ci in [0:nClasses] do
     classInfos := classInfos.push
-      (← decomposeInductiveType (← arrIdx classes ci "generateCanonicalRecursorsWithLayout: class").ind indUnivs sharedParamDecls kernel)
+      (← decomposeInductiveType (← arrIdx classes ci "generateCanonicalRecursorsWithLayout: class").ind indUnivs sharedParamDecls kernel
+        overlay)
 
   -- Generate one recursor per flat member (originals + auxiliaries), with
   -- the block-wide nested-aux rewrite scratch threaded through.
@@ -1814,7 +1831,7 @@ aux members")
 
     -- Rules.
     let (rules, nr2) ← buildRecRules di classes nParams nClasses indUnivs
-      recLevelParams recType sourceOfCanonical kernel blockNestedRewrite
+      recLevelParams recType sourceOfCanonical kernel blockNestedRewrite overlay
     blockNestedRewrite := nr2
 
     -- Safety: originals from the class representative; auxiliaries take

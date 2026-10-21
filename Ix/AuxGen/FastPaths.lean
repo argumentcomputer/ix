@@ -6,7 +6,8 @@
     applied to as many arguments as its type has leading `∀`s, whose body
     is a sort), spelled as `Ix.Tc` spells it (M2);
   * `stuckHead`: a term that is its own weak head normal form by its head
-    alone (M4);
+    alone (M4); `betaHead`: the syntactic β-steps taken before that test
+    (M5c);
   * `recursorsMayAsk`: whether the recursor generator or the elimination
     decision can ask a block's question past these fast paths (M4's asks):
     the run-ahead folds such blocks ahead of their tails.
@@ -97,6 +98,22 @@ def stuckHead (get? : Name → Option ConstantInfo) (e : Expr) : Bool :=
   | .lam .. => args.isEmpty
   | .const c _ _ => stuckConst (get? c)
   | _ => false
+
+/-- The fuel of `betaHead` (β-steps). -/
+def betaFuel : Nat := 256
+
+/-- **Syntactic β at the head** (AuxGen M5c): while the head is a `λ` applied
+to an argument, the argument substituted into its body, at most `fuel` times,
+as the kernels' `whnfCore` and the named replay (`Ix.AuxGen.Ixc.replay`) take
+the step, mdata dropped as they drop it. The term itself when its head is not
+an applied `λ`. -/
+def betaHead : Nat → Expr → Expr
+  | 0, e => e
+  | n + 1, e =>
+    let (head, args) := decomposeApps (stripMData e)
+    match stripMData head, args[0]? with
+    | .lam _ _ body _ _, some a => betaHead n (mkAppN (instantiate1 body a) (args.extract 1 args.size))
+    | _, _ => e
 
 /-! ## M4's asks -/
 
