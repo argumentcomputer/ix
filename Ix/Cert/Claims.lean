@@ -12,8 +12,10 @@ is a member's name or the name of a constructor an inductive member lists:
 
 * the class sort (`Ix.Compile.Canon.sortClasses`) only regroups its members
   (`sortClasses_mem`), for any member names: the comparisons' answers do not
-  matter;
-* ... -/
+  matter, so no hypothesis on the names (`Canon.KeysDistinct`) is needed;
+* a mutual block's projections carry its members' names and their
+  constructors' (`mutualBlock_names`), and a lone constant other than an
+  inductive or a constructor has none (`constantInfo_lone`). -/
 
 namespace Ix.Cert.Claims
 
@@ -351,5 +353,129 @@ theorem sortClasses_mem {rules : Rules} {addr? : Name → Option Address} {sourc
     injections
     subst_vars
     exact post
+
+/-! ## A block compile's projection names -/
+
+section names
+
+open Ix.CompileCert.Emission (Yields)
+open Ix.CompileCert.MutualProjections (logicalRows expectedRows sourceRows)
+
+/-- `x` is the name of a member of `sources` or of a constructor such a
+member carries. -/
+def SourceName (sources : List (List MutConst)) (x : Name) : Prop :=
+  ∃ src, (∃ c ∈ sources, src ∈ c) ∧ (x = src.name ∨ ∃ ctor ∈ src.ctors, x = ctor.cnst.name)
+
+theorem mem_of_mem_zipIdx {α : Type} {l : List α} {x : α} {i : Nat} (h : (x, i) ∈ l.zipIdx) : x ∈ l :=
+  List.fst_mem_of_mem_zipIdx h
+
+theorem expectedRows_name {owner : Address} {sources : List (List MutConst)} {x : Name}
+    {c : Ixon.Constant} (h : (x, c) ∈ expectedRows owner sources) : SourceName sources x := by
+  unfold expectedRows at h
+  obtain ⟨⟨members, index⟩, hm, h⟩ := List.mem_flatMap.1 h
+  obtain ⟨src, hsrc, h⟩ := List.mem_flatMap.1 h
+  refine ⟨src, ⟨members, mem_of_mem_zipIdx hm, hsrc⟩, ?_⟩
+  unfold sourceRows at h
+  rcases List.mem_cons.1 h with h | h
+  · exact .inl (Prod.mk.inj h).1
+  · obtain ⟨⟨ctor, ci⟩, hci, he⟩ := List.mem_map.1 h
+    exact .inr ⟨ctor, Array.mem_toList_iff.1 (mem_of_mem_zipIdx hci), (Prod.mk.inj he).1.symm⟩
+
+theorem row_logical {rows : Array Ix.CompileCert.MutualProjections.Row} {row : Ix.CompileCert.MutualProjections.Row} (h : row ∈ rows) :
+    (row.1, row.2.1) ∈ logicalRows rows :=
+  List.mem_map.2 ⟨row, Array.mem_toList_iff.2 h, rfl⟩
+
+/-- **A mutual block's projections carry its members' names and their
+constructors'**: the wrapper's rows (`MutualProjections.build_rows`), or a
+collapsed block's, every member registered to it
+(`MutualProjections.standalone_rows`). -/
+theorem mutualBlock_names (sources : List (List MutConst)) :
+    Yields (compileMutualBlock sources) (fun out => ∀ row ∈ out.projections, SourceName sources row.1) := by
+  refine Ix.CompileCert.ProjectionLayout.mutual_block _ sources ?_
+  unfold compileMutualPayload
+  refine Ix.CompileCert.Emission.Yields.bindAny _ fun compiled => ?_
+  intro context before output after ran
+  obtain ⟨-, -, built⟩ :=
+    Ix.CompileCert.ProjectionLayout.finish_mutual_ok context sources compiled.1 compiled.2.2 ran
+  obtain ⟨-, wrapped | collapsed⟩ :=
+    Ix.CompileCert.MutualArtifact.build_cases _ sources compiled.1 compiled.2.2 before output built
+  · obtain ⟨targets, metadata, -, -, proj⟩ := wrapped
+    intro row hrow
+    have hl := row_logical hrow
+    rw [proj, Ix.CompileCert.MutualProjections.build_rows] at hl
+    exact expectedRows_name hl
+  · obtain ⟨-, -, rows⟩ := collapsed
+    intro row hrow
+    have hl := row_logical hrow
+    rw [rows] at hl
+    obtain ⟨src, hsrc, he⟩ := List.mem_map.1 hl
+    obtain ⟨c, hc, hs⟩ := List.mem_flatten.1 hsrc
+    exact ⟨src, ⟨c, hc, hs⟩, .inl (Prod.mk.inj he).1.symm⟩
+
+/-- The block finisher returns no projections. -/
+theorem finish_lone (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
+    Yields (finishConstantInfoWithSharing info blockMeta) (fun r => r.projections = #[]) := by
+  intro context before output after ran
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : buildConstantWithSharing context.1.sharingLimits info before.refs before.univs with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, -⟩ := ran
+    rfl
+
+theorem definitionDataInfo_lone (source : Ix.Def) :
+    Yields (compileDefinitionDataInfo source) (fun r => r.projections = #[]) := by
+  unfold compileDefinitionDataInfo compileDefinitionDataBlock
+  exact Yields.bindAny _ fun _ => Yields.bindAny _ fun d => by
+    obtain ⟨a, b, c, e⟩ := d
+    exact finish_lone _ _
+
+/-- **A lone constant's compile returns no projections**, for every kind but
+an inductive's and a constructor's (the block compile sends those through
+the mutual compiler). -/
+theorem constantInfo_lone (const : ConstantInfo) (hi : ∀ v, const ≠ .inductInfo v)
+    (hc : ∀ v, const ≠ .ctorInfo v) :
+    Yields (compileConstantInfo const) (fun r => r.projections = #[]) := by
+  cases const with
+  | defnInfo v =>
+    show Yields (compileDefinitionConstantInfo v) _
+    unfold compileDefinitionConstantInfo withMutCtx
+    rw [Ix.CompileCert.EmissionDispatch.compileDefinitionInfo_eq]
+    exact Yields.withBlockEnv _ (definitionDataInfo_lone _)
+  | thmInfo v =>
+    show Yields (compileTheoremConstantInfo v) _
+    unfold compileTheoremConstantInfo withMutCtx compileTheoremInfo
+    exact Yields.withBlockEnv _ (definitionDataInfo_lone _)
+  | opaqueInfo v =>
+    show Yields (compileOpaqueConstantInfo v) _
+    unfold compileOpaqueConstantInfo withMutCtx compileOpaqueInfo
+    exact Yields.withBlockEnv _ (definitionDataInfo_lone _)
+  | axiomInfo v =>
+    show Yields (compileConstantInfoCore (.axiomInfo v)) _
+    unfold compileConstantInfoCore withMutCtx
+    refine Yields.withBlockEnv _ ?_
+    show Yields (compileAxiomInfo v) _
+    unfold compileAxiomInfo compileAxiomBlock
+    exact Yields.bindAny _ fun _ => Yields.bindAny _ fun d => by
+      obtain ⟨a, b, c⟩ := d
+      exact finish_lone _ _
+  | quotInfo v =>
+    show Yields (compileQuotientConstantInfo v) _
+    unfold compileQuotientConstantInfo withMutCtx compileQuotientInfo compileQuotientBlock
+    exact Yields.withBlockEnv _ (Yields.bindAny _ fun _ => Yields.bindAny _ fun d => by
+      obtain ⟨a, b, c⟩ := d
+      exact finish_lone _ _)
+  | recInfo v =>
+    show Yields (compileRecursorConstantInfo v) _
+    unfold compileRecursorConstantInfo withMutCtx compileRecursorInfo compileRecursorBlock
+    exact Yields.withBlockEnv _ (Yields.bindAny _ fun _ => Yields.bindAny _ fun d => by
+      obtain ⟨a, b, c⟩ := d
+      exact finish_lone _ _)
+  | inductInfo v => exact absurd rfl (hi v)
+  | ctorInfo v => exact absurd rfl (hc v)
+
+end names
 
 end Ix.Cert.Claims
