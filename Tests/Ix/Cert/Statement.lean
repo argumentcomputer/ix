@@ -458,6 +458,26 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           constructor check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a stray input constructor"
   | [] => errors := errors.push s!"{label}: no input constructor"
+  -- the failure check (every failure the driver records is an input name),
+  -- timed alone, then refusing, by its own message, the driver's final
+  -- environment with a failure recorded under a name no input constant has
+  let f0 ← IO.monoMsNow
+  let strayF? ← IO.lazyPure fun _ => Ix.Cert.strayFailure env cenv.ungrounded
+  let f1 ← IO.monoMsNow
+  match strayF? with
+  | none => lines := lines.push s!"{label}: strayFailure finds every recorded failure an input name \
+      ({cenv.ungrounded.size} failures, {f1 - f0} ms)"
+  | some f => errors := errors.push s!"{label}: strayFailure finds {f.pretty} recorded as a failure"
+  let planted : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "planted-stray-failure"
+  let cenvF := { cenv with ungrounded := cenv.ungrounded.insert planted "planted" }
+  match Ix.Cert.checkReport env cenvF (ixe, failures) with
+  | .error e =>
+    if (e.splitOn "failure check failed").length > 1 then
+      lines := lines.push s!"{label}: checkReport refuses a failure recorded under a name no input \
+        constant has ({planted.pretty})"
+    else
+      errors := errors.push s!"{label}: the stray failure is refused, but not by the failure check: {e}"
+  | .ok () => errors := errors.push s!"{label}: checkReport accepts a failure that is not an input name"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find

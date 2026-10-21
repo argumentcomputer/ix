@@ -614,12 +614,12 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
       crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
       foreignHead env cenv.p3Heads out.1 = none ∧ misnamedInput env = none ∧
-      strayConstructor env = none := by
+      strayConstructor env = none ∧ strayFailure env cenv.ungrounded = none := by
   unfold checkReport at h
   -- walk the checks in order: every failing branch is an error, so the one
   -- branch that returns has each check's equation in context
   repeat' (first | (split at h) | (focus (cases h; done)))
-  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
+  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -628,7 +628,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -1114,7 +1114,37 @@ theorem ctorsBelong {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures
     ∀ (n : Ix.Name) (iv : Ix.InductiveVal), env.consts.get? n = some (.inductInfo iv) →
       ∀ c ∈ iv.ctors, ∃ cv, env.consts.get? c = some (.ctorInfo cv) ∧ (cv.induct == n) = true := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact strayConstructor_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2
+  exact strayConstructor_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- What `strayFailure = none` says: every name `ungrounded` holds is one the
+input's map holds. -/
+theorem strayFailure_none {env : Ix.Environment} {ungrounded : Std.HashMap Ix.Name String}
+    (h : strayFailure env ungrounded = none) :
+    ∀ x, ungrounded.contains x = true → (env.consts.get? x).isSome = true := by
+  intro x hx
+  unfold strayFailure at h
+  rw [List.findSome?_eq_none_iff] at h
+  rw [Std.HashMap.contains_eq_isSome_getElem?] at hx
+  obtain ⟨msg, hmsg⟩ := Option.isSome_iff_exists.mp hx
+  obtain ⟨k, hxk, hk⟩ := Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList.mp hmsg
+  have hfind := h (k, msg) hk
+  dsimp only at hfind
+  have hks : (env.consts.get? k).isSome = true := by
+    cases e : (env.consts.get? k).isSome
+    · rw [e] at hfind; cases hfind
+    · rfl
+  rw [Std.HashMap.get?_eq_getElem?] at hks ⊢
+  rwa [Std.HashMap.getElem?_congr hxk]
+
+/-- **Recorded failures are input names**: when `compileReport` returns,
+every name the driver's final environment records as a failure is one the
+input's map holds (`checkReport`'s fourteenth check). -/
+theorem failuresInput {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
+      ∀ x, cenv.ungrounded.contains x = true → (env.consts.get? x).isSome = true := by
+  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
+  exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`

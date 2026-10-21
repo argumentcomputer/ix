@@ -773,7 +773,18 @@ every closure that holds it. -/
         | _ => true
     | _ => none
 
-/-- `compileReport`'s thirteen checks on a compile's result, each an error on
+/-- The first name the driver's final environment records as a failure
+(`CompileEnv.ungrounded`, the `ungrounded` argument) that the input's map does
+not hold, if any. The driver records failures of a block's members (a failed
+compile, a conflicting claim, a withdrawn promotion and its Pass 3 heads), so
+on valid input there is none. With none, a name the closure references that
+was a Pass 3 head when a block compiled, and was withdrawn later, is an input
+name, so a constant of the closure, which did not fail. -/
+@[expose] def strayFailure (env : Ix.Environment) (ungrounded : Std.HashMap Ix.Name String) :
+    Option Ix.Name :=
+  ungrounded.toList.findSome? fun (n, _) => if (env.consts.get? n).isSome then none else some n
+
+/-- `compileReport`'s fourteen checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -800,7 +811,9 @@ Pass 3 heads (`cenv.p3Heads`) is a regenerated published input name
 constants carry their names:** each input constant's own name hashes like the
 name it is stored under (`misnamedInput`). **Input constructors belong to their
 inductive:** each constructor an input inductive lists is stored as a
-constructor of it (`strayConstructor`). -/
+constructor of it (`strayConstructor`). **Failures are input names:** each
+name the driver's final environment records as a failure (`cenv.ungrounded`)
+is one the input's map holds (`strayFailure`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
@@ -826,7 +839,12 @@ constructor of it (`strayConstructor`). -/
                       match misnamedInput env with
                       | none =>
                         match strayConstructor env with
-                        | none => .ok ()
+                        | none =>
+                          match strayFailure env cenv.ungrounded with
+                          | none => .ok ()
+                          | some f =>
+                            .error s!"compileReport: failure check failed: the driver records the name \
+                              {f.pretty} as a failure, but no input constant is stored under it"
                         | some c =>
                           .error s!"compileReport: constructor check failed: the name {c.pretty}, a \
                             constructor of an input inductive, is not stored as a constructor of it"
@@ -874,7 +892,7 @@ constructor of it (`strayConstructor`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with thirteen checks (`checkReport`):
+condensation it cannot schedule). It ends with fourteen checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -886,8 +904,9 @@ block with a `Muts` entry; and every input name of the driver's final aux map
 is published with an original-form record; every published input name is
 resolved or in the aux map; no resolved name outside the aux map is a cross-SCC
 subset's claim; every Pass 3 head is in the changed set; every input
-constant carries the name it is stored under; and every constructor an input
-inductive lists is stored as a constructor of it. Any inconsistency is an error, and no artifact is
+constant carries the name it is stored under; every constructor an input
+inductive lists is stored as a constructor of it; and every failure the driver
+records is an input name. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that
 agree with their blocks, resolved names published where they resolve,

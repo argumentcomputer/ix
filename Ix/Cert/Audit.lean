@@ -1136,7 +1136,14 @@ fun env cenv out =>
                       match Ix.Cert.misnamedInput env with
                       | none =>
                         match Ix.Cert.strayConstructor env with
-                        | none => Except.ok ()
+                        | none =>
+                          match Ix.Cert.strayFailure env cenv.ungrounded with
+                          | none => Except.ok ()
+                          | some f =>
+                            Except.error
+                              (toString "compileReport: failure check failed: the driver records the name " ++
+                                  toString f.pretty ++
+                                toString " as a failure, but no input constant is stored under it")
                         | some c =>
                           Except.error
                             (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
@@ -1349,7 +1356,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                     Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
                       Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
                         Ix.Cert.foreignHead env cenv.p3Heads out.fst = none ∧
-                          Ix.Cert.misnamedInput env = none ∧ Ix.Cert.strayConstructor env = none -/
+                          Ix.Cert.misnamedInput env = none ∧
+                            Ix.Cert.strayConstructor env = none ∧ Ix.Cert.strayFailure env cenv.ungrounded = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4846,6 +4854,40 @@ fun env =>
     env.consts.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.strayConstructor
+
+/-! ## Recorded failures are input names (B9b, `HookFree`'s discharge, (i); coordinator decision, 2026-10-21 ~08:17)
+
+A reference of the block holding a compile's key may name no input constant
+(a ground edge can dangle: `Ix.groundExpr` is `partial`, so no proof shows
+edges land in the input). If such a name was a Pass 3 head when the block
+compiled and was withdrawn later, it is recorded as a failure, and `NoFailure`
+(over the closure only) does not refute it. `compileReport` now refuses a
+driver's final environment that records a failure under a name the input's
+map does not hold (`checkReport`'s fourteenth check, `strayFailure`). The
+proof route not taken: a fold invariant that every recorded failure is a
+condensation member. Re-frozen with it: `checkReport`'s print and
+`checkReport_ok` (a fourteenth conjunct). On a consistent run the result is
+unchanged. -/
+
+/-- info: [cert-audit] recorded failures: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] recorded failures: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "recorded failures"
+    (#[`strayFailure_none, `failuresInput].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "recorded failures" #[``Ix.Cert.strayFailure]
+
+/-- info: def Ix.Cert.strayFailure : Ix.Environment → Std.HashMap Ix.Name String → Option Ix.Name :=
+fun env ungrounded =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, snd) => if (env.consts.get? n).isSome = true then none else some n)
+    ungrounded.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.strayFailure
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 
