@@ -107,12 +107,15 @@ prelude's shape check (S1, fact (ii)) moved it from 5906 by the entry's change
 (`IxC/Kernel/Audit/Roots.lean`, 12 in). The hoist guard (S1) moved it from 5918 by
 the entry's change (4 in). The in-model generator's totality (S1) moved it from 5922 by the
 entry's change (`IxC/Kernel/Audit/Roots.lean`, 15 more; its nine ruled `partial`
-definitions are total, and the ruling is gone). -/
+definitions are total, and the ruling is gone). The prelude-copy check
+((b), `State.keepsPrelude` in `readStream`) moved it from 5937 by the entry's
+change (38 in: the check, the state's keys and the derived `DecidableEq`);
+externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5937 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkBytes]: 5975 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
