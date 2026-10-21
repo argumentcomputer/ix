@@ -810,19 +810,23 @@ def checkOriginalPromotion (cenv : CompileEnv) (lo : Name) (result : BlockResult
     the original-form compile's: for a lone constant, the block's bytes; for a
     projection, the projection's bytes, and the original-form block's bytes
     equal to the record stored at that block's address. No hash equality
-    decides it. The acceptance table's `identical` (`Ix.AuxGen.AuxTable`). -/
+    decides it. The acceptance table's `identical` (`Ix.AuxGen.AuxTable`).
+    AuxGen B9d: each answer carries the address of the record it compared (the
+    member's `Named.addr` here), so a consumer can check that the name is still
+    published there in the final artifact. -/
 def originalIdentities (cenv : CompileEnv) (lo : Name) (result : BlockResult) :
-    Array (Name × Bool) :=
-  let published (n : Name) : Option (Option ByteArray) :=
-    (cenv.nameToNamed.get? n).map fun named => cenv.constants.get? named.addr
+    Array (Name × Bool × Address) :=
+  let published (n : Name) : Option (Address × Option ByteArray) :=
+    (cenv.nameToNamed.get? n).map fun named => (named.addr, cenv.constants.get? named.addr)
   if result.projections.isEmpty then
     match published lo with
-    | some stored => #[(lo, stored == some result.blockBytes)]
+    | some (a, stored) => #[(lo, stored == some result.blockBytes, a)]
     | none => #[]
   else
     let blockSame := cenv.constants.get? result.blockAddr == some result.blockBytes
     result.projections.filterMap fun (name, proj, _) =>
-      (published name).map fun stored => (name, blockSame && stored == some (Ixon.ser proj))
+      (published name).map fun (a, stored) =>
+        (name, blockSame && stored == some (Ixon.ser proj), a)
 
 /-- The writes of the original-form promotion, after its checks: each
     member's `promoteAuxDriver` writes, then the ephemeral compile's blobs,
@@ -2078,6 +2082,9 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         IO.println s!"    acceptance table, {line}"
       for line in table.refusals 8 do
         IO.println s!"    acceptance table, refused: {line.take 200}"
+      -- AuxGen B9d: the identity rows against the final `named`
+      let idStats := cenv.auxReport.identityStats fun n => (ixonEnv.named.get? n).map (·.addr)
+      IO.println s!"  [compile-lean] identity rows: {idStats.line}"
     if dbg then
       if let some read := opts.memory then
         IO.println s!"  [compile-lean] rss after the compile phase: {← read}"

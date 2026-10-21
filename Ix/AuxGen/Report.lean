@@ -24,7 +24,9 @@
   Each row has the auxiliary's kind and its verdict:
   * `identical`: the published record's bytes are the original form's (and,
     for a projection, so are its block's), decided by the driver where both
-    records are in hand; the record is unchanged;
+    records are in hand; the record is unchanged. Only the promotion route
+    decides it: the row carries the address of the record the driver compared
+    (`AuxRow.addr`), and a tail verdict of `identical` is refused (AuxGen B9d);
   * `accepted`: regenerated, and Source mode accepted it at generation;
   * `exempt`: outside every statement (an unsafe block's auxiliary, or one
     blocked behind an unsafe constant);
@@ -94,6 +96,10 @@ structure AuxRow where
   name : Name
   kind : GeneratedKind
   verdict : AuxVerdict
+  /-- AuxGen B9d: a promoted name's row, the address of the published record the
+  driver compared with the original form (`Named.addr` at the promotion); `none`
+  for a displayed auxiliary's row (it has no original form) -/
+  addr : Option Address := none
   deriving Inhabited, BEq, Repr
 
 /-! ## Name-sorted arrays -/
@@ -151,6 +157,12 @@ def lateReason : String := "not admitted at generation (Lean layout)"
 not accept (AuxGen M5b). -/
 def notAcceptedPrefix : String := "block not Source-accepted: "
 
+/-- Why a tail verdict of `identical` is refused (AuxGen B9d): identity is
+decided on bytes at the original-form promotion, never by a tail, so a row is
+`identical` only on the promotion route, at the address it compared. -/
+def admittedIdenticalReason : String :=
+  "identical admitted by a tail (identity is decided only at the original-form promotion)"
+
 /-- **A tail's verdicts given its block's Source status** (AuxGen M5b;
 `AuxOracle.blockStatus`): unchanged for a block Source mode accepts (`none`), so
 a refusal there stays a refusal (the stop rule); for a block it does not accept,
@@ -165,8 +177,9 @@ def withBlockStatus (status : Option String) (names : Array Name)
   | some why => names.map fun n => (n, .exempt s!"{notAcceptedPrefix}{why}")
 
 /-- The table of the facts a compile gathers:
-* `identity`: each promoted name, and whether its published record is
-  byte-identical to its original form's;
+* `identity`: each promoted name, whether its published record is
+  byte-identical to its original form's, and the address of the published
+  record the driver compared (AuxGen B9d);
 * `generated`: each generated auxiliary's kind;
 * `admitted`: the verdict on each auxiliary an aux tail checked (`accepted`,
   `refused` with Source mode's reason, or `exempt` when blocked behind an
@@ -175,11 +188,13 @@ def withBlockStatus (status : Option String) (names : Array Name)
 * `display`: each generated auxiliary of a changed block that Pass 3 moved to
   a display name, with the name it is published at.
 
-A promoted name's row is `identical` when the bytes agree; otherwise, as a
-displayed auxiliary's row (under its display name, with the generated name's
-kind): `exempt` for an unsafe block's auxiliary, else the tail's verdict, else
-refused as late (`lateReason`). -/
-def ofFacts (identity : Array (Name × Bool)) (generated : Array (Name × GeneratedKind))
+A promoted name's row is `identical` when the bytes agree, and carries the
+compared address; otherwise, as a displayed auxiliary's row (under its display
+name, with the generated name's kind): `exempt` for an unsafe block's
+auxiliary, else the tail's verdict (a tail's `identical` refused,
+`admittedIdenticalReason`), else refused as late (`lateReason`). So a row is
+`identical` only on the promotion route. -/
+def ofFacts (identity : Array (Name × Bool × Address)) (generated : Array (Name × GeneratedKind))
     (admitted : Array (Name × AuxVerdict)) (exempt : Array (Name × String))
     (display : Array (Name × Name) := #[]) : AuxTable :=
   let generated := sortByName generated
@@ -188,10 +203,14 @@ def ofFacts (identity : Array (Name × Bool)) (generated : Array (Name × Genera
   let checked (n : Name) : AuxVerdict :=
     match findByName? exempt n with
     | some why => .exempt why
-    | none => (findByName? admitted n).getD (.refused lateReason)
-  let promoted : Array (Name × AuxRow) := identity.map fun (n, same) =>
+    | none =>
+      match findByName? admitted n with
+      | some .identical => .refused admittedIdenticalReason
+      | some v => v
+      | none => .refused lateReason
+  let promoted : Array (Name × AuxRow) := identity.map fun (n, same, a) =>
     (n, { name := n, kind := (findByName? generated n).getD .other
-          verdict := if same then .identical else checked n })
+          verdict := if same then .identical else checked n, addr := some a })
   let displayed : Array (Name × AuxRow) := display.map fun (n, d) =>
     (d, { name := d, kind := (findByName? generated n).getD .other, verdict := checked n })
   { rows := (sortByName (promoted ++ displayed)).map (·.2) }
@@ -199,6 +218,12 @@ def ofFacts (identity : Array (Name × Bool)) (generated : Array (Name × Genera
 /-- `n`'s verdict, by binary search on `Ix.Name.cmpRaw`. -/
 def verdict? (t : AuxTable) (n : Name) : Option AuxVerdict :=
   (findSorted? t.rows (·.name) n).map (·.verdict)
+
+/-- AuxGen B9d: the address `n`'s row carries (the published record the
+driver compared at the promotion), by binary search on `Ix.Name.cmpRaw`;
+`none` without a row or for a displayed auxiliary's row. -/
+def addr? (t : AuxTable) (n : Name) : Option Address :=
+  (findSorted? t.rows (·.name) n).bind (·.addr)
 
 /-- **Whether `n`'s published record is the compile of Lean's own form**,
 decided on bytes by the driver: the evidence a changed-set classifier reads for
@@ -261,6 +286,78 @@ def refusals (t : AuxTable) (cap : Nat := 16) : Array String :=
       | _ => r.name.pretty
 
 end AuxTable
+
+/-! ## The identity rows against the artifact (AuxGen B9d) -/
+
+/-- **The identity rows against the published names** (AuxGen B9d), as the
+compile report prints them:
+* the rows, and the names they cover;
+* the names with more than one row (an original-form promotion can reach a
+  name another promotion reached), and of those the ones whose rows disagree,
+  on identity or on the compared address;
+* the `identical` rows checked against the artifact's final `named`, and of
+  those the ones whose name is published at another address (`stale`: a later
+  merge overwrote it) or not at all (a later block failure withdrew it).
+
+The statements lane's decided check refuses a report with a disagreeing
+duplicate, or with a stale or unpublished `identical` row. -/
+structure IdentityStats where
+  rows : Nat := 0
+  names : Nat := 0
+  duplicated : Nat := 0
+  disagreeing : Nat := 0
+  checked : Nat := 0
+  stale : Nat := 0
+  unpublished : Nat := 0
+  deriving Inhabited, BEq, Repr
+
+namespace IdentityStats
+
+/-- A run of one name's rows closed: its count and whether they all agree. -/
+def close (s : IdentityStats) (count : Nat) (agree : Bool) : IdentityStats :=
+  { s with names := s.names + 1
+           duplicated := s.duplicated + (if count > 1 then 1 else 0)
+           disagreeing := s.disagreeing + (if agree then 0 else 1) }
+
+/-- No duplicate disagrees and every `identical` row is published at its
+compared address. -/
+def ok (s : IdentityStats) : Bool := s.disagreeing == 0 && s.stale == 0 && s.unpublished == 0
+
+/-- One line. -/
+def line (s : IdentityStats) : String :=
+  s!"{s.rows} rows over {s.names} names; {s.duplicated} names with more than one row \
+    ({s.disagreeing} disagreeing); {s.checked} identical rows against the final named: \
+    {s.stale} at another address, {s.unpublished} unpublished"
+
+end IdentityStats
+
+/-- The identity rows' statistics (`IdentityStats`) against `published?`, the
+artifact's final `named` address of a name. Duplicates are found on the rows
+sorted by `Ix.Name.cmpRaw` (`.eq` exactly on equal names). -/
+def identityStats (identity : Array (Name × Bool × Address))
+    (published? : Name → Option Address) : IdentityStats := Id.run do
+  let sorted := identity.qsort fun a b => Name.cmpRaw a.1 b.1 == .lt
+  let mut st : IdentityStats := { rows := identity.size }
+  -- the current run: its name, its first row's identity and address, its count,
+  -- whether every row so far agrees with the first
+  let mut cur : Option (Name × Bool × Address × Nat × Bool) := none
+  for (n, same, a) in sorted do
+    match cur with
+    | some (m, s0, a0, k, agree) =>
+      if Name.cmpRaw m n == .eq then
+        cur := some (m, s0, a0, k + 1, agree && same == s0 && a == a0)
+      else
+        st := st.close k agree
+        cur := some (n, same, a, 1, true)
+    | none => cur := some (n, same, a, 1, true)
+  if let some (_, _, _, k, agree) := cur then st := st.close k agree
+  for (n, same, a) in identity do
+    if same then
+      st := { st with checked := st.checked + 1 }
+      match published? n with
+      | none => st := { st with unpublished := st.unpublished + 1 }
+      | some a' => if a' != a then st := { st with stale := st.stale + 1 }
+  return st
 
 end Ix.AuxGen
 

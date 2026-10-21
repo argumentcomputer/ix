@@ -229,7 +229,11 @@ structure CompileReport where
   generated : Array (Name × GeneratedKind) := #[]
   admitted : Array (Name × AuxVerdict) := #[]
   exempt : Array (Name × String) := #[]
-  identity : Array (Name × Bool) := #[]
+  /-- AuxGen M5 and B9d: each promoted name, whether its published record is
+  byte-identical to its original form's, and that record's address (the
+  `Named.addr` the driver compared). A name can have more than one row
+  (`IdentityStats`) -/
+  identity : Array (Name × Bool × Address) := #[]
   display : Array (Name × Name) := #[]
   /-- AuxGen M5c: the blocks whose tail re-ran on `fallback` (not accepted by
   Source mode), by canonical key, with the reason and the block's generated
@@ -253,9 +257,16 @@ def CompileReport.addBlock (r : CompileReport) (key : Name) (b : BlockReport) : 
   | none => r
 
 /-- AuxGen M5: the driver's byte comparisons at an original-form promotion
-merged in. -/
-def CompileReport.addIdentity (r : CompileReport) (same : Array (Name × Bool)) : CompileReport :=
+merged in, each with the compared record's address (B9d). -/
+def CompileReport.addIdentity (r : CompileReport) (same : Array (Name × Bool × Address)) :
+    CompileReport :=
   if same.isEmpty then r else { r with identity := r.identity ++ same }
+
+/-- AuxGen B9d: the identity rows against the artifact's final `named`
+(`published?`, a name's final address). -/
+def CompileReport.identityStats (r : CompileReport) (published? : Name → Option Address) :
+    IdentityStats :=
+  Ix.AuxGen.identityStats r.identity published?
 
 /-- The canonical-block verdicts in summary. -/
 def CompileReport.canonicalSummary (r : CompileReport) : CanonicalSummary :=

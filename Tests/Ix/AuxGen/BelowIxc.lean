@@ -325,15 +325,22 @@ def admissionRowErrors (r : Ix.AuxGen.CompileReport) (t : Ix.AuxGen.AuxTable) :
 /-- AuxGen M5: the table's rule on constructed facts (`AuxTable.ofFacts`). A
 refusal is a refused row on both routes (promoted, and under a display name);
 identical bytes win over the tail's verdict; a promoted name the tail did not
-check is refused as late; a name without a row is not identical. -/
+check is refused as late; a name without a row is not identical. AuxGen B9d: a
+promoted row carries its compared address, a displayed row none; a tail's
+`identical` is refused on both routes (planted), so a row is `identical` only
+on the promotion route; and the identity rows' statistics on constructed rows
+(a disagreeing duplicate, a stale and an unpublished `identical` row). -/
 def tableRuleErrors : Array String := Id.run do
   let nm (s : String) : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon s
+  let ad (s : String) : Address := Address.blake3 s.toUTF8
   let t := Ix.AuxGen.AuxTable.ofFacts
-    (identity := #[(nm "p", false), (nm "q", true), (nm "late", false)])
-    (generated := #[(nm "p", .casesOnDef), (nm "g", .brecOnDef)])
-    (admitted := #[(nm "p", .refused "no"), (nm "q", .refused "no"), (nm "g", .refused "bad")])
+    (identity := #[(nm "p", false, ad "p"), (nm "q", true, ad "q"), (nm "late", false, ad "late"),
+      (nm "forged", false, ad "forged")])
+    (generated := #[(nm "p", .casesOnDef), (nm "g", .brecOnDef), (nm "h", .belowDef)])
+    (admitted := #[(nm "p", .refused "no"), (nm "q", .refused "no"), (nm "g", .refused "bad"),
+      (nm "forged", .identical), (nm "h", .identical)])
     (exempt := #[])
-    (display := #[(nm "g", nm "g_ix")])
+    (display := #[(nm "g", nm "g_ix"), (nm "h", nm "h_ix")])
   let mut errors : Array String := #[]
   unless t.verdict? (nm "p") == some (.refused "no") do
     errors := errors.push "the table: a promoted refusal is not a refused row"
@@ -345,8 +352,35 @@ def tableRuleErrors : Array String := Id.run do
     errors := errors.push "the table: an unchecked promoted name is not late"
   if t.identical (nm "g") || (t.verdict? (nm "g")).isSome then
     errors := errors.push "the table: a moved generated name has a row of its own"
-  unless t.counts.refused == 3 && t.counts.late == 1 && t.counts.identical == 1 do
+  -- B9d: a tail's `identical`, planted on both routes, is refused
+  let forged := some (.refused Ix.AuxGen.AuxTable.admittedIdenticalReason)
+  unless t.verdict? (nm "forged") == forged && t.verdict? (nm "h_ix") == forged do
+    errors := errors.push "the table: a tail's identical is not refused"
+  if t.identical (nm "forged") || t.identical (nm "h_ix") then
+    errors := errors.push "the table: a tail's identical is identical"
+  -- B9d: the rows' addresses
+  unless t.addr? (nm "q") == some (ad "q") && t.addr? (nm "p") == some (ad "p") do
+    errors := errors.push "the table: a promoted row does not carry its compared address"
+  unless t.addr? (nm "g_ix") == none && t.addr? (nm "absent") == none do
+    errors := errors.push "the table: a displayed row or a missing name has an address"
+  unless t.counts.refused == 5 && t.counts.late == 1 && t.counts.identical == 1 do
     errors := errors.push s!"the table's counts: {repr t.counts}"
+  -- B9d: the identity rows' statistics
+  let rows : Array (Ix.Name × Bool × Address) := #[(nm "a", true, ad "a"), (nm "b", true, ad "b"),
+    (nm "b", true, ad "b"), (nm "c", true, ad "c"), (nm "c", false, ad "c"), (nm "d", true, ad "d"),
+    (nm "e", true, ad "e")]
+  let published (n : Ix.Name) : Option Address :=
+    if n == nm "d" then some (ad "other") else if n == nm "e" then none else some (ad n.pretty)
+  let s := Ix.AuxGen.identityStats rows published
+  let want : Ix.AuxGen.IdentityStats :=
+    { rows := 7, names := 5, duplicated := 2, disagreeing := 1,
+      checked := 6, stale := 1, unpublished := 1 }
+  unless s == want do
+    errors := errors.push s!"the identity rows' statistics: {repr s}"
+  if s.ok then errors := errors.push "the identity rows' statistics: a bad set is ok"
+  let good := Ix.AuxGen.identityStats #[(nm "a", true, ad "a"), (nm "a", true, ad "a")] published
+  unless good.ok && good.duplicated == 1 && good.disagreeing == 0 do
+    errors := errors.push s!"the identity rows' statistics: an agreeing duplicate: {repr good}"
   -- AuxGen M5b: a block's Source status (`AuxTable.withBlockStatus`). On a block
   -- Source accepts, a refusal stays a refusal (the stop rule applies there); on
   -- one it does not accept, every generated name is exempt with the status
@@ -360,7 +394,8 @@ def tableRuleErrors : Array String := Id.run do
   let reason := s!"{Ix.AuxGen.AuxTable.notAcceptedPrefix}{why}"
   unless onNotAccepted == #[(nm "p", .exempt reason), (nm "q", .exempt reason)] do
     errors := errors.push "the block-status rule: a non-accepted block's names are not exempt"
-  let t2 := Ix.AuxGen.AuxTable.ofFacts (identity := #[(nm "p", false), (nm "q", false)])
+  let t2 := Ix.AuxGen.AuxTable.ofFacts
+    (identity := #[(nm "p", false, ad "p"), (nm "q", false, ad "q")])
     (generated := #[]) (admitted := onNotAccepted) (exempt := #[])
   unless t2.counts.notAccepted == 2 && t2.counts.refused == 0 do
     errors := errors.push s!"the block-status counts: {repr t2.counts}"
@@ -452,6 +487,22 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
     acceptanceErrors pe table (cenv.p3Heads.contains ·) (allowLate := true)
   for l in accInfo do lines := lines.push l
   for e in accErrors do errors := errors.push e
+  -- AuxGen B9d: production's identity rows against the final `named`: no
+  -- duplicate disagrees, every `identical` row is published at its compared
+  -- address, and each `identical` row of the table carries that address
+  let idStats := cenv.auxReport.identityStats fun n => (pe.named.get? n).map (·.addr)
+  lines := lines.push s!"identity rows: {idStats.line}"
+  unless idStats.ok do
+    errors := errors.push s!"the identity rows disagree with the artifact: {idStats.line}"
+  let mut noAddr : Array String := #[]
+  for r in table.rows do
+    if r.verdict == .identical then
+      match r.addr, pe.named.get? r.name with
+      | some a, some named => if a != named.addr then noAddr := noAddr.push r.name.pretty
+      | _, _ => noAddr := noAddr.push r.name.pretty
+  if !noAddr.isEmpty then
+    errors := errors.push s!"{noAddr.size} identical rows without their published address: \
+      {", ".intercalate (noAddr.extract 0 4).toList}"
   -- the tails' Source verdicts themselves (a changed block's regenerated
   -- auxiliaries are published under display names, so not every verdict is a
   -- row): none refused (the stop rule)
