@@ -17,7 +17,8 @@ constant to Ixon. **Quotient Source** checks a Lean environment with every
 fiber collapsed to one representative: the lowered declarations are renamed so
 that every key of a fiber becomes the fiber's representative (`substKeys`),
 and of the declarations that become equal only the first is kept
-(`collapseDecls`). A dropped declaration must be the kept one after renaming
+(`collapseDecls`, one `CollapseState.step` per declaration). A dropped
+declaration must be the kept one after renaming
 — `FiberHyp`, checked here decidably (`Declaration.beqF`) for every drop; a
 declaration whose renamed form meets an earlier declaration without equalling
 it is refused (`CollapseError.mismatch`), so no fiber is ever trusted.
@@ -436,29 +437,59 @@ structure Collapsed where
   /-- each dropped name, with the representative its fiber's kept declaration declares -/
   dropped : Array (Ix.Kernel.Key .source × Ix.Kernel.Key .source) := #[]
 
+/-- What a collapse has kept so far: the kept declarations, in order, and for
+every kept name the index of the kept declaration that declares it. -/
+structure CollapseState where
+  kept : Array (Ix.Kernel.Declaration .source) := #[]
+  owner : Std.HashMap (Ix.Kernel.Key .source) Nat := {}
+
+/-- **One step of the collapse** (`FiberHyp`, decided): a renamed declaration
+`d'` none of whose names is kept is kept (`true`); one whose every name the kept
+declaration `k` declares, and which is that declaration, is dropped (`false`);
+anything else is refused, reported at `first` (the input's name for it). The
+new state comes back on every path (a drop or a refusal leaves it as it was),
+so a caller that threads it never holds the old one and the state is updated
+in place. -/
+def CollapseState.step (s : CollapseState) (first : Ix.Kernel.Key .source)
+    (d' : Ix.Kernel.Declaration .source) : CollapseState × Except CollapseError Bool :=
+  let ns := d'.names
+  match ns.findSome? (s.owner[·]?) with
+  | none =>
+    let ⟨kept, owner⟩ := s
+    let i := kept.size
+    ({ kept := kept.push d', owner := ns.foldl (fun o n => o.insert n i) owner }, .ok true)
+  | some k =>
+    if ns.all (s.owner[·]? == some k) && Declaration.beqF d' s.kept[k]! then (s, .ok false)
+    else (s, .error (.mismatch first (ns.head?.getD (.id .anonymous))))
+
+/-- A kept declaration is appended; a dropped one changes nothing. -/
+theorem CollapseState.step_kept {s s' : CollapseState} {first : Ix.Kernel.Key .source}
+    {d' : Ix.Kernel.Declaration .source} {b : Bool} (h : s.step first d' = (s', .ok b)) :
+    s'.kept = if b then s.kept.push d' else s.kept := by
+  obtain ⟨kept, owner⟩ := s
+  unfold CollapseState.step at h
+  dsimp only at h
+  split at h
+  · cases h; simp
+  · split at h
+    · cases h; simp
+    · cases h
+
 /-- **The collapse** (`FiberHyp`, decided): rename every declaration by `ρ`, in
-order; a renamed declaration none of whose names is declared yet is kept; one
-whose every name an earlier kept declaration declares, and which is that
-declaration, is dropped; anything else is refused. -/
+order, and take the collapse's step (`CollapseState.step`): a renamed
+declaration none of whose names is declared yet is kept; one whose every name an
+earlier kept declaration declares, and which is that declaration, is dropped;
+anything else is refused. -/
 def collapseDecls (ρ : FiberMap) (ds : Array (Ix.Kernel.Declaration .source)) :
     Except CollapseError Collapsed := do
-  let mut kept : Array (Ix.Kernel.Declaration .source) := #[]
-  let mut owner : Std.HashMap (Ix.Kernel.Key .source) Nat := {}
+  let mut s : CollapseState := {}
   let mut dropped : Array (Ix.Kernel.Key .source × Ix.Kernel.Key .source) := #[]
   for d in ds do
     let d' := Declaration.substKeys ρ d
-    let ns := d'.names
-    match ns.findSome? (owner[·]?) with
-    | none =>
-      for n in ns do owner := owner.insert n kept.size
-      kept := kept.push d'
-    | some k =>
-      let first := d.names.head?.getD (.id .anonymous)
-      let rep := ns.head?.getD (.id .anonymous)
-      unless ns.all (owner[·]? == some k) && Declaration.beqF d' kept[k]! do
-        throw (.mismatch first rep)
-      dropped := dropped ++ (d.names.zip ns).toArray
-  return { decls := kept, dropped }
+    let (s', r) := s.step (d.names.head?.getD (.id .anonymous)) d'
+    s := s'
+    unless ← r do dropped := dropped ++ (d.names.zip d'.names).toArray
+  return { decls := s.kept, dropped }
 
 /-! ## The artifact's fibers
 
