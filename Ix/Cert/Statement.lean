@@ -600,21 +600,22 @@ theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
 unauthentic, no stored record is on a reference cycle, no two different
 names share a name hash, every `Muts` entry agrees with its block, every
 resolved name is published where it resolves, every published input
-inductive's component is seen and every input name of the aux map is
-published with an original-form record. -/
+inductive's component is seen, every input name of the aux map is published
+with an original-form record and every published input name is resolved or in
+the aux map. -/
 theorem checkReport_ok {env : Ix.Environment}
     {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address} {out : Ixon.Env × Failures}
     (h : checkReport env resolved aux out = .ok ()) :
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none ∧
       resolutionMismatch resolved out.1 = none ∧ unseenInductive env out.1 = none ∧
-      unoriginalAux env aux out.1 = none := by
+      unoriginalAux env aux out.1 = none ∧ unresolvedPublished env resolved aux out.1 = none := by
   unfold checkReport at h
   revert h
   cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;>
     cases nameHashCollision env out.1 <;> cases mutsMismatch out.1 <;>
     cases resolutionMismatch resolved out.1 <;> cases unseenInductive env out.1 <;>
-    cases unoriginalAux env aux out.1 <;> simp
+    cases unoriginalAux env aux out.1 <;> cases unresolvedPublished env resolved aux out.1 <;> simp
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -623,7 +624,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, _, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -927,7 +928,39 @@ theorem auxOriginal {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures
         env.consts.contains n = true →
           ∃ named, ixe.named.get? n = some named ∧ named.original.isSome = true := by
   obtain ⟨resolved, aux, hu, hc⟩ := compileReport_ok h
-  exact ⟨resolved, aux, hu, unoriginalAux_none (checkReport_ok hc).2.2.2.2.2.2.2⟩
+  exact ⟨resolved, aux, hu, unoriginalAux_none (checkReport_ok hc).2.2.2.2.2.2.2.1⟩
+
+/-- What `unresolvedPublished = none` says: every published input name is in
+`resolved` or in `aux`. -/
+theorem unresolvedPublished_none {env : Ix.Environment}
+    {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address} {ixe : Ixon.Env}
+    (h : unresolvedPublished env resolved aux ixe = none) :
+    ∀ (n : Ix.Name) (named : Ixon.Named), (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
+      resolved.contains n = true ∨ aux.contains n = true := by
+  intro n named hmem hin
+  unfold unresolvedPublished at h
+  rw [List.findSome?_eq_none_iff] at h
+  have hfind := h (n, named) hmem
+  dsimp only at hfind
+  cases hr : resolved.contains n
+  · cases ha : aux.contains n
+    · simp [hin, hr, ha] at hfind
+    · exact .inr rfl
+  · exact .inl rfl
+
+/-- **Published input names are resolved**: `compileReport`'s result comes
+with the driver's final resolution and aux maps (`compileUnchecked`'s third and
+fourth components), and every published input name is in one of them
+(`checkReport`'s ninth check). So a published input name is a primary claim of
+a block compiled during the fold (`Ix.Cert.Resolution.compileReport_claim`),
+or resolves through the aux map with an original-form record (`auxOriginal`). -/
+theorem publishedResolved {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∃ resolved aux, compileUnchecked env = .ok (ixe, failures, resolved, aux) ∧
+      ∀ (n : Ix.Name) (named : Ixon.Named), (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
+        resolved.contains n = true ∨ aux.contains n = true := by
+  obtain ⟨resolved, aux, hu, hc⟩ := compileReport_ok h
+  exact ⟨resolved, aux, hu, unresolvedPublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2⟩
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`

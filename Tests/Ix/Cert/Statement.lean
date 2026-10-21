@@ -287,6 +287,32 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           original-form check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts an input name without an \
         original-form record in the aux map"
+  -- the publication check (every published input name resolved or in the
+  -- driver's final aux map), timed alone on the compile's result, then
+  -- refusing, by its own message, the result with a published input name
+  -- dropped from both maps
+  let p0 ← IO.monoMsNow
+  let unresolved? ← IO.lazyPure fun _ => Ix.Cert.unresolvedPublished env resolved aux ixe
+  let p1 ← IO.monoMsNow
+  match unresolved? with
+  | none => lines := lines.push s!"{label}: unresolvedPublished finds every published input name \
+      resolved or in the aux map ({ixe.named.size} published names, {p1 - p0} ms)"
+  | some n => errors := errors.push s!"{label}: unresolvedPublished finds {n.pretty} in the compile's result"
+  let droppable := env.consts.toList.findSome? fun (n, _) =>
+    if ixe.named.contains n && resolved.contains n then some n else none
+  match droppable with
+  | none => errors := errors.push s!"{label}: no published, resolved input name"
+  | some n =>
+    match Ix.Cert.checkReport env (resolved.erase n) (aux.erase n) (ixe, failures) with
+    | .error e =>
+      if (e.splitOn "publication check failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses a published input name dropped from \
+          the resolution and aux maps ({n.pretty})"
+      else
+        errors := errors.push s!"{label}: the dropped published name is refused, but not by the \
+          publication check: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a published input name \
+        neither resolved nor in the aux map"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find

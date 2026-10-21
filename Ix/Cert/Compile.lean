@@ -673,7 +673,21 @@ primary claim of its own block's compile (`Ix.Cert.Resolution`). -/
   aux.toList.findSome? fun (n, _) =>
     if env.consts.contains n && !((ixe.named.get? n).any (·.original.isSome)) then some n else none
 
-/-- `compileReport`'s eight checks on a compile's result, each an error on
+/-- The first input name published in `ixe` that is neither in the driver's
+final resolution map (`resolved`) nor in its final aux map (`aux`), if any. A
+`Named` entry can come from a block's aux tail (`BlockState.auxNamed`, written
+after AuxGen's `partial` code, which no proof follows), so publication alone
+says nothing of where a name's record came from. With no such name, every
+published input name is a primary claim of a block compiled during the fold
+(`Ix.Cert.Resolution.compileReport_claim`) or resolves through the aux map,
+with an original-form record (`unoriginalAux`). -/
+@[expose] def unresolvedPublished (env : Ix.Environment)
+    (resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (ixe : Ixon.Env) :
+    Option Ix.Name :=
+  ixe.named.toList.findSome? fun (n, _) =>
+    if env.consts.contains n && !resolved.contains n && !aux.contains n then some n else none
+
+/-- `compileReport`'s nine checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -689,7 +703,9 @@ to (`resolutionMismatch`). **Every inductive component is seen:** each
 published input inductive is published at an inductive projection of a block
 with a `Muts` entry at its address (`unseenInductive`). **Aux-resolved input
 names have original-form records:** each input name of the driver's final aux
-map `aux` is published with `Named.original` (`unoriginalAux`). -/
+map `aux` is published with `Named.original` (`unoriginalAux`). **Published
+input names are resolved:** each published input name is in `resolved` or in
+`aux` (`unresolvedPublished`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
     (aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (out : Ixon.Env × Failures) :
@@ -707,7 +723,12 @@ map `aux` is published with `Named.original` (`unoriginalAux`). -/
             match unseenInductive env out.1 with
             | none =>
               match unoriginalAux env aux out.1 with
-              | none => .ok ()
+              | none =>
+                match unresolvedPublished env resolved aux out.1 with
+                | none => .ok ()
+                | some n =>
+                  .error s!"compileReport: publication check failed: the input name {n.pretty} \
+                    is published but neither resolved nor in the aux map"
               | some n =>
                 .error s!"compileReport: original-form check failed: the input name {n.pretty} \
                   resolves through the aux map but is not published with an original-form record"
@@ -739,7 +760,7 @@ map `aux` is published with `Named.original` (`unoriginalAux`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with eight checks (`checkReport`):
+condensation it cannot schedule). It ends with nine checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -748,16 +769,19 @@ only names published at member `i`'s projection of its block; every name
 the driver resolves is published at the address it resolves to; every
 published input inductive is published at an inductive projection of a
 block with a `Muts` entry; and every input name of the driver's final aux map
-is published with an original-form record. Any inconsistency is an error, and no artifact is
+is published with an original-form record; and every published input name is
+resolved or in the aux map. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that
 agree with their blocks, resolved names published where they resolve,
-inductive components the changed set sees, and original-form records for the
-input names the aux map resolves, hold by construction
+inductive components the changed set sees, original-form records for the input
+names the aux map resolves, and resolved published input names, hold by
+construction
 (`Ix.Cert.compileCovers`, `Ix.Cert.compileAuthentic`,
 `Ix.Cert.ClosureOrder`'s existence, `Ix.Cert.nameHashes_distinct`,
 `Ix.Cert.mutsMismatch_none`, `Ix.Cert.resolvedPublished`,
-`Ix.Cert.inductivesSeen`, `Ix.Cert.auxOriginal`); on a consistent run the result is
+`Ix.Cert.inductivesSeen`, `Ix.Cert.auxOriginal`, `Ix.Cert.publishedResolved`); on a
+consistent run the result is
 `compileUnchecked`'s environment and failures, byte for byte. -/
 @[expose] def compileReport (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
   let (ixe, failures, resolved, aux) ← compileUnchecked env

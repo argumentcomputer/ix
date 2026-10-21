@@ -1132,7 +1132,13 @@ fun env resolved aux out =>
             match Ix.Cert.unseenInductive env out.fst with
             | none =>
               match Ix.Cert.unoriginalAux env aux out.fst with
-              | none => Except.ok ()
+              | none =>
+                match Ix.Cert.unresolvedPublished env resolved aux out.fst with
+                | none => Except.ok ()
+                | some n =>
+                  Except.error
+                    (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
+                      toString " is published but neither resolved nor in the aux map")
               | some n =>
                 Except.error
                   (toString "compileReport: original-form check failed: the input name " ++ toString n.pretty ++
@@ -1319,7 +1325,9 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
           Ix.Cert.nameHashCollision env out.fst = none ∧
             Ix.Cert.mutsMismatch out.fst = none ∧
               Ix.Cert.resolutionMismatch resolved out.fst = none ∧
-                Ix.Cert.unseenInductive env out.fst = none ∧ Ix.Cert.unoriginalAux env aux out.fst = none -/
+                Ix.Cert.unseenInductive env out.fst = none ∧
+                  Ix.Cert.unoriginalAux env aux out.fst = none ∧
+                    Ix.Cert.unresolvedPublished env resolved aux out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4573,6 +4581,44 @@ fun env aux ixe =>
     aux.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unoriginalAux
+
+/-! ## Published input names are resolved (B9b, `HookFree`'s discharge, (v); coordinator decision, 2026-10-21)
+
+A `Named` entry can come from a block's aux tail (`BlockState.auxNamed`,
+written after AuxGen's `partial` code, which no proof follows), so a published
+input name need not be one the driver resolved. `compileReport` now refuses a
+result in which a published input name is neither in the driver's final
+resolution map nor in its final aux map (`checkReport`'s ninth check,
+`unresolvedPublished`; probe `ports/20261021T034341Z-hookprobe`: on Init+Std,
+117,694 published input names, on Mathlib 783,115, all resolved or in the aux
+map). So every published input name is a
+primary claim of a block compiled during the fold
+(`Ix.Cert.Resolution.compileReport_claim`) or resolves through the aux map
+with an original-form record (`auxOriginal`). Re-frozen with it:
+`checkReport`'s print and `checkReport_ok` (a ninth
+conjunct). On a consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] publication: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] publication: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "publication"
+    (#[`unresolvedPublished_none, `publishedResolved].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "publication" #[``Ix.Cert.unresolvedPublished]
+
+/-- info: def Ix.Cert.unresolvedPublished : Ix.Environment →
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address →
+    Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env → Option Ix.Name :=
+fun env resolved aux ixe =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, snd) => if (env.consts.contains n && !resolved.contains n && !aux.contains n) = true then some n else none)
+    ixe.named.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.unresolvedPublished
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 
