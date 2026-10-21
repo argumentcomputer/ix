@@ -1149,7 +1149,7 @@ fun env cenv out =>
                     | some h =>
                       Except.error
                         (toString "compileReport: heads check failed: the Pass 3 head " ++ toString h.pretty ++
-                          toString " is not in the changed set")
+                          toString " is not a regenerated published input name, so not known to be in the changed set")
                   | some n =>
                     Except.error
                       (toString "compileReport: cross-SCC check failed: the name " ++ toString n.pretty ++
@@ -4720,7 +4720,21 @@ set). With it, a block whose members and references avoid the changed set
 meets no head at block time (with the fold's monotonicity: a head leaves the
 heads only with its name among the failures). Re-frozen with it:
 `checkReport`'s print and `checkReport_ok` (an eleventh conjunct). On a
-consistent run the result is unchanged. -/
+consistent run the result is unchanged.
+
+**Re-frozen (2026-10-21, coordinator decision): the check reads the
+regenerated names.** Computing the changed set cost about 245 s on Mathlib,
+about half of the compile phase (`ports/20261021T065228Z-hookprobe`, quiet
+box). `foreignHead` now refuses a head that is not a regenerated published
+input name (`regeneratedNames`: a `Named` entry whose original-form record is
+at another address, of an input name), one pass over the published names.
+Each such name has a `regenerated` entry in the changed set whatever its
+changed components (`Unchanged.regenerated_entry`), so `foreignHead_none` and
+`headsChanged` keep their statements; they moved to `Ix.Cert.Unchanged`,
+which proves them through `regeneratedNames_spec`. Re-frozen with it:
+`foreignHead`'s print and `checkReport`'s print (the heads check's message).
+The check is stronger than the changed-set test it replaces; on valid input
+every head is regenerated (see the pushes record for the probe). -/
 
 /-- info: [cert-audit] heads: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -4737,14 +4751,25 @@ run_cmd do
 fun env heads ixe =>
   if heads.isEmpty = true then none
   else
-    have changed := Ix.Compile.ChangedSet.ofCompile env ixe;
+    have regenerated := Ix.Cert.regeneratedNames env ixe;
     List.findSome?
       (fun x =>
         match x with
-        | (h, snd) => if changed.contains h = true then none else some h)
+        | (h, snd) => if regenerated.contains h = true then none else some h)
       heads.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.foreignHead
+
+/-- info: def Ix.Cert.regeneratedNames : Ix.Environment → Ixon.Env → Std.HashSet Ix.Compile.ExactKey.ExactName :=
+fun env ixe =>
+  Std.HashMap.fold
+    (fun s n named =>
+      match named.original with
+      | some (orig, snd) => if (orig != named.addr && (env.consts.get? n).isSome) = true then s.insert n else s
+      | none => s)
+    ∅ ixe.named -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.regeneratedNames
 
 /-! ## Input constants carry their names (B9b, `HookFree`'s discharge, membership; coordinator decision, 2026-10-21)
 

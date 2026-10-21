@@ -681,3 +681,122 @@ theorem avoids_unchanged {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Envir
   unchanged_of_not_contains env ixe (avoids n ci found)
 
 end Ix.Cert.Unchanged
+
+/-! ## Pass 3's heads are in the changed set (`checkReport`'s eleventh check)
+
+The check reads the regenerated published input names (`Ix.Cert.regeneratedNames`),
+each of which has a `regenerated` entry in the changed set whatever its
+changed components (`regenerated_entry`). -/
+
+namespace Ix.Cert
+
+open Ix.Cert.Unchanged
+
+theorem exact_insert_contains {s : Std.HashSet Ix.Compile.ExactKey.ExactName}
+    {k n : Ix.Compile.ExactKey.ExactName} (h : (s.insert k).contains n = true) :
+    k = n ∨ s.contains n = true := by
+  rw [Std.HashSet.contains_insert] at h
+  rcases Bool.or_eq_true_iff.1 h with h | h
+  · exact .inl (beq_iff_eq.mp h)
+  · exact .inr h
+
+/-- A regenerated name is a published input name whose `Named` entry has an
+original-form record at another address. -/
+theorem regeneratedNames_spec {env : Ix.Environment} {ixe : Ixon.Env}
+    {n : Ix.Compile.ExactKey.ExactName} (h : (regeneratedNames env ixe).contains n = true) :
+    ∃ (named : Ixon.Named) (orig : Address) (cmeta : Ixon.ConstantMeta),
+      ((n : Name), named) ∈ ixe.named.toList ∧ named.original = some (orig, cmeta) ∧
+        (orig != named.addr && (env.consts.get? n).isSome) = true := by
+  unfold regeneratedNames at h
+  rw [Std.HashMap.fold_eq_foldl_toList] at h
+  have key : ∀ (l : List (Name × Ixon.Named)) (s : Std.HashSet Ix.Compile.ExactKey.ExactName),
+      (l.foldl (fun s p => match p.2.original with
+        | some (orig, _) => if (orig != p.2.addr && (env.consts.get? p.1).isSome) = true then s.insert p.1 else s
+        | none => s) s).contains n = true →
+      s.contains n = true ∨ ∃ (named : Ixon.Named) (orig : Address) (cmeta : Ixon.ConstantMeta),
+        ((n : Name), named) ∈ l ∧ named.original = some (orig, cmeta) ∧
+          (orig != named.addr && (env.consts.get? n).isSome) = true := by
+    intro l
+    induction l with
+    | nil => intro s hs; exact .inl hs
+    | cons p l ih =>
+      intro s hs
+      rw [List.foldl_cons] at hs
+      rcases ih _ hs with hs | ⟨named, orig, cmeta, hmem, ho, hd⟩
+      · obtain ⟨k, named⟩ := p
+        dsimp only at hs
+        split at hs
+        · rename_i orig cmeta ho
+          split at hs
+          · rename_i hd
+            rcases exact_insert_contains (k := k) hs with hk | hs
+            · subst hk
+              exact .inr ⟨named, orig, cmeta, List.mem_cons_self, ho, hd⟩
+            · exact .inl hs
+          · exact .inl hs
+        · exact .inl hs
+      · exact .inr ⟨named, orig, cmeta, List.mem_cons_of_mem _ hmem, ho, hd⟩
+  rcases key _ ∅ h with h | h
+  · simp at h
+  · exact h
+
+/-- A name the input's map holds is one the input holds. -/
+theorem get?_isSome_of_consts {env : Ix.Environment} {n : Name} (h : (env.consts.get? n).isSome = true) :
+    (env.get? n).isSome = true := by
+  obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp h
+  unfold Ix.Environment.get?
+  rw [hci]
+  rfl
+
+/-- What `foreignHead = none` says first: every key of `heads` is a
+regenerated published input name. -/
+theorem foreignHead_regenerated {env : Ix.Environment}
+    {heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name} {ixe : Ixon.Env}
+    (h : foreignHead env heads ixe = none) :
+    ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), heads.get? n = some k →
+      (regeneratedNames env ixe).contains n = true := by
+  intro n k hn
+  unfold foreignHead at h
+  have hne : heads.isEmpty = false := by
+    rw [Std.HashMap.isEmpty_eq_false_iff_exists_contains_eq_true]
+    exact ⟨n, by rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hn]; rfl⟩
+  rw [hne] at h
+  simp only [Bool.false_eq_true, ↓reduceIte] at h
+  rw [List.findSome?_eq_none_iff] at h
+  have hmem : (n, k) ∈ heads.toList := by
+    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
+    exact hn
+  have hfind := h (n, k) hmem
+  dsimp only at hfind
+  cases hc : (regeneratedNames env ixe).contains n
+  · simp [hc] at hfind
+  · rfl
+
+/-- What `foreignHead = none` says: every key of `heads` is in the changed
+set of the compile of `env` to `ixe` (each is a regenerated published input
+name, `foreignHead_regenerated` and `regeneratedNames_spec`, with a
+`regenerated` entry in the set, `Unchanged.regenerated_entry`). -/
+theorem foreignHead_none {env : Ix.Environment}
+    {heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name} {ixe : Ixon.Env}
+    (h : foreignHead env heads ixe = none) :
+    ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), heads.get? n = some k →
+      (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
+  intro n k hn
+  obtain ⟨named, orig, cmeta, hnamed, ho, hd⟩ := regeneratedNames_spec (foreignHead_regenerated h n k hn)
+  rw [Bool.and_eq_true] at hd
+  exact contains_of_entry env ixe
+    (regenerated_entry env ixe _ hnamed ho (by rw [Bool.and_eq_true]; exact ⟨hd.1, get?_isSome_of_consts hd.2⟩))
+    BEq.rfl
+
+/-- **Pass 3's heads are in the changed set**: in the driver's final
+environment, which `compileUnchecked` returns, every Pass 3 head is in the
+compile's changed set (`checkReport`'s eleventh check). -/
+theorem headsChanged {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
+      ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k →
+        (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
+  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
+  exact ⟨cenv, hu, foreignHead_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1⟩
+
+end Ix.Cert

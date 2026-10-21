@@ -1060,41 +1060,6 @@ theorem noCrossClaims {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
   exact ⟨cenv, hu, crossClaimed_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.1⟩
 
-/-- What `foreignHead = none` says: every key of `heads` is in the changed
-set of the compile of `env` to `ixe`. -/
-theorem foreignHead_none {env : Ix.Environment}
-    {heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name} {ixe : Ixon.Env}
-    (h : foreignHead env heads ixe = none) :
-    ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), heads.get? n = some k →
-      (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
-  intro n k hn
-  unfold foreignHead at h
-  have hne : heads.isEmpty = false := by
-    rw [Std.HashMap.isEmpty_eq_false_iff_exists_contains_eq_true]
-    exact ⟨n, by rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hn]; rfl⟩
-  rw [hne] at h
-  simp only [Bool.false_eq_true, ↓reduceIte] at h
-  rw [List.findSome?_eq_none_iff] at h
-  have hmem : (n, k) ∈ heads.toList := by
-    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
-    exact hn
-  have hfind := h (n, k) hmem
-  dsimp only at hfind
-  cases hc : (Ix.Compile.ChangedSet.ofCompile env ixe).contains n
-  · simp [hc] at hfind
-  · rfl
-
-/-- **Pass 3's heads are in the changed set**: in the driver's final
-environment, which `compileUnchecked` returns, every Pass 3 head is in the
-compile's changed set (`checkReport`'s eleventh check). -/
-theorem headsChanged {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    (h : compileReport env = .ok (ixe, failures)) :
-    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      ∀ (n : Ix.Compile.ExactKey.ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k →
-        (Ix.Compile.ChangedSet.ofCompile env ixe).contains n = true := by
-  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, foreignHead_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1⟩
-
 /-- What `misnamedInput = none` says: every input constant's own name hashes
 like the name it is stored under. -/
 theorem misnamedInput_none {env : Ix.Environment} (h : misnamedInput env = none) :

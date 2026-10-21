@@ -380,14 +380,15 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       else errors := errors.push s!"{label}: crossClaimed finds {m.pretty}, not the constructor"
     | none => errors := errors.push s!"{label}: crossClaimed misses a resolved constructor whose \
         inductive is among the extra names"
-  -- the heads check (every Pass 3 head of the driver's final environment in
-  -- the changed set), timed alone, then refusing, by its own message, the
-  -- environment with a resolved name outside the changed set planted as a head
+  -- the heads check (every Pass 3 head of the driver's final environment a
+  -- regenerated published input name, so in the changed set), timed alone,
+  -- then refusing, by its own message, the environment with a resolved name
+  -- outside the changed set (so not regenerated) planted as a head
   let q0 ← IO.monoMsNow
   let foreign? ← IO.lazyPure fun _ => Ix.Cert.foreignHead env cenv.p3Heads ixe
   let q1 ← IO.monoMsNow
   match foreign? with
-  | none => lines := lines.push s!"{label}: foreignHead finds every Pass 3 head in the changed set \
+  | none => lines := lines.push s!"{label}: foreignHead finds every Pass 3 head among the regenerated names \
       ({cenv.p3Heads.size} heads, {q1 - q0} ms)"
   | some h => errors := errors.push s!"{label}: foreignHead finds {h.pretty} in the compile's result"
   let changed := Ix.Compile.ChangedSet.ofCompile env ixe

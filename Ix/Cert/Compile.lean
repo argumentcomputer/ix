@@ -716,21 +716,37 @@ resolved name outside the aux map is a cross-SCC subset's claim. -/
   resolved.toList.findSome? fun (n, _) =>
     if !aux.contains n && (extras.contains n || ctors.contains n) then some n else none
 
+/-- The published input names whose record is not their original form: a
+`Named` entry with an original-form record (`Named.original`) at another
+address than its own, of a name the input holds. These are the changed set's
+`regenerated` entries (`Ix.Compile.ChangedSet.ofCompile`'s third loop), which
+it computes from the published names alone, without the changed components. -/
+@[expose] def regeneratedNames (env : Ix.Environment) (ixe : Ixon.Env) :
+    Std.HashSet Ix.Compile.ExactKey.ExactName :=
+  ixe.named.fold (init := {}) fun s n named =>
+    match named.original with
+    | some (orig, _) => if (orig != named.addr && (env.consts.get? n).isSome) = true then s.insert n else s
+    | none => s
+
 /-- The first key of the driver's final Pass 3 heads (`heads`,
-`CompileEnv.p3Heads`) that the compile's changed set
-(`Ix.Compile.ChangedSet.ofCompile env ixe`) does not contain, if any (none
-without heads, and then the changed set is not computed). A head is published
-by a block's merge from Pass 3's hook 1 (`editBlock`), whose inputs come from
-the aux tail (AuxGen's `partial` code, which no proof follows), and hook 2
-(`prepareBlock`) rewrites every block that references one. With no such key,
-no head is outside the changed set, so a block whose members and references
-avoid the set compiles with hook 2 the identity. -/
+`CompileEnv.p3Heads`) that is not a regenerated published input name
+(`regeneratedNames`), if any (none without heads, and then nothing is
+computed). A head is published by a block's merge from Pass 3's hook 1
+(`editBlock`), whose inputs come from the aux tail (AuxGen's `partial` code,
+which no proof follows), and hook 2 (`prepareBlock`) rewrites every block that
+references one. Every regenerated name is in the compile's changed set (its
+`regenerated` entry), so with no such key no head is outside the changed set,
+and a block whose members and references avoid the set compiles with hook 2
+the identity. The check reads the regenerated names, one pass over the
+published names, instead of the whole changed set, whose changed components
+and callers cost about half of Mathlib's compile phase
+(`ports/20261021T065228Z-hookprobe`). -/
 @[expose] def foreignHead (env : Ix.Environment)
     (heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name) (ixe : Ixon.Env) : Option Ix.Name :=
   if heads.isEmpty then none
   else
-    let changed := Ix.Compile.ChangedSet.ofCompile env ixe
-    heads.toList.findSome? fun (h, _) => if changed.contains h then none else some h
+    let regenerated := regeneratedNames env ixe
+    heads.toList.findSome? fun (h, _) => if regenerated.contains h then none else some h
 
 /-- The first input constant whose own name (`ConstantVal.name`) does not hash
 like the name it is stored under, if any. The block compile names its
@@ -779,7 +795,8 @@ input name is in the resolution map or in the aux map (`unresolvedPublished`).
 **No cross-SCC claims:** no resolved name outside the aux map is among the
 extra names, nor a constructor of an inductive among them (`crossClaimed`).
 **Heads are changed:** each of the driver's final
-Pass 3 heads (`cenv.p3Heads`) is in the changed set (`foreignHead`). **Input
+Pass 3 heads (`cenv.p3Heads`) is a regenerated published input name
+(`regeneratedNames`), so in the changed set (`foreignHead`). **Input
 constants carry their names:** each input constant's own name hashes like the
 name it is stored under (`misnamedInput`). **Input constructors belong to their
 inductive:** each constructor an input inductive lists is stored as a
@@ -818,7 +835,7 @@ constructor of it (`strayConstructor`). -/
                           under {n.pretty} carries another name"
                     | some h =>
                       .error s!"compileReport: heads check failed: the Pass 3 head {h.pretty} is not \
-                        in the changed set"
+                        a regenerated published input name, so not known to be in the changed set"
                   | some n =>
                     .error s!"compileReport: cross-SCC check failed: the name {n.pretty} resolves \
                       outside the aux map and is among the extra names or is a constructor of an inductive \
