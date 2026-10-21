@@ -22,6 +22,15 @@
      selected closure of a `Nat.land` user holds `Nat.mul`, and the raw
      closure does not. The drift check of the derivation against
      `natOpDeps` is a separate test.
+  5. **Self-contained for IxC.** The selected closure of `matcher` holds
+     `Nat.rec` (the certified reader declines an inductive block without
+     its recursor); the raw closure does not. The selected closure of
+     `greeting`, a string literal, holds the literal support
+     (`literalSupportLeanNames`, `String.ofList` among them; IxC declines a
+     string literal before it); the raw closure lacks `String.ofList`, and a
+     closure with no string literal (`landUser`'s) does not gain it. A
+     literal in a theorem's proof only (`stringInProof`, the rest of its
+     closure without one) brings the support too.
 
   `compiler-selected-closure-e2e` (`run`, ignored) compiles the same
   fixture whole and as each selected closure:
@@ -68,6 +77,14 @@ theorem carriedProof : matcher 0 = 0 := matcher._arg_pusher
 /-- A user of `Nat.land`, whose certified install needs `Nat.mul`'s record
 (`natOpDeps Nat.land`), which `Nat.land`'s value does not reference. -/
 def landUser (a b : Nat) : Nat := Nat.land a b
+
+/-- A string literal, which references none of the constants IxC types it
+with (`String.ofList` among them). -/
+def greeting : String := "hi"
+
+/-- A String literal in a theorem's proof only: its type and the rest of its
+closure hold none, and a theorem's value is not `value?`'s by default. -/
+theorem stringInProof : True := (fun (_ : String) => trivial) "hi"
 
 /-! ## The fixture of check 1 -/
 
@@ -187,6 +204,31 @@ def suite : List TestSeq := [
       errors := errors.push "raw negative control: landUser's raw closure carries Nat.mul"
     unless selected.contains ``Nat.mul do
       errors := errors.push "landUser's selected closure lacks Nat.mul"
+    checked := checked + 1
+    -- 5. self-contained for IxC: an inductive's recursor, and the string-literal
+    -- support when a closed constant has a string literal
+    unless (nameSet (Ix.EnvScope.collectSelectedDeps env [``matcher])).contains ``Nat.rec do
+      errors := errors.push "the matcher's selected closure lacks Nat.rec"
+    if (nameSet (Ix.EnvScope.collectDeps env [``matcher] {})).contains ``Nat.rec then
+      errors := errors.push "raw negative control: the matcher's raw closure carries Nat.rec"
+    let greeted := nameSet (Ix.EnvScope.collectSelectedDeps env [``greeting])
+    for n in Ix.EnvScope.literalSupportLeanNames.filter env.contains do
+      unless greeted.contains n do
+        errors := errors.push s!"greeting's selected closure lacks the literal support {n}"
+    if (nameSet (Ix.EnvScope.collectDeps env [``greeting] {})).contains ``String.ofList then
+      errors := errors.push "raw negative control: greeting's raw closure carries String.ofList"
+    if selected.contains ``String.ofList then
+      errors := errors.push "landUser's selected closure (no string literal) carries String.ofList"
+    -- a String literal in a theorem's proof only (`value? (allowOpaque := true)`)
+    let some proofCi := env.find? ``stringInProof | throw (IO.userError "stringInProof missing")
+    let isStr : Expr → Bool | .lit (.strVal _) => true | _ => false
+    unless (proofCi.type.find? isStr).isNone && Ix.EnvScope.hasStringLiteral proofCi do
+      errors := errors.push "stringInProof: the literal is not in its proof only, or is not seen there"
+    unless (Ix.EnvScope.collectDeps env [``stringInProof] .selected).all fun (n, ci) =>
+        n == ``stringInProof || !Ix.EnvScope.hasStringLiteral ci do
+      errors := errors.push "stringInProof's closure holds another String literal (the case is vacuous)"
+    unless (nameSet (Ix.EnvScope.collectSelectedDeps env [``stringInProof])).contains ``String.ofList do
+      errors := errors.push "stringInProof's selected closure (a literal in a proof) lacks String.ofList"
     checked := checked + 1
     report errors checked "selected closure")
     (.individualIO "checker support agrees with the checker's install guard (natOpDeps)" none (do

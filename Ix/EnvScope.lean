@@ -17,6 +17,9 @@ public import Ix.Compile.Image.Expr
 -- (`Ix/SpecDigest.lean` does the same). This links `IxC.Kernel.Roles`'s
 -- import closure into the `ix` binary.
 import IxC.Kernel.Roles
+-- The string-literal support (`strLitSupportNames`), from the certified
+-- reader's own list, the same direction.
+import IxC.Kernel.Ixon.Reader
 
 public section
 
@@ -311,25 +314,57 @@ def introducedSupport (env : Lean.Environment) : List Lean.Name :=
     | .num p i _ => .num (toLean p) i
   (Ix.Compile.Image.imageSupport.toList.map toLean).eraseDups.filter env.contains
 
+/-- **The string-literal support**, as Lean names: the constants IxC types a
+`String` literal with (`Ix.Kernel.Reader.strLitSupportNames`, `Nat`'s
+included), spelled by their roles' Lean names. A literal references none of
+them, so a closure carries them only by asking. -/
+def literalSupportLeanNames : List Lean.Name :=
+  (Ix.Kernel.Reader.strLitSupportNames (md := .source)).filterMap fun
+    | .role r => some (kernelNameToLean r.leanName)
+    | .id n => some (kernelNameToLean n)
+    | .aux _ _ => none
+
+/-- Whether a constant's type or value holds a `String` literal: a theorem's proof
+and an opaque's value included (`value? (allowOpaque := true)`). -/
+def hasStringLiteral (ci : Lean.ConstantInfo) : Bool :=
+  let isStr : Lean.Expr → Bool
+    | .lit (.strVal _) => true
+    | _ => false
+  (ci.type.find? isStr).isSome || ((ci.value? (allowOpaque := true)).bind (·.find? isStr)).isSome
+
 /-- The closure of a selected compiler/checker input: `collectDeps` with
 `ClosureOptions.selected`, so recursors, whole logical units and
 checker-support ground close to the same fixed point as ordinary
 references, mutual `all` members and auxiliary-family siblings, seeded with
-the compiler's introduced references (`introducedSupport`) and their units. -/
+the compiler's introduced references (`introducedSupport`) and their units.
+
+The closure is **self-contained for IxC**: when a closed constant holds a
+`String` literal and the closure lacks some of the string-literal support
+(`literalSupportLeanNames`), it is closed again with that support as seeds
+(the certified checker declines a string literal before `String.ofList` and
+its fellows are installed, and the literal names none of them). -/
 def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
     List (Lean.Name × Lean.ConstantInfo) :=
-  collectDeps env (seeds ++ introducedSupport env) .selected
+  let seeds := seeds ++ introducedSupport env
+  let closed := collectDeps env seeds .selected
+  let support := literalSupportLeanNames.filter env.contains
+  let names : Lean.NameSet := closed.foldl (fun s (n, _) => s.insert n) {}
+  if !support.all names.contains && closed.any (hasStringLiteral ·.2) then
+    collectDeps env (seeds ++ support) .selected
+  else closed
 
 /-- Default (unfiltered) constant list for a file env. Classic files keep the
 historical whole-import-env behavior (byte-identical artifacts). Module-mode
 files seed from the module-visible surface — the `OLeanLevel.exported` name
-set plus everything the file itself elaborates — closed over transitive deps
-against the full-content env: referenced foreign `_private.*` proof
-auxiliaries are pulled in (their content is mandatory for groundedness and
-their named rows for decompile/tc lookups), while unreferenced foreign
-privates stay out — the qualified-package isolation the `module` header asks
-for. Content always comes from `fe.env` (full, private-level); the exported
-view contributes names only. -/
+set plus everything the file itself elaborates — closed as a selected input
+(`collectSelectedDeps`) against the full-content env: referenced foreign
+`_private.*` proof auxiliaries are pulled in (their content is mandatory for
+groundedness and their named rows for decompile/tc lookups), with every
+inductive's recursor, whole logical units, checker support and the
+string-literal support (so the output is self-contained for IxC), while
+unreferenced foreign privates stay out — the qualified-package isolation the
+`module` header asks for. Content always comes from `fe.env` (full,
+private-level); the exported view contributes names only. -/
 def defaultConstList (fe : FileEnv) (pathStr : String)
     : IO (List (Lean.Name × Lean.ConstantInfo)) := do
   if !fe.isModule then
@@ -340,9 +375,9 @@ def defaultConstList (fe : FileEnv) (pathStr : String)
   for (n, _) in fe.env.constants.toList do
     if visible.contains n || (fe.env.getModuleIdxFor? n).isNone then
       seeds := n :: seeds
-  let closed := collectDeps fe.env seeds
+  let closed := collectSelectedDeps fe.env seeds
   IO.println s!"[env] module scope: {seeds.length} visible seed constant(s), \
-{closed.length} after transitive-dep closure"
+{closed.length} after the selected closure"
   return closed
 
 /-- The constants the file itself elaborates (no imported module owns them),

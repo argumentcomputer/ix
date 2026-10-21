@@ -33,12 +33,8 @@ def kernelNameToLean : Ix.Kernel.Name → Lean.Name
   | .num p n => .num (kernelNameToLean p) n
 
 /-- The Lean names of the literal support (`strLitSupportNames`, `Nat`'s
-included): role keys at `.source`, spelled by their roles' Lean names. -/
-def literalSupportLeanNames : List Lean.Name :=
-  (Ix.Kernel.Reader.strLitSupportNames (md := .source)).filterMap fun
-    | .role r => some (kernelNameToLean r.leanName)
-    | .id n => some (kernelNameToLean n)
-    | .aux _ _ => none
+included): `Ix.EnvScope`'s, where selected closures read them. -/
+def literalSupportLeanNames : List Lean.Name := Ix.EnvScope.literalSupportLeanNames
 
 /-- **The literal support a compile input lacks**, from the Lean environment
 it was taken from: the selected closure of the support declarations, minus
