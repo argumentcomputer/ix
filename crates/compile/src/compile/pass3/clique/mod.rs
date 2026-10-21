@@ -18,6 +18,7 @@
 //! | `Clique/Recover.lean` | [`recover`] |
 //! | `Clique/PlanClique.lean` | [`plan_clique`] |
 //! | `Clique/Hook.lean` | [`hook`] |
+//! | `Clique/Row.lean` | [`row`] |
 //!
 //! `Dag.lean`'s de Bruijn and locally nameless helpers are
 //! [`super::expr`]'s (re-exported by [`basic`]); [`basic`] has its walks
@@ -32,6 +33,7 @@ pub mod pf;
 pub mod plan;
 pub mod plan_clique;
 pub mod recover;
+pub mod row;
 pub mod structural;
 pub mod structural_eq;
 pub mod table;
