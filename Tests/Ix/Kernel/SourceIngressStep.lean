@@ -30,9 +30,10 @@ environment check does for Ixon records (`Benchmarks.Kernel.CheckIxeStep`):
 
 With a fiber map (`collapse`), the run is quotient Source's (`Ix.LeanIngress.checkSourceCollapsed`),
 step for step as `Ix.LeanIngress.lowerAllCollapsed` runs it: each group is renamed
-to its fibers' representatives before it is lowered (`graphCollapsed`'s renaming),
-and taken by `Ix.LeanIngress.collapseGroup`. An inductive group that is a kept
-block is that group's alias, not lowered or checked, with its verdict; a lowered
+to its fibers' representatives, with canonical levels, before it is lowered
+(`graphCollapsed`'s `Converted.quotient`), and taken by
+`Ix.LeanIngress.collapseGroup`. An inductive group that is a kept block is that
+group's alias, not lowered or checked, with its verdict; a lowered
 group's declarations equal to kept ones are dropped (a group all of whose
 declarations are dropped is their group's alias; one with some dropped is
 blocked behind their groups); a group that meets a kept name otherwise declines
@@ -136,10 +137,11 @@ def run (pre : Prelude .source) (env : Ix.Environment)
     | none => converted
   let t2 ← IO.monoMsNow
   let g ← IO.lazyPure fun _ => graphOf blocks groups converted
-  -- quotient Source: every conversion renamed to its fibers' representatives after
-  -- the hint override, before lowering (`Ix.LeanIngress.graphCollapsed`)
+  -- quotient Source: every conversion renamed to its fibers' representatives, with
+  -- canonical levels, after the hint override, before lowering
+  -- (`Ix.LeanIngress.graphCollapsed`'s `Converted.quotient`)
   let g : Graph := match collapse with
-    | some ρ => { g with converted := g.converted.map fun c => c.map (Converted.substKeys ρ) }
+    | some ρ => { g with converted := g.converted.map fun c => c.map (Converted.quotient ρ) }
     | none => g
   -- the tier groups (`isTierGroup`): the tier's conversion; their slots pass
   -- the logical conversion, so that the schedule's verdict on them is the

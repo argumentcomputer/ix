@@ -460,7 +460,9 @@ canonicalizes, and reads the variables back (`ofIdxIn`). The order matters:
 The ingress applies it to every lowered declaration, each constant over its
 own list (`Ix.LeanIngress.canonDecl`), after the lowering: the in-process
 modeller sees Lean's levels as Lean's kernel does, so its auxiliaries follow
-Lean's. The value of every level is unchanged (`canonLevelIn_eval`,
+Lean's. Quotient Source applies it to every group before the lowering instead
+(`Ix.LeanIngress.Converted.quotient`), as the Ixon reader reads canonical
+levels. The value of every level is unchanged (`canonLevelIn_eval`,
 `Ix/LeanIngress/CanonLevel.lean`). -/
 
 /-- The index of position `p` in the level-parameter list `lps`; a position

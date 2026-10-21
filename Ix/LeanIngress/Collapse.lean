@@ -15,9 +15,11 @@ Lean names constants; Ix addresses them by content. Two Lean constants whose
 content agrees once their references are identified (an *alias fiber*) are one
 constant to Ixon. **Quotient Source** checks a Lean environment with every
 fiber collapsed to one representative: every group is renamed so that every key
-of a fiber becomes the fiber's representative (`substKeys`) **before** it is
-lowered (`Ix.LeanIngress.lowerAllCollapsed`), so the in-process modeller runs
-on representatives; of the declarations that become equal only the first is
+of a fiber becomes the fiber's representative (`substKeys`), and given the
+compiler's canonical levels, **before** it is lowered
+(`Ix.LeanIngress.Converted.quotient`, `Ix.LeanIngress.lowerAllCollapsed`), so the
+in-process modeller runs on representatives and canonical levels, as on a
+compiled artifact; of the declarations that become equal only the first is
 kept (`CollapseState.step`; an inductive group that is a kept group's block is
 not lowered at all). A dropped declaration must be the kept one after renaming
 — `FiberHyp`, checked here decidably (`Declaration.beqF`) for every drop; a

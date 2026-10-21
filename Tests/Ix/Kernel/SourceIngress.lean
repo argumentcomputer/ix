@@ -387,7 +387,10 @@ declaration dropped; a map identifying unequal declarations is refused; and a
 or, without `Bool` in the closure, by the role table's address (`fiberAliasAt`).
 Quotient Source renames before lowering (`lowerAllCollapsed`): an alias block is
 never lowered, and a block that meets a kept block's names without being it is
-refused. -/
+refused. It also puts the levels in canonical form before lowering
+(`Converted.quotient`): at the identity map its stream is the nominal one except
+for the modeller's records, which stay as built (`Lean.Syntax`'s are not all
+canonical) and equal the nominal ones up to canonical levels. -/
 
 def kname (n : Lean.Name) : Ix.Kernel.Name := Ix.Kernel.Name.ofLeanName n
 
@@ -509,10 +512,34 @@ def evaluateQuotient : IO (Array String × Array String) := do
     | some .notRepresentative =>
       lines := lines.push "quotient: checks: unpublished constants refused (not representatives)"
     | r => errors := errors.push s!"quotient: checks: unpublished constants not refused: {r.map toString}"
+  -- canonical levels before lowering (`Converted.quotient`): at the identity map, quotient
+  -- Source's input declarations are the nominal ingress's (canonical after the lowering), and the
+  -- modeller's records are as it builds them from the canonical block (as the Ixon reader keeps
+  -- them), equal to the nominal ones up to canonical levels; `Lean.Syntax`'s nested block is one
+  -- whose generated records are not all canonical
+  let env6 ← envOf leanEnv #[`Lean.Syntax]
+  match prepareSource pre env6 (condense env6),
+      prepareSourceCollapsed {} (fun _ => none) pre env6 (condense env6) with
+  | .ok ds, .ok qs =>
+    let isCanon (d : Ix.Kernel.Declaration .source) : Bool := Declaration.beqF (canonDecl d) d
+    let gen := qs.filter (·.isGenerated)
+    let raw := gen.filter (!isCanon ·)
+    lines := lines.push s!"quotient: canonical levels: Lean.Syntax's closure, {qs.size} declarations, \
+      {gen.size} generated, {raw.size} of them not canonical"
+    let same (d q : Ix.Kernel.Declaration .source) : Bool :=
+      if q.isGenerated then Declaration.beqF d (canonDecl q) else Declaration.beqF d q
+    unless ds.size == qs.size && (ds.zip qs).all (fun (d, q) => same d q) do
+      errors := errors.push "quotient: canonical levels: the stream is not the nominal one up to \
+        the generated records' canonical levels"
+    if raw.isEmpty then
+      errors := errors.push "quotient: canonical levels: no generated record kept as built"
+    if ds.any (!isCanon ·) then
+      errors := errors.push "quotient: canonical levels: a nominal declaration is not canonical"
+  | .error err, _ | _, .error err => errors := errors.push s!"quotient: canonical levels: prepare: {err}"
   return (errors, lines)
 
 def quotient : TestSeq :=
-  .individualIO "quotient source: alias fibers collapsed, mismatches refused, role aliases" none (do
+  .individualIO "quotient source: alias fibers collapsed, mismatches refused, role aliases, canonical levels" none (do
     let (errors, lines) ← evaluateQuotient
     for l in lines do IO.println l
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
