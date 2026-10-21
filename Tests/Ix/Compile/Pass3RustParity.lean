@@ -67,6 +67,7 @@ import Tests.Ix.Compile.ImageProto
 import Ix.CompileDriver
 import Ix.EnvScope
 import Tests.Ix.Compile.Harness.Units
+import Ix.AuxGen.LiteralSupport
 import Tests.Ix.Compile.Clique.Ownership
 
 open Lean
@@ -200,16 +201,19 @@ def runCase (c : Case) : CoreM (Array Row) := do
 
 /-! ## Part 2: the callers, both compilers -/
 
-/-- The case's compile input: the constants of `Ck.Src` and the aux-gen seeds
+/-- The case's constants: those of `Ck.Src` and the aux-gen seeds
 (`Ix.CompileM.auxGenSeedNames`), closed under dependencies. -/
-def callerInput (env : Environment) (c : Case) :
-    Except String _root_.Ix.Compile.CompileInput :=
+def callerClosure (env : Environment) (c : Case) : List (Name × ConstantInfo) :=
   let src := c.ns ++ `Src
   let own := env.constants.toList.filterMap fun (n, _) =>
     if src.isPrefixOf n then some n else none
   let seeds := (_root_.Ix.CompileM.auxGenSeedNames.map toLeanName).toList
-  (_root_.Ix.Compile.CompileInput.fromAnnotations
-    (_root_.Ix.EnvScope.collectDeps env (own ++ seeds))).mapError toString
+  _root_.Ix.EnvScope.collectDeps env (own ++ seeds)
+
+/-- The case's compile input (`callerClosure`). -/
+def callerInput (env : Environment) (c : Case) :
+    Except String _root_.Ix.Compile.CompileInput :=
+  (_root_.Ix.Compile.CompileInput.fromAnnotations (callerClosure env c)).mapError toString
 
 /-- The verdict of one case's callers: `ALIGNED` (byte-identical outputs),
 `REFUSED` (both compilers refuse exactly the same constants), else the
@@ -220,12 +224,19 @@ inductive CallerVerdict where
   | diverged (why : String)
 
 /-- The Lean pipeline (`workers` workers) and the Rust compiler on one
-compile input. A refused input writes nothing by default (`ix compile` is
+compile input. The Lean pipeline's Source service gets `support`, the
+literal support the input lacks (`Ix.AuxGen.literalSupportFor`), as
+`ix compile-lean` gives it: since AuxGen M5c (production `failClosed`) a
+block whose generated auxiliaries the service cannot check is refused, and
+without the support a `.brecOn` ask about a generated `.below` fails (C2's
+callers, push 117). A refused input writes nothing by default (`ix compile` is
 fail-closed), so for one the two compilers must refuse the same constants;
 their grounded subsets are not compared (they differ before Pass 3 already:
 Rust keeps a failed block's stored constants, e.g. on `C4b`). -/
-def inputParity (input : _root_.Ix.Compile.CompileInput) (workers : Nat := 1) : IO CallerVerdict := do
-  let lean ← match ← _root_.Ix.CompileM.compileLeanInput input (numWorkers := workers) with
+def inputParity (input : _root_.Ix.Compile.CompileInput)
+    (support : List (Name × ConstantInfo) := []) (workers : Nat := 1) : IO CallerVerdict := do
+  let opts : _root_.Ix.CompileM.DriverOptions := { serviceSupport := support }
+  let lean ← match ← _root_.Ix.CompileM.compileLeanInput input (numWorkers := workers) (opts := opts) with
     | .ok out => pure out
     | .error e => return .diverged s!"lean pipeline: {e}"
   let constants ← match input.prepare with
@@ -258,7 +269,7 @@ entries that differ: {differing.toList.take 5}"
 callers (`inputParity`). -/
 def callerParity (env : Environment) (c : Case) : IO CallerVerdict := do
   match callerInput env c with
-  | .ok input => inputParity input
+  | .ok input => inputParity input (_root_.Ix.AuxGen.literalSupportFor env (callerClosure env c))
   | .error e => return .diverged s!"input: {e}"
 
 /-! ## Part 3: the clique-ownership units, both compilers
@@ -272,9 +283,11 @@ neighbour (the caller refused by name on both sides when the clique is
 transported). Both compilers must give the same bytes (`ALIGNED`), or refuse
 the same constants (`REFUSED`). -/
 
-/-- The `co-*` units: label and compile input. -/
+/-- The `co-*` units: label, compile input and the literal support the input
+lacks (`inputParity`). -/
 def ownershipUnits (env : Environment) :
-    Array (String × Except String _root_.Ix.Compile.CompileInput) := Id.run do
+    Array (String × Except String _root_.Ix.Compile.CompileInput × List (Name × ConstantInfo)) :=
+    Id.run do
   let eqn := Tests.Ix.Compile.Clique.Transport.eqnCliques env
   let prereqs := Tests.Ix.Compile.Twins.rowPrereqNames env
   let mut seen : Std.HashSet String := {}
@@ -284,10 +297,11 @@ def ownershipUnits (env : Environment) :
     seen := seen.insert c.name
     let ns := Tests.Ix.Compile.Clique.Ownership.srcNs ++ c.name.toName
     let label := s!"co-{c.name}"
-    let some (_, ms) := eqn.get? (ns ++ `first) | out := out.push (label, .error "no clique recorded"); continue
+    let some (_, ms) := eqn.get? (ns ++ `first) | out := out.push (label, .error "no clique recorded", []); continue
     let extra := if c.name.startsWith "WF8" then #[ns ++ `caller, ns ++ `neighbour] else #[]
     let closure := Tests.Ix.Compile.Harness.closureOf env ((ms ++ extra).toList ++ prereqs)
-    out := out.push (label, (_root_.Ix.Compile.compileInputFromEnv env closure).mapError toString)
+    out := out.push (label, (_root_.Ix.Compile.compileInputFromEnv env closure).mapError toString,
+      _root_.Ix.AuxGen.literalSupportFor env closure)
   return out
 
 /-! ## The suite -/
@@ -335,12 +349,12 @@ def run : IO UInt32 := do
   let mut unitsAligned := 0
   let mut unitsRefused := 0
   let units := ownershipUnits (← Tests.Ix.Compile.Twins.fixturesEnv)
-  for (label, input?) in units do
+  for (label, input?, support) in units do
     match input? with
     | .error e => failures := failures.push s!"{label}: input: {e}"
     | .ok input =>
       try
-        match ← inputParity input (workers := 8) with
+        match ← inputParity input support (workers := 8) with
         | .aligned => unitsAligned := unitsAligned + 1
         | .refused _ => unitsRefused := unitsRefused + 1
         | .diverged why => failures := failures.push s!"{label}: DIVERGED: {why}"
