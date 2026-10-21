@@ -700,4 +700,39 @@ theorem condense_scc {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep x y : Ix.Name
   simp only [namesOf, Array.getElem_map] at hnx hny
   exact (p.congr_left hnx).congr_right hny
 
+/-- A block of the discovery map's blocks is not empty. -/
+theorem blocksOfDisc_nonempty {bd : Std.HashMap UInt64 (Ix.Name × Ix.Name)} {rep : Ix.Name}
+    {all : Ix.Set Ix.Name} (h : (blocksOfDisc bd).get? rep = some all) : all.isEmpty = false := by
+  unfold blocksOfDisc at h
+  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, List.forIn_pure_yield_eq_foldl] at h
+  change (List.foldl (fun (b : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name) a =>
+      (Std.HashMap.alter b.fst a.2.snd fun x => match x with
+        | some s => some (Std.HashSet.insert s a.2.fst)
+        | none => some {a.2.fst},
+       Std.HashMap.insert b.snd a.2.fst a.2.snd)) (∅, ∅) bd.toList).fst.get? rep = some all at h
+  refine foldl_inv (fun s : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name => ∀ rep all,
+      s.1.get? rep = some all → all.isEmpty = false) _ _ _
+    (fun rep all h => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
+    (fun s e _ hs rep all h => ?_) rep all h
+  dsimp only at h
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_alter] at h
+  split at h
+  · rw [Std.HashSet.isEmpty_eq_false_iff_exists_contains_eq_true]
+    split at h
+    · cases h
+      exact ⟨_, Std.HashSet.contains_insert_self⟩
+    · cases h
+      exact ⟨e.2.1, by
+        rw [show ({e.2.1} : Ix.Set Ix.Name) = (∅ : Ix.Set Ix.Name).insert e.2.1 from rfl]
+        exact Std.HashSet.contains_insert_self⟩
+  · rw [← Std.HashMap.get?_eq_getElem?] at h
+    exact hs rep all h
+
+/-- **A block of the condensation is not empty.** -/
+theorem condense_nonempty {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep : Ix.Name} {all : Ix.Set Ix.Name}
+    (hb : (CondenseM.run refs).blocks.get? rep = some all) : all.isEmpty = false := by
+  obtain ⟨hr, hv, e⟩ := blocks_eq refs
+  rw [e] at hb
+  exact blocksOfDisc_nonempty hb
+
 end Ix.Cert.Condense
