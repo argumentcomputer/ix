@@ -22,6 +22,7 @@ import Ix.Cert.OriginalBytes
 import Ix.Cert.HookFree
 import Ix.Cert.CtxAgree
 import Ix.Cert.CtxAgreeHints
+import Ix.Cert.CtxAgreeProj
 
 /-! # The certification statements, frozen
 
@@ -5206,3 +5207,19 @@ run_cmd do
   checkRoots (tag := "cert-audit") "published projection hints"
     (#[`projEntry_definitionProjection, `hintsOf_projection_compileReport,
       `hints_agree_projection].map (`Ix.Cert.CtxAgree ++ ·))
+
+/-! ## Projection rewriting: scoped lookup and definition transport
+
+The actual projection rewrite and definition lowerer commute with scoped
+renaming under ProjectionAgree and height agreement. Successful inductive
+lowering exposes its exact owner array. Deriving that lookup relation from
+the two streams, and renaming the owner constructor through structPartsCore?,
+remain explicit intermediate obligations; no final premise is added. -/
+
+/-- info: [cert-audit] projection lookup transport: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "projection lookup transport"
+    (#[`projRewrite_mapKeys, `lowerDefinition_mapKeys,
+      `lowerInductive_owners].map (`Ix.Cert.CtxAgree ++ ·))
