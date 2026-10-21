@@ -1446,6 +1446,143 @@ theorem blockKey_mem {lo : Ix.Name} {all : Ix.Set Ix.Name} (h : all.isEmpty = fa
   rw [← Std.HashSet.contains_toArray]
   exact Array.contains_iff_exists_mem_beq.mpr ⟨_, hm, BEq.rfl⟩
 
+/-- The key of a nonempty block does not depend on its default. -/
+theorem blockKey_indep {a b : Ix.Name} {all : Ix.Set Ix.Name} (h : all.isEmpty = false) :
+    blockKey a all = blockKey b all := by
+  have ne : 0 < all.toArray.size := by
+    rw [Std.HashSet.size_toArray]
+    rw [Std.HashSet.isEmpty_eq_size_eq_zero] at h
+    simp only [beq_eq_false_iff_ne] at h
+    omega
+  unfold blockKey canonicalKey
+  rw [Array.getElem?_eq_getElem ne]
+  rfl
+
+/-- `FoldState.init`'s loop state: the unmet counts, the candidates, the
+block references. -/
+abbrev InitState := Std.HashMap Ix.Name Nat × Array Ix.Name × Std.HashMap Ix.Name (Ix.Set Ix.Name)
+
+/-- `FoldState.init`'s loop, as far as the block references go: each step
+continues, and installs a block's references under its key when it has some. -/
+def InitStep (blocks : Ix.CondensedBlocks) (f : Ix.Name × Ix.Set Ix.Name → InitState → Id (ForInStep InitState)) :
+    Prop :=
+  ∀ x s, ∃ u v, f x s = .yield (u, v, match blocks.blockRefs.get? x.1 with
+    | some refs => s.2.2.insert (blockKey x.1 x.2) refs
+    | none => s.2.2)
+
+theorem initStep_refs {blocks : Ix.CondensedBlocks}
+    {f : Ix.Name × Ix.Set Ix.Name → InitState → Id (ForInStep InitState)} (hf : InitStep blocks f)
+    (P : Ix.Name → Ix.Set Ix.Name → Prop)
+    (hP : ∀ x ∈ blocks.blocks.toList, ∀ refs, blocks.blockRefs.get? x.1 = some refs →
+      ∀ key, (blockKey x.1 x.2 == key) = true → P key refs) :
+    ∀ (l : List (Ix.Name × Ix.Set Ix.Name)), (∀ x ∈ l, x ∈ blocks.blocks.toList) → ∀ s : InitState,
+      (∀ key refs, s.2.2.get? key = some refs → P key refs) →
+      ∀ key refs, (forIn (m := Id) l s f).2.2.get? key = some refs → P key refs := by
+  intro l
+  induction l with
+  | nil => intro _ s hs; exact hs
+  | cons x l ih =>
+    intro hl s hs
+    rw [List.forIn_cons]
+    obtain ⟨u, v, hu⟩ := hf x s
+    rw [hu]
+    refine ih (fun y hy => hl y (List.mem_cons_of_mem _ hy)) _ fun key refs h => ?_
+    dsimp only at h
+    split at h
+    · rename_i r hr
+      rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
+      split at h
+      · rename_i same
+        cases h
+        exact hP x (hl x List.mem_cons_self) _ hr key same
+      · rw [← Std.HashMap.get?_eq_getElem?] at h; exact hs key refs h
+    · exact hs key refs h
+
+theorem initStep_contains {blocks : Ix.CondensedBlocks}
+    {f : Ix.Name × Ix.Set Ix.Name → InitState → Id (ForInStep InitState)} (hf : InitStep blocks f)
+    {key : Ix.Name} {x : Ix.Name × Ix.Set Ix.Name} (hx : (blocks.blockRefs.get? x.1).isSome = true)
+    (hk : blockKey x.1 x.2 = key) :
+    ∀ (l : List (Ix.Name × Ix.Set Ix.Name)) (s : InitState), x ∈ l →
+      (forIn (m := Id) l s f).2.2.contains key = true := by
+  have keep : ∀ (l : List (Ix.Name × Ix.Set Ix.Name)) (s : InitState), s.2.2.contains key = true →
+      (forIn (m := Id) l s f).2.2.contains key = true := by
+    intro l
+    induction l with
+    | nil => intro s h; exact h
+    | cons y l ih =>
+      intro s h
+      rw [List.forIn_cons]
+      obtain ⟨u, v, hu⟩ := hf y s
+      rw [hu]
+      refine ih _ ?_
+      dsimp only
+      split
+      · rw [Std.HashMap.contains_insert, h, Bool.or_true]
+      · exact h
+  intro l
+  induction l with
+  | nil => intro _ h; cases h
+  | cons y l ih =>
+    intro s h
+    rw [List.forIn_cons]
+    obtain ⟨u, v, hu⟩ := hf y s
+    rw [hu]
+    rcases List.mem_cons.mp h with rfl | h
+    · refine keep _ _ ?_
+      dsimp only
+      obtain ⟨r, hr⟩ := Option.isSome_iff_exists.mp hx
+      rw [hr]
+      dsimp only
+      rw [Std.HashMap.contains_insert, hk, BEq.rfl, Bool.true_or]
+    · exact ih _ h
+
+/-- **The block references `FoldState.init` installs**: under the key of a
+condensation block with references, the initial state holds the references of
+a condensation block (with references) whose members contain that key, when
+every condensation block is nonempty. -/
+theorem init_p3BlockRefs {cenv : CompileEnv} {blocks : Ix.CondensedBlocks} {sched : FoldSchedule}
+    {rep : Ix.Name} {all rs : Ix.Set Ix.Name} (hb : blocks.blocks.get? rep = some all)
+    (hrs : blocks.blockRefs.get? rep = some rs)
+    (nonempty : ∀ rep all, blocks.blocks.get? rep = some all → all.isEmpty = false) :
+    ∃ (refs : Ix.Set Ix.Name) (rep' : Ix.Name) (all' : Ix.Set Ix.Name),
+      (FoldState.init cenv blocks sched).acc.cenv.p3BlockRefs.get? (blockKey rep all) = some refs ∧
+      blocks.blocks.get? rep' = some all' ∧ blocks.blockRefs.get? rep' = some refs ∧
+      all'.contains (blockKey rep all) = true := by
+  have hb' := hb
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hb'
+  obtain ⟨k, rk, hk⟩ := hb'
+  have get_of : ∀ e ∈ blocks.blocks.toList, blocks.blocks.get? e.1 = some e.2 := fun e he => by
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList]
+    exact ⟨e.1, BEq.rfl, he⟩
+  have hrk : blocks.blockRefs.get? k = some rs := by
+    rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.getElem?_congr rk, ← Std.HashMap.get?_eq_getElem?]
+    exact hrs
+  have hkey : blockKey k all = blockKey rep all := blockKey_indep (nonempty rep all hb)
+  unfold FoldState.init
+  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList]
+  generalize hR : forIn (m := Id) blocks.blocks.toList ((∅, #[], ∅) : InitState) _ = R
+  have contains : R.2.2.contains (blockKey rep all) = true := by
+    rw [← hR]
+    refine initStep_contains ?_ (x := (k, all)) (by rw [hrk]; rfl) hkey _ _ hk
+    intro x s
+    dsimp only
+    cases hg : blocks.blockRefs.get? x.fst <;> split <;> exact ⟨_, _, rfl⟩
+  have values : ∀ key refs, R.2.2.get? key = some refs → ∃ rep' all', blocks.blocks.get? rep' = some all' ∧
+      blocks.blockRefs.get? rep' = some refs ∧ all'.contains key = true := by
+    rw [← hR]
+    refine initStep_refs ?_ _ (fun x hx refs h key same => ⟨x.1, x.2, get_of x hx, h, ?_⟩)
+      blocks.blocks.toList (fun x hx => hx) _ (fun key refs h => by
+        simp only [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
+    · intro x s
+      dsimp only
+      cases hg : blocks.blockRefs.get? x.fst <;> split <;> exact ⟨_, _, rfl⟩
+    · rw [← Std.HashSet.contains_congr same]
+      exact blockKey_mem (nonempty _ _ (get_of x hx))
+  obtain ⟨refs, hrefs⟩ := Option.isSome_iff_exists.mp
+    (show (R.2.2.get? (blockKey rep all)).isSome = true by
+      rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]; exact contains)
+  obtain ⟨rep', all', h₁, h₂, h₃⟩ := values _ refs hrefs
+  exact ⟨refs, rep', all', hrefs, h₁, h₂, h₃⟩
 /-! ## B9b: a resolved primary name's record -/
 
 /-- **B9b, a resolved primary name's record.** For `compileReport env =
