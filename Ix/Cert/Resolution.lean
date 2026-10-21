@@ -470,4 +470,72 @@ theorem mergeCompiledBlock_step (acc : DriverAcc) (lo : Ix.Name) (result : Block
     · intro L hL
       merge_tail hL
 
+/-- The primary claims a block outcome merges: a compiled block's, at its
+key; a promoted block's cross-SCC subset's, at its own key; none otherwise. -/
+def outcomeClaims (lo : Ix.Name) : AuxBlockOutcome → Ix.Name → Address → Prop
+  | .compiled result _ _ => fun n a => (n, a) ∈ primaryClaims lo result
+  | .promoted (some (clo, result, _, _)) _ _ _ _ _ => fun n a => (n, a) ∈ primaryClaims clo result
+  | _ => fun _ _ => False
+
+theorem fst_pure {G : Ix.Name → Address → Prop} {c : CompileEnv} {d : DriverAcc} {x : Array Ix.Name}
+    {y : Bool} (h : Step c d.cenv G) :
+    Step c (pure (d, x, y) : Id (DriverAcc × Array Ix.Name × Bool)).1.cenv G := h
+
+/-- A loop over registered names, then a return. -/
+theorem loopNames {G : Ix.Name → Address → Prop} {c : CompileEnv} {α : Type} (xs : Array α)
+    (init : Array Ix.Name) (f : α → Array Ix.Name → Id (ForInStep (Array Ix.Name)))
+    (k : Array Ix.Name → Id (DriverAcc × Array Ix.Name × Bool)) (cont : ∀ L, Step c (k L).1.cenv G) :
+    Step c (forIn (m := Id) xs init f >>= k).1.cenv G :=
+  loop_bind xs init f k (fun _ => True) (fun r => Step c r.1.cenv G) trivial (fun _ _ _ _ => trivial)
+    fun L _ => cont L
+
+/-- A loop over the driver state, then its continuation. -/
+theorem loopAcc {G : Ix.Name → Address → Prop} {c : CompileEnv} {α : Type} (xs : Array α)
+    (init : DriverAcc) (f : α → DriverAcc → Id (ForInStep DriverAcc)) (k : DriverAcc → Id DriverAcc)
+    (hinit : Step c init.cenv G) (body : ∀ x ∈ xs, ∀ s, Step c s.cenv G → Step c (f x s).value.cenv G)
+    (cont : ∀ L, Step c L.cenv G → Step c (k L).cenv G) : Step c (forIn (m := Id) xs init f >>= k).cenv G :=
+  loop_bind xs init f k (fun d => Step c d.cenv G) (fun d => Step c d.cenv G) hinit body cont
+
+
+/-- **Applying a compiled block adds only its primary claims** to the
+resolution map (or, when its claims or payloads conflict, records its
+failures and changes nothing else). -/
+theorem applyAuxBlockOutcome_compiled_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name)
+    (r : BlockResult) (c : BlockState) (p : Ix.Compile.Pass.Published) :
+    Step acc.cenv (applyAuxBlockOutcome acc lo all (.compiled r c p)).1.cenv
+      (outcomeClaims lo (.compiled r c p)) := by
+    unfold applyAuxBlockOutcome; simp only [Id.run]
+    have merged := (mergeCompiledBlock_step acc lo r c p).mono (G := outcomeClaims lo (.compiled r c p))
+      fun _ _ h => h
+    split
+    · refine fst_pure ?_
+      refine loopAcc _ _ _ _ ?_ ?_ ?_
+      · exact Step.refl _ _
+      · intro _ _ s hs
+        exact hs.trans (Step.keep rfl fun _ h => h)
+      · intro L hL
+        exact hL
+    · split
+      · refine loopNames _ _ _ _ ?_
+        intro L
+        exact fst_pure merged
+      · refine loopNames _ _ _ _ ?_
+        intro L
+        refine loopNames _ _ _ _ ?_
+        intro L
+        exact fst_pure merged
+
+/-- **Applying a failed block only records its failures.** -/
+theorem applyAuxBlockOutcome_failed_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name)
+    (msg : String) :
+    Step acc.cenv (applyAuxBlockOutcome acc lo all (.failed msg)).1.cenv (outcomeClaims lo (.failed msg)) := by
+    unfold applyAuxBlockOutcome; simp only [Id.run]
+    refine fst_pure ?_
+    refine loopAcc _ _ _ _ ?_ ?_ ?_
+    · exact Step.refl _ _
+    · intro _ _ s hs
+      exact hs.trans (Step.keep rfl fun _ h => h)
+    · intro L hL
+      exact hL
+
 end Ix.Cert.Resolution
