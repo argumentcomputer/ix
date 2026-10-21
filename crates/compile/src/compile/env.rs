@@ -466,14 +466,30 @@ pub fn compile_env_with_profile(
   // `compileEnvFoldWithSource`): the clique table and its scheduling edges.
   // The edges only order the blocks; each block's own references (the refs
   // `compile_block` reads, Lean `p3BlockRefs`) stay the condensation's, kept
-  // aside when the input has a clique.
+  // aside when the input has clique or sizeOf producer edges.
   let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
-  let block_refs_orig = if input_cliques(&const_of, &condensed).is_empty() {
+  let size_edges = crate::compile::pass3::opt::size_of_edges(
+    scan.ind_groups.keys(),
+    &const_of,
+    &|n| grounded_out_refs.get(n).cloned().unwrap_or_default(),
+    &|n| grounded_out_refs.contains_key(n),
+    &condensed.low_links,
+  );
+  let block_refs_orig = if input_cliques(&const_of, &condensed).is_empty()
+    && size_edges.is_empty()
+  {
     None
   } else {
     Some(condensed.block_refs.clone())
   };
   let (cliques, clique_roots) = schedule_cliques(&const_of, &mut condensed);
+  // O11a adds only producer dependencies. The block rewrite still reads
+  // the original references saved above, including inputs with no clique.
+  for (source, target) in size_edges {
+    if let Some(lo) = condensed.low_links.get(&source).cloned() {
+      condensed.block_refs.entry(lo).or_default().insert(target);
+    }
+  }
 
   // Pass 3's hooks run in every whole-environment compile (no mode, no
   // switch): the state is driver-prepared.

@@ -186,8 +186,8 @@ structure RwConfig where
   retry is known to be empty. Generic callbacks keep the retry. -/
   skipPjRetry : Bool := false
   /-- The recorded declines: tried at every full application next to `opt?`;
-  a cause means a pass declined because a reference it needs is absent from
-  the input. -/
+  a cause means O11a's side condition failed, including an input reference
+  its canonical form needs but cannot find. -/
   decline? : Name → Array Level → Array Expr → Option String := fun _ _ _ => none
   /-- `false` for a Lean constant, whose name keeps the faithful form (at a
   proof-justified rewrite the baseline is kept and the canonical form `c._ix`
@@ -264,12 +264,20 @@ def expansionOf : Nat → Name → RwM (Option Expansion)
     match ← liftM (expansion? n) with
     | none => return none
     | some x =>
+      let before ← (fun st : RwState => (st.declines.size, st.canon.size, st.pjForms.size)) <$> get
       let x ← if x.needsRewrite then do
           -- an expansion is shared by every site: no proof-justified pass
           let (v, _) ← withReader (fun cfg => { cfg with site := none }) (rw fuel false x.value)
           pure { x with value := v, needsRewrite := false }
         else pure x
-      modify fun st => { st with exps := st.exps.insert n x }
+      -- An expansion is shared across members: caching a result that made
+      -- a decline would lose that member's report on the next hit. The term
+      -- memo retains/replays declines, so an effectful expansion is cheap to
+      -- revisit without storing a record-free head entry.
+      modify fun st =>
+        if (st.declines.size, st.canon.size, st.pjForms.size) == before then
+          { st with exps := st.exps.insert n x }
+        else st
       return some x
 
 /-- `base(e)`: every occurrence of an image-kind auxiliary rewritten, and

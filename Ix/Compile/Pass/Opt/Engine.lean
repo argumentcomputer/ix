@@ -9,12 +9,12 @@ canonical form and Pass 3a's images.
 `engine` returns the first applicable pass's name and term, or `none`; the
 rewrite then inlines the image (the baseline). The order is
 
-  O2 → O3 → O4 → O6,
+  O11a → O2 → O3 → O4 → O6,
 
-the definitional passes of CQ5.1. O5 is the universe rule the passes use,
+the definitional passes of CQ5.1 and CQ5.3a. O5 is the universe rule the passes use,
 not a list entry. O1 is never ported: O6 builds the identical term on the
-permutation-only blocks O1 covered (R04-07). O11a (before O2), the
-proof-justified passes and the clique hook come with CQ5.3 and CQ5.2.
+permutation-only blocks O1 covered (R04-07). O11a precedes O2 (CQ5.3a).
+The proof-justified passes are deferred to CQ5.3b.
 
 ## Rewrite and resource bounds
 The engine is fused with `Translate.rw`: it sees the source head and the
@@ -23,10 +23,11 @@ calls and invokes `engineN` on them; `engineN 0` returns `none` and `engine`
 starts it with fuel 64.
 
 ## Faithfulness and canonicity obligations
-O2–O6 target conversion with the image baseline (each pass module gives its
-shape conditions and conversion argument). They record nothing per rewrite:
-no canonical constant, no decline, no proof-justified form, so the image
-memo (`CompileEnv.p3ImageExps`) stays sound for the expansions they rewrite.
+O11a and O2–O6 target conversion with the image baseline (each pass module
+gives its shape conditions and conversion argument). O11a's side-condition
+declines are recorded by the driver's separate decline hook. The default
+image rewrite has no hooks; a rewrite that records effects cannot publish a
+shared rewritten expansion without retaining those effects.
 
 ## Evidence
 The per-pass fixtures under `Tests/Ix/Compile/Pass/` and the `pass3` suite.
@@ -36,6 +37,7 @@ module
 public import Ix.Compile.Pass.ImageView
 public import Ix.Compile.Pass.Opt.Core
 public import Ix.Compile.Pass.Opt.O2
+public import Ix.Compile.Pass.Opt.O11a
 public import Ix.Compile.Pass.Opt.O3
 public import Ix.Compile.Pass.Opt.O4
 public import Ix.Compile.Pass.Opt.O5
@@ -49,7 +51,8 @@ open Ix (Name Level Expr ConstantInfo RecursorVal)
 /-- The definitional occurrence passes in their fixed order; `recur`
 rewrites the occurrences O2 synthesises (its relocated calls). -/
 def passes (recur : Occ → Option Expr) : List (String × (OptEnv → Occ → Option Expr)) :=
-  [("O2", O2.apply recur), ("O3", O3.apply), ("O4", O4.apply), ("O6", O6.apply)]
+  [("O11a", O11a.apply), ("O2", O2.apply recur), ("O3", O3.apply),
+   ("O4", O4.apply), ("O6", O6.apply)]
 
 /-- The first pass that applies, with its name. Fuel bounds the recursive
 optimization of O2's relocated calls; zero returns `none`. -/

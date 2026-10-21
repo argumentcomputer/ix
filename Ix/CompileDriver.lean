@@ -652,6 +652,8 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       cenv.p3CanonRecs
     p3Views := Ix.Compile.Pass.memoMerge cenv.p3Views published.views
     p3ImageExps := Ix.Compile.Pass.memoMerge cenv.p3ImageExps published.imageExps
+    p3NonCanonical := published.declines.foldl (fun m (n, cause) => m.insert n cause)
+      cenv.p3NonCanonical
     -- the plan table: the first plan computed for a clique wins; so do its
     -- rows (the rows table)
     p3CliquePlans := cache.p3CliquePlans.foldl
@@ -693,6 +695,7 @@ def failAuxPromotion (acc : DriverAcc) (all : Set Name) (msg : String) : DriverA
         blocks := acc.cenv.blocks.erase n
         p3Heads := acc.cenv.p3Heads.erase n
         p3CanonRecs := acc.cenv.p3CanonRecs.erase n
+        p3NonCanonical := acc.cenv.p3NonCanonical.erase n
         ungrounded := acc.cenv.ungrounded.insert n msg }
       defHints := acc.defHints.erase n }
   return { acc with pending := acc.pending.filter (!all.contains ·) }
@@ -1424,6 +1427,29 @@ unsafe block's tail keeps `Ix.Tc`). `compileEnvFoldWithSource`
 waits for the run-ahead at the end and returns what Source mode accepted
 (`Ix.AuxGen.Source.Report`). -/
 
+/-- Candidate heads of sizeOf families present in this input. Every source
+of an O11a scheduling edge is `head._sizeOf_N`; looking at names first keeps
+the streaming path from decoding unrelated theorem bodies. -/
+def sizeOfCandidates (blocks : Ix.CondensedBlocks) : Array Name := Id.run do
+  let mut seen : Std.HashSet Ix.Compile.ExactKey.ExactName := {}
+  let mut out := #[]
+  for (name, _) in blocks.lowLinks do
+    if let .str parent component _ := name then
+      if component.startsWith "_sizeOf_" && !seen.contains parent then
+        seen := seen.insert parent
+        out := out.push parent
+  return out
+
+/-- O11a's producer dependencies, for the scheduling copy only. The pass
+reads references only of its candidate inductives and their constructors;
+all lookups are the input's, so materialized and hybrid inputs agree. The
+original condensation passed to the fold/classifier remains unchanged. -/
+def prepareSizeOfScheduling (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Ix.CondensedBlocks :=
+  let refsOf := fun n => ((env.get? n).map Ix.Compile.Canon.refsConst).getD {}
+  Ix.Compile.Pass.Opt.addSizeOfEdges (sizeOfCandidates blocks) env.get? refsOf
+    blocks.lowLinks.contains blocks
+
 /-- The aux-gen seeds the condensation holds. -/
 def auxGenSeeds (blocks : Ix.CondensedBlocks) : Array Name :=
   auxGenSeedNames.filter blocks.lowLinks.contains
@@ -1770,7 +1796,7 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   -- (`CompileEnv.p3BlockRefs`, `FoldState.init`) stay the condensation's.
   -- With no input clique the blocks are unchanged.
   let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
-  let sched := FoldSchedule.of sc.1
+  let sched := FoldSchedule.of (prepareSizeOfScheduling view sc.1)
   let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks

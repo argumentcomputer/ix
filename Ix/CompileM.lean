@@ -107,6 +107,10 @@ structure CompileEnv where
       merged from the blocks that compile (`BlockState.auxReport`,
       `mergeCompiledBlock`). No byte depends on it. -/
   auxReport : Ix.AuxGen.CompileReport := {}
+  /-- Pass 3's recorded non-canonical outcomes (CQ5.3a): an O11a decline
+      and the constant whose rewrite recorded it. Report-only; merged from
+      successful block publications and erased when a source name is withdrawn. -/
+  p3NonCanonical : Std.HashMap Ix.Compile.ExactKey.ExactName String := {}
   /-- Pass 3: each image-kind auxiliary of a changed Lean block that source
       recognition admits (`Ix.Compile.Pass.sourceImageHeads`) ↦ the block's
       key, Lean's first member. Insert-once, merged from the blocks that
@@ -3130,8 +3134,8 @@ structure CompileEnvStatus where
   ungrounded : Array (String × String)
   /-- `(pretty name, cause)` of the Rust compiler's Pass 3 non-canonical
       set (the recorded declines of the definitional passes), sorted by
-      name. Empty until those passes are wired (batch 5): the faithful
-      rewrite records no decline. -/
+      name. O11a records side-condition failures; successful rewrites and
+      pattern misses add no row. Failed blocks publish no decline. -/
   nonCanonical : Array (String × String)
   /-- Bytes written to `outPath` (0 when nothing was written). -/
   bytes : UInt64

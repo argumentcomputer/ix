@@ -116,6 +116,7 @@ def sequential (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   -- each block's own references (`p3BlockRefs`, keyed as `FoldState.init`
   -- keys them) stay the condensation's
   let sc := Ix.Compile.Pass.Clique.scheduleCliques env blocks
+  let scheduled := prepareSizeOfScheduling env sc.1
   let blockRefs : Std.HashMap Name (Set Name) := blocks.blocks.fold (init := {}) fun m rep all =>
     match blocks.blockRefs.get? rep with
     | some refs => m.insert (blockKey rep all) refs
@@ -132,7 +133,7 @@ def sequential (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let mut blockInfo : Std.HashMap Name (Set Name × Nat) := {}
   let mut reverseDeps : Std.HashMap Name (Array Name) := {}
   for (lo, all) in blocks.blocks do
-    let deps := match sc.1.blockRefs.get? lo with
+    let deps := match scheduled.blockRefs.get? lo with
       | some d => d
       | none => {}
     blockInfo := blockInfo.insert lo (all, deps.size)

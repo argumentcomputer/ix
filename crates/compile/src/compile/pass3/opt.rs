@@ -3,8 +3,8 @@
 //! `RwConfig.opt?`). A port of `Ix/Compile/Pass/Opt/{Core,Engine,O2,O3,O4,
 //! O5,O6}.lean`; the Lean modules are the specification of each pass
 //! (contract, faithfulness, side condition), cited per function. O1 is never
-//! ported (O6 builds the identical term). CQ5.3a adds the O11a library
-//! and producer-edge primitives; its wiring is the next change. Donor: `jcb/ix-certify-compile` `a9cf3607`,
+//! ported (O6 builds the identical term). CQ5.3a runs O11a before O2,
+//! with producer scheduling edges and explicit side-condition reports. Donor: `jcb/ix-certify-compile` `a9cf3607`,
 //! `crates/compile/src/compile/pass3/opt.rs`.
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -1267,7 +1267,7 @@ pub fn add_size_of_edges<'n>(
 // The engine (`Opt/Engine.lean`)
 // ---------------------------------------------------------------------------
 
-/// The first pass that applies, with its name (`Engine.engineN`): O2, O3,
+/// The first pass that applies, with its name (`Engine.engineN`): O11a, O2, O3,
 /// O4, O6 in this order. Fuel bounds the recursive optimization of O2's
 /// relocated calls; zero returns `None`.
 fn engine_n(
@@ -1279,8 +1279,9 @@ fn engine_n(
     return None;
   }
   let recur = |o2: &Occ<'_>| engine_n(fuel - 1, env, o2).map(|(_, e)| e);
-  o2(&recur, env, o)
-    .map(|e| ("O2", e))
+  o11a(env, o)
+    .map(|e| ("O11a", e))
+    .or_else(|| o2(&recur, env, o).map(|e| ("O2", e)))
     .or_else(|| o3(env, o).map(|e| ("O3", e)))
     .or_else(|| o4(env, o).map(|e| ("O4", e)))
     .or_else(|| o6(env, o).map(|e| ("O6", e)))

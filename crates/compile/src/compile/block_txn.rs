@@ -59,6 +59,8 @@ pub struct BlockTxn {
   pub p3_components: Vec<Name>,
   /// Names the block would have released to the scheduler early.
   pub pending: Vec<Name>,
+  /// Non-canonical outcomes become visible only after the whole block commits.
+  pub declines: Vec<(Name, String)>,
 }
 
 thread_local! {
@@ -216,6 +218,26 @@ pub fn release_pending(stt: &CompileState, names: Vec<Name>) {
   }
 }
 
+/// Stage successful rewrite reports until the block's final commit. A
+/// direct caller outside a scheduled transaction publishes immediately.
+pub fn record_declines(stt: &CompileState, rows: Vec<(Name, String)>) {
+  if rows.is_empty() {
+    return;
+  }
+  let immediate = TXN.with(|t| match t.borrow_mut().as_mut() {
+    Some(x) => {
+      x.declines.extend(rows);
+      None
+    },
+    None => Some(rows),
+  });
+  if let Some(rows) = immediate {
+    for (name, cause) in rows {
+      stt.p3.non_canonical.insert(name, cause);
+    }
+  }
+}
+
 /// Remove what a failed block entered into the published tables.
 pub fn rollback(stt: &CompileState, txn: &BlockTxn) {
   for n in &txn.named {
@@ -254,9 +276,40 @@ pub fn finish(stt: &CompileState, failed: bool) -> Result<(), CompileError> {
   if let Some(txn) = take() {
     if failed || committed.is_err() {
       rollback(stt, &txn);
-    } else if !txn.pending.is_empty() {
-      stt.aux_gen_pending.lock().unwrap().extend(txn.pending);
+    } else {
+      for (name, cause) in txn.declines {
+        stt.p3.non_canonical.insert(name, cause);
+      }
+      if !txn.pending.is_empty() {
+        stt.aux_gen_pending.lock().unwrap().extend(txn.pending);
+      }
     }
   }
   committed
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::compile::pass3::expr::dotted;
+
+  #[test]
+  fn decline_reports_wait_for_commit_and_failed_blocks_drop_them() {
+    let stt = CompileState::default();
+    let name = dotted("declined");
+    start();
+    record_declines(&stt, vec![(name.clone(), "first".into())]);
+    assert!(stt.p3.non_canonical.is_empty());
+    finish(&stt, true).unwrap();
+    assert!(stt.p3.non_canonical.is_empty());
+
+    start();
+    record_declines(&stt, vec![(name.clone(), "committed".into())]);
+    assert!(stt.p3.non_canonical.is_empty());
+    finish(&stt, false).unwrap();
+    assert_eq!(
+      stt.p3.non_canonical.get(&name).map(|v| v.value().clone()),
+      Some("committed".into())
+    );
+  }
 }

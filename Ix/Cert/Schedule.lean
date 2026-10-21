@@ -238,7 +238,7 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
   validateMutualSafety env blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
   let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
-  let sched := FoldSchedule.of sc.1
+  let sched := FoldSchedule.of (prepareSizeOfScheduling view sc.1)
   let aux : AuxIxcOptions := {}
   let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)

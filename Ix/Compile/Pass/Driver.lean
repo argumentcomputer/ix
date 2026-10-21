@@ -92,12 +92,15 @@ structure Published where
   /-- New entries of the image memo (`CompileEnv.p3ImageExps`): recursor images,
   and definitional heads' rewritten expansions (`compileImageBlock`). -/
   imageExps : Array (Name × (Expansion × Expr)) := #[]
+  /-- Recorded declines, with the member whose rewrite produced them.
+  Report-only, published only when the block succeeds. -/
+  declines : Array (Name × String) := #[]
   deriving Inhabited
 
 instance : Append Published where
   append a b := { heads := a.heads ++ b.heads, blocks := a.blocks ++ b.blocks
                   canonRecs := a.canonRecs ++ b.canonRecs, views := a.views ++ b.views
-                  imageExps := a.imageExps ++ b.imageExps }
+                  imageExps := a.imageExps ++ b.imageExps, declines := a.declines ++ b.declines }
 
 /-- `stt.resolve_addr` over a compile environment: `nameToAddr`, then
 `auxNameToAddr`. -/
@@ -380,10 +383,22 @@ def optLookup (cenv : CompileEnv) (blocks : Std.HashMap ExactName Opt.OptBlock) 
     if !Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env n then none
     else (Opt.engine env { head := n, us, args, site }).map fun (_, e) => (e, #[], none)
 
-/-- The rewrite configuration of a block's members: the passes, nothing
-else (no decline recorded, no proof-justified pass, not in place). -/
+/-- O11a's recorded side-condition failures over the same blocks as the
+passes. A pattern miss records nothing. -/
+def declineLookup (cenv : CompileEnv) (blocks : Std.HashMap ExactName Opt.OptBlock) :
+    Name → Array Ix.Level → Array Expr → Option String :=
+  let env : Opt.OptEnv :=
+    { ienv := cenv.env, resolves := fun n => (resolveAddr cenv n).isSome
+      blockOf := fun h => (cenv.p3Heads.get? h).bind blocks.get? }
+  fun n us args =>
+    if !Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env n then none
+    else Opt.O11a.declineCause? env { head := n, us, args }
+
+/-- The block's definitional passes and recorded declines. The views' pass
+data is computed once and shared by both hooks. No proof-justified pass. -/
 def passConfig (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView) : RwConfig :=
-  { opt? := optLookup cenv (optBlocks cenv views) }
+  let blocks := optBlocks cenv views
+  { opt? := optLookup cenv blocks, decline? := declineLookup cenv blocks }
 
 /-- `expansionLookup` for a rewrite with the passes: the image memo for a
 recursor's image (built, never rewritten, the same under every
@@ -445,8 +460,8 @@ def prepareBlock (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   if used.isEmpty then return (cenv, {})
   let fail := pass3Failure cenv (used.filterMap fun h => cenv.p3Heads.get? h)
   let views ← (viewsOf cenv used).mapError fail
-  let published : Published := { views := newMemoViews cenv views }
   let rwr ← (rewriteBlock (passExpansionLookup cenv views) members (passConfig cenv views)).mapError fail
+  let published : Published := { views := newMemoViews cenv views, declines := rwr.declines }
   -- only bare or partial occurrences: nothing rewritten
   if rwr.overlay.isEmpty then return (cenv, published)
   let overlay : Std.HashMap Name ConstantInfo :=
@@ -523,6 +538,7 @@ computed from them (its expansions, read with the default `RwConfig`, which
 records nothing at no site) is then a function of memoable views and the
 input, the same in every later block. -/
 def readsMemoable (cenv : CompileEnv) (st : RwState) : Bool :=
+  st.declines.isEmpty && st.canon.isEmpty && st.pjForms.isEmpty &&
   st.exps.fold (init := true) fun ok n _ =>
     ok && match cenv.p3Heads.get? n with
       | some key => viewMemoable cenv key
