@@ -180,4 +180,294 @@ theorem foldWavesSeq_reach {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} 
       · rename_i st₁ h₁
         exact ih st₁ st' h (foldWaveSeq_reach h₁ hst)
 
+/-! ## How an operation moves the resolution map -/
+
+open Ix.Compile.ExactKey (ExactName)
+
+/-- **One driver operation's effect on the resolution map**, from `c` to `c'`:
+every entry of `c'`'s resolution map is one of `c`'s, whose name keeps its
+aux address if it had one, or its name has an aux address in `c'`, or it is
+one of the operation's own claims (`F`). -/
+def Step (c c' : CompileEnv) (F : Ix.Name → Address → Prop) : Prop :=
+  ∀ (n : ExactName) (a : Address), c'.nameToAddr.get? n = some a →
+    (c.nameToAddr.get? n = some a ∧ (c.auxNameToAddr.contains n = true → c'.auxNameToAddr.contains n = true)) ∨
+      c'.auxNameToAddr.contains n = true ∨ F n a
+
+theorem Step.refl (c : CompileEnv) (F : Ix.Name → Address → Prop) : Step c c F :=
+  fun _ _ h => .inl ⟨h, id⟩
+
+theorem Step.mono {c c' : CompileEnv} {F G : Ix.Name → Address → Prop} (h : Step c c' F)
+    (FG : ∀ n a, F n a → G n a) : Step c c' G := by
+  intro n a hn
+  rcases h n a hn with h | h | h
+  · exact .inl h
+  · exact .inr (.inl h)
+  · exact .inr (.inr (FG n a h))
+
+theorem Step.trans {c₁ c₂ c₃ : CompileEnv} {F : Ix.Name → Address → Prop} (h₁ : Step c₁ c₂ F)
+    (h₂ : Step c₂ c₃ F) : Step c₁ c₃ F := by
+  intro n a hn
+  rcases h₂ n a hn with ⟨h, keep₂⟩ | h | h
+  · rcases h₁ n a h with ⟨h, keep₁⟩ | h | h
+    · exact .inl ⟨h, fun k => keep₂ (keep₁ k)⟩
+    · exact .inr (.inl (keep₂ h))
+    · exact .inr (.inr h)
+  · exact .inr (.inl h)
+  · exact .inr (.inr h)
+
+/-- An operation that leaves the resolution map and keeps every aux name. -/
+theorem Step.keep {c c' : CompileEnv} {F : Ix.Name → Address → Prop}
+    (h₁ : c'.nameToAddr = c.nameToAddr)
+    (h₂ : ∀ n : ExactName, c.auxNameToAddr.contains n = true → c'.auxNameToAddr.contains n = true) :
+    Step c c' F := by
+  intro n a hn
+  rw [h₁] at hn
+  exact .inl ⟨hn, h₂ n⟩
+
+/-- An operation that erases one name from the resolution map and the aux map. -/
+theorem Step.erase {c c' : CompileEnv} {F : Ix.Name → Address → Prop} {m : ExactName}
+    (h₁ : c'.nameToAddr = c.nameToAddr.erase m) (h₂ : c'.auxNameToAddr = c.auxNameToAddr.erase m) :
+    Step c c' F := by
+  intro n a hn
+  rw [h₁, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_erase] at hn
+  split at hn
+  · cases hn
+  · rename_i ne
+    refine .inl ⟨by rw [Std.HashMap.get?_eq_getElem?]; exact hn, fun k => ?_⟩
+    rw [h₂, Std.HashMap.contains_erase]
+    simp [ne, k]
+
+/-- An operation that writes one entry of the resolution map: one of its own
+claims (`F`), or an aux name's. -/
+theorem Step.insert {c c' : CompileEnv} {F : Ix.Name → Address → Prop} {m : ExactName} {b : Address}
+    (h₁ : c'.nameToAddr = c.nameToAddr.insert m b)
+    (h₂ : ∀ n : ExactName, c.auxNameToAddr.contains n = true → c'.auxNameToAddr.contains n = true)
+    (hm : F m b ∨ c'.auxNameToAddr.contains m = true) : Step c c' F := by
+  intro n a hn
+  rw [h₁, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at hn
+  split at hn
+  · rename_i same
+    have e : m = n := beq_iff_eq.mp same
+    subst e
+    cases hn
+    rcases hm with hm | hm
+    · exact .inr (.inr hm)
+    · exact .inr (.inl hm)
+  · exact .inl ⟨by rw [Std.HashMap.get?_eq_getElem?]; exact hn, h₂ n⟩
+
+theorem contains_of_get {m : Std.HashMap ExactName Address} {n : ExactName} {a : Address}
+    (h : m.get? n = some a) : m.contains n = true := by
+  rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, h]; rfl
+
+/-- `loop_bind` over a hash set. -/
+theorem loop_bind_set {α σ β : Type} [BEq α] [Hashable α] (xs : Std.HashSet α) (init : σ)
+    (f : α → σ → Id (ForInStep σ)) (k : σ → Id β) (I : σ → Prop) (P : β → Prop)
+    (hinit : I init) (body : ∀ x, ∀ s, I s → I (f x s).value) (cont : ∀ L, I L → P (k L)) :
+    P (forIn (m := Id) xs init f >>= k) := by
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  exact cont _ (forIn_inv_list I f xs.toList (fun x _ => body x) init hinit)
+
+/-- **A withdrawal only erases**: `failAuxPromotion` erases each member from
+the resolution map and the aux map. -/
+theorem failAuxPromotion_step (acc : DriverAcc) (all : Ix.Set Ix.Name) (msg : String)
+    (F : Ix.Name → Address → Prop) : Step acc.cenv (failAuxPromotion acc all msg).cenv F := by
+  unfold failAuxPromotion
+  simp only [Id.run]
+  refine loop_bind_set (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
+    (I := fun s : DriverAcc => Step acc.cenv s.cenv F) _ _ _ _ (Step.refl _ _) ?_ ?_
+  · intro m s hs
+    exact hs.trans (Step.erase rfl rfl)
+  · intro L hL
+    exact hL
+
+/-- **An aux promotion writes an aux address**: `promoteAuxWrites` writes a
+name's resolution entry only from its aux entry. -/
+theorem promoteAuxWrites_step (cenv : CompileEnv) (name : Ix.Name) (origAddr : Address)
+    (origMeta : Ixon.ConstantMeta) (F : Ix.Name → Address → Prop) :
+    Step cenv (promoteAuxWrites cenv name origAddr origMeta) F := by
+  unfold promoteAuxWrites
+  simp only [Id.run]
+  split
+  · rename_i auxAddr found
+    have hm := contains_of_get found
+    split
+    · exact Step.insert rfl (fun _ h => h) (.inr hm)
+    · exact Step.insert rfl (fun _ h => h) (.inr hm)
+  · split
+    · exact Step.keep rfl (fun _ h => h)
+    · exact Step.keep rfl (fun _ h => h)
+
+/-- The original-form promotion's writes (`promoteOriginalWrites`) write only
+aux addresses. -/
+theorem promoteOriginalWrites_step (acc : DriverAcc) (lo : Ix.Name) (result : BlockResult)
+    (cache : BlockState) (F : Ix.Name → Address → Prop) :
+    Step acc.cenv (promoteOriginalWrites acc lo result cache).cenv F := by
+  unfold promoteOriginalWrites
+  simp only [Id.run]
+  refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
+    (I := fun s : DriverAcc => Step acc.cenv s.cenv F) _ _ _ _ (Step.refl _ _) ?_ ?_
+  · intro x _ s hs
+    exact hs.trans (promoteAuxWrites_step _ _ _ _ _)
+  · intro L hL
+    exact hL.trans (Step.keep rfl (fun _ h => h))
+
+/-- The remaining members' writes (`promoteRemainingWrites`) write only names
+not yet resolved, at their aux addresses. -/
+theorem promoteRemainingWrites_step (acc : DriverAcc) (all : Ix.Set Ix.Name)
+    (F : Ix.Name → Address → Prop) : Step acc.cenv (promoteRemainingWrites acc all).1.cenv F := by
+  unfold promoteRemainingWrites
+  simp only [Id.run]
+  refine loop_bind_set (P := fun d : DriverAcc × Array Ix.Name => Step acc.cenv d.1.cenv F)
+    (I := fun s : DriverAcc × Array Ix.Name => Step acc.cenv s.1.cenv F) _ _ _ _ (Step.refl _ _) ?_ ?_
+  · intro name s hs
+    split
+    · exact hs
+    · rename_i none'
+      split
+      · rename_i addr found
+        unfold resolveAddrPure at found
+        rw [none'] at found
+        exact hs.trans (Step.insert rfl (fun _ h => h) (.inr (contains_of_get found)))
+      · exact hs
+  · intro L hL
+    exact hL
+
+/-- **A promotion writes only aux addresses**: `finishAuxPromotion` withdraws
+the block, or writes the original-form promotion and the remaining members. -/
+theorem finishAuxPromotion_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name)
+    (original : Option (BlockResult × BlockState)) (F : Ix.Name → Address → Prop) :
+    Step acc.cenv (finishAuxPromotion acc lo all original).1.cenv F := by
+  have tail : ∀ (o : Option (BlockResult × BlockState)), Step acc.cenv
+      (promoteRemainingWrites (match o with
+        | some (result, cache) => promoteOriginalWrites acc lo result cache
+        | none => acc) all).1.cenv F := by
+    intro o
+    cases o with
+    | none => exact promoteRemainingWrites_step acc all F
+    | some p =>
+      obtain ⟨result, cache⟩ := p
+      exact (promoteOriginalWrites_step acc lo result cache F).trans
+        (promoteRemainingWrites_step _ all F)
+  unfold finishAuxPromotion
+  simp only [Id.run]
+  split
+  · split
+    · exact failAuxPromotion_step acc all _ F
+    · split
+      · exact failAuxPromotion_step acc all _ F
+      · refine loop_bind (P := fun r : DriverAcc × Array Ix.Name × Bool => Step acc.cenv r.1.cenv F)
+          (I := fun s : Option (DriverAcc × Array Ix.Name × Bool) × PUnit =>
+            s.1 = none ∨ ∃ msg, s.1 = some (failAuxPromotion acc all msg, #[], true))
+          _ _ _ _ (.inl rfl) ?_ ?_
+        · intro name _ s _
+          split
+          · exact .inr ⟨_, rfl⟩
+          · exact .inl rfl
+        · intro L hL
+          rcases hL with h | ⟨msg, h⟩
+          · simp only [h]
+            exact (promoteOriginalWrites_step acc lo _ _ F).trans (promoteRemainingWrites_step _ all F)
+          · simp only [h]
+            exact failAuxPromotion_step acc all msg F
+  · split
+    · exact failAuxPromotion_step acc all _ F
+    · refine loop_bind (P := fun r : DriverAcc × Array Ix.Name × Bool => Step acc.cenv r.1.cenv F)
+        (I := fun s : Option (DriverAcc × Array Ix.Name × Bool) × PUnit =>
+          s.1 = none ∨ ∃ msg, s.1 = some (failAuxPromotion acc all msg, #[], true))
+        _ _ _ _ (.inl rfl) ?_ ?_
+      · intro name _ s _
+        split
+        · exact .inr ⟨_, rfl⟩
+        · exact .inl rfl
+      · intro L hL
+        rcases hL with h | ⟨msg, h⟩
+        · simp only [h]
+          exact tail original
+        · simp only [h]
+          exact failAuxPromotion_step acc all msg F
+
+/-- Merging a map of inserts into a map keeps every name it holds. -/
+theorem fold_insert_contains {m src : Std.HashMap ExactName Address} {n : ExactName}
+    (h : m.contains n = true) : (src.fold (fun m k v => m.insert k v) m).contains n = true := by
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  suffices ∀ (l : List (ExactName × Address)) (m : Std.HashMap ExactName Address), m.contains n = true →
+      (l.foldl (fun m x => m.insert x.1 x.2) m).contains n = true from this _ m h
+  intro l
+  induction l with
+  | nil => intro m h; exact h
+  | cons x l ih =>
+    intro m h
+    rw [List.foldl_cons]
+    exact ih _ (by rw [Std.HashMap.contains_insert]; simp [h])
+
+/-- A lone constant's primary claim. -/
+theorem claim_of_empty {lo : Ix.Name} {result : BlockResult} (h : result.projections.isEmpty = true) :
+    (lo, result.blockAddr) ∈ primaryClaims lo result := by
+  simp [primaryClaims, h]
+
+/-- A member projection's primary claim. -/
+theorem claim_of_projection {lo : Ix.Name} {result : BlockResult}
+    (h : ¬result.projections.isEmpty = true) {x : Ix.Name × Ixon.Constant × Ixon.ConstantMeta}
+    (hx : x ∈ result.projections) :
+    (x.1, Address.admissionHash (Ixon.ser x.2.1)) ∈ primaryClaims lo result := by
+  unfold primaryClaims
+  simp only [h, Bool.false_eq_true, ↓reduceIte]
+  exact Array.mem_map.mpr ⟨x, hx, rfl⟩
+
+set_option hygiene false in
+/-- `mergeCompiledBlock`'s loops after its primary registrations, which change
+only the stored records, the `Named` table, the aux map (it grows), the
+extra names, Pass 3's records, the class registry and the pending names. -/
+local macro "merge_tail" init:term : tactic => `(tactic| (
+  refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
+    (I := fun c : CompileEnv => Step acc.cenv c F) _ _ _ _ ?_ ?_ ?_
+  · exact $init
+  · intro _ _ s hs; exact hs
+  · intro L₂ hL₂
+    refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
+      (I := fun c : CompileEnv => Step acc.cenv c F) _ _ _ _ hL₂ ?_ ?_
+    · intro _ _ s hs; split <;> exact hs
+    · intro L₃ hL₃
+      split
+      · refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
+          (I := fun c : CompileEnv => Step acc.cenv c F) _ _ _ _ ?_ ?_ ?_
+        · exact hL₃.trans (Step.keep rfl fun _ h => fold_insert_contains h)
+        · intro cls _ s hs
+          exact forIn_inv_array (fun c : CompileEnv => Step acc.cenv c F) _ cls (by intro _ _ s hs; exact hs) s hs
+        · intro L₄ hL₄
+          refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
+            (I := fun _ : Array Ix.Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
+          intro _ _; exact hL₄
+      · refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
+          (I := fun _ : Array Ix.Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
+        intro _ _; exact hL₃.trans (Step.keep rfl fun _ h => fold_insert_contains h)))
+
+/-- **A merge adds only the block's own primary claims** to the resolution
+map, and only grows the aux map. -/
+theorem mergeCompiledBlock_step (acc : DriverAcc) (lo : Ix.Name) (result : BlockResult)
+    (cache : BlockState) (published : Ix.Compile.Pass.Published) :
+    Step acc.cenv (mergeCompiledBlock acc lo result cache published).cenv
+      (fun n a => (n, a) ∈ primaryClaims lo result) := by
+  generalize hF : (fun n a => (n, a) ∈ primaryClaims lo result) = F
+  unfold mergeCompiledBlock
+  simp only [Id.run]
+  split
+  · rename_i hempty
+    have claim : F lo result.blockAddr := by rw [← hF]; exact claim_of_empty hempty
+    split
+    · merge_tail (Step.insert rfl (fun _ h => h) (.inl claim))
+    · merge_tail (Step.insert rfl (fun _ h => h) (.inl claim))
+  · rename_i hne
+    refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
+      (I := fun c : CompileEnv => Step acc.cenv c F) _ _ _ _ ?_ ?_ ?_
+    · exact Step.keep rfl fun _ h => h
+    · intro x hx s hs
+      have claim : F x.1 (Address.admissionHash (Ixon.ser x.2.1)) := by
+        rw [← hF]; exact claim_of_projection hne hx
+      split
+      · exact hs.trans (Step.insert rfl (fun _ h => h) (.inl claim))
+      · exact hs.trans (Step.insert rfl (fun _ h => h) (.inl claim))
+    · intro L hL
+      merge_tail hL
+
 end Ix.Cert.Resolution
