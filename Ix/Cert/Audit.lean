@@ -5190,3 +5190,19 @@ run_cmd do
     (#[`table_identical_origin, `originalIdentities_true, `Compared.mono,
       `apply_rows, `auxBlockOutcome_original, `reach_rows, `compileEnvFold_report,
       `compileEnvFold_identity, `compileReport_identical, `unchanged_original].map (`Ix.Cert.OriginalBytes ++ ·))
+
+/-! ## Projection hints: uniqueness from the compiler guard
+
+The hint table's projection entry and the guard's definitionProjection are
+exactly the same decoded projection. Successful compilation supplies the
+uniqueness used by hintsOf_projection. The published Source/Ixon hint wrapper
+still takes the existing PublishedAgree condition; compileReport does not
+check that separate address-map condition. -/
+
+/-- info: [cert-audit] published projection hints: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "published projection hints"
+    (#[`projEntry_definitionProjection, `hintsOf_projection_compileReport,
+      `hints_agree_projection].map (`Ix.Cert.CtxAgree ++ ·))

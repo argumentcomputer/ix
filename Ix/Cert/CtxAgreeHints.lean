@@ -19,7 +19,12 @@ record (`hints_agree`):
 * `hintsOf_projection`: the reader's hint at a block member is the one at its
   projection record, when that is the member's one projection record;
 * `hintsOf_block`: at a member no projection record projects (a singleton), the
-  one at its block's record. -/
+  one at its block's record.
+
+`hintsOf_projection_compileReport` discharges projection uniqueness from the
+compiler guard. `hints_agree_projection` composes the published hint equality,
+retaining the existing `PublishedAgree` condition explicitly; that condition
+is decided separately and is not a check performed by `compileReport`. -/
 
 namespace Ix.Cert.CtxAgree
 
@@ -137,5 +142,62 @@ theorem hints_agree {ixe : Ixon.Env}
     (hr : Ix.Cert.hintsOf ixe r = Ix.Cert.hintOf <$> ixe.anonHints.get? d.addr) :
     (fiberHintsMap ixe)[ingressKey n]? = Ix.Cert.hintsOf ixe r := by
   rw [fiberHintsMap_named agree hn, hr, hintOfLean_eq_hintOf]
+
+
+/-- The hint table and the compiler guard recognize exactly the same
+definition projections; only the member-reference representation differs. -/
+theorem projEntry_definitionProjection (e : Address × Ixon.LazyConstant) :
+    projEntry e = (definitionProjection e).map fun (r, a) => (.member r.1 r.2, a) := by
+  unfold projEntry definitionProjection
+  cases e.2.get? with
+  | none => rfl
+  | some c => simp only; cases c.info <;> rfl
+
+theorem projEntry_eq_some {e : Address × Ixon.LazyConstant} {r : ConstRef Address} {a : Address} :
+    projEntry e = some (r, a) ↔
+      ∃ block index, r = .member block index ∧ definitionProjection e = some ((block, index), a) := by
+  rw [projEntry_definitionProjection]
+  constructor
+  · intro h
+    obtain ⟨⟨⟨block, index⟩, address⟩, hp, same⟩ := Option.map_eq_some_iff.mp h
+    simp only [Prod.mk.injEq] at same
+    obtain ⟨rfl, rfl⟩ := same
+    exact ⟨block, index, rfl, hp⟩
+  · rintro ⟨block, index, rfl, hp⟩
+    rw [hp]
+    rfl
+
+/-- A successful compiler report supplies the projection uniqueness needed
+by the hint lookup, including arbitrary lazy-record cache states. -/
+theorem projEntry_one {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (compiled : compileReport env = .ok (ixe, failures)) {r : ConstRef Address}
+    {a : Address} {lc : Ixon.LazyConstant} (stored : (a, lc) ∈ ixe.consts.toList)
+    (projection : projEntry (a, lc) = some (r, a)) :
+    ∀ e ∈ ixe.consts.toList, ∀ a', projEntry e = some (r, a') → a' = a := by
+  obtain ⟨block, index, rfl, hp⟩ := projEntry_eq_some.mp projection
+  intro e he a' other
+  obtain ⟨block', index', same, hp'⟩ := projEntry_eq_some.mp other
+  cases same
+  exact projectionsOne compiled e he (a, lc) stored (block, index) a' a hp' hp
+
+/-- The compiler's projection check discharges `hintsOf_projection`'s
+uniqueness premise. -/
+theorem hintsOf_projection_compileReport {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (compiled : compileReport env = .ok (ixe, failures)) {r : ConstRef Address}
+    {a : Address} {lc : Ixon.LazyConstant} (stored : (a, lc) ∈ ixe.consts.toList)
+    (projection : projEntry (a, lc) = some (r, a)) :
+    hintsOf ixe r = hintOf <$> ixe.anonHints.get? a :=
+  hintsOf_projection stored projection (projEntry_one compiled stored projection)
+
+/-- A published definition projection runs the same hint on Source and
+Ixon. `PublishedAgree` is the existing address-map condition, not a new
+claim about what `compileReport` checks. -/
+theorem hints_agree_projection {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (compiled : compileReport env = .ok (ixe, failures)) (agree : PublishedAgree ixe)
+    {name : Ix.Name} {named : Ixon.Named} (published : (name, named) ∈ ixe.named.toList)
+    {r : ConstRef Address} {lc : Ixon.LazyConstant} (stored : (named.addr, lc) ∈ ixe.consts.toList)
+    (projection : projEntry (named.addr, lc) = some (r, named.addr)) :
+    (Ix.LeanIngress.fiberHintsMap ixe)[Ix.LeanIngress.ingressKey name]? = hintsOf ixe r :=
+  hints_agree agree published (hintsOf_projection_compileReport compiled stored projection)
 
 end Ix.Cert.CtxAgree
