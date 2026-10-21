@@ -18,6 +18,7 @@ import Ix.Cert.Unchanged
 import Ix.Cert.ReaderUnits
 import Ix.Cert.PassHooks
 import Ix.Cert.Resolution
+import Ix.Cert.OriginalBytes
 import Ix.Cert.HookFree
 import Ix.Cert.CtxAgree
 import Ix.Cert.CtxAgreeHints
@@ -5169,3 +5170,23 @@ fun identity ixe =>
     identity.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.identityMismatch
+
+/-! ## B9d: final published bytes of an identical original form
+
+A table's identical verdict comes from a true identity row. That row's
+original-form compile is from a reached snapshot and condensation block;
+its compared singleton bytes, or projection and original-block bytes,
+survive every merge and withdrawal and are copied into the artifact.
+Check15 ties the row to the final published address. `unchanged_original`
+composes B9a's table verdict with this byte-level fact. No digest-injectivity
+or new final compiler-correctness premise is assumed; this does not claim
+semantic equivalence of changed code from target acceptance alone. -/
+
+/-- info: [cert-audit] original bytes: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "original bytes"
+    (#[`table_identical_origin, `originalIdentities_true, `Compared.mono,
+      `apply_rows, `auxBlockOutcome_original, `reach_rows, `compileEnvFold_report,
+      `compileEnvFold_identity, `compileReport_identical, `unchanged_original].map (`Ix.Cert.OriginalBytes ++ ·))
