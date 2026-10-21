@@ -14,7 +14,15 @@
   * `PackingMatch`: a packing's leaves recognised up to a consistent renaming
     of their external variables;
   * `Telescope`: the fixed-parameter telescope in the first member's order;
-  * `Whnf`: the small weak-head reducer that types paths into `below`.
+  * `Whnf`: the small weak-head reducer that types paths into `below`;
+  * `WF`: the layout of a well-founded clique, the proofs' fixed-parameter
+    scan, the prologue and epilogue both packed transports share, and the
+    pieces of the packed equation lemma's regeneration;
+  * `WFSchema`: the exact `WellFounded.fix`/`Nat.fix` root and the positions
+    it owns (the recursive telescope, the decreasing obligations);
+  * `WFMatcher`: the declaration-checked `Nat` dispatcher the transport may
+    follow;
+  * `WFConjugation`: the decoder-owned well-founded transport (`transportWF`).
 
   Not imported by the compiler (`Ix.Compile.Pass` does not import it). No
   `MetaM`, no kernel, no `partial`.
@@ -27,3 +35,7 @@ public import Ix.Compile.Pass.Clique.Packing
 public import Ix.Compile.Pass.Clique.PackingMatch
 public import Ix.Compile.Pass.Clique.Telescope
 public import Ix.Compile.Pass.Clique.Whnf
+public import Ix.Compile.Pass.Clique.WF
+public import Ix.Compile.Pass.Clique.WFSchema
+public import Ix.Compile.Pass.Clique.WFMatcher
+public import Ix.Compile.Pass.Clique.WFConjugation
