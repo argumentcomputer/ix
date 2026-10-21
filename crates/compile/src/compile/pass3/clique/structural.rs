@@ -440,6 +440,9 @@ pub struct StructLayout<'a> {
   pub family: FxHashSet<Name>,
   pub groups: Vec<Group>,
   pub f_names: FxHashSet<Name>,
+  /// the functionals in the order the members' `brecOn` applications pass
+  /// them (the first occurrence of each)
+  pub f_list: Vec<Name>,
   pub num_fixed: usize,
   /// new fixed position `p` ↦ Lean's fixed position
   pub fixed_perm: Vec<usize>,
@@ -1848,6 +1851,7 @@ pub fn struct_layout<'a>(
   }
   // the functionals and the fixed parameters
   let mut f_names: FxHashSet<Name> = FxHashSet::default();
+  let mut f_list: Vec<Name> = Vec::new();
   let mut f_depth: FxHashMap<Name, (usize, usize)> = FxHashMap::default();
   let mut qss: Vec<Vec<usize>> = Vec::with_capacity(n);
   for (i, sh) in shapes.iter().enumerate() {
@@ -1886,6 +1890,9 @@ pub fn struct_layout<'a>(
         };
         if matchers.contains_key(&h) {
           continue;
+        }
+        if !f_names.contains(&h) {
+          f_list.push(h.clone());
         }
         f_names.insert(h.clone());
         f_depth.insert(h, (depth, g.arity));
@@ -1967,6 +1974,7 @@ pub fn struct_layout<'a>(
     family,
     groups,
     f_names,
+    f_list,
     num_fixed: m,
     fixed_perm,
     matchers,
@@ -2080,6 +2088,16 @@ pub fn transport_structural(
   force_ownership: bool,
 ) -> R<Vec<Transported>> {
   let mut l = struct_layout(members, aux, sigma, const_of, family)?;
+  // the transport rewrites the encoding's constants (`aux`) and reorders the
+  // calls to the functionals: a functional outside `aux` would keep Lean's
+  // telescope while its calls are reordered
+  if let Some(f) = l.f_list.iter().find(|f| !aux.iter().any(|d| d.name == **f))
+  {
+    return Err(format!(
+      "transportStructural: the functional {} is not one of the encoding's constants",
+      name_to_string(f)
+    ));
+  }
   l.check_ownership = force_ownership || !members.iter().all(|d| d.is_thm);
   // `brecOn` of the block: at the members' roots only
   if l.check_ownership {

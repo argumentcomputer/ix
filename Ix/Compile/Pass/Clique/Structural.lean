@@ -275,6 +275,9 @@ structure StructLayout where
   family : Std.HashSet Name
   groups : Array Group
   fNames : Std.HashSet Name
+  /-- the functionals in the order the members' `brecOn` applications pass them
+  (the first occurrence of each) -/
+  fList : Array Name := #[]
   numFixed : Nat
   fixedPerm : Array Nat
   /-- the below matchers, with their shapes (`matcherShape?`) -/
@@ -989,6 +992,7 @@ def structLayout (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
       | none => throw s!"structLayout: member {i} does not project its clique position"
   -- the functionals and the fixed parameters
   let mut fNames : Std.HashSet Name := {}
+  let mut fList : Array Name := #[]
   let mut fDepth : Std.HashMap Name (Nat × Nat) := {}
   let mut qss : Array (Array Nat) := #[]
   for (sh, i) in shapes.zipIdx do
@@ -1008,6 +1012,7 @@ def structLayout (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
       for c in comps do
         let some (h, _, args) := constApp? c | throw "structLayout: a functional that is not a constant"
         if matchers.contains h then continue
+        unless fNames.contains h do fList := fList.push h
         fNames := fNames.insert h
         fDepth := fDepth.insert h (depth, g.arity)
         unless args.size ≥ depth do throw "structLayout: a functional applied to too few arguments"
@@ -1043,7 +1048,7 @@ def structLayout (members : Array Decl) (aux : Array Decl) (σ : Array Nat)
   unless shapes.all (·.lets == numFunTypes) do throw "structLayout: inconsistent funType lets"
   unless numFunTypes == 0 || numFunTypes == n do throw "structLayout: unexpected lets"
   return { n, sigma := σ, const?, numParams := P, numMotives := K, aux := blockAux, family,
-           groups, fNames, numFixed := m, fixedPerm, matchers, numFunTypes, funPerm,
+           groups, fNames, fList, numFixed := m, fixedPerm, matchers, numFunTypes, funPerm,
            memberFixed := qss, fDepth }
 
 /-! ## The transport -/
@@ -1059,6 +1064,11 @@ def transportStructural (members : Array Decl) (aux : Array Decl) (σ : Array Na
     (lemmas : Array (Decl × Name) := #[]) (forceOwnership : Bool := false) :
     TM (Array Transported) := do
   let L ← liftE (structLayout members aux σ const? family)
+  -- the transport rewrites the encoding's constants (`aux`) and reorders the
+  -- calls to the functionals: a functional outside `aux` would keep Lean's
+  -- telescope while its calls are reordered
+  if let some f := L.fList.find? fun f => !aux.any (·.name == f) then
+    throw s!"transportStructural: the functional {f} is not one of the encoding's constants"
   let L := { L with checkOwnership := forceOwnership || !members.all (·.isThm) }
   -- `brecOn` of the block: at the members' roots only
   if L.checkOwnership then
