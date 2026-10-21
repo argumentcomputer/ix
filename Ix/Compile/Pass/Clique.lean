@@ -28,6 +28,11 @@
   * `Structural`: the structural transport (`transportStructural`), over the
     block's authenticated `below`/`brecOn` family and the below matchers
     recognised by their declarations;
+  * `PartialFixpoint`: the layout of a `partial_fixpoint` clique, and the
+    decoding and regeneration of its instance trees, packed paths,
+    `solveMonoCall`'s path proofs and the `monotone_mk` tree;
+  * `PFConjugation`: the decoder-owned `partial_fixpoint` transport
+    (`transportPF`);
   * `Plan`: the plan of a changed clique as data (encodings, the order's
     source, the transported members and canonical constants, the outcome),
     and its side-car record `_ix.clique`, typed data only;
@@ -51,5 +56,7 @@ public import Ix.Compile.Pass.Clique.WFMatcher
 public import Ix.Compile.Pass.Clique.WFConjugation
 public import Ix.Compile.Pass.Clique.StructuralEq
 public import Ix.Compile.Pass.Clique.Structural
+public import Ix.Compile.Pass.Clique.PartialFixpoint
+public import Ix.Compile.Pass.Clique.PFConjugation
 public import Ix.Compile.Pass.Clique.Plan
 public import Ix.Compile.Pass.Clique.Table
