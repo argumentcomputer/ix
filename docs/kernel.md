@@ -310,14 +310,15 @@ tower. The Mathlib instance above supplies it from ω inaccessible
 cardinals, which its corollaries take as a hypothesis, not as an axiom.
 
 **Input policy.** The entry never falls back to `Ix.Tc` or the Rust
-checker; neither is in its closure ("Trust surface"). An input may declare
-Init's compiler-trust family (`IxC/Kernel/TrustAxioms.lean`):
-`Lean.trustCompiler` installs as an opaque with value `True.intro`,
-`Lean.reduceBool` and `Lean.reduceNat` as opaques whose stored values are
-certified to be the identity (`checkReduceIdentity`; a drifted value
-declines), and `Lean.ofReduceBool` and `Lean.ofReduceNat` as bound axioms
-over them. `sorryAx` is tolerated as a declaration and installs nothing; any
-use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
+checker; neither is in its closure ("Trust surface"). The certified theory
+uses Lean's three standard axioms: `propext`, `Classical.choice` and
+`Quot.sound`. The compiler-trust axioms `Lean.trustCompiler`,
+`Lean.ofReduceBool` and `Lean.ofReduceNat` are non-standard axioms here and
+decline. There are no native-evaluation roles for these declarations or for
+`Lean.reduceBool` and `Lean.reduceNat`; opaque definitions follow the ordinary
+checking rules. Native evaluation is outside this certified theory.
+`sorryAx` is tolerated as a declaration and installs nothing; any use of it
+declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
 operations are admitted through the role table's evidence, which the
 checker checks itself ("Roles and the role table" below).
 
@@ -517,26 +518,28 @@ its recursors in motive order, and the stream's index-count check pairs the
 recursor of motive `m` with the block's type `m` (`RecCounts.motive`).
 
 **Roles and their specifications** (`IxC/Kernel/Roles.lean`). The checker
-knows 64 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
+knows 59 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
 `Empty`, `False`, the `Quot` package, every member), `Bool`, `True`, `And`,
 `Iff`, `Nonempty` with their constructors and recursors, the literal support
 (`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`,
 `Char.ofNat`), the fifteen certified `Nat` operations (`pred`, `add`, `sub`,
 `mul`, `pow`, `beq`, `ble` structural; `div`, `mod`, `gcd`, `land`, `lor`,
-`xor`, `shiftLeft`, `shiftRight` well-founded), the standard and
-compiler-trust axioms, `Lean.reduceBool`, `Lean.reduceNat` and `sorryAx`.
+`xor`, `shiftLeft`, `shiftRight` well-founded), the standard axioms and
+`sorryAx`.
 Each has a fixed specification (`Role.spec`): a closed term over role keys
-and positional levels, of one of five kinds (a basis `block`'s declarations;
+and positional levels, of one of four kinds (a basis `block`'s declarations;
 an `anchor`'s type; an operation's type and characterizing equations,
-`ops`; an `axiom`'s exact type, or none for the inert `sorryAx`; an
-`identity`'s type), its block (`Role.block`, the roles bound together) and
-its dependencies (`Role.deps`). The specifications are today's checks
+`ops`; an `axiom`'s exact type, or none for the inert `sorryAx`), its block
+(`Role.block`, the roles bound together) and its dependencies (`Role.deps`).
+The specifications are today's checks
 respelled, not new ones (`Role.spec_*` are `rfl` against the data the
 checker compares). They carry no address and no input key, so one set
-serves every toolchain. The set is versioned (`specVersion`, 1) and has a
-digest: BLAKE3 of its canonical encoding (`Ix.SpecDigest.specBytes`, 8863
-bytes), computed in the root library because the kernel admits no hasher,
-`70fedb021efa660e13618a7dbaa8f76ee0a91ac95fbd353ce05100248872e1ec`
+serves every toolchain. Specification version 2 removes the five
+compiler-trust/native-evaluation roles and the `identity` specification
+kind. The canonical encoding (`Ix.SpecDigest.specBytes`) is 8696 bytes.
+Its BLAKE3 digest, computed in the root library because the kernel admits
+no hasher, is
+`52049b9d09530c92cd2b02115a00ef79f64d99e8b279ee14c42b8b3dc9a94b3f`
 (`Ix/SpecDigest.lean` freezes it; `IxC/Kernel/Audit/Roles.lean` freezes the
 set's shape). Four anchors that no use site validates, `Bool.rec`, `And`,
 `And.intro` and `And.rec`, are validated at install (owner, 2026-10-15): the
@@ -1035,7 +1038,7 @@ files carry further changes:
 
 | File | Change | Why |
 | --- | --- | --- |
-| `IxC/Kernel/{CheckerBase,Checker,TrustAxioms,DeclCheck}.lean`, `IxC/Kernel/Cached/ParsedC.lean` and the proofs that consume them | imports `Roles` instead of `NatOpPins`; the operations' install gate checks the role table's evidence (`checkDivModEvidence`, `evidenceLocal`), the reduce opaques keep their identity certificate, the pin variants and pin comparisons are gone; the proofs take `Evidences` where they took pin lists | upstream's `NatOpPins` splices JSON pin dumps; Ix binds primitives by a role table and validates them against fixed specifications (IXC-PLAN step 4) |
+| `IxC/Kernel/{CheckerBase,Checker,DeclCheck}.lean`, `IxC/Kernel/Cached/ParsedC.lean` and the proofs that consume them; the former `TrustAxioms.lean` was removed | `Roles` replaces `NatOpPins`; the operations' install gate checks the role table's evidence (`checkDivModEvidence`, `evidenceLocal`); compiler-trust support is excluded from the certified theory; the proofs take `Evidences` where they took pin lists | upstream's `NatOpPins` splices JSON pin dumps; Ix binds primitives by a role table and validates them against fixed specifications (IXC-PLAN step 4) |
 | `IxC/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
 | `IxC/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Ix's compiler orders a nested block's auxiliary motives canonically |
 | `IxC/Kernel/Level.lean`, `IxC/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
