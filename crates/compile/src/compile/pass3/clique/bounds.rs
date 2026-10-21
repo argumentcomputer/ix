@@ -27,15 +27,26 @@ pub const SEARCH_DEPTH: usize = 64;
 /// and leaf reduction (`WFConjugation`).
 pub const WF_DEPTH: usize = 64;
 
+/// The bound on `k` when the clique table reads a member's equation lemmas
+/// `m.eq_k` (`member_eq_lemmas`): they are read while present, for `k` below
+/// it.
+pub const EQ_LEMMA_BOUND: usize = 1_000_000;
+
+/// The number of names `encoding_owner` looks up: the name itself and its
+/// nearest prefixes.
+pub const ENCODING_OWNER_DEPTH: usize = 64;
+
 /// Every bound by its Lean name, in the order of Lean's `bounds`, for the
 /// Lean/Rust parity test.
-pub fn bounds() -> [(&'static str, usize); 5] {
+pub fn bounds() -> [(&'static str, usize); 7] {
   [
     ("transportFuel", TRANSPORT_FUEL),
     ("whnfFuel", WHNF_FUEL),
     ("eqDefConversionFuel", EQ_DEF_CONVERSION_FUEL),
     ("searchDepth", SEARCH_DEPTH),
     ("wfDepth", WF_DEPTH),
+    ("eqLemmaBound", EQ_LEMMA_BOUND),
+    ("encodingOwnerDepth", ENCODING_OWNER_DEPTH),
   ]
 }
 
@@ -53,6 +64,8 @@ mod tests {
         ("eqDefConversionFuel", 256),
         ("searchDepth", 64),
         ("wfDepth", 64),
+        ("eqLemmaBound", 1_000_000),
+        ("encodingOwnerDepth", 64),
       ]
     );
   }
