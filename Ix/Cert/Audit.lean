@@ -23,6 +23,7 @@ import Ix.Cert.HookFree
 import Ix.Cert.CtxAgree
 import Ix.Cert.CtxAgreeHints
 import Ix.Cert.SourcePrelude
+import Ix.Cert.ReaderKeys
 import Ix.Cert.CtxAgreeProj
 import Ix.Cert.CtxAgreeOwners
 import Ix.Cert.CtxAgreeProjFields
@@ -5367,3 +5368,23 @@ run_cmd do
   checkRoots (tag := "cert-audit") "production source trace"
     (#[`graph_conversion, `trace_stable, `lowerAllCollapsed_stable,
       `prepareSourceCollapsed_stable].map (`Ix.Cert.SourceTrace ++ ·))
+
+/-! ## Reader cache coverage and role keys
+
+`ReaderKeys` proves lookup origins, first-address preservation and coverage
+for the actual keysOf fold, and role origins/injectivity for bindingsOf.
+Singleton fallback resolves directly. Scoped ReconCompatible isolates the
+remaining reconstruction/cache-hit case and gives memberKey's role/input
+classification. Its scope is the references that actually emit entries.
+This is an internal predicate; compiler-specific reconstruction/fallback
+compatibility and target-prefix preservation remain unproved here. No
+production guard or final admission premise is added. -/
+
+/-- info: [cert-audit] reader caches and roles: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "reader caches and roles"
+    (#[`withAddress_keeps, `keysOf_address_origin, `keysOf_key_origin,
+      `keysOf_covers, `bindings_role_origin, `bindings_role_inj,
+      `singletonAt_resolves, `memberKey_role_iff].map (`Ix.Cert.ReaderKeys ++ ·))
