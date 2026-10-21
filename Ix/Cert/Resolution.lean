@@ -538,4 +538,87 @@ theorem applyAuxBlockOutcome_failed_step (acc : DriverAcc) (lo : Ix.Name) (all :
     · intro L hL
       exact hL
 
+/-- A loop over the driver state, then a continuation that returns. -/
+theorem loopAccRet {G : Ix.Name → Address → Prop} {c : CompileEnv} {α : Type} (xs : Array α)
+    (init : DriverAcc) (f : α → DriverAcc → Id (ForInStep DriverAcc))
+    (k : DriverAcc → Id (DriverAcc × Array Ix.Name × Bool)) (hinit : Step c init.cenv G)
+    (body : ∀ x ∈ xs, ∀ s, Step c s.cenv G → Step c (f x s).value.cenv G)
+    (cont : ∀ L, Step c L.cenv G → Step c (k L).1.cenv G) : Step c (forIn (m := Id) xs init f >>= k).1.cenv G :=
+  loop_bind xs init f k (fun d => Step c d.cenv G) (fun r => Step c r.1.cenv G) hinit body cont
+
+/-- A loop body that changes only fields `Step` ignores. -/
+local macro "keep_body" : tactic => `(tactic| (intro _ _ s hs; exact hs.trans (Step.keep rfl fun _ h => h)))
+
+/-- A loop over the driver state that changes only fields `Step` ignores,
+then a return; the step to the loop's initial state is left. -/
+local macro "keep_loop" : tactic => `(tactic| refine loopAcc _ _ _ _ ?_ (by keep_body) fun _ h => h)
+
+/-- The promotion's tail, from a driver state `X` already reached by a step:
+an incomplete or failed original form withdraws the promotion, otherwise it
+finishes. `x` proves the step to `X`. -/
+local macro "prom_tail" x:tactic : tactic => `(tactic| (
+  split
+  · refine fst_pure (Step.trans ?_ (failAuxPromotion_step _ _ _ _)); $x
+  · split
+    · refine fst_pure (Step.trans ?_ (failAuxPromotion_step _ _ _ _)); $x
+    · split
+      · refine fst_pure (Step.trans ?_ (finishAuxPromotion_step _ _ _ _ _)); $x
+      · refine fst_pure (Step.trans ?_ (finishAuxPromotion_step _ _ _ _ _)); $x))
+
+/-- **Applying a promoted block adds only its cross-SCC subset's primary
+claims** (the original-form promotion and the remaining claims write aux
+addresses, a withdrawal only erases, and recorded failures leave the map). -/
+theorem applyAuxBlockOutcome_promoted_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name)
+    (cs : Option (Ix.Name × BlockResult × BlockState × Ix.Compile.Pass.Published)) (cn : Array Ix.Name)
+    (cf : Option (Array Ix.Name × String)) (im : Option String) (na : Option (BlockResult × BlockState))
+    (nf : Option String) :
+    Step acc.cenv (applyAuxBlockOutcome acc lo all (.promoted cs cn cf im na nf)).1.cenv
+      (outcomeClaims lo (.promoted cs cn cf im na nf)) := by
+  rcases cs with _ | ⟨clo, result, cache, published⟩
+  · rcases cf with _ | ⟨names, msg⟩
+    · unfold applyAuxBlockOutcome; simp only [Id.run]
+      prom_tail (exact Step.refl _ _)
+    · unfold applyAuxBlockOutcome; simp only [Id.run]
+      prom_tail (keep_loop; exact Step.refl _ _)
+  · have merged : ∀ X : DriverAcc, Step acc.cenv X.cenv
+        (outcomeClaims lo (.promoted (some (clo, result, cache, published)) cn cf im na nf)) →
+        Step acc.cenv (mergeCompiledBlock X clo result cache published).cenv
+          (outcomeClaims lo (.promoted (some (clo, result, cache, published)) cn cf im na nf)) :=
+      fun X hX => hX.trans ((mergeCompiledBlock_step X clo result cache published).mono fun _ _ h => h)
+    rcases cf with _ | ⟨names, msg⟩
+    · unfold applyAuxBlockOutcome; simp only [Id.run]
+      split
+      · prom_tail (keep_loop; exact Step.refl _ _)
+      · split
+        · refine loopNames _ _ _ _ fun _ => ?_
+          refine loopAccRet _ _ _ _ (merged _ (Step.refl _ _)) (by keep_body) fun L hL => ?_
+          prom_tail (exact hL)
+        · refine loopNames _ _ _ _ fun _ => ?_
+          refine loopNames _ _ _ _ fun _ => ?_
+          refine loopAccRet _ _ _ _ (merged _ (Step.refl _ _)) (by keep_body) fun L hL => ?_
+          prom_tail (exact hL)
+    · unfold applyAuxBlockOutcome; simp only [Id.run]
+      split
+      · prom_tail (keep_loop; keep_loop; exact Step.refl _ _)
+      · split
+        · refine loopNames _ _ _ _ fun _ => ?_
+          refine loopAccRet _ _ _ _ (merged _ ?_) (by keep_body) fun L hL => ?_
+          · keep_loop; exact Step.refl _ _
+          · prom_tail (exact hL)
+        · refine loopNames _ _ _ _ fun _ => ?_
+          refine loopNames _ _ _ _ fun _ => ?_
+          refine loopAccRet _ _ _ _ (merged _ ?_) (by keep_body) fun L hL => ?_
+          · keep_loop; exact Step.refl _ _
+          · prom_tail (exact hL)
+
+/-- **Applying a block's outcome adds only the outcome's primary claims** to
+the resolution map, besides aux names' entries. -/
+theorem applyAuxBlockOutcome_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name)
+    (o : AuxBlockOutcome) :
+    Step acc.cenv (applyAuxBlockOutcome acc lo all o).1.cenv (outcomeClaims lo o) := by
+  cases o with
+  | compiled r c p => exact applyAuxBlockOutcome_compiled_step acc lo all r c p
+  | promoted cs cn cf im na nf => exact applyAuxBlockOutcome_promoted_step acc lo all cs cn cf im na nf
+  | failed msg => exact applyAuxBlockOutcome_failed_step acc lo all msg
+
 end Ix.Cert.Resolution
