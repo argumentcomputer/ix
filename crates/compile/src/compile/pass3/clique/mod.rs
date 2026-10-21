@@ -10,6 +10,7 @@
 //! | `Clique/WF.lean`, `WFSchema.lean`, `WFMatcher.lean`, `WFConjugation.lean` | [`wf`] |
 //! | `Clique/Structural.lean` | [`structural`] |
 //! | `Clique/StructuralEq.lean` | [`structural_eq`] |
+//! | `Clique/PartialFixpoint.lean`, `PFConjugation.lean` | [`pf`] |
 //! | `Clique/Plan.lean` | [`plan`] |
 //! | `Clique/Table.lean` | [`table`] |
 //! | `Clique/Order.lean`; `Canon/Order.lean`, `Classes.lean`, `Clique.lean` (definitions) | [`order`] |
@@ -22,6 +23,7 @@ pub mod basic;
 pub mod bounds;
 pub mod order;
 pub mod packing;
+pub mod pf;
 pub mod plan;
 pub mod structural;
 pub mod structural_eq;
