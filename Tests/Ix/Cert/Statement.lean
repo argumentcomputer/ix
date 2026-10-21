@@ -95,13 +95,18 @@ resolution map at the end of the fold (`Ix.Cert.compileUnchecked`'s third
 component), which the resolution check reads; `aux` is its aux map (the fourth
 component), which the original-form check reads. -/
 def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
-    (failures : Ix.Cert.Failures)
-    (resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address) :
+    (failures : Ix.Cert.Failures) (cenv : Ix.CompileM.CompileEnv) :
     IO (Array String × Array String) := do
+  let resolved := cenv.nameToAddr
+  let aux := cenv.auxNameToAddr
+  -- `checkReport` on the driver's final environment with its resolution and
+  -- aux maps replaced (the planted cases)
+  let chk := fun (r a : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (out : Ixon.Env × Ix.Cert.Failures) =>
+    Ix.Cert.checkReport env { cenv with nameToAddr := r, auxNameToAddr := a } out
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   let t0 ← IO.monoMsNow
-  let ok? ← IO.lazyPure fun _ => Ix.Cert.checkReport env resolved aux (ixe, failures)
+  let ok? ← IO.lazyPure fun _ => Ix.Cert.checkReport env cenv (ixe, failures)
   let t1 ← IO.monoMsNow
   match ok? with
   | .ok () => lines := lines.push s!"{label}: checkReport passes on the compile's result \
@@ -136,7 +141,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     ("a blob's bytes changed", { ixe with blobs := ixe.blobs.insert b (bytes.push 0) }, failures)]
   let mut refused := 0
   for (what, ixe', failures') in tampered do
-    match Ix.Cert.checkReport env resolved aux (ixe', failures') with
+    match chk resolved aux (ixe', failures') with
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a tampered report: {what}"
     | .error _ => refused := refused + 1
   lines := lines.push s!"{label}: checkReport refuses {refused} of {tampered.length} tampered reports"
@@ -150,7 +155,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       ({env.consts.size} input and {ixe.named.size} published names, {h1 - h0} ms)"
   | some (x, y) => errors := errors.push s!"{label}: nameHashCollision finds {x.pretty} and \
       {y.pretty} in the compile's result"
-  match Ix.Cert.checkReport env resolved aux ({ ixe with named := ixe.named.insert twin named }, failures) with
+  match chk resolved aux ({ ixe with named := ixe.named.insert twin named }, failures) with
   | .error e =>
     unless (e.splitOn "name check failed").length > 1 do
       errors := errors.push s!"{label}: the planted name-hash twin is refused, but not by the name check: {e}"
@@ -176,7 +181,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     | .muts all layout =>
       let planted : Ixon.Named := { nd with constMeta := { nd.constMeta with
         info := .muts (all.push #[Address.blake3Pure "planted-muts-class".toUTF8]) layout } }
-      match Ix.Cert.checkReport env resolved aux ({ ixe with named := ixe.named.insert entry planted }, failures) with
+      match chk resolved aux ({ ixe with named := ixe.named.insert entry planted }, failures) with
       | .error e =>
         if (e.splitOn "Muts check failed").length > 1 then
           lines := lines.push s!"{label}: checkReport refuses a Muts entry with a planted class \
@@ -219,7 +224,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
         resolved.insert unpublished nd.addr, ixe)]
     let mut byCheck := 0
     for (what, resolved', ixe') in planted do
-      match Ix.Cert.checkReport env resolved' aux (ixe', failures) with
+      match chk resolved' aux (ixe', failures) with
       | .error e =>
         if (e.splitOn "resolution check failed").length > 1 then byCheck := byCheck + 1
         else errors := errors.push s!"{label}: {what} is refused, but not by the resolution check: {e}"
@@ -251,7 +256,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     let dropped := ixe.named.filter fun _ nd => match nd.constMeta.info with
       | .muts .. => nd.addr != block
       | _ => true
-    match Ix.Cert.checkReport env resolved aux ({ ixe with named := dropped }, failures) with
+    match chk resolved aux ({ ixe with named := dropped }, failures) with
     | .error e =>
       if (e.splitOn "component check failed").length > 1 then
         lines := lines.push s!"{label}: checkReport refuses a block's Muts entry dropped by the \
@@ -277,7 +282,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   match plantable with
   | none => errors := errors.push s!"{label}: no published input name without an original-form record"
   | some (n, a) =>
-    match Ix.Cert.checkReport env resolved (aux.insert n a) (ixe, failures) with
+    match chk resolved (aux.insert n a) (ixe, failures) with
     | .error e =>
       if (e.splitOn "original-form check failed").length > 1 then
         lines := lines.push s!"{label}: checkReport refuses an input name without an original-form \
@@ -303,7 +308,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   match droppable with
   | none => errors := errors.push s!"{label}: no published, resolved input name"
   | some n =>
-    match Ix.Cert.checkReport env (resolved.erase n) (aux.erase n) (ixe, failures) with
+    match chk (resolved.erase n) (aux.erase n) (ixe, failures) with
     | .error e =>
       if (e.splitOn "publication check failed").length > 1 then
         lines := lines.push s!"{label}: checkReport refuses a published input name dropped from \
@@ -313,6 +318,34 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           publication check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a published input name \
         neither resolved nor in the aux map"
+  -- the cross-SCC check (no resolved name outside the aux map among the extra
+  -- names), timed alone on the driver's final environment, then refusing, by
+  -- its own message, the environment with such a name planted among the extra
+  -- names
+  let c0 ← IO.monoMsNow
+  let cross? ← IO.lazyPure fun _ =>
+    Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames
+  let c1 ← IO.monoMsNow
+  match cross? with
+  | none => lines := lines.push s!"{label}: crossClaimed finds no resolved name outside the aux map \
+      among the extra names ({resolved.size} resolved, {cenv.auxGenExtraNames.size} extra names, \
+      {c1 - c0} ms)"
+  | some n => errors := errors.push s!"{label}: crossClaimed finds {n.pretty} in the compile's result"
+  let primary := resolved.toList.findSome? fun (n, _) => if aux.contains n then none else some n
+  match primary with
+  | none => errors := errors.push s!"{label}: no resolved name outside the aux map"
+  | some n =>
+    let cenv' := { cenv with auxGenExtraNames := cenv.auxGenExtraNames.insert (n : Ix.Name) }
+    match Ix.Cert.checkReport env cenv' (ixe, failures) with
+    | .error e =>
+      if (e.splitOn "cross-SCC check failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses a resolved name outside the aux map \
+          planted among the extra names ({(n : Ix.Name).pretty})"
+      else
+        errors := errors.push s!"{label}: the planted extra name is refused, but not by the \
+          cross-SCC check: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a resolved name outside the \
+        aux map among the extra names"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find
@@ -610,7 +643,7 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   let t1 ← IO.monoMsNow
   let pure? ← IO.lazyPure fun _ => Ix.Cert.compileUnchecked env
   let t2 ← IO.monoMsNow
-  let (ixe, failures, resolved, aux) ← match pure? with
+  let (ixe, failures, cenv) ← match pure? with
     | .ok out => pure out
     | .error e => return (#[s!"{label}: Ix.Cert.compile failed: {e}"], lines)
   -- `CompileCovers`: every input constant published exactly when it did not fail
@@ -642,7 +675,7 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
       {badBlobs.size} blobs are not at pure BLAKE3 of their bytes: \
       {(badRecords ++ badBlobs).toList.take 5}"
   -- `compileReport`'s own checks (CQ2.27)
-  let (checkErrors, checkLines) ← checkReportCases label env ixe failures resolved aux
+  let (checkErrors, checkLines) ← checkReportCases label env ixe failures cenv
   errors := errors ++ checkErrors
   lines := lines ++ checkLines
   -- the role table's bindings (Route A, B5a)

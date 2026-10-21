@@ -924,11 +924,7 @@ constructor:
 -- fold (`cenv.nameToAddr`, which it used to drop), for `checkReport`'s sixth
 -- check (section "Resolved names are published where they resolve" below). The
 -- environment and failures it returns are the same.
-/-- info: def Ix.Cert.compileUnchecked : Ix.Environment →
-  Except String
-    (Ixon.Env ×
-      Ix.Cert.Failures ×
-        Std.HashMap Ix.Compile.ExactKey.ExactName Address × Std.HashMap Ix.Compile.ExactKey.ExactName Address) :=
+/-- info: def Ix.Cert.compileUnchecked : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures × Ix.CompileM.CompileEnv) :=
 fun env =>
   have env := { consts := env.consts };
   have split := Ix.Cert.groundSplit env;
@@ -940,7 +936,7 @@ fun env =>
     | (ixe, fst, cenv) =>
       have ungrounded :=
         Std.HashMap.fold (fun m n e => m.insert n (e.refusal (Std.HashMap.contains split.snd))) ∅ split.snd;
-      pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }, cenv.nameToAddr, cenv.auxNameToAddr) -/
+      pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }, cenv) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compileUnchecked
 
@@ -1115,10 +1111,8 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.referenceCycle
 
-/-- info: def Ix.Cert.checkReport : Ix.Environment →
-  Std.HashMap Ix.Compile.ExactKey.ExactName Address →
-    Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
-fun env resolved aux out =>
+/-- info: def Ix.Cert.checkReport : Ix.Environment → Ix.CompileM.CompileEnv → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
+fun env cenv out =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
   | [], [] =>
     match Ix.Cert.referenceCycle out.fst with
@@ -1127,14 +1121,21 @@ fun env resolved aux out =>
       | none =>
         match Ix.Cert.mutsMismatch out.fst with
         | none =>
-          match Ix.Cert.resolutionMismatch resolved out.fst with
+          match Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst with
           | none =>
             match Ix.Cert.unseenInductive env out.fst with
             | none =>
-              match Ix.Cert.unoriginalAux env aux out.fst with
+              match Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst with
               | none =>
-                match Ix.Cert.unresolvedPublished env resolved aux out.fst with
-                | none => Except.ok ()
+                match Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst with
+                | none =>
+                  match Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
+                  | none => Except.ok ()
+                  | some n =>
+                    Except.error
+                      (toString "compileReport: cross-SCC check failed: the name " ++ toString n.pretty ++
+                        toString
+                          " resolves outside the aux map and is among the extra names, so a cross-SCC subset claimed it")
                 | some n =>
                   Except.error
                     (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
@@ -1195,8 +1196,8 @@ fun env resolved aux out =>
 fun env => do
   let __x ← Ix.Cert.compileUnchecked env
   match __x with
-    | (ixe, failures, resolved, aux) => do
-      Ix.Cert.checkReport env resolved aux (ixe, failures)
+    | (ixe, failures, cenv) => do
+      Ix.Cert.checkReport env cenv (ixe, failures)
       pure (ixe, failures) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compileReport
@@ -1310,24 +1311,24 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 -- CQ2.27: coverage and authenticity, by construction.
 /-- info: @Ix.Cert.compileReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
   Ix.Cert.compileReport env = Except.ok out →
-    ∃ resolved aux,
-      Ix.Cert.compileUnchecked env = Except.ok (out.fst, out.snd, resolved, aux) ∧
-        Ix.Cert.checkReport env resolved aux out = Except.ok () -/
+    ∃ cenv,
+      Ix.Cert.compileUnchecked env = Except.ok (out.fst, out.snd, cenv) ∧
+        Ix.Cert.checkReport env cenv out = Except.ok () -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileReport_ok
 
-/-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
-  {out : Ixon.Env × Ix.Cert.Failures},
-  Ix.Cert.checkReport env resolved aux out = Except.ok () →
+/-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Ix.Cert.Failures},
+  Ix.Cert.checkReport env cenv out = Except.ok () →
     Ix.Cert.uncovered env out.fst out.snd = [] ∧
       Ix.Cert.unauthentic out.fst = [] ∧
         Ix.Cert.referenceCycle out.fst = none ∧
           Ix.Cert.nameHashCollision env out.fst = none ∧
             Ix.Cert.mutsMismatch out.fst = none ∧
-              Ix.Cert.resolutionMismatch resolved out.fst = none ∧
+              Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst = none ∧
                 Ix.Cert.unseenInductive env out.fst = none ∧
-                  Ix.Cert.unoriginalAux env aux out.fst = none ∧
-                    Ix.Cert.unresolvedPublished env resolved aux out.fst = none -/
+                  Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst = none ∧
+                    Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
+                      Ix.Cert.crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4619,6 +4620,47 @@ fun env resolved aux ixe =>
     ixe.named.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unresolvedPublished
+
+/-! ## No cross-SCC claims; `compileUnchecked` returns the driver's final environment (B9b, `HookFree`'s discharge, (iv); coordinator decision, 2026-10-21)
+
+A promoted block's cross-SCC subset is compiled under its own key, which is
+not one of the condensation's block keys, so Pass 3's hook 2 (`prepareBlock`)
+does not find the block's references and walks its members' terms, a loop no
+proof unfolds: hook 2 cannot be shown the identity there. The subset's merge
+puts each of its names among the extra names (`CompileEnv.auxGenExtraNames`),
+and only a withdrawal, which also erases the name's resolution, removes one.
+`compileReport` now refuses a result in which a resolved name outside the aux
+map is among the extra names (`checkReport`'s tenth check, `crossClaimed`;
+probe `ports/20261021T034341Z-hookprobe`: 0 on Init+Std, 117,694 resolved
+names, and on Mathlib, 783,082). With it, `compileUnchecked` returns the
+driver's final environment instead of its resolution and aux maps, and
+`checkReport` reads the maps it needs from it (`nameToAddr`, `auxNameToAddr`,
+`auxGenExtraNames`; each check takes only its maps). Re-frozen with it:
+`compileUnchecked`'s, `checkReport`'s and `compileReport`'s prints,
+`compileReport_ok` (the environment instead of the two maps) and
+`checkReport_ok` (the maps read from the environment, and a tenth conjunct).
+On a consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] cross-SCC claims: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] cross-SCC claims: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "cross-SCC claims"
+    (#[`crossClaimed_none, `noCrossClaims].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "cross-SCC claims" #[``Ix.Cert.crossClaimed]
+
+/-- info: def Ix.Cert.crossClaimed : Std.HashMap Ix.Compile.ExactKey.ExactName Address →
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address → Std.HashSet Ix.Name → Option Ix.Name :=
+fun resolved aux extras =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, snd) => if (!aux.contains n && extras.contains n) = true then some n else none)
+    resolved.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.crossClaimed
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

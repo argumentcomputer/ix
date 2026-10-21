@@ -972,17 +972,13 @@ theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedB
   · exact .inl haux
   · exact .inr ⟨b, hc, assembleEnv_consts _ hb⟩
 
-/-- **`compileUnchecked`'s resolution map is the driver's final one**: a
+/-- **`compileUnchecked` returns the driver's final environment**: a
 `compileUnchecked` that returns ran the fold on the ground part's
-condensation, and returns the resolution map of the fold's final compile
-environment, with its aux map. -/
+condensation, and returns the fold's final compile environment. -/
 theorem compileUnchecked_fold {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    {resolved aux : Std.HashMap ExactName Address}
-    (h : compileUnchecked env = .ok (ixe, failures, resolved, aux)) :
-    ∃ (bytes : Nat) (cenv : CompileEnv),
-      compileEnvFold { consts := env.consts }
-        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) = .ok (ixe, bytes, cenv) ∧
-      resolved = cenv.nameToAddr ∧ aux = cenv.auxNameToAddr := by
+    {cenv : CompileEnv} (h : compileUnchecked env = .ok (ixe, failures, cenv)) :
+    ∃ bytes : Nat, compileEnvFold { consts := env.consts }
+        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) = .ok (ixe, bytes, cenv) := by
   unfold compileUnchecked at h
   simp only [bind, Except.bind, pure, Except.pure] at h
   split at h
@@ -992,28 +988,26 @@ theorem compileUnchecked_fold {env : Ix.Environment} {ixe : Ixon.Env} {failures 
     · rename_i r hr
       obtain ⟨ixe', bytes, cenv⟩ := r
       simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨rfl, -, rfl, rfl⟩ := h
-      exact ⟨bytes, cenv, hr, rfl, rfl⟩
+      obtain ⟨rfl, -, rfl⟩ := h
+      exact ⟨bytes, hr⟩
 
-/-- **Where `compileUnchecked`'s resolution map comes from**: every entry is
-an aux name's (in the fold's final aux map, which `compileUnchecked` returns),
+/-- **Where the resolution map of `compileUnchecked`'s environment comes
+from**: every entry is an aux name's (in the same environment's aux map),
 or a primary claim of a condensation block compiled during the fold, whose
 record's bytes the environment stores at its address. -/
 theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    {resolved aux : Std.HashMap ExactName Address}
-    (h : compileUnchecked env = .ok (ixe, failures, resolved, aux)) :
-    ∃ (bytes : Nat) (cenv cenv₀ : CompileEnv) (sched : FoldSchedule),
+    {cenv : CompileEnv} (h : compileUnchecked env = .ok (ixe, failures, cenv)) :
+    ∃ (bytes : Nat) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileEnvFold { consts := env.consts }
         (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) = .ok (ixe, bytes, cenv) ∧
-      resolved = cenv.nameToAddr ∧ aux = cenv.auxNameToAddr ∧
-      ∀ (n : ExactName) (a : Address), resolved.get? n = some a →
-        aux.contains n = true ∨
+      ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
+        cenv.auxNameToAddr.contains n = true ∨
           ∃ b, Compiled (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
               (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
-  obtain ⟨bytes, cenv, hf, rfl, rfl⟩ := compileUnchecked_fold h
+  obtain ⟨bytes, hf⟩ := compileUnchecked_fold h
   obtain ⟨cenv₀, sched, hp⟩ := compileEnvFold_provenance hf
-  exact ⟨bytes, cenv, cenv₀, sched, hf, rfl, rfl, hp⟩
+  exact ⟨bytes, cenv₀, sched, hf, hp⟩
 
 
 /-! ## The block compile behind a claim -/
@@ -1265,11 +1259,11 @@ theorem reach_p3BlockRefs {blocks : Ix.CondensedBlocks} {init acc : DriverAcc}
 the decided checks of the discharge (item B9b, (i)–(iv)). -/
 theorem compileReport_claim {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
-    ∃ (resolved aux : Std.HashMap ExactName Address) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv)
-      (sched : FoldSchedule),
-      compileUnchecked env = .ok (ixe, failures, resolved, aux) ∧
+    ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
+      compileUnchecked env = .ok (ixe, failures, cenv) ∧
       blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
-      ∀ (n : ExactName) (a : Address), resolved.get? n = some a → aux.contains n = false →
+      ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
+        cenv.auxNameToAddr.contains n = false →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult)
           (c : BlockState) (layout : Option Ixon.AuxLayout) (p : Ix.Compile.Pass.Published) (b : ByteArray),
@@ -1278,9 +1272,9 @@ theorem compileReport_claim {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
           runBlock snap.cenv A k = .ok (r, c, layout, p) ∧ (n, a, b) ∈ claimWrites k r ∧
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
           (HookFree snap.cenv A k → BlockCompiled snap.cenv A k n a b) := by
-  obtain ⟨resolved, aux, hu, pub⟩ := Ix.Cert.resolvedPublished h
-  obtain ⟨bytes, cenv, cenv₀, sched, -, -, -, prov⟩ := compileUnchecked_provenance hu
-  refine ⟨resolved, aux, _, cenv₀, sched, hu, rfl, fun n a hn hnaux => ⟨pub n a hn, ?_⟩⟩
+  obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
+  obtain ⟨bytes, cenv₀, sched, -, prov⟩ := compileUnchecked_provenance hu
+  refine ⟨cenv, _, cenv₀, sched, hu, rfl, fun n a hn hnaux => ⟨pub n a hn, ?_⟩⟩
   rcases prov n a hn with hx | ⟨b, hc, hb⟩
   · rw [hnaux] at hx; cases hx
   · obtain ⟨snap, rep, all, A, k, r, c, layout, p, hsnap, hall, sub, hr, hclaim⟩ := compiled_runBlock hc

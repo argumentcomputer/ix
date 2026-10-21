@@ -166,16 +166,15 @@ reserved component (the names of `blocks`), each by its least message. -/
   if let some msg := Ix.CompileM.reservedInputRefusal? blocks then throw msg
 
 /-- The compile and its failures, before `compileReport`'s checks, with the
-driver's resolution map at the end of the fold (`CompileEnv.nameToAddr`: the
-address each name the compile registered resolves to), which the resolution
-check reads, and its aux map (`CompileEnv.auxNameToAddr`), which the
-original-form check reads. A block that fails to compile is recorded, with its
+driver's compile environment at the end of the fold, whose maps the checks
+read: the resolution map (`CompileEnv.nameToAddr`: the address each name the
+compile registered resolves to), the aux map (`CompileEnv.auxNameToAddr`) and
+the extra names (`CompileEnv.auxGenExtraNames`). A block that fails to compile is recorded, with its
 dependents, and left out of the environment; the result is an error only when
 the driver itself fails (a refused input, or a condensation it cannot
 schedule), or the input is reserved (`reservedRefusal`). -/
 @[expose] def compileUnchecked (env : Ix.Environment) :
-    Except String (Ixon.Env × Failures × Std.HashMap Ix.Compile.ExactKey.ExactName Address ×
-      Std.HashMap Ix.Compile.ExactKey.ExactName Address) := do
+    Except String (Ixon.Env × Failures × Ix.CompileM.CompileEnv) := do
   let env : Ix.Environment := { consts := env.consts }
   let split := groundSplit env
   let blocks := Ix.CondenseM.run split.1
@@ -183,7 +182,7 @@ schedule), or the input is reserved (`reservedRefusal`). -/
   let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env blocks
   let ungrounded := split.2.fold (init := {}) fun m n e =>
     m.insert n (e.refusal split.2.contains)
-  pure (ixe, { ungrounded, blocks := cenv.ungrounded }, cenv.nameToAddr, cenv.auxNameToAddr)
+  pure (ixe, { ungrounded, blocks := cenv.ungrounded }, cenv)
 
 /-- The compile reports `n` as failed: the ground filter removed it, or its
 block failed to compile. -/
@@ -687,7 +686,22 @@ with an original-form record (`unoriginalAux`). -/
   ixe.named.toList.findSome? fun (n, _) =>
     if env.consts.contains n && !resolved.contains n && !aux.contains n then some n else none
 
-/-- `compileReport`'s nine checks on a compile's result, each an error on
+/-- The first name of the driver's final resolution map (`resolved`), not in
+its final aux map (`aux`), that is among its final extra names (`extras`,
+`CompileEnv.auxGenExtraNames`), if any. A promoted block's cross-SCC subset
+(`AuxBlockOutcome.promoted`'s `crossScc`) is compiled under its own key,
+which is not one of the condensation's block keys, so Pass 3's hook 2
+(`prepareBlock`) does not find the block's references (`p3BlockRefs`) and walks
+its members' terms, a loop no proof unfolds; its merge adds each of its names
+to the extra names (`applyAuxBlockOutcome`), and only a withdrawal
+(`failAuxPromotion`) removes one, from the resolution map too. With no such
+name, no resolved name outside the aux map is a cross-SCC subset's claim. -/
+@[expose] def crossClaimed (resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
+    (extras : Std.HashSet Ix.Name) : Option Ix.Name :=
+  resolved.toList.findSome? fun (n, _) =>
+    if !aux.contains n && extras.contains n then some n else none
+
+/-- `compileReport`'s ten checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -698,18 +712,18 @@ published names share a stored hash (`nameHashCollision`). **`Muts` entries
 agree with the blocks:** each name a `Muts` entry lists in class `i` is
 published at member `i`'s projection of its block (`mutsMismatch`).
 **Resolved names are published where they resolve:** each name of the
-driver's resolution map `resolved` is published at the address it resolves
+driver's final resolution map (`cenv.nameToAddr`) is published at the address it resolves
 to (`resolutionMismatch`). **Every inductive component is seen:** each
 published input inductive is published at an inductive projection of a block
 with a `Muts` entry at its address (`unseenInductive`). **Aux-resolved input
 names have original-form records:** each input name of the driver's final aux
-map `aux` is published with `Named.original` (`unoriginalAux`). **Published
-input names are resolved:** each published input name is in `resolved` or in
-`aux` (`unresolvedPublished`). -/
+map (`cenv.auxNameToAddr`) is published with `Named.original`
+(`unoriginalAux`). **Published input names are resolved:** each published
+input name is in the resolution map or in the aux map (`unresolvedPublished`).
+**No cross-SCC claims:** no resolved name outside the aux map is among the
+extra names (`crossClaimed`). -/
 @[expose] def checkReport (env : Ix.Environment)
-    (resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
-    (aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (out : Ixon.Env × Failures) :
-    Except String Unit :=
+    (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
   | [], [] =>
     match referenceCycle out.1 with
@@ -718,14 +732,19 @@ input names are resolved:** each published input name is in `resolved` or in
       | none =>
         match mutsMismatch out.1 with
         | none =>
-          match resolutionMismatch resolved out.1 with
+          match resolutionMismatch cenv.nameToAddr out.1 with
           | none =>
             match unseenInductive env out.1 with
             | none =>
-              match unoriginalAux env aux out.1 with
+              match unoriginalAux env cenv.auxNameToAddr out.1 with
               | none =>
-                match unresolvedPublished env resolved aux out.1 with
-                | none => .ok ()
+                match unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 with
+                | none =>
+                  match crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
+                  | none => .ok ()
+                  | some n =>
+                    .error s!"compileReport: cross-SCC check failed: the name {n.pretty} resolves \
+                      outside the aux map and is among the extra names, so a cross-SCC subset claimed it"
                 | some n =>
                   .error s!"compileReport: publication check failed: the input name {n.pretty} \
                     is published but neither resolved nor in the aux map"
@@ -760,7 +779,7 @@ input names are resolved:** each published input name is in `resolved` or in
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with nine checks (`checkReport`):
+condensation it cannot schedule). It ends with ten checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -769,8 +788,9 @@ only names published at member `i`'s projection of its block; every name
 the driver resolves is published at the address it resolves to; every
 published input inductive is published at an inductive projection of a
 block with a `Muts` entry; and every input name of the driver's final aux map
-is published with an original-form record; and every published input name is
-resolved or in the aux map. Any inconsistency is an error, and no artifact is
+is published with an original-form record; every published input name is
+resolved or in the aux map; and no resolved name outside the aux map is a
+cross-SCC subset's claim. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that
 agree with their blocks, resolved names published where they resolve,
@@ -784,8 +804,8 @@ construction
 consistent run the result is
 `compileUnchecked`'s environment and failures, byte for byte. -/
 @[expose] def compileReport (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
-  let (ixe, failures, resolved, aux) ← compileUnchecked env
-  checkReport env resolved aux (ixe, failures)
+  let (ixe, failures, cenv) ← compileUnchecked env
+  checkReport env cenv (ixe, failures)
   pure (ixe, failures)
 
 /-- **The pure compiler.** `compileReport`'s environment: a block that fails

@@ -571,10 +571,10 @@ against the driver's resolution map and aux map that `compileUnchecked`
 returns with them. -/
 theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
     (h : compileReport env = .ok out) :
-    ∃ resolved aux, compileUnchecked env = .ok (out.1, out.2, resolved, aux) ∧
-      checkReport env resolved aux out = .ok () := by
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (out.1, out.2, cenv) ∧
+      checkReport env cenv out = .ok () := by
   have e : compileReport env = Except.bind (compileUnchecked env)
-      (fun o => Except.bind (checkReport env o.2.2.1 o.2.2.2 (o.1, o.2.1)) fun _ =>
+      (fun o => Except.bind (checkReport env o.2.2 (o.1, o.2.1)) fun _ =>
         Except.ok (o.1, o.2.1)) :=
     rfl
   rw [e] at h
@@ -582,40 +582,44 @@ theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
   cases compileUnchecked env with
   | error err => intro h; cases h
   | ok o =>
-    obtain ⟨ixe, failures, resolved, aux⟩ := o
+    obtain ⟨ixe, failures, cenv⟩ := o
     intro h
-    change Except.bind (checkReport env resolved aux (ixe, failures))
+    change Except.bind (checkReport env cenv (ixe, failures))
       (fun _ => Except.ok (ixe, failures)) = Except.ok out at h
     revert h
-    cases hc : checkReport env resolved aux (ixe, failures) with
+    cases hc : checkReport env cenv (ixe, failures) with
     | error err => intro h; cases h
     | ok u =>
       intro h
       cases u
       have ho : (ixe, failures) = out := Except.ok.inj h
       subst ho
-      exact ⟨resolved, aux, rfl, hc⟩
+      exact ⟨cenv, rfl, hc⟩
 
 /-- `checkReport` passes exactly when nothing is uncovered, nothing is
 unauthentic, no stored record is on a reference cycle, no two different
 names share a name hash, every `Muts` entry agrees with its block, every
 resolved name is published where it resolves, every published input
 inductive's component is seen, every input name of the aux map is published
-with an original-form record and every published input name is resolved or in
-the aux map. -/
-theorem checkReport_ok {env : Ix.Environment}
-    {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address} {out : Ixon.Env × Failures}
-    (h : checkReport env resolved aux out = .ok ()) :
+with an original-form record, every published input name is resolved or in the
+aux map, and no resolved name outside the aux map is a cross-SCC claim, all in
+the driver's final environment `cenv`. -/
+theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
+    (h : checkReport env cenv out = .ok ()) :
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none ∧
-      resolutionMismatch resolved out.1 = none ∧ unseenInductive env out.1 = none ∧
-      unoriginalAux env aux out.1 = none ∧ unresolvedPublished env resolved aux out.1 = none := by
+      resolutionMismatch cenv.nameToAddr out.1 = none ∧ unseenInductive env out.1 = none ∧
+      unoriginalAux env cenv.auxNameToAddr out.1 = none ∧
+      unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
+      crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none := by
   unfold checkReport at h
   revert h
   cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;>
     cases nameHashCollision env out.1 <;> cases mutsMismatch out.1 <;>
-    cases resolutionMismatch resolved out.1 <;> cases unseenInductive env out.1 <;>
-    cases unoriginalAux env aux out.1 <;> cases unresolvedPublished env resolved aux out.1 <;> simp
+    cases resolutionMismatch cenv.nameToAddr out.1 <;> cases unseenInductive env out.1 <;>
+    cases unoriginalAux env cenv.auxNameToAddr out.1 <;>
+    cases unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 <;>
+    cases crossClaimed cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames <;> simp
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -623,8 +627,8 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     (h : compileReport env = .ok out) :
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
-  obtain ⟨_, _, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨_, -, hc⟩ := compileReport_ok h
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -804,16 +808,17 @@ theorem resolutionMismatch_none {resolved : Std.HashMap Ix.Compile.ExactKey.Exac
 
 /-- **Resolved names are published where they resolve**: `compileReport`'s
 result comes with the driver's resolution map at the end of the fold
-(`compileUnchecked`'s third component, `CompileEnv.nameToAddr`), and every
+(`CompileEnv.nameToAddr` of the driver's final environment, which
+`compileUnchecked` returns), and every
 name it holds is published at the address it resolves to (`checkReport`'s
 sixth check). So a `Named` entry the aux tail registered after code no
 proof follows cannot leave a resolved name published elsewhere. -/
 theorem resolvedPublished {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
-    ∃ resolved aux, compileUnchecked env = .ok (ixe, failures, resolved, aux) ∧
-      ∀ n a, resolved.get? n = some a → (ixe.named.get? n).map (·.addr) = some a := by
-  obtain ⟨resolved, aux, hu, hc⟩ := compileReport_ok h
-  exact ⟨resolved, aux, hu, resolutionMismatch_none (checkReport_ok hc).2.2.2.2.2.1⟩
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
+      ∀ n a, cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a := by
+  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
+  exact ⟨cenv, hu, resolutionMismatch_none (checkReport_ok hc).2.2.2.2.2.1⟩
 
 /-- An address of `mutsAddrs` is one at which a `Muts` entry is published. -/
 theorem mutsAddrs_contains {ixe : Ixon.Env} {a : Address} (h : (mutsAddrs ixe).contains a = true) :
@@ -887,7 +892,7 @@ theorem inductivesSeen {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failu
       ∃ p, (storedRecord ixe named.addr).map (·.info) = some (Ixon.ConstantInfo.iPrj p) ∧
         ∃ entry e all layout, (entry, e) ∈ ixe.named.toList ∧ e.addr = p.block ∧
           e.constMeta.info = .muts all layout := by
-  obtain ⟨_, _, -, hc⟩ := compileReport_ok h
+  obtain ⟨_, -, hc⟩ := compileReport_ok h
   exact unseenInductive_none (checkReport_ok hc).2.2.2.2.2.2.1
 
 /-- What `unoriginalAux = none` says: every input name of `aux` is published
@@ -916,19 +921,19 @@ theorem unoriginalAux_none {env : Ix.Environment}
 
 /-- **Input names the aux map resolves have original-form records**:
 `compileReport`'s result comes with the driver's final aux map
-(`compileUnchecked`'s fourth component, `CompileEnv.auxNameToAddr`), and every
+(`CompileEnv.auxNameToAddr` of the driver's final environment), and every
 input name it holds is published with `Named.original` (`checkReport`'s eighth
 check). So an input name the driver resolved through the aux map is one the
 classifier's regenerated rule reads (B9d); every other resolved name is a
 primary claim of its own block's compile (`Ix.Cert.Resolution`). -/
 theorem auxOriginal {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
-    ∃ resolved aux, compileUnchecked env = .ok (ixe, failures, resolved, aux) ∧
-      ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), aux.get? n = some a →
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
+      ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), cenv.auxNameToAddr.get? n = some a →
         env.consts.contains n = true →
           ∃ named, ixe.named.get? n = some named ∧ named.original.isSome = true := by
-  obtain ⟨resolved, aux, hu, hc⟩ := compileReport_ok h
-  exact ⟨resolved, aux, hu, unoriginalAux_none (checkReport_ok hc).2.2.2.2.2.2.2.1⟩
+  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
+  exact ⟨cenv, hu, unoriginalAux_none (checkReport_ok hc).2.2.2.2.2.2.2.1⟩
 
 /-- What `unresolvedPublished = none` says: every published input name is in
 `resolved` or in `aux`. -/
@@ -949,18 +954,48 @@ theorem unresolvedPublished_none {env : Ix.Environment}
   · exact .inl rfl
 
 /-- **Published input names are resolved**: `compileReport`'s result comes
-with the driver's final resolution and aux maps (`compileUnchecked`'s third and
-fourth components), and every published input name is in one of them
+with the driver's final environment, whose resolution and aux maps
+(`nameToAddr`, `auxNameToAddr`) hold every published input name
 (`checkReport`'s ninth check). So a published input name is a primary claim of
 a block compiled during the fold (`Ix.Cert.Resolution.compileReport_claim`),
 or resolves through the aux map with an original-form record (`auxOriginal`). -/
 theorem publishedResolved {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
-    ∃ resolved aux, compileUnchecked env = .ok (ixe, failures, resolved, aux) ∧
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
       ∀ (n : Ix.Name) (named : Ixon.Named), (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
-        resolved.contains n = true ∨ aux.contains n = true := by
-  obtain ⟨resolved, aux, hu, hc⟩ := compileReport_ok h
-  exact ⟨resolved, aux, hu, unresolvedPublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2⟩
+        cenv.nameToAddr.contains n = true ∨ cenv.auxNameToAddr.contains n = true := by
+  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
+  exact ⟨cenv, hu, unresolvedPublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2.1⟩
+
+/-- What `crossClaimed = none` says: no name of `resolved` outside `aux` is
+among `extras`. -/
+theorem crossClaimed_none {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
+    {extras : Std.HashSet Ix.Name} (h : crossClaimed resolved aux extras = none) :
+    ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), resolved.get? n = some a →
+      aux.contains n = false → extras.contains n = false := by
+  intro n a hn haux
+  unfold crossClaimed at h
+  rw [List.findSome?_eq_none_iff] at h
+  have hmem : (n, a) ∈ resolved.toList := by
+    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
+    exact hn
+  have hfind := h (n, a) hmem
+  dsimp only at hfind
+  cases he : extras.contains n
+  · rfl
+  · simp [haux, he] at hfind
+
+/-- **No cross-SCC claims**: in the driver's final environment, which
+`compileUnchecked` returns, no resolved name outside the aux map is among the
+extra names (`checkReport`'s tenth check), where a cross-SCC subset's merge
+puts its names. -/
+theorem noCrossClaims {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
+      ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
+        cenv.auxNameToAddr.contains n = false → cenv.auxGenExtraNames.contains n = false := by
+  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
+  exact ⟨cenv, hu, crossClaimed_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2⟩
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`
