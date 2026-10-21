@@ -1,4 +1,5 @@
 import Ix.Cert.Compile
+import Ix.Cert.ProjectionRead
 import Ix.LeanIngress.Theorems
 import Ix.Ixon.Authenticated.Theorems
 import IxC.Kernel.Ixon.Values
@@ -1153,11 +1154,15 @@ theorem projectionCollision_none {ixe : Ixon.Env} (h : projectionCollision ixe =
     ∀ e ∈ ixe.consts.toList, ∀ e' ∈ ixe.consts.toList, ∀ r a a',
       definitionProjection e = some (r, a) → definitionProjection e' = some (r, a') → a = a' := by
   intro e he e' he' r a a' hp hp'
+  have mem : (r, a) ∈ ixe.consts.toList.filterMap definitionProjectionFast :=
+    List.mem_filterMap.mpr ⟨e, he, by simpa only [ProjectionRead.fast_eq] using hp⟩
+  have mem' : (r, a') ∈ ixe.consts.toList.filterMap definitionProjectionFast :=
+    List.mem_filterMap.mpr ⟨e', he', by simpa only [ProjectionRead.fast_eq] using hp'⟩
   unfold projectionCollision at h
   rw [List.findSome?_eq_none_iff] at h
-  have h1 := h e he
-  have h2 := h e' he'
-  simp only [hp, hp'] at h1 h2
+  have h1 := h (r, a) mem
+  have h2 := h (r, a') mem'
+  dsimp only at h1 h2
   split at h1
   · rename_i h1'
     split at h2

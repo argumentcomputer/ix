@@ -816,23 +816,38 @@ address and its index) and the record's address. -/
     | _ => none
   | none => none
 
+/-- Whether the uncached decoder's first TagN can introduce a definition
+projection. This reads the same buffer and offset as `LazyConstant.get?`,
+without imposing a window-length check that the decoder itself does not run. -/
+@[expose] def definitionProjectionHeader (buf : ByteArray) (off : Nat) : Bool :=
+  match (Ixon.getTagN 4).run { idx := off, bytes := buf } with
+  | .ok tag _ => tag.flag == Ixon.Constant.FLAG && tag.value == Ixon.ConstantInfo.CONST_DPRJ
+  | .error _ _ => false
+
+/-- The same projection as `definitionProjection`, with a header filter before
+decoding an uncached record (`ProjectionRead.fast_eq`, on every input). A
+cached constant takes precedence over its bytes, as in `LazyConstant.get?`.
+Only a possible definition projection needs its complete payload decoded. -/
+@[expose] def definitionProjectionFast (e : Address × Ixon.LazyConstant) :
+    Option ((Address × Nat) × Address) :=
+  match e.2.cache with
+  | some _ => definitionProjection e
+  | none =>
+    if definitionProjectionHeader e.2.buf e.2.off then definitionProjection e else none
+
 /-- A member two stored definition projection records project, if any: its
 block's address and its index. The reader takes a definition block member's
 hint at its projection record (`Ix.Cert.hintsOf`), so with none the record it
 reads the hint at is the member's one projection record
 (`Ix.Cert.CtxAgree.hintsOf_projection`'s premise). Every record's first
 projection of a member is filed, then each record is compared with its member's
-filed one. -/
+filed one. The cheap header filter skips non-projections, and each candidate
+is decoded once before the two passes over projection pairs. -/
 @[expose] def projectionCollision (ixe : Ixon.Env) : Option (Address × Nat) :=
-  let entries := ixe.consts.toList
-  let first : Std.HashMap (Address × Nat) Address := entries.foldl (init := {}) fun m e =>
-    match definitionProjection e with
-    | some (r, a) => if m.contains r then m else m.insert r a
-    | none => m
-  entries.findSome? fun e =>
-    match definitionProjection e with
-    | some (r, a) => if decide (first[r]? = some a) then none else some r
-    | none => none
+  let entries := ixe.consts.toList.filterMap definitionProjectionFast
+  let first : Std.HashMap (Address × Nat) Address := entries.foldl (init := {}) fun m (r, a) =>
+    if m.contains r then m else m.insert r a
+  entries.findSome? fun (r, a) => if decide (first[r]? = some a) then none else some r
 
 /-- `compileReport`'s fifteen checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed

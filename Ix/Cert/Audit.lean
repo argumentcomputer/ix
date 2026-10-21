@@ -4948,33 +4948,43 @@ projection records of one member (`checkReport`'s fifteenth check,
 `projectionCollision`). The proof route not taken: from the compiler's emission,
 one projection per member (≈0.2–0.4k). Re-frozen with it: `checkReport`'s print
 and `checkReport_ok` (a fifteenth conjunct). On a consistent run the result is
-unchanged. -/
+unchanged.
 
-/-- info: [cert-audit] projections: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+The first corpus probe (ports/20261021T203754Z-projection-probe-p121) found
+zero collisions on Init+Std, but the two full-decoder passes cost 6.60–6.64 s
+for 29 projections among 100,327 records. The header filter now skips all
+other records, respecting cached values and uncached buffer/offset behavior
+on arbitrary inputs (`ProjectionRead.fast_eq`); candidate projections are
+decoded once. `ProjectionRead.collision_eq` proves the entire check returns
+exactly the original first collision on every input. The collision theorem
+keeps its original conclusion. Only
+the collision reader's print and these audit roots are re-frozen. -/
+
+/-- info: [cert-audit] projections: 4 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] projections: 1 safe definitions, no runtime substitution -/
+info: [cert-audit] projections: 3 safe definitions, no runtime substitution -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
   checkRoots (tag := "cert-audit") "projections"
-    (#[`projectionCollision_none, `projectionsOne].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "projections" #[``Ix.Cert.projectionCollision]
+    ((#[`projectionCollision_none, `projectionsOne].map (`Ix.Cert ++ ·)) ++
+      #[``Ix.Cert.ProjectionRead.fast_eq, ``Ix.Cert.ProjectionRead.collision_eq])
+  checkRuntime (tag := "cert-audit") "projections" #[``Ix.Cert.projectionCollision, ``Ix.Cert.definitionProjectionHeader,
+    ``Ix.Cert.definitionProjectionFast]
 
 /-- info: def Ix.Cert.projectionCollision : Ixon.Env → Option (Address × Nat) :=
 fun ixe =>
-  have entries := ixe.consts.toList;
+  have entries := List.filterMap Ix.Cert.definitionProjectionFast ixe.consts.toList;
   have first :=
     List.foldl
-      (fun m e =>
-        match Ix.Cert.definitionProjection e with
-        | some (r, a) => if m.contains r = true then m else m.insert r a
-        | none => m)
+      (fun m x =>
+        match x with
+        | (r, a) => if m.contains r = true then m else m.insert r a)
       ∅ entries;
   List.findSome?
-    (fun e =>
-      match Ix.Cert.definitionProjection e with
-      | some (r, a) => if decide (first[r]? = some a) = true then none else some r
-      | none => none)
+    (fun x =>
+      match x with
+      | (r, a) => if decide (first[r]? = some a) = true then none else some r)
     entries -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.projectionCollision
