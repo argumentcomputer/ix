@@ -44,6 +44,7 @@ use dashmap::DashMap;
 
 use ix_common::env::{Expr, Name, RecursorVal};
 
+use self::clique::hook::Rows;
 use self::clique::plan::CliqueOutcome;
 use self::clique::table::{CliqueTable, EncodingRoots};
 use self::view::{BlockView, ComponentRecord, Expansion};
@@ -87,6 +88,13 @@ pub struct Pass3State {
   /// clique's first member; the first plan computed wins (Lean
   /// `CompileEnv.p3CliquePlans`). Never changes a byte.
   pub clique_plans: DashMap<Name, CliqueOutcome>,
+  /// Clique transport: the rows table, each transported plan's rows
+  /// (`clique::row::rows_of`) as the block that made the plan computed them
+  /// (`CliqueOutcome::wf_only_rows`), keyed like the plan table, the first
+  /// entry winning (Lean `CompileEnv.p3CliqueRows`), for the rows after the
+  /// scheduler (`driver::emit_rows`, which computes a missing entry). Never
+  /// changes a byte.
+  pub clique_rows: DashMap<Name, Rows>,
 }
 
 /// A record the aux tail made, journaled for the side-car edit.

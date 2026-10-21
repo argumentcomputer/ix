@@ -52,7 +52,7 @@ use crate::graph::NameSet;
 use crate::mutual::Def;
 
 use super::Journal;
-use super::clique::hook::{CliquePrep, HookEnv, prepare_cliques};
+use super::clique::hook::{CliquePrep, HookEnv, canon_refs, prepare_cliques};
 use super::clique::plan::{CliqueOutcome, CliquePlan};
 use super::clique::row::{row_prereqs, rows_of};
 use super::clique::table::encoding_owner;
@@ -951,37 +951,47 @@ fn compile_row_const(
   publish_image(stt, &c, Named::new(addr, meta))
 }
 
-/// The rows of one transported plan (Lean `cliqueRows`' body): its `_ix.src`
-/// copies in rounds (each round compiles every pending copy whose compile
-/// succeeds; at most one round per copy plus one), then its rows.
-fn emit_plan_rows(
-  lean_env: &Arc<LeanEnv>,
+/// Map `f` over `items` on scoped threads with large stacks (the rows are
+/// deep proof terms), one contiguous chunk per thread, results in order
+/// (Lean's `Task.spawn` rounds, merged in order).
+fn par_big_stack<T: Sync, U: Send>(
+  items: &[T],
+  f: impl Fn(&T) -> U + Sync,
+) -> Vec<U> {
+  if items.is_empty() {
+    return Vec::new();
+  }
+  let threads = std::thread::available_parallelism()
+    .map_or(4, std::num::NonZero::get)
+    .min(items.len());
+  let chunk = items.len().div_ceil(threads);
+  let f = &f;
+  std::thread::scope(|s| {
+    let handles: Vec<_> = items
+      .chunks(chunk)
+      .map(|ch| {
+        std::thread::Builder::new()
+          .stack_size(1 << 30)
+          .spawn_scoped(s, move || ch.iter().map(f).collect::<Vec<U>>())
+          .expect("Pass 3: spawn a row thread")
+      })
+      .collect();
+    handles
+      .into_iter()
+      .flat_map(|h| h.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
+      .collect()
+  })
+}
+
+/// Compile the rows' constants `cs` in parallel (Lean
+/// `compileRowsParallel`); the first error in their order is the error.
+fn compile_rows_parallel(
   stt: &CompileState,
-  plan: &CliquePlan,
+  cs: &[ConstantInfo],
 ) -> Result<(), CompileError> {
-  let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
-  let (copies, rows) = rows_of(&const_of, plan).map_err(invalid)?;
-  let rounds = copies.len() + 1;
-  let mut pending = copies;
-  let mut last_err = String::new();
-  for _ in 0..rounds {
-    if pending.is_empty() {
-      break;
-    }
-    let mut rest = Vec::new();
-    for ci in pending {
-      if let Err(e) = compile_row_const(stt, &ci) {
-        last_err = format!("{}: {e}", ci.get_name().pretty());
-        rest.push(ci);
-      }
-    }
-    pending = rest;
-  }
-  if !pending.is_empty() {
-    return Err(invalid(format!("Pass 3 cliques: row copy {last_err}")));
-  }
-  for ci in rows {
-    compile_row_const(stt, &ci).map_err(|e| {
+  let results = par_big_stack(cs, |ci| compile_row_const(stt, ci));
+  for (ci, r) in cs.iter().zip(results) {
+    r.map_err(|e| {
       invalid(format!("Pass 3 cliques: row {}: {e}", ci.get_name().pretty()))
     })?;
   }
@@ -992,9 +1002,13 @@ fn emit_plan_rows(
 /// scheduler: for every transported plan of the plan table, by clique key in
 /// pretty-name order, whose members and rows' prerequisites all compiled,
 /// its `_ix.src` copies, then its rows, each a lone constant under its
-/// reserved name. Nothing references a row or a copy but a row, so they
-/// come last; the bytes do not depend on their order. On a thread with a
-/// large stack (the rows are deep proof terms).
+/// reserved name. The plans' rows come from the rows table
+/// (`Pass3State::clique_rows`, filled when each plan was made:
+/// `CliqueOutcome::wf_only_rows`); a missing entry is computed. In parallel,
+/// in rounds: the plans' rows on a thread each, the copies level by level
+/// (each round takes every pending copy whose copy references are
+/// compiled), then every row in one round. The bytes do not depend on the
+/// order.
 pub fn emit_rows(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
@@ -1013,20 +1027,52 @@ pub fn emit_rows(
   }
   plans.sort_by_cached_key(|(k, _)| k.pretty());
   let prereqs = row_prereqs();
-  with_big_stack(|| {
-    for (_, plan) in &plans {
-      if !plan
-        .all
-        .iter()
-        .chain(prereqs.iter())
-        .all(|n| stt.resolve_addr(n).is_some())
-      {
-        continue;
-      }
-      emit_plan_rows(lean_env, stt, plan)?;
+  let plans: Vec<(Name, CliquePlan)> = plans
+    .into_iter()
+    .filter(|(_, p)| {
+      p.all.iter().chain(prereqs.iter()).all(|n| stt.resolve_addr(n).is_some())
+    })
+    .collect();
+  let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
+  let parts = par_big_stack(&plans, |(k, p)| match stt.p3.clique_rows.get(k) {
+    Some(r) => Ok(r.value().clone()),
+    None => rows_of(&const_of, p),
+  });
+  let mut copies: Vec<ConstantInfo> = Vec::new();
+  let mut rows: Vec<ConstantInfo> = Vec::new();
+  for part in parts {
+    let (cs, rs) = part.map_err(invalid)?;
+    copies.extend(cs);
+    rows.extend(rs);
+  }
+  let by_name: FxHashMap<Name, ConstantInfo> =
+    copies.iter().map(|ci| (ci.get_name().clone(), ci.clone())).collect();
+  let mut done: FxHashSet<Name> = FxHashSet::default();
+  let mut pending = copies;
+  for _ in 0..=pending.len() {
+    if pending.is_empty() {
+      break;
     }
-    Ok(())
-  })
+    let (ready, rest): (Vec<ConstantInfo>, Vec<ConstantInfo>) =
+      pending.into_iter().partition(|ci| {
+        canon_refs(&by_name, ci.get_name(), ci).iter().all(|r| done.contains(r))
+      });
+    if ready.is_empty() {
+      let ns: Vec<String> =
+        rest.iter().map(|c| c.get_name().pretty()).collect();
+      return Err(invalid(format!(
+        "Pass 3 cliques: row copies with cyclic references: {}",
+        crate::compile::pass3::clique::basic::arr_str(&ns)
+      )));
+    }
+    compile_rows_parallel(stt, &ready)?;
+    done.extend(ready.iter().map(|ci| ci.get_name().clone()));
+    pending = rest;
+  }
+  if !pending.is_empty() {
+    return Err(invalid("Pass 3 cliques: row copies left".into()));
+  }
+  compile_rows_parallel(stt, &rows)
 }
 
 /// Every member of the block is an image-kind head (`isImageBlock`).
@@ -1251,10 +1297,13 @@ pub fn compile_block(
   let res = compile_const(lo, all, lean_env, cache, stt, kctx);
   // the plans the block computed join the plan table when the block
   // compiles (Lean merges a block's state only then); the first plan of a
-  // clique stays
+  // clique stays, and so do its rows (the rows table)
   if res.is_ok() {
     for (k, o) in prep.fresh {
       stt.p3.clique_plans.entry(k).or_insert(o);
+    }
+    for (k, r) in prep.rows {
+      stt.p3.clique_rows.entry(k).or_insert(r);
     }
   }
   res

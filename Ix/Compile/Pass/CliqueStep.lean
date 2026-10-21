@@ -48,6 +48,7 @@ namespace Ix.Compile.Pass
 
 open Ix (Name Expr ConstantInfo)
 open Ix.CompileM
+open Ix.Compile.ExactKey (ExactName)
 
 /-- The clique step has nothing to do with the block `all` (key `lo`): the
 input has no clique, or no member of the block is in the clique table and
@@ -155,7 +156,8 @@ def cliqueStep (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   if cliqueInert cenv all lo then return (cenv, {}, {})
   let prep ← (Clique.prepareCliques (cliqueHookEnv cenv) all (cenv.p3BlockRefs.getD lo {})).mapError
     .invalidMutualBlock
-  let init : BlockState := { p3CliquePlans := prep.fresh, p3PlanReused := prep.reused }
+  let init : BlockState :=
+    { p3CliquePlans := prep.fresh, p3CliqueRows := prep.rows, p3PlanReused := prep.reused }
   if prep.overlay.isEmpty then return (cenv, init, {})
   let (init, published) ← compileCliqueCanon cenv prep.canon init
   let overlay : Std.HashMap Name ConstantInfo :=
@@ -174,61 +176,96 @@ def cliqueStep (cenv : CompileEnv) (all : Set Name) (lo : Name) :
 /-! ## The rows, after the fold -/
 
 /-- Compile a row or an `_ix.src` copy `ci` as a lone constant (no decompile
-record), resolving the rows' earlier constants through `st`'s auxiliary
-names, into `st` (`addAuxConst`). -/
-def compileRowConst (cenv : CompileEnv) (st : BlockState) (ci : ConstantInfo) :
-    Except CompileError BlockState := do
+record), resolving the rows' earlier constants through `known` (the rows'
+block state's auxiliary names). A reserved name already claimed at another
+address is an error (`checkBlockClaims`, Rust `publish_image`). -/
+def compileRowConst (cenv : CompileEnv) (known : Std.HashMap ExactName Address)
+    (ci : ConstantInfo) : Except CompileError (BlockResult × BlockState) := do
   let c := ci.getCnst.name
   let blockEnv : BlockEnv :=
     { all := ({} : Set Name).insert c, current := c, mutCtx := default, univCtx := [] }
   let (r, bs) ← CompileM.run { cenv with p3Sources := {} } blockEnv
-    { auxNameToAddr := st.auxNameToAddr } (compileConstantInfo ci)
-  -- a reserved name is claimed once (`checkBlockClaims`, Rust `publish_image`)
+    { auxNameToAddr := known } (compileConstantInfo ci)
   if let some a := cenv.auxNameToAddr.get? c then
     if a != r.blockAddr then
       throw (.invalidMutualBlock s!"Pass 3 cliques: {c.pretty} is already claimed at another address")
-  return addAuxConst st c r bs
+  return (r, bs)
+
+/-- Compile the rows' constants `cs` against the block state `st`, each on a
+task of its own (`Task.spawn`), and add them to `st` in their order
+(`addAuxConst`). The value does not depend on the tasks: `(Task.spawn f).get
+= f ()`, and the merge is in order. -/
+def compileRowsParallel (cenv : CompileEnv) (st : BlockState) (cs : Array ConstantInfo) :
+    Except String BlockState := do
+  let known := st.auxNameToAddr
+  let tasks := cs.map fun ci => Task.spawn fun _ => (ci.getCnst.name, compileRowConst cenv known ci)
+  let mut st := st
+  for t in tasks do
+    match t.get with
+    | (c, .ok (r, bs)) => st := addAuxConst st c r bs
+    | (c, .error e) => throw s!"Pass 3 cliques: row {c.pretty}: {e}"
+  return st
 
 /-- **The clique rows** (CQ5.2), compiled after the fold from its final
 compile environment: for every transported plan of the plan table
 (`CompileEnv.p3CliquePlans`, by clique key in pretty-name order) whose
 members and rows' prerequisites (`Clique.rowPrereqs`) all compiled, its
 `_ix.src` copies, then its rows (`Clique.rowsOf`), each as a lone constant
-under its reserved name (`compileRowConst`). Nothing references a row or a
-copy but a row, so they come last; the bytes do not depend on their order
-(content addressing, name-keyed tables).
+under its reserved name. Nothing references a row or a copy but a row, so they
+come last; the bytes do not depend on their order (content addressing,
+name-keyed tables).
 
-The copies reference each other (`all₀._mutual._ix.src` its proofs'
-copies): each round compiles every pending copy whose compile succeeds, the
-others wait for the next round, in their order; at most one round per copy
-plus one (a bounded `for`). A copy that never compiles, a row that does not
-compile, and a plan whose rows no longer apply (`rowsOf` accepted it when the
-plan was made, `CliqueOutcome.wfOnly`) are the compile's errors. A plan with a
-member that did not compile has no rows: its members are not published. -/
+The plans' rows come from the rows table (`CompileEnv.p3CliqueRows`, a memo
+of `rowsOf` filled when each plan was made: `CliqueOutcome.wfOnlyRows`),
+through `memoLookup`: a missing entry is computed, and with `p3CheckPlans`
+every entry is recomputed and a difference is an error prefixed by
+`Clique.planCheckPrefix`. The table changes no byte.
+
+In parallel, in rounds: the plans' rows are read (or computed) on a task
+each; the copies (which reference each other: `all₀._mutual._ix.src` its
+proofs' copies) compile level by level, each round taking every pending copy
+whose copy references (`Clique.canonRefs`) are compiled, at most one round
+per copy plus one (a bounded `for`; a round that takes nothing is the cyclic
+error); then every row in one round (`compileRowsParallel`). A copy or a
+row that does not compile, and a plan whose rows no longer apply (`rowsOf`
+accepted it when the plan was made, `CliqueOutcome.wfOnly`), are the
+compile's errors. A plan with a member that did not compile has no rows: its
+members are not published. -/
 def cliqueRows (cenv : CompileEnv) : Except String BlockState := do
-  let plans := cenv.p3CliquePlans.toArray.qsort fun a b => a.1.pretty < b.1.pretty
+  let plans := (cenv.p3CliquePlans.toArray.qsort fun a b => a.1.pretty < b.1.pretty).filterMap
+    fun (key, outcome) => match outcome with
+      | .transported plan =>
+        if (plan.all ++ Clique.rowPrereqs).all fun n => (resolveAddr cenv n).isSome then
+          some (key, plan)
+        else none
+      | _ => none
+  let rowTasks := plans.map fun (key, plan) => Task.spawn fun _ =>
+    memoLookup cenv.p3CliqueRows cenv.p3CheckPlans
+      s!"{Clique.planCheckPrefix} the rows of the clique {key.pretty}" key
+      fun _ => Clique.rowsOf cenv.env.get? plan
+  let mut copies : Array ConstantInfo := #[]
+  let mut rows : Array ConstantInfo := #[]
+  for t in rowTasks do
+    let (cs, rs) ← t.get
+    copies := copies ++ cs
+    rows := rows ++ rs
+  let byName : Std.HashMap Name ConstantInfo :=
+    copies.foldl (fun m ci => m.insert ci.getCnst.name ci) {}
   let mut st : BlockState := {}
-  for (_, outcome) in plans do
-    let .transported plan := outcome | continue
-    unless (plan.all ++ Clique.rowPrereqs).all fun n => (resolveAddr cenv n).isSome do continue
-    let (copies, rows) ← Clique.rowsOf cenv.env.get? plan
-    let mut pending := copies
-    let mut lastErr := ""
-    for _ in [0:copies.size + 1] do
-      if pending.isEmpty then break
-      let mut rest : Array ConstantInfo := #[]
-      for ci in pending do
-        match compileRowConst cenv st ci with
-        | .ok st' => st := st'
-        | .error e =>
-          lastErr := s!"{ci.getCnst.name.pretty}: {e}"
-          rest := rest.push ci
-      pending := rest
-    unless pending.isEmpty do throw s!"Pass 3 cliques: row copy {lastErr}"
-    for ci in rows do
-      st ← (compileRowConst cenv st ci).mapError fun e =>
-        s!"Pass 3 cliques: row {ci.getCnst.name.pretty}: {e}"
-  return st
+  let mut pending := copies
+  for _ in [0:copies.size + 1] do
+    if pending.isEmpty then break
+    let done := st.auxNameToAddr
+    let ready := pending.filter fun ci =>
+      (Clique.canonRefs byName ci.getCnst.name ci).all fun r => done.contains r
+    if ready.isEmpty then
+      throw s!"Pass 3 cliques: row copies with cyclic references: {pending.map (·.getCnst.name.pretty)}"
+    st ← compileRowsParallel cenv st ready
+    let now := st.auxNameToAddr
+    pending := pending.filter fun ci => !now.contains ci.getCnst.name
+  unless pending.isEmpty do
+    throw s!"Pass 3 cliques: row copies left: {pending.map (·.getCnst.name.pretty)}"
+  compileRowsParallel cenv st rows
 
 end Ix.Compile.Pass
 

@@ -146,23 +146,36 @@ pub fn memo_lookup<K: Eq + Hash, V: Clone>(
   }
 }
 
+/// `Rows`: a transported plan's records after the fold ([`rows_of`]): the
+/// `_ix.src` copies of its encoding set, then its members' rows.
+pub type Rows = (Vec<ConstantInfo>, Vec<ConstantInfo>);
+
 impl CliqueOutcome {
-  /// `CliqueOutcome.wfOnly`: the outcome under decision (ii) (2026-10-21):
-  /// a transport stands only when its rows apply. A structural or
-  /// `partial_fixpoint` clique keeps Lean's form (no row recipe); so does a
-  /// well-founded clique whose rows do not apply ([`rows_of`] refuses) or
-  /// whose rows' prerequisites ([`row_prereqs`]) are not all in the input
-  /// (`const_of`), so that every transported clique gets its rows after the
-  /// fold (`pass3::driver::emit_rows`). The kept form's outcome is
+  /// `CliqueOutcome.wfOnlyRows`: the outcome under decision (ii)
+  /// (2026-10-21), with the rows it checked: a transport stands only when
+  /// its rows apply. A structural or `partial_fixpoint` clique keeps Lean's
+  /// form (no row recipe); so does a well-founded clique whose rows do not
+  /// apply ([`rows_of`] refuses) or whose rows' prerequisites
+  /// ([`row_prereqs`]) are not all in the input (`const_of`), so that every
+  /// transported clique gets its rows after the fold
+  /// (`pass3::driver::emit_rows`). The kept form's outcome is
   /// `Baseline(enc, Shape, why)`, the outcome of a transport that kept
   /// Lean's form; the reason is for diagnostics, never a byte. Every other
   /// outcome is kept.
-  pub fn wf_only(self, const_of: ConstOf<'_>) -> CliqueOutcome {
+  ///
+  /// The rows are `rows_of(const_of, plan)` for an outcome that stays
+  /// transported, `None` otherwise: computed once, when the plan is made,
+  /// and kept for the emission ([`CliquePrep::rows`], the driver's rows
+  /// table `Pass3State::clique_rows`).
+  pub fn wf_only_rows(
+    self,
+    const_of: ConstOf<'_>,
+  ) -> (CliqueOutcome, Option<Rows>) {
     match self {
       CliqueOutcome::Transported(plan) => {
         let enc = plan.encoding;
         let keep =
-          |why: String| CliqueOutcome::Baseline(enc, Cause::Shape, why);
+          |why: String| (CliqueOutcome::Baseline(enc, Cause::Shape, why), None);
         if enc != Encoding::WellFounded {
           return keep(format!(
             "no row recipe for a {} clique: rows are for well-founded cliques only",
@@ -178,12 +191,18 @@ impl CliqueOutcome {
           ));
         }
         match rows_of(const_of, &plan) {
-          Ok(_) => CliqueOutcome::Transported(plan),
+          Ok(rows) => (CliqueOutcome::Transported(plan), Some(rows)),
           Err(e) => keep(format!("the rows do not apply: {e}")),
         }
       },
-      o => o,
+      o => (o, None),
     }
+  }
+
+  /// `CliqueOutcome.wfOnly`: the outcome under decision (ii)
+  /// ([`CliqueOutcome::wf_only_rows`] without the rows).
+  pub fn wf_only(self, const_of: ConstOf<'_>) -> CliqueOutcome {
+    self.wf_only_rows(const_of).0
   }
 }
 
@@ -211,17 +230,30 @@ pub const PLAN_CHECK_PREFIX: &str = "Pass 3 plan cache check:";
 /// prefixed by [`PLAN_CHECK_PREFIX`] and the clique (`<prefix> the plan of
 /// the clique #[…]: the recomputed value differs from the table's`). A
 /// clique without a first member (never in the table) is planned directly.
+///
+/// A plan computed here (not taken from the table) comes with its rows when
+/// it stays transported ([`CliqueOutcome::wf_only_rows`], which computes
+/// them to decide), for the rows table ([`CliquePrep::rows`]); a plan from
+/// the table comes without them (they are in the rows table, or the
+/// emission computes them).
 pub fn clique_plan_for(
   h: &HookEnv<'_>,
   cl: &[Name],
   carried: &[Name],
-) -> R<(CliqueOutcome, bool)> {
+) -> R<(CliqueOutcome, bool, Option<Rows>)> {
   let compute = || {
     let o = plan_clique(h.env, h.addr, cl, carried);
     let const_of = |n: &Name| h.env.get(n).map(|e| e.cloned());
-    Ok(if h.wf_only { o.wf_only(&const_of) } else { o })
+    if h.wf_only { o.wf_only_rows(&const_of) } else { (o, None) }
   };
-  let Some(key) = cl.first() else { return Ok((compute()?, false)) };
+  let Some(key) = cl.first() else {
+    let (o, rows) = compute();
+    return Ok((o, false, rows));
+  };
+  if !h.plans.contains_key(key) {
+    let (o, rows) = compute();
+    return Ok((o, false, rows));
+  }
   let what = if h.check_plans {
     let names: Vec<String> = cl.iter().map(Name::pretty).collect();
     format!("{PLAN_CHECK_PREFIX} the plan of the clique {}", arr_str(&names))
@@ -234,9 +266,9 @@ pub fn clique_plan_for(
     &what,
     key,
     &CliqueOutcome::same,
-    &compute,
+    &|| Ok(compute().0),
   )?;
-  Ok((o, h.plans.contains_key(key)))
+  Ok((o, true, None))
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +342,10 @@ pub fn clique_callers(
     let Some(m) = sort_by_pretty(members).into_iter().next() else {
       continue;
     };
-    let (outcome, hit) = clique_plan_for(h, cl, carried)?;
+    // the members' blocks come before a caller's (it references a member)
+    // and plan the clique first: a plan computed here is one whose members
+    // did not compile, so there are no rows to keep
+    let (outcome, hit, _) = clique_plan_for(h, cl, carried)?;
     if hit {
       reused += 1;
     } else {
@@ -366,6 +401,9 @@ pub struct CliquePrep {
   pub canon: Vec<(Name, ConstantInfo)>,
   /// The plans computed for this block, by clique key (for the plan table).
   pub fresh: Vec<(Name, CliqueOutcome)>,
+  /// The rows of the transported plans the block's members computed, by
+  /// clique key ([`CliqueOutcome::wf_only_rows`]; for the rows table).
+  pub rows: Vec<(Name, Rows)>,
   /// The number of plans taken from the plan table.
   pub reused: usize,
 }
@@ -543,6 +581,7 @@ pub fn prepare_cliques(
     fresh0.iter().cloned().collect();
   let mut fresh = fresh0;
   let mut reused = reused0;
+  let mut rows: Vec<(Name, Rows)> = Vec::new();
   let names: Vec<Name> =
     all.iter().filter(|n| h.table.contains_key(*n)).cloned().collect();
   for n in sort_by_pretty(names) {
@@ -551,11 +590,14 @@ pub fn prepare_cliques(
     let outcome = match plans.get(key) {
       Some(o) => o.clone(),
       None => {
-        let (o, hit) = clique_plan_for(h, cl, carried)?;
+        let (o, hit, rows_of_plan) = clique_plan_for(h, cl, carried)?;
         if hit {
           reused += 1;
         } else {
           fresh.push((key.clone(), o.clone()));
+        }
+        if let Some(r) = rows_of_plan {
+          rows.push((key.clone(), r));
         }
         o
       },
@@ -596,7 +638,7 @@ pub fn prepare_cliques(
     );
   }
   if overlay.is_empty() {
-    return Ok(CliquePrep { fresh, reused, ..CliquePrep::default() });
+    return Ok(CliquePrep { fresh, rows, reused, ..CliquePrep::default() });
   }
   let pending: Vec<Name> =
     wanted.into_iter().filter(|c| (h.addr)(c).is_none()).collect();
@@ -609,7 +651,7 @@ pub fn prepare_cliques(
     Vec::new(),
     FxHashSet::default(),
   )?;
-  Ok(CliquePrep { overlay, sources, canon: order, fresh, reused })
+  Ok(CliquePrep { overlay, sources, canon: order, fresh, rows, reused })
 }
 
 #[cfg(test)]

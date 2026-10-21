@@ -563,7 +563,12 @@ def rowOf (const? : Name → Option ConstantInfo) (plan : CliquePlan) (f : Name)
 then the rows of its transported members, each in pretty-name order of the
 names they get (see `Hook`'s note on ties); both empty for another
 encoding. An encoding constant that is not a definition or a theorem is an
-error, and so is any member's refusal. -/
+error, and so is any member's refusal (the first in that order).
+
+The members' rows are independent: each is computed on a task of its own
+(`Task.spawn`), read back in order, so the value is the sequential one's
+(`(Task.spawn f).get = f ()`); a clique's rows can be large proofs (one
+Init+Std clique's four rows took ≈2.8 s each). -/
 def rowsOf (const? : Name → Option ConstantInfo) (plan : CliquePlan) :
     Except String (Array ConstantInfo × Array ConstantInfo) := do
   unless plan.encoding == .wellFounded do return (#[], #[])
@@ -574,7 +579,8 @@ def rowsOf (const? : Name → Option ConstantInfo) (plan : CliquePlan) :
     | some _ => throw s!"row: the encoding constant {c.pretty} is not a definition or a theorem"
     | none => throw s!"row: the encoding constant {c.pretty} is not in the input"
   let members := (rowMembers plan).qsort fun a b => (rowName a).pretty < (rowName b).pretty
-  let rows ← members.mapM (rowOfWith const? plan enc)
+  let tasks := members.map fun f => Task.spawn fun _ => rowOfWith const? plan enc f
+  let rows ← tasks.mapM (·.get)
   return (copies, rows)
 
 end Ix.Compile.Pass.Clique

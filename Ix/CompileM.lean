@@ -156,6 +156,13 @@ structure CompileEnv where
       by the clique's first member, filled by the blocks that computed a plan
       (first entry wins, `mergeCompiledBlock`). Never changes a byte. -/
   p3CliquePlans : Std.HashMap Name Ix.Compile.Pass.Clique.CliqueOutcome := {}
+  /-- Pass 3, clique transport: the rows table, each transported plan's rows
+      (`Clique.rowsOf`) as the block that made the plan computed them
+      (`Clique.CliqueOutcome.wfOnlyRows`), by clique key, first entry winning
+      like the plan table, for the rows after the fold
+      (`Ix.Compile.Pass.cliqueRows`, which computes a missing entry and, with
+      `p3CheckPlans`, recomputes every entry). Never changes a byte. -/
+  p3CliqueRows : Std.HashMap Name (Array Ix.ConstantInfo × Array Ix.ConstantInfo) := {}
   /-- Pass 3, clique transport: recompute every plan the table supplies and
       fail on a difference (`IX_PASS3_CHECK_PLANS`, the plan-cache suite). -/
   p3CheckPlans : Bool := false
@@ -317,6 +324,10 @@ structure BlockState where
   /-- Pass 3, clique transport: the plans this block computed, by clique key,
       for the driver's plan table (`CompileEnv.p3CliquePlans`). -/
   p3CliquePlans : Array (Name × Ix.Compile.Pass.Clique.CliqueOutcome) := #[]
+  /-- Pass 3, clique transport: the rows of the transported plans this block
+      computed, by clique key, for the driver's rows table
+      (`CompileEnv.p3CliqueRows`). -/
+  p3CliqueRows : Array (Name × (Array Ix.ConstantInfo × Array Ix.ConstantInfo)) := #[]
   /-- Pass 3, clique transport: how many plans this block took from the table. -/
   p3PlanReused : Nat := 0
   deriving Inhabited

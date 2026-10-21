@@ -93,26 +93,42 @@ def sortByPretty (xs : Array Name) : Array Name := xs.qsort fun a b => a.pretty 
 
 /-! ## The plan table -/
 
-/-- The outcome under decision (ii) (2026-10-21): a transport stands only
-when its rows apply. A structural or `partial_fixpoint` clique keeps Lean's
-form (no row recipe); so does a well-founded clique whose rows do not apply
-(`rowsOf` refuses) or whose rows' prerequisites (`rowPrereqs`) are not all
-in the input (`const?`), so that every transported clique gets its rows
-after the fold (`Ix.CompileM.emitRows`). The kept form's outcome is
-`baseline enc .shape`, the outcome of a transport that kept Lean's form, with
-the reason, which is for diagnostics, never a byte. Every other outcome is
-kept. -/
-def CliqueOutcome.wfOnly (const? : Name → Option ConstantInfo) : CliqueOutcome → CliqueOutcome
+/-- A transported plan's records after the fold (`rowsOf`): the `_ix.src`
+copies of its encoding set, then its members' rows. -/
+abbrev Rows := Array ConstantInfo × Array ConstantInfo
+
+/-- The outcome under decision (ii) (2026-10-21), with the rows it checked: a
+transport stands only when its rows apply. A structural or
+`partial_fixpoint` clique keeps Lean's form (no row recipe); so does a
+well-founded clique whose rows do not apply (`rowsOf` refuses) or whose
+rows' prerequisites (`rowPrereqs`) are not all in the input (`const?`), so
+that every transported clique gets its rows after the fold
+(`Ix.CompileM.emitRows`). The kept form's outcome is `baseline enc .shape`,
+the outcome of a transport that kept Lean's form, with the reason, which is
+for diagnostics, never a byte. Every other outcome is kept.
+
+The rows are `rowsOf const? plan` for an outcome that stays transported,
+`none` otherwise: computed once, when the plan is made, and kept for the
+emission (`CliquePrep.rows`, `CompileEnv.p3CliqueRows`). -/
+def CliqueOutcome.wfOnlyRows (const? : Name → Option ConstantInfo) :
+    CliqueOutcome → CliqueOutcome × Option Rows
   | .transported plan =>
-    let keep (why : String) : CliqueOutcome := .baseline plan.encoding .shape why
+    let keep (why : String) : CliqueOutcome × Option Rows :=
+      (.baseline plan.encoding .shape why, none)
     if plan.encoding != .wellFounded then
       keep s!"no row recipe for a {plan.encoding.tag} clique: rows are for well-founded cliques only"
     else if let some p := rowPrereqs.find? (const? · |>.isNone) then
       keep s!"the rows' prerequisite {p.pretty} is not in the input"
     else match rowsOf const? plan with
-      | .ok _ => .transported plan
+      | .ok rows => (.transported plan, some rows)
       | .error e => keep s!"the rows do not apply: {e}"
-  | o => o
+  | o => (o, none)
+
+/-- The outcome under decision (ii) (`CliqueOutcome.wfOnlyRows` without the
+rows). -/
+def CliqueOutcome.wfOnly (const? : Name → Option ConstantInfo) (o : CliqueOutcome) :
+    CliqueOutcome :=
+  (o.wfOnlyRows const?).1
 
 /-- The prefix of the plan-table check's error; a driver turns a block
 failure with this prefix into a failed compile. -/
@@ -135,17 +151,26 @@ every plan the table supplies is recomputed, and a difference (by
 `CliqueOutcome.same`) is `memoLookup`'s error, prefixed by `planCheckPrefix`
 and the clique (`<prefix> the plan of the clique #[…]: the recomputed value
 differs from the table's`). A clique without a first member (never in the
-table) is planned directly. -/
-def cliquePlanFor (h : HookEnv) (cl carried : Array Name) : Except String (CliqueOutcome × Bool) := do
-  let compute (_ : Unit) : Except String CliqueOutcome :=
+table) is planned directly.
+
+A plan computed here (not taken from the table) comes with its rows when it
+stays transported (`CliqueOutcome.wfOnlyRows`, which computes them to
+decide), for the rows table (`CliquePrep.rows`); a plan from the table comes
+without them (they are in the rows table, or the emission computes them). -/
+def cliquePlanFor (h : HookEnv) (cl carried : Array Name) :
+    Except String (CliqueOutcome × Bool × Option Rows) := do
+  let compute (_ : Unit) : CliqueOutcome × Option Rows :=
     let o := planClique h.env h.addr? cl carried
-    pure (if h.wfOnly then o.wfOnly h.env.get? else o)
-  let some key := cl[0]? | return (← compute (), false)
+    if h.wfOnly then o.wfOnlyRows h.env.get? else (o, none)
+  let some key := cl[0]? | let (o, rows) := compute (); return (o, false, rows)
+  unless h.plans.contains key do
+    let (o, rows) := compute ()
+    return (o, false, rows)
   let what := if h.checkPlans then s!"{planCheckPrefix} the plan of the clique {cl.map (·.pretty)}"
     else planCheckPrefix
   let o ← (letI : BEq CliqueOutcome := ⟨CliqueOutcome.same⟩
-    memoLookup h.plans h.checkPlans what key compute)
-  return (o, h.plans.contains key)
+    memoLookup h.plans h.checkPlans what key fun _ => pure (compute ()).1)
+  return (o, true, none)
 
 /-! ## The callers -/
 
@@ -191,7 +216,10 @@ def cliqueCallers (h : HookEnv) (all refs : Ix.Set Name) :
     -- a block of the clique's own unit is not a caller
     if all.toList.any fun n => cl.contains n || carried.contains n || isEncodingName cl n then continue
     let some m := (sortByPretty (refs.toArray.filter cl.contains))[0]? | continue
-    let (outcome, hit) ← cliquePlanFor h cl carried
+    -- the members' blocks come before a caller's (it references a member)
+    -- and plan the clique first: a plan computed here is one whose members
+    -- did not compile, so there are no rows to keep
+    let (outcome, hit, _) ← cliquePlanFor h cl carried
     if hit then reused := reused + 1 else fresh := fresh.push (key, outcome)
     match outcome with
     | .transported plan =>
@@ -222,6 +250,9 @@ structure CliquePrep where
   canon : Array (Name × ConstantInfo) := #[]
   /-- The plans computed for this block, by clique key (for the plan table). -/
   fresh : Array (Name × CliqueOutcome) := #[]
+  /-- The rows of the transported plans the block's members computed, by
+  clique key (`CliqueOutcome.wfOnlyRows`; for the rows table). -/
+  rows : Array (Name × Rows) := #[]
   /-- The number of plans taken from the plan table. -/
   reused : Nat := 0
   deriving Inhabited
@@ -315,6 +346,7 @@ def prepareCliques (h : HookEnv) (all refs : Ix.Set Name) : Except String Clique
   let mut wanted : Array Name × Std.HashSet Name := (#[], {})
   let mut fresh := fresh0
   let mut reused := reused0
+  let mut rows : Array (Name × Rows) := #[]
   let mut plans : Std.HashMap Name CliqueOutcome := fresh0.foldl (fun m (k, o) => m.insert k o) {}
   for n in sortByPretty (all.toArray.filter h.table.contains) do
     let some (cl, carried) := h.table.get? n | continue
@@ -323,8 +355,9 @@ def prepareCliques (h : HookEnv) (all refs : Ix.Set Name) : Except String Clique
     match plans.get? key with
     | some o => outcome := o
     | none =>
-      let (o, hit) ← cliquePlanFor h cl carried
+      let (o, hit, rows?) ← cliquePlanFor h cl carried
       if hit then reused := reused + 1 else fresh := fresh.push (key, o)
+      if let some r := rows? then rows := rows.push (key, r)
       outcome := o
     plans := plans.insert key outcome
     let .transported plan := outcome | continue
@@ -342,10 +375,10 @@ def prepareCliques (h : HookEnv) (all refs : Ix.Set Name) : Except String Clique
         canon := canon.insert d.name (canonConst const? d src record?)
     wanted := reachCanon canon canonNames canonNames.size
       (pushStack [] (constOccurrences canonNames.contains md.value)) wanted
-  if overlay.isEmpty then return { fresh, reused }
+  if overlay.isEmpty then return { fresh, reused, rows }
   let pending := sortByPretty (wanted.1.filter fun c => (h.addr? c).isNone)
   let order ← canonRounds h.addr? canon (pending.size + 1) pending #[] {}
-  return { overlay, sources, canon := order, fresh, reused }
+  return { overlay, sources, canon := order, fresh, reused, rows }
 
 end Ix.Compile.Pass.Clique
 

@@ -647,9 +647,12 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       cenv.p3CanonRecs
     p3Views := Ix.Compile.Pass.memoMerge cenv.p3Views published.views
     p3ImageExps := Ix.Compile.Pass.memoMerge cenv.p3ImageExps published.imageExps
-    -- the plan table: the first plan computed for a clique wins
+    -- the plan table: the first plan computed for a clique wins; so do its
+    -- rows (the rows table)
     p3CliquePlans := cache.p3CliquePlans.foldl
-      (fun m (k, v) => if m.contains k then m else m.insert k v) cenv.p3CliquePlans }
+      (fun m (k, v) => if m.contains k then m else m.insert k v) cenv.p3CliquePlans
+    p3CliqueRows := cache.p3CliqueRows.foldl
+      (fun m (k, v) => if m.contains k then m else m.insert k v) cenv.p3CliqueRows }
   -- Class-ordering registry (Rust `stt.blocks`, compile.rs:4048-4057):
   -- one entry per member, all pointing at the block's full ordering.
   if !result.classNames.isEmpty then
