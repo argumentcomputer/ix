@@ -15,7 +15,11 @@ is a member's name or the name of a constructor an inductive member lists:
   matter, so no hypothesis on the names (`Canon.KeysDistinct`) is needed;
 * a mutual block's projections carry its members' names and their
   constructors' (`mutualBlock_names`), and a lone constant other than an
-  inductive or a constructor has none (`constantInfo_lone`). -/
+  inductive or a constructor has none (`constantInfo_lone`);
+* whatever Pass 3's hooks return, `runBlockWithAux`'s projections carry those
+  names (`runBlockWithAux_owned`), and an image block's result, the image of
+  its key, has none (`runImageBlock_lone`), so every claim of `runBlock` is
+  owned or the key (`runBlock_owned`). -/
 
 namespace Ix.Cert.Claims
 
@@ -908,5 +912,175 @@ theorem runBlockWithAux_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name
   exact memberName_owned (prepareBlock_agrees hprep) hn (names row' hrow')
 
 end claims
+
+/-! ## Image blocks claim their key only -/
+
+section image
+
+/-- A constant other than an inductive or a constructor (`constantInfo_lone`'s
+premises). -/
+def Lone (ci : ConstantInfo) : Prop :=
+  (∀ v, ci = .inductInfo v → False) ∧ ∀ v, ci = .ctorInfo v → False
+
+/-- An invariant of a fallible loop's state, kept by every step from a
+member of the list, holds of its result (`done` or not). -/
+theorem forIn_list_inv {α σ ε : Type} (I : σ → Prop) (f : α → σ → Except ε (ForInStep σ)) :
+    ∀ (l : List α), (∀ x ∈ l, ∀ s r, I s → f x s = .ok r → I r.value) →
+      ∀ (s res : σ), I s → forIn l s f = .ok res → I res := by
+  intro l
+  induction l with
+  | nil => intro _ s res hs h; cases h; exact hs
+  | cons x l ih =>
+    intro step s res hs h
+    rw [List.forIn_cons] at h
+    obtain ⟨r, hr, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+    have hv := step x List.mem_cons_self s r hs hr
+    cases r with
+    | done b => cases h; exact hv
+    | yield b => exact ih (fun y hy => step y (List.mem_cons_of_mem _ hy)) b res hv h
+
+/-- `forIn_list_inv` over an array. -/
+theorem forIn_array_inv {α σ ε : Type} (I : σ → Prop) (f : α → σ → Except ε (ForInStep σ)) (xs : Array α)
+    (step : ∀ x ∈ xs, ∀ s r, I s → f x s = .ok r → I r.value) {s res : σ} (hs : I s)
+    (h : forIn xs s f = .ok res) : I res := by
+  rw [← Array.forIn_toList] at h
+  exact forIn_list_inv I f xs.toList (fun x hx => step x (Array.mem_toList_iff.1 hx)) s res hs h
+
+/-- `forIn_list_inv` over a range `[:n]` (a bounded `for`, `break` included). -/
+theorem forIn_range_inv {σ ε : Type} (I : σ → Prop) (f : Nat → σ → Except ε (ForInStep σ)) (n : Nat)
+    (step : ∀ x s r, I s → f x s = .ok r → I r.value) {s res : σ} (hs : I s)
+    (h : forIn [:n] s f = .ok res) : I res := by
+  rw [Std.Legacy.Range.forIn_eq_forIn_range'] at h
+  exact forIn_list_inv I f _ (fun x _ => step x) s res hs h
+
+/-- An image constant is a definition or a theorem. -/
+theorem imageInfo_lone (cenv : CompileEnv) (dv : Ix.DefinitionVal) :
+    Lone (Ix.Compile.Pass.imageInfo cenv dv) := by
+  unfold Ix.Compile.Pass.imageInfo
+  constructor <;> intro v h <;> split at h <;> cases h
+
+/-- An image compiles alone, to no projections. -/
+theorem compileImage_lone {cenv : CompileEnv} {known : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
+    {ci : ConstantInfo} {r : BlockResult} {bs : BlockState} (hk : Lone ci)
+    (h : Ix.Compile.Pass.compileImage cenv known ci = .ok (r, bs)) : r.projections = #[] := by
+  unfold Ix.Compile.Pass.compileImage at h
+  dsimp only at h
+  split at h
+  · rename_i r' heq
+    cases h
+    exact constantInfo_lone ci hk.1 hk.2 _ _ _ _ (Ix.CompileCert.run_success heq)
+  · cases h
+
+/-- **An image block's images have no projections**: each is `compileImage` of
+an `imageInfo` (a definition or a theorem, `constantInfo_lone`), through the
+declarations loop and the bounded rounds of `compileImageBlock`. -/
+theorem compileImageBlock_lone {cenv : CompileEnv} {all : Ix.Set Name}
+    {imgs : Array (Name × BlockResult × BlockState)} {pub : Ix.Compile.Pass.Published}
+    (h : Ix.Compile.Pass.compileImageBlock cenv all = .ok (imgs, pub)) :
+    ∀ x ∈ imgs, x.2.1.projections = #[] := by
+  unfold Ix.Compile.Pass.compileImageBlock at h
+  dsimp only at h
+  obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  obtain ⟨views, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  obtain ⟨s2, h2, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  have hd : ∀ p ∈ s2.2.1, Lone p.2 := by
+    refine forIn_array_inv (fun s : Ix.Compile.Pass.RwState × Array (Name × ConstantInfo) ×
+      Array (Name × Ix.Compile.Pass.Expansion × Expr) => ∀ p ∈ s.2.1, Lone p.2) _ _ ?_
+      (fun _ hp => by simp at hp) h2
+    intro a _ s r hs hr
+    repeat' (first
+      | (obtain ⟨_, _, hr⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hr)
+      | (split at hr))
+    all_goals first
+      | (cases hr; done)
+      | (cases hr; exact hs)
+      | (cases hr
+         intro p hp
+         rcases Array.mem_push.1 hp with hp | rfl
+         exacts [hs p hp, imageInfo_lone _ _])
+  obtain ⟨s3, h3, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  have ho : (∀ p ∈ s3.1, Lone p.2) ∧ ∀ x ∈ s3.2.2.1, x.2.1.projections = #[] := by
+    refine forIn_range_inv (fun s : Array (Name × ConstantInfo) × Std.HashMap Ix.Compile.ExactKey.ExactName Address ×
+      Array (Name × BlockResult × BlockState) × String =>
+        (∀ p ∈ s.1, Lone p.2) ∧ ∀ x ∈ s.2.2.1, x.2.1.projections = #[]) _ _ ?_
+      ⟨hd, fun _ hx => by simp at hx⟩ h3
+    intro _ s r hs hr
+    split at hr
+    · cases hr; exact hs
+    · obtain ⟨t, ht, hr⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hr
+      cases hr
+      refine forIn_array_inv (fun t : Std.HashMap Ix.Compile.ExactKey.ExactName Address ×
+        Array (Name × BlockResult × BlockState) × String × Array (Name × ConstantInfo) =>
+          (∀ x ∈ t.2.1, x.2.1.projections = #[]) ∧ ∀ p ∈ t.2.2.2, Lone p.2) _ _ ?_
+        ⟨hs.2, fun _ hp => by simp at hp⟩ ht |>.symm
+      intro x hx u q hu hq
+      split at hq
+      · rename_i r bs hc
+        cases hq
+        refine ⟨fun y hy => ?_, hu.2⟩
+        rcases Array.mem_push.1 hy with hy | rfl
+        exacts [hu.1 y hy, compileImage_lone (hs.1 x hx) hc]
+      · cases hq
+        refine ⟨hu.1, fun y hy => ?_⟩
+        rcases Array.mem_push.1 hy with hy | rfl
+        exacts [hu.2 y hy, hs.1 _ hx]
+  split at h
+  · obtain ⟨_, h, -⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+    cases h
+  · cases h
+    exact ho.2
+
+/-- An image block's result, the image of its key, has no projections. -/
+theorem runImageBlock_lone
+    {original : CompileEnv → Name → Ix.Set Name → Except CompileError (BlockResult × BlockState)}
+    {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult} {cache : BlockState}
+    {pub : Ix.Compile.Pass.Published}
+    (h : Ix.Compile.Pass.runImageBlock original cenv all lo = .ok (r, cache, pub)) : r.projections = #[] := by
+  unfold Ix.Compile.Pass.runImageBlock at h
+  dsimp only at h
+  obtain ⟨⟨imgs, published⟩, himgs, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  have lone := compileImageBlock_lone (mapError_ok himgs)
+  obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  obtain ⟨s, hs, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+
+  have hr : ∀ q, s.2 = some q → q.projections = #[] := by
+    refine forIn_array_inv (fun s : BlockState × Option BlockResult => ∀ q, s.2 = some q → q.projections = #[])
+      _ _ ?_ (fun _ hq => by cases hq) hs
+    intro x hx u v hu hv
+    split at hv
+    · cases hv
+      intro q hq
+      cases hq
+      exact lone x hx
+    · cases hv
+      exact hu
+  split at h
+  · rename_i q hq
+    cases h
+    exact hr _ hq
+  · cases h
+
+/-- **The claims of a block compile, image blocks included**: every projection
+name of `runBlock cenv all lo` hashes like a member of `all` or like a
+constructor an inductive member lists, when every constant of `cenv.env`
+carries its name (`runBlockWithAux_owned`; an image block's result has none,
+`runImageBlock_lone`, so its only claim is its key). -/
+theorem runBlock_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
+    {cache : BlockState} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
+    (hn : NamedEnv cenv.env) (h : runBlock cenv all lo = .ok (r, cache, layout?, pub)) :
+    ∀ row ∈ r.projections, Owned cenv.env all row.1 := by
+  unfold runBlock at h
+  split at h
+  · cases hi : Ix.Compile.Pass.runImageBlock compileConstNoAuxPure cenv all lo with
+    | error e => rw [hi] at h; cases h
+    | ok v =>
+      rw [hi] at h
+      cases h
+      rw [runImageBlock_lone hi]
+      intro _ hrow
+      simp at hrow
+  · exact runBlockWithAux_owned hn h
+
+end image
 
 end Ix.Cert.Claims
