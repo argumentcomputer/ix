@@ -22,7 +22,12 @@
     it owns (the recursive telescope, the decreasing obligations);
   * `WFMatcher`: the declaration-checked `Nat` dispatcher the transport may
     follow;
-  * `WFConjugation`: the decoder-owned well-founded transport (`transportWF`).
+  * `WFConjugation`: the decoder-owned well-founded transport (`transportWF`);
+  * `Plan`: the plan of a changed clique as data (encodings, the order's
+    source, the transported members and canonical constants, the outcome),
+    and its side-car record `_ix.clique`, typed data only;
+  * `Table`: the input's cliques, their carried equation lemmas, the
+    encoding roots, and the scheduling edges (`scheduleCliques`).
 
   Not imported by the compiler (`Ix.Compile.Pass` does not import it). No
   `MetaM`, no kernel, no `partial`.
@@ -39,3 +44,5 @@ public import Ix.Compile.Pass.Clique.WF
 public import Ix.Compile.Pass.Clique.WFSchema
 public import Ix.Compile.Pass.Clique.WFMatcher
 public import Ix.Compile.Pass.Clique.WFConjugation
+public import Ix.Compile.Pass.Clique.Plan
+public import Ix.Compile.Pass.Clique.Table

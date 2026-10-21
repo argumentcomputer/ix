@@ -33,11 +33,20 @@ def searchDepth : Nat := 64
 and leaf reduction (`WFConjugation`). -/
 def wfDepth : Nat := 64
 
+/-- The bound on `k` when the clique table reads a member's equation lemmas
+`m.eq_k` (`memberEqLemmas`): they are read while present, for `k` below it. -/
+def eqLemmaBound : Nat := 1000000
+
+/-- The number of names `encodingOwner?` looks up: the name itself and its
+nearest prefixes. -/
+def encodingOwnerDepth : Nat := 64
+
 /-- Every bound by name, for the Lean/Rust parity test. -/
 def bounds : List (String × Nat) :=
   [("transportFuel", transportFuel), ("whnfFuel", whnfFuel),
    ("eqDefConversionFuel", eqDefConversionFuel), ("searchDepth", searchDepth),
-   ("wfDepth", wfDepth)]
+   ("wfDepth", wfDepth), ("eqLemmaBound", eqLemmaBound),
+   ("encodingOwnerDepth", encodingOwnerDepth)]
 
 end Ix.Compile.Pass.Clique
 
