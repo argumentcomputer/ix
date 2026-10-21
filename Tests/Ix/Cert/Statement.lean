@@ -479,6 +479,39 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     else
       errors := errors.push s!"{label}: the stray failure is refused, but not by the failure check: {e}"
   | .ok () => errors := errors.push s!"{label}: checkReport accepts a failure that is not an input name"
+  -- Identity rows: duplicates agree on both verdict and compared address,
+  -- and an identical row names its final published address.
+  let id0 ← IO.monoMsNow
+  let identity? ← IO.lazyPure fun _ => Ix.Cert.identityMismatch cenv.auxReport.identity ixe
+  let id1 ← IO.monoMsNow
+  match identity? with
+  | none => lines := lines.push s!"{label}: identityMismatch finds consistent identity rows at their \
+      published addresses ({cenv.auxReport.identity.size} rows, {id1 - id0} ms)"
+  | some (n, _, _) => errors := errors.push s!"{label}: identityMismatch finds a mismatch at {n.pretty}"
+  let identityName := ixe.named.toList.find? fun (n, _) => !cenv.p3Heads.contains n
+  match identityName with
+  | none => errors := errors.push s!"{label}: no published non-head name for identity-row controls"
+  | some (n, named) =>
+    let prior := cenv.auxReport.identity.filter fun row => !(row.1 == n)
+    let badAddress : Address := ⟨ByteArray.empty⟩
+    let duplicates := prior ++ #[(n, true, named.addr), (n, true, named.addr)]
+    if (Ix.Cert.identityMismatch duplicates ixe).isSome then
+      errors := errors.push s!"{label}: identity check refuses two agreeing identical rows"
+    else
+      lines := lines.push s!"{label}: identity check permits duplicate agreeing rows"
+    for (reason, rows) in
+        [("unpublished address", prior.push (n, true, badAddress)),
+         ("conflicting verdicts", prior ++ #[(n, true, named.addr), (n, false, named.addr)]),
+         ("conflicting compared addresses", prior ++ #[(n, false, named.addr), (n, false, badAddress)])] do
+      let cenvI := { cenv with auxReport := { cenv.auxReport with identity := rows } }
+      match Ix.Cert.checkReport env cenvI (ixe, failures) with
+      | .error e =>
+        if (e.splitOn "identity check failed").length > 1 then
+          lines := lines.push s!"{label}: checkReport refuses identity rows with {reason}"
+        else
+          errors := errors.push s!"{label}: identity rows with {reason} refused by another check: {e}"
+      | .ok () => errors := errors.push s!"{label}: checkReport accepts identity rows with {reason}"
+
   -- the projection check (one stored definition projection record per member),
   -- timed alone, then refusing, by its own message, a second authentic record
   -- projecting a member (an existing projection with its univs grown, stored at

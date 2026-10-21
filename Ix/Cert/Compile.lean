@@ -806,6 +806,17 @@ name, so a constant of the closure, which did not fail. -/
     Option Ix.Name :=
   ungrounded.toList.findSome? fun (n, _) => if (env.consts.get? n).isSome then none else some n
 
+/-- The first identity row that disagrees with another row under the same
+name key, on the verdict or compared address, or says `identical` at an
+address the final artifact does not publish the name at. Duplicate agreeing
+rows are allowed: several original-form promotions can reach one name. -/
+@[expose] def identityMismatch (identity : Array (Ix.Name × Bool × Address)) (ixe : Ixon.Env) :
+    Option (Ix.Name × Bool × Address) :=
+  let first : Std.HashMap Ix.Name (Bool × Address) :=
+    identity.foldl (init := {}) fun m (n, s, a) => if m.contains n then m else m.insert n (s, a)
+  identity.toList.find? fun (n, s, a) =>
+    first.get? n != some (s, a) || (s && (ixe.named.get? n).map (·.addr) != some a)
+
 /-- A stored record's definition projection: the member it projects (its block's
 address and its index) and the record's address. -/
 @[expose] def definitionProjection (e : Address × Ixon.LazyConstant) : Option ((Address × Nat) × Address) :=
@@ -849,7 +860,7 @@ is decoded once before the two passes over projection pairs. -/
     if m.contains r then m else m.insert r a
   entries.findSome? fun (r, a) => if decide (first[r]? = some a) then none else some r
 
-/-- `compileReport`'s fifteen checks on a compile's result, each an error on
+/-- `compileReport`'s sixteen checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -878,7 +889,9 @@ name it is stored under (`misnamedInput`). **Input constructors belong to their
 inductive:** each constructor an input inductive lists is stored as a
 constructor of it (`strayConstructor`). **Failures are input names:** each
 name the driver's final environment records as a failure (`cenv.ungrounded`)
-is one the input's map holds (`strayFailure`). **One projection record per
+is one the input's map holds (`strayFailure`). **Identity rows agree:** every
+row of a name agrees on its verdict and compared address, and an identical
+row names the final published address (`identityMismatch`). **One projection record per
 definition member:** no two stored definition projection records project one
 member (`projectionCollision`). -/
 @[expose] def checkReport (env : Ix.Environment)
@@ -909,11 +922,17 @@ member (`projectionCollision`). -/
                         | none =>
                           match strayFailure env cenv.ungrounded with
                           | none =>
-                            match projectionCollision out.1 with
-                            | none => .ok ()
-                            | some (b, i) =>
-                              .error s!"compileReport: projection check failed: member {i} of the block at \
-                                {b} has more than one stored definition projection record"
+                            match identityMismatch cenv.auxReport.identity out.1 with
+                            | none =>
+                              match projectionCollision out.1 with
+                              | none => .ok ()
+                              | some (b, i) =>
+                                .error s!"compileReport: projection check failed: member {i} of the block at \
+                                  {b} has more than one stored definition projection record"
+                            | some (n, same, a) =>
+                              .error s!"compileReport: identity check failed: the identity row of \
+                                {n.pretty} ({if same then "identical" else "not identical"} at {a}) \
+                                disagrees with another row of that name, or the name is not published at that address"
                           | some f =>
                             .error s!"compileReport: failure check failed: the driver records the name \
                               {f.pretty} as a failure, but no input constant is stored under it"
@@ -964,7 +983,7 @@ member (`projectionCollision`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with fifteen checks (`checkReport`):
+condensation it cannot schedule). It ends with sixteen checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -978,7 +997,8 @@ resolved or in the aux map; no resolved name outside the aux map is a cross-SCC
 subset's claim; every Pass 3 head is in the changed set; every input
 constant carries the name it is stored under; every constructor an input
 inductive lists is stored as a constructor of it; every failure the driver
-records is an input name; and no two stored definition projection records
+records is an input name; identity rows agree with each other and identical
+rows name the final published address; and no two stored definition projection records
 project one member. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that

@@ -1142,14 +1142,26 @@ fun env cenv out =>
                         | none =>
                           match Ix.Cert.strayFailure env cenv.ungrounded with
                           | none =>
-                            match Ix.Cert.projectionCollision out.fst with
-                            | none => Except.ok ()
-                            | some (b, i) =>
+                            match Ix.Cert.identityMismatch cenv.auxReport.identity out.fst with
+                            | none =>
+                              match Ix.Cert.projectionCollision out.fst with
+                              | none => Except.ok ()
+                              | some (b, i) =>
+                                Except.error
+                                  (toString "compileReport: projection check failed: member " ++ toString i ++
+                                        toString " of the block at " ++
+                                      toString b ++
+                                    toString " has more than one stored definition projection record")
+                            | some (n, same, a) =>
                               Except.error
-                                (toString "compileReport: projection check failed: member " ++ toString i ++
-                                      toString " of the block at " ++
-                                    toString b ++
-                                  toString " has more than one stored definition projection record")
+                                (toString "compileReport: identity check failed: the identity row of " ++
+                                            toString n.pretty ++
+                                          toString " (" ++
+                                        toString (if same = true then "identical" else "not identical") ++
+                                      toString " at " ++
+                                    toString a ++
+                                  toString
+                                    ") disagrees with another row of that name, or the name is not published at that address")
                           | some f =>
                             Except.error
                               (toString "compileReport: failure check failed: the driver records the name " ++
@@ -1370,7 +1382,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                           Ix.Cert.misnamedInput env = none ∧
                             Ix.Cert.strayConstructor env = none ∧
                               Ix.Cert.strayFailure env cenv.ungrounded = none ∧
-                                Ix.Cert.projectionCollision out.fst = none -/
+                                Ix.Cert.identityMismatch cenv.auxReport.identity out.fst = none ∧
+                                  Ix.Cert.projectionCollision out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4949,10 +4962,10 @@ it finds first (`Ix.Cert.hintsOf`), quotient Source at the address the member's
 name is published at (`Ix.LeanIngress.fiberHintsMap`). They are one hint when the
 member has one projection record (`Ix.Cert.CtxAgree.hintsOf_projection`'s
 premise). `compileReport` now refuses an artifact with two stored definition
-projection records of one member (`checkReport`'s fifteenth check,
+projection records of one member (`checkReport`'s sixteenth check,
 `projectionCollision`). The proof route not taken: from the compiler's emission,
 one projection per member (≈0.2–0.4k). Re-frozen with it: `checkReport`'s print
-and `checkReport_ok` (a fifteenth conjunct). On a consistent run the result is
+and `checkReport_ok` (its projection conjunct, now sixteenth). On a consistent run the result is
 unchanged.
 
 The first corpus probe (ports/20261021T203754Z-projection-probe-p121) found
@@ -5119,3 +5132,40 @@ run_cmd do
       `occursConstFast_eq, `nonAuxAgree_of_reads, `hints_agree, `fiberHintsMap_named,
       `hintsOf_projection, `hintsOf_block].map (`Ix.Cert.CtxAgree ++ ·))
 
+
+/-! ## Identity rows: the promotion's compared address survives publication (B9d, check 15)
+
+`checkReport` refuses identity rows that disagree under one name key on their
+verdict or compared address, and an identical row whose address is not the
+name's final published address (`identityMismatch`). Agreeing duplicates
+remain valid. `identityMismatch_none` and `identityRowsAgree` expose both
+facts; the provenance and preservation of the bytes compared remain B9d.
+The report's print and success theorem are re-frozen for this new branch and
+conjunct. The existing projection refusal is now check 16. No final
+compiler-correctness statement gains a premise. -/
+
+/-- info: [cert-audit] identity rows: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] identity rows: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "identity rows"
+    (#[`identityMismatch_none, `identityRowsAgree].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "identity rows" #[``Ix.Cert.identityMismatch]
+
+/-- info: def Ix.Cert.identityMismatch : Array (Ix.Name × Bool × Address) → Ixon.Env → Option (Ix.Name × Bool × Address) :=
+fun identity ixe =>
+  have first :=
+    Array.foldl
+      (fun m x =>
+        match x with
+        | (n, s, a) => if m.contains n = true then m else m.insert n (s, a))
+      ∅ identity;
+  List.find?
+    (fun x =>
+      match x with
+      | (n, s, a) => first.get? n != some (s, a) || s && Option.map (fun x => x.addr) (ixe.named.get? n) != some a)
+    identity.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.identityMismatch

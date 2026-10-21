@@ -616,12 +616,13 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
       foreignHead env cenv.auxReport.table cenv.p3Heads out.1 = none ∧ misnamedInput env = none ∧
       strayConstructor env = none ∧ strayFailure env cenv.ungrounded = none ∧
+      identityMismatch cenv.auxReport.identity out.1 = none ∧
       projectionCollision out.1 = none := by
   unfold checkReport at h
   -- walk the checks in order: every failing branch is an error, so the one
   -- branch that returns has each check's equation in context
   repeat' (first | (split at h) | (focus (cases h; done)))
-  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
+  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -630,7 +631,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -1148,6 +1149,51 @@ theorem failuresInput {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
   exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
 
+/-- What the identity check's success says: every row of one name
+key has one verdict and address, and every identical row is published there. -/
+theorem identityMismatch_none {identity : Array (Ix.Name × Bool × Address)} {ixe : Ixon.Env}
+    (h : identityMismatch identity ixe = none) :
+    (∀ x ∈ identity.toList, ∀ y ∈ identity.toList, (x.1 == y.1) = true → x.2 = y.2) ∧
+    (∀ n a, (n, true, a) ∈ identity.toList → (ixe.named.get? n).map (·.addr) = some a) := by
+  let first : Std.HashMap Ix.Name (Bool × Address) :=
+    identity.foldl (init := {}) fun m (n, s, a) => if m.contains n then m else m.insert n (s, a)
+  change identity.toList.find? (fun (n, s, a) =>
+    first.get? n != some (s, a) || (s && (ixe.named.get? n).map (·.addr) != some a)) = none at h
+  have checked : ∀ x ∈ identity.toList, first.get? x.1 = some x.2 ∧
+      (x.2.1 = true → (ixe.named.get? x.1).map (·.addr) = some x.2.2) := by
+    rintro ⟨n, same, a⟩ hx
+    have hx := Bool.eq_false_iff.mpr (List.find?_eq_none.mp h _ hx)
+    simp only [Bool.or_eq_false_iff] at hx
+    refine ⟨by simpa using hx.1, ?_⟩
+    intro hs
+    change same = true at hs
+    have hi := hx.2
+    rw [hs] at hi
+    simpa using hi
+  constructor
+  · intro x hx y hy same
+    have ex := (checked x hx).1
+    have ey := (checked y hy).1
+    rw [Std.HashMap.get?_eq_getElem?] at ex ey
+    have eq := Std.HashMap.getElem?_congr (m := first) same
+    rw [ex, ey] at eq
+    exact Option.some.inj eq
+  · intro n a hn
+    exact (checked (n, true, a) hn).2 rfl
+
+/-- **The compiler's identity rows agree**, and every identical row's compared
+address is the name's final published address (`checkReport`'s fifteenth
+check). The byte provenance of those comparisons is B9d's separate proof. -/
+theorem identityRowsAgree {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
+      (∀ x ∈ cenv.auxReport.identity.toList, ∀ y ∈ cenv.auxReport.identity.toList,
+        (x.1 == y.1) = true → x.2 = y.2) ∧
+      (∀ n a, (n, true, a) ∈ cenv.auxReport.identity.toList →
+        (ixe.named.get? n).map (·.addr) = some a) := by
+  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
+  exact ⟨cenv, hu, identityMismatch_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+
 /-- What `projectionCollision = none` says: two stored definition projection
 records of one member are one address. -/
 theorem projectionCollision_none {ixe : Ixon.Env} (h : projectionCollision ixe = none) :
@@ -1174,13 +1220,13 @@ theorem projectionCollision_none {ixe : Ixon.Env} (h : projectionCollision ixe =
 
 /-- **One projection record per definition member**: when `compileReport`
 returns, two stored definition projection records of one member are one
-address (`checkReport`'s fifteenth check). -/
+address (`checkReport`'s sixteenth check). -/
 theorem projectionsOne {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ e ∈ ixe.consts.toList, ∀ e' ∈ ixe.consts.toList, ∀ r a a',
       definitionProjection e = some (r, a) → definitionProjection e' = some (r, a') → a = a' := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`
