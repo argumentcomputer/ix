@@ -566,9 +566,10 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
   let mut known : Std.HashMap ExactName Address := {}
   let mut out : Array (Name × BlockResult × BlockState) := #[]
   let mut lastErr := ""
-  let mut rounds := pending.size + 1
-  while !pending.isEmpty && rounds > 0 do
-    rounds := rounds - 1
+  -- at most one round per image, plus one (a bounded `for`, not a `while`:
+  -- total, so the statements' proofs can walk it)
+  for _ in [0:decls.size + 1] do
+    if pending.isEmpty then break
     let mut rest : Array (Name × ConstantInfo) := #[]
     for (a, ci) in pending do
       match compileImage cenv known ci with
