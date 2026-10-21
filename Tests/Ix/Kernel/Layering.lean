@@ -32,6 +32,12 @@ import edges:
      an Ixon-mode input key carries (`addressData`). Ix's boundary (`Ixon`,
      `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) imports the kernel,
      never the other way round.
+  6. THE ANSWERS FENCE (M7 Q1): `IxC.Kernel.Tier.Answer`, the typing tier's
+     answer view (δ and ι on tier constants), is imported by no module
+     under `IxC/Kernel/` (its boundary part included), `Ix/Cert/` or
+     `Ix/CompileCert/`, and by no `Ix.LeanIngress` module. A self-test
+     plants an import from a certified module and requires the scan to
+     find it.
 
 Every import kind is an edge: `public`, `private`, `meta`, `import all`.
 Lake gives no import barrier between `lean_lib`s of one package, so this
@@ -225,6 +231,41 @@ def chainTo (par : Parents) (m t : String) : String := Id.run do
     ch := ch.push cur
   return " <- ".intercalate ch.toList
 
+/-! ## The answers fence (M7 Q1)
+
+`IxC.Kernel.Tier.Answer` builds the typing tier's **answer view**, where tier
+definitions unfold and a tier block's recursors fire: what AuxGen's questions
+about an unsafe block need, and what no check may see. It is a leaf of the
+kernel and of every checking and certified path: no module under
+`IxC/Kernel/`, `Ix/Cert/` or `Ix/CompileCert/`, and no `Ix.LeanIngress`
+module, imports it (by any import kind). Its consumers are the Source
+service's answering scopes (`Ix/AuxGen/*`) and the tests. -/
+
+/-- The fenced module. -/
+def answersModule : String := "IxC.Kernel.Tier.Answer"
+
+/-- The directories and files whose modules may not import it. -/
+def answersFenced : List String := ["IxC/Kernel", "Ix/Cert", "Ix/CompileCert", "Ix/LeanIngress"]
+
+/-- Whether a module may not import the answers module. -/
+def answersBarred (m : String) : Bool :=
+  m != answersModule &&
+    (m.startsWith "IxC.Kernel." || m.startsWith "Ix.Cert." || m.startsWith "Ix.CompileCert." ||
+      m == "Ix.LeanIngress" || m.startsWith "Ix.LeanIngress.")
+
+/-- **The answers fence's findings**: each barred module that imports the
+answers module, with it. -/
+def answersFence (imports : Array (String × Array String)) : Array (String × String) :=
+  imports.foldl (init := #[]) fun acc (m, is) =>
+    if answersBarred m && is.contains answersModule then acc.push (m, answersModule) else acc
+
+/-- **The fence's self-test**: a planted import from a certified module is
+found, and an allowed one (the Source service's) is not. -/
+def answersFenceSelfTest : Bool :=
+  answersFence #[("Ix.Cert.Planted", #["Init", answersModule]),
+      ("Ix.AuxGen.SourceEnv", #[answersModule]), ("IxC.Kernel.Tier.Check", #["IxC.Kernel.Tier.Basic"])] ==
+    #[("Ix.Cert.Planted", answersModule)]
+
 def pairLt (a b : String × String) : Bool := a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
 
 def run (args : List String) : IO UInt32 := do
@@ -314,6 +355,23 @@ def run (args : List String) : IO UInt32 := do
   fail := (← report "kernel importing outside itself and the toolchain" boundv
     "the checker and the theory import only themselves, Init, Std and Lean; Ix's boundary \
     imports the kernel, never the reverse.") || fail
+  -- the answers fence: its self-test first (a planted import is found), then
+  -- the scan of every fenced module, the kernel's boundary part included
+  unless answersFenceSelfTest do
+    IO.println "LAYERING FAIL — the answers fence's self-test: a planted import was not found"
+    fail := true
+  let mut fenced : Array (String × Array String) := #[]
+  for fdir in answersFenced do
+    let under ← if ← System.FilePath.isDir fdir then leanFilesUnder fdir else pure #[]
+    let files := if ← System.FilePath.pathExists (fdir ++ ".lean") then under.push (fdir ++ ".lean")
+      else under
+    for rel in files do
+      let src := stripBlockComments (← readText rel).toList.toArray
+      fenced := fenced.push (modName rel, findImports src ["public", "private", "meta"] false)
+  let answersv := answersFence fenced
+  fail := (← report "a checking or certified module importing the answer view" answersv
+    s!"{answersModule} (δ and ι on tier constants) serves the Source service's answers only; \
+    no module under {", ".intercalate answersFenced} may import it.") || fail
   if fail then return 1
   let count (l : String) := (mods.filter (laneOf · == l)).size
   let doors := if rulesMods.isEmpty then " (no rules module yet)" else " as listed"
@@ -321,7 +379,8 @@ def run (args : List String) : IO UInt32 := do
   IO.println s!"layering: base {count "base"} / model {count "model"} / caps {count "caps"} modules \
     ({checker} of the checker); {basev.size} base->model edges, {implv.size} impl->theory, \
     {rulesv.size} rules->impl, {boundv.size} outside the boundary; rules closure: \
-    {rulesMods.size} modules, {doorsSeen.size} doors{doors}"
+    {rulesMods.size} modules, {doorsSeen.size} doors{doors}; answers fence: {fenced.size} fenced modules, \
+    {answersv.size} importing {answersModule} (self-test: a planted import found)"
   return 0
 
 end Tests.Ix.Kernel.Layering

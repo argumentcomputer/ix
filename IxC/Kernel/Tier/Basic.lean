@@ -35,7 +35,9 @@ definitions (Lean's `_unsafe_rec` companions, always a `mutualDefnDecl`
 with `safety := .partial`), and, staged after them as Lean's lattice
 requires, unsafe opaques (checked in Lean's safe mode), unsafe definition
 blocks and unsafe axioms. Unsafe inductives stay declined: the front ends
-never route them here. See `docs/kernel.md`, "The typing tier".
+never route them here (`Ix.Kernel.Tier.indC`, `Tier/Ind.lean`, checks them typing
+only, for AuxGen's answers, with no verdict).
+See `docs/kernel.md`, "The typing tier".
 -/
 
 namespace Ix.Kernel.Tier

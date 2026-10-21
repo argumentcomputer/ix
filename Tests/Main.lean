@@ -93,6 +93,7 @@ import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.SourceIngress
+import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.BundleEvidence
 import Tests.Ix.Cert.Statement
 import Tests.Ix.Kernel.ReadCache
@@ -236,6 +237,8 @@ def registry : List Entry := [
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
+  -- the typing tier's inductive install and its answer view (M7 Q1)
+  .suite "kernel-tier-ind" .primary Tests.Ix.Kernel.TierInd.suite,
   -- Source mode's evidence from the committed bundle (`Ix.RoleEvidence.bundleEvidence`), on
   -- the well-founded operations' Init closure without the certificate theorems
   .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,
