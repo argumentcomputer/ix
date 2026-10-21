@@ -12,6 +12,7 @@
 //! | `Clique/StructuralEq.lean` | [`structural_eq`] |
 //! | `Clique/Plan.lean` | [`plan`] |
 //! | `Clique/Table.lean` | [`table`] |
+//! | `Clique/Order.lean`; `Canon/Order.lean`, `Classes.lean`, `Clique.lean` (definitions) | [`order`] |
 //!
 //! `Dag.lean`'s de Bruijn and locally nameless helpers are
 //! [`super::expr`]'s (re-exported by [`basic`]); [`basic`] has its walks
@@ -19,6 +20,7 @@
 
 pub mod basic;
 pub mod bounds;
+pub mod order;
 pub mod packing;
 pub mod plan;
 pub mod structural;
