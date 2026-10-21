@@ -30,10 +30,24 @@
 
   Nothing here is trusted: every declaration goes through the verified
   fold, and what it cannot install is refused, with the fold's reason.
+
+  * **The tier** (M7 Q1): partial and unsafe declarations, unsafe inductive
+    blocks and recursor-less families, which the fold declines, are
+    installed beside it, typing only (`Ix.Kernel.Tier`), in an overlay the
+    logical fold never sees (`tier`). Each is checked at the view Lean's
+    lattice gives its stage (`checkView`: a partial block sees the partial
+    overlay, an unsafe opaque the logical index only, everything else the
+    whole overlay), with tier constants opaque; a definition block the
+    opaque check refuses is checked over the answer view instead, as Lean
+    unfolds tier definitions while it checks a block (`Ix.Resource.Typing`'s
+    rule). The **answer view** (`answers`, `Tier.AnswerView`) holds the
+    overlay's δ and ι forms: only an unsafe block's answering scopes read it
+    (`Ix.AuxGen.Ixc`). No tier install is a verdict.
 -/
 module
 public import Ix.LeanIngress.Expr
 public import IxC.Kernel.Cached.Installed
+public import IxC.Kernel.Tier.Answer
 public import Ix.AuxGen.FlatBlock
 public section
 
@@ -107,16 +121,118 @@ def roleBound (n : Name) : Bool := ingressKey n matches .role _
 
 /-! ## The checked environment -/
 
-/-- **The checked half of the service**: the fold, its evidence, and the
-class map σ of everything installed under fresh names. -/
+open Ix.Kernel.Tier (TierDecl TierInd TierIndOut AnswerView)
+
+/-- What a tier install adds to the answer view: δ forms and opaque headers
+(`infos`), or a checked inductive block (`ind`, its recursors' ι). -/
+inductive TierAnswer where
+  | infos (cis : List (Ix.Kernel.ConstantInfo .source))
+  | ind (o : TierIndOut .source)
+
+/-- **One tier install**: its stage in Lean's lattice (`TierDecl.stage`; an
+inductive block is `2`), its check forms (tier constants opaque) and its
+answer forms. -/
+structure TierEntry where
+  stage : Nat
+  check : List (Ix.Kernel.ConstantInfo .source)
+  answer : TierAnswer
+
+/-- **The checked half of the service**: the fold, its evidence, the class
+map σ of everything installed under fresh names, and the tier overlay. -/
 structure SourceEnv where
   fold : Fold := {}
   ev : Ix.Kernel.Evidences .source := []
   sigma : ClassMap := {}
+  tier : Array TierEntry := #[]
 
 instance : Inhabited SourceEnv := ⟨{}⟩
 
 namespace SourceEnv
+
+/-- **The check view of a stage**: the logical index with the tier constants a
+declaration of that stage may name pushed opaque: the partial ones at stage
+`0`, none at `1` (an unsafe opaque, checked in Lean's safe mode), all at `2`. -/
+def checkView (s : SourceEnv) (stage : Nat) : Ix.Kernel.FEnv .source :=
+  if stage == 1 then s.fold.fe else
+  s.tier.foldl (init := s.fold.fe) fun fe e =>
+    if stage == 2 || e.stage == 0 then Ix.Kernel.Tier.pushAll fe e.check else fe
+
+/-- **The answer view**: the logical index with the overlay's δ and ι forms,
+of the tier constants `stage` may name (`checkView`'s rule; the whole overlay
+by default). -/
+def answers (s : SourceEnv) (stage : Nat := 2) : AnswerView .source :=
+  s.tier.foldl (init := AnswerView.ofLogical s.fold.fe) fun av e =>
+    if stage == 2 || e.stage == 0 then
+      match e.answer with
+      | .infos cis => av.pushInfos cis
+      | .ind o => av.pushInd o
+    else av
+
+/-- A tier install's keys must be new to the logical index and the overlay. -/
+def tierFresh (s : SourceEnv) (keys : List (Ix.Kernel.Key .source)) : Except String Unit :=
+  let taken (k : Ix.Kernel.Key .source) : Bool :=
+    (s.fold.fe.find? k).isSome || s.tier.any (·.check.any (·.name == k))
+  match keys.find? taken with
+  | some k => throw s!"tier: {k} is already declared"
+  | none => pure ()
+
+/-- σ joined after a tier install: `σ` fits `Key.map` (as `install`'s). -/
+def joinSigma (s : SourceEnv) (σ : ClassMap) : Except String ClassMap := do
+  if let some n := σ.misfit roleBound then throw (FlatError.roleBound n).render
+  (s.sigma.union σ).mapError (·.render)
+
+/-- A definition block's δ forms over the answer view, for a block the opaque
+check refuses: each value's type, inferred with the block's δ forms in the
+view, must be convertible to its header there (`Ix.Resource.Typing`'s
+`defsOverAnswers`). -/
+def defsOverAnswers (av : AnswerView .source) (infos : List (Ix.Kernel.ConstantInfo .source)) :
+    Except (Ix.Kernel.CheckError .source) Unit := do
+  let knot := (av.pushInfos infos).knot
+  for info in infos do
+    if let .defnInfo cvA jv _ := info then
+      let ok ← Ix.Kernel.Tier.runC (do
+        let ty ← knot.infer 0 jv
+        knot.defeq 0 ty cvA.type)
+      unless ok do
+        throw (.invalid msg!"the value of {cvA.name} does not have its declared type, \
+          with tier definitions and unsafe recursors reducing")
+
+/-- **Install a tier declaration** (`hints`: a definition block's, by
+member) with the σ it joins: checked at its stage's view, its constants added
+to the overlay, opaque for checks and in δ form for answers. -/
+def installTierDecl (s : SourceEnv) (d : TierDecl .source) (hints : List Ix.Kernel.ReducibilityHint)
+    (σ : ClassMap := {}) : Except String SourceEnv := do
+  s.tierFresh d.names
+  let view := s.checkView d.stage
+  let entry ← match d with
+    | .defs _ ms =>
+      let withHints := ms.zipIdx.map fun ((cv, v), j) => (cv, v, hints.getD j (.regular 0))
+      let infos ← (Ix.Kernel.Tier.defsAnswerC view withHints).mapError renderCheck
+      match Ix.Kernel.Tier.checkDeclC s.fold.fe view d with
+      | .ok (_, ts) => pure ⟨d.stage, Ix.Kernel.Tier.TierConst.infos ts, .infos infos⟩
+      | .error e =>
+        -- Lean adds a block's members before it checks their bodies, unfolding
+        -- tier definitions: the block over the answer view
+        (defsOverAnswers (s.answers d.stage) infos).mapError fun _ => renderCheck e
+        let headers := infos.filterMap fun
+          | .defnInfo cvA _ _ => some (.axiomInfo cvA)
+          | _ => none
+        pure ⟨d.stage, headers, .infos infos⟩
+    | _ =>
+      let (_, ts) ← (Ix.Kernel.Tier.checkDeclC s.fold.fe view d).mapError renderCheck
+      let infos := Ix.Kernel.Tier.TierConst.infos ts
+      pure ⟨d.stage, infos, .infos infos⟩
+  pure { s with tier := s.tier.push entry, sigma := ← s.joinSigma σ }
+
+/-- **Install an inductive block typing only** (`Tier.indC`, at the whole
+overlay's view) with the σ it joins: its check forms (formers without
+capabilities, constructors, rule-less recursors) and, for answers, its
+recursors' typed rules. -/
+def installTierInd (s : SourceEnv) (b : TierInd .source) (σ : ClassMap := {}) :
+    Except String SourceEnv := do
+  s.tierFresh (b.types.map (·.1.name) ++ b.ctors.map (·.1.name) ++ b.recs.map (·.1.name))
+  let o ← (Ix.Kernel.Tier.indC (s.checkView 2) b).mapError renderCheck
+  pure { s with tier := s.tier.push ⟨2, o.checkInfos, .ind o⟩, sigma := ← s.joinSigma σ }
 
 /-- **A Lean term as a Source term, through σ**: constants renamed by σ, then
 the Source ingress's conversion under the numbering of `lps` (`large` for a
@@ -155,6 +271,22 @@ def admitDefinition (s : SourceEnv) (name : Name) (lps : Array Name) (type value
     let f ← (s.fold.step s.ev d).mapError renderCheck
     let σ ← (s.sigma.insert name fresh).mapError (·.render)
     pure { s with fold := f, sigma := σ }
+  | .ok _ => throw "ingress: arity"
+
+/-- **Admit a generated definition of an unsafe block** (M7 Q1): as
+`admitDefinition`, but by the tier, as an unsafe definition (a theorem too,
+whose proof the tier does not distinguish), so it may name tier constants;
+its δ form joins the answer view. -/
+def admitTierDefinition (s : SourceEnv) (name : Name) (lps : Array Name) (type value : Expr)
+    (thm : Bool) (hint : Ix.Kernel.ReducibilityHint := .abbrev) : Except String SourceEnv := do
+  if roleBound name then throw (FlatError.roleBound name).render
+  let fresh := Flat.fresh name
+  match s.ingress lps [type, value] with
+  | .error e => throw s!"ingress: {e}"
+  | .ok [t, v] =>
+    let cv : Ix.Kernel.ConstantVal .source := ⟨ingressKey fresh, (Numbering.mk lps false).params, t⟩
+    let σ ← (({} : ClassMap).insert name fresh).mapError (·.render)
+    s.installTierDecl (.defs .unsaf [(cv, v)]) [if thm then .opaque else hint] σ
   | .ok _ => throw "ingress: arity"
 
 end SourceEnv

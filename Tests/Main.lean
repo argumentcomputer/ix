@@ -84,6 +84,7 @@ import Tests.Ix.AuxGen.FlatBlockInitStd
 import Tests.Ix.AuxGen.BelowIxc
 import Tests.Ix.AuxGen.ClosureProbe
 import Tests.Ix.AuxGen.AcceptanceProbe
+import Tests.Ix.AuxGen.TierService
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -285,6 +286,9 @@ def registry : List Entry := [
   .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,
   -- AuxGen M1: the canonical flat blocks in Source mode, σ, the alias collapse resolved
   .suite "auxgen-flat-source" .primary Tests.Ix.AuxGen.FlatBlockSource.suite,
+  -- AuxGen M7 Q1 (T2): the Source service's tier, an unsafe block's oracle over the answer view,
+  -- `withFamily`
+  .suite "auxgen-tier-service" .primary Tests.Ix.AuxGen.TierService.suite,
   -- the certification statements on the same fixtures: compile parity, and
   -- the per-root hypotheses and conclusion
   .suite "cert-statement" .primary Tests.Ix.Cert.Statement.suite,

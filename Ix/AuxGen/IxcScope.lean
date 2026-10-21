@@ -43,6 +43,14 @@
   for). `withFlat` installs the block's own canonical flat block
   (`Service.installFlat`) when the block's layout is not Lean's.
 
+  **An unsafe block** (M7 Q1), whose groups the service's tier installed,
+  is answered over the tier's answer view (`SourceEnv.answers`, built once
+  per oracle): Lean unfolds tier definitions and fires an unsafe block's
+  recursors, so its answers do too. Its flat block, generated definitions
+  and families install through the tier (`tier := true`), and `withFamily`
+  installs a recursor-less family there for any block. The fast paths are
+  unchanged.
+
   Nothing here is trusted: every answer comes from IxC's verified checker over
   declarations the verified fold accepted, and an answer it cannot give is a
   refusal.
@@ -140,10 +148,12 @@ where
 
 /-- **A local context over a Source environment.** Locals are numbered by
 level, outermost `0`, as IxC's `fvar`s are; `locals[i]` is `.fvar i ty` with
-the local's annotated type. -/
+the local's annotated type. `knot` is the checker it answers with: over the
+fold's index, or over the answer view for an unsafe block (M7 Q1). -/
 structure Scope where
   env : SourceEnv
   lps : Array Name
+  knot : Ix.Kernel.Cached.CoreFnsI .source
   fvarLevels : Std.HashMap Name Nat := {}
   locals : Array (Ix.Kernel.Expr .source) := #[]
   /-- each local's name, by level (the egress's free variables) -/
@@ -154,12 +164,12 @@ namespace Scope
 
 def depth (s : Scope) : Nat := s.locals.size
 
-/-- One action of IxC's cached checker over the scope's environment, with the
+/-- One action of IxC's cached checker over the scope's view, with the
 scope's memo state. -/
 def run (s : Scope)
     (act : Ix.Kernel.Cached.CoreFnsI .source → Ix.Kernel.Cached.CheckCM .source α) :
     Except String (α × Scope) :=
-  match (act (Ix.Kernel.Cached.coreKnotI .verified s.env.fold.fe Ix.Kernel.checkFuel)).run s.cs with
+  match (act s.knot).run s.cs with
   | .ok (a, cs) => .ok (a, { s with cs })
   | .error e => .error (renderCheck e)
 
@@ -197,14 +207,19 @@ def pop (s : Scope) (k : Nat) : Except String Scope := do
     if i < keep then m.insert name i else m
   pure { s with fvarLevels, locals := s.locals.extract 0 keep, names := s.names.extract 0 keep }
 
-/-- A context over `lps` with no locals; duplicate level parameters are
+/-- A context over `lps` with no locals, over the fold's index or the answer
+view `view` (an unsafe block's, M7 Q1); duplicate level parameters are
 refused. -/
-def new (env : SourceEnv) (lps : Array Name) : Except String Scope := do
+def new (env : SourceEnv) (lps : Array Name) (view : Option (Ix.Kernel.Tier.AnswerView .source) := none) :
+    Except String Scope := do
   let mut seen : Std.HashSet Name := {}
   for n in lps do
     if seen.contains n then throw s!"duplicate universe parameter {n.pretty}"
     seen := seen.insert n
-  pure { env, lps }
+  let knot := match view with
+    | some av => av.knot
+    | none => Ix.Kernel.Cached.coreKnotI .verified env.fold.fe Ix.Kernel.checkFuel
+  pure { env, lps, knot }
 
 /-- The level of a type by IxC's checker: `annotate`, `infer`, `ensureSort`;
 the level as `Ix.Tc` builds it, `levelNormalize`d for a ∀. -/
@@ -444,9 +459,12 @@ def ofLazy (get? : Name → Option ConstantInfo) :
 Lean's: the service after it, or `none`. The flat block is built as the
 fixture test builds it (`Flat.build` over the input's lookups and the σ of
 the blocks installed before), and lowered and installed by the service
-(`Service.installFlat`); a refusal is an error naming its reason. -/
+(`Service.installFlat`); a refusal is an error naming its reason. An unsafe
+block's (`tier`, M7 Q1) is installed typing only, with its canonical
+records. -/
 def installOwnFlat (svc : Service) (classes : Array (Array Name)) (originalAll : Array Name)
-    (canonicalRecs : Array (Name × RecursorVal)) : Except String (Option Service) := do
+    (canonicalRecs : Array (Name × RecursorVal)) (tier : Bool := false) :
+    Except String (Option Service) := do
   let nClasses := classes.size
   let auxNames := (canonicalRecs.extract nClasses canonicalRecs.size).map (·.1)
   let leanNested := match originalAll[0]?.bind svc.input.get? with
@@ -454,9 +472,9 @@ def installOwnFlat (svc : Service) (classes : Array (Array Name)) (originalAll :
     | _ => 0
   unless Flat.needed classes originalAll auxNames leanNested do return none
   let fb ← (Flat.build svc.input.get? classes canonicalRecs svc.sigma).mapError (·.render)
-  let svc := svc.installFlat fb
+  let svc := svc.installFlat fb tier
   match svc.flatStatus? (fb.firstName.getD default) with
-  | some .accepted => return some svc
+  | some .accepted | some (.tier _) => return some svc
   | some (.refused why) => throw s!"flat block refused: {why}"
   | _ => throw "flat block not recorded"
 
@@ -465,15 +483,16 @@ def installOwnFlat (svc : Service) (classes : Array (Array Name)) (originalAll :
 the service: each admitted through σ under its fresh name
 (`Service.admitDefinition`), as `Ix.Tc`'s kenv takes the generated
 definition at its name. The service after them, and how many were admitted
-and refused. -/
-def admitBelowIn (svc : Service) (defs : Array BelowDef) : Service × Nat × Nat := Id.run do
+and refused. An unsafe block's (`tier`, M7 Q1) are admitted by the tier. -/
+def admitBelowIn (svc : Service) (defs : Array BelowDef) (tier : Bool := false) :
+    Service × Nat × Nat := Id.run do
   let mut svc := svc
   let mut ok := 0
   let mut bad := 0
   for d in defs do
-    let (svc', st) := svc.admitDefinition d.name d.levelParams d.typ d.value (thm := false)
+    let (svc', st) := svc.admitDefinition d.name d.levelParams d.typ d.value (thm := false) (tier := tier)
     svc := svc'
-    if st.isAccepted then ok := ok + 1 else bad := bad + 1
+    if st.isAccepted || st.isTier then ok := ok + 1 else bad := bad + 1
   return (svc, ok, bad)
 
 /-- **The block's facts the oracle carries besides its service** (AuxGen
@@ -495,9 +514,10 @@ recursors) installed as a block under fresh names through σ (AuxGen M5: a
 regenerated Prop-level `.below` family): built as a canonical flat block is
 (`Flat.build`, over the family's own declarations and the input's), so
 IxC's install checks it, recursors included. The service after it, or the
-reason it was refused. -/
+reason it was refused. An unsafe block's (`tier`, M7 Q1) is installed typing
+only, its records typed. -/
 def installFamily (svc : Service) (types : Array (InductiveVal × Array ConstructorVal))
-    (recs : Array (Name × RecursorVal)) : Except String Service := do
+    (recs : Array (Name × RecursorVal)) (tier : Bool := false) : Except String Service := do
   let own (n : Name) : Option ConstantInfo :=
     match types.find? (fun (v, _) => Ix.Compile.ExactKey.nameEq v.cnst.name n) with
     | some (v, _) => some (.inductInfo v)
@@ -506,37 +526,74 @@ def installFamily (svc : Service) (types : Array (InductiveVal × Array Construc
   let lookup (n : Name) : Option ConstantInfo := (own n).orElse fun _ => svc.input.get? n
   let classes := types.map fun (v, _) => #[v.cnst.name]
   let fb ← (Flat.build lookup classes recs svc.sigma).mapError (·.render)
-  let svc := svc.installFlat fb
+  let svc := svc.installFlat fb tier
   match svc.flatStatus? (fb.firstName.getD default) with
-  | some .accepted => return svc
+  | some .accepted | some (.tier _) => return svc
   | some (.refused why) => throw s!"family refused: {why}"
   | _ => throw "family not recorded"
+
+/-- **A family's types and constructors with no records, typing only** (M7
+Q1, `AuxOracle.withFamily`): each renamed to its fresh name through σ (the
+family's own entries joined to the service's), converted as the tier takes a
+block (`convertTierInductive`, recursor-less), and installed by
+`SourceEnv.installTierInd`, so the answer view holds the family before its
+recursors are generated. No status, no verdict. -/
+def installFamilyBare (svc : Service) (types : Array (InductiveVal × Array ConstructorVal)) :
+    Except String Service := do
+  let mut own : Flat.ClassMap := {}
+  for (v, cs) in types do
+    own ← (own.insert v.cnst.name (Flat.fresh v.cnst.name)).mapError (·.render)
+    for c in cs do own ← (own.insert c.cnst.name (Flat.fresh c.cnst.name)).mapError (·.render)
+  let refs := (types.foldl (init := ({} : Std.HashSet Name)) fun acc (v, cs) =>
+    cs.foldl (fun acc c => collectLeanConstRefs c.cnst.type acc) (collectLeanConstRefs v.cnst.type acc)
+    ).toArray.filter (fun n => (own.find? n).isNone && (svc.sigma.find? n).isNone && !Flat.isFresh n)
+  let svc := svc.ensureNames (refs.qsort (Ix.LeanIngress.nameCmp · · == .lt))
+  if let some n := svc.firstUnusable? refs then
+    throw s!"family: references {n.pretty}, which Source mode did not accept"
+  let σ ← (svc.sigma.union own).mapError (·.render)
+  let rename (e : Expr) : StateM Flat.RenameCache Expr := Flat.renameExpr σ e
+  let freshTypes := types.map fun (v, _) => Flat.fresh v.cnst.name
+  let go : StateM Flat.RenameCache (Array InductiveVal × Array (Array ConstructorVal)) :=
+    types.foldlM (init := (#[], #[])) fun (ts, css) (v, cs) => do
+      let f := Flat.fresh v.cnst.name
+      let ty ← rename v.cnst.type
+      let cs' ← cs.mapM fun c => do
+        pure { c with cnst := { c.cnst with name := Flat.fresh c.cnst.name, type := ← rename c.cnst.type },
+                      induct := f }
+      pure (ts.push { v with cnst := { v.cnst with name := f, type := ty }, all := freshTypes,
+                             ctors := v.ctors.map Flat.fresh },
+            css.push cs')
+  let (ts, css) := go.run' {}
+  let b ← (Ix.LeanIngress.convertTierInductive ts css #[]).mapError Source.renderRead
+  return { svc with env := ← svc.env.installTierInd b own }
 
 /-- **Generated declarations accepted by Source mode**, in order, each later one
 seeing the earlier ones through σ (AuxGen M5): a definition or theorem
 through `Service.admitDefinition` under its fresh name, a family through
 `installFamily`. The service after them, and each declaration's verdict
-(`none` accepted, `some` the reason). -/
-def admitGeneratedIn (svc : Service) (decls : Array GeneratedDecl) :
+(`none` accepted, `some` the reason). An unsafe block's (`tier`, M7 Q1) are
+installed by the tier, and none is accepted. -/
+def admitGeneratedIn (svc : Service) (decls : Array GeneratedDecl) (tier : Bool := false) :
     Service × Array (Name × Option String) := Id.run do
   let mut svc := svc
   let mut out : Array (Name × Option String) := #[]
   for d in decls do
     match d with
     | .defn name lps ty v thm =>
-      let (svc', st) := svc.admitDefinition name lps ty v thm
+      let (svc', st) := svc.admitDefinition name lps ty v thm (tier := tier)
       svc := svc'
       let why : Option String := match st with
         | .accepted => none
         | .refused r => some r
         | .blocked _ => some "blocked"
         | .pending => some "pending"
+        | .tier w => some s!"tier-installed ({w})"
       out := out.push (name, why)
     | .family types recs =>
-      match installFamily svc types recs with
+      match installFamily svc types recs tier with
       | .ok svc' =>
         svc := svc'
-        for (v, _) in types do out := out.push (v.cnst.name, none)
+        for (v, _) in types do out := out.push (v.cnst.name, if tier then some "tier-installed" else none)
       | .error why =>
         for (v, _) in types do out := out.push (v.cnst.name, some why)
   return (svc, out)
@@ -545,8 +602,9 @@ def admitGeneratedIn (svc : Service) (decls : Array GeneratedDecl) :
 not (AuxGen M5b, `AuxOracle.blockStatus`): `Source.Run.blockReason?`, with a
 blocking group's own reason, so the reason names the root cause (e.g.
 `blocked behind BEq (ingress: declined: inductive block without a recursor in
-the input)`). -/
+the input)`). An unsafe block the tier installed is that (M7 Q1). -/
 def blockStatus? (svc : Service) (members : Array Name) : Option String :=
+  if svc.tierBlock members then some "an unsafe block (tier-installed)" else
   members.findSome? fun n => match svc.statusOf? n with
     | some (.refused why) => some s!"refused ({why})"
     | some (.blocked root) =>
@@ -554,18 +612,19 @@ def blockStatus? (svc : Service) (members : Array Name) : Option String :=
       let rootName := (entry.map (·.name)).getD (.id .anonymous)
       let rootWhy := match entry.map (·.status) with
         | some (.refused why) => s!" ({why})"
+        | some (.tier w) => s!" (tier-installed ({w}))"
         | _ => ""
       some s!"blocked behind {rootName}{rootWhy}"
     | some .pending => some "not folded"
+    | some (.tier w) => some s!"tier-installed ({w})"
     | _ => none
 
-/-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
-the first question; the drivers' snapshot is a task), in `mode` (tracing the
-tail's counts under `trace`), with `fuel` installs left (the flat block, the
-generated `.below`). `retry` is the block's oracle in `fallback` (AuxGen M5c,
-`AuxOracle.retry`): `none` on the oracles an install returns. -/
-def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts)
-    (retry : Option AuxOracle) : Nat → (Unit → Except String Service) → AuxOracle
+/-- `oracleOf`, its scopes over the answer view when `answers` (an oracle
+`withFamily` returned) or the block is tier-installed (M7 Q1): there an
+unsafe block's questions are answered as Lean answers them (δ on tier
+definitions, ι on its recursors), and its installs go through the tier. -/
+def oracleOfWith (mode : IxcMode) (trace : Bool) (facts : OracleFacts)
+    (retry : Option AuxOracle) (answers : Bool) : Nat → (Unit → Except String Service) → AuxOracle
   | 0, _ =>
     .mk mode trace (fun _ _ => .error "oracle fuel exhausted")
       (fun _ _ _ => .error "oracle fuel exhausted") (fun _ => .error "oracle fuel exhausted")
@@ -573,38 +632,56 @@ def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts)
       (fun overlay _ locals =>
         ofLazy (overlaid overlay facts.lookup) scopeFuel locals (Thunk.pure (.error "oracle fuel exhausted")))
       (fun _ => .error "oracle fuel exhausted")
-      (fun _ => some "oracle fuel exhausted") retry
+      (fun _ => some "oracle fuel exhausted") retry (fun _ => .error "oracle fuel exhausted")
   | n + 1, svc =>
+    -- the answer view, built once per oracle, when its scopes read it
+    let view : Thunk (Except String (Option (Ix.Kernel.Tier.AnswerView .source))) := Thunk.mk fun _ =>
+      (svc ()).map fun s => if answers || s.tierBlock facts.members then some s.env.answers else none
+    let after (s' : Service) : AuxOracle := oracleOfWith mode trace facts none answers n fun _ => .ok s'
     .mk mode trace
       (fun lps locals => do
         let svc ← svc ()
-        let s ← Scope.new svc.env lps
+        let s ← Scope.new svc.env lps (← view.get)
         let s ← s.push locals
         pure (ofScope svc.input.get? scopeFuel s))
       (fun classes originalAll canonicalRecs => do
         let svc ← svc ()
-        match ← installOwnFlat svc classes originalAll canonicalRecs with
+        match ← installOwnFlat svc classes originalAll canonicalRecs (svc.tierBlock facts.members) with
         | none => pure none
-        | some svc' => pure (some (oracleOf mode trace facts none n fun _ => .ok svc')))
+        | some svc' => pure (some (after svc')))
       (fun defs => do
         let svc ← svc ()
-        let (svc', ok, bad) := admitBelowIn svc defs
-        pure (oracleOf mode trace facts none n fun _ => .ok svc', ok, bad))
+        let (svc', ok, bad) := admitBelowIn svc defs (svc.tierBlock facts.members)
+        pure (after svc', ok, bad))
       facts.recursors facts.asked
       (fun overlay lps locals =>
         ofLazy (overlaid overlay facts.lookup) scopeFuel locals (Thunk.mk fun _ => do
           let svc ← svc ()
-          if let some why := Source.Run.blockReason? svc facts.members then
-            throw s!"the block is not accepted in Source mode: {why}"
-          let s ← Scope.new svc.env lps
+          if !svc.tierBlock facts.members then
+            if let some why := Source.Run.blockReason? svc facts.members then
+              throw s!"the block is not accepted in Source mode: {why}"
+          let s ← Scope.new svc.env lps (← view.get)
           s.push locals))
       (fun decls => do
-        let (s', verdicts) := admitGeneratedIn (← svc ()) decls
-        pure (oracleOf mode trace facts none n fun _ => .ok s', verdicts))
+        let svc ← svc ()
+        let (s', verdicts) := admitGeneratedIn svc decls (svc.tierBlock facts.members)
+        pure (after s', verdicts))
       (fun _ => match svc () with
         | .ok s => blockStatus? s facts.members
         | .error e => some s!"no service: {e}")
       retry
+      (fun types => do
+        let s' ← installFamilyBare (← svc ()) types
+        pure (oracleOfWith mode trace facts none true n fun _ => .ok s'))
+
+/-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
+the first question; the drivers' snapshot is a task), in `mode` (tracing the
+tail's counts under `trace`), with `fuel` installs left (the flat block, the
+generated `.below`). `retry` is the block's oracle in `fallback` (AuxGen M5c,
+`AuxOracle.retry`): `none` on the oracles an install returns. -/
+def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts)
+    (retry : Option AuxOracle) : Nat → (Unit → Except String Service) → AuxOracle :=
+  oracleOfWith mode trace facts retry false
 
 /-- **One block's oracle over the snapshot `run`** (a run of the drivers'
 service), with the block's `members` folded first (`Service.ensureNames`): a

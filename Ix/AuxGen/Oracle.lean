@@ -337,7 +337,8 @@ inductive GeneratedDecl where
 
 /-- **One block's IxC oracle** (AuxGen M2a).
 
-`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope admit blockStatus retry`:
+`mk mode trace newScope withFlat admitBelow recursors asked newLazyScope admit blockStatus retry
+  withFamily`:
 * `mode`: how AuxGen uses the answers;
 * `trace`: whether the tail traces its counts (the measurement modes);
 * `newScope lps locals`: a context over the level parameters `lps` and the
@@ -375,7 +376,18 @@ inductive GeneratedDecl where
 * `retry`: the block's oracle in `fallback` over the same service (AuxGen
   M5c): a block Source mode does not accept, whose tail stopped on an IxC
   refusal under `failClosed`, re-runs over it. `none` on the oracles an install
-  returns. -/
+  returns.
+* `withFamily types` (M7 Q1): a family's types and constructors (a regenerated
+  Prop-level `.below` family, the block's or an unsafe block's), with no
+  recursors, installed typing only under fresh names through σ on the
+  oracle's own service copy: the oracle over it, whose scopes answer with the
+  family in view, so AuxGen's generator can build its recursors. No status
+  and no verdict: `admit`'s `.family` gives the family's.
+
+An unsafe block's oracle (its groups installed by the tier, M7 Q1) answers
+over the tier's answer view, where tier definitions unfold and the block's
+recursors fire, as Lean's kernel answers; `withFlat`, `admitBelow` and
+`admit` install through the tier; `blockStatus` says it is an unsafe block. -/
 inductive AuxOracle where
   | mk (mode : IxcMode) (trace : Bool)
       (newScope : Array Name → Array (Name × Expr) → Except String OracleScope)
@@ -388,43 +400,47 @@ inductive AuxOracle where
       (admit : Array GeneratedDecl → Except String (AuxOracle × Array (Name × Option String)))
       (blockStatus : Unit → Option String)
       (retry : Option AuxOracle)
+      (withFamily : Array (InductiveVal × Array ConstructorVal) → Except String AuxOracle)
 
 namespace AuxOracle
 
 def mode : AuxOracle → IxcMode
-  | .mk m _ _ _ _ _ _ _ _ _ _ => m
+  | .mk m _ _ _ _ _ _ _ _ _ _ _ => m
 
 def trace : AuxOracle → Bool
-  | .mk _ t _ _ _ _ _ _ _ _ _ => t
+  | .mk _ t _ _ _ _ _ _ _ _ _ _ => t
 
 def newScope : AuxOracle → Array Name → Array (Name × Expr) → Except String OracleScope
-  | .mk _ _ f _ _ _ _ _ _ _ _ => f
+  | .mk _ _ f _ _ _ _ _ _ _ _ _ => f
 
 def withFlat : AuxOracle → Array (Array Name) → Array Name → Array (Name × RecursorVal) →
     Except String (Option AuxOracle)
-  | .mk _ _ _ f _ _ _ _ _ _ _ => f
+  | .mk _ _ _ f _ _ _ _ _ _ _ _ => f
 
 def admitBelow : AuxOracle → Array BelowDef → Except String (AuxOracle × Nat × Nat)
-  | .mk _ _ _ _ f _ _ _ _ _ _ => f
+  | .mk _ _ _ _ f _ _ _ _ _ _ _ => f
 
 def recursors : AuxOracle → Bool
-  | .mk _ _ _ _ _ r _ _ _ _ _ => r
+  | .mk _ _ _ _ _ r _ _ _ _ _ _ => r
 
 def asked : AuxOracle → Bool
-  | .mk _ _ _ _ _ _ a _ _ _ _ => a
+  | .mk _ _ _ _ _ _ a _ _ _ _ _ => a
 
 def newLazyScope : AuxOracle → (Name → Option ConstantInfo) → Array Name →
     Array (Name × Expr) → OracleScope
-  | .mk _ _ _ _ _ _ _ f _ _ _ => f
+  | .mk _ _ _ _ _ _ _ f _ _ _ _ => f
 
 def admit : AuxOracle → Array GeneratedDecl → Except String (AuxOracle × Array (Name × Option String))
-  | .mk _ _ _ _ _ _ _ _ f _ _ => f
+  | .mk _ _ _ _ _ _ _ _ f _ _ _ => f
 
 def blockStatus : AuxOracle → Unit → Option String
-  | .mk _ _ _ _ _ _ _ _ _ f _ => f
+  | .mk _ _ _ _ _ _ _ _ _ f _ _ => f
 
 def retry : AuxOracle → Option AuxOracle
-  | .mk _ _ _ _ _ _ _ _ _ _ f => f
+  | .mk _ _ _ _ _ _ _ _ _ _ f _ => f
+
+def withFamily : AuxOracle → Array (InductiveVal × Array ConstructorVal) → Except String AuxOracle
+  | .mk _ _ _ _ _ _ _ _ _ _ _ f => f
 
 end AuxOracle
 

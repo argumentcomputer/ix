@@ -78,15 +78,21 @@ and no tail read it.)
 
 ## What it is not
 
-Not a verdict: `Ix.LeanIngress.checkSource` is. Unsafe groups decline in
-the ingress and stay declined here (AUXGEN-IXC §7 Q4: no unchecked install).
-Nothing here is trusted: every declaration it installs went through the
-verified fold, and an answer it cannot give is a refusal. -/
+Not a verdict: `Ix.LeanIngress.checkSource` is. The groups the ingress
+declines for their safety (`partial` and unsafe definitions, unsafe opaques
+and axioms, unsafe inductives) are installed by the typing tier
+(`SourceEnv.installTierDecl`, `installTierInd`, at the views of Lean's
+lattice), to answer an unsafe block's questions (M7 Q1). Their status is
+`tier`, never `accepted`; a logical group that depends on one is blocked, as
+it was behind the decline. Nothing here is trusted: every declaration it
+installs went through the verified fold or the tier's checks, and an answer
+it cannot give is a refusal. -/
 
 namespace Ix.AuxGen.Source
 
 open Ix.LeanIngress
 open Ix.Kernel.Reader (State Read CDecl CName ReadError Prelude)
+open Ix.Kernel.Tier (TierDecl TierInd)
 open Ix.AuxGen.Flat (NameKey ClassMap FlatBlock FlatError)
 
 def renderRead : ReadError → String
@@ -102,10 +108,16 @@ inductive Status where
   | refused (reason : String)
   /-- a group it depends on is refused (`root`, by group index) -/
   | blocked (root : Nat)
+  /-- installed by the typing tier (M7 Q1), with its safety: no verdict -/
+  | tier (safety : String)
   deriving Inhabited, BEq
 
 def Status.isAccepted : Status → Bool
   | .accepted => true
+  | _ => false
+
+def Status.isTier : Status → Bool
+  | .tier _ => true
   | _ => false
 
 def Status.isPending : Status → Bool
@@ -213,11 +225,54 @@ def nameOfKey : CName .source → Option Ix.Name
 
 /-! ## The service -/
 
+/-- **A tier group's conversion** (M7 Q1): a tier declaration with its
+members' hints (`convertTier`), or an unsafe inductive block
+(`convertTierInductive`). -/
+inductive TierItem where
+  | decl (d : TierDecl .source) (hints : List Ix.Kernel.ReducibilityHint)
+  | ind (b : TierInd .source)
+
+/-- The terms of a tier group, for its literal edges. -/
+def TierItem.exprs : TierItem → List (Ix.Kernel.Expr .source)
+  | .decl (.defs _ ms) _ => ms.flatMap fun (cv, v) => [cv.type, v]
+  | .decl (.unsafeOpaque cv v) _ => [cv.type, v]
+  | .decl (.unsafeAxiom cv) _ => [cv.type]
+  | .ind b => b.types.map (·.1.type) ++ b.ctors.map (·.1.type) ++
+      b.recs.flatMap fun (cv, _, rules) => cv.type :: rules.map (·.rhs)
+
+/-- A group's conversion: the Source ingress's, or the tier's. -/
+inductive Conv where
+  | logical (c : Converted)
+  | tier (t : TierItem)
+
+/-- **A group's conversion in the service**: a tier group (`isTierGroup`,
+`isTierInductive`) by the tier's conversion, any other by the ingress's. -/
+def convertGroup (g : Group) : Except ReadError Conv :=
+  if isTierGroup g then do
+    let hints := match g with
+      | .definitions ms => ms.toList.map fun ci => ((definitionShape ci).map (·.2.2)).getD (.regular 0)
+      | _ => []
+    return .tier (.decl (← convertTier g) hints)
+  else match g with
+    | .inductive ts cs rs =>
+      if isTierInductive g then return .tier (.ind (← convertTierInductive ts cs rs))
+      else .logical <$> convert g
+    | _ => .logical <$> convert g
+
+/-- Whether a conversion's terms contain a `Nat` and a `String` literal
+(`literalKinds`, each tier term on its own). -/
+def Conv.literalKinds : Conv → Bool × Bool
+  | .logical c => Ix.LeanIngress.literalKinds c
+  | .tier t => t.exprs.foldl (init := (false, false)) fun (n, s) e =>
+    let (n', s') := Ix.LeanIngress.literalKinds (.axiom ⟨.id .anonymous, [], e⟩)
+    (n || n', s || s')
+
 /-- A group's reading: lowered once the groups it references are, dropped
-once folded. -/
+once folded; a tier group's is its conversion. -/
 inductive Reading where
   | pending
   | lowered (r : Read .source)
+  | tier (t : TierItem)
   | refused (e : ReadError)
   | folded
 
@@ -241,7 +296,7 @@ structure Entry where
   /-- the group, until it is converted -/
   group : Option Group
   /-- its conversion, until it is lowered -/
-  converted : Option (Except ReadError Converted) := none
+  converted : Option (Except ReadError Conv) := none
   edges : Option Edges := none
   reading : Reading := .pending
   /-- the groups the `Nat` operations it declares stand on (`natOpDeps`) -/
@@ -357,7 +412,7 @@ def prepare (s : Service) (i : Nat) : Service := Id.run do
   let some e := s.entries[i]? | return s
   if e.edges.isSome then return s
   let converted := match e.group with
-    | some g => convert g
+    | some g => convertGroup g
     | none => .error (.malformed "group dropped before its conversion")
   let mut s := s
   let mut seenLo : Ix.Set Ix.Name := {}
@@ -381,7 +436,7 @@ def prepare (s : Service) (i : Nat) : Service := Id.run do
             bad := some (.malformed s!"references {ingressName r}, which is not in the environment")
   let literal := match converted with
     | .ok c =>
-      let (nat, str) := literalKinds c
+      let (nat, str) := c.literalKinds
       (if str then s.strTargets else if nat then s.natTargets else #[]).filter (· != i)
     | .error _ => #[]
   let edges : Edges := { hard := hard.toArray.qsort (· < ·), literal, unplaced := bad }
@@ -403,21 +458,26 @@ def deps (s : Service) (i : Nat) : Array Nat :=
 
 /-- Lower group `i`, prepared, whose references are lowered (one still being
 visited is a cycle), against the reader's state, and commit what it taught;
-then meet the ground of the `Nat` operations it declares. -/
+then meet the ground of the `Nat` operations it declares. A tier group is
+not lowered: its reading is its conversion, behind the same placement
+checks. -/
 def lowerOne (s : Service) (i : Nat) : Service := Id.run do
   let some e := s.entries[i]? | return s
   unless e.reading.isPending do return s
   let some ed := e.edges | return s
-  let result : Except ReadError (Read .source) := do
+  let result : Except ReadError (Read .source ⊕ TierItem) := do
     let c ← e.converted.getD (.error (.malformed "group not converted"))
     if let some err := ed.unplaced then throw err
     unless ed.hard.all (!s.isPendingReading ·) do
       throw (.malformed "a reference cycle through another declaration group")
-    lower s.reader c
+    match c with
+    | .logical c => .inl <$> lower s.reader c
+    | .tier t => pure (.inr t)
   match result with
   | .error err =>
     return s.modifyEntry i fun e => { e with converted := none, reading := .refused err }
-  | .ok r =>
+  | .ok (.inr t) => return s.modifyEntry i fun e => { e with converted := none, reading := .tier t }
+  | .ok (.inl r) =>
     let mut s := s.commit r
     let mut ground : Array Nat := #[]
     for d in r.decls do
@@ -454,14 +514,17 @@ def lowerClosure (s : Service) (root : Nat) : Service := Id.run do
 /-- Fold group `i`, whose dependencies are folded: blocked if one failed,
 refused if the ingress refused it or the fold refuses one of its
 declarations (the fold then stays as before the group), accepted
-otherwise. A group already folded is left as it is; its reading is dropped
-either way. -/
+otherwise. A tier group is installed by the tier (`tier`, or refused), and
+may depend on tier groups; a logical group behind a tier group is blocked.
+A group already folded is left as it is; its reading is dropped either way. -/
 def foldGroup (s : Service) (i : Nat) : Service :=
   match s.entries[i]? with
   | none => s
   | some e =>
     if !e.status.isPending then s else
-    let failed := (s.deps i).find? fun j => !((s.entries[j]?.map (·.status.isAccepted)).getD false)
+    let tierOk := e.reading matches .tier _
+    let failed := (s.deps i).find? fun j =>
+      !((s.entries[j]?.map fun d => d.status.isAccepted || (tierOk && d.status.isTier)).getD false)
     match failed with
     | some j =>
       let root := match s.entries[j]?.map (·.status) with
@@ -472,14 +535,23 @@ def foldGroup (s : Service) (i : Nat) : Service :=
       match e.reading with
       | .lowered r =>
         let ⟨input, entries, groupOf, natTargets, strTargets, reader, env, flats, synthesised⟩ := s
-        let ⟨fold, ev, sigma⟩ := env
+        let ⟨fold, ev, sigma, tier⟩ := env
         let (fold, err) := fold.stepsOwned ev r.decls
         let status : Status := match err with
           | none => .accepted
           | some e => .refused (renderCheck e)
         let entries := entries.modify i fun e => { e with status := status, reading := .folded }
-        ⟨input, entries, groupOf, natTargets, strTargets, reader, ⟨fold, ev, sigma⟩, flats,
+        ⟨input, entries, groupOf, natTargets, strTargets, reader, ⟨fold, ev, sigma, tier⟩, flats,
           synthesised⟩
+      | .tier t =>
+        let installed := match t with
+          | .decl d hints => (s.env.installTierDecl d hints).map (·, d.safety.word)
+          | .ind b => (s.env.installTierInd b).map (·, "unsafe")
+        match installed with
+        | .ok (env, word) =>
+          let s := s.modifyEntry i fun e => { e with status := .tier word, reading := .folded }
+          { s with env }
+        | .error why => s.modifyEntry i fun e => { e with status := .refused why, reading := .folded }
       | .refused err =>
         s.modifyEntry i fun e => { e with status := .refused (renderRead err), reading := .folded }
       | _ => s
@@ -524,6 +596,16 @@ def statusOf? (s : Service) (n : Name) : Option Status := do
 def firstUnaccepted? (s : Service) (names : Array Name) : Option Name :=
   names.find? fun n => !((s.statusOf? n).map (·.isAccepted)).getD true
 
+/-- The first of `names` whose group is neither accepted nor tier-installed:
+what a tier install may not reference. -/
+def firstUnusable? (s : Service) (names : Array Name) : Option Name :=
+  names.find? fun n => !((s.statusOf? n).map fun st => st.isAccepted || st.isTier).getD true
+
+/-- **Whether a block is tier-installed** (M7 Q1): every one of its members'
+groups is. -/
+def tierBlock (s : Service) (members : Array Name) : Bool :=
+  !members.isEmpty && members.all fun n => (s.statusOf? n).any (·.isTier)
+
 /-- Whether group `i`'s reading declares the key `k`. -/
 def declares (s : Service) (i : Nat) (k : CName .source) : Bool :=
   match s.entries[i]? with
@@ -556,10 +638,10 @@ def start (pre : Prelude .source) (input : Input) (ev : Ix.Kernel.Evidences .sou
     | some i => s := s.ensure i
     | none =>
       let ⟨input, entries, groupOf, natTargets, strTargets, reader, env, flats, synthesised⟩ := s
-      let ⟨fold, ev, sigma⟩ := env
+      let ⟨fold, ev, sigma, tier⟩ := env
       let (fold, err) := fold.stepsOwned ev #[p]
       let synthesised := if err.isNone then synthesised + 1 else synthesised
-      s := ⟨input, entries, groupOf, natTargets, strTargets, reader, ⟨fold, ev, sigma⟩, flats,
+      s := ⟨input, entries, groupOf, natTargets, strTargets, reader, ⟨fold, ev, sigma, tier⟩, flats,
         synthesised⟩
   return s
 
@@ -609,16 +691,26 @@ def flatRefs (b : FlatBlock) : Array Name := Id.run do
 first, then the block lowered as the Source ingress lowers an inductive
 group, against the reader's state, and installed with its σ
 (`SourceEnv.install`). The outcome is recorded (`flats`); a refusal leaves
-the environment and σ as they were. -/
-def installFlat (s : Service) (b : FlatBlock) : Service := Id.run do
+the environment and σ as they were. With `tier` (an unsafe block's, M7 Q1)
+the block is installed typing only (`SourceEnv.installTierInd`), its
+references accepted or tier-installed, and recorded `tier`. -/
+def installFlat (s : Service) (b : FlatBlock) (tier : Bool := false) : Service := Id.run do
   let some first := b.types[0]? | return s
   let record (st : Status) (s : Service) : Service :=
     { s with flats := s.flats.push ⟨first.cnst.name, st⟩ }
   let refs := flatRefs b
   let s := s.ensureNames refs
-  if let some n := s.firstUnaccepted? refs then
+  if let some n := if tier then s.firstUnusable? refs else s.firstUnaccepted? refs then
     return record (.refused s!"references {n.pretty}, which Source mode did not accept") s
   let env : Ix.Environment := { consts := b.consts.foldl (fun m (n, c) => m.insert n c) {} }
+  if tier then
+    let installed := match inductiveGroup env first b.recs with
+      | .inductive ts cs rs => (convertTierInductive ts cs rs).mapError renderRead >>=
+          (s.env.installTierInd · b.sigma)
+      | _ => .error "tier: the flat block is not an inductive group"
+    return match installed with
+      | .ok env' => record (.tier "unsafe") { s with env := env' }
+      | .error why => record (.refused why) s
   match convert (inductiveGroup env first b.recs) >>= lower s.reader with
   | .error e => return record (.refused (renderRead e)) s
   | .ok r =>
@@ -634,28 +726,39 @@ def flatStatus? (s : Service) (first : Name) : Option Status :=
 
 /-- **Admit a generated definition** (or theorem, `thm`): the groups it
 references (outside σ) folded first, then `SourceEnv.admitDefinition`. The
-service after it, and the verdict. -/
+service after it, and the verdict. With `tier` (an unsafe block's, M7 Q1),
+by the tier (`SourceEnv.admitTierDefinition`), its references accepted or
+tier-installed, and the verdict `tier`. -/
 def admitDefinition (s : Service) (name : Name) (lps : Array Name) (type value : Expr)
-    (thm : Bool) (hint : Ix.Kernel.ReducibilityHint := .abbrev) : Service × Status :=
+    (thm : Bool) (hint : Ix.Kernel.ReducibilityHint := .abbrev) (tier : Bool := false) :
+    Service × Status :=
   let refs := ((collectLeanConstRefs value (collectLeanConstRefs type {})).toArray.filter
     fun n => (s.sigma.find? n).isNone && !Flat.isFresh n).qsort (nameCmp · · == .lt)
   let s := s.ensureNames refs
-  match s.firstUnaccepted? refs with
+  match if tier then s.firstUnusable? refs else s.firstUnaccepted? refs with
   | some n => (s, .refused s!"references {n.pretty}, which Source mode did not accept")
   | none =>
-    match s.env.admitDefinition name lps type value thm hint with
-    | .ok env' => ({ s with env := env' }, .accepted)
+    let admitted := if tier then s.env.admitTierDefinition name lps type value thm hint
+      else s.env.admitDefinition name lps type value thm hint
+    match admitted with
+    | .ok env' => ({ s with env := env' }, if tier then .tier "unsafe" else .accepted)
     | .error why => (s, .refused why)
 
 /-! ## Counts and views -/
 
-/-- The groups met, by state: pending, accepted, refused, blocked. -/
+/-- The groups met, by state: pending, accepted, refused, blocked (a
+tier-installed group is in none: `tierCount`). -/
 def counts (s : Service) : Nat × Nat × Nat × Nat :=
   s.entries.foldl (init := (0, 0, 0, 0)) fun (p, a, r, b) e => match e.status with
     | .pending => (p + 1, a, r, b)
     | .accepted => (p, a + 1, r, b)
     | .refused _ => (p, a, r + 1, b)
     | .blocked _ => (p, a, r, b + 1)
+    | .tier _ => (p, a, r, b)
+
+/-- The groups met that the tier installed (M7 Q1). -/
+def tierCount (s : Service) : Nat := s.entries.foldl (init := 0) fun n e =>
+  if e.status.isTier then n + 1 else n
 
 /-- Each met group's state, by index. -/
 def status (s : Service) : Array Status := s.entries.map (·.status)
@@ -698,6 +801,8 @@ structure Report where
   groupsAccepted : Nat := 0
   groupsRefused : Nat := 0
   groupsBlocked : Nat := 0
+  /-- the groups the tier installed (M7 Q1: never accepted) -/
+  groupsTier : Nat := 0
   /-- prelude declarations folded from the prelude itself -/
   synthesised : Nat := 0
   /-- the blocks not accepted, by canonical key, with the reason: the first
@@ -711,13 +816,14 @@ structure Report where
 /-- How many blocks and groups a report names. -/
 def Report.cap : Nat := 64
 
-/-- One line. -/
+/-- One line (the tier's count only when the tier installed a group). -/
 def Report.summary (r : Report) : String :=
   match r.error with
   | some e => s!"unavailable: {e}"
   | none =>
+    let tier := if r.groupsTier == 0 then "" else s!", {r.groupsTier} tier-installed"
     s!"{r.accepted} of {r.blocks} inductive blocks accepted; groups met {r.met}: \
-      {r.groupsAccepted} accepted, {r.groupsRefused} refused, {r.groupsBlocked} blocked; \
+      {r.groupsAccepted} accepted, {r.groupsRefused} refused, {r.groupsBlocked} blocked{tier}; \
       prelude declarations synthesised {r.synthesised}"
 
 /-- The drivers' service and what they asked. -/
@@ -748,6 +854,7 @@ def blockReason? (svc : Service) (members : Array Ix.Name) : Option String :=
     | some (.blocked root) =>
       some s!"blocked behind {(svc.entries[root]?.map (·.name)).getD (.id .anonymous)}"
     | some .pending => some "not folded"
+    | some (.tier safety) => some s!"tier-installed ({safety})"
     | _ => none
 
 /-- **Ask for blocks**, in order (key, representative, members): each block
@@ -781,7 +888,7 @@ def report (r : Run) : Report :=
       | .refused why => some (toString e.name, why)
       | _ => none).qsort (·.1 < ·.1) |>.extract 0 Report.cap
     { blocks := r.blocks, accepted := r.accepted, met := svc.entries.size, groupsAccepted := a,
-      groupsRefused := f, groupsBlocked := b, synthesised := svc.synthesised,
+      groupsRefused := f, groupsBlocked := b, groupsTier := svc.tierCount, synthesised := svc.synthesised,
       notAccepted := notAccepted, refused := refused }
 
 end Run

@@ -568,16 +568,16 @@ def tailArgs (lo : Ix.Name) (members : Array Ix.Name) : Ix.CompileM.CompileM
   return some (cs, sortedClasses, blockResult.blockAddr, maps)
 
 /-- `o` with every question refused (planted) and `status` as its block status,
-in `failClosed`; its installs and its retry are `o`'s. -/
+in `failClosed`; its installs, its retry and its `withFamily` are `o`'s. -/
 def planted (o : Ix.AuxGen.AuxOracle) (status : Option String) : Ix.AuxGen.AuxOracle :=
   let bad {α} : Except String α := .error "planted refusal (AuxGen M5c test)"
   let scope : Ix.AuxGen.OracleScope :=
     .mk (fun _ => bad) (fun _ => bad) (fun _ => bad) (fun _ => bad) (fun _ => bad)
       (fun _ _ => bad) (fun _ => bad)
   match o with
-  | .mk _ trace _ withFlat admitBelow recursors asked _ admit _ retry =>
+  | .mk _ trace _ withFlat admitBelow recursors asked _ admit _ retry withFamily =>
     .mk .failClosed trace (fun _ _ => bad) withFlat admitBelow recursors asked
-      (fun _ _ _ => scope) admit (fun _ => status) retry
+      (fun _ _ _ => scope) admit (fun _ => status) retry withFamily
 
 /-- A block state as the tests compare it: the aux constants, named entries and
 name addresses, the block's own registrations, and the sizes of its tables. -/

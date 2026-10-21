@@ -41,6 +41,10 @@ unsafe inductive Big : Type 1
 
 unsafe def kdef : Bool := true
 
+/-- A partial definition (its `_unsafe_rec` companion is the tier's stage 0;
+the Source service's tier, `Tests.Ix.AuxGen.TierService`). -/
+partial def spin (n : Nat) : Nat := if n == 0 then 0 else spin (n - 1)
+
 /-! The queries: each value is a term asked about. -/
 
 noncomputable unsafe def qIota : Bool := U.rec (motive := fun _ => Bool) true (fun _ _ => false) U.leaf
