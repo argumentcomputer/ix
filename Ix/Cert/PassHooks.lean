@@ -129,6 +129,39 @@ theorem Returns.bind {α β : Type} {P : α → Prop} {m : CompileM β} {k : β 
   obtain ⟨b, mid, -, ran⟩ := bind_ok ran
   exact h b ctx mid x s' ran
 
+theorem Returns.ite {α : Type} {P : α → Prop} {c : Prop} [Decidable c] {a b : CompileM α}
+    (ha : Returns P a) (hb : Returns P b) : Returns P (if c then a else b) := by
+  split
+  · exact ha
+  · exact hb
+
+theorem Returns.dite {α : Type} {P : α → Prop} {c : Prop} [Decidable c] {a : c → CompileM α}
+    {b : ¬c → CompileM α} (ha : ∀ h, Returns P (a h)) (hb : ∀ h, Returns P (b h)) :
+    Returns P (if h : c then a h else b h) := by
+  split
+  · exact ha _
+  · exact hb _
+
+/-- A trace's value is its continuation's. -/
+theorem Returns.dbgTrace {α : Type} {P : α → Prop} {msg : String} {k : Unit → CompileM α}
+    (h : Returns P (k ())) : Returns P (dbgTrace msg k) := h
+
+/-- One step of a walk through a `do` block for `Returns P`: a bind (whose
+first action is never looked into), an `if`, a trace, a `return` (its value
+then shown to have `P`), or a match on a local. Each lemma is applied at
+reducible transparency, so no step unfolds the block's own definitions or the
+monad's (a `let` or `have` is substituted by the unifier, a join point's
+application beta-reduced): the walk's cost grows with the number of steps,
+not with what they call, and a bind, `let` or `if` added to the block needs
+no change to it. -/
+macro "returns_step" : tactic => `(tactic| first
+  | ((with_reducible apply Returns.bind); intro _)
+  | (with_reducible apply Returns.ite)
+  | ((with_reducible apply Returns.dite) <;> intro _)
+  | (with_reducible apply Returns.dbgTrace)
+  | ((with_reducible apply Returns.pure); rfl)
+  | split)
+
 theorem Returns.elim {α : Type} {P : α → Prop} {m : CompileM α} (hm : Returns P m)
     {ctx : CompileEnv × BlockEnv} {s s' : BlockState} {x : α} : rawRun m ctx s = (.ok x, s') → P x :=
   hm ctx s x s'
@@ -206,7 +239,7 @@ theorem compileBlockWithAux_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name}
     refine Returns.elim
       (P := fun (x : BlockResult × Option Ixon.AuxLayout × Ix.Compile.Pass.Published) =>
         recordsOf x.1 = recordsOf out) ?_
-    repeat (first | (exact Returns.pure rfl) | split | (apply Returns.bind; intro _))
+    repeat returns_step
 
 
 theorem findConst_ok {n : Ix.Name} {ctx : CompileEnv × BlockEnv} {s s' : BlockState} {c : Ix.ConstantInfo}
