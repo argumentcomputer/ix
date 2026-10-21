@@ -14,6 +14,13 @@ use ix_common::env::{
   NameData, RecursorVal,
 };
 
+use crate::compile::aux_gen::expr_utils::{LocalDecl, mk_lambda};
+use crate::compile::aux_source::{
+  AuxMotiveSig, FreshFVars, SourceRecTarget, aux_motive_sigs,
+  find_source_rec_target, peel_binders, source_ctor_for_minor,
+  source_minor_type,
+};
+
 use super::expr::{get_app_fn_args, mk_app_n, nat_usize, subst_level};
 use super::names::mk_str;
 use super::spec::BlockChange;
@@ -140,7 +147,6 @@ pub struct RecShape {
 }
 
 impl RecShape {
-  #[allow(dead_code)] // read by O2 (the next CQ5.1 commit)
   pub(super) fn arity(&self) -> usize {
     self.np + self.nm + self.nmin + self.ni + 1
   }
@@ -351,6 +357,222 @@ pub(super) fn o5_levels(s: &RecShape, us: &[Level]) -> Option<Vec<Level>> {
 // O1 (`Opt/O1.lean`)
 
 // ---------------------------------------------------------------------------
+// O2 (`Opt/O2.lean`)
+// ---------------------------------------------------------------------------
+
+/// Strip leading lambdas, counting them (`Opt.stripLamsCount`).
+fn strip_lams_count(e: &Expr) -> (Expr, usize) {
+  let mut cur = e.clone();
+  let mut d = 0;
+  while let ExprData::Lam(_, _, b, _, _) = cur.as_data() {
+    let b = b.clone();
+    cur = b;
+    d += 1;
+  }
+  (cur, d)
+}
+
+/// The Lean minor a wrapped Ix minor is built from (`Opt.wrappedMinorSrc`).
+fn wrapped_minor_src(
+  arity: usize,
+  np: usize,
+  nm: usize,
+  nmin: usize,
+  t: &Expr,
+) -> Option<usize> {
+  let (body, d) = strip_lams_count(t);
+  let (h, _) = get_app_fn_args(&body);
+  let ExprData::Bvar(k, _) = h.as_data() else { return None };
+  let k = nat_usize(k);
+  if k < d {
+    return None;
+  }
+  let j = k - d;
+  if j >= arity {
+    return None;
+  }
+  let p = arity - 1 - j;
+  if p < np + nm || p >= np + nm + nmin {
+    return None;
+  }
+  Some(p - np - nm)
+}
+
+/// The occurrence passes' recursion (`engineN`'s `recur`).
+type Recur<'r> = &'r dyn Fn(&Occ<'_>) -> Option<Expr>;
+
+/// `Opt.relocatedIh`.
+#[allow(clippy::too_many_arguments)]
+fn relocated_ih(
+  recur: Recur<'_>,
+  target: &SourceRecTarget,
+  field: &Expr,
+  all: &[Name],
+  us: &[Level],
+  ps: &[Expr],
+  ms: &[Expr],
+  mins: &[Expr],
+) -> Option<Expr> {
+  let all0 = all.first()?;
+  let target_rec = match all.get(target.source_pos) {
+    Some(x) => mk_str(x, "rec"),
+    None => mk_str(all0, &format!("rec_{}", target.source_pos - all.len() + 1)),
+  };
+  let field_app =
+    target.xs_fvars.iter().fold(field.clone(), |f, x| Expr::app(f, x.clone()));
+  let mut args = cat(&[ps, ms, mins, &target.idx_args]);
+  args.push(field_app);
+  let inner = recur(&Occ { head: &target_rec, us, args: &args })?;
+  Some(mk_lambda(inner, &target.xs_decls))
+}
+
+/// The recursive fields of a minor's constructor: `(field index, target)`.
+fn rec_fields_of(
+  env: &LeanEnv,
+  rv: &RecursorVal,
+  field_decls: &[LocalDecl],
+  ps: &[Expr],
+  aux_sigs: &[AuxMotiveSig],
+  supply: &mut FreshFVars,
+) -> Vec<(usize, SourceRecTarget)> {
+  let mut out = Vec::new();
+  for (field_idx, decl) in field_decls.iter().enumerate() {
+    if let Some(t) = find_source_rec_target(
+      &decl.domain,
+      &rv.all,
+      ps,
+      env,
+      ("split_xs", field_idx),
+      aux_sigs,
+      supply,
+    ) {
+      out.push((field_idx, t));
+    }
+  }
+  out
+}
+
+/// `Opt.adaptMinor`: `Some(Some w)` the wrapper, `Some(None)` no field into
+/// another component, `None` failure.
+#[allow(clippy::too_many_arguments, clippy::option_option)]
+fn adapt_minor(
+  recur: Recur<'_>,
+  env: &LeanEnv,
+  rv: &RecursorVal,
+  in_block: &[bool],
+  us: &[Level],
+  ps: &[Expr],
+  ms: &[Expr],
+  mins: &[Expr],
+  j: usize,
+) -> Option<Option<Expr>> {
+  let mut supply = FreshFVars::default();
+  supply.protect_expr(&rv.cnst.typ);
+  supply.protect_exprs(ps);
+  supply.protect_exprs(ms);
+  supply.protect_exprs(mins);
+  let aux_sigs = aux_motive_sigs(rv, us, ps, ms, env, &mut supply);
+  let (_, ctor) = source_ctor_for_minor(j, rv, env, &aux_sigs)?;
+  let minor_ty = source_minor_type(rv, us, ps, ms, mins, j)?;
+  let (field_decls, field_fvars, after_fields) = peel_binders(
+    minor_ty,
+    nat_usize(&ctor.num_fields),
+    "split_field",
+    0,
+    &mut supply,
+  )?;
+  let rec_fields =
+    rec_fields_of(env, rv, &field_decls, ps, &aux_sigs, &mut supply);
+  let inb = |p: usize| in_block.get(p).copied().unwrap_or(false);
+  if !rec_fields.iter().any(|(_, t)| !inb(t.source_pos)) {
+    return Some(None);
+  }
+  let (ih_decls, ih_fvars, _) =
+    peel_binders(after_fields, rec_fields.len(), "split_ih", 0, &mut supply)?;
+  if ih_decls.len() != rec_fields.len() {
+    return None;
+  }
+  let mut decls = field_decls;
+  let m = mins.get(j)?;
+  let mut body =
+    field_fvars.iter().fold(m.clone(), |f, x| Expr::app(f, x.clone()));
+  for (ih_idx, (field_idx, target)) in rec_fields.iter().enumerate() {
+    if inb(target.source_pos) {
+      decls.push(ih_decls[ih_idx].clone());
+      body = Expr::app(body, ih_fvars[ih_idx].clone());
+    } else {
+      let ih = relocated_ih(
+        recur,
+        target,
+        &field_fvars[*field_idx],
+        &rv.all,
+        us,
+        ps,
+        ms,
+        mins,
+      )?;
+      body = Expr::app(body, ih);
+    }
+  }
+  Some(Some(mk_lambda(body, &decls)))
+}
+
+/// `O2.apply`.
+fn o2(recur: Recur<'_>, env: &OptEnv<'_>, o: &Occ<'_>) -> Option<Expr> {
+  let (k, r) = classify(o.head)?;
+  if k != AuxKind::Rec {
+    return None;
+  }
+  let b = (env.block_of)(o.head)?;
+  if !b.change.split || b.change.collapse {
+    return None;
+  }
+  let s = b.shapes.get(&r)?;
+  let Some(ConstantInfo::RecInfo(rv)) = env.const_of(&r) else { return None };
+  let n = standard_telescope(env, s, AuxKind::Rec, o.head, 0)?;
+  if o.args.len() < n {
+    return None;
+  }
+  let ls = o5_levels(s, o.us)?;
+  let a = o.args;
+  let ps = &a[..s.np];
+  let ms = &a[s.np..s.np + s.nm];
+  let mins = &a[s.np + s.nm..s.np + s.nm + s.nmin];
+  let tail = &a[s.np + s.nm + s.nmin..n];
+  let in_block: Vec<bool> =
+    (0..s.nm).map(|i| s.motive_src.contains(&i)).collect();
+  let ms2 = pick(ms, &s.motive_src)?;
+  let mut mins2 = Vec::new();
+  for (src, t) in s.minor_src.iter().zip(s.minor_terms.iter()) {
+    let j = match src {
+      Some(j) => *j,
+      None => wrapped_minor_src(s.arity(), s.np, s.nm, s.nmin, t)?,
+    };
+    match adapt_minor(recur, env.ienv, &rv, &in_block, o.us, ps, ms, mins, j)? {
+      Some(w) => {
+        if src.is_some() {
+          return None;
+        }
+        mins2.push(w);
+      },
+      None => {
+        // the image wraps this minor but the syntactic reading finds no
+        // field recursive into another component (a recursive field behind
+        // an alias, `SurgAlias`): decline, the baseline is the image
+        if src.is_none() {
+          return None;
+        }
+        mins2.push(mins.get(j)?.clone());
+      },
+    }
+  }
+  Some(mk_app_n(
+    mk_const(&s.ix_rec, ls),
+    &cat(&[ps, &ms2, &mins2, tail, &a[n..]]),
+  ))
+}
+
+// ---------------------------------------------------------------------------
 // O3 (`Opt/O3.lean`)
 // ---------------------------------------------------------------------------
 
@@ -508,8 +730,10 @@ fn engine_n(
   if fuel == 0 {
     return None;
   }
-  o3(env, o)
-    .map(|e| ("O3", e))
+  let recur = |o2: &Occ<'_>| engine_n(fuel - 1, env, o2).map(|(_, e)| e);
+  o2(&recur, env, o)
+    .map(|e| ("O2", e))
+    .or_else(|| o3(env, o).map(|e| ("O3", e)))
     .or_else(|| o4(env, o).map(|e| ("O4", e)))
     .or_else(|| o6(env, o).map(|e| ("O6", e)))
 }

@@ -35,6 +35,7 @@ Donor: `jcb/ix-certify-compile` `a9cf3607`, `Ix/Compile/Pass/Opt/Engine.lean`.
 module
 public import Ix.Compile.Pass.ImageView
 public import Ix.Compile.Pass.Opt.Core
+public import Ix.Compile.Pass.Opt.O2
 public import Ix.Compile.Pass.Opt.O3
 public import Ix.Compile.Pass.Opt.O4
 public import Ix.Compile.Pass.Opt.O5
@@ -47,8 +48,8 @@ open Ix (Name Level Expr ConstantInfo RecursorVal)
 
 /-- The definitional occurrence passes in their fixed order; `recur`
 rewrites the occurrences O2 synthesises (its relocated calls). -/
-def passes (_recur : Occ → Option Expr) : List (String × (OptEnv → Occ → Option Expr)) :=
-  [("O3", O3.apply), ("O4", O4.apply), ("O6", O6.apply)]
+def passes (recur : Occ → Option Expr) : List (String × (OptEnv → Occ → Option Expr)) :=
+  [("O2", O2.apply recur), ("O3", O3.apply), ("O4", O4.apply), ("O6", O6.apply)]
 
 /-- The first pass that applies, with its name. Fuel bounds the recursive
 optimization of O2's relocated calls; zero returns `none`. -/

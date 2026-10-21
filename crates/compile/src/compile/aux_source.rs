@@ -119,7 +119,6 @@ pub(crate) fn fvar_index(base: usize, stride: u64, offset: usize) -> Nat {
   Nat(Nat::from(base as u64).0 * stride + Nat::from(offset as u64).0)
 }
 
-#[allow(dead_code)] // read by O2 (CQ5.1) and O11a (CQ5.3)
 pub(crate) fn source_ctor_for_minor(
   src_minor_idx: usize,
   rec: &RecursorVal,
@@ -170,7 +169,6 @@ pub(crate) fn source_ctor_for_minor(
 /// motive `source_pos` targets `ext_name specs… idx…`. Spec args are
 /// concrete (the recursor type is instantiated with call-site params
 /// before extraction), so field types can be matched against them by hash.
-#[allow(dead_code)] // read by O2 (CQ5.1) and O11a (CQ5.3)
 pub(crate) struct AuxMotiveSig {
   source_pos: usize,
   ext_name: Name,
@@ -181,7 +179,6 @@ pub(crate) struct AuxMotiveSig {
 /// Extract [`AuxMotiveSig`]s for every aux motive position (`>= all.len()`)
 /// of `rec`, by walking its type instantiated with the call site's levels,
 /// params, and motives.
-#[allow(dead_code)] // read by O2 (CQ5.1) and O11a (CQ5.3)
 pub(crate) fn aux_motive_sigs(
   rec: &RecursorVal,
   rec_levels: &[Level],
@@ -253,7 +250,6 @@ pub(crate) fn aux_motive_sigs(
   out
 }
 
-#[allow(dead_code)] // read by O2 (CQ5.1) and O11a (CQ5.3)
 pub(crate) fn source_minor_type(
   rec: &RecursorVal,
   rec_levels: &[Level],
@@ -283,7 +279,6 @@ pub(crate) fn source_minor_type(
   }
 }
 
-#[allow(dead_code)] // read by O2 (CQ5.1) and O11a (CQ5.3)
 pub(crate) fn peel_binders(
   mut cur: LeanExpr,
   n: usize,
@@ -314,7 +309,6 @@ pub(crate) fn peel_binders(
   Some((decls, fvars, cur))
 }
 
-#[allow(dead_code)] // read by O2 (CQ5.1) and O11a (CQ5.3)
 #[derive(Clone)]
 pub(crate) struct SourceRecTarget {
   pub(crate) source_pos: usize,
@@ -323,7 +317,6 @@ pub(crate) struct SourceRecTarget {
   pub(crate) xs_fvars: Vec<LeanExpr>,
 }
 
-#[allow(dead_code)] // read by O2 (CQ5.1) and O11a (CQ5.3)
 pub(crate) fn find_source_rec_target(
   dom: &LeanExpr,
   original_all: &[Name],
