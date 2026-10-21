@@ -1,13 +1,15 @@
 //! Test-only FFI to the Rust clique transport library
 //! (`ix_compile::compile::pass3::clique`), which the compiler does not call
-//! yet: the plan of a definition clique (`plan_clique`) and the bounds table,
-//! for the `clique-rust-parity` suite
-//! (`Tests/Ix/Compile/Clique/RustParity.lean`) to compare with Lean's
-//! `Ix.Compile.Pass.Clique.planClique` and `bounds` on the same input.
+//! yet: the plan of a definition clique (`plan_clique`), the rows of a
+//! transported plan (`row::rows_of`) and the bounds table, for the
+//! `clique-rust-parity` suite (`Tests/Ix/Compile/Clique/RustParity.lean`) to
+//! compare with Lean's `Ix.Compile.Pass.Clique.planClique`, `rowsOf` and
+//! `bounds` on the same input.
 //!
 //! The outcome crosses as plain Lean data, the structures `RsDecl` and
 //! `RsOutcome` of the suite (layouts below), so the suite compares every
-//! field of Rust's [`CliqueOutcome`] with Lean's.
+//! field of Rust's [`CliqueOutcome`] with Lean's; the rows cross as
+//! `Ix.ConstantInfo`s.
 
 use std::sync::Arc;
 
@@ -17,6 +19,7 @@ use ix_compile::compile::pass3::clique::basic::Decl;
 use ix_compile::compile::pass3::clique::bounds::bounds;
 use ix_compile::compile::pass3::clique::plan::{CliqueOutcome, OrderSource};
 use ix_compile::compile::pass3::clique::plan_clique::plan_clique;
+use ix_compile::compile::pass3::clique::row::rows_of;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanCtor, LeanExcept, LeanOwned, LeanProd, LeanRef,
   LeanString,
@@ -208,12 +211,84 @@ pub extern "C" fn rs_clique_plan(
   all: LeanArray<LeanBorrowed<'_>>,
   carried: LeanArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
+  match decode_input("rs_clique_plan", &consts, &addrs) {
+    Ok((env, table)) => {
+      let addr = |n: &Name| table.get(n).cloned();
+      let all = LeanIxName::decode_array(all);
+      let carried = LeanIxName::decode_array(carried);
+      let outcome = plan_clique(&env, &addr, &all, &carried);
+      LeanExcept::ok(build_outcome(&outcome))
+    },
+    Err(e) => LeanExcept::error_string(&e),
+  }
+}
+
+/// FFI: Rust's rows of a clique, the encoding copies and the equation rows
+/// (`rows_of`) of Rust's plan (`plan_clique`), as `Ix.ConstantInfo`s.
+///
+/// Lean signature:
+/// `@[extern "rs_clique_rows"]
+///  opaque rsCliqueRows : @& Array Ix.ConstantInfo →
+///    @& Array (Ix.Name × Address) → @& Array Ix.Name → @& Array Ix.Name →
+///    Except String (Array Ix.ConstantInfo × Array Ix.ConstantInfo)`
+///
+/// The input is [`rs_clique_plan`]'s. The error is a decoding failure, a
+/// plan that is not transported (`rs_clique_rows: the plan is not
+/// transported: …`, with [`CliqueOutcome::tag`]), or the rows' refusal
+/// (`rows_of`'s text, Lean's `rowsOf`'s); a transported plan of another
+/// encoding has no copies and no rows.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_clique_rows(
+  consts: LeanArray<LeanBorrowed<'_>>,
+  addrs: LeanArray<LeanBorrowed<'_>>,
+  all: LeanArray<LeanBorrowed<'_>>,
+  carried: LeanArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let (env, table) = match decode_input("rs_clique_rows", &consts, &addrs) {
+    Ok(input) => input,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let addr = |n: &Name| table.get(n).cloned();
+  let all = LeanIxName::decode_array(all);
+  let carried = LeanIxName::decode_array(carried);
+  let plan = match plan_clique(&env, &addr, &all, &carried) {
+    CliqueOutcome::Transported(p) => p,
+    o => {
+      return LeanExcept::error_string(&format!(
+        "rs_clique_rows: the plan is not transported: {}",
+        o.tag()
+      ));
+    },
+  };
+  let lookup = |n: &Name| env.get(n).map(|e| e.cloned());
+  match rows_of(&lookup, &plan) {
+    Ok((copies, rows)) => {
+      let mut cache = LeanBuildCache::new();
+      let copies = build_array(&copies, |ci| {
+        LeanIxConstantInfo::build(&mut cache, ci).into()
+      });
+      let rows = build_array(&rows, |ci| {
+        LeanIxConstantInfo::build(&mut cache, ci).into()
+      });
+      LeanExcept::ok(LeanProd::new(copies, rows))
+    },
+    Err(e) => LeanExcept::error_string(&e),
+  }
+}
+
+/// The input of the plan and rows FFIs: the constants as an environment
+/// (a name absent from them is absent to the library) and the address
+/// table; an error names `what` and an address that is not 32 bytes.
+fn decode_input(
+  what: &str,
+  consts: &LeanArray<LeanBorrowed<'_>>,
+  addrs: &LeanArray<LeanBorrowed<'_>>,
+) -> Result<(Arc<Env>, FxHashMap<Name, Address>), String> {
   let mut env = Env::default();
   for c in consts.iter() {
     let info = LeanIxConstantInfo(c).decode();
     env.insert(info.get_name().clone(), info);
   }
-  let env = Arc::new(env);
   let mut table: FxHashMap<Name, Address> = FxHashMap::default();
   for pair in addrs.iter() {
     let pair = pair.as_ctor();
@@ -224,19 +299,15 @@ pub extern "C" fn rs_clique_plan(
         table.insert(name, a);
       },
       Err(_) => {
-        return LeanExcept::error_string(&format!(
-          "rs_clique_plan: the address of {} has {} bytes, not 32",
+        return Err(format!(
+          "{what}: the address of {} has {} bytes, not 32",
           name.pretty(),
           bytes.len()
         ));
       },
     }
   }
-  let addr = |n: &Name| table.get(n).cloned();
-  let all = LeanIxName::decode_array(all);
-  let carried = LeanIxName::decode_array(carried);
-  let outcome = plan_clique(&env, &addr, &all, &carried);
-  LeanExcept::ok(build_outcome(&outcome))
+  Ok((Arc::new(env), table))
 }
 
 /// FFI: the clique transport's bounds by their Lean names, in the order of

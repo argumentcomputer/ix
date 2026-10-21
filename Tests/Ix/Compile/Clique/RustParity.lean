@@ -1,17 +1,18 @@
 /-
   clique-rust-parity: the Rust clique transport library
   (`crates/compile/src/compile/pass3/clique`) against the Lean one
-  (`Ix.Compile.Pass.Clique`), on the plan of a clique. Neither is wired into
-  a compiler yet, so this suite is the libraries' lockstep evidence (the
-  wiring adds whole-compile parity).
+  (`Ix.Compile.Pass.Clique`), on the plan of a clique and its rows. Neither
+  is wired into a compiler yet, so this suite is the libraries' lockstep
+  evidence (the wiring adds whole-compile parity).
 
   * **Bounds.** Rust's `bounds()` (test-only FFI `rs_clique_bounds`,
     `crates/ffi/src/clique.rs`) equals Lean's `bounds`: names and values, in
     order.
   * **Plans.** For every clique of the library suites' fixtures (the clique
-    twins, `Tests/Ix/Compile/Twins/Cliques.lean`, and the library's own,
-    `Tests/Ix/Compile/Clique/Fixtures.lean`, loaded at run time with the
-    twins: Lean's `EqnInfo` cliques and the theorem cliques), with the
+    twins, `Tests/Ix/Compile/Twins/Cliques.lean`, the library's own,
+    `Tests/Ix/Compile/Clique/Fixtures.lean`, and the ownership suite's,
+    `Tests/Ix/Compile/Clique/Ownership/{Sources,Lemmas}.lean`, loaded at run
+    time with the twins: Lean's `EqnInfo` cliques and the theorem cliques), with the
     members' equation lemmas realised (`eq_def`, `eq_<k>`), with and without
     the carried lemmas (the clique table's: the members' equation lemmas that
     reference a member and one of Lean's encoding constants), under a
@@ -38,6 +39,13 @@
     `planClique`: the `SA` cliques over an altered `Nat.brecOn`, and the
     decoy `m._f`s beside the functionals the members pass (`SA`/`SP`, both
     decoy kinds), as overlays of the environment.
+  * **Rows.** For every plan Lean transports (each case, both addresses):
+    Lean's `rowsOf` over its input against Rust's `rows_of` over Rust's own
+    plan of the same closure (`rs_clique_rows`): the refusal text, or the
+    copies and the rows in order, each record compared raw-exactly (kind,
+    name, level parameters, type, value, hints, safety, `all`). A
+    well-founded plan has copies and rows; a plan of another encoding none,
+    on both sides.
 
   Every field of the outcome is compared raw-exactly: the tag, the reason,
   the encoding and cause tags, the order source (tag and description); for a
@@ -53,9 +61,12 @@
   not run). Lean's `planClique` is total and cannot fail. The comparison's
   control: on every transported plan found `SAME`, Rust's outcome with one
   field perturbed (a canonical constant's value, a member's value, the
-  record) must be `DIFF` at that field. The run passes iff the bounds agree,
-  every plan is `SAME` and every control is found; it prints the counts by
-  outcome and encoding.
+  record) must be `DIFF` at that field; on every rows comparison found
+  `SAME`, Rust's copies and rows with one field perturbed (the first copy's
+  value, the first row's value, the first row's `all`; a refusal's text)
+  likewise. The run passes iff the bounds agree, every plan and every rows
+  comparison is `SAME` and every control is found; it prints the counts by
+  outcome and encoding, and the rows' counts.
 
   Invoked as `lake test -- clique-rust-parity`.
 -/
@@ -129,10 +140,20 @@ opaque rsCliquePlan : @& Array IxConst → @& Array (IxName × Address) → @& A
 @[extern "rs_clique_bounds"]
 opaque rsCliqueBounds : Unit → Array (String × Nat)
 
+/-- Rust's `rows_of` (the copies, then the rows) of its own plan of a clique,
+over the same input as `rsCliquePlan`. The error is a decoding failure, a
+plan that is not transported (`rs_clique_rows: …`) or the rows' refusal. -/
+@[extern "rs_clique_rows"]
+opaque rsCliqueRows : @& Array IxConst → @& Array (IxName × Address) → @& Array IxName →
+  @& Array IxName → Except String (Array IxConst × Array IxConst)
+
 /-! ## The cliques -/
 
-/-- The fixtures' roots: the clique twins and the library's own fixtures. -/
-def roots : List Name := [`Tests.Ix.Compile.Twins.Cliques, fixturesRoot]
+/-- The fixtures' roots: the clique twins, the library's own fixtures and the
+ownership suite's sources and lemma cliques. -/
+def roots : List Name :=
+  [`Tests.Ix.Compile.Twins.Cliques, fixturesRoot, `Tests.Ix.Compile.Clique.Ownership.Src,
+   `Tests.Ix.Compile.Clique.Ownership.Lem]
 
 def userName (n : Name) : Name := (Lean.privateToUserName? n).getD n
 
@@ -415,6 +436,84 @@ def cmpOutcome (l : CliqueOutcome) (r : RsOutcome) : Cmp := do
     source p.source
     cmpPlan p r
 
+/-! ## Rows -/
+
+def kindOf : IxConst → String
+  | .axiomInfo _ => "axiom"
+  | .defnInfo _ => "definition"
+  | .thmInfo _ => "theorem"
+  | .opaqueInfo _ => "opaque"
+  | .quotInfo _ => "quotient"
+  | .inductInfo _ => "inductive"
+  | .ctorInfo _ => "constructor"
+  | .recInfo _ => "recursor"
+
+def showHints : Lean.ReducibilityHints → String
+  | .opaque => "opaque"
+  | .abbrev => "abbrev"
+  | .regular h => s!"regular {h}"
+
+def showSafety : Lean.DefinitionSafety → String
+  | .unsafe => "unsafe"
+  | .safe => "safe"
+  | .partial => "partial"
+
+/-- A copy or a row, field by field (both are definitions or theorems). -/
+def cmpConst (path : String) (l r : IxConst) : Cmp := do
+  let nameEq := _root_.Ix.Compile.Image.RawExact.nameEq
+  chk s!"{path}.kind" (kindOf l == kindOf r) (fun _ => kindOf l) (fun _ => kindOf r)
+  let (lc, rc) := (l.getCnst, r.getCnst)
+  chk s!"{path}.name" (nameEq lc.name rc.name) (fun _ => lc.name.pretty) (fun _ => rc.name.pretty)
+  chk s!"{path}.levelParams" (namesEq lc.levelParams rc.levelParams)
+    (fun _ => showNames lc.levelParams) (fun _ => showNames rc.levelParams)
+  chk s!"{path}.type" (exprSame lc.type rc.type) (fun _ => showExpr lc.type) (fun _ => showExpr rc.type)
+  match l, r with
+  | .defnInfo a, .defnInfo b =>
+    chk s!"{path}.value" (exprSame a.value b.value) (fun _ => showExpr a.value) (fun _ => showExpr b.value)
+    chk s!"{path}.hints" (a.hints == b.hints) (fun _ => showHints a.hints) (fun _ => showHints b.hints)
+    chk s!"{path}.safety" (a.safety == b.safety) (fun _ => showSafety a.safety) (fun _ => showSafety b.safety)
+    chk s!"{path}.all" (namesEq a.all b.all) (fun _ => showNames a.all) (fun _ => showNames b.all)
+  | .thmInfo a, .thmInfo b =>
+    chk s!"{path}.value" (exprSame a.value b.value) (fun _ => showExpr a.value) (fun _ => showExpr b.value)
+    chk s!"{path}.all" (namesEq a.all b.all) (fun _ => showNames a.all) (fun _ => showNames b.all)
+  | _, _ => throw (s!"{path}.kind", "a definition or a theorem", kindOf r)
+
+/-- Lean's `rowsOf` against Rust's: the refusal, or every copy and row. -/
+def cmpRows (l r : Except String (Array IxConst × Array IxConst)) : Cmp := do
+  let names (cs : Array IxConst) : String := showNames (cs.map (·.getCnst.name))
+  match l, r with
+  | .error a, .error b => chk "refusal" (a == b) (fun _ => a) (fun _ => b)
+  | .error a, .ok (cs, rs) => throw ("refusal", a, s!"copies {names cs}, rows {names rs}")
+  | .ok (cs, rs), .error b => throw ("refusal", s!"copies {names cs}, rows {names rs}", b)
+  | .ok (lc, lr), .ok (rc, rr) =>
+    chk "copies.size" (lc.size == rc.size) (fun _ => names lc) (fun _ => names rc)
+    for ((a, b), i) in (lc.zip rc).zipIdx do cmpConst s!"copies[{i}]" a b
+    chk "rows.size" (lr.size == rr.size) (fun _ => names lr) (fun _ => names rr)
+    for ((a, b), i) in (lr.zip rr).zipIdx do cmpConst s!"rows[{i}]" a b
+
+/-- `all` with one more name. -/
+def pushAll (n : IxName) : IxConst → IxConst
+  | .defnInfo v => .defnInfo { v with all := v.all.push n }
+  | .thmInfo v => .thmInfo { v with all := v.all.push n }
+  | ci => ci
+
+/-- The control of the rows comparison: Rust's result equal to Lean's, with
+one field perturbed (the first copy's value, the first row's value and
+`all`; a refusal's text), must be `DIFF` at that field. -/
+def rowsPerturbations : Except String (Array IxConst × Array IxConst) →
+    Array (String × Except String (Array IxConst × Array IxConst))
+  | .error e => #[("refusal", .error (e ++ " "))]
+  | .ok (cs, rs) =>
+    let withValue := _root_.Ix.Compile.Pass.Clique.withValue
+    let copy := match cs[0]? with
+      | some _ => #[("copies[0].value", .ok (cs.modify 0 fun ci => withValue ci ci.getCnst.type, rs))]
+      | none => #[]
+    let row := match rs[0]? with
+      | some ci => #[("rows[0].value", .ok (cs, rs.modify 0 fun ci => withValue ci ci.getCnst.type)),
+          ("rows[0].all", .ok (cs, rs.modify 0 (pushAll ci.getCnst.name)))]
+      | none => #[]
+    copy ++ row
+
 /-! ## One case -/
 
 /-- A clique to plan: Lean's input is the fixtures' environment under
@@ -429,6 +528,8 @@ structure Case where
 
 structure Row where
   label : String
+  /-- `plan` or `rows` -/
+  what : String := "plan"
   verdict : String
   outcome : String := ""
   msg : String := ""
@@ -436,6 +537,10 @@ structure Row where
   different -/
   controls : Nat := 0
   missed : Array String := #[]
+  /-- rows: Lean's copies and rows, or its refusal -/
+  copies : Nat := 0
+  rows : Nat := 0
+  refusal : Bool := false
 
 /-- The control of the comparison: a Rust outcome equal to Lean's, with one
 field perturbed (a canonical constant's value, a member's value, the
@@ -498,6 +603,23 @@ def runCase (env : Environment) (c : Case) : Array Row := Id.run do
       | .error (field, lv, rv) =>
         rows := rows.push { label, verdict := "DIFF", outcome,
                             msg := s!"{field}: lean {lv} | rust {rv}" }
+    -- the rows of a transported plan: Lean's over its plan, Rust's over its own
+    if let .transported p := lean then
+      let leanRows := _root_.Ix.Compile.Pass.Clique.rowsOf leanEnv.get? p
+      let (copies, nrows, refusal) := match leanRows with
+        | .ok (cs, rs) => (cs.size, rs.size, false)
+        | .error _ => (0, 0, true)
+      let row : Row := { label, what := "rows", verdict := "", outcome, copies, rows := nrows, refusal }
+      let rustRows := rsCliqueRows consts pairs c.all c.carried
+      match cmpRows leanRows rustRows with
+      | .ok () =>
+        let ps := rowsPerturbations rustRows
+        let missed := ps.filterMap fun (field, r') => match cmpRows leanRows r' with
+          | .error (f, _, _) => if f == field then none else some s!"{field} (found {f})"
+          | .ok () => some s!"{field} (found SAME)"
+        rows := rows.push { row with verdict := "SAME", controls := ps.size, missed }
+      | .error (field, lv, rv) =>
+        rows := rows.push { row with verdict := "DIFF", msg := s!"rows {field}: lean {lv} | rust {rv}" }
   return rows
 
 /-! ## The adversarial inputs of `clique-recognition` -/
@@ -564,23 +686,35 @@ def run : IO UInt32 := do
       rows := rows ++ runCase env c
     catch e => rows := rows.push { label := c.label, verdict := "ERROR", msg := toString e }
   -- the counts
-  let count (v : String) := (rows.filter (·.verdict == v)).size
-  say s!"plans {rows.size} ({cases.size} cases, {adversarial.size} adversarial, two addresses each): \
-    SAME {count "SAME"}, DIFF {count "DIFF"}, RUST-ERR {count "RUST-ERR"}, ERROR {count "ERROR"}"
-  let controls := rows.foldl (fun n r => n + r.controls) 0
-  let missed := rows.flatMap fun r => r.missed.map (s!"{r.label}: {·}")
-  say s!"controls: {controls} perturbed Rust outcomes of transported plans, \
-    {controls - missed.size} found DIFF at the perturbed field"
-  if controls == 0 then failures := failures.push "no control ran"
-  for m in missed do failures := failures.push s!"control not found DIFF: {m}"
+  let (planRows, rowRows) := rows.partition (·.what == "plan")
+  let count (rs : Array Row) (v : String) := (rs.filter (·.verdict == v)).size
+  say s!"plans {planRows.size} ({cases.size} cases, {adversarial.size} adversarial, two addresses each): \
+    SAME {count planRows "SAME"}, DIFF {count planRows "DIFF"}, RUST-ERR {count planRows "RUST-ERR"}, \
+    ERROR {count planRows "ERROR"}"
+  let controlsOf (rs : Array Row) := rs.foldl (fun n r => n + r.controls) 0
+  let missedOf (rs : Array Row) := rs.flatMap fun r => r.missed.map (s!"{r.label} {r.what}: {·}")
+  say s!"controls: {controlsOf planRows} perturbed Rust outcomes of transported plans, \
+    {controlsOf planRows - (missedOf planRows).size} found DIFF at the perturbed field"
+  let wfRows := rowRows.filter (·.outcome == "transported well-founded")
+  let sum (rs : Array Row) (f : Row → Nat) := rs.foldl (fun n r => n + f r) 0
+  say s!"rows of {rowRows.size} transported plans ({wfRows.size} well-founded): SAME {count rowRows "SAME"}, \
+    DIFF {count rowRows "DIFF"}; Lean's: {sum wfRows (·.copies)} copies and {sum wfRows (·.rows)} rows of the \
+    well-founded plans, {(wfRows.filter (·.refusal)).size} refused, \
+    {sum (rowRows.filter (·.outcome != "transported well-founded")) fun r => r.copies + r.rows} records of the others"
+  say s!"rows controls: {controlsOf rowRows} perturbed Rust results, \
+    {controlsOf rowRows - (missedOf rowRows).size} found DIFF at the perturbed field"
+  if controlsOf planRows == 0 then failures := failures.push "no plan control ran"
+  if controlsOf rowRows == 0 then failures := failures.push "no rows control ran"
+  if wfRows.isEmpty then failures := failures.push "no well-founded plan's rows compared"
+  for m in missedOf rows do failures := failures.push s!"control not found DIFF: {m}"
   let mut byOutcome : Std.HashMap String Nat := {}
-  for r in rows do
+  for r in planRows do
     unless r.outcome.isEmpty do byOutcome := byOutcome.insert r.outcome (byOutcome.getD r.outcome 0 + 1)
   let outcomes := byOutcome.toArray.qsort fun a b => a.1 < b.1
   say s!"by outcome and encoding (Lean's): {outcomes.toList.map fun (k, n) => s!"{k}: {n}"}"
   for r in rows do
     if r.verdict != "SAME" then
-      failures := failures.push s!"{r.label} [{r.outcome}]: {r.verdict} {r.msg}"
+      failures := failures.push s!"{r.label} {r.what} [{r.outcome}]: {r.verdict} {r.msg}"
   for f in failures do say s!"FAIL {f}"
   say s!"{failures.size} failures ({(← IO.monoMsNow) - t0} ms)"
   return if failures.isEmpty then 0 else 1

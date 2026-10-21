@@ -20,6 +20,7 @@ import Tests.Ix.Compile.CanonClique
 import Tests.Ix.Compile.Clique.Dag
 import Tests.Ix.Compile.Clique.Ownership
 import Tests.Ix.Compile.Clique.Recognition
+import Tests.Ix.Compile.Clique.Rows
 import Tests.Ix.Compile.Clique.RustParity
 import Tests.Ix.Compile.Clique.Transport
 import Tests.Ix.Compile.AlphaEq
@@ -201,9 +202,14 @@ def registry : List Entry := [
   .runner "clique-ownership" .primary Tests.Ix.Compile.Clique.Ownership.run,
   -- the Rust clique library against the Lean one (test-only FFI, Rust on the
   -- clique's closure): the bounds tables, and every field of the plan of each
-  -- fixture clique and of the adversarial inputs, under two addresses
-  -- (Tests.Ix.Compile.Clique.RustParity)
+  -- fixture clique and of the adversarial inputs, under two addresses, and
+  -- the rows of each transported plan (Tests.Ix.Compile.Clique.RustParity)
   .runner "clique-rust-parity" .primary Tests.Ix.Compile.Clique.RustParity.run,
+  -- the equation rows of every transported well-founded fixture plan and the
+  -- copies of its encoding, admitted by Lean's kernel, each row's swapped
+  -- right-hand side rejected (Tests.Ix.Compile.Clique.Rows; IxC admission of
+  -- emitted rows is the wiring step's)
+  .runner "clique-rows" .primary Tests.Ix.Compile.Clique.Rows.run,
   -- the image generator's expression comparisons: raw-exact alpha equality, and motive
   -- matching up to canonical universes (Ix.Compile.Image)
   .suite "image-alpha-eq" .primary Tests.Ix.Compile.AlphaEq.suite,
