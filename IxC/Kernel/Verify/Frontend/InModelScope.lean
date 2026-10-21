@@ -217,7 +217,7 @@ theorem betaHeadE_good {e r : Expr md} (he : e.Good P) (h : betaHeadE e = .ok r)
 def ResGood (P : KeyScope md) (r : Except String (Option (Expr md))) : Prop :=
   ∀ t, r = .ok (some t) → t.Good P
 
-theorem inferTyF_sortOfF_mapKeysOn (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable md'}
+theorem inferTyF_sortOfF_mapKeysOn (hP : P.Pre) {tbl : ConstTable md} {tbl' : ConstTable md'}
     (htbl : TblOn P f tbl tbl') (fuel : Nat) :
     (∀ (ctx : List (Expr md)) (e : Expr md), Expr.GoodList P ctx → e.Good P →
       inferTyF tbl' fuel (ctx.map (Expr.mapKeys f)) (e.mapKeys f) =
@@ -374,11 +374,11 @@ theorem inferTyF_sortOfF_mapKeysOn (hP : P.All) {tbl : ConstTable md} {tbl' : Co
         | natVal n =>
           exact ⟨rfl, fun t ht => by
             simp only [inferTyF, Except.ok.injEq, Option.some.injEq] at ht
-            subst ht; exact hP _⟩
+            subst ht; exact hP _ (by decide)⟩
         | strVal s =>
           exact ⟨rfl, fun t ht => by
             simp only [inferTyF, Except.ok.injEq, Option.some.injEq] at ht
-            subst ht; exact hP _⟩
+            subst ht; exact he _ (by decide)⟩
       | fvar i t => exact ⟨rfl, fun _ ht => nomatch ht⟩
       | proj s i x => exact ⟨rfl, fun _ ht => nomatch ht⟩
     · obtain ⟨ihe, -⟩ := ihI ctx e hctx he
@@ -394,25 +394,25 @@ theorem inferTyF_sortOfF_mapKeysOn (hP : P.All) {tbl : ConstTable md} {tbl' : Co
           | none => rfl
           | some t' => cases t' <;> rfl
 
-theorem inferTy_mapKeysOn (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable md'}
+theorem inferTy_mapKeysOn (hP : P.Pre) {tbl : ConstTable md} {tbl' : ConstTable md'}
     (htbl : TblOn P f tbl tbl') {ctx : List (Expr md)} {e : Expr md} (hctx : Expr.GoodList P ctx)
     (he : e.Good P) :
     inferTy tbl' (ctx.map (Expr.mapKeys f)) (e.mapKeys f) =
       (inferTy tbl ctx e).map (Option.map (Expr.mapKeys f)) :=
   ((inferTyF_sortOfF_mapKeysOn hP htbl inferFuel).1 ctx e hctx he).1
 
-theorem inferTy_good (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable md'}
+theorem inferTy_good (hP : P.Pre) {tbl : ConstTable md} {tbl' : ConstTable md'}
     (htbl : TblOn P f tbl tbl') {ctx : List (Expr md)} {e : Expr md} (hctx : Expr.GoodList P ctx)
     (he : e.Good P) : ResGood P (inferTy tbl ctx e) :=
   ((inferTyF_sortOfF_mapKeysOn hP htbl inferFuel).1 ctx e hctx he).2
 
-theorem sortOf_mapKeysOn (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable md'}
+theorem sortOf_mapKeysOn (hP : P.Pre) {tbl : ConstTable md} {tbl' : ConstTable md'}
     (htbl : TblOn P f tbl tbl') {ctx : List (Expr md)} {e : Expr md} (hctx : Expr.GoodList P ctx)
     (he : e.Good P) :
     sortOf tbl' (ctx.map (Expr.mapKeys f)) (e.mapKeys f) = sortOf tbl ctx e :=
   (inferTyF_sortOfF_mapKeysOn hP htbl inferFuel).2 ctx e hctx he
 
-theorem sortCeil_mapKeysOn (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable md'}
+theorem sortCeil_mapKeysOn (hP : P.Pre) {tbl : ConstTable md} {tbl' : ConstTable md'}
     (htbl : TblOn P f tbl tbl') (fuel : Nat) : ∀ (ctx : List (Expr md)) (d : Expr md),
       Expr.GoodList P ctx → d.Good P →
       sortCeil tbl' fuel (ctx.map (Expr.mapKeys f)) (d.mapKeys f) = sortCeil tbl fuel ctx d := by
@@ -466,7 +466,7 @@ theorem sortCeil_mapKeysOn (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable
               ih ctx _ hctx (Expr.Good.instantiate1 hd'.2.2 hd'.2.1 0)]
           | _ => exact hh
 
-theorem idxSort_mapKeysOn (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable md'}
+theorem idxSort_mapKeysOn (hP : P.Pre) {tbl : ConstTable md} {tbl' : ConstTable md'}
     (htbl : TblOn P f tbl tbl') {ctx : List (Expr md)} {e : Expr md} (hctx : Expr.GoodList P ctx)
     (he : e.Good P) :
     idxSort tbl' (ctx.map (Expr.mapKeys f)) (e.mapKeys f) = idxSort tbl ctx e :=

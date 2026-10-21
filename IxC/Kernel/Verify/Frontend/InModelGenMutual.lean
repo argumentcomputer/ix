@@ -139,7 +139,7 @@ theorem ExRel.need {α β : Type} {G : α → Prop} {g : α → β} {o : Option 
   | none => exact ExRel.throw'
   | some a => exact ExRel.pure' ⟨rfl, hG a rfl⟩
 
-theorem idxSort_mapKeysOn' (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable md'}
+theorem idxSort_mapKeysOn' (hP : P.Pre) {tbl : ConstTable md} {tbl' : ConstTable md'}
     (htbl : TblOn P f tbl tbl') {ctx : List (Expr md)} {e : Expr md} (hctx : Expr.GoodList P ctx)
     (he : e.Good P) {ctx₂ : List (Expr md')} {e₂ : Expr md'} (h1 : ctx₂ = ctx.map (Expr.mapKeys f))
     (h2 : e₂ = e.mapKeys f) : idxSort tbl' ctx₂ e₂ = idxSort tbl ctx e := by
@@ -311,7 +311,7 @@ theorem fst_getD_mapBinders (bs : List (Expr md × BinderMeta)) (i : Nat) :
 
 @[simp] theorem iotaName_map (R : Key md) (j : Nat) : (iotaName R j).map f = iotaName (R.map f) j := rfl
 
-theorem sortOf_mapKeysOn' (hP : P.All) {tbl : ConstTable md} {tbl' : ConstTable md'}
+theorem sortOf_mapKeysOn' (hP : P.Pre) {tbl : ConstTable md} {tbl' : ConstTable md'}
     (htbl : TblOn P f tbl tbl') {ctx : List (Expr md)} {e : Expr md} (hctx : Expr.GoodList P ctx)
     (he : e.Good P) {ctx₂ : List (Expr md')} {e₂ : Expr md'} (h1 : ctx₂ = ctx.map (Expr.mapKeys f))
     (h2 : e₂ = e.mapKeys f) : sortOf tbl' ctx₂ e₂ = sortOf tbl ctx e := by
@@ -348,7 +348,7 @@ theorem cons_congr' {α : Type} {a b : α} {l l' : List α} (h1 : a = b) (h2 : l
 /-- **The mutual rung commutes with renaming keys**: on a good block, at a context agreeing on
 the scope, the renamed run fails exactly when the original does, and otherwise returns its
 records renamed. -/
-theorem genMutual_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
+theorem genMutual_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     (hctx : CtxAgree f P ctx ctx') {b : BlockRec md} (hb : b.Good P) :
     ExRel (fun ds ds' => ds' = ds.map (Declaration.mapKeys f))
       (genMutual ctx b) (genMutual ctx' (b.mapKeys f)) := by

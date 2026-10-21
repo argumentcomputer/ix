@@ -163,7 +163,7 @@ theorem buildBinders_rel {mk : Expr md → Option (Expr md)} {mk' : Expr md' →
   | _ + 1, .app _ _, _ | _ + 1, .lam _ _ _, _ | _ + 1, .letE _ _ _ _, _ | _ + 1, .lit _, _
   | _ + 1, .proj _ _ _, _ => trivial
 
-theorem projRecValue_mapKeys (hP : P.All) (hf : InjOn f P) {o : ProjRecOwner md} (ho : o.Good P)
+theorem projRecValue_mapKeys (hP : P.Pre) (hf : InjOn f P) {o : ProjRecOwner md} (ho : o.Good P)
     (ℓ : Level) {ty val : Expr md} (hty : ty.Good P) (hval : val.Good P) (i : Nat) :
     ORel (fun v v' => v' = v.mapKeys f ∧ v.Good P) (projRecValue o ℓ ty val i)
       (projRecValue (o.mapKeys f) ℓ (ty.mapKeys f) (val.mapKeys f) i) := by
@@ -217,10 +217,10 @@ theorem projRecValue_mapKeys (hP : P.All) (hf : InjOn f P) {o : ProjRecOwner md}
         split
         · exact ⟨by simp [Expr.mapKeys, Expr.mapKeys_liftLooseBVars], hd0,
             Expr.Good.liftLooseBVars hRg _ _⟩
-        · exact ⟨rfl, hd0, hP _⟩
-      | [], _ => exact ⟨rfl, hP _⟩
+        · exact ⟨rfl, hd0, hP _ (by decide)⟩
+      | [], _ => exact ⟨rfl, hP _ (by decide)⟩
       | x :: y :: zs, hbsG =>
-        refine ⟨?_, mkLams_good hbsG (hP _)⟩
+        refine ⟨?_, mkLams_good hbsG (hP _ (by decide))⟩
         rw [← mkLams_mapKeys]; rfl
     | _ => rcases bs with _ | ⟨x, _ | ⟨y, zs⟩⟩ <;> exact trivial
   obtain ⟨rfl, hmotG, hq2G⟩ := hq
@@ -243,7 +243,7 @@ theorem projRecValue_mapKeys (hP : P.All) (hf : InjOn f P) {o : ProjRecOwner md}
         · refine ⟨?_, mkLams_good hbsG trivial⟩
           rw [← mkLams_mapKeys]; rfl
         · exact trivial
-      · refine ⟨?_, mkLams_good hbsG (hP _)⟩
+      · refine ⟨?_, mkLams_good hbsG (hP _ (by decide))⟩
         rw [← mkLams_mapKeys]; rfl
   obtain ⟨rfl, hminG, hq3G⟩ := hq
   obtain ⟨minors, q3⟩ := q
@@ -267,7 +267,7 @@ theorem projRecValue_mapKeys (hP : P.All) (hf : InjOn f P) {o : ProjRecOwner md}
   | _ => exact trivial
 
 
-theorem projRecValue_map_some (hP : P.All) (hf : InjOn f P) {o : ProjRecOwner md} {ℓ : Level}
+theorem projRecValue_map_some (hP : P.Pre) (hf : InjOn f P) {o : ProjRecOwner md} {ℓ : Level}
     {ty val v : Expr md} {i : Nat} (h : projRecValue o ℓ ty val i = some v) (ho : o.Good P)
     (hty : ty.Good P) (hval : val.Good P) :
     projRecValue (o.mapKeys f) ℓ (ty.mapKeys f) (val.mapKeys f) i = some (v.mapKeys f) ∧ v.Good P := by
@@ -278,7 +278,7 @@ theorem projRecValue_map_some (hP : P.All) (hf : InjOn f P) {o : ProjRecOwner md
   | none => intro hr; exact hr.elim
   | some v' => intro hr; obtain ⟨rfl, hv⟩ := hr; exact ⟨rfl, hv⟩
 
-theorem projRecValue_map_none (hP : P.All) (hf : InjOn f P) {o : ProjRecOwner md} {ℓ : Level}
+theorem projRecValue_map_none (hP : P.Pre) (hf : InjOn f P) {o : ProjRecOwner md} {ℓ : Level}
     {ty val : Expr md} {i : Nat} (h : projRecValue o ℓ ty val i = none) (ho : o.Good P)
     (hty : ty.Good P) (hval : val.Good P) :
     projRecValue (o.mapKeys f) ℓ (ty.mapKeys f) (val.mapKeys f) i = none := by

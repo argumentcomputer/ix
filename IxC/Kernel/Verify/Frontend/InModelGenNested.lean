@@ -109,18 +109,18 @@ def ORG (P : KeyScope md) (f : md.Id → md'.Id) (o : Option (Expr md)) (o' : Op
   o' = o.map (Expr.mapKeys f) ∧ ∀ e, o = some e → e.Good P
 
 
-theorem mkEq_good (hP : P.All) {ℓ : Level} {α a b : Expr md} (hα : α.Good P) (ha : a.Good P)
+theorem mkEq_good (hP : P.Pre) {ℓ : Level} {α a b : Expr md} (hα : α.Good P) (ha : a.Good P)
     (hb : b.Good P) : (mkEq ℓ α a b).Good P :=
-  Expr.good_mkAppN_iff.2 ⟨hP _, fun x hx => by simp at hx; rcases hx with rfl | rfl | rfl <;> assumption⟩
+  Expr.good_mkAppN_iff.2 ⟨hP _ (by decide), fun x hx => by simp at hx; rcases hx with rfl | rfl | rfl <;> assumption⟩
 
-theorem mkRefl_good (hP : P.All) {ℓ : Level} {α a : Expr md} (hα : α.Good P) (ha : a.Good P) :
+theorem mkRefl_good (hP : P.Pre) {ℓ : Level} {α a : Expr md} (hα : α.Good P) (ha : a.Good P) :
     (mkRefl ℓ α a).Good P :=
-  Expr.good_mkAppN_iff.2 ⟨hP _, fun x hx => by simp at hx; rcases hx with rfl | rfl <;> assumption⟩
+  Expr.good_mkAppN_iff.2 ⟨hP _ (by decide), fun x hx => by simp at hx; rcases hx with rfl | rfl <;> assumption⟩
 
-theorem mkEqRec_good (hP : P.All) {ℓm ℓα : Level} {α a mo rf b h : Expr md} (hα : α.Good P)
+theorem mkEqRec_good (hP : P.Pre) {ℓm ℓα : Level} {α a mo rf b h : Expr md} (hα : α.Good P)
     (ha : a.Good P) (hmo : mo.Good P) (hrf : rf.Good P) (hb : b.Good P) (hh : h.Good P) :
     (mkEqRec ℓm ℓα α a mo rf b h).Good P :=
-  Expr.good_mkAppN_iff.2 ⟨hP _, fun x hx => by
+  Expr.good_mkAppN_iff.2 ⟨hP _ (by decide), fun x hx => by
     simp at hx; rcases hx with rfl | rfl | rfl | rfl | rfl | rfl <;> assumption⟩
 
 @[simp] theorem Mem.mapKeys_pins_length (mem : Mem md) : (mem.mapKeys f).pins.length = mem.pins.length :=
@@ -161,15 +161,15 @@ theorem lams {bs : List (Expr md)} {bs' : List (Expr md')} {b : Expr md} {b' : E
     (hbs : RGL P f bs bs') (hb : RG P f b b') : RG P f (mkLams bs b) (mkLams bs' b') := by
   obtain ⟨rfl, hbs⟩ := hbs; obtain ⟨rfl, hb⟩ := hb
   exact ⟨(mkLams_mapKeys bs b).symm, Expr.good_mkLams hbs hb⟩
-theorem eq (hP : P.All) {ℓ : Level} {α a b : Expr md} {α' a' b' : Expr md'} (hα : RG P f α α')
+theorem eq (hP : P.Pre) {ℓ : Level} {α a b : Expr md} {α' a' b' : Expr md'} (hα : RG P f α α')
     (ha : RG P f a a') (hb : RG P f b b') : RG P f (mkEq ℓ α a b) (mkEq ℓ α' a' b') := by
   obtain ⟨rfl, hα⟩ := hα; obtain ⟨rfl, ha⟩ := ha; obtain ⟨rfl, hb⟩ := hb
   exact ⟨(mkEq_mapKeys ℓ α a b).symm, mkEq_good hP hα ha hb⟩
-theorem refl (hP : P.All) {ℓ : Level} {α a : Expr md} {α' a' : Expr md'} (hα : RG P f α α')
+theorem refl (hP : P.Pre) {ℓ : Level} {α a : Expr md} {α' a' : Expr md'} (hα : RG P f α α')
     (ha : RG P f a a') : RG P f (mkRefl ℓ α a) (mkRefl ℓ α' a') := by
   obtain ⟨rfl, hα⟩ := hα; obtain ⟨rfl, ha⟩ := ha
   exact ⟨(mkRefl_mapKeys ℓ α a).symm, mkRefl_good hP hα ha⟩
-theorem eqRec (hP : P.All) {ℓm ℓα : Level} {α a mo rf b h : Expr md} {α' a' mo' rf' b' h' : Expr md'}
+theorem eqRec (hP : P.Pre) {ℓm ℓα : Level} {α a mo rf b h : Expr md} {α' a' mo' rf' b' h' : Expr md'}
     (hα : RG P f α α') (ha : RG P f a a') (hmo : RG P f mo mo') (hrf : RG P f rf rf') (hb : RG P f b b')
     (hh : RG P f h h') : RG P f (mkEqRec ℓm ℓα α a mo rf b h) (mkEqRec ℓm ℓα α' a' mo' rf' b' h') := by
   obtain ⟨rfl, hα⟩ := hα; obtain ⟨rfl, ha⟩ := ha; obtain ⟨rfl, hmo⟩ := hmo
@@ -374,7 +374,7 @@ theorem MRel.filterMap {α : Type} {l l' : List α} {g : α → Option (Nat × E
       · exact ih2 z hz
 
 /-- **A congruence chain** and its renaming (by its recursion). -/
-theorem RG.congrGo (hP : P.All) {ℓα : Level} {α : Expr md} {α' : Expr md'} (hα : RG P f α α')
+theorem RG.congrGo (hP : P.Pre) {ℓα : Level} {α : Expr md} {α' : Expr md'} (hα : RG P f α α')
     {F : Nat → List (Expr md) → Expr md} {F' : Nat → List (Expr md') → Expr md'}
     (hF : ∀ o l l', RGL P f l l' → RG P f (F o l) (F' o l'))
     {ls rs : List (Expr md)} (hlsG : Expr.GoodList P ls) (hrsG : Expr.GoodList P rs)
@@ -433,7 +433,7 @@ theorem RG.congrGo (hP : P.All) {ℓα : Level} {α : Expr md} {α' : Expr md'} 
               (hF 2 _ _ (RGL.set (RGL.liftAll hmid 2) pos (RG.bvar 1)))) bm) bm)
           (ih (k + 1) (by omega)) (hgetD rs hrsG pos) (RG.of_good hmem.1)
 
-theorem RG.congr (hP : P.All) {ℓα : Level} {α : Expr md} {α' : Expr md'} (hα : RG P f α α')
+theorem RG.congr (hP : P.Pre) {ℓα : Level} {α : Expr md} {α' : Expr md'} (hα : RG P f α α')
     {F : Nat → List (Expr md) → Expr md} {F' : Nat → List (Expr md') → Expr md'}
     (hF : ∀ o l l', RGL P f l l' → RG P f (F o l) (F' o l'))
     {ls rs : List (Expr md)} {ls' rs' : List (Expr md')} (hls : RGL P f ls ls') (hrs : RGL P f rs rs')
@@ -445,7 +445,7 @@ theorem RG.congr (hP : P.All) {ℓα : Level} {α : Expr md} {α' : Expr md'} (h
 
 /-- **The adapted minor's transport chain** (`_impl.rec`'s real-member minors) and
 its renaming, by its recursion over the packed positions. -/
-theorem RG.go (hP : P.All) {u ℓ : Level} {c : ACtor md} {c' : ACtor md'} (hcn : c'.nF = c.nF)
+theorem RG.go (hP : P.Pre) {u ℓ : Level} {c : ACtor md} {c' : ACtor md'} (hcn : c'.nF = c.nF)
     {fv : Nat → Expr md} {fv' : Nat → Expr md'} (hfv : ∀ i, RG P f (fv i) (fv' i)) {packed : List Nat}
     {ma : Nat → List (Expr md) → Expr md} {ma' : Nat → List (Expr md') → Expr md'}
     (hma : ∀ o l l', RGL P f l l' → RG P f (ma o l) (ma' o l'))
@@ -506,7 +506,7 @@ theorem MRel.map {α : Type} {l : List α} {g : α → Nat × Expr md × Expr md
   exact MRel.filterMap rfl h
 
 /-- **The iota statement's transport chain** (a real member's `goT`) and its renaming. -/
-theorem RG.goT (hP : P.All) {u ℓ : Level} {M n : Nat} {mems : List (Mem md)} {mems' : List (Mem md')}
+theorem RG.goT (hP : P.Pre) {u ℓ : Level} {M n : Nat} {mems : List (Mem md)} {mems' : List (Mem md')}
     (hmj : ∀ t, (mems'.getD t default).j = (mems.getD t default).j)
     {fam : Family md} (hfam : fam.Good P)
     {rn : Expr md → Expr md} {rn' : Expr md' → Expr md'} (hrn : ∀ e e', RG P f e e' → RG P f (rn e) (rn' e'))
@@ -548,7 +548,7 @@ theorem RG.goT (hP : P.All) {u ℓ : Level} {M n : Nat} {mems : List (Mem md)} {
         fun _ => hpk _ _ _ _ (RG.lift (hu o' i) _ _)) fun _ => RG.lift (RG.bvar _) _ _
 
 /-- **The iota proof's nested generalisations** and their renaming. -/
-theorem RG.nest (hP : P.All) {u ℓ : Level} {nF : Nat} {uOf eOf cOf : Nat → Nat → Expr md}
+theorem RG.nest (hP : P.Pre) {u ℓ : Level} {nF : Nat} {uOf eOf cOf : Nat → Nat → Expr md}
     {uOf' eOf' cOf' : Nat → Nat → Expr md'} (hu : ∀ o i, RG P f (uOf o i) (uOf' o i))
     (he : ∀ o i, RG P f (eOf o i) (eOf' o i)) (hc : ∀ o i, RG P f (cOf o i) (cOf' o i))
     {st : Nat → (Nat → Option (Expr md)) → (Nat → Option (Expr md)) → Expr md × Expr md × Expr md}
@@ -685,7 +685,7 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | assumption
   | exact And.left ‹_›
   | (with_reducible exact goodRecD ‹_› _)
-  | exact ‹KeyScope.All _› _
+  | exact ‹KeyScope.Pre _› _ (by decide)
   | (simp only [Mem.mapKeys_tag, Mem.mapKeys_real?, Mem.mapKeys_j, Mem.mapKeys_nIdx, Mem.mapKeys_lv,
       Mem.mapKeys_pins_length, ACtor.mapKeys_mem, ACtor.mapKeys_kinds, ACtor.mapKeys_nF,
       ACtor.mapKeys_clv, ACtor.mapKeys_J, ACtor.mapKeys_jIn, ACtor.mapKeys_cname, Group.mapKeys_tags,
@@ -789,7 +789,7 @@ theorem push_thm_map {o : Array (Declaration md)} {nm : Key md} {nm' : Key md'} 
 -- generator, each emitted term descended by `rg`); genMutual's 4000000 ran out at the
 -- last step (the projection artifacts). It bounds elaboration only.
 set_option maxHeartbeats 10000000 in
-theorem genNested_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
+theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     (hctx : CtxAgree f P ctx ctx') {b : BlockRec md} (hb : b.Good P) :
     ExRel (fun ds ds' => ds' = ds.map (Declaration.mapKeys f))
       (genNested ctx b) (genNested ctx' (b.mapKeys f)) := by
@@ -995,7 +995,7 @@ theorem genNested_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
     have hcI0G : (cb.types.getD 0 default).Good P := by
       rw [List.getD_eq_getElem?_getD]
       cases h : cb.types[0]? with
-      | none => exact ⟨⟨hP _, trivial⟩, (fun _ h => nomatch h)⟩
+      | none => exact ⟨⟨hP _ (by decide), trivial⟩, (fun _ h => nomatch h)⟩
       | some t => exact hcbG.1 t (List.mem_of_getElem? h)
     refine ExRel.bind (S := fun (s : List Nat × List (Key md)) s' =>
         s'.1 = s.1 ∧ s'.2 = s.2.map (Key.map f) ∧ ∀ k ∈ s.2, k.Good P)
@@ -1185,7 +1185,7 @@ theorem genNested_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
         intro t
         rw [List.getD_eq_getElem?_getD]
         cases h : mems[t]? with
-        | none => exact ⟨hP _, (fun _ h => nomatch h), (fun _ h => nomatch h)⟩
+        | none => exact ⟨hP _ (by decide), (fun _ h => nomatch h), (fun _ h => nomatch h)⟩
         | some m => exact hmG m (List.mem_of_getElem? h)
       have hcsn : cs.length = r0.nm := by simpa using ‹(cs.length == r0.nm) = true›
       -- 1. the tag block
@@ -1385,7 +1385,7 @@ theorem genNested_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
         intro k
         rw [List.getD_eq_getElem?_getD]
         cases h : recs[k]? with
-        | none => exact hP _
+        | none => exact hP _ (by decide)
         | some r => exact (hrc r (List.mem_of_getElem? h)).1.1
       refine ExRel.bind (S := fun (o : Array (Declaration md)) o' => o' = o.map (Declaration.mapKeys f))
         (ExRel.forIn_list (ListRel.of_map hmG) rfl fun mem mem' o o' hmem ho => ?_) fun o o' ho => ?_
@@ -1560,8 +1560,12 @@ theorem genNested_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
 /-- **The generated records commute with the renaming** (parametricity, both rungs):
 at a context agreeing with its renaming on the good keys (`CtxAgree`, which the
 reader state built from the stream supplies), a good block's generation and the
-renamed block's either both fail or give the renamed records. -/
-theorem generate_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
+renamed block's either both fail or give the renamed records. The scope needs only
+the prelude's roles (`P.Pre`): the roles the generator builds itself are `Eq`'s,
+`PUnit`'s and a `Nat` literal's type (a string literal's type comes from the
+literal's own goodness, `P.Str`), so a stream's other roles need not be committed
+yet. -/
+theorem generate_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     (hctx : CtxAgree f P ctx ctx') {b : BlockRec md} (hb : b.Good P) :
     ExRel (fun ds ds' => ds' = ds.map (Declaration.mapKeys f))
       (generate ctx b) (generate ctx' (b.mapKeys f)) := by
@@ -1572,7 +1576,7 @@ theorem generate_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ct
 
 /-- `generate_mapKeys` as the runs' results: the renamed block's records are the
 renamed records, or both runs fail. -/
-theorem generate_toOption_mapKeys (hP : P.All) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
+theorem generate_toOption_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     (hctx : CtxAgree f P ctx ctx') {b : BlockRec md} (hb : b.Good P) :
     (generate ctx' (b.mapKeys f)).toOption = (generate ctx b).toOption.map (List.map (Declaration.mapKeys f)) :=
   ExRel.toOption_eq (generate_mapKeys hP hf hctx hb)
