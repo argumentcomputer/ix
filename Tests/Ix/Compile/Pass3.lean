@@ -82,11 +82,9 @@ address: the donor's `passSameAsSurgery` (a9cf3607), measured on 2026-10-07
 at M6R slice 6, where the `bytes` rows are the legacy call-site surgery's
 own addresses (its output compared at `e020a72e`) and the Rust compiler gave
 the same. Their units (`Tests/Ix/Compile/Pass/{O1Perm,O2Split,O4BRecOn}.lean`)
-and the passes that produce these forms come with batch 5 (TT-07: `O1Perm`
-stays an input and its two pins must hold under O6, the byte-neutrality
-check of O1's deletion); this tree's compile formats differ from the
-donor's, so batch 5 confirms each pin or re-records it with its reason.
-Until then the units are listed in `pendingPinUnits`. -/
+and the passes that produce these forms came with CQ5.1 (TT-07): every pin
+holds as recorded (2026-10-21, `pass3` on the CQ5.1 tree), including
+`O1Perm`'s two under O6, the byte-neutrality check of O1's deletion. -/
 def canonicalFormPins : List FormPin := [
   { unit := "O1Perm", constant := "PassO1.Src.Even.viaRec", kind := .bytes
     address := "731dbdffd73112be86ffd51ad4eb6993b56e022ea481b704b31548673bec5f82" },
@@ -106,7 +104,7 @@ def canonicalFormPins : List FormPin := [
 /-- The units of `canonicalFormPins` that are not units of the suite yet
 (batch 5). A pin's unit must be a unit of the suite or listed here, and a
 listed unit must not be one. -/
-def pendingPinUnits : List String := ["O1Perm", "O2Split", "O4BRecOn"]
+def pendingPinUnits : List String := []
 
 /-- The pins of one unit: each constant at its pinned address. Returns the
 problems and the number of pins checked. -/
@@ -123,6 +121,93 @@ def pinProblems (u : CUnit) (out : _root_.Ix.CompileM.LeanPipelineOut) : Array S
       if toString a != pin.address then
         problems := problems.push s!"{u.name}: {pin.constant}: address {a}, pinned {pin.address}"
   return (problems, n)
+
+
+/-! ## The definitional passes' fixtures (CQ5.1, TT-07, `Tests/Ix/Compile/Pass/`)
+
+From the donor's `pass3` suite (`jcb/ix-certify-compile` `a9cf3607`):
+`O1Perm` stays an input (O1 is never ported; O6 builds its terms), the other
+units exercise O2–O6. -/
+
+/-- Pairs with one address: the pass made the permuted presentation's term
+the canonical presentation's. -/
+def passTwins : List (String × String × String) := [
+  ("O1Perm", "PassO1.Src.Even.viaRec", "PassO1.Can.Even.viaRec"),
+  ("O1Perm", "PassO1.Src.Odd.viaRecOn", "PassO1.Can.Odd.viaRecOn"),
+  ("O1Perm", "PassO1.Src.viaRec_two", "PassO1.Can.viaRec_two"),
+  ("O1Perm", "PassO1.Src.viaRecOn_three", "PassO1.Can.viaRecOn_three"),
+  ("O3Cases", "PassO3.Src.Even.isZero", "PassO3.Can.Even.isZero"),
+  ("O3Cases", "PassO3.Src.SA.isStop", "PassO3.Can.SA.isStop"),
+  ("O3Cases", "PassO3.Src.SB.isLeaf", "PassO3.Can.SB.isLeaf"),
+  ("O4BRecOn", "PassO4.Src.Odd.toNat", "PassO4.Can.Odd.toNat"),
+  ("O4BRecOn", "PassO4.Src.Even.toNat", "PassO4.Can.Even.toNat"),
+  ("O4BRecOn", "PassO4.Src.three", "PassO4.Can.three"),
+  ("O4BRecOn", "PassO4.Src.SB.depth", "PassO4.Can.SB.depth"),
+  ("O4BRecOn", "PassO4.Src.depth_two", "PassO4.Can.depth_two")]
+
+/-- Pass firing: the constant references (or does not reference) the named
+constant. `(unit, constant, referenced name, expected)`. -/
+def passRefs : List (String × String × String × Bool) := [
+  -- O6 on O1's input: `recOn` goes to the Ix `recOn`; the collapsed block keeps the paired image
+  ("O1Perm", "PassO1.Src.Odd.viaRecOn", "PassO1.Src.Odd._ix.recOn", true),
+  ("O1Perm", "PassO1.Col.A.viaRec", "PProd", true),
+  -- O3: the Ix `casesOn` of the class (permuted, split); declines on a collapsed block
+  ("O3Cases", "PassO3.Src.Even.isZero", "PassO3.Src.Even._ix.casesOn", true),
+  ("O3Cases", "PassO3.Src.SA.isStop", "PassO3.Src.SA._ix.casesOn", true),
+  ("O3Cases", "PassO3.Src.SB.isLeaf", "PassO3.Src.SB._ix.casesOn", true),
+  ("O3Cases", "PassO3.Col.A.isNil", "PassO3.Col.A._ix.casesOn", false),
+  -- O4: the Ix `brecOn`/`below` (permuted pair; the split block's lower component);
+  -- declines on the upper component (cross field)
+  ("O4BRecOn", "PassO4.Src.Odd.toNat", "PassO4.Src.Odd._ix.brecOn", true),
+  ("O4BRecOn", "PassO4.Src.Even.toNat", "PassO4.Src.Even._ix.brecOn", true),
+  ("O4BRecOn", "PassO4.Src.SB.depth", "PassO4.Src.SB._ix.brecOn", true),
+  ("O4BRecOn", "PassO4.Src.SA.size", "PassO4.Src.SA._ix.brecOn", false),
+  -- O2/O6: the component recursors; the bare occurrence keeps the image constant
+  ("O2Split", "PassO2.SA.viaRec", "PassO2.SA._ix.rec", true),
+  ("O2Split", "PassO2.SA.viaRec", "PassO2.SB._ix.rec", true),
+  ("O2Split", "PassO2.SB.viaRec", "PassO2.SB._ix.rec", true),
+  ("O2Split", "PassO2.SA.recBare", "PassO2.SA.rec", true),
+  -- O5: the Ix auxiliaries at universe 0
+  ("O5PropSplit", "PassO5.P.toQ", "PassO5.P._ix.casesOn", true),
+  ("O5PropSplit", "PassO5.Q.elim", "PassO5.Q._ix.rec", true),
+  ("O5PropSplit", "PassO5.P.viaRec", "PassO5.P._ix.rec", true)]
+
+/-- The references of a compiled constant: its own, or its block's for a
+projection. -/
+def constRefs (env : Ixon.Env) (addr : Address) : Option (Array Address) := do
+  let c ← env.getConst? addr
+  match c.info with
+  | .dPrj p | .rPrj p | .iPrj p => pure (← env.getConst? p.block).refs
+  | .cPrj p => pure (← env.getConst? p.block).refs
+  | _ => pure c.refs
+
+/-- The per-pass checks of one fixture unit: the twin pairs and the firing
+references. Returns the problems and the number of each checked. -/
+def passChecks (u : CUnit) (out : _root_.Ix.CompileM.LeanPipelineOut) :
+    Array String × Nat × Nat := Id.run do
+  let mut problems : Array String := #[]
+  let addr := fun (s : String) => out.env.getAddr? (ixN (parseName s))
+  let mut nt := 0
+  for (unit, a, b) in passTwins do
+    if unit != u.name then continue
+    nt := nt + 1
+    match addr a, addr b with
+    | some x, some y =>
+      if x != y then problems := problems.push s!"{u.name}: twins differ: {a} / {b}"
+    | _, _ => problems := problems.push s!"{u.name}: twin missing: {a} / {b}"
+  let names : Std.HashMap Address (Array String) := out.env.named.fold (init := {}) fun m n nd =>
+    m.insert nd.addr ((m.getD nd.addr #[]).push n.pretty)
+  let mut nr := 0
+  for (unit, c, r, want) in passRefs do
+    if unit != u.name then continue
+    nr := nr + 1
+    let some ad := addr c | problems := problems.push s!"{u.name}: {c} missing"; continue
+    let some refs := constRefs out.env ad
+      | problems := problems.push s!"{u.name}: {c} has no constant"; continue
+    let has := refs.any fun x => (names.getD x #[]).contains r
+    if has != want then
+      problems := problems.push s!"{u.name}: {c} {if want then "does not reference" else "references"} {r}"
+  return (problems, nt, nr)
 
 /-! ## One unit -/
 
@@ -148,6 +233,10 @@ named entries: {idr.inputNames} input constants, {idr.reserved} reserved"
   let (pins, nPins) := pinProblems u out
   problems := problems ++ pins
   if nPins > 0 then lines := lines.push s!"  pins: {nPins} canonical-form pin(s)"
+  -- the definitional passes' twins and firing references (CQ5.1)
+  let (pp, nt, nr) := passChecks u out
+  problems := problems ++ pp
+  if nt + nr > 0 then lines := lines.push s!"  passes: {nt} twin pairs at one address, {nr} firing checks"
   -- block failures against the record
   let emit := (← IO.getEnv "PASS3_EMIT_FAILURES").isSome
   let (fps, fls) := failureProblems u out Pass3Kernels.compileFailures Pass3Kernels.imageRefusals emit

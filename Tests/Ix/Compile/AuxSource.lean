@@ -2,12 +2,14 @@ module
 
 public import LSpec
 public import Ix.AuxSource
+public import Ix.Compile.Pass.Opt.O2
 
 /-!
 Unit tests for `Ix.AuxSource` (the source side of a block's auxiliaries;
 Rust `crates/compile/src/compile/aux_source.rs`): the application telescopes
-and the temporary-variable supply of the split-minor helpers. O2's and
-O11a's end-to-end captures join these with their passes (CQ5.1, CQ5.3).
+and the temporary-variable supply of the split-minor helpers, with O2's
+minor adaptation (`Ix.Compile.Pass.Opt.adaptMinor`; O11a's joins with
+CQ5.3).
 Ported from the donor's `Tests/Ix/AuxGen/AuxSourceTests.lean`
 (`jcb/ix-certify-compile` `a9cf3607`), with names compared structurally
 (`Ix.AuxGen.sameStructure`).
@@ -44,7 +46,6 @@ def telescopeTests : TestSeq :=
       let app := Ixon.Expr.app (Ixon.Expr.app f a1) a2
       let (head, args) := collectIxonTelescope app
       head == f && args == #[a1, a2] : Bool))
-
 
 /-- Full raw-tree comparison, not a cached-hash assertion. -/
 def rawSame (a b : Expr) : Bool := reprStr a == reprStr b
@@ -103,14 +104,58 @@ def allFreeChildren : Bool := Id.run do
     let ((chosen, _), _) := s.fresh "field" i
     sameStructure chosen (Name.mkNat names[i]! 0)
 
-
 def smallInd (name : Name) (ctors : Array Name) (np : Nat := 0) : Ix.InductiveVal :=
   { cnst := { name, levelParams := #[], type := sort0 }, numParams := np, numIndices := 0,
     all := #[nm "A", nm "B"], ctors, numNested := 0, isRec := true,
     isUnsafe := false, isReflexive := false }
 
+/-- A minor whose field (plain or higher-order) is recursive into `B`, the
+other component of the split block `{A, B}`. -/
+def minorFixture (higher : Bool) : Environment × Ix.RecursorVal := Id.run do
+  let a := nm "A"
+  let b := nm "B"
+  let ctor := nm "A.mk"
+  let target := Expr.mkConst b #[]
+  let fieldTy := if higher then Expr.mkForallE (nm "x") sort0 target .default else target
+  let minorTy := Expr.mkForallE (nm "field") fieldTy
+    (Expr.mkForallE (nm "ih") sort0 sort0 .default) .default
+  let rv : Ix.RecursorVal := {
+    cnst := {
+      name := nm "A.rec", levelParams := #[],
+      type := Expr.mkForallE (nm "minor") minorTy sort0 .default },
+    all := #[a, b], numParams := 0, numIndices := 0, numMotives := 0, numMinors := 1,
+    rules := #[], k := false, isUnsafe := false }
+  let cv : Ix.ConstructorVal := {
+    cnst := { name := ctor, levelParams := #[], type := sort0 },
+    induct := a, cidx := 0, numParams := 0, numFields := 1, isUnsafe := false }
+  let consts := ({} : Std.HashMap Name ConstantInfo).insert a (.inductInfo (smallInd a #[ctor]))
+  let consts := consts.insert b (.inductInfo (smallInd b #[]))
+  let consts := consts.insert ctor (.ctorInfo cv)
+  let env : Environment := { consts }
+  return (env, rv)
 
+def actualO2Capture (higher collision : Bool) : Bool := Id.run do
+  let (env, rv) := minorFixture higher
+  let pfx := if higher then "split_xs" else "split_field"
+  let m := Expr.mkFVar (freshFVar (if collision then pfx else "caller") 0).1
+  let recur := fun (o : Ix.Compile.Pass.Opt.Occ) =>
+    some (mkAppN (Expr.mkConst o.head o.us) o.args)
+  let some (some actual) := Ix.Compile.Pass.Opt.adaptMinor recur env rv
+    #[true, false] #[] #[] #[] #[m] 0 | return false
+  let target := Expr.mkConst (nm "B") #[]
+  let fieldTy := if higher then Expr.mkForallE (nm "x") sort0 target .default else target
+  let call := if higher then
+      Expr.mkLam (nm "x") sort0
+        (mkAppN (Expr.mkConst (Name.mkStr (nm "B") "rec") #[])
+          #[m, Expr.mkApp (Expr.mkBVar 1) (Expr.mkBVar 0)]) .default
+    else mkAppN (Expr.mkConst (Name.mkStr (nm "B") "rec") #[]) #[m, Expr.mkBVar 0]
+  let expected := Expr.mkLam (nm "field") fieldTy
+    (mkAppN m #[Expr.mkBVar 0, call]) .default
+  return rawSame actual expected &&
+    (Ix.Compile.Pass.Opt.adaptMinor (fun _ => none) env rv
+      #[true, false] #[] #[] #[] #[m] 0).isNone
 
+/-- Raw helper fixture, not an accepted-source/kernel-validity claim. -/
 def signatureCapture (collision : Bool) : Bool := Id.run do
   let free := Expr.mkFVar (freshFVar (if collision then "aux_sig_idx" else "caller") 0).1
   let pair := Expr.mkConst (nm "pair") #[]
@@ -130,7 +175,6 @@ def signatureCapture (collision : Bool) : Bool := Id.run do
   return sigs.size == 1 && sigs[0]!.specs.size == 1 &&
     rawSame sigs[0]!.specs[0]! (mkAppN pair #[free, Expr.mkFVar chosen])
 
-
 def captureTests : TestSeq :=
   test "split_field: preserve caller FVar and dependent domain through abstraction" (capturePeel "split_field" true)
   ++ test "split_field: ordinary open-input neighbour retains preferred names" (capturePeel "split_field" false)
@@ -145,6 +189,10 @@ def captureTests : TestSeq :=
   ++ test "fallback skips protected suffixes and overlapping stride bands" suffixAndStride
   ++ test "free-name collection visits all binder/let/projection/metadata children" allFreeChildren
   ++ test "peeler still declines a missing forall" ((peelBinders sort0 1 "split_field" 0).isNone)
+  ++ test "O2 field capture is avoided" (actualO2Capture false true)
+  ++ test "O2 field ordinary open neighbour" (actualO2Capture false false)
+  ++ test "O2 higher-order recursive field preserves caller FVar" (actualO2Capture true true)
+  ++ test "O2 higher-order ordinary open neighbour" (actualO2Capture true false)
   ++ test "signature indices preserve caller FVars" (signatureCapture true)
   ++ test "signature ordinary open neighbour retains preferred name" (signatureCapture false)
 

@@ -79,8 +79,12 @@ def protoFiles : List String :=
   ["C1Perm", "C2Split", "C3PropSplit", "C4Evap", "C5Collapse", "C6NestedCollapse", "C7IndPred",
    "C8Collapse3", "C9Params"].map fun s => s!"Tests/Ix/Compile/Image/{s}.lean"
 
+/-- The definitional passes' fixtures (CQ5.1, TT-07). -/
+def passFiles : List String :=
+  ["O1Perm", "O2Split", "O3Cases", "O4BRecOn", "O5PropSplit"].map fun s => s!"Tests/Ix/Compile/Pass/{s}.lean"
+
 /-- Every fixture file of the families loaded from files. -/
-def fixtureFiles : List String := auxCertFiles ++ protoFiles
+def fixtureFiles : List String := auxCertFiles ++ protoFiles ++ passFiles
 
 /-- The twins unit: every twin family's fixture constants and their closure,
 in the `TwinsFixtures` environment. -/
