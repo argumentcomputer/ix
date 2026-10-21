@@ -35,7 +35,7 @@ public import Ix.DecompileM
 public import Ix.CompileM
 public import Ix.AuxGen.Types
 public import Ix.AuxGen.Nested
-public import Ix.CallSiteSurgery
+public import Ix.AuxSource
 public section
 
 namespace Ix.DecompileM

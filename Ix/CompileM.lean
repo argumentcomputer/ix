@@ -30,7 +30,7 @@ public import Ix.SOrder
 public import Ix.Compile.Canon.Classes
 public import Ix.Compile.ExactKey
 public import Ix.Compile.Pass.ImageView
-public import Ix.CallSiteSurgery
+public import Ix.AuxSource
 public import Ix.CanonM
 
 namespace Ix.CompileM

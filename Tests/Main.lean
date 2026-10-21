@@ -60,6 +60,7 @@ import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.Oracle
 import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.SourceIdentity
+import Tests.Ix.Compile.AuxSource
 import Tests.Ix.Compile.SourceFamily
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
@@ -186,6 +187,8 @@ def registry : List Entry := [
     ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.Components.suite),
   -- source-body recognition of casesOn/recOn: the comparison controls (Ix.AuxGen.SourceIdentity)
   .suite "aux-source-identity-unit" .primary Tests.Ix.Compile.SourceIdentity.suite,
+  -- `Ix.AuxSource`: telescopes and the split-minor helpers' temporary-variable supply (CQ5.1)
+  .suite "aux-source-unit" .primary Tests.Compile.AuxSource.suite,
   -- the scan, and the compile's named refusal of ungrounded input (Lean and Rust)
   .suite "ground-unit" .primary (Tests.Ground.suite ++ Tests.Ix.Compile.GroundRefusal.suite),
   -- expression wire indices that do not fit a UInt64 are refused, never wrapped

@@ -22,7 +22,7 @@ public import Ix.Ixon
 public import Ix.DecompileM
 public import Ix.CompileM
 public import Ix.AuxGen.Nested
-public import Ix.CallSiteSurgery
+public import Ix.AuxSource
 public import Ix.AuxGen.Kernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.CasesOn

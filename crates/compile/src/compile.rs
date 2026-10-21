@@ -983,19 +983,6 @@ pub fn collect_mut_const_exprs<'a>(
 // Expression compilation
 // ===========================================================================
 
-/// Collect a Lean App telescope: `(head, [a1, ..., aN])`, the arguments in
-/// application order.
-fn collect_lean_telescope(e: &LeanExpr) -> (&LeanExpr, Vec<&LeanExpr>) {
-  let mut args: Vec<&LeanExpr> = Vec::new();
-  let mut cur = e;
-  while let ExprData::App(f, a, _) = cur.as_data() {
-    args.push(a);
-    cur = f;
-  }
-  args.reverse();
-  (cur, args)
-}
-
 /// Intern an address into the block's refs table, returning its index. While
 /// compiling a Pass 3 decompile record, an address outside the primary table
 /// goes to the constant's extension table (`meta_refs`, virtual index
@@ -1234,7 +1221,7 @@ pub fn compile_expr(
             // (right to left), then Compile(head). This compiles the same
             // result as the recursive one-App-at-a-time approach, but avoids
             // re-entering the App branch for inner nodes.
-            let (head_expr, args) = collect_lean_telescope(&e);
+            let (head_expr, args) = aux_source::collect_lean_telescope(&e);
             for &arg in args.iter().rev() {
               stack.push(Frame::BuildApp);
               stack.push(Frame::Compile(arg.clone()));
@@ -4064,6 +4051,7 @@ fn compile_mutual(
 
 mod admission;
 pub mod aux_gen;
+pub mod aux_source;
 pub mod block_txn;
 mod env;
 pub mod expr_key;

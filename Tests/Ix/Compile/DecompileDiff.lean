@@ -29,7 +29,7 @@ import Ix.Common
 import Ix.CompileM
 import Ix.DecompileM
 import Ix.DecompileDriver
-import Ix.CallSiteSurgery
+import Ix.AuxSource
 import Lean
 import LSpec
 import Tests.Ix.Compile.ValidateAux
