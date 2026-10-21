@@ -110,7 +110,7 @@ serialize the grounded subset)"
 
     if p.hasFlag "changed-set" || (p.flag? "changed-set-out").isSome then
       let tC ← IO.monoMsNow
-      let cs := Ix.Compile.ChangedSet.ofCompile out.cenv.env out.env
+      let cs := Ix.Compile.ChangedSet.ofCompile out.cenv.env out.blocks out.cenv.auxReport.table out.env
       IO.println s!"[compile-lean] changed set: {cs.counts.summary} \
 ({(← IO.monoMsNow) - tC}ms)"
       if let some f := p.flag? "changed-set-out" then

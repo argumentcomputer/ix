@@ -1836,6 +1836,9 @@ structure LeanPipelineOut where
   /-- What the driver's Source service said of the inductive blocks (AuxGen
       M1; `compileEnvFoldWithSource`). -/
   source : Ix.AuxGen.Source.Report := {}
+  /-- The condensation the driver compiled (the declaration groups and their
+      references), for the changed set (`Ix.Compile.ChangedSet.ofCompile`). -/
+  blocks : Ix.CondensedBlocks := default
 
 /-- Run the full pure-Lean compile pipeline over a constant list.
 
@@ -2074,7 +2077,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         blockCount := condensed.blocks.size
         digests
         annotated
-        source }
+        source
+        blocks := condensed }
 
 /-- Explicit frontend boundary: resolve occurrence contracts before
 canonicalization. Resources are validated by the caller's post-step

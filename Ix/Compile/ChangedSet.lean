@@ -2,9 +2,11 @@
 
 ## Contract
 Input: the compiler's input environment `env` (`Ix.CanonM`'s output, the
-statements' `env`) and the artifact `ixe` it compiled to
-(`Ix.Cert.compileReport env = .ok (ixe, failures)`, or the IO pipeline's
-`LeanPipelineOut.env`). Output (`ofCompile`): the input constants whose
+statements' `env`), the compile's condensation `condensed` (its declaration
+groups and their references: the statements' `Ix.Cert.compileBlocks env`, or
+the IO pipeline's `LeanPipelineOut.blocks`) and the artifact `ixe` it
+compiled to (`Ix.Cert.compileReport env = .ok (ixe, failures)`, or the IO
+pipeline's `LeanPipelineOut.env`). Output (`ofCompile`): the input constants whose
 compiled form the compiler made something other than a renaming of their
 source, each with a typed cause (`Cause`), and the changed components with
 theirs (`BlockCause`). Everything outside the set compiles as a pure renaming
@@ -21,8 +23,14 @@ What it reads, and nothing else:
   `ctx`: the members of the component it was compiled in), for a definition
   component stored as one constant (one class, no `Muts` record);
 * Lean's blocks (`InductiveVal.all`) and constants of `env`;
+* the condensation `condensed`, with the clique table and the encoding roots
+  that Pass 3's driver computes from it and the input before the first wave
+  (`cliqueTables`, the driver's own `scheduleCliques`);
 * `Named.original` of `ixe`'s entries: the address of the compile of Lean's
-  own form of a regenerated auxiliary (the promotion route).
+  own form of a regenerated auxiliary (the promotion route);
+* the aux table `table` (`Ix.AuxGen.AuxTable`): the driver's verdict, on
+  bytes, whether a regenerated auxiliary's record is the compile of Lean's own
+  form (`identical`).
 
 The causes:
 * `member`: a member of a changed component, with the component's
@@ -48,11 +56,20 @@ The causes:
   (which Pass 3 publishes): a custom wrapper that keeps its own form is then in
   the set without need, and the set stays clear of AuxGen's generators, which
   the recognizers run and which are `partial`;
-* `caller`: an input constant that references an image head and is not one:
-  its call sites are rewritten (by Pass 3's `Translate`; before it, by the
-  call-site surgery of the planned heads);
-* `regenerated`: a regenerated auxiliary whose address is not the address of
-  the compile of Lean's own form (`Named.original ≠ addr`), whatever its block
+* `caller`: every member of a condensation block whose references
+  (`condensed.blockRefs`) hold an image head, and that is not one itself
+  (`callerStage`): its block is rewritten by Pass 3's `Translate` (hook 2
+  tests exactly these references); and every member of a condensation
+  block that references one of Lean's encoding constants of a clique
+  (`cliqueStage`): the clique step refuses it when the clique is transported;
+* `clique`: a member of an input clique, or an equation lemma carried with
+  one (the clique table, `cliqueStage`): the clique step may transport its
+  value;
+* `regenerated`: a regenerated auxiliary (an input name with a
+  `Named.original`) whose published record is not the compile of Lean's own
+  form, as the driver decided on bytes (the aux table `table`,
+  `Ix.AuxGen.AuxTable.identical`; a name without a row counts as not
+  identical), whatever its block
   (ROUTE-A's `aux` kind, B9). It makes the set sound on every input without a
   proof that Pass 2 regenerates Lean's form on unchanged blocks (measured, not
   proved: Init+Std has none).
@@ -69,7 +86,8 @@ permutes; Pass 3 keeps those names, so the caller becomes a renaming.)
 
 The function is the same before and after Pass 3 is wired: it reads the
 canonical blocks from the artifact and the heads and callers from the input,
-never a Pass 3 table.
+never a Pass 3 table of the fold (the clique tables are the driver's function
+of the input and its condensation, computed again here).
 
 ## Shape (for the statements)
 Pure and total: folds over the artifact's and the input's maps; no name is
@@ -82,6 +100,8 @@ public import Ix.Ixon
 public import Ix.Compile.Canon.Graph
 public import Ix.Compile.Pass.Names
 public import Ix.Compile.ChangedSet.Block
+public import Ix.Compile.Pass.Clique.Table
+public import Ix.AuxGen.Report
 @[expose] public section
 
 namespace Ix.Compile.ChangedSet
@@ -96,9 +116,12 @@ inductive Cause where
   | imageHead
   /-- References an image head, and is not one: its call sites are rewritten. -/
   | caller
-  /-- A regenerated auxiliary whose address is not the compile of Lean's own
-  form (`Named.original ≠ addr`). -/
+  /-- A regenerated auxiliary whose published record is not the compile of
+  Lean's own form (the aux table's verdict, `AuxTable.identical`). -/
   | regenerated
+  /-- A member of an input clique, or an equation lemma carried with one
+  (Pass 3's clique table, `cliqueStage`): its value may be transported. -/
+  | clique
   deriving BEq, DecidableEq, Repr, Inhabited, Hashable
 
 def Cause.tag : Cause → String
@@ -106,12 +129,14 @@ def Cause.tag : Cause → String
   | .imageHead => "image-head"
   | .caller => "caller"
   | .regenerated => "regenerated"
+  | .clique => "clique"
 
 def Cause.index : Cause → Nat
   | .member => 0
   | .imageHead => 1
   | .caller => 2
   | .regenerated => 3
+  | .clique => 4
 
 /-- The kind of a component. Source groups an inductive block by Lean's `all`
 (with its constructors and recursors) and definitions by component. -/
@@ -147,8 +172,11 @@ structure Entry where
   name : Name
   cause : Cause
   /-- `member`: the component's `Block.first`; `imageHead`: the first member of
-  the Lean block; `caller`: the least image head it references (by name hash);
-  `regenerated`: none. -/
+  the Lean block; `caller`: the least image head its block's references hold (by
+  name hash),
+  or, for a member of a block that references a clique's encoding
+  (`cliqueStage`), the clique's first member; `clique`: the clique's first
+  member; `regenerated`: none. -/
   ref : Option Name := none
   deriving Inhabited
 
@@ -159,7 +187,9 @@ structure ChangedSet where
   /-- The changed components, by the hash of `Block.first`, then of the first
   representative. -/
   blocks : Array Block := #[]
-  /-- The entries, by name hash, then cause. A name has one entry per cause. -/
+  /-- The entries, by name hash, then cause, then reference. A name has one
+  entry per cause and reference (a `caller` can have two: an image head's and
+  a clique's). -/
   entries : Array Entry := #[]
   /-- The names of `entries`. -/
   names : Std.HashSet Name := {}
@@ -284,9 +314,78 @@ def sortEntries (es : Array Entry) : Array Entry :=
     | some p => if p.beq e then acc else acc.push e
     | none => acc.push e
 
-/-- **The changed set** of the compile of `env` to `ixe` (see the module
-docstring). -/
-def ofCompile (env : Ix.Environment) (ixe : Ixon.Env) : ChangedSet := Id.run do
+/-! ## The clique stage (CQ5.2) -/
+
+/-- The clique table and the encoding roots of the input, exactly as the
+driver computes them before the first wave from the compile's condensation
+`condensed` (`Ix.Compile.Pass.Clique.scheduleCliques` over the input's
+lookups): the driver installs them as `CompileEnv.p3Cliques` and
+`p3CliqueRoots`, and nothing changes them during the fold. -/
+def cliqueTables (env : Ix.Environment) (condensed : Ix.CondensedBlocks) :
+    Std.HashMap Name (Array Name × Array Name) × Std.HashMap Name (Array Name) :=
+  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  (Ix.Compile.Pass.Clique.scheduleCliques view condensed).2
+
+/-- **The clique stage**: the entries of Pass 3's clique step, from the
+compile's condensation `condensed` and the clique tables the driver installs
+(`cliqueTables`), appended to `entries`:
+* `clique`: every name of the clique table (each member of an input clique
+  and each equation lemma carried with one), with the clique's first member;
+* `caller`: every member of a condensation block whose references
+  (`condensed.blockRefs`, the map the driver installs as
+  `CompileEnv.p3BlockRefs`) hold one of Lean's encoding constants of a clique
+  (`Ix.Compile.Pass.Clique.encodingOwner?` over the encoding roots), with that
+  clique's first member. The referencing block's members are entered, not the
+  encoding constant, so the block is covered whatever that constant is.
+
+So a block none of whose members is in the set has no member in the clique
+table and no reference to a clique's encoding: the clique step is the
+identity on it (`Ix.Compile.Pass.cliqueInert`). The stage reads the input
+and its condensation only, never a plan: every clique of the table is
+entered, with its members, carried lemmas and callers, whatever its outcome.
+So the stage over-approximates the clique step, soundly: a clique that keeps
+Lean's form (structural or `partial_fixpoint`, decision (ii); a plan that
+keeps it; a well-founded plan whose rows do not apply) still has its
+`clique` and `caller` entries. Being in the clique table does not mean being
+transported. -/
+def cliqueStage (env : Ix.Environment) (condensed : Ix.CondensedBlocks)
+    (entries : Array Entry) : Array Entry := Id.run do
+  let tables := cliqueTables env condensed
+  let mut entries := entries
+  for (n, cl) in tables.1 do
+    entries := entries.push { name := n, cause := .clique, ref := cl.1[0]? }
+  for (lo, mems) in condensed.blocks do
+    for r in condensed.blockRefs.getD lo {} do
+      if let some all := Ix.Compile.Pass.Clique.encodingOwner? tables.2 r then
+        for m in mems do
+          entries := entries.push { name := m, cause := .caller, ref := all[0]? }
+  return entries
+
+/-- **The callers' stage**: every member of a condensation block whose
+references (`condensed.blockRefs`, the map the driver installs as
+`CompileEnv.p3BlockRefs`, which hook 2 tests) hold an image head, and that is
+not one itself, with the least such head by name hash; appended to
+`entries`. A caller's call sites are rewritten (Pass 3's `Translate`); a
+sibling of a caller in its block compiles in the rewritten block, so it is in
+the set too (a sound over-approximation of the constants that reference a
+head). Reads the condensation and the heads only: no lookup, no term walk. -/
+def callerStage (condensed : Ix.CondensedBlocks) (heads : Std.HashSet Name)
+    (entries : Array Entry) : Array Entry := Id.run do
+  let mut entries := entries
+  if heads.isEmpty then return entries
+  for (rep, mems) in condensed.blocks do
+    if let some h := leastName (condensed.blockRefs.getD rep {}) heads.contains then
+      for m in mems do
+        if !heads.contains m then
+          entries := entries.push { name := m, cause := .caller, ref := some h }
+  return entries
+
+/-- **The changed set** of the compile of `env` to `ixe`, whose condensation
+(the compile's declaration groups and their references) is `condensed` and
+whose aux table (the driver's byte verdicts on the regenerated auxiliaries,
+`Ix.AuxGen.AuxTable`) is `table` (see the module docstring). -/
+def ofCompile (env : Ix.Environment) (condensed : Ix.CondensedBlocks) (table : Ix.AuxGen.AuxTable)
+    (ixe : Ixon.Env) : ChangedSet := Id.run do
   let blocks := changedBlocks env ixe
   let mut entries : Array Entry := #[]
   -- members of the changed components (with an inductive component's
@@ -308,15 +407,14 @@ def ofCompile (env : Ix.Environment) (ixe : Ixon.Env) : ChangedSet := Id.run do
       for h in Ix.Compile.Pass.imageKinds env.get? b.all do
         heads := heads.insert h
         entries := entries.push { name := h, cause := .imageHead, ref := b.first }
-  -- callers and regenerated auxiliaries, over the published names
+  -- the clique step's members, carried lemmas and callers (`cliqueStage`)
+  entries := cliqueStage env condensed entries
+  -- the callers of the heads, by block (`callerStage`)
+  entries := callerStage condensed heads entries
+  -- regenerated auxiliaries, over the published names
   for (n, named) in ixe.named do
-    if !heads.isEmpty && !heads.contains n then
-      if let some ci := env.get? n then
-        if let some h := leastName (Ix.Compile.Canon.refsConst ci) heads.contains then
-          entries := entries.push { name := n, cause := .caller, ref := some h }
-    if let some (orig, _) := named.original then
-      if orig != named.addr && (env.get? n).isSome then
-        entries := entries.push { name := n, cause := .regenerated }
+    if named.original.isSome && (env.get? n).isSome && !table.identical n then
+      entries := entries.push { name := n, cause := .regenerated }
   let sorted := sortEntries entries
   let names : Std.HashSet Name := sorted.foldl (init := {}) fun s e => s.insert e.name
   return { blocks, entries := sorted, names }
@@ -342,6 +440,7 @@ structure Counts where
   imageHead : Nat := 0
   caller : Nat := 0
   regenerated : Nat := 0
+  clique : Nat := 0
   deriving Inhabited, Repr, BEq
 
 def ChangedSet.counts (cs : ChangedSet) : Counts := Id.run do
@@ -367,6 +466,7 @@ def ChangedSet.counts (cs : ChangedSet) : Counts := Id.run do
       | .imageHead => { c with imageHead := c.imageHead + 1 }
       | .caller => { c with caller := c.caller + 1 }
       | .regenerated => { c with regenerated := c.regenerated + 1 }
+      | .clique => { c with clique := c.clique + 1 }
   return c
 
 /-- One line: the counts by cause. -/
@@ -376,7 +476,7 @@ def Counts.summary (c : Counts) : String :=
 nested moved {c.nestedMoved}, nested evaporated {c.nestedEvaporated}); \
 {c.definitions} definition components collapsed inside; \
 {c.names} names (member {c.member}, image head {c.imageHead}, caller {c.caller}, \
-regenerated {c.regenerated})"
+regenerated {c.regenerated}, clique {c.clique})"
 
 /-! ## The statement (H1)
 
@@ -410,7 +510,7 @@ def ChangedSetSound : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (preS : Ix.Kernel.Reader.Prelude .source) (dsS : Array (CDecl .source)),
     IsClosure env roots sub → compileReport env = .ok (ixe, failures) → NoFailure failures sub →
-    (Ix.Compile.ChangedSet.ofCompile env ixe).Avoids sub →
+    (Ix.Compile.ChangedSet.ofCompile env (compileBlocks env) (compileTable env) ixe).Avoids sub →
     Ix.LeanIngress.prepareSource preS sub (blocksOf sub) = .ok dsS →
     ∃ binding preA limits order evA dsA,
       Ix.Kernel.Admission.defaultBinding = .ok binding ∧

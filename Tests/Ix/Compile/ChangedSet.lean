@@ -27,9 +27,10 @@
         `imageHead` entry; these are the same names on both artifacts, and on
         the Lean side exactly the recursor heads of `p3Heads`. On every
         inductive component the set's predicate is the plan predicate;
-     c. every constant whose metadata carries an `_ix.inline` decompile
-        record is a `caller` entry of the set (the same names on both
-        artifacts); surgered call-site metadata (kinds 10/11) no longer
+     c. every input constant whose metadata carries an `_ix.inline`
+        decompile record is a `caller` or `clique` entry of the set (the
+        same names on both artifacts; a clique's canonical constants, under
+        reserved names, are no input constants); surgered call-site metadata (kinds 10/11) no longer
         decodes at all (CQ3.6);
      d. pinned fixtures with their causes (`pinned`);
      e. the definition components that collapse inside are exactly
@@ -194,6 +195,19 @@ def imageRecursors (rawEnv : _root_.Ix.Environment) (ixe : Ixon.Env) : Array IxN
 def entriesWith (cs : ChangedSet) (cause : Cause) : Std.HashSet IxName :=
   cs.entries.foldl (init := {}) fun s e => if e.cause == cause then s.insert e.name else s
 
+/-- The entries whose compile may carry an `_ix.inline` decompile record: the
+callers (Pass 3's rewrite) and the clique entries (the clique step's
+transported values). -/
+def recordEntries (cs : ChangedSet) : Std.HashSet IxName :=
+  cs.entries.foldl (init := {}) fun s e =>
+    if e.cause == .caller || e.cause == .clique then s.insert e.name else s
+
+/-- The input constants among an artifact's record carriers: a clique's
+canonical constants are published under reserved names
+(`Ix.Compile.Pass.hasReserved`) and are no input constants. -/
+def inputCarriers (ixe : Ixon.Env) : Array IxName :=
+  (recordCarriers ixe).filter (!_root_.Ix.Compile.Pass.hasReserved ·)
+
 /-- A component, for messages: Lean's first member and the classes. -/
 def showComponent (all : Array IxName) (classes : Array (Array IxName)) : String :=
   s!"{((all[0]?).map (·.pretty)).getD "?"} \
@@ -281,8 +295,11 @@ def showCauses (cs : Array BlockCause) : String :=
 def corpusProblems (rawEnv : _root_.Ix.Environment) (rustEnv leanEnv : Ixon.Env)
     (cenv : _root_.Ix.CompileM.CompileEnv) (rustDump : String) : IO (Array String) := do
   let mut ps : Array String := #[]
-  let rustSet := ofCompile rawEnv rustEnv
-  let leanSet := ofCompile rawEnv leanEnv
+  let condensed := _root_.Ix.Cert.compileBlocks rawEnv
+  -- the Lean compile's aux table for both artifacts (their bytes agree)
+  let table := cenv.auxReport.table
+  let rustSet := ofCompile rawEnv condensed table rustEnv
+  let leanSet := ofCompile rawEnv condensed table leanEnv
   say s!"Rust artifact: {rustSet.counts.summary}"
   say s!"Lean artifact: {leanSet.counts.summary}"
   -- a. one set
@@ -363,19 +380,19 @@ edited) in {leanAlls.size} Lean blocks (Rust: {rustDone.size} in {rustAlls.size}
     if componentChanged all classes layout? != ch then
       ps := ps.push s!"inductive component {showComponent all classes}: componentChanged differs \
 from isChanged"
-  -- c. decompile records only on callers
-  let callers := entriesWith leanSet .caller
-  let leanCarriers := recordCarriers leanEnv
-  let rustCarriers := recordCarriers rustEnv
-  ps := ps ++ subsetProblems "carries an `_ix.inline` record (Lean), but is no caller entry"
-    leanCarriers callers
-  ps := ps ++ subsetProblems "carries an `_ix.inline` record (Rust), but is no caller entry"
-    rustCarriers callers
+  -- c. decompile records only on callers and clique entries
+  let callers := recordEntries leanSet
+  let leanCarriers := inputCarriers leanEnv
+  let rustCarriers := inputCarriers rustEnv
+  ps := ps ++ subsetProblems
+    "carries an `_ix.inline` record (Lean), but is no caller or clique entry" leanCarriers callers
+  ps := ps ++ subsetProblems
+    "carries an `_ix.inline` record (Rust), but is no caller or clique entry" rustCarriers callers
   if rustCarriers.map (·.pretty) != leanCarriers.map (·.pretty) then
     ps := ps.push s!"the Rust and the Lean artifacts carry records on different constants \
 ({rustCarriers.size}/{leanCarriers.size})"
   say s!"decompile records on {leanCarriers.size} constants (Rust {rustCarriers.size}), of \
-{callers.size} caller entries"
+{callers.size} caller and clique entries"
   -- regenerated auxiliaries outside the changed blocks' members and heads
   let byName : Std.HashMap IxName (Array Cause) := leanSet.entries.foldl (init := {}) fun m e =>
     m.insert e.name ((m.getD e.name #[]).push e.cause)
@@ -468,7 +485,8 @@ def runInitStd : IO UInt32 := do
   let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts 32
   let (ixe, failures) ← IO.ofExcept (← IO.lazyPure fun _ => _root_.Ix.Cert.compileReport env)
   let t1 ← IO.monoMsNow
-  let cs ← IO.lazyPure fun _ => ofCompile env ixe
+  let cs ← IO.lazyPure fun _ =>
+    ofCompile env (_root_.Ix.Cert.compileBlocks env) (_root_.Ix.Cert.compileTable env) ixe
   let t2 ← IO.monoMsNow
   say s!"Init+Std ({consts.size} constants, {failures.toMap.size} failures; compile {t1 - t0} ms, \
 set {t2 - t1} ms): {cs.counts.summary}"
@@ -518,7 +536,9 @@ def runTestEnv (env : Lean.Environment) : IO UInt32 := do
   let rustEnv := (← _root_.Ix.CompileM.rsCompileEnvFFI consts).toEnv
   let rawEnv ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts.toArray 32
   let rustDump ← Tests.Compile.AuxGenDiff.rsAuxGenDumpPlansFFI consts
-  let cs := ofCompile rawEnv rustEnv
+  -- no Lean compile here: the empty aux table, so every regenerated auxiliary
+  -- counts as not identical (fail closed)
+  let cs := ofCompile rawEnv (_root_.Ix.Cert.compileBlocks rawEnv) {} rustEnv
   say s!"Rust artifact: {cs.counts.summary}"
   let mut ps : Array String := #[]
   let planLines := (rustDump.splitOn "\n").filter fun l =>
@@ -531,11 +551,11 @@ def runTestEnv (env : Lean.Environment) : IO UInt32 := do
   ps := ps ++ edit
   let changed := comps.filter (·.2.2.2)
   let images := imageRecursors rawEnv rustEnv
-  let carriers := recordCarriers rustEnv
+  let carriers := inputCarriers rustEnv
   ps := ps ++ subsetProblems "is stored as an image, but is no imageHead entry" images
     (entriesWith cs .imageHead)
-  ps := ps ++ subsetProblems "carries an `_ix.inline` record, but is no caller entry" carriers
-    (entriesWith cs .caller)
+  ps := ps ++ subsetProblems "carries an `_ix.inline` record, but is no caller or clique entry"
+    carriers (recordEntries cs)
   say s!"{done.size} of {comps.size} inductive components edited by the first hook \
 ({changed.size} changed by the plan predicate) in {alls.size} Lean blocks; {images.size} \
 recursors stored as images; decompile records on {carriers.size} constants"
