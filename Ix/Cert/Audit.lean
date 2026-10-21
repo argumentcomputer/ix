@@ -19,6 +19,8 @@ import Ix.Cert.ReaderUnits
 import Ix.Cert.PassHooks
 import Ix.Cert.Resolution
 import Ix.Cert.HookFree
+import Ix.Cert.CtxAgree
+import Ix.Cert.CtxAgreeHints
 
 /-! # The certification statements, frozen
 
@@ -5027,3 +5029,26 @@ run_cmd do
       `applyAuxBlockOutcome_cross_extras, `cliqueTables_eq].map (`Ix.Cert.HookFree ++ ·)) ++
       #[``Ix.Cert.Claims.runBlock_owned, ``Ix.Cert.Resolution.reach_env, ``Ix.Cert.Resolution.reach_cliques,
         ``Ix.Cert.Claims.cliqueStep_keeps, ``Ix.Cert.Claims.prepareCliques_overlay, ``Ix.Cert.compileTable_eq])
+
+/-! ## S1's generated records: the statements half of `CtxAgree`
+
+`Ix.Cert.CtxAgree`: a mutual or nested block's modeller records agree on the
+two streams. At reader states that agree on the block's scope, the block and its
+renaming lower to renamed records through IxC's parametricity
+(`lowerInductive_mapKeys`, at `KeyScope.Pre`); the states agree at every key but
+the derived ones by the per-key relation (`ReadsAgreeAt`, read off the two
+prefixes, `nonAuxAgree_of_reads`), and at the derived ones because they are an
+earlier block's generated records on both sides (the cone induction,
+`Streams.units`). Both sides run one hint per published definition
+(`hints_agree`, with `fiberHintsMap_named`, `hintsOf_projection`,
+`hintsOf_block`). -/
+
+/-- info: [cert-audit] ctx agreement: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "ctx agreement"
+    (#[`Streams.units, `lowerInductive_mapKeys, `ctxAgree_genCtx, `blockRecOf_mapKeys,
+      `occursConstFast_eq, `nonAuxAgree_of_reads, `hints_agree, `fiberHintsMap_named,
+      `hintsOf_projection, `hintsOf_block].map (`Ix.Cert.CtxAgree ++ ·))
+
