@@ -999,4 +999,53 @@ theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {fai
   obtain ⟨init, hp⟩ := compileEnvFold_provenance hf
   exact ⟨bytes, cenv, init, hf, rfl, hp⟩
 
+
+/-! ## The block compile behind a claim -/
+
+/-- **A compiled outcome is its block's compile**: `auxBlockOutcome` returns
+`.compiled` only from `runBlock` on the block itself (a block whose key does
+not resolve yet). -/
+theorem auxBlockOutcome_compiled {cenv : CompileEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
+    {r : BlockResult} {c : BlockState} {p : Ix.Compile.Pass.Published}
+    (h : auxBlockOutcome cenv lo all = .compiled r c p) :
+    ∃ layout, runBlock cenv all lo = .ok (r, c, layout, p) := by
+  unfold auxBlockOutcome at h
+  simp only [Id.run] at h
+  split at h
+  · refine absurd h (loop_bind_set _ _ _ _ (fun _ => True) (fun o : AuxBlockOutcome => o ≠ .compiled r c p) trivial
+      (fun _ _ _ => trivial) fun L _ => ?_)
+    intro h'
+    repeat (first | (split at h') | cases h')
+  · split at h
+    · cases h
+    · rename_i x result cache layout published hr
+      cases h
+      exact ⟨layout, hr⟩
+
+/-- **The compile behind a claim**: a `Compiled` claim is one of the
+`claimWrites` of a condensation block's own compile (`runBlock`, against a
+state the fold reached), or of the cross-SCC subset of a promoted block. -/
+theorem compiled_cases {blocks : Ix.CondensedBlocks} {init : DriverAcc} {n : Ix.Name} {a : Address}
+    {b : ByteArray} (h : Compiled blocks init n a b) :
+    ∃ snap rep all, Reach blocks init snap ∧ blocks.blocks.get? rep = some all ∧
+      ((∃ r c p layout, runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout, p) ∧
+          (n, a, b) ∈ claimWrites (blockKey rep all) r) ∨
+        ∃ clo r c p cn cf im na nf,
+          auxBlockOutcome snap.cenv (blockKey rep all) all = .promoted (some (clo, r, c, p)) cn cf im na nf ∧
+          (n, a, b) ∈ claimWrites clo r) := by
+  obtain ⟨snap, rep, all, hsnap, hall, hclaim⟩ := h
+  refine ⟨snap, rep, all, hsnap, hall, ?_⟩
+  generalize ho : auxBlockOutcome snap.cenv (blockKey rep all) all = o at hclaim
+  cases o with
+  | compiled r c p =>
+    obtain ⟨layout, hr⟩ := auxBlockOutcome_compiled ho
+    exact .inl ⟨r, c, p, layout, hr, hclaim⟩
+  | promoted cs cn cf im na nf =>
+    cases cs with
+    | none => exact hclaim.elim
+    | some x =>
+      obtain ⟨clo, r, c, p⟩ := x
+      exact .inr ⟨clo, r, c, p, cn, cf, im, na, nf, rfl, hclaim⟩
+  | failed msg => exact hclaim.elim
+
 end Ix.Cert.Resolution
