@@ -222,6 +222,18 @@ def evaluate : IO (Array String × Array String) := do
   let mut controlChecked := 0
   let mut indcs := 0
   let mut deferred : Std.HashMap String Nat := {}
+  -- AuxGen M5b: production's acceptance table (`CompileEnv.auxReport`) holds a
+  -- verdict for every generated definition this harness admits: under its
+  -- own name (promoted) or under its `_ix` display name (a changed block's)
+  let report := cenv.auxReport
+  let table := report.table
+  let prodVerdict (n : Ix.Name) : Option Ix.AuxGen.AuxVerdict :=
+    (table.verdict? n).orElse fun _ =>
+      (report.display.find? (Ix.Compile.ExactKey.nameEq ·.1 n)).bind fun (_, d) => table.verdict? d
+  let mut harnessDefs := 0
+  let mut prodCounts : Std.HashMap String Nat := {}
+  let mut prodMissing : Array String := #[]
+  let mut prodRefused : Array String := #[]
   for (lo, members) in inductiveBlocks env blocks do
     match blockAux cenv lo members with
     | .error e => errors := errors.push s!"{lo.pretty}: aux generation: {e}"
@@ -256,6 +268,14 @@ def evaluate : IO (Array String × Array String) := do
         let (defs, belowIndcs) := generatedDefs b.out
         indcs := indcs + belowIndcs.size
         for (n, lps, ty, v, thm) in defs do
+          harnessDefs := harnessDefs + 1
+          match prodVerdict n with
+          | none => prodMissing := prodMissing.push n.pretty
+          | some (.refused why) =>
+            prodRefused := prodRefused.push s!"{n.pretty}: {why.take 200}"
+          | some .identical => prodCounts := bump prodCounts "identical"
+          | some .accepted => prodCounts := bump prodCounts "accepted"
+          | some (.exempt _) => prodCounts := bump prodCounts "exempt"
           let control := ({ svc with env := { svc.env with sigma := {} } } : Service).admitDefinition n lps ty v thm
           let (svc', st) := svc.admitDefinition n lps ty v thm
           svc := svc'
@@ -292,6 +312,18 @@ def evaluate : IO (Array String × Array String) := do
   if installed == 0 then errors := errors.push "no flat block was installed"
   if controlRefused == 0 then
     errors := errors.push "the control accepted every collapsed block's definition by Lean's names"
+  -- AuxGen M5b: production's record for exactly the harness's declarations
+  let withVerdict := harnessDefs - prodMissing.size
+  lines := lines.push s!"generated definitions the harness admits: {harnessDefs}; with a verdict in \
+    production's acceptance table: {withVerdict} ({showCounts prodCounts}, {prodRefused.size} \
+    refused)"
+  if !prodMissing.isEmpty then
+    errors := errors.push s!"{prodMissing.size} generated definitions have no verdict in \
+      production's acceptance table: {", ".intercalate (prodMissing.extract 0 4).toList}"
+  if !prodRefused.isEmpty then
+    errors := errors.push s!"{prodRefused.size} generated definitions refused in production's \
+      acceptance table: {", ".intercalate (prodRefused.extract 0 4).toList}"
+  if harnessDefs == 0 then errors := errors.push "the harness admitted no generated definition"
   return (errors, lines)
 
 def fixtures : TestSeq :=
