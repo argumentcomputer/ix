@@ -37,7 +37,16 @@
     source, the transported members and canonical constants, the outcome),
     and its side-car record `_ix.clique`, typed data only;
   * `Table`: the input's cliques, their carried equation lemmas, the
-    encoding roots, and the scheduling edges (`scheduleCliques`).
+    encoding roots, and the scheduling edges (`scheduleCliques`);
+  * `Order`: the canonical order of a theorem clique by its statements
+    (`statementOrder`);
+  * `Transport`: the transport's entry point (`transport`): its input (the
+    clique, its encoding, `σ`, the authenticated structural family), the
+    dispatch to the three transports, the baseline and the causes;
+  * `Recover`: the recovered specification of a clique (each member's body
+    with its recursion made explicit again, checked by re-encoding), its
+    normalised form (`normalisedSpecs`) and the canonical order it gives
+    (`cliqueOrder`).
 
   Not imported by the compiler (`Ix.Compile.Pass` does not import it). No
   `MetaM`, no kernel, no `partial`.
@@ -60,3 +69,6 @@ public import Ix.Compile.Pass.Clique.PartialFixpoint
 public import Ix.Compile.Pass.Clique.PFConjugation
 public import Ix.Compile.Pass.Clique.Plan
 public import Ix.Compile.Pass.Clique.Table
+public import Ix.Compile.Pass.Clique.Order
+public import Ix.Compile.Pass.Clique.Transport
+public import Ix.Compile.Pass.Clique.Recover
