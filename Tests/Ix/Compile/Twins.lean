@@ -852,11 +852,13 @@ constants, {closure.length} in the closure (environment and closure {t1 - t0} ms
     (leanOut.cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e))
   let dir ← IO.FS.createTempDir
   let mut rsUngrounded : Array (String × String) := #[]
+  let mut rsDeclines : Array (String × String) := #[]
   let mut rsEnv : Ixon.Env := {}
   try
     let (bytes, status) ← ClosureHarness.rustClosure env closure (dir / "twins-rs.ixe")
     rsEnv ← IO.ofExcept (Ixon.rsDeEnv bytes)
     rsUngrounded := status.ungrounded
+    rsDeclines := status.nonCanonical.qsort (·.1 < ·.1)
   catch ex =>
     IO.println s!"[twins] Rust compile failed: {ex}"
     failures := failures + 1
@@ -867,6 +869,13 @@ constants, {closure.length} in the closure (environment and closure {t1 - t0} ms
     (leanOut.env.getAddr? (_root_.Ix.Name.fromLeanName n)).map toString
   let rsAddr (n : Name) : Option String :=
     (rsEnv.getAddr? (_root_.Ix.Name.fromLeanName n)).map toString
+  let declines := (leanOut.cenv.p3NonCanonical.toArray.map fun (n, cause) =>
+    (n.pretty, cause)).qsort (·.1 < ·.1)
+  if declines != rsDeclines then
+    failures := failures + 1
+    IO.println s!"[twins] Lean/Rust decline reports differ: Lean {declines.toList}, Rust {rsDeclines.toList}"
+  IO.println s!"[twins] {declines.size} recorded declines"
+  for (name, cause) in declines do IO.println s!"[twins] decline {name}: {cause}"
   -- 2. Lean and Rust agree on every fixture constant
   let mut lr := 0
   for n in seeds do

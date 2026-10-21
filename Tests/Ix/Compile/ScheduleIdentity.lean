@@ -19,7 +19,7 @@
     canon and condensation, so other block representatives) at 1, 4 and 16
     workers;
 
-  and require every serialized environment to be byte-identical. A
+  and require every serialized environment and decline report to be identical. A
   difference is reported with the constant and its two addresses.
 
   Refusals: the twin presentations that the compilers refuse on purpose
@@ -93,13 +93,19 @@ def saveRun (label : String) (bytes : ByteArray) (failures : List (String × Str
     say s!"[schedule] saved {path}: {Address.blake3 bytes}"
 
 /-- One leg's result: (label, bytes, environment, block failures as (name, message)). -/
-abbrev LegResult := String × ByteArray × Ixon.Env × List (String × String)
+abbrev Declines := Array (String × String)
+
+/-- Report order is not observable; each name's final cause is. -/
+def declinesOf (cenv : Ix.CompileM.CompileEnv) : Declines :=
+  (cenv.p3NonCanonical.toArray.map fun (n, cause) => (n.pretty, cause)).qsort (·.1 < ·.1)
+
+abbrev LegResult := String × ByteArray × Ixon.Env × List (String × String) × Declines
 
 /-- A leg: its label in the log, its file label for `saveRun`, and the compile. -/
 structure Leg where
   label : String
   saveLabel : String
-  act : IO (ByteArray × Ixon.Env × List (String × String))
+  act : IO (ByteArray × Ixon.Env × List (String × String) × Declines)
 
 /-- The leg tier: `SCHED_LEGS=quick` (three legs) or `full` (the default, the
     integration tier). -/
@@ -118,12 +124,12 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
     cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e)
   let outcome (label : String)
       (result : Except String (Ixon.Env × Nat × Ix.CompileM.CompileEnv)) :
-      IO (ByteArray × Ixon.Env × List (String × String)) := do
+      IO (ByteArray × Ixon.Env × List (String × String) × Declines) := do
     match result with
     | .error e => throw (IO.userError s!"[schedule] {label}: {e}")
     | .ok (ixon, _, cenv) =>
       let bytes ← IO.ofExcept (Ixon.serEnv ixon)
-      pure (bytes, ixon, failuresOf cenv)
+      pure (bytes, ixon, failuresOf cenv, declinesOf cenv)
   let mut legs : Array Leg := #[]
   -- the driver, at its default width (the reference) and at widths 1 and 32
   for width in (if quick then [none] else [none, some 1, some 32]) do
@@ -150,7 +156,7 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
     legs := legs.push { label := s!"compile-lean --workers {k}", saveLabel := s!"pipeline-{k}",
                         act := do
       let out ← ClosureHarness.compileClosure env closure k
-      pure (out.bytes, out.env, failuresOf out.cenv) }
+      pure (out.bytes, out.env, failuresOf out.cenv, declinesOf out.cenv) }
   return legs
 
 /-- Run the legs, at most `SCHED_JOBS` at a time (default: all at once; each
@@ -159,15 +165,15 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
 def runLegs (legs : Array Leg) : IO (Array LegResult) := do
   let jobs := ((← IO.getEnv "SCHED_JOBS").bind String.toNat?).getD 0
   let jobs := if jobs == 0 then legs.size else jobs
-  let mut done : Array (ByteArray × Ixon.Env × List (String × String)) := #[]
-  let mut pending : Array (Task (Except IO.Error (ByteArray × Ixon.Env × List (String × String)))) := #[]
+  let mut done : Array (ByteArray × Ixon.Env × List (String × String) × Declines) := #[]
+  let mut pending : Array (Task (Except IO.Error (ByteArray × Ixon.Env × List (String × String) × Declines))) := #[]
   for leg in legs do
     if pending.size ≥ jobs then
       done := done.push (← IO.ofExcept (← IO.wait pending[0]!))
       pending := pending.extract 1 pending.size
     pending := pending.push (← IO.asTask (prio := .dedicated) leg.act)
   for t in pending do done := done.push (← IO.ofExcept (← IO.wait t))
-  return (legs.zip done).map fun (leg, (bytes, ixon, fails)) => (leg.label, bytes, ixon, fails)
+  return (legs.zip done).map fun (leg, (bytes, ixon, fails, declines)) => (leg.label, bytes, ixon, fails, declines)
 
 /-- Every schedule's result, compared. Returns the number of failures. -/
 def compareLegs (closure : List (Name × ConstantInfo)) (legs : Array Leg)
@@ -175,17 +181,17 @@ def compareLegs (closure : List (Name × ConstantInfo)) (legs : Array Leg)
   if ← quickTier then
     say "[schedule] SCHED_LEGS=quick: the per-iteration tier (3 legs); not the integration gate"
   let scope : Std.HashSet Name := closure.foldl (init := {}) fun s (n, _) => s.insert n
-  for (leg, (_, bytes, _, fails)) in legs.zip runs do
+  for (leg, (_, bytes, _, fails, declines)) in legs.zip runs do
     saveRun leg.saveLabel bytes fails
-    say s!"[schedule] {leg.label}: {bytes.size} bytes, {fails.length} block failures"
-  let some (refLabel, refBytes, refEnv, refFails) := runs[0]? | return 1
+    say s!"[schedule] {leg.label}: {bytes.size} bytes, {fails.length} block failures, {declines.size} declines"
+  let some (refLabel, refBytes, refEnv, refFails, refDeclines) := runs[0]? | return 1
   let mut failures := 0
   -- Refusals: under every schedule exactly the expected refusals, with their
   -- messages; every other source name is in the output; and the full
   -- (name, message) list of failures is the same in every schedule.
   let sortFails (xs : List (String × String)) : Array (String × String) :=
     xs.toArray.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
-  for (label, _, ixon, fails) in runs do
+  for (label, _, ixon, fails, declines) in runs do
     let bad ← Tests.Ix.Compile.Twins.refusalCheck s!"schedule: {label}" scope fails
     let missing := closure.filter fun (name, _) =>
       !Tests.Ix.Compile.Twins.refusedSet.contains name
@@ -200,7 +206,10 @@ def compareLegs (closure : List (Name × ConstantInfo)) (legs : Array Leg)
     if sortFails fails != sortFails refFails then
       failures := failures + 1
       say s!"[schedule] {label}: block failures (names or messages) differ from {refLabel}"
-  for (label, bytes, ixon, _) in runs[1:] do
+    if declines != refDeclines then
+      failures := failures + 1
+      say s!"[schedule] {label}: decline reports differ from {refLabel}"
+  for (label, bytes, ixon, _, _) in runs[1:] do
     if bytes == refBytes then
       say s!"[schedule] {label} = {refLabel}"
     else

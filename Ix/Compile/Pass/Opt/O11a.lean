@@ -1,7 +1,8 @@
 /- # O11a: Lean's mutual `_sizeOf_N` of a split member, in the instance form
 
 **CQ5.3a: definitional, no equation rows.** The `rfl` the plan asks for holds
-under the three kernels (below), so O11a is not proof-justified. Its output
+in the donor's three kernel legs (below); this line gates the certified
+checker and Rust kernel. O11a is not proof-justified. Its output
 references `T._sizeOf_inst` (and `SizeOf.sizeOf`) from `_sizeOf_N`,
 references the input constant does not have; the scheduler orders blocks by
 the input's reference graph, so without help `_sizeOf_N` could compile
@@ -101,7 +102,8 @@ obligations of a pass whose output adds a reference):
    nothing recorded that the canonical form was not reached.)
 
 ## Non-canonical set and evidence
-None on a closure that carries the unit. On an input without
+A closure that carries the unit has no missing-instance decline; the
+other side conditions above can still produce recorded declines. On an input without
 `T._sizeOf_inst`: the `_sizeOf_N` with the cause above
 (`Tests/Ix/Compile/O11aDecline.lean`: the withheld instance declines with
 the record, the valid neighbour with the instance rewrites).
@@ -368,7 +370,8 @@ constructor and minor type of minor `j` cannot be read", which is the
 split-minor helpers `sourceCtorForMinor`/`sourceMinorType`/`peelBinders`
 failing to place minor `j`, as on a split block with an evaporated nested
 auxiliary). One occurrence gives one cause; a constant with several
-recorded occurrences keeps the last in the compile's map
+recorded occurrences keeps the last distinct cause in traversal order
+(the block collector deduplicates identical member/cause pairs) in the compile's map
 (`CompileEnv.p3NonCanonical`). A failing
 side condition takes precedence over absence (O11a would decline with the
 instances present too).
