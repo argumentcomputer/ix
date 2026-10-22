@@ -47,25 +47,25 @@ open Benchmarks.Kernel.CheckIxeStep
 /-- Phase A's step state: the installed environment, the memo state and the
 fold position (as `Checker`'s), every recorded check with the record it
 belongs to, and the records whose install failed. -/
-structure Installer where
-  fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
-  cs : Ix.Kernel.Cached.CState .anon := {}
+structure Installer (md : Ix.Kernel.Mode := .anon) where
+  fe : Ix.Kernel.FEnv md := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+  cs : Ix.Kernel.Cached.CState md := {}
   pos : Nat := 0
-  pend : Array (Ix.Kernel.Cached.PendingCheck .anon) := #[]
+  pend : Array (Ix.Kernel.Cached.PendingCheck md) := #[]
   owners : Array Address := #[]
-  installErrors : Std.HashMap Address (Ix.Kernel.CheckError .anon) := {}
+  installErrors : Std.HashMap Address (Ix.Kernel.CheckError md) := {}
 
-instance : Inhabited Installer := ⟨{}⟩
+instance : Inhabited (Installer md) := ⟨{}⟩
 
 /-- A record's declarations installed in order from a fresh accumulator of
 recorded checks; the first failure ends it, rolled back as `Checker.step`
 rolls back (the index rebuilt from the constants before the declaration,
 the memo state reset), with the checks the declarations before it recorded. -/
-def installDecls (ev : Ix.Kernel.Evidences .anon) :
-    Nat → Ix.Kernel.FEnv .anon → Array (Ix.Kernel.Cached.PendingCheck .anon) → Ix.Kernel.Cached.CState .anon →
-      List (Ix.Kernel.Declaration .anon) →
-      Nat × Ix.Kernel.FEnv .anon × Array (Ix.Kernel.Cached.PendingCheck .anon) × Ix.Kernel.Cached.CState .anon ×
-        Option (Ix.Kernel.CheckError .anon)
+def installDecls (ev : Ix.Kernel.Evidences md) :
+    Nat → Ix.Kernel.FEnv md → Array (Ix.Kernel.Cached.PendingCheck md) → Ix.Kernel.Cached.CState md →
+      List (Ix.Kernel.Declaration md) →
+      Nat × Ix.Kernel.FEnv md × Array (Ix.Kernel.Cached.PendingCheck md) × Ix.Kernel.Cached.CState md ×
+        Option (Ix.Kernel.CheckError md)
   | pos, fe, pend, cs, [] => (pos, fe, pend, cs, none)
   | pos, fe, pend, cs, d :: rest =>
     let before := fe.env
@@ -75,8 +75,8 @@ def installDecls (ev : Ix.Kernel.Evidences .anon) :
     | .error (e, _) => (pos + 1, Ix.Kernel.mkFEnv before, recorded, {}, some e)
 
 /-- Phase A's step: install a record's declarations, recording their checks. -/
-def Installer.stepRecord (ev : Ix.Kernel.Evidences .anon) (c : Installer) (address : Address)
-    (rd : Read .anon) : Installer × Option (Ix.Kernel.CheckError .anon) :=
+def Installer.stepRecord (ev : Ix.Kernel.Evidences md) (c : Installer md) (address : Address)
+    (rd : Read md) : Installer md × Option (Ix.Kernel.CheckError md) :=
   let ⟨fe, cs, pos, pend, owners, installErrors⟩ := c
   let (pos, fe, recorded, cs, err) := installDecls ev pos fe #[] cs rd.decls.toList
   let owners := owners ++ Array.replicate recorded.size address
@@ -93,8 +93,8 @@ abbrev Slot := IO.Ref (Option (Address × Nat))
 
 /-- Recorded check `k` against its prefix view, from a fresh memo state:
 its failure, if any, and its time. -/
-def checkOne (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon)) (k : Nat) :
-    IO (Option (Ix.Kernel.CheckError .anon) × Nat) := do
+def checkOne (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingCheck md)) (k : Nat) :
+    IO (Option (Ix.Kernel.CheckError md) × Nat) := do
   let t0 ← IO.monoNanosNow
   let r ← IO.lazyPure fun _ => match pend[k]? with
     | some pc => match Ix.Kernel.Cached.checkPending .verified fe pc {} with
@@ -105,10 +105,10 @@ def checkOne (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.Pending
 
 /-- A worker: claim one check at a time off `next` until it is past the
 checks, with its watchdog slot set while it checks. -/
-def worker (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon))
+def worker (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingCheck md))
     (owners : Array Address) (next : IO.Ref Nat) (slot : Slot) :
-    (fuel : Nat) → Array (Nat × Option (Ix.Kernel.CheckError .anon) × Nat) →
-      IO (Array (Nat × Option (Ix.Kernel.CheckError .anon) × Nat))
+    (fuel : Nat) → Array (Nat × Option (Ix.Kernel.CheckError md) × Nat) →
+      IO (Array (Nat × Option (Ix.Kernel.CheckError md) × Nat))
   | 0, acc => pure acc
   | fuel + 1, acc => do
     let k ← next.modifyGet fun a => (a, a + 1)
@@ -121,14 +121,14 @@ def worker (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCh
 
 /-- Phase B on one dedicated worker thread per slot: every check's failure,
 if any, and its time, in check order. -/
-def pool (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon))
+def pool (fe : Ix.Kernel.FEnv md) (pend : Array (Ix.Kernel.Cached.PendingCheck md))
     (owners : Array Address) (slots : Array Slot) :
-    IO (Array (Option (Ix.Kernel.CheckError .anon) × Nat)) := do
+    IO (Array (Option (Ix.Kernel.CheckError md) × Nat)) := do
   let next ← IO.mkRef 0
   let mut tasks := #[]
   for slot in slots do
     tasks := tasks.push (← IO.asTask (prio := .dedicated) (worker fe pend owners next slot (pend.size + 1) #[]))
-  let mut table : Array (Option (Ix.Kernel.CheckError .anon) × Nat) :=
+  let mut table : Array (Option (Ix.Kernel.CheckError md) × Nat) :=
     Array.replicate pend.size (some (.internal "check phase: check never ran"), 0)
   for t in tasks do
     for (k, r, micros) in ← IO.ofExcept (← IO.wait t) do
@@ -139,15 +139,16 @@ def pool (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingChec
 
 /-- The environment check over `addresses` with phase B on one worker per
 slot (`slots`, the watchdog's; at least one). Rows go to `emit`, in the
-per-record check's order; stage lines go to `log`. Returns the outcome and
-first-cause counts. -/
-def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences .anon) (names : Address → Array String)
+per-record check's order; stage lines go to `log`. Returns the actual logical-record outcome
+and failed-root map. Tier records are not enabled by this logical-only pool;
+the normal runner uses the serial tier loop when requested. -/
+def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String) (slots : Array Slot)
     (emit : Row → IO Unit) (log : String → IO Unit)
     (progress : Nat → Std.HashMap String Nat → IO Unit := fun _ _ => pure ())
-    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ())
-    (spell : Ix.Kernel.Key .anon → String := toString) :
-    IO (Std.HashMap String Nat × Std.HashMap String Nat) := do
+    (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
+    (spell : Ix.Kernel.Key md → String := toString) :
+    IO (LoopOutcome Unit) := do
   let some slot0 := slots[0]? | throw (IO.userError "check-ixe: the pool needs a worker")
   -- phase A: what each record's rows will carry besides the verdict
   let times ← IO.mkRef ({} : Std.HashMap Address (Nat × Nat))
@@ -173,7 +174,7 @@ def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences .anon) (name
   let tM ← IO.monoMsNow
   -- the memo state is only a cache; the rest is used to the end of the run
   -- (`markPersistent` is `unsafe` because a persistent object is never freed)
-  let inst : Installer := { inst with cs := {} }
+  let inst : Installer md := { inst with cs := {} }
   let _ ← unsafe Runtime.markPersistent inst
   let fe := inst.fe
   let pend := inst.pend
@@ -188,7 +189,7 @@ def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences .anon) (name
     {failures} failed"
   -- the verdicts: a record's first failed check (in install order), else its
   -- install failure; and its checks' time
-  let mut verdicts : Std.HashMap Address (Ix.Kernel.CheckError .anon) := {}
+  let mut verdicts : Std.HashMap Address (Ix.Kernel.CheckError md) := {}
   let mut checkMicros : Std.HashMap Address Nat := {}
   for ((r, micros), k) in table.zipIdx do
     let some a := owners[k]? | continue
@@ -214,6 +215,17 @@ def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences .anon) (name
     (emit := fun row => emit { row with micros := rowMicros row,
                                         readMicros := (times.getD row.address (0, 0)).2 })
     (spell := spell)
+  return out
+
+/-- Compatibility count-pair API over the mode-generic logical pool. -/
+def run {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md) (names : Address → Array String)
+    (addresses : Array Address) (skip : Std.HashSet String) (slots : Array Slot)
+    (emit : Row → IO Unit) (log : String → IO Unit)
+    (progress : Nat → Std.HashMap String Nat → IO Unit := fun _ _ => pure ())
+    (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
+    (spell : Ix.Kernel.Key md → String := toString) :
+    IO (Std.HashMap String Nat × Std.HashMap String Nat) := do
+  let out ← runOutcome src ev names addresses skip slots emit log progress onRead spell
   return (out.counts, out.reasons)
 
 end Benchmarks.Kernel.CheckIxePool

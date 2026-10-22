@@ -249,9 +249,9 @@ the safety (`partial`, `unsafe`); a tier failure declines, `tier (<safety>): …
 /-- What a check loop needs to run the typing tier: a record's tier
 declaration, read at its turn (`none`: not a tier record), and the index of
 the step state's environment. -/
-structure TierHook (σ κ : Type) where
-  read : σ → Address → Option (Except ReadError (Ix.Kernel.Tier.TierDecl .anon))
-  index : κ → Ix.Kernel.FEnv .anon
+structure TierHook (σ κ : Type) (md : Ix.Kernel.Mode := .anon) where
+  read : σ → Address → Option (Except ReadError (Ix.Kernel.Tier.TierDecl md))
+  index : κ → Ix.Kernel.FEnv md
 
 /-- A tier record's declaration, read against `cx` (`none`: not a tier record). -/
 def readTierAt (cx : Ctx md) (address : Address) (source : Ixon.Constant) :
@@ -292,8 +292,8 @@ def tierOutcome (s : Ix.Kernel.Tier.Safety) (e : Ix.Kernel.CheckError md)
 
 /-- The per-record step as the check loop's step: install and check the
 record's declarations (`Checker.steps`). -/
-def Checker.stepRecord (ev : Ix.Kernel.Evidences .anon) (c : Checker .anon) (_ : Address) (rd : Read .anon) :
-    Checker .anon × Option (Ix.Kernel.CheckError .anon) :=
+def Checker.stepRecord (ev : Ix.Kernel.Evidences md) (c : Checker md) (_ : Address) (rd : Read md) :
+    Checker md × Option (Ix.Kernel.CheckError md) :=
   c.steps ev rd.decls
 
 /-- Check `addresses` in order, continuing past failures; each row is passed
@@ -310,15 +310,15 @@ a checker failure's reason (`kernel-check-ixe` passes the `.meta` renderer,
 records are deferred and checked by the typing tier after the loop
 (`TierHook`); without it, the logical reader declines them, as before. -/
 def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option RecordView)
-    (read : σ → Address → Except ReadError (Read .anon)) (commit : σ → Address → Read .anon → σ) (init : σ)
-    (step : κ → Address → Read .anon → κ × Option (Ix.Kernel.CheckError .anon)) (start : κ)
+    (read : σ → Address → Except ReadError (Read md)) (commit : σ → Address → Read md → σ) (init : σ)
+    (step : κ → Address → Read md → κ × Option (Ix.Kernel.CheckError md)) (start : κ)
     (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
     (after : IO Unit := pure ()) (progress : Nat → LoopOutcome κ → IO Unit := fun _ _ => pure ())
-    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ())
-    (spell : Ix.Kernel.Key .anon → String := toString)
-    (tier : Option (TierHook σ κ) := none) :
+    (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
+    (spell : Ix.Kernel.Key md → String := toString)
+    (tier : Option (TierHook σ κ md) := none) :
     IO (LoopOutcome κ) := do
   let mut out : LoopOutcome κ := { checker := default }
   -- the reading state and the step state live in references of the loop's
@@ -330,7 +330,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
   let mut consumed : Std.HashSet Address := {}
   -- the tier records, deferred in order: address, view, declaration,
   -- dependencies, reading time
-  let mut deferred : Array (Address × RecordView × Ix.Kernel.Tier.TierDecl .anon × Array Address × Nat) := #[]
+  let mut deferred : Array (Address × RecordView × Ix.Kernel.Tier.TierDecl md × Array Address × Nat) := #[]
   let mut deferredSet : Std.HashSet Address := {}
   let mut index := 0
   for address in addresses do
@@ -472,13 +472,13 @@ def Setup.read (s : Setup) (st : State .anon) (address : Address) : Except ReadE
 /-- What a check loop reads from: the records' views, their readings, and
 the reading state, whose initial value `init` builds on the loop's own
 thread. -/
-structure LoopSource (σ : Type) where
+structure LoopSource (σ : Type) (md : Ix.Kernel.Mode := .anon) where
   view : Address → Option RecordView
-  read : σ → Address → Except ReadError (Read .anon)
-  commit : σ → Address → Read .anon → σ
+  read : σ → Address → Except ReadError (Read md)
+  commit : σ → Address → Read md → σ
   init : IO σ
   /-- the tier reader (`TierHook.read`), if the source runs the typing tier -/
-  tier : Option (σ → Address → Option (Except ReadError (Ix.Kernel.Tier.TierDecl .anon))) := none
+  tier : Option (σ → Address → Option (Except ReadError (Ix.Kernel.Tier.TierDecl md))) := none
 
 /-- A record of a check setup, read by the tier reader if it is a tier record. -/
 def Setup.tierRead (s : Setup) (address : Address) :
@@ -494,7 +494,7 @@ def Setup.source (s : Setup) : LoopSource (State .anon) :=
     tier := some fun _ a => s.tierRead a }
 
 /-- The per-record check's tier hook over a source's tier reader. -/
-def LoopSource.tierHook (src : LoopSource σ) : Option (TierHook σ (Checker .anon)) :=
+def LoopSource.tierHook (src : LoopSource σ md) : Option (TierHook σ (Checker md) md) :=
   src.tier.map fun r => { read := r, index := (·.fe) }
 
 /-- `checkLoopWith` over a check setup with the per-record step: each record
