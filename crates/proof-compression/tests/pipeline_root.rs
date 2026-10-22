@@ -22,7 +22,18 @@ fn root_system() -> (
   CommitmentParameters,
   FriParameters,
 ) {
-  let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
+  root_system_with_blowup(1)
+}
+
+fn root_system_with_blowup(
+  log_blowup: usize,
+) -> (
+  System<GoldilocksBlake3Config>,
+  multi_stark::system::ProverKey<GoldilocksBlake3Config>,
+  CommitmentParameters,
+  FriParameters,
+) {
+  let cp = CommitmentParameters { log_blowup, cap_height: 0 };
   let fp = FriParameters {
     log_final_poly_len: 0,
     max_log_arity: 1,
@@ -50,7 +61,8 @@ fn root_system() -> (
 #[test]
 fn different_root_statements_and_trace_shard_counts() {
   let (system, pk, cp, fp) = root_system();
-  let key = AiurVerifyingKey::from_bytes(&to_bytes(&system, cp, fp)).unwrap();
+  let key_bytes = to_bytes(&system, cp, fp);
+  let key = AiurVerifyingKey::from_bytes(&key_bytes).unwrap();
   for (seed, shards) in [(7, 1), (31, 2)] {
     let expected: Vec<_> = (0..18).map(|i| Val::from_u32(seed + i)).collect();
     let inputs = || {
@@ -73,6 +85,13 @@ fn different_root_statements_and_trace_shard_counts() {
     let stage =
       prepare_root(&key, &proof, &expected, Default::default()).unwrap();
     assert_eq!(stage.public_values(), expected);
+    check_cli_root(
+      &key_bytes,
+      &proof,
+      &expected,
+      shards,
+      stage.circuit().stats(),
+    );
     let mut wrong = expected.clone();
     wrong[17] += Val::ONE;
     assert!(prepare_root(&key, &proof, &wrong, Default::default()).is_err());
@@ -107,6 +126,182 @@ fn different_root_statements_and_trace_shard_counts() {
     verifier.verify(&compressed, &expected).unwrap();
     assert!(verifier.verify(&compressed, &wrong).is_err());
   }
+}
+
+#[test]
+fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
+-> Result<(), Box<dyn std::error::Error>> {
+  use ix_proof_compression::fri::{
+    Envelope, ImplementationOptions, ProofEnvelope, ProofProfile, Statement,
+    StatementBinding, VerifierKey, VerifierPlan,
+  };
+  use multi_stark::plonkish::CircuitBuilder;
+
+  let (system, pk, cp, fp) = root_system_with_blowup(2);
+  let key = AiurVerifyingKey::from_bytes(&to_bytes(&system, cp, fp))?;
+  let expected: Vec<_> = (0..18).map(|i| Val::from_u32(41 + i)).collect();
+  let mut row = expected.clone();
+  row.push(Val::ONE);
+  row.extend(vec![Val::ZERO; 19]);
+  let proof = system.prove_batch(
+    &pk,
+    vec![ShardInput {
+      claims: vec![expected.clone()],
+      witness: SystemWitness::from_stage_1(
+        vec![RowMajorMatrix::new(row, 19)],
+        &system,
+      ),
+    }],
+    vec![],
+  );
+  let prepared = prepare_root(&key, &proof, &expected, Default::default())?;
+
+  let verifier_key = VerifierKey::from_system(key.system());
+  let header = &proof.preamble.headers[0];
+  let plan = VerifierPlan::validate(
+    &verifier_key,
+    ProofProfile {
+      envelope: Envelope::SingleBatch,
+      active: header.active.clone(),
+      log_degrees: header.log_degrees.clone(),
+      claim_lengths: vec![expected.len()],
+      message_lengths: vec![],
+      max_field_retries: 2,
+    },
+    Default::default(),
+  )?;
+  let expanded = plan.expand_witness(ProofEnvelope::SingleBatch(&proof))?;
+  let mut builder = CircuitBuilder::new();
+  builder.enable_compact_blake3();
+  let claims = vec![
+    (0..expected.len())
+      .map(|i| {
+        StatementBinding::Wire(builder.public_input(format!("claim[0][{i}]")))
+      })
+      .collect(),
+  ];
+  let inputs = plan.constrain(
+    &mut builder,
+    Statement { claims, messages: vec![] },
+    ImplementationOptions { compact_blake3: true },
+  )?;
+  let circuit = builder.finish();
+  let mut witness = circuit.witness();
+  inputs.assign_statement(
+    &mut witness,
+    &Statement { claims: vec![expected.clone()], messages: vec![] },
+  )?;
+  expanded.assign_proof(&mut witness, &inputs)?;
+  let assignment = witness.generate()?;
+  let compiled =
+    circuit.lower_to_multi_stark_sharded(Val::from_u8(107), 1 << 24)?;
+  let claims = compiled.claims(&expected)?;
+  let template = compiled.claims(&vec![Val::ZERO; expected.len()])?;
+  let traces = compiled.traces(&assignment)?;
+  let mut definitions = compiled.circuit_inputs();
+  for definition in &mut definitions {
+    definition.lookup_group_size = 3;
+  }
+  drop(compiled);
+  drop(assignment);
+  let (reference, key) =
+    System::new(GoldilocksBlake3Config::new(cp, fp), definitions);
+  let proof = reference.prove_multiple_claims(
+    &key,
+    &claims.iter().map(Vec::as_slice).collect::<Vec<_>>(),
+    SystemWitness::from_stage_1(traces, &reference),
+  );
+  let reference_key = VerifierKey::from_system(&reference).to_bytes()?;
+  let reference_proof = proof.to_bytes()?;
+  drop(reference);
+
+  let (verifier, proof) =
+    prepared.prove_fri(GoldilocksBlake3Config::new(cp, fp), 1 << 24)?;
+  type EncodedVerifier = (Vec<u8>, (Vec<Vec<Val>>, Vec<(usize, usize)>));
+  let bytes = verifier.to_bytes()?;
+  let ((key, (actual_template, locations)), consumed): (
+    EncodedVerifier,
+    usize,
+  ) = bincode::serde::decode_from_slice(
+    &bytes[8..],
+    bincode::config::standard(),
+  )?;
+  assert_eq!(consumed, bytes.len() - 8);
+  assert_eq!(key, reference_key);
+  assert_eq!(actual_template, template);
+  assert_eq!(
+    locations,
+    (1..=expected.len()).map(|i| (i, 3)).collect::<Vec<_>>()
+  );
+  assert_eq!(proof.to_bytes()?, reference_proof);
+  Ok(())
+}
+
+fn check_cli_root(
+  key: &[u8],
+  proof: &aiur::synthesis::AiurProof,
+  expected: &[Val],
+  shards: usize,
+  stats: multi_stark::plonkish::CircuitStats,
+) {
+  use ix_proof_compression::fri::*;
+  use p3_field::PrimeField64;
+  use std::fs;
+
+  let directory = std::env::temp_dir()
+    .join(format!("ix-cli-root-{}-{shards}", std::process::id()));
+  fs::create_dir(&directory).unwrap();
+  let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+    let input = directory.join("input");
+    let output = directory.join("output");
+    fs::create_dir(&input)?;
+    fs::write(input.join("root-vk.bin"), key)?;
+    fs::write(input.join("root-proof.bin"), proof.to_bytes()?)?;
+    let mut claims = 1u64.to_le_bytes().to_vec();
+    claims.extend((expected.len() as u64).to_le_bytes());
+    for value in expected {
+      claims.extend(value.as_canonical_u64().to_le_bytes());
+    }
+    fs::write(input.join("root-claims.bin"), claims)?;
+    ix_proof_compression::pipeline::command(
+      "fri",
+      &[
+        input.to_string_lossy().into_owned(),
+        output.to_string_lossy().into_owned(),
+        "--check-only".into(),
+      ],
+    )?;
+    assert!(output.join("CHECKED").is_file());
+    assert!(
+      fs::read_to_string(output.join("circuit-cost.txt"))?
+        .starts_with(&format!("Stats: {stats:?}\n"))
+    );
+    if shards == 1 {
+      let key = AiurVerifyingKey::from_bytes(key)?;
+      let key = VerifierKey::from_system(key.system());
+      let header = &proof.preamble.headers[0];
+      let plan = VerifierPlan::validate(
+        &key,
+        ProofProfile {
+          envelope: Envelope::SingleBatch,
+          active: header.active.clone(),
+          log_degrees: header.log_degrees.clone(),
+          claim_lengths: vec![expected.len()],
+          message_lengths: vec![],
+          max_field_retries: DEFAULT_FIELD_RETRIES,
+        },
+        Default::default(),
+      )?;
+      let identity = plan.identity(&Statement {
+        claims: vec![vec![StatementSlot::Public; expected.len()]],
+        messages: vec![],
+      })?;
+      assert_eq!(fs::read(output.join("plan-id.bin"))?, identity);
+    }
+    Ok(())
+  })();
+  fs::remove_dir_all(directory).unwrap();
+  result.unwrap();
 }
 
 /// Runs all real compression circuits; expensive because it includes two KZG provers.

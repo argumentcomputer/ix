@@ -13,8 +13,8 @@ use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::plonkish::Value;
 use multi_stark::system::Circuit;
 
-/// Boundary wires bound by the transcript gadget. None of these
-/// values is authenticated by the algebraic checks themselves.
+/// Boundary wires that the transcript gadget binds. None of these values
+/// is authenticated by the algebraic checks themselves.
 #[derive(Clone, Copy, Debug)]
 pub struct AlgebraicChallenges {
   pub beta: Q,
@@ -265,6 +265,8 @@ pub(super) fn constrain_algebraic_checks_with_residual<
     ],
   );
   let AlgebraicChallenges { beta, gamma, alpha, zeta } = inputs.challenges;
+  // Zero collapses current-row and next-row opening points.
+  zeta.inverse(builder);
   let mut acc = zero;
   for claim in &inputs.claims {
     let mut fingerprint = zero;

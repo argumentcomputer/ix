@@ -1,5 +1,5 @@
 //! [`ProofConfig`] instantiation for the KZG backend: BLS12-381
-//! scalar field (its own challenge field, `D = 1`), Blake3 transcript,
+//! scalar field (its own challenge field, `D = 1`), a selected transcript,
 //! monomial KZG commitments.
 
 use std::sync::Arc;
@@ -10,18 +10,21 @@ use p3_maybe_rayon::prelude::*;
 use multi_stark::config::ProofConfig;
 use multi_stark::traits::Pcs;
 
+#[cfg(feature = "cuda")]
+use super::cuda;
 use super::field::Scalar;
-use super::pcs::KzgPcs;
+use super::pcs::{KzgCommitment, KzgPcs, KzgProverData};
 use super::srs::Srs;
-use super::transcript::Blake3Transcript;
+use super::transcript::{KzgTranscript, TranscriptKind};
 
 #[derive(Clone)]
 pub struct KzgConfig {
   pcs: KzgPcs,
-  /// Bytes observed into every fresh challenger: a domain tag plus a
-  /// digest of the protocol parameters INCLUDING the SRS (see the
-  /// transcript contract on [`ProofConfig::initialise_challenger`]).
+  /// Bytes observed into every fresh challenger: a domain tag, the trace
+  /// cap and quotient budget, the public setup and the four anchor points
+  /// (see the transcript contract on [`ProofConfig::initialise_challenger`]).
   transcript_seed: Vec<u8>,
+  transcript_kind: TranscriptKind,
   max_log_degree: usize,
   stream_lookups: bool,
   stream_quotient: bool,
@@ -35,10 +38,26 @@ impl KzgConfig {
   /// Panics if the SRS length is not a power of two (trace domains
   /// are, and `max_log_degree` is read off the SRS).
   pub fn new(srs: Arc<Srs>, max_quotient_degree: usize) -> Self {
-    let verifier = super::VerifierParams::from_srs(&srs);
+    let max_trace_len = srs.max_len();
+    Self::with_max_trace_len(srs, max_trace_len, max_quotient_degree)
+  }
+
+  /// Bind the admitted trace cap independently of the loaded public-power prefix.
+  pub fn with_max_trace_len(
+    srs: Arc<Srs>,
+    max_trace_len: usize,
+    max_quotient_degree: usize,
+  ) -> Self {
+    let verifier =
+      super::VerifierParams::with_max_trace_len(&srs, max_trace_len);
     let mut config = Self::verifier_only(verifier, max_quotient_degree);
-    config.pcs = KzgPcs::new(srs, max_quotient_degree);
+    config.pcs =
+      KzgPcs::with_max_trace_len(srs, max_trace_len, max_quotient_degree);
     config
+  }
+
+  pub fn transcript_seed(&self) -> &[u8] {
+    &self.transcript_seed
   }
 
   /// Construct a verifier without retaining the proving powers. No proving operation is available.
@@ -46,33 +65,59 @@ impl KzgConfig {
     params: super::VerifierParams,
     max_quotient_degree: usize,
   ) -> Self {
-    let max_log_degree = p3_util::log2_strict_usize(params.max_len());
-    let mut transcript_seed = b"multi-stark/kzg/v3".to_vec();
-    for parameter in [max_log_degree, max_quotient_degree] {
-      transcript_seed.extend(u64::try_from(parameter).unwrap().to_le_bytes());
-    }
-    // Preserve the proving configuration's transcript exactly.
-    params.g1[0]
-      .serialize_compressed(&mut transcript_seed)
-      .expect("Vec serialization");
-    params
-      .g2
-      .serialize_compressed(&mut transcript_seed)
-      .expect("Vec serialization");
-    params.g1[1]
-      .serialize_compressed(&mut transcript_seed)
-      .expect("Vec serialization");
-    params
-      .tau_g2
-      .serialize_compressed(&mut transcript_seed)
-      .expect("Vec serialization");
+    let max_log_degree = p3_util::log2_strict_usize(params.max_trace_len());
+    assert!(max_quotient_degree.is_power_of_two());
+    let transcript_kind = TranscriptKind::Blake3;
+    let transcript_seed =
+      Self::make_transcript_seed(&params, max_quotient_degree, transcript_kind);
     Self {
       pcs: KzgPcs::verifier_only(params, max_quotient_degree),
       transcript_seed,
+      transcript_kind,
       max_log_degree,
       stream_lookups: false,
       stream_quotient: false,
     }
+  }
+
+  /// Select the Fiat-Shamir protocol and its parameter-binding domain.
+  pub fn with_transcript(mut self, kind: TranscriptKind) -> Self {
+    self.transcript_seed = Self::make_transcript_seed(
+      self.pcs.verifier_params(),
+      self.pcs.max_quotient_degree(),
+      kind,
+    );
+    self.transcript_kind = kind;
+    self
+  }
+
+  pub fn transcript_kind(&self) -> TranscriptKind {
+    self.transcript_kind
+  }
+
+  fn make_transcript_seed(
+    params: &super::VerifierParams,
+    max_quotient_degree: usize,
+    kind: TranscriptKind,
+  ) -> Vec<u8> {
+    let domain: &[u8] = match kind {
+      TranscriptKind::Blake3 => b"multi-stark/kzg/v4",
+      TranscriptKind::Keccak256 => b"multi-stark/kzg/keccak256/v1",
+    };
+    let mut seed = domain.to_vec();
+    for parameter in
+      [p3_util::log2_strict_usize(params.max_trace_len()), max_quotient_degree]
+    {
+      seed.extend(u64::try_from(parameter).unwrap().to_le_bytes());
+    }
+    seed.extend((params.public_setup.max_degree as u64).to_le_bytes());
+    seed.extend(params.public_setup.id);
+    // Proving and portable verification bind the same public anchors.
+    params.g1[0].serialize_compressed(&mut seed).expect("Vec serialization");
+    params.g2.serialize_compressed(&mut seed).expect("Vec serialization");
+    params.g1[1].serialize_compressed(&mut seed).expect("Vec serialization");
+    params.tau_g2.serialize_compressed(&mut seed).expect("Vec serialization");
+    seed
   }
 
   /// Reconstruct and commit one lookup trace at a time from committed columns.
@@ -87,6 +132,170 @@ impl KzgConfig {
     self.stream_quotient = true;
     self
   }
+
+  /// One circuit's lookup trace, constructed on the host from committed
+  /// columns, with its local accumulator total.
+  fn host_lookup_part(
+    &self,
+    i: usize,
+    input: &multi_stark::config::LookupCommitInput<'_, Self>,
+    beta: Scalar,
+    gamma: Scalar,
+  ) -> (KzgProverData, Scalar) {
+    use multi_stark::traits::Algebra;
+    use multi_stark::traits::EvaluationDomain;
+    let start = std::time::Instant::now();
+    let domain = input.stage_1.0.matrices[input.stage_1.1].domain;
+    let (selected, graph) =
+      super::quotient_plan::lookup_graph(&input.circuit.graph);
+    tracing::info!(
+      circuit = i,
+      fixed_columns = selected.len(),
+      "KZG lookup fixed columns"
+    );
+    let fixed = input.preprocessed.filter(|_| !selected.is_empty()).map(
+      |(data, slot)| self.pcs.evaluate_columns(data, slot, domain, &selected),
+    );
+    let main = self.pcs.get_evaluations_on_domain(
+      input.stage_1.0,
+      input.stage_1.1,
+      domain,
+    );
+    const CHUNK: usize = 1 << 12;
+    let width = input.circuit.stage_2_width;
+    let mut trace = vec![Scalar::ZERO; domain.size() * width];
+    // Every chunk starts at zero. Its total determines the prefix
+    // offset applied in a second bounded, parallel pass.
+    let totals: Vec<_> = trace
+      .par_chunks_mut(CHUNK * width)
+      .enumerate()
+      .map(|(i, dst)| {
+        let start = i * CHUNK;
+        let values = multi_stark::system::compute_lookup_values_range(
+          &graph,
+          &main,
+          fixed.as_ref(),
+          start..start + dst.len() / width,
+        );
+        let (mut chunks, next) =
+          multi_stark::lookup::LookupValues::stage_2_traces(
+            &[values],
+            &[input.circuit.lookup_group_size],
+            beta,
+            &gamma,
+            Scalar::ZERO,
+          );
+        dst.copy_from_slice(&chunks.remove(0).values);
+        next[0]
+      })
+      .collect();
+    let mut local = Scalar::ZERO;
+    let offsets: Vec<_> = totals
+      .into_iter()
+      .map(|value| {
+        let offset = local;
+        local += value;
+        offset
+      })
+      .collect();
+    trace.par_chunks_mut(CHUNK * width).zip(offsets).for_each(
+      |(dst, offset)| {
+        if offset != Scalar::ZERO {
+          for value in dst {
+            *value += offset;
+          }
+        }
+      },
+    );
+    drop(main);
+    drop(fixed);
+    let trace =
+      p3_matrix::dense::RowMajorMatrix::new(trace, input.circuit.stage_2_width);
+    let (_, data) = self.pcs.commit(vec![(domain, trace)]);
+    tracing::info!(
+      circuit = i,
+      seconds = start.elapsed().as_secs_f64(),
+      "KZG lookup committed"
+    );
+    (data, local)
+  }
+
+  /// One circuit's quotient, evaluated on the host one trace-sized coset at
+  /// a time with fixed-column passes.
+  fn host_quotient_part(
+    &self,
+    i: usize,
+    input: &multi_stark::config::QuotientCommitInput<'_, Self>,
+    alpha: Scalar,
+  ) -> KzgProverData {
+    use multi_stark::traits::Algebra;
+    use multi_stark::traits::EvaluationDomain;
+    use multi_stark::traits::TwoAdicField;
+    let start = std::time::Instant::now();
+    let n = input.trace_domain.size();
+    let ratio = input.quotient_domain.size() / n;
+    let generator = Scalar::two_adic_generator(input.quotient_domain.log_size);
+    let mut shift = input.quotient_domain.shift;
+    let mut values = vec![Scalar::ZERO; input.quotient_domain.size()];
+    let passes = super::quotient_plan::plan(
+      &input.circuit.graph,
+      input.circuit.lookup_group_size.max(1),
+    );
+    tracing::info!(circuit = i, fixed_columns = ?passes.iter().map(|p| p.fixed.len()).collect::<Vec<_>>(), "KZG quotient fixed-column passes");
+    for coset in 0..ratio {
+      let domain = super::domain::Radix2Coset {
+        log_size: input.trace_domain.log_size,
+        shift,
+      };
+      let main = self.pcs.get_evaluations_on_domain(
+        input.stage_1.0,
+        input.stage_1.1,
+        domain,
+      );
+      let stage2 = self.pcs.get_evaluations_on_domain(
+        input.stage_2.0,
+        input.stage_2.1,
+        domain,
+      );
+      for pass in &passes {
+        let fixed = input.preprocessed.filter(|_| !pass.fixed.is_empty()).map(
+          |(data, slot)| {
+            self.pcs.evaluate_columns(data, slot, domain, &pass.fixed)
+          },
+        );
+        super::quotient::evaluate_coset(
+          input,
+          pass,
+          domain,
+          fixed.as_ref(),
+          &main,
+          &stage2,
+          alpha,
+          coset,
+          ratio,
+          &mut values,
+        );
+      }
+      shift *= generator;
+      tracing::info!(
+        circuit = i,
+        coset,
+        seconds = start.elapsed().as_secs_f64(),
+        "KZG quotient coset evaluated"
+      );
+    }
+    let (_, data) = self.pcs.commit_quotient(vec![(
+      input.quotient_domain,
+      p3_matrix::dense::RowMajorMatrix::new_col(values),
+      ratio,
+    )]);
+    tracing::info!(
+      circuit = i,
+      seconds = start.elapsed().as_secs_f64(),
+      "KZG quotient committed"
+    );
+    data
+  }
 }
 
 impl ProofConfig for KzgConfig {
@@ -100,91 +309,48 @@ impl ProofConfig for KzgConfig {
     if !self.stream_lookups {
       return None;
     }
-    let mut parts = Vec::new();
-    let mut accumulators = Vec::new();
-    for (i, input) in inputs.iter().enumerate() {
-      let start = std::time::Instant::now();
-      let domain = input.stage_1.0.matrices[input.stage_1.1].domain;
-      let (selected, graph) =
-        super::quotient_plan::lookup_graph(&input.circuit.graph);
-      tracing::info!(
-        circuit = i,
-        fixed_columns = selected.len(),
-        "KZG lookup fixed columns"
-      );
-      let fixed = input.preprocessed.filter(|_| !selected.is_empty()).map(
-        |(data, slot)| self.pcs.evaluate_columns(data, slot, domain, &selected),
-      );
-      let main = self.pcs.get_evaluations_on_domain(
-        input.stage_1.0,
-        input.stage_1.1,
-        domain,
-      );
-      use multi_stark::traits::Algebra;
-      use multi_stark::traits::EvaluationDomain;
-      const CHUNK: usize = 1 << 12;
-      let width = input.circuit.stage_2_width;
-      let mut trace = vec![Scalar::ZERO; domain.size() * width];
-      // Every chunk starts at zero. Its total determines the prefix
-      // offset applied in a second bounded, parallel pass.
-      let totals: Vec<_> = trace
-        .par_chunks_mut(CHUNK * width)
-        .enumerate()
-        .map(|(i, dst)| {
-          let start = i * CHUNK;
-          let values = multi_stark::system::compute_lookup_values_range(
-            &graph,
-            &main,
-            fixed.as_ref(),
-            start..start + dst.len() / width,
-          );
-          let (mut chunks, next) =
-            multi_stark::lookup::LookupValues::stage_2_traces(
-              &[values],
-              &[input.circuit.lookup_group_size],
-              beta,
-              &gamma,
-              Scalar::ZERO,
-            );
-          dst.copy_from_slice(&chunks.remove(0).values);
-          next[0]
+    #[cfg(feature = "cuda")]
+    let results: Vec<(KzgProverData, Scalar)> = {
+      use rayon::prelude::*;
+      let mut parts: Vec<_> = inputs
+        .par_iter()
+        .map(|input| {
+          cuda::lookup::coefficients(input, beta, gamma).map(
+            |(columns, local)| {
+              let domain = input.stage_1.0.matrices[input.stage_1.1].domain;
+              (
+                self.pcs.commit_trace_coefficients(domain.log_size, columns),
+                local,
+              )
+            },
+          )
         })
         .collect();
-      let mut local = Scalar::ZERO;
-      let offsets: Vec<_> = totals
-        .into_iter()
-        .map(|value| {
-          let offset = local;
-          local += value;
-          offset
-        })
-        .collect();
-      trace.par_chunks_mut(CHUNK * width).zip(offsets).for_each(
-        |(dst, offset)| {
-          if offset != Scalar::ZERO {
-            for value in dst {
-              *value += offset;
-            }
-          }
-        },
-      );
-      drop(main);
-      drop(fixed);
+      // Partitions the devices did not admit use the host path one at a
+      // time, keeping one trace-sized working set.
+      for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
+        if part.is_none() {
+          *part = Some(self.host_lookup_part(i, input, beta, gamma));
+        }
+      }
+      parts.into_iter().map(Option::unwrap).collect()
+    };
+    #[cfg(not(feature = "cuda"))]
+    let results: Vec<(KzgProverData, Scalar)> = inputs
+      .iter()
+      .enumerate()
+      .map(|(i, input)| self.host_lookup_part(i, input, beta, gamma))
+      .collect();
+    let mut parts = Vec::with_capacity(results.len());
+    let mut accumulators = Vec::with_capacity(results.len());
+    // Local traces start at zero; only the ordered public totals depend
+    // on the preceding circuit's accumulator.
+    for (data, local) in results {
+      parts.push(data);
       acc += local;
       accumulators.push(acc);
-      let trace = p3_matrix::dense::RowMajorMatrix::new(
-        trace,
-        input.circuit.stage_2_width,
-      );
-      let (_, data) = self.pcs.commit(vec![(domain, trace)]);
-      parts.push(data);
-      tracing::info!(
-        circuit = i,
-        seconds = start.elapsed().as_secs_f64(),
-        "KZG lookup committed"
-      );
     }
-    let (commitment, data) = super::pcs::KzgProverData::concatenate(parts);
+    let (commitment, data) = KzgProverData::concatenate(parts);
     Some((commitment, data, accumulators))
   }
 
@@ -192,83 +358,40 @@ impl ProofConfig for KzgConfig {
     &self,
     inputs: &[multi_stark::config::QuotientCommitInput<'_, Self>],
     alpha: Scalar,
-  ) -> Option<(super::pcs::KzgCommitment, super::pcs::KzgProverData)> {
+  ) -> Option<(KzgCommitment, KzgProverData)> {
     if !self.stream_quotient {
       return None;
     }
-    use multi_stark::traits::Algebra;
-    use multi_stark::traits::EvaluationDomain;
-    use multi_stark::traits::TwoAdicField;
-    let mut parts = Vec::with_capacity(inputs.len());
-    for (i, input) in inputs.iter().enumerate() {
-      let start = std::time::Instant::now();
-      let n = input.trace_domain.size();
-      let ratio = input.quotient_domain.size() / n;
-      let generator =
-        Scalar::two_adic_generator(input.quotient_domain.log_size);
-      let mut shift = input.quotient_domain.shift;
-      let mut values = vec![Scalar::ZERO; input.quotient_domain.size()];
-      let passes = super::quotient_plan::plan(
-        &input.circuit.graph,
-        input.circuit.lookup_group_size.max(1),
-      );
-      tracing::info!(circuit = i, fixed_columns = ?passes.iter().map(|p| p.fixed.len()).collect::<Vec<_>>(), "KZG quotient fixed-column passes");
-      for coset in 0..ratio {
-        let domain = super::domain::Radix2Coset {
-          log_size: input.trace_domain.log_size,
-          shift,
-        };
-        let main = self.pcs.get_evaluations_on_domain(
-          input.stage_1.0,
-          input.stage_1.1,
-          domain,
-        );
-        let stage2 = self.pcs.get_evaluations_on_domain(
-          input.stage_2.0,
-          input.stage_2.1,
-          domain,
-        );
-        for pass in &passes {
-          let fixed = input
-            .preprocessed
-            .filter(|_| !pass.fixed.is_empty())
-            .map(|(data, slot)| {
-              self.pcs.evaluate_columns(data, slot, domain, &pass.fixed)
-            });
-          super::quotient::evaluate_coset(
-            input,
-            pass,
-            domain,
-            fixed.as_ref(),
-            &main,
-            &stage2,
-            alpha,
-            coset,
-            ratio,
-            &mut values,
-          );
+    #[cfg(feature = "cuda")]
+    {
+      use rayon::prelude::*;
+      let mut parts: Vec<_> = inputs
+        .par_iter()
+        .map(|input| {
+          cuda::quotient::coefficients(input, alpha).map(|columns| {
+            self.pcs.commit_quotient_coefficients(
+              input.trace_domain.log_size,
+              columns,
+            )
+          })
+        })
+        .collect();
+      for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
+        if part.is_none() {
+          *part = Some(self.host_quotient_part(i, input, alpha));
         }
-        shift *= generator;
-        tracing::info!(
-          circuit = i,
-          coset,
-          seconds = start.elapsed().as_secs_f64(),
-          "KZG quotient coset evaluated"
-        );
       }
-      let (_, data) = self.pcs.commit_quotient(vec![(
-        input.quotient_domain,
-        p3_matrix::dense::RowMajorMatrix::new_col(values),
-        ratio,
-      )]);
-      parts.push(data);
-      tracing::info!(
-        circuit = i,
-        seconds = start.elapsed().as_secs_f64(),
-        "KZG quotient committed"
-      );
+      Some(KzgProverData::concatenate(parts.into_iter().map(Option::unwrap)))
     }
-    Some(super::pcs::KzgProverData::concatenate(parts))
+    #[cfg(not(feature = "cuda"))]
+    {
+      Some(KzgProverData::concatenate(
+        inputs
+          .iter()
+          .enumerate()
+          .map(|(i, input)| self.host_quotient_part(i, input, alpha)),
+      ))
+    }
   }
 
   fn omit_inactive_preprocessed_openings(&self) -> bool {
@@ -280,14 +403,14 @@ impl ProofConfig for KzgConfig {
 
   type Pcs = KzgPcs;
   type Challenge = Scalar;
-  type Challenger = Blake3Transcript;
+  type Challenger = KzgTranscript;
 
   fn pcs(&self) -> &KzgPcs {
     &self.pcs
   }
 
-  fn initialise_challenger(&self) -> Blake3Transcript {
-    let mut challenger = Blake3Transcript::new();
+  fn initialise_challenger(&self) -> KzgTranscript {
+    let mut challenger = KzgTranscript::new(self.transcript_kind);
     challenger.observe_bytes(&self.transcript_seed);
     challenger
   }
@@ -309,13 +432,11 @@ impl ProofConfig for KzgConfig {
     0
   }
 }
-
 #[cfg(test)]
 mod tests {
   use super::*;
   use multi_stark::expr::Expr;
   use multi_stark::lookup::Lookup;
-  use multi_stark::prover::Proof;
   use multi_stark::system::CircuitInputs;
   use multi_stark::system::System;
   use multi_stark::system::SystemWitness;
@@ -363,6 +484,33 @@ mod tests {
     system
       .verify_multiple_claims(no_claims, &proof)
       .expect("KZG proof failed to verify");
+  }
+
+  #[test]
+  fn proof_binds_public_identity_degree_and_trace_cap() {
+    let srs = Arc::new(Srs::unsafe_dev_setup(16, b"public-parameters"));
+    let params = super::super::VerifierParams::from_srs(&srs);
+    let (mut system, key) =
+      System::new(KzgConfig::new(srs.clone(), 8), [mul_circuit()]);
+    let proof = system.prove_multiple_claims(&key, &[], witness(&system));
+    let anchors = Srs::unsafe_dev_setup_prefix(2, 15, b"public-parameters");
+    system.config = KzgConfig::verifier_only(
+      super::super::VerifierParams::with_max_trace_len(&anchors, 16),
+      8,
+    );
+    system.verify_multiple_claims(&[], &proof).unwrap();
+    let mut identity = params.clone();
+    identity.public_setup.id[0] ^= 1;
+    let mut degree = params;
+    degree.public_setup.max_degree = 31;
+    for changed in [
+      identity,
+      degree,
+      super::super::VerifierParams::with_max_trace_len(&srs, 8),
+    ] {
+      system.config = KzgConfig::verifier_only(changed, 8);
+      assert!(system.verify_multiple_claims(&[], &proof).is_err());
+    }
   }
 
   #[test]
@@ -524,12 +672,15 @@ mod tests {
   }
 
   #[test]
-  fn kzg_serialization_round_trip() {
+  fn kzg_compact_round_trip() {
     let (system, key) = kzg_system();
     let no_claims: &[&[Scalar]] = &[];
     let proof = system.prove_multiple_claims(&key, no_claims, witness(&system));
-    let bytes = proof.to_bytes().expect("serialize");
-    let proof2 = Proof::<KzgConfig>::from_bytes(&bytes).expect("deserialize");
+    let codec =
+      super::super::compact::FixedProofCodec::new(&system, &proof.log_degrees)
+        .unwrap();
+    let bytes = codec.encode(&proof).expect("serialize");
+    let proof2 = codec.decode(&bytes).expect("deserialize");
     system.verify_multiple_claims(no_claims, &proof2).unwrap();
   }
 
@@ -556,7 +707,11 @@ mod tests {
     );
     let no_claims: &[&[Scalar]] = &[];
     let proof = system.prove_multiple_claims(&key, no_claims, witness);
-    let bytes = proof.to_bytes().expect("serialize");
+    let bytes =
+      super::super::compact::FixedProofCodec::new(&system, &proof.log_degrees)
+        .unwrap()
+        .encode(&proof)
+        .expect("serialize");
     println!(
       "KZG proof: {} bytes (two circuits, heights 4 and 16)",
       bytes.len()
