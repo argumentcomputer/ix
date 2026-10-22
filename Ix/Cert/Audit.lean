@@ -30,6 +30,7 @@ import Ix.Cert.SourceNames
 import Ix.Cert.SourceRetained
 import Ix.Cert.SourceReplay
 import Ix.Cert.SourceCommit
+import Ix.Cert.SourceTrace
 
 /-! # The certification statements, frozen
 
@@ -5350,3 +5351,19 @@ run_cmd do
   checkRoots (tag := "cert-audit") "source read commits"
     (#[`commit_replay, `collapseRead_replay, `collapseRead_commit,
       `quotient_lower_classified].map (`Ix.Cert.SourceCommit ++ ·))
+
+/-! ## Production Source trace: conversion provenance and stable replay
+
+Both converted-array maps preserve actual group provenance; missing/default
+and failed conversions cannot yield success. Trace induction supplies stable
+replay, and actual lowering/preparation wrappers discharge membership and
+stability premises. This closes these Source context facts, not acceptance,
+Source/Ixon unit correspondence or the final compiler theorem. -/
+
+/-- info: [cert-audit] production source trace: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "production source trace"
+    (#[`graph_conversion, `trace_stable, `lowerAllCollapsed_stable,
+      `prepareSourceCollapsed_stable].map (`Ix.Cert.SourceTrace ++ ·))
