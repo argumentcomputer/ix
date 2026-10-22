@@ -1,6 +1,10 @@
-import Ix.Address.Admission
-import Ix.Ixon.BlockOrder
-import IxC.Kernel.Admission.Tier
+module
+
+public import Ix.Address.Admission
+public import Ix.Ixon.BlockOrder
+public import IxC.Kernel.Admission.Tier
+
+@[expose] public section
 
 /-! # The authenticated Ixon entries at BLAKE3
 

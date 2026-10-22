@@ -1,3 +1,5 @@
+module
+
 /-
 Canonical comparison and refinement follow crates/kernel/src/canonical_check.rs
 and crates/common/src/strong_ordering.rs at Ix revision
@@ -8,8 +10,10 @@ compares physical Ixon references directly; it does not import the old Ix.Tc
 representation.
 -/
 
-import Ix.Ixon.Projection
-import Ix.Ixon.ReduceUniverse
+public import Ix.Ixon.Projection
+public import Ix.Ixon.ReduceUniverse
+
+@[expose] public section
 
 /-! Canonical mutual-block order, outside the hash-free kernel.
 

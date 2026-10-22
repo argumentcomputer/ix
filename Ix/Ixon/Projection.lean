@@ -1,6 +1,10 @@
-import IxC.Ixon.Codec
-import IxC.Kernel.Admission
-import IxC.Kernel.Egress.Projection
+module
+
+public import IxC.Ixon.Codec
+public import IxC.Kernel.Admission
+public import IxC.Kernel.Egress.Projection
+
+@[expose] public section
 
 /-! Projection reconstruction outside the hash-free kernel.
 

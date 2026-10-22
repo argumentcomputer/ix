@@ -70,10 +70,16 @@ end Ixon.Authenticated.Audit
 -- The committed fallback recursor guard (2026-10-22) adds seven compiled
 -- functions to each entry closure. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- M7 A2: module visibility compiles one additional specialization,
+-- Option.instBEq.beq._at_.Ixon.BlockOrder.checkMotives.spec_0,
+-- instead of reusing Reader.buildIndex's Option Nat equality helper.
+-- Its IR is identical after symbol renaming. Measured +1 against the
+-- archived pre-header modules; extern/unsafe/opaque/substitution and
+-- csimp sets and every ruling count are unchanged (2026-10-22).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 6163 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+ Address.admissionHash]: 6164 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
