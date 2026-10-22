@@ -79,6 +79,7 @@
 import Lean.Data.Json
 import LSpec
 import Ix.Ixon
+import Tests.Ix.Compile.LeanReport
 
 open LSpec
 
@@ -593,7 +594,18 @@ def scopeBridge (src : String) (wholeEnv : Ixon.Env) (localOut : System.FilePath
     one-line summary. -/
 def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
   let src := f.src.getD s!"Tests/Ix/Compile/AuxCert/{f.stem}.lean"
-  let dir ← IO.FS.createTempDir
+  let keep ← IO.getEnv "AUX_CERT_KEEP"
+  let dir ← match keep with
+    | none => IO.FS.createTempDir
+    | some base => do
+      let dir := System.FilePath.mk base / f.stem
+      if ← dir.pathExists then throw (IO.userError s!"aux-cert: refusing to overwrite {dir}")
+      IO.FS.createDirAll dir
+      pure dir
+  let save (label : String) (out : IO.Process.Output) : IO Unit := do
+    IO.FS.writeFile (dir / s!"{label}.stdout") out.stdout
+    IO.FS.writeFile (dir / s!"{label}.stderr") out.stderr
+    IO.FS.writeFile (dir / s!"{label}.exit") (toString out.exitCode ++ "\n")
   let mut problems : Array String := #[]
   try
     let rsOut := dir / "rs.ixe"
@@ -609,6 +621,8 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
         run ixExe (#["compile-lean", src, "--rust-check", "--out", leanOut.toString] ++ scope)
       else pure { exitCode := (0 : UInt32), stdout := "", stderr := "" }
     let rs ← IO.ofExcept (← IO.wait rsTask)
+    save "compile-rust" rs
+    save "compile-lean" ln
     let rsText := rs.stdout ++ rs.stderr
     let lnText := ln.stdout ++ ln.stderr
     let rsCode : UInt32 := rs.exitCode
@@ -669,6 +683,7 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
     -- The certified checker.
     let certPath := dir / "cert.jsonl"
     let cert ← run certExe #[rsOut.toString, certPath.toString, "--jobs", "8"]
+    save "check-cert" cert
     let rows ← if ← certPath.pathExists then certRows certPath else pure #[]
     if rows.isEmpty then
       problems := problems.push s!"kernel-check-ixe wrote no rows (exit {cert.exitCode})"
@@ -696,20 +711,27 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       let ours := ((byRecord.getD address #[]).toList ++ names.filter (owns f)).eraseDups
       for n in ours do failed := failed.push ("cert", n, s!"{outcome}: {reason}")
     let rsCheck ← IO.ofExcept (← IO.wait rsCheckTask)
+    save "check-rust" rsCheck
     for (n, m) in failLines (rsCheck.stdout ++ rsCheck.stderr) do
       failed := failed.push ("rs", n, m)
     let namesFile := dir / "names.txt"
     IO.FS.writeFile namesFile ("\n".intercalate mine ++ "\n")
     let failOut := dir / "lean.fail"
     let leanCheck ← run ixExe #["check-lean", rsOut.toString, "--consts-file",
-      namesFile.toString, "--fail-out", failOut.toString, "--workers", "8"]
-    let leanFails ← if ← failOut.pathExists then
-        pure ((← IO.FS.readFile failOut).splitOn "\n" |>.filter fun l =>
-          !l.isEmpty && !l.startsWith "#")
-      else pure []
-    for n in leanFails do failed := failed.push ("lean", n.trimAscii.toString, "")
-    if leanFails.isEmpty && leanCheck.exitCode != 0 then
-      failed := failed.push ("lean", "*", s!"check-lean exit {leanCheck.exitCode}")
+      namesFile.toString, "--fail-out", failOut.toString, "--workers", "8", "--verbose"]
+    save "check-lean" leanCheck
+    let failText ← if ← failOut.pathExists then IO.FS.readFile failOut else pure ""
+    let mut leanSummary := ""
+    match LeanReport.parse mine.toArray leanCheck.stdout leanCheck.stderr failText leanCheck.exitCode with
+    | .error e => problems := problems.push e
+    | .ok outcomes =>
+      IO.FS.writeFile (dir / "lean-outcomes.json")
+        ((Lean.Json.arr (outcomes.map LeanReport.Row.toJson)).pretty ++ "\n")
+      let counts := #["accept", "typed", "reject", "decline", "blocked"].map fun outcome =>
+        s!"{outcome} {(outcomes.filter (·.outcome == outcome)).size}"
+      leanSummary := s!"; lean {outcomes.size}/{mine.length} exact labels ({", ".intercalate counts.toList})"
+      for row in outcomes do
+        unless LeanReport.success row.outcome do failed := failed.push ("lean", row.label, row.reason)
     for (leg, n, m) in failed do
       if (known f leg n).isNone then
         problems := problems.push s!"{leg}: {n} fails, not recorded: {m.take 200}"
@@ -719,13 +741,16 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
     let nKnown := failed.size
     let mut shadowSummary := ""
     if let some t := shadowTask then
-      let (shProblems, summary) ← shadowCheck (← IO.ofExcept (← IO.wait t)) shadowOut leanOut
+      let shadow ← IO.ofExcept (← IO.wait t)
+      save "shadow" shadow
+      let (shProblems, summary) ← shadowCheck shadow shadowOut leanOut
       problems := problems ++ shProblems
       shadowSummary := s!"; {summary}"
     return (problems, s!"compiled, ALIGNED, {mine.length} names, {nKnown} recorded \
-      failure(s){shadowSummary}")
+      failure(s){leanSummary}{shadowSummary}")
   finally
-    IO.FS.removeDirAll dir
+    if keep.isNone then IO.FS.removeDirAll dir
+    else IO.println s!"[aux-cert] retained {f.stem}: {dir}"
 
 /-- Runs `xs` on `jobs` workers that each take the next unstarted item (no
     straggler waits between batches), keeping the order of the results. -/
