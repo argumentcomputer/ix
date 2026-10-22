@@ -72,8 +72,10 @@
   Run with: `lake test -- --ignored aux-cert` (after `lake build ix
   kernel-check-ixe`). `AUX_CERT_JOBS` sets the fixture parallelism (default
   4); `AUX_CERT_ONLY` restricts to a comma-separated list of fixture stems;
-  `AUX_CERT_WHOLE=1` selects the whole-file scope (above). The verdict lines
-  are the same in both scopes; `[aux-cert] time` lines report each
+  `AUX_CERT_WHOLE=1` selects the whole-file scope (above).
+  `AUX_CERT_KEEP=<fresh-directory>` retains per-fixture artifacts and exact
+  IxC outcome ledgers; existing fixture directories are never overwritten.
+  The verdict lines are the same in both scopes; `[aux-cert] time` lines report each
   fixture's wall time.
 -/
 import Lean.Data.Json
@@ -98,6 +100,13 @@ inductive Expect where
   | xfail (defect msg : String) (leanToo : Bool := true)
   deriving Inhabited
 
+/-- Measured IxC refusals, with the diagnostic's addresses resolved from the
+artifact. These are exact label/outcome/reason records, never name patterns. -/
+inductive LeanRefusal where
+  | smallEliminator (label typeName : String)
+  | blocked (label rootName : String)
+  deriving Inhabited
+
 /-- One fixture and its record. -/
 structure Fixture where
   /-- File stem under `Tests/Ix/Compile/AuxCert/` (the fixture's label
@@ -107,10 +116,12 @@ structure Fixture where
   ns : List String
   expect : Expect := .compiles
   /-- Constants known to fail a check: `(leg, name, defect)` with leg
-      `rs` (`check-rs`), `lean` (`check-lean`) or `cert` (certified checker,
+      `rs` (`check-rs`) or `cert` (certified checker,
       reject or undocumented decline); name `*` stands for every constant of
       the fixture on that leg and `P.*` for every name under `P`. -/
   knownFails : List (String × String × String) := []
+  /-- Exact IxC outcomes and reasons measured by `check-lean`. -/
+  leanRefusals : List LeanRefusal := []
   /-- Names that must be in the compiled output. -/
   requireNames : List String := []
   /-- Names that must not be in the compiled output. -/
@@ -198,14 +209,10 @@ def fixtures : List Fixture := [
   -- distinct arguments") and the eta-wrapped two ("collapse call site is a
   -- partial application"); Pass 3 rewrites the callers through images
   -- instead, so all four compile (the donor's record after its flip).
-  { stem := "SurgCollapse", ns := ["SurgCollapse"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
-  { stem := "SurgCollapseEq", ns := ["SurgCollapseEq"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
-  { stem := "F4FlatAlphaUsers", ns := ["F4FlatAlphaUsers"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
-  { stem := "F4_NestedAlphaUsers", ns := ["A", "B", "r", "t", "sizeL", "sizeLA"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
+  { stem := "SurgCollapse", ns := ["SurgCollapse"] },
+  { stem := "SurgCollapseEq", ns := ["SurgCollapseEq"] },
+  { stem := "F4FlatAlphaUsers", ns := ["F4FlatAlphaUsers"] },
+  { stem := "F4_NestedAlphaUsers", ns := ["A", "B", "r", "t", "sizeL", "sizeLA"] },
   -- A0 item 2 (WB-B1, A5/C3, C1): the user's names stay the user's.
   { stem := "FieldBelow", ns := ["FieldBelow"] },
   { stem := "FieldBelowRace", ns := ["FieldBelowRace"] },
@@ -231,14 +238,18 @@ def fixtures : List Fixture := [
           "NestedSortU.t_rec"] },
   -- CQX.8: `T`'s field `K True (Box T)` mentions the block only before
   -- whnf. The Rust kernel tests positivity after whnf, as Lean does, and
-  -- accepts `T` and its recursors (D-14 finds `Box T` under `K`); `Ix.Tc`
-  -- still rejects the block (not fixed: deleted in CQX.2). The certified
-  -- checker's modeller passes the field since CQX.8 and declines the block
-  -- as `NestedSortU`'s (a non-`Prop` nested block with a small eliminator).
+  -- accepts `T` and its recursors (D-14 finds `Box T` under `K`). Both IxC
+  -- paths pass the field since CQX.8 and decline the existing non-Prop/small
+  -- eliminator modeller boundary. M7 measured these exact four declines and
+  -- their blocked dependent; this is not the old Ix.Tc positivity refusal.
   { stem := "NestedSortUK", ns := ["NestedSortUK"]
+    leanRefusals :=
+      [ .smallEliminator "NestedSortUK.T" "NestedSortUK.T"
+      , .smallEliminator "NestedSortUK.T.mk" "NestedSortUK.T"
+      , .smallEliminator "NestedSortUK.T.rec" "NestedSortUK.T"
+      , .smallEliminator "NestedSortUK.T.rec_1" "NestedSortUK.T"
+      , .blocked "NestedSortUK.t_rec" "NestedSortUK.T" ]
     knownFails :=
-      kf "lean" "CQX.8 (Ix.Tc tests positivity before whnf; not fixed, CQX.2)"
-        ["NestedSortUK.T", "NestedSortUK.T.*"] ++
       kf "cert" "IxC modeller: a non-Prop nested block with a small eliminator (decline)"
         ["NestedSortUK.T", "NestedSortUK.T.mk", "NestedSortUK.T.rec", "NestedSortUK.T.rec_1",
           "NestedSortUK.t_rec"] },
@@ -261,9 +272,7 @@ def fixtures : List Fixture := [
   -- Passing neighbours with value pins.
   { stem := "Neighbours"
     ns := ["F1Pair", "F1Ring", "F1Triple", "F4Flat", "F5PSigma", "F5Prod",
-      "F6AFirst", "F8NoSplit", "L2Data", "L2TwoCtors", "RecBelow"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)"
-      ["F1Pair.*", "F1Ring.*", "F1Triple.*", "F4Flat.*"] },
+      "F6AFirst", "F8NoSplit", "L2Data", "L2TwoCtors", "RecBelow"] },
   -- Reproducers that compile cleanly (the audits' refuted leads).
   { stem := "BetaField", ns := ["BetaField"] },
   { stem := "DotCtor", ns := ["DotCtor"] },
@@ -290,8 +299,7 @@ def fixtures : List Fixture := [
   -- run of the flip, 2026-10-20; the donor kept the `sizeOf` rows).
   { stem := "Coind", ns := ["Coind"] },
   { stem := "PropSplit", ns := ["PropSplit"] },
-  { stem := "PropCollapse", ns := ["PropCollapse"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress), WB-B2" ["*"] },
+  { stem := "PropCollapse", ns := ["PropCollapse"] },
   { stem := "L2_PropSplit", ns := ["A", "B", "ua"] },
   -- WB-B6: a recursive field behind a reducible alias (`Id' (PA n)`, and
   -- `Branches Higher`, an alias of a function telescope). The Prop `.below`
@@ -321,11 +329,9 @@ def fixtures : List Fixture := [
   -- non-inductive head, and both kernels now find them.
   { stem := "UnsafeI", ns := ["UnsafeI"] },
   { stem := "F1_Collapse2p1", ns := ["A", "B", "C"]
-    knownFails := kf "rs" "BB-F1 (metadata of collapsed aliases)" ["*"] ++
-      kf "lean" "BB-F1, BB-F7" ["*"] },
+    knownFails := kf "rs" "BB-F1 (metadata of collapsed aliases)" ["*"] },
   { stem := "F5_SigmaNestedNested", ns := ["T"] },
-  { stem := "F7_AlphaVLean", ns := ["A", "B"]
-    knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
+  { stem := "F7_AlphaVLean", ns := ["A", "B"] },
   -- WB-A7, fixed by CQ3.1: `P`'s elimination is decided by the kernels'
   -- rule before the field probe, which failed on the auxiliary `And P P`
   -- the bridge's kernel does not hold. `T` (`Id (List T)`) is nested under
@@ -514,6 +520,35 @@ def recordOf (env : Ixon.Env) (addr : Address) : Address :=
     | .cPrj p => p.block
     | _ => addr
   | none => addr
+
+def LeanRefusal.expected (env : Ixon.Env) (refusal : LeanRefusal) : Except String LeanReport.Row := do
+  let (label, root) := match refusal with
+    | .smallEliminator l r | .blocked l r => (l, r)
+  let candidates := env.named.fold (init := []) fun acc name nd =>
+    if toString name == root then nd :: acc else acc
+  let [nd] := candidates | throw s!"lean record: missing or ambiguous root {root}"
+  let some raw := env.consts[nd.addr]? | throw s!"lean record: missing root record {root}"
+  let _ ← raw.get
+  let owner := recordOf env nd.addr
+  unless env.consts.contains owner do throw s!"lean record: missing owner of {root}"
+  let (outcome, reason) := match refusal with
+    | .smallEliminator .. => ("decline", s!"decline: reader: in-process model of #{(toString nd.addr).take 12}: small eliminator on a non-Prop block")
+    | .blocked .. => ("blocked", s!"blocked: {owner}")
+  return { label, outcome, reason }
+
+/-- Every recorded refusal must occur exactly, and no other refusal is
+allowed. Accept/typed retain their distinct successful CLI meanings. -/
+def leanOutcomeProblems (expected actual : Array LeanReport.Row) : Array String := Id.run do
+  let mut problems := #[]
+  unless (expected.map (·.label)).toList.eraseDups.length == expected.size do
+    problems := problems.push "lean: duplicate expected refusal label"
+  for row in expected do
+    unless actual.filter (·.label == row.label) == #[row] do
+      problems := problems.push s!"lean: {row.label} differs from recorded {row.outcome}: {row.reason}"
+  for row in actual do
+    unless LeanReport.success row.outcome || expected.contains row do
+      problems := problems.push s!"lean: {row.label} has unrecorded {row.outcome}: {row.reason}"
+  return problems
 
 /-- The output's layout against the fixture's record: names that share one
     address (`sameAddress`), projections into blocks of an exact size
@@ -722,6 +757,7 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
     save "check-lean" leanCheck
     let failText ← if ← failOut.pathExists then IO.FS.readFile failOut else pure ""
     let mut leanSummary := ""
+    let mut leanRefused := 0
     match LeanReport.parse mine.toArray leanCheck.stdout leanCheck.stderr failText leanCheck.exitCode with
     | .error e => problems := problems.push e
     | .ok outcomes =>
@@ -730,15 +766,17 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       let counts := #["accept", "typed", "reject", "decline", "blocked"].map fun outcome =>
         s!"{outcome} {(outcomes.filter (·.outcome == outcome)).size}"
       leanSummary := s!"; lean {outcomes.size}/{mine.length} exact labels ({", ".intercalate counts.toList})"
-      for row in outcomes do
-        unless LeanReport.success row.outcome do failed := failed.push ("lean", row.label, row.reason)
+      leanRefused := (outcomes.filter (!LeanReport.success ·.outcome)).size
+      match f.leanRefusals.toArray.mapM (·.expected outEnv) with
+      | .error e => problems := problems.push e
+      | .ok expected => problems := problems ++ leanOutcomeProblems expected outcomes
     for (leg, n, m) in failed do
       if (known f leg n).isNone then
         problems := problems.push s!"{leg}: {n} fails, not recorded: {m.take 200}"
     for (leg, n, d) in f.knownFails do
       unless isPattern n || failed.any (fun (l, m, _) => l == leg && m == n) do
         problems := problems.push s!"{leg}: {n} recorded as failing ({d}) but passes"
-    let nKnown := failed.size
+    let nKnown := failed.size + leanRefused
     let mut shadowSummary := ""
     if let some t := shadowTask then
       let shadow ← IO.ofExcept (← IO.wait t)

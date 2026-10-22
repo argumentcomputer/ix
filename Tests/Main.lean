@@ -52,6 +52,7 @@ import Tests.Ix.Compile.Pass3Core
 import Tests.Ix.Compile.HeadLookup
 import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.LeanReportTests
+import Tests.Ix.Compile.AuxCertLeanExpect
 import Tests.Ix.Compile.Pass3
 import Tests.Ix.Compile.Pass3Tools
 import Tests.Ix.Compile.DriverInput
@@ -266,6 +267,7 @@ def registry : List Entry := [
   -- the strict readers of the checkers' reports (Tests.Ix.Compile.KernelReport)
   .suite "compiler-reports" .primary Tests.Ix.Compile.KernelReportTests.suite,
   .suite "compiler-lean-reports" .primary Tests.Ix.Compile.LeanReportTests.suite,
+  .suite "aux-cert-lean-expect" .primary Tests.Ix.Compile.AuxCertLeanExpect.suite,
   -- auxiliary dump inputs keyed by the canonical member, not the Tarjan representative
   .suite "aux-dump-inputs" .primary Tests.Compile.AuxGenDiff.suite,
   -- the compile drivers refuse a condensation block without a reference set
