@@ -109,6 +109,7 @@ import Tests.Ix.Cert.Statement
 import Tests.Ix.ResourceHints
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.Kernel.RecordCheck
+import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.SharingExact
@@ -296,6 +297,7 @@ def registry : List Entry := [
   -- the environment check's persistent read cache: a run from the mapped plan gives the live rows
   .suite "kernel-read-cache" .primary Tests.Ix.Kernel.ReadCache.suite,
   .suite "kernel-record-check" .primary Tests.Ix.Kernel.RecordCheck.suite,
+  .suite "kernel-check-lean-targets" .primary Tests.Ix.Kernel.CheckLeanTargets.suite,
   .suite "primitive-address-parity" .primary (Tests.Ix.Kernel.BuildPrimitives.paritySuite
     ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
   .suite "decompile-unit" .primary Tests.Decompile.unitSuite,
