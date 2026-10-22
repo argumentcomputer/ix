@@ -810,14 +810,90 @@ fn table_trim(tb: CTable, slack: i128) -> CTable {
   }
 }
 
+/// The sorted concatenation of two ascending slices, without allocation.
+/// Equal elements are emitted twice, just as `merge_sorted` preserves them.
+struct Merged<'a> {
+  a: &'a [TermId],
+  b: &'a [TermId],
+}
+
+impl Iterator for Merged<'_> {
+  type Item = TermId;
+
+  fn next(&mut self) -> Option<TermId> {
+    match (self.a.split_first(), self.b.split_first()) {
+      (Some((&x, a)), Some((&y, b))) => {
+        if x <= y {
+          self.a = a;
+          Some(x)
+        } else {
+          self.b = b;
+          Some(y)
+        }
+      },
+      (Some((&x, a)), None) => {
+        self.a = a;
+        Some(x)
+      },
+      (None, Some((&y, b))) => {
+        self.b = b;
+        Some(y)
+      },
+      (None, None) => None,
+    }
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let n = self.a.len() + self.b.len();
+    (n, Some(n))
+  }
+}
+
+impl ExactSizeIterator for Merged<'_> {}
+
+/// Exactly `set_prec` on the two materialized merges, including prefix and
+/// equal-sequence behavior. No disjointness or duplicate removal is assumed.
+fn merged_prec(mut a: Merged<'_>, mut b: Merged<'_>) -> bool {
+  loop {
+    match (a.next(), b.next()) {
+      (Some(x), Some(y)) if x == y => {},
+      (Some(x), Some(y)) => return y < x,
+      (None, Some(_)) => return true,
+      _ => return false,
+    }
+  }
+}
+
+type DelayedChoice<'a> = (i128, &'a [TermId], &'a [TermId]);
+
+/// Convolve tables of ascending choices in the original pair order, keeping
+/// the same winner at every actual merged count. Only final winners allocate.
 fn table_conv(a: &CTable, b: &CTable) -> CTable {
-  let mut out: CTable = Vec::new();
+  let mut out: Vec<Option<DelayedChoice<'_>>> = Vec::new();
   for (da, sa) in a.iter().flatten() {
     for (db, sb) in b.iter().flatten() {
-      table_add(&mut out, (da + db, merge_sorted(sa, sb)));
+      let delta = da + db;
+      let k = sa.len() + sb.len();
+      if out.len() <= k {
+        out.resize(k + 1, None);
+      }
+      let wins = match out[k] {
+        None => true,
+        Some((d, a, b)) => {
+          delta < d
+            || (delta == d
+              && merged_prec(Merged { a: sa, b: sb }, Merged { a, b }))
+        },
+      };
+      if wins {
+        out[k] = Some((delta, sa, sb));
+      }
     }
   }
   out
+    .into_iter()
+    .map(|e| e.map(|(d, a, b)| (d, Merged { a, b }.collect())))
+    .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -2344,6 +2420,138 @@ pub fn normalize_constant_sharing_uniform(
     return Err(internal("uniform output length differs from its accounting"));
   }
   Ok((out, result))
+}
+
+#[cfg(test)]
+mod convolution_tests {
+  use super::*;
+
+  // The previous eager implementation is the complete-table oracle.
+  fn eager(a: &CTable, b: &CTable) -> CTable {
+    let mut out = CTable::new();
+    for (da, sa) in a.iter().flatten() {
+      for (db, sb) in b.iter().flatten() {
+        table_add(&mut out, (da + db, merge_sorted(sa, sb)));
+      }
+    }
+    out
+  }
+
+  #[test]
+  fn merged_streams_preserve_duplicates_prefixes_and_exact_ties() {
+    let mut lists = vec![Vec::new()];
+    for len in 1..=3u32 {
+      for mut code in 0..3u32.pow(len) {
+        let mut xs = Vec::new();
+        for _ in 0..len {
+          xs.push(code % 3);
+          code /= 3;
+        }
+        xs.sort_unstable();
+        if !lists.contains(&xs) {
+          lists.push(xs);
+        }
+      }
+    }
+    assert_eq!(lists.len(), 20);
+    let pairs: Vec<_> = lists
+      .iter()
+      .flat_map(|a| {
+        lists
+          .iter()
+          .map(move |b| (a.as_slice(), b.as_slice(), merge_sorted(a, b)))
+      })
+      .collect();
+    for (a, b, expected) in &pairs {
+      let mut merged = Merged { a, b };
+      for (i, &t) in expected.iter().enumerate() {
+        assert_eq!(merged.len(), expected.len() - i);
+        assert_eq!(merged.next(), Some(t));
+      }
+      assert_eq!((merged.len(), merged.next()), (0, None));
+      for (c, d, other) in &pairs {
+        assert_eq!(
+          merged_prec(Merged { a, b }, Merged { a: c, b: d }),
+          set_prec(expected, other),
+          "{a:?}+{b:?} vs {c:?}+{d:?}"
+        );
+      }
+    }
+    // Equal choices must not replace the first winner, even when split differently.
+    assert!(!merged_prec(
+      Merged { a: &[1], b: &[2] },
+      Merged { a: &[], b: &[1, 2] }
+    ));
+  }
+
+  #[test]
+  fn convolution_preserves_complete_sparse_tables_and_actual_counts() {
+    let tables = [
+      vec![],
+      vec![None, None],
+      vec![Some((0, vec![])), None, None],
+      vec![None, Some((0, vec![1, 1])), None, Some((0, vec![]))],
+      vec![
+        Some((-1, vec![0, 4])),
+        Some((0, vec![1])),
+        None,
+        Some((-1, vec![4])),
+      ],
+      vec![Some((0, vec![2])), Some((0, vec![1])), Some((0, vec![1]))],
+    ];
+    for a in &tables {
+      for b in &tables {
+        assert_eq!(table_conv(a, b), eager(a, b));
+      }
+    }
+    // Deliberately unrelated row indices and overlapping input sets: count
+    // the actual merged multiset, preserve every duplicate and every hole.
+    let got = table_conv(
+      &vec![Some((0, vec![1, 1]))],
+      &vec![Some((0, vec![1, 2])), None],
+    );
+    assert_eq!(got, vec![None, None, None, None, Some((0, vec![1, 1, 1, 2]))]);
+  }
+
+  fn next(seed: &mut u64, n: u64) -> u64 {
+    *seed ^= *seed << 13;
+    *seed ^= *seed >> 7;
+    *seed ^= *seed << 17;
+    *seed % n
+  }
+
+  fn random_table(seed: &mut u64, parity: Option<u32>) -> CTable {
+    (0..next(seed, 10))
+      .map(|_| {
+        if next(seed, 4) == 0 {
+          return None;
+        }
+        let mut xs: Vec<_> = (0..next(seed, 9))
+          .map(|_| {
+            let t = TermId::try_from(next(seed, 12)).unwrap();
+            parity.map_or(t, |p| 2 * t + p)
+          })
+          .collect();
+        xs.sort_unstable();
+        if parity.is_some() {
+          xs.dedup();
+        }
+        Some((i128::from(next(seed, 5)) - 2, xs))
+      })
+      .collect()
+  }
+
+  #[test]
+  fn convolution_matches_eager_random_tables() {
+    let mut seed = 0x9E37_79B9_7F4A_7C15;
+    for i in 0..1000 {
+      // Alternate arbitrary overlapping multisets and disjoint group sets.
+      let disjoint = i % 2 == 0;
+      let a = random_table(&mut seed, disjoint.then_some(0));
+      let b = random_table(&mut seed, disjoint.then_some(1));
+      assert_eq!(table_conv(&a, &b), eager(&a, &b), "case {i}: {a:?} {b:?}");
+    }
+  }
 }
 
 #[cfg(test)]
