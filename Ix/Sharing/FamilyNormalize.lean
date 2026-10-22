@@ -1,8 +1,8 @@
 module
 
 public import Ix.Sharing.FamilyPrototypeCached
-public import Ix.Sharing.Exact
-import all Ix.Sharing.Exact.TieredFast
+public import Ix.Sharing.Exact.TieredFast
+import all Ix.Sharing.Exact.UniformSearch
 
 @[expose] public section
 
@@ -63,16 +63,9 @@ def familyStep (cfg : Config) (limits : Limits) (ex : Expanded) (sg : UStage)
   let (cx, posC) := mkSCtxL ex sg.f sg.up sg.cand sg.b0 sg.vis0 sg.rootCount
     sg.slack sg.theta sg.baseEv sg.widthCs sg.allTrue sg.unc parents posC members
   let work ← bump work (familyWork cfg members.size cx.closure.size) limits.maxCostEvals .costEvals
-  if localSearchOK cx then
-    let posA := setPositions posA cx.area
-    let trace := traceWithPositions cfg cx width results.size members posA posC
-    let result ← retainedResult sg.slack trace
-    return ((results.push result, states, work), clearPositions posA cx.area,
-      clearPositions posC cx.closure)
-  else
-    let trace := traceWithPhi cfg cx width results.size members cx.phiE
-    let result ← retainedResult sg.slack trace
-    return ((results.push result, states, work), posA, clearPositions posC cx.closure)
+  let (trace, posA, posC) := cachedEvaluation cfg cx width results.size members posA posC
+  let result ← retainedResult sg.slack trace
+  return ((results.push result, states, work), posA, posC)
 
 def familyComponents (cfg : Config) (limits : Limits) (ex : Expanded) (sg : UStage)
     (width : Nat) (parents : Array (Array Nat)) :

@@ -58,33 +58,43 @@ private theorem traceWithPositions_eq (cfg : Config) {cx : SCtx} (width index : 
 
 abbrev CacheState := Array ComponentTrace × Array Nat × Array Nat
 
+/-- Shared evaluator/clear step for the trace fold and the metered production
+fold. The caller may charge closure work after preparation and before this call. -/
+def cachedEvaluation (cfg : Config) (cx : SCtx) (width index : Nat)
+    (members posA posC : Array Nat) : ComponentTrace × Array Nat × Array Nat :=
+  if localSearchOK cx then
+    let posA := setPositions posA cx.area
+    let trace := traceWithPositions cfg cx width index members posA posC
+    (trace, clearPositions posA cx.area, clearPositions posC cx.closure)
+  else
+    let trace := traceWithPhi cfg cx width index members cx.phiE
+    (trace, posA, clearPositions posC cx.closure)
+
+def cachedComponent (cfg : Config) (ex : Expanded) (sg : UStage) (width : Nat)
+    (parents : Array (Array Nat)) (posA posC members : Array Nat) (index : Nat) :
+    ComponentTrace × Array Nat × Array Nat :=
+  let (cx, posC) := mkSCtxL ex sg.f sg.up sg.cand sg.b0 sg.vis0 sg.rootCount
+    sg.slack sg.theta sg.baseEv sg.widthCs sg.allTrue sg.unc parents posC members
+  cachedEvaluation cfg cx width index members posA posC
+
 /-- One component consumes its evaluator before clearing its shared buffers.
 Trace rows contain values/IDs, never a retained context or position closure. -/
 def cachedStep (cfg : Config) (ex : Expanded) (sg : UStage) (width : Nat)
     (parents : Array (Array Nat)) (acc : CacheState) (item : Array Nat × Nat) : CacheState :=
   let (results, posA, posC) := acc
-  let (members, index) := item
-  let (cx, posC) := mkSCtxL ex sg.f sg.up sg.cand sg.b0 sg.vis0 sg.rootCount
-    sg.slack sg.theta sg.baseEv sg.widthCs sg.allTrue sg.unc parents posC members
-  if localSearchOK cx then
-    let posA := setPositions posA cx.area
-    let trace := traceWithPositions cfg cx width index members posA posC
-    (results.push trace, clearPositions posA cx.area, clearPositions posC cx.closure)
-  else
-    let trace := traceWithPhi cfg cx width index members cx.phiE
-    (results.push trace, posA, clearPositions posC cx.closure)
+  let (trace, posA, posC) := cachedComponent cfg ex sg width parents posA posC item.1 item.2
+  (results.push trace, posA, posC)
 
 /-- From cleared buffers, the cached step returns the reference trace and
 cleared buffers again. No stage/classification premise is added. -/
-theorem cachedStep_eq (cfg : Config) (ex : Expanded) (sg : UStage) (width : Nat)
-    (hcp : childrenPrecede ex.dag.nodes = true) (results : Array ComponentTrace)
+theorem cachedComponent_eq (cfg : Config) (ex : Expanded) (sg : UStage) (width : Nat)
+    (hcp : childrenPrecede ex.dag.nodes = true)
     (members : Array Nat) (index : Nat) :
-    cachedStep cfg ex sg width (parentsOf ex.dag)
-        (results, Array.replicate sg.up.prep.dag.size 0, Array.replicate ex.dag.size 0)
-        (members, index) =
-      (results.push (component cfg ex sg width index members),
+    cachedComponent cfg ex sg width (parentsOf ex.dag)
+        (Array.replicate sg.up.prep.dag.size 0) (Array.replicate ex.dag.size 0) members index =
+      (component cfg ex sg width index members,
         Array.replicate sg.up.prep.dag.size 0, Array.replicate ex.dag.size 0) := by
-  unfold cachedStep
+  unfold cachedComponent
   dsimp only
   rw [LocalSearch.mkSCtxL_eq ex sg.f sg.up sg.cand sg.b0 sg.vis0 sg.rootCount sg.slack
     sg.theta sg.baseEv sg.widthCs sg.allTrue sg.unc members hcp]
@@ -102,9 +112,12 @@ theorem cachedStep_eq (cfg : Config) (ex : Expanded) (sg : UStage) (width : Nat)
       sg.theta sg.baseEv sg.widthCs sg.allTrue sg.unc members = cx := rfl
   have hcl : cx.closure = upClosure ex.dag ((markTable ex.dag.size members)[·]!) := rfl
   have hup : cx.up = sg.up := rfl
-  rw [hcx, hcl, hzC]
+  rw [hcx]
+  unfold cachedEvaluation
+  rw [hcl, hzC]
   by_cases hok : localSearchOK cx = true
   · rw [ite_eq_left hok]
+    dsimp only
     obtain ⟨_, _, _, _, _, _, _, _, harea, _⟩ := LocalSearch.localSearchOK_spec hok
     have hainc := (LocalSearch.localSearchOK_inc hok).1
     have hain : ∀ i, i < cx.area.size → cx.area[i]! < sg.up.prep.dag.size := by
@@ -119,11 +132,24 @@ theorem cachedStep_eq (cfg : Config) (ex : Expanded) (sg : UStage) (width : Nat)
       ⟨hok, LocalSearch.setPositions_posFn _ _ hainc hain,
         by rw [hcl]; exact LocalSearch.setPositions_posFn _ _ hCinc hCin⟩
     rw [traceWithPositions_eq cfg width index members hr, hzA]
-    exact congrArg (fun t => (results.push t, Array.replicate sg.up.prep.dag.size 0,
+    exact congrArg (fun t => (t, Array.replicate sg.up.prep.dag.size 0,
       Array.replicate ex.dag.size 0)) (traceWithPhi_spec cfg ex sg width index members)
   · rw [ite_eq_right hok]
-    exact congrArg (fun t => (results.push t, Array.replicate sg.up.prep.dag.size 0,
+    dsimp only
+    exact congrArg (fun t => (t, Array.replicate sg.up.prep.dag.size 0,
       Array.replicate ex.dag.size 0)) (traceWithPhi_spec cfg ex sg width index members)
+
+theorem cachedStep_eq (cfg : Config) (ex : Expanded) (sg : UStage) (width : Nat)
+    (hcp : childrenPrecede ex.dag.nodes = true) (results : Array ComponentTrace)
+    (members : Array Nat) (index : Nat) :
+    cachedStep cfg ex sg width (parentsOf ex.dag)
+        (results, Array.replicate sg.up.prep.dag.size 0, Array.replicate ex.dag.size 0)
+        (members, index) =
+      (results.push (component cfg ex sg width index members),
+        Array.replicate sg.up.prep.dag.size 0, Array.replicate ex.dag.size 0) := by
+  unfold cachedStep
+  dsimp only
+  rw [cachedComponent_eq cfg ex sg width hcp]
 
 /-- Whole-stage fold, with the initial classification supplied once. Non-DAG
 inputs retain the reference loop; valid inputs use the proved cached walk. -/

@@ -49,13 +49,14 @@ theorem familyStep_cached (cfg : Config) (limits : Limits) (ex : Expanded) (sg :
   obtain ⟨cx, posC'⟩ := prepared
   dsimp only at run
   obtain ⟨work', _, run⟩ := bind_eq_ok run
+  unfold cachedEvaluation at run
   split at run <;> rename_i localOK
   all_goals
     obtain ⟨result, retained, run⟩ := bind_eq_ok run
     simp only [pure, Except.pure, Except.ok.injEq] at run
     cases run
     refine ⟨_, result, states', work', retained, ?_, rfl⟩
-    simp [cachedStep, context, localOK]
+    simp [cachedStep, cachedComponent, cachedEvaluation, context, localOK]
 
 theorem familyStep_reference (cfg : Config) (limits : Limits) (ex : Expanded) (sg : UStage)
     (width : Nat) (hcp : childrenPrecede ex.dag.nodes = true) (results : Array CompResult)
