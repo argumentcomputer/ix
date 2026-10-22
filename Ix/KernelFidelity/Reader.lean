@@ -6,6 +6,8 @@ public import Ix.IxonUniv
 public import Ix.Compile.Pass
 public import Ix.CanonM
 public import Ix.KernelCheck.Step
+public import Ix.KernelCheck.Stream
+public import Ix.KernelFidelity.Access
 
 @[expose] public section
 
@@ -571,6 +573,94 @@ def Input.ofEnv (lean : Lean.Environment) (ixon : Ixon.Env) : IO Input := do
     if lean.contains ln || isBlockName ln then none else some nd.addr
   return { lean := lean.find?, names, ixon, store, foreign }
 
+/-- Source and record access for fidelity. The lazy constructor retains only
+record skeletons (recursors in full), headers and windows into one image.
+Authentication belongs to `ofBytes` or the caller of `ofParts`; this host
+interface itself is not an admission judgment. -/
+structure InputAccess where
+  lean : Lean.Name → Option Lean.ConstantInfo
+  names : Array Lean.Name
+  headers : Array (_root_.Ix.Name × Address)
+  address : _root_.Ix.Name → Option Address
+  metadata : _root_.Ix.Name → Except String Ixon.Named
+  records : _root_.Ix.KernelFidelity.RecordAccess
+  store : RecordStore
+  hints : Std.HashMap Address Lean.ReducibilityHints
+  blobs : Std.HashMap Address ByteArray
+  literals : Option (Array (Address × Ixon.Constant)) := none
+  foreign : Array Address := #[]
+
+/-- Preserve the eager input's exact store and enumeration; no rebuild. -/
+def InputAccess.ofInput (input : Input) : InputAccess := {
+  lean := input.lean, names := input.names, store := input.store
+  headers := input.ixon.named.toArray.map fun (n, nd) => (n, nd.addr)
+  address := fun n => (input.ixon.named[n]?).map (·.addr)
+  metadata := fun n => match input.ixon.named[n]? with
+    | some nd => .ok nd | none => .error s!"fidelity: missing named metadata for {n.pretty}"
+  records := _root_.Ix.KernelFidelity.RecordAccess.ofStore input.store input.ixon.blobs.toList
+  hints := input.ixon.anonHints, blobs := input.ixon.blobs, foreign := input.foreign }
+
+/-- Decode each record transiently for its skeleton and literal edges. The
+insertion order is exactly `Input.ofEnv`'s, including colliding hash buckets.
+Metadata is decoded per requested source name, never as a whole named store.
+No `StreamState.take` raw-window copies are made. -/
+def InputAccess.ofParts (lean : Lean.Environment) (parts : Ixon.LazyEnvParts) :
+    Except String InputAccess := do
+  let records := _root_.Ix.KernelFidelity.RecordAccess.ofParts parts
+  let mut store : RecordStore := {}
+  let mut literals := #[]
+  for (a, _) in parts.env.consts.toList do
+    let tag ← (records.tag a).mapError fun e => s!"fidelity: tag {a}: {e}"
+    let c ← records.read a tag
+    let (nat, str) := literalKinds c
+    if nat || str then
+      literals := literals.push (a, Benchmarks.Kernel.CheckIxeStream.literalStandIn nat str)
+    store := store.insert a (Benchmarks.Kernel.CheckIxeStream.skeleton c)
+  let rowFor (n : _root_.Ix.Name) : Except String Ixon.NamedRow := do
+    let some i := parts.rowIdx[n]? | throw s!"fidelity: missing named metadata for {n.pretty}"
+    let some row := parts.namedRows[i]? | throw s!"fidelity: named row index out of range for {n.pretty}"
+    unless row.name == n do throw s!"fidelity: named row changed for {n.pretty}"
+    return row
+  for row in parts.namedRows do let _ ← rowFor row.name
+  -- `rowIdx` has the eager named map's insertion order. Map its array,
+  -- not the HashMap: HashMap.map reverses collision buckets in this Lean.
+  let headers ← parts.rowIdx.toArray.mapM fun (n, _) => do return (n, (← rowFor n).addr)
+  let address := fun n => ((rowFor n).toOption).map (·.addr)
+  let names := lean.constants.toList.toArray.filterMap fun (n, _) =>
+    if parts.rowIdx.contains (_root_.Ix.Name.fromLeanName n) then some n else none
+  let foreign := headers.filterMap fun (n, a) =>
+    let ln := _root_.Ix.SemanticContract.toLeanName n
+    if lean.contains ln || isBlockName ln then none else some a
+  let metadata (n : _root_.Ix.Name) : Except String Ixon.Named := do
+    let row ← rowFor n
+    (row.materialize parts.backing parts.nameRev).mapError fun e => s!"fidelity: metadata {n.pretty}: {e}"
+  return {
+    lean := lean.find?, names, headers, address, metadata, records, store
+    hints := parts.env.anonHints, blobs := parts.env.blobs
+    literals := some literals, foreign }
+
+/-- Authenticate both envelope versions before constructing lazy access. -/
+def InputAccess.ofBytes (lean : Lean.Environment) (bytes : ByteArray) : Except String InputAccess := do
+  InputAccess.ofParts lean (← Ixon.deEnvVerifiedLazy bytes)
+
+/-- The body must agree with the retained index structure. In particular,
+recursors, including recursor-bearing mutual blocks, are compared in full:
+an inconsistent getter must not hide changed rules behind the index's copy. -/
+def InputAccess.read (input : InputAccess) (address : Address)
+    (retained : Ixon.Constant) : Except String Ixon.Constant := do
+  let c ← input.records.read address (_root_.Ix.KernelFidelity.recordTag retained)
+  unless Benchmarks.Kernel.CheckIxeStream.skeleton c ==
+      Benchmarks.Kernel.CheckIxeStream.skeleton retained do
+    throw s!"fidelity: record structure changed at {address}"
+  return c
+
+/-- The metadata facts comparison actually needs. Arenas, original metadata
+and their expression tables are released after extracting these flags. -/
+structure NamedFacts where
+  addr : Address
+  original : Bool
+  inlineRecord : Bool
+
 /-! ## The closure of seeds -/
 
 /-- The constants a declaration names, including an inductive's
@@ -630,9 +720,9 @@ def bindingProblems (roles : Bindings .anon)
 
 /-- What the comparison of one record reads besides the record. -/
 structure Cx where
-  input : Input
+  lean : Lean.Name → Option Lean.ConstantInfo
   rcx : RefCx
-  named : Std.HashMap Lean.Name Ixon.Named
+  named : Std.HashMap Lean.Name NamedFacts
   byName : Std.HashMap (CName .anon) (Array Lean.Name)
   /-- record owners whose metadata names constants outside the Lean
   environment (the compiled source's own declarations) -/
@@ -704,10 +794,10 @@ def judge (cx : Cx) (st : State .anon) (n : Lean.Name) (actual : Entry) (expecte
           if actualHint == cx.advisory n && cx.aliases n > 1 then .normalized "compiler hint (per address)"
           else .unexplained s!"{diff} (the reader's hint is not the per-address hint of an alias set)"
         else
-          let regenerated := (nd.map (·.original.isSome)).getD false
+          let regenerated := (nd.map (·.original)).getD false
           let canon? : Option String :=
             if regenerated then some "auxiliary regenerated"
-            else if (nd.map (hasInlineRecord ·.constMeta)).getD false then
+            else if (nd.map (·.inlineRecord)).getD false then
               some "Pass 3 call-site records"
             else none
           match actual, expected, canon? with
@@ -745,7 +835,7 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
         continue
       seen := seen.insert actual.name
       for n in leans do
-        let some ci := cx.input.lean n | continue
+        let some ci := cx.lean n | continue
         let (expected, tr') := ((reference cx.rcx n ci).run).run tr
         tr := tr'
         report := report.bump n (judge cx st n actual expected) (cx.keep n)
@@ -759,17 +849,17 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
     let actualNames := block.map (·.toConstantVal.name)
     let some first := block.head? | continue
     let some ln := (cx.byName.getD first.toConstantVal.name #[])[0]? | continue
-    let some (.inductInfo iv) := cx.input.lean ln | continue
+    let some (.inductInfo iv) := cx.lean ln | continue
     let leanOrder : List Lean.Name := Id.run do
       let mut ctors : List Lean.Name := []
       for t in iv.all do
-        if let some (.inductInfo tv) := cx.input.lean t then ctors := ctors ++ tv.ctors
+        if let some (.inductInfo tv) := cx.lean t then ctors := ctors ++ tv.ctors
       let recs := iv.all.map (· ++ `rec) ++
         ((List.range iv.numNested).filterMap fun j => iv.all.head?.map (·.str s!"rec_{j + 1}"))
       return iv.all ++ ctors ++ recs
     let expectedNames := leanOrder.filterMap fun n => (cx.rcx.name n).toOption
     unless actualNames == expectedNames do
-      let regenerated := leanOrder.any fun n => ((cx.named[n]?).map (·.original.isSome)).getD false
+      let regenerated := leanOrder.any fun n => ((cx.named[n]?).map (·.original)).getD false
       -- a changed block's canonical recursors are Pass 3 `_ix` constants: the
       -- Lean names of its recursors hold their images (definitions), so each
       -- stands in for one Lean recursor the block no longer holds
@@ -786,7 +876,7 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
   if let some (_, b) := rd.blocks.head? then
     for t in b.types do
       let some ln := (cx.byName.getD t.cv.name #[])[0]? | continue
-      let some (.inductInfo iv) := cx.input.lean ln | continue
+      let some (.inductInfo iv) := cx.lean ln | continue
       unless t.isRec == iv.isRec && t.isReflexive == iv.isReflexive &&
           t.numNested == iv.numNested && t.nIdx == iv.numIndices && t.nP == iv.numParams do
         report := report.problem s!"shape of {ln}: reader isRec {t.isRec}, isReflexive \
@@ -794,7 +884,7 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
           {iv.isReflexive}, {iv.numNested}, {iv.numIndices}, {iv.numParams}"
     for rr in b.recs do
       let some ln := (cx.byName.getD rr.cv.name #[])[0]? | continue
-      let some (.recInfo rv) := cx.input.lean ln | continue
+      let some (.recInfo rv) := cx.lean ln | continue
       unless rr.nP == rv.numParams && rr.nM == rv.numMotives && rr.nm == rv.numMinors &&
           rr.nI == rv.numIndices do
         report := report.problem s!"recursor counts of {ln}: reader ({rr.nP}, {rr.nM}, {rr.nm}, \
@@ -805,22 +895,33 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
 translation of the Lean constants. `limit` bounds the records read (in the
 check order); `keep` decides which verdicts are kept by name; `roots`
 restricts the run to the prelude and the closure of those records. -/
-def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool := fun _ => false)
+def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Name → Bool := fun _ => false)
     (roots : Option (Array Address) := none) :
     IO Report := do
   let t0 ← IO.monoMsNow
   let table ← IO.ofExcept defaultTable
   let pre ← IO.ofExcept (preludeFor table)
-  let hints := Hints.ofStore input.store input.ixon.anonHints
-  let s : Setup := setup input.store (input.ixon.blobs[·]?) table pre hints.lookup
+  let hints := Hints.ofStore input.store input.hints
+  let s : Setup := setup input.store (input.blobs[·]?) table pre hints.lookup (literals := input.literals)
   let store := s.store
   -- the bridge: Lean name ↦ reference, from the compiled metadata
   let mut refs : Std.HashMap Lean.Name (ConstRef Address) := {}
-  let mut named : Std.HashMap Lean.Name Ixon.Named := {}
+  let mut named : Std.HashMap Lean.Name NamedFacts := {}
   for n in input.names do
-    if let some nd := input.ixon.named[_root_.Ix.Name.fromLeanName n]? then
-      named := named.insert n nd
-      if let some r := resolve (store[·]?) nd.addr then refs := refs.insert n r
+    let ixName := _root_.Ix.Name.fromLeanName n
+    let some address := input.address ixName
+      | throw (IO.userError s!"fidelity: missing source-name header for {n}")
+    unless input.store.contains address do
+      throw (IO.userError s!"fidelity: source record {address} for {n} is missing")
+    let nd ← IO.ofExcept (input.metadata ixName)
+    unless nd.addr == address do
+      throw (IO.userError s!"fidelity: metadata address changed for {n}")
+    named := named.insert n {
+      addr := address, original := nd.original.isSome
+      inlineRecord := hasInlineRecord nd.constMeta }
+    let some r := resolve (store[·]?) address
+      | throw (IO.userError s!"fidelity: source record {address} for {n} does not resolve")
+    refs := refs.insert n r
   let rcx : RefCx :=
     { find := input.lean, addrOf := fun n => (named[n]?).map (·.addr), refOf := (refs[·]?),
       roles := s.cx.roles }
@@ -836,30 +937,34 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
       byName := byName.insert c ((byName.getD c #[]).push n)
       let actual := (s.cx.memberKey r).toOption
       if actual != some c then
-        if (named[n]?.map (·.original.isSome)).getD false then
+        if (named[n]?.map (·.original)).getD false then
           report := { report with renamedAux := report.renamedAux + 1 }
         else
           report := report.problem s!"name of {n}: reader {actual}, reference {c}"
     | .error e => report := report.problem s!"name of {n}: {e}"
   for p in bindingProblems s.cx.roles byRef do report := report.problem p
-  let foreign : Std.HashSet Address := input.foreign.foldl (fun acc a =>
-    match store[a]? with
-    | some c => acc.insert (owner a c)
-    | none => acc) {}
+  for (n, address) in input.headers do
+    unless input.store.contains address do
+      throw (IO.userError s!"fidelity: named record {address} for {n.pretty} is missing")
+  let mut foreign : Std.HashSet Address := {}
+  for a in input.foreign do
+    let some c := input.store[a]?
+      | throw (IO.userError s!"fidelity: foreign source record {a} is missing")
+    foreign := foreign.insert (owner a c)
   let advisory (n : Lean.Name) : Option Ix.Kernel.ReducibilityHint := (refs[n]?).bind s.cx.hint
   let aliases (n : Lean.Name) : Nat := ((refs[n]?).map fun r => (byRef.getD r #[]).size).getD 0
   -- Pass 3's canonical constants of changed blocks: published under reserved
   -- `_ix` names, read with the block they belong to (whose members keep their
   -- Lean names), so they are recognized by key, not by record
-  let pass3Keys : Std.HashSet (CName .anon) := input.ixon.named.fold (init := {}) fun acc n nd =>
+  let pass3Keys : Std.HashSet (CName .anon) := input.headers.foldl (init := {}) fun acc (n, address) =>
     if Ix.Compile.Pass.hasReserved n then
-      match resolve (store[·]?) nd.addr with
+      match resolve (store[·]?) address with
       | some r => match (s.cx.memberKey r).toOption with
         | some k => acc.insert k
         | none => acc
       | none => acc
     else acc
-  let cx : Cx := { input, rcx, named, byName, foreign, pass3Keys, keep, advisory, aliases }
+  let cx : Cx := { lean := input.lean, rcx, named, byName, foreign, pass3Keys, keep, advisory, aliases }
   -- read in the check order, comparing each record's constants at the
   -- reader's state before it
   let base := match roots with
@@ -871,7 +976,12 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
   let mut readNs := 0
   let mut failed : Std.HashMap Address String := {}
   for address in ordered do
-    let some source := store[address]? | continue
+    let some skeleton := store[address]?
+      | throw (IO.userError s!"fidelity: ordered record {address} is missing")
+    let source ← if input.store.contains address then
+        IO.ofExcept (input.read address skeleton)
+      else if pre.records.any (fun (a, _) => a == address) then pure skeleton
+      else throw (IO.userError s!"fidelity: ordered record {address} is not an input or prelude record")
     let r0 ← IO.monoNanosNow
     let reading ← IO.lazyPure fun _ => readRecord s.cx st address source
     readNs := readNs + ((← IO.monoNanosNow) - r0)
@@ -901,7 +1011,8 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     let some c := (rcx.name n).toOption | continue
     if seen.contains c then continue
     let some ci := input.lean n | continue
-    let some rec := store[r.block]? | continue
+    let some rec := store[r.block]?
+      | throw (IO.userError s!"fidelity: owner record {r.block} for {n} is missing")
     -- a recursor record is read with its block; a projection's owner is its block
     let ownerAddr := owner r.block rec
     let blockAddr : Address := match ci with
@@ -919,5 +1030,12 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     report := report.bump n verdict (keep n)
   let t1 ← IO.monoMsNow
   return { report with readMs := readNs / 1000000, compareMs := t1 - t0 - readNs / 1000000 }
+
+/-- Existing eager entry point, preserving its store and failure policy for
+successful reads. Missing source/ordered records are now explicit access
+failures rather than omitted comparisons. -/
+def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool := fun _ => false)
+    (roots : Option (Array Address) := none) : IO Report :=
+  runAccess (InputAccess.ofInput input) limit keep roots
 
 end Tests.Ix.Kernel.ReaderFidelity
