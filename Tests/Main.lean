@@ -66,6 +66,7 @@ import Tests.Ix.Compile.UniverseWire
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.ClosureWhole
+import Tests.Ix.Compile.ClosurePhase4
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Compile.Twins
@@ -571,6 +572,7 @@ def registry : List Entry := [
   -- closure against whole, checker-support ground, and `ix pack` carrying the reference closure.
   .runner "compiler-selected-closure-e2e" (.ci .compilerClosures) Tests.Ix.Compile.SelectedClosure.run,
   .runner "compile-closure-whole" (.ci .compilerClosures) Tests.Ix.Compile.ClosureWhole.run,
+  .suite "compile-closure-phase4" .primary Tests.Ix.Compile.ClosurePhase4.suite,
   .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
   .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
   -- Canonicity over twin presentations, exact against the non-canonical

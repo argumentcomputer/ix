@@ -53,7 +53,7 @@
      (the `--local` scope) compiles with no refusal, the Rust compile is
      byte-identical, it decompiles to the source, its derived references
      are carried, and `ix validate-lean --ns LocalCollapse` passes its
-     phases 1–3 and 5 (phase 4 is excluded, see `localCollapse`); the same
+     all five phases, including source/reader fidelity; the same
      closure without the introduced references is refused naming one of
      them (negative control);
   8. **the Rust compiler**: the Rust compile of every closure
@@ -65,10 +65,9 @@
   - Checks 6 and 7 (`1a20574b`) came with the flip, whose images reference
     the support constants: without the transport prerequisites (batch 5),
     with `ix validate-lean --ns` for the donor's `--local` (this tree's
-    validate-lean has no `--local`), judged per phase from its report with
-    phase 4 excluded (the donor's validate-lean routes collapsed blocks
-    around `Ix.Tc`'s meta mode, this tree's does not), and with the Rust
-    parity of check 8 on the local scope too.
+    validate-lean has no `--local`), judged per phase from its report, and
+    with the Rust parity of check 8 on the local scope too. M7's source/reader
+    comparison now makes phase 4 a required gate for collapsed blocks.
   - The `mode` loop is gone, and `CLOSURE_WHOLE_ON` is renamed to
     `CLOSURE_WHOLE_IXE` (R11-16).
   - Pass 3 is replaced by the closure harness.
@@ -176,24 +175,44 @@ def introducedRefs (out : Ixon.Env) (base full : Std.HashSet Name) :
 def sortedNames (s : Std.HashSet Name) : Array String :=
   s.toList.map toString |>.toArray.qsort (· < ·)
 
+/-- The actual LocalCollapse report gate: all five phases, with explicit
+nonzero source coverage for the source/reader comparison. -/
+def localPhaseProblems (exitCode : UInt32) (phases : Array (String × String × String)) :
+    Array String := Id.run do
+  let mut errors := #[]
+  if exitCode != 0 then errors := errors.push s!"local collapse: validate-lean exit {exitCode}"
+  if phases.size != 5 then errors := errors.push s!"local collapse: expected 5 phase rows, got {phases.size}"
+  for key in ["1.", "2.", "3.", "4.", "5."] do
+    let rows := phases.filter (·.1.startsWith key)
+    let [(name, result, detail)] := rows.toList
+      | errors := errors.push s!"local collapse: expected one phase {key} row, got {rows.size}"
+        continue
+    unless result == "pass" do
+      errors := errors.push s!"local collapse: validate-lean {name}: {result}: {detail}"
+    if key == "4." then
+      unless name == "4. Source/reader fidelity" do
+        errors := errors.push s!"local collapse: wrong phase-4 scope: {name}"
+      let coverage : Option (Nat × Nat) := do
+        let [line] := (detail.splitOn "\n").filter (·.startsWith "source coverage:") | none
+        let ["source", "coverage:", counts, "named", "constants"] := line.splitOn " " | none
+        let [checked, expected] := counts.splitOn "/" | none
+        return (← checked.toNat?, ← expected.toNat?)
+      unless coverage.any (fun (checked, expected) => checked > 0 && checked == expected) do
+        errors := errors.push "local collapse: phase 4 lacks complete nonzero source coverage"
+  return errors
+
 /-- 7. The local scope of a collapse fixture: the selected closure of the
 file's own constants (`ix compile --local`) compiles with no refusal, the Rust
 compile is byte-identical, it decompiles to the source, the references its
 output introduces are carried, and `ix validate-lean --ns LocalCollapse`
-passes its phases 1–3 and 5 (compile, serde, kernel anon roundtrip,
-decompile), read from its `--report`. Negative control: the same closure
+passes all five phases (compile, serde, projection/order fidelity,
+source/reader fidelity, decompile), read from its `--report`. Negative control: the same closure
 without the compiler's introduced references (recursors only, the scope
-`--local` had before them) is refused, naming one of them.
-
-validate-lean's phase 4, the kernel meta roundtrip, is excluded, and its
-verdict is printed. `Ix.Tc`'s meta ingress registers one inductive per class of
-a `Muts` block (the class's first name), so the members a block-internal
-collapse merges into another (`TB` with its constructors, `PB.b`) are absent
-from its kernel environment, and a reference to one egresses as the class's
-first member (`TA.a`'s type). That is BB-F7 (`COMPILER-QUEUE.md`: it goes when
-`Ix.Tc` is deleted), and the fixture exists to collapse. It predates Pass 3:
-validate-lean at `d76a8890` reports the same 8 phase 4 errors on this file. -/
-def localCollapse (dir : System.FilePath) : IO (Array String) := do
+`--local` had before them) is refused, naming one of them. M7's reader checks
+the flat collapse through its decoded member and recursor keys; the historical
+BB-F7 meta-roundtrip exclusion is retired. `workers` controls the CLI invocation;
+the full runner retains its existing default. -/
+def localCollapse (dir : System.FilePath) (workers : Nat := 8) : IO (Array String) := do
   let file := "Tests/Ix/Compile/Fixtures/LocalCollapse.lean"
   let env ← getFileEnv file
   let own := ownConstants env
@@ -233,7 +252,7 @@ def localCollapse (dir : System.FilePath) : IO (Array String) := do
   let report := dir / "local-collapse-validate-lean.json"
   let r ← IO.Process.output
     { cmd := exe.toString
-      args := #["validate-lean", "--ns", "LocalCollapse", "--workers", "8",
+      args := #["validate-lean", "--ns", "LocalCollapse", "--workers", toString workers,
         "--report", report.toString, file] }
   say s!"local collapse: ix validate-lean --ns LocalCollapse: exit {r.exitCode}"
   -- the phase table: (name, result, detail) per phase
@@ -250,18 +269,8 @@ def localCollapse (dir : System.FilePath) : IO (Array String) := do
     errors := errors.push s!"local collapse: validate-lean (exit {r.exitCode}) wrote no report: \
       {e}; stderr ends {((r.stderr.splitOn "\n").filter (!·.isEmpty)).getLast?}"
   | .ok ps =>
-    for key in ["1.", "2.", "3.", "5."] do
-      match ps.find? (·.1.startsWith key) with
-      | none => errors := errors.push s!"local collapse: validate-lean reports no phase {key}"
-      | some (name, result, detail) =>
-        say s!"local collapse: validate-lean {name}: {result}"
-        unless result == "pass" do
-          errors := errors.push s!"local collapse: validate-lean {name}: {result}: {detail}"
-    for (name, result, detail) in ps.filter (·.1.startsWith "4.") do
-      say s!"local collapse: validate-lean {name}: {result} — EXCLUDED, known failure \
-        BB-F7 (pre-existing: Ix.Tc's meta ingress registers one inductive per class, so a \
-        block that collapses inside loses its other members; the same with the pre-flip \
-        compiler; reassess at M7, when Ix.Tc goes): {(detail.splitOn "\n").headD ""}"
+    for (name, result, _) in ps do say s!"local collapse: validate-lean {name}: {result}"
+    errors := errors ++ localPhaseProblems r.exitCode ps
   return errors
 
 def run : IO UInt32 := do
