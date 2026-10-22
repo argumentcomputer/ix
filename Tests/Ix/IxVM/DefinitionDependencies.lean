@@ -1,6 +1,6 @@
 import Tests.Ix.IxVM.Exploits
 import Ix.KernelCheck
-import Tests.Ix.Tc.AnonDiff
+import Ix.EnvScope
 
 namespace Tests.Ix.IxVM.DefinitionDependencies
 
@@ -155,7 +155,7 @@ private def recursionTests : IO TestSeq := do
         unless declaration.safety == .safe do
           throw <| IO.userError s!"{seed} is not a safe definition"
       let path := directory / s!"{label}.ixe"
-      let constants := Tests.Tc.AnonDiff.closureOf env seeds
+      let constants := Ix.EnvScope.collectDeps env seeds
       let status ← Ix.CompileM.rsCompileEnvBytesFFI constants path.toString false
       unless status.ungrounded.isEmpty do
         throw <| IO.userError s!"compilation omitted {status.ungrounded.size} declarations"
