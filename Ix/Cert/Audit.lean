@@ -1,3 +1,4 @@
+import Ix.Compile.OriginalData
 import Ix.Cert.Statement
 import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
@@ -5247,3 +5248,13 @@ run_cmd do
       `lower_noBasis, `group_frame, `lowerAllCollapsed_prefix,
       `prepareSourceCollapsed_prefix].map (`Ix.Cert.SourcePrelude ++ ·)) ++
       #[``Ix.Cert.SourcePrelude.Shape.generate_noBasis])
+
+/-! ## Unwired original-data finalization: exact bytes and old-field frame -/
+
+/-- info: [cert-audit] original-data frame: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "original-data frame"
+    (#[`insertBytes_existing, `insertBytes_self, `insertBytes_keeps,
+      `finalizeOriginals_frame].map (`Ix.Compile.OriginalData ++ ·))

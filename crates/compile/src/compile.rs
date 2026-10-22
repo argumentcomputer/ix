@@ -4058,6 +4058,7 @@ pub mod expr_key;
 mod memory;
 pub mod mutual;
 pub mod nat_conv;
+pub mod original_data;
 pub mod pass3;
 mod publication;
 pub(crate) mod validation;
