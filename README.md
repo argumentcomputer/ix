@@ -243,7 +243,7 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 - `lake test -- --ignored` runs all expensive test suites and runners
     - Most tests require at least 32 GB RAM
     - The `compile` and `decompile` tests require 128 GB RAM
-    - `ixvm` generates ZK proofs and uses significant CPU
+    - `ixvm` checks typing and [evaluation claims](docs/eval-claims.md) through Aiur execution and generated-backend parity, without proving
 - `lake test -- --ignored <name>` runs one or more expensive suites or runners by name
 - `--exclude=<name,...>` excludes ignored suites or runners from a full ignored-test run
 - `lake test -- --include-ignored` runs both primary and expensive test suites

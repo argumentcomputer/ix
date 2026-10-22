@@ -21,6 +21,7 @@ public import Ix.IxVM.Kernel.Infer
 public import Ix.IxVM.Kernel.CanonicalCheck
 public import Ix.IxVM.Kernel.Check
 public import Ix.IxVM.Kernel.Claim
+public import Ix.IxVM.Kernel.Eval
 
 public section
 
@@ -169,7 +170,7 @@ def entrypoints := ⟦
   -- Claim-discipline entrypoint — the only production entrypoint. Loads
   -- the claim bytes at ch 0 keyed by `claim_digest`, blake3-binds them
   -- against that key (so the public input pins which claim was proved),
-  -- then dispatches on the claim variant: Check, CheckEnv, Reveal, and
+  -- then dispatches on the claim variant: Eval, Check, CheckEnv, Reveal, and
   -- Contains. See `run_claim` for the per-variant discipline.
   -- The digest is public input as 8 field elements of 4 packed LE bytes
   -- (injective in Goldilocks; 8 input columns instead of 32) — the same
@@ -207,6 +208,7 @@ def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge canonicalCheck
   let vm ← vm.merge check
   let vm ← vm.merge claim
+  let vm ← vm.merge eval
   vm.merge entrypoints
 
 /-- Pruned production toplevel: `verify_claim` and nothing else.

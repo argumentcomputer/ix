@@ -148,6 +148,9 @@ Verified by composition of per-piece `checkEnv` claims with set
 discharge — there is deliberately no whole-catalog interpreter arm.
 -/
 inductive Claim where
+  /-- Check the input declaration and normalize its body to the output's body.
+  The output is a safe standalone definition with the same universe parameter
+  count and structurally equal erased type. Assumptions concern input dependencies. -/
   | eval     (input output : Address) (assumptions : Option Address)
   | check    (const : Address) (assumptions : Option Address)
   | checkEnv (root : Address) (assumptions : Option Address)
@@ -714,4 +717,3 @@ end Proof
 end Ixon
 
 end
-

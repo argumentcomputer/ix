@@ -10,8 +10,6 @@
 //! opaque Merkle commitment and already accepts free-form roots produced by
 //! recursive `merkle_join`; there is no canonical-root validator on claims.
 
-use rustc_hash::FxHashSet;
-
 use ix_common::address::Address;
 use ixon::constant::ConstantInfo;
 use ixon::env::Env;
@@ -40,17 +38,10 @@ pub fn build_check_claim(env: &Env, const_addr: Address) -> Claim {
 
 /// Build an eval claim for the pair `(input, output)` in `env`.
 ///
-/// Assumptions = canonical merkle root over `transitive_deps(input) ∪
-/// transitive_deps(output) \ {input, output}`. `None` if that set is
-/// empty.
+/// Only the input's dependency closure needs typing assumptions. The output
+/// definition's type and body are established by the evaluation claim.
 pub fn build_eval_claim(env: &Env, input: Address, output: Address) -> Claim {
-  let mut set: FxHashSet<Address> =
-    env.transitive_deps_excl(&input).into_iter().collect();
-  set.extend(env.transitive_deps_excl(&output));
-  set.remove(&input);
-  set.remove(&output);
-  let mut deps: Vec<Address> = set.into_iter().collect();
-  deps.sort_unstable();
+  let deps = env.transitive_deps_excl(&input);
   let assumptions = merkle_root_canonical(&deps);
   Claim::Eval { input, output, assumptions }
 }
@@ -215,14 +206,14 @@ mod tests {
   }
 
   #[test]
-  fn eval_excludes_both_endpoints_from_assumptions() {
-    // i -> d, o -> d. The set is {d}, not containing i or o.
+  fn eval_assumptions_come_only_from_input() {
+    // Output-only dependencies are not input typing assumptions.
     let env = Env::new();
     let i = Address::hash(b"i");
     let o = Address::hash(b"o");
     let d = Address::hash(b"d");
     env.store_const(i.clone(), defn_const(vec![d.clone()]));
-    env.store_const(o.clone(), defn_const(vec![d.clone()]));
+    env.store_const(o.clone(), defn_const(vec![Address::hash(b"output-only")]));
     env.store_const(d.clone(), defn_const(vec![]));
     match build_eval_claim(&env, i.clone(), o.clone()) {
       Claim::Eval { input, output, assumptions: Some(asm) } => {
@@ -232,6 +223,19 @@ mod tests {
       },
       other => panic!("expected Eval Some, got {other:?}"),
     }
+  }
+
+  #[test]
+  fn eval_keeps_output_when_it_is_an_input_dependency() {
+    let env = Env::new();
+    let input = Address::hash(b"input");
+    let output = Address::hash(b"output");
+    env.store_const(input.clone(), defn_const(vec![output.clone()]));
+    env.store_const(output.clone(), defn_const(vec![]));
+    assert_eq!(
+      build_eval_claim(&env, input.clone(), output.clone()),
+      Claim::Eval { input, assumptions: Some(leaf_hash(&output)), output }
+    );
   }
 
   #[test]
