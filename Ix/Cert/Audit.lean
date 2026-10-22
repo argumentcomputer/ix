@@ -24,6 +24,7 @@ import Ix.Cert.CtxAgree
 import Ix.Cert.CtxAgreeHints
 import Ix.Cert.SourcePrelude
 import Ix.Cert.ReaderKeys
+import Ix.Cert.ReaderClosureKeys
 import Ix.Cert.CtxAgreeProj
 import Ix.Cert.CtxAgreeOwners
 import Ix.Cert.CtxAgreeProjFields
@@ -5388,3 +5389,24 @@ run_cmd do
     (#[`withAddress_keeps, `keysOf_address_origin, `keysOf_key_origin,
       `keysOf_covers, `bindings_role_origin, `bindings_role_inj,
       `singletonAt_resolves, `memberKey_role_iff].map (`Ix.Cert.ReaderKeys ++ ·))
+
+/-! ## Selected closure rows and reader caches
+
+ReaderClosureKeys connects resolving stored seeds and published Source
+rows to the actual keysOf cache over Stream.decodedOf. Input rows shadow
+fallback rows; selected recursors retain that exact origin split. A
+coherent standalone recursor origin is cached. With an internal fallback
+singleton-shape premise, every selected recursor is cached or has an
+explicit input origin in a mutual block. The closed fallback data, all
+emitting-reference coverage and paired-trace correspondence remain owed.
+StoredCanonical/closure_decodes still connect decodedOf to raw admission;
+no final assumption, guard or hash-injectivity premise is added. -/
+
+/-- info: [cert-audit] selected closure caches: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "selected closure caches"
+    (#[`context_input, `context_coherent_of_nodup, `selected_origin,
+      `standalone_origin_cached, `selected_cached_or_input_mutual,
+      `seeded_resolved_cached, `published_resolved_cached].map (`Ix.Cert.ReaderClosureKeys ++ ·))
