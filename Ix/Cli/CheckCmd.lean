@@ -19,12 +19,14 @@
 module
 public import Cli
 public import Ix.Shard.Check
+public import Ix.Cli.FormalAiur
 
 public section
 namespace Ix.Cli.CheckCmd
 open Ix.Check Ix.Shard Ix.Shard.Check
 
 def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
+  if FormalAiur.selected p then return ← FormalAiur.run p false
   let interpMode : Option String := (p.flag? "interp").map (·.as! String)
   let interpSource := interpMode == some "source"
   let useBytecode := interpMode == some "bytecode"
@@ -148,6 +150,8 @@ def checkCmd : Cli.Cmd := `[Cli|
   "Typecheck Lean / `.ixe` constants through the LegacyIxVM LegacyAiur kernel"
 
   FLAGS:
+    "formal"; "Use the new certified Aiur compiler and bytecode runtime."
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     interp : String;        "Choose a legacy interpreter: `source` provides source-level diagnostics; `bytecode` explicitly uses legacy bytecode. Without this flag, the build uses bytecode by default or generated native kernels when built with IX_NATIVE=1."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."

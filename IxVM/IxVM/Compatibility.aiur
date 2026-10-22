@@ -1,7 +1,7 @@
 // Stage-one adapters. Appended before static reachability pruning.
 // U8 and U32 are opaque library values; U64 is an array of opaque bytes.
 // Raw inputs are checked at construction; word arithmetic preserves their ranges.
-// This IxVM instantiation selects Goldilocks explicitly in Examples/IxVM.lean.
+// This IxVM instantiation selects Goldilocks explicitly in IxVM/Program.lean.
 // Shared UInt8, UInt32, UInt64 and Blake3 modules own these operations.
 type U8 = UInt8::U8;
 type U32 = UInt32::U32;
@@ -95,4 +95,10 @@ fn check_primitives() -> () {
     let ctor = store(KExprNode::Const(nat_zero_addr_iota(), store(ListNode::Nil)));
     assert_eq!(k_is_def_eq_struct_go(zero, ctor, empty), 1, "natural literal expansion");
     ()
+}
+
+// Production claims bind the packed digest to the parsed claim bytes.
+fn verify_claim(digest: [Field; 8]) -> () { run_claim(digest) }
+fn verify_check_env(digest: [Field; 32]) -> () {
+    run_check_env(store(Blake3::address_from_fields(digest)), Option::None)
 }

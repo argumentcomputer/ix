@@ -17,6 +17,7 @@
 module
 import Ix.TracingTexray
 public import Cli
+public import Ix.Cli.FormalAggregate
 public import Ix.Aggr
 public import Ix.Aggr.Backend
 public import LegacyIxVM
@@ -132,7 +133,8 @@ private def runAggregateCmdNativeWith
 
 /-- Aggregate through the native controller. -/
 def runAggregateCmdWith (recursionParameters : Aggr.RecursionParameters)
-    (p : Cli.Parsed) : IO UInt32 :=
+    (p : Cli.Parsed) : IO UInt32 := do
+  if FormalAiur.selected p then return ← FormalAggregate.run p
   runAggregateCmdNativeWith recursionParameters p
 
 def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -149,6 +151,11 @@ def aggregateCmd : Cli.Cmd := `[Cli|
   "Wrap shard proofs and fold multi-shard manifests into one recursive aggregate"
 
   FLAGS:
+    "formal"; "Aggregate using the new Aiur bytecode runtime and certified compiler."
+    "aiur-artifact" : String; "Trusted formal IxVM artifact; otherwise compile/cache local sources."
+    "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
+    "shard-rows" : Nat; "Formal backend: maximum rows per function/memory chip per trace shard (default 65536)."
+    "retention" : String; "Formal backend: retain or regenerate (default regenerate)."
     "ixe" : String;  "Path to the serialized environment whose shards were proven."
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
     "plan-only";     "Validate coverage and print the wrap/join slot plan without loading or proving shard proofs."

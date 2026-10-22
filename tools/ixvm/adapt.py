@@ -11,12 +11,20 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
-REVISION = '91348190f091d53ab0838440eaeaf0cb36f2737f'
+REVISION = '827550579ea660a4749c520968ad6f58be63acf4'
 FILES = ['Core', 'ByteStream', 'Blake3', 'RBTreeMap', 'Ixon', 'IxonSerialize',
          'IxonDeserialize', 'KernelTypes', 'Kernel/Klimbs', 'Kernel/NatPrim',
          'Convert', 'Ingress', 'Kernel/Levels', 'Kernel/Subst', 'Kernel/Whnf',
          'Kernel/InferOnly', 'Kernel/DefEq', 'Kernel/Infer',
-         'Kernel/CanonicalCheck', 'Kernel/Check', 'Kernel/Claim']
+         'Kernel/CanonicalCheck', 'Kernel/Check', 'Kernel/Claim', 'Kernel/Eval']
+ROOTS = ['verify_claim', 'verify_constant', 'verify_transitive', 'verify_serde',
+         'verify_check_env', 'check_primitives', 'check_port_cases']
+
+
+def source_path(name):
+    directory = 'LegacyAiur/Library' if name in ('Core', 'ByteStream', 'Blake3') else 'LegacyIxVM'
+    return directory + '/' + name + '.lean'
+
 
 # Shared implementations live in Aiur/Library, rather than in the generated VM.
 LIBRARY_FUNCTIONS = {
@@ -194,6 +202,53 @@ def wrap_arms(s):
 def adapt(s, semantic=True):
     s, saved = strings(uncomments(s))
     if semantic:
+        # Address-set keys are values, never prover-chosen ROM addresses.
+        # Preserve the balanced tree and compare all 32 address bytes.
+        s = s.replace('Node(G, G, V, &RBTreeMap', 'Node(G, Addr, V, &RBTreeMap')
+        for name in ['rbtree_map_balance', 'rbtree_map_balance_fix', 'rbtree_map_ins',
+                     'rbtree_map_insert', 'rbtree_map_lookup', 'rbtree_map_lookup_or_default']:
+            s = re.sub(r'(fn ' + name + r'‹V›\([^{}]*?)key: G', r'\1key: Addr', s)
+            s = transform_body(s, name, lambda body:
+                body.replace('u32_less_than(key, k)', 'eq_zero(canon_addr_cmp(key, k))')
+                    .replace('let eq = key - k;', 'let eq = canon_addr_cmp(key, k) - 1;'))
+        s = s.replace('rbtree_map_insert(ptr_val(a), 1, acc)', 'rbtree_map_insert(a, 1, acc)')
+        s = s.replace('rbtree_map_lookup_or_default(ptr_val(a), tree, 0)',
+                      'rbtree_map_lookup_or_default(a, tree, 0)')
+        s = transform_body(s, 'run_claim', lambda body:
+            body.replace('io_get_info(0, digest)',
+                         'hint::<(G, G)>("ixvm.io.claim", digest)')
+                .replace('match variant {', 'match to_field(variant) {'))
+        s = transform_body(s, 'parse_atree_body', lambda body:
+            body.replace('match tag {', 'match to_field(tag) {'))
+        # Opaque words expose equality through their public, checked interface.
+        # Comparing the packed field for a u64 would lose information modulo p.
+        s = transform_body(s, 'load_assumption_tree', lambda body:
+            body.replace('assert_eq!(tag, 0xE2u8,', 'assert_eq!(to_field(tag), 0xE2,')
+                .replace('assert_eq!(computed_arr, raw,',
+                         'assert_eq!(address_fields(computed_arr), address_fields(raw),'))
+        s = transform_body(s, 'check_opt_u64', lambda body:
+            body.replace('assert_eq!(real, claimed,', 'assert_eq!(u64_eq(real, claimed), 1,'))
+        for name, first in [('check_opt_addr', 'real'), ('check_opt_expr_addr', 'computed')]:
+            s = transform_body(s, name, lambda body, first=first:
+                body.replace(f'assert_eq!(load({first}), load(claimed),',
+                             f'assert_eq!(address_eq({first}, claimed), 1,'))
+        s = transform_body(s, 'check_recr_rules', lambda body:
+            body.replace('assert_eq!(c_idx, pos,', 'assert_eq!(u64_eq(c_idx, pos), 1,')
+                .replace('assert_eq!(r_fields, c_fields,', 'assert_eq!(u64_eq(r_fields, c_fields), 1,'))
+        for name, byte in [('get_opt_addr', 'tag'), ('get_opt_def_kind_masked', 'b'),
+                           ('get_opt_def_safety_masked', 'b'), ('get_opt_quot_kind_masked', 'b'),
+                           ('get_reveal_mut_const_info', 'variant'), ('get_reveal_info', 'variant')]:
+            s = transform_body(s, name, lambda body, byte=byte:
+                body.replace(f'match {byte} {{', f'match to_field({byte}) {{'))
+        s = transform_body(s, 'run_claim', lambda body:
+            re.sub(r'assert_eq!\((format|validator), (\d+)u8,',
+                   r'assert_eq!(to_field(\1), \2,', body))
+        s = transform_body(s, 'eval_output', lambda body:
+            body.replace('assert_eq!(output_type, input_type,',
+                         'assert_eq!(kexpr_struct_eq(output_type, input_type), 1,'))
+        s = transform_body(s, 'run_eval', lambda body:
+            body.replace('assert_eq!(result, expected,',
+                         'assert_eq!(kexpr_struct_eq(result, expected), 1,'))
         for name, result in {
             'level_struct_eq': '1',
             'kexpr_struct_eq': '1',
@@ -261,7 +316,7 @@ def adapt(s, semantic=True):
             r'assert_eq!(address_eq(\1, \2), 1,', s)
         # Pointer-containing values cannot use assert_eq!. Nil is a refutable
         # pattern; arbitrary limb equality uses the existing structural comparator.
-        s = re.sub(r'assert_eq!\(load\((\w+)\), ListNode\.Nil,\s*"STRING_\d+"\)',
+        s = re.sub(r'assert_eq!\(load\((\w+)\), ListNode\.Nil(?:,\s*"STRING_\d+")?\)',
             r'let ListNode.Nil = load(\1)', s)
         s = s.replace('assert_eq!(lhs, rhs,', 'assert_eq!(klimbs_eq(lhs, rhs), 1,')
         s = replace_body(s, 'load_constant_hint', '    hint::<Field>("ixvm.io.tag", (3, address_fields(load(addr))))')
@@ -357,7 +412,7 @@ def use_raw_byte_operations(s):
     return s
 
 
-def prune(s, roots):
+def prune(s, roots, module='IxVM', raw_bytes=True):
     # Keep the original call boundaries for shared non-inline functions.
     # In particular, raw byte conversion is a checked lookup in UInt8.
     for name in LIBRARY_FUNCTIONS:
@@ -370,12 +425,14 @@ def prune(s, roots):
         m = re.search(r'\benum ' + name + r'\b[^{}]*\{', s)
         if m:
             s = s[:m.start()] + s[balance_end(s, m.end()-1):]
-    s = re.sub(r'\btype Layer = [^;]+;', '', s)
+    s = re.sub(r'\btype Layer = [^;]+;', 'type Layer = Blake3::Layer;', s)
     s = s.replace('type List<T> = &ListNode<T>;', 'type List<T> = Lists::List<T>;')
     s = s.replace('type U64 = [U8; 8];', 'type U64 = UInt64::U64;')
     s = s.replace('ListNode::', 'Lists::Node::')
+    s = s.replace('LayerNode::', 'Blake3::LayerNode::').replace('MaybeDigest::', 'Blake3::MaybeDigest::')
     s = s.replace('UInt32::U8', 'UInt8::U8').replace('UInt32::BYTE_', 'UInt8::BYTE_')
-    s = use_raw_byte_operations(s)
+    if raw_bytes:
+        s = use_raw_byte_operations(s)
     # Identify top-level definitions, ignoring braces in diagnostic strings.
     hidden, saved = strings(s)
     functions = {}; types = []
@@ -401,7 +458,7 @@ def prune(s, roots):
         if name not in functions: continue
         reachable.add(name)
         todo += re.findall(r'\b(\w+)\s*(?:::<[^>]*>)?\(', functions[name])
-    out = 'module IxVM {\n' + '\n'.join(types + [body for name, body in functions.items() if name in reachable]) + '\n}\n'
+    out = f'module {module} {{\n' + '\n'.join(types + [body for name, body in functions.items() if name in reachable]) + '\n}\n'
     for i, text in enumerate(saved): out = out.replace(f'"STRING_{i}"', text)
     return out, reachable
 
@@ -413,14 +470,13 @@ def main():
     args = parser.parse_args()
     parts = []
     for name in FILES:
-        directory = 'Ix/Aiur/Library' if name in ('Core', 'ByteStream', 'Blake3') else 'Ix/IxVM'
-        path = directory + '/' + name + '.lean'
+        path = source_path(name)
         text = subprocess.check_output(['git', '-C', str(args.ix), 'show', f'{REVISION}:{path}'], text=True)
         parts.append(text.split('⟦', 1)[1].split('⟧', 1)[0])
     source = adapt('\n'.join(parts))
     source += (ROOT / 'IxVM/IxVM/Compatibility.aiur').read_text()
     source += (ROOT / 'IxVM/IxVM/PortCases.aiur').read_text()
-    output, names = prune(source, ['verify_constant', 'verify_transitive', 'verify_serde', 'check_primitives', 'check_port_cases'])
+    output, names = prune(source, ROOTS)
     output = ('// Generated by tools/ixvm/adapt.py; local adapters are in Compatibility.aiur.\n'
               '// Shared byte, word, list and hash implementations are in Aiur/Library.\n' + output)
     output = '\n'.join(line.rstrip() for line in output.splitlines()) + '\n'

@@ -23,11 +23,13 @@ use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
+mod batch;
 mod rom;
 mod tables;
 #[cfg(test)]
 mod tests;
 mod witness;
+pub use batch::VerifyingKey;
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
@@ -47,10 +49,12 @@ impl WitnessField for NativeField<Val> {
 }
 
 pub type Proof = multi_stark::prover::Proof<GoldilocksBlake3Config>;
+pub type BatchProof = multi_stark::batch::BatchProof<GoldilocksBlake3Config>;
 
 // Separate message namespaces; callable/type IDs fix the shape within each.
 const CALL: u64 = 1;
 const ROM: u64 = 2;
+const MEMSEG: u64 = 16;
 
 /// CPU FRI configuration. Root Merkle caps also cover height-one circuits.
 /// These are explicit protocol parameters, not a claimed security-bit estimate.
@@ -89,6 +93,7 @@ pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   lookup_plans: Vec<witness::LookupPlan>,
   members: Vec<Vec<usize>>,
   parameters: Parameters,
+  segmented_memory: bool,
 }
 
 fn constant(x: u64) -> Expr<Val> {
@@ -122,6 +127,23 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   pub fn new(
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
+  ) -> Result<Self, String> {
+    Self::with_memory_policy(plan, parameters, false)
+  }
+
+  /// Batch proofs close contiguous memory ranges through authenticated
+  /// boundary messages. A standalone proof uses the original first-row rule.
+  pub fn for_batch(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+  ) -> Result<Self, String> {
+    Self::with_memory_policy(plan, parameters, true)
+  }
+
+  fn with_memory_policy(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    segmented_memory: bool,
   ) -> Result<Self, String> {
     if plan.program.field.modulus() != Val::ORDER_U64 {
       return Err("multi-stark adapter requires the Goldilocks field".into());
@@ -172,7 +194,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       names.push(chip.name.clone());
     }
     let tables = tables::fixed_tables(plan, &mut inputs, &mut names)?;
-    rom.append_circuits(&mut inputs, &mut names)?;
+    rom.append_circuits(&mut inputs, &mut names, segmented_memory)?;
     // Fail with an error before System::new's degree assertion. Grouping
     // is tuned below using the backend's compiled (constant-folded) degrees.
     let max_degree = (1 << parameters.log_blowup) + 1;
@@ -247,6 +269,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       lookup_plans,
       members,
       parameters,
+      segmented_memory,
     })
   }
 
@@ -269,7 +292,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       .collect()
   }
 
-  fn claim(
+  pub fn claim(
     &self,
     entry: &str,
     args: &[B::Element],
@@ -468,6 +491,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     output: &[B::Element],
     witness: SystemWitness<Val>,
   ) -> Result<Proof, String> {
+    if self.segmented_memory {
+      return Err("segmented memory requires a batch proof".into());
+    }
     let claim = self.claim(entry, args, output)?;
     let (active, degrees) = self.trace_shape(&witness.traces)?;
     self.check_shape(&active, &degrees)?;
@@ -486,6 +512,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     output: &[B::Element],
     proof: &Proof,
   ) -> Result<(), String> {
+    if self.segmented_memory {
+      return Err("segmented memory requires a batch proof".into());
+    }
     let claim = self.claim(entry, args, output)?;
     self.check_shape(&proof.active, &proof.log_degrees)?;
     self

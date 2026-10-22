@@ -60,8 +60,7 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     parts, files, origins = [], [], {}
     for name in adapt.FILES:
-        directory = 'Ix/Aiur/Library' if name in ('Core', 'ByteStream', 'Blake3') else 'Ix/IxVM'
-        path = directory + '/' + name + '.lean'
+        path = adapt.source_path(name)
         raw = subprocess.check_output(['git', '-C', str(args.ix), 'show', f'{adapt.REVISION}:{path}'], text=True)
         text = raw.split('⟦', 1)[1].split('⟧', 1)[0]
         parts.append(text)
@@ -76,7 +75,7 @@ def main():
     port_text = (adapt.ROOT / 'IxVM/IxVM/Program.aiur').read_text()
     port = functions(port_text)
     rebuilt, _ = adapt.prune(adapt.adapt(raw) + (adapt.ROOT / 'IxVM/IxVM/Compatibility.aiur').read_text() + (adapt.ROOT / 'IxVM/IxVM/PortCases.aiur').read_text(),
-                            ['verify_constant', 'verify_transitive', 'verify_serde', 'check_primitives', 'check_port_cases'])
+                            adapt.ROOTS)
     assert tokens(port_text) == tokens(rebuilt), 'generated source is stale'
     assert 'ptr_val(' not in port_text and not re.search(r'[#@]\w+\(', port_text)
     rows, diffs = [], []

@@ -258,6 +258,26 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     entry: &str,
     args: &[B::Element],
   ) -> Result<SystemWitness<Val>, String> {
+    self.generate_with::<true>(record, entry, args)
+  }
+
+  /// Batch proving creates lookup buffers per shard. Avoid allocating their
+  /// whole-trace counterparts during the initial row population.
+  pub fn generate_stage_1(
+    &self,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
+    Ok(self.generate_with::<false>(record, entry, args)?.traces)
+  }
+
+  fn generate_with<const LOOKUPS: bool>(
+    &self,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<SystemWitness<Val>, String> {
     self.plan.validate_record(record)?;
     self.plan.root(record, entry, args)?;
     let memory: FxHashMap<_, _> =
@@ -269,7 +289,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let memory_rows = self.rom.partition(record, &memory_counts)?;
     let generate = |ci: usize| {
       if ci < self.plan.artifact.chips.len() {
-        self.function_witness(ci, record, &memory)
+        self.function_witness::<LOOKUPS>(ci, record, &memory)
       } else {
         let table = ci - self.plan.artifact.chips.len();
         let trace = if let Some(table) = self.tables.get(table) {
@@ -277,7 +297,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         } else {
           self.rom.witness(&memory_rows, table - self.tables.len())?
         };
-        let lookups = self.auxiliary_lookups(ci, &trace);
+        let lookups = if LOOKUPS {
+          self.auxiliary_lookups(ci, &trace)
+        } else {
+          LookupValues::builder(0, &self.lookup_plans[ci].widths).finish()
+        };
         Ok((trace, lookups))
       }
     };
@@ -296,7 +320,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     Ok(SystemWitness { traces, lookups })
   }
 
-  fn function_witness(
+  fn function_witness<const LOOKUPS: bool>(
     &self,
     ci: usize,
     record: &Execution<B>,
@@ -319,14 +343,16 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let mut values =
       Val::zero_vec(height.checked_mul(width).ok_or("trace size overflow")?);
     let lookup_plan = &self.lookup_plans[ci];
-    let mut builder = LookupValues::builder(height, &lookup_plan.widths);
+    let mut builder = LookupValues::builder(
+      if LOOKUPS { height } else { 0 },
+      &lookup_plan.widths,
+    );
     let mut writers = builder.rows_mut();
     let populate = |worker: &mut Worker<B::Element>,
                     batch: usize,
                     cells: &mut [Val],
                     lookups: &mut [LookupRowMut<'_, Val>]| {
-      for (i, (row, lookup)) in cells.chunks_mut(width).zip(lookups).enumerate()
-      {
+      for (i, row) in cells.chunks_mut(width).enumerate() {
         let (function, query) = rows[batch * ROW_BATCH + i];
         let table = &record.queries.tables[function];
         let output = table.output(query);
@@ -350,32 +376,53 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           })?;
         row[chip.activation] = Val::ONE;
         row[chip.width] = Val::from_u64(output.multiplicity);
-        lookup_plan.fill(row, &[], worker, lookup);
+        if LOOKUPS {
+          lookup_plan.fill(row, &[], worker, &mut lookups[i]);
+        }
       }
       Ok::<_, String>(())
     };
     let real_values = &mut values[..rows.len() * width];
-    let real_writers = &mut writers[..rows.len()];
+    let real_writers =
+      if LOOKUPS { &mut writers[..rows.len()] } else { &mut [] };
     #[cfg(feature = "parallel")]
-    real_values
-      .par_chunks_mut(width * ROW_BATCH)
-      .zip(real_writers.par_chunks_mut(ROW_BATCH))
-      .enumerate()
-      .try_for_each_init(
-        Worker::<B::Element>::default,
-        |worker, (batch, (cells, lookups))| {
-          populate(worker, batch, cells, lookups)
-        },
-      )?;
+    if LOOKUPS {
+      real_values
+        .par_chunks_mut(width * ROW_BATCH)
+        .zip(real_writers.par_chunks_mut(ROW_BATCH))
+        .enumerate()
+        .try_for_each_init(
+          Worker::<B::Element>::default,
+          |worker, (batch, (cells, lookups))| {
+            populate(worker, batch, cells, lookups)
+          },
+        )?;
+    } else {
+      real_values
+        .par_chunks_mut(width * ROW_BATCH)
+        .enumerate()
+        .try_for_each_init(
+          Worker::<B::Element>::default,
+          |worker, (batch, cells)| populate(worker, batch, cells, &mut []),
+        )?;
+    }
     #[cfg(not(feature = "parallel"))]
     {
       let mut worker = Worker::<B::Element>::default();
-      for (batch, (cells, lookups)) in real_values
-        .chunks_mut(width * ROW_BATCH)
-        .zip(real_writers.chunks_mut(ROW_BATCH))
-        .enumerate()
-      {
-        populate(&mut worker, batch, cells, lookups)?;
+      if LOOKUPS {
+        for (batch, (cells, lookups)) in real_values
+          .chunks_mut(width * ROW_BATCH)
+          .zip(real_writers.chunks_mut(ROW_BATCH))
+          .enumerate()
+        {
+          populate(&mut worker, batch, cells, lookups)?;
+        }
+      } else {
+        for (batch, cells) in
+          real_values.chunks_mut(width * ROW_BATCH).enumerate()
+        {
+          populate(&mut worker, batch, cells, &mut [])?;
+        }
       }
     }
     drop(writers);

@@ -57,6 +57,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "stark-key",
 ]
 
 [[package]]
@@ -76,6 +77,7 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "serde_json",
+ "stark-key",
  "tracing",
  "tracing-texray",
 ]
@@ -1912,6 +1914,7 @@ name = "ixvm"
 version = "0.1.0"
 dependencies = [
  "aiur",
+ "blake3",
  "multi-stark",
  "serde",
  "serde_json",
@@ -3743,6 +3746,26 @@ dependencies = [
  "libc",
  "psm",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "stark-key"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "multi-stark",
+]
+
+[[package]]
+name = "stark-verifier"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "blake3",
+ "multi-stark",
+ "serde",
+ "serde_json",
+ "stark-key",
 ]
 
 [[package]]

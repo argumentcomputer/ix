@@ -20,3 +20,14 @@ pub mod value;
 
 pub use bytecode::Program;
 pub use execute::{Execution, ExecutionError, QueryInput, QueryOutput};
+/// Decode a trusted compiler artifact. Wide constraint polynomials can exceed
+/// serde_json's default nesting limit; witness/proof input retains normal bounds.
+pub fn decode_artifact<T: serde::de::DeserializeOwned>(
+  bytes: &[u8],
+) -> Result<T, serde_json::Error> {
+  let mut decoder = serde_json::Deserializer::from_slice(bytes);
+  decoder.disable_recursion_limit();
+  let artifact = T::deserialize(&mut decoder)?;
+  decoder.end()?;
+  Ok(artifact)
+}

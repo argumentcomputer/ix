@@ -26,6 +26,7 @@
 -/
 module
 public import Cli
+public import Ix.Cli.FormalAiur
 public import LegacyAiur.Compiler
 public import LegacyAiur.Protocol
 public import Ix.Aggr
@@ -249,6 +250,7 @@ def reportPartition (proven : Array (Array Address × Nat)) (planned : Nat) : IO
       skip the splits next run"
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
+  if FormalAiur.selected p then return ← FormalAiur.run p true
   -- Streamed `[texray] <span>: <dur> ── RAM Δ/peak` lines on stderr as
   -- each `aiur/` / `stark/` span closes: the per-phase wall + RSS
   -- breakdown (execute vs witness vs STARK) of every prove in the run.
@@ -526,6 +528,9 @@ def proveCmd : Cli.Cmd := `[Cli|
   "Generate a STARK proof for an `Ix.Claim` (mirrors `ix check`'s CLI shape)"
 
   FLAGS:
+    "formal"; "Prove with the new certified Aiur compiler and bytecode runtime."
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "shard-rows" : Nat; "Formal backend: maximum rows per function/memory chip per trace shard (power of two, default 65536)."
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
     "texray";           "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages) to stderr as each span closes."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."

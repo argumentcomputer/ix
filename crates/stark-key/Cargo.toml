@@ -1,0 +1,9 @@
+[package]
+name = "stark-key"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+multi-stark = { workspace = true }
+bincode = { version = "2", features = ["serde"] }

@@ -9,6 +9,46 @@ use aiur::{
 
 mod io;
 
+/// Prepare a production claim witness using immutable IO arenas.
+pub fn prepare_streams<'a, B: FieldBackend>(
+  program: &'a CheckedProgram<B>,
+  streams: &aiur::library::io::Streams,
+) -> Result<PreparedHints<'a, B>, String> {
+  use aiur::bytecode::Type;
+  let arenas = streams.prepare(program.field())?;
+  let mut channels = HintChannels::new();
+  aiur::library::u32::register(&mut channels, program.field())?;
+  aiur::library::u64::register(&mut channels, program.field())?;
+  arenas.register_read::<1>(io::READ_CHANNEL, true, &mut channels)?;
+  let address = Type::Tuple { items: vec![Type::Field; 32] };
+  let address_key = Type::Tuple { items: vec![Type::Field, address] };
+  let mut data = arenas.metadata(
+    "ixvm.io.info",
+    address_key.clone(),
+    None,
+    |s| [1, 2, 4].contains(&s.channel),
+    false,
+  )?;
+  data.extend(arenas.metadata(
+    "ixvm.io.claim",
+    Type::Tuple { items: vec![Type::Field; 8] },
+    Some(0),
+    |s| s.channel == 0,
+    false,
+  )?);
+  data.extend(arenas.metadata(
+    "ixvm.io.tag",
+    address_key,
+    None,
+    |s| s.channel == 3,
+    true,
+  )?);
+  let hints = program.prepare_hint_channels(&data, &channels)?;
+  let mut maps = MapOverrides::new();
+  aiur::library::u8::register_maps(program, &mut maps)?;
+  hints.with_map_overrides(&maps)
+}
+
 pub fn prepare<'a, B: FieldBackend>(
   program: &'a CheckedProgram<B>,
   entries: &[HintEntry],

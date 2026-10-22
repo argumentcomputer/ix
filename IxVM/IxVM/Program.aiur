@@ -21,6 +21,10 @@ module IxVM {
 
 
 
+  type Layer = Blake3::Layer;
+
+
+
 
 
 
@@ -49,7 +53,7 @@ module IxVM {
 
   enum RBTreeMap<V> {
 
-    Node(Field, Field, V, &RBTreeMap<V>, &RBTreeMap<V>),
+    Node(Field, Addr, V, &RBTreeMap<V>, &RBTreeMap<V>),
     Nil
   }
 
@@ -467,6 +471,93 @@ type U32 = UInt32::U32;
     let bytes = read_byte_stream(channel, idx, len);
     list_depth_checked(bytes);
     bytes
+  }
+
+
+
+  fn b3_pack_w(w: U32) -> Field {
+    UInt32::compact_field(UInt32::compact(w))
+  }
+  fn b3_pack(h: [U32; 8]) -> [Field; 8] {
+    [b3_pack_w(h[0]), b3_pack_w(h[1]), b3_pack_w(h[2]), b3_pack_w(h[3]),
+     b3_pack_w(h[4]), b3_pack_w(h[5]), b3_pack_w(h[6]), b3_pack_w(h[7])]
+  }
+
+  fn rbtree_map_balance<V>(color: Field, key: Addr, value: V, left: RBTreeMap<V>, right: RBTreeMap<V>) -> RBTreeMap<V> {
+    match color {
+      1 => {  rbtree_map_balance_fix(key, value, left, right) } ,
+      _ => {  RBTreeMap::Node(color, key, value, store(left), store(right)) } ,
+    }
+  }
+
+  fn rbtree_map_balance_fix<V>(key: Addr, value: V, left: RBTreeMap<V>, right: RBTreeMap<V>) -> RBTreeMap<V> {
+    match (left, right) {
+
+      (RBTreeMap::Node(0, yk, yv, &RBTreeMap::Node(0, xk, xv, a, b), c), d) => {
+        RBTreeMap::Node(0, yk, yv,
+          store(RBTreeMap::Node(1, xk, xv, a, b)),
+          store(RBTreeMap::Node(1, key, value, c, store(d)))) } ,
+
+      (RBTreeMap::Node(0, xk, xv, a, &RBTreeMap::Node(0, yk, yv, b, c)), d) => {
+        RBTreeMap::Node(0, yk, yv,
+          store(RBTreeMap::Node(1, xk, xv, a, b)),
+          store(RBTreeMap::Node(1, key, value, c, store(d)))) } ,
+
+      (a, RBTreeMap::Node(0, zk, zv, &RBTreeMap::Node(0, yk, yv, b, c), d)) => {
+        RBTreeMap::Node(0, yk, yv,
+          store(RBTreeMap::Node(1, key, value, store(a), b)),
+          store(RBTreeMap::Node(1, zk, zv, c, d))) } ,
+
+      (a, RBTreeMap::Node(0, yk, yv, b, &RBTreeMap::Node(0, zk, zv, c, d))) => {
+        RBTreeMap::Node(0, yk, yv,
+          store(RBTreeMap::Node(1, key, value, store(a), b)),
+          store(RBTreeMap::Node(1, zk, zv, c, d))) } ,
+
+      _ => {  RBTreeMap::Node(1, key, value, store(left), store(right)) } ,
+    }
+  }
+
+  fn rbtree_map_ins<V>(key: Addr, value: V, tree: RBTreeMap<V>) -> RBTreeMap<V> {
+    match tree {
+      RBTreeMap::Nil => {
+        RBTreeMap::Node(0, key, value, store(RBTreeMap::Nil), store(RBTreeMap::Nil)) } ,
+      RBTreeMap::Node(color, k, v, &left, &right) => {
+        let lt = Fields::is_zero(canon_addr_cmp(key, k));
+        match lt {
+          1 => {  rbtree_map_balance(color, k, v, rbtree_map_ins(key, value, left), right) } ,
+          _ => {
+
+            let eq = canon_addr_cmp(key, k) - 1;
+            match eq {
+              0 => {  RBTreeMap::Node(color, key, value, store(left), store(right)) } ,
+              _ => {  rbtree_map_balance(color, k, v, left, rbtree_map_ins(key, value, right)) } ,
+            } } ,
+        } } ,
+    }
+  }
+
+  fn rbtree_map_insert<V>(key: Addr, value: V, tree: RBTreeMap<V>) -> RBTreeMap<V> {
+    let result = rbtree_map_ins(key, value, tree);
+    match result {
+      RBTreeMap::Node(_, k, v, left, right) => {  RBTreeMap::Node(1, k, v, left, right) } ,
+    }
+  }
+
+  fn rbtree_map_lookup_or_default<V>(key: Addr, tree: RBTreeMap<V>, default: V) -> V {
+    match tree {
+      RBTreeMap::Nil => {  default } ,
+      RBTreeMap::Node(_, k, v, &left, &right) => {
+        let lt = Fields::is_zero(canon_addr_cmp(key, k));
+        match lt {
+          1 => {  rbtree_map_lookup_or_default(key, left, default) } ,
+          _ => {
+            let eq = canon_addr_cmp(key, k) - 1;
+            match eq {
+              0 => {  v } ,
+              _ => {  rbtree_map_lookup_or_default(key, right, default) } ,
+            } } ,
+        } } ,
+    }
   }
 
   fn put_expr(expr: Expr, rest: ByteStream) -> ByteStream {
@@ -11994,6 +12085,978 @@ let block_c = load_verified_constant(block_addr);
     let ci = load(get_ci(member_addr));
     check_const(ci, member_addr)
   }
+
+  fn leaf_hash(addr: Addr) -> Addr {
+    let tail = put_address(addr, store(Lists::Node::Nil));
+    let bytes = store(Lists::Node::Cons(UInt8::BYTE_0, tail));
+    Blake3::bytes_to_addr(bytes)
+  }
+
+  fn node_hash(l: Addr, r: Addr) -> Addr {
+    let tail = put_address(l, put_address(r, store(Lists::Node::Nil)));
+    let bytes = store(Lists::Node::Cons(UInt8::BYTE_1, tail));
+    Blake3::bytes_to_addr(bytes)
+  }
+
+  fn parse_atree_body(stream: ByteStream) -> (Addr, List<Addr>, ByteStream) {
+    let (tag, s) = read_byte(stream);
+    match UInt8::to_field(tag) {
+      0 => {
+        let (addr, s2) = get_address(s);
+        let h = leaf_hash(addr);
+        (h, store(Lists::Node::Cons(addr, store(Lists::Node::Nil))), s2) } ,
+      1 => {
+        (store([UInt8::BYTE_0; 32]), store(Lists::Node::Nil), s) } ,
+      2 => {
+        let (lh, ll, s2) = parse_atree_body(s);
+        let (rh, rl, s3) = parse_atree_body(s2);
+        let h = node_hash(lh, rh);
+        (h, list_concat(ll, rl), s3) } ,
+    }
+  }
+
+  fn load_assumption_tree(root: Addr) -> List<Addr> {
+    let raw = load(root);
+    let (idx, len) = io_get_info(1, raw);
+
+    let bytes = read_finite_byte_stream(1, idx, len);
+
+    let (tag, s) = read_byte(bytes);
+    assert_eq!(UInt8::to_field(tag), 226, "assumption tree: wrong TagN header");
+    let (computed_root, leaves, rest) = parse_atree_body(s);
+    let Lists::Node::Nil = load(rest);
+    let computed_arr = load(computed_root);
+
+    assert_eq!(Blake3::address_to_fields(computed_arr), Blake3::address_to_fields(raw),
+      "assumption tree: recomputed merkle root != requested root");
+    leaves
+  }
+
+  fn addr_set_build(leaves: List<Addr>, acc: RBTreeMap<Field>) -> RBTreeMap<Field> {
+    match load(leaves) {
+      Lists::Node::Nil => {  acc } ,
+      Lists::Node::Cons(a, rest) => {
+        addr_set_build(rest, rbtree_map_insert(a, 1, acc)) } ,
+    }
+  }
+
+  fn addr_set_member(a: Addr, tree: RBTreeMap<Field>) -> Field {
+    rbtree_map_lookup_or_default(a, tree, 0)
+  }
+
+  fn env_walk(addr: Addr, owned: RBTreeMap<Field>, asm: RBTreeMap<Field>,
+                  strict: Field) -> () {
+
+    match addr_set_member(addr, asm) {
+      1 => {  () } ,
+      _ => {
+        match strict {
+          1 => {
+            assert_eq!(addr_set_member(addr, owned), 1,
+              "CheckEnv: walk reached a constant outside the owned set");
+            () } ,
+          _ => {  () } ,
+        };
+        let c = load_verified_constant(addr);
+        match c {
+          Constant::Mk(info, _, refs, _) => {
+            match info {
+              ConstantInfo::Muts(members) => {
+                check_muts_all(addr, members, members, 0) } ,
+              ConstantInfo::DPrj(dprj) => {
+                match dprj {
+                  DefinitionProj::Mk(_, block_addr) => {
+                    run_check(addr);
+                    env_walk(block_addr, owned, asm, strict) } ,
+                } } ,
+              ConstantInfo::IPrj(iprj) => {
+                match iprj {
+                  InductiveProj::Mk(_, block_addr) => {
+                    run_check(addr);
+                    env_walk(block_addr, owned, asm, strict) } ,
+                } } ,
+              ConstantInfo::CPrj(cprj) => {
+                match cprj {
+                  ConstructorProj::Mk(_, _, block_addr) => {
+                    run_check(addr);
+                    env_walk(block_addr, owned, asm, strict) } ,
+                } } ,
+              ConstantInfo::RPrj(rprj) => {
+                match rprj {
+                  RecursorProj::Mk(_, block_addr) => {
+                    run_check(addr);
+                    env_walk(block_addr, owned, asm, strict) } ,
+                } } ,
+              _ => {  run_check(addr) } ,
+            };
+            env_walk_refs(refs, const_idxs_of(c), 0, owned, asm, strict) } ,
+        } } ,
+    }
+  }
+
+  fn env_walk_refs(refs: List<Addr>, consts: List<Field>, i: Field,
+                       owned: RBTreeMap<Field>,
+                       asm: RBTreeMap<Field>, strict: Field) -> () {
+    match load(refs) {
+      Lists::Node::Nil => {  () } ,
+      Lists::Node::Cons(a, rest) => {
+        match g_list_has(consts, i) {
+          1 => {  env_walk(a, owned, asm, strict) } ,
+          _ => {  () } ,
+        };
+        env_walk_refs(rest, consts, i + 1, owned, asm, strict) } ,
+    }
+  }
+
+  fn env_walk_leaves(leaves: List<Addr>, owned: RBTreeMap<Field>,
+                         asm: RBTreeMap<Field>) -> () {
+    match load(leaves) {
+      Lists::Node::Nil => {  () } ,
+      Lists::Node::Cons(a, rest) => {
+        env_walk(a, owned, asm, 1);
+        env_walk_leaves(rest, owned, asm) } ,
+    }
+  }
+
+  fn run_check_env(env_root: Addr, asm: Option<Addr>) -> () {
+    match asm {
+      Option::None => {
+
+        walk_leaves_owned(load_assumption_tree(env_root)) } ,
+      Option::Some(r) => {
+        let owned = load_assumption_tree(env_root);
+        let owned_set = addr_set_build(owned, RBTreeMap::Nil);
+        let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap::Nil);
+        env_walk_leaves(owned, owned_set, asm_set) } ,
+    }
+  }
+
+  fn walk_leaves_owned(leaves: List<Addr>) -> () {
+    match load(leaves) {
+      Lists::Node::Nil => {  () } ,
+      Lists::Node::Cons(a, rest) => {
+        check_owned(load(a));
+        walk_leaves_owned(rest) } ,
+    }
+  }
+
+  fn check_owned(bytes: [U8; 32]) -> () {
+    env_walk_all(store(bytes))
+  }
+
+  fn env_walk_all(addr: Addr) -> () {
+    let c = load_verified_constant(addr);
+    match c {
+      Constant::Mk(info, _, refs, _) => {
+        match info {
+          ConstantInfo::Muts(members) => {
+            check_muts_all(addr, members, members, 0) } ,
+          ConstantInfo::DPrj(dprj) => {
+            match dprj {
+              DefinitionProj::Mk(_, block_addr) => {
+                run_check(addr);
+                check_owned(load(block_addr)) } ,
+            } } ,
+          ConstantInfo::IPrj(iprj) => {
+            match iprj {
+              InductiveProj::Mk(_, block_addr) => {
+                run_check(addr);
+                check_owned(load(block_addr)) } ,
+            } } ,
+          ConstantInfo::CPrj(cprj) => {
+            match cprj {
+              ConstructorProj::Mk(_, _, block_addr) => {
+                run_check(addr);
+                check_owned(load(block_addr)) } ,
+            } } ,
+          ConstantInfo::RPrj(rprj) => {
+            match rprj {
+              RecursorProj::Mk(_, block_addr) => {
+                run_check(addr);
+                check_owned(load(block_addr)) } ,
+            } } ,
+          _ => {  run_check(addr) } ,
+        };
+        env_walk_refs_all(refs, const_idxs_of(c), 0) } ,
+    }
+  }
+
+  fn env_walk_refs_all(refs: List<Addr>, consts: List<Field>, i: Field) -> () {
+    match load(refs) {
+      Lists::Node::Nil => {  () } ,
+      Lists::Node::Cons(a, rest) => {
+        match g_list_has(consts, i) {
+          1 => {  check_owned(load(a)) } ,
+          _ => {  () } ,
+        };
+        env_walk_refs_all(rest, consts, i + 1) } ,
+    }
+  }
+
+  fn get_opt_addr(stream: ByteStream) -> (Option<Addr>, ByteStream) {
+    let (tag, s) = read_byte(stream);
+    match UInt8::to_field(tag) {
+      0 => {  (Option::None, s) } ,
+      1 => {
+        let (addr, s2) = get_address(s);
+        (Option::Some(addr), s2) } ,
+    }
+  }
+
+  fn get_opt_u64_masked(mb: Field, stream: ByteStream)
+      -> (Option<U64>, ByteStream) {
+    match mb {
+      0 => {  (Option::None, stream) } ,
+      _ => {
+        let (n, s) = get_tagn0(stream);
+        (Option::Some(n), s) } ,
+    }
+  }
+
+  fn get_opt_addr_masked(mb: Field, stream: ByteStream)
+      -> (Option<Addr>, ByteStream) {
+    match mb {
+      0 => {  (Option::None, stream) } ,
+      _ => {
+        let (a, s) = get_address(stream);
+        (Option::Some(a), s) } ,
+    }
+  }
+
+  fn get_opt_bool_masked(mb: Field, stream: ByteStream)
+      -> (Option<Field>, ByteStream) {
+    match mb {
+      0 => {  (Option::None, stream) } ,
+      _ => {
+        let (b, s) = read_byte(stream);
+        (Option::Some(UInt8::to_field(b)), s) } ,
+    }
+  }
+
+  fn get_opt_def_kind_masked(mb: Field, stream: ByteStream)
+      -> (Option<DefKind>, ByteStream) {
+    match mb {
+      0 => {  (Option::None, stream) } ,
+      _ => {
+        let (b, s) = read_byte(stream);
+        match UInt8::to_field(b) {
+          0 => {  (Option::Some(DefKind::Definition), s) } ,
+          1 => {  (Option::Some(DefKind::Opaque), s) } ,
+          2 => {  (Option::Some(DefKind::Theorem), s) } ,
+        } } ,
+    }
+  }
+
+  fn get_opt_def_safety_masked(mb: Field, stream: ByteStream)
+      -> (Option<DefinitionSafety>, ByteStream) {
+    match mb {
+      0 => {  (Option::None, stream) } ,
+      _ => {
+        let (b, s) = read_byte(stream);
+        match UInt8::to_field(b) {
+          0 => {  (Option::Some(DefinitionSafety::Unsafe), s) } ,
+          1 => {  (Option::Some(DefinitionSafety::Safe), s) } ,
+          2 => {  (Option::Some(DefinitionSafety::Partial), s) } ,
+        } } ,
+    }
+  }
+
+  fn get_opt_quot_kind_masked(mb: Field, stream: ByteStream)
+      -> (Option<QuotKind>, ByteStream) {
+    match mb {
+      0 => {  (Option::None, stream) } ,
+      _ => {
+        let (b, s) = read_byte(stream);
+        match UInt8::to_field(b) {
+          0 => {  (Option::Some(QuotKind::Typ), s) } ,
+          1 => {  (Option::Some(QuotKind::Ctor), s) } ,
+          2 => {  (Option::Some(QuotKind::Lift), s) } ,
+          3 => {  (Option::Some(QuotKind::Ind), s) } ,
+        } } ,
+    }
+  }
+
+  fn get_reveal_rule(stream: ByteStream) -> (RevealRecursorRule, ByteStream) {
+    let (rule_idx, s) = get_tagn0(stream);
+    let (fields, s) = get_tagn0(s);
+    let (rhs, s) = get_address(s);
+    (RevealRecursorRule::Mk(rule_idx, fields, rhs), s)
+  }
+
+  fn get_reveal_rule_list_inner(stream: ByteStream, count: U64)
+      -> (List<RevealRecursorRule>, ByteStream) {
+    match UInt64::is_zero(count) {
+      1 => {  (store(Lists::Node::Nil), stream) } ,
+      _ => {
+        let (rule, s) = get_reveal_rule(stream);
+        let (rest, s2) = get_reveal_rule_list_inner(s, UInt64::saturating_pred(count));
+        (store(Lists::Node::Cons(rule, rest)), s2) } ,
+    }
+  }
+
+  fn get_opt_rule_list_masked(mb: Field, stream: ByteStream)
+      -> (Option<List<RevealRecursorRule>>, ByteStream) {
+    match mb {
+      0 => {  (Option::None, stream) } ,
+      _ => {
+        let (count, s) = get_tagn0(stream);
+        let (rules, s2) = get_reveal_rule_list_inner(s, count);
+        (Option::Some(rules), s2) } ,
+    }
+  }
+
+  fn get_reveal_ctor_info(stream: ByteStream)
+      -> (RevealConstructorInfo, ByteStream) {
+    let (mask, s) = get_tagn0(stream);
+    let mask_lo = UInt8::bit_decomposition(mask[0]);
+    let [b0, b1, b2, b3, b4, b5, _, _] = mask_lo;
+    let (is_unsafe, s) = get_opt_bool_masked(b0, s);
+    let (lvls, s) = get_opt_u64_masked(b1, s);
+    let (cidx, s) = get_opt_u64_masked(b2, s);
+    let (params, s) = get_opt_u64_masked(b3, s);
+    let (fields, s) = get_opt_u64_masked(b4, s);
+    let (typ, s) = get_opt_addr_masked(b5, s);
+    (RevealConstructorInfo::Mk(is_unsafe, lvls, cidx, params, fields, typ), s)
+  }
+
+  fn get_ctor_entry(stream: ByteStream)
+      -> ((U64, RevealConstructorInfo), ByteStream) {
+    let (idx, s) = get_tagn0(stream);
+    let (info, s) = get_reveal_ctor_info(s);
+    ((idx, info), s)
+  }
+
+  fn get_ctor_entry_list_inner(stream: ByteStream, count: U64)
+      -> (List<(U64, RevealConstructorInfo)>, ByteStream) {
+    match UInt64::is_zero(count) {
+      1 => {  (store(Lists::Node::Nil), stream) } ,
+      _ => {
+        let (entry, s) = get_ctor_entry(stream);
+        let (rest, s2) = get_ctor_entry_list_inner(s, UInt64::saturating_pred(count));
+        (store(Lists::Node::Cons(entry, rest)), s2) } ,
+    }
+  }
+
+  fn get_opt_ctor_entry_list_masked(mb: Field, stream: ByteStream)
+      -> (Option<List<(U64, RevealConstructorInfo)>>, ByteStream) {
+    match mb {
+      0 => {  (Option::None, stream) } ,
+      _ => {
+        let (count, s) = get_tagn0(stream);
+        let (list, s2) = get_ctor_entry_list_inner(s, count);
+        (Option::Some(list), s2) } ,
+    }
+  }
+
+  fn get_reveal_mut_const_info(stream: ByteStream)
+      -> (RevealMutConstInfo, ByteStream) {
+    let (variant, s) = read_byte(stream);
+    let (mask, s) = get_tagn0(s);
+    let mask_lo = UInt8::bit_decomposition(mask[0]);
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = mask_lo;
+    let mask_hi = UInt8::bit_decomposition(mask[1]);
+    let [b8, _, _, _, _, _, _, _] = mask_hi;
+    match UInt8::to_field(variant) {
+      0 => {
+        let (kind, s) = get_opt_def_kind_masked(b0, s);
+        let (safety, s) = get_opt_def_safety_masked(b1, s);
+        let (lvls, s) = get_opt_u64_masked(b2, s);
+        let (typ, s) = get_opt_addr_masked(b3, s);
+        let (value, s) = get_opt_addr_masked(b4, s);
+        (RevealMutConstInfo::Defn(kind, safety, lvls, typ, value), s) } ,
+      1 => {
+        let (is_unsafe, s) = get_opt_bool_masked(b0, s);
+        let (lvls, s) = get_opt_u64_masked(b1, s);
+        let (params, s) = get_opt_u64_masked(b2, s);
+        let (indices, s) = get_opt_u64_masked(b3, s);
+        let (typ, s) = get_opt_addr_masked(b4, s);
+        let (ctors, s) = get_opt_ctor_entry_list_masked(b5, s);
+        (RevealMutConstInfo::Indc(is_unsafe, lvls, params,
+                                  indices, typ, ctors), s) } ,
+      2 => {
+        let (k, s) = get_opt_bool_masked(b0, s);
+        let (is_unsafe, s) = get_opt_bool_masked(b1, s);
+        let (lvls, s) = get_opt_u64_masked(b2, s);
+        let (params, s) = get_opt_u64_masked(b3, s);
+        let (indices, s) = get_opt_u64_masked(b4, s);
+        let (motives, s) = get_opt_u64_masked(b5, s);
+        let (minors, s) = get_opt_u64_masked(b6, s);
+        let (typ, s) = get_opt_addr_masked(b7, s);
+        let (rules, s) = get_opt_rule_list_masked(b8, s);
+        (RevealMutConstInfo::Recr(k, is_unsafe, lvls, params, indices,
+                                  motives, minors, typ, rules), s) } ,
+    }
+  }
+
+  fn get_mut_entry(stream: ByteStream)
+      -> ((U64, RevealMutConstInfo), ByteStream) {
+    let (idx, s) = get_tagn0(stream);
+    let (info, s) = get_reveal_mut_const_info(s);
+    ((idx, info), s)
+  }
+
+  fn get_mut_entry_list_inner(stream: ByteStream, count: U64)
+      -> (List<(U64, RevealMutConstInfo)>, ByteStream) {
+    match UInt64::is_zero(count) {
+      1 => {  (store(Lists::Node::Nil), stream) } ,
+      _ => {
+        let (entry, s) = get_mut_entry(stream);
+        let (rest, s2) = get_mut_entry_list_inner(s, UInt64::saturating_pred(count));
+        (store(Lists::Node::Cons(entry, rest)), s2) } ,
+    }
+  }
+
+  fn get_reveal_info(stream: ByteStream) -> (RevealConstantInfo, ByteStream) {
+    let (variant, s) = read_byte(stream);
+    let (mask, s) = get_tagn0(s);
+    let mask_lo = UInt8::bit_decomposition(mask[0]);
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = mask_lo;
+    let mask_hi = UInt8::bit_decomposition(mask[1]);
+    let [b8, _, _, _, _, _, _, _] = mask_hi;
+    match UInt8::to_field(variant) {
+      0 => {
+        let (kind, s) = get_opt_def_kind_masked(b0, s);
+        let (safety, s) = get_opt_def_safety_masked(b1, s);
+        let (lvls, s) = get_opt_u64_masked(b2, s);
+        let (typ, s) = get_opt_addr_masked(b3, s);
+        let (value, s) = get_opt_addr_masked(b4, s);
+        (RevealConstantInfo::Defn(kind, safety, lvls, typ, value), s) } ,
+      1 => {
+        let (k, s) = get_opt_bool_masked(b0, s);
+        let (is_unsafe, s) = get_opt_bool_masked(b1, s);
+        let (lvls, s) = get_opt_u64_masked(b2, s);
+        let (params, s) = get_opt_u64_masked(b3, s);
+        let (indices, s) = get_opt_u64_masked(b4, s);
+        let (motives, s) = get_opt_u64_masked(b5, s);
+        let (minors, s) = get_opt_u64_masked(b6, s);
+        let (typ, s) = get_opt_addr_masked(b7, s);
+        let (rules, s) = get_opt_rule_list_masked(b8, s);
+        (RevealConstantInfo::Recr(k, is_unsafe, lvls, params, indices,
+                                  motives, minors, typ, rules), s) } ,
+      2 => {
+        let (is_unsafe, s) = get_opt_bool_masked(b0, s);
+        let (lvls, s) = get_opt_u64_masked(b1, s);
+        let (typ, s) = get_opt_addr_masked(b2, s);
+        (RevealConstantInfo::Axio(is_unsafe, lvls, typ), s) } ,
+      3 => {
+        let (kind, s) = get_opt_quot_kind_masked(b0, s);
+        let (lvls, s) = get_opt_u64_masked(b1, s);
+        let (typ, s) = get_opt_addr_masked(b2, s);
+        (RevealConstantInfo::Quot(kind, lvls, typ), s) } ,
+      4 => {
+        let (idx, s) = get_opt_u64_masked(b0, s);
+        let (cidx, s) = get_opt_u64_masked(b1, s);
+        let (block, s) = get_opt_addr_masked(b2, s);
+        (RevealConstantInfo::CPrj(idx, cidx, block), s) } ,
+      5 => {
+        let (idx, s) = get_opt_u64_masked(b0, s);
+        let (block, s) = get_opt_addr_masked(b1, s);
+        (RevealConstantInfo::RPrj(idx, block), s) } ,
+      6 => {
+        let (idx, s) = get_opt_u64_masked(b0, s);
+        let (block, s) = get_opt_addr_masked(b1, s);
+        (RevealConstantInfo::IPrj(idx, block), s) } ,
+      7 => {
+        let (idx, s) = get_opt_u64_masked(b0, s);
+        let (block, s) = get_opt_addr_masked(b1, s);
+        (RevealConstantInfo::DPrj(idx, block), s) } ,
+      8 => {
+        let (components, s) = match b0 {
+          0 => {  (store(Lists::Node::Nil), s) } ,
+          1 => {
+            let (count, s2) = get_tagn0(s);
+            get_mut_entry_list_inner(s2, count) } ,
+        };
+        (RevealConstantInfo::Muts(components), s) } ,
+    }
+  }
+
+  fn expr_addr(e_ref: &Expr) -> Addr {
+    let bytes = put_expr(load(e_ref), store(Lists::Node::Nil));
+    Blake3::bytes_to_addr(bytes)
+  }
+
+  fn def_kind_tag(k: DefKind) -> Field {
+    match k {
+      DefKind::Definition => {  0 } ,
+      DefKind::Opaque => {  1 } ,
+      DefKind::Theorem => {  2 } ,
+    }
+  }
+
+  fn def_safety_tag(s: DefinitionSafety) -> Field {
+    match s {
+      DefinitionSafety::Unsafe => {  0 } ,
+      DefinitionSafety::Safe => {  1 } ,
+      DefinitionSafety::Partial => {  2 } ,
+    }
+  }
+
+  fn quot_kind_tag(k: QuotKind) -> Field {
+    match k {
+      QuotKind::Typ => {  0 } ,
+      QuotKind::Ctor => {  1 } ,
+      QuotKind::Lift => {  2 } ,
+      QuotKind::Ind => {  3 } ,
+    }
+  }
+
+  fn check_opt_def_kind(real: DefKind, opt: Option<DefKind>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {
+        assert_eq!(def_kind_tag(real), def_kind_tag(claimed),
+          "Reveal: claimed definition kind != real");
+        () } ,
+    }
+  }
+
+  fn check_opt_def_safety(real: DefinitionSafety,
+                          opt: Option<DefinitionSafety>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {
+        assert_eq!(def_safety_tag(real), def_safety_tag(claimed),
+          "Reveal: claimed definition safety != real");
+        () } ,
+    }
+  }
+
+  fn check_opt_quot_kind(real: QuotKind, opt: Option<QuotKind>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {
+        assert_eq!(quot_kind_tag(real), quot_kind_tag(claimed),
+          "Reveal: claimed quotient kind != real");
+        () } ,
+    }
+  }
+
+  fn check_opt_bool(real: Field, opt: Option<Field>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {
+        assert_eq!(real, claimed, "Reveal: claimed flag != real");
+        () } ,
+    }
+  }
+
+  fn check_opt_u64(real: U64, opt: Option<U64>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {
+        assert_eq!(UInt64::eq(real, claimed), 1, "Reveal: claimed numeric field != real");
+        () } ,
+    }
+  }
+
+  fn check_opt_addr(real: Addr, opt: Option<Addr>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {
+        assert_eq!(address_eq(real, claimed), 1,
+          "Reveal: claimed address field != real");
+        () } ,
+    }
+  }
+
+  fn check_opt_expr_addr(real_e: &Expr, opt: Option<Addr>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {
+        let computed = expr_addr(real_e);
+        assert_eq!(address_eq(computed, claimed), 1,
+          "Reveal: claimed expr hash != hash of the real expr");
+        () } ,
+    }
+  }
+
+  fn check_recr_rules(real: List<RecursorRule>,
+                      claimed: List<RevealRecursorRule>,
+                      pos: U64) -> () {
+    match load(claimed) {
+      Lists::Node::Nil => {
+        match load(real) {
+          Lists::Node::Nil => {  () } ,
+        } } ,
+      Lists::Node::Cons(cr, rest_claimed) => {
+        match load(real) {
+          Lists::Node::Cons(rr, rest_real) => {
+            match cr {
+              RevealRecursorRule::Mk(c_idx, c_fields, c_rhs) => {
+                match rr {
+                  RecursorRule::Mk(r_fields, r_rhs) => {
+                    assert_eq!(UInt64::eq(c_idx, pos), 1,
+                      "Reveal: claimed recursor rule index != its position");
+                    assert_eq!(UInt64::eq(r_fields, c_fields), 1,
+                      "Reveal: claimed recursor rule field count != real");
+                    check_opt_expr_addr(r_rhs, Option::Some(c_rhs));
+                    check_recr_rules(rest_real, rest_claimed,
+                      UInt64::wrapping_succ(pos)) } ,
+                } } ,
+            } } ,
+        } } ,
+    }
+  }
+
+  fn check_opt_recr_rules(real: List<RecursorRule>,
+                          opt: Option<List<RevealRecursorRule>>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {
+        check_recr_rules(real, claimed,
+          [UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]) } ,
+    }
+  }
+
+  fn check_ctor_entry(real_list: List<Constructor>,
+                      idx: U64,
+                      info: RevealConstructorInfo) -> () {
+    let real_ctor = list_lookup_u64(real_list, idx);
+    match info {
+      RevealConstructorInfo::Mk(opt_unsafe, opt_lvls, opt_cidx,
+                                opt_params, opt_fields, opt_typ) => {
+        match real_ctor {
+          Constructor::Mk(r_unsafe, r_lvls, r_cidx, r_params, r_fields, r_typ) => {
+            check_opt_bool(r_unsafe, opt_unsafe);
+            check_opt_u64(r_lvls, opt_lvls);
+            check_opt_u64(r_cidx, opt_cidx);
+            check_opt_u64(r_params, opt_params);
+            check_opt_u64(r_fields, opt_fields);
+            check_opt_expr_addr(r_typ, opt_typ) } ,
+        } } ,
+    }
+  }
+
+  fn check_ctor_entries(real_list: List<Constructor>,
+                        claimed: List<(U64, RevealConstructorInfo)>) -> () {
+    match load(claimed) {
+      Lists::Node::Nil => {  () } ,
+      Lists::Node::Cons(entry, rest) => {
+        match entry {
+          (idx, info) => {
+            check_ctor_entry(real_list, idx, info);
+            check_ctor_entries(real_list, rest) } ,
+        } } ,
+    }
+  }
+
+  fn check_opt_ctor_entries(real_list: List<Constructor>,
+                            opt: Option<List<(U64, RevealConstructorInfo)>>) -> () {
+    match opt {
+      Option::None => {  () } ,
+      Option::Some(claimed) => {  check_ctor_entries(real_list, claimed) } ,
+    }
+  }
+
+  fn check_mut_const(real: MutConst, claimed: RevealMutConstInfo) -> () {
+    match real {
+      MutConst::Defn(d) => {
+        match claimed {
+          RevealMutConstInfo::Defn(opt_kind, opt_safety, opt_lvls,
+                                   opt_typ, opt_value) => {
+            match d {
+              Definition::Mk(r_kind, r_safety, r_lvls, r_typ, r_value) => {
+                check_opt_def_kind(r_kind, opt_kind);
+                check_opt_def_safety(r_safety, opt_safety);
+                check_opt_u64(r_lvls, opt_lvls);
+                check_opt_expr_addr(r_typ, opt_typ);
+                check_opt_expr_addr(r_value, opt_value) } ,
+            } } ,
+        } } ,
+      MutConst::Indc(i) => {
+        match claimed {
+          RevealMutConstInfo::Indc(opt_unsafe, opt_lvls,
+                                   opt_params, opt_indices,
+                                   opt_typ, opt_ctors) => {
+            match i {
+              Inductive::Mk(r_unsafe, r_lvls, r_params,
+                            r_indices, r_typ, r_ctors) => {
+                check_opt_bool(r_unsafe, opt_unsafe);
+                check_opt_u64(r_lvls, opt_lvls);
+                check_opt_u64(r_params, opt_params);
+                check_opt_u64(r_indices, opt_indices);
+                check_opt_expr_addr(r_typ, opt_typ);
+                check_opt_ctor_entries(r_ctors, opt_ctors) } ,
+            } } ,
+        } } ,
+      MutConst::Recr(r) => {
+        match claimed {
+          RevealMutConstInfo::Recr(opt_k, opt_unsafe, opt_lvls, opt_params,
+                                   opt_indices, opt_motives, opt_minors,
+                                   opt_typ, opt_rules) => {
+            match r {
+              Recursor::Mk(r_k, r_unsafe, r_lvls, r_params, r_indices,
+                           r_motives, r_minors, r_typ, r_rules) => {
+                check_opt_bool(r_k, opt_k);
+                check_opt_bool(r_unsafe, opt_unsafe);
+                check_opt_u64(r_lvls, opt_lvls);
+                check_opt_u64(r_params, opt_params);
+                check_opt_u64(r_indices, opt_indices);
+                check_opt_u64(r_motives, opt_motives);
+                check_opt_u64(r_minors, opt_minors);
+                check_opt_expr_addr(r_typ, opt_typ);
+                check_opt_recr_rules(r_rules, opt_rules) } ,
+            } } ,
+        } } ,
+    }
+  }
+
+  fn check_muts_components(real: List<MutConst>,
+                           claimed: List<(U64, RevealMutConstInfo)>) -> () {
+    match load(claimed) {
+      Lists::Node::Nil => {  () } ,
+      Lists::Node::Cons(entry, rest_claimed) => {
+        match entry {
+          (idx, info) => {
+            let real_mc = list_lookup_u64(real, idx);
+            check_mut_const(real_mc, info);
+            check_muts_components(real, rest_claimed) } ,
+        } } ,
+    }
+  }
+
+  fn run_reveal(comm_addr: Addr, info: RevealConstantInfo) -> () {
+    let c = load_verified_constant(comm_addr);
+    match c {
+      Constant::Mk(ci, _, _, _) => {
+        match ci {
+          ConstantInfo::Defn(d) => {
+            match info {
+              RevealConstantInfo::Defn(opt_kind, opt_safety, opt_lvls,
+                                       opt_typ, opt_value) => {
+                match d {
+                  Definition::Mk(r_kind, r_safety, r_lvls, r_typ, r_value) => {
+                    check_opt_def_kind(r_kind, opt_kind);
+                    check_opt_def_safety(r_safety, opt_safety);
+                    check_opt_u64(r_lvls, opt_lvls);
+                    check_opt_expr_addr(r_typ, opt_typ);
+                    check_opt_expr_addr(r_value, opt_value) } ,
+                } } ,
+            } } ,
+          ConstantInfo::Recr(r) => {
+            match info {
+              RevealConstantInfo::Recr(opt_k, opt_unsafe, opt_lvls, opt_params,
+                                       opt_indices, opt_motives, opt_minors,
+                                       opt_typ, opt_rules) => {
+                match r {
+                  Recursor::Mk(r_k, r_unsafe, r_lvls, r_params, r_indices,
+                               r_motives, r_minors, r_typ, r_rules) => {
+                    check_opt_bool(r_k, opt_k);
+                    check_opt_bool(r_unsafe, opt_unsafe);
+                    check_opt_u64(r_lvls, opt_lvls);
+                    check_opt_u64(r_params, opt_params);
+                    check_opt_u64(r_indices, opt_indices);
+                    check_opt_u64(r_motives, opt_motives);
+                    check_opt_u64(r_minors, opt_minors);
+                    check_opt_expr_addr(r_typ, opt_typ);
+                    check_opt_recr_rules(r_rules, opt_rules) } ,
+                } } ,
+            } } ,
+          ConstantInfo::Axio(a) => {
+            match info {
+              RevealConstantInfo::Axio(opt_unsafe, opt_lvls, opt_typ) => {
+                match a {
+                  Axiom::Mk(r_unsafe, r_lvls, r_typ) => {
+                    check_opt_bool(r_unsafe, opt_unsafe);
+                    check_opt_u64(r_lvls, opt_lvls);
+                    check_opt_expr_addr(r_typ, opt_typ) } ,
+                } } ,
+            } } ,
+          ConstantInfo::Quot(q) => {
+            match info {
+              RevealConstantInfo::Quot(opt_kind, opt_lvls, opt_typ) => {
+                match q {
+                  Quotient::Mk(r_kind, r_lvls, r_typ) => {
+                    check_opt_quot_kind(r_kind, opt_kind);
+                    check_opt_u64(r_lvls, opt_lvls);
+                    check_opt_expr_addr(r_typ, opt_typ) } ,
+                } } ,
+            } } ,
+          ConstantInfo::CPrj(p) => {
+            match info {
+              RevealConstantInfo::CPrj(opt_idx, opt_cidx, opt_block) => {
+                match p {
+                  ConstructorProj::Mk(r_idx, r_cidx, r_block) => {
+                    check_opt_u64(r_idx, opt_idx);
+                    check_opt_u64(r_cidx, opt_cidx);
+                    check_opt_addr(r_block, opt_block) } ,
+                } } ,
+            } } ,
+          ConstantInfo::RPrj(p) => {
+            match info {
+              RevealConstantInfo::RPrj(opt_idx, opt_block) => {
+                match p {
+                  RecursorProj::Mk(r_idx, r_block) => {
+                    check_opt_u64(r_idx, opt_idx);
+                    check_opt_addr(r_block, opt_block) } ,
+                } } ,
+            } } ,
+          ConstantInfo::IPrj(p) => {
+            match info {
+              RevealConstantInfo::IPrj(opt_idx, opt_block) => {
+                match p {
+                  InductiveProj::Mk(r_idx, r_block) => {
+                    check_opt_u64(r_idx, opt_idx);
+                    check_opt_addr(r_block, opt_block) } ,
+                } } ,
+            } } ,
+          ConstantInfo::DPrj(p) => {
+            match info {
+              RevealConstantInfo::DPrj(opt_idx, opt_block) => {
+                match p {
+                  DefinitionProj::Mk(r_idx, r_block) => {
+                    check_opt_u64(r_idx, opt_idx);
+                    check_opt_addr(r_block, opt_block) } ,
+                } } ,
+            } } ,
+          ConstantInfo::Muts(real_mc_list) => {
+            match info {
+              RevealConstantInfo::Muts(claimed_components) => {
+                check_muts_components(real_mc_list, claimed_components) } ,
+            } } ,
+        } } ,
+    }
+  }
+
+  fn run_contains(tree_root: Addr, target: Addr) -> () {
+    let leaves = load_assumption_tree(tree_root);
+    assert_eq!(se_addr_in(target, leaves), 1,
+      "Contains: target is not a leaf of the claimed tree");
+  }
+
+  fn run_claim(digest: [Field; 8]) -> () {
+
+    let (idx, len) = hint::<(Field, Field)>("ixvm.io.claim", digest);
+    let bytes = read_finite_byte_stream(0, idx, len);
+
+    let h = Blake3::hash(bytes);
+    assert_eq!(b3_pack(h), digest,
+      "claim: bytes do not hash to the public claim digest");
+
+    let (tag, s) = get_tagn4(bytes);
+    let (flag, size) = tag;
+    assert_eq!(flag, 14, "claim: wrong TagN flag");
+
+    let [_, sz1, sz2, sz3, sz4, sz5, sz6, sz7] = size;
+    assert_eq!(((((((UInt8::to_field(sz1) + UInt8::to_field(sz2)) + UInt8::to_field(sz3))
+                  + UInt8::to_field(sz4)) + UInt8::to_field(sz5)) + UInt8::to_field(sz6))
+                  + UInt8::to_field(sz7)), 0,
+      "claim: TagN size exceeds a single byte");
+    let variant = size[0];
+
+    let (format, s) = read_byte(s);
+    assert_eq!(UInt8::to_field(format), 4, "claim: unsupported object format");
+    let (validator, s) = read_byte(s);
+    match UInt8::to_field(variant) {
+      3 => {
+        assert_eq!(UInt8::to_field(validator), 1, "claim: wrong validator identity");
+        let (input, s) = get_address(s);
+        let (output, s) = get_address(s);
+        let (asm, rest) = get_opt_addr(s);
+        let Lists::Node::Nil = load(rest);
+        run_eval(input, output, asm) } ,
+      4 => {
+        assert_eq!(UInt8::to_field(validator), 1, "claim: wrong validator identity");
+        let (target, s2) = get_address(s);
+        let (asm, rest) = get_opt_addr(s2);
+        let Lists::Node::Nil = load(rest);
+        match asm {
+          Option::None => {  run_check_transitive(target) } ,
+          Option::Some(r) => {
+            let asm_leaves = load_assumption_tree(r);
+            let asm_set = addr_set_build(asm_leaves, RBTreeMap::Nil);
+            env_walk(target, RBTreeMap::Nil, asm_set, 0) } ,
+        } } ,
+      5 => {
+        assert_eq!(UInt8::to_field(validator), 1, "claim: wrong validator identity");
+        let (root, s2) = get_address(s);
+        let (asm, rest) = get_opt_addr(s2);
+        let Lists::Node::Nil = load(rest);
+        run_check_env(root, asm) } ,
+      6 => {
+        assert_eq!(UInt8::to_field(validator), 0, "claim: wrong validator identity");
+        let (comm, s2) = get_address(s);
+        let (info, rest) = get_reveal_info(s2);
+        let Lists::Node::Nil = load(rest);
+        run_reveal(comm, info) } ,
+      7 => {
+        assert_eq!(UInt8::to_field(validator), 0, "claim: wrong validator identity");
+        let (tree, s2) = get_address(s);
+        let (target, rest) = get_address(s2);
+        let Lists::Node::Nil = load(rest);
+        run_contains(tree, target) } ,
+      9 => {
+        assert_eq!(UInt8::to_field(validator), 2, "claim: wrong resource validator identity");
+
+        assert_eq!(0, 1, "claim: resource-v1 is not implemented by LegacyIxVM");
+        () } ,
+    }
+  }
+
+  fn eval_nf(e: KExpr, types: List<KExpr>) -> KExpr {
+    let w = whnf(e, types);
+    match load(w) {
+      KExprNode::Lam(t, b) => {
+        let nt = eval_nf(t, types);
+        store(KExprNode::Lam(nt, eval_nf(b, store(Lists::Node::Cons(t, types))))) } ,
+      KExprNode::Forall(t, b) => {
+        let nt = eval_nf(t, types);
+        store(KExprNode::Forall(nt, eval_nf(b, store(Lists::Node::Cons(t, types))))) } ,
+      _ => {  eval_nf_spine(w, types) } ,
+    }
+  }
+
+  fn eval_nf_spine(e: KExpr, types: List<KExpr>) -> KExpr {
+    match load(e) {
+      KExprNode::App(f, a) => {
+        store(KExprNode::App(eval_nf_spine(f, types), eval_nf(a, types))) } ,
+      KExprNode::Proj(addr, i, e) => {
+        store(KExprNode::Proj(addr, i, eval_nf(e, types))) } ,
+      _ => {  e } ,
+    }
+  }
+
+  fn eval_body(input: Addr) -> (Field, KExpr, KExpr) {
+    let ci = load(get_ci(input));
+    assert_eq!(is_unsafe_ci(ci), 0, "Eval: unsafe or partial input");
+    match ci {
+      KConstantInfo::Defn(n, ty, value, _, _) => {  (n, ty, value) } ,
+      KConstantInfo::Thm(n, ty, value) => {  (n, ty, value) } ,
+      KConstantInfo::Opaque(n, ty, value, _) => {  (n, ty, value) } ,
+    }
+  }
+
+  fn eval_output(output: Addr, nlvls: Field, input_type: KExpr) -> KExpr {
+    let Constant::Mk(info, sharing, refs, univs) = load_verified_constant(output);
+    let ConstantInfo::Defn(defn) = info;
+    let Definition::Mk(kind, safety, lvls, ty, value) = defn;
+    assert_eq!(kind, DefKind::Definition, "Eval: output must be a definition");
+    assert_eq!(safety, DefinitionSafety::Safe, "Eval: unsafe or partial output");
+    assert_eq!(UInt64::to_field(lvls), nlvls, "Eval: universe parameter count mismatch");
+    let no_recur = store(Lists::Node::Nil);
+    let output_type = convert_expr(ty, sharing, refs, no_recur, univs);
+    assert_eq!(kexpr_struct_eq(output_type, input_type), 1, "Eval: output type does not match input");
+    convert_expr(value, sharing, refs, no_recur, univs)
+  }
+
+  fn run_eval(input: Addr, output: Addr, asm: Option<Addr>) -> () {
+
+    run_check(input);
+    match asm {
+      Option::None => {  run_check_transitive(input) } ,
+      Option::Some(r) => {
+        let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap::Nil);
+        assert_eq!(addr_set_member(input, asm_set), 0, "Eval: input is an assumption");
+        env_walk(input, RBTreeMap::Nil, asm_set, 0) } ,
+    };
+    let (nlvls, ty, body) = eval_body(input);
+    let expected = eval_output(output, nlvls, ty);
+    let result = eval_nf(body, store(Lists::Node::Nil));
+
+    assert_eq!(kexpr_struct_eq(result, expected), 1, "Eval: result does not match output");
+    ()
+  }
 inline fn store<T>(value: T) -> &T { &value }
 inline fn load<T>(pointer: &T) -> T { *pointer }
 
@@ -12081,6 +13144,10 @@ fn check_primitives() -> () {
     let ctor = store(KExprNode::Const(nat_zero_addr_iota(), store(Lists::Node::Nil)));
     assert_eq!(k_is_def_eq_struct_go(zero, ctor, empty), 1, "natural literal expansion");
     ()
+}
+fn verify_claim(digest: [Field; 8]) -> () { run_claim(digest) }
+fn verify_check_env(digest: [Field; 32]) -> () {
+    run_check_env(store(Blake3::address_from_fields(digest)), Option::None)
 }
 fn audit_div(a: KLimbs, b: KLimbs, expected_q: KLimbs, expected_r: KLimbs) -> () {
     let (q, r) = klimbs_div_mod(a, b);

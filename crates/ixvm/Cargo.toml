@@ -1,5 +1,6 @@
 [package]
 name = "ixvm"
+default-run = "ixvm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,11 +11,13 @@ aiur = { workspace = true }
 multi-stark = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
+blake3 = { workspace = true }
 
 [features]
 default = []
 stark = ["aiur/stark"]
 parallel = ["stark", "aiur/parallel"]
+cuda = ["stark", "aiur/cuda"]
 function-profile = ["aiur/function-profile"]
 function-profile-ops = ["function-profile", "aiur/function-profile-ops"]
 
@@ -24,4 +27,9 @@ required-features = ["stark"]
 
 [[example]]
 name = "witness"
+required-features = ["stark"]
+
+[[bin]]
+name = "ixvm-proof"
+path = "src/proof.rs"
 required-features = ["stark"]

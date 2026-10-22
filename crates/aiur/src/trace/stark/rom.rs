@@ -67,6 +67,7 @@ impl Rom {
     &self,
     circuits: &mut Vec<CircuitInputs<Val>>,
     names: &mut Vec<String>,
+    segmented: bool,
   ) -> Result<(), String> {
     for &payload_width in &self.widths {
       // [multiplicity, is_real, width-local address, payload...].
@@ -82,16 +83,39 @@ impl Rom {
         vec![constant(ROM), constant(payload_width as u64), address.clone()];
       args.extend((3..width).map(main_var));
       let transition = Expr::IsTransition * Expr::main_next(1);
+      let mut constraints = vec![
+        active.clone() * (active.clone() - constant(1)),
+        count.clone() * (constant(1) - active.clone()),
+        transition.clone() * (active.clone() - constant(1)),
+        transition * (Expr::main_next(2) - address.clone() - constant(1)),
+      ];
+      let mut lookups = vec![Lookup::pull(count, args)];
+      if segmented {
+        // Each contiguous run leaves its start/end in the batch balance.
+        // Authenticated closure messages and the height bound tile [0, N).
+        lookups.push(Lookup::push(
+          active.clone(),
+          vec![
+            constant(MEMSEG),
+            constant(payload_width as u64),
+            address.clone(),
+          ],
+        ));
+        lookups.push(Lookup::pull(
+          active,
+          vec![
+            constant(MEMSEG),
+            constant(payload_width as u64),
+            address + constant(1),
+          ],
+        ));
+      } else {
+        constraints.push(Expr::IsFirstRow * address);
+      }
       circuits.push(CircuitInputs {
         main_width: width,
-        constraints: vec![
-          active.clone() * (active.clone() - constant(1)),
-          count.clone() * (constant(1) - active.clone()),
-          Expr::IsFirstRow * address.clone(),
-          transition.clone() * (active.clone() - constant(1)),
-          transition * (Expr::main_next(2) - address - constant(1)),
-        ],
-        lookups: vec![Lookup::pull(count, args)],
+        constraints,
+        lookups,
         ..Default::default()
       });
       names.push(format!("<ROM:{payload_width}>"));

@@ -6,6 +6,7 @@ package ix where
 
 require aiur from "Aiur"
 require ixvm from "IxVM"
+require multiStark from "MultiStark"
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
@@ -163,6 +164,14 @@ lean_exe ix where
 section Tests
 
 lean_lib Tests
+
+lean_exe «formal-aiur-tests» where
+  root := `Tests.FormalAiur
+  supportInterpreter := true
+
+lean_exe «formal-aggregate-tests» where
+  root := `Tests.FormalAggregate
+  supportInterpreter := true
 
 @[test_driver]
 lean_exe IxTests where

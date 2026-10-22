@@ -10,6 +10,8 @@
 -/
 module
 public import Cli
+public import Ix.Cli.FormalAiur
+public import Ix.Cli.FormalAggregate
 public import Ix.Address
 public import LegacyAiur.Compiler
 public import LegacyAiur.Protocol
@@ -216,6 +218,8 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
 proof verification remains pinned to its independent canonical parameters. -/
 def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
+  if FormalAiur.selected p then
+    return ← if p.hasFlag "aggregate" then FormalAggregate.verify p else FormalAiur.verify p
   let proofs := (p.variableArgsAs! String).toList
   if p.hasFlag "aggregate" then
     if proofs.isEmpty then
@@ -307,6 +311,9 @@ def verifyCmd : Cli.Cmd := `[Cli|
   "Verify STARK proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
+    "formal"; "Verify a proof produced by the new Aiur backend."
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."

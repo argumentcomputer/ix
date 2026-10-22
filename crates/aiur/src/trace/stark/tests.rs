@@ -22,6 +22,52 @@ fn parameters() -> Parameters {
   Parameters { log_blowup: 1, num_queries: 32 }
 }
 
+#[test]
+fn batch_memory_partition_and_persisted_key() {
+  use multi_stark::batch::Retention;
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let record = program.execute("root", vec![3]).unwrap();
+  let mut witness = backend.generate(&record, "root", &[3]).unwrap();
+  let memory = witness.traces.last_mut().unwrap();
+  assert_eq!(memory.width, 4);
+  // Two unused but consecutive cells force a memory boundary across shards.
+  memory
+    .values
+    .extend([0, 1, 1, 42, 0, 1, 2, 43, 0, 0, 0, 0].map(Val::from_u64));
+  let retained = backend
+    .prove_batch_stage_1(
+      "root",
+      &[3],
+      &[9],
+      witness.traces.clone(),
+      2,
+      Retention::Retain,
+    )
+    .unwrap();
+  let proof = backend
+    .prove_batch("root", &[3], &[9], witness, 2, Retention::Regenerate)
+    .unwrap();
+  assert_eq!(proof.proofs.len(), 2);
+  assert_eq!(proof.to_bytes().unwrap(), retained.to_bytes().unwrap());
+  let bytes = backend.verifying_key_bytes().unwrap();
+  let key = VerifyingKey::from_bytes(&bytes).unwrap();
+  assert_eq!(key.to_bytes(), bytes);
+  let claim = backend.claim("root", &[3], &[9]).unwrap();
+  key.verify(&[claim], &proof).unwrap();
+  assert!(backend.verify_batch("root", &[3], &[8], &proof).is_err());
+  let mut bad = proof.clone();
+  bad.preamble.messages[1].args[2] += Val::ONE;
+  assert!(backend.verify_batch("root", &[3], &[9], &bad).is_err());
+  let mut bad = proof.clone();
+  bad.preamble.messages.extend(proof.preamble.messages.clone());
+  assert!(backend.verify_batch("root", &[3], &[9], &bad).is_err());
+  let mut bad = proof.clone();
+  bad.preamble.headers[1].claims = bad.preamble.headers[0].claims.clone();
+  assert!(backend.verify_batch("root", &[3], &[9], &bad).is_err());
+}
+
 fn compare_generated<B: WitnessField>(
   backend: &Backend<'_, '_, B>,
   record: &Execution<B>,
@@ -32,6 +78,11 @@ fn compare_generated<B: WitnessField>(
     backend.plan.generate_reference(record, entry, args, true).unwrap();
   let expected = backend.witness(record, &trace).unwrap();
   let got = backend.generate(record, entry, args).unwrap();
+  let stage_1 = backend.generate_stage_1(record, entry, args).unwrap();
+  for (full, main) in got.traces.iter().zip(&stage_1) {
+    assert_eq!(full.width, main.width);
+    assert_eq!(full.values, main.values);
+  }
   assert_eq!(expected.traces.len(), got.traces.len());
   for (a, b) in expected.traces.iter().zip(&got.traces) {
     assert_eq!(a.width, b.width);
