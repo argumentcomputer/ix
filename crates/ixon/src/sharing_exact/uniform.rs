@@ -1100,7 +1100,9 @@ struct SCtx<'a, 'd> {
   stored_in: Vec<TermId>,
   slack: i128,
   theta: i128,
-  memo: FxHashMap<Vec<u64>, CTable>,
+  // Completed group tables are immutable; memo hits share their per-count
+  // choices instead of cloning every selected-term vector.
+  memo: FxHashMap<Vec<u64>, Arc<CTable>>,
   memo_hits: u64,
   /// Scratch of `phi`: the value of each area term.
   vals: Vec<UVal>,
@@ -1386,7 +1388,7 @@ impl SCtx<'_, '_> {
     g: &[TermId],
     in_all: &[TermId],
     out_all: &[TermId],
-  ) -> Result<CTable, SharingError> {
+  ) -> Result<Arc<CTable>, SharingError> {
     let out = self.flags(out_all);
     let in_f = self.flags(in_all);
     let key = {
@@ -1403,7 +1405,7 @@ impl SCtx<'_, '_> {
     };
     if let Some(tb) = self.memo.get(&key) {
       self.memo_hits += 1;
-      return Ok(tb.clone());
+      return Ok(Arc::clone(tb));
     }
     let (phi0, work) = self.phi(&in_f, in_all)?;
     Self::charge(meter, work.saturating_add(len64(self.area.len())))?;
@@ -1417,8 +1419,8 @@ impl SCtx<'_, '_> {
       g,
       Vec::new(),
     )?;
-    let tb = table_trim(tb, self.slack);
-    self.memo.insert(key, tb.clone());
+    let tb = Arc::new(table_trim(tb, self.slack));
+    self.memo.insert(key, Arc::clone(&tb));
     Ok(tb)
   }
 
@@ -1915,6 +1917,10 @@ pub(crate) fn optimize_uniform_with(
       vals: vec![UVal::default(); area_len],
     };
     let tb = cx.solve(meter, members, &[], &[])?;
+    // Only the final component table escapes. Release its memo owners
+    // before recovering the owned table expected by the existing API.
+    drop(cx);
+    let tb = Arc::unwrap_or_clone(tb);
     let bd = table_best(&tb)
       .ok_or_else(|| internal("component search found no choice"))?;
     let mut best_set: Option<&Vec<TermId>> = None;
