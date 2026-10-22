@@ -110,6 +110,7 @@ import Tests.Ix.ResourceHints
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.Kernel.RecordCheck
 import Tests.Ix.Kernel.CheckLeanTargets
+import Tests.Ix.Kernel.CheckLeanCli
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.SharingExact
@@ -368,6 +369,7 @@ def registry : List Entry := [
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
+  .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
 
   -- expensive suites and runners (these require significant RAM)
   .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,

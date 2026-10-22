@@ -1,7 +1,6 @@
 module
 
 public import LSpec
-public import Ix.Tc
 public import Ix.Cli.CheckLeanCmd
 public import Tests.Ix.Tc.ParityEnv
 
@@ -10,8 +9,9 @@ public import Tests.Ix.Tc.ParityEnv
 against a real serialized env (compiled on demand — see `Tests.Tc.ParityEnv`).
 Each pin is a constant that previously OOMed, was falsely rejected at
 depth 2001, or blew the worker stack (see the short-circuit note in
-`Ix/Tc/DefEq.lean` and `ParCheckCfg.stackBytes`); the suite ingresses
-the env once and checks each pin subject-only under a wall-clock budget.
+`Ix/Tc/DefEq.lean`; the host CheckCfg retains its stack reservation); the suite authenticates
+the input once and checks each pin's producer under its original budget,
+with complete supporting checks measured separately.
 Budgets are generous — the pins guard ∞/OOM regression classes, not
 micro-perf. Known-slow pins (open perf issues) run only with
 `IX_PINS_SLOW=1`.
@@ -20,12 +20,11 @@ micro-perf. Known-slow pins (open perf issues) run only with
 namespace Tests.Tc.Pins
 
 open LSpec
-open Ix.Tc
 
-structure Pin where
+public structure Pin where
   /-- Fail-out-style label (meta-mode Lean name rendering). -/
   label : String
-  /-- Wall-clock budget for the subject-only check. -/
+  /-- Budget for the selected producer's checker work, excluding reading/support. -/
   budgetMs : Nat := 60_000
   /-- Known-slow (open issue): skipped unless `IX_PINS_SLOW=1`. -/
   slow : Bool := false
@@ -53,50 +52,40 @@ def pins : List Pin := [
   { label := "Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.denote_blastDivSubtractShift_q" },
 ]
 
-/-- Check one pin subject-only over the shared ingressed env (fresh
-    single worker per pin: per-pin cache isolation, deterministic
-    budget). -/
-def checkPin (kenv : MetaEnv) (prims : Primitives .meta)
-    (work : Array (CheckWorkItem .meta)) (pin : Pin) : IO TestSeq := do
-  let (sel, unmatched) := Ix.Cli.CheckLeanCmd.selectWork work
-    (fun id => toString id.name) #[pin.label]
-  if !unmatched.isEmpty || sel.isEmpty then
-    return test s!"{pin.label}: resolves in env" false
-  let cfg : ParCheckCfg :=
-    { workers := 1, silent := true, progressMs := 0, stuckMs := 0,
-      slowMs := 0, clearEvery := 0 }
-  let report ← checkEnvParallel kenv prims sel
-    (labelOf := toString) (failLabelOf := fun id => toString id.name) cfg
-  if !report.failures.isEmpty then
-    let (_, msg) := report.failures[0]!
-    return test s!"{pin.label}: passes (got: {msg})" false
-  return test
-    s!"{pin.label}: passes in {report.elapsedMs}ms (budget {pin.budgetMs}ms)"
-    (report.elapsedMs ≤ pin.budgetMs)
+/-- Check a fresh supporting closure over shared authenticated preparation.
+The existing per-subject budget measures its actual producer's checker time;
+input, preparation, reading and support checking are reported separately. -/
+public def checkPin (prepared : Ix.Cli.CheckLeanCmd.PreparedInput) (pin : Pin) : IO TestSeq := do
+  let expected ← match Ix.Cli.CheckLeanTargets.findCandidate prepared.inventory pin.label with
+    | .ok c => pure c
+    | .error _ => return test s!"{pin.label}: resolves unambiguously in the input" false
+  let cfg : Ix.Cli.CheckLeanCmd.CheckCfg :=
+    { workers := 1, silent := true, progressMs := 0, slowMs := 0 }
+  match ← Ix.Cli.CheckLeanCmd.runPrepared prepared cfg (.only #[pin.label]) with
+  | .error e => return test s!"{pin.label}: driver failed: {e.message}" false
+  | .ok report =>
+    if report.targets.size != 1 || report.targets.any (fun r => r.target.label != expected.label || r.target.address != expected.address || r.outcome != "accept") then
+      return test s!"{pin.label}: exact accepted coverage (got {report.failures})" false
+    let subjectMs := report.subjectMicros / 1000
+    IO.println s!"tc-pins: {pin.label}: selected checker {subjectMs}ms; preparation {report.prepareMs}ms; \
+      reading {report.readMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; run {report.elapsedMs}ms"
+    return test s!"{pin.label}: producer checked in {subjectMs}ms (budget {pin.budgetMs}ms)"
+      (report.subjectMicros ≤ pin.budgetMs * 1000)
 
 public def run : IO UInt32 := do
   IO.println "tc-pins"
   let path ← Tests.Tc.ParityEnv.ensure
   let includeSlow := (← IO.getEnv "IX_PINS_SLOW").isSome
-  let t0 ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile path
-  match Ixon.deEnv bytes with
-  | .error e => IO.eprintln s!"tc-pins: deserialize failed: {e}"; return 1
-  | .ok ixonEnv =>
-    match ingressMetaEnvParallel ixonEnv with
-    | .error e => IO.eprintln s!"tc-pins: ingress failed: {e}"; return 1
-    | .ok kenv =>
-      let work := buildCheckWork kenv
-      let prims := Primitives.fromEnv kenv
-      IO.println s!"tc-pins: env ready in {(← IO.monoMsNow) - t0}ms \
-                    ({kenv.consts.size} consts, {work.size} work items)"
-      let mut seq : TestSeq := .done
-      for pin in pins do
-        if pin.slow && !includeSlow then
-          IO.println s!"tc-pins: skipping known-slow {pin.label} \
-                        (set IX_PINS_SLOW=1 to include)"
-        else
-          seq := seq ++ (← checkPin kenv prims work pin)
-      lspecIO (.ofList [("tc-pins", [seq])]) []
+  match ← Ix.Cli.CheckLeanCmd.prepareInput bytes with
+  | .error e => IO.eprintln s!"tc-pins: {e.message}"; return e.exitCode
+  | .ok prepared =>
+    IO.println s!"tc-pins: authenticated input ready in {prepared.prepareMs}ms ({prepared.inventory.size} labels)"
+    let mut seq : TestSeq := .done
+    for pin in pins do
+      if pin.slow && !includeSlow then
+        IO.println s!"tc-pins: skipping known-slow {pin.label} (set IX_PINS_SLOW=1 to include)"
+      else seq := seq ++ (← checkPin prepared pin)
+    lspecIO (.ofList [("tc-pins", [seq])]) []
 
 end Tests.Tc.Pins
