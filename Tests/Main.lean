@@ -108,6 +108,7 @@ import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
 import Tests.Ix.Kernel.ReaderAccess
 import Tests.Ix.Kernel.PreludeFidelity
+import Tests.Ix.Kernel.CollapseFidelity
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.BundleEvidence
@@ -288,6 +289,7 @@ def registry : List Entry := [
   .suite "kernel-fidelity-access" .primary Tests.Ix.Kernel.FidelityAccess.suite,
   .suite "kernel-reader-access" .primary Tests.Ix.Kernel.ReaderAccess.suite,
   .suite "kernel-prelude-fidelity" .primary Tests.Ix.Kernel.PreludeFidelity.suite,
+  .suite "kernel-collapse-fidelity" .primary Tests.Ix.Kernel.CollapseFidelity.suite,
   .suite "validate-lean-fidelity-cli" .primary Tests.Ix.Kernel.ValidateLeanCli.suite,
   .suite "validate-lean-reader-cli" .primary Tests.Ix.Kernel.ValidateReaderCli.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants

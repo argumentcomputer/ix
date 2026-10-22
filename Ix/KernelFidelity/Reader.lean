@@ -738,6 +738,47 @@ structure Cx where
   advisory : Lean.Name → Option Ix.Kernel.ReducibilityHint
   /-- how many Lean constants share a Lean constant's reference -/
   aliases : Lean.Name → Nat
+  recursorKey : ConstRef Address → Option (CName .anon) := fun _ => none
+
+/-- The decoded index's unique recursor for this exact owning type. -/
+def canonicalRecursor (cx : Ctx .anon) (type : ConstRef Address) : Option (CName .anon) := do
+  let shape ← cx.index.blocks[type.block]?
+  let candidates := shape.recs.filter fun r => (cx.index.recs[r]?).any fun e =>
+    e.block == type.block && e.major == type
+  let [recursor] := candidates.toList | none
+  (cx.memberKey recursor).toOption
+
+def sameUniqueKeys (actual expected : List (CName .anon)) : Bool :=
+  let expected := expected.eraseDups
+  actual.length == expected.length && actual.eraseDups.length == actual.length &&
+    actual.all expected.contains
+
+/-- Flat source members may project many-to-one into a changed block. Check
+the exact canonical keys by kind, including the index-derived recursors. -/
+def flatCollapseOrder (cx : Cx) (iv : Lean.InductiveVal) (block : List (CInfo .anon)) : Bool :=
+  (do
+    guard (iv.numNested == 0 && iv.all.eraseDups.length == iv.all.length)
+    let refs ← iv.all.mapM cx.rcx.refOf
+    let first :: _ := refs | none
+    guard (refs.eraseDups.length < refs.length)
+    guard (refs.all fun | .member b _ => b == first.block | _ => false)
+    let types ← iv.all.mapM fun n => (cx.rcx.name n).toOption
+    let mut ctors := []
+    for n in iv.all do
+      let some (.inductInfo member) := cx.lean n | none
+      guard (member.numNested == 0 && member.all == iv.all)
+      guard ((cx.named[n ++ `rec]?).any fun (nd : NamedFacts) => nd.original)
+      ctors := ctors ++ (← member.ctors.mapM fun c => (cx.rcx.name c).toOption)
+    let recs ← refs.mapM cx.recursorKey
+    let actualTypes := block.filterMap fun (ci : CInfo .anon) => match ci with
+      | .indInfo cv _ => some cv.name | _ => none
+    let actualCtors := block.filterMap fun (ci : CInfo .anon) => match ci with
+      | .ctorInfo cv .. => some cv.name | _ => none
+    let actualRecs := block.filterMap fun (ci : CInfo .anon) => match ci with
+      | .recInfo cv .. => some cv.name | _ => none
+    return block.length == actualTypes.length + actualCtors.length + actualRecs.length &&
+      sameUniqueKeys actualTypes types && sameUniqueKeys actualCtors ctors &&
+      sameUniqueKeys actualRecs recs).getD false
 
 /-- What a canonicalized constant must still agree on: its kind, name and
 level parameters, an inductive's parameter count, a constructor's counts,
@@ -868,9 +909,9 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
       -- stands in for one Lean recursor the block no longer holds
       let canonical := actualNames.filter cx.pass3Keys.contains
       let images := expectedNames.filter fun e => !actualNames.contains e
-      if regenerated && actualNames.length == expectedNames.length &&
+      if (regenerated && actualNames.length == expectedNames.length &&
           actualNames.all (fun a => expectedNames.contains a || cx.pass3Keys.contains a) &&
-          canonical.length == images.length then
+          canonical.length == images.length) || flatCollapseOrder cx iv block then
         report := { report with reorderedBlocks := report.reorderedBlocks.push ln }
       else
         report := report.problem s!"block order of {ln}: reader {actualNames.take 6}…, \
@@ -971,7 +1012,7 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
     else acc
   let cx : Cx := {
     lean := input.lean, rcx, named, byName, foreign, pass3Keys, preludeOnly
-    keep, advisory, aliases }
+    keep, advisory, aliases, recursorKey := canonicalRecursor s.cx }
   -- read in the check order, comparing each record's constants at the
   -- reader's state before it
   let base := match roots with
