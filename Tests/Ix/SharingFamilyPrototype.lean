@@ -1,5 +1,5 @@
 import Tests.Ix.SharingUniform
-import Ix.Sharing.FamilyPrototype
+import Ix.Sharing.FamilyPrototypeFast
 
 namespace Tests.SharingFamilyPrototype
 
@@ -60,6 +60,8 @@ private def modelControls : IO Nat := do
       for (members, i) in stage.comps.zipIdx do
         if members.size > 8 then continue
         let cx := componentContext ex stage members
+        let positions := localPositions cx
+        ensure positions.isSome "valid initial context bypassed the closure-local evaluator"
         let baseline := (cx.phiE (fun _ => false) #[]).1
         let cost := componentDelta cx baseline
         ensure (cost #[] == 0) "empty-subset delta is not zero"
@@ -70,6 +72,17 @@ private def modelControls : IO Nat := do
         for row in fallback.rows do
           ensure (row.any fun (d, s) => d == cost s && s.all members.contains && strictInc s)
             "fallback row cost/membership is not actual phiE"
+          if let some (_, set) := row then
+            ensure (localPhi cx positions set.contains set == cx.phiE set.contains set)
+              "local evaluator changed the cost/work pair"
+        let badSize := { cx with cand := #[] }
+        ensure ((localPositions badSize).isNone &&
+          localPhi badSize (localPositions badSize) members.contains members ==
+            badSize.phiE members.contains members) "bad-size evaluator fallback changed"
+        let missing := { cx with area := #[] }
+        ensure (localSearchOK missing && (localPositions missing).isNone &&
+          localPhi missing (localPositions missing) members.contains members ==
+            missing.phiE members.contains members) "missing-member evaluator fallback changed"
         let (reference, _, _) ← IO.ofExcept ((searchComponentRef stage.up stage.f stage.opaq
           ex.roots stage.slack {} members 0 0).mapError toString)
         let kept (rows : CTable) := (rows.trim stage.slack).zipIdx.filterMap fun (r, k) => r.map (k, ·)
