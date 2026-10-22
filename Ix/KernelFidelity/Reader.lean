@@ -730,6 +730,9 @@ structure Cx where
   /-- the reader's keys of the constants published under reserved `_ix` names
   (Pass 3's canonical constants of changed blocks) -/
   pass3Keys : Std.HashSet (CName .anon) := {}
+  /-- Trusted setup records absent from the compiled input. They still
+  supply reader state; their unlabelled entries are not source comparisons. -/
+  preludeOnly : Std.HashSet Address := {}
   keep : Lean.Name → Bool
   /-- the host hint the environment check supplies at a Lean constant's reference -/
   advisory : Lean.Name → Option Ix.Kernel.ReducibilityHint
@@ -830,7 +833,7 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
           report := { report with foreign := report.foreign + 1 }
         else if cx.pass3Keys.contains actual.name then
           report := { report with pass3Canonical := report.pass3Canonical + 1 }
-        else
+        else unless cx.preludeOnly.contains address do
           report := { report with unmatched := report.unmatched.push actual.name }
         continue
       seen := seen.insert actual.name
@@ -901,6 +904,8 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
   let t0 ← IO.monoMsNow
   let table ← IO.ofExcept defaultTable
   let pre ← IO.ofExcept (preludeFor table)
+  let preludeOnly := pre.records.foldl (init := {}) fun (s : Std.HashSet Address) (a, _) =>
+    if input.store.contains a then s else s.insert a
   let hints := Hints.ofStore input.store input.hints
   let s : Setup := setup input.store (input.blobs[·]?) table pre hints.lookup (literals := input.literals)
   let store := s.store
@@ -964,7 +969,9 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
         | none => acc
       | none => acc
     else acc
-  let cx : Cx := { lean := input.lean, rcx, named, byName, foreign, pass3Keys, keep, advisory, aliases }
+  let cx : Cx := {
+    lean := input.lean, rcx, named, byName, foreign, pass3Keys, preludeOnly
+    keep, advisory, aliases }
   -- read in the check order, comparing each record's constants at the
   -- reader's state before it
   let base := match roots with
@@ -987,6 +994,8 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
     readNs := readNs + ((← IO.monoNanosNow) - r0)
     match reading with
     | .error e =>
+      if preludeOnly.contains address then
+        throw (IO.userError s!"fidelity: setup-only prelude record {address}: {e}")
       acc := ({ acc.1 with records := acc.1.records + 1, readFailures := acc.1.readFailures + 1 },
         acc.2)
       failed := failed.insert address (toString e)
