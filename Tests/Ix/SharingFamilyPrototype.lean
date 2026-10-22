@@ -1,5 +1,5 @@
 import Tests.Ix.SharingUniform
-import Ix.Sharing.FamilyPrototypeFast
+import Ix.Sharing.FamilyPrototypeCached
 
 namespace Tests.SharingFamilyPrototype
 
@@ -57,6 +57,29 @@ private def modelControls : IO Nat := do
     let ex ← IO.ofExcept ((expand {} #[] roots false).mapError toString)
     for width in [1, 2, 3] do
       let stage := uniformStage width ex (Prep.ofDag ex.dag)
+      -- Repeated/reordered components and an empty endpoint expose stale
+      -- positions without requiring a large corpus or changing any family.
+      let repeated := { stage with comps := stage.comps ++ stage.comps.reverse ++ #[#[]] }
+      for experimentK in [0, 3] do
+        let cfg : Config := ⟨experimentK⟩
+        let reference := repeated.comps.mapIdx fun j ms => component cfg ex repeated width j ms
+        let cached := componentsCachedWith cfg ex repeated width
+        ensure (cached.map (·.tsv "cached") == reference.map (·.tsv "cached"))
+          "cached stage changed full traces after repeated/reordered components"
+        let parents := parentsOf ex.dag
+        let zeroA := Array.replicate repeated.up.prep.dag.size 0
+        let zeroC := Array.replicate ex.dag.size 0
+        let mut state : CacheState := (#[], zeroA, zeroC)
+        for item in repeated.comps.zipIdx do
+          state := cachedStep cfg ex repeated width parents state item
+          ensure (state.2.1 == zeroA && state.2.2 == zeroC)
+            "cached component left touched positions uncleared"
+        ensure (state.1.map (·.tsv "cached") == reference.map (·.tsv "cached"))
+          "cached step fold differs from the stage loop"
+        let bad := { repeated with cand := #[] }
+        let badReference := bad.comps.mapIdx fun j ms => component cfg ex bad width j ms
+        ensure ((componentsCachedWith cfg ex bad width).map (·.tsv "fallback") ==
+          badReference.map (·.tsv "fallback")) "cached representation fallback changed traces"
       for (members, i) in stage.comps.zipIdx do
         if members.size > 8 then continue
         let cx := componentContext ex stage members

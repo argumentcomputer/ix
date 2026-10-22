@@ -1,8 +1,9 @@
-import Ix.Sharing.FamilyPrototypeFast
+import Ix.Sharing.FamilyPrototypeCached
 
 /-! Standalone experimental component traces from canonical constant bytes.
 Link natively using the workspace's existing executable objects/FFI linkage;
-the evaluator uses proved closure-local rows, not the production area path. -/
+the evaluator uses proved closure-local rows. Whole-width traces reuse
+component preparation; a filtered component uses the single-component twin. -/
 
 open Ix.Sharing.Exact Ix.Sharing.FamilyPrototype
 
@@ -23,10 +24,19 @@ def main (args : List String) : IO UInt32 := do
   -- the prototype makes no totality claim about that input route.
   let expanded ← IO.ofExcept ((expand {} constant.sharing (constantInfoRoots constant.info) true).mapError toString)
   IO.println s!"header\tversion=1\tK={k}\ttie=set_prec\tevaluator=lean-phiEL2-closure-local\tnumeric=Nat/Int\tstatus=experimental"
+  (← IO.getStdout).flush
   for width in [1, 2, 3] do
     if widthFilter.any (· != width) then continue
     let stage := uniformStage width expanded (Prep.ofDag expanded.dag)
     if componentFilter.any (· ≥ stage.comps.size) then throw (IO.userError "component index out of range")
+    if componentFilter.isNone then
+      let start ← IO.monoNanosNow
+      let traces ← IO.lazyPure fun _ => componentsCachedWith ⟨k⟩ expanded stage width
+      let elapsed := (← IO.monoNanosNow) - start
+      for trace in traces do IO.println (trace.tsv label)
+      IO.println s!"time-width\t{label}\t{width}\t{elapsed}\tns\tcached-preparation"
+      (← IO.getStdout).flush
+      continue
     for (members, index) in stage.comps.zipIdx do
       if componentFilter.any (· != index) then continue
       let start ← IO.monoNanosNow
