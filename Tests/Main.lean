@@ -102,6 +102,7 @@ import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Kernel.ReaderRoundtrip
+import Tests.Ix.Kernel.FidelityAccess
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.BundleEvidence
@@ -277,6 +278,7 @@ def registry : List Entry := [
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
+  .suite "kernel-fidelity-access" .primary Tests.Ix.Kernel.FidelityAccess.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
   -- the typing tier's inductive install and its answer view (M7 Q1)

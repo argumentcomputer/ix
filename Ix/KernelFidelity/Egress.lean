@@ -2,6 +2,7 @@ module
 
 public import Ix.Ixon.Authenticated
 public import Ix.KernelFidelity.Reader
+public import Ix.KernelFidelity.Access
 
 @[expose] public section
 
@@ -138,18 +139,27 @@ def memberNames (ixon : Ixon.Env) (store : RecordStore) (block : Address) : List
 
 def maxProjections : Nat := 1 <<< 20
 
-/-- Every `muts` record's projections, written by the certified writer for
-that block alone, against the compiler's; and each block's canonical order. -/
-def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : ProjectionReport := Id.run do
-  let mut byOwner : Std.HashMap Address (Array (Address × Ixon.Constant)) := {}
+/-- Projection and block-order fidelity through an ordered record view.
+Only projection addresses/tags and block addresses survive the first scan;
+each compared projection and mutual block is decoded on demand. -/
+def projectionsAccess (input : _root_.Ix.KernelFidelity.RecordAccess) :
+    Except String ProjectionReport := do
+  let mut byOwner : Std.HashMap Address (Array (Address × Ixon.ConstTag)) := {}
+  let mut blocks : Array Address := #[]
   let mut report : ProjectionReport := {}
-  for (a, c) in store.toList do
-    if Ix.Kernel.Ingress.isProjection c.info then
-      byOwner := byOwner.insert (owner a c) ((byOwner.getD (owner a c) #[]).push (a, c))
+  for a in input.addresses do
+    let tag ← (input.tag a).mapError fun e => s!"fidelity: tag {a}: {e}"
+    match tag with
+    | .iPrj | .cPrj | .rPrj | .dPrj =>
+      let c ← input.read a tag
+      byOwner := byOwner.insert (owner a c) ((byOwner.getD (owner a c) #[]).push (a, tag))
       report := { report with compiled := report.compiled + 1 }
+    | .muts => blocks := blocks.push a
+    | _ => pure ()
   let mut covered : Std.HashSet Address := {}
-  for (a, c) in store.toList do
-    let .muts ms := c.info | continue
+  for a in blocks do
+    let c ← input.read a .muts
+    let .muts ms := c.info | throw s!"fidelity: expected a mutual block at {a}"
     report := { report with blocks := report.blocks + 1 }
     match Ixon.Authenticated.reconstruct maxProjections [(a, c)] with
     | .error e => report := { report with problems := report.problems.push s!"{a}: {reprStr e}" }
@@ -159,7 +169,8 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
       report := { report with written := report.written + written.length }
       for (k, w) in written do
         match compiled.find? (·.1 == k) with
-        | some (_, c') =>
+        | some (_, tag) =>
+          let c' ← input.read k tag
           if Ixon.serConstant w == Ixon.serConstant c' then
             report := { report with matched := report.matched + 1 }
             covered := covered.insert k
@@ -170,14 +181,14 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
     if ms.size ≥ 2 then
       let kind := blockKind ms
       report := { report with ordered := report.ordered.insert kind (report.ordered.getD kind 0 + 1) }
-      match Ixon.BlockOrder.checkRecord Address.admissionHash {} blobs a c with
+      match Ixon.BlockOrder.checkRecord Address.admissionHash {} input.blobs a c with
       | .ok () =>
         if kind == "recursor" then
           report := { report with motiveOrdered := report.motiveOrdered.push a }
           -- the wrong order: the first two members swapped
           let swapped := { c with info := .muts (ms.swapIfInBounds 0 1) }
           if let .error (.motiveOrder ..) :=
-              Ixon.BlockOrder.checkRecord Address.admissionHash {} blobs a swapped then
+              Ixon.BlockOrder.checkRecord Address.admissionHash {} input.blobs a swapped then
             report := { report with swapsRefused := report.swapsRefused + 1 }
       | .error _ =>
         report := { report with refused := report.refused.insert kind ((report.refused.getD kind #[]).push a) }
@@ -187,6 +198,14 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
         report := { report with problems := report.problems.push (
           s!"compiler projection {k} is not written by its block") }
   return report
+
+/-- The eager fixture API, using exactly the store's former scan order.
+Its access cannot fail for enumerated keys; preserve fail-closed behavior
+if an access failure is ever introduced. -/
+def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : ProjectionReport :=
+  match projectionsAccess (_root_.Ix.KernelFidelity.RecordAccess.ofStore store blobs) with
+  | .ok report => report
+  | .error e => { problems := #[e] }
 
 /-! ## 2. Re-reading and the installed environment -/
 
