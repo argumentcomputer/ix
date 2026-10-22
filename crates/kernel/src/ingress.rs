@@ -821,7 +821,8 @@ fn ingress_expr<M: KernelMode>(
             .map_err(|_e| format!("BVar index {idx} exceeds usize"))?;
           let name = binder_names
             .len()
-            .checked_sub(1 + idx_usize)
+            .checked_sub(1)
+            .and_then(|top| top.checked_sub(idx_usize))
             .and_then(|i| binder_names.get(i))
             .cloned()
             .unwrap_or_else(Name::anon);
@@ -2337,7 +2338,8 @@ fn lean_expr_to_zexpr_raw(
       let idx_usize = usize::try_from(idx_u64).unwrap_or(usize::MAX);
       let name = binder_names
         .len()
-        .checked_sub(1 + idx_usize)
+        .checked_sub(1)
+        .and_then(|top| top.checked_sub(idx_usize))
         .and_then(|i| binder_names.get(i))
         .cloned()
         .unwrap_or_else(Name::anon);
@@ -5140,6 +5142,66 @@ mod tests {
       ExprData::Var(i, _, _) => assert_eq!(*i, 5),
       other => panic!("expected Var, got {other:?}"),
     }
+  }
+
+  #[test]
+  fn ingress_bvar_display_names_with_nonempty_context() {
+    let prefix = vec![mk_name("outer"), mk_name("inner")];
+    let mut binders = prefix.clone();
+    for (idx, expected) in [
+      (0, mk_name("inner")),
+      (1, mk_name("outer")),
+      (2, Name::anon()),
+      (u64::MAX, Name::anon()),
+    ] {
+      let k = lean_expr_to_zexpr_cached(
+        &LeanExpr::bvar(Nat::from(idx)),
+        &[],
+        &mut binders,
+        &mut InternTable::new(),
+        None,
+        None,
+        None,
+        None,
+      )
+      .unwrap();
+      assert!(
+        matches!(k.data(), ExprData::Var(i, n, _) if *i == idx && n == &expected)
+      );
+      assert_eq!(binders, prefix);
+    }
+  }
+
+  #[test]
+  fn ixon_bvar_largest_usize_has_anonymous_name() {
+    let ctx = Ctx::<Meta> {
+      sharing: &[],
+      refs: &[],
+      univs: &[],
+      mut_ctx: vec![],
+      local_refs: None,
+      arena: &ExprMeta::default(),
+      names: &FxHashMap::default(),
+      lvls: vec![],
+      univ_patches: FxHashMap::default(),
+      meta_univs: &[],
+      synth_counter: Cell::new(0),
+    };
+    let idx = usize::MAX as u64;
+    let k = ingress_expr(
+      &Arc::new(IxonExpr::Var(idx)),
+      0,
+      &ctx,
+      &mut InternTable::new(),
+      &IxonEnv::new(),
+      &mut ExprCache::default(),
+      &mut UnivCache::default(),
+      &mut ConvertStats::default(),
+    )
+    .unwrap();
+    assert!(
+      matches!(k.data(), ExprData::Var(i, n, _) if *i == idx && n == &Name::anon())
+    );
   }
 
   #[test]
