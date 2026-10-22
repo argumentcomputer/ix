@@ -2634,6 +2634,10 @@ structure EnvStats where
   named : UInt64
   blobs : UInt64
   comms : UInt64
+  originals : UInt64
+  /-- Raw record bytes, excluding trailer framing. -/
+  originalBytes : UInt64
+  originalHintOverrides : UInt64
   deriving Inhabited, BEq
 
 /-- One name present in both envs whose constant address changed.
@@ -2682,6 +2686,12 @@ structure EnvDiff where
   hintsChanged : Array (Address × String × String)
   statsA : EnvStats
   statsB : EnvStats
+  /-- Unchecked original-data deltas, populated only in metadata mode. -/
+  originalsOnlyA : Array Address
+  originalsOnlyB : Array Address
+  originalsChanged : Array Address
+  /-- Labels distinguish an absent override from explicit `none`. -/
+  originalHintsChanged : Array (String × String × String)
   deriving Inhabited, BEq
 
 /-- True when no difference was found (ignores `statsA`/`statsB`,
@@ -2695,6 +2705,8 @@ def EnvDiff.isEmpty (d : EnvDiff) : Bool :=
   && d.constsOnlyA.isEmpty && d.constsOnlyB.isEmpty
   && d.blobsOnlyA.isEmpty && d.blobsOnlyB.isEmpty
   && d.hintsChanged.isEmpty
+  && d.originalsOnlyA.isEmpty && d.originalsOnlyB.isEmpty
+  && d.originalsChanged.isEmpty && d.originalHintsChanged.isEmpty
 
 @[extern "rs_diff_envs"]
 opaque rsDiffEnvsFFI : @& ByteArray → @& ByteArray → Bool → Except String EnvDiff
@@ -2704,7 +2716,7 @@ opaque rsDiffEnvsFFI : @& ByteArray → @& ByteArray → Bool → Except String 
     per-field classification, consts/blobs sets, comms,
     `main`/`assumptions`, and reducibility hints; `compareMeta := true`
     additionally compares `Named` metadata content (`namedMetaOnly` +
-    `NamedDiff.metaFields`). -/
+    `NamedDiff.metaFields`) and the unchecked original-data tables. -/
 def rsDiffEnvs (a b : ByteArray) (compareMeta : Bool := false) :
     Except String EnvDiff :=
   rsDiffEnvsFFI a b compareMeta
