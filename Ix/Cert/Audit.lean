@@ -35,6 +35,7 @@ import Ix.Cert.SourceRetained
 import Ix.Cert.SourceReplay
 import Ix.Cert.SourceCommit
 import Ix.Cert.SourceTrace
+import Ix.Cert.SourceOrigin
 
 /-! # The certification statements, frozen
 
@@ -5442,3 +5443,17 @@ run_cmd do
   checkRoots (tag := "cert-audit") "original-data frame"
     (#[`insertBytes_existing, `insertBytes_self, `insertBytes_keeps,
       `finalizeOriginals_frame].map (`Ix.Compile.OriginalData ++ ·))
+
+/-! ## Generated declaration names: input-block base origins
+
+Successful Mutual and Nested generation root every emitted declaration name
+at an input block name's base. The public wrappers discharge the internal
+scope from the actual input. Distinctness, no-drop, accepted-stream alignment
+and Source/Ixon unit correspondence remain separate obligations. -/
+
+/-- info: [cert-audit] generated base origins: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "generated base origins"
+    (#[`genMutual_bases, `genNested_bases, `generate_bases].map (`Ix.Cert.SourceOrigin ++ ·))
