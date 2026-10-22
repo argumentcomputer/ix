@@ -71,15 +71,13 @@ def testRustCheckPrimeGaps : TestSeq :=
   ) .done
 
 def testLeanCheckPrimeGaps : TestSeq :=
-  .individualIO s!"Ix.Tc check {focusConsts.size} inlined PrimeGaps consts" none (do
+  .individualIO s!"IxC check {focusConsts.size} inlined PrimeGaps consts" none (do
     let names ← filterFocusConsts focusConsts
     let leanEnv ← get_env!
-    let (_, closedConsts) :=
-      Tests.Ix.Kernel.TutorialMeta.collectDepsWithExtras leanEnv {} names.toList
     IO.println s!"[check-primegaps/lean] compiling \
-      {closedConsts.length}-constant closure for {names.size} exact subject(s)"
+      selected IxC closure for {names.size} exact subject(s)"
     Tests.Ix.Kernel.FocusedLeanCheck.checkClosure "check-primegaps/lean"
-      "primegaps-reduction" closedConsts names
+      "primegaps-reduction" leanEnv names
   ) .done
 
 def suite : List TestSeq := [testRustCheckPrimeGaps, testLeanCheckPrimeGaps]

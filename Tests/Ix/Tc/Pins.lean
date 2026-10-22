@@ -74,7 +74,7 @@ public def checkPin (prepared : Ix.Cli.CheckLeanCmd.PreparedInput) (pin : Pin) :
 
 public def run : IO UInt32 := do
   IO.println "tc-pins"
-  let path ← Tests.Tc.ParityEnv.ensure
+  let path ← Tests.Tc.ParityEnv.ensureSelected
   let includeSlow := (← IO.getEnv "IX_PINS_SLOW").isSome
   let bytes ← IO.FS.readBinFile path
   match ← Ix.Cli.CheckLeanCmd.prepareInput bytes with

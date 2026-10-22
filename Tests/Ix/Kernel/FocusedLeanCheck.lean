@@ -2,6 +2,7 @@ module
 
 public import Ix.Cli.CheckLeanCmd
 public import Ix.CompileM
+public import Ix.EnvScope
 
 /-!
 Shared harness for checking a small source-level closure with the pure-Lean
@@ -15,11 +16,13 @@ public section
 namespace Tests.Ix.Kernel.FocusedLeanCheck
 
 def checkClosure (tag fileStem : String)
-    (consts : List (Lean.Name × Lean.ConstantInfo))
+    (env : Lean.Environment)
     (names : Array Lean.Name) :
     IO (Bool × Nat × Nat × Option String) := do
   if names.isEmpty then
     return (false, 0, 0, some s!"[{tag}] no subjects selected")
+  let consts := Ix.EnvScope.collectSelectedDeps env names.toList
+  IO.println s!"[{tag}] {consts.length} constants in the selected IxC closure (recursors, units and checker support)"
   let dir ← IO.FS.createTempDir
   try
     let path := dir / s!"{fileStem}.ixe"
