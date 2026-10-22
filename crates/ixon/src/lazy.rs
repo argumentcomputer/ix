@@ -128,6 +128,12 @@ pub struct LazyConstant {
 }
 
 impl LazyConstant {
+  /// Share the raw heap/mmap buffer without retaining a decoded AST.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn clone_raw(&self) -> Self {
+    Self { cache: None, ..self.clone() }
+  }
+
   /// Construct from already-serialized heap-resident bytes (the
   /// `std::fs::read` lazy load path and the test-FFI path).
   ///

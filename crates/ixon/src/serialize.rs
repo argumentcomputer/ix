@@ -2940,6 +2940,7 @@ impl Env {
     named_done: &mut FxHashSet<Name>,
     assumed: &FxHashSet<Address>,
   ) -> Result<(), String> {
+    let mut originals_done = FxHashSet::default();
     loop {
       self.prune_value_pass(out, visited, pending, assumed)?;
 
@@ -2956,13 +2957,13 @@ impl Env {
           continue;
         }
         named_done.insert(name.clone());
-        Self::carry_named_entry(
+        self.carry_named_entry(
           out,
           name,
           &named,
           &|na| names.get(na).cloned(),
           &|ba| self.get_blob(ba),
-          &|a| self.holds_or_assumed(a, assumed),
+          &mut originals_done,
           visited,
           pending,
           &mut named_refs,
@@ -2976,6 +2977,7 @@ impl Env {
       );
 
       if pending.is_empty() {
+        Self::dedup_originals(out)?;
         return Ok(());
       }
     }

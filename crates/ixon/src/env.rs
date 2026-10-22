@@ -970,10 +970,9 @@ impl Env {
   ///   share one address), the name components they reference (with
   ///   full parent chains and string-component blobs), `DataValue`
   ///   payload blobs, `meta_refs` extension DAG edges, and aux_gen
-  ///   `original` constants when the source stores them (a compiled
-  ///   env never stores an original that differs from its canonical
-  ///   address; the `Named` row keeps the address as provenance — see
-  ///   [`Self::carry_named_entry`]). Metadata can introduce new DAG edges, so
+  ///   originals and projection blocks in a separate raw-data channel.
+  ///   Required originals cannot be omitted at assumption cuts.
+  ///   Metadata can introduce new DAG edges, so
   ///   the walk runs to fixpoint (usually two rounds).
   /// - The constants that carried metadata names for meta kernel
   ///   ingress to resolve through `named` ([`ConstantMeta::named_refs`]:
@@ -1016,6 +1015,7 @@ impl Env {
     named_done: &mut FxHashSet<Name>,
     assumed: &FxHashSet<Address>,
   ) -> Result<(), String> {
+    let mut originals_done = FxHashSet::default();
     loop {
       self.prune_value_pass(out, visited, pending, assumed)?;
 
@@ -1029,13 +1029,13 @@ impl Env {
           continue;
         }
         named_done.insert(name.clone());
-        Self::carry_named_entry(
+        self.carry_named_entry(
           out,
           name,
           named,
           &|na| self.get_name(na),
           &|ba| self.get_blob(ba),
-          &|a| self.holds_or_assumed(a, assumed),
+          &mut originals_done,
           visited,
           pending,
           &mut named_refs,
@@ -1052,6 +1052,7 @@ impl Env {
       // The named pass ran against the final consts of this round; if
       // it produced no new DAG work, the walk is complete.
       if pending.is_empty() {
+        Self::dedup_originals(out)?;
         return Ok(());
       }
     }
@@ -1095,19 +1096,99 @@ impl Env {
     Ok((out, visited, pending))
   }
 
-  /// Whether a prune can resolve `addr` against this source under the
-  /// cut `assumed`: the source stores it (constant or blob), or it is
-  /// a declared cut-point. Gates the aux_gen `original` edge (see
-  /// [`Self::carry_named_entry`]).
+  /// Required original records use their own worklist. External refs enter the
+  /// canonical value walk; projection blocks stay in raw data. In particular,
+  /// a mutual original does not synthesize all possible projection records.
   #[cfg(not(target_arch = "riscv64"))]
-  pub(crate) fn holds_or_assumed(
+  #[allow(clippy::too_many_arguments)]
+  fn carry_original(
     &self,
-    addr: &Address,
-    assumed: &FxHashSet<Address>,
-  ) -> bool {
-    assumed.contains(addr)
-      || self.consts.contains_key(addr)
-      || self.blobs.contains_key(addr)
+    out: &mut Env,
+    name: &Name,
+    root: Address,
+    done: &mut FxHashSet<Address>,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut VecDeque<Address>,
+  ) -> Result<(), String> {
+    if let Some(hint) = self.original_hint_overrides.get(name) {
+      out.original_hint_overrides.insert(name.clone(), *hint);
+    }
+    let mut data = vec![root];
+    while let Some(addr) = data.pop() {
+      if !done.insert(addr.clone()) {
+        continue;
+      }
+      let canonical = self.consts.get(&addr).map(|c| c.clone_raw());
+      let original = self.originals.get(&addr).map(|c| c.clone_raw());
+      if let (Some(c), Some(o)) = (&canonical, &original)
+        && c.raw_bytes() != o.raw_bytes()
+      {
+        return Err(format!(
+          "prune_to_closure: conflicting original bytes for {} at {}",
+          name.pretty(),
+          addr.hex()
+        ));
+      }
+      let raw = canonical.or(original).ok_or_else(|| {
+        format!(
+          "prune_to_closure: missing original record/block for {} at {}",
+          name.pretty(),
+          addr.hex()
+        )
+      })?;
+      let c = raw.get_at(&addr).map_err(|e| {
+        format!(
+          "prune_to_closure: original {} at {}: {e}",
+          name.pretty(),
+          addr.hex()
+        )
+      })?;
+      let mut encoded = Vec::new();
+      c.put(&mut encoded);
+      if encoded != raw.raw_bytes() {
+        return Err(format!(
+          "prune_to_closure: noncanonical original for {} at {}",
+          name.pretty(),
+          addr.hex()
+        ));
+      }
+      for reference in &c.refs {
+        if visited.insert(reference.clone()) {
+          pending.push_back(reference.clone());
+        }
+      }
+      match &c.info {
+        ConstantInfo::DPrj(p) => data.push(p.block.clone()),
+        ConstantInfo::IPrj(p) => data.push(p.block.clone()),
+        ConstantInfo::RPrj(p) => data.push(p.block.clone()),
+        ConstantInfo::CPrj(p) => data.push(p.block.clone()),
+        _ => {},
+      }
+      out.originals.insert(addr, raw);
+    }
+    Ok(())
+  }
+
+  /// Canonical dependencies may arrive after their raw originals. Equal keys
+  /// select actual bytes to compare; only exact duplicates are removed.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn dedup_originals(out: &mut Env) -> Result<(), String> {
+    let mut redundant = Vec::new();
+    for original in out.originals.iter() {
+      if let Some(canonical) = out.consts.get(original.key()) {
+        if canonical.raw_bytes() != original.raw_bytes() {
+          return Err(format!(
+            "prune_to_closure: conflicting retained original at {}",
+            original.key().hex()
+          ));
+        }
+        redundant.push(original.key().clone());
+      }
+    }
+    for addr in redundant {
+      out.originals.remove(&addr);
+    }
+    Ok(())
   }
 
   /// One value pass: 3-edge BFS over pending roots, cut at `assumed`.
@@ -1157,19 +1238,11 @@ impl Env {
   /// Carry one named entry and its metadata dependencies into `out`:
   /// the `Named` row, its name's component chain, every
   /// metadata-referenced name component and blob, and (via
-  /// `visited`/`pending`) any new constant DAG edges (`meta_refs`, and
-  /// aux `original`s the source holds) for the next value pass.
+  /// `visited`/`pending`) new canonical DAG edges for the next value pass.
+  /// Required originals and their projection blocks use `carry_original`'s
+  /// separate raw-data walk; only retained names keep hint overrides.
   ///
-  /// An aux_gen `original` address is provenance, not a reference: the
-  /// compiler computes the Lean-source form's address but never stores
-  /// that constant (`compile_const_no_aux` is ephemeral; `validate-aux`
-  /// phase 3 fails if one leaks into `consts`). It is followed only
-  /// when `holds(addr)` — the source stores it, or it is assumed;
-  /// otherwise the `Named` row still carries the address and its
-  /// metadata, exactly as the full env does, and decompile falls back
-  /// as it does on the full env.
-  ///
-  /// `resolve_name`/`get_blob`/`holds` abstract the source: the
+  /// `resolve_name`/`get_blob` abstract the metadata source: the
   /// in-memory env for
   /// [`Self::prune_to_closure`]; the §4 lookup + lazy env for the
   /// streaming variant (`Env::prune_to_closure_streaming` in
@@ -1181,12 +1254,13 @@ impl Env {
   #[cfg(not(target_arch = "riscv64"))]
   #[allow(clippy::too_many_arguments)]
   pub(crate) fn carry_named_entry(
+    &self,
     out: &mut Env,
     name: &Name,
     named: &Named,
     resolve_name: &dyn Fn(&Address) -> Option<Name>,
     get_blob: &dyn Fn(&Address) -> Option<Vec<u8>>,
-    holds: &dyn Fn(&Address) -> bool,
+    originals_done: &mut FxHashSet<Address>,
     visited: &mut FxHashSet<Address>,
     pending: &mut VecDeque<Address>,
     named_refs: &mut Vec<Name>,
@@ -1196,6 +1270,10 @@ impl Env {
 
     let mut ref_addrs: Vec<Address> = Vec::new();
     named.meta().named_refs(&mut ref_addrs);
+    let original = named.original_checked()?;
+    if let Some((_, meta)) = &original {
+      meta.named_refs(&mut ref_addrs);
+    }
     for na in ref_addrs {
       if let Some(n) = resolve_name(&na) {
         named_refs.push(n);
@@ -1206,10 +1284,15 @@ impl Env {
     let mut blob_addrs: Vec<Address> = Vec::new();
     let mut dag_addrs: Vec<Address> = Vec::new();
     named.meta().collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
-    if let Some((orig_addr, orig_meta)) = named.original() {
-      if holds(&orig_addr) {
-        dag_addrs.push(orig_addr);
-      }
+    if let Some((orig_addr, orig_meta)) = original {
+      self.carry_original(
+        out,
+        name,
+        orig_addr,
+        originals_done,
+        visited,
+        pending,
+      )?;
       orig_meta.collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
     }
     for na in name_addrs {
@@ -1862,7 +1945,7 @@ mod tests {
   /// Fixture for the streaming/anon prune tests: `a` (the main) named
   /// "Foo" with Def metadata carrying (i) a §4-resolved non-ancestor
   /// name component (`u`, in `lvls`), (ii) a `meta_refs` blob, and
-  /// (iii) an `original` edge to `b` — a constant NOT reachable from
+  /// (iii) an original whose metadata names `b` — a constant NOT reachable from
   /// `a`'s value, so carrying it requires a second fixpoint round; `b`
   /// is named "Bar". Returns (serialized env, a, b, "Bar").
   fn streaming_prune_fixture() -> (Vec<u8>, Address, Address, Name) {
@@ -1888,8 +1971,12 @@ mod tests {
       value_root: 0,
     });
     meta.meta_refs.push(meta_blob);
+    let mut original_meta = meta.clone();
+    if let ConstantMetaInfo::Def { all, .. } = &mut original_meta.info {
+      all.push(Address::from_blake3_hash(*n("Bar").get_hash()));
+    }
     let mut foo_named = Named::new(a.clone(), meta);
-    foo_named.set_original(b.clone(), ConstantMeta::default());
+    foo_named.set_original(b.clone(), original_meta);
     env.register_name(foo, foo_named);
     env.register_hint(a.clone(), ReducibilityHints::Regular(2));
     let bar = n("Bar");
@@ -1930,9 +2017,10 @@ mod tests {
         &FxHashSet::default(),
       )
       .unwrap();
-    // Round-2 evidence: Bar rides in through Foo's `original` edge.
+    // Round-2 evidence: Bar rides in through the original metadata's `all`.
     assert!(via_stream.named.get(&bar).is_some(), "round-2 named carried");
     assert!(via_stream.consts.contains_key(&b));
+    assert!(via_stream.originals.is_empty(), "exact canonical overlap removed");
     via_stream.validate_closed().unwrap();
     assert_eq!(
       ser(&via_full),
@@ -1949,7 +2037,159 @@ mod tests {
       .unwrap();
     assert!(via_stream_cut.named.get(&bar).is_none());
     assert!(via_stream_cut.assumptions.contains(&b));
+    assert!(
+      via_stream_cut.originals.contains_key(&b),
+      "raw original survives cut"
+    );
     assert_eq!(ser(&via_full_cut), ser(&via_stream_cut));
+  }
+
+  #[test]
+  fn prune_original_data_shared_blocks_hints_mmap_and_refusals() {
+    use crate::constant::defn_proj_constant;
+    let env = Env::new();
+    let main = store_canonical(&env, const_with_refs(vec![]));
+    let dep = store_canonical(&env, const_with_refs_discriminator(vec![], 7));
+    let unused =
+      store_canonical(&env, const_with_refs_discriminator(vec![], 99));
+    let block = Constant {
+      refs: vec![dep.clone()],
+      ..Constant::new(ConstantInfo::Muts(vec![
+        MutConst::Defn(defn_member(1)),
+        MutConst::Defn(defn_member(2)),
+      ]))
+    };
+    let (block_addr, block_bytes) = block.commit();
+    let (proj, proj_bytes) = defn_proj_constant(0, block_addr.clone()).commit();
+    let (unused_original, unused_bytes) =
+      const_with_refs_discriminator(vec![], 100).commit();
+    for (a, bytes) in [
+      (&block_addr, &block_bytes),
+      (&proj, &proj_bytes),
+      (&unused_original, &unused_bytes),
+    ] {
+      env
+        .originals
+        .insert(a.clone(), LazyConstant::from_bytes(bytes.clone().into()));
+    }
+    for (label, canonical, original) in [
+      ("AliasA", &main, Some(&proj)),
+      ("AliasB", &main, Some(&proj)),
+      ("Dep", &dep, None),
+      ("Unused", &unused, Some(&unused_original)),
+    ] {
+      let name = n(label);
+      env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
+      let mut named = Named::with_addr(canonical.clone());
+      named.set_hints(Some(ReducibilityHints::Abbrev));
+      if let Some(a) = original {
+        named.set_original(a.clone(), ConstantMeta::default());
+      }
+      env.register_name(name, named);
+    }
+    env
+      .original_hint_overrides
+      .insert(n("AliasA"), Some(ReducibilityHints::Regular(7)));
+    env.original_hint_overrides.insert(n("AliasB"), None);
+    env
+      .original_hint_overrides
+      .insert(n("Unused"), Some(ReducibilityHints::Opaque));
+    let ser = |e: &Env| {
+      let mut b = Vec::new();
+      e.put(&mut b).unwrap();
+      b
+    };
+    let bytes = ser(&env);
+    assert_eq!(bytes[0], 0xe5);
+    let full = env.prune_to_closure(&main, &FxHashSet::default()).unwrap();
+    full.validate_closed().unwrap();
+    assert_eq!(full.consts.len(), 2);
+    assert!(
+      full.named.contains_key(&n("Dep")),
+      "ordinary original refs retain canonical names"
+    );
+    assert_eq!(
+      full.originals.len(),
+      2,
+      "unused originals and synthetic sibling projections excluded"
+    );
+    assert_eq!(full.original_hint_overrides.len(), 2);
+    assert_eq!(
+      full.original_hint_overrides.get(&n("AliasA")).map(|h| *h),
+      Some(Some(ReducibilityHints::Regular(7)))
+    );
+    assert_eq!(
+      full.original_hint_overrides.get(&n("AliasB")).map(|h| *h),
+      Some(None)
+    );
+    assert!(
+      !full.consts.contains_key(&proj)
+        && !full.consts.contains_key(&block_addr)
+    );
+    assert!(!full.bfs_closure(std::slice::from_ref(&main)).contains(&proj));
+    let path = std::env::temp_dir()
+      .join(format!("ix-prune-originals-{}.ixe", std::process::id()));
+    std::fs::write(&path, &bytes).unwrap();
+    let file = std::fs::File::open(&path).unwrap();
+    // SAFETY: this test owns the file and never changes its mapped bytes.
+    let mmap = Arc::new(unsafe { memmap2::Mmap::map(&file).unwrap() });
+    let (index, names) = Env::parse_lazy_index_with_names(&mmap).unwrap();
+    let lazy = Env::from_lazy_index_mmap(&index, &mmap).unwrap();
+    let streamed = lazy
+      .prune_to_closure_streaming(
+        &index,
+        &mmap,
+        &names,
+        &main,
+        &FxHashSet::default(),
+      )
+      .unwrap();
+    assert_eq!(ser(&full), ser(&streamed));
+    assert_eq!(
+      streamed.originals.get(&proj).unwrap().raw_bytes().as_ptr(),
+      lazy.originals.get(&proj).unwrap().raw_bytes().as_ptr()
+    );
+    assert!(streamed.originals.iter().all(|c| !c.is_materialized()));
+    let packed = ser(&streamed);
+    let reopened = Env::get(&mut packed.as_slice()).unwrap();
+    assert_eq!(reopened.originals.get(&proj).unwrap().raw_bytes(), proj_bytes);
+    assert!(!reopened.originals.get(&proj).unwrap().is_materialized());
+    let anon =
+      lazy.prune_to_closure_anon(&main, &FxHashSet::default()).unwrap();
+    assert!(
+      anon.originals.is_empty() && anon.original_hint_overrides.is_empty()
+    );
+    assert_eq!(ser(&anon)[0], 0xe4);
+    std::fs::remove_file(path).unwrap();
+    // An equal key never licenses conflicting original bytes.
+    env
+      .originals
+      .insert(dep.clone(), LazyConstant::from_bytes(proj_bytes.into()));
+    env
+      .named
+      .get_mut(&n("AliasA"))
+      .unwrap()
+      .set_original(dep.clone(), ConstantMeta::default());
+    assert!(
+      env
+        .prune_to_closure(&main, &FxHashSet::default())
+        .unwrap_err()
+        .contains("conflicting original bytes")
+    );
+    env.originals.remove(&dep);
+    env
+      .named
+      .get_mut(&n("AliasA"))
+      .unwrap()
+      .set_original(proj, ConstantMeta::default());
+    env.originals.remove(&block_addr);
+    let cut = [block_addr.clone()].into_iter().collect();
+    let error = env.prune_to_closure(&main, &cut).unwrap_err();
+    assert!(
+      error.contains("missing original record/block")
+        && error.contains(&block_addr.hex()),
+      "{error}"
+    );
   }
 
   /// A structural/well-founded/`partial` `mutual` definition (`Odd`)
@@ -2013,18 +2253,10 @@ mod tests {
     assert!(!anon.consts.contains_key(&even_c), "anon: value closure only");
   }
 
-  /// A regenerated auxiliary (`.rec`/`.below`/`.brecOn` of a reordered,
-  /// alpha-collapsed or nested block) records in `Named.original` the
-  /// address of Lean's source form, which the compiler never stores
-  /// (`compile_const_no_aux` is ephemeral). `Foo.rec` here is such an
-  /// entry, and `Bar.rec` shares its canonical constant (as `Nat.rec`
-  /// does with an alpha-collapsed user recursor) with an original equal
-  /// to its address. Packing either must succeed on both prune paths,
-  /// byte-identically: the original is kept as provenance (address and
-  /// metadata, names carried), not followed. Assumed, it is still
-  /// recorded as a cut-point, as before.
+  /// A legacy artifact with an unstored original cannot produce a faithful
+  /// bundle. Declaring that raw original assumed does not supply its bytes.
   #[test]
-  fn prune_to_closure_keeps_unstored_aux_original_as_provenance() {
+  fn prune_missing_original_is_not_excused_by_assumptions() {
     use crate::metadata::{ConstantMetaInfo, ExprMeta};
     let env = Env::new();
     let rec_c = store_canonical(&env, const_with_refs(vec![]));
@@ -2067,34 +2299,23 @@ mod tests {
     let (index, names) = Env::parse_lazy_index_with_names(&bytes).unwrap();
     let lazy = Env::from_lazy_index(&index, &bytes).unwrap();
 
-    let none = FxHashSet::default();
-    let bundle = env.prune_to_closure(&rec_c, &none).unwrap();
-    bundle.validate_closed().unwrap();
-    assert!(bundle.consts.get(&ghost).is_none(), "original not stored");
-    assert!(!bundle.assumptions.contains(&ghost), "nor assumed");
-    let foo_b = bundle.named.get(&foo).expect("Foo.rec carried").clone();
-    assert_eq!(foo_b.original().expect("original kept").0, ghost);
-    assert!(bundle.named.get(&bar).is_some(), "alias carried");
-    assert!(bundle.names.get(&src_a).is_some(), "original's names carried");
-    let streamed = lazy
-      .prune_to_closure_streaming(&index, &bytes, &names, &rec_c, &none)
-      .unwrap();
-    assert_eq!(ser(&bundle), ser(&streamed), "streaming parity");
-    let back = {
-      let buf = ser(&bundle);
-      let mut cur = buf.as_slice();
-      Env::get(&mut cur).unwrap()
-    };
-    assert_eq!(back.named.get(&foo).unwrap().original().unwrap().0, ghost);
-
-    // Declared as a cut-point: recorded, as before.
-    let cut: FxHashSet<Address> = [ghost.clone()].into_iter().collect();
-    let thin = env.prune_to_closure(&rec_c, &cut).unwrap();
-    assert!(thin.assumptions.contains(&ghost));
-    let thin_s = lazy
-      .prune_to_closure_streaming(&index, &bytes, &names, &rec_c, &cut)
-      .unwrap();
-    assert_eq!(ser(&thin), ser(&thin_s), "streaming parity (cut)");
+    for cut in [FxHashSet::default(), [ghost.clone()].into_iter().collect()] {
+      for error in [
+        env.prune_to_closure(&rec_c, &cut).unwrap_err(),
+        lazy
+          .prune_to_closure_streaming(&index, &bytes, &names, &rec_c, &cut)
+          .unwrap_err(),
+      ] {
+        assert!(
+          error.contains("missing original record/block")
+            && error.contains("Foo.rec"),
+          "{error}"
+        );
+      }
+    }
+    let anon =
+      env.prune_to_closure_anon(&rec_c, &FxHashSet::default()).unwrap();
+    assert_eq!(ser(&anon)[0], 0xe4);
   }
 
   /// A cut bundle serializes a `Named.original` whose address is
@@ -2120,6 +2341,7 @@ mod tests {
     };
     assert!(back.consts.get(&b).is_none());
     assert!(back.assumptions.contains(&b));
+    assert!(back.originals.contains_key(&b));
     let foo_named = back.named.get(&n("Foo")).expect("Foo carried").clone();
     let (orig_addr, _) = foo_named.original().expect("original carried");
     assert_eq!(orig_addr, b, "original still points at the assumed const");
