@@ -115,6 +115,7 @@ import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.Kernel.RecordCheck
 import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.Kernel.CheckLeanCli
+import Tests.Ix.Kernel.ValidateLeanCli
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.SharingExact
@@ -282,6 +283,7 @@ def registry : List Entry := [
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
   .suite "kernel-fidelity-access" .primary Tests.Ix.Kernel.FidelityAccess.suite,
+  .suite "validate-lean-fidelity-cli" .primary Tests.Ix.Kernel.ValidateLeanCli.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
   -- the typing tier's inductive install and its answer view (M7 Q1)
