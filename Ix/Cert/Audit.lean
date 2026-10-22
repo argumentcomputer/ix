@@ -29,6 +29,7 @@ import Ix.Cert.CtxAgreeProjFields
 import Ix.Cert.SourceNames
 import Ix.Cert.SourceRetained
 import Ix.Cert.SourceReplay
+import Ix.Cert.SourceCommit
 
 /-! # The certification statements, frozen
 
@@ -5333,3 +5334,19 @@ run_cmd do
   checkRoots (tag := "cert-audit") "source owner replay"
     (#[`step_drop, `trace_ownerExact, `trace_keptNoBasis, `replay_idem,
       `StableOwned.fields, `step_replay].map (`Ix.Cert.SourceReplay ++ ·))
+
+/-! ## Source reads: stable replay through actual collapse and commit
+
+The actual loop preserves its explicit owner/basis/stability invariants and
+relates raw and kept replay. Retained classification identifies the actual
+commit folds, yielding all-five-lookup agreement while allowing counters to
+differ. Production schedule extraction and Trace StableOwned discharge are
+still separate; no final compiler-correctness premise is added. -/
+
+/-- info: [cert-audit] source read commits: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "source read commits"
+    (#[`commit_replay, `collapseRead_replay, `collapseRead_commit,
+      `quotient_lower_classified].map (`Ix.Cert.SourceCommit ++ ·))
