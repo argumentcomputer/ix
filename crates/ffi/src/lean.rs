@@ -56,8 +56,9 @@ lean_ffi::lean_inductive! {
   LeanIxonRawBlob         [ { num_obj: 2 } ];
   LeanIxonRawComm         [ { num_obj: 2 } ];
   LeanIxonRawNameEntry    [ { num_obj: 2 } ];
-  // consts, named, blobs, comms, names, main, assumptions, anonHints
-  LeanIxonRawEnv          [ { num_obj: 8 } ];
+  // consts, named, blobs, comms, names, main, assumptions, anonHints,
+  // originals (raw bytes), originalHintOverrides
+  LeanIxonRawEnv          [ { num_obj: 10 } ];
 
   // Lazy/anon deserialization (`rs_de_env_lazy`): zero-copy const windows
   // (addr + offset + len), name->addr, copied blobs, the bundle header

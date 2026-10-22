@@ -431,6 +431,10 @@ pub struct Env {
   /// kernel's metadata-free correctness model — and are intentionally
   /// NOT covered by the consts merkle root.
   pub anon_hints: IxonMap<Address, ReducibilityHints>,
+  /// Unchecked original-form bytes. Ordinary constant lookup never reads this.
+  pub originals: IxonMap<Address, LazyConstant>,
+  /// Exact per-name original hint overrides; None explicitly clears a hint.
+  pub original_hint_overrides: IxonMap<Name, Option<ReducibilityHints>>,
   /// Distinguished root constant for bundle envs; `None` for whole
   /// environments. A pointer, not a proof: nothing in the file
   /// authenticates it, so readers check `main ∈ consts` and consumers
@@ -454,6 +458,8 @@ impl Env {
       names: IxonMap::new(),
       comms: IxonMap::new(),
       anon_hints: IxonMap::new(),
+      originals: IxonMap::new(),
+      original_hint_overrides: IxonMap::new(),
       main: None,
       assumptions: FxHashSet::default(),
     }

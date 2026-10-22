@@ -262,6 +262,11 @@ def rawEnvEq (a b : RawEnv) : Bool :=
   a.blobs.size == b.blobs.size &&
   a.comms.size == b.comms.size &&
   a.names.size == b.names.size &&
+  a.originals.size == b.originals.size &&
+  a.originals.all (fun r => b.originals.any (fun q => r.addr == q.addr && r.bytes == q.bytes)) &&
+  a.originalHintOverrides.size == b.originalHintOverrides.size &&
+  a.originalHintOverrides.all (fun (n, h) =>
+    b.originalHintOverrides.any (fun (m, k) => Ix.Name.beqRaw n m && h == k)) &&
   -- Size equality + one-directional all/any is sufficient when addresses are unique:
   -- if sizes match and every element in 'a' has a match in 'b', then 'b' cannot
   -- have extra elements (since sizes are equal and addresses uniquely identify items).
@@ -301,6 +306,17 @@ def rawEnvTests : TestSeq :=
     blobs := #[testRawBlob],
     comms := #[testRawComm]
   }
+  let withOriginals := { withData with
+    originals := #[{ addr := testAddr, bytes := ByteArray.mk #[0xff, 0x00, 0x01] }]
+    originalHintOverrides := #[(testName, some .opaque),
+      (Ix.Name.mkStr testName "regular", some (.regular 37)),
+      (Ix.Name.mkStr testName "cleared", none)] }
+  let isolated := { empty with originals := withOriginals.originals }
+  test "RawEnv originals preserve raw bytes and exact optional hints"
+    (rawEnvEq (roundtripRawEnv withOriginals) withOriginals) ++
+  test "RawEnv originals stay separate and preserve unparseable bytes"
+    ((isolated.toEnv.getConst? testAddr).isNone &&
+      isolated.toEnv.toRawEnv.originals == isolated.originals) ++
   test "RawEnv empty" (rawEnvEq (roundtripRawEnv empty) empty) ++
   test "RawEnv with data" (rawEnvEq (roundtripRawEnv withData) withData)
 

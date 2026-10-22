@@ -1078,6 +1078,11 @@ structure Env where
       populates this map; `putEnv` serializes it as the hints section
       and `getEnv` reads it back. Mirrors Rust `Env.anon_hints`. -/
   anonHints : Std.HashMap Address Lean.ReducibilityHints := {}
+  /-- Unchecked original-form payloads, separate from the checker store. -/
+  originals : Std.HashMap Address LazyConstant := {}
+  /-- Exact original hint overrides by name. A present none clears a hint;
+      absence inherits Named.hints. Never merged through anonHints. -/
+  originalHintOverrides : Std.HashMap Ix.Name (Option Lean.ReducibilityHints) := {}
   deriving Inhabited
 
 namespace Env
@@ -1349,7 +1354,7 @@ structure RawNameEntry where
 /-- Raw FFI environment structure using arrays instead of HashMaps.
     This is the array-based equivalent of `Env` for FFI compatibility.
     Field order matters: the Rust mirror (`LeanIxonRawEnv`) addresses
-    constructor slots positionally (0-7). -/
+    constructor slots positionally (0-9). -/
 structure RawEnv where
   consts : Array RawConst
   named : Array RawNamed
@@ -1362,6 +1367,9 @@ structure RawEnv where
   assumptions : Array Address := #[]
   /-- Explicit reducibility hints (`Env.anonHints`), sorted by address. -/
   anonHints : Array (Address × Lean.ReducibilityHints) := #[]
+  /-- Exact serialized original bytes; no materialization/default substitution. -/
+  originals : Array RawBlob := #[]
+  originalHintOverrides : Array (Ix.Name × Option Lean.ReducibilityHints) := #[]
   deriving Repr, Inhabited, BEq
 
 namespace RawEnv
@@ -1422,7 +1430,11 @@ def toEnv (raw : RawEnv) : Env := Id.run do
   return { env with
     main := raw.main
     assumptions := raw.assumptions.foldl (·.insert ·) {}
-    anonHints := raw.anonHints.foldl (fun m (a, h) => m.insert a h) {} }
+    anonHints := raw.anonHints.foldl (fun m (a, h) => m.insert a h) {}
+    originals := raw.originals.foldl (fun m r =>
+      m.insert r.addr (LazyConstant.ofSlice r.bytes 0 r.bytes.size)) {}
+    originalHintOverrides := raw.originalHintOverrides.foldl
+      (fun m (n, h) => m.insert n h) {} }
 
 end RawEnv
 
@@ -1454,6 +1466,8 @@ def toRawEnv (env : Env) : RawEnv := {
   main := env.main
   assumptions := env.assumptions.toArray.qsort addrLt
   anonHints := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
+  originals := env.originals.toArray.map fun (addr, lc) => { addr, bytes := lc.rawBytes }
+  originalHintOverrides := env.originalHintOverrides.toArray
 }
 
 /-- TagN (`f = 4`) header flag for Env (0xE). -/
