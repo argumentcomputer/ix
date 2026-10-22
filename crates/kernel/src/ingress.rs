@@ -2186,7 +2186,7 @@ pub fn lean_expr_to_zexpr(
   // Uncached path — only for callers without KEnv access. Top-level
   // expressions start with an empty binder stack.
   let mut binder_names: Vec<Name> = Vec::new();
-  let e = lean_expr_to_zexpr_raw(
+  lean_expr_to_zexpr_cached(
     expr,
     param_names,
     &mut binder_names,
@@ -2195,8 +2195,7 @@ pub fn lean_expr_to_zexpr(
     aux_n2a,
     None,
     None,
-  )?;
-  Ok(intern.intern_expr(e))
+  )
 }
 
 /// Cached variant that takes a full `KEnv` reference instead of just `InternTable`.
@@ -2222,12 +2221,24 @@ pub fn lean_expr_to_zexpr_with_kenv(
   )
 }
 
+enum LeanExprFrame<'a> {
+  Visit(&'a LeanExpr),
+  Finish {
+    node: &'a LeanExprData,
+    mdata: Vec<MData>,
+    key: Option<(CtxAddr, CtxAddr)>,
+    projection_id: Option<KId<Meta>>,
+  },
+  PushBinder(&'a Name),
+  PopBinder,
+}
+
 /// Cached variant: uses `ingress_cache` (if provided) to avoid re-converting
 /// shared LeanExpr subtrees. The cache is keyed by `(expr_hash, pn_hash)` to
 /// account for different level param bindings producing different KExprs.
 ///
 /// `binder_names` is the stack of enclosing binder names (outermost first),
-/// pushed/popped around each Lam/All/Let body recursion. It's used to
+/// pushed/popped around each Lam/All/Let body. It's used to
 /// populate `ExprData::Var`'s `name` metadata by de Bruijn lookup — a
 /// cosmetic field for pretty-printing that doesn't affect type-checking.
 /// Top-level callers pass an empty `Vec`. Mirrors the `binder_names` stack
@@ -2246,7 +2257,8 @@ pub fn lean_expr_to_zexpr_with_kenv(
 /// a substituted value, on an unknown universe parameter, a level
 /// metavariable, a free variable, an expression metavariable, or a bound
 /// variable or projection index that does not fit a `u64`. Only successful
-/// conversions enter the cache.
+/// conversions enter the cache. The caller's binder stack is restored on
+/// both success and error; completed child cache entries survive an error.
 #[allow(clippy::too_many_arguments)]
 pub fn lean_expr_to_zexpr_cached(
   expr: &LeanExpr,
@@ -2258,287 +2270,171 @@ pub fn lean_expr_to_zexpr_cached(
   mut cache: Option<&mut FxHashMap<(CtxAddr, CtxAddr), KExpr<Meta>>>,
   pn_hash: Option<&CtxAddr>,
 ) -> Result<KExpr<Meta>, String> {
-  // Check cache
-  if let (Some(cache), Some(pn_hash)) = (cache.as_ref(), pn_hash) {
-    let expr_key = *expr.get_hash();
-    let key = (expr_key, *pn_hash);
-    if let Some(hit) = cache.get(&key) {
-      return Ok(hit.clone());
-    }
-  }
-
-  let e = lean_expr_to_zexpr_raw(
-    expr,
-    param_names,
-    binder_names,
-    intern,
-    n2a,
-    aux_n2a,
-    cache.as_deref_mut(),
-    pn_hash,
-  )?;
-  let result = intern.intern_expr(e);
-
-  // Store in cache
-  if let (Some(cache), Some(pn_hash)) = (cache, pn_hash) {
-    let expr_key = *expr.get_hash();
-    cache.insert((expr_key, *pn_hash), result.clone());
-  }
-
-  Ok(result)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lean_expr_to_zexpr_raw(
-  expr: &LeanExpr,
-  pn: &[Name],
-  binder_names: &mut Vec<Name>,
-  intern: &mut InternTable<Meta>,
-  n2a: Option<&DashMap<Name, Address>>,
-  aux_n2a: Option<&DashMap<Name, Address>>,
-  mut cache: Option<&mut FxHashMap<(CtxAddr, CtxAddr), KExpr<Meta>>>,
-  pn_hash: Option<&CtxAddr>,
-) -> Result<KExpr<Meta>, String> {
-  // Walk through any consecutive `Mdata` wrappers first, accumulating them
-  // as kernel-side `MData` layers. Lean represents `Mdata(a, Mdata(b, e))`
-  // as two separate AST nodes; the kernel stores the layers in a single
-  // `Vec<MData>` attached to the innermost node via the `_mdata` constructors.
-  //
-  // The accumulation is **essential for roundtrip fidelity** — earlier
-  // versions discarded the kv-map here, which silently lost every Lean
-  // mdata annotation (`_recApp`, `_inaccessible`, `noImplicitLambda`,
-  // `borrowed`, `sunfoldMatch`, `save_info`, etc.). The `kernel-lean-
-  // roundtrip` test guards against regressing that.
-  let mut mdata_layers: Vec<MData> = Vec::new();
-  let mut cur = expr;
-  while let LeanExprData::Mdata(kv, inner, _) = cur.as_data() {
-    mdata_layers.push(kv.clone());
-    cur = inner;
-  }
-
-  // Emit the `_mdata` variant of the appropriate constructor. An empty
-  // `mdata_layers` hashes identically to the non-`_mdata` constructor (both
-  // go through `no_mdata::<Meta>()` which is just `Vec::new()`), so we
-  // don't need a separate empty-case branch.
-  //
-  // For subtree recursion into a fresh binder context, we push the binder
-  // name onto `binder_names`, recurse, then pop — mirroring the Ixon side
-  // of ingress.
-  Ok(match cur.as_data() {
-    LeanExprData::Bvar(idx, _) => {
-      // An index that does not fit a `u64` is refused (it used to become
-      // `bvar 0`, a different variable).
-      let idx_u64 = idx
-        .to_u64()
-        .ok_or_else(|| format!("bound variable index {idx} exceeds u64"))?;
-      // Resolve the bound variable's display name by de Bruijn lookup
-      // into the current binder stack. Missing entries (ill-scoped
-      // expressions, or traversals from a non-empty starting stack)
-      // fall back to anonymous; the idx itself is always correct.
-      let idx_usize = usize::try_from(idx_u64).unwrap_or(usize::MAX);
-      let name = binder_names
-        .len()
-        .checked_sub(1)
-        .and_then(|top| top.checked_sub(idx_usize))
-        .and_then(|i| binder_names.get(i))
-        .cloned()
-        .unwrap_or_else(Name::anon);
-      KExpr::var_mdata(idx_u64, name, mdata_layers)
-    },
-    LeanExprData::Sort(lvl, _) => {
-      KExpr::sort_mdata(lean_level_to_kuniv(lvl, pn)?, mdata_layers)
-    },
-    LeanExprData::Const(name, us, _) => {
-      let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
-      let zid = KId::new(addr, name.clone());
-      let zus: Box<[KUniv<Meta>]> = us
-        .iter()
-        .map(|u| lean_level_to_kuniv(u, pn))
-        .collect::<Result<_, _>>()?;
-      KExpr::cnst_mdata(zid, zus, mdata_layers)
-    },
-    LeanExprData::App(f, a, _) => {
-      let f_k = lean_expr_to_zexpr_cached(
-        f,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      let a_k = lean_expr_to_zexpr_cached(
-        a,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      KExpr::app_mdata(f_k, a_k, mdata_layers)
-    },
-    LeanExprData::ForallE(binder_name, dom, body, bi, _) => {
-      let dom_k = lean_expr_to_zexpr_cached(
-        dom,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      binder_names.push(binder_name.clone());
-      let body_k = lean_expr_to_zexpr_cached(
-        body,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      binder_names.pop();
-      KExpr::all_mdata(
-        binder_name.clone(),
-        bi.clone(),
-        dom_k,
-        body_k,
-        mdata_layers,
-      )
-    },
-    LeanExprData::Lam(binder_name, dom, body, bi, _) => {
-      let dom_k = lean_expr_to_zexpr_cached(
-        dom,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      binder_names.push(binder_name.clone());
-      let body_k = lean_expr_to_zexpr_cached(
-        body,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      binder_names.pop();
-      KExpr::lam_mdata(
-        binder_name.clone(),
-        bi.clone(),
-        dom_k,
-        body_k,
-        mdata_layers,
-      )
-    },
-    LeanExprData::LetE(binder_name, ty, val, body, nd, _) => {
-      let ty_k = lean_expr_to_zexpr_cached(
-        ty,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      let val_k = lean_expr_to_zexpr_cached(
-        val,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      binder_names.push(binder_name.clone());
-      let body_k = lean_expr_to_zexpr_cached(
-        body,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      )?;
-      binder_names.pop();
-      KExpr::let_mdata(
-        binder_name.clone(),
-        ty_k,
-        val_k,
-        body_k,
-        *nd,
-        mdata_layers,
-      )
-    },
-    LeanExprData::Proj(name, idx, e, _) => {
-      let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
-      let zid = KId::new(addr, name.clone());
-      let e_k = lean_expr_to_zexpr_cached(
-        e,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache,
-        pn_hash,
-      )?;
-      // An index that does not fit a `u64` is refused (it used to become
-      // field 0).
-      let idx_u64 = idx.to_u64().ok_or_else(|| {
-        format!("projection index {idx} of {} exceeds u64", name.pretty())
-      })?;
-      KExpr::prj_mdata(zid, idx_u64, e_k, mdata_layers)
-    },
-    LeanExprData::Lit(lit, _) => {
-      use ix_common::env::Literal;
-      match lit {
-        Literal::NatVal(n) => {
-          // Address must match the Ixon-side blob address for this Nat,
-          // which is `Address::hash(&blob_bytes)` where `blob_bytes =
-          // n.to_le_bytes()` (see `store_nat` / `store_blob`). Hashing
-          // `to_u64()` instead truncates any value ≥ 2^64 to 0, causing
-          // distinct Nats to hash-cons to the same KExpr.
-          let addr = Address::hash(&n.to_le_bytes());
-          KExpr::nat_mdata(n.clone(), addr, mdata_layers)
+  let entry_depth = binder_names.len();
+  let result = (|| {
+    let mut stack = vec![LeanExprFrame::Visit(expr)];
+    let mut values: Vec<KExpr<Meta>> = Vec::new();
+    while let Some(frame) = stack.pop() {
+      match frame {
+        LeanExprFrame::Visit(expr) => {
+          let key = pn_hash.map(|h| (*expr.get_hash(), *h));
+          if let (Some(cache), Some(key)) = (cache.as_ref(), key)
+            && let Some(hit) = cache.get(&key)
+          {
+            values.push(hit.clone());
+            continue;
+          }
+          // Preserve the original cache key and outer-to-inner Mdata order.
+          // Peeled intermediate wrappers are not separate cache entries.
+          let mut mdata = Vec::new();
+          let mut cur = expr;
+          while let LeanExprData::Mdata(kv, inner, _) = cur.as_data() {
+            mdata.push(kv.clone());
+            cur = inner;
+          }
+          let node = cur.as_data();
+          // Projection address resolution precedes its operand conversion;
+          // field-index validation remains after that conversion.
+          let projection_id = match node {
+            LeanExprData::Proj(name, ..) => Some(KId::new(
+              resolve_lean_name_addr(name, n2a, aux_n2a),
+              name.clone(),
+            )),
+            _ => None,
+          };
+          stack.push(LeanExprFrame::Finish { node, mdata, key, projection_id });
+          match node {
+            LeanExprData::App(f, a, _) => {
+              stack.push(LeanExprFrame::Visit(a));
+              stack.push(LeanExprFrame::Visit(f));
+            },
+            LeanExprData::Lam(name, dom, body, _, _)
+            | LeanExprData::ForallE(name, dom, body, _, _) => {
+              stack.push(LeanExprFrame::PopBinder);
+              stack.push(LeanExprFrame::Visit(body));
+              stack.push(LeanExprFrame::PushBinder(name));
+              stack.push(LeanExprFrame::Visit(dom));
+            },
+            LeanExprData::LetE(name, ty, val, body, _, _) => {
+              stack.push(LeanExprFrame::PopBinder);
+              stack.push(LeanExprFrame::Visit(body));
+              stack.push(LeanExprFrame::PushBinder(name));
+              stack.push(LeanExprFrame::Visit(val));
+              stack.push(LeanExprFrame::Visit(ty));
+            },
+            LeanExprData::Proj(_, _, value, _) => {
+              stack.push(LeanExprFrame::Visit(value));
+            },
+            _ => {},
+          }
         },
-        Literal::StrVal(s) => {
-          let addr = Address::hash(s.as_bytes());
-          KExpr::str_mdata(s.clone(), addr, mdata_layers)
+        LeanExprFrame::PushBinder(name) => binder_names.push(name.clone()),
+        LeanExprFrame::PopBinder => {
+          binder_names.pop();
+        },
+        LeanExprFrame::Finish { node, mdata, key, projection_id } => {
+          let e = match node {
+            LeanExprData::Bvar(idx, _) => {
+              let idx_u64 = idx.to_u64().ok_or_else(|| {
+                format!("bound variable index {idx} exceeds u64")
+              })?;
+              let idx_usize = usize::try_from(idx_u64).unwrap_or(usize::MAX);
+              let name = binder_names
+                .len()
+                .checked_sub(1)
+                .and_then(|top| top.checked_sub(idx_usize))
+                .and_then(|i| binder_names.get(i))
+                .cloned()
+                .unwrap_or_else(Name::anon);
+              KExpr::var_mdata(idx_u64, name, mdata)
+            },
+            LeanExprData::Sort(lvl, _) => {
+              KExpr::sort_mdata(lean_level_to_kuniv(lvl, param_names)?, mdata)
+            },
+            LeanExprData::Const(name, us, _) => {
+              let id = KId::new(
+                resolve_lean_name_addr(name, n2a, aux_n2a),
+                name.clone(),
+              );
+              let us = us
+                .iter()
+                .map(|u| lean_level_to_kuniv(u, param_names))
+                .collect::<Result<Box<[_]>, _>>()?;
+              KExpr::cnst_mdata(id, us, mdata)
+            },
+            LeanExprData::App(..) => {
+              let a = values.pop().unwrap();
+              let f = values.pop().unwrap();
+              KExpr::app_mdata(f, a, mdata)
+            },
+            LeanExprData::Lam(name, _, _, bi, _) => {
+              let body = values.pop().unwrap();
+              let dom = values.pop().unwrap();
+              KExpr::lam_mdata(name.clone(), bi.clone(), dom, body, mdata)
+            },
+            LeanExprData::ForallE(name, _, _, bi, _) => {
+              let body = values.pop().unwrap();
+              let dom = values.pop().unwrap();
+              KExpr::all_mdata(name.clone(), bi.clone(), dom, body, mdata)
+            },
+            LeanExprData::LetE(name, _, _, _, nd, _) => {
+              let body = values.pop().unwrap();
+              let val = values.pop().unwrap();
+              let ty = values.pop().unwrap();
+              KExpr::let_mdata(name.clone(), ty, val, body, *nd, mdata)
+            },
+            LeanExprData::Proj(name, idx, _, _) => {
+              let value = values.pop().unwrap();
+              let idx_u64 = idx.to_u64().ok_or_else(|| {
+                format!(
+                  "projection index {idx} of {} exceeds u64",
+                  name.pretty()
+                )
+              })?;
+              KExpr::prj_mdata(projection_id.unwrap(), idx_u64, value, mdata)
+            },
+            LeanExprData::Lit(lit, _) => match lit {
+              ix_common::env::Literal::NatVal(n) => KExpr::nat_mdata(
+                n.clone(),
+                Address::hash(&n.to_le_bytes()),
+                mdata,
+              ),
+              ix_common::env::Literal::StrVal(s) => {
+                KExpr::str_mdata(s.clone(), Address::hash(s.as_bytes()), mdata)
+              },
+            },
+            LeanExprData::Fvar(name, _) => {
+              return Err(format!(
+                "unexpected FVar({}) in elaborated kernel term during ingress",
+                name.pretty()
+              ));
+            },
+            LeanExprData::Mvar(name, _) => {
+              return Err(format!(
+                "unexpected MVar({}) in elaborated kernel term during ingress",
+                name.pretty()
+              ));
+            },
+            LeanExprData::Mdata(..) => {
+              unreachable!("Mdata was peeled on entry")
+            },
+          };
+          // Construct and intern in the old postorder, including on intern
+          // hits, so allocation/first-occurrence metadata behavior is stable.
+          let e = intern.intern_expr(e);
+          if let (Some(cache), Some(key)) = (cache.as_deref_mut(), key) {
+            cache.insert(key, e.clone());
+          }
+          values.push(e);
         },
       }
-    },
-    LeanExprData::Mdata(..) => {
-      // Unreachable — the while-loop above peeled off every `Mdata` layer.
-      unreachable!("Mdata should have been peeled off into mdata_layers");
-    },
-    LeanExprData::Fvar(name, _) => {
-      return Err(format!(
-        "unexpected FVar({}) in elaborated kernel term during ingress",
-        name.pretty()
-      ));
-    },
-    LeanExprData::Mvar(name, _) => {
-      return Err(format!(
-        "unexpected MVar({}) in elaborated kernel term during ingress",
-        name.pretty()
-      ));
-    },
-  })
+    }
+    Ok(values.pop().unwrap())
+  })();
+  // A failed body must not leak a pushed binder into its caller. Successful
+  // child cache/interner writes are retained, exactly as on the old path.
+  binder_names.truncate(entry_depth);
+  result
 }
 
 /// Name → Address for KId construction from Lean Names.
@@ -3033,7 +2929,7 @@ fn lean_recursor_order(
 ///
 /// **Meta-only**: the existing `lean_expr_to_zexpr_*` family is Meta-mode
 /// only, so this helper is Meta-mode only by extension. Generalizing to
-/// `Anon` would require generalizing `lean_expr_to_zexpr_raw` too.
+/// `Anon` would require generalizing `lean_expr_to_zexpr_cached` too.
 #[cfg(not(target_arch = "riscv64"))]
 pub fn lean_ingress(lean_env: &LeanEnv) -> Result<KEnv<Meta>, String> {
   use std::time::Instant;
@@ -5941,6 +5837,190 @@ mod tests {
     };
     assert_eq!(i1, 0);
     assert_eq!(i2, 1);
+  }
+
+  fn cached_for_frames(
+    e: &LeanExpr,
+    binders: &mut Vec<Name>,
+    kenv: &mut KEnv<Meta>,
+  ) -> Result<KExpr<Meta>, String> {
+    lean_expr_to_zexpr_cached(
+      e,
+      &[],
+      binders,
+      &mut kenv.intern,
+      None,
+      None,
+      Some(&mut kenv.ingress_cache),
+      Some(&param_names_hash(&[])),
+    )
+  }
+
+  fn frame_binder(kind: u8, dom: LeanExpr, body: LeanExpr) -> LeanExpr {
+    let name = mk_name("inner");
+    let value = LeanExpr::lit(env::Literal::NatVal(n_lit(42)));
+    match kind {
+      0 => LeanExpr::lam(name, dom, body, BinderInfo::Implicit),
+      1 => LeanExpr::all(name, dom, body, BinderInfo::Implicit),
+      _ => LeanExpr::letE(name, dom, value, body, true),
+    }
+  }
+
+  #[test]
+  fn lean_frames_restore_context_and_keep_successful_children() {
+    let good = LeanExpr::sort(Level::zero());
+    let bad = frame_binder(0, good.clone(), LeanExpr::fvar(mk_name("bad")));
+    let key = |e: &LeanExpr| (*e.get_hash(), param_names_hash(&[]));
+    for kind in 0..3 {
+      for failure in 0..3 {
+        let mut kenv = KEnv::<Meta>::new();
+        let prefix = vec![mk_name("outer")];
+        let mut binders = prefix.clone();
+        let dom = if failure == 0 { bad.clone() } else { good.clone() };
+        let body =
+          if failure == 1 { bad.clone() } else { LeanExpr::bvar(n_lit(0)) };
+        let e = frame_binder(kind, dom, body);
+        let result = cached_for_frames(&e, &mut binders, &mut kenv);
+        assert_eq!(binders, prefix);
+        if failure < 2 {
+          assert_eq!(
+            result.unwrap_err(),
+            "unexpected FVar(bad) in elaborated kernel term during ingress"
+          );
+          assert!(kenv.ingress_cache.contains_key(&key(&good)));
+          assert!(!kenv.ingress_cache.contains_key(&key(&e)));
+          assert!(!kenv.ingress_cache.contains_key(&key(&bad)));
+        } else {
+          let k = result.unwrap();
+          let body = match k.data() {
+            ExprData::Lam(n, bi, _, b, _) | ExprData::All(n, bi, _, b, _) => {
+              assert_eq!(n, &mk_name("inner"));
+              assert_eq!(bi, &BinderInfo::Implicit);
+              b
+            },
+            ExprData::Let(n, _, _, b, nd, _) => {
+              assert_eq!(n, &mk_name("inner"));
+              assert!(*nd);
+              b
+            },
+            _ => panic!("expected binder"),
+          };
+          assert!(
+            matches!(body.data(), ExprData::Var(0, n, _) if n == &mk_name("inner"))
+          );
+        }
+      }
+    }
+    let mut binders = vec![mk_name("outer"), mk_name("middle")];
+    let prefix = binders.clone();
+    let e = LeanExpr::letE(
+      mk_name("inner"),
+      LeanExpr::bvar(n_lit(1)),
+      LeanExpr::bvar(n_lit(0)),
+      LeanExpr::bvar(n_lit(2)),
+      true,
+    );
+    let k = cached_for_frames(&e, &mut binders, &mut KEnv::new()).unwrap();
+    assert_eq!(binders, prefix);
+    let ExprData::Let(_, ty, val, body, _, _) = k.data() else { panic!() };
+    for (e, expected) in [(ty, "outer"), (val, "middle"), (body, "outer")] {
+      assert!(
+        matches!(e.data(), ExprData::Var(_, n, _) if n == &mk_name(expected))
+      );
+    }
+    assert!(
+      ty.addr() < val.addr()
+        && val.addr() < body.addr()
+        && body.addr() < k.addr()
+    );
+  }
+
+  #[test]
+  fn lean_frames_metadata_cache_and_allocation_order() {
+    let layer = |s| vec![(mk_name(s), env::DataValue::OfBool(true))];
+    let child = LeanExpr::mdata(
+      layer("child"),
+      LeanExpr::lit(env::Literal::NatVal(n_lit(42))),
+    );
+    let core =
+      LeanExpr::app(child, LeanExpr::lit(env::Literal::StrVal("tail".into())));
+    let inner = LeanExpr::mdata(layer("inner"), core.clone());
+    let e = LeanExpr::mdata(layer("outer"), inner.clone());
+    let mut kenv = KEnv::new();
+    let mut binders = vec![];
+    let k = cached_for_frames(&e, &mut binders, &mut kenv).unwrap();
+    assert_eq!(k.mdata(), &vec![layer("outer"), layer("inner")]);
+    let ExprData::App(f, a, _) = k.data() else { panic!() };
+    assert_eq!(f.mdata(), &vec![layer("child")]);
+    assert!(matches!(f.data(), ExprData::Nat(n, _, _) if n == &n_lit(42)));
+    assert!(matches!(a.data(), ExprData::Str(s, _, _) if s == "tail"));
+    assert!(f.addr() < a.addr() && a.addr() < k.addr());
+    let key = |e: &LeanExpr| (*e.get_hash(), param_names_hash(&[]));
+    assert_eq!(kenv.ingress_cache.len(), 3);
+    assert!(!kenv.ingress_cache.contains_key(&key(&core)));
+    assert!(!kenv.ingress_cache.contains_key(&key(&inner)));
+    assert!(k.ptr_eq(&cached_for_frames(&e, &mut binders, &mut kenv).unwrap()));
+    assert_eq!(kenv.ingress_cache.len(), 3);
+    let var = LeanExpr::bvar(n_lit(0));
+    binders.push(mk_name("first"));
+    let first = cached_for_frames(&var, &mut binders, &mut kenv).unwrap();
+    binders[0] = mk_name("second");
+    let second = cached_for_frames(&var, &mut binders, &mut kenv).unwrap();
+    assert!(first.ptr_eq(&second));
+    assert!(
+      matches!(second.data(), ExprData::Var(0, n, _) if n == &mk_name("first"))
+    );
+    assert_eq!(binders, vec![mk_name("second")]);
+  }
+
+  #[test]
+  fn lean_frames_error_precedence() {
+    let first = LeanExpr::fvar(mk_name("first"));
+    let second = LeanExpr::fvar(mk_name("second"));
+    let let_e =
+      |ty, val, body| LeanExpr::letE(mk_name("x"), ty, val, body, false);
+    for e in [
+      LeanExpr::app(first.clone(), second.clone()),
+      let_e(first.clone(), second.clone(), second.clone()),
+      let_e(LeanExpr::sort(Level::zero()), first.clone(), second),
+      LeanExpr::proj(mk_name("Prod"), past_u64(), first),
+    ] {
+      assert_eq!(
+        try_ingress(&e, &[]).unwrap_err(),
+        "unexpected FVar(first) in elaborated kernel term during ingress"
+      );
+    }
+  }
+
+  #[test]
+  fn lean_frames_deep_bodies_and_staged_teardown() {
+    for kind in 0..3 {
+      let mut e = LeanExpr::bvar(n_lit(0));
+      for _ in 0..500 {
+        e = match kind {
+          0 => frame_binder(0, LeanExpr::sort(Level::zero()), e),
+          1 => frame_binder(2, LeanExpr::sort(Level::zero()), e),
+          _ => LeanExpr::proj(mk_name("Prod"), n_lit(0), e),
+        };
+      }
+      let mut kenv = KEnv::new();
+      let k = cached_for_frames(&e, &mut vec![], &mut kenv).unwrap();
+      eprintln!("deep kind {kind}: converted");
+      drop(k);
+      eprintln!("deep kind {kind}: output dropped");
+      drop(kenv);
+      eprintln!("deep kind {kind}: caches/interner dropped");
+      while let LeanExprData::Lam(_, _, b, _, _)
+      | LeanExprData::LetE(_, _, _, b, _, _)
+      | LeanExprData::Proj(_, _, b, _) = e.as_data()
+      {
+        let next = b.clone();
+        drop(e);
+        e = next;
+      }
+      drop(e);
+      eprintln!("deep kind {kind}: input dropped");
+    }
   }
 
   // ---- build_ingress_lookups ----
