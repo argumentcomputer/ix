@@ -1,6 +1,10 @@
-import IxC.Kernel.Core
-import IxC.Kernel.ExprOps
-import Lean.Data.Name
+module
+
+public import IxC.Kernel.Core
+public import IxC.Kernel.ExprOps
+public import Lean.Data.Name
+
+@[expose] public section
 
 /-! # Printing terms with Lean's names (IxC step 6b, display only)
 

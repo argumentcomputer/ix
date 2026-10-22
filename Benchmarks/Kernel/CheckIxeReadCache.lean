@@ -94,7 +94,7 @@ def sourceDigest : UInt64 := hash [
   include_str "../../IxC/Kernel/PropWhen.lean",
   include_str "../../Ix/Ixon.lean",
   include_str "../../IxC/Ixon/Types.lean",
-  include_str "CheckIxeStep.lean",
+  include_str "../../Ix/KernelCheck/Step.lean",
   include_str "CheckIxeReadCache.lean"]
 
 /-- The reader version a plan is written under. -/

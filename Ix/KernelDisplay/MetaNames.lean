@@ -1,8 +1,12 @@
-import Ix.Ixon
-import Ix.LeanIngress.Names
-import IxC.Kernel.Ixon.Reader
-import Ix.KernelDisplay.Render
-import IxC.Kernel.FEnv
+module
+
+public import Ix.Ixon
+public import Ix.LeanIngress.Names
+public import IxC.Kernel.Ixon.Reader
+public import Ix.KernelDisplay.Render
+public import IxC.Kernel.FEnv
+
+@[expose] public section
 
 /-! # `.meta`'s binder names, from the `.ixe`'s metadata (IxC step 6b, display only)
 
