@@ -209,6 +209,76 @@ fn own_bytes(node: &Node) -> Result<u128, SharingError> {
   }
 }
 
+// This cap is used ONLY for empty costs consumed by initial classification.
+// It covers 2*w for every public u64 width, not merely tiered widths 1..=3.
+// Proofs: IxSharingVerify.UniformCappedSize. General UPrep/phi/gains retain
+// their existing arithmetic; a capped value must never enter those paths.
+const EMPTY_SIZE_CAP: u128 = (1u128 << 65) - 2;
+
+#[cfg(test)]
+mod capped_size_tests;
+
+fn empty_cap_add(a: u128, b: u128) -> u128 {
+  // Both operands become <=2^65-2, so this addition cannot overflow u128.
+  (a.min(EMPTY_SIZE_CAP) + b.min(EMPTY_SIZE_CAP)).min(EMPTY_SIZE_CAP)
+}
+
+/// Exact own-payload cost, capped independently of Len's u64 sentinel.
+/// In particular, all Ref/Rec universe arguments contribute their bytes.
+fn empty_own_size(node: &Node) -> Result<u128, SharingError> {
+  Ok(match node {
+    Node::Sort(n) | Node::Var(n) | Node::Str(n) | Node::Nat(n) => {
+      u(tag4_len(*n))
+    },
+    Node::Ref(n, us) | Node::Rec(n, us) => {
+      let count = u64::try_from(us.len()).map_err(|_e| overflow())?;
+      us.iter().fold(
+        empty_cap_add(u(tag4_len(count)), u(tag0_len(*n))),
+        |size, level| empty_cap_add(size, u(tag0_len(*level))),
+      )
+    },
+    Node::Prj(t, f, _) => empty_cap_add(u(tag4_len(*f)), u(tag0_len(*t))),
+    Node::Let(c, ..) => empty_cap_add(u(tag4_len(c.flags())), 1),
+    Node::App(..) | Node::Lam(..) | Node::All(..) => 0,
+  })
+}
+
+/// min(C_0, EMPTY_SIZE_CAP) in child-before-parent order. Empty evaluation
+/// has no opaque/available terms and no cut or subtraction. Its only
+/// recurrences are nonnegative sums of payloads, sides and natural tails;
+/// distributing min(cap, _) over those sums is exact.
+fn empty_sizes_capped(
+  nodes: &[Node],
+  spine_len: &[u64],
+  spine_tail: &[TermId],
+) -> Result<Vec<u128>, SharingError> {
+  let mut cost = vec![0; nodes.len()];
+  let mut sides = vec![0; nodes.len()];
+  for (t, node) in nodes.iter().enumerate() {
+    if node.family().is_none() {
+      cost[t] = node
+        .children()
+        .as_slice()
+        .iter()
+        .fold(empty_own_size(node)?, |size, child| {
+          empty_cap_add(size, cost[ix(*child)])
+        });
+    } else {
+      let next = spine_next(node);
+      let continued = nodes[ix(next)].family() == node.family();
+      sides[t] = empty_cap_add(
+        empty_cap_add(side_extra(node), cost[ix(side_child(node))]),
+        if continued { sides[ix(next)] } else { 0 },
+      );
+      cost[t] = empty_cap_add(
+        empty_cap_add(u(tag4_len(spine_len[t])), sides[t]),
+        cost[ix(spine_tail[t])],
+      );
+    }
+  }
+  Ok(cost)
+}
+
 /// Whether the edge from `parent` to its `i`-th child continues the
 /// parent's telescope.
 fn continuation_edge(parent: &Node, i: usize, child: &Node) -> bool {
@@ -384,16 +454,19 @@ impl<'d> UPrep<'d> {
 // Classification
 // ---------------------------------------------------------------------------
 
-/// `(occ-1)*size < occ*w`, exactly, for `occ >= 1` (a saturated `occ`
-/// stands for some value at least `u128::MAX`).
+/// `(occ-1)*size < occ*w`, with Nat subtraction, including occ=0/1 and
+/// w=0. For size>w and occ>=1 this is occ*(size-w)<size, equivalently
+/// occ <= (size-1)/(size-w). No product can overflow. A saturated occurrence
+/// count is sound here: the quotient is strictly below size<=EMPTY_SIZE_CAP
+/// (and in fact below u128::MAX for any representable size>w).
 fn certainly_excluded(occ: u128, size: u128, w: u128) -> bool {
+  if occ == 0 || w == 0 {
+    return false;
+  }
   if size <= w {
     return true;
   }
-  match occ.checked_mul(size - w) {
-    Some(x) => x < size,
-    None => false,
-  }
+  occ <= (size - 1) / (size - w)
 }
 
 /// Lower bounds of the certain-stored test (Lean `UBounds`): `inl`, bytes
@@ -2146,8 +2219,8 @@ pub(crate) struct DagPrep {
   pub(crate) facts: Facts,
   /// Spine lengths with no stop terms.
   spine_len: Vec<u64>,
-  /// Unshared sizes of the uniform model (the empty evaluation; it does not
-  /// read the width), or its overflow error.
+  /// Empty sizes capped at EMPTY_SIZE_CAP, ONLY for certain-excluded tests.
+  /// Errors concern unencodable own-payload counts, not large unfolded costs.
   size: Result<Vec<u128>, SharingError>,
 }
 
@@ -2159,12 +2232,8 @@ impl DagPrep {
     let base = Evaluation::new(nodes, &own, &super::dict::NoWidths);
     let edges = ReadEdges::new(nodes);
     let facts = graph_facts(dag);
-    let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
-    // With no opaque and no available term, `UPrep::node` reads the width
-    // nowhere (no cut is available and every cost is the inline bound), so
-    // any width gives these sizes.
-    let size = UPrep::new(nodes, 1, vec![false; n])
-      .map(|empty| empty.base.iter().map(|v| v.cost).collect());
+    let (spine_len, spine_tail) = spine_tables(nodes, &vec![false; n]);
+    let size = empty_sizes_capped(nodes, &spine_len, &spine_tail);
     DagPrep { own, base, edges, facts, spine_len, size }
   }
 }
@@ -2206,7 +2275,7 @@ fn initial<'d>(
       bound: TELE_SUBADD_END,
     }));
   }
-  // Unshared sizes C_0 (no stop terms, nothing available).
+  // Predicate-sufficient min(C_0, cap); never reused as a general model cost.
   let size: &[u128] = prep.size.as_ref().map_err(Clone::clone)?;
   // Classes: certain-excluded, low degree, and the gain test on visible
   // counts with threshold theta.
