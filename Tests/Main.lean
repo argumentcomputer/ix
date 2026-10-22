@@ -118,6 +118,7 @@ import Tests.Ix.Kernel.RecordCheck
 import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.Kernel.CheckLeanCli
 import Tests.Ix.Kernel.ValidateLeanCli
+import Tests.Ix.Kernel.ValidateReaderCli
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.SharingExact
@@ -288,6 +289,7 @@ def registry : List Entry := [
   .suite "kernel-reader-access" .primary Tests.Ix.Kernel.ReaderAccess.suite,
   .suite "kernel-prelude-fidelity" .primary Tests.Ix.Kernel.PreludeFidelity.suite,
   .suite "validate-lean-fidelity-cli" .primary Tests.Ix.Kernel.ValidateLeanCli.suite,
+  .suite "validate-lean-reader-cli" .primary Tests.Ix.Kernel.ValidateReaderCli.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
   -- the typing tier's inductive install and its answer view (M7 Q1)
