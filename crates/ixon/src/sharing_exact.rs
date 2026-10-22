@@ -129,6 +129,9 @@ pub use uniform::{
   UniformSharingResult, normalize_constant_sharing_uniform,
   optimize_sharing_uniform,
 };
+// Offline experiments only; no compiler or canonical entry calls this module.
+#[doc(hidden)]
+pub use uniform::experimental;
 // The first-tier search of phase 2, for the tests; not part of the API.
 #[cfg(test)]
 pub(crate) use tiered::first_tier;

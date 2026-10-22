@@ -713,6 +713,16 @@ pub(crate) fn tiered(
       r.map(|i| run(len64(i) + 1)).collect()
     })
   };
+  finish_candidates(layout, dag, &prep, limits, candidates)
+}
+
+pub(super) fn finish_candidates(
+  layout: ShareLayout,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  limits: &ExactSharingLimits,
+  candidates: Vec<Result<Candidate, SharingError>>,
+) -> Result<TieredSharingResult, SharingError> {
   let mut built: Vec<Candidate> = Vec::with_capacity(3);
   let mut best: Option<usize> = None;
   let mut lengths = Vec::with_capacity(3);
@@ -742,10 +752,10 @@ pub(crate) fn tiered(
     }
   }
   let chosen = chosen.ok_or_else(|| internal("no tiered candidate"))?;
-  let mut best = finish(layout, dag, &prep, limits, chosen, true)?;
+  let mut best = finish(layout, dag, prep, limits, chosen, true)?;
   if limits.full_check {
     for c in rest {
-      finish(layout, dag, &prep, limits, c, false)?;
+      finish(layout, dag, prep, limits, c, false)?;
     }
   }
   // The returned candidate's meter includes the work charged in `finish`.
@@ -1050,6 +1060,22 @@ fn tiered_at(
   meter: &mut Meter<'_>,
   w: u64,
 ) -> Result<Candidate, SharingError> {
+  tiered_at_using(layout, dag, prep, meter, w, |meter| {
+    optimize_uniform_with(w, dag, prep, meter)
+  })
+}
+
+pub(super) fn tiered_at_using(
+  layout: ShareLayout,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+  w: u64,
+  phase1: impl FnOnce(
+    &mut Meter<'_>,
+  )
+    -> Result<(UniformSharingResult, UniformPlan), SharingError>,
+) -> Result<Candidate, SharingError> {
   let nodes = dag.nodes();
   let n = nodes.len();
   let limits = meter.limits();
@@ -1067,7 +1093,7 @@ fn tiered_at(
   // Phase 1, without building its expressions: phase 2 reads only what they
   // contain, which the dry run reports from the same decisions
   // (`PlanShares`), with the real length.
-  let (mut u, plan1) = optimize_uniform_with(w, dag, prep, meter)?;
+  let (mut u, plan1) = phase1(meter)?;
   let (shares, real1) = plan1.shares(dag, &u.table_terms, limits)?;
   u.variable_len = real1;
   if limits.full_check {
@@ -1330,7 +1356,7 @@ pub(crate) fn normalize_constant_sharing_tiered_at_width(
 
 /// Expand `c`'s table, run `run` on its DAG, and reassemble the Constant,
 /// checking its serialized length against the result's accounting.
-fn normalize_tiered_with(
+pub(super) fn normalize_tiered_with(
   c: &Constant,
   limits: &ExactSharingLimits,
   run: impl FnOnce(&SharingDag) -> Result<TieredSharingResult, SharingError>,

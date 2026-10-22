@@ -107,6 +107,9 @@ use crate::constant::Constant;
 use crate::expr::Expr;
 use crate::tag::TagN;
 
+#[doc(hidden)]
+pub mod experimental;
+
 fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
 }
@@ -166,6 +169,9 @@ pub struct UniformSharingResult {
   /// Whether the table-count knapsack chose a lower TagN bracket.
   pub lower_bracket: bool,
   pub stats: ExactSharingStats,
+  /// Test-only view of retained per-count optima, including canonical ties.
+  #[cfg(test)]
+  pub(crate) component_tables: Vec<CTable>,
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +207,76 @@ fn own_bytes(node: &Node) -> Result<u128, SharingError> {
     Some(_) => Ok(0),
     None => node.own_len().exact().map(u).ok_or_else(overflow),
   }
+}
+
+// This cap is used ONLY for empty costs consumed by initial classification.
+// It covers 2*w for every public u64 width, not merely tiered widths 1..=3.
+// Proofs: IxSharingVerify.UniformCappedSize. General UPrep/phi/gains retain
+// their existing arithmetic; a capped value must never enter those paths.
+const EMPTY_SIZE_CAP: u128 = (1u128 << 65) - 2;
+
+#[cfg(test)]
+mod capped_size_tests;
+
+fn empty_cap_add(a: u128, b: u128) -> u128 {
+  // Both operands become <=2^65-2, so this addition cannot overflow u128.
+  (a.min(EMPTY_SIZE_CAP) + b.min(EMPTY_SIZE_CAP)).min(EMPTY_SIZE_CAP)
+}
+
+/// Exact own-payload cost, capped independently of Len's u64 sentinel.
+/// In particular, all Ref/Rec universe arguments contribute their bytes.
+fn empty_own_size(node: &Node) -> Result<u128, SharingError> {
+  Ok(match node {
+    Node::Sort(n) | Node::Var(n) | Node::Str(n) | Node::Nat(n) => {
+      u(tag4_len(*n))
+    },
+    Node::Ref(n, us) | Node::Rec(n, us) => {
+      let count = u64::try_from(us.len()).map_err(|_e| overflow())?;
+      us.iter().fold(
+        empty_cap_add(u(tag4_len(count)), u(tag0_len(*n))),
+        |size, level| empty_cap_add(size, u(tag0_len(*level))),
+      )
+    },
+    Node::Prj(t, f, _) => empty_cap_add(u(tag4_len(*f)), u(tag0_len(*t))),
+    Node::Let(c, ..) => empty_cap_add(u(tag4_len(c.flags())), 1),
+    Node::App(..) | Node::Lam(..) | Node::All(..) => 0,
+  })
+}
+
+/// min(C_0, EMPTY_SIZE_CAP) in child-before-parent order. Empty evaluation
+/// has no opaque/available terms and no cut or subtraction. Its only
+/// recurrences are nonnegative sums of payloads, sides and natural tails;
+/// distributing min(cap, _) over those sums is exact.
+fn empty_sizes_capped(
+  nodes: &[Node],
+  spine_len: &[u64],
+  spine_tail: &[TermId],
+) -> Result<Vec<u128>, SharingError> {
+  let mut cost = vec![0; nodes.len()];
+  let mut sides = vec![0; nodes.len()];
+  for (t, node) in nodes.iter().enumerate() {
+    if node.family().is_none() {
+      cost[t] = node
+        .children()
+        .as_slice()
+        .iter()
+        .fold(empty_own_size(node)?, |size, child| {
+          empty_cap_add(size, cost[ix(*child)])
+        });
+    } else {
+      let next = spine_next(node);
+      let continued = nodes[ix(next)].family() == node.family();
+      sides[t] = empty_cap_add(
+        empty_cap_add(side_extra(node), cost[ix(side_child(node))]),
+        if continued { sides[ix(next)] } else { 0 },
+      );
+      cost[t] = empty_cap_add(
+        empty_cap_add(u(tag4_len(spine_len[t])), sides[t]),
+        cost[ix(spine_tail[t])],
+      );
+    }
+  }
+  Ok(cost)
 }
 
 /// Whether the edge from `parent` to its `i`-th child continues the
@@ -378,16 +454,19 @@ impl<'d> UPrep<'d> {
 // Classification
 // ---------------------------------------------------------------------------
 
-/// `(occ-1)*size < occ*w`, exactly, for `occ >= 1` (a saturated `occ`
-/// stands for some value at least `u128::MAX`).
+/// `(occ-1)*size < occ*w`, with Nat subtraction, including occ=0/1 and
+/// w=0. For size>w and occ>=1 this is occ*(size-w)<size, equivalently
+/// occ <= (size-1)/(size-w). No product can overflow. A saturated occurrence
+/// count is sound here: the quotient is strictly below size<=EMPTY_SIZE_CAP
+/// (and in fact below u128::MAX for any representable size>w).
 fn certainly_excluded(occ: u128, size: u128, w: u128) -> bool {
+  if occ == 0 || w == 0 {
+    return false;
+  }
   if size <= w {
     return true;
   }
-  match occ.checked_mul(size - w) {
-    Some(x) => x < size,
-    None => false,
-  }
+  occ <= (size - 1) / (size - w)
 }
 
 /// Lower bounds of the certain-stored test (Lean `UBounds`): `inl`, bytes
@@ -788,6 +867,7 @@ fn table_best(tb: &CTable) -> Option<i128> {
   tb.iter().flatten().map(|(d, _)| *d).min()
 }
 
+#[cfg(test)]
 fn table_add(tb: &mut CTable, e: Choice) {
   let k = e.1.len();
   if tb.len() <= k {
@@ -798,6 +878,7 @@ fn table_add(tb: &mut CTable, e: Choice) {
   }
 }
 
+#[cfg(test)]
 fn table_trim(tb: CTable, slack: i128) -> CTable {
   match table_best(&tb) {
     None => tb,
@@ -807,14 +888,348 @@ fn table_trim(tb: CTable, slack: i128) -> CTable {
   }
 }
 
+/// The sorted concatenation of two ascending slices, without allocation.
+/// Equal elements are emitted twice, just as `merge_sorted` preserves them.
+struct Merged<'a> {
+  a: &'a [TermId],
+  b: &'a [TermId],
+}
+
+impl Iterator for Merged<'_> {
+  type Item = TermId;
+
+  fn next(&mut self) -> Option<TermId> {
+    match (self.a.split_first(), self.b.split_first()) {
+      (Some((&x, a)), Some((&y, b))) => {
+        if x <= y {
+          self.a = a;
+          Some(x)
+        } else {
+          self.b = b;
+          Some(y)
+        }
+      },
+      (Some((&x, a)), None) => {
+        self.a = a;
+        Some(x)
+      },
+      (None, Some((&y, b))) => {
+        self.b = b;
+        Some(y)
+      },
+      (None, None) => None,
+    }
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let n = self.a.len() + self.b.len();
+    (n, Some(n))
+  }
+}
+
+impl ExactSizeIterator for Merged<'_> {}
+
+/// Exactly `set_prec` on the two materialized merges, including prefix and
+/// equal-sequence behavior. No disjointness or duplicate removal is assumed.
+fn merged_prec(mut a: Merged<'_>, mut b: Merged<'_>) -> bool {
+  loop {
+    match (a.next(), b.next()) {
+      (Some(x), Some(y)) if x == y => {},
+      (Some(x), Some(y)) => return y < x,
+      (None, Some(_)) => return true,
+      _ => return false,
+    }
+  }
+}
+
+#[cfg(test)]
+type DelayedChoice<'a> = (i128, &'a [TermId], &'a [TermId]);
+
+/// Convolve tables of ascending choices in the original pair order, keeping
+/// the same winner at every actual merged count. Only final winners allocate.
+#[cfg(test)]
 fn table_conv(a: &CTable, b: &CTable) -> CTable {
-  let mut out: CTable = Vec::new();
+  let mut out: Vec<Option<DelayedChoice<'_>>> = Vec::new();
   for (da, sa) in a.iter().flatten() {
     for (db, sb) in b.iter().flatten() {
-      table_add(&mut out, (da + db, merge_sorted(sa, sb)));
+      let delta = da + db;
+      let k = sa.len() + sb.len();
+      if out.len() <= k {
+        out.resize(k + 1, None);
+      }
+      let wins = match out[k] {
+        None => true,
+        Some((d, a, b)) => {
+          delta < d
+            || (delta == d
+              && merged_prec(Merged { a: sa, b: sb }, Merged { a, b }))
+        },
+      };
+      if wins {
+        out[k] = Some((delta, sa, sb));
+      }
     }
   }
   out
+    .into_iter()
+    .map(|e| e.map(|(d, a, b)| (d, Merged { a, b }.collect())))
+    .collect()
+}
+
+// SCtx choices use a bounded component-local encoding. Global tables and
+// the count knapsack still receive the original sorted ID vectors.
+const PACKED_MEMBERS: usize = 512;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum LocalSet {
+  Listed(Vec<TermId>),
+  Packed(Box<[u64]>),
+}
+
+impl LocalSet {
+  fn len(&self) -> usize {
+    match self {
+      Self::Listed(ids) => ids.len(),
+      Self::Packed(words) => {
+        words.iter().map(|w| w.count_ones() as usize).sum()
+      },
+    }
+  }
+}
+
+type LocalTable = Vec<Option<(i128, LocalSet)>>;
+
+enum LocalIter<'a> {
+  Listed(std::slice::Iter<'a, TermId>),
+  Packed { members: &'a [TermId], words: &'a [u64], at: usize, bits: u64 },
+}
+
+impl Iterator for LocalIter<'_> {
+  type Item = TermId;
+  fn next(&mut self) -> Option<TermId> {
+    match self {
+      Self::Listed(ids) => ids.next().copied(),
+      Self::Packed { members, words, at, bits } => loop {
+        if *bits != 0 {
+          let bit = bits.trailing_zeros() as usize;
+          *bits &= *bits - 1;
+          return Some(members[*at * 64 + bit]);
+        }
+        *at += 1;
+        *bits = *words.get(*at)?;
+      },
+    }
+  }
+}
+
+#[derive(Clone, Copy)]
+struct LocalPair<'a> {
+  a: &'a LocalSet,
+  b: &'a LocalSet,
+  packed: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ComponentSets<'a> {
+  members: &'a [TermId],
+  words: Option<usize>,
+}
+
+impl<'a> ComponentSets<'a> {
+  fn new(members: &'a [TermId], enabled: bool) -> Self {
+    let packed = enabled
+      && members.len() <= PACKED_MEMBERS
+      && members.windows(2).all(|w| w[0] < w[1]);
+    Self { members, words: packed.then(|| members.len().div_ceil(64)) }
+  }
+
+  fn pack(&self, ids: Vec<TermId>) -> LocalSet {
+    let Some(n) = self.words else {
+      return LocalSet::Listed(ids);
+    };
+    if !ids.windows(2).all(|w| w[0] < w[1]) {
+      return LocalSet::Listed(ids);
+    }
+    let mut words = vec![0u64; n];
+    for &t in &ids {
+      let Ok(i) = self.members.binary_search(&t) else {
+        return LocalSet::Listed(ids);
+      };
+      words[i / 64] |= 1 << (i % 64);
+    }
+    LocalSet::Packed(words.into_boxed_slice())
+  }
+
+  fn iter<'b>(&'b self, set: &'b LocalSet) -> LocalIter<'b> {
+    match set {
+      LocalSet::Listed(ids) => LocalIter::Listed(ids.iter()),
+      LocalSet::Packed(words) => LocalIter::Packed {
+        members: self.members,
+        words,
+        at: 0,
+        bits: words.first().copied().unwrap_or(0),
+      },
+    }
+  }
+
+  fn iter_prec(
+    mut a: impl Iterator<Item = TermId>,
+    mut b: impl Iterator<Item = TermId>,
+  ) -> bool {
+    loop {
+      match (a.next(), b.next()) {
+        (Some(x), Some(y)) if x == y => {},
+        (Some(x), Some(y)) => return y < x,
+        (None, Some(_)) => return true,
+        _ => return false,
+      }
+    }
+  }
+
+  fn prec(&self, a: &LocalSet, b: &LocalSet) -> bool {
+    match (a, b) {
+      (LocalSet::Listed(a), LocalSet::Listed(b)) => set_prec(a, b),
+      (LocalSet::Packed(a), LocalSet::Packed(b)) => {
+        for (&a, &b) in a.iter().zip(b) {
+          let diff = a ^ b;
+          if diff != 0 {
+            return a & (1 << diff.trailing_zeros()) == 0;
+          }
+        }
+        false
+      },
+      _ => Self::iter_prec(self.iter(a), self.iter(b)),
+    }
+  }
+
+  fn pair<'b>(&self, a: &'b LocalSet, b: &'b LocalSet) -> LocalPair<'b> {
+    let packed = match (self.words, a, b) {
+      (Some(n), LocalSet::Packed(a), LocalSet::Packed(b)) => {
+        a.len() == n && b.len() == n && a.iter().zip(b).all(|(a, b)| a & b == 0)
+      },
+      _ => false,
+    };
+    LocalPair { a, b, packed }
+  }
+
+  fn union<'b>(
+    &'b self,
+    pair: LocalPair<'b>,
+  ) -> impl Iterator<Item = TermId> + 'b {
+    let mut a = self.iter(pair.a).peekable();
+    let mut b = self.iter(pair.b).peekable();
+    std::iter::from_fn(move || match (a.peek(), b.peek()) {
+      (Some(x), Some(y)) if x <= y => a.next(),
+      (_, Some(_)) => b.next(),
+      (Some(_), None) => a.next(),
+      (None, None) => None,
+    })
+  }
+
+  fn pair_prec(&self, a: LocalPair<'_>, b: LocalPair<'_>) -> bool {
+    if a.packed
+      && b.packed
+      && let (
+        LocalSet::Packed(a1),
+        LocalSet::Packed(a2),
+        LocalSet::Packed(b1),
+        LocalSet::Packed(b2),
+      ) = (a.a, a.b, b.a, b.b)
+    {
+      for ((&a1, &a2), (&b1, &b2)) in a1.iter().zip(a2).zip(b1.iter().zip(b2)) {
+        let a = a1 | a2;
+        let diff = a ^ (b1 | b2);
+        if diff != 0 {
+          return a & (1 << diff.trailing_zeros()) == 0;
+        }
+      }
+      return false;
+    }
+    if let (
+      LocalSet::Listed(a1),
+      LocalSet::Listed(a2),
+      LocalSet::Listed(b1),
+      LocalSet::Listed(b2),
+    ) = (a.a, a.b, b.a, b.b)
+    {
+      return merged_prec(Merged { a: a1, b: a2 }, Merged { a: b1, b: b2 });
+    }
+    Self::iter_prec(self.union(a), self.union(b))
+  }
+
+  fn materialize(&self, pair: LocalPair<'_>) -> LocalSet {
+    if pair.packed
+      && let (LocalSet::Packed(a), LocalSet::Packed(b)) = (pair.a, pair.b)
+    {
+      return LocalSet::Packed(a.iter().zip(b).map(|(a, b)| a | b).collect());
+    }
+    let ids = match (pair.a, pair.b) {
+      (LocalSet::Listed(a), LocalSet::Listed(b)) => Merged { a, b }.collect(),
+      _ => self.union(pair).collect(),
+    };
+    // Duplicate/overlapping or out-of-vocabulary choices remain listed.
+    self.pack(ids)
+  }
+
+  fn add(&self, tb: &mut LocalTable, e: (i128, LocalSet)) {
+    let k = e.1.len();
+    if tb.len() <= k {
+      tb.resize(k + 1, None);
+    }
+    if tb[k]
+      .as_ref()
+      .is_none_or(|(d, s)| e.0 < *d || (e.0 == *d && self.prec(&e.1, s)))
+    {
+      tb[k] = Some(e);
+    }
+  }
+
+  fn best(tb: &LocalTable) -> Option<i128> {
+    tb.iter().flatten().map(|(d, _)| *d).min()
+  }
+
+  fn trim(tb: LocalTable, slack: i128) -> LocalTable {
+    match Self::best(&tb) {
+      None => tb,
+      Some(b) => {
+        tb.into_iter().map(|e| e.filter(|(d, _)| *d <= b + slack)).collect()
+      },
+    }
+  }
+
+  fn conv(&self, a: &LocalTable, b: &LocalTable) -> LocalTable {
+    let mut out: Vec<Option<(i128, LocalPair<'_>)>> = Vec::new();
+    for (da, sa) in a.iter().flatten() {
+      for (db, sb) in b.iter().flatten() {
+        let delta = da + db;
+        let k = sa.len() + sb.len();
+        if out.len() <= k {
+          out.resize(k + 1, None);
+        }
+        let pair = self.pair(sa, sb);
+        if out[k].is_none_or(|(d, old)| {
+          delta < d || (delta == d && self.pair_prec(pair, old))
+        }) {
+          out[k] = Some((delta, pair));
+        }
+      }
+    }
+    out.into_iter().map(|e| e.map(|(d, p)| (d, self.materialize(p)))).collect()
+  }
+
+  fn decode(&self, tb: LocalTable) -> CTable {
+    tb.into_iter()
+      .map(|e| {
+        e.map(|(d, set)| {
+          let ids = match set {
+            LocalSet::Listed(ids) => ids,
+            set => self.iter(&set).collect(),
+          };
+          (d, ids)
+        })
+      })
+      .collect()
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,15 +1515,23 @@ struct SCtx<'a, 'd> {
   stored_in: Vec<TermId>,
   slack: i128,
   theta: i128,
-  memo: FxHashMap<Vec<u64>, CTable>,
+  /// At most eight words per packed choice; None retains listed choices.
+  set_words: Option<usize>,
+  // Completed group tables are immutable; memo hits share their per-count
+  // choices instead of cloning every selected-term vector.
+  memo: FxHashMap<Vec<u64>, Arc<LocalTable>>,
   memo_hits: u64,
   /// Scratch of `phi`: the value of each area term.
   vals: Vec<UVal>,
 }
 
 impl SCtx<'_, '_> {
+  fn sets(&self) -> ComponentSets<'_> {
+    ComponentSets { members: &self.members, words: self.set_words }
+  }
+
   fn at(&self, t: TermId) -> Option<usize> {
-    match self.pos[ix(t)] {
+    match self.pos.get(ix(t)).copied()? {
       NO_POS => None,
       j => Some(j as usize),
     }
@@ -1378,6 +1801,96 @@ impl SCtx<'_, '_> {
     (key, rel)
   }
 
+  /// Lean `keyContext` and the checks before `solveP`'s memo lookup. Only
+  /// the key's context suffix is decoded; the group and separator are not.
+  fn key_context(
+    &self,
+    g: &[TermId],
+    entries: &[u64],
+    in_f: &[bool],
+    out: &[bool],
+  ) -> Result<(Vec<TermId>, Vec<TermId>), SharingError> {
+    let err =
+      || internal("memo key context is not part of the decided context");
+    let (mut in_red, mut out_red) = (Vec::new(), Vec::new());
+    for &e in entries {
+      let t = TermId::try_from(e / 3).map_err(|_err| err())?;
+      if e % 3 == 0 {
+        out_red.push(t);
+      } else {
+        in_red.push(t);
+      }
+    }
+    let ordered_members = |ts: &[TermId]| {
+      ts.windows(2).all(|w| w[0] < w[1])
+        && ts
+          .iter()
+          .all(|&t| self.at(t).is_some_and(|j| self.member_of[j] != NO_POS))
+    };
+    let has = |set: &[bool], t| self.at(t).is_some_and(|j| set[j]);
+    if !ordered_members(g)
+      || !ordered_members(&in_red)
+      || !ordered_members(&out_red)
+      || g.iter().any(|&t| has(in_f, t) || has(out, t))
+      || in_red.iter().any(|&t| !has(in_f, t) || has(out, t))
+      || out_red.iter().any(|&t| !has(out, t) || has(in_f, t))
+    {
+      return Err(err());
+    }
+    Ok((in_red, out_red))
+  }
+
+  /// Lean `sepCheckA`: a non-out, non-opaque member must not reach both
+  /// the group and other members. Recompute opacity under the reduced
+  /// context; a cut inferred from the full context is not sufficient.
+  fn sep_check(
+    &self,
+    g: &[TermId],
+    in_red: &[TermId],
+    out_red: &[TermId],
+  ) -> Result<bool, SharingError> {
+    let in_f = self.flags(in_red);
+    let out = self.flags(out_red);
+    let b = self.rebound(&out)?;
+    let opq: Vec<bool> = self
+      .area
+      .iter()
+      .enumerate()
+      .map(|(j, &t)| {
+        self.up.opaq[ix(t)] || (in_f[j] && self.opaque_under(&b, t))
+      })
+      .collect();
+    // Bit 1: group; bit 2: other member; zero: unlabeled. OR is the
+    // reach-label join, and 3 is Lean's mixed label `some none`.
+    let mut label = vec![0u8; self.area.len()];
+    for (ts, bit) in [(&self.members[..], 2), (g, 1), (in_red, 0), (out_red, 0)]
+    {
+      for &t in ts {
+        let Some(j) = self.at(t) else {
+          return Ok(false);
+        };
+        label[j] = bit;
+      }
+    }
+    let mut reach = vec![0u8; self.area.len()];
+    for (j, &t) in self.area.iter().enumerate() {
+      let mut r = label[j];
+      for &c in self.up.nodes[ix(t)].children().as_slice() {
+        if let Some(k) = self.at(c) {
+          r |= if opq[k] { label[k] } else { reach[k] };
+        }
+      }
+      reach[j] = r;
+    }
+    Ok(
+      g.iter().all(|&t| {
+        self.at(t).is_some_and(|j| self.member_of[j] != NO_POS && label[j] == 1)
+      }) && self.members.iter().all(|&t| {
+        self.at(t).is_some_and(|j| out[j] || opq[j] || reach[j] != 3)
+      }),
+    )
+  }
+
   /// Exact table of a group under the decided members outside it (Lean
   /// `SCtx.solve`).
   fn solve(
@@ -1386,7 +1899,7 @@ impl SCtx<'_, '_> {
     g: &[TermId],
     in_all: &[TermId],
     out_all: &[TermId],
-  ) -> Result<CTable, SharingError> {
+  ) -> Result<Arc<LocalTable>, SharingError> {
     let out = self.flags(out_all);
     let in_f = self.flags(in_all);
     let key = {
@@ -1401,24 +1914,29 @@ impl SCtx<'_, '_> {
         .collect();
       self.memo_key(&opq, &in_f, &out, g).0
     };
+    let (in_red, out_red) =
+      self.key_context(g, &key[g.len() + 1..], &in_f, &out)?;
     if let Some(tb) = self.memo.get(&key) {
       self.memo_hits += 1;
-      return Ok(tb.clone());
+      return Ok(Arc::clone(tb));
     }
-    let (phi0, work) = self.phi(&in_f, in_all)?;
+    if !self.sep_check(g, &in_red, &out_red)? {
+      return Err(internal("search group is not separated"));
+    }
+    let (phi0, work) = self.phi(&self.flags(&in_red), &in_red)?;
     Self::charge(meter, work.saturating_add(len64(self.area.len())))?;
     let tb = self.node(
       meter,
       phi0,
-      in_all,
-      out_all.to_vec(),
-      out_all.len(),
+      &in_red,
+      out_red.clone(),
+      out_red.len(),
       Vec::new(),
       g,
       Vec::new(),
     )?;
-    let tb = table_trim(tb, self.slack);
-    self.memo.insert(key, tb.clone());
+    let tb = Arc::new(ComponentSets::trim(tb, self.slack));
+    self.memo.insert(key, Arc::clone(&tb));
     Ok(tb)
   }
 
@@ -1433,8 +1951,8 @@ impl SCtx<'_, '_> {
     n_out_ctx: usize,
     local_in: Vec<TermId>,
     und: &[TermId],
-    mut tb: CTable,
-  ) -> Result<CTable, SharingError> {
+    mut tb: LocalTable,
+  ) -> Result<LocalTable, SharingError> {
     let out = self.flags(&out_all);
     // Reclassify.
     let (gains, opaque_in) = {
@@ -1494,10 +2012,11 @@ impl SCtx<'_, '_> {
     Self::charge(meter, work.saturating_add(2 * len64(self.area.len())))?;
     let delta = to_i(phi)? - to_i(phi0)?;
     if und.is_empty() {
-      table_add(&mut tb, (delta, local_in));
+      let sets = self.sets();
+      sets.add(&mut tb, (delta, sets.pack(local_in)));
       return Ok(tb);
     }
-    if let Some(bd) = table_best(&tb)
+    if let Some(bd) = ComponentSets::best(&tb)
       && delta > bd + self.slack
     {
       return Ok(tb);
@@ -1526,13 +2045,14 @@ impl SCtx<'_, '_> {
       let (phi_none, work) = self.phi(&in_f, &in_all)?;
       Self::charge(meter, work)?;
       let base = to_i(phi_none)? - to_i(phi0)?;
-      let mut comb: CTable = vec![Some((base, local_in.clone()))];
+      let mut comb: LocalTable =
+        vec![Some((base, self.sets().pack(local_in.clone())))];
       for grp in &groups {
         let sub = self.solve(meter, grp, &in_all, &out_all)?;
-        comb = table_trim(table_conv(&comb, &sub), self.slack);
+        comb = ComponentSets::trim(self.sets().conv(&comb, &sub), self.slack);
       }
       for e in comb.into_iter().flatten() {
-        table_add(&mut tb, e);
+        self.sets().add(&mut tb, e);
       }
       return Ok(tb);
     }
@@ -1699,8 +2219,8 @@ pub(crate) struct DagPrep {
   pub(crate) facts: Facts,
   /// Spine lengths with no stop terms.
   spine_len: Vec<u64>,
-  /// Unshared sizes of the uniform model (the empty evaluation; it does not
-  /// read the width), or its overflow error.
+  /// Empty sizes capped at EMPTY_SIZE_CAP, ONLY for certain-excluded tests.
+  /// Errors concern unencodable own-payload counts, not large unfolded costs.
   size: Result<Vec<u128>, SharingError>,
 }
 
@@ -1712,35 +2232,40 @@ impl DagPrep {
     let base = Evaluation::new(nodes, &own, &super::dict::NoWidths);
     let edges = ReadEdges::new(nodes);
     let facts = graph_facts(dag);
-    let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
-    // With no opaque and no available term, `UPrep::node` reads the width
-    // nowhere (no cut is available and every cost is the inline bound), so
-    // any width gives these sizes.
-    let size = UPrep::new(nodes, 1, vec![false; n])
-      .map(|empty| empty.base.iter().map(|v| v.cost).collect());
+    let (spine_len, spine_tail) = spine_tables(nodes, &vec![false; n]);
+    let size = empty_sizes_capped(nodes, &spine_len, &spine_tail);
     DagPrep { own, base, edges, facts, spine_len, size }
   }
 }
 
-/// [`optimize_uniform`] (`w >= 1`) with the width-independent tables of
-/// `prep`, up to the decisions: the result has empty `roots` and `sharing`
-/// and `variable_len` 0, and the [`UniformPlan`] builds the expressions
-/// ([`UniformPlan::build`], which [`optimize_uniform`] does) or describes
-/// them ([`UniformPlan::shares`], the dry run of phase 1 of the tiered
-/// construction).
-pub(crate) fn optimize_uniform_with(
+/// Initial classification shared by the exact path and offline experiments.
+struct Initial<'d> {
+  up: UPrep<'d>,
+  cand: Vec<bool>,
+  bounds: Bounds,
+  vis0: (Vec<u64>, Vec<u64>),
+  theta: i128,
+  cs: Vec<TermId>,
+  ce_terms: Vec<TermId>,
+  unc: Vec<TermId>,
+  low: Vec<TermId>,
+  comps: Vec<Vec<TermId>>,
+  slack: i128,
+}
+
+/// The initial canonical classification, before any recursive reclassification.
+fn initial<'d>(
   w: u64,
-  dag: &SharingDag,
+  dag: &'d SharingDag,
   prep: &DagPrep,
   meter: &mut Meter<'_>,
-) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+) -> Result<Initial<'d>, SharingError> {
   if w == 0 {
     return Err(SharingError::FormatBound(FormatBound::UniformWidth { w }));
   }
   let wu = u(w);
   let nodes = dag.nodes();
   let n = nodes.len();
-  let p = prof::scope(Phase::Classify);
   let facts = &prep.facts;
   // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
   // before the search (Lean's `optimizeUniformExpanded`).
@@ -1750,7 +2275,7 @@ pub(crate) fn optimize_uniform_with(
       bound: TELE_SUBADD_END,
     }));
   }
-  // Unshared sizes C_0 (no stop terms, nothing available).
+  // Predicate-sufficient min(C_0, cap); never reused as a general model cost.
   let size: &[u128] = prep.size.as_ref().map_err(Clone::clone)?;
   // Classes: certain-excluded, low degree, and the gain test on visible
   // counts with threshold theta.
@@ -1818,6 +2343,47 @@ pub(crate) fn optimize_uniform_with(
   // contain the certain-stored terms.
   let slack = i128::from(tag0_len(k_cs.saturating_add(k_unc)))
     - i128::from(tag0_len(k_cs));
+  Ok(Initial {
+    up,
+    cand,
+    bounds,
+    vis0,
+    theta,
+    cs,
+    ce_terms,
+    unc,
+    low,
+    comps,
+    slack,
+  })
+}
+
+/// Exact optimization up to decisions; the returned plan builds expressions
+/// or describes their shares for the tiered construction's dry run.
+pub(crate) fn optimize_uniform_with(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  let p = prof::scope(Phase::Classify);
+  let Initial {
+    up,
+    cand,
+    bounds,
+    vis0,
+    theta,
+    cs,
+    ce_terms,
+    unc,
+    low,
+    comps,
+    slack,
+  } = initial(w, dag, prep, meter)?;
+  let nodes = dag.nodes();
+  let n = nodes.len();
+  let facts = &prep.facts;
+  let spine_len = &prep.spine_len;
   // Search each component (independent searches; see `Parallelism`).
   let search_area = |members: &Vec<TermId>,
                      area: Vec<TermId>,
@@ -1910,11 +2476,16 @@ pub(crate) fn optimize_uniform_with(
       stored_in,
       slack,
       theta,
+      set_words: ComponentSets::new(members, true).words,
       memo: FxHashMap::default(),
       memo_hits: 0,
       vals: vec![UVal::default(); area_len],
     };
     let tb = cx.solve(meter, members, &[], &[])?;
+    // Only the final component table escapes. Release its memo owners
+    // before recovering the owned table expected by the existing API.
+    drop(cx);
+    let tb = ComponentSets::new(members, true).decode(Arc::unwrap_or_clone(tb));
     let bd = table_best(&tb)
       .ok_or_else(|| internal("component search found no choice"))?;
     let mut best_set: Option<&Vec<TermId>> = None;
@@ -1974,6 +2545,41 @@ pub(crate) fn optimize_uniform_with(
     }
   }
   drop(p);
+  combine_uniform(
+    w,
+    dag,
+    prep,
+    meter,
+    Initial {
+      up,
+      cand,
+      bounds,
+      vis0,
+      theta,
+      cs,
+      ce_terms,
+      unc,
+      low,
+      comps,
+      slack,
+    },
+    results,
+  )
+}
+
+fn combine_uniform(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+  stage: Initial<'_>,
+  results: Vec<(Choice, CTable)>,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  let Initial { up, cs, ce_terms, unc, low, comps, .. } = stage;
+  let nodes = dag.nodes();
+  let n = nodes.len();
+  let facts = &prep.facts;
+  let k_cs = len64(cs.len());
   let p = prof::scope(Phase::Knapsack);
   let states_visited = meter.stats.states_created;
   // Combine: per-component optima, unless a lower count bracket is shorter.
@@ -2097,7 +2703,11 @@ pub(crate) fn optimize_uniform_with(
     states_visited,
     lower_bracket,
     stats: meter.stats.clone(),
+    #[cfg(test)]
+    component_tables: results.into_iter().map(|(_, table)| table).collect(),
   };
+  #[cfg(not(test))]
+  drop(results);
   drop(p);
   Ok((result, UniformPlan { dict, plan, model, k }))
 }
@@ -2238,6 +2848,507 @@ pub fn normalize_constant_sharing_uniform(
     return Err(internal("uniform output length differs from its accounting"));
   }
   Ok((out, result))
+}
+
+#[cfg(test)]
+mod convolution_tests {
+  use super::*;
+
+  // The previous eager implementation is the complete-table oracle.
+  fn eager(a: &CTable, b: &CTable) -> CTable {
+    let mut out = CTable::new();
+    for (da, sa) in a.iter().flatten() {
+      for (db, sb) in b.iter().flatten() {
+        table_add(&mut out, (da + db, merge_sorted(sa, sb)));
+      }
+    }
+    out
+  }
+
+  #[test]
+  fn merged_streams_preserve_duplicates_prefixes_and_exact_ties() {
+    let mut lists = vec![Vec::new()];
+    for len in 1..=3u32 {
+      for mut code in 0..3u32.pow(len) {
+        let mut xs = Vec::new();
+        for _ in 0..len {
+          xs.push(code % 3);
+          code /= 3;
+        }
+        xs.sort_unstable();
+        if !lists.contains(&xs) {
+          lists.push(xs);
+        }
+      }
+    }
+    assert_eq!(lists.len(), 20);
+    let pairs: Vec<_> = lists
+      .iter()
+      .flat_map(|a| {
+        lists
+          .iter()
+          .map(move |b| (a.as_slice(), b.as_slice(), merge_sorted(a, b)))
+      })
+      .collect();
+    for (a, b, expected) in &pairs {
+      let mut merged = Merged { a, b };
+      for (i, &t) in expected.iter().enumerate() {
+        assert_eq!(merged.len(), expected.len() - i);
+        assert_eq!(merged.next(), Some(t));
+      }
+      assert_eq!((merged.len(), merged.next()), (0, None));
+      for (c, d, other) in &pairs {
+        assert_eq!(
+          merged_prec(Merged { a, b }, Merged { a: c, b: d }),
+          set_prec(expected, other),
+          "{a:?}+{b:?} vs {c:?}+{d:?}"
+        );
+      }
+    }
+    // Equal choices must not replace the first winner, even when split differently.
+    assert!(!merged_prec(
+      Merged { a: &[1], b: &[2] },
+      Merged { a: &[], b: &[1, 2] }
+    ));
+  }
+
+  #[test]
+  fn convolution_preserves_complete_sparse_tables_and_actual_counts() {
+    let tables = [
+      vec![],
+      vec![None, None],
+      vec![Some((0, vec![])), None, None],
+      vec![None, Some((0, vec![1, 1])), None, Some((0, vec![]))],
+      vec![
+        Some((-1, vec![0, 4])),
+        Some((0, vec![1])),
+        None,
+        Some((-1, vec![4])),
+      ],
+      vec![Some((0, vec![2])), Some((0, vec![1])), Some((0, vec![1]))],
+    ];
+    for a in &tables {
+      for b in &tables {
+        assert_eq!(table_conv(a, b), eager(a, b));
+      }
+    }
+    // Deliberately unrelated row indices and overlapping input sets: count
+    // the actual merged multiset, preserve every duplicate and every hole.
+    let got = table_conv(
+      &vec![Some((0, vec![1, 1]))],
+      &vec![Some((0, vec![1, 2])), None],
+    );
+    assert_eq!(got, vec![None, None, None, None, Some((0, vec![1, 1, 1, 2]))]);
+  }
+
+  fn next(seed: &mut u64, n: u64) -> u64 {
+    *seed ^= *seed << 13;
+    *seed ^= *seed >> 7;
+    *seed ^= *seed << 17;
+    *seed % n
+  }
+
+  fn random_table(seed: &mut u64, parity: Option<u32>) -> CTable {
+    (0..next(seed, 10))
+      .map(|_| {
+        if next(seed, 4) == 0 {
+          return None;
+        }
+        let mut xs: Vec<_> = (0..next(seed, 9))
+          .map(|_| {
+            let t = TermId::try_from(next(seed, 12)).unwrap();
+            parity.map_or(t, |p| 2 * t + p)
+          })
+          .collect();
+        xs.sort_unstable();
+        if parity.is_some() {
+          xs.dedup();
+        }
+        Some((i128::from(next(seed, 5)) - 2, xs))
+      })
+      .collect()
+  }
+
+  #[test]
+  fn convolution_matches_eager_random_tables() {
+    let mut seed = 0x9E37_79B9_7F4A_7C15;
+    for i in 0..1000 {
+      // Alternate arbitrary overlapping multisets and disjoint group sets.
+      let disjoint = i % 2 == 0;
+      let a = random_table(&mut seed, disjoint.then_some(0));
+      let b = random_table(&mut seed, disjoint.then_some(1));
+      assert_eq!(table_conv(&a, &b), eager(&a, &b), "case {i}: {a:?} {b:?}");
+    }
+  }
+}
+
+#[cfg(test)]
+mod compact_choice_tests {
+  use super::*;
+
+  fn encode(codec: ComponentSets<'_>, tb: &CTable, mixed: bool) -> LocalTable {
+    tb.iter()
+      .enumerate()
+      .map(|(i, e)| {
+        e.as_ref().map(|(d, ids)| {
+          let set = if mixed && i % 2 == 1 {
+            LocalSet::Listed(ids.clone())
+          } else {
+            codec.pack(ids.clone())
+          };
+          (*d, set)
+        })
+      })
+      .collect()
+  }
+
+  #[test]
+  fn compact_roundtrip_and_ties_cover_word_and_fallback_boundaries() {
+    for n in [0, 1, 63, 64, 65, 127, 128, 511, 512, 513] {
+      let members: Vec<_> = (0..n).map(|i| 10 + 3 * tid(i)).collect();
+      let codec = ComponentSets::new(&members, true);
+      assert_eq!(codec.words.is_some(), n <= PACKED_MEMBERS);
+      let mut cases = vec![
+        vec![],
+        members.clone(),
+        members.iter().step_by(2).copied().collect(),
+        members.iter().take(3).copied().collect(),
+        members.iter().skip(n.saturating_sub(3)).copied().collect(),
+        vec![0],
+      ];
+      if n != 0 {
+        cases.push(vec![members[0], members[0]]);
+      }
+      for a in &cases {
+        let packed = codec.pack(a.clone());
+        assert_eq!(packed.len(), a.len());
+        assert_eq!(codec.iter(&packed).collect::<Vec<_>>(), *a);
+        let eligible = n <= PACKED_MEMBERS
+          && a.windows(2).all(|w| w[0] < w[1])
+          && a.iter().all(|t| members.binary_search(t).is_ok());
+        assert_eq!(matches!(packed, LocalSet::Packed(_)), eligible);
+        for b in &cases {
+          let bp = codec.pack(b.clone());
+          let al = LocalSet::Listed(a.clone());
+          let bl = LocalSet::Listed(b.clone());
+          for (x, y) in [(&packed, &bp), (&packed, &bl), (&al, &bp), (&al, &bl)]
+          {
+            assert_eq!(codec.prec(x, y), set_prec(a, b));
+            let union = codec.materialize(codec.pair(x, y));
+            assert_eq!(union.len(), a.len() + b.len());
+            assert_eq!(
+              codec.iter(&union).collect::<Vec<_>>(),
+              merge_sorted(a, b)
+            );
+          }
+        }
+      }
+      if n != 0 && n <= PACKED_MEMBERS {
+        let one = codec.pack(vec![members[0]]);
+        let pair = codec.pair(&one, &one);
+        assert!(!pair.packed, "overlap must preserve multiplicity");
+        assert_eq!(
+          codec.materialize(pair),
+          LocalSet::Listed(vec![members[0]; 2])
+        );
+      }
+    }
+    for members in [vec![2, 1], vec![1, 1]] {
+      let codec = ComponentSets::new(&members, true);
+      assert!(codec.words.is_none());
+      assert_eq!(codec.pack(vec![1, 2]), LocalSet::Listed(vec![1, 2]));
+    }
+  }
+
+  #[test]
+  fn compact_pairs_match_all_stream_ties_and_equal_choices() {
+    let members = [3, 6, 9, 12, 15, 18, 21, 24, 27];
+    let codec = ComponentSets::new(&members, true);
+    let cases = [
+      vec![],
+      vec![3],
+      vec![6],
+      vec![3, 6],
+      vec![6, 9],
+      vec![3, 3],
+      vec![0, 6],
+    ];
+    let sets: Vec<_> = cases
+      .iter()
+      .flat_map(|s| [codec.pack(s.clone()), LocalSet::Listed(s.clone())])
+      .collect();
+    for a in &sets {
+      for b in &sets {
+        for c in &sets {
+          for d in &sets {
+            let p = codec.pair(a, b);
+            let q = codec.pair(c, d);
+            let expected_p = codec.union(p).collect::<Vec<_>>();
+            let expected_q = codec.union(q).collect::<Vec<_>>();
+            assert_eq!(
+              codec.pair_prec(p, q),
+              set_prec(&expected_p, &expected_q)
+            );
+          }
+        }
+      }
+    }
+  }
+
+  fn next(seed: &mut u64, n: usize) -> usize {
+    *seed ^= *seed << 13;
+    *seed ^= *seed >> 7;
+    *seed ^= *seed << 17;
+    usize::try_from(*seed % len64(n)).unwrap()
+  }
+
+  fn table(seed: &mut u64, members: &[TermId], unique: bool) -> CTable {
+    (0..next(seed, 9))
+      .map(|_| {
+        if next(seed, 4) == 0 {
+          return None;
+        }
+        let mut ids: Vec<_> = (0..next(seed, 12))
+          .map(|_| {
+            let i = next(seed, members.len() + 2);
+            members.get(i).copied().unwrap_or(1_000_000 + tid(i))
+          })
+          .collect();
+        ids.sort_unstable();
+        if unique {
+          ids.dedup();
+        }
+        Some((i128::try_from(next(seed, 5)).unwrap() - 2, ids))
+      })
+      .collect()
+  }
+
+  #[test]
+  fn compact_tables_match_complete_listed_results() {
+    let mut seed = 0x9E37_79B9_7F4A_7C15;
+    for n in [0, 1, 63, 64, 65, 511, 512, 513] {
+      let members: Vec<_> = (0..n).map(|i| 17 + 5 * tid(i)).collect();
+      for i in 0..100 {
+        let a = table(&mut seed, &members, i % 2 == 0);
+        let b = table(&mut seed, &members, i % 2 == 0);
+        let expected = table_conv(&a, &b);
+        for enabled in [false, true] {
+          let codec = ComponentSets::new(&members, enabled);
+          for mixed in [false, true] {
+            let local =
+              codec.conv(&encode(codec, &a, mixed), &encode(codec, &b, mixed));
+            assert_eq!(codec.decode(local.clone()), expected, "n={n} case={i}");
+            for slack in [0, 1, 2] {
+              assert_eq!(
+                codec.decode(ComponentSets::trim(local.clone(), slack)),
+                table_trim(expected.clone(), slack)
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn compact_and_forced_listed_search_have_identical_tables_and_counters() {
+    let mut results = Vec::new();
+    for packed in [false, true] {
+      context_tests::with_context(1, |cx, parent| {
+        if !packed {
+          cx.set_words = None;
+        }
+        let limits = ExactSharingLimits::default();
+        let mut meter = Meter::new(&limits);
+        let table = cx.solve(&mut meter, &[0, 1], &[2, parent], &[3]).unwrap();
+        results.push((cx.sets().decode(table.as_ref().clone()), meter.stats));
+      });
+    }
+    assert_eq!(results[0], results[1]);
+    eprintln!(
+      "choice metadata: listed cell={}B local cell={}B; target packed payload=5*8B; vector capacity/hash/allocator overhead is additional",
+      size_of::<Option<Choice>>(),
+      size_of::<Option<(i128, LocalSet)>>()
+    );
+  }
+}
+
+#[cfg(test)]
+mod context_tests {
+  use super::*;
+
+  // Four candidate leaves under one candidate App ancestor. The two
+  // intermediate App prefixes have compact in-degree one, hence are not
+  // candidates. Storing the ancestor separates the leaves.
+  pub(super) fn with_context(
+    w: u128,
+    test: impl FnOnce(&mut SCtx<'_, '_>, TermId),
+  ) {
+    let leaves: Vec<_> = (0..4).map(|i| Expr::reference(i, vec![0])).collect();
+    let parent = leaves[1..]
+      .iter()
+      .fold(leaves[0].clone(), |f, x| Expr::app(f, x.clone()));
+    let mut roots = vec![parent.clone(), parent];
+    roots.extend(leaves);
+    let dag =
+      SharingDag::from_expanded_roots(&roots, &ExactSharingLimits::default())
+        .unwrap();
+    let nodes = dag.nodes();
+    let n = nodes.len();
+    let facts = graph_facts(&dag);
+    let cand: Vec<bool> = facts.deg.iter().map(|&d| d >= 2).collect();
+    let members: Vec<_> = (0..n).filter(|&t| cand[t]).map(tid).collect();
+    let up = UPrep::new(nodes, w, vec![false; n]).unwrap();
+    let b0 = uniform_bounds(nodes, w, &cand).unwrap();
+    let vis0 = visible_counts(&dag, &cand);
+    let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
+    let pos: Vec<_> = (0..n).map(tid).collect();
+    let mut member_of = vec![NO_POS; n];
+    for (i, &t) in members.iter().enumerate() {
+      member_of[ix(t)] = tid(i);
+    }
+    let in_edges = (0..n)
+      .map(|y| {
+        facts.parents[y]
+          .iter()
+          .map(|&q| {
+            let p = &nodes[ix(q)];
+            let edge =
+              p.children().as_slice().iter().position(|&c| ix(c) == y).unwrap();
+            (q, q, 1, u64::from(!continuation_edge(p, edge, &nodes[y])))
+          })
+          .collect()
+      })
+      .collect();
+    let mut root_occ = vec![0; n];
+    for &r in dag.roots() {
+      root_occ[ix(r)] += 1;
+    }
+    let root_mult = root_occ
+      .iter()
+      .enumerate()
+      .filter(|(_, m)| **m != 0)
+      .map(|(t, &m)| (tid(t), u128::from(m)))
+      .collect();
+    let set_words = ComponentSets::new(&members, true).words;
+    let mut cx = SCtx {
+      up: &up,
+      facts: &facts,
+      cand: &cand,
+      b0: &b0,
+      vis0: &vis0,
+      spine_len: &spine_len,
+      dag_size: len64(n),
+      members,
+      member_of,
+      area: pos.clone(),
+      pos: &pos,
+      in_edges,
+      root_occ,
+      root_mult,
+      stored_in: vec![],
+      slack: 1,
+      theta: 2,
+      set_words,
+      memo: FxHashMap::default(),
+      memo_hits: 0,
+      vals: vec![UVal::default(); n],
+    };
+    test(&mut cx, dag.roots()[0]);
+  }
+
+  #[test]
+  fn reduced_context_keeps_all_counts_ties_and_memo_replay() {
+    with_context(1, |cx, parent| {
+      let group = [0, 1];
+      let in_all = [2, parent];
+      let out_all = [3];
+      let in_f = cx.flags(&in_all);
+      let out = cx.flags(&out_all);
+      let b = cx.rebound(&out).unwrap();
+      let opq: Vec<_> = cx
+        .area
+        .iter()
+        .enumerate()
+        .map(|(j, &t)| in_f[j] && cx.opaque_under(&b, t))
+        .collect();
+      let key = cx.memo_key(&opq, &in_f, &out, &group).0;
+      let (in_red, out_red) =
+        cx.key_context(&group, &key[group.len() + 1..], &in_f, &out).unwrap();
+      assert_eq!((&in_red, &out_red), (&vec![parent], &vec![]));
+      assert!(in_red.len() < in_all.len() && out_red.len() < out_all.len());
+      let base_full = cx.phi(&in_f, &in_all).unwrap().0;
+      let base_red = cx.phi(&cx.flags(&in_red), &in_red).unwrap().0;
+      let mut reference = CTable::new();
+      for mask in 0..4 {
+        let chosen: Vec<_> = group
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| mask & (1 << i) != 0)
+          .map(|(_, &t)| t)
+          .collect();
+        let full = merge_sorted(&in_all, &chosen);
+        let red = merge_sorted(&in_red, &chosen);
+        let df = to_i(cx.phi(&cx.flags(&full), &full).unwrap().0).unwrap()
+          - to_i(base_full).unwrap();
+        let dr = to_i(cx.phi(&cx.flags(&red), &red).unwrap().0).unwrap()
+          - to_i(base_red).unwrap();
+        assert_eq!(df, dr, "subset {chosen:?}");
+        table_add(&mut reference, (dr, chosen));
+      }
+      let reference = table_trim(reference, cx.slack);
+      assert!(reference.iter().flatten().count() >= 2);
+      assert_eq!(
+        reference[1].as_ref().unwrap().1,
+        vec![1],
+        "canonical one-member tie"
+      );
+      let limits = ExactSharingLimits::default();
+      let mut meter = Meter::new(&limits);
+      let got = cx.solve(&mut meter, &group, &in_all, &out_all).unwrap();
+      let decoded = cx.sets().decode(got.as_ref().clone());
+      assert_eq!(
+        decoded.iter().flatten().collect::<Vec<_>>(),
+        reference.iter().flatten().collect::<Vec<_>>()
+      );
+      let (hits, states) = (cx.memo_hits, meter.stats.states_created);
+      let replay = cx.solve(&mut meter, &group, &[parent], &[2, 3]).unwrap();
+      assert_eq!(got, replay);
+      assert_eq!(
+        (cx.memo_hits, meter.stats.states_created),
+        (hits + 1, states)
+      );
+    });
+  }
+
+  #[test]
+  fn reduced_context_rejects_mixed_reach_and_bad_keys() {
+    with_context(1, |cx, parent| {
+      assert!(cx.sep_check(&[0, 1], &[parent], &[]).unwrap());
+      assert!(cx.sep_check(&[0, 1], &[], &[parent]).unwrap());
+      assert!(!cx.sep_check(&[0, 1], &[], &[]).unwrap());
+      assert!(!cx.sep_check(&[0, 1], &[0, parent], &[]).unwrap());
+      let inside = cx.flags(&[parent]);
+      let outside = cx.flags(&[]);
+      for (group, entries) in [
+        (vec![0, 0], vec![]),
+        (vec![0], vec![3 * u64::from(parent) + 2; 2]),
+        (vec![0], vec![3 * u64::from(parent)]),
+        (vec![0], vec![3 * u64::from(TermId::MAX) + 2]),
+        (vec![parent], vec![]),
+      ] {
+        assert!(cx.key_context(&group, &entries, &inside, &outside).is_err());
+      }
+      let limits = ExactSharingLimits::default();
+      assert!(matches!(cx.solve(&mut Meter::new(&limits), &[0, 1], &[], &[]),
+        Err(SharingError::Internal(msg)) if msg == "search group is not separated"));
+    });
+    with_context(100, |cx, parent| {
+      // A stored term is not necessarily opaque: recheck under the actual
+      // reduced bounds instead of trusting an encoded opaque tag.
+      assert!(!cx.sep_check(&[0, 1], &[parent], &[]).unwrap());
+    });
+  }
 }
 
 #[cfg(test)]
