@@ -26,6 +26,7 @@ import Ix.Cert.SourcePrelude
 import Ix.Cert.CtxAgreeProj
 import Ix.Cert.CtxAgreeOwners
 import Ix.Cert.CtxAgreeProjFields
+import Ix.Cert.SourceNames
 
 /-! # The certification statements, frozen
 
@@ -5282,3 +5283,19 @@ run_cmd do
     (#[`ownersOf_good, `lowerInductive_owners_good, `projLevelEntry_mapKeys,
       `noteGenerated_projLevels, `fold_projection_fields,
       `UnitAgree.projection_entries].map (`Ix.Cert.CtxAgree ++ ·))
+
+/-! ## Source names: raw generated and production ordinary classification
+
+The generator results are nonempty and all-derived. The actual raw Source
+read classifies its generated prefix. Production fiberAliasAt preserves
+ordinary keys through the quotient conversion; arbitrary FiberMap does not.
+This does not establish retained indices, duplicate/drop replay or iota-level
+consistency after collapse, and adds no final correctness premise. -/
+
+/-- info: [cert-audit] source name classification: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "source name classification"
+    (#[`fiberAliasAt_not_aux, `generate_names, `lower_generated,
+      `quotient_lower_ordinary].map (`Ix.Cert.SourceNames ++ ·))
