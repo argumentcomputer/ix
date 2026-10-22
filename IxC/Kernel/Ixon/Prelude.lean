@@ -168,13 +168,26 @@ def checkPreludeShape (pre : Prelude md) : Except String Unit :=
       (fun i => names[i]? != pinned[i]?)).getD 0
     throw s!"the prelude's declaration {i} does not name its pinned prelude roles"
 
+/-- A recursor used from fallback has its own singleton record. -/
+def fallbackRecursorShape (c : Ixon.Constant) : Bool :=
+  match c.info with
+  | .muts ms => ms.all fun | .recr _ => false | _ => true
+  | _ => true
+
+/-- Check the committed fallback's recursor shape, including its evidence. -/
+def checkFallbackRecursors (pre : Prelude md) : Except String Unit :=
+  if (pre.records ++ pre.evidence).all (fun p => fallbackRecursorShape p.2) then pure ()
+  else throw "prelude fallback contains a mutual recursor"
+
 /-- The committed prelude, read under the role table `t`, with the default
 evidence backing the store, its shape checked (`checkPreludeShape`): every
 prelude declaration names its pinned prelude roles, so the prelude read under
-any table it passes for is keyed as under the default table. -/
+any table it passes for is keyed as under the default table. The fallback
+recursors, including evidence, must also have singleton records. -/
 def preludeFor (t : Ix.Kernel.RoleTable) : Except String (Prelude md) := do
   let pre ← preludeRead t
   checkPreludeShape pre
+  checkFallbackRecursors pre
   pure pre
 
 /-- The committed prelude under the default table. A failure is a corrupted

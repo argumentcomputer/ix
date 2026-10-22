@@ -25,6 +25,7 @@ import Ix.Cert.CtxAgreeHints
 import Ix.Cert.SourcePrelude
 import Ix.Cert.ReaderKeys
 import Ix.Cert.ReaderClosureKeys
+import Ix.Cert.ReaderFallback
 import Ix.Cert.CtxAgreeProj
 import Ix.Cert.CtxAgreeOwners
 import Ix.Cert.CtxAgreeProjFields
@@ -5410,3 +5411,23 @@ run_cmd do
     (#[`context_input, `context_coherent_of_nodup, `selected_origin,
       `standalone_origin_cached, `selected_cached_or_input_mutual,
       `seeded_resolved_cached, `published_resolved_cached].map (`Ix.Cert.ReaderClosureKeys ++ ·))
+
+/-! ## The checked committed fallback
+
+preludeFor checks fallback recursor shape independently of declaration
+role names; generic readPrelude and injected preludes remain flexible.
+ReaderFallback derives singleton recursor origins from that check, and
+coherence from kernel-checked fixed-address uniqueness and structural
+decoder transport, without reducing evidence bodies. Its selected-recursor
+result is scoped to actual preludeFor success and retains the mutual-input
+case. All-emitting-reference coverage, paired traces and StoredCanonical
+remain separate; no final premise or new axiom is introduced. -/
+
+/-- info: [cert-audit] committed fallback: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "committed fallback"
+    ((#[`fixed_addresses, `decoded_keys, `preludeFor_keys, `preludeFor_singletons,
+      `context_coherent, `selected].map (`Ix.Cert.ReaderFallback ++ ·)) ++
+      #[``Ix.Kernel.Reader.preludeFor_checks])

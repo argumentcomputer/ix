@@ -73,9 +73,12 @@ the entry's change (4 in); the in-model generator's totality (S1) from
 and the ruling is gone); the prelude-copy check ((b), `State.keepsPrelude` in `readStream`)
 from 6099, by the entry's change (38 in: the check, the state's keys and the derived
 `DecidableEq` it compares with; externs, `unsafe` and csimp unchanged). -/
+-- The committed fallback recursor guard (2026-10-22) adds seven compiled
+-- functions to each entry closure. Measured before refreezing; externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 6137 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ixon.BlockOrder.compareExpr]: 6144 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

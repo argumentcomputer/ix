@@ -67,10 +67,13 @@ end Ixon.Authenticated.Audit
 -- and the ruling is gone); the prelude-copy check ((b), `State.keepsPrelude` in
 -- `readStream`) from 6118, likewise (38 in: the check, the state's keys and the derived
 -- `DecidableEq` it compares with; externs, `unsafe` and csimp unchanged).
+-- The committed fallback recursor guard (2026-10-22) adds seven compiled
+-- functions to each entry closure. Measured before refreezing; externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 6156 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+ Address.admissionHash]: 6163 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -241,7 +244,7 @@ under its public name; externs, `unsafe` and csimp unchanged),
 and the prelude-copy check ((b), `State.keepsPrelude` in `readStream`) from 6060, likewise
 (38 in: the check, the state's keys and the derived `DecidableEq` it compares with). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6098 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6105 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

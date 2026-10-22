@@ -287,4 +287,34 @@ def andElsewhere : Except String Ix.Kernel.RoleTable := do
 #guard (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .anon)).isOk
 #guard (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)).isOk
 
+
+/-! The committed fallback has singleton recursors. This check is separate
+from declaration role shape and leaves explicit readPrelude inputs flexible. -/
+
+def fallbackOf (c : Ixon.Constant) : Ix.Kernel.Reader.Prelude .anon :=
+  { evidence := #[(address 98, c)] }
+
+def singletonRecFallback : Ixon.Constant := ⟨.recr default, #[], #[], #[]⟩
+def mutualRecFallback : Ixon.Constant := ⟨.muts #[.indc default, .recr default], #[], #[], #[]⟩
+
+def fallbackRefused (pre : Ix.Kernel.Reader.Prelude .anon) : Bool :=
+  match Ix.Kernel.Reader.checkFallbackRecursors pre with
+  | .error "prelude fallback contains a mutual recursor" => true
+  | _ => false
+
+#guard (Ix.Kernel.Reader.checkFallbackRecursors (fallbackOf singletonRecFallback)).isOk
+#guard (Ix.Kernel.Reader.checkFallbackRecursors (fallbackOf ⟨.muts #[.indc default], #[], #[], #[]⟩)).isOk
+#guard (Ix.Kernel.Reader.checkFallbackRecursors (fallbackOf ⟨.muts #[.defn default], #[], #[], #[]⟩)).isOk
+#guard fallbackRefused (fallbackOf mutualRecFallback)
+-- The same exact refusal covers recursors in the prelude records.
+#guard fallbackRefused { records := #[(address 98, mutualRecFallback)] }
+-- Generic readers may use custom fallback data; this restriction belongs to preludeFor.
+#guard (Ix.Kernel.Reader.readPrelude (md := .anon) default #[]
+  #[(address 98, mutualRecFallback)]).isOk
+-- Exercise the actual fixed prelude and evidence, without replacing either record array.
+#guard match (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .anon)) with
+  | .ok pre => (Ix.Kernel.Reader.checkFallbackRecursors pre).isOk
+  | .error _ => false
+#guard (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .meta)).isOk
+
 end Tests.Ix.Kernel.CertifiedEntry
