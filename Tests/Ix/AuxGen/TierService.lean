@@ -143,7 +143,8 @@ def mlListService : TestSeq :=
     let n := Lean.Name.str (Lean.Name.str (Lean.Name.num `_private.Batteries.Data.MLList.Basic 0)
       "MLList") "MLListImpl"
     let key := Ix.Name.fromLeanName n
-    let env ← envOf leanEnv #[n]
+    -- Auxiliary generation follows the families exported by the closure.
+    let env ← envOf leanEnv #[n, n ++ `below, n ++ `brecOn]
     let blocks := condense env
     let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
     let svc := (Service.create pre env blocks
@@ -161,9 +162,15 @@ def mlListService : TestSeq :=
       | return (false, 0, 0, some "MLList block missing")
     let oracle := Ixc.oracleOf .shadow false
       { members, recursors := true, lookup := env.get? } none 4 (fun _ => .ok svc)
-    let some (st, _) ← IO.ofExcept (← IO.lazyPure fun _ =>
-      Tests.Ix.AuxGen.BelowIxc.tailStats cenv lo members oracle)
-      | return (false, 0, 0, some "MLList tail missing")
+    let tail : Ix.CompileM.CompileM (Option IxcStats) := do
+      let some (cs, sorted, addr, maps) ← Tests.Ix.AuxGen.BelowIxc.tailArgs lo members
+        | return none
+      let (_, ctx) ← (compileMutualAuxTail cs sorted addr maps (.ixc maps oracle)).run
+        AuxKernelCtx.new
+      return some ctx.ixcStats
+    let (st?, _) ← IO.ofExcept (← IO.lazyPure fun _ =>
+      Tests.Ix.AuxGen.BelowIxc.runIn cenv lo tail)
+    let some st := st? | return (false, 0, 0, some "MLList tail missing")
     let counts := Tests.Ix.AuxGen.BelowIxc.statsLine st
     IO.println s!"MLList: tier unsafe, not accepted; {counts}"
     let ok := st.queries > 0 && st.answered == st.queries && st.equal == st.queries &&
