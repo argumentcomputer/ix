@@ -1,0 +1,43 @@
+import Tests.LegacyAiur.TraceCodegen
+import LegacyAiur.Stages.TraceCuda
+
+/-! Regenerates the trace-codegen test fixtures: for the planner's fixture
+program and the BLAKE3 library, the Rust seed packers and row writers under
+`crates/aiur-legacy/src/trace_codegen/tests/`, the CUDA units under
+`crates/aiur-legacy/cuda/generated/`, and the manifest that binds them. `--check`
+compares instead of writing, as `ix codegen --trace-bundle --check` does
+for the production units. -/
+
+def main (args : List String) : IO UInt32 := do
+  unless args.isEmpty || args == ["--check"] do
+    IO.eprintln "Expected no arguments or --check"
+    return 1
+  let files : Except String (Array (String × String)) := do
+    let mut files := #[]
+    let mut units := #[]
+    for (unit, top) in #[("fixtures", ← LegacyAiurTests.TraceCodegen.fixtureProgram),
+        ("blake3", ← LegacyAiurTests.TraceCodegen.blake3Program)] do
+      let stem := if unit == "fixtures" then "generated" else "blake3"
+      let cuda ← LegacyAiur.TraceCuda.emit top unit
+      let digest := (Blake3.Rust.hash cuda.toUTF8).val.data.map fun n => Lean.toJson n.toNat
+      let path := s!"cuda/generated/{unit}.cu"
+      units := units.push (Lean.Json.mkObj [("source", Lean.toJson path), ("digest", Lean.Json.arr digest)])
+      files := files ++ #[
+        (s!"crates/aiur-legacy/src/trace_codegen/tests/{stem}.rs", ← LegacyAiur.TraceCodegen.emit top "crate"),
+        (s!"crates/aiur-legacy/src/trace_codegen/tests/{stem}_cuda.rs", ← LegacyAiur.TraceCuda.registry top unit "crate"),
+        (s!"crates/aiur-legacy/{path}", cuda)]
+    let manifest := Lean.Json.mkObj [("abi", Lean.toJson (2 : Nat)), ("units", Lean.Json.arr units)]
+    pure (files.push ("crates/aiur-legacy/cuda/trace-manifest.json", manifest.pretty ++ "\n"))
+  let files ← match files with
+    | .ok files => pure files
+    | .error error => IO.eprintln error; return 1
+  for (path, source) in files do
+    if args == ["--check"] then
+      if (← IO.FS.readFile path) != source then
+        IO.eprintln s!"{path} is stale"
+        return 1
+    else
+      if let some parent := (System.FilePath.mk path).parent then IO.FS.createDirAll parent
+      IO.FS.writeFile path source
+    IO.println s!"{path}: {source.utf8ByteSize} bytes"
+  return 0

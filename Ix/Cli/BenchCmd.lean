@@ -87,7 +87,7 @@ structure EnvSpec where
 def envSpecs : List EnvSpec := [
   { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
   { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean" },
-  -- Init+Std+Lean+Batteries as ONE env: the whole-env Aiur execution
+  -- Init+Std+Lean+Batteries as ONE env: the whole-env LegacyAiur execution
   -- benchmark's fast tier (the union deduplicates — Lean already
   -- carries Init and Std).
   { name := "ISLB",    module := "Benchmarks/Compile/CompileISLB.lean" },
@@ -143,7 +143,7 @@ def testbedOnMachine (testbed machine : String) : String :=
 
 /-- The stage qualifiers a pipeline measure may carry ahead of its base
     name — one per pipeline stage, named for what the stage proves
-    (`ixvm-`: the IxVM typecheck; `fri-verifier-`: the in-circuit FRI
+    (`ixvm-`: the LegacyIxVM typecheck; `fri-verifier-`: the in-circuit FRI
     verifier over the previous proof; `join-`: the optional pair-wide
     aggregate join; the KZG stages add their own entries as they land) —
     plus `pipeline-` for the whole run. Stripped
@@ -226,7 +226,7 @@ def backendSpecs : List BackendSpec := [
   -- every stage of the pipeline, per constant, plus the total. The optional
   -- `bench-typecheck --join` contributes a separate pair row, measured in
   -- its own process after the per-constant runs. The ixvm
-  -- stage proves the constant's IxVM typecheck; the fri-verifier stage
+  -- stage proves the constant's LegacyIxVM typecheck; the fri-verifier stage
   -- executes the in-circuit multi-stark verifier over that fresh proof
   -- and proves THAT execution; the KZG stages will join as stages 3/4
   -- when they land, folding into the same ledger. Each stage reports the
@@ -248,7 +248,7 @@ def backendSpecs : List BackendSpec := [
                  ("execute", "aiur-execute")],
     unscheduled := ["execute"],
     stages := [("prove",
-      [("IxVM on FRI",
+      [("LegacyIxVM on FRI",
          ["ixvm-execute-time", "ixvm-prove-time", "ixvm-throughput",
           "ixvm-peak-rss", "ixvm-proof-size", "ixvm-verify-time",
           "ixvm-fft-cost", "ixvm-trace-shards"]),
@@ -264,7 +264,7 @@ def backendSpecs : List BackendSpec := [
          ["total-time", "pipeline-throughput", "pipeline-peak-rss"])])],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "fft-cost"])],
-    -- ixvm-fft-cost is deterministic but only ever drops on a real Aiur
+    -- ixvm-fft-cost is deterministic but only ever drops on a real LegacyAiur
     -- win → upper-only 5% instead of a hard pin. fri-verifier-fft-cost
     -- drifts ~±15% run-to-run (the parallel prover emits byte-different
     -- valid proofs, so the verifier authenticates different Merkle
@@ -295,7 +295,7 @@ def backendSpecs : List BackendSpec := [
                    ("fri-verifier-proof-size", "0.05", "_"),
                    ("ixvm-verify-time", "0.10", "_"),
                    ("fri-verifier-verify-time", "0.10", "_")] },
-  -- aiur-sharded-env: whole-env Aiur execution — the sharded feeder pipeline
+  -- aiur-sharded-env: whole-env LegacyAiur execution — the sharded feeder pipeline
   -- end-to-end at env scale, one row per env. Shards the `.ixe` for the
   -- runner's RAM (`ix shard --max-ram 100`: seed sizing), then one gated
   -- full-width rayon batch with the split audit (`ix check --ram-budget
@@ -756,7 +756,7 @@ is not a benchmark run"
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "aiur-sharded-env" =>
-    -- Whole-env sharded Aiur execution: seed the env for the runner's RAM
+    -- Whole-env sharded LegacyAiur execution: seed the env for the runner's RAM
     -- from its static block-shape score (`--max-ram 100`), then ONE gated
     -- full-width rayon batch over the manifest — the RamGate bounds peak
     -- RSS, so no `--jobs` is passed. The check writes the env-keyed row

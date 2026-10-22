@@ -1,12 +1,12 @@
 /-
-  Drives the Aiur kernel through every lean-kernel-arena tutorial
+  Drives the LegacyAiur kernel through every lean-kernel-arena tutorial
   fixture (`Tests.Ix.Kernel.TutorialDefs` + `NatReduction`) using the
-  shared `IxVM.ixVMFull` toplevel + `verify_const` entrypoint.
+  shared `LegacyIxVM.ixVMFull` toplevel + `verify_const` entrypoint.
 
   Each fixture's outcome is classified against the test case's expected
-  outcome (good must typecheck; bad must be rejected via Aiur execution
+  outcome (good must typecheck; bad must be rejected via LegacyAiur execution
   error, where the error originates from an `assert_eq!` failure inside
-  the Aiur kernel source).
+  the LegacyAiur kernel source).
 
   `verify_const` is a DEBUG entrypoint, not a claim — it
   type-checks only the target and trusts transitive deps. Arena uses
@@ -24,14 +24,14 @@
     typechecks);
   - constants filtered by `compile_env` (ungrounded blocks);
   - constants in `knownIncompatible` (meta-only Lean kernel checks the
-    Aiur kernel structurally cannot see).
+    LegacyAiur kernel structurally cannot see).
 -/
 import Ix.Meta
-import Ix.Aiur.Protocol
-import Ix.Aiur.Compiler
-import Ix.IxVM
-import Ix.IxVM.ClaimHarness
-import Tests.Aiur.Common
+import LegacyAiur.Protocol
+import LegacyAiur.Compiler
+import LegacyIxVM
+import LegacyIxVM.ClaimHarness
+import Tests.LegacyAiur.Common
 import Tests.Ix.Kernel.TutorialMeta
 import Tests.Ix.Kernel.TutorialDefs
 import Tests.Ix.Kernel.NatReduction
@@ -39,7 +39,7 @@ import LSpec
 
 open LSpec
 open Tests.Ix.Kernel.TutorialMeta
-open IxVM.ClaimHarness
+open LegacyIxVM.ClaimHarness
 
 namespace Tests.Ix.Kernel.Arena
 
@@ -47,7 +47,7 @@ structure ArenaCheck where
   name : Lean.Name
   expectPass : Bool
 
-/-- Constants the Aiur kernel structurally cannot adjudicate. Skipped
+/-- Constants the LegacyAiur kernel structurally cannot adjudicate. Skipped
     rather than counted as pass/fail. -/
 def knownIncompatible : Array (Lean.Name × String) := #[
   -- Duplicate `levelParams` is a meta-mode hygiene check (Lean's
@@ -61,13 +61,13 @@ def knownIncompatible : Array (Lean.Name × String) := #[
   -- AdvNat.rec is a malformed raw recursor payload that aux-gen would
   -- sanitize before it reaches Ixon. Tests.Ix.Kernel.Tutorial uses a
   -- dedicated FFI (`rs_kernel_check_malformed_rec_rule_ixon`) to inject
-  -- the bad rule post-aux-gen. Standard Lean→Ixon→Aiur path never
+  -- the bad rule post-aux-gen. Standard Lean→Ixon→LegacyAiur path never
   -- exposes the malformed rule.
   (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec,
    "malformed rec rule sanitized by aux-gen; Tutorial uses bespoke FFI"),
   -- Same reason as tut06_bad01: duplicate levelParams is Meta-mode
   -- hygiene; Ixon Anon stores only the `lvls` COUNT, so the duplication
-  -- pattern is erased before the Aiur kernel can see it.
+  -- pattern is erased before the LegacyAiur kernel can see it.
   (`inductLevelParam,
    "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107")
 ]
@@ -98,7 +98,7 @@ private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run 
     `ixonEnv`. Returns `error` when `compile_env` filtered the
     constant (no Ixon address) — caller treats that as a skip. -/
 private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
-    Except String (Array Aiur.G × Aiur.IOBuffer) :=
+    Except String (Array LegacyAiur.G × LegacyAiur.IOBuffer) :=
   match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
   | none => .error "ungrounded by compile_env"
   | some addr =>
@@ -107,11 +107,11 @@ private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
     let witness := buildVerifyConst ixonEnv addr
     .ok (witness.input, witness.inputIOBuffer)
 
-/-- Run the arena suite against `compiled` (already-compiled Aiur
-    `IxVM.ixVMFull` toplevel) using a single shared Ixon env. Returns one
+/-- Run the arena suite against `compiled` (already-compiled LegacyAiur
+    `LegacyIxVM.ixVMFull` toplevel) using a single shared Ixon env. Returns one
     `TestSeq` entry per fixture. -/
 def arenaTests (env : Lean.Environment)
-    (compiled : Aiur.CompiledToplevel) : IO TestSeq := do
+    (compiled : LegacyAiur.CompiledToplevel) : IO TestSeq := do
   let funIdx ← match compiled.getFuncIdx `verify_const with
     | some i => pure i
     | none => throw <| IO.userError "verify_const entrypoint missing"

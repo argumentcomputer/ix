@@ -38,7 +38,7 @@ def main (args : List String) : IO Unit := do
   IO.println s!"Exported {kernelPrimitives.size} primitive addresses and \
     {env.consts.size} constants to {dir}"
   -- The checked-in table must be this output: it is the record the Rust
-  -- `PrimAddrs::new`, `Ix/Tc/Primitive.lean` and the IxVM literals mirror.
+  -- `PrimAddrs::new`, `Ix/Tc/Primitive.lean` and the LegacyIxVM literals mirror.
   unless (← IO.FS.readFile "Tests/Fixtures/ixon-v4/primitives.tsv") == text do
     throw <| IO.userError s!"Tests/Fixtures/ixon-v4/primitives.tsv differs from the live \
       addresses; copy {tsvPath} over it and update `PrimAddrs::new`"

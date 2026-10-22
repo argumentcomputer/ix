@@ -1,8 +1,8 @@
 module
 public import Tests.Ix.IxonV4
-public import Tests.Aiur.Common
-public import Ix.IxVM.Toplevel
-public import Ix.IxVM.ClaimHarness
+public import Tests.LegacyAiur.Common
+public import LegacyIxVM.Toplevel
+public import LegacyIxVM.ClaimHarness
 public import Ix.Resource.Claim
 public import Tests.Ix.ResourceAddressed
 
@@ -43,22 +43,22 @@ def codecEntrypoints := ⟦
   }
 ⟧
 
-def codecToplevel : Except Aiur.Global Aiur.Source.Toplevel := do
-  let vm ← Aiur.Library.core.merge Aiur.Library.byteStream
-  let vm ← vm.merge IxVM.ixon
-  let vm ← vm.merge IxVM.ixonSerialize
-  let vm ← vm.merge IxVM.ixonDeserialize
+def codecToplevel : Except LegacyAiur.Global LegacyAiur.Source.Toplevel := do
+  let vm ← LegacyAiur.Library.core.merge LegacyAiur.Library.byteStream
+  let vm ← vm.merge LegacyIxVM.ixon
+  let vm ← vm.merge LegacyIxVM.ixonSerialize
+  let vm ← vm.merge LegacyIxVM.ixonDeserialize
   let vm ← vm.merge codecEntrypoints
   return vm.prune [`ixon_expr_codec, `ixon_const_codec,
     `ixon_expr_decode, `ixon_const_decode]
 
-def codecBuffer (bytes : ByteArray) : Aiur.IOBuffer :=
-  (default : Aiur.IOBuffer).extend 0 #[0] (bytes.data.map .ofUInt8)
+def codecBuffer (bytes : ByteArray) : LegacyAiur.IOBuffer :=
+  (default : LegacyAiur.IOBuffer).extend 0 #[0] (bytes.data.map .ofUInt8)
 
 /-- Check acceptance, empty output, and an unchanged I/O buffer on each interpreter.
 Production claims also run through the generated Rust VM with query-count parity. -/
 def checkVM (env : AiurTestEnv) (label : String) (fnName : Lean.Name)
-    (input : Array Aiur.G) (buffer : Aiur.IOBuffer) (accept : Bool)
+    (input : Array LegacyAiur.G) (buffer : LegacyAiur.IOBuffer) (accept : Bool)
     (generated : Bool := false) : IO Nat := do
   let some index := env.compiled.getFuncIdx fnName
     | throw <| IO.userError s!"{label}: missing VM entrypoint {fnName}"
@@ -81,14 +81,14 @@ def checkVM (env : AiurTestEnv) (label : String) (fnName : Lean.Name)
         throw <| IO.userError s!"{label}: generated VM output or query counts differ"
     | .error e =>
       if accept then throw <| IO.userError s!"{label}: generated VM execution failed: {e}"
-  let name := Aiur.Global.mk fnName
+  let name := LegacyAiur.Global.mk fnName
   let some (.function function) := env.decls.getByKey name
     | throw <| IO.userError s!"{label}: missing source entrypoint {fnName}"
-  let inputs := Aiur.unflattenInputs env.decls input (function.inputs.map (·.2))
-  let (interpreted, state) := Aiur.runFunction env.decls name inputs buffer
+  let inputs := LegacyAiur.unflattenInputs env.decls input (function.inputs.map (·.2))
+  let (interpreted, state) := LegacyAiur.runFunction env.decls name inputs buffer
   match interpreted with
   | .ok value =>
-    let flattened := Aiur.flattenValue env.decls (fun g => env.compiled.getFuncIdx g.toName) value
+    let flattened := LegacyAiur.flattenValue env.decls (fun g => env.compiled.getFuncIdx g.toName) value
     unless accept && flattened.isEmpty && state.ioBuffer == buffer do
       throw <| IO.userError s!"{label}: source interpretation unexpectedly accepted or changed output"
   | .error e =>
@@ -108,10 +108,10 @@ def checkVMEncoding (env : AiurTestEnv) (name : String) (bytes : ByteArray)
   return checks
 
 def checkVMProof (env : AiurTestEnv) (fnName : Lean.Name)
-    (input : Array Aiur.G) (buffer : Aiur.IOBuffer) : IO Unit := do
+    (input : Array LegacyAiur.G) (buffer : LegacyAiur.IOBuffer) : IO Unit := do
   let index := env.compiled.getFuncIdx fnName |>.get!
   let (claim, proof, _) ← IO.ofExcept (env.aiurSystem.prove index input buffer)
-  IO.ofExcept (env.aiurSystem.verify claim (Aiur.Proof.ofBytes proof.toBytes))
+  IO.ofExcept (env.aiurSystem.verify claim (LegacyAiur.Proof.ofBytes proof.toBytes))
 
 /-- Every counted decoding path accepts one complete element and rejects a
 short stream when the count is two, 128 (a two-byte TagN count for both
@@ -151,24 +151,24 @@ def runCountTruncations (env : AiurTestEnv) : IO Nat := do
         bytes accept `ixon_const_decode)
   return checks
 
-def replaceClaimBytes (witness : IxVM.ClaimHarness.ClaimWitness) (bytes : ByteArray) :
-    IxVM.ClaimHarness.ClaimWitness :=
-  let key := IxVM.ClaimHarness.packedDigestKey (Address.blake3 bytes)
+def replaceClaimBytes (witness : LegacyIxVM.ClaimHarness.ClaimWitness) (bytes : ByteArray) :
+    LegacyIxVM.ClaimHarness.ClaimWitness :=
+  let key := LegacyIxVM.ClaimHarness.packedDigestKey (Address.blake3 bytes)
   { witness with
     input := key
     inputIOBuffer := witness.inputIOBuffer.extend 0 key (bytes.data.map .ofUInt8) }
 
 def checkVMClaim (env : AiurTestEnv) (label : String)
-    (witness : IxVM.ClaimHarness.ClaimWitness) (accept : Bool) : IO Nat :=
+    (witness : LegacyIxVM.ClaimHarness.ClaimWitness) (accept : Bool) : IO Nat :=
   checkVM env label witness.funcName witness.input witness.inputIOBuffer accept (generated := true)
 
 def runVMClaims : IO Nat := do
-  let vm ← IO.ofExcept (AiurTestEnv.build IxVM.ixVM)
+  let vm ← IO.ofExcept (AiurTestEnv.build LegacyIxVM.ixVM)
   let (base, unit) := Tests.ResourceAddressed.unitEnv
   let constant := Tests.ResourceAddressed.identity unit
   let (env, validTarget) := Tests.ResourceAddressed.store base constant
   let env := { env with anonHints := env.anonHints.insert validTarget .opaque }
-  let some tree := IxVM.ClaimHarness.envCanonicalTree env
+  let some tree := LegacyIxVM.ClaimHarness.envCanonicalTree env
     | throw <| IO.userError "VM claim fixture has no tree"
   let trees := ({} : Std.HashMap Address Ix.AssumptionTree).insert tree.root tree
   let mut checks := 0
@@ -179,7 +179,7 @@ def runVMClaims : IO Nat := do
       ("check-env", .checkEnv tree.root none),
       ("reveal", .reveal validTarget (.defn none none none (some revealedType) none)),
       ("contains", .contains tree.root validTarget)] do
-    let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees)
+    let witness ← IO.ofExcept (LegacyIxVM.ClaimHarness.buildClaimWitness env claim trees)
     checks := checks + (← checkVMClaim vm name witness true)
     let bytes := Ix.Claim.ser claim
     -- Positive control: the unchanged bytes, sent through the same
@@ -206,7 +206,7 @@ def runVMClaims : IO Nat := do
   let (escaping, escapingTarget) := Tests.ResourceAddressed.store base
     (Tests.ResourceAddressed.identity unit Tests.ResourceAddressed.linearLocal .shared)
   let escaping := { escaping with anonHints := escaping.anonHints.insert escapingTarget .opaque }
-  let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness escaping (.check escapingTarget none))
+  let witness ← IO.ofExcept (LegacyIxVM.ClaimHarness.buildClaimWitness escaping (.check escapingTarget none))
   checks := checks + (← checkVMClaim vm "explicit erased typing" witness true)
   unless (Ix.Resource.validate escaping {}).toOption.isNone do
     throw <| IO.userError "escaping fixture passed native resource validation"
@@ -215,10 +215,10 @@ def runVMClaims : IO Nat := do
   let profile : Ix.Resource.Profile := {}
   let claim ← IO.ofExcept (Ix.Resource.makeClaim env profile)
   let profileAddr ← IO.ofExcept profile.address
-  let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees
+  let witness ← IO.ofExcept (LegacyIxVM.ClaimHarness.buildClaimWitness env claim trees
     (({} : Std.HashMap Address ByteArray).insert profileAddr profile.bytes))
   checks := checks + (← checkVMClaim vm "unsupported circuit resource validator" witness false)
-  let checkWitness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env (.check validTarget none))
+  let checkWitness ← IO.ofExcept (LegacyIxVM.ClaimHarness.buildClaimWitness env (.check validTarget none))
   checkVMProof vm checkWitness.funcName checkWitness.input checkWitness.inputIOBuffer
   return checks + 1
 

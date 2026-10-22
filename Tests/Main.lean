@@ -1,13 +1,13 @@
-import Tests.Aiur
-import Tests.Aiur.RustSyntax
+import Tests.LegacyAiur
+import Tests.LegacyAiur.RustSyntax
 import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
-import Tests.Ix.IxVM
-import Tests.Ix.IxVM.Eval
-import Tests.Ix.IxVM.Exploits
-import Tests.Ix.IxVM.DefinitionDependencies
-import Tests.Ix.IxVM.TagN
+import Tests.Ix.LegacyIxVM
+import Tests.Ix.LegacyIxVM.Eval
+import Tests.Ix.LegacyIxVM.Exploits
+import Tests.Ix.LegacyIxVM.DefinitionDependencies
+import Tests.Ix.LegacyIxVM.TagN
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -67,7 +67,7 @@ import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
 import Tests.FFI
 import Tests.Keccak
-import Tests.MultiStark
+import Tests.LegacyMultiStark
 import Tests.Aggr
 import Tests.AggrProof
 import Tests.AggrSemantics
@@ -86,7 +86,7 @@ import Tests.Ix.TruthMinesRecords
 import Tests.Ix.TruthMines
 import Ix.Common
 import Ix.Meta
-import Ix.IxVM
+import LegacyIxVM
 
 /-- Runs the full compile → serialize → decompile roundtrip over the given
     constants and returns the number of failures (0 = clean): decompile
@@ -117,9 +117,9 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("bench-measures", Tests.Ix.BenchMeasures.suite),
   ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
   ("ground-unit", Tests.Ground.suite),
-  ("aiur-cross", [AiurTests.Cross.tests]),
-  ("aiur-cost", [AiurTests.Cost.tests]),
-  ("aiur-trace-plan", [AiurTests.TracePlan.tests]),
+  ("aiur-cross", [LegacyAiurTests.Cross.tests]),
+  ("aiur-cost", [LegacyAiurTests.Cost.tests]),
+  ("aiur-trace-plan", [LegacyAiurTests.TracePlan.tests]),
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
   -- the Ixon reader against a direct translation of compiled Lean constants
   ("kernel-reader-roundtrip", Tests.Ix.Kernel.ReaderRoundtrip.suite),
@@ -183,24 +183,24 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 
 /-- Primary test runners — quick suites run by default alongside
 `primarySuites`, but kept as deferred `IO` actions (not `TestSeq`
-values) so their setup — Aiur system builds, STARK proofs — does not
+values) so their setup — LegacyAiur system builds, STARK proofs — does not
 execute at module initialization for unrelated invocations. All are
 seconds-scale: ixvm-tagn about 16 s (measured 2026-10-01), aiur-prove
 about 11 s and the rest 2-4 s each (measured 2026-08-05). -/
 def primaryRunners : List (String × IO UInt32) := [
-  ("aiur-rust-syntax", AiurTests.RustSyntax.run),
+  ("aiur-rust-syntax", LegacyAiurTests.RustSyntax.run),
   -- The circuit TagN codec against the host codec (about 16 s).
-  ("ixvm-tagn", Tests.Ix.IxVM.TagN.runSuite),
+  ("ixvm-tagn", Tests.Ix.LegacyIxVM.TagN.runSuite),
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
-    | .error e => IO.eprintln s!"Aiur setup failed: {e}"; return 1
+    | .error e => IO.eprintln s!"LegacyAiur setup failed: {e}"; return 1
     | .ok env => do
       let r1 ← LSpec.lspecEachIO aiurTestCases fun tc => pure (env.runTestCase tc)
       -- The same toplevel with `testGroups` applied: the members share one
       -- circuit, and the whole suite of grouped cases proves through it.
       match AiurTestEnv.build (pure toplevel) testGroups with
-      | .error e => IO.eprintln s!"Aiur grouped setup failed: {e}"; return 1
+      | .error e => IO.eprintln s!"LegacyAiur grouped setup failed: {e}"; return 1
       | .ok genv => do
         let r2 ← LSpec.lspecEachIO groupedTestCases fun tc => pure (genv.runTestCase tc)
         let r3 ← LSpec.lspecIO
@@ -210,24 +210,24 @@ def primaryRunners : List (String × IO UInt32) := [
   ("aiur-hashes", do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do
-        let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge Aiur.Library.blake3)
+        let t ← LegacyAiur.Library.core.merge LegacyAiur.Library.byteStream; t.merge LegacyAiur.Library.blake3)
       | IO.eprintln "Blake3 setup failed"; return 1
     let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
     let .ok sha256Env := AiurTestEnv.build (do
-        let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge IxVM.sha256)
+        let t ← LegacyAiur.Library.core.merge LegacyAiur.Library.byteStream; t.merge LegacyIxVM.sha256)
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
   ("rbtree-map", do
     IO.println "rbtree-map"
-    match AiurTestEnv.build (pure IxVM.rbTreeMap) with
+    match AiurTestEnv.build (pure LegacyIxVM.rbTreeMap) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
   -- Multi-STARK recursive verifier: `multi-stark` runs the verifier's
   -- primitive self-tests, `recursive-verifier` the full
   -- factorial-prove → recursive-verify → reject-tampering pipeline.
-  ("multi-stark", Tests.MultiStark.selfTestSuite),
-  ("recursive-verifier", Tests.MultiStark.endToEndSuite),
+  ("multi-stark", Tests.LegacyMultiStark.selfTestSuite),
+  ("recursive-verifier", Tests.LegacyMultiStark.endToEndSuite),
   -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
   ("ix-aggr", Tests.Aggr.convergedSuite),
@@ -239,15 +239,15 @@ def primaryRunners : List (String × IO UInt32) := [
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("aggregate-proof", Tests.Aggr.proofRoundTrip),
   ("kernel-dependencies", do
-    match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
-    | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
+    match AiurTestEnv.build LegacyIxVM.ixVM LegacyIxVM.functionGroups with
+    | .error e => IO.eprintln s!"LegacyIxVM setup failed: {e}"; return 1
     | .ok vm =>
-      let tests ← Tests.Ix.IxVM.DefinitionDependencies.tests vm.compiled
+      let tests ← Tests.Ix.LegacyIxVM.DefinitionDependencies.tests vm.compiled
       LSpec.lspecIO (.ofList [("kernel-dependencies", [tests])]) []),
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
-    let claimEnv ← IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
+    let claimEnv ← LegacyIxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
     let envFull ← claimCheckEnvFull claimEnv
     let envFrontier ← claimCheckEnvFrontier claimEnv
     let checkAsm ← claimCheckWithAsm claimEnv
@@ -261,18 +261,18 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     -- committed kernel system).
     let kernelUnitTests := .exec `kernel_unit_tests
     let serdeTest ← serdeNatAddComm env
-    match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups, AiurTestEnv.build IxVM.ixVMFull with
+    match AiurTestEnv.build LegacyIxVM.ixVM LegacyIxVM.functionGroups, AiurTestEnv.build LegacyIxVM.ixVMFull with
     | .error e, _ | _, .error e =>
-      IO.eprintln s!"IxVM env build failed: {e}"; return 1
+      IO.eprintln s!"LegacyIxVM env build failed: {e}"; return 1
     | .ok vmEnv, .ok fullVmEnv =>
       IO.eprintln "[ixvm] eval: reduction, output contracts, and compiled fixtures"
-      let evalSeq ← Tests.Ix.IxVM.Eval.tests vmEnv.compiled
-      let evalCompiledSeq ← Tests.Ix.IxVM.Eval.compiledTests env vmEnv.compiled
-      let evalCommandSeq ← Tests.Ix.IxVM.Eval.commandTests env vmEnv.compiled
+      let evalSeq ← Tests.Ix.LegacyIxVM.Eval.tests vmEnv.compiled
+      let evalCompiledSeq ← Tests.Ix.LegacyIxVM.Eval.compiledTests env vmEnv.compiled
+      let evalCommandSeq ← Tests.Ix.LegacyIxVM.Eval.commandTests env vmEnv.compiled
       IO.eprintln "[ixvm] eval: dependent, recursive, and neutral-term fixtures"
-      let evalDifficultSeq ← Tests.Ix.IxVM.Eval.difficultTests env vmEnv.compiled
+      let evalDifficultSeq ← Tests.Ix.LegacyIxVM.Eval.difficultTests env vmEnv.compiled
       IO.eprintln "[ixvm] eval: generated differential corpus (24 samples)"
-      let evalDifferentialSeq ← Tests.Ix.IxVM.Eval.differentialTests env vmEnv.compiled
+      let evalDifferentialSeq ← Tests.Ix.LegacyIxVM.Eval.differentialTests env vmEnv.compiled
       -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
       -- through the kernel's subject-only `verify_const` debug
@@ -283,8 +283,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       -- constants, below the layer the arena's Lean fixtures can
       -- reach. Each case pins the kernel's verdict, which is REJECT
       -- except where accepting is the specified claim semantics.
-      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env vmEnv.compiled
-      let dependencySeq ← Tests.Ix.IxVM.DefinitionDependencies.tests vmEnv.compiled
+      let exploitSeq ← Tests.Ix.LegacyIxVM.Exploits.exploitTests env vmEnv.compiled
+      let dependencySeq ← Tests.Ix.LegacyIxVM.DefinitionDependencies.tests vmEnv.compiled
       let aiurSeq := (kernelChecks ++
           [envFull, envFrontier, checkAsm,
            revealFields, revealExpr, revealModes, revealCPrj, containsTc]).foldl
@@ -292,7 +292,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       -- Codegen parity gate: the generated Rust kernel is emitted from
       -- the toplevel, so this runs the same witnesses through both
       -- engines and asserts they agree. It is only meaningful against a
-      -- CURRENT `ix codegen` output — regenerate after any Aiur edit, or
+      -- CURRENT `ix codegen` output — regenerate after any LegacyAiur edit, or
       -- this gate compares against a stale kernel. Reuses the
       -- `kernelChecks` cases (`runParityCase` ignores the FFT pins), so
       -- the per-constant witness setup runs once, not twice.
@@ -319,7 +319,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             -- (`.round.toUInt64.toNat`): any cost shift must be an
             -- explicit, reviewed bump.
             let actual :=
-              (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
+              (LegacyAiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
               s!"Shard pipeline FFT matches: expected 6_233_515_145, got {actual}"
               (actual = 6_233_515_145))

@@ -2481,7 +2481,7 @@ def RawEnvLazy.toEnv (raw : RawEnvLazy) (buf : ByteArray) : Env := Id.run do
 @[extern "rs_de_env_lazy"]
 opaque rsDeEnvLazyFFI : @& ByteArray → Except String RawEnvLazy
 
-/-- Lazy, zero-copy, metadata-light deserialization for the Aiur check path.
+/-- Lazy, zero-copy, metadata-light deserialization for the LegacyAiur check path.
     Constants are byte-window `LazyConstant`s into `bytes` (parsed on demand,
     only for the checked closure); binder metadata is dropped, keeping just
     `name → addr` and per-`Defn` hints. The returned env borrows `bytes` — keep

@@ -1,6 +1,6 @@
 module
 public import LSpec
-public import Ix.Aiur.Protocol
+public import LegacyAiur.Protocol
 
 public section
 namespace Tests.ProofHelpers
@@ -23,9 +23,9 @@ def expectErr (descr : String) (e : Except ε α) : TestSeq :=
 code itself is blowup/query-count agnostic, and `pcs_check_witness` is shared
 by both PoW phases, so the query-phase grinding exercises the commit-phase
 code path too. -/
-def recCommitParams : Aiur.CommitmentParameters :=
+def recCommitParams : LegacyAiur.CommitmentParameters :=
   { logBlowup := 2, capHeight := 0 }
-def innerFri : Aiur.FriParameters :=
+def innerFri : LegacyAiur.FriParameters :=
   { logFinalPolyLen := 0, maxLogArity := 1, numQueries := 3,
     commitProofOfWorkBits := 0, queryProofOfWorkBits := 20 }
 

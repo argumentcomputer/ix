@@ -1,6 +1,6 @@
 module
 public import Ix.Shard.Manifest
-public import Ix.IxVM.ClaimHarness
+public import LegacyIxVM.ClaimHarness
 
 /-! Manifest ownership, coverage, and environment loading. -/
 
@@ -119,7 +119,7 @@ def IxesManifestView.pruneEmpty (view : IxesManifestView)
     deterministically from the env + the shard's owned blocks. Matches the
     digest `prove --shard K` produced, so a proof can be bound to its shard. -/
 def shardClaimDigest (ixonEnv : Ixon.Env) (blocks : Array Address) : Except String Address := do
-  let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv
+  let (claim, _) ← LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv
     (ownedConstsForBlocks ixonEnv blocks)
   pure (Address.blake3 (Ix.Claim.ser claim))
 

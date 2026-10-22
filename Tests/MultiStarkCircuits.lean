@@ -1,5 +1,5 @@
 module
-public import MultiStark
+public import LegacyMultiStark
 
 /-!
 # Self-tests for the Multi-STARK recursive verifier
@@ -7,9 +7,9 @@ public import MultiStark
 The `pub fn *_test` entrypoints validating the verifier's primitives against
 Rust reference values (`multi-stark/src/types.rs` test outputs). They live in a
 SEPARATE toplevel fragment, merged on top of the production verifier toplevel
-(`MultiStark.multiStarkTests` in `Tests/MultiStarkCircuits.lean`): every `pub fn` adds a
+(`LegacyMultiStark.multiStarkTests` in `Tests/MultiStarkCircuits.lean`): every `pub fn` adds a
 circuit to the compiled system, so keeping the tests out of
-`MultiStark.multiStark` keeps the production verifier's width free of
+`LegacyMultiStark.multiStark` keeps the production verifier's width free of
 test-only circuits.
 
 Cross-fragment references (e.g. `gl_val`, `mmcs_hash_row`, `fri_fold2`,
@@ -19,7 +19,7 @@ namespace.
 
 public section
 
-namespace MultiStark
+namespace LegacyMultiStark
 
 def tests := ⟦
   -- ==========================================================================
@@ -388,11 +388,11 @@ def tests := ⟦
 ⟧
 
 /-- Generic verifier circuits plus their execution-only test entrypoints. -/
-def multiStarkTests : Except Aiur.Global Aiur.Source.Toplevel := do
+def multiStarkTests : Except LegacyAiur.Global LegacyAiur.Source.Toplevel := do
   let t ← verifierBase
   let t ← t.merge entrypoints
   t.merge tests
 
-end MultiStark
+end LegacyMultiStark
 
 end

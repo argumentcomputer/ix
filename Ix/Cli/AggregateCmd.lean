@@ -2,11 +2,11 @@
   `ix aggregate --ixe E --ixes M <shard-proof>...`
 
   Bind persisted shard proof wrappers to every nonempty shard in a manifest,
-  wrap each IxVM proof into the single-entrypoint `ix_aggr` recursion system,
+  wrap each LegacyIxVM proof into the single-entrypoint `ix_aggr` recursion system,
   then execute/prove binary folds in the manifest's bisection-tree order.
   Small folds use flat canonical subjects; folds above `--structural-above`
   use an O(1) root-of-roots subject fold plus assumption-membership paths.
-  `--direct-joins` keeps raw IxVM leaves until their first parent as an
+  `--direct-joins` keeps raw LegacyIxVM leaves until their first parent as an
   explicitly non-default policy. The final persisted wrapper carries the
   aggregate `CheckEnv` claim and recursive proof bytes.
 
@@ -19,8 +19,8 @@ import Ix.TracingTexray
 public import Cli
 public import Ix.Aggr
 public import Ix.Aggr.Backend
-public import Ix.IxVM
-public import MultiStark
+public import LegacyIxVM
+public import LegacyMultiStark
 public import Ix.Store
 
 public section
@@ -35,7 +35,7 @@ private def timed {α : Type} (action : IO α) : IO (α × Nat) := do
   pure (result, (← IO.monoMsNow) - started)
 
 /-- Production Stage 2 entrypoint. The Lean-authored circuit sources still
-compile here, in parallel with mmap-loading the environment. Once both Aiur
+compile here, in parallel with mmap-loading the environment. Once both LegacyAiur
 systems exist, one FFI call transfers the complete data-dependent pipeline to
 Rust; no Lean statement tree or scheduler task survives on this path. -/
 private def runAggregateCmdNativeWith
@@ -82,10 +82,10 @@ private def runAggregateCmdNativeWith
 
   let setupStarted ← IO.monoMsNow
   let envTask ← IO.asTask (prio := .dedicated) do
-    timed (IO.lazyPure fun _ => Aiur.EnvHandle.fromIxe ixePath)
+    timed (IO.lazyPure fun _ => LegacyAiur.EnvHandle.fromIxe ixePath)
   let ixvmBackendTask ← IO.asTask (prio := .dedicated) do
-    timed (Aggr.compileBackend "IxVM" (fun _ => IxVM.ixVM) IxVM.functionGroups
-      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters)
+    timed (Aggr.compileBackend "LegacyIxVM" (fun _ => LegacyIxVM.ixVM) LegacyIxVM.functionGroups
+      LegacyAiur.defaultCommitmentParameters LegacyAiur.defaultFriParameters)
   let aggrBackendTask ← IO.asTask (prio := .dedicated) do
     timed (Aggr.compileBackend "ixAggr recursion" (fun _ => Aggr.ixAggr)
       Aggr.functionGroups recursionParameters.commitment recursionParameters.fri)
@@ -97,7 +97,7 @@ private def runAggregateCmdNativeWith
   let (aggrResult, aggrMs) ← IO.ofExcept aggrBackendTask.get
   let setupMs := (← IO.monoMsNow) - setupStarted
   IO.println s!"[aggregate] parallel host setup: {setupMs}ms \
-    (environment {envMs}ms, IxVM backend {ixvmMs}ms, ixAggr backend {aggrMs}ms)"
+    (environment {envMs}ms, LegacyIxVM backend {ixvmMs}ms, ixAggr backend {aggrMs}ms)"
   (← IO.getStdout).flush
 
   let envHandle ← match envResult with
@@ -159,7 +159,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "jobs" : Nat;    "Maximum aggregate slots proving concurrently (default 0: all ready slots, subject to the RAM gate)."
     "max-ram" : Nat; "Aggregate in-flight RAM budget in GiB (default: 92% of MemTotal). An estimated-oversized slot runs alone."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
-    "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
+    "direct-joins";  "Keep LegacyIxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
     "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
     "exec-ahead" : Nat; "Slots executing ahead of the provers (default 1): a ready join executes and plans while the previous one proves, so one GPU prover never waits for an execution; each slot ahead holds its execution record. 0: each slot executes and proves on one worker, --jobs at a time."
     "wrap-root";     "Wrap the root proof, each wrap a proof that verifies the previous one, until the final proof is a single trace shard."

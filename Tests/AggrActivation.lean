@@ -25,7 +25,7 @@ selected.
 
 public section
 
-open Aiur
+open LegacyAiur
 
 namespace Tests.Aggr
 namespace ActivationAudit
@@ -63,7 +63,7 @@ private def Disposition.label : Disposition → String
 
 /-- Cheap parameters are sufficient here: the audit studies which verifier
 circuits execute, not production soundness calibration or proof size. -/
-private def auditFri : Aiur.FriParameters :=
+private def auditFri : LegacyAiur.FriParameters :=
   { logFinalPolyLen := 0, maxLogArity := 1, numQueries := 1,
     commitProofOfWorkBits := 0, queryProofOfWorkBits := 0 }
 
@@ -99,14 +99,14 @@ private def childProgram : Source.Toplevel := ⟦
 private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
   (Ix.AssumptionTree.canonical leaves).get!
 
-private def digestSelectsShort (digest : Array Aiur.G) : Bool :=
+private def digestSelectsShort (digest : Array LegacyAiur.G) : Bool :=
   match digest[0]?, digest[1]? with
   | some a, some b => decide (a.n < b.n)
   | _, _ => false
 
 private structure Indices where
-  verify : Aiur.Bytecode.FunIdx
-  aggr : Aiur.Bytecode.FunIdx
+  verify : LegacyAiur.Bytecode.FunIdx
+  aggr : LegacyAiur.Bytecode.FunIdx
 
 private structure Fixture where
   height : Height
@@ -154,7 +154,7 @@ private def findFixture (height : Height) : Except String Fixture := do
   let some salt := (Array.range 65536).find? fun salt =>
       let fixture := fixtureAt height salt
       fixture.statements.all fun statement =>
-        digestSelectsShort (MultiStark.digestGs (Ix.Claim.ser statement.claim)) ==
+        digestSelectsShort (LegacyMultiStark.digestGs (Ix.Claim.ser statement.claim)) ==
           wantShort
     | throw s!"activation audit: no {height.label} statement fixture found"
   pure (fixtureAt height salt)
@@ -163,11 +163,11 @@ private structure HeightConfig where
   fixture : Fixture
   probeRows : Nat
 
-private def prepareHeightConfig (compiled : Aiur.CompiledToplevel)
-    (indices : Indices) (probeIdx : Aiur.Bytecode.FunIdx) (height : Height) :
+private def prepareHeightConfig (compiled : LegacyAiur.CompiledToplevel)
+    (indices : Indices) (probeIdx : LegacyAiur.Bytecode.FunIdx) (height : Height) :
     Except String HeightConfig := do
   let fixture ← findFixture height
-  let input := MultiStark.digestGs (Ix.Claim.ser fixture.leftNone.claim)
+  let input := LegacyMultiStark.digestGs (Ix.Claim.ser fixture.leftNone.claim)
   let (_, _, counts) ← compiled.bytecode.execute indices.verify input default
   let some count := counts[probeIdx]?
     | throw s!"activation audit: missing height-probe query count {probeIdx}"
@@ -187,18 +187,18 @@ private structure PreparedChild where
   proofAdviceBytes : ByteArray
   claimsBytes : ByteArray
 
-private def prepareChild (ixvmSystem selfSystem : Aiur.AiurSystem)
+private def prepareChild (ixvmSystem selfSystem : LegacyAiur.AiurSystem)
     (indices : Indices) (allowed : ByteArray) (kind : ChildKind)
     (statement : Aggr.CheckEnvTrees) : Except String PreparedChild := do
   let claimBytes := Ix.Claim.ser statement.claim
   let (system, idx, input) := match kind with
-    | .ixvm => (ixvmSystem, indices.verify, MultiStark.digestGs claimBytes)
+    | .ixvm => (ixvmSystem, indices.verify, LegacyMultiStark.digestGs claimBytes)
     | .aggr => (selfSystem, indices.aggr, Aggr.pubInput allowed claimBytes)
   let (outer, proof, _) ← system.prove idx input default
   let proofAdviceBytes ← system.proofToAdviceBytes outer proof
   pure {
     proofAdviceBytes
-    claimsBytes := MultiStark.serializeClaims #[outer]
+    claimsBytes := LegacyMultiStark.serializeClaims #[outer]
   }
 
 private structure PairShape where
@@ -232,7 +232,7 @@ private structure PairCase where
   leftChild : PreparedChild
   rightChild : PreparedChild
 
-private def prepareWrapCases (ixvmSystem selfSystem : Aiur.AiurSystem)
+private def prepareWrapCases (ixvmSystem selfSystem : LegacyAiur.AiurSystem)
     (indices : Indices) (allowed : ByteArray)
     (configs : Array HeightConfig) : Except String (Array WrapCase) := do
   let mut cases : Array WrapCase := #[]
@@ -249,7 +249,7 @@ private def prepareWrapCases (ixvmSystem selfSystem : Aiur.AiurSystem)
       }
   pure cases
 
-private def preparePairCases (ixvmSystem selfSystem : Aiur.AiurSystem)
+private def preparePairCases (ixvmSystem selfSystem : LegacyAiur.AiurSystem)
     (indices : Indices) (allowed : ByteArray)
     (configs : Array HeightConfig) : Except String (Array PairCase) := do
   let mut cases : Array PairCase := #[]
@@ -284,10 +284,10 @@ private def preparePairCases (ixvmSystem selfSystem : Aiur.AiurSystem)
 private structure Sample where
   label : String
   shape : Nat
-  queryCounts : Array Aiur.QueryCount
+  queryCounts : Array LegacyAiur.QueryCount
 
-private def runWrap (compiled : Aiur.CompiledToplevel)
-    (idx : Aiur.Bytecode.FunIdx) (ixvmVk selfVk allowed : ByteArray)
+private def runWrap (compiled : LegacyAiur.CompiledToplevel)
+    (idx : LegacyAiur.Bytecode.FunIdx) (ixvmVk selfVk allowed : ByteArray)
     (case : WrapCase) : Except String Sample := do
   let claimBytes := Ix.Claim.ser case.statement.claim
   let (_, queryCounts) ← match compiled.bytecode.executeIxAggr idx
@@ -299,8 +299,8 @@ private def runWrap (compiled : Aiur.CompiledToplevel)
     | .error e => throw s!"{case.label}: {e}"
   pure { label := case.label, shape := case.shape, queryCounts }
 
-private def runPair (compiled : Aiur.CompiledToplevel)
-    (idx : Aiur.Bytecode.FunIdx) (ixvmVk selfVk allowed : ByteArray)
+private def runPair (compiled : LegacyAiur.CompiledToplevel)
+    (idx : LegacyAiur.Bytecode.FunIdx) (ixvmVk selfVk allowed : ByteArray)
     (case : PairCase) : Except String Sample := do
   let output := if case.pair.structural then
     case.left.joinStructural case.right
@@ -326,8 +326,8 @@ private def runPair (compiled : Aiur.CompiledToplevel)
     | .error e => throw s!"{case.label}: {e}"
   pure { label := case.label, shape := case.pair.shape, queryCounts }
 
-private def collect (compiled : Aiur.CompiledToplevel)
-    (idx : Aiur.Bytecode.FunIdx) (ixvmVk selfVk allowed : ByteArray)
+private def collect (compiled : LegacyAiur.CompiledToplevel)
+    (idx : LegacyAiur.Bytecode.FunIdx) (ixvmVk selfVk allowed : ByteArray)
     (wrapCases : Array WrapCase) (pairCases : Array PairCase) :
     Except String (Array Sample) := do
   let mut samples : Array Sample := #[]
@@ -337,7 +337,7 @@ private def collect (compiled : Aiur.CompiledToplevel)
     samples := samples.push (← runPair compiled idx ixvmVk selfVk allowed case)
   pure samples
 
-private def queryCountsEq (left right : Array Aiur.QueryCount) : Bool :=
+private def queryCountsEq (left right : Array LegacyAiur.QueryCount) : Bool :=
   left.size == right.size && (left.zip right).all fun (a, b) =>
     a.uniqueRows == b.uniqueRows && a.totalHits == b.totalHits
 
@@ -350,9 +350,9 @@ private structure Circuit where
   name : String
   queryIdx : Nat
 
-private def circuits (compiled : Aiur.CompiledToplevel) : Array Circuit := Id.run do
+private def circuits (compiled : LegacyAiur.CompiledToplevel) : Array Circuit := Id.run do
   let reverseNames := compiled.nameMap.fold
-    (init := ({} : Std.HashMap Aiur.Bytecode.FunIdx String))
+    (init := ({} : Std.HashMap LegacyAiur.Bytecode.FunIdx String))
     fun names global idx =>
       let name := toString global
       match names[idx]? with
@@ -413,7 +413,7 @@ private def activationSignature (samples : Array Sample) : Address :=
     sample.label ++ ":" ++ String.intercalate "," counts.toList
   Address.blake3 (String.intercalate "\n" lines.toList).toUTF8
 
-private def report (compiled : Aiur.CompiledToplevel)
+private def report (compiled : LegacyAiur.CompiledToplevel)
     (configs : Array HeightConfig) (samples : Array Sample) : String :=
   let catalog := circuits compiled
   let affected := catalog.filter fun circuit =>
@@ -481,9 +481,9 @@ def run : IO UInt32 := do
   let some probeIdx := childCompiled.getFuncIdx `activation_height_probe | do
     IO.eprintln "activation audit: height probe not found"; return 1
   let indices : Indices := { verify := verifyIdx, aggr := fakeAggrIdx }
-  let ixvmSystem := Aiur.AiurSystem.build childCompiled.bytecode
+  let ixvmSystem := LegacyAiur.AiurSystem.build childCompiled.bytecode
     Tests.ProofHelpers.recCommitParams auditFri
-  let selfSystem := Aiur.AiurSystem.build childCompiled.bytecode
+  let selfSystem := LegacyAiur.AiurSystem.build childCompiled.bytecode
     Tests.ProofHelpers.recCommitParams { auditFri with numQueries := 2 }
   let ixvmVk := ixvmSystem.vkBytes
   let selfVk := selfSystem.vkBytes

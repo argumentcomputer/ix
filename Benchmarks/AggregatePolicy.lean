@@ -1,7 +1,7 @@
 import Ix.Aggr
-import Ix.Aiur.Compiler
-import Ix.IxVM
-import Ix.IxVM.Toplevel
+import LegacyAiur.Compiler
+import LegacyIxVM
+import LegacyIxVM.Toplevel
 import Ix.Aggr.Reference
 import Ix.Benchmark.Bench
 import Ix.TracingTexray
@@ -9,7 +9,7 @@ import Ix.TracingTexray
 /-!
 # Four-shard converged aggregation policy benchmark
 
-This executable is the M1-f handoff harness. It consumes four persisted IxVM
+This executable is the M1-f handoff harness. It consumes four persisted LegacyIxVM
 shard proofs from a validated manifest, derives the selected subtree from the
 manifest aggregation tree, and measures either production wrap-first or
 non-default direct joins through the single `ix_aggr` entrypoint.
@@ -36,8 +36,8 @@ structure AggregateSlot where
   kind : Aggr.ChildKind := .aggr
   statement : Aggr.CheckEnvTrees
   subjectCount : Nat
-  outerClaim : Array Aiur.G
-  proof : Aiur.Proof
+  outerClaim : Array LegacyAiur.G
+  proof : LegacyAiur.Proof
   proofAddress? : Option Address
   /-- Serialized singleton outer-claim list consumed by a parent. -/
   claimsBytes : ByteArray := ByteArray.empty
@@ -99,9 +99,9 @@ def parseShardIds (value : String) : Except String (Array Nat) := do
   pure ids
 
 def compileToplevel (label : String)
-    (source : Except Aiur.Global Aiur.Source.Toplevel)
+    (source : Except LegacyAiur.Global LegacyAiur.Source.Toplevel)
     (groups : Array (String × Array String)) :
-    IO (Except String Aiur.CompiledToplevel) := do
+    IO (Except String LegacyAiur.CompiledToplevel) := do
   match source with
   | .error error => pure (.error s!"{label} toplevel merge failed: {error}")
   | .ok top => match top.compileWithGroups groups with
@@ -111,7 +111,7 @@ def compileToplevel (label : String)
 def prepareShard (env : Ixon.Env) (blocks : Array Address) :
     Except String PreparedShard := do
   let owned := Ix.Shard.ownedConstsForBlocks env blocks
-  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
+  let (claim, trees) ← LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
   let statement ← Aggr.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
 
@@ -236,12 +236,12 @@ def printPlan (policy : Policy) (plan : Array ScheduledFold)
 structure InputProof where
   address : Address
   wrapper : Ixon.Proof
-  proof : Aiur.Proof
-  innerClaim : Array Aiur.G
+  proof : LegacyAiur.Proof
+  innerClaim : Array LegacyAiur.G
   claimsBytes : ByteArray
 
 def loadInputProof (shardId : Nat) (proofAddress : String)
-    (prepared : PreparedShard) (verifyIdx : Aiur.Bytecode.FunIdx) :
+    (prepared : PreparedShard) (verifyIdx : LegacyAiur.Bytecode.FunIdx) :
     IO (Except String InputProof) := do
   let some address := Address.fromString proofAddress
     | return .error s!"--proof-{shardId}: expected a 64-character store address"
@@ -252,26 +252,26 @@ def loadInputProof (shardId : Nat) (proofAddress : String)
       | .ok wrapper => pure wrapper
     if wrapper.claim != prepared.claim then
       return .error s!"shard {shardId}: persisted wrapper claim does not match the selected shard"
-    let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
+    let proof ← match LegacyAiur.Proof.ofBytesChecked wrapper.proof with
       | .error error =>
         return .error s!"shard {shardId}: proof decode failed: {error}"
       | .ok proof => pure proof
     let claimBytes := Ix.Claim.ser prepared.claim
-    let innerClaim := Aiur.buildClaim verifyIdx
-      (IxVM.ClaimHarness.packedDigestKey (Address.blake3 claimBytes)) #[]
+    let innerClaim := LegacyAiur.buildClaim verifyIdx
+      (LegacyIxVM.ClaimHarness.packedDigestKey (Address.blake3 claimBytes)) #[]
     let input : InputProof := {
       address := address
       wrapper := wrapper
       proof := proof
       innerClaim := innerClaim
-      claimsBytes := MultiStark.serializeClaims #[innerClaim]
+      claimsBytes := LegacyMultiStark.serializeClaims #[innerClaim]
     }
     pure (.ok input)
   catch error =>
     pure (.error s!"shard {shardId}: store read failed: {error}")
 
 def persistAggregateProof (statement : Aggr.CheckEnvTrees)
-    (proof : Aiur.Proof) : IO Address := do
+    (proof : LegacyAiur.Proof) : IO Address := do
   let claim := statement.claim
   let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
   let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
@@ -306,8 +306,8 @@ def stageRow (slotIdx : Nat) (item : ScheduledFold)
 
 def runLeaf (slotIdx shardId : Nat) (item : ScheduledFold)
     (prepared : PreparedShard) (input : InputProof) (spec : AggregateSlotSpec)
-    (ixvmSystem aggrSystem : Aiur.AiurSystem) (ixvmVk aggrVk allowed : ByteArray)
-    (aggrIdx : Aiur.Bytecode.FunIdx) : IO (Except String MeasuredSlot) := do
+    (ixvmSystem aggrSystem : LegacyAiur.AiurSystem) (ixvmVk aggrVk allowed : ByteArray)
+    (aggrIdx : LegacyAiur.Bytecode.FunIdx) : IO (Except String MeasuredSlot) := do
   TracingTexray.resetPeakTreeRss
   let (innerVerified, innerVerifySeconds) ← timed fun _ =>
     ixvmSystem.verify input.innerClaim input.proof
@@ -375,7 +375,7 @@ def runLeaf (slotIdx shardId : Nat) (item : ScheduledFold)
       kind := .aggr, statement := spec.statement,
       subjectCount := spec.subjectCount, outerClaim,
       proof, proofAddress? := some address,
-      claimsBytes := MultiStark.serializeClaims #[outerClaim]
+      claimsBytes := LegacyMultiStark.serializeClaims #[outerClaim]
     }
     pure (.ok {
       slot
@@ -387,8 +387,8 @@ def runLeaf (slotIdx shardId : Nat) (item : ScheduledFold)
     })
 
 def runJoin (slotIdx : Nat) (item : ScheduledFold) (left right : AggregateSlot)
-    (spec : AggregateSlotSpec) (ixvmSystem aggrSystem : Aiur.AiurSystem)
-    (ixvmVk aggrVk allowed : ByteArray) (aggrIdx : Aiur.Bytecode.FunIdx) :
+    (spec : AggregateSlotSpec) (ixvmSystem aggrSystem : LegacyAiur.AiurSystem)
+    (ixvmVk aggrVk allowed : ByteArray) (aggrIdx : LegacyAiur.Bytecode.FunIdx) :
     IO (Except String MeasuredSlot) := do
   let output := spec.statement
   let outputClaimBytes := Ix.Claim.ser output.claim
@@ -444,7 +444,7 @@ def runJoin (slotIdx : Nat) (item : ScheduledFold) (left right : AggregateSlot)
     kind := .aggr, statement := output,
     subjectCount := spec.subjectCount, outerClaim,
     proof, proofAddress? := some address,
-    claimsBytes := MultiStark.serializeClaims #[outerClaim]
+    claimsBytes := LegacyMultiStark.serializeClaims #[outerClaim]
   }
   pure (.ok {
     slot
@@ -493,7 +493,7 @@ def metadata (ixePath ixesPath : String) (ixeBytes ixesBytes : ByteArray)
   let cpu ← cpuLabel
   let memInfo ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
   let physicalRam := aggregateMemTotalBytes memInfo |>.getD 0
-  let fri := { Aiur.defaultFriParameters with numQueries := queries }
+  let fri := { LegacyAiur.defaultFriParameters with numQueries := queries }
   pure <| Json.mkObj
     [("commit", Json.str commit),
      ("timestamp", Json.str timestamp),
@@ -510,8 +510,8 @@ def metadata (ixePath ixesPath : String) (ixeBytes ixesBytes : ByteArray)
      ("input_proof_addresses", Lean.toJson proofAddresses),
      ("policy", Json.str policy.label),
      ("recursion_parameters", Json.mkObj
-       [("log_blowup", Lean.toJson Aiur.defaultCommitmentParameters.logBlowup),
-        ("cap_height", Lean.toJson Aiur.defaultCommitmentParameters.capHeight),
+       [("log_blowup", Lean.toJson LegacyAiur.defaultCommitmentParameters.logBlowup),
+        ("cap_height", Lean.toJson LegacyAiur.defaultCommitmentParameters.capHeight),
         ("log_final_poly_len", Lean.toJson fri.logFinalPolyLen),
         ("max_log_arity", Lean.toJson fri.maxLogArity),
         ("num_queries", Lean.toJson fri.numQueries),
@@ -618,8 +618,8 @@ def main (args : List String) : IO UInt32 := do
 
   writeReport jsonPath? metadata0 rows #[] "preparing"
   TracingTexray.startSampler 25
-  IO.println "[aggregate-policy] compiling IxVM and ixAggr systems"
-  let ixvmCompiled ← match ← compileToplevel "IxVM" IxVM.ixVM IxVM.functionGroups with
+  IO.println "[aggregate-policy] compiling LegacyIxVM and ixAggr systems"
+  let ixvmCompiled ← match ← compileToplevel "LegacyIxVM" LegacyIxVM.ixVM LegacyIxVM.functionGroups with
     | .error error =>
       writeReport jsonPath? metadata0 rows #[] "error" (error? := some error)
       IO.eprintln error
@@ -633,13 +633,13 @@ def main (args : List String) : IO UInt32 := do
     | .ok compiled => pure compiled
   let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!
   let aggrIdx := aggrCompiled.getFuncIdx `ix_aggr |>.get!
-  let friParameters := { Aiur.defaultFriParameters with numQueries := queries }
+  let friParameters := { LegacyAiur.defaultFriParameters with numQueries := queries }
   let recursionParameters : Aggr.RecursionParameters := {
-    commitment := Aiur.defaultCommitmentParameters
+    commitment := LegacyAiur.defaultCommitmentParameters
     fri := friParameters
   }
-  let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode
-    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+  let ixvmSystem := LegacyAiur.AiurSystem.build ixvmCompiled.bytecode
+    LegacyAiur.defaultCommitmentParameters LegacyAiur.defaultFriParameters
   let aggrSystem := Aggr.buildRecursionSystem aggrCompiled.bytecode
     recursionParameters
   let ixvmVk := ixvmSystem.vkBytes
@@ -757,7 +757,7 @@ def main (args : List String) : IO UInt32 := do
     return 1
   let rootProofBytes := root.proof.toBytes
   let rootClaimDigest := Address.blake3 (Ix.Claim.ser root.statement.claim)
-  let outerClaimDigest := Address.blake3 (MultiStark.serializeClaims #[root.outerClaim])
+  let outerClaimDigest := Address.blake3 (LegacyMultiStark.serializeClaims #[root.outerClaim])
   let totals := Json.mkObj
     [("wall_seconds", jsonRound 6 wallSeconds),
      ("serialized_prove_seconds", jsonRound 6 proveSeconds),

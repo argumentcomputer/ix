@@ -14,7 +14,7 @@
 
 use aiur::synthesis::{AiurProof, AiurSystem};
 use ix_kernel::shard::ShardManifest;
-use ixvm_codegen::env_handle::EnvHandle;
+use ixvm_legacy::env_handle::EnvHandle;
 use plan::{
   FoldPolicy, PlanIdentity, PlanOp, SlotSpec, build_specs,
   build_statement_specs, plan_replay, subtree_plan,

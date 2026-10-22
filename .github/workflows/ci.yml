@@ -22,6 +22,9 @@ jobs:
   # Each job has its own sticky cache, so the checks run independently. Lean
   # builds, tests, and lints share one job and one incremental build cache.
   lean-test:
+    env:
+      # Exercise the retained native path; ordinary development builds omit it.
+      IX_NATIVE: "1"
     runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,7 +39,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=target
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -55,6 +58,21 @@ jobs:
           test-args: "--wfail"
           lint-args: "-- --wfail -v"
           use-github-cache: false
+      - name: Check formal Aiur proofs, FFI, and IxVM packages
+        run: |
+          lake build aiur/Aiur ixvm/IxVM Tests.AiurBoundaries
+          lake build aiur/aiur_tests aiur/execution_tests aiur/trace_tests ixvm/ixvm
+          Aiur/.lake/build/bin/aiur_tests
+          Aiur/.lake/build/bin/execution_tests
+          Aiur/.lake/build/bin/trace_tests
+      - name: Check new IxVM execution and proof fixture
+        if: github.event_name != 'push'
+        run: |
+          lake exe ixvm/ixvm export /tmp/ixvm-execution.json
+          cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.json all
+          target/release/ixvm /tmp/ixvm-execution.json validate IxVM/IxVM/fixtures/nat-add-comm.json
+          lake exe ixvm/ixvm export-trace /tmp/ixvm-trace.json
+          cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- /tmp/ixvm-trace.json IxVM/IxVM/fixtures/nat-add-comm.json witness 1
       - name: Check codegen'd IxVM kernel is up to date
         if: github.event_name != 'push'
         run: lake exe ix codegen --check
@@ -67,6 +85,8 @@ jobs:
         if: github.event_name != 'push'
         run: |
           diff lean-toolchain Benchmarks/Compile/lean-toolchain
+          diff lean-toolchain Aiur/lean-toolchain
+          diff lean-toolchain IxVM/lean-toolchain
           diff lean-toolchain IxC/lean-toolchain
           diff lean-toolchain Models/SetTheory/lean-toolchain
       - name: Test Ix CLI
@@ -93,7 +113,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=target
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -114,11 +134,11 @@ jobs:
         if: github.event_name != 'push'
         uses: actions-rust-lang/rustfmt@4066006ec54a31931b9b1fddfd38f2fdf2d27143 # v1.1.2
       - name: Check clippy warnings
-        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile -- -D warnings
+        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ix-ffi/legacy-native,ixon/sharing-profile,aiur/parallel,ixvm/parallel -- -D warnings
       - name: Check *everything* compiles
-        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile
+        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ix-ffi/legacy-native,ixon/sharing-profile,aiur/parallel,ixvm/parallel
       - name: Tests
-        run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
+        run: cargo nextest run --release --profile ci --workspace --features ix-ffi/legacy-native,aiur/parallel,ixvm/parallel ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version
         if: github.event_name != 'push'
         run: |

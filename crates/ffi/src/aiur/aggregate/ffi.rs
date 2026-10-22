@@ -20,7 +20,7 @@ use super::{
 use crate::lean::LeanAiurAggregateExpected;
 use aiur::execute::IOBuffer;
 use ix_kernel::shard::ShardManifest;
-use ixvm_codegen::env_handle::EnvHandle;
+use ixvm_legacy::env_handle::EnvHandle;
 use lean_ffi::object::LeanString;
 use std::{fs, path::Path};
 
@@ -221,7 +221,7 @@ fn build_ix_aggr_io_buffer(
   trees_blob: &[u8],
   paths_blob: &[u8],
 ) -> Result<IOBuffer, String> {
-  use ixvm_codegen::aiur_ix_aggr_runner::{
+  use ixvm_legacy::aiur_ix_aggr_runner::{
     AggrAdvice, aggr_io_buffer, decode_aggr_paths, decode_aggr_preimages,
     decode_aggr_trees,
   };
@@ -295,7 +295,7 @@ extern "C" fn rs_aiur_ix_aggr_execute(
   let result = if use_bytecode {
     toplevel.execute(fun_idx, input, &mut io_buffer)
   } else {
-    ixvm_codegen::aiur_ix_aggr_runner::execute_ix_aggr(
+    ixvm_legacy::aiur_ix_aggr_runner::execute_ix_aggr(
       &toplevel,
       fun_idx,
       input,
@@ -361,7 +361,7 @@ extern "C" fn rs_aiur_ix_aggr_prove(
       fun_idx,
       &args,
       &mut io_buffer,
-      ixvm_codegen::aiur_ix_aggr_runner::execute_ix_aggr,
+      ixvm_legacy::aiur_ix_aggr_runner::execute_ix_aggr,
     )
   };
 

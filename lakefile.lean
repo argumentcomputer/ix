@@ -4,6 +4,9 @@ open System Lake DSL
 package ix where
   version := v!"0.1.0"
 
+require aiur from "Aiur"
+require ixvm from "IxVM"
+
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
 
@@ -47,9 +50,11 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA;
   -- IX_CUDA_TRACE_CODEGEN=1 enables generated trace kernels and implies CUDA.
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
+  let ixNative ← IO.getEnv "IX_NATIVE"
   let ixCuda ← IO.getEnv "IX_CUDA"
   let ixTraceCodegen ← IO.getEnv "IX_CUDA_TRACE_CODEGEN"
   let mut features : Array String := #[]
+  if ixNative == some "1" then features := features.push "legacy-native"
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
     features := features.push "cuda"
@@ -68,11 +73,18 @@ arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
 archive from a previous invocation. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
-  let sources ← inputDir (pkg.dir / "crates") true fun path =>
-    path.extension == some "rs" || path.extension == some "cu" ||
-    path.extension == some "cuh" || path.extension == some "h" ||
-    path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
-    path.fileName == "trace-manifest.json"
+  -- Changes to the new Aiur/IxVM packages do not invalidate legacy FFI builds.
+  -- Generated kernels are inputs only when their optional dependency is enabled.
+  let mut crates := #["aiur-legacy", "bench", "common", "compile", "ffi",
+    "ixvm-legacy", "ixon", "kernel"]
+  if args.any (fun arg => (arg.splitOn ",").contains "legacy-native") then
+    crates := crates.push "ixvm-legacy-native"
+  let sources := Job.collectArray (← crates.mapM fun name =>
+    inputDir (pkg.dir / "crates" / FilePath.mk name) true fun path =>
+      path.extension == some "rs" || path.extension == some "cu" ||
+      path.extension == some "cuh" || path.extension == some "h" ||
+      path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
+      path.fileName == "trace-manifest.json")
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")
@@ -117,7 +129,13 @@ target ix_rs_net pkg : FilePath := do
 
 end FFI
 
-lean_lib MultiStark where
+lean_lib LegacyAiur where
+  moreLinkObjs := #[ix_rs]
+
+lean_lib LegacyIxVM where
+  moreLinkObjs := #[ix_rs]
+
+lean_lib LegacyMultiStark where
   moreLinkObjs := #[ix_rs]
 
 /-- `lake -R -Kprofile build` compiles with frame pointers, so `perf` can unwind
@@ -161,7 +179,7 @@ lean_exe «arena-exclude» where
 the Rust writers, CUDA units and manifest the `aiur` parity tests compile
 against. -/
 lean_exe «trace-fixtures» where
-  root := `Tests.Aiur.TraceFixtures
+  root := `Tests.LegacyAiur.TraceFixtures
   supportInterpreter := true
 
 /-- Focused source-contract checks, including fresh-module registration export. -/
@@ -191,7 +209,7 @@ lean_exe «uniform-hard» where
   root := `Benchmarks.UniformHard
 
 lean_exe «bench-aiur» where
-  root := `Benchmarks.Aiur
+  root := `Benchmarks.LegacyAiur
 
 lean_exe «bench-aiur-compile» where
   root := `Benchmarks.AiurCompile
@@ -204,7 +222,7 @@ lean_exe «bench-sha256» where
   root := `Benchmarks.Sha256
 
 lean_exe «bench-ixvm» where
-  root := `Benchmarks.IxVM
+  root := `Benchmarks.LegacyIxVM
   supportInterpreter := true
 
 lean_exe «bench-shardmap» where

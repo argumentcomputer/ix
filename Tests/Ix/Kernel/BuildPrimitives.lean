@@ -197,13 +197,13 @@ opaque rsPrimAddrsCanonicalFFI : IO (Array (String × String))
     compiling that primitive's Lean declaration through the live
     `rsCompileEnvFFI` pipeline. A mismatch means someone changed the
     compile/serialize logic in a way that altered a primitive's
-    content hash — Aiur and downstream kernel primitive resolution
+    content hash — LegacyAiur and downstream kernel primitive resolution
     will silently break if `PrimAddrs::new()` isn't updated.
 
     On failure: re-run `lake test -- --ignored
     rust-kernel-build-primitives` to dump the fresh table, then
     update `PrimAddrs::new` in `crates/common/src/prim_addrs.rs` and its
-    Lean/Aiur mirrors.
+    Lean/LegacyAiur mirrors.
 
     Exception: `eagerReduce` is a synthetic kernel marker whose
     PrimAddrs value (`0xff…3`) intentionally diverges from its

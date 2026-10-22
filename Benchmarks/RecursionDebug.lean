@@ -1,17 +1,17 @@
-import Ix.IxVM
-import Ix.IxVM.Toplevel
-import Ix.IxVM.ClaimHarness
-import Ix.Aiur.Protocol
-import Ix.Aiur.Compiler
-import Ix.Aiur.Interpret
-import Ix.Aiur.Statistics
-import MultiStark
+import LegacyIxVM
+import LegacyIxVM.Toplevel
+import LegacyIxVM.ClaimHarness
+import LegacyAiur.Protocol
+import LegacyAiur.Compiler
+import LegacyAiur.Interpret
+import LegacyAiur.Statistics
+import LegacyMultiStark
 import Ix.Cli.NameResolve
 
 /-!
 # Recursive-verifier debugging harness
 
-Proves the IxVM typecheck of a single constant (same recipe as
+Proves the LegacyIxVM typecheck of a single constant (same recipe as
 `bench-typecheck --recursive`'s inner prove), SAVES the proof/vk/claims blobs
 to disk, and re-runs the in-circuit recursive verifier
 (`verify_multi_stark_proof`) from the saved blobs — so an expensive prove
@@ -39,7 +39,7 @@ lake exe bench-recursion-debug --ixe init.ixe --const Array.extract_append --mod
   --mode M         how to run the recursive verifier over the saved proof:
                      native    codegen'd Rust verifier (default; the
                                production path bench-typecheck uses)
-                     bytecode  generic Rust Aiur bytecode interpreter
+                     bytecode  generic Rust LegacyAiur bytecode interpreter
                      interp    Lean debug interpreter — call-stack trace +
                                pretty-printed values on failure (slow)
   --depth N        interp: pointer-deref depth in the pp (default 2)
@@ -59,9 +59,9 @@ def argStr (args : List String) (flag : String) : Option String :=
   | _ :: v :: _ => some v
   | _ => none
 
-def commitParams : Aiur.CommitmentParameters := { logBlowup := 2, capHeight := 0 }
+def commitParams : LegacyAiur.CommitmentParameters := { logBlowup := 2, capHeight := 0 }
 
-def friParams (numQueries : Nat) : Aiur.FriParameters :=
+def friParams (numQueries : Nat) : LegacyAiur.FriParameters :=
   { logFinalPolyLen := 0, maxLogArity := 1, numQueries,
     commitProofOfWorkBits := 0, queryProofOfWorkBits := 20 }
 
@@ -69,17 +69,17 @@ def secs (t0 t1 : Nat) : Float := (Float.ofNat (t1 - t0)) / 1e9
 
 /-- Prove `constName`'s typecheck and return `(proofBytes, vkBytes, claimBytes)`. -/
 def proveConst (ixePath constName : String) (skipDeps : Bool)
-    (fri : Aiur.FriParameters) : IO (Option (ByteArray × ByteArray × ByteArray)) := do
+    (fri : LegacyAiur.FriParameters) : IO (Option (ByteArray × ByteArray × ByteArray)) := do
   -- `--skip-deps` uses the subject-only `verify_const`, which the
   -- production toplevel no longer carries.
-  let .ok toplevel := (if skipDeps then IxVM.ixVMFull else IxVM.ixVM)
-    | IO.eprintln "IxVM toplevel merge failed"; return none
-  let .ok compiled := toplevel.compileWithGroups IxVM.functionGroups
-    | IO.eprintln "IxVM compile failed"; return none
+  let .ok toplevel := (if skipDeps then LegacyIxVM.ixVMFull else LegacyIxVM.ixVM)
+    | IO.eprintln "LegacyIxVM toplevel merge failed"; return none
+  let .ok compiled := toplevel.compileWithGroups LegacyIxVM.functionGroups
+    | IO.eprintln "LegacyIxVM compile failed"; return none
   let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
     | IO.eprintln s!"{entrypoint} entrypoint missing"; return none
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitParams fri
+  let aiurSystem := LegacyAiur.AiurSystem.build compiled.bytecode commitParams fri
   let ixonEnv ← match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
     | .error e => IO.eprintln s!"deserialize {ixePath} failed: {e}"; return none
     | .ok env => pure env
@@ -91,12 +91,12 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
   let t0 ← IO.monoNanosNow
   let (claim, proof) ←
     if skipDeps then
-      let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+      let witness := LegacyIxVM.ClaimHarness.buildVerifyConst ixonEnv addr
       match aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer with
       | .error e => IO.eprintln s!"proveIxVM failed: {e}"; return none
       | .ok (claim, proof, _) => pure (claim, proof)
     else do
-      let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+      let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe: {e}"; return none
         | .ok h => pure h
       match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash with
@@ -106,7 +106,7 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
         -- serialized `Ix.Claim` (same recipe as `ix verify` / bench-typecheck:
         -- 8 G elements of 4 LE bytes each, `ClaimHarness.packedDigestKey`).
         let digest := Address.blake3 claimBytes
-        pure (Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[], proof)
+        pure (LegacyAiur.buildClaim funIdx (LegacyIxVM.ClaimHarness.packedDigestKey digest) #[], proof)
   let t1 ← IO.monoNanosNow
   IO.println s!"inner prove: {secs t0 t1} s, proof {proof.toBytes.size} bytes"
   -- Sanity: the inner proof must verify out-of-circuit before we chase the
@@ -118,7 +118,7 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
   match aiurSystem.proofToAdviceBytes claim proof with
   | .error e => IO.eprintln s!"advice re-encoding failed: {e}"; return none
   | .ok adviceBytes =>
-    return some (adviceBytes, aiurSystem.vkBytes, MultiStark.serializeClaims #[claim])
+    return some (adviceBytes, aiurSystem.vkBytes, LegacyMultiStark.serializeClaims #[claim])
 
 def main (args : List String) : IO UInt32 := do
   let ixePath := (argStr args "--ixe").getD "init.ixe"
@@ -160,46 +160,46 @@ def main (args : List String) : IO UInt32 := do
     claims {claimBytes.size} bytes"
 
   -- ── the recursive verifier over the saved blobs ───────────────────────────
-  let .ok vTop := MultiStark.multiStark
+  let .ok vTop := LegacyMultiStark.multiStark
     | IO.eprintln "multi-stark verifier toplevel merge failed"; return 1
   -- `--list-funcs`: dump the compiled verifier's funIdx → name table (for
   -- decoding fun_idx stacks printed by the Rust bytecode interpreter).
   if args.contains "--list-funcs" then
-    let .ok vCompiled := vTop.compileWithGroups MultiStark.verifierFunctionGroups
+    let .ok vCompiled := vTop.compileWithGroups LegacyMultiStark.verifierFunctionGroups
       | IO.eprintln "multi-stark verifier compile failed"; return 1
     let entries := vCompiled.nameMap.toArray.qsort (·.2 < ·.2)
     for (g, i) in entries do
       IO.println s!"{i} {g}"
     return 0
-  let pubInput := MultiStark.verifierPubInput vkBytes claimBytes
+  let pubInput := LegacyMultiStark.verifierPubInput vkBytes claimBytes
   if mode == "interp" then
     -- Lean debug interpreter: call-stack + pretty-printed values on failure.
     let decls ← match vTop.mkDecls with
       | .error e => IO.eprintln s!"mkDecls failed: {e}"; return 1
       | .ok d => pure d
-    let gName := Aiur.Global.mk `verify_multi_stark_proof
+    let gName := LegacyAiur.Global.mk `verify_multi_stark_proof
     let inputTypes ← match decls.getByKey gName with
       | some (.function f) => pure (f.inputs.map (·.2))
       | _ => IO.eprintln "verify_multi_stark_proof not in decls"; return 1
-    let inputs := Aiur.unflattenInputs decls pubInput inputTypes
-    let toGs := fun (b : ByteArray) => b.data.map Aiur.G.ofUInt8
-    let io := (((default : Aiur.IOBuffer).extend 0 #[Aiur.G.ofNat 0] (toGs proofBytes)).extend
-        1 #[Aiur.G.ofNat 0] (toGs vkBytes)).extend
-        2 #[Aiur.G.ofNat 0] (toGs claimBytes)
+    let inputs := LegacyAiur.unflattenInputs decls pubInput inputTypes
+    let toGs := fun (b : ByteArray) => b.data.map LegacyAiur.G.ofUInt8
+    let io := (((default : LegacyAiur.IOBuffer).extend 0 #[LegacyAiur.G.ofNat 0] (toGs proofBytes)).extend
+        1 #[LegacyAiur.G.ofNat 0] (toGs vkBytes)).extend
+        2 #[LegacyAiur.G.ofNat 0] (toGs claimBytes)
     IO.println "running verify_multi_stark_proof under the Lean debug interpreter …"
     (← IO.getStdout).flush
     let t0 ← IO.monoNanosNow
-    match Aiur.runFunction decls gName inputs io with
+    match LegacyAiur.runFunction decls gName inputs io with
     | (.error e, s) =>
       let t1 ← IO.monoNanosNow
       IO.eprintln s!"REJECTED after {secs t0 t1} s:\n{e.ppDeref s.store depth stackLimit}"
       return 1
     | (.ok v, s) =>
       let t1 ← IO.monoNanosNow
-      IO.println s!"ACCEPTED in {secs t0 t1} s: {Aiur.Value.ppDeref s.store depth v}"
+      IO.println s!"ACCEPTED in {secs t0 t1} s: {LegacyAiur.Value.ppDeref s.store depth v}"
       return 0
   else
-    let .ok vCompiled := vTop.compileWithGroups MultiStark.verifierFunctionGroups
+    let .ok vCompiled := vTop.compileWithGroups LegacyMultiStark.verifierFunctionGroups
       | IO.eprintln "multi-stark verifier compile failed"; return 1
     let some vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof
       | IO.eprintln "verify_multi_stark_proof entrypoint missing"; return 1
@@ -216,8 +216,8 @@ def main (args : List String) : IO UInt32 := do
       return 1
     | .ok (out, qc) =>
       let t1 ← IO.monoNanosNow
-      let vShapes := Aiur.circuitShapes vCompiled.bytecode commitParams fri
-      let stats := Aiur.computeStats vCompiled qc vShapes
+      let vShapes := LegacyAiur.circuitShapes vCompiled.bytecode commitParams fri
+      let stats := LegacyAiur.computeStats vCompiled qc vShapes
         (logBlowup := commitParams.logBlowup)
       IO.println s!"ACCEPTED in {secs t0 t1} s, output {out}, \
         fft-cost {stats.totalFftCost}"

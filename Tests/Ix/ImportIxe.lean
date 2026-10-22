@@ -371,7 +371,7 @@ private def elabTest : IO (Bool × Nat × Nat × Option String) := do
     imported function applied to the commitment
     (`Ix.Commit.evalClaim`) — all with a closure-scoped compile, so
     cost tracks the claim, not the environment. (Proving the claim is
-    `ix prove`'s job; the IxVM eval arm is still landing.) -/
+    `ix prove`'s job; the LegacyIxVM eval arm is still landing.) -/
 private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
   let dir ← IO.FS.createTempDir
   let ixePath := (dir / "fixture.ixe").toString

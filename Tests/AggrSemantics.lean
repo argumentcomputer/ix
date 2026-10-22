@@ -14,7 +14,7 @@ regressions live beside the Rust controller.
 
 public section
 
-open LSpec Aiur
+open LSpec LegacyAiur
 
 namespace Tests.Aggr
 
@@ -178,16 +178,16 @@ def semanticSuite : IO UInt32 := do
   let defaultRecursionSystem :=
     Aggr.buildRecursionSystem childCompiled.bytecode recursionDefaults
   let directDefaultSystem := AiurSystem.build childCompiled.bytecode
-    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+    LegacyAiur.defaultCommitmentParameters LegacyAiur.defaultFriParameters
   let expectedDefaultFriBytes : ByteArray :=
     ⟨u64le 0 ++ u64le 1 ++ u64le 100 ++ u64le 0 ++ u64le 20⟩
-  let tunedFri : Aiur.FriParameters :=
+  let tunedFri : LegacyAiur.FriParameters :=
     { recursionDefaults.fri with numQueries := 50 }
   let tunedFriParameters : Aggr.RecursionParameters :=
     { recursionDefaults with fri := tunedFri }
   let tunedFriSystem :=
     Aggr.buildRecursionSystem childCompiled.bytecode tunedFriParameters
-  let tunedCommitment : Aiur.CommitmentParameters :=
+  let tunedCommitment : LegacyAiur.CommitmentParameters :=
     { recursionDefaults.commitment with logBlowup := 3 }
   let tunedCommitmentParameters : Aggr.RecursionParameters :=
     { recursionDefaults with commitment := tunedCommitment }
@@ -244,7 +244,7 @@ def semanticSuite : IO UInt32 := do
     | .error e => IO.eprintln s!"right aggregate prove failed: {e}"; return 1
     | .ok result => pure result
   let outerClaimBindsValue := leftOuter != rightOuter &&
-    flatOuter == Aiur.buildClaim fakeAggrIdx (Aggr.pubInput allowed flatBytes) #[]
+    flatOuter == LegacyAiur.buildClaim fakeAggrIdx (Aggr.pubInput allowed flatBytes) #[]
 
   let childRecursionParameters : Aggr.RecursionParameters := {
     commitment := recCommitParams
@@ -264,7 +264,7 @@ def semanticSuite : IO UInt32 := do
     selfVk childRecursionParameters leftOuter 1
   let repeated07 : Nat := 506381209866536711
   let cacheVectorParameters : Aggr.RecursionParameters := {
-    commitment := Aiur.defaultCommitmentParameters
+    commitment := LegacyAiur.defaultCommitmentParameters
     fri := {
       logFinalPolyLen := repeated07
       maxLogArity := repeated07
@@ -381,7 +381,7 @@ def semanticSuite : IO UInt32 := do
       IO.FS.writeBinFile ixePath envBytes
       IO.FS.writeBinFile ixesPath <| minimalIxesFor #[#[singleAddr]]
         (#[1, 0] ++ u32le4 0 ++ #[0])
-      match Aiur.EnvHandle.fromIxe ixePath.toString with
+      match LegacyAiur.EnvHandle.fromIxe ixePath.toString with
       | .error _ => pure (false, false)
       | .ok handle =>
         let planWorks := (ixvmSystem.aggregateStage2 selfSystem handle
@@ -389,7 +389,7 @@ def semanticSuite : IO UInt32 := do
           (16 * 1024 * 1024 * 1024) 4096 0 false true
           childRecursionParameters.cacheFriBytes false true false 0 false 1
           false 0).isOk
-        let expectedMatches := match Aiur.AiurSystem.aggregateExpected
+        let expectedMatches := match LegacyAiur.AiurSystem.aggregateExpected
             handle ixesPath.toString 4096 with
           | .error _ => false
           | .ok expected =>
@@ -438,12 +438,12 @@ def semanticSuite : IO UInt32 := do
     let legacyClosure : Std.HashSet Address := Id.run do
       let mut closure : Std.HashSet Address := {}
       for address in owned do
-        closure := closure.union (IxVM.ClaimHarness.closureFrom sharedEnv address)
+        closure := closure.union (LegacyIxVM.ClaimHarness.closureFrom sharedEnv address)
       pure closure
     let expectedOwned := canonicalTree owned
     let expectedFrontier := canonicalTree #[sharedAddress]
-    match IxVM.ClaimHarness.shardCheckEnvClaimTrees sharedEnv owned,
-        IxVM.ClaimHarness.shardCheckEnvClaim sharedEnv owned with
+    match LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees sharedEnv owned,
+        LegacyIxVM.ClaimHarness.shardCheckEnvClaim sharedEnv owned with
     | .ok (claimOnly, treesOnly), .ok (claimFull, closure, treesFull) =>
       let sameClosure := closure.size == legacyClosure.size &&
         closure.toArray.all legacyClosure.contains
@@ -554,7 +554,7 @@ def semanticSuite : IO UInt32 := do
       cacheKeyMatchesRustVector,
     test "wrap-first specs precompute every uniform claim and cache key"
       wrapSpecsComplete,
-    test "direct specs retain raw IxVM leaves and one aggregate root"
+    test "direct specs retain raw LegacyIxVM leaves and one aggregate root"
       directSpecsUseRawLeaves,
     test "wrap-first and direct policies derive the same flat root claim"
       policiesShareRootClaim,

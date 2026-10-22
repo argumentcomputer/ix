@@ -1,0 +1,13 @@
+[package]
+name = "ixvm-legacy-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aiur = { package = "aiur-legacy", path = "../aiur-legacy" }
+multi-stark.workspace = true
+stacker = "0.1"
+
+[lints]
+workspace = true

@@ -2,7 +2,7 @@
   Guards the kernel's hardcoded primitive addresses against the
   canonical table.
 
-  The Aiur kernel hardcodes ~77 primitive constant addresses as 32-byte
+  The LegacyAiur kernel hardcodes ~77 primitive constant addresses as 32-byte
   literals (`fn nat_add_addr() -> Addr { store([0xd6u8, ...]) }`) so
   reduction can recognize `Nat.add` etc. by address alone. Those bytes
   are the kernel's entire notion of "this Const IS the primitive whose
@@ -29,9 +29,9 @@
   (e.g. an AST shape change) cannot pass unnoticed.
 -/
 import Ix.Meta
-import Ix.Aiur.Compiler
-import Ix.IxVM
-import Ix.IxVM.Toplevel
+import LegacyAiur.Compiler
+import LegacyIxVM
+import LegacyIxVM.Toplevel
 import Ix.Tc.Primitive
 import LSpec
 
@@ -43,7 +43,7 @@ namespace Tests.Ix.Kernel.PrimAddrs
     Recognizes exactly the shape the addr helpers use:
     `store([b0u8, …, b31u8])`. Anything else → `none` (the function is
     not an address constant). -/
-private def addrLiteralOf (body : Aiur.Source.Term) : Option Address :=
+private def addrLiteralOf (body : LegacyAiur.Source.Term) : Option Address :=
   match body with
   | .store (.array elts) | .array elts =>
     if elts.size != 32 then none else Id.run do
@@ -57,7 +57,7 @@ private def addrLiteralOf (body : Aiur.Source.Term) : Option Address :=
 
 /-- Every `fn <name>() -> Addr`-shaped constant in the toplevel, paired
     with the address its literal encodes. -/
-private def collectAddrFns (t : Aiur.Source.Toplevel) :
+private def collectAddrFns (t : LegacyAiur.Source.Toplevel) :
     Array (String × Address) := Id.run do
   let mut out : Array (String × Address) := #[]
   for f in t.functions do
@@ -111,8 +111,8 @@ private def nameExceptions : Std.HashMap String String := .ofList [
 ]
 
 def suite : List TestSeq := Id.run do
-  let some toplevel := (IxVM.ixVMFull).toOption
-    | [test "IxVM toplevel builds" false]
+  let some toplevel := (LegacyIxVM.ixVMFull).toOption
+    | [test "LegacyIxVM toplevel builds" false]
   let fns := collectAddrFns toplevel
   let mut tests : TestSeq :=
     -- Guard against the extractor silently matching nothing (e.g. an

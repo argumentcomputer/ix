@@ -1,0 +1,98 @@
+// Stage-one adapters. Appended before static reachability pruning.
+// U8 and U32 are opaque library values; U64 is an array of opaque bytes.
+// Raw inputs are checked at construction; word arithmetic preserves their ranges.
+// This IxVM instantiation selects Goldilocks explicitly in Examples/IxVM.lean.
+// Shared UInt8, UInt32, UInt64 and Blake3 modules own these operations.
+type U8 = UInt8::U8;
+type U32 = UInt32::U32;
+inline fn store<T>(value: T) -> &T { &value }
+inline fn load<T>(pointer: &T) -> T { *pointer }
+
+inline fn io_get_info(channel: Field, key: [U8; 32]) -> (Field, Field) {
+    hint::<(Field, Field)>("ixvm.io.info", (channel, Blake3::address_to_fields(key)))
+}
+
+// Binary long division using ordinary recursive calls. No quotient pointers are
+// accepted as advice; division by zero follows Lean Nat.div/Nat.mod.
+fn ordinary_div_mod(a: KLimbs, b: KLimbs) -> (KLimbs, KLimbs) {
+    let a = klimbs_normalize(a);
+    let b = klimbs_normalize(b);
+    match klimbs_is_zero(b) {
+      1 => (store(ListNode::Nil), a),
+      _ => divide_grow(a, b),
+    }
+}
+fn divide_grow(a: KLimbs, b: KLimbs) -> (KLimbs, KLimbs) {
+    match klimbs_le(b, a) {
+      0 => (store(ListNode::Nil), a),
+      _ => {
+        let (q, r) = divide_grow(a, klimbs_add(b, b));
+        let q = klimbs_add(q, q);
+        match klimbs_le(b, r) {
+          0 => (q, r),
+          _ => (klimbs_succ(q), klimbs_sub(r, b)),
+        }
+      },
+    }
+}
+
+fn stream_equal(a: ByteStream, b: ByteStream) -> Field {
+    match (load(a), load(b)) {
+      (ListNode::Nil, ListNode::Nil) => 1,
+      (ListNode::Cons(x, xs), ListNode::Cons(y, ys)) => {
+        match UInt8::to_field(x) - UInt8::to_field(y) { 0 => stream_equal(xs, ys), _ => 0 }
+      },
+      _ => 0,
+    }
+}
+fn verify_serde(digest: [Field; 32]) -> () {
+    let digest = Blake3::address_from_fields(digest);
+    let (idx, len) = io_get_info(2, digest);
+    let bytes = read_byte_stream(2, idx, len);
+    Blake3::verify_bytes_against(bytes, digest);
+    let (constant, rest) = get_constant(bytes);
+    let ListNode::Nil = load(rest);
+    let output = put_constant(constant, store(ListNode::Nil));
+    assert_eq!(stream_equal(bytes, output), 1, "Ixon serialization round trip");
+    ()
+}
+fn verify_constant(digest: [Field; 32]) -> () { run_check(store(Blake3::address_from_fields(digest))) }
+fn verify_transitive(digest: [Field; 32]) -> () { run_check_transitive(store(Blake3::address_from_fields(digest))) }
+fn check_primitives() -> () {
+    assert_eq!(UInt32::compact_field(UInt32::compact(UInt32::add(UInt32::MAX, UInt32::ONE))), 0, "u32 carry");
+    assert_eq!(UInt32::compact_field(UInt32::compact(UInt32::add3(UInt32::MAX, UInt32::MAX, UInt32::MAX))), 4294967293, "three-word carry");
+    assert_eq!(UInt32::less_than_fields(255, 256), 1, "u32 compare");
+    assert_eq!(UInt32::less_than_fields(256, 255), 0, "u32 compare reverse");
+    let a = store(ListNode::Cons([UInt8::BYTE_25,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0], store(ListNode::Nil)));
+    let b = store(ListNode::Cons([UInt8::BYTE_7,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0], store(ListNode::Nil)));
+    let (q,r) = ordinary_div_mod(a,b);
+    let ListNode::Cons(q0, qt) = load(q);
+    let ListNode::Nil = load(qt);
+    assert_eq!(UInt64::eq(q0, [UInt8::BYTE_3,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0]), 1, "division");
+    let ListNode::Cons(r0, rt) = load(r);
+    let ListNode::Nil = load(rt);
+    assert_eq!(UInt64::eq(r0, [UInt8::BYTE_4,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0,UInt8::BYTE_0]), 1, "remainder");
+    // Identity fast paths are omitted; the original fallback still proves
+    // reflexivity for closed and open terms, and preserves unused credit.
+    let empty = store(ListNode::Nil);
+    let prop = store(KExprNode::Srt(store(KLevelNode::Zero)));
+    let var = store(KExprNode::BVar(0));
+    let ctx = store(ListNode::Cons(prop, empty));
+    let lam = store(KExprNode::Lam(prop, var));
+    assert_eq!(k_is_def_eq(prop, prop, empty), 1, "sort reflexivity without pointer shortcut");
+    assert_eq!(k_is_def_eq(var, var, ctx), 1, "open reflexivity without pointer shortcut");
+    assert_eq!(k_is_def_eq(var, var, empty), 1, "context-free variable comparison");
+    let head = store(KExprNode::BVar(1));
+    let app = store(KExprNode::App(head, var));
+    assert_eq!(k_is_def_eq(app, app, empty), 1, "context-free application comparison");
+    let other = store(KExprNode::App(var, var));
+    assert_eq!(try_def_eq_app(app, other, empty), 0, "different variable heads");
+    assert_eq!(k_is_def_eq(lam, lam, empty), 1, "lambda reflexivity without pointer shortcut");
+    assert_eq!(k_is_def_eq_struct_bounded(lam, lam, 3, empty), (1, 3), "structural credit");
+    let str = store(KExprNode::Lit(KLiteral::Str(store(ListNode::Nil))));
+    assert_eq!(k_is_def_eq_struct_go(str, var, ctx), 0, "string expansion makes no progress");
+    let zero = store(KExprNode::Lit(KLiteral::Nat(store(ListNode::Nil))));
+    let ctor = store(KExprNode::Const(nat_zero_addr_iota(), store(ListNode::Nil)));
+    assert_eq!(k_is_def_eq_struct_go(zero, ctor, empty), 1, "natural literal expansion");
+    ()
+}

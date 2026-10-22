@@ -1,0 +1,559 @@
+//! Rust port of `IxVM.ClaimHarness.buildShardCheckEnvWitness`.
+//!
+//! Replaces the Lean-side IOBuffer construction (~92% of shard
+//! wall time on heavy partitions) with a direct Rust implementation
+//! that builds `aiur::execute::IOBuffer` without per-byte boxing
+//! into Lean values.
+//!
+//! Mirrors the per-channel layout documented in
+//! `LegacyIxVM/ClaimHarness.lean`:
+//!
+//! | ch | purpose                  | key            | value     |
+//! |----|--------------------------|----------------|-----------|
+//! | 0  | claim wire bytes         | claim_digest   | bytes     |
+//! | 1  | assumption tree bytes    | tree.root      | bytes     |
+//! | 2  | constant wire bytes      | const addr     | bytes     |
+//! | 3  | Defn reducibility hint   | Defn addr      | single G  |
+//! | 4  | blob raw bytes           | blob addr      | bytes     |
+//!
+//! An address is seeded on ch 2 iff it is a constant and on ch 4 iff it
+//! is a blob. The two sets are NOT disjoint: constant and blob addresses
+//! share a hash codomain, so one address can be read both ways, and the
+//! Expr context (`Ref`/`Prj` vs `Str`/`Nat`) is what says which table a
+//! reference means. Each channel is therefore seeded independently, and
+//! the kernel derives which it wants from that context, so no
+//! discriminator entry is shipped.
+//!
+//! Every byte-stream is blake3-verified kernel-side against its
+//! content-addressed key.
+//!
+//! # Parallelism
+//!
+//! The byte scope is computed by `witness_scope`, which delegates to
+//! `Env::bfs_closure` — a single sequential BFS that parses each closure
+//! member exactly once. The hot phase that follows uses rayon:
+//!
+//! * **Byte→G conversion** (`add_entries_parallel`): assign offsets in
+//!   sorted address order, then fill disjoint slices of the final channel
+//!   arenas in parallel. No intermediate field-element buffers are kept.
+
+use multi_stark::p3_field::PrimeCharacteristicRing;
+use rayon::prelude::*;
+use rustc_hash::FxHashSet;
+
+use aiur::G;
+use aiur::execute::{IOBuffer, IOKeyInfo};
+use ix_common::address::Address;
+use ix_common::env::ReducibilityHints;
+use ix_common::prim_addrs::PrimAddrs;
+use ixon::Env;
+use ixon::assumption_tree::AssumptionTree;
+use ixon::proof::Claim;
+
+/// Append `data` to the per-channel arena and record `(idx, len)`
+/// in the `(channel, key)` info map.
+#[inline]
+fn extend(io: &mut IOBuffer, channel: G, key: Vec<G>, data: Vec<G>) {
+  let arena = io.data.entry(channel).or_default();
+  let idx = arena.len();
+  let len = data.len();
+  arena.extend(data);
+  io.map.insert((channel, key), IOKeyInfo { idx, len });
+}
+
+/// An address as its 32 bytes, one field element each: the memory-table key
+/// of an interned `Addr` and the argument of `check_owned`.
+#[inline]
+pub fn addr_key(addr: &Address) -> Vec<G> {
+  addr.as_bytes().iter().map(|b| G::from_u8(*b)).collect()
+}
+
+/// An address as 8 packed-4-LE-byte field elements: the `verify_claim`
+/// public-input (and ch-0 key) form. Mirrors the in-circuit `b3_pack`
+/// and Lean `IxVM.ClaimHarness.packedDigestKey`.
+#[inline]
+fn packed_digest_key(addr: &Address) -> Vec<G> {
+  addr
+    .as_bytes()
+    .as_chunks::<4>()
+    .0
+    .iter()
+    .map(|w| {
+      G::from_u32(
+        u32::from(w[0])
+          | u32::from(w[1]) << 8
+          | u32::from(w[2]) << 16
+          | u32::from(w[3]) << 24,
+      )
+    })
+    .collect()
+}
+
+#[inline]
+fn bytes_to_g(bytes: &[u8]) -> Vec<G> {
+  bytes.iter().map(|b| G::from_u8(*b)).collect()
+}
+
+/// Mirror of `IxVM.ClaimHarness.hintToG`:
+/// `Opaque → 0`, `Abbrev → 0xFFFFFFFF`, `Regular n → min(1+n, 0xFFFFFFFE)`.
+fn hint_to_g(h: &ReducibilityHints) -> G {
+  let v: u64 = match h {
+    ReducibilityHints::Opaque => 0,
+    ReducibilityHints::Abbrev => 0xFFFF_FFFF,
+    ReducibilityHints::Regular(n) => {
+      let v = (1u64).saturating_add(u64::from(*n));
+      v.min(0xFFFF_FFFE)
+    },
+  };
+  G::from_u64(v)
+}
+
+/// Assign deterministic offsets, then convert bytes directly into the
+/// final arenas. Holding converted partials while growing/copying the
+/// arenas can otherwise multiply the peak memory of large witnesses.
+fn add_entries_parallel(
+  env: &Env,
+  closure: &FxHashSet<Address>,
+  io: &mut IOBuffer,
+) {
+  let ch_hint = G::from_u8(3);
+
+  // Pull the set of addrs we'll touch as a Vec for parallel iteration,
+  // SORTED: the closure set is unioned by racing threads (DashSet), so its
+  // iteration order varies run to run; the arena indices assigned below
+  // follow this order and flow into the trace via ioGetInfo, so an
+  // unsorted walk makes proof bytes nondeterministic (semantically
+  // equivalent, but bytes and FRI queries reshuffle every run).
+  let mut closure_vec: Vec<Address> = closure.iter().cloned().collect();
+  closure_vec.sort_unstable();
+
+  // Seed the constant and blob channels independently: a single address
+  // may occur in BOTH tables. Missing addresses remain absent, as before.
+  for channel in [2, 4] {
+    let entries: Vec<_> = closure_vec
+      .iter()
+      .filter_map(|addr| {
+        let len = if channel == 2 {
+          env.consts.get(addr).map(|c| c.raw_bytes().len())
+        } else {
+          env.blobs.get(addr).map(|b| b.len())
+        };
+        len.map(|len| (addr, len))
+      })
+      .collect();
+    if entries.is_empty() {
+      continue;
+    }
+    let channel = G::from_u8(channel);
+    let arena = io.data.entry(channel).or_default();
+    let mut idx = arena.len();
+    let len: usize = entries.iter().map(|(_, len)| len).sum();
+    arena.reserve_exact(len);
+    arena.resize(idx + len, G::ZERO);
+    let mut remaining = &mut arena[idx..];
+    let mut jobs = Vec::with_capacity(entries.len());
+    for (addr, len) in entries {
+      io.map.insert((channel, addr_key(addr)), IOKeyInfo { idx, len });
+      idx += len;
+      let (dst, rest) = remaining.split_at_mut(len);
+      remaining = rest;
+      jobs.push((addr, dst));
+    }
+    jobs.into_par_iter().for_each(|(addr, dst)| {
+      let fill = |src: &[u8], dst: &mut [G]| {
+        assert_eq!(src.len(), dst.len());
+        for (out, byte) in dst.iter_mut().zip(src) {
+          *out = G::from_u8(*byte);
+        }
+      };
+      if channel == G::from_u8(2) {
+        let constant =
+          env.consts.get(addr).expect("witness constant disappeared");
+        fill(constant.raw_bytes(), dst);
+      } else {
+        let blob = env.blobs.get(addr).expect("witness blob disappeared");
+        fill(blob.value(), dst);
+      }
+    });
+  }
+  for addr in &closure_vec {
+    if let Some(hint) = env.anon_hints.get(addr) {
+      extend(io, ch_hint, addr_key(addr), vec![hint_to_g(&hint)]);
+    }
+  }
+}
+
+/// Build a `Check { const_addr, assumptions=None }` claim witness
+/// directly in Rust. Returns `(claim, claim_digest_input, io_buffer)`
+/// ready to feed to `crate::ix::aiur_ixvm_runner::execute_ixvm`.
+///
+/// Mirrors `IxVM.ClaimHarness.buildClaimWitness` on the
+/// `Claim.check addr none` branch: the witness scope seeds ch 2/3/4,
+/// claim bytes go to ch 0. Asm-tree variant deferred — caller falls
+/// back to Lean witness when `asm = Some _`.
+pub fn build_claim_check_witness(
+  env: &Env,
+  target: &Address,
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  let closure: FxHashSet<Address> =
+    witness_scope(env, std::slice::from_ref(target));
+
+  let claim = Claim::Check { const_addr: target.clone(), assumptions: None };
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let digest = Address::hash(&claim_bytes);
+  let digest_key = packed_digest_key(&digest);
+
+  let mut io = IOBuffer {
+    data: rustc_hash::FxHashMap::default(),
+    map: rustc_hash::FxHashMap::default(),
+  };
+  // ch 0: claim bytes
+  extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
+  // ch 2/3/4: per-const/hint/blob entries — parallel byte conversion.
+  add_entries_parallel(env, &closure, &mut io);
+
+  Ok((claim, digest_key, io))
+}
+
+/// Every primitive address the kernel can name, as the Lean seeder sees
+/// them: the parity table plus the reserved reduction markers. Built from
+/// `ix_common::prim_addrs::PrimAddrs`, which the `prim-addrs` parity test
+/// pins against `Ix.Tc.PrimAddrs`, so both seeders cover the same set by
+/// construction.
+fn prim_addrs() -> Vec<Address> {
+  let mut v: Vec<Address> = PrimAddrs::lean_parity_table()
+    .iter()
+    .map(|(name, hex)| {
+      Address::from_hex(hex)
+        .unwrap_or_else(|| panic!("primitive {name}: invalid address hex"))
+    })
+    .collect();
+  v.extend(PrimAddrs::reserved_marker_addrs().iter().map(|(_, a)| a.clone()));
+  v
+}
+
+/// The full WITNESS byte scope for `roots`: the env dependency closure
+/// plus every primitive present in the env.
+///
+/// `Env::bfs_closure` follows `refs`, each projection's `block` pointer,
+/// AND — for a `Muts` block — every member/constructor projection
+/// address it derives. That last edge is what the kernel needs: its
+/// lazy `get_ci` synthesizes IPrj/CPrj/RPrj/DPrj wrapper addrs via
+/// kernel-side blake3 and faults their bytes from ch 2, so wrappers
+/// over a closure block must ship even when no `Constant.refs` edge
+/// reaches them. The closure already carries them — expanding a wrapper
+/// only re-adds its (already present) block — so no reverse scan of the
+/// env is needed.
+///
+/// Primitives are seeded as additional ROOTS because the kernel
+/// FABRICATES references to them while reducing — `Const(nat_succ_addr(),
+/// ..)` and friends are built from addresses hardcoded in the Aiur
+/// source, not discovered by walking `refs` — and `get_ci` then faults
+/// their bytes from ch 2 like any other constant. Such a primitive need
+/// not appear anywhere in the target's ref closure, so a closure-only
+/// scope aborts with `invalid IO key`. Intersected with `env.consts`: a
+/// primitive the env does not carry is one the check cannot reach.
+///
+/// They are walked rather than merely inserted because def-eq
+/// delta-unfolds primitive BODIES, and a body's refs are reachable from
+/// nowhere else in the scope (the `strAppend*` arena fixtures exercise
+/// exactly this).
+///
+/// Every witness builder goes through here, so the byte scope cannot
+/// drift apart per call site. Mirrors
+/// `LegacyIxVM.ClaimHarness.closureFrom`.
+fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
+  let mut all_roots: Vec<Address> = roots.to_vec();
+  all_roots
+    .extend(prim_addrs().into_iter().filter(|a| env.consts.contains_key(a)));
+  env.bfs_closure(&all_roots)
+}
+
+/// Whole-environment `CheckEnv` witness split across workers (trace-sharding
+/// design §13.3): the claim over the environment's canonical tree with no
+/// assumptions, the digest key worker 0's `verify_claim` takes as input, and
+/// one IO buffer per worker. Worker 0's carries the claim bytes (ch 0) and
+/// the tree (ch 1); every worker's carries the byte scope (ch 2) of the
+/// constants it owns, which is all a worker's `check_owned` runs fault.
+pub fn build_env_check_witnesses(
+  env: &Env,
+  owners: &[Vec<Address>],
+) -> Result<(Claim, Vec<G>, Vec<IOBuffer>), String> {
+  let statement = EnvCheckStatement::new(env)?;
+  let ios = (0..owners.len())
+    .map(|worker| statement.worker_io(env, owners, worker))
+    .collect();
+  Ok((statement.claim, statement.digest_key, ios))
+}
+
+/// The whole-environment `CheckEnv` statement: the claim over the
+/// environment's canonical tree with no assumptions, the packed digest key
+/// worker 0's `verify_claim` takes as input, and the tree itself.
+pub struct EnvCheckStatement {
+  pub claim: Claim,
+  pub digest_key: Vec<G>,
+  claim_bytes: Vec<u8>,
+  tree: AssumptionTree,
+}
+
+impl EnvCheckStatement {
+  pub fn new(env: &Env) -> Result<Self, String> {
+    let mut all: Vec<Address> =
+      env.consts.iter().map(|entry| entry.key().clone()).collect();
+    all.sort();
+    let tree = AssumptionTree::canonical(&all)
+      .ok_or_else(|| "EnvCheckStatement: empty environment".to_string())?;
+    let claim = Claim::CheckEnv { root: tree.root(), assumptions: None };
+    let mut claim_bytes: Vec<u8> = Vec::new();
+    claim.put(&mut claim_bytes);
+    let digest_key = packed_digest_key(&Address::hash(&claim_bytes));
+    Ok(Self { claim, digest_key, claim_bytes, tree })
+  }
+
+  /// Worker `worker`'s IO buffer, built on demand (see
+  /// [`build_env_check_witnesses`] for the layout): a worker's execution
+  /// reads it, and a re-execution reads a fresh one.
+  pub fn worker_io(
+    &self,
+    env: &Env,
+    owners: &[Vec<Address>],
+    worker: usize,
+  ) -> IOBuffer {
+    let mut io = IOBuffer {
+      data: rustc_hash::FxHashMap::default(),
+      map: rustc_hash::FxHashMap::default(),
+    };
+    if worker == 0 {
+      extend(
+        &mut io,
+        G::ZERO,
+        self.digest_key.clone(),
+        bytes_to_g(&self.claim_bytes),
+      );
+      extend(
+        &mut io,
+        G::ONE,
+        addr_key(&self.tree.root()),
+        bytes_to_g(&self.tree.ser()),
+      );
+    }
+    add_entries_parallel(env, &witness_scope(env, &owners[worker]), &mut io);
+    io
+  }
+}
+
+/// Every worker's byte scope: the closure its `check_owned` runs can reach
+/// from the constants it owns.
+pub fn worker_scopes(
+  env: &Env,
+  owners: &[Vec<Address>],
+) -> Vec<FxHashSet<Address>> {
+  owners.par_iter().map(|owned| witness_scope(env, owned)).collect()
+}
+
+/// Which workers may call into which: `callers[r]` lists every worker
+/// other than `r` whose byte scope (`scopes`, from [`worker_scopes`])
+/// contains a constant `r` owns, plus worker 0 for every `r`, whose
+/// `verify_claim` walk reaches every chunk. A superset of the calls actually
+/// deferred, so a worker whose callers have all executed can commit.
+pub fn worker_callers(
+  owners: &[Vec<Address>],
+  scopes: &[FxHashSet<Address>],
+) -> Vec<Vec<usize>> {
+  (0..owners.len())
+    .map(|r| {
+      (0..owners.len())
+        .filter(|&c| {
+          c != r
+            && (c == 0 || owners[r].iter().any(|addr| scopes[c].contains(addr)))
+        })
+        .collect()
+    })
+    .collect()
+}
+
+/// Shard `CheckEnv` witness: thin-frontier claim (see
+/// `ixon::shard_claim`) plus the `bfs_closure` byte scope the kernel
+/// needs for its blake3-synthesized projection addresses. The frontier
+/// membership set stays at `closure_from` granularity — the claim's walk
+/// only follows refs + Prj→block edges; the block→wrapper edges
+/// `bfs_closure` adds are byte scope only.
+pub fn build_shard_check_env_witness(
+  env: &Env,
+  owned: &[Address],
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  // Claim + THIN frontier from the shared convention module — the
+  // single source of truth for shard CheckEnv digests (see
+  // ixon::shard_claim; Lean mirror:
+  // IxVM.ClaimHarness.shardCheckEnvClaimThin).
+  let (claim, frontier) = ixon::shard_claim::shard_check_env_claim(env, owned)
+    .ok_or_else(|| {
+      "build_shard_check_env_witness: empty owned set".to_string()
+    })?;
+  let mut owned_sorted: Vec<Address> = owned.to_vec();
+  owned_sorted.sort();
+  let owned_tree =
+    AssumptionTree::canonical(&owned_sorted).ok_or_else(|| {
+      "build_shard_check_env_witness: empty owned set".to_string()
+    })?;
+  let asm_tree = AssumptionTree::canonical(&frontier);
+  debug_assert_eq!(
+    claim,
+    Claim::CheckEnv {
+      root: owned_tree.root(),
+      assumptions: asm_tree.as_ref().map(|t| t.root()),
+    }
+  );
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let digest = Address::hash(&claim_bytes);
+  let digest_key = packed_digest_key(&digest);
+
+  let mut io = IOBuffer {
+    data: rustc_hash::FxHashMap::default(),
+    map: rustc_hash::FxHashMap::default(),
+  };
+  extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
+  let byte_scope = witness_scope(env, owned);
+  add_entries_parallel(env, &byte_scope, &mut io);
+  extend(
+    &mut io,
+    G::ONE,
+    addr_key(&owned_tree.root()),
+    bytes_to_g(&owned_tree.ser()),
+  );
+  if let Some(at) = asm_tree {
+    extend(&mut io, G::ONE, addr_key(&at.root()), bytes_to_g(&at.ser()));
+  }
+
+  Ok((claim, digest_key, io))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use ixon::constant::{Axiom, Constant, ConstantInfo};
+  use ixon::expr::Expr;
+  use std::sync::Arc;
+
+  fn const_with_refs(refs: Vec<Address>) -> Constant {
+    Constant::with_tables(
+      ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: Arc::new(Expr::Sort(0)),
+      }),
+      Vec::new(),
+      refs,
+      Vec::new(),
+    )
+  }
+
+  #[test]
+  fn direct_arenas_preserve_serial_layout() {
+    let env = Env::new();
+    let mut closure = FxHashSet::default();
+    // Cross the old 256-entry chunk boundaries; include constant-only,
+    // blob-only, dual-use, missing, zero-length, and hint-only entries.
+    for i in 0_u32..600 {
+      let addr = Address::hash(&i.to_le_bytes());
+      closure.insert(addr.clone());
+      if i % 2 == 0 {
+        env.store_const(addr.clone(), const_with_refs(vec![]));
+      }
+      if i % 3 == 0 {
+        env
+          .blobs
+          .insert(addr.clone(), vec![i.to_le_bytes()[0]; (i % 17) as usize]);
+      }
+      if i % 5 == 0 {
+        env.anon_hints.insert(addr, ReducibilityHints::Regular(i));
+      }
+    }
+    let initial = || {
+      let mut io =
+        IOBuffer { data: Default::default(), map: Default::default() };
+      // Offsets must remain correct when appending to nonempty arenas.
+      for channel in [2, 3, 4] {
+        extend(&mut io, G::from_u8(channel), vec![G::ZERO], vec![G::ONE]);
+      }
+      io
+    };
+    let mut expected = initial();
+    let mut sorted: Vec<_> = closure.iter().collect();
+    sorted.sort_unstable();
+    for addr in sorted {
+      if let Some(c) = env.consts.get(addr) {
+        extend(
+          &mut expected,
+          G::from_u8(2),
+          addr_key(addr),
+          bytes_to_g(c.raw_bytes()),
+        );
+      }
+      if let Some(b) = env.blobs.get(addr) {
+        extend(
+          &mut expected,
+          G::from_u8(4),
+          addr_key(addr),
+          bytes_to_g(b.value()),
+        );
+      }
+      if let Some(h) = env.anon_hints.get(addr) {
+        extend(
+          &mut expected,
+          G::from_u8(3),
+          addr_key(addr),
+          vec![hint_to_g(&h)],
+        );
+      }
+    }
+    for threads in [1, 4] {
+      let mut actual = initial();
+      rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .unwrap()
+        .install(|| add_entries_parallel(&env, &closure, &mut actual));
+      assert_eq!(actual.data, expected.data);
+      assert_eq!(actual.map.len(), expected.map.len());
+      for (key, info) in &expected.map {
+        let got = actual.map.get(key).unwrap();
+        assert_eq!((got.idx, got.len), (info.idx, info.len));
+      }
+    }
+    let mut empty =
+      IOBuffer { data: Default::default(), map: Default::default() };
+    add_entries_parallel(&env, &FxHashSet::default(), &mut empty);
+    assert!(empty.data.is_empty());
+    assert!(empty.map.is_empty());
+  }
+
+  /// One address can legitimately be read as both a constant and a blob
+  /// payload: blob and constant addresses share a hash codomain, and the
+  /// Expr context (`Ref`/`Prj` vs `Str`/`Nat`) is what disambiguates. The
+  /// kernel faults such an address from ch 2 and ch 4 independently, so
+  /// the witness must seed both — a constant hit must not suppress the
+  /// blob lookup, or the check aborts with `invalid IO key`.
+  #[test]
+  fn dual_use_address_is_seeded_on_both_channels() {
+    let env = Env::new();
+    let target = Address::hash(b"target");
+    let dual = Address::hash(b"dual");
+    env.store_const(target.clone(), const_with_refs(vec![dual.clone()]));
+    env.store_const(dual.clone(), const_with_refs(vec![]));
+    env.blobs.insert(dual.clone(), vec![1, 2, 3]);
+
+    let (_, _, io) = build_claim_check_witness(&env, &target).unwrap();
+    let key = addr_key(&dual);
+    assert!(
+      io.map.contains_key(&(G::from_u8(2), key.clone())),
+      "dual-use address missing from ch 2 (constant bytes)"
+    );
+    assert!(
+      io.map.contains_key(&(G::from_u8(4), key)),
+      "dual-use address missing from ch 4 (blob bytes)"
+    );
+  }
+}

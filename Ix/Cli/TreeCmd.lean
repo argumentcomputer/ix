@@ -13,7 +13,7 @@ public import Cli
 public import Ix.Address
 public import Ix.AssumptionTree
 public import Ix.Common
-public import Ix.IxVM.ClaimHarness
+public import LegacyIxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Store
 
@@ -57,7 +57,7 @@ def runTreeCanonical (p : Cli.Parsed) : IO UInt32 := do
 
 /-- Build the canonical merkle tree over every `Ixon.Env` constant
     address and persist it at `~/.ix/store/<root>`. Same shape as
-    `IxVM.ClaimHarness.envCanonicalTree`; the root is what
+    `LegacyIxVM.ClaimHarness.envCanonicalTree`; the root is what
     `Claim.checkEnv root _` expects. -/
 def runTreeEnv (p : Cli.Parsed) : IO UInt32 := do
   let some ixeArg := p.positionalArg? "ixe"
@@ -68,7 +68,7 @@ def runTreeEnv (p : Cli.Parsed) : IO UInt32 := do
     | .error e =>
       IO.eprintln s!"error: failed to deserialize {ixePath}: {e}"; return 1
     | .ok env => pure env
-  let some tree := IxVM.ClaimHarness.envCanonicalTree ixonEnv
+  let some tree := LegacyIxVM.ClaimHarness.envCanonicalTree ixonEnv
     | IO.eprintln s!"error: {ixePath} has no consts; cannot build env tree"
       return 1
   let tbytes := Ix.AssumptionTree.ser tree

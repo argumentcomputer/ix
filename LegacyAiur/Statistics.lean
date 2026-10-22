@@ -1,0 +1,210 @@
+module
+public import LegacyAiur.Compiler
+public import LegacyAiur.Semantics.BytecodeFfi
+public import LegacyAiur.Protocol
+
+/-!
+Circuit statistics for LegacyAiur executions.
+
+Given a `CompiledToplevel`, the per-circuit `QueryCount`s returned by
+`execute`, and the per-circuit `CircuitShape`s read off the compiled Rust
+`System`, computes per-circuit stage-1, stage-2, quotient and total committed
+widths, height (the unique-row count), cache hits (sum of multiplicities),
+and the FFT cost for every
+system circuit — constrained functions, memories, and the fixed-height
+`Bytes1`/`Bytes2` byte gadgets.
+
+The FFT cost counts the transforms the pinned prover actually runs, per
+committed column, using the raw (unpadded) height `h` so the statistic
+stays sensitive to one-row changes (the real prover pads `h` to a power of
+two; structural powers of two like the blowup `B` and the quotient degree
+`q` stay exact):
+
+- each PCS trace commit (stage 1 width `m`, stage 2 width `s2`) is one
+  size-`h` inverse DFT plus `B` size-`h` coset DFTs per column
+  (`Radix2DitParallel::coset_lde_batch`), i.e. `(B+1)·F(h)`;
+- the quotient runs one forward DFT of the `(q·h) × D` flattened quotient
+  (`D·F(q·h)`) and one zero-padded size-`B·h` DFT per chunk column
+  (`q·D·F(B·h)`, `lde_from_shifted_coefficients`); committing the
+  prebuilt chunk LDE (`Pcs::commit_ldes`) runs no transform,
+
+where `F(0) = 0` and `F(x) = x·log2(max(x, 2))`. Costs are `Float`s to
+capture small changes continuously. Results are sorted by FFT cost in
+decreasing order and printed with cumulative FFT cost percentages.
+-/
+
+public section
+
+namespace LegacyAiur
+
+structure CircuitStats where
+  name : String
+  stage1Width : Nat
+  stage2Width : Nat
+  /-- Quotient chunk columns, flattened over the base field. -/
+  quotientWidth : Nat
+  /-- Total committed width: stage 1 + stage 2 + quotient chunks. -/
+  width : Nat
+  height : Nat
+  cacheHits : Nat
+  fftCost : Float
+  /-- FFT cost at the uncached height `height + cacheHits` (fixed-height
+  gadget circuits keep their normal cost). Feeds `totalUncachedFftCost`. -/
+  uncachedFftCost : Float
+
+structure ExecutionStats where
+  circuits : Array CircuitStats
+  totalFftCost : Float
+  totalUncachedFftCost : Float
+  totalCacheHits : Nat
+  deriving Inhabited
+
+/-- Continuous transform-size surrogate: `0` at `0` (an empty circuit is
+deactivated by the prover), else `x·log2(max(x, 2))` — the clamp keeps a
+height-1 transform nonzero. -/
+def transformCost (x : Nat) : Float :=
+  if x == 0 then 0.0
+  else
+    let xf := x.toFloat
+    xf * (max xf 2.0).log2
+
+/-- FFT work of one circuit at height `h`: `(B+1)` size-`h` transforms per
+trace column (stage 1 and 2 commits), plus the quotient's forward DFT and
+its per-chunk-column size-`B·h` LDE transforms. See the module docstring. -/
+def fftCost (shape : CircuitShape) (h : Nat) (logBlowup : Nat) : Float :=
+  let qD := shape.quotientDegree * G.extensionDegree
+  let traceWidth := shape.mainWidth + shape.stage2Width
+  ((2 ^ logBlowup) + 1).toFloat * traceWidth.toFloat * transformCost h
+    + G.extensionDegree.toFloat * transformCost (shape.quotientDegree * h)
+    + qD.toFloat * transformCost ((2 ^ logBlowup) * h)
+
+/-- Committed width of a circuit: stage 1 + stage 2 + quotient chunks. -/
+def CircuitShape.committedWidth (shape : CircuitShape) : Nat :=
+  shape.mainWidth + shape.stage2Width + shape.quotientDegree * G.extensionDegree
+
+def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount)
+    (shapes : Array CircuitShape)
+    (logBlowup : Nat := defaultCommitmentParameters.logBlowup) :
+    ExecutionStats :=
+  let t := compiled.bytecode
+  let nAllFuns := t.functions.size
+  -- Shapes arrive in canonical system order: function circuits (grouped;
+  -- singletons for ungrouped functions, in ascending member index),
+  -- memories, `Bytes1`, `Bytes2`. A mismatch means the shapes were built
+  -- from a different toplevel; misindexing would silently attribute costs
+  -- to the wrong circuits.
+  if shapes.size != t.circuits.size + t.memorySizes.size + 2 then
+    panic! s!"computeStats: {shapes.size} circuit shapes for \
+      {t.circuits.size} function circuits + {t.memorySizes.size} memories + 2 gadgets"
+  else
+  let mkStats (name : String) (shape : CircuitShape) (h hits : Nat) : CircuitStats :=
+    { name, stage1Width := shape.mainWidth, stage2Width := shape.stage2Width,
+      quotientWidth := shape.quotientDegree * G.extensionDegree,
+      width := shape.committedWidth, height := h, cacheHits := hits,
+      fftCost := fftCost shape h logBlowup,
+      uncachedFftCost := fftCost shape (h + hits) logBlowup }
+  -- One row per function circuit: heights and cache hits are summed over
+  -- the circuit's member functions (singletons sum over one).
+  let functionCircuits := t.circuits.mapIdx fun cIdx c =>
+    let shape := shapes[cIdx]!
+    let (h, hits) := c.members.foldl (init := (0, 0)) fun (h, hits) i =>
+      let qc := queryCounts[i]!
+      (h + qc.uniqueRows, hits + (qc.totalHits - qc.uniqueRows))
+    mkStats c.name shape h hits
+  let memoryCircuits := t.memorySizes.mapIdx fun i size =>
+    let shape := shapes[t.circuits.size + i]!
+    let qc := queryCounts[nAllFuns + i]!
+    mkStats s!"memory[{size}]" shape qc.uniqueRows (qc.totalHits - qc.uniqueRows)
+  -- The byte gadgets commit full-table traces in every proof: their height
+  -- is the (fixed) preprocessed height, independent of the query set, so
+  -- they carry no cache-hit counterfactual.
+  let gadgetCircuits := #["Bytes1", "Bytes2"].mapIdx fun i name =>
+    let shape := shapes[t.circuits.size + t.memorySizes.size + i]!
+    mkStats name shape shape.preprocessedHeight 0
+  let circuits := (functionCircuits ++ memoryCircuits ++ gadgetCircuits).qsort
+    (·.fftCost > ·.fftCost)
+  let totalFftCost := circuits.foldl (· + ·.fftCost) 0.0
+  let totalUncachedFftCost := circuits.foldl (· + ·.uncachedFftCost) 0.0
+  let totalCacheHits := circuits.foldl (· + ·.cacheHits) 0
+  { circuits, totalFftCost, totalUncachedFftCost, totalCacheHits }
+
+private def padLeft (s : String) (n : Nat) : String :=
+  let pad := n - s.length
+  String.ofList (List.replicate pad ' ') ++ s
+
+private def padRight (s : String) (n : Nat) : String :=
+  let pad := n - s.length
+  s ++ String.ofList (List.replicate pad ' ')
+
+private def formatPercent (fftCost totalFftCost : Float) : String :=
+  if totalFftCost == 0.0 then "0.00%"
+  else
+    let pct := fftCost * 100.0 / totalFftCost
+    let bps := (pct * 100.0).round.toUInt32.toNat
+    let whole := bps / 100
+    let frac := bps % 100
+    let fracStr := if frac < 10 then s!"0{frac}" else toString frac
+    s!"{whole}.{fracStr}%"
+
+/-- Scientific notation with a two-decimal mantissa (`1.74e8`). Only used
+for nonnegative costs; any nonzero circuit cost is ≥ 1, so the exponent
+is never negative. -/
+def formatSci (f : Float) : String :=
+  if f == 0.0 then "0"
+  else
+    let e := f.log10.floor
+    let cents := (f / (10.0 ^ e) * 100.0).round
+    -- Rounding can push the mantissa to 10.00; carry into the exponent.
+    let (cents, e) := if cents >= 1000.0 then (100.0, e + 1.0) else (cents, e)
+    let cents := cents.toUInt64.toNat
+    let frac := cents % 100
+    let fracStr := if frac < 10 then s!"0{frac}" else toString frac
+    s!"{cents / 100}.{fracStr}e{e.toUInt64.toNat}"
+
+def printStats (stats : ExecutionStats) : IO Unit := do
+  let wName := stats.circuits.foldl (fun m cs => Nat.max m cs.name.length) 4
+  let wStage1 := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.stage1Width).length) 6
+  let wStage2 := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.stage2Width).length) 6
+  let wQuotient := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.quotientWidth).length) 8
+  let wWidth := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.width).length) 5
+  let wHeight := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.height).length) 6
+  let wHits := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.cacheHits).length) 5
+  let formatCost (f : Float) : String :=
+    let n := f.round.toUInt64.toNat
+    toString n
+  let wFftCost := stats.circuits.foldl (fun m cs => Nat.max m (formatSci cs.fftCost).length) 8
+  let wPct := 7
+  let wCum := 7
+  let totalW := wName + 1 + wStage1 + 1 + wStage2 + 1 + wQuotient + 1 +
+    wWidth + 1 + wHeight + 1 + wHits + 1 + wFftCost + 1 + wPct + 1 + wCum
+  let totalStage1 := stats.circuits.foldl (· + ·.stage1Width) 0
+  let totalStage2 := stats.circuits.foldl (· + ·.stage2Width) 0
+  let totalQuotient := stats.circuits.foldl (· + ·.quotientWidth) 0
+  let totalWidth := stats.circuits.foldl (· + ·.width) 0
+  let savedPct :=
+    if stats.totalUncachedFftCost == 0.0 then "0.00%"
+    else formatPercent (stats.totalUncachedFftCost - stats.totalFftCost) stats.totalUncachedFftCost
+  let sep := String.ofList (List.replicate totalW '-')
+  IO.println "=== Circuit Statistics ==="
+  IO.println s!"Circuits: {stats.circuits.size}"
+  IO.println s!"Total stage 1 width: {totalStage1}"
+  IO.println s!"Total stage 2 width: {totalStage2}"
+  IO.println s!"Total quotient width: {totalQuotient}"
+  IO.println s!"Total width: {totalWidth}"
+  IO.println s!"Total FFT cost: {formatCost stats.totalFftCost} ({formatSci stats.totalFftCost})"
+  IO.println s!"Total cache hits: {stats.totalCacheHits}"
+  IO.println s!"Total saved cost: {savedPct}"
+  IO.println sep
+  IO.println "Widths count base-field columns; Width = Stage1 + Stage2 + Quotient."
+  IO.println s!"{padRight "Name" wName} {padLeft "Stage1" wStage1} {padLeft "Stage2" wStage2} {padLeft "Quotient" wQuotient} {padLeft "Width" wWidth} {padLeft "Height" wHeight} {padLeft "Hits" wHits} {padLeft "FFT cost" wFftCost} {padLeft "%" wPct} {padLeft "%++" wCum}"
+  IO.println sep
+  let mut cumFftCost : Float := 0.0
+  for cs in stats.circuits do
+    cumFftCost := cumFftCost + cs.fftCost
+    let pct := formatPercent cs.fftCost stats.totalFftCost
+    let cum := formatPercent cumFftCost stats.totalFftCost
+    IO.println s!"{padRight cs.name wName} {padLeft (toString cs.stage1Width) wStage1} {padLeft (toString cs.stage2Width) wStage2} {padLeft (toString cs.quotientWidth) wQuotient} {padLeft (toString cs.width) wWidth} {padLeft (toString cs.height) wHeight} {padLeft (toString cs.cacheHits) wHits} {padLeft (formatSci cs.fftCost) wFftCost} {padLeft pct wPct} {padLeft cum wCum}"
+
+end LegacyAiur
+
+end

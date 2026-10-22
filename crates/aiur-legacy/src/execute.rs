@@ -1,0 +1,1509 @@
+use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
+use rustc_hash::FxHashMap;
+use std::collections::hash_map::Entry;
+
+use crate::{
+  FxIndexMap, G,
+  bytecode::{Block, Ctrl, FunIdx, Function, Op, Toplevel},
+  gadgets::{
+    AiurGadget,
+    bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
+    bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
+  },
+  querymap::QueryMap,
+  record_pool::{BudgetError, RecordReservation},
+};
+
+fn u32_value(map: &[G], bytes: &[usize]) -> u64 {
+  assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
+  bytes
+    .iter()
+    .enumerate()
+    .fold(0, |word, (i, idx)| word | (map[*idx].as_canonical_u64() << (8 * i)))
+}
+
+fn u32_sum(values: &[u64]) -> ([G; 4], G) {
+  let sum: u128 = values.iter().map(|x| u128::from(*x)).sum();
+  let word = u32::try_from(sum & 0xFFFF_FFFF).expect("masked to 32 bits");
+  let carry = u64::try_from(sum >> 32).expect("sum of u32 words fits in u64");
+  (word.to_le_bytes().map(|b| G::from_u64(b.into())), G::from_u64(carry))
+}
+
+pub struct QueryRecord {
+  pub function_queries: Vec<QueryMap>,
+  pub memory_queries: FxIndexMap<usize, QueryMap>,
+  /// Admission and lifetime of this record's retained query storage.
+  pub budget: RecordBudget,
+  pub bytes1_queries: Bytes1Queries,
+  pub bytes2_queries: Bytes2Queries,
+  /// The pointer of every memory table's first entry: entry `i` of a table
+  /// has pointer `pointer_base + i`, whatever the table's width. Records
+  /// proven together in one batch take distinct bases so their pointers
+  /// never coincide, which is what lets a load in one record be served by
+  /// a memory row in another. The bases are a fixed split of the pointer
+  /// space ([`pointer_stride`] apart): no table's height enters, and a base
+  /// per width would gain nothing, since the width is part of every memory
+  /// message.
+  pub pointer_base: usize,
+  /// The calls this record leaves to other records, if any.
+  pub ownership: Option<Ownership>,
+  /// Deferred calls made so far: the callee's arguments and how many
+  /// times a caller in this record pushed them. Each is a push with no
+  /// row here; the owner's row absorbs the count
+  /// ([`Self::absorb_deferred`]).
+  pub deferred: FxHashMap<Vec<G>, u64>,
+}
+
+/// Which calls a record answers itself. A call to `callee` whose arguments
+/// are not in `owned` is deferred: the caller's row pushes the call's
+/// message as if the callee had run, and nothing runs. Some record whose
+/// `owned` holds the arguments executes the call for real, and its row
+/// pulls every record's pushes once their counts are absorbed. Ownership
+/// is a prover hint, never constrained: a call no record answers leaves
+/// the batch unbalanced, and a call two records answer is two balanced
+/// rows. The callee must return nothing, since a deferring record has no
+/// output to hand its caller.
+pub struct Ownership {
+  pub callee: FunIdx,
+  pub owned: rustc_hash::FxHashSet<Vec<G>>,
+}
+
+impl QueryRecord {
+  /// Records a call to `callee` with `args` as deferred and returns `true`,
+  /// or returns `false` when this record answers it itself (no ownership,
+  /// another callee, or owned arguments).
+  pub fn defer_call(
+    &mut self,
+    callee: FunIdx,
+    args: &[G],
+  ) -> Result<bool, ExecError> {
+    let Some(ownership) = &self.ownership else {
+      return Ok(false);
+    };
+    if ownership.callee != callee || ownership.owned.contains(args) {
+      return Ok(false);
+    }
+    let queries = &mut self.function_queries[callee];
+    if queries.get_index_of(args).is_none() {
+      // The entry a caller's row reads its (empty) output from; no
+      // multiplicity, so no row.
+      queries.insert(args, &[], G::ZERO)?;
+    }
+    *self.deferred.entry(args.to_vec()).or_insert(0) += 1;
+    Ok(true)
+  }
+
+  /// Adds another record's deferred calls to the multiplicities of the rows
+  /// of `callee` that answer them. Every deferred call must have been
+  /// executed here — a call this record deferred as well has no answer.
+  pub fn absorb_deferred(
+    &mut self,
+    callee: FunIdx,
+    deferred: &FxHashMap<Vec<G>, u64>,
+  ) -> Result<(), String> {
+    let queries = &mut self.function_queries[callee];
+    for (args, &count) in deferred {
+      if self.deferred.contains_key(args) {
+        return Err("deferred call was deferred by its owner too".into());
+      }
+      let Some(i) = queries.get_index_of(args) else {
+        return Err("deferred call has no row in the owning record".into());
+      };
+      let (_, multiplicity) =
+        queries.get_index_mut(i).expect("index just found");
+      *multiplicity += G::from_u64(count);
+    }
+    Ok(())
+  }
+}
+
+/// Pointer distance between the memory namespaces of `workers` records
+/// proven in one batch: record `r` stores its width-`w` table at
+/// `[r · stride, r · stride + N_{r,w})`. Every pointer must stay below
+/// 2^32, since the kernel's memoization compares interned pointers as
+/// `u32`, so the stride is the largest power of two with `workers` strides
+/// below 2^32; a record's tables must fit it.
+pub fn pointer_stride(workers: usize) -> usize {
+  POINTER_LIMIT / workers.max(1).next_power_of_two()
+}
+
+/// The entries a memory table can hold: the kernel compares pointers as
+/// `u32`, so `Store` fails once a table would reach 2^32 entries instead
+/// of allocating a pointer the comparison cannot order.
+pub const POINTER_LIMIT: usize = 1 << 32;
+
+impl QueryRecord {
+  pub fn new(toplevel: &Toplevel) -> Self {
+    Self::with_pointer_base(toplevel, 0)
+  }
+
+  /// A record whose memory pointers start at `pointer_base`.
+  pub fn with_pointer_base(toplevel: &Toplevel, pointer_base: usize) -> Self {
+    let budget = RecordBudget::for_this_thread();
+    let function_queries = toplevel
+      .functions
+      .iter()
+      .map(|f| QueryMap::with_budget(f.layout.input_size, budget.clone()))
+      .collect();
+    let memory_queries = toplevel
+      .memory_sizes
+      .iter()
+      .map(|width| (*width, QueryMap::with_budget(*width, budget.clone())))
+      .collect();
+    let bytes1_queries = Bytes1Queries::new();
+    let bytes2_queries = Bytes2Queries::new();
+    Self {
+      function_queries,
+      memory_queries,
+      budget,
+      bytes1_queries,
+      bytes2_queries,
+      pointer_base,
+      ownership: None,
+      deferred: FxHashMap::default(),
+    }
+  }
+}
+
+thread_local! {
+  static RECORD_RESERVATION: std::cell::RefCell<Option<RecordReservation>> =
+    const { std::cell::RefCell::new(None) };
+  static RECORD_BYTE_CAP: std::cell::Cell<Option<usize>> =
+    const { std::cell::Cell::new(None) };
+  /// Retained bytes of the record being built on this thread, counted at
+  /// every query-map insertion ([`note_retained`]), so every path that
+  /// grows a record is covered and the total is exact at every check.
+  static RECORD_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Caps the retained bytes of every record created on this thread from
+/// now on (`None`: no cap). A driver running several executions ahead of
+/// a prover gives each an equal share of the host budget this way, so an
+/// execution that would outgrow its share stops with
+/// [`ExecError::RecordBudgetExceeded`] instead of exhausting the box.
+pub fn set_record_byte_cap(cap: Option<usize>) {
+  RECORD_BYTE_CAP.with(|cell| cell.set(cap));
+}
+
+/// Binds admission to records constructed on the current thread. The
+/// records and their maps retain ownership after the binding ends.
+pub fn bind_record_reservation(
+  reservation: &RecordReservation,
+) -> RecordBinding {
+  let previous =
+    RECORD_RESERVATION.with(|cell| cell.replace(Some(reservation.clone())));
+  let cap = RECORD_BYTE_CAP.with(|cell| cell.replace(None));
+  RECORD_BYTES.with(|cell| cell.set(0));
+  RecordBinding { previous, cap, thread: std::marker::PhantomData }
+}
+
+pub struct RecordBinding {
+  previous: Option<RecordReservation>,
+  cap: Option<usize>,
+  thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl Drop for RecordBinding {
+  fn drop(&mut self) {
+    RECORD_RESERVATION.with(|cell| cell.replace(self.previous.take()));
+    RECORD_BYTE_CAP.with(|cell| cell.set(self.cap));
+  }
+}
+
+/// Counts a query-map entry of `elems` field elements toward the record
+/// being built on this thread, as [`record_retained_bytes`] measures it.
+#[inline]
+pub fn note_retained(
+  elems: usize,
+  budget: &RecordBudget,
+) -> Result<(), ExecError> {
+  let bytes = elems.saturating_mul(8).saturating_add(21);
+  if let Some(reservation) = &budget.reservation {
+    reservation.reserve(bytes)?;
+  }
+  RECORD_BYTES.with(|cell| {
+    let next = cell.get().saturating_add(bytes);
+    if let Some(cap) = budget.cap
+      && next > cap
+    {
+      return Err(ExecError::RecordBudgetExceeded { bytes: next, cap });
+    }
+    cell.set(next);
+    Ok(())
+  })
+}
+
+/// Retained bytes of the record most recently built on this thread, as
+/// the cap measures them ([`note_retained`]): what a driver reads after
+/// an execution to report the record's size against its share.
+pub fn record_bytes() -> usize {
+  RECORD_BYTES.with(std::cell::Cell::get)
+}
+
+/// Fixed-cap admission or a share of a process-wide pool.
+#[derive(Clone, Debug, Default)]
+pub struct RecordBudget {
+  pub cap: Option<usize>,
+  pub reservation: Option<RecordReservation>,
+}
+
+impl RecordBudget {
+  /// The cap set for this thread, and a fresh count for the new record.
+  fn for_this_thread() -> Self {
+    RECORD_BYTES.with(|cell| cell.set(0));
+    Self {
+      cap: RECORD_BYTE_CAP.with(std::cell::Cell::get),
+      reservation: RECORD_RESERVATION.with(|cell| cell.borrow().clone()),
+    }
+  }
+}
+
+/// Function-entry cancellation check, also enforcing fixed-cap admission.
+/// Query insertion reserves capacity before allocating.
+#[inline]
+pub fn check_record_cap(budget: &RecordBudget) -> Result<(), ExecError> {
+  if let Some(reservation) = &budget.reservation {
+    reservation.check()?;
+  }
+  let Some(cap) = budget.cap else {
+    return Ok(());
+  };
+  let bytes = RECORD_BYTES.with(std::cell::Cell::get);
+  if bytes > cap {
+    return Err(ExecError::RecordBudgetExceeded { bytes, cap });
+  }
+  Ok(())
+}
+
+/// Every memory store's admission check, in the interpreter and in the
+/// generated kernel alike: the width's table must be under
+/// [`POINTER_LIMIT`], and the record must be within its byte cap. Both
+/// failures are clean [`ExecError`]s the execution returns.
+#[inline]
+pub fn check_store(
+  budget: &RecordBudget,
+  table: &QueryMap,
+  size: usize,
+) -> Result<(), ExecError> {
+  if table.len() >= POINTER_LIMIT {
+    return Err(ExecError::MemoryTableFull(size));
+  }
+  check_record_cap(budget)
+}
+
+pub struct IOKeyInfo {
+  pub idx: usize,
+  pub len: usize,
+}
+
+pub struct IOBuffer {
+  /// Per-channel data arenas. `idx` slots into `data[&channel]`.
+  pub data: FxHashMap<G, Vec<G>>,
+  /// Channel-keyed info map; same `key` on different channels resolves
+  /// to distinct `IOKeyInfo`.
+  pub map: FxHashMap<(G, Vec<G>), IOKeyInfo>,
+}
+
+impl IOBuffer {
+  #[inline]
+  pub fn get_info(
+    &self,
+    channel: G,
+    key: &[G],
+  ) -> Result<&IOKeyInfo, ExecError> {
+    self.map.get(&(channel, key.to_vec())).ok_or(ExecError::InvalidIOKey)
+  }
+  fn set_info(
+    &mut self,
+    channel: G,
+    key: Vec<G>,
+    idx: usize,
+    len: usize,
+  ) -> Result<(), ExecError> {
+    let Entry::Vacant(e) = self.map.entry((channel, key)) else {
+      return Err(ExecError::IOMappingAlreadySet);
+    };
+    e.insert(IOKeyInfo { idx, len });
+    Ok(())
+  }
+  #[inline]
+  pub fn read(
+    &self,
+    channel: G,
+    idx: usize,
+    len: usize,
+  ) -> Result<&[G], ExecError> {
+    let empty: &[G] = &[];
+    let arena = self.data.get(&channel).map_or(empty, |v| v.as_slice());
+    arena
+      .get(idx..idx.saturating_add(len))
+      .ok_or(ExecError::IOReadOutOfBounds { idx, len })
+  }
+  fn write(&mut self, channel: G, data: impl Iterator<Item = G>) {
+    self.data.entry(channel).or_default().extend(data)
+  }
+}
+
+/// Errors raised by Aiur bytecode execution. Mirrors the panic/assert sites
+/// in `Function::execute` so callers (tests, kernel-arena runner) can
+/// distinguish recoverable rejections (`AssertEq`, `MatchNoCase`) from
+/// genuine bytecode bugs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecError {
+  NotEntryFunction(FunIdx),
+  InvalidMemorySize(usize),
+  /// A width's table reached [`POINTER_LIMIT`] entries.
+  MemoryTableFull(usize),
+  /// The next insertion would exceed the execution's record ceiling.
+  /// Shared-pool pressure below the ceiling waits for capacity instead.
+  RecordBudgetExceeded {
+    bytes: usize,
+    cap: usize,
+  },
+  /// A paused execution releases its record so another can finish.
+  RecordMemoryContention,
+  RecordPoolShutdown,
+  UnboundPointer {
+    ptr: u64,
+    size: usize,
+  },
+  PointerTooLarge(u64),
+  IndexTooLarge(u64),
+  U32OutOfRange(u64),
+  U8RangeCheckFailed(u64),
+  UnconstrainedBigUintDivModFailed(String),
+  AssertEqLengthMismatch {
+    lhs: usize,
+    rhs: usize,
+  },
+  AssertEqMismatch {
+    lhs: u64,
+    rhs: u64,
+    /// Optional label from `assert_eq!(a, b, "…")`, surfaced in the error
+    /// so a failing assert identifies itself instead of reporting bare
+    /// operands that could have come from anywhere.
+    msg: Option<String>,
+  },
+  MatchNoCase(u64),
+  NoContinuation,
+  StackNotEmpty,
+  InvalidIOKey,
+  IOMappingAlreadySet,
+  IOReadOutOfBounds {
+    idx: usize,
+    len: usize,
+  },
+  /// Dispatched a `fun_idx` that the codegen'd kernel doesn't know.
+  /// Generated by `execute_generated` in `crate::ix::aiur_ixvm`.
+  InvalidFunIdx(usize),
+}
+
+impl std::fmt::Display for ExecError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::NotEntryFunction(idx) => {
+        write!(f, "cannot execute non-entry function {idx}")
+      },
+      Self::InvalidMemorySize(s) => write!(f, "invalid memory size {s}"),
+      Self::MemoryTableFull(s) => write!(
+        f,
+        "width-{s} memory table reached the pointer limit of {POINTER_LIMIT} entries"
+      ),
+      Self::RecordBudgetExceeded { bytes, cap } => write!(
+        f,
+        "record reached {bytes} B of retained queries, over its cap of {cap} B"
+      ),
+      Self::RecordMemoryContention => {
+        write!(f, "record cancelled to resolve memory contention")
+      },
+      Self::RecordPoolShutdown => write!(f, "record pool shut down"),
+      Self::UnboundPointer { ptr, size } => {
+        write!(f, "unbound pointer {ptr} for memory size {size}")
+      },
+      Self::PointerTooLarge(p) => write!(f, "pointer {p} too large for usize"),
+      Self::IndexTooLarge(i) => write!(f, "index {i} too large for usize"),
+      Self::U32OutOfRange(v) => write!(f, "value {v} out of u32 range"),
+      Self::U8RangeCheckFailed(v) => {
+        write!(f, "value {v} out of u8 range [0, 256)")
+      },
+      Self::UnconstrainedBigUintDivModFailed(msg) => {
+        write!(f, "unconstrained_big_uint_div_mod failed: {msg}")
+      },
+      Self::AssertEqLengthMismatch { lhs, rhs } => {
+        write!(f, "assert_eq length mismatch: lhs={lhs}, rhs={rhs}")
+      },
+      Self::AssertEqMismatch { lhs, rhs, msg } => match msg {
+        Some(m) => write!(f, "assert_eq mismatch: {lhs} != {rhs} ({m})"),
+        None => write!(f, "assert_eq mismatch: {lhs} != {rhs}"),
+      },
+      Self::MatchNoCase(v) => write!(f, "no match case for value {v}"),
+      Self::NoContinuation => write!(f, "yield without continuation"),
+      Self::StackNotEmpty => {
+        write!(f, "exec entries stack not empty at return")
+      },
+      Self::InvalidIOKey => write!(f, "invalid IO key"),
+      Self::IOMappingAlreadySet => write!(f, "IO mapping already set for key"),
+      Self::IOReadOutOfBounds { idx, len } => {
+        write!(f, "IO read out of bounds: idx={idx}, len={len}")
+      },
+      Self::InvalidFunIdx(idx) => write!(f, "invalid fun_idx {idx}"),
+    }
+  }
+}
+
+impl std::error::Error for ExecError {}
+
+impl From<BudgetError> for ExecError {
+  fn from(error: BudgetError) -> Self {
+    match error {
+      BudgetError::Exceeded { bytes, cap } => {
+        Self::RecordBudgetExceeded { bytes, cap }
+      },
+      BudgetError::Cancelled => Self::RecordMemoryContention,
+      BudgetError::Shutdown => Self::RecordPoolShutdown,
+    }
+  }
+}
+
+/// Gated by `IX_AIUR_QUERY_STATS=1`: dump per-function query-map sizes
+/// during/after execution so RAM blowups can be attributed to specific
+/// Aiur functions (indices resolve to names via the Lean
+/// `CompiledToplevel`). Heaviest maps first, by retained G elements.
+static QUERY_STATS: std::sync::LazyLock<bool> =
+  std::sync::LazyLock::new(|| {
+    std::env::var_os("IX_AIUR_QUERY_STATS").is_some()
+  });
+
+fn dump_query_stats(record: &QueryRecord, tag: &str) {
+  let mut rows: Vec<(usize, usize, usize)> = record
+    .function_queries
+    .iter()
+    .enumerate()
+    .map(|(i, m)| (i, m.len(), m.retained_elems()))
+    .filter(|(_, n, _)| *n > 0)
+    .collect();
+  rows.sort_by_key(|row| std::cmp::Reverse(row.2));
+  let total_entries: usize = rows.iter().map(|r| r.1).sum();
+  let total_elems: usize = rows.iter().map(|r| r.2).sum();
+  eprintln!(
+    "[aiur-stats {tag}] function_queries: {total_entries} entries, \
+     {total_elems} G-elems; top maps:"
+  );
+  for (i, n, e) in rows.iter().take(30) {
+    eprintln!("  fn{i:<4} entries={n:<12} g_elems={e}");
+  }
+  let mem: Vec<String> = record
+    .memory_queries
+    .iter()
+    .map(|(w, m)| format!("w{w}={}", m.len()))
+    .collect();
+  eprintln!("[aiur-stats {tag}] memory entries: {}", mem.join(" "));
+}
+
+impl Toplevel {
+  pub fn execute(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    self.execute_with_pointer_base(fun_idx, args, io_buffer, 0)
+  }
+
+  /// [`Self::execute`] into a record whose memory pointers start at
+  /// `pointer_base` (see [`QueryRecord::pointer_base`]).
+  pub fn execute_with_pointer_base(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    pointer_base: usize,
+  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    let mut record = QueryRecord::with_pointer_base(self, pointer_base);
+    let output = self.execute_in(fun_idx, args, io_buffer, &mut record)?;
+    Ok((record, output))
+  }
+
+  /// Executes entry `fun_idx` into `record`, memoizing against whatever it
+  /// already holds. The entry query is registered with multiplicity one —
+  /// the pull a claim's push balances — so a record that runs an entry
+  /// nobody claims (a worker answering deferred calls) takes that one off
+  /// again.
+  pub fn execute_in(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    record: &mut QueryRecord,
+  ) -> Result<Vec<G>, ExecError> {
+    if !self.functions[fun_idx].entry {
+      return Err(ExecError::NotEntryFunction(fun_idx));
+    }
+    let function = &self.functions[fun_idx];
+    let output = function.execute(fun_idx, args, self, record, io_buffer)?;
+    if *QUERY_STATS {
+      dump_query_stats(record, "final");
+    }
+    Ok(output)
+  }
+}
+
+enum ExecEntry<'a> {
+  Op(&'a Op),
+  Ctrl(&'a Ctrl),
+}
+
+struct CallerState {
+  fun_idx: FunIdx,
+  map: Vec<G>,
+  unconstrained: bool,
+  continuation_depth: usize,
+}
+
+struct ContinuationState<'a> {
+  block: &'a Block,
+  map_len: usize,
+}
+
+impl Function {
+  fn execute(
+    &self,
+    mut fun_idx: FunIdx,
+    mut map: Vec<G>,
+    toplevel: &Toplevel,
+    record: &mut QueryRecord,
+    io_buffer: &mut IOBuffer,
+  ) -> Result<Vec<G>, ExecError> {
+    let mut exec_entries_stack = vec![];
+    let mut callers_states_stack: Vec<CallerState> = vec![];
+    let mut continuation_stack: Vec<ContinuationState<'_>> = vec![];
+    macro_rules! push_block_exec_entries {
+      ($block:expr) => {
+        exec_entries_stack.push(ExecEntry::Ctrl(&$block.ctrl));
+        exec_entries_stack.extend($block.ops.iter().rev().map(ExecEntry::Op));
+      };
+    }
+    push_block_exec_entries!(&self.body);
+    let mut unconstrained = false;
+    let mut stats_ops: u64 = 0;
+    while let Some(exec_entry) = exec_entries_stack.pop() {
+      if *QUERY_STATS {
+        stats_ops += 1;
+        if stats_ops.is_multiple_of(1 << 31) {
+          dump_query_stats(record, &format!("ops={stats_ops}"));
+          let depth = callers_states_stack.len();
+          let tail: Vec<String> = callers_states_stack
+            .iter()
+            .rev()
+            .take(40)
+            .map(|cs| cs.fun_idx.to_string())
+            .collect();
+          eprintln!(
+            "[aiur-stats] call stack depth={depth}, top fns: {}",
+            tail.join(" ")
+          );
+        }
+      }
+      match exec_entry {
+        ExecEntry::Op(Op::Const(c)) => map.push(*c),
+        ExecEntry::Op(Op::Add(a, b)) => {
+          let a = map[*a];
+          let b = map[*b];
+          map.push(a + b);
+        },
+        ExecEntry::Op(Op::Sub(a, b)) => {
+          let a = map[*a];
+          let b = map[*b];
+          map.push(a - b);
+        },
+        ExecEntry::Op(Op::Mul(a, b)) => {
+          let a = map[*a];
+          let b = map[*b];
+          map.push(a * b);
+        },
+        ExecEntry::Op(Op::EqZero(a)) => {
+          let a = map[*a];
+          map.push(G::from_bool(a == G::ZERO));
+        },
+        ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
+          let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
+          let callee_unconstrained = unconstrained || *op_unconstrained;
+          // A call another record answers: the caller's row pushes it and
+          // nothing runs here (the callee returns nothing).
+          if !callee_unconstrained && record.defer_call(*callee_idx, &args)? {
+            continue;
+          }
+          let mut cached_output = None;
+          if let Some(i) =
+            record.function_queries[*callee_idx].get_index_of(&args)
+          {
+            // A zero-multiplicity entry was computed only as an
+            // unconstrained hint.  Promoting just this row would omit all
+            // of the callee's child lookups and unbalance their channels;
+            // replay the body constrained so promotion recurses through
+            // the whole dependency tree.
+            let mult = record.function_queries[*callee_idx].mult_at(i);
+            if callee_unconstrained || !mult.is_zero() {
+              if !callee_unconstrained {
+                record.function_queries[*callee_idx].bump_multiplicity(i);
+              }
+              cached_output = Some(
+                record.function_queries[*callee_idx].output_at(i).to_vec(),
+              );
+            }
+          }
+          if let Some(output) = cached_output {
+            map.extend(output);
+          } else {
+            let saved_map = std::mem::replace(&mut map, args);
+            callers_states_stack.push(CallerState {
+              fun_idx,
+              map: saved_map,
+              unconstrained,
+              continuation_depth: continuation_stack.len(),
+            });
+            fun_idx = *callee_idx;
+            unconstrained = callee_unconstrained;
+            check_record_cap(&record.budget)?;
+            push_block_exec_entries!(&toplevel.functions[fun_idx].body);
+          }
+        },
+        ExecEntry::Op(Op::Store(values)) => {
+          let values = values.iter().map(|v| map[*v]).collect::<Vec<_>>();
+          let size = values.len();
+          let pointer_base = record.pointer_base;
+          let memory_queries = record
+            .memory_queries
+            .get_mut(&size)
+            .ok_or(ExecError::InvalidMemorySize(size))?;
+          if let Some(i) = memory_queries.get_index_of(&values) {
+            if !unconstrained {
+              memory_queries.bump_multiplicity(i);
+            }
+            map.extend_from_slice(memory_queries.output_at(i));
+          } else {
+            check_store(&record.budget, memory_queries, size)?;
+            let ptr = G::from_usize(pointer_base + memory_queries.len());
+            memory_queries.insert(
+              &values,
+              &[ptr],
+              G::from_bool(!unconstrained),
+            )?;
+            map.push(ptr);
+          }
+        },
+        ExecEntry::Op(Op::Load(size, ptr)) => {
+          let pointer_base = record.pointer_base;
+          let memory_queries = record
+            .memory_queries
+            .get_mut(size)
+            .ok_or(ExecError::InvalidMemorySize(*size))?;
+          let ptr = &map[*ptr];
+          let ptr_u64 = ptr.as_canonical_u64();
+          let index = usize::try_from(ptr_u64)
+            .ok()
+            .ok_or(ExecError::PointerTooLarge(ptr_u64))?
+            .checked_sub(pointer_base)
+            .filter(|&i| i < memory_queries.len())
+            .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
+          if !unconstrained {
+            memory_queries.bump_multiplicity(index);
+          }
+          let (args, _) =
+            memory_queries.get_index(index).expect("bounds checked above");
+          map.extend_from_slice(args);
+        },
+        ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
+          if xs.len() != ys.len() {
+            return Err(ExecError::AssertEqLengthMismatch {
+              lhs: xs.len(),
+              rhs: ys.len(),
+            });
+          }
+          for (x, y) in xs.iter().zip(ys) {
+            let lhs = map[*x];
+            let rhs = map[*y];
+            if lhs != rhs {
+              return Err(ExecError::AssertEqMismatch {
+                lhs: lhs.as_canonical_u64(),
+                rhs: rhs.as_canonical_u64(),
+                msg: msg.clone(),
+              });
+            }
+          }
+        },
+        ExecEntry::Op(Op::IOGetInfo(channel, key)) => {
+          let channel = map[*channel];
+          let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
+          let IOKeyInfo { idx, len } = io_buffer.get_info(channel, &key)?;
+          map.push(G::from_usize(*idx));
+          map.push(G::from_usize(*len));
+        },
+        ExecEntry::Op(Op::IOSetInfo(channel, key, idx, len)) => {
+          let channel = map[*channel];
+          let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
+          let get = |x: &usize| {
+            let v = map[*x].as_canonical_u64();
+            usize::try_from(v).ok().ok_or(ExecError::IndexTooLarge(v))
+          };
+          io_buffer.set_info(channel, key, get(idx)?, get(len)?)?;
+        },
+        ExecEntry::Op(Op::IORead(channel, idx, len)) => {
+          let channel = map[*channel];
+          let idx_val = map[*idx].as_canonical_u64();
+          let idx = usize::try_from(idx_val)
+            .ok()
+            .ok_or(ExecError::IndexTooLarge(idx_val))?;
+          let data = io_buffer.read(channel, idx, *len)?.to_vec();
+          map.extend(data);
+        },
+        ExecEntry::Op(Op::IOWrite(channel, data)) => {
+          let channel = map[*channel];
+          io_buffer.write(channel, data.iter().map(|v| map[*v]))
+        },
+        ExecEntry::Op(Op::U8BitDecomposition(byte)) => {
+          if unconstrained {
+            map.extend(Bytes1::bit_decompose(&map[*byte]));
+          } else {
+            bytes1_execute(
+              *byte,
+              &Bytes1Op::BitDecomposition,
+              &mut map,
+              record,
+            );
+          }
+        },
+        ExecEntry::Op(Op::U8ShiftLeft(byte)) => {
+          if unconstrained {
+            map.push(Bytes1::shift_left(&map[*byte]));
+          } else {
+            bytes1_execute(*byte, &Bytes1Op::ShiftLeft, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8ShiftRight(byte)) => {
+          if unconstrained {
+            map.push(Bytes1::shift_right(&map[*byte]));
+          } else {
+            bytes1_execute(*byte, &Bytes1Op::ShiftRight, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8Xor(i, j)) => {
+          if unconstrained {
+            map.push(Bytes2::xor(&map[*i], &map[*j]));
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::Xor, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8Add(i, j)) => {
+          // The add gadget yields only the low byte; the carry is derived
+          // and pushed separately so the op still produces `(low, carry)`.
+          let (_r, o) = Bytes2::add(&map[*i], &map[*j]);
+          if unconstrained {
+            map.push(Bytes2::add(&map[*i], &map[*j]).0);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record);
+          }
+          map.push(o);
+        },
+        ExecEntry::Op(Op::UnconstrainedU32Add(a, b)) => {
+          let (bytes, carry) =
+            u32_sum(&[u32_value(&map, a), u32_value(&map, b)]);
+          map.extend(bytes);
+          map.push(carry);
+        },
+        ExecEntry::Op(Op::UnconstrainedU32Add3(a, b, c)) => {
+          let (bytes, carry) = u32_sum(&[
+            u32_value(&map, a),
+            u32_value(&map, b),
+            u32_value(&map, c),
+          ]);
+          map.extend(bytes);
+          map.push(carry);
+        },
+        ExecEntry::Op(Op::U32ToField(bytes)) => {
+          map.push(G::from_u64(u32_value(&map, bytes)));
+        },
+        ExecEntry::Op(Op::U8Mul(i, j)) => {
+          if unconstrained {
+            let (lo, hi) = Bytes2::mul(&map[*i], &map[*j]);
+            map.extend([lo, hi]);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::Mul, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8Sub(i, j)) => {
+          // The sub gadget yields only the low byte; the borrow is derived
+          // and pushed separately so the op still produces `(low, borrow)`.
+          let (_r, u) = Bytes2::sub(&map[*i], &map[*j]);
+          if unconstrained {
+            map.push(Bytes2::sub(&map[*i], &map[*j]).0);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::Sub, &mut map, record);
+          }
+          map.push(u);
+        },
+        ExecEntry::Op(Op::U8And(i, j)) => {
+          if unconstrained {
+            map.push(Bytes2::and(&map[*i], &map[*j]));
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::And, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8Or(i, j)) => {
+          if unconstrained {
+            map.push(Bytes2::or(&map[*i], &map[*j]));
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::Or, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8LessThan(i, j)) => {
+          if unconstrained {
+            map.push(Bytes2::less_than(&map[*i], &map[*j]));
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::LessThan, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U32LessThan(x_idx, y_idx)) => {
+          let a_val = map[*x_idx].as_canonical_u64();
+          let b_val = map[*y_idx].as_canonical_u64();
+          let a_u32 =
+            u32::try_from(a_val).ok().ok_or(ExecError::U32OutOfRange(a_val))?;
+          let b_u32 =
+            u32::try_from(b_val).ok().ok_or(ExecError::U32OutOfRange(b_val))?;
+          let result = G::from_bool(a_u32 < b_u32);
+          map.push(result);
+          if !unconstrained {
+            let c_u32 = a_u32.wrapping_sub(b_u32);
+            for word in [a_u32, c_u32, b_u32] {
+              record
+                .bytes2_queries
+                .bump_u16_range_check((word & 0xffff) as u16);
+              record.bytes2_queries.bump_u16_range_check((word >> 16) as u16);
+            }
+          }
+        },
+        ExecEntry::Op(Op::U8XorSplit7(i, j)) => {
+          let (a, b) = Bytes2::xor_split7(&map[*i], &map[*j]);
+          if !unconstrained {
+            record.bytes2_queries.bump_xor_split7(&map[*i], &map[*j]);
+          }
+          map.extend([a, b]);
+        },
+        ExecEntry::Op(Op::U8XorSplit4(i, j)) => {
+          let (a, b) = Bytes2::xor_split4(&map[*i], &map[*j]);
+          if !unconstrained {
+            record.bytes2_queries.bump_xor_split4(&map[*i], &map[*j]);
+          }
+          map.extend([a, b]);
+        },
+        ExecEntry::Op(Op::U8RangeCheck(i, j)) => {
+          // No `map.push`: the two `u8` outputs alias the inputs `i`, `j`.
+          // Records a range-check query so the byte-chip lookup is satisfied.
+          if !unconstrained {
+            let (vi, vj) = (map[*i], map[*j]);
+            let (bi, bj) = (vi.as_canonical_u64(), vj.as_canonical_u64());
+            if bi >= 256 {
+              return Err(ExecError::U8RangeCheckFailed(bi));
+            }
+            if bj >= 256 {
+              return Err(ExecError::U8RangeCheckFailed(bj));
+            }
+            record.bytes2_queries.bump_range_check(&vi, &vj);
+          }
+        },
+        ExecEntry::Op(Op::UnconstrainedBigUintDivMod(a_idx, b_idx)) => {
+          // Unconstrained hint for klimbs-style LE byte division. Inputs are
+          // pointers to `List<U64>` (in memory[10]) values storing `a` and
+          // `b` as little-endian u64 limbs (each limb's 8 bytes are stored
+          // tag-then-bytes within memory[10] per the standard Aiur enum
+          // layout: `[tag, b0..b7, next_ptr]`). The op walks both lists,
+          // computes `q = a / b` and `r = a % b` via `num_bigint::BigUint`,
+          // and rebuilds the result lists in memory[10] with multiplicity 0
+          // (unconstrained). Returns the two new head pointers. The caller
+          // is responsible for verifying `q * b + r == a` and `r < b` in
+          // constrained code.
+          //
+          // The `memory[10]` channel is chosen because the standard Aiur
+          // layout for a tagged enum with a `(U64, &Self)` constructor is
+          // `tag(1) + U64(8) + ptr(1) = 10` G values.
+          let a_ptr = map[*a_idx];
+          let b_ptr = map[*b_idx];
+          let a_limbs =
+            read_klimbs_u64(&record.memory_queries, record.pointer_base, a_ptr)
+              .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let b_limbs =
+            read_klimbs_u64(&record.memory_queries, record.pointer_base, b_ptr)
+              .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let a_big = klimbs_u64_to_biguint(&a_limbs);
+          let b_big = klimbs_u64_to_biguint(&b_limbs);
+          let (q_big, r_big) = if b_big == num_bigint::BigUint::ZERO {
+            (num_bigint::BigUint::ZERO, a_big.clone())
+          } else {
+            (&a_big / &b_big, &a_big % &b_big)
+          };
+          let q_limbs = biguint_to_klimbs_u64(&q_big);
+          let r_limbs = biguint_to_klimbs_u64(&r_big);
+          let q_ptr = build_klimbs_u64(
+            &mut record.memory_queries,
+            record.pointer_base,
+            &q_limbs,
+          )?;
+          let r_ptr = build_klimbs_u64(
+            &mut record.memory_queries,
+            record.pointer_base,
+            &r_limbs,
+          )?;
+          map.push(q_ptr);
+          map.push(r_ptr);
+        },
+        ExecEntry::Op(Op::UnconstrainedGToBytes(a_idx)) => {
+          // Unconstrained hint: the 8 LE bytes of the canonical u64 value.
+          // No record side effects — the caller pins the bytes with range
+          // checks + a recomposition assert + a canonicality assert.
+          let bytes = map[*a_idx].as_canonical_u64().to_le_bytes();
+          map.extend(bytes.iter().map(|b| G::from_u8(*b)));
+        },
+        ExecEntry::Op(Op::UnconstrainedGInverse(a_idx)) => {
+          // Unconstrained hint: the field inverse (`0 ↦ 0`). No record side
+          // effects — the caller pins it via multiply-and-assert.
+          map.push(g_inverse_value(map[*a_idx]));
+        },
+        ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
+          None => println!("{label}"),
+          Some(idxs) => {
+            let parts: Vec<_> =
+              idxs.iter().map(|idx| map[*idx].to_string()).collect();
+            let parts_joined = parts.join(", ");
+            println!("{label}: {parts_joined}");
+          },
+        },
+        ExecEntry::Ctrl(Ctrl::Match(val_idx, cases, default)) => {
+          let val = &map[*val_idx];
+          if let Some(block) = cases.get(val) {
+            push_block_exec_entries!(block);
+          } else {
+            let default = default
+              .as_ref()
+              .ok_or_else(|| ExecError::MatchNoCase(val.as_canonical_u64()))?;
+            push_block_exec_entries!(default);
+          }
+        },
+        ExecEntry::Ctrl(Ctrl::MatchContinue(
+          val_idx,
+          cases,
+          default,
+          _output_size,
+          _shared_aux,
+          _shared_lookups,
+          continuation,
+        )) => {
+          continuation_stack.push(ContinuationState {
+            block: continuation,
+            map_len: map.len(),
+          });
+          let val = &map[*val_idx];
+          if let Some(block) = cases.get(val) {
+            push_block_exec_entries!(block);
+          } else {
+            let default = default
+              .as_ref()
+              .ok_or_else(|| ExecError::MatchNoCase(val.as_canonical_u64()))?;
+            push_block_exec_entries!(default);
+          }
+        },
+        ExecEntry::Ctrl(Ctrl::Yield(_, output)) => {
+          let cont =
+            continuation_stack.pop().ok_or(ExecError::NoContinuation)?;
+          let yielded: Vec<G> = output.iter().map(|&v| map[v]).collect();
+          map.truncate(cont.map_len);
+          map.extend(yielded);
+          push_block_exec_entries!(cont.block);
+        },
+        ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
+          let input_size = toplevel.functions[fun_idx].layout.input_size;
+          let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
+          record.function_queries[fun_idx].finish(
+            &map[..input_size],
+            &output,
+            !unconstrained,
+          )?;
+          if let Some(CallerState {
+            fun_idx: caller_idx,
+            map: caller_map,
+            unconstrained: caller_unconstrained,
+            continuation_depth,
+          }) = callers_states_stack.pop()
+          {
+            continuation_stack.truncate(continuation_depth);
+            fun_idx = caller_idx;
+            map = caller_map;
+            map.extend(output);
+            unconstrained = caller_unconstrained;
+          } else {
+            continuation_stack.clear();
+            if !exec_entries_stack.is_empty() {
+              return Err(ExecError::StackNotEmpty);
+            }
+            map = output;
+            break;
+          }
+        },
+      }
+    }
+    Ok(map)
+  }
+}
+
+pub fn bytes1_execute(
+  byte: usize,
+  op: &Bytes1Op,
+  map: &mut Vec<G>,
+  record: &mut QueryRecord,
+) {
+  map.extend(Bytes1.execute(op, &[map[byte]], record));
+}
+
+pub fn bytes2_execute(
+  i: usize,
+  j: usize,
+  op: &Bytes2Op,
+  map: &mut Vec<G>,
+  record: &mut QueryRecord,
+) {
+  map.extend(Bytes2.execute(op, &[map[i], map[j]], record));
+}
+
+// ============================================================================
+// Per-op value-returning helpers for the codegen'd kernel.
+//
+// The interpreter routes byte ops through `bytes{1,2}_execute(idx, op,
+// &mut Vec<G>, record)` which `extends` the Vec with the gadget's
+// output. The codegen'd kernel doesn't keep a `Vec<G>` value stack
+// (every Aiur ValIdx is a real Rust local), so the wrappers below let
+// it consume gadget outputs as fixed-size arrays / tuples / single Gs
+// without an allocating Vec<G> per op.
+//
+// Each helper bumps the same `bytes{1,2}_queries` channel as the
+// interpreter's `Bytes{1,2}::execute` arm, so QueryRecord parity is
+// preserved bit-for-bit.
+// ============================================================================
+
+#[inline]
+pub fn bytes1_bit_decompose_value(byte: G, record: &mut QueryRecord) -> [G; 8] {
+  record.bytes1_queries.bump_bit_decomposition(&byte);
+  let byte_u64 = byte.as_canonical_u64();
+  [
+    G::from_bool(byte_u64 & 1 == 1),
+    G::from_bool(byte_u64 >> 1 & 1 == 1),
+    G::from_bool(byte_u64 >> 2 & 1 == 1),
+    G::from_bool(byte_u64 >> 3 & 1 == 1),
+    G::from_bool(byte_u64 >> 4 & 1 == 1),
+    G::from_bool(byte_u64 >> 5 & 1 == 1),
+    G::from_bool(byte_u64 >> 6 & 1 == 1),
+    G::from_bool(byte_u64 >> 7 & 1 == 1),
+  ]
+}
+
+/// IxVM kernel doesn't emit `Op::U8ShiftLeft` today; kept for codegen
+/// of other toplevels that might.
+#[inline]
+#[allow(dead_code)]
+pub fn bytes1_shift_left_value(byte: G, record: &mut QueryRecord) -> G {
+  record.bytes1_queries.bump_shift_left(&byte);
+  Bytes1::shift_left(&byte)
+}
+
+/// IxVM kernel doesn't emit `Op::U8ShiftRight` today; kept for
+/// codegen of other toplevels.
+#[inline]
+#[allow(dead_code)]
+pub fn bytes1_shift_right_value(byte: G, record: &mut QueryRecord) -> G {
+  record.bytes1_queries.bump_shift_right(&byte);
+  Bytes1::shift_right(&byte)
+}
+
+#[inline]
+pub fn bytes2_xor_value(a: G, b: G, record: &mut QueryRecord) -> G {
+  record.bytes2_queries.bump_xor(&a, &b);
+  Bytes2::xor(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_and_value(a: G, b: G, record: &mut QueryRecord) -> G {
+  record.bytes2_queries.bump_and(&a, &b);
+  Bytes2::and(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_or_value(a: G, b: G, record: &mut QueryRecord) -> G {
+  record.bytes2_queries.bump_or(&a, &b);
+  Bytes2::or(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_less_than_value(a: G, b: G, record: &mut QueryRecord) -> G {
+  record.bytes2_queries.bump_less_than(&a, &b);
+  Bytes2::less_than(&a, &b)
+}
+
+/// IxVM kernel doesn't emit `Op::U8Mul` today; kept for codegen of
+/// other toplevels.
+#[inline]
+#[allow(dead_code)]
+pub fn bytes2_mul_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_mul(&a, &b);
+  Bytes2::mul(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_xor_split7_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_xor_split7(&a, &b);
+  Bytes2::xor_split7(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_xor_split4_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_xor_split4(&a, &b);
+  Bytes2::xor_split4(&a, &b)
+}
+
+/// Bumps `bytes2_queries.add` and returns the full `(low, carry)`
+/// pair. The constrained-mode gadget only LOOKUPS `low` from the
+/// chip; carry is derived natively. The codegen path uses this
+/// helper so the add gadget runs exactly once.
+#[inline]
+pub fn bytes2_add_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_add(&a, &b);
+  Bytes2::add(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_sub_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_sub(&a, &b);
+  Bytes2::sub(&a, &b)
+}
+
+/// Re-exports for the codegen'd kernel (`ix::aiur_ixvm`). The generated
+/// code names these as `aiur::execute::*`; we re-export them `pub` here
+/// so an external `ix` crate can see them. `CodegenBytes1Op` and
+/// `CodegenBytes2Op` aren't re-exported here because the generated
+/// kernel no longer references them (per-op value helpers above
+/// replaced the byte-op enum dispatch).
+pub use crate::gadgets::bytes1::Bytes1 as CodegenBytes1;
+pub use crate::gadgets::bytes2::Bytes2 as CodegenBytes2;
+
+/// The value of the `UnconstrainedGInverse` hint: the field inverse, with
+/// `0 ↦ 0`. Shared by the interpreter, the codegen'd kernels, and trace
+/// population so all three produce identical witness values.
+#[inline]
+pub fn g_inverse_value(x: G) -> G {
+  x.try_inverse().unwrap_or(G::ZERO)
+}
+
+/// Helper extracted for the codegen'd kernel: compute the unconstrained
+/// BigUint div-mod and return `(q_ptr, r_ptr)`. Same side effects on
+/// `record.memory_queries` as the inlined `Op::UnconstrainedBigUintDivMod`
+/// arm in the interpreter.
+pub fn unconstrained_big_uint_div_mod_helper(
+  a_ptr: G,
+  b_ptr: G,
+  record: &mut QueryRecord,
+) -> Result<(G, G), ExecError> {
+  let a_limbs =
+    read_klimbs_u64(&record.memory_queries, record.pointer_base, a_ptr)
+      .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+  let b_limbs =
+    read_klimbs_u64(&record.memory_queries, record.pointer_base, b_ptr)
+      .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+  let a_big = klimbs_u64_to_biguint(&a_limbs);
+  let b_big = klimbs_u64_to_biguint(&b_limbs);
+  let (q_big, r_big) = if b_big == num_bigint::BigUint::ZERO {
+    (num_bigint::BigUint::ZERO, a_big.clone())
+  } else {
+    (&a_big / &b_big, &a_big % &b_big)
+  };
+  let q_limbs = biguint_to_klimbs_u64(&q_big);
+  let r_limbs = biguint_to_klimbs_u64(&r_big);
+  let q_ptr = build_klimbs_u64(
+    &mut record.memory_queries,
+    record.pointer_base,
+    &q_limbs,
+  )?;
+  let r_ptr = build_klimbs_u64(
+    &mut record.memory_queries,
+    record.pointer_base,
+    &r_limbs,
+  )?;
+  Ok((q_ptr, r_ptr))
+}
+
+/// Read-only twin of `unconstrained_big_uint_div_mod_helper` for trace
+/// population: recompute `(q, r)` and resolve the list-head pointers the
+/// execution already recorded in `memory[10]` — every node was built there
+/// during execution, so each key must be present.
+pub fn find_unconstrained_big_uint_div_mod(
+  a_ptr: G,
+  b_ptr: G,
+  memory: &FxIndexMap<usize, QueryMap>,
+  pointer_base: usize,
+) -> Result<(G, G), String> {
+  let a_limbs = read_klimbs_u64(memory, pointer_base, a_ptr)?;
+  let b_limbs = read_klimbs_u64(memory, pointer_base, b_ptr)?;
+  let a_big = klimbs_u64_to_biguint(&a_limbs);
+  let b_big = klimbs_u64_to_biguint(&b_limbs);
+  let (q_big, r_big) = if b_big == num_bigint::BigUint::ZERO {
+    (num_bigint::BigUint::ZERO, a_big.clone())
+  } else {
+    (&a_big / &b_big, &a_big % &b_big)
+  };
+  let q_ptr = find_klimbs_u64(memory, &biguint_to_klimbs_u64(&q_big))?;
+  let r_ptr = find_klimbs_u64(memory, &biguint_to_klimbs_u64(&r_big))?;
+  Ok((q_ptr, r_ptr))
+}
+
+/// Read-only twin of `build_klimbs_u64`: resolve the pointer of each
+/// (already-recorded) list node without inserting.
+fn find_klimbs_u64(
+  memory: &FxIndexMap<usize, QueryMap>,
+  limbs: &[u64],
+) -> Result<G, String> {
+  let queries = memory.get(&10).ok_or_else(|| {
+    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  })?;
+  let nil_key: Vec<G> =
+    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  let mut tail_ptr = queries
+    .get(&nil_key)
+    .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
+    .output[0];
+  for limb in limbs.iter().rev() {
+    let mut key: Vec<G> = Vec::with_capacity(10);
+    key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
+    for b in &limb.to_le_bytes() {
+      key.push(G::from_u8(*b));
+    }
+    key.push(tail_ptr);
+    tail_ptr = queries
+      .get(&key)
+      .ok_or_else(|| {
+        format!("List<U64> Cons node for limb {limb} not recorded")
+      })?
+      .output[0];
+  }
+  Ok(tail_ptr)
+}
+
+/// Walk a `List<U64>` chain from `head_ptr` in `memory[10]`, returning the
+/// u64 limbs in head-first order. Each memory[10] entry is the standard Aiur
+/// tagged-enum layout: `[tag, byte0..byte7, next_ptr]`. `tag == 0` = Nil
+/// (terminator), `tag == 1` = Cons. Bytes are LE within the u64.
+fn read_klimbs_u64(
+  memory: &FxIndexMap<usize, QueryMap>,
+  pointer_base: usize,
+  head_ptr: G,
+) -> Result<Vec<u64>, String> {
+  let queries = memory.get(&10).ok_or_else(|| {
+    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  })?;
+  let mut limbs: Vec<u64> = Vec::new();
+  let mut ptr = head_ptr;
+  loop {
+    let ptr_u64 = ptr.as_canonical_u64();
+    let ptr_idx = usize::try_from(ptr_u64)
+      .map_err(|_e| format!("ptr {ptr_u64} too large for usize"))?
+      .checked_sub(pointer_base)
+      .ok_or_else(|| {
+        format!("ptr {ptr_u64} below the record's pointer base")
+      })?;
+    let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
+      format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
+    })?;
+    let tag = key[0].as_canonical_u64();
+    // `enum ListNode { Cons, Nil }` in LegacyAiur/Library/Core.lean — Cons is the
+    // first variant (tag 0), Nil the second (tag 1).
+    if tag == 1 {
+      return Ok(limbs);
+    }
+    if tag != 0 {
+      return Err(format!(
+        "List<U64> walk: unexpected tag {tag} (expected 0=Cons, 1=Nil)"
+      ));
+    }
+    let mut limb_bytes = [0u8; 8];
+    for k in 0..8 {
+      let b = key[1 + k].as_canonical_u64();
+      if b >= 256 {
+        return Err(format!("limb byte {b} out of u8 range"));
+      }
+      limb_bytes[k] = u8::try_from(b).expect("range-checked above");
+    }
+    limbs.push(u64::from_le_bytes(limb_bytes));
+    ptr = key[9];
+  }
+}
+
+/// Treat `limbs` as a little-endian sequence of 64-bit limbs and convert to
+/// a `BigUint`. Aiur's `klimbs_normalize` strips trailing zero limbs but a
+/// non-normalized input still produces the correct value via `from_bytes_le`.
+fn klimbs_u64_to_biguint(limbs: &[u64]) -> num_bigint::BigUint {
+  let mut bytes: Vec<u8> = Vec::with_capacity(limbs.len() * 8);
+  for limb in limbs {
+    bytes.extend_from_slice(&limb.to_le_bytes());
+  }
+  num_bigint::BigUint::from_bytes_le(&bytes)
+}
+
+/// Convert a `BigUint` to LE-u64 limbs. The output is non-padded (trailing
+/// limbs that would all be zero are omitted), matching `klimbs_normalize`'s
+/// canonical form so the Aiur kernel's subsequent equality checks compare
+/// equal forms without round-trip discrepancies.
+fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
+  if n == &num_bigint::BigUint::ZERO {
+    return Vec::new();
+  }
+  let mut bytes = n.to_bytes_le();
+  while !bytes.len().is_multiple_of(8) {
+    bytes.push(0);
+  }
+  bytes.as_chunks::<8>().0.iter().map(|c| u64::from_le_bytes(*c)).collect()
+}
+
+/// Build a `List<U64>` chain in `memory[10]` from `limbs` (head-first order)
+/// and return the head pointer. Each entry is inserted with multiplicity 0
+/// (unconstrained); subsequent constrained `Load`s by the kernel will bump
+/// the multiplicity. Content-addressed via `QueryMap::get_mut`, so repeated
+/// identical sub-tails share storage.
+fn build_klimbs_u64(
+  memory: &mut FxIndexMap<usize, QueryMap>,
+  pointer_base: usize,
+  limbs: &[u64],
+) -> Result<G, ExecError> {
+  let queries = memory.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?;
+  // Find or insert the Nil ptr (tag = 1, padded payload all zero).
+  let nil_key: Vec<G> =
+    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
+    out.output[0]
+  } else {
+    if queries.len() >= POINTER_LIMIT {
+      return Err(ExecError::MemoryTableFull(10));
+    }
+    let ptr = G::from_usize(pointer_base + queries.len());
+    queries.insert(&nil_key, &[ptr], G::ZERO)?;
+    ptr
+  };
+  // Walk limbs in REVERSE so each Cons points at the previously-built tail.
+  for limb in limbs.iter().rev() {
+    let bytes = limb.to_le_bytes();
+    let mut key: Vec<G> = Vec::with_capacity(10);
+    key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
+    for b in &bytes {
+      key.push(G::from_u8(*b));
+    }
+    key.push(tail_ptr);
+    tail_ptr = if let Some(out) = queries.get_mut(&key) {
+      out.output[0]
+    } else {
+      if queries.len() >= POINTER_LIMIT {
+        return Err(ExecError::MemoryTableFull(10));
+      }
+      let ptr = G::from_usize(pointer_base + queries.len());
+      queries.insert(&key, &[ptr], G::ZERO)?;
+      ptr
+    };
+  }
+  Ok(tail_ptr)
+}
+
+/// Approximate retained bytes of a record's query maps: field elements
+/// (keys + outputs) at 8 bytes plus ~21 bytes of per-entry index
+/// overhead (hash-table slot, stored hash, multiplicity). Feeds the
+/// witness phase of the prover RAM model
+/// ([`crate::synthesis::AiurSystem::peak_prove_bytes`]).
+pub fn record_retained_bytes(record: &QueryRecord) -> usize {
+  let mut elems = 0usize;
+  let mut entries = 0usize;
+  for m in &record.function_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  for (_, m) in &record.memory_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  elems * 8 + entries * 21
+}
+
+#[cfg(test)]
+mod record_pool_tests {
+  use super::*;
+  use crate::{bytecode::FunctionLayout, record_pool::RecordPool};
+
+  #[test]
+  fn return_chain_reserves_before_insertion_and_returns_an_error() {
+    let toplevel = Toplevel {
+      functions: (0..80)
+        .map(|i| Function {
+          body: Block {
+            ops: if i < 79 {
+              vec![Op::Call(i + 1, Vec::new(), 0, false)]
+            } else {
+              Vec::new()
+            },
+            ctrl: Ctrl::Return(0, Vec::new()),
+          },
+          layout: FunctionLayout {
+            input_size: 0,
+            selectors: 1,
+            auxiliaries: 1,
+            lookups: 2,
+          },
+          entry: i == 0,
+          constrained: true,
+        })
+        .collect(),
+      memory_sizes: Vec::new(),
+      circuits: Vec::new(),
+    };
+    let pool = RecordPool::new(1000, 100);
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let binding = bind_record_reservation(&reservation);
+    let mut io = IOBuffer { data: Default::default(), map: Default::default() };
+    let error = toplevel.execute(0, Vec::new(), &mut io).err().unwrap();
+    assert_eq!(
+      error,
+      ExecError::RecordBudgetExceeded { bytes: 1008, cap: 1000 }
+    );
+    assert!(pool.stats().peak_reserved <= 1000);
+    drop(binding);
+    drop(reservation);
+    assert_eq!(pool.stats().reserved, 0);
+  }
+
+  #[test]
+  fn bigint_growth_is_charged_and_maps_keep_reservations_across_threads() {
+    let pool = RecordPool::new(300, 109);
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let binding = bind_record_reservation(&reservation);
+    let mut record = QueryRecord::new(&Toplevel {
+      functions: Vec::new(),
+      memory_sizes: vec![10],
+      circuits: Vec::new(),
+    });
+    let result = build_klimbs_u64(&mut record.memory_queries, 0, &[1, 2, 3]);
+    assert_eq!(
+      result,
+      Err(ExecError::RecordBudgetExceeded { bytes: 327, cap: 300 })
+    );
+    assert_eq!(record.memory_queries[&10].len(), 2);
+    assert_eq!(record_retained_bytes(&record), 218);
+    reservation.finish_execution();
+    let table = record.memory_queries.swap_remove(&10).unwrap();
+    drop(record);
+    drop(binding);
+    drop(reservation);
+    assert_eq!(pool.stats().reserved, 218);
+    std::thread::spawn(move || drop(table)).join().unwrap();
+    assert_eq!(pool.stats().reserved, 0);
+  }
+}

@@ -1631,7 +1631,7 @@ unnormalized substitution results).
 `linearize ∘ subsumption ∘ normalizeAux` — the kernels' Géran
 comparison form (`normalizeLevel`, `Ix/Tc/Level.lean:227-472`;
 `crates/kernel/src/level.rs:335-696`;
-`Ix/IxVM/Kernel/Levels.lean:336-386`), transliterated to positional
+`LegacyIxVM/Kernel/Levels.lean:336-386`), transliterated to positional
 `Ixon.Univ` and then linearized back into a level term. The Géran
 form is a map from **paths** (sorted lists of param indices —
 imax-conditioning chains) to **nodes** (a constant offset plus
@@ -1717,7 +1717,7 @@ pathological spelling — never by readers of stored canonical forms.
 **The kernel-rebuild rule set.** The `mk*` simplification rules —
 Lean `kernel/level.cpp:81-103`/`:112-120`, mirrored at
 `Ix/Tc/Level.lean:144-197`, `crates/kernel/src/level.rs:162-247`,
-`Ix/IxVM/Kernel/Levels.lean:637-680` — are normative here in three
+`LegacyIxVM/Kernel/Levels.lean:637-680` — are normative here in three
 roles: the P3 fixpoint target (kernel ingress rebuilds through them),
 the stage-1 decoration-presence test (below), and the P6 oracle.
 They are **not** the address quotient (they miss commutative twins).

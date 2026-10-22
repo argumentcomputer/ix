@@ -1,11 +1,11 @@
 import Cli
-import Ix.IxVM
-import Ix.IxVM.Toplevel
-import Ix.IxVM.ClaimHarness
-import Ix.Aiur.Protocol
-import Ix.Aiur.Compiler
-import Ix.Aiur.Statistics
-import MultiStark
+import LegacyIxVM
+import LegacyIxVM.Toplevel
+import LegacyIxVM.ClaimHarness
+import LegacyAiur.Protocol
+import LegacyAiur.Compiler
+import LegacyAiur.Statistics
+import LegacyMultiStark
 import Ix.Aggr
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
@@ -14,9 +14,9 @@ import Ix.Cli.ConstsFile
 import Ix.Cli.NameResolve
 
 /-!
-# Aiur typecheck benchmark
+# LegacyAiur typecheck benchmark
 
-Out-of-circuit **execution** and in-circuit **proving** benchmark for the IxVM
+Out-of-circuit **execution** and in-circuit **proving** benchmark for the LegacyIxVM
 kernel's `verify_claim` entrypoint, run over constants from a serialized
 `Ixon.Env` (`.ixe`). Reading the env from a `.ixe` keeps this on Ix's critical
 path (same load `ix check --ixe` uses) and avoids importing Lean modules at
@@ -75,7 +75,7 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  --execute-only.
   --join         with --recursive and exactly two constants, benchmark the
                  converged ix_aggr direct flat pair (shape 2) over the two
-                 singleton-CheckEnv IxVM proofs. Emits one `left + right` JSON row
+                 singleton-CheckEnv LegacyIxVM proofs. Emits one `left + right` JSON row
                  carrying join-execute-time, join-fft-cost, join-prove-time,
                  join-peak-rss, join-proof-size, and join-verify-time. This is
                  an explicit W0/Section-13 diagnostic, not part of the default
@@ -104,7 +104,7 @@ four phases:
    then prove the verifier execution — the end-to-end recursion cost.
 4. **Join** (`--recursive --join`, exactly two constants): use each requested
    constant as a one-owned-constant `CheckEnv` shard, then execute/prove/verify
-   the converged `ix_aggr` direct flat pair (shape 2) over those IxVM proofs.
+   the converged `ix_aggr` direct flat pair (shape 2) over those LegacyIxVM proofs.
    The pair gets a dedicated JSON row because the join is one shared operation,
    not a cost attributable to either child independently.
 
@@ -134,12 +134,12 @@ it intentionally has no per-child or pipeline ledger fields.
 
 open Lean (Json Name)
 
-def commitmentParameters : Aiur.CommitmentParameters := {
+def commitmentParameters : LegacyAiur.CommitmentParameters := {
   logBlowup := 2
   capHeight := 0
 }
 
-def friParameters : Aiur.FriParameters := {
+def friParameters : LegacyAiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
   numQueries := 100
@@ -148,7 +148,7 @@ def friParameters : Aiur.FriParameters := {
 }
 
 /-- Recursion-tuned commitment parameters for `--recursive`. -/
-def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
+def recursiveCommitmentParameters : LegacyAiur.CommitmentParameters := {
   logBlowup := 2
   capHeight := 0
 }
@@ -165,7 +165,7 @@ def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
     between secure recursion and what fits today.
     `--recursive` runs the WHOLE system, inner prove included, under
     these, so its rows are not comparable to a plain `prove` run's. -/
-def recursiveFriParameters : Aiur.FriParameters := {
+def recursiveFriParameters : LegacyAiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
   numQueries := 50
@@ -188,7 +188,7 @@ structure Result where
       skips it, and the run exits with the reserved rejection code. -/
   failed : Bool := false
   proveSec : Option Float := none
-  /-- Serialized proof size in bytes (`Aiur.Proof.toBytes`). Tracked because
+  /-- Serialized proof size in bytes (`LegacyAiur.Proof.toBytes`). Tracked because
       prover changes can trade speed against proof size. -/
   proofSize : Option Nat := none
   /-- Wall time of `AiurSystem.verify` over the fresh proof — the other side
@@ -227,9 +227,9 @@ structure Result where
   recursiveVerifySec : Option Float := none
   deriving Inhabited
 
-/-- The successfully verified IxVM artifact retained for the optional binary
+/-- The successfully verified LegacyIxVM artifact retained for the optional binary
     join phase. `innerClaimsBytes` is the serialized singleton list containing
-    the IxVM proof's Aiur claim; `checkEnvClaimBytes` is the nested Ix claim
+    the LegacyIxVM proof's LegacyAiur claim; `checkEnvClaimBytes` is the nested Ix claim
     preimage that the converged join opens below it. -/
 structure JoinArtifact where
   label : String
@@ -237,8 +237,8 @@ structure JoinArtifact where
   statement : Aggr.CheckEnvTrees
   innerClaimsBytes : ByteArray
   checkEnvClaimBytes : ByteArray
-  outerClaim : Array Aiur.G
-  proof : Aiur.Proof
+  outerClaim : Array LegacyAiur.G
+  proof : LegacyAiur.Proof
 
 /-- Measurements for the one pair-wide `ix_aggr` shape-2 operation. Kept separate
     from `Result`: copying these fields onto both child rows would count the
@@ -417,7 +417,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Recursive: after each constant's prove, execute AND prove the in-circuit
   -- multi-stark verifier over the fresh proof (Phase 3).
   let recursive := p.hasFlag "recursive"
-  -- Join: retain two verified IxVM proofs, then benchmark one production
+  -- Join: retain two verified LegacyIxVM proofs, then benchmark one production
   -- direct flat join over their singleton-CheckEnv statements.
   let join := p.hasFlag "join"
   if recursive && executeOnly then
@@ -463,15 +463,15 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   | true, some path => TracingTexray.jsonSink s!"{path}.spans"
   | _, _ => pure ()
 
-  -- Compile the IxVM kernel once; build the prover system once.
+  -- Compile the LegacyIxVM kernel once; build the prover system once.
   -- `--skip-deps` proves the subject-only `verify_const`, a debug
   -- entrypoint absent from the production toplevel, so it needs the full
   -- one — and is thereby measuring a DIFFERENT verifying key than a
   -- claim run, which is the honest reading of those numbers.
-  let .ok toplevel := (if skipDeps then IxVM.ixVMFull else IxVM.ixVM)
-    | throw (IO.userError "Merging IxVM kernel failed")
-  let .ok compiled := toplevel.compileWithGroups IxVM.functionGroups
-    | throw (IO.userError "Compilation of IxVM kernel failed")
+  let .ok toplevel := (if skipDeps then LegacyIxVM.ixVMFull else LegacyIxVM.ixVM)
+    | throw (IO.userError "Merging LegacyIxVM kernel failed")
+  let .ok compiled := toplevel.compileWithGroups LegacyIxVM.functionGroups
+    | throw (IO.userError "Compilation of LegacyIxVM kernel failed")
   let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
     | throw (IO.userError s!"{entrypoint} entrypoint missing")
@@ -491,25 +491,25 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let friParams := match queryCount? with
     | some n => { friParams with numQueries := n }
     | none => friParams
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitParams friParams
+  let aiurSystem := LegacyAiur.AiurSystem.build compiled.bytecode commitParams friParams
   -- The recursive-verifier context, compiled and built ONCE: the verifier
   -- toplevel is constant-independent, and its prover system (same recursion
   -- parameters) is reused for every constant's outer prove.
-  let vCtx : Option (Aiur.CompiledToplevel × Aiur.Bytecode.FunIdx × Aiur.AiurSystem) ←
+  let vCtx : Option (LegacyAiur.CompiledToplevel × LegacyAiur.Bytecode.FunIdx × LegacyAiur.AiurSystem) ←
     if !recursive then pure none else do
-      let .ok vTop := MultiStark.multiStark
+      let .ok vTop := LegacyMultiStark.multiStark
         | throw (IO.userError "Merging multi-stark verifier failed")
-      let .ok vCompiled := vTop.compileWithGroups MultiStark.verifierFunctionGroups
+      let .ok vCompiled := vTop.compileWithGroups LegacyMultiStark.verifierFunctionGroups
         | throw (IO.userError "Compilation of multi-stark verifier failed")
       let some vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof
         | throw (IO.userError "verify_multi_stark_proof entrypoint missing")
       pure (some (vCompiled, vIdx,
-        Aiur.AiurSystem.build vCompiled.bytecode commitParams friParams))
+        LegacyAiur.AiurSystem.build vCompiled.bytecode commitParams friParams))
   -- The opt-in pair metric uses the converged production aggregator while the
   -- generic recursive phase above remains the standalone Multi-STARK verifier
   -- benchmark. Compile the second system only when `--join` requests it.
   let aggrCtx : Option
-      (Aiur.CompiledToplevel × Aiur.Bytecode.FunIdx × Aiur.AiurSystem) ←
+      (LegacyAiur.CompiledToplevel × LegacyAiur.Bytecode.FunIdx × LegacyAiur.AiurSystem) ←
     if !join then pure none else do
       let .ok aggrTop := Aggr.ixAggr
         | throw (IO.userError "Merging ix_aggr failed")
@@ -518,7 +518,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let some aggrIdx := aggrCompiled.getFuncIdx `ix_aggr
         | throw (IO.userError "ix_aggr entrypoint missing")
       pure (some (aggrCompiled, aggrIdx,
-        Aiur.AiurSystem.build aggrCompiled.bytecode commitParams friParams))
+        LegacyAiur.AiurSystem.build aggrCompiled.bytecode commitParams friParams))
 
   -- Load the serialized env lazily (the `ix check --ixe` path, #445): byte-window
   -- constants over the backing buffer, so only the checked closure is ever
@@ -542,7 +542,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Build the env once into a Rust-owned `EnvHandle` and share it
   -- across both Phase 1 and Phase 2 loops. Per-target FFI calls
   -- reuse the parsed env — no per-call mmap / lazy-index rebuild.
-  let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+  let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixePath with
     | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
     | .ok h => pure h
 
@@ -571,7 +571,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       TracingTexray.resetPeakTreeRss
       let (res, execSec) ← timed fun _ =>
         if skipDeps then
-          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+          let witness := LegacyIxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           if useInterp then
             compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
           else
@@ -589,7 +589,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           ({ name := label, constants := 0, fftCost := 0, executeSec := 0,
              failed := true }, addr)
       | .ok (_, _, queryCounts) =>
-        let stats := Aiur.computeStats compiled queryCounts shapes
+        let stats := LegacyAiur.computeStats compiled queryCounts shapes
           (logBlowup := commitParams.logBlowup)
         -- Constants CHECKED, not shipped: `check_const` is memoized per
         -- (ci, addr), so its unique query count is exactly the number of
@@ -672,7 +672,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       TracingTexray.resetPeakTreeRss
       let (proveRes, proveSec) ← timed fun _ =>
         if skipDeps then
-          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+          let witness := LegacyIxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           let proveRes :=
             if useInterp then
               aiurSystem.prove funIdx witness.input witness.inputIOBuffer
@@ -695,7 +695,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             | some proof =>
               let digest := Address.blake3 result.claimBytes
               let claim :=
-                Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
+                LegacyAiur.buildClaim funIdx (LegacyIxVM.ClaimHarness.packedDigestKey digest) #[]
               -- Shard proving no longer returns its whole ingested IO scope;
               -- this benchmark never reads it after the proof is produced.
               .ok (claim, proof, default, some result.claimBytes)
@@ -709,15 +709,15 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             -- `ix verify`).
             let digest := Address.blake3 claimBytes
             let claim :=
-              Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
+              LegacyAiur.buildClaim funIdx (LegacyIxVM.ClaimHarness.packedDigestKey digest) #[]
             .ok (claim, proof, ioBuf, none)
       match (proveRes : Except String
-          (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer × Option ByteArray)) with
+          (Array LegacyAiur.G × LegacyAiur.Proof × LegacyAiur.IOBuffer × Option ByteArray)) with
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
       | .ok (claim, proof, _ioBuf, checkEnvClaimBytes?) =>
         spent := spent + proveSec
         let peak ← TracingTexray.peakTreeRssBytes
-        let proofBytes := Aiur.Proof.toBytes proof
+        let proofBytes := LegacyAiur.Proof.toBytes proof
         let (verifyRes, verifySec) ← timed fun _ =>
           aiurSystem.verify claim proof
         -- A proof that does not verify is a correctness alarm, not a slow
@@ -733,7 +733,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             IO.eprintln s!"  verify {r.name} FAILED: {e}"
             r := { r with failed := true }
             pure none
-        let shards := Aiur.Proof.shardCount proof
+        let shards := LegacyAiur.Proof.shardCount proof
         IO.println s!"  {r.name}: prove={proveSec}s verify={verifySec}s \
           proof={proofBytes.size} bytes, {shards} trace shard(s) (cumulative {spent}s)"
         ordered := ordered.set! i
@@ -750,9 +750,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if let some (vCompiled, vIdx, vSystem) := vCtx then
           IO.println s!"  [{i + 1}/{ordered.size}] recursively verifying {r.name} …"
           (← IO.getStdout).flush
-          let innerClaimsBytes := MultiStark.serializeClaims #[claim]
+          let innerClaimsBytes := LegacyMultiStark.serializeClaims #[claim]
           let vkBytes := aiurSystem.vkBytes
-          let pubInput := MultiStark.verifierPubInput vkBytes innerClaimsBytes
+          let pubInput := LegacyMultiStark.verifierPubInput vkBytes innerClaimsBytes
           -- Verify and serialize the proof transport consumed in-circuit.
           -- `proofBytes` remains the raw proof used for reported proof size.
           let adviceBytes ← match aiurSystem.proofToAdviceBytes claim proof with
@@ -769,14 +769,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           | .error e =>
             IO.eprintln s!"  ❌ recursive verifier REJECTED {r.name}'s proof: {e}"
           | .ok (_, qc) =>
-            let rvStats := Aiur.computeStats vCompiled qc vSystem.circuitShapes
+            let rvStats := LegacyAiur.computeStats vCompiled qc vSystem.circuitShapes
               (logBlowup := commitParams.logBlowup)
             IO.println s!"  {r.name}: recursive={rvSec}s \
               fri-verifier-fft-cost={rvStats.totalFftCost}"
             -- The per-circuit breakdown names where the verifier's cost
             -- lives (deserialization vs blake3 vs FRI); texray-gated like
             -- the other detailed diagnostics.
-            if useTexray then Aiur.printStats rvStats
+            if useTexray then LegacyAiur.printStats rvStats
             let (row, _) := ordered[i]!
             ordered := ordered.set! i
               ({ row with recursiveExecuteSec := some rvSec
@@ -797,7 +797,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                 IO.eprintln s!"  outer prove {r.name} failed: {e}"
                 continue
             let rvPeak ← TracingTexray.peakTreeRssBytes
-            let rvProofBytes := Aiur.Proof.toBytes rvProof
+            let rvProofBytes := LegacyAiur.Proof.toBytes rvProof
             let (rvVerifyRes, rvVerifySec) ← timed fun _ =>
               vSystem.verify rvClaim rvProof
             let rvVerifySec? ← match rvVerifyRes with
@@ -818,7 +818,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
               match rvVerifyRes, checkEnvClaimBytes? with
               | .ok (), some checkEnvClaimBytes =>
                 let (expectedClaim, trees) ← IO.ofExcept <|
-                  IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv #[addr]
+                  LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv #[addr]
                 if Ix.Claim.ser expectedClaim != checkEnvClaimBytes then
                   throw <| IO.userError s!"join benchmark: native shard claim for \
                     {r.name} differs from host reconstruction"
@@ -841,7 +841,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"  prove {r.name} threw: {e}"
 
   -- Phase 4 (--recursive --join): one pair-wide converged direct join. The two
-  -- child rows retain their ordinary IxVM/recursive-verifier measurements;
+  -- child rows retain their ordinary LegacyIxVM/recursive-verifier measurements;
   -- the shared ix_aggr shape-2 proof lands under its own stable `left + right`
   -- row so it is neither duplicated nor assigned arbitrarily to one child.
   let mut joinRejected := false
@@ -851,10 +851,10 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     let rightLabel := targets[1]!.1
     let pairName := s!"{leftLabel} + {rightLabel}"
     let some left := joinArtifacts.find? fun artifact => artifact.label == leftLabel | do
-      IO.eprintln s!"join benchmark: no verified IxVM proof for {leftLabel}"
+      IO.eprintln s!"join benchmark: no verified LegacyIxVM proof for {leftLabel}"
       return 1
     let some right := joinArtifacts.find? fun artifact => artifact.label == rightLabel | do
-      IO.eprintln s!"join benchmark: no verified IxVM proof for {rightLabel}"
+      IO.eprintln s!"join benchmark: no verified LegacyIxVM proof for {rightLabel}"
       return 1
     let some (aggrCompiled, aggrIdx, aggrSystem) := aggrCtx | do
       IO.eprintln "join benchmark: ix_aggr context was not built"
@@ -905,11 +905,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         joinRejected := true
         pure none
       | .ok (_, queryCounts) =>
-        let stats := Aiur.computeStats aggrCompiled queryCounts aggrSystem.circuitShapes
+        let stats := LegacyAiur.computeStats aggrCompiled queryCounts aggrSystem.circuitShapes
           (logBlowup := commitParams.logBlowup)
         IO.println s!"  {pairName}: join-execute={joinExecuteSec}s \
           join-fft-cost={stats.totalFftCost}"
-        if useTexray then Aiur.printStats stats
+        if useTexray then LegacyAiur.printStats stats
         pure (some stats.totalFftCost)
     if let some joinFftCost := joinFftCost then
       -- Persist the cheap phase before proving, so a watchdog kill still
@@ -933,7 +933,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.eprintln s!"  prove join {pairName} failed: {e}"
         return 1
       | .ok (joinClaim, joinProof) =>
-        let expectedClaim := Aiur.buildClaim aggrIdx pubInput #[]
+        let expectedClaim := LegacyAiur.buildClaim aggrIdx pubInput #[]
         if joinClaim != expectedClaim then
           IO.eprintln s!"  join {pairName} returned an unexpected outer claim"
           return 1
@@ -973,7 +973,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
 
 def typecheckCmd : Cli.Cmd := `[Cli|
   typecheck VIA runTypecheckCmd;
-  "Benchmark IxVM-kernel execution + proving of `Ix.Claim.check` over `.ixe` constants"
+  "Benchmark LegacyIxVM-kernel execution + proving of `Ix.Claim.check` over `.ixe` constants"
 
   FLAGS:
     "ixe"          : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
@@ -986,7 +986,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "join";               "With --recursive and exactly two resolved constants, prove each as a singleton CheckEnv shard, then execute/prove/verify one direct flat aggregate join (ix_aggr shape 2). Emits a dedicated `left + right` row with join-* metrics. Conflicts with --skip-deps, --execute-only, and --interp."
     "trace-shards";       "Prove each constant as a singleton CheckEnv shard planned to a batch of trace shards within --max-ram (the `ix prove --trace-shards` path); `BENCH_TRACE_SHARDS=<GiB>` sets both from the environment. Every proven row reports `ixvm-trace-shards`, the shard count of its proof."
     "max-ram"   : Nat;    "With --trace-shards: the per-constant prover RAM budget in GiB (default 0: 85% of MemAvailable)."
-    "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
+    "interp";             "Route execution through the generic LegacyAiur bytecode interpreter instead of the codegen'd LegacyIxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `LegacyIxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the positive FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 

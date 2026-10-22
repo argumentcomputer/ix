@@ -64,7 +64,7 @@ def testJoinReport : TestSeq := Id.run do
   let joinSection := scopeAiurSection names
     { heading := "Aggregate flat join", metrics := #["join-prove-time"] }
   let ixvmSection := scopeAiurSection names
-    { heading := "IxVM on FRI", metrics := #["ixvm-prove-time"] }
+    { heading := "LegacyIxVM on FRI", metrics := #["ixvm-prove-time"] }
   let rows := Lean.Json.mkObj [
     ("Nat.add_comm", Lean.Json.mkObj [("ixvm-prove-time", Lean.toJson (1 : Nat))]),
     (pair, Lean.Json.mkObj [("status", Lean.Json.str "oom")])]

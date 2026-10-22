@@ -1,13 +1,13 @@
 import Ix.Check
 
-/-! Native phase timings for the production IxVM compiler and Nat.add_comm.
+/-! Native phase timings for the production LegacyIxVM compiler and Nat.add_comm.
 Run `lake exe bench-aiur-compile [stages] [bytecode] [compile-only]`.
 The default times the unmodified compiler. `stages` expands that same pipeline
 to locate its costs. Parsing/elaboration happened when the executable was built;
-module initialization (including IxVM merge/prune) precedes `main`.
+module initialization (including LegacyIxVM merge/prune) precedes `main`.
 -/
 
-open Aiur
+open LegacyAiur
 
 @[noinline] private def timePure (label : String)
     (action : Unit → Except String α) : IO α := do
@@ -30,7 +30,7 @@ open Aiur
     IO CompiledToplevel := timeIO "compiler total" do
   unless stages do
     return ← timePure "compileWithGroups" fun _ =>
-      t.compileWithGroups IxVM.functionGroups
+      t.compileWithGroups LegacyIxVM.functionGroups
   let t ← timePure "inline" fun _ => t.inlineCalls
   let typed ← timePure "check and simplify" fun _ =>
     t.checkAndSimplify.mapError toString
@@ -56,18 +56,18 @@ open Aiur
     return CompiledToplevel.mk t bytecode nameMap
   timePure "group functions" fun _ =>
     if functionGroupsDisabled then .ok compiled
-    else compiled.groupFunctions IxVM.functionGroups
+    else compiled.groupFunctions LegacyIxVM.functionGroups
 
 def main (args : List String) : IO Unit := do
   let start ← IO.monoNanosNow
-  let toplevel ← IO.ofExcept (IxVM.ixVM.mapError toString)
+  let toplevel ← IO.ofExcept (LegacyIxVM.ixVM.mapError toString)
   let compiled ← compileTimed toplevel (args.contains "stages")
   IO.println s!"Functions: {compiled.bytecode.functions.size}; function circuits: {compiled.bytecode.circuits.size}"
   unless args.contains "compile-only" do
     let env ← timeIO "load Lean environment" get_env!
     let ixonEnv ← timeIO "compile Nat.add_comm environment" <|
-      IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
-    let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv ``Nat.add_comm
+      LegacyIxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
+    let addr ← LegacyIxVM.ClaimHarness.lookupAddr ixonEnv ``Nat.add_comm
     let handle ← timeIO "serialize and load Ixon environment" do
       let bytes ← IO.ofExcept (Ixon.serEnv ixonEnv)
       IO.ofExcept (EnvHandle.fromBytes bytes)
@@ -75,7 +75,7 @@ def main (args : List String) : IO Unit := do
     let useBytecode := args.contains "bytecode"
     let (_, _, counts) ← timePure
         (if useBytecode then "bytecode check (including witness)"
-          else "native check (including witness)") fun _ =>
+          else "selected legacy runner (including witness)") fun _ =>
       compiled.bytecode.checkAddrWithEnv funIdx handle addr.hash useBytecode
     let shapes ← timePure "Rust system build and circuit shapes" fun _ =>
       .ok (circuitShapes compiled.bytecode defaultCommitmentParameters defaultFriParameters)

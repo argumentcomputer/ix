@@ -21,7 +21,7 @@ use aiur::{
 };
 use ix_common::address::Address;
 use ixon::{Proof as IxonProof, merkle::MerklePath};
-use ixvm_codegen::aiur_ix_aggr_runner::{
+use ixvm_legacy::aiur_ix_aggr_runner::{
   AggrAdvice, AggrPath, AggrPreimage, AggrTree, aggr_io_buffer, execute_ix_aggr,
 };
 use multi_stark::types::ExtVal;

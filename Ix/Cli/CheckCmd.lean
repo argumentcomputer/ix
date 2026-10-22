@@ -1,5 +1,5 @@
 /-
-  `ix check`: execute the IxVM Aiur kernel over a Lean or `.ixe`
+  `ix check`: execute the LegacyIxVM LegacyAiur kernel over a Lean or `.ixe`
   environment, one constant at a time.
   The Rust kernel typechecker that used to live under this name is now `ix check-rs`.
 
@@ -8,7 +8,7 @@
       ix check Nat.add_comm                            # from compiled-in Lean env
       ix check --ixe arena.ixe foo bar baz             # from .ixe, named targets
       ix check --ixe arena.ixe                         # iterate every named const
-      ix check --interp Nat.add_comm                   # Aiur interpreter (richer errors)
+      ix check --interp Nat.add_comm                   # LegacyAiur interpreter (richer errors)
       ix check --stats-out STATS Nat.add_comm          # redirect per-circuit stats
 
   Stats print when exactly one constant is targeted. Multi-target +
@@ -46,7 +46,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- a single targeted constant, a `--claim`, or a single shard each print
   -- per-circuit stats; whole-env / whole-partition iteration suppresses them.
   let printStats := names.length == 1 || claimHex.isSome || (ixesPath.isSome && shardK.isSome)
-  let toplevel ← match IxVM.ixVM with
+  let toplevel ← match LegacyIxVM.ixVM with
     | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
     | .ok t => pure t
   -- `runOne` consumes `(claim, envHandle?, target, label)`. For the
@@ -57,12 +57,12 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- bypass. So `--interp` rejects `.addr`/`.shard` targets here;
   -- the legacy `runShardCheckManifest` path is used for `--interp`
   -- shard mode.
-  let runOne : Ix.Claim → Option Aiur.EnvHandle → Target → String → IO UInt32 ←
+  let runOne : Ix.Claim → Option LegacyAiur.EnvHandle → Target → String → IO UInt32 ←
     if interpSource then do
       let decls ← match toplevel.mkDecls with
         | .error e => IO.eprintln s!"mkDecls failed: {e}"; return 1
         | .ok d => pure d
-      let go (_ : Ix.Claim) (_ : Option Aiur.EnvHandle) (target : Target)
+      let go (_ : Ix.Claim) (_ : Option LegacyAiur.EnvHandle) (target : Target)
           (label : String) : IO UInt32 :=
         match target with
         | .leanW w => runInterp decls w label
@@ -72,10 +72,10 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
           pure 1
       pure go
     else do
-      let compiled ← match toplevel.compileWithGroups IxVM.functionGroups with
+      let compiled ← match toplevel.compileWithGroups LegacyIxVM.functionGroups with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      let go (_ : Ix.Claim) (envHandle? : Option Aiur.EnvHandle) (target : Target)
+      let go (_ : Ix.Claim) (envHandle? : Option LegacyAiur.EnvHandle) (target : Target)
           (label : String) : IO UInt32 :=
         runCompiled compiled printStats statsOut useBytecode envHandle? target label
       pure go
@@ -85,7 +85,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       return (← runShardCheckManifest manifest ixe k
         (fun c w l => runOne c none (.leanW w) l))
     else do
-      let compiled ← match toplevel.compileWithGroups IxVM.functionGroups with
+      let compiled ← match toplevel.compileWithGroups LegacyIxVM.functionGroups with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
       return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut useBytecode)
@@ -94,7 +94,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
         (fun c w l => runOne c none (.leanW w) l))
     else do
-      let compiled ← match toplevel.compileWithGroups IxVM.functionGroups with
+      let compiled ← match toplevel.compileWithGroups LegacyIxVM.functionGroups with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
       let json? := (p.flag? "json").map fun f =>
@@ -107,7 +107,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
         | some g =>
           if g > 0 then pure (g * gibBytes, "flag")
           else
-            let b ← Aiur.detectedRamBudgetBytes
+            let b ← LegacyAiur.detectedRamBudgetBytes
             if b == 0 then
               IO.eprintln "--ram-budget 0: cannot detect MemAvailable (/proc/meminfo unreadable)"
               return 1
@@ -145,10 +145,10 @@ end Ix.Cli.CheckCmd
 open Ix.Cli.CheckCmd in
 def checkCmd : Cli.Cmd := `[Cli|
   check VIA runCheckCmd;
-  "Typecheck Lean / `.ixe` constants through the IxVM Aiur kernel"
+  "Typecheck Lean / `.ixe` constants through the LegacyIxVM LegacyAiur kernel"
 
   FLAGS:
-    interp : String;        "Use an interpreter instead of the codegen'd IxVM Rust kernel. Modes: `source` = Aiur source interpreter (richer per-execution error diagnostics, slowest); `bytecode` = generic Aiur bytecode interpreter (skips the regen + cargo rebuild cycle when iterating on `Ix/IxVM/*.lean`). Omit the flag entirely for the native codegen kernel."
+    interp : String;        "Choose a legacy interpreter: `source` provides source-level diagnostics; `bytecode` explicitly uses legacy bytecode. Without this flag, the build uses bytecode by default or generated native kernels when built with IX_NATIVE=1."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."

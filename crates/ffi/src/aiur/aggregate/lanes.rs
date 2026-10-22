@@ -21,8 +21,8 @@ use aiur::record_pool::{
   PoolStats, ProverBudget, RecordPool, RecordReservation,
 };
 use aiur::synthesis::ShardRetention as Retention;
-use ixvm_codegen::aiur_ixvm_runner::execute_ixvm;
-use ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness;
+use ixvm_legacy::aiur_ixvm_runner::execute_ixvm;
+use ixvm_legacy::aiur_ixvm_witness::build_shard_check_env_witness;
 
 use super::prepare::PreparedRun;
 use super::protocol::serialize_claims;

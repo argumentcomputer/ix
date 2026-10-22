@@ -8,14 +8,14 @@ license.workspace = true
 crate-type = ["lib", "staticlib"]
 
 [dependencies]
-aiur = { workspace = true }
+aiur = { package = "aiur-legacy", path = "../aiur-legacy" }
 anyhow = { workspace = true }
 bignat = { workspace = true }
 blake3 = { workspace = true }
 dashmap = { workspace = true, features = ["rayon"] }
 indexmap = { workspace = true, features = ["rayon"] }
 itertools = { workspace = true }
-ixvm-codegen = { workspace = true }
+ixvm-legacy = { workspace = true }
 ix-bench = { workspace = true }
 ix-common = { workspace = true }
 ix-compile = { workspace = true }
@@ -47,6 +47,7 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [features]
 default = []
+legacy-native = ["ixvm-legacy/native"]
 parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda"]
 cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]

@@ -1,8 +1,8 @@
 /-
   `ix verify <proof-hex>`: read a persisted `Ixon.Proof` wrapper from
   the content-addressed store, extract the inner claim + opaque ZK
-  proof bytes, reconstruct the Aiur-level public input, and run the
-  Aiur backend's `verify`. Exits 0 on success, 1 with an error
+  proof bytes, reconstruct the LegacyAiur-level public input, and run the
+  LegacyAiur backend's `verify`. Exits 0 on success, 1 with an error
   message otherwise.
 
   The wrapper carries the claim, so this command takes only the proof
@@ -11,15 +11,15 @@
 module
 public import Cli
 public import Ix.Address
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Protocol
+public import LegacyAiur.Compiler
+public import LegacyAiur.Protocol
 public import Ix.Claim
 public import Ix.Common
-public import Ix.IxVM
-public import Ix.IxVM.Toplevel
-public import Ix.IxVM.ClaimHarness
+public import LegacyIxVM
+public import LegacyIxVM.Toplevel
+public import LegacyIxVM.ClaimHarness
 public import Ix.Aggr
-public import MultiStark
+public import LegacyMultiStark
 public import Ix.Store
 public import Ix.Aggr.Backend
 public import Ix.Aggr.Verification
@@ -44,19 +44,19 @@ private def addrOfHex! (label : String) (s : String) : IO Address := do
     Mismatch makes verification fail silently with no useful diagnostic,
     so these MUST match the proving side until they migrate into the
     proof header. -/
-private def commitmentParameters : Aiur.CommitmentParameters :=
-  Aiur.defaultCommitmentParameters
+private def commitmentParameters : LegacyAiur.CommitmentParameters :=
+  LegacyAiur.defaultCommitmentParameters
 
-private def friParameters : Aiur.FriParameters :=
-  Aiur.defaultFriParameters
+private def friParameters : LegacyAiur.FriParameters :=
+  LegacyAiur.defaultFriParameters
 
 /-- Verify one persisted `Ixon.Proof` wrapper (by store address) against its
-    bundled claim, using an already-built Aiur backend. -/
-def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
+    bundled claim, using an already-built LegacyAiur backend. -/
+def verifyOneProof (aiurSystem : LegacyAiur.AiurSystem) (compiled : LegacyAiur.CompiledToplevel)
     (proofAddr : Address) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
-  let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
+  let proof ← match LegacyAiur.Proof.ofBytesChecked wrapper.proof with
     | .ok proof => pure proof
     | .error e =>
       IO.eprintln s!"error: proof {proofAddr} does not decode: {e}"
@@ -69,8 +69,8 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
     | none =>
       IO.eprintln "error: `verify_claim` entrypoint missing from compiled toplevel"
       return 1
-  let input : Array Aiur.G := IxVM.ClaimHarness.packedDigestKey claimDigest
-  let aiurClaim := Aiur.buildClaim funIdx input #[]
+  let input : Array LegacyAiur.G := LegacyIxVM.ClaimHarness.packedDigestKey claimDigest
+  let aiurClaim := LegacyAiur.buildClaim funIdx input #[]
   match aiurSystem.verify aiurClaim proof with
   | .ok () =>
     IO.println s!"ok: proof {proofAddr} verifies claim {claimDigest}"
@@ -79,15 +79,15 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
     IO.eprintln s!"error: verification failed: {e}"
     return 1
 
-/-- Build the Aiur backend (toplevel → compile → system), matching the proving
+/-- Build the LegacyAiur backend (toplevel → compile → system), matching the proving
     side. Shared by every proof-verifying path. -/
-def buildBackend : IO (Except String (Aiur.AiurSystem × Aiur.CompiledToplevel)) := do
-  match IxVM.ixVM with
+def buildBackend : IO (Except String (LegacyAiur.AiurSystem × LegacyAiur.CompiledToplevel)) := do
+  match LegacyIxVM.ixVM with
   | .error e => return .error s!"toplevel merging failed: {e}"
-  | .ok toplevel => match toplevel.compileWithGroups IxVM.functionGroups with
+  | .ok toplevel => match toplevel.compileWithGroups LegacyIxVM.functionGroups with
     | .error e => return .error s!"compilation failed: {e}"
     | .ok compiled =>
-      return .ok (Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters, compiled)
+      return .ok (LegacyAiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters, compiled)
 
 structure ExpectedAggregate where
   claim : Ix.Claim
@@ -108,7 +108,7 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
       IO.eprintln s!"error: aggregate claim {wrapper.claim} does not match expected {expected.claim}"
       return 1
   | none => pure ()
-  let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
+  let proof ← match LegacyAiur.Proof.ofBytesChecked wrapper.proof with
     | .ok proof => pure proof
     | .error e =>
       IO.eprintln s!"error: aggregate proof {proofAddr} does not decode: {e}"
@@ -118,7 +118,7 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
   let verifyStarted ← IO.monoMsNow
   match backend.system.verify outerClaim proof with
   | .ok () =>
-    IO.println s!"[verify] aggregate Aiur proof: {(← IO.monoMsNow) - verifyStarted}ms"
+    IO.println s!"[verify] aggregate LegacyAiur proof: {(← IO.monoMsNow) - verifyStarted}ms"
     IO.println s!"ok: aggregate proof {proofAddr} verifies {wrapper.claim}"
     if let some expected := expected? then
       IO.println s!"[verify] aggregate coverage: {expected.constantCount}/\
@@ -196,7 +196,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
     let backend ← match ← Aggr.buildVerificationBackend recursionParameters with
       | .error e => IO.eprintln e; return 1
       | .ok backend => pure backend
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+    let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixePath with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
       | .ok handle => pure handle
     let proofHexes := String.intercalate "\n" proofs
@@ -212,7 +212,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       recordProof d proofAddr
     return 0
 
-/-- Verify with an explicit aggregate-recursion configuration. Ordinary IxVM
+/-- Verify with an explicit aggregate-recursion configuration. Ordinary LegacyIxVM
 proof verification remains pinned to its independent canonical parameters. -/
 def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
@@ -234,7 +234,7 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
         let env ← match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
           | .error e => IO.eprintln s!"deserialize {ixePath} failed: {e}"; return 1
           | .ok env => pure env
-        let some expectedTree := IxVM.ClaimHarness.envCanonicalTree env | do
+        let some expectedTree := LegacyIxVM.ClaimHarness.envCanonicalTree env | do
           IO.eprintln "error: cannot verify an aggregate against an empty environment"
           return 1
         let statement : Aggr.CheckEnvTrees := {
@@ -247,13 +247,13 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
         pure (some { claim := statement.claim, constantCount })
       | some ixePath, some manifestPath =>
         let started ← IO.monoMsNow
-        let envHandle ← match ← IO.lazyPure fun _ => Aiur.EnvHandle.fromIxe ixePath with
+        let envHandle ← match ← IO.lazyPure fun _ => LegacyAiur.EnvHandle.fromIxe ixePath with
           | .error e =>
             IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"
             return 1
           | .ok handle => pure handle
         let native ← match ← IO.lazyPure fun _ =>
-            Aiur.AiurSystem.aggregateExpected envHandle manifestPath structuralAbove with
+            LegacyAiur.AiurSystem.aggregateExpected envHandle manifestPath structuralAbove with
           | .error e =>
             IO.eprintln s!"native aggregate manifest audit failed: {e}"
             return 1

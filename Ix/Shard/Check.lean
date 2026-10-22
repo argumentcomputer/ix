@@ -5,29 +5,29 @@ public import Ix.Benchmark.Results
 public import Ix.TracingTexray
 public import Ix.Unsigned
 
-/-! Manifest-driven IxVM execution, resource auditing, and shard refinement. -/
+/-! Manifest-driven LegacyIxVM execution, resource auditing, and shard refinement. -/
 
 public section
 namespace Ix.Shard.Check
-open Ix.Check Ix.Shard IxVM.ClaimHarness
+open Ix.Check Ix.Shard LegacyIxVM.ClaimHarness
 
 /-- Run the shard operation for one shard, given the already-loaded env and the
     shard's owned `blocks`: build the `CheckEnv` witness over the owned consts
     (ingress their closure, skip the frontier) and dispatch `runOne`. -/
 def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
+    (runOne : Ix.Claim → LegacyIxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
     {owned.size}/{ixonEnv.consts.size} owned consts"
-  match IxVM.ClaimHarness.buildShardCheckEnvWitness ixonEnv owned with
+  match LegacyIxVM.ClaimHarness.buildShardCheckEnvWitness ixonEnv owned with
   | .error e => IO.eprintln s!"shard witness build failed: {e}"; return 1
   | .ok (claim, witness) => runOne claim witness s!"shard {shardK}"
 
-/-- IxVM-native fast path: dispatch through `shardCheckWithEnv` (a
+/-- LegacyIxVM-native fast path: dispatch through `shardCheckWithEnv` (a
     Rust-owned `EnvHandle` reused across calls). Caller threads in
     the pre-built envHandle so all shards in an all-shards run share
     one env parse. -/
-def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
+def runShardOwnedNative (envHandle : LegacyAiur.EnvHandle) (compiled : LegacyAiur.CompiledToplevel)
     (printStats : Bool) (statsOut : Option String)
     (useBytecode : Bool)
     (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
@@ -43,7 +43,7 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
     blob := blob ++ a.hash
   match compiled.bytecode.shardCheckWithEnv funIdx envHandle blob useBytecode with
   | .error e =>
-    IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
+    IO.eprintln s!"{label}: LegacyIxVM-native shard check error: {e}"
     return 1
   | .ok (_output, _ioBuffer, queryCounts) =>
     if printStats then emitStats compiled queryCounts statsOut
@@ -51,17 +51,17 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
 
 /-- Manifest-driven check/prove of one shard `shardK` of the partition. -/
 def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
+    (runOne : Ix.Claim → LegacyIxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) => match shards[shardK]? with
     | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
     | some blocks => runShardOwned ixonEnv blocks shardK runOne
 
-/-- IxVM-native shard check, single shard. Builds an `EnvHandle`
+/-- LegacyIxVM-native shard check, single shard. Builds an `EnvHandle`
     once for this one call. -/
 def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
-    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
+    (compiled : LegacyAiur.CompiledToplevel) (printStats : Bool)
     (statsOut : Option String)
     (useBytecode : Bool) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
@@ -69,7 +69,7 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
   | .ok (ixonEnv, shards) => match shards[shardK]? with
     | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
     | some blocks =>
-      let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+      let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
       runShardOwnedNative envHandle compiled printStats statsOut
@@ -105,7 +105,7 @@ structure LeafRefinement where
   shard : Nat
   parts : Array (Array Address × Nat)
 
-/-- Wire encoding of `Aiur.shardManifestRefine`'s refinements argument:
+/-- Wire encoding of `LegacyAiur.shardManifestRefine`'s refinements argument:
     `count(u32)`, then per refined leaf `id(u32) ‖ nparts(u32)` and per
     part `nblocks(u32) ‖ 32·nblocks ‖ peak(u64)`. -/
 def refinementsBlob (rs : Array LeafRefinement) : ByteArray :=
@@ -129,7 +129,7 @@ def refinementsOfRuns (n : Nat)
       | some (_, peak) => (rs, if k < measured.size then measured.set! k peak else measured)
       | none => (rs, measured)
 
-/-- Decode the new-id table `Aiur.shardManifestRefine` returns:
+/-- Decode the new-id table `LegacyAiur.shardManifestRefine` returns:
     `count(u32)`, then per refinement `n(u32) ‖ n × id(u32)`. Malformed
     input yields the ids decoded so far, never a panic. -/
 def decodeIdTable (bytes : ByteArray) : Array (Array Nat) := Id.run do
@@ -155,17 +155,17 @@ def decodeIdTable (bytes : ByteArray) : Array (Array Nat) := Id.run do
 /-- Emit the partition a run actually validated as a refinement of the
     manifest it started from — the shared tail of `ix prove --out-ixes`
     and `ix check --ram-budget --out-ixes`. Untouched leaves keep their
-    records, ids and tree positions (`Aiur.shardManifestRefine`); a leaf
+    records, ids and tree positions (`LegacyAiur.shardManifestRefine`); a leaf
     that split becomes a subtree over its parts, part 0 keeping the leaf's
     id and later parts taking fresh ids after the last existing one.
     `measured` carries the peaks of the leaves that ran unsplit. Skipped
     with a note when any shard failed: a refined manifest describes a
     fully-validated partition. Returns the parts' new ids per refinement. -/
-def emitRefinedManifest (tag : String) (envHandle : Aiur.EnvHandle)
+def emitRefinedManifest (tag : String) (envHandle : LegacyAiur.EnvHandle)
     (sourcePath out : String) (refinements : Array LeafRefinement)
     (measured : Array Nat) (failures : Nat) : IO (Array (Array Nat)) := do
   if failures == 0 then
-    let ids ← Aiur.shardManifestRefine envHandle sourcePath
+    let ids ← LegacyAiur.shardManifestRefine envHandle sourcePath
       (refinementsBlob refinements) (peaksBlob measured) out
     IO.println s!"[{tag}] refined manifest → {out} \
       ({refinements.size} leaf/leaves split)"
@@ -208,7 +208,7 @@ structure PartReport where
     rescan): the digest `ix prove` persists and `ix aggregate` matches on. -/
 def claimDigestOfOwned (ixonEnv : Ixon.Env) (owned : Array Address) :
     Except String Address := do
-  let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned
+  let (claim, _) ← LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned
   pure (Address.blake3 (Ix.Claim.ser claim))
 
 /-- `K`, `a-b`, or a comma list of those: the leaf ids a run is restricted
@@ -271,7 +271,7 @@ private def fileJson (path : String) (digest : Option (String × Nat))
     proven-leaf guard, a JSON report, and `ix shard refine`'s failure
     policy. -/
 def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
-    (compiled : Aiur.CompiledToplevel) (useBytecode : Bool)
+    (compiled : LegacyAiur.CompiledToplevel) (useBytecode : Bool)
     (json? : Option (String × String))
     (maxRamBytes : Nat) (outIxes : Option String)
     (opts : AuditOptions := {}) :
@@ -292,7 +292,7 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
           return 1
         pure sel
     let selectedSet : Std.HashSet Nat := selected.foldl (·.insert ·) {}
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+    let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixePath with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
       | .ok h => pure h
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
@@ -344,7 +344,7 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       let start ← IO.monoMsNow
       match compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle
           (addrListsBlob ownedPer) useBytecode jobs
-          Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+          LegacyAiur.defaultCommitmentParameters LegacyAiur.defaultFriParameters
           maxRamBytes with
       | .error e => IO.eprintln s!"shard batch (wave {waveNum}): {e}"; return 1
       | .ok rs =>
@@ -542,7 +542,7 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
     if any shard fails, else 0. -/
 def runShardManifestAll (manifestPath ixePath : String)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
+    (runOne : Ix.Claim → LegacyIxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
@@ -558,7 +558,7 @@ def runShardManifestAll (manifestPath ixePath : String)
     shard's IO buffer re-ingests its whole closure. Returns 1 on a coverage gap
     or any shard failure. -/
 def runShardCheckAll (manifestPath ixePath : String) (jobs? : Option Nat)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
+    (runOne : Ix.Claim → LegacyIxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
   let (ixonEnv, shards) ← match (← loadEnvAndShards manifestPath ixePath) with
     | .error e => IO.eprintln e; return 1
     | .ok r => pure r

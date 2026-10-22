@@ -7,8 +7,8 @@
       ix prove --ixe arena.ixe                         # iterate every named const
       ix prove --ixe arena.ixe --claim <hex>           # against a persisted claim
 
-  Each invocation runs the same `verify_claim` Aiur witness that
-  `ix check` does, then drives Aiur's `prove` over it and persists
+  Each invocation runs the same `verify_claim` LegacyAiur witness that
+  `ix check` does, then drives LegacyAiur's `prove` over it and persists
   the result as an `Ixon.Proof` wrapper (claim + opaque proof
   bytes). Prints the resulting proof blake3 hex on stdout — feed
   that to `ix verify <proof-hex>`.
@@ -26,40 +26,40 @@
 -/
 module
 public import Cli
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Protocol
+public import LegacyAiur.Compiler
+public import LegacyAiur.Protocol
 public import Ix.Aggr
 public import Ix.Claim
 public import Ix.Shard.Check
 public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
 public import Ix.Common
-public import Ix.IxVM
-public import Ix.IxVM.Toplevel
-public import Ix.IxVM.ClaimHarness
+public import LegacyIxVM
+public import LegacyIxVM.Toplevel
+public import LegacyIxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Store
 
 public section
 
-open IxVM.ClaimHarness
+open LegacyIxVM.ClaimHarness
 
 namespace Ix.Cli.ProveCmd
 
 /-- Canonical aiur params shared between prove and verify (the shared
-    defaults in `Ix.Aiur.Protocol`). Matches `Tests.Aiur.Common`. Until
+    defaults in `LegacyAiur.Protocol`). Matches `Tests.LegacyAiur.Common`. Until
     these become flags / commit to the proof header, they MUST stay in
     sync between `prove` and `verify`. -/
-private def commitmentParameters : Aiur.CommitmentParameters :=
-  Aiur.defaultCommitmentParameters
+private def commitmentParameters : LegacyAiur.CommitmentParameters :=
+  LegacyAiur.defaultCommitmentParameters
 
-private def friParameters : Aiur.FriParameters :=
-  Aiur.defaultFriParameters
+private def friParameters : LegacyAiur.FriParameters :=
+  LegacyAiur.defaultFriParameters
 
-def proveOne (aiurSystem : Aiur.AiurSystem)
-    (compiled : Aiur.CompiledToplevel)
+def proveOne (aiurSystem : LegacyAiur.AiurSystem)
+    (compiled : LegacyAiur.CompiledToplevel)
     (claim : Ix.Claim)
-    (envHandle? : Option Aiur.EnvHandle)
+    (envHandle? : Option LegacyAiur.EnvHandle)
     (target : Ix.Check.Target)
     (label : String) : IO UInt32 := do
   IO.println s!"Proving {label}"
@@ -70,12 +70,12 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
       IO.eprintln s!"{label}: entrypoint `verify_claim` missing from compiled toplevel"
       return 1
   let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
-  -- Native IxVM path: routes execution + STARK prove through the
+  -- Native LegacyIxVM path: routes execution + STARK prove through the
   -- codegen'd Rust kernel. `.addr` / `.shard` go through the
   -- envHandle-based prove FFIs (witness + execute + prove all in
   -- one Rust trip). `.leanW` consumes a pre-built `ClaimWitness`
   -- via `proveIxVM` (used for non-`check addr none` `--claim hex`).
-  let proof : Aiur.Proof ← match target, envHandle? with
+  let proof : LegacyAiur.Proof ← match target, envHandle? with
     | .addr a, some envHandle =>
       match aiurSystem.proveAddrWithEnv funIdx envHandle a.hash with
       | .error e =>
@@ -138,11 +138,11 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
     measured projected prover peak: the parent's own when it fit,
     otherwise its descendants'. That is the partition the run really
     produced — what the corrected manifest describes, peaks included. -/
-partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
-    (ixonEnv : Ixon.Env) (aiurSystem : Aiur.AiurSystem)
-    (funIdx : Aiur.Bytecode.FunIdx) (maxRamBytes : Nat)
-    (execOnly traceShards : Bool) (retention : Aiur.AiurSystem.ShardRetention)
-    (compiled : Aiur.CompiledToplevel)
+partial def proveBlocksWithinBudget (envHandle : LegacyAiur.EnvHandle)
+    (ixonEnv : Ixon.Env) (aiurSystem : LegacyAiur.AiurSystem)
+    (funIdx : LegacyAiur.Bytecode.FunIdx) (maxRamBytes : Nat)
+    (execOnly traceShards : Bool) (retention : LegacyAiur.AiurSystem.ShardRetention)
+    (compiled : LegacyAiur.CompiledToplevel)
     (indexDir? : Option System.FilePath) (skipProven : Bool) (label : String)
     (blocks owned : Array Address) :
     IO (Except String (Array (Array Address × Nat))) := do
@@ -151,7 +151,7 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
   -- proof this run would produce — reuse it without executing anything.
   if skipProven then
     if let some dir := indexDir? then
-      if let .ok (claim, _) := IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned then
+      if let .ok (claim, _) := LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned then
         if let some addr ← Ix.Cli.ShardProofIndex.verifiedProof aiurSystem compiled dir claim then
           let digest := Address.blake3 (Ix.Claim.ser claim)
           IO.println s!"[{label}] verified proof of claim {digest} in the \
@@ -223,11 +223,11 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
 
 /-- Prove shard `shardK` of the partition, splitting it as needed.
     Returns the block sets actually proven for that shard. -/
-def runShardProveNative (envHandle : Aiur.EnvHandle) (ixonEnv : Ixon.Env)
+def runShardProveNative (envHandle : LegacyAiur.EnvHandle) (ixonEnv : Ixon.Env)
     (shards ownedPerShard : Array (Array Address)) (shardK : Nat)
-    (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
+    (aiurSystem : LegacyAiur.AiurSystem) (compiled : LegacyAiur.CompiledToplevel)
     (maxRamBytes : Nat) (execOnly traceShards : Bool)
-    (retention : Aiur.AiurSystem.ShardRetention)
+    (retention : LegacyAiur.AiurSystem.ShardRetention)
     (indexDir? : Option System.FilePath) (skipProven : Bool) :
     IO (Except String (Array (Array Address × Nat))) := do
   match shards[shardK]?, ownedPerShard[shardK]? with
@@ -265,8 +265,8 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   -- instead of being cut into parts (see `shardProveWithEnv`).
   let traceShards := p.hasFlag "trace-shards"
   let retention ← match (p.flag? "retention").map (·.as! String) with
-    | none => pure Aiur.AiurSystem.ShardRetention.auto
-    | some s => match Aiur.AiurSystem.ShardRetention.parse s with
+    | none => pure LegacyAiur.AiurSystem.ShardRetention.auto
+    | some s => match LegacyAiur.AiurSystem.ShardRetention.parse s with
       | some r => pure r
       | none =>
         IO.eprintln s!"--retention: expected auto, retain or regenerate, got {s}"
@@ -280,7 +280,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Both `--ixes` branches end the same way: the partition the run
   -- actually proved, written as a refinement of the manifest it started
   -- from — the one the next run of this env should start from.
-  let emitRefined (envHandle : Aiur.EnvHandle) (sourcePath : String)
+  let emitRefined (envHandle : LegacyAiur.EnvHandle) (sourcePath : String)
       (numShards : Nat) (runs : Array (Nat × Array (Array Address × Nat)))
       (failures : Nat) : IO Unit := do
     if let some out := outIxes then
@@ -303,14 +303,14 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     if p.hasFlag "shards" || p.hasFlag "shard" || p.hasFlag "distributed" || execOnly then
       IO.eprintln "--lanes cannot be combined with --shard, --shards, --distributed or --exec-only"
       return 1
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+    let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixe with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
       | .ok h => pure h
     -- Both prover systems are built once here; Rust derives a resident
     -- pair per GPU from them without copying the bytecode again.
-    let ixvmCompiled ← match IxVM.ixVM with
+    let ixvmCompiled ← match LegacyIxVM.ixVM with
       | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
-      | .ok t => match t.compileWithGroups IxVM.functionGroups with
+      | .ok t => match t.compileWithGroups LegacyIxVM.functionGroups with
         | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
         | .ok c => pure c
     let aggrCompiled ← match Aggr.ixAggr with
@@ -319,36 +319,36 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         | .error e => IO.eprintln s!"ixAggr compilation failed: {e}"; return 1
         | .ok c => pure c
     let rp := Aggr.defaultRecursionParameters
-    let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode commitmentParameters friParameters
-    let aggrSystem := Aiur.AiurSystem.build aggrCompiled.bytecode rp.commitment rp.fri
+    let ixvmSystem := LegacyAiur.AiurSystem.build ixvmCompiled.bytecode commitmentParameters friParameters
+    let aggrSystem := LegacyAiur.AiurSystem.build aggrCompiled.bytecode rp.commitment rp.fri
     let some verifyIdx := ixvmCompiled.getFuncIdx `verify_claim
       | IO.eprintln "compiled toplevel has no `verify_claim` entry"; return 1
     let some aggrIdx := aggrCompiled.getFuncIdx `ix_aggr
       | IO.eprintln "compiled ixAggr has no `ix_aggr` entry"; return 1
     let result ← IO.lazyPure fun _ =>
-      Aiur.AiurSystem.proveLanes ixvmSystem aggrSystem envHandle manifest
+      LegacyAiur.AiurSystem.proveLanes ixvmSystem aggrSystem envHandle manifest
         verifyIdx aggrIdx lanes maxRamBytes
         (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0) 0 rp.cacheFriBytes
         (outIxes.getD "")
     match result with
     | .error e => IO.eprintln s!"[lanes] {e}"; return 1
     | .ok root => IO.println root; return 0
-  let toplevel ← match IxVM.ixVM with
+  let toplevel ← match LegacyIxVM.ixVM with
     | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
     | .ok t => pure t
-  let compiled ← match toplevel.compileWithGroups IxVM.functionGroups with
+  let compiled ← match toplevel.compileWithGroups LegacyIxVM.functionGroups with
     | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
     | .ok c => pure c
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
+  let aiurSystem := LegacyAiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
   let runOne := proveOne aiurSystem compiled
   match ixePath, (p.flag? "ixes").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
   | some ixe, some manifest, some k =>
-    -- IxVM-native shard prove. Build the envHandle once + share it
+    -- LegacyIxVM-native shard prove. Build the envHandle once + share it
     -- with the shard prove FFI.
     match (← Ix.Shard.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
     | .ok (ixonEnv, shards) =>
-      let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+      let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
       match ← runShardProveNative envHandle ixonEnv shards
@@ -366,12 +366,12 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         emitRefined envHandle manifest shards.size #[(k, parts)] 0
         return 0
   | some ixe, some manifest, none =>
-    -- IxVM-native all-shards prove. Same envHandle reused across
+    -- LegacyIxVM-native all-shards prove. Same envHandle reused across
     -- every shard.
     match (← Ix.Shard.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
     | .ok (ixonEnv, shards) =>
-      let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+      let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
       -- Accumulate the partition the run actually produced. Splits stay
@@ -381,7 +381,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       let ownedPer := Ix.Shard.ownedConstsPer ixonEnv shards
       if p.hasFlag "distributed" then
         -- One claim for the whole environment, one worker record per
-        -- chunk, a manifest shard (see `Aiur.AiurSystem.proveEnvDistributed`).
+        -- chunk, a manifest shard (see `LegacyAiur.AiurSystem.proveEnvDistributed`).
         let funIdx := compiled.getFuncIdx `verify_claim |>.get!
         let some checkOwnedIdx := compiled.getFuncIdx `check_owned
           | IO.eprintln "compiled toplevel has no `check_owned` entry"; return 1
@@ -458,7 +458,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
           if skipProven then
             if let some dir := indexDir? then
               if let .ok (claim, _) :=
-                  IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv ownedPer[k]! then
+                  LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv ownedPer[k]! then
                 if let some addr ← Ix.Cli.ShardProofIndex.verifiedProof
                     aiurSystem compiled dir claim then
                   let digest := Address.blake3 (Ix.Claim.ser claim)

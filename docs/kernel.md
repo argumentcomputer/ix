@@ -491,12 +491,12 @@ interleaved:
    `Tests/Fixtures/ixon-v4/primitives.tsv` differs from the live addresses;
    copy the file it names over the fixture. Mirror every changed address
    into `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`),
-   `Ix/Tc/Primitive.lean` and the IxVM literals in `Ix/IxVM/Kernel/*.lean`
+   `Ix/Tc/Primitive.lean` and the IxVM literals in `LegacyIxVM/Kernel/*.lean`
    (search each old address in hex and in 32-byte array form). The suites
    `prim-addrs` and `primitive-address-parity` and
    `lake exe ixon-v4-tests --primitives` must pass.
 3. **Generated IxVM Rust.** `lake exe ix codegen` regenerates
-   `crates/ixvm-codegen/src/*.rs` from the IxVM sources (the literals of step
+   `crates/ixvm-legacy-native/src/*.rs` from the IxVM sources (the literals of step
    2 among them); `lake exe ix codegen --check` must pass.
 4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
    writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
@@ -520,7 +520,7 @@ interleaved:
    are the codec's: rewrite them for the new grammar (`kernel-codec`
    compares the Lean codec with Rust's on them).
 7. **IxVM costs.** `lake test --wfail -- --ignored ixvm` reports every
-   kernel-check FFT-cost pin of `Tests/Ix/IxVM.lean` and the shard pin in
+   kernel-check FFT-cost pin of `Tests/Ix/LegacyIxVM.lean` and the shard pin in
    `Tests/Main.lean` that moved; set each to the measured value.
 8. **Frozen audit records**, as step 3 of a toolchain bump, including the
    codec's own closure in `IxC/Ixon/Audit.lean`.

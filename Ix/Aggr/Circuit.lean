@@ -1,7 +1,7 @@
 module
-public import Ix.Aiur.Meta
-public import Ix.Aiur.Library.Blake3
-public import MultiStark.Verifier
+public import LegacyAiur.Meta
+public import LegacyAiur.Library.Blake3
+public import LegacyMultiStark.Verifier
 
 /-!
 # Heterogeneous recursive aggregation circuit
@@ -11,22 +11,22 @@ shape hint (IO channel 6) selects one of thirteen verified forms:
 
 | shape | children                  | statement fold                          |
 |-------|---------------------------|-----------------------------------------|
-| 0     | one IxVM proof            | pass-through (wrap)                     |
+| 0     | one LegacyIxVM proof            | pass-through (wrap)                     |
 | 1     | one `ix_aggr` proof       | pass-through (wrap)                     |
-| 2     | IxVM, IxVM                | union / difference                      |
-| 3     | IxVM, `ix_aggr`           | union / difference                      |
-| 4     | `ix_aggr`, IxVM           | union / difference                      |
+| 2     | LegacyIxVM, LegacyIxVM                | union / difference                      |
+| 3     | LegacyIxVM, `ix_aggr`           | union / difference                      |
+| 4     | `ix_aggr`, LegacyIxVM           | union / difference                      |
 | 5     | `ix_aggr`, `ix_aggr`      | union / difference                      |
-| 6     | IxVM, IxVM                | structural root / path discharge        |
-| 7     | IxVM, `ix_aggr`           | structural root / path discharge        |
-| 8     | `ix_aggr`, IxVM           | structural root / path discharge        |
+| 6     | LegacyIxVM, LegacyIxVM                | structural root / path discharge        |
+| 7     | LegacyIxVM, `ix_aggr`           | structural root / path discharge        |
+| 8     | `ix_aggr`, LegacyIxVM           | structural root / path discharge        |
 | 9     | `ix_aggr`, `ix_aggr`      | structural root / path discharge        |
-| 10    | shards `[lo, hi)` of an IxVM batch | range leaf: residual sum        |
+| 10    | shards `[lo, hi)` of an LegacyIxVM batch | range leaf: residual sum        |
 | 11    | `ix_aggr`, `ix_aggr` (ranges) | range join: adjacent ranges added   |
-| 12    | one `ix_aggr` range proof | range root: whole batch, IxVM claim     |
+| 12    | one `ix_aggr` range proof | range root: whole batch, LegacyIxVM claim     |
 
 Shapes 10–12 are the range-sum recursion (see the section of that name in
-the circuit): together they verify one large IxVM batch across several
+the circuit): together they verify one large LegacyIxVM batch across several
 recursion proofs, and the root's statement is exactly the wrap's (shape 0),
 so ranges compose with every pair shape unchanged.
 
@@ -52,7 +52,7 @@ function index inside a circuit.
 
 Child claims normalize to one `CheckEnv` statement each:
 
-* IxVM child — 10-word `verify_claim` claim `[0, verify_idx, digest(8)]`,
+* LegacyIxVM child — 10-word `verify_claim` claim `[0, verify_idx, digest(8)]`,
   where the digest packs `blake3` of the serialized `CheckEnv` claim.
 * `ix_aggr` child — 18-word claim `[0, aggr_idx, allowed(8), digest(8)]`.
 
@@ -70,7 +70,7 @@ input assumption by either carrying it into the canonical output assumptions
 or discharging it with a strict Merkle inclusion path on channel 6.
 
 All address-list operations use bytewise address comparison. Pointer identity
-is never used as set equality: Aiur memory constrains pointers to be unique,
+is never used as set equality: LegacyAiur memory constrains pointers to be unique,
 not stored values to be globally deduplicated.
 
 ## IO channels
@@ -78,7 +78,7 @@ not stored values to be globally deduplicated.
 | channel | key                  | payload                                  |
 |---------|----------------------|------------------------------------------|
 | 0       | `[0]` / `[1]`        | child proof bytes; a range leaf carries the batch preamble at `[0]` and the range's proofs at `[1]`, a range root the preamble at `[1]` |
-| 1       | `[kind]`             | vk bytes (0 = IxVM, 1 = self)            |
+| 1       | `[kind]`             | vk bytes (0 = LegacyIxVM, 1 = self)            |
 | 2       | `[0]` / `[1]`, `[2]` | child claims; output claim or range statement bytes |
 | 3       | `[0]`                | 80-byte allowed blob                     |
 | 4       | packed digest        | `CheckEnv` claim and range statement preimages |
@@ -99,7 +99,7 @@ def circuit := ⟦
   /- ## Small strict byte readers
 
   The aggregator only decodes fixed-width digests, u64 function indices, and
-  single-byte tags.  Keeping these readers local avoids pulling the full IxVM
+  single-byte tags.  Keeping these readers local avoids pulling the full LegacyIxVM
   Ixon decoder (and all of its kernel-only types) into the recursion system.
   -/
 
@@ -605,7 +605,7 @@ def circuit := ⟦
 
   /- ## Heterogeneous child verification
 
-  Child kind 0 verifies against the IxVM system, kind 1 against this circuit's
+  Child kind 0 verifies against the LegacyIxVM system, kind 1 against this circuit's
   own system.  Which system a proof MUST verify against is fixed by the kind:
   the vk bytes on channel 1 are digest-checked against the corresponding half
   of the allowed blob before deserialization, so a hinted kind that does not
@@ -648,7 +648,7 @@ def circuit := ⟦
   -- Verify the child at `key` as the hinted `kind` and return the packed
   -- digest of its `CheckEnv` claim bytes.
   --
-  -- * kind 0 (IxVM): the 10-word `verify_claim` claim carries the `CheckEnv`
+  -- * kind 0 (LegacyIxVM): the 10-word `verify_claim` claim carries the `CheckEnv`
   --   digest as its public input.
   -- * kind 1 (self): the 18-word `ix_aggr` claim must bind THIS aggregation
   --   identity (`allowed_digest`), pinning both vks and both entrypoint
@@ -663,9 +663,9 @@ def circuit := ⟦
     match kind {
       0 =>
         assert_eq!(list_length(claim), 10,
-          "aggr: IxVM child must expose a 10-word verify_claim claim");
+          "aggr: LegacyIxVM child must expose a 10-word verify_claim claim");
         assert_eq!(aggr_claim_field(claim, 1), verify_idx,
-          "aggr: IxVM child has the wrong entrypoint");
+          "aggr: LegacyIxVM child has the wrong entrypoint");
         aggr_claim_digest(claim, 2),
       _ =>
         assert_eq!(list_length(claim), 18,
@@ -757,7 +757,7 @@ def circuit := ⟦
     ()
   }
 
-  /- ## Range-sum recursion over one IxVM batch
+  /- ## Range-sum recursion over one LegacyIxVM batch
 
   A batch of K trace shards balances when the shards' residuals plus the
   preamble messages' contribution sum to zero under the batch challenges.
@@ -769,7 +769,7 @@ def circuit := ⟦
   * a **range join** (shape 11) adds two adjacent ranges of the same batch;
   * a **range root** (shape 12) checks that one range covers `[0, K)`, adds
     the messages' contribution, demands zero, and re-emits the batch's one
-    IxVM claim exactly as a wrap (shape 0) of that batch would.
+    LegacyIxVM claim exactly as a wrap (shape 0) of that batch would.
 
   Every range node binds the batch by `D = blake3(preamble bytes)`, the
   bincode of the headers and messages. Leaves and the root parse the
@@ -882,7 +882,7 @@ def circuit := ⟦
     (headers, messages)
   }
 
-  -- The batch challenges from the IxVM system and the preamble.
+  -- The batch challenges from the LegacyIxVM system and the preamble.
   fn aggr_batch_challenges(sys: Sys, headers: List‹ShardHeader›,
       messages: List‹BatchMessage›) -> (Ext, Ext, ByteStream) {
     let Sys.Mk(_params, tlimbs, _circuits, commit, _prep_indices) = sys;
@@ -972,7 +972,7 @@ def circuit := ⟦
   }
 
   -- Range root: one self child covering `[0, K)` on channel 0 key 0, the
-  -- preamble on channel 0 key 1. Emits the batch's IxVM claim digest.
+  -- preamble on channel 0 key 1. Emits the batch's LegacyIxVM claim digest.
   fn aggr_range_root(ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
       verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
       out_claim_digest: [G; 8]) {
@@ -1026,7 +1026,7 @@ def circuit := ⟦
     let aggr_idx = flatten_u64(aggr_idx_limb);
 
     -- Shape hint: exactly one advice byte.
-    --   0 = wrap IxVM        1 = wrap self
+    --   0 = wrap LegacyIxVM        1 = wrap self
     --   2–5 = flat pairs:       2 + 2·left + right
     --   6–9 = structural pairs: 6 + 2·left + right
     --   10 = range leaf      11 = range join      12 = range root

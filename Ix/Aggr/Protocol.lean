@@ -24,13 +24,13 @@ def allowedBlob (ixvmVkBytes : ByteArray) (verifyClaimIdx : Nat)
     (selfVkBytes : ByteArray) (aggrIdx : Nat) : ByteArray :=
   let ixvmDigest := (Blake3.Rust.hash ixvmVkBytes).val.data
   let selfDigest := (Blake3.Rust.hash selfVkBytes).val.data
-  ⟨ixvmDigest ++ MultiStark.u64le verifyClaimIdx ++
-    selfDigest ++ MultiStark.u64le aggrIdx⟩
+  ⟨ixvmDigest ++ LegacyMultiStark.u64le verifyClaimIdx ++
+    selfDigest ++ LegacyMultiStark.u64le aggrIdx⟩
 
 /-- Public input of `ix_aggr`: the packed Blake3 digest of the identity blob
 followed by the packed digest of the output `CheckEnv` claim bytes. -/
-def pubInput (allowed outClaimBytes : ByteArray) : Array Aiur.G :=
-  MultiStark.digestGs allowed ++ MultiStark.digestGs outClaimBytes
+def pubInput (allowed outClaimBytes : ByteArray) : Array LegacyAiur.G :=
+  LegacyMultiStark.digestGs allowed ++ LegacyMultiStark.digestGs outClaimBytes
 
 /-! ## Shapes -/
 
@@ -44,8 +44,8 @@ def ChildKind.code : ChildKind → Nat
   | .ixvm => 0
   | .aggr => 1
 
-/-- The advice byte selecting a wrap or flat pair: `0`/`1` wrap one IxVM /
-`ix_aggr` child; `2`–`5` fold a flat pair, `2 + 2·left + right` with IxVM = 0
+/-- The advice byte selecting a wrap or flat pair: `0`/`1` wrap one LegacyIxVM /
+`ix_aggr` child; `2`–`5` fold a flat pair, `2 + 2·left + right` with LegacyIxVM = 0
 and `ix_aggr` = 1. -/
 def shapeCode : (children : ChildKind × Option ChildKind) → Nat
   | (kind, none) => kind.code
@@ -58,7 +58,7 @@ def structuralShapeCode (left right : ChildKind) : Nat :=
 
 /-! ## Range-sum recursion
 
-Shapes `10`–`12` verify one IxVM batch across several recursion proofs: a
+Shapes `10`–`12` verify one LegacyIxVM batch across several recursion proofs: a
 leaf verifies shards `[lo, hi)`, a join adds two adjacent ranges, and the
 root checks that one range covers the whole batch, balances it against the
 preamble messages, and emits the batch's `CheckEnv` digest exactly as a wrap
@@ -83,7 +83,7 @@ canonical extension-field element). -/
 def rangeStatement (preamble : ByteArray) (lo hi : Nat)
     (residual : ByteArray) : ByteArray :=
   ⟨#[rangeStatementTag] ++ (Blake3.Rust.hash preamble).val.data ++
-    MultiStark.u64le lo ++ MultiStark.u64le hi ++ residual.data⟩
+    LegacyMultiStark.u64le lo ++ LegacyMultiStark.u64le hi ++ residual.data⟩
 
 /-! ## Native-FFI advice framing
 
@@ -153,49 +153,49 @@ them, for the pure-Lean `Bytecode.Toplevel.execute` path. The native
 execute/prove FFI will consume byte blobs with the same channel layout. -/
 
 /-- One byte per Goldilocks element, the layout `#read_byte_stream` expects. -/
-def byteGs (bytes : ByteArray) : Array Aiur.G :=
+def byteGs (bytes : ByteArray) : Array LegacyAiur.G :=
   bytes.data.map .ofUInt8
 
 /-- Channel 4: a `CheckEnv` claim preimage, keyed by its packed digest. The
 circuit re-hashes the payload against the key, so host keys are addressing,
 not trusted bindings. -/
-def extendPreimage (io : Aiur.IOBuffer) (bytes : ByteArray) : Aiur.IOBuffer :=
-  io.extend 4 (MultiStark.digestGs bytes) (byteGs bytes)
+def extendPreimage (io : LegacyAiur.IOBuffer) (bytes : ByteArray) : LegacyAiur.IOBuffer :=
+  io.extend 4 (LegacyMultiStark.digestGs bytes) (byteGs bytes)
 
 /-- Channel 5: one serialized canonical tree, keyed by its raw 32-byte root.
 The circuit independently checks strict leaf order and recomputes the
 canonical root. -/
-def extendTree (io : Aiur.IOBuffer) (tree : Ix.AssumptionTree) : Aiur.IOBuffer :=
+def extendTree (io : LegacyAiur.IOBuffer) (tree : Ix.AssumptionTree) : LegacyAiur.IOBuffer :=
   io.extend 5 (byteGs tree.root.hash) (byteGs (Ix.AssumptionTree.ser tree))
 
 /-- Channel 6: one structural carried/discharged choice keyed by the raw
 candidate address. The 32-element address key cannot collide with the shape's
 one-element `[0]` key. -/
-def extendPath (io : Aiur.IOBuffer) (candidate : Address)
-    (path? : Option Ix.Merkle.MerklePath) : Aiur.IOBuffer :=
+def extendPath (io : LegacyAiur.IOBuffer) (candidate : Address)
+    (path? : Option Ix.Merkle.MerklePath) : LegacyAiur.IOBuffer :=
   io.extend 6 (byteGs candidate.hash) (byteGs (pathPayload path?))
 
 /-- Channels 0/2 for one child slot: verified serialized proof transport and
 serialized claims. -/
-def extendChild (io : Aiur.IOBuffer) (key : Nat)
-    (proofAdviceBytes claimsBytes : ByteArray) : Aiur.IOBuffer :=
+def extendChild (io : LegacyAiur.IOBuffer) (key : Nat)
+    (proofAdviceBytes claimsBytes : ByteArray) : LegacyAiur.IOBuffer :=
   let io := io.extend 0 #[.ofNat key] (byteGs proofAdviceBytes)
   io.extend 2 #[.ofNat key] (byteGs claimsBytes)
 
 /-- Channels 3 and 6: the identity blob and the shape byte. -/
-def extendIdentity (io : Aiur.IOBuffer) (allowed : ByteArray)
-    (shape : Nat) : Aiur.IOBuffer :=
+def extendIdentity (io : LegacyAiur.IOBuffer) (allowed : ByteArray)
+    (shape : Nat) : LegacyAiur.IOBuffer :=
   let io := io.extend 3 #[.ofNat 0] (byteGs allowed)
   io.extend 6 #[.ofNat 0] #[.ofNat shape]
 
-/-- Channel 1: vk bytes for one child kind (key 0 = IxVM, key 1 = self). -/
-def extendVk (io : Aiur.IOBuffer) (kind : ChildKind)
-    (vkBytes : ByteArray) : Aiur.IOBuffer :=
+/-- Channel 1: vk bytes for one child kind (key 0 = LegacyIxVM, key 1 = self). -/
+def extendVk (io : LegacyAiur.IOBuffer) (kind : ChildKind)
+    (vkBytes : ByteArray) : LegacyAiur.IOBuffer :=
   io.extend 1 #[.ofNat kind.code] (byteGs vkBytes)
 
 /-- Channel 2 key 2: the output claim bytes of a pair fold. Wrap shapes bind
 the output digest against the child claim directly and read no output bytes. -/
-def extendOutputClaim (io : Aiur.IOBuffer) (bytes : ByteArray) : Aiur.IOBuffer :=
+def extendOutputClaim (io : LegacyAiur.IOBuffer) (bytes : ByteArray) : LegacyAiur.IOBuffer :=
   io.extend 2 #[.ofNat 2] (byteGs bytes)
 
 /-- Bump when aggregate cache identity changes beyond the recursion verifying
@@ -212,16 +212,16 @@ blob, and output statement at every persisted node.
 -/
 def aggregateCacheKey (recursionVk : ByteArray)
     (recursionParameters : Aggr.RecursionParameters)
-    (outerClaim : Array Aiur.G) (version : Nat := aggregateCacheVersion) : Address :=
+    (outerClaim : Array LegacyAiur.G) (version : Nat := aggregateCacheVersion) : Address :=
   let recursionVkDigest := (Address.blake3 recursionVk).hash
-  let outerClaimBytes := MultiStark.serializeClaims #[outerClaim]
-  Address.blake3 ⟨MultiStark.u64le version ++ recursionVkDigest.data ++
+  let outerClaimBytes := LegacyMultiStark.serializeClaims #[outerClaim]
+  Address.blake3 ⟨LegacyMultiStark.u64le version ++ recursionVkDigest.data ++
     recursionParameters.cacheFriBytes.data ++ outerClaimBytes.data⟩
 
 /-- The public claim is uniform across wrap, flat, and structural witnesses. -/
-def aggregateOuterClaim (allowed : ByteArray) (aggrIdx : Aiur.Bytecode.FunIdx)
-    (claim : Ix.Claim) : Array Aiur.G :=
-  Aiur.buildClaim aggrIdx (Aggr.pubInput allowed (Ix.Claim.ser claim)) #[]
+def aggregateOuterClaim (allowed : ByteArray) (aggrIdx : LegacyAiur.Bytecode.FunIdx)
+    (claim : Ix.Claim) : Array LegacyAiur.G :=
+  LegacyAiur.buildClaim aggrIdx (Aggr.pubInput allowed (Ix.Claim.ser claim)) #[]
 
 end Aggr
 end

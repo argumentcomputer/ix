@@ -2,7 +2,7 @@
   `ix addr-of <Lean.Name> [--ixe <path>]`: resolve a Lean.Name to its
   32-byte content address. Without `--ixe`, the lookup compiles the
   name's transitive closure from the compiled-in Lean env (via
-  `IxVM.ClaimHarness.loadIxonEnv` → `lookupAddr`). With `--ixe`, the
+  `LegacyIxVM.ClaimHarness.loadIxonEnv` → `lookupAddr`). With `--ixe`, the
   lookup reads the env from disk and dispatches `Ixon.Env.getAddr?`.
 
   Prints the resulting address hex on stdout (one line, no prefix), so
@@ -13,7 +13,7 @@ public import Cli
 public import Ix.Address
 public import Ix.Common
 public import Ix.Environment
-public import Ix.IxVM.ClaimHarness
+public import LegacyIxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Cli.NameResolve
@@ -48,8 +48,8 @@ def runAddrOfCmd (p : Cli.Parsed) : IO UInt32 := do
     if !env.constants.contains name then
       IO.eprintln s!"error: {name} not found in compiled-in Lean env"
       return 1
-    let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
-    let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
+    let ixonEnv ← LegacyIxVM.ClaimHarness.loadIxonEnv name env
+    let addr ← LegacyIxVM.ClaimHarness.lookupAddr ixonEnv name
     IO.println (toString addr)
     return 0
 

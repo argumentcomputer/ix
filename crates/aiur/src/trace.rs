@@ -1,878 +1,942 @@
-use multi_stark::{
-  lookup::{LookupRowMut, LookupValues},
-  p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
-  p3_matrix::dense::RowMajorMatrix,
-};
-use rayon::{
-  iter::{
-    IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
-  },
-  slice::ParallelSliceMut,
-};
+//! Witness population plans for the final, certified circuit layout.
+//!
+//! This is an untrusted witness generator. Plans are exported by Lean alongside
+//! the certified circuits. Population never executes a callee or obtains fresh
+//! hints. Constraints and exact integer message balance can be checked separately.
+use crate::bytecode::{CheckedProgram, Instruction, Type};
+use crate::execute::Execution;
+use crate::field::{FieldBackend, PrimeField};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{Deserialize, Serialize};
 
-use crate::{
-  FxIndexMap, G,
-  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
-  execute::{
-    IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
-    g_inverse_value,
-  },
-  function_channel,
-  gadgets::{bytes1::Bytes1, bytes2::Bytes2},
-  memory::Memory,
-  querymap::QueryMap,
-  u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
-  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
-  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
-  u16_range_check_channel,
-};
+mod plan;
+#[cfg(feature = "stark")]
+pub mod stark;
+#[cfg(test)]
+mod tests;
 
-struct ColumnIndex {
-  auxiliary: usize,
-  lookup: usize,
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Polynomial {
+  Const(u64),
+  Var(usize),
+  Add(Box<[Polynomial; 2]>),
+  Sub(Box<[Polynomial; 2]>),
+  Mul(Box<[Polynomial; 2]>),
 }
 
-struct ColumnMutSlice<'a, 'b> {
-  inputs: &'a mut [G],
-  selectors: &'a mut [G],
-  auxiliaries: &'a mut [G],
-  /// `None` builds the trace alone (see [`trace_only_lookups`]).
-  lookups: Option<&'a mut LookupRowMut<'b, G>>,
-}
-
-/// Whether witness builders skip the lookup witness and hand the prover a
-/// shape-only lookup witness (`LookupValues::shape_only`), which any
-/// prover path that would read the payload refuses. The CUDA backend derives
-/// every lookup message from the committed trace through the constraint
-/// graph and never reads the host lookup witness, so building it is wasted
-/// work there. Enabled by `AIUR_TRACE_ONLY_LOOKUPS=1`; a prover that reads
-/// the host lookup witness (the CPU backend, or the CUDA backend's host
-/// fallback for a circuit it cannot evaluate on the device) fails instead of
-/// proving.
-pub fn trace_only_lookups() -> bool {
-  static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-  *FLAG.get_or_init(|| {
-    std::env::var("AIUR_TRACE_ONLY_LOOKUPS").is_ok_and(|v| v == "1")
-  })
-}
-
-type Degree = u8;
-
-fn u32_value(map: &[(G, Degree)], bytes: &[usize]) -> u64 {
-  assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
-  bytes.iter().enumerate().fold(0, |word, (i, idx)| {
-    word | (map[*idx].0.as_canonical_u64() << (8 * i))
-  })
-}
-
-fn u32_sum(values: &[u64]) -> ([G; 4], G) {
-  let sum: u128 = values.iter().map(|x| u128::from(*x)).sum();
-  let word = u32::try_from(sum & 0xFFFF_FFFF).expect("masked to 32 bits");
-  let carry = u64::try_from(sum >> 32).expect("sum of u32 words fits in u64");
-  (word.to_le_bytes().map(|b| G::from_u64(b.into())), G::from_u64(carry))
-}
-
-impl<'a, 'b> ColumnMutSlice<'a, 'b> {
-  /// Slice a circuit row into the regions of one member function: the
-  /// member's inputs are a prefix of the circuit's input block, its
-  /// selectors a sub-range of the circuit's selector block at `sel_offset`,
-  /// and the auxiliary block is shared by all members.
-  fn from_slice(
-    function: &Function,
-    circuit_layout: &FunctionLayout,
-    sel_offset: usize,
-    slice: &'a mut [G],
-    lookups: Option<&'a mut LookupRowMut<'b, G>>,
-  ) -> Self {
-    let (inputs, slice) = slice.split_at_mut(circuit_layout.input_size);
-    let (selectors, auxiliaries) = slice.split_at_mut(circuit_layout.selectors);
-    assert_eq!(auxiliaries.len(), circuit_layout.auxiliaries);
-    let inputs = &mut inputs[..function.layout.input_size];
-    let selectors =
-      &mut selectors[sel_offset..sel_offset + function.layout.selectors];
-    Self { inputs, selectors, auxiliaries, lookups }
-  }
-
-  fn push_auxiliary(&mut self, index: &mut ColumnIndex, t: G) {
-    self.auxiliaries[index.auxiliary] = t;
-    index.auxiliary += 1;
-  }
-
-  fn push_lookup(
-    &mut self,
-    index: &mut ColumnIndex,
-    multiplicity: G,
-    args: &[G],
-  ) {
-    if let Some(lookups) = self.lookups.as_deref_mut() {
-      lookups.push(index.lookup, multiplicity, args);
-    }
-    index.lookup += 1;
-  }
-}
-
-#[derive(Clone, Copy)]
-struct TraceContext<'a> {
-  function_index: G,
-  multiplicity: G,
-  inputs: &'a [G],
-  output: &'a [G],
-  query_record: &'a QueryRecord,
-}
-
-/// Shared by all queried rows of one member of a circuit.
-struct MemberMeta<'a> {
-  function: &'a Function,
-  sel_offset: usize,
-  function_index: G,
-  queries: &'a QueryMap,
-}
-
-/// Query slices and function metadata stay in their original storage.
-/// Only these two indices are repeated per active row.
-struct RowMeta {
-  member: usize,
-  query: usize,
-}
-
-/// Function witness metadata, excluding the lookup row writers shared by
-/// every circuit type. The estimator may conservatively include advice rows.
-pub(crate) fn witness_metadata_bytes(members: usize, rows: usize) -> usize {
-  members * size_of::<MemberMeta<'_>>() + rows * size_of::<RowMeta>()
-}
-
-/// A position in a function circuit's concatenated query maps: the member
-/// (its index within the circuit's member list) and the position within that
-/// member's query map. `(members, 0)` is one past the last query.
-pub type QueryPosition = (usize, usize);
-
-impl Toplevel {
-  #[cfg(test)]
-  pub(crate) fn main_row_for_test(
-    &self,
-    circuit_index: usize,
-    member: usize,
-    query: usize,
-    record: &QueryRecord,
-    io: &IOBuffer,
-  ) -> Vec<G> {
-    let circuit = &self.circuits[circuit_index];
-    let function = &self.functions[member];
-    let offset: usize = circuit
-      .members
-      .iter()
-      .take_while(|&&i| i != member)
-      .map(|&i| self.functions[i].layout.selectors)
-      .sum();
-    assert!(circuit.members.contains(&member));
-    let (inputs, result) =
-      record.function_queries[member].get_index(query).unwrap();
-    let mut row = vec![G::ZERO; circuit.layout.width()];
-    let mut slice = ColumnMutSlice::from_slice(
-      function,
-      &circuit.layout,
-      offset,
-      &mut row,
-      None,
-    );
-    function.populate_row(
-      &mut ColumnIndex { auxiliary: 0, lookup: 1 },
-      &mut slice,
-      TraceContext {
-        function_index: G::from_usize(member),
-        multiplicity: result.multiplicity,
-        inputs,
-        output: result.output,
-        query_record: record,
+impl Polynomial {
+  fn visit(&self, f: &mut impl FnMut(usize)) {
+    match self {
+      Self::Var(v) => f(*v),
+      Self::Const(_) => (),
+      Self::Add(xs) | Self::Sub(xs) | Self::Mul(xs) => {
+        xs[0].visit(f);
+        xs[1].visit(f);
       },
-      io,
-    );
-    row
+    }
   }
-
-  /// The number of rows function circuit `circuit_index` contributes: its
-  /// members' queries with a nonzero multiplicity, in member order then
-  /// record order. The unit [`Self::witness_data_range`] indexes.
-  pub fn function_rows(
+  fn validate<B: FieldBackend>(
     &self,
-    circuit_index: usize,
-    query_record: &QueryRecord,
-  ) -> usize {
-    self.circuits[circuit_index]
-      .members
+    width: usize,
+    field: B,
+  ) -> Result<(), String> {
+    match self {
+      Self::Var(v) if *v >= width => {
+        Err(format!("out-of-bounds witness {v}/{width}"))
+      },
+      Self::Const(v) if !field.contains(*v) => {
+        Err("noncanonical plan constant".into())
+      },
+      Self::Add(xs) | Self::Sub(xs) | Self::Mul(xs) => {
+        xs[0].validate(width, field)?;
+        xs[1].validate(width, field)
+      },
+      _ => Ok(()),
+    }
+  }
+  fn eval<B: FieldBackend>(&self, row: &[B::Element], field: B) -> B::Element {
+    match self {
+      Self::Const(v) => field.from_u64(*v),
+      Self::Var(v) => row[*v],
+      Self::Add(xs) => {
+        field.add(xs[0].eval(row, field), xs[1].eval(row, field))
+      },
+      Self::Sub(xs) => {
+        field.sub(xs[0].eval(row, field), xs[1].eval(row, field))
+      },
+      Self::Mul(xs) => {
+        field.mul(xs[0].eval(row, field), xs[1].eval(row, field))
+      },
+    }
+  }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum Action {
+  Assign {
+    dest: Vec<usize>,
+    values: Vec<Polynomial>,
+  },
+  Inverse {
+    dest: usize,
+    value: Polynomial,
+  },
+  Choose {
+    dest: Vec<usize>,
+    tests: Vec<Vec<Polynomial>>,
+  },
+  Failure {
+    dest: Vec<usize>,
+    differences: Vec<Polynomial>,
+  },
+  Call {
+    name: String,
+    args: Vec<Polynomial>,
+    dest: Vec<usize>,
+  },
+  Store {
+    r#type: Type,
+    values: Vec<Polynomial>,
+    dest: usize,
+  },
+  Load {
+    r#type: Type,
+    address: Polynomial,
+    dest: Vec<usize>,
+  },
+  Hint {
+    #[serde(default)]
+    channel: String,
+    instruction: usize,
+    r#type: Type,
+    key_type: Type,
+    key: Vec<Polynomial>,
+    dest: Vec<usize>,
+  },
+}
+
+impl Action {
+  fn dest(&self) -> &[usize] {
+    match self {
+      Self::Assign { dest, .. }
+      | Self::Choose { dest, .. }
+      | Self::Failure { dest, .. }
+      | Self::Call { dest, .. }
+      | Self::Load { dest, .. }
+      | Self::Hint { dest, .. } => dest,
+      Self::Inverse { dest, .. } | Self::Store { dest, .. } => {
+        std::slice::from_ref(dest)
+      },
+    }
+  }
+  fn expressions(&self) -> Vec<&Polynomial> {
+    match self {
+      Self::Assign { values, .. } | Self::Store { values, .. } => {
+        values.iter().collect()
+      },
+      Self::Inverse { value, .. } => vec![value],
+      Self::Choose { tests, .. } => tests.iter().flatten().collect(),
+      Self::Failure { differences, .. } => differences.iter().collect(),
+      Self::Call { args, .. } => args.iter().collect(),
+      Self::Load { address, .. } => vec![address],
+      Self::Hint { key, .. } => key.iter().collect(),
+    }
+  }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PopulationStep {
+  pub guard: Polynomial,
+  pub action: Action,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct ColumnWrite {
+  pub column: usize,
+  pub source: usize,
+  pub guard: Polynomial,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct FunctionPlan {
+  pub name: String,
+  pub chip: String,
+  pub witnesses: usize,
+  pub inputs: Vec<usize>,
+  pub output: Vec<usize>,
+  pub steps: Vec<PopulationStep>,
+  pub writes: Vec<ColumnWrite>,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct Send {
+  pub channel: String,
+  pub args: Vec<Polynomial>,
+  pub result: Vec<usize>,
+  pub enable: Polynomial,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct MemoryLookup {
+  pub r#type: Type,
+  pub address: Polynomial,
+  pub values: Vec<Polynomial>,
+  pub enable: Polynomial,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct Chip {
+  pub name: String,
+  pub width: usize,
+  /// The last physical column is the proved row-activation selector.
+  pub activation: usize,
+  pub inputs: Vec<usize>,
+  pub output: Vec<Polynomial>,
+  pub constraints: Vec<Polynomial>,
+  pub sends: Vec<Send>,
+  pub memory: Vec<MemoryLookup>,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct TraceArtifact {
+  pub version: u32,
+  pub modulus: u64,
+  pub functions: Vec<FunctionPlan>,
+  pub chips: Vec<Chip>,
+}
+
+/// Height is explicit: a zero-column circuit can still provide a claim.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Matrix<F = u64> {
+  pub chip: String,
+  pub width: usize,
+  pub height: usize,
+  pub unpadded_height: usize,
+  pub values: Vec<F>,
+  pub multiplicities: Vec<u64>,
+}
+impl<F> Matrix<F> {
+  pub fn row(&self, index: usize) -> &[F] {
+    &self.values[index * self.width..(index + 1) * self.width]
+  }
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Trace<F = u64> {
+  pub matrices: Vec<Matrix<F>>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct PopulationTimings {
+  pub validate_seconds: f64,
+  pub bind_seconds: f64,
+  pub fill_seconds: f64,
+  pub padding_seconds: f64,
+  pub count_seconds: f64,
+}
+
+/// A checked plan is tied to the immutable checked execution program.
+pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
+  program: &'a CheckedProgram<B>,
+  artifact: TraceArtifact,
+  callables: FxHashMap<String, usize>,
+  members: Vec<usize>,
+  fills: Vec<plan::FillPlan<B>>,
+}
+
+fn indices(xs: &[usize], width: usize) -> Result<(), String> {
+  if xs.iter().any(|x| *x >= width) {
+    Err("plan index out of bounds".into())
+  } else {
+    Ok(())
+  }
+}
+
+impl<'a, B: FieldBackend> TracePlan<'a, B> {
+  pub fn new(
+    program: &'a CheckedProgram<B>,
+    mut artifact: TraceArtifact,
+  ) -> Result<Self, String> {
+    if artifact.version != 2 || artifact.modulus != program.field.modulus() {
+      return Err("trace version or field mismatch".into());
+    }
+    if artifact.functions.len() != program.program.functions.len() {
+      return Err("trace function count mismatch".into());
+    }
+    let mut chips = FxHashMap::default();
+    for (i, chip) in artifact.chips.iter().enumerate() {
+      if chips.insert(chip.name.clone(), i).is_some() {
+        return Err("duplicate trace chip".into());
+      }
+    }
+    let callables: FxHashMap<_, _> = (0..program.inputs.len())
+      .map(|id| (program.callable_name(id).unwrap().to_owned(), id))
+      .collect();
+    let field = program.field;
+    let mut members = vec![];
+    for (id, function) in artifact.functions.iter_mut().enumerate() {
+      if function.name != program.program.functions[id].name {
+        return Err("trace function order mismatch".into());
+      }
+      let chip =
+        *chips.get(&function.chip).ok_or("unknown representative chip")?;
+      members.push(chip);
+      if function.inputs.len() != program.inputs[id].width()
+        || function.output.len() != program.outputs[id].width()
+      {
+        return Err("trace function interface width mismatch".into());
+      }
+      indices(&function.inputs, function.witnesses)?;
+      indices(&function.output, function.witnesses)?;
+      for step in &function.steps {
+        step.guard.validate(function.witnesses, field)?;
+        indices(step.action.dest(), function.witnesses)?;
+        for expr in step.action.expressions() {
+          expr.validate(function.witnesses, field)?;
+        }
+        match &step.action {
+          Action::Assign { dest, values } if dest.len() != values.len() => {
+            return Err("assignment shape mismatch".into());
+          },
+          Action::Choose { dest, tests } if dest.len() != tests.len() => {
+            return Err("choice shape mismatch".into());
+          },
+          Action::Failure { dest, differences }
+            if dest.len() != differences.len() =>
+          {
+            return Err("failure shape mismatch".into());
+          },
+          Action::Call { name, args, dest } => {
+            let id = *callables.get(name).ok_or("unknown trace callable")?;
+            if args.len() != program.inputs[id].width()
+              || dest.len() != program.outputs[id].width()
+            {
+              return Err("trace call shape mismatch".into());
+            }
+          },
+          Action::Store { r#type, values, .. } => {
+            if r#type.layout(&program.program.enums, &mut vec![])?.width()
+              != values.len()
+            {
+              return Err("trace store shape mismatch".into());
+            }
+          },
+          Action::Load { r#type, dest, .. } => {
+            if r#type.layout(&program.program.enums, &mut vec![])?.width()
+              != dest.len()
+            {
+              return Err("trace load shape mismatch".into());
+            }
+          },
+          Action::Hint {
+            channel,
+            instruction,
+            r#type,
+            key_type,
+            key,
+            dest,
+          } => match program.program.functions[id].code.get(*instruction) {
+            Some(Instruction::Hint {
+              channel: c,
+              r#type: t,
+              key_type: k,
+              key: ks,
+              dest: ds,
+            }) if c == channel
+              && t == r#type
+              && k == key_type
+              && ks.len() == key.len()
+              && ds.len() == dest.len() => {},
+            _ => return Err("trace hint site mismatch".into()),
+          },
+          _ => (),
+        }
+      }
+      for write in &function.writes {
+        indices(&[write.source], function.witnesses)?;
+        // The row writer owns the activation column, never a recipe.
+        indices(&[write.column], artifact.chips[chip].activation)?;
+        write.guard.validate(function.witnesses, field)?;
+      }
+      // Conservative dependency closure. Guarded assignments do not kill
+      // alternative branch definitions of the same logical destination.
+      let mut live = FxHashSet::default();
+      for write in &function.writes {
+        live.insert(write.source);
+        write.guard.visit(&mut |v| {
+          live.insert(v);
+        });
+      }
+      loop {
+        let before = live.len();
+        for step in function.steps.iter().rev() {
+          if step.action.dest().iter().any(|v| live.contains(v)) {
+            step.guard.visit(&mut |v| {
+              live.insert(v);
+            });
+            for p in step.action.expressions() {
+              p.visit(&mut |v| {
+                live.insert(v);
+              });
+            }
+          }
+        }
+        if live.len() == before {
+          break;
+        }
+      }
+      function
+        .steps
+        .retain(|s| s.action.dest().iter().any(|v| live.contains(v)));
+    }
+    for chip in &artifact.chips {
+      if chip.activation.checked_add(1) != Some(chip.width) {
+        return Err("invalid activation column".into());
+      }
+      let callable =
+        *callables.get(&chip.name).ok_or("unknown chip callable")?;
+      if chip.inputs.len() != program.inputs[callable].width()
+        || chip.output.len() != program.outputs[callable].width()
+      {
+        return Err("circuit interface width mismatch".into());
+      }
+      indices(&chip.inputs, chip.width)?;
+      for p in chip.constraints.iter().chain(&chip.output) {
+        p.validate(chip.width, field)?;
+      }
+      for send in &chip.sends {
+        send.enable.validate(chip.width, field)?;
+        for p in &send.args {
+          p.validate(chip.width, field)?;
+        }
+        indices(&send.result, chip.width)?;
+        let id =
+          *callables.get(&send.channel).ok_or("unknown circuit channel")?;
+        if send.args.len() != program.inputs[id].width()
+          || send.result.len() != program.outputs[id].width()
+        {
+          return Err("circuit send shape mismatch".into());
+        }
+      }
+      for cell in &chip.memory {
+        cell.enable.validate(chip.width, field)?;
+        cell.address.validate(chip.width, field)?;
+        for p in &cell.values {
+          p.validate(chip.width, field)?;
+        }
+        if cell.r#type.layout(&program.program.enums, &mut vec![])?.width()
+          != cell.values.len()
+        {
+          return Err("circuit memory shape mismatch".into());
+        }
+      }
+    }
+    let fills = artifact
+      .functions
       .iter()
-      .map(|&member| {
-        query_record.function_queries[member]
-          .iter()
-          .filter(|(_, res)| !res.multiplicity.is_zero())
-          .count()
-      })
-      .sum()
+      .map(|f| plan::FillPlan::compile(f, &callables, program))
+      .collect();
+    Ok(Self { program, artifact, callables, members, fills })
   }
 
-  /// All of function circuit `circuit_index`'s rows as one trace:
-  /// [`Self::witness_data_range`] over every member's every query.
-  pub fn witness_data(
+  /// Populate each original query once. Power-of-two padding remains all
+  /// zero, with no activation, provides, or outgoing requirements.
+  pub fn generate(
     &self,
-    circuit_index: usize,
-    query_record: &QueryRecord,
-    io_buffer: &IOBuffer,
-    slot_arg_widths: &[usize],
-  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
-    let members = self.circuits[circuit_index].members.len();
-    let rows = self.function_rows(circuit_index, query_record);
-    self.witness_data_range(
-      circuit_index,
-      query_record,
-      io_buffer,
-      slot_arg_widths,
-      (0, 0),
-      (members, 0),
-      rows,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+    pad: bool,
+  ) -> Result<Trace<B::Element>, String> {
+    self.generate_impl(
+      record,
+      entry,
+      args,
+      pad,
+      false,
+      &mut PopulationTimings::default(),
     )
   }
 
-  /// The rows among the queries from `start` to `end` (positions in the
-  /// concatenated query maps of circuit `circuit_index`'s members) as a
-  /// trace: the queries in that span with a nonzero multiplicity, of which
-  /// there must be exactly `row_count`. An empty span yields an EMPTY trace
-  /// (not a padded height-1 one): the prover deactivates the circuit, so it
-  /// is neither committed nor opened.
-  #[tracing::instrument(level = "info", skip_all, name = "aiur/cpu_witness", fields(circuit = circuit_index, rows = row_count))]
-  pub fn witness_data_range(
+  /// Slow logical recipe interpreter for differential checks and benchmarks.
+  pub fn generate_reference(
     &self,
-    circuit_index: usize,
-    query_record: &QueryRecord,
-    io_buffer: &IOBuffer,
-    slot_arg_widths: &[usize],
-    start: QueryPosition,
-    end: QueryPosition,
-    row_count: usize,
-  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
-    let circuit = &self.circuits[circuit_index];
-    let layout = &circuit.layout;
-    let width = layout.width();
-    // Concatenate the members' queried rows in the span, in member order.
-    let mut members_meta = Vec::with_capacity(circuit.members.len());
-    let mut sel_offset = 0;
-    for &member in &circuit.members {
-      let function = &self.functions[member];
-      members_meta.push(MemberMeta {
-        function,
-        sel_offset,
-        function_index: G::from_usize(member),
-        queries: &query_record.function_queries[member],
-      });
-      sel_offset += function.layout.selectors;
-    }
-    // A member's share of the span: the positions of its query map the
-    // span covers, empty for a member outside it.
-    let span = |m: usize, queries: &QueryMap| -> std::ops::Range<usize> {
-      if !(start.0..=end.0).contains(&m) {
-        return 0..0;
-      }
-      let lo = if m == start.0 { start.1 } else { 0 };
-      let hi = if m == end.0 { end.1 } else { queries.len() };
-      lo..hi
-    };
-    // Count before allocating: no geometric growth or metadata for advice.
-    fn active_queries(
-      queries: &QueryMap,
-      span: std::ops::Range<usize>,
-    ) -> impl Iterator<Item = usize> + '_ {
-      span.filter(move |&i| !queries.mult_at(i).is_zero())
-    }
-    let height_no_padding: usize = members_meta
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+    pad: bool,
+  ) -> Result<Trace<B::Element>, String> {
+    self.generate_impl(
+      record,
+      entry,
+      args,
+      pad,
+      true,
+      &mut PopulationTimings::default(),
+    )
+  }
+
+  pub fn generate_profiled(
+    &self,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+    pad: bool,
+    reference: bool,
+  ) -> Result<(Trace<B::Element>, PopulationTimings), String> {
+    let mut timings = PopulationTimings::default();
+    let trace =
+      self.generate_impl(record, entry, args, pad, reference, &mut timings)?;
+    Ok((trace, timings))
+  }
+
+  fn generate_impl(
+    &self,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+    pad: bool,
+    reference: bool,
+    timings: &mut PopulationTimings,
+  ) -> Result<Trace<B::Element>, String> {
+    let start = std::time::Instant::now();
+    self.validate_record(record)?;
+    self.root(record, entry, args)?;
+    timings.validate_seconds = start.elapsed().as_secs_f64();
+    let start = std::time::Instant::now();
+    let mut matrices: Vec<_> = self
+      .artifact
+      .chips
       .iter()
-      .enumerate()
-      .map(|(m, meta)| {
-        active_queries(meta.queries, span(m, meta.queries)).count()
+      .map(|chip| Matrix {
+        chip: chip.name.clone(),
+        width: chip.width,
+        height: 0,
+        unpadded_height: 0,
+        values: vec![],
+        multiplicities: vec![],
       })
-      .sum();
-    assert_eq!(
-      height_no_padding, row_count,
-      "query span holds a different row count"
-    );
-    let mut rows_meta = Vec::with_capacity(height_no_padding);
-    for (member, meta) in members_meta.iter().enumerate() {
-      rows_meta.extend(
-        active_queries(meta.queries, span(member, meta.queries))
-          .map(|query| RowMeta { member, query }),
-      );
+      .collect();
+    for (function, &chip) in self.members.iter().enumerate() {
+      matrices[chip].unpadded_height = matrices[chip]
+        .unpadded_height
+        .checked_add(record.queries.tables[function].len())
+        .ok_or("trace height overflow")?;
     }
-    // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
-    // the prover deactivates it, so it is neither committed nor opened.
-    let height = if height_no_padding == 0 {
-      0
-    } else {
-      height_no_padding.next_power_of_two()
-    };
-    // A zeroed allocation: pages materialize when rows are written, so the
-    // padding rows cost nothing and no fill pass touches the whole matrix.
-    let mut rows = {
-      let _g =
-        tracing::info_span!("aiur/witness_zero", height, width).entered();
-      G::zero_vec(height * width)
-    };
-    let rows_no_padding = &mut rows[0..height_no_padding * width];
-    let populate =
-      |i: usize, row: &mut [G], lookups: Option<&mut LookupRowMut<'_, G>>| {
-        let row_meta = &rows_meta[i];
-        let meta = &members_meta[row_meta.member];
-        let (inputs, result) =
-          meta.queries.get_index(row_meta.query).expect("recorded query");
-        let index = &mut ColumnIndex {
-          auxiliary: 0,
-          // we skip the first lookup, which is reserved for return
-          lookup: 1,
-        };
-        let slice = &mut ColumnMutSlice::from_slice(
-          meta.function,
-          layout,
-          meta.sel_offset,
-          row,
-          lookups,
-        );
-        let context = TraceContext {
-          function_index: meta.function_index,
-          inputs,
-          multiplicity: result.multiplicity,
-          output: result.output,
-          query_record,
-        };
-        meta.function.populate_row(index, slice, context, io_buffer);
+    for matrix in &mut matrices {
+      matrix.height = if pad && matrix.unpadded_height > 0 {
+        matrix
+          .unpadded_height
+          .checked_next_power_of_two()
+          .ok_or("padded height overflow")?
+      } else {
+        matrix.unpadded_height
       };
-    if trace_only_lookups() {
-      rows_no_padding
-        .par_chunks_mut(width)
-        .enumerate()
-        .for_each(|(i, row)| populate(i, row, None));
-      let trace = RowMajorMatrix::new(rows, width);
-      return (trace, LookupValues::shape_only(height, slot_arg_widths));
+      let size =
+        matrix.height.checked_mul(matrix.width).ok_or("trace size overflow")?;
+      matrix.values.try_reserve_exact(size).map_err(|e| e.to_string())?;
+      matrix.values.resize(size, self.program.field.zero());
+      matrix.multiplicities.resize(matrix.height, 0);
     }
-    // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
-    // rows need no writes at all.
-    let mut builder = LookupValues::builder(height, slot_arg_widths);
-    let mut row_writers = builder.rows_mut();
-    rows_no_padding
-      .par_chunks_mut(width)
-      .zip(row_writers[..height_no_padding].par_iter_mut())
-      .enumerate()
-      .for_each(|(i, (row, lookups))| populate(i, row, Some(lookups)));
-    drop(row_writers);
-    let trace = RowMajorMatrix::new(rows, width);
-    (trace, builder.finish())
-  }
-}
-
-impl Function {
-  pub fn width(&self) -> usize {
-    self.layout.input_size + self.layout.auxiliaries + self.layout.selectors
-  }
-
-  fn populate_row(
-    &self,
-    index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_, '_>,
-    context: TraceContext<'_>,
-    io_buffer: &IOBuffer,
-  ) {
-    debug_assert_eq!(
-      self.layout.input_size,
-      context.inputs.len(),
-      "Argument mismatch"
-    );
-    // Variable to value map
-    let map = &mut context.inputs.iter().map(|arg| (*arg, 1)).collect();
-    // One column per input
-    context
-      .inputs
-      .iter()
-      .enumerate()
-      .for_each(|(i, arg)| slice.inputs[i] = *arg);
-    // Push the multiplicity
-    slice.push_auxiliary(index, context.multiplicity);
-    let _ = self.body.populate_row(map, index, slice, context, io_buffer);
-  }
-}
-
-/// `Some(values)` means the block ended with `Yield` (values for the merge).
-/// `None` means the block ended with `Return` (function exited).
-type PopulateResult = Option<Vec<G>>;
-
-impl Block {
-  fn populate_row(
-    &self,
-    map: &mut Vec<(G, Degree)>,
-    index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_, '_>,
-    context: TraceContext<'_>,
-    io_buffer: &IOBuffer,
-  ) -> PopulateResult {
-    self
-      .ops
-      .iter()
-      .for_each(|op| op.populate_row(map, index, slice, context, io_buffer));
-    self.ctrl.populate_row(map, index, slice, context, io_buffer)
-  }
-}
-
-/// Dispatch a match: look up the value in the cases map, or fall through to the
-/// default (pushing inverse witnesses for each case to prove inequality).
-fn dispatch_branch<'a>(
-  val: G,
-  cases: &'a FxIndexMap<G, Block>,
-  def: &'a Option<Box<Block>>,
-  index: &mut ColumnIndex,
-  slice: &mut ColumnMutSlice<'_, '_>,
-) -> &'a Block {
-  cases
-    .get(&val)
-    .or_else(|| {
-      for &case in cases.keys() {
-        let witness = (val - case).inverse();
-        slice.push_auxiliary(index, witness);
-      }
-      def.as_deref()
-    })
-    .expect("No match")
-}
-
-impl Ctrl {
-  fn populate_row(
-    &self,
-    map: &mut Vec<(G, Degree)>,
-    index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_, '_>,
-    context: TraceContext<'_>,
-    io_buffer: &IOBuffer,
-  ) -> PopulateResult {
-    match self {
-      Ctrl::Return(sel, _) => {
-        slice.selectors[*sel] = G::ONE;
-        let args = function_lookup_args(
-          context.function_index,
-          context.inputs,
-          context.output,
-        );
-        // The first lookup slot is reserved for the function return, which
-        // pulls the query claim with the query's multiplicity.
-        if let Some(lookups) = slice.lookups.as_deref_mut() {
-          lookups.pull(0, context.multiplicity, &args);
+    let memory: FxHashMap<&[B::Element], usize> =
+      record.memory.iter().map(|m| (m.cell.value, m.address)).collect();
+    if memory.len() != record.memory.len() {
+      return Err("duplicate interned ROM payload".into());
+    }
+    let mut offsets = vec![0usize; matrices.len()];
+    let mut scratch = vec![];
+    let mut buffer = vec![];
+    let mut hint_output = vec![];
+    let field = self.program.field;
+    timings.bind_seconds = start.elapsed().as_secs_f64();
+    let start = std::time::Instant::now();
+    for (function, plan) in self.artifact.functions.iter().enumerate() {
+      let table = &record.queries.tables[function];
+      let matrix = &mut matrices[self.members[function]];
+      scratch.resize(plan.witnesses, field.zero());
+      for query in 0..table.len() {
+        let offset = offsets[self.members[function]];
+        matrix.values[offset * matrix.width
+          + self.artifact.chips[self.members[function]].activation] =
+          field.one();
+        matrix.multiplicities[offset] = table.output(query).multiplicity;
+        if !reference {
+          let row = &mut matrix.values
+            [offset * matrix.width..(offset + 1) * matrix.width];
+          self.fills[function]
+            .fill(
+              record,
+              (table.input(query), table.output(query)),
+              &memory,
+              &mut scratch,
+              &mut buffer,
+              row,
+            )
+            .map_err(|e| format!("{} query {query}: {e}", plan.name))?;
+          offsets[self.members[function]] += 1;
+          continue;
         }
-        None
-      },
-      Ctrl::Yield(sel, vals) => {
-        slice.selectors[*sel] = G::ONE;
-        Some(vals.iter().map(|&v| map[v].0).collect())
-      },
-      Ctrl::Match(var, cases, def) => {
-        let branch = dispatch_branch(map[*var].0, cases, def, index, slice);
-        branch.populate_row(map, index, slice, context, io_buffer)
-      },
-      Ctrl::MatchContinue(
-        var,
-        cases,
-        def,
-        _output_size,
-        shared_aux,
-        shared_lookups,
-        continuation,
-      ) => {
-        let map_len = map.len();
-        let init_aux = index.auxiliary;
-        let init_lookup = index.lookup;
-
-        let branch = dispatch_branch(map[*var].0, cases, def, index, slice);
-        let result = branch.populate_row(map, index, slice, context, io_buffer);
-        match result {
-          Some(yielded) => {
-            // Advance past the shared branch region. The taken branch may
-            // use fewer auxiliaries/lookups than the max across all branches.
-            index.auxiliary = init_aux + shared_aux;
-            index.lookup = init_lookup + shared_lookups;
-
-            map.truncate(map_len);
-            for &val in &yielded {
-              slice.push_auxiliary(index, val);
-              map.push((val, 1));
+        scratch.fill(field.zero());
+        let input = table.input(query);
+        let output = table.output(query);
+        for (&dest, &v) in plan.inputs.iter().zip(input) {
+          scratch[dest] = v;
+        }
+        for (&dest, &v) in plan.output.iter().zip(output.output) {
+          scratch[dest] = v;
+        }
+        for (step_id, step) in plan.steps.iter().enumerate() {
+          if step.guard.eval(&scratch, field) != field.one() {
+            continue;
+          }
+          let mut fill = || -> Result<(), String> {
+            match &step.action {
+              Action::Assign { dest, values } => {
+                buffer.clear();
+                buffer.extend(values.iter().map(|p| p.eval(&scratch, field)));
+                for (&d, &v) in dest.iter().zip(&buffer) {
+                  scratch[d] = v;
+                }
+              },
+              Action::Inverse { dest, value } => {
+                scratch[*dest] = field
+                  .inverse(value.eval(&scratch, field))
+                  .ok_or("active zero denominator")?;
+              },
+              Action::Choose { dest, tests } => {
+                let selected = tests
+                  .iter()
+                  .position(|xs| {
+                    xs.iter().all(|p| p.eval(&scratch, field) == field.zero())
+                  })
+                  .ok_or("no matching trace arm")?;
+                for (i, &d) in dest.iter().enumerate() {
+                  scratch[d] = field.from_u64(u64::from(i == selected));
+                }
+              },
+              Action::Failure { dest, differences } => {
+                let (selected, v) = differences
+                  .iter()
+                  .enumerate()
+                  .find_map(|(i, p)| {
+                    let v = p.eval(&scratch, field);
+                    (v != field.zero()).then_some((i, v))
+                  })
+                  .ok_or("rejected pattern actually matches")?;
+                for &d in dest {
+                  scratch[d] = field.zero();
+                }
+                scratch[dest[selected]] =
+                  field.inverse(v).ok_or("zero failure witness")?;
+              },
+              Action::Call { name, args, dest } => {
+                buffer.clear();
+                buffer.extend(args.iter().map(|p| p.eval(&scratch, field)));
+                let table = &record.queries.tables[self.callables[name]];
+                // Independent reference population always uses
+                // the original table, never a host override.
+                let values = if let Some(map) = &table.static_map {
+                  map.binding.output(map.binding.row(&buffer)?)
+                } else {
+                  let id =
+                    table.lookup(&buffer).1.ok_or("missing recorded callee")?;
+                  let answer = table.output(id);
+                  if answer.multiplicity == 0 {
+                    return Err("pending recorded callee".into());
+                  }
+                  answer.output
+                };
+                for (&d, &v) in dest.iter().zip(values) {
+                  scratch[d] = v;
+                }
+              },
+              Action::Store { values, dest, .. } => {
+                buffer.clear();
+                buffer.extend(values.iter().map(|p| p.eval(&scratch, field)));
+                let address = *memory
+                  .get(buffer.as_slice())
+                  .ok_or("missing recorded store")?;
+                scratch[*dest] = field.from_u64(
+                  u64::try_from(address).map_err(|_| "ROM address overflow")?,
+                );
+              },
+              Action::Load { address, dest, .. } => {
+                let address =
+                  usize::try_from(field.to_u64(address.eval(&scratch, field)))
+                    .map_err(|_| "ROM address overflow")?;
+                let cell = &record
+                  .memory
+                  .get_by_width(dest.len(), address)
+                  .ok_or("missing recorded load")?
+                  .cell;
+                if cell.value.len() != dest.len() {
+                  return Err("ROM load shape mismatch".into());
+                }
+                for (&d, &v) in dest.iter().zip(cell.value) {
+                  scratch[d] = v;
+                }
+              },
+              Action::Hint { instruction, key, dest, .. } => {
+                buffer.clear();
+                buffer.extend(key.iter().map(|p| p.eval(&scratch, field)));
+                hint_output.resize(dest.len(), field.zero());
+                record.hints.sites[function][*instruction]
+                  .as_ref()
+                  .ok_or("missing hint site")?
+                  .evaluate(&buffer, &mut hint_output, field)?;
+                for (&d, &v) in dest.iter().zip(&hint_output) {
+                  scratch[d] = v;
+                }
+              },
             }
-            continuation.populate_row(map, index, slice, context, io_buffer)
-          },
-          None => None,
+            Ok(())
+          };
+          fill().map_err(|e| {
+            format!(
+              "{} query {query}, population step {step_id}: {e}",
+              plan.name
+            )
+          })?;
         }
-      },
-    }
-  }
-}
-
-impl Op {
-  fn populate_row(
-    &self,
-    map: &mut Vec<(G, Degree)>,
-    index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_, '_>,
-    context: TraceContext<'_>,
-    io_buffer: &IOBuffer,
-  ) {
-    match self {
-      Op::Const(f) => map.push((*f, 0)),
-      Op::Add(a, b) => {
-        let (a, a_deg) = map[*a];
-        let (b, b_deg) = map[*b];
-        let deg = a_deg.max(b_deg);
-        map.push((a + b, deg));
-      },
-      Op::Sub(a, b) => {
-        let (a, a_deg) = map[*a];
-        let (b, b_deg) = map[*b];
-        let deg = a_deg.max(b_deg);
-        map.push((a - b, deg));
-      },
-      Op::Mul(a, b) => {
-        let (a, a_deg) = map[*a];
-        let (b, b_deg) = map[*b];
-        let deg = a_deg + b_deg;
-        let f = a * b;
-        if deg < 2 {
-          map.push((f, deg));
-        } else {
-          map.push((f, 1));
-          slice.push_auxiliary(index, f);
-        }
-      },
-      Op::EqZero(a) => {
-        let (a, deg) = map[*a];
-        let is_zero = a == G::ZERO;
-        let is_zero_g = G::from_bool(is_zero);
-        if deg == 0 {
-          map.push((is_zero_g, 0));
-        } else {
-          let (d, x) =
-            if is_zero { (G::ZERO, G::ONE) } else { (a.inverse(), G::ZERO) };
-          slice.push_auxiliary(index, d);
-          slice.push_auxiliary(index, x);
-          map.push((is_zero_g, 1));
-        }
-      },
-      Op::Call(function_index, inputs, _, op_unconstrained) => {
-        let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
-        let queries = &context.query_record.function_queries[*function_index];
-        let result = queries.get(&inputs).expect("Cannot find query result");
-        for f in result.output.iter() {
-          map.push((*f, 1));
-          slice.push_auxiliary(index, *f);
-        }
-        if !op_unconstrained {
-          let args = function_lookup_args(
-            G::from_usize(*function_index),
-            &inputs,
-            result.output,
-          );
-          slice.push_lookup(index, G::ONE, &args);
-        }
-      },
-      Op::Store(values) => {
-        let size = values.len();
-        let memory_queries = context
-          .query_record
-          .memory_queries
-          .get(&size)
-          .expect("Invalid memory size");
-        let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
-        let ptr = G::from_usize(
-          context.query_record.pointer_base
-            + memory_queries.get_index_of(&values).expect("Unbound pointer"),
-        );
-        map.push((ptr, 1));
-        slice.push_auxiliary(index, ptr);
-        let args = Memory::lookup_args(G::from_usize(size), ptr, &values);
-        slice.push_lookup(index, G::ONE, &args);
-      },
-      Op::Load(size, ptr) => {
-        let memory_queries = context
-          .query_record
-          .memory_queries
-          .get(size)
-          .expect("Invalid memory size");
-        let (ptr, _) = map[*ptr];
-        let ptr_u64 = ptr.as_canonical_u64();
-        let table_index = usize::try_from(ptr_u64)
-          .expect("Pointer is too big")
-          .checked_sub(context.query_record.pointer_base)
-          .expect("Pointer below the record's base");
-        let (values, _) =
-          memory_queries.get_index(table_index).expect("Unbound pointer");
-        for f in values.iter() {
-          map.push((*f, 1));
-          slice.push_auxiliary(index, *f);
-        }
-        let args = Memory::lookup_args(G::from_usize(*size), ptr, values);
-        slice.push_lookup(index, G::ONE, &args);
-      },
-      Op::IOGetInfo(channel, key) => {
-        let channel = map[*channel].0;
-        let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
-        let IOKeyInfo { idx, len } =
-          io_buffer.get_info(channel, &key).expect("Invalid IO key");
-        for f in [G::from_usize(*idx), G::from_usize(*len)] {
-          map.push((f, 1));
-          slice.push_auxiliary(index, f);
-        }
-      },
-      Op::IORead(channel, idx, len) => {
-        let channel = map[*channel].0;
-        let idx = map[*idx]
-          .0
-          .as_canonical_u64()
-          .try_into()
-          .expect("Index is too big for an usize");
-        let data = io_buffer
-          .read(channel, idx, *len)
-          .expect("IO read out of bounds")
-          .to_vec();
-        for f in data {
-          map.push((f, 1));
-          slice.push_auxiliary(index, f);
-        }
-      },
-      Op::U8BitDecomposition(byte) => {
-        let (byte, _) = map[*byte];
-        let bits = Bytes1::bit_decompose(&byte);
-        for &b in &bits {
-          map.push((b, 1));
-          slice.push_auxiliary(index, b);
-        }
-        let mut lookup_args = vec![u8_bit_decomposition_channel(), byte];
-        lookup_args.extend(bits);
-        slice.push_lookup(index, G::ONE, &lookup_args);
-      },
-      Op::U8ShiftLeft(byte) => {
-        let (byte, _) = map[*byte];
-        let byte_shifted = Bytes1::shift_left(&byte);
-        map.push((byte_shifted, 1));
-        slice.push_auxiliary(index, byte_shifted);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_shift_left_channel(), byte, byte_shifted],
-        );
-      },
-      Op::U8ShiftRight(byte) => {
-        let (byte, _) = map[*byte];
-        let byte_shifted = Bytes1::shift_right(&byte);
-        map.push((byte_shifted, 1));
-        slice.push_auxiliary(index, byte_shifted);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_shift_right_channel(), byte, byte_shifted],
-        );
-      },
-      Op::U8Xor(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let xor = Bytes2::xor(&i, &j);
-        map.push((xor, 1));
-        slice.push_auxiliary(index, xor);
-        slice.push_lookup(index, G::ONE, &[u8_xor_channel(), i, j, xor]);
-      },
-      Op::U8Add(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        // Only the low byte `r` is witnessed (one auxiliary + the add lookup).
-        // The carry `o` is a derived value, pushed to the map for downstream
-        // ops but not materialized as a column.
-        let (r, o) = Bytes2::add(&i, &j);
-        map.push((r, 1));
-        map.push((o, 1));
-        slice.push_auxiliary(index, r);
-        slice.push_lookup(index, G::ONE, &[u8_add_channel(), i, j, r]);
-      },
-      Op::UnconstrainedU32Add(a, b) => {
-        let (bytes, carry) = u32_sum(&[u32_value(map, a), u32_value(map, b)]);
-        for byte in bytes {
-          map.push((byte, 1));
-          slice.push_auxiliary(index, byte);
-        }
-        map.push((carry, 1));
-      },
-      Op::UnconstrainedU32Add3(a, b, c) => {
-        let (bytes, carry) =
-          u32_sum(&[u32_value(map, a), u32_value(map, b), u32_value(map, c)]);
-        for byte in bytes {
-          map.push((byte, 1));
-          slice.push_auxiliary(index, byte);
-        }
-        map.push((carry, 1));
-      },
-      Op::U32ToField(bytes) => {
-        let word = u32_value(map, bytes);
-        let degree = bytes.iter().map(|idx| map[*idx].1).max().unwrap_or(0);
-        map.push((G::from_u64(word), degree));
-      },
-      Op::U8Mul(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let (lo, hi) = Bytes2::mul(&i, &j);
-        map.push((lo, 1));
-        map.push((hi, 1));
-        slice.push_auxiliary(index, lo);
-        slice.push_auxiliary(index, hi);
-        slice.push_lookup(index, G::ONE, &[u8_mul_channel(), i, j, lo, hi]);
-      },
-      Op::U8Sub(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        // Only the low byte `r` is witnessed (one auxiliary + the sub lookup).
-        // The borrow `u` is derived, pushed to the map for downstream ops but
-        // not materialized as a column.
-        let (r, u) = Bytes2::sub(&i, &j);
-        map.push((r, 1));
-        map.push((u, 1));
-        slice.push_auxiliary(index, r);
-        slice.push_lookup(index, G::ONE, &[u8_sub_channel(), i, j, r]);
-      },
-      Op::U8And(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let and = Bytes2::and(&i, &j);
-        map.push((and, 1));
-        slice.push_auxiliary(index, and);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_xor_channel(), i, j, i + j - G::TWO * and],
-        );
-      },
-      Op::U8Or(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let or = Bytes2::or(&i, &j);
-        map.push((or, 1));
-        slice.push_auxiliary(index, or);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_xor_channel(), i, j, G::TWO * or - i - j],
-        );
-      },
-      Op::U8LessThan(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let less_than = Bytes2::less_than(&i, &j);
-        map.push((less_than, 1));
-        slice.push_auxiliary(index, less_than);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_sub_channel(), i, j, i - j + G::from_u16(256) * less_than],
-        );
-      },
-      Op::U8XorSplit7(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let (hi, lo) = Bytes2::xor_split7(&i, &j);
-        map.extend([(hi, 1), (lo, 1)]);
-        slice.push_auxiliary(index, hi);
-        slice.push_auxiliary(index, lo);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_xor_split7_channel(), i, j, hi, lo],
-        );
-      },
-      Op::U8XorSplit4(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let (hi, lo) = Bytes2::xor_split4(&i, &j);
-        map.extend([(hi, 1), (lo, 1)]);
-        slice.push_auxiliary(index, hi);
-        slice.push_auxiliary(index, lo);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_xor_split4_channel(), i, j, hi, lo],
-        );
-      },
-      Op::U32LessThan(x_idx, y_idx) => {
-        let (a, _) = map[*x_idx];
-        let (b, _) = map[*y_idx];
-        let a_u32 = u32::try_from(a.as_canonical_u64()).unwrap();
-        let b_u32 = u32::try_from(b.as_canonical_u64()).unwrap();
-        let c_u32 = a_u32.wrapping_sub(b_u32);
-        // Six auxiliaries and scalar queries, ordered as a, c, b, low first.
-        // Execution already recorded these multiplicities.
-        for word in [a_u32, c_u32, b_u32] {
-          for shift in [0, 16] {
-            let limb = G::from_u16(((word >> shift) & 0xffff) as u16);
-            slice.push_auxiliary(index, limb);
-            slice.push_lookup(
-              index,
-              G::ONE,
-              &[u16_range_check_channel(), limb],
-            );
+        let offset = offsets[self.members[function]];
+        let row = &mut matrix.values
+          [offset * matrix.width..(offset + 1) * matrix.width];
+        for write in &plan.writes {
+          if write.guard.eval(&scratch, field) == field.one() {
+            row[write.column] = scratch[write.source];
           }
         }
-        map.push((G::from_bool(a_u32 < b_u32), 1));
-      },
-      Op::U8RangeCheck(i, j) => {
-        // No `map.push`: the `u8` outputs alias the inputs. Just require the
-        // `(i, j)` pair from the byte-chip range-check table.
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_range_check_channel(), map[*i].0, map[*j].0],
-        );
-      },
-      Op::UnconstrainedBigUintDivMod(a, b) => {
-        // Mirrors the execute arm and the two auxiliary columns the
-        // constraints allocate: recompute `(q, r)` and resolve the head
-        // pointers execution recorded in memory[10]. Skipping the two map
-        // pushes would shift every later `ValIdx` (and witness column) in
-        // the block.
-        let (q_ptr, r_ptr) = find_unconstrained_big_uint_div_mod(
-          map[*a].0,
-          map[*b].0,
-          &context.query_record.memory_queries,
-          context.query_record.pointer_base,
-        )
-        .expect("BigUint div-mod result not recorded");
-        for f in [q_ptr, r_ptr] {
-          map.push((f, 1));
-          slice.push_auxiliary(index, f);
-        }
-      },
-      Op::UnconstrainedGToBytes(a) => {
-        // Recompute the deterministic hint (canonical LE bytes) and fill
-        // the 8 auxiliary columns the constraints allocate.
-        let bytes = map[*a].0.as_canonical_u64().to_le_bytes();
-        for b in bytes {
-          let f = G::from_u8(b);
-          map.push((f, 1));
-          slice.push_auxiliary(index, f);
-        }
-      },
-      Op::UnconstrainedGInverse(a) => {
-        let f = g_inverse_value(map[*a].0);
-        map.push((f, 1));
-        slice.push_auxiliary(index, f);
-      },
-      Op::AssertEq(..)
-      | Op::IOSetInfo(..)
-      | Op::IOWrite(..)
-      | Op::Debug(..) => {},
+        offsets[self.members[function]] += 1;
+      }
     }
+    timings.fill_seconds = start.elapsed().as_secs_f64();
+    // Allocation already zeroed the inactive padding rows. Their lookup
+    // multiplicities are zero, so execution counts require no repair.
+    Ok(Trace { matrices })
+  }
+
+  fn validate_record(&self, record: &Execution<B>) -> Result<(), String> {
+    if !std::sync::Arc::ptr_eq(&record.hints.program, &self.program.program) {
+      return Err("hint providers belong to another program".into());
+    }
+    if record.queries.tables.len() != self.program.inputs.len() {
+      return Err("query record callable count mismatch".into());
+    }
+    let validate_table = |(i, table): (usize, &crate::query::QueryTable<B>)| {
+      if table.widths()
+        != (self.program.inputs[i].width(), self.program.outputs[i].width())
+      {
+        return Err("query record width mismatch".into());
+      }
+      if i >= self.program.program.functions.len() {
+        let map =
+          table.static_map.as_ref().ok_or("missing static map record")?;
+        if !std::sync::Arc::ptr_eq(&map.binding.program, &self.program.program)
+          || map.binding.id != i - self.program.program.functions.len()
+        {
+          return Err(
+            "static map record belongs to another program/map".into(),
+          );
+        }
+        if map.counts.len() != map.binding.rows() {
+          return Err("malformed static map counts".into());
+        }
+        // Inputs/results are borrowed from already validated tables.
+        return Ok(());
+      }
+      if table.static_map.is_some() {
+        return Err("function record contains a static map".into());
+      }
+      for row in 0..table.len() {
+        let output = table.output(row);
+        if output.multiplicity == 0 {
+          return Err("incomplete query record".into());
+        }
+        self.program.inputs[i]
+          .validate(table.input(row), self.program.field)?;
+        self.program.outputs[i].validate(output.output, self.program.field)?;
+      }
+      Ok::<_, String>(())
+    };
+    #[cfg(feature = "parallel")]
+    record
+      .queries
+      .tables
+      .par_iter()
+      .enumerate()
+      .try_for_each(validate_table)?;
+    #[cfg(not(feature = "parallel"))]
+    record.queries.tables.iter().enumerate().try_for_each(validate_table)?;
+    if record
+      .memory
+      .iter()
+      .any(|m| m.address as u128 >= self.program.field.modulus() as u128)
+    {
+      return Err("ROM exceeds field capacity".into());
+    }
+    let validate_memory = |m: crate::memory::MemoryEntryRef<'_, B::Element>| {
+      self
+        .program
+        .memory_layouts
+        .get(m.cell.r#type)
+        .ok_or("unknown recorded ROM type")?
+        .validate(m.cell.value, self.program.field)
+    };
+    #[cfg(feature = "parallel")]
+    record.memory.par_iter().try_for_each(validate_memory)?;
+    #[cfg(not(feature = "parallel"))]
+    record.memory.iter().try_for_each(validate_memory)?;
+    Ok(())
+  }
+
+  fn root(
+    &self,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<Claim<B::Element>, String> {
+    let id = self.program.entry(entry)?.function;
+    self.program.inputs[id].validate(args, self.program.field)?;
+    let query =
+      record.queries.tables[id].lookup(args).1.ok_or("missing entry query")?;
+    if record.queries.tables[id].output(query).output != record.output {
+      return Err("root output mismatch".into());
+    }
+    let chip = self.members[id];
+    Ok(Claim {
+      channel: self.callables[&self.artifact.chips[chip].name],
+      args: args.to_vec(),
+      output: record.output.clone(),
+    })
+  }
+
+  fn claim(&self, chip: &Chip, row: &[B::Element]) -> Claim<B::Element> {
+    Claim {
+      channel: self.callables[&chip.name],
+      args: chip.inputs.iter().map(|&i| row[i]).collect(),
+      output: chip
+        .output
+        .iter()
+        .map(|p| p.eval(row, self.program.field))
+        .collect(),
+    }
+  }
+  fn send_claim(&self, send: &Send, row: &[B::Element]) -> Claim<B::Element> {
+    Claim {
+      channel: self.callables[&send.channel],
+      args: send.args.iter().map(|p| p.eval(row, self.program.field)).collect(),
+      output: send.result.iter().map(|&i| row[i]).collect(),
+    }
+  }
+  fn static_claim(&self, claim: &Claim<B::Element>) -> Result<bool, String> {
+    let Some(map) = self
+      .program
+      .program
+      .maps
+      .get(claim.channel.wrapping_sub(self.program.program.functions.len()))
+    else {
+      return Ok(false);
+    };
+    let index = self.program.map_indexes[map.input]
+      .as_ref()
+      .ok_or("missing static map index")?;
+    let row = index.get(&claim.args).ok_or("unavailable static map claim")?;
+    if self.program.tables[map.output][row] != claim.output {
+      return Err("wrong static map result".into());
+    }
+    Ok(true)
+  }
+
+  /// Independent diagnostic validation of every physical row, typed ROM
+  /// lookup, static map membership and exact integer message balance.
+  pub fn check(
+    &self,
+    record: &Execution<B>,
+    trace: &Trace<B::Element>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<(), String> {
+    self.validate_record(record)?;
+    if trace.matrices.len() != self.artifact.chips.len() {
+      return Err("trace matrix count mismatch".into());
+    }
+    let field = self.program.field;
+    let mut ledger: FxHashMap<Claim<B::Element>, i128> = FxHashMap::default();
+    ledger.insert(self.root(record, entry, args)?, -1);
+    for (chip, matrix) in self.artifact.chips.iter().zip(&trace.matrices) {
+      if matrix.chip != chip.name
+        || matrix.width != chip.width
+        || matrix.unpadded_height > matrix.height
+        || matrix.height.checked_mul(matrix.width) != Some(matrix.values.len())
+        || matrix.multiplicities.len() != matrix.height
+        || matrix.values.iter().any(|v| !field.valid(*v))
+      {
+        return Err("malformed trace matrix".into());
+      }
+      for row_id in 0..matrix.height {
+        let row = matrix.row(row_id);
+        if (row[chip.activation] != field.zero()
+          && row[chip.activation] != field.one())
+          || (row[chip.activation] == field.zero()
+            && matrix.multiplicities[row_id] != 0)
+        {
+          return Err("invalid inactive row multiplicity or activation".into());
+        }
+        for (i, p) in chip.constraints.iter().enumerate() {
+          if p.eval(row, field) != field.zero() {
+            return Err(format!(
+              "{} row {row_id}: constraint {i} is nonzero",
+              chip.name
+            ));
+          }
+        }
+        for (i, cell) in chip.memory.iter().enumerate() {
+          if cell.enable.eval(row, field) != field.one() {
+            continue;
+          }
+          let address =
+            usize::try_from(field.to_u64(cell.address.eval(row, field)))
+              .map_err(|_| "ROM address overflow")?;
+          let value = &record
+            .memory
+            .get_by_width(cell.values.len(), address)
+            .ok_or("missing circuit ROM cell")?
+            .cell;
+          if value.value.len() != cell.values.len()
+            || value
+              .value
+              .iter()
+              .zip(&cell.values)
+              .any(|(&v, p)| v != p.eval(row, field))
+          {
+            return Err(format!(
+              "{} row {row_id}: memory lookup {i} mismatch",
+              chip.name
+            ));
+          }
+        }
+        let balance = ledger.entry(self.claim(chip, row)).or_default();
+        *balance = balance
+          .checked_add(i128::from(matrix.multiplicities[row_id]))
+          .ok_or("ledger overflow")?;
+        for send in &chip.sends {
+          if send.enable.eval(row, field) == field.one() {
+            let claim = self.send_claim(send, row);
+            if !self.static_claim(&claim)? {
+              let balance = ledger.entry(claim).or_default();
+              *balance = balance.checked_sub(1).ok_or("ledger overflow")?;
+            }
+          }
+        }
+      }
+    }
+    if ledger.values().any(|&count| count != 0) {
+      return Err("unbalanced trace messages".into());
+    }
+    Ok(())
   }
 }
 
-fn function_lookup_args(
-  function_index: G,
-  inputs: &[G],
-  output: &[G],
-) -> Vec<G> {
-  let mut args = vec![function_channel(), function_index];
-  args.extend(inputs);
-  args.extend(output);
-  args
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct Claim<F> {
+  channel: usize,
+  args: Vec<F>,
+  output: Vec<F>,
 }

@@ -2,7 +2,7 @@ module
 
 public import LSpec
 public import Ix.Aggr
-public import Ix.Aiur.Compiler
+public import LegacyAiur.Compiler
 public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.Aggr.Reference
@@ -15,7 +15,7 @@ public import Tests.ProofHelpers
 pure-Lean interpreter over a Lean-built IO buffer) across all thirteen shapes, with
 real Multi-STARK child proofs from two cheap stand-in systems:
 
-* a "fake IxVM" system whose `fake_verify_claim` reproduces `verify_claim`'s
+* a "fake LegacyIxVM" system whose `fake_verify_claim` reproduces `verify_claim`'s
   10-word claim layout, and
 * a "fake self" system (same bytecode, different FRI parameters, hence a
   different verifying key) whose `fake_aggr` reproduces `ix_aggr`'s 18-word
@@ -34,13 +34,13 @@ the CLI/benchmark layer, not this suite.
 
 public section
 
-open LSpec Aiur
+open LSpec LegacyAiur
 
 namespace Tests.Aggr
 
 open Tests.ProofHelpers (expectOk expectErr recCommitParams innerFri)
 
-/-- Cheap stand-in children. `fake_verify_claim` mirrors the IxVM
+/-- Cheap stand-in children. `fake_verify_claim` mirrors the LegacyIxVM
 `verify_claim` claim shape (10 words), `fake_aggr` mirrors the `ix_aggr` claim
 shape (18 words). Bodies touch memory so the proofs have a non-trivial trace. -/
 def childProgram : Source.Toplevel := ⟦
@@ -144,8 +144,8 @@ def smokeSuite : IO UInt32 := do
     leftStatement rightStatement structuralOutput
 
   -- ── M1-d production policy / claim derivation ──────────────────────────
-  -- Three leaves make the direct policy exercise both the IxVM+IxVM and
-  -- aggregate+IxVM pair shapes. The threshold keeps the lower fold flat and
+  -- Three leaves make the direct policy exercise both the LegacyIxVM+LegacyIxVM and
+  -- aggregate+LegacyIxVM pair shapes. The threshold keeps the lower fold flat and
   -- the root structural.
   let driverOps : Array Ix.Shard.AggregationTree.FoldOp :=
     #[.leaf 0, .leaf 1, .join 0 1, .leaf 2, .join 2 3]
@@ -240,23 +240,23 @@ def smokeSuite : IO UInt32 := do
     | _, _ => false
 
   -- ── child proofs ────────────────────────────────────────────────────────
-  -- Kind 0 ("IxVM"): claim = [0, fake_verify_claim, digest(CheckEnv bytes)].
+  -- Kind 0 ("LegacyIxVM"): claim = [0, fake_verify_claim, digest(CheckEnv bytes)].
   let mkIxvmChild (claimBytes : ByteArray) : Except String ChildSlot := do
     let (claim, proof, _) ←
-      ixvmSystem.prove fakeVerifyIdx (MultiStark.digestGs claimBytes) default
+      ixvmSystem.prove fakeVerifyIdx (LegacyMultiStark.digestGs claimBytes) default
     let proofAdviceBytes ← ixvmSystem.proofToAdviceBytes claim proof
-    pure ⟨proofAdviceBytes, MultiStark.serializeClaims #[claim]⟩
+    pure ⟨proofAdviceBytes, LegacyMultiStark.serializeClaims #[claim]⟩
   -- Kind 1 ("self"): claim = [0, fake_aggr, digest(allowed), digest(CheckEnv)].
   let mkSelfChild (blob claimBytes : ByteArray) : Except String ChildSlot := do
     let (claim, proof, _) ←
       aggrSystem.prove fakeAggrIdx (Aggr.pubInput blob claimBytes) default
     let proofAdviceBytes ← aggrSystem.proofToAdviceBytes claim proof
-    pure ⟨proofAdviceBytes, MultiStark.serializeClaims #[claim]⟩
+    pure ⟨proofAdviceBytes, LegacyMultiStark.serializeClaims #[claim]⟩
   let leftIxvm ← match mkIxvmChild leftClaimBytes with
-    | .error e => IO.eprintln s!"left IxVM proof advice encoding failed: {e}"; return 1
+    | .error e => IO.eprintln s!"left LegacyIxVM proof advice encoding failed: {e}"; return 1
     | .ok child => pure child
   let rightIxvm ← match mkIxvmChild rightClaimBytes with
-    | .error e => IO.eprintln s!"right IxVM proof advice encoding failed: {e}"; return 1
+    | .error e => IO.eprintln s!"right LegacyIxVM proof advice encoding failed: {e}"; return 1
     | .ok child => pure child
   let leftSelf ← match mkSelfChild allowed leftClaimBytes with
     | .error e => IO.eprintln s!"left self proof advice encoding failed: {e}"; return 1
@@ -319,11 +319,11 @@ def smokeSuite : IO UInt32 := do
       structuralOutput rightStatement nestedStructuralOutput)
 
   -- ── codegen/native parity ───────────────────────────────────────────────
-  -- The generated Rust aggregator (`crates/ixvm-codegen/src/aiur_ix_aggr.rs`)
+  -- The generated Rust aggregator (`crates/ixvm-legacy-native/src/aiur_ix_aggr.rs`)
   -- plus the native advice builder must reproduce the interpreter's output
   -- and per-circuit query counts exactly — the standing parity invariant.
-  let sameCounts (native : Except String (Array Aiur.G × Array QueryCount))
-      (interp : Except String (Array Aiur.G × IOBuffer × Array QueryCount)) :
+  let sameCounts (native : Except String (Array LegacyAiur.G × Array QueryCount))
+      (interp : Except String (Array LegacyAiur.G × IOBuffer × Array QueryCount)) :
       Bool :=
     match native, interp with
     | .ok (out, qc), .ok (outI, _, qcI) =>
@@ -434,7 +434,7 @@ def smokeSuite : IO UInt32 := do
 
   -- ── negative cases — one broken binding each ────────────────────────────
   -- Shape hint lies about the child's system: a self proof cannot verify
-  -- against the IxVM vk the hinted kind binds.
+  -- against the LegacyIxVM vk the hinted kind binds.
   let shapeLie := run (Aggr.shapeCode (.ixvm, none)) #[leftSelf] leftClaimBytes
   -- Tampered proof advice.
   let tamperedBytes := leftIxvm.proofAdviceBytes.set! 0
@@ -519,12 +519,12 @@ def smokeSuite : IO UInt32 := do
       #[leftIxvm])
   let invalidShape := run 13 #[leftIxvm] leftClaimBytes
 
-  -- ── range-sum recursion (shapes 10–12) over one IxVM batch ─────────────
+  -- ── range-sum recursion (shapes 10–12) over one LegacyIxVM batch ─────────────
   -- `prove` yields a one-shard batch, so its ranges are `[0, 0)` and
   -- `[0, 1)`: a leaf for each, a join adding them into `[0, 1)`, and a root
   -- closing the batch and emitting the wrap's statement.
   let rangeBatch ← match ixvmSystem.prove fakeVerifyIdx
-      (MultiStark.digestGs leftClaimBytes) default with
+      (LegacyMultiStark.digestGs leftClaimBytes) default with
     | .error e => IO.eprintln s!"range batch proof failed: {e}"; return 1
     | .ok (_, proof, _) => pure proof
   let (preamble, fullProofs, fullResidual) ← match rangeBatch.rangeAdvice 0 1 with
@@ -606,15 +606,15 @@ def smokeSuite : IO UInt32 := do
       shapeWeightsBounded,
     test "driver specs use uniform aggregate claims and cache version 2"
       uniformDriverClaims,
-    expectOk "wrap of an IxVM child accepts" wrapIxvm,
+    expectOk "wrap of an LegacyIxVM child accepts" wrapIxvm,
     expectOk "wrap of a self child accepts" wrapSelf,
-    expectOk "pair (IxVM, IxVM) accepts" pairII,
-    expectOk "pair (IxVM, self) accepts" pairIA,
-    expectOk "pair (self, IxVM) accepts" pairAI,
+    expectOk "pair (LegacyIxVM, LegacyIxVM) accepts" pairII,
+    expectOk "pair (LegacyIxVM, self) accepts" pairIA,
+    expectOk "pair (self, LegacyIxVM) accepts" pairAI,
     expectOk "pair (self, self) accepts" pairAA,
-    expectOk "structural pair (IxVM, IxVM) accepts" structuralII,
-    expectOk "structural pair (IxVM, self) accepts" structuralIA,
-    expectOk "structural pair (self, IxVM) accepts" structuralAI,
+    expectOk "structural pair (LegacyIxVM, LegacyIxVM) accepts" structuralII,
+    expectOk "structural pair (LegacyIxVM, self) accepts" structuralIA,
+    expectOk "structural pair (self, LegacyIxVM) accepts" structuralAI,
     expectOk "structural pair (self, self) accepts" structuralAA,
     expectOk "structural parent accepts a structural self child"
       nestedStructural,

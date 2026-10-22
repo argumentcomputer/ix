@@ -1,0 +1,27 @@
+[package]
+name = "ixvm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version = "1.98"
+
+[dependencies]
+aiur = { workspace = true }
+multi-stark = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
+
+[features]
+default = []
+stark = ["aiur/stark"]
+parallel = ["stark", "aiur/parallel"]
+function-profile = ["aiur/function-profile"]
+function-profile-ops = ["function-profile", "aiur/function-profile-ops"]
+
+[[example]]
+name = "ixvm_bench"
+required-features = ["stark"]
+
+[[example]]
+name = "witness"
+required-features = ["stark"]

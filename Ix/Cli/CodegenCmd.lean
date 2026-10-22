@@ -1,22 +1,22 @@
 /-
-  `ix codegen`: write the IxVM kernel, the MultiStark recursive
+  `ix codegen`: write the LegacyIxVM kernel, the LegacyMultiStark recursive
   verifier, and the ixAggr aggregation system as Rust source files via
   the Bytecode → Rust codegen pass.
 
   Output paths are fixed at compile time:
-  - `crates/ixvm-codegen/src/aiur_ixvm.rs` (the IxVM kernel)
-  - `crates/ixvm-codegen/src/aiur_multi_stark.rs` (the recursive verifier)
-  - `crates/ixvm-codegen/src/aiur_ix_aggr.rs` (the heterogeneous aggregator)
+  - `crates/ixvm-legacy-native/src/aiur_ixvm.rs` (the LegacyIxVM kernel)
+  - `crates/ixvm-legacy-native/src/aiur_multi_stark.rs` (the recursive verifier)
+  - `crates/ixvm-legacy-native/src/aiur_ix_aggr.rs` (the heterogeneous aggregator)
   The generated files are the single destinations; no flag overrides.
 
   Output per target: a Rust module body containing one `fn aiur_fn_N(...)`
-  per Aiur function, plus per-fn `IN_N` / `OUT_N` / `INPUT_SIZE_N`
+  per LegacyAiur function, plus per-fn `IN_N` / `OUT_N` / `INPUT_SIZE_N`
   size constants and the dispatch entry `execute_generated`. The two
   files never collide — each is its own Rust module, and every
   generated item is module-scoped.
 
   Before integrating into the build pipeline:
-  1. Generate code for a single small Aiur fn (e.g. `klimbs_add`).
+  1. Generate code for a single small LegacyAiur fn (e.g. `klimbs_add`).
   2. Drop the generated source into a Rust test crate.
   3. Run both backends (`execute_generated` vs the interpreter
      `execute::execute`) on identical input.
@@ -29,25 +29,25 @@
 module
 public import Cli
 public import Ix.Aggr
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Stages.Codegen
-public import Ix.Aiur.Stages.TraceCodegen
-public import Ix.Aiur.Stages.TraceCuda
-public import Ix.IxVM
-public import Ix.IxVM.Toplevel
-public import MultiStark
+public import LegacyAiur.Compiler
+public import LegacyAiur.Stages.Codegen
+public import LegacyAiur.Stages.TraceCodegen
+public import LegacyAiur.Stages.TraceCuda
+public import LegacyIxVM
+public import LegacyIxVM.Toplevel
+public import LegacyMultiStark
 
 public section
 
 namespace Ix.Cli.CodegenCmd
 
-open Aiur
+open LegacyAiur
 
-/-- One codegen target: a human label, the Aiur toplevel to compile, and the
+/-- One codegen target: a human label, the LegacyAiur toplevel to compile, and the
     fixed destination path (compile-time constant, no CLI override). -/
 structure Target where
   label : String
-  source : Except Aiur.Global Aiur.Source.Toplevel
+  source : Except LegacyAiur.Global LegacyAiur.Source.Toplevel
   outPath : String
   groups : Array (String × Array String)
 
@@ -56,16 +56,16 @@ def targets : List Target := [
   -- `execute_ixvm` must select the SAME toplevel for its function-index
   -- table (CheckCmd / ProveCmd / VerifyCmd), or `funIdx` lookups
   -- resolve against a different function set than the generated code.
-  { label := "ixvm", source := IxVM.ixVM,
-    outPath := "crates/ixvm-codegen/src/aiur_ixvm.rs", groups := IxVM.functionGroups },
-  { label := "multi-stark", source := MultiStark.multiStark,
-    outPath := "crates/ixvm-codegen/src/aiur_multi_stark.rs",
-    groups := MultiStark.verifierFunctionGroups },
+  { label := "ixvm", source := LegacyIxVM.ixVM,
+    outPath := "crates/ixvm-legacy-native/src/aiur_ixvm.rs", groups := LegacyIxVM.functionGroups },
+  { label := "multi-stark", source := LegacyMultiStark.multiStark,
+    outPath := "crates/ixvm-legacy-native/src/aiur_multi_stark.rs",
+    groups := LegacyMultiStark.verifierFunctionGroups },
   -- `ix aggregate` proving/verification must select the SAME toplevel for its
   -- function-index table (`Aggr.ixAggr`), or `ix_aggr` lookups resolve
   -- against a different function set than the generated code.
   { label := "ix-aggr", source := Aggr.ixAggr,
-    outPath := "crates/ixvm-codegen/src/aiur_ix_aggr.rs", groups := Aggr.functionGroups }
+    outPath := "crates/ixvm-legacy-native/src/aiur_ix_aggr.rs", groups := Aggr.functionGroups }
 ]
 
 /-- Emit one target. In `--check` mode, compares against the on-disk file
@@ -77,8 +77,8 @@ def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
     | .error e => IO.eprintln s!"{t.label} source error: {repr e}"; return false
   let compiled ← match src.compile with
     | .ok c => pure c
-    | .error e => IO.eprintln s!"{t.label} Aiur compile error: {e}"; return false
-  let rustSource := Aiur.Codegen.emit compiled.bytecode
+    | .error e => IO.eprintln s!"{t.label} LegacyAiur compile error: {e}"; return false
+  let rustSource := LegacyAiur.Codegen.emit compiled.bytecode
   if checkOnly then
     -- CI mode: compare emitted source against the on-disk file.
     -- Does not write.
@@ -105,7 +105,7 @@ def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
   return true
 
 /-- Circuits generated beyond the static rule, by circuit name per target:
-the IxVM circuits whose host trace building dominates a proof, small rows
+the LegacyIxVM circuits whose host trace building dominates a proof, small rows
 in very large numbers whose typed seed is a fraction of the row. The list
 was chosen from one environment's measurements; revisit it when a heavier
 one is profiled. -/
@@ -150,11 +150,11 @@ def traceBundle : Except String (Array (String × String)) := do
     let digest := (Blake3.Rust.hash cuda.toUTF8).val.data.map fun n => Lean.toJson n.toNat
     units := units.push (Lean.Json.mkObj [("source", Lean.toJson path), ("digest", Lean.Json.arr digest)])
     files := files ++ #[
-      (s!"crates/aiur/src/trace_codegen/programs/{unit}.rs", ← TraceCodegen.emit grouped.bytecode "crate" selected),
-      (s!"crates/aiur/src/trace_codegen/programs/{unit}_cuda.rs", ← TraceCuda.registry grouped.bytecode unit "crate" selected),
-      (s!"crates/aiur/{path}", cuda)]
+      (s!"crates/aiur-legacy/src/trace_codegen/programs/{unit}.rs", ← TraceCodegen.emit grouped.bytecode "crate" selected),
+      (s!"crates/aiur-legacy/src/trace_codegen/programs/{unit}_cuda.rs", ← TraceCuda.registry grouped.bytecode unit "crate" selected),
+      (s!"crates/aiur-legacy/{path}", cuda)]
   let manifest := Lean.Json.mkObj [("abi", Lean.toJson (2 : Nat)), ("units", Lean.Json.arr units)]
-  pure (files.push ("crates/aiur/cuda/generated/production/trace-manifest.json", manifest.pretty ++ "\n"))
+  pure (files.push ("crates/aiur-legacy/cuda/generated/production/trace-manifest.json", manifest.pretty ++ "\n"))
 
 def emitTraceBundle (checkOnly : Bool) : IO UInt32 := do
   let files ← match traceBundle with
@@ -210,8 +210,8 @@ def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← source.compile
       let grouped ← compiled.groupFunctions target.groups
       let unit := target.label.replace "-" "_"
-      if traceCuda then Aiur.TraceCuda.emit grouped.bytecode unit (some indices)
-      else Aiur.TraceCuda.registry grouped.bytecode unit "aiur" (some indices)
+      if traceCuda then LegacyAiur.TraceCuda.emit grouped.bytecode unit (some indices)
+      else LegacyAiur.TraceCuda.registry grouped.bytecode unit "aiur" (some indices)
     match emitted with
     | .ok source => IO.print source; return 0
     | .error error => IO.eprintln s!"{target.label} CUDA codegen: {error}"; return 1
@@ -230,7 +230,7 @@ def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
       let source ← target.source.mapError (fun error => s!"{repr error}")
       let compiled ← source.compile
       let grouped ← compiled.groupFunctions target.groups
-      Aiur.TraceCodegen.emit grouped.bytecode "aiur" selected
+      LegacyAiur.TraceCodegen.emit grouped.bytecode "aiur" selected
     match emitted with
     | .ok source => IO.print source; return 0
     | .error error => IO.eprintln s!"{target.label} trace codegen: {error}"; return 1
@@ -244,7 +244,7 @@ end Ix.Cli.CodegenCmd
 open Ix.Cli.CodegenCmd in
 def codegenCmd : Cli.Cmd := `[Cli|
   "codegen" VIA runCodegenCmd;
-  "Compile the IxVM kernel, MultiStark verifier, and single-entrypoint ixAggr system to Rust via the Bytecode → Rust codegen pass (fixed output paths, no override). PARITY UNVERIFIED — run their generated/interpreter fixture checks before trusting any witness."
+  "Compile the LegacyIxVM kernel, LegacyMultiStark verifier, and single-entrypoint ixAggr system to Rust via the Bytecode → Rust codegen pass (fixed output paths, no override). PARITY UNVERIFIED — run their generated/interpreter fixture checks before trusting any witness."
 
   FLAGS:
     "trace-bundle"; "Generate production CUDA units, host seed writers, and registry manifests for all three programs; --check detects stale files."

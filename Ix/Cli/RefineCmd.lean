@@ -16,13 +16,13 @@
 module
 public import Cli
 public import Ix.Common
-public import Ix.Aiur.Protocol
+public import LegacyAiur.Protocol
 public import Ix.Shard.Check
 public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
-public import Ix.IxVM
-public import Ix.IxVM.Toplevel
-public import Ix.IxVM.ClaimHarness
+public import LegacyIxVM
+public import LegacyIxVM.Toplevel
+public import LegacyIxVM.ClaimHarness
 
 public section
 
@@ -37,7 +37,7 @@ def resolveBudget (maxRam? : Option Nat) : IO (Option (Nat × String)) := do
   | none => detect
 where
   detect : IO (Option (Nat × String)) := do
-    let b ← Aiur.detectedRamBudgetBytes
+    let b ← LegacyAiur.detectedRamBudgetBytes
     if b == 0 then return none
     IO.println s!"[refine] budget {toGib b} GiB (detected: 85% of MemAvailable)"
     pure (some (b, "detected"))
@@ -60,24 +60,24 @@ def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
       return 1
   let jobs? := (p.flag? "jobs").map (·.as! Nat)
   let report? := (p.flag? "report").map (·.as! String)
-  let toplevel ← match IxVM.ixVM with
+  let toplevel ← match LegacyIxVM.ixVM with
     | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
     | .ok t => pure t
-  let compiled ← match toplevel.compileWithGroups IxVM.functionGroups with
+  let compiled ← match toplevel.compileWithGroups LegacyIxVM.functionGroups with
     | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
     | .ok c => pure c
   -- The proven-leaf guard: a selected leaf whose claim already has a
   -- verified proof in the index is kept exactly as it is.
   let guard? ← if p.hasFlag "no-index" then pure none else do
-    let aiurSystem := Aiur.AiurSystem.build compiled.bytecode
-      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+    let aiurSystem := LegacyAiur.AiurSystem.build compiled.bytecode
+      LegacyAiur.defaultCommitmentParameters LegacyAiur.defaultFriParameters
     let dir ← Ix.Cli.ShardProofIndex.indexDir
     pure (some fun (ixonEnv : Ixon.Env) (_ : Array (Array Address))
         (ownedAll : Array (Array Address)) (selected : Array Nat) => do
       let mut kept : Std.HashMap Nat Address := {}
       for k in selected do
         let some owned := ownedAll[k]? | continue
-        match IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned with
+        match LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned with
         | .error _ => continue
         | .ok (claim, _) =>
           if let some addr ← Ix.Cli.ShardProofIndex.verifiedProof aiurSystem compiled dir claim then

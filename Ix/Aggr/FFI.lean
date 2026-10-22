@@ -1,11 +1,11 @@
 module
-public import Ix.Aiur.Protocol
+public import LegacyAiur.Protocol
 
 /-! Native aggregation execution, proving, and manifest binding.
 Extern symbols and record layout are shared with `crates/ffi/src/aiur/aggregate/ffi.rs`. -/
 
 public section
-namespace Aiur
+namespace LegacyAiur
 
 /-- Manifest-bound aggregate root reconstructed and audited by the native
 Stage 2 controller. `claimBytes` is the exact root `Ix.Claim` wire encoding;
@@ -60,7 +60,7 @@ opaque proveIxAggr (system : @& AiurSystem)
     Except String (Array G × Proof)
 
 /-- Run the production aggregate-first Stage 2 pipeline natively after Lean
-has compiled the IxVM and `ix_aggr` systems. Rust owns all data-dependent
+has compiled the LegacyIxVM and `ix_aggr` systems. Rust owns all data-dependent
 orchestration: manifest/environment binding, shard-claim reconstruction,
 statement folding, cache validation, dependency scheduling, recursive advice,
 proving, and persistence. `proofHexes` is one store address per line;
@@ -125,5 +125,5 @@ opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
   (cacheFriBytes : @& ByteArray) (outManifest : @& String) : Except String String
 
 end AiurSystem
-end Aiur
+end LegacyAiur
 end

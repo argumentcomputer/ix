@@ -17,7 +17,7 @@
   tracks the term.
 
   Proving the claim is out-of-band (`ix prove --claim <digest>`);
-  IxVM verifies the checked input body against the output definition's body.
+  LegacyIxVM verifies the checked input body against the output definition's body.
   This command reports a claim; it does not execute or prove it.
 
   Note on qualification: bare `Name`/`Expr` inside the `Ix` namespace

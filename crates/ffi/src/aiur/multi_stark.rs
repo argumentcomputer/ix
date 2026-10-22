@@ -37,7 +37,7 @@ extern "C" fn rs_aiur_multi_stark_execute(
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let mut io_buffer = ixvm_codegen::aiur_multi_stark_runner::verifier_io_buffer(
+  let mut io_buffer = ixvm_legacy::aiur_multi_stark_runner::verifier_io_buffer(
     proof_bytes.as_bytes(),
     vk_bytes.as_bytes(),
     claims_bytes.as_bytes(),
@@ -49,7 +49,7 @@ extern "C" fn rs_aiur_multi_stark_execute(
   let result = if use_bytecode {
     toplevel.execute(fun_idx, input, &mut io_buffer)
   } else {
-    ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
+    ixvm_legacy::aiur_multi_stark_runner::execute_multi_stark(
       &toplevel,
       fun_idx,
       input,
@@ -86,7 +86,7 @@ extern "C" fn rs_aiur_multi_stark_prove(
   ffi_catch_unwind("AiurSystem.proveMultiStark", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
     let mut io_buffer =
-      ixvm_codegen::aiur_multi_stark_runner::verifier_io_buffer(
+      ixvm_legacy::aiur_multi_stark_runner::verifier_io_buffer(
         proof_bytes.as_bytes(),
         vk_bytes.as_bytes(),
         claims_bytes.as_bytes(),
@@ -101,7 +101,7 @@ extern "C" fn rs_aiur_multi_stark_prove(
         fun_idx,
         &args,
         &mut io_buffer,
-        ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark,
+        ixvm_legacy::aiur_multi_stark_runner::execute_multi_stark,
       )
     };
 

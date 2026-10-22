@@ -10,7 +10,7 @@ scheduling are owned by the native controller. -/
 
 public section
 namespace Aggr.Reference
-open IxVM.ClaimHarness
+open LegacyIxVM.ClaimHarness
 
 structure PreparedShard where
   claim : Ix.Claim
@@ -22,7 +22,7 @@ structure AggregateSlotSpec where
   kind : Aggr.ChildKind := .aggr
   statement : Aggr.CheckEnvTrees
   subjectCount : Nat
-  outerClaim : Array Aiur.G
+  outerClaim : Array LegacyAiur.G
   cacheKey : Address
 
 /-- A manifest fold operation annotated with the cumulative subject count and
@@ -50,10 +50,10 @@ def aggregateStructuralJoinRamBytes : Nat := aggregateWrapRamBytes
 is charged to its consuming pair. -/
 def aggregateRawShardRamBytes : Nat := 4 * aggregateGiB
 
-/-- Measured upper envelope for an `IxVM + IxVM` pair (shapes 2/6). -/
+/-- Measured upper envelope for an `LegacyIxVM + LegacyIxVM` pair (shapes 2/6). -/
 def aggregateDirectJoinRamBytes : Nat := 390 * aggregateGiB
 
-/-- Measured upper envelope for a mixed recursive/IxVM pair (shapes 3/4/7/8). -/
+/-- Measured upper envelope for a mixed recursive/LegacyIxVM pair (shapes 3/4/7/8). -/
 def aggregateMixedJoinRamBytes : Nat := 340 * aggregateGiB
 
 /-- Flat joins add canonical subject-tree work to the recursive-proof base.
@@ -131,10 +131,10 @@ def schedulePlan (plan : Array Ix.Shard.AggregationTree.FoldOp)
 
 /-- Derive every converged slot statement, uniform outer claim, kind, and
 cache key before proving. Wrap-first leaves use shape 0; direct-policy leaves
-remain raw IxVM claims and are deliberately not cache-consumed. -/
+remain raw LegacyIxVM claims and are deliberately not cache-consumed. -/
 def buildAggrSlotSpecs (plan : Array ScheduledFold)
     (prepared : Array PreparedShard) (aggrVk allowed : ByteArray)
-    (verifyIdx aggrIdx : Aiur.Bytecode.FunIdx)
+    (verifyIdx aggrIdx : LegacyAiur.Bytecode.FunIdx)
     (recursionParameters : Aggr.RecursionParameters) :
     Except String (Array AggregateSlotSpec) := do
   let mut specs : Array AggregateSlotSpec := #[]
@@ -149,9 +149,9 @@ def buildAggrSlotSpecs (plan : Array ScheduledFold)
         throw s!"prepared shard {shard} has {preparedShard.statement.subjectCount} \
           subjects, but the schedule records {item.subjectCount}"
       let claimBytes := Ix.Claim.ser preparedShard.claim
-      let verifyInput := IxVM.ClaimHarness.packedDigestKey
+      let verifyInput := LegacyIxVM.ClaimHarness.packedDigestKey
         (Address.blake3 claimBytes)
-      let innerClaim := Aiur.buildClaim verifyIdx verifyInput #[]
+      let innerClaim := LegacyAiur.buildClaim verifyIdx verifyInput #[]
       let outerClaim := match item.kind with
         | .ixvm => innerClaim
         | .aggr => aggregateOuterClaim allowed aggrIdx preparedShard.claim
@@ -198,7 +198,7 @@ def buildAggrSlotSpecs (plan : Array ScheduledFold)
 
 private def prepareOwnedShard (env : Ixon.Env) (owned : Array Address) :
     Except String PreparedShard := do
-  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
+  let (claim, trees) ← LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
   let statement ← Aggr.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
 
@@ -223,7 +223,7 @@ def prepareShards (env : Ixon.Env) (shards : Array (Array Address))
 
 private def shardStatement (env : Ixon.Env) (owned : Array Address) :
     Except String Aggr.CheckEnvTrees := do
-  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
+  let (claim, trees) ← LegacyIxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
   Aggr.CheckEnvTrees.ofClaim claim trees
 
 /-- Reproduce the flat/structural statement fold from a coverage-validated

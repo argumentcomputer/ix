@@ -1,11 +1,11 @@
 /-
   Emit the list of arena fixture names that should NOT be driven through
-  `dbg_check_const` in the IxVM kernel binary:
+  `dbg_check_const` in the LegacyIxVM kernel binary:
 
     - Constants registered under a `.bad` test-case outcome (intentional
       kernel rejections).
     - Constants in `Tests.Ix.Kernel.Arena.knownIncompatible` (cases the
-      Aiur kernel structurally cannot adjudicate — see comments there).
+      LegacyAiur kernel structurally cannot adjudicate — see comments there).
     - Constants whose test case carries a non-empty `renamings` field
       (collision tests, not single-constant typechecks).
 

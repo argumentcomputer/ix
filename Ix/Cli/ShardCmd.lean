@@ -1,13 +1,13 @@
 /-
   `ix shard <path.ixe> [--profile <path.ixprof>]`: partition an environment
-  into shards for the Aiur (IxVM) checking pipeline.
+  into shards for the LegacyAiur (LegacyIxVM) checking pipeline.
 
   Two strategies:
   - **Static (default, no `--profile`)**: computed from the `.ixe` alone —
     no out-of-circuit kernel run. Byte-balanced min-cut over the env's
     static walk-edge nets (the relation that generates each shard's thin
     frontier, i.e. its real ingress), then a global rebalance post-pass
-    toward equal predicted Aiur FFT cost (fitted model — constants and
+    toward equal predicted LegacyAiur FFT cost (fitted model — constants and
     provenance in `ix_kernel::shard::STATIC_OWNED_PER_BYTE`). `--shards N`
     fixes the count; `--max-ram G` seeds it from the same static block-shape
     score, mildly superlinear in both library scale and inverse RAM budget.

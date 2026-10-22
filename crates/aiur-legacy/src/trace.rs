@@ -1,0 +1,878 @@
+use multi_stark::{
+  lookup::{LookupRowMut, LookupValues},
+  p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
+  p3_matrix::dense::RowMajorMatrix,
+};
+use rayon::{
+  iter::{
+    IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+  },
+  slice::ParallelSliceMut,
+};
+
+use crate::{
+  FxIndexMap, G,
+  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
+  execute::{
+    IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
+    g_inverse_value,
+  },
+  function_channel,
+  gadgets::{bytes1::Bytes1, bytes2::Bytes2},
+  memory::Memory,
+  querymap::QueryMap,
+  u8_add_channel, u8_bit_decomposition_channel, u8_mul_channel,
+  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  u16_range_check_channel,
+};
+
+struct ColumnIndex {
+  auxiliary: usize,
+  lookup: usize,
+}
+
+struct ColumnMutSlice<'a, 'b> {
+  inputs: &'a mut [G],
+  selectors: &'a mut [G],
+  auxiliaries: &'a mut [G],
+  /// `None` builds the trace alone (see [`trace_only_lookups`]).
+  lookups: Option<&'a mut LookupRowMut<'b, G>>,
+}
+
+/// Whether witness builders skip the lookup witness and hand the prover a
+/// shape-only lookup witness (`LookupValues::shape_only`), which any
+/// prover path that would read the payload refuses. The CUDA backend derives
+/// every lookup message from the committed trace through the constraint
+/// graph and never reads the host lookup witness, so building it is wasted
+/// work there. Enabled by `AIUR_TRACE_ONLY_LOOKUPS=1`; a prover that reads
+/// the host lookup witness (the CPU backend, or the CUDA backend's host
+/// fallback for a circuit it cannot evaluate on the device) fails instead of
+/// proving.
+pub fn trace_only_lookups() -> bool {
+  static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+  *FLAG.get_or_init(|| {
+    std::env::var("AIUR_TRACE_ONLY_LOOKUPS").is_ok_and(|v| v == "1")
+  })
+}
+
+type Degree = u8;
+
+fn u32_value(map: &[(G, Degree)], bytes: &[usize]) -> u64 {
+  assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
+  bytes.iter().enumerate().fold(0, |word, (i, idx)| {
+    word | (map[*idx].0.as_canonical_u64() << (8 * i))
+  })
+}
+
+fn u32_sum(values: &[u64]) -> ([G; 4], G) {
+  let sum: u128 = values.iter().map(|x| u128::from(*x)).sum();
+  let word = u32::try_from(sum & 0xFFFF_FFFF).expect("masked to 32 bits");
+  let carry = u64::try_from(sum >> 32).expect("sum of u32 words fits in u64");
+  (word.to_le_bytes().map(|b| G::from_u64(b.into())), G::from_u64(carry))
+}
+
+impl<'a, 'b> ColumnMutSlice<'a, 'b> {
+  /// Slice a circuit row into the regions of one member function: the
+  /// member's inputs are a prefix of the circuit's input block, its
+  /// selectors a sub-range of the circuit's selector block at `sel_offset`,
+  /// and the auxiliary block is shared by all members.
+  fn from_slice(
+    function: &Function,
+    circuit_layout: &FunctionLayout,
+    sel_offset: usize,
+    slice: &'a mut [G],
+    lookups: Option<&'a mut LookupRowMut<'b, G>>,
+  ) -> Self {
+    let (inputs, slice) = slice.split_at_mut(circuit_layout.input_size);
+    let (selectors, auxiliaries) = slice.split_at_mut(circuit_layout.selectors);
+    assert_eq!(auxiliaries.len(), circuit_layout.auxiliaries);
+    let inputs = &mut inputs[..function.layout.input_size];
+    let selectors =
+      &mut selectors[sel_offset..sel_offset + function.layout.selectors];
+    Self { inputs, selectors, auxiliaries, lookups }
+  }
+
+  fn push_auxiliary(&mut self, index: &mut ColumnIndex, t: G) {
+    self.auxiliaries[index.auxiliary] = t;
+    index.auxiliary += 1;
+  }
+
+  fn push_lookup(
+    &mut self,
+    index: &mut ColumnIndex,
+    multiplicity: G,
+    args: &[G],
+  ) {
+    if let Some(lookups) = self.lookups.as_deref_mut() {
+      lookups.push(index.lookup, multiplicity, args);
+    }
+    index.lookup += 1;
+  }
+}
+
+#[derive(Clone, Copy)]
+struct TraceContext<'a> {
+  function_index: G,
+  multiplicity: G,
+  inputs: &'a [G],
+  output: &'a [G],
+  query_record: &'a QueryRecord,
+}
+
+/// Shared by all queried rows of one member of a circuit.
+struct MemberMeta<'a> {
+  function: &'a Function,
+  sel_offset: usize,
+  function_index: G,
+  queries: &'a QueryMap,
+}
+
+/// Query slices and function metadata stay in their original storage.
+/// Only these two indices are repeated per active row.
+struct RowMeta {
+  member: usize,
+  query: usize,
+}
+
+/// Function witness metadata, excluding the lookup row writers shared by
+/// every circuit type. The estimator may conservatively include advice rows.
+pub(crate) fn witness_metadata_bytes(members: usize, rows: usize) -> usize {
+  members * size_of::<MemberMeta<'_>>() + rows * size_of::<RowMeta>()
+}
+
+/// A position in a function circuit's concatenated query maps: the member
+/// (its index within the circuit's member list) and the position within that
+/// member's query map. `(members, 0)` is one past the last query.
+pub type QueryPosition = (usize, usize);
+
+impl Toplevel {
+  #[cfg(test)]
+  pub(crate) fn main_row_for_test(
+    &self,
+    circuit_index: usize,
+    member: usize,
+    query: usize,
+    record: &QueryRecord,
+    io: &IOBuffer,
+  ) -> Vec<G> {
+    let circuit = &self.circuits[circuit_index];
+    let function = &self.functions[member];
+    let offset: usize = circuit
+      .members
+      .iter()
+      .take_while(|&&i| i != member)
+      .map(|&i| self.functions[i].layout.selectors)
+      .sum();
+    assert!(circuit.members.contains(&member));
+    let (inputs, result) =
+      record.function_queries[member].get_index(query).unwrap();
+    let mut row = vec![G::ZERO; circuit.layout.width()];
+    let mut slice = ColumnMutSlice::from_slice(
+      function,
+      &circuit.layout,
+      offset,
+      &mut row,
+      None,
+    );
+    function.populate_row(
+      &mut ColumnIndex { auxiliary: 0, lookup: 1 },
+      &mut slice,
+      TraceContext {
+        function_index: G::from_usize(member),
+        multiplicity: result.multiplicity,
+        inputs,
+        output: result.output,
+        query_record: record,
+      },
+      io,
+    );
+    row
+  }
+
+  /// The number of rows function circuit `circuit_index` contributes: its
+  /// members' queries with a nonzero multiplicity, in member order then
+  /// record order. The unit [`Self::witness_data_range`] indexes.
+  pub fn function_rows(
+    &self,
+    circuit_index: usize,
+    query_record: &QueryRecord,
+  ) -> usize {
+    self.circuits[circuit_index]
+      .members
+      .iter()
+      .map(|&member| {
+        query_record.function_queries[member]
+          .iter()
+          .filter(|(_, res)| !res.multiplicity.is_zero())
+          .count()
+      })
+      .sum()
+  }
+
+  /// All of function circuit `circuit_index`'s rows as one trace:
+  /// [`Self::witness_data_range`] over every member's every query.
+  pub fn witness_data(
+    &self,
+    circuit_index: usize,
+    query_record: &QueryRecord,
+    io_buffer: &IOBuffer,
+    slot_arg_widths: &[usize],
+  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
+    let members = self.circuits[circuit_index].members.len();
+    let rows = self.function_rows(circuit_index, query_record);
+    self.witness_data_range(
+      circuit_index,
+      query_record,
+      io_buffer,
+      slot_arg_widths,
+      (0, 0),
+      (members, 0),
+      rows,
+    )
+  }
+
+  /// The rows among the queries from `start` to `end` (positions in the
+  /// concatenated query maps of circuit `circuit_index`'s members) as a
+  /// trace: the queries in that span with a nonzero multiplicity, of which
+  /// there must be exactly `row_count`. An empty span yields an EMPTY trace
+  /// (not a padded height-1 one): the prover deactivates the circuit, so it
+  /// is neither committed nor opened.
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/cpu_witness", fields(circuit = circuit_index, rows = row_count))]
+  pub fn witness_data_range(
+    &self,
+    circuit_index: usize,
+    query_record: &QueryRecord,
+    io_buffer: &IOBuffer,
+    slot_arg_widths: &[usize],
+    start: QueryPosition,
+    end: QueryPosition,
+    row_count: usize,
+  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
+    let circuit = &self.circuits[circuit_index];
+    let layout = &circuit.layout;
+    let width = layout.width();
+    // Concatenate the members' queried rows in the span, in member order.
+    let mut members_meta = Vec::with_capacity(circuit.members.len());
+    let mut sel_offset = 0;
+    for &member in &circuit.members {
+      let function = &self.functions[member];
+      members_meta.push(MemberMeta {
+        function,
+        sel_offset,
+        function_index: G::from_usize(member),
+        queries: &query_record.function_queries[member],
+      });
+      sel_offset += function.layout.selectors;
+    }
+    // A member's share of the span: the positions of its query map the
+    // span covers, empty for a member outside it.
+    let span = |m: usize, queries: &QueryMap| -> std::ops::Range<usize> {
+      if !(start.0..=end.0).contains(&m) {
+        return 0..0;
+      }
+      let lo = if m == start.0 { start.1 } else { 0 };
+      let hi = if m == end.0 { end.1 } else { queries.len() };
+      lo..hi
+    };
+    // Count before allocating: no geometric growth or metadata for advice.
+    fn active_queries(
+      queries: &QueryMap,
+      span: std::ops::Range<usize>,
+    ) -> impl Iterator<Item = usize> + '_ {
+      span.filter(move |&i| !queries.mult_at(i).is_zero())
+    }
+    let height_no_padding: usize = members_meta
+      .iter()
+      .enumerate()
+      .map(|(m, meta)| {
+        active_queries(meta.queries, span(m, meta.queries)).count()
+      })
+      .sum();
+    assert_eq!(
+      height_no_padding, row_count,
+      "query span holds a different row count"
+    );
+    let mut rows_meta = Vec::with_capacity(height_no_padding);
+    for (member, meta) in members_meta.iter().enumerate() {
+      rows_meta.extend(
+        active_queries(meta.queries, span(member, meta.queries))
+          .map(|query| RowMeta { member, query }),
+      );
+    }
+    // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
+    // the prover deactivates it, so it is neither committed nor opened.
+    let height = if height_no_padding == 0 {
+      0
+    } else {
+      height_no_padding.next_power_of_two()
+    };
+    // A zeroed allocation: pages materialize when rows are written, so the
+    // padding rows cost nothing and no fill pass touches the whole matrix.
+    let mut rows = {
+      let _g =
+        tracing::info_span!("aiur/witness_zero", height, width).entered();
+      G::zero_vec(height * width)
+    };
+    let rows_no_padding = &mut rows[0..height_no_padding * width];
+    let populate =
+      |i: usize, row: &mut [G], lookups: Option<&mut LookupRowMut<'_, G>>| {
+        let row_meta = &rows_meta[i];
+        let meta = &members_meta[row_meta.member];
+        let (inputs, result) =
+          meta.queries.get_index(row_meta.query).expect("recorded query");
+        let index = &mut ColumnIndex {
+          auxiliary: 0,
+          // we skip the first lookup, which is reserved for return
+          lookup: 1,
+        };
+        let slice = &mut ColumnMutSlice::from_slice(
+          meta.function,
+          layout,
+          meta.sel_offset,
+          row,
+          lookups,
+        );
+        let context = TraceContext {
+          function_index: meta.function_index,
+          inputs,
+          multiplicity: result.multiplicity,
+          output: result.output,
+          query_record,
+        };
+        meta.function.populate_row(index, slice, context, io_buffer);
+      };
+    if trace_only_lookups() {
+      rows_no_padding
+        .par_chunks_mut(width)
+        .enumerate()
+        .for_each(|(i, row)| populate(i, row, None));
+      let trace = RowMajorMatrix::new(rows, width);
+      return (trace, LookupValues::shape_only(height, slot_arg_widths));
+    }
+    // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
+    // rows need no writes at all.
+    let mut builder = LookupValues::builder(height, slot_arg_widths);
+    let mut row_writers = builder.rows_mut();
+    rows_no_padding
+      .par_chunks_mut(width)
+      .zip(row_writers[..height_no_padding].par_iter_mut())
+      .enumerate()
+      .for_each(|(i, (row, lookups))| populate(i, row, Some(lookups)));
+    drop(row_writers);
+    let trace = RowMajorMatrix::new(rows, width);
+    (trace, builder.finish())
+  }
+}
+
+impl Function {
+  pub fn width(&self) -> usize {
+    self.layout.input_size + self.layout.auxiliaries + self.layout.selectors
+  }
+
+  fn populate_row(
+    &self,
+    index: &mut ColumnIndex,
+    slice: &mut ColumnMutSlice<'_, '_>,
+    context: TraceContext<'_>,
+    io_buffer: &IOBuffer,
+  ) {
+    debug_assert_eq!(
+      self.layout.input_size,
+      context.inputs.len(),
+      "Argument mismatch"
+    );
+    // Variable to value map
+    let map = &mut context.inputs.iter().map(|arg| (*arg, 1)).collect();
+    // One column per input
+    context
+      .inputs
+      .iter()
+      .enumerate()
+      .for_each(|(i, arg)| slice.inputs[i] = *arg);
+    // Push the multiplicity
+    slice.push_auxiliary(index, context.multiplicity);
+    let _ = self.body.populate_row(map, index, slice, context, io_buffer);
+  }
+}
+
+/// `Some(values)` means the block ended with `Yield` (values for the merge).
+/// `None` means the block ended with `Return` (function exited).
+type PopulateResult = Option<Vec<G>>;
+
+impl Block {
+  fn populate_row(
+    &self,
+    map: &mut Vec<(G, Degree)>,
+    index: &mut ColumnIndex,
+    slice: &mut ColumnMutSlice<'_, '_>,
+    context: TraceContext<'_>,
+    io_buffer: &IOBuffer,
+  ) -> PopulateResult {
+    self
+      .ops
+      .iter()
+      .for_each(|op| op.populate_row(map, index, slice, context, io_buffer));
+    self.ctrl.populate_row(map, index, slice, context, io_buffer)
+  }
+}
+
+/// Dispatch a match: look up the value in the cases map, or fall through to the
+/// default (pushing inverse witnesses for each case to prove inequality).
+fn dispatch_branch<'a>(
+  val: G,
+  cases: &'a FxIndexMap<G, Block>,
+  def: &'a Option<Box<Block>>,
+  index: &mut ColumnIndex,
+  slice: &mut ColumnMutSlice<'_, '_>,
+) -> &'a Block {
+  cases
+    .get(&val)
+    .or_else(|| {
+      for &case in cases.keys() {
+        let witness = (val - case).inverse();
+        slice.push_auxiliary(index, witness);
+      }
+      def.as_deref()
+    })
+    .expect("No match")
+}
+
+impl Ctrl {
+  fn populate_row(
+    &self,
+    map: &mut Vec<(G, Degree)>,
+    index: &mut ColumnIndex,
+    slice: &mut ColumnMutSlice<'_, '_>,
+    context: TraceContext<'_>,
+    io_buffer: &IOBuffer,
+  ) -> PopulateResult {
+    match self {
+      Ctrl::Return(sel, _) => {
+        slice.selectors[*sel] = G::ONE;
+        let args = function_lookup_args(
+          context.function_index,
+          context.inputs,
+          context.output,
+        );
+        // The first lookup slot is reserved for the function return, which
+        // pulls the query claim with the query's multiplicity.
+        if let Some(lookups) = slice.lookups.as_deref_mut() {
+          lookups.pull(0, context.multiplicity, &args);
+        }
+        None
+      },
+      Ctrl::Yield(sel, vals) => {
+        slice.selectors[*sel] = G::ONE;
+        Some(vals.iter().map(|&v| map[v].0).collect())
+      },
+      Ctrl::Match(var, cases, def) => {
+        let branch = dispatch_branch(map[*var].0, cases, def, index, slice);
+        branch.populate_row(map, index, slice, context, io_buffer)
+      },
+      Ctrl::MatchContinue(
+        var,
+        cases,
+        def,
+        _output_size,
+        shared_aux,
+        shared_lookups,
+        continuation,
+      ) => {
+        let map_len = map.len();
+        let init_aux = index.auxiliary;
+        let init_lookup = index.lookup;
+
+        let branch = dispatch_branch(map[*var].0, cases, def, index, slice);
+        let result = branch.populate_row(map, index, slice, context, io_buffer);
+        match result {
+          Some(yielded) => {
+            // Advance past the shared branch region. The taken branch may
+            // use fewer auxiliaries/lookups than the max across all branches.
+            index.auxiliary = init_aux + shared_aux;
+            index.lookup = init_lookup + shared_lookups;
+
+            map.truncate(map_len);
+            for &val in &yielded {
+              slice.push_auxiliary(index, val);
+              map.push((val, 1));
+            }
+            continuation.populate_row(map, index, slice, context, io_buffer)
+          },
+          None => None,
+        }
+      },
+    }
+  }
+}
+
+impl Op {
+  fn populate_row(
+    &self,
+    map: &mut Vec<(G, Degree)>,
+    index: &mut ColumnIndex,
+    slice: &mut ColumnMutSlice<'_, '_>,
+    context: TraceContext<'_>,
+    io_buffer: &IOBuffer,
+  ) {
+    match self {
+      Op::Const(f) => map.push((*f, 0)),
+      Op::Add(a, b) => {
+        let (a, a_deg) = map[*a];
+        let (b, b_deg) = map[*b];
+        let deg = a_deg.max(b_deg);
+        map.push((a + b, deg));
+      },
+      Op::Sub(a, b) => {
+        let (a, a_deg) = map[*a];
+        let (b, b_deg) = map[*b];
+        let deg = a_deg.max(b_deg);
+        map.push((a - b, deg));
+      },
+      Op::Mul(a, b) => {
+        let (a, a_deg) = map[*a];
+        let (b, b_deg) = map[*b];
+        let deg = a_deg + b_deg;
+        let f = a * b;
+        if deg < 2 {
+          map.push((f, deg));
+        } else {
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
+      Op::EqZero(a) => {
+        let (a, deg) = map[*a];
+        let is_zero = a == G::ZERO;
+        let is_zero_g = G::from_bool(is_zero);
+        if deg == 0 {
+          map.push((is_zero_g, 0));
+        } else {
+          let (d, x) =
+            if is_zero { (G::ZERO, G::ONE) } else { (a.inverse(), G::ZERO) };
+          slice.push_auxiliary(index, d);
+          slice.push_auxiliary(index, x);
+          map.push((is_zero_g, 1));
+        }
+      },
+      Op::Call(function_index, inputs, _, op_unconstrained) => {
+        let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+        let queries = &context.query_record.function_queries[*function_index];
+        let result = queries.get(&inputs).expect("Cannot find query result");
+        for f in result.output.iter() {
+          map.push((*f, 1));
+          slice.push_auxiliary(index, *f);
+        }
+        if !op_unconstrained {
+          let args = function_lookup_args(
+            G::from_usize(*function_index),
+            &inputs,
+            result.output,
+          );
+          slice.push_lookup(index, G::ONE, &args);
+        }
+      },
+      Op::Store(values) => {
+        let size = values.len();
+        let memory_queries = context
+          .query_record
+          .memory_queries
+          .get(&size)
+          .expect("Invalid memory size");
+        let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+        let ptr = G::from_usize(
+          context.query_record.pointer_base
+            + memory_queries.get_index_of(&values).expect("Unbound pointer"),
+        );
+        map.push((ptr, 1));
+        slice.push_auxiliary(index, ptr);
+        let args = Memory::lookup_args(G::from_usize(size), ptr, &values);
+        slice.push_lookup(index, G::ONE, &args);
+      },
+      Op::Load(size, ptr) => {
+        let memory_queries = context
+          .query_record
+          .memory_queries
+          .get(size)
+          .expect("Invalid memory size");
+        let (ptr, _) = map[*ptr];
+        let ptr_u64 = ptr.as_canonical_u64();
+        let table_index = usize::try_from(ptr_u64)
+          .expect("Pointer is too big")
+          .checked_sub(context.query_record.pointer_base)
+          .expect("Pointer below the record's base");
+        let (values, _) =
+          memory_queries.get_index(table_index).expect("Unbound pointer");
+        for f in values.iter() {
+          map.push((*f, 1));
+          slice.push_auxiliary(index, *f);
+        }
+        let args = Memory::lookup_args(G::from_usize(*size), ptr, values);
+        slice.push_lookup(index, G::ONE, &args);
+      },
+      Op::IOGetInfo(channel, key) => {
+        let channel = map[*channel].0;
+        let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+        let IOKeyInfo { idx, len } =
+          io_buffer.get_info(channel, &key).expect("Invalid IO key");
+        for f in [G::from_usize(*idx), G::from_usize(*len)] {
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
+      Op::IORead(channel, idx, len) => {
+        let channel = map[*channel].0;
+        let idx = map[*idx]
+          .0
+          .as_canonical_u64()
+          .try_into()
+          .expect("Index is too big for an usize");
+        let data = io_buffer
+          .read(channel, idx, *len)
+          .expect("IO read out of bounds")
+          .to_vec();
+        for f in data {
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
+      Op::U8BitDecomposition(byte) => {
+        let (byte, _) = map[*byte];
+        let bits = Bytes1::bit_decompose(&byte);
+        for &b in &bits {
+          map.push((b, 1));
+          slice.push_auxiliary(index, b);
+        }
+        let mut lookup_args = vec![u8_bit_decomposition_channel(), byte];
+        lookup_args.extend(bits);
+        slice.push_lookup(index, G::ONE, &lookup_args);
+      },
+      Op::U8ShiftLeft(byte) => {
+        let (byte, _) = map[*byte];
+        let byte_shifted = Bytes1::shift_left(&byte);
+        map.push((byte_shifted, 1));
+        slice.push_auxiliary(index, byte_shifted);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_shift_left_channel(), byte, byte_shifted],
+        );
+      },
+      Op::U8ShiftRight(byte) => {
+        let (byte, _) = map[*byte];
+        let byte_shifted = Bytes1::shift_right(&byte);
+        map.push((byte_shifted, 1));
+        slice.push_auxiliary(index, byte_shifted);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_shift_right_channel(), byte, byte_shifted],
+        );
+      },
+      Op::U8Xor(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let xor = Bytes2::xor(&i, &j);
+        map.push((xor, 1));
+        slice.push_auxiliary(index, xor);
+        slice.push_lookup(index, G::ONE, &[u8_xor_channel(), i, j, xor]);
+      },
+      Op::U8Add(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        // Only the low byte `r` is witnessed (one auxiliary + the add lookup).
+        // The carry `o` is a derived value, pushed to the map for downstream
+        // ops but not materialized as a column.
+        let (r, o) = Bytes2::add(&i, &j);
+        map.push((r, 1));
+        map.push((o, 1));
+        slice.push_auxiliary(index, r);
+        slice.push_lookup(index, G::ONE, &[u8_add_channel(), i, j, r]);
+      },
+      Op::UnconstrainedU32Add(a, b) => {
+        let (bytes, carry) = u32_sum(&[u32_value(map, a), u32_value(map, b)]);
+        for byte in bytes {
+          map.push((byte, 1));
+          slice.push_auxiliary(index, byte);
+        }
+        map.push((carry, 1));
+      },
+      Op::UnconstrainedU32Add3(a, b, c) => {
+        let (bytes, carry) =
+          u32_sum(&[u32_value(map, a), u32_value(map, b), u32_value(map, c)]);
+        for byte in bytes {
+          map.push((byte, 1));
+          slice.push_auxiliary(index, byte);
+        }
+        map.push((carry, 1));
+      },
+      Op::U32ToField(bytes) => {
+        let word = u32_value(map, bytes);
+        let degree = bytes.iter().map(|idx| map[*idx].1).max().unwrap_or(0);
+        map.push((G::from_u64(word), degree));
+      },
+      Op::U8Mul(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (lo, hi) = Bytes2::mul(&i, &j);
+        map.push((lo, 1));
+        map.push((hi, 1));
+        slice.push_auxiliary(index, lo);
+        slice.push_auxiliary(index, hi);
+        slice.push_lookup(index, G::ONE, &[u8_mul_channel(), i, j, lo, hi]);
+      },
+      Op::U8Sub(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        // Only the low byte `r` is witnessed (one auxiliary + the sub lookup).
+        // The borrow `u` is derived, pushed to the map for downstream ops but
+        // not materialized as a column.
+        let (r, u) = Bytes2::sub(&i, &j);
+        map.push((r, 1));
+        map.push((u, 1));
+        slice.push_auxiliary(index, r);
+        slice.push_lookup(index, G::ONE, &[u8_sub_channel(), i, j, r]);
+      },
+      Op::U8And(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let and = Bytes2::and(&i, &j);
+        map.push((and, 1));
+        slice.push_auxiliary(index, and);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_channel(), i, j, i + j - G::TWO * and],
+        );
+      },
+      Op::U8Or(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let or = Bytes2::or(&i, &j);
+        map.push((or, 1));
+        slice.push_auxiliary(index, or);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_channel(), i, j, G::TWO * or - i - j],
+        );
+      },
+      Op::U8LessThan(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let less_than = Bytes2::less_than(&i, &j);
+        map.push((less_than, 1));
+        slice.push_auxiliary(index, less_than);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_sub_channel(), i, j, i - j + G::from_u16(256) * less_than],
+        );
+      },
+      Op::U8XorSplit7(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (hi, lo) = Bytes2::xor_split7(&i, &j);
+        map.extend([(hi, 1), (lo, 1)]);
+        slice.push_auxiliary(index, hi);
+        slice.push_auxiliary(index, lo);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_split7_channel(), i, j, hi, lo],
+        );
+      },
+      Op::U8XorSplit4(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (hi, lo) = Bytes2::xor_split4(&i, &j);
+        map.extend([(hi, 1), (lo, 1)]);
+        slice.push_auxiliary(index, hi);
+        slice.push_auxiliary(index, lo);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_split4_channel(), i, j, hi, lo],
+        );
+      },
+      Op::U32LessThan(x_idx, y_idx) => {
+        let (a, _) = map[*x_idx];
+        let (b, _) = map[*y_idx];
+        let a_u32 = u32::try_from(a.as_canonical_u64()).unwrap();
+        let b_u32 = u32::try_from(b.as_canonical_u64()).unwrap();
+        let c_u32 = a_u32.wrapping_sub(b_u32);
+        // Six auxiliaries and scalar queries, ordered as a, c, b, low first.
+        // Execution already recorded these multiplicities.
+        for word in [a_u32, c_u32, b_u32] {
+          for shift in [0, 16] {
+            let limb = G::from_u16(((word >> shift) & 0xffff) as u16);
+            slice.push_auxiliary(index, limb);
+            slice.push_lookup(
+              index,
+              G::ONE,
+              &[u16_range_check_channel(), limb],
+            );
+          }
+        }
+        map.push((G::from_bool(a_u32 < b_u32), 1));
+      },
+      Op::U8RangeCheck(i, j) => {
+        // No `map.push`: the `u8` outputs alias the inputs. Just require the
+        // `(i, j)` pair from the byte-chip range-check table.
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_range_check_channel(), map[*i].0, map[*j].0],
+        );
+      },
+      Op::UnconstrainedBigUintDivMod(a, b) => {
+        // Mirrors the execute arm and the two auxiliary columns the
+        // constraints allocate: recompute `(q, r)` and resolve the head
+        // pointers execution recorded in memory[10]. Skipping the two map
+        // pushes would shift every later `ValIdx` (and witness column) in
+        // the block.
+        let (q_ptr, r_ptr) = find_unconstrained_big_uint_div_mod(
+          map[*a].0,
+          map[*b].0,
+          &context.query_record.memory_queries,
+          context.query_record.pointer_base,
+        )
+        .expect("BigUint div-mod result not recorded");
+        for f in [q_ptr, r_ptr] {
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
+      Op::UnconstrainedGToBytes(a) => {
+        // Recompute the deterministic hint (canonical LE bytes) and fill
+        // the 8 auxiliary columns the constraints allocate.
+        let bytes = map[*a].0.as_canonical_u64().to_le_bytes();
+        for b in bytes {
+          let f = G::from_u8(b);
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
+      Op::UnconstrainedGInverse(a) => {
+        let f = g_inverse_value(map[*a].0);
+        map.push((f, 1));
+        slice.push_auxiliary(index, f);
+      },
+      Op::AssertEq(..)
+      | Op::IOSetInfo(..)
+      | Op::IOWrite(..)
+      | Op::Debug(..) => {},
+    }
+  }
+}
+
+fn function_lookup_args(
+  function_index: G,
+  inputs: &[G],
+  output: &[G],
+) -> Vec<G> {
+  let mut args = vec![function_channel(), function_index];
+  args.extend(inputs);
+  args.extend(output);
+  args
+}

@@ -17,3 +17,6 @@ refs
 # TruthMines corpus artifacts: a .ixc is a self-contained directory
 # (manifest + pieces + build cache) — never checked in.
 *.ixc/
+
+# Python maintenance tools
+__pycache__/

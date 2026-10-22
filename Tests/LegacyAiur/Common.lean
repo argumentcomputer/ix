@@ -1,0 +1,152 @@
+module
+
+public import LSpec
+public import Ix.Unsigned
+public import LegacyAiur.Goldilocks
+public import LegacyAiur.Protocol
+public import LegacyAiur.Compiler
+public import LegacyAiur.Interpret
+public import LegacyAiur.Statistics
+
+public section
+
+open LSpec
+
+/-- Every case executes; `interpret` and `withProof` independently add the
+    interpreter agreement check and the prove/verify pipeline. All three
+    used combinations have a constructor: `prove` (execute + interpret +
+    prove), `interp` (execute + interpret), `exec` (execute only). -/
+structure AiurTestCase where
+  functionName : Lean.Name
+  label : String := toString functionName
+  input : Array LegacyAiur.G := #[]
+  expectedOutput : Array LegacyAiur.G := #[]
+  inputIOBuffer : LegacyAiur.IOBuffer := default
+  expectedIOBuffer : LegacyAiur.IOBuffer := default
+  interpret : Bool := true
+  withProof : Bool := true
+  /-- When set, asserts the total FFT cost equals this value (rounded to
+      `UInt64`). Pins per-circuit cost regressions: any kernel change that
+      shifts FFT cost forces a manual update to the expected value. -/
+  expectedFftCost : Option Nat := none
+
+/-- Full pipeline: execute + interpret + prove/verify. -/
+def AiurTestCase.prove (functionName : Lean.Name)
+    (input expectedOutput : Array LegacyAiur.G)
+    (label : String := toString functionName) : AiurTestCase :=
+  { functionName, label, input, expectedOutput }
+
+/-- Execute + interpret, no proof. -/
+def AiurTestCase.interp (functionName : Lean.Name)
+    (input expectedOutput : Array LegacyAiur.G)
+    (label : String := toString functionName) : AiurTestCase :=
+  { functionName, label, input, expectedOutput, withProof := false }
+
+/-- Execute only. -/
+def AiurTestCase.exec (functionName : Lean.Name)
+    (input : Array LegacyAiur.G := #[]) (expectedOutput : Array LegacyAiur.G := #[])
+    (label : String := toString functionName) : AiurTestCase :=
+  { functionName, label, input, expectedOutput,
+    interpret := false, withProof := false }
+
+def commitmentParameters : LegacyAiur.CommitmentParameters := {
+  logBlowup := 2
+  capHeight := 0
+}
+
+/-- Test-only FRI parameters: soundness margin is irrelevant here, so no
+    proof-of-work grinding (it adds a fixed 2^bits hashing cost to every
+    proof and tests nothing) and the same query count the Rust-side unit
+    tests use (`crates/aiur-legacy/src/synthesis.rs`). -/
+def friParameters : LegacyAiur.FriParameters := {
+  logFinalPolyLen := 0
+  maxLogArity := 1
+  numQueries := 64
+  commitProofOfWorkBits := 0
+  queryProofOfWorkBits := 0
+}
+
+structure AiurTestEnv where
+  compiled : LegacyAiur.CompiledToplevel
+  decls : LegacyAiur.Source.Decls
+  aiurSystem : LegacyAiur.AiurSystem
+  shapes : Array LegacyAiur.CircuitShape
+
+def AiurTestEnv.build (toplevelFn : Except LegacyAiur.Global LegacyAiur.Source.Toplevel)
+    (groups : Array (String × Array String) := #[]) :
+    Except String AiurTestEnv := do
+  let toplevel ← toplevelFn.mapError toString
+  let compiled ← toplevel.compile
+  let compiled ← if groups.isEmpty then pure compiled
+    else compiled.groupFunctions groups
+  let decls ← toplevel.mkDecls.mapError toString
+  let aiurSystem := LegacyAiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
+  return ⟨compiled, decls, aiurSystem, aiurSystem.circuitShapes⟩
+
+def AiurTestEnv.interpTest (env : AiurTestEnv) (testCase : AiurTestCase)
+    (execOutput : Array LegacyAiur.G) (execIOBuffer : LegacyAiur.IOBuffer) : TestSeq :=
+  let label := testCase.label
+  let funcName := LegacyAiur.Global.mk testCase.functionName
+  let inputTypes := match env.decls.getByKey funcName with
+    | some (.function f) => f.inputs.map (·.2)
+    | _ => []
+  let inputs := LegacyAiur.unflattenInputs env.decls testCase.input inputTypes
+  let funcIdx g := env.compiled.getFuncIdx g.toName
+  match LegacyAiur.runFunction env.decls funcName inputs testCase.inputIOBuffer with
+  | (.error e, _) =>
+    test s!"Interpret succeeds for {label}: {e}" false
+  | (.ok output, state) =>
+    let flat := LegacyAiur.flattenValue env.decls funcIdx output
+    let interpOutputTest := test s!"Interpret output matches for {label}"
+      (flat == execOutput)
+    let interpIOTest := test s!"Interpret IOBuffer matches for {label}"
+      (state.ioBuffer == execIOBuffer)
+    interpOutputTest ++ interpIOTest
+
+def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : TestSeq :=
+  let label := testCase.label
+  let funIdx := env.compiled.getFuncIdx testCase.functionName |>.get!
+  match env.compiled.bytecode.execute funIdx testCase.input testCase.inputIOBuffer with
+  | .error e => test s!"Execute succeeds for {label}: {e}" false
+  | .ok (execOutput, execIOBuffer, queryCounts) =>
+    let execOutputTest := test s!"Execute output matches for {label}"
+      (execOutput == testCase.expectedOutput)
+    let execIOTest := test s!"Execute IOBuffer matches for {label}"
+      (execIOBuffer == testCase.expectedIOBuffer)
+    let fftTest := match testCase.expectedFftCost with
+      | none => .done
+      | some expected =>
+        let stats := LegacyAiur.computeStats env.compiled queryCounts env.shapes
+        let actual := stats.totalFftCost.round.toUInt64.toNat
+        test s!"FFT cost matches for {label}: expected {expected}, got {actual}"
+          (actual == expected)
+    let execTest := execOutputTest ++ execIOTest ++ fftTest
+    let interpTest :=
+      if testCase.interpret then env.interpTest testCase execOutput execIOBuffer
+      else .done
+    if !testCase.withProof then execTest ++ interpTest
+    else
+      match env.aiurSystem.prove funIdx testCase.input testCase.inputIOBuffer with
+      | .error _ =>
+        execTest ++ interpTest ++ test s!"Prove succeeds for {label}" false
+      | .ok (claim, proof, ioBuffer) =>
+        let claimTest := test s!"Claim matches for {label}"
+          (claim == LegacyAiur.buildClaim funIdx testCase.input testCase.expectedOutput)
+        let ioTest := test s!"IOBuffer matches for {label}"
+          (ioBuffer == testCase.expectedIOBuffer)
+        let proof := .ofBytes proof.toBytes
+        let pvTest := withExceptOk s!"Prove/verify works for {label}"
+          (env.aiurSystem.verify claim proof) fun _ => .done
+        execTest ++ interpTest ++ claimTest ++ ioTest ++ pvTest
+
+def mkAiurTests (toplevelFn : Except LegacyAiur.Global LegacyAiur.Source.Toplevel)
+    (cases : List AiurTestCase) : TestSeq :=
+  withExceptOk "Toplevel merging succeeds" toplevelFn fun toplevel =>
+    withExceptOk "Compilation succeeds" toplevel.compile fun compiled =>
+      withExceptOk "mkDecls succeeds" (toplevel.mkDecls.mapError toString) fun decls =>
+        let aiurSystem := LegacyAiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
+        let env : AiurTestEnv := ⟨compiled, decls, aiurSystem, aiurSystem.circuitShapes⟩
+        cases.foldl (init := .done) fun tSeq testCase =>
+          tSeq ++ env.runTestCase testCase
+
+end

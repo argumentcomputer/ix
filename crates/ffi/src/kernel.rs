@@ -2535,7 +2535,7 @@ pub extern "C" fn rs_shard_env_static(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_manifest_from_partition(
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   shards_blob: LeanByteArray<LeanBorrowed<'_>>,
@@ -2676,7 +2676,7 @@ fn decode_refinements(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_manifest_refine(
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   source_path: LeanString<LeanBorrowed<'_>>,

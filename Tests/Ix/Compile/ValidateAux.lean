@@ -83,7 +83,7 @@ def validateAuxClosure (env : Lean.Environment)
     -- Level-spelling fixtures (canonicity §10.6): mk*-reducible spellings
     -- per rule, spelling twins, Géran order twins, a WF eq_def.
     `Tests.Ix.Compile.LevelSpellings,
-    -- IxVM ingress fixtures (Tests.Ix.IxVM) — nested/dedup shapes like
+    -- LegacyIxVM ingress fixtures (Tests.Ix.LegacyIxVM) — nested/dedup shapes like
     -- IxVMInd.DedupM (two nested occurrences of one external inductive
     -- with distinct spec_params) that only otherwise compile under the
     -- full-env `rust-compile` runner.

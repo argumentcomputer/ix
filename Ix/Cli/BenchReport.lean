@@ -187,7 +187,7 @@ structure CompareSection where
   names : Option (Array String) := none
   rowNoun : Option String := none
 
-/-- Aggregation measures a pair, while the other Aiur stages measure each
+/-- Aggregation measures a pair, while the other LegacyAiur stages measure each
     constant. Select by workload identity so OOM/rejected rows remain visible
     even when they have no metrics. -/
 def scopeAiurSection (names : Array String) (sec : CompareSection) : CompareSection :=

@@ -282,8 +282,8 @@ lean_ffi::lean_inductive! {
   LeanAiurFunction [ { num_obj: 2, num_8: 2 } ];
   LeanAiurCircuit  [ { num_obj: 3 } ];
 
-  // Aiur FFI result structures (`Ix/Aiur/Semantics/BytecodeFfi.lean`,
-  // `Ix/Aiur/Protocol.lean`). `IOBuffer` hashmaps cross the boundary as
+  // Aiur FFI result structures (`LegacyAiur/Semantics/BytecodeFfi.lean`,
+  // `LegacyAiur/Protocol.lean`). `IOBuffer` hashmaps cross the boundary as
   // flat `ioData`/`ioMap` arrays; Lean folds them back into hashmaps.
   // idx, len
   LeanAiurIOKeyInfo      [ { num_obj: 2 } ];

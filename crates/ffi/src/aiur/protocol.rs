@@ -38,7 +38,7 @@ pub(super) static AIUR_PROOF_CLASS: LazyLock<ExternalClass> =
 static AIUR_SYSTEM_CLASS: LazyLock<ExternalClass> =
   LazyLock::new(ExternalClass::register_with_drop::<AiurSystem>);
 static IX_ENV_HANDLE_CLASS: LazyLock<ExternalClass> = LazyLock::new(
-  ExternalClass::register_with_drop::<ixvm_codegen::env_handle::EnvHandle>,
+  ExternalClass::register_with_drop::<ixvm_legacy::env_handle::EnvHandle>,
 );
 
 // =============================================================================
@@ -122,7 +122,7 @@ extern "C" fn rs_aiur_system_build(
 }
 
 /// Helper: encode `CircuitShape`s as a Lean `Array CircuitShape`. Field
-/// order must match `Aiur.CircuitShape` in `Ix/Aiur/Protocol.lean`.
+/// order must match `Aiur.CircuitShape` in `LegacyAiur/Protocol.lean`.
 fn build_circuit_shapes_array(shapes: &[CircuitShape]) -> LeanArray<LeanOwned> {
   let arr = LeanArray::alloc(shapes.len());
   for (i, shape) in shapes.iter().enumerate() {
@@ -234,7 +234,7 @@ extern "C" fn rs_aiur_proof_range_advice(
 }
 
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
-/// `Except String ExecuteResult` (see `Ix/Aiur/Semantics/BytecodeFfi.lean`).
+/// `Except String ExecuteResult` (see `LegacyAiur/Semantics/BytecodeFfi.lean`).
 /// On execution failure (e.g. assertion mismatch from a typechecker
 /// rejecting a constant), returns `Except.error msg` instead of panicking
 /// — letting Lean test runners (`KernelArena.lean`) classify failures.
@@ -269,8 +269,8 @@ extern "C" fn rs_aiur_toplevel_execute(
 
 /// `Bytecode.Toplevel.executeIxVM`: same shape as `rs_aiur_toplevel_execute`,
 /// but routes execution through the codegen'd IxVM Rust kernel
-/// (`ixvm_codegen::aiur_ixvm::execute_generated`) via the helper in
-/// `ixvm_codegen::aiur_ixvm_runner::execute_ixvm`. The resulting
+/// (`ixvm_legacy::aiur_ixvm::execute_generated`) via the helper in
+/// `ixvm_legacy::aiur_ixvm_runner::execute_ixvm`. The resulting
 /// `QueryRecord` is byte-for-byte identical to the interpreter's
 /// (modulo standing codegen parity invariant).
 #[unsafe(no_mangle)]
@@ -287,16 +287,15 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
 
   // Same execution-phase span as `dispatch_execute`/the prove pipeline.
   let _g = tracing::info_span!("aiur/execute_ixvm").entered();
-  let (query_record, output) =
-    match ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-      &toplevel,
-      fun_idx,
-      args.map(|x| lean_unbox_g(&x)),
-      &mut io_buffer,
-    ) {
-      Ok(pair) => pair,
-      Err(err) => return LeanExcept::error_string(&err.to_string()),
-    };
+  let (query_record, output) = match ixvm_legacy::aiur_ixvm_runner::execute_ixvm(
+    &toplevel,
+    fun_idx,
+    args.map(|x| lean_unbox_g(&x)),
+    &mut io_buffer,
+  ) {
+    Ok(pair) => pair,
+    Err(err) => return LeanExcept::error_string(&err.to_string()),
+  };
 
   LeanExcept::ok(build_execute_result(
     &output,
@@ -307,7 +306,7 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
 }
 
 /// `AiurSystem.prove`: runs the prover and returns a `ProveResult`
-/// (see `Ix/Aiur/Protocol.lean`).
+/// (see `LegacyAiur/Protocol.lean`).
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -343,9 +342,9 @@ extern "C" fn rs_aiur_env_handle_from_ixe(
   path_bytes: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let path_str = String::from_utf8_lossy(path_bytes.as_bytes()).into_owned();
-  match ixvm_codegen::env_handle::EnvHandle::from_ixe_path(
-    std::path::Path::new(&path_str),
-  ) {
+  match ixvm_legacy::env_handle::EnvHandle::from_ixe_path(std::path::Path::new(
+    &path_str,
+  )) {
     Ok(h) => {
       let lean_handle: LeanOwned =
         LeanExternal::alloc(&IX_ENV_HANDLE_CLASS, h).into();
@@ -363,7 +362,7 @@ extern "C" fn rs_aiur_env_handle_from_ixe(
 extern "C" fn rs_aiur_env_handle_from_bytes(
   bytes: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  match ixvm_codegen::env_handle::EnvHandle::from_bytes(bytes.as_bytes()) {
+  match ixvm_legacy::env_handle::EnvHandle::from_bytes(bytes.as_bytes()) {
     Ok(h) => {
       let lean_handle: LeanOwned =
         LeanExternal::alloc(&IX_ENV_HANDLE_CLASS, h).into();
@@ -502,7 +501,7 @@ fn decode_owned_blob(
 /// generic Aiur bytecode interpreter (`use_bytecode = true`).
 /// The bytecode interpreter doesn't require regenerating the
 /// codegen'd Rust kernel after Lean-side IxVM source changes —
-/// useful for tight iteration loops on `Ix/IxVM/*.lean`.
+/// useful for tight iteration loops on `LegacyIxVM/*.lean`.
 #[inline]
 fn dispatch_execute(
   toplevel: &aiur::bytecode::Toplevel,
@@ -521,7 +520,7 @@ fn dispatch_execute(
       .execute(fun_idx, input, io_buffer)
       .map_err(|e| format!("execute (bytecode): {e}"))
   } else {
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+    ixvm_legacy::aiur_ixvm_runner::execute_ixvm(
       toplevel, fun_idx, input, io_buffer,
     )
     .map_err(|e| format!("execute_ixvm: {e}"))
@@ -538,7 +537,7 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
@@ -553,7 +552,7 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   let env = &env_handle.get().env;
 
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
+    match ixvm_legacy::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
     {
       Ok(t) => t,
       Err(e) => {
@@ -606,7 +605,7 @@ extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
   toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   addrs_blob: LeanByteArray<LeanBorrowed<'_>>,
@@ -628,7 +627,7 @@ extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
       .enumerate()
       .filter_map(|(i, addr)| {
         let err =
-          match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(
+          match ixvm_legacy::aiur_ixvm_witness::build_claim_check_witness(
             env, addr,
           ) {
             Err(e) => Some(format!("witness build: {e}")),
@@ -834,7 +833,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
   toplevel_obj: LeanAiurToplevel<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   shards_blob: LeanByteArray<LeanBorrowed<'_>>,
@@ -901,7 +900,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
       .map(|(owned, est)| {
         gate.acquire(*est);
         let result =
-          match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+          match ixvm_legacy::aiur_ixvm_witness::build_shard_check_env_witness(
             env, owned,
           ) {
             Err(e) => (format!("witness build: {e}"), 0, 1),
@@ -963,7 +962,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
@@ -981,7 +980,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   // shard entrypoint builds the the kernel witness (thin frontier + wrapper
   // augmentation).
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+    match ixvm_legacy::aiur_ixvm_witness::build_shard_check_env_witness(
       env, &owned,
     ) {
       Ok(t) => t,
@@ -1019,7 +1018,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
@@ -1034,7 +1033,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
     let env = &env_handle.get().env;
 
     let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(
+      match ixvm_legacy::aiur_ixvm_witness::build_claim_check_witness(
         env, &addr,
       ) {
         Ok(t) => t,
@@ -1061,7 +1060,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
         &input,
         &mut io_buffer,
         |toplevel, fun_idx, input, io_buffer| {
-          ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+          ixvm_legacy::aiur_ixvm_runner::execute_ixvm(
             toplevel, fun_idx, input, io_buffer,
           )
         },
@@ -1111,7 +1110,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
@@ -1135,7 +1134,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     let env = &env_handle.get().env;
 
     let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+      match ixvm_legacy::aiur_ixvm_witness::build_shard_check_env_witness(
         env, &owned,
       ) {
         Ok(t) => t,
@@ -1156,7 +1155,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
       &input,
       &mut io_buffer,
       |toplevel, fun_idx, input, io_buffer| {
-        ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+        ixvm_legacy::aiur_ixvm_runner::execute_ixvm(
           toplevel, fun_idx, input, io_buffer,
         )
       },
@@ -1209,7 +1208,7 @@ extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   owners_blob: LeanByteArray<LeanBorrowed<'_>>,
@@ -1336,7 +1335,7 @@ fn prove_shards_ahead(
     let label = labels[k];
     let started = std::time::Instant::now();
     let (claim, input, mut io) =
-      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+      ixvm_legacy::aiur_ixvm_witness::build_shard_check_env_witness(
         env, &owners[k],
       )
       .map_err(|e| {
@@ -1347,7 +1346,7 @@ fn prove_shards_ahead(
       &input,
       &mut io,
       |toplevel, fun_idx, input, io_buffer| {
-        ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+        ixvm_legacy::aiur_ixvm_runner::execute_ixvm(
           toplevel, fun_idx, input, io_buffer,
         )
       },
@@ -1538,7 +1537,7 @@ extern "C" fn rs_aiur_system_prove_env_distributed(
   verify_idx: LeanNat<LeanBorrowed<'_>>,
   check_owned_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
+    ixvm_legacy::env_handle::EnvHandle,
     LeanBorrowed<'_>,
   >,
   owners_blob: LeanByteArray<LeanBorrowed<'_>>,
@@ -1748,8 +1747,8 @@ fn prove_env_distributed(
   measured: &[usize],
 ) -> Result<(Vec<u8>, Option<AiurProof>, Vec<u64>), String> {
   use aiur::execute::{Ownership, pointer_stride};
-  use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
-  use ixvm_codegen::aiur_ixvm_witness::{
+  use ixvm_legacy::aiur_ixvm_runner::execute_ixvm_in;
+  use ixvm_legacy::aiur_ixvm_witness::{
     EnvCheckStatement, addr_key, worker_callers, worker_scopes,
   };
   use rustc_hash::FxHashSet;
@@ -2284,7 +2283,7 @@ extern "C" fn rs_aiur_system_prove_ixvm(
       &args,
       &mut io_buffer,
       |toplevel, fun_idx, input, io_buffer| {
-        ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+        ixvm_legacy::aiur_ixvm_runner::execute_ixvm(
           toplevel, fun_idx, input, io_buffer,
         )
       },

@@ -1,16 +1,16 @@
-/- IxVM claim execution and target selection shared by check and prove. -/
+/- LegacyIxVM claim execution and target selection shared by check and prove. -/
 module
 public import Ix.Address
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Interpret
-public import Ix.Aiur.Protocol
-public import Ix.Aiur.Statistics
+public import LegacyAiur.Compiler
+public import LegacyAiur.Interpret
+public import LegacyAiur.Protocol
+public import LegacyAiur.Statistics
 public import Ix.AssumptionTree
 public import Ix.Claim
 public import Ix.Common
-public import Ix.IxVM
-public import Ix.IxVM.Toplevel
-public import Ix.IxVM.ClaimHarness
+public import LegacyIxVM
+public import LegacyIxVM.Toplevel
+public import LegacyIxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Store
@@ -18,7 +18,7 @@ public import Ix.Cli.NameResolve
 
 public section
 
-open IxVM.ClaimHarness
+open LegacyIxVM.ClaimHarness
 open Ix.Cli.NameResolve
 
 namespace Ix.Check
@@ -64,30 +64,30 @@ def loadClaimAndTrees (claimHex : String) :
     `Ix.Claim.check addr none` (full transitive typecheck of the
     target's closure). -/
 def mkWitness (addr : Address) (ixonEnv : Ixon.Env) :
-    IO IxVM.ClaimHarness.ClaimWitness := do
+    IO LegacyIxVM.ClaimHarness.ClaimWitness := do
   IO.ofExcept <|
-    IxVM.ClaimHarness.buildClaimWitness ixonEnv (Ix.Claim.check addr none) {}
+    LegacyIxVM.ClaimHarness.buildClaimWitness ixonEnv (Ix.Claim.check addr none) {}
 
 /-- Compute + emit per-circuit stats. With `statsOut = none` prints to
     stdout; with `some path` redirects stdout to the file for the
     duration of `printStats` so the terminal stays clean.
 
-    Circuit shapes come from the one-shot FFI (`Aiur.circuitShapes`),
+    Circuit shapes come from the one-shot FFI (`LegacyAiur.circuitShapes`),
     which builds and drops an `AiurSystem` — the check flow never builds
     one otherwise. That cost is paid only when stats are requested. -/
-def emitStats (compiled : Aiur.CompiledToplevel)
-    (queryCounts : Array Aiur.QueryCount)
+def emitStats (compiled : LegacyAiur.CompiledToplevel)
+    (queryCounts : Array LegacyAiur.QueryCount)
     (statsOut : Option String) : IO Unit := do
-  let shapes := Aiur.circuitShapes compiled.bytecode
-    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-  let stats := Aiur.computeStats compiled queryCounts shapes
+  let shapes := LegacyAiur.circuitShapes compiled.bytecode
+    LegacyAiur.defaultCommitmentParameters LegacyAiur.defaultFriParameters
+  let stats := LegacyAiur.computeStats compiled queryCounts shapes
   match statsOut with
-  | none => Aiur.printStats stats
+  | none => LegacyAiur.printStats stats
   | some path => do
     let handle ← IO.FS.Handle.mk path .write
     let stream := IO.FS.Stream.ofHandle handle
     let old ← IO.setStdout stream
-    try Aiur.printStats stats
+    try LegacyAiur.printStats stats
     finally let _ ← IO.setStdout old
 
 /-- What a single `runOne` invocation is targeting.
@@ -102,13 +102,13 @@ def emitStats (compiled : Aiur.CompiledToplevel)
       persisted claim. No envHandle needed.
 
     The env lives once per CLI invocation in a Rust-owned
-    `Aiur.EnvHandle`. Lean threads a `@& EnvHandle` reference
+    `LegacyAiur.EnvHandle`. Lean threads a `@& EnvHandle` reference
     through every per-target FFI call, eliminating per-call env
     re-parse. -/
 inductive Target where
   | addr  (a : Address)
   | shard (owned : Array Address)
-  | leanW (w : IxVM.ClaimHarness.ClaimWitness)
+  | leanW (w : LegacyIxVM.ClaimHarness.ClaimWitness)
 
 /-- Batch PARALLEL check over one `.ixe`: resolve the targets (explicit
     names, or every named constant when `names` is empty), hand the
@@ -119,12 +119,12 @@ inductive Target where
     read-only toplevel and env. Failures come back as batch indices
     and resolve to labels here. -/
 def runBatchCheck (ixePath : String) (names : List String) (jobs : Nat)
-    (toplevel : Aiur.Source.Toplevel) (useBytecode : Bool) : IO UInt32 := do
-  let compiled : Aiur.CompiledToplevel ←
-    match toplevel.compileWithGroups IxVM.functionGroups with
+    (toplevel : LegacyAiur.Source.Toplevel) (useBytecode : Bool) : IO UInt32 := do
+  let compiled : LegacyAiur.CompiledToplevel ←
+    match toplevel.compileWithGroups LegacyIxVM.functionGroups with
     | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
     | .ok c => pure c
-  let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+  let envHandle ← match LegacyAiur.EnvHandle.fromIxe ixePath with
     | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
     | .ok h => pure h
   let bytes ← IO.FS.readBinFile ixePath
@@ -168,19 +168,19 @@ def runBatchCheck (ixePath : String) (names : List String) (jobs : Nat)
         | some i =>
           if h : i < targets.size then targets[i].1 else s!"index {idxStr}"
         | none => s!"index {idxStr}"
-      IO.eprintln s!"{label}: IxVM-native Aiur execution error: {err}"
+      IO.eprintln s!"{label}: LegacyIxVM-native LegacyAiur execution error: {err}"
     IO.eprintln
       s!"{failures.size} of {targets.size} checked constant(s) FAILED\
         {if unresolved.isEmpty then "" else s!", {unresolved.size} unresolved"}"
     return 1
 
-/-- Run a single check claim through the codegen'd IxVM Rust kernel.
+/-- Run a single check claim through the codegen'd LegacyIxVM Rust kernel.
     The `envHandle?` is `none` only for `.leanW` targets (`--interp`
     fallback); the addr/shard arms require it. -/
-def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
+def runCompiled (compiled : LegacyAiur.CompiledToplevel) (printStats : Bool)
     (statsOut : Option String)
     (useBytecode : Bool)
-    (envHandle? : Option Aiur.EnvHandle)
+    (envHandle? : Option LegacyAiur.EnvHandle)
     (target : Target) (label : String) : IO UInt32 := do
   IO.println s!"Typechecking {label}"
   (← IO.getStdout).flush
@@ -204,23 +204,23 @@ def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
       .error "internal: addr/shard target with no envHandle"
   match res with
   | .error e =>
-    IO.eprintln s!"{label}: IxVM-native Aiur execution error: {e}"
+    IO.eprintln s!"{label}: LegacyIxVM-native LegacyAiur execution error: {e}"
     return 1
   | .ok (_output, _ioBuffer, queryCounts) =>
     if printStats then emitStats compiled queryCounts statsOut
     pure 0
 
-/-- Run a single witness through the Aiur interpreter (richer errors). -/
-def runInterp (decls : Aiur.Source.Decls)
-    (witness : IxVM.ClaimHarness.ClaimWitness) (label : String) : IO UInt32 := do
+/-- Run a single witness through the LegacyAiur interpreter (richer errors). -/
+def runInterp (decls : LegacyAiur.Source.Decls)
+    (witness : LegacyIxVM.ClaimHarness.ClaimWitness) (label : String) : IO UInt32 := do
   IO.println s!"Interpreting {label}"
   (← IO.getStdout).flush
-  let funcName := Aiur.Global.mk witness.funcName
+  let funcName := LegacyAiur.Global.mk witness.funcName
   let inputTypes ← match decls.getByKey funcName with
     | some (.function f) => pure $ f.inputs.map (·.2)
     | _ => IO.eprintln s!"{label}: function not found in decls"; return 1
-  let inputs := Aiur.unflattenInputs decls witness.input inputTypes
-  match Aiur.runFunction decls funcName inputs witness.inputIOBuffer with
+  let inputs := LegacyAiur.unflattenInputs decls witness.input inputTypes
+  match LegacyAiur.runFunction decls funcName inputs witness.inputIOBuffer with
   | (.error e, s) =>
     IO.eprintln s!"{label}: interpreter error:\n{e.ppDeref s.store 1 10}"
     return 1
@@ -242,14 +242,14 @@ def runInterp (decls : Aiur.Source.Decls)
     The `WitnessSource` is `Native` (Rust-built witness from a
     `.ixe` path + target addr) whenever both are available and the
     claim is the common `Claim.check addr none` shape — avoids the
-    per-byte boxing into `Aiur.G` that dominates wall time on heavy
+    per-byte boxing into `LegacyAiur.G` that dominates wall time on heavy
     claims. Falls back to `Lean` when the env is the compiled-in
     Lean env (no `.ixe` to mmap) or when the persisted `--claim`
     variant isn't `check addr none`. -/
 def forEachClaim
     (ixePath : Option String) (claimHex : Option String) (names : List String)
     (keepGoing : Bool) (logTag : String) (forceLeanWitness : Bool)
-    (runOne : Ix.Claim → Option Aiur.EnvHandle → Target → String → IO UInt32)
+    (runOne : Ix.Claim → Option LegacyAiur.EnvHandle → Target → String → IO UInt32)
     : IO UInt32 := do
   let mut failures : Array String := #[]
   match ixePath with
@@ -257,7 +257,7 @@ def forEachClaim
     -- Build the env once for the entire batch. The lazy index parse
     -- runs O(num_consts) once at handle construction; all per-name
     -- FFI calls below share the parsed env (no per-call re-mmap).
-    let envHandle ← match Aiur.EnvHandle.fromIxe path with
+    let envHandle ← match LegacyAiur.EnvHandle.fromIxe path with
       | .error e =>
         IO.eprintln s!"EnvHandle.fromIxe {path}: {e}"; return 1
       | .ok h => pure h
@@ -286,12 +286,12 @@ def forEachClaim
         | .check addr none =>
           if forceLeanWitness then
             let witness ← IO.ofExcept <|
-              IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
+              LegacyIxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
             pure (.leanW witness)
           else pure (.addr addr)
         | _ =>
           let witness ← IO.ofExcept <|
-            IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
+            LegacyIxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
           pure (.leanW witness)
       if (← runOne claim (some envHandle) target label) ≠ 0 then
         failures := failures.push label
@@ -343,8 +343,8 @@ def forEachClaim
       -- during reduction (Bool/Nat ctors, String-literal ctor form),
       -- whose bytes must be in ch 2 even when the target's proof body
       -- never references them.
-      let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
-      let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
+      let ixonEnv ← LegacyIxVM.ClaimHarness.loadIxonEnv name env
+      let addr ← LegacyIxVM.ClaimHarness.lookupAddr ixonEnv name
       let claim := Ix.Claim.check addr none
       if forceLeanWitness then
         let w ← mkWitness addr ixonEnv
@@ -353,7 +353,7 @@ def forEachClaim
         let envBytes ← match Ixon.serEnv ixonEnv with
           | .error e => throw (IO.userError s!"serEnv failed for {label}: {e}")
           | .ok b => pure b
-        let envHandle ← match Aiur.EnvHandle.fromBytes envBytes with
+        let envHandle ← match LegacyAiur.EnvHandle.fromBytes envBytes with
           | .error e => throw (IO.userError s!"EnvHandle.fromBytes failed for {label}: {e}")
           | .ok h => pure h
         runOne claim (some envHandle) (.addr addr) label

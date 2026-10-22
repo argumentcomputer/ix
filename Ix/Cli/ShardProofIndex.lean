@@ -9,12 +9,12 @@
 -/
 module
 public import Ix.Address
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Protocol
+public import LegacyAiur.Compiler
+public import LegacyAiur.Protocol
 public import Ix.Claim
 public import Ix.Ixon
 public import Ix.Store
-public import Ix.IxVM.ClaimHarness
+public import LegacyIxVM.ClaimHarness
 
 public section
 
@@ -52,7 +52,7 @@ def writeAddress (dir : System.FilePath) (digest addr : Address) : IO Unit := do
     the caller expects: the wrapper must decode, bundle exactly `expected`,
     and its proof must verify under `verify_claim`'s public input for that
     claim (the same check `ix verify --shard K` performs). -/
-def verifyWrapper (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
+def verifyWrapper (aiurSystem : LegacyAiur.AiurSystem) (compiled : LegacyAiur.CompiledToplevel)
     (expected : Ix.Claim) (proofAddr : Address) : IO (Except String Unit) := do
   try
     let bytes ← StoreIO.toIO (Store.read proofAddr)
@@ -61,21 +61,21 @@ def verifyWrapper (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplev
     | .ok wrapper =>
       if wrapper.claim != expected then
         return .error s!"wrapper {proofAddr} bundles a different claim"
-      match Aiur.Proof.ofBytesChecked wrapper.proof with
+      match LegacyAiur.Proof.ofBytesChecked wrapper.proof with
       | .error e => pure (.error s!"proof {proofAddr} does not decode: {e}")
       | .ok proof =>
         let some funIdx := compiled.getFuncIdx `verify_claim
           | return .error "`verify_claim` entrypoint missing from compiled toplevel"
-        let input := IxVM.ClaimHarness.packedDigestKey
+        let input := LegacyIxVM.ClaimHarness.packedDigestKey
           (Address.blake3 (Ix.Claim.ser wrapper.claim))
-        match aiurSystem.verify (Aiur.buildClaim funIdx input #[]) proof with
+        match aiurSystem.verify (LegacyAiur.buildClaim funIdx input #[]) proof with
         | .ok () => pure (.ok ())
         | .error e => pure (.error s!"proof {proofAddr} does not verify: {e}")
   catch e => pure (.error s!"{e}")
 
 /-- The address of a verified proof of `expected`, if the index has one.
     An entry that fails any check is reported and treated as a miss. -/
-def verifiedProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
+def verifiedProof (aiurSystem : LegacyAiur.AiurSystem) (compiled : LegacyAiur.CompiledToplevel)
     (dir : System.FilePath) (expected : Ix.Claim) : IO (Option Address) := do
   let digest := Address.blake3 (Ix.Claim.ser expected)
   let some addr ← readAddress dir digest | return none
