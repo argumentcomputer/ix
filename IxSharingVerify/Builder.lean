@@ -1,5 +1,5 @@
 import Ix.CompileM
-import IxSharingVerify.TieredWire
+import IxSharingVerify.CanonicalProduction
 import IxSharingVerify.BlockTables
 
 /-!

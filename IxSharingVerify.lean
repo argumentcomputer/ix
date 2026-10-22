@@ -31,6 +31,8 @@ import IxSharingVerify.TieredPhase3
 import IxSharingVerify.TieredIdem
 import IxSharingVerify.TieredWire
 import IxSharingVerify.TieredGuard
+import IxSharingVerify.CanonicalProduction
+import IxSharingVerify.FamilyExactConstant
 
 /-!
 # Proofs of the canonical sharing construction

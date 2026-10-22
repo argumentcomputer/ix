@@ -6,10 +6,10 @@ import all Ix.Sharing.Exact.UniformSearch
 
 @[expose] public section
 
-/-! Experimental whole-constant family normalization, with no production
-routing or format change. Existing allocation/materialization/serialization
-checks remain. Family-relative leastness and the semantic finish bridge are
-separate proof obligations; successful replay is not a totality proof.
+/-! Parameterized family normalization used by the canonical K16 wrappers.
+Existing allocation/materialization/serialization checks remain. The verified
+family minimum and successful-output contracts live in IxSharingVerify;
+successful replay is not a totality proof.
 
 The family meter counts mathematical cost calls (excluding the empty baseline)
 and the exact sum of `phiE`'s existing work field (including that baseline).
@@ -119,8 +119,8 @@ def familyExpanded (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex :
     (familyAtWidth cfg layout limits ex prep facts parents candidates)
   return withExpansionStats ex result
 
-/-- Explicit offline API. Keep all non-root fields, refs and universes.
-The old normalizeConstantSharingTiered and production callers are unchanged. -/
+/-- Parameterized family API. Keep all non-root fields, refs and universes.
+The canonical production wrapper fixes this rule's parameter at K16. -/
 def normalizeFamily (cfg : Config) (layout : ShareLayout) (constant : Ixon.Constant)
     (limits : Limits := {}) : Except SharingError (Ixon.Constant × TieredSharingResult) := do
   let expanded ← expand limits constant.sharing (constantInfoRoots constant.info) true

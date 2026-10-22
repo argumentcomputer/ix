@@ -42,6 +42,34 @@ private def quotOnly : Array Lean.Name := #[``Quot.sound]
 requires every `@[csimp]` theorem on the compiler's import path to be one of
 them. -/
 def roots : Array RootAllowance := #[
+  -- sharing-k16-greedy-v1: preserved exact references, proved compiled
+  -- family twins, actual family leastness and compiler-facing contracts.
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.Reference.canonicalSharingTiered_meaning, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTiered_format, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTieredTable_format, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTiered_serialized, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTieredTable_serialized, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.component_eq_fast, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.components_eq_cached, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyReferenceExpanded_eq_cached, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.exact_family_iff, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.exact_table_row_least, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.table_tie_coverage, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.initial_knapsack_least, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyUniform_selection, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.initial_minimum_cost, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyUniform_finished, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyUniform_model_minimum, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyExpanded_checked, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeFamily_meaning, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeFamily_wire, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalProduction.canonicalSharingTiered_parts, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalProduction.canonicalSharingTieredTable_parts, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalProduction.canonicalSharingTiered_family_least, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalProduction.canonicalSharingTiered_output, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_eq_family, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_reference_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_reference_bytes, standardAxioms := standard },
   -- The meaning of the canonical construction: the pointer cache, ingestion
   -- of the table and the roots, and canonical numbering preserve what each
   -- input expression denotes.
@@ -287,7 +315,7 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Tiered.canonicalTiered_reexpand,
     standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.Tiered.canonicalSharingTieredTable_idem,
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTieredTable_idem,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Tiered.wireCounts_spec,
     standardAxioms := propextOnly },

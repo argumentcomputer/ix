@@ -347,10 +347,10 @@ def SharingMeaning (sources sharing roots : Array Ixon.Expr) : Prop :=
 /-- The actual canonical sharing entry preserves the complete ordered input
 expressions. This composes source ingestion, canonical renumbering and the
 production re-expansion check; no output certificate is a premise. -/
-theorem canonicalSharingTiered_meaning (layout : ShareLayout) (limits : Limits) (sources : Array Ixon.Expr)
-    (result : TieredSharingResult) (ran : canonicalSharingTiered layout sources limits = .ok result) :
+theorem Reference.canonicalSharingTiered_meaning (layout : ShareLayout) (limits : Limits) (sources : Array Ixon.Expr)
+    (result : TieredSharingResult) (ran : Exact.Reference.canonicalSharingTiered layout sources limits = .ok result) :
     SharingMeaning sources result.result.sharing result.result.roots := by
-  unfold canonicalSharingTiered at ran
+  unfold Exact.Reference.canonicalSharingTiered at ran
   obtain ⟨expanded, expandedRan, sharedRan⟩ := bind_eq_ok ran
   have original := expand_unshared limits sources expanded expandedRan
   obtain ⟨visits, rechecked⟩ := Tiered.canonicalTiered_reexpand sharedRan

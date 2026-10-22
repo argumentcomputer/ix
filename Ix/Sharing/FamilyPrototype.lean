@@ -4,8 +4,8 @@ public import Ix.Sharing.Exact.Uniform
 
 @[expose] public section
 
-/-! Experimental component families, not a production sharing entry.
-The caller supplies the initial canonical DAG/classification. This module
+/-! Component-family specification. The canonical entry fixes K16; offline
+callers may supply other parameters and initial DAG/classification. This module
 does not redefine valid wire/root inputs or impose a new input-size bound.
 It claims neither a total semantic normalizer nor an operational/bit-cost
 bound: payload size, output witnesses and optional execution budgets belong
@@ -89,9 +89,8 @@ def componentContext (ex : Expanded) (stage : UStage) (members : Array Nat) : SC
   mkSCtx ex stage.f stage.up stage.cand stage.b0 stage.vis0 stage.rootCount stage.slack
     stage.theta stage.baseEv stage.widthCs stage.allTrue stage.unc members
 
-/-- `phiE` is the specification; its existing proved fast twin still visits
-the full upward closure. Prototype timings are reference-evaluator timings,
-not estimates for production's area-only evaluator. -/
+/-- `phiE` is the specification; its proved evaluator twins preserve the
+component delta. Reference timings are distinct from closure-local timings. -/
 def componentDelta (cx : SCtx) (baseline : Nat) (set : Array Nat) : _root_.Int :=
   ((cx.phiE set.contains set).1 : _root_.Int) - (baseline : _root_.Int)
 
