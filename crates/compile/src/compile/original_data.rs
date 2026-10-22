@@ -28,6 +28,28 @@ pub struct Receipt {
 
 pub type OriginalStaging = Vec<Receipt>;
 
+/// A producer's exact source data before the successful publication address is
+/// known. Every Rust producer has the original declaration's hint in scope;
+/// non-definition declarations carry a known absent hint.
+#[derive(Clone, Debug)]
+pub struct Captured {
+  pub original: Payload,
+  pub hints: Option<ReducibilityHints>,
+  pub block: Option<Payload>,
+}
+
+impl Captured {
+  pub fn at(self, name: Name, published: Address) -> Receipt {
+    Receipt {
+      name,
+      published,
+      original: self.original,
+      hints: Some(self.hints),
+      block: self.block,
+    }
+  }
+}
+
 enum Member {
   Defn(DefKind),
   Indc(usize),

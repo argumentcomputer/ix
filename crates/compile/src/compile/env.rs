@@ -1567,6 +1567,7 @@ fn precompile_aux_gen_prereqs(
 #[cfg(test)]
 mod promotion_tests {
   use super::*;
+  use crate::compile::original_data::{Captured, Payload};
   use crate::compile::{block_txn, compile_name};
   use ix_common::env::ReducibilityHints;
   use ixon::env::Named;
@@ -1578,6 +1579,14 @@ mod promotion_tests {
 
   fn addr(s: &str) -> Address {
     Address::hash(s.as_bytes())
+  }
+
+  fn capture(s: &str, hints: Option<ReducibilityHints>) -> Captured {
+    Captured {
+      original: Payload { addr: addr(s), bytes: Arc::from(s.as_bytes()) },
+      hints,
+      block: None,
+    }
   }
 
   fn seed(stt: &CompileState, n: &Name, canonical: &Address) {
@@ -1617,9 +1626,19 @@ mod promotion_tests {
     }
     stt.record_hint(&other, Some(ReducibilityHints::Opaque));
     block_txn::start();
-    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
     stt
-      .promote_aux(&other, addr("other-original"), ConstantMeta::default())
+      .promote_original(
+        &a,
+        ConstantMeta::default(),
+        capture("a-original", None),
+      )
+      .unwrap();
+    stt
+      .promote_original(
+        &other,
+        ConstantMeta::default(),
+        capture("other-original", None),
+      )
       .unwrap();
     stt.record_hint(&other, Some(ReducibilityHints::Abbrev));
     let e = stt
@@ -1633,6 +1652,7 @@ mod promotion_tests {
     assert!(!stt.env.named.get(&other).unwrap().has_original());
     assert_eq!(stt.recorded_hint(&other), Some(ReducibilityHints::Opaque));
     assert_eq!(stt.resolve_addr(&other), Some(canonical));
+    assert!(stt.original_receipts.lock().unwrap().is_empty());
   }
 
   #[test]
@@ -1644,16 +1664,43 @@ mod promotion_tests {
     seed(&stt, &b, &canonical);
     stt.name_to_addr.insert(b.clone(), addr("conflicting-main"));
     block_txn::start();
-    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
-    stt.promote_aux(&b, addr("b-original"), ConstantMeta::default()).unwrap();
+    stt
+      .promote_original(
+        &a,
+        ConstantMeta::default(),
+        capture("a-original", None),
+      )
+      .unwrap();
+    stt
+      .promote_original(
+        &b,
+        ConstantMeta::default(),
+        capture("b-original", None),
+      )
+      .unwrap();
     let e = block_txn::commit(&stt).unwrap_err();
     assert!(!stt.env.named.get(&a).unwrap().has_original());
     assert!(!stt.env.named.get(&b).unwrap().has_original());
+    assert!(stt.original_receipts.lock().unwrap().is_empty());
     let txn = block_txn::take().unwrap();
     block_txn::rollback(&stt, &txn);
-    let all = [a, b].into_iter().collect();
+    let all = [a.clone(), b.clone()].into_iter().collect();
     fail_aux_promotion(&stt, &all, &e.to_string());
     assert_withdrawn(&stt, &all);
+    // A retry publishes one new receipt per member, never the discarded data.
+    for n in [&a, &b] {
+      seed(&stt, n, &canonical);
+    }
+    block_txn::start();
+    for n in [&a, &b] {
+      stt
+        .promote_original(n, ConstantMeta::default(), capture("retry", None))
+        .unwrap();
+    }
+    block_txn::finish(&stt, false).unwrap();
+    let rows = stt.original_receipts.lock().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r.original.addr == addr("retry")));
   }
 
   #[test]
@@ -1665,8 +1712,18 @@ mod promotion_tests {
       seed(&stt, n, &canonical);
     }
     block_txn::start();
-    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
-    stt.promote_aux(&b, addr("b-original"), ConstantMeta::default()).unwrap();
+    let block = capture("shared-block", None).original;
+    let mut a_data = capture("a-original", Some(ReducibilityHints::Regular(7)));
+    a_data.block = Some(block.clone());
+    let mut b_data = capture("b-original", None);
+    b_data.block = Some(block.clone());
+    stt.promote_original(&a, ConstantMeta::default(), a_data).unwrap();
+    stt.promote_original(&b, ConstantMeta::default(), b_data).unwrap();
+    // The image writes different hints after the original has been captured.
+    for n in [&a, &b] {
+      stt.record_hint(n, Some(ReducibilityHints::Abbrev));
+    }
+    assert!(stt.original_receipts.lock().unwrap().is_empty());
     assert!(!stt.name_to_addr.contains_key(&a));
     assert!(!stt.env.named.get(&a).unwrap().has_original());
     block_txn::commit(&stt).unwrap();
@@ -1678,6 +1735,17 @@ mod promotion_tests {
       assert_eq!(stt.name_to_addr.get(n).unwrap().value(), &canonical);
     }
     assert!(stt.ungrounded.is_empty());
+    let rows = stt.original_receipts.lock().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].hints, Some(Some(ReducibilityHints::Regular(7))));
+    assert_eq!(rows[1].hints, Some(None));
+    assert!(rows.iter().all(|r| r.published == canonical));
+    assert!(Arc::ptr_eq(
+      &rows[0].block.as_ref().unwrap().bytes,
+      &rows[1].block.as_ref().unwrap().bytes
+    ));
+    assert_eq!(rows[0].original.bytes.as_ref(), b"a-original");
+    assert_eq!(stt.recorded_hint(&a), Some(ReducibilityHints::Abbrev));
   }
 
   #[test]
@@ -1743,12 +1811,20 @@ mod promotion_tests {
     seed(&stt, &n, &canonical);
     block_txn::start();
     stt
-      .promote_aux(&n, addr("discarded-original"), ConstantMeta::default())
+      .promote_original(
+        &n,
+        ConstantMeta::default(),
+        capture("discarded-original", None),
+      )
       .unwrap();
     thread::scope(|s| {
       s.spawn(|| {
         stt
-          .promote_aux(&n, addr("successful-original"), ConstantMeta::default())
+          .promote_original(
+            &n,
+            ConstantMeta::default(),
+            capture("successful-original", None),
+          )
           .unwrap();
       })
       .join()
@@ -1759,6 +1835,30 @@ mod promotion_tests {
     let named = stt.env.named.get(&n).unwrap();
     assert_eq!(named.original().unwrap().0, addr("successful-original"));
     assert_eq!(stt.resolve_addr(&n), Some(canonical));
+    let rows = stt.original_receipts.lock().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].original.addr, addr("successful-original"));
+  }
+
+  #[test]
+  fn captured_original_binds_only_when_its_name_is_published() {
+    let stt = CompileState::default();
+    let n = name("latePublication");
+    stt
+      .promote_original(&n, ConstantMeta::default(), capture("absent", None))
+      .unwrap();
+    assert!(stt.original_receipts.lock().unwrap().is_empty());
+    block_txn::start();
+    stt
+      .promote_original(&n, ConstantMeta::default(), capture("staged", None))
+      .unwrap();
+    let canonical = addr("published-after-staging");
+    seed(&stt, &n, &canonical);
+    block_txn::finish(&stt, false).unwrap();
+    let rows = stt.original_receipts.lock().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].published, canonical);
+    assert_eq!(rows[0].original.addr, addr("staged"));
   }
 }
 

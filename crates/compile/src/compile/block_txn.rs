@@ -34,6 +34,14 @@ use ixon::metadata::ConstantMeta;
 use rustc_hash::FxHashMap;
 
 use super::CompileState;
+use super::original_data::{Captured, Receipt};
+
+pub struct Promotion {
+  pub name: Name,
+  pub addr: Address,
+  pub meta: ConstantMeta,
+  pub captured: Option<Captured>,
+}
 
 /// What a block entered into the published tables.
 #[derive(Default)]
@@ -42,7 +50,7 @@ pub struct BlockTxn {
   /// A source family can include members outside the scheduled block;
   /// rolling back old snapshots could otherwise overwrite another worker's
   /// promotion.
-  pub promotions: Vec<(Name, Address, ConstantMeta)>,
+  pub promotions: Vec<Promotion>,
   /// Final per-name hints, including removals, before publication.
   pub hints: FxHashMap<Name, Option<ReducibilityHints>>,
   /// Names newly registered in `env.named`.
@@ -91,18 +99,23 @@ pub fn log_named(n: &Name) {
 
 /// Stage original metadata while a transaction is active. Outside a scheduled
 /// block, return the payload to the direct caller for immediate promotion.
-pub fn defer_promotion(
-  n: &Name,
-  addr: Address,
-  meta: ConstantMeta,
-) -> Option<(Address, ConstantMeta)> {
+pub fn defer_promotion(promotion: Promotion) -> Option<Promotion> {
   TXN.with(|t| match t.borrow_mut().as_mut() {
     Some(x) => {
-      x.promotions.push((n.clone(), addr, meta));
+      x.promotions.push(promotion);
       None
     },
-    None => Some((addr, meta)),
+    None => Some(promotion),
   })
+}
+
+/// Called only after every fallible check. Bind the captured data to the Named
+/// entry actually updated, not an earlier snapshot of another worker's entry.
+pub fn publish_promotion(stt: &CompileState, p: Promotion) -> Option<Receipt> {
+  let mut entry = stt.env.named.get_mut(&p.name)?;
+  let published = entry.addr.clone();
+  entry.value_mut().set_original(p.addr, p.meta);
+  p.captured.map(|data| data.at(p.name, published))
 }
 
 /// Check every address claim before publishing any original metadata. Claims
@@ -117,17 +130,14 @@ pub fn commit(stt: &CompileState) -> Result<(), CompileError> {
       })
       .unwrap_or_default()
   });
-  for (n, _, _) in &promotions {
-    let addr = stt.aux_name_to_addr.get(n).map(|r| r.value().clone());
+  for p in &promotions {
+    let addr = stt.aux_name_to_addr.get(&p.name).map(|r| r.value().clone());
     if let Some(addr) = addr {
-      stt.claim_compiled_name(n, &addr)?;
+      stt.claim_compiled_name(&p.name, &addr)?;
     }
   }
-  for (n, addr, meta) in promotions {
-    if let Some(mut entry) = stt.env.named.get_mut(&n) {
-      entry.value_mut().set_original(addr, meta);
-    }
-  }
+  let receipts: Vec<_> =
+    promotions.into_iter().filter_map(|p| publish_promotion(stt, p)).collect();
   for (n, hint) in hints {
     match hint {
       Some(h) => {
@@ -138,6 +148,7 @@ pub fn commit(stt: &CompileState) -> Result<(), CompileError> {
       },
     }
   }
+  stt.original_receipts.lock().unwrap().extend(receipts);
   Ok(())
 }
 

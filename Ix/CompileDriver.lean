@@ -428,6 +428,8 @@ structure DriverAcc where
   cenv : CompileEnv
   blockNames : Std.HashMap Address Ix.Name := {}
   defHints : Std.HashMap Name Lean.ReducibilityHints := {}
+  /-- Successful publications' raw originals; finalized after assembly. -/
+  originals : Ix.Compile.OriginalData.OriginalStaging := #[]
   /-- Names whose dependents must be released at the CURRENT block's
       completion beyond its own members: the aux names the block's tail
       registered (Rust `aux_gen_pending`, drained per completion —
@@ -609,6 +611,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
   -- in this function's loops, the state stayed referenced twice and every
   -- insert below copied its maps (Init+Std's compile phase 44 s → 391 s).
   let reclaimed := reclaimedNames cenv lo result cache
+  let originals := published.originals.filter fun row => !reclaimed.contains row.name
   cenv := { cenv with
     totalBytes := cenv.totalBytes + result.blockBytes.size
     constants := cenv.constants.insert result.blockAddr result.blockBytes
@@ -673,6 +676,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     cenv
     blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
     defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints
+    originals := acc.originals ++ originals
     pending }
 
 /-- Withdraw a failed source block's provisional auxiliary publication: its
@@ -845,6 +849,8 @@ def originalIdentities (cenv : CompileEnv) (lo : Name) (result : BlockResult) :
 def promoteOriginalWrites (acc : DriverAcc) (lo : Name) (result : BlockResult)
     (cache : BlockState) : DriverAcc := Id.run do
   let identities := originalIdentities acc.cenv lo result
+  let originals := Ix.Compile.OriginalData.captureOriginals lo result cache
+    (fun n => (acc.cenv.nameToNamed.get? n).map (·.addr))
   let mut acc := acc
   for (name, origAddr, origMeta) in originalPromotions lo result do
     acc := { acc with cenv := promoteAuxWrites acc.cenv name origAddr origMeta }
@@ -853,7 +859,8 @@ def promoteOriginalWrites (acc : DriverAcc) (lo : Name) (result : BlockResult)
       blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs
       auxReport := acc.cenv.auxReport.addIdentity identities }
     blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
-    defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints }
+    defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints
+    originals := acc.originals ++ originals }
 
 /-- The entire original-form promotion in pure state (`checkOriginalPromotion`,
     then `promoteOriginalWrites`). On error the caller keeps none of these

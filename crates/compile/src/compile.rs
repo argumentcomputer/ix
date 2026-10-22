@@ -51,6 +51,7 @@ use crate::{
 
 pub use expr_key::{ExprKey, UnivKey};
 use expr_key::{PreseedKey, UnivContext};
+use original_data::{Captured, Payload};
 
 /// Whether to output timing diagnostics for slow blocks and aux_gen phases.
 /// Set via IX_TIMING=1 environment variable.
@@ -170,6 +171,8 @@ pub struct CompileState {
   /// registered, so [`Self::finalize_hints`] resolves this map through
   /// `env.named` into `env.anon_hints` once compilation completes.
   pub def_hints: DashMap<Name, ReducibilityHints>,
+  /// Raw originals published by successful transactions, outside canonical data.
+  pub original_receipts: std::sync::Mutex<original_data::OriginalStaging>,
   /// Resource limits of every canonical sharing construction run against
   /// this state: compilation, and the decompiler's recompile check.
   /// `compile_env` sets them once, from [`SHARING_LIMITS_ENV`], before it
@@ -295,6 +298,7 @@ impl Default for CompileState {
       aux_name_to_addr: Default::default(),
       lean_env: None,
       def_hints: Default::default(),
+      original_receipts: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
       driver_prepared: false,
       p3: Default::default(),
@@ -548,6 +552,31 @@ impl CompileState {
     orig_addr: Address,
     orig_meta: ConstantMeta,
   ) -> Result<(), CompileError> {
+    self.promote_with_capture(name, orig_addr, orig_meta, None)
+  }
+
+  /// Retain exact source bytes and hints, but only when promotion succeeds.
+  pub fn promote_original(
+    &self,
+    name: &Name,
+    orig_meta: ConstantMeta,
+    captured: Captured,
+  ) -> Result<(), CompileError> {
+    self.promote_with_capture(
+      name,
+      captured.original.addr.clone(),
+      orig_meta,
+      Some(captured),
+    )
+  }
+
+  fn promote_with_capture(
+    &self,
+    name: &Name,
+    orig_addr: Address,
+    orig_meta: ConstantMeta,
+    captured: Option<Captured>,
+  ) -> Result<(), CompileError> {
     // Verify that the metadata's own name address matches the constant
     // being promoted. A mismatch means we're about to attach metadata
     // that describes some other constant.
@@ -577,17 +606,20 @@ impl CompileState {
 
     // During a scheduled block the claim and the original metadata wait until
     // the whole block has succeeded (`block_txn::commit`).
-    let Some((orig_addr, orig_meta)) =
-      block_txn::defer_promotion(name, orig_addr, orig_meta)
-    else {
+    let Some(promotion) = block_txn::defer_promotion(block_txn::Promotion {
+      name: name.clone(),
+      addr: orig_addr,
+      meta: orig_meta,
+      captured,
+    }) else {
       return Ok(());
     };
     let aux_addr = self.aux_name_to_addr.get(name).map(|r| r.value().clone());
     if let Some(aux_addr) = aux_addr {
       self.claim_compiled_name(name, &aux_addr)?;
     }
-    if let Some(mut entry) = self.env.named.get_mut(name) {
-      entry.value_mut().set_original(orig_addr, orig_meta);
+    if let Some(receipt) = block_txn::publish_promotion(self, promotion) {
+      self.original_receipts.lock().unwrap().push(receipt);
     }
     Ok(())
   }
@@ -3451,9 +3483,17 @@ fn compile_const_inner_body(
     } else {
       // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
       // original (addr, meta) in Named.original for decompilation metadata.
-      // Do NOT store the constant blob — it's ephemeral and would pollute
-      // the Ixon env with unreferenced constants.
-      stt.promote_aux(name, addr.clone(), meta.clone())?;
+      // Keep raw data separate from checked constants, with the source hint
+      // captured before the image restores its own hint.
+      stt.promote_original(
+        name,
+        meta.clone(),
+        Captured {
+          original: Payload { addr: addr.clone(), bytes: bytes.into() },
+          hints: Some(def.hints),
+          block: None,
+        },
+      )?;
     }
     Ok((addr, meta))
   }
@@ -3576,7 +3616,15 @@ fn compile_const_inner_body(
             Named::new(addr.clone(), meta.clone()),
           )?;
         } else {
-          stt.promote_aux(name, addr.clone(), meta)?;
+          stt.promote_original(
+            name,
+            meta,
+            Captured {
+              original: Payload { addr: addr.clone(), bytes: bytes.into() },
+              hints: None,
+              block: None,
+            },
+          )?;
         }
         addr
       } else {
@@ -3769,11 +3817,20 @@ fn compile_mutual(
         }
       }
     } else {
+      let original = Payload { addr: addr.clone(), bytes: bytes.into() };
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
           let meta = all_metas.remove(&n).unwrap_or_default();
-          stt.promote_aux(&n, addr.clone(), meta)?;
+          let hints = match cnst {
+            MutConst::Defn(d) => Some(d.hints),
+            _ => None,
+          };
+          stt.promote_original(
+            &n,
+            meta,
+            Captured { original: original.clone(), hints, block: None },
+          )?;
         }
       }
     }
@@ -3784,7 +3841,7 @@ fn compile_mutual(
     compile_mutual_block(&stt.sharing_limits, ixon_mutuals, refs, univs)?;
   let block_addr = compiled.addr.clone();
 
-  if aux {
+  let original_block = if aux {
     stt.store_const_bytes(
       block_addr.clone(),
       compiled.bytes,
@@ -3800,7 +3857,10 @@ fn compile_mutual(
         stt.blocks.insert(cnst.name(), class_ordering.clone());
       }
     }
-  }
+    None
+  } else {
+    Some(Payload { addr: block_addr.clone(), bytes: compiled.bytes.into() })
+  };
 
   // Create projections for each constant.
   // When aux=true: store Ixon blobs and register Named entries (normal path).
@@ -3833,7 +3893,15 @@ fn compile_mutual(
               Named::new(proj_addr.clone(), meta),
             )?;
           } else {
-            stt.promote_aux(&n, proj_addr, meta)?;
+            stt.promote_original(
+              &n,
+              meta,
+              Captured {
+                original: Payload { addr: proj_addr, bytes: proj_bytes.into() },
+                hints: None,
+                block: original_block.clone(),
+              },
+            )?;
           }
 
           // Constructor projections
@@ -3859,7 +3927,18 @@ fn compile_mutual(
                 Named::new(ctor_addr.clone(), ctor_meta),
               )?;
             } else {
-              stt.promote_aux(&ctor.cnst.name, ctor_addr, ctor_meta)?;
+              stt.promote_original(
+                &ctor.cnst.name,
+                ctor_meta,
+                Captured {
+                  original: Payload {
+                    addr: ctor_addr,
+                    bytes: ctor_bytes.into(),
+                  },
+                  hints: None,
+                  block: original_block.clone(),
+                },
+              )?;
             }
           }
 
@@ -3881,7 +3960,19 @@ fn compile_mutual(
           Named::new(proj_addr.clone(), meta),
         )?;
       } else {
-        stt.promote_aux(&n, proj_addr, meta)?;
+        let hints = match cnst {
+          MutConst::Defn(d) => Some(d.hints),
+          _ => None,
+        };
+        stt.promote_original(
+          &n,
+          meta,
+          Captured {
+            original: Payload { addr: proj_addr, bytes: proj_bytes.into() },
+            hints,
+            block: original_block.clone(),
+          },
+        )?;
       }
     }
     idx += 1;

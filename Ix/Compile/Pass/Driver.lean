@@ -70,6 +70,7 @@ public import Ix.Compile.Pass.Opt.Engine
 public import Ix.Compile.ChangedSet.Block
 public import Ix.AuxGen.SourceIdentity
 public import Ix.AuxGen.SourceFamily
+public import Ix.Compile.OriginalCapture
 public section
 
 namespace Ix.Compile.Pass
@@ -95,12 +96,15 @@ structure Published where
   /-- Recorded declines, with the member whose rewrite produced them.
   Report-only, published only when the block succeeds. -/
   declines : Array (Name × String) := #[]
+  /-- Raw originals and source hints, staged until the block's checks pass. -/
+  originals : Ix.Compile.OriginalData.OriginalStaging := #[]
   deriving Inhabited
 
 instance : Append Published where
   append a b := { heads := a.heads ++ b.heads, blocks := a.blocks ++ b.blocks
                   canonRecs := a.canonRecs ++ b.canonRecs, views := a.views ++ b.views
-                  imageExps := a.imageExps ++ b.imageExps, declines := a.declines ++ b.declines }
+                  imageExps := a.imageExps ++ b.imageExps, declines := a.declines ++ b.declines
+                  originals := a.originals ++ b.originals }
 
 /-- `stt.resolve_addr` over a compile environment: `nameToAddr`, then
 `auxNameToAddr`. -/
@@ -632,6 +636,10 @@ def runImageBlock
   let (imgs, published) ← (compileImageBlock cenv all).mapError
     (pass3Failure cenv (all.toArray.filterMap fun h => cenv.p3Heads.get? h))
   let (origRes, origCache) ← original cenv lo all
+  let imageAddrs : Std.HashMap ExactName Address :=
+    imgs.foldl (fun m (n, r, _) => m.insert n r.blockAddr) {}
+  let originals := Ix.Compile.OriginalData.captureOriginals lo origRes origCache
+    (fun n => imageAddrs.get? n)
   let origs : Std.HashMap ExactName (Address × Ixon.ConstantMeta) :=
     if origRes.projections.isEmpty then
       ({} : Std.HashMap ExactName _).insert lo (origRes.blockAddr, origRes.blockMeta)
@@ -651,7 +659,7 @@ def runImageBlock
       defHints := bs.defHints.fold (fun m k v => m.insert k v) cache.defHints }
     if nameEq a lo then result? := some r
   let some result := result? | throw (.invalidMutualBlock s!"Pass 3: no image for {lo.pretty}")
-  return (result, cache, published)
+  return (result, cache, { published with originals := published.originals ++ originals })
 
 /-! ## Decompile records: the extension references -/
 
