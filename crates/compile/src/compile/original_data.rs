@@ -250,3 +250,7 @@ pub fn finalize_originals(
   }
   Ok(())
 }
+
+#[cfg(test)]
+#[path = "original_data_tests.rs"]
+mod tests;
