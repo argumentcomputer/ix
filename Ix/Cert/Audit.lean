@@ -28,6 +28,7 @@ import Ix.Cert.CtxAgreeOwners
 import Ix.Cert.CtxAgreeProjFields
 import Ix.Cert.SourceNames
 import Ix.Cert.SourceRetained
+import Ix.Cert.SourceReplay
 
 /-! # The certification statements, frozen
 
@@ -5316,3 +5317,19 @@ run_cmd do
   checkRoots (tag := "cert-audit") "source retained prefix"
     (#[`collapseRead_retained, `Retained.generated_le, `Retained.indices,
       `Retained.transfer, `quotient_collapse_classified].map (`Ix.Cert.SourceRetained ++ ·))
+
+/-! ## Source collapse: exact owners and per-step replay fixed points
+
+OwnerExact and kept basis-freedom hold on the actual reachable Source trace.
+A successful drop is the exact kept declaration at an in-bounds owner index.
+Replay is pointwise idempotent and preserves old unwritten heights. The
+per-step endpoint retains explicit internal owner/basis/stability conditions;
+read-loop/commit assembly and production Trace stability remain follow-ups. -/
+
+/-- info: [cert-audit] source owner replay: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "source owner replay"
+    (#[`step_drop, `trace_ownerExact, `trace_keptNoBasis, `replay_idem,
+      `StableOwned.fields, `step_replay].map (`Ix.Cert.SourceReplay ++ ·))
