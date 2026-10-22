@@ -27,6 +27,7 @@ import Ix.Cert.CtxAgreeProj
 import Ix.Cert.CtxAgreeOwners
 import Ix.Cert.CtxAgreeProjFields
 import Ix.Cert.SourceNames
+import Ix.Cert.SourceRetained
 
 /-! # The certification statements, frozen
 
@@ -5299,3 +5300,19 @@ run_cmd do
   checkRoots (tag := "cert-audit") "source name classification"
     (#[`fiberAliasAt_not_aux, `generate_names, `lower_generated,
       `quotient_lower_ordinary].map (`Ix.Cert.SourceNames ++ ·))
+
+/-! ## Source collapse: retained indices and generated-prefix classification
+
+Actual successful collapse yields an ordered subsequence of original pairs,
+with exactly its retained generated cutoff. Classification transfers to the
+kept read and is instantiated for the production quotient conversion. No
+name uniqueness, drop replay, owner coherence or semantic-map equality is
+assumed or established by these endpoints. -/
+
+/-- info: [cert-audit] source retained prefix: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "source retained prefix"
+    (#[`collapseRead_retained, `Retained.generated_le, `Retained.indices,
+      `Retained.transfer, `quotient_collapse_classified].map (`Ix.Cert.SourceRetained ++ ·))
