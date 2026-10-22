@@ -167,14 +167,17 @@ pub struct ExactSharingLimits {
   /// Sharing candidates remaining after reductions R1/R2 (the width-state
   /// search only).
   pub max_candidates: u64,
-  /// Width states created by the dynamic program.
+  /// Reference cost calls precharged by the K16 component families; width
+  /// states created by the dynamic program on the test-only exact route.
   pub max_states: u64,
   /// States in one layer (entries stored) of the dynamic program.
   pub max_layer_states: u64,
   /// Candidate transitions examined.
   pub max_transitions: u64,
-  /// Node evaluations, spine steps and marking steps, per candidate of the
-  /// tiered construction. Its phase 3 charges one evaluation of the whole
+  /// Logical evaluation work, per candidate of the tiered construction.
+  /// K16 phase 1 precharges `(calls + 1) * closure + storedSum`, matching
+  /// Lean's family recipe even when native evaluations reuse prior values.
+  /// Its phase 3 charges one evaluation of the whole
   /// table when the order is closed under stored descendants (one pass), and
   /// one evaluation per table prefix otherwise, so the two paths charge
   /// different amounts for the same output (see `tiered`).
@@ -224,15 +227,10 @@ pub struct ExactSharingLimits {
 ///   tasks, each under its own meter (as in the sequential path), and are
 ///   compared afterwards by the same rule. An error at any width fails the
 ///   call with the error of the lowest failing width, as sequentially.
-/// * `components`: the uncertain components of phase 1 are searched as
-///   separate tasks and their tables combined in component order. Each
-///   component counts its `states_created` and `work` on a meter of its own;
-///   the counts are then added to the call's meter in component order,
-///   checking `states_created` and then `work` after each component. The
-///   totals equal the sequential ones and a call fails if and only if the
-///   sequential call fails, but when both counters reach their limits within
-///   the same component the reported resource can differ from the sequential
-///   path's (which reports whichever was reached first).
+/// * `components`: retained for the test-only unbounded reference solver.
+///   The production K16 family fold is sequential, checking each component's
+///   state precharge before its closure/work precharge regardless of this
+///   budget. Reference tasks accumulate counters in component order.
 /// * `materialize`: the per-prefix phase 3 (an order not closed under
 ///   stored descendants, [`ExactSharingLimits::phase3_per_prefix`], and the
 ///   per-prefix reference of [`ExactSharingLimits::full_check`]) evaluates
@@ -642,6 +640,7 @@ impl<'l> Meter<'l> {
     Ok(())
   }
 
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn state(&mut self) -> Result<(), SharingError> {
     self.stats.states_created = self.stats.states_created.saturating_add(1);
     if self.stats.states_created > self.limits.max_states {
