@@ -209,7 +209,7 @@ def prepare (staging : OriginalStaging) (base : Ixon.Env) : Except String Tables
     if hint != named.hints then out := { out with hints := out.hints.insert name hint }
   return out
 
-/-- Populate only unchecked original data; no compiler driver calls this yet. -/
+/-- Populate only unchecked original data after canonical assembly. -/
 def finalizeOriginals (staging : OriginalStaging) (base : Ixon.Env) : Except String Ixon.Env := do
   let tables ← prepare staging base
   return { base with originals := tables.originals, originalHintOverrides := tables.hints }

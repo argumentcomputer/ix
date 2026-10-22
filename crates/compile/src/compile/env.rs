@@ -488,7 +488,7 @@ pub fn compile_env_with_profile(
 
   // Pass 3's hooks run in every whole-environment compile (no mode, no
   // switch): the state is driver-prepared.
-  let stt = CompileState {
+  let mut stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
@@ -1344,6 +1344,7 @@ pub fn compile_env_with_profile(
   }
 
   stt.finalize_hints();
+  stt.finalize_original_data()?;
 
   if !semantic_sources.is_empty() || profile.is_some() {
     if !stt.ungrounded.is_empty() {

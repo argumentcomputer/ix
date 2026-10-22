@@ -58,6 +58,36 @@ fn wire(env: &Env) -> Vec<u8> {
 }
 
 #[test]
+fn driver_finalization_propagates_refusal_and_keeps_canonical_data() {
+  use crate::compile::CompileState;
+  let original =
+    payload(&Constant::new(ConstantInfo::Defn(definition(DefKind::Theorem))));
+  let (env, row) = fixture(original.clone(), None, Some(None));
+  let canonical = env.consts.iter().next().unwrap().key().clone();
+  let mut stt = CompileState {
+    env,
+    original_receipts: std::sync::Mutex::new(vec![row.clone()]),
+    ..Default::default()
+  };
+  stt.finalize_original_data().unwrap();
+  assert!(stt.original_receipts.get_mut().unwrap().is_empty());
+  assert_eq!(stt.env.consts.len(), 1);
+  assert!(stt.env.consts.contains_key(&canonical));
+  assert_eq!(
+    stt.env.originals.get(&original.addr).unwrap().raw_bytes(),
+    original.bytes.as_ref()
+  );
+  assert_eq!(wire(&stt.env)[0], 0xe5);
+  let before = wire(&stt.env);
+  let mut unavailable = row;
+  unavailable.hints = None;
+  stt.original_receipts.get_mut().unwrap().push(unavailable);
+  let error = stt.finalize_original_data().unwrap_err().to_string();
+  assert!(error.contains("unavailable original hints"), "{error}");
+  assert_eq!(wire(&stt.env), before);
+}
+
+#[test]
 fn actual_kinds_and_every_projection_variant_are_checked() {
   for kind in [DefKind::Definition, DefKind::Theorem, DefKind::Opaque] {
     let d = definition(kind);

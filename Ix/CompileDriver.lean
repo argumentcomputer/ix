@@ -1012,6 +1012,13 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   }
   return (ixonEnv, cenv.totalBytes, cenv)
 
+/-- Assemble canonical data, then validate and retain the originals of the
+successful publications. A finalization error aborts the whole result. -/
+def finalizeEnv (acc : DriverAcc) : Except String (Ixon.Env × Nat × CompileEnv) := do
+  let (base, bytes, cenv) := assembleEnv acc
+  let out ← Ix.Compile.OriginalData.finalizeOriginals acc.originals base
+  return (out, bytes, cenv)
+
 /-! ## Domain restriction: canonical inductive flags — env.rs:262-285 -/
 
 /-- A group's members: its first member's own `all`, read through `get?`
@@ -1817,7 +1824,7 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
     p3O11aPlans := sizePlan.2 }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let acc ← emitRows st.acc
-  let (ixe, bytes, cenv) := assembleEnv acc
+  let (ixe, bytes, cenv) ← finalizeEnv acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
 
 /-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/

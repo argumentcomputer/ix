@@ -1,5 +1,6 @@
 module
 public import Ix.Compile.OriginalData
+public import Ix.CompileDriver
 public import LSpec
 
 open Ix.Compile.OriginalData
@@ -31,10 +32,33 @@ private def checks (key : Address) : List (String × Bool) := Id.run do
     ("missing captured block", (requiresHint {} label #[{ knownNone with block? := none }]
       (.projection key 0 .indc)).toOption.isNone)]
 
+private def driverChecks (key : Address) : List (String × Bool) := Id.run do
+  let name : Ix.Name := .anonymous key
+  let original : Ixon.Constant := { (default : Ixon.Constant) with
+    info := .defn { (default : Ixon.Definition) with kind := .thm } }
+  let raw := Ixon.ser original
+  let address := Address.admissionHash raw
+  let acc : Ix.CompileM.DriverAcc := { cenv := { (default : Ix.CompileM.CompileEnv) with
+    nameToNamed := ({} : Std.HashMap _ _).insert name
+      { addr := key, original := some (address, .empty) } } }
+  let refused := match Ix.CompileM.finalizeEnv acc with
+    | .error message => message.startsWith "original data: missing receipt"
+    | .ok _ => false
+  let staged := { acc with originals := #[{
+    name, published := key, original := ⟨address, raw⟩, hints := some none }] }
+  let accepted := match Ix.CompileM.finalizeEnv staged with
+    | .error _ => false
+    | .ok (out, bytes, cenv) =>
+      (out.originals[address]?).map Ixon.LazyConstant.rawBytes == some raw &&
+      out.originalHintOverrides.isEmpty && Ixon.Env.envelopeVersion out == 5 &&
+      bytes == 0 && cenv.totalBytes == 0 && out.consts.isEmpty
+  return [("driver propagates missing-original refusal", refused),
+    ("driver retains validated bytes outside canonical constants", accepted)]
+
 /-- Keep the fixture parameterized so no checks run at module initialization. -/
 public def Tests.Ix.OriginalData.units (key : Address) : LSpec.TestSeq :=
   .individualIO "original finalization: declaration kinds and projection controls" none (do
-    let rows ← IO.lazyPure fun _ => checks key
+    let rows ← IO.lazyPure fun _ => checks key ++ driverChecks key
     return match rows.find? (!·.2) with
       | none => (true, rows.length, rows.length, none)
       | some (label, _) => (false, 0, rows.length, some label)) .done

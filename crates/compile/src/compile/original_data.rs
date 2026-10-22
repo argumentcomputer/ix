@@ -1,4 +1,4 @@
-//! Unwired original-data finalization. No checker or scheduler reads receipts.
+//! Checked original-data finalization. No checker or scheduler reads receipts.
 
 use std::{cmp::Ordering, sync::Arc};
 

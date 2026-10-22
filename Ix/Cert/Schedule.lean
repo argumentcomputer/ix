@@ -250,7 +250,7 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
     p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3O11aPlans := sizePlan.2 }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let acc ← emitRows st.acc
-  let (ixe, bytes, cenv) := assembleEnv acc
+  let (ixe, bytes, cenv) ← finalizeEnv acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
 
 /-- **The driver, sequentially**: `compileEnvFold` with its waves

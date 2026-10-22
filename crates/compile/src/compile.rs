@@ -307,6 +307,14 @@ impl Default for CompileState {
 }
 
 impl CompileState {
+  /// Complete canonical assembly with checked original data. Release ephemeral
+  /// receipts on either result; callers propagate a failure instead of publishing.
+  pub fn finalize_original_data(&mut self) -> Result<(), CompileError> {
+    let staging = std::mem::take(self.original_receipts.get_mut().unwrap());
+    original_data::finalize_originals(&staging, &mut self.env)
+      .map_err(|reason| CompileError::InvalidMutualBlock { reason })
+  }
+
   /// Create an empty compile state for testing (no environment).
   pub fn new_empty() -> Self {
     Self::default()
