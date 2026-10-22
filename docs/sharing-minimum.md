@@ -1,13 +1,16 @@
 # Implement canonical minimum sharing in Ix
 
-> **Status: implemented, with the target revised (§12).** §1–§10 are the original plan. Its
+> **Status: rule revision `sharing-k16-greedy-v1` adopted (§14); production cutover in progress.**
+> §14 supersedes §12's unbounded phase-1 search and its no-fallback claim. §1–§10 are the original plan. Its
 > target, the global byte minimum under the key of §3.3, was found infeasible at production
 > scale (§12.1) and is **superseded** by the decisions of §12 wherever the two differ. Read §12
-> first. What was built:
+> together with §14. The construction and its retained components are:
 >
 > - **Construction.** `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Lean
 >   `Ix/Sharing/Exact/Tiered.lean`, Rust `crates/ixon/src/sharing_exact/tiered.rs`). Phase 1 is
->   the exact minimum of the uniform-width model at each width `w ∈ {1, 2, 3}` (§12.3, §12.11).
+>   the minimum over a fixed component family at each width `w ∈ {1, 2, 3}` (§14).
+>   Initial uncertain components of at most 16 members use every subset; larger components
+>   use the deterministic greedy chain. The old exact optimum remains a reference theorem.
 >   Phase 2 allocates an exact first tier of eight 1-byte slots, then orders the rest by Kahn
 >   priority (§12.14, §12.15). Phase 3 re-materializes every entry and root at the real TagN
 >   widths. The candidate with the fewest real bytes wins, ties going to the lower width.
@@ -16,14 +19,18 @@
 > - **Format.** TagN replaces Tag0, Tag2 and Tag4 (§12.12, §12.16). The format version is 4
 >   (`.ixe` header `0xE4`), with object format 4 and the identifiers `ixon-v4` and
 >   `ixon-v4/resource-v1`. The IxVM circuit reads and writes TagN.
-> - **Proofs.** Phase-1 minimality, the per-phase specifications, the equality of the minimized
->   length with the serialized length, and wire validity of the output are machine-checked,
->   for a run on the canonical DAG of the input (§12.13). The compiled fast implementations are
+> - **Proofs.** Family-relative phase-1 minimality, successful-output semantics and format,
+>   and conditional representation/byte compatibility are proved for the family entry (§14.3).
+>   Production entry and audit integration remain part of the cutover. The old exact minimality,
+>   per-phase specifications, equality of the minimized
+>   length with the serialized length, and wire validity remain machine-checked on the reference
+>   route (§12.13). The compiled fast implementations are
 >   tied to the specifications by audited `@[csimp]` equalities (§12.18).
 > - **Limits.** Resource limits are a safety net with a CLI override (`ix compile
->   --sharing-limits`). Exceeding one is a compile error; there is no fallback.
-> - **Compile time.** Mathlib `ix compile` takes 1.13–1.26× the time of the heuristic route
->   in the final back-to-back runs (§12.18).
+>   --sharing-limits`). Exceeding one is a compile error. The component-size gate chooses the
+>   fixed greedy family before search; exhausting a budget never changes that family.
+> - **Compile time.** §12.18 records the earlier exact implementation. §14.4 records the
+>   family measurements; whole-compiler validation of the new production route remains due.
 > - **Metadata.** The decompilers implement the extended index space of §13.1. The
 >   construction of §13.2 is not implemented.
 > - **Oracles.** The exact search of §6 is kept as a test oracle for small inputs (§12.1).
@@ -1144,3 +1151,99 @@ Obligations when implemented: the primary table, primary roots and primary bytes
 with and without metadata (a theorem, by construction: the primary result is an input);
 expansion round trip of every metadata root; idempotence; Lean/Rust byte parity; fixtures.
 Like §8.2, this does not make the combined primary-plus-metadata artifact a global minimum.
+
+## 14. Canonical rule revision `sharing-k16-greedy-v1`
+
+Owner decision, 2026-10-22. This rule supersedes the unbounded uncertain-component search
+in §12. It changes canonicalization identity, not the encoding grammar. Checked objects and
+claims retain format 4. The M6D metadata envelope version 5 is a separate change; this rule
+adds no version byte, tag, header field or metadata field. The identifier is recorded here and
+in [Ixon](Ixon.md#canonical-construction).
+
+### 14.1 Fixed component family
+
+At each uniform width `w ∈ {1, 2, 3}`, expand and canonicalize the input DAG, then use the
+existing **initial** classification and uncertain-component partition. No search or
+reclassification precedes the gate. For each initial component `C`:
+
+- If `|C| ≤ 16`, its family contains every subset of `C`.
+- Otherwise, its family is the chain `S₀, …, Sₘ`, where `m = |C|`, `S₀ = ∅`, and
+  `Sᵢ₊₁` adds the member minimizing
+  `Δ_C(Sᵢ ∪ {member}) = phiE(Sᵢ ∪ {member}) − phiE(∅)` in the existing uniform context.
+  Equal deltas choose the `setPrec`-least set, which at a chain step means adding the larger
+  structural ID. All `m + 1` chain rows are retained before slack trimming.
+
+For each attainable count, select the `setPrec`-least minimum-delta family member. Apply
+the existing slack trim, count-bracket knapsack and global `setPrec` tie rule. Phase 2's
+slot allocation, phase 3's rematerialization, and the final choice of the fewest actual
+bytes with lower-width ties are unchanged. The chosen set is optimal over this fixed
+product family; a component using the chain carries no claim of an optimum over all subsets.
+
+The gate, K = 16, classification and tie order are part of the rule identity. An implementation
+may use a different search algorithm only if it produces the same retained rows. For example,
+branch and bound may switch to enumeration of the **same** family. Timeouts, work budgets,
+available memory and implementation language must never choose a different family or emit
+the best table found so far.
+
+### 14.2 Input domain and refusal
+
+The common domain for the follow-up totality theorem includes the existing `.ixe` framed
+constant-body bound: fewer than `2^64` bytes per constant. Standalone normalization and
+structured APIs must state that bound explicitly, alongside their ingestion and wire
+conditions. It does not follow from an arbitrary in-memory `Constant` or from individual
+UInt64-sized fields alone.
+
+The production cutover retains checked arithmetic, resource limits and construction guards.
+In particular, the current telescope-spine guard, output-count/size checks and
+allocate/rematerialize checks remain. A failure returns an error. A structural fallback is
+part of the rule; a fallback triggered by failure is not. The framed input bound by itself
+does not prove that the selected output fits its frame or that every guard succeeds.
+
+### 14.3 Proof scope and follow-up
+
+The family proof stack establishes successful-run meaning and format, least choice in the
+fixed family, representation congruence, and conditional idempotence. It also establishes
+complete constant and serialized-byte equality with the old exact route when every initial
+component at all three widths has at most 16 members, both routes succeed with the same
+limits, and the old route uses its default search (`uniformSubsetSearch = false`). This
+conditional theorem does **not** imply that old-route success guarantees new-route success
+under an arbitrarily tight budget.
+
+The cutover must attach these statements and the proved fast twins to the production
+entry and its audits, preserving compiler-facing meaning, format and codec theorems without
+new premises. The old exact-optimum theorems remain on the reference path. Rust is a
+separately tested implementation; byte parity is not a universal refinement proof.
+
+The follow-up PR will prove success on the stated input domain with sufficient limits and
+a cost bound. Its remaining work includes connecting the spine-free cost/writing proofs
+through the selected output, output-domain closure and UInt64 representability, discharging
+all remaining guards, exact wide Rust arithmetic and wider IDs, traversal/teardown bounds,
+budget independence, and complete resource accounting including phase 2. Definitions of
+component call/work counts alone are not a cost theorem. None of this completes the separate
+Source acceptance, no-drop, paired-stream or `CompileCorrect` obligations.
+
+### 14.4 Evidence and release gates
+
+With references held fixed, K16 normalization of the saved corpora changed 16 of 100,327
+Init+Std constants (net +117 payload bytes) and 112 of 689,469 Mathlib constants (net +223).
+Every observed difference involved a fallback component; no wholly exact constant changed.
+These measurements exclude changes to dependent addresses during a whole compile.
+
+The captured `genMutual_mapKeys` input normalized to identical 2,805,615-byte outputs in
+Rust and Lean: 25.50 s and 331.00 s respectively. These are individual normalizations, not
+whole-environment compile times. The 65-second compile target is soft; performance work is
+separate from correctness. The old exact output for this capture remains unknown.
+
+The small valid doubling-DAG inputs exposed a Rust refusal while computing the unshared
+size for initial classification. That predicate now uses the proved sufficient cap
+`min(C0, 2 * u64::MAX)` and a product-free comparison. CPU replay gives 11/11 complete
+Rust outputs identical to Lean, including the four former refusals at depths 127, 128, 130
+and 256. The repaired capture is byte-identical in 25.61 s; all 100,327 Init+Std output
+signatures and recorded candidate meters match the preceding K16 run. This targeted repair
+does not eliminate the remaining general arithmetic or index bounds.
+
+Release requires focused mixed-family oracle tests, strict builds and audits, exact-gate
+snapshot compatibility, direct corpus normalization with the production binaries, whole
+Init+Std/Mathlib compiles with Lean/Rust parity and attributed address changes, the formerly
+stalled whole-environment compile, and all affected CI tiers. Prototype measurements do not
+stand in for these production gates.

@@ -679,6 +679,13 @@ decompiler's recompile check. It is the only sharing construction.
 
 ### Canonical construction
 
+The adopted canonicalization revision is **`sharing-k16-greedy-v1`**, with K = 16.
+It is recorded here and in [sharing-minimum §14](sharing-minimum.md#14-canonical-rule-revision-sharing-k16-greedy-v1).
+This is a change to the canonical choice of sharing, with no change to the wire grammar,
+checked-object/claim format 4, or the separate M6D metadata envelope version 5.
+Production cutover and its full compiler gates are in progress. The revision replaces
+the previous unbounded phase-1 search; the table rules and phases 2 and 3 are unchanged.
+
 The canonical table is the output of `Ix.Sharing.Exact.canonicalSharingTiered
 .tagN` (Lean, `Ix/Sharing/Exact/Tiered.lean`) and of
 `canonical_sharing_tiered(ShareLayout::TagN, ..)` (Rust,
@@ -697,15 +704,22 @@ table normalizes to the same bytes (tested; proved under a hypothesis, see
    of interned terms depends only on the terms the roots denote, not on the
    interner's temporary IDs.
 2. **Phase 1: selection, at each uniform width `w ∈ {1, 2, 3}`.**
-   `optimizeSharingUniform w` finds a stored set that minimizes the
-   constant's length when every `Share` costs `w` bytes and everything else
-   is priced at its encoded length, telescopes and table count included.
+   Select the minimum uniform-width length over a fixed family of stored sets.
+   Every `Share` costs `w` bytes; everything else is priced at its encoded length,
+   telescopes and table count included.
    - Only terms with compact in-degree at least 2 are considered. The
      in-degree counts DAG edges with multiplicity, plus root occurrences.
    - Ties go to the minimum that is least in the pinned order `setPrec`.
-   - Each candidate is classified as certain-stored, certain-excluded or
-     uncertain using DAG bounds. The uncertain ones are searched exhaustively,
-     component by component.
+   - Classify candidates as certain-stored, certain-excluded or uncertain using
+     the existing initial DAG bounds, and partition the uncertain terms before search.
+   - An initial uncertain component of at most 16 members uses every subset.
+     A larger component uses a deterministic greedy chain starting at the empty set.
+     Each step adds the member giving the smallest component delta from the empty
+     baseline; equal deltas add the larger structural ID. Keep every chain row,
+     including the empty and full endpoints.
+   - Keep the `setPrec`-least minimum for each count, then use the existing slack
+     trim, count-bracket knapsack and global tie rule. Resource exhaustion never
+     switches the family. Exactness is relative to this family.
 3. **Phase 2: slot allocation.** Let `ref(t)` be the number of `Share(t)` in
    the phase-1 output.
    - The 1-byte tier (indices 0–7) gets a set of at most 8 stored terms that
@@ -781,10 +795,24 @@ resource exhausted: states (limit 1099511627776); raise it with
 --sharing-limits states=N (IX_SHARING_LIMITS)`. Every other construction
 failure is `CompileError.sharingConstruction`. In Rust, kernel egress and the
 decompiler's recompile name the constant in the message (`egress '<name>':
-…`, `recompile of '<name>' (sharing): …`). There is no fallback to another
-construction, and a partial or best-so-far table is never emitted.
+…`, `recompile of '<name>' (sharing): …`). The structural gate above fixes the
+exact or greedy family before search. A refusal never switches families or emits
+a partial or best-so-far table.
 
 ### What is proved, and what is not
+
+For `sharing-k16-greedy-v1`, the family proof stack proves the minimum within the
+fixed family, successful-output meaning and wire validity, representation congruence,
+and conditional idempotence. Production-entry and audit integration are part of the
+cutover. Complete old/new bytes agree when both routes succeed with the same limits,
+all initial components at all three widths have at most 16 members, and the old
+route uses `uniformSubsetSearch = false`. Old-route success alone is not yet a proof
+of new-route success. [Sharing-minimum §14.3](sharing-minimum.md#143-proof-scope-and-follow-up)
+records the remaining totality, output-domain and cost obligations.
+
+The detailed exact-search theorem inventory below describes the retained reference
+route and the common later phases. Its phase-1 global optimum must not be read as a
+claim about components that use the new greedy family.
 
 The following theorems are machine-checked in Lean, in `IxSharingVerify`
 (the `IxSharingVerify` library; the TagN theorems are in
@@ -797,7 +825,7 @@ listed axioms, which are among `propext`, `Classical.choice` and
 successful run on the canonical DAG of the input (`ex.dag`, `ex.roots`); the
 step that builds that DAG is outside them (see "Expansion" below).
 
-- **Phase 1 minimality** (`IxSharingVerify/UniformOptimality.lean`):
+- **Reference phase 1 minimality** (`IxSharingVerify/UniformOptimality.lean`):
   `optimizeUniform_minimum` and `optimizeUniform_least`. Suppose
   `optimizeUniformExpanded w limits ex` succeeds with the default
   branch-and-bound search (`limits.uniformSubsetSearch = false`; the
@@ -892,8 +920,8 @@ failing check turns a run into an error, never into a different table.
 Not claimed:
 
 - **No global minimum.** The canonical table is not a global byte minimum
-  over all tables, orders and occurrence choices. Each phase is exact for
-  its own problem; their composition is not claimed to be optimal.
+  over all tables, orders and occurrence choices. Phase 1 is exact only over
+  the fixed family; the composition is not claimed to be optimal.
 - **Phase 2 on larger tables.** For tables of more than 1,032 entries, whose
   indices span the 2- and 3-byte rungs, the Kahn order is not claimed to
   minimize `Σ ref · width`.
@@ -932,14 +960,17 @@ Not claimed:
   and requires identical serialized environments
   ([performance](sharing-minimum-performance.md)).
 - **Length range in Rust.** Lean computes lengths with arbitrary-precision
-  `Nat`. Rust's phase 1 uses 128-bit length arithmetic and fails closed
-  (`format bound: LengthOverflow`) on an input whose phase-1 lengths leave
-  that range, where Lean succeeds: for example the chain
-  `e(i+1) = App(e(i), e(i))` at depth 127 or more (at depth 126 both give the
-  same bytes). No Init or Mathlib constant comes near this bound. This is a
-  known divergence of the two implementations.
+  `Nat`. Rust retains checked 128-bit general costs and signed deltas, so
+  their overflow remains a possible refusal. The measured classification-only
+  overflow on small valid doubling DAGs is repaired: all 11 fixtures, including
+  depths 127–256, now have complete Rust/Lean byte parity. That predicate uses
+  a sufficient cap, not a saturated replacement for general costs; wider
+  arithmetic remains follow-up work (§14.3 of sharing-minimum).
 - **Failure.** The theorems describe successful runs. A run that exceeds a
-  limit returns an error.
+  limit returns an error. The follow-up totality domain includes ingestion/wire
+  conditions and fewer than `2^64` bytes per framed constant body; standalone and
+  structured APIs must state that bound explicitly. Input framing alone does not
+  prove output framing or that the remaining guards cannot fail.
 
 ### Example
 
