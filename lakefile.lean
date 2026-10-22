@@ -259,7 +259,12 @@ lean_lib Apps
 
 lean_exe Apps.ZKVoting.Prover where
   supportInterpreter := true
-lean_exe Apps.ZKVoting.Verifier
+lean_exe Apps.ZKVoting.Verifier where
+  supportInterpreter := true
+lean_exe Apps.ZKVoting.Tests where
+  supportInterpreter := true
+lean_exe Apps.ZKVoting.Demo where
+  supportInterpreter := true
 
 end IxApplications
 
