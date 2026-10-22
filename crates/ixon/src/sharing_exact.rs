@@ -88,9 +88,11 @@
 mod cost;
 mod dag;
 mod dict;
+mod measure;
 mod par;
 mod prof;
 mod roots;
+#[cfg(any(test, feature = "sharing-reference"))]
 mod search;
 mod tiered;
 mod uniform;
@@ -103,6 +105,7 @@ mod oracle;
 mod tests;
 
 use std::fmt;
+#[cfg(any(test, feature = "sharing-reference"))]
 use std::sync::Arc;
 
 pub use cost::{
@@ -112,12 +115,12 @@ pub use cost::{
 pub use dag::{Children, Node, NodeKey, SharingDag, TermId};
 pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
 // Diagnostic only (empty without the `sharing-profile` feature).
+pub use measure::{candidate_terms, sequence_len};
 #[doc(hidden)]
 pub use prof::profile_report;
 pub use roots::{
   constant_info_root_count, constant_info_root_exprs, rebuild_constant_info,
 };
-pub use search::{candidate_terms, sequence_len};
 pub use tiered::{
   ShareLayout, TAGN_RUNG1_END, TAGN_RUNG2_END, TAGN_RUNG3_END, TAGN_RUNG4_END,
   TAGN_RUNG5_END, TieredSharingResult, TieredStats, canonical_sharing_tiered,
@@ -125,18 +128,21 @@ pub use tiered::{
   normalize_constant_sharing_tiered, normalize_constant_sharing_tiered_par,
   tagn_width,
 };
+pub use uniform::UniformSharingResult;
+#[cfg(any(test, feature = "sharing-reference"))]
 pub use uniform::{
-  UniformSharingResult, normalize_constant_sharing_uniform,
-  optimize_sharing_uniform,
+  normalize_constant_sharing_uniform, optimize_sharing_uniform,
 };
-// Offline experiments only; no compiler or canonical entry calls this module.
-#[doc(hidden)]
-pub use uniform::experimental;
+// Historical variable-K experiments are private unit-test controls.
+#[cfg(test)]
+pub(crate) use uniform::experimental;
 // The first-tier search of phase 2, for the tests; not part of the API.
 #[cfg(test)]
 pub(crate) use tiered::first_tier;
 
+#[cfg(any(test, feature = "sharing-reference"))]
 use crate::constant::Constant;
+#[cfg(any(test, feature = "sharing-reference"))]
 use crate::expr::Expr;
 
 /// Deterministic resource limits and search options. Exhausting a limit is
@@ -616,6 +622,7 @@ impl<'l> Meter<'l> {
     Ok(())
   }
 
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn candidates(&mut self, k: u64) -> Result<(), SharingError> {
     self.stats.candidates = k;
     if k > self.limits.max_candidates {
@@ -643,6 +650,7 @@ impl<'l> Meter<'l> {
     Ok(())
   }
 
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn transition(&mut self) -> Result<(), SharingError> {
     self.stats.transitions = self.stats.transitions.saturating_add(1);
     if self.stats.transitions > self.limits.max_transitions {
@@ -654,6 +662,7 @@ impl<'l> Meter<'l> {
     Ok(())
   }
 
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn layer(&mut self, size: u64) -> Result<(), SharingError> {
     self.stats.max_layer = self.stats.max_layer.max(size);
     if size > self.limits.max_layer_states {
@@ -667,6 +676,7 @@ impl<'l> Meter<'l> {
 
   /// Add the `states_created` and `work` counted on another meter (one
   /// parallel task), checking `states_created` and then `work`.
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn absorb(
     &mut self,
     other: &ExactSharingStats,
@@ -692,6 +702,7 @@ impl<'l> Meter<'l> {
 
 /// A certified exact-minimum sharing encoding of ordered expanded roots.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(any(test, feature = "sharing-reference"))]
 pub struct ExactSharingResult {
   /// Rewritten roots, in input order.
   pub roots: Vec<Arc<Expr>>,
@@ -712,6 +723,7 @@ pub struct ExactSharingResult {
 /// The full-Constant key differs from the variable length only by bytes that
 /// do not depend on sharing, so the result is the global minimum of any
 /// Constant with these ordered roots.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn optimize_sharing(
   roots: &[Arc<Expr>],
   limits: &ExactSharingLimits,
@@ -724,6 +736,7 @@ pub fn optimize_sharing(
 /// Expand `c`'s table (validating backward references) and return the
 /// exact-minimum Constant together with its search result (the width-state
 /// search, a test oracle; see [`optimize_sharing`]).
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_sharing_with_stats(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -758,6 +771,7 @@ pub fn normalize_constant_sharing_with_stats(
 
 /// Expand `c`'s table and return its exact-minimum encoding (the test
 /// oracle of [`optimize_sharing`]).
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_sharing(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -767,6 +781,7 @@ pub fn normalize_constant_sharing(
 
 /// Outcome of [`check_exact_minimum`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(any(test, feature = "sharing-reference"))]
 pub enum ExactMinimumCheck {
   /// `c` is its exact-minimum encoding.
   Minimum,
@@ -778,6 +793,7 @@ pub enum ExactMinimumCheck {
 /// against the width-state search, the test oracle of [`optimize_sharing`]
 /// (Lean `checkExactMinimum`). It does not check the compiler's
 /// canonical construction ([`canonical_sharing_tiered`]).
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn check_exact_minimum(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -794,7 +810,7 @@ pub fn check_exact_minimum(
   })
 }
 
-/// Failure of [`normalize_constant_bytes`].
+/// Failure of byte-level normalization, including the canonical tiered entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NormalizeBytesError {
   /// The input is not exactly one wire-valid serialized Constant.
@@ -816,6 +832,7 @@ impl std::error::Error for NormalizeBytesError {}
 /// Byte-level normalization: decode exactly one serialized Constant (no
 /// trailing bytes), expand and validate its table, and return the serialized
 /// exact-minimum Constant (the test oracle of [`optimize_sharing`]).
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_bytes(
   bytes: &[u8],
   limits: &ExactSharingLimits,
@@ -838,6 +855,7 @@ pub fn normalize_constant_bytes(
 /// Byte-level uniform-width normalization: decode exactly one serialized
 /// Constant, re-share it with the uniform-width optimum for Share width `w`,
 /// and return the serialized result.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_bytes_uniform(
   w: u64,
   bytes: &[u8],

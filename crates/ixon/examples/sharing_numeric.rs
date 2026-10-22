@@ -13,7 +13,10 @@ use ix_common::env::DefinitionSafety;
 use ixon::Env;
 use ixon::constant::{Constant, ConstantInfo, DefKind, Definition};
 use ixon::expr::Expr;
-use ixon::sharing_exact::{ExactSharingLimits, SharingDag, experimental};
+use ixon::sharing_exact::{
+  ExactSharingLimits, ShareLayout, SharingDag,
+  normalize_constant_sharing_tiered,
+};
 use ixon::univ::Univ;
 use sha2::{Digest, Sha256};
 
@@ -133,25 +136,12 @@ fn run(dir: &Path, depth: u64) -> Result<(), String> {
     Sha256::digest(&envelope)
   );
   println!(
-    "VALID\tcodec-roundtrip\tbackward-shares\tclosed-binders\trefs-empty\tunivs=[SuccZero]\ttyping=construction-only\tlimits=default\tK=12\texact-baseline=unknown"
+    "VALID\tcodec-roundtrip\tbackward-shares\tclosed-binders\trefs-empty\tunivs=[SuccZero]\ttyping=construction-only\tlimits=default\tK=16\trule=sharing-k16-greedy-v1"
   );
   std::io::stdout().flush().map_err(|e| e.to_string())?;
   let limits = ExactSharingLimits::default();
   let start = Instant::now();
-  let mut widths = 0;
-  let classified = experimental::classify(&c, &limits, &mut |event| {
-    if matches!(event, experimental::Event::Width { .. }) {
-      widths += 1;
-    }
-    Ok(())
-  });
-  println!(
-    "CLASSIFY\tdepth={depth}\twidths={widths}\tms={}\tresult={classified:?}",
-    start.elapsed().as_millis()
-  );
-  std::io::stdout().flush().map_err(|e| e.to_string())?;
-  let start = Instant::now();
-  match experimental::normalize(&c, &limits, 12, &mut |_| Ok(())) {
+  match normalize_constant_sharing_tiered(ShareLayout::TagN, &c, &limits) {
     Err(e) => println!(
       "NORMALIZE\tdepth={depth}\tms={}\terror={e:?}\tdisplay={e}",
       start.elapsed().as_millis()
@@ -175,7 +165,7 @@ fn run(dir: &Path, depth: u64) -> Result<(), String> {
       let mut encoded = Vec::new();
       out.put(&mut encoded);
       preserve(
-        &dir.join(format!("depth-{depth:04}.K12.experimental.ixn")),
+        &dir.join(format!("depth-{depth:04}.K16.canonical.ixn")),
         &encoded,
       )?;
       println!(
@@ -188,7 +178,7 @@ fn run(dir: &Path, depth: u64) -> Result<(), String> {
       );
     },
   }
-  Ok(()) // Numeric refusal is recorded data; validation/IO failures remain errors.
+  Ok(()) // Refusal is recorded data; validation/IO failures remain errors.
 }
 
 fn main() -> Result<(), String> {
