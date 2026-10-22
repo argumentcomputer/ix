@@ -331,7 +331,7 @@ def promotionCases : List (String × Bool) := Id.run do
       defHints := ({} : Std.HashMap _ _).insert a .abbrev |>.insert other .opaque
       pending := #[a, b, other] }
   let withdrawn (out : DriverAcc) : Bool :=
-    all.toList.all (fun n => (resolveAddrPure out.cenv n).isNone &&
+    out.originals.isEmpty && all.toList.all (fun n => (resolveAddrPure out.cenv n).isNone &&
       !out.cenv.nameToNamed.contains n && !out.cenv.auxGenExtraNames.contains n &&
       out.cenv.ungrounded.contains n && !out.defHints.contains n && !out.pending.contains n)
   let untouched (out : DriverAcc) : Bool :=
@@ -369,7 +369,40 @@ def promotionCases : List (String × Bool) := Id.run do
   cases := cases ++ [("valid neighbor promotes canonical addresses and own original",
     !bad && all.toList.all (fun n => ok.cenv.nameToAddr.get? n == some canonical) &&
     ((ok.cenv.nameToNamed.get? a).bind (·.original)) == some (original, .empty) &&
-    ok.cenv.ungrounded.isEmpty && untouched ok)]
+    ok.cenv.ungrounded.isEmpty && untouched ok && ok.originals.size == 1 &&
+    ok.originals[0]?.map (·.published) == some canonical &&
+    ok.originals[0]?.map (·.original.addr) == some original)]
+  let (retried, _, retryBad) := finishAuxPromotion
+    { acc with originals := claimFailure.originals } a all (some (loneResult original, default))
+  cases := cases ++ [("retry publishes only its own captured original",
+    !retryBad && retried.originals.size == 1)]
+  let definition : Ixon.Constant := { (default : Ixon.Constant) with info := .defn { (default : Ixon.Definition) with kind := .defn } }
+  let bytes := Ixon.ser definition
+  let sourceResult : BlockResult :=
+    { block := definition, blockBytes := bytes, blockAddr := Address.admissionHash bytes }
+  let sourceCache : BlockState :=
+    { defHints := ({} : Std.HashMap _ _).insert a (.regular 7) }
+  let captured := Ix.Compile.OriginalData.captureOriginals a sourceResult sourceCache
+    (fun n => if n == a then some canonical else none)
+  let imageCache : BlockState := { defHints := ({} : Std.HashMap _ _).insert a .abbrev }
+  let imagePublished : Ix.Compile.Pass.Published := { originals := captured }
+  let image := mergeCompiledBlock emptyAcc a (loneResult canonical) imageCache imagePublished
+  let reclaimed := mergeCompiledBlock image a (loneResult canonical) imageCache imagePublished
+  cases := cases ++ [("image captures exact source bytes and hints before overrides",
+    image.originals.size == 1 && image.originals[0]?.map (·.original.bytes) == some bytes &&
+    image.originals[0]?.map (·.hints) == some (some (some (.regular 7))) &&
+    image.defHints.get? a == some .abbrev),
+    ("identical re-claim retains the owner's receipt", reclaimed.originals.size == 1)]
+  let getHints := Ix.Compile.OriginalData.capturedHints
+  let theoremRecord : Ixon.Constant := { (default : Ixon.Constant) with info := .defn { (default : Ixon.Definition) with kind := .thm } }
+  let block : Ixon.Constant := { (default : Ixon.Constant) with info := .muts #[.defn { (default : Ixon.Definition) with kind := .defn }] }
+  let projected : Ixon.Constant := { (default : Ixon.Constant) with info := .dPrj ⟨0, canonical⟩ }
+  let recursor : Ixon.Constant := { (default : Ixon.Constant) with info := .rPrj ⟨0, canonical⟩ }
+  cases := cases ++ [("missing definition hint stays unavailable",
+    (getHints default a definition definition).isNone),
+    ("theorem known absence is preserved", getHints default a theoremRecord theoremRecord == some none),
+    ("projection uses original member hint", getHints sourceCache a block projected == some (some (.regular 7))),
+    ("recursor never inherits image definition hints", getHints imageCache a block recursor == some none)]
   let sourceOwned := fun n => all.contains n
   cases := cases ++ [("source dependency waits despite provisional resolution",
     !auxDependencyReady sourceOwned acc.cenv {} a &&

@@ -29,6 +29,9 @@ import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.Pass3RustParity
+import Tests.Ix.Compile.O11aDecline
+import Tests.Ix.Compile.O11aCopies
+import Tests.Ix.Compile.O11aPlanning
 import Tests.Ix.Compile.PlanCache
 import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.ChangedSet
@@ -548,6 +551,9 @@ def registry : List Entry := [
   -- The Rust Pass 3 core against Ix.Compile.Image (the images of image-gen's
   -- fixtures, test-only FFI) and against the Lean compiler on their callers (bytes)
   .runner "pass3-rust-parity" (.ci .compilePipeline) Tests.Ix.Compile.Pass3RustParity.run,
+  .runner "o11a-decline" (.ci .compilePipeline) Tests.Ix.Compile.O11aDecline.run,
+  .runner "o11a-copies" (.ci .compilePipeline) Tests.Ix.Compile.O11aCopies.run,
+  .runner "o11a-planning" (.ci .compilePipeline) Tests.Ix.Compile.O11aPlanning.run,
   -- Source ownership of auxiliary claims, independent of arrival order
   -- (Tests.Ix.Compile.ClaimOrder).
   .runner "compile-claim-order" (.ci .compilePipeline) Tests.Ix.Compile.ClaimOrder.run,

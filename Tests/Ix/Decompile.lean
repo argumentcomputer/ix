@@ -13,11 +13,11 @@ public import Ix.Meta
 public import Ix.CompileM
 public import Ix.DecompileM
 public import Ix.DecompileDriver
-public import Ix.DecompileRoundtrip
 public import Ix.ImportIxe
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
+public import Tests.Ix.DecompileOriginals
 
 open LSpec
 
@@ -42,9 +42,8 @@ def testDecompile : TestSeq :=
     IO.println s!"[Step 1]   names={phases.compileEnv.names.size}, named={phases.compileEnv.named.size}, consts={phases.compileEnv.consts.size}, blobs={phases.compileEnv.blobs.size}"
     IO.println ""
 
-    -- Step 2: Full decompile driver (Pass 1 aux-skip → Pass 1.5 flags →
-    -- Pass 2 aux regeneration/recovery) with the source env as the
-    -- debug-track oracle.
+    -- Step 2: Read stored originals and restore inductive flags. The source
+    -- view remains a compatibility argument; comparison is below.
     IO.println s!"[Step 2] Decompiling (full driver) to Ix types..."
     let decompStart ← IO.monoMsNow
     let origView : Std.HashMap Ix.Name Ix.ConstantInfo := phases.rawEnv.consts
@@ -780,10 +779,9 @@ private def rsEnv (support : Bool) : Ixon.Env :=
   let env := rsAxiom {} nRsSrc .zero
   if support then rsAxiom env nRsHelper (.succ .zero) else env
 
-/-- The full driver decompiles the source axiom and skips the support. The
-    input is read through a reference, so the driver (whose recompiles call
-    the FFI) runs when the test runs, not as a closed term when the suite is
-    built. -/
+/-- The full driver decompiles the source axiom and skips the support. Read
+    the input at test execution time, keeping native hashing out of module
+    initialization. -/
 private def rsSupportSkipped : TestSeq :=
   .individualIO "reserved support: the full driver skips it" none (do
     let support ← IO.mkRef true
@@ -835,6 +833,7 @@ public def unitSuite : List TestSeq := [
       irCompiledTerms
     ++ test "inline record: whole constant decompiles" irAxiom,
   rsSupportSkipped,
+  Tests.DecompileOriginals.suite,
   irParity
 ]
 

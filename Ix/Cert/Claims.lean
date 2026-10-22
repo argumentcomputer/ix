@@ -740,10 +740,10 @@ theorem rewriteBlock_overlay {expansion? : Name → Except String (Option Ix.Com
     obtain ⟨n, ci⟩ := x
     dsimp only at hstep
     obtain ⟨⟨⟨ci', changed⟩, st'⟩, hrun, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep
-    have keeps : Keeps ci ci' := rewriteConstM_keeps expansion? ci cfg s.1 _ st' hrun
+    have keeps : Keeps ci ci' := rewriteConstM_keeps expansion? ci cfg
+      { s.1 with declines := #[] } _ st' hrun
     have hmem : (n, ci) ∈ members := Array.mem_toList_iff.1 (by rw [← hx]; simp)
     dsimp only at hstep
-    obtain ⟨decl, -, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep
     split at hstep
     · cases hstep
       refine ⟨_, rfl, fun p hp => ?_⟩

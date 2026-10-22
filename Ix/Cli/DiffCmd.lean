@@ -50,7 +50,8 @@ private def isSyntheticMuts (s : String) : Bool :=
 
 private def printStats (path : String) (s : Ixon.EnvStats) : IO Unit :=
   IO.println
-    s!"[diff] {path}: {s.consts} consts, {s.named} named, {s.blobs} blobs, {s.comms} comms"
+    s!"[diff] {path}: {s.consts} consts, {s.named} named, {s.blobs} blobs, {s.comms} comms, \
+      {s.originals} originals ({s.originalBytes} payload bytes), {s.originalHintOverrides} original hints"
 
 /-- Print up to `cap` addresses (all when `verbose`), one per line. -/
 private def printAddrList
@@ -190,6 +191,18 @@ def runDiffCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"  {shortAddr verbose a}  {oldH} → {newH}"
     if d.hintsChanged.size > cap then
       IO.println s!"  … and {d.hintsChanged.size - cap} more"
+  unless d.originalsOnlyA.isEmpty && d.originalsOnlyB.isEmpty && d.originalsChanged.isEmpty do
+    IO.println s!"originals: {d.originalsOnlyA.size} removed, {d.originalsOnlyB.size} added, {d.originalsChanged.size} changed"
+    printAddrList "  - " d.originalsOnlyA verbose
+    printAddrList "  + " d.originalsOnlyB verbose
+    printAddrList "  ~ " d.originalsChanged verbose
+  unless d.originalHintsChanged.isEmpty do
+    IO.println s!"original hints changed: {d.originalHintsChanged.size}"
+    let cap := if verbose then d.originalHintsChanged.size else min d.originalHintsChanged.size 10
+    for (name, old, new) in d.originalHintsChanged[0:cap] do
+      IO.println s!"  {name}  {old} → {new}"
+    if d.originalHintsChanged.size > cap then
+      IO.println s!"  … and {d.originalHintsChanged.size - cap} more"
   IO.println s!"[diff] {oldPath} ≠ {newPath}"
   return 1
 
@@ -202,7 +215,7 @@ def diffCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     anon; "Compare only anonymous structure (the default; accepted for explicitness)."
-    «meta»; "Additionally compare named metadata (binder names, originals, kv-maps)."
+    «meta»; "Additionally compare named metadata and unchecked original data."
     verbose; "Print full addresses, uncapped lists, synthetic mutual-block names, and rippled changed rows."
 
   ARGS:

@@ -58,7 +58,9 @@ use super::clique::plan::{CliqueOutcome, CliquePlan};
 use super::clique::row::{row_prereqs, rows_of};
 use super::clique::table::encoding_owner;
 use super::names::{has_reserved, image_kinds, ix_aux_name, mk_str};
-use super::opt::{Occ, OptBlock, OptEnv, engine, opt_block_of};
+use super::opt::{
+  Occ, OptBlock, OptEnv, engine, o11a_decline_cause, opt_block_of,
+};
 use super::sidecar::{hash_map_of, rename_named};
 use super::spec::NestedCanon;
 use super::translate::{RwState, image_decl_with, rewrite_block};
@@ -490,6 +492,7 @@ pub fn patch_recs(
 struct Ctx<'a> {
   lean_env: &'a Arc<LeanEnv>,
   stt: &'a CompileState,
+  o11a_blocked: FxHashMap<Name, String>,
 }
 
 impl Ctx<'_> {
@@ -697,6 +700,7 @@ fn with_big_stack<R: Send>(f: impl FnOnce() -> R + Send) -> R {
 struct Prepared {
   overlay: FxHashMap<Name, ConstantInfo>,
   sources: Vec<Expr>,
+  declines: Vec<(Name, String)>,
 }
 
 /// The overlay and decompile sources of a block (`prepareBlock`); `None`
@@ -773,21 +777,41 @@ fn prepare_block_rewrite(
     let key = ctx.stt.p3.heads.get(h).map(|r| r.clone())?;
     opt_blocks.get(&key)
   };
-  let env =
-    OptEnv { ienv: ctx.lean_env, resolves: &resolves, block_of: &block_of };
+  let reject_ref = |n: &Name| {
+    ctx.o11a_blocked.get(n).cloned().or_else(|| {
+      ctx
+        .stt
+        .ungrounded
+        .contains_key(n)
+        .then(|| format!("producer {} failed compilation", n.pretty()))
+    })
+  };
+  let env = OptEnv {
+    ienv: ctx.lean_env,
+    resolves: &resolves,
+    block_of: &block_of,
+    reject_ref: &reject_ref,
+  };
   let opt = |n: &Name, us: &[Level], args: &[Expr]| {
     if !permits_optimization(ctx.lean_env, n) {
       return None;
     }
-    engine(&env, &Occ { head: n, us, args }).map(|(_, e)| e)
+    engine(&env, &Occ { head: n, us, args }).map(|(_, e, reports)| (e, reports))
+  };
+  let decline = |n: &Name, us: &[Level], args: &[Expr]| {
+    if !permits_optimization(ctx.lean_env, n) {
+      return None;
+    }
+    o11a_decline_cause(&env, &Occ { head: n, us, args })
   };
   let rw = {
     let mut lookup = |n: &Name| pass_expansion_lookup(ctx, &mut views, n);
-    rewrite_block(&mut lookup, members, Some(&opt))?
+    rewrite_block(&mut lookup, members, Some(&opt), Some(&decline))?
   };
   Ok(Prepared {
     overlay: rw.overlay.into_iter().collect(),
     sources: rw.sources,
+    declines: rw.declines,
   })
 }
 
@@ -882,18 +906,18 @@ fn clique_canon_rewrite(
   ctx: &Ctx<'_>,
   c: &Name,
   ci: &ConstantInfo,
-) -> Result<(ConstantInfo, Vec<Expr>), String> {
+) -> Result<(ConstantInfo, Vec<Expr>, Vec<(Name, String)>), String> {
   if ctx.stt.p3.heads.is_empty() {
-    return Ok((ci.clone(), Vec::new()));
+    return Ok((ci.clone(), Vec::new(), Vec::new()));
   }
   let used: Vec<Name> = heads_in(ctx.stt, ci).into_iter().collect();
   if used.is_empty() {
-    return Ok((ci.clone(), Vec::new()));
+    return Ok((ci.clone(), Vec::new(), Vec::new()));
   }
   let members = [(c.clone(), ci.clone())];
   let p = with_big_stack(|| prepare_block_rewrite(ctx, &members, used))?;
   let ci2 = p.overlay.get(c).cloned().unwrap_or_else(|| ci.clone());
-  Ok((ci2, p.sources))
+  Ok((ci2, p.sources, p.declines))
 }
 
 /// Compile the canonical constants of a block's transported cliques
@@ -906,13 +930,14 @@ fn clique_canon_rewrite(
 fn compile_clique_canon(
   ctx: &Ctx<'_>,
   canon: &[(Name, ConstantInfo)],
-) -> Result<(), CompileError> {
+) -> Result<Vec<(Name, String)>, CompileError> {
   let stt = ctx.stt;
+  let mut declines = Vec::new();
   for (c, ci) in canon {
     let err = |e: CompileError| {
       invalid(format!("Pass 3 cliques: canonical constant {}: {e}", c.pretty()))
     };
-    let (ci2, sources) =
+    let (ci2, sources, causes) =
       clique_canon_rewrite(ctx, c, ci).map_err(|e| err(invalid(e)))?;
     let def = match &ci2 {
       ConstantInfo::DefnInfo(v) => Def::mk_defn(v),
@@ -929,8 +954,9 @@ fn compile_clique_canon(
       compile_single_def_parts(c, &def, &mut cache, stt).map_err(err)?;
     stt.store_const_bytes(addr.clone(), bytes, constant)?;
     publish_image(stt, c, Named::new(addr, meta))?;
+    declines.extend(causes);
   }
-  Ok(())
+  Ok(declines)
 }
 
 /// Compile a row or an `_ix.src` copy as a lone constant (no decompile
@@ -1189,7 +1215,8 @@ fn compile_image_block(
         // a definitional head's rewritten expansion enters the image memo when
         // every view the block's rewrite read is stable (Lean `readsMemoable`):
         // a later block's rewrite reads it instead of rewriting Lean's value
-        if x.needs_rewrite && all_stable(ctx, &views) {
+        if x.needs_rewrite && st.declines.is_empty() && all_stable(ctx, &views)
+        {
           let rewritten = Expansion {
             value: value.clone(),
             needs_rewrite: false,
@@ -1268,7 +1295,20 @@ pub fn compile_block(
   stt: &CompileState,
   kctx: &mut KernelCtx,
 ) -> Result<Address, CompileError> {
-  let ctx = Ctx { lean_env, stt };
+  let mut o11a_blocked = FxHashMap::default();
+  for n in all {
+    for (p, why) in stt.p3.o11a_blocked.get(n).into_iter().flatten() {
+      o11a_blocked
+        .entry(p.clone())
+        .and_modify(|old: &mut String| {
+          if why.as_str() < old.as_str() {
+            *old = why.clone();
+          }
+        })
+        .or_insert_with(|| why.clone());
+    }
+  }
+  let ctx = Ctx { lean_env, stt, o11a_blocked };
   if is_image_block(stt, all) {
     return compile_image_block(&ctx, lo, all, kctx);
   }
@@ -1280,9 +1320,11 @@ pub fn compile_block(
   } else {
     clique_step(&ctx, all, refs)?
   };
-  if !prep.overlay.is_empty() {
-    compile_clique_canon(&ctx, &prep.canon)?;
-  }
+  let mut declines = if !prep.overlay.is_empty() {
+    compile_clique_canon(&ctx, &prep.canon)?
+  } else {
+    Vec::new()
+  };
   let clique: FxHashMap<Name, ConstantInfo> =
     prep.overlay.iter().cloned().collect();
   let prepared = prepare_block(&ctx, all, refs, &clique).map_err(invalid)?;
@@ -1301,12 +1343,14 @@ pub fn compile_block(
   if let Some(p) = prepared {
     cache.p3_overlay.extend(p.overlay);
     cache.p3_sources.extend(p.sources.into_iter().enumerate());
+    declines.extend(p.declines);
   }
   let res = compile_const(lo, all, lean_env, cache, stt, kctx);
   // the plans the block computed join the plan table when the block
   // compiles (Lean merges a block's state only then); the first plan of a
   // clique stays, and so do its rows (the rows table)
   if res.is_ok() {
+    block_txn::record_declines(stt, declines);
     for (k, o) in prep.fresh {
       stt.p3.clique_plans.entry(k).or_insert(o);
     }

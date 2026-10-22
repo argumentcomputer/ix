@@ -32,6 +32,7 @@ pub mod driver;
 pub mod expr;
 pub mod names;
 pub mod opt;
+pub mod producer;
 pub mod sidecar;
 pub mod spec;
 pub mod translate;
@@ -66,9 +67,11 @@ pub struct Pass3State {
   pub components: DashMap<Name, ComponentRecord>,
   /// The compile's non-canonical set (`CompileEnv.p3NonCanonical`), reported
   /// by `CompileEnvStatus.nonCanonical`: the recorded declines of the
-  /// definitional passes, by constant. No pass is wired yet, so it stays
-  /// empty.
+  /// definitional passes, by constant. CQ5.3a records O11a's side-condition
+  /// failures here after the containing block commits.
   pub non_canonical: DashMap<Name, String>,
+  /// Immutable per-source-member producer cycle/groundedness plan.
+  pub o11a_blocked: producer::Refusals,
   /// Stable views: entered only once every original member of the block is
   /// compiled.
   pub views: DashMap<Name, Arc<BlockView>>,

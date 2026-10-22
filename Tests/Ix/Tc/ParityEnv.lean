@@ -29,8 +29,8 @@ def headerVersion? (path : System.FilePath) : IO (Option UInt64) := do
     | .error _ => none
 
 /-- Path to the parity `.ixe`, compiling it from the seed closure if absent or
-written under another `.ixe` format version (a cached file from before a format
-change is unreadable, so it is rebuilt rather than failing every reader).
+written under an unsupported `.ixe` envelope version. Both v4 and v5 caches
+are readable and do not need a fresh corpus compilation.
 `buildFile` first: the test suite only builds what `IxTests` needs, not the rest
 of `Ix.lean`'s closure (e.g. the benchmarks it also imports), and `getFileEnv`
 needs every olean present. Then it loads the env and hands the transitive seed
@@ -42,9 +42,9 @@ def ensureWith (selected : Bool) : IO System.FilePath := do
   if ← out.pathExists then
     match ← headerVersion? out with
     | some version =>
-      if version == Ixon.Env.VERSION then return out
-      IO.println s!"tc-parity: {out} has .ixe format version {version}, expected \
-        {Ixon.Env.VERSION} — recompiling from {constsFile}"
+      if Ixon.Env.supportedEnvelopeVersion version then return out
+      IO.println s!"tc-parity: {out} has unsupported .ixe envelope version {version}, expected \
+        4 or 5 — recompiling from {constsFile}"
     | none =>
       IO.println s!"tc-parity: {out} has no .ixe header — recompiling from {constsFile}"
   else

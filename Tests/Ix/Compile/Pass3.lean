@@ -60,6 +60,52 @@ namespace Tests.Ix.Compile.Pass3
 
 open Tests.Ix.Compile.Harness
 
+/-! ## O11a: is Lean's mutual `_sizeOf` of a split member the instance form, by δ? -/
+
+/-- The members of `Linear.EqCnstr`'s block (the library twins, `Oracle.Lib`). -/
+def o11aMembers : List Name :=
+  [`EqCnstr, `EqCnstrProof, `IneqCnstr, `IneqCnstrProof, `DiseqCnstr, `DiseqCnstrProof,
+   `UnsatProof].map (`Lean.Meta.Grind.Arith.Linear ++ ·)
+
+/-- One `rfl` per member, in a test-only copy of the twins' output:
+`(fun t => @sizeOf Orig.X Orig.X._sizeOf_inst t) = (fun t => @sizeOf Twin.X
+Twin.X._sizeOf_inst t)`. `Orig` is the block as Lean declares it (its
+`_sizeOf_N` inline the block recursor, relocated by Pass 3 for the split);
+`Twin` declares the components separately (its `_sizeOf` goes through the
+instances of the other components). Both production kernel legs require the two are
+definitionally equal (δ of the instances and the `_sizeOf` functions, β,
+projection; no induction). -/
+def o11aEnv (on : Ix.CompileM.LeanPipelineOut) : Except String (Ixon.Env × Array String) := do
+  let mut env := on.env
+  let mut names : Array String := #[]
+  let one := _root_.Ix.Level.mkSucc _root_.Ix.Level.mkZero
+  let nat := _root_.Ix.Expr.mkConst (ixN ``Nat) #[]
+  let mut known : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName Address := {}
+  for m in o11aMembers do
+    let o := `Tests.Ix.Compile.Oracle.Lib.Orig ++ m
+    let t := `Tests.Ix.Compile.Oracle.Lib.Twin ++ m
+    let side := fun (x : Name) =>
+      _root_.Ix.Expr.mkLam (ixN `t) (_root_.Ix.Expr.mkConst (ixN x) #[])
+        (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp
+          (_root_.Ix.Expr.mkConst (ixN ``SizeOf.sizeOf) #[one]) (_root_.Ix.Expr.mkConst (ixN x) #[]))
+          (_root_.Ix.Expr.mkConst (ixN (x ++ `_sizeOf_inst)) #[])) (_root_.Ix.Expr.mkBVar 0))
+        .default
+    let ty := _root_.Ix.Expr.mkForallE (ixN `t) (_root_.Ix.Expr.mkConst (ixN t) #[]) nat .default
+    let lhs := side o
+    let rhs := side t
+    let stmt := _root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp
+      (_root_.Ix.Expr.mkConst (ixN ``Eq) #[one]) ty) lhs) rhs
+    let pf := _root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkApp
+      (_root_.Ix.Expr.mkConst (ixN ``Eq.refl) #[one]) ty) lhs
+    let name := ixN (`o11a ++ m)
+    let tv : _root_.Ix.TheoremVal := {
+      cnst := { name, levelParams := #[], type := stmt }, value := pf, all := #[name] }
+    let (env', a) ← addConst on.cenv known env (.thmInfo tv)
+    env := env'
+    known := known.insert name a
+    names := names.push name.pretty
+  return (env, names)
+
 /-! ## Canonical-form pins -/
 
 /-- How a pin's term was established: byte for byte against a reference
@@ -144,6 +190,9 @@ def passTwins : List (String × String × String) := [
   ("O4BRecOn", "PassO4.Src.three", "PassO4.Can.three"),
   ("O4BRecOn", "PassO4.Src.SB.depth", "PassO4.Can.SB.depth"),
   ("O4BRecOn", "PassO4.Src.depth_two", "PassO4.Can.depth_two")]
+  ++ o11aMembers.map fun m =>
+    ("twins", s!"{`Tests.Ix.Compile.Oracle.Lib.Orig ++ m ++ `_sizeOf_inst}",
+     s!"{`Tests.Ix.Compile.Oracle.Lib.Twin ++ m ++ `_sizeOf_inst}")
 
 /-- Pass firing: the constant references (or does not reference) the named
 constant. `(unit, constant, referenced name, expected)`. -/
@@ -162,6 +211,8 @@ def passRefs : List (String × String × String × Bool) := [
   ("O4BRecOn", "PassO4.Src.Even.toNat", "PassO4.Src.Even._ix.brecOn", true),
   ("O4BRecOn", "PassO4.Src.SB.depth", "PassO4.Src.SB._ix.brecOn", true),
   ("O4BRecOn", "PassO4.Src.SA.size", "PassO4.Src.SA._ix.brecOn", false),
+  -- O11a: the split upper member uses the lower member's size instance.
+  ("O2Split", "PassO2.SA._sizeOf_1", "PassO2.SB._sizeOf_inst", true),
   -- O2/O6: the component recursors; the bare occurrence keeps the image constant
   ("O2Split", "PassO2.SA.viaRec", "PassO2.SA._ix.rec", true),
   ("O2Split", "PassO2.SA.viaRec", "PassO2.SB._ix.rec", true),
@@ -290,6 +341,19 @@ named entries: {idr.inputNames} input constants, {idr.reserved} reserved"
 rfl, {rfailed.size} kernel failure(s)"
           for (leg, n, m) in rfailed do
             problems := problems.push s!"{u.name}: rule {leg}: {n} fails: {m.take 240}"
+    if u.name == "twins" then
+      match o11aEnv out with
+      | .error e => problems := problems.push s!"twins: O11a equality environment: {e}"
+      | .ok (env, names) =>
+        match Ixon.serEnv env with
+        | .error e => problems := problems.push s!"twins: O11a equality serialization: {e}"
+        | .ok bytes =>
+          let odir := dir / "o11a"
+          IO.FS.createDirAll odir
+          let failed ← kernelFailures odir bytes names (anon := true)
+          lines := lines.push s!"  o11a: {names.size} rfl statements, {failed.size} kernel failure(s)"
+          for (leg, n, why) in failed do
+            problems := problems.push s!"twins: O11a {leg}: {n}: {why.take 240}"
   finally
     if keep?.isNone then IO.FS.removeDirAll dir
   return (problems, lines)

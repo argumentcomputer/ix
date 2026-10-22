@@ -248,6 +248,8 @@ structure OptEnv where
   resolves : Name → Bool
   /-- The block of a Lean image-kind head, when it is a changed block's. -/
   blockOf : Name → Option OptBlock
+  /-- Static enclosing-block rejection, or a producer's terminal failure. -/
+  rejectRef? : Name → Option String := fun _ => none
 
 /-- A constant of the input environment. -/
 def OptEnv.const? (env : OptEnv) (n : Name) : Option ConstantInfo := env.ienv.get? n

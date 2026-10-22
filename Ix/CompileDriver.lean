@@ -428,6 +428,8 @@ structure DriverAcc where
   cenv : CompileEnv
   blockNames : Std.HashMap Address Ix.Name := {}
   defHints : Std.HashMap Name Lean.ReducibilityHints := {}
+  /-- Successful publications' raw originals; finalized after assembly. -/
+  originals : Ix.Compile.OriginalData.OriginalStaging := #[]
   /-- Names whose dependents must be released at the CURRENT block's
       completion beyond its own members: the aux names the block's tail
       registered (Rust `aux_gen_pending`, drained per completion —
@@ -609,6 +611,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
   -- in this function's loops, the state stayed referenced twice and every
   -- insert below copied its maps (Init+Std's compile phase 44 s → 391 s).
   let reclaimed := reclaimedNames cenv lo result cache
+  let originals := published.originals.filter fun row => !reclaimed.contains row.name
   cenv := { cenv with
     totalBytes := cenv.totalBytes + result.blockBytes.size
     constants := cenv.constants.insert result.blockAddr result.blockBytes
@@ -652,6 +655,8 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       cenv.p3CanonRecs
     p3Views := Ix.Compile.Pass.memoMerge cenv.p3Views published.views
     p3ImageExps := Ix.Compile.Pass.memoMerge cenv.p3ImageExps published.imageExps
+    p3NonCanonical := published.declines.foldl (fun m (n, cause) => m.insert n cause)
+      cenv.p3NonCanonical
     -- the plan table: the first plan computed for a clique wins; so do its
     -- rows (the rows table)
     p3CliquePlans := cache.p3CliquePlans.foldl
@@ -671,6 +676,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     cenv
     blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
     defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints
+    originals := acc.originals ++ originals
     pending }
 
 /-- Withdraw a failed source block's provisional auxiliary publication: its
@@ -693,6 +699,7 @@ def failAuxPromotion (acc : DriverAcc) (all : Set Name) (msg : String) : DriverA
         blocks := acc.cenv.blocks.erase n
         p3Heads := acc.cenv.p3Heads.erase n
         p3CanonRecs := acc.cenv.p3CanonRecs.erase n
+        p3NonCanonical := acc.cenv.p3NonCanonical.erase n
         ungrounded := acc.cenv.ungrounded.insert n msg }
       defHints := acc.defHints.erase n }
   return { acc with pending := acc.pending.filter (!all.contains ·) }
@@ -842,6 +849,8 @@ def originalIdentities (cenv : CompileEnv) (lo : Name) (result : BlockResult) :
 def promoteOriginalWrites (acc : DriverAcc) (lo : Name) (result : BlockResult)
     (cache : BlockState) : DriverAcc := Id.run do
   let identities := originalIdentities acc.cenv lo result
+  let originals := Ix.Compile.OriginalData.captureOriginals lo result cache
+    (fun n => (acc.cenv.nameToNamed.get? n).map (·.addr))
   let mut acc := acc
   for (name, origAddr, origMeta) in originalPromotions lo result do
     acc := { acc with cenv := promoteAuxWrites acc.cenv name origAddr origMeta }
@@ -850,7 +859,8 @@ def promoteOriginalWrites (acc : DriverAcc) (lo : Name) (result : BlockResult)
       blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs
       auxReport := acc.cenv.auxReport.addIdentity identities }
     blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
-    defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints }
+    defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints
+    originals := acc.originals ++ originals }
 
 /-- The entire original-form promotion in pure state (`checkOriginalPromotion`,
     then `promoteOriginalWrites`). On error the caller keeps none of these
@@ -1001,6 +1011,13 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
     anonHints
   }
   return (ixonEnv, cenv.totalBytes, cenv)
+
+/-- Assemble canonical data, then validate and retain the originals of the
+successful publications. A finalization error aborts the whole result. -/
+def finalizeEnv (acc : DriverAcc) : Except String (Ixon.Env × Nat × CompileEnv) := do
+  let (base, bytes, cenv) := assembleEnv acc
+  let out ← Ix.Compile.OriginalData.finalizeOriginals acc.originals base
+  return (out, bytes, cenv)
 
 /-! ## Domain restriction: canonical inductive flags — env.rs:262-285 -/
 
@@ -1424,6 +1441,31 @@ unsafe block's tail keeps `Ix.Tc`). `compileEnvFoldWithSource`
 waits for the run-ahead at the end and returns what Source mode accepted
 (`Ix.AuxGen.Source.Report`). -/
 
+/-- Candidate heads of sizeOf families present in this input. Every source
+of an O11a scheduling edge is `head._sizeOf_N`; looking at names first keeps
+the streaming path from decoding unrelated theorem bodies. -/
+def sizeOfCandidates (blocks : Ix.CondensedBlocks) : Array Name := Id.run do
+  let mut seen : Std.HashSet Ix.Compile.ExactKey.ExactName := {}
+  let mut out := #[]
+  for (name, _) in blocks.lowLinks do
+    if let .str parent component _ := name then
+      if component.startsWith "_sizeOf_" && !seen.contains parent then
+        seen := seen.insert parent
+        out := out.push parent
+  return out
+
+/-- O11a's producer dependencies, for the scheduling copy only. The pass
+reads references only of its candidate inductives and their constructors;
+all lookups are the input's, so materialized and hybrid inputs agree. The
+original condensation passed to the fold/classifier remains unchanged. -/
+def prepareSizeOfPlan (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Ix.CondensedBlocks × Ix.Compile.Pass.Opt.ProducerRefusals :=
+  let refsOf := fun n => ((env.get? n).map Ix.Compile.Canon.refsConst).getD {}
+  Ix.Compile.Pass.Opt.planSizeOf (sizeOfCandidates blocks) env.get? refsOf blocks
+
+def prepareSizeOfScheduling (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Ix.CondensedBlocks := (prepareSizeOfPlan env blocks).1
+
 /-- The aux-gen seeds the condensation holds. -/
 def auxGenSeeds (blocks : Ix.CondensedBlocks) : Array Name :=
   auxGenSeedNames.filter blocks.lowLinks.contains
@@ -1770,17 +1812,19 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   -- (`CompileEnv.p3BlockRefs`, `FoldState.init`) stay the condensation's.
   -- With no input clique the blocks are unchanged.
   let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
-  let sched := FoldSchedule.of sc.1
+  let sizePlan := prepareSizeOfPlan view sc.1
+  let sched := FoldSchedule.of sizePlan.1
   let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
   let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
-    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans }
+    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans
+    p3O11aPlans := sizePlan.2 }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let acc ← emitRows st.acc
-  let (ixe, bytes, cenv) := assembleEnv acc
+  let (ixe, bytes, cenv) ← finalizeEnv acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
 
 /-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/

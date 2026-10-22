@@ -1,8 +1,8 @@
 //! Pass 3: the call-site rewrite. A port of `Ix/Compile/Pass/Translate.lean`
-//! without the optimisation passes: at every full application of an
-//! image-kind head the image is inlined (developed at the occurrence's
-//! arguments); a bare or partial occurrence keeps the Lean name, which
-//! denotes the stored image.
+//! with optional definitional-pass and decline hooks. At every full
+//! application of an image-kind head the pass runs first, then its image
+//! is the fallback. A bare or partial occurrence keeps the Lean name,
+//! which denotes the stored image.
 //!
 //! Every outermost rewritten occurrence is wrapped in the placeholder
 //! `[(_ix.inline, n)]` and the source occurrence is returned as source `n`;
@@ -34,13 +34,34 @@ pub const REWRITE_FUEL: usize = 1 << 20;
 /// The definitional passes (Lean `RwConfig.opt?`, [`super::opt::engine`]):
 /// tried at every full application of a head, before its image is inlined;
 /// `None` keeps the baseline.
-pub type OptHook<'a> = dyn Fn(&Name, &[Level], &[Expr]) -> Option<Expr> + 'a;
+pub type OptHook<'a> =
+  dyn Fn(&Name, &[Level], &[Expr]) -> Option<(Expr, Vec<String>)> + 'a;
+
+/// A recorded side-condition failure at a full occurrence (Lean decline?).
+pub type DeclineHook<'a> =
+  dyn Fn(&Name, &[Level], &[Expr]) -> Option<String> + 'a;
+
+/// Effects are sets in first-occurrence order, never occurrence counts.
+/// This also bounds recursive Engine/O2 merges before they reach the memo.
+pub(crate) fn extend_causes(
+  out: &mut Vec<String>,
+  reports: impl IntoIterator<Item = String>,
+) {
+  for cause in reports {
+    if !out.contains(&cause) {
+      out.push(cause);
+    }
+  }
+}
 
 #[derive(Default)]
 pub struct RwState<'o> {
   /// The passes of this rewrite (`None`: the default `RwConfig`, the
   /// faithful baseline).
   pub opt: Option<&'o OptHook<'o>>,
+  pub decline: Option<&'o DeclineHook<'o>>,
+  /// Distinct causes in the current scope, replayed on a term-cache hit.
+  pub declines: Vec<String>,
   /// The source occurrences, placeholder `i` for entry `i`.
   pub sources: Vec<Expr>,
   /// Rewritten expansions.
@@ -53,7 +74,7 @@ pub struct RwState<'o> {
   /// Rewritten subterms by (term, record mode, site), each entry retaining
   /// its input: a hit is confirmed by raw equality (the key's hash is only
   /// its fast path).
-  cache: FxHashMap<(Hash, bool, Option<Name>), (Expr, Expr)>,
+  cache: FxHashMap<(Hash, bool, Option<Name>), (Expr, Expr, Vec<String>)>,
   /// An expansion's value at universe arguments, by the head and the
   /// arguments' hashes, each entry retaining its levels (confirmed raw).
   level_cache: FxHashMap<(Name, Vec<Hash>), (Vec<Level>, Expr)>,
@@ -75,6 +96,7 @@ impl RwState<'_> {
       return Ok(Some(x.clone()));
     }
     let Some(x) = lookup(n)? else { return Ok(None) };
+    let outer = std::mem::take(&mut self.declines);
     let x = if x.needs_rewrite {
       // an expansion is shared by every site (Lean: `site := none`)
       let site = self.site.take();
@@ -84,7 +106,13 @@ impl RwState<'_> {
     } else {
       x
     };
-    self.exps.insert(n.clone(), x.clone());
+    // A head entry carries no effects. Revisit an expansion that recorded
+    // a decline; its term-cache entries retain and replay those causes.
+    let effects = std::mem::replace(&mut self.declines, outer);
+    if effects.is_empty() {
+      self.exps.insert(n.clone(), x.clone());
+    }
+    extend_causes(&mut self.declines, effects);
     Ok(Some(x))
   }
 
@@ -120,11 +148,15 @@ impl RwState<'_> {
     }
     let fuel = fuel - 1;
     let ck = (key(e), record, self.site.clone());
-    if let Some((input, r)) = self.cache.get(&ck)
+    if let Some((input, r, declines)) = self.cache.get(&ck)
       && input.same_raw(e)
     {
+      extend_causes(&mut self.declines, declines.iter().cloned());
       return Ok(r.clone());
     }
+    // Capture a complete local effect set, independent of ambient causes.
+    // Global deduplication followed by a suffix would lose repeated effects.
+    let outer = std::mem::take(&mut self.declines);
     let r = match e.as_data() {
       ExprData::App(..) | ExprData::Const(..) => {
         let (h, args) = get_app_fn_args(e);
@@ -142,12 +174,20 @@ impl RwState<'_> {
                 } else {
                   // the passes first (Lean `RwConfig.opt?`), else the image
                   let body = match self.opt.and_then(|opt| opt(n, us, &args2)) {
-                    Some(e) => e,
+                    Some((e, reports)) => {
+                      extend_causes(&mut self.declines, reports);
+                      e
+                    },
                     None => {
                       let f = self.at_levels(n, us, &x);
                       instantiate_with(&mut self.dev, &f, &args2)?
                     },
                   };
+                  if let Some(cause) =
+                    self.decline.and_then(|decline| decline(n, us, &args2))
+                  {
+                    extend_causes(&mut self.declines, [cause]);
+                  }
                   if record {
                     let k = self.sources.len();
                     self.sources.push(e.clone());
@@ -208,7 +248,9 @@ impl RwState<'_> {
       },
       _ => e.clone(),
     };
-    self.cache.insert(ck, (e.clone(), r.clone()));
+    let effects = std::mem::replace(&mut self.declines, outer);
+    extend_causes(&mut self.declines, effects.iter().cloned());
+    self.cache.insert(ck, (e.clone(), r.clone(), effects));
     Ok(r)
   }
 
@@ -292,6 +334,8 @@ pub struct BlockRewrite {
   pub overlay: Vec<(Name, ConstantInfo)>,
   /// The source occurrences, placeholder `i` for entry `i`.
   pub sources: Vec<Expr>,
+  /// Recorded declines, attributed to every member that encountered them.
+  pub declines: Vec<(Name, String)>,
 }
 
 /// Rewrite the members of one block; placeholder indices are block-unique
@@ -300,16 +344,25 @@ pub fn rewrite_block(
   lookup: &mut ExpansionLookup<'_>,
   members: &[(Name, ConstantInfo)],
   opt: Option<&OptHook<'_>>,
+  decline: Option<&DeclineHook<'_>>,
 ) -> Result<BlockRewrite, String> {
-  let mut st = RwState { opt, ..RwState::default() };
+  let mut st = RwState { opt, decline, ..RwState::default() };
   let mut overlay = Vec::new();
+  let mut declines: Vec<(Name, String)> = Vec::new();
   for (n, ci) in members {
+    st.declines.clear();
     let (ci2, changed) = st.rewrite_const(lookup, ci)?;
+    let mut causes = st.declines.clone();
+    causes.sort();
+    causes.dedup();
+    if !causes.is_empty() {
+      declines.push((n.clone(), causes.join("; ")));
+    }
     if changed {
       overlay.push((n.clone(), ci2));
     }
   }
-  Ok(BlockRewrite { overlay, sources: st.sources })
+  Ok(BlockRewrite { overlay, sources: st.sources, declines })
 }
 
 /// The value and type of an image constant `a` with every head rewritten,
@@ -399,7 +452,7 @@ mod tests {
       (root_name("u"), axiom("u", term("T"))),
       (root_name("c"), axiom("c", Expr::app(term("head"), term("T")))),
     ];
-    let rw = rewrite_block(&mut |n| Ok(head(n)), &members, None).unwrap();
+    let rw = rewrite_block(&mut |n| Ok(head(n)), &members, None, None).unwrap();
     assert_eq!(rw.overlay.len(), 1);
     assert_eq!(rw.overlay[0].0, root_name("c"));
     assert_eq!(rw.sources.len(), 1);
@@ -451,7 +504,7 @@ mod tests {
       (root_name("m1"), defn("m1", typ.clone(), typ.clone())),
       (root_name("m2"), defn("m2", typ.clone(), typ.clone())),
     ];
-    let rw = rewrite_block(&mut |n| Ok(head(n)), &members, None).unwrap();
+    let rw = rewrite_block(&mut |n| Ok(head(n)), &members, None, None).unwrap();
     assert_eq!(rw.sources, vec![occ.clone(), occ.clone(), occ]);
     let mut got = Vec::new();
     for (_, ci) in &rw.overlay {
@@ -468,5 +521,114 @@ mod tests {
     let mut st = RwState::default();
     let e = Expr::app(term("f"), term("a"));
     assert!(st.rw(&mut |n| Ok(head(n)), 1, true, &e).is_err());
+  }
+
+  #[test]
+  fn shared_dag_effects_are_bounded_and_independent_of_ambient_causes() {
+    for depth in [6, 64] {
+      let mut lookup = |n: &Name| {
+        Ok(if n.same_raw(&root_name("outer")) {
+          Some(Expansion {
+            level_params: vec![],
+            value: term("inner"),
+            arity: 0,
+            needs_rewrite: true,
+          })
+        } else if n.same_raw(&root_name("inner")) {
+          Some(Expansion {
+            level_params: vec![],
+            value: term("baseline"),
+            arity: 0,
+            needs_rewrite: false,
+          })
+        } else {
+          None
+        })
+      };
+      let cause = "zeta cause";
+      let expected = [cause, "alpha cause"];
+      let decline = |n: &Name, _: &[Level], _: &[Expr]| {
+        if n.same_raw(&root_name("inner")) {
+          Some(cause.to_owned())
+        } else {
+          n.same_raw(&root_name("outer")).then(|| "alpha cause".to_owned())
+        }
+      };
+      let mut st = RwState {
+        decline: Some(&decline),
+        declines: vec![cause.to_owned()],
+        ..RwState::default()
+      };
+      let mut e = term("outer");
+      for _ in 0..depth {
+        e = Expr::app(Expr::app(term("pair"), e.clone()), e);
+      }
+      st.rw(&mut lookup, 256, false, &e).unwrap();
+      assert_eq!(st.declines, expected);
+      assert!(!st.exps.contains_key(&root_name("outer")));
+      assert!(st.cache.len() <= depth + 4);
+      assert!(st.cache.values().all(|(_, _, effects)| effects.len() <= 2));
+      st.declines.clear();
+      st.rw(&mut lookup, 256, false, &e).unwrap();
+      assert_eq!(st.declines, expected);
+      let member = (root_name("member"), defn("member", term("T"), e));
+      let out =
+        rewrite_block(&mut lookup, &[member], None, Some(&decline)).unwrap();
+      assert_eq!(
+        out.declines,
+        [(root_name("member"), "alpha cause; zeta cause".to_owned())]
+      );
+    }
+  }
+
+  #[test]
+  fn declines_survive_shared_expansions_and_term_cache_hits() {
+    let mut lookup = |n: &Name| {
+      Ok(if n.same_raw(&root_name("outer")) {
+        Some(Expansion {
+          level_params: vec![],
+          value: term("inner"),
+          arity: 0,
+          needs_rewrite: true,
+        })
+      } else if n.same_raw(&root_name("inner")) {
+        Some(Expansion {
+          level_params: vec![],
+          value: term("baseline"),
+          arity: 0,
+          needs_rewrite: false,
+        })
+      } else {
+        None
+      })
+    };
+    let cause = "recorded decline inside a shared expansion";
+    let decline = |n: &Name, _: &[Level], _: &[Expr]| {
+      n.same_raw(&root_name("inner")).then(|| cause.to_owned())
+    };
+    let theorem = |n: &str| {
+      ConstantInfo::ThmInfo(ix_common::env::TheoremVal {
+        cnst: ConstantVal {
+          name: root_name(n),
+          level_params: vec![],
+          typ: term("T"),
+        },
+        value: term("outer"),
+        all: vec![root_name(n)],
+      })
+    };
+    let members = vec![
+      (root_name("a"), defn("a", term("T"), term("outer"))),
+      (root_name("b"), defn("b", term("T"), term("outer"))),
+      (root_name("c"), theorem("c")),
+      (root_name("d"), theorem("d")),
+    ];
+    let out =
+      rewrite_block(&mut lookup, &members, None, Some(&decline)).unwrap();
+    assert_eq!(out.overlay.len(), 4);
+    assert_eq!(
+      out.declines,
+      ["a", "b", "c", "d"].map(|n| (root_name(n), cause.to_owned()))
+    );
   }
 }

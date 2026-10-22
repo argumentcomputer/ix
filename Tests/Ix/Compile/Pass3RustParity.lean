@@ -52,6 +52,10 @@
   copies of a transported well-founded clique, and a caller's refusal, in
   both compilers.
 
+  Part 4: O11a's eight success/decline inputs, with byte equality and exact
+  equality of the (name, cause) report. Report parity is also required for
+  every caller and clique unit, including equally refused inputs.
+
   The run passes iff every image is `SAME`, there are image-gen's 38, and
   every case's callers and every `co-*` unit are `ALIGNED` or `REFUSED`
   alike.
@@ -69,6 +73,7 @@ import Ix.EnvScope
 import Tests.Ix.Compile.Harness.Units
 import Ix.AuxGen.LiteralSupport
 import Tests.Ix.Compile.Clique.Ownership
+import Tests.Ix.Compile.O11aDecline
 
 open Lean
 
@@ -247,6 +252,11 @@ def inputParity (input : _root_.Ix.Compile.CompileInput)
   let status ← _root_.Ix.CompileM.rsCompileEnvBytesFFI constants path.toString true
   let rustBytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
+  let leanDeclines := (lean.cenv.p3NonCanonical.toArray.map fun (n, cause) =>
+    (n.pretty, cause)).qsort (·.1 < ·.1)
+  let rustDeclines := status.nonCanonical.qsort (·.1 < ·.1)
+  if leanDeclines != rustDeclines then
+    return .diverged s!"declines differ: lean {leanDeclines.toList}, rust {rustDeclines.toList}"
   let leanRefused := (lean.cenv.ungrounded.toArray.map (·.1.pretty)).qsort (· < ·)
   let rustRefused := (status.ungrounded.map (·.1)).qsort (· < ·)
   if !leanRefused.isEmpty || !rustRefused.isEmpty then
@@ -361,6 +371,20 @@ def run : IO UInt32 := do
       catch e => failures := failures.push s!"{label}: {e}"
   IO.println s!"[pass3-rust-parity] clique-ownership units: {units.size}, {unitsAligned} ALIGNED, \
 {unitsRefused} REFUSED alike"
+  -- Part 4: O11a success and every supported decline condition. inputParity
+  -- checks the report as well as bytes, including refused inputs above.
+  let units ← Tests.Ix.Compile.O11aDecline.units
+  let mut o11aAligned := 0
+  for u in units do
+    match _root_.Ix.Compile.compileInputFromEnv u.env u.closure with
+    | .error e => failures := failures.push s!"{u.name}: input: {e}"
+    | .ok input =>
+      match ← inputParity input (_root_.Ix.AuxGen.literalSupportFor u.env u.closure) with
+      | .aligned => o11aAligned := o11aAligned + 1
+      | .refused n => failures := failures.push s!"{u.name}: refused {n} constants"
+      | .diverged why => failures := failures.push s!"{u.name}: DIVERGED: {why}"
+  IO.println s!"[pass3-rust-parity] O11a: {o11aAligned}/{units.size} ALIGNED with equal decline reports"
+  unless units.size == 8 do failures := failures.push "expected eight O11a inputs"
   for f in failures do IO.println s!"[pass3-rust-parity] FAIL {f}"
   IO.println s!"[pass3-rust-parity] {failures.size} failures"
   return if failures.isEmpty then 0 else 1

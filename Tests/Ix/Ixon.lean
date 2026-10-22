@@ -2,6 +2,7 @@ module
 public import Ix.Ixon
 public import Tests.Gen.Ixon
 public import Tests.FFI.Ixon
+public import Tests.Ix.OriginalData
 
 open LSpec SlimCheck Gen Ixon
 open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSerialization rsEqEnvSerialization)
@@ -457,7 +458,9 @@ def envSerializationMatches (raw : RawEnv) : Bool :=
     `rsEqEnvSerialization`'s content comparison). -/
 def envBytesMatchRust (raw : RawEnv) : Bool :=
   match serEnv raw.toEnv with
-  | .ok bytes => bytes == rsSerEnvFFI raw
+  | .ok bytes => match rsSerEnvFFI raw with
+    | .ok rustBytes => bytes == rustBytes
+    | .error _ => false
   | .error _ => false
 
 /-- Unit tests for Lean==Rust serialization comparison -/
@@ -612,7 +615,7 @@ def envMerkleRootUnitTests : TestSeq :=
   test "(a,b) and (b,a) same root"
     (raw_ab.merkleRoot == raw_ba.merkleRoot)
 
-/-! ## Format version 4: header byte and version rejection -/
+/-! ## Checked format 4 and versioned storage envelopes -/
 
 /-- The empty env's bytes, with the header byte replaced by `header`. -/
 private def emptyEnvWithHeader (header : UInt8) : ByteArray :=
@@ -625,13 +628,13 @@ private def versionRejected {α : Type} (r : Except String α) (got : Nat) : Boo
   match r with
   | .ok _ => false
   | .error e =>
-    (e.splitOn s!"expected .ixe format version {Env.VERSION}, got {got}").length > 1
+    (e.splitOn s!"unsupported .ixe envelope version {got}").length > 1
 
 def envHeaderUnits : TestSeq :=
   let bytes := match serEnv ({} : Env) with | .ok b => b | .error _ => .empty
   test "env header is TagN(4, 0xE, 4) = 0xE4" (bytes.data[0]? == some 0xE4)
   ++ test "wireFormatId is ixon-v4" (wireFormatId == "ixon-v4")
-  ++ test "object-format byte is the version" (Env.OBJECT_FORMAT == 4)
+  ++ test "checked object-format byte remains 4" (Env.OBJECT_FORMAT == 4)
   ++ test "Lean reader accepts the version 4 header" ((deEnv bytes).toOption.isSome)
   ++ test "Lean reader rejects a version 3 header"
       (versionRejected (deEnv (emptyEnvWithHeader 0xE3)) 3)
@@ -640,10 +643,165 @@ def envHeaderUnits : TestSeq :=
   ++ test "Rust reader rejects a version 3 header"
       (versionRejected (deEnvAnon (emptyEnvWithHeader 0xE3)) 3)
 
+/-! ## Separate original-data storage (M6D) -/
+
+private def originalCheck (label : String) (ok : Bool) : Except String Unit :=
+  if ok then .ok () else .error label
+
+private def originalReadersRefuse (bytes : ByteArray) : Bool :=
+  (deEnv bytes).toOption.isNone && (deEnvVerifiedLazy bytes).toOption.isNone &&
+    (rsDeEnv bytes).toOption.isNone && (deEnvAnon bytes).toOption.isNone
+
+/-- Construct adversarial trailers independently of the validating writer. -/
+private def originalWire (base : ByteArray) (rows : Array RawBlob)
+    (hints : Array (UInt64 × Option Lean.ReducibilityHints)) : ByteArray :=
+  (base.set! 0 0xE5) ++ runPut do
+    putTagN 0 0 rows.size.toUInt64
+    for row in rows do
+      Serialize.put row.addr
+      putTagN 0 0 row.bytes.size.toUInt64
+      putBytes row.bytes
+    putTagN 0 0 hints.size.toUInt64
+    for (idx, hint) in hints do
+      putTagN 0 0 idx
+      putFusedOptHint hint
+
+private def originalDataChecks (definition : Definition) : Except String Unit := do
+  let c : Constant := {
+    info := .defn definition, sharing := #[], refs := #[], univs := #[] }
+  let a : Constant := { c with info := .quot { kind := .type, lvls := 0, typ := .sort 0 } }
+  let b : Constant := { c with info := .quot { kind := .ctor, lvls := 0, typ := .sort 0 } }
+  let ca := Address.blake3 (serConstant c)
+  let oa : RawBlob := { addr := Address.blake3 (serConstant a), bytes := serConstant a }
+  let ob : RawBlob := { addr := Address.blake3 (serConstant b), bytes := serConstant b }
+  originalCheck "fixture addresses must be distinct" (ca != oa.addr && ca != ob.addr && oa.addr != ob.addr)
+  let n := Ix.Name.mkStr Ix.Name.mkAnon "OriginalA"
+  let clear := Ix.Name.mkStr Ix.Name.mkAnon "OriginalClear"
+  let absent := Ix.Name.mkStr Ix.Name.mkAnon "OriginalAbsent"
+  let raw : RawEnv := {
+    consts := #[{ addr := ca, const := c }], blobs := #[], comms := #[],
+    named := #[n, clear, absent].map (fun name =>
+      { name, addr := ca, constMeta := .empty, original := some (oa.addr, .empty),
+        hints := some Lean.ReducibilityHints.abbrev }),
+    names := #[n, clear, absent].map (fun name => { addr := name.getHash, name }),
+    originals := #[oa, ob],
+    originalHintOverrides := #[(n, some (.regular 37)), (clear, none)] }
+  let env ← raw.toEnvChecked
+  let bytes ← serEnv env
+  originalCheck "v5 bytes agree across writers" (bytes == (← rsSerEnvFFI raw) && bytes.data[0]? == some 0xE5)
+  let legacy := { env with originals := {}, originalHintOverrides := {} }
+  let base ← serEnv legacy
+  let baseRead ← deEnv base
+  originalCheck "v5 changes only the header before its trailer"
+    (base.data[0]? == some 0xE4 && bytes.extract 1 base.size == base.extract 1 base.size)
+  let goldenEmpty := runPut do
+    putU8 0xE4
+    Serialize.put Ix.Merkle.zeroAddress
+    putBytes (ByteArray.mk #[0, 0, 0, 0, 0, 1])
+    Serialize.put Ix.Name.mkAnon.getHash
+    putBytes (ByteArray.mk #[0, 0, 0])
+  originalCheck "empty v4 bytes retain the legacy layout" ((← serEnv {}) == goldenEmpty)
+  let full ← deEnv bytes
+  let rust ← rsDeEnv bytes
+  let parts ← deEnvVerifiedLazy bytes
+  let named ← parts.materializeAllNamed
+  let cached ← parts.materializeAll
+  for loaded in [full, rust, named, cached] do
+    originalCheck "full/lazy original tables roundtrip" ((← serEnv loaded) == bytes)
+    originalCheck "original hints preserve some, explicit none, and absence"
+      (loaded.originalHintOverrides[n]? == some (some (.regular 37)) &&
+       loaded.originalHintOverrides[clear]? == some none && loaded.originalHintOverrides[absent]? == none)
+    originalCheck "original payloads stay raw and outside canonical lookup"
+      (loaded.originals.size == 2 && loaded.originals.toList.all (fun (_, lc) => lc.cache.isNone) &&
+       (loaded.getConst? oa.addr).isNone)
+    originalCheck "canonical name lookup does not switch to original addresses"
+      ((loaded.addrToName[ca]?).any (fun name => (loaded.named[name]?).any (·.addr == ca)) &&
+       loaded.addrToName[oa.addr]? == none)
+  originalCheck "the trailer preserves the Lean reader's canonical alias choice"
+    (full.addrToName[ca]? == baseRead.addrToName[ca]? && named.addrToName[ca]? == baseRead.addrToName[ca]?)
+  originalCheck "verified lazy originals retain backing windows"
+    (parts.env.originals.toList.all fun (_, lc) => lc.off > 0 && lc.buf.size == bytes.size)
+  let anon ← deEnvAnon bytes
+  let prefixEnv ← rsDeEnvAnon bytes
+  for view in [anon, prefixEnv] do
+    originalCheck "anonymous views omit both original-data tables"
+      (view.originals.isEmpty && view.originalHintOverrides.isEmpty && view.consts.size == 1)
+  let (s1, s2, s3, s4, s5, s6, trailer) := envSectionSizes env
+  originalCheck "v5 size accounting includes exactly its trailer"
+    (35 + s1 + s2 + s3 + s4 + s5 + s6 + trailer == bytes.size && trailer == bytes.size - base.size)
+  let (v1, v2, v3, v4, v5, v6, emptyTrailer) := envSectionSizes legacy
+  originalCheck "v4 size accounting matches its bytes with no trailer"
+    (35 + v1 + v2 + v3 + v4 + v5 + v6 == base.size && emptyTrailer == 0)
+  for only in [{ raw with originals := #[] }, { raw with originalHintOverrides := #[] }] do
+    let emitted ← serEnv (← only.toEnvChecked)
+    originalCheck "either nonempty table selects v5"
+      (emitted.data[0]? == some 0xE5 && emitted == (← rsSerEnvFFI only))
+    originalCheck "single-table v5 roundtrips" ((← serEnv (← deEnv emitted)) == emitted)
+  for duplicate in [
+      { raw with originals := raw.originals.push oa },
+      { raw with originals := raw.originals.push { oa with bytes := ob.bytes } },
+      { raw with originalHintOverrides := raw.originalHintOverrides.push (n, some (.regular 37)) },
+      { raw with originalHintOverrides := raw.originalHintOverrides.push (n, none) }] do
+    for refusal in [(duplicate.toEnvChecked >>= serEnv), rsSerEnvFFI duplicate] do
+      match refusal with
+      | .ok _ => throw "duplicate original-data key was silently folded"
+      | .error e => originalCheck "duplicate evidence is checked before folding" ((e.splitOn "duplicate").length > 1)
+  let malformed : RawBlob := {
+    addr := Address.blake3 (ByteArray.mk #[0xff, 0, 1]), bytes := ByteArray.mk #[0xff, 0, 1] }
+  let rawBad := { raw with originals := #[malformed] }
+  originalCheck "raw FFI transfer preserves malformed bytes"
+    (Tests.FFI.Ixon.rawEnvEq (Tests.FFI.Ixon.roundtripRawEnv rawBad) rawBad)
+  originalCheck "Merkle roots ignore unchecked original data"
+    (raw.merkleRoot == rawBad.merkleRoot && rsEnvMerkleRootFFI raw == rsEnvMerkleRootFFI rawBad)
+  for bad in [rawBad,
+      { raw with originals := #[{ addr := ca, bytes := serConstant c }] },
+      { raw with
+        consts := #[{ addr := oa.addr, const := c }], named := #[], names := #[], originalHintOverrides := #[] },
+      { raw with originalHintOverrides := #[(Ix.Name.mkAnon, none)] },
+      { raw with named := raw.named.map (fun row => { row with original := none }) }] do
+    originalCheck "writers refuse malformed, overlapping or unbound original data"
+      ((bad.toEnvChecked >>= serEnv).toOption.isNone && (rsSerEnvFFI bad).toOption.isNone)
+  let sorted := Env.topologicalSortNames env.names
+  let idx ← match sorted.findIdx? (fun (_, name) => name == n) with
+    | some i => pure i.toUInt64
+    | none => throw "fixture name missing from index"
+  let clearIdx ← match sorted.findIdx? (fun (_, name) => name == clear) with
+    | some i => pure i.toUInt64
+    | none => throw "fixture clear-name missing from index"
+  originalCheck "fixture hint indices differ" (idx != clearIdx)
+  let descending := if idx < clearIdx then #[(clearIdx, none), (idx, none)]
+    else #[(idx, none), (clearIdx, none)]
+  let noncanonical := oa.bytes.push 0
+  for bad in [base ++ ByteArray.mk #[0], bytes.push 0, bytes.extract 0 (bytes.size - 1),
+      bytes.set! 0 0xE6, originalWire base #[] #[],
+      originalWire base #[oa, oa] #[],
+      originalWire base (#[oa, ob].qsort fun a b => addrLt b.addr a.addr) #[],
+      originalWire base #[malformed] #[],
+      originalWire base #[{ oa with bytes := ob.bytes }] #[],
+      originalWire base #[{ addr := Address.blake3 noncanonical, bytes := noncanonical }] #[],
+      originalWire base #[{ addr := ca, bytes := serConstant c }] #[],
+      originalWire base #[oa] #[(idx, none), (idx, some Lean.ReducibilityHints.opaque)],
+      originalWire base #[oa] descending,
+      originalWire base #[oa] #[(sorted.size.toUInt64, none)],
+      originalWire base #[oa] #[(0, none)]] do
+    originalCheck "full and verified-lazy readers refuse malformed original trailers" (originalReadersRefuse bad)
+
+/-- Keep the fixture as a parameter so the compiler cannot initialize the
+entire closed FFI computation before the selected test runs. -/
+private def originalDataUnits (definition : Definition) : TestSeq :=
+  .individualIO "original data: v4/v5, exact FFI, lazy retention and malformed controls" none (do
+    let result ← IO.lazyPure fun _ => originalDataChecks definition
+    return match result with
+      | .ok _ => (true, 0, 0, none)
+      | .error e => (false, 0, 0, some e)) .done
+
 /-! ## Test Suite (property-based) -/
 
 public def Tests.Ixon.suite : List TestSeq := [
   envHeaderUnits,
+  Tests.Ix.OriginalData.units Ix.Merkle.zeroAddress,
+  originalDataUnits {
+    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 },
   univExactUnits,
   univUnits,
   exprExactUnits,

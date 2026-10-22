@@ -894,8 +894,7 @@ def decompileInductive (ind : Ixon.Inductive) (cnst : Constant) (cMeta : Constan
     let ctorMeta : ConstantMeta :=
       if let some ctorAddr := ctorNameAddrs[i]? then
         if let some ctorIxName := env.ixonEnv.names.get? ctorAddr then
-          env.ixonEnv.named.fold (init := ConstantMeta.empty) fun acc ixN named =>
-            if ixN == ctorIxName then named.constMeta else acc
+          (env.ixonEnv.named[ctorIxName]?).map (·.constMeta) |>.getD .empty
         else .empty
       else .empty
     let ctorVal ← decompileConstructor ctor cnst ctorMeta name
@@ -939,18 +938,72 @@ def decompileProjection (cnst : Constant) (cMeta : ConstantMeta)
       let info ← decompileRecursor rec bc cMeta
       pure #[(info.getCnst.name, info)]
     | _ => throw (.badConstantFormat s!"rPrj index {proj.idx} not found")
-  | .cPrj _ => pure #[]
-  | _ => pure #[]
+  | .cPrj proj =>
+    match mutuals[proj.idx.toNat]? with
+    | some (.indc ind) =>
+      let some ctor := ind.ctors[proj.cidx.toNat]?
+        | throw (.badConstantFormat s!"cPrj constructor index {proj.cidx} not found")
+      let .ctor _ _ induct .. := cMeta.info
+        | throw (.badConstantFormat "cPrj requires constructor metadata")
+      let info ← decompileConstructor ctor bc cMeta (← lookupNameAddr induct)
+      pure #[(info.cnst.name, .ctorInfo info)]
+    | _ => throw (.badConstantFormat s!"cPrj inductive index {proj.idx} not found")
+  | _ => throw (.badConstantFormat "expected a projection")
 
 /-! ## Main Entry Points -/
 
-/-- Decompile a single named constant, purely. Returns Ix types. -/
+/-- Select the source address, metadata (including constructors), and exact
+    per-name hints. Keep the canonical address-to-name index: original bodies
+    still refer to canonical addresses. This view never adds checker records. -/
+def originalView (ixonEnv : Ixon.Env) : Ixon.Env :=
+  let named := ixonEnv.named.fold (init := {}) fun m name entry =>
+    let selected := match entry.original with
+      | none => entry
+      | some (addr, constMeta) =>
+        { entry with
+          addr := addr
+          constMeta := constMeta
+          hints := ixonEnv.originalHintOverrides[name]?.getD entry.hints }
+    m.insert name selected
+  { ixonEnv with named }
+
+/-- Read exact bytes from the canonical store first, then unchecked original
+    data. Validate the address and canonical encoding, ignoring a lazy value's
+    cache. This is a decoding check, not a typing judgment. -/
+def readConstant (ixonEnv : Ixon.Env) (addr : Address) : Except String Constant := do
+  let some lc := ixonEnv.consts[addr]? <|> ixonEnv.originals[addr]?
+    | throw s!"missing constant/original at {addr}; recompile the artifact with original data"
+  let bytes := lc.rawBytes
+  if let some original := ixonEnv.originals[addr]? then
+    if original.rawBytes != bytes then
+      throw s!"conflicting original bytes at {addr}"
+  Ixon.Env.checkOriginalPayload addr bytes
+  Ixon.deConstantExact bytes
+
+/-- A compiler-created mutual container, not a source declaration. Pass 3
+    may rename its member metadata while retaining its `Ix.<addr>.*` label.
+    Original-bearing entries must still decode as declarations. -/
+private def isMutsContainer (ixName : Ix.Name) (named : Ixon.Named)
+    (mutuals : Array Ixon.MutConst) : Bool :=
+  match named.constMeta.info with
+  | .muts all _ =>
+    let containerPrefix := Lean.Name.str (.str .anonymous "Ix") (toString named.addr)
+    let name := ixNameToLean ixName
+    named.original.isNone && !mutuals.isEmpty && all.size == mutuals.size &&
+      all.all (fun members => !members.isEmpty) &&
+      containerPrefix.isPrefixOf name && name != containerPrefix
+  | _ => false
+
+/-- Decompile a single named constant, purely. Missing records and malformed
+    projections are named errors, including constructor projections. -/
 def decompileOne (env : DecompileEnv) (ixonEnv : Ixon.Env)
-    (_ixName : Ix.Name) (named : Ixon.Named)
-    : Except String (Array (Ix.Name × Ix.ConstantInfo)) :=
-  match ixonEnv.getConst? named.addr with
-  | none => .ok #[]
-  | some cnst =>
+    (ixName : Ix.Name) (named : Ixon.Named)
+    : Except String (Array (Ix.Name × Ix.ConstantInfo)) := (do
+    let cnst ← readConstant ixonEnv named.addr
+    let block? ← match cnst.info with
+      | .dPrj p | .iPrj p | .rPrj p => some <$> readConstant ixonEnv p.block
+      | .cPrj p => some <$> readConstant ixonEnv p.block
+      | _ => pure none
     let m : DecompileM (Array (Ix.Name × Ix.ConstantInfo)) :=
       match cnst.info with
       | .defn d => do
@@ -965,26 +1018,17 @@ def decompileOne (env : DecompileEnv) (ixonEnv : Ixon.Env)
       | .recr rec => do
         let info ← decompileRecursor rec cnst named.constMeta
         pure #[(info.getCnst.name, info)]
-      | .dPrj proj =>
-        match ixonEnv.getConst? proj.block with
+      | .dPrj _ | .iPrj _ | .rPrj _ | .cPrj _ =>
+        match block? with
         | some { info := .muts mutuals, sharing, refs, univs } =>
           decompileProjection cnst named.constMeta mutuals sharing refs univs
-        | _ => pure #[]
-      | .iPrj proj =>
-        match ixonEnv.getConst? proj.block with
-        | some { info := .muts mutuals, sharing, refs, univs } =>
-          decompileProjection cnst named.constMeta mutuals sharing refs univs
-        | _ => pure #[]
-      | .rPrj proj =>
-        match ixonEnv.getConst? proj.block with
-        | some { info := .muts mutuals, sharing, refs, univs } =>
-          decompileProjection cnst named.constMeta mutuals sharing refs univs
-        | _ => pure #[]
-      | .cPrj _ => pure #[]
-      | .muts _ => pure #[]
+        | _ => throw (DecompileError.badConstantFormat "projection block is not a mutual block")
+      | .muts mutuals =>
+        if isMutsContainer ixName named mutuals then pure #[]
+        else throw (DecompileError.badConstantFormat "named constant is a mutual block")
     match DecompileM.run env default {} m with
     | .ok (entries, _) => .ok entries
-    | .error err => .error (toString err)
+    | .error err => .error (toString err)).mapError fun err => s!"'{ixName.pretty}': {err}"
 
 /-- Decompile a chunk of constants, purely. Returns results and errors. -/
 def decompileChunk (env : DecompileEnv) (ixonEnv : Ixon.Env)
@@ -1000,11 +1044,9 @@ def decompileChunk (env : DecompileEnv) (ixonEnv : Ixon.Env)
 
 /-- Decompile all constants in parallel using chunked pure Tasks. Returns Ix types.
 
-    `skip` filters named entries out of the pass entirely — the Pass-1
-    driver passes the aux_gen skip (`named.original.isSome &&
-    isAuxGenSuffix name`, Rust `decompile_named_const`
-    decompile.rs:3595-3597); aux constants are regenerated/recovered by
-    Pass 2 instead. Default skips nothing (standalone whole-env use). -/
+    `skip` filters named entries out of the pass entirely. The full driver
+    passes `originalView` and skips only reserved compiler-support names.
+    Default skips nothing (standalone whole-env use). -/
 def decompileAllParallel (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     (skip : Ix.Name → Ixon.Named → Bool := fun _ _ => false)
     : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) := Id.run do
@@ -1015,6 +1057,7 @@ def decompileAllParallel (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     if !skip ixName named then
       allEntries := allEntries.push (ixName, named)
   let total := allEntries.size
+  let numWorkers := max 1 numWorkers
   let chunkSize := (total + numWorkers - 1) / numWorkers
   -- Spawn one task per chunk
   let mut tasks : Array (Task (Array (Ix.Name × Ix.ConstantInfo) × Array (Ix.Name × String))) := #[]

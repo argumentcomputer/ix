@@ -18,7 +18,7 @@ namespace Tests.Ix.Compile.NonCanonicalDefault
 
 open Tests.Ix.Compile.NonCanonical
 
-/-- Entries 0 to 199. -/
+/-- Entries 0 to 197. -/
 def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.SA "P0" "P1" `ev "clique member" .pendingTransport (.root false true false)
     "6a95c0e321c602cf788b502681a2d273157a5a0653c26af77691ea83721dcb5d" "c8550d91c030b61f2772d502e35b62c37b006d9fa2b6e080bdfe80ad44f0ea5c" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
@@ -415,17 +415,11 @@ def part0 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wx.eq_def "equation lemma" .lazy (.root false true true)
     "536a0ccd00e89fc090179b723a25ddb1fce68a1257b05169f75c5122c36d9874" "1369d30019bbd8c870ac4a620feece8eaaf1963ade3dc8a01d756f4370422d97" "value.λ.body.@1.@0.fn",
   e `Tests.Ix.Compile.Twins.Cliques.WU "P0" "P1" `wy.eq_def "equation lemma" .lazy (.root false true true)
-    "b6f0f0613e648619e747a56663db0f844a5bf3d8d1829ad5642c3b099e3ea2ef" "f9a53f194d6e42939af76f7dd338862ff4c9081d9b15b7ed9a7137a63edf3e2e" "value.λ.body.@1.@0.fn",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "cd37d419d255515656933e6d23afe32bffc3622104ad299967bf429b71328188" "3149caf1f58e19e0832f94972715f19a8fb484385a3ed50e37ef683a5e12fd5e" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "9f571cee8cd34435aae331146255374c3c30bd41d22263eb4d83e9487a9971d1" "ecb5aa3e7f9be159472b15d3af82ab2d24f88b45a0502ffcc86c00d1320e9973" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor"
+    "b6f0f0613e648619e747a56663db0f844a5bf3d8d1829ad5642c3b099e3ea2ef" "f9a53f194d6e42939af76f7dd338862ff4c9081d9b15b7ed9a7137a63edf3e2e" "value.λ.body.@1.@0.fn"
 ]
 
-/-- Entries 200 to 399. -/
+/-- Entries 198 to 391. -/
 def part1 : List NonCanonicalEntry := [
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "6d49117afba347441fd9d5c801883965a81a59d32b23b89e2f613cce8ede1432" "5ba8df4f5c5b687425a8c97a35a5a33c0d9617049892ca7563726f89bd459959" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "6825ad81f198d5b2c2383e8f41765aa9173509839d83eca74daf8ed4250cf7f6" "edb22d889d302d4fc637bd44e88dcadb1f8a38bf305e62670e018b630cfcb4fa" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -434,8 +428,6 @@ def part1 : List NonCanonicalEntry := [
     "61409cf8593535276483244e4931eddbcfe3c128ec76ebb73f98e09c5235aa04" "162916defdace1c6bef8b2e24099f7dcd356717119fd8de74c9f49e3d71199f9" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "231dc18951ea73da5c170f4d74f2cc36c744823c7a2e5bc63d2833f57237bc90" "607b55c6ab4127543778e692744db18f9f4d0403b2f323cdde273214930d053e" "type.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "1306c44721989e0badcb92934c7b477015f0d751772f8b67a115b6124d735d07" "9c6e07355e685e9c65caeb6e041a6155e814bc3fb7618a18042c173a21a53570" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "3ccc83899f75d3c94a6f6edac10f5a968ab26ea933205cbc7ac420376c39080d" "c25c953a464d477303c1228a5d162fb91be4191770fda51ed39d0a34c7ca1524" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQMut "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -484,12 +476,6 @@ def part1 : List NonCanonicalEntry := [
     "c9cce8cecf22064511a309ecf5cd00f6c87b031ed8e058eb09fd699217fa8c71" "16322604a39ee2bc2c59b6433315f3b40ddb32f55011712161bc88252942c5bf" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQReord "twin" "orig" `Odd.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1527c316d83a38d43628ce583eb0dba56fdbb7a296b8a0e2e0f64f0e845a3ac4" "c3c6e9068e2b7d3a4ecb6fdc5243e5a0c8288a344a7bb8240e67e9bd8e382cb8" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "8213397c2ef94e997c72f414215b607d6a596692f727b2b7e92ad5c1e66271f6" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "dfa3b4b8edc8219901c2f579d769c771b0b1b2a025b5efee3ed2807f303fa791" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "f57838f5f203e4afcf753dad2e4838d6997dcb9d63acff9466417b8f1c8d1098" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5415f5f54a992d17fec6b65e0382c4577c3c7dfeb1d4f1e16b36448e23f299cb" "17f5ea7d767f19b280e22f1194210bc852a2d9697596daa4818a050fb08d2272" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -504,8 +490,6 @@ def part1 : List NonCanonicalEntry := [
     "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "50a97cdfcaf35fef5816074e6551f227029fc2ec898d320cd5252cc6bc41631b" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.len._sunfold "user constant" .inherited (.inherited [`A.len])
     "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "37aca8f02a0d00b79593a83338b231b9e5d09242f9c63d1bb87fb61f457b6f34" "",
-  e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "2a2cdf86d8e40f14fc7ada709238857154b02786b47b3401409a8599de92e7ff" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "507879810bce736d4eaf20aa5fe5e0ff6a59641422f54f61cb7c7dee3614eb55" "bc4d5e04e34bebe33ec6ad6138a67ad9f50db6f517d43e758c0ee5217b23f322" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.DQSplit "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -826,7 +810,7 @@ def part1 : List NonCanonicalEntry := [
     "2efa4bbd958d459004f3a93a7400ab7ba98da1688554df3e17a1fcbd2439a636" "757541206477da5f1aed7a4f6069168ddc96ad6897815cb4215d140048bd3c09" "kind"
 ]
 
-/-- Entries 400 to 599. -/
+/-- Entries 392 to 583. -/
 def part2 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.PropSplit "twin" "orig" `P1.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "d2d89c26f75ac727358474a7f94e4f3243cda39617619200efcd322e701c98d3" "a0d6a9f7105a2e25f72767aa82e60b9102aa3a36dc698a74ffa13f4644e264d2" "kind",
@@ -968,12 +952,6 @@ def part2 : List NonCanonicalEntry := [
     "c09085185737921cb32d9f4ae87bf398174cf7c6ff37b1f84018fa1232b60565" "982b163bacf09f5d93e21edf31f66e438929df26c44e7fd4d774a104633bc674" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgIdx2 "twin" "orig" `B.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1ef1eab0f0ea73af40b15337444a8317d7359eeab39e3123d36624c6a3612825" "6416e95e5dbc8465b4094be3510d9b9b262131e0e367fa41a838ce7b001546e4" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "8213397c2ef94e997c72f414215b607d6a596692f727b2b7e92ad5c1e66271f6" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "dfa3b4b8edc8219901c2f579d769c771b0b1b2a025b5efee3ed2807f303fa791" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "f57838f5f203e4afcf753dad2e4838d6997dcb9d63acff9466417b8f1c8d1098" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5415f5f54a992d17fec6b65e0382c4577c3c7dfeb1d4f1e16b36448e23f299cb" "17f5ea7d767f19b280e22f1194210bc852a2d9697596daa4818a050fb08d2272" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -988,8 +966,6 @@ def part2 : List NonCanonicalEntry := [
     "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "50a97cdfcaf35fef5816074e6551f227029fc2ec898d320cd5252cc6bc41631b" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing) (WB SurgSplit)",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.len._sunfold "user constant" .inherited (.inherited [`A.len])
     "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "37aca8f02a0d00b79593a83338b231b9e5d09242f9c63d1bb87fb61f457b6f34" "",
-  e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "2a2cdf86d8e40f14fc7ada709238857154b02786b47b3401409a8599de92e7ff" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "507879810bce736d4eaf20aa5fe5e0ff6a59641422f54f61cb7c7dee3614eb55" "bc4d5e04e34bebe33ec6ad6138a67ad9f50db6f517d43e758c0ee5217b23f322" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Repro.SurgSplit "twin" "orig" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1038,12 +1014,6 @@ def part2 : List NonCanonicalEntry := [
     "c9cce8cecf22064511a309ecf5cd00f6c87b031ed8e058eb09fd699217fa8c71" "16322604a39ee2bc2c59b6433315f3b40ddb32f55011712161bc88252942c5bf" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C1 "can" "src" `Odd.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1527c316d83a38d43628ce583eb0dba56fdbb7a296b8a0e2e0f64f0e845a3ac4" "c3c6e9068e2b7d3a4ecb6fdc5243e5a0c8288a344a7bb8240e67e9bd8e382cb8" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "19e46c2c75aba8115ea388c0f2c1cbc22f450d7fcd18cf31fd375cde30828552" "8213397c2ef94e997c72f414215b607d6a596692f727b2b7e92ad5c1e66271f6" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A._sizeOf_inst "user constant" .inherited (.inherited [`A._sizeOf_1])
-    "cb38961a123f89cadfc53462a78ff4dbfea68b5aabccb0706ec0e7a5853ad4b7" "dfa3b4b8edc8219901c2f579d769c771b0b1b2a025b5efee3ed2807f303fa791" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.a.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "028b918c12d718298eb45d488de35571619507e7cd476a66da582e007caf017d" "f57838f5f203e4afcf753dad2e4838d6997dcb9d63acff9466417b8f1c8d1098" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "5415f5f54a992d17fec6b65e0382c4577c3c7dfeb1d4f1e16b36448e23f299cb" "17f5ea7d767f19b280e22f1194210bc852a2d9697596daa4818a050fb08d2272" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1064,8 +1034,6 @@ def part2 : List NonCanonicalEntry := [
     "4cf893733c374cb1e3d3193e6849687b35b597e8339b7a494c69912565a5b934" "50a97cdfcaf35fef5816074e6551f227029fc2ec898d320cd5252cc6bc41631b" "type.∀.body.∀.dom" "structural recursion over a split block: `below` path (`x.2.1` vs `x.1`) and the extra motive of the Lean block (O9 re-pathing)",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.len._sunfold "user constant" .inherited (.inherited [`A.len])
     "4d723026dd9e109918901fa7dad29203102a220255ced0743a93ddfe9d957c37" "37aca8f02a0d00b79593a83338b231b9e5d09242f9c63d1bb87fb61f457b6f34" "",
-  e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.nil.sizeOf_spec "user constant" .inherited (.inherited [`A._sizeOf_inst])
-    "9a2ccaeac841163498ff30c729158232c2fde2948c593b0434359c016a391fcf" "2a2cdf86d8e40f14fc7ada709238857154b02786b47b3401409a8599de92e7ff" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "507879810bce736d4eaf20aa5fe5e0ff6a59641422f54f61cb7c7dee3614eb55" "bc4d5e04e34bebe33ec6ad6138a67ad9f50db6f517d43e758c0ee5217b23f322" "type.∀.body.∀.dom",
   e `Tests.Ix.Compile.Twins.Proto.C2 "can" "src" `A.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -1230,7 +1198,7 @@ def part2 : List NonCanonicalEntry := [
     "a572550a6184263f6d3999ca82aa84c41b6e33ef8fa4c1ab4a4b72e95496e4be" "54b4288db5d14dfa34199cb58d10ca65aa4ba1ce70d219649534ee53b4644389" ""
 ]
 
-/-- Entries 600 to 799. -/
+/-- Entries 584 to 783. -/
 def part3 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C5 "can" "src" `X.noConfusion "user constant" .inherited (.inherited [`X.casesOn, `X.noConfusionType])
     "567f68cba689df3ecee088d50c35c5224bc83709602c1ec997dbd49835743974" "ad1f01e0b43bcddb903a7578e07b8dc94139187e04452c5398f67da4f4423972" "",
@@ -1634,7 +1602,7 @@ def part3 : List NonCanonicalEntry := [
     "63650d74af08a8656ea58d1d8908d5d9dcbfced02f395196cbf03442b517f5d7" "14377b0b5664d5233dfbd0e8403b28b65db10299f6689c5a35fada7b113a771c" ""
 ]
 
-/-- Entries 800 to 999. -/
+/-- Entries 784 to 983. -/
 def part4 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C9b "can" "src" `X.noConfusionType "user constant" .inherited (.inherited [`X.casesOn])
     "9cd4d7eeda28cb6ac9b9d9d313c7c6961c9a1c0836fdc0d5d20b994d646e365a" "8e05cd1a3cd533559c4d44cb56126e6ff53d81ed239c7c9031f4f9360de0cd46" "",
@@ -2038,7 +2006,7 @@ def part4 : List NonCanonicalEntry := [
     "eef819e5b3a1f23419de8344465c75450546960adc656a1d38ab2e97b87ee488" "48e5937f9e9948c2ad7a9016f4b1127eada0f49355eedf5c7958ba339116bcb0" "type.∀.dom.∀.dom"
 ]
 
-/-- Entries 1000 to 1099. -/
+/-- Entries 984 to 1048. -/
 def part5 : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `LeCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "91404fbe5acdba843e4ea2006e4c902e8404d9188988b7488a1750ccff0ef42e" "6eedf7ce146d045c89554d2449ed79155f99d7bdf07f54b04088d2ca3d195219" "type.∀.dom.∀.dom",
@@ -2058,12 +2026,6 @@ def part5 : List NonCanonicalEntry := [
     "e1b49f51e12a215d5416dbc1d48b45425080b97430bf36e1ec07c3e783f9ae34" "2030131c7a438172ecc23809936f22ab26545083e51b34a3b645a58c5a7dee3e" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Cutsat "twin" "orig" `UnsatProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "d69e6440907a54695f07b081350a18d53ed8ba143ed58df17cedcb838cbec2a0" "0cdb34f88087601f72ef14e4d01f52b37ac899a74a2142151a45cd80d6ef42ea" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "85a24f55398a917aee85d4a010268491ccdd46c1c6c910b170a42b4b498ca41e" "2c09df2384c14d3e81a80104c783dabbb4d8f78671581c3c5eea8fd387a97e55" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_2 "sizeOf family" .o11aPending (.root false true false)
-    "e2a92f924f397ee61827e23616fd2e88e68658d4b276dc9934eefbc27bab7535" "18a13d99f62f9cc40cca165aa59fdc9c0e530ec8c516dbe7d0d07b0e65e58353" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "a68dfd8ad37a0d7353c831effb9c40edcb120a99e3ed2832e29aedda3c2d11c1" "b9b7d186c4be9795e57c3fc597a3a224a3ef7de3c0c22a98bc8002497822e858" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "767a78bfd0d31e8f4dca91a442d33430ad8c9dd4b96e0856aa348d41c75082db" "3dd9a4d1621440c44ace4ba0efc1f1b4ba42bf1d69bea4281b7427a227a1ea8a" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2072,14 +2034,10 @@ def part5 : List NonCanonicalEntry := [
     "d702ca348ec82c3cd8a702bb8e402de358ea76f34581912d20bbe1e2d217ffbc" "a4764bc7ee1ef3442a6b98a43d74f6b9c06e15e802a6cb35a75556340fd64c7b" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "f2460b7d68d84b2ff64c503aae835bbcbf3c4fd1664e57747bdbffc3b35d1d27" "7dfbea026720a178d97edd529d1cf2e1cca832e76097645eec163b7af66ef204" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.mk.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstr._sizeOf_inst, `DiseqCnstrProof._sizeOf_inst])
-    "078ebac4ce215824bf4d84f657ee911a63ce9f4d48b014c1e9892dea048d93d9" "030ade7b4ce8013572eb45899592a618edb900ff9a83a5273f72b95ac1206874" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "de41580be1bcfbcba9dad929960fa2597a0137ebfd9069f5d90bf6384675c56e" "9ce9d1e69fb16cc61a4c404d5606c4502c571afda532ee17163278688dc2931e" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "9deea21239de4357d1b95f9fd6c7b57fc6e24206749e71a956455bf4c4028ab9" "5ed957a8bc64702a8694661487bde2ff9390c6019ac202df6d748fc9a7fad1d6" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "6e544b31bccfa51cc310fc586f38ed01db34a47fa05118d1cc9341ffc1f8728b" "8ccbbef4f9e8665b6b1579682c69247b860dee77a16e841690aae6f26414f218" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "a6c3871f4aeccd4f83f273d6865cfcb8347f8eea07303c600595949d1426b555" "2efa60b590d236572b0073a9f6360c4d77e18fd807b19824eac7dc5fd789c7dd" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2088,24 +2046,10 @@ def part5 : List NonCanonicalEntry := [
     "87767078c157f3869cae4cda776e6a3005ea9328a981af59d218cfbc7e1685b4" "8608c061ae2f1b02b311f574a2a8a33dd3a4377c7672a77a2d2794cce11e61d5" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "191ab7f135b63d6e256e86b7d1add71a1174809e22a97687c34dea4535f046c3" "6526eed039f32a244c037afccf215b7a3da38e28211a356470d9a0a9847ddc2c" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.core.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstrProof._sizeOf_inst])
-    "b85f2224ce8fdb1e90db7de74051355afe8a230ad0fe74dd3e509058b7d59265" "56196a0b30bfe618f11d318afb57468f6526eb5eba04dc8cf12c758fbaeea80f" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.coreOfNat.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstrProof._sizeOf_inst])
-    "90deab7b8ec8624dddd1df088de74ed6753d9fbecd48ad87b6e9e1648b8a5e89" "0166ac60aa5e80656774a62fd2ab843c40bf847974f83272514a71ca79e877f6" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.neg.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstr._sizeOf_inst, `DiseqCnstrProof._sizeOf_inst])
-    "7d1085991126f6feed29521796230238703df6434cb4dbe5b55f366298221e53" "b4c894e1932e914f5b700f60b8fd8c6a10bb466e8dc68781efab7987adcec0dd" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.oneNeZero.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstrProof._sizeOf_inst])
-    "c1b7f56c7036d87c4688486af4d27ccdf403beacbf4e836aa9b7ea881c12591d" "152e62a2a546b0aad9ad44bc9faa63d00fffde52428c3db97d80cacac0c0525a" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "8fcd86d734867a58a6f5ba3485949ef43ce420b807a489ef957678bb7f767045" "69b4ab708e01e0bb41581133956c97469ef444f0232fd55bae9b2f1693d42151" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "3790a45d2c5493ef6300397d842682a2c1bb5539dcf4e191bc639d34a454d4be" "ae56f9710b03f3b0ceab6c55e8eb68f323a52935dbd2c29c536728870b8ab3ed" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.ring.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstrProof._sizeOf_inst])
-    "9f4deadfded52ac4e0eabcc5245b97b9552d3f6710121438e52a4221b12a387a" "7f1d70fd294871f0fd020356184a712f97718c59a3af31f6f4271a1098bf9eb2" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstr._sizeOf_inst, `DiseqCnstrProof._sizeOf_inst])
-    "011aaf3cb0725ee66afc6d5b53e7782008e8ea675fd94feef58ae2d685d3cee0" "41f01138973442dfccb87196627440681666c9ef8cab96a798d2649f076b718c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `DiseqCnstrProof.subst1.sizeOf_spec "user constant" .inherited (.inherited [`DiseqCnstr._sizeOf_inst, `DiseqCnstrProof._sizeOf_inst])
-    "c328caba9b28bc991619d28898951e676cc9bfc2d86dd1218af90c8003d99d42" "d652625999dac12f91dec772cfe880f0cc34862dc92543577064c7f414fdbb77" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "8d0514132628bc48ee7ecfb3336cecd8f76398d475ace232520fc482a25cde0b" "eae37b6b1534d392e90b8e5026a68a2fed91350a91b918dce737ca2e87ac4291" "type.∀.body.∀.body.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2130,14 +2074,6 @@ def part5 : List NonCanonicalEntry := [
     "8f3449025976a0959d6409e896e8cfa124a26af5c5cfa8e0e9da20b08439bcec" "fa459d0fd2fc854e252642675239669ea5f9ff1c46c4be5c743d43ff6b366599" "type.∀.body.∀.body.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `EqCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "8916cd2e47de8152ba1c5006f521f0d5c6e018e996b3a12b029fcd8e3e1509cb" "95f4e1bc9852bb779edede8da30dbfa07911cf32773cc641698268ca6580402a" "type.∀.body.∀.body.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_1 "sizeOf family" .o11aPending (.root false true false)
-    "4b6555393b8582bec0208dd4d4b426976f7c1b76e4b849da5969ced982d1f170" "b9d2c07c6731bf9cc87846259ec9066aa92e262386831c2c3aed10a32680e826" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_2 "sizeOf family" .o11aPending (.root false true false)
-    "6d3da884671a32df7f6d48437ca32ea99ef2ade30c031f2e32a88ce03865ae8a" "91ee268e9a4f9567a40946537b3da35a1aa7bf7d51e3717092a90e231eeb9e48" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_3 "sizeOf family" .o11aPending (.root false true false)
-    "1e09f92eaa14c13b438d30e2f0b19f39086586cb9fc76cb511fe797f3c9d58ce" "a1bf4ef62ae7de9cf0707b58a29f40e0c03b3eb4c6a7b41573d28c1c9da92e6e" "value.λ.body" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "21a3c8f414efd691ca6bb6d32535a5dee694108fd5b93ec2ae0f398e136e34dc" "36604e31da0f0832b159815e160e328ce311412848e5f0176dc4175ee05f8606" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "9695dec5fc6c3035432db8179f17845195a29805df318ffd4bec5951bafc9e77" "efe1aabeb0d11c3405ae229d2d9e4bb8e1fe963ec9e45c40cd818c4d9bc64316" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2146,14 +2082,10 @@ def part5 : List NonCanonicalEntry := [
     "2e35539b3419ff56e6433032f6121c9676ecdb7bd7877b1e3936062c8ef759e4" "34d4de9483a3f7d21627eee4675e329269a6f0bf7bfc161dce9360719dbe52c4" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "12b60daae001ce3d044d05aa3913b87210b0b1945162bb3b38926a9408f6a012" "ca0e37231a9d22339130c64cdbbb7eb99fdbabd7faaf05b6367d2d9cfb8d6d51" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.mk.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "4fe3cccb6ddeaa49f11cc39b7ae31d30432fb38329907e56e21ed29907b72627" "200052737c6856f2b2572e9438140525cfa877042e649c9a51eecce4d4656e9f" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2e8da0e2e6fda579baca7f7b18b2831e02617cab499c9b6b4027f54b5cd96b9b" "9b7ff36311afa5663ff0b7c142c0e57e5d2dae6fc5e20a2ba4313a737d5a3ce3" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstr.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "a3ac43469c10d7d49b43fcbc191c9d02d1215a7508ed310251cfaaf181da50c1" "cf23116c1bb648d794cb58afcce7ec80a292df87355f5935963ebd055e1f7ddc" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "4816bc5331a9808ef1352b97872725ebba359cdcb55544bf4cd105dd94541ca3" "18e9e4887de2c0d7b1a297c4578e05008cb80ee0172b8b733fe4d3144bc2fd88" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "080015f9b5b0281c4942200f57865b7c2c2f02b767f064caf40b59e69aa91838" "e9b155f950b3edd405fe595a993b374ed38af322a71d2a332327a4241cfd66bf" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2162,40 +2094,10 @@ def part5 : List NonCanonicalEntry := [
     "aca34ba7665a7e007afe5dcded061b5479f9daba72942f4cd8b9ecbaaf57e42a" "e75fdfea551fa47b42cc36ecff8c5e6421929c26debf71529ad40c19f9c4326e" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "7fd866a9bfc2745f7ab0faf3e9b14bddda0fc2cbfadeb7e8a30310956f27dd2a" "247ffa92a3370c3610731318ab947d80e857051360463e14ed04be58fa2e3e7f" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.combine.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "b5cbbe20fa4f4467aa7c6759cf65222e4d4be472f4f678f3da4c2176d979daca" "f7585b20c4077ca99d9d845e1609b38593aa6fe1195cc5da1360e67b99411aae" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.core.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "a74a60920f98ef433c60fbba9817f6fa0cc32d585a599961ceb2fdac0ce9e0d1" "d3c9cdd4eb55fc217267aebaff5caadf3202899273a059fbed9d62e577766da9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.coreOfNat.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "35373a974552d40d5c66ff036d2c1f0b8b27d8e9dcf80a641654c50b2a2cb631" "84608a0d69e605f65eeb96a57d3850debc77096eeb163a22c0836c00fb53abb8" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.dec.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "9f757738ff82e1c612a0d153fa9909275918cce4163d15ae8e213ba858d6c7d9" "7eda72879d70646dcc6a8d868a0ac5cf57fd184fee3edb419c5e4ae0020e60dc" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.norm.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "bea3ae8c8d027116b019c310417d5afd4853b2030515633d67079dcee0457dc7" "9552be21f36daaf95edf68bd440cb98fa76ecbda23a5986bf137dae88ab19d26" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCore.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "01a6e3b2e1158517ca0fb75bf042ca356c58bea423b5e38840bb4dbff6151c33" "7f9af11aa91a7bbba72561d828ea650f04aff607303bf10fa61fc0a82b0aa227" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.notCoreOfNat.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "c812f8fec228bc3d0143516bf67ad5adf8a653b086ba6d4b715d07dd3c9bac7c" "ace80c95d6c7c6c9f325f14c6ffc5c861e2c95c03618d7e4bc5fa3d55279dd74" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofDiseqSplit.sizeOf_spec "user constant" .inherited (.inherited [`UnsatProof._sizeOf_inst, `DiseqCnstr._sizeOf_inst, `IneqCnstrProof._sizeOf_inst])
-    "cfc29c7dfba8091979426e2637e589c43cbf670583d9287e67ee2d43dcf31cea" "659c00c5984224026bccb9df7bb45f01f8a7f9458b17d0e836db2915f3108be9" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEq.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "4603107e6a354c19517fa39721aa1ea28c43e97de795b2f9f2ef93fdd1600664" "f06a5606098279c9075cacfc969e744fdd37f22951da37ec66aefc69d6b3569b" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ofEqOfNat.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "d06162abe66e36f46f4c3080c35613a3be5ec59a36ebc26c16f459f2d004a874" "87d0a2b30689c76ee93bb81d53423d36260cfdc9731d47cb3b97a7c6b500902c" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.oneGtZero.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "7167f92dc8816fc4ec17978ab468441c41161719340123e4035fdf6319e5cb9d" "9487fc46795b525b293403ac9b6043dc35500f59a3a5dab1e24aadb96f568b0c" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "2bb3e55f987b275b8b1cc2ed3dd459567635ff969f72471e914a1396b13a4056" "06b592545e16c174884278209525dcacee29811e2c9718fce2a516789788ead1" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "7396d2991fdb06838fc9d6f924b3322115c56115a72c9d5e8934e2b223498457" "08d029718ca33d416533ba123d507247868e05a1e21598b6618474336b2540d8" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ring.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "20d8f15b9079591b8cd8601a2f7152ca8364c933efd20e6fd75b21e0d2b1d02a" "9fb419fa2d4b2ebf71d0ac21d32f75c9b16a8ea3a20944478968183e67c5427e" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.ringEq.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst])
-    "3dacb1e7bed424eb8c096588d97449dfcee0876c69ee8db92e5205312b415d18" "ceea112676ee95fa15b420842a2f9201b350e7fb5c967ae04c481b77aa983ead" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `IneqCnstrProof.subst.sizeOf_spec "user constant" .inherited (.inherited [`IneqCnstrProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "b5083cb595f0e1ca587616cea952d75c24e55d150f6c8682b75cd133c9da67aa" "80c4de67e3d77b2b043098aa0d3d59dc0c9db282951e050e049274473e7eaa39" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof._sizeOf_inst "sizeOf family" .o11aPending (.root false true false)
-    "b56f470d7c99d75df77302315a9c774c6c697474d6008af73ed60c50f851ff8e" "d7dd0d384ddcca4f8e3d7749d23dea2ba2dda218bae280ac7cdbdce84eae85ec" "value.@1.λ.body.fn" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.below "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "fb226f44ab7b006474ce6925f33a25cdf94de536110892eea3689e7a7114ae3b" "999e6430c31222308c7cb01c2892962ff79f8f36c8996a702879ad04c3b1cd0e" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.brecOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
@@ -2204,10 +2106,6 @@ def part5 : List NonCanonicalEntry := [
     "b2948c710f1b91bc78407e8e9581661140e7e4fb16aca2bd081cd730936cc31f" "84155b04fe96bdfc21b836543f1346828c1c5fcac040b96d854cfd00fafa3e4b" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.brecOn.go "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "1900a41bb7538e61b1d503b70185b3477da7ea67d6445d8100b56638181484b9" "a1035a40b074edb78499af69098da75619b4cb60c9f95711ad0f6d739ec6708f" "type.∀.dom.∀.dom",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.diseq.sizeOf_spec "user constant" .inherited (.inherited [`UnsatProof._sizeOf_inst, `DiseqCnstr._sizeOf_inst])
-    "950bd0ebc5c2b761d97af1eb27b38bbff010c3c62f16f2d7f3203f802f547988" "c0eecfe044481543199d35a3fd41d1209b18ebb8d3f2cee55c48ad2e394797ad" "",
-  e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.lt.sizeOf_spec "user constant" .inherited (.inherited [`UnsatProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "7db1620eb349e5e89775e44bb0d7bb373a4bcf8a39373cd6a5bf33ce5e643fa2" "ab7c3ee7a25016741a85ba51fdd9164c81428df33acf9b62d15ed6dbaf623e01" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.rec "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)
     "c6d6643b2efec099db31c557dc67b897d530a6f38dbd58e06748abfdfef61850" "27984d633fdb66cda209145f9ece2f14868bed7893a3e5b7092bcb90c3bdcf38" "type.∀.dom.∀.dom",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.recOn "image-kind head of a changed block (its Lean name holds the image)" .image (.root true true false)

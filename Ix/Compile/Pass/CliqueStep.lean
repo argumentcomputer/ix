@@ -75,9 +75,10 @@ blocks it references, the definitional passes), so a transported clique
 over a changed block references its images as any constant does. The
 rewritten constant (itself when nothing changed), its decompile sources
 (placeholder `i` for entry `i`) and the views the rewrite built. A rewrite
-that records Pass 3 data (a decline, a pass's canonical constant, a
-proof-justified form) is an error: the memo caveat, checked. -/
-def rewriteCliqueCanon (cenv : CompileEnv) (c : Name) (ci : ConstantInfo) :
+that records a decline returns it in Published (CQ5.3a), so no effect is
+lost. A pass-created canonical constant or proof-justified form is still an
+error: those records are not carried by this path. -/
+def rewriteCliqueCanon (cenv : CompileEnv) (sourceAll : Set Name) (c : Name) (ci : ConstantInfo) :
     Except CompileError (ConstantInfo × Std.HashMap Nat Expr × Published) := do
   if cenv.p3Heads.isEmpty then return (ci, {}, {})
   let used := headsIn cenv.p3Heads ci
@@ -85,18 +86,17 @@ def rewriteCliqueCanon (cenv : CompileEnv) (c : Name) (ci : ConstantInfo) :
   let fail := pass3Failure cenv (used.filterMap fun h => cenv.p3Heads.get? h)
   let views ← (viewsOf cenv used).mapError fail
   let rwr ← (rewriteBlock (passExpansionLookup cenv views) #[(c, ci)]
-    (passConfig cenv views)).mapError fail
-  -- the memo caveat, checked: the rewrite records nothing (no decline, no
-  -- canonical constant of a pass, no proof-justified form), so the step reads
-  -- the image memo as any block does and writes no clique data into it (Rust
-  -- `rewrite_block` returns no records at all)
-  unless rwr.declines.isEmpty && rwr.canon.isEmpty && rwr.pjForms.isEmpty do
+    (passConfig cenv views sourceAll)).mapError fail
+  -- Declines travel with this result and are published on block success.
+  -- The default image memo still records nothing; passExpansionLookup does
+  -- not reuse a definitional head rewritten under another configuration.
+  unless rwr.canon.isEmpty && rwr.pjForms.isEmpty do
     throw (.invalidMutualBlock
       s!"Pass 3 cliques: the rewrite of the canonical constant {c.pretty} recorded Pass 3 data")
   let ci' := ((rwr.overlay[0]?).map (·.2)).getD ci
   let sources : Std.HashMap Nat Expr :=
     rwr.sources.zipIdx.foldl (fun m (e, i) => m.insert i e) {}
-  return (ci', sources, { views := newMemoViews cenv views })
+  return (ci', sources, { views := newMemoViews cenv views, declines := rwr.declines })
 
 /-- A lone constant `c` compiled for the clique step or its rows (`r`, with
 the block state `bs` of its compile), added to the block state `st` as an
@@ -125,12 +125,12 @@ auxiliary names (`lookupConstAddr`), and the driver merges them like the aux
 tail's constants (`mergeCompiledBlock`; reserved names are insert-once,
 `checkBlockClaims`). Each constant resolves the earlier ones through the
 same map. -/
-def compileCliqueCanon (cenv : CompileEnv) (canon : Array (Name × ConstantInfo))
+def compileCliqueCanon (cenv : CompileEnv) (sourceAll : Set Name) (canon : Array (Name × ConstantInfo))
     (st : BlockState) : Except CompileError (BlockState × Published) := do
   let mut st := st
   let mut published : Published := {}
   for (c, ci) in canon do
-    let (ci', sources, pub) ← (rewriteCliqueCanon cenv c ci).mapError (cliqueCanonError c)
+    let (ci', sources, pub) ← (rewriteCliqueCanon cenv sourceAll c ci).mapError (cliqueCanonError c)
     published := published ++ pub
     let blockEnv : BlockEnv :=
       { all := ({} : Set Name).insert c, current := c, mutCtx := default, univCtx := [] }
@@ -159,7 +159,7 @@ def cliqueStep (cenv : CompileEnv) (all : Set Name) (lo : Name) :
   let init : BlockState :=
     { p3CliquePlans := prep.fresh, p3CliqueRows := prep.rows, p3PlanReused := prep.reused }
   if prep.overlay.isEmpty then return (cenv, init, {})
-  let (init, published) ← compileCliqueCanon cenv prep.canon init
+  let (init, published) ← compileCliqueCanon cenv all prep.canon init
   let overlay : Std.HashMap Name ConstantInfo :=
     prep.overlay.foldl (fun m (n, ci) => m.insert n ci) {}
   let sources : Std.HashMap Nat Expr :=

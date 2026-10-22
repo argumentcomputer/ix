@@ -300,7 +300,8 @@ impl<R: LeanRef> LeanIxonRawNameEntry<R> {
 }
 
 // =============================================================================
-// RawEnv (consts, named, blobs, comms, names, main, assumptions, anonHints)
+// RawEnv (consts, named, blobs, comms, names, main, assumptions, anonHints,
+//         originals, originalHintOverrides)
 // =============================================================================
 
 /// Decoded Ixon.RawEnv
@@ -316,6 +317,9 @@ pub struct DecodedRawEnv {
   pub assumptions: Vec<Address>,
   /// Explicit reducibility hints (`Env::anon_hints`), sorted by address.
   pub anon_hints: Vec<(Address, ReducibilityHints)>,
+  /// Preserve exact unchecked bytes, including malformed inputs for validation.
+  pub originals: Vec<DecodedRawBlob>,
+  pub original_hint_overrides: Vec<(Name, Option<ReducibilityHints>)>,
 }
 
 impl LeanIxonRawEnv<LeanOwned> {
@@ -375,6 +379,22 @@ impl LeanIxonRawEnv<LeanOwned> {
       );
     }
 
+    let originals_arr = LeanArray::alloc(env.originals.len());
+    for (i, raw) in env.originals.iter().enumerate() {
+      originals_arr.set(i, LeanIxonRawBlob::build(raw));
+    }
+    let original_hints_arr =
+      LeanArray::alloc(env.original_hint_overrides.len());
+    for (i, (name, hint)) in env.original_hint_overrides.iter().enumerate() {
+      original_hints_arr.set(
+        i,
+        LeanProd::new(
+          LeanIxName::build(&mut cache, name),
+          build_opt_hints(*hint),
+        ),
+      );
+    }
+
     // Build RawEnv structure
     let ctor = LeanIxonRawEnv::alloc(0);
     ctor.set_obj(0, consts_arr);
@@ -385,12 +405,14 @@ impl LeanIxonRawEnv<LeanOwned> {
     ctor.set_obj(5, main_obj);
     ctor.set_obj(6, assumptions_arr);
     ctor.set_obj(7, hints_arr);
+    ctor.set_obj(8, originals_arr);
+    ctor.set_obj(9, original_hints_arr);
     ctor
   }
 }
 
-/// Populate the bundle-field constructor slots (5-7: main,
-/// assumptions, anonHints) of a `RawEnv` being built field-by-field —
+/// Populate the trailing constructor slots (5-9: main, assumptions,
+/// anonHints, originals, originalHintOverrides) of a `RawEnv` being built field-by-field —
 /// the compile FFI assembles its RawEnv manually instead of going
 /// through [`LeanIxonRawEnv::build`], and leaving these slots unset is
 /// uninitialized memory (segfault on GC). Set-shaped fields are sorted
@@ -425,6 +447,29 @@ pub fn set_raw_env_bundle_fields(
   ctor.set_obj(5, main_obj);
   ctor.set_obj(6, assumptions_arr);
   ctor.set_obj(7, hints_arr);
+  let mut originals: Vec<_> = env
+    .originals
+    .iter()
+    .map(|e| (e.key().clone(), e.value().raw_bytes().to_vec()))
+    .collect();
+  originals.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+  let originals_arr = LeanArray::alloc(originals.len());
+  for (i, (addr, bytes)) in originals.iter().enumerate() {
+    originals_arr.set(i, LeanIxonRawBlob::build_from_parts(addr, bytes));
+  }
+  let mut cache = LeanBuildCache::new();
+  let original_hints_arr = LeanArray::alloc(env.original_hint_overrides.len());
+  for (i, entry) in env.original_hint_overrides.iter().enumerate() {
+    original_hints_arr.set(
+      i,
+      LeanProd::new(
+        LeanIxName::build(&mut cache, entry.key()),
+        build_opt_hints(*entry.value()),
+      ),
+    );
+  }
+  ctor.set_obj(8, originals_arr);
+  ctor.set_obj(9, original_hints_arr);
 }
 
 impl<R: LeanRef> LeanIxonRawEnv<R> {
@@ -439,6 +484,8 @@ impl<R: LeanRef> LeanIxonRawEnv<R> {
     let main_obj = ctor.get(5);
     let assumptions_arr = ctor.get(6).as_array();
     let hints_arr = ctor.get(7).as_array();
+    let originals_arr = ctor.get(8).as_array();
+    let original_hints_arr = ctor.get(9).as_array();
 
     // `Option Address`: scalar-optimized none, or a tag-0/1 ctor.
     let main: Option<Address> = if main_obj.is_scalar() {
@@ -466,6 +513,15 @@ impl<R: LeanRef> LeanIxonRawEnv<R> {
       main,
       assumptions: assumptions_arr
         .map(|x| LeanIxAddress::from_borrowed(x.as_byte_array()).decode()),
+      originals: originals_arr
+        .map(|x| LeanIxonRawBlob::new(x.to_owned_ref()).decode()),
+      original_hint_overrides: original_hints_arr.map(|x| {
+        let pair = x.as_ctor();
+        (
+          LeanIxName::new(pair.get(0).to_owned_ref()).decode(),
+          decode_opt_hints(pair.get(1)),
+        )
+      }),
       anon_hints: hints_arr.map(|x| {
         let pair = x.as_ctor();
         let addr =
@@ -505,12 +561,41 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
   for rc in &decoded.comms {
     env.store_comm(rc.addr.clone(), rc.comm.clone());
   }
+  for raw in &decoded.originals {
+    env.originals.insert(
+      raw.addr.clone(),
+      ixon::lazy::LazyConstant::from_bytes(raw.bytes.clone().into()),
+    );
+  }
+  env.original_hint_overrides.extend(
+    decoded.original_hint_overrides.iter().map(|(n, h)| (n.clone(), *h)),
+  );
   env.main = decoded.main.clone();
   env.assumptions.extend(decoded.assumptions.iter().cloned());
   env
     .anon_hints
     .extend(decoded.anon_hints.iter().map(|(a, h)| (a.clone(), *h)));
   env
+}
+
+/// Preserve evidence of duplicate original-data keys until it is checked.
+/// The pure converter remains available for raw transfer and consts Merkle roots.
+pub fn decoded_to_ixon_env_checked(
+  decoded: &DecodedRawEnv,
+) -> Result<IxonEnv, String> {
+  let mut addresses = std::collections::HashSet::new();
+  for raw in &decoded.originals {
+    if !addresses.insert(&raw.addr) {
+      return Err(format!("originals: duplicate address {}", raw.addr.hex()));
+    }
+  }
+  let mut names = std::collections::HashSet::new();
+  for (name, _) in &decoded.original_hint_overrides {
+    if !names.insert(name) {
+      return Err(format!("original hints: duplicate name {}", name.pretty()));
+    }
+  }
+  Ok(decoded_to_ixon_env(decoded))
 }
 
 /// Convert a Rust IxonEnv to a DecodedRawEnv.
@@ -576,6 +661,19 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
     main: env.main.clone(),
     assumptions,
     anon_hints,
+    originals: env
+      .originals
+      .iter()
+      .map(|e| DecodedRawBlob {
+        addr: e.key().clone(),
+        bytes: e.value().raw_bytes().to_vec(),
+      })
+      .collect(),
+    original_hint_overrides: env
+      .original_hint_overrides
+      .iter()
+      .map(|e| (e.key().clone(), *e.value()))
+      .collect(),
   })
 }
 
@@ -583,17 +681,21 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
 // rs_ser_env: Serialize an Ixon.RawEnv to bytes
 // =============================================================================
 
-/// FFI: Serialize an Ixon.RawEnv -> ByteArray via Rust's Env.put. Pure.
+/// FFI: Serialize an Ixon.RawEnv -> Except String ByteArray. Pure.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_ser_env(
   obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
-) -> LeanByteArray<LeanOwned> {
+) -> LeanExcept<LeanOwned> {
   let decoded = obj.decode();
-  let env = decoded_to_ixon_env(&decoded);
-  let mut buf = Vec::new();
-  env.put(&mut buf).expect("Env serialization failed");
-
-  LeanByteArray::from_bytes(&buf)
+  let result = decoded_to_ixon_env_checked(&decoded).and_then(|env| {
+    let mut buf = Vec::new();
+    env.put(&mut buf)?;
+    Ok(buf)
+  });
+  match result {
+    Ok(buf) => LeanExcept::ok(LeanByteArray::from_bytes(&buf)),
+    Err(e) => LeanExcept::error_string(&format!("rs_ser_env: {e}")),
+  }
 }
 
 // =============================================================================

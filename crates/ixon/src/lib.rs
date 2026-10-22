@@ -30,8 +30,9 @@ pub mod syntax;
 pub mod tag;
 pub mod univ;
 
-/// Stable identifier for the Ixon wire format, version 4
-/// (`Env::VERSION`). Mirrors `Ixon.wireFormatId`.
+/// Stable identifier for checked Ixon grammar, version 4
+/// (`Env::CHECKED_FORMAT_VERSION`). Unchecked envelope data does not change it.
+/// Mirrors `Ixon.wireFormatId`.
 pub const WIRE_FORMAT_ID: &str = "ixon-v4";
 
 // Re-export main types

@@ -44,7 +44,6 @@ public import Ix.CompileResource
 public import Ix.Cli.DriverOptions
 public import Ix.DecompileM
 public import Ix.DecompileDriver
-public import Ix.DecompileRoundtrip
 public import Ix.Meta
 public import Ix.Tc
 public import Ix.Cli.ValidateCmd
