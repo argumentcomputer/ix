@@ -17,6 +17,13 @@ unsafe inductive U
 unsafe inductive UN
   | mk : List UN → UN
 
+/-- MLList's polymorphic shape, including its nested Thunk recursor. -/
+unsafe inductive Poly (m : Type u → Type u) (α : Type u) : Type u
+  | nil : Poly m α
+  | cons : α → Poly m α → Poly m α
+  | thunk : Thunk (Poly m α) → Poly m α
+  | squash : (Unit → m (Poly m α)) → Poly m α
+
 unsafe inductive UNeg
   | mk : (UNeg → Bool) → UNeg
 
@@ -51,6 +58,10 @@ noncomputable unsafe def qIota : Bool := U.rec (motive := fun _ => Bool) true (f
 noncomputable unsafe def qNested : Bool :=
   UN.rec (motive_1 := fun _ => Bool) (motive_2 := fun _ => Bool) (fun _ ih => ih) true
     (fun _ _ _ _ => false) (UN.mk [])
+noncomputable unsafe def qPoly : Bool :=
+  Poly.rec (motive_1 := fun _ => Bool) (motive_2 := fun _ => Bool)
+    true (fun _ _ ih => ih) (fun _ ih => ih) (fun _ => false) (fun _ ih => ih ())
+    (Poly.thunk ⟨fun _ => Poly.nil (m := Id) (α := Bool)⟩)
 unsafe def qEtaL : S → S := fun s => s
 unsafe def qEtaR : S → S := fun s => S.mk s.b
 unsafe def qDelta : Bool := kdef

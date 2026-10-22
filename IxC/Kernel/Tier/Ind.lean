@@ -298,6 +298,16 @@ def mapC (f : α → Except ε β) : List α → Except ε (List β)
     let bs ← mapC f as
     pure (b :: bs)
 
+/-- A recursor has the block's levels, or a fresh elimination level first,
+as `Numbering.large` and `Reader.recLps` encode it. The former prefix test
+mistook an appended elimination level for this canonical large-eliminator
+shape and rejected every polymorphic block with a large eliminator.
+The header and every rule equation are still checked independently. -/
+def recLevelsMatch (lps rlps : List LevelParam) : Bool :=
+  rlps == lps || match rlps with
+    | elim :: rest => rest == lps && !lps.contains elim
+    | [] => false
+
 /-- **The typing-only check of an inductive block** at `fe` (see the
 module's documentation). -/
 def indC (fe : FEnv md) (b : TierInd md) : Except (CheckError md) (TierIndOut md) := do
@@ -327,7 +337,7 @@ def indC (fe : FEnv md) (b : TierInd md) : Except (CheckError md) (TierIndOut md
   -- the recursors' headers, each at the block's index; then their rules
   let rhs ← mapC (fun (cv, sh, rules) => do
       let (cvA, _) ← runC (checkConstantValC .verified fe₂ cv)
-      unless cvA.levelParams.take lps.length == lps && cvA.levelParams.length ≤ lps.length + 1 do
+      unless recLevelsMatch lps cvA.levelParams do
         throw (.notImplemented msg!"tier: the universe parameters of {cv.name} are not its block's")
       unless (cvA.type.stripPis (sh.majorIdx + 1)).isSome do
         throw (.notImplemented msg!"tier: the type of {cv.name} has fewer binders than its counts")

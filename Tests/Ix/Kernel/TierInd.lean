@@ -13,7 +13,8 @@ their logical closure (`List` and the prelude) is checked in Source mode
 
 * **the blocks**, through the Source ingress's tier conversion
   (`convertTierInductive`) and `Ix.Kernel.Tier.indC`: the reflexive `U`, the
-  nested `UN` (its auxiliary recursor `UN.rec_1`), the negative `UNeg`
+  nested `UN` and polymorphic MLList-shaped `Poly` (including their nested
+  recursors), the negative `UNeg`
   (positivity is not checked), the structure `S` (a projection table), the
   mutual `A`/`B`, and the family `PF` without its recursor, each typed and
   pushed onto the check view and the answer view;
@@ -27,7 +28,8 @@ their logical closure (`List` and the prelude) is checked in Source mode
   is `true`; a term naming the family's absent recursor is refused;
 * **the declines**: `U`'s rules swapped (a rule without its equation's type),
   `A.a` claimed by `B` (a constructor not returning its former), `Big` with
-  its type lowered to `Type` (a field's universe above its type's). -/
+  its type lowered to `Type` (a field's universe above its type's), and
+  `Poly` recursor headers with reordered, extra, duplicate or missing levels. -/
 
 open LSpec
 open Ix.LeanIngress
@@ -108,6 +110,7 @@ def checkKnot (fe : FEnv .source) : Ix.Kernel.Cached.CoreFnsI .source :=
 def blocks : List (String × List Lean.Name × List Lean.Name) := [
   ("U", [defs "U"], [defs "U.rec"]),
   ("UN", [defs "UN"], [defs "UN.rec", defs "UN.rec_1"]),
+  ("Poly", [defs "Poly"], [defs "Poly.rec", defs "Poly.rec_1"]),
   ("UNeg", [defs "UNeg"], [defs "UNeg.rec"]),
   ("S", [defs "S"], [defs "S.rec"]),
   ("A/B", [defs "A", defs "B"], [defs "A.rec", defs "B.rec"]),
@@ -115,12 +118,12 @@ def blocks : List (String × List Lean.Name × List Lean.Name) := [
 
 def evaluate : IO (Array String × Array String) := do
   let leanEnv ← getCompileEnv #[defsModule]
-  let logEnv ← envOf leanEnv #[`List]
+  let logEnv ← envOf leanEnv #[`List, `Thunk, `Id]
   let kenv ← match checkSource logEnv (condense logEnv) with
     | .ok k => pure k
     | .error e => throw (IO.userError s!"checkSource on the logical closure: {e}")
   let fe₀ := mkFEnv kenv
-  let fix ← envOf leanEnv (#["U", "UN", "UNeg", "S", "A", "PF", "Big", "kdef", "qIota", "qNested",
+  let fix ← envOf leanEnv (#["U", "UN", "Poly", "UNeg", "S", "A", "PF", "Big", "kdef", "qIota", "qNested", "qPoly",
     "qEtaL", "qEtaR", "qDelta", "qTrue", "qPfL", "qPfR", "qPfRec"].map defs)
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
@@ -165,6 +168,7 @@ def evaluate : IO (Array String × Array String) := do
   -- the questions: (left, right, answer view's verdict, check view's verdict if asked)
   let qs : List (String × String × Bool × Option Bool) := [
     ("qIota", "qTrue", true, some false), ("qNested", "qTrue", true, none),
+    ("qPoly", "qTrue", true, some false),
     ("qEtaL", "qEtaR", true, some false), ("qDelta", "qTrue", true, some false),
     ("qPfL", "qPfR", true, none)]
   for (l, r, wantA, wantC?) in qs do
@@ -214,6 +218,18 @@ def evaluate : IO (Array String × Array String) := do
   let lowered := (tierBlock fix [defs "Big"] []).map fun b =>
     { b with types := b.types.map fun (cv, nIdx) => ({ cv with type := .sort (.succ .zero) }, nIdx) }
   (errors, lines) := expectDecline "Big at Type" lowered fe₀ "universe above" errors lines
+  -- A header still has to declare distinct, sufficient levels, and only
+  -- the established order is admitted. In particular [0,1], which passed
+  -- the former prefix guard, is not Poly's large-eliminator order [1,0].
+  let poly := tierBlock fix [defs "Poly"] [defs "Poly.rec", defs "Poly.rec_1"]
+  for (label, levels, why) in [
+      ("reordered", [0, 1], "are not its block's"),
+      ("extra", [2, 1, 0], "are not its block's"),
+      ("duplicate", [1, 0, 0], "duplicate universe parameters"),
+      ("missing", [1], "undeclared universe parameter")] do
+    let bad := poly.map fun b =>
+      { b with recs := b.recs.map fun (cv, sh, rules) => ({ cv with levelParams := levels }, sh, rules) }
+    (errors, lines) := expectDecline s!"Poly, {label} levels" bad fe₀ why errors lines
   return (errors, lines)
 
 def tierInd : TestSeq :=

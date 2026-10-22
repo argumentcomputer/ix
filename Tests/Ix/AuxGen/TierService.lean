@@ -3,6 +3,8 @@ import Ix.Meta
 import Ix.AuxGen.IxcScope
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierIndDefs
+import Tests.Ix.AuxGen.BelowIxc
+import Batteries.Data.MLList.Basic
 
 /-! # The Source service's tier and an unsafe block's oracle (`lake test -- auxgen-tier-service`)
 
@@ -132,6 +134,47 @@ def tierService : TestSeq :=
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
     return (errors.isEmpty, lines.size, 0, msg)) .done
 
-def suite : List TestSeq := [tierService]
+/-- The real polymorphic unsafe block that exposed the universe-order bug:
+its service status stays outside acceptance, while all AuxGen questions agree
+with the old kernel. This exercises the actual nested recursor and .below. -/
+def mlListService : TestSeq :=
+  .individualIO "MLList: tier install and every shadow answer" none (do
+    let leanEnv ← getCompileEnv #[`Batteries.Data.MLList.Basic]
+    let n := Lean.Name.str (Lean.Name.str (Lean.Name.num `_private.Batteries.Data.MLList.Basic 0)
+      "MLList") "MLListImpl"
+    let key := Ix.Name.fromLeanName n
+    let env ← envOf leanEnv #[n]
+    let blocks := condense env
+    let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
+    let svc := (Service.create pre env blocks
+      (evidence := some (Ix.RoleEvidence.bundleEvidence ()))).ensureNames #[key]
+    let some (.tier "unsafe") := svc.statusOf? key
+      | return (false, 0, 0, some "MLList was not installed by the unsafe tier")
+    if (svc.firstUnaccepted? #[key]).isNone then
+      return (false, 0, 0, some "MLList was incorrectly counted accepted")
+    let (_, _, cenv) ← IO.ofExcept (← IO.lazyPure fun _ =>
+      Ix.CompileM.compileEnvFold env blocks (width := 4))
+    unless cenv.ungrounded.isEmpty do
+      return (false, 0, 0, some s!"MLList closure: {cenv.ungrounded.size} failed blocks")
+    let some (lo, members) := (Tests.Ix.AuxGen.FlatBlockSource.inductiveBlocks env blocks).find?
+      (fun (_, members) => members.any (Ix.Compile.ExactKey.nameEq · key))
+      | return (false, 0, 0, some "MLList block missing")
+    let oracle := Ixc.oracleOf .shadow false
+      { members, recursors := true, lookup := env.get? } none 4 (fun _ => .ok svc)
+    let some (st, _) ← IO.ofExcept (← IO.lazyPure fun _ =>
+      Tests.Ix.AuxGen.BelowIxc.tailStats cenv lo members oracle)
+      | return (false, 0, 0, some "MLList tail missing")
+    let counts := Tests.Ix.AuxGen.BelowIxc.statsLine st
+    IO.println s!"MLList: tier unsafe, not accepted; {counts}"
+    let ok := st.queries > 0 && st.answered == st.queries && st.equal == st.queries &&
+      st.recWhnf > 0 && st.recEqual == st.recWhnf && st.elim > 0 && st.elimEqual == st.elim &&
+      st.belowAdmitted > 0 && [st.differ, st.refused, st.scopesRefused, st.flatRefused,
+        st.decisionsDiffer, st.recDiffer, st.recDecisionDiffer, st.recSkipDiffer,
+        st.elimDiffer, st.leanRecDiffer, st.belowRefused, st.recRefused, st.elimRefused,
+        st.familyRefused].all (· == 0)
+    return (ok, st.queries + st.recWhnf + st.elim, 0,
+      if ok then none else some (counts ++ "\n" ++ "\n".intercalate st.samples.toList))) .done
+
+def suite : List TestSeq := [tierService, mlListService]
 
 end Tests.Ix.AuxGen.TierService
