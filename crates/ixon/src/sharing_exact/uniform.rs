@@ -166,6 +166,9 @@ pub struct UniformSharingResult {
   /// Whether the table-count knapsack chose a lower TagN bracket.
   pub lower_bracket: bool,
   pub stats: ExactSharingStats,
+  /// Test-only view of retained per-count optima, including canonical ties.
+  #[cfg(test)]
+  pub(crate) component_tables: Vec<CTable>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1110,7 +1113,7 @@ struct SCtx<'a, 'd> {
 
 impl SCtx<'_, '_> {
   fn at(&self, t: TermId) -> Option<usize> {
-    match self.pos[ix(t)] {
+    match self.pos.get(ix(t)).copied()? {
       NO_POS => None,
       j => Some(j as usize),
     }
@@ -1380,6 +1383,96 @@ impl SCtx<'_, '_> {
     (key, rel)
   }
 
+  /// Lean `keyContext` and the checks before `solveP`'s memo lookup. Only
+  /// the key's context suffix is decoded; the group and separator are not.
+  fn key_context(
+    &self,
+    g: &[TermId],
+    entries: &[u64],
+    in_f: &[bool],
+    out: &[bool],
+  ) -> Result<(Vec<TermId>, Vec<TermId>), SharingError> {
+    let err =
+      || internal("memo key context is not part of the decided context");
+    let (mut in_red, mut out_red) = (Vec::new(), Vec::new());
+    for &e in entries {
+      let t = TermId::try_from(e / 3).map_err(|_err| err())?;
+      if e % 3 == 0 {
+        out_red.push(t);
+      } else {
+        in_red.push(t);
+      }
+    }
+    let ordered_members = |ts: &[TermId]| {
+      ts.windows(2).all(|w| w[0] < w[1])
+        && ts
+          .iter()
+          .all(|&t| self.at(t).is_some_and(|j| self.member_of[j] != NO_POS))
+    };
+    let has = |set: &[bool], t| self.at(t).is_some_and(|j| set[j]);
+    if !ordered_members(g)
+      || !ordered_members(&in_red)
+      || !ordered_members(&out_red)
+      || g.iter().any(|&t| has(in_f, t) || has(out, t))
+      || in_red.iter().any(|&t| !has(in_f, t) || has(out, t))
+      || out_red.iter().any(|&t| !has(out, t) || has(in_f, t))
+    {
+      return Err(err());
+    }
+    Ok((in_red, out_red))
+  }
+
+  /// Lean `sepCheckA`: a non-out, non-opaque member must not reach both
+  /// the group and other members. Recompute opacity under the reduced
+  /// context; a cut inferred from the full context is not sufficient.
+  fn sep_check(
+    &self,
+    g: &[TermId],
+    in_red: &[TermId],
+    out_red: &[TermId],
+  ) -> Result<bool, SharingError> {
+    let in_f = self.flags(in_red);
+    let out = self.flags(out_red);
+    let b = self.rebound(&out)?;
+    let opq: Vec<bool> = self
+      .area
+      .iter()
+      .enumerate()
+      .map(|(j, &t)| {
+        self.up.opaq[ix(t)] || (in_f[j] && self.opaque_under(&b, t))
+      })
+      .collect();
+    // Bit 1: group; bit 2: other member; zero: unlabeled. OR is the
+    // reach-label join, and 3 is Lean's mixed label `some none`.
+    let mut label = vec![0u8; self.area.len()];
+    for (ts, bit) in [(&self.members[..], 2), (g, 1), (in_red, 0), (out_red, 0)]
+    {
+      for &t in ts {
+        let Some(j) = self.at(t) else {
+          return Ok(false);
+        };
+        label[j] = bit;
+      }
+    }
+    let mut reach = vec![0u8; self.area.len()];
+    for (j, &t) in self.area.iter().enumerate() {
+      let mut r = label[j];
+      for &c in self.up.nodes[ix(t)].children().as_slice() {
+        if let Some(k) = self.at(c) {
+          r |= if opq[k] { label[k] } else { reach[k] };
+        }
+      }
+      reach[j] = r;
+    }
+    Ok(
+      g.iter().all(|&t| {
+        self.at(t).is_some_and(|j| self.member_of[j] != NO_POS && label[j] == 1)
+      }) && self.members.iter().all(|&t| {
+        self.at(t).is_some_and(|j| out[j] || opq[j] || reach[j] != 3)
+      }),
+    )
+  }
+
   /// Exact table of a group under the decided members outside it (Lean
   /// `SCtx.solve`).
   fn solve(
@@ -1403,18 +1496,23 @@ impl SCtx<'_, '_> {
         .collect();
       self.memo_key(&opq, &in_f, &out, g).0
     };
+    let (in_red, out_red) =
+      self.key_context(g, &key[g.len() + 1..], &in_f, &out)?;
     if let Some(tb) = self.memo.get(&key) {
       self.memo_hits += 1;
       return Ok(Arc::clone(tb));
     }
-    let (phi0, work) = self.phi(&in_f, in_all)?;
+    if !self.sep_check(g, &in_red, &out_red)? {
+      return Err(internal("search group is not separated"));
+    }
+    let (phi0, work) = self.phi(&self.flags(&in_red), &in_red)?;
     Self::charge(meter, work.saturating_add(len64(self.area.len())))?;
     let tb = self.node(
       meter,
       phi0,
-      in_all,
-      out_all.to_vec(),
-      out_all.len(),
+      &in_red,
+      out_red.clone(),
+      out_red.len(),
       Vec::new(),
       g,
       Vec::new(),
@@ -2103,6 +2201,8 @@ pub(crate) fn optimize_uniform_with(
     states_visited,
     lower_bracket,
     stats: meter.stats.clone(),
+    #[cfg(test)]
+    component_tables: results.into_iter().map(|(_, table)| table).collect(),
   };
   drop(p);
   Ok((result, UniformPlan { dict, plan, model, k }))
@@ -2244,6 +2344,178 @@ pub fn normalize_constant_sharing_uniform(
     return Err(internal("uniform output length differs from its accounting"));
   }
   Ok((out, result))
+}
+
+#[cfg(test)]
+mod context_tests {
+  use super::*;
+
+  // Four candidate leaves under one candidate App ancestor. The two
+  // intermediate App prefixes have compact in-degree one, hence are not
+  // candidates. Storing the ancestor separates the leaves.
+  fn with_context(w: u128, test: impl FnOnce(&mut SCtx<'_, '_>, TermId)) {
+    let leaves: Vec<_> = (0..4).map(|i| Expr::reference(i, vec![0])).collect();
+    let parent = leaves[1..]
+      .iter()
+      .fold(leaves[0].clone(), |f, x| Expr::app(f, x.clone()));
+    let mut roots = vec![parent.clone(), parent];
+    roots.extend(leaves);
+    let dag =
+      SharingDag::from_expanded_roots(&roots, &ExactSharingLimits::default())
+        .unwrap();
+    let nodes = dag.nodes();
+    let n = nodes.len();
+    let facts = graph_facts(&dag);
+    let cand: Vec<bool> = facts.deg.iter().map(|&d| d >= 2).collect();
+    let members: Vec<_> = (0..n).filter(|&t| cand[t]).map(tid).collect();
+    let up = UPrep::new(nodes, w, vec![false; n]).unwrap();
+    let b0 = uniform_bounds(nodes, w, &cand).unwrap();
+    let vis0 = visible_counts(&dag, &cand);
+    let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
+    let pos: Vec<_> = (0..n).map(tid).collect();
+    let mut member_of = vec![NO_POS; n];
+    for (i, &t) in members.iter().enumerate() {
+      member_of[ix(t)] = tid(i);
+    }
+    let in_edges = (0..n)
+      .map(|y| {
+        facts.parents[y]
+          .iter()
+          .map(|&q| {
+            let p = &nodes[ix(q)];
+            let edge =
+              p.children().as_slice().iter().position(|&c| ix(c) == y).unwrap();
+            (q, q, 1, u64::from(!continuation_edge(p, edge, &nodes[y])))
+          })
+          .collect()
+      })
+      .collect();
+    let mut root_occ = vec![0; n];
+    for &r in dag.roots() {
+      root_occ[ix(r)] += 1;
+    }
+    let root_mult = root_occ
+      .iter()
+      .enumerate()
+      .filter(|(_, m)| **m != 0)
+      .map(|(t, &m)| (tid(t), u128::from(m)))
+      .collect();
+    let mut cx = SCtx {
+      up: &up,
+      facts: &facts,
+      cand: &cand,
+      b0: &b0,
+      vis0: &vis0,
+      spine_len: &spine_len,
+      dag_size: len64(n),
+      members,
+      member_of,
+      area: pos.clone(),
+      pos: &pos,
+      in_edges,
+      root_occ,
+      root_mult,
+      stored_in: vec![],
+      slack: 1,
+      theta: 2,
+      memo: FxHashMap::default(),
+      memo_hits: 0,
+      vals: vec![UVal::default(); n],
+    };
+    test(&mut cx, dag.roots()[0]);
+  }
+
+  #[test]
+  fn reduced_context_keeps_all_counts_ties_and_memo_replay() {
+    with_context(1, |cx, parent| {
+      let group = [0, 1];
+      let in_all = [2, parent];
+      let out_all = [3];
+      let in_f = cx.flags(&in_all);
+      let out = cx.flags(&out_all);
+      let b = cx.rebound(&out).unwrap();
+      let opq: Vec<_> = cx
+        .area
+        .iter()
+        .enumerate()
+        .map(|(j, &t)| in_f[j] && cx.opaque_under(&b, t))
+        .collect();
+      let key = cx.memo_key(&opq, &in_f, &out, &group).0;
+      let (in_red, out_red) =
+        cx.key_context(&group, &key[group.len() + 1..], &in_f, &out).unwrap();
+      assert_eq!((&in_red, &out_red), (&vec![parent], &vec![]));
+      assert!(in_red.len() < in_all.len() && out_red.len() < out_all.len());
+      let base_full = cx.phi(&in_f, &in_all).unwrap().0;
+      let base_red = cx.phi(&cx.flags(&in_red), &in_red).unwrap().0;
+      let mut reference = CTable::new();
+      for mask in 0..4 {
+        let chosen: Vec<_> = group
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| mask & (1 << i) != 0)
+          .map(|(_, &t)| t)
+          .collect();
+        let full = merge_sorted(&in_all, &chosen);
+        let red = merge_sorted(&in_red, &chosen);
+        let df = to_i(cx.phi(&cx.flags(&full), &full).unwrap().0).unwrap()
+          - to_i(base_full).unwrap();
+        let dr = to_i(cx.phi(&cx.flags(&red), &red).unwrap().0).unwrap()
+          - to_i(base_red).unwrap();
+        assert_eq!(df, dr, "subset {chosen:?}");
+        table_add(&mut reference, (dr, chosen));
+      }
+      let reference = table_trim(reference, cx.slack);
+      assert!(reference.iter().flatten().count() >= 2);
+      assert_eq!(
+        reference[1].as_ref().unwrap().1,
+        vec![1],
+        "canonical one-member tie"
+      );
+      let limits = ExactSharingLimits::default();
+      let mut meter = Meter::new(&limits);
+      let got = cx.solve(&mut meter, &group, &in_all, &out_all).unwrap();
+      assert_eq!(
+        got.iter().flatten().collect::<Vec<_>>(),
+        reference.iter().flatten().collect::<Vec<_>>()
+      );
+      let (hits, states) = (cx.memo_hits, meter.stats.states_created);
+      let replay = cx.solve(&mut meter, &group, &[parent], &[2, 3]).unwrap();
+      assert_eq!(got, replay);
+      assert_eq!(
+        (cx.memo_hits, meter.stats.states_created),
+        (hits + 1, states)
+      );
+    });
+  }
+
+  #[test]
+  fn reduced_context_rejects_mixed_reach_and_bad_keys() {
+    with_context(1, |cx, parent| {
+      assert!(cx.sep_check(&[0, 1], &[parent], &[]).unwrap());
+      assert!(cx.sep_check(&[0, 1], &[], &[parent]).unwrap());
+      assert!(!cx.sep_check(&[0, 1], &[], &[]).unwrap());
+      assert!(!cx.sep_check(&[0, 1], &[0, parent], &[]).unwrap());
+      let inside = cx.flags(&[parent]);
+      let outside = cx.flags(&[]);
+      for (group, entries) in [
+        (vec![0, 0], vec![]),
+        (vec![0], vec![3 * u64::from(parent) + 2; 2]),
+        (vec![0], vec![3 * u64::from(parent)]),
+        (vec![0], vec![3 * u64::from(TermId::MAX) + 2]),
+        (vec![parent], vec![]),
+      ] {
+        assert!(cx.key_context(&group, &entries, &inside, &outside).is_err());
+      }
+      let limits = ExactSharingLimits::default();
+      assert!(matches!(cx.solve(&mut Meter::new(&limits), &[0, 1], &[], &[]),
+        Err(SharingError::Internal(msg)) if msg == "search group is not separated"));
+    });
+    with_context(100, |cx, parent| {
+      // A stored term is not necessarily opaque: recheck under the actual
+      // reduced bounds instead of trusting an encoded opaque tag.
+      assert!(!cx.sep_check(&[0, 1], &[parent], &[]).unwrap());
+    });
+  }
 }
 
 #[cfg(test)]

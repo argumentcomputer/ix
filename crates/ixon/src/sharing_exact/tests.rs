@@ -2659,6 +2659,32 @@ fn subset_reference_limits() -> ExactSharingLimits {
   }
 }
 
+// The subset oracle can retain early discoveries outside the final slack
+// band; compare every count inside that band, including its chosen set.
+fn retained_component_counts(
+  u: &UniformSharingResult,
+) -> Vec<Vec<(usize, i128, Vec<TermId>)>> {
+  let cs = u.certain_stored.len() as u64;
+  let slack =
+    i128::from(tag0_len(cs + u.uncertain.len() as u64) - tag0_len(cs));
+  u.component_tables
+    .iter()
+    .map(|table| {
+      let best = table.iter().flatten().map(|(d, _)| *d).min().unwrap();
+      table
+        .iter()
+        .enumerate()
+        .filter_map(|(k, entry)| {
+          entry
+            .as_ref()
+            .filter(|(d, _)| *d <= best + slack)
+            .map(|(d, set)| (k, *d, set.clone()))
+        })
+        .collect()
+    })
+    .collect()
+}
+
 /// The reclassifying branch and bound returns exactly what the subset
 /// enumeration returns (same set, so the same tie-break, and the same
 /// output), on inputs with larger uncertain components.
@@ -2681,6 +2707,12 @@ fn uniform_branch_and_bound_matches_subset_enumeration() {
     }
     match optimize_sharing_uniform(w, &roots, &reference) {
       Ok(r) => {
+        assert_eq!(u.components, r.components);
+        assert_eq!(
+          retained_component_counts(&u),
+          retained_component_counts(&r),
+          "per-count optimum/tie: case {i} w={w} roots={roots:?}"
+        );
         assert_eq!(
           (&u.stored, u.model_len, u.lower_bracket),
           (&r.stored, r.model_len, r.lower_bracket),
@@ -2723,6 +2755,11 @@ fn uniform_branch_and_bound_across_a_bracket() {
     let u = optimize_sharing_uniform(w, &roots, &limits()).unwrap();
     let r = optimize_sharing_uniform(w, &roots, &reference).unwrap();
     assert_eq!((&u.stored, u.model_len), (&r.stored, r.model_len), "w={w}");
+    assert_eq!(
+      retained_component_counts(&u),
+      retained_component_counts(&r),
+      "w={w}"
+    );
   }
 }
 
