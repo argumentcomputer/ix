@@ -675,12 +675,14 @@ mod tests {
   use crate::constant::{Axiom, Constructor, DefKind, Inductive, RecursorRule};
   use crate::univ::Univ;
 
-  /// The validator identity and the wire-format id move with the format
-  /// version: a version bump cannot leave profile addresses in the old
-  /// domain.
+  /// Validator identity follows checked grammar, independently of the storage
+  /// envelope version used for unchecked original data.
   #[test]
   fn validator_id_follows_the_wire_format() {
-    assert_eq!(crate::WIRE_FORMAT_ID, format!("ixon-v{}", Env::VERSION));
+    assert_eq!(
+      crate::WIRE_FORMAT_ID,
+      format!("ixon-v{}", Env::CHECKED_FORMAT_VERSION)
+    );
     assert_eq!(VALIDATOR_ID, format!("{}/resource-v1", crate::WIRE_FORMAT_ID));
   }
 

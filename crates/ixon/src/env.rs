@@ -233,6 +233,27 @@ impl Named {
     self.original.as_ref().map(|(a, m)| (a.clone(), m.decode()))
   }
 
+  /// Fallible original lookup for checked storage interfaces. In particular,
+  /// malformed lazy metadata must not turn into a panic during validation.
+  pub fn original_checked(
+    &self,
+  ) -> Result<Option<(Address, Arc<ConstantMeta>)>, String> {
+    if let MetaRepr::Window(w) = &self.meta {
+      let window = w.window();
+      let (_, meta_len) = decode_window_meta(window, &w.rev)?;
+      let Some((addr, off)) = decode_window_orig_header(window, meta_len)?
+      else {
+        return Ok(None);
+      };
+      let (meta, end) = decode_window_orig_meta(window, off, &w.rev)?;
+      if end != window.len() {
+        return Err("original: trailing bytes in metadata window".into());
+      }
+      return Ok(Some((addr, Arc::new(meta))));
+    }
+    Ok(self.original.as_ref().map(|(a, m)| (a.clone(), m.decode())))
+  }
+
   pub fn has_original(&self) -> bool {
     match &self.meta {
       MetaRepr::Window(w) => w.has_original(),
@@ -385,6 +406,9 @@ pub struct LazyIndex {
   /// Byte offset (within the parsed buffer) of §5's entry count — where
   /// a [`crate::serialize::NamedMetaCursor`] starts its streaming walk.
   pub named_section_offset: usize,
+  /// Unchecked original records, retained separately from checked constants.
+  pub originals: Vec<LazyConstSlice>,
+  pub original_hint_overrides: Vec<(Name, Option<ReducibilityHints>)>,
   /// §4 positional index → name-component address, retained so §5
   /// entries can be re-parsed standalone (`get_named_indexed`) without
   /// re-walking §4. ~32 B per name.
@@ -600,6 +624,14 @@ impl Env {
       let end = Self::lazy_slice_end(c, data.len(), "from_lazy_index")?;
       env.store_const_lazy(c.addr.clone(), Arc::from(&data[c.offset..end]));
     }
+    for c in &index.originals {
+      let end =
+        Self::lazy_slice_end(c, data.len(), "originals from_lazy_index")?;
+      env.originals.insert(
+        c.addr.clone(),
+        LazyConstant::from_bytes(Arc::from(&data[c.offset..end])),
+      );
+    }
     Ok(Self::fill_from_lazy_index(env, index))
   }
 
@@ -620,6 +652,13 @@ impl Env {
         Arc::clone(mmap),
         c.offset,
         c.len,
+      );
+    }
+    for c in &index.originals {
+      Self::lazy_slice_end(c, mmap.len(), "originals from_lazy_index_mmap")?;
+      env.originals.insert(
+        c.addr.clone(),
+        LazyConstant::from_mmap_slice(Arc::clone(mmap), c.offset, c.len),
       );
     }
     Ok(Self::fill_from_lazy_index(env, index))
@@ -655,6 +694,9 @@ impl Env {
     }
     for (addr, comm) in &index.comms {
       env.comms.insert(addr.clone(), comm.clone());
+    }
+    for (name, hint) in &index.original_hint_overrides {
+      env.original_hint_overrides.insert(name.clone(), *hint);
     }
     env.main = index.main.clone();
     env.assumptions = index.assumptions.iter().cloned().collect();

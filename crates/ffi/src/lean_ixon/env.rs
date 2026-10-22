@@ -578,6 +578,26 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
   env
 }
 
+/// Preserve evidence of duplicate original-data keys until it is checked.
+/// The pure converter remains available for raw transfer and consts Merkle roots.
+pub fn decoded_to_ixon_env_checked(
+  decoded: &DecodedRawEnv,
+) -> Result<IxonEnv, String> {
+  let mut addresses = std::collections::HashSet::new();
+  for raw in &decoded.originals {
+    if !addresses.insert(&raw.addr) {
+      return Err(format!("originals: duplicate address {}", raw.addr.hex()));
+    }
+  }
+  let mut names = std::collections::HashSet::new();
+  for (name, _) in &decoded.original_hint_overrides {
+    if !names.insert(name) {
+      return Err(format!("original hints: duplicate name {}", name.pretty()));
+    }
+  }
+  Ok(decoded_to_ixon_env(decoded))
+}
+
 /// Convert a Rust IxonEnv to a DecodedRawEnv.
 ///
 /// Forces materialization of every constant — callers operating on a
@@ -661,17 +681,21 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
 // rs_ser_env: Serialize an Ixon.RawEnv to bytes
 // =============================================================================
 
-/// FFI: Serialize an Ixon.RawEnv -> ByteArray via Rust's Env.put. Pure.
+/// FFI: Serialize an Ixon.RawEnv -> Except String ByteArray. Pure.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_ser_env(
   obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
-) -> LeanByteArray<LeanOwned> {
+) -> LeanExcept<LeanOwned> {
   let decoded = obj.decode();
-  let env = decoded_to_ixon_env(&decoded);
-  let mut buf = Vec::new();
-  env.put(&mut buf).expect("Env serialization failed");
-
-  LeanByteArray::from_bytes(&buf)
+  let result = decoded_to_ixon_env_checked(&decoded).and_then(|env| {
+    let mut buf = Vec::new();
+    env.put(&mut buf)?;
+    Ok(buf)
+  });
+  match result {
+    Ok(buf) => LeanExcept::ok(LeanByteArray::from_bytes(&buf)),
+    Err(e) => LeanExcept::error_string(&format!("rs_ser_env: {e}")),
+  }
 }
 
 // =============================================================================

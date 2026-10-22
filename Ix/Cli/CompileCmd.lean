@@ -39,6 +39,18 @@ private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α ×
   let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
   xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
 
+/-- The report describes this invocation's published envelope. An abort
+never opens a possibly pre-existing output file. Both supported headers are
+one byte; checked object/claim versions are independent of this value. -/
+def Ix.Cli.publishedEnvelopeVersion (published : Bool) (path : FilePath) : IO (Option Nat) := do
+  unless published do return none
+  let file ← IO.FS.Handle.mk path .read
+  let header ← file.read 1
+  match (header[0]? : Option UInt8) with
+  | some 0xE4 => return some 4
+  | some 0xE5 => return some 5
+  | _ => throw <| IO.userError s!"compile report: invalid published envelope header in {path}"
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch. The Rust compiler and serializer
@@ -208,13 +220,14 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- `--report`: machine-readable compile status, written on success,
   -- fail-closed abort, and partial publish alike.
   if let some flag := p.flag? "report" then
+    let envelopeVersion ← Ix.Cli.publishedEnvelopeVersion (!failClosed) (FilePath.mk outPath)
     let flagStr (name : String) : Lean.Json :=
       (p.flag? name).map (Lean.Json.str <| ·.as! String) |>.getD Lean.Json.null
     let report := Lean.Json.mkObj
-      [ ("schemaVersion", Lean.toJson (1 : Nat))
+      [ ("schemaVersion", Lean.toJson (2 : Nat))
       , ("ixVersion", Lean.Json.str Ix.versionString)
       , ("leanToolchain", Lean.Json.str Lean.versionString)
-      , ("ixeFormatVersion", Lean.toJson Ixon.Env.VERSION.toNat)
+      , ("ixeFormatVersion", Lean.toJson envelopeVersion)
       , ("input", Lean.Json.str pathStr)
       , ("output", Lean.Json.str outPath)
       , ("seeds", Lean.Json.mkObj

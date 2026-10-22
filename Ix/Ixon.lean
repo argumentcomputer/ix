@@ -1436,6 +1436,22 @@ def toEnv (raw : RawEnv) : Env := Id.run do
     originalHintOverrides := raw.originalHintOverrides.foldl
       (fun m (n, h) => m.insert n h) {} }
 
+/-- Check the original-data array keys before map conversion can erase a
+duplicate. Payload and published-name validation belongs to the writer.
+`toEnv` remains the unchecked raw-transfer/Merkle conversion interface. -/
+def toEnvChecked (raw : RawEnv) : Except String Env := do
+  let mut addresses : Std.HashSet Address := {}
+  for original in raw.originals do
+    if addresses.contains original.addr then
+      throw s!"originals: duplicate address {original.addr}"
+    addresses := addresses.insert original.addr
+  let mut names : Std.HashSet Ix.Name := {}
+  for (name, _) in raw.originalHintOverrides do
+    if names.contains name then
+      throw s!"original hints: duplicate name {name}"
+    names := names.insert name
+  return raw.toEnv
+
 end RawEnv
 
 /-! ## Env Serialization -/
@@ -1473,18 +1489,102 @@ def toRawEnv (env : Env) : RawEnv := {
 /-- TagN (`f = 4`) header flag for Env (0xE). -/
 def FLAG : UInt8 := 0xE
 
-/-- `.ixe` format version, carried in the header's TagN value field.
-    Any change to serialized bytes bumps this; readers reject a
-    mismatch and there is no back-compat reading of old versions —
-    `.ixe` files are regenerated artifacts. Version 4 is the TagN
-    format; its header is the single byte `0xE4`. Mirrors Rust
-    `Env::VERSION` in `crates/ixon/src/serialize.rs`. -/
-def VERSION : UInt64 := 4
+/-- Checked object/claim/proof/catalog grammar; unchanged by unchecked data. -/
+def CHECKED_FORMAT_VERSION : UInt8 := 4
+def LEGACY_ENV_VERSION : UInt64 := 4
+def ORIGINALS_ENV_VERSION : UInt64 := 5
+/-- Compatibility alias for the original envelope, not the selected writer version. -/
+def VERSION : UInt64 := LEGACY_ENV_VERSION
+def OBJECT_FORMAT : UInt8 := CHECKED_FORMAT_VERSION
 
-/-- Object-format byte bound by claim, proof and catalog scopes: the
-    format version as one byte, so an object produced under another
-    version is rejected. Mirrors Rust `Env::OBJECT_FORMAT`. -/
-def OBJECT_FORMAT : UInt8 := VERSION.toUInt8
+/-- Empty original-data tables preserve the exact legacy envelope. -/
+def envelopeVersion (env : Env) : UInt64 :=
+  if env.originals.isEmpty && env.originalHintOverrides.isEmpty then
+    LEGACY_ENV_VERSION else ORIGINALS_ENV_VERSION
+
+def supportedEnvelopeVersion (version : UInt64) : Bool :=
+  version == LEGACY_ENV_VERSION || version == ORIGINALS_ENV_VERSION
+
+/-- Validate exact unchecked bytes without inserting them into `consts`. -/
+def checkOriginalPayload (addr : Address) (bytes : ByteArray) : Except String Unit := do
+  if Address.blake3 bytes != addr then
+    throw s!"originals: bytes hash mismatch for {addr}"
+  let constant ← deConstantExact bytes
+  if serConstant constant != bytes then
+    throw s!"originals: noncanonical payload for {addr}"
+
+def checkOriginalData (env : Env) : Except String Unit := do
+  for (addr, lc) in env.originals do
+    let bytes := lc.rawBytes
+    checkOriginalPayload addr bytes
+    if let some existing := env.consts[addr]? then
+      let why := if existing.rawBytes == bytes then "redundant" else "conflicting"
+      throw s!"originals: {why} bytes already in consts at {addr}"
+  for (name, _) in env.originalHintOverrides do
+    let some named := env.named[name]? | throw s!"original hints: unpublished name {name}"
+    if named.original.isNone then
+      throw s!"original hints: {name} has no Named.original"
+
+/-- The v5 trailer uses address order and §4 index order. Payloads stay raw. -/
+def putOriginalTrailer (env : Env) (nameIdx : NameIndex) : ExceptT String PutM Unit := do
+  if env.envelopeVersion == LEGACY_ENV_VERSION then return
+  let originals := env.originals.toArray.qsort fun a b => addrLt a.1 b.1
+  putTagN 0 0 originals.size.toUInt64
+  for (addr, lc) in originals do
+    Serialize.put addr
+    let bytes := lc.rawBytes
+    putTagN 0 0 bytes.size.toUInt64
+    putBytes bytes
+  let mut hints : Array (UInt64 × Option Lean.ReducibilityHints) := #[]
+  for (name, hint) in env.originalHintOverrides do
+    let some idx := nameIdx[name.getHash]? | throw s!"original hints: {name} is absent from names"
+    hints := hints.push (idx, hint)
+  hints := hints.qsort fun a b => a.1 < b.1
+  putTagN 0 0 hints.size.toUInt64
+  let mut prev : Option UInt64 := none
+  for (idx, hint) in hints do
+    if let some p := prev then
+      unless p < idx do throw "original hints: duplicate name index"
+    prev := some idx
+    putTagN 0 0 idx
+    putFusedOptHint hint
+
+/-- Read and validate the trailer, retaining only windows for original bodies.
+`hasOriginal` is supplied by the full §5 map or the lazy reader's existing
+§5 parse; no second whole-table metadata decode is needed. -/
+def getOriginalTrailer (env : Env) (nameRev : NameReverseIndex)
+    (names : Std.HashMap Address Ix.Name) (hasOriginal : Ix.Name → Bool) :
+    GetM Env := do
+  let backing := (← get).bytes
+  let mut env := env
+  let count := (← getTagN 0).value.toNat
+  let mut prev : Option Address := none
+  for _ in [:count] do
+    let addr : Address ← Serialize.get
+    if let some p := prev then
+      unless addrLt p addr do throw "originals: addresses are not strictly ascending"
+    prev := some addr
+    if env.consts.contains addr then throw s!"originals: address {addr} overlaps consts"
+    let len := (← getTagN 0).value.toNat
+    let off := (← get).idx
+    let bytes ← getBytes len
+    if let .error e := checkOriginalPayload addr bytes then throw e
+    env := { env with originals := env.originals.insert addr (LazyConstant.ofSlice backing off len) }
+  let hints := (← getTagN 0).value.toNat
+  if count == 0 && hints == 0 then throw "originals: empty v5 trailer; use the v4 envelope"
+  let mut prevIdx : Option Nat := none
+  for _ in [:hints] do
+    let idx := (← getTagN 0).value.toNat
+    if let some p := prevIdx then
+      unless p < idx do throw "original hints: indices are not strictly ascending"
+    prevIdx := some idx
+    let hint ← getFusedOptHint
+    let some addr := nameRev[idx]? | throw "original hints: name index out of range"
+    let some name := names[addr]? | throw "original hints: missing name"
+    unless hasOriginal name do throw s!"original hints: {name} has no published Named.original"
+    if env.originalHintOverrides.contains name then throw s!"original hints: duplicate name {name}"
+    env := { env with originalHintOverrides := env.originalHintOverrides.insert name hint }
+  return env
 
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/
@@ -1601,8 +1701,8 @@ def namedChunk : Nat := 2048
     referencing unstored constants/names are unrepresentable and must
     fail at write time (mirrors Rust `Env::put`). -/
 def putEnv (env : Env) : ExceptT String PutM Unit := do
-  -- Header: TagN(4) with flag=0xE, value=VERSION (format version)
-  putTagN 4 FLAG VERSION
+  if let .error e := checkOriginalData env then throw e
+  putTagN 4 FLAG env.envelopeVersion
 
   -- Canonical merkle root over consts addresses (matches Rust Env::put).
   -- Always 32 bytes: for empty const sets, the sentinel
@@ -1715,6 +1815,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   for (addr, comm) in comms do
     Serialize.put addr
     putComm comm
+  putOriginalTrailer env nameIdx
 
 /-- Deserialize an Env from bytes (pure Lean, full metadata). Used for
     round-trip (`deEnv`) on small/in-memory envs. The lazy/anon `.ixe` check
@@ -1726,8 +1827,8 @@ def getEnv : GetM Env := do
   let tag ← getTagN 4
   if tag.flag != FLAG then
     throw s!"Env.get: expected flag 0x{FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
-  if tag.value != VERSION then
-    throw s!"Env.get: expected .ixe format version {VERSION}, got {tag.value} — recompile the artifact"
+  unless supportedEnvelopeVersion tag.value do
+    throw s!"Env.get: unsupported .ixe envelope version {tag.value} (expected 4 or 5)"
 
   -- Canonical merkle root (fixed 32 bytes). For empty const sets the
   -- stored value is `Ix.Merkle.zeroAddress`. Verified at end against
@@ -1897,9 +1998,10 @@ def getEnv : GetM Env := do
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
 
-  -- Comms is the final section; trailing bytes are truncation damage
-  -- or concatenated garbage. (Mirrors Rust `Env::get`; the early-stop
-  -- readers cannot make this check by design.)
+  if tag.value == ORIGINALS_ENV_VERSION then
+    env ← getOriginalTrailer env nameRev namesLookup
+      (fun name => (env.named[name]?).any (·.original.isSome))
+  -- No bytes may follow the selected envelope's last section.
   let st ← get
   if st.idx != st.bytes.size then
     throw s!"Env.get: {st.bytes.size - st.idx} trailing bytes after final section"
@@ -2009,8 +2111,8 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   let tag ← getTagN 4
   if tag.flag != Env.FLAG then
     throw s!"Env.get: expected flag 0x{Env.FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
-  if tag.value != Env.VERSION then
-    throw s!"Env.get: expected .ixe format version {Env.VERSION}, got {tag.value} — recompile the artifact"
+  unless Env.supportedEnvelopeVersion tag.value do
+    throw s!"Env.get: unsupported .ixe envelope version {tag.value} (expected 4 or 5)"
   let storedRoot : Address ← Serialize.get
   let mainTag ← getU8
   let main : Option Address ← match mainTag with
@@ -2027,7 +2129,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
         throw "Env.get: assumptions not strictly ascending"
     assumptionArr := assumptionArr.push addr
   reserCheck "header" hdrStart <| runPut do
-    putTagN 4 Env.FLAG Env.VERSION
+    putTagN 4 Env.FLAG tag.value
     Serialize.put storedRoot
     match main with
     | none => putU8 0
@@ -2169,6 +2271,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   loadTrace s!"§5 named: {numNamed}"
   let mut namedRows : Array NamedRow := #[]
   let mut rowIdx : Std.HashMap Ix.Name Nat := {}
+  let mut originalNames : Std.HashSet Ix.Name := {}
   let mut prevName : Option Ix.Name := none
   for _ in [:numNamed.toNat] do
     let eStart := (← get).idx
@@ -2215,6 +2318,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
       if !(compare prev name).isLT then
         throw "serde gate (§5): named entries not in ascending name order"
     prevName := some name
+    if original.isSome then originalNames := originalNames.insert name
     reserCheck "§5 named" eStart <| runPut do
       putTagN 0 0 nameIdx
       putTagN 0 0 constRank
@@ -2259,6 +2363,9 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     (Ix.Merkle.merkleRootCanonical constOrder).getD Ix.Merkle.zeroAddress
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
+
+  if tag.value == Env.ORIGINALS_ENV_VERSION then
+    env ← Env.getOriginalTrailer env nameRev namesLookup originalNames.contains
 
   let st ← get
   if st.idx != st.bytes.size then
@@ -2309,8 +2416,9 @@ def serEnv (env : Env) : Except String ByteArray :=
 def deEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
 
 /-- Compute section sizes for debugging.
-    Returns (blobs, consts, anonHints, names, named, comms). -/
-def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.run do
+    Returns (blobs, consts, anonHints, names, named, comms, originalData).
+    The original-data trailer contributes zero bytes in a v4 envelope. -/
+def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat × Nat := Id.run do
   -- Blobs section
   let blobsBytes := runPut do
     let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
@@ -2326,7 +2434,9 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
     putTagN 0 0 consts.size.toUInt64
     for (addr, lc) in consts do
       Serialize.put addr
-      putBytes lc.rawBytes
+      let bytes := lc.rawBytes
+      putTagN 0 0 bytes.size.toUInt64
+      putBytes bytes
 
   -- anon_hints section: delta-coded §2 ranks + fused hints. The sort
   -- is load-bearing (delta widths depend on it). Sizes assume a
@@ -2357,10 +2467,10 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
   -- length-prefixed metadata blob; absolute indices, so per-entry
   -- sizes are iteration-order independent — never delta-code here).
   -- Missing keys fall back to index 0 (diagnostics only).
+  let nameIdx : NameIndex := sortedNames.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity sortedNames.size)
   let namedBytes := runPut do
-    let nameIdx : NameIndex := sortedNames.zipIdx.foldl
-      (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
-      (Std.HashMap.emptyWithCapacity sortedNames.size)
     let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
     putTagN 0 0 named.size.toUInt64
     for (name, namedEntry) in named do
@@ -2386,16 +2496,31 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
       Serialize.put addr
       putComm comm
 
+  -- Original data is a separate trailer, absent in v4. Count payload bytes
+  -- without constructing another buffer containing every original record.
+  let mut originalBytes := 0
+  if env.envelopeVersion == Env.ORIGINALS_ENV_VERSION then
+    originalBytes := (runPut do
+      putTagN 0 0 env.originals.size.toUInt64
+      putTagN 0 0 env.originalHintOverrides.size.toUInt64).size
+    for (_, lc) in env.originals do
+      let len := lc.rawBytes.size
+      originalBytes := originalBytes + 32 + (runPut (putTagN 0 0 len.toUInt64)).size + len
+    for (name, hint) in env.originalHintOverrides do
+      originalBytes := originalBytes + (runPut do
+        putTagN 0 0 (nameIdx[name.getHash]?.getD 0)
+        putFusedOptHint hint).size
+
   ( blobsBytes.size, constsBytes.size, hintsBytes.size, namesBytes.size,
-    namedBytes.size, commsBytes.size )
+    namedBytes.size, commsBytes.size, originalBytes )
 
 /-! ## Rust FFI Serialization -/
 
 @[extern "rs_ser_env"]
-opaque rsSerEnvFFI : @& RawEnv → ByteArray
+opaque rsSerEnvFFI : @& RawEnv → Except String ByteArray
 
 /-- Serialize an Ixon.Env to bytes using Rust. -/
-def rsSerEnv (env : Env) : ByteArray :=
+def rsSerEnv (env : Env) : Except String ByteArray :=
   rsSerEnvFFI env.toRawEnv
 
 @[extern "rs_de_env"]
