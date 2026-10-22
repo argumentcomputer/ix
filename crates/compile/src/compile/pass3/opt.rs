@@ -518,7 +518,7 @@ fn adapt_minor(
         ms,
         mins,
       )?;
-      causes.extend(reports);
+      super::translate::extend_causes(&mut causes, reports);
       body = Expr::app(body, ih);
     }
   }
@@ -563,7 +563,7 @@ fn o2(recur: Recur<'_>, env: &OptEnv<'_>, o: &Occ<'_>) -> Option<OptTerm> {
           return None;
         }
         mins2.push(w);
-        causes.extend(reports);
+        super::translate::extend_causes(&mut causes, reports);
       },
       None => {
         // the image wraps this minor but the syntactic reading finds no
@@ -1309,7 +1309,7 @@ fn engine_n(
   o2(&recur, env, o)
     .map(|(e, reports)| {
       let mut reports_out = causes.clone();
-      reports_out.extend(reports);
+      super::translate::extend_causes(&mut reports_out, reports);
       ("O2", e, reports_out)
     })
     .or_else(|| o3(env, o).map(|e| ("O3", e, causes.clone())))

@@ -65,12 +65,45 @@ def sharedDeclines : Bool := Id.run do
     return out.overlay.size == 4 &&
       out.declines == (#["a", "b", "c", "d"].map fun s => (nm s, cause))
 
+
+/-- A shared DAG has exponentially many tree occurrences but only two causes.
+The small case fails promptly on the old implementation before the deep case. -/
+def boundedDeclines : Bool := Id.run do
+  let expand (n : Name) : Except String (Option Expansion) :=
+    .ok (if n == nm "outer" then some {
+      levelParams := #[], value := term "inner", arity := 0, needsRewrite := true
+    } else if n == nm "inner" then some {
+      levelParams := #[], value := term "baseline", arity := 0, needsRewrite := false
+    } else none)
+  let cause := "zeta cause"
+  let expected := #[cause, "alpha cause"]
+  let cfg : RwConfig := {
+    decline? := fun n _ _ => if n == nm "inner" then some cause
+      else if n == nm "outer" then some "alpha cause" else none }
+  for depth in [6, 64] do
+    let mut e := term "outer"
+    for _ in [0:depth] do e := Expr.mkApp (Expr.mkApp (term "pair") e) e
+    -- An ambient identical cause must neither erase this memo entry's
+    -- effects nor authorize caching the effectful expansion.
+    let .ok (_, st) := ((rw expand 256 false e).run cfg).run {declines := #[cause]}
+      | return false
+    unless st.declines == expected && !st.exps.contains (nm "outer") &&
+        st.memo.size <= depth + 4 && st.memo.toArray.all (fun (_, v) => v.declines.size <= 2) do
+      return false
+    let .ok (_, replay) := ((rw expand 256 false e).run cfg).run {st with declines := #[]}
+      | return false
+    unless replay.declines == expected &&
+        appendMemberDeclines #[] (nm "member") replay.declines ==
+          #[(nm "member", "alpha cause; zeta cause")] do return false
+  return true
+
 def suite : List TestSeq := [
   test "generic rewrite callbacks retain their no-site retry" genericRetry,
   test "ordered callback keeps the faithful result with and without retry"
     (orderedNeighbour false false && orderedNeighbour true false),
   test "ordered callback keeps the in-place PJ result with and without retry"
     (orderedNeighbour false true && orderedNeighbour true true),
-  test "declines survive shared expansions and term memo hits across members" sharedDeclines]
+  test "declines survive shared expansions and term memo hits across members" sharedDeclines,
+  test "shared DAG decline effects stay bounded and independent of ambient causes" boundedDeclines]
 
 end Tests.Ix.Compile.RewriteRetry

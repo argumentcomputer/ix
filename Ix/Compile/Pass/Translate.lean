@@ -169,6 +169,11 @@ instance : LawfulHashable LevelsKey where
 
 /-! ## Configuration and state -/
 
+/-- Distinct causes, retaining first occurrence order. Effects are sets: a
+shared DAG must not turn one diagnostic into exponentially many copies. -/
+def mergeDeclines (left right : Array String) : Array String :=
+  right.foldl (fun out cause => if out.contains cause then out else out.push cause) left
+
 /-- What a rewrite run reads and never changes. -/
 structure RwConfig where
   /-- Placeholder index of the first source of this run. -/
@@ -223,7 +228,8 @@ structure RwState where
   the canonical form `c._ix` of a definition where a proof-justified pass
   fires, and the helpers the passes' rewrites reference. -/
   canon : Array ConstantInfo := #[]
-  /-- The causes recorded so far, in rewrite order. -/
+  /-- Distinct causes in the current term/expansion/member scope, in first
+  occurrence order. Each memo entry retains its own complete scope. -/
   declines : Array String := #[]
   /-- A proof-justified pass fired in the value being rewritten. -/
   pjFired : Bool := false
@@ -264,7 +270,9 @@ def expansionOf : Nat → Name → RwM (Option Expansion)
     match ← liftM (expansion? n) with
     | none => return none
     | some x =>
-      let before ← (fun st : RwState => (st.declines.size, st.canon.size, st.pjForms.size)) <$> get
+      let outer := (← get).declines
+      modify fun st => { st with declines := #[] }
+      let before ← (fun st : RwState => (st.canon.size, st.pjForms.size)) <$> get
       let x ← if x.needsRewrite then do
           -- an expansion is shared by every site: no proof-justified pass
           let (v, _) ← withReader (fun cfg => { cfg with site := none }) (rw fuel false x.value)
@@ -275,9 +283,9 @@ def expansionOf : Nat → Name → RwM (Option Expansion)
       -- memo retains/replays declines, so an effectful expansion is cheap to
       -- revisit without storing a record-free head entry.
       modify fun st =>
-        if (st.declines.size, st.canon.size, st.pjForms.size) == before then
-          { st with exps := st.exps.insert n x }
-        else st
+        let cacheable := st.declines.isEmpty && (st.canon.size, st.pjForms.size) == before
+        { st with declines := mergeDeclines outer st.declines
+                  exps := if cacheable then st.exps.insert n x else st.exps }
       return some x
 
 /-- `base(e)`: every occurrence of an image-kind auxiliary rewritten, and
@@ -292,9 +300,12 @@ def rw : Nat → Bool → Expr → RwM (Expr × Bool)
       -- a cached subterm records its declines again (they belong to the
       -- constant being rewritten now)
       unless hit.declines.isEmpty do
-        modify fun st => { st with declines := st.declines ++ hit.declines }
+        modify fun st => { st with declines := mergeDeclines st.declines hit.declines }
       return (hit.term, hit.changed)
-    let before := (← get).declines.size
+    -- A fresh scope captures all effects, including causes already seen by
+    -- a parent or earlier member. Taking a suffix of a global set loses them.
+    let outer := (← get).declines
+    modify fun st => { st with declines := #[] }
     let r : Expr × Bool ← match e with
       | .app .. | .const .. => do
         let (h, args) := getAppFnArgs e
@@ -328,7 +339,7 @@ def rw : Nat → Bool → Expr → RwM (Expr × Bool)
               | none => pure none
             let body ← match res with
               | some (e, cs, reports) =>
-                unless reports.isEmpty do modify fun st => { st with declines := st.declines ++ reports }
+                unless reports.isEmpty do modify fun st => { st with declines := mergeDeclines st.declines reports }
                 unless cs.isEmpty do
                   let canon := cs.foldl (init := (← get).canon) fun acc c =>
                     if acc.any (fun d => nameEq d.getCnst.name c.getCnst.name) then acc
@@ -350,7 +361,7 @@ def rw : Nat → Bool → Expr → RwM (Expr × Bool)
                 modify fun st => { st with dev }
                 pure body
             if let some cause := cfg.decline? n us args' then
-              modify fun st => { st with declines := st.declines.push cause }
+              modify fun st => { st with declines := mergeDeclines st.declines #[cause] }
             if record then
               let st ← get
               let k := cfg.base + st.sources.size
@@ -395,8 +406,9 @@ def rw : Nat → Bool → Expr → RwM (Expr × Bool)
         pure (if c then Expr.mkMData md x' else e, c)
       | e => pure (e, false)
     modify fun st => { st with
+      declines := mergeDeclines outer st.declines
       memo := st.memo.insert key
-        { term := r.1, changed := r.2, declines := st.declines.extract before st.declines.size } }
+        { term := r.1, changed := r.2, declines := st.declines } }
     return r
 end
 
@@ -494,10 +506,10 @@ def rewriteBlock (expansion? : Name → Except String (Option Expansion))
   let mut overlay : Array (Name × ConstantInfo) := #[]
   let mut declines : Array (Name × String) := #[]
   for (n, ci) in members do
-    let before := st.declines.size
+    st := { st with declines := #[] }
     let ((ci', changed), st') ← ((rewriteConstM expansion? ci).run cfg).run st
     st := st'
-    declines := appendMemberDeclines declines n (st.declines.extract before st.declines.size)
+    declines := appendMemberDeclines declines n st.declines
     if changed then overlay := overlay.push (n, ci')
   return { overlay, sources := st.sources, declines, canon := st.canon,
            pjForms := st.pjForms }

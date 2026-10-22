@@ -41,13 +41,26 @@ pub type OptHook<'a> =
 pub type DeclineHook<'a> =
   dyn Fn(&Name, &[Level], &[Expr]) -> Option<String> + 'a;
 
+/// Effects are sets in first-occurrence order, never occurrence counts.
+/// This also bounds recursive Engine/O2 merges before they reach the memo.
+pub(crate) fn extend_causes(
+  out: &mut Vec<String>,
+  reports: impl IntoIterator<Item = String>,
+) {
+  for cause in reports {
+    if !out.contains(&cause) {
+      out.push(cause);
+    }
+  }
+}
+
 #[derive(Default)]
 pub struct RwState<'o> {
   /// The passes of this rewrite (`None`: the default `RwConfig`, the
   /// faithful baseline).
   pub opt: Option<&'o OptHook<'o>>,
   pub decline: Option<&'o DeclineHook<'o>>,
-  /// Causes in traversal order, replayed on a term-cache hit.
+  /// Distinct causes in the current scope, replayed on a term-cache hit.
   pub declines: Vec<String>,
   /// The source occurrences, placeholder `i` for entry `i`.
   pub sources: Vec<Expr>,
@@ -83,7 +96,7 @@ impl RwState<'_> {
       return Ok(Some(x.clone()));
     }
     let Some(x) = lookup(n)? else { return Ok(None) };
-    let before = self.declines.len();
+    let outer = std::mem::take(&mut self.declines);
     let x = if x.needs_rewrite {
       // an expansion is shared by every site (Lean: `site := none`)
       let site = self.site.take();
@@ -95,9 +108,11 @@ impl RwState<'_> {
     };
     // A head entry carries no effects. Revisit an expansion that recorded
     // a decline; its term-cache entries retain and replay those causes.
-    if self.declines.len() == before {
+    let effects = std::mem::replace(&mut self.declines, outer);
+    if effects.is_empty() {
       self.exps.insert(n.clone(), x.clone());
     }
+    extend_causes(&mut self.declines, effects);
     Ok(Some(x))
   }
 
@@ -136,10 +151,12 @@ impl RwState<'_> {
     if let Some((input, r, declines)) = self.cache.get(&ck)
       && input.same_raw(e)
     {
-      self.declines.extend(declines.iter().cloned());
+      extend_causes(&mut self.declines, declines.iter().cloned());
       return Ok(r.clone());
     }
-    let before = self.declines.len();
+    // Capture a complete local effect set, independent of ambient causes.
+    // Global deduplication followed by a suffix would lose repeated effects.
+    let outer = std::mem::take(&mut self.declines);
     let r = match e.as_data() {
       ExprData::App(..) | ExprData::Const(..) => {
         let (h, args) = get_app_fn_args(e);
@@ -158,7 +175,7 @@ impl RwState<'_> {
                   // the passes first (Lean `RwConfig.opt?`), else the image
                   let body = match self.opt.and_then(|opt| opt(n, us, &args2)) {
                     Some((e, reports)) => {
-                      self.declines.extend(reports);
+                      extend_causes(&mut self.declines, reports);
                       e
                     },
                     None => {
@@ -169,7 +186,7 @@ impl RwState<'_> {
                   if let Some(cause) =
                     self.decline.and_then(|decline| decline(n, us, &args2))
                   {
-                    self.declines.push(cause);
+                    extend_causes(&mut self.declines, [cause]);
                   }
                   if record {
                     let k = self.sources.len();
@@ -231,9 +248,9 @@ impl RwState<'_> {
       },
       _ => e.clone(),
     };
-    self
-      .cache
-      .insert(ck, (e.clone(), r.clone(), self.declines[before..].to_vec()));
+    let effects = std::mem::replace(&mut self.declines, outer);
+    extend_causes(&mut self.declines, effects.iter().cloned());
+    self.cache.insert(ck, (e.clone(), r.clone(), effects));
     Ok(r)
   }
 
@@ -333,9 +350,9 @@ pub fn rewrite_block(
   let mut overlay = Vec::new();
   let mut declines: Vec<(Name, String)> = Vec::new();
   for (n, ci) in members {
-    let before = st.declines.len();
+    st.declines.clear();
     let (ci2, changed) = st.rewrite_const(lookup, ci)?;
-    let mut causes = st.declines[before..].to_vec();
+    let mut causes = st.declines.clone();
     causes.sort();
     causes.dedup();
     if !causes.is_empty() {
@@ -504,6 +521,64 @@ mod tests {
     let mut st = RwState::default();
     let e = Expr::app(term("f"), term("a"));
     assert!(st.rw(&mut |n| Ok(head(n)), 1, true, &e).is_err());
+  }
+
+  #[test]
+  fn shared_dag_effects_are_bounded_and_independent_of_ambient_causes() {
+    for depth in [6, 64] {
+      let mut lookup = |n: &Name| {
+        Ok(if n.same_raw(&root_name("outer")) {
+          Some(Expansion {
+            level_params: vec![],
+            value: term("inner"),
+            arity: 0,
+            needs_rewrite: true,
+          })
+        } else if n.same_raw(&root_name("inner")) {
+          Some(Expansion {
+            level_params: vec![],
+            value: term("baseline"),
+            arity: 0,
+            needs_rewrite: false,
+          })
+        } else {
+          None
+        })
+      };
+      let cause = "zeta cause";
+      let expected = [cause, "alpha cause"];
+      let decline = |n: &Name, _: &[Level], _: &[Expr]| {
+        if n.same_raw(&root_name("inner")) {
+          Some(cause.to_owned())
+        } else {
+          n.same_raw(&root_name("outer")).then(|| "alpha cause".to_owned())
+        }
+      };
+      let mut st = RwState {
+        decline: Some(&decline),
+        declines: vec![cause.to_owned()],
+        ..RwState::default()
+      };
+      let mut e = term("outer");
+      for _ in 0..depth {
+        e = Expr::app(Expr::app(term("pair"), e.clone()), e);
+      }
+      st.rw(&mut lookup, 256, false, &e).unwrap();
+      assert_eq!(st.declines, expected);
+      assert!(!st.exps.contains_key(&root_name("outer")));
+      assert!(st.cache.len() <= depth + 4);
+      assert!(st.cache.values().all(|(_, _, effects)| effects.len() <= 2));
+      st.declines.clear();
+      st.rw(&mut lookup, 256, false, &e).unwrap();
+      assert_eq!(st.declines, expected);
+      let member = (root_name("member"), defn("member", term("T"), e));
+      let out =
+        rewrite_block(&mut lookup, &[member], None, Some(&decline)).unwrap();
+      assert_eq!(
+        out.declines,
+        [(root_name("member"), "alpha cause; zeta cause".to_owned())]
+      );
+    }
   }
 
   #[test]

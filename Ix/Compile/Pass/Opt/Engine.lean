@@ -56,7 +56,7 @@ def engineN : Nat → OptEnv → Occ → Option (String × Expr × Array String)
     if let some e := O11a.apply env o then return ("O11a", e, #[])
     let causes := (O11a.declineCause? env o).toArray
     let recur := fun o' => (engineN fuel env o').map fun (_, e, reports) => (e, reports)
-    if let some (e, reports) := O2.apply recur env o then return ("O2", e, causes ++ reports)
+    if let some (e, reports) := O2.apply recur env o then return ("O2", e, mergeDeclines causes reports)
     for (name, pass) in [("O3", O3.apply), ("O4", O4.apply), ("O6", O6.apply)] do
       if let some e := pass env o then return (name, e, causes)
     none

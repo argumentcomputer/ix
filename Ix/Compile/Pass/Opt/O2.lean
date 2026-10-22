@@ -83,6 +83,7 @@ O2 fires).
 -/
 module
 public import Ix.Compile.Pass.Opt.Core
+public import Ix.Compile.Pass.Translate
 public import Ix.Compile.Pass.Opt.O5
 public import Ix.AuxSource
 public import Ix.AuxGen.ExprUtils
@@ -165,7 +166,7 @@ def adaptMinor (recur : Occ → Option (Expr × Array String)) (env : Ix.Environ
       body := Expr.mkApp body ihFVars[ihIdx]!
     else
       let (ih, reports) ← relocatedIh recur target fieldFVars[fieldIdx]! rv.all us ps ms mins
-      causes := causes ++ reports
+      causes := mergeDeclines causes reports
       body := Expr.mkApp body ih
   return some (Ix.AuxGen.mkLambda body decls, causes)
 
@@ -198,7 +199,7 @@ def O2.apply (recur : Occ → Option (Expr × Array String)) (env : OptEnv) (o :
       -- the image relocates here too (it wraps this minor)
       if src?.isSome then none
       mins' := mins'.push w
-      causes := causes ++ reports
+      causes := mergeDeclines causes reports
     | none =>
       -- the image wraps this minor (it found a field recursive into another
       -- component, through the kernel's reduction) but the syntactic reading
