@@ -142,7 +142,7 @@ import Tests.Ix.Tc.InitScale
 import Tests.Ix.Tc.TutorialTc
 import Tests.Ix.Tc.Roundtrip
 import Tests.Ix.Tc.IngressMetaTests
-import Tests.Ix.Tc.Pins
+import Tests.Ix.Kernel.Pins
 import Tests.Ix.Tc.AccelDiff
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM

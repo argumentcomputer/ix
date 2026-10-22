@@ -1,7 +1,7 @@
 import LSpec
 import Ix.Cli.CheckLeanCmd
 import Tests.Ix.Kernel.ReaderRoundtrip
-import Tests.Ix.Tc.Pins
+import Tests.Ix.Kernel.Pins
 
 namespace Tests.Ix.Kernel.CheckLeanCli
 

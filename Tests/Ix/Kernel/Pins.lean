@@ -2,7 +2,7 @@ module
 
 public import LSpec
 public import Ix.Cli.CheckLeanCmd
-public import Tests.Ix.Tc.ParityEnv
+public import Tests.Ix.Kernel.ParityEnv
 
 /-!
 `tc-pins` (ignored runner): regression pins for the pure-Lean kernel
