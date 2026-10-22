@@ -38,6 +38,15 @@
 //!                             and every column but `ms` are those of the
 //!                             default mode, and a discrepancy is a failure
 //!                             with an `internal error` status
+//!   [--experiment-classify | --experiment-k K] [--experiment-tsv PATH]
+//!                             offline initial-component measurements or
+//!                             family prototype (K <= 24); NO format rule
+//!   [--experiment-input-canonical] marks saved input as canonical baseline;
+//!                             otherwise exact-baseline status is unknown
+//!   [--experiment-timeout-ms N] cooperative phase-1 abort; use an external
+//!                             process bound for ingestion and phases 2/3
+//!   [--experiment-export DIR] exact input and successful candidate .ixn
+//!                             files; differing existing files are refused
 //! ```
 //!
 //! Candidate counts are reported two ways: `cand`, the R1/R2 search
@@ -65,6 +74,9 @@ use ixon::sharing_exact::{
 };
 use rayon::prelude::*;
 
+#[path = "sharing_corpus/experiment.rs"]
+mod experiment;
+
 // The allocator of the `ix` binary (`crates/ffi`), so per-constant times
 // match the compiler's.
 #[global_allocator]
@@ -88,6 +100,12 @@ struct Args {
   max_states: Option<u64>,
   sharing_limits: Option<String>,
   full_check: bool,
+  experiment_classify: bool,
+  experiment_k: Option<usize>,
+  experiment_tsv: Option<String>,
+  experiment_input_canonical: bool,
+  experiment_timeout_ms: Option<usize>,
+  experiment_export: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -107,6 +125,12 @@ fn parse_args() -> Result<Args, String> {
     max_states: None,
     sharing_limits: None,
     full_check: false,
+    experiment_classify: false,
+    experiment_k: None,
+    experiment_tsv: None,
+    experiment_input_canonical: false,
+    experiment_timeout_ms: None,
+    experiment_export: None,
   };
   let num = |v: Option<String>| -> Result<usize, String> {
     v.ok_or("missing value")?.parse::<usize>().map_err(|e| e.to_string())
@@ -130,12 +154,38 @@ fn parse_args() -> Result<Args, String> {
         a.sharing_limits = Some(it.next().ok_or("missing value")?);
       },
       "--full-check" => a.full_check = true,
+      "--experiment-classify" => a.experiment_classify = true,
+      "--experiment-k" => a.experiment_k = Some(num(it.next())?),
+      "--experiment-tsv" => {
+        a.experiment_tsv = Some(it.next().ok_or("missing value")?)
+      },
+      "--experiment-input-canonical" => a.experiment_input_canonical = true,
+      "--experiment-timeout-ms" => {
+        a.experiment_timeout_ms = Some(num(it.next())?)
+      },
+      "--experiment-export" => {
+        a.experiment_export = Some(it.next().ok_or("missing value")?)
+      },
       p if !p.starts_with("--") && a.path.is_empty() => a.path = p.to_string(),
       other => return Err(format!("unknown argument {other}")),
     }
   }
   if a.path.is_empty() {
     return Err("usage: sharing_corpus <file.ixe> [options]".into());
+  }
+  let experiment = a.experiment_classify || a.experiment_k.is_some();
+  if a.experiment_classify && a.experiment_k.is_some()
+    || a.experiment_k.is_some_and(|k| k > 24)
+    || experiment != a.experiment_tsv.is_some()
+    || !experiment
+      && (a.experiment_input_canonical
+        || a.experiment_timeout_ms.is_some()
+        || a.experiment_export.is_some())
+  {
+    return Err(
+      "experimental mode requires exactly one of classify/K<=24 and a TSV path"
+        .into(),
+    );
   }
   Ok(a)
 }
@@ -402,6 +452,9 @@ fn main() -> Result<(), String> {
     limits = limits.with_overrides(spec)?;
   }
   limits.full_check = args.full_check;
+  if args.experiment_tsv.is_some() {
+    return experiment::run(&args, &limits, &mmap, &consts);
+  }
   let done = AtomicUsize::new(0);
   let t1 = Instant::now();
   let total = consts.len();

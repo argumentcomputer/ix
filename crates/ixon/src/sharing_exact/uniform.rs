@@ -107,6 +107,9 @@ use crate::constant::Constant;
 use crate::expr::Expr;
 use crate::tag::TagN;
 
+#[doc(hidden)]
+pub mod experimental;
+
 fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
 }
@@ -2166,25 +2169,34 @@ impl DagPrep {
   }
 }
 
-/// [`optimize_uniform`] (`w >= 1`) with the width-independent tables of
-/// `prep`, up to the decisions: the result has empty `roots` and `sharing`
-/// and `variable_len` 0, and the [`UniformPlan`] builds the expressions
-/// ([`UniformPlan::build`], which [`optimize_uniform`] does) or describes
-/// them ([`UniformPlan::shares`], the dry run of phase 1 of the tiered
-/// construction).
-pub(crate) fn optimize_uniform_with(
+/// Initial classification shared by the exact path and offline experiments.
+struct Initial<'d> {
+  up: UPrep<'d>,
+  cand: Vec<bool>,
+  bounds: Bounds,
+  vis0: (Vec<u64>, Vec<u64>),
+  theta: i128,
+  cs: Vec<TermId>,
+  ce_terms: Vec<TermId>,
+  unc: Vec<TermId>,
+  low: Vec<TermId>,
+  comps: Vec<Vec<TermId>>,
+  slack: i128,
+}
+
+/// The initial canonical classification, before any recursive reclassification.
+fn initial<'d>(
   w: u64,
-  dag: &SharingDag,
+  dag: &'d SharingDag,
   prep: &DagPrep,
   meter: &mut Meter<'_>,
-) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+) -> Result<Initial<'d>, SharingError> {
   if w == 0 {
     return Err(SharingError::FormatBound(FormatBound::UniformWidth { w }));
   }
   let wu = u(w);
   let nodes = dag.nodes();
   let n = nodes.len();
-  let p = prof::scope(Phase::Classify);
   let facts = &prep.facts;
   // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
   // before the search (Lean's `optimizeUniformExpanded`).
@@ -2262,6 +2274,47 @@ pub(crate) fn optimize_uniform_with(
   // contain the certain-stored terms.
   let slack = i128::from(tag0_len(k_cs.saturating_add(k_unc)))
     - i128::from(tag0_len(k_cs));
+  Ok(Initial {
+    up,
+    cand,
+    bounds,
+    vis0,
+    theta,
+    cs,
+    ce_terms,
+    unc,
+    low,
+    comps,
+    slack,
+  })
+}
+
+/// Exact optimization up to decisions; the returned plan builds expressions
+/// or describes their shares for the tiered construction's dry run.
+pub(crate) fn optimize_uniform_with(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  let p = prof::scope(Phase::Classify);
+  let Initial {
+    up,
+    cand,
+    bounds,
+    vis0,
+    theta,
+    cs,
+    ce_terms,
+    unc,
+    low,
+    comps,
+    slack,
+  } = initial(w, dag, prep, meter)?;
+  let nodes = dag.nodes();
+  let n = nodes.len();
+  let facts = &prep.facts;
+  let spine_len = &prep.spine_len;
   // Search each component (independent searches; see `Parallelism`).
   let search_area = |members: &Vec<TermId>,
                      area: Vec<TermId>,
@@ -2423,6 +2476,41 @@ pub(crate) fn optimize_uniform_with(
     }
   }
   drop(p);
+  combine_uniform(
+    w,
+    dag,
+    prep,
+    meter,
+    Initial {
+      up,
+      cand,
+      bounds,
+      vis0,
+      theta,
+      cs,
+      ce_terms,
+      unc,
+      low,
+      comps,
+      slack,
+    },
+    results,
+  )
+}
+
+fn combine_uniform(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+  stage: Initial<'_>,
+  results: Vec<(Choice, CTable)>,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  let Initial { up, cs, ce_terms, unc, low, comps, .. } = stage;
+  let nodes = dag.nodes();
+  let n = nodes.len();
+  let facts = &prep.facts;
+  let k_cs = len64(cs.len());
   let p = prof::scope(Phase::Knapsack);
   let states_visited = meter.stats.states_created;
   // Combine: per-component optima, unless a lower count bracket is shorter.
@@ -2549,6 +2637,8 @@ pub(crate) fn optimize_uniform_with(
     #[cfg(test)]
     component_tables: results.into_iter().map(|(_, table)| table).collect(),
   };
+  #[cfg(not(test))]
+  drop(results);
   drop(p);
   Ok((result, UniformPlan { dict, plan, model, k }))
 }
