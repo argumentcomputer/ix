@@ -200,6 +200,14 @@ section Benchmarks
 lean_exe «uniform-hard» where
   root := `Benchmarks.UniformHard
 
+/-- Offline component-family traces; no production artifacts are emitted. -/
+lean_exe «sharing-family-prototype» where
+  root := `Benchmarks.SharingFamilyPrototype
+
+/-- Offline captured-input normalization, using the proved production evaluator. -/
+lean_exe «sharing-family-normalize» where
+  root := `Benchmarks.SharingFamilyNormalize
+
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 
