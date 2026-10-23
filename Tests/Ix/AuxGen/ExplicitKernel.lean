@@ -69,7 +69,8 @@ private def noKernelPaths : IO Unit := do
 
 def evaluate : IO Unit := do
   noKernelPaths
-  let leanEnv ← getCompileEnv #[`Tests.Ix.AuxGen.ExplicitKernel]
+  let leanEnv ← getCompileEnv #[`Tests.Ix.AuxGen.ExplicitKernel,
+    `Tests.Ix.Compile.AuxCert.NestedSortUK]
   let env ← Tests.Ix.Kernel.SourceIngress.envOf leanEnv
     #[``Tree.brecOn, ``Predicate.brecOn,
       `Tests.Ix.Compile.Mutual.AlphaCollapse.A.brecOn, `NestedSortUK.T, `NestedSortUK.t_rec]

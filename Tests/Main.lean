@@ -93,6 +93,7 @@ import Tests.Ix.AuxGen.BelowIxc
 import Tests.Ix.AuxGen.ClosureProbe
 import Tests.Ix.AuxGen.AcceptanceProbe
 import Tests.Ix.AuxGen.TierService
+import Tests.Ix.AuxGen.CheckedGeneration
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -179,6 +180,10 @@ import Tests.Ix.RustCompile
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
+
+run_cmd do
+  if (← Lean.getEnv).header.moduleNames.contains `Tests.Ix.Compile.AuxCert.NestedSortUK then
+    throwError "M7's NestedSortUK fixture must be loaded at runtime, outside Tests.Main"
 
 open Tests.Registry in
 /-- Every `IxTests` entry with its tier (`Tests/Registry.lean`): primary
@@ -543,6 +548,9 @@ def registry : List Entry := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   .env "aux-gen-diff" (.ci .compilePipeline) Tests.Compile.AuxGenDiff.run,
+  -- Checked generation capabilities, actual nine-target retries, immutable
+  -- Source state and explicit callers; the expensive replay runs once.
+  .runner "auxgen-checked-generation" (.ci .compilePipeline) Tests.Ix.AuxGen.CheckedGeneration.run,
   -- The compiler's nested expansion against IxC's nested modeller (SP5):
   -- source order, canonical order, permutation, field kinds and verdicts
   -- on every nested fixture block (Tests.Ix.Compile.NestedAgreement).
@@ -601,7 +609,7 @@ def registry : List Entry := [
   -- Pass 3's clique tables (plans, rows) are memos: the check mode
   -- (`IX_PASS3_CHECK_PLANS`) at 1, 4 and 32 workers writes the reference's
   -- bytes, with negative controls (Tests.Ix.Compile.PlanCache)
-  .runner "pass3-plan-cache" .landing Tests.Ix.Compile.PlanCache.run,
+  .runner "pass3-plan-cache" (.ci .compilePipeline) Tests.Ix.Compile.PlanCache.run,
   -- The clique transport wired: every plan of the twins unit, and its rows and
   -- `_ix.src` copies published exactly (Tests.Ix.Compile.Pass3Cliques)
   .runner "pass3-cliques" .landing Tests.Ix.Compile.Pass3Cliques.run,
@@ -674,4 +682,6 @@ def main (args : List String) : IO UInt32 := do
     for msg in errors[:min 50 errors.size] do
       IO.println s!"  {msg}"
     return 1
-  Tests.Registry.run registry get_env! args
+  Tests.Registry.run registry get_env! args (required :=
+    [("auxgen-checked-generation", "ci:compile-pipeline"),
+     ("pass3-plan-cache", "ci:compile-pipeline")])
