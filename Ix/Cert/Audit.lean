@@ -36,6 +36,7 @@ import Ix.Cert.SourceReplay
 import Ix.Cert.SourceCommit
 import Ix.Cert.SourceTrace
 import Ix.Cert.SourceOrigin
+import Ix.Cert.SourceOriginRead
 
 /-! # The certification statements, frozen
 
@@ -5457,3 +5458,18 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "generated base origins"
     (#[`genMutual_bases, `genNested_bases, `generate_bases].map (`Ix.Cert.SourceOrigin ++ ·))
+
+/-! ## Generated bases of actual inductive reads
+
+The generator's roots are closing block names even when its type zip is
+truncated. Generated entries inherit that origin; ordinary-key and mapped
+forms give the baseS/baseA shapes. Actual quotient conversion discharges
+ordinary keys. No accepted-stream, no-drop or pairing premise is hidden. -/
+
+/-- info: [cert-audit] generated read bases: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "generated read bases"
+    (#[`roots_blockRecOf, `lowerInductive_bases, `lowerInductive_bases_ordinary,
+      `lowerInductive_bases_mapKeys, `quotient_lowerInductive_bases].map (`Ix.Cert.SourceOriginRead ++ ·))
