@@ -118,7 +118,7 @@ private def controls (base : Source.Service) : IO Unit := do
   let broken := replace vs fn (some (.defnInfo { original with value := Expr.mkConst absent #[] }))
   match GenerationOnly.ofService broken vr with
   | .ok _ => throw (IO.userError "unresolved input reference was allowed")
-  | .error e => need ((e.splitOn absent.pretty).length > 1) s!"wrong unresolved-reference cause: {e}"
+  | .error e => need (e == s!"invalid: unknown constant in value of {fn.pretty}") s!"wrong unresolved-reference cause: {e}"
   let accepted := base.ensureNames #[Name.fromLeanName `Nat]
   refused "accepted owner" (GenerationOnly.ofService accepted (Name.fromLeanName `Nat)) "generation: Source-accepted block is ineligible"
   let o ← IO.ofExcept (factory svc)
