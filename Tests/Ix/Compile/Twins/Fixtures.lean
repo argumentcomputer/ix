@@ -33,3 +33,5 @@ import Tests.Ix.Compile.Clique.Fixtures
 import Tests.Ix.Compile.Clique.Ownership.Sources
 import Tests.Ix.Compile.Clique.Ownership.Lemmas
 import Tests.Ix.Compile.AuxCert.NestedSortUK
+-- Checked opaque-generation fixtures remain outside the whole test environment.
+import Tests.Ix.AuxGen.GenerationOnlyOpaqueFixtures

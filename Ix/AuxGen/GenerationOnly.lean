@@ -1,8 +1,8 @@
 /- A checked answer capability for generation from a safe Source-unaccepted
 family. The logical Source snapshot is immutable. Checked tier/sigma updates
 are private, every resulting oracle stays failClosed and every generated
-row retains the original non-acceptance reason. This factory is not wired
-into the production retry provider. Actual supplied safe dependencies may be checked privately; absent or
+row retains the original non-acceptance reason. The production retry provider
+requests this factory lazily. Actual supplied safe dependencies may be checked privately; absent or
 unsupported records refuse. Supplied safe opaques are checked with their
 actual logical bodies and stay opaque in both private views. No logical group is discovered/folded and no
 missing recursor is synthesized. Char alone has a guarded full-check route. -/

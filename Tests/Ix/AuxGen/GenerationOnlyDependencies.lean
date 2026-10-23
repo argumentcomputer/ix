@@ -1,5 +1,6 @@
 import Tests.Ix.AuxGen.GenerationOnlyFactory
 import Tests.Ix.AuxGen.GenerationOnlyAliases
+import Tests.Ix.AuxGen.GenerationOnlyOpaques
 import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.IxVM
 import Tests.Ix.Fixtures
@@ -102,8 +103,13 @@ private def controls (base : Source.Service) : IO Unit := do
   need absent.isEmpty "actual recordless Exists changed"
   let dn := Name.fromLeanName `List.instMembership
   let some (.defnInfo dv) := svc.input.get? dn | throw (IO.userError "definition fixture missing")
-  let unsupported := #[ConstantInfo.axiomInfo ⟨dv.cnst, false⟩,
-    .opaqueInfo ⟨dv.cnst, dv.value, false, dv.all⟩, .thmInfo ⟨dv.cnst, dv.value, dv.all⟩]
+  -- Safe opaques with the supplied body are now an intentionally supported
+  -- private generation input. Full-body/opacity negatives run in Opaques.
+  let opaqueVariant := ConstantInfo.opaqueInfo ⟨dv.cnst, dv.value, false, dv.all⟩
+  let .definitions #[.opaqueInfo actual] ← IO.ofExcept (groupOf (replace svc dn (some opaqueVariant)).input dn)
+    | throw (IO.userError "valid safe opaque was not extracted intact")
+  need (actual.cnst == dv.cnst && actual.value == dv.value && !actual.isUnsafe) "opaque extraction changed supplied data"
+  let unsupported := #[ConstantInfo.axiomInfo ⟨dv.cnst, false⟩, .thmInfo ⟨dv.cnst, dv.value, dv.all⟩]
   for ci in unsupported do
     refused "unsupported dependency" (groupOf (replace svc dn (some ci)).input dn) s!"generation: unsupported supplied dependency {dn.pretty}"
   refused "unsafe definition" (groupOf (replace svc dn (some (.defnInfo { dv with safety := .unsafe }))).input dn) s!"generation: non-safe definition unit member {dn.pretty}"
@@ -144,6 +150,7 @@ private def targets : Array String := #["Exists.intro", "Tests.Ix.Compile.Mutual
 def evaluate (factoryControls : Bool := true) : IO Unit := do
   if factoryControls then
     GenerationOnlyAliases.evaluate
+    GenerationOnlyOpaques.evaluate
     GenerationOnlyFactory.evaluate
   let leanEnv ← getCompileEnv #[`Tests.Ix.Compile.ValidateAux, `Tests.Ix.IxVM, `Tests.Ix.Fixtures]
   let filtered := validateAuxClosure leanEnv
