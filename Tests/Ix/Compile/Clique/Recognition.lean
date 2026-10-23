@@ -414,10 +414,11 @@ def wfPositiveProbes (env : Environment) : IO Unit := _root_.runMeta (do
 def structuralIdentityControl (env : Environment) : IO Unit := _root_.runMeta (do
   let const? := constOf env
   let members ← #[fx "RepeatedStructural.first", fx "RepeatedStructural.second"].mapM (getDecl env)
+  let oracleFor := SourceFamilyOracle.forLean env (ixEnvOf env) (members.map (·.name))
   -- the authenticated `below`/`brecOn` family of the block (`Input.family`):
   -- the structural layout refuses without it
   let family ← ofExcept "structural identity family"
-    (_root_.Ix.Compile.Pass.Clique.authenticatedFamily (ixEnvOf env) members)
+    (_root_.Ix.Compile.Pass.Clique.authenticatedFamily oracleFor (ixEnvOf env) members)
   let layout ← ofExcept "ordinary structural identity fixture declined"
     (_root_.Ix.Compile.Pass.Clique.structLayout members #[] #[1, 0] const? family)
   unless layout.numFixed == 2 do throwError "structural identity fixture lost its two fixed slots"
@@ -733,6 +734,9 @@ private def checkPlan (scratch : Name) (extra : Array Decl) (cp : _root_.Ix.Comp
 def adversarialNegatives (env : Environment) : IO Unit := _root_.runMeta (do
   let const? := constOf env
   let adv (s : String) : Name := fx ("Adversarial." ++ s)
+  let familySeeds := #[ixName ``Nat, ixName `Tests.Ix.Compile.Twins.Cliques.Common.EvP,
+    ixName (adv "Pair")]
+  let oracleFor := SourceFamilyOracle.forLean env (ixEnvOf env) familySeeds
   let addr (n : IxName) : Option Address := some (Address.blake3 (toLeanName n).toString.toUTF8)
   let isBaseline : _root_.Ix.Compile.Pass.Clique.CliqueOutcome → Bool
     | .baseline .. => true
@@ -766,7 +770,7 @@ def adversarialNegatives (env : Environment) : IO Unit := _root_.runMeta (do
         _root_.Ix.Compile.Pass.Clique.isMatcherName d.value).foldl (init := #[]) fun acc n =>
     if acc.contains n then acc else acc.push n
   let ipAux ← ipMatcherNames.mapM fun n => getDecl env (toLeanName n)
-  let ipFamily ← ofExcept "IP family" (_root_.Ix.Compile.Pass.Clique.authenticatedFamily (ixEnvOf env) ipMembers)
+  let ipFamily ← ofExcept "IP family" (_root_.Ix.Compile.Pass.Clique.authenticatedFamily oracleFor (ixEnvOf env) ipMembers)
   let ipSigma := (List.range ipMembers.size).toArray.reverse
   let layout ← ofExcept "IP layout"
     (_root_.Ix.Compile.Pass.Clique.structLayout ipMembers ipAux ipSigma const? ipFamily)
@@ -836,7 +840,7 @@ def adversarialNegatives (env : Environment) : IO Unit := _root_.runMeta (do
   let pairBrecOn := ixName (adv "Pair.brecOn")
   if (_root_.Ix.Compile.Pass.Clique.familyCandidates const? pairBrecOn).isSome then
     throwError "a non-recursive structure's user brecOn has family candidates"
-  let kept := _root_.Ix.AuxGen.SourceFamily.filterHeads (ixEnvOf env) #[pair] #[pairBelow, pairBrecOn]
+  let kept := _root_.Ix.AuxGen.SourceFamily.filterHeads oracleFor (ixEnvOf env) #[pair] #[pairBelow, pairBrecOn]
   unless kept.isEmpty do
     throwError "the user below/brecOn of a non-recursive structure were authenticated: {kept.map (·.pretty)}"
   let named : Std.HashSet IxName := ({} : Std.HashSet IxName).insert pairBelow |>.insert pairBrecOn
@@ -852,13 +856,14 @@ def adversarialNegatives (env : Environment) : IO Unit := _root_.runMeta (do
     (_root_.Ix.Expr.mkLam (ixName `x) brecOnVal.cnst.type (_root_.Ix.Expr.mkBVar 0) .default) brecOnVal.value
   let alteredBrecOn : IxConst := .defnInfo { brecOnVal with value := alteredValue }
   let alteredEnv := ixEnvOf env (({} : Std.HashMap IxName IxConst).insert natBrecOn alteredBrecOn)
+  let alteredOracle := SourceFamilyOracle.forLean env alteredEnv familySeeds
   let mut transportedPlans := 0
   for p in ["P0", "P1"] do
     let (all, members) ← cliqueOf env (`Tests.Ix.Compile.Twins.Cliques.SA ++ p.toName ++ `ev)
     let aux ← members.mapM fun m => getDecl env (toLeanName m.name ++ `_f)
-    let family ← ofExcept "SA family" (_root_.Ix.Compile.Pass.Clique.authenticatedFamily (ixEnvOf env) members)
+    let family ← ofExcept "SA family" (_root_.Ix.Compile.Pass.Clique.authenticatedFamily oracleFor (ixEnvOf env) members)
     let alteredFamily ← ofExcept "SA family (altered brecOn)"
-      (_root_.Ix.Compile.Pass.Clique.authenticatedFamily alteredEnv members)
+      (_root_.Ix.Compile.Pass.Clique.authenticatedFamily alteredOracle alteredEnv members)
     unless family.contains natBrecOn && !alteredFamily.contains natBrecOn do
       throwError "SA {p}: the altered Nat.brecOn was authenticated (or the original was not)"
     let some all0 := all[0]? | throwError "SA {p}: no member"
@@ -869,8 +874,8 @@ def adversarialNegatives (env : Environment) : IO Unit := _root_.runMeta (do
       throwError "SA {p}: the structural transport accepted an altered brecOn: {out.causes.map (·.2.2)}"
     let control := _root_.Ix.Compile.Pass.Clique.transport { inp with const? := const?, family }
     if control.baseline then throwError "control: SA {p} kept Lean's form with the authenticated family"
-    let cleanPlan := _root_.Ix.Compile.Pass.Clique.planClique (ixEnvOf env) addr all #[]
-    let alteredPlan := _root_.Ix.Compile.Pass.Clique.planClique alteredEnv addr all #[]
+    let cleanPlan := _root_.Ix.Compile.Pass.Clique.planClique oracleFor (ixEnvOf env) addr all #[]
+    let alteredPlan := _root_.Ix.Compile.Pass.Clique.planClique alteredOracle alteredEnv addr all #[]
     if let .transported _ := cleanPlan then transportedPlans := transportedPlans + 1
     unless isBaseline alteredPlan do
       throwError "SA {p}: the plan over an altered brecOn is not the baseline: {alteredPlan.tag}"
@@ -890,13 +895,14 @@ def adversarialNegatives (env : Environment) : IO Unit := _root_.runMeta (do
     let (all, members) ← cliqueOf env (ns ++ (if fam == "SA" then `ev else `fa))
     let fs ← members.mapM fun m => getDecl env (toLeanName m.name ++ `_f)
     let family ← ofExcept s!"{label} family"
-      (_root_.Ix.Compile.Pass.Clique.authenticatedFamily (ixEnvOf env) members)
+      (_root_.Ix.Compile.Pass.Clique.authenticatedFamily oracleFor (ixEnvOf env) members)
     let sigma := (List.range members.size).toArray.reverse
     -- control: Lean's functionals are recovered
     discard <| ofExcept s!"control: {label} recovery"
       (_root_.Ix.Compile.Pass.Clique.recoverStructural members fs const? family).run'
     let (overlay, members', decoys, copies, others) := decoyInput const? kind members fs
     let decoyEnv := ixEnvOf env overlay
+    let decoyOracle := SourceFamilyOracle.forLean env decoyEnv familySeeds
     -- the decoys are refused by the ownership rule (body) or the recovery's
     -- functional check (ref), or first by the
     -- transport's check that every functional the members pass is one of the
@@ -946,7 +952,7 @@ def adversarialNegatives (env : Environment) : IO Unit := _root_.runMeta (do
     -- the plan over the decoy input (what the hook computes: its encoding
     -- constants are the `m._f` names): the baseline, or a transport whose
     -- constants the kernel accepts
-    let plan := _root_.Ix.Compile.Pass.Clique.planClique decoyEnv addr all #[]
+    let plan := _root_.Ix.Compile.Pass.Clique.planClique decoyOracle decoyEnv addr all #[]
     let recorded := knownDecoyPlanGaps.contains label
     let rejected ← match plan with
       | .transported cp =>

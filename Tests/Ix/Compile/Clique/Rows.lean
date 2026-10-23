@@ -255,6 +255,7 @@ def run : IO UInt32 := do
   let (env, realised) ← RustParity.withEqLemmas env0 cls
   let const? := constOf env
   let ixEnv := ixEnvOf env
+  let oracleFor := SourceFamilyOracle.forLean env ixEnv (cls.flatten.map ixName)
   let ctx : Core.Context := { fileName := "<clique-rows>", fileMap := default, maxHeartbeats := 0 }
   let mut t : Tally := {}
   let mut planned := 0
@@ -268,7 +269,7 @@ def run : IO UInt32 := do
     for carriedV in (if carried.isEmpty then #[#[]] else #[#[], carried]) do
       for (aname, addr?) in [("name", RustParity.nameAddr), ("content", RustParity.contentAddr const? ns)] do
         planned := planned + 1
-        let .transported plan := _root_.Ix.Compile.Pass.Clique.planClique ixEnv addr? all carriedV | continue
+        let .transported plan := _root_.Ix.Compile.Pass.Clique.planClique oracleFor ixEnv addr? all carriedV | continue
         let tag := s!"{label} carried={carriedV.size} addr={aname} σ={plan.sigma}"
         if plan.encoding != .wellFounded then
           t := checkNoRows const? plan tag t

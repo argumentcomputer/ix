@@ -102,6 +102,12 @@ structure CompileEnv where
       by the block's canonical key (`Ix.AuxGen.Oracle`), set by the wave fold
       (`compileEnvFoldWithSource`); `none` outside it. -/
   auxOracle : Option (Name → Option Ix.AuxGen.AuxOracle) := none
+  /-- Checked generation retry, requested only after an IxC refusal on an
+      unaccepted block. The key is the original schedule's canonical block
+      key, never a rewritten tail name or canonical class. Tail-only. -/
+  auxGenerationRetry : Option (Name → Except String Ix.AuxGen.AuxOracle) := none
+  /-- Original-source capabilities, retained for post-compile plan checks. -/
+  sourceFamilyOracle : Option Ix.AuxGen.SourceFamilyOracle := none
   /-- AuxGen M4c: AuxGen's part of the compile report (`Ix.AuxGen.CompileReport`:
       each block's canonical-block verdict, by the block's canonical key),
       merged from the blocks that compile (`BlockState.auxReport`,
@@ -177,6 +183,12 @@ structure CompileEnv where
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
   { env, nameToNamed := {}, constants := {}, blobs := {}, totalBytes := 0 }
+
+/-- A missing compiler provider is a named configuration error when used. -/
+def CompileEnv.familyOracle (cenv : CompileEnv) : Ix.AuxGen.SourceFamilyOracle := fun owner =>
+  match cenv.sourceFamilyOracle with
+  | some provider => provider owner
+  | none => .error s!"source family {owner.pretty}: original-source provider is absent"
 
 instance : Inhabited CompileEnv where
   default := { env := { consts := {} }, nameToNamed := {}, constants := {}, blobs := {}, totalBytes := 0 }

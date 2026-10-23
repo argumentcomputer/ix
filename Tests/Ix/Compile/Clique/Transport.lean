@@ -249,7 +249,8 @@ def pairInput (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Nam
     | .structural => ms0[0]!)
   let family ← match enc with
     | .structural =>
-      match _root_.Ix.Compile.Pass.Clique.authenticatedFamily (ixEnvOf env) members with
+      let oracleFor := SourceFamilyOracle.forLean env (ixEnvOf env) (members.map (·.name))
+      match _root_.Ix.Compile.Pass.Clique.authenticatedFamily oracleFor (ixEnvOf env) members with
       | .ok f => pure f
       | .error e => throw s!"{p0.ns}: no authenticated family ({e})"
     | _ => pure {}
