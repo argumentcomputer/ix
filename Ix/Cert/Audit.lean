@@ -37,6 +37,7 @@ import Ix.Cert.SourceCommit
 import Ix.Cert.SourceTrace
 import Ix.Cert.SourceOrigin
 import Ix.Cert.SourceOriginRead
+import Ix.Cert.ValueRows
 
 /-! # The certification statements, frozen
 
@@ -5473,3 +5474,19 @@ run_cmd do
   checkRoots (tag := "cert-audit") "generated read bases"
     (#[`roots_blockRecOf, `lowerInductive_bases, `lowerInductive_bases_ordinary,
       `lowerInductive_bases_mapKeys, `quotient_lowerInductive_bases].map (`Ix.Cert.SourceOriginRead ++ ·))
+
+/-! ## Strong value models and exact equation rows
+
+Strong-model admission and its value-model projection preserve one
+interpretation. Actual stored Eq rows equate endpoints within their declared
+type/universe domains. These leaves do not establish source-copy faithfulness,
+changed-code conversion, endpoint typing or the final compiler theorem. -/
+
+/-- info: [cert-audit] strong models and equation rows: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "strong models and equation rows"
+    (#[`ofStrong, `strongModel_of_acceptsRef, `commutes_strong, `equation_values,
+      `stored_equation_values, `strong_equation_values, `equation_to_constant,
+      `equation_to_stored_constant].map (`Ix.Cert.ValueRows ++ ·))
