@@ -1,6 +1,6 @@
 # Implement canonical minimum sharing in Ix
 
-> **Status: rule revision `sharing-k16-greedy-v1` adopted (§14); production cutover in progress.**
+> **Status: `sharing-k16-greedy-v1` implemented in the cutover candidates (§14); combined gates pending.**
 > §14 supersedes §12's unbounded phase-1 search and its no-fallback claim. §1–§10 are the original plan. Its
 > target, the global byte minimum under the key of §3.3, was found infeasible at production
 > scale (§12.1) and is **superseded** by the decisions of §12 wherever the two differ. Read §12
@@ -21,7 +21,7 @@
 >   `ixon-v4/resource-v1`. The IxVM circuit reads and writes TagN.
 > - **Proofs.** Family-relative phase-1 minimality, successful-output semantics and format,
 >   and conditional representation/byte compatibility are proved for the family entry (§14.3).
->   Production entry and audit integration remain part of the cutover. The old exact minimality,
+>   The Lean production entry and its audits now carry these contracts. The old exact minimality,
 >   per-phase specifications, equality of the minimized
 >   length with the serialized length, and wire validity remain machine-checked on the reference
 >   route (§12.13). The compiled fast implementations are
@@ -1209,9 +1209,11 @@ limits, and the old route uses its default search (`uniformSubsetSearch = false`
 conditional theorem does **not** imply that old-route success guarantees new-route success
 under an arbitrarily tight budget.
 
-The cutover must attach these statements and the proved fast twins to the production
+The Lean cutover attaches these statements and the proved fast twins to the production
 entry and its audits, preserving compiler-facing meaning, format and codec theorems without
-new premises. The old exact-optimum theorems remain on the reference path. Rust is a
+new premises. Its audit has 174 theorem roots and checks all 28 compiler-path `csimp`
+equalities; the accepted unsafe set is unchanged. The old exact-optimum theorems remain
+on the reference path. Rust is a
 separately tested implementation; byte parity is not a universal refinement proof.
 
 The follow-up PR will prove success on the stated input domain with sufficient limits and
