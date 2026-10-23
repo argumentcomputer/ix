@@ -6,12 +6,14 @@ license.workspace = true
 publish = false
 
 [dependencies]
+aiur = { workspace = true }
 multi-stark = { workspace = true }
 ark-bls12-381 = { version = "0.5", features = ["curve"] }
 ark-ec = "0.5"
 ark-ff = { version = "0.5", features = ["asm"] }
 ark-poly = "0.5"
 ark-serialize = { version = "0.5", features = ["std"] }
+bincode = { version = "2", features = ["serde"] }
 blake3 = { workspace = true }
 num-bigint = { workspace = true }
 serde = { version = "1", features = ["derive"] }
@@ -27,10 +29,9 @@ p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c837
 
 [features]
 default = ["parallel"]
-parallel = ["multi-stark/parallel", "p3-maybe-rayon/parallel", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
+parallel = ["multi-stark/parallel", "aiur/parallel", "p3-maybe-rayon/parallel", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
 
 [dev-dependencies]
-bincode = { version = "2", features = ["serde"] }
 p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
 [lints]

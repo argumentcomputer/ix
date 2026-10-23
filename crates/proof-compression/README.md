@@ -1,9 +1,10 @@
-# Proof compression foundations
+# FRI and KZG proof compression
 
 This crate provides a BLS12-381 KZG polynomial commitment scheme implementing
 the `multi-stark` field, evaluation-domain, transcript, and PCS interfaces,
 along with a proving configuration, Goldilocks circuit translation, and
-constrained FRI verification for fixed profiles.
+constrained FRI verification for fixed profiles. The pipeline compresses
+Aiur root proofs through a FRI stage and then a KZG stage.
 
 - `Scalar` provides canonical scalar-field serialization and arithmetic.
 - `Radix2Coset` defines evaluation domains and their selector polynomials.
@@ -26,7 +27,6 @@ constrained FRI verification for fixed profiles.
   canonical field rejection sampling with a fixed retry budget.
 - `constrain_transcript` binds the system shape, claims, commitments, and
   intermediate accumulators to the algebraic challenges.
-
 - The fixed-profile verifier authenticates openings through Merkle paths,
   PCS reductions, binary FRI folds, grinding checks, and the final polynomial.
 - The batch verifier shares a transcript across shards and constrains their
@@ -36,16 +36,25 @@ constrained FRI verification for fixed profiles.
 
 Callers supply trusted system metadata and supported profiles, and expose or
 constrain statement wires in the enclosing circuit. Standalone arithmetic and
-transcript helpers do not verify complete proofs. Validated verifier planning
-and resource limits are introduced in the next patch.
+transcript helpers do not verify complete proofs. `VerifierPlan` validates
+trusted keys, profiles, statement dimensions, and resource limits before
+constructing a verifier. Proof assignment preserves caller-owned statement wires.
+
+`prepare_root` checks Aiur batch policy and builds a root-verifier witness;
+`prove_fri`, `prepare_kzg`, and `prove_kzg` carry the expected statement through
+the two compression stages. Verifier codecs retain the statement schema and
+verification parameters without retaining proving powers or fixed matrices.
+`FixedRoot` constructs a circuit for fixed trace and memory bounds, while
+`AiurSystem::prove_from_execution_normalized` pads executions to those bounds
+so different inputs can use the same verifier.
 
 The caller must authenticate the SRS provenance. Point and consistency checks
 cannot establish that its trapdoor is unknown. `Srs::unsafe_dev_setup` generates
 known-trapdoor parameters for tests only. The caller also binds its protocol and
 parameters into the BLAKE3 transcript before committing and opening polynomials.
 
-The crate currently exposes this backend as a library. Certificate
-compression and CLI integration are introduced by subsequent patches.
+The crate currently exposes compression as a library. Recursive KZG compression
+and CLI integration are introduced by subsequent patches.
 
 ## Tests
 
@@ -63,6 +72,9 @@ Complete-verifier tests cover ordinary and batch proofs, sparse activation,
 mixed heights, malformed shapes, and statement binding. Adversarial tests
 mutate openings, commitments, paths, challenges, grinding witnesses, and the
 final polynomial after witness expansion to check the circuit constraints.
+Planning and pipeline tests cover key transport, invalid profiles, statement
+ownership, normalized trace bounds, memory limits, deterministic verifier
+construction, and preservation of claims across compression stages.
 
 Run them on a machine with sufficient resources:
 

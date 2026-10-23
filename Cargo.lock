@@ -2053,6 +2053,7 @@ dependencies = [
 name = "ix-proof-compression"
 version = "0.1.0"
 dependencies = [
+ "aiur",
  "ark-bls12-381",
  "ark-ec",
  "ark-ff",

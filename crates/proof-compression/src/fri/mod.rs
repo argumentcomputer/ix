@@ -1,5 +1,6 @@
 //! Fixed-profile multi-stark verification with transcript, algebra, PCS and FRI checks.
-//! Callers supply trusted system metadata and profiles and bind statement wires.
+//! [`VerifierPlan`] validates a trusted key and profile; callers bind the statement.
+//! Proof assignment never overwrites statement wires.
 //!
 //! Standalone algebraic and transcript helpers do not verify a complete proof.
 
@@ -33,5 +34,11 @@ pub use transcript::{
   constrain_transcript,
 };
 
+mod key_codec;
 mod plan;
-pub use plan::{Envelope, Message};
+pub(crate) use plan::validate_parameters;
+pub use plan::{
+  Envelope, ImplementationOptions, Message, PreparedProof, ProofEnvelope,
+  ProofProfile, ResourceEstimate, Statement, StatementBinding, StatementSlot,
+  VerifierError, VerifierInputs, VerifierKey, VerifierLimits, VerifierPlan,
+};
