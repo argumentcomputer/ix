@@ -1,5 +1,5 @@
 import Tests.Ix.SharingUniform
-import Ix.Sharing.FamilyPrototypeCached
+import Ix.Sharing.FamilyNormalizeArea
 
 namespace Tests.SharingFamilyPrototype
 
@@ -119,10 +119,95 @@ private def modelControls : IO Nat := do
   IO.println s!"family prototype: {tested} component/width cases; {interacting} non-singletons; exact/chain, actual deltas and area parity"
   return tested
 
+private def meterImage (outcome : Except SharingError MeterState) :=
+  outcome.map fun (results, states, work) =>
+    (results.map (fun (r : CompResult) => (r.members, r.bestDelta, r.bestSet, r.bySize)), states, work)
+
+private def sameOutcome [BEq α] (a b : Except SharingError α) : Bool :=
+  match a, b with
+  | .ok a, .ok b => a == b
+  | .error a, .error b => a == b
+  | _, _ => false
+
+private def areaControls : IO Nat := do
+  let inputs := runGen 712 ((List.range 12).mapM fun _ => Tests.SharingUniform.genSearchRoots)
+  let mut exercised := 0
+  for roots in inputs do
+    let ex ← IO.ofExcept ((expand {} #[] roots false).mapError toString)
+    for width in [1, 2, 3] do
+      let sg := uniformStageF width ex (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots)
+      let sg := { sg with comps := sg.comps ++ sg.comps.reverse ++ #[#[]] }
+      let parents := parentsOf ex.dag
+      let tb := TBase.ofPrep sg.up.prep sg.up.w sg.up.opaq
+      for k in [0, 3, 8] do
+        let cfg : Config := ⟨k⟩
+        for limits in [({} : Limits), { maxStates := 0 }, { maxCostEvals := 0 }] do
+          ensure (sameOutcome (meterImage (familyComponentsArea cfg limits ex sg width parents))
+            (meterImage (familyComponents cfg limits ex sg width parents)))
+            "area fold changed retained rows, counters, or exact refusal after repeated components"
+        if ex.dag.size > 0 then
+          -- Preserve every array bound while violating the opacity premise:
+          -- the first DAG term is a leaf whose inline cost is below this width.
+          let badStage := { sg with up := { sg.up with
+            opaq := sg.up.opaq.set! 0 true, w := tb.inl[0]! + 1 } }
+          ensure (!tStageOK badStage.up.prep badStage.up.w badStage.up.opaq
+            (TBase.ofPrep badStage.up.prep badStage.up.w badStage.up.opaq)) "bad stage passed the guard"
+          ensure (sameOutcome (meterImage (familyComponentsArea cfg {} ex badStage width parents))
+            (meterImage (familyComponents cfg {} ex badStage width parents))) "stage fallback changed result"
+        if !tStageOK sg.up.prep sg.up.w sg.up.opaq tb then continue
+        for (members, index) in sg.comps.zipIdx do
+          let cx := componentContext ex sg members
+          let zero := Array.replicate ex.dag.size 0
+          let posA := setPositions zero cx.area
+          let posC := setPositions zero cx.closure
+          let (actual, a, c) := familyAreaEvaluation cfg ex cx tb parents width index members zero posC
+          let (expected, ea, ec) := cachedEvaluation cfg cx width index members zero posC
+          ensure (actual.tsv "area" == expected.tsv "area" && a == ea && c == ec && a == zero && c == zero)
+            "area evaluator changed a full trace or left touched positions uncleared"
+          if familyAreaOK ex cx parents posA posC && !members.isEmpty then
+            exercised := exercised + 1
+            let aux := familyAreaAux ex cx posA tb
+            for row in expected.rows do
+              if let some (_, selected) := row then
+                ensure (phiA { cx with closure := #[], rootsC := #[], storedInC := #[] }
+                    posA tb aux (fun _ => (cx, posC)) selected.contains selected ==
+                  phiEL2 cx posA posC selected.contains selected) "area cost/work pair changed"
+            let badArea := { cx with area := #[] }
+            ensure (!familyAreaOK ex badArea parents zero posC &&
+              (familyTraceArea cfg ex badArea tb parents width index members zero posC).tsv "bad" ==
+                (traceWithPositions cfg badArea width index members zero posC).tsv "bad")
+              "missing-member area did not retain the closure fallback"
+          let badCx := { cx with cand := #[] }
+          if ex.dag.size > 0 then
+            let (bad, _, _) := familyAreaEvaluation cfg ex badCx tb parents width index members zero posC
+            ensure (!localSearchOK badCx && bad.tsv "bad" ==
+              (traceWithPhi cfg badCx width index members badCx.phiE).tsv "bad")
+              "malformed context bypassed the specification fallback"
+  -- A real leaf deliberately mislabeled opaque at width 3 must fail the
+  -- per-evaluation opacity test, independently of the outer stage guard.
+  let ex ← IO.ofExcept ((expand {} #[] #[.var 0] false).mapError toString)
+  let sg := uniformStageF 3 ex (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots)
+  let original := componentContext ex sg #[0]
+  let cx := { original with up := { original.up with opaq := #[true] } }
+  let tb := TBase.ofPrep cx.up.prep cx.up.w cx.up.opaq
+  let posA := setPositions #[0] cx.area
+  let posC := setPositions #[0] cx.closure
+  let aux := familyAreaAux ex cx posA tb
+  let (cost, inl, sides, _) := areaFold cx.up.prep cx.up.opaq tb cx.up.w cx.area posA (memberFlags cx posA (fun _ => false))
+  ensure (!aux.storedA.all (tGuard cx.up.prep tb.tTail cx.up.w (rdA posA cost tb.cost)
+    (rdA posA inl tb.inl) (rdA posA sides tb.sides))) "opacity negative control did not reject"
+  ensure (phiA { cx with closure := #[], rootsC := #[], storedInC := #[] } posA tb aux
+      (fun _ => (cx, posC)) (fun _ => false) #[] == phiEL2 cx posA posC (fun _ => false) #[])
+    "per-evaluation opacity fallback changed the full cost/work pair"
+  ensure (exercised > 0) "area controls never exercised a nonempty guarded area"
+  IO.println s!"family area: {exercised} nonempty guarded traces; full pairs, repeated folds, refusals and fallbacks"
+  return exercised
+
 def suite : List TestSeq := [
   .individualIO "experimental component families preserve costs, counts and canonical ties" none (do
     genericControls
     let tested ← modelControls
-    return (true, tested, 0, none)) .done]
+    let areaTested ← areaControls
+    return (true, tested + areaTested, 0, none)) .done]
 
 end Tests.SharingFamilyPrototype

@@ -1,5 +1,5 @@
 import Tests.Ix.SharingUniform
-import Ix.Sharing.FamilyNormalize
+import Ix.Sharing.FamilyNormalizeArea
 
 namespace Tests.SharingFamilyNormalize
 
@@ -7,6 +7,31 @@ open LSpec Ixon Ix.Sharing.Exact Ix.Sharing.FamilyPrototype Tests.SharingExact
 
 private def ensure (b : Bool) (message : String) : IO Unit :=
   unless b do throw (IO.userError message)
+
+/-- Keep a native closure-evaluator reference: `familyAtWidth` has no csimp
+replacement. Calling the public reference entry here would run the new twin. -/
+private def closureNormalize (cfg : Config) (constant : Constant) (limits : Limits) :
+    Except SharingError (Constant × TieredSharingResult) := do
+  let ex ← expand limits constant.sharing (constantInfoRoots constant.info) true
+  uniformDagChecks ex
+  let prep := Prep.ofDag ex.dag
+  uniformSpineCheck ex prep
+  let facts := graphFacts ex.dag ex.roots
+  let parents := parentsOf ex.dag
+  let candidates := tieredCandidateCount ex.dag.size prep facts
+  let result ← tieredCandidates ex.dag.size (familyAtWidth cfg .tagN limits ex prep facts parents candidates)
+  let info ← withRoots constant.info result.result.roots
+  return ({ constant with info, sharing := result.result.sharing }, withExpansionStats ex result)
+
+private def outcomeImage (outcome : Except SharingError (Constant × TieredSharingResult)) :=
+  outcome.map fun (constant, report) =>
+    (serConstant constant, report.phase1.statesVisited, report.phase1.result.stats.costEvals)
+
+private def sameOutcome [BEq α] (a b : Except SharingError α) : Bool :=
+  match a, b with
+  | .ok a, .ok b => a == b
+  | .error a, .error b => a == b
+  | _, _ => false
 
 private def budgetControls : IO Unit := do
   -- Independent small enumerations of calls and the actual phiE work field.
@@ -31,6 +56,9 @@ private def budgetControls : IO Unit := do
         ensure (familyCalls ⟨k⟩ m == calls && familyWork ⟨k⟩ m closure == work)
           "precharged mathematical calls/work differ from independent enumeration"
   let witness := wrapRoots #[.var 20, .var 20] 0
+  for limits in [({ maxStates := 0 } : Limits), { maxCostEvals := 0 }, { maxOutputBytes := 0 }] do
+    ensure (sameOutcome (outcomeImage (normalizeFamily ⟨16⟩ .tagN witness limits))
+      (outcomeImage (closureNormalize ⟨16⟩ witness limits))) "area and closure refused differently"
   ensure (isErr (normalizeFamily ⟨12⟩ .tagN witness { maxStates := 0 })
     (· == .resourceExhausted .states 0)) "family state budget did not refuse"
   ensure (isErr (normalizeFamily ⟨12⟩ .tagN witness { maxCostEvals := 0 })
@@ -50,6 +78,9 @@ private def normalizationControls : IO Nat := do
     let alternate ← IO.ofExcept ((normalizeConstantSharingUniform 1 constant).mapError toString)
     for k in [0, 3, 24] do
       let (candidate, report) ← IO.ofExcept ((normalizeFamily ⟨k⟩ .tagN constant).mapError toString)
+      let reference ← IO.ofExcept ((closureNormalize ⟨k⟩ constant {}).mapError toString)
+      ensure (sameOutcome (outcomeImage (.ok (candidate, report))) (outcomeImage (.ok reference)))
+        "area normalization changed complete serialized bytes or mathematical charges"
       let after ← IO.ofExcept ((expand {} candidate.sharing (constantInfoRoots candidate.info) true).mapError toString)
       ensure (after.dag.nodes == before.dag.nodes && after.roots == before.roots)
         "experimental normalization changed the expanded terms"

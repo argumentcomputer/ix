@@ -1,4 +1,4 @@
-import Ix.Sharing.FamilyNormalize
+import Ix.Sharing.FamilyNormalizeArea
 
 /-! Offline whole-constant experiment; output is not a production canonical
 artifact. Reuse identical outputs but preserve/refuse differing existing data. -/
