@@ -9,8 +9,46 @@ open LSpec Tests.Ix.Compile.Harness
 private def ensure (ok : Bool) (message : String) : IO Unit :=
   unless ok do throw (IO.userError message)
 
+private def recordControls (env : Ixon.Env) : IO Unit := do
+  let typeName := toString (Tests.Ix.Kernel.ReaderRoundtrip.defs "Color")
+  let ctorName := toString (Tests.Ix.Kernel.ReaderRoundtrip.defs "Color.red")
+  let some typ := env.named[_root_.Ix.Name.fromLeanName (Tests.Ix.Kernel.ReaderRoundtrip.defs "Color")]?
+    | throw (IO.userError "missing record-control type")
+  let some ctor := env.named[_root_.Ix.Name.fromLeanName (Tests.Ix.Kernel.ReaderRoundtrip.defs "Color.red")]?
+    | throw (IO.userError "missing record-control constructor")
+  let owner := Tests.Ix.Compile.AuxCert.recordOf env typ.addr
+  ensure (owner != typ.addr && typ.addr != ctor.addr) "record address controls are vacuous"
+  let blocked ← IO.ofExcept (Pass3Kernels.LeanReason.expected env (.blocked typeName))
+  let small ← IO.ofExcept (Pass3Kernels.LeanReason.expected env (.smallEliminator typeName))
+  let minor ← IO.ofExcept (Pass3Kernels.LeanReason.expected env (.minorMismatch typeName ctorName))
+  let unsafeReason ← IO.ofExcept (Pass3Kernels.LeanReason.expected env .unsafeInductive)
+  ensure (blocked == ("blocked", s!"blocked: {owner}") &&
+    small == ("decline", s!"decline: reader: in-process model of #{(toString typ.addr).take 12}: small eliminator on a non-Prop block") &&
+    minor == ("decline", s!"decline: reader: in-process model of #{(toString typ.addr).take 12}: minor 1 (#{(toString ctor.addr).take 12}): 1 inductive hypotheses for 0 recursive fields") &&
+    unsafeReason == ("decline", "decline: reader: unsafe inductive declaration")) "measured reason forms changed"
+  for broken in [{ env with named := {} }, { env with consts := env.consts.erase typ.addr },
+      { env with consts := env.consts.erase owner },
+      { env with consts := env.consts.insert owner { buf := ByteArray.empty, len := 0 } }] do
+    ensure (Pass3Kernels.LeanReason.expected broken (.blocked typeName) matches .error _)
+      "missing/malformed record evidence was accepted"
+  ensure (Pass3Kernels.LeanReason.expected env (.minorMismatch typeName "missing ctor") matches .error _)
+    "missing minor constructor evidence was accepted"
+  let expected : LeanReport.Row := { label := "record-control", outcome := blocked.1, reason := blocked.2 }
+  ensure (!(Tests.Ix.Compile.AuxCert.leanOutcomeProblems #[expected]
+    #[{ expected with reason := s!"blocked: {typ.addr}" }]).isEmpty) "projection address passed as blocked owner"
+  let labels := Pass3Kernels.leanRecords.flatMap fun r => r.names.map (r.unit, ·)
+  let unsafeRows := Pass3Kernels.leanRecords.filter (·.unit == "UnsafeI")
+  ensure (Pass3Kernels.leanRecords.length == 17 && labels.length == 134 && labels.eraseDups.length == 134)
+    "measured record has missing/duplicate groups or labels"
+  ensure (((unsafeRows.filter (fun r => r.reason matches .unsafeInductive)).flatMap (·.names)).length == 15)
+    "UnsafeI decline coverage changed"
+  ensure (((unsafeRows.filter (fun r => r.reason matches .blocked _)).flatMap (·.names)).length == 54)
+    "UnsafeI blocked coverage changed"
+  IO.println "IxC records: 17 groups/134 exact labels; four reason forms; five absent/malformed evidence refusals and one wrong-owner refusal; UnsafeI 15 decline/54 blocked"
+
 private def check : IO Nat := do
   let (_, inp) ← Tests.Ix.Kernel.ReaderRoundtrip.input
+  recordControls inp.ixon
   let fixture := fun s => _root_.Ix.Name.fromLeanName (Tests.Ix.Kernel.ReaderRoundtrip.defs s)
   let some twice := inp.ixon.named[fixture "twice"]? | throw (IO.userError "missing twice")
   let some ax := inp.ixon.named[fixture "fidelityAxiom"]? | throw (IO.userError "missing axiom")
