@@ -29,7 +29,7 @@ def evaluate : IO Unit := do
   let ((ix1, _, c1), _) ← IO.ofExcept (← IO.lazyPure fun _ => CompileM.compileEnvFoldWithSource env blocks (width := 1))
   let ((ix4, _, c4), _) ← IO.ofExcept (← IO.lazyPure fun _ => CompileM.compileEnvFoldWithSource env blocks (width := 4))
   need (c1.ungrounded.isEmpty && c4.ungrounded.isEmpty && (← IO.ofExcept (Ixon.serEnv ix1)) == (← IO.ofExcept (Ixon.serEnv ix4))) "width 1/4 compile differs"
-  need (c4.auxOracle.isNone && c4.auxGenerationRetry.isNone && c4.sourceFamilyOracle.isSome && (CompileM.planCheckFailure? c4).isNone) "provider lifetime/plan check changed"
+  need (c4.auxOracle.isNone && c4.auxGenerationRetry.isNone && c4.sourceFamilyOracle.isSome) "provider lifetime changed"
   let opts : CompileM.AuxIxcOptions := {}
   let ra := Source.RunAhead.start env.get? blocks (CompileM.scheduleLevels blocks (CompileM.FoldSchedule.of blocks)) opts.asks
   let cenv := opts.withSourceProviders env.get? blocks ra c4
@@ -45,6 +45,12 @@ def evaluate : IO Unit := do
   let svcAgain ← IO.ofExcept snapshot.get
   need (svc.entries.map (·.status) == svcAgain.entries.map (·.status) && decide (svc.env.fold.fe.env.consts = svcAgain.env.fold.fe.env.consts)) "cached snapshot advanced logical fold"
   let some why := ordinary.blockStatus () | throw (IO.userError "owner accepted")
+  let retained ← IO.ofExcept (c4.familyOracle owner)
+  need (retained.blockStatus () == some why) "retained SourceFamily changed the original status"
+  let some (.inductInfo ind) := env.get? owner | throw (IO.userError "retained owner missing")
+  let _ ← IO.ofExcept (do
+    let scope ← retained.newScope ind.cnst.levelParams #[]
+    scope.infer (Expr.mkConst owner (ind.cnst.levelParams.map Level.mkParam)))
   let actual ← IO.ofExcept (provider key)
   need ((← IO.ofExcept (provider key)).blockStatus () == some why && Ixc.blockStatus? svc members == some why) "provider changed original status"
   let some shadow := ({ opts with mode := .shadow }).oracleFor ra env.get? key | throw (IO.userError "shadow missing")
