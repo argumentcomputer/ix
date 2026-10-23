@@ -287,7 +287,7 @@ missing canonical aliases: {missing}"
 - circular dependency?"
 
   -- the clique rows after the loop, as the fold does (`emitRows`, CQ5.2 (b))
-  return assembleEnv <$> emitRows acc
+  return (emitRows acc).bind finalizeEnv
 
 
 end Tests.Ix.Compile.ScheduleReference
