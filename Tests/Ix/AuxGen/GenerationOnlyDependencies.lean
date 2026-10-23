@@ -6,7 +6,12 @@ import Lean.Elab.Command
 
 namespace Tests.Ix.AuxGen.GenerationOnlyDependencies
 open _root_.Ix _root_.Ix.AuxGen
-open Tests.Ix.AuxGen.GenerationOnlySpike (runTail sameTail replaceRetry)
+open Tests.Ix.AuxGen.GenerationOnlySpike (runTail sameTail)
+
+deriving instance BEq for Ix.Compile.Pass.Clique.Decl,
+  Ix.Compile.Pass.Clique.CliquePlan, Ix.Compile.Pass.Clique.CliqueOutcome,
+  BlockReport, CompileM.MetaRefTable, CompileM.BlockState, CompileM.BlockResult,
+  Ix.Compile.OriginalData.Receipt, Ix.Compile.Pass.Published
 
 -- Explicit test-only access, with exact unique private-name matching. No
 -- constructor, environment or guard hook is added to the production API.
@@ -135,8 +140,8 @@ private def targets : Array String := #["Exists.intro", "Tests.Ix.Compile.Mutual
   "_private.Tests.Ix.Compile.Canonicity.0.Tests.Ix.Compile.Canonicity.ZFA2.Lists'.Subset.cons",
   "Tests.Ix.Compile.Mutual.NestedPredicate.VR.con", "IxVMInd.AuxTie.c"]
 
-def evaluate : IO Unit := do
-  GenerationOnlyFactory.evaluate
+def evaluate (factoryControls : Bool := true) : IO Unit := do
+  if factoryControls then GenerationOnlyFactory.evaluate
   let leanEnv ← getCompileEnv #[`Tests.Ix.Compile.ValidateAux, `Tests.Ix.IxVM, `Tests.Ix.Fixtures]
   let filtered := validateAuxClosure leanEnv
   let raw ← CompileM.rsCompilePhasesFFI filtered
@@ -144,33 +149,53 @@ def evaluate : IO Unit := do
   let blocks := raw.condensed.toCondensedBlocks
   let compiled := raw.compileEnv.toEnv
   let cenv := Tests.Compile.AuxGenDiff.seedBlockRegistry (Ix.Commit.mkCompileEnv { rawEnv := env, condensed := blocks, compileEnv := compiled }) blocks
+  let opts : CompileM.AuxIxcOptions := {}
+  let ra := Source.RunAhead.start env.get? blocks (CompileM.scheduleLevels blocks (CompileM.FoldSchedule.of blocks)) opts.asks
+  let cenv := opts.withSourceProviders env.get? blocks ra cenv
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
   let base := Source.Service.create pre env blocks (evidence := some (Ix.RoleEvidence.bundleEvidence ()))
   IO.println s!"production raw input: {filtered.length} constants, {blocks.blocks.size} blocks, {compiled.named.size} named surroundings"
-  controls base
+  if factoryControls then controls base
   let mut count := 0
   for label in targets do
     let choices := blocks.blocks.toArray.filter (fun (_, ms) => ms.toArray.any (·.pretty == label))
     need (choices.size == 1) s!"missing/ambiguous target {label}"
     let some (lo, ms) := choices[0]? | throw (IO.userError "target missing")
+    let lo := CompileM.blockKey lo ms
     let members := ms.toArray.qsort (fun a b => Ix.LeanIngress.nameCmp a b == .lt)
-    let some owner := members.findSome? (fun n => match env.get? n with | some (.inductInfo v) => v.all[0]? | _ => none)
-      | throw (IO.userError "owner missing")
     let svc := base.ensureNames members
     let some why := Ixc.blockStatus? svc members | throw (IO.userError "target unexpectedly accepted")
     let original mode := Ixc.oracleOf mode false { members, recursors := true, lookup := env.get? } none 8 (fun _ => .ok svc)
-    let expected ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members (replaceRetry (original .failClosed) (original .fallback)) true)
-    let actual ← IO.ofExcept (GenerationOnly.ofService svc owner)
+    let expected ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members (original .fallback))
+    let some provider := cenv.auxGenerationRetry | throw (IO.userError "driver provider absent")
+    let actual ← IO.ofExcept (provider lo)
     need (actual.mode == .failClosed && actual.recursors && actual.retry.isNone && actual.blockStatus () == some why) "factory policy changed"
-    let observed ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members (replaceRetry (original .failClosed) actual) true)
+    let some ordinary := cenv.auxOracle.bind (· lo) | throw (IO.userError "driver oracle absent")
+    need ordinary.retry.isNone "production retained legacy retry"
+    let observed ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members ordinary true)
+    let direct ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members actual)
+    need ({ observed.2 with auxReport := { observed.2.auxReport with retried := none } } == direct.2) s!"whole BlockState rollback changed: {label}"
     need (sameTail expected observed) s!"output changed: {label}"
     need (observed.2.auxReport.retried == some why && observed.1.2.admitted.size == observed.1.2.generated.size &&
       observed.1.2.admitted.all (fun (_, v) => v == .exempt s!"{AuxTable.notAcceptedPrefix}{why}")) s!"exemption/retry changed: {label}"
     need (observed.1.2.scopeEpoch == 0 && observed.1.2.ingressCache.isEmpty && observed.1.2.auxIngressSeen.isEmpty &&
       observed.1.2.sourceNames.isEmpty && observed.1.2.tcState.env.consts.isEmpty) s!"legacy activity: {label}"
+    let full ← IO.ofExcept ((← IO.lazyPure fun _ => CompileM.runBlockWithAux cenv ms lo).mapError toString)
+    let reference ← IO.ofExcept ((← IO.lazyPure fun _ => CompileM.runBlockWithAux
+      { cenv with auxOracle := some (fun _ => some (original .fallback)) } ms lo).mapError toString)
+    need (full.1 == reference.1 && full.2.2 == reference.2.2 &&
+      { full.2.1 with auxReport := {} } == { reference.2.1 with auxReport := {} } &&
+      full.2.1.auxReport.retried == some why) s!"full driver output changed: {label}"
+    if label == "Tests.Ix.Compile.Mutual.NestedPredicate.VR.con" then
+      let fn := Name.fromLeanName `Tests.Ix.Compile.Mutual.NestedPredicate.CtorInfo.ofKey
+      let owner := Name.fromLeanName `Tests.Ix.Compile.Mutual.NestedPredicate.VR
+      let some (.defnInfo dv) := svc.input.get? fn | throw (IO.userError "unresolved fixture missing")
+      let broken := replace svc fn (some (.defnInfo { dv with value := Expr.mkConst (fn.mkStr "missing") #[] }))
+      refused "driver unresolved" (runTail { cenv with auxGenerationRetry := some (fun _ => GenerationOnly.ofService broken owner) }
+        lo members ordinary true) s!"unsupportedExpr: AuxGen (generation retry): block {lo.pretty}: invalid: unknown constant in value of {fn.pretty}"
     count := count + 1
-    IO.println s!"production factory SAME {label}: {observed.1.2.generated.size} exempt rows"
+    IO.println s!"production driver SAME {label}: {observed.1.2.generated.size} exempt rows"
   need (count == 9) "incomplete nine-case confirmation"
-  IO.println "production generation-only factory: 9/9 strict output/exemption comparisons"
+  IO.println "production generation retry: 9/9 full-driver and tail comparisons; whole-state rollback"
 
 end Tests.Ix.AuxGen.GenerationOnlyDependencies

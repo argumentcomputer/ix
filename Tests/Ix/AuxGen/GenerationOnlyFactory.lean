@@ -8,7 +8,7 @@ import Tests.Ix.AuxGen.GenerationOnlyControls
 namespace Tests.Ix.AuxGen.GenerationOnlyFactory
 
 open _root_.Ix _root_.Ix.AuxGen
-open Tests.Ix.AuxGen.GenerationOnlySpike (runTail sameTail replaceRetry)
+open Tests.Ix.AuxGen.GenerationOnlySpike (runTail sameTail)
 
 private def need (condition : Bool) (why : String) : IO Unit :=
   unless condition do throw (IO.userError why)
@@ -83,9 +83,11 @@ def evaluate : IO Unit := do
     (fun (_, ms) => ms.any (Ix.Compile.ExactKey.nameEq · owner)) | throw (IO.userError "T block missing")
   let original := Ixc.oracleOf .failClosed false { members, recursors := true, lookup := env.get? } none 8 (fun _ => .ok svc)
   let frozen ← IO.ofExcept (Tests.Ix.AuxGen.GenerationOnlySpike.start svc owner)
-  let expected ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members
-    (replaceRetry original (Tests.Ix.AuxGen.GenerationOnlySpike.oracle .failClosed frozen 8)) true)
-  let observed ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members (replaceRetry original actual) true)
+  let expected ← IO.ofExcept (← IO.lazyPure fun _ => runTail
+    { cenv with auxGenerationRetry := some (fun _ => .ok (Tests.Ix.AuxGen.GenerationOnlySpike.oracle .failClosed frozen 8)) }
+    lo members original true)
+  let observed ← IO.ofExcept (← IO.lazyPure fun _ => runTail
+    { cenv with auxGenerationRetry := some (fun _ => .ok actual) } lo members original true)
   need (sameTail expected observed && observed.1.2.admitted == expected.1.2.admitted &&
     observed.2.auxReport.retried == some why && observed.1.2.generated.size == 2) "factory changed actual retry output/verdicts"
   need (observed.1.2.scopeEpoch == 0 && observed.1.2.ingressCache.isEmpty && observed.1.2.tcState.env.consts.isEmpty) "factory retry used legacy scope"

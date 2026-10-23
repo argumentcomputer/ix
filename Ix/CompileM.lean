@@ -102,6 +102,10 @@ structure CompileEnv where
       by the block's canonical key (`Ix.AuxGen.Oracle`), set by the wave fold
       (`compileEnvFoldWithSource`); `none` outside it. -/
   auxOracle : Option (Name → Option Ix.AuxGen.AuxOracle) := none
+  /-- Checked generation retry, requested only after an IxC refusal on an
+      unaccepted block. The key is the original schedule's canonical block
+      key, never a rewritten tail name or canonical class. Tail-only. -/
+  auxGenerationRetry : Option (Name → Except String Ix.AuxGen.AuxOracle) := none
   /-- Original-source capabilities, retained for post-compile plan checks. -/
   sourceFamilyOracle : Option Ix.AuxGen.SourceFamilyOracle := none
   /-- AuxGen M4c: AuxGen's part of the compile report (`Ix.AuxGen.CompileReport`:

@@ -10,11 +10,6 @@ private def need (condition : Bool) (why : String) : IO Unit :=
 
 private def isError (r : Except ε α) : Bool := match r with | .error _ => true | _ => false
 
-def replaceRetry (old next : AuxOracle) : AuxOracle :=
-  match old with
-  | .mk mode trace scope flat below recursors asked lazyScope admit status _ family =>
-    .mk mode trace scope flat below recursors asked lazyScope admit status (some next) family
-
 def runTail (cenv : CompileM.CompileEnv) (lo : Name) (members : Array Name) (o : AuxOracle)
     (retry : Bool := false) : Except String (((Option Ixon.AuxLayout × AuxTailRecs) × AuxKernelCtx) × CompileM.BlockState) :=
   runIn cenv lo do
@@ -114,7 +109,8 @@ def evaluate : IO Unit := do
   need ([st.differ, st.refused, st.scopesRefused, st.flatRefused, st.decisionsDiffer, st.recDiffer, st.recDecisionDiffer,
     st.recSkipDiffer, st.elimDiffer, st.leanRecDiffer, st.belowRefused, st.elimRefused, st.familyRefused].all (· == 0)) "generation shadow refusal/difference"
   need (sameTail legacy shadow) "generation changed emitted bytes, named metadata or recursor records"
-  let retryOracle := replaceRetry (original .failClosed) baseOracle
+  let retryOracle := original .failClosed
+  let cenv := { cenv with auxGenerationRetry := some (fun _ => .ok baseOracle) }
   let fresh ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members retryOracle true)
   need (sameTail legacy fresh && fresh.2.auxReport.retried == some why) "generation retry changed output or lost rollback reason"
   need (fresh.1.2.generated.size == 2 && fresh.1.2.admitted.size == fresh.1.2.generated.size) "exemption coverage differs/incomplete"
