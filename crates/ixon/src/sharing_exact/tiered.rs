@@ -19,8 +19,8 @@
 //! the final choice is the real-byte minimum over the three candidates, not
 //! a global optimum. One candidate is `tiered_at` (Lean `tieredAtWidth`).
 //!
-//! **Phase 1 (selection).** The stored set and its bodies are the
-//! uniform-`w` optimum ([`super::optimize_sharing_uniform`]). Phase 2 reads only
+//! **Phase 1 (selection).** The stored set is the least uniform-`w` minimum
+//! over the fixed K16 initial-component families. Phase 2 reads only
 //! what the phase-1 expressions contain, so they are not built: the dry run
 //! (`UniformPlan::shares`) reports it from the same decisions.
 //!
@@ -116,7 +116,7 @@ use super::dict::{
 };
 use super::prof::{self, Phase};
 use super::uniform::{
-  DagPrep, UniformPlan, UniformSharingResult, optimize_uniform_with,
+  DagPrep, UniformPlan, UniformSharingResult, optimize_family_with,
   pinned_order, set_prec,
 };
 use super::{
@@ -1061,7 +1061,7 @@ fn tiered_at(
   w: u64,
 ) -> Result<Candidate, SharingError> {
   tiered_at_using(layout, dag, prep, meter, w, |meter| {
-    optimize_uniform_with(w, dag, prep, meter)
+    optimize_family_with(w, dag, prep, meter)
   })
 }
 

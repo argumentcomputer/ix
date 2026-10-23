@@ -46,7 +46,7 @@ private def normalizationControls : IO Nat := do
   for (roots, index) in samples.zipIdx do
     let constant := wrapRoots roots index
     let before ← IO.ofExcept ((expand {} constant.sharing roots true).mapError toString)
-    let exact ← IO.ofExcept ((normalizeConstantSharingTiered .tagN constant).mapError toString)
+    let exact ← IO.ofExcept ((Reference.normalizeConstantSharingTiered .tagN constant).mapError toString)
     let alternate ← IO.ofExcept ((normalizeConstantSharingUniform 1 constant).mapError toString)
     for k in [0, 3, 24] do
       let (candidate, report) ← IO.ofExcept ((normalizeFamily ⟨k⟩ .tagN constant).mapError toString)

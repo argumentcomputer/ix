@@ -76,15 +76,15 @@ theorem canonicalTiered_reexpand {layout : ShareLayout} {limits : Limits} {ex : 
 /-- **Idempotence.** If expanding the output yields the same canonical DAG
 and root IDs as expanding the input, normalizing the output reproduces its
 sharing table, roots and table terms. -/
-theorem canonicalSharingTieredTable_idem {layout : ShareLayout} {limits : Limits}
+theorem Reference.canonicalSharingTieredTable_idem {layout : ShareLayout} {limits : Limits}
     {sharing roots : Array Ixon.Expr} {r : TieredSharingResult} {ex ex' : Expanded}
-    (h : canonicalSharingTieredTable layout sharing roots limits = .ok r)
+    (h : Exact.Reference.canonicalSharingTieredTable layout sharing roots limits = .ok r)
     (hex : expand limits sharing roots true = .ok ex)
     (hex' : expand limits r.result.sharing r.result.roots true = .ok ex')
     (hd : ex'.dag = ex.dag) (hr : ex'.roots = ex.roots) :
-    ∃ r', canonicalSharingTieredTable layout r.result.sharing r.result.roots limits =
+    ∃ r', Exact.Reference.canonicalSharingTieredTable layout r.result.sharing r.result.roots limits =
         .ok r' ∧ encodingOf r' = encodingOf r ∧ r'.stats = r.stats := by
-  unfold canonicalSharingTieredTable at h ⊢
+  unfold Exact.Reference.canonicalSharingTieredTable at h ⊢
   rw [hex] at h
   rw [hex']
   change canonicalTieredExpanded layout limits ex = .ok r at h

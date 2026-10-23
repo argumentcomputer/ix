@@ -683,7 +683,7 @@ The adopted canonicalization revision is **`sharing-k16-greedy-v1`**, with K = 1
 It is recorded here and in [sharing-minimum §14](sharing-minimum.md#14-canonical-rule-revision-sharing-k16-greedy-v1).
 This is a change to the canonical choice of sharing, with no change to the wire grammar,
 checked-object/claim format 4, or the separate M6D metadata envelope version 5.
-Production cutover and its full compiler gates are in progress. The revision replaces
+The cutover candidates implement this revision; combined compiler gates remain pending. It replaces
 the previous unbounded phase-1 search; the table rules and phases 2 and 3 are unchanged.
 
 The canonical table is the output of `Ix.Sharing.Exact.canonicalSharingTiered
@@ -803,8 +803,9 @@ a partial or best-so-far table.
 
 For `sharing-k16-greedy-v1`, the family proof stack proves the minimum within the
 fixed family, successful-output meaning and wire validity, representation congruence,
-and conditional idempotence. Production-entry and audit integration are part of the
-cutover. Complete old/new bytes agree when both routes succeed with the same limits,
+and conditional idempotence. The Lean production entry and its audits carry the
+meaning, format and serialized-length contracts without new caller premises.
+Complete old/new bytes agree when both routes succeed with the same limits,
 all initial components at all three widths have at most 16 members, and the old
 route uses `uniformSubsetSearch = false`. Old-route success alone is not yet a proof
 of new-route success. [Sharing-minimum §14.3](sharing-minimum.md#143-proof-scope-and-follow-up)
@@ -817,13 +818,14 @@ claim about components that use the new greedy family.
 The following theorems are machine-checked in Lean, in `IxSharingVerify`
 (the `IxSharingVerify` library; the TagN theorems are in
 `IxC/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
-`IxSharingVerify/Audit/Statements.lean` (111 roots), which
+`IxSharingVerify/Audit/Statements.lean` (174 roots at the K16 cutover), which
 `lake build --wfail IxSharingVerify` checks: every root uses exactly its
 listed axioms, which are among `propext`, `Classical.choice` and
 `Quot.sound`, and no declaration of an `Ix.Sharing` module uses `sorry`
-(`Audit/SorryFrontier.lean`). `lake lint` builds the library too. The construction theorems are stated for a
-successful run on the canonical DAG of the input (`ex.dag`, `ex.roots`); the
-step that builds that DAG is outside them (see "Expansion" below).
+(`Audit/SorryFrontier.lean`). `lake lint` builds the library too. Lower-level
+theorems describe runs on a canonical DAG (`ex.dag`, `ex.roots`). The production
+wrapper theorems include the actual input expansion and derive their graph and
+format premises from the successful run's checks.
 
 - **Reference phase 1 minimality** (`IxSharingVerify/UniformOptimality.lean`):
   `optimizeUniform_minimum` and `optimizeUniform_least`. Suppose
@@ -885,15 +887,21 @@ step that builds that DAG is outside them (see "Expansion" below).
   `SharingRunOK`). The theorems about the stored bytes
   (`BlockResult.mk'_codec_roundtrip`,
   `BlockResult.constantInfo_codec_roundtrip`,
-  `finishConstantInfoWithSharing_run_codecWF`) are proved but are not audit
-  roots: `BlockResult.mk'` hashes the block, and the Blake3 package's
-  `HasherOps.hash` carries a `native_decide` axiom, which the manifest does
-  not admit. No theorem covers the compiler's per-declaration drivers
-  before that tail.
+  `finishConstantInfoWithSharing_run_codecWF`) are audit roots with the
+  allowed standard axioms. Hash finalization supplies its 32-byte bound by
+  a kernel-checked proof, with no `native_decide` axiom. These codec statements
+  do not by themselves prove the complete per-declaration compiler or
+  `CompileCorrect`.
 - **Structural IDs** (`SharingExactCanon.lean`: `canonicalize_det`): two
   interner outputs that pass the interner's checks, are hash-consed and
   whose roots denote the same terms canonicalize to the same DAG and root
   IDs.
+- **Input expansion and meaning** (`CanonicalMeaning.lean`, `FamilyDomain.lean`,
+  `CanonicalProduction.lean`): the actual successful ingestion and canonical
+  numbering preserve the ordered source expressions, and the successful family
+  output unfolds to those expressions. Arbitrary prior backward sharing is
+  covered by the shared-input meaning theorem. The pointer cache is an
+  implementation aid; structural confirmation protects term identity.
 - **Integers**: the TagN theorems of [Integer Encoding](#integer-encoding-tagn).
 
 **Compiled code.** The compiler runs faster bodies than the specifications
@@ -904,7 +912,7 @@ every theorem keeps talking about the specification; the module map of
 `Ix/Sharing/Exact.lean` lists them. The audit module
 `IxSharingVerify/Audit/CompiledCode.lean` fails the build unless every
 `@[csimp]` theorem of an `Ix` module on the compiler's import path is an audit
-root (19), and unless no declaration of `Ix.Sharing.*` is
+root (28 at the K16 cutover), and unless no declaration of `Ix.Sharing.*` is
 `unsafe`, `partial`, `@[implemented_by]` or `@[extern]`, except the
 interner's pointer-cache key `exprPtr`.
 
@@ -912,8 +920,10 @@ interner's pointer-cache key `exprPtr`.
 [Canonical construction](#canonical-construction) stay in the code: the
 layout length against the evaluated length and against phase 1, the
 re-expansion to the stored terms and the input's root IDs, and the wire
-domain (`phase3_le_phase1` proves that the comparison with phase 1 never
-fails). Rust runs every check listed in the module documentation of
+domain. The retained exact reference has its `phase3_le_phase1` proof; the
+family successful-run theorem obtains that inequality from the executed guard.
+Proving the guard unreachable for the entire family domain remains follow-up.
+Rust runs every check listed in the module documentation of
 `sharing_exact/tiered.rs`. The theorems are stated for successful runs, so a
 failing check turns a run into an error, never into a different table.
 
@@ -925,22 +935,12 @@ Not claimed:
 - **Phase 2 on larger tables.** For tables of more than 1,032 entries, whose
   indices span the 2- and 3-byte rungs, the Kahn order is not claimed to
   minimize `Σ ref · width`.
-- **Expansion.** The step from the input expressions to the canonical DAG
-  (`expand`: share expansion and interning, with a pointer cache keyed by
-  `exprPtr`, an `unsafe` address read) is not covered: no theorem states
-  that the DAG denotes the input expressions. The round trip to the input is
-  therefore proved only relative to that DAG; the run-time re-expansion
-  check uses the same interner, so it does not check the expansion
-  independently. Logically `exprPtr` is an arbitrary function of the
-  expression; no theorem inspects it, so the theorems hold whatever addresses
-  a run sees. Independence from in-memory pointer sharing is tested, not
-  proved: in `exact-sharing`, pool-shared, deserialized, DAG-shared and
-  re-encoded inputs give identical bytes under the tiered construction and
-  the exact search (120 generated inputs).
-- **Idempotence** is proved only under the hypothesis that expanding the
-  output yields the input's canonical DAG and root IDs
-  (`canonicalSharingTieredTable_idem`). It is tested: re-running the Rust
-  construction on every stored constant reproduces the stored bytes, for
+- **Unconditional output-domain closure and idempotence.** Family representation
+  congruence and conditional idempotence are proved, including complete constant
+  bytes. They still require successful raw expansion of the output; proving that
+  expansion always succeeds on the stated domain remains follow-up. The old
+  exact `Reference.canonicalSharingTieredTable_idem` theorem is retained.
+  Earlier exact-route tests re-ran every stored constant and reproduced its bytes for
   the Init and Init+Std files compiled on Lean 4.34.0 and for the Init and
   Mathlib files compiled on Lean 4.33.1.
 - **Rust.** The Rust implementation is not proved. It is checked against
@@ -948,7 +948,9 @@ Not claimed:
   it runs over a whole `.ixe`). Its phase-1 search evaluates each
   component's area under a truncated cost model, where Lean's specification
   evaluates the component's whole closure; the outputs are equal on every
-  input tested. On corpora compiled with `ix compile` on Lean 4.34.0, with
+  input tested. The following measurements are historical exact-route evidence;
+  §14.4 of sharing-minimum records the K16 prototype evidence, and the production
+  gates remain separate. On corpora compiled with `ix compile` on Lean 4.34.0, with
   Rust in its checked mode, Lean and Rust produce the same bytes for all
   56,783 stored constants of Init and all 100,277 of Init+Std, with no
   resource exhaustion on either side; on Lean 4.33.1 the same held for

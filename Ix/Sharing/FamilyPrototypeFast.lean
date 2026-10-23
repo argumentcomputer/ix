@@ -5,10 +5,10 @@ import all Ix.Sharing.Exact.UniformSearchLocal
 
 @[expose] public section
 
-/-! A proved closure-local evaluator for the offline family prototype.
+/-! A proved closure-local evaluator for component families.
 Positions are prepared once per component. Each subset allocates only local
 closure rows; the DAG-sized base tables remain read-only. This does not change
-the family, numeric domain, trace counters, or production sharing entry.
+the family, numeric domain or trace counters.
 
 The checks are representation checks, never a choice between families. A
 failed check retains the original evaluator. The area/TBase evaluator and

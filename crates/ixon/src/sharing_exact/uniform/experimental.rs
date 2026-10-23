@@ -13,7 +13,7 @@ use super::*;
 /// Trace schema v1; streamed before slack filtering. Model work is not native
 /// time or a proved operational cost. `closure` is the full upward closure.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Event {
+pub(crate) enum Event {
   /// Cooperative observation/abort point, not part of the family trace.
   Progress,
   Input {
@@ -130,7 +130,7 @@ fn width_event(w: u64, s: &Initial<'_>) -> Event {
 /// convolution, knapsack, phase 2, or materialization. Serialized input bytes
 /// (including unreachable entries and universe payloads) are supplied by the
 /// runner, separately from these reachable-DAG/payload metrics.
-pub fn classify(
+pub(crate) fn classify(
   c: &Constant,
   limits: &ExactSharingLimits,
   observe: &mut Observe<'_>,
@@ -161,57 +161,7 @@ pub fn classify(
   Ok(())
 }
 
-/// Explicit mask enumeration is the bounded exact evaluator: exactly 2^m
-/// complete subsets, no recursive search, pruning or partial-state evaluation.
-/// The greedy path evaluates each remaining one-member extension. Every count
-/// has a feasible row before trimming, even when its delta is negative or tied.
-fn family_table(
-  members: &[TermId],
-  k: usize,
-  mut cost: impl FnMut(&[TermId]) -> Result<i128, SharingError>,
-) -> Result<CTable, SharingError> {
-  if k > 24 {
-    return Err(internal("EXPERIMENT unsupported K > 24"));
-  }
-  if !members.windows(2).all(|p| p[0] < p[1]) {
-    return Err(internal("EXPERIMENT noncanonical component members"));
-  }
-  let mut rows: CTable = vec![None; members.len() + 1];
-  if members.len() <= k {
-    for mask in 0..(1u64 << members.len()) {
-      let chosen: Vec<_> = members
-        .iter()
-        .enumerate()
-        .filter_map(|(j, &t)| ((mask >> j) & 1 != 0).then_some(t))
-        .collect();
-      let d = cost(&chosen)?;
-      let row = &mut rows[chosen.len()];
-      if better(d, &chosen, row.as_ref()) {
-        *row = Some((d, chosen));
-      }
-    }
-  } else {
-    let mut chosen = Vec::new();
-    rows[0] = Some((cost(&chosen)?, chosen.clone()));
-    for row in rows.iter_mut().skip(1) {
-      let mut best = None;
-      for &t in members {
-        let Err(at) = chosen.binary_search(&t) else { continue };
-        let mut next = chosen.clone();
-        next.insert(at, t);
-        let d = cost(&next)?;
-        if better(d, &next, best.as_ref()) {
-          best = Some((d, next));
-        }
-      }
-      let next =
-        best.ok_or_else(|| internal("EXPERIMENT invalid component members"))?;
-      chosen = next.1.clone();
-      *row = Some(next);
-    }
-  }
-  Ok(rows)
-}
+use super::family::family_table;
 
 fn uniform_family(
   w: u64,
@@ -322,7 +272,7 @@ fn uniform_family(
 /// their resource/format errors are reported, not converted to a success.
 /// No admitted family changes when a budget is exhausted. K is experiment
 /// data (0..=24), NOT a format identifier or default compiler option.
-pub fn normalize(
+pub(crate) fn normalize(
   c: &Constant,
   limits: &ExactSharingLimits,
   k: usize,
@@ -406,9 +356,9 @@ mod tests {
 
   #[test]
   fn experimental_threshold_ties_and_refusals() {
-    for n in [0u32, 1, 2, 12, 13] {
+    for n in [0u32, 1, 2, 12, 13, 16, 17] {
       let members: Vec<_> = (0..n).collect();
-      for k in [0usize, 12] {
+      for k in [0usize, 12, 16] {
         let mut calls = 0;
         let rows = family_table(&members, k, |_| {
           calls += 1;
