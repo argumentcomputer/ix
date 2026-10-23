@@ -5,43 +5,42 @@ code, together with what follows from them: format version 4, the new identifier
 rule for `Share` inside metadata, and the IxVM circuit codec. For each part it names the Lean,
 Rust and IxVM code, the theorems that cover it and the fixtures that pin it. The normative
 format is [Ixon](Ixon.md); the decisions behind it are in [`sharing-minimum.md`](sharing-minimum.md)
-§12–§13. Code is referred to by file and symbol, not by line.
+§12–§14. Code is referred to by file and symbol, not by line.
 
-Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13):
+Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14):
 
 - the canonical sharing of a constant is `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Rust
   `canonical_sharing_tiered(ShareLayout::TagN, ..)`), the only sharing construction of both
-  compilers; the heuristic and its proofs are removed;
+  compilers, under `sharing-k16-greedy-v1` (K = 16); the heuristic and its proofs
+  are removed. The old unbounded exact search is a reference route;
 - TagN with flag widths 0, 2 and 4 replaces Tag0, Tag2 and Tag4 at every site of the grammar and
   is the only integer code; there is one format, with no dual-format gate and no reader for the
   old one;
-- references stay backward. The format version is 4, together with the object-format byte (4),
-  the resource validator ID (`"ixon-v4/resource-v1"`) and `wireFormatId` (`"ixon-v4"`). The env
-  header is TagN(4, `0xE`, version), the byte `0xE4`, read by context;
+- references stay backward. Checked payloads and claims retain object format 4,
+  the resource validator ID (`"ixon-v4/resource-v1"`) and `wireFormatId` (`"ixon-v4"`).
+  The environment envelope is v4 (`0xE4`) or v5 (`0xE5`) with M6D original records
+  or original-hint overrides;
+  that metadata extension does not change the checked payload grammar;
 - compiler limits are a safety net: metering and fail-closed errors stay, the defaults sit far
   above every corpus maximum, and `ix compile --sharing-limits` overrides them;
 - a `Share` inside a metadata expression is read in the extended index space of
   `sharing-minimum.md` §13.1; there is no metadata construction;
 - the IxVM circuit codec changes in the same PR.
 
-**Status at this PR's head:**
+**Current implementation map:**
 
 | Item | State |
 |---|---|
 | TagN at every Lean, Rust and IxVM site; six rungs (widths 1, 2, 3, 4, 5, 9); old encoders, decoders and canonical-integer checks deleted | done |
-| Exact-sharing pricing and tie-break bytes at TagN widths; count threshold θmax (finding 7); telescope-spine guard (finding 9) | done |
+| Sharing pricing and tie-break bytes at TagN widths; count threshold θmax (finding 7); telescope-spine guard (finding 8) | implemented; guards can still refuse |
 | Canonical construction as the only compiler route in Lean and Rust; heuristic removed | done (§3.2, §8) |
 | Compiler limits as a safety net with a CLI override | done (§8) |
-| Proofs: TagN codec, phase-1 minimality, per-phase specifications, serialized length and wire validity of the output, the compiler's sharing builder over it; fast twins attached by audited `@[csimp]` theorems | done; 111 audit roots in `IxSharingVerify` on Lean 4.34.0 (§4) |
-| Version 4, object format 4, `ixon-v4` identifiers; readers reject other versions | done (§6) |
-| Fixtures and pins regenerated through their producers | done, except the FLT benchmark artifact and a new dated aggregate fixture (§6) |
+| Successful-run proofs for the production family, input expansion, format and builder codec; audited fast twins | proved with the conditions described in §4; totality, output-domain closure and cost remain follow-ups |
+| Checked object format 4 and `ixon-v4` identifiers; v4/v5 environment envelopes | implemented; see [Ixon](Ixon.md#environment) for the envelope distinction |
 | `.ixe` caches keyed by the format version | done (§6) |
 | Metadata `Share` reader rule in both decompilers | done; no metadata construction (§5.3) |
-| IxVM: TagN codec, claim scope bytes, v4 primitive addresses, re-pinned FFT costs | done (§3.1, §6) |
-| Lean/Rust differential (Init, Init+Std, Mathlib sample) | done: on Lean 4.34.0, Init 56,783 and Init+Std 100,277 stored constants; on Lean 4.33.1, Init 56,622 and a Mathlib sample of 20,284; 0 disagreements (§7 risk 1) |
-| `ix compile` time: Mathlib within 1.5× of the heuristic route | done: 1.13–1.26× in the final back-to-back runs (`sharing-minimum-performance.md`) |
-| CI-equivalent gates at this PR's head | passed (§8, "Gates at this PR's head") |
-| Lean construction within 2–4× of Rust | not met: about 8–12× single-threaded on Lean 4.34.0 (8.3–15.4× on 4.33.1; follow-up, `sharing-minimum.md` §12.18) |
+| IxVM TagN codec, claim scope bytes and v4 primitive addresses | implemented (§3.1, §6); the historical gate record below does not establish current FFT cost-pin acceptance |
+| Corpus parity and performance | [K16 production evidence](sharing-minimum.md#144-evidence-and-release-gates); older exact-route measurements below are historical |
 
 ## 1. Key findings
 
@@ -172,8 +171,9 @@ explicit limits.
 | `decompile.rs`: `roundtrip_block` | `AuxGenError::Recompile`, which keeps the compile error and its category and names the constant and step (`recompile of '<name>' (sharing): …`); the recompiled address must equal `Named.original`, so the recompile uses exactly the compile route |
 
 Errors: resource exhaustion is `CompileError.resourceLimit` (it names the limit and the
-override); every other construction failure is `CompileError.sharingConstruction`. There is no
-fallback.
+override); every other construction failure is `CompileError.sharingConstruction`.
+The initial K16 gate selects the exact or greedy family before search; a
+failure does not switch families or emit a best-so-far result.
 
 ### 3.3 Share consumers that are independent of the encoding
 
@@ -197,82 +197,45 @@ table logically.
 
 ## 4. Verification theorems
 
-Everything below builds in `lake build --wfail IxSharingVerify` (the proofs under
-`IxSharingVerify`), except the TagN and codec theorems, which are in `IxC/Ixon/Verify` and build
-with the certified checker's byte stage (`lake -d IxC build --wfail`). Its trust audit
-(`IxSharingVerify/Audit/Statements.lean`, 111 roots on Lean 4.34.0, among them the TagN roots)
-fixes each root's axioms exactly; `Audit/SorryFrontier.lean` checks that no declaration of an
-`Ix.Sharing` module uses `sorry`; and `Audit/CompiledCode.lean` checks the compiled code (below).
-`lake lint` builds it as well.
+The current theorem inventory and limitations are in
+[Ixon, "What is proved, and what is not"](Ixon.md#what-is-proved-and-what-is-not).
+The source map is:
 
-- **TagN** (`IxC/Ixon/Verify/Basic.lean` and `TagN.lean`): the byte specification `tagNBytes`, the writer and
-  reader laws `putTagN_writes` and `getTagN_reads`, canonicity and injectivity
-  (`runGetExact_getTagN_eq`, `runGetExact_getTagN_iff`, `runGetExact_getTagN_inj`,
-  `putTagN_inj`) and the two rejection laws (`getTagN_rejects_code`,
-  `getTagN_rejects_overflow`). The codec theorems of `IxC/Ixon/Verify/` `Basic.lean`, `Expr.lean`,
-  `ExprSpine.lean` and the constant codecs (`Constant.lean`, `ConstantTables.lean`,
-  `NonrecursiveConstant.lean`, `RecursorConstant.lean`, `MutualConstant.lean`) are stated over
-  these facts; TagN is bijective, so no
-  canonical-integer side conditions remain.
-- **Size model**: `SharingExact.lean` proves `exprSize_eq_serExpr` (the TagN-priced size is the
-  serialized length of every `wireWF` expression) and `serConstant_size_decomposition`;
-  `UniformLength.lean` proves `optimizeUniform_variableBytes` (phase 1's serialized length is its
-  model length when every index has width `w`).
-- **Construction**, for a successful run on the canonical DAG `ex.dag`/`ex.roots`: phase 1 in
-  `UniformOptimality.lean` (`optimizeUniform_minimum`, `optimizeUniform_least`, over the
-  `Uniform*` modules), phase 2 in `TieredTier.lean` (`allocate_spec`, `firstTier_spec`) and
-  `TieredGuard.lean` (`allocate_optimal`, `phase3_le_phase1`), phase 3 in `TieredPhase3.lean`
-  (`materializeTable_min`, `rematerialize_spec`, `materializeTableOnePass_eq`), the selection in
-  `TieredSelect.lean` (`canonicalTieredCore_select`), determinism and re-expansion against the
-  DAG in `TieredIdem.lean`, structural IDs in `SharingExactCanon.lean` (`canonicalize_det`), and
-  in `TieredWire.lean` the format facts (`FormatOK`, `canonicalSharingTiered_format`,
-  `canonicalSharingTieredTable_format`) and the serialized length
-  (`canonicalSharingTiered_serialized`, `canonicalSharingTieredTable_serialized`:
-  `variableBytes` is `tag0Size` of the table count plus the `serExpr` lengths of every entry and
-  root, and `modelBytes = variableBytes`).
-- **The compiler's sharing builder** (`Builder.lean`):
-  `buildConstantWithSharing_wireWF` takes the entries' and roots' `wireWF` and the table
-  capacity from `FormatOK`. `SharingRunOK limits run` states the outcome of a run whose only
-  possible failure is the builder: either `run = .ok (result, state')` with
-  `BlockResultCodecWF result` (the block is `wireWF` and its bytes decode to it exactly), or
-  `run = .error err` where the builder returns `.error err` on some payload and tables. Under
-  `SharingSucceeds` only the first case remains. The singleton-driver tail concludes
-  `SharingRunOK compileEnv.sharingLimits (run ..)` (`finishConstantInfoWithSharing_run_codecWF`).
-  The theorems about the stored bytes (`BlockResult.mk'_codec_roundtrip`,
-  `BlockResult.constantInfo_codec_roundtrip`, `finishConstantInfoWithSharing_run_codecWF`) are not
-  audit roots: `BlockResult.mk'` hashes the block with Blake3, whose package carries a
-  `native_decide` axiom that the manifest does not admit. No theorem covers the per-declaration
-  drivers before that tail. `FormatOK`'s backwardness conjuncts are the decoders' rule that a
-  `Share` refers only to an earlier entry.
+| Contract | Source and conditions |
+| --- | --- |
+| TagN and constant codec | `IxC/Ixon/Verify/{Basic,TagN,Constant}.lean` and the supporting codecs; wire bounds and exact decoding remain explicit |
+| Actual input expansion and output meaning | `IxSharingVerify/CanonicalMeaning.lean`, `FamilyDomain.lean`, `CanonicalProduction.lean`; successful production runs preserve the ordered input expressions, including the input-to-DAG bridge |
+| K16 family minimum, format and serialized length | `IxSharingVerify/CanonicalProduction.lean`; the successful production entry supplies the domain and check premises; phase 1 minimizes within the fixed family, not over every subset of a large component |
+| Representation congruence and idempotence | `IxSharingVerify/FamilyIdempotence.lean`; congruence requires the same unfolded roots, non-expression fields, refs and universes, and both normalizations must succeed at the same configuration, layout and limits |
+| Compatibility with the old exact route | `IxSharingVerify/FamilyExactConstant.lean`; every initial component at all three widths has at most 16 members, the old route uses `uniformSubsetSearch = false`, and both public wrappers succeed with the same limits |
+| Compiler builder and stored-byte decoding | `IxSharingVerify/Builder.lean`; `buildConstantWithSharing_wireWF_headers` requires wire-safe header fields and reference/universe tables plus builder success; `finishConstantInfoWithSharing_run_codecWF` retains its wire-safe payload/table premises and allows a builder error |
+| Compiled implementations equal their specifications | audited `@[csimp]` equalities, including `Ix/Sharing/FamilyNormalizeArea.lean`; equality covers complete results, charges and errors, and the guarded area evaluator falls back to the reference evaluator without changing the family |
 
-**Specification, fast twin, csimp theorem, audit root.** The theorems describe the
-specification modules of `Ix/Sharing/Exact/` (`Basic`, `Dag`, `Dictionary`, `Search`,
-`UniformSearch`, `Uniform`, `Tiered`). The compiler runs faster bodies: each fast twin (in
-`Phase3`, `Reexpand`, `UniformSearchLocal`, `TierFast`, `PinnedDeps`, `PinnedFast`,
-`KnapsackFast`, or inside a specification module) is attached by a `@[csimp]` theorem
-`@f = @fFast`, an unconditional equality of the whole result (values, metered counts, errors),
-so compiled code calls the twin. A csimp applies only to code compiled after it, so `TieredFast`
-recompiles the callers (`allocate`, `tieredAtWidth`, `canonicalTieredCore`,
-`canonicalTieredExpanded`, `optimizeUniformExpanded`; `*_eq_C`) to reach the twins. Each csimp
-theorem is an audit root, and `Audit/CompiledCode.lean` fails the build if a csimp theorem of an
-`Ix` module on `Ix.CompileM`'s import path is not (19), or if `Ix.Sharing.*`
-declares anything `unsafe`, `partial`, `@[implemented_by]` or `@[extern]` other than the
-interner's pointer-cache key `exprPtr`. The module map in the docstring of
-`Ix/Sharing/Exact.lean` lists every specification, twin and csimp theorem; the three widths run
-as parallel tasks above 1,024 DAG terms (`tieredCandidates`, `tieredCandidates_eq`).
+The compatibility row compares
+`Ix.Sharing.Exact.Reference.normalizeConstantSharingTiered` with the production
+`Ix.Sharing.Exact.normalizeConstantSharingTiered` under its listed conditions.
+It does not assert unchanged bytes for the whole K16 cutover; §14.4 of
+`sharing-minimum.md` records the changed corpus constants and their attribution.
 
-Not machine-checked: phase-2 optimality for tables of more than 1,032 entries; any global
-minimum; and the step from the input expressions to the canonical DAG (`expand`, whose interner
-keys a cache by the `unsafe` address `exprPtr`): no theorem states that the DAG denotes the input
-expressions, so the round trip is proved relative to the DAG and re-checked at run time through
-the same interner, and independence from pointer layout is tested (`docs/Ixon.md`, "What is
-proved, and what is not"). The run-time checks that remain in `rematerialize` are: layout length
-= evaluated length; at most phase 1's layout length; re-expansion to the stored terms and the
-input's root IDs; every output expression in the wire domain.
+`lake build --wfail IxSharingVerify` builds these sharing proofs and audits;
+`lake -d IxC build --wfail` builds the codec proofs with the certified checker.
+`Audit/Statements.lean` fixes each root's axiom set, `Audit/SorryFrontier.lean`
+rejects `sorryAx` in sharing declarations, and `Audit/CompiledCode.lean`
+requires every compiler-path `csimp` equality to be an audit root. The
+builder's stored-byte roots are included: hash finalization uses
+`Address.admissionHash`, with no `native_decide` axiom or hash-injectivity
+premise. The module map in `Ix/Sharing/Exact.lean` identifies the specification
+and compiled implementation of each stage.
 
-The Rust construction is not proved. Its phase-1 search evaluates a component's area under a
-truncated cost model, where the Lean specification evaluates the component's whole closure; the
-outputs are equal on every input tested.
+These are successful-run contracts. Old-route success does not imply
+new-route success at an arbitrarily tight budget; idempotence does not
+silently supply second-run success. Totality on the stated framed-input
+domain, output-domain closure and cost bounds remain follow-up work
+([§14.3](sharing-minimum.md#143-proof-scope-and-follow-up)). There is no global
+minimum claim or phase-2 optimum for tables above 1,032 entries. Rust has
+differential evidence, not a universal refinement proof. Sharing preserves
+the unfolded Ixon expressions; these results do not complete the Source
+acceptance or compiler value-preservation composition.
 
 The former `Ix.Tc.Verify` tree, whose `native_decide` serde fixtures recomputed bytes with the
 codec, is retired ([kernel](kernel.md), "Removal ledger").
@@ -337,12 +300,13 @@ anonymous bytes (metadata is not part of `Constant`).
 
 ## 6. Version, identifiers, fixtures and caches
 
-Policy (`docs/Ixon.md`, "Environment Serialization"): any byte change bumps the version,
-readers reject a mismatch, there is no back-compat reading, and `.ixe` files are regenerated.
+The checked payload grammar and the metadata envelope have separate versions
+([Ixon, "Environment Serialization"](Ixon.md#environment-serialization)).
+The sharing-rule revision is separate again (§14 of `sharing-minimum.md`).
 
 | Item | Lean | Rust | Value |
 |---|---|---|---|
-| format version | `Ixon.Env.VERSION` | `Env::VERSION` | 4; `.ixe` header `0xE4` |
+| environment envelope version | `Ixon.Env.envelopeVersion` | `Env::envelope_version` | 4 (`0xE4`) with empty original-data tables; otherwise 5 (`0xE5`) |
 | object-format byte (claims, proofs, catalog manifests) | `Ixon.Env.OBJECT_FORMAT` | `Env::OBJECT_FORMAT` | 4 |
 | wire format ID | `Ixon.wireFormatId` | `WIRE_FORMAT_ID` | `"ixon-v4"` |
 | resource validator ID (profile prefix `<ID>/profile\0`) | `Ix.Resource.validatorId` | `resource::addressed::VALIDATOR_ID` | `"ixon-v4/resource-v1"` |
@@ -350,8 +314,9 @@ readers reject a mismatch, there is no back-compat reading, and `.ixe` files are
 | text grammar version | `Ixon.Syntax.VERSION` | `syntax::VERSION` | 3 (unchanged; it covers no integer bytes) |
 
 The env readers (Lean `getEnv`, `getEnvVerifiedLazy`; Rust `read_env_header`, used by
-`Env::get`, `get_anon`, `get_anon_mmap` and `parse_lazy_index`) reject any other version with
-"expected .ixe format version 4, got N — recompile the artifact". Claim and catalog readers
+`Env::get`, `get_anon`, `get_anon_mmap` and `parse_lazy_index`) accept envelopes
+4 and 5 and reject other versions. Original records and original-hint overrides
+belong to the v5 metadata extension, outside the checked constant set. Claim and catalog readers
 reject another object format with "claim: unsupported object format N, expected 4 — regenerate
 the claim" ("catalog: …" likewise). The in-circuit claim readers require object format 4
 (§3.1). The scratch files of the `ixon-v4-*` executables live under `$IX_IXON_V4_DIR` (default
@@ -405,9 +370,9 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
    the evaluations actually done: one evaluation of the whole table in one pass, one per prefix
    otherwise), so equal limits can succeed in one language and fail in the other; every observed
    case was a Lean-only exhaustion that matched Rust once raised.
-3. **The expansion step is outside the proofs** (§4): the canonical DAG is built by an interner
-   with a pointer cache. The round trip is re-checked at run time and pointer-layout
-   independence is tested.
+3. **The pointer cache is not evidence of term equality.** Successful input expansion is
+   covered by the proofs (§4), including structural confirmation of cache hits. The
+   unsafe pointer key remains an explicit implementation boundary in the audit.
 4. **Width jumps.** TagN grows by one byte per rung end except by four at `R5`. The count
    threshold (finding 7) and the telescope-spine guard (finding 8) cover the two arguments that
    needed it; any new argument that assumes a header grows by at most one byte per boundary is
@@ -421,10 +386,11 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
 8. **Reader gaps** (§5.3): cyclic sharing tables, metadata or record references can make the
    decompilers and kernel ingress loop. They predate this work and affect only malformed input;
    reader hardening is follow-up work.
-9. **Length range.** Rust's phase 1 uses 128-bit lengths and fails closed (`format bound:
-   LengthOverflow`) where Lean's `Nat` succeeds, for example on the chain
-   `e(i+1) = App(e(i), e(i))` at depth 127 or more. No Init or Mathlib constant is near it; the
-   divergence is documented, not removed.
+9. **Length range.** General Rust costs and signed deltas still use checked 128-bit
+   arithmetic, so overflow can refuse where Lean's `Nat` succeeds. The earlier initial-
+   classification overflow on doubling DAGs is repaired: all 11 fixtures, including
+   depths 127–256, have Rust/Lean byte parity. That bounded predicate repair does not
+   prove the remaining general arithmetic bounds (§14.3–§14.4 of `sharing-minimum.md`).
 10. **Rust's default mode checks built expressions for the returned candidate only.** A wrong
     length of another candidate would change the selection without an error. The checked mode
     (`ExactSharingLimits::full_check`) builds and checks all three; over all of Init and Mathlib
@@ -475,11 +441,11 @@ returns only; keys of the other language are accepted and ignored. One list of 3
 specifications pins both (`LIMIT_SPEC_PARITY` in `crates/ixon/src/sharing_exact/tests.rs`,
 `limitSpecParity` in `Tests/Ix/SharingExact.lean`). `ix compile --sharing-limits` and
 `ix compile-lean --sharing-limits` validate the override and publish it through
-`IX_SHARING_LIMITS`. It is read once per run: by the Lean CLI's driver options (`Ix.Cli.driverOptionsFromEnv`) and
-`decompileEnvFullParallel` (`compilerSharingLimitsFromEnv`, carried in
-`CompileEnv.sharingLimits`) and by each Rust compile or decompile entry point
-(`CompileState::sharing_limits`); an invalid value fails the run once, before any block is
-shared.
+`IX_SHARING_LIMITS`. The Lean compiler reads it through
+`Ix.Cli.driverOptionsFromEnv`, carried in `CompileEnv.sharingLimits`; the Rust
+compile and regeneration paths use `CompileState::sharing_limits`. Lean's
+`decompileEnvFullParallel` reads stored originals and ignores its historical
+sharing-limits parameter; it does not invoke the sharing construction.
 
 **Test oracles.** The width-state search (`Ix.Sharing.Exact.Search`, `search.rs`, the `exact`
 corpus mode), the tiny exhaustive oracle (`Exact.Oracle`, `oracle.rs`), the subset-enumeration
@@ -511,13 +477,14 @@ encoding (`mss.rs`, test-only) are labelled as test oracles; the compiler path n
   `--check-sequential`, which compares the parallel and sequential paths under the run's
   limits).
 
-### Gates at this PR's head
+### Historical gates before the K16 cutover
 
-Recorded on Lean 4.33.1 at the head of the canonical-sharing change, before it was merged with
-the certified checker. Since then `IxTcVerify` is retired ([kernel](kernel.md), "Removal
-ledger"), and the sharing proofs and their audit are the `IxSharingVerify` library (§4: 111
-roots on Lean 4.34.0, all 19 `@[csimp]` theorems among them, sorry frontier clean for
-`Ix.Sharing`). All passed:
+Recorded on Lean 4.33.1 at the head of the earlier canonical-sharing change,
+before it was merged with the certified checker. These are historical
+commands and counts, not gates on the current PR head. `IxTcVerify` and
+`IxCompileVerify` have since been retired; §4 maps their retained sharing
+and codec contracts. K16 evidence is recorded in
+[§14.4](sharing-minimum.md#144-evidence-and-release-gates). The old run reported:
 
 - Lean: `lake build --wfail -v`; `lake test --wfail` (primary tier, 3,957 checks); `lake lint --
   --wfail -v`; `lake build IxTcVerify` (audits of 2,034, 1 and 7 roots, sorry frontier clean);
