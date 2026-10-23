@@ -43,6 +43,7 @@ import Ix.CompileCert.ImageOrigin
 import Ix.CompileCert.ImageShape
 import Ix.CompileCert.CliqueRowShape
 import Ix.CompileCert.CliqueRowsCoverage
+import Ix.CompileCert.O6RecRead
 
 /-! # The certification statements, frozen
 
@@ -5570,3 +5571,18 @@ run_cmd do
     (#[`row_workers, `rowsOf_produced, `rowsOf_wf, `Produced.sizes,
       `Produced.copy_of_input, `Produced.row_of_member, `Produced.input_of_copy,
       `Produced.member_of_row, `Produced.copy_contents].map (`Ix.CompileCert.CliqueRowsCoverage ++ ·))
+
+/-! ## Actual closed O6 recursor branch: raw reader reduction
+
+The real successful pass, image/matcher provenance and both reader results
+yield raw kernel Red through a derived positional selector/pick relation.
+Universe arity and closed arguments remain explicit. Raw .never is not a
+checked annotation, and no value/under-binder/fallback claim is made. -/
+
+/-- info: [cert-audit] O6 raw reader reduction: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 raw reader reduction"
+    (#[`related_unique, `Lambdas.beta, `o6_rec_output, `o5_subst_levels,
+      `data_picks, `selects_read, `o6_rec_raw_reader_red].map (`Ix.CompileCert.O6RecRead ++ ·))
