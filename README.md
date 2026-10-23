@@ -256,7 +256,9 @@ landing gates) and `manual` (with a reason, e.g. a Mathlib-sized input).
   `Benchmarks/`, `Apps/` and `MultiStark/` except a typed exclusion list
   (`lakefile.lean`, `moduleExclusions`); `lake lint` runs it too
 - Most expensive entries require at least 32 GB RAM; `compile` and
-  `decompile` require 128 GB, and `ixvm` generates ZK proofs
+  `decompile` require 128 GB. `ixvm` checks typing and
+  [evaluation claims](docs/eval-claims.md) through Aiur execution and
+  generated-backend parity, without proving
 - `lake exe ixon-v4-tests` runs the Ixon v4 format suite (golden bytes, FFI, VM, text grammar, resource admission, claims, and the fixtures in `Tests/Fixtures/ixon-v4/`); `lake exe ixon-v4-primitives` regenerates the primitive closure and checks `primitives.tsv` against it; both keep their scratch files in `$IX_IXON_V4_DIR` (default `/tmp`)
 - `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`IxSharingVerify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxC build --wfail`
 

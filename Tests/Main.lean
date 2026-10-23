@@ -4,6 +4,7 @@ import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
+import Tests.Ix.IxVM.Eval
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.IxVM.DefinitionDependencies
 import Tests.Ix.IxVM.TagN
@@ -475,6 +476,14 @@ def registry : List Entry := [
     | .error e, _ | _, .error e =>
       IO.eprintln s!"IxVM env build failed: {e}"; return 1
     | .ok vmEnv, .ok fullVmEnv =>
+      IO.eprintln "[ixvm] eval: reduction, output contracts, and compiled fixtures"
+      let evalSeq ← Tests.Ix.IxVM.Eval.tests vmEnv.compiled
+      let evalCompiledSeq ← Tests.Ix.IxVM.Eval.compiledTests env vmEnv.compiled
+      let evalCommandSeq ← Tests.Ix.IxVM.Eval.commandTests env vmEnv.compiled
+      IO.eprintln "[ixvm] eval: dependent, recursive, and neutral-term fixtures"
+      let evalDifficultSeq ← Tests.Ix.IxVM.Eval.difficultTests env vmEnv.compiled
+      IO.eprintln "[ixvm] eval: generated differential corpus (24 samples)"
+      let evalDifferentialSeq ← Tests.Ix.IxVM.Eval.differentialTests env vmEnv.compiled
       -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
       -- through the kernel's subject-only `verify_const` debug
@@ -527,7 +536,8 @@ def registry : List Entry := [
               (actual = 6_227_982_091))
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) [],
+          [evalSeq, evalCompiledSeq, evalCommandSeq, evalDifficultSeq, evalDifferentialSeq,
+           fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) [],
   .env "validate-aux" (.ci .compilePipeline) runCompileValidateAux,
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see

@@ -2,8 +2,7 @@
   `#ixeval`: evaluate a term through the ix pipeline and surface the
   content-addressed evaluation claim.
 
-  `#ixeval t` elaborates `t`, normalizes it (`Meta.reduce`, the same
-  normalization the ZkVoting prover flow uses to fix claim outputs),
+  `#ixeval t` elaborates `t`, computes a candidate normal form with `Meta.reduceAll`,
   compiles the term's reference closure with the Rust compiler, and
   builds an `Ix.Claim.eval` from the input and output content
   addresses (`Ix.Commit.evalClaim`). The reduced value, the claim, and
@@ -17,9 +16,9 @@
   transitive reference closure, not the whole environment, so cost
   tracks the term.
 
-  Proving the claim is out-of-band (`ix prove --claim <digest>`); the
-  IxVM `run_eval` arm is still landing, so today the claim is the
-  commitment artifact, not yet a proven one.
+  Proving the claim is out-of-band (`ix prove --claim <digest>`);
+  IxVM verifies the checked input body against the output definition's body.
+  This command reports a claim; it does not execute or prove it.
 
   Note on qualification: bare `Name`/`Expr` inside the `Ix` namespace
   resolve to ix's own mirror types, so Lean's are `Lean.`-qualified
@@ -53,7 +52,7 @@ meta def elabIxEval : CommandElab := fun stx => do
         throwError "#ixeval: term has unresolved metavariables"
       if input.hasFVar then
         throwError "#ixeval: term has free variables"
-      let output ← Lean.Meta.reduce input
+      let output ← Lean.Meta.reduceAll input
       let type ← Lean.Meta.inferType input
       let lvls := (Lean.collectLevelParams default input).params.toList
       -- Closure-scoped compile: every constant reachable from the

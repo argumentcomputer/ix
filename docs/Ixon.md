@@ -1754,7 +1754,7 @@ the multi-byte-tag path.
 Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
 and NOT transmitted on the wire. Wrapper decoding alone proves nothing.
-IxVM supports Check, CheckEnv, Reveal, and Contains; Resource is currently
+IxVM supports Eval, Check, CheckEnv, Reveal, and Contains; Resource is currently
 validated by the native Lean/Rust boundary and is explicitly rejected as an
 IxVM proof request. Catalog proofs compose erased CheckEnv claims.
 
@@ -1841,6 +1841,13 @@ pub struct Proof {
 ### Serialization Examples
 
 **Eval claim** (0xE3, 2 addresses + opt assumptions byte):
+
+Both addresses identify constants. The input is typechecked and normalized;
+the output is a safe standalone definition with the same type and universe
+parameter count, wrapping the expected normal form. It can be transported in
+an ordinary environment bundle. See [evaluation claims](eval-claims.md) for
+the exact comparison and assumption rules.
+
 ```
 E3                    -- N4(0xE, 3) (Eval)
 04 01                 -- object format 4, erased-lean-v1

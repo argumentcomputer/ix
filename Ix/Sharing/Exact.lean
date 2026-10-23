@@ -112,7 +112,7 @@ public import Ix.Sharing.Exact.Oracle
 public import Ix.Sharing.Exact.Uniform
 public import Ix.Sharing.Exact.Tiered
 public import Ix.Sharing.Exact.TieredFast
-public import Ix.Sharing.FamilyNormalizeSpec
+public import Ix.Sharing.FamilyNormalizeArea
 
 public section
 
@@ -296,7 +296,7 @@ canonicalization rule, independent of the checked-object/envelope versions. -/
 def canonicalFamilyConfig : Ix.Sharing.FamilyPrototype.Config := ⟨16⟩
 
 /-- Production K16 family sharing of Share-free roots. The reference entry
-is compiled through its proved cached/closure-local twin. -/
+is compiled through its proved cached/area-local twin. -/
 def canonicalSharingTiered (layout : ShareLayout) (roots : Array Ixon.Expr)
     (limits : Limits := {}) : Except SharingError TieredSharingResult := do
   let ex ← expand limits #[] roots false
