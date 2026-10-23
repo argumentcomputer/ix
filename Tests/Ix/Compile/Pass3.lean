@@ -16,14 +16,14 @@
      roundtrip defects (`Pass3Kernels.decompileKnown`, none); the listed
      units (`Pass3Kernels.rustDecompileUnits`) through the Rust decompiler
      too (`rs_decompile_roundtrip`), with no error;
-  3. **kernels** (`Harness.kernelRun`): the certified checker (`cert`) and
-     the Rust kernel (`rs`, meta mode) on every fixture constant and every
+  3. **kernels** (`Harness.kernelRun`): the certified checker (`cert`),
+     the Rust kernel (`rs`, meta mode) and IxC (`lean`) on every fixture constant and every
      `_ix` name of the output; every failure, and only those, in the record
      (`Pass3Kernels.table`, by cause), and each leg checks every requested
      declaration;
   4. **computation rules** (`Harness.ruleEnv`): for each changed block, the
      images of its recursors and their rule statements (proof `Eq.refl`),
-     compiled into a test-only copy of the output, checked by both legs;
+     compiled into a test-only copy of the output, checked by all three legs;
   5. **display names**: every changed block has an `_ix` name;
   and every block failure is a recorded root (`Pass3Kernels.compileFailures`,
   A0's evaporation refusals), a consequence of one (REFUSED-SIBLING) or a
@@ -31,8 +31,7 @@
 
   Ported from a9cf3607's `Tests/Ix/Compile/Pass3.lean`, with the harness
   split out (R11-08, `Tests/Ix/Compile/Harness/*`) and the diagnostic modes
-  in their own runner (`pass3-tools`, lane G `6dcb793e`). Not here: the
-  `lean` kernel leg (`ix check-lean`, `Ix.Tc`) until M7's `check-lean` move;
+  in their own runner (`pass3-tools`, lane G `6dcb793e`). Not here:
   the definitional and proof-justified passes' fixtures, twin pairs and
   firing checks, O11a, cliques (batch 5); the library comparison
   (`runLib`, `pass3-lib`) and the surgery's diagnostics (`runSurgered`, the
@@ -326,7 +325,7 @@ named entries: {idr.inputNames} input constants, {idr.reserved} reserved"
       else pure none
     let (kps, summary) := check Pass3Kernels.table u.name run.failed run.checked run.targets.size anon?
     problems := problems ++ kps
-    lines := lines.push s!"  kernels: {summary}"
+    lines := lines.push s!"  kernels: {summary}; {run.leanSummary}"
     if !idr.changedBlocks.isEmpty && out.cenv.ungrounded.isEmpty then
       match ruleEnv out with
       | .error e => problems := problems.push s!"{u.name}: rule environment: {e}"
@@ -336,9 +335,10 @@ named entries: {idr.inputNames} input constants, {idr.reserved} reserved"
         | .ok bytes =>
           let rdir := dir / "rules"
           IO.FS.createDirAll rdir
-          let rfailed ← kernelFailures rdir bytes (images ++ rules) (anon := true)
+          let rulesRun ← kernelRun rdir bytes (images ++ rules) (anon := true)
+          let rfailed := rulesRun.failed
           lines := lines.push s!"  rules: {images.size} images, {rules.size} rule statements by \
-rfl, {rfailed.size} kernel failure(s)"
+rfl, {rfailed.size} kernel failure(s); selected {rulesRun.selected}, checked {rulesRun.checked}; {rulesRun.leanSummary}"
           for (leg, n, m) in rfailed do
             problems := problems.push s!"{u.name}: rule {leg}: {n} fails: {m.take 240}"
     if u.name == "twins" then

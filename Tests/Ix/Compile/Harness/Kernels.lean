@@ -7,8 +7,9 @@
   `ClosureHarness.certify`; acceptance is a row verdict, declines in
   documented classes are not failures), and `rs`, the Rust kernel
   (`ix check-rs`, meta mode: seeded checks are subject-only; anonymous mode
-  on request). The `lean` leg (`ix check-lean`, `Ix.Tc`) returns after M7's
-  `check-lean` move (Q-CHECKLEAN); until then a record has no `lean` rows.
+  on request), and `lean`, IxC through `ix check-lean`. Its exact selected
+  labels, outcomes and reasons are checked independently of producer/support
+  record counts; accept and typed remain distinct successful outcomes.
 
   A record (`Expect` rows) covers the failures of one unit and leg whose
   message contains `msg`: exactly the names listed, or exactly `count` of
@@ -26,6 +27,7 @@
 import Ix.Compile.Pass
 import Tests.Ix.Compile.Harness.Units
 import Tests.Ix.Compile.KernelReport
+import Tests.Ix.Compile.LeanReport
 
 open Lean
 
@@ -45,8 +47,56 @@ constants each leg reports it checked. -/
 structure KernelRun where
   failed : Array (String × String × String)
   checked : List (String × Nat)
+  /-- Selected labels, independent of an anonymous Rust dependency closure. -/
+  selected : List (String × Nat) := []
   /-- The declarations checked: the requested names, block labels expanded. -/
   targets : Array String := #[]
+  /-- Exact selected IxC outcomes, including successful typed-only subjects. -/
+  leanOutcomes : Array LeanReport.Row := #[]
+
+/-- The three legs must independently cover the requested declarations.
+These are selected-label counts, not the number of producer/support records. -/
+def kernelCoverageProblems (checked : List (String × Nat)) (requested : Nat) : Array String := Id.run do
+  let mut problems := #[]
+  if requested == 0 then problems := problems.push "kernels requested zero declarations"
+  for leg in ["cert", "rs", "lean"] do
+    unless checked.filter (·.1 == leg) == [(leg, requested)] do
+      problems := problems.push s!"{leg}: missing, duplicate or incomplete selected-label coverage"
+  for (leg, _) in checked do
+    unless ["cert", "rs", "lean"].contains leg do
+      problems := problems.push s!"unknown kernel leg: {leg}"
+  return problems
+
+/-- Rust reports selected seeds separately from anonymous closure work. -/
+def rsSelectedLabels (stdout : String) (anon : Bool) : Except String Nat := do
+  let seedPrefix := if anon then "[check] " else "[check] checking "
+  let [line] := (stdout.splitOn "\n").filter fun line =>
+    line.startsWith seedPrefix && hasSub line " seed constant(s)"
+    | throw "check-rs: missing or duplicate selected-seed summary"
+  let rest := (line.drop seedPrefix.length).toString
+  let [count, suffix] := rest.splitOn " seed constant(s)"
+    | throw "check-rs: malformed selected-seed summary"
+  unless (if anon then suffix.startsWith ": " else suffix.isEmpty) do
+    throw "check-rs: malformed selected-seed suffix"
+  let some count := count.toNat? | throw "check-rs: non-numeric selected-seed count"
+  return count
+
+/-- Attach actual strict IxC CLI evidence without changing either older leg. -/
+def KernelRun.withLeanReport (run : KernelRun) (stdout stderr failOut : String) (exitCode : UInt32) :
+    Except String KernelRun := do
+  let rows ← LeanReport.parse run.targets stdout stderr failOut exitCode
+  let refused := rows.filterMap fun r =>
+    if LeanReport.success r.outcome then none else some ("lean", r.label, r.reason)
+  return { run with
+    failed := run.failed ++ refused
+    checked := run.checked ++ [("lean", rows.size)]
+    selected := run.selected ++ [("lean", rows.size)]
+    leanOutcomes := rows }
+
+def KernelRun.leanSummary (run : KernelRun) : String :=
+  let counts := ["accept", "typed", "reject", "decline", "blocked"].map fun outcome =>
+    s!"{outcome} {(run.leanOutcomes.filter (·.outcome == outcome)).size}"
+  s!"IxC {run.leanOutcomes.size}/{run.targets.size} exact labels ({", ".intercalate counts})"
 
 /-- A synthetic `Muts` label denotes a container, not a kernel declaration.
 Expand it to all recorded members, verifying each member's projection and
@@ -92,7 +142,7 @@ def expandKernelTargets (parts : Ixon.LazyEnvParts) (requested : Array String) :
     unless declarations.contains member do declarations := declarations.push member
   return declarations
 
-/-- `(leg, name, message)` of every failure of the two kernels on `names` of
+/-- `(leg, name, message)` of every failure of the three kernels on `names` of
 the output `bytes`, and each leg's checked count. The output is written to
 `<dir>/out.ixe`. Declines of the certified checker in documented classes are
 not failures. Process and report failures throw instead of entering the
@@ -154,7 +204,25 @@ def kernelRun (dir : System.FilePath) (bytes : ByteArray) (names : Array String)
   if rs.exitCode != 0 && rsRows.isEmpty then
     failed := failed.push ("rs", "*",
       s!"check-rs exit {rs.exitCode}: {((rs.stdout ++ rs.stderr).takeEnd 300).toString}")
-  return { failed, targets := names, checked := [("cert", expected.size), ("rs", rsN.getD 0)] }
+  let rsSelected ← IO.ofExcept (rsSelectedLabels rs.stdout anon)
+  unless (rsN.getD 0) > 0 do throw (IO.userError "check-rs checked zero records or omitted its summary")
+  let partialRun : KernelRun := {
+    failed, targets := names, checked := [("cert", expected.size), ("rs", rsN.getD 0)]
+    selected := [("cert", expected.size), ("rs", rsSelected)] }
+  let leanFailOut := dir / "lean.fail"
+  if ← leanFailOut.pathExists then IO.FS.removeFile leanFailOut
+  let lean ← runProc ixExe #["check-lean", path.toString, "--consts-file", namesFile.toString,
+    "--fail-out", leanFailOut.toString, "--workers", "1", "--verbose"]
+  IO.FS.writeFile (dir / "lean.stdout") lean.stdout
+  IO.FS.writeFile (dir / "lean.stderr") lean.stderr
+  IO.FS.writeFile (dir / "lean.exit") s!"{lean.exitCode}\n"
+  let failText ← if ← leanFailOut.pathExists then IO.FS.readFile leanFailOut else pure ""
+  let result ← IO.ofExcept (partialRun.withLeanReport lean.stdout lean.stderr failText lean.exitCode)
+  IO.FS.writeFile (dir / "lean-outcomes.json")
+    ((Json.arr (result.leanOutcomes.map LeanReport.Row.toJson)).pretty ++ "\n")
+  let coverage := kernelCoverageProblems result.selected names.size
+  unless coverage.isEmpty do throw (IO.userError ("; ".intercalate coverage.toList))
+  return result
 
 /-- `(leg, name, message)` of every failure (`kernelRun` without the counts). -/
 def kernelFailures (dir : System.FilePath) (bytes : ByteArray) (names : Array String)
@@ -171,7 +239,10 @@ def dumpRuns (unit : String) (runs : List (String × KernelRun)) : IO Unit := do
   let clean := fun (s : String) => (s.replace "\n" " | ").replace "\t" " "
   for (run, r) in runs do
     for (leg, n) in r.checked do h.putStrLn s!"#checked\t{unit}\t{run}\t{leg}\t{n}"
+    for (leg, n) in r.selected do h.putStrLn s!"#selected\t{unit}\t{run}\t{leg}\t{n}"
     for (leg, n, m) in r.failed do h.putStrLn s!"{unit}\t{run}\t{leg}\t{n}\t{clean m}"
+    for row in r.leanOutcomes do
+      h.putStrLn s!"#outcome\t{unit}\t{run}\tlean\t{row.label}\t{row.outcome}\t{clean row.reason}"
   h.flush
 
 /-! ## 4. Computation rules in a test-only environment -/
