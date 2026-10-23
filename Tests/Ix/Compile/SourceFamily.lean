@@ -31,6 +31,7 @@ the same actual-source decisions. A provider cannot select a legacy mode. -/
 def providerControls (source : _root_.Ix.Environment)
     (oracleFor : _root_.Ix.AuxGen.SourceFamilyOracle) (ind : _root_.Ix.InductiveVal) : IO Unit := do
   let owner := ind.cnst.name
+  SourceFamilyOracle.cacheControls source ind.all
   let heads := #[owner, owner.mkStr "below", owner.mkStr "brecOn"]
   let lazySource : _root_.Ix.Environment := { consts := {}, fallback? := some source.get? }
   let expected ← IO.ofExcept (filterHeadsChecked oracleFor source ind.all heads)
@@ -110,6 +111,67 @@ def classifierControls : IO Unit := do
   need (exprReferences (_root_.Ix.Expr.mkProj (n ["P"]) 0 c) == #[n ["P"], n ["c"]])
     "projection owners precede their subterm's references"
 
+/-- This raw `addDecl` fixture has Prop-only recursors, although its former
+returns `Sort u`. Lean never generated below/brecOn helpers for it. The old
+source recognizer could construct ill-typed Type-valued recipes by installing
+them unchecked. Both Lean and IxC must reject those recipes; ordinary source
+heads remain available, and an unsupported brec reconstruction stays an error. -/
+def nestedSortRefusal : IO Unit := do
+  let env := (← getFileEnvCore "Tests/Ix/Compile/AuxCert/NestedSortUK.lean").env
+  let seeds := ClosureHarness.ownConstants env ++
+    [``PProd, ``PProd.mk, ``And, ``And.intro, ``True, ``True.intro, ``Eq, ``Eq.refl]
+  let input := Twins.closeWithRecursors env (_root_.Ix.EnvScope.collectDeps env seeds)
+  let source : _root_.Ix.Environment := { consts :=
+    (_root_.Ix.CanonM.canonChunk input.toArray).foldl (fun m (n, ci) => m.insert n ci) {} }
+  let owner := Name.fromLeanName `NestedSortUK.T
+  let some (.inductInfo ind) := source.get? owner | throw (IO.userError "raw Sort-u owner missing")
+  let oracleFor := SourceFamilyOracle.forInput source (source.consts.toArray.map (·.1))
+  for n in [`NestedSortUK.T.below, `NestedSortUK.T.below_1,
+      `NestedSortUK.T.brecOn, `NestedSortUK.T.brecOn_1] do
+    need (env.find? n |>.isNone) s!"unexpected frontend helper {n}"
+    need (env.toKernelEnv.find? n |>.isNone) s!"unexpected kernel helper {n}"
+    need (source.get? (Name.fromLeanName n) |>.isNone) s!"unexpected selected helper {n}"
+  let recipes ← IO.ofExcept (reconstruct oracleFor source ind.all false)
+  need (recipes.map Recipe.name == #[owner.mkStr "below", owner.mkStr "below_1"])
+    "raw Sort-u below recipe coverage changed"
+  let mut defs : Array _root_.Ix.AuxGen.BelowDef := #[]
+  for recipe in recipes do
+    let .definition d := recipe | throw (IO.userError "expected Type-valued below definition")
+    need (!d.isUnsafe) "raw Sort-u recipe unexpectedly unsafe"
+    defs := defs.push {
+      name := d.name
+      levelParams := d.levelParams
+      typ := d.typ
+      value := d.value
+      isUnsafe := d.isUnsafe }
+    let decl : Lean.Declaration := .defnDecl {
+      name := ClosureHarness.toLeanName d.name
+      levelParams := d.levelParams.toList.map ClosureHarness.toLeanName
+      type := (_root_.Ix.CanonM.uncanonExpr d.typ).run' {}
+      value := (_root_.Ix.CanonM.uncanonExpr d.value).run' {}
+      hints := .abbrev
+      safety := .safe }
+    let failure ← try
+        runCore (Lean.addDecl decl) env
+        pure none
+      catch e => pure (some e.toString)
+    let some why := failure | throw (IO.userError "Lean accepted an invalid below recipe")
+    need ((why.splitOn "application type mismatch").length > 1)
+      s!"unexpected Lean kernel refusal: {why}"
+  let oracle ← IO.ofExcept (oracleFor owner)
+  needError (oracle.admitBelow defs) "invalid: application type mismatch"
+  let belowHeads := #[owner] ++ recipes.map Recipe.name
+  need ((← IO.ofExcept (filterHeadsChecked oracleFor source ind.all #[owner])) == #[owner])
+    "raw Sort-u ordinary head lost"
+  need ((← IO.ofExcept (filterHeadsChecked oracleFor source ind.all belowHeads)) == #[owner])
+    "absent below helpers were authenticated"
+  let brecHeads := belowHeads.push (owner.mkStr "brecOn")
+  need (filterHeads oracleFor source ind.all brecHeads == #[owner])
+    "public filter authenticated an unsupported family"
+  needError (filterHeadsChecked oracleFor source ind.all brecHeads)
+    "unsupportedExpr: aux kernel (IxC Source mode): getLevel of a type headed by NestedSortUK.T.below in .brecOn's scope at depth 3: invalid: unknown constant NestedSortUK.T.below"
+  IO.println "[aux-source-family] raw Sort-u: both kernels refuse two invalid recipes; ordinary heads preserved"
+
 def fixture : System.FilePath := "Tests/Ix/Compile/Fixtures/AuxiliaryFamilyIdentity.lean"
 def root : Lean.Name := `Tests.Ix.Compile.Fixtures.AuxiliaryFamilyIdentity
 
@@ -156,6 +218,7 @@ def check (env : Lean.Environment) : IO UInt32 := do
   return 0
 
 def run : IO UInt32 := do
+  nestedSortRefusal
   check (← getFileEnvCore fixture).env
 
 end Tests.Ix.Compile.SourceFamily
