@@ -155,7 +155,7 @@ def leanExpectations (unit : String) (env : Ixon.Env) : Except String (Array Lea
   let mut expected := #[]
   for record in leanRecords.filter (·.unit == unit) do
     unless !record.names.isEmpty do throw s!"{unit}: empty IxC refusal record"
-    let (outcome, reason) ← record.reason.expected env
+    let (outcome, reason) ← LeanReason.expected env record.reason
     expected := expected ++ record.names.toArray.map fun label => { label, outcome, reason }
   return expected
 
