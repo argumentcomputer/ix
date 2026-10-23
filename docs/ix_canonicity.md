@@ -23,7 +23,7 @@ canonicalization rule:
 ```
     c₁ and c₂ differ only in supported erased choices:
       - local variable names
-      - declaration metadata (mdata, binder info, docstrings, source positions)
+      - presentation mdata, ordinary Lean BinderInfo, docstrings, source positions
       - source declaration order within mutual blocks
       - nested-inductive aux discovery order
       - hygiene annotations on Name components
@@ -38,8 +38,13 @@ general test for mathematical equivalence. Distinct encodings can denote
 the same value. Preservation of the source value by compilation is a
 separate proof obligation.
 
+Semantic contracts are excluded from these erased choices. Reserved
+`ix.contract` source mdata lowers into the anonymous binder fields: usage,
+ownership, locality, arrow-result contracts and let borrow kind. Changing
+those fields can change payload bytes and addresses (§5.1).
+
 Informally: **renaming a bound variable, reordering a mutual block, or
-decorating a term with `@[inline]` does not move the content address.**
+adding ordinary presentation mdata does not move the content address.**
 If it does, canonicity is broken and the property fails — which in turn
 breaks the zk-PCC story, because two parties compiling the same library
 would produce different hashes and could not share proofs.
@@ -98,7 +103,7 @@ Source ──(successful compile)──→ Canonical content
 
 - **Canonical content is many-to-one.** Alpha-equivalent sources can share
   a payload, while the name map retains their separate source identities.
-- **Source reconstruction uses additional data.** Binder names, mdata,
+- **Source reconstruction uses additional data.** Binder names, presentation mdata,
   source member order and original records support the implemented
   decompile paths (§9). Source ranges and hygiene are outside that
   roundtrip contract (§5.3), and docstring persistence is still open
@@ -223,13 +228,20 @@ compiler's canonicity claims.
 
 ### 5.1 Erased from canonical form
 
-Everything that depends on source choices is stripped before hashing:
+The following presentation choices are stripped before hashing. Ordinary
+Lean `BinderInfo` (explicit/implicit/instance presentation) is distinct from
+Ixon's semantic `BinderContract`. The compiler consumes reserved
+`ix.contract` mdata into `lam`/`all`/`letE` payload fields
+(`Ix.SemanticContract.Contract.lower`, called by `Ix/CompileM.lean` and Rust
+`compile_expr`). These fields participate in serialized identity even
+though the source wrapper is an `Expr.mdata` node. See
+[source contracts](source-contracts.md#pure-input-and-source-identity).
 
 | Category                           | Where it's erased                                    |
 | ---------------------------------- | ---------------------------------------------------- |
 | Bound variable names (λ, ∀, let)   | `Expr::Lam/All/Let` has no `name` field — `src/ix/ixon/expr.rs` |
-| `BinderInfo` (impl/inst/strict)    | not serialized in `put_expr`                         |
-| `Expr.mdata` wrappers              | canonical form has no `Mdata` node                   |
+| Ordinary Lean `BinderInfo` (impl/inst/strict) | not serialized in `put_expr`; semantic binder contracts are separate payload fields |
+| Presentation `Expr.mdata` wrappers | stored in the sidecar; semantic `ix.contract` wrappers are consumed into the payload, not erased |
 | Free variable identity             | FVar and MVar are rejected — `compile.rs:848-857`    |
 | De Bruijn depth artifacts          | indices are **the** identifier; no names survive     |
 | Lean `InductiveVal.all` order      | replaced by `sort_consts` canonical class order; kernel enforces via `validate_canonical_block_single_pass` at ingress (§4.4) |
@@ -248,7 +260,7 @@ Everything needed to round-trip back to a source-faithful Lean
 | --------------------------------------- | ---------------------------------------------------- |
 | Binder names, `BinderInfo`              | `ExprMetaData::Binder { name, info, … }`             |
 | Let binders                             | `ExprMetaData::LetBinder`                            |
-| `Expr.mdata` KVMaps                     | `ExprMetaData::Mdata`                                |
+| Presentation `Expr.mdata` KVMaps        | `ExprMetaData::Mdata`; semantic contracts are reconstructed from committed binder fields |
 | Reference names (per `Const` / `Rec`)   | `ExprMetaData::Ref`; name choice at alias occurrences: §10.5 |
 | Projection struct name                  | `ExprMetaData::Prj`                                  |
 | Pass 3 call-site source occurrence      | `_ix.inline` record (`Mdata`) + `ConstantMeta.meta_sharing` |
@@ -652,8 +664,8 @@ expansion** (A2-order; Pass 1's `Rules.compiler`,
   not as Lean's `ExtInd.all`.
 - Occurrences are deduplicated by a **canonical key**: external constants
   by compiled address, universe levels in the serializer's positional
-  normal form (`canonUniv`), binder names, binder information and
-  metadata erased. Two occurrences that the stored Ixon cannot tell apart
+  normal form (`canonUniv`), with binder names, ordinary Lean `BinderInfo`
+  and presentation metadata erased. Two occurrences that the stored Ixon cannot tell apart
   (collapsed or content-equal constants, `List.{max 0 0} T` and
   `List.{0} T`) share one auxiliary.
 - There is no sort: the canonical expansion is already in canonical
@@ -841,9 +853,12 @@ The output depends only on those expanded expressions:
   interned terms depends only on the terms the roots denote. Successful
   input expansion is proved in `IxSharingVerify/CanonicalMeaning.lean`;
   the pointer cache uses structural confirmation before accepting a hit.
-- **Metadata does not participate.** The arena, names, binder info and
-  call-site data play no part, so a metadata-only change never moves an
-  address. Conversely, re-sharing never invalidates metadata: arena nodes
+- **Presentation sidecars do not choose sharing.** The arena, display names,
+  ordinary Lean `BinderInfo` and call-site reconstruction data are outside
+  the anonymous payload. Changing only that sidecar leaves the payload's
+  address fixed. Semantic source contracts have already been lowered into
+  the payload and are inputs to sharing. Re-sharing preserves the sidecar's
+  expression positions: arena nodes
   follow the unshared tree and a `Share` is transparent to them
   (`sharing-minimum-integration.md` §5.4).
 - **Every tie is pinned.** The stored set is the `setPrec`-least minimum of
@@ -1473,7 +1488,7 @@ block content, not of traversal or discovery order, or two correct
 implementations can diverge forever. Inherited spellings are exactly
 that: a function of the block's source expressions and the fixed
 synthesis algorithm, with no new ordering, no alias-set lookup, and
-no hash impact (metadata never enters a content hash, §6.6). The
+no hash impact (these display names live in the presentation sidecar, §6.6). The
 fidelity checkers already enforce it: both decompile-side checkers
 rebuild their reference by re-running the same generator over
 decompiled source constants (`DecompileDriver` Pass 2 in Lean;
@@ -1834,16 +1849,17 @@ The binder names `x` and `y` live in
 entries, distinct addresses — but both addresses are outside the hash
 input. `addr(f₁) == addr(f₂)`.
 
-### 12.2 mdata strip
+### 12.2 Presentation mdata strip
 
-```lean
-def g₁ : Nat := n + n
-def g₂ : Nat := @[inline] (n + n)   -- conceptually; Lean stores via `mdata`
+```text
+e
+Lean.Expr.mdata displayData e
 ```
 
-`put_expr` ignores `Mdata` nodes entirely — the canonical form has no
-`Mdata` variant. Both values hash to the same bytes;
-`addr(g₁) == addr(g₂)`.
+When `displayData` contains only presentation fields, the compiler stores
+it in the sidecar and both expressions produce the same anonymous bytes
+on success. This example does not apply to `ix.contract` frames: the
+compiler consumes them into semantic binder fields (§5.1).
 
 ### 12.3 Universe permutation (non-equal)
 
@@ -2107,7 +2123,7 @@ that enforces it:
 | Invariant                                                  | Enforced by                                                     |
 | ---------------------------------------------------------- | --------------------------------------------------------------- |
 | `Expr` has no binder names                                 | `src/ix/ixon/expr.rs` — no `name` field on `Lam/All/Let`        |
-| Serializer omits names, mdata, universe names              | `src/ix/ixon/serialize.rs:111-210` `put_expr`                   |
+| Anonymous encoding omits presentation names/mdata and keeps semantic contracts | `Ix/CompileM.lean`, `Ix/SemanticContract.lean`; Rust `compile_expr` and `put_expr` |
 | Hash is Blake3 over serializer output                      | `Constant::commit` at `serialize.rs:861` → `Address::hash`      |
 | `sort_consts` is deterministic and refinement-stable       | `src/ix/compile.rs:2526-2564` (iterative refinement)            |
 | Nested-aux dedup across aliases                            | `replace_if_nested` `aux_seen` table, `nested.rs:191-362`       |
@@ -2130,7 +2146,7 @@ It does not decide general mathematical equivalence.
 `src/ix/compile/canonicity_tests.rs` (new file, `#[cfg(test)]`):
 
 - **`alpha_rename_hashes_equal`** — `λx.x+1` vs `λy.y+1` → same address.
-- **`mdata_wrapper_stripped`** — `e` vs `Mdata(kv, e)` → same address.
+- **`mdata_wrapper_stripped`** — `e` vs presentation-only `Mdata(kv, e)` → same address; semantic-contract frames are excluded.
 - **`mutual_reorder_invariant`** — declare `[A, B]` and `[B, A]`
   (alpha-equivalent) → same block address.
 - **`mutual_rename_invariant`** — declare `[A, B]` and `[X, Y]`
@@ -2454,7 +2470,8 @@ proofs of P1/P2/P4.
 
 The current implementation separates these obligations:
 
-1. Anonymous payloads omit binder names and presentation metadata.
+1. Anonymous payloads omit binder names and presentation metadata, while
+   retaining semantic binder contracts lowered from source annotations.
 2. Canonical classes determine mutual-block order and alpha-collapse;
    nested expansion uses canonical dependency identities.
 3. Pass 3 images and occurrence passes rewrite references to changed
