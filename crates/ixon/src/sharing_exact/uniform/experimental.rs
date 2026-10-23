@@ -356,9 +356,9 @@ mod tests {
 
   #[test]
   fn experimental_threshold_ties_and_refusals() {
-    for n in [0u32, 1, 2, 12, 13] {
+    for n in [0u32, 1, 2, 12, 13, 16, 17] {
       let members: Vec<_> = (0..n).collect();
-      for k in [0usize, 12] {
+      for k in [0usize, 12, 16] {
         let mut calls = 0;
         let rows = family_table(&members, k, |_| {
           calls += 1;

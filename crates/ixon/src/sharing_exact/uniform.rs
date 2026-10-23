@@ -117,6 +117,16 @@ use crate::expr::Expr;
 use crate::tag::TagN;
 
 mod family;
+#[cfg(test)]
+pub(crate) fn optimize_family_at_test(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+  k: usize,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  family::optimize_at(w, dag, prep, meter, k)
+}
 pub(crate) use family::optimize_family_with;
 
 #[cfg(any(test, feature = "sharing-reference"))]
@@ -181,7 +191,8 @@ pub struct UniformSharingResult {
   pub low_degree: Vec<TermId>,
   /// Components of the uncertain terms (each ascending, by first member).
   pub components: Vec<Vec<TermId>>,
-  /// Component subsets evaluated.
+  /// Reference cost calls precharged for the component families (search
+  /// states on the old test-only exact path).
   pub states_visited: u64,
   /// Whether the table-count knapsack chose a lower TagN bracket.
   pub lower_bracket: bool,
@@ -909,7 +920,7 @@ impl KnapsackLayer {
   }
 }
 
-/// The table-count knapsack of [`optimize_uniform`] for total counts
+/// The shared phase-1 table-count knapsack for total counts
 /// `<= cap`: after the components `0..j`, every cell `c` holds the least
 /// `(delta, set)` under [`better`] (delta, then `set_prec`) over the choices
 /// of one entry per component table with counts summing to `c`. The sets of
@@ -1491,7 +1502,7 @@ fn combine_uniform(
   Ok((result, UniformPlan { dict, plan, model, k }))
 }
 
-/// The decisions of one uniform-width optimum ([`optimize_uniform_with`]):
+/// The decisions of one uniform-width family optimum:
 /// the table indices of the stored terms and the materialization choice of
 /// every entry top and needed term. The expressions are either built and
 /// checked ([`UniformPlan::build`]) or only described

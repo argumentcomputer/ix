@@ -38,6 +38,8 @@ use crate::univ::Univ;
 
 type E = Arc<Expr>;
 
+mod family;
+
 fn hex(b: &[u8]) -> String {
   b.iter().map(|x| format!("{x:02x}")).collect()
 }
@@ -2302,6 +2304,7 @@ fn uniform_agrees_with_reference_and_brute_force() {
       continue;
     }
     let u = uni(w, &roots);
+    family::compare_production(w, &roots, &u);
     let (rm, rq) = uni_reference(w, &roots, false);
     let (rrm, rrq) = uni_reference(w, &roots, true);
     assert_eq!((u.model_len, rrm), (rm, rm), "w={w} roots={roots:?}");
@@ -2778,6 +2781,7 @@ fn uniform_branch_and_bound_matches_subset_enumeration() {
     if comp < 2 {
       continue;
     }
+    family::compare_production(w, &roots, &u);
     match optimize_sharing_uniform(w, &roots, &reference) {
       Ok(r) => {
         assert_eq!(u.components, r.components);

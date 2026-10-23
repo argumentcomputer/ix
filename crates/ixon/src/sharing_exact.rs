@@ -3,14 +3,15 @@
 //!
 //! The compiler shares every block with the tiered canonical construction
 //! ([`canonical_sharing_tiered`], `tiered`; Lean
-//! `Ix.Sharing.Exact.canonicalSharingTiered`): phase 1 is the exact
-//! uniform-width optimizer (`uniform`) at widths 1, 2 and 3, phase 2
+//! `Ix.Sharing.Exact.canonicalSharingTiered`): phase 1 uses the fixed K16
+//! component families (`uniform`) at widths 1, 2 and 3, phase 2
 //! allocates the table slots, phase 3 re-materializes every part under the
 //! real TagN widths, and the candidate with the fewest bytes wins.
 //!
-//! The rest of this module is the global exact minimum of
+//! The optional test-only `sharing-reference` feature also exposes the
+//! global exact minimum of
 //! `docs/sharing-minimum.md` §3, computed by the width-state search
-//! ([`optimize_sharing`], [`normalize_constant_sharing`], `search`). It is
+//! (`optimize_sharing`, `normalize_constant_sharing`, `search`). It is
 //! exponential in the candidates and is a test oracle for small inputs, not
 //! on the compiler path. Given a resolved anonymous Constant (or its ordered
 //! expanded roots), it returns the feasible backward-reference sharing
@@ -42,7 +43,8 @@
 //! - `search`: the sparse width-state dynamic program (§6) with the proved
 //!   reductions R1/R2, the optimistic-dictionary lower bound (§4.1) and a
 //!   materialization lower bound (the test oracle above).
-//! - `uniform`: the exact optimizer for a uniform Share width (phase 1).
+//! - `uniform`: the fixed-family optimizer for a uniform Share width (phase 1),
+//!   with the old exact optimizer isolated behind the reference feature.
 //! - `tiered`: the canonical tiered construction, its checks and its
 //!   checked mode ([`ExactSharingLimits::full_check`]).
 //! - `par`: deterministic task splitting for [`Parallelism`]; `prof`: phase
@@ -69,14 +71,14 @@
 //!   a Share in entry `i` must name an entry `< i`, a Share in a root must
 //!   name an entry `< len`. Out-of-range, forward and cyclic references are
 //!   [`MalformedSharing`] errors, including in unreachable entries.
-//!   [`optimize_sharing`] rejects any Share leaf in its input.
+//!   The reference `optimize_sharing` rejects any Share leaf in its input.
 //! - **Byte tie.** For a fixed table sequence each entry and root is
 //!   materialized as its byte-least minimum-length representation. This
 //!   equals the rule: an inline constructor precedes a Share of the same
 //!   length (flags `0x0..=0xA` < `0xB`); among telescope prefixes of one
 //!   node the least TagN header bytes win (distinct prefix lengths always
 //!   differ inside the header); then children independently.
-//! - **Variable length.** [`ExactSharingResult::variable_len`] is the sum of
+//! - **Variable length.** [`UniformSharingResult::variable_len`] is the sum of
 //!   the root encodings, the table's TagN count and the entry encodings; the
 //!   rest of the Constant is fixed and checked against `Constant::put`.
 //!
