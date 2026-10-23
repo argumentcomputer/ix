@@ -38,6 +38,7 @@ import Ix.Cert.SourceTrace
 import Ix.Cert.SourceOrigin
 import Ix.Cert.SourceOriginRead
 import Ix.Cert.ValueRows
+import Ix.Cert.ConversionValues
 
 /-! # The certification statements, frozen
 
@@ -5490,3 +5491,18 @@ run_cmd do
     (#[`ofStrong, `strongModel_of_acceptsRef, `commutes_strong, `equation_values,
       `stored_equation_values, `strong_equation_values, `equation_to_constant,
       `equation_to_stored_constant].map (`Ix.Cert.ValueRows ++ ·))
+
+/-! ## Full-grade conversion at the actual checked subjects
+
+The same strong model supplies both inferred readings and grades. Static
+DefEq equates their public values; actual annotation/value-front and
+definition-check traces retain the checked subjects' provenance. No raw
+let/fvar denotation or compiler-wide conversion premise is introduced. -/
+
+/-- info: [cert-audit] checked conversion values: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked conversion values"
+    (#[`infer_reading, `reading_denotes, `defeq_values, `defeq_denotations_eq,
+      `checked_defeq_values, `definition_front, `valueFront_defeq_values].map (`Ix.Cert.ConversionValues ++ ·))
