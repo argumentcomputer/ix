@@ -11,8 +11,10 @@ private def ensure (ok : Bool) (message : String) : IO Unit :=
 private def check : IO Nat := do
   ensure (fixtures.all fun f => f.knownFails.all (·.1 != "lean")) "old Lean allowances remain"
   let selected := fixtures.filter (!·.leanRefusals.isEmpty)
-  ensure (selected.length == 1 && selected.head!.stem == "NestedSortUK") "unexpected refusal fixture"
-  let specs := selected.head!.leanRefusals
+  ensure (selected.map (·.stem) == ["NestedSortU", "NestedSortUK", "NestShapes", "UnsafeI", "KernelSpec"]) "unexpected refusal fixtures"
+  ensure ((selected.map (·.leanRefusals.length)).foldl (· + ·) 0 == 134) "all 134 measured labels are required"
+  let some fixture := selected.find? (·.stem == "NestedSortUK") | throw (IO.userError "missing NestedSortUK record")
+  let specs := fixture.leanRefusals
   ensure (specs.length == 5) "exactly five measured expectations are required"
   let block : Ixon.Constant := {
     info := .muts #[.indc {
@@ -31,6 +33,14 @@ private def check : IO Nat := do
   ensure ((expected.extract 0 4).all (fun r => r.outcome == "decline" && r.reason ==
     s!"decline: reader: in-process model of #{(toString address).take 12}: small eliminator on a non-Prop block") &&
     expected[4]?.map (·.reason) == some s!"blocked: {owner}") "addresses were not derived from the artifact"
+  let ctor : Ixon.Constant := { projection with info := .cPrj { idx := 0, cidx := 0, block := owner } }
+  let ctorAddr := Address.blake3 (Ixon.serConstant ctor)
+  let withCtor := (env.storeConst ctorAddr ctor).registerName (_root_.Ix.Name.fromLeanName `NestedSortUK.T.mk) { addr := ctorAddr, constMeta := .empty }
+  let minor ← IO.ofExcept ((LeanRefusal.minorMismatch "Example" "NestedSortUK.T" "NestedSortUK.T.mk").expected withCtor)
+  ensure (ctorAddr != address && minor.reason == s!"decline: reader: in-process model of #{(toString address).take 12}: minor 1 (#{(toString ctorAddr).take 12}): 1 inductive hypotheses for 0 recursive fields") "minor mismatch lost exact type/constructor evidence"
+  ensure (((LeanRefusal.minorMismatch "Example" "NestedSortUK.T" "NestedSortUK.T.mk").expected env) matches .error _) "missing constructor evidence accepted"
+  let unsafeRow ← IO.ofExcept ((LeanRefusal.unsafeInductive "NestedSortUK.T").expected env)
+  ensure (unsafeRow.outcome == "decline" && unsafeRow.reason == "decline: reader: unsafe inductive declaration") "unsafe record changed outcome/reason"
   let accept : Tests.Ix.Compile.LeanReport.Row := { label := "Ordinary", outcome := "accept" }
   let typed : Tests.Ix.Compile.LeanReport.Row := { label := "Unsafe", outcome := "typed" }
   let actual := #[accept, typed] ++ expected
@@ -59,8 +69,8 @@ private def check : IO Nat := do
     ensure (specs.toArray.mapM (LeanRefusal.expected broken) matches .error _)
       "missing artifact evidence was accepted"
   ensure (cases.length == 10) "expectation controls did not all run"
-  IO.println "AuxCert IxC record: exactly five address-derived expectations; 15 missing/extra/status/reason/rejection/evidence refusals"
-  return 15
+  IO.println "AuxCert IxC records: five measured fixtures/134 labels; exact address-derived reasons and all 15 prior refusal controls retained"
+  return 19
 
 def suite : List TestSeq := [
   .individualIO "measured IxC refusals require exact labels, outcomes, reasons and owners" none (do

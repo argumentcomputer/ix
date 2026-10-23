@@ -82,6 +82,7 @@ import Lean.Data.Json
 import LSpec
 import Ix.Ixon
 import Tests.Ix.Compile.LeanReport
+import Tests.Ix.Compile.IxcRefusalRecords
 
 open LSpec
 
@@ -105,7 +106,18 @@ artifact. These are exact label/outcome/reason records, never name patterns. -/
 inductive LeanRefusal where
   | smallEliminator (label typeName : String)
   | blocked (label rootName : String)
+  | minorMismatch (label typeName ctorName : String)
+  | unsafeInductive (label : String)
   deriving Inhabited
+
+/-- The same exact measured fixture rows used by Pass3, with no wildcard policy. -/
+def measuredLeanRefusals (unit : String) : List LeanRefusal :=
+  (IxcRefusalRecords.leanRecords.filter (·.unit == unit)).flatMap fun r =>
+    r.names.map fun label => match r.reason with
+      | .smallEliminator ty => .smallEliminator label ty
+      | .minorMismatch ty ctor => .minorMismatch label ty ctor
+      | .unsafeInductive => .unsafeInductive label
+      | .blocked owner => .blocked label owner
 
 /-- One fixture and its record. -/
 structure Fixture where
@@ -232,6 +244,7 @@ def fixtures : List Fixture := [
   -- nested block with a small eliminator (its `_impl.unpack` eliminates into
   -- `Sort u`). The block's dependents are blocked on it.
   { stem := "NestedSortU", ns := ["NestedSortU"]
+    leanRefusals := measuredLeanRefusals "NestedSortU"
     knownFails :=
       kf "cert" "IxC modeller: a non-Prop nested block with a small eliminator (decline)"
         ["NestedSortU.T", "NestedSortU.T.mk", "NestedSortU.T.rec", "NestedSortU.T.rec_1",
@@ -243,12 +256,7 @@ def fixtures : List Fixture := [
   -- eliminator modeller boundary. M7 measured these exact four declines and
   -- their blocked dependent; this is not the old Ix.Tc positivity refusal.
   { stem := "NestedSortUK", ns := ["NestedSortUK"]
-    leanRefusals :=
-      [ .smallEliminator "NestedSortUK.T" "NestedSortUK.T"
-      , .smallEliminator "NestedSortUK.T.mk" "NestedSortUK.T"
-      , .smallEliminator "NestedSortUK.T.rec" "NestedSortUK.T"
-      , .smallEliminator "NestedSortUK.T.rec_1" "NestedSortUK.T"
-      , .blocked "NestedSortUK.t_rec" "NestedSortUK.T" ]
+    leanRefusals := measuredLeanRefusals "NestedSortUK"
     knownFails :=
       kf "cert" "IxC modeller: a non-Prop nested block with a small eliminator (decline)"
         ["NestedSortUK.T", "NestedSortUK.T.mk", "NestedSortUK.T.rec", "NestedSortUK.T.rec_1",
@@ -284,6 +292,7 @@ def fixtures : List Fixture := [
   -- WB §6: the certified checker declines the reflexive nested `R`
   -- (its documented modeller limitation); its dependents are blocked.
   { stem := "NestShapes", ns := ["NestShapes"]
+    leanRefusals := measuredLeanRefusals "NestShapes"
     knownFails := kf "cert" "WB §6 (certified: reflexive nested decline)"
       ["NestShapes.R", "NestShapes.R.*"] },
   -- Compiled, with constants a checker rejects: totality defects outside
@@ -327,7 +336,7 @@ def fixtures : List Fixture := [
   -- WB-B9 and BB-F5 were the kernels' head-only nested discovery (D-14):
   -- `UNestNeg`'s and `T`'s occurrences sit under a binder or a
   -- non-inductive head, and both kernels now find them.
-  { stem := "UnsafeI", ns := ["UnsafeI"] },
+  { stem := "UnsafeI", ns := ["UnsafeI"], leanRefusals := measuredLeanRefusals "UnsafeI" },
   { stem := "F1_Collapse2p1", ns := ["A", "B", "C"]
     knownFails := kf "rs" "BB-F1 (metadata of collapsed aliases)" ["*"] },
   { stem := "F5_SigmaNestedNested", ns := ["T"] },
@@ -340,6 +349,7 @@ def fixtures : List Fixture := [
   -- the block (one inductive hypothesis for no syntactically recursive
   -- field, SP5 §3.5), blocking its dependents.
   { stem := "KernelSpec", ns := ["KernelSpec"]
+    leanRefusals := measuredLeanRefusals "KernelSpec"
     knownFails :=
       kf "cert" "IxC modeller: nested under a definition (SP5 §3.5; decline)"
         ["KernelSpec.T", "KernelSpec.T.*"] },
@@ -523,7 +533,8 @@ def recordOf (env : Ixon.Env) (addr : Address) : Address :=
 
 def LeanRefusal.expected (env : Ixon.Env) (refusal : LeanRefusal) : Except String LeanReport.Row := do
   let (label, root) := match refusal with
-    | .smallEliminator l r | .blocked l r => (l, r)
+    | .smallEliminator l r | .blocked l r | .minorMismatch l r _ => (l, r)
+    | .unsafeInductive l => (l, l)
   let candidates := env.named.fold (init := []) fun acc name nd =>
     if toString name == root then nd :: acc else acc
   let [nd] := candidates | throw s!"lean record: missing or ambiguous root {root}"
@@ -531,9 +542,18 @@ def LeanRefusal.expected (env : Ixon.Env) (refusal : LeanRefusal) : Except Strin
   let _ ← raw.get
   let owner := recordOf env nd.addr
   unless env.consts.contains owner do throw s!"lean record: missing owner of {root}"
+  let ctorAddress ← match refusal with
+    | .minorMismatch _ _ ctor => do
+      let [(_, named)] := env.named.toList.filter (fun (n, _) => toString n == ctor) | throw s!"lean record: missing or ambiguous constructor {ctor}"
+      let some raw := env.consts[named.addr]? | throw s!"lean record: missing constructor record {ctor}"
+      let _ ← raw.get
+      pure named.addr
+    | _ => pure nd.addr
   let (outcome, reason) := match refusal with
     | .smallEliminator .. => ("decline", s!"decline: reader: in-process model of #{(toString nd.addr).take 12}: small eliminator on a non-Prop block")
     | .blocked .. => ("blocked", s!"blocked: {owner}")
+    | .unsafeInductive .. => ("decline", "decline: reader: unsafe inductive declaration")
+    | .minorMismatch .. => ("decline", s!"decline: reader: in-process model of #{(toString nd.addr).take 12}: minor 1 (#{(toString ctorAddress).take 12}): 1 inductive hypotheses for 0 recursive fields")
   return { label, outcome, reason }
 
 /-- Every recorded refusal must occur exactly, and no other refusal is
