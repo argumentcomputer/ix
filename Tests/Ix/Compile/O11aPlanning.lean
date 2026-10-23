@@ -2,6 +2,10 @@
 import Tests.Ix.Compile.O11aCopies
 import Tests.Ix.Compile.O11aDecline
 import Ix.Compile.Pass.Opt.ProducerPlan
+import IxC.Kernel.Audit.Axioms
+
+#guard_kernel_axioms Ix.Compile.Pass.Opt.producerReverseAppend_lookup [propext, Classical.choice, Quot.sound]
+
 open Lean
 namespace Tests.Ix.Compile.O11aPlanning
 open _root_.Ix.Compile.Pass.Opt

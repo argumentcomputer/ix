@@ -12,6 +12,15 @@ abbrev ProducerGraph := Std.HashMap ExactName (Array Name)
 abbrev ProducerSet := Std.HashSet ExactName
 abbrev ProducerRefusals := Std.HashMap ExactName (Std.HashMap ExactName String)
 
+/-- Updating the reverse adjacency in place preserves every lookup, including
+the complete caller array's order and duplicates. -/
+theorem producerReverseAppend_lookup (reverse : ProducerGraph) (producer query : ExactName)
+    (caller : Name) :
+    (reverse.alter producer (fun callers => some ((callers.getD #[]).push caller)))[query]? =
+      (reverse.insert producer ((reverse.getD producer #[]).push caller))[query]? := by
+  simp only [Std.HashMap.getElem?_alter, Std.HashMap.getElem?_insert,
+    Std.HashMap.getD_eq_getD_getElem?]
+
 /-- Reachability including the start node. Enqueue-once bounds the walk by
 the graph's number of vertices, including isolated producer vertices. -/
 def producerReach (graph : ProducerGraph) (start : Name) (bound : Nat) : ProducerSet := Id.run do
@@ -36,7 +45,9 @@ def producerBase (blocks : Ix.CondensedBlocks) : ProducerGraph × ProducerGraph 
       if let some p := blocks.lowLinks.get? n then
         if !Ix.Compile.ExactKey.nameEq p lo then deps := deps.insert p
     graph := graph.insert lo deps.toArray
-    for p in deps do reverse := reverse.insert p ((reverse.getD p #[]).push lo)
+    -- Update inside the map so a growing caller array is not retained across `push`.
+    for p in deps do
+      reverse := reverse.alter p fun callers => some ((callers.getD #[]).push lo)
   return (graph, reverse)
 
 /-- Plan proposed caller-to-producer dependencies without consulting readiness.
