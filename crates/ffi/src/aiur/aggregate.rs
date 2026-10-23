@@ -38,7 +38,7 @@ mod ffi;
 pub mod lanes;
 mod plan;
 mod prepare;
-mod protocol;
+pub(crate) mod protocol;
 mod prove;
 mod scheduler;
 mod statement;

@@ -2009,6 +2009,7 @@ dependencies = [
  "ix-common",
  "ix-compile",
  "ix-kernel",
+ "ix-proof-compression",
  "ixon",
  "ixvm-codegen",
  "lean-ffi",

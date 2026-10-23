@@ -1,97 +1,148 @@
-# FRI and KZG proof compression
+# Proof compression
 
-This crate provides a BLS12-381 KZG polynomial commitment scheme implementing
-the `multi-stark` field, evaluation-domain, transcript, and PCS interfaces,
-along with a proving configuration, Goldilocks circuit translation, and
-constrained FRI verification for fixed profiles. The pipeline compresses
-Aiur root proofs through FRI, KZG, and recursive KZG stages.
+Compress an aggregated Ix certificate through three stages:
+root Aiur proof → FRI proof → KZG proof → recursive KZG proof.
+The certificate claim remains unchanged. The root can aggregate any number of
+shards, provided its recursive verification fits the configured trace bounds.
 
-- `Scalar` provides canonical scalar-field serialization and arithmetic.
-- `Radix2Coset` defines evaluation domains and their selector polynomials.
-- `Srs` loads and validates proving parameters; `VerifierParams` retains only
-  the public parameters required for verification.
-- `KzgPcs` commits polynomial columns, batches openings by evaluation point,
-  and enforces each polynomial's declared degree bound with shifted commitments.
-- Coefficients can be resident, constant, or stored in checksummed local files.
-- `KzgConfig` binds the protocol parameters and SRS into the transcript and
-  implements multi-stark proving with streamed lookup and quotient processing.
-- `FixedProofCodec` encodes proofs against a fixed, trusted system and trace
-  layout, omitting metadata that the verifier already knows.
-- `GoldilocksCircuit` translates Goldilocks constraints into scalar-field
-  constraints, preserving public values and enforcing canonical integer bounds.
-- `KzgCircuitExt` chooses lookup groups within the quotient and SRS bounds.
-- `QuadraticValue` constrains quadratic-extension arithmetic, and
-  `constrain_algebraic_checks` enforces the inner system's constraint and
-  lookup equations against supplied openings and challenges.
-- `Blake3Challenger` matches native Goldilocks/BLAKE3 sampling, including
-  canonical field rejection sampling with a fixed retry budget.
-- `constrain_transcript` binds the system shape, claims, commitments, and
-  intermediate accumulators to the algebraic challenges.
-- The fixed-profile verifier authenticates openings through Merkle paths,
-  PCS reductions, binary FRI folds, grinding checks, and the final polynomial.
-- The batch verifier shares a transcript across shards and constrains their
-  total lookup residual against caller-bound messages.
-- Witness expansion reconstructs paths and challenges without native proof
-  verification; the circuit authenticates the supplied values.
+## Local setup and CLI
 
-Callers supply trusted system metadata and supported profiles, and expose or
-constrain statement wires in the enclosing circuit. Standalone arithmetic and
-transcript helpers do not verify complete proofs. `VerifierPlan` validates
-trusted keys, profiles, statement dimensions, and resource limits before
-constructing a verifier. Proof assignment preserves caller-owned statement wires.
+Build with `lake build ix`, then run `.lake/build/bin/ix` (called `ix` below):
 
-`prepare_root` checks Aiur batch policy and builds a root-verifier witness;
-`prove_fri`, `prepare_kzg`, and `prove_kzg` carry the expected statement through
-the two compression stages. Verifier codecs retain the statement schema and
-verification parameters without retaining proving powers or fixed matrices.
-`FixedRoot` constructs a circuit for fixed trace and memory bounds, while
-`AiurSystem::prove_from_execution_normalized` pads executions to those bounds
-so different inputs can use the same verifier.
+```sh
+ix compression setup --srs /path/to/trusted.srs
+ix compress ROOT_ADDRESS
+ix verify COMPRESSED_ADDRESS
+```
 
-`prepare_recursive` builds a scalar-field circuit for KZG verification using
-constrained base-field arithmetic, curve operations, multiscalar multiplication,
-and transcript replay. Pairing operands are public outputs of that circuit.
-`RecursiveVerifier` checks the outer proof against the expected claim and
-checks the degree-bound and opening pairing equations outside the circuit.
-`setup` derives the complete verifier from trusted root metadata, fixed bounds,
-and proving parameters without requiring a proof or witness.
+The prover and verifier each run setup with the same SRS, compiled aggregate
+backend, and bounds. Setup derives a fixed verifier locally without a certificate
+or proof. The prover supplies only the proof; no verifier key is accepted from it.
+`compress` accepts a root from `ix aggregate` using the current default aggregate
+parameters, checks it, normalizes it, runs all three stages, and verifies the
+result against the local key before saving it. It prints the new store address
+to stdout and progress to stderr.
 
-The caller must authenticate the SRS provenance. Point and consistency checks
-cannot establish that its trapdoor is unknown. `Srs::unsafe_dev_setup` generates
-known-trapdoor parameters for tests only. The caller also binds its protocol and
-parameters into the BLAKE3 transcript before committing and opening polynomials.
+Configurations live in `~/.ix/compression/<configuration-id>/`; set
+`IX_COMPRESSION_HOME` to use another directory. Each contains `settings.json` and
+`verifier.bin`. The `default` file selects the proving configuration. Proofs carry
+an identifier for an already configured local verifier. Unknown configurations
+are rejected. Setup records the absolute SRS path for proving; verification needs
+only settings and the verifier key. Repeated setup with identical parameters
+reuses the key. Treat the configuration directory as trusted local data.
 
-The crate currently exposes compression as a library. CLI integration follows
-in the final patch.
+Use `--dev-srs` instead of `--srs FILE` only for development. It generates
+known-trapdoor parameters in `development.srs`; those proofs are not
+production-secure. Imported SRS files use `Srs::write` / `Srs::from_reader` format:
+`IXKZGS01`, a little-endian u32 log-length, `2^log-length` G1 powers,
+G2 and tau-G2, then log-length + 1 degree keys, all compressed Ark points.
+Import checks point encodings, subgroups, and consistency; provenance must be
+established independently.
 
-## Tests
+## Trace bounds
 
-The inline tests cover canonical encodings, domain selectors, SRS validation,
-transcript observations, degree-bound rejection, verifier-only parameters, and
-equivalence of constant, resident, and disk-backed polynomial operations.
-Backend tests also cover foreign-field bounds, compact encoding, transcript
-binding, streamed/dense proving equivalence, and copy constraints across shards.
-FRI gadget tests compare arithmetic and transcript results with native
-implementations, exercise BLAKE3 block and tree boundaries and forced field
-sampling retries, and reject altered claims, openings, roots, and challenges.
-A fixed parity fixture checks call/return relations and unused rows independently
-of the proof protocol.
-Complete-verifier tests cover ordinary and batch proofs, sparse activation,
-mixed heights, malformed shapes, and statement binding. Adversarial tests
-mutate openings, commitments, paths, challenges, grinding witnesses, and the
-final polynomial after witness expansion to check the circuit constraints.
-Planning and pipeline tests cover key transport, invalid profiles, statement
-ownership, normalized trace bounds, memory limits, deterministic verifier
-construction, and preservation of claims across compression stages.
-Recursive tests cover field and curve arithmetic, multiscalar multiplication,
-transcript agreement, tampered public values, and external pairing checks.
-The original ignored `complete_compression_chain` test exercises the entire
-pipeline and compares its verifier with one derived independently by `setup`.
+The normalizer wraps the root through the aggregate program into one all-active
+Aiur trace shard. Each function and memory trace has its own `u8` log-height;
+byte tables retain their native heights. Setup fixes the complete layout before
+any proof is provided. Oversized executions are rejected before trace allocation.
 
-Run them on a machine with sufficient resources:
+```sh
+ix compression layout > root-layout.json
+# Edit the bounds for the executions you intend to support.
+ix compression setup --srs /path/to/trusted.srs --root-layout root-layout.json
+```
+
+The JSON contains `functions`, an array in compiled function-circuit order, and
+`memory`, an object mapping every memory width to its log-height. For example,
+`{"functions": [18, 12], "memory": {"1": 16, "8": 10}}` describes a backend with
+two function circuits and two memory widths. Heights must be integers in 1–26;
+missing entries and unknown fields are rejected. Templates start at 20; use
+`compression layout --root-log-height N` to change that starting value.
+Without `--root-layout`, setup uses uniform `--root-log-height N` (default 20).
+The two setup flags are mutually exclusive.
+
+These bounds cover verification of the input aggregate proof, including memory
+closures; they do not describe the original shards or the proof's byte size.
+Changing any bound requires matching setup on both sides.
+
+The compression stages have independent partition limits:
+
+| Setup flag | Log-height range | Default |
+| --- | --- | --- |
+| `--fri-log-height` | 16–26 | 23 |
+| `--log-height` (intermediate KZG) | 16–26 | 24 |
+| `--recursive-log-height` (final KZG) | 16–28 | `--log-height` |
+
+The SRS must cover the larger KZG limit. The FRI stage uses the aggregate
+backend's query and proof-of-work parameters with blowup four; its partition
+must fit indivisible hash traces. Partition limits are part of the configuration
+identity, not total memory limits or automatic RAM tuning. Setup and proving can
+require substantial resources and do not resume automatically.
+
+## Reproduce the sub-3 KB Init proof
+
+Start with the stored root from aggregating all 16 shards of Init, and retain
+`Init.ixe` and `Init-16.ixes` for the environment audit. The supplied
+[Init layout](examples/init16-root-layout.json) fixes the 88 function-circuit
+and 11 memory bounds used for this run. It is an example for this compiled
+backend and workload, not a universal layout for every aggregate root.
+
+From the repository root, in Bash:
+
+```sh
+lake build ix
+export RAYON_NUM_THREADS=32
+export IX_COMPRESSION_HOME="$PWD/compression"
+ix=.lake/build/bin/ix
+root=ROOT_ADDRESS # Replace with your stored 16-shard aggregate root address.
+
+"$ix" compression setup --dev-srs \
+  --root-layout crates/proof-compression/examples/init16-root-layout.json \
+  --fri-log-height 23 --log-height 25 --recursive-log-height 28
+compressed=$("$ix" compress "$root")
+"$ix" verify "$compressed"
+"$ix" verify --aggregate --ixe Init.ixe --ixes Init-16.ixes "$compressed"
+
+# Copy and measure the complete serialized Ixon.Proof, including its claim.
+cp "$HOME/.ix/store/${compressed:0:2}/${compressed:2:2}/${compressed:4:2}/${compressed:6}" compressed.proof
+wc -c < compressed.proof
+test "$(wc -c < compressed.proof)" -lt 3000
+```
+
+This configuration produced a 2,707-byte complete proof. The larger final
+partition permits one arithmetic trace plus the lookup table, avoiding the
+commitments and openings of multiple final arithmetic partitions. A smaller
+final height can still prove the statement but produces a larger proof. The
+size target depends on the layout and compiled circuits; it is not guaranteed
+for arbitrary bounds. The development recipe exercises the full pipeline;
+for production, replace `--dev-srs` with `--srs /path/to/trusted.srs` covering
+`2^28` G1 powers, with the required degree keys.
+
+## Library and tests
+
+`pipeline::FixedRoot` and `pipeline::setup` derive the fixed verifier without a
+witness. `pipeline::prepare_root` also supports variable root layouts with an
+independently trusted aggregate key and expected outer claim. `Prepared::prove_fri`,
+`prepare_kzg` / `Prepared::prove_kzg`, and `prepare_recursive` /
+`RecursiveStage::prove` expose the three stages separately. The final verifier
+checks the expected claim, outer proof, and both opening and degree pairing
+equations. Verifier codecs contain no proving powers; authenticate keys before
+loading them outside local setup.
+
+The FRI verifier supports Goldilocks with quadratic challenges, cap-height zero,
+binary FRI, a constant final polynomial, active preprocessed tables, and bounded
+field-sampling retries. Unsupported profiles fail during preparation.
 
 ```sh
 cargo test --release -p ix-proof-compression
-cargo test --release -p ix-proof-compression --no-default-features
-cargo test --release -p ix-proof-compression --test pipeline_root complete_compression_chain -- --ignored
+```
+
+Tests generate their fixtures and cover native/constrained verifier agreement,
+statement binding, malformed inputs, degree bounds, and streaming equivalence.
+The expensive complete-chain test independently derives a fixed key and proves
+a synthetic relation with development parameters and low FRI query counts:
+
+```sh
+cargo test --release -p ix-proof-compression --test pipeline_root \
+  complete_compression_chain -- --ignored --nocapture
 ```
