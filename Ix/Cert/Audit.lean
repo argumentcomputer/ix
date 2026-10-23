@@ -44,6 +44,7 @@ import Ix.CompileCert.ImageShape
 import Ix.CompileCert.CliqueRowShape
 import Ix.CompileCert.CliqueRowsCoverage
 import Ix.CompileCert.O6RecRead
+import Ix.Cert.AnnotatedBeta
 
 /-! # The certification statements, frozen
 
@@ -5586,3 +5587,18 @@ run_cmd do
   checkRoots (tag := "cert-audit") "O6 raw reader reduction"
     (#[`related_unique, `Lambdas.beta, `o6_rec_output, `o5_subst_levels,
       `data_picks, `selects_read, `o6_rec_raw_reader_red].map (`Ix.CompileCert.O6RecRead ++ ·))
+
+/-! ## Actual closed annotation/inference: certified beta and public values
+
+The exact application run supplies argument io inference and domain DefEq,
+including Prop. The annotation trace retains the real opener and marker.
+Reduction soundness supplies the reduct's frame/read/grade at the same model;
+annotation of the raw reduct or actual O6 output is not identified here. -/
+
+/-- info: [cert-audit] annotated beta values: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "annotated beta values"
+    (#[`inferred_beta_certificate, `annotate_lam_trace, `annotate_beta_trace,
+      `inferred_beta_values, `annotated_beta_values].map (`Ix.Cert.AnnotatedBeta ++ ·))
