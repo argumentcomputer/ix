@@ -2,12 +2,13 @@ import LSpec
 import Ix.Meta
 import Ix.CompileDriver
 import Tests.Ix.AuxGen.BelowIxc
+import Tests.Ix.AuxGen.CheckedKernel
 
 /-! # Generated auxiliaries accepted by Source mode (`lake exe IxTests --ignored auxgen-acceptance-probe`)
 
 AuxGen M5a's library check, before its wiring (`auxgen-m5.md` §2). For every
 block that holds an inductive, on the fixtures and on Init+Std: the aux
-tail's patches (`generateAuxPatches` on `Ix.Tc`), then, over the block's
+tail's patches (`generateAuxPatches` on the checked IxC capability), then, over the block's
 oracle (a run-ahead with production's asks, the block folded):
 - a block whose layout is Lean's (no flat block) is left to the identity
   verdict (the input's own acceptance); its patches are counted against
@@ -60,7 +61,7 @@ def order : Ix.AuxGen.PatchedConstant → Nat
     | _ => 5
   | .recr _ => 7
 
-/-- One block's generation on `Ix.Tc`: its classes, Lean's `all`, the
+/-- One block's checked IxC generation: its classes, Lean's `all`, the
 patches, and the Prop family's generated recursors (as CompileAux generates
 them, over an overlay). -/
 structure Gen where
@@ -95,7 +96,8 @@ def generate (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Name
     let classes := (classNames.map (·.filter inAll)).filter (!·.isEmpty)
     if classes.isEmpty then return none
     let maps := Ix.AuxGen.AddrMaps.ofCompileEnv (← Ix.CompileM.getCompileEnv)
-    let (out, _) ← (Ix.AuxGen.generateAuxPatches classes originalAll maps).run
+    let kernel ← checkedFamilyKernel cenv maps originalAll
+    let (out, ctx) ← (Ix.AuxGen.generateAuxPatches classes originalAll maps kernel).run
       Ix.AuxGen.AuxKernelCtx.new
     -- the Prop family, as CompileAux builds its overlay
     let belowRaw : Array Ix.AuxGen.BelowIndc := out.patches.fold (init := #[]) fun acc _ p =>
@@ -116,9 +118,14 @@ def generate (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Name
         overlay := overlay.insert ind.name (.inductInfo v)
         for c in ind.ctors do overlay := overlay.insert c.cnst.name (.ctorInfo c)
     let familyRecs ← if family.isEmpty then pure #[] else do
-      let (recs, _) ← (Ix.AuxGen.generateCanonicalRecursorsWithOverlay
-        (family.map fun (v, _) => #[v.cnst.name]) (some overlay) none (.tc maps)).run
-          Ix.AuxGen.AuxKernelCtx.new
+      let (recs, _) ← (do
+        let base := match ctx.canonical, ctx.canonicalOracle with
+          | some .installed, some oracle => Ix.AuxGen.AuxKernel.ixc maps oracle
+          | _, _ => kernel
+        let familyKernel ← base.withFamily family
+        Ix.AuxGen.generateCanonicalRecursorsWithOverlay
+          (family.map fun (p : Ix.InductiveVal × Array Ix.ConstructorVal) => #[p.1.cnst.name])
+          (some overlay) none familyKernel).run ctx
       pure recs.1
     return some { classes, originalAll, out, family, familyRecs }
   match Ix.CompileM.CompileM.run cenv blockEnv {} act with

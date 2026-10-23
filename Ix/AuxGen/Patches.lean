@@ -103,10 +103,10 @@ def auxAliasFindTarget (patches : Std.HashMap Name PatchedConstant)
     (aux_gen.rs:188).
 
     `maps` serves the compile-side alias identification (the permutation's
-    `resolveAddr` and the claims); `kernel` (by default `Ix.Tc` over the
-    same `maps`) answers every kernel question. -/
+    `resolveAddr` and the claims); the explicit `kernel` answers every
+    kernel question. -/
 def generateAuxPatches (sortedClasses : Array (Array Name))
-    (originalAll : Array Name) (maps : AddrMaps) (kernel : AuxKernel := .tc maps)
+    (originalAll : Array Name) (maps : AddrMaps) (kernel : AuxKernel)
     : KBridgeM AuxPatchesOutput := do
   let patches : Std.HashMap Name PatchedConstant := {}
   let aliases : Std.HashMap Name Name := {}

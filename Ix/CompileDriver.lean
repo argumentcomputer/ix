@@ -192,6 +192,21 @@ def runAuxTail (lo : Name) (cs : Array MutConst) (sortedClasses : List (List Mut
         Ix.AuxGen.AuxTable.withBlockStatus (some why) (kctx.generated.map (·.1)) kctx.admitted
       return (out, { kctx with admitted })
 
+/-- A missing required capability is a configuration error. Mutual
+definition blocks still register their Muts entry without asking a kernel. -/
+private def runConfiguredAuxTail (lo : Name) (cs : Array MutConst)
+    (sortedClasses : List (List MutConst)) (blockAddr : Address)
+    (maps : Ix.AuxGen.AddrMaps) (oracle? : Option Ix.AuxGen.AuxOracle) :
+    CompileM ((Option Ixon.AuxLayout × Ix.AuxGen.AuxTailRecs) × Ix.AuxGen.AuxKernelCtx) := do
+  match oracle? with
+  | some oracle => runAuxTail lo cs sortedClasses blockAddr maps (.ixc maps oracle)
+  | none =>
+    if cs.any (fun c => c matches .indc _) then
+      throw (.unsupportedExpr s!"AuxGen (configuration): block {lo.pretty}: IxC provider is absent")
+    (do
+      discard <| Ix.AuxGen.registerMutualAuxEntry sortedClasses blockAddr
+      pure (none, (default : Ix.AuxGen.AuxTailRecs))).run Ix.AuxGen.AuxKernelCtx.new
+
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
     singleton non-inductive constants take the plain single-constant
@@ -248,9 +263,9 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   let bstate ← getBlockState
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
     (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
-  -- The kernel AuxGen asks: IxC Source mode through the fold's oracle (AuxGen
-  -- M2b–M5c, `CompileEnv.auxOracle`), `Ix.Tc` over the bridge without one
-  -- (AuxGen M0). Since AuxGen T3 an unsafe block's tail asks it too: the
+  -- The kernel AuxGen asks: IxC Source mode through the fold's explicit
+  -- oracle (`CompileEnv.auxOracle`). An inductive tail without a provider
+  -- is a configuration error. Since AuxGen T3 an unsafe block's tail asks it too: the
   -- service's tier installs the block's groups typing only (M7 Q1), and its
   -- oracle answers over the tier's answer view; its auxiliaries stay outside
   -- every statement (`recordTailReport`). Under a measurement mode
@@ -259,16 +274,13 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     | .indc ind => !ind.isUnsafe
     | .recr rv => !rv.isUnsafe
     | .defn d => d.safety != .unsaf
-  let kernel : Ix.AuxGen.AuxKernel :=
-    match cenv.auxOracle.bind (· lo) with
-    | some oracle => .ixc maps oracle
-    | none => .tc maps
+  let oracle? := cenv.auxOracle.bind (· lo)
   -- AuxGen M5c: under `failClosed` (production), a block Source mode does
   -- not accept can request a checked generation retry; any other refusal fails it
   -- (`runAuxTail`).
   let ((auxLayout?, recs), kctx) ←
-    runAuxTail lo cs sortedClasses blockResult.blockAddr maps kernel
-  if let .ixc _ oracle := kernel then
+    runConfiguredAuxTail lo cs sortedClasses blockResult.blockAddr maps oracle?
+  if let some oracle := oracle? then
     if oracle.trace then
       let tier := !safe && oracle.blockStatus () == some Ix.AuxGen.AuxOracle.tierBlockStatus
       let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0

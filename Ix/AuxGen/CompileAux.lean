@@ -958,7 +958,7 @@ def admitGenerated (cs : Array MutConst) (patches : Std.HashMap Name PatchedCons
     `IX_TIMING` instrumentation is not ported. -/
 def generateAndCompileAuxRecursors (cs : Array MutConst)
     (classNames : Array (Array Name)) (maps : AddrMaps)
-    (kernel : AuxKernel := .tc maps)
+    (kernel : AuxKernel)
     : KBridgeM (Option Ixon.AuxLayout × AuxTailRecs) := do
   -- Guard: aux_gen canonical generation only runs for blocks containing
   -- inductives (mutual.rs:521-524).
@@ -1258,26 +1258,10 @@ source-indexed aux name")
   let recs := auxOut.canonicalRecs.filter fun (n, _) => patches.contains n
   return (auxLayout, { recs, belowRecs })
 
-/-- The aux tail of `compile_mutual` (compile.rs:3986-4144): register the
-    primary block's synthetic `Muts` named entry, run the aux pipeline, and
-    re-register the entry with the returned `AuxLayout`. Returns the layout
-    and the canonical recursors the pipeline generated (`AuxTailRecs`), which
-    the driver's Pass 3 hook reads (`Ix.Compile.Pass.editBlock`). No call-site
-    plan is computed: Pass 3 rewrites the callers of a changed block instead
-    (the surgery's plan computation, `computeCallSitePlans`, is no longer
-    called). Lives here rather than in `Ix.CompileM.compileMutualBlock`
-    because CompileM cannot import AuxGen (dependency direction).
-
-    `kernel` is the kernel AuxGen asks (`Ix.Tc` over `maps` by default);
-    `maps` also serves the compile-side alias identification. This is the
-    compile driver's construction point of the `AuxKernel` (AuxGen M1's
-    seam). -/
-def compileMutualAuxTail (cs : Array MutConst)
-    (sortedClasses : List (List MutConst)) (blockAddr : Address)
-    (maps : AddrMaps) (kernel : AuxKernel := .tc maps)
-    : KBridgeM (Option Ixon.AuxLayout × AuxTailRecs) := do
-  -- Primary `Muts` named entry (compile.rs:3986-4013); registered on the
-  -- aux path only — the no-aux promotion pass reuses these entries.
+/-- The primary `Muts` entry, also needed by a mutual definition block
+whose tail has no inductives and never asks a kernel question. -/
+def registerMutualAuxEntry (sortedClasses : List (List MutConst))
+    (blockAddr : Address) : KBridgeM (Name × Array (Array Address)) := do
   let firstName := (← listHead (← listHead sortedClasses
     "compileMutualAuxTail: first class") "compileMutualAuxTail: first member").name
   let mutsAll : Array (Array Address) := sortedClasses.toArray.map fun cls =>
@@ -1288,6 +1272,29 @@ def compileMutualAuxTail (cs : Array MutConst)
     auxRegisterName mutsName
       { addr := blockAddr
         constMeta := Ixon.ConstantMeta.new (.muts mutsAll none) }
+  return (mutsName, mutsAll)
+
+/-- The aux tail of `compile_mutual` (compile.rs:3986-4144): register the
+    primary block's synthetic `Muts` named entry, run the aux pipeline, and
+    re-register the entry with the returned `AuxLayout`. Returns the layout
+    and the canonical recursors the pipeline generated (`AuxTailRecs`), which
+    the driver's Pass 3 hook reads (`Ix.Compile.Pass.editBlock`). No call-site
+    plan is computed: Pass 3 rewrites the callers of a changed block instead
+    (the surgery's plan computation, `computeCallSitePlans`, is no longer
+    called). Lives here rather than in `Ix.CompileM.compileMutualBlock`
+    because CompileM cannot import AuxGen (dependency direction).
+
+    `kernel` is the explicit kernel AuxGen asks;
+    `maps` also serves the compile-side alias identification. This is the
+    compile driver's construction point of the `AuxKernel` (AuxGen M1's
+    seam). -/
+def compileMutualAuxTail (cs : Array MutConst)
+    (sortedClasses : List (List MutConst)) (blockAddr : Address)
+    (maps : AddrMaps) (kernel : AuxKernel)
+    : KBridgeM (Option Ixon.AuxLayout × AuxTailRecs) := do
+  -- Primary `Muts` named entry (compile.rs:3986-4013); registered on the
+  -- aux path only — the no-aux promotion pass reuses these entries.
+  let (mutsName, mutsAll) ← registerMutualAuxEntry sortedClasses blockAddr
 
   -- Regenerate + compile auxiliaries (compile.rs:4018-4029).
   let classNames : Array (Array Name) :=
