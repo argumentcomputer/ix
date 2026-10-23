@@ -39,6 +39,7 @@ import Ix.Cert.SourceOrigin
 import Ix.Cert.SourceOriginRead
 import Ix.Cert.ValueRows
 import Ix.Cert.ConversionValues
+import Ix.CompileCert.ImageOrigin
 
 /-! # The certification statements, frozen
 
@@ -5506,3 +5507,17 @@ run_cmd do
   checkRoots (tag := "cert-audit") "checked conversion values"
     (#[`infer_reading, `reading_denotes, `defeq_values, `defeq_denotations_eq,
       `checked_defeq_values, `definition_front, `valueFront_defeq_values].map (`Ix.Cert.ConversionValues ++ ·))
+
+/-! ## Actual image-generation prefix and production view provenance
+
+The successful StateT run supplies one coherent prefix through telescope,
+minor analysis and buildRecApp. The view retains its actual spec/canonical
+build and exact back-renaming. No rule simulation or recognition is assumed. -/
+
+/-- info: [cert-audit] image production origins: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "image production origins"
+    (#[`imageOf_origin, `view_image_origin, `buildViewWith_spec,
+      `buildView_origin].map (`Ix.CompileCert.ImageOrigin ++ ·))
