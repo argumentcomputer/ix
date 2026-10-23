@@ -1,2 +1,3 @@
-//! Polynomial commitment foundations for Ix proof compression.
+//! KZG proving and Goldilocks circuit translation for Ix proof compression.
+pub mod foreign;
 pub mod kzg;

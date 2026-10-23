@@ -13,7 +13,10 @@ ark-ff = { version = "0.5", features = ["asm"] }
 ark-poly = "0.5"
 ark-serialize = { version = "0.5", features = ["std"] }
 blake3 = { workspace = true }
+num-bigint = { workspace = true }
 serde = { version = "1", features = ["derive"] }
+tracing = { workspace = true }
+p3-field = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-matrix = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }

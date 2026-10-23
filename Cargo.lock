@@ -2061,10 +2061,13 @@ dependencies = [
  "bincode",
  "blake3",
  "multi-stark",
+ "num-bigint 0.4.6",
+ "p3-field",
  "p3-matrix",
  "p3-maybe-rayon",
  "p3-util",
  "serde",
+ "tracing",
 ]
 
 [[package]]
