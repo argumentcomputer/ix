@@ -40,6 +40,7 @@ import Ix.Cert.SourceOriginRead
 import Ix.Cert.ValueRows
 import Ix.Cert.ConversionValues
 import Ix.CompileCert.ImageOrigin
+import Ix.CompileCert.ImageShape
 
 /-! # The certification statements, frozen
 
@@ -5521,3 +5522,18 @@ run_cmd do
   checkRoots (tag := "cert-audit") "image production origins"
     (#[`imageOf_origin, `view_image_origin, `buildViewWith_spec,
       `buildView_origin].map (`Ix.CompileCert.ImageOrigin ++ ·))
+
+/-! ## Actual image-shape recognition and bounded selectors
+
+Successful loops recover the exact header and argument witnesses, preserving
+raw cached hashes. Optional lookups discharge bounds for every selected
+argument and retained minor term. Permutations and production provenance use
+the same recognition success; image completeness/simulation stay separate. -/
+
+/-- info: [cert-audit] image shape recognition: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "image shape recognition"
+    (#[`position_shape, `readShape_result, `readShape_permutations,
+      `readShape_reads, `production_origin].map (`Ix.CompileCert.ImageShape ++ ·))
