@@ -1,4 +1,5 @@
 import Tests.Ix.AuxGen.GenerationOnlyFactory
+import Tests.Ix.AuxGen.GenerationOnlyAliases
 import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.IxVM
 import Tests.Ix.Fixtures
@@ -141,7 +142,9 @@ private def targets : Array String := #["Exists.intro", "Tests.Ix.Compile.Mutual
   "Tests.Ix.Compile.Mutual.NestedPredicate.VR.con", "IxVMInd.AuxTie.c"]
 
 def evaluate (factoryControls : Bool := true) : IO Unit := do
-  if factoryControls then GenerationOnlyFactory.evaluate
+  if factoryControls then
+    GenerationOnlyAliases.evaluate
+    GenerationOnlyFactory.evaluate
   let leanEnv ← getCompileEnv #[`Tests.Ix.Compile.ValidateAux, `Tests.Ix.IxVM, `Tests.Ix.Fixtures]
   let filtered := validateAuxClosure leanEnv
   let raw ← CompileM.rsCompilePhasesFFI filtered

@@ -23,7 +23,8 @@ private def refused (r : Except String α) (want : String) : IO Unit := match r 
   | .ok _ => throw (IO.userError s!"unexpected success: {want}")
 
 def evaluate : IO Unit := do
-  let leanEnv ← getCompileEnv #[`Tests.Ix.AuxGen.GenerationRetry]
+  let leanEnv ← getCompileEnv #[`Tests.Ix.AuxGen.GenerationRetry,
+    `Tests.Ix.Compile.AuxCert.NestedSortUK]
   let env ← Tests.Ix.Kernel.SourceIngress.envOf leanEnv #[`NestedSortUK.T, `NestedSortUK.t_rec, ``TierTree]
   let blocks := Tests.Ix.Kernel.SourceIngressStep.condense env
   let ((ix1, _, c1), _) ← IO.ofExcept (← IO.lazyPure fun _ => CompileM.compileEnvFoldWithSource env blocks (width := 1))

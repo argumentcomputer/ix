@@ -4,6 +4,7 @@ import Ix.CompileDriver
 import Ix.AuxGen.SourceService
 import Ix.Cert.Statement
 import Tests.Ix.Kernel.SourceIngress
+import Tests.Ix.AuxGen.CheckedKernel
 
 /-! # The canonical flat block in Source mode (`lake test -- auxgen-flat-source`)
 
@@ -80,7 +81,8 @@ def blockAux (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Name
     let classes := (classNames.map (·.filter inAll)).filter (!·.isEmpty)
     if classes.isEmpty then return none
     let maps := Ix.AuxGen.AddrMaps.ofCompileEnv (← Ix.CompileM.getCompileEnv)
-    let (out, _) ← (Ix.AuxGen.generateAuxPatches classes originalAll maps).run
+    let kernel ← checkedFamilyKernel cenv maps originalAll
+    let (out, _) ← (Ix.AuxGen.generateAuxPatches classes originalAll maps kernel).run
       Ix.AuxGen.AuxKernelCtx.new
     return some { lo, classes, originalAll, out }
   match Ix.CompileM.CompileM.run cenv blockEnv {} act with

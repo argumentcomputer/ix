@@ -1,5 +1,4 @@
 import Tests.Ix.AuxGen.TierService
-import Tests.Ix.Compile.AuxCert.NestedSortUK
 
 /-! Isolated M7 spike. Nothing calls this from production. A generation
 context stores only checked tier/sigma extensions of an immutable Source

@@ -4,6 +4,7 @@ import Ix.AuxGen.Patches
 import Ix.AuxGen.Nested
 import Ix.LeanIngress
 import Tests.Ix.Kernel.SourceIngressStep
+import Tests.Ix.AuxGen.CheckedKernel
 
 /-! # nested-agreement: the compiler's nested expansion against IxC's nested modeller
 
@@ -402,8 +403,9 @@ def compilerScc (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (sccInds : Array 
   | .error e => return { lo := lo.pretty, classes := #[], path := "error", err := some s!"{e}" }
   | .ok ((classes, reps, canon, perm, srcX, types, ctors, path, externalsInLeanOrder), _) =>
     -- the generated recursors (production entry point)
-    let patchesE := Ix.CompileM.CompileM.run cenv blockEnv {}
-      ((Ix.AuxGen.generateAuxPatches classes originalAll maps).run' Ix.AuxGen.AuxKernelCtx.new)
+    let patchesE := Ix.CompileM.CompileM.run cenv blockEnv {} do
+      let kernel ← Tests.Ix.AuxGen.checkedFamilyKernel cenv maps originalAll
+      (Ix.AuxGen.generateAuxPatches classes originalAll maps kernel).run' Ix.AuxGen.AuxKernelCtx.new
     let canonRecs : Except String (Array Ix.RecursorVal) :=
       match patchesE with
       | .error e => .error s!"generateAuxPatches: {e}"
