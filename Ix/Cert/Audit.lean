@@ -41,6 +41,7 @@ import Ix.Cert.ValueRows
 import Ix.Cert.ConversionValues
 import Ix.CompileCert.ImageOrigin
 import Ix.CompileCert.ImageShape
+import Ix.CompileCert.CliqueRowShape
 
 /-! # The certification statements, frozen
 
@@ -5537,3 +5538,18 @@ run_cmd do
   checkRoots (tag := "cert-audit") "image shape recognition"
     (#[`position_shape, `readShape_result, `readShape_permutations,
       `readShape_reads, `production_origin].map (`Ix.CompileCert.ImageShape ++ ·))
+
+/-! ## Exact equation rows from successful production construction
+
+The row's source/value/universe, empty-state proof run and guard remain
+linked to its actual returned theorem. Source-copy header/value identities
+name only the producer operations; semantic faithfulness, required row
+existence, publication, reading and Eq-domain discharge remain separate. -/
+
+/-- info: [cert-audit] clique row producer shape: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "clique row producer shape"
+    (#[`rowOfWith_shape, `rowOf_shape, `srcCopy_header, `srcCopy_value,
+      `rowOfWith_header].map (`Ix.CompileCert.CliqueRowShape ++ ·))
