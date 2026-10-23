@@ -7,9 +7,8 @@
   `check-rs`'s fail-out rows and summary: messages per label, header and
   trailer comments skipped, anonymous labels resolved to their address.
 
-  Ported from a9cf3607 (`Tests/Ix/Compile/KernelReportTests.lean`) without
-  the `check-lean` readers, which return with the `lean` kernel leg after
-  M7's `check-lean` move.
+  Ported from a9cf3607 (`Tests/Ix/Compile/KernelReportTests.lean`). The migrated
+  IxC `check-lean` protocol has its separate strict controls in LeanReportTests.
 -/
 import LSpec
 import Tests.Ix.Compile.KernelReport
