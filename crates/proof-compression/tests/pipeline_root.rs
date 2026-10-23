@@ -1,6 +1,10 @@
 //! Generated aggregate-shaped statements, including multi-shard Aiur batches.
 use aiur::vk_codec::{AiurVerifyingKey, to_bytes};
-use ix_proof_compression::pipeline::prepare_root;
+use ix_proof_compression::kzg::Srs;
+use ix_proof_compression::pipeline::{
+  FixedRoot, FriVerifier, KzgVerifier, RecursiveVerifier, prepare_kzg,
+  prepare_recursive, prepare_root, setup,
+};
 use multi_stark::batch::ShardInput;
 use multi_stark::expr::Expr;
 use multi_stark::lookup::Lookup;
@@ -10,6 +14,7 @@ use multi_stark::types::{
 };
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
+use std::sync::Arc;
 
 fn root_system() -> (
   System<GoldilocksBlake3Config>,
@@ -102,4 +107,69 @@ fn different_root_statements_and_trace_shard_counts() {
     verifier.verify(&compressed, &expected).unwrap();
     assert!(verifier.verify(&compressed, &wrong).is_err());
   }
+}
+
+/// Runs all real compression circuits; expensive because it includes two KZG provers.
+#[test]
+#[ignore = "complete compression chain, including recursive KZG proving"]
+fn complete_compression_chain() -> Result<(), Box<dyn std::error::Error>> {
+  let (system, pk, cp, fp) = root_system();
+  let key = AiurVerifyingKey::from_bytes(&to_bytes(&system, cp, fp))?;
+  let height = 1 << 22;
+  let srs =
+    Arc::new(Srs::unsafe_dev_setup(height, b"complete-compression-test"));
+  srs.validate()?;
+  let fixed = FixedRoot::new(vec![1], vec![], 18)?;
+  let config = || {
+    GoldilocksBlake3Config::new(
+      CommitmentParameters { log_blowup: 2, cap_height: 0 },
+      FriParameters { num_queries: 1, ..fp },
+    )
+  };
+  eprintln!("deriving the local verifier without a proof");
+  let local =
+    setup(&key, &fixed, srs.clone(), config(), 1 << 20, height, height)?;
+  let local_bytes = local.to_bytes()?;
+  drop(local);
+  eprintln!("local verifier ready; generating the root proof");
+  let expected: Vec<_> = (0..18).map(|i| Val::from_u32(71 + i)).collect();
+  let mut row = expected.clone();
+  row.push(Val::ONE);
+  row.extend(vec![Val::ZERO; 19]);
+  let root = system.prove_batch(
+    &pk,
+    vec![ShardInput {
+      claims: vec![expected.clone()],
+      witness: SystemWitness::from_stage_1(
+        vec![RowMajorMatrix::new(row, 19)],
+        &system,
+      ),
+    }],
+    vec![],
+  );
+  let prepared = fixed.prepare(&key, &root, &expected, Default::default())?;
+  eprintln!("root verifier: {:?}", prepared.circuit().stats());
+  let (fri, proof) = prepared.prove_fri(config(), 1 << 20)?;
+  let fri = FriVerifier::from_bytes(&fri.to_bytes()?)?;
+  let prepared = prepare_kzg(&fri, &proof, &expected, Default::default())?;
+  eprintln!("foreign verifier: {:?}", prepared.circuit().stats());
+  let (kzg, proof) = prepared.prove_kzg(srs.clone(), height)?;
+  let kzg = KzgVerifier::from_bytes(&kzg.to_bytes()?)?;
+  eprintln!("foreign proof verified");
+  let recursive = prepare_recursive(&kzg, &proof, &expected)?;
+  eprintln!("recursive verifier: {:?}", recursive.circuit().stats());
+  let (verifier, proof) = recursive.prove(srs, height)?;
+  assert_eq!(verifier.to_bytes()?, local_bytes);
+  let verifier = RecursiveVerifier::from_bytes(&local_bytes)?;
+  verifier.verify(&proof, &expected)?;
+  let bytes = verifier.encode_proof(&proof)?;
+  verifier.verify_bytes(&bytes, &expected)?;
+  let mut wrong = expected.clone();
+  wrong[17] += Val::ONE;
+  assert!(verifier.verify_bytes(&bytes, &wrong).is_err());
+  let mut corrupt = bytes;
+  let last = corrupt.len() - 1;
+  corrupt[last] ^= 1;
+  assert!(verifier.verify_bytes(&corrupt, &expected).is_err());
+  Ok(())
 }

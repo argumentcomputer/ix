@@ -4,7 +4,7 @@ This crate provides a BLS12-381 KZG polynomial commitment scheme implementing
 the `multi-stark` field, evaluation-domain, transcript, and PCS interfaces,
 along with a proving configuration, Goldilocks circuit translation, and
 constrained FRI verification for fixed profiles. The pipeline compresses
-Aiur root proofs through a FRI stage and then a KZG stage.
+Aiur root proofs through FRI, KZG, and recursive KZG stages.
 
 - `Scalar` provides canonical scalar-field serialization and arithmetic.
 - `Radix2Coset` defines evaluation domains and their selector polynomials.
@@ -48,13 +48,21 @@ verification parameters without retaining proving powers or fixed matrices.
 `AiurSystem::prove_from_execution_normalized` pads executions to those bounds
 so different inputs can use the same verifier.
 
+`prepare_recursive` builds a scalar-field circuit for KZG verification using
+constrained base-field arithmetic, curve operations, multiscalar multiplication,
+and transcript replay. Pairing operands are public outputs of that circuit.
+`RecursiveVerifier` checks the outer proof against the expected claim and
+checks the degree-bound and opening pairing equations outside the circuit.
+`setup` derives the complete verifier from trusted root metadata, fixed bounds,
+and proving parameters without requiring a proof or witness.
+
 The caller must authenticate the SRS provenance. Point and consistency checks
 cannot establish that its trapdoor is unknown. `Srs::unsafe_dev_setup` generates
 known-trapdoor parameters for tests only. The caller also binds its protocol and
 parameters into the BLAKE3 transcript before committing and opening polynomials.
 
-The crate currently exposes compression as a library. Recursive KZG compression
-and CLI integration are introduced by subsequent patches.
+The crate currently exposes compression as a library. CLI integration follows
+in the final patch.
 
 ## Tests
 
@@ -75,10 +83,15 @@ final polynomial after witness expansion to check the circuit constraints.
 Planning and pipeline tests cover key transport, invalid profiles, statement
 ownership, normalized trace bounds, memory limits, deterministic verifier
 construction, and preservation of claims across compression stages.
+Recursive tests cover field and curve arithmetic, multiscalar multiplication,
+transcript agreement, tampered public values, and external pairing checks.
+The original ignored `complete_compression_chain` test exercises the entire
+pipeline and compares its verifier with one derived independently by `setup`.
 
 Run them on a machine with sufficient resources:
 
 ```sh
 cargo test --release -p ix-proof-compression
 cargo test --release -p ix-proof-compression --no-default-features
+cargo test --release -p ix-proof-compression --test pipeline_root complete_compression_chain -- --ignored
 ```

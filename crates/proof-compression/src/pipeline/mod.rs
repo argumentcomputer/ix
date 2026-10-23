@@ -7,13 +7,17 @@
 mod codec;
 mod fixed;
 mod root;
-#[cfg(test)]
 mod setup;
 #[cfg(test)]
 mod tests;
+mod wrap;
 
 pub use fixed::FixedRoot;
 pub use root::prepare_root;
+pub use setup::setup;
+pub use wrap::{
+  RecursiveProof, RecursiveStage, RecursiveVerifier, prepare_recursive,
+};
 
 use crate::foreign::{GoldilocksCircuit, KzgCircuitExt};
 use crate::fri::{self, VerifierKey};
@@ -25,7 +29,6 @@ use multi_stark::prover::{Proof, Stage1};
 use multi_stark::system::{ProverKey, System, SystemWitness};
 use multi_stark::traits::{Algebra, Field, Pcs};
 use multi_stark::types::{GoldilocksBlake3Config, Val};
-#[cfg(test)]
 use p3_field::PrimeField64;
 use p3_matrix::Matrix;
 use std::sync::Arc;
@@ -405,7 +408,6 @@ impl Prepared<Scalar> {
   }
 }
 
-#[cfg(test)]
 fn scalar_statement(expected: &[Val]) -> Vec<Scalar> {
   expected.iter().map(|v| Scalar::from_u64(v.as_canonical_u64())).collect()
 }

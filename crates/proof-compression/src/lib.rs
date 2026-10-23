@@ -4,3 +4,4 @@ pub mod foreign;
 pub mod fri;
 pub mod kzg;
 pub mod pipeline;
+pub mod recursive;

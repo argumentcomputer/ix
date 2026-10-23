@@ -173,6 +173,17 @@ fn kzg_stages_derive_claims_for_different_layouts_and_parameters() -> Result<()>
     assert!(verifier.system.circuits.iter().all(|c| c.preprocessed.is_none()));
     // The verifier does not retain the proving powers.
     assert_eq!(Arc::strong_count(&srs), 1);
+    if height == 128 {
+      let claim: Vec<_> = expected
+        .iter()
+        .map(|v| Val::from_u64(v.canonical_limbs_le()[0]))
+        .collect();
+      let recursive = prepare_recursive(&verifier, &proof, &claim)?;
+      assert!(recursive.circuit().stats().publics > claim.len());
+      let mut wrong = claim;
+      wrong[0] += Val::ONE;
+      assert!(prepare_recursive(&verifier, &proof, &wrong).is_err());
+    }
   }
   let srs = Arc::new(Srs::unsafe_dev_setup(8, b"too-small"));
   assert!(arithmetic(Scalar::ONE, 2).prove_kzg(srs, 16).is_err());

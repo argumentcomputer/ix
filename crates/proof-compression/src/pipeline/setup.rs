@@ -1,6 +1,26 @@
 //! Deterministic verifier construction. No proof or witness is an input.
 use super::*;
 use crate::kzg::KzgCommitment;
+use aiur::vk_codec::AiurVerifyingKey;
+
+/// Derive a complete fixed compression verifier from locally trusted inputs.
+/// This performs circuit construction and preprocessing commitments, but no
+/// proof generation. The supplied SRS must have been authenticated/validated.
+pub fn setup(
+  root_key: &AiurVerifyingKey,
+  root: &FixedRoot,
+  srs: Arc<Srs>,
+  fri_config: GoldilocksBlake3Config,
+  fri_height: usize,
+  kzg_height: usize,
+  recursive_height: usize,
+) -> Result<RecursiveVerifier> {
+  let circuit = root.circuit(root_key, Default::default())?;
+  let fri = fri(circuit, fri_config, fri_height)?;
+  let circuit = foreign(&fri)?;
+  let kzg = kzg(circuit, srs.clone(), kzg_height)?;
+  wrap::setup_recursive(&kzg, srs, recursive_height)
+}
 
 pub(super) fn fri(
   circuit: Circuit<Val>,
@@ -23,6 +43,28 @@ pub(super) fn fri(
   validate_config(&config, &definitions)?;
   let (system, _) = System::new_without_preprocessed(config, definitions);
   Ok(FriVerifier { key: VerifierKey::new(system), statement })
+}
+
+pub(super) fn foreign(verifier: &FriVerifier) -> Result<Circuit<Scalar>> {
+  let system = verifier.key.system();
+  let profile = fri::ProofProfile {
+    envelope: fri::Envelope::Ordinary,
+    active: vec![true; system.circuits.len()],
+    log_degrees: system
+      .circuits
+      .iter()
+      .map(|c| {
+        u8::try_from(c.preprocessed_height.ilog2()).expect("usize log fits u8")
+      })
+      .collect(),
+    claim_lengths: verifier.statement.template.iter().map(Vec::len).collect(),
+    message_lengths: vec![],
+    max_field_retries: fri::DEFAULT_FIELD_RETRIES,
+  };
+  let plan =
+    fri::VerifierPlan::validate(&verifier.key, profile, Default::default())?;
+  let (circuit, _) = plan.build(verifier.schema(), Default::default())?;
+  Ok(GoldilocksCircuit::new_preallocated(&circuit).circuit)
 }
 
 pub(super) fn kzg(
