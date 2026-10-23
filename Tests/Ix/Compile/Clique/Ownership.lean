@@ -127,10 +127,11 @@ def auxOf (env : Environment) (enc : Encoding) (ms : Array Name) : Array Name :=
 
 /-- The block's authenticated `below`/`brecOn` family of a structural clique
 (`Input.family`; empty for the other encodings, which do not read it). -/
-def familyOf (ixEnv : _root_.Ix.Environment) (enc : Encoding) (members : Array Decl) :
+def familyOf (oracleFor : _root_.Ix.AuxGen.SourceFamilyOracle)
+    (ixEnv : _root_.Ix.Environment) (enc : Encoding) (members : Array Decl) :
     Except String (Std.HashSet IxName) :=
   match enc with
-  | .structural => (_root_.Ix.Compile.Pass.Clique.authenticatedFamily ixEnv members).mapError
+  | .structural => (_root_.Ix.Compile.Pass.Clique.authenticatedFamily oracleFor ixEnv members).mapError
       (s!"no authenticated family ({·})")
   | _ => pure {}
 
@@ -263,7 +264,8 @@ def runCase (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Name)
     | .partialFixpoint => ns ++ `canon.mutual
     | .structural => ms[σinv[0]!]!)
   -- a structural clique needs its block's authenticated family (R02-06)
-  let family ← match familyOf (ixEnvOf env) enc members with
+  let oracleFor := SourceFamilyOracle.forLean env (ixEnvOf env) (ms.map ixName)
+  let family ← match familyOf oracleFor (ixEnvOf env) enc members with
     | .ok f => pure f
     | .error e => return { name := c.name, outcome := "NO FAMILY", failures := #[s!"{c.name}: {e}"] }
   let inp : Input := { encoding := enc, members, aux, sigma := σ, newEncName, const? := constOf env, family }
@@ -372,11 +374,12 @@ def runPlanCase (env : Environment) (eqn : Std.HashMap Name (Encoding × Array N
         overlay := overlay.insert (ixName (m ++ `_f)) (.defnInfo { v with value := rawProjsDeep v.value })
   let ixEnv := ixEnvOf env overlay
   let const? := ixEnv.get?
-  let outcome := _root_.Ix.Compile.Pass.Clique.planClique ixEnv (fixtureAddr env ns) (ms.map ixName) #[]
+  let oracleFor := SourceFamilyOracle.forLean env ixEnv (ms.map ixName)
+  let outcome := _root_.Ix.Compile.Pass.Clique.planClique oracleFor ixEnv (fixtureAddr env ns) (ms.map ixName) #[]
   -- the recovered specifications the order compares, for the log
   let specMembers := ms.filterMap fun m => (const? (ixName m)).bind Decl.ofConstantInfo?
   let specs : Except String (Array IxExpr) := do
-    let family ← familyOf ixEnv .structural specMembers
+    let family ← familyOf oracleFor ixEnv .structural specMembers
     let specInp : Input :=
       { encoding := .structural, members := specMembers
         aux := ms.filterMap fun m => (const? (ixName (m ++ `_f))).bind Decl.ofConstantInfo?
@@ -442,7 +445,8 @@ def memoByMode (env : Environment) (eqn : Std.HashMap Name (Encoding × Array Na
   let some members := ms.mapM (declOf env ·) | throw "HC: a member is not a definition"
   let all := ms.map ixName
   let some (_, aux) := encodingOf const? all members | throw "HC: no encoding"
-  let family ← (familyOf (ixEnvOf env) .structural members).mapError (s!"HC: {·}")
+  let oracleFor := SourceFamilyOracle.forLean env (ixEnvOf env) (members.map (·.name))
+  let family ← (familyOf oracleFor (ixEnvOf env) .structural members).mapError (s!"HC: {·}")
   let some f := aux.find? (·.name == ixName (ms[0]! ++ `_f)) | throw "HC: no functional"
   let (bs, _) := _root_.Ix.Compile.Canon.peelForalls 2 f.type #[]
   let some (_, natTy, _) := bs[0]? | throw "HC: the functional has no major"
@@ -492,7 +496,8 @@ def equationRegenerationChecks (env : Environment)
   let some members := ms.mapM (declOf env ·) | throw "eq_def: SC1 member missing"
   let all := ms.map ixName
   let some (_, aux) := encodingOf const? all members | throw "eq_def: SC1 encoding missing"
-  let family ← (familyOf (ixEnvOf env) .structural members).mapError (s!"eq_def: SC1 {·}")
+  let oracleFor := SourceFamilyOracle.forLean env (ixEnvOf env) (members.map (·.name))
+  let family ← (familyOf oracleFor (ixEnvOf env) .structural members).mapError (s!"eq_def: SC1 {·}")
   let some lemmas := ms.mapM (fun n => declOf env (n ++ `eq_def)) | throw "eq_def: SC1 lemma missing"
   let pairs := lemmas.map fun d => (d, d.name)
   let generate (lookup : IxName → Option IxConst) (pairs : Array (Decl × IxName)) :=
@@ -591,7 +596,8 @@ def runLemmaPlan (env : Environment) (eqn : Std.HashMap Name (Encoding × Array 
   let carried := (ms.map fun m => ixName (m ++ `eq_def)).qsort (·.pretty < ·.pretty)
   for c in carried do
     unless env.contains (toLeanName c) do failures := failures.push s!"{nm}: {c.pretty} is not in the input"
-  let outcome := _root_.Ix.Compile.Pass.Clique.planClique (ixEnvOf env) (fixtureAddr env ns) (ms.map ixName) carried
+  let oracleFor := SourceFamilyOracle.forLean env (ixEnvOf env) (ms.map ixName)
+  let outcome := _root_.Ix.Compile.Pass.Clique.planClique oracleFor (ixEnvOf env) (fixtureAddr env ns) (ms.map ixName) carried
   let (got, decls) : String × Array Decl := match outcome with
     | .transported p =>
       (if carried.all p.members.contains && p.causes.isEmpty then "transported"

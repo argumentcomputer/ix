@@ -572,13 +572,14 @@ def runCase (env : Environment) (c : Case) : Array Row := Id.run do
   let leanEnv : _root_.Ix.Environment :=
     { base with consts := consts.foldl (fun m ci => m.insert ci.getCnst.name ci) c.overlay }
   let domain := addrDomain consts
+  let oracleFor := SourceFamilyOracle.forLean env leanEnv c.all
   let mut rows := #[]
   for (aname, addr?) in [("name", nameAddr), ("content", contentAddr leanEnv.get? c.ns)] do
     let pairs := domain.filterMap fun n => (addr? n).map (n, ·)
     let table : Std.HashMap IxName Address := pairs.foldl (fun m (n, a) => m.insert n a) {}
     let addrL (n : IxName) : Option Address := (table.get? n).orElse fun _ => addr? n
     let label := s!"{c.label} carried={c.carried.size} addr={aname}"
-    let lean := _root_.Ix.Compile.Pass.Clique.planClique leanEnv addrL c.all c.carried
+    let lean := _root_.Ix.Compile.Pass.Clique.planClique oracleFor leanEnv addrL c.all c.carried
     let outcome := s!"{tagName (tagOf lean)} {encOf lean}"
     -- a transported plan's constants may mention library constants Lean's do
     -- not (the composition fallback's monotonicity lemmas); `planClique`

@@ -245,8 +245,10 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
+  let familyOracle := sourceFamilyProvider serviceGet? blocks ra
   let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
+    sourceFamilyOracle := some familyOracle
     p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3O11aPlans := sizePlan.2 }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let acc ← emitRows st.acc

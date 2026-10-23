@@ -156,8 +156,9 @@ def moveToDisplay (originalAll : Array Name) (rep0 : Name) (perm : Array (Option
 /-- The heads of a Lean block that get images: its image kinds
 (`imageKinds`) that source recognition admits (`casesOn`/`recOn` recognized
 as the generated wrappers, the `below`/`brecOn` family recognized whole). -/
-def sourceImageHeads (env : Ix.Environment) (all : Array Name) : Array Name :=
-  Ix.AuxGen.SourceFamily.filterHeads env all <|
+def sourceImageHeads (oracleFor : Ix.AuxGen.SourceFamilyOracle) (env : Ix.Environment)
+    (all : Array Name) : Except String (Array Name) :=
+  Ix.AuxGen.SourceFamily.filterHeadsChecked oracleFor env all <|
     (imageKinds env.get? all).filter (Ix.AuxGen.SourceIdentity.permitsOptimization env)
 
 /-- Hook 1 of a changed block: the side-car edit (every Ix auxiliary to its
@@ -169,7 +170,9 @@ def editChangedBlock (cs : Array MutConst) (classNames : Array (Array Name))
   let cenv ← getCompileEnv
   let some (originalAll, rep0, perm) := displayInputs cs classNames layout? | return {}
   let some all0 := originalAll[0]? | return {}
-  let heads := sourceImageHeads cenv.env originalAll
+  let heads ← match sourceImageHeads cenv.familyOracle cenv.env originalAll with
+    | .ok heads => pure heads
+    | .error why => throw (.invalidMutualBlock why)
   -- every Lean name moves off the Ix auxiliaries: the image kinds denote
   -- their images (compiled when their own block comes up, `runImageBlock`),
   -- the rest are Lean's own blocks
@@ -245,7 +248,9 @@ def editPermutedBelowFamily (cs : Array MutConst) (belowRecs : Array (Name × Re
   moveToDisplay belowAll rep0 #[] fun n =>
     !belowAll.contains n && !ctors.contains n
       && belowAll.any fun b => (stripPrefix? b n).isSome
-  let heads := sourceImageHeads cenv.env belowAll
+  let heads ← match sourceImageHeads cenv.familyOracle cenv.env belowAll with
+    | .ok heads => pure heads
+    | .error why => throw (.invalidMutualBlock why)
   return { heads := heads.map (·, all0), blocks := #[(all0, belowAll)], canonRecs := belowRecs }
 
 /-- **Hook 1**, after a block's aux tail: `editChangedBlock` for a changed

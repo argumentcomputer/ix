@@ -13,7 +13,7 @@ equals what Lean's generators build from the block's *source* recursors
 (`reconstruct`: the source mutual order and recursors, a fresh bridge, no
 compiled addresses or canonical classes). `filterHeads` keeps a derived name
 among the heads that may get an image only when the whole family checks.
-Nothing on the compile path calls these functions yet (Pass 3 wires them).
+Pass 3 uses the compilation's fixed original-source IxC provider.
 
 Mirrors Rust `aux_gen/source_family.rs`.
 -/
@@ -142,7 +142,8 @@ def propFormer : Expr → Bool
 /-- Reuse the actual generators with original source recursors and a fresh
 source-only bridge. No compiled addresses, canonical classes or rewritten
 overlay participate in identifying the supplied source declaration. -/
-def reconstruct (env : Environment) (all : Array Name) (includeBRecOn : Bool := true) :
+def reconstruct (oracleFor : SourceFamilyOracle) (env : Environment)
+    (all : Array Name) (includeBRecOn : Bool := true) :
     Except String (Array Recipe) := do
   let some owner := all[0]? | throw "source auxiliary family is empty"
   let some (.inductInfo ind) := env.get? owner | throw "source auxiliary owner is absent"
@@ -156,13 +157,16 @@ def reconstruct (env : Environment) (all : Array Name) (includeBRecOn : Bool := 
     unless nameEq name rv.cnst.name && namesAgree all rv.all do
       throw s!"source recursor family differs: {name.pretty}"
     recs := recs.push (name, rv)
+  let oracle ← oracleFor owner
+  unless oracle.mode == .failClosed && oracle.recursors && oracle.retry.isNone do
+    throw s!"source family {owner.pretty}: failClosed recursor capability without retry required"
   let action : KBridgeM (Array Recipe) := do
-    let kernel : AuxKernel := .tc { nameToAddr := fun _ => none }
+    let kernel : AuxKernel := .ixc { nameToAddr := fun _ => none } oracle
     let isProp := propFormer ind.cnst.type
     let below ← generateBelowConstants classes recs isProp kernel (allAux := true)
     let brecon ← if includeBRecOn then do
-        let _ ← populateCanonKenvWithBelow below classes kernel
-        generateBreconConstants classes recs below isProp kernel (allAux := true)
+        let brecKernel ← populateCanonKenvWithBelow below classes kernel
+        generateBreconConstants classes recs below isProp brecKernel (allAux := true)
       else pure #[]
     let belowAll := below.filterMap fun b => match b with
       | .indc i => some i.name
@@ -193,9 +197,19 @@ def reconstruct (env : Environment) (all : Array Name) (includeBRecOn : Bool := 
 /-- The heads that may get an image: a derived head is kept only when its
 whole family is recognized (`authenticated`). Evaluated once per block,
 before the heads can be published or used by the occurrence optimizations. -/
-def filterHeads (env : Environment) (all heads : Array Name) : Array Name := Id.run do
+def filterHeads (oracleFor : SourceFamilyOracle) (env : Environment)
+    (all heads : Array Name) : Array Name := Id.run do
   if !heads.any isDerived then return heads
-  let recipes := (reconstruct env all (heads.any isBRecOn)).toOption.getD #[]
+  let recipes := (reconstruct oracleFor env all (heads.any isBRecOn)).toOption.getD #[]
+  return heads.filter fun name =>
+    !isDerived name || authenticated env recipes (recipes.size + 1) #[] name
+
+/-- Compiler callers retain reconstruction/provider errors. Custom declarations
+still filter normally after successful generation of the expected recipes. -/
+def filterHeadsChecked (oracleFor : SourceFamilyOracle) (env : Environment)
+    (all heads : Array Name) : Except String (Array Name) := do
+  if !heads.any isDerived then return heads
+  let recipes ← reconstruct oracleFor env all (heads.any isBRecOn)
   return heads.filter fun name =>
     !isDerived name || authenticated env recipes (recipes.size + 1) #[] name
 

@@ -2,6 +2,7 @@ import Ix.AuxGen.SourceFamily
 import Ix.CanonM
 import Ix.EnvScope
 import Ix.Meta
+import Tests.Ix.Compile.SourceFamilyOracle
 
 /-!
 Source-family recognition of `below`/`brecOn` (`Ix.AuxGen.SourceFamily`),
@@ -9,7 +10,7 @@ Source-family recognition of `below`/`brecOn` (`Ix.AuxGen.SourceFamily`),
 `Fixtures/AuxiliaryFamilyIdentity.lean` (elaborated at run time). In each
 mode the standard `Even` helper is recognized and kept by `filterHeads`; the
 custom `Odd` helper, or a standard one that depends on a custom helper, is
-not. Nothing on the compile path consults the recognizer yet.
+not. The same recognizer guards the production image and clique paths.
 -/
 
 namespace Tests.Ix.Compile.SourceFamily
@@ -19,6 +20,48 @@ open _root_.Ix.AuxGen.SourceFamily
 
 private def need (ok : Bool) (why : String) : IO Unit :=
   unless ok do throw (IO.userError why)
+
+private def needError (result : Except String α) (expected : String) : IO Unit :=
+  match result with
+  | .error why => need (why == expected) s!"expected {expected}, got {why}"
+  | .ok _ => throw (IO.userError s!"accepted instead of {expected}")
+
+/-- The checked caller keeps failures visible; successful lazy reads retain
+the same actual-source decisions. A provider cannot select a legacy mode. -/
+def providerControls (source : _root_.Ix.Environment)
+    (oracleFor : _root_.Ix.AuxGen.SourceFamilyOracle) (ind : _root_.Ix.InductiveVal) : IO Unit := do
+  let owner := ind.cnst.name
+  let heads := #[owner, owner.mkStr "below", owner.mkStr "brecOn"]
+  let lazySource : _root_.Ix.Environment := { consts := {}, fallback? := some source.get? }
+  let expected ← IO.ofExcept (filterHeadsChecked oracleFor source ind.all heads)
+  need ((← IO.ofExcept (filterHeadsChecked oracleFor lazySource ind.all heads)) == expected)
+    "lookup-only source changed the checked heads"
+  let below ← IO.ofExcept (reconstruct oracleFor source ind.all false)
+  need (!below.isEmpty && below.all (fun r => !isBRecOn r.name)) "below-only coverage"
+  needError (reconstruct oracleFor source #[]) "source auxiliary family is empty"
+  needError (reconstruct oracleFor { source with consts := source.consts.erase owner } ind.all)
+    "source auxiliary owner is absent"
+  needError (reconstruct oracleFor source ind.all.reverse) "source auxiliary mutual order differs"
+  let recName := owner.mkStr "rec"
+  needError (reconstruct oracleFor { source with consts := source.consts.erase recName } ind.all)
+    s!"source recursor absent: {recName.pretty}"
+  let unavailable : _root_.Ix.AuxGen.SourceFamilyOracle := fun _ => .error "planted provider failure"
+  needError (filterHeadsChecked unavailable source ind.all heads) "planted provider failure"
+  need (filterHeads unavailable source ind.all heads == #[owner]) "public filter accepted unavailable recipes"
+  need ((← IO.ofExcept (filterHeadsChecked unavailable source ind.all #[owner])) == #[owner])
+    "nonderived fast path queried the provider"
+  let actual ← IO.ofExcept (oracleFor owner)
+  let .mk _ trace scope flat below recs asked lazyScope admit status retry family := actual
+  let unsafeModes := #[
+    _root_.Ix.AuxGen.AuxOracle.mk .fallback trace scope flat below recs asked lazyScope admit status retry family,
+    .mk .failClosed trace scope flat below false asked lazyScope admit status retry family,
+    .mk .failClosed trace scope flat below true asked lazyScope admit status (some actual) family]
+  for candidate in unsafeModes do
+    needError (reconstruct (fun _ => .ok candidate) source ind.all)
+      s!"source family {owner.pretty}: failClosed recursor capability without retry required"
+  needError ((_root_.Ix.CompileM.CompileEnv.new source).familyOracle owner)
+    s!"source family {owner.pretty}: original-source provider is absent"
+  IO.println "[aux-source-family] 13 provider/lookup/negative controls"
 
 /-- A validator graph control, separate from the checked source fixture.
 Every member of a mutual below group names every other member. Traversing
@@ -81,13 +124,15 @@ def check (env : Lean.Environment) : IO UInt32 := do
   let consts := (_root_.Ix.CanonM.canonChunk input.toArray).foldl
     (fun acc (n, ci) => acc.insert n ci) ({} : Std.HashMap Name _root_.Ix.ConstantInfo)
   let source : _root_.Ix.Environment := { consts }
+  let oracleFor := SourceFamilyOracle.forInput source (consts.toArray.map (·.1))
   let mut checked := 0
   for mode in [`Main, `Go, `Below] do
     let ns := root ++ mode
     let even := Name.fromLeanName (ns ++ `Even)
     let odd := Name.fromLeanName (ns ++ `Odd)
     let some (.inductInfo ind) := source.get? even | throw (IO.userError "source member missing")
-    let recipes ← IO.ofExcept (reconstruct source ind.all (mode != `Below))
+    if mode == `Main then providerControls source oracleFor ind
+    let recipes ← IO.ofExcept (reconstruct oracleFor source ind.all (mode != `Below))
     let authentic := authenticated source recipes (recipes.size + 1) #[]
     let helper := if mode == `Below then "below" else "brecOn"
     let ordinary := even.mkStr helper
@@ -95,8 +140,8 @@ def check (env : Lean.Environment) : IO UInt32 := do
     need (authentic ordinary) s!"{mode}: the standard helper was not recognized"
     need (!authentic changed) s!"{mode}: the custom helper was recognized"
     let heads := #[even, ordinary, changed]
-    need (filterHeads source ind.all heads == #[even, ordinary])
-      s!"{mode}: filterHeads kept {(filterHeads source ind.all heads).map (·.pretty)}"
+    need (filterHeads oracleFor source ind.all heads == #[even, ordinary])
+      s!"{mode}: filterHeads kept {(filterHeads oracleFor source ind.all heads).map (·.pretty)}"
     checked := checked + 2
     if mode == `Go then
       let some recipe := recipes.find? (fun r => r.name == changed)

@@ -51,6 +51,7 @@ public import Ix.Compile.Pass.CliqueStep
 public import Ix.AuxGen.CompileAux
 public import Ix.AuxGen.SourceService
 public import Ix.AuxGen.IxcScope
+public import Ix.AuxGen.GenerationOnly
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Resource.Addressed
 public section
@@ -1751,6 +1752,43 @@ def AuxIxcOptions.oracleFor (aux : AuxIxcOptions) (ra : Ix.AuxGen.Source.RunAhea
         lookup := get? }
     Ix.AuxGen.Ixc.oracleOfRun aux.mode aux.trace (fun _ => t.get) members facts
 
+/-- Fixed original-source capabilities for this compilation. Each scheduled
+snapshot (including a failure) is prepared at most once, on first use, from
+the existing run-ahead task. The source owner is resolved through the base
+condensation and its seed-order key, never through compiled classes. -/
+def sourceFamilyProvider (get? : Name → Option ConstantInfo) (blocks : Ix.CondensedBlocks)
+    (ra : Ix.AuxGen.Source.RunAhead) : Ix.AuxGen.SourceFamilyOracle :=
+  let prepared : Std.HashMap Ix.AuxGen.Flat.NameKey
+      (Thunk (Except String Ix.AuxGen.Source.Service)) :=
+    ra.levelOf.fold (init := {}) fun cache key _ =>
+      cache.insert key (Thunk.mk fun _ => do
+        let some task := ra.runFor key.name
+          | throw s!"scheduled Source task absent for {key.name.pretty}"
+        return (← task.get.service).ensureNames (ra.membersFor key.name))
+  fun owner => (do
+    let some (.inductInfo ind) := get? owner | throw "original inductive owner is absent"
+    let some rep := blocks.lowLinks.get? owner | throw "original owner has no condensation entry"
+    let some members := blocks.blocks.get? rep | throw "original condensation block is absent"
+    unless members.contains owner do throw "original owner is outside its condensation block"
+    let key := blockKey rep members
+    let scheduled := ra.membersFor key
+    unless scheduled.size == members.size && scheduled.all members.contains do
+      throw s!"scheduled members differ at {key.pretty}"
+    let some snapshot := prepared.get? ⟨key⟩ | throw s!"scheduled snapshot absent at {key.pretty}"
+    let svc ← snapshot.get
+    unless !ind.all.isEmpty && ind.all.contains owner do throw "original mutual family is malformed"
+    for name in ind.all do
+      match svc.statusOf? name with
+      | none => throw s!"Source status absent for {name.pretty}"
+      | some .pending => throw s!"Source status pending for {name.pretty}"
+      | some _ => pure ()
+    if ind.all.all (fun name => (svc.statusOf? name).any Ix.AuxGen.Source.Status.isAccepted) || svc.tierBlock ind.all then
+      return Ix.AuxGen.Ixc.oracleOf .failClosed false
+        { recursors := true, lookup := get?, members := ind.all } none
+        Ix.AuxGen.Ixc.oracleFuel (fun _ => .ok svc)
+    Ix.AuxGen.GenerationOnly.ofService svc owner).mapError
+      (fun why => s!"source family {owner.pretty}: {why}")
+
 /-- **The Source service's input**: the fold's lookups and condensation, with
 the literal support beside them when the input lacks it (generation side
 only: the fold itself reads `get?` and `blocks` alone). -/
@@ -1818,13 +1856,16 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
+  let familyOracle := sourceFamilyProvider serviceGet? blocks ra
   let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
+    sourceFamilyOracle := some familyOracle
     p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans
     p3O11aPlans := sizePlan.2 }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let acc ← emitRows st.acc
   let (ixe, bytes, cenv) ← finalizeEnv acc
+  -- Keep the fixed original provider alive for returned-state plan checks.
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
 
 /-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/
