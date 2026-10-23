@@ -634,6 +634,7 @@ def registry : List Entry := [
   -- environment (Tests.Ix.RustCompile); before the registry, a special case
   -- that ran alone and skipped every other name
   .env "rust-compile" .landing Tests.Ix.RustCompile.run,
+  .runner "rust-compile-coverage" .primary Tests.Ix.RustCompile.coverageControl,
   -- the 132-case, twice-executed `ix_aggr` activation matrix, kept out of the
   -- primary suite and independent of the large environment
   .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit

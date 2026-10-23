@@ -1301,6 +1301,22 @@ extern "C" fn rs_tmp_decode_const_map(
       return n;
     },
   };
+  if !stt.ungrounded.is_empty() {
+    eprintln!(
+      "[rust-compile] Phase 1 FAILED: {} ungrounded input declarations",
+      stt.ungrounded.len(),
+    );
+    let mut refusals: Vec<_> = stt
+      .ungrounded
+      .iter()
+      .map(|entry| (entry.key().pretty(), entry.value().clone()))
+      .collect();
+    refusals.sort();
+    for (name, reason) in refusals.iter().take(16) {
+      eprintln!("[rust-compile] ungrounded {name}: {reason}");
+    }
+    return n;
+  }
   eprintln!(
     "[rust-compile] Phase 1 done in {:.2}s ({} consts, {} named, {} names, {} blobs)",
     t0.elapsed().as_secs_f32(),
@@ -1745,7 +1761,7 @@ extern "C" fn rs_tmp_decode_const_map(
   eprintln!("[rust-compile] Phase 3: Checking decompile roundtrip...");
   let t2 = std::time::Instant::now();
   let mut failures = match check_decompile(env.as_ref(), &stt, &dstt) {
-    Ok(c) => c.failures(|n| stt.ungrounded.contains_key(n)),
+    Ok(c) => c.failures(|_| false),
     Err(e) => {
       eprintln!("[rust-compile] Phase 3 check FAILED: {e:?}");
       1
@@ -1793,7 +1809,7 @@ extern "C" fn rs_tmp_decode_const_map(
       }
       match decompile_env(&fresh_stt) {
         Ok(dstt2) => match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
-          Ok(c) => failures += c.failures(|n| stt.ungrounded.contains_key(n)),
+          Ok(c) => failures += c.failures(|_| false),
           Err(e) => {
             eprintln!("[rust-compile] Phase 6 check FAILED: {e:?}");
             failures += 1;
