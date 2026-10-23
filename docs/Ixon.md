@@ -805,6 +805,9 @@ For `sharing-k16-greedy-v1`, the family proof stack proves the minimum within th
 fixed family, successful-output meaning and wire validity, representation congruence,
 and conditional idempotence. The Lean production entry and its audits carry the
 meaning, format and serialized-length contracts without new caller premises.
+The guarded area evaluator is tied to the closure reference by unconditional
+equalities of complete results, work charges and errors; these preserve the same
+family, limits and tie rules.
 Complete old/new bytes agree when both routes succeed with the same limits,
 all initial components at all three widths have at most 16 members, and the old
 route uses `uniformSubsetSearch = false`. Old-route success alone is not yet a proof
@@ -818,7 +821,7 @@ claim about components that use the new greedy family.
 The following theorems are machine-checked in Lean, in `IxSharingVerify`
 (the `IxSharingVerify` library; the TagN theorems are in
 `IxC/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
-`IxSharingVerify/Audit/Statements.lean` (174 roots at the K16 cutover), which
+`IxSharingVerify/Audit/Statements.lean` (184 roots including the guarded area evaluator), which
 `lake build --wfail IxSharingVerify` checks: every root uses exactly its
 listed axioms, which are among `propext`, `Classical.choice` and
 `Quot.sound`, and no declaration of an `Ix.Sharing` module uses `sorry`
@@ -912,7 +915,7 @@ every theorem keeps talking about the specification; the module map of
 `Ix/Sharing/Exact.lean` lists them. The audit module
 `IxSharingVerify/Audit/CompiledCode.lean` fails the build unless every
 `@[csimp]` theorem of an `Ix` module on the compiler's import path is an audit
-root (28 at the K16 cutover), and unless no declaration of `Ix.Sharing.*` is
+root (30 including the guarded area evaluator), and unless no declaration of `Ix.Sharing.*` is
 `unsafe`, `partial`, `@[implemented_by]` or `@[extern]`, except the
 interner's pointer-cache key `exprPtr`.
 

@@ -7,7 +7,7 @@
 > together with §14. The construction and its retained components are:
 >
 > - **Construction.** `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Lean
->   `Ix/Sharing/Exact/Tiered.lean`, Rust `crates/ixon/src/sharing_exact/tiered.rs`). Phase 1 is
+>   `Ix/Sharing/Exact.lean`, Rust `crates/ixon/src/sharing_exact/tiered.rs`). Phase 1 is
 >   the minimum over a fixed component family at each width `w ∈ {1, 2, 3}` (§14).
 >   Initial uncertain components of at most 16 members use every subset; larger components
 >   use the deterministic greedy chain. The old exact optimum remains a reference theorem.
@@ -30,7 +30,8 @@
 >   --sharing-limits`). Exceeding one is a compile error. The component-size gate chooses the
 >   fixed greedy family before search; exhausting a budget never changes that family.
 > - **Compile time.** §12.18 records the earlier exact implementation. §14.4 records the
->   family measurements; whole-compiler validation of the new production route remains due.
+>   family measurements and whole-Mathlib byte parity after the proved evaluator and
+>   dependency-planning repairs. Remaining release gates are listed there.
 > - **Metadata.** The decompilers implement the extended index space of §13.1. The
 >   construction of §13.2 is not implemented.
 > - **Oracles.** The exact search of §6 is kept as a test oracle for small inputs (§12.1).
@@ -1211,10 +1212,17 @@ under an arbitrarily tight budget.
 
 The Lean cutover attaches these statements and the proved fast twins to the production
 entry and its audits, preserving compiler-facing meaning, format and codec theorems without
-new premises. Its audit has 174 theorem roots and checks all 28 compiler-path `csimp`
+new premises. Its audit has 184 theorem roots and checks all 30 compiler-path `csimp`
 equalities; the accepted unsafe set is unchanged. The old exact-optimum theorems remain
 on the reference path. Rust is a
 separately tested implementation; byte parity is not a universal refinement proof.
+
+The guarded area evaluator in `Ix/Sharing/FamilyNormalizeArea.lean` is proved equal
+to the closure evaluator for complete results, mathematical work charges and errors.
+It builds one base table per width and retains the reference evaluator when its
+representation or opacity checks fail. Its two audited `csimp` equalities route both
+the production entry and the parameterized normalizer through this implementation;
+the component family, tie rules and resource limits are unchanged.
 
 The follow-up PR will prove success on the stated input domain with sufficient limits and
 a cost bound. Its remaining work includes connecting the spine-free cost/writing proofs
@@ -1235,6 +1243,23 @@ The captured `genMutual_mapKeys` input normalized to identical 2,805,615-byte ou
 Rust and Lean: 25.50 s and 331.00 s respectively. These are individual normalizations, not
 whole-environment compile times. The 65-second compile target is soft; performance work is
 separate from correctness. The old exact output for this capture remains unknown.
+
+The 2026-10-23 guarded area implementation reduced that Lean normalization to
+133.245 s with identical complete output bytes and charges. A controlled Init+Std
+comparison measured 70.515 s before the integrated compiler changes, 71.287 s after
+M6/CQ5.3a, and 127.940 s with the initial K16 evaluator. Area evaluation then measured
+89.962 s under concurrent validation load, again with full Rust byte parity; this last
+measurement is not an isolated timing comparison.
+
+A separate whole-Mathlib profile identified quadratic copying in producer dependency
+planning before the first compilation wave. Updating the reverse map with `HashMap.alter`
+removes that retained-array copy; an all-key lookup theorem preserves complete caller
+arrays, including order and duplicates. With both repairs, Lean and Rust each compiled
+all 783,115 selected Mathlib declarations at default limits with zero failures and
+identical 2,386,468,475-byte artifacts (SHA-256
+`a31241a4d326e77b03e54ce29a30d7ede427a900a2c570c3e60a3d30530067f0`).
+The Lean compile phase took 556.658 s; its full command, including the Rust cross-check,
+took 18m16s. This establishes measured corpus success, not totality or a universal cost bound.
 
 The small valid doubling-DAG inputs exposed a Rust refusal while computing the unshared
 size for initial classification. That predicate now uses the proved sufficient cap
