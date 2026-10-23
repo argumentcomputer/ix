@@ -175,6 +175,56 @@ private def installCheckedChar (g : Context) : Except String Source.SourceEnv :=
 oracle install successors. The original Source snapshot is never folded. -/
 private def dependencyDepth : Nat := 256
 
+/-- A supplied definition's annotation may need a previously checked alias
+to unfold (for example a monad abbreviation in an instance argument).
+Headers retain the opaque check view. Current bodies are never installed
+while any member is being checked; only prior answers and opaque current
+headers are available to the verified knot. -/
+private def checkedDefinitionAnswers (s : SourceEnv)
+    (members : List (Ix.Kernel.ConstantVal .source × Ix.Kernel.Expr .source))
+    (hints : List Ix.Kernel.ReducibilityHint) :
+    Except (Ix.Kernel.CheckError .source) (List (Ix.Kernel.ConstantInfo .source)) := do
+  let view := s.checkView 2
+  Ix.Kernel.Tier.blockShape members
+  let headers ← Ix.Kernel.Tier.headersC view members
+  for header in headers do Ix.Kernel.Tier.sortC view header
+  let opaqueHeaders := headers.map Ix.Kernel.ConstantInfo.axiomInfo
+  let knot := ((s.answers 2).pushInfos opaqueHeaders).knot
+  let present := Ix.Kernel.Tier.pushHeaders view headers
+  (headers.zip members).zipIdx.mapM fun ((header, (_, value)), i) => do
+    unless Ix.Kernel.Expr.looseBVarsBounded 0 value do
+      throw (.invalid msg!"loose bound variable in value of {header.name}")
+    if value.hasFvar then
+      throw (.invalid msg!"unexpected free variable in value of {header.name}")
+    let annotated ← Ix.Kernel.Tier.runC (knot.annotate 0 value)
+    unless Ix.Kernel.Expr.allLevelParamsDefinedC header.levelParams annotated do
+      throw (.invalid msg!"undeclared universe parameter in value of {header.name}")
+    unless Ix.Kernel.Cached.constsResolveFC present annotated do
+      throw (Ix.Kernel.unresolvedConstsError msg!"value of {header.name}" annotated)
+    let inferred ← Ix.Kernel.Tier.runC (knot.infer 0 annotated)
+    unless ← Ix.Kernel.Tier.runC (knot.defeq 0 inferred header.type) do
+      throw (.invalid (Ix.Kernel.Msg.withTerms
+        msg!"type mismatch in generation dependency {header.name}"
+        [("has type", inferred), ("but is expected to have type", header.type)]))
+    pure (.defnInfo header annotated (hints.getD i (.regular 0)))
+
+/-- Preserve the ordinary install, then retry only supplied safe definition
+dependencies over prior checked answers. Freshness and the complete block
+are checked before appending an opaque check entry and its answer records.
+A failed retry preserves the original refusal. No logical field changes. -/
+private def installPreparedDefinitions (s : SourceEnv)
+    (members : List (Ix.Kernel.ConstantVal .source × Ix.Kernel.Expr .source))
+    (hints : List Ix.Kernel.ReducibilityHint) : Except String SourceEnv :=
+  match s.installTierDecl (.defs .unsaf members) hints with
+  | .ok installed => .ok installed
+  | .error original =>
+    let retry : Except String SourceEnv := do
+      s.tierFresh (members.map (·.1.name))
+      let infos ← (checkedDefinitionAnswers s members hints).mapError Source.renderCheck
+      let headers := infos.map fun info => Ix.Kernel.ConstantInfo.axiomInfo info.toConstantVal
+      return { s with tier := s.tier.push ⟨2, headers, .infos infos⟩ }
+    retry.mapError fun _ => original
+
 private def prepare : Nat → Context → Array Name → Name → Except String Context
   | 0, g, _, name =>
     if (g.ready (({} : Std.HashSet Name).insert name)).isOk then .ok g
@@ -203,7 +253,8 @@ private def prepare : Nat → Context → Array Name → Name → Except String 
           return ConstantInfo.defnInfo { v with safety := .unsafe }
         let d ← (Ix.LeanIngress.convertTier (.definitions staged)).mapError Source.renderRead
         let hints := ms.toList.map fun ci => ((Ix.LeanIngress.definitionShape ci).map (·.2.2)).getD (.regular 0)
-        next.env.installTierDecl d hints
+        let .defs .unsaf members := d | throw "generation: supplied definition staging differs"
+        installPreparedDefinitions next.env members hints
       | _ => throw "generation: unsupported group escaped extraction"
     return next.update env
 
