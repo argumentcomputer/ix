@@ -3,7 +3,8 @@ family. The logical Source snapshot is immutable. Checked tier/sigma updates
 are private, every resulting oracle stays failClosed and every generated
 row retains the original non-acceptance reason. This factory is not wired
 into the production retry provider. Actual supplied safe dependencies may be checked privately; absent or
-unsupported records refuse. No logical group is discovered/folded and no
+unsupported records refuse. Supplied safe opaques are checked with their
+actual logical bodies and stay opaque in both private views. No logical group is discovered/folded and no
 missing recursor is synthesized. Char alone has a guarded full-check route. -/
 module
 public import Ix.AuxGen.IxcScope
@@ -92,6 +93,14 @@ private def actualGroup (input : Source.Input) (name : Name) : Except String Ix.
     let group ← suppliedInductive input first
     unless group.names.any (Ix.Compile.ExactKey.nameEq · name) do throw s!"generation: family does not claim {name.pretty}"
     return group
+  if let .opaqueInfo v := ci then
+    if v.isUnsafe then throw s!"generation: unsafe supplied opaque {name.pretty}"
+    let some lo := input.blocks.lowLinks.get? name | throw s!"generation: opaque is unplaced {name.pretty}"
+    let some members := input.blocks.blocks.get? lo | throw s!"generation: opaque unit is absent {name.pretty}"
+    let #[member] := members.toArray | throw s!"generation: opaque unit is not singleton {name.pretty}"
+    unless Ix.Compile.ExactKey.nameEq member name do
+      throw s!"generation: opaque unit member differs at {name.pretty}"
+    return .definitions #[ci]
   let .defnInfo _ := ci | throw s!"generation: unsupported supplied dependency {name.pretty}"
   let some lo := input.blocks.lowLinks.get? name | throw s!"generation: definition is unplaced {name.pretty}"
   let some members := input.blocks.blocks.get? lo | throw s!"generation: definition unit is absent {name.pretty}"
@@ -108,6 +117,7 @@ private def refsOf : Ix.LeanIngress.Group → Std.HashSet Name
   | .inductive ts cs rs => blockRefs ts cs rs
   | .definitions ms => ms.foldl (init := {}) fun refs ci => match ci with
       | .defnInfo v => collectLeanConstRefs v.value (collectLeanConstRefs v.cnst.type refs)
+      | .opaqueInfo v => collectLeanConstRefs v.value (collectLeanConstRefs v.cnst.type refs)
       | _ => refs
   | _ => {}
 
@@ -174,6 +184,49 @@ private def installCheckedChar (g : Context) : Except String Source.SourceEnv :=
 /-- Dependency preparation has its own bound; the public fuel still counts
 oracle install successors. The original Source snapshot is never folded. -/
 private def dependencyDepth : Nat := 256
+
+/-- A supplied opaque is checked before its key is visible. Its header has
+the normal opaque declaration guards and sort check; its actual logical
+body is annotated and typed using only prior checked answers. Neither this
+key nor any current body is pushed while these checks run. -/
+private def checkedOpaqueHeader (s : SourceEnv)
+    (cv : Ix.Kernel.ConstantVal .source) (body : Ix.Kernel.Expr .source) :
+    Except (Ix.Kernel.CheckError .source) (Ix.Kernel.ConstantVal .source) := do
+  let view := s.checkView 2
+  let (header, _) ← Ix.Kernel.Tier.runC
+    (Ix.Kernel.Cached.checkConstantValC .verified view cv)
+  let knot := (s.answers 2).knot
+  unless Ix.Kernel.Expr.looseBVarsBounded 0 body do
+    throw (.invalid msg!"loose bound variable in value of {header.name}")
+  if body.hasFvar then
+    throw (.invalid msg!"unexpected free variable in value of {header.name}")
+  let annotated ← Ix.Kernel.Tier.runC (knot.annotate 0 body)
+  unless Ix.Kernel.Expr.allLevelParamsDefinedC header.levelParams annotated do
+    throw (.invalid msg!"undeclared universe parameter in value of {header.name}")
+  unless Ix.Kernel.Cached.constsResolveFC view annotated do
+    throw (Ix.Kernel.unresolvedConstsError msg!"value of {header.name}" annotated)
+  let inferred ← Ix.Kernel.Tier.runC (knot.infer 0 annotated)
+  unless ← Ix.Kernel.Tier.runC (knot.defeq 0 inferred header.type) do
+    throw (.invalid (Ix.Kernel.Msg.withTerms
+      msg!"type mismatch in generation opaque {header.name}"
+      [("has type", inferred), ("but is expected to have type", header.type)]))
+  return header
+
+/-- Only the actual supplied safe opaque body is checked. On success its
+header is opaque in BOTH private views; no runtime companion is looked up
+and no transparent definition or logical acceptance is produced. -/
+private def installPreparedOpaque (s : SourceEnv) (v : OpaqueVal) : Except String SourceEnv := do
+  if v.isUnsafe then throw s!"generation: unsafe supplied opaque {v.cnst.name.pretty}"
+  let key := Ix.LeanIngress.ingressKey v.cnst.name
+  let .id _ := key | throw "generation: opaque must have an input key"
+  s.tierFresh [key]
+  let numbering := Ix.LeanIngress.Numbering.mk v.cnst.levelParams false
+  let terms ← (Ix.LeanIngress.ingressExprs numbering.pos [v.cnst.type, v.value]).mapError
+    (fun error => s!"generation: opaque ingress: {error}")
+  let [type, body] := terms | throw "generation: opaque ingress arity"
+  let header ← (checkedOpaqueHeader s ⟨key, numbering.params, type⟩ body).mapError Source.renderCheck
+  let info := Ix.Kernel.ConstantInfo.axiomInfo header
+  return { s with tier := s.tier.push ⟨2, [info], .infos [info]⟩ }
 
 /-- A supplied definition's annotation may need a previously checked alias
 to unfold (for example a monad abbreviation in an instance argument).
@@ -246,6 +299,7 @@ private def prepare : Nat → Context → Array Name → Name → Except String 
         else do
           let b ← (Ix.LeanIngress.convertTierInductive ts cs rs).mapError Source.renderRead
           next.env.installTierInd b
+      | .definitions #[.opaqueInfo v] => installPreparedOpaque next.env v
       | .definitions ms => do
         let staged ← ms.mapM fun ci => do
           let .defnInfo v := ci | throw "generation: non-definition escaped extraction"
@@ -345,7 +399,8 @@ private def oracle (trace : Bool) (g : Context) : Nat → AuxOracle
 
 /-- Check and expose a private generation view of a safe Source-unaccepted
 original family. The original owner must already have an unaccepted reason.
-Safe supplied dependency groups may be checked in a private overlay; their
+Safe supplied definition, opaque and inductive dependency groups may be
+checked in a private overlay; opaque bodies remain unavailable after checking. Their
 logical statuses are never changed. Only supplied recursors are used.
 The result and every install successor are failClosed, have no fallback,
 retain the original refusal and never report logical acceptance. -/
