@@ -1,8 +1,9 @@
-# KZG proof backend
+# Proof compression foundations
 
 This crate provides a BLS12-381 KZG polynomial commitment scheme implementing
 the `multi-stark` field, evaluation-domain, transcript, and PCS interfaces,
-along with a proving configuration and Goldilocks circuit translation.
+along with a proving configuration, Goldilocks circuit translation, and
+arithmetic and transcript gadgets for FRI verification.
 
 - `Scalar` provides canonical scalar-field serialization and arithmetic.
 - `Radix2Coset` defines evaluation domains and their selector polynomials.
@@ -18,6 +19,16 @@ along with a proving configuration and Goldilocks circuit translation.
 - `GoldilocksCircuit` translates Goldilocks constraints into scalar-field
   constraints, preserving public values and enforcing canonical integer bounds.
 - `KzgCircuitExt` chooses lookup groups within the quotient and SRS bounds.
+- `QuadraticValue` constrains quadratic-extension arithmetic, and
+  `constrain_algebraic_checks` enforces the inner system's constraint and
+  lookup equations against supplied openings and challenges.
+- `Blake3Challenger` matches native Goldilocks/BLAKE3 sampling, including
+  canonical field rejection sampling with a fixed retry budget.
+- `constrain_transcript` binds the system shape, claims, commitments, and
+  intermediate accumulators to the algebraic challenges.
+
+The FRI helpers do not yet verify a complete proof: openings still require
+PCS authentication. The complete verifier is introduced in the next patch.
 
 The caller must authenticate the SRS provenance. Point and consistency checks
 cannot establish that its trapdoor is unknown. `Srs::unsafe_dev_setup` generates
@@ -34,6 +45,11 @@ transcript observations, degree-bound rejection, verifier-only parameters, and
 equivalence of constant, resident, and disk-backed polynomial operations.
 Backend tests also cover foreign-field bounds, compact encoding, transcript
 binding, streamed/dense proving equivalence, and copy constraints across shards.
+FRI gadget tests compare arithmetic and transcript results with native
+implementations, exercise BLAKE3 block and tree boundaries and forced field
+sampling retries, and reject altered claims, openings, roots, and challenges.
+A fixed parity fixture checks call/return relations and unused rows independently
+of the proof protocol.
 
 Run them on a machine with sufficient resources:
 
