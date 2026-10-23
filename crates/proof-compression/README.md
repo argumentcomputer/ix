@@ -3,7 +3,7 @@
 This crate provides a BLS12-381 KZG polynomial commitment scheme implementing
 the `multi-stark` field, evaluation-domain, transcript, and PCS interfaces,
 along with a proving configuration, Goldilocks circuit translation, and
-arithmetic and transcript gadgets for FRI verification.
+constrained FRI verification for fixed profiles.
 
 - `Scalar` provides canonical scalar-field serialization and arithmetic.
 - `Radix2Coset` defines evaluation domains and their selector polynomials.
@@ -27,8 +27,17 @@ arithmetic and transcript gadgets for FRI verification.
 - `constrain_transcript` binds the system shape, claims, commitments, and
   intermediate accumulators to the algebraic challenges.
 
-The FRI helpers do not yet verify a complete proof: openings still require
-PCS authentication. The complete verifier is introduced in the next patch.
+- The fixed-profile verifier authenticates openings through Merkle paths,
+  PCS reductions, binary FRI folds, grinding checks, and the final polynomial.
+- The batch verifier shares a transcript across shards and constrains their
+  total lookup residual against caller-bound messages.
+- Witness expansion reconstructs paths and challenges without native proof
+  verification; the circuit authenticates the supplied values.
+
+Callers supply trusted system metadata and supported profiles, and expose or
+constrain statement wires in the enclosing circuit. Standalone arithmetic and
+transcript helpers do not verify complete proofs. Validated verifier planning
+and resource limits are introduced in the next patch.
 
 The caller must authenticate the SRS provenance. Point and consistency checks
 cannot establish that its trapdoor is unknown. `Srs::unsafe_dev_setup` generates
@@ -50,6 +59,10 @@ implementations, exercise BLAKE3 block and tree boundaries and forced field
 sampling retries, and reject altered claims, openings, roots, and challenges.
 A fixed parity fixture checks call/return relations and unused rows independently
 of the proof protocol.
+Complete-verifier tests cover ordinary and batch proofs, sparse activation,
+mixed heights, malformed shapes, and statement binding. Adversarial tests
+mutate openings, commitments, paths, challenges, grinding witnesses, and the
+final polynomial after witness expansion to check the circuit constraints.
 
 Run them on a machine with sufficient resources:
 
