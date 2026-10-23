@@ -118,11 +118,14 @@ def sequential (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let sc := Ix.Compile.Pass.Clique.scheduleCliques env blocks
   let sizePlan := prepareSizeOfPlan env sc.1
   let scheduled := sizePlan.1
+  let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks
+    (scheduleLevels blocks (FoldSchedule.of scheduled)) .recursors
   let blockRefs : Std.HashMap Name (Set Name) := blocks.blocks.fold (init := {}) fun m rep all =>
     match blocks.blockRefs.get? rep with
     | some refs => m.insert (blockKey rep all) refs
     | none => m
   let cenv₀ : CompileEnv := { CompileEnv.new env with
+    sourceFamilyOracle := some (sourceFamilyProvider env.get? blocks ra)
     unmaterialized, sharingLimits, p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2,
     p3BlockRefs := blockRefs, p3O11aPlans := sizePlan.2 }
   let mut acc : DriverAcc := { cenv := cenv₀ }

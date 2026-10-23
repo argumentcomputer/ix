@@ -91,9 +91,10 @@ theorem authenticated_theorem {env : Ix.Environment} {recipes : Array Recipe}
 
 /-- A derived image head must have passed the source-only family check. -/
 theorem filterHeads_authenticated {env : Ix.Environment} {all heads : Array Name}
-    {name : Name} (kept : name ∈ filterHeads env all heads)
+    {oracleFor : Ix.AuxGen.SourceFamilyOracle}
+    {name : Name} (kept : name ∈ filterHeads oracleFor env all heads)
     (derived : isDerived name = true) :
-    let recipes := (reconstruct env all (heads.any isBRecOn)).toOption.getD #[]
+    let recipes := (reconstruct oracleFor env all (heads.any isBRecOn)).toOption.getD #[]
     authenticated env recipes (recipes.size + 1) #[] name = true := by
   unfold filterHeads at kept
   dsimp at kept
@@ -107,8 +108,9 @@ theorem filterHeads_authenticated {env : Ix.Environment} {all heads : Array Name
 /-- The actual declarations selected by the production filter, with no
 assumption that auxiliary spelling or binder count identifies their values. -/
 theorem filterHeads_source {env : Ix.Environment} {all heads : Array Name} {name : Name}
-    (kept : name ∈ filterHeads env all heads) (derived : isDerived name = true) :
-    let recipes := (reconstruct env all (heads.any isBRecOn)).toOption.getD #[]
+    {oracleFor : Ix.AuxGen.SourceFamilyOracle}
+    (kept : name ∈ filterHeads oracleFor env all heads) (derived : isDerived name = true) :
+    let recipes := (reconstruct oracleFor env all (heads.any isBRecOn)).toOption.getD #[]
     ∃ recipe actual,
       recipes.find? (fun r => nameEq r.name name) = some recipe ∧
       env.get? name = some actual ∧
@@ -117,15 +119,37 @@ theorem filterHeads_source {env : Ix.Environment} {all heads : Array Name} {name
 
 /-- A reconstruction error cannot authenticate any derived image head. -/
 theorem filterHeads_constructed {env : Ix.Environment} {all heads : Array Name} {name : Name}
-    (kept : name ∈ filterHeads env all heads) (derived : isDerived name = true) :
-    ∃ recipes, reconstruct env all (heads.any isBRecOn) = .ok recipes := by
+    {oracleFor : Ix.AuxGen.SourceFamilyOracle}
+    (kept : name ∈ filterHeads oracleFor env all heads) (derived : isDerived name = true) :
+    ∃ recipes, reconstruct oracleFor env all (heads.any isBRecOn) = .ok recipes := by
   have source := filterHeads_source kept derived
-  cases built : reconstruct env all (heads.any isBRecOn) with
+  cases built : reconstruct oracleFor env all (heads.any isBRecOn) with
   | error failure =>
     rw [built] at source
     obtain ⟨recipe, _, missing, _⟩ := source
     change (none : Option Recipe) = some recipe at missing
     contradiction
   | ok recipes => exact ⟨recipes, rfl⟩
+
+/-- The checked caller path selects exactly the public filter's heads when
+reconstruction succeeds, so all source-shape facts apply without new premises. -/
+theorem filterHeadsChecked_eq {oracleFor : Ix.AuxGen.SourceFamilyOracle}
+    {env : Ix.Environment} {all heads kept : Array Name}
+    (success : filterHeadsChecked oracleFor env all heads = .ok kept) :
+    filterHeads oracleFor env all heads = kept := by
+  unfold filterHeadsChecked at success
+  unfold filterHeads
+  dsimp at success ⊢
+  split at success <;> rename_i h
+  · change Except.ok heads = Except.ok kept at success
+    simp only [h, ↓reduceIte]
+    exact Except.ok.inj success
+  · cases built : reconstruct oracleFor env all (heads.any isBRecOn) with
+    | error why => rw [built] at success; cases success
+    | ok recipes =>
+      rw [built] at success
+      change Except.ok _ = Except.ok kept at success
+      simp only [h, Bool.false_eq_true, ↓reduceIte, Except.toOption, Option.getD]
+      exact Except.ok.inj success
 
 end Ix.CompileCert.SourceFamily

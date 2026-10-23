@@ -413,6 +413,10 @@ inductive AuxOracle where
       (retry : Option AuxOracle)
       (withFamily : Array (InductiveVal × Array ConstructorVal) → Except String AuxOracle)
 
+/-- An original source owner's capability, fixed for one compilation input.
+Local installs return private successors; the provider's base stays immutable. -/
+abbrev SourceFamilyOracle := Name → Except String AuxOracle
+
 namespace AuxOracle
 
 def mode : AuxOracle → IxcMode
