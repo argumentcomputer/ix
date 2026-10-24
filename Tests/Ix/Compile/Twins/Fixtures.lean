@@ -35,3 +35,5 @@ import Tests.Ix.Compile.Clique.Ownership.Lemmas
 import Tests.Ix.Compile.AuxCert.NestedSortUK
 -- Checked opaque-generation fixtures remain outside the whole test environment.
 import Tests.Ix.AuxGen.GenerationOnlyOpaqueFixtures
+-- Portable checked Source fixtures are built here and loaded only at runtime.
+import Tests.Ix.AuxGen.PortableFixtures

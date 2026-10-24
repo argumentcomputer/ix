@@ -84,6 +84,7 @@ import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
 import Tests.Ix.AuxGen.AuxKernelTests
 import Tests.Ix.AuxGen.ElimRuleTests
+import Tests.Ix.AuxGen.PortableKernel
 import Tests.Ix.AuxGen.FlatBlockTests
 import Tests.Ix.AuxGen.LevelEgressTests
 import Tests.Ix.AuxGen.ComponentsTests
@@ -250,7 +251,7 @@ def registry : List Entry := [
   .suite "reserved-input" .primary Tests.Ix.Compile.ReservedInput.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite
-    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.FlatBlock.suite
+    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.PortableKernel.suite ++ Tests.AuxGen.FlatBlock.suite
     ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.Components.suite),
   -- source-body recognition of casesOn/recOn: the comparison controls (Ix.AuxGen.SourceIdentity)
   .suite "aux-source-identity-unit" .primary Tests.Ix.Compile.SourceIdentity.suite,
