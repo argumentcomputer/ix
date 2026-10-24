@@ -5973,3 +5973,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "fixed interpretation stored recursor readings"
     (#[`openRev_resolves, `stored_rule_resolves, `stored_rule_readings].map
       (`Ix.Cert.PrefixRecRules ++ ·))
+
+/-! ## Universal recursor rules at the supplied final interpretation
+
+The full law retains RHS grading, outer guarded pin grading, contravariant
+nested comparisons, both type readings and the fired equality/output grade. -/
+
+/-- info: [cert-audit] universal fixed interpretation recursor rules: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal fixed interpretation recursor rules"
+    #[`Ix.Cert.PrefixRecRules.rec_rules_preserved,
+      `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_rec_rules]

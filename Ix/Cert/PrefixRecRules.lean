@@ -77,4 +77,83 @@ theorem stored_rule_readings (wf : EnvWF before)
     resolving_reading_eq acval φ 0 _ lookup slots rhs,
     fun lvls ps fire i => resolving_reading_eq acval φ rP _ lookup slots (pins lvls ps fire i)⟩
 
+universe w
+
+/-- Every stored fired rule uses the supplied FINAL law at the same acval.
+Both existential readings move back; type premises move forward; the nested
+comparison consumes a final pin reading by moving it back to the prefix. -/
+theorem rec_rules_preserved {V : Type w} [SetTheory V]
+    (M : Cached.StrongModel V final) (core : EnvModel V before)
+    (valuation : core.acval = M.internal.base2.acval)
+    (lookup : FindPreserved before final) (slots : StoredHeadSlots before final)
+    (φ : LevelParam → Nat) : RecRules core φ := by
+  intro n cv mI rP rules stored rl member active
+  obtain ⟨bounds, levelsLaw⟩ :=
+    M.internal.rec_rules φ n cv mI rP rules (lookup stored) rl member active
+  refine ⟨bounds, ?_⟩
+  intro us arity
+  obtain ⟨Ra, rhsRead, rhsGrade, pinsGrade, law⟩ := levelsLaw us arity
+  obtain ⟨headerEq, rhsEq, pinsEq⟩ :=
+    stored_rule_readings core.wf lookup slots M.internal.base2.acval φ stored member us
+  refine ⟨Ra, ?_, rhsGrade, ?_, ?_⟩
+  · simpa only [valuation] using rhsEq.trans rhsRead
+  · intro lvls pins fire i bound
+    obtain ⟨vpa, pinRead, pinGrade⟩ := pinsGrade lvls pins fire i bound
+    refine ⟨vpa, ?_, ?_⟩
+    · simpa only [valuation] using (pinsEq lvls pins fire i).trans pinRead
+    · intro ρ zs TVa restR length grades typeRead fit
+      apply pinGrade ρ zs TVa restR length grades ?_ fit
+      exact headerEq.symm.trans (by simpa only [valuation] using typeRead)
+  · intro cvj cnP cnF ctorFound usj ρ xs ys TVa TVja restR restC
+      lengthX lengthY ctorArity levels plain nested indexPin typeRead ctorRead fitR fitC
+    have ctorResolved := (core.wf _ (Semantics.Env.find?_mem ctorFound)).2.2.1
+    have ctorInst : (cvj.type.instantiateLevelParams cvj.levelParams usj).constsResolve before = true := by
+      rw [Ix.Kernel.Expr.constsResolve_instantiateLevelParams]
+      exact ctorResolved
+    have ctorEq := resolving_reading_eq M.internal.base2.acval φ 0 _ lookup slots ctorInst
+    simp only [valuation] at typeRead ctorRead fitR ⊢
+    refine law cvj cnP cnF (lookup ctorFound) usj ρ xs ys TVa TVja restR restC
+      lengthX lengthY ctorArity levels plain ?_ indexPin
+      (headerEq.symm.trans typeRead) (ctorEq.symm.trans ctorRead) fitR fitC
+    intro lvls pins fire i bound vpa finalRead
+    apply nested lvls pins fire i bound vpa
+    simpa only [valuation] using (pinsEq lvls pins fire i).trans finalRead
+
 end Ix.Cert.PrefixRecRules
+
+namespace Ix.Cert.ReferenceFronts
+
+open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model Ix.Kernel.SetTheory
+open Ix.Kernel.Model.Rules (Graded)
+open Ix.Cert.PrefixRecRules
+
+universe w
+variable {md : Mode} {ev : Evidences md} {ds : List (Declaration md)}
+  {envA before : Env md} {i F : Nat} {cv : Ix.Kernel.ConstantVal md}
+  {raw expected checked : Ix.Kernel.Expr md} {hint : ReducibilityHint}
+
+/-- The actual indexed front supplies UNIVERSAL RecRules at the same final
+interpretation, retaining every prior row and the target package. TowerOk,
+NatOpRow, baseline typing/equality and source-model composition remain open. -/
+theorem DefinitionFrontAt.final_prefix_rec_rules
+    (front : DefinitionFrontAt ev ds envA i cv raw hint F before expected checked)
+    (V : Type w) [SetTheory V] (M : Cached.StrongModel V envA) :
+    ∃ core : EnvModel V before,
+      core.acval = M.internal.base2.acval ∧ cvalOf core.acval = M.model.cval ∧
+      AcvalValid core ∧ (∀ φ : LevelParam → Nat, NatHeads core φ) ∧ EqLaw core ∧
+      AcvalDefnInst core ∧ (∀ φ : LevelParam → Nat, ConstType core φ) ∧
+      CapsOk core ∧ (∀ φ : LevelParam → Nat, Rules.NatSuccRow core φ) ∧
+      (∀ φ : LevelParam → Nat, RecRules core φ) ∧
+      ∀ φ : LevelParam → Nat,
+        ∃ ha,
+          denoteMeta core.acval before φ 0 expected = some ha ∧ Graded V [] ha ∧
+          denoteMeta core.acval before φ 0 checked = some (core.acval cv.name φ) ∧
+          Graded V [] (core.acval cv.name φ) ∧
+          ∀ ρ : BVarIdx → V, interp V ρ (core.acval cv.name φ) ∈ˢ interp V ρ ha := by
+  obtain ⟨core, valuation, publicEq, valid, heads, eqLaw, definitions, types, caps, succ, target⟩ :=
+    front.final_prefix_caps_succ V M
+  exact ⟨core, valuation, publicEq, valid, heads, eqLaw, definitions, types, caps, succ,
+    fun φ => rec_rules_preserved M core valuation front.lookup_preserved front.stored_head_slots φ,
+    target⟩
+
+end Ix.Cert.ReferenceFronts
