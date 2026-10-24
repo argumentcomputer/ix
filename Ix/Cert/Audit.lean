@@ -50,6 +50,11 @@ import Ix.Cert.CheckedBetaSpine
 import Ix.CompileCert.O6Values
 import Ix.CompileCert.O6Opened
 import Ix.CompileCert.O6LambdaValues
+import Ix.Cert.ContextValues
+import Ix.Cert.ApplicationFronts
+import Ix.CompileCert.O6ApplicationValues
+import Ix.CompileCert.O6Telescope
+import Ix.CompileCert.O6TelescopeOpened
 
 /-! # The certification statements, frozen
 
@@ -5682,3 +5687,92 @@ run_cmd do
   checkRoots (tag := "cert-audit") "O6 whole lambda values"
     (#[`lam_mem_pi_bits, `infer_package, `lambda_markers_eq_of_fronts].map
       (`Ix.Cert.LambdaMarkers ++ ·) ++ #[`Ix.CompileCert.O6LambdaValues.o6_rec_under_lam_values])
+
+/-! ## Internal context composition under valid valuations
+
+Actual local checks transport the raw Frame/Ctx invariant and supply
+witnessed readings/grades. Same-domain lambda congruence uses the body IH
+and bit agreement only under Sat, without a context inhabitant or global
+marker equality. Local check producers remain an explicit proof obligation. -/
+
+/-- info: [cert-audit] checked context lambda congruence: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked context lambda congruence"
+    (#[`annotate_context, `infer_package_at, `lambda_bits_at,
+      `eqAt_of_readings, `checked_lambda_congr_at].map (`Ix.Cert.ContextValues ++ ·))
+
+/-! ## Real local fronts from enclosing applications
+
+Paired actual app checks with the same raw function derive both argument
+fronts and one WHNF domain. Real function inference/WHNF supplies its
+semantic frame/context/read/grade, without inventing a domain check. The
+typed-header consumer and full O6 production composition remain separate. -/
+
+/-- info: [cert-audit] actual application argument fronts: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual application argument fronts"
+    (#[`function_domain, `paired_app_argument_fronts].map (`Ix.Cert.ApplicationFronts ++ ·))
+
+/-! ## Consumers of the application producer's typed header
+
+The factored marker/congruence proofs consume the proved domain package.
+The direct lambda-argument connection derives every header fact and both
+local fronts from actual paired app calls. Existing executable-header
+interfaces remain wrappers; no domain check or runtime checker is invented. -/
+
+/-- info: [cert-audit] produced typed header consumers: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "produced typed header consumers"
+    #[`Ix.Cert.ContextValues.lambda_bits_of_header,
+      `Ix.Cert.ContextValues.checked_lambda_congr_of_header,
+      `Ix.Cert.ApplicationFronts.paired_app_lambda_arguments]
+
+/-! ## Actual O6 composition through a lambda argument and application
+
+Real enclosing checks and O6 producers derive the lambda shapes, local
+fronts/header and body comparison. Application congruence is consumed by
+the whole public-value endpoint; no unsupported body IH passes through. -/
+
+/-- info: [cert-audit] O6 whole application values: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 whole application values"
+    (#[`app_argument, `o6_lambda_argument_values].map (`Ix.CompileCert.O6ApplicationValues ++ ·))
+
+/-! ## Actual shared dependent telescope producer
+
+Whole annotations and baseline full inference produce common typed domains,
+exact per-binder subcalls, bulk-opened leaf runs and frames. Every supplied
+strong model then gets a real context-extension trace, without a Sat witness. -/
+
+/-- info: [cert-audit] actual telescope producer: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual telescope producer"
+    (#[`openers_append_one, `annotation_reopen_at, `annotation_frame_at,
+      `DomainTraceFrom.length, `DomainTraceFrom.at, `ContextTrace.length,
+      `paired_telescope_from, `DomainTrace.length, `DomainTrace.at,
+      `paired_telescope].map (`Ix.CompileCert.O6Telescope ++ ·))
+
+/-! ## Actual O6 reduction under a shared dependent telescope
+
+Bulk opening preserves the derived selector body at its own binder cursor.
+The produced leaf checks and frames supply certified beta; the endpoint
+retains all original O6 pass, image and reader evidence. -/
+
+/-- info: [cert-audit] O6 dependent telescope reduction: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 dependent telescope reduction"
+    (#[`strip_open_list, `BulkAnn.unique, `bulk_ann_pairs, `bulk_ann_apps,
+      `selectors_bulk_annotated, `bulk_opened_layout,
+      `o6_rec_under_telescope_opened_red].map (`Ix.CompileCert.O6TelescopeOpened ++ ·))

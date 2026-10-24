@@ -62,6 +62,7 @@ import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.BridgeBoundaries
 import Tests.Ix.Compile.BridgeScopes
+import Tests.Ix.Compile.BridgePortable
 import Tests.Ix.Compile.BridgeProvenance
 import Tests.Ix.Compile.TableWorklist
 import Tests.Ix.Compile.HeaderCounts
@@ -292,7 +293,7 @@ def registry : List Entry := [
   .suite "compiler-index-safety" .primary Tests.Ix.Compile.IndexSafety.suite,
   -- the aux kernel bridges refuse what they cannot convert (D-12)
   .suite "compiler-bridge-boundaries" .primary Tests.Ix.Compile.BridgeBoundaries.suite,
-  .suite "compiler-bridge-scopes" .primary Tests.Ix.Compile.BridgeScopes.suite,
+  .suite "compiler-bridge-scopes" .primary (Tests.Ix.Compile.BridgeScopes.suite ++ Tests.Ix.Compile.BridgePortable.suite),
   .suite "compiler-provenance" .primary Tests.Ix.Compile.BridgeProvenance.suite,
   .suite "table-worklist" .primary Tests.Ix.Compile.TableWorklist.suite,
   .suite "header-count" .primary Tests.Ix.Compile.HeaderCounts.suite,

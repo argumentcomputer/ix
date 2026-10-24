@@ -37,3 +37,4 @@ import Tests.Ix.Compile.AuxCert.NestedSortUK
 import Tests.Ix.AuxGen.GenerationOnlyOpaqueFixtures
 -- Portable checked Source fixtures are built here and loaded only at runtime.
 import Tests.Ix.AuxGen.PortableFixtures
+import Tests.Ix.Compile.BridgePortableFixtures
