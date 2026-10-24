@@ -45,6 +45,7 @@ import Ix.CompileCert.CliqueRowShape
 import Ix.CompileCert.CliqueRowsCoverage
 import Ix.CompileCert.O6RecRead
 import Ix.Cert.AnnotatedBeta
+import Ix.CompileCert.O6Annotation
 
 /-! # The certification statements, frozen
 
@@ -5602,3 +5603,19 @@ run_cmd do
   checkRoots (tag := "cert-audit") "annotated beta values"
     (#[`inferred_beta_certificate, `annotate_lam_trace, `annotate_beta_trace,
       `inferred_beta_values, `annotated_beta_values].map (`Ix.Cert.AnnotatedBeta ++ ·))
+
+/-! ## Actual O6 selector layout through annotation
+
+The real typed openings preserve the exact terminal selector body. Actual
+argument runs agree across fuels in one env/depth, yielding equality with
+the actual checked output, including repeated/reordered arguments and extras.
+No checked beta spine, value preservation or under-binder claim is inferred. -/
+
+/-- info: [cert-audit] O6 annotation layout: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 annotation layout"
+    (#[`annotation_unique, `annotate_apps, `Flat.annotate, `open_close,
+      `annotate_selector_tail, `ReadAnn.unique, `read_ann_apps,
+      `selectors_annotated, `o6_rec_annotation_layout].map (`Ix.CompileCert.O6Annotation ++ ·))
