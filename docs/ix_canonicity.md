@@ -1,11 +1,13 @@
 # Anonymous Canonicity in Ix
 
-> This is the authoritative spec for **anonymous canonicity** — the
-> foundational content-addressing property of the Ix compiler. It covers
-> the theory (what the property is and why we need it), the operational
-> pipeline that achieves it (compile, decompile, surgery, metadata),
+> This document describes **anonymous canonicity**, the intended
+> content-addressing invariants of the Ix compiler. It covers
+> the property, the compile/decompile pipeline and metadata,
 > worked examples from `Tests/Ix/Compile/Mutual.lean`, a testing plan,
-> and the currently-open implementation work.
+> and implementation limitations. Retired call-site surgery is historical (§8);
+> the current compiler uses Pass 3 images (§7). These are implementation
+> contracts, not a completed compiler value-preservation theorem; see
+> [the certification boundary](kernel.md#relation-to-compiler-certification).
 >
 > Companion document: [`docs/Ixon.md`](./Ixon.md) (binary format
 > reference).
@@ -14,27 +16,35 @@
 
 ## 1. The Property
 
-Given a Lean 4 `ConstantInfo` `c`, compilation produces a content-address
-`addr(c) ∈ Ixon`. The **anonymous canonicity** property is:
+For corresponding constants in successfully compiled dependency closures,
+**anonymous canonicity** targets the following invariance under the same
+canonicalization rule:
 
 ```
-For every pair (c₁, c₂) of Lean constants:
-
-    addr(c₁) = addr(c₂)
-    ⇔
-    c₁ and c₂ are structurally identical modulo:
+    c₁ and c₂ differ only in supported erased choices:
       - local variable names
-      - declaration metadata (mdata, binder info, docstrings, source positions)
+      - presentation mdata, ordinary Lean BinderInfo, docstrings, source positions
       - source declaration order within mutual blocks
       - nested-inductive aux discovery order
       - hygiene annotations on Name components
+
+    ⇒ canonical payload bytes(c₁) = canonical payload bytes(c₂)
+    ⇒ addr(c₁) = addr(c₂)
 ```
 
-Equivalently: two Lean constants share a hash iff they denote the same
-mathematical object modulo cosmetic choices.
+An address is BLAKE3 of the payload bytes. Equality of hashes is not a
+proof of equality of bytes, and equality of canonical encodings is not a
+general test for mathematical equivalence. Distinct encodings can denote
+the same value. Preservation of the source value by compilation is a
+separate proof obligation.
+
+Semantic contracts are excluded from these erased choices. Reserved
+`ix.contract` source mdata lowers into the anonymous binder fields: usage,
+ownership, locality, arrow-result contracts and let borrow kind. Changing
+those fields can change payload bytes and addresses (§5.1).
 
 Informally: **renaming a bound variable, reordering a mutual block, or
-decorating a term with `@[inline]` does not move the content address.**
+adding ordinary presentation mdata does not move the content address.**
 If it does, canonicity is broken and the property fails — which in turn
 breaks the zk-PCC story, because two parties compiling the same library
 would produce different hashes and could not share proofs.
@@ -48,10 +58,10 @@ anonymous expressions (§6.7). So the property also holds modulo:
 - the order in which the compiler built it;
 - which compiler ran, Lean or Rust.
 
-These are properties of the definition. The construction's proofs start from
-the canonical DAG of the expressions; independence from in-memory sharing and
-the agreement of the Rust implementation with the Lean definition are tested
-(§6.7).
+The Lean sharing proofs cover successful input expansion and output meaning,
+representation congruence and conditional idempotence (§6.7). They do not
+prove this whole compiler contract. Agreement of the Rust implementation
+with the Lean compiler is tested, not a universal refinement theorem.
 
 ## 2. Why It Matters
 
@@ -82,27 +92,22 @@ a proof of `X : Tree` from A cannot be used by B's verifier. **Canonicity
 restores this property** by erasing source order, binder names, and
 metadata from the hash input.
 
-## 3. The Epimorphism / Isomorphism Pair
+## 3. Canonical Content and Source Reconstruction
 
-Write `Source` for the set of Lean source constants and `Canonical` for
-the set of content addresses. Compilation induces two maps:
+The design separates anonymous content from source reconstruction:
 
 ```
-Source ──(compile)──→ Canonical              (many-to-one: α-equivalent sources
-                                              collapse to one canonical form)
-Source ──(compile)──→ Canonical × Metadata   (bijective: metadata preserves
-                                              the information erased by compile)
+Source ──(successful compile)──→ Canonical content
+                                 + source metadata and original records
 ```
 
-- **Canonical alone is epimorphic onto Source.** Renaming, reordering,
-  and stripping decoration are surjective: any canonical form is the image
-  of some Lean term, but different Lean terms can share one canonical.
-- **Canonical + metadata is isomorphic to Source** (modulo source
-  ranges and hygiene, which are explicitly out of scope — see §5.3).
-  The metadata sidecar carries exactly the information needed to
-  reconstruct a particular Lean-visible term — binder names, mdata
-  wrappers, source member order, docstrings — without contributing to
-  the hash.
+- **Canonical content is many-to-one.** Alpha-equivalent sources can share
+  a payload, while the name map retains their separate source identities.
+- **Source reconstruction uses additional data.** Binder names, presentation mdata,
+  source member order and original records support the implemented
+  decompile paths (§9). Source ranges and hygiene are outside that
+  roundtrip contract (§5.3), and docstring persistence is still open
+  (§17.5). There is no unrestricted bijection or total roundtrip theorem.
 
 This pair is the entire design:
 
@@ -116,7 +121,9 @@ Lean  ──compile──▸  Ixon (canonical)
 Lean' ◀─decompile─  Ixon + Metadata
 ```
 
-where `Lean' ≡ Lean` as Lean `ConstantInfo`s, not just observationally.
+The roundtrip tests compare reconstructed `ConstantInfo`s under their
+stated fidelity checks. Missing source records or malformed metadata can
+make decompilation fail; metadata is not certified by the Ixon checker.
 
 ## 4. Four Operational Invariants
 
@@ -221,13 +228,20 @@ compiler's canonicity claims.
 
 ### 5.1 Erased from canonical form
 
-Everything that depends on source choices is stripped before hashing:
+The following presentation choices are stripped before hashing. Ordinary
+Lean `BinderInfo` (explicit/implicit/instance presentation) is distinct from
+Ixon's semantic `BinderContract`. The compiler consumes reserved
+`ix.contract` mdata into `lam`/`all`/`letE` payload fields
+(`Ix.SemanticContract.Contract.lower`, called by `Ix/CompileM.lean` and Rust
+`compile_expr`). These fields participate in serialized identity even
+though the source wrapper is an `Expr.mdata` node. See
+[source contracts](source-contracts.md#pure-input-and-source-identity).
 
 | Category                           | Where it's erased                                    |
 | ---------------------------------- | ---------------------------------------------------- |
 | Bound variable names (λ, ∀, let)   | `Expr::Lam/All/Let` has no `name` field — `src/ix/ixon/expr.rs` |
-| `BinderInfo` (impl/inst/strict)    | not serialized in `put_expr`                         |
-| `Expr.mdata` wrappers              | canonical form has no `Mdata` node                   |
+| Ordinary Lean `BinderInfo` (impl/inst/strict) | not serialized in `put_expr`; semantic binder contracts are separate payload fields |
+| Presentation `Expr.mdata` wrappers | stored in the sidecar; semantic `ix.contract` wrappers are consumed into the payload, not erased |
 | Free variable identity             | FVar and MVar are rejected — `compile.rs:848-857`    |
 | De Bruijn depth artifacts          | indices are **the** identifier; no names survive     |
 | Lean `InductiveVal.all` order      | replaced by `sort_consts` canonical class order; kernel enforces via `validate_canonical_block_single_pass` at ingress (§4.4) |
@@ -246,7 +260,7 @@ Everything needed to round-trip back to a source-faithful Lean
 | --------------------------------------- | ---------------------------------------------------- |
 | Binder names, `BinderInfo`              | `ExprMetaData::Binder { name, info, … }`             |
 | Let binders                             | `ExprMetaData::LetBinder`                            |
-| `Expr.mdata` KVMaps                     | `ExprMetaData::Mdata`                                |
+| Presentation `Expr.mdata` KVMaps        | `ExprMetaData::Mdata`; semantic contracts are reconstructed from committed binder fields |
 | Reference names (per `Const` / `Rec`)   | `ExprMetaData::Ref`; name choice at alias occurrences: §10.5 |
 | Projection struct name                  | `ExprMetaData::Prj`                                  |
 | Pass 3 call-site source occurrence      | `_ix.inline` record (`Mdata`) + `ConstantMeta.meta_sharing` |
@@ -323,7 +337,7 @@ Muts([
 
 Each `Indc(I)` carries `I.ctors: Vec<Constructor>` inline. **Constructors
 are not separate `MutConst` entries** — they live inside their parent
-`Inductive`. This matters for projections (see [projections](inter-block-references--projections)).
+`Inductive`. This matters for projections (see [projections](#inter-block-references--projections)).
 
 **Aux inductives are not serialized in the inductive block.** They are
 transient compile-time entities, derived from primary ctor walks during
@@ -650,8 +664,8 @@ expansion** (A2-order; Pass 1's `Rules.compiler`,
   not as Lean's `ExtInd.all`.
 - Occurrences are deduplicated by a **canonical key**: external constants
   by compiled address, universe levels in the serializer's positional
-  normal form (`canonUniv`), binder names, binder information and
-  metadata erased. Two occurrences that the stored Ixon cannot tell apart
+  normal form (`canonUniv`), with binder names, ordinary Lean `BinderInfo`
+  and presentation metadata erased. Two occurrences that the stored Ixon cannot tell apart
   (collapsed or content-equal constants, `List.{max 0 0} T` and
   `List.{0} T`) share one auxiliary.
 - There is no sort: the canonical expansion is already in canonical
@@ -731,6 +745,11 @@ inductive itself, and in the corresponding derived blocks for its
 `.rec`, `.below`, `.brecOn`, etc.).
 
 ### 6.5 Evaporated auxiliaries (over-merge splits)
+
+The example below explains evaporation. Its detailed `CallSitePlan` mechanism
+records the retired surgery implementation (§8). Current callers use Pass 3
+images and `_ix.inline` reconstruction records (§7); the old plan and metadata
+constructors are not live APIs.
 
 A source aux can lose its home entirely: its OWNER (the inductive
 whose constructor walk discovers the occurrence) stays in an SCC while
@@ -831,50 +850,49 @@ The output depends only on those expanded expressions:
   numbered by height and then by constructor, scalars and child IDs.
   Hashes and the interner's pointer cache only speed up discovery; they
   never decide identity. `canonicalize_det` proves that the numbering of
-  interned terms depends only on the terms the roots denote. The step that
-  interns the input (`expand`) is outside the proofs; that pointer layout
-  does not change the bytes is tested on generated inputs.
-- **Metadata does not participate.** The arena, names, binder info and
-  call-site data play no part, so a metadata-only change never moves an
-  address. Conversely, re-sharing never invalidates metadata: arena nodes
+  interned terms depends only on the terms the roots denote. Successful
+  input expansion is proved in `IxSharingVerify/CanonicalMeaning.lean`;
+  the pointer cache uses structural confirmation before accepting a hit.
+- **Presentation sidecars do not choose sharing.** The arena, display names,
+  ordinary Lean `BinderInfo` and call-site reconstruction data are outside
+  the anonymous payload. Changing only that sidecar leaves the payload's
+  address fixed. Semantic source contracts have already been lowered into
+  the payload and are inputs to sharing. Re-sharing preserves the sidecar's
+  expression positions: arena nodes
   follow the unshared tree and a `Share` is transparent to them
   (`sharing-minimum-integration.md` §5.4).
 - **Every tie is pinned.** The stored set is the `setPrec`-least minimum of
-  phase 1. The first tier, the Kahn order and the width selection all have
-  fixed tie-breaks. The result therefore does not depend on search order,
+  phase 1's fixed K16 family. The first tier, the Kahn order and the width
+  selection all have fixed tie-breaks. The result therefore does not depend on search order,
   parallelism or hash-map iteration. The Rust implementation's
   deterministic parallelism is checked by byte-identity tests.
 - **Backward references.** Entry `i` references only entries below `i`.
   Expanding the table left to right reproduces every root exactly.
-- **Idempotent.** Normalizing a canonically shared constant reproduces its
-  bytes (tested; proved under the hypothesis that the output expands to the
-  input's canonical DAG, `canonicalSharingTieredTable_idem`).
+- **Conditional idempotence.** Repeating normalization reproduces the
+  bytes when both runs succeed at the same configuration, layout and
+  limits (`IxSharingVerify/FamilyIdempotence.lean`). Success of the output's
+  raw expansion remains an explicit condition of the stronger repeat theorem.
 
 [Ixon](Ixon.md#sharing-system) describes the three phases and the width
-selection. It also states which properties are machine-checked: phase-1
-minimality, the per-phase specifications of phases 2 and 3 and of the
-selection, that the minimized length is the serialized length
-(`canonicalSharingTiered_serialized`), and wire validity of the output
-(`canonicalSharingTiered_format`), all for a run on the canonical DAG. Three
-things are not claimed: that the result is a global byte minimum, that the
-step building the DAG from the input expressions is correct, and that the
-Rust implementation is proved. Rust is held to the Lean definition
-by differential tests (`exact-sharing-ffi`, and the corpus differential on
-Init and a Mathlib sample described in
-[Ixon](Ixon.md#what-is-proved-and-what-is-not)).
+selection. Its [proof inventory](Ixon.md#what-is-proved-and-what-is-not)
+distinguishes the production K16 family from the retained exact reference.
+Successful production runs have input-expansion, meaning, format and
+serialized-length proofs. Totality, output-domain closure and cost bounds
+remain follow-ups; no global byte minimum or universal Rust refinement is
+claimed. Rust/Lean agreement is checked by differential tests.
 
 A failed construction, for example one that exceeds a resource limit, is a
-compile error for that block. There is no fallback, because a fallback
-would make the address depend on resource limits rather than on the
-expressions.
+compile error for that block. The initial component-size gate chooses the
+exact or greedy family before search. Failure cannot select another family
+or publish a best-so-far result.
 
 Both compilers route every block through this construction, including
 aux-gen blocks, and in Rust also kernel egress and the decompiler's
 recompile. The recompile invariant `Named.original` (§9.2) relies on
 recompile using exactly this route.
 
-Lean and Rust produce identical bytes for every stored constant of the
-Init (56,783) and Init+Std (100,277) files compiled on Lean 4.34.0, and
+Historical exact-route runs produced identical Lean and Rust bytes for every
+stored constant of the Init (56,783) and Init+Std (100,277) files compiled on Lean 4.34.0, and
 did for Init (56,622) and a Mathlib sample of 20,284 constants on Lean
 4.33.1; the merge-queue suite `lake test -- --ignored compile` requires
 the Lean and Rust compilers to write identical environments for its whole
@@ -882,80 +900,33 @@ test environment (238,574 constants on Lean 4.34.0).
 
 ## 7. The Compile Pipeline
 
+Both compilers use the three-pass driver. The Lean entry points are
+`Ix/CompileDriver.lean`, `Ix/Compile/Canon.lean` and `Ix/Compile/Pass/Driver.lean`;
+Rust's are `crates/compile/src/compile.rs`, `compile/mutual.rs` and
+`compile/pass3/driver.rs`.
+
 ```
 Lean.Env
   │
-  │  (for each mutual inductive block)
+  ├─ dependency closure, groundedness and SCC scheduling
+  ├─ canonical classes and nested expansion (Pass 1)
+  ├─ canonical blocks and regenerated auxiliary families (Pass 2)
+  ├─ changed-block images and caller rewrites (Pass 3)
+  │    ├─ occurrence passes: O11a → O2 → O3 → O4 → O6
+  │    └─ clique transport, with rows for successful WF plans
   ▼
-sort_consts → sorted_classes: Vec<Vec<Name>>                  [compile.rs]
-  │                                                           // alpha-collapse
-  │
-  ▼
-compile_mutual_block(primary_inductives)                      [compile.rs]
-  → Muts([ Indc(U₀), Indc(U₁), …, Indc(A₀), Indc(A₁), … ])    // INDUCTIVE BLOCK
-  // Constructors are embedded in each Indc's `ctors` field.
-  //
-  // Nested-aux inductives live in this SAME block, after the user
-  // classes. They're the `_nested.ExtInd_N` synthetic inductives
-  // built by expand_nested_block and structurally sorted.
-  │
-  │
-  ▼
-generate_aux_patches(sorted_classes, original_all, …)         [aux_gen.rs]
-  │
-  ├─ expand_nested_block_canonical(ordered_originals, …, stt) [nested.rs]
-  │    → ExpandedBlock { types, aux_to_nested, aux_ctor_map, … }
-  │      (auxes in canonical = discovery order; no sort)
-  │
-  ├─ compute_aux_perm(expanded, original_all, …)              [nested.rs]
-  │    → perm[source_j] = canonical_i
-  │
-  ├─ generate_recursors_from_expanded(sorted_classes, expanded) [recursor.rs]
-  │    → Vec<(Name, RecursorVal)>  // in canonical layout
-  │
-  ├─ RestoreCtx::restore — map _nested.X_N references in rec bodies
-  │    back to ExtInd spec_params form                        [expr_utils.rs]
-  │
-  ├─ generate_below_constants, generate_brecon_constants,
-  │    generate_cases_on, generate_rec_on                     [below/brecon/…]
-  │    → Derived patches (Defn or Indc, per aux kind)
-  │
-  └─ alias_patches — deep-rename each rep's patches for each
-       non-rep class member                                   [aux_gen.rs:648-700]
-  │
-  ▼
-AuxPatchesOutput { patches, perm, … }
-  │
-  │  (each family block, and each auxiliary definition, compiled on its own:)
-  ▼
-compile_aux_block(rec_consts)     → Muts([ Recr(…), … ])      // REC BLOCK
-compile_aux_components(cases_on_defs) → Defn(…), …         // standalone (D6)
-compile_aux_components(rec_on_defs)   → Defn(…), …         // standalone
-compile_aux_block(below_indcs)    → Muts([ Indc(…), … ])      // BELOW INDC BLOCK (Prop)
-compile_aux_components(below_defs)    → Defn(…), …         // standalone (Type)
-compile_below_recursors(…)        → Muts([ Recr(…), … ])      // BELOW.REC BLOCK (Prop)
-compile_aux_components(brecon_go)     → Defn(…), …         // standalone
-compile_aux_components(brecon_main)   → Defn(…), …         // standalone
-compile_aux_components(brecon_eq)     → Defn(…), …         // standalone
-  │
-  │  Each block's member order is [user-classes (sort_consts) | aux (structural sort)].
-  │  Constants reference each other by content address: projections into the
-  │  blocks (IndcProj / RecrProj / DefnProj) or a standalone constant's own address.
-  │
-  ▼
-stt.aux_perms.insert(
-    name_of(<source_all[0]>),           // key: Name (from env.get_name(addr))
-    AuxLayout { perm, source_ctor_counts },
-)
-  │
-  ▼
-compute_call_site_plans (per aux name) → surgery              [surgery.rs]
-  │
-  ▼
-Ixon bytes (many canonical blocks + per-block metadata)
+canonical sharing, serialized records and publication
+  + source metadata and original records
 ```
 
-Five invariants hold at the pipeline seams:
+Pass 3 rewrites callers through images; it does not register the retired
+`CallSitePlan`s. O5 supplies universe handling to the occurrence passes.
+O11a is a definitional pass and emits no equation rows. Structural and
+partial-fixpoint clique row support remains separate from the shipped WF
+row route. The implementation and tests of these transformations do not
+complete their value-preservation proofs.
+
+Five invariants constrain the pipeline seams:
 
 1. **Ingress is name-only via content-hash.** `compile_name(name)`
    uses `Blake3(name.components)`; hygiene is stripped.
@@ -1093,6 +1064,10 @@ the same Ixon environment.
 
 ### 9.1 The three-track decompile
 
+The diagram describes the source/canonical record choices. The Lean full
+source decompiler now reads stored originals directly; Rust also retains
+an auxiliary-regeneration path. Their actual entry points are in §9.3.
+
 ```
 Ixon bytes + Named map
   │
@@ -1225,42 +1200,26 @@ preserve invariant 4.2 across Lean upgrades.
 
 ### 9.3 Mutual-block reconstruction
 
-For aux_gen-rewritten mutual blocks, decompile's canonical path needs
-to regenerate the block in the same layout compile produced. The
-entry point is `decompile_block_aux_gen` at
-`src/ix/decompile.rs:3226`, which today proceeds as follows:
+**Lean full source decompile** (`Ix/DecompileDriver.lean`) uses
+`decompileOriginals`: select original addresses, metadata and hints with
+`originalView`, decode the source records, skip reserved `_ix` support
+names, and recompute inductive flags from the decoded declarations. It
+neither regenerates auxiliaries nor invokes a kernel fallback. A missing
+required original is an error requiring recompilation of the artifact.
+The M6D originals and original-hint tables use the v5 envelope; checked
+constant payloads and claims retain format 4.
 
-```
-decompile_block_aux_gen(block_addr, env):
-  1. Before any block work, rehydrate_aux_perms_from_env (decompile.rs:3148)
-     has already scanned every Muts-tagged Named entry and populated
-     `stt.aux_perms[source_first_name] = layout` from
-     ConstantMetaInfo::Muts.aux_layout (§10.2).
-  2. Load Muts block at `block_addr`.
-  3. For each primary inductive in the block, decompile its user-form
-     InductiveVal (using original.1 for source-faithful binder names).
-  4. Build a singleton-class alpha layout (decompile.rs:3252-3259) —
-     one inductive per class. This is a tactical workaround for the
-     full sort_consts re-run and is the remaining open item here
-     (§17.2); it's sufficient for non-alpha-collapsed blocks but
-     skips the collapse-class rebuild.
-  5. Look up the block's stored AuxLayout from `stt.aux_perms`
-     (populated by step 1). When present, pass it to
-     `generate_canonical_recursors_with_layout` at decompile.rs:3324
-     to recover the exact canonical aux layout compile produced.
-     When absent (block had no nested auxes), fall back to
-     `generate_canonical_recursors_with_overlay`.
-  6. Insert decompiled user-form ConstantInfos into dstt.env.
-```
-
-**Decompile MUST NOT** run a fresh source walk on the decompiled
-inductives to re-derive the nested-aux order. A fresh walk's
-discovery order could differ from the original compile-time source
-walk (Lean-version drift, ctor reordering in the source), which
-would produce different `_N` numbering and break invariants 4.2 and
-4.3. The persisted `ConstantMetaInfo::Muts.aux_layout` **preserves
-the original compile-time source-walk numbering** forever; that's
-the whole point of storing it.
+**Rust full decompile** (`crates/compile/src/decompile.rs`, `decompile_env`)
+still calls `decompile_block_aux_gen`. That path builds singleton source
+classes and deliberately passes `None` as the aux-layout override to
+`generate_canonical_recursors_with_layout`. It regenerates source-walk
+order to reproduce `Named.original.0`, rather than replaying canonical
+layout at `Named.addr`. `roundtrip_block` checks the regenerated form
+against the stored original address; recovery of a source record does
+not erase a recorded regeneration error. There is no live
+`rehydrate_aux_perms_from_env` scan or `stt.aux_perms` table. The retained
+Rust regeneration path and its singleton-class limitation are distinct
+from Lean's stored-record route (§17.2).
 
 ### 9.4 Recompilation and the roundtrip fixed point
 
@@ -1371,60 +1330,32 @@ canonicity requires metadata on the per-inductive Named entries
 
 ### 10.2 Aux layout persistence (shipped)
 
-The aux permutation lives on the block's `Muts` meta variant, not on
-`Named` itself — it's a property of the block rather than of any
-individual member:
+`AuxLayout` lives in `crates/ixon/src/env.rs` and is stored on the block's
+`ConstantMetaInfo::Muts.aux_layout`, not on each `Named` entry. It contains:
 
-```rust
-// src/ix/ixon/metadata.rs
-ConstantMetaInfo::Muts {
-    all: Vec<Vec<Address>>,
-    aux_layout: Option<AuxLayout>,   // Some for blocks with nested auxes
-}
+- `perm[source_j] = canonical_i`, with `PERM_OUT_OF_SCC` for an auxiliary
+  outside this component;
+- `source_ctor_counts`, in source-walk order;
+- `evaporated`, distinguishing an auxiliary this component owns but whose
+  canonical expansion disappeared from one owned by another component.
 
-// src/ix/ixon/env.rs
-pub struct AuxLayout {
-    /// `perm[source_j] = canonical_i`: source-walk → canonical aux order.
-    pub perm: Vec<usize>,
-    /// Ctor count of each source-walk aux at position j.
-    pub source_ctor_counts: Vec<usize>,
-}
-```
+`compile_aux_gen_block` in `crates/compile/src/compile/mutual.rs` constructs
+the layout from `generate_aux_patches` and `source_aux_order`. The caller in
+`crates/compile/src/compile.rs` persists it on the primary block's Muts
+metadata and passes it to Pass 3's changed-block handling. The metadata
+codec is in `crates/ixon/src/metadata.rs`, mirrored by `Ix/Ixon.lean`.
 
-- **Aux permutation** `perm: Vec<usize>` — length `n_source_aux`,
-  where `perm[source_j] = canonical_i`. The sentinel
-  `PERM_OUT_OF_SCC = usize::MAX` (`nested.rs:762`) marks source
-  auxes that belong to a different SCC (so they shouldn't be
-  resolved via this block).
-- **Source ctor counts** `source_ctor_counts: Vec<usize>` — ctor
-  count of each source-walk aux. Surgery consumes this to rewrite
-  call sites, and decompile consumes it to reconstruct the
-  source-indexed `_N` names that Lean exposes.
-
-**Compile** constructs the layout as a local in
-`compile_aux_gen_block` (`mutual.rs:453-483`) using `aux_out.perm`
-from `generate_aux_patches` plus ctor counts from
-`nested::source_aux_order`. The same local is (a) passed directly
-to surgery (`compute_call_site_plans` at `surgery.rs:166` takes
-`aux_layout: Option<&AuxLayout>`) and (b) embedded on the block's
-`ConstantMetaInfo::Muts.aux_layout` for persistence.
-
-**Decompile** recovers it by scanning every Muts-tagged Named entry
-at startup via `rehydrate_aux_perms_from_env`
-(`src/ix/decompile.rs:3148`). The scan resolves each block's
-`Muts.all[0][0]` — the first canonical-class representative — back
-to its source-order first inductive via `rep.meta.Indc.all[0]`, and
-writes `stt.aux_perms[source_first_name] = layout`. This DashMap
-(`compile.rs:187`, `DashMap<Name, AuxLayout>`) is the shared
-lookup table that `decompile_block_aux_gen` (§9.3) uses to retrieve
-a block's layout before handing it to
-`generate_canonical_recursors_with_layout`.
-
-**Serialization.** The Muts payload round-trips through
-`metadata.rs:1056-1065` (write) and `metadata.rs:1144-1161` (read);
-the 0/1 tag for `Option<AuxLayout>` lives on disk.
+Neither current full-decompile entry uses the old `stt.aux_perms` rehydrate
+scan. Lean reads stored originals; Rust's retained regeneration deliberately
+requests source-walk order without a layout override (§9.3). A persisted
+canonical layout must not be described as the mechanism of either source
+decompile path.
 
 ### 10.3 CallSite metadata alignment
+
+This subsection is historical, for the retired metadata in §8. Current
+`_ix.inline` records use `Pass/SideCar.lean`; `CallSite` kinds 10 and 11
+are refused by the current metadata decoders.
 
 `ExprMetaData::CallSite` is expression metadata, not block-layout
 metadata. Its `entries` field is the source-order inverse map needed
@@ -1464,7 +1395,7 @@ as well (§13.5). The anonymous form is unaffected — any spelling of a
 reference compiles to the same `Rec(idx)` / `Ref(addr)` bytes — but
 the metadata sidecar records a **display name per occurrence**:
 `ExprMetaData::Ref { name }` for each `Const` occurrence,
-`CallSite.name` for surgered heads, `Prj.struct_name` for projections
+`Prj.struct_name` for projections, and source expressions saved by `_ix.inline`
 (`metadata.rs`; Lean mirror `Ix/Ixon.lean`). Wherever the referenced
 address carries more than one name, the metadata must record a name
 at each such occurrence, and that choice was previously unspecified.
@@ -1484,24 +1415,22 @@ That is normative — decompile reconstructs the source spelling from
 source: ordinary constants, each class member's own primary meta
 (compiled from that member's source form in the per-class loop of
 `compile_mutual` / `compileMutConsts`), the `Named.original` forms
-compiled by `compile_const_no_aux` (§9.2), and the source-order
-`entries` of surgered call sites (§8, §10.3).
+compiled by `compile_const_no_aux` (§9.2), and the source expressions saved
+by Pass 3's sidecar (`Ix/Compile/Pass/SideCar.lean`).
 
 **Rule: synthesized occurrences inherit their source spelling.** An
 expression the compiler synthesizes rather than reads — the
 regenerated `.rec` / `.casesOn` / `.recOn` / `.below` / `.brecOn`
 (and `.go` / `.eq`) families, aux `.rec_N` / `.below_N` derivatives,
-and canonical arguments synthesized by surgery inside otherwise
-source-derived bodies (§8) — is not free-standing: it is derived from
+and arguments synthesized by image construction inside otherwise
+source-derived bodies (§7) — is not free-standing: it is derived from
 identified source material of its own block. Minor premises splice
 the constructor telescopes (`buildMinorType` in
 `Ix/AuxGen/Recursor.lean` and its `recursor.rs` mirror),
 `.casesOn` / `.recOn` are built from `.rec`'s type, `_nested`
 expansions are restored to the original source application
-(`RestoreCtx.restore` in `Ix/AuxGen/ExprUtils.lean`), and surgery
-peels its synthesized arguments off the source minor
-(`adaptSplitMinor`, §8). The rule: every metadata position in a
-synthesized expression that records a display name records **the
+(`RestoreCtx.restore` in `Ix/AuxGen/ExprUtils.lean`). The rule: every metadata
+position in a synthesized expression that records a display name records **the
 spelling of the source occurrence it derives from** — the name is
 inherited through the derivation, never chosen at emission. Where the
 synthesis introduces a reference with no source ancestor — the family
@@ -1541,12 +1470,8 @@ record a *reference to another constant*:
 
 - `ExprMetaData::Ref { name }` — every `Const` occurrence,
   block-local (`Rec`) and external (`Ref`) alike;
-- `ExprMetaData::CallSite { name, … }` — the surgered head reference
-  (doubles as the head's `Ref` metadata);
-- arena subtrees for arguments surgery synthesized rather than kept
-  (split-SCC wrapper minors and `adapt_split_minor` IHs, §6.5 / §8)
-  — reached from `CallSite.canon_meta` with no source-order `Kept`
-  entry;
+- reference metadata in synthesized image arguments and in the source
+  expressions saved by `_ix.inline`;
 - `ExprMetaData::Prj { struct_name }` — the projected structure
   reference.
 
@@ -1563,7 +1488,7 @@ block content, not of traversal or discovery order, or two correct
 implementations can diverge forever. Inherited spellings are exactly
 that: a function of the block's source expressions and the fixed
 synthesis algorithm, with no new ordering, no alias-set lookup, and
-no hash impact (metadata never enters a content hash, §6.6). The
+no hash impact (these display names live in the presentation sidecar, §6.6). The
 fidelity checkers already enforce it: both decompile-side checkers
 rebuild their reference by re-running the same generator over
 decompiled source constants (`DecompileDriver` Pass 2 in Lean;
@@ -1861,12 +1786,9 @@ and resolves the virtual indices through `univs ++ metaUnivs`. The
 stage-1 rule — decorate from the primary table entry when its `mk*`
 rebuild differs — remains as the patchless FALLBACK: on canonical
 tables it never fires (P3), and it keeps hand-built raw-table
-fixtures meaningful. One structural subtlety, mirrored in all
-consumers: a surgered call-site head's own arena root is unreachable
-during replay (`CallSite.name` subsumes it), so the compiler CLONES
-a head patch onto the `callSite` node root, and both the decompiler
-head rebuild and the kernel meta-ingress head arms key their lookup
-there. Artifacts predating the format carry a
+fixtures meaningful. The old surgery path copied head patches onto its
+`CallSite` node; that node and its replay are retired (§8). Artifacts
+predating the format carry a
 "pre-normal-levels .ixe; recompile it" parse hint following the
 pre-compact-keys precedent (`crates/ixon/src/serialize.rs`).
 
@@ -1927,16 +1849,17 @@ The binder names `x` and `y` live in
 entries, distinct addresses — but both addresses are outside the hash
 input. `addr(f₁) == addr(f₂)`.
 
-### 12.2 mdata strip
+### 12.2 Presentation mdata strip
 
-```lean
-def g₁ : Nat := n + n
-def g₂ : Nat := @[inline] (n + n)   -- conceptually; Lean stores via `mdata`
+```text
+e
+Lean.Expr.mdata displayData e
 ```
 
-`put_expr` ignores `Mdata` nodes entirely — the canonical form has no
-`Mdata` variant. Both values hash to the same bytes;
-`addr(g₁) == addr(g₂)`.
+When `displayData` contains only presentation fields, the compiler stores
+it in the sidecar and both expressions produce the same anonymous bytes
+on success. This example does not apply to `ix.contract` frames: the
+compiler consumes them into semantic binder fields (§5.1).
 
 ### 12.3 Universe permutation (non-equal)
 
@@ -2079,11 +2002,11 @@ expand_nested_block_canonical   (crates/compile/src/compile/aux_gen/nested.rs)
   → dedupes occurrences by their canonical key (`addr_key`).
 
 compute_aux_perm            (nested.rs:797)
-  → builds the source-walk → canonical permutation for surgery.
+  → builds the source-walk → canonical permutation for family generation.
 
-compute_call_site_plans    (src/ix/compile/surgery.rs:166)
-  → rewrites call-site arg lists so `f.rec_2 args` produced by Lean's
-    source-walk lands in our canonical-order recursor.
+Pass 3 images             (Ix/Compile/Image/Build.lean)
+  → connect source-order auxiliary occurrences to the canonical family;
+    Translate rewrites callers through those images.
 ```
 
 ### 14.1 `NestedSimple` — single inductive nesting
@@ -2200,30 +2123,30 @@ that enforces it:
 | Invariant                                                  | Enforced by                                                     |
 | ---------------------------------------------------------- | --------------------------------------------------------------- |
 | `Expr` has no binder names                                 | `src/ix/ixon/expr.rs` — no `name` field on `Lam/All/Let`        |
-| Serializer omits names, mdata, universe names              | `src/ix/ixon/serialize.rs:111-210` `put_expr`                   |
+| Anonymous encoding omits presentation names/mdata and keeps semantic contracts | `Ix/CompileM.lean`, `Ix/SemanticContract.lean`; Rust `compile_expr` and `put_expr` |
 | Hash is Blake3 over serializer output                      | `Constant::commit` at `serialize.rs:861` → `Address::hash`      |
 | `sort_consts` is deterministic and refinement-stable       | `src/ix/compile.rs:2526-2564` (iterative refinement)            |
 | Nested-aux dedup across aliases                            | `replace_if_nested` `aux_seen` table, `nested.rs:191-362`       |
 | Nested-aux section is the canonical expansion's discovery order | `expand_nested_block_canonical`, `addr_key`, `crates/compile/src/compile/aux_gen/nested.rs` |
-| Source-walk → canonical permutation is reversible          | `compute_aux_perm`, `nested.rs:797-907`                         |
-| Call sites are surgically rewritten to canonical order     | `compute_call_site_plans`, `surgery.rs:166-570`                 |
-| CallSite metadata keeps source and canonical views separate | `ExprMetaData::CallSite { entries, canon_meta }`; `compile_expr::BuildCallSite`; `kernel/ingress.rs` |
+| Source auxiliary positions map to canonical positions or explicit out-of-component/evaporated cases | `compute_aux_perm`, `crates/compile/src/compile/aux_gen/nested.rs`; `AuxLayout` (§10.2) |
+| Callers of changed auxiliary families use their images     | `Ix/Compile/Image/Build.lean`, `Ix/Compile/Pass/Translate.lean`, and Rust `compile/pass3/{build,translate}.rs` |
+| Source expressions survive caller rewrites in metadata      | `_ix.inline`, `Ix/Compile/Pass/SideCar.lean`, and Rust `compile/pass3/sidecar.rs` |
 | Optional original-kernel check isolates adversarial raw constants | `CompileOptions::check_originals`, `mutual.rs::check_originals`, `orig_kenv` in `compile/env.rs` |
 | Stored primary order matches `sort_consts` (kernel-side)   | `validate_canonical_block_single_pass`, `src/ix/kernel/canonical_check.rs` (called from `ingress_muts_block`) |
 | Aux ordering matches the canonical expansion             | `build_flat_block` (stored external groups), `crates/kernel/src/inductive.rs`; position-by-position recursor validation in `check_recursor` |
 
 ## 16. Testing Plan
 
-The canonicity property is an equivalence, so the test strategy is
-**pairs of known-equivalent and known-inequivalent Lean inputs with
-address comparison as the observation**.
+The test strategy uses pairs expected to have the same or different
+canonical encodings, with payload and address comparison as observations.
+It does not decide general mathematical equivalence.
 
 ### 16.1 Rust-side unit tests
 
 `src/ix/compile/canonicity_tests.rs` (new file, `#[cfg(test)]`):
 
 - **`alpha_rename_hashes_equal`** — `λx.x+1` vs `λy.y+1` → same address.
-- **`mdata_wrapper_stripped`** — `e` vs `Mdata(kv, e)` → same address.
+- **`mdata_wrapper_stripped`** — `e` vs presentation-only `Mdata(kv, e)` → same address; semantic-contract frames are excluded.
 - **`mutual_reorder_invariant`** — declare `[A, B]` and `[B, A]`
   (alpha-equivalent) → same block address.
 - **`mutual_rename_invariant`** — declare `[A, B]` and `[X, Y]`
@@ -2390,32 +2313,16 @@ shared `PermCtx` construction path so the two validation modes cannot
 drift in how they populate `aux_layout`, constructor counts, and
 `const_addr`.
 
-### 17.2 Decompile canonical-path unification
+### 17.2 Rust auxiliary-regeneration path
 
-`decompile_block_aux_gen` now lives at `src/ix/decompile.rs:3226`
-and is layout-aware: the rehydrate scan at
-`src/ix/decompile.rs:3148` (`rehydrate_aux_perms_from_env`)
-populates `stt.aux_perms` from `ConstantMetaInfo::Muts.aux_layout`,
-and the function calls `generate_canonical_recursors_with_layout`
-at line 3324 with that layout (falling back to
-`generate_canonical_recursors_with_overlay` when the block has no
-nested auxes).
-
-What's still tactical rather than principled: decompile builds an
-**un-collapsed singleton-class layout** (one inductive per class)
-at `src/ix/decompile.rs:3252-3259` instead of re-running
-`sort_consts` on the decompiled inductives to recover the
-alpha-collapse classes compile saw. For non-alpha-collapsed blocks
-this is observationally identical; for blocks that compile
-alpha-collapsed, the workaround lets surgery still find
-callee positions but doesn't reconstruct the collapse at the
-decompiled-inductive level.
-
-Remaining work: replace the singleton-class builder with a proper
-`sort_consts` run over the decompiled inductives, so the
-alpha-collapse story survives the full compile → decompile →
-compile round trip at the `ConstantInfo` level, not just at the
-`addr` level.
+The remaining singleton-class construction is in Rust's
+`crates/compile/src/decompile.rs`, `decompile_block_aux_gen`. It deliberately
+regenerates source-walk order with no aux-layout override and checks the
+result against the original address (§9.3). Replacing it with canonical
+classes is not a mechanical cleanup: source numbering, alpha-collapse and
+the roundtrip check must continue to agree. This is separate from Lean's
+full source decompiler, which reads original records and has no regeneration
+state. No shared decompile-correctness theorem is claimed.
 
 ### 17.3 `check_decompile` scoping
 
@@ -2561,98 +2468,57 @@ proofs of P1/P2/P4.
 
 ## 18. Summary
 
-Anonymous canonicity in Ix reduces to six operational commitments:
+The current implementation separates these obligations:
 
-1. Binder names, mdata, and hygiene **never enter the hash input**.
-2. Mutual blocks are **structurally sorted** by an iterative-refinement
-   equivalence-class algorithm (`sort_consts`); source order and name
-   choices don't leak into the block address.
-3. Nested-inductive auxes are **structurally sorted** and **de-duped**
-   independent of Lean's source-walk discovery.
-4. Call sites are **surgically rewritten** so source-order aux
-   references resolve to canonical-order auxes.
-5. A **metadata sidecar** — binder names, mdata, Lean-order `all`,
-   `CallSite.entries` / `CallSite.canon_meta`, and `AuxLayout` on
-   the block's Muts metadata (plus docstrings, planned) — preserves
-   everything the hash erases, making
-   `canonical + metadata` isomorphic to source Lean.
-6. The **kernel independently re-runs `sort_consts`** on every
-   stored mutual block when the primary validator needs refinement
-   (fast strong-adjacent validation at ingress)
-   and on every set of rediscovered auxes (full iterative sort
-   during recursor regeneration). The kernel never trusts the
-   compiler's claim that an input is canonical; it verifies the
-   claim by recomputing it. See §4.4 and
-   `src/ix/kernel/canonical_check.rs`.
+1. Anonymous payloads omit binder names and presentation metadata, while
+   retaining semantic binder contracts lowered from source annotations.
+2. Canonical classes determine mutual-block order and alpha-collapse;
+   nested expansion uses canonical dependency identities.
+3. Pass 3 images and occurrence passes rewrite references to changed
+   auxiliary families. The retired call-site surgery is documented in §8.
+4. Canonical sharing uses the fixed K16 rule, with successful-run proofs
+   and explicit remaining totality/cost obligations (§6.7).
+5. Metadata and original records support source reconstruction under the
+   distinct Lean and Rust paths (§9.3); they are outside certification.
+6. Kernel checks independently constrain stored block order and recursor
+   layout (§4.4). Their acceptance does not establish that compilation
+   preserved the source value.
 
-The failure of any one commitment breaks the zk-PCC story. The test
-harness in §16 makes each commitment observable as an address-equality
-predicate. The open items in §17 are where the current implementation
-is known to be partial.
+The tests in §16 observe payload/address equality and reconstruction
+fidelity on their inputs. The full compiler value-preservation composition
+remains unproved and required in this PR.
 
 ## 19. Cross-References
 
-- [`docs/Ixon.md`](./Ixon.md) — binary format, Expr/Constant/Meta
-  layout, serialization details.
-- [`docs/Ixon.md` § Sharing System](./Ixon.md#sharing-system) and
-  [`docs/sharing-minimum.md`](./sharing-minimum.md) §12 — the canonical sharing
-  construction (§6.7): `Ix/Sharing/Exact/Tiered.lean`,
-  `crates/ixon/src/sharing_exact/tiered.rs`, proofs in
-  `IxSharingVerify/{UniformOptimality,TieredTier,TieredPhase3,TieredSelect,TieredWire}.lean`.
-- `src/ix/compile.rs` — `sort_consts`, `Frame`, `compile_expr`.
-- `src/ix/kernel/canonical_check.rs` — kernel-side `sort_consts`
-  port: `compare_kuniv`, `compare_kexpr`, `compare_kconst`,
-  `sort_kconsts`, `validate_canonical_block_single_pass`. The
-  kernel's independent canonicity oracle (§4.4).
-- `src/ix/kernel/ingress.rs::ingress_muts_block` — wires
-  `validate_canonical_block_single_pass` for stored Indc blocks.
-- `crates/kernel/src/inductive.rs::build_flat_block` — rediscovers the
-  auxes in the canonical expansion's discovery order (stored external
-  groups). Position-by-position recursor validation lives in
-  `check_recursor`.
-- `src/ix/kernel/error.rs::TcError::NonCanonicalBlock` — rejection
-  variant emitted when ingress finds a non-canonical primary block.
-- `src/ix/compile/aux_gen.rs` — main `generate_aux_patches` entry
-  and the `AuxPatchesOutput` return type.
-- `src/ix/compile/aux_gen/nested.rs` — `expand_nested_block`,
-  `expand_nested_block_canonical`, `compute_aux_perm`, `source_aux_order`.
-- `src/ix/compile/aux_gen/recursor.rs` — canonical recursors from an
-  expanded block, plus targeted canonical KEnv ingress for aux_gen
-  sort/recursor generation. Reducible definitions referenced by inductive
-  target types or constructor fields are loaded as real definitions;
-  type-only dependencies remain stubs to avoid mirroring the full Lean env.
-- `src/ix/compile/aux_gen/below.rs`, `brecon.rs`, `cases_on.rs`,
-  `rec_on.rs` — derived aux generation.
-- `src/ix/compile/aux_gen/expr_utils.rs` — FVar-based expression
-  manipulation primitives (`forall_telescope`, `mk_forall`, etc.).
-- `src/ix/compile/aux_gen/expr_utils.rs::RestoreCtx` — maps
-  `_nested.X_N` references back to `ExtInd spec_params` form.
-- `src/ix/compile/surgery.rs` — call-site argument reordering;
-  `CallSitePlan`, `compute_call_site_plans`.
-- `src/ix/compile/mutual.rs` — orchestrates `generate_aux_patches` +
-  surgery + compilation per mutual block. Normal trusted compile paths skip
-  the full `orig_kenv`; adversarial raw-constant tests can opt into
-  `CompileOptions::check_originals` to validate Lean-original constants
-  against a separate `lean_ingress` kernel environment.
-- `src/ix/decompile.rs::rehydrate_aux_perms_from_env` — rehydrates
-  `stt.aux_perms` from `ConstantMetaInfo::Muts.aux_layout` before any
-  block is decompiled.
-- `src/ix/decompile.rs::decompile_block_aux_gen` — canonical → Lean
-  reconstruction, layout-aware (calls
-  `generate_canonical_recursors_with_layout` when the block carries
-  a persisted aux layout).
-- `src/ix/ixon/env.rs::{Named, AuxLayout, Env}` — on-disk env
-  layout; aux permutation lives on the `Muts` meta variant.
-- `src/ix/ixon/metadata.rs::ConstantMetaInfo::Muts.aux_layout` —
-  persisted aux permutation sidecar (read/written at
-  `metadata.rs:1056-1065` / `1144-1161`).
-- `src/ix/ixon/expr.rs`, `serialize.rs`, `metadata.rs` — canonical
-  data types.
-- `Tests/Ix/Compile/Mutual.lean` — canonicity fixtures.
-- `Tests/Ix/Compile/ValidateAux.lean` — validate-aux phases.
-- `refs/lean4/src/kernel/inductive.cpp` — Lean's reference
-  implementation of nested inductive handling; our
-  `expand_nested_block` port mirrors the source walk.
-- `refs/lean4/src/Lean/Meta/Constructions/BRecOn.lean` — Lean's
-  `.below` / `.brecOn` generator; our `below.rs` / `brecon.rs`
-  follow it.
+- [Ixon](Ixon.md) — checked payload grammar, metadata and v4/v5 environment envelopes.
+- [Canonical sharing](sharing-minimum.md#14-canonical-rule-revision-sharing-k16-greedy-v1)
+  and [its proof inventory](Ixon.md#what-is-proved-and-what-is-not) — the fixed
+  family, successful-run contracts and remaining totality/cost work.
+- [Compiler driver](../Ix/CompileDriver.lean) and
+  [Rust compiler](../crates/compile/src/compile.rs) — scheduling, block compilation,
+  record assembly and publication.
+- [Lean canonicalization](../Ix/Compile/Canon.lean) and
+  [Rust mutual compilation](../crates/compile/src/compile/mutual.rs) — canonical
+  classes, auxiliary generation and original-record handling.
+- [Pass 3 module map](../crates/compile/src/compile/pass3/mod.rs),
+  [image construction](../Ix/Compile/Image/Build.lean),
+  [caller rewriting](../Ix/Compile/Pass/Translate.lean) and
+  [occurrence passes](../Ix/Compile/Pass/Opt/Engine.lean) — current replacements
+  for the retired surgery mechanism.
+- [Rust nested expansion](../crates/compile/src/compile/aux_gen/nested.rs) and
+  [recursor generation](../crates/compile/src/compile/aux_gen/recursor.rs) —
+  canonical expansion, source/canonical positions and generated auxiliaries.
+- [Rust canonical checker](../crates/kernel/src/canonical_check.rs),
+  [ingress](../crates/kernel/src/ingress.rs) and
+  [inductive checker](../crates/kernel/src/inductive.rs) — block-order and
+  recursor-layout checks; [the certified checker](kernel.md) is a distinct entry.
+- [Lean full decompile](../Ix/DecompileDriver.lean),
+  [original-record reader](../Ix/DecompileM.lean) and
+  [Rust decompile](../crates/compile/src/decompile.rs) — the distinct source
+  reconstruction paths in §9.3.
+- [Environment records](../crates/ixon/src/env.rs) and
+  [metadata codec](../crates/ixon/src/metadata.rs) — `Named`, `AuxLayout` and
+  source presentation data.
+- [Mutual fixtures](../Tests/Ix/Compile/Mutual.lean),
+  [auxiliary validation](../Tests/Ix/Compile/ValidateAux.lean) and
+  [Pass 3 parity](../Tests/Ix/Compile/Pass3RustParity.lean) — concrete test entry points.

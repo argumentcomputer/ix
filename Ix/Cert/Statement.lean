@@ -61,11 +61,11 @@ Statements (`def … : Prop`) and the theorems proved now:
   compiled ones by `Key.map f`, for every `f` injective on the run's ids
   (`RenamingHyp`). Stated, not proved.
 
-No reverse statement ("Ixon accepts, so Source accepts") is made: the two
-modes' evidence differs (Ixon's comes with the table, Source's from the
-certificate theorems in the checked environment, so a closure without them
-declines `Nat.div`, `Nat.mod`, `Nat.shiftLeft` and their dependents in Source
-only); and fuel can run out on either side alone.
+No reverse statement ("Ixon accepts, so Source accepts") is made. Source
+mode uses the committed `Ix.RoleEvidence.bundleEvidence`, independently of
+which certificate theorems the input closure carries; Ixon mode resolves
+the admitted role table's evidence. The two front ends have distinct
+acceptance conditions, and fuel can run out on either side alone.
 
 The statements are frozen in `Ix.Cert.Audit`, and checked on fixtures in
 `Tests.Ix.Cert.Statement`. -/

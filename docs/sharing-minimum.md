@@ -1,6 +1,8 @@
 # Implement canonical minimum sharing in Ix
 
-> **Status: `sharing-k16-greedy-v1` implemented in the cutover candidates (§14); combined gates pending.**
+> **Status: `sharing-k16-greedy-v1` is the production route (§14).** Successful-run
+> proofs are attached to the Lean entry; §14.4 records the corpus evidence.
+> Totality, output-domain closure and cost bounds remain follow-up work (§14.3).
 > §14 supersedes §12's unbounded phase-1 search and its no-fallback claim. §1–§10 are the original plan. Its
 > target, the global byte minimum under the key of §3.3, was found infeasible at production
 > scale (§12.1) and is **superseded** by the decisions of §12 wherever the two differ. Read §12
@@ -16,9 +18,12 @@
 >   widths. The candidate with the fewest real bytes wins, ties going to the lower width.
 > - **Single route.** Both compilers build every table with it. The heuristic
 >   (`Ix/Sharing.lean`, `crates/ixon/src/sharing.rs`) and its proofs are removed.
-> - **Format.** TagN replaces Tag0, Tag2 and Tag4 (§12.12, §12.16). The format version is 4
->   (`.ixe` header `0xE4`), with object format 4 and the identifiers `ixon-v4` and
->   `ixon-v4/resource-v1`. The IxVM circuit reads and writes TagN.
+> - **Format.** TagN replaces Tag0, Tag2 and Tag4 (§12.12, §12.16). Checked objects
+>   retain format 4 and the identifiers `ixon-v4` and `ixon-v4/resource-v1`.
+>   The `.ixe` envelope is v4 (`0xE4`) or, when it carries M6D original records
+>   or original-hint overrides, v5 (`0xE5`); this metadata extension is separate
+>   from the sharing rule.
+>   The IxVM circuit reads and writes TagN.
 > - **Proofs.** Family-relative phase-1 minimality, successful-output semantics and format,
 >   and conditional representation/byte compatibility are proved for the family entry (§14.3).
 >   The Lean production entry and its audits now carry these contracts. The old exact minimality,
@@ -1207,8 +1212,10 @@ fixed family, representation congruence, and conditional idempotence. It also es
 complete constant and serialized-byte equality with the old exact route when every initial
 component at all three widths has at most 16 members, both routes succeed with the same
 limits, and the old route uses its default search (`uniformSubsetSearch = false`). This
-conditional theorem does **not** imply that old-route success guarantees new-route success
-under an arbitrarily tight budget.
+conditional theorem compares `Ix.Sharing.Exact.Reference.normalizeConstantSharingTiered`
+with the production `Ix.Sharing.Exact.normalizeConstantSharingTiered`. It does **not** imply
+that old-route success guarantees new-route success under an arbitrarily tight budget,
+or that the K16 cutover left every corpus constant unchanged (§14.4).
 
 The Lean cutover attaches these statements and the proved fast twins to the production
 entry and its audits, preserving compiler-facing meaning, format and codec theorems without

@@ -318,12 +318,11 @@ impl Named {
 
 /// Nested-auxiliary layout info for a mutual inductive block.
 ///
-/// Paired perm + source_ctor_counts so consumers have everything needed to
-/// correctly permute source-order aux motives/minors into canonical
-/// positions. Both arrays have one entry per source-walk-discovered aux.
+/// Source-walk positions mapped to canonical positions, with source
+/// constructor counts and evaporation ownership. All three arrays have
+/// one entry per source-walk-discovered auxiliary.
 ///
-/// It lives in `ixon::env` (not `ix_compile::surgery`, where it originated;
-/// the surgery layer re-exports it) and is carried per block in the block's
+/// It lives in `ixon::env` and is carried per block in the block's
 /// `Muts` metadata (`ConstantMetaInfo::Muts::aux_layout`, encoded inline
 /// there), not in a side table of the environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -336,13 +335,10 @@ pub struct AuxLayout {
   /// canonically (it's a property of the external nested inductive).
   pub source_ctor_counts: Vec<usize>,
   /// `evaporated[source_j]`: THIS block owns the evaporation of source
-  /// position j — no SCC's canonical expansion contains the aux, so the
-  /// exported `all0.rec_{j+1}` name is aliased to the external head's
-  /// generic recursor and call sites get a head-rewrite plan. A position
+  /// position j — no SCC's canonical expansion contains the auxiliary. A position
   /// that is canonical in ANOTHER SCC of the same original mutual stays
   /// `PERM_OUT_OF_SCC` in `perm` with `evaporated = false` here: that
-  /// SCC owns the name, and this block registers neither alias nor plan
-  /// (see plans/aux-recursor-alias-collision.md). Same length as `perm`.
+  /// SCC owns the generated name. Same length as `perm`.
   pub evaporated: Vec<bool>,
 }
 
