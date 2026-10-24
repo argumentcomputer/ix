@@ -59,6 +59,7 @@ import Ix.CompileCert.O6TelescopeValues
 import Ix.Cert.ReferenceFronts
 import Ix.Cert.PrefixReadings
 import Ix.Cert.PrefixCore
+import Ix.Cert.PrefixDefinitions
 
 /-! # The certification statements, frozen
 
@@ -5880,3 +5881,20 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "actual final interpretation prefix package"
     #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_core]
+
+/-! ## Every stored definition's actual creating reference step
+
+All non-definition paths preserve the exact definition entries, including
+native settled/retry, modeled, basis, quotient and projection branches. -/
+
+/-- info: [cert-audit] universal stored definition origins: 17 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal stored definition origins"
+    (#[`definition_mem, `fold_definitions, `basis_definitions, `member_definitions,
+      `recs_definitions, `projection_definitions, `projection_step_definitions,
+      `modeled_definitions, `constructors_definitions, `native_table_definitions,
+      `native_pass_definitions, `native_tail_definitions, `native_definitions,
+      `checkDecl_definitions, `step_definition_origin, `fold_definition_origin,
+      `reference_stored_definition_origin].map (`Ix.Cert.PrefixDefinitions ++ ·))
