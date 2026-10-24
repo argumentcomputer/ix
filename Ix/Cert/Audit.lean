@@ -52,6 +52,7 @@ import Ix.CompileCert.O6Opened
 import Ix.CompileCert.O6LambdaValues
 import Ix.Cert.ContextValues
 import Ix.Cert.ApplicationFronts
+import Ix.CompileCert.O6ApplicationValues
 
 /-! # The certification statements, frozen
 
@@ -5729,3 +5730,16 @@ run_cmd do
     #[`Ix.Cert.ContextValues.lambda_bits_of_header,
       `Ix.Cert.ContextValues.checked_lambda_congr_of_header,
       `Ix.Cert.ApplicationFronts.paired_app_lambda_arguments]
+
+/-! ## Actual O6 composition through a lambda argument and application
+
+Real enclosing checks and O6 producers derive the lambda shapes, local
+fronts/header and body comparison. Application congruence is consumed by
+the whole public-value endpoint; no unsupported body IH passes through. -/
+
+/-- info: [cert-audit] O6 whole application values: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 whole application values"
+    (#[`app_argument, `o6_lambda_argument_values].map (`Ix.CompileCert.O6ApplicationValues ++ ·))
