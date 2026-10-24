@@ -1,5 +1,6 @@
 import Ix.AuxGen.Types
 import Tests.Ix.AuxGen.Reference.Patches
+import Tests.Ix.AuxGen.PatchReferenceFields
 import Lean
 
 /-! Complete structural finite references for ExplicitKernel's four existing
