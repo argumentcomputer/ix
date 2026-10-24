@@ -55,6 +55,10 @@ import Ix.Cert.ApplicationFronts
 import Ix.CompileCert.O6ApplicationValues
 import Ix.CompileCert.O6Telescope
 import Ix.CompileCert.O6TelescopeOpened
+import Ix.CompileCert.O6TelescopeValues
+import Ix.Cert.ReferenceFronts
+import Ix.Cert.PrefixReadings
+import Ix.Cert.PrefixCore
 
 /-! # The certification statements, frozen
 
@@ -5776,3 +5780,103 @@ run_cmd do
     (#[`strip_open_list, `BulkAnn.unique, `bulk_ann_pairs, `bulk_ann_apps,
       `selectors_bulk_annotated, `bulk_opened_layout,
       `o6_rec_under_telescope_opened_red].map (`Ix.CompileCert.O6TelescopeOpened ++ ·))
+
+/-! ## Closing actual paired lambda telescopes
+
+Actual full-inference chains propagate the root compatibility derived
+from real header/value fronts within each supplied strong model. -/
+
+/-- info: [cert-audit] checked telescope closing: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked telescope closing"
+    (#[`lamPw_abstract1, `markers_of_fronts, `close_telescope].map (`Ix.CompileCert.O6TelescopeValues ++ ·))
+
+/-! ## Whole O6 values under an arbitrary shared dependent telescope
+
+The frozen O6 leaf, real header and both whole value fronts derive every
+opening, inner run and marker fact. Conversion remains inside each model. -/
+
+/-- info: [cert-audit] O6 whole telescope values: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 whole telescope values"
+    #[`Ix.CompileCert.O6TelescopeValues.o6_rec_under_telescope_values]
+
+/-! ## Indexed reference-stream definition fronts
+
+One actual accepted fuel supplies the exact prefix, declaration and suffix.
+Lookup persistence identifies the annotated body in the final environment. -/
+
+/-- info: [cert-audit] indexed reference definition fronts: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "indexed reference definition fronts"
+    (#[`reference_definition_front_at, `DefinitionFrontAt.unique,
+      `DefinitionFrontAt.denotes].map (`Ix.Cert.ReferenceFronts ++ ·))
+
+/-! ## Fronts of the exact prepared Ixon stream
+
+One actual preparation/evidence witness supplies every indexed definition
+front; no separately accepted environment or source-form check is chosen. -/
+
+/-- info: [cert-audit] prepared Ixon definition fronts: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "prepared Ixon definition fronts"
+    #[`Ix.Cert.ReferenceFronts.ixon_definition_fronts]
+
+/-! ## Actual paired readings under a fixed interpretation
+
+Positive lookup preservation transports the real inference run's literal
+support and present projection slots; no prefix model is assumed. -/
+
+/-- info: [cert-audit] fixed interpretation paired readings: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed interpretation paired readings"
+    (#[`lookup_guard, `nat_support, `string_support, `projection_slot,
+      `inferred_readings_preserved].map (`Ix.Cert.PrefixReadings ++ ·))
+
+/-! ## Actual prefix fronts at the supplied final interpretation
+
+The indexed run derives lookup growth and paired header/body readings.
+Final stored-definition laws supply the target package at the same acval. -/
+
+/-- info: [cert-audit] final interpretation prefix fronts: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "final interpretation prefix fronts"
+    (#[`lookup_preserved, `readings_across, `final_semantic_front].map
+      (`Ix.Cert.ReferenceFronts.DefinitionFrontAt ++ ·))
+
+/-! ## The actual prefix core with the final model's literal valuation
+
+Prefix acceptance yields only model-free Props; every interpreted field
+comes from the supplied final model, with both valuation equalities by rfl. -/
+
+/-- info: [cert-audit] fixed final interpretation prefix core: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed final interpretation prefix core"
+    (#[`prefix_syntax, `coreAt_acval, `coreAt_cval,
+      `core_of_front].map (`Ix.Cert.PrefixCore ++ ·))
+
+/-! ## Actual final-interpretation prefix core and basic target package
+
+Leaf validity, numeral heads and Eq use only the supplied final model;
+the actual target package is transported through the same literal acval. -/
+
+/-- info: [cert-audit] actual final interpretation prefix package: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual final interpretation prefix package"
+    #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_core]

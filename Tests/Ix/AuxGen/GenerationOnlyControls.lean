@@ -1,4 +1,5 @@
 import Tests.Ix.AuxGen.GenerationOnlySpike
+import Tests.Ix.AuxGen.NestedTailReference
 
 namespace Tests.Ix.AuxGen.GenerationOnlySpike
 
@@ -117,6 +118,10 @@ def evaluate : IO Unit := do
   need (fresh.1.2.admitted.all fun (_, v) => v == .exempt s!"{AuxTable.notAcceptedPrefix}{why}") "a generation-only row was accepted"
   need (fresh.1.2.scopeEpoch == 0 && fresh.1.2.ingressCache.isEmpty && fresh.1.2.auxIngressSeen.isEmpty &&
     fresh.1.2.sourceNames.isEmpty && fresh.1.2.tcState.env.consts.isEmpty) "IxC-only retry touched legacy scopes"
+  let direct ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members baseOracle)
+  IO.ofExcept (NestedTailReference.check 0 #[`Tests.Ix.Compile.AuxCert.NestedSortUK] #[`NestedSortUK.T, `NestedSortUK.t_rec]
+    (some blockedAlias) env blocks lo members why fresh direct)
+  IO.println "nested tail reference: controls-planted-alias binding, full output and rollback passed"
   let stopped := runTail cenv lo members (planted retryOracle none) true
   need (isError stopped) "accepted-block refusal used the generation retry"
   match stopped with
