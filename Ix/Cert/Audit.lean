@@ -62,6 +62,7 @@ import Ix.Cert.PrefixCore
 import Ix.Cert.PrefixDefinitions
 import Ix.Cert.PrefixConstType
 import Ix.Cert.PrefixCapabilities
+import Ix.Cert.PrefixRecRules
 
 /-! # The certification statements, frozen
 
@@ -5959,3 +5960,16 @@ run_cmd do
     ((#[`eta_family_preserved, `capabilities_preserved, `nat_succ_row].map
       (`Ix.Cert.PrefixCapabilities ++ ·)) ++
       #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_caps_succ])
+
+/-! ## Every stored recursor's exact header, RHS and open-pin readings
+
+Actual prefix WF supplies resolution, including getD defaults and the
+sort-zero reverse openers. Reading equations need no model or grading. -/
+
+/-- info: [cert-audit] fixed interpretation stored recursor readings: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed interpretation stored recursor readings"
+    (#[`openRev_resolves, `stored_rule_resolves, `stored_rule_readings].map
+      (`Ix.Cert.PrefixRecRules ++ ·))
