@@ -1,6 +1,7 @@
 import Tests.Ix.AuxGen.AcceptanceProbe
 import Tests.Ix.AuxGen.GenerationOnlyDependencies
 import Tests.Ix.Compile.NestedAgreement
+import Tests.Ix.AuxGen.PatchReference
 
 /-! W2's real callers: exact patch records and Prop-family recursors against
 the retained Tc reference, explicit driver providers, named absence/policy
@@ -69,6 +70,7 @@ private def noKernelPaths : IO Unit := do
 
 def evaluate : IO Unit := do
   noKernelPaths
+  let patchReferences ← IO.ofExcept PatchReference.read
   let leanEnv ← getCompileEnv #[`Tests.Ix.AuxGen.ExplicitKernel,
     `Tests.Ix.Compile.AuxCert.NestedSortUK]
   let env ← Tests.Ix.Kernel.SourceIngress.envOf leanEnv
@@ -116,6 +118,8 @@ def evaluate : IO Unit := do
       need (probe.familyRecs == expected.1.1.1 && !probe.familyRecs.isEmpty)
         "checked Prop-family recursors changed"
       families := families + 1
+    IO.ofExcept (PatchReference.check patchReferences checked owner block.classes block.originalAll
+      block.out probe.family probe.familyRecs)
     let dump ← IO.ofExcept (runIn compiled key (Tests.Compile.AuxGenDiff.leanDumpPatchesBlock key all))
     need ((dump.1.splitOn "patch ").length > 1 && !(dump.1.startsWith "error "))
       "patch dump lost nonempty coverage"
@@ -151,5 +155,6 @@ def evaluate : IO Unit := do
     checked := checked + 1
   need (checked == 4 && families ≥ 1) "explicit caller coverage was empty or incomplete"
   IO.println s!"explicit callers: {checked} exact patch records, {families} exact Prop families; missing providers/policies; singleton/mutual no-kernel paths"
+  IO.println "patch references: 4 owners, 13 patches, 2 aliases, 5 canonical and 1 Prop recursor; rule/alias perturbations"
 
 end Tests.Ix.AuxGen.ExplicitKernel
