@@ -6110,3 +6110,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual optimizer shape insertion origins"
     (#[`Origins.insert, `optBlockOf_origins, `optBlockOf_shape_origin].map
       (`Ix.CompileCert.OptShapeOrigin ++ ·))
+
+/-! ## The actual hook's common O6 source/image/shape witnesses
+
+The repaired shape producer enriches the SAME view/query/shape tuple;
+all engine branches, reports and the rec/recOn distinction are retained. -/
+
+/-- info: [cert-audit] actual O6 image call origins: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual O6 image call origins"
+    (#[`o6_calls_images, `O6Images.calls, `passConfig_with_images].map
+      (`Ix.CompileCert.OptShapeOrigin ++ ·))
