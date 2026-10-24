@@ -63,6 +63,7 @@ import Ix.Cert.PrefixDefinitions
 import Ix.Cert.PrefixConstType
 import Ix.Cert.PrefixCapabilities
 import Ix.Cert.PrefixRecRules
+import Ix.Cert.PrefixTowers
 
 /-! # The certification statements, frozen
 
@@ -5986,3 +5987,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "universal fixed interpretation recursor rules"
     #[`Ix.Cert.PrefixRecRules.rec_rules_preserved,
       `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_rec_rules]
+
+/-! ## Actual prefix tower heads and all body/header readings
+
+Both positive head witnesses come from prefix projection discipline;
+the table and three exact depth-zero readings transport at fixed acval. -/
+
+/-- info: [cert-audit] fixed interpretation stored tower readings: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed interpretation stored tower readings"
+    (#[`stored_tower_heads, `stored_tower_readings].map
+      (`Ix.Cert.PrefixTowers ++ ·))
