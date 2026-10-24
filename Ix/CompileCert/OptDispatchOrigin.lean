@@ -1,4 +1,6 @@
 import Ix.Compile.Pass.Driver
+import Ix.Cert.Condense
+import Ix.CompileCert.ImageShape
 
 /-! # Provenance of the actual optimization hook
 
@@ -114,5 +116,98 @@ theorem passConfig_origin {cenv : CompileEnv} {views : Std.HashMap ExactName Blo
       simp only [ran, Option.map_some] at hit
       obtain ⟨rfl, rfl, rfl, rfl⟩ := hit
       exact ⟨rfl, rfl, rfl, tag, rfl, engine_origin ran⟩
+
+/-- The actual exact-key fold supplies its own view and computed block. -/
+theorem optBlocks_origin {cenv : CompileEnv} {views : Std.HashMap ExactName BlockView}
+    {key : ExactName} {block : OptBlock} (hit : (optBlocks cenv views).get? key = some block) :
+    ∃ view, views.get? key = some view ∧ block = optBlockOf (viewInput cenv) view := by
+  unfold optBlocks at hit
+  rw [Std.HashMap.fold_eq_foldl_toList] at hit
+  refine Ix.Cert.Condense.foldl_insert_get_of
+    (P := fun k b => ∃ v, views.get? k = some v ∧ b = optBlockOf (viewInput cenv) v)
+    (fun x : ExactName × BlockView => x.1) (fun x => optBlockOf (viewInput cenv) x.2)
+    views.toList {} ?_ ?_ key block hit
+  · intro k b impossible
+    simp at impossible
+  · intro x member k same
+    exact ⟨x.2, Ix.Cert.Condense.get_of_mem_toList member same, rfl⟩
+
+/-- Invert the actual O6 calls without selecting rec over recOn or inferring
+an occurrence universe count from the shape's O5 guard. -/
+theorem o6_lookup_origin {env : OptEnv} {o : Occ} {out : Expr}
+    (run : O6.apply env o = some out) :
+    ∃ k r block s count levels,
+      classify o.head = some (k, r) ∧ (k = .kRec ∨ k = .kRecOn) ∧
+      env.blockOf o.head = some block ∧ block.shapes.get? r = some s ∧
+      s.isSelection = true ∧ standardTelescope env s k o.head = some count ∧
+      count ≤ o.args.size ∧ O5.levels s o.us = some levels := by
+  unfold O6.apply at run
+  obtain ⟨⟨k, r⟩, kind, run⟩ := ImageShape.bind_some run
+  dsimp only at run
+  split at run
+  · cases run
+  · rename_i allowed
+    have kinds : k = .kRec ∨ k = .kRecOn := by
+      cases k <;> first | exact Or.inl rfl | exact Or.inr rfl | exact (allowed rfl).elim
+    obtain ⟨block, blockHit, run⟩ := ImageShape.bind_some run
+    obtain ⟨s, shapeHit, run⟩ := ImageShape.bind_some run
+    split at run
+    · cases run
+    · rename_i selected
+      have selection : s.isSelection = true := by simpa using selected
+      obtain ⟨count, telescope, run⟩ := ImageShape.bind_some run
+      split at run
+      · cases run
+      · rename_i enough
+        obtain ⟨levels, levelRun, _⟩ := ImageShape.bind_some run
+        exact ⟨k, r, block, s, count, levels, kind, kinds, blockHit, shapeHit,
+          selection, telescope, Nat.le_of_not_gt enough, levelRun⟩
+
+/-- Operational O6 provenance at the actual driver snapshot. The view hit
+is NOT a fresh buildView result; the shape hit is NOT an image-origin law. -/
+def O6Calls (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView)
+    (sourceAll : Ix.Set Name) (o : Occ) (out : Expr) : Prop :=
+  O6.apply (driverEnv cenv views sourceAll) o = some out ∧
+  ∃ (k : AuxKind) (r key : Name) (view : BlockView) (block : OptBlock) (s : RecShape)
+    (count : Nat) (levels : Array Ix.Level),
+    classify o.head = some (k, r) ∧ (k = .kRec ∨ k = .kRecOn) ∧
+    cenv.p3Heads.get? o.head = some key ∧ views.get? key = some view ∧
+    (optBlocks cenv views).get? key = some block ∧ block = optBlockOf (viewInput cenv) view ∧
+    (driverEnv cenv views sourceAll).blockOf o.head = some block ∧ block.shapes.get? r = some s ∧
+    s.isSelection = true ∧ standardTelescope (driverEnv cenv views sourceAll) s k o.head = some count ∧
+    count ≤ o.args.size ∧ O5.levels s o.us = some levels
+
+theorem driver_o6_origin {cenv : CompileEnv} {views : Std.HashMap ExactName BlockView}
+    {sourceAll : Ix.Set Name} {o : Occ} {out : Expr}
+    (run : O6.apply (driverEnv cenv views sourceAll) o = some out) :
+    O6Calls cenv views sourceAll o out := by
+  obtain ⟨k, r, block, s, count, levels, kind, kinds, blockHit, shapeHit,
+      selection, telescope, enough, levelRun⟩ := o6_lookup_origin run
+  have actualBlock := blockHit
+  change ((cenv.p3Heads.get? o.head).bind (optBlocks cenv views).get?) = some block at actualBlock
+  obtain ⟨key, owner, storedBlock⟩ := ImageShape.bind_some actualBlock
+  obtain ⟨view, storedView, blockEq⟩ := optBlocks_origin storedBlock
+  exact ⟨run, k, r, key, view, block, s, count, levels, kind, kinds, owner, storedView,
+    storedBlock, blockEq, blockHit, shapeHit, selection, telescope, enough, levelRun⟩
+
+/-- An actual hook result retains EVERY branch, and its recovered O6 branch
+supplies all driver/map/call provenance. No O6 tag is a caller premise. -/
+theorem passConfig_with_o6_origin {cenv : CompileEnv} {views : Std.HashMap ExactName BlockView}
+    {sourceAll : Ix.Set Name} {site : Option Name} {n : Name} {us : Array Ix.Level} {args : Array Expr}
+    {out : Expr} {constants : Array ConstantInfo} {proofTag : Option String} {reports : Array String}
+    (hit : (passConfig cenv views sourceAll).opt? site n us args = some (out, constants, proofTag, reports)) :
+    Ix.AuxGen.SourceIdentity.permitsOptimization cenv.env n = true ∧ constants = #[] ∧ proofTag = none ∧
+    ∃ tag, engine (driverEnv cenv views sourceAll) { head := n, us, args, site } = some (tag, out, reports) ∧
+      Branch 63 (driverEnv cenv views sourceAll) { head := n, us, args, site } tag out reports ∧
+      (tag = "O6" → O6Calls cenv views sourceAll { head := n, us, args, site } out) := by
+  obtain ⟨permitted, empty, noProof, tag, ran, branch⟩ := passConfig_origin hit
+  refine ⟨permitted, empty, noProof, tag, ran, branch, ?_⟩
+  intro selected
+  cases branch with
+  | o11a => simp at selected
+  | o2 => simp at selected
+  | o3 => simp at selected
+  | o4 => simp at selected
+  | o6 _ _ _ _ pass => exact driver_o6_origin pass
 
 end Ix.CompileCert.OptDispatchOrigin

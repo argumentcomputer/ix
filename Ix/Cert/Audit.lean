@@ -6083,3 +6083,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual optimization dispatch origins"
     (#[`engineN_origin, `engineN_success_origin, `engine_origin, `passConfig_origin].map
       (`Ix.CompileCert.OptDispatchOrigin ++ ·))
+
+/-! ## Actual outer-map/view and O6 call provenance
+
+The real exact-key fold supplies its view. Recovered O6 dispatch retains
+both rec/recOn and the actual guards, without inventing image or memo origin. -/
+
+/-- info: [cert-audit] actual O6 driver call origins: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual O6 driver call origins"
+    (#[`optBlocks_origin, `o6_lookup_origin, `driver_o6_origin, `passConfig_with_o6_origin].map
+      (`Ix.CompileCert.OptDispatchOrigin ++ ·))
