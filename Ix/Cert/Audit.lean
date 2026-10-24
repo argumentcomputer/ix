@@ -6166,3 +6166,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual primary write agreement and projection"
     (#[`WalkOk.insert, `checkBlockClaims_primary_agrees, `checkCompiledBlock_primary_agrees,
       `mergeCompiledBlock_primary].map (`Ix.CompileCert.PrimaryAddressFrame ++ ·))
+
+/-! ## Checked primary-address value preservation
+
+The real guard and old primary hit derive exact post-merge lookup and
+resolution priority. The auxiliary-only query branch remains explicit. -/
+
+/-- info: [cert-audit] checked primary address frames: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked primary address frames"
+    (#[`PrimaryAgrees.foldl_keeps, `checked_merge_primary_frame, `checked_merge_query_partition].map
+      (`Ix.CompileCert.PrimaryAddressFrame ++ ·))

@@ -176,4 +176,57 @@ theorem mergeCompiledBlock_primary (acc : DriverAcc) (lo : Name) (result : Block
         simpa only [goalMap, primaryClaims, nonempty, Bool.false_eq_true, ↓reduceIte, Array.foldl_map] using hL
       merge_primary_tail actual
 
+/-- An agreed write sequence preserves an exact old hit, including through
+duplicates. The table may freely acquire other entries. -/
+theorem PrimaryAgrees.foldl_keeps {before : CompileEnv} {writes : Array (Name × Address)}
+    (agrees : PrimaryAgrees before writes) {n : ExactName} {addr : Address}
+    (old : before.nameToAddr.get? n = some addr) :
+    (writes.foldl (fun table (key, value) => table.insert key value) before.nameToAddr).get? n = some addr := by
+  rw [← Array.foldl_toList]
+  apply List.foldlRecOn (motive := fun table : Std.HashMap ExactName Address => table.get? n = some addr)
+  · exact old
+  · intro table held ⟨key, value⟩ member
+    change (table.insert (show ExactName from key) value).get? n = some addr
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert]
+    split
+    · rename_i same
+      have equal : (show ExactName from key) = n := eq_of_beq same
+      have agreed : value = addr := agrees key value (Array.mem_toList_iff.mp member)
+        addr ((congrArg (fun q : ExactName => before.nameToAddr.get? q) equal).trans old)
+      exact congrArg some agreed
+    · exact held
+
+/-- The actual check suffices for the old primary hit and its ViewInput
+address to survive. Primary priority makes later auxiliary writes irrelevant. -/
+theorem checked_merge_primary_frame {acc : DriverAcc} {lo : Name} {result : BlockResult}
+    {cache : BlockState} {pub : Published} {n : Name} {addr : Address}
+    (checked : checkCompiledBlock acc.cenv lo result cache pub = .ok ())
+    (old : acc.cenv.nameToAddr.get? n = some addr) :
+    (mergeCompiledBlock acc lo result cache pub).cenv.nameToAddr.get? n = some addr ∧
+    (viewInput (mergeCompiledBlock acc lo result cache pub).cenv).addr? n = some addr ∧
+    (viewInput (mergeCompiledBlock acc lo result cache pub).cenv).addr? n = (viewInput acc.cenv).addr? n := by
+  have afterHit : (mergeCompiledBlock acc lo result cache pub).cenv.nameToAddr.get? n = some addr := by
+    rw [mergeCompiledBlock_primary]
+    exact (checkCompiledBlock_primary_agrees checked).foldl_keeps old
+  exact ⟨afterHit, by simp only [viewInput, resolveAddr, afterHit],
+    by simp only [viewInput, resolveAddr, afterHit, old]⟩
+
+/-- Arbitrary successful old queries retain BOTH operational branches.
+The auxiliary-only branch is exposed, with no unproved post-merge frame. -/
+theorem checked_merge_query_partition {acc : DriverAcc} {lo : Name} {result : BlockResult}
+    {cache : BlockState} {pub : Published} {n : Name} {addr : Address}
+    (checked : checkCompiledBlock acc.cenv lo result cache pub = .ok ())
+    (query : (viewInput acc.cenv).addr? n = some addr) :
+    (acc.cenv.nameToAddr.get? n = some addr ∧
+      (mergeCompiledBlock acc lo result cache pub).cenv.nameToAddr.get? n = some addr ∧
+      (viewInput (mergeCompiledBlock acc lo result cache pub).cenv).addr? n = some addr) ∨
+    (acc.cenv.nameToAddr.get? n = none ∧ acc.cenv.auxNameToAddr.get? n = some addr) := by
+  cases primary : acc.cenv.nameToAddr.get? n with
+  | none => exact .inr ⟨rfl, by simpa only [viewInput, resolveAddr, primary] using query⟩
+  | some value =>
+    have same : value = addr := Option.some.inj (by simpa only [viewInput, resolveAddr, primary] using query)
+    subst value
+    have frame := checked_merge_primary_frame checked primary
+    exact .inl ⟨rfl, frame.1, frame.2.1⟩
+
 end Ix.CompileCert.PrimaryAddressFrame
