@@ -84,6 +84,31 @@ private def traceControls : IO Unit := do
   let refuses text stem why : IO Unit := match checkedTrace text stem with
     | .error e => ensure (e == "checked trace: " ++ why) s!"wrong trace refusal: {e}"
     | .ok _ => throw (IO.userError "bad trace passed")
+  -- Exact row from all five frozen134 whole-file captures (row SHA54cd00a3).
+  -- Both unsafe definitions stay Source-blocked; this wrapper asks no IxC work.
+  let idle := "[auxgen-ixc] Lean.Meta.FindSplitImpl.visit: queries 0 tcFast 0 ixcFast 0 answered 0 equal 0 differ 0 refused 0 scopesRefused 0 flat 0/0 decisions 0 decisionsEqual 0 decisionsDiffer 0 exprQueries 0 exprAnswered 0 below 0/0 recWhnf 0 recStuck 0 recSame 0 recReplayed 0 recBeta 0 recRefused 0 recEqual 0 recDiffer 0 recDiffName 0 recDiffInfo 0 recDiffLevel 0 recDiffOther 0 recDecisionDiffer 0 recSkipped 0 recSkipDiffer 0 recForced 0 elim 0 elimEqual 0 elimDiffer 0 elimRefused 0 leanRecSame 0 leanRecDiffer 0 family 0/0 unsafe 1 tier 0 asked 0"
+  let (idleCounts, idleTails) ← IO.ofExcept (checkedTrace idle "SortUDecl")
+  ensure (idleTails == 1 && idleCounts.get? "unsafe" == some 1 && idleCounts.get? "tier" == some 0 &&
+    idleCounts.get? "asked" == some 0) "captured zero-work row disappeared from coverage"
+  let producerWords := (((good.splitOn ": ")[1]!).splitOn " ").filter (!·.isEmpty) |>.toArray
+  for i in [:producerWords.size / 2] do
+    let k := producerWords[2*i]!; let v := producerWords[2*i+1]!
+    refuses (good.replace s!" {k} {v}" "") "TraceProfile"
+      (if k == "queries" then "malformed tail header" else "missing required counter")
+  let idleWords := (((idle.splitOn ": ")[1]!).splitOn " ").filter (!·.isEmpty) |>.toArray
+  for i in [:idleWords.size / 2] do
+    let k := idleWords[2*i]!; let v := idleWords[2*i+1]!
+    if k == "unsafe" || k == "tier" then continue
+    let parts := (v.splitOn "/").toArray
+    for j in [:parts.size] do
+      let changed := String.intercalate "/" (parts.set! j "1").toList
+      refuses (idle.replace s!" {k} {v}" s!" {k} {changed}") "SortUDecl"
+        (if k == "queries" || k == "answered" then "answered/query coverage differs" else "unsafe tail lacks its tier")
+  refuses (idle ++ " futureCounter 1") "SortUDecl" "unsafe tail lacks its tier"
+  refuses (idle.replace "unsafe 1 tier 0" "unsafe 0 tier 1") "SortUDecl" "tier marker without unsafe block"
+  for (k, v) in [("unsafe", "1"), ("tier", "0"), ("asked", "0")] do
+    refuses (idle.replace s!" {k} {v}" s!" {k} 2") "SortUDecl" "non-Boolean trace flag"
+  refuses (good.replace "unsafe 1 tier 1" "unsafe 0 tier 0" ++ "\n" ++ idle) "UnsafeI" "unsafe profile is empty"
   for (text, why) in [("", "no tail coverage"), (good ++ "\n" ++ good, "empty/duplicate tail key"),
       (good.replace ": queries" ": query", "malformed tail header"),
       (good ++ " dangling", "dangling counter"), (good.replace "answered 1" "answered nope", "nonnumeric counter"),
@@ -100,6 +125,7 @@ private def traceControls : IO Unit := do
     !complete { groupsRefused := 65, refused := Array.replicate 64 ("group", "refused") } &&
     complete { groupsRefused := 64, refused := (Array.range 64).map fun i => (s!"group{i}", "refused") }) "Source report completeness guard changed"
   IO.println "checked trace: malformed/missing/duplicate/refusal/profile controls; malformed/truncated/exact-cap Source reports"
+  IO.println "captured unsafe wrapper retained; full producer schema, every work component/new field and Boolean flags checked"
 
 def suite : List TestSeq := [
   .individualIO "measured IxC refusals require exact labels, outcomes, reasons and owners" none (do

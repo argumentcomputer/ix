@@ -426,8 +426,11 @@ def checkedStopCounts : List String :=
 /-- Strict checked-path trace validation. Missing fields cannot become zero;
 all tails, including unsafe and generation-only tails, stay in the census. -/
 def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat × Nat) := do
-  let required := #["queries", "answered", "refused", "scopesRefused", "flat", "below", "recWhnf", "recBeta",
-    "recRefused", "elim", "elimRefused", "leanRecSame", "leanRecDiffer", "family", "unsafe", "tier", "asked"]
+  let required := #["queries", "tcFast", "ixcFast", "answered", "equal", "differ", "refused", "scopesRefused", "flat",
+    "decisions", "decisionsEqual", "decisionsDiffer", "exprQueries", "exprAnswered", "below", "recWhnf", "recStuck",
+    "recSame", "recReplayed", "recBeta", "recRefused", "recEqual", "recDiffer", "recDiffName", "recDiffInfo",
+    "recDiffLevel", "recDiffOther", "recDecisionDiffer", "recSkipped", "recSkipDiffer", "recForced", "elim",
+    "elimEqual", "elimDiffer", "elimRefused", "leanRecSame", "leanRecDiffer", "family", "unsafe", "tier", "asked"]
   let mut blocks : Std.HashSet String := {}
   for line in text.splitOn "\n" do
     if !line.startsWith "[auxgen-ixc] " || line.startsWith "[auxgen-ixc]   " then continue
@@ -439,6 +442,7 @@ def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat ×
     let words := (body.splitOn " ").filter (!·.isEmpty) |>.toArray
     if words.size % 2 != 0 then throw "checked trace: dangling counter"
     let mut fields : Std.HashSet String := {}
+    let mut noWork := true
     for i in [:words.size / 2] do
       let key := words[2*i]!; let value := words[2*i+1]!
       if fields.contains key then throw "checked trace: duplicate counter"
@@ -448,11 +452,17 @@ def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat ×
       for part in parts do
         let some n := part.toNat? | throw "checked trace: nonnumeric counter"
         if toString n != part then throw "checked trace: noncanonical counter"
+        if key != "unsafe" && key != "tier" && n != 0 then noWork := false
     if !required.all fields.contains then throw "checked trace: missing required counter"
     let (row, _) := tailCounts line
     if row.getD "refused" 0 == 0 && row.getD "answered" 0 != row.getD "queries" 0 then
       throw "checked trace: answered/query coverage differs"
-    if row.getD "unsafe" 0 != row.getD "tier" 0 then throw "checked trace: unsafe tail lacks its tier"
+    let unsafeBlock := row.getD "unsafe" 0; let tier := row.getD "tier" 0
+    if [unsafeBlock, tier, row.getD "asked" 0].any (· > 1) then throw "checked trace: non-Boolean trace flag"
+    if tier == 1 && unsafeBlock != 1 then throw "checked trace: tier marker without unsafe block"
+    -- Mutual-definition wrappers may be unasked and perform no IxC work.
+    -- Every other value, including asked, pair halves and new fields, counts.
+    if unsafeBlock == 1 && tier == 0 && !noWork then throw "checked trace: unsafe tail lacks its tier"
   if blocks.isEmpty then throw "checked trace: no tail coverage"
   let (counts, tails) := tailCounts text
   for key in checkedStopCounts do
@@ -460,7 +470,7 @@ def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat ×
   if #["BelowNRec", "UnsafeI", "F5_SigmaNestedNested"].contains stem then
     if ["queries", "recWhnf", "elim", "leanRecSame"].any (counts.getD · 0 == 0) then throw "checked trace: required real profile is empty"
     if stem == "BelowNRec" && counts.getD "familyAdmitted" 0 == 0 then throw "checked trace: Prop family profile is empty"
-    if stem == "UnsafeI" && counts.getD "unsafe" 0 == 0 then throw "checked trace: unsafe profile is empty"
+    if stem == "UnsafeI" && (counts.getD "unsafe" 0 == 0 || counts.getD "tier" 0 == 0) then throw "checked trace: unsafe profile is empty"
     if stem == "F5_SigmaNestedNested" && counts.getD "recBeta" 0 == 0 then throw "checked trace: named beta profile is empty"
   return (counts, tails)
 
