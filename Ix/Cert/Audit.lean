@@ -53,6 +53,7 @@ import Ix.CompileCert.O6LambdaValues
 import Ix.Cert.ContextValues
 import Ix.Cert.ApplicationFronts
 import Ix.CompileCert.O6ApplicationValues
+import Ix.CompileCert.O6Telescope
 
 /-! # The certification statements, frozen
 
@@ -5743,3 +5744,19 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "O6 whole application values"
     (#[`app_argument, `o6_lambda_argument_values].map (`Ix.CompileCert.O6ApplicationValues ++ ·))
+
+/-! ## Actual shared dependent telescope producer
+
+Whole annotations and baseline full inference produce common typed domains,
+exact per-binder subcalls, bulk-opened leaf runs and frames. Every supplied
+strong model then gets a real context-extension trace, without a Sat witness. -/
+
+/-- info: [cert-audit] actual telescope producer: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual telescope producer"
+    (#[`openers_append_one, `annotation_reopen_at, `annotation_frame_at,
+      `DomainTraceFrom.length, `DomainTraceFrom.at, `ContextTrace.length,
+      `paired_telescope_from, `DomainTrace.length, `DomainTrace.at,
+      `paired_telescope].map (`Ix.CompileCert.O6Telescope ++ ·))
