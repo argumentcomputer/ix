@@ -47,6 +47,7 @@ import Ix.CompileCert.O6RecRead
 import Ix.Cert.AnnotatedBeta
 import Ix.CompileCert.O6Annotation
 import Ix.Cert.CheckedBetaSpine
+import Ix.CompileCert.O6Values
 
 /-! # The certification statements, frozen
 
@@ -5635,3 +5636,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "checked beta spines"
     (#[`domains_abstract, `inferred_lam_domains, `infer_apps, `trace_beta,
       `checked_lambda_spine_red].map (`Ix.Cert.CheckedBetaSpine ++ ·))
+
+/-! ## Actual closed O6 recursor rewrite: public equal values
+
+The real pass/image/read/annotation trace and baseline full inference derive
+checked Red/DefEq. Every strong model of that same prefix env gives a common
+public value. No output/reduct inference, N-PERM, CQ5.4 or driver proof is assumed. -/
+
+/-- info: [cert-audit] O6 checked values: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 checked values"
+    #[`Ix.CompileCert.O6Values.o6_rec_values]
