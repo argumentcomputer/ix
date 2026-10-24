@@ -51,6 +51,7 @@ import Ix.CompileCert.O6Values
 import Ix.CompileCert.O6Opened
 import Ix.CompileCert.O6LambdaValues
 import Ix.Cert.ContextValues
+import Ix.Cert.ApplicationFronts
 
 /-! # The certification statements, frozen
 
@@ -5698,3 +5699,17 @@ run_cmd do
   checkRoots (tag := "cert-audit") "checked context lambda congruence"
     (#[`annotate_context, `infer_package_at, `lambda_bits_at,
       `eqAt_of_readings, `checked_lambda_congr_at].map (`Ix.Cert.ContextValues ++ ·))
+
+/-! ## Real local fronts from enclosing applications
+
+Paired actual app checks with the same raw function derive both argument
+fronts and one WHNF domain. Real function inference/WHNF supplies its
+semantic frame/context/read/grade, without inventing a domain check. The
+typed-header consumer and full O6 production composition remain separate. -/
+
+/-- info: [cert-audit] actual application argument fronts: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual application argument fronts"
+    (#[`function_domain, `paired_app_argument_fronts].map (`Ix.Cert.ApplicationFronts ++ ·))
