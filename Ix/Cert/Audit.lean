@@ -46,6 +46,7 @@ import Ix.CompileCert.CliqueRowsCoverage
 import Ix.CompileCert.O6RecRead
 import Ix.Cert.AnnotatedBeta
 import Ix.CompileCert.O6Annotation
+import Ix.Cert.CheckedBetaSpine
 
 /-! # The certification statements, frozen
 
@@ -5619,3 +5620,18 @@ run_cmd do
     (#[`annotation_unique, `annotate_apps, `Flat.annotate, `open_close,
       `annotate_selector_tail, `ReadAnn.unique, `read_ann_apps,
       `selectors_annotated, `o6_rec_annotation_layout].map (`Ix.CompileCert.O6Annotation ++ ·))
+
+/-! ## Checked lambda spines from original full inference
+
+Actual head inference fixes every lambda/forall domain. The original
+application trace supplies each certified beta, including Prop, without
+intermediate-reduct inference. Bulk substitution and extra arguments are
+derived exactly; the O6 public-value wrapper remains separate. -/
+
+/-- info: [cert-audit] checked beta spines: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked beta spines"
+    (#[`domains_abstract, `inferred_lam_domains, `infer_apps, `trace_beta,
+      `checked_lambda_spine_red].map (`Ix.Cert.CheckedBetaSpine ++ ·))
