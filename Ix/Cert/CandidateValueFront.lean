@@ -7,6 +7,7 @@ the temporary pushed FEnv; lookup agreement never equates its physical tail.
 This producer checkpoint supplies no Source-origin or value-equality claim. -/
 namespace Ix.Cert.CandidateValueFront
 open Ix.Kernel Ix.Kernel.Cached Ix.Kernel.Semantics
+universe w
 variable {md : Mode}
 
 /-- One existing verified whole-body call, returning only its checked body.
@@ -80,5 +81,72 @@ theorem pure_front {env out : Env md} {F : Nat} {cv : Ix.Kernel.ConstantVal md}
           · simp [resolved] at run
         · simp [levels] at run
   · simp [bounded, bind, Except.bind] at run
+
+private theorem body_front {env : Env md} (wf : EnvWF env)
+    {cv : Ix.Kernel.ConstantVal md} {expected candidate checked : Ix.Kernel.Expr md} {hint : ReducibilityHint}
+    (headerScoped : Ix.Kernel.Expr.WScoped 0 expected)
+    (run : body (mkFEnv env) cv expected candidate hint = .ok checked) :
+    ∃ F, ValueFrontRun .verified F env cv candidate expected checked := by
+  unfold body at run
+  cases cached : bodyC (mkFEnv env) cv expected candidate hint {} with
+  | error e => simp [cached, Except.map] at run
+  | ok pair =>
+    obtain ⟨value, state⟩ := pair
+    simp only [cached, Except.map, Except.ok.injEq] at run
+    subst value
+    unfold bodyC at cached
+    obtain ⟨after, mid, actual, projected⟩ := bindC_ok cached
+    obtain ⟨_, out, relation, F, pureRun⟩ :=
+      (checkDefnValC_sim (mode := .verified) rfl wf headerScoped rfl rfl (CSOK.empty env)) after mid actual
+    rw [checkDefnVal_datF] at pureRun
+    obtain ⟨value, front, shape⟩ := pure_front pureRun
+    have contents := congrArg Env.consts (relation.1.trans shape)
+    simp only [contents, pure, StateT.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at projected
+    obtain ⟨rfl, _⟩ := projected
+    exact ⟨F, front⟩
+
+inductive Error where
+  | context (message : String)
+  | value (error : CheckError .anon)
+
+/-- A generic candidate check, not a Source-form designation. Receipt data
+alone is not authentication; the theorem below requires its actual run. -/
+def checkAt (r : DefinitionSnapshots.Receipt) (i : Nat) (candidate : Ix.Kernel.Expr .anon) :
+    Except Error (Ix.Kernel.Expr .anon) := do
+  let s ← (r.snapshot i).mapError .context
+  (body s.view s.cv s.expected candidate s.hint).mapError .value
+
+private theorem mapError_ok {ε ε' α : Type} {f : ε → ε'} {x : Except ε α} {v : α}
+    (h : x.mapError f = .ok v) : x = .ok v := by
+  cases x with
+  | error e => cases h
+  | ok a => cases h; rfl
+
+/-- Real receipt/index/candidate execution produces an independent-fuel
+whole value front at the SAME before/cv/expected. All structural and cache
+premises are discharged internally; source origin/value equality are absent. -/
+theorem checkAt_front (V : Type w) [SetTheory V] {binding limits records blobs hints r}
+    (accepted : DefinitionSnapshots.checkReceipt binding limits records blobs hints = .ok r)
+    {i : Nat} {cv : Ix.Kernel.ConstantVal .anon} {targetRaw candidate candidateChecked : Ix.Kernel.Expr .anon}
+    {hint : ReducibilityHint}
+    (atDecl : r.ds.toList[i]? = some (.defnDecl cv targetRaw hint))
+    (ran : checkAt r i candidate = .ok candidateChecked) :
+    ∃ F before expected targetChecked FB,
+      ReferenceFronts.DefinitionFrontAt r.ev r.ds.toList r.env i cv targetRaw hint
+        F before expected targetChecked ∧
+      ValueFrontRun .verified FB before cv candidate expected candidateChecked := by
+  obtain ⟨F, before, expected, targetChecked, front, snapshot, _, _, lookup, _⟩ :=
+    DefinitionSnapshots.snapshot_of_check V accepted atDecl
+  unfold checkAt at ran
+  simp only [snapshot, Except.mapError, bind, Except.bind] at ran
+  have checked := mapError_ok ran
+  have same : (r.index.restrictTo before.consts.length).find? = (mkFEnv before).find? :=
+    funext fun n => (lookup n).trans (mkFEnv_find? before n).symm
+  rw [body_congr same] at checked
+  have header := front.2.2.2.2.2.1
+  obtain ⟨_, _, _, _, bounded, closed, annotated, _, _, _⟩ := header
+  have headerScoped := (ConversionValues.annotation_frame annotated closed bounded).1
+  obtain ⟨FB, value⟩ := body_front (PrefixCore.prefix_syntax front V).1 headerScoped checked
+  exact ⟨F, before, expected, targetChecked, FB, front, value⟩
 
 end Ix.Cert.CandidateValueFront

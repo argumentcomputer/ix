@@ -1,6 +1,7 @@
 import Ix.Cert.AdmittedTargetFronts
 import Ix.Cert.RecursorSupport
 import Ix.Cert.DefinitionSnapshots
+import Ix.Cert.CandidateValueFront
 import Ix.Ixon.CheckOrder
 import Tests.Ix.Compile.Harness.Units
 import Tests.Ix.Kernel.Authentication
@@ -350,6 +351,49 @@ private def snapshotControls (binding : Binding) (t : RoleTable) (pre : Prelude 
   need (match check binding limits with | .error (.mismatch ..) => true | _ => false) "receipt changed byte error precedence"
   IO.println "snapshot controls: native full-install, constant/declaration offsets, later-key hiding, missing/kind indices and exact error precedence passed"
 
+def candidateTarget : Nat := 7
+
+-- Synthetic candidate controls only: zero is not the source form of seven.
+private def candidateControls (binding : Binding) (t : RoleTable) (pre : Prelude .anon) : IO Unit := do
+  let env ← getCompileEnv #[`Tests.Ix.Compile.SelectedAdmission]
+  let raw := Tests.Ix.Compile.Harness.closureOf env [``candidateTarget]
+  let out ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts raw (numWorkers := 1))
+  let some named := out.env.named.get? (_root_.Ix.Name.fromLeanName ``candidateTarget)
+    | throw (IO.userError "candidate target missing")
+  let p ← IO.ofExcept ((RecursorSupport.catalogue out.env limits).mapError reprStr)
+  let (literal, _) ← IO.ofExcept (candidate out.env t pre named.addr)
+  let (order, _, _) ← IO.ofExcept (supportedCandidate p t pre named.addr literal)
+  let records := recordsOf out.env order
+  let blobs := blobsOf out.env order
+  let r ← IO.ofExcept ((DefinitionSnapshots.checkReceipt binding limits records blobs (hintsOf out.env)).mapError toString)
+  let constants ← IO.ofExcept ((decodeRecords limits records).mapError reprStr)
+  let cx := streamContext Address.admissionHash r.table r.pre constants blobs (hintsOf out.env)
+  let key ← IO.ofExcept ((cx.memberKey (.member named.addr 0)).mapError reprStr)
+  let some i := r.ds.findIdx? (fun | .defnDecl cv .. => cv.name == key | _ => false)
+    | throw (IO.userError "candidate definition index missing")
+  let s ← IO.ofExcept (r.snapshot i)
+  need (s.cv.levelParams.isEmpty && !natOpNames.contains key && !natDivModNames.contains key)
+    "candidate control is not an ordinary monomorphic definition"
+  let natTy : _root_.Ix.Kernel.Expr .anon := .const natName []
+  let good : _root_.Ix.Kernel.Expr .anon := .const natZeroName []
+  need (good != s.raw) "candidate control copied the target body"
+  let .ok checked := CandidateValueFront.checkAt r i good | throw (IO.userError "distinct well-typed candidate refused")
+  need (!checked.hasFvar && checked != s.checked) "candidate result was confused with the target value"
+  let missing : Key .anon := .id (Tests.Ix.Kernel.Reader.address 999)
+  need (s.view.find? key == none && s.view.find? missing == none) "negative lookup controls are vacuous"
+  let bad : List (String × _root_.Ix.Kernel.Expr .anon) :=
+    [("wrong type", .sort .zero), ("loose variable", .bvar 0), ("free variable", .fvar 0 natTy),
+     ("current self", .const key []), ("unresolved", .const missing []), ("undeclared level", .sort (.param 999))]
+  for (label, value) in bad do
+    need (match CandidateValueFront.checkAt r i value with | .error (.value _) => true | _ => false)
+      s!"candidate {label} did not preserve a value error"
+  let .error expectedContext := r.snapshot r.ds.size | throw (IO.userError "missing-index control accepted")
+  need (match CandidateValueFront.checkAt r r.ds.size good with
+    | .error (.context got) => got == expectedContext | _ => false) "candidate context error changed"
+  let same ← IO.ofExcept (r.snapshot i)
+  need (same.checked == s.checked && same.expected == s.expected) "temporary candidate push changed the target receipt"
+  IO.println "candidate controls: distinct typed value only; wrong type, loose/free variables, self, unresolved and level errors; context error and target receipt preserved"
+
 def runSupported : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
   let t ← IO.ofExcept ((admitBinding Address.admissionHash binding).mapError (toString ∘ Error.binding))
@@ -362,6 +406,7 @@ def runSupported : IO Unit := do
   supportedCensus out binding t pre
   supportControls binding t pre
   snapshotControls binding t pre
+  candidateControls binding t pre
 
 def run : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
@@ -405,4 +450,6 @@ def run : IO Unit := do
 #guard_msgs in #print axioms _root_.Ix.Cert.DefinitionSnapshots.checkReceipt_ok
 /-- info: 'Ix.Cert.DefinitionSnapshots.snapshot_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.DefinitionSnapshots.snapshot_of_check
+/-- info: 'Ix.Cert.CandidateValueFront.checkAt_front' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.CandidateValueFront.checkAt_front
 end Tests.Ix.Compile.SelectedAdmission
