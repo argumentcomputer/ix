@@ -1,5 +1,7 @@
 import LSpec
 import Tests.Ix.Compile.AuxCert
+import Tests.Ix.AuxGen.ProbeReport
+import Ix.AuxGen.Kernel
 
 namespace Tests.Ix.Compile.AuxCertLeanExpect
 
@@ -72,9 +74,36 @@ private def check : IO Nat := do
   IO.println "AuxCert IxC records: five measured fixtures/134 labels; exact address-derived reasons and all 15 prior refusal controls retained"
   return 19
 
+private def traceControls : IO Unit := do
+  let key := _root_.Ix.Name.fromLeanName `TraceProfile
+  let good := _root_.Ix.AuxGen.IxcStats.line key
+    { queries := 1, answered := 1, recWhnf := 1, recBeta := 1, elim := 1,
+      leanRecSame := 1, familyInstalled := 1, unsafeBlock := 1, tier := 1 }
+  for stem in ["BelowNRec", "UnsafeI", "F5_SigmaNestedNested"] do
+    ensure (checkedTrace good stem matches .ok _) "valid checked trace refused"
+  let refuses text stem why : IO Unit := match checkedTrace text stem with
+    | .error e => ensure (e == "checked trace: " ++ why) s!"wrong trace refusal: {e}"
+    | .ok _ => throw (IO.userError "bad trace passed")
+  for (text, why) in [("", "no tail coverage"), (good ++ "\n" ++ good, "empty/duplicate tail key"),
+      (good.replace ": queries" ": query", "malformed tail header"),
+      (good ++ " dangling", "dangling counter"), (good.replace "answered 1" "answered nope", "nonnumeric counter"),
+      (good.replace " answered 1" "", "missing required counter"), (good.replace "below 0/0" "below 0", "counter shape"),
+      (good ++ " queries 1", "duplicate counter"), (good.replace "refused 0" "refused 1", "refused is nonzero"),
+      (good.replace "tier 1" "tier 0", "unsafe tail lacks its tier")] do refuses text "BelowNRec" why
+  for (stem, text, why) in [("BelowNRec", good.replace "family 1/0" "family 0/0", "Prop family profile is empty"),
+      ("UnsafeI", good.replace "unsafe 1 tier 1" "unsafe 0 tier 0", "unsafe profile is empty"),
+      ("F5_SigmaNestedNested", good.replace "recBeta 1" "recBeta 0", "named beta profile is empty")] do refuses text stem why
+  let complete := Tests.Ix.AuxGen.ProbeReport.complete
+  ensure (complete {} && !complete { blocks := 1, accepted := 2 } &&
+    !complete { blocks := 65, notAccepted := Array.replicate 64 (key, "refused") } &&
+    !complete { groupsRefused := 65, refused := Array.replicate 64 ("group", "refused") } &&
+    complete { groupsRefused := 64, refused := (Array.range 64).map fun i => (s!"group{i}", "refused") }) "Source report completeness guard changed"
+  IO.println "checked trace: malformed/missing/duplicate/refusal/profile controls; malformed/truncated/exact-cap Source reports"
+
 def suite : List TestSeq := [
   .individualIO "measured IxC refusals require exact labels, outcomes, reasons and owners" none (do
     let n ← check
+    traceControls
     return (true, n, 0, none)) .done]
 
 end Tests.Ix.Compile.AuxCertLeanExpect
