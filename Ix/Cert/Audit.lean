@@ -45,6 +45,11 @@ import Ix.CompileCert.CliqueRowShape
 import Ix.CompileCert.CliqueRowsCoverage
 import Ix.CompileCert.O6RecRead
 import Ix.Cert.AnnotatedBeta
+import Ix.CompileCert.O6Annotation
+import Ix.Cert.CheckedBetaSpine
+import Ix.CompileCert.O6Values
+import Ix.CompileCert.O6Opened
+import Ix.CompileCert.O6LambdaValues
 
 /-! # The certification statements, frozen
 
@@ -5602,3 +5607,78 @@ run_cmd do
   checkRoots (tag := "cert-audit") "annotated beta values"
     (#[`inferred_beta_certificate, `annotate_lam_trace, `annotate_beta_trace,
       `inferred_beta_values, `annotated_beta_values].map (`Ix.Cert.AnnotatedBeta ++ ·))
+
+/-! ## Actual O6 selector layout through annotation
+
+The real typed openings preserve the exact terminal selector body. Actual
+argument runs agree across fuels in one env/depth, yielding equality with
+the actual checked output, including repeated/reordered arguments and extras.
+No checked beta spine, value preservation or under-binder claim is inferred. -/
+
+/-- info: [cert-audit] O6 annotation layout: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 annotation layout"
+    (#[`annotation_unique, `annotate_apps, `Flat.annotate, `open_close,
+      `annotate_selector_tail, `ReadAnn.unique, `read_ann_apps,
+      `selectors_annotated, `o6_rec_annotation_layout].map (`Ix.CompileCert.O6Annotation ++ ·))
+
+/-! ## Checked lambda spines from original full inference
+
+Actual head inference fixes every lambda/forall domain. The original
+application trace supplies each certified beta, including Prop, without
+intermediate-reduct inference. Bulk substitution and extra arguments are
+derived exactly; the O6 public-value wrapper remains separate. -/
+
+/-- info: [cert-audit] checked beta spines: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked beta spines"
+    (#[`domains_abstract, `inferred_lam_domains, `infer_apps, `trace_beta,
+      `checked_lambda_spine_red].map (`Ix.Cert.CheckedBetaSpine ++ ·))
+
+/-! ## Actual closed O6 recursor rewrite: public equal values
+
+The real pass/image/read/annotation trace and baseline full inference derive
+checked Red/DefEq. Every strong model of that same prefix env gives a common
+public value. No output/reduct inference, N-PERM, CQ5.4 or driver proof is assumed. -/
+
+/-- info: [cert-audit] O6 checked values: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 checked values"
+    #[`Ix.CompileCert.O6Values.o6_rec_values]
+
+/-! ## Actual O6 body beneath one enclosing lambda
+
+Whole annotation/inference runs derive the common opener, reopening,
+Frame and inner inference. The real opened selector layout yields certified
+body Red/DefEq at depth one. Outer marker agreement and whole-lambda values
+remain separate; no final closed-occurrence restriction is introduced. -/
+
+/-- info: [cert-audit] O6 actual opened bodies: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 actual opened bodies"
+    (#[`annotation_reopen, `trace_beta_at, `checked_spine_at, `OpenAnn.unique,
+      `selectors_open_annotated, `opened_layout,
+      `o6_rec_under_lam_opened_red].map (`Ix.CompileCert.O6Opened ++ ·))
+
+/-! ## Whole-lambda markers and actual O6 public values
+
+Two real value fronts against one checked header force marker agreement
+inside each supplied strong model, including empty binder domains. Actual
+body conversion and both reopening identities then give whole-lambda
+DefEq/public values. No model existence or context inhabitant is assumed. -/
+
+/-- info: [cert-audit] O6 whole lambda values: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 whole lambda values"
+    (#[`lam_mem_pi_bits, `infer_package, `lambda_markers_eq_of_fronts].map
+      (`Ix.Cert.LambdaMarkers ++ ·) ++ #[`Ix.CompileCert.O6LambdaValues.o6_rec_under_lam_values])
