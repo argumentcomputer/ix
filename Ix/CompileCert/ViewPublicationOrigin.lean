@@ -1,4 +1,7 @@
 import Ix.CompileCert.OptShapeOrigin
+import Ix.Cert.Resolution
+import Ix.Cert.Claims
+import IxC.Kernel.Verify.Rename.Installs
 
 /-! # Actual view queries and the birth of new memo entries
 
@@ -139,5 +142,227 @@ theorem newMemoViews_built {cenv : CompileEnv} {heads : Array Name} {views : Std
   rcases origin with cached | ⟨_, built⟩
   · rw [absent] at cached; cases cached
   · exact ⟨absent, memoable, built⟩
+
+/-- Insert-once merging preserves the EXACT old value, not just its domain. -/
+theorem memoMerge_keeps {table : Std.HashMap ExactName BlockView}
+    (entries : Array (ExactName × BlockView)) {key : ExactName} {view : BlockView}
+    (hit : table.get? key = some view) : (memoMerge table entries).get? key = some view := by
+  unfold memoMerge
+  rw [← Array.foldl_toList]
+  apply List.foldlRecOn (motive := fun current : Std.HashMap ExactName BlockView =>
+    current.get? key = some view) entries.toList _ hit
+  intro current held pair _
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insertIfNew]
+  split
+  · rename_i fresh
+    have same : pair.1 = key := eq_of_beq fresh.1
+    have absent : current[key]? = none := Std.HashMap.getElem?_eq_none (by simpa only [same] using fresh.2)
+    have present : current[key]? = some view := held
+    rw [present] at absent
+    cases absent
+  · exact held
+
+def MemoOrigins (old : Std.HashMap ExactName BlockView) (entries : Array (ExactName × BlockView))
+    (table : Std.HashMap ExactName BlockView) : Prop :=
+  ∀ (key : ExactName) view, table.get? key = some view → old.get? key = some view ∨ (key, view) ∈ entries
+
+theorem memoMerge_origin {table : Std.HashMap ExactName BlockView}
+    {entries : Array (ExactName × BlockView)} {key : ExactName} {view : BlockView}
+    (hit : (memoMerge table entries).get? key = some view) :
+    table.get? key = some view ∨ (key, view) ∈ entries := by
+  suffices MemoOrigins table entries (memoMerge table entries) from this key view hit
+  unfold memoMerge
+  rw [← Array.foldl_toList]
+  apply List.foldlRecOn
+  · intro k v old; exact .inl old
+  · intro current held pair member k v found
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insertIfNew] at found
+    split at found
+    · rename_i fresh
+      have same : pair.1 = k := eq_of_beq fresh.1
+      subst k
+      cases found
+      exact .inr (Array.mem_toList_iff.mp member)
+    · exact held k v found
+
+/-- A new transition result is the old exact hit or a real producer build. -/
+theorem memoMerge_views_origin {cenv : CompileEnv} {heads : Array Name} {views : Std.HashMap ExactName BlockView}
+    (run : viewsOf cenv heads = .ok views) {key : ExactName} {view : BlockView}
+    (hit : (memoMerge cenv.p3Views (newMemoViews cenv views)).get? key = some view) :
+    cenv.p3Views.get? key = some view ∨
+      cenv.p3Views.get? key = none ∧ viewMemoable cenv key = true ∧ Built cenv key view := by
+  rcases memoMerge_origin hit with old | added
+  · exact .inl old
+  · exact .inr (newMemoViews_built run added)
+
+set_option hygiene false in
+local macro "finish_views" held:term : tactic => `(tactic| (
+  refine Ix.Cert.Resolution.loop_bind
+    (P := fun d : DriverAcc => d.cenv.p3Views = memoMerge acc.cenv.p3Views pub.views)
+    (I := fun _ : Array Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
+  intro _ _
+  exact $held))
+
+set_option hygiene false in
+local macro "merge_views_tail" held:term : tactic => `(tactic| (
+  refine Ix.Cert.Resolution.loop_bind
+    (P := fun d : DriverAcc => d.cenv.p3Views = memoMerge acc.cenv.p3Views pub.views)
+    (I := fun c : CompileEnv => c.p3Views = acc.cenv.p3Views) _ _ _ _ $held
+    (fun _ _ _ h => h) ?_
+  intro L hL
+  refine Ix.Cert.Resolution.loop_bind
+    (P := fun d : DriverAcc => d.cenv.p3Views = memoMerge acc.cenv.p3Views pub.views)
+    (I := fun c : CompileEnv => c.p3Views = acc.cenv.p3Views) _ _ _ _ hL ?_ ?_
+  · intro _ _ _ h; split <;> exact h
+  · intro L' hL'
+    split
+    · refine Ix.Cert.Resolution.loop_bind
+        (P := fun d : DriverAcc => d.cenv.p3Views = memoMerge acc.cenv.p3Views pub.views)
+        (I := fun c : CompileEnv => c.p3Views = memoMerge acc.cenv.p3Views pub.views) _ _ _ _ ?_ ?_ ?_
+      · change memoMerge L'.p3Views pub.views = _
+        rw [hL']
+      · intro cls _ s hs
+        exact Ix.Cert.Resolution.forIn_inv_array
+          (fun c : CompileEnv => c.p3Views = memoMerge acc.cenv.p3Views pub.views)
+          _ cls (by intro _ _ _ h; exact h) s hs
+      · intro _ h; finish_views h
+    · finish_views (by change memoMerge L'.p3Views pub.views = _; rw [hL'])))
+
+/-- Only the memo component is identified; live input fields may change. -/
+theorem mergeCompiledBlock_views (acc : DriverAcc) (lo : Name) (result : BlockResult)
+    (cache : BlockState) (pub : Published) :
+    (mergeCompiledBlock acc lo result cache pub).cenv.p3Views = memoMerge acc.cenv.p3Views pub.views := by
+  unfold mergeCompiledBlock
+  simp only [Id.run]
+  split
+  · split <;> merge_views_tail rfl
+  · refine Ix.Cert.Resolution.loop_bind
+      (P := fun d : DriverAcc => d.cenv.p3Views = memoMerge acc.cenv.p3Views pub.views)
+      (I := fun c : CompileEnv => c.p3Views = acc.cenv.p3Views) _ _ _ _ rfl ?_ ?_
+    · intro _ _ _ h; split <;> exact h
+    · intro _ h; merge_views_tail h
+
+/-- Retention alone is not soundness or reachability of a warm view. -/
+theorem failAuxPromotion_views (acc : DriverAcc) (all : Ix.Set Name) (message : String) :
+    (failAuxPromotion acc all message).cenv.p3Views = acc.cenv.p3Views := by
+  unfold failAuxPromotion
+  simp only [Id.run, Loop.idBind, Loop.idPure]
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  refine Ix.Cert.Resolution.forIn_inv_list (fun state => state.cenv.p3Views = acc.cenv.p3Views)
+    _ _ ?_ acc rfl
+  intros
+  assumption
+
+/-- The post-failure query has a REAL surviving head/owner. Its reused arm
+keeps the same pre-failure value; no current-build equality is inferred. -/
+theorem after_failure_query_origin {acc : DriverAcc} {all : Ix.Set Name} {message : String}
+    {heads : Array Name} {views : Std.HashMap ExactName BlockView}
+    (run : viewsOf (failAuxPromotion acc all message).cenv heads = .ok views)
+    {key : Name} {view : BlockView} (hit : views.get? key = some view) :
+    ∃ h ∈ heads.toList, (failAuxPromotion acc all message).cenv.p3Heads.get? h = some key ∧
+      (acc.cenv.p3Views.get? key = some view ∨
+        Built (failAuxPromotion acc all message).cenv key view) := by
+  obtain ⟨h, member, owner, old | ⟨_, built⟩⟩ := viewsOf_origin run hit
+  · exact ⟨h, member, owner, .inl (by simpa only [failAuxPromotion_views] using old)⟩
+  · exact ⟨h, member, owner, .inr built⟩
+
+open Ix.Kernel (ExPost)
+
+def PublicationOrigin (cenv : CompileEnv) (pub : Published) : Prop :=
+  pub.views = #[] ∨ ∃ heads views, viewsOf cenv heads = .ok views ∧ pub.views = newMemoViews cenv views
+
+theorem PublicationOrigin.entry_built {cenv pub} (origin : PublicationOrigin cenv pub)
+    {key : Name} {view : BlockView} (member : (key, view) ∈ pub.views) :
+    cenv.p3Views.get? key = none ∧ viewMemoable cenv key = true ∧ Built cenv key view := by
+  rcases origin with empty | ⟨_, views, run, shape⟩
+  · rw [empty] at member; simp at member
+  · exact newMemoViews_built run (shape ▸ member)
+
+private theorem post_bind_any {ε α β : Type} {x : Except ε α} {k : α → Except ε β} {P : β → Prop}
+    (next : ∀ a, ExPost (k a) P) : ExPost (x >>= k) P :=
+  ExPost.post_bind.mpr (ExPost.of_forall next)
+
+set_option hygiene false in
+local macro "from_view_run" actual:term : tactic => `(tactic| (
+  repeat' first
+    | dsimp only
+    | (with_reducible apply post_bind_any); intro _
+    | (rw [ExPost.post_pure]; exact Or.inr ⟨_, _, $actual, rfl⟩)
+    | exact ExPost.post_throw.mpr trivial
+    | exact ExPost.post_error.mpr trivial
+    | split))
+
+/-- The clique publication is built at its INPUT snapshot, not an overlay. -/
+theorem rewriteCliqueCanon_origin {cenv : CompileEnv} {sourceAll : Ix.Set Name} {name : Name}
+    {ci next : Ix.ConstantInfo} {sources : Std.HashMap Nat Ix.Expr} {pub : Published}
+    (run : rewriteCliqueCanon cenv sourceAll name ci = .ok (next, sources, pub)) :
+    PublicationOrigin cenv pub := by
+  have post : ExPost (rewriteCliqueCanon cenv sourceAll name ci) (fun r => PublicationOrigin cenv r.2.2) := by
+    unfold rewriteCliqueCanon
+    split
+    · exact ExPost.post_pure.mpr (Or.inl rfl)
+    · dsimp only
+      split
+      · exact ExPost.post_pure.mpr (Or.inl rfl)
+      · rw [ExPost.post_bind]
+        intro views read
+        have actual := Ix.Cert.Claims.mapError_ok read
+        from_view_run actual
+  exact post _ run
+
+set_option hygiene false in
+local macro "collect_view_publication" : tactic => `(tactic| (
+  with_reducible apply post_bind_any
+  intro collection
+  try dsimp only
+  split
+  · exact ExPost.post_pure.mpr (Or.inl rfl)
+  · rw [ExPost.post_bind]
+    intro views read
+    have actual := Ix.Cert.Claims.mapError_ok read
+    from_view_run actual))
+
+/-- Hook2's returned overlay is not substituted for its actual build input. -/
+theorem prepareBlock_origin {cenv next : CompileEnv} {all : Ix.Set Name} {lo : Name} {pub : Published}
+    (run : prepareBlock cenv all lo = .ok (next, pub)) : PublicationOrigin cenv pub := by
+  have post : ExPost (prepareBlock cenv all lo) (fun r => PublicationOrigin cenv r.2) := by
+    unfold prepareBlock
+    split
+    · exact ExPost.post_pure.mpr (Or.inl rfl)
+    · try dsimp only
+      split
+      · try dsimp only
+        split
+        · exact ExPost.post_pure.mpr (Or.inl rfl)
+        · collect_view_publication
+      · collect_view_publication
+  exact post _ run
+
+/-- Successful image compilation publishes only the views from its actual
+input-snapshot viewsOf call, regardless of its later compilation rounds. -/
+theorem compileImageBlock_origin {cenv : CompileEnv} {all : Ix.Set Name}
+    {out : Array (Name × BlockResult × BlockState)} {pub : Published}
+    (run : compileImageBlock cenv all = .ok (out, pub)) : PublicationOrigin cenv pub := by
+  have post : ExPost (compileImageBlock cenv all) (fun r => PublicationOrigin cenv r.2) := by
+    unfold compileImageBlock
+    with_reducible apply post_bind_any
+    intro _
+    rw [ExPost.post_bind]
+    intro views actual
+    from_view_run actual
+  exact post _ run
+
+/-- The live merge keeps an exact old value or admits an entry built at its
+ACTUAL producer snapshot. The two environments are deliberately not equated. -/
+theorem merge_publication_origin {producer : CompileEnv} {acc : DriverAcc} {lo : Name}
+    {result : BlockResult} {cache : BlockState} {pub : Published}
+    (origin : PublicationOrigin producer pub) {key : ExactName} {view : BlockView}
+    (hit : (mergeCompiledBlock acc lo result cache pub).cenv.p3Views.get? key = some view) :
+    acc.cenv.p3Views.get? key = some view ∨
+      producer.p3Views.get? key = none ∧ viewMemoable producer key = true ∧ Built producer key view := by
+  rw [mergeCompiledBlock_views] at hit
+  rcases memoMerge_origin hit with old | added
+  · exact .inl old
+  · exact .inr (origin.entry_built added)
 
 end Ix.CompileCert.ViewPublicationOrigin

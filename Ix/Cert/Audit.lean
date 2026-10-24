@@ -6137,3 +6137,18 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual view query and publication origins"
     (#[`viewOf_origin, `Origins.mono, `Origins.insert, `viewsOf_origins, `viewsOf_origin,
       `newMemoViews_entries, `newMemoViews_built].map (`Ix.CompileCert.ViewPublicationOrigin ++ ·))
+
+/-! ## Actual view publication and transition values
+
+All three real producers supply their own build snapshots. Merges retain
+exact values; post-failure queries retain actual head/owner witnesses. -/
+
+/-- info: [cert-audit] actual view publication transitions: 11 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual view publication transitions"
+    (#[`memoMerge_keeps, `memoMerge_origin, `memoMerge_views_origin, `mergeCompiledBlock_views,
+      `failAuxPromotion_views, `after_failure_query_origin, `PublicationOrigin.entry_built,
+      `rewriteCliqueCanon_origin, `prepareBlock_origin, `compileImageBlock_origin,
+      `merge_publication_origin].map (`Ix.CompileCert.ViewPublicationOrigin ++ ·))
