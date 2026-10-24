@@ -5,7 +5,7 @@ public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.CompileM
 public import Ix.Common
-public import Ix.Tc.Primitive
+public import Ix.PrimAddrs
 
 public section
 

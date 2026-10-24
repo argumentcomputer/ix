@@ -3,14 +3,15 @@
 //!
 //! The compiler shares every block with the tiered canonical construction
 //! ([`canonical_sharing_tiered`], `tiered`; Lean
-//! `Ix.Sharing.Exact.canonicalSharingTiered`): phase 1 is the exact
-//! uniform-width optimizer (`uniform`) at widths 1, 2 and 3, phase 2
+//! `Ix.Sharing.Exact.canonicalSharingTiered`): phase 1 uses the fixed K16
+//! component families (`uniform`) at widths 1, 2 and 3, phase 2
 //! allocates the table slots, phase 3 re-materializes every part under the
 //! real TagN widths, and the candidate with the fewest bytes wins.
 //!
-//! The rest of this module is the global exact minimum of
+//! The optional test-only `sharing-reference` feature also exposes the
+//! global exact minimum of
 //! `docs/sharing-minimum.md` §3, computed by the width-state search
-//! ([`optimize_sharing`], [`normalize_constant_sharing`], `search`). It is
+//! (`optimize_sharing`, `normalize_constant_sharing`, `search`). It is
 //! exponential in the candidates and is a test oracle for small inputs, not
 //! on the compiler path. Given a resolved anonymous Constant (or its ordered
 //! expanded roots), it returns the feasible backward-reference sharing
@@ -42,7 +43,8 @@
 //! - `search`: the sparse width-state dynamic program (§6) with the proved
 //!   reductions R1/R2, the optimistic-dictionary lower bound (§4.1) and a
 //!   materialization lower bound (the test oracle above).
-//! - `uniform`: the exact optimizer for a uniform Share width (phase 1).
+//! - `uniform`: the fixed-family optimizer for a uniform Share width (phase 1),
+//!   with the old exact optimizer isolated behind the reference feature.
 //! - `tiered`: the canonical tiered construction, its checks and its
 //!   checked mode ([`ExactSharingLimits::full_check`]).
 //! - `par`: deterministic task splitting for [`Parallelism`]; `prof`: phase
@@ -69,14 +71,14 @@
 //!   a Share in entry `i` must name an entry `< i`, a Share in a root must
 //!   name an entry `< len`. Out-of-range, forward and cyclic references are
 //!   [`MalformedSharing`] errors, including in unreachable entries.
-//!   [`optimize_sharing`] rejects any Share leaf in its input.
+//!   The reference `optimize_sharing` rejects any Share leaf in its input.
 //! - **Byte tie.** For a fixed table sequence each entry and root is
 //!   materialized as its byte-least minimum-length representation. This
 //!   equals the rule: an inline constructor precedes a Share of the same
 //!   length (flags `0x0..=0xA` < `0xB`); among telescope prefixes of one
 //!   node the least TagN header bytes win (distinct prefix lengths always
 //!   differ inside the header); then children independently.
-//! - **Variable length.** [`ExactSharingResult::variable_len`] is the sum of
+//! - **Variable length.** [`UniformSharingResult::variable_len`] is the sum of
 //!   the root encodings, the table's TagN count and the entry encodings; the
 //!   rest of the Constant is fixed and checked against `Constant::put`.
 //!
@@ -88,9 +90,11 @@
 mod cost;
 mod dag;
 mod dict;
+mod measure;
 mod par;
 mod prof;
 mod roots;
+#[cfg(any(test, feature = "sharing-reference"))]
 mod search;
 mod tiered;
 mod uniform;
@@ -103,6 +107,7 @@ mod oracle;
 mod tests;
 
 use std::fmt;
+#[cfg(any(test, feature = "sharing-reference"))]
 use std::sync::Arc;
 
 pub use cost::{
@@ -112,12 +117,12 @@ pub use cost::{
 pub use dag::{Children, Node, NodeKey, SharingDag, TermId};
 pub use dict::{FixedDictionary, dictionary_cost, materialize_with_dictionary};
 // Diagnostic only (empty without the `sharing-profile` feature).
+pub use measure::{candidate_terms, sequence_len};
 #[doc(hidden)]
 pub use prof::profile_report;
 pub use roots::{
   constant_info_root_count, constant_info_root_exprs, rebuild_constant_info,
 };
-pub use search::{candidate_terms, sequence_len};
 pub use tiered::{
   ShareLayout, TAGN_RUNG1_END, TAGN_RUNG2_END, TAGN_RUNG3_END, TAGN_RUNG4_END,
   TAGN_RUNG5_END, TieredSharingResult, TieredStats, canonical_sharing_tiered,
@@ -125,15 +130,21 @@ pub use tiered::{
   normalize_constant_sharing_tiered, normalize_constant_sharing_tiered_par,
   tagn_width,
 };
+pub use uniform::UniformSharingResult;
+#[cfg(any(test, feature = "sharing-reference"))]
 pub use uniform::{
-  UniformSharingResult, normalize_constant_sharing_uniform,
-  optimize_sharing_uniform,
+  normalize_constant_sharing_uniform, optimize_sharing_uniform,
 };
+// Historical variable-K experiments are private unit-test controls.
+#[cfg(test)]
+pub(crate) use uniform::experimental;
 // The first-tier search of phase 2, for the tests; not part of the API.
 #[cfg(test)]
 pub(crate) use tiered::first_tier;
 
+#[cfg(any(test, feature = "sharing-reference"))]
 use crate::constant::Constant;
+#[cfg(any(test, feature = "sharing-reference"))]
 use crate::expr::Expr;
 
 /// Deterministic resource limits and search options. Exhausting a limit is
@@ -158,14 +169,17 @@ pub struct ExactSharingLimits {
   /// Sharing candidates remaining after reductions R1/R2 (the width-state
   /// search only).
   pub max_candidates: u64,
-  /// Width states created by the dynamic program.
+  /// Reference cost calls precharged by the K16 component families; width
+  /// states created by the dynamic program on the test-only exact route.
   pub max_states: u64,
   /// States in one layer (entries stored) of the dynamic program.
   pub max_layer_states: u64,
   /// Candidate transitions examined.
   pub max_transitions: u64,
-  /// Node evaluations, spine steps and marking steps, per candidate of the
-  /// tiered construction. Its phase 3 charges one evaluation of the whole
+  /// Logical evaluation work, per candidate of the tiered construction.
+  /// K16 phase 1 precharges `(calls + 1) * closure + storedSum`, matching
+  /// Lean's family recipe even when native evaluations reuse prior values.
+  /// Its phase 3 charges one evaluation of the whole
   /// table when the order is closed under stored descendants (one pass), and
   /// one evaluation per table prefix otherwise, so the two paths charge
   /// different amounts for the same output (see `tiered`).
@@ -215,15 +229,10 @@ pub struct ExactSharingLimits {
 ///   tasks, each under its own meter (as in the sequential path), and are
 ///   compared afterwards by the same rule. An error at any width fails the
 ///   call with the error of the lowest failing width, as sequentially.
-/// * `components`: the uncertain components of phase 1 are searched as
-///   separate tasks and their tables combined in component order. Each
-///   component counts its `states_created` and `work` on a meter of its own;
-///   the counts are then added to the call's meter in component order,
-///   checking `states_created` and then `work` after each component. The
-///   totals equal the sequential ones and a call fails if and only if the
-///   sequential call fails, but when both counters reach their limits within
-///   the same component the reported resource can differ from the sequential
-///   path's (which reports whichever was reached first).
+/// * `components`: retained for the test-only unbounded reference solver.
+///   The production K16 family fold is sequential, checking each component's
+///   state precharge before its closure/work precharge regardless of this
+///   budget. Reference tasks accumulate counters in component order.
 /// * `materialize`: the per-prefix phase 3 (an order not closed under
 ///   stored descendants, [`ExactSharingLimits::phase3_per_prefix`], and the
 ///   per-prefix reference of [`ExactSharingLimits::full_check`]) evaluates
@@ -613,6 +622,7 @@ impl<'l> Meter<'l> {
     Ok(())
   }
 
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn candidates(&mut self, k: u64) -> Result<(), SharingError> {
     self.stats.candidates = k;
     if k > self.limits.max_candidates {
@@ -632,6 +642,7 @@ impl<'l> Meter<'l> {
     Ok(())
   }
 
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn state(&mut self) -> Result<(), SharingError> {
     self.stats.states_created = self.stats.states_created.saturating_add(1);
     if self.stats.states_created > self.limits.max_states {
@@ -640,6 +651,7 @@ impl<'l> Meter<'l> {
     Ok(())
   }
 
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn transition(&mut self) -> Result<(), SharingError> {
     self.stats.transitions = self.stats.transitions.saturating_add(1);
     if self.stats.transitions > self.limits.max_transitions {
@@ -651,6 +663,7 @@ impl<'l> Meter<'l> {
     Ok(())
   }
 
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn layer(&mut self, size: u64) -> Result<(), SharingError> {
     self.stats.max_layer = self.stats.max_layer.max(size);
     if size > self.limits.max_layer_states {
@@ -664,6 +677,7 @@ impl<'l> Meter<'l> {
 
   /// Add the `states_created` and `work` counted on another meter (one
   /// parallel task), checking `states_created` and then `work`.
+  #[cfg(any(test, feature = "sharing-reference"))]
   pub(crate) fn absorb(
     &mut self,
     other: &ExactSharingStats,
@@ -689,6 +703,7 @@ impl<'l> Meter<'l> {
 
 /// A certified exact-minimum sharing encoding of ordered expanded roots.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(any(test, feature = "sharing-reference"))]
 pub struct ExactSharingResult {
   /// Rewritten roots, in input order.
   pub roots: Vec<Arc<Expr>>,
@@ -709,6 +724,7 @@ pub struct ExactSharingResult {
 /// The full-Constant key differs from the variable length only by bytes that
 /// do not depend on sharing, so the result is the global minimum of any
 /// Constant with these ordered roots.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn optimize_sharing(
   roots: &[Arc<Expr>],
   limits: &ExactSharingLimits,
@@ -721,6 +737,7 @@ pub fn optimize_sharing(
 /// Expand `c`'s table (validating backward references) and return the
 /// exact-minimum Constant together with its search result (the width-state
 /// search, a test oracle; see [`optimize_sharing`]).
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_sharing_with_stats(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -755,6 +772,7 @@ pub fn normalize_constant_sharing_with_stats(
 
 /// Expand `c`'s table and return its exact-minimum encoding (the test
 /// oracle of [`optimize_sharing`]).
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_sharing(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -764,6 +782,7 @@ pub fn normalize_constant_sharing(
 
 /// Outcome of [`check_exact_minimum`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(any(test, feature = "sharing-reference"))]
 pub enum ExactMinimumCheck {
   /// `c` is its exact-minimum encoding.
   Minimum,
@@ -775,6 +794,7 @@ pub enum ExactMinimumCheck {
 /// against the width-state search, the test oracle of [`optimize_sharing`]
 /// (Lean `checkExactMinimum`). It does not check the compiler's
 /// canonical construction ([`canonical_sharing_tiered`]).
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn check_exact_minimum(
   c: &Constant,
   limits: &ExactSharingLimits,
@@ -791,7 +811,7 @@ pub fn check_exact_minimum(
   })
 }
 
-/// Failure of [`normalize_constant_bytes`].
+/// Failure of byte-level normalization, including the canonical tiered entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NormalizeBytesError {
   /// The input is not exactly one wire-valid serialized Constant.
@@ -813,6 +833,7 @@ impl std::error::Error for NormalizeBytesError {}
 /// Byte-level normalization: decode exactly one serialized Constant (no
 /// trailing bytes), expand and validate its table, and return the serialized
 /// exact-minimum Constant (the test oracle of [`optimize_sharing`]).
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_bytes(
   bytes: &[u8],
   limits: &ExactSharingLimits,
@@ -835,6 +856,7 @@ pub fn normalize_constant_bytes(
 /// Byte-level uniform-width normalization: decode exactly one serialized
 /// Constant, re-share it with the uniform-width optimum for Share width `w`,
 /// and return the serialized result.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_bytes_uniform(
   w: u64,
   bytes: &[u8],

@@ -30,7 +30,7 @@ fact kills both branches outright:
 * `T ≠ c₀.name` — if they were equal the family's own lookup would
   return the cons, i.e. a `recInfo`, where `CapsOk`'s premise says
   `indInfo`;
-* `caps.etaCtor ≠ c₀.name` — same argument at `EtaFamilyStored`'s
+* `caps.etaCtor ≠ some c₀.name` — same argument at `EtaFamilyStored`'s
   second conjunct, which says `ctorInfo`.
 
 So neither closure fact is needed, no `isProjFnShape` side condition
@@ -50,33 +50,33 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-- **The projection cons's η split** (`memberEtaSplit`'s twin at a
 `recInfo` head, V-free).  Either the family descends untouched — with
 the three disequalities the transport needs — or the cons completes
 it, at the cons's own former and field index. -/
-theorem projEtaSplit {c₀ : ConstantInfo} {T₀ : Name} {i : Nat}
+theorem projEtaSplit {c₀ : ConstantInfo md} {T₀ : Key md} {i : Nat}
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)
-    {T : Name} {cvT : ConstantVal} {caps : IndCaps}
-    (hfT : (⟨c₀ :: env.consts⟩ : Env).find? T
+    {T : Key md} {cvT : ConstantVal md} {caps : IndCaps md}
+    (hfT : (⟨c₀ :: env.consts⟩ : Env md).find? T
       = some (.indInfo cvT caps))
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
     (env.find? T = some (.indInfo cvT caps) ∧
         Ix.Kernel.EtaFamilyStored env T caps ∧
-        T ≠ c₀.name ∧ caps.etaCtor ≠ c₀.name ∧
+        T ≠ c₀.name ∧ caps.etaCtor ≠ some c₀.name ∧
         ∀ j, j < caps.etaFields → Ix.Kernel.projFnName T j ≠ c₀.name) ∨
       (T = T₀ ∧ i < caps.etaFields) := by
   obtain ⟨cvr, mIr, rPr, rulesr, hc₀eq⟩ := hc₀rec
-  have hdown : ∀ n : Name, n ≠ c₀.name →
-      (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
+  have hdown : ∀ n : Key md, n ≠ c₀.name →
+      (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
   -- the former is not the cons: the cons is a `recInfo`
@@ -85,11 +85,13 @@ theorem projEtaSplit {c₀ : ConstantInfo} {T₀ : Name} {i : Nat}
     rw [hh, Ix.Kernel.Env.find?_cons_self, hc₀eq] at hfT
     exact nomatch hfT
   -- the capability constructor is not the cons: same argument
-  have hC0 : caps.etaCtor ≠ c₀.name := by
+  obtain ⟨C, hC, hCres, ⟨cvC, hfC⟩, hfP⟩ := hfam
+  have hC0' : C ≠ c₀.name := by
     intro hh
-    obtain ⟨-, ⟨cvC, hfC⟩, -⟩ := hfam
     rw [hh, Ix.Kernel.Env.find?_cons_self, hc₀eq] at hfC
     exact nomatch hfC
+  have hC0 : caps.etaCtor ≠ some c₀.name := fun h =>
+    hC0' (Option.some.inj (hC.symm.trans h))
   by_cases hhit : ∃ j, j < caps.etaFields ∧
       Ix.Kernel.projFnName T j = c₀.name
   · -- the cons completes the family: identify it
@@ -104,9 +106,8 @@ theorem projEtaSplit {c₀ : ConstantInfo} {T₀ : Name} {i : Nat}
         Ix.Kernel.projFnName T j ≠ c₀.name := by
       intro j hj hh
       exact hhit ⟨j, hj, hh⟩
-    obtain ⟨hCres, ⟨cvC, hfC⟩, hfP⟩ := hfam
     refine ⟨by rwa [hdown _ hT0] at hfT,
-      ⟨hCres, ⟨cvC, by rwa [hdown _ hC0] at hfC⟩, ?_⟩, hT0, hC0, hnP⟩
+      ⟨C, hC, hCres, ⟨cvC, by rwa [hdown _ hC0'] at hfC⟩, ?_⟩, hT0, hC0, hnP⟩
     intro j hj
     obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
     rw [hdown _ (hnP j hj)] at hf2
@@ -124,19 +125,19 @@ descends by kind at once, and — post-repair — the unit half carries no
 family premise to re-establish. -/
 theorem capsOk_cons_proj (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm} {T₀ : Name} {i : Nat}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Key md} {i : Nat}
     (hfresh : env.find? c₀.name = none)
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
     -- the one live row: the family this cons completes
-    (hcomplete : ∀ (cvT : ConstantVal) (caps : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T₀ = some (.indInfo cvT caps) →
+    (hcomplete : ∀ (cvT : ConstantVal md) (caps : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T₀ = some (.indInfo cvT caps) →
       caps.eta = true → i < caps.etaFields →
       Ix.Kernel.reservedBasisNames.contains T₀ = false →
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T₀ caps →
-      ∀ φ' : Name → Nat, EtaLaw m₂ φ' T₀ cvT caps) :
+      ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T₀ cvT caps) :
     CapsOk m₂ := by
   have hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps := by
     obtain ⟨cvr, mIr, rPr, rulesr, rfl⟩ := hc₀rec
@@ -152,9 +153,10 @@ theorem capsOk_cons_proj (mp : EnvModelM V μ env)
     rcases projEtaSplit hc₀name hc₀rec hf hfam with
       ⟨hfE, hfam₀, hnT, hnC, hnP⟩ | ⟨rfl, hlt⟩
     · -- descends: the transport, verbatim
-      intro us hlen
+      intro C hC us hlen
+      have hnC' : C ≠ c₀.name := fun h => hnC (h ▸ hC)
       obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-        hprev.1 T cvT caps hfE hcape hres hfam₀ φ' us hlen
+        hprev.1 T cvT caps hfE hcape hres hfam₀ φ' C hC us hlen
       refine ⟨TVa, ?_, hokTVa, ?_⟩
       · rw [hac]
         exact denoteMeta_cons_fresh_mono hfresh hntc _ 0 _
@@ -174,7 +176,7 @@ theorem capsOk_cons_proj (mp : EnvModelM V μ env)
           refine congrArg _ (List.map_congr_left fun j hj => ?_)
           dsimp only
           rw [hac, acvalWith_ne (hnP j (List.mem_range.mp hj))]
-        rw [hfab, hac, acvalWith_ne hnC]
+        rw [hfab, hac, acvalWith_ne hnC']
         exact hlaw ρ ts rest x hlents hfit hmem
     · -- completes: the live row
       exact hcomplete cvT caps hf hcape hlt hres hfam φ'

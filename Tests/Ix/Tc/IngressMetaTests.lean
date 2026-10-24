@@ -13,7 +13,7 @@ Meta-mode ingress tests (`tc-unit` entries + `tc-ingress-meta` ignored).
 
 Pure fixtures (tc-unit):
 - metadata lands in the kernel types (constant names, level params, binder
-  names/infos, mdata layers, call-site head names);
+  names/infos, mdata layers);
 - anon/meta ADDRESS PARITY: metadata is never hashed, so the meta ingress
   of a constant must produce byte-identical `ty`/`val` addresses to the
   anon ingress of the same env;
@@ -199,52 +199,6 @@ def metaLamSynthFallback : Bool := Id.run do
     match kenv.get? ⟨dAddr, nId⟩ with
     | some (.defn (val := .lam n _ _ _ _) ..) =>
       return n == Ix.Name.mkStr Ix.Name.mkAnon "_s0"
-    | _ => return false
-
-open Tests.Tc.Fixtures in
-/-- A `callSite` arena node distributes canonical-arg metadata and names
-    the head from the call-site's `name` field. -/
-def metaCallSiteFixture : Bool := Id.run do
-  let (env, aAddr) := envA
-  -- f : A → A (reuse idA-shaped constant under a different name source),
-  -- g : A := @f @A-axiom? Keep it minimal: value `(@f x…)` needs a bound
-  -- var — use `fun (x : A) => f x` with a callSite over the `f x` spine.
-  let f : Ixon.Constant :=
-    ⟨.defn ⟨.defn, .safe, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]),
-      .leanLam (.ref 0 #[]) (.var 0)⟩, #[], #[aAddr], #[]⟩
-  let (env, fAddr) := storeConst env f
-  let nF := Ix.Name.mkStr Ix.Name.mkAnon "f"
-  let g : Ixon.Constant :=
-    ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[],
-      .leanLam (.ref 0 #[]) (.app (.ref 1 #[]) (.var 0))⟩,
-     #[], #[aAddr, fAddr], #[]⟩
-  let (env, gAddr) := storeConst env g
-  let nG := Ix.Name.mkStr Ix.Name.mkAnon "g"
-  -- Arena: [0] ref A (g ty), [1] ref A (lam domain), [2] leaf (var),
-  -- [3] callSite f #[kept 0 2] canonMeta=[2], [4] binder x over (1, 3).
-  let arena : Ixon.ExprMetaArena := ⟨#[
-    .ref nA.getHash,
-    .ref nA.getHash,
-    .leaf,
-    .callSite nF.getHash #[.kept 0 2] #[2] none,
-    .binder nX.getHash .default 1 3
-  ]⟩
-  let cm : Ixon.ConstantMeta := .new (.defn nG.getHash #[] #[] #[] arena 0 4)
-  let env := withNamed env nG gAddr cm (extraNames := [nX, nF])
-  let env := withNamed env nF fAddr
-    (.new (.defn nF.getHash #[] #[] #[]
-      ⟨#[.ref nA.getHash, .ref nA.getHash, .binder nX.getHash .default 0 1,
-         .ref nA.getHash, .leaf, .binder nX.getHash .default 3 4]⟩ 2 5))
-  let env := withNamed env nA aAddr
-    (.new (.axio nA.getHash #[] ⟨#[.leaf]⟩ 0))
-  match ingressAllMeta env with
-  | .error _ => return false
-  | .ok kenv =>
-    match kenv.get? ⟨gAddr, nG⟩ with
-    | some (.defn (val := .lam _ _ _ (.app fk _ _) _) ..) =>
-      match fk with
-      | .const id _ _ => return id.name == nF && id.addr == fAddr
-      | _ => return false
     | _ => return false
 
 /-! ### Level-spelling decorations (canonicity §10.6, stage 1)
@@ -457,7 +411,6 @@ def unitTests : List TestSeq :=
         metaRefMissingArenaCaught
     ++ test "meta soft fallback: lam without arena gets synth name"
         metaLamSynthFallback
-    ++ test "meta callSite: head named from call-site" metaCallSiteFixture
     ++ test "decor: weird sort carries stored spelling" dsDecor
     ++ test "decor: semantic addr is the reduced form's" dsAddr
     ++ test "decor: anon/meta addr parity survives decoration" dsParity

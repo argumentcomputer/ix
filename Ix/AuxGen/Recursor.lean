@@ -31,12 +31,16 @@
   so the embedded blake3 hashes stay bit-identical with the Rust compiler.
 -/
 module
-public import Ix.AuxGen.Kernel
+public import Ix.AuxGen.AuxKernel
 public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError)
+-- A7 (D8): out-of-range array accesses are named errors (`arrIdx`, or a
+-- bounds-carrying access where the index is proved in range).
+
+
+open Ix.CompileM (CompileM CompileError arrIdx)
 
 /-! ## Environment view (overlay + base env)
 
@@ -52,6 +56,14 @@ def envGet (overlay : Option (Std.HashMap Name ConstantInfo)) (name : Name) :
   match overlay.bind (·.get? name) with
   | some ci => return some ci
   | none => lookupConst? name
+
+/-- The overlay alone, as a lookup: what the recursor route's IxC scopes read
+    before the input's declarations (AuxGen M5c, `AuxScope.new`'s
+    `overlay`), so a nested block's synthetic auxiliaries are stuck
+    inductives for the fast paths, as for `Ix.Tc`. -/
+def overlayGet (overlay : Option (Std.HashMap Name ConstantInfo)) (name : Name) :
+    Option ConstantInfo :=
+  overlay.bind (·.get? name)
 
 /-! ## Inductive recursor-structural decomposition (kernel-backed) -/
 
@@ -73,18 +85,20 @@ def envGet (overlay : Option (Std.HashMap Name ConstantInfo)) (name : Name) :
     - fewer Pi binders than `paramFvars.size` (even after WHNF);
     - the final body isn't a `Sort` after peeling every leading Pi. -/
 def decomposeInductiveType (ind : InductiveVal) (indUnivs : Array Level)
-    (paramFvars : Array LocalDecl) (maps : AddrMaps) : KBridgeM IndRecInfo := do
+    (paramFvars : Array LocalDecl) (kernel : AuxKernel)
+    (overlay : Option (Std.HashMap Name ConstantInfo) := none) : KBridgeM IndRecInfo := do
   let nParams := paramFvars.size
   let ty := substLevels ind.cnst.type ind.cnst.levelParams indUnivs
 
   -- TcScope pre-populated with the caller's param FVars. As we peel
   -- indices, each is pushed into the scope so subsequent `whnfLean` calls
   -- see them as locals.
-  let mut scope ← TcScopeSt.new paramFvars ind.cnst.levelParams maps
+  let mut scope ← AuxScope.new kernel paramFvars ind.cnst.levelParams (route := .recursor)
+    (overlay := overlayGet overlay)
 
   let mut cur := ty
   if !(cur matches .forallE ..) then
-    cur ← scope.whnfLean cur
+    cur ← scope.whnfOrInput cur
 
   -- Instantiate `nParams` leading Pi's with the caller's param FVars.
   -- No WHNF between substitutions unless a post-substitution head is
@@ -92,10 +106,10 @@ def decomposeInductiveType (ind : InductiveVal) (indUnivs : Array Level)
   for p in [0:nParams] do
     match cur with
     | .forallE _ _ body _ _ =>
-      let paramFv := Expr.mkFVar paramFvars[p]!.fvarName
+      let paramFv := Expr.mkFVar (← arrIdx paramFvars p "decomposeInductiveType: param fvar").fvarName
       cur := instantiate1 body paramFv
       if !(cur matches .forallE ..) then
-        cur ← scope.whnfLean cur
+        cur ← scope.whnfOrInput cur
     | _ =>
       throw (.invalidMutualBlock
         s!"decompose_inductive_type({ind.cnst.name.pretty}): fewer than \
@@ -108,7 +122,7 @@ def decomposeInductiveType (ind : InductiveVal) (indUnivs : Array Level)
   let mut idxI : Nat := 0
   repeat
     if !(cur matches .forallE ..) then
-      let after ← scope.whnfLean cur
+      let after ← scope.whnfOrInput cur
       if !(after matches .forallE ..) then
         cur := after
         break
@@ -118,7 +132,7 @@ def decomposeInductiveType (ind : InductiveVal) (indUnivs : Array Level)
       let (fvName, fv) := freshFVar "idx" idxI
       let decl : LocalDecl :=
         { fvarName := fvName, binderName := name, domain := dom, info := bi }
-      scope ← scope.pushLocals #[decl]
+      scope ← scope.push #[decl]
       indices := indices.push decl
       cur := instantiate1 body fv
       idxI := idxI + 1
@@ -193,48 +207,34 @@ def abstractSpecParamsToBVars (specParams : Array Expr)
         m.insert d.fvarName i
     specParams.map fun sp => batchAbstract sp fvarMap n 0
 
-/-- Mirrors Rust `try_detect_nested_fvar` (aux_gen/nested.rs:2003).
-
-    Check if a field domain contains a nested inductive occurrence and, if
-    so, add an auxiliary entry to the flat block. A nested occurrence is:
-    after peeling foralls, the result is `ExtInd args` where `ExtInd` is a
-    previously-declared inductive (not in our block) and some parameter arg
-    mentions an original block inductive. Rust mutates `flat`/`aux_seen`
-    in place; here they are passed and returned. -/
-def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
+/-- Test one application without reducing or peeling it. A recognized
+occurrence stops the source preorder even when its specialization was already
+seen, just as `replaceAllNested` stops at a replacement. -/
+def tryDetectNestedFVarAt (dom : Expr) (blockNames : Std.HashSet Name)
     (flat : Array FvarFlatMember)
     (auxSeen : Array (Name × Array Address × Array Address))
     (overlay : Option (Std.HashMap Name ConstantInfo))
     (blockParamFvarNames : Array Name) :
     CompileM
-      (Array FvarFlatMember × Array (Name × Array Address × Array Address)) := do
-  -- Peel foralls structurally to get to the result type. Note: NOT
-  -- forallTelescope — peeled binders introduce BVars in the body, which
-  -- `hasInvalidSpecRef` flags if they leak into a spec_param.
-  let mut cur := dom
-  repeat
-    match cur with
-    | .forallE _ _ body _ _ => cur := body
-    | _ => break
-
-  let (head, args) := decomposeApps cur
-  let .const headName headLevels _ := head | return (flat, auxSeen)
+      (Bool × Array FvarFlatMember × Array (Name × Array Address × Array Address)) := do
+  let (head, args) := decomposeApps (stripMdataRef dom)
+  let .const headName headLevels _ := head | return (false, flat, auxSeen)
 
   -- Skip if head is in the original block (direct recursive, not nested).
   if blockNames.contains headName then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
   -- Skip if head is already a non-auxiliary flat member.
   if flat.any (fun m => m.name == headName && blockNames.contains m.name) then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
 
   -- Verify head is an external inductive.
-  let (extNParams, extNIndices) ← match ← envGet overlay headName with
-    | some (.inductInfo v) => pure (v.numParams, v.numIndices)
-    | _ => return (flat, auxSeen)
+  let (extNParams, extNIndices, extAll) ← match ← envGet overlay headName with
+    | some (.inductInfo v) => pure (v.numParams, v.numIndices, v.all)
+    | _ => return (false, flat, auxSeen)
 
   -- Must have at least extNParams applied args.
   if args.size < extNParams then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
 
   -- Some parameter arg must mention an *original* block inductive
   -- (deliberately NOT extended with flat-stored aux names — see the Rust
@@ -242,14 +242,14 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
   let hasNestedRef :=
     (args.extract 0 extNParams).any (exprMentionsAnyName · blockNames)
   if !hasNestedRef then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
 
   -- Extract spec_params (first extNParams args) and reject invalid refs
   -- (free BVars from domain-local foralls, non-param FVars).
   let specParams : Array Expr := args.extract 0 extNParams
   for sp in specParams do
     if hasInvalidSpecRef sp blockParamFvarNames then
-      return (flat, auxSeen)
+      return (false, flat, auxSeen)
 
   -- Dedup by the complete nested application identity. Universe arguments
   -- remain distinct even when the family and term-parameter spine agree.
@@ -260,17 +260,90 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
         && ((levels.zip levelHashes).all fun (a, b) => a == b)
         && hashes.size == specHashes.size
         && ((hashes.zip specHashes).all fun (a, b) => a == b)) then
-    return (flat, auxSeen)
-  let auxSeen := auxSeen.push (headName, levelHashes, specHashes)
+    return (true, flat, auxSeen)
+  -- Lean's rule (`elim_nested_inductive_fn`; A0, WB-A1): the first
+  -- occurrence of an external inductive `I As` registers an auxiliary for
+  -- EVERY member `J As` of I's mutual group, in group order, and marks each
+  -- one seen, so a later occurrence of a sibling dedups instead of opening
+  -- a second copy of the group. Use the raw levels from the Const node in
+  -- the constructor type. Mirrors Rust `try_detect_nested_fvar`.
+  let group : Array Name := if extAll.isEmpty then #[headName] else extAll
+  let mut flat := flat
+  let mut auxSeen := auxSeen
+  for jName in group do
+    if auxSeen.any (fun (name, levels, hashes) =>
+        name == jName && levels == levelHashes && hashes == specHashes) then
+      continue
+    let dims : Option (Nat × Nat) ←
+      if jName == headName then pure (some (extNParams, extNIndices))
+      else do
+        match ← envGet overlay jName with
+        | some (.inductInfo v) => pure (some (v.numParams, v.numIndices))
+        | _ => pure none
+    let some (ownParams, nIndices) := dims | continue
+    auxSeen := auxSeen.push (jName, levelHashes, specHashes)
+    flat := flat.push
+      { name := jName
+        specParams
+        occurrenceLevelArgs := headLevels
+        ownParams
+        nIndices }
+  return (true, flat, auxSeen)
 
-  -- Use the raw levels from the Const node in the constructor type.
-  let flat := flat.push
-    { name := headName
-      specParams
-      occurrenceLevelArgs := headLevels
-      ownParams := extNParams
-      nIndices := extNIndices }
-  return (flat, auxSeen)
+/-- A proof-only measure; no structural-size walk is executed at runtime. -/
+noncomputable def nestedScanWeight : List Expr → Nat
+  | [] => 0
+  | expr :: rest => sizeOf expr + nestedScanWeight rest
+
+private theorem nestedScanExpr_size_pos (expr : Expr) : 0 < sizeOf expr := by
+  cases expr <;> simp <;> omega
+
+/-- Source preorder over a constructor's remaining syntax, after its block
+parameters have been opened. Field-local bound variables stay loose in a
+candidate parameter and are rejected by `hasInvalidSpecRef`; block parameters
+are the permitted FVars. Recognition prunes the whole application. The visited
+set is local to this constructor, as in the source expansion's walk cache. -/
+def scanNestedFVars (blockNames : Std.HashSet Name)
+    (overlay : Option (Std.HashMap Name ConstantInfo))
+    (blockParamFvarNames : Array Name) (work : List Expr)
+    (flat : Array FvarFlatMember)
+    (auxSeen : Array (Name × Array Address × Array Address))
+    (visited : Std.HashSet Address) :
+    CompileM (Array FvarFlatMember × Array (Name × Array Address × Array Address)) := do
+  match work with
+  | [] => return (flat, auxSeen)
+  | expr :: rest =>
+    if visited.contains expr.getHash then
+      return ← scanNestedFVars blockNames overlay blockParamFvarNames rest flat auxSeen visited
+    let visited := visited.insert expr.getHash
+    let (recognized, flat, auxSeen) ←
+      tryDetectNestedFVarAt expr blockNames flat auxSeen overlay blockParamFvarNames
+    if recognized then
+      return ← scanNestedFVars blockNames overlay blockParamFvarNames rest flat auxSeen visited
+    match expr with
+    | .app fn arg _ =>
+      scanNestedFVars blockNames overlay blockParamFvarNames (fn :: arg :: rest) flat auxSeen visited
+    | .lam _ type body _ _ | .forallE _ type body _ _ =>
+      scanNestedFVars blockNames overlay blockParamFvarNames (type :: body :: rest) flat auxSeen visited
+    | .letE _ type value body _ _ =>
+      scanNestedFVars blockNames overlay blockParamFvarNames (type :: value :: body :: rest) flat auxSeen visited
+    | .mdata _ inner _ | .proj _ _ inner _ =>
+      scanNestedFVars blockNames overlay blockParamFvarNames (inner :: rest) flat auxSeen visited
+    | _ => scanNestedFVars blockNames overlay blockParamFvarNames rest flat auxSeen visited
+termination_by nestedScanWeight work
+decreasing_by
+  all_goals simp only [nestedScanWeight]
+  all_goals first
+    | exact Nat.lt_add_of_pos_left (nestedScanExpr_size_pos _)
+    | simp_wf; omega
+
+def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
+    (flat : Array FvarFlatMember)
+    (auxSeen : Array (Name × Array Address × Array Address))
+    (overlay : Option (Std.HashMap Name ConstantInfo))
+    (blockParamFvarNames : Array Name) :
+    CompileM (Array FvarFlatMember × Array (Name × Array Address × Array Address)) :=
+  scanNestedFVars blockNames overlay blockParamFvarNames [dom] flat auxSeen {}
 
 /-- Mirrors Rust `build_compile_flat_block_with_overlay`
     (aux_gen/nested.rs:1734).
@@ -321,7 +394,7 @@ inductive)")
   -- occurrences; new auxiliary entries are appended and processed later.
   let mut qi := 0
   while qi < flat.size do
-    let member := flat[qi]!
+    let member ← arrIdx flat qi "buildCompileFlatBlockWithOverlay: queue"
     qi := qi + 1
 
     let (ctorNames, levelParams) ← match ← envGet overlay member.name with
@@ -329,8 +402,8 @@ inductive)")
       | _ => continue
 
     for ctorName in ctorNames do
-      let (ctorNFields, ctorTyp) ← match ← envGet overlay ctorName with
-        | some (.ctorInfo c) => pure (c.numFields, c.cnst.type)
+      let ctorTyp ← match ← envGet overlay ctorName with
+        | some (.ctorInfo c) => pure c.cnst.type
         | _ => continue
 
       -- Substitute the external inductive's level params with the concrete
@@ -340,23 +413,22 @@ inductive)")
       -- Peel ownParams foralls, substituting with FVar-form spec_params.
       let mut cur := ctorTyInst
       for j in [0:member.ownParams] do
+        cur := stripMdataRef cur
         match cur with
         | .forallE _ _ body _ _ =>
-          if j < member.specParams.size then
-            cur := instantiate1 body member.specParams[j]!
+          if h : j < member.specParams.size then
+            cur := instantiate1 body member.specParams[j]
           else
             continue -- Shouldn't happen for well-formed types.
         | _ => break
 
-      -- Open field foralls into FVars; each field domain is now in FVar
-      -- space (block-param FVars + earlier-field FVars).
-      let (_, fieldDecls, _) := forallTelescope cur ctorNFields "nf" 0
-
-      for decl in fieldDecls do
-        let (flat', auxSeen') ← tryDetectNestedFVar decl.domain blockNameSet
-          flat auxSeen overlay blockParamFvarNames
-        flat := flat'
-        auxSeen := auxSeen'
+      -- Scan the remaining constructor syntax in source preorder. In
+      -- particular, `Id (List T)` contains the occurrence `List T` even
+      -- though its outer head is a definition. Do not delta-reduce heads.
+      let (flat', auxSeen') ← tryDetectNestedFVar cur blockNameSet
+        flat auxSeen overlay blockParamFvarNames
+      flat := flat'
+      auxSeen := auxSeen'
 
   -- Convert FVar-form spec_params back to BVar form for the output.
   return flat.map fun entry =>
@@ -501,11 +573,13 @@ structure Binder where
     Collect the first `n` forall binders from an expression, stripping
     outParam/semiOutParam/optParam/autoParam wrappers from domains
     (Lean's `consume_type_annotations` in `mk_local_decl`,
-    inductive.cpp:179). -/
+    inductive.cpp:179). Metadata on the forall spine is transparent, as
+    it is for `forallTelescope`; domain metadata remains intact. -/
 def collectBinders (expr : Expr) (n : Nat) : Array Binder := Id.run do
   let mut binders : Array Binder := #[]
   let mut cur := expr
   for _ in [0:n] do
+    cur := stripMdataRef cur
     match cur with
     | .forallE name dom body bi _ =>
       let cleanDom := consumeTypeAnnotations dom
@@ -599,7 +673,7 @@ partial def hasLooseBVarInExplicitDomain (e : Expr) (target : Nat)
     (`refs/lean4/src/Lean/Expr.lean:1362-1368`): marks explicit binders
     implicit when the binder's own BVar appears in an explicit domain
     downstream. -/
-partial def inferImplicit (ty : Expr) (numParams : Nat) : Expr :=
+def inferImplicit (ty : Expr) (numParams : Nat) : Expr :=
   if numParams == 0 then ty
   else match ty with
   | .forallE name dom body bi _ =>
@@ -664,8 +738,8 @@ def matchClassesAgainstApp (ty : Expr) (classes : Array FlatInfo)
     are cache-hot. The scope is left balanced. Mirrors
     `kernel/inductive.cpp::is_rec_argument`. -/
 def findRecTarget (dom : Expr) (classes : Array FlatInfo)
-    (paramFvars : Array Expr) (nParams : Nat) (scope : TcScopeSt) :
-    KBridgeM (Option Nat × TcScopeSt) := do
+    (paramFvars : Array Expr) (nParams : Nat) (scope : AuxScope) :
+    KBridgeM (Option Nat × AuxScope) := do
   let mut scope := scope
   -- Phase 1: syntactic peel + match.
   let mut ty := dom
@@ -681,26 +755,47 @@ def findRecTarget (dom : Expr) (classes : Array FlatInfo)
     | _ => break
 
   -- Pre-warm the kernel cache for `dom` (result discarded; see Rust doc).
-  discard <| scope.whnfLean dom
+  scope.warm dom
 
   if let some ci := phase1Match then
     return (some ci, scope)
 
   -- Phase 2: WHNF fallback for reducible-alias heads.
-  let mut ty2 ← scope.whnfLean dom
-  let mut pushed : Array LocalDecl := #[]
-  repeat
-    match ty2 with
-    | .forallE name d body bi _ =>
-      let (fvName, fv) := freshFVar "frt" pushed.size
-      let decl : LocalDecl :=
-        { fvarName := fvName, binderName := name, domain := d, info := bi }
-      scope ← scope.pushLocals #[decl]
-      pushed := pushed.push decl
-      ty2 ← scope.whnfLean (instantiate1 body fv)
-    | _ => break
-  scope ← scope.popLocals pushed
-  return (matchClassesAgainstApp ty2 classes paramFvars nParams, scope)
+  let phase2 (scope : AuxScope) (whnf : AuxScope → Expr → KBridgeM Expr) :
+      KBridgeM (Option Nat × AuxScope) := do
+    let mut scope := scope
+    let mut ty2 ← whnf scope dom
+    let mut pushed : Array LocalDecl := #[]
+    repeat
+      match ty2 with
+      | .forallE name d body bi _ =>
+        let (fvName, fv) := freshFVar "frt" pushed.size
+        let decl : LocalDecl :=
+          { fvarName := fvName, binderName := name, domain := d, info := bi }
+        scope ← scope.push #[decl]
+        pushed := pushed.push decl
+        ty2 ← whnf scope (instantiate1 body fv)
+      | _ => break
+    scope ← scope.pop pushed
+    return (matchClassesAgainstApp ty2 classes paramFvars nParams, scope)
+
+  -- AuxGen M4: with the recursor generator on IxC, a field whose type names
+  -- no member of the block's classes cannot reduce to one of them (the
+  -- environment's definitions precede the block), so it is not recursive
+  -- and its Phase 2 asks nothing. Under `shadow` and `fallbackEager`,
+  -- `Ix.Tc` still decides it as before, and a disagreement is counted.
+  if scope.skipsUnmentioned then
+    if !Ixc.mentionsConst dom (fun n => classes.any (·.allNames.any (· == n))) then
+      if scope.checksSkips then
+        let (tc?, scope') ← phase2 scope fun s e => s.whnfTcOrInput e
+        scope := scope'
+        if tc?.isSome then
+          bumpIxc fun st => (st.sample s!"skipped field decided recursive by Ix.Tc") |>
+            fun st => { st with recSkipDiffer := st.recSkipDiffer + 1 }
+      bumpIxc fun st => { st with recSkipped := st.recSkipped + 1 }
+      return (none, scope)
+
+  phase2 scope fun s e => s.whnfOrInput e (named := false)
 
 /-! ## Motive types (recursor.rs:1194) -/
 
@@ -714,16 +809,54 @@ def buildMotiveType (indInfo : IndRecInfo) (elimLevel : Level) : Expr :=
   let decls : Array LocalDecl := indInfo.indices.push indInfo.major
   mkForall sort decls
 
+/-- Peel `n` index binders of an auxiliary member's instantiated type: the
+    leading Pi's as they stand, and through the kernel's `whnf` where the
+    head is not a Pi (WB-A3: `Ext α : Fam` with `abbrev Fam := Nat → Type`),
+    as `decomposeInductiveType` does for the originals and Lean's kernel
+    (`mk_rec_infos`) for every member. The scope over the block parameters
+    (`paramDecls`, universe parameters `levelParams`) is opened only when a
+    head is stuck, so a syntactic telescope costs no kernel call and gives
+    exactly `forallTelescope`'s binders. Mirrors Rust `peel_aux_indices`. -/
+def peelAuxIndices (ty : Expr) (n : Nat) (pfx : String)
+    (paramDecls : Array LocalDecl) (levelParams : Array Name) (kernel : AuxKernel)
+    (overlay : Option (Std.HashMap Name ConstantInfo) := none) :
+    KBridgeM (Array Expr × Array LocalDecl × Expr) := do
+  let (fvars, decls, rest) := forallTelescope ty n pfx 0
+  if decls.size == n then return (fvars, decls, rest)
+  let start := decls.size
+  let mut scope ← AuxScope.new kernel (paramDecls ++ decls) levelParams (route := .recursor)
+    (overlay := overlayGet overlay)
+  let mut fvars := fvars
+  let mut decls := decls
+  let mut cur := rest
+  for i in [start:n] do
+    cur := stripMdataRef cur
+    if !(cur matches .forallE ..) then
+      cur ← scope.whnfOrInput cur
+    match cur with
+    | .forallE name dom body bi _ =>
+      let (fvName, fv) := freshFVar pfx i
+      let decl : LocalDecl :=
+        { fvarName := fvName, binderName := name, domain := dom, info := bi }
+      scope ← scope.push #[decl]
+      decls := decls.push decl
+      fvars := fvars.push fv
+      cur := instantiate1 body fv
+    | _ => break
+  return (fvars, decls, cur)
+
 /-- Mirrors Rust `build_motive_type_aux` (recursor.rs:1226).
 
     Motive type for an auxiliary (nested) flat member: for a nested
     occurrence `J Ds` the motive type is
     `∀ (indices...) (t : J Ds indices), Sort u`, with `Ds` the FVar-form
-    spec_params. Uses FVar-based index peeling so dependent index domains
-    are correctly instantiated. -/
+    spec_params. Uses FVar-based index peeling (`peelAuxIndices`) so
+    dependent index domains are correctly instantiated and an index behind
+    a reducible alias is found. -/
 def buildMotiveTypeAux (member : FlatInfo) (_nParams : Nat) (elimLevel : Level)
     (_indUnivs : Array Level) (overlay : Option (Std.HashMap Name ConstantInfo))
-    (paramFvars : Array Expr) : CompileM Expr := do
+    (paramFvars : Array Expr) (paramDecls : Array LocalDecl)
+    (levelParams : Array Name) (kernel : AuxKernel) : KBridgeM Expr := do
   -- Look up the external inductive (overlay first for expanded aux types).
   let ind ← match ← envGet overlay member.name with
     | some (.inductInfo v) => pure v
@@ -742,16 +875,18 @@ def buildMotiveTypeAux (member : FlatInfo) (_nParams : Nat) (elimLevel : Level)
   let specFvars := instantiateSpecWithFVars member.specParams paramFvars
   let mut cur := ty
   for p in [0:nExtParams] do
+    cur := stripMdataRef cur
     if let .forallE _ _ body _ _ := cur then
-      if p < specFvars.size then
-        cur := instantiate1 body specFvars[p]!
+      if h : p < specFvars.size then
+        cur := instantiate1 body specFvars[p]
       else
         cur := instantiate1 body (Expr.mkSort Level.mkZero) -- placeholder
   -- Beta-reduce after spec_param instantiation (lambda-valued spec_params
   -- create unreduced redexes that may obstruct the telescope below).
   cur := betaReduce cur
-  -- Peel index binders using FVars.
-  let (indexFvars, indexDecls, _) := forallTelescope cur nExtIndices "ma_idx" 0
+  -- Peel index binders using FVars (through `whnf` where stuck).
+  let (indexFvars, indexDecls, _) ←
+    peelAuxIndices cur nExtIndices "ma_idx" paramDecls levelParams kernel overlay
 
   -- Major type: `J.{occurrence_us} spec_params index_fvars`.
   let majorUnivs :=
@@ -790,12 +925,12 @@ def buildMotiveTypeAux (member : FlatInfo) (_nParams : Nat) (elimLevel : Level)
     updated scope is returned. -/
 def buildIhTypeFVar (fieldFvar fieldDom : Expr) (targetCi : Nat)
     (_nParams : Nat) (_paramFvars : Array Expr) (motiveFvars : Array Expr)
-    (classes : Array FlatInfo) (scope : TcScopeSt) :
-    KBridgeM (Expr × TcScopeSt) := do
+    (classes : Array FlatInfo) (scope : AuxScope) :
+    KBridgeM (Expr × AuxScope) := do
   let mut scope := scope
   let mut xsFvars : Array Expr := #[]
   let mut xsDecls : Array LocalDecl := #[]
-  let mut cur ← scope.whnfLean fieldDom
+  let mut cur ← scope.whnfOrInput fieldDom
 
   repeat
     match cur with
@@ -814,22 +949,22 @@ def buildIhTypeFVar (fieldFvar fieldDom : Expr) (targetCi : Nat)
       let (fvName, fv) := freshFVar "ih_xs" xsFvars.size
       let decl : LocalDecl :=
         { fvarName := fvName, binderName := name, domain := dom, info := bi }
-      scope ← scope.pushLocals #[decl]
+      scope ← scope.push #[decl]
       xsDecls := xsDecls.push decl
       xsFvars := xsFvars.push fv
-      cur ← scope.whnfLean (instantiate1 body fv)
+      cur ← scope.whnfOrInput (instantiate1 body fv)
     | _ => break
 
   -- Pop the xs decls so the scope stays balanced for the next field.
-  scope ← scope.popLocals xsDecls
+  scope ← scope.pop xsDecls
 
   -- `cur` is now the fully FVar-instantiated inner: I params idx_args.
   let (_, innerArgs) := decomposeApps cur
-  let nTargetParams := classes[targetCi]!.ind.numParams
+  let nTargetParams := (← arrIdx classes targetCi "buildIhTypeFVar: target class").ind.numParams
   let idxArgs : Array Expr := innerArgs.extract nTargetParams innerArgs.size
 
   -- IH body: motive[target](idx_args, field xs_fvars).
-  let mut ihBody := motiveFvars[targetCi]!
+  let mut ihBody ← arrIdx motiveFvars targetCi "buildIhTypeFVar: motive"
   for idx in idxArgs do
     ihBody := Expr.mkApp ihBody idx
   let mut fieldApp := fieldFvar
@@ -856,10 +991,11 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
     (classes : Array FlatInfo) (nParams : Nat) (_nClasses : Nat)
     (paramFvars : Array Expr) (paramDecls : Array LocalDecl)
     (motiveFvars : Array Expr) (indUnivs : Array Level)
-    (recLevelParams : Array Name) (maps : AddrMaps)
-    (nestedRewrite : Option NestedRewriteCtx) :
+    (recLevelParams : Array Name) (kernel : AuxKernel)
+    (nestedRewrite : Option NestedRewriteCtx)
+    (overlay : Option (Std.HashMap Name ConstantInfo) := none) :
     KBridgeM (Expr × Option NestedRewriteCtx) := do
-  let member := classes[classIdx]!
+  let member ← arrIdx classes classIdx "buildMinorType: class"
   -- Aux members substitute occurrence levels; originals the block univs.
   let ctorTy :=
     if member.isAux && !member.occurrenceLevelArgs.isEmpty then
@@ -876,11 +1012,12 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
     if member.isAux then instantiateSpecWithFVars member.specParams paramFvars
     else #[]
   for p in [0:nCtorParams] do
+    cur := stripMdataRef cur
     if let .forallE _ _ body _ _ := cur then
-      if member.isAux && p < spFvars.size then
-        cur := instantiate1 body spFvars[p]!
-      else if p < paramFvars.size then
-        cur := instantiate1 body paramFvars[p]!
+      if h : member.isAux = true ∧ p < spFvars.size then
+        cur := instantiate1 body (spFvars[p]'h.2)
+      else if h : p < paramFvars.size then
+        cur := instantiate1 body paramFvars[p]
       else
         cur := instantiate1 body (Expr.mkSort Level.mkZero) -- placeholder
   -- Beta-reduce after spec_param instantiation for auxiliary members.
@@ -901,9 +1038,11 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
   let mut fieldFvars : Array Expr := #[]
   let mut recFields : Array (Nat × Nat) := #[] -- (field_idx, target_class)
 
-  let mut scope ← TcScopeSt.new paramDecls recLevelParams maps
+  let mut scope ← AuxScope.new kernel paramDecls recLevelParams (route := .recursor)
+    (overlay := overlayGet overlay)
 
   for fi in [0:nFields] do
+    cur := stripMdataRef cur
     match cur with
     | .forallE name dom body bi _ =>
       -- Strip autoParam/optParam/outParam wrappers.
@@ -915,7 +1054,7 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
       scope := scope'
       if let some ci := recCi then
         recFields := recFields.push (fi, ci)
-      scope ← scope.pushLocals #[decl]
+      scope ← scope.push #[decl]
       fieldDecls := fieldDecls.push decl
       fieldFvars := fieldFvars.push fv
       cur := instantiate1 body fv
@@ -925,18 +1064,18 @@ def buildMinorType (classIdx : Nat) (ctor : ConstructorVal)
   -- alongside — never read; not reconstructed here.)
   let mut ihDecls : Array LocalDecl := #[]
   for ((fi, targetCi), k) in recFields.zipIdx do
-    let (ihTy, scope') ← buildIhTypeFVar fieldFvars[fi]! fieldDecls[fi]!.domain
+    let (ihTy, scope') ← buildIhTypeFVar (← arrIdx fieldFvars fi "buildMinorType: field fvar") (← arrIdx fieldDecls fi "buildMinorType: field decl").domain
       targetCi nParams paramFvars motiveFvars classes scope
     scope := scope'
     -- Lean C++ appendAfter("_ih") on the innermost string component.
-    let ihName := nameAppendAfter fieldDecls[fi]!.binderName "_ih"
+    let ihName := nameAppendAfter (← arrIdx fieldDecls fi "buildMinorType: field decl").binderName "_ih"
     let (ihFvName, _ihFv) := freshFVar "ih" k
     ihDecls := ihDecls.push
       { fvarName := ihFvName, binderName := ihName, domain := ihTy
         info := .default }
 
   -- Conclusion: motive[classIdx](ctor_return_indices, C params fields).
-  let mut conclusion := motiveFvars[classIdx]!
+  let mut conclusion ← arrIdx motiveFvars classIdx "buildMinorType: motive"
 
   -- Return indices: `cur` is the ctor's return type with FVars; extract
   -- args past params (own_params for aux, block params for originals).
@@ -985,7 +1124,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
     (_paramBinders : Array Binder) (paramFvars : Array Expr)
     (paramDecls : Array LocalDecl) (classInfos : Array IndRecInfo)
     (elimLevel : Level) (indUnivs : Array Level) (recLevelParams : Array Name)
-    (overlay : Option (Std.HashMap Name ConstantInfo)) (maps : AddrMaps)
+    (overlay : Option (Std.HashMap Name ConstantInfo)) (kernel : AuxKernel)
     (nestedRewrite : Option NestedRewriteCtx) :
     KBridgeM (Expr × Option NestedRewriteCtx) := do
   let nFlat := flat.size
@@ -1001,11 +1140,11 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
   let mut motiveFvars : Array Expr := #[]
   for j in [0:nFlat] do
     let motiveTy ←
-      if j < nClasses then
-        pure (buildMotiveType classInfos[j]! elimLevel)
-      else
-        buildMotiveTypeAux classes[j]! nParams elimLevel indUnivs overlay
-          paramFvars
+      if j < nClasses then do
+        pure (buildMotiveType (← arrIdx classInfos j "buildRecType: class info") elimLevel)
+      else do
+        buildMotiveTypeAux (← arrIdx classes j "buildRecType: aux class") nParams elimLevel indUnivs overlay
+          paramFvars paramDecls recLevelParams kernel
     let motiveName :=
       if nFlat > 1 then
         Name.mkStr .mkAnon s!"motive_{j + 1}"
@@ -1022,10 +1161,10 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
   let mut nestedRewrite := nestedRewrite
   for j in [0:nFlat] do
     let memberCtors : Array ConstructorVal ←
-      if j < nClasses then
-        pure classes[j]!.ctors
+      if j < nClasses then do
+        pure (← arrIdx classes j "buildRecType: class").ctors
       else do
-        match ← envGet overlay flat[j]!.name with
+        match ← envGet overlay (← arrIdx flat j "buildRecType: flat member").name with
         | some (.inductInfo ind) => do
           let mut cs : Array ConstructorVal := #[]
           for cn in ind.ctors do
@@ -1033,11 +1172,11 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
               cs := cs.push c
           pure cs
         | _ => pure #[]
-    let indName := flat[j]!.name
+    let indName := (← arrIdx flat j "buildRecType: flat member").name
     for ctor in memberCtors do
       let (minorTy, nr') ← buildMinorType j ctor classes nParams nClasses
-        paramFvars paramDecls motiveFvars indUnivs recLevelParams maps
-        nestedRewrite
+        paramFvars paramDecls motiveFvars indUnivs recLevelParams kernel
+        nestedRewrite overlay
       nestedRewrite := nr'
       -- Minor binder name: ctor name with the inductive prefix stripped.
       let minorName :=
@@ -1055,23 +1194,22 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
 
   -- --- Indices + major for member di ---
   -- Non-aux: drop the pre-computed `IndRecInfo` decls straight in. Aux:
-  -- substitute spec_params and peel syntactically (see Rust note about
-  -- WHNF-on-reducible-target for aux members — not observed in the wild).
-  let diMember := classes[di]!
+  -- substitute spec_params and peel the indices (`peelAuxIndices`).
+  let diMember ← arrIdx classes di "buildRecType: class"
   let diIsAux := diMember.isAux
 
   let mut indexFvars : Array Expr := #[]
   let mut majorFv : Expr := default
 
   if !diIsAux then
-    let info := classInfos[di]!
+    let info ← arrIdx classInfos di "buildRecType: class info"
     allDecls := allDecls ++ info.indices
     for d in info.indices do
       indexFvars := indexFvars.push (Expr.mkFVar d.fvarName)
     majorFv := Expr.mkFVar info.major.fvarName
     allDecls := allDecls.push info.major
   else
-    -- Legacy aux path: substitute spec_params, peel syntactically.
+    -- Aux path: substitute spec_params, then peel the indices.
     let diTy :=
       if !diMember.occurrenceLevelArgs.isEmpty then
         substLevels diMember.ind.cnst.type diMember.ind.cnst.levelParams
@@ -1083,28 +1221,22 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
     let diNExtParams := diMember.ownParams
     let diSpFvars := instantiateSpecWithFVars diMember.specParams paramFvars
     for p in [0:diNExtParams] do
+      ity := stripMdataRef ity
       if let .forallE _ _ body _ _ := ity then
-        if p < diSpFvars.size then
-          ity := instantiate1 body diSpFvars[p]!
-        else if p < paramFvars.size then
-          ity := instantiate1 body paramFvars[p]!
+        if h : p < diSpFvars.size then
+          ity := instantiate1 body diSpFvars[p]
+        else if h : p < paramFvars.size then
+          ity := instantiate1 body paramFvars[p]
         else
           ity := body
     -- Beta-reduce: lambda-valued spec_params create redexes.
     ity := betaReduce ity
 
-    -- Peel nIndices leading Pi's (syntactic for aux members).
-    let nIndices := diMember.nIndices
-    let mut indexDecls : Array LocalDecl := #[]
-    for fi in [0:nIndices] do
-      match ity with
-      | .forallE name dom body bi _ =>
-        let (fvName, fv) := freshFVar "idx" fi
-        indexDecls := indexDecls.push
-          { fvarName := fvName, binderName := name, domain := dom, info := bi }
-        indexFvars := indexFvars.push fv
-        ity := instantiate1 body fv
-      | _ => break
+    -- Peel nIndices leading Pi's, through `whnf` where the head is stuck
+    -- (an index behind a reducible alias, WB-A3).
+    let (auxIndexFvars, indexDecls, _) ←
+      peelAuxIndices ity diMember.nIndices "idx" paramDecls recLevelParams kernel overlay
+    indexFvars := indexFvars ++ auxIndexFvars
     allDecls := allDecls ++ indexDecls
 
     -- Major domain: I spec_params indices.
@@ -1124,7 +1256,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
         domain := app, info := .default }
 
   -- --- Return: motive_di(index_fvars, major_fv) ---
-  let mut ret := motiveFvars[di]!
+  let mut ret ← arrIdx motiveFvars di "buildRecType: motive"
   for idxFv in indexFvars do
     ret := Expr.mkApp ret idxFv
   ret := Expr.mkApp ret majorFv
@@ -1145,14 +1277,14 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
 def buildRuleIhFVar (fieldFvar fieldDom : Expr) (targetCi : Nat)
     (recName : Name) (recUnivs : Array Level)
     (paramFvars motiveFvars minorFvars : Array Expr)
-    (classes : Array FlatInfo) (scope : TcScopeSt) :
-    KBridgeM (Expr × TcScopeSt) := do
+    (classes : Array FlatInfo) (scope : AuxScope) :
+    KBridgeM (Expr × AuxScope) := do
   let mut scope := scope
-  let targetNParams := classes[targetCi]!.ind.numParams
+  let targetNParams := (← arrIdx classes targetCi "buildRuleIhFVar: target class").ind.numParams
 
   let mut xsFvars : Array Expr := #[]
   let mut xsDecls : Array LocalDecl := #[]
-  let mut cur ← scope.whnfLean fieldDom
+  let mut cur ← scope.whnfOrInput fieldDom
 
   repeat
     match cur with
@@ -1168,12 +1300,12 @@ def buildRuleIhFVar (fieldFvar fieldDom : Expr) (targetCi : Nat)
       let (fvName, fv) := freshFVar "rih_xs" xsFvars.size
       let decl : LocalDecl :=
         { fvarName := fvName, binderName := name, domain := dom, info := bi }
-      scope ← scope.pushLocals #[decl]
+      scope ← scope.push #[decl]
       xsDecls := xsDecls.push decl
       xsFvars := xsFvars.push fv
-      cur ← scope.whnfLean (instantiate1 body fv)
+      cur ← scope.whnfOrInput (instantiate1 body fv)
     | _ => break
-  scope ← scope.popLocals xsDecls
+  scope ← scope.pop xsDecls
 
   let (_, innerArgs) := decomposeApps cur
   let idxArgs : Array Expr := innerArgs.extract targetNParams innerArgs.size
@@ -1204,21 +1336,19 @@ def buildRuleIhFVar (fieldFvar fieldDom : Expr) (targetCi : Nat)
 def buildRecRules (di : Nat) (classes : Array FlatInfo)
     (nParams nClasses : Nat) (indUnivs : Array Level)
     (recLevelParams : Array Name) (recType : Expr)
-    (sourceOfCanonical : Option (Array Nat)) (maps : AddrMaps)
-    (nestedRewrite : Option NestedRewriteCtx) :
+    (sourceOfCanonical : Option (Array Nat)) (kernel : AuxKernel)
+    (nestedRewrite : Option NestedRewriteCtx)
+    (overlay : Option (Std.HashMap Name ConstantInfo) := none) :
     KBridgeM (Array RecursorRule × Option NestedRewriteCtx) := do
   let nFlat := classes.size
   let nMotives := nFlat
   let nMinors : Nat := classes.foldl (init := 0) fun acc c => acc + c.ctors.size
   let pmm := nParams + nMotives + nMinors
 
-  -- (Rust extracts `_pmm_binders = collect_binders(rec_type, pmm)` here —
-  -- dead value, not reconstructed.)
-
   -- Param binder infos from the inductive type (for rule RHS lambdas).
   let paramBinderInfos : Array Lean.BinderInfo :=
-    let indTy := substLevels classes[0]!.ind.cnst.type
-      classes[0]!.ind.cnst.levelParams indUnivs
+    let indTy := substLevels (← arrIdx classes 0 "buildRecRules: first class").ind.cnst.type
+      (← arrIdx classes 0 "buildRecRules: first class").ind.cnst.levelParams indUnivs
     (collectBinders indTy nParams).map (·.info)
 
   -- Create FVars for params, motives, minors by walking the rec type.
@@ -1235,6 +1365,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
     let (fvName, fv) := freshFVar kind localIdx
     let mut binderName := Name.mkAnon
     let mut domain := Expr.mkSort Level.mkZero
+    recTyCur := stripMdataRef recTyCur
     match recTyCur with
     | .forallE n d b _bi _ =>
       binderName := n
@@ -1259,7 +1390,8 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
 
   -- TcScope seeded with params+motives+minors (delta-unfolding of
   -- reducible-alias heads during recursive-field detection).
-  let mut scope ← TcScopeSt.new pmmDecls recLevelParams maps
+  let mut scope ← AuxScope.new kernel pmmDecls recLevelParams (route := .recursor)
+    (overlay := overlayGet overlay)
 
   let mut rules : Array RecursorRule := #[]
 
@@ -1269,7 +1401,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
 
   let mut nestedRewrite := nestedRewrite
 
-  let class_ := classes[di]!
+  let class_ ← arrIdx classes di "buildRecRules: class"
   for ctor in class_.ctors do
     let nFields := ctor.numFields
 
@@ -1288,11 +1420,12 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
         instantiateSpecWithFVars class_.specParams paramFvars
       else #[]
     for p in [0:nCtorParams] do
+      ty := stripMdataRef ty
       if let .forallE _ _ b _ _ := ty then
-        if class_.isAux && p < ruleSpFvars.size then
-          ty := instantiate1 b ruleSpFvars[p]!
-        else if p < paramFvars.size then
-          ty := instantiate1 b paramFvars[p]!
+        if h : class_.isAux = true ∧ p < ruleSpFvars.size then
+          ty := instantiate1 b (ruleSpFvars[p]'h.2)
+        else if h : p < paramFvars.size then
+          ty := instantiate1 b paramFvars[p]
         else
           ty := instantiate1 b (Expr.mkSort Level.mkZero)
     if class_.isAux then
@@ -1310,6 +1443,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
     let mut recFieldData : Array (Expr × Nat) := #[] -- (field_fvar, target_ci)
 
     for fi in [0:nFields] do
+      ty := stripMdataRef ty
       match ty with
       | .forallE fname dom b fbi _ =>
         let cleanDom := consumeTypeAnnotations dom
@@ -1322,14 +1456,14 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
         scope := scope'
         if let some targetCi := target? then
           recFieldData := recFieldData.push (fv, targetCi)
-        scope ← scope.pushLocals #[decl]
+        scope ← scope.push #[decl]
         fieldDecls := fieldDecls.push decl
         fieldFvars := fieldFvars.push fv
         ty := instantiate1 b fv
       | _ => break
 
     -- Body: minor(fields)(ihs).
-    let mut body := minorFvars[globalMinorIdx]!
+    let mut body ← arrIdx minorFvars globalMinorIdx "buildRecRules: minor"
     for fv in fieldFvars do
       body := Expr.mkApp body fv
 
@@ -1338,10 +1472,10 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
       -- Recursor name for the target: originals `<target>.rec`,
       -- auxiliaries `<all[0]>.rec_N` (Lean hangs `_N` under all[0]).
       let recName ←
-        if targetCi < nClasses then
-          pure (Name.mkStr classes[targetCi]!.ind.cnst.name "rec")
+        if targetCi < nClasses then do
+          pure (Name.mkStr (← arrIdx classes targetCi "buildRecRules: target class").ind.cnst.name "rec")
         else do
-          let all0 := (classes[0]!.ind.all[0]?).getD classes[0]!.ind.cnst.name
+          let all0 := ((← arrIdx classes 0 "buildRecRules: first class").ind.all[0]?).getD (← arrIdx classes 0 "buildRecRules: first class").ind.cnst.name
           let canonicalI := targetCi - nClasses
           let auxIdx ← match sourceOfCanonical with
             | some s =>
@@ -1367,7 +1501,7 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
       body := Expr.mkApp body ih
 
     -- Pop this ctor's field decls so the scope is clean for the next ctor.
-    scope ← scope.popLocals fieldDecls
+    scope ← scope.pop fieldDecls
 
     -- Abstract and wrap: fields (innermost), then PMM (outermost).
     let mut allDecls : Array LocalDecl := #[]
@@ -1383,266 +1517,33 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
 
 /-! ## is_large / k / is_prop computation (recursor.rs:2311)
 
-NOTE (Rust recursor.rs:1976-1985): the old syntactic
-`elim_only_at_universe_zero` fallback trio was removed upstream — a TC
-failure here surfaces as a hard error, never a silent fallback. -/
-
-/-- Mirrors Rust `collect_const_refs` (recursor.rs:2694).
-
-    Collect all constant names referenced in an expression, appended onto
-    `out` (a work queue, NOT a set — dedup happens at the consumer's
-    `seen`). Explicit stack, matching the Rust traversal order, with a
-    digest-keyed visited set so structurally shared subterms are walked
-    once (DAG cost, not unshared-tree cost). -/
-def collectConstRefs (expr : Expr) (out : Array Name) : Array Name := Id.run do
-  let mut out := out
-  let mut visited : Std.HashSet Address := {}
-  let mut stack : Array Expr := #[expr]
-  repeat
-    if let some e := stack.back? then
-      stack := stack.pop
-      if visited.contains e.getHash then
-        continue
-      visited := visited.insert e.getHash
-      match e with
-      | .const n _ _ => out := out.push n
-      | .app f a _ =>
-        stack := stack.push f
-        stack := stack.push a
-      | .forallE _ d b _ _ | .lam _ d b _ _ =>
-        stack := stack.push d
-        stack := stack.push b
-      | .letE _ t v b _ _ =>
-        stack := stack.push t
-        stack := stack.push v
-        stack := stack.push b
-      | .proj name _ e' _ =>
-        out := out.push name
-        stack := stack.push e'
-      | .mdata _ e' _ =>
-        stack := stack.push e'
-      | _ => pure ()
-    else
-      break
-  return out
-
-/-- Mirrors Rust `ingress_type_stub` (recursor.rs:2649).
-
-    Insert a type-only `KConst.axio` stub for `name` into the bridge kenv
-    (skipped when an entry already exists under the resolved address). -/
-def ingressTypeStub (name : Name) (typ : Expr) (levelParams : Array Name)
-    (maps : AddrMaps) : KBridgeM Unit := do
-  let addr := maps.resolve name
-  let zid : MKId := ⟨addr, name⟩
-  if (← kenvGet? zid).isSome then
-    return
-  let tyZ ← leanExprToKexpr typ levelParams maps
-  let nLvls := UInt64.ofNat levelParams.size
-  kenvInsert zid (.axio name levelParams false nLvls tyZ)
-
-/-- Mirrors Rust `ingress_aux_gen_dep` (recursor.rs:2597).
-
-    Ingress one dependency with the right fidelity: definitions /
-    inductives / ctors as full entries (`ensureFullInKenvOf`), everything
-    else as type stubs. New const refs discovered in the entry's types
-    are appended to the returned queue (Rust `&mut Vec<Name>`). -/
-def ingressAuxGenDep (name : Name) (ci : ConstantInfo) (maps : AddrMaps)
-    (queue : Array Name) : KBridgeM (Array Name) := do
-  match ci with
-  | .defnInfo v => do
-    ensureFullInKenvOf name maps
-    let queue := collectConstRefs v.cnst.type queue
-    return collectConstRefs v.value queue
-  | .inductInfo v => do
-    ensureFullInKenvOf name maps
-    let mut queue := collectConstRefs v.cnst.type queue
-    for ctorName in v.ctors do
-      if let some (.ctorInfo ctor) ← lookupConst? ctorName then
-        queue := collectConstRefs ctor.cnst.type queue
-    return queue
-  | .ctorInfo v => do
-    ensureFullInKenvOf name maps
-    return collectConstRefs v.cnst.type queue
-  | .axiomInfo v => do
-    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
-    return collectConstRefs v.cnst.type queue
-  | .thmInfo v => do
-    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
-    return collectConstRefs v.cnst.type queue
-  | .opaqueInfo v => do
-    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
-    return collectConstRefs v.cnst.type queue
-  | .recInfo v => do
-    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
-    return collectConstRefs v.cnst.type queue
-  | .quotInfo v => do
-    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
-    return collectConstRefs v.cnst.type queue
-
-/-- Mirrors Rust `drain_ingress_queue` (recursor.rs).
-
-    Drain a worklist of names through `ingressAuxGenDep`, deduplicated
-    against the kenv-lifetime `auxIngressSeen` (resolved-id-keyed — see
-    the `AuxKernelCtx` field docs) instead of a per-call set: the
-    dispatch is deterministic per constant kind, so a seen id is already
-    at final kenv fidelity and re-expanding its closure would be pure
-    cost. -/
-def drainIngressQueue (queue₀ : Array Name) (maps : AddrMaps) :
-    KBridgeM Unit := do
-  let mut queue := queue₀
-  repeat
-    let some name := queue.back? | break
-    queue := queue.pop
-    let zid : MKId := ⟨maps.resolve name, name⟩
-    if (← get).auxIngressSeen.contains zid then
-      continue
-    modify fun kctx =>
-      { kctx with auxIngressSeen := kctx.auxIngressSeen.insert zid }
-    if let some ci ← lookupConst? name then
-      queue ← ingressAuxGenDep name ci maps queue
-  return ()
-
-/-- Mirrors Rust `ingress_target_type_deps` (recursor.rs:2548).
-
-    Ingress constants referenced by an inductive target type with enough
-    fidelity for WHNF (target aliases like `Set α := α → Prop` must
-    unfold). -/
-def ingressTargetTypeDeps (targetTy : Expr) (maps : AddrMaps) :
-    KBridgeM Unit :=
-  drainIngressQueue (collectConstRefs targetTy #[]) maps
-
-/-- Mirrors Rust `ingress_field_deps` (recursor.rs:2572).
-
-    Walk field domains of the class's constructors and ingress referenced
-    constants into the bridge kenv so `infer`/WHNF can look them up
-    (reducible definitions as real `Defn` entries — recursive occurrences
-    hidden under aliases like `constType (I α) (I α)` are missed
-    otherwise). -/
-def ingressFieldDeps (cls : FlatInfo) (_lvlParams : Array Name)
-    (maps : AddrMaps) : KBridgeM Unit := do
-  let mut queue : Array Name := #[]
-  for ctor in cls.ctors do
-    queue := collectConstRefs ctor.cnst.type queue
-  drainIngressQueue queue maps
-
-/-- Mirrors Rust `peek_result_sort` (recursor.rs:2732).
-
-    Syntactic-only peek at the result sort of a KExpr type. Dead code in
-    Rust too (`#[allow(dead_code)]`) — no longer wired into the K-target
-    check, kept for the historical record and potential future callers. -/
-partial def peekResultSort (ty : MKExpr) : Option MKUniv := Id.run do
-  let mut cur := ty
-  repeat
-    match cur with
-    | .all _ _ _ body _ => cur := body
-    | .sort u _ => return some u
-    | _ => return none
-  return none -- unreachable
+The kernel half (the elimination decision and the ingress it needs) is the
+interface's `AuxKernel.elimDecision` (`Ix.AuxGen.tcElimDecision` in the
+`Ix.Tc` bridge). -/
 
 /-- Mirrors Rust `compute_is_large_and_k` (recursor.rs:2328).
 
-    Compute `(isLarge, k, isProp)` for the canonical recursor using the
-    kernel's `isLargeEliminator`:
-    - ephemeral `KConst.indc`/`KConst.ctor` entries for ALL original
-      classes go into the bridge kenv (provisional addresses), so the
-      kernel sees the full mutual block and can apply the
-      "mutual Prop → small" rule;
-    - `getResultSortLevel` WHNF-peels params+indices (crucial for
-      reducible-alias targets like `Set σ := σ → Prop`);
-    - spec-level override: non-Prop inductives always eliminate large
-      (inductive.cpp:539-548) — corrects syntactically-nonzero Params;
-    - C1 fix: a Prop block with nested auxiliaries the kenv didn't see is
-      forced small;
+    Compute `(isLarge, k, isProp)` for the canonical recursor: the kernels'
+    elimination decision (`AuxKernel.elimDecision`) over the block's
+    original classes in the expanded block of `classes.size` members (Lean's
+    kernel counts the nested auxiliaries as members, so a level that may be
+    zero eliminates small whenever the flat block is not a singleton), then
     - K: single flat member (aux included), single ctor, 0 fields, Prop.
     TC failures are hard `invalidMutualBlock` errors (no syntactic
     fallback). Rust's `IX_TIMING` diagnostics block is not ported. -/
 def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
-    (maps : AddrMaps) : KBridgeM (Bool × Bool × Bool) := do
-  let mut indInfos : Array (MKId × UInt64 × UInt64 × Array MKId × MKExpr) := #[]
-
-  -- The first class's block KId is the shared block reference.
-  let blockAddr := maps.resolve classes[0]!.ind.cnst.name
-  let blockZid : MKId := ⟨blockAddr, classes[0]!.ind.cnst.name⟩
-
-  for ci in [0:nClasses] do
-    let cls := classes[ci]!
-    let clsInd := cls.ind
-    let clsLvlParams := clsInd.cnst.levelParams
-    let clsNLvls := UInt64.ofNat clsLvlParams.size
-    let clsNIndices := UInt64.ofNat clsInd.numIndices
-
-    let clsAddr := maps.resolve clsInd.cnst.name
-    let clsZid : MKId := ⟨clsAddr, clsInd.cnst.name⟩
-    let clsTyZ ← leanExprToKexpr clsInd.cnst.type clsLvlParams maps
-
-    -- Convert constructors.
-    let mut clsCtorZids : Array MKId := #[]
-    for ctor in cls.ctors do
-      let ctorAddr := maps.resolve ctor.cnst.name
-      let ctorZid : MKId := ⟨ctorAddr, ctor.cnst.name⟩
-      let ctorTyZ ← leanExprToKexpr ctor.cnst.type clsLvlParams maps
-      let ctorFields := UInt64.ofNat ctor.numFields
-      let ctorParams := UInt64.ofNat ctor.numParams
-      kenvInsert ctorZid (.ctor ctor.cnst.name clsLvlParams ctor.isUnsafe
-        clsNLvls clsZid (UInt64.ofNat clsCtorZids.size) ctorParams ctorFields
-        ctorTyZ)
-      clsCtorZids := clsCtorZids.push ctorZid
-
-    -- Insert inductive.
-    kenvInsert clsZid (.indc clsInd.cnst.name clsLvlParams clsNLvls
-      (UInt64.ofNat nParams) clsNIndices clsInd.isUnsafe blockZid
-      (UInt64.ofNat ci) clsTyZ clsCtorZids #[])
-
-    -- Target types may hide their final Sort behind reducible aliases.
-    ingressTargetTypeDeps clsInd.cnst.type maps
-    -- Ingress field deps for this class.
-    ingressFieldDeps cls clsLvlParams maps
-
-    indInfos := indInfos.push
-      (clsZid, UInt64.ofNat nParams, clsNIndices, clsCtorZids, clsTyZ)
-
-  let (_, _, firstNIndices, _, firstTyZ) := indInfos[0]!
-
-  -- Fresh TypeChecker over the persistent kenv (Rust
-  -- `TypeChecker::new(&mut kctx.kenv)`).
-  modify fun kctx => { kctx with
-    tcState := Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims }
-
-  -- WHNF-reduced result sort level via the kernel.
-  let resultKuniv ←
-    match ← runTc (Ix.Tc.TcM.runRec
-        (Ix.Tc.RecM.getResultSortLevel firstTyZ
-          (nParams + firstNIndices.toNat))) with
-    | .ok u => pure u
-    | .error e =>
-      throw (.invalidMutualBlock
-        s!"compute_is_large_and_k: TC failed for \
-{classes[0]!.ind.cnst.name.pretty}: {e}")
-
-  let isLarge ←
-    match ← runTc (Ix.Tc.TcM.runRec
-        (Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos)) with
-    | .ok b => pure b
-    | .error e =>
-      throw (.invalidMutualBlock
-        s!"compute_is_large_and_k: is_large_eliminator failed for \
-{classes[0]!.ind.cnst.name.pretty}: {e}")
-
-  -- Spec-level override: non-Prop inductives always get large elimination.
-  let isLarge := if !isLarge && !resultKuniv.isSemanticZero then true else isLarge
-
-  -- Prop determination from the WHNF-reduced kernel-derived level.
-  let isProp := resultKuniv.isSemanticZero
-
-  -- C1 fix: Prop block with nested auxiliaries the KEnv didn't see →
-  -- small elimination (Lean treats nested auxes as full mutual members).
-  let isLarge :=
-    if isLarge && isProp && classes.size > nClasses then false else isLarge
+    (kernel : AuxKernel) : KBridgeM (Bool × Bool × Bool) := do
+  let decision ← kernel.elimDecision
+    ((classes.extract 0 nClasses).map fun c => (c.ind, c.ctors)) nParams classes.size
+  let isProp := decision.isProp
+  let isLarge := decision.isLarge
 
   -- K-target: single flat member (aux included, matching Lean's expanded
   -- `m_ind_types.size() == 1`), single ctor, 0 fields, Prop.
-  let k := classes.size == 1 && classes[0]!.ctors.size == 1
-    && classes[0]!.ctors[0]!.numFields == 0 && isProp
+  let k := match classes[0]? with
+    | some c0 => classes.size == 1 && c0.ctors.size == 1
+        && (c0.ctors[0]?.map (·.numFields == 0)).getD false && isProp
+    | none => false
 
   return (isLarge, k, isProp)
 
@@ -1687,7 +1588,7 @@ flat discovered {nAux} auxes (need perm.len() >= n_aux)")
   for (canonI64, sourceJ) in layout.perm.zipIdx do
     let canonI := canonI64.toNat
     if canonI != PERM_OUT_OF_SCC && canonI < nAux
-        && canonRepr[canonI]! == PERM_OUT_OF_SCC && sourceJ < nAux then
+        && canonRepr[canonI]? == some PERM_OUT_OF_SCC && sourceJ < nAux then
       canonRepr := canonRepr.set! canonI sourceJ
 
   -- Verify every canonical slot has a source representative.
@@ -1700,11 +1601,12 @@ flat discovered {nAux} auxes (need perm.len() >= n_aux)")
   let mut primary : Array CompileFlatMember := flat.extract 0 nClasses
   let auxSrc : Array CompileFlatMember := flat.extract nClasses flat.size
   for (sourceJ, canonicalI) in canonRepr.zipIdx do
-    if sourceJ >= auxSrc.size then
+    if h : sourceJ < auxSrc.size then
+      primary := primary.push auxSrc[sourceJ]
+    else
       return .error (flat,
         s!"aux_layout perm: canon_repr[{canonicalI}] = {sourceJ} >= n_aux \
 ({auxSrc.size})")
-    primary := primary.push auxSrc[sourceJ]!
 
   return .ok primary
 
@@ -1729,13 +1631,13 @@ flat discovered {nAux} auxes (need perm.len() >= n_aux)")
       discovery order (`canonical_i`). -/
 def generateCanonicalRecursorsWithLayout (sortedClasses : Array (Array Name))
     (overlay : Option (Std.HashMap Name ConstantInfo))
-    (preFlat : Option (Array CompileFlatMember)) (maps : AddrMaps)
+    (preFlat : Option (Array CompileFlatMember)) (kernel : AuxKernel)
     (auxLayout : Option Ixon.AuxLayout) (sourceOfCanonical : Option (Array Nat)) :
     KBridgeM (Array (Name × RecursorVal) × Bool) := do
   -- One FlatInfo per equivalence class (representative's data).
   let mut classes : Array FlatInfo := #[]
   for cls in sortedClasses do
-    let rep := cls[0]!
+    let rep ← arrIdx cls 0 "generateCanonicalRecursorsWithLayout: class representative"
     let ind ← match ← envGet overlay rep with
       | some (.inductInfo v) => pure v
       | _ => throw (.invalidMutualBlock
@@ -1756,7 +1658,7 @@ def generateCanonicalRecursorsWithLayout (sortedClasses : Array (Array Name))
         ownParams, nIndices }
 
   let nClasses := classes.size
-  let nParams := classes[0]!.ind.numParams
+  let nParams := (← arrIdx classes 0 "generateCanonicalRecursorsWithLayout: first class").ind.numParams
 
   -- Flat block: pre-built (expand/restore) or detected from ctor types.
   let orderedOriginals : Array Name := classes.map (·.name)
@@ -1812,7 +1714,7 @@ def generateCanonicalRecursorsWithLayout (sortedClasses : Array (Array Name))
       for (canonI64, srcJ) in layout.perm.zipIdx do
         let canonI := canonI64.toNat
         if canonI != PERM_OUT_OF_SCC && canonI < nAux
-            && s[canonI]! == PERM_OUT_OF_SCC then
+            && s[canonI]? == some PERM_OUT_OF_SCC then
           s := s.set! canonI srcJ
       for (slot, ci) in s.zipIdx do
         if slot == PERM_OUT_OF_SCC then
@@ -1837,11 +1739,11 @@ aux members")
   let nMinors : Nat := classes.foldl (init := 0) fun acc fi => acc + fi.ctors.size
 
   -- is_large / k / is_prop via the kernel (hard error on TC failure).
-  let (isLarge, k, isProp) ← computeIsLargeAndK classes nClasses nParams maps
+  let (isLarge, k, isProp) ← computeIsLargeAndK classes nClasses nParams kernel
 
   -- Canonical elim level name following Lean C++ init_elim_level: "u",
   -- with "u_{i}" fallback on conflict with existing level params.
-  let indLevelParams := classes[0]!.ind.cnst.levelParams
+  let indLevelParams := (← arrIdx classes 0 "generateCanonicalRecursorsWithLayout: first class").ind.cnst.levelParams
   let elimLevelName := Id.run do
     let mut u := Name.mkStr .mkAnon "u"
     let mut i := 1
@@ -1854,59 +1756,69 @@ aux members")
     recLevelParams := recLevelParams.push elimLevelName
   recLevelParams := recLevelParams ++ indLevelParams
 
-  let nIndLvls := classes[0]!.ind.cnst.levelParams.size
+  let nIndLvls := (← arrIdx classes 0 "generateCanonicalRecursorsWithLayout: first class").ind.cnst.levelParams.size
   let univOffset : Nat := if isLarge then 1 else 0
 
   -- Shifted universe args for inductives.
-  let indUnivs : Array Level := (Array.range nIndLvls).map fun i =>
-    Level.mkParam recLevelParams[i + univOffset]!
+  let indUnivs : Array Level ← (Array.range nIndLvls).mapM fun i => do
+    pure (Level.mkParam (← arrIdx recLevelParams (i + univOffset)
+      "generateCanonicalRecursorsWithLayout: level param"))
 
   -- Elim level.
-  let elimLevel :=
-    if isLarge then Level.mkParam recLevelParams[0]! else Level.mkZero
+  let elimLevel ←
+    if isLarge then do
+      pure (Level.mkParam (← arrIdx recLevelParams 0
+        "generateCanonicalRecursorsWithLayout: elim level"))
+    else pure Level.mkZero
 
   -- === Collect binder info following Lean C++ mk_rec_infos ===
-  let firstTy := substLevels classes[0]!.ind.cnst.type
-    classes[0]!.ind.cnst.levelParams indUnivs
+  let firstTy := substLevels (← arrIdx classes 0 "generateCanonicalRecursorsWithLayout: first class").ind.cnst.type
+    (← arrIdx classes 0 "generateCanonicalRecursorsWithLayout: first class").ind.cnst.levelParams indUnivs
   let paramBinders := collectBinders firstTy nParams
 
   -- One shared set of param FVars for the whole block (C++ `m_params`).
-  let (sharedParamFvars, rawParamDecls, _) :=
-    forallTelescope firstTy nParams "param" 0
+  let (sharedParamFvars, rawParamDecls, _) ←
+    match forallTelescopeExact firstTy nParams "param" 0
+        "generate_canonical_recursors_with_layout" "inductive parameters" with
+    | .ok result => pure result
+    | .error (.unsupportedExpr description) =>
+      throw (CompileError.unsupportedExpr description)
   let sharedParamDecls : Array LocalDecl :=
-    (rawParamDecls.zip paramBinders).map fun (d, pb) =>
-      { d with domain := consumeTypeAnnotations d.domain, info := pb.info }
+    rawParamDecls.map fun d =>
+      { d with domain := consumeTypeAnnotations d.domain }
 
   -- WHNF-decompose each ORIGINAL class's stored type (the `mk_rec_infos`
   -- analog; exposes Pis hidden inside reducible aliases).
   let mut classInfos : Array IndRecInfo := #[]
   for ci in [0:nClasses] do
     classInfos := classInfos.push
-      (← decomposeInductiveType classes[ci]!.ind indUnivs sharedParamDecls maps)
+      (← decomposeInductiveType (← arrIdx classes ci "generateCanonicalRecursorsWithLayout: class").ind indUnivs sharedParamDecls kernel
+        overlay)
 
   -- Generate one recursor per flat member (originals + auxiliaries), with
   -- the block-wide nested-aux rewrite scratch threaded through.
   let mut blockNestedRewrite := NestedRewriteCtx.new classes nClasses
   let mut results : Array (Name × RecursorVal) := #[]
   for di in [0:nFlat] do
-    let diMember := classes[di]!
+    let diMember ← arrIdx classes di "generateCanonicalRecursorsWithLayout: class"
     let nIndices := diMember.nIndices
 
     -- Name: original → <ind>.rec; auxiliary → <all[0]>.rec_N (Lean hangs
     -- `_N` names under all[0], not the class representative).
-    let recName :=
+    let recName ←
       if di < nClasses then
-        Name.mkStr diMember.ind.cnst.name "rec"
-      else
-        let all0 := (classes[0]!.ind.all[0]?).getD classes[0]!.ind.cnst.name
+        pure (Name.mkStr diMember.ind.cnst.name "rec")
+      else do
+        let c0 ← arrIdx classes 0 "generateCanonicalRecursorsWithLayout: first class"
+        let all0 := (c0.ind.all[0]?).getD c0.ind.cnst.name
         let canonicalI := di - nClasses
         -- Prefer source-indexed `_N` when a perm was supplied; missing
         -- entries were validated above and are construction errors.
-        let auxIdx :=
+        let auxIdx ←
           match sourceOfCanonical with
-          | some s => s[canonicalI]!
-          | none => canonicalI
-        Name.mkStr all0 s!"rec_{auxIdx + 1}"
+          | some s => arrIdx s canonicalI "generateCanonicalRecursorsWithLayout: source of canonical aux"
+          | none => pure canonicalI
+        pure (Name.mkStr all0 s!"rec_{auxIdx + 1}")
 
     -- `all` lists only the original inductives, matching Lean.
     let all : Array Name := (classes.extract 0 nClasses).map (·.ind.cnst.name)
@@ -1914,21 +1826,22 @@ aux members")
     -- Rec type: ∀ params motives minors indices major, motive indices major.
     let (recType, nr1) ← buildRecType di classes flat nParams nClasses
       paramBinders sharedParamFvars sharedParamDecls classInfos elimLevel
-      indUnivs recLevelParams overlay maps blockNestedRewrite
+      indUnivs recLevelParams overlay kernel blockNestedRewrite
     blockNestedRewrite := nr1
 
     -- Rules.
     let (rules, nr2) ← buildRecRules di classes nParams nClasses indUnivs
-      recLevelParams recType sourceOfCanonical maps blockNestedRewrite
+      recLevelParams recType sourceOfCanonical kernel blockNestedRewrite overlay
     blockNestedRewrite := nr2
 
     -- Safety: originals from the class representative; auxiliaries take
     -- the block-wide flag (the aux class's `ind` is the EXTERNAL
     -- inductive, whose own flag is unrelated — see inductive.cpp:774 and
     -- the Rust comment about `mkBRecOnFromRec`).
-    let isUnsafe :=
-      if diMember.isAux then classes[0]!.ind.isUnsafe
-      else diMember.ind.isUnsafe
+    let isUnsafe ←
+      if diMember.isAux then do
+        pure (← arrIdx classes 0 "generateCanonicalRecursorsWithLayout: first class").ind.isUnsafe
+      else pure diMember.ind.isUnsafe
 
     results := results.push (recName,
       { cnst :=
@@ -1951,16 +1864,10 @@ aux members")
     by the standard flat-block path and `compile_below_recursors`). -/
 def generateCanonicalRecursorsWithOverlay (sortedClasses : Array (Array Name))
     (overlay : Option (Std.HashMap Name ConstantInfo))
-    (preFlat : Option (Array CompileFlatMember)) (maps : AddrMaps) :
+    (preFlat : Option (Array CompileFlatMember)) (kernel : AuxKernel) :
     KBridgeM (Array (Name × RecursorVal) × Bool) :=
-  generateCanonicalRecursorsWithLayout sortedClasses overlay preFlat maps
+  generateCanonicalRecursorsWithLayout sortedClasses overlay preFlat kernel
     none none
-
-/-- Mirrors Rust `generate_canonical_recursors` (recursor.rs:293) — the
-    Rust version is `#[cfg(test)]`-only; kept callable here for tests. -/
-def generateCanonicalRecursors (sortedClasses : Array (Array Name))
-    (maps : AddrMaps) : KBridgeM (Array (Name × RecursorVal) × Bool) :=
-  generateCanonicalRecursorsWithOverlay sortedClasses none none maps
 
 /-- Mirrors Rust `generate_recursors_from_expanded` (recursor.rs:46).
 
@@ -1978,7 +1885,7 @@ def generateCanonicalRecursors (sortedClasses : Array (Array Name))
     nested-aux hash-sort permutation. -/
 def generateRecursorsFromExpanded (sortedClasses : Array (Array Name))
     (expanded : ExpandedBlock) (sourceOfCanonical : Option (Array Nat))
-    (maps : AddrMaps) : KBridgeM (Array (Name × RecursorVal) × Bool) := do
+    (kernel : AuxKernel) : KBridgeM (Array (Name × RecursorVal) × Bool) := do
   if expanded.types.isEmpty then
     return (#[], false)
 
@@ -2068,7 +1975,7 @@ def generateRecursorsFromExpanded (sortedClasses : Array (Array Name))
         nIndices := member.nIndices }
 
   generateCanonicalRecursorsWithLayout sortedClasses (some overlay)
-    (some preFlat) maps none sourceOfCanonical
+    (some preFlat) kernel none sourceOfCanonical
 
 end Ix.AuxGen
 

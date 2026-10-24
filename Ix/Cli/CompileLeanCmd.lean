@@ -1,22 +1,25 @@
 /-
   `ix compile-lean <path.lean> [--out out.ixe]`: compile a Lean file's
-  environment to a serialized Ixon `.ixe` through the PURE-LEAN pipeline
-  end-to-end — the `Ix.CompileM` counterpart of `ix compile` (which
+  environment to a serialized Ixon `.ixe` through the Lean pipeline
+  — the `Ix.CompileM` counterpart of `ix compile` (which
   drives the Rust FFI compiler). Phases: elaborate → canonicalize
   (`Ix.CanonM`) → reference graph (`Ix.GraphM`) → groundedness filter
-  (`Ix.Ground`) → Tarjan condense (`Ix.CondenseM`) → aux-aware parallel
-  compile (`Ix.CompileM.compileEnvParallelAux`) → `Ixon.serEnv`.
+  (`Ix.Ground`) → Tarjan condense (`Ix.CondenseM`) → the driver with its
+  Source service (`Ix.CompileM.compileEnvFoldWithSource`) → `Ixon.serEnv`.
 
   `--rust-check` additionally compiles the same environment through the
   Rust FFI compiler (`rs_compile_env_bytes` — the exact bytes
   `ix compile` writes) and byte-compares the two outputs: this is the
-  ALIGNED gate. The comparison is cross-serializer (Rust `Env::put`
-  vs Lean `Ixon.serEnv`), which the serde gate guarantees agree on
-  identical environments — so byte equality here certifies the full
-  pipeline, not just the compiler core.
+  ALIGNED gate. The comparison covers both compilers and serializers
+  (Rust `Env::put` and Lean `Ixon.serEnv`) on this input. It is measured
+  whole-output parity, not a universal refinement or value-preservation
+  proof. `compileLeanInputValidated` runs the resource post-step; it does
+  not run `Ix.Cert.checkReport` or changed-cone certification.
 
-  Exit codes: 0 success (and aligned, when checked); 1 pipeline error or
-  divergence; 2 usage.
+  Exit codes: 0 success (including an explicitly allowed partial output,
+  and aligned when checked); 1 pipeline error, an unallowed block failure,
+  or divergence; 2 usage. The Lean output is written before `--rust-check`,
+  so a later divergence leaves that output on disk.
 -/
 module
 public import Cli
@@ -24,6 +27,10 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.Compile.ChangedSet
+public import Ix.CompileResource
+public import Ix.Cli.DriverOptions
+public import Ix.AuxGen.LiteralSupport
 public import Ix.Cli.ValidateCmd
 public import Ix.Cli.CompileCmd
 public section
@@ -32,6 +39,13 @@ open System (FilePath)
 open Ix.EnvScope
 
 namespace Ix.Cli.CompileLeanCmd
+
+/-- Failures listed root causes first: a constant that failed only because a
+    dependency is missing is a cascade, listed after the ones that name the
+    cause (a refusal's message must be visible in the bounded listing). -/
+private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
+  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
+  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
 
 def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let args : Array String := p.variableArgsAs! String
@@ -49,17 +63,29 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if let some e ← applySharingLimitsFlag p then
     p.printError s!"error: {e}"
     return 2
+  -- The drivers' options: limits (`--sharing-limits` / `IX_SHARING_LIMITS`),
+  -- traces (`IX_COMPILE_DBG`); phase timings always on.
+  let opts ← match ← Ix.Cli.driverOptionsFromEnv (dbg := true) with
+    | .ok opts => pure opts
+    | .error e =>
+      p.printError s!"error: {e}"
+      return 2
 
   IO.println s!"[compile-lean] building {pathStr}..."
   buildFile pathStr
   let fe ← getFileEnvCore pathStr
-  let constList ← defaultConstList fe pathStr
+  let constList ← if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
 
   let t0 ← IO.monoMsNow
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
-      (dbg := true) with
+  -- AuxGen M3: the literal support the input lacks, for the Source service only
+  -- (generation side; nothing compiled or certified reads it).
+  let opts := { opts with serviceSupport := Ix.AuxGen.literalSupportFor fe.env constList }
+  -- The compile, then the resource post-step (an input with semantic
+  -- contracts is emitted only if its resources validate).
+  match ← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers)
+      (opts := opts) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
     return 1
@@ -73,7 +99,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"[compile-lean] error: {ungroundedCount} constant(s) \
 failed to compile; nothing written to {outPath} (use --allow-partial to \
 serialize the grounded subset)"
-      for (n, e) in out.cenv.ungrounded.toList.take 8 do
+      for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
       return 1
     IO.FS.writeBinFile outPath out.bytes
@@ -82,8 +108,20 @@ serialize the grounded subset)"
 {ungroundedCount} block failures) in {elapsed}ms"
     if ungroundedCount > 0 then
       IO.println s!"[compile-lean] PARTIAL: {ungroundedCount} constants failed to compile"
-      for (n, e) in out.cenv.ungrounded.toList.take 8 do
+      for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.println s!"  {n.pretty}: {e.take 200}"
+
+    if p.hasFlag "changed-set" || (p.flag? "changed-set-out").isSome then
+      let tC ← IO.monoMsNow
+      let cs := Ix.Compile.ChangedSet.ofCompile out.cenv.env out.blocks out.cenv.auxReport.table out.env
+      IO.println s!"[compile-lean] changed set: {cs.counts.summary} \
+({(← IO.monoMsNow) - tC}ms)"
+      if let some f := p.flag? "changed-set-out" then
+        let path := f.as! String
+        let rows := cs.entries.map fun e =>
+          s!"{e.name.pretty}\t{e.cause.tag}\t{(e.ref.map (·.pretty)).getD "-"}"
+        IO.FS.writeFile path (String.intercalate "\n" rows.toList ++ "\n")
+        IO.println s!"[compile-lean] changed set: {cs.entries.size} entries written to {path}"
 
     if p.hasFlag "rust-check" then
       IO.println "[compile-lean] --rust-check: compiling via Rust FFI..."
@@ -119,6 +157,9 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
+    "changed-set" ;        "Print the changed set's counts by cause (`Ix.Compile.ChangedSet`): the input constants whose compiled form is not a renaming of their source. Reads the output only; writes nothing."
+    "changed-set-out" : String; "Also write the changed set's entries to this file, one per line: name, cause tag, reference (`-` for none), tab-separated (implies --changed-set)"
+    "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env. --rust-check compiles the same list."
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."
 

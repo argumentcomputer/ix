@@ -337,14 +337,54 @@ def natTests : TestSeq :=
     (let e := appN (pAddr P.natDecLe) [natLit 1, natLit 2]
      whnfEq emptyEnv e e)
 
-def nativeTests : TestSeq :=
-  test "System.Platform.numBits → 64"
-    (whnfEq emptyEnv (pAddr P.systemPlatformNumBits) (natLit 64))
-  ++ test "Subtype.val (getNumBits ()) form → 64"
+/-! ### Reductions Lean's kernel does not make
+
+Each term below once reduced by a rule that read only a class method's type
+argument (the instance is the opaque constant `inst`), or by a conversion
+Lean's kernel does not make. Over an empty environment nothing unfolds, so
+each must come back unchanged. -/
+
+def notReducedTests : TestSeq :=
+  let inst := pConst (aId "inst")
+  let x := pConst (aId "x")
+  let bv8 := KExpr.mkApp (pAddr P.bitVec) (natLit 8)
+  let bvLit (n : Nat) : AE := appN (pAddr P.bitVecOfNat) [natLit 8, natLit n]
+  test "System.Platform.numBits (over an opaque) is not 64"
+    (whnfEq emptyEnv (pAddr P.systemPlatformNumBits) (pAddr P.systemPlatformNumBits))
+  ++ test "Subtype.val (getNumBits ()) is not 64"
     (let inner := KExpr.mkApp (pAddr P.systemPlatformGetNumBits) sort0
      let e := appN (pAddr P.subtypeVal) [sort0, sort0, inner]
-     whnfEq emptyEnv e (natLit 64))
-  ++ test "String.utf8ByteSize literal"
+     whnfEq emptyEnv e e)
+  ++ test "BitVec.toNat (OfNat.ofNat (BitVec 8) 5 inst) reads the instance"
+    (let e := appN (pAddr P.bitVecToNat)
+       [natLit 8, appN (pAddr P.ofNatOfNat) [bv8, natLit 5, inst]]
+     whnfEq emptyEnv e e)
+  ++ test "BitVec.ult over an OfNat.ofNat argument reads the instance"
+    ((let five := appN (pAddr P.ofNatOfNat) [bv8, natLit 5, inst]
+     let e := appN (pAddr P.bitVecUlt) [natLit 8, five, bvLit 7]
+     match runWhnf emptyEnv e with
+     | .ok r => r.addr != (pAddr P.boolTrue).addr && r.addr != (pAddr P.boolFalse).addr
+     | .error _ => false : Bool))
+  ++ test "decide (@LT.lt (BitVec 8) inst 0 1) reads the instance"
+    (let prop := appN (pAddr P.ltLt) [bv8, inst, bvLit 0, bvLit 1]
+     let e := appN (pAddr P.decidableDecide) [prop, pConst (aId "dec")]
+     whnfEq emptyEnv e e)
+  ++ test "@SizeOf.sizeOf Unit inst x reads the instance"
+    (let e := appN (pAddr P.sizeOfSizeOf) [pAddr P.unit, inst, x]
+     whnfEq emptyEnv e e)
+  ++ test "PUnit._sizeOf_1 x has no native rule"
+    (let e := KExpr.mkApp (pAddr P.punitSizeOf1) x
+     whnfEq emptyEnv e e)
+  ++ test "(Decidable.rec … d).val on a variable d stays a projection"
+    (let fin3 := KExpr.mkApp (pAddr P.fin) (natLit 3)
+     let minor (n : String) : AE := KExpr.mkLam () () sort0 (pConst (aId n))
+     let recApp := appN (pAddr P.decidableRec)
+       [sort0, KExpr.mkLam () () sort0 fin3, minor "f", minor "g", pConst (aId "d")]
+     let e := KExpr.mkPrj ⟨P.fin, ()⟩ 0 recApp
+     whnfEq emptyEnv e e)
+
+def nativeTests : TestSeq :=
+  test "String.utf8ByteSize literal"
     (whnfEq emptyEnv (KExpr.mkApp (pAddr P.stringUtf8ByteSize) (.mkStrLit "hé"))
       (natLit 3))
   ++ test "String.back literal → Char.ofNat codepoint"
@@ -414,8 +454,8 @@ def cacheTests : TestSeq :=
      | .error _ _ => false : Bool))
 
 public def suite : List TestSeq :=
-  [pureHelperTests, structuralTests, iotaTests, natTests, nativeTests,
-    cacheTests]
+  [pureHelperTests, structuralTests, iotaTests, natTests, notReducedTests,
+    nativeTests, cacheTests]
 
 end Tests.Tc.WhnfTests
 

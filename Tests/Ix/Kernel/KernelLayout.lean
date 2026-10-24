@@ -8,7 +8,8 @@ list fails both fences.
 
 * **The checker** (`Part.checker`): the implementation, con-leche's
   `ConLeche/Kernel/*` (flattened into `IxC/Kernel/`), `Cached/*` and
-  `Frontend/*`, with Ix's `LevelGeran.lean` beside `Level.lean`. It must
+  `Frontend/*`, with Ix's `LevelGeran.lean` beside `Level.lean` and Ix's
+  typing tier `Tier/*`. It must
   never import the theory.
 * **The theory** (`Part.theory`): everything else of the checker's
   correctness argument and its tools: `Verify`, `Semantics`, `SetTheory`,
@@ -46,12 +47,14 @@ def topLevel : List (String × Part) := [
   ("Checker", .checker), ("CheckerBase", .checker), ("CheckerSplit", .checker),
   ("Core", .checker), ("CoreDefs", .checker), ("CoreIO", .checker), ("DeclCheck", .checker),
   ("Env", .checker), ("Exclusive", .checker), ("Expr", .checker), ("ExprOps", .checker),
-  ("FEnv", .checker), ("Inductives", .checker), ("Level", .checker), ("LevelGeran", .checker),
-  ("Name", .checker), ("NatOpPinSet", .checker), ("PropRead", .checker), ("PropWhen", .checker),
-  ("StdAxioms", .checker), ("TrustAxioms", .checker), ("TrustPins", .checker),
-  ("TypeChecker", .checker),
-  -- the checker: con-leche's cached checker and frontend
-  ("Cached", .checker), ("Frontend", .checker),
+  ("FEnv", .checker), ("Inductives", .checker), ("Key", .checker), ("Level", .checker),
+  ("LevelGeran", .checker), ("Name", .checker),
+  ("PropRead", .checker), ("PropWhen", .checker), ("Roles", .checker),
+  ("StdAxioms", .checker),
+  ("TypeChecker", .checker), ("Units", .checker),
+  -- the checker: con-leche's cached checker and frontend, and Ix's typing
+  -- tier (its data and its fold over the cached checker's functions)
+  ("Cached", .checker), ("Frontend", .checker), ("Tier", .checker),
   -- the theory
   ("Denotes", .theory), ("MainTheorem", .theory), ("Model", .theory), ("PinGen", .theory),
   ("Rules", .theory), ("Semantics", .theory), ("SetModel", .theory), ("SetTheory", .theory),

@@ -77,14 +77,14 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps projFnName RecRule)
 
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The P basis leaves are pinned FOR FREE
 
@@ -107,9 +107,9 @@ the basis tier's structural crux, and this is its P half. -/
 pin.**  From `EnvS.basis_pinned` and `acval_erase`, by injectivity of
 `erase` at a constant head. -/
 theorem acval_basis_pinned {m : EnvModel V env}
-    {n : Name} {ci : ConstantInfo} (hf : env.find? n = some ci)
+    {n : Key md} {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
-    {c : Ix.Kernel.Term.BConst} {us : List Nat} {ψ : Name → Nat}
+    {c : Ix.Kernel.Term.BConst} {us : List Nat} {ψ : LevelParam → Nat}
     (hd : Ix.Kernel.Verify.pinnedStructT n ψ
       = some (Term.const c us)) :
     m.acval n ψ = .const c us := by
@@ -135,11 +135,11 @@ heads (`Kernel/Basis/PSigma.lean:326`), a kind that is neither
 the reserved-name route.  Between the two lemmas every basis cons is
 covered. -/
 theorem basis_declsA_reserved (kind : Ix.Kernel.BasisKind) :
-    ∀ ci ∈ kind.declsA,
+    ∀ ci ∈ kind.declsA (md := md),
       (match ci with
        | .projInfo _ => true
        | _ => Ix.Kernel.reservedBasisNames.contains ci.name) = true := by
-  cases kind <;> decide
+  cases kind <;> cases md <;> decide
 
 /-- **`nat_heads` at a cons that is none of the three literal
 heads.**  The guard reads `natName`, `natZeroName` and `natSuccName`
@@ -149,17 +149,17 @@ their obligation here, and so would any inductive-kind cons.  (The
 `Nat` block itself is where the guard *becomes* true; it supplies
 `nat_heads` bespoke, and no back-transfer exists.) -/
 theorem natHeads_cons_offNat (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
     (hnS : c₀.name ≠ natSuccName)
     (m2 : EnvModel V ⟨c₀ :: env.consts⟩)
     (hacval : m2.acval = acvalWith mp.base2.acval c₀.name A)
-    (φ : Name → Nat) : NatHeads m2 φ := by
+    (φ : LevelParam → Nat) : NatHeads m2 φ := by
   intro hg ρ
   rw [hacval]
   -- the three lookups are the prefix's, so the guard reflects
-  have hfind : ∀ p : Name, c₀.name ≠ p →
-      (⟨c₀ :: env.consts⟩ : Env).find? p = env.find? p := by
+  have hfind : ∀ p : Key md, c₀.name ≠ p →
+      (⟨c₀ :: env.consts⟩ : Env md).find? p = env.find? p := by
     intro p hp
     show List.find? _ (c₀ :: env.consts) = _
     rw [List.find?_cons_of_neg (by simpa using hp)]
@@ -190,30 +190,32 @@ from the name rather than from the kind: the law's own
 `EtaFamilyStored`'s name-only conjunct separates the capability
 constructor, and `projFnName_ne_reserved` separates every projection
 slot. -/
-theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo} {T : Name}
-    {cvT : ConstantVal} {caps : IndCaps}
+theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo md} {T : Key md}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     (hres₀ : Ix.Kernel.reservedBasisNames.contains c₀.name = true)
     (hresT : Ix.Kernel.reservedBasisNames.contains T = false)
-    (hf : (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps))
+    (hf : (⟨c₀ :: env.consts⟩ : Env md).find? T = some (.indInfo cvT caps))
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
     env.find? T = some (.indInfo cvT caps) ∧
       Ix.Kernel.EtaFamilyStored env T caps ∧
-      T ≠ c₀.name ∧ caps.etaCtor ≠ c₀.name ∧
+      T ≠ c₀.name ∧ caps.etaCtor ≠ some c₀.name ∧
       ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name := by
-  obtain ⟨hCres, ⟨cvC, hfC⟩, hfP⟩ := hfam
+  obtain ⟨C, hC, hCres, ⟨cvC, hfC⟩, hfP⟩ := hfam
   have hnT : T ≠ c₀.name := fun hh => by rw [hh, hres₀] at hresT
                                          exact nomatch hresT
-  have hnC : caps.etaCtor ≠ c₀.name := fun hh => by
+  have hnC' : C ≠ c₀.name := fun hh => by
     rw [hh, hres₀] at hCres; exact nomatch hCres
+  have hnC : caps.etaCtor ≠ some c₀.name := fun h =>
+    hnC' (Option.some.inj (hC.symm.trans h))
   have hnP : ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name :=
     fun _ _ => projFnName_ne_reserved hres₀
-  have hdown : ∀ n : Name, n ≠ c₀.name →
-      (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
+  have hdown : ∀ n : Key md, n ≠ c₀.name →
+      (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
-  refine ⟨by rwa [hdown _ hnT] at hf, ⟨hCres, ⟨cvC, ?_⟩, ?_⟩,
+  refine ⟨by rwa [hdown _ hnT] at hf, ⟨C, hC, hCres, ⟨cvC, ?_⟩, ?_⟩,
     hnT, hnC, hnP⟩
-  · rwa [hdown _ hnC] at hfC
+  · rwa [hdown _ hnC'] at hfC
   · intro j hj
     obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
     rw [hdown _ (hnP j hj)] at hf2
@@ -227,7 +229,7 @@ stored family can be completed here and the law's leaves are all
 prefix leaves. -/
 theorem capsOk_cons_basis (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ConsCrossEnv env c₀)
     (hres₀ : Ix.Kernel.reservedBasisNames.contains c₀.name = true)
@@ -236,11 +238,12 @@ theorem capsOk_cons_basis (mp : EnvModelM V μ env)
     CapsOk m₂ := by
   constructor
   · -- the η half
-    intro T cvT caps hf hcape hres hfam φ' us hlen
+    intro T cvT caps hf hcape hres hfam φ' C hC us hlen
     obtain ⟨hfE, hfam₀, hnT, hnC, hnP⟩ :=
       etaFamilyStored_descend_reserved hres₀ hres hf hfam
+    have hnC' : C ≠ c₀.name := fun h => hnC (h ▸ hC)
     obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-      hprev.1 T cvT caps hfE hcape hres hfam₀ φ' us hlen
+      hprev.1 T cvT caps hfE hcape hres hfam₀ φ' C hC us hlen
     refine ⟨TVa, ?_, hokTVa, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_mono hfresh
@@ -261,7 +264,7 @@ theorem capsOk_cons_basis (mp : EnvModelM V μ env)
         refine congrArg _ (List.map_congr_left fun j hj => ?_)
         dsimp only
         rw [hac, acvalWith_ne (hnP j (List.mem_range.mp hj))]
-      rw [hfab, hac, acvalWith_ne hnC]
+      rw [hfab, hac, acvalWith_ne hnC']
       exact hlaw ρ ts rest x hlents hfit hmem
   · -- the unit-like half: one leaf to move, the disequality off the
     -- law's own non-reserved premise

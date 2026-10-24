@@ -20,7 +20,7 @@ open Ix.Kernel.Term
 
 /-- The stored level parameters only read the constant's
 level-parameter slot. -/
-theorem levelParamsAt_ext {env₁ env₂ : Env} {n : Name}
+theorem levelParamsAt_ext {env₁ env₂ : Env md} {n : Key md}
     (h : (env₁.find? n).map (fun ci => ci.toConstantVal.levelParams) =
       (env₂.find? n).map (fun ci => ci.toConstantVal.levelParams)) :
     levelParamsAt env₁ n = levelParamsAt env₂ n := by
@@ -33,16 +33,16 @@ parameters and the two literal guards.**  Transpose of
 `interp_env_ext`; the swap's workhorse.  An equation, so a law's
 denote *hypotheses* and *conclusions* both move across it for free —
 which is what makes the fired-form fields transportable at all. -/
-theorem denote_env_ext {cval : TConstVal} {env₁ env₂ : Env}
-    {φ : Name → Nat}
+theorem denote_env_ext {cval : TConstVal md} {env₁ env₂ : Env md}
+    {φ : LevelParam → Nat}
     (henvLev : ∀ n,
       (env₁.find? n).map (fun ci => ci.toConstantVal.levelParams) =
       (env₂.find? n).map (fun ci => ci.toConstantVal.levelParams))
     (hnat : natLitSupported env₁ = natLitSupported env₂)
     (hstr : strLitSupported env₁ = strLitSupported env₂)
-    (hproj : ∀ (sn : Name) (i : Nat),
+    (hproj : ∀ (sn : Key md) (i : Nat),
       env₁.findProj? sn i = env₂.findProj? sn i) :
-    ∀ (d : Nat) (e : Expr),
+    ∀ (d : Nat) (e : Expr md),
       denote cval env₁ φ d e = denote cval env₂ φ d e := by
   intro d e
   induction d, e using denote.induct (cval := cval) (env := env₁) (φ := φ) with
@@ -111,7 +111,7 @@ theorem denote_env_ext {cval : TConstVal} {env₁ env₂ : Env}
     | .forallE b c dd => exact (k4 b c dd rfl).elim
     | .lam b c dd => exact (k5 b c dd rfl).elim
     | .app a b => exact (k6 a b rfl).elim
-    | .letE b c dd => exact (k7 b c dd rfl).elim
+    | .letE b c dd _ => exact (k7 b c dd _ rfl).elim
     | .proj a b c => exact (k8 a b c rfl).elim
     | .lit (.natVal n) => exact (k9 n rfl).elim
     | .lit (.strVal t) => exact (k10 t rfl).elim

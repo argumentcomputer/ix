@@ -126,9 +126,8 @@ structure TcState (m : Mode) where
       fallback (stats; cross-kernel comparand of Rust `IX_KSYNTH_LOG`). -/
   kSynthRejects : UInt64 := 0
   /-- Disable the Ix-specific semantic shortcuts that have COMPLETE pure
-      fallbacks — BitVec natives, Decidable natives, `Fin.val`-through-
-      `Decidable.rec`, `reduceBool`/`reduceNat` markers — so accelerated
-      and pure reduction can be differential-tested
+      fallbacks — BitVec natives, Decidable natives, `reduceBool`/`reduceNat`
+      markers — so accelerated and pure reduction can be differential-tested
       (`IX_TC_NO_ACCEL=1`). Deliberately does NOT gate Nat-literal or
       string-literal bridging: those are representation-level (the
       official kernel computes them natively) and the pure path cannot
@@ -383,7 +382,7 @@ def ctxAddrForLbrUncached (s : TcState m) (lbr : UInt64) : Address :=
       | none =>
         h := h.update "local".toUTF8
         h := h.update s.ctx[i]!.addr.hash
-    return ⟨(h.finalizeWithLength 32).val⟩
+    return (Address.ofHasher h)
 
 /-- Memoized wrapper around `ctxAddrForLbrUncached`, mirroring tc.rs
     `ctx_addr_for_lbr`. The pure helper is a verification seam as well as an
@@ -422,7 +421,7 @@ def pushLocal (ty : KExpr m) : TcM m Unit := do
     h := h.update "ctx.local".toUTF8
     h := h.update ty.addr.hash
     h := h.update s.ctxId.hash
-    return ⟨(h.finalizeWithLength 32).val⟩
+    return (Address.ofHasher h)
   set { s with
     ctxIdStack := s.ctxIdStack.push s.ctxId
     ctxId
@@ -438,7 +437,7 @@ def pushLet (ty val : KExpr m) : TcM m Unit := do
     h := h.update ty.addr.hash
     h := h.update val.addr.hash
     h := h.update s.ctxId.hash
-    return ⟨(h.finalizeWithLength 32).val⟩
+    return (Address.ofHasher h)
   set { s with
     ctxIdStack := s.ctxIdStack.push s.ctxId
     ctxId

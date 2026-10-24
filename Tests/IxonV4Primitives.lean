@@ -1,12 +1,14 @@
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.IxonV4Paths
+import Ix.EnvScope
 
 open Tests.Ix.Kernel.BuildPrimitives
 
 def usage : String :=
   s!"usage: lake exe ixon-v4-primitives
 
-Compile the primitive dependency closure of the installed Lean environment,
+Compile the primitive dependency closure of the installed Lean environment (its
+selected closure, self-contained for the certified checker),
 write its canonical primitive addresses and the compiled closure to the scratch
 directory, and check the addresses against Tests/Fixtures/ixon-v4/primitives.tsv.
 
@@ -20,7 +22,10 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   let tsvPath := Tests.IxonV4.primitivesTsv dir
   let leanEnv ← get_env!
-  let needed := collectDeps leanEnv (kernelPrimitives.map parseNameToLean)
+  -- the selected closure, self-contained for IxC (recursors, literal support):
+  -- `ixon-v4-tests --primitives` validates it
+  let needed : Lean.NameSet := (Ix.EnvScope.collectSelectedDeps leanEnv
+    (kernelPrimitives.map parseNameToLean).toList).foldl (fun s (n, _) => s.insert n) {}
   let constants := leanEnv.constants.toList.filter fun (name, _) => needed.contains name
   IO.println s!"Compiling {constants.length} primitive dependency declarations"
   let raw ← Ix.CompileM.rsCompileEnvFFI constants

@@ -19,7 +19,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
   BinderMeta)
 
 universe w
@@ -29,7 +29,7 @@ variable {V : Type w} [SetTheory V]
 /-! ## Openings at any depth -/
 
 theorem openPisAtFvars_of_stripPis_isSome :
-    ∀ (n : Nat) {e : Expr} (d : Nat), (Expr.stripPis n e).isSome = true →
+    ∀ (n : Nat) {e : Expr md} (d : Nat), (Expr.stripPis n e).isSome = true →
       ∃ fvs o, openPisAtFvars n e d = some (fvs, o)
   | 0, e, _, _ => ⟨[], e, rfl⟩
   | n + 1, e, d, h => by
@@ -40,16 +40,16 @@ theorem openPisAtFvars_of_stripPis_isSome :
         (Expr.stripPis_instantiate1_isSome (v := .fvar d dom) n 0 h)
       exact ⟨.fvar d dom :: fvs, o, by simp only [openPisAtFvars, ho]⟩
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
 /-! ## Per-index scoping -/
 
 /-- Each opened variable's annotation is scoped at its own depth. -/
 theorem openPisAtFvars_typeWScoped :
-    ∀ (n : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {o : Expr},
+    ∀ (n : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {o : Expr md},
       openPisAtFvars n e d = some (fvs, o) → Expr.WScoped d e →
-      ∀ (i : Nat) (x : Expr), fvs[i]? = some x → Expr.WScoped (d + i) (Expr.fvarTypeD x)
+      ∀ (i : Nat) (x : Expr md), fvs[i]? = some x → Expr.WScoped (d + i) (Expr.fvarTypeD x)
   | 0, _, _, _, _, hop, _, i, x, hx => by
     simp only [openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at hop
     obtain ⟨rfl, -⟩ := hop
@@ -80,14 +80,14 @@ theorem openPisAtFvars_typeWScoped :
           exact this
       · exact nomatch hop
     | .bvar _, hop | .fvar _ _, hop | .sort _, hop | .const _ _, hop | .app _ _, hop
-    | .lam _ _ _, hop | .letE _ _ _, hop | .lit _, hop | .proj _ _ _, hop =>
+    | .lam _ _ _, hop | .letE _ _ _ _, hop | .lit _, hop | .proj _ _ _, hop =>
       simp [openPisAtFvars] at hop
 
 /-- An `instPisAt` residual is scoped at the spine's end. -/
 theorem instPisAt_res_WScoped :
-    ∀ (sp : List Expr) {d : Nat} {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {d : Nat} {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) → Expr.WScoped d ty →
-      (∀ (i : Nat) (a : Expr), sp[i]? = some a → Expr.WScoped (d + i + 1) a) →
+      (∀ (i : Nat) (a : Expr md), sp[i]? = some a → Expr.WScoped (d + i + 1) a) →
       Expr.WScoped (d + sp.length) rs
   | [], d, ty, ds, rs, h, hty, _ => by
     simp only [Expr.instPisAt, Option.some.injEq, Prod.mk.injEq] at h
@@ -117,7 +117,7 @@ theorem instPisAt_res_WScoped :
         rw [show d + (sp.length + 1) = d + 1 + sp.length from by omega]
         exact this
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.instPisAt] at h
 
 /-! ## Frame shifts under a consed spine -/

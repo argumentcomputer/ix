@@ -303,7 +303,6 @@ impl PermCtx {
   /// (e.g., an out-of-SCC aux motive).
   fn source_to_canonical_pos(&self, source_pos: usize) -> Option<usize> {
     let n_primary = self.n_primary;
-    let _n_source_aux = self.n_source_aux();
     let n_source_motives = self.n_source_motives();
     let primary_minors: usize = self.primary_ctor_counts.iter().sum();
 

@@ -30,7 +30,10 @@ import Ix.AuxGen.Nested
 import Ix.AuxGen.Patches
 import Ix.AuxGen.CompileAux
 import Ix.CompileDriver
+import Tests.Ix.Compile.ScheduleReference
 import Tests.Ix.Compile.ValidateAux
+import Tests.Ix.AuxGen.CheckedKernel
+import LSpec
 
 namespace Tests.Compile.AuxGenDiff
 
@@ -165,9 +168,8 @@ def firstDiff (a b : ByteArray) : Option Nat := Id.run do
 `leanDumpExpand` reproduces — byte for byte — the text that
 `rs_aux_gen_dump_expand` emits from the Rust side, by running the
 pure-Lean `Ix.AuxGen` pipeline (`sortConsts` → `expandNestedBlock` →
-`sortAuxByPartitionRefinement` → `computeAuxPerm` →
-`sourceAuxOrderWithOwner`) per inductive SCC block. The gate is a line
-diff; the first diverging line pinpoints the phase. -/
+`computeAuxPerm` → `sourceAuxOrderWithOwner`) per inductive SCC block. The
+gate is a line diff; the first diverging line pinpoints the phase. -/
 
 /-- Expr content hash as lowercase hex (mirrors Rust
     `Address::from_blake3_hash(e.get_hash()).hex()`). -/
@@ -214,7 +216,7 @@ def leanDumpBlock (lo : Ix.Name) (all : Array Ix.Name)
     if let some (.inductInfo v) ← Ix.AuxGen.lookupConst? name then
       if v.numNested > 0 then metadataHasNested := true
 
-  let expanded ← Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep
+  let expanded ← Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep true
   let structuralHasNested : Bool := expanded.types.size > expanded.nOriginals
 
   out := out ++ s!"flags meta_nested={metadataHasNested} structural_nested={structuralHasNested} n_classes={sortedClasses.length}\n"
@@ -239,15 +241,6 @@ def leanDumpBlock (lo : Ix.Name) (all : Array Ix.Name)
 
   if !(metadataHasNested && structuralHasNested) then
     return out
-
-  let (expanded, sortperm) ← Ix.AuxGen.sortAuxByPartitionRefinement expanded
-  out := out ++ s!"sortperm {" ".intercalate (sortperm.toList.map toString)}\n"
-  for (mem, i) in expanded.types.zipIdx do
-    if i < expanded.nOriginals then
-      continue
-    out := out ++ s!"post {i} name={mem.name.pretty} owner={mem.sourceOwner.pretty} typ={exprAddr mem.typ}\n"
-    for (ctor, j) in mem.ctors.zipIdx do
-      out := out ++ s!"postctor {i} {j} name={ctor.name.pretty} typ={exprAddr ctor.typ}\n"
 
   let mut origToCanonMap : Std.HashMap Ix.Name Ix.Name := {}
   for cls in sortedClasses do
@@ -299,7 +292,8 @@ def leanDumpPatchesBlock (lo : Ix.Name) (all : Array Ix.Name)
     return #[]
   let cenv ← Ix.CompileM.getCompileEnv
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
-  let auxOut ← (Ix.AuxGen.generateAuxPatches classNames originalAll maps).run'
+  let kernel ← Tests.Ix.AuxGen.checkedFamilyKernel cenv maps originalAll
+  let auxOut ← (Ix.AuxGen.generateAuxPatches classNames originalAll maps kernel).run'
     Ix.AuxGen.AuxKernelCtx.new
   let patchNames := (auxOut.patches.toList.map (·.1)).toArray.qsort
     (fun a b => a.pretty < b.pretty)
@@ -384,20 +378,29 @@ def seedBlockRegistry (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .error _ => continue
   return { cenv with blocks := registry }
 
+/-- Stable diagnostic inputs, shared by the expansion and patch dumps.
+Independent condensations can choose different Tarjan representatives. Use
+the production driver's canonical member key for the label and block order;
+retain every member and the existing pretty-sorted generator inputs. -/
+def dumpBlocks (isInductive : Ix.Name → Bool) (condensed : Ix.CondensedBlocks)
+    : Array (String × Ix.Name × Array Ix.Name) := Id.run do
+  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
+  for (lo, members) in condensed.blocks do
+    let all := members.toArray.qsort (fun a b => a.pretty < b.pretty)
+    if all.any isInductive then
+      let key := Ix.CompileM.canonicalKey lo all
+      blocks := blocks.push (key.pretty, key, all)
+  return blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+
+private def isInductive (cenv : CompileEnv) (name : Ix.Name) : Bool :=
+  match cenv.env.consts.get? name with
+  | some (.inductInfo _) => true
+  | _ => false
+
 /-- Whole-env Lean patches dump (same block selection/order as Rust). -/
 def leanDumpPatches (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     : String := Id.run do
-  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
-  for (lo, members) in condensed.blocks do
-    let sortedAll := (members.toArray.map (·, ())).map (·.1)
-      |>.qsort (fun a b => a.pretty < b.pretty)
-    let hasInd := sortedAll.any fun n =>
-      match cenv.env.consts.get? n with
-      | some (.inductInfo _) => true
-      | _ => false
-    if hasInd then
-      blocks := blocks.push (lo.pretty, lo, sortedAll)
-  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+  let blocks := dumpBlocks (isInductive cenv) condensed
   let mut out := ""
   for (_, lo, all) in blocks do
     let blockEnv : Ix.CompileM.BlockEnv :=
@@ -407,134 +410,33 @@ def leanDumpPatches (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .error e => out := out ++ s!"block {lo.pretty}\nerror generate {e}\n"
   return out
 
-/-! ## Plans gate: orchestration plans/AuxLayout/Muts parity
+/-! ## Plans gate: orchestration AuxLayout/Muts parity
 
-Mirrors `rs_aux_gen_dump_plans`: per qualifying block (mutual OR
-inductive-containing — Rust registers `Muts` entries for every
-`compile_mutual` invocation with `aux=true`), compile the primary block,
-run `compileMutualAuxTail`, and render the resulting call-site plans,
-brecOn/below plans, and `Muts` named entries (dedup by name, LAST wins —
-the layout re-registration overrides) in the endpoint's exact format. -/
-
-private def dumpBits (bits : Array Bool) : String :=
-  String.ofList (bits.toList.map fun b => if b then '1' else '0')
-
-private def dumpNats (xs : Array Nat) : String :=
-  ",".intercalate (xs.toList.map fun x =>
-    if x == Ix.AuxGen.PERM_OUT_OF_SCC then "out" else toString x)
+Mirrors `rs_aux_gen_dump_plans`: the `Muts` named entries of the compiled
+environment, sorted, in the endpoint's exact format, from the Lean driver's
+output (`compileEnvFold`). Pass 3's hooks run in the driver (a changed
+block's Ix auxiliaries move to their `_ix` display names, and the `Muts`
+entries of their blocks list those names), so the Lean half reads the
+driver's output, as the Rust half reads its compile's. No call-site plan is
+computed since Pass 3 is wired, so neither dump has plan lines. -/
 
 private def dumpU64s (xs : Array UInt64) : String :=
   ",".intercalate (xs.toList.map fun x =>
     if x.toNat == Ix.AuxGen.PERM_OUT_OF_SCC then "out" else toString x.toNat)
 
-/-- Per-block Lean half of the plans dump. Returns accumulated
-    (plans, brecPlans, belowPlans, mutsLines-source). -/
-def leanDumpPlansBlock (_lo : Ix.Name) (all : Array Ix.Name)
-    : Ix.CompileM.CompileM
-        (Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan
-          × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan
-          × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan
-          × Array (Ix.Name × Ixon.Named)) := do
-  let mut cs : Array Ix.MutConst := #[]
-  for n in all do
-    match (← Ix.AuxGen.lookupConst? n) with
-    | none => pure ()
-    | some ci =>
-      match ci with
-      | .inductInfo val => cs := cs.push (← Ix.CompileM.MutConst.mkIndc val)
-      | .defnInfo val => cs := cs.push (Ix.MutConst.fromDefinitionVal val)
-      | .opaqueInfo val => cs := cs.push (Ix.MutConst.fromOpaqueVal val)
-      | .thmInfo val => cs := cs.push (Ix.MutConst.fromTheoremVal val)
-      | .recInfo val => cs := cs.push (.recr val)
-      | _ => pure ()
-  let sortedClasses ← Ix.CompileM.sortConsts cs.toList
-  let blockResult ← Ix.CompileM.compileMutualBlock sortedClasses
-  -- Alpha-collapsed standalone (single non-inductive class): production
-  -- returns BEFORE the Muts registration and the aux tail
-  -- (compile.rs:3872) — no plans, no muts entry.
-  let isMuts := match blockResult.block.info with
-    | .muts _ => true
-    | _ => false
-  if !isMuts then
-    return ({}, {}, {}, #[])
-  let cenv ← Ix.CompileM.getCompileEnv
-  let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
-  let (auxLayout?, plans, brecPlans, belowPlans) ←
-    (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
-      maps).run' Ix.AuxGen.AuxKernelCtx.new
-  let _ := auxLayout?
-  let st ← Ix.CompileM.getBlockState
-  return (plans, brecPlans, belowPlans, st.auxNamed)
+/-- The `muts` lines of a plans dump, in order. -/
+def mutsLines (dump : String) : String :=
+  "\n".intercalate ((dump.splitOn "\n").filter (·.startsWith "muts "))
 
-/-- Whole-env Lean plans dump in `rs_aux_gen_dump_plans` format. -/
-def leanDumpPlans (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
-    : String := Id.run do
-  -- Block selection: every compile_mutual-with-aux invocation — mutual
-  -- blocks of any kind, plus singleton inductives.
-  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
-  for (lo, members) in condensed.blocks do
-    let sortedAll := (members.toArray.map (·, ())).map (·.1)
-      |>.qsort (fun a b => a.pretty < b.pretty)
-    let hasInd := sortedAll.any fun n =>
-      match cenv.env.consts.get? n with
-      | some (.inductInfo _) => true
-      | _ => false
-    -- Count only block-compilable kinds for the "mutual" test (ctors
-    -- are members of their parent's SCC but not MutConsts).
-    let mut nCompilable := 0
-    let mut allCompilableAux := true
-    for n in sortedAll do
-      match cenv.env.consts.get? n with
-      | some (.inductInfo _) | some (.defnInfo _) | some (.opaqueInfo _)
-      | some (.thmInfo _) | some (.recInfo _) =>
-        nCompilable := nCompilable + 1
-        if !isAuxFamily n then allCompilableAux := false
-      | _ => pure ()
-    -- Production's scheduler PROMOTES blocks whose members were already
-    -- compiled as aux constants by their parent inductive's pipeline
-    -- (env.rs:566-708) — compile_mutual never runs on them, so they get
-    -- no plans and their Muts entries come from the parent's
-    -- compileAuxBlock. Mirror: skip blocks whose every compilable member
-    -- is aux-family-named.
-    if (hasInd || nCompilable > 1) && !(nCompilable > 0 && allCompilableAux) then
-      blocks := blocks.push (lo.pretty, lo, sortedAll)
-  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
-
-  let mut allPlans : Array (String × Ix.AuxGen.CallSitePlan) := #[]
-  let mut allBrec : Array (String × Ix.AuxGen.BRecOnCallSitePlan) := #[]
-  let mut allBelow : Array (String × Ix.AuxGen.BRecOnCallSitePlan) := #[]
-  let mut mutsEntries : Std.HashMap Ix.Name Ixon.Named := {}
-  for (_, lo, all) in blocks do
-    let blockEnv : Ix.CompileM.BlockEnv :=
-      { all := {}, current := lo, mutCtx := default, univCtx := [] }
-    match Ix.CompileM.CompileM.run cenv blockEnv {}
-        (leanDumpPlansBlock lo all) with
-    | .ok ((plans, brecPlans, belowPlans, auxNamed), _) =>
-      for (n, p) in plans do
-        allPlans := allPlans.push (n.pretty, p)
-      for (n, p) in brecPlans do
-        allBrec := allBrec.push (n.pretty, p)
-      for (n, p) in belowPlans do
-        allBelow := allBelow.push (n.pretty, p)
-      for (n, named) in auxNamed do
-        if let .muts .. := named.constMeta.info then
-          mutsEntries := mutsEntries.insert n named
-    | .error _ =>
-      -- Errors surface in the patches gate already; keep plans quiet.
-      pure ()
-
+/-- The Lean half of the plans dump: the `Muts` named entries of `env` in
+    `rs_aux_gen_dump_plans` format, sorted by name. -/
+def leanDumpPlansOf (env : Ixon.Env) : String := Id.run do
+  let mutsSorted := (env.named.toList.filterMap fun (n, named) =>
+      match named.constMeta.info with
+      | .muts .. => some (n.pretty, toString named.addr, named)
+      | _ => none).toArray.qsort
+    (fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1))
   let mut out := ""
-  for (name, p) in allPlans.qsort (fun a b => a.1 < b.1) do
-    let head := match p.headRewrite with
-      | some h => s!"{h.targetRec.pretty}@{h.targetMotivePos}"
-      | none => "none"
-    out := out ++ s!"plan {name} params={p.nParams} smotives={p.nSourceMotives} sminors={p.nSourceMinors} indices={p.nIndices} mkeep={dumpBits p.motiveKeep} nkeep={dumpBits p.minorKeep} m2c={dumpNats p.sourceToCanonMotive} n2c={dumpNats p.sourceToCanonMinor} inblock={dumpBits p.sourceInBlock} head={head}\n"
-  for (tag, arr) in [("bplan", allBrec), ("wplan", allBelow)] do
-    for (name, p) in arr.qsort (fun a b => a.1 < b.1) do
-      out := out ++ s!"{tag} {name} params={p.nParams} smotives={p.nSourceMotives} indices={p.nIndices} mkeep={dumpBits p.motiveKeep} m2c={dumpNats p.sourceToCanonMotive}\n"
-  let mutsSorted := (mutsEntries.toList.map fun (n, named) =>
-    (n.pretty, toString named.addr, named)).toArray.qsort
-      (fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1))
   for (name, addrHex, named) in mutsSorted do
     if let .muts allClasses auxLayout := named.constMeta.info then
       let allStr := ";".intercalate (allClasses.toList.map fun cls =>
@@ -560,22 +462,12 @@ def filterPatchDump (dump : String) (kinds : List String) : String :=
   String.intercalate "\n" ((dump.splitOn "\n").filter keep)
 
 /-- Whole-env Lean dump over the same block selection/order as the Rust
-    endpoint (inductive-containing SCCs, sorted by lowlink pretty name,
+    endpoint (inductive-containing SCCs, sorted by canonical key pretty name,
     members pretty-sorted). CompileM errors surface as `error` lines so a
     divergence shows in the diff instead of aborting. -/
 def leanDumpExpand (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     : String := Id.run do
-  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
-  for (lo, members) in condensed.blocks do
-    let all := (members.toArray.map (·, ())).map (·.1)
-    let sortedAll := all.qsort (fun a b => a.pretty < b.pretty)
-    let hasInd := sortedAll.any fun n =>
-      match cenv.env.consts.get? n with
-      | some (.inductInfo _) => true
-      | _ => false
-    if hasInd then
-      blocks := blocks.push (lo.pretty, lo, sortedAll)
-  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+  let blocks := dumpBlocks (isInductive cenv) condensed
 
   let mut out := ""
   for (_, lo, all) in blocks do
@@ -585,6 +477,95 @@ def leanDumpExpand (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .ok (s, _) => out := out ++ s
     | .error e => out := out ++ s!"block {lo.pretty}\nerror compilem {e}\n"
   return out
+
+/-- Exercise the actual dump input selection with a different representative,
+member insertion order and block insertion order, retaining both families. -/
+def suite : List LSpec.TestSeq := Id.run do
+  let eq := Ix.Name.fromLeanName `Eq
+  let refl := Ix.Name.fromLeanName `Eq.refl
+  let nat := Ix.Name.fromLeanName `Nat
+  let zero := Ix.Name.fromLeanName `Nat.zero
+  let plain := Ix.Name.fromLeanName `plain
+  let left : Ix.CondensedBlocks :=
+    { lowLinks := {}, blockRefs := {}, blocks := ({} : Ix.Map _ _)
+        |>.insert eq (({} : Ix.Set _).insert eq |>.insert refl)
+        |>.insert nat (({} : Ix.Set _).insert nat |>.insert zero)
+        |>.insert plain (({} : Ix.Set _).insert plain) }
+  let right : Ix.CondensedBlocks :=
+    { lowLinks := {}, blockRefs := {}, blocks := ({} : Ix.Map _ _)
+        |>.insert plain (({} : Ix.Set _).insert plain)
+        |>.insert zero (({} : Ix.Set _).insert zero |>.insert nat)
+        |>.insert refl (({} : Ix.Set _).insert refl |>.insert eq) }
+  let selected := dumpBlocks (fun n => n == eq || n == nat) left
+  let reordered := dumpBlocks (fun n => n == eq || n == nat) right
+  return [
+    LSpec.test "auxiliary dumps ignore SCC representative and insertion order"
+      (selected == reordered),
+    LSpec.test "auxiliary dumps retain both complete inductive blocks"
+      (selected.size == 2 && selected.all (fun (_, _, ns) => ns.size == 2)
+        && selected.any (fun (_, _, ns) => ns.contains eq && ns.contains refl)
+        && selected.any (fun (_, _, ns) => ns.contains nat && ns.contains zero))]
+
+/-- **AuxGen M5b: the acceptance table equals the patch table.** Every Lean
+patch (each `patch <name> kind=…` line of the Lean patches dump, the table the
+patches gate compares with Rust's) has a verdict in production's acceptance
+table under the name it is published at: its own row (the promotion route), or
+the row of each `_ix` display name Pass 3 moved it to (a changed block's
+regenerated auxiliary). No verdict is a refusal. Names are compared as
+`Ix.Name.pretty` prints them, the dump's own spelling. The counts are printed.
+AuxGen M5c: every block that re-ran on `fallback` (`CompileReport.retried`,
+printed) has every generated auxiliary exempt with its status, and every block
+the run-ahead reports not Source-accepted (`source`) either re-ran or compiled
+(no failure in `ungrounded`: under `failClosed`, without a refusal). -/
+def acceptanceGate (leanPatchDump : String) (report : Ix.AuxGen.CompileReport)
+    (source : Ix.AuxGen.Source.Report) (ungrounded : Std.HashMap Ix.Name String) : IO Bool := do
+  let table := report.table
+  let mut covered : Std.HashSet String := {}
+  for r in table.rows do covered := covered.insert r.name.pretty
+  for (g, d) in report.display do
+    if (table.verdict? d).isSome then covered := covered.insert g.pretty
+  let patchNames : Array String :=
+    ((leanPatchDump.splitOn "\n").filter (·.startsWith "patch ")).toArray.map fun l =>
+      ((l.drop 6).toString.splitOn " kind=").headD ""
+  let uncovered := patchNames.filter (!covered.contains ·)
+  let c := table.counts
+  IO.println s!"[aux-gen-diff] acceptance table: {table.rows.size} rows ({c.line}); \
+    {patchNames.size} Lean patches, {patchNames.size - uncovered.size} with a verdict, \
+    {uncovered.size} without"
+  for n in uncovered.extract 0 8 do IO.println s!"[aux-gen-diff]   no verdict: {n}"
+  for l in table.refusals 8 do IO.println s!"[aux-gen-diff]   refused: {l.take 200}"
+  -- AuxGen M5c: production is `failClosed`. This corpus has blocks Source mode
+  -- does not accept (its `validateAuxClosure` leaves some recursors out). Such a
+  -- block's tail either stops on an IxC refusal and re-runs on `fallback`
+  -- (`runAuxTail`), its auxiliaries exempt with the status, or never asks the
+  -- service (the fast paths) and compiles without a refusal. The bytes are the
+  -- reference-schedule gate's (= Rust).
+  let mut retryErrors : Array String := #[]
+  let notAccepted := source.notAccepted.map (·.1)
+  IO.println s!"[aux-gen-diff] failClosed retries: {report.retried.size} blocks; \
+    {source.notAccepted.size} blocks not Source-accepted in the run-ahead's report"
+  for (k, why, names) in report.retried do
+    let listed := notAccepted.contains k
+    IO.println s!"[aux-gen-diff]   retried on fallback: {k.pretty} ({names.size} auxiliaries\
+      {if listed then "" else "; not in the run-ahead's report, status from its own copy"}): \
+      {why.take 200}"
+    if why.isEmpty then retryErrors := retryErrors.push s!"{k.pretty}: retried with no status"
+    let want := s!"{Ix.AuxGen.AuxTable.notAcceptedPrefix}{why}"
+    for n in names do
+      let verdicts := report.admitted.filter (·.1 == n)
+      unless !verdicts.isEmpty && verdicts.all (fun (_, v) => v == .exempt want) do
+        retryErrors := retryErrors.push s!"{k.pretty}: {n.pretty} is not exempt with the status"
+  for (k, why) in source.notAccepted do
+    let retried := report.retried.any (·.1 == k)
+    let failed := ungrounded.contains k
+    unless retried do
+      IO.println s!"[aux-gen-diff]   not accepted, compiled without a retry: {k.pretty}\
+        {if failed then " (FAILED)" else ""}: {why.take 160}"
+    if failed then retryErrors := retryErrors.push s!"{k.pretty}: a block not Source-accepted failed"
+  for e in retryErrors.extract 0 8 do IO.println s!"[aux-gen-diff]   retry: {e.take 200}"
+  let ok := uncovered.isEmpty && c.refused == 0 && !patchNames.isEmpty && retryErrors.isEmpty
+  IO.println s!"[aux-gen-diff] acceptance-table gate: {if ok then "PASS" else "FAIL"}"
+  return ok
 
 /-- Compare the two dumps line-by-line; report the first divergence with
     surrounding context. Returns true iff identical. -/
@@ -696,6 +677,10 @@ def run (env : Lean.Environment) : IO UInt32 := do
   -- production driver's incremental merge relies on.
   let cenv : CompileEnv := seedBlockRegistry (Ix.Commit.mkCompileEnv phases)
     condensed
+  let options : Ix.CompileM.AuxIxcOptions := {}
+  let source := Ix.AuxGen.Source.RunAhead.start rawEnv.get? condensed
+    (Ix.CompileM.scheduleLevels condensed (Ix.CompileM.FoldSchedule.of condensed)) options.asks
+  let cenv := options.withSourceProviders rawEnv.get? condensed source cenv
 
   let mut rep : Report := {}
   -- Names covered by Lean block outputs (to compute Rust-only extras).
@@ -731,8 +716,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
       else
         rep := { rep with defnError := rep.defnError.push (lo, toString e) }
     | .ok (result, _cache) =>
-      -- Member name → Lean address, mirroring the parallel driver's
-      -- projection handling (CompileM.compileEnvParallel).
+      -- Member name → Lean address, mirroring the drivers' projection
+      -- handling (`Ix.CompileM.mergeCompiledBlock`).
       let mut outs : Array (Ix.Name × Address × Ixon.ConstantMeta) := #[]
       if result.projections.isEmpty then
         outs := #[(lo, Address.blake3 result.blockBytes, result.blockMeta)]
@@ -851,17 +836,32 @@ def run (env : Lean.Environment) : IO UInt32 := do
     (·.startsWith "patch ") |>.length
   IO.println s!"[aux-gen-diff] patches gate ({", ".intercalate kinds}): {if patchesOk then "PASS" else "FAIL"} ({recCount} patches compared)"
 
-  -- Plans gate: orchestration plans / AuxLayout / Muts entries.
+  -- The Lean driver over the corpus, once: the plans gate reads its `Muts`
+  -- entries, the driver gate below compares it with Rust's whole. With its
+  -- Source service's report (`compileEnvFold` is its first component), which
+  -- names why a block is not accepted (AuxGen M5b: an acceptance refusal that
+  -- references such a block).
+  let foldedWithSource := Ix.CompileM.compileEnvFoldWithSource rawEnv condensed
+  let folded := Prod.fst <$> foldedWithSource
+  if let .ok (_, source) := foldedWithSource then
+    IO.println s!"[aux-gen-diff] source service: {source.summary}"
+    for (k, why) in source.notAccepted.extract 0 12 do
+      IO.println s!"[aux-gen-diff]   block not accepted: {k.pretty}: {why.take 240}"
+    for (g, why) in source.refused.extract 0 12 do
+      IO.println s!"[aux-gen-diff]   group refused: {g}: {why.take 240}"
+  -- Plans gate: orchestration AuxLayout / Muts entries.
   IO.println "[aux-gen-diff] plans dump (Rust)..."
   let rustPlansDump ← rsAuxGenDumpPlansFFI filtered
   IO.println "[aux-gen-diff] plans dump (Lean)..."
-  let leanPlansDump := leanDumpPlans cenv condensed
-  let plansOk ← compareDumps rustPlansDump leanPlansDump
+  let leanPlansDump ← match folded with
+    | .ok (leanEnv, _, _) => pure (leanDumpPlansOf leanEnv)
+    | .error e => do
+      IO.println s!"[aux-gen-diff] plans: Lean driver ERROR: {e}"
+      pure ""
+  let plansOk ← compareDumps (mutsLines rustPlansDump) (mutsLines leanPlansDump)
   let mutsCount := ((rustPlansDump.splitOn "\n").filter
     (·.startsWith "muts ")).length
-  let planCount := ((rustPlansDump.splitOn "\n").filter
-    (·.startsWith "plan ")).length
-  IO.println s!"[aux-gen-diff] plans gate: {if plansOk then "PASS" else "FAIL"} ({planCount} plans, {mutsCount} muts entries)"
+  IO.println s!"[aux-gen-diff] plans gate: {if plansOk then "PASS" else "FAIL"} ({mutsCount} muts entries)"
   -- Optional dump save for inspection (IX_AUX_DUMP_OUT=<path-prefix>).
   match (← IO.getEnv "IX_AUX_DUMP_OUT") with
   | some pathPrefix =>
@@ -874,16 +874,16 @@ def run (env : Lean.Environment) : IO UInt32 := do
     IO.println s!"[aux-gen-diff] dumps saved to {pathPrefix}.*.txt"
   | none => pure ()
 
-  -- Driver gate: FULL aux-aware driver parity. `compileEnvAux` runs the
-  -- production pipeline (prereq seeding, per-block aux tails, promotion
+  -- Driver gate: FULL aux-aware driver parity. `compileEnvFold` runs the
+  -- production driver (the aux-gen seeds as dependencies, aux tails, promotion
   -- + no-aux originals, pending release) over the same corpus; the
   -- result env is compared against Rust's CompileState env whole:
   -- named coverage both directions, per-name addresses, per-address
   -- constant BYTES, and full Named metadata (constMeta + original +
   -- hints).
-  IO.println "[aux-gen-diff] aux-aware driver (compileEnvAux)..."
+  IO.println "[aux-gen-diff] aux-aware driver (compileEnvFold)..."
   let driverOk ← do
-    match Ix.CompileM.compileEnvAux rawEnv condensed with
+    match folded with
     | .error e =>
       IO.println s!"[aux-gen-diff] driver ERROR: {e}"
       pure false
@@ -968,35 +968,51 @@ def run (env : Lean.Environment) : IO UInt32 := do
         && anonHintsMism == 0 && serOk)
   IO.println s!"[aux-gen-diff] driver gate: {if driverOk then "PASS" else "FAIL"}"
 
-  -- Parallel-driver gate: the PARALLEL aux-aware driver must produce the
-  -- identical env (wave workers + rustRef fail-fast — the InitStd gate
-  -- vehicle).
-  IO.println "[aux-gen-diff] parallel aux driver (compileEnvParallelAux)..."
+  -- Reference-schedule gate: the test-only reference schedule (the former
+  -- sequential driver, with the Rust-style seed pre-pass) and the fold at
+  -- another width must produce the identical env; the fold's names are also
+  -- checked against Rust's addresses (`rustRefMismatch?`).
+  IO.println "[aux-gen-diff] reference schedule and the fold at width 32..."
   let rustNameToAddr : Std.HashMap Ix.Name Address :=
     rustEnv.named.fold (init := {}) fun m n named => m.insert n named.addr
   let parOk ← do
-    match ← Ix.CompileM.compileEnvParallelAux rawEnv condensed
-        (rustRef := some rustNameToAddr) with
-    | .error e =>
-      IO.println s!"[aux-gen-diff]   parallel driver ERROR: {e}"
-      pure false
-    | .ok (parEnv, _, _) =>
-      match Ixon.serEnv parEnv, Ixon.serEnv rustEnv with
-      | .ok pb, .ok rb =>
-        if pb == rb then
-          IO.println s!"[aux-gen-diff]   parallel serialized env: {pb.size} bytes, IDENTICAL"
-          pure true
-        else
-          IO.println s!"[aux-gen-diff]   parallel serialized env DIFFERS: lean {pb.size}B rust {rb.size}B (first diff at {repr (firstDiff pb rb)})"
-          pure false
-      | .error e, _ =>
-        IO.println s!"[aux-gen-diff]   serEnv (parallel) failed: {e}"
-        pure false
-      | _, .error e =>
-        IO.println s!"[aux-gen-diff]   serEnv (rust) failed: {e}"
-        pure false
-  IO.println s!"[aux-gen-diff] parallel driver gate: {if parOk then "PASS" else "FAIL"}"
+    let runs : List (String × Except String (Ixon.Env × Nat × Ix.CompileM.CompileEnv)) :=
+      [("reference schedule", Tests.Ix.Compile.ScheduleReference.sequential rawEnv condensed),
+       ("fold, width 32", Ix.CompileM.compileEnvFold rawEnv condensed (width := 32))]
+    let mut ok := true
+    for (label, run) in runs do
+      match run with
+      | .error e =>
+        IO.println s!"[aux-gen-diff]   {label} ERROR: {e}"
+        ok := false
+      | .ok (parEnv, _, parCenv) =>
+        if let some msg := Ix.CompileM.rustRefMismatch? rustNameToAddr parCenv then
+          IO.println s!"[aux-gen-diff]   {label}: {msg}"
+          ok := false
+        match Ixon.serEnv parEnv, Ixon.serEnv rustEnv with
+        | .ok pb, .ok rb =>
+          if pb == rb then
+            IO.println s!"[aux-gen-diff]   {label} serialized env: {pb.size} bytes, IDENTICAL"
+          else
+            IO.println s!"[aux-gen-diff]   {label} serialized env DIFFERS: lean {pb.size}B rust {rb.size}B (first diff at {repr (firstDiff pb rb)})"
+            ok := false
+        | .error e, _ =>
+          IO.println s!"[aux-gen-diff]   serEnv ({label}) failed: {e}"
+          ok := false
+        | _, .error e =>
+          IO.println s!"[aux-gen-diff]   serEnv (rust) failed: {e}"
+          ok := false
+    pure ok
+  IO.println s!"[aux-gen-diff] reference-schedule gate: {if parOk then "PASS" else "FAIL"}"
 
-  return if gateOk && dumpOk && patchesOk && plansOk && driverOk && parOk then 0 else 1
+  -- AuxGen M5b: the acceptance table equals the patch table (`acceptanceGate`)
+  let tableOk ← match foldedWithSource with
+    | .ok ((_, _, cenv'), source) =>
+      acceptanceGate leanPatchDump cenv'.auxReport source cenv'.ungrounded
+    | .error e => do
+      IO.println s!"[aux-gen-diff] acceptance-table gate: Lean driver ERROR: {e}"
+      pure false
+
+  return if gateOk && dumpOk && patchesOk && plansOk && driverOk && parOk && tableOk then 0 else 1
 
 end Tests.Compile.AuxGenDiff

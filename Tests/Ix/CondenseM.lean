@@ -209,6 +209,209 @@ def testBlockRefsTwoCycles : TestSeq :=
     test "blockRefs: AB SCC refs C" (blockRefs.map (·.contains (mkName "C")) |>.getD false)
   | none => test "blockRefs: found A's root" false
 
+/-! ## References outside the keys, and large graphs -/
+
+/-- A reference to a name that is not a key is not an edge: it joins no
+component and has no representative, but stays in its block's `blockRefs`. -/
+def testOutsideRefs : TestSeq :=
+  let graph := buildGraph [("A", ["B", "X"]), ("B", ["A", "Y"]), ("C", ["X", "A"])]
+  let sccs := Ix.CondenseM.run graph
+  let aRoot := sccs.lowLinks.get? (mkName "A")
+  let cRoot := sccs.lowLinks.get? (mkName "C")
+  let refsOf := fun (r : Option Ix.Name) =>
+    ((r.bind sccs.blockRefs.get?).getD {}).toList.map toString |>.mergeSort
+  test "outside refs: SCCs" (sccsToSorted sccs == [["A", "B"], ["C"]]) ++
+  test "outside refs: no representative for X, Y"
+    (!sccs.lowLinks.contains (mkName "X") && !sccs.lowLinks.contains (mkName "Y")) ++
+  test "outside refs: AB block refs X, Y" (refsOf aRoot == ["X", "Y"]) ++
+  test "outside refs: C block refs A, X" (refsOf cRoot == ["A", "X"])
+
+/-- A chain and a cycle of 100,000 nodes: the total Tarjan keeps its own
+call stack, so depth costs no native stack. -/
+def testLargeGraphs : TestSeq :=
+  let n := 100000
+  let chain : Map Ix.Name (Set Ix.Name) := (List.range n).foldl (init := {}) fun m i =>
+    m.insert (mkName s!"n{i}") (if i + 1 < n then {mkName s!"n{i+1}"} else {})
+  let cycle : Map Ix.Name (Set Ix.Name) := (List.range n).foldl (init := {}) fun m i =>
+    m.insert (mkName s!"n{i}") {mkName s!"n{(i + 1) % n}"}
+  let c1 := Ix.CondenseM.run chain
+  let c2 := Ix.CondenseM.run cycle
+  test "100k chain: 100k singleton blocks"
+    (c1.blocks.size == n && c1.lowLinks.size == n && c1.blocks.toList.all (·.2.size == 1)) ++
+  test "100k cycle: one block of 100k"
+    (c2.blocks.size == 1 && c2.lowLinks.size == n && c2.blocks.toList.all (·.2.size == n))
+
+/-! ## The total Tarjan on index graphs -/
+
+/-- `Ix.Compile.Canon.tarjan` on small graphs (components compared as sets). -/
+def testTarjan : TestSeq :=
+  let norm := fun (cs : Array (Array Nat)) => (cs.map (·.qsort (· < ·))).qsort
+    (fun a b => a[0]?.getD 0 < b[0]?.getD 0)
+  let cases : List (Array (Array Nat) × Array (Array Nat)) := [
+    (#[], #[]),
+    (#[#[]], #[#[0]]),
+    (#[#[1], #[0]], #[#[0, 1]]),
+    (#[#[1], #[2], #[]], #[#[0], #[1], #[2]]),
+    (#[#[1], #[0, 2], #[3], #[2]], #[#[0, 1], #[2, 3]]),
+    (#[#[1], #[2], #[0, 3], #[4], #[5], #[3], #[7], #[6]],
+      #[#[0, 1, 2], #[3, 4, 5], #[6, 7]]),
+    (#[#[0]], #[#[0]]),
+    -- out-of-range successors are ignored
+    (#[#[1, 7], #[0, 9]], #[#[0, 1]])]
+  cases.foldl (init := .done) fun t (g, want) =>
+    t ++ test s!"tarjan {g}" ((Ix.Compile.Canon.tarjan g).map norm == some (norm want))
+
+/-! ## The former `partial` Tarjan, as a reference
+
+`Former.run` is the implementation `CondenseM.run` replaced, kept verbatim
+except that `visit` takes fuel (the number of keys plus one, more than the
+recursion depth) instead of being `partial`. `CondenseM.run` must reproduce
+its three maps exactly: contents and iteration orders, which downstream
+compilation and Source-mode ingress depend on. -/
+
+namespace Former
+
+structure CondenseEnv where
+  validNames: Set Ix.Name
+  outRefs: Map Ix.Name (Set Ix.Name)
+
+structure CondenseState where
+  names: Map Ix.Name UInt64
+  ids: Map UInt64 Ix.Name
+  lowLink: Map UInt64 UInt64
+  stack: Array UInt64
+  onStack: Set UInt64
+  id : UInt64
+
+def CondenseState.init : CondenseState := ⟨{}, {}, {}, #[], {}, 0⟩
+
+abbrev CondenseM := ReaderT CondenseEnv <| StateT CondenseState Id
+
+def visit : Nat → Ix.Name → CondenseM Unit
+| 0, _ => pure ()
+| fuel + 1, name => do
+  if !(<- read).validNames.contains name then return ()
+  let refs := match (<- read).outRefs.get? name with
+    | .some x => x
+    | .none => {}
+  let id := (<- get).id
+  modify fun stt => { stt with
+    names := stt.names.insert name id
+    ids := stt.ids.insert id name
+    stack := stt.stack.push id
+    onStack := stt.onStack.insert id
+    lowLink := stt.lowLink.insert id id
+    id := id + 1
+  }
+  for ref in refs do
+    if !(<- read).validNames.contains ref then continue
+    match (<- get).names.get? ref with
+    | .none => do
+      visit fuel ref
+      modify fun stt =>
+        let ll := stt.lowLink.get! id
+        let rll := stt.lowLink.get! (stt.names.get! ref)
+        { stt with lowLink := stt.lowLink.insert id (min ll rll) }
+    | .some id' => if (<- get).onStack.contains id' then
+      modify fun stt =>
+        let ll := stt.lowLink.get! id
+        { stt with lowLink := stt.lowLink.insert id (min ll id') }
+  if id == (<- get).lowLink.get! id then
+    let mut stack := (<- get).stack
+    if !stack.isEmpty then
+      while true do
+        let top := stack.back!
+        stack := stack.pop
+        modify fun stt => { stt with
+          lowLink := stt.lowLink.insert top id
+          onStack := stt.onStack.erase top
+        }
+        if top == id then break
+    modify fun stt => { stt with stack := stack }
+
+def condense (fuel : Nat) : CondenseM CondensedBlocks := do
+  for (name, _) in (<- read).outRefs do
+    match (<- get).names.get? name with
+    | .some _ => continue
+    | .none => visit fuel name
+  let mut blocks : Map Ix.Name (Set Ix.Name) := {}
+  let mut lowLinks := {}
+  for (i, low) in (<- get).lowLink do
+    let name := (<- get).ids.get! i
+    let lowName := (<- get).ids.get! low
+    lowLinks := lowLinks.insert name lowName
+    blocks := blocks.alter lowName fun x => match x with
+      | .some s => .some (s.insert name)
+      | .none => .some {name}
+  let mut blockRefs := {}
+  let refs := (<- read).outRefs
+  for (lo, all) in blocks do
+    let mut rs: Set Ix.Name := {}
+    for a in all do
+      rs := rs.union (refs.get! a)
+    rs := rs.filter (!all.contains ·)
+    blockRefs := blockRefs.insert lo rs
+  return ⟨lowLinks, blocks, blockRefs⟩
+
+def run (refs : Map Ix.Name (Set Ix.Name)) : CondensedBlocks :=
+  let validNames : Set Ix.Name := refs.fold (init := {}) fun acc k _ => acc.insert k
+  Id.run (StateT.run (ReaderT.run (condense (refs.size + 1)) ⟨validNames, refs⟩)
+    CondenseState.init).1
+
+end Former
+
+/-- The three maps in their iteration orders, member sets included. -/
+def layout (cb : CondensedBlocks) :
+    Array (Ix.Name × Ix.Name) × Array (Ix.Name × Array Ix.Name) ×
+      Array (Ix.Name × Array Ix.Name) := Id.run do
+  let mut lows := #[]
+  for p in cb.lowLinks do lows := lows.push p
+  let mut blocks := #[]
+  for (k, s) in cb.blocks do
+    let mut ms := #[]
+    for m in s do ms := ms.push m
+    blocks := blocks.push (k, ms)
+  let mut refs := #[]
+  for (k, s) in cb.blockRefs do
+    let mut rs := #[]
+    for r in s do rs := rs.push r
+    refs := refs.push (k, rs)
+  return (lows, blocks, refs)
+
+/-- A pseudo-random graph on `n` keys: up to `deg` references per key, some
+to the key itself and some to names outside the keys. -/
+def randomGraph (seed n deg : Nat) : Map Ix.Name (Set Ix.Name) := Id.run do
+  let mut s := seed
+  let mut m : Map Ix.Name (Set Ix.Name) := {}
+  for i in [0:n] do
+    s := (s * 6364136223846793005 + 1442695040888963407) % 18446744073709551616
+    let k := (s / 65536) % (deg + 1)
+    let mut rs : Set Ix.Name := {}
+    for _ in [0:k] do
+      s := (s * 6364136223846793005 + 1442695040888963407) % 18446744073709551616
+      let j := (s / 65536) % (n + n / 8 + 1)
+      rs := rs.insert (if j < n then mkName s!"n{j}" else mkName s!"x{j}")
+    m := m.insert (mkName s!"n{i}") rs
+  return m
+
+/-- `CondenseM.run` against the former implementation on a fixed list of
+graphs: equal maps, member sets and iteration orders. -/
+def testAgainstFormer : TestSeq := Id.run do
+  let mut graphs : Array (String × Map Ix.Name (Set Ix.Name)) := #[
+    ("complex", buildGraph [("A", ["B"]), ("B", ["C", "E", "F"]), ("C", ["D", "G"]),
+      ("D", ["C", "H"]), ("E", ["A", "F"]), ("F", ["G"]), ("G", ["F"]), ("H", ["D", "G"])]),
+    ("outside", buildGraph [("A", ["B", "X"]), ("B", ["A", "Y"]), ("C", ["X", "A"])]),
+    ("self", buildGraph [("A", ["A"]), ("B", ["A", "B"])])]
+  for n in [0, 1, 2, 3, 5, 8, 13, 40, 200, 1000, 3000] do
+    for deg in [1, 2, 4] do
+      for seed in [1, 7, 42] do
+        graphs := graphs.push (s!"random n={n} deg={deg} seed={seed}", randomGraph seed n deg)
+  let mut t : TestSeq := .done
+  for (label, g) in graphs do
+    t := t ++ test s!"same maps as the former Tarjan: {label}"
+      (layout (Ix.CondenseM.run g) == layout (Former.run g))
+  return t
+
 /-! ## Full Test Suite (unit tests) -/
 
 public def suite : List TestSeq := [
@@ -233,7 +436,11 @@ public def suite : List TestSeq := [
   group "blockRefs" (
     testBlockRefsChain ++
     testBlockRefsTwoCycles
-  )
+  ),
+  group "outside references" testOutsideRefs,
+  group "large graphs" testLargeGraphs,
+  group "total Tarjan" testTarjan,
+  group "former implementation" testAgainstFormer
 ]
 
 /-! ## Cross-Implementation Tests (Lean vs Rust) -/
@@ -376,9 +583,28 @@ def testSccComparison : TestSeq :=
     return (true, 0, 0, none)
   ) .done
 
+/-- `CondenseM.run` against the former implementation on the reference graph
+of the test binary's environment: equal maps, member sets and iteration
+orders. -/
+def testFormerOnEnv : TestSeq :=
+  .individualIO "CondenseM.run vs the former Tarjan on the environment" none (do
+    let env ← get_env!
+    let rawEnv ← rsCanonicalizeEnvToIxRaw env.constants.toList
+    let refs := Ix.GraphM.envParallel rawEnv.toEnvironment
+    let mine := layout (Ix.CondenseM.run refs)
+    let former := layout (Former.run refs)
+    let same := mine == former
+    IO.println s!"[Test]   {refs.size} nodes, {mine.2.1.size} blocks; \
+      same maps and orders: {same}"
+    if !same then
+      return (false, 0, 0, some "the maps differ from the former implementation's")
+    return (true, 0, 0, none)
+  ) .done
+
 /-- Cross-implementation test suite (expensive, run with --ignored) -/
 public def suiteIO : List TestSeq := [
-  testSccComparison
+  testSccComparison,
+  testFormerOnEnv
 ]
 
 end Tests.Ix.CondenseM

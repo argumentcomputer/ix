@@ -132,12 +132,15 @@ structure AuxPatchesOutput where
       SCC are `false`. Travels into `AuxLayout.evaporated`. Mirrors Rust
       `AuxPatchesOutput.evaporated`. -/
   evaporated : Option (Array Bool) := none
-  /-- Number of equivalence classes (primary members) in the canonical block. -/
-  nClasses : Nat := 0
-  /-- Number of canonical aux members (length of the hash-sorted aux section). -/
+  /-- Number of canonical aux members (length of the canonical aux section). -/
   nCanonicalAux : Nat := 0
-  /-- Number of source-walk aux positions (≥ `nCanonicalAux` under collapse). -/
-  nSourceAux : Nat := 0
+  /-- Every canonical recursor of the block, in canonical flat order: one
+      per class (`<rep>.rec`, class order), then one per canonical nested
+      auxiliary (`<all0>.rec_N`, canonical order, source-indexed names),
+      whether or not the closure exports the `.rec` family (`patches` holds
+      them only when it does). The canonical flat block
+      (`Ix.AuxGen.Flat.FlatBlock`) is built from them. -/
+  canonicalRecs : Array (Name × RecursorVal) := #[]
   deriving Inhabited
 
 end Ix.AuxGen

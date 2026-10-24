@@ -5,23 +5,26 @@
   canonicity core). An inductive with nested occurrences (`Array (Part α)`)
   is expanded into a flat mutual block whose auxiliary members
   (`<all0>._nested.Array_1 …`) share the block's params/levels — mirroring
-  the C++ kernel's `elim_nested_inductive`. The aux tail is then sorted
-  STRUCTURALLY (each aux carrying a synthetic trailing `_nested_id`
-  identity-marker ctor, ordered by the ordinary content-addressed
-  `sortConsts`) so the canonical layout is independent of Lean's
-  source-walk discovery order; `computeAuxPerm` maps Lean's source
-  numbering (`X.rec_N`) onto the canonical positions.
+  the C++ kernel's `elim_nested_inductive`. The canonical order of the aux
+  tail is the DISCOVERY order of the canonical expansion: the expansion of
+  the class representatives in canonical order (`canonicalGroups`), where
+  an external occurrence opens its group as that group's compiled canonical
+  classes and occurrences are deduplicated by their canonical key
+  (`Ix.Compile.Canon.addrKey`: compiled addresses, `canonUniv` levels). It
+  is Lean's `X.rec_N` numbering on every block whose members Lean already
+  lists in canonical order; `computeAuxPerm` (Pass 1's `computePerm`, read
+  through `ExpandedBlock.toCanon`) maps Lean's source numbering onto the
+  canonical positions. No sort is applied: the canonical expansion's
+  discovery order is the canonical order.
 
   The auxiliaries are EPHEMERAL: they exist only during recursor
   generation and are restored to nested applications before emission —
   only regenerated recursors/below/brecOn persist, plus the
   `AuxLayout {perm, sourceCtorCounts}` metadata.
 
-  The kernel re-derives this order via blake3 `AUX_INDC_VIEW` /
-  `AUX_MARKER_VIEW` seed addresses (`Ix/Tc/Inductive.lean:canonicalAuxOrder`,
-  `crates/kernel/src/inductive.rs:canonical_aux_order`) — those seed
-  strings are the CONSUMER's reconstruction and must not appear here: the
-  compile side orders purely by marker ctor + `sortConsts`.
+  The kernels recompute this order by the same walk over the stored
+  canonical members (`Ix/Tc/Inductive.lean:buildFlatBlock`,
+  `crates/kernel/src/inductive.rs:build_flat_block`), with no sort.
 -/
 module
 public import Ix.Common
@@ -31,11 +34,14 @@ public import Ix.Mutual
 public import Ix.CompileM
 public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
+public import Ix.Compile.Canon.Nested
 public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError findConst getBlockState modifyBlockState)
+-- Out-of-range array accesses are named errors (`arrIdx`, or an `Option`
+-- access with a named error).
+open Ix.CompileM (CompileM CompileError findConst arrIdx)
 
 /-! ## Expanded block (expand/restore model) -/
 
@@ -222,7 +228,7 @@ partial def replaceCtorResultHeadWithAux (e : Expr) (originalInd auxName : Name)
 def hasInvalidSpecRef (expr : Expr) (paramFvarNames : Array Name) : Bool := Id.run do
   let mut stack : Array (Expr × Nat) := #[(expr, 0)]
   while !stack.isEmpty do
-    let (e, depth) := stack.back!
+    let some (e, depth) := stack.back? | break
     stack := stack.pop
     match e with
     | .bvar idx _ =>
@@ -260,33 +266,6 @@ partial def hasIndOcc (e : Expr) (names : Std.HashSet Name)
       else hasIndOcc b names
     | .proj _ _ s _ => hasIndOcc s names
     | .mdata _ inner _ => hasIndOcc inner names
-    | _ => pure false
-  modify (·.insert e result)
-  return result
-
-/-- Memoized "contains a Const that is an original mutual member NOT in
-    the current SCC" check. Mirrors Rust `has_out_of_scc_const`
-    (nested.rs:1352). -/
-partial def hasOutOfSccConst (e : Expr) (inSccNames : Std.HashMap Name Name)
-    (originalNames : Std.HashSet Name)
-    : StateM (Std.HashMap Expr Bool) Bool := do
-  if let some cached := (← get).get? e then
-    return cached
-  let result ← match e with
-    | .const name _ _ =>
-      pure (originalNames.contains name && !inSccNames.contains name)
-    | .app f a _ => do
-      if (← hasOutOfSccConst f inSccNames originalNames) then pure true
-      else hasOutOfSccConst a inSccNames originalNames
-    | .lam _ t b _ _ | .forallE _ t b _ _ => do
-      if (← hasOutOfSccConst t inSccNames originalNames) then pure true
-      else hasOutOfSccConst b inSccNames originalNames
-    | .letE _ t v b _ _ => do
-      if (← hasOutOfSccConst t inSccNames originalNames) then pure true
-      else if (← hasOutOfSccConst v inSccNames originalNames) then pure true
-      else hasOutOfSccConst b inSccNames originalNames
-    | .proj _ _ s _ => hasOutOfSccConst s inSccNames originalNames
-    | .mdata _ inner _ => hasOutOfSccConst inner inSccNames originalNames
     | _ => pure false
   modify (·.insert e result)
   return result
@@ -409,7 +388,7 @@ partial def auxSpecEq (canon src : Expr)
 
 /-- Collect every `Const` reference to an original mutual-block member
     inside `expr` into the returned set. DAG-memoized via the visited
-    set (same rationale as `hasOutOfSccConst`). Mirrors Rust
+    set. Mirrors Rust
     `collect_member_refs` (nested.rs). -/
 partial def collectMemberRefs (expr : Expr)
     (originalNames : Std.HashSet Name)
@@ -450,16 +429,27 @@ structure ExpandSt where
   typeNameSet : Std.HashSet Name := {}
   auxToNested : Std.HashMap Name Expr := {}
   auxCtorMap : Std.HashMap Name (Name × Name) := {}
-  /-- Dedup: nested-app (`IAs`) → aux name (hash-keyed Expr map mirrors
-      Rust's `FxHashMap<Hash, Name>`). -/
-  auxSeen : Std.HashMap Expr Name := {}
+  /-- Dedup: occurrence key → aux name (`Ix.Compile.Canon.SeenKey`, compared
+      exactly; Rust `SeenKey`). -/
+  auxSeen : Std.HashMap Ix.Compile.Canon.SeenKey Name := {}
   nextAuxIdx : Nat := 1
   all0 : Name := default
+  /-- The block's universe parameters (the positions of the canonical key's
+      levels). -/
+  levelParams : List Name := []
   blockLevels : Array Level := #[]
   blockParamFvars : Array Expr := #[]
   blockParamDecls : Array LocalDecl := #[]
   blockParamFvarNames : Array Name := #[]
   nParams : Nat := 0
+  /-- Open an external group as its compiled canonical classes
+      (`CompileEnv.blocks`, Pass 1's `groupOfBlocks`) instead of Lean's
+      `I.all`: the expansion of a canonical block (`docs/ix_canonicity.md` §6.2).
+      Off for Lean's source walk (`X.rec_N` numbering, `numNested`). -/
+  canonicalGroups : Bool := false
+  /-- With `canonicalGroups`: deduplicate occurrences by their canonical key
+      (Pass 1's `addrKey`, addresses from `constAddrLookup`). -/
+  keyAddr? : Option (Name → Option Address) := none
   walkCache : ExprCache := {}
   deriving Inhabited
 
@@ -514,8 +504,16 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
   -- `IAs = I.{lvls} spec_params` in block-param space.
   let iAs := mkAppN (Expr.mkConst headName headLevels) specParams
 
-  -- Dedup by nested-app identity.
-  if let some auxName := st.auxSeen.get? iAs then
+  -- Dedup by the occurrence's key: the occurrence itself on the source
+  -- walk, its canonical key (addresses, `canonUniv` levels) on a canonical
+  -- expansion (`Ix.Compile.Canon.seenKey`).
+  let keyOf : Expr → CompileM Ix.Compile.Canon.SeenKey := fun x =>
+    match Ix.Compile.Canon.seenKey st.levelParams st.keyAddr?
+        st.typeNameSet.contains x with
+    | .ok key => pure key
+    | .error e => throw (.invalidMutualBlock s!"expand_nested_block: {e}")
+  let iKey ← keyOf iAs
+  if let some auxName := st.auxSeen.get? iKey then
     let mut result := Expr.mkConst auxName st.blockLevels
     for af in asFvars do
       result := Expr.mkApp result af
@@ -524,10 +522,23 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
     return some result
 
   -- New occurrence — create auxiliaries for the whole external group.
-  let extAll := extInd.all
+  -- The group the occurrence opens, as classes (representative first):
+  -- Lean's `I.all` on the source walk; on a canonical expansion, `I`'s
+  -- compiled canonical classes (Pass 1's `groupOfBlocks`), which is what
+  -- the kernels recompute from Ixon. The two agree on identity blocks.
+  let groups : Array (Array Name) ←
+    if st.canonicalGroups then do
+      let cenv ← Ix.CompileM.getCompileEnv
+      pure (Ix.Compile.Canon.blockGroup cenv.blocks headName extInd.all)
+    else pure (extInd.all.map (#[·]))
+  -- Every key of the group, computed before the state changes (no read of
+  -- the pre-state `st` inside the loop below, which updates the state).
+  let groupKeys : Array (Array Ix.Compile.Canon.SeenKey) ← groups.mapM fun cls =>
+    cls.mapM fun k => keyOf (mkAppN (Expr.mkConst k headLevels) specParams)
   let mut result : Option Expr := none
 
-  for jName in extAll do
+  for (cls, keys) in groups.zip groupKeys do
+    let some jName := cls[0]? | continue
     let some (.inductInfo jInfo) ← lookupConst? jName | continue
 
     -- `<all0>._nested.<Ext>_N`
@@ -539,11 +550,18 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
     -- aux → `J.{I_lvls} spec_params` (semantic identity).
     let jAs := mkAppN (Expr.mkConst jName headLevels) specParams
     modify fun s => { s with auxToNested := s.auxToNested.insert auxName jAs }
-    -- Only the FIRST group member (the head) registers under this
-    -- occurrence hash; the rest are reached via the queue walk.
-    modify fun s =>
-      if s.auxSeen.contains iAs then s
-      else { s with auxSeen := s.auxSeen.insert iAs auxName }
+    -- Every member `J As` of the group registers under its own nested
+    -- application (Lean's `elim_nested_inductive_fn`; A0, WB-A1): a later
+    -- occurrence of a sibling, e.g. `Forest T` inside the `Tree T`
+    -- auxiliary's constructors, dedups to that sibling's auxiliary instead
+    -- of opening a second copy of the group. Mirrors Rust
+    -- `expand_nested_block`.
+    -- A canonical class registers each of its names (collapsed members of
+    -- the external block share the representative's auxiliary).
+    for kAs in keys do
+      modify fun s =>
+        if s.auxSeen.contains kAs then s
+        else { s with auxSeen := s.auxSeen.insert kAs auxName }
 
     -- Aux type: substLevels → instantiatePiParams → block-param space →
     -- re-abstract block params.
@@ -571,7 +589,7 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) (sourceOwner : Name)
         { name := auxCtorName, typ := auxCtorType, nFields := jCtor.numFields }
 
     -- The head inductive supplies the replacement expression.
-    if jName == headName then
+    if cls.contains headName then
       let mut r := Expr.mkConst auxName (← get).blockLevels
       for af in asFvars do
         r := Expr.mkApp r af
@@ -629,9 +647,13 @@ partial def replaceAllNested (e : Expr) (asFvars : Array Expr)
 /-- Build an expanded mutual block: replace nested inductive occurrences
     with auxiliary types sharing the block's params and levels.
     Mirrors Rust `expand_nested_block` (nested.rs:428) / C++
-    `elim_nested_inductive_fn::operator()` (inductive.cpp:1045-1077). -/
+    `elim_nested_inductive_fn::operator()` (inductive.cpp:1045-1077).
+    `canonicalGroups`: the expansion of a canonical block, whose external
+    groups open as their compiled canonical classes (see `ExpandSt`); off
+    for Lean's source walk. -/
 def expandNestedBlock (orderedOriginals : Array Name)
-    (aliasToRep : Std.HashMap Name Name) : CompileM ExpandedBlock := do
+    (aliasToRep : Std.HashMap Name Name) (canonicalGroups : Bool := false) :
+    CompileM ExpandedBlock := do
   let some firstName := orderedOriginals[0]?
     | throw (.invalidMutualBlock "expand_nested_block: empty ordered_originals")
   let some (.inductInfo firstInd) ← lookupConst? firstName
@@ -648,10 +670,12 @@ def expandNestedBlock (orderedOriginals : Array Name)
 
   let all0 := firstInd.all[0]?.getD firstName
 
+  let addr? ← Ix.CompileM.constAddrLookup
   let init : ExpandSt := {
-    all0, blockLevels
+    all0, levelParams := levelParams.toList, blockLevels
     blockParamFvars, blockParamDecls, blockParamFvarNames
-    nParams
+    nParams, canonicalGroups
+    keyAddr? := if canonicalGroups then some addr? else none
   }
 
   let build : ExpandM ExpandedBlock := do
@@ -699,10 +723,10 @@ def expandNestedBlock (orderedOriginals : Array Name)
     -- cache per constructor (rewrites depend on asFvars/sourceOwner).
     let mut qi := 0
     while qi < (← get).types.size do
-      let nCtors := ((← get).types[qi]!).ctors.size
-      let sourceOwner := ((← get).types[qi]!).sourceOwner
+      let nCtors := (← arrIdx (← get).types qi "expandNestedBlock: queue member").ctors.size
+      let sourceOwner := (← arrIdx (← get).types qi "expandNestedBlock: queue member").sourceOwner
       for ci in [0:nCtors] do
-        let ctorType := (((← get).types[qi]!).ctors[ci]!).typ
+        let ctorType := (← arrIdx (← arrIdx (← get).types qi "expandNestedBlock: queue member").ctors ci "expandNestedBlock: constructor").typ
         let (asFvars, asDecls, peeled) :=
           forallTelescope ctorType nParams "cp" (qi * 100 + ci)
         modify fun s => { s with walkCache := {} }
@@ -728,192 +752,29 @@ def expandNestedBlock (orderedOriginals : Array Name)
 
 /-! ## Canonical structural sort of the aux section -/
 
-/-- Reorder the aux tail of an `ExpandedBlock` structurally so the
-    canonical order is independent of Lean's source-walk discovery order,
-    returning the updated block and `perm[oldJ] = canonicalJ`.
-
-    Each aux member gets a synthetic trailing `_nested_id` identity-marker
-    ctor whose type is its `auxToNested` entry with block-param FVars
-    abstracted to loose BVars by position — two occurrences of the same
-    external inductive can be alpha-identical when the distinguishing spec
-    param is phantom; the marker orders them by spec-param content. The
-    aux tail is then sorted by the ordinary `sortConsts` (fresh comparison
-    cache, mirroring Rust's fresh `BlockCache`), and the renaming
-    (`<all0>._nested.<Ext>_<newJ+1>`) cascades through `auxCtorMap`,
-    `auxToNested`, and every member/ctor type.
-    Mirrors Rust `sort_aux_by_partition_refinement` (nested.rs:616).
-    (Rust's `IX_RECURSOR_DUMP` debug block is not ported.) -/
-def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
-    : CompileM (ExpandedBlock × Array Nat) := do
-  let nOriginals := expanded.nOriginals
-  let nTotal := expanded.types.size
-  if nTotal ≤ nOriginals then
-    return (expanded, #[])
-  let nAux := nTotal - nOriginals
-
-  let levelParams := expanded.levelParams
-  let blockParamBvars : Array Expr :=
-    (Array.range expanded.blockParamFvars.size).map Expr.mkBVar
-
-  -- Synthetic MutConst::Indc views for all members; aux members carry the
-  -- trailing identity marker (nested.rs:656-725).
-  let mut allMutConsts : Array MutConst := #[]
-  for _h : mi in [0:expanded.types.size] do
-    let mem := expanded.types[mi]!
-    let mut ctorNames : Array Name := mem.ctors.map (·.name)
-    let mut ctors : Array ConstructorVal := #[]
-    for _h2 : ci in [0:mem.ctors.size] do
-      let c := mem.ctors[ci]!
-      ctors := ctors.push {
-        cnst := { name := c.name, levelParams, type := c.typ }
-        induct := mem.name
-        cidx := ci
-        numParams := mem.nParams
-        numFields := c.nFields
-        isUnsafe := false
-      }
-    if mi ≥ nOriginals then
-      if let some nested := expanded.auxToNested.get? mem.name then
-        let markerTyp :=
-          replaceParamsExpr nested expanded.blockParamFvars blockParamBvars
-        let markerName := Name.mkStr mem.name "_nested_id"
-        ctors := ctors.push {
-          cnst := { name := markerName, levelParams, type := markerTyp }
-          induct := mem.name
-          cidx := ctors.size
-          numParams := mem.nParams
-          numFields := 0
-          isUnsafe := false
-        }
-        ctorNames := ctorNames.push markerName
-    allMutConsts := allMutConsts.push (.indc {
-      name := mem.name
-      levelParams
-      type := mem.typ
-      numParams := mem.nParams
-      numIndices := mem.nIndices
-      all := #[]
-      ctors
-      numNested := 0
-      isRec := false
-      isReflexive := false
-      isUnsafe := false
-    })
-
-  let auxConsts := allMutConsts.toList.drop nOriginals
-
-  -- Fresh comparison cache (Rust: `BlockCache::default()`), restored after.
-  let savedCmp := (← getBlockState).cmpCache
-  modifyBlockState fun c => { c with cmpCache := {} }
-  let sortedClasses ← Ix.CompileM.sortConsts auxConsts
-  modifyBlockState fun c => { c with cmpCache := savedCmp }
-
-  let nCanon := sortedClasses.length
-
-  -- Build oldJ → canonicalJ; equivalence classes map many-to-one.
-  let auxTailNames : Array Name :=
-    (expanded.types.toList.drop nOriginals).toArray.map (·.name)
-  let mut perm : Array Nat := Array.replicate nAux PERM_OUT_OF_SCC
-  let mut sortedOrder : Array Nat := #[]
-  for (cls, canonicalJ) in sortedClasses.zipIdx do
-    for (member, memberJ) in cls.zipIdx do
-      let some oldJ := auxTailNames.findIdx? (· == member.name)
-        | throw (.invalidMutualBlock
-            s!"aux sort returned unknown member {member.name.pretty}")
-      perm := perm.set! oldJ canonicalJ
-      if memberJ == 0 then
-        sortedOrder := sortedOrder.push oldJ
-  if perm.contains PERM_OUT_OF_SCC then
-    throw (.invalidMutualBlock
-      "aux sort did not assign every auxiliary member")
-
-  -- Already canonical?
-  if nCanon == nAux && (perm.zipIdx.all fun (p, i) => p == i) then
-    return (expanded, perm)
-
-  -- `<all0>._nested` prefix from the first aux name.
-  let firstAuxName := (expanded.types[nOriginals]!).name
-  let nestedPrefix ← match firstAuxName with
-    | .str prefix_ _ _ => pure prefix_
-    | _ => throw (.invalidMutualBlock
-        s!"nested aux name is not a string name: {firstAuxName.pretty}")
-
-  -- New canonical names `<all0>._nested.<Ext>_<newJ+1>` (Ext recovered by
-  -- stripping the trailing `_<N>` from the OLD suffix).
-  let mut newAuxNames : Array Name := #[]
-  for newJ in [0:nCanon] do
-    let oldJ := sortedOrder[newJ]!
-    let oldName := (expanded.types[nOriginals + oldJ]!).name
-    let ext ← match oldName with
-      | .str _ suffix _ =>
-        let parts := suffix.splitOn "_"
-        pure (if parts.length > 1 then
-          String.intercalate "_" parts.dropLast
-        else suffix)
-      | _ => throw (.invalidMutualBlock
-          s!"nested aux name is not a string name: {oldName.pretty}")
-    newAuxNames := newAuxNames.push
-      (Name.mkStr nestedPrefix s!"{ext}_{newJ + 1}")
-
-  let mut nameRename : Std.HashMap Name Name := {}
-  for (canonicalJ, oldJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
-    let oldName := (expanded.types[nOriginals + oldJ]!).name
-    nameRename := nameRename.insert oldName newAuxNames[canonicalJ]!
-
-  -- Cascade 1: auxCtorMap (keys are prefix-renamed; first insert wins).
-  let mut newAuxCtorMap : Std.HashMap Name (Name × Name) := {}
-  for (oldCtorName, origCtorName, oldAuxInd) in expanded.auxCtorMap do
-    let newAuxInd := (nameRename.get? oldAuxInd).getD oldAuxInd
-    let newCtorName := nameReplacePrefix oldCtorName oldAuxInd newAuxInd
-    if !newAuxCtorMap.contains newCtorName then
-      newAuxCtorMap := newAuxCtorMap.insert newCtorName (origCtorName, newAuxInd)
-
-  -- Cascade 2: auxToNested keys (values are name-independent).
-  let mut newAuxToNested : Std.HashMap Name Expr := {}
-  for (oldName, nestedExpr) in expanded.auxToNested do
-    let newName := (nameRename.get? oldName).getD oldName
-    if !newAuxToNested.contains newName then
-      newAuxToNested := newAuxToNested.insert newName nestedExpr
-
-  -- Cascade 3: every member/ctor type (sibling auxes reference each other
-  -- via Const nodes); shared rewrite cache. NOTE: this deliberately uses
-  -- `replaceConstNamesCached` (proj type names renamed too), matching the
-  -- Rust call to `expr_utils::replace_const_names_cached` — NOT
-  -- `canonicalizeConstNames`.
-  let mut renameCache : ExprCache := {}
-  let mut renamedTypes : Array ExpandedMember := #[]
-  for mem in expanded.types do
-    let (memTyp, cache1) :=
-      (replaceConstNamesCached mem.typ nameRename).run renameCache
-    renameCache := cache1
-    let mut ctors : Array ExpandedCtor := #[]
-    for ctor in mem.ctors do
-      let (ctorTyp, cache2) :=
-        (replaceConstNamesCached ctor.typ nameRename).run renameCache
-      renameCache := cache2
-      ctors := ctors.push { ctor with typ := ctorTyp }
-    renamedTypes := renamedTypes.push { mem with typ := memTyp, ctors }
-
-  -- Reorder the aux tail into canonical positions and apply own-name +
-  -- ctor-prefix renames.
-  let auxTail : Array ExpandedMember :=
-    (renamedTypes.toList.drop nOriginals).toArray
-  let mut reordered : Array ExpandedMember := #[]
-  for newJ in [0:nCanon] do
-    let oldJ := sortedOrder[newJ]!
-    let mem := auxTail[oldJ]!
-    let oldName := mem.name
-    let newName := newAuxNames[newJ]!
-    let ctors := mem.ctors.map fun ctor =>
-      { ctor with name := nameReplacePrefix ctor.name oldName newName }
-    reordered := reordered.push { mem with name := newName, ctors }
-  let finalTypes :=
-    (renamedTypes.toList.take nOriginals).toArray ++ reordered
-
-  return ({ expanded with
-    types := finalTypes
-    auxToNested := newAuxToNested
-    auxCtorMap := newAuxCtorMap }, perm)
+/-- The expansion as Pass 1 reads it (`Ix.Compile.Canon.Expanded`): the
+same members, constructors and names; member and constructor types are
+closed already and are copied; each occurrence in `auxToNested` has its
+block-parameter FVars abstracted to Pass 1's de Bruijn convention (parameter
+`i` of `n` is `bvar (n - 1 - i)` at depth 0). A conversion only: nothing is
+recomputed. -/
+def ExpandedBlock.toCanon (x : ExpandedBlock) : Ix.Compile.Canon.Expanded :=
+  let np := x.blockParamFvars.size
+  let fvarPos : Std.HashMap Name Nat :=
+    x.blockParamFvars.zipIdx.foldl (init := {}) fun m (fv, i) =>
+      match fv with
+      | .fvar n _ => m.insert n i
+      | _ => m
+  { types := x.types.map fun m =>
+      { name := m.name, sourceOwner := m.sourceOwner, typ := m.typ,
+        ctors := m.ctors.map fun c => { name := c.name, typ := c.typ, nFields := c.nFields },
+        nParams := m.nParams, nIndices := m.nIndices }
+    auxToNested := x.auxToNested.fold (init := {}) fun m k v =>
+      m.insert k (batchAbstract v fvarPos np 0)
+    auxCtorMap := x.auxCtorMap
+    nOriginals := x.nOriginals
+    levelParams := x.levelParams
+    nParams := np }
 
 /-! ## Source-walk order and the source→canonical permutation -/
 
@@ -982,12 +843,13 @@ def matchAuxSignature (srcHead : Name) (srcLevels : Array Level)
     (sourceToCanonFvar : Std.HashMap Name Name)
     (strictNames : Std.HashSet Name)
     (specEqCache : Std.HashMap (Expr × Expr) Bool)
-    : Option Nat × Std.HashMap (Expr × Expr) Bool := Id.run do
+    : Except String (Option Nat × Std.HashMap (Expr × Expr) Bool) := do
   let candidates := (byHead.get? srcHead).getD #[]
   let mut cache := specEqCache
   -- Pass A: exact universe instantiation + spec equality.
   for i in candidates do
-    let (_, canonLevels, canonSpecs) := signatures[i]!
+    let some (_, canonLevels, canonSpecs) := signatures[i]?
+      | throw s!"matchAuxSignature: candidate {i} out of range ({signatures.size} signatures)"
     if canonLevels == srcLevels && canonSpecs.size == normalized.size then
       let mut allEq := true
       for (canonSp, srcSp) in canonSpecs.zip normalized do
@@ -999,7 +861,8 @@ def matchAuxSignature (srcHead : Name) (srcLevels : Array Level)
       if allEq then return (some i, cache)
   -- Pass B: level-insensitive fallback.
   for i in candidates do
-    let (_, _, canonSpecs) := signatures[i]!
+    let some (_, _, canonSpecs) := signatures[i]?
+      | throw s!"matchAuxSignature: candidate {i} out of range ({signatures.size} signatures)"
     if canonSpecs.size == normalized.size then
       let mut allEq := true
       for (canonSp, srcSp) in canonSpecs.zip normalized do
@@ -1042,18 +905,18 @@ def buildSccClaimCtx (memberClasses : Array (Array Name))
     let names := cls.filter originalLookup.contains
     if !names.isEmpty then
       filtered := filtered.push names
-  let reps : Array Name := filtered.map (·[0]!)
+  let reps : Array Name ← filtered.mapM (arrIdx · 0 "buildSccClaimCtx: class representative")
   let mut aliasToRep : Std.HashMap Name Name := {}
   for cls in filtered do
     for aliasName in cls.toList.drop 1 do
-      aliasToRep := aliasToRep.insert aliasName cls[0]!
-  let expanded ← expandNestedBlock reps aliasToRep
+      aliasToRep := aliasToRep.insert aliasName (← arrIdx cls 0 "buildSccClaimCtx: class representative")
+  let expanded ← expandNestedBlock reps aliasToRep (canonicalGroups := true)
   let signatures := auxSignaturesOfExpanded expanded
   let byHead := signaturesByHead signatures
   let mut origToCanon : Std.HashMap Name Name := {}
   for cls in filtered do
     for n in cls do
-      origToCanon := origToCanon.insert n cls[0]!
+      origToCanon := origToCanon.insert n (← arrIdx cls 0 "buildSccClaimCtx: class representative")
   let mut strictNames : Std.HashSet Name := {}
   for n in originalAll do
     if !origToCanon.contains n then
@@ -1100,6 +963,13 @@ def positionClaimedBySpecScc (sourceExpanded : ExpandedBlock)
   let cenv ← Ix.CompileM.getCompileEnv
   let mut sccCtxCache := sccCtxCache
   let mut candidateReps : Array Name := #[]
+  -- A7 (D13): `cenv.blocks` is a global registry, but it is read only at
+  -- names `member` that the block's own spec expressions reference, so
+  -- every key is in the block's closure; its entry was registered by
+  -- `member`'s own block (a function of that block alone, Rust
+  -- `stt.blocks`), which the reference forces before this block in every
+  -- schedule. So the value read is a function of closure(B) (design
+  -- document §6.2, condition (i)), and a missing entry is the error below.
   for member in memberRefs do
     let some classes := cenv.blocks.get? member
       | throw (.invalidMutualBlock
@@ -1127,9 +997,11 @@ its dependents")
         (replaceConstNamesCached sp ctx.origToCanon).run normalizeCache
       normalizeCache := cache'
       normalized := normalized.push sp'
-    let (matched, specEqCache) := matchAuxSignature srcHead srcLevels
+    let (matched, specEqCache) ← match matchAuxSignature srcHead srcLevels
       normalized ctx.signatures ctx.byHead resolveAddr ctx.fvarMap
-      ctx.strictNames ctx.specEqCache
+      ctx.strictNames ctx.specEqCache with
+      | .ok r => pure r
+      | .error e => throw (.invalidMutualBlock e)
     sccCtxCache := sccCtxCache.insert rep
       { ctx with normalizeCache, specEqCache }
     if matched.isSome then
@@ -1148,123 +1020,32 @@ canonically claimed by two SCCs: '{prev.pretty}' and '{rep.pretty}'")
     auxes whose spec_params reference out-of-SCC inductives; many-to-one
     under alpha-collapse). Mirrors Rust `compute_aux_perm`
     (nested.rs:1067). `resolveAddr` mirrors `stt.resolve_addr`
-    (name→addr with aux fallback). -/
+    (name→addr with aux fallback).
+
+    The permutation is Pass 1's (`Ix.Compile.Canon.computePerm`): the
+    canonical signatures of `expanded` against those of the source-order
+    expansion of `originalAll`, both read through `ExpandedBlock.toCanon`
+    (block parameters by position, so the two expansions' parameter FVars
+    need no correspondence map). Source specs are renamed to the
+    component's representatives before matching; a source position with no
+    match is out of the component when its specs mention an original member
+    outside it or its owner is outside it, and an error otherwise; every
+    canonical auxiliary needs a source position. -/
 def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
     (origToCanonNames : Std.HashMap Name Name)
     (resolveAddr : Name → Option Address) : CompileM (Array Nat) := do
-  let nOriginals := expanded.nOriginals
-  let canonicalAux := (expanded.types.toList.drop nOriginals).toArray
-  let nCanon := canonicalAux.size
-
-  let sourceExpanded ← expandNestedBlock originalAll {}
-  let sourceOrder := sourceAuxOrderFromExpanded sourceExpanded
-  let nSource := sourceOrder.size
-
-  -- Source→canonical block-param FVar correspondence.
-  let mut sourceToCanonFvar : Std.HashMap Name Name := {}
-  for (src, canon) in sourceExpanded.blockParamFvars.zip expanded.blockParamFvars do
-    if let (.fvar srcName _, .fvar canonName _) := (src, canon) then
-      sourceToCanonFvar := sourceToCanonFvar.insert srcName canonName
-
-  -- Canonical `(head, headLevels, specParams)` signatures (semantic
-  -- identities). Not keyed by raw hash: alpha-collapse can express the
-  -- same aux via different source names that resolve to one address.
-  let canonicalSignatures := auxSignaturesOfExpanded expanded
-  if canonicalSignatures.size != nCanon then
+  let canonX := expanded.toCanon
+  let canonical := canonX.sigs
+  if canonical.size != canonX.aux.size then
     throw (.invalidMutualBlock
       "compute_aux_perm: canonical aux missing nested_expr entries")
-
-  -- Head-name buckets.
-  let canonByHead := signaturesByHead canonicalSignatures
-
-  let originalNames : Std.HashSet Name :=
-    originalAll.foldl (init := {}) (·.insert ·)
-
-  -- Original members OUTSIDE this SCC compare name-strictly during
-  -- matching (see `auxSpecEq`): they behave as external constants in
-  -- specs, but address-equating them would let an alpha-twin member of
-  -- a different SCC spuriously match, making two SCCs claim one source
-  -- position's `all0.rec_N` name family.
-  let mut strictNamesM : Std.HashSet Name := {}
-  for n in originalAll do
-    if !origToCanonNames.contains n then
-      strictNamesM := strictNamesM.insert n
-  let strictNames := strictNamesM
-
-  let mut perm : Array Nat := Array.replicate nSource PERM_OUT_OF_SCC
-  let mut specEqCache : Std.HashMap (Expr × Expr) Bool := {}
-  let mut outOfSccCache : Std.HashMap Expr Bool := {}
-  let mut normalizeCache : ExprCache := {}
-
-  for ((srcOwner, srcHead, srcLevels, srcSpecs), j) in sourceOrder.zipIdx do
-    -- Normalize source spec_params to the canonical walk's view. In-SCC
-    -- alpha-collapse aliases rewrite to their representatives;
-    -- everything else (genuine external types AND other-SCC original
-    -- members) stays as spelled.
-    let mut normalized : Array Expr := #[]
-    for sp in srcSpecs do
-      let (sp', cache') :=
-        (replaceConstNamesCached sp origToCanonNames).run normalizeCache
-      normalizeCache := cache'
-      normalized := normalized.push sp'
-
-    -- Match FIRST, then classify misses. A position whose specs mention
-    -- other-SCC members can still be canonical HERE when this SCC's own
-    -- constructors mention the same occurrence — e.g.
-    -- `S.mk : List (S × T) → S` with `T` split into its own SCC: the
-    -- canonical expansion of {S} carries the `T`-spelling verbatim, so
-    -- strict-name matching identifies exactly the discovered-here
-    -- occurrences (fixture `AuxOwnership.SplitSpecs`; the old
-    -- out-of-SCC pre-filter skipped these and then failed the
-    -- covered-check below with "canonical aux has no source mapping").
-    let (canonIdx, specEqCache') := matchAuxSignature srcHead srcLevels
-      normalized canonicalSignatures canonByHead resolveAddr
-      sourceToCanonFvar strictNames specEqCache
-    specEqCache := specEqCache'
-
-    match canonIdx with
-    | some ci => perm := perm.set! j ci
-    | none =>
-      -- No canonical match here. A position whose specs reference
-      -- out-of-SCC original members is another block's business:
-      -- canonical in the SCC that discovers it, or evaporated by the
-      -- owner's SCC — the disposition pass in `generateAuxPatches`
-      -- decides. Other constants are ordinary external parameters.
-      let mut referencesOut := false
-      for sp in srcSpecs do
-        let (bad, cache') :=
-          (hasOutOfSccConst sp origToCanonNames originalNames).run
-            outOfSccCache
-        outOfSccCache := cache'
-        if bad then referencesOut := true
-      if referencesOut then
-        continue
-      -- Discovered from a different split SCC's ctor walk → skip; an
-      -- in-SCC owner with no match is a construction bug.
-      if !origToCanonNames.contains srcOwner then
-        continue
-      let srcSig := ", ".intercalate
-        (normalized.toList.map (fun e => toString e.getHash))
-      let canonSigs := " · ".intercalate (canonicalSignatures.toList.map
-        fun (head, levels, specs) =>
-          s!"{head.pretty}.\{{", ".intercalate (levels.toList.map (toString ·.getHash))}}[{", ".intercalate (specs.toList.map (toString ·.getHash))}]")
-      throw (.invalidMutualBlock
-        s!"compute_aux_perm: no canonical match for in-SCC source aux #{j} \
-owned by {srcOwner.pretty} (head={srcHead.pretty}); normalized source \
-specs: [{srcSig}]; canonical signatures: {canonSigs}")
-
-  -- Coverage: every canonical aux needs at least one source mapping.
-  let mut covered : Array Bool := Array.replicate nCanon false
-  for p in perm do
-    if p != PERM_OUT_OF_SCC && p < nCanon then
-      covered := covered.set! p true
-  for (c, i) in covered.zipIdx do
-    if !c then
-      throw (.invalidMutualBlock
-        s!"compute_aux_perm: canonical aux #{i} has no source mapping \
-(canonical produced an aux that source walk missed)")
-
-  return perm
+  let sourceExpanded ← expandNestedBlock originalAll {}
+  match Ix.Compile.Canon.computePerm resolveAddr canonical sourceExpanded.toCanon.sigs
+      originalAll origToCanonNames with
+  | .ok perm => pure (perm.map fun
+      | some i => i
+      | none => PERM_OUT_OF_SCC)
+  | .error e => throw (.invalidMutualBlock s!"compute_aux_perm: {e}")
 
 /-! ## Lean-faithful inductive flags -/
 
@@ -1306,35 +1087,38 @@ def computeLeanIndFlags (all : Array Name) : CompileM LeanIndFlags := do
         | _ => go := false
   return { isRec, isReflexive, numNested }
 
-/-- Validate that every inductive group carries exactly the recomputed
-    flags. Groups with missing members/ctors are skipped (Rust returns Ok
-    for them). Mirrors Rust `validate_ind_groups` (nested.rs:2176),
-    sequentially (Rust uses par_iter; ordering of error discovery is the
-    only difference, and each group's verdict is independent). -/
-def validateIndGroups (groups : Std.HashMap Name (Array Name))
-    : CompileM Unit := do
-  for (_, all) in groups do
-    -- Skip groups whose members/ctors aren't all resolvable inductives.
-    let mut skip := false
-    for member in all do
-      match ← lookupConst? member with
-      | some (.inductInfo v) =>
-        for cn in v.ctors do
-          match ← lookupConst? cn with
-          | some (.ctorInfo _) => pure ()
-          | _ => skip := true
-      | _ => skip := true
-    if skip then
-      continue
-    let flags ← computeLeanIndFlags all
-    for member in all do
-      let some (.inductInfo v) ← lookupConst? member | continue
-      if v.isRec != flags.isRec || v.isReflexive != flags.isReflexive
-          || v.numNested != flags.numNested then
-        throw (.invalidMutualBlock
-          s!"non-canonical inductive flags for '{member.pretty}': stored \
+/-- Validate that one inductive group carries exactly the recomputed flags.
+    A group with a member that is not an inductive, or a constructor that is
+    not a constructor, is skipped (Rust returns `Ok` for it). Mirrors Rust
+    `validate_one_group` (nested.rs:2685). -/
+def validateIndGroup (all : Array Name) : CompileM Unit := do
+  for member in all do
+    match ← lookupConst? member with
+    | some (.inductInfo v) =>
+      for cn in v.ctors do
+        match ← lookupConst? cn with
+        | some (.ctorInfo _) => pure ()
+        | _ => return
+    | _ => return
+  let flags ← computeLeanIndFlags all
+  for member in all do
+    let some (.inductInfo v) ← lookupConst? member | continue
+    if v.isRec != flags.isRec || v.isReflexive != flags.isReflexive
+        || v.numNested != flags.numNested then
+      throw (.invalidMutualBlock
+        s!"non-canonical inductive flags for '{member.pretty}': stored \
 isRec={v.isRec} isReflexive={v.isReflexive} numNested={v.numNested}, \
 computed isRec={flags.isRec} isReflexive={flags.isReflexive} \
 numNested={flags.numNested}")
+
+/-- Validate that every inductive group carries exactly the recomputed
+    flags (`validateIndGroup`). Mirrors Rust `validate_ind_groups`
+    (nested.rs:2653), sequentially (Rust uses par_iter; ordering of error
+    discovery is the only difference, and each group's verdict is
+    independent). -/
+def validateIndGroups (groups : Std.HashMap Name (Array Name))
+    : CompileM Unit := do
+  for (_, all) in groups do
+    validateIndGroup all
 
 end Ix.AuxGen

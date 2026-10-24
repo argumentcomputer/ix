@@ -9,11 +9,10 @@ public import Tests.Ix.Tc.ParityEnv
 Ix-specific semantic shortcuts vs the pure path (`TcState.noAccel`,
 CLI `IX_TC_NO_ACCEL=1`). The accelerations are shared trusted code in
 BOTH kernels (BitVec natives, Decidable natives, `reduceBool`/`reduceNat`
-markers, `Fin.val`-through-`Decidable.rec`), so cross-kernel diffing is
-structurally blind to a common bug — these fixtures check accelerated
-results against genuine pure reduction over the real env (compiled on
-demand — see `Tests.Tc.ParityEnv`; the pure path needs real definitions
-to delta-unfold).
+markers), so cross-kernel diffing is structurally blind to a common bug —
+these fixtures check accelerated results against genuine pure reduction
+over the real env (compiled on demand — see `Tests.Tc.ParityEnv`; the
+pure path needs real definitions to delta-unfold).
 Small literals only: the pure path is exponential in literal size by
 design (see `TcState.noAccel`).
 

@@ -114,6 +114,124 @@ def GraphM.envSerial (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run
     refs := refs.insert name rs
   return refs
 
+/-! ## The graph does not read the environment
+
+Proof only. The statements' closure relation (`Ix.Cert.refsOf`) runs
+`graphConst` under the empty environment, the driver's graph
+(`GraphM.envSerial`) under the input; these say the two agree. -/
+
+/-- A graph computation that does not read the environment. -/
+private def EnvFree {α : Type} (g : GraphM α) : Prop :=
+  ∀ env₁ env₂ : Ix.Environment, g env₁ = g env₂
+
+private theorem EnvFree.pure {α : Type} (a : α) : EnvFree (Pure.pure a : GraphM α) :=
+  fun _ _ => rfl
+
+private theorem EnvFree.bind {α β : Type} {g : GraphM α} {f : α → GraphM β} (hg : EnvFree g)
+    (hf : ∀ a, EnvFree (f a)) : EnvFree (g >>= f) := by
+  intro env₁ env₂
+  funext s
+  show (g env₁ s >>= fun p => f p.1 env₁ p.2) = (g env₂ s >>= fun p => f p.1 env₂ p.2)
+  rw [hg env₁ env₂]
+  simp only [hf _ env₁ env₂]
+
+private theorem EnvFree.map {α β : Type} {g : GraphM α} (f : α → β) (hg : EnvFree g) :
+    EnvFree (f <$> g) := by
+  rw [← bind_pure_comp]
+  exact hg.bind fun a => EnvFree.pure (f a)
+
+private theorem EnvFree.seq {α β : Type} {g : GraphM (α → β)} {h : GraphM α} (hg : EnvFree g)
+    (hh : EnvFree h) : EnvFree (g <*> h) := by
+  rw [seq_eq_bind_map]
+  exact hg.bind fun a => hh.map a
+
+private theorem EnvFree.forInList {α σ : Type} (f : α → σ → GraphM (ForInStep σ))
+    (hf : ∀ a s, EnvFree (f a s)) : ∀ (l : List α) (init : σ), EnvFree (ForIn.forIn l init f) := by
+  intro l
+  induction l with
+  | nil => intro init; exact EnvFree.pure init
+  | cons a l ih =>
+    intro init
+    rw [List.forIn_cons]
+    refine (hf a init).bind fun r => ?_
+    cases r with
+    | done b => exact EnvFree.pure b
+    | yield b => exact ih b
+
+private theorem EnvFree.forInArray {α σ : Type} (f : α → σ → GraphM (ForInStep σ))
+    (hf : ∀ a s, EnvFree (f a s)) (xs : Array α) (init : σ) : EnvFree (ForIn.forIn xs init f) := by
+  rw [← Array.forIn_toList]
+  exact EnvFree.forInList f hf xs.toList init
+
+private theorem graphExpr_envFree (e : Ix.Expr) : EnvFree (graphExpr e) := by
+  induction e with
+  | bvar | fvar | mvar | sort | const | lit =>
+    rw [graphExpr]
+    refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
+    split
+    · exact EnvFree.pure _
+    · rw [graphExpr.go.eq_def]
+      exact (EnvFree.pure _).bind fun _ _ _ => rfl
+  | app _ _ _ ihf iha =>
+    rw [graphExpr]
+    refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
+    split
+    · exact EnvFree.pure _
+    · rw [graphExpr.go.eq_def]
+      exact ((ihf.map _).seq iha).bind fun _ _ _ => rfl
+  | lam _ _ _ _ _ iht ihb | forallE _ _ _ _ _ iht ihb =>
+    rw [graphExpr]
+    refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
+    split
+    · exact EnvFree.pure _
+    · rw [graphExpr.go.eq_def]
+      exact ((iht.map _).seq ihb).bind fun _ _ _ => rfl
+  | letE _ _ _ _ _ _ iht ihv ihb =>
+    rw [graphExpr]
+    refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
+    split
+    · exact EnvFree.pure _
+    · rw [graphExpr.go.eq_def]
+      exact ((iht.map _).seq ((ihv.map _).seq ihb)).bind fun _ _ _ => rfl
+  | mdata _ _ _ ih =>
+    rw [graphExpr]
+    refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
+    split
+    · exact EnvFree.pure _
+    · rw [graphExpr.go.eq_def]
+      exact ih.bind fun _ _ _ => rfl
+  | proj _ _ _ _ ih =>
+    rw [graphExpr]
+    refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
+    split
+    · exact EnvFree.pure _
+    · rw [graphExpr.go.eq_def]
+      exact (ih.map _).bind fun _ _ _ => rfl
+
+/-- **`graphExpr` does not read the environment it runs in.** -/
+theorem graphExpr_env (e : Ix.Expr) (env₁ env₂ : Ix.Environment) :
+    graphExpr e env₁ = graphExpr e env₂ :=
+  graphExpr_envFree e env₁ env₂
+
+/-- **`graphConst` does not read the environment it runs in**: under any two
+environments, from one graph state, it returns the same references and state. -/
+theorem graphConst_env (ci : Ix.ConstantInfo) (env₁ env₂ : Ix.Environment) (s : GraphState) :
+    GraphM.run env₁ s (graphConst ci) = GraphM.run env₂ s (graphConst ci) := by
+  have h : EnvFree (graphConst ci) := by
+    cases ci with
+    | axiomInfo v | quotInfo v => exact graphExpr_envFree _
+    | defnInfo v | thmInfo v | opaqueInfo v =>
+      exact ((graphExpr_envFree _).map _).seq (graphExpr_envFree _)
+    | inductInfo v => exact (graphExpr_envFree _).bind fun _ => EnvFree.pure _
+    | ctorInfo v => exact (graphExpr_envFree _).bind fun _ => EnvFree.pure _
+    | recInfo v =>
+      refine (graphExpr_envFree _).bind fun t => ?_
+      dsimp only
+      refine (EnvFree.forInArray _ (fun rule r => ?_) _ _).bind fun _ => EnvFree.pure _
+      exact (graphExpr_envFree _).bind fun _ => EnvFree.pure _
+  show (graphConst ci env₁).run s = (graphConst ci env₂).run s
+  rw [h env₁ env₂]
+
 end Ix
 
 end

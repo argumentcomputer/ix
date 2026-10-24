@@ -34,17 +34,17 @@ variable {mode : CheckMode}
 
 section Walks
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 end Walks
 
 section Walks3
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Port of `annotateBodyI_sim`. -/
 theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
-    {d : Nat} {i : Expr} {ex : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+    {d : Nat} {i : Expr md} {ex : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i ex) (hw : Expr.WScoped d ex) :
     SimC mode env s₀ (RelEC d)
       (annotateBodyI (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d i)
@@ -62,12 +62,12 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
   | const nmN us =>
     dsimp only
     exact SimC.pure hs ⟨hden, hw⟩
-  | letE t v b =>
+  | letE t v b lmeta =>
     dsimp only
     have hwtvb : Expr.WScoped d t ∧ Expr.WScoped d v ∧
         Expr.WScoped d b := by
       have hw' : Expr.WScoped d
-        (Expr.letE t v b) := hw
+        (Expr.letE t v b lmeta) := hw
       simpa only [Expr.WScoped] using hw'
     unfold annotateBody
     try dsimp only
@@ -217,17 +217,18 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
       -- task #161 P5: the single-binder write — the λ chain rule at a
       -- chain of length one, the same `annotPwLam` the spec clause runs.
       -- The rebuilt node is the same on both sides whatever the datum.
-      have hstep : ∀ (s' : CState) (pw : PropWhen), CSOK mode env s' →
+      have hstep : ∀ (s' : CState md) (pw : PropWhen), CSOK mode env s' →
           SimC mode env s' (RelEC d)
-            (pure (Expr.lam ty' bAbs ⟨pw⟩))
+            (pure (Expr.lam ty' bAbs (m.withPw pw)))
             (pure (Expr.lam ty' (body'x.abstract1 d)
-              ⟨pw⟩)) := by
+              { m with pw })) := by
         intro s' pw hsS
+        rw [BinderMeta.withPw_eq]
         refine SimC.of_eff (pureC_eff hsS
-          (x := Expr.lam ty' bAbs ⟨pw⟩)) _ (fun r hQ => ⟨by
+          (x := Expr.lam ty' bAbs { m with pw })) _ (fun r hQ => ⟨by
             show _ = _
             have h2 : r
-              = Expr.lam ty' bAbs ⟨pw⟩ := hQ
+              = Expr.lam ty' bAbs { m with pw } := hQ
             rw [h2, hQabs], by
             simp only [Expr.WScoped]
             exact ⟨hwty', Ix.Kernel.WScoped.abstract1 0 hwbody'⟩⟩)
@@ -309,7 +310,7 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
       exact SimC.throw
     | forallE t' b' m' =>
       exact SimC.throw
-    | letE t' v' b' =>
+    | letE t' v' b' _ =>
       exact SimC.throw
     | proj s' j' e'' =>
       exact SimC.throw

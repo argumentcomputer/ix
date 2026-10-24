@@ -128,6 +128,12 @@ pub struct LazyConstant {
 }
 
 impl LazyConstant {
+  /// Share the raw heap/mmap buffer without retaining a decoded AST.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn clone_raw(&self) -> Self {
+    Self { cache: None, ..self.clone() }
+  }
+
   /// Construct from already-serialized heap-resident bytes (the
   /// `std::fs::read` lazy load path and the test-FFI path).
   ///
@@ -182,6 +188,24 @@ impl LazyConstant {
     LazyConstant {
       bytes: BytesSource::Heap(buf.into()),
       cache: Some(Arc::new(c)),
+      pending_addr: None,
+      verified: Arc::new(AtomicBool::new(false)),
+    }
+  }
+
+  /// [`Self::from_constant`] (`cache` true) or
+  /// [`Self::from_constant_uncached`] (`cache` false) for a constant the
+  /// caller has already serialized: `bytes` must be `c`'s serialization,
+  /// which is not computed again.
+  pub fn from_serialized(c: Constant, bytes: Vec<u8>, cache: bool) -> Self {
+    debug_assert!({
+      let mut buf = Vec::new();
+      c.put(&mut buf);
+      buf == bytes
+    });
+    LazyConstant {
+      bytes: BytesSource::Heap(bytes.into()),
+      cache: cache.then(|| Arc::new(c)),
       pending_addr: None,
       verified: Arc::new(AtomicBool::new(false)),
     }

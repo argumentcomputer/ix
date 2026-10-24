@@ -1,0 +1,596 @@
+/-
+  compile-claim-conflict: single ownership of compiled names, in both
+  compilers (a name assigned twice is an error unless both assignments are
+  equal).
+
+  Rust's scheduler claims names insert-once (`CompileState::claim_compiled_name`
+  and `claim_aux_name`) and raises
+  `conflicting claims for name '…': already registered at …, claimed again at …`
+  on a second claim at another address. The Lean drivers check the same claims
+  at merge time (`Ix.CompileM.checkBlockClaims`). Two parts:
+
+  1. **Driver API.** Each kind of insert-once merge is driven directly:
+     through `checkBlockClaims` then `mergeCompiledBlock` (what every driver
+     does with a compiled block), through `applyAuxBlockOutcome` (the wave
+     driver's merge, with two blocks of one wave claiming one name) and
+     through `promoteRemaining`: a primary name over an aux claim, an aux
+     claim over a compiled name, over an earlier aux claim and over itself
+     within one block, an identical re-claim (accepted), a conflicting Pass 3
+     record of each kind (a display name, an image-kind head, a Lean block,
+     a canonical recursor compared whole), Pass 3 over a failed block (a
+     missing-constant cascade, not an image error), and a second compiled
+     claim at another address. The messages must be Rust's, character for character. An
+     alias of a promoted target does not borrow the target's `original`
+     (its own promotion supplies one), so its metadata does not depend on
+     promotion order. An identical re-claim of a name an earlier block owns
+     keeps the owner's `Named` entry (CQ2.24 b), while a block's own second
+     registration of a name it claimed replaces its first.
+  2. **Both compilers.** A constructed closure that bypasses the rule that
+     auxiliaries exist exactly when Lean generates them: it holds a user
+     constant named `T.below` (a plain definition, not Lean's auxiliary) for
+     a recursive inductive `T` whose field type depends on it, so `T.below`
+     compiles before `T` in every schedule and `T`'s aux tail then
+     regenerates and claims `T.below`. Real Lean input cannot contain this:
+     Lean's own `mkBelow` would have failed on the name. The Rust compiler
+     (`ix compile`'s FFI), the sequential and wave drivers (1, 4, 16
+     workers) and the `ix compile-lean` pipeline (1, 4, 16 workers) must all
+     refuse exactly `T`'s block with the same refusal: the source name
+     `T.below` that its aux tail claims has no forward provenance to `T`
+     (source ownership, `Ix.AuxGen.checkAuxSourceClaim`), which is checked
+     before any claim. `T.rec` fails in both for the missing `T` (a failed
+     block publishes nothing); the user `T.below` itself compiles.
+
+  Run with: `lake test -- --ignored compile-claim-conflict`.
+-/
+import Ix.Meta
+import Ix.EnvScope
+import Ix.CompileDriver
+import Tests.Ix.Compile.ScheduleReference
+
+open Lean
+
+namespace Tests.Ix.Compile.ClaimConflict
+
+namespace Fixture
+
+/-- Stands in for a user constant named `T.below`: the constructed closure
+    renames it. -/
+def FakeBelow : Type := PUnit
+
+/-- `T`'s field type. In the constructed closure its body is the user
+    `T.below`, so `T`'s block depends on it. -/
+def Dep : Type := FakeBelow
+
+/-- A recursive inductive: Lean generates `T.below` for it, and so does Ix's
+    aux-gen. -/
+inductive T where
+  | leaf : T
+  | node : Dep → T → T
+
+end Fixture
+
+/-! ## Part 1: the driver API -/
+
+section DriverApi
+open Ix.CompileM
+
+private def addr (s : String) : Address := Address.blake3 s.toUTF8
+
+private def ixName (s : String) : Ix.Name := Ix.Name.fromLeanName s.toName
+
+/-- Rust's `name_claim_conflict` format, written out. -/
+private def rustConflict (n : Ix.Name) (existing claimed : Address) : String :=
+  s!"conflicting claims for name '{n.pretty}': already registered at \
+{(toString existing).take 12}, claimed again at {(toString claimed).take 12}"
+
+private def emptyAcc : DriverAcc := { cenv := default }
+
+/-- A block result whose lone constant `lo` sits at `a` (no projections). -/
+private def loneResult (a : Address) : BlockResult :=
+  { block := default, blockBytes := ByteArray.empty, blockAddr := a }
+
+/-- A block state whose aux tail claims `claims`, in order, the way
+    `Ix.AuxGen.CompileAux` registers them. -/
+private def auxCache (claims : List (Ix.Name × Address)) : BlockState := Id.run do
+  let mut st : BlockState := default
+  for (n, a) in claims do
+    st := { st with
+      auxNamed := st.auxNamed.push (n, { addr := a })
+      auxNameToAddr := st.auxNameToAddr.insert n a
+      auxGenExtraNames := st.auxGenExtraNames.insert n }
+  return st
+
+/-- What every driver does with a compiled block: `checkBlockClaims`, then
+    `mergeCompiledBlock` if the check passes. -/
+private def merge (acc : DriverAcc) (lo : Ix.Name) (result : BlockResult) (cache : BlockState)
+    (published : Ix.Compile.Pass.Published := {}) : Except CompileError DriverAcc := do
+  checkBlockClaims acc.cenv (primaryClaims lo result) cache published
+  pure (mergeCompiledBlock acc lo result cache published)
+
+private def errOf : Except CompileError DriverAcc → Option String
+  | .error (.invalidMutualBlock r) => some r
+  | .error e => some s!"(another error) {e}"
+  | .ok _ => none
+
+private def recursor (n : Ix.Name) (k : Bool) : Ix.RecursorVal :=
+  { cnst := { name := n, levelParams := #[], type := Ix.Expr.mkSort Ix.Level.mkZero }
+    all := #[n], numParams := 0, numIndices := 0, numMotives := 1, numMinors := 0,
+    rules := #[], k, isUnsafe := false }
+
+/-- The driver-API cases: (label, expected message or `none` for accepted,
+    actual). -/
+def driverCases : List (String × Option String × Option String) := Id.run do
+  let n := ixName "Fx.T.below"
+  let lo := ixName "Fx.T"
+  let x := addr "x"
+  let y := addr "y"
+  let withCompiled : DriverAcc :=
+    { cenv := { (default : CompileEnv) with nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x } }
+  let withClaimed : DriverAcc :=
+    { cenv := { (default : CompileEnv) with auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x } }
+  let mut cases : List (String × Option String × Option String) := []
+  -- claim_compiled_name: a primary name aux-gen has claimed elsewhere
+  cases := cases ++ [("primary name over an aux claim", some (rustConflict n x y),
+    errOf (merge withClaimed n (loneResult y) default))]
+  -- claim_aux_name over name_to_addr
+  cases := cases ++ [("aux claim over a compiled name", some (rustConflict n x y),
+    errOf (merge withCompiled lo (loneResult (addr "t")) (auxCache [(n, y)])))]
+  -- claim_aux_name over the block's own primary name
+  cases := cases ++ [("aux claim over the block's own primary name", some (rustConflict n y x),
+    errOf (merge emptyAcc n (loneResult y) (auxCache [(n, x)])))]
+  -- claim_aux_name over an earlier aux claim
+  cases := cases ++ [("aux claim over an earlier aux claim", some (rustConflict n x y),
+    errOf (merge withClaimed lo (loneResult (addr "t")) (auxCache [(n, y)])))]
+  -- claim_aux_name twice in one block
+  cases := cases ++ [("two aux claims in one block", some (rustConflict n x y),
+    errOf (merge emptyAcc lo (loneResult (addr "t")) (auxCache [(n, x), (n, y)])))]
+  -- identical re-claims are no-ops
+  cases := cases ++ [("identical re-claim", none,
+    errOf (merge withClaimed lo (loneResult (addr "t")) (auxCache [(n, x), (n, x)])))]
+  cases := cases ++ [("identical compiled name and aux claim", none,
+    errOf (merge withCompiled lo (loneResult (addr "t")) (auxCache [(n, x)])))]
+  -- a second compiled claim at another address
+  cases := cases ++ [("second compiled claim", some (rustConflict n x y),
+    errOf (merge withCompiled n (loneResult y) default))]
+  cases := cases ++ [("identical second compiled claim", none,
+    errOf (merge withCompiled n (loneResult x) default))]
+  -- Pass 3's records (Rust `insert_once`, `move_to_display`): a display
+  -- name, an image-kind head, a Lean block and a canonical recursor are
+  -- insert-once against the live state and within the block
+  let k := ixName "Fx.A.rec"
+  let d := ixName "Fx.A._ix.rec"
+  let lo₃ := ixName "Fx.B"
+  let rec₁ := recursor k false
+  let rec₂ := recursor k true
+  let withP3 : DriverAcc := { cenv := { (default : CompileEnv) with
+    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert d x
+    p3Heads := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert k lo
+    p3Blocks := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert lo #[lo]
+    p3CanonRecs := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert k rec₁ } }
+  let display (a : Address) : BlockState :=
+    { (default : BlockState) with
+      auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert d a }
+  cases := cases ++ [("conflicting display name", some (rustConflict d x y),
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) (display y)))]
+  cases := cases ++ [("conflicting image-kind head",
+    some s!"Pass 3: conflicting image-kind head '{k.pretty}'",
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { heads := #[(k, lo₃)] }))]
+  cases := cases ++ [("conflicting image-kind head in one block",
+    some s!"Pass 3: conflicting image-kind head '{d.pretty}'",
+    errOf (merge emptyAcc lo₃ (loneResult (addr "t")) default
+      { heads := #[(d, lo), (d, lo₃)] }))]
+  cases := cases ++ [("conflicting Lean block",
+    some s!"Pass 3: conflicting Lean block '{lo.pretty}'",
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { blocks := #[(lo, #[lo, lo₃])] }))]
+  cases := cases ++ [("conflicting canonical recursor (same type, other fields)",
+    some s!"Pass 3: conflicting canonical recursor '{k.pretty}'",
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { canonRecs := #[(k, rec₂)] }))]
+  cases := cases ++ [("equal Pass 3 records", none,
+    errOf (merge withP3 lo₃ (loneResult (addr "t")) (display x)
+      { heads := #[(k, lo)], blocks := #[(lo, #[lo])], canonRecs := #[(k, rec₁)] }))]
+  -- the cascade rule (`Ix.Compile.Pass.pass3Failure`): an image block whose
+  -- Lean block has a member that did not compile fails as that member's
+  -- missing constant, like every other dependent of a failed block
+  let h := ixName "Fx.C.rec"
+  let key := ixName "Fx.C"
+  let failedBlock : CompileEnv := { (default : CompileEnv) with
+    p3Heads := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert h key
+    p3Blocks := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert key #[key] }
+  let cascade : Option String :=
+    match runBlock failedBlock (({} : Ix.Set Ix.Name).insert h) h with
+    | .ok _ => none
+    | .error e => some (toString e)
+  cases := cases ++ [("Pass 3 over a failed block: its cascade",
+    some s!"missingConstant: {key}", cascade)]
+  -- the wave driver: two blocks of one wave, computed on one snapshot,
+  -- claim `n` at different addresses; the second merge is refused and the
+  -- block is reported failed (its dependents are released as failed)
+  let lo₂ := ixName "Fx.U"
+  let all₁ : Ix.Set Ix.Name := ({} : Ix.Set Ix.Name).insert lo
+  let all₂ : Ix.Set Ix.Name := ({} : Ix.Set Ix.Name).insert lo₂
+  let (acc₁, _, failed₁) := applyAuxBlockOutcome emptyAcc lo all₁
+    (.compiled (loneResult (addr "t")) (auxCache [(n, x)]) {})
+  let (acc₂, names₂, failed₂) := applyAuxBlockOutcome acc₁ lo₂ all₂
+    (.compiled (loneResult (addr "u")) (auxCache [(n, y)]) {})
+  let waveMsg : Option String :=
+    if failed₁ || !failed₂ || !names₂.isEmpty || acc₂.cenv.auxNameToAddr.get? n != some x then
+      some s!"wrong outcome: failed {failed₁}/{failed₂}, registered {names₂.size}, \
+claim {acc₂.cenv.auxNameToAddr.get? n}"
+    else (acc₂.cenv.ungrounded.get? lo₂).map fun m => (m.drop "invalidMutualBlock: ".length).toString
+  cases := cases ++ [("wave: two blocks of one wave", some (rustConflict n x y), waveMsg)]
+  -- the promote-remaining pass: a member compiled at `x` with an aux claim
+  -- at `y` is recorded, not skipped
+  let both : DriverAcc := { cenv := { (default : CompileEnv) with
+    nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x
+    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n y } }
+  let (accP, _) := promoteRemaining both (({} : Ix.Set Ix.Name).insert n)
+  cases := cases ++ [("promote-remaining over a compiled member", some (rustConflict n x y),
+    (accP.cenv.ungrounded.get? n).map fun m => (m.drop "invalidMutualBlock: ".length).toString)]
+  return cases
+
+/-- Target promotion must not change a new alias's provenance (an alias
+    borrowing its target's `original` made its metadata depend on promotion
+    order), and the alias's own source promotion must still be retained. -/
+def aliasProvenanceCheck : Except String Unit := do
+  let source := ixName "Fx.A.rec_1"
+  let target := ixName "Fx.B.rec"
+  let canonical := addr "canonical"
+  let targetOriginal := addr "target-original"
+  let sourceOriginal := addr "source-original"
+  let aliases := ({} : Std.HashMap Ix.Name Ix.Name).insert source target
+  let blockEnv : BlockEnv :=
+    { all := ({} : Ix.Set Ix.Name).insert source, current := source, mutCtx := default, univCtx := [] }
+  let targetEnv (original : Option (Address × Ixon.ConstantMeta)) : CompileEnv :=
+    { (default : CompileEnv) with
+      nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert target canonical
+      nameToNamed := ({} : Std.HashMap _ _).insert target
+        { addr := canonical, original, hints := some .abbrev } }
+  let register (env : CompileEnv) :=
+    (CompileM.run env blockEnv {} (Ix.AuxGen.registerAuxAliases aliases "alias fixture"))
+      |>.mapError toString
+  let (_, before) ← register (targetEnv none)
+  let (_, after) ← register (targetEnv (some (targetOriginal, .empty)))
+  let some (n, aliasBefore) := before.auxNamed[0]? | throw "missing initial alias"
+  let some (_, aliasAfter) := after.auxNamed[0]? | throw "missing alias after target promotion"
+  if n != source || before.auxNamed.size != 1 || after.auxNamed.size != 1 then
+    throw "wrong alias registrations"
+  if aliasBefore != aliasAfter || aliasAfter.original.isSome then
+    throw "alias borrowed the target's source provenance"
+  if aliasAfter.addr != canonical || aliasAfter.hints != some .abbrev then
+    throw "canonical alias content or hints lost"
+  let env := { targetEnv (some (targetOriginal, .empty)) with
+    nameToNamed := (targetEnv none).nameToNamed.insert source aliasAfter
+    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert source canonical }
+  let promoted ← (promoteAuxDriver env source sourceOriginal .empty).mapError toString
+  let some own := promoted.nameToNamed.get? source | throw "own promotion missing"
+  if own.original != some (sourceOriginal, .empty) || own.addr != canonical then
+    throw "own source provenance was not preserved"
+  let (_, repeated) ← register promoted
+  if !repeated.auxNamed.isEmpty then
+    throw "consistent re-registration overwrote the source's own original"
+
+/-- CQ2.24 b (R03-16's residual): an identical re-claim of a name an earlier
+    block owns does not replace the owner's `Named` entry (its metadata, its
+    promoted original, its hints), for an aux claim and for a primary name;
+    a name one block claims twice keeps that block's last entry. Mirrors
+    Rust `compile::tests::identical_reclaim_keeps_the_owner_named` and
+    `reclaim_within_one_block_reregisters`. -/
+def ownerNamedCheck : Except String Unit := do
+  let n := ixName "Fx.A.rec_1"
+  let lo := ixName "Fx.T"
+  let x := addr "x"
+  let tag (s : String) : Ixon.ConstantMeta := .new (.muts #[#[addr s]] none)
+  let owner : Ixon.Named :=
+    { addr := x, constMeta := tag "owner", original := some (addr "owner-original", .empty),
+      hints := some .abbrev }
+  -- an aux claim over an earlier block's aux claim of `n` at `x`
+  let claimed : DriverAcc := { cenv := { (default : CompileEnv) with
+    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x
+    nameToNamed := ({} : Std.HashMap _ _).insert n owner } }
+  let later : BlockState :=
+    { auxCache [(n, x)] with auxNamed := #[(n, { addr := x, constMeta := tag "later" })] }
+  let acc ← (merge claimed lo (loneResult (addr "t")) later).mapError toString
+  if acc.cenv.nameToNamed.get? n != some owner then
+    throw "an identical aux re-claim replaced the owner's Named"
+  -- a primary name over an earlier block's compiled claim of `n` at `x`
+  let compiled : DriverAcc := { cenv := { (default : CompileEnv) with
+    nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x
+    nameToNamed := ({} : Std.HashMap _ _).insert n owner } }
+  let acc ← (merge compiled n { loneResult x with blockMeta := tag "later" } default).mapError toString
+  if acc.cenv.nameToNamed.get? n != some owner then
+    throw "an identical primary re-claim replaced the owner's Named"
+  -- one block claiming `n` twice keeps its own last entry
+  let twice : BlockState :=
+    { auxCache [(n, x), (n, x)] with
+      auxNamed := #[(n, { addr := x, constMeta := tag "first" }),
+        (n, { addr := x, constMeta := tag "second" })] }
+  let acc ← (merge emptyAcc lo (loneResult (addr "t")) twice).mapError toString
+  if (acc.cenv.nameToNamed.get? n).map (·.constMeta) != some (tag "second") then
+    throw "a block's own second registration was dropped"
+
+/-- Original-form publication is conditional on the entire promotion
+    succeeding, including writes for a member outside the scheduled block
+    that the source-family compile visits; a failed promotion withdraws the
+    block's provisional names; a source dependency waits for its own block. -/
+def promotionCases : List (String × Bool) := Id.run do
+  let a := ixName "Fx.Promote.a"
+  let b := ixName "Fx.Promote.b"
+  let other := ixName "Fx.Promote.other"
+  let canonical := addr "promotion-canonical"
+  let original := addr "promotion-original"
+  let different := addr "promotion-conflict"
+  let all : Ix.Set Ix.Name := (({} : Ix.Set Ix.Name).insert a).insert b
+  let acc : DriverAcc :=
+    { cenv := { (default : CompileEnv) with
+        auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert a canonical |>.insert b canonical
+        nameToNamed := ({} : Std.HashMap _ _).insert a { addr := canonical }
+          |>.insert b { addr := canonical } |>.insert other { addr := canonical }
+        nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert other canonical
+        auxGenExtraNames := all
+        constants := ({} : Std.HashMap _ _).insert canonical ByteArray.empty }
+      defHints := ({} : Std.HashMap _ _).insert a .abbrev |>.insert other .opaque
+      pending := #[a, b, other] }
+  let withdrawn (out : DriverAcc) : Bool :=
+    out.originals.isEmpty && all.toList.all (fun n => (resolveAddrPure out.cenv n).isNone &&
+      !out.cenv.nameToNamed.contains n && !out.cenv.auxGenExtraNames.contains n &&
+      out.cenv.ungrounded.contains n && !out.defHints.contains n && !out.pending.contains n)
+  let untouched (out : DriverAcc) : Bool :=
+    out.cenv.nameToNamed.get? other == acc.cenv.nameToNamed.get? other &&
+    out.cenv.nameToAddr.get? other == some canonical &&
+    out.defHints.get? other == some .opaque && out.cenv.constants.contains canonical
+  let (failed, names, bad) := applyAuxBlockOutcome acc a all
+    (.promoted none #[] none none none (some "original compile refused"))
+  let mut cases := [("no-aux refusal withdraws all provisional names",
+    bad && names.isEmpty && withdrawn failed && untouched failed)]
+  let (incomplete, names, bad) := applyAuxBlockOutcome acc a all
+    (.promoted none #[] none (some "incomplete auxiliary family") none none)
+  cases := cases ++ [("incomplete family has no public residue",
+    bad && names.isEmpty && withdrawn incomplete && untouched incomplete)]
+  let (crossFailure, names, bad) := applyAuxBlockOutcome acc a all
+    (.promoted none #[] (some (#[b], "cross-SCC subset refused")) none none none)
+  cases := cases ++ [("failed cross-SCC subset withdraws the whole block",
+    bad && names.isEmpty && withdrawn crossFailure && untouched crossFailure)]
+  let malformed : Ixon.ConstantMeta := { Ixon.ConstantMeta.empty with
+    info := .axio different #[] {} 0 }
+  let lateBad : BlockResult := { loneResult original with projections :=
+    #[(other, default, .empty), (a, default, malformed)] }
+  let (lateFailure, names, bad) := finishAuxPromotion acc a all (some (lateBad, default))
+  cases := cases ++ [("late self-name failure discards earlier outside-block original",
+    bad && names.isEmpty && withdrawn lateFailure && untouched lateFailure)]
+  let conflict := { acc with cenv := { acc.cenv with
+    nameToAddr := acc.cenv.nameToAddr.insert b different } }
+  let outside : BlockResult := { loneResult original with projections :=
+    #[(other, default, .empty)] }
+  let (claimFailure, names, bad) := finishAuxPromotion conflict a all
+    (some (outside, default))
+  cases := cases ++ [("remaining-claim failure discards staged originals",
+    bad && names.isEmpty && withdrawn claimFailure && untouched claimFailure)]
+  let (ok, _, bad) := finishAuxPromotion acc a all (some (loneResult original, default))
+  cases := cases ++ [("valid neighbor promotes canonical addresses and own original",
+    !bad && all.toList.all (fun n => ok.cenv.nameToAddr.get? n == some canonical) &&
+    ((ok.cenv.nameToNamed.get? a).bind (·.original)) == some (original, .empty) &&
+    ok.cenv.ungrounded.isEmpty && untouched ok && ok.originals.size == 1 &&
+    ok.originals[0]?.map (·.published) == some canonical &&
+    ok.originals[0]?.map (·.original.addr) == some original)]
+  let (retried, _, retryBad) := finishAuxPromotion
+    { acc with originals := claimFailure.originals } a all (some (loneResult original, default))
+  cases := cases ++ [("retry publishes only its own captured original",
+    !retryBad && retried.originals.size == 1)]
+  let definition : Ixon.Constant := { (default : Ixon.Constant) with info := .defn { (default : Ixon.Definition) with kind := .defn } }
+  let bytes := Ixon.ser definition
+  let sourceResult : BlockResult :=
+    { block := definition, blockBytes := bytes, blockAddr := Address.admissionHash bytes }
+  let sourceCache : BlockState :=
+    { defHints := ({} : Std.HashMap _ _).insert a (.regular 7) }
+  let captured := Ix.Compile.OriginalData.captureOriginals a sourceResult sourceCache
+    (fun n => if n == a then some canonical else none)
+  let imageCache : BlockState := { defHints := ({} : Std.HashMap _ _).insert a .abbrev }
+  let imagePublished : Ix.Compile.Pass.Published := { originals := captured }
+  let image := mergeCompiledBlock emptyAcc a (loneResult canonical) imageCache imagePublished
+  let reclaimed := mergeCompiledBlock image a (loneResult canonical) imageCache imagePublished
+  cases := cases ++ [("image captures exact source bytes and hints before overrides",
+    image.originals.size == 1 && image.originals[0]?.map (·.original.bytes) == some bytes &&
+    image.originals[0]?.map (·.hints) == some (some (some (.regular 7))) &&
+    image.defHints.get? a == some .abbrev),
+    ("identical re-claim retains the owner's receipt", reclaimed.originals.size == 1)]
+  let getHints := Ix.Compile.OriginalData.capturedHints
+  let theoremRecord : Ixon.Constant := { (default : Ixon.Constant) with info := .defn { (default : Ixon.Definition) with kind := .thm } }
+  let block : Ixon.Constant := { (default : Ixon.Constant) with info := .muts #[.defn { (default : Ixon.Definition) with kind := .defn }] }
+  let projected : Ixon.Constant := { (default : Ixon.Constant) with info := .dPrj ⟨0, canonical⟩ }
+  let recursor : Ixon.Constant := { (default : Ixon.Constant) with info := .rPrj ⟨0, canonical⟩ }
+  cases := cases ++ [("missing definition hint stays unavailable",
+    (getHints default a definition definition).isNone),
+    ("theorem known absence is preserved", getHints default a theoremRecord theoremRecord == some none),
+    ("projection uses original member hint", getHints sourceCache a block projected == some (some (.regular 7))),
+    ("recursor never inherits image definition hints", getHints imageCache a block recursor == some none)]
+  let sourceOwned := fun n => all.contains n
+  cases := cases ++ [("source dependency waits despite provisional resolution",
+    !auxDependencyReady sourceOwned acc.cenv {} a &&
+    auxDependencyReady sourceOwned acc.cenv all a &&
+    auxDependencyReady sourceOwned acc.cenv {} other &&
+    !auxDependencyReady sourceOwned acc.cenv {} (ixName "Fx.Promote.absent"))]
+  return cases
+
+end DriverApi
+
+/-! ## Part 2: both compilers on a constructed closure -/
+
+/-- The aux-gen seed names (`Ix.CompileM.auxGenSeedNames`), as Lean names. -/
+def auxSeeds : List Name :=
+  [``PUnit, ``PProd, ``Eq, ``Eq.refl, ``Eq.symm, ``Eq.ndrec, ``rfl, ``HEq, ``HEq.refl,
+    ``eq_of_heq, ``True, ``And]
+
+/-- A closure with the recursors of its inductives (`X.rec`, `X.rec_N`) and
+    their own closures. -/
+def closeWithRecursors (env : Environment) (closure : List (Name × ConstantInfo)) :
+    List (Name × ConstantInfo) := Id.run do
+  let mut extra : Array Name := #[]
+  for (n, ci) in closure do
+    if let .inductInfo _ := ci then
+      if env.contains (n ++ `rec) then extra := extra.push (n ++ `rec)
+      let mut i := 1
+      while env.contains ((n ++ `rec).appendIndexAfter i) do
+        extra := extra.push ((n ++ `rec).appendIndexAfter i)
+        i := i + 1
+  if extra.isEmpty then return closure
+  Ix.EnvScope.collectDeps env (closure.map (·.1) ++ extra.toList)
+
+def tName : Name := ``Fixture.T
+def belowName : Name := tName ++ `below
+
+/-- The closure of `T` and `Dep`, with `FakeBelow` renamed to `T.below` and
+    `Dep`'s body pointing at it. Lean's own auxiliaries of `T` are not in it:
+    nothing in the closure references them. -/
+def conflictClosure (env : Environment) : Except String (List (Name × ConstantInfo)) := do
+  let some (.defnInfo fv) := env.find? ``Fixture.FakeBelow | throw "FakeBelow missing"
+  let some (.defnInfo dv) := env.find? ``Fixture.Dep | throw "Dep missing"
+  if (dv.value.getUsedConstants.contains ``Fixture.FakeBelow) == false then
+    throw "Dep does not mention FakeBelow"
+  let base := closeWithRecursors env
+    (Ix.EnvScope.collectDeps env ([``Fixture.Dep, tName, tName ++ `rec] ++ auxSeeds))
+  let userBelow : ConstantInfo := .defnInfo { fv with name := belowName, all := [belowName] }
+  let dep' : ConstantInfo := .defnInfo { dv with value := .const belowName [] }
+  let rest := base.filterMap fun (n, ci) =>
+    if n == ``Fixture.FakeBelow then none
+    else if n == ``Fixture.Dep then some (n, dep')
+    else some (n, ci)
+  return (belowName, userBelow) :: rest
+
+/-- The message without the error-kind prefix: Rust prints
+    `invalid mutual block: …`, Lean `invalidMutualBlock: …` (the two
+    compilers' `CompileError` spellings differ for every error). -/
+def core (msg : String) : String :=
+  match msg.splitOn ": " with
+  | _ :: rest@(_ :: _) => ": ".intercalate rest
+  | _ => msg
+
+/-- A missing-dependency cascade, in either compiler's spelling. -/
+def isCascadeRaw (msg : String) : Bool :=
+  msg.startsWith "missingConstant" || msg.startsWith "missing constant"
+
+/-- Sorted (name, message) pairs, messages without the error-kind prefix;
+    cascades are marked `missing …`. -/
+def sorted (xs : List (String × String)) : List (String × String) :=
+  (xs.map fun (n, m) => (n, if isCascadeRaw m then s!"missing {core m}" else core m)).toArray.qsort
+    (fun a b => a.1 < b.1) |>.toList
+
+def isCascade (msg : String) : Bool := msg.startsWith "missing "
+
+/-- The `ix compile-lean` pipeline on a closure (`compileInputFromEnv`, then
+    `compileLeanInput`). -/
+def leanCompile (env : Environment) (closure : List (Name × ConstantInfo)) (workers : Nat) :
+    IO Ix.CompileM.LeanPipelineOut := do
+  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
+  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) with
+  | .ok o => pure o
+  | .error e => throw (IO.userError s!"Lean compile failed: {e}")
+
+def run : IO UInt32 := do
+  let mut failures := 0
+  match aliasProvenanceCheck with
+  | .ok () => IO.println "[claim-conflict] alias provenance: target promotion independent; own original preserved"
+  | .error e =>
+    failures := failures + 1
+    IO.println s!"[claim-conflict] alias provenance: FAIL: {e}"
+  match ownerNamedCheck with
+  | .ok () => IO.println "[claim-conflict] owner Named: an identical re-claim keeps the \
+owner's entry; a block's own re-registration wins"
+  | .error e =>
+    failures := failures + 1
+    IO.println s!"[claim-conflict] owner Named: FAIL: {e}"
+  -- Part 1
+  for (label, expected, actual) in driverCases do
+    if expected == actual then
+      IO.println s!"[claim-conflict] driver: {label}: {actual.getD "accepted"}"
+    else
+      failures := failures + 1
+      IO.println s!"[claim-conflict] driver: {label}: FAIL: expected {expected.getD "accepted"}, \
+got {actual.getD "accepted"}"
+  for (label, passed) in promotionCases do
+    if passed then
+      IO.println s!"[claim-conflict] promotion: {label}: PASS"
+    else
+      failures := failures + 1
+      IO.println s!"[claim-conflict] promotion: {label}: FAIL"
+  -- Part 2
+  let env ← get_env!
+  let closure ← IO.ofExcept (conflictClosure env)
+  IO.println s!"[claim-conflict] constructed closure: {closure.length} constants"
+  -- Rust (the `ix compile` FFI), partial output allowed so the status
+  -- lists every refused constant
+  let dir ← IO.FS.createTempDir
+  let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env closure)
+  let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared (dir / "rs.ixe").toString true
+  IO.FS.removeDirAll dir
+  let rust := sorted status.ungrounded.toList
+  for (n, m) in rust do
+    IO.println s!"[claim-conflict] rust refuses {n}: {m}"
+  let belowPretty := (Ix.Name.fromLeanName belowName).pretty
+  let tPretty := (Ix.Name.fromLeanName tName).pretty
+  let isConflict (m : String) :=
+    m == s!"auxiliary claim for source name '{belowPretty}' has no forward provenance to the claiming block"
+  if !(rust.any fun (n, m) => n == tPretty && isConflict m) then
+    failures := failures + 1
+    IO.println s!"[claim-conflict] FAIL: Rust does not refuse {tPretty} for its claim on the source name {belowPretty}"
+  if rust.any (·.1 == belowPretty) then
+    failures := failures + 1
+    IO.println s!"[claim-conflict] FAIL: Rust refuses the user {belowPretty} itself"
+  -- Lean: every schedule
+  let mut runs : Array (String × List (String × String)) := #[]
+  let phases ← Ix.CompileM.rsCompilePhasesOf closure
+  -- the IO pipeline's count of input constants, which bounds the
+  -- source-claim walk as there
+  let unmaterialized := closure.length
+  match Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed (unmaterialized := unmaterialized) with
+  | .error e => throw (IO.userError s!"[claim-conflict] fold: {e}")
+  | .ok (_, _, cenv) =>
+    runs := runs.push ("fold", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+  -- the test-only reference schedule (the former sequential driver), with the
+  -- least and with the greatest ready key first
+  for least in [true, false] do
+    match ScheduleReference.sequential phases.rawEnv phases.condensed (unmaterialized := unmaterialized)
+        (least := least) with
+    | .error e => throw (IO.userError s!"[claim-conflict] reference schedule: {e}")
+    | .ok (_, _, cenv) =>
+      runs := runs.push (s!"reference, {if least then "least" else "greatest"} key first",
+        cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+  for k in [1, 4, 16] do
+    let out ← leanCompile env closure k
+    runs := runs.push (s!"compile-lean --workers {k}",
+      out.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+  -- Root refusals (every failure that is not a missing-dependency cascade)
+  -- must be Rust's in every schedule, name for name and message for message,
+  -- and so must the cascades, name for name (their messages are each
+  -- compiler's own spelling): exactly `T.rec`, whose block compiles after
+  -- `T`'s failed one. A failed block publishes nothing in either compiler:
+  -- the Lean drivers merge nothing of it (`checkBlockClaims` runs first), and
+  -- Rust rolls back what it entered (`block_txn`), so `T.rec` meets no `T`.
+  let expectedCascades : List String := [(Ix.Name.fromLeanName (tName ++ `rec)).pretty]
+  let rustRoots := rust.filter (!isCascade ·.2)
+  let rustCascades := (rust.filter (isCascade ·.2)).map (·.1)
+  if rustCascades != expectedCascades then
+    failures := failures + 1
+    IO.println s!"[claim-conflict] FAIL: Rust cascades {rustCascades}, expected {expectedCascades}"
+  let mut reference : Option (List (String × String)) := none
+  for (label, refusals) in runs do
+    let lean := sorted refusals
+    let roots := lean.filter (!isCascade ·.2)
+    let cascades := (lean.filter (isCascade ·.2)).map (·.1)
+    if roots == rustRoots && cascades == expectedCascades then
+      IO.println s!"[claim-conflict] {label}: {roots.length} refusals identical to Rust's; \
+cascade {cascades}, as in Rust"
+    else
+      failures := failures + 1
+      IO.println s!"[claim-conflict] {label}: FAIL: refusals differ from Rust"
+      for (n, m) in lean do
+        IO.println s!"[claim-conflict]   lean {n}: {m}"
+    match reference with
+    | none => reference := some lean
+    | some r =>
+      if r != lean then
+        failures := failures + 1
+        IO.println s!"[claim-conflict] {label}: FAIL: refusals differ from the sequential driver's"
+  IO.println s!"[claim-conflict] {if failures == 0 then "PASS" else s!"FAIL ({failures})"}"
+  return if failures == 0 then 0 else 1
+
+end Tests.Ix.Compile.ClaimConflict

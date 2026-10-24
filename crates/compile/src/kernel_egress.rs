@@ -1,4 +1,4 @@
-//! Egress: convert kernel types (`Meta` mode) to `src/ix/env.rs` Lean types.
+//! Egress: convert kernel types (`Meta` mode) to `crates/common/src/env.rs` Lean types.
 //!
 //! Only works for `Meta` mode since it needs actual names and binder info.
 
@@ -493,21 +493,44 @@ impl EgressCtx {
     self.preseeded = true;
   }
 
+  /// Install the ORIGINAL constant's refs table, for the same reason as
+  /// [`Self::preseed_univs`]: Pass 3's decompile records (`_ix.inline`)
+  /// store their source occurrences in `ConstantMeta.meta_sharing`, whose
+  /// `Ref`/`Str`/`Nat` indices address the original table (primary
+  /// indices, then `refs.len() + j` into `meta_refs`), and the roundtrip
+  /// pairs the rebuilt constant with that original meta. Traversal interns
+  /// then hit the original positions instead of a first-use order.
+  fn preseed_refs(&mut self, refs: &[Address]) {
+    for r in refs {
+      self.refs.insert(r.clone());
+    }
+  }
+
   fn intern_ref(&mut self, addr: Address) -> u64 {
     let (idx, _) = self.refs.insert_full(addr);
     idx as u64
   }
 
-  fn intern_univ(&mut self, u: Arc<IxonUniv>) -> u64 {
-    let (idx, fresh) = self.univs.insert_full(u);
-    debug_assert!(
-      !(fresh && self.preseeded),
-      "kexpr_to_ixon interned a universe absent from the original \
-       constant's table ({:?}) — the rebuilt table no longer matches the \
-       original meta's univ_patches index space (canonicity §10.6 V1)",
-      self.univs.get_index(idx)
-    );
-    idx as u64
+  /// Intern `u` and return its index. Once the table is preseeded with the
+  /// original constant's, a universe absent from it is an error in every
+  /// build: appending it would shift the original meta's `univ_patches`
+  /// index space (canonicity §10.6 V1). This was a `debug_assert!`, so a
+  /// release build appended the universe silently.
+  fn intern_univ(&mut self, u: Arc<IxonUniv>) -> Result<u64, String> {
+    if self.preseeded {
+      return self.univs.get_index_of(&u).map(|idx| idx as u64).ok_or_else(
+        || {
+          format!(
+            "kexpr_to_ixon: universe {u:?} is absent from the original \
+             constant's table, so the rebuilt table would no longer match \
+             the original meta's univ_patches index space (canonicity \
+             §10.6 V1)"
+          )
+        },
+      );
+    }
+    let (idx, _) = self.univs.insert_full(u);
+    Ok(idx as u64)
   }
 
   fn into_vecs(self) -> (Vec<Address>, Vec<Arc<IxonUniv>>) {
@@ -541,14 +564,17 @@ fn kuniv_to_ixon(u: &KUniv<Meta>, ctx: &mut EgressCtx) -> Arc<IxonUniv> {
 }
 
 /// Intern a universe into the block's `univs` table and return its index.
-fn kuniv_idx(u: &KUniv<Meta>, ctx: &mut EgressCtx) -> u64 {
+fn kuniv_idx(u: &KUniv<Meta>, ctx: &mut EgressCtx) -> Result<u64, String> {
   let u = kuniv_to_ixon(u, ctx);
   ctx.intern_univ(u)
 }
 
 /// Convert a list of kernel universes to a `Vec<u64>` of indices into the
 /// block's `univs` table. Used for `IxonExpr::Ref` / `Rec` universe args.
-fn kunivs_to_idxs(us: &[KUniv<Meta>], ctx: &mut EgressCtx) -> Vec<u64> {
+fn kunivs_to_idxs(
+  us: &[KUniv<Meta>],
+  ctx: &mut EgressCtx,
+) -> Result<Vec<u64>, String> {
   us.iter().map(|u| kuniv_idx(u, ctx)).collect()
 }
 
@@ -564,19 +590,24 @@ fn kunivs_to_idxs(us: &[KUniv<Meta>], ctx: &mut EgressCtx) -> Vec<u64> {
 ///
 /// Note on `Share`: we never emit `IxonExpr::Share(_)` here; sharing is
 /// discovered fresh by the `apply_sharing_*` pass that wraps our output.
-fn kexpr_to_ixon(expr: &KExpr<Meta>, ctx: &mut EgressCtx) -> Arc<IxonExpr> {
+fn kexpr_to_ixon(
+  expr: &KExpr<Meta>,
+  ctx: &mut EgressCtx,
+) -> Result<Arc<IxonExpr>, String> {
   let key = *expr.addr();
   if let Some(hit) = ctx.expr_cache.get(&key) {
-    return hit.clone();
+    return Ok(hit.clone());
   }
   let out = match expr.data() {
     ExprData::Var(idx, _, _) => IxonExpr::var(*idx),
     // See `egress_expr`: FVars must be abstracted back into de Bruijn
     // before serialization. They have no Ixon representation.
-    ExprData::FVar(id, _, _) => panic!(
-      "kexpr_to_ixon: unexpected FVar({id}) — abstract back to de Bruijn \
-       before exporting"
-    ),
+    ExprData::FVar(id, _, _) => {
+      return Err(format!(
+        "kexpr_to_ixon: unexpected FVar({id}) — abstract back to de Bruijn \
+         before exporting"
+      ));
+    },
     // Canonicity §10.6: the ixon half emits the kernel-held (canonical)
     // level in ALL cases — decorations do NOT flow into the rebuilt
     // tables. The original spellings ride along in the untouched
@@ -584,9 +615,9 @@ fn kexpr_to_ixon(expr: &KExpr<Meta>, ctx: &mut EgressCtx) -> Arc<IxonExpr> {
     // roundtrip pairs with this constant; the decompiler replays them
     // from there. (The Lean half, `egress_expr` above, still replays
     // decorations by VALUE — no table index space involved.)
-    ExprData::Sort(u, _) => IxonExpr::sort(kuniv_idx(u, ctx)),
+    ExprData::Sort(u, _) => IxonExpr::sort(kuniv_idx(u, ctx)?),
     ExprData::Const(id, univs, _) => {
-      let u_idxs = kunivs_to_idxs(univs, ctx);
+      let u_idxs = kunivs_to_idxs(univs, ctx)?;
       // Look up in mut_ctx first — a match means this is a mutual
       // self-reference and must be emitted as `Rec`, not `Ref`.
       if let Some(&rec_idx) = ctx.mut_ctx.get(id) {
@@ -597,28 +628,28 @@ fn kexpr_to_ixon(expr: &KExpr<Meta>, ctx: &mut EgressCtx) -> Arc<IxonExpr> {
       }
     },
     ExprData::App(f, a, _) => {
-      let f = kexpr_to_ixon(f, ctx);
-      let a = kexpr_to_ixon(a, ctx);
+      let f = kexpr_to_ixon(f, ctx)?;
+      let a = kexpr_to_ixon(a, ctx)?;
       IxonExpr::app(f, a)
     },
     ExprData::Lam(_, _, ty, body, _) => {
-      let ty = kexpr_to_ixon(ty, ctx);
-      let body = kexpr_to_ixon(body, ctx);
+      let ty = kexpr_to_ixon(ty, ctx)?;
+      let body = kexpr_to_ixon(body, ctx)?;
       IxonExpr::lam(ty, body)
     },
     ExprData::All(_, _, ty, body, _) => {
-      let ty = kexpr_to_ixon(ty, ctx);
-      let body = kexpr_to_ixon(body, ctx);
+      let ty = kexpr_to_ixon(ty, ctx)?;
+      let body = kexpr_to_ixon(body, ctx)?;
       IxonExpr::all(ty, body)
     },
     ExprData::Let(_, ty, val, body, nd, _) => {
-      let ty = kexpr_to_ixon(ty, ctx);
-      let val = kexpr_to_ixon(val, ctx);
-      let body = kexpr_to_ixon(body, ctx);
+      let ty = kexpr_to_ixon(ty, ctx)?;
+      let val = kexpr_to_ixon(val, ctx)?;
+      let body = kexpr_to_ixon(body, ctx)?;
       IxonExpr::let_(*nd, ty, val, body)
     },
     ExprData::Prj(id, field, val, _) => {
-      let val = kexpr_to_ixon(val, ctx);
+      let val = kexpr_to_ixon(val, ctx)?;
       let r_idx = ctx.intern_ref(id.addr.clone());
       IxonExpr::prj(r_idx, *field, val)
     },
@@ -632,7 +663,7 @@ fn kexpr_to_ixon(expr: &KExpr<Meta>, ctx: &mut EgressCtx) -> Arc<IxonExpr> {
     },
   };
   ctx.expr_cache.insert(key, out.clone());
-  out
+  Ok(out)
 }
 
 /// Build an `IxonDefinition` body (type + value) from a `KConst::Defn`.
@@ -642,8 +673,8 @@ fn kdefn_to_ixon(
 ) -> Result<IxonDefinition, String> {
   match kc {
     KConst::Defn { kind, safety, lvls, ty, val, .. } => {
-      let typ = kexpr_to_ixon(ty, ctx);
-      let value = kexpr_to_ixon(val, ctx);
+      let typ = kexpr_to_ixon(ty, ctx)?;
+      let value = kexpr_to_ixon(val, ctx)?;
       Ok(IxonDefinition {
         kind: *kind,
         safety: *safety,
@@ -674,14 +705,16 @@ fn krecr_to_ixon(
       rules,
       ..
     } => {
-      let typ = kexpr_to_ixon(ty, ctx);
+      let typ = kexpr_to_ixon(ty, ctx)?;
       let rules: Vec<IxonRecursorRule> = rules
         .iter()
-        .map(|r| IxonRecursorRule {
-          fields: r.fields,
-          rhs: kexpr_to_ixon(&r.rhs, ctx),
+        .map(|r| {
+          Ok(IxonRecursorRule {
+            fields: r.fields,
+            rhs: kexpr_to_ixon(&r.rhs, ctx)?,
+          })
         })
-        .collect();
+        .collect::<Result<_, String>>()?;
       Ok(IxonRecursor {
         k: *k,
         is_unsafe: *is_unsafe,
@@ -705,7 +738,7 @@ fn kaxio_to_ixon(
 ) -> Result<IxonAxiom, String> {
   match kc {
     KConst::Axio { is_unsafe, lvls, ty, .. } => {
-      let typ = kexpr_to_ixon(ty, ctx);
+      let typ = kexpr_to_ixon(ty, ctx)?;
       Ok(IxonAxiom { is_unsafe: *is_unsafe, lvls: *lvls, typ })
     },
     _ => Err(format!("kaxio_to_ixon: expected Axio, got {}", kc_kind(kc))),
@@ -719,7 +752,7 @@ fn kquot_to_ixon(
 ) -> Result<IxonQuotient, String> {
   match kc {
     KConst::Quot { kind, lvls, ty, .. } => {
-      let typ = kexpr_to_ixon(ty, ctx);
+      let typ = kexpr_to_ixon(ty, ctx)?;
       Ok(IxonQuotient { kind: *kind, lvls: *lvls, typ })
     },
     _ => Err(format!("kquot_to_ixon: expected Quot, got {}", kc_kind(kc))),
@@ -756,12 +789,12 @@ fn kind_to_ixon(
     ));
   };
 
-  let typ = kexpr_to_ixon(ty, ctx);
+  let typ = kexpr_to_ixon(ty, ctx)?;
   let ctors: Vec<IxonConstructor> = ctor_kconsts
     .iter()
     .map(|cc| match cc {
       KConst::Ctor { is_unsafe, lvls, cidx, params, fields, ty, .. } => {
-        let typ = kexpr_to_ixon(ty, ctx);
+        let typ = kexpr_to_ixon(ty, ctx)?;
         Ok(IxonConstructor {
           is_unsafe: *is_unsafe,
           lvls: *lvls,
@@ -990,6 +1023,7 @@ fn egress_muts_block(
   // `univ_patches` stay index-valid (canonicity §10.6, see EgressCtx).
   if let Some(orig_const) = original_env.get_const(&muts_named.addr) {
     ctx.preseed_univs(&orig_const.univs);
+    ctx.preseed_refs(&orig_const.refs);
   }
 
   // Determine per-class representative KConst: this is the kernel's
@@ -1180,6 +1214,7 @@ fn egress_standalone(
   // `univ_patches` stay index-valid (canonicity §10.6, see EgressCtx).
   if let Some(orig_const) = original_env.get_const(&original_named.addr) {
     ctx.preseed_univs(&orig_const.univs);
+    ctx.preseed_refs(&orig_const.refs);
   }
   // A sharing failure (resource limit or construction error) names the
   // constant it stopped.
@@ -1850,5 +1885,44 @@ mod tests {
     )
     .unwrap();
     assert!(out.named.contains_key(&name));
+  }
+
+  // ---- fallible universe interning (CQ2.24 a) ----
+
+  #[test]
+  fn preseeded_univ_table_refuses_an_absent_universe() {
+    // The original constant's table holds `zero` only: `Sort 0` resolves
+    // to its index, while `Sort 1` would append and shift the original
+    // meta's patch index space, so it is an error in every build.
+    let mut ctx = EgressCtx::new();
+    ctx.preseed_univs(&[IxonUniv::zero()]);
+    let hit = kexpr_to_ixon(&sort0(), &mut ctx).unwrap();
+    assert_eq!(hit, IxonExpr::sort(0));
+    let err = kexpr_to_ixon(&sort_succ(), &mut ctx)
+      .expect_err("a universe absent from the preseeded table");
+    assert!(err.contains("absent from the original constant's table"), "{err}");
+    let (_, univs) = ctx.into_vecs();
+    assert_eq!(univs, vec![IxonUniv::zero()]);
+  }
+
+  #[test]
+  fn unseeded_univ_table_interns_in_first_use_order() {
+    let mut ctx = EgressCtx::new();
+    assert_eq!(
+      kexpr_to_ixon(&sort_succ(), &mut ctx).unwrap(),
+      IxonExpr::sort(0)
+    );
+    assert_eq!(kexpr_to_ixon(&sort0(), &mut ctx).unwrap(), IxonExpr::sort(1));
+    let (_, univs) = ctx.into_vecs();
+    assert_eq!(univs, vec![IxonUniv::succ(IxonUniv::zero()), IxonUniv::zero()]);
+  }
+
+  #[test]
+  fn fvar_is_an_egress_error() {
+    let mut ctx = EgressCtx::new();
+    let e = KExpr::<Meta>::fvar(ix_kernel::expr::FVarId(7), mk_name("x"));
+    let err =
+      kexpr_to_ixon(&e, &mut ctx).expect_err("an FVar has no Ixon form");
+    assert!(err.contains("unexpected FVar"), "{err}");
   }
 }

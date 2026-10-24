@@ -1,10 +1,18 @@
 module
 
 public import Ix.Resource.Addressed
-public import Ix.Tc.Driver
+public import Ix.Resource.Typing
+public import Ix.PrimAddrs
 
 /-! The combined native validation boundary. Both validators consume the same
-addressed v4 bytes. Kernel typechecking alone has no resource meaning. -/
+addressed v4 bytes. Kernel typechecking alone has no resource meaning.
+
+The typing half is `Ix.Resource.typeCheck` (`Ix.Resource.Typing`): IxC's
+tiered Ixon entry, with its theorem, over everything it admits, and beside it,
+uncertified, IxC's typing of the unsafe inductives and assumption axioms it
+declines by design and of the records that depend on them. The claim string
+stays `resource-v1`: re-based on IxC, still uncertified as a resource claim
+(`Ix.Resource.Claim`). -/
 
 @[expose] public section
 
@@ -28,23 +36,10 @@ def checkLiteralProfile (profile : Profile) : Except String Unit := do
     if let some selected := selected then
       unless selected == actual do throw "resource validator: literal type differs from the kernel primitive identity"
 
-/-- Rebuild the anonymous input from bounded raw byte windows. Lean's public
-LazyConstant record permits constructing a conflicting materialized cache;
-neither validator may trust that cache as a replacement for committed bytes. -/
-def rawTypingEnv (env : Ixon.Env) : Ixon.Env := {
-  consts := env.consts.fold (init := {}) fun result address lazy =>
-    let bytes := lazy.rawBytes
-    result.insert address (Ixon.LazyConstant.ofSlice bytes 0 bytes.size)
-  blobs := env.blobs
-  anonHints := env.anonHints }
-
 def validate (env : Ixon.Env) (profile : Profile) : Except String AddressedProgram := do
   checkLiteralProfile profile
   let resolved ← Addressed.checkResources env profile
-  let checked ← Ix.Tc.checkEnvAnon (rawTypingEnv env) { verifyHashes := true }
-  for result in checked do
-    if let some error := result.err? then
-      throw s!"resource validator: erased typing failed at {result.addr}: {error}"
+  typeCheck env
   return resolved
 
 end Ix.Resource

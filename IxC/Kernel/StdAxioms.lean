@@ -32,35 +32,36 @@ bridges a hit.
 
 namespace Ix.Kernel
 
-open Name (anonymous)
 open BasisDSL
 
 /-- The name `propext`. -/
-def propextName : Name := anonymous |>.str "propext"
+abbrev propextName : Key md := roleKey .propext
 
 /-- The name `Classical.choice`. -/
-def choiceName : Name := (anonymous |>.str "Classical") |>.str "choice"
+abbrev choiceName : Key md := roleKey .choice
 
 /-- The name `Iff`. -/
-def iffName : Name := anonymous |>.str "Iff"
+abbrev iffName : Key md := roleKey .iff
 
 /-- The name `Iff.intro`. -/
-def iffIntroName : Name := iffName |>.str "intro"
+abbrev iffIntroName : Key md := roleKey .iffIntro
 
 /-- The name `Iff.rec`. -/
-def iffRecName : Name := iffName |>.str "rec"
+abbrev iffRecName : Key md := roleKey .iffRec
 
 /-- The name `Nonempty`. -/
-def nonemptyName : Name := anonymous |>.str "Nonempty"
+abbrev nonemptyName : Key md := roleKey .nonempty
 
 /-- The name `Nonempty.intro`. -/
-def nonemptyIntroName : Name := nonemptyName |>.str "intro"
+abbrev nonemptyIntroName : Key md := roleKey .nonemptyIntro
 
 /-- The name `Nonempty.rec`. -/
-def nonemptyRecName : Name := nonemptyName |>.str "rec"
+abbrev nonemptyRecName : Key md := roleKey .nonemptyRec
 
 /-- Shape comparison for the standard pins: exact name, level
-parameters and counts, type up to the `pw` datum.
+parameters and counts, type up to the `pw` datum.  Binder contracts are
+compared: every pin carries the Lean fragment's, so a stored constant with
+other contracts does not match.
 
 **Guidance for anyone adding a pin.**  Two properties of a pin decide
 how expensive it is for a *consumer* of the pin (the checker's own
@@ -100,27 +101,27 @@ validated against the checker's own inference at the front door
 `--trusted` — which writes nothing — would stop matching every
 annotated pin, i.e. an annotation-only deviation would change a
 verdict, exactly what the binder-info paragraph above forbids. -/
-def Expr.erasePw : Expr → Expr
+def Expr.erasePw : Expr md → Expr md
   | .bvar i => .bvar i
   | .fvar i ty => .fvar i ty.erasePw
   | .sort u => .sort u
   | .const n us => .const n us
   | .app f a => .app f.erasePw a.erasePw
-  | .lam ty b _ => .lam ty.erasePw b.erasePw ⟨.never⟩
-  | .forallE ty b _ => .forallE ty.erasePw b.erasePw ⟨.never⟩
-  | .letE ty v b => .letE ty.erasePw v.erasePw b.erasePw
+  | .lam ty b bm => .lam ty.erasePw b.erasePw { bm with pw := .never }
+  | .forallE ty b bm => .forallE ty.erasePw b.erasePw { bm with pw := .never }
+  | .letE ty v b lmeta => .letE ty.erasePw v.erasePw b.erasePw lmeta
   | .lit l => .lit l
   | .proj s i e => .proj s i e.erasePw
 
-def ConstantVal.matchesPin (cv pin : ConstantVal) : Bool :=
+def ConstantVal.matchesPin (cv pin : ConstantVal md) : Bool :=
   cv.name = pin.name && cv.levelParams = pin.levelParams &&
     cv.type.erasePw == pin.type.erasePw
 
 /-! ### The lockstep comparison (task #226)
 
 `matchesPin` above is the SPECIFICATION, and every proof about a pin
-hit consumes it (`Verify/StdAxiomPin.lean`, `Verify/OfReducePin.lean`,
-`Verify/ReducePinInv.lean`, `Model/DivMod.lean`).  What it says to do
+hit consumes it (`Verify/StdAxiomPin.lean`, the model's axiom branch),
+and what it says to do
 — build `erasePw` of BOTH sides, then compare — is `O(tree)` on the
 side that comes from the stream: `Expr.erasePw` rebuilds every node,
 so a DAG-shared type unfolds.  `tests/e2e/tower_axiom_pin.ndjson`
@@ -138,16 +139,18 @@ is unchanged: same verdict on every input, only the work changes. -/
 
 /-- `a.erasePw = b.erasePw`, decided in lockstep
 (`erasePwEq_eq`). -/
-def Expr.erasePwEq : Expr → Expr → Bool
+def Expr.erasePwEq : Expr md → Expr md → Bool
   | .bvar i, .bvar j => i == j
   | .fvar i t, .fvar j t' => i == j && t.erasePwEq t'
   | .sort u, .sort v => u == v
   | .const n us, .const n' us' => n == n' && us == us'
   | .app f a, .app f' a' => f.erasePwEq f' && a.erasePwEq a'
-  | .lam t b _, .lam t' b' _ => t.erasePwEq t' && b.erasePwEq b'
-  | .forallE t b _, .forallE t' b' _ => t.erasePwEq t' && b.erasePwEq b'
-  | .letE t v b, .letE t' v' b' =>
-      t.erasePwEq t' && v.erasePwEq v' && b.erasePwEq b'
+  | .lam t b m, .lam t' b' m' => t.erasePwEq t' && b.erasePwEq b' &&
+      m.contract == m'.contract && m.result == m'.result
+  | .forallE t b m, .forallE t' b' m' => t.erasePwEq t' && b.erasePwEq b' &&
+      m.contract == m'.contract && m.result == m'.result
+  | .letE t v b l, .letE t' v' b' l' =>
+      t.erasePwEq t' && v.erasePwEq v' && b.erasePwEq b' && l == l'
   | .lit l, .lit l' => l == l'
   | .proj s i e, .proj s' i' e' => s == s' && i == i' && e.erasePwEq e'
   | _, _ => false
@@ -159,7 +162,7 @@ the binder `pw` datum), so two erased terms are equal iff the
 originals agree constructor by constructor down to their leaves —
 which is what the descent tests. -/
 theorem Expr.erasePwEq_iff :
-    ∀ a b : Expr, a.erasePwEq b = true ↔ a.erasePw = b.erasePw := by
+    ∀ a b : Expr md, a.erasePwEq b = true ↔ a.erasePw = b.erasePw := by
   intro a
   induction a with
   | bvar i => intro b; cases b <;> simp [Expr.erasePwEq, Expr.erasePw]
@@ -172,11 +175,11 @@ theorem Expr.erasePwEq_iff :
       simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, ihf, iha]
   | lam t b m iht ihb =>
     intro c; cases c <;>
-      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb]
+      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb, and_assoc]
   | forallE t b m iht ihb =>
     intro c; cases c <;>
-      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb]
-  | letE t v b iht ihv ihb =>
+      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb, and_assoc]
+  | letE t v b _ iht ihv ihb =>
     intro c; cases c <;>
       simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihv, ihb, and_assoc]
   | lit l => intro b; cases b <;> simp [Expr.erasePwEq, Expr.erasePw]
@@ -186,7 +189,7 @@ theorem Expr.erasePwEq_iff :
 
 /-- **The agreement**: the lockstep comparison returns exactly what
 `matchesPin`'s equation test returns, on every pair of terms. -/
-theorem Expr.erasePwEq_eq (a b : Expr) :
+theorem Expr.erasePwEq_eq (a b : Expr md) :
     a.erasePwEq b = (a.erasePw == b.erasePw) := by
   cases hb : (a.erasePw == b.erasePw) with
   | true => exact (Expr.erasePwEq_iff a b).2 (eq_of_beq hb)
@@ -196,21 +199,21 @@ theorem Expr.erasePwEq_eq (a b : Expr) :
 
 /-- `matchesPin` at the lockstep comparison (`@[csimp]` below): the
 executed shape test. -/
-def ConstantVal.matchesPinFast (cv pin : ConstantVal) : Bool :=
+def ConstantVal.matchesPinFast (cv pin : ConstantVal md) : Bool :=
   cv.name = pin.name && cv.levelParams = pin.levelParams &&
     cv.type.erasePwEq pin.type
 
 @[csimp] theorem ConstantVal.matchesPin_eq_matchesPinFast :
     @ConstantVal.matchesPin = @ConstantVal.matchesPinFast := by
-  funext cv pin
+  funext md cv pin
   simp [ConstantVal.matchesPin, ConstantVal.matchesPinFast, Expr.erasePwEq_eq]
 
 /-- `Iff (a b : Prop) : Prop`. -/
-def iffRaw : ConstantInfo :=
+def iffRaw : ConstantInfo md :=
   .indInfo ⟨iffName, [], pi "a" prop <| pi "b" prop prop⟩ {}
 
 /-- `Iff.intro (a b : Prop) (mp : a → b) (mpr : b → a) : Iff a b`. -/
-def iffIntroRaw : ConstantInfo :=
+def iffIntroRaw : ConstantInfo md :=
   .ctorInfo ⟨iffIntroName, [],
     pi "a" prop <|
     pi "b" prop <|
@@ -221,7 +224,7 @@ def iffIntroRaw : ConstantInfo :=
 
 /-- `Iff.rec`'s minor premise, in the `a`/`b`/`motive` binder context:
 `∀ (mp : a → b) (mpr : b → a), motive (Iff.intro a b mp mpr)`. -/
-def iffRecIntro : Expr :=
+def iffRecIntro : Expr md :=
   pi "mp" (pi "right" (bv 2) (bv 2)) <|
   pi "mpr" (piA (bv 2) (bv 4)) <|
   .app (bv 2) (ap4 (cnst iffIntroName) (bv 4) (bv 3) (bv 1) (bv 0))
@@ -229,7 +232,7 @@ def iffRecIntro : Expr :=
 /-- `Iff.rec.{u} (a b : Prop) (motive : Iff a b → Sort u)
 (intro : ∀ mp mpr, motive (Iff.intro a b mp mpr)) (t : Iff a b) :
 motive t`. -/
-def iffRecRaw : ConstantInfo :=
+def iffRecRaw : ConstantInfo md :=
   .recInfo ⟨iffRecName, [uN],
     pi "a" prop <|
     pi "b" prop <|
@@ -240,11 +243,11 @@ def iffRecRaw : ConstantInfo :=
 
 /-- The raw `Iff` family, as an export carries it (dependency
 order). -/
-def iffFamily : List ConstantInfo := [iffRaw, iffIntroRaw, iffRecRaw]
+def iffFamily : List (ConstantInfo md) := [iffRaw, iffIntroRaw, iffRecRaw]
 
 /-- The raw `propext` declaration:
 `propext (a b : Prop) : Iff a b → Eq.{1} Prop a b`. -/
-def propextRaw : ConstantVal :=
+def propextRaw : ConstantVal md :=
   ⟨propextName, [],
     pi "a" prop <|
     pi "b" prop <|
@@ -252,11 +255,11 @@ def propextRaw : ConstantVal :=
     ap3 (cnst eqName [.succ .zero]) prop (bv 2) (bv 1)⟩
 
 /-- `Nonempty.{u} (α : Sort u) : Prop`. -/
-def nonemptyRaw : ConstantInfo :=
+def nonemptyRaw : ConstantInfo md :=
   .indInfo ⟨nonemptyName, [uN], pi "α" (srt u) prop⟩ {}
 
 /-- `Nonempty.intro.{u} (α : Sort u) (val : α) : Nonempty α`. -/
-def nonemptyIntroRaw : ConstantInfo :=
+def nonemptyIntroRaw : ConstantInfo md :=
   .ctorInfo ⟨nonemptyIntroName, [uN],
     pi "α" (srt u) <|
     pi "val" (bv 0) <|
@@ -267,7 +270,7 @@ def nonemptyIntroRaw : ConstantInfo :=
 (intro : ∀ val, motive (Nonempty.intro α val)) (t : Nonempty α) :
 motive t`.  The motive sort is pinned to `Prop` (see the guidance
 above). -/
-def nonemptyRecRaw : ConstantInfo :=
+def nonemptyRecRaw : ConstantInfo md :=
   .recInfo ⟨nonemptyRecName, [uN],
     pi "α" (srt u) <|
     pi "motive" (pi "t" (.app (cnst nonemptyName [u]) (bv 0)) prop) <|
@@ -278,12 +281,12 @@ def nonemptyRecRaw : ConstantInfo :=
     3 3 []
 
 /-- The raw `Nonempty` family. -/
-def nonemptyFamily : List ConstantInfo :=
+def nonemptyFamily : List (ConstantInfo md) :=
   [nonemptyRaw, nonemptyIntroRaw, nonemptyRecRaw]
 
 /-- The raw `Classical.choice` declaration:
 `Classical.choice.{u} (α : Sort u) : Nonempty α → α`. -/
-def choiceRaw : ConstantVal :=
+def choiceRaw : ConstantVal md :=
   ⟨choiceName, [uN],
     pi "α" (srt u) <|
     piA (.app (cnst nonemptyName [u]) (bv 0)) (bv 1)⟩
@@ -332,7 +335,7 @@ both deleted — see DESIGN.md's task #209 section — for why that
 distinction carries a scheduling consequence).  The
 pins predate that argument; it is recorded here because it is the
 reason they are right. -/
-def stdAxiomOk (env : Env) (cvA : ConstantVal) : Bool :=
+def stdAxiomOk (env : Env md) (cvA : ConstantVal md) : Bool :=
   if cvA.name = propextName then
     decide (env.find? eqName = some eqA) &&
     (match env.find? iffName with

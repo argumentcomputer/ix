@@ -16,23 +16,22 @@ delta-unfolding and monotonicity lemmas need it.
 namespace Ix.Kernel
 
 /-- The projection-table name shape is injective. -/
-theorem projFnName_inj {T T' : Name} {i i' : Nat}
+theorem projFnName_inj {T T' : Key md} {i i' : Nat}
     (h : projFnName T i = projFnName T' i') : T = T' ∧ i = i' := by
-  simp only [projFnName, Name.num.injEq, Name.str.injEq] at h
-  exact ⟨h.1.1, h.2⟩
+  obtain ⟨hT, hi⟩ := auxKey_inj₂ (d := .projFn i) (d' := .projFn i') h
+  exact ⟨hT, Derived.projFn.inj hi⟩
 
 /-- The projection-table name shape is injective (task #175 S1). -/
-theorem projTableName_inj {T T' : Name} (h : projTableName T = projTableName T') :
+theorem projTableName_inj {T T' : Key md} (h : projTableName T = projTableName T') :
     T = T' := by
-  simp only [projTableName, Name.num.injEq, Name.str.injEq] at h
-  exact h.1.1
+  exact auxKey_inj.mp h
 
 /-- Unfold a successful projection-table lookup to the stored table:
 the structure's table is stored, the index is in range, and the entry
 is the table's view at it (task #175 S1). -/
-theorem Env.findProj?_some {env : Env} {T : Name} {i : Nat}
-    {entry : ProjEntry} (h : env.findProj? T i = some entry) :
-    ∃ tbl : ProjTable, env.find? (projTableName T) = some (.projInfo tbl) ∧
+theorem Env.findProj?_some {env : Env md} {T : Key md} {i : Nat}
+    {entry : ProjEntry md} (h : env.findProj? T i = some entry) :
+    ∃ tbl : ProjTable md, env.find? (projTableName T) = some (.projInfo tbl) ∧
       i < tbl.numFields ∧ entry = tbl.entry i := by
   unfold Env.findProj? at h
   split at h
@@ -43,7 +42,7 @@ theorem Env.findProj?_some {env : Env} {T : Name} {i : Nat}
   next => exact nomatch h
 
 /-- The lookup at a stored table, in range. -/
-theorem Env.findProj?_of_table {env : Env} {T : Name} {tbl : ProjTable}
+theorem Env.findProj?_of_table {env : Env md} {T : Key md} {tbl : ProjTable md}
     (h : env.find? (projTableName T) = some (.projInfo tbl)) {i : Nat}
     (hi : i < tbl.numFields) : env.findProj? T i = some (tbl.entry i) := by
   unfold Env.findProj?
@@ -51,7 +50,7 @@ theorem Env.findProj?_of_table {env : Env} {T : Name} {tbl : ProjTable}
   exact if_pos hi
 
 /-- No table stored, no entry. -/
-theorem Env.findProj?_none_of_fresh {env : Env} {T : Name}
+theorem Env.findProj?_none_of_fresh {env : Env md} {T : Key md}
     (h : env.find? (projTableName T) = none) (i : Nat) : env.findProj? T i = none := by
   unfold Env.findProj?
   rw [h]
@@ -59,12 +58,12 @@ theorem Env.findProj?_none_of_fresh {env : Env} {T : Name}
 /-- **The stored table's projection offset** of structure `T` (task
 #210 Part A; `0` when no table is stored): what every entry of the
 table carries (`Env.findProj?_off`). -/
-def Env.projOff (env : Env) (T : Name) : Nat :=
+def Env.projOff (env : Env md) (T : Key md) : Nat :=
   match env.find? (projTableName T) with
   | some (.projInfo tbl) => tbl.off
   | _ => 0
 
-theorem Env.findProj?_off {env : Env} {T : Name} {i : Nat} {e : ProjEntry}
+theorem Env.findProj?_off {env : Env md} {T : Key md} {i : Nat} {e : ProjEntry md}
     (hi : env.findProj? T i = some e) : e.off = env.projOff T := by
   obtain ⟨tbl, hf, -, rfl⟩ := Env.findProj?_some hi
   unfold Env.projOff
@@ -73,7 +72,7 @@ theorem Env.findProj?_off {env : Env} {T : Name} {i : Nat} {e : ProjEntry}
 
 /-- Two entries of one structure's table carry the same projection
 offset (task #210 Part A): both are views of the one stored table. -/
-theorem Env.findProj?_off_eq {env : Env} {T : Name} {i j : Nat} {e e' : ProjEntry}
+theorem Env.findProj?_off_eq {env : Env md} {T : Key md} {i j : Nat} {e e' : ProjEntry md}
     (hi : env.findProj? T i = some e) (hj : env.findProj? T j = some e') : e.off = e'.off := by
   obtain ⟨tbl, hf, -, rfl⟩ := Env.findProj?_some hi
   obtain ⟨tbl', hf', -, rfl⟩ := Env.findProj?_some hj
@@ -81,25 +80,25 @@ theorem Env.findProj?_off_eq {env : Env} {T : Name} {i j : Nat} {e e' : ProjEntr
   rfl
 
 /-- A stored table's view fixes the entry's data. -/
-@[simp] theorem ProjTable.entry_structName (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_structName (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).structName = tbl.structName := rfl
-@[simp] theorem ProjTable.entry_idx (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_idx (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).idx = i := rfl
-@[simp] theorem ProjTable.entry_levelParams (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_levelParams (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).levelParams = tbl.levelParams := rfl
-@[simp] theorem ProjTable.entry_numParams (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_numParams (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).numParams = tbl.numParams := rfl
-@[simp] theorem ProjTable.entry_ctor (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_ctor (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).ctor = tbl.ctor := rfl
-@[simp] theorem ProjTable.entry_numFields (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_numFields (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).numFields = tbl.numFields := rfl
-@[simp] theorem ProjTable.entry_body (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_body (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).body = tbl.bodies.getD i default := rfl
-@[simp] theorem ProjTable.entry_fieldSort (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_fieldSort (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).fieldSort = tbl.guards.getD i .zero := rfl
-@[simp] theorem ProjTable.entry_structSort (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_structSort (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).structSort = tbl.structSort := rfl
-@[simp] theorem ProjTable.entry_off (tbl : ProjTable) (i : Nat) :
+@[simp] theorem ProjTable.entry_off (tbl : ProjTable md) (i : Nat) :
     (tbl.entry i).off = tbl.off := rfl
 /-- **The capability arities**: an inductive stored with the unit-like
 or the η capability has the `∀`-telescope its capability record's
@@ -113,13 +112,13 @@ are literal) and consumed by the structure-η and unit-like rows
 (`CapsRows`) from the invariant, where `structEtaCertWith` and
 `structUnitCert` used to re-check it per call ("invariants over
 runtime gates"). -/
-@[expose] def IndCapsWF (c : ConstantInfo) : Prop :=
+@[expose] def IndCapsWF (c : ConstantInfo md) : Prop :=
   ∀ cv caps, c = .indInfo cv caps →
     (caps.unitlike = true → (cv.type.stripPis caps.unitParams).isSome = true) ∧
     (caps.eta = true → (cv.type.stripPis caps.etaParams).isSome = true)
 
 /-- `IndCapsWF` at an inductive, from the two arity facts. -/
-theorem IndCapsWF.of_caps {cv : ConstantVal} {caps : IndCaps}
+theorem IndCapsWF.of_caps {cv : ConstantVal md} {caps : IndCaps md}
     (hu : caps.unitlike = true → (cv.type.stripPis caps.unitParams).isSome = true)
     (he : caps.eta = true → (cv.type.stripPis caps.etaParams).isSome = true) :
     IndCapsWF (.indInfo cv caps) := by
@@ -129,7 +128,7 @@ theorem IndCapsWF.of_caps {cv : ConstantVal} {caps : IndCaps}
 
 /-- A `stripPis` at a larger count strips at a smaller one. -/
 theorem stripPis_isSome_of_le :
-    ∀ {k n : Nat} {e : Expr}, k ≤ n → (e.stripPis n).isSome = true →
+    ∀ {k n : Nat} {e : Expr md}, k ≤ n → (e.stripPis n).isSome = true →
       (e.stripPis k).isSome = true := by
   intro k
   induction k with
@@ -144,7 +143,7 @@ theorem stripPis_isSome_of_le :
         exact ih (by omega) h
 
 /-- Syntactic well-formedness of one stored constant w.r.t. `env`. -/
-@[expose] def ConstWF (env : Env) (c : ConstantInfo) : Prop :=
+@[expose] def ConstWF (env : Env md) (c : ConstantInfo md) : Prop :=
   c.toConstantVal.type.hasFvar = false ∧
   c.toConstantVal.type.allLevelParamsDefined c.toConstantVal.levelParams = true ∧
   c.toConstantVal.type.constsResolve env = true ∧
@@ -189,7 +188,7 @@ theorem stripPis_isSome_of_le :
   -- are exactly `numFields` of them
   (∀ tbl, c = .projInfo tbl →
     tbl.bodies.size = tbl.numFields ∧
-    ∀ (i : Nat) (b : Expr), tbl.bodies[i]? = some b →
+    ∀ (i : Nat) (b : Expr md), tbl.bodies[i]? = some b →
       b.hasFvar = false ∧
       b.allLevelParamsDefined tbl.levelParams = true ∧
       b.constsResolve env = true ∧
@@ -198,18 +197,18 @@ theorem stripPis_isSome_of_le :
   IndCapsWF c
 
 /-- Every stored constant is syntactically well-formed. -/
-@[expose] def EnvWF (env : Env) : Prop := ∀ c ∈ env.consts, ConstWF env c
+@[expose] def EnvWF (env : Env md) : Prop := ∀ c ∈ env.consts, ConstWF env c
 
 /-- The capability arities of a stored inductive, off `EnvWF`. -/
-theorem EnvWF.indCaps {env : Env} (henv : EnvWF env) {T : Name}
-    {cv : ConstantVal} {caps : IndCaps}
+theorem EnvWF.indCaps {env : Env md} (henv : EnvWF env) {T : Key md}
+    {cv : ConstantVal md} {caps : IndCaps md}
     (h : env.find? T = some (.indInfo cv caps)) :
     (caps.unitlike = true → (cv.type.stripPis caps.unitParams).isSome = true) ∧
     (caps.eta = true → (cv.type.stripPis caps.etaParams).isSome = true) :=
   (henv _ (List.mem_of_find?_eq_some h)).2.2.2.2.2.2.2 cv caps rfl
 
 /-- `find?` on a cons. -/
-theorem Env.find?_cons {c : ConstantInfo} {env : Env} {n : Name} :
+theorem Env.find?_cons {c : ConstantInfo md} {env : Env md} {n : Key md} :
     Env.find? ⟨c :: env.consts⟩ n = if c.name = n then some c else env.find? n := by
   simp only [Env.find?, List.find?]
   split
@@ -217,13 +216,13 @@ theorem Env.find?_cons {c : ConstantInfo} {env : Env} {n : Name} :
   · next h => simp_all
 
 /-- A cons finds its own head. -/
-theorem Env.find?_cons_self (c : ConstantInfo) (env : Env) :
+theorem Env.find?_cons_self (c : ConstantInfo md) (env : Env md) :
     Env.find? ⟨c :: env.consts⟩ c.name = some c := by
   rw [Env.find?_cons, if_pos rfl]
 
 /-- A cons of a *fresh* head does not find anything new. -/
-theorem Env.find?_cons_of_fresh {c : ConstantInfo} {env : Env}
-    {n : Name} {ci : ConstantInfo} (hfresh : env.find? c.name = none)
+theorem Env.find?_cons_of_fresh {c : ConstantInfo md} {env : Env md}
+    {n : Key md} {ci : ConstantInfo md} (hfresh : env.find? c.name = none)
     (h : env.find? n = some ci) :
     Env.find? ⟨c :: env.consts⟩ n = some ci := by
   rw [Env.find?_cons]
@@ -233,7 +232,7 @@ theorem Env.find?_cons_of_fresh {c : ConstantInfo} {env : Env}
 
 /-- Extending the environment with a fresh constant does not change
 successful lookups. -/
-theorem Env.find?_cons_of_isSome {c : ConstantInfo} {env : Env} {n : Name}
+theorem Env.find?_cons_of_isSome {c : ConstantInfo md} {env : Env md} {n : Key md}
     (hfresh : env.find? c.name = none) (h : (env.find? n).isSome = true) :
     Env.find? ⟨c :: env.consts⟩ n = env.find? n := by
   rw [Env.find?_cons]
@@ -242,7 +241,7 @@ theorem Env.find?_cons_of_isSome {c : ConstantInfo} {env : Env} {n : Name}
   · rfl
 
 /-- A cons at another name does not change a table lookup. -/
-theorem Env.findProj?_cons_ne {env : Env} {c₀ : ConstantInfo} {T : Name}
+theorem Env.findProj?_cons_ne {env : Env md} {c₀ : ConstantInfo md} {T : Key md}
     (hn : c₀.name ≠ projTableName T) (i : Nat) :
     Env.findProj? ⟨c₀ :: env.consts⟩ T i = env.findProj? T i := by
   unfold Env.findProj?
@@ -251,9 +250,9 @@ theorem Env.findProj?_cons_ne {env : Env} {c₀ : ConstantInfo} {T : Name}
 /-- Resolution depends on the environment only through which names it
 finds: every name found in `env` being found in `env'` carries
 resolution over. -/
-theorem Expr.constsResolve_of_find {env env' : Env}
+theorem Expr.constsResolve_of_find {env env' : Env md}
     (hf : ∀ n, (env.find? n).isSome = true → (env'.find? n).isSome = true) :
-    ∀ {e : Expr}, e.constsResolve env = true → e.constsResolve env' = true := by
+    ∀ {e : Expr md}, e.constsResolve env = true → e.constsResolve env' = true := by
   intro e
   induction e with
   | bvar i => intro h; simp [Expr.constsResolve]
@@ -291,7 +290,7 @@ theorem Expr.constsResolve_of_find {env env' : Env}
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
     exact ⟨ihty h.1, ihbody h.2⟩
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
     exact ⟨⟨ihty h.1.1, ihval h.1.2⟩, ihbody h.2⟩
@@ -301,17 +300,17 @@ theorem Expr.constsResolve_of_find {env env' : Env}
     exact ⟨hf _ h.1, ih h.2⟩
 
 /-- Resolution is monotone under environment extension. -/
-theorem Expr.constsResolve_mono {c : ConstantInfo} {env : Env} :
-    ∀ {e : Expr}, e.constsResolve env = true →
+theorem Expr.constsResolve_mono {c : ConstantInfo md} {env : Env md} :
+    ∀ {e : Expr md}, e.constsResolve env = true →
       e.constsResolve ⟨c :: env.consts⟩ = true :=
   Expr.constsResolve_of_find fun n h => by
     rw [Env.find?_cons]
     split <;> simp_all
 
 /-- Resolution survives binder opening. -/
-theorem Expr.constsResolve_instantiate1 {env : Env} {d : Nat} {ty : Expr}
+theorem Expr.constsResolve_instantiate1 {env : Env md} {d : Nat} {ty : Expr md}
     (hty : ty.constsResolve env = true) :
-    ∀ {e : Expr} (k : Nat), e.constsResolve env = true →
+    ∀ {e : Expr md} (k : Nat), e.constsResolve env = true →
       (e.instantiate1 (.fvar d ty) k).constsResolve env = true := by
   intro e
   induction e <;> intro k h <;> simp_all [Expr.instantiate1, Expr.constsResolve]
@@ -321,41 +320,25 @@ theorem Expr.constsResolve_instantiate1 {env : Env} {d : Nat} {ty : Expr}
     · split <;> simp [Expr.constsResolve]
 
 /-- Level instantiation does not change which constants occur. -/
-theorem Expr.constsResolve_instantiateLevelParams {env : Env} (ks : List Name)
+theorem Expr.constsResolve_instantiateLevelParams {env : Env md} (ks : List LevelParam)
     (us : List Level) :
-    ∀ {e : Expr}, (e.instantiateLevelParams ks us).constsResolve env = e.constsResolve env := by
+    ∀ {e : Expr md}, (e.instantiateLevelParams ks us).constsResolve env = e.constsResolve env := by
   intro e
   induction e <;> simp_all [Expr.instantiateLevelParams, Expr.constsResolve]
 
-/-- No name equals its own string extension. -/
-theorem Name.str_ne (n : Name) (s : String) : n.str s ≠ n := by
-  intro h
-  have h1 : sizeOf (Name.str n s) = sizeOf n := congrArg sizeOf h
-  simp at h1
-  omega
-
-/-- No name equals its own two-step string extension. -/
-theorem Name.str_str_ne (n : Name) (s₁ s₂ : String) :
-    (n.str s₁).str s₂ ≠ n := by
-  intro h
-  have h1 : sizeOf ((Name.str (Name.str n s₁) s₂)) = sizeOf n :=
-    congrArg sizeOf h
-  simp at h1
-  omega
-
 /-- Resolution only reads whether names are stored. -/
-theorem Expr.constsResolve_congr {env₁ env₂ : Env}
+theorem Expr.constsResolve_congr {env₁ env₂ : Env md}
     (henv : ∀ n, (env₁.find? n).isSome = (env₂.find? n).isSome) :
-    ∀ (e : Expr), e.constsResolve env₁ = e.constsResolve env₂ := by
+    ∀ (e : Expr md), e.constsResolve env₁ = e.constsResolve env₂ := by
   intro e
   induction e with
   | lit l => cases l <;> simp_all [Expr.constsResolve]
   | _ => simp_all [Expr.constsResolve]
 
 /-- Telescope domains of a resolving type resolve. -/
-theorem Expr.constsResolve_stripPis {env : Env} :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr},
+theorem Expr.constsResolve_stripPis {env : Env md} :
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md},
       e.stripPis k = some (bs, body) → e.constsResolve env = true →
       (∀ b ∈ bs, (b.1).constsResolve env = true) ∧
       body.constsResolve env = true := by
@@ -387,9 +370,9 @@ theorem Expr.constsResolve_stripPis {env : Env} :
         · exact hd bnd hb
 
 /-- `stripPis` commutes with constant renaming. -/
-theorem Expr.stripPis_renameConsts {f : Name → Name} :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr},
+theorem Expr.stripPis_renameConsts {f : Key md → Key md} :
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md},
       e.stripPis k = some (bs, body) →
       (e.renameConsts f).stripPis k =
         some (bs.map (fun b => ((b.1).renameConsts f, b.2)),
@@ -420,8 +403,8 @@ theorem Expr.stripPis_renameConsts {f : Name → Name} :
 
 /-- A `∀`-telescope pin of a renamed expression is one of the
 expression itself (renaming touches no binder structure). -/
-theorem Expr.stripPis_isSome_of_renameConsts {f : Name → Name} :
-    ∀ (k : Nat) {e : Expr},
+theorem Expr.stripPis_isSome_of_renameConsts {f : Key md → Key md} :
+    ∀ (k : Nat) {e : Expr md},
       ((e.renameConsts f).stripPis k).isSome = true →
       (e.stripPis k).isSome = true
   | 0, _, _ => rfl
@@ -436,9 +419,9 @@ theorem Expr.stripPis_isSome_of_renameConsts {f : Name → Name} :
 
 /-- Renaming maps that agree on every stored name rename a resolving
 expression identically. -/
-theorem Expr.renameConsts_congr_resolve {env : Env} {f g : Name → Name}
+theorem Expr.renameConsts_congr_resolve {env : Env md} {f g : Key md → Key md}
     (hfg : ∀ n, (env.find? n).isSome = true → f n = g n) :
-    ∀ (e : Expr), e.constsResolve env = true →
+    ∀ (e : Expr md), e.constsResolve env = true →
       e.renameConsts f = e.renameConsts g := by
   intro e
   induction e <;> intro h <;>
@@ -449,7 +432,7 @@ theorem Expr.renameConsts_congr_resolve {env : Env} {f g : Name → Name}
   | (rename_i s _ _; exact hfg s h.1)
 
 /-- Extending with a fresh, well-formed constant preserves `EnvWF`. -/
-theorem EnvWF.cons {c : ConstantInfo} {env : Env}
+theorem EnvWF.cons {c : ConstantInfo md} {env : Env md}
     (henv : EnvWF env)
     (hc : ConstWF ⟨c :: env.consts⟩ c) : EnvWF ⟨c :: env.consts⟩ := by
   intro c' hc'
@@ -474,10 +457,10 @@ theorem EnvWF.cons {c : ConstantInfo} {env : Env}
       ⟨p1, p2, Expr.constsResolve_mono p3, p4⟩, n4⟩
 
 /-- Resolution is monotone under lookup-preserving extension. -/
-theorem Expr.constsResolve_le {envA envB : Env}
+theorem Expr.constsResolve_le {envA envB : Env md}
     (hf : ∀ n, (envA.find? n).isSome = true →
       (envB.find? n).isSome = true) :
-    ∀ {e : Expr}, e.constsResolve envA = true →
+    ∀ {e : Expr md}, e.constsResolve envA = true →
       e.constsResolve envB = true := by
   intro e
   induction e with
@@ -516,7 +499,7 @@ theorem Expr.constsResolve_le {envA envB : Env}
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
     exact ⟨ihty h.1, ihbody h.2⟩
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
     exact ⟨⟨ihty h.1.1, ihval h.1.2⟩, ihbody h.2⟩

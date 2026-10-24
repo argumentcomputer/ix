@@ -5,6 +5,63 @@ namespace Ixon.BlockOrder
 
 open Ix.Kernel
 
+/-! ## The comparison's `let` arm: the nondependency bit is a key -/
+
+/-- The `let` arm of the canonical comparison: the type, then the value, then
+the body, then the nondependency bit (`LetContract.nonDep`, `false < true`),
+each only when everything before it is equal (`thenM`). The `let`'s kind and
+binder contract are not compared. -/
+theorem compareExpr_letE (block : Block) (ctx : LocalContext) (fuel leftLimit rightLimit : Nat)
+    (xc yc : Ixon.LetContract) (xt xv xb yt yv yb : Ixon.Expr) :
+    compareExpr block ctx (fuel + 1) leftLimit (.letE xc xt xv xb) rightLimit (.letE yc yt yv yb) =
+      (do
+        thenM (← compareExpr block ctx fuel leftLimit xt rightLimit yt) fun _ => do
+          thenM (← compareExpr block ctx fuel leftLimit xv rightLimit yv) fun _ => do
+            thenM (← compareExpr block ctx fuel leftLimit xb rightLimit yb) fun _ =>
+              .ok (compare xc.nonDep.toNat yc.nonDep.toNat)) :=
+  rfl
+
+/-- **The nondependency bit is a key.** Two `let`s whose types, values and
+bodies compare equal and whose bits differ compare by their bits: the `let`
+(`false`) before the `have` (`true`), never equal. So two members that differ
+only in the bit of one `let` are never one class. -/
+theorem compareExpr_letE_nonDep {block : Block} {ctx : LocalContext}
+    {fuel leftLimit rightLimit : Nat} {xc yc : Ixon.LetContract} {xt xv xb yt yv yb : Ixon.Expr}
+    (type : compareExpr block ctx fuel leftLimit xt rightLimit yt = .ok .eq)
+    (value : compareExpr block ctx fuel leftLimit xv rightLimit yv = .ok .eq)
+    (body : compareExpr block ctx fuel leftLimit xb rightLimit yb = .ok .eq)
+    (bit : xc.nonDep ≠ yc.nonDep) :
+    compareExpr block ctx (fuel + 1) leftLimit (.letE xc xt xv xb) rightLimit (.letE yc yt yv yb) =
+      .ok (if xc.nonDep then .gt else .lt) := by
+  rw [compareExpr_letE, type, value, body]
+  cases hx : xc.nonDep <;> cases hy : yc.nonDep
+  all_goals first
+    | exact absurd (hx.trans hy.symm) bit
+    | rfl
+
+/-- A comparison followed by an equal one is that comparison. -/
+theorem bind_thenM_eq (e : Except Error Ordering) :
+    (do thenM (← e) fun _ => (.ok .eq : Except Error Ordering)) = e := by
+  cases e with
+  | error _ => rfl
+  | ok r => cases r <;> rfl
+
+/-- With equal bits the `let` arm is the type, the value, then the body, as
+before the bit was a key: the key changes only comparisons of `let`s whose
+bits differ. -/
+theorem compareExpr_letE_sameBit {block : Block} {ctx : LocalContext}
+    {fuel leftLimit rightLimit : Nat} {xc yc : Ixon.LetContract} {xt xv xb yt yv yb : Ixon.Expr}
+    (bit : xc.nonDep = yc.nonDep) :
+    compareExpr block ctx (fuel + 1) leftLimit (.letE xc xt xv xb) rightLimit (.letE yc yt yv yb) =
+      (do
+        thenM (← compareExpr block ctx fuel leftLimit xt rightLimit yt) fun _ => do
+          thenM (← compareExpr block ctx fuel leftLimit xv rightLimit yv) fun _ =>
+            compareExpr block ctx fuel leftLimit xb rightLimit yb) := by
+  have same : compare xc.nonDep.toNat yc.nonDep.toNat = .eq := by
+    rw [bit]; cases yc.nonDep <;> rfl
+  rw [compareExpr_letE, same]
+  simp only [bind_thenM_eq]
+
 /-- An independently counted refinement derivation. A terminal derivation
 must exhibit an unchanged complete pass; a changing pass cannot be terminal.
 No rule converts exhaustion into a result. -/
@@ -78,11 +135,12 @@ theorem refine_mono {block comparison small large initial result}
   exact trace.complete (Nat.le_trans used bound)
 
 /-- The stored order must be the recomputed list of ordered singletons.
-This predicate records physical preparation, deterministic seeding, and a
-finite refinement derivation, independently of the bounded loop's verdict. -/
-def Canonical (limits : Limits) (owner : Address) (source : Ixon.Constant)
+This predicate records physical preparation (projection addresses under
+`hash`), deterministic seeding, and a finite refinement derivation,
+independently of the bounded loop's verdict. -/
+def Canonical (hash : ByteArray → Address) (limits : Limits) (owner : Address) (source : Ixon.Constant)
     (blobs : Ingress.Blobs) : Prop :=
-  ∃ block initial rounds, prepare owner source blobs = .ok block ∧ seed block = .ok initial ∧
+  ∃ block initial rounds, prepare hash owner source blobs = .ok block ∧ seed block = .ok initial ∧
     rounds ≤ limits.refinement ∧
     Refinement block limits.comparison rounds initial (orderedSingletons block.entries.size)
 
@@ -94,13 +152,13 @@ theorem canonicalClasses_ok_iff (limits : Limits) (block : Block) (classes : Cla
   | error error => simp [canonicalClasses, seeded, bind, Except.bind]
   | ok initial => simp [canonicalClasses, seeded, bind, Except.bind, refine_ok_iff]
 
-theorem checkBlock_ok_iff (limits : Limits) (owner : Address) (source : Ixon.Constant)
-    (blobs : Ingress.Blobs) : checkBlock limits owner source blobs = .ok () ↔
-      Canonical limits owner source blobs := by
-  cases prepared : prepare owner source blobs with
+theorem checkBlock_ok_iff (hash : ByteArray → Address) (limits : Limits) (owner : Address)
+    (source : Ixon.Constant) (blobs : Ingress.Blobs) : checkBlock hash limits owner source blobs = .ok () ↔
+      Canonical hash limits owner source blobs := by
+  cases prepared : prepare hash owner source blobs with
   | error error => simp [checkBlock, Canonical, prepared, bind, Except.bind]
   | ok block =>
-    have run : checkBlock limits owner source blobs = .ok () ↔
+    have run : checkBlock hash limits owner source blobs = .ok () ↔
         canonicalClasses limits block = .ok (orderedSingletons block.entries.size) := by
       cases sorted : canonicalClasses limits block with
       | error error => simp [checkBlock, prepared, sorted, bind, Except.bind]
@@ -196,15 +254,16 @@ theorem checkMotiveOrder_ok_iff (owner : Address) (source : Ixon.Constant)
 
 /-- A record's order: a recursor block in motive order, any other `muts`
 block in canonical structural order, any other record unconstrained. -/
-def OrderedRecord (limits : Limits) (blobs : Ingress.Blobs) (pair : Address × Ixon.Constant) : Prop :=
+def OrderedRecord (hash : ByteArray → Address) (limits : Limits) (blobs : Ingress.Blobs)
+    (pair : Address × Ixon.Constant) : Prop :=
   match pair.2.info with
   | .muts members =>
-    if members.all isRecursor then MotiveOrdered pair.2 members else Canonical limits pair.1 pair.2 blobs
+    if members.all isRecursor then MotiveOrdered pair.2 members else Canonical hash limits pair.1 pair.2 blobs
   | _ => True
 
-theorem checkRecord_ok_iff (limits : Limits) (blobs : Ingress.Blobs) (owner : Address)
-    (source : Ixon.Constant) :
-    checkRecord limits blobs owner source = .ok () ↔ OrderedRecord limits blobs (owner, source) := by
+theorem checkRecord_ok_iff (hash : ByteArray → Address) (limits : Limits) (blobs : Ingress.Blobs)
+    (owner : Address) (source : Ixon.Constant) :
+    checkRecord hash limits blobs owner source = .ok () ↔ OrderedRecord hash limits blobs (owner, source) := by
   rcases source with ⟨info, sharing, refs, univs⟩
   cases info with
   | muts members =>
@@ -212,23 +271,25 @@ theorem checkRecord_ok_iff (limits : Limits) (blobs : Ingress.Blobs) (owner : Ad
     · simp only [checkRecord, OrderedRecord, recursors, ite_true]
       exact checkMotiveOrder_ok_iff owner _ members
     · simp only [checkRecord, OrderedRecord, recursors, Bool.false_eq_true, ite_false]
-      exact checkBlock_ok_iff limits owner _ blobs
+      exact checkBlock_ok_iff hash limits owner _ blobs
   | _ => simp [checkRecord, OrderedRecord]
 
-def Ordered (limits : Limits) (blobs : Ingress.Blobs) (input : Ingress.Constants) : Prop :=
-  ∀ pair ∈ input, OrderedRecord limits blobs pair
+def Ordered (hash : ByteArray → Address) (limits : Limits) (blobs : Ingress.Blobs)
+    (input : Ingress.Constants) : Prop :=
+  ∀ pair ∈ input, OrderedRecord hash limits blobs pair
 
-theorem checkConstants_ok_iff (limits : Limits) (blobs : Ingress.Blobs) (input : Ingress.Constants) :
-    checkConstants limits blobs input = .ok () ↔ Ordered limits blobs input := by
+theorem checkConstants_ok_iff (hash : ByteArray → Address) (limits : Limits) (blobs : Ingress.Blobs)
+    (input : Ingress.Constants) :
+    checkConstants hash limits blobs input = .ok () ↔ Ordered hash limits blobs input := by
   induction input with
   | nil => simp [checkConstants, Ordered]
   | cons pair rest ih =>
     rcases pair with ⟨owner, source⟩
-    have orderedCons : Ordered limits blobs ((owner, source) :: rest) ↔
-        OrderedRecord limits blobs (owner, source) ∧ Ordered limits blobs rest := by
+    have orderedCons : Ordered hash limits blobs ((owner, source) :: rest) ↔
+        OrderedRecord hash limits blobs (owner, source) ∧ Ordered hash limits blobs rest := by
       simp only [Ordered, List.mem_cons, forall_eq_or_imp]
     rw [orderedCons, ← ih, ← checkRecord_ok_iff]
-    cases checked : checkRecord limits blobs owner source with
+    cases checked : checkRecord hash limits blobs owner source with
     | error error => simp [checkConstants, checked, bind, Except.bind]
     | ok value => cases value; simp [checkConstants, checked, bind, Except.bind]
 
@@ -236,18 +297,20 @@ universe v
 
 /-! ## The certified entry -/
 
-open Ix.Kernel.Reader (defaultPins builtinPrelude builtinNatOpPins)
+open Ix.Kernel.Reader (preludeFor)
 
-theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
+theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
+    (limits : Admission.Limits) (orderLimits : Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
-    checkBytes maxProjections limits orderLimits records blobs hint = .ok env ↔
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env .anon) :
+    checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env ↔
       Admission.preflight limits records blobs = .ok () ∧
-      Admission.uniqueKeys records blobs = .ok () ∧ ∃ input output,
+      Admission.uniqueKeys records blobs = .ok () ∧
+      Admission.authenticate hash records blobs = .ok () ∧ ∃ input output,
         Admission.decodeRecords limits records = .ok input ∧
-        Projection.reconstruct maxProjections input = .ok output ∧
-        checkConstants orderLimits blobs input = .ok () ∧
-        Admission.checkConstants output blobs hint = .ok env := by
+        Projection.reconstruct hash maxProjections input = .ok output ∧
+        checkConstants hash orderLimits blobs input = .ok () ∧
+        Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   cases flight : Admission.preflight limits records blobs with
   | error error => simp [checkBytes, flight, Except.mapError, bind, Except.bind]
   | ok value =>
@@ -256,86 +319,122 @@ theorem checkBytes_run_iff (maxProjections : Nat) (limits : Admission.Limits) (o
     | error error => simp [checkBytes, flight, unique, Except.mapError, bind, Except.bind]
     | ok value =>
       cases value
-      cases decoded : Admission.decodeRecords limits records with
-      | error error => simp [checkBytes, flight, unique, decoded, Except.mapError, bind, Except.bind]
-      | ok input =>
-        cases expanded : Projection.reconstruct maxProjections input with
+      cases authentic : Admission.authenticate hash records blobs with
+      | error error => simp [checkBytes, flight, unique, authentic, Except.mapError, bind, Except.bind]
+      | ok value =>
+        cases value
+        cases decoded : Admission.decodeRecords limits records with
         | error error =>
-          simp [checkBytes, flight, unique, decoded, expanded, Except.mapError, bind, Except.bind]
-        | ok output =>
-          cases ordered : checkConstants orderLimits blobs input with
+          simp [checkBytes, flight, unique, authentic, decoded, Except.mapError, bind, Except.bind]
+        | ok input =>
+          cases expanded : Projection.reconstruct hash maxProjections input with
           | error error =>
-            simp [checkBytes, flight, unique, decoded, expanded, ordered, Except.mapError, bind,
+            simp [checkBytes, flight, unique, authentic, decoded, expanded, Except.mapError, bind,
               Except.bind]
-          | ok value =>
-            cases value
-            cases checked : Admission.checkConstants output blobs hint <;>
-              simp [checkBytes, flight, unique, decoded, expanded, ordered, checked, Except.mapError,
+          | ok output =>
+            cases ordered : checkConstants hash orderLimits blobs input with
+            | error error =>
+              simp [checkBytes, flight, unique, authentic, decoded, expanded, ordered, Except.mapError,
                 bind, Except.bind]
+            | ok value =>
+              cases value
+              cases checked : Admission.checkConstantsAt hash binding output blobs hint <;>
+                simp [checkBytes, flight, unique, authentic, decoded, expanded, ordered, checked,
+                  Except.mapError, bind, Except.bind]
 
-theorem checkBytes_ok_iff (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
+theorem checkBytes_ok_iff (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
+    (limits : Admission.Limits) (orderLimits : Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
-    checkBytes maxProjections limits orderLimits records blobs hint = .ok env ↔
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env .anon) :
+    checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env ↔
       Admission.WithinBatch limits records blobs ∧
-      Admission.UniqueKeys records blobs ∧ ∃ input output,
+      Admission.UniqueKeys records blobs ∧ Admission.Authentic hash records blobs ∧ ∃ input output,
         Admission.RecordsRead limits records input ∧
-        Projection.Expanded maxProjections input output ∧ Ordered orderLimits blobs input ∧
-        Admission.checkConstants output blobs hint = .ok env := by
+        Projection.Expanded hash maxProjections input output ∧ Ordered hash orderLimits blobs input ∧
+        Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   simp only [checkBytes_run_iff, Admission.preflight_ok_iff, Admission.uniqueKeys_ok_iff,
-    Admission.decodeRecords_ok_iff, Projection.reconstruct_ok_iff, checkConstants_ok_iff]
+    Admission.authenticate_ok_iff, Admission.decodeRecords_ok_iff, Projection.reconstruct_ok_iff,
+    checkConstants_ok_iff]
 
-/-- **Fidelity**: unique keys, exact reading, computed projections,
-canonical order, and the checker installed what the expanded records
-describe. -/
-theorem checkBytes_reading {maxProjections : Nat} {limits : Admission.Limits} {orderLimits : Limits}
+/-- **Fidelity**: unique and authentic keys, exact reading, computed
+projections, canonical order, every record the checker read stored under
+`hash` of its serialization, and the checker installed what the expanded
+records describe. -/
+theorem checkBytes_reading {hash : ByteArray → Address} {binding : Admission.Binding}
+    {maxProjections : Nat}
+    {limits : Admission.Limits} {orderLimits : Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
-    (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
-    Admission.UniqueKeys records blobs ∧ ∃ input output, Admission.RecordsRead limits records input ∧
-      Projection.Expanded maxProjections input output ∧ Ordered orderLimits blobs input ∧
-      ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
-        builtinNatOpPins = .ok natPins ∧
-        Admission.Installed pins pre natPins output blobs hint env := by
-  obtain ⟨_, keys, input, output, reading, expanded, ordered, checked⟩ :=
-    (checkBytes_ok_iff _ _ _ _ _ _ _).mp h
-  obtain ⟨pins, pre, natPins, hp, hq, hn, hw⟩ := Admission.checkConstants_with checked
-  exact ⟨keys, input, output, reading, expanded, ordered, pins, pre, natPins, hp, hq, hn,
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    (h : checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env) :
+    Admission.UniqueKeys records blobs ∧ Admission.Authentic hash records blobs ∧
+      ∃ input output, Admission.RecordsRead limits records input ∧
+      Projection.Expanded hash maxProjections input output ∧ Ordered hash orderLimits blobs input ∧
+      Admission.Hashed hash output ∧
+      ∃ t pre, Admission.BindingAdmitted hash binding t ∧ preludeFor t = .ok pre ∧
+        Admission.Installed hash t pre output blobs hint env := by
+  obtain ⟨_, keys, authentic, input, output, reading, expanded, ordered, checked⟩ :=
+    (checkBytes_ok_iff _ _ _ _ _ _ _ _ _).mp h
+  obtain ⟨t, pre, hb, hq, hw⟩ := Admission.checkConstantsAt_with checked
+  exact ⟨keys, authentic, input, output, reading, expanded, ordered,
+    expanded.hashed (reading.hashed authentic.1), t, pre, hb, hq,
     Admission.checkConstantsWith_installed hw⟩
 
+/-- **Authentication** for the ordered entry: every supplied record and blob
+is stored under `hash` of its bytes, and every record the checker read,
+supplied or reconstructed, under `hash` of its serialization. -/
+theorem checkBytes_authentic {hash : ByteArray → Address} {binding : Admission.Binding}
+    {maxProjections : Nat}
+    {limits : Admission.Limits} {orderLimits : Limits}
+    {records : Admission.Records} {blobs : Ingress.Blobs}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    (h : checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env) :
+    Admission.Authentic hash records blobs ∧ ∃ output, Admission.Hashed hash output ∧
+      Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
+  obtain ⟨_, _, authentic, input, output, reading, expanded, _, checked⟩ :=
+    (checkBytes_ok_iff _ _ _ _ _ _ _ _ _).mp h
+  exact ⟨authentic, output, expanded.hashed (reading.hashed authentic.1), checked⟩
+
 /-- **Model existence** for the certified ordered entry. -/
-theorem checkBytes_has_model (V : Type v) [Ix.Kernel.SetTheory V] {maxProjections : Nat}
+theorem checkBytes_has_model (V : Type v) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+    {binding : Admission.Binding} {maxProjections : Nat}
     {limits : Admission.Limits} {orderLimits : Limits} {records : Admission.Records}
     {blobs : Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
+    {env : Ix.Kernel.Env .anon}
+    (h : checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.has_model V
 
 /-- **No proof of `False`** for the certified ordered entry. -/
-theorem checkBytes_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory V] {maxProjections : Nat}
+theorem checkBytes_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+    {binding : Admission.Binding} {maxProjections : Nat}
     {limits : Admission.Limits} {orderLimits : Limits} {records : Admission.Records}
     {blobs : Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : checkBytes maxProjections limits orderLimits records blobs hint = .ok env) :
-    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
+    {env : Ix.Kernel.Env .anon}
+    (h : checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env) :
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.no_proof_of_False V
 
-/-- On a read, expanded, canonically ordered input, every checker outcome
-survives unchanged. -/
-theorem checkBytes_of_ordered {maxProjections limits orderLimits records input output blobs hint}
+/-- On a read, authenticated, expanded, canonically ordered input, every
+checker outcome survives unchanged. -/
+theorem checkBytes_of_ordered {hash binding maxProjections limits orderLimits records input output blobs
+    hint}
     (within : Admission.WithinBatch limits records blobs)
     (keys : Admission.UniqueKeys records blobs)
+    (authentic : Admission.Authentic hash records blobs)
     (reading : Admission.RecordsRead limits records input)
-    (expanded : Projection.Expanded maxProjections input output)
-    (ordered : Ordered orderLimits blobs input) :
-    checkBytes maxProjections limits orderLimits records blobs hint =
-      (Admission.checkConstants output blobs hint).mapError .checker := by
+    (expanded : Projection.Expanded hash maxProjections input output)
+    (ordered : Ordered hash orderLimits blobs input) :
+    checkBytes hash binding maxProjections limits orderLimits records blobs hint =
+      (Admission.checkConstantsAt hash binding output blobs hint).mapError .checker := by
   have flight := (Admission.preflight_ok_iff _ _ _).mpr within
   have unique := (Admission.uniqueKeys_ok_iff _ _).mpr keys
+  have hashed := (Admission.authenticate_ok_iff _ _ _).mpr authentic
   have decoded := (Admission.decodeRecords_ok_iff _ _ _).mpr reading
-  have reconstructed := (Projection.reconstruct_ok_iff _ _ _).mpr expanded
-  have order := (checkConstants_ok_iff _ _ _).mpr ordered
-  simp [checkBytes, flight, unique, decoded, reconstructed, order, Except.mapError, bind, Except.bind]
+  have reconstructed := (Projection.reconstruct_ok_iff _ _ _ _).mpr expanded
+  have order := (checkConstants_ok_iff _ _ _ _).mpr ordered
+  simp [checkBytes, flight, unique, hashed, decoded, reconstructed, order, Except.mapError, bind,
+    Except.bind]
 
 end Ixon.BlockOrder

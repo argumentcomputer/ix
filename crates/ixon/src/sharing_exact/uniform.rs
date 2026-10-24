@@ -1,7 +1,8 @@
-//! Exact minimum sharing under a uniform Share width.
+//! Canonical family sharing under a uniform Share width.
 //!
-//! This is a byte-for-byte port of the Lean `Ix/Sharing/Exact/Uniform.lean`;
-//! the rules below are pinned by that implementation.
+//! Production uses the fixed K16 family in `family`. The old unbounded
+//! uniform optimizer and its controls live in `reference`, available only
+//! to unit tests or the explicit test-FFI reference feature.
 //!
 //! Cost model: every `Share` costs exactly `w >= 1` bytes regardless of its
 //! index; the table count is an exact TagN; telescopes and every other byte
@@ -20,8 +21,10 @@
 //!   that do not continue a telescope (an App as the function of
 //!   an App, a Lam as the body of a Lam, an All as the body of an All);
 //!   `occ(t)`: expanded occurrences; `size(t)`: unshared standalone length.
-//! * The canonical result is the minimum over tables whose entries all have
-//!   in-degree >= 2. In-degree-1 terms are left out by an exchange that never
+//! * The production result minimizes over the fixed initial component
+//!   families, with certain-stored entries held fixed. The reference oracle
+//!   minimizes over all tables whose entries have in-degree >= 2.
+//!   In-degree-1 terms are left out by an exchange that never
 //!   increases the length (store the single parent instead, or turn extra
 //!   writes of a stored parent into Shares), so this class contains a
 //!   global minimum; ties can also store an in-degree-1 term, which this
@@ -57,7 +60,9 @@
 //! choice reaches a TagN bracket of 128 or more entries, a knapsack over
 //! components checks the lower brackets.
 //!
-//! The component search is the reclassifying branch and bound of the Lean
+//! Production enumerates every subset up to sixteen initial members and
+//! otherwise keeps every count of the setPrec-least greedy chain. The old
+//! reference component search is the reclassifying branch and bound of Lean
 //! implementation. At each node it (1) recomputes the bounds and visible
 //! counts over the component's area with the members decided "not stored"
 //! removed from `M`, and forces
@@ -101,11 +106,36 @@ use super::dict::{
 use super::prof::{self, Phase};
 use super::{
   ExactSharingLimits, ExactSharingStats, FormatBound, Meter, SharingError,
+};
+#[cfg(any(test, feature = "sharing-reference"))]
+use super::{
   constant_fixed_len, constant_info_root_exprs, rebuild_constant_info,
 };
+#[cfg(any(test, feature = "sharing-reference"))]
 use crate::constant::Constant;
 use crate::expr::Expr;
 use crate::tag::TagN;
+
+mod family;
+#[cfg(test)]
+pub(crate) fn optimize_family_at_test(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+  k: usize,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  family::optimize_at(w, dag, prep, meter, k)
+}
+pub(crate) use family::optimize_family_with;
+
+#[cfg(any(test, feature = "sharing-reference"))]
+mod reference;
+#[cfg(any(test, feature = "sharing-reference"))]
+pub(crate) use reference::optimize_uniform_with;
+
+#[cfg(test)]
+pub(crate) mod experimental;
 
 fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
@@ -161,11 +191,15 @@ pub struct UniformSharingResult {
   pub low_degree: Vec<TermId>,
   /// Components of the uncertain terms (each ascending, by first member).
   pub components: Vec<Vec<TermId>>,
-  /// Component subsets evaluated.
+  /// Reference cost calls precharged for the component families (search
+  /// states on the old test-only exact path).
   pub states_visited: u64,
   /// Whether the table-count knapsack chose a lower TagN bracket.
   pub lower_bracket: bool,
   pub stats: ExactSharingStats,
+  /// Test-only view of retained per-count optima, including canonical ties.
+  #[cfg(test)]
+  pub(crate) component_tables: Vec<CTable>,
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +235,76 @@ fn own_bytes(node: &Node) -> Result<u128, SharingError> {
     Some(_) => Ok(0),
     None => node.own_len().exact().map(u).ok_or_else(overflow),
   }
+}
+
+// This cap is used ONLY for empty costs consumed by initial classification.
+// It covers 2*w for every public u64 width, not merely tiered widths 1..=3.
+// Proofs: IxSharingVerify.UniformCappedSize. General UPrep/phi/gains retain
+// their existing arithmetic; a capped value must never enter those paths.
+const EMPTY_SIZE_CAP: u128 = (1u128 << 65) - 2;
+
+#[cfg(test)]
+mod capped_size_tests;
+
+fn empty_cap_add(a: u128, b: u128) -> u128 {
+  // Both operands become <=2^65-2, so this addition cannot overflow u128.
+  (a.min(EMPTY_SIZE_CAP) + b.min(EMPTY_SIZE_CAP)).min(EMPTY_SIZE_CAP)
+}
+
+/// Exact own-payload cost, capped independently of Len's u64 sentinel.
+/// In particular, all Ref/Rec universe arguments contribute their bytes.
+fn empty_own_size(node: &Node) -> Result<u128, SharingError> {
+  Ok(match node {
+    Node::Sort(n) | Node::Var(n) | Node::Str(n) | Node::Nat(n) => {
+      u(tag4_len(*n))
+    },
+    Node::Ref(n, us) | Node::Rec(n, us) => {
+      let count = u64::try_from(us.len()).map_err(|_e| overflow())?;
+      us.iter().fold(
+        empty_cap_add(u(tag4_len(count)), u(tag0_len(*n))),
+        |size, level| empty_cap_add(size, u(tag0_len(*level))),
+      )
+    },
+    Node::Prj(t, f, _) => empty_cap_add(u(tag4_len(*f)), u(tag0_len(*t))),
+    Node::Let(c, ..) => empty_cap_add(u(tag4_len(c.flags())), 1),
+    Node::App(..) | Node::Lam(..) | Node::All(..) => 0,
+  })
+}
+
+/// min(C_0, EMPTY_SIZE_CAP) in child-before-parent order. Empty evaluation
+/// has no opaque/available terms and no cut or subtraction. Its only
+/// recurrences are nonnegative sums of payloads, sides and natural tails;
+/// distributing min(cap, _) over those sums is exact.
+fn empty_sizes_capped(
+  nodes: &[Node],
+  spine_len: &[u64],
+  spine_tail: &[TermId],
+) -> Result<Vec<u128>, SharingError> {
+  let mut cost = vec![0; nodes.len()];
+  let mut sides = vec![0; nodes.len()];
+  for (t, node) in nodes.iter().enumerate() {
+    if node.family().is_none() {
+      cost[t] = node
+        .children()
+        .as_slice()
+        .iter()
+        .fold(empty_own_size(node)?, |size, child| {
+          empty_cap_add(size, cost[ix(*child)])
+        });
+    } else {
+      let next = spine_next(node);
+      let continued = nodes[ix(next)].family() == node.family();
+      sides[t] = empty_cap_add(
+        empty_cap_add(side_extra(node), cost[ix(side_child(node))]),
+        if continued { sides[ix(next)] } else { 0 },
+      );
+      cost[t] = empty_cap_add(
+        empty_cap_add(u(tag4_len(spine_len[t])), sides[t]),
+        cost[ix(spine_tail[t])],
+      );
+    }
+  }
+  Ok(cost)
 }
 
 /// Whether the edge from `parent` to its `i`-th child continues the
@@ -378,16 +482,19 @@ impl<'d> UPrep<'d> {
 // Classification
 // ---------------------------------------------------------------------------
 
-/// `(occ-1)*size < occ*w`, exactly, for `occ >= 1` (a saturated `occ`
-/// stands for some value at least `u128::MAX`).
+/// `(occ-1)*size < occ*w`, with Nat subtraction, including occ=0/1 and
+/// w=0. For size>w and occ>=1 this is occ*(size-w)<size, equivalently
+/// occ <= (size-1)/(size-w). No product can overflow. A saturated occurrence
+/// count is sound here: the quotient is strictly below size<=EMPTY_SIZE_CAP
+/// (and in fact below u128::MAX for any representable size>w).
 fn certainly_excluded(occ: u128, size: u128, w: u128) -> bool {
+  if occ == 0 || w == 0 {
+    return false;
+  }
   if size <= w {
     return true;
   }
-  match occ.checked_mul(size - w) {
-    Some(x) => x < size,
-    None => false,
-  }
+  occ <= (size - 1) / (size - w)
 }
 
 /// Lower bounds of the certain-stored test (Lean `UBounds`): `inl`, bytes
@@ -662,11 +769,14 @@ fn better(delta: i128, set: &[TermId], cur: Option<&Choice>) -> bool {
 
 struct CompCtx<'a, 'd> {
   up: &'a UPrep<'d>,
+  #[cfg(any(test, feature = "sharing-reference"))]
   members: Vec<TermId>,
   area: Vec<TermId>,
   root_mult: Vec<(TermId, u128)>,
   stored_in: Vec<TermId>,
+  #[cfg(any(test, feature = "sharing-reference"))]
   phi0: u128,
+  #[cfg(any(test, feature = "sharing-reference"))]
   slack: i128,
   /// Scratch: values of area terms, valid where `stamp == epoch`.
   vals: Vec<UVal>,
@@ -725,56 +835,6 @@ impl CompCtx<'_, '_> {
     }
     Ok((total, work))
   }
-
-  /// Depth-first branch and bound over the members (ascending), "not
-  /// stored" first. Returns the best choice and the best per set size.
-  fn search(
-    &mut self,
-    meter: &mut Meter<'_>,
-  ) -> Result<(Choice, Vec<Option<Choice>>), SharingError> {
-    let mut best: Option<Choice> = None;
-    let mut by_size: Vec<Option<Choice>> = Vec::new();
-    // Frames: (next member index, chosen so far).
-    let mut stack: Vec<(usize, Vec<TermId>)> = vec![(0, Vec::new())];
-    while let Some((i, chosen)) = stack.pop() {
-      meter.state()?;
-      for (k, &m) in self.members.iter().enumerate() {
-        self.avail[ix(m)] = k >= i || chosen.contains(&m);
-      }
-      let (phi, work) = self.phi(&chosen)?;
-      meter.work(work)?;
-      let delta = to_i(phi)? - to_i(self.phi0)?;
-      if i >= self.members.len() {
-        if better(delta, &chosen, best.as_ref()) {
-          best = Some((delta, chosen.clone()));
-        }
-        let k = chosen.len();
-        if by_size.len() <= k {
-          by_size.resize(k + 1, None);
-        }
-        if better(delta, &chosen, by_size[k].as_ref()) {
-          by_size[k] = Some((delta, chosen));
-        }
-        continue;
-      }
-      if let Some((b, _)) = &best
-        && delta > b + self.slack
-      {
-        continue;
-      }
-      let t = self.members[i];
-      let mut with = chosen.clone();
-      with.push(t);
-      stack.push((i + 1, with));
-      stack.push((i + 1, chosen));
-    }
-    for &m in &self.members {
-      self.avail[ix(m)] = false;
-    }
-    let best =
-      best.ok_or_else(|| internal("component search found no choice"))?;
-    Ok((best, by_size))
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -784,10 +844,12 @@ impl CompCtx<'_, '_> {
 /// Best `(delta, set)` per chosen count (index = set size).
 type CTable = Vec<Option<Choice>>;
 
+#[cfg(any(test, feature = "sharing-reference"))]
 fn table_best(tb: &CTable) -> Option<i128> {
   tb.iter().flatten().map(|(d, _)| *d).min()
 }
 
+#[cfg(test)]
 fn table_add(tb: &mut CTable, e: Choice) {
   let k = e.1.len();
   if tb.len() <= k {
@@ -798,6 +860,7 @@ fn table_add(tb: &mut CTable, e: Choice) {
   }
 }
 
+#[cfg(test)]
 fn table_trim(tb: CTable, slack: i128) -> CTable {
   match table_best(&tb) {
     None => tb,
@@ -805,16 +868,6 @@ fn table_trim(tb: CTable, slack: i128) -> CTable {
       tb.into_iter().map(|o| o.filter(|(d, _)| *d <= b + slack)).collect()
     },
   }
-}
-
-fn table_conv(a: &CTable, b: &CTable) -> CTable {
-  let mut out: CTable = Vec::new();
-  for (da, sa) in a.iter().flatten() {
-    for (db, sb) in b.iter().flatten() {
-      table_add(&mut out, (da + db, merge_sorted(sa, sb)));
-    }
-  }
-  out
 }
 
 // ---------------------------------------------------------------------------
@@ -867,7 +920,7 @@ impl KnapsackLayer {
   }
 }
 
-/// The table-count knapsack of [`optimize_uniform`] for total counts
+/// The shared phase-1 table-count knapsack for total counts
 /// `<= cap`: after the components `0..j`, every cell `c` holds the least
 /// `(delta, set)` under [`better`] (delta, then `set_prec`) over the choices
 /// of one entry per component table with counts summing to `c`. The sets of
@@ -1024,549 +1077,6 @@ fn knapsack_reference(tables: &[&CTable], cap: usize) -> Vec<Option<Choice>> {
   dp
 }
 
-/// The undecided member to branch on: the largest `|gain|`, then the
-/// smaller ID.
-fn pick_branch(gains: &[(TermId, i128)]) -> Option<(TermId, i128)> {
-  let mut acc: Option<(TermId, i128)> = None;
-  for &(t, g) in gains {
-    acc = match acc {
-      None => Some((t, g)),
-      Some((a, ga)) => {
-        if g.unsigned_abs() > ga.unsigned_abs()
-          || (g.unsigned_abs() == ga.unsigned_abs() && t < a)
-        {
-          Some((t, g))
-        } else {
-          acc
-        }
-      },
-    };
-  }
-  acc
-}
-
-/// Area position of no term (`SCtx::pos`).
-const NO_POS: u32 = u32::MAX;
-
-/// Bounds of the area under a maybe-stored predicate, over the root-level
-/// bounds (Lean `SCtx.rebound`): `vals[j]` for the area term at position
-/// `j`, the root-level bounds elsewhere.
-struct Overlay<'b> {
-  base: &'b Bounds,
-  pos: &'b [u32],
-  vals: Vec<[u128; 4]>,
-}
-
-impl Overlay<'_> {
-  fn get(&self, t: TermId) -> [u128; 4] {
-    match self.pos[ix(t)] {
-      NO_POS => {
-        let k = ix(t);
-        [
-          self.base.inl[k],
-          self.base.merged[k],
-          self.base.head_lb[k],
-          self.base.cont_lb[k],
-        ]
-      },
-      j => self.vals[j as usize],
-    }
-  }
-}
-
-/// The search of one component (Lean `SCtx`). Sets of decided members are
-/// passed as sorted term lists and, inside one call, as flags over the area
-/// positions (every member is in the area; a term outside the area is in
-/// none of them).
-struct SCtx<'a, 'd> {
-  up: &'a UPrep<'d>,
-  facts: &'a Facts,
-  cand: &'a [bool],
-  b0: &'a Bounds,
-  vis0: &'a (Vec<u64>, Vec<u64>),
-  spine_len: &'a [u64],
-  dag_size: u64,
-  members: Vec<TermId>,
-  /// Member index of each area position (`NO_POS` for other terms).
-  member_of: Vec<u32>,
-  area: Vec<TermId>,
-  /// Area position of every term of the DAG (`NO_POS` outside the area).
-  pos: &'a [u32],
-  /// Per area node: `(parent, its area position, edges, head edges)` per
-  /// distinct parent.
-  in_edges: Vec<Vec<(TermId, u32, u64, u64)>>,
-  root_occ: Vec<u64>,
-  root_mult: Vec<(TermId, u128)>,
-  stored_in: Vec<TermId>,
-  slack: i128,
-  theta: i128,
-  memo: FxHashMap<Vec<u64>, CTable>,
-  memo_hits: u64,
-  /// Scratch of `phi`: the value of each area term.
-  vals: Vec<UVal>,
-}
-
-impl SCtx<'_, '_> {
-  fn at(&self, t: TermId) -> Option<usize> {
-    match self.pos[ix(t)] {
-      NO_POS => None,
-      j => Some(j as usize),
-    }
-  }
-
-  /// Flags over the area positions of the terms `ts`.
-  fn flags(&self, ts: &[TermId]) -> Vec<bool> {
-    let mut f = vec![false; self.area.len()];
-    for &t in ts {
-      if let Some(j) = self.at(t) {
-        f[j] = true;
-      }
-    }
-    f
-  }
-
-  /// The component cost with the area terms flagged in `avail` available
-  /// and the entries of `stored`, and the evaluation work (Lean
-  /// `SCtx.phi`). Every area term is evaluated, children first; other terms
-  /// keep their root-level values.
-  fn phi(
-    &mut self,
-    avail: &[bool],
-    stored: &[TermId],
-  ) -> Result<(u128, u64), SharingError> {
-    let mut work = 0u64;
-    for k in 0..self.area.len() {
-      let t = self.area[k];
-      let (v, s) = {
-        let (vals, base, pos) = (&self.vals, &self.up.base, self.pos);
-        let get = |c: TermId| match pos[ix(c)] {
-          NO_POS => base[ix(c)],
-          j => vals[j as usize],
-        };
-        let av = |c: TermId| match pos[ix(c)] {
-          NO_POS => false,
-          j => avail[j as usize],
-        };
-        self.up.node(&get, &av, t)?
-      };
-      self.vals[k] = v;
-      work = work.saturating_add(1 + s);
-    }
-    let get = |c: TermId| match self.pos[ix(c)] {
-      NO_POS => self.up.base[ix(c)],
-      j => self.vals[j as usize],
-    };
-    let mut total = 0u128;
-    for &(r, m) in &self.root_mult {
-      total = total.saturating_add(m.saturating_mul(get(r).cost));
-    }
-    for &c in self.stored_in.iter().chain(stored) {
-      total = total.saturating_add(get(c).inl);
-    }
-    if total == u128::MAX {
-      return Err(overflow());
-    }
-    Ok((total, work))
-  }
-
-  fn charge(meter: &mut Meter<'_>, work: u64) -> Result<(), SharingError> {
-    meter.state()?;
-    meter.work(work)
-  }
-
-  /// Whether `t` may be stored: a candidate not decided "not stored".
-  fn maybe(&self, out: &[bool], t: TermId) -> bool {
-    self.cand[ix(t)] && self.at(t).is_none_or(|j| !out[j])
-  }
-
-  fn rebound(&self, out: &[bool]) -> Result<Overlay<'_>, SharingError> {
-    let mut ov = Overlay {
-      base: self.b0,
-      pos: self.pos,
-      vals: Vec::with_capacity(self.area.len()),
-    };
-    for (j, &t) in self.area.iter().enumerate() {
-      let v = {
-        let ovr = &ov;
-        bound_step(
-          self.up.nodes,
-          t,
-          self.up.w,
-          self.cand[ix(t)] && !out[j],
-          &|c| ovr.get(c)[2],
-          &|c| ovr.get(c)[3],
-        )?
-      };
-      ov.vals.push(v);
-    }
-    Ok(ov)
-  }
-
-  /// Visible counts of the area terms (by area position).
-  fn revisible(&self, out: &[bool]) -> Vec<(u64, u64)> {
-    let mut vis: Vec<(u64, u64)> = vec![(0, 0); self.area.len()];
-    for j in (0..self.area.len()).rev() {
-      let r = self.root_occ[j];
-      let (mut d, mut h) = (r, r);
-      for &(q, qj, ma, mh) in &self.in_edges[j] {
-        let wq = if self.maybe(out, q) {
-          1
-        } else {
-          match qj {
-            NO_POS => self.vis0.0[ix(q)],
-            qj => vis[qj as usize].0,
-          }
-          .min(VISIBLE_CAP)
-        };
-        d = d.saturating_add(ma.saturating_mul(wq));
-        h = h.saturating_add(mh.saturating_mul(wq));
-      }
-      vis[j] = (d, h);
-    }
-    vis
-  }
-
-  fn opaque_under(&self, b: &Overlay<'_>, t: TermId) -> bool {
-    let v = b.get(t);
-    if self.up.nodes[ix(t)].family().is_none() {
-      v[0] >= self.up.w
-    } else {
-      v[1] >= self.up.w
-    }
-  }
-
-  /// Groups of the undecided members (Lean `SCtx.groups`); `opq` and
-  /// `avail_fixed` are flags over the area positions.
-  fn groups(
-    &self,
-    opq: &[bool],
-    avail_fixed: &[bool],
-    und: &[TermId],
-  ) -> Vec<Vec<TermId>> {
-    let und_f = self.flags(und);
-    let mut uf: Vec<usize> = (0..self.members.len()).collect();
-    let mut reps: Vec<Vec<usize>> = vec![Vec::new(); self.area.len()];
-    let union = |uf: &mut Vec<usize>, x: usize, y: usize| {
-      let a = uf_find(uf, x);
-      let b = uf_find(uf, y);
-      if a != b {
-        if a < b {
-          uf[b] = a;
-        } else {
-          uf[a] = b;
-        }
-      }
-    };
-    let member = |j: usize| match self.member_of[j] {
-      NO_POS => 0,
-      m => m as usize,
-    };
-    for j in 0..self.area.len() {
-      let y = self.area[j];
-      if opq[j] {
-        continue;
-      }
-      let mut rs: Vec<usize> = Vec::new();
-      for &c in self.up.nodes[ix(y)].children().as_slice() {
-        if let Some(jc) = self.at(c) {
-          for &r in &reps[jc] {
-            let fr = uf_find(&uf, r);
-            if !rs.contains(&fr) {
-              rs.push(fr);
-            }
-          }
-        }
-      }
-      if und_f[j] {
-        let iy = member(j);
-        for &r in &rs {
-          union(&mut uf, iy, r);
-        }
-        reps[j] = vec![uf_find(&uf, iy)];
-      } else if avail_fixed[j] && rs.len() > 1 {
-        let r0 = rs[0];
-        for &r in &rs {
-          union(&mut uf, r0, r);
-        }
-        reps[j] = vec![uf_find(&uf, r0)];
-      } else {
-        reps[j] = rs;
-      }
-    }
-    let mut groups: FxHashMap<usize, Vec<TermId>> = FxHashMap::default();
-    for &t in und {
-      let r = uf_find(&uf, self.at(t).map_or(0, member));
-      groups.entry(r).or_default().push(t);
-    }
-    let mut gs: Vec<Vec<TermId>> = groups
-      .into_values()
-      .map(|mut g| {
-        g.sort_unstable();
-        g
-      })
-      .collect();
-    gs.sort_by_key(|g| g[0]);
-    gs
-  }
-
-  /// Memo key of a group and the decided members that reach it (Lean
-  /// `SCtx.memoKey`), and those members as flags over the area positions.
-  /// `opq`, `in_f` and `out` are flags over the area positions.
-  fn memo_key(
-    &self,
-    opq: &[bool],
-    in_f: &[bool],
-    out: &[bool],
-    g: &[TermId],
-  ) -> (Vec<u64>, Vec<bool>) {
-    let code =
-      |q: TermId, j: usize| u64::from(q) * 3 + if opq[j] { 2 } else { 1 };
-    let mut entries: Vec<u64> = Vec::new();
-    let mut rel = vec![false; self.area.len()];
-    let mut down_start: Vec<TermId> = g.to_vec();
-    let mut seen = self.flags(g);
-    let mut stack: Vec<TermId> = g.to_vec();
-    while let Some(y) = stack.pop() {
-      for &q in &self.facts.parents[ix(y)] {
-        let Some(j) = self.at(q) else { continue };
-        if seen[j] {
-          continue;
-        }
-        seen[j] = true;
-        if out[j] {
-          entries.push(u64::from(q) * 3);
-          rel[j] = true;
-        } else if in_f[j] {
-          entries.push(code(q, j));
-          rel[j] = true;
-          if !opq[j] {
-            down_start.push(q);
-          }
-        }
-        if !opq[j] {
-          stack.push(q);
-        }
-      }
-    }
-    let mut seen = self.flags(&down_start);
-    let mut stack = down_start;
-    while let Some(y) = stack.pop() {
-      for &c in self.up.nodes[ix(y)].children().as_slice() {
-        let Some(j) = self.at(c) else { continue };
-        if seen[j] {
-          continue;
-        }
-        seen[j] = true;
-        if !rel[j] {
-          if out[j] {
-            entries.push(u64::from(c) * 3);
-            rel[j] = true;
-          } else if in_f[j] {
-            entries.push(code(c, j));
-            rel[j] = true;
-          }
-        }
-        if !opq[j] {
-          stack.push(c);
-        }
-      }
-    }
-    entries.sort_unstable();
-    let mut key: Vec<u64> = g.iter().map(|&t| u64::from(t)).collect();
-    key.push(3 * self.dag_size + 3);
-    key.extend(entries);
-    (key, rel)
-  }
-
-  /// Exact table of a group under the decided members outside it (Lean
-  /// `SCtx.solve`).
-  fn solve(
-    &mut self,
-    meter: &mut Meter<'_>,
-    g: &[TermId],
-    in_all: &[TermId],
-    out_all: &[TermId],
-  ) -> Result<CTable, SharingError> {
-    let out = self.flags(out_all);
-    let in_f = self.flags(in_all);
-    let key = {
-      let b = self.rebound(&out)?;
-      let opq: Vec<bool> = self
-        .area
-        .iter()
-        .enumerate()
-        .map(|(j, &t)| {
-          self.up.opaq[ix(t)] || (in_f[j] && self.opaque_under(&b, t))
-        })
-        .collect();
-      self.memo_key(&opq, &in_f, &out, g).0
-    };
-    if let Some(tb) = self.memo.get(&key) {
-      self.memo_hits += 1;
-      return Ok(tb.clone());
-    }
-    let (phi0, work) = self.phi(&in_f, in_all)?;
-    Self::charge(meter, work.saturating_add(len64(self.area.len())))?;
-    let tb = self.node(
-      meter,
-      phi0,
-      in_all,
-      out_all.to_vec(),
-      out_all.len(),
-      Vec::new(),
-      g,
-      Vec::new(),
-    )?;
-    let tb = table_trim(tb, self.slack);
-    self.memo.insert(key, tb.clone());
-    Ok(tb)
-  }
-
-  /// Branch-and-bound node of a group (Lean `SCtx.node`).
-  #[allow(clippy::too_many_arguments)]
-  fn node(
-    &mut self,
-    meter: &mut Meter<'_>,
-    phi0: u128,
-    in_ctx: &[TermId],
-    out_all: Vec<TermId>,
-    n_out_ctx: usize,
-    local_in: Vec<TermId>,
-    und: &[TermId],
-    mut tb: CTable,
-  ) -> Result<CTable, SharingError> {
-    let out = self.flags(&out_all);
-    // Reclassify.
-    let (gains, opaque_in) = {
-      let b = self.rebound(&out)?;
-      let vis = self.revisible(&out);
-      let mut gains: Vec<(TermId, i128)> = Vec::with_capacity(und.len());
-      for &t in und {
-        let (d, h) = self
-          .at(t)
-          .map_or((self.vis0.0[ix(t)], self.vis0.1[ix(t)]), |j| vis[j]);
-        let v = b.get(t);
-        let gt = stored_gain(
-          &self.up.nodes[ix(t)],
-          d,
-          h,
-          self.spine_len[ix(t)],
-          v[0],
-          v[1],
-          self.up.w,
-        )?;
-        gains.push((t, gt));
-      }
-      // Opacity of every decided-stored member under these bounds (the
-      // forced members included), for the split below.
-      let mut opaque_in = vec![false; self.area.len()];
-      for &t in in_ctx
-        .iter()
-        .chain(&local_in)
-        .chain(gains.iter().filter(|(_, g)| *g >= self.theta).map(|(t, _)| t))
-      {
-        if self.opaque_under(&b, t)
-          && let Some(j) = self.at(t)
-        {
-          opaque_in[j] = true;
-        }
-      }
-      (gains, opaque_in)
-    };
-    let forced: Vec<TermId> =
-      gains.iter().filter(|(_, g)| *g >= self.theta).map(|(t, _)| *t).collect();
-    let local_in = if forced.is_empty() {
-      local_in
-    } else {
-      merge_sorted(&local_in, &forced)
-    };
-    let open: Vec<(TermId, i128)> =
-      gains.into_iter().filter(|(_, g)| *g < self.theta).collect();
-    let und: Vec<TermId> = open.iter().map(|(t, _)| *t).collect();
-    let in_all: Vec<TermId> = in_ctx.iter().chain(&local_in).copied().collect();
-    let in_f = self.flags(&in_all);
-    // Lower bound: every undecided member available, its entry free.
-    let mut in_und = self.flags(&und);
-    for (a, &b) in in_und.iter_mut().zip(&in_f) {
-      *a |= b;
-    }
-    let (phi, work) = self.phi(&in_und, &in_all)?;
-    Self::charge(meter, work.saturating_add(2 * len64(self.area.len())))?;
-    let delta = to_i(phi)? - to_i(phi0)?;
-    if und.is_empty() {
-      table_add(&mut tb, (delta, local_in));
-      return Ok(tb);
-    }
-    if let Some(bd) = table_best(&tb)
-      && delta > bd + self.slack
-    {
-      return Ok(tb);
-    }
-    // Split into independent groups.
-    let opq: Vec<bool> = self
-      .area
-      .iter()
-      .enumerate()
-      .map(|(j, &t)| self.up.opaq[ix(t)] || (in_f[j] && opaque_in[j]))
-      .collect();
-    let avail_fixed: Vec<bool> =
-      in_f.iter().zip(&opq).map(|(&i, &o)| i && !o).collect();
-    let groups = self.groups(&opq, &avail_fixed, &und);
-    let route = if groups.len() > 1 {
-      true
-    } else if groups.len() == 1 {
-      let (_, rel) = self.memo_key(&opq, &in_f, &out, &groups[0]);
-      let related = |t: &TermId| self.at(*t).is_some_and(|j| rel[j]);
-      local_in.iter().any(|t| !related(t))
-        || out_all[n_out_ctx..].iter().any(|t| !related(t))
-    } else {
-      false
-    };
-    if route {
-      let (phi_none, work) = self.phi(&in_f, &in_all)?;
-      Self::charge(meter, work)?;
-      let base = to_i(phi_none)? - to_i(phi0)?;
-      let mut comb: CTable = vec![Some((base, local_in.clone()))];
-      for grp in &groups {
-        let sub = self.solve(meter, grp, &in_all, &out_all)?;
-        comb = table_trim(table_conv(&comb, &sub), self.slack);
-      }
-      for e in comb.into_iter().flatten() {
-        table_add(&mut tb, e);
-      }
-      return Ok(tb);
-    }
-    // Branch on the largest |gain|, "stored" first when it is positive.
-    let Some((t, gt)) = pick_branch(&open) else {
-      return Ok(tb);
-    };
-    let mut und2 = und.clone();
-    if let Some(p) = und2.iter().position(|&x| x == t) {
-      und2.remove(p);
-    }
-    let with_t = merge_sorted(&local_in, &[t]);
-    let mut out_t = out_all.clone();
-    out_t.push(t);
-    if gt > 0 {
-      let tb = self
-        .node(meter, phi0, in_ctx, out_all, n_out_ctx, with_t, &und2, tb)?;
-      self.node(meter, phi0, in_ctx, out_t, n_out_ctx, local_in, &und2, tb)
-    } else {
-      let tb = self.node(
-        meter,
-        phi0,
-        in_ctx,
-        out_t,
-        n_out_ctx,
-        local_in.clone(),
-        &und2,
-        tb,
-      )?;
-      self.node(meter, phi0, in_ctx, out_all, n_out_ctx, with_t, &und2, tb)
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Order and driver
 // ---------------------------------------------------------------------------
@@ -1669,6 +1179,7 @@ pub(crate) fn pinned_order(
 }
 
 /// Exact uniform-width optimization of a DAG.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub(crate) fn optimize_uniform(
   w: u64,
   dag: &SharingDag,
@@ -1699,8 +1210,8 @@ pub(crate) struct DagPrep {
   pub(crate) facts: Facts,
   /// Spine lengths with no stop terms.
   spine_len: Vec<u64>,
-  /// Unshared sizes of the uniform model (the empty evaluation; it does not
-  /// read the width), or its overflow error.
+  /// Empty sizes capped at EMPTY_SIZE_CAP, ONLY for certain-excluded tests.
+  /// Errors concern unencodable own-payload counts, not large unfolded costs.
   size: Result<Vec<u128>, SharingError>,
 }
 
@@ -1712,35 +1223,44 @@ impl DagPrep {
     let base = Evaluation::new(nodes, &own, &super::dict::NoWidths);
     let edges = ReadEdges::new(nodes);
     let facts = graph_facts(dag);
-    let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
-    // With no opaque and no available term, `UPrep::node` reads the width
-    // nowhere (no cut is available and every cost is the inline bound), so
-    // any width gives these sizes.
-    let size = UPrep::new(nodes, 1, vec![false; n])
-      .map(|empty| empty.base.iter().map(|v| v.cost).collect());
+    let (spine_len, spine_tail) = spine_tables(nodes, &vec![false; n]);
+    let size = empty_sizes_capped(nodes, &spine_len, &spine_tail);
     DagPrep { own, base, edges, facts, spine_len, size }
   }
 }
 
-/// [`optimize_uniform`] (`w >= 1`) with the width-independent tables of
-/// `prep`, up to the decisions: the result has empty `roots` and `sharing`
-/// and `variable_len` 0, and the [`UniformPlan`] builds the expressions
-/// ([`UniformPlan::build`], which [`optimize_uniform`] does) or describes
-/// them ([`UniformPlan::shares`], the dry run of phase 1 of the tiered
-/// construction).
-pub(crate) fn optimize_uniform_with(
+/// Initial classification shared by the exact path and offline experiments.
+struct Initial<'d> {
+  up: UPrep<'d>,
+  #[cfg(any(test, feature = "sharing-reference"))]
+  cand: Vec<bool>,
+  #[cfg(any(test, feature = "sharing-reference"))]
+  bounds: Bounds,
+  #[cfg(any(test, feature = "sharing-reference"))]
+  vis0: (Vec<u64>, Vec<u64>),
+  #[cfg(any(test, feature = "sharing-reference"))]
+  theta: i128,
+  cs: Vec<TermId>,
+  ce_terms: Vec<TermId>,
+  unc: Vec<TermId>,
+  low: Vec<TermId>,
+  comps: Vec<Vec<TermId>>,
+  slack: i128,
+}
+
+/// The initial canonical classification, before any recursive reclassification.
+fn initial<'d>(
   w: u64,
-  dag: &SharingDag,
+  dag: &'d SharingDag,
   prep: &DagPrep,
   meter: &mut Meter<'_>,
-) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+) -> Result<Initial<'d>, SharingError> {
   if w == 0 {
     return Err(SharingError::FormatBound(FormatBound::UniformWidth { w }));
   }
   let wu = u(w);
   let nodes = dag.nodes();
   let n = nodes.len();
-  let p = prof::scope(Phase::Classify);
   let facts = &prep.facts;
   // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
   // before the search (Lean's `optimizeUniformExpanded`).
@@ -1750,7 +1270,7 @@ pub(crate) fn optimize_uniform_with(
       bound: TELE_SUBADD_END,
     }));
   }
-  // Unshared sizes C_0 (no stop terms, nothing available).
+  // Predicate-sufficient min(C_0, cap); never reused as a general model cost.
   let size: &[u128] = prep.size.as_ref().map_err(Clone::clone)?;
   // Classes: certain-excluded, low degree, and the gain test on visible
   // counts with threshold theta.
@@ -1818,162 +1338,38 @@ pub(crate) fn optimize_uniform_with(
   // contain the certain-stored terms.
   let slack = i128::from(tag0_len(k_cs.saturating_add(k_unc)))
     - i128::from(tag0_len(k_cs));
-  // Search each component (independent searches; see `Parallelism`).
-  let search_area = |members: &Vec<TermId>,
-                     area: Vec<TermId>,
-                     meter: &mut Meter<'_>,
-                     pos: &[u32]|
-   -> Result<(Choice, CTable), SharingError> {
-    let mut mult: std::collections::BTreeMap<TermId, u128> =
-      std::collections::BTreeMap::new();
-    for &r in dag.roots() {
-      if pos[ix(r)] != NO_POS {
-        *mult.entry(r).or_default() += 1;
-      }
-    }
-    let root_mult: Vec<(TermId, u128)> = mult.into_iter().collect();
-    let stored_in: Vec<TermId> =
-      area.iter().copied().filter(|&t| up.opaq[ix(t)]).collect();
-    if meter.limits().uniform_subset_search {
-      // The reference: plain subset enumeration.
-      let mut cx = CompCtx {
-        up: &up,
-        members: members.clone(),
-        area,
-        root_mult,
-        stored_in,
-        phi0: 0,
-        slack,
-        vals: vec![UVal::default(); n],
-        stamp: vec![0; n],
-        epoch: 0,
-        avail: vec![false; n],
-      };
-      let (phi0, _) = cx.phi(&[])?;
-      cx.phi0 = phi0;
-      return cx.search(meter);
-    }
-    let mut member_of: Vec<u32> = vec![NO_POS; area.len()];
-    for (m, &t) in members.iter().enumerate() {
-      if let Some(j) =
-        usize::try_from(pos[ix(t)]).ok().filter(|&j| j < area.len())
-      {
-        member_of[j] = u32::try_from(m).unwrap_or(NO_POS);
-      }
-    }
-    let in_edges: Vec<Vec<(TermId, u32, u64, u64)>> = area
-      .iter()
-      .map(|&y| {
-        facts.parents[ix(y)]
-          .iter()
-          .map(|&q| {
-            let node = &nodes[ix(q)];
-            let (mut ma, mut mh) = (0u64, 0u64);
-            for (i, &c) in node.children().as_slice().iter().enumerate() {
-              if c == y {
-                ma += 1;
-                if !continuation_edge(node, i, &nodes[ix(y)]) {
-                  mh += 1;
-                }
-              }
-            }
-            (q, pos[ix(q)], ma, mh)
-          })
-          .collect()
-      })
-      .collect();
-    let root_occ: Vec<u64> = area
-      .iter()
-      .map(|y| {
-        root_mult
-          .iter()
-          .find(|(r, _)| r == y)
-          .map_or(0, |(_, m)| u64::try_from(*m).unwrap_or(u64::MAX))
-      })
-      .collect();
-    let area_len = area.len();
-    let mut cx = SCtx {
-      up: &up,
-      facts,
-      cand: &cand,
-      b0: &bounds,
-      vis0: &vis0,
-      spine_len,
-      dag_size: len64(n),
-      members: members.clone(),
-      member_of,
-      area,
-      pos,
-      in_edges,
-      root_occ,
-      root_mult,
-      stored_in,
-      slack,
-      theta,
-      memo: FxHashMap::default(),
-      memo_hits: 0,
-      vals: vec![UVal::default(); area_len],
-    };
-    let tb = cx.solve(meter, members, &[], &[])?;
-    let bd = table_best(&tb)
-      .ok_or_else(|| internal("component search found no choice"))?;
-    let mut best_set: Option<&Vec<TermId>> = None;
-    for (d, s) in tb.iter().flatten() {
-      if *d == bd && best_set.is_none_or(|a| set_prec(s, a)) {
-        best_set = Some(s);
-      }
-    }
-    let bs = best_set
-      .cloned()
-      .ok_or_else(|| internal("component search found no choice"))?;
-    Ok(((bd, bs), tb))
-  };
-  // `pos` maps every term to its position in the component's area
-  // (`NO_POS` outside it); it is set for the area of each component and
-  // cleared afterwards, so one buffer serves every component.
-  let search_one = |members: &Vec<TermId>,
-                    meter: &mut Meter<'_>,
-                    pos: &mut [u32]|
-   -> Result<(Choice, CTable), SharingError> {
-    let area = component_area(&up, facts, members);
-    for (j, &t) in area.iter().enumerate() {
-      pos[ix(t)] = u32::try_from(j).unwrap_or(NO_POS);
-    }
-    let res = search_area(members, area.clone(), meter, pos);
-    for &t in &area {
-      pos[ix(t)] = NO_POS;
-    }
-    res
-  };
-  drop(p);
-  let p = prof::scope(Phase::Search);
-  let budget = meter.parallel.components;
-  let mut results: Vec<(Choice, CTable)> = Vec::with_capacity(comps.len());
-  if budget <= 1 {
-    let mut pos = vec![NO_POS; n];
-    for members in &comps {
-      results.push(search_one(members, meter, &mut pos)?);
-    }
-  } else {
-    // Each component on its own meter; the counts are added in component
-    // order afterwards (`Meter::absorb`), then the results are used in the
-    // same order as sequentially.
-    let limits = meter.limits();
-    let outs = super::par::map_ranges(comps.len(), budget, |r| {
-      let mut pos = vec![NO_POS; n];
-      r.map(|j| {
-        let mut m = Meter::new(limits);
-        let res = search_one(&comps[j], &mut m, &mut pos);
-        (res, m.stats)
-      })
-      .collect()
-    });
-    for (res, stats) in outs {
-      meter.absorb(&stats)?;
-      results.push(res?);
-    }
-  }
-  drop(p);
+  Ok(Initial {
+    up,
+    #[cfg(any(test, feature = "sharing-reference"))]
+    cand,
+    #[cfg(any(test, feature = "sharing-reference"))]
+    bounds,
+    #[cfg(any(test, feature = "sharing-reference"))]
+    vis0,
+    #[cfg(any(test, feature = "sharing-reference"))]
+    theta,
+    cs,
+    ce_terms,
+    unc,
+    low,
+    comps,
+    slack,
+  })
+}
+
+fn combine_uniform(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+  stage: Initial<'_>,
+  results: Vec<(Choice, CTable)>,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  let Initial { up, cs, ce_terms, unc, low, comps, .. } = stage;
+  let nodes = dag.nodes();
+  let n = nodes.len();
+  let facts = &prep.facts;
+  let k_cs = len64(cs.len());
   let p = prof::scope(Phase::Knapsack);
   let states_visited = meter.stats.states_created;
   // Combine: per-component optima, unless a lower count bracket is shorter.
@@ -2097,12 +1493,16 @@ pub(crate) fn optimize_uniform_with(
     states_visited,
     lower_bracket,
     stats: meter.stats.clone(),
+    #[cfg(test)]
+    component_tables: results.into_iter().map(|(_, table)| table).collect(),
   };
+  #[cfg(not(test))]
+  drop(results);
   drop(p);
   Ok((result, UniformPlan { dict, plan, model, k }))
 }
 
-/// The decisions of one uniform-width optimum ([`optimize_uniform_with`]):
+/// The decisions of one uniform-width family optimum:
 /// the table indices of the stored terms and the materialization choice of
 /// every entry top and needed term. The expressions are either built and
 /// checked ([`UniformPlan::build`]) or only described
@@ -2204,6 +1604,7 @@ impl UniformPlan {
 }
 
 /// Exact uniform-width sharing of ordered, fully expanded roots.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn optimize_sharing_uniform(
   w: u64,
   roots: &[Arc<Expr>],
@@ -2215,6 +1616,7 @@ pub fn optimize_sharing_uniform(
 }
 
 /// Expand `c`'s table and re-share it with the uniform-width optimum.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub fn normalize_constant_sharing_uniform(
   w: u64,
   c: &Constant,

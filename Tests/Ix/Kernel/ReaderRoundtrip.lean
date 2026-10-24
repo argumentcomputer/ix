@@ -80,14 +80,16 @@ def expected : List (Lean.Name × Verdict) := [
   (defs "Node.val", .normalized "projection rewrite"),
   (defs "Node.kids", .normalized "projection rewrite"),
   (defs "Even", .equal), (defs "Odd", .equal), (defs "Odd.succ", .equal),
-  (defs "Even.rec", .canonicalized "auxiliary regenerated"),
+  -- a changed block (members out of Lean's order): since Pass 3, the Lean name
+  -- of each recursor holds its image, a definition of the recursor's type
+  (defs "Even.rec", .canonicalized "Pass 3 image of a recursor"),
   -- a mutual block of data types: the compiler regenerates its recursors in
-  -- canonical member order, and the definitions over it call them through
-  -- permuted call sites
+  -- canonical member order, Pass 3 stores each Lean recursor's image under its
+  -- name, and the definitions over it call the auxiliaries through the images
   (defs "Tm", .equal), (defs "Args.cons", .equal),
-  (defs "Tm.rec", .canonicalized "auxiliary regenerated"),
-  (defs "Args.rec", .canonicalized "auxiliary regenerated"),
-  (defs "Tm.size", .canonicalized "call-site surgery"),
+  (defs "Tm.rec", .canonicalized "Pass 3 image of a recursor"),
+  (defs "Args.rec", .canonicalized "Pass 3 image of a recursor"),
+  (defs "Tm.size", .canonicalized "Pass 3 call-site records"),
   (defs "Trivial", .equal), (defs "Trivial.rec", .equal),
   (defs "Both", .equal), (defs "Both.left", .equal),
   (defs "Pair", .equal), (defs "Pair.mk", .equal),
@@ -115,16 +117,16 @@ def expected : List (Lean.Name × Verdict) := [
 
 /-! ## Tampering: the comparison has teeth -/
 
-def always : Ix.Kernel.BinderMeta := ⟨.ifAllZero []⟩
+def always : Ix.Kernel.BinderMeta := { pw := .ifAllZero [] }
 
 /-- The first binder's annotation set to `always`. -/
-def tamperPw : Ix.Kernel.Expr → Option Ix.Kernel.Expr
+def tamperPw : Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | .lam t b _ => some (.lam t b always)
   | .forallE t b _ => some (.forallE t b always)
   | _ => none
 
 /-- A natural-number literal bumped. -/
-partial def tamperLit : Ix.Kernel.Expr → Option Ix.Kernel.Expr
+partial def tamperLit : Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | .lit (.natVal n) => some (.lit (.natVal (n + 1)))
   | .app f a => ((tamperLit a).map (.app f ·)).orElse fun _ => (tamperLit f).map (.app · a)
   | .lam t b m => (tamperLit b).map (.lam t · m)
@@ -134,8 +136,8 @@ partial def tamperLit : Ix.Kernel.Expr → Option Ix.Kernel.Expr
 def tampers : List (String × Lean.Name × (Entry → Option Entry)) := [
   ("definition value replaced by its type", defs "twice", fun
     | .defn cv _ h => some (.defn cv cv.type h) | _ => none),
-  ("level parameter renamed", defs "twice", fun
-    | .defn cv v h => some (.defn { cv with levelParams := cv.levelParams.map (·.str "x") } v h)
+  ("level parameter renumbered", defs "twice", fun
+    | .defn cv v h => some (.defn { cv with levelParams := cv.levelParams.map (· + 1) } v h)
     | _ => none),
   ("binder annotation set", defs "twice", fun
     | .defn cv v h => (tamperPw v).map (.defn cv · h) | _ => none),
@@ -219,10 +221,12 @@ def evaluateEgress (inp : Input) : IO (Array String × Array String) := do
     unless ent.projectionRecords > 0 && ent.projectionsInstalled == ent.projectionRecords do
       errors := errors.push s!"{label}: {ent.projectionsInstalled} of {ent.projectionRecords} projections installed"
   -- the two recursor blocks that are in motive order but not in structural
-  -- order are among those the order check accepts
+  -- order are among those the order check accepts (a changed block's
+  -- canonical recursors are published under Pass 3's `_ix` names, read here
+  -- without the reserved component: `Tm._ix.rec` as `Tm.rec`)
   let accepted := proj.motiveOrdered.toList.map fun a =>
-    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "." |>.reverse |>.take 2 |>.reverse
-      |> ".".intercalate)
+    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "." |>.filter (· != "_ix")
+      |>.reverse |>.take 2 |>.reverse |> ".".intercalate)
   for block in [["Rose.rec", "Rose.rec_1"], ["Args.rec", "Tm.rec"]] do
     unless accepted.contains block do
       errors := errors.push s!"block order: the recursor block {block} is not accepted in motive order"

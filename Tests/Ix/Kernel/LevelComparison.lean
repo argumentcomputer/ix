@@ -45,9 +45,9 @@ summary line; the exit code is nonzero on any failure. -/
 
 namespace Tests.Ix.Kernel.LevelComparison
 
-open _root_.Ix.Kernel (Level Name)
+open _root_.Ix.Kernel (Level LevelParam)
 
-def param (i : Nat) : Level := .param (.str .anonymous s!"u{i}")
+def param (i : Nat) : Level := .param i
 
 /-- Every level with exactly `size` constructors over `params` parameters. -/
 partial def levelsOfSize (params : Nat) (size : Nat) : Array Level :=
@@ -73,18 +73,13 @@ def offset : Level → Nat
   | .max a b | .imax a b => Max.max (offset a) (offset b)
 
 /-- Every valuation of `params` parameters with values in `values`. -/
-def valuations (params : Nat) (values : List Nat) : List (Name → Nat) :=
+def valuations (params : Nat) (values : List Nat) : List (LevelParam → Nat) :=
   let tuples := (List.range params).foldr
     (fun _ rest => values.flatMap fun v => rest.map (v :: ·)) [[]]
-  tuples.map fun vs n => match n with
-    | .str .anonymous s =>
-      match (s.drop 1).toNat? with
-      | some i => vs.getD i 0
-      | none => 0
-    | _ => 0
+  tuples.map fun vs n => vs.getD n 0
 
 /-- `a ≤ b + diff` at every valuation in `vals`. -/
-def bruteLe (vals : List (Name → Nat)) (a b : Level) (diff : Int) : Bool :=
+def bruteLe (vals : List (LevelParam → Nat)) (a b : Level) (diff : Int) : Bool :=
   vals.all fun φ => (Level.eval φ a : Int) ≤ Level.eval φ b + diff
 
 partial def levelString : Level → String
@@ -92,8 +87,7 @@ partial def levelString : Level → String
   | .succ l => s!"{levelString l}+1"
   | .max a b => s!"max({levelString a},{levelString b})"
   | .imax a b => s!"imax({levelString a},{levelString b})"
-  | .param (.str _ s) => s
-  | .param _ => "?"
+  | .param i => s!"u{i}"
 
 structure Counts where
   pairs : Nat := 0
@@ -121,7 +115,7 @@ def Counts.verdict (c : Counts) (what : String) (v : Option Bool) (truth : Bool)
 
 /-- One pair, against the valuations `vals`: `leq` both ways, `isEquiv`, and
 `Geran.leq` at offsets `-2‥2`. -/
-def check (vals : List (Name → Nat)) (c : Counts) (a b : Level) : Counts := Id.run do
+def check (vals : List (LevelParam → Nat)) (c : Counts) (a b : Level) : Counts := Id.run do
   let sa := levelString a
   let sb := levelString b
   let le := bruteLe vals a b 0
@@ -248,15 +242,14 @@ def rewrites (params size count : Nat) (c : Counts) : Counts := Id.run do
     c := check vals (check vals c a b) b' a
   return c
 
-/-- Ixon's universe of a level over `param`s (`u{i}` is `var i`), and back,
+/-- Ixon's universe of a level over `param`s (parameter `i` is `var i`), and back,
 as the reader converts it (`Ix.Kernel.Reader.convUniv`). -/
 def toUniv : Level → Ixon.Univ
   | .zero => .zero
   | .succ l => .succ (toUniv l)
   | .max a b => .max (toUniv a) (toUniv b)
   | .imax a b => .imax (toUniv a) (toUniv b)
-  | .param (.str .anonymous s) => .var ((s.drop 1).toNat?.getD 0).toUInt64
-  | .param _ => .var 0
+  | .param i => .var i.toUInt64
 
 def ofUniv : Ixon.Univ → Level
   | .zero => .zero

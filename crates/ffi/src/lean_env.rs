@@ -1301,6 +1301,22 @@ extern "C" fn rs_tmp_decode_const_map(
       return n;
     },
   };
+  if !stt.ungrounded.is_empty() {
+    eprintln!(
+      "[rust-compile] Phase 1 FAILED: {} ungrounded input declarations",
+      stt.ungrounded.len(),
+    );
+    let mut refusals: Vec<_> = stt
+      .ungrounded
+      .iter()
+      .map(|entry| (entry.key().pretty(), entry.value().clone()))
+      .collect();
+    refusals.sort();
+    for (name, reason) in refusals.iter().take(16) {
+      eprintln!("[rust-compile] ungrounded {name}: {reason}");
+    }
+    return n;
+  }
   eprintln!(
     "[rust-compile] Phase 1 done in {:.2}s ({} consts, {} named, {} names, {} blobs)",
     t0.elapsed().as_secs_f32(),
@@ -1745,7 +1761,7 @@ extern "C" fn rs_tmp_decode_const_map(
   eprintln!("[rust-compile] Phase 3: Checking decompile roundtrip...");
   let t2 = std::time::Instant::now();
   let mut failures = match check_decompile(env.as_ref(), &stt, &dstt) {
-    Ok(c) => c.mismatches + c.missing,
+    Ok(c) => c.failures(|_| false),
     Err(e) => {
       eprintln!("[rust-compile] Phase 3 check FAILED: {e:?}");
       1
@@ -1793,7 +1809,7 @@ extern "C" fn rs_tmp_decode_const_map(
       }
       match decompile_env(&fresh_stt) {
         Ok(dstt2) => match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
-          Ok(c) => failures += c.mismatches + c.missing,
+          Ok(c) => failures += c.failures(|_| false),
           Err(e) => {
             eprintln!("[rust-compile] Phase 6 check FAILED: {e:?}");
             failures += 1;
@@ -2167,8 +2183,18 @@ extern "C" fn rs_compile_validate_aux(
       }
       drop(p2_ingressed);
 
+      // An ingress error (an ill-formed level or free variable in a
+      // constant) is reported here; the blocks that need the constant then
+      // fail in Pass 3 with an unknown constant, recorded per block.
       for name in &p2_names {
-        expr_utils::ensure_in_kenv_of(name, &env, &stt, &mut p2_kctx);
+        if let Err(e) =
+          expr_utils::ensure_in_kenv_of(name, &env, &stt, &mut p2_kctx)
+        {
+          eprintln!(
+            "[validate-aux] pass 2 pre-ingress of {}: {e}",
+            name.pretty()
+          );
+        }
       }
     }
 
@@ -3646,28 +3672,158 @@ extern "C" fn rs_compile_validate_aux(
     // whichever form their original flavor used; resolution tries the
     // other form before declaring a name absent, so one seed list serves
     // both env flavors.
-    let resolve_seed = |name: &str| -> Option<ix_common::address::Address> {
-      if let Some(a) = stt.resolve_addr(&mk_name(name)) {
-        return Some(a);
-      }
+    //
+    // The canonicity question of this phase is about the Ix constants. Under
+    // Pass 3 the Lean name of a changed block's auxiliary holds its image
+    // (a definition of Lean's own type, so it depends on Lean's `all` order
+    // and on which member it eliminates into, by design), and the canonical
+    // Ix auxiliary is stored under the display name the side-car edit gave
+    // it (`pass3::names::ix_aux_name`, Lean `Ix.Compile.Pass.ixAuxName`):
+    // `x._ix.S` for Lean's `x.S`, and for a nested `all0.kind_j` at its
+    // canonical position, `rep0._ix.kind_i`. An auxiliary seed therefore
+    // resolves to its display name when the output has one, else to the Lean
+    // name (an unchanged block keeps its canonical auxiliary there). The
+    // Lean name of such a seed must still hold its image (checked below).
+    //
+    // The display name is recomputed from the output, as the edit computed
+    // it: the components of the seed's Lean block are the `Muts` entries
+    // whose classes hold a member of the block (a split block has one per
+    // SCC); a component's `rep0` is its first class's first member and its
+    // nested permutation is its layout's (`PERM_OUT_OF_SCC` is no
+    // position). The component whose layout places a nested seed's position
+    // owns it; any other gives the name `x._ix.S`.
+    //
+    // The names a seed may have in the environment: as written, then with
+    // the private prefix added or removed.
+    let seed_names = |name: &str| -> Vec<Name> {
+      let mut out = vec![mk_name(name)];
       for module in ["Tests.Ix.Compile.Canonicity", "Tests.Ix.Compile.Mutual"] {
         if let Some(rest) = name.strip_prefix(module) {
-          let mangled = format!("_private.{module}.0.{module}{rest}");
-          if let Some(a) = stt.resolve_addr(&mk_name(&mangled)) {
-            return Some(a);
-          }
+          out.push(mk_name(&format!("_private.{module}.0.{module}{rest}")));
         }
-        let mangled_prefix = format!("_private.{module}.0.");
-        if let Some(rest) = name.strip_prefix(&mangled_prefix)
-          && let Some(a) = stt.resolve_addr(&mk_name(rest))
+        if let Some(rest) = name.strip_prefix(&format!("_private.{module}.0."))
         {
-          return Some(a);
+          out.push(mk_name(rest));
         }
       }
-      None
+      out
+    };
+    let resolve_plain = |name: &str| -> Option<ix_common::address::Address> {
+      seed_names(name).iter().find_map(|n| stt.resolve_addr(n))
+    };
+    let name_hash =
+      |n: &Name| ix_common::address::Address::from_blake3_hash(*n.get_hash());
+    // every component of the output: its classes (name hashes) and nested
+    // permutation, indexed by member
+    let mut components: Vec<(
+      Vec<Vec<ix_common::address::Address>>,
+      Vec<Option<usize>>,
+    )> = Vec::new();
+    let mut components_of: FxHashMap<ix_common::address::Address, Vec<usize>> =
+      FxHashMap::default();
+    for entry in stt.env.named.iter() {
+      if let ixon::metadata::ConstantMetaInfo::Muts { all, aux_layout } =
+        &entry.value().meta().info
+      {
+        let perm: Vec<Option<usize>> =
+          aux_layout.as_ref().map_or_else(Vec::new, |l| {
+            l.perm
+              .iter()
+              .map(|p| {
+                (*p != ix_compile::compile::aux_gen::nested::PERM_OUT_OF_SCC)
+                  .then_some(*p)
+              })
+              .collect()
+          });
+        for h in all.iter().flatten() {
+          components_of.entry(h.clone()).or_default().push(components.len());
+        }
+        components.push((all.clone(), perm));
+      }
+    }
+    fn name_parent(n: &Name) -> Option<Name> {
+      match n.as_data() {
+        ix_common::env::NameData::Str(p, _, _)
+        | ix_common::env::NameData::Num(p, _, _) => Some(p.clone()),
+        ix_common::env::NameData::Anonymous(_) => None,
+      }
+    }
+    // The display names of auxiliary `n`, owners first: `ix_aux_name` over
+    // Lean's `all` of each inductive prefix of `n`, longest first, with each
+    // component of that block.
+    let display_names = |n: &Name| -> Vec<Name> {
+      use ix_compile::compile::pass3::names::ix_aux_name;
+      let (mut owned, mut plain): (Vec<Name>, Vec<Name>) = Default::default();
+      let mut prefix = name_parent(n);
+      while let Some(p) = prefix {
+        if let Some(ConstantInfo::InductInfo(v)) =
+          env.get(&p).map(|e| e.cloned())
+        {
+          let mut ks: Vec<usize> = v
+            .all
+            .iter()
+            .filter_map(|m| components_of.get(&name_hash(m)))
+            .flatten()
+            .copied()
+            .collect();
+          ks.sort_unstable();
+          ks.dedup();
+          for k in ks {
+            let (classes, perm) = &components[k];
+            let Some(rep0) = classes
+              .first()
+              .and_then(|c| c.first())
+              .and_then(|h| v.all.iter().find(|m| name_hash(m) == *h))
+            else {
+              continue;
+            };
+            let Some(d) = ix_aux_name(&v.all, rep0, perm, n) else {
+              continue;
+            };
+            let own = ix_aux_name(&v.all, rep0, &[], n).as_ref() != Some(&d);
+            let list = if own { &mut owned } else { &mut plain };
+            if !list.contains(&d) {
+              list.push(d);
+            }
+          }
+        }
+        prefix = name_parent(&p);
+      }
+      owned.extend(plain);
+      owned
+    };
+    let resolve_display = |name: &str| -> Option<ix_common::address::Address> {
+      seed_names(name)
+        .iter()
+        .find_map(|n| display_names(n).iter().find_map(|d| stt.resolve_addr(d)))
+    };
+    let resolve_seed = |name: &str| -> Option<ix_common::address::Address> {
+      resolve_display(name).or_else(|| resolve_plain(name))
     };
 
     for group in groups {
+      // A seed whose canonical form moved to its display name keeps its
+      // Lean name: an image (a definition or theorem constant), or, for the
+      // `below` of a Prop block (an inductive, not an image kind), Lean's
+      // own inductive family.
+      for name in group.iter() {
+        if resolve_display(name).is_none() {
+          continue;
+        }
+        let image = resolve_plain(name).and_then(|a| stt.env.get_const(&a));
+        if !image.as_ref().is_some_and(|c| match &c.info {
+          ixon::constant::ConstantInfo::Defn(_) => true,
+          ixon::constant::ConstantInfo::IPrj(_) => name.ends_with(".below"),
+          _ => false,
+        }) {
+          p4b.record_fail(format!(
+            "{name}: its canonical auxiliary is under the display name, but \
+             the Lean name holds neither an image nor Lean's own `below` \
+             family ({})",
+            image.map_or("MISSING".to_string(), |c| format!("{:?}", c.info)),
+          ));
+        }
+      }
       let addrs: Vec<_> =
         group.iter().map(|name| (*name, resolve_seed(name))).collect();
 
@@ -3776,6 +3932,12 @@ extern "C" fn rs_compile_validate_aux(
           for name in &r.extra_names {
             p5.record_fail(format!("  extra: {name}"));
           }
+        }
+        for e in &r.aux_gen_errors {
+          p5.record_fail(format!("aux_gen roundtrip error: {e}"));
+        }
+        for n in r.absent.iter().filter(|n| !stt.ungrounded.contains_key(*n)) {
+          p5.record_fail(format!("absent from decompiled: {}", n.pretty()));
         }
       },
       Err(e) => {
@@ -3902,6 +4064,10 @@ extern "C" fn rs_compile_validate_aux(
   // chases every Arc.
   let compile_env_only = std::mem::take(&mut stt.env);
   let sharing_limits = stt.sharing_limits.clone();
+  // The compile's ungrounded inputs: the only originals Phase 7's decompile
+  // may lack.
+  let ungrounded: FxHashSet<Name> =
+    stt.ungrounded.iter().map(|e| e.key().clone()).collect();
   rayon::join(|| drop(dstt), || drop(stt));
 
   // ══════════════════════════════════════════════════════════════════════
@@ -4022,6 +4188,15 @@ extern "C" fn rs_compile_validate_aux(
                   for name in &r.extra_names {
                     p7.record_fail(format!("  extra: {name}"));
                   }
+                }
+                for e in &r.aux_gen_errors {
+                  p7.record_fail(format!("aux_gen roundtrip error: {e}"));
+                }
+                for n in r.absent.iter().filter(|n| !ungrounded.contains(*n)) {
+                  p7.record_fail(format!(
+                    "absent from decompiled: {}",
+                    n.pretty()
+                  ));
                 }
               },
               Err(e) => {
@@ -4274,7 +4449,7 @@ extern "C" fn rs_compile_validate_aux(
   );
 
   // Skip destructors on the CLI path. Mirrors the `rs_compile_env`
-  // treatment (`src/ffi/compile.rs`). On Mathlib the remaining live state
+  // treatment (`crates/ffi/src/compile.rs`). On Mathlib the remaining live state
   // — `env` (~1–2 GB), `dstt2` (~30 GB) — would otherwise take 60+ seconds
   // to drop serially across DashMap shards and `Arc<NameData>` chains, and
   // the process exits moments after this function returns anyway.
@@ -4501,7 +4676,7 @@ fn serialized_meta_size(
 /// handle Lean's `«…»` escape syntax, so it's unsuitable for names
 /// containing special characters; callers that receive Lean-originated
 /// names should instead pass the structured `Lean.Name` across FFI and
-/// use `decode_name`, as done by `src/ffi/kernel.rs`.
+/// use `decode_name`, as done by `crates/ffi/src/kernel.rs`.
 #[cfg(feature = "test-ffi")]
 pub fn parse_name(s: &str) -> Name {
   let parts: Vec<&str> = s.split('.').collect();

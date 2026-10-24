@@ -50,6 +50,125 @@ moves can name them without importing the bodies.
 
 namespace Ix.Kernel
 
+/-! ## Failure messages (IXC-PLAN §7, step 6) -/
+
+/-- **What a failure shows beside its message** (step 6b, display only): the
+terms it is about, each with its role (`"argument"`, `"has type"`, …), and the
+binders it was thrown under, each at the depth it was opened at (the binder of
+`fvar d`), outermost first. -/
+structure FailureDisplay (md : Mode) where
+  terms : List (String × Expr md) := []
+  binders : List (Nat × BinderMeta) := []
+
+/-- The empty failure display. -/
+@[inline] def FailureDisplay.empty : Squash (FailureDisplay md) := Squash.mk {}
+
+/-- Failure displays compare equal: a `Squash` is a subsingleton. -/
+instance : DecidableEq (Squash (FailureDisplay md)) := fun a b => isTrue (Subsingleton.elim a b)
+instance : Repr (Squash (FailureDisplay md)) := ⟨fun _ _ => "⟨display⟩"⟩
+
+/-- **A part of a failure's message**: fixed prose, the key of a constant
+the failure is about, or a number. Keys stay keys: the mode's renderer
+spells them (`Msg.render`).
+
+A prose part carries the failure's display (`FailureDisplay`, step 6b): a
+subsingleton, so two failures that differ only there are equal, and only the
+renderers outside the kernel read it. Only the first prose part of a message
+holds one (`Msg.mapDisplay`). -/
+inductive MsgPart (md : Mode) where
+  | text (s : String) (display : Squash (FailureDisplay md) := FailureDisplay.empty)
+  | key (k : Key md)
+  | nat (n : Nat)
+  deriving DecidableEq, Repr
+
+/-- **A failure's message**: its parts, in order. -/
+abbrev Msg (md : Mode) := List (MsgPart md)
+
+/-- The message of fixed prose. -/
+instance : Coe String (Msg md) := ⟨fun s => [.text s]⟩
+
+/-- What a `msg!` interpolation turns a value into. -/
+class ToMsg (md : Mode) (α : Type) where
+  toMsg : α → Msg md
+
+instance : ToMsg md String := ⟨fun s => [.text s]⟩
+instance : ToMsg md (Key md) := ⟨fun k => [.key k]⟩
+instance : ToMsg md Nat := ⟨fun n => [.nat n]⟩
+instance : ToMsg md (Msg md) := ⟨id⟩
+
+/-- **`msg!"…{k}…"`**: a message from an interpolated string, as `s!` builds
+a string; a key interpolates as a key part, a number as a number part, a
+string as prose. -/
+syntax:max "msg!" interpolatedStr(term) : term
+
+macro_rules
+  | `(msg! $interpStr) => do
+    interpStr.expandInterpolatedStr (← `(Ix.Kernel.Msg _)) (← `(Ix.Kernel.ToMsg.toMsg))
+
+/-- A message part with its key spelled by `spell` (the display is not
+printed: the renderers of `.meta` and `.source` read it outside the kernel). -/
+def MsgPart.render (spell : Key md → String) : MsgPart md → String
+  | .text s _ => s
+  | .key k => spell k
+  | .nat n => toString n
+
+/-- A message with its keys spelled by `spell`. -/
+def Msg.render (spell : Key md → String) (m : Msg md) : String :=
+  String.join (m.map (MsgPart.render spell))
+
+/-- A message part with its key renamed (a display is dropped: its terms are
+the other mode's). -/
+def MsgPart.mapKeys (σ : Key md → Key md') : MsgPart md → MsgPart md'
+  | .text s _ => .text s
+  | .key k => .key (σ k)
+  | .nat n => .nat n
+
+/-! ### A failure's display (step 6b)
+
+The checker puts what a failure is about on its message at run time, outside
+`.anon`: the terms (`Msg.withTerms`) and the binders it was thrown under
+(`CheckError.underChain`, through `withChain` in the cached core). Both are
+the identity in the logic, because a display is a subsingleton, so no
+statement or proof sees them: each is a `@[reducible]` identity whose
+run-time version is substituted by a `@[csimp]` equation. -/
+
+/-- The first prose part's display, updated by `f`. -/
+def Msg.mapDisplay (f : FailureDisplay md → FailureDisplay md) : Msg md → Msg md
+  | [] => []
+  | .text s d :: rest => .text s (Squash.lift d fun x => Squash.mk (f x)) :: rest
+  | p :: rest => p :: Msg.mapDisplay f rest
+
+/-- Updating a display changes no message. -/
+theorem Msg.mapDisplay_eq (f : FailureDisplay md → FailureDisplay md) (m : Msg md) :
+    Msg.mapDisplay f m = m := by
+  induction m with
+  | nil => rfl
+  | cons p rest ih =>
+    cases p with
+    | text s d =>
+      show MsgPart.text s _ :: rest = MsgPart.text s d :: rest
+      rw [Subsingleton.elim (Squash.lift d fun x => Squash.mk (f x)) d]
+    | key k => exact congrArg _ ih
+    | nat n => exact congrArg _ ih
+
+/-- **The message `m` of a failure about the terms `ts`** (display only): `m`
+itself; at run time (`withTermsImpl`) the terms go on its display. -/
+@[reducible] def Msg.withTerms (m : Msg md) (_ts : List (String × Expr md)) : Msg md := m
+
+/-- The run-time `Msg.withTerms`: the terms on the display, outside `.anon`. -/
+def Msg.withTermsImpl (m : Msg md) (ts : List (String × Expr md)) : Msg md :=
+  match md with
+  | .anon => m
+  | .meta | .source => Msg.mapDisplay (fun d => { d with terms := ts }) m
+
+@[csimp] theorem Msg.withTerms_eq_impl : @Msg.withTerms = @Msg.withTermsImpl := by
+  funext md m ts
+  cases md <;> simp only [Msg.withTerms, Msg.withTermsImpl, Msg.mapDisplay_eq]
+
+/-- A message with its keys renamed. -/
+def Msg.mapKeys (σ : Key md → Key md') (m : Msg md) : Msg md' :=
+  m.map (MsgPart.mapKeys σ)
+
 /-- **The verdict of a failure, everywhere in the binary** — the one
 error type the whole accept path reports (task #295): the kernel's
 steps, the fold, and the frontend's parse and prelude alike.  The
@@ -64,20 +183,80 @@ as in the size guard, which refuses the input before reading it) and
 the record's position in the list the fold folds
 (`Ix.Kernel.Cached.checkDecls`).  The two are in the same type because
 the driver chains the steps, and the main corollary states that chain
-(`IxC/Kernel/MainTheorem.lean`). -/
-inductive CheckError where
-  | notImplemented (what : String)
-  | invalid (msg : String)
-  | internal (msg : String)
+(`IxC/Kernel/MainTheorem.lean`).
+
+**Structured** (IXC-PLAN §7, step 6): a failure's message is a `Msg md`,
+fixed prose around the keys it is about (`MsgPart`), and the checker never
+spells a key. Each mode's renderer does (`CheckError.render`: `.anon` short
+hexadecimal, `.meta` names with their address, `.source` Lean names), and a
+renaming maps the keys (`CheckError.mapKeys`). No control flow reads a
+message. -/
+inductive CheckError (md : Mode) where
+  | notImplemented (what : Msg md)
+  | invalid (msg : Msg md)
+  | internal (msg : Msg md)
   deriving Repr
 
-instance : ToString CheckError where
-  toString
-    | .notImplemented what => s!"not implemented yet: {what}"
-    | .invalid msg => s!"invalid: {msg}"
-    | .internal msg => s!"internal error: {msg}"
+namespace CheckError
 
-abbrev CheckM := Except CheckError
+/-- A failure's message, without its verdict. -/
+def msg : CheckError md → Msg md
+  | .notImplemented m | .invalid m | .internal m => m
+
+/-- The verdict's prefix, as a message spells it. -/
+def verdictPrefix : CheckError md → String
+  | .notImplemented _ => "not implemented yet: "
+  | .invalid _ => "invalid: "
+  | .internal _ => "internal error: "
+
+/-- **The renderer**: the verdict's prefix and the message, with each key
+spelled by `spell` (the mode's spelling: `Key.toName` for `.anon` and
+`.source`, the display table's for `.meta`). -/
+def render (spell : Key md → String) (e : CheckError md) : String :=
+  e.verdictPrefix ++ e.msg.render spell
+
+/-- **Renaming the keys of a failure** (IXC-PLAN §12: the renaming lemma maps
+errors): the verdict and the prose stay. -/
+def mapKeys (σ : Key md → Key md') : CheckError md → CheckError md'
+  | .notImplemented m => .notImplemented (Msg.mapKeys σ m)
+  | .invalid m => .invalid (Msg.mapKeys σ m)
+  | .internal m => .internal (Msg.mapKeys σ m)
+
+/-- The failure with its display updated by `f` (step 6b). -/
+def mapDisplay (f : FailureDisplay md → FailureDisplay md) : CheckError md → CheckError md
+  | .notImplemented m => .notImplemented (Msg.mapDisplay f m)
+  | .invalid m => .invalid (Msg.mapDisplay f m)
+  | .internal m => .internal (Msg.mapDisplay f m)
+
+/-- Updating a display changes no failure. -/
+theorem mapDisplay_eq (f : FailureDisplay md → FailureDisplay md) (e : CheckError md) :
+    e.mapDisplay f = e := by
+  cases e <;> simp only [mapDisplay, Msg.mapDisplay_eq]
+
+/-- The binders of the chain at the head of `e` (binders of `e`'s own kind:
+a λ-chain or a ∀-chain), opened from depth `d`, outermost first. -/
+def chainFrames (d : Nat) : Expr md → List (Nat × BinderMeta)
+  | .lam _ b m => (d, m) :: (if b matches .lam .. then chainFrames (d + 1) b else [])
+  | .forallE _ b m => (d, m) :: (if b matches .forallE .. then chainFrames (d + 1) b else [])
+  | _ => []
+
+/-- **A failure thrown under the binder chain at the head of `e`, opened
+from depth `d`** (display only): the chain's binders before those the display
+holds (which were opened inside it). -/
+def underChain (d : Nat) (e : Expr md) (err : CheckError md) : CheckError md :=
+  err.mapDisplay fun disp => { disp with binders := chainFrames d e ++ disp.binders }
+
+end CheckError
+
+/-- The default rendering: keys as `Key.toName` spells them, as every message
+read before step 6. -/
+instance : ToString (CheckError md) := ⟨CheckError.render (fun k => toString k)⟩
+
+/-- A failure inside a message (an evidence check's): its verdict's prefix and
+its message, as the default rendering spells it. -/
+instance : ToMsg md (CheckError md) := ⟨fun e => .text e.verdictPrefix :: e.msg⟩
+
+abbrev CheckM (md : Mode) := Except (CheckError md)
 
 /-- **The verdict at a constant the environment does not know.**
 
@@ -97,21 +276,21 @@ so a `sorryAx` in a domain reaches inference first.  Its companion
 `unresolvedConstsError` (`IxC/Kernel/CheckerBase.lean`) decides
 the same question at the guard, for the `sorryAx` occurrences
 inference never reaches. -/
-def unknownConstError (n : Name) : CheckError :=
+def unknownConstError (n : Key md) : CheckError md :=
   if n = sorryAxName then .notImplemented "use of the sorryAx axiom"
-  else .invalid s!"unknown constant {n}"
+  else .invalid msg!"unknown constant {n}"
 
 /-- The record of mutually recursive core entry points.  `whnfCore`
 computes a head normal form without delta; `whnf` is the full reduction
 loop; `infer` is type inference;
 `defeq` is definitional equality; `annotate` computes binder
 annotations (and is the one place typing is checked). -/
-structure CoreFns (m : Type → Type u) where
-  whnfCore : Nat → Expr → m Expr
-  whnf : Nat → Expr → m Expr
-  infer : Nat → Expr → m Expr
-  defeq : Nat → Expr → Expr → m Bool
-  annotate : Nat → Expr → m Expr
+structure CoreFns (md : Mode) (m : Type → Type u) where
+  whnfCore : Nat → Expr md → m (Expr md)
+  whnf : Nat → Expr md → m (Expr md)
+  infer : Nat → Expr md → m (Expr md)
+  defeq : Nat → Expr md → Expr md → m Bool
+  annotate : Nat → Expr md → m (Expr md)
   /-- Type inference at the **infer-only grade** (task #170): the
   official kernel's `infer_type_core(e, infer_only = true)`, the entry
   every *internal* inference call site uses — a subject that already
@@ -127,19 +306,28 @@ structure CoreFns (m : Type → Type u) where
   modes, the licence ruling of 2026-09-06); this mode-parametric
   spelling is not the thing that ships, so `μ.betaGate` here stays the
   P tier's own bit, and the two agree at `.verified`. -/
-  inferIO : Nat → Expr → m Expr
+  inferIO : Nat → Expr md → m (Expr md)
 
 /-- The **io-grade view** of a core record: the record whose full-grade
 `infer` slot is the io slot, so that a body written against `r.infer`
 recurses at the io grade when handed `r.ioView`.  This is how the io
 inference body propagates its own grade (official: `infer_type_core`
 passes `infer_only` down) without a textual twin. -/
-def CoreFns.ioView {m : Type → Type u} (r : CoreFns m) : CoreFns m :=
+def CoreFns.ioView {m : Type → Type u} (r : (CoreFns md) m) : (CoreFns md) m :=
   { r with infer := r.inferIO }
+
+/-- Lift a fuel-style partial result; `none` is an internal error. Its
+arguments do not name the mode, so it takes the error class in the form whose
+error type the monad determines (`MonadExcept`, an `outParam`): a call site's
+mode is its monad's. -/
+def liftFueled {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
+    (what : String) : Option α → m α
+  | some a => pure a
+  | none => throw (.internal msg!"fuel exhausted: {what}")
 
 section Bodies
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /- The three-mode setting (task #147): definitions below that mention
 `mode` take it as their first explicit argument (after the monad
@@ -148,18 +336,13 @@ instances).  Only the seven TT-lane check sites branch on it, through
 one, at `.verified` (the default) the seven checks are skipped. -/
 variable (mode : CheckMode)
 
-/-- Lift a fuel-style partial result; `none` is an internal error. -/
-def liftFueled (what : String) : Option α → m α
-  | some a => pure a
-  | none => throw (.internal s!"fuel exhausted: {what}")
-
 /-- Literal acceleration (the official kernel's `reduceNat`, run in the
 `whnf` loop *before* delta-unfolding): pack `Nat.succ` applied to a
 literal back into a literal.  Binary operations on literal arguments
 are added with the verified fast-path capabilities (see DESIGN.md);
 until then only the constructor packing reduces. -/
-def reduceNat (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) :
-    m (Option Expr) := do
+def reduceNat (r : (CoreFns md) m) (env : Env md) (depth : Nat) (e : Expr md) :
+    m (Option (Expr md)) := do
   match e with
   | .app (.const c []) a =>
     if c = natSuccName ∧ natLitSupported env then
@@ -201,7 +384,7 @@ def reduceNat (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) :
       | some _ =>
         match rawNatLit? (← r.whnf depth b) with
         | some _ => throw (.notImplemented
-            s!"native Nat computation on literals ({c})")
+            msg!"native Nat computation on literals ({c})")
         | none => pure none
       | none => pure none
     else pure none
@@ -228,8 +411,8 @@ run, so gating it would be circular.  The fence is
 `io_squash_no_transfer`'s witness: at a possibly-zero datum the skip
 is unsound model-class-wide, so the licensed fragment is exactly
 `.never`. -/
-def iotaCerts (r : CoreFns m) (env : Env) (depth : Nat) (lic : Bool) :
-    Expr → List Expr → m Bool
+def iotaCerts (r : (CoreFns md) m) (env : Env md) (depth : Nat) (lic : Bool) :
+    (Expr md) → List (Expr md) → m Bool
   | _, [] => pure true
   | .forallE ty body mb, arg :: rest =>
     if lic && mb.pw.isNever then
@@ -244,8 +427,8 @@ def iotaCerts (r : CoreFns m) (env : Env) (depth : Nat) (lic : Bool) :
 
 /-- Pairwise definitional equality of two spines (used to check a
 major's constructor parameters against the recursor's). -/
-def defEqList (r : CoreFns m) (env : Env) (depth : Nat) :
-    List Expr → List Expr → m Bool
+def defEqList (r : (CoreFns md) m) (env : Env md) (depth : Nat) :
+    List (Expr md) → List (Expr md) → m Bool
   | [], [] => pure true
   | a :: as, b :: bs => do
     if ← r.defeq depth a b then
@@ -263,8 +446,8 @@ canonical indices.  At `mI = rP` there is nothing to compare (the law's
 skipped.  The residual-head test that once stood beside the comparison
 (`stripPis` + "the body's head is a constant") was consumed by nothing
 in the P lane and is gone. -/
-def iotaIndexOk (r : CoreFns m) (env : Env) (depth : Nat) (mI rP cnP : Nat)
-    (tyCtor : Expr) (margs idx : List Expr) : m Bool :=
+def iotaIndexOk (r : (CoreFns md) m) (env : Env md) (depth : Nat) (mI rP cnP : Nat)
+    (tyCtor : Expr md) (margs idx : List (Expr md)) : m Bool :=
   if mI = rP then pure true
   else
     match piResidual tyCtor margs with
@@ -281,7 +464,7 @@ checked before definitional equality compares it; congruence compares
 argument pairs only after the earlier arguments matched) makes a
 heterogeneous comparison unreachable, so the official kernel's check is
 implied (see DESIGN.md, design-review triage). -/
-def proofIrrel (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+def proofIrrel (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) :
     m Bool := do
   -- task #172 B4: every inference here is at the io grade (official's
   -- is_def_eq_proof_irrel runs infer_type — always infer_only)
@@ -325,7 +508,7 @@ squash-regime licence, stage 3 of the same design
 (`prf_of_isProofFast`, `IxC/Kernel/Model/Rules/DefEqSoundKit.lean`), which the
 verified mode's `DefEq.proofFast` rule consumes; the trusted mode is unverified and
 inherits the arm without a row, as it inherits every other body. -/
-def propIrrel (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+def propIrrel (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) :
     m Bool := do
   if notProofFast env.find? a || notProofFast env.find? b then
     pure false
@@ -356,9 +539,9 @@ side.  A tower-backed family (the direct install's table, task #175
 S1) has no per-field telescope and needs no certificate: its η law
 (`TowerEtaLaw`) is keyed on the family's typing of the stuck side,
 which the caller already holds. -/
-def structEtaProjCerts (r : CoreFns m) (env : Env) (depth : Nat)
-    (T : Name) (us' : List Level) (targs : List Expr) (b : Expr)
-    (lpsT : List Name) : List Nat → m Bool
+def structEtaProjCerts (r : (CoreFns md) m) (env : Env md) (depth : Nat)
+    (T : Key md) (us' : List Level) (targs : List (Expr md)) (b : Expr md)
+    (lpsT : List LevelParam) : List Nat → m Bool
   | [] => pure true
   | i :: rest => do
     match env.find? (projFnName T i) with
@@ -377,8 +560,8 @@ def structEtaProjCerts (r : CoreFns m) (env : Env) (depth : Nat)
 type of the stuck side (callers that already reduced it — the
 stuck-major rescue — pass their own copy, so the certificate's facts
 are in terms of that expression). -/
-def structEtaCertWith (r : CoreFns m) (env : Env) (depth : Nat)
-    (a b wtb : Expr) : m Bool := do
+def structEtaCertWith (r : (CoreFns md) m) (env : Env md) (depth : Nat)
+    (a b wtb : Expr md) : m Bool := do
   match a.getAppFn with
   | .const c us =>
     match env.find? c with
@@ -388,7 +571,7 @@ def structEtaCertWith (r : CoreFns m) (env : Env) (depth : Nat)
         | .const T us' =>
           match env.find? T with
           | some (.indInfo cvT caps) =>
-            if caps.eta = true ∧ caps.etaCtor = c ∧
+            if caps.eta = true ∧ caps.etaCtor = some c ∧
                 reservedBasisNames.contains T = false ∧
                 reservedBasisNames.contains c = false ∧
                 wtb.getAppArgs.length = caps.etaParams ∧
@@ -458,7 +641,7 @@ parameter and field counts the certificate works at are the
 capability RECORD's, which is what the stored law speaks; the
 constructor's own counts gate the redex's shape and nothing else
 (`etaCtorShape`). -/
-def structEtaCert (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+def structEtaCert (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) :
     m Bool := do
   -- The constructor-shape test FIRST (the divergence audit's D13):
   -- official `try_eta_struct_core` (`type_checker.cpp:824-829`) reads
@@ -476,7 +659,7 @@ def structEtaCert (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
 unit-like family (the types are definitionally equal and the type
 application is certified against the family's telescope), so their
 values coincide by the stored unit law. -/
-def structUnitCert (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+def structUnitCert (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) :
     m Bool := do
   -- task #172 B4: io grade
   let ta ← r.inferIO depth a
@@ -503,11 +686,11 @@ def structUnitCert (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
   | _ => pure false
 
 /-- Eta certification for a one-sided λ against a stuck term `b`: `b`'s
-type whnfs to a `∀` whose domain is defeq to the λ's, and the λ's body
-is pointwise the application of `b`.  The λ is then `b`'s eta-expansion
-(soundness: `SetTheory.lam_eta`). -/
-def etaCert (mode : CheckMode) (r : CoreFns m) (_env : Env) (depth : Nat)
-    (ty₁ body₁ : Expr) (m₁ : BinderMeta) (b : Expr) :
+type whnfs to a `∀` whose domain is defeq to the λ's and whose input
+contract is the λ's, and the λ's body is pointwise the application of
+`b`.  The λ is then `b`'s eta-expansion (soundness: `SetTheory.lam_eta`). -/
+def etaCert (mode : CheckMode) (r : (CoreFns md) m) (_env : Env md) (depth : Nat)
+    (ty₁ body₁ : Expr md) (m₁ : BinderMeta) (b : Expr md) :
     m Bool := do
   -- task #172 B4: io grade
   let tb ← r.inferIO depth b
@@ -523,6 +706,7 @@ def etaCert (mode : CheckMode) (r : CoreFns m) (_env : Env) (depth : Nat)
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₁))
           (.app b (.fvar depth ty₁)) do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (eta)")
       pure true
@@ -534,7 +718,7 @@ in either direction, unit-likeness, else proof irrelevance.  (The
 pinned-pair certificate `pairEtaCert` that used to lead is retired
 with the `PSigma'` pin, task #175 W6: the pair is an ordinary direct
 structure and `structEtaCert` covers it.) -/
-def stuckIrrel (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+def stuckIrrel (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) :
     m Bool := do
   if ← structEtaCert mode r env depth a b then pure true
   else if ← structEtaCert mode r env depth b a then pure true
@@ -554,8 +738,8 @@ a proposition, which official never η-rescues — the constructor of the
 major's projections is fabricated and certified by proof irrelevance
 (the `And` branch below).  An uncertified major stays put — sound, the
 reduction simply stays stuck. -/
-def majorToCtor (r : CoreFns m) (env : Env) (depth : Nat)
-    (_recName : Name) (rules : List RecRule) (major : Expr) : m Expr := do
+def majorToCtor (r : (CoreFns md) m) (env : Env md) (depth : Nat)
+    (_recName : Key md) (rules : List (RecRule md)) (major : Expr md) : m (Expr md) := do
   -- cheap syntactic gates before any inference: a rescue needs a
   -- single-rule recursor whose rule carries the matching install-time
   -- rescue bit (`RecRule.k`/`RecRule.eta`)
@@ -638,7 +822,7 @@ def majorToCtor (r : CoreFns m) (env : Env) (depth : Nat)
                 -- only at a constructor stored with the former's own
                 -- level parameters (`RecCtorsStored`), which the
                 -- fabrication's levels are those of
-                let fab := Expr.mkAppN (.const caps.etaCtor ust)
+                let fab := Expr.mkAppN (.const rl.ctor ust)
                     (etaFabArgsE env T ust tmaj.getAppArgs major
                       caps.etaFields)
                 -- scope guard, as in the K branch
@@ -732,8 +916,8 @@ literal one layer (`litToCtorIfNat`); a `String` literal to its
 `str_lit_to_ctor_reducing`) since `String.ofList` is a definition, not
 a constructor.  An unsupported literal passes through (stuck; sound,
 and unreachable for annotated input). -/
-def litMajorToCtor (r : CoreFns m) (env : Env) (depth : Nat) :
-    Expr → m Expr
+def litMajorToCtor (r : (CoreFns md) m) (env : Env md) (depth : Nat) :
+    (Expr md) → m (Expr md)
   | .lit (.strVal s) =>
     if strLitSupported env then r.whnf depth (strLitToConstructor s)
     else pure (.lit (.strVal s))
@@ -748,8 +932,8 @@ to the real `String.ofByteArray` constructor form.  Only `String`
 literals — no reference touches other scrutinees here.  An unsupported
 literal passes through (stuck; sound, and unreachable for annotated
 input). -/
-def projLitToCtor (r : CoreFns m) (env : Env) (depth : Nat) :
-    Expr → m Expr
+def projLitToCtor (r : (CoreFns md) m) (env : Env md) (depth : Nat) :
+    (Expr md) → m (Expr md)
   | .lit (.strVal s) =>
     if strLitSupported env then r.whnf depth (strLitToConstructor s)
     else pure (.lit (.strVal s))
@@ -783,8 +967,8 @@ theorem application — `Eq.ndrec … (Int.decEq._proof_1 a b h)` with
 `604800` literal: one knot level per `succ`, fuel exhaustion.  The
 official order fabricates `Eq.refl` from the type (`a ≡ b` by the
 `Nat` literal fast paths) and never opens either proof. -/
-def prepareMajor (r : CoreFns m) (env : Env) (depth : Nat)
-    (recName : Name) (rules : List RecRule) (major : Expr) : m Expr := do
+def prepareMajor (r : (CoreFns md) m) (env : Env md) (depth : Nat)
+    (recName : Key md) (rules : List (RecRule md)) (major : Expr md) : m (Expr md) := do
   if recRuleK rules then
     let majorK ← majorToCtor mode r env depth recName rules major
     let major₀ ← r.whnf depth majorK
@@ -807,8 +991,8 @@ under the domain-relative collapse, DESIGN.md).  The
 result is the rule's rhs applied to the non-index prefix and the
 constructor's fields; over-application is handled by the outer app
 recursion. -/
-def iotaRec (r : CoreFns m) (env : Env) (depth : Nat) (e : Expr) :
-    m (Option Expr) := do
+def iotaRec (r : (CoreFns md) m) (env : Env md) (depth : Nat) (e : Expr md) :
+    m (Option (Expr md)) := do
   match e.getAppFn with
   | .const c us =>
     match env.find? c with
@@ -938,8 +1122,8 @@ subject, so the certificate is *licensed* like the ι slot's
 certificate is skipped — every field binder of an ordinary `structure`
 — which is the io skip the retired two-run certificate had through
 `inferSpine`. -/
-def projCert (r : CoreFns m) (env : Env) (depth : Nat) (lic : Bool)
-    (c : Name) (us : List Level) (args : List Expr) : m Bool := do
+def projCert (r : (CoreFns md) m) (env : Env md) (depth : Nat) (lic : Bool)
+    (c : Key md) (us : List Level) (args : List (Expr md)) : m Bool := do
   match env.find? c with
   | some (.ctorInfo cvC _ _) =>
     iotaCerts r env depth lic
@@ -956,8 +1140,8 @@ constructor redex with no certificate (`type_checker.cpp`), so at
 unconditionally.  The trusted lane stays an accept-superset of the P
 lane, which is all the agreement floor
 (`Verify/Cached/AgreeFloor.lean`) asks of it. -/
-def projCertAt (r : CoreFns m) (env : Env) (depth : Nat) (verified lic : Bool)
-    (c : Name) (us : List Level) (args : List Expr) : m Bool :=
+def projCertAt (r : (CoreFns md) m) (env : Env md) (depth : Nat) (verified lic : Bool)
+    (c : Key md) (us : List Level) (args : List (Expr md)) : m Bool :=
   if verified then projCert r env depth lic c us args else pure true
 
 /-- The head-normalization body: beta (with the per-redex argument
@@ -965,7 +1149,7 @@ certificate, unconditional since the task-#100 de-gating), iota (with
 the stuck-major machinery) and the native basis pair projection — but
 **no delta**; unfolding happens in the `whnf` loop.  Values (sorts,
 binders, constants, literals) return themselves. -/
-def whnfCoreBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+def whnfCoreBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr md) :=
   fun depth e =>
     match e with
     | .sort u => pure (.sort u)
@@ -1042,7 +1226,7 @@ def whnfCoreBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
           else pure (.proj sn i pe)
         | _ => pure (.proj sn i pe)
       | none => pure (.proj sn i pe)
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       -- **Unreachable by construction** (task #241).  The former ζ step
       -- (official kernel `whnf_core`, `case expr_kind::Let`; nanoda
       -- `whnf_no_unfolding_aux` `Let`; lean4lean `whnfCore'` `.letE`)
@@ -1083,8 +1267,8 @@ loop's continuation `k`.  As everywhere in this module, the body never
 calls itself: the continuation is abstracted exactly like the record
 `r`, so every lemma about the body is proven once, with a hypothesis
 about `k`, and the loop lemma is one induction on the budget. -/
-def whnfStep (r : CoreFns m) (env : Env) (depth : Nat)
-    (k : Expr → m Expr) (e : Expr) : m Expr := do
+def whnfStep (r : (CoreFns md) m) (env : Env md) (depth : Nat)
+    (k : Expr md → m (Expr md)) (e : Expr md) : m (Expr md) := do
   let e₁ ← r.whnfCore depth e
   match ← reduceNat r env depth e₁ with
   | some e₂ => k e₂
@@ -1095,18 +1279,18 @@ def whnfStep (r : CoreFns m) (env : Env) (depth : Nat)
 
 /-- The reduction loop: iterate `whnfStep` on its own step budget, so
 the whole chain costs one knot level however many steps it takes. -/
-def whnfLoop (r : CoreFns m) (env : Env) (depth : Nat) :
-    Nat → Expr → m Expr
+def whnfLoop (r : (CoreFns md) m) (env : Env md) (depth : Nat) :
+    Nat → Expr md → m (Expr md)
   | 0, _ => throw (.internal "fuel exhausted: whnf loop")
   | n + 1, e => whnfStep r env depth (whnfLoop r env depth n) e
 
 /-- The reduction loop's body: run `whnfLoop` at its own step budget. -/
-def whnfBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+def whnfBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr md) :=
   fun depth e => whnfLoop r env depth whnfLoopFuel e
 
 /-- Ensure `e` (the type of some expression) is a sort, returning its
 level. -/
-def ensureSort (r : CoreFns m) (_env : Env) (depth : Nat) (e : Expr) :
+def ensureSort (r : (CoreFns md) m) (_env : Env md) (depth : Nat) (e : Expr md) :
     m Level := do
   match ← r.whnf depth e with
   | .sort u => pure u
@@ -1115,7 +1299,7 @@ def ensureSort (r : CoreFns m) (_env : Env) (depth : Nat) (e : Expr) :
 /-- The inference body — **infer-only**: the application rule's
 argument check ran once, in the annotation pass, and is trusted here
 (so speculative inference inside reduction cannot reject). -/
-def inferBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+def inferBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr md) :=
   fun depth e => do
     match e with
     | .sort u => pure (.sort (.succ u))
@@ -1136,10 +1320,10 @@ def inferBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
         -- a projection table is not a term (task #175 W4c): `.proj`
         -- nodes read it, no constant names it
         unless !ci.isTowerEntry do
-          throw (.invalid s!"projection table entry used as a constant {n}")
+          throw (.invalid msg!"projection table entry used as a constant {n}")
         let cv := ci.toConstantVal
         unless us.length = cv.levelParams.length do
-          throw (.invalid s!"incorrect number of universe levels for {n}")
+          throw (.invalid msg!"incorrect number of universe levels for {n}")
         pure (cv.type.instantiateLevelParams cv.levelParams us)
     | .lit (.natVal _) => do
       if natLitSupported env then pure (.const natName [])
@@ -1268,7 +1452,7 @@ def inferBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
           else throw (.notImplemented "projection without a native entry")
         | none => throw (.notImplemented "projection without a native entry")
       | _ => throw (.notImplemented "projection without a native entry")
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       -- **Unreachable by construction** (task #241).  The official
       -- kernel's `infer_let` triple (`!infer_only`) is not lost: it is
       -- `annotateBody`'s `.letE` clause, which is the one pass that
@@ -1295,7 +1479,7 @@ propagates — official's `infer_type_core(e, infer_only)` passing
 Moved here from `IxC/Kernel/CoreIO.lean` (task #172 B4) so the knot
 can tie the io slot; the definition is byte-identical to the io-license
 batch's. -/
-def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+def inferBodyIO (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr md) :=
   fun depth e => do
     match e with
     | .sort u => pure (.sort (.succ u))
@@ -1309,10 +1493,10 @@ def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
         -- a projection table is not a term (task #175 W4c): `.proj`
         -- nodes read it, no constant names it
         unless !ci.isTowerEntry do
-          throw (.invalid s!"projection table entry used as a constant {n}")
+          throw (.invalid msg!"projection table entry used as a constant {n}")
         let cv := ci.toConstantVal
         unless us.length = cv.levelParams.length do
-          throw (.invalid s!"incorrect number of universe levels for {n}")
+          throw (.invalid msg!"incorrect number of universe levels for {n}")
         pure (cv.type.instantiateLevelParams cv.levelParams us)
     | .lit (.natVal _) => do
       if natLitSupported env then pure (.const natName [])
@@ -1403,7 +1587,7 @@ def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
           else throw (.notImplemented "projection without a native entry")
         | none => throw (.notImplemented "projection without a native entry")
       | _ => throw (.notImplemented "projection without a native entry")
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       -- unreachable by construction, as in `inferBody` (task #241)
       throw (.internal "inferType: `let` in an annotated expression")
     | .bvar _ =>
@@ -1419,7 +1603,7 @@ failure the step continues.  Only the reduction is here; the guard is
 Verdict-neutral against lazy delta (a `whnf` reduct is what the
 unfolding loop reaches, one step at a time), one memoised `whnf`
 instead of one loop iteration per unfolding. -/
-def boolTrueShortcut (r : CoreFns m) (depth : Nat) (a : Expr) : m Bool := do
+def boolTrueShortcut (r : (CoreFns md) m) (depth : Nat) (a : Expr md) : m Bool := do
   let w ← r.whnf depth a
   pure w.isBoolTrue
 
@@ -1430,7 +1614,7 @@ official kernel's `try_eq_const_app`): before unfolding both sides of
 the spine arguments.  A `false` verdict is never final — the caller
 falls back to unfolding — so an inconclusive level comparison simply
 answers `false` here. -/
-def defeqSpine (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
+def defeqSpine (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) :
     m Bool := do
   match a.getAppFn with
   | .const n us =>
@@ -1464,8 +1648,8 @@ structural congruence with the stuck fallbacks decide.  The hints
 steer *order only*: every branch below is an independently sound
 reduction or comparison, so the verdict never depends on the hint
 values. -/
-def defeqStep (r : CoreFns m) (env : Env) (depth : Nat)
-    (k : Bool → Expr → Expr → m Bool) (pi : Bool) (a b : Expr) : m Bool := do
+def defeqStep (r : (CoreFns md) m) (env : Env md) (depth : Nat)
+    (k : Bool → Expr md → Expr md → m Bool) (pi : Bool) (a b : Expr md) : m Bool := do
     -- syntactic fast path (the references' most-hit branch)
     if a == b then pure true else
     -- the eq-true shortcut (E2, `boolTrueShortcut`): right side
@@ -1641,10 +1825,14 @@ def defeqStep (r : CoreFns m) (env : Env) (depth : Nat)
       -- is exactly the cross-provenance coherence corner, declined
       -- loudly.  (The official kernel compares no annotations; the
       -- pre-#100 zero-ness comparison is back in validated clothing.)
+      -- The binders' input contracts must also be equal (a mismatch is
+      -- an inequality, `false`).  Result contracts are not compared: a
+      -- `λ` has none, so the type inferred for one carries the default.
       unless ← r.defeq depth ty₁ ty₂ do return false
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₂))
           (body₂.instantiate1 (.fvar depth ty₂)) do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-forall)")
       pure true
@@ -1653,6 +1841,7 @@ def defeqStep (r : CoreFns m) (env : Env) (depth : Nat)
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₂))
           (body₂.instantiate1 (.fvar depth ty₂)) do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-lam)")
       pure true
@@ -1707,8 +1896,8 @@ def defeqStep (r : CoreFns m) (env : Env) (depth : Nat)
     | e₁, e₂ => stuckIrrel mode r env depth e₁ e₂
 
 /-- The lazy-delta loop: iterate `defeqStep` on its own step budget. -/
-def defeqLoop (r : CoreFns m) (env : Env) (depth : Nat) :
-    Nat → Bool → Expr → Expr → m Bool
+def defeqLoop (r : (CoreFns md) m) (env : Env md) (depth : Nat) :
+    Nat → Bool → Expr md → Expr md → m Bool
   | 0, _, _, _ => throw (.internal "fuel exhausted: defeq loop")
   | fl + 1, pi, a, b =>
     defeqStep mode r env depth (defeqLoop r env depth fl) pi a b
@@ -1721,12 +1910,12 @@ absorbs the literal-acceleration re-entries lean4lean routes through
 
 /-- The definitional-equality body: the lazy-delta loop at its own
 step budget. -/
-def defeqBody (r : CoreFns m) (env : Env) : Nat → Expr → Expr → m Bool :=
+def defeqBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → Expr md → m Bool :=
   fun depth a b => defeqLoop mode r env depth defeqLoopFuel true a b
 
 /-- Check that a (raw) type is a `Prop` by annotating it and inferring
 its sort. -/
-def isPropType (r : CoreFns m) (env : Env) (depth : Nat) (ty : Expr) :
+def isPropType (r : (CoreFns md) m) (env : Env md) (depth : Nat) (ty : Expr md) :
     m Bool := do
   let ty' ← r.annotate depth ty
   -- io grade (task #172 B4): `ty'` is the pass's own output, already
@@ -1768,7 +1957,7 @@ so it *failed* on terms the interned pass accepts — e.g.
 `∀ (x : Prop), ∀ (y : Foo), Prop` with `Foo` absent from the
 environment: `annotate` never looks a constant up, but inferring the
 inner ∀ node does.  See DESIGN.md, task #161 P5 proof-lane finding. -/
-def annotPwPi (r : CoreFns m) (env : Env) (depth : Nat) (body' : Expr) :
+def annotPwPi (r : (CoreFns md) m) (env : Env md) (depth : Nat) (body' : Expr md) :
     m PropWhen := do
   -- Task #168 stage 2: the head-symbol reader first.  It subsumes the
   -- chain read (`typeSortPW` of a ∀ IS its `forallPw`) and answers
@@ -1786,7 +1975,7 @@ def annotPwPi (r : CoreFns m) (env : Env) (depth : Nat) (body' : Expr) :
 Mirrors `inferBody`'s λ clause exactly — a λ body reuses its inner
 neighbour's datum (the chain rule, no inference), any other body pays
 one leaf computation (`(lam-cod-leaf)`). -/
-def annotPwLam (r : CoreFns m) (env : Env) (depth : Nat) (body' : Expr) :
+def annotPwLam (r : (CoreFns md) m) (env : Env md) (depth : Nat) (body' : Expr md) :
     m PropWhen := do
   -- task #168 stage 2: the reader first (it subsumes the `lamPw`
   -- chain read), as in `annotPwPi`
@@ -1808,7 +1997,7 @@ follows re-checks every application and every binder body and
 validates each annotation against its own result; what it takes from
 the annotations is a licence to skip a *certificate* at a binder whose
 datum is `never`, never a typing it does not redo. -/
-def annotateBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
+def annotateBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr md) :=
   fun depth e =>
     match e with
     | .bvar i => pure (.bvar i)
@@ -1847,15 +2036,15 @@ def annotateBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
       let pw ← if !pwWritten mb.pw then
           annotPwPi r env (depth + 1) body'
         else pure mb.pw
-      pure (.forallE ty' (body'.abstract1 depth) ⟨pw⟩)
+      pure (.forallE ty' (body'.abstract1 depth) { mb with pw })
     | .lam ty body mb => do
       let ty' ← r.annotate depth ty
       let body' ← r.annotate (depth + 1) (body.instantiate1 (.fvar depth ty'))
       let pw ← if !pwWritten mb.pw then
           annotPwLam r env (depth + 1) body'
         else pure mb.pw
-      pure (.lam ty' (body'.abstract1 depth) ⟨pw⟩)
-    | .letE ty v b => do
+      pure (.lam ty' (body'.abstract1 depth) { mb with pw })
+    | .letE ty v b _ => do
       -- The body is annotated *with the value transparent* — nanoda's
       -- `infer_let` instantiates the body with the value and recurses
       -- (the official kernel gets the same transparency from valued
@@ -1928,9 +2117,9 @@ are the bodies applied to the record one fuel level down.  Fuel is
 next level is constructed lazily, inside each entry point's closure
 (constant work per call; an eager tower would cost `fuel` allocations
 per instantiation). -/
-def coreKnot {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
-    (mode : CheckMode) (env : Env)
-    (wrap : CoreFns m → CoreFns m) : Nat → CoreFns m
+def coreKnot {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
+    (mode : CheckMode) (env : Env md)
+    (wrap : (CoreFns md) m → (CoreFns md) m) : Nat → (CoreFns md) m
   | 0 =>
     { whnfCore := fun _ _ => throw (.internal "fuel exhausted: whnfCore")
       whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")

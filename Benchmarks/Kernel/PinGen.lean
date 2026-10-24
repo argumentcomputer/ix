@@ -1,164 +1,94 @@
 import Benchmarks.Kernel.CheckIxeStep
+import Ix.RoleEvidence
+import Ix.Address.Admission
+import Ix.Meta
+import Ix.CanonM
+import Ix.GraphM
+import Ix.CondenseM
+import Ix.LeanIngress
+import Ix.Cert.RoleClosurePrepare
 
-/-! # The pin table, the Ixon prelude and the Nat-operation pins, from Ixon (untrusted)
+/-! # The default role table, its evidence and the Ixon prelude, from Ixon (untrusted)
 
-Generates `IxC/Kernel/Ixon/PinData.lean` (the pin table and the prelude)
-and `IxC/Kernel/Ixon/NatOpPinData.lean` (the pin variant of the eight
-pin-certified `Nat` operations) from two compiled `.ixe` files: the compiled
-Init (`.lake/envs/initstd.ixe`) and `IxC/Kernel/PinGen/Certs.lean` compiled
-by the Ix compiler (`regenerate` below gives the commands). No JSON is read,
-and none is generated: the optional closure rows are the environment check's JSONL
-report rows.
+Generates `IxC/Kernel/Ixon/RoleData.lean`: the role table of a compiled
+Init (`Ix.Kernel.RoleTable`, its binding section and the section's address),
+the theorem records its proof evidence names, the blobs their literals use,
+and the checker's prelude records. The inputs are two compiled `.ixe` files:
+the compiled Init (`.lake/envs/initstd.ixe`) and
+`IxC/Kernel/PinGen/Certs.lean` compiled by the Ix compiler (`regenerate`
+below gives the commands). A toolchain bump reruns this and changes nothing
+in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
 
-1. **The names.** The checker's pinned names, and only those: the basis
-   (`reservedBasisNames`), the prelude's `And` and `Bool`, the structural and
-   pin-certified Nat operations, the string-literal support, the standard and
-   compiler-trust axioms (with `Iff`, `Nonempty`, `True`), `sorryAx`.
-   Recursor names (`T.rec`, `T.rec_k`) are not pinned: the reader derives
-   them.
-2. **Candidates.** Each name is looked up in the environment's `named`
-   metadata (this host tool is the only place metadata is read), and its
-   address resolved to a `ConstRef Address` exactly as the reader resolves
-   references.
-3. **The Nat-operation pins** (upstream con-leche's generator
-   `PinGen.lean`, which Ix does not carry, over Ixon):
-   - **the pins** are the operations' stored values, as the reader reads them
-     from the compiled Init (in the dependency order the environment check uses). Ixon
-     names a constant by its content, so the pin table's address for
-     `Nat.div` already fixes `Nat.div`'s helpers: upstream's helper
-     unfolding, which keeps a pin stable when an export renames a helper,
-     has nothing to do here;
-   - **the certificate proofs** are the values of the theorems of
-     `IxC/Kernel/PinGen/Certs.lean` (`certSpecs`), compiled by the Ix compiler
-     and read by the same reader, closed by upstream's rule
-     (`inlineCertClosure`): every constant outside the operation's dependency
-     cone (the declarations of the records its record reaches), its
-     certificate ground (`natOpDeps`) and the statements' machinery
-     (`stmtNames`) is replaced by its value, with beta, `let` and
-     projection-of-constructor reduction, to a fixpoint; a residual outside
-     those sets fails the run. Upstream also force-inlines equation-compiler
-     internals inside the cone, because a lean4export stream need not
-     declare them; an Ixon stream that declares the operation declares its
-     whole reference closure, so nothing is forced here;
-   - the two compiles must agree: each operation's address in the
-     certificates' `.ixe` is its address in the Init `.ixe`.
-4. **Verification by the verified fold.** The prelude records are read under the
-   candidate table, and the dependency closure of every pinned constant is
-   read and checked record by record (`CheckIxeStep.checkLoop`, the environment check's
-   own step) with the generated pin variant. The run fails unless every
-   pinned constant's record is accepted (a basis block matches its pin up to
-   `canon`, the literal-support constants have their exact types, the
-   structural Nat operations are certified by their recurrences and the
-   pin-certified ones by these pins and certificates), both literal
-   capabilities hold in the final environment, and every recursor the
-   prelude names gets its derived name.
-5. **Output.** `PinData.lean`: the table, sorted by name, the level names,
-   and the prelude's records (the twelve declarations of the checker's
-   prelude, with their projection and recursor records) as canonical bytes.
-   `NatOpPinData.lean`: the pin variant as a share table (the format is in
-   `IxC/Kernel/Ixon/Prelude.lean`), decoded by the committed decoder and
-   compared with the generated variant before it is written.
+1. **The bindings.** Every role's Lean name (`Role.leanName`) is looked up in
+   the environment's `named` metadata (this host tool is the only place
+   metadata is read), and its address resolved to a reference exactly as the
+   reader resolves references. Two roles on one constant fail the run (the
+   table is injective).
+2. **The prelude** records are taken by their roles' addresses and read under
+   the bindings; every recursor role must be the reader's own name for its
+   recursor.
+3. **The evidence.** The structural operations get one `defeq` entry per
+   recurrence equation. For each well-founded operation, the theorems of
+   `IxC/Kernel/PinGen/Certs.lean` (`Ix.RoleEvidence.certTheorems`), compiled
+   by the Ix compiler and read by the same reader over the Init's records,
+   are closed over the operation's dependency closure
+   (`Ix.RoleEvidence.closedProofs`: every constant outside it inlined, with
+   beta, `let` and projection-of-constructor reduction, to a fixpoint) and
+   written as theorem records (`theoremRecord`: the theorem's statement and
+   the closed proof, with a sharing table over the proof's DAG). The
+   evidence names each record by its address, BLAKE3 of its bytes. The two
+   compiles must agree: each operation's address in the certificates' `.ixe`
+   is its address in the Init `.ixe`.
+4. **Verification by the verified fold.** The evidence records are read back
+   (`Reader.evidenceOf`) and must give the closed proofs; then the dependency
+   closure of every bound constant is checked record by record
+   (`CheckIxeStep.checkLoop`, the environment check's own step) under the
+   generated table and its evidence. The run fails unless every bound
+   constant's record is accepted (a basis block matches its specification up
+   to `canon`, the literal support has its exact types, the structural `Nat`
+   operations are certified by their recurrences and the well-founded ones by
+   the evidence) and both literal capabilities hold in the final
+   environment.
+5. **Output.** `RoleData.lean`: the table's binding section (canonical, well
+   formed, checked by decoding it back) and its address, the evidence
+   records and blobs, and the prelude's records, each as canonical bytes;
+   and Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`, for an
+   input without the certificate theorems): the theorems closed in Source
+   mode over the certificate module's own environment (`sourceEvidenceOf`;
+   the module's `.olean`, which `lake -d IxC build` builds), written as
+   theorem records whose references are names (`nameAddress`), with the
+   names, and read back. Not the `.anon` records renamed: an Ixon address
+   is an alias fiber's, several Lean names.
 
-Usage: `kernel-pin-gen <init.ixe> <certs.ixe> <PinData.lean> <NatOpPinData.lean> [closure.jsonl]`. -/
+Usage: `kernel-pin-gen <init.ixe> <certs.ixe> <RoleData.lean> [closure.jsonl]`. -/
 
 namespace Benchmarks.Kernel.PinGen
 
-open Ix.Kernel (ConstRef)
+open Ix.Kernel (ConstRef LevelParam Role)
 open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
-def fixedNames : List CName :=
-  Ix.Kernel.reservedBasisNames ++
-  [Ix.Kernel.andName, Ix.Kernel.andIntroName, Ix.Kernel.boolName, Ix.Kernel.boolFalseName,
-   Ix.Kernel.boolTrueName] ++
-  Ix.Kernel.natOpNames ++ Ix.Kernel.natDivModNames ++
-  [Ix.Kernel.stringName, Ix.Kernel.stringOfListName, Ix.Kernel.listName, Ix.Kernel.listNilName,
-   Ix.Kernel.listConsName, Ix.Kernel.charName, Ix.Kernel.charOfNatName] ++
-  [Ix.Kernel.propextName, Ix.Kernel.choiceName, Ix.Kernel.iffName, Ix.Kernel.iffIntroName,
-   Ix.Kernel.nonemptyName, Ix.Kernel.nonemptyIntroName] ++
-  [Ix.Kernel.trueName, Ix.Kernel.trueIntroName, Ix.Kernel.trustCompilerName,
-   Ix.Kernel.reduceNatName, Ix.Kernel.reduceBoolName, Ix.Kernel.ofReduceNatName,
-   Ix.Kernel.ofReduceBoolName, Ix.Kernel.sorryAxName]
+/-- The prelude's declarations, in upstream con-leche's prelude order (its
+`pins/<toolchain>.prelude.ndjson`): each group's roles. -/
+def preludeGroups : List (List Role) :=
+  [[.eq, .eqRefl, .eqRec], [.nat, .natZero, .natSucc, .natRec], [.punit, .punitUnit, .punitRec],
+   [.empty, .emptyRec], [.false, .falseRec],
+   [.quot], [.quotMk], [.quotLift], [.quotInd], [.quotSound],
+   [.and, .andIntro, .andRec], [.bool, .boolFalse, .boolTrue, .boolRec]]
 
-/-- The prelude's declarations, in upstream con-leche's prelude order
-(its `pins/<toolchain>.prelude.ndjson`): each group's names. -/
-def preludeGroups : List (List CName) :=
-  [[Ix.Kernel.eqName, Ix.Kernel.eqReflName, Ix.Kernel.eqName.str "rec"],
-   [Ix.Kernel.natName, Ix.Kernel.natZeroName, Ix.Kernel.natSuccName, Ix.Kernel.natName.str "rec"],
-   [Ix.Kernel.punitName, Ix.Kernel.punitUnitName, Ix.Kernel.punitRecName],
-   [Ix.Kernel.emptyName, Ix.Kernel.emptyName.str "rec"],
-   [Ix.Kernel.falseName, Ix.Kernel.falseName.str "rec"],
-   [Ix.Kernel.quotName], [Ix.Kernel.quotMkName], [Ix.Kernel.quotLiftName], [Ix.Kernel.quotIndName],
-   [Ix.Kernel.quotSoundName],
-   [Ix.Kernel.andName, Ix.Kernel.andIntroName, Ix.Kernel.andName.str "rec"],
-   [Ix.Kernel.boolName, Ix.Kernel.boolFalseName, Ix.Kernel.boolTrueName, Ix.Kernel.boolName.str "rec"]]
-
-/-- Per pin-certified operation, in `NatOpPinSet` field order, the theorems
-of `IxC/Kernel/PinGen/Certs.lean` that certify it, in the order of its pinned
-statements (`Ix.Kernel.divModCertStmts`), as in upstream's `opSpecs`. -/
-def certSpecs : List (CName × List Lean.Name) :=
-  [(Ix.Kernel.natDivName, [`Ix.Kernel.PinGen.divRecCert, `Ix.Kernel.PinGen.divBaseGtCert,
-     `Ix.Kernel.PinGen.divBaseZeroCert]),
-   (Ix.Kernel.natModName, [`Ix.Kernel.PinGen.modRecCert, `Ix.Kernel.PinGen.modBaseGtCert,
-     `Ix.Kernel.PinGen.modBaseZeroCert]),
-   (Ix.Kernel.natGcdName, [`Ix.Kernel.PinGen.gcdRecCert, `Ix.Kernel.PinGen.gcdBaseCert]),
-   (Ix.Kernel.natLandName, [`Ix.Kernel.PinGen.landRecCert, `Ix.Kernel.PinGen.landBaseCert]),
-   (Ix.Kernel.natLorName, [`Ix.Kernel.PinGen.lorRecCert, `Ix.Kernel.PinGen.lorBaseCert]),
-   (Ix.Kernel.natXorName, [`Ix.Kernel.PinGen.xorRecCert, `Ix.Kernel.PinGen.xorBaseCert]),
-   (Ix.Kernel.natShiftLeftName, [`Ix.Kernel.PinGen.shiftLeftRecCert,
-     `Ix.Kernel.PinGen.shiftLeftBaseCert]),
-   (Ix.Kernel.natShiftRightName, [`Ix.Kernel.PinGen.shiftRightRecCert,
-     `Ix.Kernel.PinGen.shiftRightBaseCert])]
-
-/-- The certificate statements' machinery (upstream's `stmtMachineryNames`):
-every certificate install requires these stored, so a proof may keep them. -/
-def stmtNames : List CName :=
-  [Ix.Kernel.natName, Ix.Kernel.natZeroName, Ix.Kernel.natSuccName, Ix.Kernel.natName.str "rec",
-   Ix.Kernel.boolName, Ix.Kernel.boolTrueName, Ix.Kernel.boolFalseName, Ix.Kernel.boolName.str "rec",
-   Ix.Kernel.eqName, Ix.Kernel.eqReflName, Ix.Kernel.eqName.str "rec"]
-
-/-- The commands that regenerate both files, written into their headers. -/
+/-- The commands that regenerate `RoleData.lean`, written into its header.
+`--no-build`: the files import only `Init`, and `IxC/`'s lakefile does not
+know `IxC/Kernel/PinGen/Certs.lean` as a target of the root's. The
+generator loads that module's `.olean` for Source mode's evidence, which
+`lake -d IxC build` builds. -/
 def regenerate : List String :=
-  ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe",
-   s!"lake exe ix compile IxC/Kernel/PinGen/Certs.lean --out .lake/envs/certs.ixe --consts \\\n      \
-    {",".intercalate (certSpecs.flatMap (·.2) |>.map toString)}",
+  ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --no-build --out .lake/envs/initstd.ixe",
+   "lake -d IxC build IxC.Kernel.PinGen.Certs",
+   s!"lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --out .lake/envs/certs.ixe --consts \\\n      \
+    {",".intercalate (Ix.RoleEvidence.certTheorems.flatMap (·.2) |>.map toString)}",
    "lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \\\n      \
-    IxC/Kernel/Ixon/PinData.lean IxC/Kernel/Ixon/NatOpPinData.lean"]
-
-def toLeanName : CName → Lean.Name
-  | .anonymous => .anonymous
-  | .str p s => .str (toLeanName p) s
-  | .num p n => .num (toLeanName p) n
-
-def isRecursorName : CName → Bool
-  | .str _ s => s == "rec" || s.startsWith "rec_"
-  | _ => false
-
-def components : CName → List (String ⊕ Nat)
-  | .anonymous => []
-  | .str p s => components p ++ [.inl s]
-  | .num p n => components p ++ [.inr n]
-
-def componentLit : String ⊕ Nat → String
-  | .inl s => s!".inl {s.quote}"
-  | .inr n => s!".inr {n}"
-
-def ixToC : Ix.Name → CName
-  | .anonymous _ => .anonymous
-  | .str p s _ => .str (ixToC p) s
-  | .num p n _ => .num (ixToC p) n
-
-/-- The level-parameter names a constant's metadata records. -/
-def metaLevels (env : Ixon.Env) (named : Ixon.Named) : Option (List CName) := do
-  let addrs := match named.constMeta.info with
-    | .defn _ lvls .. | .axio _ lvls .. | .quot _ lvls .. | .indc _ lvls .. | .ctor _ lvls ..
-    | .recr _ lvls .. => lvls
-    | _ => #[]
-  addrs.toList.mapM fun a => ixToC <$> env.names[a]?
-
-def refFields : ConstRef Address → String × Nat × Nat
-  | .member b i => (toString b, i, 0)
-  | .ctor b i c => (toString b, i, c + 1)
+    IxC/Kernel/Ixon/RoleData.lean",
+   "lake exe IxTests cert-statement   # then: RoleEvidenceChecks on the committed file"]
 
 def sha256 (path : System.FilePath) : IO String := do
   let out ← IO.Process.output { cmd := "sha256sum", args := #["--", path.toString] }
@@ -172,14 +102,17 @@ def loadStore (path : System.FilePath) : IO (Ixon.Env × RecordStore) := do
     store := store.insert address (← IO.ofExcept lazy.get)
   return (env, store)
 
+/-- The content hash of the generated records and section (BLAKE3). -/
+def hash (bytes : ByteArray) : Address := Address.admissionHash bytes
+
 /-! ## Reading declarations -/
 
 /-- Read `addresses` in order, threading the reader state as the environment check does,
 and return each record's declarations, with the records that do not read. -/
 def readOrdered (s : Setup) (addresses : Array Address) :
-    Std.HashMap Address (Array CDecl) × Array (Address × ReadError) := Id.run do
-  let mut st : State := {}
-  let mut out : Std.HashMap Address (Array CDecl) := {}
+    Std.HashMap Address (Array (CDecl .anon)) × Array (Address × ReadError) := Id.run do
+  let mut st : State .anon := {}
+  let mut out : Std.HashMap Address (Array (CDecl .anon)) := {}
   let mut errors : Array (Address × ReadError) := #[]
   for a in addresses do
     let some c := s.store[a]? | continue
@@ -190,499 +123,340 @@ def readOrdered (s : Setup) (addresses : Array Address) :
     | .error e => errors := errors.push (a, e)
   return (out, errors)
 
-/-- The record owners `roots` reach by table references, projections replaced
-by their owners: the records a dependency order puts before them. -/
-def reachable (store : RecordStore) (roots : Array Address) : Std.HashSet Address := Id.run do
-  let mut reach : Std.HashSet Address := {}
-  let mut todo := roots
-  while h : todo.size > 0 do
-    let a := todo[todo.size - 1]
-    todo := todo.pop
-    let some c := store[a]? | continue
-    let o := owner a c
-    if reach.contains o then continue
-    reach := reach.insert o
-    for r in ((store[o]?.map (·.refs)).getD #[]) do
-      if store.contains r then todo := todo.push r
-  return reach
+/-! ## Theorem records from closed proofs -/
 
-/-- What the inliner needs about the declarations read: the values of the
-definitions, theorems and opaques (with their level parameters), and the
-parameter counts of the constructors. -/
-structure Universe where
-  values : Std.HashMap CName (List CName × CExpr) := {}
-  ctorParams : Std.HashMap CName Nat := {}
+/-- The writer's state: the record's tables and the blobs its literals need. -/
+structure Egress (md : Ix.Kernel.Mode) where
+  refs : Array Address := #[]
+  refIdx : Std.HashMap Address Nat := {}
+  univs : Array Ixon.Univ := #[]
+  univIdx : Std.HashMap Ixon.Univ Nat := {}
+  sharing : Array Ixon.Expr := #[]
+  shareIdx : Std.HashMap (CExpr md) Nat := {}
+  blobs : Array (Address × ByteArray) := #[]
 
-def Universe.add (u : Universe) (d : CDecl) : Universe :=
-  match d with
-  | .defnDecl cv v _ | .thmDecl cv v | .opaqueDecl cv v =>
-    { u with values := u.values.insert cv.name (cv.levelParams, v) }
-  | .indDecl block _ => block.foldl (fun u ci => match ci with
-      | .ctorInfo cv nP _ => { u with ctorParams := u.ctorParams.insert cv.name nP }
-      | _ => u) u
-  | _ => u
+abbrev EgressM (md : Ix.Kernel.Mode) := StateT (Egress md) (Except String)
 
-/-! ## Expression surgery (memoized over the DAG; host code) -/
+def refOf {md : Ix.Kernel.Mode} (a : Address) : EgressM md UInt64 := do
+  if let some i := (← get).refIdx[a]? then return i.toUInt64
+  let i := (← get).refs.size
+  modify fun s => { s with refs := s.refs.push a, refIdx := s.refIdx.insert a i }
+  return i.toUInt64
 
-abbrev Memo := Std.HashMap CExpr CExpr
+def convLevel : CLevel → Ixon.Univ
+  | .zero => .zero
+  | .succ u => .succ (convLevel u)
+  | .max u v => .max (convLevel u) (convLevel v)
+  | .imax u v => .imax (convLevel u) (convLevel v)
+  | .param i => .var i.toUInt64
 
-/-- The level parameters `ks` instantiated by `us`. -/
-partial def instLevelsGo (ks : List CName) (us : List CLevel) (e : CExpr) : StateM Memo CExpr := do
-  if !e.hasLP then return e
-  if let some r := (← get)[e]? then return r
-  let r ← match e with
-    | .sort u => pure (.sort (Ix.Kernel.Level.subst ks us u))
-    | .const n ls => pure (.const n (ls.map (Ix.Kernel.Level.subst ks us)))
-    | .app f a => return .app (← instLevelsGo ks us f) (← instLevelsGo ks us a)
-    | .lam t b m => return .lam (← instLevelsGo ks us t) (← instLevelsGo ks us b) m
-    | .forallE t b m => return .forallE (← instLevelsGo ks us t) (← instLevelsGo ks us b) m
-    | .letE t v b =>
-      return .letE (← instLevelsGo ks us t) (← instLevelsGo ks us v) (← instLevelsGo ks us b)
-    | .proj s i x => return .proj s i (← instLevelsGo ks us x)
-    | .fvar i t => return .fvar i (← instLevelsGo ks us t)
-    | e => pure e
-  modify (·.insert e r)
-  return r
+def univOf {md : Ix.Kernel.Mode} (l : CLevel) : EgressM md UInt64 := do
+  let u := convLevel l
+  if let some i := (← get).univIdx[u]? then return i.toUInt64
+  let i := (← get).univs.size
+  modify fun s => { s with univs := s.univs.push u, univIdx := s.univIdx.insert u i }
+  return i.toUInt64
 
-def instLevels (ks : List CName) (us : List CLevel) (e : CExpr) : CExpr :=
-  if ks.isEmpty then e else (instLevelsGo ks us e |>.run {}).1
+/-- A natural number's blob: little-endian bytes, no trailing zero (the
+reader's `natural`). -/
+def natBytes (n : Nat) : ByteArray := Id.run do
+  let mut out : ByteArray := .empty
+  let mut k := n
+  while k > 0 do
+    out := out.push (k % 256).toUInt8
+    k := k / 256
+  return out
 
-/-- No loose `bvar` at or above `d`. -/
-def closedAbove (e : CExpr) (d : Nat) : Bool :=
-  e.bvarBRaw < Ix.Kernel.satRange && e.bvarBRaw ≤ d
+def blobOf {md : Ix.Kernel.Mode} (bytes : ByteArray) : EgressM md UInt64 := do
+  let a := hash bytes
+  unless (← get).blobs.any (·.1 == a) do
+    modify fun s => { s with blobs := s.blobs.push (a, bytes) }
+  refOf a
 
-/-- `e` with loose `bvar (d + k)` replaced by `vs[n - 1 - k]` (lifted past the
-`d` binders crossed) for `k < n = vs.size`, and the loose `bvar`s above
-lowered by `n`: Lean's `instantiate` of the reversed `vs`, so `vs[n - 1]` is
-`bvar 0`. -/
-partial def instGo (vs : Array CExpr) (d : Nat) (e : CExpr) :
-    StateM (Std.HashMap (CExpr × Nat) CExpr) CExpr := do
-  if closedAbove e d then return e
-  if let some r := (← get)[(e, d)]? then return r
-  let n := vs.size
-  let r ← match e with
-    | .bvar i =>
-      if i < d then pure (.bvar i)
-      else if i - d < n then
-        let v := vs[n - 1 - (i - d)]!
-        pure (if d == 0 || closedAbove v 0 then v else Ix.Kernel.Expr.liftLooseBVars d 0 v)
-      else pure (Ix.Kernel.Expr.mkBvar (i - n))
-    | .app f a => return .app (← instGo vs d f) (← instGo vs d a)
-    | .lam t b m => return .lam (← instGo vs d t) (← instGo vs (d + 1) b) m
-    | .forallE t b m => return .forallE (← instGo vs d t) (← instGo vs (d + 1) b) m
-    | .letE t v b => return .letE (← instGo vs d t) (← instGo vs d v) (← instGo vs (d + 1) b)
-    | .proj s i x => return .proj s i (← instGo vs d x)
-    | e => pure e
-  modify (·.insert (e, d) r)
-  return r
-
-def instantiate (e : CExpr) (vs : Array CExpr) : CExpr :=
-  if vs.isEmpty then e else (instGo vs 0 e |>.run {}).1
-
-/-- The number of leading `fun` binders of `f`, at most `k`, and the body
-under them. -/
-def peelLams : Nat → CExpr → Nat × CExpr
-  | k + 1, .lam _ b _ => let (m, body) := peelLams k b; (m + 1, body)
-  | _, e => (0, e)
-
-/-- `f args`, beta-reduced at the head. -/
-def betaApp (f : CExpr) (args : Array CExpr) : CExpr :=
-  let (m, body) := peelLams args.size f
-  let head := if m == 0 then f else instantiate body (args.extract 0 m)
-  (args.extract m args.size).foldl .app head
-
-/-- One pass: every constant `inline` selects that has a value is replaced by
-it (levels instantiated, beta-reduced against its arguments), and the result
-is visited again (upstream's `unfoldStep` under `Core.transform`). -/
-partial def unfoldGo (u : Universe) (inline : CName → Bool) (e : CExpr) : StateM Memo CExpr := do
-  if let some r := (← get)[e]? then return r
-  let unfolded : Option CExpr := match e.getAppFn with
-    | .const c us =>
-      if inline c then
-        match u.values[c]? with
-        | some (lps, v) =>
-          if lps.length == us.length then some (betaApp (instLevels lps us v) e.getAppArgs.toArray)
-          else none
-        | none => none
-      else none
-    | _ => none
-  let r ← match unfolded with
-    | some e' => unfoldGo u inline e'
-    | none => match e with
-      | .app f a => return .app (← unfoldGo u inline f) (← unfoldGo u inline a)
-      | .lam t b m => return .lam (← unfoldGo u inline t) (← unfoldGo u inline b) m
-      | .forallE t b m => return .forallE (← unfoldGo u inline t) (← unfoldGo u inline b) m
-      | .letE t v b =>
-        return .letE (← unfoldGo u inline t) (← unfoldGo u inline v) (← unfoldGo u inline b)
-      | .proj s i x => return .proj s i (← unfoldGo u inline x)
-      | e => pure e
-  modify (·.insert e r)
-  return r
-
-/-- A projection of a constructor application: its field. -/
-def projOfCtor (u : Universe) (i : Nat) (x : CExpr) : Option CExpr :=
-  match x.getAppFn with
-  | .const c _ => do
-    let nP ← u.ctorParams[c]?
-    let args := x.getAppArgs.toArray
-    if h : nP + i < args.size then some args[nP + i] else none
-  | _ => none
-
-/-- One pass of beta, `let` (zeta) and projection-of-constructor reduction
-(upstream's `simpStep`, and the zeta-expansion of its `toConLeche`), each
-result visited again. -/
-partial def simpGo (u : Universe) (e : CExpr) : StateM Memo CExpr := do
-  if let some r := (← get)[e]? then return r
-  let reduced : Option CExpr := match e with
-    | .letE _ v b => some (instantiate b #[v])
-    | .proj _ i x => projOfCtor u i x
-    | .app .. =>
-      match e.getAppFn with
-      | f@(.lam ..) => some (betaApp f e.getAppArgs.toArray)
-      | _ => none
-    | _ => none
-  let r ← match reduced with
-    | some e' => simpGo u e'
-    | none => match e with
-      | .app f a => return .app (← simpGo u f) (← simpGo u a)
-      | .lam t b m => return .lam (← simpGo u t) (← simpGo u b) m
-      | .forallE t b m => return .forallE (← simpGo u t) (← simpGo u b) m
-      | .proj s i x => return .proj s i (← simpGo u x)
-      | e => pure e
-  modify (·.insert e r)
-  return r
-
-/-- Every constant (and projection structure) an expression names. -/
-partial def constsGo (e : CExpr) : StateM (Std.HashSet CExpr × Std.HashSet CName) Unit := do
-  if (← get).1.contains e then return
-  modify fun (seen, cs) => (seen.insert e, cs)
+/-- How often each node occurs in `e`'s DAG (each parent edge counted once
+per distinct parent). -/
+partial def countUses {md : Ix.Kernel.Mode} (e : CExpr md) : StateM (Std.HashMap (CExpr md) Nat) Unit := do
+  let seen := (← get)[e]?
+  modify fun m => m.insert e (seen.getD 0 + 1)
+  if seen.isSome then return
   match e with
-  | .const n _ => modify fun (seen, cs) => (seen, cs.insert n)
-  | .app f a => constsGo f; constsGo a
-  | .lam t b _ | .forallE t b _ => constsGo t; constsGo b
-  | .letE t v b => constsGo t; constsGo v; constsGo b
-  | .proj s _ x => modify (fun (seen, cs) => (seen, cs.insert s)); constsGo x
-  | .fvar _ t => constsGo t
+  | .app f a => countUses f; countUses a
+  | .lam t b _ | .forallE t b _ => countUses t; countUses b
+  | .letE t v b _ => countUses t; countUses v; countUses b
+  | .proj _ _ x => countUses x
+  | .fvar _ t => countUses t
   | _ => pure ()
 
-def constsOf (e : CExpr) : Std.HashSet CName := ((constsGo e).run ({}, {})).2.2
+/-- An expression as an Ixon expression under the writer's tables: every
+node used more than once (and not a leaf) becomes a sharing entry, written
+after the entries it uses. `addrOf` names a constant's record. -/
+partial def egress {md : Ix.Kernel.Mode} (uses : Std.HashMap (CExpr md) Nat)
+    (addrOf : CName md → Option Address) (e : CExpr md) : EgressM md Ixon.Expr := do
+  let leaf := match e with
+    | .bvar _ | .sort _ | .const .. | .lit _ => true
+    | _ => false
+  if !leaf && uses.getD e 0 > 1 then
+    if let some i := (← get).shareIdx[e]? then return .share i.toUInt64
+    let x ← build
+    let i := (← get).sharing.size
+    modify fun s => { s with sharing := s.sharing.push x, shareIdx := s.shareIdx.insert e i }
+    return .share i.toUInt64
+  build
+where
+  build : EgressM md Ixon.Expr := do
+    match e with
+    | .bvar i => pure (.var i.toUInt64)
+    | .sort u => pure (.sort (← univOf u))
+    | .const n us =>
+      let some a := addrOf n | throw s!"no record for constant {n}"
+      pure (.ref (← refOf a) (← us.toArray.mapM univOf))
+    | .app f a => pure (.app (← egress uses addrOf f) (← egress uses addrOf a))
+    | .lam t b m => pure (.lam m.contract (← egress uses addrOf t) (← egress uses addrOf b))
+    | .forallE t b m =>
+      pure (.all m.contract m.result (← egress uses addrOf t) (← egress uses addrOf b))
+    | .letE t v b l =>
+      pure (.letE l.contract (← egress uses addrOf t) (← egress uses addrOf v) (← egress uses addrOf b))
+    | .lit (.natVal n) => pure (.nat (← blobOf (natBytes n)))
+    | .lit (.strVal s) => pure (.str (← blobOf s.toUTF8))
+    | .proj s i x =>
+      let some a := addrOf s | throw s!"no record for structure {s}"
+      pure (.prj (← refOf a) i.toUInt64 (← egress uses addrOf x))
+    | .fvar .. => throw "a free variable in a proof"
 
-/-- Upstream's `inlineCertClosure`: unfold and simplify to a fixpoint, then
-require every remaining constant to be `allowed`. -/
-def inlineCertClosure (u : Universe) (allowed : CName → Bool) (e : CExpr) :
-    Except String CExpr := do
-  let mut e := e
-  let mut done := false
-  for _ in [0:1000] do
-    let e1 := (unfoldGo u (!allowed ·) e |>.run {}).1
-    let e2 := (simpGo u e1 |>.run {}).1
-    if e2 == e then
-      done := true
-      break
-    e := e2
-  unless done do throw "no fixpoint after 1000 rounds"
-  let bad := (constsOf e).toList.filter (!allowed ·)
-  unless bad.isEmpty do
-    throw s!"residual constants outside the operation's cone, ground and statement machinery \
-      (name, has a value): {bad.map fun n => (n, (u.values[n]?).isSome)}"
-  return e
+/-- **A theorem record** with statement `type` and proof `value`: level
+monomorphic, safe, its constants named through `addrOf`. -/
+def theoremRecord {md : Ix.Kernel.Mode} (addrOf : CName md → Option Address) (type value : CExpr md) :
+    Except String (Ixon.Constant × Array (Address × ByteArray)) := do
+  let uses := ((countUses type *> countUses value).run {}).2
+  let ((typ, val), eg) ← (do
+      let t ← egress uses addrOf type
+      let v ← egress uses addrOf value
+      pure (t, v) : EgressM md _).run {}
+  let c : Ixon.Constant :=
+    { info := .defn { kind := .thm, safety := .safe, lvls := 0, typ, value := val },
+      sharing := eg.sharing, refs := eg.refs, univs := eg.univs }
+  pure (c, eg.blobs)
 
-/-! ## The share table (the format of `IxC/Kernel/Ixon/Prelude.lean`) -/
+/-! ## Source mode's evidence -/
 
-def hexByte (b : UInt8) : String :=
-  let d := "0123456789ABCDEF".toList.toArray
-  String.ofList [d[b.toNat / 16]!, d[b.toNat % 16]!]
+/-- The module of the certificate theorems. -/
+def certsModule : Lean.Name := `IxC.Kernel.PinGen.Certs
 
-/-- Percent-encode every byte outside `[A-Za-z0-9._'!?-]`. -/
-def percentEncode (s : String) : String :=
-  s.toUTF8.foldl (fun acc b =>
-    let c := Char.ofNat b.toNat
-    if b < 128 && (c.isAlphanum || "._'!?-".contains c) then acc.push c
-    else acc ++ "%" ++ hexByte b) ""
+/-- A Lean name's bytes for its address: each component tagged and
+length-delimited, so distinct names have distinct bytes. -/
+def nameBytes (n : Lean.Name) : ByteArray :=
+  let rec go : Lean.Name → String
+    | .anonymous => ""
+    | .str p s => go p ++ s!"s{s.utf8ByteSize}:{s}"
+    | .num p k => go p ++ s!"n{k};"
+  ("ix.source-name:" ++ go n).toUTF8
 
-structure Enc where
-  lines : Array String := #[]
-  names : Std.HashMap CName Nat := {}
-  levels : Std.HashMap CLevel Nat := {}
-  exprs : Std.HashMap CExpr Nat := {}
+/-- **A name's address**, by which a Source evidence record references the
+constant of that name (`RoleData.sourceNames` names it back). -/
+def nameAddress (n : Lean.Name) : Address := hash (nameBytes n)
 
-abbrev EncM := StateT Enc (Except String)
+/-- **Source mode's closed certificate proofs**, over the Lean environment
+of the certificate module (Init and `IxC/Kernel/PinGen/Certs.lean`), as the
+Source ingress takes it: canonicalized (`Ix.CanonM`, on `workers` tasks) and
+condensed, every declaration group lowered in the Source order behind the
+prelude `pre` (a group that does not lower, a `partial` or `unsafe` one, is
+left out, as the step drivers leave it), then
+`Ix.LeanIngress.sourceEvidenceReport`. Also the prepared declarations. -/
+def sourceEvidenceOf (pre : Prelude .source) (leanEnv : Lean.Environment) (workers : Nat) :
+    (Ix.Kernel.Evidences .source × List String) × Array (CDecl .source) := Id.run do
+  let consts := leanEnv.constants.toList.toArray
+  let size := (consts.size + workers - 1) / max workers 1
+  let tasks := (Ix.CanonM.chunks consts (max size 1)).map fun chunk =>
+    Task.spawn fun _ => Ix.CanonM.canonChunk chunk
+  let env : Ix.Environment :=
+    { consts := tasks.foldl (init := {}) fun m t => t.get.foldl (fun m (n, c) => m.insert n c) m }
+  let blocks := Ix.CondenseM.run (Ix.GraphM.envParallel env)
+  let groups := Ix.LeanIngress.groupsOf env blocks
+  let g := Ix.LeanIngress.graphOf blocks groups (groups.map Ix.LeanIngress.convert)
+  let mut st := pre.state
+  let mut lowered : Array (CDecl .source) := #[]
+  for (_, c) in Ix.LeanIngress.scheduleOf g do
+    match c >>= Ix.LeanIngress.lower st with
+    | .ok r =>
+      st := st.commit r
+      lowered := lowered ++ r.decls
+    | .error _ => pure ()
+  let decls := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
+  return (Ix.LeanIngress.sourceEvidenceReport decls, decls)
 
-def emit (line : String) : EncM Nat := do
-  let i := (← get).lines.size + 2
-  modify fun s => { s with lines := s.lines.push line }
-  return i
+/-- A Lean name as a term of the generated file, constructor by constructor
+(exact for every component: numbers, and strings no identifier spells). -/
+def nameTerm : Lean.Name → String
+  | .anonymous => ".anonymous"
+  | .str p s => s!"(.str {nameTerm p} {s.quote})"
+  | .num p k => s!"(.num {nameTerm p} {k})"
 
-partial def encName (n : CName) : EncM Nat := do
-  if let .anonymous := n then return 0
-  if let some i := (← get).names[n]? then return i
-  let i ← match n with
-    | .str p s => do let a ← encName p; emit s!"n {a} {percentEncode s}"
-    | .num p k => do let a ← encName p; emit s!"m {a} {k}"
-    | .anonymous => pure 0
-  modify fun s => { s with names := s.names.insert n i }
-  return i
+/-! ## The run -/
 
-partial def encLevel (l : CLevel) : EncM Nat := do
-  if let .zero := l then return 1
-  if let some i := (← get).levels[l]? then return i
-  let i ← match l with
-    | .succ u => do let a ← encLevel u; emit s!"S {a}"
-    | .max u v => do let a ← encLevel u; let b ← encLevel v; emit s!"M {a} {b}"
-    | .imax u v => do let a ← encLevel u; let b ← encLevel v; emit s!"I {a} {b}"
-    | .param n => do let a ← encName n; emit s!"P {a}"
-    | .zero => pure 1
-  modify fun s => { s with levels := s.levels.insert l i }
-  return i
-
-def requireNever (m : Ix.Kernel.BinderMeta) : EncM Unit :=
-  unless m.pw.toList?.isNone do throw "a binder with a prop-ness annotation other than `never`"
-
-partial def encExpr (e : CExpr) : EncM Nat := do
-  if let some i := (← get).exprs[e]? then return i
-  let i ← match e with
-    | .bvar k => emit s!"B {k}"
-    | .sort u => do let a ← encLevel u; emit s!"Y {a}"
-    | .const n us => do
-      let a ← encName n
-      let bs ← us.mapM encLevel
-      emit (" ".intercalate (["C", toString a] ++ bs.map toString))
-    | .app f x => do let a ← encExpr f; let b ← encExpr x; emit s!"A {a} {b}"
-    | .lam t b m => do
-      requireNever m; let a ← encExpr t; let c ← encExpr b; emit s!"L {a} {c}"
-    | .forallE t b m => do
-      requireNever m; let a ← encExpr t; let c ← encExpr b; emit s!"F {a} {c}"
-    | .letE t v b => do
-      let a ← encExpr t; let c ← encExpr v; let d ← encExpr b; emit s!"E {a} {c} {d}"
-    | .lit (.natVal k) => emit s!"N {k}"
-    | .lit (.strVal s) => emit s!"T {percentEncode s}"
-    | .proj s k x => do let a ← encName s; let c ← encExpr x; emit s!"J {a} {k} {c}"
-    | .fvar .. => throw "a free variable in a pin"
-  modify fun s => { s with exprs := s.exprs.insert e i }
-  return i
-
-/-- The variant as a share table and its per-operation roots. -/
-def encodePins (ps : Ix.Kernel.NatOpPinSet) :
-    Except String (Array String × Array (String × Nat × List Nat)) := do
-  let ops : List (String × CExpr × List CExpr) :=
-    [("Nat.div", ps.divPin, ps.divProofs), ("Nat.mod", ps.modPin, ps.modProofs),
-     ("Nat.gcd", ps.gcdPin, ps.gcdProofs), ("Nat.land", ps.landPin, ps.landProofs),
-     ("Nat.lor", ps.lorPin, ps.lorProofs), ("Nat.xor", ps.xorPin, ps.xorProofs),
-     ("Nat.shiftLeft", ps.shiftLeftPin, ps.shiftLeftProofs),
-     ("Nat.shiftRight", ps.shiftRightPin, ps.shiftRightProofs)]
-  let act : EncM (List (String × Nat × List Nat)) := ops.mapM fun (n, pin, proofs) => do
-    let p ← encExpr pin
-    let qs ← proofs.mapM encExpr
-    return (n, p, qs)
-  let (roots, enc) ← act.run {}
-  return (enc.lines, roots.toArray)
-
-def natOpPinSetBeq (a b : Ix.Kernel.NatOpPinSet) : Bool :=
-  a.toolchain == b.toolchain && a.divPin == b.divPin && a.modPin == b.modPin &&
-  a.gcdPin == b.gcdPin && a.landPin == b.landPin && a.lorPin == b.lorPin && a.xorPin == b.xorPin &&
-  a.shiftLeftPin == b.shiftLeftPin && a.shiftRightPin == b.shiftRightPin &&
-  a.divProofs == b.divProofs && a.modProofs == b.modProofs && a.gcdProofs == b.gcdProofs &&
-  a.landProofs == b.landProofs && a.lorProofs == b.lorProofs && a.xorProofs == b.xorProofs &&
-  a.shiftLeftProofs == b.shiftLeftProofs && a.shiftRightProofs == b.shiftRightProofs
-
-/-! ## The Nat-operation pins -/
-
-/-- The pin variant: pins from the Init reading, certificate proofs from the
-certificates' reading, closed by upstream's rule. -/
-def natOpPins (env : Ixon.Env) (s : Setup) (pre : Prelude) (pinned : Pins)
-    (byName : Std.HashMap CName (ConstRef Address)) (certPath : System.FilePath)
-    (toolchain : String) : IO Ix.Kernel.NatOpPinSet := do
+def run (args : List String) : IO UInt32 := do
+  let parsed : Option (String × String × String × Option String) := match args with
+    | [i, c, o] => some (i, c, o, none)
+    | [i, c, o, r] => some (i, c, o, some r)
+    | _ => none
+  let some (input, certInput, output, rowsOut) := parsed
+    | IO.eprintln "usage: kernel-pin-gen <init.ixe> <certs.ixe> <RoleData.lean> [closure.jsonl]"
+      return 2
   let fail {α : Type} (msg : String) : IO α := throw (IO.userError s!"pin-gen: {msg}")
-  let opRefs ← certSpecs.mapM fun (op, _) => do
-    let some r := byName[op]? | fail s!"{op} is not pinned"
-    pure (op, r)
-  -- the Init reading: the prelude and the operations' closures, in order
-  let initOrder := closure s.store s.extra
-    (pre.records.map (·.1) ++ (opRefs.map (·.2.block)).toArray)
-  let (initDecls, initErrors) := readOrdered s initOrder
-  unless initErrors.isEmpty do
-    fail s!"Init records that do not read: {initErrors.toList.map fun (a, e) => (toString a, toString e)}"
-  -- the certificates' compile, read under the same table and prelude, over
-  -- the Init's records: `--consts` compiles a closure that leaves out the
-  -- recursors nothing names, and the two compiles agree on every shared
-  -- address (checked below for the operations)
-  let (certEnv, certRecords) ← loadStore certPath
-  let mut certStore := s.store
+  let started ← IO.monoMsNow
+  let (env, store) ← loadStore input
+  IO.eprintln s!"pin-gen: {store.size} records loaded in {(← IO.monoMsNow) - started} ms"
+  let lookup : Store := (store[·]?)
+  -- 1: the bindings
+  let mut bound : Array (Role × Address) := #[]
+  let mut refOfRole : Std.HashMap Role (ConstRef Address) := {}
+  let mut roleOfRef : Std.HashMap (ConstRef Address) Role := {}
+  for r in Role.all do
+    let n := Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .anon) r)
+    let some named := env.named[Ix.Name.fromLeanName n]? | fail s!"no constant named {n}"
+    let some c := store[named.addr]? | fail s!"{n}: no record at {named.addr}"
+    let some ref := resolveSource lookup named.addr c | fail s!"{n}: {named.addr} does not resolve"
+    if let some other := roleOfRef[ref]? then
+      fail s!"{repr r} and {repr other} are the same constant ({named.addr})"
+    roleOfRef := roleOfRef.insert ref r
+    refOfRole := refOfRole.insert r ref
+    bound := bound.push (r, named.addr)
+  let boundOnly := Ix.Kernel.RoleTable.ofEntries Ix.Kernel.specVersion bound.toList []
+  IO.eprintln s!"pin-gen: {bound.size} roles bound"
+  -- 2: the prelude records, in prelude order
+  let mut preludeAddrs : Array Address := #[]
+  for group in preludeGroups do
+    for r in group do
+      let a := (boundOnly.addressOf? r).getD default
+      let some c := store[a]? | fail s!"no prelude record for {repr r}"
+      for x in #[owner a c, a] do
+        unless preludeAddrs.contains x do preludeAddrs := preludeAddrs.push x
+  let preRecords : Array (Address × Ixon.Constant) := preludeAddrs.filterMap fun a =>
+    (store[a]?).map (a, ·)
+  for (a, c) in preRecords do
+    let bytes := Ixon.serConstant c
+    match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
+    | .ok c' => unless c' == c do fail s!"prelude record {a} does not round-trip"
+    | .error e => fail s!"prelude record {a}: {e}"
+  let pre0 ← IO.ofExcept (readPrelude boundOnly preRecords)
+  IO.eprintln s!"pin-gen: prelude: {preRecords.size} records, {pre0.ix.decls.size} declarations"
+  let hints := Hints.ofStore store env.anonHints
+  let s0 := setup store (env.blobs[·]?) boundOnly pre0 hints.lookup
+  for r in Role.all do
+    let some ref := refOfRole[r]? | continue
+    unless (s0.cx.memberKey ref).toOption == some (Ix.Kernel.roleKey r) do
+      fail s!"{repr r} is not read as its role"
+  -- 3: the evidence
+  let (certEnv, certRecords) ← loadStore certInput
+  let mut certStore := s0.store
   let mut added := 0
   for (a, c) in certRecords.toList do
     unless certStore.contains a do
       certStore := certStore.insert a c
       added := added + 1
-  let initBlobs := env.blobs
-  let cs := setup certStore (fun a => certEnv.blobs[a]? <|> initBlobs[a]?) pinned pre
-    (Hints.ofStore certStore certEnv.anonHints).lookup
-  for (op, _) in opRefs do
-    let lean := Ix.Name.fromLeanName (toLeanName op)
-    let some named := certEnv.named[lean]? | fail s!"{certPath} has no {op}"
-    let some initNamed := env.named[lean]? | fail s!"the Init has no {op}"
+  for (r, _) in Ix.RoleEvidence.certTheorems do
+    let lean := Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .anon) r))
+    let some named := certEnv.named[lean]? | fail s!"{certInput} has no {repr r}"
+    let some initNamed := env.named[lean]? | fail s!"the Init has no {repr r}"
     unless named.addr == initNamed.addr do
-      fail s!"{op} is {named.addr} in {certPath} but {initNamed.addr} in the Init: \
+      fail s!"{repr r} is {named.addr} in {certInput} but {initNamed.addr} in the Init: \
         the two compiles disagree"
-  let mut certRoots : Array Address := pre.records.map (·.1)
+  let cs := setup certStore (fun a => certEnv.blobs[a]? <|> env.blobs[a]?) boundOnly pre0
+    (Hints.ofStore certStore certEnv.anonHints).lookup
+  -- the readings: the prelude, the operations' closures and the theorems' closures
   let mut certAt : Std.HashMap Lean.Name Address := {}
-  for (_, thms) in certSpecs do
+  let mut roots : Array Address := preRecords.map (·.1)
+  for (r, thms) in Ix.RoleEvidence.certTheorems do
+    if let some ref := refOfRole[r]? then roots := roots.push ref.block
     for t in thms do
-      let some named := certEnv.named[Ix.Name.fromLeanName t]? | fail s!"{certPath} has no {t}"
-      certRoots := certRoots.push named.addr
+      let some named := certEnv.named[Ix.Name.fromLeanName t]? | fail s!"{certInput} has no {t}"
       certAt := certAt.insert t named.addr
-  let certOrder := closure cs.store cs.extra certRoots
-  let (certDecls, certErrors) := readOrdered cs certOrder
-  unless certErrors.isEmpty do
-    fail s!"certificate records that do not read: \
-      {certErrors.toList.map fun (a, e) => (toString a, toString e)}"
-  let uni : Universe := (initDecls.toList ++ certDecls.toList).foldl
-    (fun u (_, ds) => ds.foldl Universe.add u) {}
-  IO.eprintln s!"pin-gen: Nat-op pins: {initOrder.size} Init records read; the certificates' \
-    compile adds {added} records to the Init's, {certOrder.size} read; {uni.values.size} values"
-  let mut pins : Array (CExpr × List CExpr) := #[]
-  for (op, r) in opRefs do
-    -- the pin: the stored value
-    let pinOf? : Option CExpr := (initDecls.getD r.block #[]).findSome? (fun d =>
-      match d with
-      | .defnDecl cv v _ => if cv.name == op then some v else none
-      | _ => none)
-    let some pin := pinOf? | fail s!"{op}'s record does not read as its definition"
-    -- the cone: the declarations of every record the operation's record reaches
-    let cone : Std.HashSet CName := (reachable s.store #[r.block]).fold (fun acc a =>
-      (initDecls.getD a #[]).foldl (fun acc d => d.names.foldl (·.insert ·) acc) acc) {}
-    let ground : List CName := Ix.Kernel.natOpDeps op ++ stmtNames
-    let allowed : CName → Bool := fun c => c == op || ground.contains c || cone.contains c
-    let thms := ((certSpecs.find? (·.1 == op)).map (·.2)).getD []
-    let mut proofs : List CExpr := []
-    for t in thms do
-      let a := certAt.getD t default
-      let some name := (resolve (cs.store[·]?) a).map cs.cx.nameOf | fail s!"{t} does not resolve"
-      let valueOf? : Option CExpr := (certDecls.getD a #[]).findSome? (fun d =>
-        match d with
-        | .thmDecl cv v => if cv.name == name then some v else none
-        | _ => none)
-      let some value := valueOf? | fail s!"{t}'s record does not read as a theorem"
-      match inlineCertClosure uni allowed value with
-      | .ok p => proofs := proofs ++ [p]
-      | .error why => fail s!"certificate {t} of {op}: {why}"
-    IO.eprintln s!"pin-gen: {op}: cone {cone.size} constants, {proofs.length} certificates closed"
-    pins := pins.push (pin, proofs)
-  let some (divPin, divProofs) := pins[0]? | fail "no pins"
-  let (modPin, modProofs) := pins[1]!
-  let (gcdPin, gcdProofs) := pins[2]!
-  let (landPin, landProofs) := pins[3]!
-  let (lorPin, lorProofs) := pins[4]!
-  let (xorPin, xorProofs) := pins[5]!
-  let (shiftLeftPin, shiftLeftProofs) := pins[6]!
-  let (shiftRightPin, shiftRightProofs) := pins[7]!
-  return { toolchain, divPin, modPin, gcdPin, landPin, lorPin, xorPin, shiftLeftPin, shiftRightPin,
-           divProofs, modProofs, gcdProofs, landProofs, lorProofs, xorProofs, shiftLeftProofs,
-           shiftRightProofs }
-
-/-! ## The run -/
-
-def run (args : List String) : IO UInt32 := do
-  let parsed : Option (String × String × String × String × Option String) := match args with
-    | [i, c, o, n] => some (i, c, o, n, none)
-    | [i, c, o, n, r] => some (i, c, o, n, some r)
-    | _ => none
-  let some (input, certInput, output, natOutput, rowsOut) := parsed
-    | IO.eprintln "usage: kernel-pin-gen <init.ixe> <certs.ixe> <PinData.lean> \
-        <NatOpPinData.lean> [closure.jsonl]"
-      return 2
-  let started ← IO.monoMsNow
-  let (env, store) ← loadStore input
-  IO.eprintln s!"pin-gen: {store.size} records loaded in {(← IO.monoMsNow) - started} ms"
-  let lookup : Ix.Kernel.Reader.Store := (store[·]?)
-  -- 1-2: names and candidates
-  let wanted := (fixedNames ++ preludeGroups.flatten).eraseDups
-  let mut pins : Array Pin := #[]
-  let mut missing : Array CName := #[]
-  let mut recNames : Array CName := #[]
-  let mut addrOf : Std.HashMap CName Address := {}
-  for n in wanted do
-    let some named := env.named[Ix.Name.fromLeanName (toLeanName n)]?
-      | missing := missing.push n; continue
-    addrOf := addrOf.insert n named.addr
-    if isRecursorName n then recNames := recNames.push n; continue
-    let some c := store[named.addr]? | missing := missing.push n; continue
-    let some ref := resolveSource lookup named.addr c | missing := missing.push n; continue
-    pins := pins.push ⟨ref, n⟩
-  unless missing.isEmpty do
-    IO.eprintln s!"pin-gen: required names without a resolvable record: {missing.toList}"
-    return 1
-  -- aliases: two names on one reference keep the first and are reported
-  let mut byRef : Std.HashMap (ConstRef Address) CName := {}
-  let mut kept : Array Pin := #[]
-  for p in pins do
-    if let some other := byRef[p.ref]? then
-      IO.eprintln s!"pin-gen: alias: {p.name} and {other} are the same constant; keeping {other}"
-    else
-      byRef := byRef.insert p.ref p.name
-      kept := kept.push p
-  let pinnedNames ← IO.ofExcept (pinMap kept)
-  -- level-parameter names: every pinned constant's, and the recursors' of
-  -- every pinned inductive (`matchesPin` compares them by name)
-  let mut levels : Std.HashMap (ConstRef Address) (List CName) := {}
-  for p in kept do
-    let some named := env.named[Ix.Name.fromLeanName (toLeanName p.name)]? | continue
-    if let some ns := metaLevels env named then levels := levels.insert p.ref ns
-    if (inductiveAt lookup p.ref).isSome then
-      for r in (List.range 8).map (fun k => if k == 0 then p.name.str "rec" else p.name.str s!"rec_{k}") do
-        let some rn := env.named[Ix.Name.fromLeanName (toLeanName r)]? | continue
-        let some rc := store[rn.addr]? | continue
-        let some rref := resolveSource lookup rn.addr rc | continue
-        if let some ns := metaLevels env rn then levels := levels.insert rref ns
-  let pinned : Pins := { names := pinnedNames, levels }
-  IO.eprintln s!"pin-gen: {kept.size} pins, {levels.size} level lists, {recNames.size} derived recursor names"
-  -- the prelude records, in prelude order
-  let mut preludeAddrs : Array Address := #[]
-  for group in preludeGroups do
-    for n in group do
-      let a := addrOf.getD n default
-      let some c := store[a]? | IO.eprintln s!"pin-gen: no prelude record for {n}"; return 1
-      for x in #[owner a c, a] do
-        unless preludeAddrs.contains x do preludeAddrs := preludeAddrs.push x
-  let preRecords : Array (Address × Ixon.Constant) := preludeAddrs.filterMap fun a =>
-    (store[a]?).map (a, ·)
-  -- canonical bytes round-trip through the decoder the prelude loader uses
-  for (a, c) in preRecords do
-    let bytes := Ixon.serConstant c
-    match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
-    | .ok c' => unless c' == c do IO.eprintln s!"pin-gen: prelude record {a} does not round-trip"; return 1
-    | .error e => IO.eprintln s!"pin-gen: prelude record {a}: {e}"; return 1
-  let pre ← match readPrelude pinned preRecords with
-    | .ok p => pure p
-    | .error e => IO.eprintln s!"pin-gen: prelude: {e}"; return 1
-  IO.eprintln s!"pin-gen: prelude: {preRecords.size} records, {pre.ix.decls.size} declarations: \
-    {pre.ix.decls.toList.map Ix.Kernel.Frontend.preludeKey}"
-  let s := setup store (env.blobs[·]?) pinned pre (Hints.ofStore store env.anonHints).lookup
-  for n in recNames do
-    let a := addrOf.getD n default
-    let some c := store[a]? | continue
-    let some ref := resolveSource lookup a c | continue
-    unless s.cx.nameOf ref == n do
-      IO.eprintln s!"pin-gen: recursor {n} is named {s.cx.nameOf ref} by the reader"
-      return 1
-  -- 3: the Nat-operation pins
-  let toolchain := (← IO.FS.readFile "lean-toolchain").trimAscii.toString
-  let byName : Std.HashMap CName (ConstRef Address) := kept.foldl (fun m p => m.insert p.name p.ref) {}
-  let natPins ← natOpPins env s pre pinned byName certInput toolchain
-  let (tableLines, opRoots) ← IO.ofExcept (encodePins natPins)
-  let table := "\n".intercalate tableLines.toList
-  let decoded ← IO.ofExcept do
-    natOpPinSetOf toolchain (← decodePinTable ("\n" ++ table ++ "\n")) opRoots
-  unless natOpPinSetBeq decoded natPins do
-    IO.eprintln "pin-gen: the share table does not decode to the generated variant"
-    return 1
-  IO.eprintln s!"pin-gen: Nat-op pin variant: {tableLines.size} share-table nodes, decoded back equal"
-  -- 4: verification by the verified fold over the pinned constants' closure
-  let roots := (preRecords.map (·.1)) ++ (kept.map (·.ref.block))
-  let ordered := closure s.store s.extra roots
+      roots := roots.push named.addr
+  let order := closure cs.store cs.extra roots
+  let (decls, readErrors) := readOrdered cs order
+  unless readErrors.isEmpty do
+    fail s!"records that do not read: {readErrors.toList.map fun (a, e) => (toString a, toString e)}"
+  let allDecls : Array (CDecl .anon) := order.foldl (fun acc a => acc ++ decls.getD a #[]) #[]
+  let uni : Ix.RoleEvidence.Universe .anon := allDecls.foldl Ix.RoleEvidence.Universe.add {}
+  let lookMap := Ix.RoleEvidence.lookupOf allDecls
+  let look : CName .anon → Option (Ix.Kernel.ConstantInfo .anon) := (lookMap[·]?)
+  IO.eprintln s!"pin-gen: evidence: the certificates' compile adds {added} records; {order.size} \
+    records read, {uni.values.size} values"
+  -- every record's address by the reader's name for it
+  let mut addrOfName : Std.HashMap (CName .anon) Address := {}
+  for (a, _) in cs.store.toList do
+    if let .ok n := cs.cx.keyAt a then
+      unless addrOfName.contains n do addrOfName := addrOfName.insert n a
+  for (r, a) in bound do addrOfName := addrOfName.insert (Ix.Kernel.roleKey r) a
+  let keyOf (t : Lean.Name) : CName .anon :=
+    match certAt[t]? with
+    -- a name that is not a certificate theorem keys `sorryAx`, which no proof is
+    | some a => (cs.cx.keyAt a).toOption.getD (Ix.Kernel.roleKey .sorryAx)
+    | none => Ix.Kernel.roleKey .sorryAx
+  let mut evidence : Array (Role × Array (Ix.Kernel.Evidence Address)) :=
+    Ix.RoleEvidence.defeqRoles.toArray.map fun r => (r, (Ix.RoleEvidence.defeqEvidence r).toArray)
+  let mut evRecords : Array (Address × Ixon.Constant) := #[]
+  let mut evBlobs : Array (Address × ByteArray) := #[]
+  let mut closed : Std.HashMap Address (CExpr .anon) := {}
+  for (r, thms) in Ix.RoleEvidence.certTheorems do
+    let proofs ← match Ix.RoleEvidence.closedProofs allDecls uni look keyOf r with
+      | .ok ps => pure ps
+      | .error e => fail s!"{repr r}: {e}"
+    let mut entries : Array (Ix.Kernel.Evidence Address) := #[]
+    for ((k, p), t) in proofs.zip thms do
+      let some type := allDecls.findSome? (fun
+          | .thmDecl cv _ => if cv.name == k then some cv.type else none
+          | _ => none)
+        | fail s!"{t}: no statement"
+      let (c, blobs) ← match theoremRecord (addrOfName[·]?) type p with
+        | .ok x => pure x
+        | .error e => fail s!"{t}: {e}"
+      let bytes := Ixon.serConstant c
+      match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
+      | .ok c' => unless c' == c do fail s!"{t}: its record does not round-trip"
+      | .error e => fail s!"{t}: its record does not decode: {e}"
+      let a := hash bytes
+      evRecords := evRecords.push (a, c)
+      for b in blobs do
+        unless evBlobs.any (·.1 == b.1) do evBlobs := evBlobs.push b
+      closed := closed.insert a p
+      entries := entries.push (.proof a)
+    IO.eprintln s!"pin-gen: {repr r}: {entries.size} certificates closed and written"
+    evidence := evidence.push (r, entries)
+  let table := Ix.Kernel.RoleTable.ofEntries Ix.Kernel.specVersion bound.toList evidence.toList
+  IO.ofExcept (table.check.mapError (s!"pin-gen: the table is not well formed: " ++ ·))
+  let tableBytes := table.toBytes
+  unless table.wireWF do fail "the table is outside the binding section's domain"
+  match Ix.Kernel.RoleTable.ofBytes tableBytes with
+  | some t' => unless t'.toBytes == tableBytes do fail "the section does not decode back"
+  | none => fail "the section does not decode"
+  let tableAddress := hash tableBytes
+  IO.eprintln s!"pin-gen: table: {tableBytes.size} bytes at {tableAddress}"
+  -- 4: verification: the evidence reads back, and the fold accepts every
+  -- bound constant's closure under the table
+  let pre ← IO.ofExcept (readPrelude table preRecords evRecords evBlobs.toList)
+  let s := setup store (env.blobs[·]?) table pre hints.lookup
+  for (r, es) in s.evidence do
+    for e in es do
+      match e with
+      | .defeq => pure ()
+      | .proof (k, v) =>
+        let some a := (table.evidence.toList.find? (·.1 == r)).bind fun (_, xs) =>
+          xs.toList.findSome? fun | .proof a => if closed[a]? == some v then some a else none
+                                  | .defeq => none
+          | fail s!"{repr r}: the evidence {k} does not read back as its closed proof"
+        IO.eprintln s!"pin-gen: {repr r}: {k} reads back at {a}"
+  let evRoles := table.evidence.toList.filter (fun (_, es) => es.any fun
+    | .proof _ => true | .defeq => false)
+  for (r, _) in evRoles do
+    unless (s.evidence.find? (·.1 == r)).any (fun (_, es) => !es.isEmpty) do
+      fail s!"{repr r}: its evidence does not resolve"
+  let checkRoots := (preRecords.map (·.1)) ++ (bound.filterMap fun (r, _) =>
+    (refOfRole[r]?).map (·.block))
+  let ordered := closure s.store s.extra checkRoots
   IO.eprintln s!"pin-gen: checking the closure, {ordered.size} records"
   let rows ← IO.mkRef (#[] : Array Row)
   let names := reportNames env s.store
-  let out ← checkLoop s [natPins] (names.getD · #[]) ordered {}
+  let out ← checkLoop s (names.getD · #[]) ordered {}
     (emit := fun row => rows.modify (·.push row))
   let rows ← rows.get
   if let some path := rowsOut then
@@ -690,121 +464,235 @@ def run (args : List String) : IO UInt32 := do
   IO.eprintln s!"pin-gen: closure checked in {(← IO.monoMsNow) - started} ms: {out.counts.toList}"
   let outcomeOf : Std.HashMap Address (String × String) :=
     rows.foldl (fun m r => m.insert r.address (r.outcome, r.reason)) {}
-  -- every pinned constant's record must be accepted (a pin-certified
-  -- operation's only when the variant matched and its certificates
-  -- checked), and both literal capabilities must hold in the final environment
   let mut bad := 0
-  for p in kept do
-    let verdict := outcomeOf[p.ref.block]?
+  for (r, _) in bound do
+    let some ref := refOfRole[r]? | continue
+    let verdict := outcomeOf[ref.block]?
     match verdict with
     | some ("accept", _) => pure ()
     | _ =>
       let (o, reason) := verdict.getD ("unchecked", "")
-      IO.eprintln s!"pin-gen: pinned {p.name}: {o}: {reason}"
+      IO.eprintln s!"pin-gen: bound {repr r}: {o}: {reason}"
       bad := bad + 1
   let fe := out.checker.fe
   let nat := Ix.Kernel.natLitSupportedF fe
   let str := Ix.Kernel.strLitSupportedF fe
   IO.eprintln s!"pin-gen: Nat literals {nat}, String literals {str}"
   unless bad == 0 && nat && str do return 1
-  for (op, _) in certSpecs do
-    let a := ((byName[op]?).map (·.block)).getD default
+  for (r, _) in Ix.RoleEvidence.certTheorems do
+    let a := ((refOfRole[r]?).map (·.block)).getD default
     let micros := ((rows.find? (·.address == a)).map (·.micros)).getD 0
-    IO.eprintln s!"pin-gen: {op}: accepted with the generated variant, {micros} µs"
+    IO.eprintln s!"pin-gen: {repr r}: accepted with the generated evidence, {micros} µs"
+  -- 4c: the well-founded operations' dependency closure, pinned for
+  -- `Ix.Cert.RoleClosure.RoleEvidenceChecks` (with the blobs its literals
+  -- reference and its definitions' hints), and checked as that statement
+  -- reads it: the Ixon entry's reading behind the prelude, the verified fold
+  let preludeSet : Std.HashSet Address := preRecords.foldl (fun m (a, _) => m.insert a) {}
+  let wfRoots : Array Address := Ix.RoleEvidence.certTheorems.toArray.filterMap fun (r, _) =>
+    (refOfRole[r]?).map (·.block)
+  -- the reader needs every block's projection records (the entry reconstructs
+  -- none) and every inductive block's recursors (their records, closed over in
+  -- turn): `closure` keeps owners only, so both are added to a fixpoint
+  let mut projectionsOf : Std.HashMap Address (Array Address) := {}
+  for (a, c) in s.store.toList do
+    let o := owner a c
+    if o != a then projectionsOf := projectionsOf.insert o ((projectionsOf.getD o #[]).push a)
+  let mut closureRoots := wfRoots
+  let mut closureOrder : Array Address := #[]
+  repeat
+    closureOrder := closure s.store s.extra closureRoots
+    let have_ : Std.HashSet Address := closureOrder.foldl (fun m a => m.insert a) {}
+    let mut more : Array Address := #[]
+    for a in closureOrder do
+      if let some shape := s.cx.index.blocks[a]? then
+        for r in shape.recs do
+          unless have_.contains r.block || more.contains r.block do more := more.push r.block
+    if more.isEmpty then break
+    closureRoots := closureRoots ++ more
+  let withProjections : Array Address := closureOrder.foldl (init := #[]) fun acc a =>
+    (acc.push a) ++ ((projectionsOf.getD a #[]).qsort fun x y => toString x < toString y)
+  let closureRecords : Array (Address × Ixon.Constant) :=
+    (withProjections.filter (!preludeSet.contains ·)).filterMap fun a => (s.store[a]?).map (a, ·)
+  for (a, c) in closureRecords do
+    let bytes := Ixon.serConstant c
+    match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
+    | .ok c' => unless c' == c do fail s!"closure record {a} does not round-trip"
+    | .error e => fail s!"closure record {a}: {e}"
+  let mut closureBlobs : Array (Address × ByteArray) := #[]
+  for (_, c) in closureRecords do
+    for x in c.refs do
+      if let some b := env.blobs[x]? then
+        unless closureBlobs.any (·.1 == x) do closureBlobs := closureBlobs.push (x, b)
+  let closureHints : Array (Address × Ix.Kernel.ReducibilityHint) := closureRecords.filterMap fun (a, _) =>
+    (env.anonHints[a]?).map fun
+      | .opaque => (a, .opaque)
+      | .abbrev => (a, .abbrev)
+      | .regular h => (a, .regular h.toNat)
+  let prepared := Ix.Cert.RoleClosure.prepareClosure table pre closureRecords closureBlobs.toList
+    closureHints
+  unless Ix.Cert.RoleClosure.closureCheck prepared do
+    fail s!"the well-founded operations' closure does not check: \
+      {match prepared with | .ok _ => "the fold refuses it or an operation is not defined" | .error e => e}"
+  IO.eprintln s!"pin-gen: closure: {closureRecords.size} records (bytes \
+    {closureRecords.foldl (fun n (_, c) => n + (Ixon.serConstant c).size) 0}), {closureBlobs.size} blobs, \
+    {closureHints.size} hints; it defines every well-founded operation and the verified fold accepts it"
+  -- 4b: Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`): the
+  -- certificate theorems closed in Source mode over the certificate module's
+  -- own environment, written as theorem records whose references are names
+  -- (an Ixon address is an alias fiber's, several names, so the `.anon`
+  -- records cannot be read by name)
+  let srcStarted ← IO.monoMsNow
+  let leanEnv ← getCompileEnv #[certsModule]
+  let preSrc ← IO.ofExcept (readPrelude (md := .source) table preRecords evRecords evBlobs.toList)
+  let ((srcEv, srcWhy), srcDecls) := sourceEvidenceOf preSrc leanEnv 16
+  unless srcWhy.isEmpty do fail s!"Source evidence: {srcWhy}"
+  let mut srcRecords : Array (Address × Ixon.Constant) := #[]
+  let mut srcBlobs : Array (Address × ByteArray) := #[]
+  let mut srcNames : Std.HashMap Address Lean.Name := {}
+  for (r, es) in srcEv do
+    for e in es do
+      let .proof (k, p) := e | continue
+      let some type := srcDecls.findSome? (fun
+          | .thmDecl cv _ => if cv.name == k then some cv.type else none
+          | _ => none)
+        | fail s!"{k}: no statement in Source mode"
+      let mut named : Std.HashMap Address Lean.Name := {}
+      for n in (type.constKeys.toList ++ p.constKeys.toList) do
+        let ln := Ix.RoleEvidence.toLeanName n
+        unless Ix.RoleEvidence.ofLeanName ln == n do
+          fail s!"{k}: the key {n} is not its name's (a generated key)"
+        let a := nameAddress ln
+        if let some m := named[a]? then
+          unless m == ln do fail s!"{k}: {m} and {ln} have one name address"
+        named := named.insert a ln
+      let (c, blobs) ← match theoremRecord (fun n => some (nameAddress (Ix.RoleEvidence.toLeanName n))) type p with
+        | .ok x => pure x
+        | .error e => fail s!"{k}: {e}"
+      let bytes := Ixon.serConstant c
+      match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
+      | .ok c' => unless c' == c do fail s!"{k}: its Source record does not round-trip"
+      | .error e => fail s!"{k}: its Source record does not decode: {e}"
+      let a := hash bytes
+      srcRecords := srcRecords.push (a, c)
+      srcNames := srcNames.insert a (Ix.RoleEvidence.toLeanName k)
+      for (x, n) in named.toList do
+        if let some m := srcNames[x]? then
+          unless m == n do fail s!"{m} and {n} have one name address"
+        srcNames := srcNames.insert x n
+      for b in blobs do
+        unless evBlobs.any (·.1 == b.1) || srcBlobs.any (·.1 == b.1) do srcBlobs := srcBlobs.push b
+    if es.any (fun | .proof _ => true | .defeq => false) then
+      IO.eprintln s!"pin-gen: {repr r}: Source evidence closed and written"
+  let srcNameRows : Array (Address × Lean.Name) := srcNames.toArray.qsort fun (a, n) (b, m) =>
+    toString a < toString b || (toString a == toString b && n.toString < m.toString)
+  let hexRows (xs : Array (Address × ByteArray)) : Array (String × String) :=
+    xs.map fun (a, b) => (toString a, hexOfBytes b)
+  -- the bundle reads back as the closed proofs
+  let bundle ← IO.ofExcept ((Ix.RoleEvidence.Bundle.ofRows
+    (hexRows (srcRecords.map fun (a, c) => (a, Ixon.serConstant c)))
+    (srcNameRows.map fun (a, n) => (toString a, n)) (hexRows (evBlobs ++ srcBlobs))).mapError
+      (s!"pin-gen: the Source bundle: " ++ ·))
+  let (readEv, readWhy) := bundle.evidenceReport
+  unless readWhy.isEmpty && readEv == srcEv do
+    fail s!"the Source bundle does not read back as the closed proofs: {readWhy}"
+  IO.eprintln s!"pin-gen: Source evidence: {srcRecords.size} records, {srcNames.size} names, \
+    {srcBlobs.size} more blobs; reads back; {(← IO.monoMsNow) - srcStarted} ms"
   -- 5: output
   let digest ← sha256 input
   let certDigest ← sha256 certInput
-  let sorted := kept.qsort (fun a b => toString a.name < toString b.name)
-  let pinLines := sorted.toList.map fun p =>
-    let (b, i, c) := refFields p.ref
-    s!"  ([{", ".intercalate ((components p.name).map componentLit)}], {b.quote}, {i}, {c})"
-  let levelLines := (levels.toArray.qsort (fun a b => toString (refFields a.1) < toString (refFields b.1))).toList.map
-    fun (r, ns) =>
-      let (b, i, c) := refFields r
-      s!"  ({b.quote}, {i}, {c}, [{", ".intercalate (ns.map fun n => s!"[{", ".intercalate ((components n).map componentLit)}]")}])"
-  let preLines := preRecords.toList.map fun (a, c) =>
-    s!"  ({(toString a).quote},\n   {(hexOfBytes (Ixon.serConstant c)).quote})"
+  let rowsOf (xs : Array (Address × ByteArray)) : String :=
+    ",\n".intercalate (xs.toList.map fun (a, b) => s!"  ({(toString a).quote},\n   {(hexOfBytes b).quote})")
+  let namesOf (xs : Array (Address × Lean.Name)) : String :=
+    ",\n".intercalate (xs.toList.map fun (a, n) => s!"  ({(toString a).quote},\n   {nameTerm n})")
   let recipe := "\n".intercalate (regenerate.map ("    " ++ ·))
-  let text := s!"/-! # Pinned names and prelude records (generated)
+  let text := s!"module
 
-GENERATED by `kernel-pin-gen` (`Benchmarks/Kernel/PinGen.lean`),
-together with `NatOpPinData.lean`; do not edit. To regenerate:
+/-! # The default role table, its evidence, and the Ixon prelude (generated)
 
-{recipe}
-
-Every pinned constant's record, and the literal capabilities, were checked by
-the verified fold through the Ixon reader when this file was
-generated; see `IxC/Kernel/Ixon/Reader.lean` for what the table may affect
-(coverage, never soundness). Source: sha256 {digest}.
-
-`pins`: (name components, block address, member, constructor + 1 or 0).
-`levels`: (block address, member, constructor + 1 or 0, level-parameter
-names), for the pinned constants and their recursors.
-`prelude`: (record address, canonical record bytes), in the checker's
-prelude order. -/
-
-namespace Ix.Kernel.Reader.PinData
-
-def source : String := {s!"sha256:{digest}".quote}
-
-def pins : Array (List (String ⊕ Nat) × String × Nat × Nat) := #[
-{",\n".intercalate pinLines}]
-
-def levels : Array (String × Nat × Nat × List (List (String ⊕ Nat))) := #[
-{",\n".intercalate levelLines}]
-
-def prelude : Array (String × String) := #[
-{",\n".intercalate preLines}]
-
-end Ix.Kernel.Reader.PinData
-"
-  IO.FS.writeFile output text
-  IO.eprintln s!"pin-gen: wrote {output}: {sorted.size} pins, {preRecords.size} prelude records"
-  let opLines := opRoots.toList.map fun (n, pin, proofs) =>
-    s!"  ({n.quote}, {pin}, {proofs})"
-  let natText := s!"/-! # The pin-certified Nat operations' pins and certificates (generated)
-
-GENERATED by `kernel-pin-gen` (`Benchmarks/Kernel/PinGen.lean`),
-together with `PinData.lean`; do not edit. To regenerate:
+GENERATED by `kernel-pin-gen` (`Benchmarks/Kernel/PinGen.lean`); do not edit.
+To regenerate:
 
 {recipe}
 
-One pin variant (`Ix.Kernel.NatOpPinSet`) of the eight pin-certified `Nat`
-operations, from Ixon records only:
+The default table binds every role (`Ix.Kernel.Role`) to the constant of the
+compiled Init (sha256 {digest}) under the role's Lean name, with the
+structural `Nat` operations' `defeq` evidence and, for each well-founded one,
+the theorems of `IxC/Kernel/PinGen/Certs.lean` (compiled, sha256 {certDigest})
+closed over the operation's dependency closure and written as theorem
+records. Every bound constant's record, the evidence and both literal
+capabilities were checked by the verified fold through the Ixon reader under
+this table when this file was generated. The table is untrusted: every
+theorem holds for every table (`Ix.Kernel.Admission.checkBytes`), and it is
+for tests and the command line only.
 
-* the pins are the operations' stored values in the compiled Init (sha256
-  {digest}), as the Ixon reader reads them;
-* the certificate proofs are the theorems of `IxC/Kernel/PinGen/Certs.lean`,
-  compiled by the Ix compiler (sha256 {certDigest}) and read by the same
-  reader, with every constant outside the operation's dependency cone, its
-  certificate ground and the statements' machinery inlined, and beta, `let`
-  and projection-of-constructor redexes reduced (upstream's pinner's rule).
+`table`: the binding section (`Ix.Kernel.RoleTable.toBytes`), `tableAddress`
+its BLAKE3 hash. `evidence`: the evidence's theorem records (address,
+canonical bytes); `blobs`: the blobs their literals reference (address,
+bytes). `prelude`: (record address, canonical record bytes), in the checker's
+prelude order.
 
-Every operation was certified by the verified fold through the Ixon
-reader, with this variant, when this file was generated. The fold takes its
-pin list as a parameter and `Ix.Kernel.model_exists` holds at every list, so
-the data carries no trust. `table` is a share table and `ops` its roots per
-operation, in `NatOpPinSet` field order; the format and the decoder are in
-`IxC/Kernel/Ixon/Prelude.lean`. -/
+`sourceEvidence`: Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`,
+for an input without the certificate theorems): the same theorems closed in
+Source mode over the certificate module's own environment, as theorem records
+(address, canonical bytes) whose references are names: `sourceNames` names
+each reference's address (the generator's `nameAddress`) and each record (its theorem), and
+a literal's blob is in `blobs` or `sourceBlobs`. These were read back as the
+closed proofs when this file was generated.
 
-namespace Ix.Kernel.Reader.NatOpPinData
+`closure`: the well-founded `Nat` operations' dependency closure in the
+compiled Init, less the prelude (record address, canonical record bytes), in
+check order; `closureBlobs`: the blobs its literals reference; `closureHints`:
+its definitions' hints (record address, `opaque`, `abbrev` or a height). Read
+by the Ixon entry's reader behind the prelude, it defines every well-founded
+operation and the verified fold accepts it under this table's evidence
+(`Ix.Cert.RoleClosure.RoleEvidenceChecks`): checked when this file was
+generated, and by `lake exe IxTests cert-statement` (`roleEvidenceCheck`) after
+every regeneration. -/
+
+@[expose] public section
+
+namespace Ix.Kernel.Reader.RoleData
 
 def source : String := {s!"sha256:{digest} sha256:{certDigest}".quote}
 
-def toolchain : String := {toolchain.quote}
+def table : String := {(hexOfBytes tableBytes).quote}
 
-def ops : Array (String × Nat × List Nat) := #[
-{",\n".intercalate opLines}]
+def tableAddress : String := {(toString tableAddress).quote}
 
-def table : String := r\"
-{table}
-\"
+def evidence : Array (String × String) := #[
+{rowsOf (evRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
 
-end Ix.Kernel.Reader.NatOpPinData
+def blobs : Array (String × String) := #[
+{rowsOf evBlobs}]
+
+def prelude : Array (String × String) := #[
+{rowsOf (preRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
+
+def sourceEvidence : Array (String × String) := #[
+{rowsOf (srcRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
+
+def sourceNames : Array (String × Lean.Name) := #[
+{namesOf srcNameRows}]
+
+def sourceBlobs : Array (String × String) := #[
+{rowsOf srcBlobs}]
+
+def closure : Array (String × String) := #[
+{rowsOf (closureRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
+
+def closureBlobs : Array (String × String) := #[
+{rowsOf closureBlobs}]
+
+def closureHints : Array (String × String) := #[
+{",\n".intercalate (closureHints.toList.map fun (a, h) =>
+    s!"  ({(toString a).quote}, {(Ix.Cert.RoleClosure.hintString h).quote})")}]
+
+end Ix.Kernel.Reader.RoleData
 "
-  IO.FS.writeFile natOutput natText
-  let proofCount := (opRoots.toList.map (·.2.2.length)).foldl (· + ·) 0
-  IO.eprintln s!"pin-gen: wrote {natOutput}: {tableLines.size} nodes, {proofCount} certificate proofs"
+  IO.FS.writeFile output text
+  IO.eprintln s!"pin-gen: wrote {output}: {bound.size} roles, {evRecords.size} evidence records, \
+    {evBlobs.size} blobs, {preRecords.size} prelude records, {srcRecords.size} Source \
+    evidence records, {srcNameRows.size} names, {closureRecords.size} closure records"
   return 0
 
 end Benchmarks.Kernel.PinGen

@@ -25,11 +25,15 @@ pub mod unsigned;
 
 pub mod builder;
 pub mod catalog;
+#[cfg(feature = "test-ffi")]
+pub mod clique;
 pub mod compile;
 pub mod graph;
 pub mod ix;
 pub mod kernel;
 pub mod lean_ixon;
+#[cfg(feature = "test-ffi")]
+pub mod pass3;
 pub mod primitives;
 #[cfg(feature = "test-ffi")]
 pub mod refcount;

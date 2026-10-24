@@ -148,12 +148,12 @@ def testCrossImpl : TestSeq :=
     IO.println ""
 
     -- Step 2: Compile with Lean using Rust's rawEnv and condensed blocks
-    -- (the aux-aware parallel driver: prereqs, aux tails, promotion +
+    -- (the driver, `compileEnvFold`: aux tails, promotion +
     -- no-aux originals — full production semantics).
-    IO.println s!"[Step 2] Running Lean parallel compilation (aux-aware)..."
+    IO.println s!"[Step 2] Running the Lean driver (compileEnvFold)..."
     let leanStart ← IO.monoMsNow
 
-    match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (dbg := true) with
+    match ← IO.lazyPure fun _ => Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed (dbg := true) with
     | .error err =>
       let leanTime := (← IO.monoMsNow) - leanStart
       IO.println s!"[Step 2] Compilation failed after {leanTime}ms"
@@ -337,8 +337,8 @@ def testCrossImpl : TestSeq :=
         IO.println s!"[Step 4]   Lean blob stats: total={fmtBytes leanTotalBlobData}, max={fmtBytes leanMaxBlob}, avg={fmtBytes leanAvgBlob}, big(>1kB)={leanBig}, huge(>100kB)={leanHuge}"
         IO.println s!"[Step 4]   Lean top 10 blob sizes: {leanTopSizes.map fmtBytes}"
 
-        let (leanBlobs, leanConsts, leanHints, leanNames, leanNamed, leanComms) := Ixon.envSectionSizes leanIxonEnv
-        IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, hints={fmtBytes leanHints}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}"
+        let (leanBlobs, leanConsts, leanHints, leanNames, leanNamed, leanComms, leanOriginals) := Ixon.envSectionSizes leanIxonEnv
+        IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, hints={fmtBytes leanHints}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}, originalData={fmtBytes leanOriginals}"
         let leanEnvBytes ← serializeEnv leanIxonEnv
         IO.println s!"[Step 4]   Lean env done: {fmtBytes leanEnvBytes.size}"
 
@@ -358,8 +358,8 @@ def testCrossImpl : TestSeq :=
         IO.println s!"[Step 4]   Rust blob stats: total={fmtBytes rustTotalBlobData}, max={fmtBytes rustMaxBlob}, avg={fmtBytes rustAvgBlob}, big(>1kB)={rustBig}, huge(>100kB)={rustHuge}"
         IO.println s!"[Step 4]   Rust top 10 blob sizes: {rustTopSizes.map fmtBytes}"
 
-        let (rustBlobs, rustConsts, rustHints, rustNames, rustNamed, rustComms) := Ixon.envSectionSizes phases.compileEnv
-        IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, hints={fmtBytes rustHints}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}"
+        let (rustBlobs, rustConsts, rustHints, rustNames, rustNamed, rustComms, rustOriginals) := Ixon.envSectionSizes phases.compileEnv
+        IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, hints={fmtBytes rustHints}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}, originalData={fmtBytes rustOriginals}"
         let rustEnvBytes ← serializeEnv phases.compileEnv
         IO.println s!"[Step 4]   Rust env done: {fmtBytes rustEnvBytes.size}"
         let serTime := (← IO.monoMsNow) - serStart

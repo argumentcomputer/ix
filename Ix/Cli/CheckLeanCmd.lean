@@ -1,289 +1,299 @@
-/-
-  `ix check-lean <path.ixe>`: typecheck a serialized `.ixe` environment
-  through the pure-Lean `Ix.Tc` kernel — the reference-kernel counterpart
-  of `ix check-rs`, with matching mode default, live progress, and exit
-  codes. Correctness-first: expect the Rust kernel to be much faster.
-
-  Modes:
-  - Default (meta): the full env is parsed (`Ixon.deEnv`), meta-ingressed
-    in parallel into one merged `KEnv .meta`, and every Named entry's
-    block is checked. Labels are Lean names.
-  - `--anon`: anon sections only (`Ixon.deEnvAnon`); metadata never
-    reaches the kernel; labels are `#<hex>` addresses. Verdicts are
-    mode-independent (checking never reads metadata) — meta buys readable
-    progress/errors, anon a smaller memory footprint.
-
-  Both modes eagerly ingress the WHOLE env before checking: checking is
-  subject-only but still reads dependencies' declared types, so every
-  constant must be present. `--max` therefore bounds the check phase
-  only, never ingress. Checking then runs work-stealing parallel workers
-  over the shared env (see `Ix.Tc.ParCheck`).
-
-  Progress mirrors `check-rs`: a periodic aggregate line (done/total,
-  rate, eta, oldest in-flight) on stderr, persistent lines only for
-  failures and slow constants, tunable via IX_KERNEL_CHECK_PROGRESS_MS /
-  IX_PROGRESS_MS, IX_KERNEL_CHECK_SLOW_MS, IX_KERNEL_CHECK_ACTIVE_SLOW_MS
-  (0 disables). `--fail-out` streams failures in the check-rs FailureLog
-  shape (bare name lines + `#` comments), so a meta-mode file feeds
-  straight into `ix check-rs --consts-file` for differential bisects.
-  `--consts`/`--consts-file` narrow the check to named targets (matched
-  against the same labels fail-out writes, `«»`-insensitively) — the
-  fast iteration loop for single-constant repros: ingress still covers
-  the whole env, but checking touches only the requested blocks.
-
-  Exit codes match check-rs: 0 all pass; 3 kernel rejection; 2 usage;
-  1 infra (read/parse/ingress) error.
--/
 module
+
 public import Cli
 public import Ix.Common
-public import Ix.Cli.ConstsFile
-public import Ix.Tc
+public import Ix.Cli.CheckLeanTargets
+public import Ix.KernelCheck.Run
+public import Ix.KernelCheck.Stream
+public import Ix.Runtime.Thread
 public import Ix.Benchmark.Results
 
 public section
 
+/-! The IxC host record checker behind check-lean. Both modes authenticate
+input bytes. Selected declarations run with their complete supporting closure;
+actual emitted-key coverage is required. This harness reports accept/typed/
+reject/decline/blocked, not an aggregate certified byte-admission theorem. -/
+
 namespace Ix.Cli.CheckLeanCmd
 
-open Ix.Tc
+open Ix.Kernel Ix.Kernel.Reader Benchmarks.Kernel.CheckIxeStep
+open Benchmarks.Kernel.CheckIxeMeta
+open Ix.Cli.CheckLeanTargets
 
-/-- First set env var wins; else the default. Zero is a valid setting. -/
-def envNat (names : List String) (dflt : Nat) : IO Nat := do
-  for n in names do
-    if let some v ← IO.getEnv n then
-      if let some parsed := v.trimAscii.toString.toNat? then
-        return parsed
-  return dflt
+inductive DriverError where
+  | usage (message : String)
+  | infrastructure (message : String)
+  | refused (label message : String)
 
-/-- Default worker count: `LEAN_NUM_THREADS`, else the machine's core
-    count via `nproc` (Lean has no core-count API), else 8. -/
+def DriverError.message : DriverError → String
+  | .usage s | .infrastructure s => s | .refused n s => s!"{n}: {s}"
+def DriverError.exitCode : DriverError → UInt32
+  | .usage _ => 2 | .infrastructure _ => 1 | .refused .. => 3
+
+def targetError : CheckLeanTargets.Error → DriverError
+  | .selector s => .usage s
+  | .input n e => .refused n s!"{(readOutcome e).1}: {(readOutcome e).2}"
+  | .coverage n s => .refused n s!"decline: {s}"
+
+structure CheckCfg where
+  workers : Nat := 1
+  verbose : Bool := false
+  silent : Bool := false
+  progressMs : Nat := 2000
+  slowMs : Nat := 7000
+  stackBytes : Nat := 256 * 1024 * 1024
+  tag : String := "[check-lean]"
+
+structure PreparedInput where
+  parts : Ixon.LazyEnvParts
+  setup : Setup
+  pre : Prelude .anon
+  hints : Hints
+  inventory : Array Candidate
+  anon : Bool
+  prepareMs : Nat := 0
+
+/-- Authenticate first; retain raw windows and reader skeletons. No metadata
+or original-data field is rebuilt through an incomplete Env literal. -/
+def prepareInput (bytes : ByteArray) (anon : Bool := false) : IO (Except DriverError PreparedInput) := do
+  let start ← IO.monoMsNow
+  let result : Except DriverError PreparedInput ← IO.lazyPure fun _ => do
+    let parts ← (Ixon.deEnvVerifiedLazy bytes).mapError DriverError.infrastructure
+    let table ← defaultTable.mapError DriverError.infrastructure
+    let pre ← (preludeFor table : Except String (Prelude .anon)).mapError DriverError.infrastructure
+    let mut store : RecordStore := {}
+    let mut literals := #[]
+    for (a, lc) in parts.env.consts do
+      let c ← lc.get.mapError DriverError.infrastructure
+      let (nat, str) := literalKinds c
+      if nat || str then literals := literals.push (a, Benchmarks.Kernel.CheckIxeStream.literalStandIn nat str)
+      store := store.insert a (Benchmarks.Kernel.CheckIxeStream.skeleton c)
+    let hints := Hints.ofStore store parts.env.anonHints
+    let setup := Benchmarks.Kernel.CheckIxeStep.setup store (parts.env.blobs[·]?) table pre hints.lookup
+      (literals := some literals)
+    let inventory ← if anon then (anonymousCandidates store).mapError targetError else
+      pure (namedCandidates store (parts.namedRows.map fun (r : Ixon.NamedRow) => (toString r.name, r.addr)))
+    pure { parts, setup, pre, hints, inventory, anon : PreparedInput }
+  let elapsed := (← IO.monoMsNow) - start
+  return result.map fun p => { p with prepareMs := elapsed }
+
+def PreparedInput.record (p : PreparedInput) (a : Address) : Except ReadError Ixon.Constant :=
+  match p.parts.env.consts[a]? with
+  | some lc => lc.get.mapError (.malformed ·)
+  | none => match p.setup.store[a]? with
+    | some c => .ok c | none => .error (.malformed "record is missing")
+
+structure CheckReport where
+  targets : Array TargetResult
+  execution : Execution
+  omitted : Array String
+  records : Nat
+  inputMs : Nat
+  prepareMs : Nat
+  elapsedMs : Nat
+  subjectMicros : Nat
+  supportMicros : Nat
+  readMicros : Nat
+
+def success (outcome : String) : Bool := outcome == "accept" || outcome == "typed"
+def CheckReport.targetsCovered (r : CheckReport) : Nat := r.targets.size
+def CheckReport.passed (r : CheckReport) : Nat := (r.targets.filter (success ∘ (·.outcome))).size
+def CheckReport.typed (r : CheckReport) : Nat := (r.targets.filter (·.outcome == "typed")).size
+def CheckReport.failures (r : CheckReport) : Array (String × String) :=
+  (r.targets.filter (!success ·.outcome)).map fun t => (t.target.label, s!"{t.outcome}: {t.reason}")
+
+/-- No persistent marking: each call owns fresh serial checker/reader state.
+The exact cached tier declarations and onRead values supply key observations. -/
+def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev : Evidences md)
+    (erase : Key md → Key .anon) (decorate : Read md → Read md) (decorateTier : Tier.TierDecl md → Tier.TierDecl md)
+    (spell : Key md → String) (prepareStart : Nat) (failOut? : Option IO.FS.Handle) :
+    IO (Except DriverError CheckReport) := do
+  let mut tiers : Std.HashMap Address (Except ReadError (Tier.TierDecl md)) := {}
+  let mut observed : Produced := {}
+  for a in plan.addresses do
+    if (p.setup.store[a]?).any (fun c => Ix.Kernel.Admission.isTierInfo c.info) then
+      let d := (p.record a >>= fun c => (readTierAt cx a c).getD (.error (.malformed "missing tier declaration"))).map decorateTier
+      tiers := tiers.insert a d
+      if let .ok decl := d then observed := noteTier erase observed a decl
+  let seen ← IO.mkRef observed
+  let actual ← IO.mkRef (tiers.fold (init := {}) fun (set : Std.HashSet Address) a _ => set.insert a)
+  let src : LoopSource (State md) md := {
+    view := p.setup.view, init := pure {}, commit := fun st _ rd => st.commit rd,
+    read := fun st a => (p.record a >>= readRecord cx st a).map decorate,
+    tier := some fun _ a => tiers[a]? }
+  let byProducer := plan.targets.foldl (fun (m : Std.HashMap Address (List Target)) t =>
+    m.insert t.producer (t :: m.getD t.producer [])) {}
+  let prepareMs := (← IO.monoMsNow) - prepareStart
+  let start ← IO.monoMsNow
+  let completed ← IO.mkRef (0, 0)
+  let stop ← IO.mkRef false
+  let reporter ← IO.asTask (prio := .dedicated) do
+    if cfg.silent || cfg.progressMs == 0 then return
+    let mut last := start
+    while !(← stop.get) do
+      IO.sleep (min 100 cfg.progressMs).toUInt32
+      let now ← IO.monoMsNow
+      if now - last ≥ cfg.progressMs && !(← stop.get) then
+        let (subjects, records) ← completed.get
+        IO.eprintln s!"{cfg.tag} {subjects}/{plan.targets.size} subjects, {records} record rows, elapsed {(now - start) / 1000}s"
+        last := now
+  try
+    let run ← runRecords src ev (fun _ => #[]) plan.addresses { workers := some cfg.workers, tier := true }
+      (spell := spell)
+      (onRead := fun a r _ => do
+        actual.modify (·.insert a)
+        if let .ok rd := r then seen.modify (noteRead erase · a rd))
+      (emit := fun row => do
+        let selected := (byProducer.getD row.address []).reverse
+        completed.modify fun (n, r) => (n + selected.length, r + 1)
+        if selected.isEmpty && cfg.verbose && !cfg.silent && !success row.outcome then
+          IO.eprintln s!"{cfg.tag} support #{row.address}: {row.outcome} {row.reason}"
+        for t in selected do
+          let covered := (← seen.get).getD row.address {} |>.contains t.key
+          let outcome := if success row.outcome && !covered then "decline" else row.outcome
+          let reason := if success row.outcome && !covered then "selected key was not emitted" else row.reason
+          if !cfg.silent && (cfg.verbose || !success outcome || (cfg.slowMs > 0 && row.micros / 1000 ≥ cfg.slowMs)) then
+            IO.eprintln s!"{cfg.tag} {t.label}: {outcome} {reason} ({row.micros / 1000}ms)"
+          if let some h := failOut? then
+            if !success outcome then
+              h.putStrLn s!"\n# {outcome}: {(reason.replace "\n" " | ").replace "\r" ""}"
+              h.putStrLn t.fileLabel
+              h.flush)
+    let targets ← match results plan run.rows (← seen.get) with
+      | .ok xs => pure xs | .error e => return .error (targetError e)
+    let actual ← actual.get
+    let subject := run.rows.foldl (fun n r => if actual.contains r.address && byProducer.contains r.address then n + r.micros else n) 0
+    let total := run.rows.foldl (fun n r => if actual.contains r.address then n + r.micros else n) 0
+    let reads := run.rows.foldl (fun n r => if actual.contains r.address then n + r.readMicros else n) 0
+    let elapsedMs := (← IO.monoMsNow) - start
+    return .ok {
+      targets, execution := run.execution, omitted := plan.omitted, records := actual.size
+      inputMs := p.prepareMs, prepareMs, elapsedMs, subjectMicros := subject
+      supportMicros := total - subject, readMicros := reads }
+  finally
+    stop.set true
+    let _ ← IO.wait reporter
+    pure ()
+
+/-- Preparation is shareable; every run owns ordinary reclaimable checker
+state. Tier support explicitly chooses one effective worker. -/
+def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
+    (maxGroups : Option Nat := none) (failOut? : Option IO.FS.Handle := none) : IO (Except DriverError CheckReport) := do
+  if cfg.workers == 0 then return .error (.usage "--workers must be greater than zero")
+  try
+    let start ← IO.monoMsNow
+    let plan ← match select p.setup (p.pre.records.map fun (a, c) => owner a c) p.inventory selection maxGroups with
+      | .ok v => pure v | .error e => return .error (targetError e)
+    if !cfg.silent then IO.eprintln s!"{cfg.tag} {plan.targets.size} selected subjects, {plan.producers.size} producers, {plan.addresses.size} support/prelude records; workers requested {cfg.workers}, effective 1 (serial typing tier); {plan.omitted.size} omitted by cap"
+    let job : IO (Except DriverError CheckReport) ← if p.anon then
+      pure (runMode p cfg plan p.setup.cx p.setup.evidence id id id toString start failOut?)
+    else do
+      let mut included := plan.addresses.foldl (fun (s : Std.HashSet Address) a => s.insert a) {}
+      for a in plan.addresses do
+        for r in recursorRecords p.setup.cx.index a do included := included.insert r
+      let mut env := p.parts.env
+      for row in p.parts.namedRows do
+        if (p.setup.store[row.addr]?).any (fun c => included.contains (owner row.addr c)) then
+          let named ← IO.ofExcept (row.materialize p.parts.backing p.parts.nameRev)
+          env := { env with named := env.named.insert row.name named }
+      let pre : Prelude .meta ← IO.ofExcept (preludeFor p.setup.table)
+      let (cx, ev) := metaContext p.setup (env.blobs[·]?) p.setup.table pre p.hints.lookup
+      let display := displayTable env cx
+      let nc : Ix.KernelDisplay.NameCx := ⟨env.names, Ix.KernelDisplay.metaTable env cx⟩
+      pure (runMode p cfg plan cx ev (fun k => Key.map (md := .meta) (md' := .anon) id k)
+        (fun rd => (Ix.KernelDisplay.nameRead nc (withDisplay display rd)).1)
+        (fun d => (nameTier nc d {}).1) (spellWith display) start failOut?)
+    if cfg.stackBytes != 0 then Ix.Tc.setLeanThreadStackSize (USize.ofNat cfg.stackBytes)
+    IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) job))
+  catch e => return .error (.infrastructure e.toString)
+
+def runMetaCheck (bytes : ByteArray) (cfg : CheckCfg) (selection : Selection)
+    (maxGroups : Option Nat := none) (failOut? : Option IO.FS.Handle := none) : IO (Except DriverError CheckReport) := do
+  match ← prepareInput bytes with
+  | .error e => return .error e | .ok p => runPrepared p cfg selection maxGroups failOut?
+def runAnonCheck (bytes : ByteArray) (cfg : CheckCfg) (selection : Selection)
+    (maxGroups : Option Nat := none) (failOut? : Option IO.FS.Handle := none) : IO (Except DriverError CheckReport) := do
+  match ← prepareInput bytes true with
+  | .error e => return .error e | .ok p => runPrepared p cfg selection maxGroups failOut?
+
+/-- First supplied setting wins; malformed values are usage errors. -/
+def envNat (names : List String) (dflt : Nat) : IO (Except DriverError Nat) := do
+  for name in names do
+    if let some v ← IO.getEnv name then
+      return match v.trimAscii.toString.toNat? with
+        | some n => .ok n | none => .error (.usage s!"{name} requires a natural number")
+  return .ok dflt
+
 def defaultWorkers : IO Nat := do
-  if let some n := (← IO.getEnv "LEAN_NUM_THREADS").bind
-      (·.trimAscii.toString.toNat?) then
-    return max 1 n
+  if let some n := (← IO.getEnv "LEAN_NUM_THREADS").bind (·.trimAscii.toString.toNat?) then return max 1 n
   match ← (IO.Process.output { cmd := "nproc" }).toBaseIO with
-  | .ok out =>
-    if out.exitCode == 0 then
-      return (out.stdout.trimAscii.toString.toNat?).map (max 1) |>.getD 8
-    return 8
+  | .ok out => if out.exitCode != 0 then return 8 else return (out.stdout.trimAscii.toString.toNat?).map (max 1) |>.getD 8
   | .error _ => return 8
 
-/-- Narrow check work to the requested names (`--consts`/`--consts-file`;
-    empty = everything). Returns the kept items plus the requests that
-    matched nothing. Matching goes through `ConstsFile.normalizeName` on
-    both sides so fail-out files from either kernel resolve (Lean escapes
-    non-identifier components as `«…»`, Rust renders them bare); a leading
-    `#` on a request is dropped so anon `#hex` labels match bare hex too. -/
-def selectWork (work : Array (CheckWorkItem m)) (labelOf : KId m → String)
-    (only : Array String) :
-    Array (CheckWorkItem m) × Array String := Id.run do
-  if only.isEmpty then return (work, #[])
-  let key (s : String) : String :=
-    ConstsFile.normalizeName
-      (if s.startsWith "#" then (s.drop 1).toString else s)
-  let wanted : Std.HashSet String :=
-    only.foldl (fun acc n => acc.insert (key n)) {}
-  let mut seen : Std.HashSet String := {}
-  let mut kept : Array (CheckWorkItem m) := #[]
-  for it in work do
-    let mut hit := false
-    for t in it.targets do
-      let k := key (labelOf t)
-      if wanted.contains k then
-        hit := true
-        seen := seen.insert k
-    if hit then
-      kept := kept.push it
-  let unmatched := only.filter (fun n => !seen.contains (key n))
-  return (kept, unmatched)
-
-/-- Apply `selectWork` and report: unmatched-name warnings and, when a
-    filter is active, the narrowed item count. -/
-def selectWorkReporting (work : Array (CheckWorkItem m))
-    (labelOf : KId m → String) (only : Array String) :
-    IO (Array (CheckWorkItem m)) := do
-  let (kept, unmatched) := selectWork work labelOf only
-  for n in unmatched do
-    IO.eprintln s!"[check-lean] warning: --consts name matched nothing: {n}"
-  if !only.isEmpty then
-    IO.eprintln s!"[check-lean] filter: {only.size} name(s) → \
-                   {kept.size} work item(s)"
-  return kept
-
-/-- Meta path: full parse → parallel meta ingress → check work → parallel
-    check. Returns `(report, workItems)` or an infra error. -/
-def runMetaCheck (bytes : ByteArray) (cfg : ParCheckCfg) (verify : Bool)
-    (max? : Option Nat) (only : Array String)
-    (failOut? : Option IO.FS.Handle) :
-    IO (Except String (ParCheckReport × Nat)) := do
-  let t0 ← IO.monoMsNow
-  match Ixon.deEnv bytes with
-  | .error e => return .error s!"deserialize failed: {e}"
-  | .ok ixonEnv =>
-    let t1 ← IO.monoMsNow
-    IO.eprintln s!"[check-lean] deserialize: {t1 - t0}ms \
-                   ({ixonEnv.consts.size} consts, {ixonEnv.named.size} named)"
-    match ingressMetaEnvParallel ixonEnv (verify := verify) with
-    | .error e => return .error s!"meta ingress failed: {e}"
-    | .ok kenv =>
-      let t2 ← IO.monoMsNow
-      IO.eprintln s!"[check-lean] ingress:     {t2 - t1}ms \
-                     ({kenv.consts.size} kernel consts, {kenv.blocks.size} blocks)"
-      let workAll ← selectWorkReporting (buildCheckWork kenv)
-        (fun id => toString id.name) only
-      let work := match max? with
-        | some n => workAll.extract 0 (min n workAll.size)
-        | none => workAll
-      let totalTargets := work.foldl (fun n it => n + it.targets.size) 0
-      IO.eprintln s!"[check-lean] checking {work.size} work item(s) for \
-                     {totalTargets} constants with {cfg.workers} worker(s)..."
-      let prims := Primitives.fromEnv kenv
-      let report ← checkEnvParallel kenv prims work
-        (labelOf := fun id => toString id)
-        (failLabelOf := fun id => toString id.name)
-        cfg failOut?
-      return .ok (report, work.size)
-
-/-- Anon path: anon parse → parallel anon ingress → check work → parallel
-    check. Same driver, `#<hex>` labels. -/
-def runAnonCheck (bytes : ByteArray) (cfg : ParCheckCfg) (verify : Bool)
-    (max? : Option Nat) (only : Array String)
-    (failOut? : Option IO.FS.Handle) :
-    IO (Except String (ParCheckReport × Nat)) := do
-  let t0 ← IO.monoMsNow
-  match Ixon.deEnvAnon bytes with
-  | .error e => return .error s!"deserialize failed: {e}"
-  | .ok ixonEnv =>
-    let t1 ← IO.monoMsNow
-    IO.eprintln s!"[check-lean] deserialize: {t1 - t0}ms \
-                   ({ixonEnv.consts.size} consts, {ixonEnv.anonHints.size} hints)"
-    match buildAnonWork ixonEnv with
-    | .error e => return .error s!"work discovery failed: {e}"
-    | .ok ingressWork =>
-      match ingressAnonEnvParallel ixonEnv ingressWork (verify := verify) with
-      | .error e => return .error s!"anon ingress failed: {e}"
-      | .ok kenv =>
-        let t2 ← IO.monoMsNow
-        IO.eprintln s!"[check-lean] ingress:     {t2 - t1}ms \
-                       ({kenv.consts.size} kernel consts, {kenv.blocks.size} blocks)"
-        let workAll ← selectWorkReporting (buildCheckWork kenv)
-          (fun id => s!"#{id.addr}") only
-        let work := match max? with
-          | some n => workAll.extract 0 (min n workAll.size)
-          | none => workAll
-        let totalTargets := work.foldl (fun n it => n + it.targets.size) 0
-        IO.eprintln s!"[check-lean] checking {work.size} work item(s) for \
-                       {totalTargets} constants with {cfg.workers} worker(s)..."
-        let report ← checkEnvParallel kenv Primitives.ofAnonAddrs work
-          (labelOf := fun id => toString id)
-          (failLabelOf := fun id => s!"#{id.addr}")
-          cfg failOut?
-        return .ok (report, work.size)
-
-/-- Best-effort `#hex → name` relabeling for anon failure rows (meta
-    sections parsed only on demand, only when something failed). -/
-def relabelAnonFailures (bytes : ByteArray)
-    (failures : Array (String × String)) : Array (String × String) :=
-  match Ixon.deEnv bytes with
-  | .error _ => failures
-  | .ok fullEnv =>
-    let addrToName : Std.HashMap String String :=
-      fullEnv.addrToName.fold
-        (fun acc addr name => acc.insert (toString addr) (toString name)) {}
-    failures.map fun (label, msg) =>
-      match addrToName[(label.drop 1).toString]? with
-      | some n => (s!"{label} ({n})", msg)
-      | none => (label, msg)
+def checkConfig (p : Cli.Parsed) : IO (Except DriverError CheckCfg) := do
+  if p.hasFlag "no-verify" then return .error (.usage "--no-verify is unsupported by IxC; byte authentication is required")
+  if ((p.flag? "clear-every").map (·.as! Nat)).getD 0 != 0 then return .error (.usage "--clear-every must be 0; Ix.Tc cache controls do not apply to IxC")
+  for name in ["IX_TC_STEP_TRACE", "IX_TC_STATS", "IX_TC_NO_ACCEL", "IX_KERNEL_CHECK_ACTIVE_SLOW_MS"] do
+    if let some v ← IO.getEnv name then
+      if v.trimAscii.toString.toNat? != some 0 then return .error (.usage s!"{name} is unsupported by IxC; unset it or use 0")
+  if (← IO.getEnv "IX_TC_DEBUG_CONST").any (!·.trimAscii.isEmpty) then return .error (.usage "IX_TC_DEBUG_CONST is unsupported by IxC")
+  if (← IO.getEnv "IX_MAX_REC_FUEL").isSome then return .error (.usage "IX_MAX_REC_FUEL cannot override IxC's checker limits")
+  let workers ← match (p.flag? "workers").map (·.as! Nat) with | some n => pure n | none => defaultWorkers
+  if workers == 0 then return .error (.usage "--workers must be greater than zero")
+  let progress ← envNat ["IX_KERNEL_CHECK_PROGRESS_MS", "IX_PROGRESS_MS"] 2000
+  let slow ← envNat ["IX_KERNEL_CHECK_SLOW_MS"] 7000
+  return do pure { workers, verbose := p.hasFlag "verbose", progressMs := ← progress, slowMs := ← slow }
 
 def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some pathArg := p.positionalArg? "path"
-    | p.printError "error: must specify <path> to a .ixe file"
-      return Ix.Benchmark.Results.exitUsage
-  let envPath := pathArg.as! String
-  let anon := p.hasFlag "anon"
-  let verbose := p.hasFlag "verbose"
-  let verify := !(p.hasFlag "no-verify")
-  let clearEvery := ((p.flag? "clear-every").map (·.as! Nat)).getD 0
-  let max? := (p.flag? "max").map (·.as! Nat)
-  let only ← Ix.Cli.ConstsFile.gather p
-  let failOutPath := ((p.flag? "fail-out").map (·.as! String)).getD ""
-  let workers ← match (p.flag? "workers").map (·.as! Nat) with
-    | some n => pure (max 1 n)
-    | none => defaultWorkers
-  let cfg : ParCheckCfg := {
-    workers, clearEvery, verbose
-    progressMs := ← envNat ["IX_KERNEL_CHECK_PROGRESS_MS", "IX_PROGRESS_MS"] 2000
-    slowMs := ← envNat ["IX_KERNEL_CHECK_SLOW_MS"] 7000
-    stuckMs := ← envNat ["IX_KERNEL_CHECK_ACTIVE_SLOW_MS"] 30000
-    debugConst? := ← IO.getEnv "IX_TC_DEBUG_CONST"
-    stepTrace := (← envNat ["IX_TC_STEP_TRACE"] 0) != 0
-    stats := (← envNat ["IX_TC_STATS"] 0) != 0
-    noAccel := (← envNat ["IX_TC_NO_ACCEL"] 0) != 0
-    maxRecFuel? := ((← IO.getEnv "IX_MAX_REC_FUEL").bind
-      (·.trimAscii.toString.toNat?)).map (·.toUInt64) }
-
-  IO.println s!"Running Ix.Tc kernel check \
-                ({if anon then "anon" else "meta"} mode) on {envPath}"
-  let t0 ← IO.monoMsNow
-  let bytes ← IO.FS.readBinFile envPath
-  let t1 ← IO.monoMsNow
-  IO.eprintln s!"[check-lean] read env:    {t1 - t0}ms ({bytes.size} bytes)"
-
-  let failOut? ← if failOutPath.isEmpty then pure none else do
-    let h ← IO.FS.Handle.mk failOutPath .write
-    h.putStrLn "# ix check-lean failures"
-    h.putStrLn s!"# env: {envPath}"
-    pure (some h)
-
-  let result ← if anon then runAnonCheck bytes cfg verify max? only failOut?
-    else runMetaCheck bytes cfg verify max? only failOut?
-  match result with
-  | .error e =>
-    IO.eprintln s!"[check-lean] {e}"
-    return 1
-  | .ok (report, workN) =>
-    if let some h := failOut? then
-      h.putStrLn ""
-      h.putStrLn s!"# total failures: {report.failures.size}"
-      h.flush
-    let failures := if anon && !report.failures.isEmpty then
-        relabelAnonFailures bytes report.failures
-      else report.failures
-    IO.println s!"[check-lean] checked {report.targetsCovered} constants \
-                  ({workN} work items) in {report.elapsedMs}ms"
-    IO.println s!"[check-lean] {report.passed}/{report.targetsCovered} passed"
-    if !failures.isEmpty then
-      IO.println s!"[check-lean] {failures.size} failure(s):"
-      let shown := min 30 failures.size
-      for (label, msg) in failures.toSubarray 0 shown do
-        IO.println s!"  ✗ {label}: {msg}"
-      if failures.size > shown then
-        IO.println s!"  … ({failures.size - shown} more failures suppressed)"
-    if !failOutPath.isEmpty then
-      IO.println s!"[check-lean] streamed {report.failures.size} failure(s) \
-                    to {failOutPath}"
-    IO.println s!"##check-lean## {report.elapsedMs} {report.passed} \
-                  {failures.size} {report.targetsCovered}"
-    return if failures.isEmpty then 0 else Ix.Benchmark.Results.exitRejected
+  let some path := p.positionalArg? "path" | p.printError "error: must specify <path>"; return 2
+  let cfg ← match ← checkConfig p with
+    | .ok c => pure c | .error e => IO.eprintln e.message; return e.exitCode
+  try
+    let only ← ConstsFile.gather p
+    let selection := if (p.flag? "consts").isSome || (p.flag? "consts-file").isSome then Selection.only only else .all
+    let cap := (p.flag? "max").map (·.as! Nat)
+    let bytes ← IO.FS.readBinFile (path.as! String)
+    let out ← match p.flag? "fail-out" with
+      | none => pure none
+      | some f => do
+        let h ← IO.FS.Handle.mk (f.as! String) .write
+        h.putStrLn s!"# ix check-lean failures\n# env: {path.as! String}"
+        pure (some h)
+    IO.println s!"Running IxC record check ({if p.hasFlag "anon" then "anon" else "meta"} mode)"
+    let result ← if p.hasFlag "anon" then runAnonCheck bytes cfg selection cap out else runMetaCheck bytes cfg selection cap out
+    match result with
+    | .error e =>
+      IO.eprintln s!"[check-lean] {e.message}"
+      if let some h := out then
+        h.putStrLn s!"# {e.message.replace "\n" " | "}"
+        if let .refused label _ := e then h.putStrLn (if label.startsWith "#" then (label.drop 1).toString else label)
+        h.flush
+      return e.exitCode
+    | .ok report =>
+      if let some h := out then h.putStrLn s!"\n# total failures: {report.failures.size}"; h.flush
+      IO.println s!"[check-lean] {report.passed}/{report.targetsCovered} subjects passed ({report.typed} typed only), {report.records} checked/read records"
+      IO.println s!"[check-lean] authenticated input {report.inputMs}ms; run preparation {report.prepareMs}ms; selected checker {report.subjectMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; reading {report.readMicros / 1000}ms; run {report.elapsedMs}ms"
+      IO.println s!"##check-lean## {report.elapsedMs} {report.passed} {report.failures.size} {report.targetsCovered}"
+      return if report.failures.isEmpty then 0 else Ix.Benchmark.Results.exitRejected
+  catch e => IO.eprintln s!"[check-lean] {e}"; return 1
 
 end Ix.Cli.CheckLeanCmd
 
 open Ix.Cli.CheckLeanCmd in
 def checkLeanCmd : Cli.Cmd := `[Cli|
   "check-lean" VIA runCheckLeanCmd;
-  "Typecheck a `.ixe` through the pure-Lean Ix.Tc kernel (meta mode by default; parallel)"
-
+  "Check authenticated .ixe declarations with IxC (meta by default; serial typing tier)"
   FLAGS:
-    anon;                   "Run in anon mode (metadata never reaches the kernel; `#hex` labels)"
-    workers       : Nat;    "Parallel check workers (default: LEAN_NUM_THREADS, else core count)"
-    "fail-out"    : String; "Stream failing constants to this path (check-rs consts-file format)"
-    consts        : String; "Check only these constants (comma-separated fail-out labels; meta names or anon #hex)"
-    "consts-file" : String; "Check only the constants listed in this file (consts-file grammar; e.g. a --fail-out file)"
-    max           : Nat;    "Check only the first N work items (ingress still covers the whole env)"
-    "clear-every" : Nat;    "Clear each worker's reduction caches every N work items (0 disables; default 0 — warm caches win ~20% wall for ~3GB RSS)"
-    "no-verify";            "Skip blake3 integrity verification at constant materialization"
-    verbose;                "Serial mode: one line per constant (forces --workers 1)"
-
+    anon; "Anonymous keys and #hex display labels"
+    workers : Nat; "Requested workers (>0); the tier-capable path reports effective 1"
+    "fail-out" : String; "Write failing selected labels in consts-file format"
+    consts : String; "Comma-separated selected names or anonymous addresses"
+    "consts-file" : String; "Selected labels, one per line; # introduces comments"
+    max : Nat; "Select the first N producer groups; all dependencies/prelude remain"
+    "clear-every" : Nat; "Compatibility option: only 0 is supported by IxC"
+    "no-verify"; "Unsupported: IxC requires byte authentication"
+    verbose; "Print one outcome per selected subject"
   ARGS:
     path : String; "Path to a serialized .ixe environment"
 ]

@@ -19,7 +19,7 @@ public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.Levels
 public import Ix.AuxGen.Nested
-public import Ix.AuxGen.Kernel
+public import Ix.AuxGen.AuxKernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.CasesOn
 public import Ix.AuxGen.RecOn
@@ -29,29 +29,21 @@ public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError)
+-- A7 (D8): out-of-range array accesses are named errors (`arrIdx`).
 
-/-- Mirrors Rust `is_below_shaped` (aux_gen.rs:998).
 
-    Check whether a type expression is shaped like a `.below` auxiliary.
+open Ix.CompileM (CompileM CompileError arrIdx)
 
-    A genuine `.below` type is a forall telescope ending in `Sort _`:
-      `∀ {params} {motives} (indices) (major), Sort rlvl`
-
-    This distinguishes `.below` auxiliaries from coincidental name
-    collisions like structure field accessors (e.g.,
-    `NewDecl.below : NewDecl → LocalDecl`).
-
-    (Defined before `generateAuxPatches` — its only caller — instead of
-    at its Rust source position after it; no semantic difference.) -/
-def isBelowShaped (typ : Expr) : Bool := Id.run do
-  let mut cur := typ
-  repeat
-    match cur with
-    | .forallE _ _ body _ _ => cur := body
-    | .sort _ _ => return true
-    | _ => return false
-  return false -- unreachable: the loop always returns
+/-- `belowFamilyLeanExists` over the base compile environment: the Lean
+    conditions under which the `.below`/`.brecOn` families of the Lean block
+    `originalAll` exist (A0, WB-B1). Mirrors Rust
+    `below_family_lean_exists` (aux_gen.rs). -/
+def belowFamilyLeanExistsM (originalAll : Array Name) : CompileM Bool := do
+  let mut infos : Std.HashMap Name ConstantInfo := {}
+  for n in originalAll do
+    if let some ci ← lookupConst? n then
+      infos := infos.insert n ci
+  return belowFamilyLeanExists (infos.get? ·) originalAll
 
 /-- Mirrors Rust `populate_canon_kenv_with_below` (aux_gen.rs:1017).
 
@@ -65,46 +57,20 @@ def isBelowShaped (typ : Expr) : Bool := Id.run do
     (Defined before `generateAuxPatches` — its only caller — instead of
     at its Rust source position after it; no semantic difference.) -/
 def populateCanonKenvWithBelow (belowConsts : Array BelowConstant)
-    (sortedClasses : Array (Array Name)) (maps : AddrMaps)
-    : KBridgeM Unit := do
+    (sortedClasses : Array (Array Name)) (kernel : AuxKernel)
+    : KBridgeM AuxKernel := do
   -- Ensure PUnit and PProd are in kenv.
-  ensurePreludeInKenvOf maps
+  kernel.admitPrelude
 
   -- Ensure parent inductives (and their constructors) are in the kenv —
   -- the .below types reference these in their motive/major domains.
   for cls in sortedClasses do
-    let rep := cls[0]!
-    ensureInKenvOf rep maps
+    let rep ← arrIdx cls 0 "populateCanonKenvWithBelow: class representative"
+    kernel.admitSource #[rep]
 
-  -- Insert canonical .below definitions/inductives.
-  for bc in belowConsts do
-    match bc with
-    | .defn d =>
-      let addr := maps.resolve d.name
-      let zid : MKId := ⟨addr, d.name⟩
-      let tyZ ← leanExprToKexpr d.typ d.levelParams maps
-      let valZ ← leanExprToKexpr d.value d.levelParams maps
-      -- Rust: KConst::Defn { kind: Definition, safety: Safe,
-      -- hints: Abbrev, lean_all: vec![], block: zid }.
-      kenvInsert zid (.defn d.name d.levelParams .defn .safe .abbrev
-        (UInt64.ofNat d.levelParams.size) tyZ valZ #[] zid)
-    | .indc i =>
-      let addr := maps.resolve i.name
-      let zid : MKId := ⟨addr, i.name⟩
-      let tyZ ← leanExprToKexpr i.typ i.levelParams maps
-      let mut ctorZids : Array MKId := #[]
-      for ctor in i.ctors do
-        let ctorAddr := maps.resolve ctor.name
-        let ctorZid : MKId := ⟨ctorAddr, ctor.name⟩
-        let ctorTyZ ← leanExprToKexpr ctor.typ i.levelParams maps
-        kenvInsert ctorZid (.ctor ctor.name i.levelParams false
-          (UInt64.ofNat i.levelParams.size) zid
-          (UInt64.ofNat ctorZids.size) (UInt64.ofNat ctor.nParams)
-          (UInt64.ofNat ctor.nFields) ctorTyZ)
-        ctorZids := ctorZids.push ctorZid
-      kenvInsert zid (.indc i.name i.levelParams
-        (UInt64.ofNat i.levelParams.size) (UInt64.ofNat i.nParams)
-        (UInt64.ofNat i.nIndices) false zid 0 tyZ ctorZids #[])
+  -- Insert canonical .below definitions/inductives; IxC's environment too on
+  -- the `ixc` arm (AuxGen M3), whose kernel Phase 3 asks.
+  kernel.admitGenerated belowConsts
 
 /-- Alias-target lookup for original-order `_N` aux aliases. Mirrors the
     Rust `find_target` closure in `generate_aux_patches`
@@ -134,35 +100,37 @@ def auxAliasFindTarget (patches : Std.HashMap Name PatchedConstant)
     `sortConsts` determines the canonical classes; `originalAll` is the
     Lean-source `InductiveVal.all` list driving `<all0>.rec_N` naming and
     the source-aux walk. Mirrors Rust `generate_aux_patches`
-    (aux_gen.rs:188). -/
+    (aux_gen.rs:188).
+
+    `maps` serves the compile-side alias identification (the permutation's
+    `resolveAddr` and the claims); the explicit `kernel` answers every
+    kernel question. -/
 def generateAuxPatches (sortedClasses : Array (Array Name))
-    (originalAll : Array Name) (maps : AddrMaps)
+    (originalAll : Array Name) (maps : AddrMaps) (kernel : AuxKernel)
     : KBridgeM AuxPatchesOutput := do
   let patches : Std.HashMap Name PatchedConstant := {}
   let aliases : Std.HashMap Name Name := {}
 
   if originalAll.isEmpty then
-    return { patches, aliases, perm := none,
-             nClasses := sortedClasses.size, nCanonicalAux := 0,
-             nSourceAux := 0 }
+    return { patches, aliases, perm := none, nCanonicalAux := 0 }
 
   let nClasses := sortedClasses.size
   let mut capturedPerm : Option (Array Nat) := none
   let mut capturedNCanonicalAux : Nat := 0
-  let mut capturedNSourceAux : Nat := 0
 
   -- PUnit/PProd must be authoritative BEFORE any ingress (aux_gen.rs:229).
-  ensurePreludeInKenvOf maps
+  kernel.admitPrelude
 
   -- Phase 1: canonical recursors (aux_gen.rs:231-549).
-  let orderedOriginals : Array Name := sortedClasses.map (·[0]!)
+  let orderedOriginals : Array Name ←
+    sortedClasses.mapM (arrIdx · 0 "generateAuxPatches: class representative")
   let mut aliasToRep : Std.HashMap Name Name := {}
   for cls in sortedClasses do
-    let rep := cls[0]!
+    let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
     for aliasName in cls.toList.drop 1 do
       aliasToRep := aliasToRep.insert aliasName rep
   let expandedProbe ← liftM
-    (Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep : CompileM _)
+    (Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep true : CompileM _)
   let structuralHasNested : Bool :=
     expandedProbe.types.size > expandedProbe.nOriginals
   let mut metadataHasNested := false
@@ -172,114 +140,92 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
 
   let (canonicalRecs, isProp) ←
     if metadataHasNested && structuralHasNested then do
-      -- Canonicalize the aux tail; every downstream patch layout depends
-      -- on this order (aux_gen.rs:280).
-      let (expanded, _sortPerm) ← liftM
-        (Ix.AuxGen.sortAuxByPartitionRefinement expandedProbe : CompileM _)
-      if expanded.types.size > expanded.nOriginals then do
-        -- Source→canonical permutation FIRST, so the generator emits
-        -- Lean-source-indexed `_N` suffixes directly (aux_gen.rs:283).
-        let mut origToCanonMap : Std.HashMap Name Name := {}
-        for cls in sortedClasses do
-          let rep := cls[0]!
-          for n in cls do
-            origToCanonMap := origToCanonMap.insert n rep
-        let nCanon := expanded.types.size - expanded.nOriginals
-        let perm ← liftM
-          (Ix.AuxGen.computeAuxPerm expanded originalAll origToCanonMap
-            (fun n => some (maps.resolve n)) : CompileM _)
-        capturedPerm := some perm
-        capturedNCanonicalAux := nCanon
-        capturedNSourceAux := perm.size
+      -- The canonical expansion lists its auxiliaries in canonical
+      -- (discovery) order already, and it has some (`structuralHasNested`);
+      -- every downstream patch layout depends on this order.
+      let expanded := expandedProbe
+      -- Source→canonical permutation FIRST, so the generator emits
+      -- Lean-source-indexed `_N` suffixes directly (aux_gen.rs:283).
+      let mut origToCanonMap : Std.HashMap Name Name := {}
+      for cls in sortedClasses do
+        let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
+        for n in cls do
+          origToCanonMap := origToCanonMap.insert n rep
+      let nCanon := expanded.types.size - expanded.nOriginals
+      let perm ← liftM
+        (Ix.AuxGen.computeAuxPerm expanded originalAll origToCanonMap
+          (fun n => some (maps.resolve n)) : CompileM _)
+      capturedPerm := some perm
+      capturedNCanonicalAux := nCanon
 
-        -- canonRepr[canonical_i] = min source_j (deterministic under
-        -- alpha-collapse); every canonical slot MUST have a source
-        -- mapping (aux_gen.rs:318-341).
-        let mut canonRepr : Array Nat := Array.replicate nCanon PERM_OUT_OF_SCC
-        for (canonI, srcJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
-          if canonI != PERM_OUT_OF_SCC && canonI < nCanon
-              && canonRepr[canonI]! == PERM_OUT_OF_SCC then
-            canonRepr := canonRepr.set! canonI srcJ
-        for (srcJ, ci) in canonRepr.zipIdx do
-          if srcJ == PERM_OUT_OF_SCC then
-            throw (.invalidMutualBlock
-              s!"aux_gen canonical aux #{ci} has no Lean source mapping; \
+      -- canonRepr[canonical_i] = min source_j (deterministic under
+      -- alpha-collapse); every canonical slot MUST have a source
+      -- mapping (aux_gen.rs:318-341).
+      let mut canonRepr : Array Nat := Array.replicate nCanon PERM_OUT_OF_SCC
+      for (canonI, srcJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
+        if canonI != PERM_OUT_OF_SCC && canonI < nCanon
+            && canonRepr[canonI]? == some PERM_OUT_OF_SCC then
+          canonRepr := canonRepr.set! canonI srcJ
+      for (srcJ, ci) in canonRepr.zipIdx do
+        if srcJ == PERM_OUT_OF_SCC then
+          throw (.invalidMutualBlock
+            s!"aux_gen canonical aux #{ci} has no Lean source mapping; \
 refusing to synthesize canonical-indexed _N names")
-        let sourceOfCanonical := canonRepr
+      let sourceOfCanonical := canonRepr
 
-        let (rawRecs, isProp) ← generateRecursorsFromExpanded sortedClasses
-          expanded (some sourceOfCanonical) maps
+      let (rawRecs, isProp) ← generateRecursorsFromExpanded sortedClasses
+        expanded (some sourceOfCanonical) kernel
 
-        -- aux_rec_map: `_nested.X.rec` → `<source_all0>.rec_{source_j+1}`
-        -- (aux_gen.rs:381-393; source_all0 is the LEAN source first
-        -- inductive, NOT the class rep — below/brecOn hang their `_N`
-        -- names off it too).
-        let sourceAll0 := originalAll[0]!
-        let mut auxRecMap : Std.HashMap Name Name := {}
-        for (mem, canonicalI) in
-            ((expanded.types.toList.drop expanded.nOriginals).toArray).zipIdx do
-          let sourceJ := sourceOfCanonical[canonicalI]!
-          let auxNestedRecName := Name.mkStr mem.name "rec"
-          let sourceRecName := Name.mkStr sourceAll0 s!"rec_{sourceJ + 1}"
-          auxRecMap := auxRecMap.insert auxNestedRecName sourceRecName
+      -- aux_rec_map: `_nested.X.rec` → `<source_all0>.rec_{source_j+1}`
+      -- (aux_gen.rs:381-393; source_all0 is the LEAN source first
+      -- inductive, NOT the class rep — below/brecOn hang their `_N`
+      -- names off it too).
+      let sourceAll0 ← arrIdx originalAll 0 "generateAuxPatches: Lean all0"
+      let mut auxRecMap : Std.HashMap Name Name := {}
+      for (mem, canonicalI) in
+          ((expanded.types.toList.drop expanded.nOriginals).toArray).zipIdx do
+        let sourceJ ← arrIdx sourceOfCanonical canonicalI "generateAuxPatches: source of canonical aux"
+        let auxNestedRecName := Name.mkStr mem.name "rec"
+        let sourceRecName := Name.mkStr sourceAll0 s!"rec_{sourceJ + 1}"
+        auxRecMap := auxRecMap.insert auxNestedRecName sourceRecName
 
-        let mut restoreCtx := RestoreCtx.new expanded.auxToNested
-          expanded.auxCtorMap auxRecMap expanded.blockParamFvars
-          ((expanded.types[0]?.map (·.nParams)).getD 0)
+      let mut restoreCtx := RestoreCtx.new expanded.auxToNested
+        expanded.auxCtorMap auxRecMap expanded.blockParamFvars
+        ((expanded.types[0]?.map (·.nParams)).getD 0)
 
-        -- Restored `all` = the CANONICAL original member names — the
-        -- shadowing at aux_gen.rs:406 is deliberate.
-        let restoredAll : Array Name :=
-          ((expanded.types.toList.take expanded.nOriginals).toArray).map (·.name)
+      -- Restored `all` = the CANONICAL original member names — the
+      -- shadowing at aux_gen.rs:406 is deliberate.
+      let restoredAll : Array Name :=
+        ((expanded.types.toList.take expanded.nOriginals).toArray).map (·.name)
 
-        let mut restoredRecs : Array (Name × RecursorVal) := #[]
-        for (name, rv) in rawRecs do
-          let newName := (auxRecMap.get? name).getD name
-          let (restoredType, ctx1) := restoreCtx.restore rv.cnst.type
-          restoreCtx := ctx1
-          let mut restoredRules : Array RecursorRule := #[]
-          for r in rv.rules do
-            let newCtor := match expanded.auxCtorMap.get? r.ctor with
-              | some (origCtor, _) => origCtor
-              | none => r.ctor
-            let (rhs', ctx2) := restoreCtx.restore r.rhs
-            restoreCtx := ctx2
-            restoredRules := restoredRules.push
-              { ctor := newCtor, nfields := r.nfields, rhs := rhs' }
-          restoredRecs := restoredRecs.push (newName,
-            { rv with
-              cnst := { name := newName, type := restoredType,
-                        levelParams := rv.cnst.levelParams }
-              all := restoredAll
-              rules := restoredRules })
-        pure (restoredRecs, isProp)
-      else do
-        -- Defensive: post-sort aux tail empty (aux_gen.rs:454-499).
-        if structuralHasNested then do
-          let expandedForPerm ← liftM
-            (Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep
-              : CompileM _)
-          let mut origToCanonMap : Std.HashMap Name Name := {}
-          for cls in sortedClasses do
-            let rep := cls[0]!
-            for n in cls do
-              origToCanonMap := origToCanonMap.insert n rep
-          let nCanon :=
-            expandedForPerm.types.size - expandedForPerm.nOriginals
-          let perm ← liftM
-            (Ix.AuxGen.computeAuxPerm expandedForPerm originalAll
-              origToCanonMap (fun n => some (maps.resolve n)) : CompileM _)
-          capturedPerm := some perm
-          capturedNCanonicalAux := nCanon
-          capturedNSourceAux := perm.size
-        generateCanonicalRecursorsWithOverlay sortedClasses none none maps
+      let mut restoredRecs : Array (Name × RecursorVal) := #[]
+      for (name, rv) in rawRecs do
+        let newName := (auxRecMap.get? name).getD name
+        let (restoredType, ctx1) := restoreCtx.restore rv.cnst.type
+        restoreCtx := ctx1
+        let mut restoredRules : Array RecursorRule := #[]
+        for r in rv.rules do
+          let newCtor := match expanded.auxCtorMap.get? r.ctor with
+            | some (origCtor, _) => origCtor
+            | none => r.ctor
+          let (rhs', ctx2) := restoreCtx.restore r.rhs
+          restoreCtx := ctx2
+          restoredRules := restoredRules.push
+            { ctor := newCtor, nfields := r.nfields, rhs := rhs' }
+        restoredRecs := restoredRecs.push (newName,
+          { rv with
+            cnst := { name := newName, type := restoredType,
+                      levelParams := rv.cnst.levelParams }
+            all := restoredAll
+            rules := restoredRules })
+      pure (restoredRecs, isProp)
     else do
       -- Standard flat-block generation; disagreement flavors still need
       -- the perm for surgery/aliases (aux_gen.rs:500-548).
       if structuralHasNested || metadataHasNested then do
         let mut origToCanonMap : Std.HashMap Name Name := {}
         for cls in sortedClasses do
-          let rep := cls[0]!
+          let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
           for n in cls do
             origToCanonMap := origToCanonMap.insert n rep
         let nCanon := expandedProbe.types.size - expandedProbe.nOriginals
@@ -288,8 +234,7 @@ refusing to synthesize canonical-indexed _N names")
             (fun n => some (maps.resolve n)) : CompileM _)
         capturedPerm := some perm
         capturedNCanonicalAux := nCanon
-        capturedNSourceAux := perm.size
-      generateCanonicalRecursorsWithOverlay sortedClasses none none maps
+      generateCanonicalRecursorsWithOverlay sortedClasses none none kernel
 
   -- Block membership is decided per FAMILY, never per name (aux_gen.rs
   -- `family_exported`). Each auxiliary kind (`.rec`, `.casesOn`, `.recOn`,
@@ -301,21 +246,26 @@ refusing to synthesize canonical-indexed _N names")
   -- family (some class's name, or a nested auxiliary's
   -- `<all0>.<suffix>_N`), emit the whole family. A whole environment
   -- exports every family all-or-nothing, so nothing changes there.
-  -- `sub` selects `<name>.<suffix>.<sub>` (`brecOn.go`, `brecOn.eq`);
-  -- `checkShape` applies the `.below` name-collision guard (a structure
-  -- field accessor named `below`, e.g. `IndPredBelow.NewDecl.below`; a
-  -- genuine `.below` type ends in `Sort _` after peeling foralls).
-  let familyExported (suffix : String) (sub : Option String)
-      (checkShape : Bool) : KBridgeM Bool := do
+  -- `sub` selects `<name>.<suffix>.<sub>` (`brecOn.go`, `brecOn.eq`).
+  --
+  -- Existence is decided by Lean's conditions first, never by name shape:
+  -- `.rec`, `.casesOn` and `.recOn` exist for every inductive, while the
+  -- `.below`/`.brecOn` families exist only when `belowFamilyLeanExists`
+  -- holds (the block is recursive, …). Only then does the presence of a
+  -- member's name decide whether a closure carries the family. A user
+  -- constant `T.below` on a non-recursive `T` stays the user's (WB-B1).
+  let belowLean ← liftM (belowFamilyLeanExistsM originalAll : CompileM _)
+  let familyExported (suffix : String) (sub : Option String) :
+      KBridgeM Bool := do
+    if (suffix == "below" || suffix == "brecOn") && !belowLean then
+      return false
     let withSub (n : Name) : Name := match sub with
       | some s => Name.mkStr n s
       | none => n
     for cls in sortedClasses do
       for n in cls do
-        match ← liftM (lookupConst? (withSub (Name.mkStr n suffix)) : CompileM _) with
-        | some ci =>
-          if !checkShape || isBelowShaped ci.getCnst.type then return true
-        | none => pure ()
+        if (← liftM (lookupConst? (withSub (Name.mkStr n suffix)) : CompileM _)).isSome then
+          return true
     if let some all0 := originalAll[0]? then
       for (recName, _) in canonicalRecs.toList.drop nClasses do
         if let some idx := auxRecSuffixIdx recName then
@@ -324,9 +274,13 @@ refusing to synthesize canonical-indexed _N names")
     return false
 
   let mut patches := patches
-  if ← familyExported "rec" none false then
+  if ← familyExported "rec" none then
     for (recName, recVal) in canonicalRecs do
       patches := patches.insert recName (.recr recVal)
+
+  -- AuxGen M4: the canonical block checked by Source mode right after its
+  -- recursors (with the recursors on IxC; `AuxKernel.checkCanonicalBlock`).
+  let (kernel, canonChecked) ← kernel.checkCanonicalBlock sortedClasses originalAll canonicalRecs
 
   -- Phase 1b: Generate `.casesOn` definitions (aux_gen.rs:560-583).
   -- `.casesOn` is a definition that wraps `.rec`, stripping IH fields
@@ -341,8 +295,8 @@ refusing to synthesize canonical-indexed _N names")
   -- `.brecOn.eq` is proved by cases on the block's own inductives; emitting
   -- the `.eq` family whole (Phase 3) needs the `.casesOn` family
   -- (aux_gen.rs Phase 1b).
-  let emitCasesOn ← pure (← familyExported "casesOn" none false)
-    <||> familyExported "brecOn" (some "eq") false
+  let emitCasesOn ← pure (← familyExported "casesOn" none)
+    <||> familyExported "brecOn" (some "eq")
   for (recName, recVal) in canonicalRecs.toList.take nClasses do
     -- Build casesOn name: recName is "I.rec", casesOn name is "I.casesOn"
     -- (Rust matches `NameData::Str(parent, _, _)` — the suffix itself is
@@ -357,7 +311,12 @@ refusing to synthesize canonical-indexed _N names")
         match ← liftM (generateCasesOn casesOnName recVal : CompileM _) with
         | some auxDef =>
           patches := patches.insert casesOnName (.casesOnDef auxDef)
-        | none => pure ()
+        | none =>
+          -- A declined generation is refused, naming the block (A0,
+          -- WB-F5): skipping it would compile Lean's source-form
+          -- `.casesOn` against the canonical `.rec` (aux_gen.rs Phase 1b).
+          throw (.invalidMutualBlock s!"casesOn generation declined \
+'{casesOnName.pretty}' in the block of '{blockLabel sortedClasses}'")
     | _ => pure ()
 
   -- Phase 1c: Generate `.recOn` definitions (arg-reordered `.rec`
@@ -365,7 +324,7 @@ refusing to synthesize canonical-indexed _N names")
   --
   -- Only generate for original recursors (first `nClasses`), not
   -- auxiliary `rec_N` — same intentional restriction as Phase 1b.
-  let emitRecOn ← familyExported "recOn" none false
+  let emitRecOn ← familyExported "recOn" none
   for (recName, recVal) in canonicalRecs.toList.take nClasses do
     match recName with
     | .str indName _ _ =>
@@ -381,9 +340,14 @@ refusing to synthesize canonical-indexed _N names")
   -- (aux_gen.rs:603-660).
   -- `familyExported` (above) also counts a nested auxiliary's
   -- `<all0>.below_N`: a closure can hold one without any class's `.below`.
-  if ← familyExported "below" none true then
+  if ← familyExported "below" none then
+    -- AuxGen M2a: a Type-level `.below` asks its kernel for levels; an IxC
+    -- oracle first installs the block's own canonical flat block
+    -- (`AuxKernel.withFlatBlock`; `Ix.Tc` needs nothing).
+    let belowKernel ← if isProp || canonChecked then pure kernel
+      else kernel.withFlatBlock sortedClasses originalAll canonicalRecs
     let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
-      isProp maps (allAux := true)
+      isProp belowKernel (allAux := true)
     -- `Ix.AuxGen.Below` derives `.below_N` names and internal cross-aux
     -- references from already-source-indexed rec names (see
     -- `generateBelowConstants` → `auxRecSuffixIdx`), so there is no
@@ -398,19 +362,21 @@ refusing to synthesize canonical-indexed _N names")
     -- during brecOn generation — uses the SAME renamed belowConsts that
     -- `patches` got, keeping hash addressing consistent end-to-end
     -- (aux_gen.rs:646-657).
-    populateCanonKenvWithBelow belowConsts sortedClasses maps
+    -- AuxGen M3: Phase 3 asks the kernel after them (the flat block's σ and the
+    -- admitted `.below` on the IxC arm; `Ix.Tc`'s is unchanged).
+    let brecKernel ← populateCanonKenvWithBelow belowConsts sortedClasses belowKernel
 
     -- Phase 3: Generate .brecOn constants (if originals exist)
     -- (aux_gen.rs:659-702).
     -- `.brecOn.go`, `.brecOn` and `.brecOn.eq` are three blocks (three
     -- families): a closure can hold `X.brecOn.go` without any `.brecOn`,
     -- or `.brecOn` without `.brecOn.eq` (aux_gen.rs Phase 3).
-    let emitGo ← familyExported "brecOn" (some "go") false
-    let emitMain ← familyExported "brecOn" none false
-    let emitEq ← familyExported "brecOn" (some "eq") false
+    let emitGo ← familyExported "brecOn" (some "go")
+    let emitMain ← familyExported "brecOn" none
+    let emitEq ← familyExported "brecOn" (some "eq")
     if emitGo || emitMain || emitEq then
       let breconConsts ← generateBreconConstants sortedClasses
-        canonicalRecs belowConsts isProp maps (allAux := true)
+        canonicalRecs belowConsts isProp brecKernel (allAux := true)
       -- Emit per family (the `.go` / main / `.eq` batch the name falls
       -- in, as CompileAux's `breconBatch` splits them), not per name, in
       -- batch order so each batch can resolve the ones before it. `BRecOn`
@@ -418,8 +384,8 @@ refusing to synthesize canonical-indexed _N names")
       -- form directly — no post-generation rewrite. A whole family can
       -- need constants a closure lacks (a nested block's
       -- `<all0>.brecOn_N.eq` is proved by cases on the external inductive,
-      -- `List.casesOn`): that batch then falls back to the members present
-      -- (aux_gen.rs Phase 3).
+      -- `List.casesOn`): such a slice is refused, naming the block (A0,
+      -- WB-E3; aux_gen.rs Phase 3).
       let batchOf (n : Name) : Nat := match n with
         | .str _ "go" _ => 0
         | .str _ "eq" _ => 2
@@ -430,21 +396,33 @@ refusing to synthesize canonical-indexed _N names")
         let mut present : Array Bool := #[]
         for d in defs do
           present := present.push (← liftM (lookupConst? d.name : CompileM _)).isSome
-        let mut take := if emitFamily[b]! then defs.map (fun _ => true) else present
-        if emitFamily[b]! && present.any (!·) then
+        let fam ← arrIdx emitFamily b "generateAuxPatches: brecOn batch"
+        let take := if fam then defs.map (fun _ => true) else present
+        if fam && present.any (!·) then
           let batchNames : Std.HashSet Name :=
             defs.foldl (fun acc d => acc.insert d.name) {}
           let mut refs : Array Name := #[]
           for d in defs do
             refs := collectConstRefs d.typ refs
             refs := collectConstRefs d.value refs
-          let mut resolvable := true
+          let mut missing : Option Name := none
           for n in refs do
-            if resolvable && !patches.contains n && !batchNames.contains n then
+            if missing.isNone && !patches.contains n && !batchNames.contains n then
               if (← liftM (lookupConst? n : CompileM _)).isNone then
-                resolvable := false
-          if !resolvable then
-            take := present
+                missing := some n
+          -- The block cannot be built from this slice, and the members
+          -- present alone would get addresses that differ from the
+          -- whole-environment compile: refused, naming the block (A0,
+          -- WB-E3; formerly a silent partial family here, a warning in
+          -- Rust).
+          if let some m := missing then
+            let absent := (defs.zip present).filterMap fun (d, p) =>
+              if p then none else some d.name.pretty
+            throw (.invalidMutualBlock s!"partial auxiliary family in the \
+block of '{blockLabel sortedClasses}': the environment lacks {m.pretty}, which the \
+canonical block of {", ".intercalate (defs.map (·.name.pretty)).toList} needs \
+(absent members: {", ".intercalate absent.toList}); close the slice over aux \
+families (Lean.auxFamilySiblings)")
         for (d, t) in defs.zip take do
           if t then
             patches := patches.insert d.name (.brecOnDef d)
@@ -458,7 +436,7 @@ refusing to synthesize canonical-indexed _N names")
   for cls in sortedClasses do
     if cls.size <= 1 then
       continue
-    let rep := cls[0]!
+    let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
     for aliasMem in cls.toList.drop 1 do
       -- For each active suffix that has a representative patch, register
       -- the alias name only when Lean actually exported that name.
@@ -548,7 +526,7 @@ refusing to synthesize canonical-indexed _N names")
           for (canonicalI, sourceJ) in perm.zipIdx do
             if canonicalI != PERM_OUT_OF_SCC
                 && canonicalI < capturedNCanonicalAux
-                && sourceOfCanonical[canonicalI]! == PERM_OUT_OF_SCC then
+                && sourceOfCanonical[canonicalI]? == some PERM_OUT_OF_SCC then
               sourceOfCanonical := sourceOfCanonical.set! canonicalI sourceJ
 
           for (canonicalI, sourceJ) in perm.zipIdx do
@@ -679,43 +657,39 @@ exists")
           if claimedElsewhere then
             -- The spec SCC compiled first (scheduler dependency) and
             -- registered the name as its canonical patch/alias. Nothing
-            -- to do here — but the registration must actually exist, or
-            -- the probe and the compiled state disagree. Full optional
-            -- resolve chain (CompileAux.resolveAddr? is downstream of
-            -- this module): primary overlay, global names, block-local
-            -- aux, merged prior-block aux. `AddrMaps.resolve`'s
-            -- name-hash fallback would make this check vacuous.
-            let cenvGlobal ← liftM (Ix.CompileM.getCompileEnv : CompileM _)
-            let bst ← liftM (Ix.CompileM.getBlockState : CompileM _)
-            let registered :=
-              bst.blockNameToAddr.contains sourceName
-                || cenvGlobal.nameToAddr.contains sourceName
-                || bst.auxNameToAddr.contains sourceName
-                || cenvGlobal.auxNameToAddr.contains sourceName
-            if !registered then
-              throw (.invalidMutualBlock
-                s!"aux position {sourceJ} ('{sourceName.pretty}') is \
-canonically owned by its spec members' SCC, but that SCC registered no \
-address for the name")
+            -- to do here. (Until Pass 3 the registration under the Lean
+            -- name was checked here. Pass 3 moves a changed SCC's Ix
+            -- auxiliaries to their `_ix` display names when its tail ends
+            -- (`Ix.Compile.Pass.editChangedBlock`): the Lean name then
+            -- denotes an image, or a constant of Lean's own block, compiled
+            -- when that block comes up, so it can be absent here by design.
+            -- The check went with the flip in both compilers (donor
+            -- `42cb9848`; Rust under `driver_prepared`).)
             continue
           -- Target guard mirrors the head-rewrite plan registration in
           -- surgery (driven by the same `evaporated` flags) —
           -- multi-motive external targets are outside the supported
-          -- rewrite domain; skipping leaves the original compile.
-          let targetOk ←
-            match ← liftM (lookupConst? targetName : CompileM _) with
-            | some (.recInfo r) => pure (r.numMotives == 1)
-            | _ => pure false
+          -- rewrite domain, and so is a target the environment lacks. Both
+          -- are refused, naming the block (A0, WB-E1): compiling Lean's
+          -- original form would ship a specialized recursor the kernels
+          -- reject (aux_gen.rs, same place).
+          let targetCi ← liftM (lookupConst? targetName : CompileM _)
+          let targetOk := match targetCi with
+            | some (.recInfo r) => r.numMotives == 1
+            | _ => false
           if patches.contains sourceName then
             continue
           if !targetOk then
-            continue
+            let why := if targetCi.isSome then "is not a one-motive recursor"
+              else "is absent from the environment"
+            throw (.invalidMutualBlock s!"evaporated auxiliary '{sourceName.pretty}' \
+of the block of '{blockLabel sortedClasses}': its target '{targetName.pretty}' {why}; \
+refusing to compile the original form")
           aliases := aliases.insert sourceName targetName
           evaporatedFlags := evaporatedFlags.set! sourceJ true
         evaporated := some evaporatedFlags
 
   return { patches, aliases, perm := capturedPerm, evaporated,
-           nClasses, nCanonicalAux := capturedNCanonicalAux,
-           nSourceAux := capturedNSourceAux }
+           nCanonicalAux := capturedNCanonicalAux, canonicalRecs }
 
 end Ix.AuxGen

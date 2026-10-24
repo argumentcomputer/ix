@@ -16,8 +16,8 @@ namespace Ix.Kernel.Admission.Audit
 
 /-- The certified entry's byte admission. -/
 def operations : Array Lean.Name :=
-  #[``Ix.Kernel.Admission.preflight, ``Ix.Kernel.Admission.uniqueKeys, ``Ix.Kernel.Admission.decodeRecords,
-    ``Ix.Kernel.Admission.checkBytes]
+  #[``Ix.Kernel.Admission.preflight, ``Ix.Kernel.Admission.uniqueKeys, ``Ix.Kernel.Admission.authenticate,
+    ``Ix.Kernel.Admission.decodeRecords, ``Ix.Kernel.Admission.checkBytes]
 
 /-- Admission runs the kernel's checker behind the Ixon reader
 (`Ix.Kernel.Admission`, with the kernel `Ix.Kernel`: the checker with the
@@ -53,25 +53,80 @@ run_cmd Ix.Kernel.Audit.checkImports #[`IxC.Kernel.Admission.Theorems] Ix.Kernel
 
 /- Measured independently before freezing. The certified entry reaches the
 codec, with Ixon v4's TagN integer code (`Ixon.getTagN`, `getTagNWide`,
-`getTagN0Values`, `putTagN`, `tagNHeader`, `tagNEnd1..6`), the byte stage
-(`preflight`, `uniqueKeys`, `decodeRecords`), the Ixon reader, the committed
-tables and the verified fold. Its ruled
+`getTagN0Values`, `putTagN`, `tagNHeader`, `tagNEnd1..6`, and the twins that
+compiled code calls, `getTagNFast`, `putTagNFast`, `getTagN0/2/4`,
+`putTagN0/2/4`), the byte stage
+(`preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`; the content hash
+is a parameter, so no hasher), the binding section's admission
+(`admitBinding`: `RoleTable.ofBytes`, `RoleTable.check`), the Ixon reader, the
+committed default table and prelude and the verified fold. Its ruled
 constructs are the fold's computed-field overrides and proved csimps and
-the in-model generator's `partial` definitions. The committed
-Nat-operation pins are decoded from a string table at first use
-(`Ix.Kernel.Reader.builtinNatOpPins`), which adds eight
-string-scanning externs (below). -/
+the in-model generator's `partial` definitions. Step 4 retired the
+Nat-operation pin decoder (`builtinNatOpPins`) and its eight string-scanning
+externs, and the pin table's derived-shape check (`Reader.derivedShape`) with
+`String.Slice.Pattern.Internal.memcmpStr`. Step 5a (typed keys) moved the count
+from 5653 by the entry's change (`IxC/Kernel/Audit/Roots.lean`): `Key`'s three
+computed-field overrides, its rendering for messages (`Key.toName`,
+`Role.leanName`, `Derived.spell`) in, the closed terms that spelled role and
+derived names out. Step 5b's `LetMeta` moved it from 5444 by the let contract's
+equality, hash and `Repr` (`IxC/Kernel/Audit/Roots.lean`). Step 5b's walk change
+(the source `f` of every arity-reduced `f._redArg` reached is visited, with no
+extern, `unsafe`, `csimp` or `partial` constant among them) moved it from 5471.
+Step 5b's mode index moved it from 5563 by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`), and its address keys from 5575 and 111
+inherited externs, by the entry's change. The IxC performance series (PERF
+P16, P14, P3, P2) moved it from 5549 and 113 inherited externs by the entry's
+change (`IxC/Kernel/Audit/Roots.lean`): the memo state reset (P16, 7
+fewer), the shared binder metadata (P14, 5 more), the codec's TagN twins
+(P3, 8 more: `getTagNFast`, `putTagNFast` and the copies at widths 0, 2 and 4,
+the ruled csimps 21 to 23, the references they replace still reached, csimp
+4 to 6) and phase B on tasks (P2, 12 more, with `Init`'s `Task.spawn` and
+`Task.get` the two new inherited externs). Step 6's structured errors
+moved it from 5567 and 115 inherited externs by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`): the fold no longer prints terms (two string
+externs fewer), and every fixed message of the fold is a one-part list (two
+more closed objects per message site). The validation of the four install
+anchors moved it from 5785 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
+11 more). Step 6b's display annotations moved it from 5796 by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`, 8 more, one more ruled csimp: PERF P14 with names),
+and its failure display from 5804 by the entry's change (30 more, one more
+ruled csimp: `Msg.withTerms`). The reader's and its tables' conversion to Lean
+`module`s moved it from 5834 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
+28 more: the module's own specialisations, `instBEqAddress.beq` and
+`Std.Format.defWidth` called). CQX.8's field test in the in-model generator moved
+it from 5862 by the entry's change (`IxC/Kernel/Audit/Roots.lean`, 4 of `genNested`'s
+specialisations gone). (A) (`ALPHA-COLLAPSE.md` §8.2) moved it from 5858 by the
+entry's change (`IxC/Kernel/Audit/Roots.lean`, 122 out: the compiler-trust roles
+and their checks). The `.indDecl` shape guard moved it from 5736 by the entry's
+change (`IxC/Kernel/Audit/Roots.lean`, 44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled). The mutual modeller's reading of Lean's
+recursive fields moved it from 5780 by the entry's change (9 more). The rest-only
+hoist and the decided units check (S1) moved it from 5789 by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`, 117 in: `checkUnits` at the fold's end, its
+units, their bases and shapes and the prelude-role test, and their specialisations). The
+prelude's shape check (S1, fact (ii)) moved it from 5906 by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`, 12 in). The hoist guard (S1) moved it from 5918 by
+the entry's change (4 in). The in-model generator's totality (S1) moved it from 5922 by the
+entry's change (`IxC/Kernel/Audit/Roots.lean`, 15 more; its nine ruled `partial`
+definitions are total, and the ruling is gone). The prelude-copy check
+((b), `State.keepsPrelude` in `readStream`) moved it from 5937 by the entry's
+change (38 in: the check, the state's keys and the derived `DecidableEq`);
+externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
+-- The committed fallback recursor guard (2026-10-22) adds seven compiled
+-- functions to each entry closure. Measured before refreezing; externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
+ Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5293 compiled functions; inherited externs 121, implemented_by 0,
-unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
+ Ix.Kernel.Admission.checkBytes]: 5982 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
 #guard_kernel_axioms Ix.Kernel.Admission.consume_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.preflight_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.uniqueKeys_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.authenticate_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.RecordsRead.hashed [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.RecordsRead.encode [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.RecordsRead.univNodes_le [propext, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.RecordsRead.resourceUnits_le [propext, Classical.choice, Quot.sound]
@@ -88,7 +143,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes_no_proof_of_False [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes_no_False_theorem [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytes_authentic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes_resources [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytes_binding [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.admitBinding_ok_iff [propext, Classical.choice, Quot.sound]
 
 /-- info: Ixon.Verify.Work.Admission.parserStage_erases : ∀ (limits : Ix.Kernel.Admission.Limits)
   (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs),
@@ -118,6 +176,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.uniqueKeys_ok_iff
 
+/-- info: Ix.Kernel.Admission.authenticate_ok_iff : ∀ (hash : ByteArray → Address) (records : Ix.Kernel.Admission.Records)
+  (blobs : Ix.Kernel.Ingress.Blobs),
+  Ix.Kernel.Admission.authenticate hash records blobs = Except.ok () ↔ Ix.Kernel.Admission.Authentic hash records blobs -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.authenticate_ok_iff
+
 /-- info: Ix.Kernel.Admission.decodeRecords_ok_iff : ∀ (limits : Ix.Kernel.Admission.Limits)
   (records : Ix.Kernel.Admission.Records) (constants : Ix.Kernel.Ingress.Constants),
   Ix.Kernel.Admission.decodeRecords limits records = Except.ok constants ↔
@@ -127,41 +191,47 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[
 
 /-! ### The certified entry's public theorems -/
 
-/-- info: Ix.Kernel.Admission.checkBytes_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
-  Ix.Kernel.Admission.checkBytes limits records blobs hint = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
+/-- info: Ix.Kernel.Admission.checkBytes_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
+    Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_has_model
 
 /-- info: Ix.Kernel.Admission.checkBytes_has_model_values : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
-  Ix.Kernel.Admission.checkBytes limits records blobs hint = Except.ok env →
+  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
     ∃ M,
-      ∀ (cv : Ix.Kernel.ConstantVal) (value : Ix.Kernel.Expr) (hint' : Ix.Kernel.ReducibilityHint),
+      ∀ (cv : Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon) (value : Ix.Kernel.Expr Ix.Kernel.Mode.anon)
+        (hint' : Ix.Kernel.ReducibilityHint),
         Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
           ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
             Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_has_model_values
 
-/-- info: Ix.Kernel.Admission.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
-  Ix.Kernel.Admission.checkBytes limits records blobs hint = Except.ok env →
-    ∀ (ci : Ix.Kernel.ConstantInfo),
-      ci ∈ env.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const Ix.Kernel.falseName [] → False -/
+/-- info: Ix.Kernel.Admission.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
+    ∀ (ci : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.anon),
+      ci ∈ env.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const (Ix.Kernel.roleKey Ix.Kernel.Role.false) [] → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_no_proof_of_False
 
-/-- info: Ix.Kernel.Admission.checkBytes_no_False_theorem : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
-  Ix.Kernel.Admission.checkBytes limits records blobs hint = Except.ok env →
-    ∀ {pins : Ix.Kernel.Reader.Pins} {pre : Ix.Kernel.Reader.Prelude},
-      Ix.Kernel.Reader.defaultPins = Except.ok pins →
-        Ix.Kernel.Reader.builtinPrelude = Except.ok pre →
+/-- info: Ix.Kernel.Admission.checkBytes_no_False_theorem : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
+    ∀ {t : Ix.Kernel.RoleTable} {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon},
+      Ix.Kernel.Admission.admitBinding hash binding = Except.ok t →
+        Ix.Kernel.Reader.preludeFor t = Except.ok pre →
           ∀ {constants : List (Address × Ixon.Constant)},
             Ix.Kernel.Admission.RecordsRead limits records constants →
               ∀ {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition},
@@ -169,33 +239,43 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[
                   c.info = Ixon.ConstantInfo.defn d →
                     d.kind = Ix.DefKind.thm →
                       (Ix.Kernel.Reader.definitionReader
-                                (Ix.Kernel.Admission.streamContext pins pre constants blobs hint) owner c d).read
+                                (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) owner c d).read
                             d.typ =
-                          Except.ok (Ix.Kernel.Expr.const Ix.Kernel.falseName []) →
+                          Except.ok (Ix.Kernel.Expr.const (Ix.Kernel.roleKey Ix.Kernel.Role.false) []) →
                         False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_no_False_theorem
 
-/-- info: @Ix.Kernel.Admission.checkBytes_reading : ∀ {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env},
-  Ix.Kernel.Admission.checkBytes limits records blobs hint = Except.ok env →
-    ∃ pins pre natPins,
-      Ix.Kernel.Reader.defaultPins = Except.ok pins ∧
-        Ix.Kernel.Reader.builtinPrelude = Except.ok pre ∧
-          Ix.Kernel.Reader.builtinNatOpPins = Except.ok natPins ∧
-            Ix.Kernel.Admission.WithinBatch limits records blobs ∧
-              Ix.Kernel.Admission.UniqueKeys records blobs ∧
+/-- info: @Ix.Kernel.Admission.checkBytes_reading : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
+    ∃ t pre,
+      Ix.Kernel.Admission.admitBinding hash binding = Except.ok t ∧
+        Ix.Kernel.Reader.preludeFor t = Except.ok pre ∧
+          Ix.Kernel.Admission.WithinBatch limits records blobs ∧
+            Ix.Kernel.Admission.UniqueKeys records blobs ∧
+              Ix.Kernel.Admission.Authentic hash records blobs ∧
                 ∃ constants,
-                  Ix.Kernel.Admission.RecordsRead limits records constants ∧
-                    Ix.Kernel.Admission.Installed pins pre natPins constants blobs hint env -/
+                  Ix.Kernel.Admission.BindingAdmitted hash binding t ∧
+                    Ix.Kernel.Admission.RecordsRead limits records constants ∧
+                      Ix.Kernel.Admission.Hashed hash constants ∧
+                        Ix.Kernel.Admission.Installed hash t pre constants blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_reading
 
-/-- info: @Ix.Kernel.Admission.checkBytes_resources : ∀ {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env},
-  Ix.Kernel.Admission.checkBytes limits records blobs hint = Except.ok env →
+/-- info: @Ix.Kernel.Admission.checkBytes_authentic : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
+    Ix.Kernel.Admission.Authentic hash records blobs ∧ hash binding.bytes = binding.address -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytes_authentic
+
+/-- info: @Ix.Kernel.Admission.checkBytes_resources : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
     ∃ constants,
       Ix.Kernel.Admission.RecordsRead limits records constants ∧
         Ix.Kernel.Admission.resourceUnits constants ≤
@@ -203,21 +283,30 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_resources
 
-/- The certified entry adds ten Init externs beyond the codec, the reader and
-the fold: `ByteArray.mk` and `Array.pop`, used to load the committed pin
-table and prelude (`Ix.Kernel.Reader.defaultPins`, `builtinPrelude`),
-and the eight string-scanning primitives of the Nat-operation pin decoder
-(`builtinNatOpPins`). No further unsafe primitive. -/
+/- The certified entry adds two Init externs beyond the codec, the reader
+and the fold: `ByteArray.mk` and `Array.pop`, used to load the committed
+default table and prelude (`Ix.Kernel.Reader.defaultTable`, `preludeFor`).
+Step 4 removed nine: the eight string-scanning primitives of the retired
+Nat-operation pin decoder (`builtinNatOpPins`) and
+`String.Slice.Pattern.Internal.memcmpStr`, the retired pin table's
+derived-shape check (`Reader.derivedShape`, through `String.startsWith`). No
+further unsafe primitive. Step 6's structured errors took the fold's spelling
+of keys and numbers out (`IxC/Kernel/Audit/Roots.lean`), so seven `Init`
+externs the fold used to share with the entry now show here: the string
+primitives `String.Internal.next`, `extract`, `posOf`, `offsetOfPos`,
+`length` and `pushn`, and `UInt32.decEq`, with which the entry parses the
+committed default table and prelude (`addressOfHex`, `bytesOfHex`,
+`natOfHex`) and spells the loader's messages. The entry reaches no new
+extern: its inherited externs went from 115 to 113. -/
 /-- info: Additional certified-entry externs: [Array.pop,
- String.decodeChar,
- String.Pos.next,
- UInt32.decLe,
- String.toUTF8,
- String.Pos.Raw.extract,
- String.Pos.Raw.next,
- String.Pos.Raw.get,
- String.Pos.Raw.atEnd,
- ByteArray.mk]
+ String.Internal.next,
+ String.Internal.extract,
+ String.Internal.posOf,
+ String.Internal.offsetOfPos,
+ String.Internal.length,
+ String.Internal.pushn,
+ ByteArray.mk,
+ UInt32.decEq]
 ---
 info: Additional certified-entry unsafe: [] -/
 #guard_msgs (whitespace := lax) in

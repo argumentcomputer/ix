@@ -90,13 +90,16 @@ fn opt_addr(o: &Option<Address>) -> LeanOwned {
 }
 
 impl LeanIxonEnvStats<LeanOwned> {
-  /// Build `Ixon.EnvStats { consts, named, blobs, comms }`.
+  /// Build all seven `Ixon.EnvStats` scalars in declaration order.
   fn build(s: &EnvStats) -> Self {
     let ctor = LeanIxonEnvStats::alloc(0);
     ctor.set_num_64(0, s.consts as u64);
     ctor.set_num_64(1, s.named as u64);
     ctor.set_num_64(2, s.blobs as u64);
     ctor.set_num_64(3, s.comms as u64);
+    ctor.set_num_64(4, s.originals as u64);
+    ctor.set_num_64(5, s.original_bytes as u64);
+    ctor.set_num_64(6, s.original_hint_overrides as u64);
     ctor
   }
 }
@@ -149,6 +152,20 @@ impl LeanIxonEnvDiff<LeanOwned> {
     ctor.set_obj(14, hint_array(&d.hints_changed));
     ctor.set_obj(15, LeanIxonEnvStats::build(&d.stats_a));
     ctor.set_obj(16, LeanIxonEnvStats::build(&d.stats_b));
+    ctor.set_obj(17, addr_array(&d.originals_only_a));
+    ctor.set_obj(18, addr_array(&d.originals_only_b));
+    ctor.set_obj(19, addr_array(&d.originals_changed));
+    let hints = LeanArray::alloc(d.original_hints_changed.len());
+    for (i, (name, old, new)) in d.original_hints_changed.iter().enumerate() {
+      hints.set(
+        i,
+        LeanProd::new(
+          LeanString::new(name),
+          LeanProd::new(LeanString::new(old), LeanString::new(new)),
+        ),
+      );
+    }
+    ctor.set_obj(20, hints);
     ctor
   }
 }

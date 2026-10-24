@@ -2,6 +2,7 @@ module
 
 public import Std.Data.HashSet.Basic
 public import IxC.Kernel.Core
+public import IxC.Kernel.Units
 
 @[expose] public section
 
@@ -53,8 +54,8 @@ open Ix.Kernel
 
 /-- The constants an `Expr` DAG references, each node visited once
 (`Std.HashSet Expr`: pointer-first equality, computed hash). -/
-def usedConstsGo (seen : Std.HashSet Expr) (acc : Array Name) (e : Expr) :
-    Std.HashSet Expr × Array Name :=
+def usedConstsGo (seen : Std.HashSet (Expr md)) (acc : Array (Key md)) (e : Expr md) :
+    Std.HashSet (Expr md) × Array (Key md) :=
   if seen.contains e then (seen, acc) else
   let seen := seen.insert e
   match e with
@@ -79,13 +80,13 @@ def usedConstsGo (seen : Std.HashSet Expr) (acc : Array Name) (e : Expr) :
 /-- The constants a parsed record references (types, values, recursor
 rule right-hand sides; a basis block references nothing the stream
 declares). -/
-def _root_.Ix.Kernel.Declaration.usedConsts : Declaration → Array Name
+def _root_.Ix.Kernel.Declaration.usedConsts : Declaration md → Array (Key md)
   | .axiomDecl cv => (usedConstsGo {} #[] cv.type).2
   | .defnDecl cv v _ | .thmDecl cv v | .opaqueDecl cv v =>
     let (seen, acc) := usedConstsGo {} #[] cv.type
     (usedConstsGo seen acc v).2
   | .indDecl block _ =>
-    (block.foldl (init := (({} : Std.HashSet Expr), (#[] : Array Name)))
+    (block.foldl (init := (({} : Std.HashSet (Expr md)), (#[] : Array (Key md))))
       fun (seen, acc) ci =>
         let (seen, acc) := usedConstsGo seen acc ci.toConstantVal.type
         match ci with
@@ -97,7 +98,7 @@ def _root_.Ix.Kernel.Declaration.usedConsts : Declaration → Array Name
 /-- The pinned `Nat` operation records whose ground the pass serves:
 the pin-certified WF operations and the structural ones (whose
 `natOpDeps` are in their own closures already — kept uniform). -/
-def isNatOpRecord : Declaration → Option Name
+def isNatOpRecord : Declaration md → Option (Key md)
   | .defnDecl cv .. =>
     if natDivModNames.contains cv.name || natOpNames.contains cv.name then some cv.name
     else none
@@ -107,10 +108,10 @@ def isNatOpRecord : Declaration → Option Name
 index to the earliest pinned-operation index it must precede.  Empty —
 and then the hoist is the identity — on every stream whose ground
 precedes its operations. -/
-def hoistTargets (ds : Array Declaration) : Std.HashMap Nat Nat := Id.run do
+def hoistTargets (ds : Array (Declaration md)) : Std.HashMap Nat Nat := Id.run do
   -- name ↦ the index of the record declaring it (the first, on a
   -- duplicate — the fold rejects the second anyway)
-  let mut idx : Std.HashMap Name Nat := {}
+  let mut idx : Std.HashMap (Key md) Nat := {}
   for i in [0:ds.size] do
     for n in ds[i]!.names do
       if !idx.contains n then idx := idx.insert n i
@@ -147,8 +148,8 @@ prepared list's shape lemma states (`mergeSort_perm`,
 `IxC/Kernel/Verify/Frontend/Prepare.lean`).  The keys are pairwise
 distinct (each carries its own index), so the order is the same one
 `qsort` produced. -/
-def applyHoist (ds : Array Declaration) (target : Std.HashMap Nat Nat) :
-    Array Declaration × Array Name :=
+def applyHoist (ds : Array (Declaration md)) (target : Std.HashMap Nat Nat) :
+    Array (Declaration md) × Array (Key md) :=
   let key : Nat → Nat × Nat × Nat := fun k =>
     match target[k]? with
     | some t => (t, 0, k)
@@ -161,11 +162,30 @@ def applyHoist (ds : Array Declaration) (target : Std.HashMap Nat Nat) :
   let moved := (Array.range ds.size).filter (target.contains ·)
   ((order.map (ds[·]!)).toArray, moved.flatMap fun k => (ds[k]!.names).toArray)
 
+/-- **Would the hoist split a unit?**  A record it would move is a generated
+record (`Declaration.isGenerated`, a mutual or nested block's model record)
+or the declaration right after one (the block's own), or it would land
+inside such a lowering (the record before its target is a generated one): a
+lowering of several declarations is what the fold's units check needs whole
+and in order (`IxC/Kernel/Units.lean`). -/
+def splitsUnit (ds : Array (Declaration md)) (target : Std.HashMap Nat Nat) : Bool :=
+  target.toList.any fun (k, t) =>
+    ds[k]!.isGenerated || (k > 0 && ds[k - 1]!.isGenerated) || (t > 0 && ds[t - 1]!.isGenerated)
+
 /-- **The hoist.**  Returns the reordered records and the names of the
 records moved (empty, and the array untouched, when no operation's
-ground is declared after it). -/
-def hoistNatOpGround (ds : Array Declaration) : Array Declaration × Array Name :=
+ground is declared after it, or when moving it would split a mutual or
+nested block's lowering, `splitsUnit`: the stream is then left as it is,
+and the fold meets the operation before its ground, as it would have met
+the block's model records left behind). -/
+def hoistNatOpGround (ds : Array (Declaration md)) : Array (Declaration md) × Array (Key md) :=
   let target := hoistTargets ds
-  if target.isEmpty then (ds, #[]) else applyHoist ds target
+  if target.isEmpty || splitsUnit ds target then (ds, #[]) else applyHoist ds target
+
+/-- **The hoist's receipt**, for the drivers' reports: how many records it would
+move, and whether the guard (`splitsUnit`) keeps them where they are. -/
+def hoistReport (ds : Array (Declaration md)) : Nat × Bool :=
+  let target := hoistTargets ds
+  (target.size, !target.isEmpty && splitsUnit ds target)
 
 end Ix.Kernel.Frontend

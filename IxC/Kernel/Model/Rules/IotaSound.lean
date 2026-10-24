@@ -72,22 +72,22 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
-  {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {env : Env md} {m : EnvModel V env}
+  {φ : LevelParam → Nat}
 set_option linter.unusedVariables false in
 /-- The ι row (`iotaStep_of`, `Steps/IotaRows.lean:492`, with
 `iotaReads_of`, `:332`, for the reduct's reading): the stored
 recursor's fired contract (`RecRules`) at the two certified telescopes
 and the parameter/index comparisons. -/
-theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr} {c : Name}
-    {us : List Level} {cv : ConstantVal} {mI rP : Nat} {rules : List RecRule}
-    {major : Expr} {cj : Name} {usj : List Level} {cvj : ConstantVal}
-    {cnP cnF : Nat} {rl : RecRule} {residual : Expr}
+theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr md} {c : Key md}
+    {us : List Level} {cv : ConstantVal md} {mI rP : Nat} {rules : List (RecRule md)}
+    {major : Expr md} {cj : Key md} {usj : List Level} {cvj : ConstantVal md}
+    {cnP cnF : Nat} {rl : RecRule md} {residual : Expr md}
     (hhead : e.getAppFn = .const c us)
     (hrec : env.find? c = some (.recInfo cv mI rP rules))
     (hlen : e.getAppArgs.length = mI + 1)
@@ -328,7 +328,7 @@ theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr} {c : Name
         rw [hcmp, List.length_map, List.length_take, hmlen] at h1
         omega
       -- the frames of the comparand list
-      have hfrPin : ∀ (p : Expr), p ∈ pins →
+      have hfrPin : ∀ (p : Expr md), p ∈ pins →
           Frame d (Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
             (p.instantiateLevelParams cv.levelParams us)) ∧
           CtxOk m φ d Δa (Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
@@ -359,7 +359,7 @@ theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr} {c : Name
           · exact ((hfrE y (List.mem_of_mem_take hy)).2).2 l hly
       -- each comparand reads, to the pin's open reading chained along
       -- the recursor's parameter prefix
-      have hcompRead : ∀ (p : Expr), p ∈ pins →
+      have hcompRead : ∀ (p : Expr md), p ∈ pins →
           denoteMeta m.acval env φ d
               (Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
                 (p.instantiateLevelParams cv.levelParams us))
@@ -437,7 +437,7 @@ theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr} {c : Name
           have := hspB.length
           simpa using this
         have hjp : j < pins.length := by omega
-        have h1 := hspB.getD (default : Expr) j (by
+        have h1 := hspB.getD (default : Expr md) j (by
           rw [List.length_map]; omega)
         rw [hgetB j hjp] at h1
         obtain ⟨vpa', hvpa', -⟩ := hpinsOk lvls pins hn j (by omega)
@@ -458,7 +458,7 @@ theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr} {c : Name
       have hgi := map_interp_getD_eqK hmapN hlt
       rw [getD_takeAK hi] at hgi
       -- the `i`-th comparand's reading is the chained pin
-      have hiB := hspB.getD (default : Expr) i (by
+      have hiB := hspB.getD (default : Expr md) i (by
         simp only [List.length_map]; omega)
       rw [hgetB i (by omega), hvpa] at hiB
       simp only [Option.map_some, Option.some.injEq] at hiB
@@ -522,9 +522,9 @@ this branch and build `proofIrrel`'s argument; at the motive the whole
 of that argument is the `DefEq fab major` premise.  Hence the linter
 option. -/
 theorem Red.rescueK_sound (hin : RulesInputs V m φ) {d : Nat}
-    {major tm tmaj fab tf : Expr} {recName : Name} {cv : ConstantVal}
-    {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Name}
-    {tus ust : List Level} {cvT : ConstantVal} {caps : IndCaps}
+    {major tm tmaj fab tf : Expr md} {recName : Key md} {cv : ConstantVal md}
+    {mI rP : Nat} {rl : RecRule md} {cvj : ConstantVal md} {cnP cnF : Nat} {T : Key md}
+    {tus ust : List Level} {cvT : ConstantVal md} {caps : IndCaps md}
     (hrec : env.find? recName = some (.recInfo cv mI rP [rl]))
     (hk : rl.k = true)
     (hctor : env.find? rl.ctor = some (.ctorInfo cvj cnP cnF))
@@ -601,9 +601,9 @@ nodes, whose storage and telescope fit come from the rule's
 `EtaProjCerts` premise (`hproj`) — the same premise `DefEq.structEta`
 carries, and the same certificate the checker runs there. -/
 theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
-    {major tm tmaj fab : Expr} {recName : Name} {cv : ConstantVal}
-    {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Name}
-    {tus ust : List Level} {cvT : ConstantVal} {caps : IndCaps}
+    {major tm tmaj fab : Expr md} {recName : Key md} {cv : ConstantVal md}
+    {mI rP : Nat} {rl : RecRule md} {cvj : ConstantVal md} {cnP cnF : Nat} {T : Key md}
+    {tus ust : List Level} {cvT : ConstantVal md} {caps : IndCaps md}
     (hrec : env.find? recName = some (.recInfo cv mI rP [rl]))
     (heta : rl.eta = true)
     (hctor : env.find? rl.ctor = some (.ctorInfo cvj cnP cnF))
@@ -614,7 +614,7 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
     (hlen : tmaj.getAppArgs.length = caps.etaParams)
     (hlv : ust.length = cvT.levelParams.length)
     (hnz : Ix.Kernel.capsNeverZero cvT.levelParams ust caps = true)
-    (hfab : fab = Expr.mkAppN (.const caps.etaCtor ust)
+    (hfab : fab = Expr.mkAppN (.const rl.ctor ust)
       (Ix.Kernel.etaFabArgsE env T ust tmaj.getAppArgs major caps.etaFields))
     (hws : fab.wscopedB d = true) (hb : fab.looseBVarsBounded 0 = true)
     (hlv' : fab.fvarLeaves.all (fun l => major.fvarLeaves.contains l) = true)
@@ -637,7 +637,7 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
   -- carries the former's level parameters (`RecCtorsStored`)
   obtain ⟨-, hEbits⟩ := Ix.Kernel.recCtors_bits m.rec_ctors hrec
     List.mem_cons_self hctor hres hind
-  obtain ⟨hcapseta, hectr, hlpsE⟩ := hEbits heta
+  obtain ⟨hcapseta, -, hlpsE⟩ := hEbits heta
   have hlpj : ust.length = cvj.levelParams.length := by
     rw [hlpsE]; exact hlv
   -- the major's io-inferred type, reduced, is the family at its spine
@@ -664,9 +664,9 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
     constTy_pkg hin.const_ty hctor rfl (show ust.length = _ from hlpj)
   dsimp only [Ix.Kernel.ConstantInfo.toConstantVal] at hTVjaD hmemCj hnfJ hbdJ
   obtain ⟨hfJ, hCJ⟩ := frame_of_not_hasFvar (m := m) (Δa := Δa) hnfJ hbdJ hCM.1
-  have hheadCj : denoteMeta m.acval env φ d (.const caps.etaCtor ust)
+  have hheadCj : denoteMeta m.acval env φ d (.const rl.ctor ust)
       = some (m.acval rl.ctor (Level.substFn φ cvj.levelParams ust)) := by
-    rw [← hectr]; exact denoteMeta_const hctor (show ust.length = _ from hlpj)
+    exact denoteMeta_const hctor (show ust.length = _ from hlpj)
   -- the fabricated projections' frames (a `.proj` node over the major)
   have hprFr : ∀ j, Frame d (Expr.proj T j major) ∧
       CtxOk m φ d Δa (Expr.proj T j major) := fun j =>
@@ -890,9 +890,9 @@ fabricated spine is the reduced type's parameters plus the major's two
 two stored entries' typing law (`TowerOk`); the `DefEq fab major`
 premise carries the proof-irrelevance identification. -/
 theorem Red.rescueAnd_sound (hin : RulesInputs V m φ) {d : Nat}
-    {major tm tmaj fab tf : Expr} {recName : Name} {cv : ConstantVal}
-    {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat}
-    {tus ust : List Level} {cvT : ConstantVal} {caps : IndCaps}
+    {major tm tmaj fab tf : Expr md} {recName : Key md} {cv : ConstantVal md}
+    {mI rP : Nat} {rl : RecRule md} {cvj : ConstantVal md} {cnP cnF : Nat}
+    {tus ust : List Level} {cvT : ConstantVal md} {caps : IndCaps md}
     (hrec : env.find? recName = some (.recInfo cv mI rP [rl]))
     (hctor : env.find? rl.ctor = some (.ctorInfo cvj cnP cnF))
     (hres : (cvj.type.piResult).getAppFn = .const andName tus)

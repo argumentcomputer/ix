@@ -22,8 +22,8 @@ shape. The indices must be explicit because the Source DSL cannot materialize
 its compiler-assigned function index inside a circuit. -/
 def allowedBlob (ixvmVkBytes : ByteArray) (verifyClaimIdx : Nat)
     (selfVkBytes : ByteArray) (aggrIdx : Nat) : ByteArray :=
-  let ixvmDigest := (Blake3.Rust.hash ixvmVkBytes).val.data
-  let selfDigest := (Blake3.Rust.hash selfVkBytes).val.data
+  let ixvmDigest := (Address.blake3 ixvmVkBytes).hash.data
+  let selfDigest := (Address.blake3 selfVkBytes).hash.data
   ⟨ixvmDigest ++ MultiStark.u64le verifyClaimIdx ++
     selfDigest ++ MultiStark.u64le aggrIdx⟩
 
@@ -82,7 +82,7 @@ where `preamble` is the batch's serialized headers and messages and
 canonical extension-field element). -/
 def rangeStatement (preamble : ByteArray) (lo hi : Nat)
     (residual : ByteArray) : ByteArray :=
-  ⟨#[rangeStatementTag] ++ (Blake3.Rust.hash preamble).val.data ++
+  ⟨#[rangeStatementTag] ++ (Address.blake3 preamble).hash.data ++
     MultiStark.u64le lo ++ MultiStark.u64le hi ++ residual.data⟩
 
 /-! ## Native-FFI advice framing
@@ -115,7 +115,7 @@ private def keyedBlobs
 as Blake3(payload), matching IO channel 4's packed-digest lookup. -/
 def preimagesBlob (preimages : Array ByteArray) : ByteArray :=
   keyedBlobs <| preimages.map fun bytes =>
-    ((Blake3.Rust.hash bytes).val, bytes)
+    ((Address.blake3 bytes).hash, bytes)
 
 /-- Pack serialized canonical trees for the native FFI. Channel 5 keys use
 the raw 32-byte tree root. The in-circuit loader independently checks strict

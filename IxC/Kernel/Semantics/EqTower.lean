@@ -24,18 +24,18 @@ namespace Ix.Kernel.Semantics
 open Ix.Kernel.Term
 
 /-- `Eq`'s valuation: the former, eta-expanded. -/
-def eqValT (ψ : Name → Nat) : Term :=
+def eqValT (ψ : LevelParam → Nat) : Term :=
   .lam (.sort (ψ uN)) (.lam (.bvar 0) (.lam (.bvar 1)
     (.eqE (.bvar 1) (.bvar 0))))
 
 /-- `Eq.refl`'s valuation. -/
-def eqReflValT (ψ : Name → Nat) : Term :=
+def eqReflValT (ψ : LevelParam → Nat) : Term :=
   .lam (.sort (ψ uN)) (.lam (.bvar 0) .prf)
 
 /-- `Eq.rec`'s valuation: the minor premise, returned.  Transport is
 the identity — `eqRec_derivable` (`IxC/Kernel/Term/Examples.lean`), which is
 why the layer does not carry `Eq.rec` at all. -/
-def eqRecValT (ψ : Name → Nat) : Term :=
+def eqRecValT (ψ : LevelParam → Nat) : Term :=
   .lam (.sort (ψ uN))
     (.lam (.bvar 0)
       (.lam (.pi (.bvar 1)
@@ -54,19 +54,19 @@ from `SetR/Install/BasisS.lean`, statements verbatim — both lanes
 read them and neither reading is semantic). -/
 
 /-- The tower is closed. -/
-theorem eqValT_closed (ψ : Name → Nat) : Term.Closed (eqValT ψ) := by
+theorem eqValT_closed (ψ : LevelParam → Nat) : Term.Closed (eqValT ψ) := by
   simp only [eqValT, Term.Closed, Term.bvarsBelow]
   exact ⟨trivial, by omega, by omega, by omega, by omega⟩
 
 
 /-- `Eq.refl`'s tower is closed. -/
-theorem eqReflValT_closed (ψ : Name → Nat) : Term.Closed (eqReflValT
+theorem eqReflValT_closed (ψ : LevelParam → Nat) : Term.Closed (eqReflValT
   ψ) := by
   simp only [eqReflValT, Term.Closed, Term.bvarsBelow]
   exact ⟨trivial, by omega, trivial⟩
 
 /-- `Eq.rec`'s tower is closed. -/
-theorem eqRecValT_closed (ψ : Name → Nat) : Term.Closed (eqRecValT
+theorem eqRecValT_closed (ψ : LevelParam → Nat) : Term.Closed (eqRecValT
   ψ) := by
   simp only [eqRecValT, Term.Closed, Term.bvarsBelow, Term.mkAppN,
     eqValT, eqReflValT]

@@ -22,6 +22,14 @@ def dataImports : Array Lean.Name :=
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `IxC.Ixon.Verify]
 
+/-- The codec's one ruled exception to the runtime audit: its two `@[csimp]`
+replacements, `getTagN_eq_fast` and `putTagN_eq_fast` (`IxC/Ixon/Codec.lean`,
+PERF P3), the TagN reader and writer at a fixed flag width with their powers
+folded, each admitted only with a theorem on the standard axioms. Compiled code
+calls `getTagNFast`/`putTagNFast`; every theorem is about `getTagN`/`putTagN`,
+which the two equations make the same functions. -/
+def rulings : Ix.Kernel.Audit.RuntimeRulings := { csimpModules := #[`IxC.Ixon.Codec] }
+
 end Ixon.Audit
 
 #guard_kernel_axioms Ixon.Verify.deUniv_serUniv [propext, Classical.choice, Quot.sound]
@@ -97,13 +105,26 @@ writers: `getTag0/2/4`, `getTag0Sizes`, `putTag0/2/4`, `get/putU64TrimmedLE`,
 `u64ByteCount` and the writers' cached UInt8 constants left the closure;
 `getTagN`, `getTagNWide`, `getTagN0Values`, `putTagN`, `tagNHeader`,
 `tagNEnd1..5` and the `Nat.shiftRight` extern entered, and the `UInt8.add` and
-`UInt8.sub` externs left (352 compiled functions and 54 externs before). -/
+`UInt8.sub` externs left (352 compiled functions and 54 externs before).
+The walk now visits the source `f` of each arity-reduced `f._redArg` it
+reaches (`Ix.Kernel.Audit.reducedAritySource?`), 12 more functions: the sources
+(`Ixon.getArray`, `Ixon.runGet`, `Ixon.runGetExact`,
+`Ixon.WireCheck.validArray`, `panic`, `outOfBounds` and Init's tail-recursive
+list helpers), with no extern, `unsafe` or `csimp` among them (339 before).
+The TagN twins (PERF P3; `getTagN_eq_fast`, `putTagN_eq_fast`, ruled by
+`Ixon.Audit.rulings`) added 8 functions, `getTagNFast`, `putTagNFast` and the
+copies at the three widths, `getTagN0/2/4` and `putTagN0/2/4` (their inlined
+helpers leave no functions of their own), with no extern (351 before). The
+references `getTagN` and `putTagN` stay in the closure: the twins call them
+for a width other than 0, 2 and 4, so both replacements are reported where
+the walk reaches them (`csimp 2`) and where it reaches their targets (`ruled
+csimp 2`). -/
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 339 compiled functions;
-inherited externs 53, implemented_by 0, unsafe 2, csimp 0 -/
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 359 compiled functions;
+inherited externs 53, implemented_by 0, unsafe 2, csimp 2; ruled csimp 2 -/
 #guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntime Ixon.Audit.operations #[`Init, `Std]
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ixon.Audit.rulings
 
 /-- info: Ixon.Verify.deUniv_serUniv : ∀ (u : Ixon.Univ),
   Ixon.Verify.UnivWireWF u → Ixon.deUniv (Ixon.serUniv u) = Except.ok u -/

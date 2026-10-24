@@ -211,10 +211,10 @@ pub struct Proof {
 /// - 8: Catalog claim (`E8 00`)
 /// - 9: Resource claim (`E8 01`)
 ///
-/// The `.ixe` header also uses flag 0xE, with the format version as the
-/// value (`Env::VERSION`): version 4 is the byte `0xE4`, the same byte as
-/// the Check claim tag. Readers know which object they read; nothing
-/// dispatches on the first byte.
+/// The `.ixe` header also uses flag 0xE, with its storage envelope version:
+/// legacy 4 is `0xE4` and original-data 5 is `0xE5`. Checked claims still bind
+/// object format 4. Readers know which object they read; nothing dispatches
+/// on the first byte alone.
 pub const FLAG_CLAIM: u8 = 0xE;
 
 // VARIANT 1 = Comm (handled in comm.rs)

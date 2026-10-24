@@ -1,7 +1,7 @@
 /-
   `ix validate-lean <file.lean>`: run the pure-Lean Ix pipeline validation
-  against the Lean environment for any file — the `Ix.Tc` counterpart to
-  `ix validate` (which drives the Rust implementation's 8-phase pipeline).
+  against the Lean environment for any file. `ix validate` drives the
+  Rust implementation's separate 8-phase pipeline.
 
   Phases (all pure-Lean):
 
@@ -9,25 +9,23 @@
                                         (canon → graph → ground →
                                         condense → aux-aware parallel
                                         compile → serialize)
-    2. Serde gate (pure)              — `deEnv` parses the compiled bytes,
-                                        `serEnv` reproduces them byte-exactly
-    3. Kernel anon roundtrip (pure)   — every constant ingressed, egressed
-                                        back to Ixon, canonically compared;
-                                        projections byte-exact
-    4. Kernel meta roundtrip (pure)   — whole env meta-ingressed, egressed
-                                        to `Ix.ConstantInfo`, compared
-                                        against the elaborated env with
-                                        Rust `compare_envs` semantics
-    5. Decompile (Ixon → Lean)        — the full decompile driver (Pass 1
-                                        aux-skip → flags → Pass 2 aux
-                                        regeneration/recovery), compared
+    2. Serde gate (pure)              — verified lazy parsing, with exact
+                                        writer bytes per serialized unit
+    3. Projection/block-order fidelity — IxC reconstructs the projections;
+                                        exact bytes, coverage and block order
+    4. Source/reader fidelity         — IxC's reader compared with a direct
+                                        translation of the Lean source;
+                                        complete named-source coverage
+    5. Decompile (Ixon → Lean)        — stored originals read without a
+                                        kernel, then inductive flags, compared
                                         hash-identical against the
                                         canonicalized source
 
   Starting from a Lean FILE (like `ix validate`) is what makes phase 4
   possible: the elaborated environment is the comparison oracle. For an
   external `.ixe` with no Lean source (`--ixe`), only the oracle-free
-  phases 2–3 run; 1/4/5 report skipped.
+  phases 2–3 run without an oracle; 1/4 report skipped and 5 checks
+  decompilation errors without a source comparison.
 
   Separate from the `lake test` binary for the same reason as `validate`:
   large files' transitive imports (e.g. Mathlib via
@@ -40,11 +38,13 @@ public import Ix.Common
 public import Ix.CanonM
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.CompileResource
+public import Ix.Cli.DriverOptions
 public import Ix.DecompileM
 public import Ix.DecompileDriver
-public import Ix.DecompileRoundtrip
+public import Ix.KernelFidelity.Egress
+public import Ix.KernelFidelity.Reader
 public import Ix.Meta
-public import Ix.Tc
 public import Ix.Cli.ValidateCmd
 
 public section
@@ -53,8 +53,6 @@ open System (FilePath)
 open Ix.EnvScope
 
 namespace Ix.Cli.ValidateLeanCmd
-
-open Ix.Tc
 
 /-- Phase outcome for the final report. -/
 inductive PhaseResult where
@@ -72,6 +70,56 @@ def PhaseResult.render : PhaseResult → String
 def PhaseResult.isFailure : PhaseResult → Bool
   | .failed _ => true
   | _ => false
+
+/-- The existing report rows, shared by successful and failed phases. -/
+def phaseRows (phases : Array (String × PhaseResult)) : Lean.Json :=
+  Lean.Json.arr <| phases.map fun (name, r) =>
+    let (result, detail) := match r with
+      | .passed d => ("pass", d)
+      | .failed d => ("fail", d)
+      | .stubbed d => ("stub", d)
+      | .skipped d => ("skip", d)
+    Lean.Json.mkObj
+      [ ("name", Lean.Json.str name)
+      , ("result", Lean.Json.str result)
+      , ("detail", Lean.Json.str detail) ]
+
+/-- An uncapped source run must compare every named source constant. Expected
+reader declines retain their distinct verdicts in the full summary. -/
+def readerResult (report : Tests.Ix.Kernel.ReaderFidelity.Report)
+    (expected elapsedMs : Nat) : PhaseResult :=
+  let detail := report.summary ++
+    s!"\nsource coverage: {report.constants}/{expected} named constants\n({elapsedMs}ms)"
+  if report.problems.isEmpty && report.unexplained.isEmpty && report.unmatched.isEmpty &&
+      report.constants == expected then .passed detail else .failed detail
+
+/-- Construction and access/IO errors become phase failures, so the CLI still
+reaches its recap and JSON report. No limit or root restriction is applied. -/
+def readerPhase (input : IO Tests.Ix.Kernel.ReaderFidelity.InputAccess) : IO PhaseResult := do
+  let t0 ← IO.monoMsNow
+  try
+    let access ← input
+    let report ← Tests.Ix.Kernel.ReaderFidelity.runAccess access
+    return readerResult report access.names.size ((← IO.monoMsNow) - t0)
+  catch e => return .failed s!"source/reader fidelity: {e}"
+
+/-- Retain the projection report and the full reviewed failure predicate.
+    This checks projection bytes, coverage and block order, not typing or
+    a roundtrip of every constant body. -/
+def projectionResult (report : Tests.Ix.Kernel.EgressFidelity.ProjectionReport)
+    (elapsedMs : Nat) : PhaseResult :=
+  let orderProblems := report.orderProblems
+  let detail := report.summary ++
+    String.join (orderProblems.map ("\nblock order: " ++ ·)) ++ s!"\n({elapsedMs}ms)"
+  if report.problems.isEmpty && report.matched == report.compiled && orderProblems.isEmpty then
+    .passed detail
+  else .failed detail
+
+/-- The old anonymous ingress diagnostics cannot select a partial version
+    of the new fidelity pass. An explicitly skipped phase ignores them. -/
+def retiredAnonOptions : IO (Array String) :=
+  #["IX_ANON_CAP", "IX_ANON_STAGE", "IX_ANON_SEQ", "IX_ANON_HOLD"].filterM fun key =>
+    return (← IO.getEnv key).isSome
 
 /-- Append a phase result AND emit its section heading immediately, in
     `ix validate`'s style (`[validate-aux] Phase: … / n pass, m fail`),
@@ -92,6 +140,13 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if ixe?.isNone && path?.isNone then
     p.printError "error: must specify <path> to a Lean source file (or --ixe <file>)"
     return 1
+  -- The drivers' options (sharing limits, traces), read once for the compile
+  -- (phase 1) and the decompile (phase 5).
+  let opts ← match ← Ix.Cli.driverOptionsFromEnv with
+    | .ok opts => pure opts
+    | .error e =>
+      IO.eprintln s!"[validate-lean] error: {e}"
+      return 2
 
   -- Sources: either elaborate a Lean file (full pipeline, oracle
   -- available) or read a pre-compiled `.ixe` (phases 2–3 only).
@@ -108,14 +163,13 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   -- whole-Mathlib scale is the difference between fitting in RAM and
   -- swapping.
   -- `--full-oracle` keeps the old whole-env view: full structural BEq per
-  -- constant plus the decompiler's per-recovery debug track — use it to
-  -- debug a digest mismatch on a filtered (`--ns`) closure.
+  -- constant — use it to debug a digest mismatch on a filtered (`--ns`) closure.
   let mut canonView? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none
   let mut canonDigests? : Option (Std.HashMap Ix.Name UInt64) := none
 
   match ixe?, path? with
   | some ixePath, _ =>
-    IO.println s!"Running pure-Lean Ix validator on {ixePath} (no Lean source: phases 1/4/5 skipped)"
+    IO.println s!"Running pure-Lean Ix validator on {ixePath} (no Lean source: phases 1/4 skipped)"
     bytes ← IO.FS.readBinFile ixePath
     phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
       .skipped "pre-compiled .ixe input — no Lean source to compile")
@@ -138,7 +192,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
           let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
             if prefixes.any (·.isPrefixOf n) then some n else none
           IO.println s!"[validate-lean] filter: {prefixes.length} namespace(s), {seeds.length} seed constants"
-          let closed := collectDeps leanEnv seeds
+          let closed := collectSelectedDeps leanEnv seeds
           IO.println s!"[validate-lean] filter: {closed.length} constants after transitive-dep closure"
           pure closed
     IO.println s!"Total constants: {constList.length}"
@@ -148,8 +202,8 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     -- ground → condense → aux-aware parallel compile → serialize).
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
     let t0 ← IO.monoMsNow
-    match ← Ix.CompileM.compileLeanConsts constList
-        (numWorkers := compileWorkers) with
+    match ← Ix.CompileM.compileLeanConstsValidated constList
+        (numWorkers := compileWorkers) (opts := opts) with
     | .error e =>
       phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
         .failed s!"pure-Lean pipeline: {e}")
@@ -198,7 +252,7 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
   IO.println "[validate-lean] phase 2: serde gate (streaming)..."
   (← IO.getStdout).flush
   let t0 ← IO.monoMsNow
-  let parts? ← match serdeGateStreaming bytes with
+  let parts? ← match Ixon.deEnvVerifiedLazy bytes with
     | .error e =>
       phases ← pushPhase phases ("2. Serde (streaming)", .failed e)
       pure none
@@ -215,83 +269,62 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
   match parts? with
   | none =>
     -- Serde failed: nothing downstream can run.
-    phases ← pushPhase phases ("3. Kernel anon roundtrip", .skipped "serde gate failed")
-    phases ← pushPhase phases ("4. Kernel meta roundtrip", .skipped "serde gate failed")
+    phases ← pushPhase phases ("3. Projection/block-order fidelity", .skipped "serde gate failed")
+    phases ← pushPhase phases ("4. Source/reader fidelity", .skipped "serde gate failed")
   | some parts =>
-    -- Phase 3: anon structural roundtrip (named-independent: works off
-    -- the lazy consts windows). Memory-diagnosis knobs:
-    -- `IX_ANON_CAP=<n>` bisects the work list; `IX_SKIP_PHASES=3,5`
-    -- skips phases outright to isolate another phase's footprint.
+    -- Phase 3 reads participating records on demand from the verified
+    -- windows. It retains address/tag indexes, not an eager record store.
     let skipPhases := ((← IO.getEnv "IX_SKIP_PHASES").getD "").splitOn ","
     if skipPhases.contains "3" then
-      phases ← pushPhase phases ("3. Kernel anon roundtrip", .skipped "IX_SKIP_PHASES")
+      phases ← pushPhase phases ("3. Projection/block-order fidelity", .skipped "IX_SKIP_PHASES")
     else
-      IO.println "[validate-lean] phase 3: kernel anon roundtrip..."
-      (← IO.getStdout).flush
-      let anonCap := (← IO.getEnv "IX_ANON_CAP").bind (·.toNat?)
-      let anonSeq := (← IO.getEnv "IX_ANON_SEQ").isSome
-      let anonCut := ((← IO.getEnv "IX_ANON_STAGE").bind (·.toNat?)).getD 0
-      let t0 ← IO.monoMsNow
-      let (rows, err?) := anonRoundtripEnv parts.env anonCap anonSeq anonCut
-      let t1 ← IO.monoMsNow
-      phases ← pushPhase phases ("3. Kernel anon roundtrip",
-        match err? with
-        | none => .passed s!"{rows} constants structurally preserved ({t1 - t0}ms)"
-        | some e => .failed s!"after {rows} rows: {e}")
-      if (← IO.getEnv "IX_ANON_HOLD").isSome then
-        IO.println "[hold] phase 3 returned; sleeping 60s (memory probe)"
+      let retired ← retiredAnonOptions
+      if !retired.isEmpty then
+        phases ← pushPhase phases ("3. Projection/block-order fidelity",
+          .failed s!"retired anonymous-roundtrip diagnostics: {", ".intercalate retired.toList}; \
+use IX_SKIP_PHASES=3 to skip this phase explicitly")
+      else
+        IO.println "[validate-lean] phase 3: projection/block-order fidelity..."
         (← IO.getStdout).flush
-        IO.sleep 60000
-        IO.println "[hold] done"
-        (← IO.getStdout).flush
-    -- Phase 4: meta roundtrip (needs the elaborated env as oracle) —
-    -- streaming: per-chunk materialize → chunk-local ingress → egress →
-    -- compare → drop; the whole-env merged MetaEnv never exists.
+        let t0 ← IO.monoMsNow
+        let result := Tests.Ix.Kernel.EgressFidelity.projectionsAccess
+          (Ix.KernelFidelity.RecordAccess.ofParts parts)
+        let t1 ← IO.monoMsNow
+        phases ← pushPhase phases ("3. Projection/block-order fidelity",
+          match result with
+          | .error e => .failed e
+          | .ok report => projectionResult report (t1 - t0))
+    -- Phase 4 compares the reader with the elaborated source. Default access
+    -- keeps lazy windows, skeletons and full recursors; metadata is per name.
     match leanEnv? with
     | none =>
-      phases ← pushPhase phases ("4. Kernel meta roundtrip",
+      phases ← pushPhase phases ("4. Source/reader fidelity",
         .skipped "no Lean source env to compare against (--ixe mode)")
     | some leanEnv =>
-      IO.println "[validate-lean] phase 4: kernel meta roundtrip (streaming)..."
+      let eager := (← IO.getEnv "IX_META_EAGER").isSome
+      IO.println s!"[validate-lean] phase 4: source/reader fidelity ({if eager then "eager diagnostic" else "lazy"})..."
       (← IO.getStdout).flush
-      let t0 ← IO.monoMsNow
-      -- IX_META_EAGER=1: the pre-streaming whole-env driver (memory
-      -- diagnosis oracle; needs the full named table materialized AND
-      -- the merged whole-env MetaEnv — closure-scale only).
-      let metaResult ← if (← IO.getEnv "IX_META_EAGER").isSome then
-          pure <| parts.materializeAllNamed.bind fun fullEnv =>
-            metaRoundtripEnv leanEnv fullEnv
+      let result ← readerPhase do
+        if eager then
+          -- Explicit whole-store diagnostic, using the preserved eager
+          -- wrapper. The default never materializes the full named store.
+          let fullEnv ← IO.ofExcept parts.materializeAllNamed
+          let input ← Tests.Ix.Kernel.ReaderFidelity.Input.ofEnv leanEnv fullEnv
+          return Tests.Ix.Kernel.ReaderFidelity.InputAccess.ofInput input
         else
-          pure <| metaRoundtripEnvStreaming leanEnv parts
-      match metaResult with
-      | .error e =>
-        phases ← pushPhase phases ("4. Kernel meta roundtrip", .failed e)
-      | .ok report =>
-        let t1 ← IO.monoMsNow
-        let counts := s!"checked {report.checked}, notFound {report.notFound}, \
-                        skippedAux {report.skippedAux}, \
-                        skippedSurgery {report.skippedSurgery} ({t1 - t0}ms)"
-        if report.errorCount == 0 then
-          phases ← pushPhase phases ("4. Kernel meta roundtrip", .passed counts)
-        else
-          let shown := report.errors.toSubarray 0 (min 5 report.errors.size)
-          let msgs := shown.toArray.map fun (n, m) => s!"    ✗ {n}: {m}"
-          phases ← pushPhase phases ("4. Kernel meta roundtrip",
-            .failed (s!"{report.errorCount} comparison error(s); {counts}\n" ++
-              String.intercalate "\n" msgs.toList))
+          IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.InputAccess.ofParts leanEnv parts)
+      phases ← pushPhase phases ("4. Source/reader fidelity", result)
 
   -- The Lean source env's job ends with phase 4 — release it before the
   -- decompile phase so its elaboration overlay can be reclaimed (the
   -- compacted import region stays mapped either way).
   leanEnv? := none
 
-  -- Phase 5: decompile through the full pure-Lean driver (Pass 1
-  -- aux-skip → Pass 1.5 flags → Pass 2 aux regeneration/recovery).
+  -- Phase 5: read stored originals and restore inductive flags.
   -- With a Lean source (path mode) the canonicalized env is the oracle:
   -- every reconstructed constant must match it, both directions — by
-  -- per-name digest (default) or full structural BEq (`--full-oracle`,
-  -- which also switches the decompiler's per-recovery debug track on by
-  -- passing the view as `origEnv?`). In `--ixe` mode the phase runs
+  -- per-name digest (default) or full structural BEq (`--full-oracle`).
+  -- In `--ixe` mode the phase runs
   -- oracle-free (decompile errors only).
   let skipPhases5 := ((← IO.getEnv "IX_SKIP_PHASES").getD "").splitOn ","
   let ixonEnvForDecompile? : Option (Except String Ixon.Env) :=
@@ -312,7 +345,7 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     let decompileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 16
     let (decompiled, errs, _p2st) ←
       Ix.DecompileM.decompileEnvFullParallel ixonEnv canonView?
-        (numWorkers := decompileWorkers)
+        (numWorkers := decompileWorkers) (sharingLimits := opts.sharingLimits)
     let t1 ← IO.monoMsNow
     if !errs.isEmpty then
       let shown := errs.toList.take 5
@@ -392,16 +425,6 @@ missing; {nMatch} matched ({t1 - t0}ms) — rerun with --full-oracle \
   -- `--report`: machine-readable phase table + verdict, the
   -- `ix compile --report` shape (the fidelity suites' gate).
   if let some flag := p.flag? "report" then
-    let phaseRows := Lean.Json.arr <| phases.map fun (name, r) =>
-      let (result, detail) := match r with
-        | .passed d => ("pass", d)
-        | .failed d => ("fail", d)
-        | .stubbed d => ("stub", d)
-        | .skipped d => ("skip", d)
-      Lean.Json.mkObj
-        [ ("name", Lean.Json.str name)
-        , ("result", Lean.Json.str result)
-        , ("detail", Lean.Json.str detail) ]
     let report := Lean.Json.mkObj
       [ ("schemaVersion", Lean.toJson (1 : Nat))
       , ("tool", Lean.Json.str "validate-lean")
@@ -410,7 +433,7 @@ missing; {nMatch} matched ({t1 - t0}ms) — rerun with --full-oracle \
       , ("input", Lean.Json.str (ixe?.getD (path?.getD "")))
       , ("ns", (p.flag? "ns").map (Lean.Json.str <| ·.as! String)
           |>.getD Lean.Json.null)
-      , ("phases", phaseRows)
+      , ("phases", phaseRows phases)
       , ("totalFailures", Lean.toJson failures.size)
       , ("passed", Lean.toJson failures.isEmpty) ]
     IO.FS.writeFile (flag.as! String) (report.pretty ++ "\n")
@@ -422,14 +445,14 @@ end Ix.Cli.ValidateLeanCmd
 open Ix.Cli.ValidateLeanCmd in
 def validateLeanCmd : Cli.Cmd := `[Cli|
   "validate-lean" VIA runValidateLeanCmd;
-  "Validate a Lean file through the pure-Lean Ix pipeline (compile [stub] → serde → kernel anon+meta roundtrips → decompile [stub])"
+  "Validate a Lean file through compilation, serde, projection/block-order fidelity, source/reader fidelity and decompilation"
 
   FLAGS:
     ns  : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
-    ixe : String; "Validate a pre-compiled .ixe instead of a Lean file (oracle-free: runs serde + anon roundtrip only)"
+    ixe : String; "Validate a pre-compiled .ixe (serde, projection/block-order fidelity and oracle-free decompilation; compilation and source comparison are skipped)"
     report : String; "Write a machine-readable JSON report (phase table + pass/fail) to this path."
     workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale — memory scales with workers (phase 1 at 32 peaks past 116 GiB there; 8 is a safe whole-Mathlib setting on a 128 GiB box)."
-    «full-oracle»; "Phase 5 comparison via the full canonicalized env (structural BEq per constant + the decompiler's per-recovery debug track) instead of the default per-name digests. Holds a whole extra env copy through phase 5 — use on --ns-filtered closures to debug a digest mismatch."
+    «full-oracle»; "Phase 5 comparison via the full canonicalized env (structural BEq per constant) instead of the default per-name digests. Holds a whole extra env copy through phase 5 — use on --ns-filtered closures to debug a digest mismatch."
 
   ARGS:
     ...path : String; "Path to the Lean source file whose env should be validated (omit with --ixe)."

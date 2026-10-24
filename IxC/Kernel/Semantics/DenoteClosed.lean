@@ -58,7 +58,7 @@ namespace Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
-open Ix.Kernel (Env Expr Name CheckMode)
+open Ix.Kernel (Env Expr Key CheckMode)
 
 namespace AnnotTerm
 
@@ -134,11 +134,11 @@ The valuation premise is v1's own: the leaves' *erasures* are closed,
 which at an install is `EnvS.cval_closed` composed with
 `EnvModelU.acval_erase`. -/
 theorem denoteAnnot_closed {mode : CheckMode}
-    {acval : Name → (Name → Nat) → AnnotTerm} {cval : TConstVal}
-    {env : Env} {φ : Name → Nat} {fuel : Nat}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal md}
+    {env : Env md} {φ : LevelParam → Nat} {fuel : Nat}
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {e : Expr} {ea : AnnotTerm} (hnf : e.hasFvar = false)
+    {e : Expr md} {ea : AnnotTerm} (hnf : e.hasFvar = false)
     (hb : e.looseBVarsBounded 0 = true)
     (h : denoteAnnot mode acval env φ fuel 0 e = some ea) (n k : Nat) :
     ea.liftN n k = ea :=

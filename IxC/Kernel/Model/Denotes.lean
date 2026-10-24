@@ -47,7 +47,7 @@ open Ix.Kernel.Semantics Ix.Kernel.SetModel Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
 open Ix.Kernel.Term
 open Ix.Kernel.SetTheory.Tower (projS)
-open Ix.Kernel (Env Expr Name Level ConstantInfo)
+open Ix.Kernel (Env Expr Key Level ConstantInfo)
 open Ix.Kernel.Expr (closeN)
 
 universe w
@@ -55,13 +55,13 @@ universe w
 variable {V : Type w} [SetTheory V]
 
 /-- The set-valued leaf of an annotated valuation. -/
-noncomputable def cvalOf (acval : Name → (Name → Nat) → AnnotTerm)
-    (n : Name) (ψ : Name → Nat) : V :=
+noncomputable def cvalOf (acval : Key md → (LevelParam → Nat) → AnnotTerm)
+    (n : Key md) (ψ : LevelParam → Nat) : V :=
   interp V (fun _ => SetTheory.empty) (acval n ψ)
 
 /-- A closed leaf interprets to its `cvalOf` under every environment. -/
-theorem interp_cvalOf {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) (n : Name) (ψ : Name → Nat)
+theorem interp_cvalOf {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) (n : Key md) (ψ : LevelParam → Nat)
     (ρ : Nat → V) : interp V ρ (acval n ψ) = cvalOf acval n ψ :=
   interp_closed (V := V) (hcl n ψ) ρ _
 
@@ -73,15 +73,15 @@ theorem field_eq_projS : ∀ (i : Nat) (p : V), Ix.Kernel.field i p = projS i p
   | 0, _ => rfl
   | i + 1, p => field_eq_projS i (ssnd p)
 
-theorem regime_eq_pwBit (φ : Name → Nat) (pw : Ix.Kernel.PropWhen) :
+theorem regime_eq_pwBit (φ : LevelParam → Nat) (pw : Ix.Kernel.PropWhen) :
     Ix.Kernel.regime φ pw = pwBit φ pw := rfl
 
 /-! ### The literal spines -/
 
 /-- A constant stored without universe parameters, at the empty
 instantiation. -/
-private theorem Denotes_const_nil {cval : Name → (Name → Nat) → V} {env : Env}
-    {φ : Name → Nat} {ρ : Nat → V} {n : Name} {ci : ConstantInfo}
+private theorem Denotes_const_nil {cval : Key md → (LevelParam → Nat) → V} {env : Env md}
+    {φ : LevelParam → Nat} {ρ : Nat → V} {n : Key md} {ci : ConstantInfo md}
     (hf : env.find? n = some ci) (h0 : ci.toConstantVal.levelParams = []) :
     Denotes cval env φ ρ (.const n []) (cval n (Level.substFn φ [] [])) := by
   have h := Denotes.const (cval := cval) (env := env) (φ := φ) (ρ := ρ) hf
@@ -90,8 +90,8 @@ private theorem Denotes_const_nil {cval : Name → (Name → Nat) → V} {env : 
 
 /-- A constant stored with one universe parameter, at `[.zero]`, valued
 at the stored parameter list as `denoteMeta` spells it. -/
-private theorem Denotes_const_one {cval : Name → (Name → Nat) → V} {env : Env}
-    {φ : Name → Nat} {ρ : Nat → V} {n : Name} {ci : ConstantInfo} {p : Name}
+private theorem Denotes_const_one {cval : Key md → (LevelParam → Nat) → V} {env : Env md}
+    {φ : LevelParam → Nat} {ρ : Nat → V} {n : Key md} {ci : ConstantInfo md} {p : LevelParam}
     (hf : env.find? n = some ci) (h1 : ci.toConstantVal.levelParams = [p]) :
     Denotes cval env φ ρ (.const n [.zero])
       (cval n (Level.substFn φ (levelParamsAt env n) [.zero])) := by
@@ -103,8 +103,8 @@ private theorem Denotes_const_one {cval : Name → (Name → Nat) → V} {env : 
 
 /-- Under the `Nat`-literal guard, the constructor form of a literal
 denotes the annotated numeral `denoteMeta` reads. -/
-theorem Denotes_natLitToConstructor {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : Name → Nat}
+theorem Denotes_natLitToConstructor {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env md} {φ : LevelParam → Nat}
     (hsup : Ix.Kernel.natLitSupported env = true) (ρ : Nat → V) :
     ∀ k, Denotes (cvalOf (V := V) acval) env φ ρ (Ix.Kernel.natLitToConstructor k)
       (interp V ρ (natLitAV (acval natZeroName (Level.substFn φ [] []))
@@ -123,8 +123,8 @@ theorem Denotes_natLitToConstructor {acval : Name → (Name → Nat) → AnnotTe
 /-- Under the `String`-literal guard, the character-list spine of a
 literal's constructor form denotes the annotated spine `denoteMeta`
 reads. -/
-private theorem Denotes_charList {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : Name → Nat}
+private theorem Denotes_charList {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env md} {φ : LevelParam → Nat}
     (hsup : Ix.Kernel.strLitSupported env = true) (ρ : Nat → V) :
     ∀ l : List Char,
       Denotes (cvalOf (V := V) acval) env φ ρ
@@ -162,8 +162,8 @@ private theorem Denotes_charList {acval : Name → (Name → Nat) → AnnotTerm}
 
 /-- Under the `String`-literal guard, the constructor form of a literal
 denotes what `denoteMeta` reads for the literal. -/
-theorem Denotes_strLitToConstructor {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : Name → Nat}
+theorem Denotes_strLitToConstructor {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env md} {φ : LevelParam → Nat}
     (hsup : Ix.Kernel.strLitSupported env = true) (ρ : Nat → V) (s : String) :
     Denotes (cvalOf (V := V) acval) env φ ρ (Ix.Kernel.strLitToConstructor s)
       (interp V ρ (.app (acval stringOfListName (Level.substFn φ [] []))
@@ -212,16 +212,16 @@ theorem wellDenotedV_of_projAV {ρ : Nat → V} :
 
 /-- A term with no `fvar` is scoped below every depth. -/
 private theorem fvarsBelow_zero_of_not_hasFvar :
-    ∀ {e : Expr}, e.hasFvar = false → Expr.fvarsBelow 0 e := by
+    ∀ {e : Expr md}, e.hasFvar = false → Expr.fvarsBelow 0 e := by
   intro e
   induction e <;> simp_all [Expr.fvarsBelow, Expr.hasFvar]
 
 /-- **The bridge**: wherever `denoteMeta` reads a term whose reading is
 graded and bit-valid, `interp` of the reading is a denotation of the
 term's closure under `Denotes` at the interpreted leaves. -/
-theorem Denotes_of_denoteMeta {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : Name → Nat} :
-    ∀ (d : Nat) (e : Expr) {ta : AnnotTerm},
+theorem Denotes_of_denoteMeta {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env md} {φ : LevelParam → Nat} :
+    ∀ (d : Nat) (e : Expr md) {ta : AnnotTerm},
       denoteMeta acval env φ d e = some ta →
       Expr.fvarsBelow d e → e.looseBVarsBounded 0 = true →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta →
@@ -366,7 +366,7 @@ theorem Denotes_of_denoteMeta {acval : Name → (Name → Nat) → AnnotTerm}
     | forallE ty b mb => exact absurd rfl (hpi ty b mb)
     | lam ty b mb => exact absurd rfl (hlam ty b mb)
     | app fe a => exact absurd rfl (happ fe a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with
@@ -377,7 +377,7 @@ theorem Denotes_of_denoteMeta {acval : Name → (Name → Nat) → AnnotTerm}
 
 /-- **The model, read off the invariant**: `Model V env` from
 `EnvModelM V μ env`. -/
-noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env}
+noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
     (m : EnvModelM V μ env) : Ix.Kernel.Model V env where
   cval := cvalOf m.base2.acval
   mem := by
@@ -395,28 +395,28 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env}
     exact m.mem_type c hc φ ta hta ρ
   false_empty := by
     intro φ ρ F h
-    suffices hs : ∀ (ψ : Name → Nat) (ci : ConstantInfo),
+    suffices hs : ∀ (ψ : LevelParam → Nat) (ci : ConstantInfo md),
         env.find? falseName = some ci →
         cvalOf (V := V) m.base2.acval falseName ψ = SetTheory.empty by
       cases h with
       | const hf hlen => exact hs _ _ hf
     intro ψ ci hf
-    have hpd : Ix.Kernel.Verify.pinnedStructT falseName ψ
+    have hpd : Ix.Kernel.Verify.pinnedStructT (md := md) falseName ψ
         = some (Term.const .empty [0]) := by
-      simp +decide [Ix.Kernel.Verify.pinnedStructT]
+      cases md <;> simp +decide [Ix.Kernel.Verify.pinnedStructT]
     have he : (m.base2.acval falseName ψ).erase = Term.const .empty [0] :=
-      m.base2.cvalE_pinned (n := falseName) (by decide) (by rw [hf]; rfl) ψ hpd
+      m.base2.cvalE_pinned (n := falseName) (by (cases md <;> decide)) (by rw [hf]; rfl) ψ hpd
     rw [cvalOf, erase_eq_const he, interp_const]
     rfl
   eq_equality := by
     intro u φ ρ E A a b h hA ha hb
     cases h with
     | const hf hlen =>
-      have hpin := (m.base2.basis_pinned _ _ hf (by decide)).1
+      have hpin := (m.base2.basis_pinned _ _ hf (by (cases md <;> decide))).1
       rw [show Ix.Kernel.pinnedInfo Ix.Kernel.eqName = Ix.Kernel.eqA from rfl]
         at hpin
       subst hpin
-      rw [show (Ix.Kernel.eqA : ConstantInfo).toConstantVal.levelParams
+      rw [show (Ix.Kernel.eqA : ConstantInfo md).toConstantVal.levelParams
         = [Ix.Kernel.uN] from rfl]
       have hψ : Level.substFn φ [Ix.Kernel.uN] [u] Ix.Kernel.uN = Level.eval φ u := by
         simp [Level.substFn]

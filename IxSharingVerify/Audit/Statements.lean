@@ -1,6 +1,7 @@
 import IxC.Kernel.Audit.Axioms
 import IxSharingVerify
 import IxSharingVerify.Builder
+import Ix.LeanIngress.Expr
 
 /-!
 # Trust manifest for the sharing proofs
@@ -41,19 +42,99 @@ private def quotOnly : Array Lean.Name := #[``Quot.sound]
 requires every `@[csimp]` theorem on the compiler's import path to be one of
 them. -/
 def roots : Array RootAllowance := #[
-  -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`). The
-  -- theorems about `BlockResult.mk'` (`BlockResult.mk'_codec_roundtrip`,
-  -- `BlockResult.constantInfo_codec_roundtrip`,
-  -- `finishConstantInfoWithSharing_run_codecWF`) are not roots: `mk'` hashes
-  -- the block, and the Blake3 package's `HasherOps.hash` carries a
-  -- `native_decide` axiom, which this manifest does not admit.
+  -- sharing-k16-greedy-v1: preserved exact references, proved compiled
+  -- family twins, actual family leastness and compiler-facing contracts.
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.Reference.canonicalSharingTiered_meaning, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTiered_format, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTieredTable_format, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTiered_serialized, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTieredTable_serialized, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.component_eq_fast, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.components_eq_cached, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyReferenceExpanded_eq_cached, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyAreaPhi_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyTraceArea_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyAreaEvaluation_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyStepArea_eq_reference, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyFoldArea_eq_reference, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyComponentsArea_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyUniformArea_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyAtWidthArea_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyExpanded_eq_area, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeFamily_eq_area, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.exact_family_iff, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.exact_table_row_least, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.table_tie_coverage, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.initial_knapsack_least, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyUniform_selection, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.initial_minimum_cost, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyUniform_finished, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyUniform_model_minimum, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.familyExpanded_checked, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeFamily_meaning, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeFamily_wire, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalProduction.canonicalSharingTiered_parts, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalProduction.canonicalSharingTieredTable_parts, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalProduction.canonicalSharingTiered_family_least, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalProduction.canonicalSharingTiered_output, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_eq_family, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_reference_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_reference_bytes, standardAxioms := standard },
+  -- The meaning of the canonical construction: the pointer cache, ingestion
+  -- of the table and the roots, and canonical numbering preserve what each
+  -- input expression denotes.
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.canonicalize_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.expand_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.expand_unshared, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.expand_root_terms, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.canonicalSharingTiered_meaning, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_run, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.canonicalize_ingested, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_initial, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_unshared, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.reexpand_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.termOf_retains, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Verify.Ingestion.internNode_good, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestExpr_checked, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestExpr_initial, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.sound_empty, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.sound_insert, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_entry, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_sound, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_insert, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.collision_miss, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.Sound.mono, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit_meaning, standardAxioms := standard },
+  -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`) and the
+  -- stored-byte wrapper `BlockResult.mk'`, which hashes the block with
+  -- `Address.admissionHash` (pure BLAKE3 in the logic; since CQ2.1 no hash
+  -- reaches a `native_decide` axiom). These assert no hash-injectivity or
+  -- FFI-agreement law.
+  { root := ``Ix.Sharing.Verify.BlockResult.mk'_codec_roundtrip,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.BlockResult.mk'_codecWF,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.BlockResult.constantInfo_codec_roundtrip,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.finishConstantInfoWithSharing_run_codecWF,
+    standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.buildConstantWithSharing_wireWF,
+    standardAxioms := standard },
+  -- The same endpoint from the payload's header fields alone: the roots that
+  -- sharing rewrites need no wire-validity premise.
+  { root := ``Ix.Sharing.Verify.buildConstantWithSharing_wireWF_headers,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.constantInfoRootExprs_toList,
     standardAxioms := #[``propext] },
   { root := ``Ixon.Verify.TagN.runGetExact_getTagN_eq,
     standardAxioms := standard },
   { root := ``Ixon.Verify.TagN.putTagN_inj,
+    standardAxioms := noChoice },
+  -- Compiled host code (`Ix.Ixon` and its importers) writes TagN integers
+  -- with the inlined copy `putTagNI` (`@[csimp]`, by `rfl`).
+  { root := ``Ixon.putTagN_eq_I,
     standardAxioms := noChoice },
   { root := ``Ixon.Verify.TagN.getTagN_rejects_code,
     standardAxioms := standard },
@@ -180,6 +261,11 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.searchComponentsWith_eq_fast,
     standardAxioms := standard },
+  -- The compiled tiered copies (`*_eq_C` below) run that loop as
+  -- `searchComponentsArea`, the search on each component's area with the
+  -- truncated evaluation, equal to `searchComponentsWith` on a stage's tables.
+  { root := ``Ix.Sharing.Exact.AreaProof.searchComponentsArea_eq,
+    standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Tiered.canonicalTieredCore_select,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Tiered.tieredAtWidth_parts,
@@ -239,7 +325,7 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Tiered.canonicalTiered_reexpand,
     standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.Tiered.canonicalSharingTieredTable_idem,
+  { root := ``Ix.Sharing.Verify.Tiered.Reference.canonicalSharingTieredTable_idem,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Tiered.wireCounts_spec,
     standardAxioms := propextOnly },
@@ -279,6 +365,13 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.canonicalTieredExpanded_eq_C,
     standardAxioms := standard },
+  -- The compiler's preseed table walks (CQ2.9, `Ix.CompileM.TableWorklist`):
+  -- compiled code runs the total worklists, proved equal to the structural
+  -- walks (`@[csimp]`), in place of the former `implemented_by` code.
+  { root := ``Ix.CompileM.collectExprTables_eq_worklist,
+    standardAxioms := standard },
+  { root := ``Ix.CompileM.preseedExprTables_eq_worklist,
+    standardAxioms := standard },
   -- Compiled-code replacements (`@[csimp]`): compiled code runs the
   -- right-hand side wherever the specification on the left is called.
   { root := ``Ix.Sharing.Exact.tagNByteWidth_eq_fast,
@@ -291,7 +384,22 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Exact.SCtx.phiE_eq_fast,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.csBase_eq_fast,
-    standardAxioms := noChoice }
+    standardAxioms := noChoice },
+  -- The compiler's exact cache keys (CQ2.8, `Ix.Compile.ExactKey`): compiled
+  -- code compares expressions, levels and names pointer-first with a memo,
+  -- proved equal to `decide (a = b)` over the raw terms (`@[csimp]`).
+  { root := ``Ix.Compile.ExactKey.exprEq_eq_impl,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.ExactKey.levelEq_eq_impl,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.ExactKey.nameEq_eq_impl,
+    standardAxioms := noChoice },
+  -- The Source ingress's term conversion (`Ix.LeanIngress.Expr`), which the
+  -- compile drivers now run through their Source service (AuxGen M1):
+  -- compiled code runs the shared-memo conversion, proved equal to the
+  -- structural one (`@[csimp]`).
+  { root := ``Ix.LeanIngress.ingressExprs_eq_shared,
+    standardAxioms := standard }
 ]
 
 /-- Check every root: no duplicates, only Lean's standard axioms listed, and

@@ -227,7 +227,16 @@
           lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
             src = leanSrc;
             depOverrideDeriv = {
-              Blake3 = blake3-lean.packages.${system}.rust;
+              # Blake3.lean's `rust` package builds only its `Blake3Rust`
+              # library (`Blake3.Rust` and the `Blake3` root). Ix also imports
+              # `Blake3.Pure` (`Ix.Address.Pure`), and binaries that import
+              # their closure at run time (`get_env!`) look for it under this
+              # package's path in `LEAN_PATH`, so build it here as well.
+              Blake3 = blake3-lean.packages.${system}.rust.overrideAttrs (old: {
+                postBuild = (old.postBuild or "") + ''
+                  lake build +Blake3.Pure
+                '';
+              });
             };
           }) (map (p: p.name) (builtins.filter (p: p.type == "path") lakeManifest.packages));
           lakePackageOverrides = pkgs.writers.writeJSON "lake-package-overrides.json" (
@@ -320,17 +329,16 @@
               }
             )
           );
-          # Test binary links rustPkg (with test-ffi) instead of rustPkgRelease
-          ixTest = wrapBin (
-            lake2nix.mkPackage (
-              lakeTestBuildArgs
-              // {
-                lakeArtifacts = ixLib;
-                name = "IxTests";
-                installArtifacts = true;
-              }
-            )
+          # Test binary links rustPkgTest (with test-ffi) instead of rustPkgRelease
+          ixTestArtifacts = lake2nix.mkPackage (
+            lakeTestBuildArgs
+            // {
+              lakeArtifacts = ixLib;
+              name = "IxTests";
+              installArtifacts = true;
+            }
           );
+          ixTest = wrapBin ixTestArtifacts;
           ZKVotingProver = wrapBin (
             lake2nix.mkPackage (
               lakeBinArgs
@@ -384,15 +392,25 @@
             # files by paths relative to the working dir, so run it from a
             # writable copy of the source tree, as if from a checkout.
             ix-tests = pkgs.runCommandCC "ix-tests" {
-              nativeBuildInputs = [ rustToolchain ];
+              nativeBuildInputs = [ rustToolchain lean ];
             } ''
               cp -r ${./.} src
               chmod -R u+w src
-              # IxTests depends on the ix target, so its wrapped output already
-              # contains the matching CLI. Recreate Lake's checkout-relative
-              # path for tests that intentionally exercise that CLI.
-              mkdir -p src/.lake/build/bin
-              ln -s ${ixTest}/bin/ix src/.lake/build/bin/ix
+              # Source-mode CLI tests invoke Lake. Reuse the configured build
+              # tree, including local package overrides and fixture oleans,
+              # with writable copies of all artifacts that Lake may rebuild.
+              cp -rP ${ixTestArtifacts}/.lake src/.lake
+              chmod -R u+w src/.lake
+              cp ${ixTestArtifacts}/lakefile.lean src/lakefile.lean
+              # The configured lakefile delegates Cargo to Crane; preserve
+              # its prebuilt archive input if a Lake target needs refreshing.
+              mkdir -p src/target/release
+              ln -s ${rustPkgTest}/lib/libix_ffi.a src/target/release/libix_ffi.a
+              # Both subprocesses are built by IxTests.needs. Use their
+              # wrappers so runtime imports keep the packaged search paths.
+              for exe in ix kernel-check-ixe; do
+                ln -sf ${ixTest}/bin/$exe src/.lake/build/bin/$exe
+              done
               cd src
               ${ixTest}/bin/IxTests
               touch $out

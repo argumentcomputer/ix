@@ -24,12 +24,18 @@ module
 public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
+public import Ix.Compile.Canon.Expr
 public import Std.Data.HashMap
 public import Std.Data.HashSet
 
 public section
 
 namespace Ix.AuxGen
+
+-- A7 (D8): out-of-range array accesses are bounds-carrying accesses or
+-- iterations (no `]!`); `RestoreCtx.restore` keeps one `get!` on the cache
+-- `ensureCache` has just initialised.
+
 
 /-- Local error channel for `Ix.AuxGen`. Mirrors the slice of Rust
     `ixon::CompileError` these utilities can actually produce.
@@ -105,17 +111,76 @@ def mkConst (name : Name) (univs : Array Level) : Expr :=
   Expr.mkConst name univs
 
 /-- Mirrors Rust `decompose_apps` (aux_gen/expr_utils.rs:1509).
-    Decompose an application spine: `f a1 a2 ... an` → `(f, #[a1, ..., an])`. -/
-def decomposeApps (expr : Expr) : Expr × Array Expr := Id.run do
-  let mut args : Array Expr := #[]
-  let mut cur := expr
-  repeat
-    match cur with
-    | .app f a _ =>
-      args := args.push a
-      cur := f
-    | _ => break
-  return (cur, args.reverse)
+    Decompose an application spine: `f a1 a2 ... an` → `(f, #[a1, ..., an])`.
+    The structural tail recursion keeps the push/reverse traversal while
+    exposing its subterm bounds to the ordinary expression compiler
+    (`Ix.CompileM.compileExprNoSurgeryStep`). -/
+def decomposeApps.go (expr : Expr) (args : Array Expr) : Expr × Array Expr :=
+  match expr with
+  | .app f a _ => decomposeApps.go f (args.push a)
+  | head => (head, args.reverse)
+
+/-- Application head and arguments, in application order. -/
+def decomposeApps (expr : Expr) : Expr × Array Expr := decomposeApps.go expr #[]
+
+/-- `decomposeApps.go` is Pass 1's `getAppFnArgs` with the accumulated
+arguments appended in reverse. -/
+theorem decomposeApps.go_eq (expr : Expr) (args : Array Expr) :
+    decomposeApps.go expr args =
+      ((Compile.Canon.getAppFnArgs expr).1,
+        (Compile.Canon.getAppFnArgs expr).2 ++ args.reverse) := by
+  induction expr generalizing args <;> simp only [decomposeApps.go, Compile.Canon.getAppFnArgs]
+  case app fn arg hash ihfn iharg =>
+    rw [ihfn]
+    rw [Array.reverse_push]
+    simp only [Array.push_eq_append, Array.append_assoc]
+  all_goals simp only [Array.empty_append]
+
+/-- The compiler's application spine is Pass 1's
+(`Ix.Compile.Canon.getAppFnArgs`). -/
+theorem decomposeApps_eq (expr : Expr) :
+    decomposeApps expr = Compile.Canon.getAppFnArgs expr := by
+  simp only [decomposeApps, decomposeApps.go_eq, Array.reverse_empty,
+    Array.append_empty]
+
+theorem decomposeApps.go_head_le (expr : Expr) (args : Array Expr) :
+    sizeOf (decomposeApps.go expr args).1 ≤ sizeOf expr := by
+  induction expr generalizing args <;> simp only [decomposeApps.go]
+  case app fn arg hash ihfn iharg =>
+    have small := ihfn (args.push arg)
+    simp only [Expr.app.sizeOf_spec]
+    omega
+  all_goals exact Nat.le_refl _
+
+theorem decomposeApps.go_mem (expr : Expr) (args : Array Expr) {x : Expr}
+    (mem : x ∈ (decomposeApps.go expr args).2) : sizeOf x < sizeOf expr ∨ x ∈ args := by
+  induction expr generalizing args <;> simp only [decomposeApps.go] at mem
+  case app fn arg hash ihfn iharg =>
+    rcases ihfn (args.push arg) mem with small | prior
+    · left
+      simp only [Expr.app.sizeOf_spec]
+      omega
+    · simp only [Array.mem_push] at prior
+      rcases prior with prior | rfl
+      · exact Or.inr prior
+      · left
+        simp only [Expr.app.sizeOf_spec]
+        omega
+  all_goals exact Or.inr (Array.mem_reverse.mp mem)
+
+/-- The head of an application spine is a strict subterm of it. -/
+theorem decomposeApps_app_head_lt (fn arg : Expr) (hash : Address) :
+    sizeOf (decomposeApps (.app fn arg hash)).1 < sizeOf (Expr.app fn arg hash) := by
+  have small := decomposeApps.go_head_le fn (#[].push arg)
+  simp only [decomposeApps, decomposeApps.go, Expr.app.sizeOf_spec]
+  omega
+
+/-- Every argument of an application spine is a strict subterm of it. -/
+theorem decomposeApps_app_mem_lt (fn arg : Expr) (hash : Address) {x : Expr}
+    (mem : x ∈ (decomposeApps (.app fn arg hash)).2) :
+    sizeOf x < sizeOf (Expr.app fn arg hash) := by
+  have small := decomposeApps.go_mem (.app fn arg hash) #[] mem
+  simpa only [Array.not_mem_empty, or_false] using small
 
 /-- Mirrors Rust `count_foralls` (aux_gen/expr_utils.rs:1521).
     Count the number of leading forall binders in an expression. -/
@@ -188,7 +253,7 @@ partial def lowerVars (expr : Expr) (amount : Nat) (cutoff : Nat) : Expr :=
 /-! ## Instantiation: BVar -> replacement (aux_gen/expr_utils.rs:591) -/
 
 /-- Mirrors Rust `instantiate1_at` (aux_gen/expr_utils.rs:605). -/
-partial def instantiate1At (body : Expr) (replacement : Expr) (depth : Nat) : Expr :=
+def instantiate1At (body : Expr) (replacement : Expr) (depth : Nat) : Expr :=
   match body with
   | .bvar i _ =>
     if i == depth then replacement
@@ -227,9 +292,9 @@ partial def instantiateRevAt (body : Expr) (args : Array Expr) (depth : Nat) : E
   | .bvar i _ =>
     if i >= depth then
       let ridx := i - depth
-      if ridx < n then
+      if h : ridx < args.size then
         -- Replace with args[ridx], shifted up by depth for the binders we're under.
-        shiftVars args[ridx]! depth 0
+        shiftVars args[ridx] depth 0
       else
         -- Free BVar past our substitution range: decrement by n.
         Expr.mkBVar (i - n)
@@ -274,8 +339,7 @@ def instantiateRev (body : Expr) (args : Array Expr) : Expr :=
     not replicated here.) -/
 def instantiatePiParams (typ : Expr) (n : Nat) (args : Array Expr) : Expr := Id.run do
   let mut cur := typ
-  for i in [0:Nat.min n args.size] do
-    let arg := args[i]!
+  for arg in args.extract 0 n do
     match cur with
     | .forallE _ _ body _ _ =>
       cur := instantiateRev body #[arg]
@@ -325,6 +389,24 @@ def levelExplicitOffset (l : Level) : Option (Level × Nat) :=
   | .zero _ => some (base, n)
   | _ => none
 
+/-- The digest-free key of a name: its components as a `Lean.Name`. Two names
+    have equal keys exactly when Rust `Name::same_structure` holds; a stored
+    digest never decides the comparison. -/
+def nameKey : Name → Lean.Name
+  | .anonymous _ => .anonymous
+  | .str p s _ => .str (nameKey p) s
+  | .num p n _ => .num (nameKey p) n
+
+/-- Level equality ignoring every stored digest (Rust `Level::same_structure`). -/
+def levelSameStructure : Level → Level → Bool
+  | .zero _, .zero _ => true
+  | .succ a _, .succ b _ => levelSameStructure a b
+  | .max a b _, .max c d _ => levelSameStructure a c && levelSameStructure b d
+  | .imax a b _, .imax c d _ => levelSameStructure a c && levelSameStructure b d
+  | .param a _, .param b _ => nameKey a == nameKey b
+  | .mvar a _, .mvar b _ => nameKey a == nameKey b
+  | _, _ => false
+
 /-- Mirrors Rust `Level::max_smart` (common/src/env.rs:356).
 
     Smart `max x y` constructor mirroring the kernel's `KUniv::max`.
@@ -335,7 +417,7 @@ def levelMaxSmart (x y : Level) : Level := Id.run do
   if let (some (_, ox), some (_, oy)) := (levelExplicitOffset x, levelExplicitOffset y) then
     -- Both explicit numerals (Succ^n(Zero)): take the larger.
     return if ox >= oy then x else y
-  if x == y then
+  if levelSameStructure x y then
     return x
   if let .zero _ := x then
     return y
@@ -343,16 +425,16 @@ def levelMaxSmart (x y : Level) : Level := Id.run do
     return x
   -- max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
   if let .max bl br _ := y then
-    if bl == x || br == x then
+    if levelSameStructure bl x || levelSameStructure br x then
       return y
   -- max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
   if let .max al ar _ := x then
-    if al == y || ar == y then
+    if levelSameStructure al y || levelSameStructure ar y then
       return x
   -- Same base, different offsets: succ^n(x) vs succ^m(x) → take larger.
   let (baseX, offX) := levelPeelSucc x
   let (baseY, offY) := levelPeelSucc y
-  if baseX == baseY then
+  if levelSameStructure baseX baseY then
     return if offX >= offY then x else y
   return Level.mkMax x y
 
@@ -374,7 +456,7 @@ def levelImaxSmart (x y : Level) : Level := Id.run do
   if let .succ inner _ := x then
     if let .zero _ := inner then
       return y
-  if x == y then
+  if levelSameStructure x y then
     return x
   return Level.mkIMax x y
 
@@ -395,9 +477,9 @@ partial def substLevel (lvl : Level) (params : Array Name) (univs : Array Level)
   | .imax a b _ =>
     levelImaxSmart (substLevel a params univs) (substLevel b params univs)
   | .param name _ => Id.run do
-    for i in [0:params.size] do
-      if params[i]! == name && i < univs.size then
-        return univs[i]!
+    for h : i in [0:params.size] do
+      if hu : nameKey params[i] == nameKey name ∧ i < univs.size then
+        return univs[i]'hu.2
     return lvl
 
 /-- Mirrors Rust `subst_levels` (aux_gen/expr_utils.rs:864).
@@ -560,12 +642,6 @@ def forallTelescopeExact (expr : Expr) (n : Nat) (pfx : String) (startIdx : Nat)
   else
     .ok (fvars, decls, body)
 
-/-- Mirrors Rust `instantiate_fvars_in_domain` (aux_gen/expr_utils.rs:1291).
-    Domain is already in FVar form from `instantiate1` calls — identity. -/
-def instantiateFVarsInDomain (dom : Expr) (_fvars : Array Expr)
-    (_decls : Array LocalDecl) : Expr :=
-  dom
-
 /-- Mirrors Rust `lambda_telescope` (aux_gen/expr_utils.rs:1261).
 
     Open lambda binders into FVars (matching `forallTelescope` but for
@@ -580,9 +656,10 @@ def lambdaTelescope (expr : Expr) (n : Nat) (pfx : String) (offset : Nat) :
     match cur with
     | .lam name dom body bi _ =>
       let (fvName, fv) := freshFVar pfx (offset + i)
-      let cleanDom := instantiateFVarsInDomain dom fvars decls
+      -- `dom` is already in FVar form: `instantiate1` opened every
+      -- earlier binder in it.
       decls := decls.push
-        { fvarName := fvName, binderName := name, domain := cleanDom, info := bi }
+        { fvarName := fvName, binderName := name, domain := dom, info := bi }
       fvars := fvars.push fv
       cur := instantiate1 body fv
     | _ => break
@@ -632,13 +709,13 @@ partial def abstractFVar (expr : Expr) (fvarName : Name) (depth : Nat) : Expr :=
     - `internalDepth`: expression-internal binder depth, starts at 0.
     - FVar at binder position `i`: `BVar((scopeDepth - 1 - i) + internalDepth)`.
     - Free BVar(n) where `n >= internalDepth`: shifted to `BVar(n + scopeDepth)`. -/
-partial def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
+def batchAbstractWith (lookup : Name → Option Nat) (expr : Expr)
     (scopeDepth : Nat) (internalDepth : Nat) : Expr :=
   -- Fast path: no binders to abstract.
   if scopeDepth == 0 then expr
   else match expr with
   | .fvar name _ =>
-    match fvarMap.get? name with
+    match lookup name with
     | some pos =>
       if pos < scopeDepth then
         Expr.mkBVar ((scopeDepth - 1 - pos) + internalDepth)
@@ -657,24 +734,30 @@ partial def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
       -- Bound by an expression-internal binder — unchanged.
       expr
   | .app f a _ =>
-    Expr.mkApp (batchAbstract f fvarMap scopeDepth internalDepth)
-      (batchAbstract a fvarMap scopeDepth internalDepth)
+    Expr.mkApp (batchAbstractWith lookup f scopeDepth internalDepth)
+      (batchAbstractWith lookup a scopeDepth internalDepth)
   | .lam n t b bi _ =>
-    Expr.mkLam n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) bi
+    Expr.mkLam n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) bi
   | .forallE n t b bi _ =>
-    Expr.mkForallE n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) bi
+    Expr.mkForallE n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) bi
   | .letE n t v b nd _ =>
-    Expr.mkLetE n (batchAbstract t fvarMap scopeDepth internalDepth)
-      (batchAbstract v fvarMap scopeDepth internalDepth)
-      (batchAbstract b fvarMap scopeDepth (internalDepth + 1)) nd
+    Expr.mkLetE n (batchAbstractWith lookup t scopeDepth internalDepth)
+      (batchAbstractWith lookup v scopeDepth internalDepth)
+      (batchAbstractWith lookup b scopeDepth (internalDepth + 1)) nd
   | .proj n i e _ =>
-    Expr.mkProj n i (batchAbstract e fvarMap scopeDepth internalDepth)
+    Expr.mkProj n i (batchAbstractWith lookup e scopeDepth internalDepth)
   | .mdata kvs e _ =>
-    Expr.mkMData kvs (batchAbstract e fvarMap scopeDepth internalDepth)
+    Expr.mkMData kvs (batchAbstractWith lookup e scopeDepth internalDepth)
   -- Sort, Const, MVar, Lit — no FVars or BVars to process.
   | _ => expr
+
+/-- Compatibility entry point for arbitrary hash-map callers. Its lookup
+semantics remain exactly the supplied map's; no name/hash law is required. -/
+def batchAbstract (expr : Expr) (fvarMap : Std.HashMap Name Nat)
+    (scopeDepth internalDepth : Nat) : Expr :=
+  batchAbstractWith fvarMap.get? expr scopeDepth internalDepth
 
 /-- Mirrors Rust `BinderKind` (aux_gen/expr_utils.rs:453). Constructor
     names deviate (`Forall`/`Lambda` → `forallE`/`lambda`) because
@@ -690,19 +773,19 @@ def mkBinderChain (body : Expr) (binders : Array LocalDecl) (kind : BinderKind) 
   let k := binders.size
   if k == 0 then
     return body
-  -- Build FVar name → binder position map (0 = outermost).
-  let mut fvarMap : Std.HashMap Name Nat := {}
-  for i in [0:k] do
-    fvarMap := fvarMap.insert binders[i]!.fvarName i
+  -- Structural name → position map (0 = outermost); later writes win
+  -- (Rust `ix_common::name_table::NameTable`).
+  let mut fvarMap : Std.HashMap Lean.Name Nat := {}
+  for (b, i) in binders.zipIdx do
+    fvarMap := fvarMap.insert (nameKey b.fvarName) i
+  let lookup := fun (n : Name) => fvarMap.get? (nameKey n)
   -- Abstract body: all k binders in scope.
-  let mut result := batchAbstract body fvarMap k 0
+  let mut result := batchAbstractWith lookup body k 0
   -- Build binder chain from innermost to outermost.
-  for j' in [0:k] do
-    let j := k - 1 - j'
-    let decl := binders[j]!
+  for (decl, j) in binders.zipIdx.reverse do
     -- Domain D_j: only binders 0..j-1 are in scope (scopeDepth = j).
     -- Binder j's domain is NOT under binder j itself — only the body is.
-    let domain := batchAbstract decl.domain fvarMap j 0
+    let domain := batchAbstractWith lookup decl.domain j 0
     result := match kind with
       | .forallE => Expr.mkForallE decl.binderName domain result decl.info
       | .lambda => Expr.mkLam decl.binderName domain result decl.info
@@ -746,10 +829,10 @@ def betaReduce (expr : Expr) : Expr := Id.run do
     -- Now `head` is a non-App; try to reduce `head args[0]` into head.
     let mut i := 0
     repeat
-      if i < args.size then
+      if h : i < args.size then
         match head with
         | .lam _ _ body _ _ =>
-          head := instantiate1 body args[i]!
+          head := instantiate1 body args[i]
           i := i + 1
         | _ => break
       else
@@ -889,12 +972,12 @@ partial def consumeTypeAnnotations (e : Expr) : Expr :=
   match head with
   | .const name _ _ =>
     let n := name.pretty
-    if (n == "outParam" || n == "semiOutParam") && args.size == 1 then
+    if h : (n == "outParam" || n == "semiOutParam") ∧ args.size = 1 then
       -- outParam.{u} (α : Sort u) := α — strip and recurse
-      consumeTypeAnnotations args[0]!
-    else if (n == "optParam" || n == "autoParam") && args.size == 2 then
+      consumeTypeAnnotations (args[0]'(by have := h.2; omega))
+    else if h : (n == "optParam" || n == "autoParam") ∧ args.size = 2 then
       -- optParam.{u} (α : Sort u) (default : α) := α — strip to first arg
-      consumeTypeAnnotations args[0]!
+      consumeTypeAnnotations (args[0]'(by have := h.2; omega))
     else e
   | _ => e
 
@@ -986,8 +1069,8 @@ def findMotiveFVar (dom : Expr) (motiveFVars : Array Expr) : Option Nat := Id.ru
     | _ =>
       let (head, _) := decomposeApps ty
       if let .fvar name _ := head then
-        for j in [0:motiveFVars.size] do
-          if let .fvar mn _ := motiveFVars[j]! then
+        for h : j in [0:motiveFVars.size] do
+          if let .fvar mn _ := motiveFVars[j] then
             if name == mn then
               return some j
       return none
@@ -1027,14 +1110,20 @@ def sourceNameHintCandidate (expr : Expr) : Bool :=
 
     Collect every `Const` name and `Proj` type name in `expr` into `out`.
     Rust threads `&mut FxHashSet<Name>`; here the set is passed in and the
-    extended set returned. -/
+    extended set returned. Like Rust's walk it visits each subterm once by
+    its digest, so a DAG-shared term costs its DAG size, not its tree size;
+    the names, and the order they first enter `out`, are the tree walk's. -/
 def collectLeanConstRefs (expr : Expr) (out : Std.HashSet Name) : Std.HashSet Name :=
   Id.run do
     let mut out := out
+    let mut visited : Std.HashSet Address := {}
     let mut stack : Array Expr := #[expr]
     repeat
       if let some e := stack.back? then
         stack := stack.pop
+        if visited.contains e.getHash then
+          continue
+        visited := visited.insert e.getHash
         match e with
         | .const name _ _ =>
           out := out.insert name
@@ -1124,8 +1213,8 @@ def ensureCache (ctx : RestoreCtx) : RestoreCtx := Id.run do
   let asFVars : Array Expr := (Array.range ctx.nParams).map (fun i => (freshFVar "rp" i).2)
   let substFVars : Array Expr := asFVars.reverse
   let mut bpFVarMap : Std.HashMap Name Nat := {}
-  for i in [0:ctx.blockParamFVars.size] do
-    match ctx.blockParamFVars[i]! with
+  for h : i in [0:ctx.blockParamFVars.size] do
+    match ctx.blockParamFVars[i] with
     | .fvar n _ => bpFVarMap := bpFVarMap.insert n i
     | _ => pure ()
   let mut auxRestored : Std.HashMap Name Expr := {}
@@ -1168,8 +1257,8 @@ partial def replaceWalkUncached (ctx : RestoreCtx) (e : Expr) :
       -- (Rust debug_asserts args.len() >= n — release no-op.)
       -- Apply remaining args (indices past params).
       let mut result := restored
-      for i in [n:args.size] do
-        result := Expr.mkApp result (← replaceWalk ctx args[i]!)
+      for a in args.extract n args.size do
+        result := Expr.mkApp result (← replaceWalk ctx a)
       return result
     -- Case 2: aux constructor reference → rename and restore. Matches C++
     -- restore_nested lines 852-866: look up the nested expression for the
@@ -1183,8 +1272,8 @@ partial def replaceWalkUncached (ctx : RestoreCtx) (e : Expr) :
         let mut result := newFn
         for a in origIndArgs do
           result := Expr.mkApp result a
-        for i in [ctx.nParams:args.size] do
-          result := Expr.mkApp result (← replaceWalk ctx args[i]!)
+        for a in args.extract ctx.nParams args.size do
+          result := Expr.mkApp result (← replaceWalk ctx a)
         return result
       -- Fallback: just rename the const and recurse args. In practice
       -- never hit, but kept for defensive parity with Rust.

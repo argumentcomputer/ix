@@ -27,8 +27,8 @@ namespace Ix.Kernel
 variable {mode : CheckMode}
 
 /-- A thrown step never succeeds. -/
-private theorem structThrow_ne_ok {α : Type} {e : CheckError} {a : α}
-    (h : (throw e : CheckM α) = .ok a) : False := by
+private theorem structThrow_ne_ok {α : Type} {e : CheckError md} {a : α}
+    (h : (throw e : CheckM md α) = .ok a) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- The shape walk's closers: every non-surviving goal holds a
@@ -42,8 +42,8 @@ local macro_rules
             (by simpa [bind, Except.bind] using ‹_›)))
 
 /-- A successful `unwrapOr` names its option. -/
-theorem unwrapOr_ok {α : Type} {x : Option α} {e : CheckError} {a : α}
-    (h : (unwrapOr x e : CheckM α) = .ok a) : x = some a := by
+theorem unwrapOr_ok {α : Type} {x : Option α} {e : CheckError md} {a : α}
+    (h : (unwrapOr x e : CheckM md α) = .ok a) : x = some a := by
   cases x with
   | none => exact absurd h (by simp [unwrapOr, throw, throwThe, MonadExceptOf.throw])
   | some b =>
@@ -53,7 +53,7 @@ theorem unwrapOr_ok {α : Type} {x : Option α} {e : CheckError} {a : α}
 /-- Introduction for `ConstWF` with the clause types spelled out (the
 `thmInfo` clause defaulted, as every constant installed by the direct
 path is an inductive-kind one). -/
-theorem structConstWF {env : Env} {c : ConstantInfo}
+theorem structConstWF {env : Env md} {c : ConstantInfo md}
     (h1 : c.toConstantVal.type.hasFvar = false)
     (h2 : c.toConstantVal.type.allLevelParamsDefined
       c.toConstantVal.levelParams = true)
@@ -86,22 +86,22 @@ theorem structConstWF {env : Env} {c : ConstantInfo}
                   (fun i => Expr.bvar (mI - rP - 1 - i)))
     (h8 : ∀ tbl, c = .projInfo tbl →
       tbl.bodies.size = tbl.numFields ∧
-      ∀ (i : Nat) (b : Expr), tbl.bodies[i]? = some b →
+      ∀ (i : Nat) (b : Expr md), tbl.bodies[i]? = some b →
         b.hasFvar = false ∧
         b.allLevelParamsDefined tbl.levelParams = true ∧
         b.constsResolve env = true ∧
         b.looseBVarsBounded (tbl.numParams + 1) = true := by
         intro tbl h
-        exact ConstantInfo.noConfusion h)
+        exact ConstantInfo.noConfusion rfl (heq_of_eq h))
     (h9 : IndCapsWF c := by
         intro cv caps h
-        exact ConstantInfo.noConfusion h) :
+        exact ConstantInfo.noConfusion rfl (heq_of_eq h)) :
     ConstWF env c := ⟨h1, h2, h3, h4, h5, h6, h8, h9⟩
 
 /-- A checked inductive-kind cons is well-formed (its `ConstWF` is the
 four type-slot facts; every value clause is refuted by the kind). -/
-theorem envWF_cons_ind {env : Env} (henv : EnvWF env)
-    {cvA : ConstantVal} {caps : IndCaps} {F : Nat} {cv : ConstantVal}
+theorem envWF_cons_ind {env : Env md} (henv : EnvWF env)
+    {cvA : ConstantVal md} {caps : IndCaps md} {F : Nat} {cv : ConstantVal md}
     (hccv : checkConstantVal (fueledOps mode F) env cv = .ok cvA)
     (hcaps : IndCapsWF (.indInfo cvA caps)) :
     EnvWF ⟨.indInfo cvA caps :: env.consts⟩ := by
@@ -110,7 +110,7 @@ theorem envWF_cons_ind {env : Env} (henv : EnvWF env)
     (Expr.constsResolve_mono htr) htb
     (fun _ _ _ heq => nomatch heq)
     (fun _ _ _ _ heq => nomatch heq)
-    (by intro tbl h; exact ConstantInfo.noConfusion h)
+    (by intro tbl h; exact ConstantInfo.noConfusion rfl (heq_of_eq h))
     hcaps)
 
 /-! ## Stage 5: the projection table (task #175 S1) -/
@@ -118,12 +118,12 @@ theorem envWF_cons_ind {env : Env} (henv : EnvWF env)
 /-- The table stage's run, inverted: the bodies are the generator's,
 they pass the scoping guard, the table name is fresh, and the output
 is the table consed. -/
-theorem checkStructProjTable_inv {env envOut : Env} {T C : Name}
-    {lps : List Name} {nP nF : Nat} {rs : Level} {guards : List Level}
-    {cvCa : ConstantVal}
-    (h : checkStructProjTable (m := CheckM) T C lps nP nF rs guards off cvCa env
+theorem checkStructProjTable_inv {env envOut : Env md} {T C : Key md}
+    {lps : List LevelParam} {nP nF : Nat} {rs : Level} {guards : List Level}
+    {cvCa : ConstantVal md}
+    (h : checkStructProjTable (m := CheckM md) T C lps nP nF rs guards off cvCa env
       = .ok envOut) :
-    ∃ bodies : Array Expr,
+    ∃ bodies : Array (Expr md),
       structProjBodies T nP nF cvCa.type = some bodies ∧
       (bodies.size = nF ∧ bodies.all (fun b => !b.hasFvar &&
         b.allLevelParamsDefined lps && b.constsResolve env &&
@@ -148,10 +148,10 @@ theorem checkStructProjTable_inv {env envOut : Env} {T C : Name}
 /-- The projection-table stage at the run level (task #175 S1): the
 environment it produces is well-formed — the table's constant type is
 the closed `Sort 1`, and the bodies' scoping is the stage's own guard. -/
-theorem direct_table_wf {env envOut : Env} (henv : EnvWF env)
-    {T C : Name} {lps : List Name} {nP nF : Nat} {rs : Level}
-    {guards : List Level} {off : Nat} {cvCa : ConstantVal}
-    (h : checkStructProjTable (m := CheckM) T C lps nP nF rs guards off cvCa env
+theorem direct_table_wf {env envOut : Env md} (henv : EnvWF env)
+    {T C : Key md} {lps : List LevelParam} {nP nF : Nat} {rs : Level}
+    {guards : List Level} {off : Nat} {cvCa : ConstantVal md}
+    (h : checkStructProjTable (m := CheckM md) T C lps nP nF rs guards off cvCa env
       = .ok envOut) :
     EnvWF envOut := by
   obtain ⟨bodies, -, ⟨hsize, hall⟩, -, -, rfl⟩ := checkStructProjTable_inv h

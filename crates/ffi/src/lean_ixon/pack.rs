@@ -36,45 +36,47 @@ pub extern "C" fn rs_pack_env(
   anon: LeanBool<LeanBorrowed<'_>>,
   verbose: LeanBool<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let anon = anon.to_bool();
-  let verbose = verbose.to_bool();
-  let path = env_path.to_string();
-  let main_str = main_name.to_string();
-  let out = out_path.to_string();
-  let assume_vec: Vec<String> = assume.map(|obj| obj.as_string().to_string());
+  match pack_env(
+    &env_path.to_string(),
+    &main_name.to_string(),
+    &assume.map(|obj| obj.as_string().to_string()),
+    &out_path.to_string(),
+    anon.to_bool(),
+    verbose.to_bool(),
+  ) {
+    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
+    Err(e) => LeanIOResult::error_string(&e),
+  }
+}
 
-  let mmap = match mmap_file(&path, "source") {
-    Ok(m) => m,
-    Err(e) => return LeanIOResult::error_string(&format!("rs_pack_env: {e}")),
-  };
+/// The body of [`rs_pack_env`].
+fn pack_env(
+  path: &str,
+  main_str: &str,
+  assume_vec: &[String],
+  out: &str,
+  anon: bool,
+  verbose: bool,
+) -> Result<(), String> {
+  let mmap =
+    mmap_file(path, "source").map_err(|e| format!("rs_pack_env: {e}"))?;
   if verbose {
     eprintln!(
       "[rs_pack_env] parsing {path} ({} MB, lazy reader)...",
       mmap.len() / 1_000_000
     );
   }
-  let (index, names) = match IxonEnv::parse_lazy_index_with_names(&mmap[..]) {
-    Ok(v) => v,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_pack_env: failed to index {path}: {e}"
-      ));
-    },
-  };
-  let src = match IxonEnv::from_lazy_index_mmap(&index, &mmap) {
-    Ok(env) => env,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_pack_env: failed to load {path}: {e}"
-      ));
-    },
-  };
+  let (index, names) = IxonEnv::parse_lazy_index_with_names(&mmap[..])
+    .map_err(|e| format!("rs_pack_env: failed to index {path}: {e}"))?;
+  let src = IxonEnv::from_lazy_index_mmap(&index, &mmap)
+    .map_err(|e| format!("rs_pack_env: failed to load {path}: {e}"))?;
   if verbose {
     eprintln!(
-      "[rs_pack_env] source env: {} consts, {} named, {} blobs",
+      "[rs_pack_env] source env: {} consts, {} named, {} blobs, {} originals",
       src.consts.len(),
       src.named.len(),
-      src.blobs.len()
+      src.blobs.len(),
+      src.originals.len()
     );
   }
 
@@ -82,17 +84,17 @@ pub extern "C" fn rs_pack_env(
   // name→addr entries (the `rs_env_extract` idiom).
   let by_name: FxHashMap<String, Address> =
     index.named.iter().map(|n| (n.name.to_string(), n.addr.clone())).collect();
-  let main = match by_name.get(&main_str) {
+  let main = match by_name.get(main_str) {
     Some(a) => a.clone(),
     None => {
-      return LeanIOResult::error_string(&format!(
+      return Err(format!(
         "rs_pack_env: no constant named {main_str} in {path}"
       ));
     },
   };
   let mut assumed: FxHashSet<Address> = FxHashSet::default();
   let mut unresolved: Vec<&str> = Vec::new();
-  for s in &assume_vec {
+  for s in assume_vec {
     if let Some(a) = by_name.get(s.as_str()) {
       assumed.insert(a.clone());
     } else if let Some(a) = Address::from_hex(s) {
@@ -102,7 +104,7 @@ pub extern "C" fn rs_pack_env(
     }
   }
   if !unresolved.is_empty() {
-    return LeanIOResult::error_string(&format!(
+    return Err(format!(
       "rs_pack_env: --assume entries neither named in {path} nor 64-hex \
        addresses: [{}]",
       unresolved.join(", ")
@@ -113,30 +115,20 @@ pub extern "C" fn rs_pack_env(
     src.prune_to_closure_anon(&main, &assumed)
   } else {
     src.prune_to_closure_streaming(&index, &mmap[..], &names, &main, &assumed)
-  };
-  let bundle = match bundle {
-    Ok(b) => b,
-    Err(e) => return LeanIOResult::error_string(&format!("rs_pack_env: {e}")),
-  };
-  if let Err(e) = bundle.validate_closed() {
-    return LeanIOResult::error_string(&format!("rs_pack_env: {e}"));
   }
+  .map_err(|e| format!("rs_pack_env: {e}"))?;
+  bundle.validate_closed().map_err(|e| format!("rs_pack_env: {e}"))?;
   let mut buf = Vec::new();
-  if let Err(e) = bundle.put(&mut buf) {
-    return LeanIOResult::error_string(&format!(
-      "rs_pack_env: bundle serialization failed: {e}"
-    ));
-  }
-  if let Err(e) = std::fs::write(&out, &buf) {
-    return LeanIOResult::error_string(&format!(
-      "rs_pack_env: failed to write {out}: {e}"
-    ));
-  }
+  bundle
+    .put(&mut buf)
+    .map_err(|e| format!("rs_pack_env: bundle serialization failed: {e}"))?;
+  std::fs::write(out, &buf)
+    .map_err(|e| format!("rs_pack_env: failed to write {out}: {e}"))?;
   if verbose {
     eprintln!("[rs_pack_env] main {} ({main_str})", main.hex());
     eprintln!(
       "[rs_pack_env] kept {}/{} consts, {}/{} named, {}/{} blobs, \
-       {} assumption(s){}",
+       {} assumption(s), {}/{} originals, {}/{} original hints{}",
       bundle.consts.len(),
       src.consts.len(),
       bundle.named.len(),
@@ -144,9 +136,13 @@ pub extern "C" fn rs_pack_env(
       bundle.blobs.len(),
       src.blobs.len(),
       bundle.assumptions.len(),
+      bundle.originals.len(),
+      src.originals.len(),
+      bundle.original_hint_overrides.len(),
+      src.original_hint_overrides.len(),
       if anon { " [anon: no display metadata]" } else { "" }
     );
     eprintln!("[rs_pack_env] wrote {out} ({} bytes)", buf.len());
   }
-  LeanIOResult::ok(LeanOwned::box_usize(0))
+  Ok(())
 }

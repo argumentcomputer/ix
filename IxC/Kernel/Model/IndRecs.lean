@@ -43,7 +43,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule IndCaps)
 
 universe w
@@ -55,10 +55,10 @@ variable {μ : CheckMode}
 invariant the P fold threads.  `RuleFactsS`'s P residue: its syntactic
 clauses are V-free and the v1 fold establishes them, so only the law
 is here. -/
-def RecLawsAt {env : Env} (m : EnvModel V env) (cv : ConstantVal)
-    (mI rP : Nat) (rules : List RecRule) : Prop :=
+def RecLawsAt {env : Env md} (m : EnvModel V env) (cv : ConstantVal md)
+    (mI rP : Nat) (rules : List (RecRule md)) : Prop :=
   ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
-    ∀ φ : Name → Nat, RecRuleLaw m φ cv.name cv mI rP rl
+    ∀ φ : LevelParam → Nat, RecRuleLaw m φ cv.name cv mI rP rl
 
 set_option maxHeartbeats 1600000 in
 /-- **The provisioning and the install fold, run together at the
@@ -67,17 +67,17 @@ reading** (`indRecsFoldS`'s P half).  The conclusion is the single row
 either sits unchanged in the self environment — where `rec_rules`
 already covers it — or carries the rules `iotaRules` fired. -/
 theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
-    {blockNames : List Name} {envSelf envBase : Env}
+    {blockNames : List (Key md)} {envSelf envBase : Env md}
     (mp : EnvModelM V μ envSelf)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hroT : RenameOk mp.base2.acval envSelf (fun n =>
-      if blockNames.contains n then n.str "_model" else n))
+      if blockNames.contains n then auxKey n .model else n))
     (hupB : FoldUpS envBase envSelf)
     (heqfB : envBase.find? eqName = some eqA) :
-    ∀ (recs : List ConstantInfo) {envP envF env₃ : Env}
-      {checked : List (ConstantVal × Nat × Nat × List RecRule)},
-      (∀ (n : Name) (cv : ConstantVal) (mI rP : Nat)
-        (rules : List RecRule),
+    ∀ (recs : List (ConstantInfo md)) {envP envF env₃ : Env md}
+      {checked : List (ConstantVal md × Nat × Nat × List (RecRule md))},
+      (∀ (n : Key md) (cv : ConstantVal md) (mI rP : Nat)
+        (rules : List (RecRule md)),
         envF.find? n = some (.recInfo cv mI rP rules) →
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
         RecLawsAt mp.base2 cv mI rP rules) →
@@ -85,19 +85,19 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
       ProvisionRecsRun μ F blockNames envP recs envSelf checked →
       IndRecsRun.IndRecsFoldRun μ F blockNames envBase envSelf
         envF checked env₃ →
-      ∀ (n : Name) (cv : ConstantVal) (mI rP : Nat)
-        (rules : List RecRule),
+      ∀ (n : Key md) (cv : ConstantVal md) (mI rP : Nat)
+        (rules : List (RecRule md)),
         env₃.find? n = some (.recInfo cv mI rP rules) →
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
         RecLawsAt mp.base2 cv mI rP rules := by
   -- the four claims and the reads, at every assignment (`hμ` + `mp`)
   have hclaims := fun ψ =>
     checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp ψ) F
-  have hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F :=
+  have hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.1
-  have hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F :=
+  have hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.2
-  have hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F :=
+  have hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F :=
     fun ψ => inferReads_of hμ (Rules.RulesInputs.ofSem mp ψ)
   intro recs
   induction recs with
@@ -136,8 +136,8 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
 /-- `BlockAcvalInstalled` crosses the swap: the predicate reads the
 environment only through "this name is stored", and a swap changes no
 stored name. -/
-theorem blockAcvalInstalled_swap {blockNames : List Name}
-    {env₀ env₃ : Env} {acval : Name → (Name → Nat) → AnnotTerm}
+theorem blockAcvalInstalled_swap {blockNames : List (Key md)}
+    {env₀ env₃ : Env md} {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     (hcg : Ix.Kernel.SwapCongr env₀ env₃)
     (h : BlockAcvalInstalled blockNames env₀ acval) :
     BlockAcvalInstalled blockNames env₃ acval := by
@@ -154,9 +154,9 @@ The v1 carrier at the group's output is a premise — the install runs
 `indRecsS` for it anyway, and taking it here keeps `EnvWF`,
 `RecCtorsStored` and `RecRulesV` out of the P lane entirely. -/
 theorem indRecs (hμ : μ.verifiedChecks = true)
-    (hetaP : MemberEtaLaw V) (hunitP : MemberUnitLaw V) {F : Nat}
-    {blockNames : List Name} {env₂ env₃ : Env}
-    {recs : List ConstantInfo}
+    (hetaP : (MemberEtaLaw (md := md)) V) (hunitP : (MemberUnitLaw (md := md)) V) {F : Nat}
+    {blockNames : List (Key md)} {env₂ env₃ : Env md}
+    {recs : List (ConstantInfo md)}
     (mp : EnvModelM V μ env₂)
     (hI : BlockInstalledTT blockNames env₂ mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env₂ mp.base2.acval)
@@ -199,10 +199,10 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
   -- the fired rhs's denotation, and `acceptedReads_of` supplies it at
   -- the P carrier — the S10 residual-A route, threaded as
   -- `iotaRulesFactsRun`'s `hden` premise.
-  have hdenS : ∀ e : Expr, e.hasFvar = false →
+  have hdenS : ∀ e : Expr md, e.hasFvar = false →
       e.looseBVarsBounded 0 = true →
       (∃ t', inferTypeCore μ envSelf F 0 e = .ok t') →
-      ∀ φ : Name → Nat,
+      ∀ φ : LevelParam → Nat,
         ∃ Rv, denoteClosed mS.base2.cvalE envSelf φ e = some Rv := by
     intro e hef heb hrun φ
     obtain ⟨t', hrun'⟩ := hrun
@@ -240,7 +240,7 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
     hbn hprov hfold
   -- `rec_rules` at the swapped carrier
   have hrecP : ∀ m₃ : EnvModel V env₃, m₃.acval = mS.base2.acval →
-      ∀ φ : Name → Nat, RecRules m₃ φ := by
+      ∀ φ : LevelParam → Nat, RecRules m₃ φ := by
     intro m₃ hac φ n cv mI rP rules hf rl hrl hfire
     rcases hentF n cv mI rP rules hf with hfS | hlaws
     · exact RecRuleLaw.swapP hcg hac
@@ -264,14 +264,14 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
     obtain ⟨cvm, mval, hm, hfm, hlps, hren, hv⟩ := hIS n hn ci₃ hf₃
     exact ⟨cvm, mval, hm,
       hcg.findUp _ _ hfm
-        (fun _ _ _ _ hcon => ConstantInfo.noConfusion hcon),
+        (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)),
       hlps, hren, hv⟩
   · rw [h₃] at hf₃
     obtain rfl := Option.some.inj hf₃
     obtain ⟨cvm, mval, hm, hfm, hlps, hren, hv⟩ := hIS n hn _ h₀
     exact ⟨cvm, mval, hm,
       hcg.findUp _ _ hfm
-        (fun _ _ _ _ hcon => ConstantInfo.noConfusion hcon),
+        (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)),
       hlps, hren, hv⟩
 
 end Ix.Kernel.Model

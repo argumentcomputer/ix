@@ -24,7 +24,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w
 

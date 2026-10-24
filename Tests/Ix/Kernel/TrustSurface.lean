@@ -10,7 +10,11 @@ script). Upstream's is a Python program in a shell wrapper.
 
 It scans the checker and the theory under `IxC/Kernel/`
 (`Tests.Ix.Kernel.KernelLayout`, whose table `topLevel` must classify every
-file under `IxC/Kernel/`) for compiler escapes. Ix's boundary (`Ixon`,
+file under `IxC/Kernel/`) for compiler escapes, and the root library's files
+that substitute code in the certified entries' execution (`rootSources`),
+and its display modules (`displaySources`, step 6b: the one display-only
+read).
+Ix's boundary (`Ixon`,
 `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) is fenced by Ix's Lean audits
 in `IxC/Kernel/Audit/*`, which see compiled code, not tokens; ruled entries
 are recorded once more in the Lean runtime audit
@@ -50,6 +54,12 @@ list fails just as loudly as one in a bare file.
       equality goes through `@[csimp]` + `withPtrEq` with the redundancy
       proved (`Name.beqPtr_eq`).
 
+  IxC/Kernel/Key.lean           computed_field
+      A cached hash only (`Key.hashData`), as `Name`'s: the constant keys
+      (input, role and derived) hash in O(1). Pointer equality goes
+      through `@[csimp]` + `withPtrEq` with the redundancy proved
+      (`Key.beqPtr_eq`).
+
   IxC/Kernel/Exclusive.lean     unsafe, implemented_by
       `withExclusive`: defined as `k false` and `@[implemented_by]` the
       compiled `k (isExclusiveUnsafe a)`, the reference-count read the
@@ -64,10 +74,37 @@ list fails just as loudly as one in a bare file.
       (a `meta section`) and splice the resulting literals. Nothing here
       is in the binary; the literals are ordinary data the proofs consume.
 
+  Ix/Address/Admission.lean     implemented_by
+      The admission hash: `Address.admissionHash` is defined as pure
+      BLAKE3 (`Address.blake3Pure`), which every theorem about the
+      authenticated entries (`Ixon.Authenticated`) is stated at, and
+      `@[implemented_by]` the Rust BLAKE3 `Address.blake3`. Unlike the
+      entries above, no obligation proves the substitution: the owner
+      approved it (2026-10-13) on the explicit assumption that the two
+      agree on every input, which `Tests.Ix.Kernel.AddressPure` checks on
+      fixture inputs. It is the one such assumption; the runtime audit
+      admits it by name only for the authenticated entries
+      (`Ix.Kernel.Audit.assumedSubstitutions`). The file's docstring is
+      the justification.
+
+  Ix/KernelDisplay/Peek.lean    unsafe, unsafeCast
+      DISPLAY ONLY; OUTSIDE THE CERTIFIED CLOSURE; `.meta` NEVER DECIDES
+      (step 6b, owner 2026-10-15). A binder's or a let's Lean name, and a
+      failure's terms and binders, are display annotations held in a
+      `Squash`, a subsingleton, so no statement, equation or decision of the
+      checker sees them; the same property hides their value from safe code.
+      `peekSquash` reads one (`unsafeCast`, a `Squash` is its value at run
+      time) to print it, and `peekAll` hands it to the safe renderer
+      (`Ix.KernelDisplay.Render`). No certified root's compiled closure
+      reaches it (`Tests.Ix.Kernel.DisplayRead`), and the `.meta` and
+      `.source` verdicts are `.anon`'s (the erasure test). The file is
+      scanned with the display modules (`displaySources`), which hold no
+      other escape.
+
 Not policed, as upstream: `partial`, `@[csimp]`, `withPtrEq`/`withPtrAddr`,
 `opaque`, `noncomputable`. The Lean runtime audit polices the compiled
-form of the first two (`partial` only in `IxC/Kernel/Frontend/InModel*`,
-`csimp` only with a theorem on the standard axioms).
+form of the first two (no `partial` definition at all, `csimp` only with a
+theorem on the standard axioms).
 
 Changes from upstream: the scanned files come from the repository's own
 layout, and a file under `IxC/Kernel/` that the layout does not classify
@@ -103,8 +140,21 @@ def tokens : List String :=
 def allow : List (String × List String) := [
   ("IxC/Kernel/Expr.lean", ["computed_field"]),
   ("IxC/Kernel/Name.lean", ["computed_field"]),
+  ("IxC/Kernel/Key.lean", ["computed_field"]),
   ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
-  ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"])]
+  ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
+  ("Ix/Address/Admission.lean", ["implemented_by"]),
+  ("Ix/KernelDisplay/Peek.lean", ["unsafe", "unsafeCast"])]
+
+/-- Root-library files in the certified entries' execution that substitute
+code: the admission hash, which the authenticated entries run. -/
+def rootSources : Array String := #["Ix/Address/Admission.lean"]
+
+/-- The root library's display modules (step 6b): the renderer, the `.meta`
+name pass, the Source names and the one display-only read. -/
+def displaySources : Array String :=
+  #["Ix/KernelDisplay/MetaNames.lean", "Ix/KernelDisplay/Peek.lean",
+    "Ix/KernelDisplay/Render.lean", "Ix/LeanIngress/Names.lean"]
 
 def allowed (file tok : String) : Bool :=
   ((allow.lookup file).getD []).contains tok
@@ -462,8 +512,13 @@ def selftest : IO UInt32 := do
 def run (args : List String) : IO UInt32 := do
   if args.contains "--selftest" then return ← selftest
   if (← selftest) != 0 then return 1
-  let (sources, unclassified) ← covered
+  let (kernelSources, unclassified) ← covered
   if ← reportUnclassified "TRUST-SURFACE" unclassified then return 1
+  for rel in rootSources ++ displaySources do
+    unless ← System.FilePath.pathExists rel do
+      IO.println s!"TRUST-SURFACE FAIL - a root source is missing: {rel}"
+      return 1
+  let sources := kernelSources ++ rootSources ++ displaySources
   let mut occurrences : Array (String × Nat × String × String) := #[]
   for rel in sources do
     match ← scanFile rel with

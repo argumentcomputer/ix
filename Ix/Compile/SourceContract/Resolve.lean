@@ -78,7 +78,7 @@ def resolveBinderSelector (source : Lean.ConstantInfo) (selector : BinderSelecto
     if index < telescope.size then return index
     throw (.argumentOutOfRange source.name index)
   | .name name =>
-    let indices := (List.range telescope.size).filter fun i => telescope[i]!.2 == name
+    let indices := (telescope.zipIdx.filter fun (b, _) => b.2 == name).toList.map (·.2)
     match indices with
     | [] => throw (.unknownBinder source.name name)
     | [index] => return index
@@ -213,8 +213,8 @@ def SourceContract.fromAnnotations (source : Lean.ConstantInfo) :
   if (sourceBody? source).isSome then
     let types := sourceTelescope source .type
     let bodies := sourceTelescope source .body
-    for index in [:types.size] do
-      let typeSite := types[index]!.1
+    for h : index in [:types.size] do
+      let typeSite := types[index].1
       if let some annotation := binders.find? (·.site == typeSite) then
         let some (bodySite, _) := bodies[index]?
           | throw (.missingBodyBinder source.name index)

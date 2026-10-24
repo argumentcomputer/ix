@@ -25,23 +25,23 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level PropWhen
+open Ix.Kernel (Env Expr Key Level PropWhen
   natLitSupported strLitSupported)
 
 /-- **The monotone crossing, tower-slot refined**: a successful prefix
 reading of a subject with no `.proj T i` node is reproduced at an
 extension whose only new tower slot is `(T, i)`. -/
-theorem denoteMeta_envExtend_mono_at {env₀ env : Env}
-    {acval : Name → (Name → Nat) → AnnotTerm} {φ : Name → Nat}
-    {T : Name}
+theorem denoteMeta_envExtend_mono_at {env₀ env : Env md}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
+    {T : Key md}
     (hF : FindPreserved env₀ env) (hG : LitGuardsMono env₀ env)
-    (hproj : ∀ (sn : Name) (j : Nat) (entry : Ix.Kernel.ProjEntry),
+    (hproj : ∀ (sn : Key md) (j : Nat) (entry : Ix.Kernel.ProjEntry md),
       env₀.findProj? sn j = none → env.findProj? sn j = some entry →
       sn = T) :
-    ∀ (d : Nat) (e : Expr), ConstsBound env₀ e → (∀ j, Expr.NoProjAt T j e) →
+    ∀ (d : Nat) (e : Expr md), ConstsBound env₀ e → (∀ j, Expr.NoProjAt T j e) →
       ∀ {ea : AnnotTerm}, denoteMeta acval env₀ φ d e = some ea →
         denoteMeta acval env φ d e = some ea := by
-  have hmono : ∀ (sn : Name) (j : Nat) (entry : Ix.Kernel.ProjEntry),
+  have hmono : ∀ (sn : Key md) (j : Nat) (entry : Ix.Kernel.ProjEntry md),
       env₀.findProj? sn j = some entry →
       env.findProj? sn j = some entry := by
     intro sn j entry h
@@ -149,7 +149,7 @@ theorem denoteMeta_envExtend_mono_at {env₀ env : Env}
     | forallE ty b m => exact absurd rfl (hpi ty b m)
     | lam ty b m => exact absurd rfl (hlam ty b m)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with
@@ -158,8 +158,8 @@ theorem denoteMeta_envExtend_mono_at {env₀ env : Env}
 
 /-- A table cons adds exactly its own structure's slots: any lookup
 new at the extension is the head's (task #175 S1). -/
-theorem findProj?_cons_tower {env : Env} {tbl₀ : Ix.Kernel.ProjTable} :
-    ∀ (sn : Name) (j : Nat) (entry : Ix.Kernel.ProjEntry),
+theorem findProj?_cons_tower {env : Env md} {tbl₀ : Ix.Kernel.ProjTable md} :
+    ∀ (sn : Key md) (j : Nat) (entry : Ix.Kernel.ProjEntry md),
       env.findProj? sn j = none →
       Env.findProj? ⟨.projInfo tbl₀ :: env.consts⟩ sn j = some entry →
       sn = tbl₀.structName := by

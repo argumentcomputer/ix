@@ -38,6 +38,9 @@
 //!                             and every column but `ms` are those of the
 //!                             default mode, and a discrepancy is a failure
 //!                             with an `internal error` status
+//!   [--canonical-tsv PATH]  fixed K16 production receipts in address order
+//!   [--canonical-export DIR] exact input/successful output .ixn files
+//!                             requires --canonical-tsv; never overwrites
 //! ```
 //!
 //! Candidate counts are reported two ways: `cand`, the R1/R2 search
@@ -65,6 +68,9 @@ use ixon::sharing_exact::{
 };
 use rayon::prelude::*;
 
+#[path = "sharing_corpus/canonical.rs"]
+mod canonical;
+
 // The allocator of the `ix` binary (`crates/ffi`), so per-constant times
 // match the compiler's.
 #[global_allocator]
@@ -88,6 +94,8 @@ struct Args {
   max_states: Option<u64>,
   sharing_limits: Option<String>,
   full_check: bool,
+  canonical_tsv: Option<String>,
+  canonical_export: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -107,6 +115,8 @@ fn parse_args() -> Result<Args, String> {
     max_states: None,
     sharing_limits: None,
     full_check: false,
+    canonical_tsv: None,
+    canonical_export: None,
   };
   let num = |v: Option<String>| -> Result<usize, String> {
     v.ok_or("missing value")?.parse::<usize>().map_err(|e| e.to_string())
@@ -130,12 +140,21 @@ fn parse_args() -> Result<Args, String> {
         a.sharing_limits = Some(it.next().ok_or("missing value")?);
       },
       "--full-check" => a.full_check = true,
+      "--canonical-tsv" => {
+        a.canonical_tsv = Some(it.next().ok_or("missing value")?)
+      },
+      "--canonical-export" => {
+        a.canonical_export = Some(it.next().ok_or("missing value")?)
+      },
       p if !p.starts_with("--") && a.path.is_empty() => a.path = p.to_string(),
       other => return Err(format!("unknown argument {other}")),
     }
   }
   if a.path.is_empty() {
     return Err("usage: sharing_corpus <file.ixe> [options]".into());
+  }
+  if a.canonical_export.is_some() && a.canonical_tsv.is_none() {
+    return Err("--canonical-export requires --canonical-tsv".into());
   }
   Ok(a)
 }
@@ -402,6 +421,9 @@ fn main() -> Result<(), String> {
     limits = limits.with_overrides(spec)?;
   }
   limits.full_check = args.full_check;
+  if args.canonical_tsv.is_some() {
+    return canonical::run(&args, &limits, &mmap, &consts);
+  }
   let done = AtomicUsize::new(0);
   let t1 = Instant::now();
   let total = consts.len();

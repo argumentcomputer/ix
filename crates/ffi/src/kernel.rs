@@ -2220,7 +2220,8 @@ pub extern "C" fn rs_env_extract(
 // ===========================================================================
 // Sharding profiler: run the anon kernel out of circuit over a `.ixe`,
 // recording per-block heartbeats + the delta-unfold graph into a `.ixprof`.
-// See `plans/sharding.md`.
+// `profile_anon_ixe` below records the profile; `Ix/Cli/ShardCmd.lean`
+// selects its consumer with `--profile`.
 // ===========================================================================
 
 /// Summary returned by [`profile_anon_ixe`].
@@ -4057,7 +4058,7 @@ fn format_tc_error<M: KernelMode>(
       format!("unknown constant {name} ({:.12})", addr.hex())
     },
     // Everything else has a hand-written `Display` impl in
-    // `src/ix/kernel/error.rs` — prefer it over `{:?}` which dumps raw
+    // `crates/kernel/src/error.rs` — prefer it over `{:?}` which dumps raw
     // KExpr internals.
     other => format!("{other}"),
   }
@@ -4203,6 +4204,8 @@ pub extern "C" fn rs_decompile_roundtrip(
     return build_string_array(&[format!("serialize error: {e}")]);
   }
   let sharing_limits = compile_state.sharing_limits.clone();
+  let ungrounded: rustc_hash::FxHashSet<Name> =
+    compile_state.ungrounded.iter().map(|e| e.key().clone()).collect();
   drop(compile_state);
   let mut slice: &[u8] = &bytes;
   let env = match ixon::env::Env::get_demoted_named(&mut slice) {
@@ -4237,8 +4240,13 @@ pub extern "C" fn rs_decompile_roundtrip(
   );
 
   let t4 = Instant::now();
-  let (errors, checked, not_found) =
+  let (mut errors, checked, not_found) =
     compare_envs(&rust_env_arc, |n| dstt.env.get(n));
+  errors.extend(decompile_completeness_errors(
+    &rust_env_arc,
+    &dstt,
+    &ungrounded,
+  ));
   eprintln!(
     "[rs_decompile_roundtrip] verify:     {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
     t4.elapsed(),
@@ -4348,8 +4356,15 @@ pub extern "C" fn rs_kernel_roundtrip(
   // content-hash, reading decompile's DashMap directly — a plain-`Env`
   // copy of it would double the resident decompiled env at peak.
   let t6 = Instant::now();
-  let (errors, checked, not_found) =
+  let (mut errors, checked, not_found) =
     compare_envs(&rust_env_arc, |n| dstt.env.get(n));
+  let ungrounded: rustc_hash::FxHashSet<Name> =
+    compile_state.ungrounded.iter().map(|e| e.key().clone()).collect();
+  errors.extend(decompile_completeness_errors(
+    &rust_env_arc,
+    &dstt,
+    &ungrounded,
+  ));
   eprintln!(
     "[rs_kernel_roundtrip] verify:        {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
     t6.elapsed(),
@@ -4365,6 +4380,32 @@ pub extern "C" fn rs_kernel_roundtrip(
   );
 
   build_string_array(&errors)
+}
+
+/// The round trip's completeness errors besides `compare_envs`' content
+/// diffs: Pass 2's regeneration errors (`DecompileState::aux_gen_errors`,
+/// which `decompile_env` reports without failing) and every original
+/// constant absent from the decompiled env other than the compile's
+/// ungrounded inputs.
+#[cfg(feature = "test-ffi")]
+fn decompile_completeness_errors(
+  original: &ix_common::env::Env,
+  dstt: &ix_compile::decompile::DecompileState,
+  ungrounded: &rustc_hash::FxHashSet<Name>,
+) -> Vec<String> {
+  let mut errors: Vec<String> = dstt
+    .aux_gen_errors
+    .iter()
+    .map(|e| format!("aux_gen roundtrip error: {e}"))
+    .collect();
+  let mut absent: Vec<String> = original
+    .iter()
+    .filter(|(n, _)| !dstt.env.contains_key(*n) && !ungrounded.contains(*n))
+    .map(|(n, _)| format!("absent from decompiled: {}", n.pretty()))
+    .collect();
+  absent.sort();
+  errors.extend(absent);
+  errors
 }
 
 /// Compare the original env against a decompiled/egressed side for
@@ -4636,7 +4677,14 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
   // Direct Lean → kernel ingress. No compile, no Ixon.
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let kenv = lean_ingress(&rust_env_arc);
+  let kenv = match lean_ingress(&rust_env_arc) {
+    Ok(kenv) => kenv,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_roundtrip_no_compile: ingress failed {e}"
+      ));
+    },
+  };
   eprintln!(
     "[rs_kernel_roundtrip_no_compile] ingress:     {:>8.1?} ({} consts)",
     t1.elapsed(),

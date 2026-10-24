@@ -17,6 +17,7 @@ public import Ix.Address
 public import Ix.Environment
 public import Ix.Common
 public import Ix.AuxGen.ExprUtils
+public import Ix.Compile.Pass.Names
 
 public section
 
@@ -88,6 +89,13 @@ instance : ToString DecompileError := ⟨DecompileError.toString⟩
 /-- Global decompilation environment (reader, immutable). -/
 structure DecompileEnv where
   ixonEnv : Ixon.Env
+  /-- Read the compiled term under a Pass 3 decompile record (`_ix.inline`,
+      `inlineRecord?`) instead of replaying the recorded source occurrence;
+      the record itself is then dropped. Off by default; the Rust
+      decompiler always replays. For a reader that needs the stored
+      (rewritten) value, such as a check of a transported clique member's
+      compiled value against Lean's. -/
+  compiledTerms : Bool := false
   deriving Inhabited
 
 /-- Per-block context for decompiling a single constant (reader, immutable per-block). -/
@@ -98,16 +106,15 @@ structure BlockCtx where
   mutCtx : Array Ix.Name       -- mutual context: index = Rec index
   univParams : Array Ix.Name   -- universe parameter names
   arena : ExprMetaArena
-  /-- `ConstantMeta.metaSharing` of the constant being decompiled:
-      collapsed call-site arguments (and rewritten original heads),
-      indexed by `CallSiteEntry.collapsed.sharingIdx` / `origHead` —
-      distinct from the block's primary `sharing` table. A `share` inside
-      one of these expressions is read in the extended index space
+  /-- `ConstantMeta.metaSharing` of the constant being decompiled: the
+      source occurrences of its Pass 3 decompile records (`_ix.inline`),
+      distinct from the block's primary `sharing` table. A `share` inside one of these
+      expressions is read in the extended index space
       (`ShareScope.metaEntry`). -/
   metaSharing : Array Ixon.Expr := #[]
   /-- Level-spelling patches of the constant being decompiled, keyed by
       metadata-arena index (canonicity §10.6): a patched `sort`/`ref`/
-      `recur` occurrence (or surgered call-site head) resolves the
+      `recur` occurrence resolves the
       patch's univ indices — written in the VIRTUAL space
       `univs ++ metaUnivs`, i.e. this ctx's already-extended `univs` —
       instead of the node's own canonical indices. Absent patch → the
@@ -131,9 +138,8 @@ structure BlockCtx where
       strictly decreases along metadata-to-metadata resolution, so
       expansion is well founded.
 
-    Call-site references (`CallSiteEntry.collapsed sharingIdx`,
-    `origHead = some (sharingIdx, _)`) index `metaSharing` directly (no
-    offset by `p`) and read the entry in scope `metaEntry sharingIdx`.
+    Pass 3 decompile records (`inlineRecord?`'s `s`) index `metaSharing`
+    directly (no offset by `p`) and read the entry in scope `metaEntry s`.
     Mirrors Rust `decompile::ShareScope`. -/
 inductive ShareScope where
   | primary
@@ -384,6 +390,23 @@ def decompileKVMap (kvm : Ixon.KVMap) : DecompileM (Array (Ix.Name × Ix.DataVal
     result := result.push (keyName, val)
   pure result
 
+/-! ## Pass 3 decompile records -/
+
+/-- The decompile record of a call site that Pass 3 rewrote: a decompiled
+    KVMap that is exactly `[(_ix.inline, s), (_ix.inline_meta, m)]`
+    (`Ix.Compile.Pass.inlineKey`, `inlineMetaKey`, in this order, both
+    `ofNat`). `s` indexes the compiled source occurrence in
+    `ConstantMeta.metaSharing`, `m` is its metadata-arena root. Any other
+    KVMap, including one with a single `_ix.inline` key, is ordinary
+    metadata. Mirrors Rust `decompile::inline_record`. -/
+def inlineRecord? (data : Array (Ix.Name × Ix.DataValue)) : Option (Nat × Nat) :=
+  match data with
+  | #[(k₁, .ofNat s), (k₂, .ofNat m)] =>
+    if k₁ == Ix.Compile.Pass.inlineKey && k₂ == Ix.Compile.Pass.inlineMetaKey then
+      some (s, m)
+    else none
+  | _ => none
+
 /-! ## Mdata Application -/
 
 /-- Apply collected mdata layers to an Ix.Expr (outermost-first). -/
@@ -462,30 +485,6 @@ def validateMetaSharing (p : Nat) (metaSharing : Array Ixon.Expr)
       | .prj _ _ v => stack := stack.push v
       | .sort _ | .var _ | .ref .. | .recur .. | .str _ | .nat _ => pure ()
 
-/-- Collect an Ixon App telescope for call-site replay, transparently
-    expanding `.share` nodes along the SPINE (Rust
-    `collect_ixon_telescope_expanding_shares`). `scope` is the share scope
-    of `e`. Arguments are returned in application order, each with the
-    scope it is read in (a spine `share` can lead from a metadata
-    expression into a primary entry), and are NOT share-expanded — each is
-    decompiled individually, where `.share` handling applies as usual. -/
-def collectIxonTelescopeExpandingShares (scope : ShareScope) (e : Ixon.Expr)
-    : DecompileM (Ixon.Expr × Array (Ixon.Expr × ShareScope)) := do
-  let mut args : Array (Ixon.Expr × ShareScope) := #[]
-  let mut cur := e
-  let mut curScope := scope
-  repeat
-    match cur with
-    | .share idx =>
-      let (s, sScope) ← resolveShare curScope idx "callSite telescope"
-      cur := s
-      curScope := sScope
-    | .app f a =>
-      args := args.push (a, curScope)
-      cur := f
-    | _ => break
-  return (cur, args.reverse)
-
 /-- Decompile an expression read in share scope `scope` to Ix.Expr with
     arena-based metadata. -/
 partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UInt64) :
@@ -501,9 +500,12 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
   let cacheKey := (e, arenaIdx, scope)
   if let some cached := (← get).exprCache.get? cacheKey then return cached
 
-  -- 2. Follow mdata chain
+  -- 2. Follow mdata chain. A Pass 3 decompile record (`inlineRecord?`) is
+  -- not a layer: the first one on the chain is replayed below, a later one
+  -- is dropped.
   let mut currentIdx := arenaIdx
   let mut mdataLayers : Array (Array (Ix.Name × Ix.DataValue)) := #[]
+  let mut inlineRecord : Option (Nat × Nat) := none
   let mut done := false
   while !done do
     match ← getArenaNode currentIdx with
@@ -512,149 +514,47 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
         let data ← decompileKVMap kvm
         if Ix.SemanticContract.hasMetadata data then
           throw (.badConstantFormat "semantic contracts cannot come from optional metadata")
-        mdataLayers := mdataLayers.push data
+        match inlineRecord? data with
+        | some record => if inlineRecord.isNone then inlineRecord := some record
+        | none => mdataLayers := mdataLayers.push data
       currentIdx := child
     | _ => done := true
 
-  let node ← getArenaNode currentIdx
-
-  match node with
-  | .callSite .. | .etaCallSite .. =>
+  -- Pass 3 replay: the decompiled term is the recorded source occurrence,
+  -- `metaSharing[s]` read in its own metadata scope at arena root `m`,
+  -- under the chain's other layers. The compiled (rewritten) term is not
+  -- read, unless `compiledTerms`. The replay is optional metadata, so it
+  -- may not drop a semantic contract: a compiled term that carries one,
+  -- also behind sharing, is refused (the guard the retired call-site
+  -- replay had, CQ3.6). Rust `decompile_expr` replays the same, with the
+  -- same two range checks and the same guard.
+  if (← getEnv).compiledTerms then inlineRecord := none
+  if let some (s, m) := inlineRecord then
     let ctx ← getCtx
+    let some shared := ctx.metaSharing[s]?
+      | throw (.badConstantFormat s!"Pass 3 inline record {s} out of range \
+          ({ctx.metaSharing.size} metadata entries)")
+    unless m < ctx.arena.nodes.size do
+      throw (.badConstantFormat s!"Pass 3 inline record arena root {m} out of range \
+        ({ctx.arena.nodes.size} arena nodes)")
     let annotated ← match Ix.SemanticContract.containsIxon
         (fun s idx => resolveShareIn ctx s idx "semantic scan") scope e with
       | .ok annotated => pure annotated
       | .error error => throw error
     if annotated then
-      throw (.badConstantFormat "optional call-site replay would rewrite a semantic contract")
-  | _ => pure ()
+      throw (.badConstantFormat "Pass 3 inline record replay would drop a semantic contract")
+    let source ← decompileExprIn (.metaEntry s) shared m.toUInt64
+    let result := applyMdata source mdataLayers
+    modify fun st => { st with exprCache := st.exprCache.insert cacheKey result }
+    return result
+
+  let node ← getArenaNode currentIdx
+
   if let some contract := Ix.SemanticContract.ofIxon? e then
     mdataLayers := mdataLayers.push contract.ixMetadata
 
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
-  -- Eta adapter replay: strip the synthesized lambda telescope, read the
-  -- canonical body spine, and rebuild only the source prefix that was
-  -- originally present. Existing source arguments were lifted under the
-  -- wrapper, so lower their loose BVars after decompilation.
-  | .etaCallSite nSynth nameAddr entries canonMeta _wrapperMeta, _ => do
-    let ctx ← getCtx
-    let mut body := e
-    let mut bodyScope := scope
-    for _ in [0:nSynth.toNat] do
-      repeat
-        match body with
-        | .share idx =>
-          let (shared, sharedScope) ← resolveShare bodyScope idx
-            "etaCallSite wrapper"
-          body := shared
-          bodyScope := sharedScope
-        | _ => break
-      match body with
-      | .lam _ _ b => body := b
-      | _ => throw (.badConstantFormat s!"EtaCallSite: expected \
-{nSynth} synthesized lambdas")
-    let (headIxon, canonicalArgs) ←
-      collectIxonTelescopeExpandingShares bodyScope body
-    if canonMeta.size != canonicalArgs.size then
-      throw (.badConstantFormat s!"EtaCallSite: {canonMeta.size} canonical \
-metadata entries but body telescope has {canonicalArgs.size} args")
-    let headName ← lookupNameAddr nameAddr
-    let headPatch := ctx.univPatches.get? currentIdx
-    let levels ← match headPatch, headIxon with
-      | some idxs, .ref .. => decompileUnivIndices idxs
-      | some idxs, .recur .. => decompileUnivIndices idxs
-      | none, .ref _ univIndices => decompileUnivIndices univIndices
-      | none, .recur _ univIndices => decompileUnivIndices univIndices
-      | _, _ => pure #[]
-    let mut spine := Ix.Expr.mkConst headName levels
-    for entry in entries do
-      let arg ← match entry with
-        | .kept canonIdx metaIdx =>
-          match canonicalArgs[canonIdx.toNat]? with
-          | some (argIxon, argScope) => decompileExprIn argScope argIxon metaIdx
-          | none => throw (.badConstantFormat s!"EtaCallSite: Kept \
-canonIdx {canonIdx} out of bounds (body telescope has \
-{canonicalArgs.size} args)")
-        | .collapsed sharingIdx metaIdx =>
-          -- Direct `metaSharing` index (no offset by the primary length);
-          -- the entry's own shares are read in its metadata scope.
-          match ctx.metaSharing[sharingIdx.toNat]? with
-          | some shared => decompileExprIn (.metaEntry sharingIdx.toNat) shared metaIdx
-          | none => throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
-              "etaCallSite collapsed")
-      spine := Ix.Expr.mkApp spine
-        (Ix.AuxGen.lowerVars arg nSynth.toNat 0)
-    pure (applyMdata spine mdataLayers)
-
-  -- Call-site surgery replay: reconstruct the SOURCE-order application
-  -- spine from the canonical Ixon spine plus the metadata extension
-  -- tables (Rust `decompile_expr`, CallSite arm). Entries walk in source
-  -- order: Kept entries index the canonical telescope by `canonIdx`;
-  -- Collapsed entries index `ConstantMeta.metaSharing` directly (NOT the
-  -- block's primary sharing table, no offset by its length) and are read
-  -- in that entry's metadata scope. `origHead` restores the pre-rewrite
-  -- head of evaporated-aux sites; otherwise the head is rebuilt from the
-  -- CallSite name plus the canonical head's level args. Mdata wraps the
-  -- WHOLE reassembled spine, matching how the compiler produced the
-  -- node.
-  | .callSite nameAddr entries _canonMeta origHead, _ => do
-    let ctx ← getCtx
-    let (headIxon, canonicalArgs) ← collectIxonTelescopeExpandingShares scope e
-    -- Most CallSites have one Kept entry per canonical arg; split-SCC
-    -- minor adaptation stores a synthesized wrapper canonically with the
-    -- source arg Collapsed, so canonical args may OUTNUMBER Kept
-    -- entries — but every Kept entry must point at an existing slot.
-    let keptCount := entries.foldl (init := 0) fun n entry =>
-      match entry with
-      | .kept .. => n + 1
-      | _ => n
-    if keptCount > canonicalArgs.size then
-      throw (.badConstantFormat s!"CallSite: {keptCount} Kept entries \
-but canonical telescope has only {canonicalArgs.size} args")
-    let head ← match origHead with
-      | some (sharingIdx, headMetaIdx) =>
-        -- Head-rewritten site: the ORIGINAL head expression (source
-        -- name + source level args) lives in metaSharing.
-        match ctx.metaSharing[sharingIdx.toNat]? with
-        | some shared => decompileExprIn (.metaEntry sharingIdx.toNat) shared headMetaIdx
-        | none =>
-          throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
-            "callSite origHead")
-      | none =>
-        let headName ← lookupNameAddr nameAddr
-        -- Level-spelling patch replay (canonicity §10.6): the compiler
-        -- clones the head's patch onto the callSite root (the head's
-        -- own arena root is unreachable from here), so look it up by
-        -- the CURRENT arena index.
-        let headPatch := ctx.univPatches.get? currentIdx
-        let levels ← match headPatch, headIxon with
-          | some idxs, .ref .. => decompileUnivIndices idxs
-          | some idxs, .recur .. => decompileUnivIndices idxs
-          | none, .ref _ univIndices => decompileUnivIndices univIndices
-          | none, .recur _ univIndices => decompileUnivIndices univIndices
-          | _, _ => pure #[]
-        pure (Ix.Expr.mkConst headName levels)
-    let mut spine := head
-    for entry in entries do
-      match entry with
-      | .kept canonIdx metaIdx =>
-        match canonicalArgs[canonIdx.toNat]? with
-        | some (argIxon, argScope) =>
-          spine := Ix.Expr.mkApp spine (← decompileExprIn argScope argIxon metaIdx)
-        | none =>
-          throw (.badConstantFormat s!"CallSite: Kept canonIdx \
-{canonIdx} out of bounds (canonical telescope has \
-{canonicalArgs.size} args)")
-      | .collapsed sharingIdx metaIdx =>
-        match ctx.metaSharing[sharingIdx.toNat]? with
-        | some shared =>
-          spine := Ix.Expr.mkApp spine
-            (← decompileExprIn (.metaEntry sharingIdx.toNat) shared metaIdx)
-        | none =>
-          throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
-            "callSite collapsed")
-    pure (applyMdata spine mdataLayers)
   | _, .var idx =>
     pure (applyMdata (Ix.Expr.mkBVar idx.toNat) mdataLayers)
 
@@ -854,8 +754,9 @@ def decompileMetaCtx (cMeta : ConstantMeta) : DecompileM (Array Ix.Name) := do
     wrapper. `metaRefs`/`metaUnivs` extend the primary tables — the
     documented virtual-address contract (mirrors Rust
     `load_meta_extensions`); `metaSharing` rides its own dedicated field
-    for surgery replay, and `share` nodes inside it are read in the
-    extended index space (`ShareScope`), never appended to `sharing`. The
+    (Pass 3's decompile records; the call-site surgery replay), and
+    `share` nodes inside it are read in the extended index space
+    (`ShareScope`), never appended to `sharing`. The
     context is rebuilt per constant, so extensions never leak across
     sibling constants of a block. -/
 def mkBlockCtx (cnst : Constant) (mutCtx : Array Ix.Name)
@@ -993,8 +894,7 @@ def decompileInductive (ind : Ixon.Inductive) (cnst : Constant) (cMeta : Constan
     let ctorMeta : ConstantMeta :=
       if let some ctorAddr := ctorNameAddrs[i]? then
         if let some ctorIxName := env.ixonEnv.names.get? ctorAddr then
-          env.ixonEnv.named.fold (init := ConstantMeta.empty) fun acc ixN named =>
-            if ixN == ctorIxName then named.constMeta else acc
+          (env.ixonEnv.named[ctorIxName]?).map (·.constMeta) |>.getD .empty
         else .empty
       else .empty
     let ctorVal ← decompileConstructor ctor cnst ctorMeta name
@@ -1038,18 +938,72 @@ def decompileProjection (cnst : Constant) (cMeta : ConstantMeta)
       let info ← decompileRecursor rec bc cMeta
       pure #[(info.getCnst.name, info)]
     | _ => throw (.badConstantFormat s!"rPrj index {proj.idx} not found")
-  | .cPrj _ => pure #[]
-  | _ => pure #[]
+  | .cPrj proj =>
+    match mutuals[proj.idx.toNat]? with
+    | some (.indc ind) =>
+      let some ctor := ind.ctors[proj.cidx.toNat]?
+        | throw (.badConstantFormat s!"cPrj constructor index {proj.cidx} not found")
+      let .ctor _ _ induct .. := cMeta.info
+        | throw (.badConstantFormat "cPrj requires constructor metadata")
+      let info ← decompileConstructor ctor bc cMeta (← lookupNameAddr induct)
+      pure #[(info.cnst.name, .ctorInfo info)]
+    | _ => throw (.badConstantFormat s!"cPrj inductive index {proj.idx} not found")
+  | _ => throw (.badConstantFormat "expected a projection")
 
 /-! ## Main Entry Points -/
 
-/-- Decompile a single named constant, purely. Returns Ix types. -/
+/-- Select the source address, metadata (including constructors), and exact
+    per-name hints. Keep the canonical address-to-name index: original bodies
+    still refer to canonical addresses. This view never adds checker records. -/
+def originalView (ixonEnv : Ixon.Env) : Ixon.Env :=
+  let named := ixonEnv.named.fold (init := {}) fun m name entry =>
+    let selected := match entry.original with
+      | none => entry
+      | some (addr, constMeta) =>
+        { entry with
+          addr := addr
+          constMeta := constMeta
+          hints := ixonEnv.originalHintOverrides[name]?.getD entry.hints }
+    m.insert name selected
+  { ixonEnv with named }
+
+/-- Read exact bytes from the canonical store first, then unchecked original
+    data. Validate the address and canonical encoding, ignoring a lazy value's
+    cache. This is a decoding check, not a typing judgment. -/
+def readConstant (ixonEnv : Ixon.Env) (addr : Address) : Except String Constant := do
+  let some lc := ixonEnv.consts[addr]? <|> ixonEnv.originals[addr]?
+    | throw s!"missing constant/original at {addr}; recompile the artifact with original data"
+  let bytes := lc.rawBytes
+  if let some original := ixonEnv.originals[addr]? then
+    if original.rawBytes != bytes then
+      throw s!"conflicting original bytes at {addr}"
+  Ixon.Env.checkOriginalPayload addr bytes
+  Ixon.deConstantExact bytes
+
+/-- A compiler-created mutual container, not a source declaration. Pass 3
+    may rename its member metadata while retaining its `Ix.<addr>.*` label.
+    Original-bearing entries must still decode as declarations. -/
+private def isMutsContainer (ixName : Ix.Name) (named : Ixon.Named)
+    (mutuals : Array Ixon.MutConst) : Bool :=
+  match named.constMeta.info with
+  | .muts all _ =>
+    let containerPrefix := Lean.Name.str (.str .anonymous "Ix") (toString named.addr)
+    let name := ixNameToLean ixName
+    named.original.isNone && !mutuals.isEmpty && all.size == mutuals.size &&
+      all.all (fun members => !members.isEmpty) &&
+      containerPrefix.isPrefixOf name && name != containerPrefix
+  | _ => false
+
+/-- Decompile a single named constant, purely. Missing records and malformed
+    projections are named errors, including constructor projections. -/
 def decompileOne (env : DecompileEnv) (ixonEnv : Ixon.Env)
-    (_ixName : Ix.Name) (named : Ixon.Named)
-    : Except String (Array (Ix.Name × Ix.ConstantInfo)) :=
-  match ixonEnv.getConst? named.addr with
-  | none => .ok #[]
-  | some cnst =>
+    (ixName : Ix.Name) (named : Ixon.Named)
+    : Except String (Array (Ix.Name × Ix.ConstantInfo)) := (do
+    let cnst ← readConstant ixonEnv named.addr
+    let block? ← match cnst.info with
+      | .dPrj p | .iPrj p | .rPrj p => some <$> readConstant ixonEnv p.block
+      | .cPrj p => some <$> readConstant ixonEnv p.block
+      | _ => pure none
     let m : DecompileM (Array (Ix.Name × Ix.ConstantInfo)) :=
       match cnst.info with
       | .defn d => do
@@ -1064,26 +1018,17 @@ def decompileOne (env : DecompileEnv) (ixonEnv : Ixon.Env)
       | .recr rec => do
         let info ← decompileRecursor rec cnst named.constMeta
         pure #[(info.getCnst.name, info)]
-      | .dPrj proj =>
-        match ixonEnv.getConst? proj.block with
+      | .dPrj _ | .iPrj _ | .rPrj _ | .cPrj _ =>
+        match block? with
         | some { info := .muts mutuals, sharing, refs, univs } =>
           decompileProjection cnst named.constMeta mutuals sharing refs univs
-        | _ => pure #[]
-      | .iPrj proj =>
-        match ixonEnv.getConst? proj.block with
-        | some { info := .muts mutuals, sharing, refs, univs } =>
-          decompileProjection cnst named.constMeta mutuals sharing refs univs
-        | _ => pure #[]
-      | .rPrj proj =>
-        match ixonEnv.getConst? proj.block with
-        | some { info := .muts mutuals, sharing, refs, univs } =>
-          decompileProjection cnst named.constMeta mutuals sharing refs univs
-        | _ => pure #[]
-      | .cPrj _ => pure #[]
-      | .muts _ => pure #[]
+        | _ => throw (DecompileError.badConstantFormat "projection block is not a mutual block")
+      | .muts mutuals =>
+        if isMutsContainer ixName named mutuals then pure #[]
+        else throw (DecompileError.badConstantFormat "named constant is a mutual block")
     match DecompileM.run env default {} m with
     | .ok (entries, _) => .ok entries
-    | .error err => .error (toString err)
+    | .error err => .error (toString err)).mapError fun err => s!"'{ixName.pretty}': {err}"
 
 /-- Decompile a chunk of constants, purely. Returns results and errors. -/
 def decompileChunk (env : DecompileEnv) (ixonEnv : Ixon.Env)
@@ -1099,11 +1044,9 @@ def decompileChunk (env : DecompileEnv) (ixonEnv : Ixon.Env)
 
 /-- Decompile all constants in parallel using chunked pure Tasks. Returns Ix types.
 
-    `skip` filters named entries out of the pass entirely — the Pass-1
-    driver passes the aux_gen skip (`named.original.isSome &&
-    isAuxGenSuffix name`, Rust `decompile_named_const`
-    decompile.rs:3595-3597); aux constants are regenerated/recovered by
-    Pass 2 instead. Default skips nothing (standalone whole-env use). -/
+    `skip` filters named entries out of the pass entirely. The full driver
+    passes `originalView` and skips only reserved compiler-support names.
+    Default skips nothing (standalone whole-env use). -/
 def decompileAllParallel (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     (skip : Ix.Name → Ixon.Named → Bool := fun _ _ => false)
     : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) := Id.run do
@@ -1114,6 +1057,7 @@ def decompileAllParallel (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     if !skip ixName named then
       allEntries := allEntries.push (ixName, named)
   let total := allEntries.size
+  let numWorkers := max 1 numWorkers
   let chunkSize := (total + numWorkers - 1) / numWorkers
   -- Spawn one task per chunk
   let mut tasks : Array (Task (Array (Ix.Name × Ix.ConstantInfo) × Array (Ix.Name × String))) := #[]

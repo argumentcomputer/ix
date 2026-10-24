@@ -39,16 +39,16 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo)
+open Ix.Kernel (Env Expr Key Level ConstantInfo)
 
-variable {env : Env} {φ : Name → Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-- **Erasure-equal expressions read equally** (`denote_erasedEq`'s
 transpose). -/
-theorem denoteMeta_erasedEq {acval : Name → (Name → Nat) → AnnotTerm}
-    {env : Env} {φ : Name → Nat} :
-    ∀ {e₁ e₂ : Expr}, Expr.ErasedEq e₁ e₂ →
+theorem denoteMeta_erasedEq {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {env : Env md} {φ : LevelParam → Nat} :
+    ∀ {e₁ e₂ : Expr md}, Expr.ErasedEq e₁ e₂ →
       ∀ d : Nat, denoteMeta acval env φ d e₁ = denoteMeta acval env φ d e₂
   | .bvar i, e₂, he, _ => by
     match e₂, he with
@@ -90,9 +90,9 @@ theorem denoteMeta_erasedEq {acval : Name → (Name → Nat) → AnnotTerm}
         denoteMeta_erasedEq (Expr.ErasedEq.instantiate1 h2
           (show Expr.ErasedEq (.fvar d ty) (.fvar d ty') from rfl))
           (d + 1)]
-  | .letE ty vl body, e₂, he, d => by
+  | .letE ty vl body _, e₂, he, d => by
     match e₂, he with
-    | .letE ty' vl' body', he => rw [denoteMeta, denoteMeta]
+    | .letE ty' vl' body' _, he => rw [denoteMeta, denoteMeta]
   | .lit l, e₂, he, _ => by
     match e₂, he with
     | .lit l', he => obtain rfl : l = l' := he; rfl
@@ -112,13 +112,13 @@ decreasing_by
 /-- **Renaming preserves the reading of a *resolving* expression**
 (`denote_renameConsts_resolve`'s transpose; see the module
 docstring). -/
-theorem denoteMeta_renameConsts_resolve {f : Name → Name}
+theorem denoteMeta_renameConsts_resolve {f : Key md → Key md}
     (hup : ∀ n ci, env.find? n = some ci →
       ∃ ci', env.find? (f n) = some ci' ∧
         ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams)
-    (hval : ∀ (n : Name) (ci : ConstantInfo), env.find? n = some ci →
-      ∀ ψ : Name → Nat, acval (f n) ψ = acval n ψ) :
-    ∀ (e : Expr) (d : Nat), e.constsResolve env = true →
+    (hval : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
+      ∀ ψ : LevelParam → Nat, acval (f n) ψ = acval n ψ) :
+    ∀ (e : Expr md) (d : Nat), e.constsResolve env = true →
       denoteMeta acval env φ d (e.renameConsts f)
         = denoteMeta acval env φ d e
   | .bvar _, _, _ => by simp [Expr.renameConsts]
@@ -165,7 +165,7 @@ theorem denoteMeta_renameConsts_resolve {f : Name → Name}
       denoteMeta_renameConsts_resolve hup hval
         (body.instantiate1 (.fvar d ty)) (d + 1)
         (Expr.constsResolve_instantiate1 hr.1 0 hr.2)]
-  | .letE ty val body, d, hr => by
+  | .letE ty val body _, d, hr => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta]
   termination_by e => e.sizeB

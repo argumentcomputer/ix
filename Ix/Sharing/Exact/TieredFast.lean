@@ -14,6 +14,10 @@
   `graphFacts`, the DAG checks and the candidate count) once per constant
   instead of once per width and phase; each copy is the specification's
   body with those tables passed in, and each equality is proved by unfolding.
+  The copies run the component loop of the uniform stages as
+  `searchComponentsArea` (`Exact.AreaSearch`, the search on each component's
+  area), which is the specification's loop once the DAG checks have passed
+  (`uniformChoose_eq_G`, from `AreaProof.searchComponentsArea_eq`).
   For a DAG of at least `tieredParMin` terms the three candidates run as
   parallel tasks and are combined in width order, which is the same value
   (`tieredCandidates_eq`); only the latency of a large constant changes.
@@ -23,9 +27,13 @@ module
 public import Ix.Sharing.Exact.TierFast
 public import Ix.Sharing.Exact.PinnedFast
 public import Ix.Sharing.Exact.KnapsackFast
+public import Ix.Sharing.Exact.AreaSearch
 import all Ix.Sharing.Exact.Tiered
 import all Ix.Sharing.Exact.Uniform
 import all Ix.Sharing.Exact.UniformSearch
+import all Ix.Sharing.Exact.Dictionary
+import all Ix.Sharing.Exact.Dag
+import Ix.Sharing.Exact.AreaSearchEq
 
 public section
 
@@ -135,6 +143,119 @@ theorem uniformChoose_eq_F (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep
   unfold uniformChoose uniformChooseF
   rw [uniformStage_eq_F]
 
+/-! ## The component loop on the areas
+
+`uniformChooseG` runs the component loop as `searchComponentsArea` (the
+search on each component's area with the truncated evaluation), which is
+`searchComponentsWith` when the stage's tables are those of `uniformStageF`
+on `Prep.ofDag` of a DAG that passed `uniformDagChecks`
+(`AreaProof.searchComponentsArea_eq`). -/
+
+/-- `uniformChooseF` with the component loop on the areas. -/
+def uniformChooseG (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (f : GraphFacts) :
+    Except SharingError UniformChoice := do
+  let sg := uniformStageF w ex p f
+  unless componentsChecked ex.dag sg.cls sg.opaq sg.comps (componentLabels ex.dag.size sg.comps) do
+    throw (.internal "uncertain components are not a separated partition")
+  let (results, states, costEvals) ← searchComponentsArea limits ex sg.f sg.up sg.cand sg.b0
+    sg.vis0 sg.rootCount sg.slack sg.theta sg.baseEv sg.widthCs sg.allTrue sg.unc sg.opaq sg.comps
+  let (chosenDelta, chosenX, lowerBracket) ← uniformKnapsack limits sg.cs.size results
+  let modelInt : _root_.Int := (csBase ex p sg : Nat) + chosenDelta +
+    (tag0Size (sg.cs.size + chosenX.size) : _root_.Int)
+  if modelInt < 0 then throw (.internal "negative model length")
+  let model := modelInt.toNat
+  if model > limits.maxOutputBytes then
+    throw (.resourceExhausted .outputBytes limits.maxOutputBytes)
+  return { facts := sg.f, certainStored := sg.cs, certainExcluded := sg.ce, uncertain := sg.unc,
+           lowDegree := sg.low, components := sg.comps, stored := mergeSorted sg.cs chosenX, model,
+           states, costEvals, lowerBracket }
+
+theorem upPrep_fields (p : Prep) (w : Nat) (opaq : Array Bool) :
+    (UPrep.mk' p w opaq).prep = p ∧ (UPrep.mk' p w opaq).w = w ∧
+      (UPrep.mk' p w opaq).opaq = opaq := by
+  unfold UPrep.mk'
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- The widths of the certain-stored terms are `w` exactly where they are
+marked opaque. -/
+theorem widths_fold (w n : Nat) (cs : Array Nat) (u : Nat) :
+    widthOf (cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)) u =
+      if (cs.foldl (fun acc t => acc.set! t true) (Array.replicate n false))[u]! then some w
+      else none := by
+  rw [← Array.foldl_toList, ← Array.foldl_toList]
+  have key : ∀ (l : List Nat) (W : Array (Option Nat)) (O : Array Bool), W.size = O.size →
+      (∀ u, widthOf W u = if O[u]! then some w else none) →
+      ∀ u, widthOf (l.foldl (fun acc t => acc.set! t (some w)) W) u =
+        if (l.foldl (fun acc t => acc.set! t true) O)[u]! then some w else none := by
+    intro l
+    induction l with
+    | nil => intro W O _ h; exact h
+    | cons t l ih =>
+      intro W O hs h
+      simp only [List.foldl_cons]
+      apply ih _ _ (by simp [hs])
+      intro v
+      rw [getElem!_setBang]
+      by_cases hv : v = t ∧ t < O.size
+      · rw [ite_eq_left hv]
+        obtain ⟨rfl, ht⟩ := hv
+        unfold widthOf
+        simp [hs, ht]
+      · rw [ite_eq_right hv, ← h v]
+        unfold widthOf
+        by_cases hvt : v = t
+        · subst hvt
+          have : ¬ v < W.size := by rw [hs]; exact fun h' => hv ⟨rfl, h'⟩
+          simp [this]
+        · simp [Ne.symm hvt]
+  apply key _ _ _ (by simp)
+  intro v
+  unfold widthOf
+  by_cases hv : v < n
+  · rw [getElem!_pos _ v (by simpa using hv)]; simp [hv]
+  · rw [getElem!_neg _ v (by simpa using hv)]; simp [hv]
+
+/-- The facts of the stage that the area search relies on. -/
+private theorem stageOK_F (w : Nat) (ex : Expanded) (f : GraphFacts) (hdag : AreaProof.DagOK ex.dag) :
+    AreaProof.StageOK ex (uniformStageF w ex (Prep.ofDag ex.dag) f).up
+      (uniformStageF w ex (Prep.ofDag ex.dag) f).baseEv
+      (uniformStageF w ex (Prep.ofDag ex.dag) f).widthCs
+      (uniformStageF w ex (Prep.ofDag ex.dag) f).allTrue := by
+  have hf := upPrep_fields (Prep.ofDag ex.dag) w (uniformStageF w ex (Prep.ofDag ex.dag) f).opaq
+  have hup : (uniformStageF w ex (Prep.ofDag ex.dag) f).up =
+      UPrep.mk' (Prep.ofDag ex.dag) w (uniformStageF w ex (Prep.ofDag ex.dag) f).opaq := rfl
+  rw [← hup] at hf
+  obtain ⟨h1, h2, h3⟩ := hf
+  refine ⟨hdag, h1, fun u => ?_, rfl, by rw [h1]; rfl⟩
+  rw [h3, h2]
+  exact widths_fold w ex.dag.size _ u
+
+private theorem uniformChoose_eq_G (w : Nat) (limits : Limits) (ex : Expanded) (f : GraphFacts)
+    (hdag : AreaProof.DagOK ex.dag) :
+    uniformChooseG w limits ex (Prep.ofDag ex.dag) f =
+      uniformChooseF w limits ex (Prep.ofDag ex.dag) f := by
+  unfold uniformChooseG uniformChooseF
+  simp only [AreaProof.searchComponentsArea_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    (stageOK_F w ex f hdag), searchComponents_eq_via, searchComponentsVia]
+
+/-- The DAG checks give the facts of the DAG the area search relies on. -/
+private theorem dagOK_of_checks {ex : Expanded} (h : uniformDagChecks ex = .ok ()) :
+    AreaProof.DagOK ex.dag := by
+  unfold uniformDagChecks at h
+  by_cases h1 : childrenPrecede ex.dag.nodes = true
+  · by_cases h2 : (ex.dag.nodes.all fun node => node.children.size == node.head.arity) = true
+    · refine ⟨h1, fun t ht => ?_⟩
+      have ht' : t < ex.dag.nodes.size := by simpa [Dag.size] using ht
+      have := Array.all_eq_true.mp h2 t ht'
+      have hn : ex.dag.node t = ex.dag.nodes[t] := by
+        unfold Dag.node; simp [ht']
+      rw [hn]
+      simpa using this
+    · simp [h1, h2] at h
+      cases h
+  · simp [h1] at h
+    cases h
+
 /-- `inClassCheck` with the in-degrees `deg` passed in. -/
 def inClassCheckD (deg : Array Nat) (stored : Array Nat) : Bool :=
   (List.range stored.size).all (fun i => decide (i + 1 < stored.size → stored[i]! < stored[i + 1]!)) &&
@@ -187,6 +308,21 @@ def optimizeUniformF (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (f :
   spine
   let c ← uniformChooseF w limits ex p f
   uniformFinishF w limits ex p f.deg c
+
+/-- `optimizeUniformF` with the component loop on the areas. -/
+def optimizeUniformG (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (f : GraphFacts)
+    (spine : Except SharingError Unit) : Except SharingError UniformSharingResult := do
+  spine
+  let c ← uniformChooseG w limits ex p f
+  uniformFinishF w limits ex p f.deg c
+
+private theorem optimizeUniform_eq_G (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep)
+    (f : GraphFacts) (spine : Except SharingError Unit) (hp : p = Prep.ofDag ex.dag)
+    (hdag : AreaProof.DagOK ex.dag) :
+    optimizeUniformG w limits ex p f spine = optimizeUniformF w limits ex p f spine := by
+  subst hp
+  unfold optimizeUniformG optimizeUniformF
+  rw [uniformChoose_eq_G w limits ex f hdag]
 
 theorem optimizeUniformExpanded_eq_F (w : Nat) (limits : Limits) (ex : Expanded) :
     optimizeUniformExpanded w limits ex =
@@ -283,6 +419,31 @@ theorem tieredAtWidth_eq_F (layout : ShareLayout) (limits : Limits) (ex : Expand
   simp only [hw, Bool.false_eq_true, ite_false, tieredResult_eq_F, rematerialize_eq_P]
   cases uniformDagChecks ex <;> rfl
 
+/-- `tieredAtWidthF` with the component loop on the areas. -/
+def tieredAtWidthG (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : Nat)
+    (p : Prep) (f : GraphFacts) (spine : Except SharingError Unit) (k : Nat) :
+    Except SharingError TieredSharingResult := do
+  let u ← optimizeUniformG w limits ex p f spine
+  let a ← allocate layout limits ex.dag f.deg u.result.tableTerms u.result.sharing u.result.roots
+  let phase1Layout := layoutBytes layout u.result.sharing u.result.roots
+  let m ← rematerializeP p layout limits ex a.order phase1Layout
+  return tieredResultF layout w u a m k phase1Layout
+
+private theorem tieredAtWidth_eq_G (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (w : Nat) (p : Prep) (f : GraphFacts) (spine : Except SharingError Unit) (k : Nat)
+    (hp : p = Prep.ofDag ex.dag) (hdag : AreaProof.DagOK ex.dag) :
+    tieredAtWidthG layout limits ex w p f spine k = tieredAtWidthF layout limits ex w p f spine k := by
+  unfold tieredAtWidthG tieredAtWidthF
+  rw [optimizeUniform_eq_G w limits ex p f spine hp hdag]
+
+/-- A computation after the DAG checks may assume the facts they give. -/
+private theorem checks_bind {α : Type} (ex : Expanded) (g g' : Unit → Except SharingError α)
+    (h : AreaProof.DagOK ex.dag → g () = g' ()) :
+    (uniformDagChecks ex).bind g = (uniformDagChecks ex).bind g' := by
+  cases hc : uniformDagChecks ex with
+  | error e => rfl
+  | ok u => cases u; exact h (dagOK_of_checks hc)
+
 /-- `tieredAtWidth` with the width-independent tables computed once for its
 three phases. -/
 def tieredAtWidthC (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : Nat) :
@@ -292,7 +453,7 @@ def tieredAtWidthC (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w :
     (uniformDagChecks ex).bind fun _ =>
       let p := Prep.ofDag ex.dag
       let f := graphFacts ex.dag ex.roots
-      tieredAtWidthF layout limits ex w p f (uniformSpineCheck ex p)
+      tieredAtWidthG layout limits ex w p f (uniformSpineCheck ex p)
         (tieredCandidateCount ex.dag.size p f)
 
 @[csimp] theorem tieredAtWidth_eq_C : @tieredAtWidth = @tieredAtWidthC := by
@@ -305,7 +466,9 @@ def tieredAtWidthC (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w :
     simp only [hw, ite_true]
     rfl
   · rename_i hw
-    exact tieredAtWidth_eq_F layout limits ex w (by simpa using hw)
+    rw [tieredAtWidth_eq_F layout limits ex w (by simpa using hw)]
+    exact checks_bind ex _ _ (fun hdag =>
+      (tieredAtWidth_eq_G layout limits ex w _ _ _ _ rfl hdag).symm)
 
 /-- The best of the three candidates with every candidate's length (the tail
 of `canonicalTieredCore`). -/
@@ -359,14 +522,28 @@ def canonicalTieredCoreC (layout : ShareLayout) (limits : Limits) (dag : Dag)
     let f := graphFacts dag roots
     let spine := uniformSpineCheck ex p
     let k := tieredCandidateCount dag.size p f
-    tieredCandidates dag.size fun w => tieredAtWidthF layout limits ex w p f spine k
+    tieredCandidates dag.size fun w => tieredAtWidthG layout limits ex w p f spine k
 
 @[csimp] theorem canonicalTieredCore_eq_C : @canonicalTieredCore = @canonicalTieredCoreC := by
   funext layout limits dag roots
   unfold canonicalTieredCore canonicalTieredCoreC
   simp only [tieredAtWidth_eq_F _ _ _ 1 rfl, tieredAtWidth_eq_F _ _ _ 2 rfl,
     tieredAtWidth_eq_F _ _ _ 3 rfl, tieredCandidates_eq]
-  cases uniformDagChecks { dag, roots, visits := 0, internedNodes := 0 } <;> rfl
+  cases hc : uniformDagChecks { dag, roots, visits := 0, internedNodes := 0 } with
+  | error e => rfl
+  | ok u =>
+    have hdag := dagOK_of_checks hc
+    have hG : ∀ w, tieredAtWidthG layout limits { dag, roots, visits := 0, internedNodes := 0 } w
+        (Prep.ofDag dag) (graphFacts dag roots)
+        (uniformSpineCheck { dag, roots, visits := 0, internedNodes := 0 } (Prep.ofDag dag))
+        (tieredCandidateCount dag.size (Prep.ofDag dag) (graphFacts dag roots)) =
+        tieredAtWidthF layout limits { dag, roots, visits := 0, internedNodes := 0 } w
+        (Prep.ofDag dag) (graphFacts dag roots)
+        (uniformSpineCheck { dag, roots, visits := 0, internedNodes := 0 } (Prep.ofDag dag))
+        (tieredCandidateCount dag.size (Prep.ofDag dag) (graphFacts dag roots)) :=
+      fun w => tieredAtWidth_eq_G _ _ _ w _ _ _ _ rfl hdag
+    simp only [hG]
+    rfl
 
 /-- `canonicalTieredExpanded`, compiled with the parts above. -/
 def canonicalTieredExpandedC (layout : ShareLayout) (limits : Limits) (ex : Expanded) :
@@ -387,12 +564,18 @@ def optimizeUniformExpandedC (w : Nat) (limits : Limits) (ex : Expanded) :
   if w == 0 then throw (.formatBound "uniform Share width" 0)
   else (uniformDagChecks ex).bind fun _ =>
     let p := Prep.ofDag ex.dag
-    optimizeUniformF w limits ex p (graphFacts ex.dag ex.roots) (uniformSpineCheck ex p)
+    optimizeUniformG w limits ex p (graphFacts ex.dag ex.roots) (uniformSpineCheck ex p)
 
 @[csimp] theorem optimizeUniformExpanded_eq_C :
     @optimizeUniformExpanded = @optimizeUniformExpandedC := by
   funext w limits ex
-  exact optimizeUniformExpanded_eq_F w limits ex
+  rw [optimizeUniformExpanded_eq_F w limits ex]
+  unfold optimizeUniformExpandedC
+  by_cases hw : (w == 0) = true
+  · simp only [hw, ite_true]
+  · simp only [hw, Bool.false_eq_true, ite_false]
+    exact checks_bind ex _ _ (fun hdag =>
+      (optimizeUniform_eq_G w limits ex _ _ _ rfl hdag).symm)
 
 end Ix.Sharing.Exact
 

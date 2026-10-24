@@ -24,6 +24,9 @@
   smart constructors in `Ix.Environment` (`Expr.mkApp`, `Level.mkParam`,
   ...) so the embedded blake3 hashes stay bit-identical with the Rust
   compiler.
+
+  A7 (D8): out-of-range accesses are `internalIndexError`s naming the
+  block (`arrIdx`).
 -/
 module
 public import Ix.Common
@@ -38,7 +41,7 @@ public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM)
+open Ix.CompileM (CompileM arrIdx)
 
 /-- Mirrors Rust `mk_pi_unit` (aux_gen/cases_on.rs:29).
 
@@ -159,10 +162,10 @@ def generateCasesOn (name : Name) (recVal : RecursorVal) :
     | some (.inductInfo v) => pure v.cnst.levelParams.size
     | _ => return none
   let elimToProp := recVal.cnst.levelParams.size == indNLparams
-  let elimLvl := if elimToProp then
-      Level.mkZero
+  let elimLvl ← if elimToProp then
+      pure Level.mkZero
     else
-      Level.mkParam recVal.cnst.levelParams[0]!
+      Level.mkParam <$> arrIdx recVal.cnst.levelParams 0 "generateCasesOn: levelParams"
 
   -- Count constructors per inductive (cases_on.rs:90-97).
   let mut ctorCounts : Array Nat := #[]
@@ -194,7 +197,7 @@ def generateCasesOn (name : Name) (recVal : RecursorVal) :
       motiveFvars := motiveFvars.push fv
       afterMotives := instantiate1 body fv
     | _ => pure ()
-  let targetMotiveDecl := allMotiveDecls[targetIdx]!
+  let targetMotiveDecl ← arrIdx allMotiveDecls targetIdx "generateCasesOn: motiveDecls"
 
   -- Open minors (keep FVar-based domains; dummy FVars for instantiation).
   let mut minorDoms : Array Expr := #[]
@@ -352,7 +355,7 @@ def generateCasesOn (name : Name) (recVal : RecursorVal) :
   -- pushes at most `nMotives` decls.)
   for (motiveDecl, j) in allMotiveDecls.zipIdx do
     if j == targetIdx then
-      val := Expr.mkApp val motiveFvars[targetIdx]!
+      val := Expr.mkApp val (← arrIdx motiveFvars targetIdx "generateCasesOn: motiveFvars")
     else
       -- Build λ (motive_args...), unit_type
       let motiveType := motiveDecl.domain

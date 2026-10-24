@@ -28,12 +28,17 @@ def selectionOk (r : TieredSharingResult) : Bool :=
   ls.map (·.1) == #[1, 2, 3] && r.stats.phase3LayoutBytes == best &&
     (ls.find? (·.2 == best)).map (·.1) == some r.stats.w
 
-/-- The candidate at phase-1 width `w` alone (`tieredAtWidth`) on the
-expanded roots of `c`. -/
+/-- The production K16 candidate at phase-1 width `w` alone, with the same
+expanded-input guards and prepared context as the canonical entry. -/
 def candidateAt (l : ShareLayout) (c : Constant) (w : Nat) :
     Except SharingError TieredSharingResult := do
   let ex ← expand {} c.sharing (constantInfoRoots c.info) true
-  tieredAtWidth l {} ex w
+  uniformDagChecks ex
+  let prep := Prep.ofDag ex.dag
+  uniformSpineCheck ex prep
+  let facts := graphFacts ex.dag ex.roots
+  Ix.Sharing.FamilyPrototype.familyAtWidth canonicalFamilyConfig l {} ex prep facts (parentsOf ex.dag)
+    (tieredCandidateCount ex.dag.size prep facts) w
 
 /-- Every recorded candidate length is that of the candidate run alone, and
 the result is byte-identical to the candidate at its winning width. -/

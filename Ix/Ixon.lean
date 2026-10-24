@@ -8,10 +8,12 @@
 -/
 module
 public import Ix.Address
+public import Ix.Address.Admission
 public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
 public import IxC.Ixon.Codec
+import all IxC.Ixon.Codec
 public import Ix.Merkle
 
 public section
@@ -19,6 +21,60 @@ public section
 namespace Ixon
 
 open Ix (DefKind DefinitionSafety QuotKind)
+
+/-! ## The TagN writer, inlined for the host
+
+`putTagN` (`Ix.Ixon.Codec`) is compiled out of line with `f` as a runtime
+argument, so every integer it writes evaluates its rung ends and header shift
+(`2 ^ (8 - f - 1)`, ...) with `Nat.pow`. Every host caller (metadata, names,
+the environment's sections, claims) passes a literal `f`. `putTagNI` is the
+same body with its rung ends, header and byte writer `@[inline]`, so at each
+call site the compiler folds the powers to constants. The `@[csimp]` theorem
+`putTagN_eq_I` (by `rfl`) makes compiled code in this module and its importers
+call it; no definition changes.
+
+The codec module keeps the out-of-line writer: its compiled code is what the
+certified checker's runtime-closure audits count (`Ix.Ixon.Audit`,
+`Ix.Kernel.Audit.Roots`), and those modules do not import this one. -/
+
+@[inline] def putU8I (x : UInt8) : PutM Unit :=
+  StateT.modifyGet (fun s => ((), s.push x))
+@[inline] def tagNEnd1I (f : Nat) : Nat := 2 ^ (8 - f - 1)
+@[inline] def tagNEnd2I (f : Nat) : Nat := tagNEnd1I f + 2 ^ (8 - f - 2 + 8)
+@[inline] def tagNEnd3I (f : Nat) : Nat := tagNEnd2I f + 2 ^ 16
+@[inline] def tagNEnd4I (f : Nat) : Nat := tagNEnd3I f + 2 ^ 24
+@[inline] def tagNEnd5I (f : Nat) : Nat := tagNEnd4I f + 2 ^ 32
+@[inline] def tagNHeaderI (f : Nat) (flag : UInt8) (payload : Nat) : UInt8 :=
+  (flag.toNat * 2 ^ (8 - f) + payload).toUInt8
+
+/-- `putTagN` with every helper inlined (see above). -/
+@[inline] def putTagNI (f : Nat) (flag : UInt8) (value : UInt64) : PutM Unit :=
+  let v := value.toNat
+  let lead := 2 ^ (8 - f - 1)
+  let mbit := 2 ^ (8 - f - 2)
+  if v < tagNEnd1I f then
+    putU8I (tagNHeaderI f flag v)
+  else if v < tagNEnd2I f then do
+    putU8I (tagNHeaderI f flag (lead + (v - tagNEnd1I f) / 256))
+    putU8I ((v - tagNEnd1I f) % 256).toUInt8
+  else if v < tagNEnd3I f then do
+    putU8I (tagNHeaderI f flag (lead + mbit))
+    putU64TrimmedLEAux (v - tagNEnd2I f).toUInt64 2
+  else if v < tagNEnd4I f then do
+    putU8I (tagNHeaderI f flag (lead + mbit + 1))
+    putU64TrimmedLEAux (v - tagNEnd3I f).toUInt64 3
+  else if v < tagNEnd5I f then do
+    putU8I (tagNHeaderI f flag (lead + mbit + 2))
+    putU64TrimmedLEAux (v - tagNEnd4I f).toUInt64 4
+  else do
+    putU8I (tagNHeaderI f flag (lead + mbit + 3))
+    putU64TrimmedLEAux (v - tagNEnd5I f).toUInt64 8
+
+/-- Compiled host code writes TagN integers with the inlined copy. Audit root
+in `Ix.Sharing.Verify.Audit.Statements`. -/
+@[csimp] theorem putTagN_eq_I : @putTagN = @putTagNI := by
+  funext f flag value
+  rfl
 
 -- These defaults intentionally use the host's BLAKE3-derived default address.
 -- The pure data module does not import that backend or replace its value.
@@ -42,20 +98,6 @@ inductive DataValue where
 /-- Key-value map for Lean.Expr.mdata -/
 abbrev KVMap := Array (Address × DataValue)
 
-/-- Entry in a `callSite` metadata node, representing one source-order
-    argument. Mirrors Rust `ixon::metadata::CallSiteEntry`. -/
-inductive CallSiteEntry where
-  /-- Argument exists in canonical form at App-spine position `canonIdx`.
-      `metaIdx` is the arena index for this argument's metadata subtree
-      (Rust field name: `meta` — a reserved keyword here). -/
-  | kept (canonIdx : UInt64) (metaIdx : UInt64)
-  /-- Argument was collapsed. Expression stored in
-      `ConstantMeta.metaSharing[sharingIdx]` (a direct index, not offset by
-      the primary sharing table's length). `metaIdx` is the arena index
-      for this argument's metadata subtree. -/
-  | collapsed (sharingIdx : UInt64) (metaIdx : UInt64)
-  deriving BEq, Repr, Inhabited
-
 /-- Arena node for per-expression metadata.
     Nodes are allocated bottom-up (children before parents) in the arena.
     Arena indices are UInt64 values pointing into `ExprMetaArena.nodes`. -/
@@ -69,23 +111,6 @@ inductive ExprMetaData where
   | ref (name : Address)
   | prj (structName : Address) (child : UInt64)
   | mdata (mdata : Array KVMap) (child : UInt64)
-  /-- Surgered call-site: replaces the entire App-spine metadata chain
-      (outermost App down to the Ref head) with a single node. `entries` are
-      in SOURCE order; `canonMeta` holds canonical-order metadata roots (one
-      per argument in the IXON App spine); `origHead` is
-      `some (sharingIdx, meta)` when the call-site head itself was rewritten
-      (evaporated-aux recursors). Mirrors Rust
-      `ixon::metadata::ExprMetaData::CallSite`. -/
-  | callSite (name : Address) (entries : Array CallSiteEntry)
-             (canonMeta : Array UInt64) (origHead : Option (UInt64 × UInt64))
-  /-- Eta adapter for a partial plan-bearing reference. The Ixon expression
-      is a synthesized lambda telescope with a canonical call-site body;
-      decompile discards `nSynth` binders and restores only `entries`, while
-      meta ingress follows `wrapperMeta` through the ordinary synthesized
-      Binder/CallSite metadata tree. -/
-  | etaCallSite (nSynth : UInt64) (name : Address)
-                (entries : Array CallSiteEntry) (canonMeta : Array UInt64)
-                (wrapperMeta : UInt64)
   deriving BEq, Repr, Inhabited
 
 /-- Arena for expression metadata within a single constant. -/
@@ -99,20 +124,19 @@ def ExprMetaArena.alloc (arena : ExprMetaArena) (node : ExprMetaData)
   ({ nodes := arena.nodes.push node }, idx)
 
 /-- Count ExprMetaData nodes by type:
-    (leaf, app, binder, letBinder, ref, prj, mdata, callSite) -/
+    (leaf, app, binder, letBinder, ref, prj, mdata) -/
 def ExprMetaArena.countByType (arena : ExprMetaArena)
-    : Nat × Nat × Nat × Nat × Nat × Nat × Nat × Nat :=
-  arena.nodes.foldl (init := (0, 0, 0, 0, 0, 0, 0, 0))
-    fun (le, ap, bi, lb, rf, pj, md, cs) node =>
+    : Nat × Nat × Nat × Nat × Nat × Nat × Nat :=
+  arena.nodes.foldl (init := (0, 0, 0, 0, 0, 0, 0))
+    fun (le, ap, bi, lb, rf, pj, md) node =>
     match node with
-    | .leaf => (le + 1, ap, bi, lb, rf, pj, md, cs)
-    | .app .. => (le, ap + 1, bi, lb, rf, pj, md, cs)
-    | .binder .. => (le, ap, bi + 1, lb, rf, pj, md, cs)
-    | .letBinder .. => (le, ap, bi, lb + 1, rf, pj, md, cs)
-    | .ref .. => (le, ap, bi, lb, rf + 1, pj, md, cs)
-    | .prj .. => (le, ap, bi, lb, rf, pj + 1, md, cs)
-    | .mdata .. => (le, ap, bi, lb, rf, pj, md + 1, cs)
-    | .callSite .. | .etaCallSite .. => (le, ap, bi, lb, rf, pj, md, cs + 1)
+    | .leaf => (le + 1, ap, bi, lb, rf, pj, md)
+    | .app .. => (le, ap + 1, bi, lb, rf, pj, md)
+    | .binder .. => (le, ap, bi + 1, lb, rf, pj, md)
+    | .letBinder .. => (le, ap, bi, lb + 1, rf, pj, md)
+    | .ref .. => (le, ap, bi, lb, rf + 1, pj, md)
+    | .prj .. => (le, ap, bi, lb, rf, pj + 1, md)
+    | .mdata .. => (le, ap, bi, lb, rf, pj, md + 1)
 
 /-- Count mdata items in an arena. -/
 def ExprMetaArena.mdataItemCount (arena : ExprMetaArena) : Nat :=
@@ -184,15 +208,15 @@ structure UnivPatch where
 /-- Per-constant metadata wrapper: variant payload + extension tables.
     The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) extend the
     index spaces of the primary `Constant` tables (for a projection, the
-    tables of its `muts` block), used by `callSite` nodes in the metadata
-    arena for call-site surgery roundtrip and by `univPatches` for original
-    level spellings (canonicity §10.6). Mirrors Rust
+    tables of its `muts` block), used by Pass 3's decompile records
+    (`_ix.inline`), and `univPatches` holds original level spellings
+    (canonicity §10.6). Mirrors Rust
     `ixon::metadata::ConstantMeta`. -/
 structure ConstantMeta where
   info : ConstantMetaInfo := .empty
-  /-- Compiled Ixon expressions for collapsed call-site arguments and
-      rewritten call-site heads, indexed DIRECTLY (no offset) by
-      `CallSiteEntry.collapsed sharingIdx` and `origHead = some (sharingIdx, _)`.
+  /-- Compiled Ixon expressions of Pass 3's decompile records (`_ix.inline`),
+      indexed DIRECTLY (no offset). (The retired call-site metadata indexed
+      its collapsed arguments here too.)
 
       Extended index space for `share` (a reader rule; the bytes are
       unchanged). Let the primary table `sharing` have `p` entries and this
@@ -281,7 +305,7 @@ def ConstantMetaInfo.exprMetaByType : ConstantMetaInfo → Nat × Nat × Nat × 
       | .recr _ _ _ _ _ a _ _ => a
       | .empty => {}
       | .muts _ _ => {}
-    let (_, _, bi, lb, rf, pj, md, _) := arena.countByType
+    let (_, _, bi, lb, rf, pj, md) := arena.countByType
     (bi, lb, rf, pj, md)
 
 /-- Wrapper delegator: count total arena nodes. -/
@@ -330,7 +354,7 @@ def deConstantAt (buf : ByteArray) (off : Nat) : Except String Constant :=
 
 /-- Lazily-materialized constant: an offset window `(buf, off, len)` into a
     shared backing `ByteArray` plus an optional pre-materialized `Constant`.
-    Mirrors the Rust kernel's `LazyConstant` (`src/ix/ixon/lazy.rs`) — the
+    Mirrors the Rust kernel's `LazyConstant` (`crates/ixon/src/lazy.rs`) — the
     `ofSlice` form is the analog of its window-into-a-shared-buffer
     (`from_mmap_slice`) variant, except here the shared buffer is the resident
     `.ixe` bytes rather than an mmap.
@@ -587,7 +611,8 @@ def getMdataStackIndexed (rev : NameReverseIndex) : GetM (Array KVMap) := do
 `arena := len node₀ … node_{len-1}`; node `i` is a tag byte
 `kind <<< 3 ||| mask` followed by its fields in declaration order. Kinds:
 0 leaf, 1 app, 2–5 binder (2 + binder info), 6 letBinder, 7 ref, 8 prj,
-9 mdata, 10 callSite, 11 etaCallSite. Child references are never absolute:
+9 mdata; kinds 10 and 11 (the retired callSite and etaCallSite, CQ3.6) are
+refused. Child references are never absolute:
 
 * The *structural* slots (app fun/arg, binder type/body, let
   type/value/body, prj child, mdata child) may be **implicit**: bit `s` of
@@ -598,8 +623,8 @@ def getMdataStackIndexed (rev : NameReverseIndex) : GetM (Array KVMap) := do
   index of node `i`'s contiguous post-order block; `lo[i] = i` for a node
   without structural slots). A tree allocated bottom-up in post-order writes
   no child references at all.
-* Every other reference (a structural slot whose bit is clear, and every
-  call-site reference) is **explicit**: TagN (`f = 0`) of the backward
+* Every other reference (a structural slot whose bit is clear) is
+  **explicit**: TagN (`f = 0`) of the backward
   delta `(i - 1 - c) mod 2^64`. Forward references are representable
   (wrapping), so every arena of `UInt64` indices has an encoding.
 
@@ -611,7 +636,7 @@ with `top = 0`, so each arena has exactly one encoding. Mirrors Rust
 /-- Number of structural (possibly implicit) child slots of a node kind;
 `none` for an unknown kind. -/
 def exprMetaSlotCount : Nat → Option Nat
-  | 0 | 7 | 10 | 11 => some 0
+  | 0 | 7 => some 0
   | 1 | 2 | 3 | 4 | 5 => some 2
   | 6 => some 3
   | 8 | 9 => some 1
@@ -649,49 +674,6 @@ def getExprMetaRef (i : Nat) : GetM UInt64 := do
   let d := (← getTagN 0).value
   pure (i.toUInt64 - 1 - d)
 
-/-- Call-site entries: count, then per entry a tag byte, the canonical or
-sharing index, and an explicit reference. -/
-def putExprMetaEntries (i : Nat) (entries : Array CallSiteEntry) : PutM Unit := do
-  putTagN 0 0 entries.size.toUInt64
-  for entry in entries do
-    match entry with
-    | .kept canonIdx metaIdx =>
-      putU8 0
-      putTagN 0 0 canonIdx
-      putExprMetaRef i metaIdx
-    | .collapsed sharingIdx metaIdx =>
-      putU8 1
-      putTagN 0 0 sharingIdx
-      putExprMetaRef i metaIdx
-
-def getExprMetaEntries (i : Nat) : GetM (Array CallSiteEntry) := do
-  let numEntries := (← getTagN 0).value.toNat
-  let mut entries : Array CallSiteEntry := #[]
-  for _ in [0:numEntries] do
-    let entry ← match ← getU8 with
-      | 0 =>
-        let canonIdx := (← getTagN 0).value
-        let metaIdx ← getExprMetaRef i
-        pure (CallSiteEntry.kept canonIdx metaIdx)
-      | 1 =>
-        let sharingIdx := (← getTagN 0).value
-        let metaIdx ← getExprMetaRef i
-        pure (CallSiteEntry.collapsed sharingIdx metaIdx)
-      | x => throw s!"invalid CallSiteEntry tag {x}"
-    entries := entries.push entry
-  pure entries
-
-/-- A count followed by explicit references. -/
-def putExprMetaRefs (i : Nat) (refs : Array UInt64) : PutM Unit := do
-  putTagN 0 0 refs.size.toUInt64
-  for c in refs do putExprMetaRef i c
-
-def getExprMetaRefs (i : Nat) : GetM (Array UInt64) := do
-  let n := (← getTagN 0).value.toNat
-  let mut refs : Array UInt64 := #[]
-  for _ in [0:n] do
-    refs := refs.push (← getExprMetaRef i)
-  pure refs
 
 /-- Node tag byte: `kind <<< 3 ||| mask`. -/
 def exprMetaTag (kind mask : UInt8) : UInt8 := (kind <<< 3) ||| mask
@@ -731,24 +713,6 @@ def putExprMetaNode (em : ExprMetaData) (i : Nat) (mask : UInt8) (idx : NameInde
     putU8 (exprMetaTag 9 mask)
     putMdataStackIndexed mdata idx
     slot 0 child
-  | .callSite name entries canonMeta origHead =>
-    putU8 (exprMetaTag 10 0)
-    putIdx name idx
-    putExprMetaEntries i entries
-    putExprMetaRefs i canonMeta
-    match origHead with
-    | none => putU8 0
-    | some (sharingIdx, metaIdx) =>
-      putU8 1
-      putTagN 0 0 sharingIdx
-      putExprMetaRef i metaIdx
-  | .etaCallSite nSynth name entries canonMeta wrapperMeta =>
-    putU8 (exprMetaTag 11 0)
-    putTagN 0 0 nSynth
-    putIdx name idx
-    putExprMetaEntries i entries
-    putExprMetaRefs i canonMeta
-    putExprMetaRef i wrapperMeta
 
 /-- Resolve the implicit slots of node `i` (explicit ones are already read)
 and return them with `lo[i]`; rejects an implicit slot with no preceding
@@ -817,25 +781,7 @@ def getExprMetaNode (rev : NameReverseIndex) (i : Nat) (lo : Array Nat) :
     let c ← slot 0
     let (cs, top) ← resolveExprMetaSlots #[c] mask i lo
     pure (.mdata mdata cs[0]!, top)
-  | 10 =>
-    let name ← getIdx rev
-    let entries ← getExprMetaEntries i
-    let canonMeta ← getExprMetaRefs i
-    let origHead ← match ← getU8 with
-      | 0 => pure none
-      | 1 =>
-        let sharingIdx := (← getTagN 0).value
-        let metaIdx ← getExprMetaRef i
-        pure (some (sharingIdx, metaIdx))
-      | x => throw s!"invalid CallSite origHead tag {x}"
-    pure (.callSite name entries canonMeta origHead, i)
-  | _ =>
-    let nSynth := (← getTagN 0).value
-    let name ← getIdx rev
-    let entries ← getExprMetaEntries i
-    let canonMeta ← getExprMetaRefs i
-    let wrapperMeta ← getExprMetaRef i
-    pure (.etaCallSite nSynth name entries canonMeta wrapperMeta, i)
+  | k => throw s!"invalid ExprMetaData tag: kind {k}"
 
 /-- Serialize ExprMetaArena (length-prefixed array of nodes; see the arena
 wire format above). -/
@@ -1132,6 +1078,11 @@ structure Env where
       populates this map; `putEnv` serializes it as the hints section
       and `getEnv` reads it back. Mirrors Rust `Env.anon_hints`. -/
   anonHints : Std.HashMap Address Lean.ReducibilityHints := {}
+  /-- Unchecked original-form payloads, separate from the checker store. -/
+  originals : Std.HashMap Address LazyConstant := {}
+  /-- Exact original hint overrides by name. A present none clears a hint;
+      absence inherits Named.hints. Never merged through anonHints. -/
+  originalHintOverrides : Std.HashMap Ix.Name (Option Lean.ReducibilityHints) := {}
   deriving Inhabited
 
 namespace Env
@@ -1168,7 +1119,7 @@ def getName? (env : Env) (addr : Address) : Option Ix.Name :=
 
 /-- Store a blob and return its content address. -/
 def storeBlob (env : Env) (bytes : ByteArray) : Env × Address :=
-  let addr := Address.blake3 bytes
+  let addr := Address.admissionHash bytes
   ({ env with blobs := env.blobs.insert addr bytes }, addr)
 
 /-- Get a blob by address. -/
@@ -1403,7 +1354,7 @@ structure RawNameEntry where
 /-- Raw FFI environment structure using arrays instead of HashMaps.
     This is the array-based equivalent of `Env` for FFI compatibility.
     Field order matters: the Rust mirror (`LeanIxonRawEnv`) addresses
-    constructor slots positionally (0-7). -/
+    constructor slots positionally (0-9). -/
 structure RawEnv where
   consts : Array RawConst
   named : Array RawNamed
@@ -1416,6 +1367,9 @@ structure RawEnv where
   assumptions : Array Address := #[]
   /-- Explicit reducibility hints (`Env.anonHints`), sorted by address. -/
   anonHints : Array (Address × Lean.ReducibilityHints) := #[]
+  /-- Exact serialized original bytes; no materialization/default substitution. -/
+  originals : Array RawBlob := #[]
+  originalHintOverrides : Array (Ix.Name × Option Lean.ReducibilityHints) := #[]
   deriving Repr, Inhabited, BEq
 
 namespace RawEnv
@@ -1448,7 +1402,7 @@ partial def addNameComponentsWithBlobs
     | .str parent s _ =>
       -- Store string component as blob for deduplication
       let strBytes := s.toUTF8
-      let strAddr := Address.blake3 strBytes
+      let strAddr := Address.admissionHash strBytes
       let blobs := blobs.insert strAddr strBytes
       addNameComponentsWithBlobs names blobs parent
     | .num parent _ _ =>
@@ -1476,11 +1430,39 @@ def toEnv (raw : RawEnv) : Env := Id.run do
   return { env with
     main := raw.main
     assumptions := raw.assumptions.foldl (·.insert ·) {}
-    anonHints := raw.anonHints.foldl (fun m (a, h) => m.insert a h) {} }
+    anonHints := raw.anonHints.foldl (fun m (a, h) => m.insert a h) {}
+    originals := raw.originals.foldl (fun m r =>
+      m.insert r.addr (LazyConstant.ofSlice r.bytes 0 r.bytes.size)) {}
+    originalHintOverrides := raw.originalHintOverrides.foldl
+      (fun m (n, h) => m.insert n h) {} }
+
+/-- Check the original-data array keys before map conversion can erase a
+duplicate. Payload and published-name validation belongs to the writer.
+`toEnv` remains the unchecked raw-transfer/Merkle conversion interface. -/
+def toEnvChecked (raw : RawEnv) : Except String Env := do
+  let mut addresses : Std.HashSet Address := {}
+  for original in raw.originals do
+    if addresses.contains original.addr then
+      throw s!"originals: duplicate address {original.addr}"
+    addresses := addresses.insert original.addr
+  let mut names : Std.HashSet Ix.Name := {}
+  for (name, _) in raw.originalHintOverrides do
+    if names.contains name then
+      throw s!"original hints: duplicate name {name}"
+    names := names.insert name
+  return raw.toEnv
 
 end RawEnv
 
 /-! ## Env Serialization -/
+
+/-- The section order of the env writer: ascending address bytes, the order
+    of `Ord Address` (lexicographic over the hash bytes). Decided by
+    `Address.cmpBytes`, which agrees with `Ord Address` without building the
+    two byte lists that instance compares; the sections sort hundreds of
+    thousands of addresses (a whole-environment names table has millions),
+    and the list-building comparison was most of the writer's time. -/
+@[inline] def addrLt (a b : Address) : Bool := a.cmpBytes b == .lt
 
 namespace Env
 
@@ -1498,27 +1480,111 @@ def toRawEnv (env : Env) : RawEnv := {
   comms := env.comms.toArray.map fun (addr, comm) => { addr, comm }
   names := env.names.toArray.map fun (addr, name) => { addr, name }
   main := env.main
-  assumptions := env.assumptions.toList.toArray.qsort
-    fun a b => (compare a b).isLT
-  anonHints := env.anonHints.toList.toArray.qsort
-    fun a b => (compare a.1 b.1).isLT
+  assumptions := env.assumptions.toArray.qsort addrLt
+  anonHints := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
+  originals := env.originals.toArray.map fun (addr, lc) => { addr, bytes := lc.rawBytes }
+  originalHintOverrides := env.originalHintOverrides.toArray
 }
 
 /-- TagN (`f = 4`) header flag for Env (0xE). -/
 def FLAG : UInt8 := 0xE
 
-/-- `.ixe` format version, carried in the header's TagN value field.
-    Any change to serialized bytes bumps this; readers reject a
-    mismatch and there is no back-compat reading of old versions —
-    `.ixe` files are regenerated artifacts. Version 4 is the TagN
-    format; its header is the single byte `0xE4`. Mirrors Rust
-    `Env::VERSION` in `crates/ixon/src/serialize.rs`. -/
-def VERSION : UInt64 := 4
+/-- Checked object/claim/proof/catalog grammar; unchanged by unchecked data. -/
+def CHECKED_FORMAT_VERSION : UInt8 := 4
+def LEGACY_ENV_VERSION : UInt64 := 4
+def ORIGINALS_ENV_VERSION : UInt64 := 5
+/-- Compatibility alias for the original envelope, not the selected writer version. -/
+def VERSION : UInt64 := LEGACY_ENV_VERSION
+def OBJECT_FORMAT : UInt8 := CHECKED_FORMAT_VERSION
 
-/-- Object-format byte bound by claim, proof and catalog scopes: the
-    format version as one byte, so an object produced under another
-    version is rejected. Mirrors Rust `Env::OBJECT_FORMAT`. -/
-def OBJECT_FORMAT : UInt8 := VERSION.toUInt8
+/-- Empty original-data tables preserve the exact legacy envelope. -/
+def envelopeVersion (env : Env) : UInt64 :=
+  if env.originals.isEmpty && env.originalHintOverrides.isEmpty then
+    LEGACY_ENV_VERSION else ORIGINALS_ENV_VERSION
+
+def supportedEnvelopeVersion (version : UInt64) : Bool :=
+  version == LEGACY_ENV_VERSION || version == ORIGINALS_ENV_VERSION
+
+/-- Validate exact unchecked bytes without inserting them into `consts`. -/
+def checkOriginalPayload (addr : Address) (bytes : ByteArray) : Except String Unit := do
+  if Address.blake3 bytes != addr then
+    throw s!"originals: bytes hash mismatch for {addr}"
+  let constant ← deConstantExact bytes
+  if serConstant constant != bytes then
+    throw s!"originals: noncanonical payload for {addr}"
+
+def checkOriginalData (env : Env) : Except String Unit := do
+  for (addr, lc) in env.originals do
+    let bytes := lc.rawBytes
+    checkOriginalPayload addr bytes
+    if let some existing := env.consts[addr]? then
+      let why := if existing.rawBytes == bytes then "redundant" else "conflicting"
+      throw s!"originals: {why} bytes already in consts at {addr}"
+  for (name, _) in env.originalHintOverrides do
+    let some named := env.named[name]? | throw s!"original hints: unpublished name {name}"
+    if named.original.isNone then
+      throw s!"original hints: {name} has no Named.original"
+
+/-- The v5 trailer uses address order and §4 index order. Payloads stay raw. -/
+def putOriginalTrailer (env : Env) (nameIdx : NameIndex) : ExceptT String PutM Unit := do
+  if env.envelopeVersion == LEGACY_ENV_VERSION then return
+  let originals := env.originals.toArray.qsort fun a b => addrLt a.1 b.1
+  putTagN 0 0 originals.size.toUInt64
+  for (addr, lc) in originals do
+    Serialize.put addr
+    let bytes := lc.rawBytes
+    putTagN 0 0 bytes.size.toUInt64
+    putBytes bytes
+  let mut hints : Array (UInt64 × Option Lean.ReducibilityHints) := #[]
+  for (name, hint) in env.originalHintOverrides do
+    let some idx := nameIdx[name.getHash]? | throw s!"original hints: {name} is absent from names"
+    hints := hints.push (idx, hint)
+  hints := hints.qsort fun a b => a.1 < b.1
+  putTagN 0 0 hints.size.toUInt64
+  let mut prev : Option UInt64 := none
+  for (idx, hint) in hints do
+    if let some p := prev then
+      unless p < idx do throw "original hints: duplicate name index"
+    prev := some idx
+    putTagN 0 0 idx
+    putFusedOptHint hint
+
+/-- Read and validate the trailer, retaining only windows for original bodies.
+`hasOriginal` is supplied by the full §5 map or the lazy reader's existing
+§5 parse; no second whole-table metadata decode is needed. -/
+def getOriginalTrailer (env : Env) (nameRev : NameReverseIndex)
+    (names : Std.HashMap Address Ix.Name) (hasOriginal : Ix.Name → Bool) :
+    GetM Env := do
+  let backing := (← get).bytes
+  let mut env := env
+  let count := (← getTagN 0).value.toNat
+  let mut prev : Option Address := none
+  for _ in [:count] do
+    let addr : Address ← Serialize.get
+    if let some p := prev then
+      unless addrLt p addr do throw "originals: addresses are not strictly ascending"
+    prev := some addr
+    if env.consts.contains addr then throw s!"originals: address {addr} overlaps consts"
+    let len := (← getTagN 0).value.toNat
+    let off := (← get).idx
+    let bytes ← getBytes len
+    if let .error e := checkOriginalPayload addr bytes then throw e
+    env := { env with originals := env.originals.insert addr (LazyConstant.ofSlice backing off len) }
+  let hints := (← getTagN 0).value.toNat
+  if count == 0 && hints == 0 then throw "originals: empty v5 trailer; use the v4 envelope"
+  let mut prevIdx : Option Nat := none
+  for _ in [:hints] do
+    let idx := (← getTagN 0).value.toNat
+    if let some p := prevIdx then
+      unless p < idx do throw "original hints: indices are not strictly ascending"
+    prevIdx := some idx
+    let hint ← getFusedOptHint
+    let some addr := nameRev[idx]? | throw "original hints: name index out of range"
+    let some name := names[addr]? | throw "original hints: missing name"
+    unless hasOriginal name do throw s!"original hints: {name} has no published Named.original"
+    if env.originalHintOverrides.contains name then throw s!"original hints: duplicate name {name}"
+    env := { env with originalHintOverrides := env.originalHintOverrides.insert name hint }
+  return env
 
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/
@@ -1584,116 +1650,23 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
   -- index (arena nodes frequently reference it as a binder name).
   -- Matches Rust `topological_sort_names`, which emits it explicitly —
   -- required for byte-identical writer output across the mirrors.
-  let initVisited : Std.HashSet Address := ({} : Std.HashSet Address).insert anonAddr
-  let initResult : Array (Address × Ix.Name) := #[(anonAddr, Ix.Name.mkAnon)]
+  let initVisited : Std.HashSet Address :=
+    (Std.HashSet.emptyWithCapacity (names.size + 1)).insert anonAddr
+  let initResult : Array (Address × Ix.Name) :=
+    (Array.emptyWithCapacity (names.size + 1)).push (anonAddr, Ix.Name.mkAnon)
   -- Sort names by address before iterating to ensure deterministic DFS order
-  let sortedEntries := names.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let sortedEntries := names.toArray.qsort fun a b => addrLt a.1 b.1
   let (_, result) := sortedEntries.foldl (init := (initVisited, initResult)) fun (visited, result) (_, name) =>
     visit name visited result
   result
 
-/-- Serialize an Env to bytes.
-
-    Runs in `ExceptT String PutM`: the §3/§5 sections key their entries
-    by §2/§4 indices, so hints keyed outside `consts` or named entries
-    referencing unstored constants/names are unrepresentable and must
-    fail at write time (mirrors Rust `Env::put`). -/
-def putEnv (env : Env) : ExceptT String PutM Unit := do
-  -- Header: TagN(4) with flag=0xE, value=VERSION (format version)
-  putTagN 4 FLAG VERSION
-
-  -- Canonical merkle root over consts addresses (matches Rust Env::put).
-  -- Always 32 bytes: for empty const sets, the sentinel
-  -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
-  -- canonical root, which is always a Blake3 hash).
-  let constAddrs : Array Address :=
-    (env.consts.toList.toArray.map (·.1))
-  let root := (Ix.Merkle.merkleRootCanonical constAddrs).getD Ix.Merkle.zeroAddress
-  Serialize.put root
-
-  -- Bundle header fields: main (Option, 0/1-tagged) + assumptions
-  -- (strictly ascending address list). Matches Rust `Env::put`.
-  match env.main with
-  | none => putU8 0
-  | some addr => do
-    putU8 1
-    Serialize.put addr
-  let assumptions := env.assumptions.toList.toArray.qsort
-    fun a b => (compare a b).isLT
-  putTagN 0 0 assumptions.size.toUInt64
-  for addr in assumptions do
-    Serialize.put addr
-
-  -- Section 1: Blobs (Address -> bytes)
-  let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
-  putTagN 0 0 blobs.size.toUInt64
-  for (addr, bytes) in blobs do
-    Serialize.put addr
-    putTagN 0 0 bytes.size.toUInt64
-    putBytes bytes
-
-  -- Section 2: Consts (Address -> TagN-length-prefixed constant bytes)
-  --
-  -- The TagN length sidecar is added at the env-section level so a lazy
-  -- loader can slice each constant without parsing its header.
-  -- The length is NOT part of the content-addressed bytes: the address
-  -- is `Address.hash` over the constant body alone (which is
-  -- exactly what `serConstant` produces).
-  let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
-  putTagN 0 0 consts.size.toUInt64
-  for (addr, lc) in consts do
-    Serialize.put addr
-    -- The lazy entry already holds exactly `serConstant`'s output, so write
-    -- its bytes directly — no re-materialization or re-serialization.
-    let bytes := lc.rawBytes
-    putTagN 0 0 bytes.size.toUInt64
-    putBytes bytes
-
-  -- Rank of each constant in §2's ascending-address order — §3 hint
-  -- entries and §5 named entries key their constants through it.
-  let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
-
-  -- Section 3: anon_hints — the canonical hint channel for the
-  -- anon/lazy readers, placed before the metadata sections so they can
-  -- stop right after it. Serialized straight from `env.anonHints`, the
-  -- single home for hints, as delta-coded §2 ranks + fused hints (the
-  -- address sort is load-bearing: it makes the ranks strictly
-  -- ascending). Matches Rust `Env::put`.
-  let hintPairs := env.anonHints.toList.toArray.qsort
-    fun a b => (compare a.1 b.1).isLT
-  putTagN 0 0 hintPairs.size.toUInt64
-  let mut prevRank : UInt64 := 0 -- rank + 1 of the previous entry
-  for (addr, hints) in hintPairs do
-    match constIdx.get? addr with
-    | none => throw s!"putEnv: anon_hints key {reprStr (toString addr)} not \
-                       present in consts — hints must be keyed by stored \
-                       constant addresses"
-    | some rank =>
-      putTagN 0 0 (rank + 1 - prevRank)
-      putFusedHint hints
-      prevRank := rank + 1
-
-  -- Section 4: Names (Address -> Name component)
-  -- Topologically sorted so parents come before children, with ties broken by address
-  let sortedNames := topologicalSortNames env.names
-  -- Build name index from sorted positions (matching Rust)
-  let nameIdx := sortedNames.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
-  putTagN 0 0 sortedNames.size.toUInt64
-  for (addr, name) in sortedNames do
-    Serialize.put addr
-    putNameComponent name
-
-  -- Section 5: Named (name §4-index -> Named with metadata; the
-  -- entry's constant is a §2 rank). Entry order stays ascending name
-  -- hash. Each entry carries its EXACT per-name hint in the header,
-  -- then a length-prefixed metadata blob so hint scanners can skip the
-  -- bodies. `original` keeps a raw address: it can reference an
-  -- assumed constant that is NOT stored in §2 (prune cut bundles).
-  let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
-  putTagN 0 0 named.size.toUInt64
-  for (name, namedEntry) in named do
+/-- §5 entries `named[lo:hi]`, exactly as `putEnv` writes them one after the
+    other: the entry's §4 name index, its §2 constant rank, its exact hint,
+    and its length-prefixed metadata blob. -/
+def putNamedEntries (named : Array (Ix.Name × Named)) (lo hi : Nat)
+    (nameIdx : NameIndex) (constIdx : Std.HashMap Address UInt64) :
+    ExceptT String PutM Unit := do
+  for (name, namedEntry) in named[lo:hi] do
     -- The name's stored hash is bytewise its §4 component address.
     match nameIdx.get? name.getHash with
     | none => throw s!"putEnv: named key {reprStr (toString name.getHash)} \
@@ -1718,12 +1691,131 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
     putTagN 0 0 blob.size.toUInt64
     putBytes blob
 
+/-- Entries per task when §5 is written in parallel (`putEnv`). -/
+def namedChunk : Nat := 2048
+
+/-- Serialize an Env to bytes.
+
+    Runs in `ExceptT String PutM`: the §3/§5 sections key their entries
+    by §2/§4 indices, so hints keyed outside `consts` or named entries
+    referencing unstored constants/names are unrepresentable and must
+    fail at write time (mirrors Rust `Env::put`). -/
+def putEnv (env : Env) : ExceptT String PutM Unit := do
+  if let .error e := checkOriginalData env then throw e
+  putTagN 4 FLAG env.envelopeVersion
+
+  -- Canonical merkle root over consts addresses (matches Rust Env::put).
+  -- Always 32 bytes: for empty const sets, the sentinel
+  -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
+  -- canonical root, which is always a Blake3 hash).
+  let consts := env.consts.toArray.qsort fun a b => addrLt a.1 b.1
+  let root := (Ix.Merkle.merkleRootCanonical (consts.map (·.1))).getD
+    Ix.Merkle.zeroAddress
+  Serialize.put root
+
+  -- Bundle header fields: main (Option, 0/1-tagged) + assumptions
+  -- (strictly ascending address list). Matches Rust `Env::put`.
+  match env.main with
+  | none => putU8 0
+  | some addr => do
+    putU8 1
+    Serialize.put addr
+  let assumptions := env.assumptions.toArray.qsort addrLt
+  putTagN 0 0 assumptions.size.toUInt64
+  for addr in assumptions do
+    Serialize.put addr
+
+  -- Section 1: Blobs (Address -> bytes)
+  let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
+  putTagN 0 0 blobs.size.toUInt64
+  for (addr, bytes) in blobs do
+    Serialize.put addr
+    putTagN 0 0 bytes.size.toUInt64
+    putBytes bytes
+
+  -- Section 2: Consts (Address -> TagN-length-prefixed constant bytes)
+  --
+  -- The TagN length sidecar is added at the env-section level so a lazy
+  -- loader can slice each constant without parsing its header.
+  -- The length is NOT part of the content-addressed bytes: the address
+  -- is `Address.hash` over the constant body alone (which is
+  -- exactly what `serConstant` produces). `consts` is sorted above.
+  putTagN 0 0 consts.size.toUInt64
+  for (addr, lc) in consts do
+    Serialize.put addr
+    -- The lazy entry already holds exactly `serConstant`'s output, so write
+    -- its bytes directly — no re-materialization or re-serialization.
+    let bytes := lc.rawBytes
+    putTagN 0 0 bytes.size.toUInt64
+    putBytes bytes
+
+  -- Rank of each constant in §2's ascending-address order — §3 hint
+  -- entries and §5 named entries key their constants through it.
+  let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity consts.size)
+
+  -- Section 3: anon_hints — the canonical hint channel for the
+  -- anon/lazy readers, placed before the metadata sections so they can
+  -- stop right after it. Serialized straight from `env.anonHints`, the
+  -- single home for hints, as delta-coded §2 ranks + fused hints (the
+  -- address sort is load-bearing: it makes the ranks strictly
+  -- ascending). Matches Rust `Env::put`.
+  let hintPairs := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
+  putTagN 0 0 hintPairs.size.toUInt64
+  let mut prevRank : UInt64 := 0 -- rank + 1 of the previous entry
+  for (addr, hints) in hintPairs do
+    match constIdx.get? addr with
+    | none => throw s!"putEnv: anon_hints key {reprStr (toString addr)} not \
+                       present in consts — hints must be keyed by stored \
+                       constant addresses"
+    | some rank =>
+      putTagN 0 0 (rank + 1 - prevRank)
+      putFusedHint hints
+      prevRank := rank + 1
+
+  -- Section 4: Names (Address -> Name component)
+  -- Topologically sorted so parents come before children, with ties broken by address
+  let sortedNames := topologicalSortNames env.names
+  -- Build name index from sorted positions (matching Rust)
+  let nameIdx : NameIndex := sortedNames.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity sortedNames.size)
+  putTagN 0 0 sortedNames.size.toUInt64
+  for (addr, name) in sortedNames do
+    Serialize.put addr
+    putNameComponent name
+
+  -- Section 5: Named (name §4-index -> Named with metadata; the
+  -- entry's constant is a §2 rank). Entry order stays ascending name
+  -- hash. Each entry carries its EXACT per-name hint in the header,
+  -- then a length-prefixed metadata blob so hint scanners can skip the
+  -- bodies. `original` keeps a raw address: it can reference an
+  -- assumed constant that is NOT stored in §2 (prune cut bundles).
+  let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
+  putTagN 0 0 named.size.toUInt64
+  -- The entries are independent given the two indices: they are written in
+  -- chunks of `namedChunk` on parallel tasks and concatenated in order, which
+  -- is the sequential loop's output (`putNamedEntries` is its body); the first
+  -- failing entry in order reports, as in the loop.
+  let chunks := (named.size + namedChunk - 1) / namedChunk
+  let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
+    match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
+      constIdx).run).run ByteArray.empty with
+    | (.ok _, bytes) => Except.ok bytes
+    | (.error e, _) => Except.error e
+  for t in tasks do
+    match t.get with
+    | .ok bytes => putBytes bytes
+    | .error e => throw e
+
   -- Section 6: Comms (Address -> Comm)
-  let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
   putTagN 0 0 comms.size.toUInt64
   for (addr, comm) in comms do
     Serialize.put addr
     putComm comm
+  putOriginalTrailer env nameIdx
 
 /-- Deserialize an Env from bytes (pure Lean, full metadata). Used for
     round-trip (`deEnv`) on small/in-memory envs. The lazy/anon `.ixe` check
@@ -1735,8 +1827,8 @@ def getEnv : GetM Env := do
   let tag ← getTagN 4
   if tag.flag != FLAG then
     throw s!"Env.get: expected flag 0x{FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
-  if tag.value != VERSION then
-    throw s!"Env.get: expected .ixe format version {VERSION}, got {tag.value} — recompile the artifact"
+  unless supportedEnvelopeVersion tag.value do
+    throw s!"Env.get: unsupported .ixe envelope version {tag.value} (expected 4 or 5)"
 
   -- Canonical merkle root (fixed 32 bytes). For empty const sets the
   -- stored value is `Ix.Merkle.zeroAddress`. Verified at end against
@@ -1906,9 +1998,10 @@ def getEnv : GetM Env := do
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
 
-  -- Comms is the final section; trailing bytes are truncation damage
-  -- or concatenated garbage. (Mirrors Rust `Env::get`; the early-stop
-  -- readers cannot make this check by design.)
+  if tag.value == ORIGINALS_ENV_VERSION then
+    env ← getOriginalTrailer env nameRev namesLookup
+      (fun name => (env.named[name]?).any (·.original.isSome))
+  -- No bytes may follow the selected envelope's last section.
   let st ← get
   if st.idx != st.bytes.size then
     throw s!"Env.get: {st.bytes.size - st.idx} trailing bytes after final section"
@@ -2018,8 +2111,8 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   let tag ← getTagN 4
   if tag.flag != Env.FLAG then
     throw s!"Env.get: expected flag 0x{Env.FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
-  if tag.value != Env.VERSION then
-    throw s!"Env.get: expected .ixe format version {Env.VERSION}, got {tag.value} — recompile the artifact"
+  unless Env.supportedEnvelopeVersion tag.value do
+    throw s!"Env.get: unsupported .ixe envelope version {tag.value} (expected 4 or 5)"
   let storedRoot : Address ← Serialize.get
   let mainTag ← getU8
   let main : Option Address ← match mainTag with
@@ -2036,7 +2129,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
         throw "Env.get: assumptions not strictly ascending"
     assumptionArr := assumptionArr.push addr
   reserCheck "header" hdrStart <| runPut do
-    putTagN 4 Env.FLAG Env.VERSION
+    putTagN 4 Env.FLAG tag.value
     Serialize.put storedRoot
     match main with
     | none => putU8 0
@@ -2178,6 +2271,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   loadTrace s!"§5 named: {numNamed}"
   let mut namedRows : Array NamedRow := #[]
   let mut rowIdx : Std.HashMap Ix.Name Nat := {}
+  let mut originalNames : Std.HashSet Ix.Name := {}
   let mut prevName : Option Ix.Name := none
   for _ in [:numNamed.toNat] do
     let eStart := (← get).idx
@@ -2224,6 +2318,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
       if !(compare prev name).isLT then
         throw "serde gate (§5): named entries not in ascending name order"
     prevName := some name
+    if original.isSome then originalNames := originalNames.insert name
     reserCheck "§5 named" eStart <| runPut do
       putTagN 0 0 nameIdx
       putTagN 0 0 constRank
@@ -2268,6 +2363,9 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     (Ix.Merkle.merkleRootCanonical constOrder).getD Ix.Merkle.zeroAddress
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
+
+  if tag.value == Env.ORIGINALS_ENV_VERSION then
+    env ← Env.getOriginalTrailer env nameRev namesLookup originalNames.contains
 
   let st ← get
   if st.idx != st.bytes.size then
@@ -2318,11 +2416,12 @@ def serEnv (env : Env) : Except String ByteArray :=
 def deEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
 
 /-- Compute section sizes for debugging.
-    Returns (blobs, consts, anonHints, names, named, comms). -/
-def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.run do
+    Returns (blobs, consts, anonHints, names, named, comms, originalData).
+    The original-data trailer contributes zero bytes in a v4 envelope. -/
+def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat × Nat := Id.run do
   -- Blobs section
   let blobsBytes := runPut do
-    let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
     putTagN 0 0 blobs.size.toUInt64
     for (addr, bytes) in blobs do
       Serialize.put addr
@@ -2330,24 +2429,24 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
       putBytes bytes
 
   -- Consts section
+  let consts := env.consts.toArray.qsort fun a b => addrLt a.1 b.1
   let constsBytes := runPut do
-    let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
     putTagN 0 0 consts.size.toUInt64
     for (addr, lc) in consts do
       Serialize.put addr
-      putBytes lc.rawBytes
+      let bytes := lc.rawBytes
+      putTagN 0 0 bytes.size.toUInt64
+      putBytes bytes
 
   -- anon_hints section: delta-coded §2 ranks + fused hints. The sort
   -- is load-bearing (delta widths depend on it). Sizes assume a
   -- well-formed env — an out-of-consts key falls back to rank 0 here
   -- (diagnostics only; `serEnv` is where that is a hard error).
-  let sortedConstAddrs := (env.consts.toList.toArray.map (·.1)).qsort
-    fun a b => (compare a b).isLT
-  let constIdx : Std.HashMap Address UInt64 := sortedConstAddrs.zipIdx.foldl
-    (fun acc (addr, i) => acc.insert addr i.toUInt64) {}
+  let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity consts.size)
   let hintsBytes := runPut do
-    let hintPairs := env.anonHints.toList.toArray.qsort
-      fun a b => (compare a.1 b.1).isLT
+    let hintPairs := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
     putTagN 0 0 hintPairs.size.toUInt64
     let mut prevRank : UInt64 := 0
     for (addr, hints) in hintPairs do
@@ -2357,8 +2456,8 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
       prevRank := rank + 1
 
   -- Names section
+  let sortedNames := Env.topologicalSortNames env.names
   let namesBytes := runPut do
-    let sortedNames := Env.topologicalSortNames env.names
     putTagN 0 0 sortedNames.size.toUInt64
     for (addr, name) in sortedNames do
       Serialize.put addr
@@ -2368,11 +2467,11 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
   -- length-prefixed metadata blob; absolute indices, so per-entry
   -- sizes are iteration-order independent — never delta-code here).
   -- Missing keys fall back to index 0 (diagnostics only).
+  let nameIdx : NameIndex := sortedNames.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity sortedNames.size)
   let namedBytes := runPut do
-    let sortedNames := Env.topologicalSortNames env.names
-    let nameIdx : NameIndex := sortedNames.zipIdx.foldl
-      (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
-    let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
     putTagN 0 0 named.size.toUInt64
     for (name, namedEntry) in named do
       putTagN 0 0 (nameIdx.get? name.getHash |>.getD 0)
@@ -2391,22 +2490,37 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
 
   -- Comms section
   let commsBytes := runPut do
-    let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
     putTagN 0 0 comms.size.toUInt64
     for (addr, comm) in comms do
       Serialize.put addr
       putComm comm
 
+  -- Original data is a separate trailer, absent in v4. Count payload bytes
+  -- without constructing another buffer containing every original record.
+  let mut originalBytes := 0
+  if env.envelopeVersion == Env.ORIGINALS_ENV_VERSION then
+    originalBytes := (runPut do
+      putTagN 0 0 env.originals.size.toUInt64
+      putTagN 0 0 env.originalHintOverrides.size.toUInt64).size
+    for (_, lc) in env.originals do
+      let len := lc.rawBytes.size
+      originalBytes := originalBytes + 32 + (runPut (putTagN 0 0 len.toUInt64)).size + len
+    for (name, hint) in env.originalHintOverrides do
+      originalBytes := originalBytes + (runPut do
+        putTagN 0 0 (nameIdx[name.getHash]?.getD 0)
+        putFusedOptHint hint).size
+
   ( blobsBytes.size, constsBytes.size, hintsBytes.size, namesBytes.size,
-    namedBytes.size, commsBytes.size )
+    namedBytes.size, commsBytes.size, originalBytes )
 
 /-! ## Rust FFI Serialization -/
 
 @[extern "rs_ser_env"]
-opaque rsSerEnvFFI : @& RawEnv → ByteArray
+opaque rsSerEnvFFI : @& RawEnv → Except String ByteArray
 
 /-- Serialize an Ixon.Env to bytes using Rust. -/
-def rsSerEnv (env : Env) : ByteArray :=
+def rsSerEnv (env : Env) : Except String ByteArray :=
   rsSerEnvFFI env.toRawEnv
 
 @[extern "rs_de_env"]
@@ -2419,7 +2533,7 @@ def rsDeEnv (bytes : ByteArray) : Except String Env :=
 /-! ### Lazy/anon deserialization (zero-copy `.ixe` load for the check path)
 
 The Rust side (`rs_de_env_lazy`) parses the env once — reusing the proven
-parser, so every metadata variant (e.g. `CallSite`) is handled — and returns:
+parser, so every metadata variant (e.g. `mdata`) is handled — and returns:
 constants as `(addr, offset, len)` windows into the buffer we pass in,
 `name → addr`, per-`Defn` reducibility hints, and copied blobs. We then
 reconstruct an `Env` whose constants are byte-window `LazyConstant`s over that
@@ -2520,6 +2634,10 @@ structure EnvStats where
   named : UInt64
   blobs : UInt64
   comms : UInt64
+  originals : UInt64
+  /-- Raw record bytes, excluding trailer framing. -/
+  originalBytes : UInt64
+  originalHintOverrides : UInt64
   deriving Inhabited, BEq
 
 /-- One name present in both envs whose constant address changed.
@@ -2568,6 +2686,12 @@ structure EnvDiff where
   hintsChanged : Array (Address × String × String)
   statsA : EnvStats
   statsB : EnvStats
+  /-- Unchecked original-data deltas, populated only in metadata mode. -/
+  originalsOnlyA : Array Address
+  originalsOnlyB : Array Address
+  originalsChanged : Array Address
+  /-- Labels distinguish an absent override from explicit `none`. -/
+  originalHintsChanged : Array (String × String × String)
   deriving Inhabited, BEq
 
 /-- True when no difference was found (ignores `statsA`/`statsB`,
@@ -2581,6 +2705,8 @@ def EnvDiff.isEmpty (d : EnvDiff) : Bool :=
   && d.constsOnlyA.isEmpty && d.constsOnlyB.isEmpty
   && d.blobsOnlyA.isEmpty && d.blobsOnlyB.isEmpty
   && d.hintsChanged.isEmpty
+  && d.originalsOnlyA.isEmpty && d.originalsOnlyB.isEmpty
+  && d.originalsChanged.isEmpty && d.originalHintsChanged.isEmpty
 
 @[extern "rs_diff_envs"]
 opaque rsDiffEnvsFFI : @& ByteArray → @& ByteArray → Bool → Except String EnvDiff
@@ -2590,7 +2716,7 @@ opaque rsDiffEnvsFFI : @& ByteArray → @& ByteArray → Bool → Except String 
     per-field classification, consts/blobs sets, comms,
     `main`/`assumptions`, and reducibility hints; `compareMeta := true`
     additionally compares `Named` metadata content (`namedMetaOnly` +
-    `NamedDiff.metaFields`). -/
+    `NamedDiff.metaFields`) and the unchecked original-data tables. -/
 def rsDiffEnvs (a b : ByteArray) (compareMeta : Bool := false) :
     Except String EnvDiff :=
   rsDiffEnvsFFI a b compareMeta
@@ -2641,7 +2767,7 @@ the Rust implementation. Returns `none` for an empty const set, otherwise
 the 32-byte root wrapped in `some`.
 
 The same value is stored in the env's on-disk TagN header (see
-`Env::put`/`Env::get` in `src/ix/ixon/serialize.rs`).
+`Env::put`/`Env::get` in `crates/ixon/src/serialize.rs`).
 -/
 def rsEnvMerkleRoot (env : Env) : Option Address :=
   let bytes := rsEnvMerkleRootFFI env.toRawEnv

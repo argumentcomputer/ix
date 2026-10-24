@@ -30,10 +30,11 @@ runtime.  It is deliberately *not* a `module`: the proofs unfold core
 definition bodies (`eq_def`, `rfl`-iota) that the module system hides,
 and the early stream positions of `Nat.land`/`Nat.lor`/`Nat.xor` (in
 the `Init.Prelude` region, before `HAnd`/`AndOp`/`testBit` even exist)
-rule out the public bitwise lemma API.  It is built ahead of
-`IxC/Kernel/NatOpPins.lean` as its own Lake target
-(`ConLechePinCerts`, wired via `extraDepTargets`), and the generator
-loads it by name into its full-view environment.
+rule out the public bitwise lemma API.  It is its own Lake target; the role-table generator
+(`kernel-pin-gen`) loads it by name into its full-view environment and
+egresses its theorems as the default table's evidence records, and Source
+mode reads them from the checked environment
+(`Ix.LeanIngress.sourceEvidence`).
 -/
 
 namespace Ix.Kernel.PinGen
