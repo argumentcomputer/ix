@@ -114,4 +114,70 @@ theorem runImageBlock_trace
       by rw [← selected]; exact traced⟩
   · cases run
 
+/-- A final exact-key hit comes from an actual ordered write, including
+when later writes overwrite earlier ones. -/
+theorem fold_hit_origin (imgs : List Image) {n : ExactName} {addr : Address}
+    (hit : (imgs.foldl (fun m x => m.insert x.1 x.2.1.blockAddr)
+      ({} : Std.HashMap ExactName Address)).get? n = some addr) :
+    ∃ x ∈ imgs, x.1 = n ∧ x.2.1.blockAddr = addr := by
+  have origins : ∀ (key : ExactName) value,
+      (imgs.foldl (fun m x => m.insert x.1 x.2.1.blockAddr)
+        ({} : Std.HashMap ExactName Address)).get? key = some value →
+      ∃ x ∈ imgs, x.1 = key ∧ x.2.1.blockAddr = value := by
+    apply List.foldlRecOn (motive := fun table : Std.HashMap ExactName Address =>
+      ∀ (key : ExactName) value, table.get? key = some value →
+        ∃ x ∈ imgs, x.1 = key ∧ x.2.1.blockAddr = value)
+    · intro key value absent
+      have impossible := (Std.HashMap.getElem?_empty (a := key)).symm.trans absent
+      cases impossible
+    · intro table prior x member key value found
+      change (table.insert (show ExactName from x.1) x.2.1.blockAddr).get? key = some value at found
+      rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at found
+      split at found
+      · rename_i same
+        have equal : (show ExactName from x.1) = key := eq_of_beq same
+        cases found
+        exact ⟨x, member, equal, rfl⟩
+      · exact prior key value found
+  exact origins n addr hit
+
+/-- One actual image/original run supplies every final hit's matching image,
+Named row and result-producing compile call. No source fidelity or equality
+to an address in a later LIVE state follows from these origins. -/
+theorem runImageBlock_aux_origins
+    {original : CompileEnv → Name → Ix.Set Name → Except CompileError (BlockResult × BlockState)}
+    {producer : CompileEnv} {all : Ix.Set Name} {lo : Name} {result : BlockResult}
+    {cache : BlockState} {pub : Published}
+    (run : runImageBlock original producer all lo = .ok (result, cache, pub)) :
+    ∃ imgs pub0 origRes origCache,
+      compileImageBlock producer all = .ok (imgs, pub0) ∧
+      original producer lo all = .ok (origRes, origCache) ∧
+      cache.auxGenExtraNames = {} ∧
+      cache.auxNameToAddr = imgs.foldl (fun m (n, r, _) => m.insert n r.blockAddr) {} ∧
+      result.projections = #[] ∧ primaryClaims lo result = #[(lo, result.blockAddr)] ∧
+      cache.auxNameToAddr.get? lo = some result.blockAddr ∧
+      (∀ x ∈ imgs, ImageCall producer x) ∧
+      ∀ (n : Name) addr, cache.auxNameToAddr.get? n = some addr →
+        ∃ r bs named known ci,
+          (n, r, bs) ∈ imgs ∧ r.blockAddr = addr ∧ r.projections = #[] ∧
+          (n, named) ∈ cache.auxNamed ∧ named.addr = addr ∧
+          compileImage producer known ci = .ok (r, bs) := by
+  obtain ⟨imgs, pub0, origRes, origCache, images, originalRun, traced⟩ := runImageBlock_trace run
+  have lone := Ix.Cert.Claims.runImageBlock_lone run
+  have calls := compileImageBlock_calls images
+  refine ⟨imgs, pub0, origRes, origCache, images, originalRun, traced.extra, ?_, lone,
+    by simp only [primaryClaims, lone, Array.isEmpty_empty, ↓reduceIte], traced.selected.symm, calls, ?_⟩
+  · simpa only [Array.foldl_toList] using traced.addresses
+  · intro n addr hit
+    rw [traced.addresses] at hit
+    obtain ⟨⟨name, r, bs⟩, member, same, address⟩ := fold_hit_origin imgs.toList hit
+    dsimp only at same address
+    subst name
+    have actualMember := Array.mem_toList_iff.mp member
+    obtain ⟨named, present, namedAddr⟩ := traced.named (n, r, bs) member
+    obtain ⟨known, ci, compiled⟩ := calls (n, r, bs) actualMember
+    exact ⟨r, bs, named, known, ci, actualMember, address,
+      Ix.Cert.Claims.compileImageBlock_lone images (n, r, bs) actualMember,
+      present, namedAddr.trans address, compiled⟩
+
 end Ix.CompileCert.ImageAuxOrigins
