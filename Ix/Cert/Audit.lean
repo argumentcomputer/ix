@@ -55,6 +55,7 @@ import Ix.Cert.ApplicationFronts
 import Ix.CompileCert.O6ApplicationValues
 import Ix.CompileCert.O6Telescope
 import Ix.CompileCert.O6TelescopeOpened
+import Ix.CompileCert.O6TelescopeValues
 
 /-! # The certification statements, frozen
 
@@ -5776,3 +5777,27 @@ run_cmd do
     (#[`strip_open_list, `BulkAnn.unique, `bulk_ann_pairs, `bulk_ann_apps,
       `selectors_bulk_annotated, `bulk_opened_layout,
       `o6_rec_under_telescope_opened_red].map (`Ix.CompileCert.O6TelescopeOpened ++ ·))
+
+/-! ## Closing actual paired lambda telescopes
+
+Actual full-inference chains propagate the root compatibility derived
+from real header/value fronts within each supplied strong model. -/
+
+/-- info: [cert-audit] checked telescope closing: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked telescope closing"
+    (#[`lamPw_abstract1, `markers_of_fronts, `close_telescope].map (`Ix.CompileCert.O6TelescopeValues ++ ·))
+
+/-! ## Whole O6 values under an arbitrary shared dependent telescope
+
+The frozen O6 leaf, real header and both whole value fronts derive every
+opening, inner run and marker fact. Conversion remains inside each model. -/
+
+/-- info: [cert-audit] O6 whole telescope values: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 whole telescope values"
+    #[`Ix.CompileCert.O6TelescopeValues.o6_rec_under_telescope_values]
