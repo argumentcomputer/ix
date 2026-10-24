@@ -2,6 +2,7 @@ import LSpec
 import Ix.Meta
 import Ix.CompileDriver
 import Tests.Ix.AuxGen.FlatBlockSource
+import Tests.Ix.AuxGen.BelowPropReference
 
 /-! # `.below` and `.brecOn` from IxC Source mode (AuxGen M2a, M2b, M3)
 
@@ -659,7 +660,7 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   let prod ← IO.lazyPure fun _ => Ix.CompileM.compileEnvFold env blocks (width := 16)
-  let (_, _, cenv) ← IO.ofExcept prod
+  let (ixe, _, cenv) ← IO.ofExcept prod
   let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
   let opts : Ix.CompileM.AuxIxcOptions := {}
   let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels opts.asks
@@ -670,26 +671,32 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
   let mut familyStats : Ix.AuxGen.IxcStats := {}
   let mut notStandalone := 0
   let shadowOpts : Ix.CompileM.AuxIxcOptions := { opts with mode := .shadow }
-  for (lo, members) in inductiveBlocks env blocks do
-    let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
+  let selected := inductiveBlocks env blocks
+  let reference ← IO.ofExcept (BelowPropReference.read env blocks selected)
+  for ((rep, members), i) in selected.zipIdx do
+    let key := Ix.CompileM.blockKey rep ((blocks.blocks.get? rep).getD {})
     let lo := key
-    let some real := opts.oracleFor ra env.get? key | continue
+    let some real := opts.oracleFor ra env.get? key
+      | do errors := errors.push s!"{lo.pretty}: missing measured checked oracle"; continue
     -- 3. the Prop-level `.below` family's recursors on IxC (T3): the driver's
     -- tail in `shadow` (every answer compared with `Ix.Tc`'s) and in production's
     -- `failClosed`, from the same block state
     let some shadowO := shadowOpts.oracleFor ra env.get? key
       | do errors := errors.push s!"{lo.pretty}: no shadow oracle"; continue
     let famTail (o : Ix.AuxGen.AuxOracle) :
-        Ix.CompileM.CompileM (Option Ix.AuxGen.AuxKernelCtx) := do
+        Ix.CompileM.CompileM (Option BelowPropReference.Tail) := do
       let some (cs, sorted, addr, maps) ← tailArgs lo members | return none
       return some (← (Ix.AuxGen.compileMutualAuxTail cs sorted addr maps (.ixc maps o)).run
-        Ix.AuxGen.AuxKernelCtx.new).2
-    match ← IO.lazyPure fun _ => runIn cenv lo (famTail shadowO),
-        ← IO.lazyPure fun _ => runIn cenv lo (famTail real) with
+        Ix.AuxGen.AuxKernelCtx.new)
+    let sr ← IO.lazyPure fun _ => runIn cenv lo (famTail shadowO)
+    let cr ← IO.lazyPure fun _ => runIn cenv lo (famTail real)
+    IO.ofExcept (BelowPropReference.check reference i rep key members (cenv.auxGenExtraNames.contains key)
+      shadowO real sr cr stateKey ixe)
+    match sr, cr with
     | .error e, .error e' =>
-      -- a block this harness cannot re-run on its own over the production fold's
-      -- environment (a family another block's tail compiled: its claims are
-      -- taken) fails before the family's generation in both runs, alike
+      -- The capture records 73 recursor registration and 12 alias conflicts
+      -- when rerunning over the completed environment; only 3 keys are promoted.
+      -- Keep this original paired-error comparison alongside the full reference.
       if e == e' then notStandalone := notStandalone + 1
       else errors := errors.push s!"{lo.pretty}: the tails fail differently: {e.take 160} / \
         {e'.take 160}"
@@ -697,7 +704,7 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     | .ok _, .error e => errors := errors.push s!"{lo.pretty}: only the failClosed tail fails: \
         {e.take 200}"
     | .ok (none, _), _ | _, .ok (none, _) => pure ()
-    | .ok (some sk, sst), .ok (some _, pst) =>
+    | .ok (some (_, sk), sst), .ok (some _, pst) =>
       let st := sk.ixcStats
       if st.familyInstalled + st.familyRefused > 0 then
         families := families + 1
