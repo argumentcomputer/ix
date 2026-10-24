@@ -71,6 +71,7 @@ import Ix.CompileCert.OptDispatchOrigin
 import Ix.CompileCert.OptShapeOrigin
 import Ix.CompileCert.ViewPublicationOrigin
 import Ix.CompileCert.PrimaryAddressFrame
+import Ix.CompileCert.ImageAuxOrigins
 
 /-! # The certification statements, frozen
 
@@ -6179,3 +6180,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "checked primary address frames"
     (#[`PrimaryAgrees.foldl_keeps, `checked_merge_primary_frame, `checked_merge_query_partition].map
       (`Ix.CompileCert.PrimaryAddressFrame ++ ·))
+
+/-! ## Actual image calls and ordered auxiliary output trace
+
+Successful round calls, paired Named writes and selected-primary lookup
+origins come from the same producer, with no live address equality claim. -/
+
+/-- info: [cert-audit] actual image auxiliary write traces: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual image auxiliary write traces"
+    (#[`compileImageBlock_calls, `runImageBlock_trace].map
+      (`Ix.CompileCert.ImageAuxOrigins ++ ·))
