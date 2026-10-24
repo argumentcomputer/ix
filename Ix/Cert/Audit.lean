@@ -66,6 +66,7 @@ import Ix.Cert.PrefixRecRules
 import Ix.Cert.PrefixTowers
 import Ix.Cert.PrefixNatOps
 import Ix.Cert.RuleInputValues
+import Ix.CompileCert.O6PrefixValues
 
 /-! # The certification statements, frozen
 
@@ -6056,3 +6057,15 @@ run_cmd do
   checkRoots (tag := "cert-audit") "fixed interpretation checked value adapters"
     (#[`frame_context, `infer_package, `reading_denotes, `defeq_readings,
       `lambda_markers_eq_of_fronts, `markers_of_fronts].map (`Ix.Cert.RuleInputValues ++ ·))
+
+/-! ## Actual indexed O6 values in the supplied final model
+
+The real target front and one same-prefix/header baseline front derive the
+telescope conversion; both checked subjects denote the final constant. -/
+
+/-- info: [cert-audit] indexed O6 final interpretation values: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "indexed O6 final interpretation values"
+    #[`Ix.CompileCert.O6PrefixValues.o6_rec_under_telescope_final_values]
