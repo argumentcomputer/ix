@@ -68,15 +68,16 @@ theorem infer_package_at (M : Cached.StrongModel V env) (φ : LevelParam → Nat
       (Ix.Kernel.Rules.inferTypeCore_bridge run) frame context read
   exact ⟨ea, ta, read, typeRead, typeFrame, context.of_subset leaves, grade, typeGrade, member⟩
 
-/-- Common actual type checks fix the lambda bits ONLY at a valid context
-valuation. In contrast to the closed helper, no PropWhen extensionality or
-arbitrary empty-set valuation is used at an open context. -/
-theorem lambda_bits_at (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
+/-- INTERNAL typed-header variant: a proved domain/header package supplies
+its read/grade, without pretending the checker ran a fresh domain inference.
+Bit agreement remains conditional on a valid context valuation. -/
+theorem lambda_bits_of_header (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
     {d : Nat} {Δ : List AnnotTerm}
-    {expected headerSortType domL bodyL domR bodyR leftType rightType : Ix.Kernel.Expr md}
-    {mL mR : BinderMeta} {FH FL FR CL CR : Nat}
+    {expected domL bodyL domR bodyR leftType rightType : Ix.Kernel.Expr md} {headerA : AnnotTerm}
+    {mL mR : BinderMeta} {FL FR CL CR : Nat}
     (headerFrame : Frame d expected) (headerContext : CtxOk M.internal.base2 φ d Δ expected)
-    (headerInfer : inferTypeCore .verified env FH d expected = .ok headerSortType)
+    (headerRead : denoteMeta M.internal.base2.acval env φ d expected = some headerA)
+    (headerGrade : Graded V Δ headerA)
     (leftFrame : Frame d (.lam domL bodyL mL)) (rightFrame : Frame d (.lam domR bodyR mR))
     (leftContext : CtxOk M.internal.base2 φ d Δ (.lam domL bodyL mL))
     (rightContext : CtxOk M.internal.base2 φ d Δ (.lam domR bodyR mR))
@@ -87,8 +88,6 @@ theorem lambda_bits_at (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
     ∀ ρ : BVarIdx → V, Sat V Δ ρ → (pwBit φ mL.pw = 0 ↔ pwBit φ mR.pw = 0) := by
   obtain ⟨cod, rfl⟩ := Ix.Kernel.Rules.Infer.lam_shape
     (Ix.Kernel.Rules.inferTypeCore_bridge leftInfer)
-  obtain ⟨ha, _, headerRead, _, _, _, headerGrade, _, _⟩ :=
-    infer_package_at M φ headerFrame headerContext headerInfer
   obtain ⟨_, lta, _, leftTypeRead, leftTypeFrame, leftTypeContext, _, leftTypeGrade, _⟩ :=
     infer_package_at M φ leftFrame leftContext leftInfer
   obtain ⟨ra, rta, rightRead, rightTypeRead, rightTypeFrame, rightTypeContext, _, rightTypeGrade, rightMember⟩ :=
@@ -109,6 +108,27 @@ theorem lambda_bits_at (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
   rw [rightShape, leftShape, interp_lam, interp_pi] at member
   exact LambdaMarkers.lam_mem_pi_bits member
 
+/-- The existing executable-header interface, now a wrapper around the
+typed-header proof. Its actual full header run supplies that package. -/
+theorem lambda_bits_at (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
+    {d : Nat} {Δ : List AnnotTerm}
+    {expected headerSortType domL bodyL domR bodyR leftType rightType : Ix.Kernel.Expr md}
+    {mL mR : BinderMeta} {FH FL FR CL CR : Nat}
+    (headerFrame : Frame d expected) (headerContext : CtxOk M.internal.base2 φ d Δ expected)
+    (headerInfer : inferTypeCore .verified env FH d expected = .ok headerSortType)
+    (leftFrame : Frame d (.lam domL bodyL mL)) (rightFrame : Frame d (.lam domR bodyR mR))
+    (leftContext : CtxOk M.internal.base2 φ d Δ (.lam domL bodyL mL))
+    (rightContext : CtxOk M.internal.base2 φ d Δ (.lam domR bodyR mR))
+    (leftInfer : inferTypeCore .verified env FL d (.lam domL bodyL mL) = .ok leftType)
+    (rightInfer : inferTypeCore .verified env FR d (.lam domR bodyR mR) = .ok rightType)
+    (leftCheck : isDefEqCore .verified env CL d leftType expected = .ok true)
+    (rightCheck : isDefEqCore .verified env CR d rightType expected = .ok true) :
+    ∀ ρ : BVarIdx → V, Sat V Δ ρ → (pwBit φ mL.pw = 0 ↔ pwBit φ mR.pw = 0) := by
+  obtain ⟨ha, _, headerRead, _, _, _, headerGrade, _, _⟩ :=
+    infer_package_at M φ headerFrame headerContext headerInfer
+  exact lambda_bits_of_header M φ headerFrame headerContext headerRead headerGrade
+    leftFrame rightFrame leftContext rightContext leftInfer rightInfer leftCheck rightCheck
+
 /-- Reading functionality turns witnessed pointwise equality into the
 fixed-context induction motive. No existence is inferred from that motive. -/
 theorem eqAt_of_readings {m : EnvModel V env} {φ : LevelParam → Nat} {d : Nat}
@@ -123,21 +143,18 @@ theorem eqAt_of_readings {m : EnvModel V env} {φ : LevelParam → Nat} {d : Nat
   rw [← leftEq, ← rightEq]
   exact agree ρ sat
 
-/-- INTERNAL same-domain lambda context constructor. The raw Frame/CtxOk
-and body EqAt are the proof induction invariant; the local fronts/header
-are actual runs. Checked frames, contexts, reads and grades are derived.
-The result is meaningful only at valid context valuations, and does not
-assert a global marker equation, whole syntactic DefEq or public Denotes
-of open terms. Local expected-type checks must still be produced by the
-actual checker trace or a proved typed transport, not assumed from a root
-front or invented as new runtime checks. -/
-theorem checked_lambda_congr_at (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
+/-- INTERNAL same-domain constructor with a PROVED typed-header package.
+The application producer supplies it from real function inference
+and WHNF. It is not an unproved header assumption at a compiler endpoint.
+The raw Frame/Ctx and body EqAt remain the context-induction invariant;
+the result is internal witnessed reading/grade/equality under Sat only. -/
+theorem checked_lambda_congr_of_header (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
     {d : Nat} {Δ : List AnnotTerm}
-    {rawHeader expected headerSortType rawL rawR dom bodyL bodyR : Ix.Kernel.Expr md}
-    {mL mR : BinderMeta} {FA FT : Nat}
-    (headerFrame : Frame d rawHeader) (headerContext : CtxOk M.internal.base2 φ d Δ rawHeader)
-    (headerAnn : annotateCore .verified env FA d rawHeader = .ok expected)
-    (headerInfer : inferTypeCore .verified env FT d expected = .ok headerSortType)
+    {expected rawL rawR dom bodyL bodyR : Ix.Kernel.Expr md} {headerA : AnnotTerm}
+    {mL mR : BinderMeta}
+    (headerFrame : Frame d expected) (headerContext : CtxOk M.internal.base2 φ d Δ expected)
+    (headerRead : denoteMeta M.internal.base2.acval env φ d expected = some headerA)
+    (headerGrade : Graded V Δ headerA)
     (leftFrame : Frame d rawL) (rightFrame : Frame d rawR)
     (leftContext : CtxOk M.internal.base2 φ d Δ rawL)
     (rightContext : CtxOk M.internal.base2 φ d Δ rawR)
@@ -153,8 +170,6 @@ theorem checked_lambda_congr_at (M : Cached.StrongModel V env) (φ : LevelParam 
       EqAt M.internal.base2 φ d Δ (.lam dom bodyL mL) (.lam dom bodyR mR) := by
   obtain ⟨FAL, FIL, FCL, leftType, leftAnn, leftInfer, leftCheck⟩ := left
   obtain ⟨FAR, FIR, FCR, rightType, rightAnn, rightInfer, rightCheck⟩ := right
-  obtain ⟨checkedHeaderFrame, checkedHeaderContext⟩ :=
-    annotate_context M φ headerFrame headerContext headerAnn
   obtain ⟨checkedLeftFrame, checkedLeftContext⟩ :=
     annotate_context M φ leftFrame leftContext leftAnn
   obtain ⟨checkedRightFrame, checkedRightContext⟩ :=
@@ -163,7 +178,7 @@ theorem checked_lambda_congr_at (M : Cached.StrongModel V env) (φ : LevelParam 
     infer_package_at M φ checkedLeftFrame checkedLeftContext leftInfer
   obtain ⟨ra, _, rightRead, _, _, _, rightGrade, _, _⟩ :=
     infer_package_at M φ checkedRightFrame checkedRightContext rightInfer
-  have bits := lambda_bits_at M φ checkedHeaderFrame checkedHeaderContext headerInfer
+  have bits := lambda_bits_of_header M φ headerFrame headerContext headerRead headerGrade
     checkedLeftFrame checkedRightFrame checkedLeftContext checkedRightContext
     leftInfer rightInfer leftCheck rightCheck
   have agree : ∀ ρ : BVarIdx → V, Sat V Δ ρ → interp V ρ la = interp V ρ ra := by
@@ -184,5 +199,35 @@ theorem checked_lambda_congr_at (M : Cached.StrongModel V env) (φ : LevelParam 
       (CtxOk.openS checkedRightContext.lam_ty checkedRightContext.lam_body domainReadL domainGrade)
       bodyReadL bodyReadR bodyGradeL bodyGradeR (cons x ρ) (Sat_cons V sat member)
   exact ⟨la, ra, leftRead, rightRead, leftGrade, rightGrade, eqAt_of_readings leftRead rightRead agree⟩
+
+/-- The existing executable-header constructor. No local expected-type
+check is invented: the caller retains the actual header/value fronts and
+the same internal context/body invariant as before. -/
+theorem checked_lambda_congr_at (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
+    {d : Nat} {Δ : List AnnotTerm}
+    {rawHeader expected headerSortType rawL rawR dom bodyL bodyR : Ix.Kernel.Expr md}
+    {mL mR : BinderMeta} {FA FT : Nat}
+    (headerFrame : Frame d rawHeader) (headerContext : CtxOk M.internal.base2 φ d Δ rawHeader)
+    (headerAnn : annotateCore .verified env FA d rawHeader = .ok expected)
+    (headerInfer : inferTypeCore .verified env FT d expected = .ok headerSortType)
+    (leftFrame : Frame d rawL) (rightFrame : Frame d rawR)
+    (leftContext : CtxOk M.internal.base2 φ d Δ rawL)
+    (rightContext : CtxOk M.internal.base2 φ d Δ rawR)
+    (left : LocalFront env d rawL expected (.lam dom bodyL mL))
+    (right : LocalFront env d rawR expected (.lam dom bodyR mR))
+    (bodyIH : ∀ da, denoteMeta M.internal.base2.acval env φ d dom = some da →
+      EqAt M.internal.base2 φ (d + 1) (da :: Δ)
+        (bodyL.instantiate1 (.fvar d dom)) (bodyR.instantiate1 (.fvar d dom))) :
+    ∃ la ra,
+      denoteMeta M.internal.base2.acval env φ d (.lam dom bodyL mL) = some la ∧
+      denoteMeta M.internal.base2.acval env φ d (.lam dom bodyR mR) = some ra ∧
+      Graded V Δ la ∧ Graded V Δ ra ∧
+      EqAt M.internal.base2 φ d Δ (.lam dom bodyL mL) (.lam dom bodyR mR) := by
+  obtain ⟨checkedHeaderFrame, checkedHeaderContext⟩ :=
+    annotate_context M φ headerFrame headerContext headerAnn
+  obtain ⟨ha, _, headerRead, _, _, _, headerGrade, _, _⟩ :=
+    infer_package_at M φ checkedHeaderFrame checkedHeaderContext headerInfer
+  exact checked_lambda_congr_of_header M φ checkedHeaderFrame checkedHeaderContext headerRead headerGrade
+    leftFrame rightFrame leftContext rightContext left right bodyIH
 
 end Ix.Cert.ContextValues

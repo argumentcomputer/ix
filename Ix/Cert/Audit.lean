@@ -5713,3 +5713,19 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "actual application argument fronts"
     (#[`function_domain, `paired_app_argument_fronts].map (`Ix.Cert.ApplicationFronts ++ ·))
+
+/-! ## Consumers of the application producer's typed header
+
+The factored marker/congruence proofs consume the proved domain package.
+The direct lambda-argument connection derives every header fact and both
+local fronts from actual paired app calls. Existing executable-header
+interfaces remain wrappers; no domain check or runtime checker is invented. -/
+
+/-- info: [cert-audit] produced typed header consumers: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "produced typed header consumers"
+    #[`Ix.Cert.ContextValues.lambda_bits_of_header,
+      `Ix.Cert.ContextValues.checked_lambda_congr_of_header,
+      `Ix.Cert.ApplicationFronts.paired_app_lambda_arguments]

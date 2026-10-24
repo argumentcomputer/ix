@@ -120,4 +120,42 @@ theorem paired_app_argument_fronts (M : Cached.StrongModel V env) (φ : LevelPar
     ⟨far, fir, fir, argTypeR, argAnnR, argInferR, argCheckR⟩,
     domainFrame, domainContext, da, domainRead, domainGrade⟩
 
+/-- Explicit producer-to-consumer connection for actual lambda arguments.
+The caller supplies enclosing annotation/full inference, raw context
+invariants and the body comparison IH. BOTH local fronts and ALL header
+facts are derived by paired_app_argument_fronts; no domain inference or
+unproved header package is an input. This returns the argument comparison,
+leaving whole-application/O6 production composition separate. -/
+theorem paired_app_lambda_arguments (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
+    {d : Nat} {Δ : List AnnotTerm}
+    {rawFn rawArgL rawArgR fnL fnR dom bodyL bodyR typeL typeR : Ix.Kernel.Expr md}
+    {mL mR : BinderMeta} {FAL FAR FIL FIR : Nat}
+    (frameL : Frame d (.app rawFn rawArgL)) (frameR : Frame d (.app rawFn rawArgR))
+    (contextL : CtxOk M.internal.base2 φ d Δ (.app rawFn rawArgL))
+    (contextR : CtxOk M.internal.base2 φ d Δ (.app rawFn rawArgR))
+    (annL : annotateCore .verified env FAL d (.app rawFn rawArgL) =
+      .ok (.app fnL (.lam dom bodyL mL)))
+    (annR : annotateCore .verified env FAR d (.app rawFn rawArgR) =
+      .ok (.app fnR (.lam dom bodyR mR)))
+    (inferL : inferTypeCore .verified env FIL d (.app fnL (.lam dom bodyL mL)) = .ok typeL)
+    (inferR : inferTypeCore .verified env FIR d (.app fnR (.lam dom bodyR mR)) = .ok typeR)
+    (bodyIH : ∀ da, denoteMeta M.internal.base2.acval env φ d dom = some da →
+      EqAt M.internal.base2 φ (d + 1) (da :: Δ)
+        (bodyL.instantiate1 (.fvar d dom)) (bodyR.instantiate1 (.fvar d dom))) :
+    ∃ la ra,
+      denoteMeta M.internal.base2.acval env φ d (.lam dom bodyL mL) = some la ∧
+      denoteMeta M.internal.base2.acval env φ d (.lam dom bodyR mR) = some ra ∧
+      Graded V Δ la ∧ Graded V Δ ra ∧
+      EqAt M.internal.base2 φ d Δ (.lam dom bodyL mL) (.lam dom bodyR mR) := by
+  obtain ⟨fnA, argL, argR, _, expected, _, _, shapeL, shapeR, _, _, _, _, _,
+      rawFrameL, rawFrameR, rawContextL, rawContextR, frontL, frontR,
+      headerFrame, headerContext, ha, headerRead, headerGrade⟩ :=
+    paired_app_argument_fronts M φ frameL frameR contextL contextR annL annR inferL inferR
+  have argEqL := (Ix.Kernel.Expr.app.inj shapeL).2
+  have argEqR := (Ix.Kernel.Expr.app.inj shapeR).2
+  subst argL
+  subst argR
+  exact checked_lambda_congr_of_header M φ headerFrame headerContext headerRead headerGrade
+    rawFrameL rawFrameR rawContextL rawContextR frontL frontR bodyIH
+
 end Ix.Cert.ApplicationFronts
