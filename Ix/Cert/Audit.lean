@@ -50,6 +50,7 @@ import Ix.Cert.CheckedBetaSpine
 import Ix.CompileCert.O6Values
 import Ix.CompileCert.O6Opened
 import Ix.CompileCert.O6LambdaValues
+import Ix.Cert.ContextValues
 
 /-! # The certification statements, frozen
 
@@ -5682,3 +5683,18 @@ run_cmd do
   checkRoots (tag := "cert-audit") "O6 whole lambda values"
     (#[`lam_mem_pi_bits, `infer_package, `lambda_markers_eq_of_fronts].map
       (`Ix.Cert.LambdaMarkers ++ ·) ++ #[`Ix.CompileCert.O6LambdaValues.o6_rec_under_lam_values])
+
+/-! ## Internal context composition under valid valuations
+
+Actual local checks transport the raw Frame/Ctx invariant and supply
+witnessed readings/grades. Same-domain lambda congruence uses the body IH
+and bit agreement only under Sat, without a context inhabitant or global
+marker equality. Local check producers remain an explicit proof obligation. -/
+
+/-- info: [cert-audit] checked context lambda congruence: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked context lambda congruence"
+    (#[`annotate_context, `infer_package_at, `lambda_bits_at,
+      `eqAt_of_readings, `checked_lambda_congr_at].map (`Ix.Cert.ContextValues ++ ·))
