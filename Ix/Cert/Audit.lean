@@ -48,6 +48,7 @@ import Ix.Cert.AnnotatedBeta
 import Ix.CompileCert.O6Annotation
 import Ix.Cert.CheckedBetaSpine
 import Ix.CompileCert.O6Values
+import Ix.CompileCert.O6Opened
 
 /-! # The certification statements, frozen
 
@@ -5649,3 +5650,19 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "O6 checked values"
     #[`Ix.CompileCert.O6Values.o6_rec_values]
+
+/-! ## Actual O6 body beneath one enclosing lambda
+
+Whole annotation/inference runs derive the common opener, reopening,
+Frame and inner inference. The real opened selector layout yields certified
+body Red/DefEq at depth one. Outer marker agreement and whole-lambda values
+remain separate; no final closed-occurrence restriction is introduced. -/
+
+/-- info: [cert-audit] O6 actual opened bodies: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 actual opened bodies"
+    (#[`annotation_reopen, `trace_beta_at, `checked_spine_at, `OpenAnn.unique,
+      `selectors_open_annotated, `opened_layout,
+      `o6_rec_under_lam_opened_red].map (`Ix.CompileCert.O6Opened ++ ·))
