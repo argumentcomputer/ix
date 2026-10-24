@@ -53,6 +53,7 @@ public import Ix.AuxGen.SourceService
 public import Ix.AuxGen.IxcScope
 public import Ix.AuxGen.GenerationOnly
 public import Ix.Compile.SourceContract.Transport
+public import Ix.Compile.SourceGraph.Prepass
 public import Ix.Resource.Addressed
 public section
 
@@ -2047,6 +2048,9 @@ structure LeanPipelineOut where
   /-- The condensation the driver compiled (the declaration groups and their
       references), for the changed set (`Ix.Compile.ChangedSet.ofCompile`). -/
   blocks : Ix.CondensedBlocks := default
+  /-- Complete original-input dependency facts, before grounding; no acceptance
+      verdict. `none` is unavailable, while `some {}` is an empty input. -/
+  sourceNodes? : Option (Ix.Map Name Ix.Compile.SourceGraph.Node) := none
 
 /-- Run the full pure-Lean compile pipeline over a constant list.
 
@@ -2098,23 +2102,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --     checks read only name-existence and is-it-a-ctor
   --     (`groundExpr`/`groundConst`), so two shared placeholder
   --     constants stand in for every value.
-  let placeholderCnst : Ix.ConstantVal :=
-    ⟨.mkAnon, #[], Ix.Expr.mkSort Ix.Level.mkZero⟩
-  let phAxiom : Ix.ConstantInfo :=
-    .axiomInfo { cnst := placeholderCnst, isUnsafe := false }
-  let phCtor : Ix.ConstantInfo := .ctorInfo
-    { cnst := placeholderCnst, induct := .mkAnon, cidx := 0
-      numParams := 0, numFields := 0, isUnsafe := false }
-  let mut leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo) := {}
-  let mut thinConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
-  let mut ixArr : Array (Ix.Name × Lean.ConstantInfo) := #[]
-  for (ln, lci) in constArr do
-    let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
-    leanByIx := leanByIx.insert ixn (ln, lci)
-    thinConsts := thinConsts.insert ixn
-      (if lci matches .ctorInfo _ then phCtor else phAxiom)
-    ixArr := ixArr.push (ixn, lci)
-  let thinEnv : Ix.Environment := { consts := thinConsts }
+  let ⟨leanByIx, thinConsts, ixArr⟩ ← IO.lazyPure fun _ =>
+    Ix.Compile.SourceGraph.Prepass.run constArr
   let t ← tick s!"canon names ({ixArr.size} consts)" t0
   -- 1b/2/3a. Streamed canon (chunk-parallel): canonicalize, take refs +
   --     immediate ground error + digest. PROOF bodies (`thmInfo` /
@@ -2126,42 +2115,11 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --     retention) are KEPT and materialized as the shared `consts`
   --     map: one shared structure instead of a fresh unshared copy per
   --     on-demand read.
-  let chunkSize := max 1 ((ixArr.size + numWorkers - 1) / numWorkers)
-  let chunkArr := Ix.CanonM.chunks ixArr chunkSize
-  let tasks := chunkArr.map fun chunk =>
-    Task.spawn fun _ => Id.run do
-      let mut state : Ix.CanonM.CanonState := {}
-      let mut out : Array
-        (Ix.Name × Ix.Set Ix.Name × Option Ix.GroundError × UInt64
-          × Option Ix.ConstantInfo × Bool) := #[]
-      for (ixn, lci) in chunk do
-        let (ci, state') := StateT.run (Ix.CanonM.canonConst lci) state
-        state := state'
-        let (refs, _) :=
-          Ix.GraphM.run { consts := {} } .init (Ix.graphConst ci)
-        let groundErr? := match Ix.groundConstCheck ci thinEnv with
-          | .ok _ => none
-          | .error e => some e
-        let keep? := match ci with
-          | .thmInfo _ | .opaqueInfo _ => none
-          | _ => some ci
-        out := out.push (ixn, refs, groundErr?, hash ci, keep?,
-          sourceHasReservedMetadata lci)
-      out
-  let mut outRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
-  let mut immediate : Ix.Map Ix.Name Ix.GroundError := {}
-  let mut digests : Std.HashMap Ix.Name UInt64 := {}
-  let mut codeConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
-  let mut reservedMetadata : Array Ix.Name := #[]
-  for task in tasks do
-    for (n, refs, gerr?, dig, keep?, reserved) in task.get do
-      if reserved then reservedMetadata := reservedMetadata.push n
-      outRefs := outRefs.insert n refs
-      if let some e := gerr? then
-        immediate := immediate.insert n e
-      digests := digests.insert n dig
-      if let some ci := keep? then
-        codeConsts := codeConsts.insert n ci
+  -- Destructure immediately: fallback retains only leanByIx; temporary thin,
+  -- label and task storage must not escape through a captured aggregate.
+  let ⟨⟨sourceNodes, codeConsts⟩, outRefs, immediate, digests, reservedMetadata⟩ ←
+    IO.lazyPure fun _ => Ix.Compile.SourceGraph.Stream.runLabelled
+      { consts := thinConsts } sourceHasReservedMetadata ixArr numWorkers
   let t ← tick s!"canon+graph+ground ({outRefs.size} nodes, \
 {codeConsts.size} code kept, {outRefs.size - codeConsts.size} proofs streamed)" t
   let mut inRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
@@ -2295,7 +2253,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         digests
         annotated
         source
-        blocks := condensed }
+        blocks := condensed
+        sourceNodes? := some sourceNodes }
 
 /-- Explicit frontend boundary: resolve occurrence contracts before
 canonicalization. Resources are validated by the caller's post-step

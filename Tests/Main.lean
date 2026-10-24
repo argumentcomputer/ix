@@ -96,6 +96,7 @@ import Tests.Ix.AuxGen.ClosureProbe
 import Tests.Ix.AuxGen.AcceptanceProbe
 import Tests.Ix.AuxGen.TierService
 import Tests.Ix.AuxGen.CheckedGeneration
+import Tests.Ix.Compile.SourceGraph
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -286,6 +287,7 @@ def registry : List Entry := [
   .suite "aux-dump-inputs" .primary Tests.Compile.AuxGenDiff.suite,
   -- the compile drivers refuse a condensation block without a reference set
   .suite "compile-driver-input" .primary Tests.Ix.Compile.DriverInput.suite,
+  .runner "compile-source-graph" .primary Tests.Ix.Compile.SourceGraph.run,
   .suite "local-blob" .primary Tests.Ix.Compile.LocalBlob.suite,
   .suite "compiler-index-safety" .primary Tests.Ix.Compile.IndexSafety.suite,
   -- the aux kernel bridges refuse what they cannot convert (D-12)
