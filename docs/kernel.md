@@ -56,10 +56,15 @@ relation between nominal and quotient value models.
 The command-line paths are also distinct. `ix compile` runs the Rust
 compiler. `ix compile-lean` runs the Lean driver followed by
 `compileLeanInputValidated` in
-[`Ix/CompileResource.lean`](../Ix/CompileResource.lean): its validation is
-the resource post-step, a no-op without semantic contracts or a resource
-profile. It does not invoke `Ix.Cert.checkReport` or the remaining CQ5.4
-checks. `--rust-check` compares the two serialized outputs for that input;
+[`Ix/CompileResource.lean`](../Ix/CompileResource.lean): it validates resources
+when semantic contracts or a resource profile require them, then checks
+original-input publication/failure accounting. Valid partial output remains
+allowed; missing, double or outside-input failure accounting is rejected.
+These checks rely on the actual compiler's retained input facts; they do not
+authenticate arbitrary caller-supplied fact maps. Bare compiler APIs remain
+unvalidated. This path does not invoke the full `Ix.Cert.checkReport` or the
+remaining CQ5.4 admission and Source-form typing checks. `--rust-check`
+compares the two serialized outputs for that input;
 byte parity is empirical evidence, not a universal compiler-refinement
 theorem. Metadata, including the records used for source reconstruction,
 is outside the certification claim.
