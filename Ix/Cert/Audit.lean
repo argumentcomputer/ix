@@ -49,6 +49,7 @@ import Ix.CompileCert.O6Annotation
 import Ix.Cert.CheckedBetaSpine
 import Ix.CompileCert.O6Values
 import Ix.CompileCert.O6Opened
+import Ix.CompileCert.O6LambdaValues
 
 /-! # The certification statements, frozen
 
@@ -5666,3 +5667,18 @@ run_cmd do
     (#[`annotation_reopen, `trace_beta_at, `checked_spine_at, `OpenAnn.unique,
       `selectors_open_annotated, `opened_layout,
       `o6_rec_under_lam_opened_red].map (`Ix.CompileCert.O6Opened ++ ·))
+
+/-! ## Whole-lambda markers and actual O6 public values
+
+Two real value fronts against one checked header force marker agreement
+inside each supplied strong model, including empty binder domains. Actual
+body conversion and both reopening identities then give whole-lambda
+DefEq/public values. No model existence or context inhabitant is assumed. -/
+
+/-- info: [cert-audit] O6 whole lambda values: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 whole lambda values"
+    (#[`lam_mem_pi_bits, `infer_package, `lambda_markers_eq_of_fronts].map
+      (`Ix.Cert.LambdaMarkers ++ ·) ++ #[`Ix.CompileCert.O6LambdaValues.o6_rec_under_lam_values])
