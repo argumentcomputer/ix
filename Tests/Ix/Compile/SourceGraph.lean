@@ -3,6 +3,7 @@ import Ix.EnvScope
 import Ix.CompileDriver
 import Ix.Cert.SourcePrepass
 import Tests.Ix.Compile.GroundRefusal
+import Tests.Ix.Compile.SourceAccounting
 import Lean.Elab.Command
 
 namespace Tests.Ix.Compile.SourceGraph
@@ -149,6 +150,7 @@ def run : IO UInt32 := do
   facts many 8 streamed
   need (streamed.cenv.ungrounded.isEmpty && streamed.cenv.env.consts.isEmpty &&
     streamed.cenv.unmaterialized == 128) "streamed-body control retained canonical code or failed"
+  SourceAccounting.run
   IO.println "source graph IO: complete/empty/failure facts; materialized reference; worker bytes; streamed fallback; digests/counts"
   return 0
 

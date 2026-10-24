@@ -1,16 +1,29 @@
 import Ix.Cert.SourceAccounting
+import Ix.Cert.SourceAccountingPost
 import Ix.Meta
 import Ix.EnvScope
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Kernel.TierIndDefs
+import Tests.Ix.ContractPipeline
 
 namespace Tests.Ix.Compile.SourceAccounting
 open _root_.Ix (Name)
 open _root_.Ix.Compile.SourceGraph.Accounting
 
+run_cmd do
+  let env ← Lean.getEnv
+  for (caller, callee) in #[(`Ix.CompileM.resourcePostStep, `Ix.Compile.SourceGraph.Accounting.check),
+      (`Ix.CompileM.compileLeanInputValidated, `Ix.CompileM.resourcePostStep),
+      (`Ix.CompileM.compileLeanConstsValidated, `Ix.CompileM.resourcePostStep)] do
+    let some (.defnInfo d) := env.find? caller | throwError "caller unavailable: {caller}"
+    unless d.value.getUsedConstantsAsSet.contains callee do throwError "{caller} no longer calls {callee}"
+
 def ordinary : Nat := 7
 private def need (ok : Bool) (why : String) : IO Unit := unless ok do throw (IO.userError why)
+private def postError (out : _root_.Ix.CompileM.LeanPipelineOut) (want : String) : IO Unit :=
+  need (match _root_.Ix.CompileM.resourcePostStep out with | .error got => got == want | .ok _ => false)
+    s!"post-step did not preserve expected error: {want}"
 private def refuses (want : Issue) : Except Issue Unit → Bool
   | .error got => decide (got = want)
   | .ok _ => false
@@ -38,6 +51,7 @@ private def audit (label : String) (out : _root_.Ix.CompileM.LeanPipelineOut) : 
   for n in report.uncovered ++ report.outside do
     IO.println s!"  anomaly {n.pretty}: input={nodes.contains n} published={named.contains n} failure={repr (failed.get? n)}"
   need (check nodes named failed |>.isOk) s!"genuine final producer accounting anomaly: {label}"
+  IO.ofExcept (_root_.Ix.CompileM.resourcePostStep out)
   return regenerated
 
 private def mutations (out partialOut : _root_.Ix.CompileM.LeanPipelineOut) : IO Unit := do
@@ -48,11 +62,18 @@ private def mutations (out partialOut : _root_.Ix.CompileM.LeanPipelineOut) : IO
       if named.contains n && !failed.contains n then some n else none)
     | throw (IO.userError "mutation requires a published original")
   need (refuses (.neither n) (check nodes (named.erase n) failed)) "missing-publication mutation escaped"
+  postError { out with env := { out.env with named := named.erase n } }
+    s!"source accounting: '{n.pretty}' is neither published nor recorded as failed"
   need (refuses (.both n) (check nodes named (failed.insert n "planted failure"))) "both mutation escaped"
+  postError { out with cenv := { out.cenv with ungrounded := failed.insert n "planted failure" } }
+    s!"source accounting: '{n.pretty}' is both published and recorded as failed"
   let outside := Name.fromLeanName `Accounting.absent
   need (!nodes.contains outside) "outside mutation is not outside the input"
   need (refuses (.outside outside) (check nodes named (failed.insert outside "planted outsider"))) "outside failure escaped"
+  postError { out with cenv := { out.cenv with ungrounded := failed.insert outside "planted outsider" } }
+    s!"source accounting: failure name '{outside.pretty}' is outside the original input"
   need ((check nodes (named.insert outside { addr := default }) failed).isOk) "generated non-input publication rejected"
+  IO.ofExcept (_root_.Ix.CompileM.resourcePostStep { out with env := { out.env with named := named.insert outside { addr := default } } })
   -- A retained error under a structural alias stays in the original key
   -- class. This accounting control makes no grounding-history claim.
   let aliasName : Name := .str .mkAnon "retained-error" n.getHash
@@ -67,6 +88,10 @@ private def mutations (out partialOut : _root_.Ix.CompileM.LeanPipelineOut) : IO
   need (!partialOut.env.named.contains bad) "partial negative starts already both"
   need (refuses (.both bad) (check partialNodes (partialOut.env.named.insert bad { addr := default }) partialOut.cenv.ungrounded))
     "failed-only to both mutation escaped"
+  postError { partialOut with env := { partialOut.env with named := partialOut.env.named.insert bad { addr := default } } }
+    s!"source accounting: '{bad.pretty}' is both published and recorded as failed"
+  postError { partialOut with annotated := true, sourceNodes? := none }
+    "resource compilation requires the complete requested closure"
   let f : _root_.Ix.Cert.Failures :=
     { ungrounded := .ofList [(n, "ground")], blocks := .ofList [(n, "block"), (outside, "other")] }
   need (f.toMap.get? n == some "ground" && [n, outside].all (fun k => f.toMap.contains k == f.failed k))
@@ -78,6 +103,14 @@ def run : IO Unit := do
   let empty ← compile env []
   let _ ← audit "empty" empty
   need ((facts empty).isOk && !(facts { empty with sourceNodes? := none }).isOk) "unavailable facts became empty"
+  postError { empty with sourceNodes? := none } "source accounting: original input facts are unavailable"
+  let tiny : Lean.ConstantInfo := .axiomInfo { name := `Accounting.tiny, levelParams := [], type := .sort .zero, isUnsafe := false }
+  for xs in [[], [(tiny.name, tiny)]] do
+    let bare ← compile env xs
+    let input ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanInputValidated (.plain xs) (numWorkers := 1))
+    let consts ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConstsValidated xs (numWorkers := 1))
+    need (input.bytes == bare.bytes && consts.bytes == bare.bytes && input.sourceNodes?.isSome && consts.sourceNodes?.isSome)
+      "validated wrapper changed successful bytes or discarded facts"
   let raw := _root_.Ix.EnvScope.collectDeps env [``ordinary, `Nat.rec, `Nat.brecOn, `List.rec]
   let normal ← compile env raw
   let regenerated ← audit "ordinary/regenerated" normal
@@ -102,6 +135,13 @@ def run : IO Unit := do
     need (tier.env.named.contains (Name.fromLeanName n) && !tier.cenv.ungrounded.contains (Name.fromLeanName n))
       "typed partial/unsafe input was not positively published"
   mutations normal partialOut
+  let invalid ← IO.ofExcept ((Tests.ContractPipeline.input .shared).mapError toString)
+  let invalidOut ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanInput invalid (numWorkers := 1))
+  need (invalidOut.annotated && invalidOut.cenv.ungrounded.isEmpty) "resource precedence fixture did not reach validation"
+  let .error prior := _root_.Ix.Resource.validate invalidOut.env (_root_.Ix.Resource.standardProfile invalidOut.env)
+    | throw (IO.userError "resource precedence fixture unexpectedly validated")
+  postError { invalidOut with sourceNodes? := none } prior
+  IO.println "accounting post-step: pinned errors; both validated wrappers; completeness/resource errors retain precedence"
 
 /-- info: 'Ix.Cert.SourceAccounting.check_success_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.check_success_iff
@@ -115,4 +155,8 @@ def run : IO Unit := do
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_outside_empty_iff
 /-- info: 'Ix.Cert.SourceAccounting.produced_published' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_published
+/-- info: 'Ix.Cert.SourceAccountingPost.checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccountingPost.checked
+/-- info: 'Ix.Cert.SourceAccountingPost.accounted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccountingPost.accounted
 end Tests.Ix.Compile.SourceAccounting
