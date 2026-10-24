@@ -270,4 +270,158 @@ theorem checked_suffix_stored_slots {ev : Evidences md} {F : Nat}
       have presentMid : (mid.find? T).isSome = true := by rw [growth.persist found]; rfl
       exact (next T presentMid j).trans (first T present j)
 
+variable {before after : Env md}
+
+theorem query_eq (lookup : FindPreserved before after) {n : Key md}
+    (present : (before.find? n).isSome = true) : after.find? n = before.find? n := by
+  cases found : before.find? n with
+  | none => rw [found] at present; cases present
+  | some ci => exact lookup found
+
+/-- Guard equality is derived only when this subject's support names are
+already present. Literal support may still grow elsewhere. -/
+theorem nat_guard_eq (lookup : FindPreserved before after)
+    (n : (before.find? natName).isSome = true) (z : (before.find? natZeroName).isSome = true)
+    (s : (before.find? natSuccName).isSome = true) : natLitSupported after = natLitSupported before := by
+  unfold natLitSupported
+  rw [query_eq lookup n, query_eq lookup z, query_eq lookup s]
+
+theorem string_queries_eq (lookup : FindPreserved before after) {s : String}
+    (resolves : (Ix.Kernel.Expr.lit (.strVal s)).constsResolve before = true) :
+    strLitSupported after = strLitSupported before ∧
+    Ix.Kernel.Verify.levelParamsAt after listNilName = Ix.Kernel.Verify.levelParamsAt before listNilName ∧
+    Ix.Kernel.Verify.levelParamsAt after listConsName = Ix.Kernel.Verify.levelParamsAt before listConsName := by
+  simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at resolves
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨n, z⟩, s⟩, st⟩, ofList⟩, list⟩, nil⟩, cons⟩, char⟩, ofNat⟩ := resolves
+  refine ⟨?_, (levelParamsAt_congr lookup nil).symm, (levelParamsAt_congr lookup cons).symm⟩
+  unfold strLitSupported
+  rw [nat_guard_eq lookup n z s, query_eq lookup st, query_eq lookup ofList, query_eq lookup list,
+    query_eq lookup nil, query_eq lookup cons, query_eq lookup char, query_eq lookup ofNat]
+
+/-- Every resolving subject has the same reading at the fixed acval.
+Resolution supplies the literal queries and the OLD projection heads;
+both table and pair-fallback branches are retained. No input reading,
+model, grade, global guard equality or global absence premise is assumed. -/
+theorem resolving_reading_eq
+    (acval : Key md → (LevelParam → Nat) → AnnotTerm) (φ : LevelParam → Nat)
+    (d : Nat) (e : Ix.Kernel.Expr md) (lookup : FindPreserved before after)
+    (slots : StoredHeadSlots before after) (resolves : e.constsResolve before = true) :
+    denoteMeta acval before φ d e = denoteMeta acval after φ d e := by
+  revert resolves
+  induction d, e using denoteMeta.induct (env := before) with
+  | case1 d u => intro _; rw [denoteMeta, denoteMeta]
+  | case2 d idx ty => intro _; rw [denoteMeta, denoteMeta]
+  | case3 d n us ci found arity => intro _; rw [denoteMeta, found, denoteMeta, lookup found]
+  | case4 d n us ci found arity => intro _; rw [denoteMeta, found, denoteMeta, lookup found]
+  | case5 d n us absent => intro h; simp [Ix.Kernel.Expr.constsResolve, absent] at h
+  | case6 d ty body mb ihty ihbody =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h
+    rw [denoteMeta, denoteMeta, ihty h.1, ihbody (Ix.Kernel.Expr.constsResolve_instantiate1 h.1 0 h.2)]
+  | case7 d ty body mb ihty ihbody =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h
+    rw [denoteMeta, denoteMeta, ihty h.1, ihbody (Ix.Kernel.Expr.constsResolve_instantiate1 h.1 0 h.2)]
+  | case8 d f a ihf iha =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h
+    rw [denoteMeta, denoteMeta, ihf h.1, iha h.2]
+  | case9 d ty val body => intro _; rw [denoteMeta, denoteMeta]
+  | case10 d sn j e ih =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h
+    rw [denoteMeta, denoteMeta, ih h.2, slots sn h.1 j]
+  | case11 d n support =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h
+    rw [denoteMeta, denoteMeta, nat_guard_eq lookup h.1.1 h.1.2 h.2]
+  | case12 d n support =>
+    intro h
+    simp only [Ix.Kernel.Expr.constsResolve, Bool.and_eq_true] at h
+    rw [denoteMeta, denoteMeta, nat_guard_eq lookup h.1.1 h.1.2 h.2]
+  | case13 d s support =>
+    intro h
+    have queries := string_queries_eq lookup h
+    rw [denoteMeta, denoteMeta, queries.1, queries.2.1, queries.2.2]
+  | case14 d s support =>
+    intro h
+    have queries := string_queries_eq lookup h
+    rw [denoteMeta, denoteMeta, queries.1, queries.2.1, queries.2.2]
+  | case15 d x hs hfv hc hpi hlam happ hlet hproj hnat hstr =>
+    intro _
+    cases x with
+    | bvar i => rw [denoteMeta.eq_def, denoteMeta.eq_def]
+    | sort u => exact absurd rfl (hs u)
+    | fvar i ty => exact absurd rfl (hfv i ty)
+    | const n us => exact absurd rfl (hc n us)
+    | forallE ty b mb => exact absurd rfl (hpi ty b mb)
+    | lam ty b mb => exact absurd rfl (hlam ty b mb)
+    | app f a => exact absurd rfl (happ f a)
+    | letE ty v b mb => exact absurd rfl (hlet ty v b mb)
+    | proj sn i e => exact absurd rfl (hproj sn i e)
+    | lit l => cases l with
+      | natVal n => exact absurd rfl (hnat n)
+      | strVal s => exact absurd rfl (hstr s)
+
 end Ix.Cert.PrefixConstType
+
+namespace Ix.Cert.ReferenceFronts
+
+open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model Ix.Kernel.SetTheory
+open Ix.Kernel.Model.Rules (Graded)
+open Ix.Cert.PrefixConstType
+
+universe w
+variable {md : Mode} {ev : Evidences md} {ds : List (Declaration md)}
+  {envA before : Env md} {i F : Nat} {cv : Ix.Kernel.ConstantVal md}
+  {raw expected checked : Ix.Kernel.Expr md} {hint : ReducibilityHint}
+
+/-- The actual indexed current/suffix run supplies old-head slot stability;
+it is not a caller-supplied environment or missing-slot agreement. -/
+theorem DefinitionFrontAt.stored_head_slots
+    (front : DefinitionFrontAt ev ds envA i cv raw hint F before expected checked) :
+    StoredHeadSlots before envA := by
+  obtain ⟨_, _, _, step, suffix, _, _, _⟩ := front
+  have run : (.defnDecl cv raw hint :: ds.drop (i + 1)).foldlM
+      (checkDecl .verified (fueledOps .verified F) ev) before = .ok envA := by
+    rw [List.foldlM_cons, step]
+    exact suffix
+  exact checked_suffix_stored_slots run
+
+/-- UNIVERSAL constant typing at the exact supplied final interpretation.
+Actual prefix WF gives resolution of every stored header; level
+instantiation preserves it. The same final M supplies the arbitrary-depth,
+arbitrary-level reading/grade/membership, transported by the derived
+reading equation. Computed/pinned headers require no invented inference.
+The existing tower exclusion and all other supplier obligations remain. -/
+theorem DefinitionFrontAt.final_prefix_const_ty
+    (front : DefinitionFrontAt ev ds envA i cv raw hint F before expected checked)
+    (V : Type w) [SetTheory V] (M : Cached.StrongModel V envA) :
+    ∃ core : EnvModel V before,
+      core.acval = M.internal.base2.acval ∧ cvalOf core.acval = M.model.cval ∧
+      AcvalValid core ∧ (∀ φ : LevelParam → Nat, NatHeads core φ) ∧ EqLaw core ∧
+      AcvalDefnInst core ∧ (∀ φ : LevelParam → Nat, ConstType core φ) ∧
+      ∀ φ : LevelParam → Nat,
+        ∃ ha,
+          denoteMeta core.acval before φ 0 expected = some ha ∧ Graded V [] ha ∧
+          denoteMeta core.acval before φ 0 checked = some (core.acval cv.name φ) ∧
+          Graded V [] (core.acval cv.name φ) ∧
+          ∀ ρ : BVarIdx → V, interp V ρ (core.acval cv.name φ) ∈ˢ interp V ρ ha := by
+  obtain ⟨core, acvalEq, cvalEq, valid, heads, eqLaw, definitions, target⟩ := front.final_prefix_defn V M
+  have lookup : FindPreserved before envA := front.lookup_preserved
+  have slots : StoredHeadSlots before envA := front.stored_head_slots
+  refine ⟨core, acvalEq, cvalEq, valid, heads, eqLaw, definitions, ?_, target⟩
+  intro φ d n ci us found notTower arity
+  obtain ⟨ta, finalRead, grade, member⟩ := M.internal.constType (φ := φ) d n ci us
+    (lookup found) notTower arity
+  have resolves := (core.wf ci (Semantics.Env.find?_mem found)).2.2.1
+  have instantiated : (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us).constsResolve
+      before = true := by
+    rw [Ix.Kernel.Expr.constsResolve_instantiateLevelParams]
+    exact resolves
+  have same := resolving_reading_eq M.internal.base2.acval φ d _ lookup slots instantiated
+  refine ⟨ta, ?_, grade, ?_⟩
+  · simpa only [acvalEq] using same.trans finalRead
+  · simpa only [acvalEq] using member
+
+end Ix.Cert.ReferenceFronts

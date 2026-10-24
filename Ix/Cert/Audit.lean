@@ -5928,3 +5928,18 @@ run_cmd do
       `native_table_origin, `native_pass_origin, `native_tail_origin, `native_origin,
       `step_table_origin, `checked_step_stored_slots,
       `checked_suffix_stored_slots].map (`Ix.Cert.PrefixConstType ++ ·))
+
+/-! ## Every resolving header at the supplied final interpretation
+
+Actual growth derives subject-specific literal queries and both projection
+branches. The SAME final model supplies every constant type/level/depth row. -/
+
+/-- info: [cert-audit] universal fixed interpretation constant types: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal fixed interpretation constant types"
+    ((#[`query_eq, `nat_guard_eq, `string_queries_eq, `resolving_reading_eq].map
+      (`Ix.Cert.PrefixConstType ++ ·)) ++
+      #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.stored_head_slots,
+        `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_const_ty])
