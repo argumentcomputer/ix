@@ -58,6 +58,7 @@ import Ix.CompileCert.O6TelescopeOpened
 import Ix.CompileCert.O6TelescopeValues
 import Ix.Cert.ReferenceFronts
 import Ix.Cert.PrefixReadings
+import Ix.Cert.PrefixCore
 
 /-! # The certification statements, frozen
 
@@ -5854,3 +5855,28 @@ run_cmd do
   checkRoots (tag := "cert-audit") "final interpretation prefix fronts"
     (#[`lookup_preserved, `readings_across, `final_semantic_front].map
       (`Ix.Cert.ReferenceFronts.DefinitionFrontAt ++ ·))
+
+/-! ## The actual prefix core with the final model's literal valuation
+
+Prefix acceptance yields only model-free Props; every interpreted field
+comes from the supplied final model, with both valuation equalities by rfl. -/
+
+/-- info: [cert-audit] fixed final interpretation prefix core: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed final interpretation prefix core"
+    (#[`prefix_syntax, `coreAt_acval, `coreAt_cval,
+      `core_of_front].map (`Ix.Cert.PrefixCore ++ ·))
+
+/-! ## Actual final-interpretation prefix core and basic target package
+
+Leaf validity, numeral heads and Eq use only the supplied final model;
+the actual target package is transported through the same literal acval. -/
+
+/-- info: [cert-audit] actual final interpretation prefix package: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual final interpretation prefix package"
+    #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_core]
