@@ -53,15 +53,16 @@ private def numbers : Bool → Nat → Json → Except String Json
 private def retired : Array String := #["tcFast", "equal", "differ", "decisionsEqual", "decisionsDiffer",
   "recEqual", "recDiffer", "recDiffName", "recDiffInfo", "recDiffLevel", "recDiffOther",
   "recDecisionDiffer", "recSkipDiffer", "elimEqual", "elimDiffer"]
--- Drop only the enumerated Tc fields; no whitelist or default-zero lookup.
+-- The live view retires only the shadow call/status and enumerated Tc fields.
+-- Every checked report/context field remains; no whitelist or default zeros.
 private def project (row : Json) : Except String Json := do
-  let mut row := row
-  for side in #["shadow", "checked"] do
-    let result ← row.getObjVal? side
-    if let .ok context := result.getObjVal? "context" then
-      let .obj stats ← context.getObjVal? "stats" | throw "below reference: stats object absent"
-      let kept := Json.mkObj (stats.toList.filter fun (k, _) => !retired.contains k)
-      row := row.setObjVal! side (result.setObjVal! "context" (context.setObjVal! "stats" kept))
+  let .obj fields := row | throw "below reference: case object absent"
+  let row := Json.mkObj (fields.toList.filter fun (k, _) => k != "shadow" && k != "shadowStatus")
+  let result ← row.getObjVal? "checked"
+  if let .ok context := result.getObjVal? "context" then
+    let .obj stats ← context.getObjVal? "stats" | throw "below reference: stats object absent"
+    let kept := Json.mkObj (stats.toList.filter fun (k, _) => !retired.contains k)
+    return row.setObjVal! "checked" (result.setObjVal! "context" (context.setObjVal! "stats" kept))
   return row
 private def checkRow (rows : Array Json) (i : Nat) (actual : Json) : Except String Unit := do
   require (rows.size == 219 && i < rows.size) "case coverage differs"
@@ -110,8 +111,8 @@ private def controls (rows : Array Json) : Except String Unit := do
       return c.setObjVal! "tail" tail
     rejected (checkRow rows i changed) s!"below reference: complete case differs at {i}"
 
-/-- Decode once; all archived raw data stays in the module. Only Tc stats
-are projected. Each side keeps its own report/context/capability values. -/
+/-- Decode once; both raw capture sides stay archived. The checked call keeps
+its own report/context and takes its complete output expectation from shadow. -/
 def load (encoded : String) : Except String (Json × Array Json) := do
   Reference.JsonTable.controls; encodingControls
   let table ← Json.parse encoded
@@ -179,13 +180,14 @@ private def wire (base : Ixon.Env) (s : CompileM.BlockState) : Except String (Ar
   result
   return (s.auxConsts.map (fun (_, c) => Ixon.serConstant c), bytes)
 
-/-- Consume both existing real calls. No captured value is used as an answer. -/
-def check (rows : Array Json) (i : Nat) (rep key : Name) (members : Array Name) (promoted : Bool)
-    (shadowOracle checkedOracle : AuxOracle) (shadow checked : Except String Output)
+/-- Consume the real checked call; no captured value is used as an answer. -/
+def checkChecked (rows : Array Json) (i : Nat) (rep key : Name) (members : Array Name) (promoted : Bool)
+    (checkedOracle : AuxOracle) (checked : Except String Output)
     (stateKey : CompileM.BlockState → String) (base : Ixon.Env) : Except String Unit := do
+  require (checkedOracle.mode == .failClosed && checkedOracle.recursors && checkedOracle.retry.isNone) "wrong checked capability"
   let actual := Json.mkObj [("index", nat i), ("representative", name rep), ("key", name key), ("members", names members),
     ("promoted", .bool promoted), ("originalStatus", toJson (checkedOracle.blockStatus ())),
-    ("shadowStatus", toJson (shadowOracle.blockStatus ())), ("shadow", ← observed stateKey shadow), ("checked", ← observed stateKey checked)]
+    ("checked", ← observed stateKey checked)]
   checkRow rows i actual
   if i == 36 || i == 102 then
     let .ok (some t, s) := checked | throw "below reference: live byte-control outcome differs"
