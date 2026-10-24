@@ -126,4 +126,130 @@ theorem checked_context (V : Type w) [SetTheory V]
     rw [mkFEnv_find?_visibleBelow envA _ n (checked_names run), logical]
   · simp [FEnv.find?, FEnv.restrictTo, counter]
 
+open Ix.Kernel.Reader Ix.Kernel.Admission Ix.Cert.AdmittedTargetFronts
+open Ix.Cert.DefinitionSnapshots (Receipt checkReceipt checkReceipt_ok)
+
+structure Snapshot where
+  position : Nat
+  cv : Ix.Kernel.ConstantVal .anon
+  raw : Ix.Kernel.Expr .anon
+  counter : Nat
+  expected : Ix.Kernel.Expr .anon
+  view : FEnv .anon
+
+def Snapshot.before (s : Snapshot) : Env .anon := s.view.env.prefixTo s.counter
+
+/-- An accessor of the existing receipt, with no check or annotation replay.
+The discarded annotated proof is not a field of this executable snapshot. -/
+def snapshot (r : Receipt) (i : Nat) : Except String Snapshot := do
+  let some d := r.ds[i]? | throw "theorem snapshot: declaration index is unavailable"
+  let .thmDecl cv raw := d | throw "theorem snapshot: declaration is not a theorem"
+  let some (counter, c) := r.index.idx[cv.name]? | throw "theorem snapshot: theorem index entry is unavailable"
+  let .thmInfo stored _ := c | throw "theorem snapshot: indexed constant is not a theorem"
+  return ⟨i, cv, raw, counter, stored.type, r.index.restrictTo counter⟩
+
+theorem snapshot_of_check (V : Type w) [SetTheory V] {binding limits records blobs hint r}
+    (run : checkReceipt binding limits records blobs hint = .ok r)
+    {i : Nat} {cv : Ix.Kernel.ConstantVal .anon} {raw : Ix.Kernel.Expr .anon}
+    (atDecl : r.ds.toList[i]? = some (.thmDecl cv raw)) :
+    ∃ F before expected checkedProof,
+      let snap : Snapshot := ⟨i, cv, raw, before.consts.length, expected,
+        r.index.restrictTo before.consts.length⟩
+      TheoremFrontAt r.ev r.ds.toList r.env i cv raw F before expected checkedProof ∧
+      snapshot r i = .ok snap ∧ snap.before = before ∧ snap.view.env = r.env ∧
+      (∀ n, snap.view.find? n = before.find? n) ∧ snap.view.find? cv.name = none := by
+  obtain ⟨_, _, _, checkedRun, canonical⟩ := checkReceipt_ok run
+  obtain ⟨F, before, expected, checkedProof, front, counter, logical, _, lookup, hidden⟩ :=
+    checked_context V checkedRun atDecl
+  have indexed : r.index.idx[cv.name]? = some (before.consts.length,
+      .thmInfo ⟨cv.name, cv.levelParams, expected⟩ raw) := by rw [canonical]; exact counter
+  have atArray : r.ds[i]? = some (.thmDecl cv raw) := by simpa using atDecl
+  refine ⟨F, before, expected, checkedProof, front, ?_, ?_, rfl, ?_, ?_⟩
+  · simp [snapshot, atArray, indexed, pure, Except.pure]
+  · exact logical
+  · intro n; rw [canonical]; exact lookup n
+  · rw [canonical]; exact hidden
+
+/-- One preparation recovered from this very receipt, including its exact
+prepared declaration stream. No reader/checker is run by the proof. -/
+theorem prepared_of_receipt {binding limits records blobs hint r}
+    (run : checkReceipt binding limits records blobs hint = .ok r) :
+    ∃ p : Prepared binding limits records blobs hint r.env,
+      p.table = r.table ∧ p.pre = r.pre ∧ p.ev = r.ev ∧
+      Frontend.preparePrelude p.pre.ix p.decls = r.ds := by
+  have bytes : Ixon.Authenticated.checkBytes binding limits records blobs hint = .ok r.env := by
+    rw [← DefinitionSnapshots.checkReceipt_env, run]; rfl
+  obtain ⟨p⟩ := prepared_of_check bytes
+  obtain ⟨admitted, prelude, prepared, _, _⟩ := checkReceipt_ok run
+  have table := Except.ok.inj (p.admitted.symm.trans admitted)
+  have pre : p.pre = r.pre := Except.ok.inj ((table ▸ p.prelude).symm.trans prelude)
+  have pair := Prod.mk.inj (Except.ok.inj ((pre ▸ p.prepared).symm.trans prepared))
+  exact ⟨p, table, pre, pair.1, by simpa only [pre] using pair.2⟩
+
+variable {binding : Binding} {limits : Limits} {records : Records} {blobs : Ingress.Blobs}
+  {hint : ConstRef Address → Option ReducibilityHint} {envA : Env .anon}
+
+/-- Exact canonical theorem occurrence, actual projection rewrite, and the
+same prepared theorem front. Reader and checker prefixes remain distinct. -/
+def TheoremAt (p : Prepared binding limits records blobs hint envA) (j : Nat)
+    (a : Address) (c : Ixon.Constant) (d : Ixon.Definition) : Prop :=
+  let cx := streamContext Address.admissionHash p.table p.pre p.constants blobs hint
+  ∃ fin st r key ty value i F before expected checkedProof,
+    StreamRead cx p.pre.state p.constants fin p.decls ∧
+    p.ev = evidenceOf cx fin p.table ∧ State.keepsPrelude p.pre.state fin = true ∧
+    RecordAt cx p.pre.state fin p.constants p.decls j a c st r ∧
+    cx.memberKey (.member a 0) = .ok key ∧
+    (definitionReader cx a c d).read d.typ = .ok ty ∧
+    (definitionReader cx a c d).read d.value = .ok value ∧
+    let cv := (⟨key, singletonLps d.lvls, ty⟩ : Ix.Kernel.ConstantVal .anon)
+    let raw := (projRewrite st cv value).getD value
+    r.decls = #[.thmDecl cv raw] ∧
+    TheoremFrontAt p.ev (Frontend.preparePrelude p.pre.ix p.decls).toList envA
+      i cv raw F before expected checkedProof
+
+theorem singleton_theorem (V : Type w) [SetTheory V]
+    (p : Prepared binding limits records blobs hint envA) {j a c d}
+    (atRecord : p.constants[j]? = some (a, c)) (info : c.info = .defn d) (kind : d.kind = .thm) :
+    TheoremAt p j a c d := by
+  obtain ⟨fin, stream, evidence, keeps⟩ := readStream_spec p.read
+  obtain ⟨st, r, trace⟩ := stream_at stream atRecord
+  obtain ⟨_, pref, suff, beforeRun, recordRun, afterRun, shape⟩ := trace
+  obtain ⟨decl, reading, decls⟩ := readRecord_singleton (by simp [isSingleton, info]) recordRun
+  cases reading with
+  | @defn d' key ty value decl found keyed type body form =>
+    rw [info] at found
+    cases found
+    rw [kind] at form
+    cases form with
+    | thm =>
+      let cv : Ix.Kernel.ConstantVal .anon := ⟨key, singletonLps d.lvls, ty⟩
+      let raw := (projRewrite st cv value).getD value
+      have member : .thmDecl cv raw ∈ p.decls := by simp [shape, decls, cv, raw]
+      have kept := Frontend.mem_preparePrelude (pre := p.pre.ix) member
+      obtain ⟨i, atDecl⟩ := List.mem_iff_getElem?.mp (Array.mem_toList_iff.mpr kept)
+      obtain ⟨F, before, expected, checkedProof, front⟩ := reference_theorem_front_at
+        (Cached.checkDecls_refines_ref V rfl p.checked) atDecl
+      exact ⟨fin, st, r, key, ty, value, i, F, before, expected, checkedProof, stream, evidence, keeps,
+        ⟨atRecord, pref, suff, beforeRun, recordRun, afterRun, shape⟩, keyed, type, body, decls, front⟩
+  | axio found => rw [info] at found; cases found
+  | quot found => rw [info] at found; cases found
+
+/-- All selected occurrences share this receipt's preparation. The derived
+indices therefore feed snapshot_of_check without a preparation premise. -/
+theorem selected_theorem_fronts (V : Type w) [SetTheory V] {binding limits ixe order receipt}
+    (nodes : Ix.Map Ix.Name Ix.Compile.SourceGraph.Node) (cs : Ix.Compile.ChangedSet.ChangedSet)
+    (run : checkReceipt binding limits (recordsOf ixe order) (blobsOf ixe order) (hintsOf ixe) = .ok receipt) :
+    ∃ p : Prepared binding limits (recordsOf ixe order) (blobsOf ixe order) (hintsOf ixe) receipt.env,
+      p.table = receipt.table ∧ p.pre = receipt.pre ∧ p.ev = receipt.ev ∧
+      Frontend.preparePrelude p.pre.ix p.decls = receipt.ds ∧
+      ∀ r ∈ SourcePublication.selectOriginal nodes cs ixe, ∀ j bytes,
+        (recordsOf ixe order)[j]? = some (r.address, bytes) →
+        ∃ c, p.constants[j]? = some (r.address, c) ∧
+          Ixon.Verify.Canonical.Reads limits.maxRecordBytes limits.maxRecordUnivNodes bytes c ∧
+          ∀ d, c.info = .defn d → d.kind = .thm → TheoremAt p j r.address c d := by
+  obtain ⟨p, table, pre, ev, ds⟩ := prepared_of_receipt run
+  refine ⟨p, table, pre, ev, ds, fun r _ j bytes atByte => ?_⟩
+  obtain ⟨c, atRecord, read⟩ := decoded_at (decodeRecords_ok_iff .. |>.mp p.decoded) atByte
+  exact ⟨c, atRecord, read, fun d info kind => singleton_theorem V p atRecord info kind⟩
+
 end Ix.Cert.TheoremSnapshots
