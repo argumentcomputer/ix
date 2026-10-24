@@ -61,6 +61,9 @@ import Ix.Cert.PrefixReadings
 import Ix.Cert.PrefixCore
 import Ix.Cert.PrefixDefinitions
 import Ix.Cert.PrefixConstType
+import Ix.Cert.PrefixCapabilities
+import Ix.Cert.PrefixRecRules
+import Ix.Cert.PrefixTowers
 
 /-! # The certification statements, frozen
 
@@ -5943,3 +5946,70 @@ run_cmd do
       (`Ix.Cert.PrefixConstType ++ ·)) ++
       #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.stored_head_slots,
         `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_const_ty])
+
+/-! ## Capability and successor rows at the same final interpretation
+
+Positive family guards and resolving headers transport both capability
+halves. The successor argument uses only the supplied core; the unit law
+gains no eta-family premise and no prefix interpretation is chosen. -/
+
+/-- info: [cert-audit] fixed interpretation capability and successor rows: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed interpretation capability and successor rows"
+    ((#[`eta_family_preserved, `capabilities_preserved, `nat_succ_row].map
+      (`Ix.Cert.PrefixCapabilities ++ ·)) ++
+      #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_caps_succ])
+
+/-! ## Every stored recursor's exact header, RHS and open-pin readings
+
+Actual prefix WF supplies resolution, including getD defaults and the
+sort-zero reverse openers. Reading equations need no model or grading. -/
+
+/-- info: [cert-audit] fixed interpretation stored recursor readings: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed interpretation stored recursor readings"
+    (#[`openRev_resolves, `stored_rule_resolves, `stored_rule_readings].map
+      (`Ix.Cert.PrefixRecRules ++ ·))
+
+/-! ## Universal recursor rules at the supplied final interpretation
+
+The full law retains RHS grading, outer guarded pin grading, contravariant
+nested comparisons, both type readings and the fired equality/output grade. -/
+
+/-- info: [cert-audit] universal fixed interpretation recursor rules: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal fixed interpretation recursor rules"
+    #[`Ix.Cert.PrefixRecRules.rec_rules_preserved,
+      `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_rec_rules]
+
+/-! ## Actual prefix tower heads and all body/header readings
+
+Both positive head witnesses come from prefix projection discipline;
+the table and three exact depth-zero readings transport at fixed acval. -/
+
+/-- info: [cert-audit] fixed interpretation stored tower readings: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed interpretation stored tower readings"
+    (#[`stored_tower_heads, `stored_tower_readings].map
+      (`Ix.Cert.PrefixTowers ++ ·))
+
+/-! ## Universal tower laws at the supplied final interpretation
+
+Produced prefix hits identify the final law's witnesses. The exact typing,
+iota, eta and Prop-guard clauses use the same readings and final acval. -/
+
+/-- info: [cert-audit] universal fixed interpretation tower laws: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal fixed interpretation tower laws"
+    #[`Ix.Cert.PrefixTowers.tower_ok_preserved,
+      `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_tower_ok]
