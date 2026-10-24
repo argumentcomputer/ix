@@ -1,4 +1,5 @@
 import Tests.Ix.AuxGen.GenerationOnlyDependencies
+import Tests.Ix.AuxGen.NestedTailReference
 
 namespace Tests.Ix.AuxGen.GenerationRetry
 open _root_.Ix _root_.Ix.AuxGen
@@ -61,6 +62,11 @@ def evaluate : IO Unit := do
     checked.1.2.generated.size == 2 && sameTail legacy checked) "NestedSortUK three-query tail changed"
   need (((svc.ensureNames #[Name.fromLeanName `NestedSortUK.t_rec]).statusOf? (Name.fromLeanName `NestedSortUK.t_rec)).any
     (fun | .blocked _ => true | _ => false)) "NestedSortUK dependent fence changed"
+  let direct ← IO.ofExcept (runTail cenv key members actual)
+  need ({ checked.2 with auxReport := { checked.2.auxReport with retried := none } } == direct.2) "whole checked rollback changed"
+  IO.ofExcept (NestedTailReference.check 1 #[`Tests.Ix.AuxGen.GenerationRetry, `Tests.Ix.Compile.AuxCert.NestedSortUK]
+    #[`NestedSortUK.T, `NestedSortUK.t_rec, ``TierTree] none env blocks key members why checked direct)
+  IO.println "nested tail reference: retry-tier-tree binding, full output and rollback passed"
   let some recOff := ({ opts with recursors := false }).oracleFor ra env.get? key | throw (IO.userError "rec-off missing")
   let some oldRetry := recOff.retry | throw (IO.userError "rec-off lost its diagnostic retry")
   let diagnostic ← IO.ofExcept (runTail cenv key members (planted recOff (some why)) true)
