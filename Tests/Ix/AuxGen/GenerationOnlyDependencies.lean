@@ -1,6 +1,7 @@
 import Tests.Ix.AuxGen.GenerationOnlyFactory
 import Tests.Ix.AuxGen.GenerationOnlyAliases
 import Tests.Ix.AuxGen.GenerationOnlyOpaques
+import Tests.Ix.AuxGen.NineReference
 import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.IxVM
 import Tests.Ix.Fixtures
@@ -166,6 +167,7 @@ def evaluate (factoryControls : Bool := true) : IO Unit := do
   let base := Source.Service.create pre env blocks (evidence := some (Ix.RoleEvidence.bundleEvidence ()))
   IO.println s!"production raw input: {filtered.length} constants, {blocks.blocks.size} blocks, {compiled.named.size} named surroundings"
   if factoryControls then controls base
+  let references ← IO.ofExcept (NineReference.read targets)
   let mut count := 0
   for label in targets do
     let choices := blocks.blocks.toArray.filter (fun (_, ms) => ms.toArray.any (·.pretty == label))
@@ -196,6 +198,8 @@ def evaluate (factoryControls : Bool := true) : IO Unit := do
     need (full.1 == reference.1 && full.2.2 == reference.2.2 &&
       { full.2.1 with auxReport := {} } == { reference.2.1 with auxReport := {} } &&
       full.2.1.auxReport.retried == some why) s!"full driver output changed: {label}"
+    IO.ofExcept (NineReference.check references count label lo members why
+      observed.1.2.generated.size (observed.1.1, observed.2) full)
     if label == "Tests.Ix.Compile.Mutual.NestedPredicate.VR.con" then
       let fn := Name.fromLeanName `Tests.Ix.Compile.Mutual.NestedPredicate.CtorInfo.ofKey
       let owner := Name.fromLeanName `Tests.Ix.Compile.Mutual.NestedPredicate.VR
@@ -207,5 +211,6 @@ def evaluate (factoryControls : Bool := true) : IO Unit := do
     IO.println s!"production driver SAME {label}: {observed.1.2.generated.size} exempt rows"
   need (count == 9) "incomplete nine-case confirmation"
   IO.println "production generation retry: 9/9 full-driver and tail comparisons; whole-state rollback"
+  IO.println "nine references: 9 complete tail/state/full-output rows; 19 canonical and 14 Prop recursors; raw layout/state perturbations"
 
 end Tests.Ix.AuxGen.GenerationOnlyDependencies
