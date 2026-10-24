@@ -6000,3 +6000,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "fixed interpretation stored tower readings"
     (#[`stored_tower_heads, `stored_tower_readings].map
       (`Ix.Cert.PrefixTowers ++ ·))
+
+/-! ## Universal tower laws at the supplied final interpretation
+
+Produced prefix hits identify the final law's witnesses. The exact typing,
+iota, eta and Prop-guard clauses use the same readings and final acval. -/
+
+/-- info: [cert-audit] universal fixed interpretation tower laws: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal fixed interpretation tower laws"
+    #[`Ix.Cert.PrefixTowers.tower_ok_preserved,
+      `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_tower_ok]
