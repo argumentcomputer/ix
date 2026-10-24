@@ -84,6 +84,7 @@ import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
 import Tests.Ix.AuxGen.AuxKernelTests
+import Tests.Ix.AuxGen.ConfigurationTests
 import Tests.Ix.AuxGen.ElimRuleTests
 import Tests.Ix.AuxGen.PortableKernel
 import Tests.Ix.AuxGen.FlatBlockTests
@@ -255,7 +256,8 @@ def registry : List Entry := [
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite
     ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.PortableKernel.suite ++ Tests.AuxGen.FlatBlock.suite
-    ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.LevelReference.suite ++ Tests.AuxGen.Components.suite),
+    ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.LevelReference.suite ++ Tests.AuxGen.Components.suite
+    ++ Tests.Ix.AuxGen.ConfigurationTests.suite),
   -- source-body recognition of casesOn/recOn: the comparison controls (Ix.AuxGen.SourceIdentity)
   .suite "aux-source-identity-unit" .primary Tests.Ix.Compile.SourceIdentity.suite,
   -- `Ix.AuxSource`: telescopes and the split-minor helpers' temporary-variable supply (CQ5.1)
