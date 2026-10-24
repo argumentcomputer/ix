@@ -5,8 +5,9 @@ import Ix.Cert.SelectedRoots
 This unwired layer indexes exactly the materialized logical Source edges.
 Adjacency updates consume their old array inside `alter`; the walk retains
 missing seeds and counts duplicate edges in its derived fuel budget. The
-bound is in extracted adjacency volume. Source-expression extraction costs,
-reachability equivalence, and the streaming-input graph bridge are separate.
+bound is in extracted adjacency volume. Selection is proved literally equal
+to the frozen reference. Source-expression extraction costs, the streaming
+graph bridge, admission and runtime wiring remain separate.
 -/
 
 namespace Ix.Cert.SourceReverse
@@ -283,5 +284,191 @@ theorem walk_pending_empty (index : Index) (seeds : Std.HashSet Name) :
     funext p
     simp [weight]
   simp [potential, mass, emptyWeight, budget, edgeCount, Nat.add_comm]
+
+/-- Reverse reachability includes every seed, even one absent from the index. -/
+inductive BackReach (index : Index) (seeds : Std.HashSet Name) : Name → Prop
+  | seed {n} : seeds.contains n = true → BackReach index seeds n
+  | step {dependency caller} : BackReach index seeds dependency →
+      (index.getD dependency #[]).contains caller = true → BackReach index seeds caller
+
+theorem backReach_congr {index seeds n n'} (reached : BackReach index seeds n)
+    (same : (n == n') = true) : BackReach index seeds n' := by
+  cases reached with
+  | seed h => exact .seed (by rw [← Std.HashSet.contains_congr same]; exact h)
+  | step h edge => exact .step h (Closure.array_contains_of_beq same edge)
+
+private def Pending (s : State) (n : Name) : Prop :=
+  s.seen.contains n = true ∨ s.pending.contains n = true
+
+private theorem pending_step (index : Index) (s : State) (n : Name)
+    (h : Pending s n) : Pending (step index s) n := by
+  obtain ⟨seen, pending⟩ := s
+  cases pending with
+  | nil => exact h
+  | cons top todo =>
+    rcases h with marked | queued
+    · cases hs : seen.contains top <;> simp [Pending, step, hs, Std.HashSet.contains_insert, marked]
+    · simp only [List.contains_cons, Bool.or_eq_true] at queued
+      rcases queued with same | queued
+      · cases hs : seen.contains top with
+        | false => simp [Pending, step, hs, Std.HashSet.contains_insert, BEq.symm same]
+        | true =>
+          have hn := (Std.HashSet.contains_congr (m := seen) (BEq.symm same)).symm.trans hs
+          exact .inl (by simpa [step, hs] using hn)
+      · cases hs : seen.contains top <;> simp [Pending, step, hs, List.contains_append, queued]
+
+private structure Inv (index : Index) (seeds : Std.HashSet Name) (s : State) : Prop where
+  sound : ∀ n, Pending s n → BackReach index seeds n
+  roots : ∀ n, seeds.contains n = true → Pending s n
+  closed : ∀ d, s.seen.contains d = true → ∀ n,
+    (index.getD d #[]).contains n = true → Pending s n
+
+private theorem inv_step {index seeds s} (inv : Inv index seeds s) :
+    Inv index seeds (step index s) := by
+  obtain ⟨seen, pending⟩ := s
+  cases pending with
+  | nil => exact inv
+  | cons top todo =>
+    have reached : BackReach index seeds top := inv.sound top (.inr (by simp))
+    refine ⟨?_, fun n h => pending_step index _ n (inv.roots n h), ?_⟩
+    · intro n hn
+      cases hs : seen.contains top with
+      | true =>
+        rcases hn with marked | queued
+        · exact inv.sound n (.inl (by simpa [step, hs] using marked))
+        · have tail : todo.contains n = true := by simpa [step, hs] using queued
+          exact inv.sound n (.inr (by simp [tail]))
+      | false =>
+        rcases hn with marked | queued
+        · simp only [step, hs, Bool.false_eq_true, ite_false, Std.HashSet.contains_insert,
+            Bool.or_eq_true] at marked
+          rcases marked with same | old
+          · exact backReach_congr reached same
+          · exact inv.sound n (.inl old)
+        · simp only [step, hs, Bool.false_eq_true, ite_false, List.contains_append,
+            Array.contains_toList, Bool.or_eq_true] at queued
+          rcases queued with edge | old
+          · exact .step reached edge
+          · exact inv.sound n (.inr (by simp [old]))
+    · intro d marked n edge
+      cases hs : seen.contains top with
+      | true =>
+        exact pending_step index _ n (inv.closed d (by simpa [step, hs] using marked) n edge)
+      | false =>
+        simp only [step, hs, Bool.false_eq_true, ite_false, Std.HashSet.contains_insert,
+          Bool.or_eq_true] at marked
+        rcases marked with same | old
+        · have edgeTop : (index.getD top #[]).contains n = true := by
+            rw [Std.HashMap.getD_congr same]; exact edge
+          exact .inr (by simp [step, hs, List.contains_append, Array.contains_toList, edgeTop])
+        · exact pending_step index _ n (inv.closed d old n edge)
+
+private theorem inv_walkFuel {index seeds} (fuel : Nat) (s : State) (inv : Inv index seeds s) :
+    Inv index seeds (walkFuel index fuel s) := by
+  induction fuel generalizing s with
+  | zero => exact inv
+  | succ fuel ih =>
+    cases hp : s.pending with
+    | nil => simpa only [walkFuel, hp] using inv
+    | cons n todo => simpa only [walkFuel, hp] using ih (step index s) (inv_step inv)
+
+theorem walk_contains_iff (index : Index) (seeds : Std.HashSet Name) (n : Name) :
+    (walk index seeds).seen.contains n = true ↔ BackReach index seeds n := by
+  have initial : Inv index seeds ⟨{}, seeds.toList⟩ := by
+    constructor
+    · intro n h
+      exact .seed (by simpa [Pending, Std.HashSet.contains_toList] using h)
+    · intro n h; exact .inr (by simpa using h)
+    · intro d h; simp at h
+  have inv := inv_walkFuel (budget index seeds) _ initial
+  change Inv index seeds (walk index seeds) at inv
+  have done : ∀ n, Pending (walk index seeds) n → (walk index seeds).seen.contains n = true := by
+    intro n h
+    simpa [Pending, walk_pending_empty] using h
+  constructor
+  · intro h; exact inv.sound n (.inl h)
+  · intro reached
+    induction reached with
+    | seed h => exact done _ (inv.roots _ h)
+    | step _ edge ih => exact done _ (inv.closed _ ih _ edge)
+
+private theorem reaches_from {env roots a b} (start : Reaches env roots a)
+    (path : Reaches env [a] b) : Reaches env roots b := by
+  induction path with
+  | root h => exact Closure.reaches_congr start (BEq.symm (by simpa using h))
+  | step _ edge ih => exact .step ih edge
+
+private theorem back_of_reaches (env : Ix.Environment) (cs : Ix.Compile.ChangedSet.ChangedSet)
+    {a b : Name} (path : Reaches (logicalInput env) [a] b) :
+    BackReach (build env) cs.names b → BackReach (build env) cs.names a := by
+  induction path with
+  | root h => intro back; exact backReach_congr back (by simpa using h)
+  | step _ edge ih => intro back; exact ih (.step back ((build_contains_iff ..).mpr edge))
+
+theorem backReach_iff_affected (env : Ix.Environment) (cs : Ix.Compile.ChangedSet.ChangedSet) (n : Name) :
+    BackReach (build env) cs.names n ↔ SelectedRoots.AffectedName env cs n := by
+  constructor
+  · intro reached
+    induction reached with
+    | @seed n changed => exact ⟨n, .root (by simp), changed⟩
+    | @step d n _ edge ih =>
+      obtain ⟨m, path, changed⟩ := ih
+      exact ⟨m, reaches_from (.step (.root (by simp)) ((build_contains_iff ..).mp edge)) path, changed⟩
+  · rintro ⟨m, path, changed⟩
+    exact back_of_reaches env cs path (.seed changed)
+
+def affectedNames (env : Ix.Environment) (cs : Ix.Compile.ChangedSet.ChangedSet) : Std.HashSet Name :=
+  (walk (build env) cs.names).seen
+
+theorem affectedNames_iff (env : Ix.Environment) (cs : Ix.Compile.ChangedSet.ChangedSet) (n : Name) :
+    (affectedNames env cs).contains n = true ↔ SelectedRoots.AffectedName env cs n := by
+  exact (walk_contains_iff ..).trans (backReach_iff_affected ..)
+
+theorem affectedNames_contains_eq (env : Ix.Environment) (cs : Ix.Compile.ChangedSet.ChangedSet) (n : Name) :
+    (affectedNames env cs).contains n = SelectedRoots.affected env cs n := by
+  apply Bool.eq_iff_iff.mpr
+  rw [affectedNames_iff, SelectedRoots.affected_iff]
+
+/-- Unwired selection computes the reverse cone once. Direct and observed-row
+enumeration, publication order and reason multiplicity are the reference's. -/
+def select (env : Ix.Environment) (cs : Ix.Compile.ChangedSet.ChangedSet) (sub : Ix.Environment)
+    (ixe : Ixon.Env) : List SelectedRoots.Root :=
+  let affected := affectedNames env cs
+  SelectedRoots.directRoots cs sub ixe ++
+    (sub.consts.toList.filterMap fun (n, _) =>
+      if cs.contains n = false ∧ affected.contains n = true then
+        (SelectedRoots.published? sub ixe n).map fun a => ⟨n, a, .cascade⟩
+      else none) ++ SelectedRoots.rowRoots cs sub ixe
+
+/-- Literal list equality, stronger than address coverage or permutation. -/
+theorem select_eq (env : Ix.Environment) (cs : Ix.Compile.ChangedSet.ChangedSet)
+    (sub : Ix.Environment) (ixe : Ixon.Env) :
+    select env cs sub ixe = SelectedRoots.select env cs sub ixe := by
+  simp only [select, SelectedRoots.select, SelectedRoots.cascadeRoots, affectedNames_contains_eq]
+
+theorem select_sound {env cs sub ixe r} (h : r ∈ select env cs sub ixe) :
+    SelectedRoots.ClassifiedRoot env cs sub ixe r :=
+  SelectedRoots.select_sound (by simpa only [select_eq] using h)
+
+theorem select_complete {env cs sub ixe a reason}
+    (h : ∃ n, SelectedRoots.ClassifiedRoot env cs sub ixe ⟨n, a, reason⟩) :
+    ∃ r ∈ select env cs sub ixe, r.address = a ∧ r.reason = reason := by
+  simpa only [select_eq] using SelectedRoots.select_complete h
+
+/-- Coverage uses the actual classifier's proved names/entries correspondence. -/
+theorem required_covered_ofCompile {env condensed table sub ixe a}
+    (h : SelectedRoots.RequiredRoot env
+      (Ix.Compile.ChangedSet.ofCompile (logicalInput env) condensed table ixe) sub ixe a) :
+    ∃ r ∈ select env (Ix.Compile.ChangedSet.ofCompile (logicalInput env) condensed table ixe) sub ixe,
+      r.address = a := by
+  simpa only [select_eq] using SelectedRoots.required_covered_ofCompile h
+
+theorem selected_input_required_ofCompile {env condensed table sub ixe r}
+    (h : r ∈ select env (Ix.Compile.ChangedSet.ofCompile (logicalInput env) condensed table ixe) sub ixe)
+    (input : r.reason ≠ .row) :
+    SelectedRoots.RequiredRoot env
+      (Ix.Compile.ChangedSet.ofCompile (logicalInput env) condensed table ixe) sub ixe r.address :=
+  SelectedRoots.selected_input_required_ofCompile
+    (by simpa only [SelectedRoots.selectCompile, select_eq] using h) input
 
 end Ix.Cert.SourceReverse

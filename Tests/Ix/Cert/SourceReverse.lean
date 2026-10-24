@@ -77,6 +77,48 @@ private def cycle : Index := appendAt (appendAt {} (name 1) (name 2)) (name 2) (
 -- A pre-marked name is popped without expanding its otherwise present bucket.
 #guard (step cycle ⟨seed 1, [alias 1]⟩).pending.isEmpty
 
+private def changes (es : Array _root_.Ix.Compile.ChangedSet.Entry) :
+    _root_.Ix.Compile.ChangedSet.ChangedSet :=
+  { entries := es, names := es.foldl (fun s e => s.insert e.name) {} }
+private def causes : List _root_.Ix.Compile.ChangedSet.Cause :=
+  [.member, .imageHead, .caller, .regenerated, .clique]
+private def changed := changes ((causes.toArray.map fun c => ⟨name 1, c, none⟩) ++ #[⟨alias 1, .caller, none⟩])
+private def publishedInput : _root_.Ix.Environment := { consts := input.consts.insert (name 1) (atom (name 1)) }
+private def ixe : Ixon.Env :=
+  { named := .ofList [(name 1, { addr := addr 100 }), (name 2, { addr := addr 100 }),
+      (name 3, { addr := addr 101 }), (name 9, { addr := addr 109 }),
+      (_root_.Ix.Compile.Pass.Clique.rowName (name 1), { addr := addr 200 })] }
+private def sameRoots (xs ys : List SelectedRoots.Root) : Bool :=
+  xs.length == ys.length && (xs.zip ys).all fun (x, y) =>
+    _root_.Ix.Compile.ExactKey.nameEq x.source y.source && x.address == y.address && x.reason == y.reason
+private def agrees env cs sub ixe := sameRoots (select env cs sub ixe) (SelectedRoots.select env cs sub ixe)
+private def selected := select publishedInput changed publishedInput ixe
+-- Compare complete ordered lists, including structural source names and repeated reasons.
+#guard agrees publishedInput changed publishedInput ixe
+#guard selected.length == 9
+#guard causes.all fun c => selected.any fun r => r.reason == .direct c && r.address == addr 100
+#guard (selected.filter (·.reason == .direct .caller)).length == 2
+#guard (selected.filter (·.reason == .cascade)).length == 2
+#guard (selected.filter (·.reason == .row)).length == 1
+#guard selected.any fun r => _root_.Ix.Compile.ExactKey.nameEq r.source (alias 1)
+#guard !(selected.any fun r => r.source == name 9)
+private def noRows : Ixon.Env := { named := ixe.named.erase (_root_.Ix.Compile.Pass.Clique.rowName (name 1)) }
+#guard agrees publishedInput changed publishedInput noRows
+#guard (select publishedInput changed publishedInput noRows).length == 8
+-- Missing changed input/publication retains downstream callers, but no direct/row root.
+#guard agrees input changed input ixe
+#guard (select input changed input ixe).length == 2
+private def onlyLast : Ixon.Env := { named := .ofList [(name 3, { addr := addr 101 })] }
+#guard agrees input changed input onlyLast
+#guard (select input changed input onlyLast).length == 1
+#guard agrees publishedInput changed { consts := {} } ixe
+#guard (select publishedInput changed { consts := {} } ixe).isEmpty
+#guard agrees publishedInput (changes #[]) publishedInput ixe
+#guard (select publishedInput (changes #[]) publishedInput ixe).isEmpty
+#guard (#[name 1, alias 1, name 2, alias 2, name 3, name 8, name 9]).all fun n =>
+  (affectedNames input changed).contains n == SelectedRoots.affected input changed n
+#guard (affectedNames input (changes #[⟨name 8, .member, none⟩])).contains (alias 8)
+
 /-- info: 'Ix.Cert.SourceReverse.appendAt_lookup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.appendAt_lookup
 /-- info: 'Ix.Cert.SourceReverse.recursors_lookup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -87,5 +129,21 @@ private def cycle : Index := appendAt (appendAt {} (name 1) (name 2)) (name 2) (
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.build_contains_iff
 /-- info: 'Ix.Cert.SourceReverse.walk_pending_empty' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.walk_pending_empty
+/-- info: 'Ix.Cert.SourceReverse.walk_contains_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.walk_contains_iff
+/-- info: 'Ix.Cert.SourceReverse.backReach_iff_affected' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.backReach_iff_affected
+/-- info: 'Ix.Cert.SourceReverse.affectedNames_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.affectedNames_iff
+/-- info: 'Ix.Cert.SourceReverse.select_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.select_eq
+/-- info: 'Ix.Cert.SourceReverse.select_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.select_sound
+/-- info: 'Ix.Cert.SourceReverse.select_complete' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.select_complete
+/-- info: 'Ix.Cert.SourceReverse.required_covered_ofCompile' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.required_covered_ofCompile
+/-- info: 'Ix.Cert.SourceReverse.selected_input_required_ofCompile' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.SourceReverse.selected_input_required_ofCompile
 
 end Tests.Ix.Cert.SourceReverse
