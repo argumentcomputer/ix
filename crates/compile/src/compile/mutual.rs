@@ -582,13 +582,10 @@ pub fn compile_aux_block_with_rename(
   let muts_name = block_addr.muts_name(&first_name);
   compile_name(&muts_name, stt)?;
   crate::compile::pass3::journal_muts(&muts_name);
-  // `compile_aux_block_with_rename` handles derivative blocks (rec, below,
-  // brecOn, ...) that share the same aux_layout as the primary inductive
-  // block. We DO NOT attach aux_layout here — those derived blocks inherit
-  // layout through their projection addresses into the primary's rec/aux
-  // block, and decompile resolves layout via the primary inductive's Muts
-  // meta (see `compile.rs:3254` for the primary-block registration and
-  // `decompile_block_aux_gen` for the lookup).
+  // Derived blocks (rec, below, brecOn, ...) leave aux_layout empty.
+  // The primary inductive's Muts metadata carries the layout when present.
+  // Rust decompile regeneration requests source-walk order independently;
+  // it does not recover a layout override from these derived records.
   stt.register_named(
     muts_name,
     Named::new(

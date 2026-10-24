@@ -66,6 +66,7 @@ def cliqueInert (cenv : CompileEnv) (all : Set Name) (lo : Name) : Bool :=
 cliques only. -/
 def cliqueHookEnv (cenv : CompileEnv) : Clique.HookEnv :=
   { env := cenv.env, addr? := resolveAddr cenv, table := cenv.p3Cliques
+    sourceFamilyOracle := cenv.familyOracle
     roots := cenv.p3CliqueRoots, plans := cenv.p3CliquePlans
     checkPlans := cenv.p3CheckPlans, wfOnly := true }
 

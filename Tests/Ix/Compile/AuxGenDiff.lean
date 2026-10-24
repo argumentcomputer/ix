@@ -32,6 +32,7 @@ import Ix.AuxGen.CompileAux
 import Ix.CompileDriver
 import Tests.Ix.Compile.ScheduleReference
 import Tests.Ix.Compile.ValidateAux
+import Tests.Ix.AuxGen.CheckedKernel
 import LSpec
 
 namespace Tests.Compile.AuxGenDiff
@@ -291,7 +292,8 @@ def leanDumpPatchesBlock (lo : Ix.Name) (all : Array Ix.Name)
     return #[]
   let cenv ← Ix.CompileM.getCompileEnv
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
-  let auxOut ← (Ix.AuxGen.generateAuxPatches classNames originalAll maps).run'
+  let kernel ← Tests.Ix.AuxGen.checkedFamilyKernel cenv maps originalAll
+  let auxOut ← (Ix.AuxGen.generateAuxPatches classNames originalAll maps kernel).run'
     Ix.AuxGen.AuxKernelCtx.new
   let patchNames := (auxOut.patches.toList.map (·.1)).toArray.qsort
     (fun a b => a.pretty < b.pretty)
@@ -675,6 +677,10 @@ def run (env : Lean.Environment) : IO UInt32 := do
   -- production driver's incremental merge relies on.
   let cenv : CompileEnv := seedBlockRegistry (Ix.Commit.mkCompileEnv phases)
     condensed
+  let options : Ix.CompileM.AuxIxcOptions := {}
+  let source := Ix.AuxGen.Source.RunAhead.start rawEnv.get? condensed
+    (Ix.CompileM.scheduleLevels condensed (Ix.CompileM.FoldSchedule.of condensed)) options.asks
+  let cenv := options.withSourceProviders rawEnv.get? condensed source cenv
 
   let mut rep : Report := {}
   -- Names covered by Lean block outputs (to compute Rust-only extras).

@@ -554,7 +554,8 @@ def report (errors lines : Array String) : IO (Bool × Nat × Nat × Option Stri
 
 /-! ## The fixtures -/
 
-def fixtureInput : IO (Ix.Environment × Ix.CondensedBlocks) := do
+/-- Retain the exact raw input for independent compiler measurements. -/
+def fixtureInputWithRaw : IO (List (Lean.Name × Lean.ConstantInfo) × Ix.Environment × Ix.CondensedBlocks) := do
   let leanEnv ← getCompileEnv (fixtureModules ++ #[`IxC.Kernel.PinGen.Certs])
   let idxs := fixtureModules.filterMap leanEnv.getModuleIdx?
   let seeds := leanEnv.constants.toList.toArray.filterMap fun (n, _) =>
@@ -563,7 +564,10 @@ def fixtureInput : IO (Ix.Environment × Ix.CondensedBlocks) := do
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv
     (seeds ++ certs ++ Tests.Ix.Kernel.SourceIngress.preludeNames))
   let env := Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray (workers := 4)
-  return (env, Ix.Cert.blocksOf env)
+  return (closed, env, Ix.Cert.blocksOf env)
+
+def fixtureInput : IO (Ix.Environment × Ix.CondensedBlocks) := do
+  return (← fixtureInputWithRaw).2
 
 def fixtures : TestSeq :=
   .individualIO "AuxGen M2a: .below's levels from IxC agree with Ix.Tc's; the measurement fold's bytes"
@@ -579,12 +583,10 @@ Over the fixtures' inductive blocks, through the driver's own tail:
 1. **A refusal on an accepted block fails it, named.** An oracle whose every
    question IxC refuses (planted), on a block Source mode accepts: the tail fails,
    and the failure names the block, the scope, the question and IxC's reason.
-2. **A block Source mode does not accept re-runs on `fallback`, rolled back
-   exactly.** The same planted oracle, with a status saying the block is not
-   accepted: the tail succeeds by its retry, the report records it, every
-   generated auxiliary is exempt with the status, and the block state after it is
-   the state a `fallback` tail leaves from the same start (so the failed
-   attempt's writes are all rolled back).
+2. **A forged nonacceptance cannot bypass the accepted-owner fence.** The
+   same planted oracle, with a false nonacceptance status, requests the real
+   provider and gets its exact accepted-owner rejection. Actual unaccepted
+   input closures supply the positive retry controls in GenerationOnlyDependencies.
 3. **The Prop-level `.below` family's recursors on IxC** (AuxGen T3). For each
    block with a Prop-level `.below` family, the driver's own tail over the
    block's oracle in `shadow` (both kernels, every answer compared): the family
@@ -661,16 +663,17 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
   let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
   let opts : Ix.CompileM.AuxIxcOptions := {}
   let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels opts.asks
+  let cenv := opts.withSourceProviders env.get? blocks ra cenv
   let mut named := 0
-  let mut retried := 0
+  let mut rejected := 0
   let mut families := 0
   let mut familyStats : Ix.AuxGen.IxcStats := {}
   let mut notStandalone := 0
   let shadowOpts : Ix.CompileM.AuxIxcOptions := { opts with mode := .shadow }
   for (lo, members) in inductiveBlocks env blocks do
     let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
+    let lo := key
     let some real := opts.oracleFor ra env.get? key | continue
-    let some fb := real.retry | do errors := errors.push s!"{lo.pretty}: no retry oracle"; continue
     -- 3. the Prop-level `.below` family's recursors on IxC (T3): the driver's
     -- tail in `shadow` (every answer compared with `Ix.Tc`'s) and in production's
     -- `failClosed`, from the same block state
@@ -726,27 +729,18 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
         unless (e.splitOn part).length > 1 do
           errors := errors.push s!"{lo.pretty}: the failure does not name {part}: {e.take 300}"
     let why := "planted: not accepted (AuxGen M5c test)"
-    match ← IO.lazyPure fun _ => runIn cenv lo (tail (.ixc · (planted real (some why))) true),
-        ← IO.lazyPure fun _ => runIn cenv lo (tail (.ixc · fb) false) with
-    | .ok (some kctx, st), .ok (some _, st') =>
-      retried := retried + 1
-      if st.auxReport.retried != some why then
-        errors := errors.push s!"{lo.pretty}: the retry is not recorded"
-      if stateKey { st with auxReport := {} } != stateKey { st' with auxReport := {} } then
-        errors := errors.push s!"{lo.pretty}: the retried block state is not the fallback tail's"
-      let exempt := kctx.admitted.filter fun (_, v) => v matches .exempt _
-      unless exempt.size == kctx.generated.size && kctx.admitted.size == kctx.generated.size do
-        errors := errors.push s!"{lo.pretty}: {exempt.size} of {kctx.generated.size} generated \
-          auxiliaries exempt after the retry"
-    | .error e, _ => errors := errors.push s!"{lo.pretty}: the retry failed: {e.take 200}"
-    | _, .error e => errors := errors.push s!"{lo.pretty}: the fallback tail failed: {e.take 200}"
-    | _, _ => errors := errors.push s!"{lo.pretty}: a tail ran on one side only"
-  lines := lines.push s!"M5c: named failures {named}, retries {retried}; T3: blocks with a \
+    match ← IO.lazyPure fun _ => runIn cenv lo (tail (.ixc · (planted real (some why))) true) with
+    | .error e =>
+      if e == s!"unsupportedExpr: AuxGen (generation retry): block {lo.pretty}: generation: Source-accepted block is ineligible" then
+        rejected := rejected + 1
+      else errors := errors.push s!"{lo.pretty}: wrong accepted-owner rejection: {e}"
+    | .ok _ => errors := errors.push s!"{lo.pretty}: a false status bypassed the accepted-owner fence"
+  lines := lines.push s!"M5c: named failures {named}, accepted-owner rejections {rejected}; T3: blocks with a \
     Prop-level .below family on IxC in shadow {families} (blocks this harness cannot re-run \
     alone, failing alike both ways: {notStandalone})"
   lines := lines.push s!"T3, those tails in shadow: {statsLine familyStats}"
   if named == 0 then errors := errors.push "no planted refusal failed a block"
-  if retried == 0 then errors := errors.push "no planted retry ran"
+  if rejected == 0 then errors := errors.push "no forged nonacceptance was rejected"
   if families == 0 then errors := errors.push "no Prop-level .below family was compared"
   if familyStats.familyInstalled == 0 then
     errors := errors.push "no Prop-level .below family was installed in IxC"
@@ -858,15 +852,19 @@ def suite : List TestSeq := [fixtures, egressFixtures, m5c]
 
 def workers : Nat := 32
 
+/-- The Init/Std input, without benchmark-file declarations or added support. -/
+def initStdInputWithRaw : IO (List (Lean.Name × Lean.ConstantInfo) × Ix.Environment × Ix.CondensedBlocks) := do
+  let leanEnv ← getCompileEnv #[`Init, `Std]
+  let consts := leanEnv.constants.toList.toArray
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts workers
+  let blocks ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.condense env (parallel := true)
+  return (consts.toList, env, blocks)
+
 def initStd : TestSeq :=
   .individualIO "AuxGen M2a on Init+Std: shadow agreement, the measurement fold, the service timed"
     none (do
       let t0 ← IO.monoMsNow
-      let leanEnv ← getCompileEnv #[`Init, `Std]
-      let consts := leanEnv.constants.toList.toArray
-      let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts workers
-      let blocks ← IO.lazyPure fun _ =>
-        Tests.Ix.Kernel.SourceIngressStep.condense env (parallel := true)
+      let (_, env, blocks) ← initStdInputWithRaw
       let t1 ← IO.monoMsNow
       IO.println s!"Init+Std: load, canon and condense {t1 - t0} ms"
       let (errors, lines) ← evaluate "Init+Std" env blocks (4 * workers)

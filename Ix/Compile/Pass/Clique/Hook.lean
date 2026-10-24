@@ -67,6 +67,8 @@ open Ix (Name Expr ConstantInfo)
 structure HookEnv where
   /-- The input constants. -/
   env : Ix.Environment
+  /-- The same original-source provider on the initial plan and recomputation. -/
+  sourceFamilyOracle : Ix.AuxGen.SourceFamilyOracle
   /-- The addresses compiled so far (the compiler's resolution map, then its
   auxiliary names). -/
   addr? : Name → Option Address
@@ -160,7 +162,7 @@ without them (they are in the rows table, or the emission computes them). -/
 def cliquePlanFor (h : HookEnv) (cl carried : Array Name) :
     Except String (CliqueOutcome × Bool × Option Rows) := do
   let compute (_ : Unit) : CliqueOutcome × Option Rows :=
-    let o := planClique h.env h.addr? cl carried
+    let o := planClique h.sourceFamilyOracle h.env h.addr? cl carried
     if h.wfOnly then o.wfOnlyRows h.env.get? else (o, none)
   let some key := cl[0]? | let (o, rows) := compute (); return (o, false, rows)
   unless h.plans.contains key do

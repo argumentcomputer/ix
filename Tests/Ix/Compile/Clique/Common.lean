@@ -22,6 +22,7 @@ import Ix.CanonM
 import Ix.Compile.Canon
 import Ix.Compile.Pass.Clique
 import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.SourceFamilyOracle
 
 open Lean
 

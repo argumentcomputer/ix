@@ -68,6 +68,7 @@ import Ix.Cert.PrefixNatOps
 import Ix.Cert.RuleInputValues
 import Ix.CompileCert.O6PrefixValues
 import Ix.CompileCert.OptDispatchOrigin
+import Ix.CompileCert.OptShapeOrigin
 
 /-! # The certification statements, frozen
 
@@ -6096,3 +6097,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual O6 driver call origins"
     (#[`optBlocks_origin, `o6_lookup_origin, `driver_o6_origin, `passConfig_with_o6_origin].map
       (`Ix.CompileCert.OptDispatchOrigin ++ ·))
+
+/-! ## Actual shape insertion origins under exact name keys
+
+Every positive hit retains its real source/image/recognizer calls through
+skipped attempts and overwrite, with exact query/name/level identification. -/
+
+/-- info: [cert-audit] actual optimizer shape insertion origins: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual optimizer shape insertion origins"
+    (#[`Origins.insert, `optBlockOf_origins, `optBlockOf_shape_origin].map
+      (`Ix.CompileCert.OptShapeOrigin ++ ·))

@@ -18,6 +18,10 @@
   `clique-ownership` suite (`Tests.Ix.Compile.Clique.Ownership.{Sources,
   Lemmas}`), cliques whose user values have the shape of their own encoding,
   loaded the same way, as the library's other suites load theirs.
+
+  M7's checked-generation controls load NestedSortUK separately at run time.
+  Build its raw-addDecl fixture here so registering those controls does not
+  expose its deliberately refused Source input to whole-environment suites.
 -/
 import Tests.Ix.Compile.Twins.Cliques
 import Tests.Ix.Compile.Twins.Repro
@@ -28,3 +32,9 @@ import Tests.Ix.Compile.Fixtures.NestedLevels
 import Tests.Ix.Compile.Clique.Fixtures
 import Tests.Ix.Compile.Clique.Ownership.Sources
 import Tests.Ix.Compile.Clique.Ownership.Lemmas
+import Tests.Ix.Compile.AuxCert.NestedSortUK
+-- Checked opaque-generation fixtures remain outside the whole test environment.
+import Tests.Ix.AuxGen.GenerationOnlyOpaqueFixtures
+-- Portable checked Source fixtures are built here and loaded only at runtime.
+import Tests.Ix.AuxGen.PortableFixtures
+import Tests.Ix.Compile.BridgePortableFixtures

@@ -51,6 +51,7 @@ module
 public import Ix.Environment
 public import Ix.Compile.Canon.Expr
 public import Ix.Compile.Canon.Block
+public import Ix.Compile.ExactKey
 public section
 
 namespace Ix.Compile.Pass.Opt
@@ -234,10 +235,10 @@ def readShape (leanRec : Name) (levelParams : Array Name) (np nm nmin ni : Nat) 
 structure OptBlock where
   all : Array Name
   change : BlockChange
-  /-- The canonical class of each member (Pass 1). -/
-  classOf : Std.HashMap Name (Array Name)
-  /-- The shapes of the block's Lean recursors (those that have one). -/
-  shapes : Std.HashMap Name RecShape
+  /-- The canonical class of each structurally identified member (Pass 1). -/
+  classOf : Std.HashMap ExactKey.ExactName (Array Name)
+  /-- The shapes of the block's Lean recursors, confirmed by complete name. -/
+  shapes : Std.HashMap ExactKey.ExactName RecShape
   deriving Inhabited
 
 /-- What the passes read of the compiler. -/

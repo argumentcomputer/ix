@@ -62,6 +62,7 @@ import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.BridgeBoundaries
 import Tests.Ix.Compile.BridgeScopes
+import Tests.Ix.Compile.BridgePortable
 import Tests.Ix.Compile.BridgeProvenance
 import Tests.Ix.Compile.TableWorklist
 import Tests.Ix.Compile.HeaderCounts
@@ -84,8 +85,10 @@ import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
 import Tests.Ix.AuxGen.AuxKernelTests
 import Tests.Ix.AuxGen.ElimRuleTests
+import Tests.Ix.AuxGen.PortableKernel
 import Tests.Ix.AuxGen.FlatBlockTests
 import Tests.Ix.AuxGen.LevelEgressTests
+import Tests.Ix.AuxGen.LevelReference
 import Tests.Ix.AuxGen.ComponentsTests
 import Tests.Ix.AuxGen.FlatBlockSource
 import Tests.Ix.AuxGen.FlatBlockInitStd
@@ -93,6 +96,8 @@ import Tests.Ix.AuxGen.BelowIxc
 import Tests.Ix.AuxGen.ClosureProbe
 import Tests.Ix.AuxGen.AcceptanceProbe
 import Tests.Ix.AuxGen.TierService
+import Tests.Ix.AuxGen.CheckedGeneration
+import Tests.Ix.Compile.SourceGraph
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -180,6 +185,10 @@ import Ix.Common
 import Ix.Meta
 import Ix.IxVM
 
+run_cmd do
+  if (← Lean.getEnv).header.moduleNames.contains `Tests.Ix.Compile.AuxCert.NestedSortUK then
+    throwError "M7's NestedSortUK fixture must be loaded at runtime, outside Tests.Main"
+
 open Tests.Registry in
 /-- Every `IxTests` entry with its tier (`Tests/Registry.lean`): primary
 entries run with no arguments; the others are named, or selected by tier
@@ -245,8 +254,8 @@ def registry : List Entry := [
   .suite "reserved-input" .primary Tests.Ix.Compile.ReservedInput.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite
-    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.FlatBlock.suite
-    ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.Components.suite),
+    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.PortableKernel.suite ++ Tests.AuxGen.FlatBlock.suite
+    ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.LevelReference.suite ++ Tests.AuxGen.Components.suite),
   -- source-body recognition of casesOn/recOn: the comparison controls (Ix.AuxGen.SourceIdentity)
   .suite "aux-source-identity-unit" .primary Tests.Ix.Compile.SourceIdentity.suite,
   -- `Ix.AuxSource`: telescopes and the split-minor helpers' temporary-variable supply (CQ5.1)
@@ -279,11 +288,12 @@ def registry : List Entry := [
   .suite "aux-dump-inputs" .primary Tests.Compile.AuxGenDiff.suite,
   -- the compile drivers refuse a condensation block without a reference set
   .suite "compile-driver-input" .primary Tests.Ix.Compile.DriverInput.suite,
+  .runner "compile-source-graph" .primary Tests.Ix.Compile.SourceGraph.run,
   .suite "local-blob" .primary Tests.Ix.Compile.LocalBlob.suite,
   .suite "compiler-index-safety" .primary Tests.Ix.Compile.IndexSafety.suite,
   -- the aux kernel bridges refuse what they cannot convert (D-12)
   .suite "compiler-bridge-boundaries" .primary Tests.Ix.Compile.BridgeBoundaries.suite,
-  .suite "compiler-bridge-scopes" .primary Tests.Ix.Compile.BridgeScopes.suite,
+  .suite "compiler-bridge-scopes" .primary (Tests.Ix.Compile.BridgeScopes.suite ++ Tests.Ix.Compile.BridgePortable.suite),
   .suite "compiler-provenance" .primary Tests.Ix.Compile.BridgeProvenance.suite,
   .suite "table-worklist" .primary Tests.Ix.Compile.TableWorklist.suite,
   .suite "header-count" .primary Tests.Ix.Compile.HeaderCounts.suite,
@@ -543,6 +553,9 @@ def registry : List Entry := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   .env "aux-gen-diff" (.ci .compilePipeline) Tests.Compile.AuxGenDiff.run,
+  -- Checked generation capabilities, actual nine-target retries, immutable
+  -- Source state and explicit callers; the expensive replay runs once.
+  .runner "auxgen-checked-generation" (.ci .compilePipeline) Tests.Ix.AuxGen.CheckedGeneration.run,
   -- The compiler's nested expansion against IxC's nested modeller (SP5):
   -- source order, canonical order, permutation, field kinds and verdicts
   -- on every nested fixture block (Tests.Ix.Compile.NestedAgreement).
@@ -601,7 +614,7 @@ def registry : List Entry := [
   -- Pass 3's clique tables (plans, rows) are memos: the check mode
   -- (`IX_PASS3_CHECK_PLANS`) at 1, 4 and 32 workers writes the reference's
   -- bytes, with negative controls (Tests.Ix.Compile.PlanCache)
-  .runner "pass3-plan-cache" .landing Tests.Ix.Compile.PlanCache.run,
+  .runner "pass3-plan-cache" (.ci .compilePipeline) Tests.Ix.Compile.PlanCache.run,
   -- The clique transport wired: every plan of the twins unit, and its rows and
   -- `_ix.src` copies published exactly (Tests.Ix.Compile.Pass3Cliques)
   .runner "pass3-cliques" .landing Tests.Ix.Compile.Pass3Cliques.run,
@@ -629,7 +642,7 @@ def registry : List Entry := [
   -- bytes in each mode, on the fixtures; the same on Init+Std, timed, with the service measured
   .suite "auxgen-below-ixc" .landing Tests.Ix.AuxGen.BelowIxc.suite,
   .suite "auxgen-below-initstd" (.manual "the AuxGen lane's M2a measurement on Init+Std (about 10 min): shadow agreement, the measurement fold in each mode, the Source service timed") Tests.Ix.AuxGen.BelowIxc.initStdSuite,
-  .runner "auxgen-closure-probe" (.manual "AuxGen M3's coverage probe: the Source service on selected closures of Init+Std, in shadow mode, traced") Tests.Ix.AuxGen.ClosureProbe.run,
+  .runner "auxgen-closure-probe" (.manual "AuxGen M3's coverage probe: the Source service on selected closures of Init+Std, failClosed and traced") Tests.Ix.AuxGen.ClosureProbe.run,
   .runner "auxgen-acceptance-probe" (.manual "AuxGen M5a library check: generated auxiliaries of flat and nested blocks accepted by Source mode, by kind") Tests.Ix.AuxGen.AcceptanceProbe.run,
   -- Source evidence from the committed bundle unblocks the service's inductive blocks
   .runner "bundle-evidence-initstd" (.manual "AuxGen's Source service on Init+Std without the certificate module, at the input's evidence and at the committed bundle's (about 2 min)") Tests.Ix.Kernel.BundleEvidence.runInitStd,
@@ -674,4 +687,6 @@ def main (args : List String) : IO UInt32 := do
     for msg in errors[:min 50 errors.size] do
       IO.println s!"  {msg}"
     return 1
-  Tests.Registry.run registry get_env! args
+  Tests.Registry.run registry get_env! args (required :=
+    [("auxgen-checked-generation", "ci:compile-pipeline"),
+     ("pass3-plan-cache", "ci:compile-pipeline")])

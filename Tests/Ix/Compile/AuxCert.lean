@@ -48,14 +48,11 @@
      changed); recursor blocks of an exact size (one class and one
      canonical auxiliary); and the Lean names that must hold Pass 3 images
      (a definition with `Named.original`).
-  5. AuxGen M5c's shadow leg, on a compiled fixture: `ix compile-lean` again
-     under `IX_AUXGEN_IXC=shadow` (each safe block's aux tail asks both
-     kernels and uses `Ix.Tc`'s answers), after the production compile and
-     alongside the checks. Its output must equal production's byte for byte
-     (production is `failClosed`, IxC's answers alone), and its traced counts
-     must show no IxC answer, decision or recursor `whnf` different from
-     `Ix.Tc`'s and no refusal on a block Source mode accepts: the stop rule
-     (`shadowCheck`; a block it does not accept retries on `fallback`).
+  5. A checked trace leg, on a compiled fixture: `ix compile-lean` again
+     under `IX_AUXGEN_IXC=failClosed,asks=recursors`. Its output must equal
+     the independently cross-checked production bytes, and every tail must
+     have a well-formed trace with no checked refusal or Lean-layout mismatch.
+     Real Prop, unsafe-tier and named-beta profiles require nonempty coverage.
 
   The output's names are read from its own named section (all of them):
   the required and forbidden names, the constants handed to `check-lean`, and
@@ -420,57 +417,73 @@ def tailCounts (out : String) (skip : String → Bool := fun _ => false) :
       | _ => m := m.insert k (m.getD k 0 + v.toNat!)
   return (m, tails)
 
-/-- The traced counts the stop rule holds at 0 on a shadow compile (AuxGen
-    M5c; `auxgen-below-ixc`'s assertions): an IxC answer, decision, recursor
-    `whnf` or elimination decision different from `Ix.Tc`'s, a skipped field
-    `Ix.Tc` finds recursive, a Lean-layout block whose canonical recursors are
-    not Lean's, and every refusal (AuxGen T3: a Prop-level `.below` family's
-    install too, `familyRefused`). -/
-def shadowStopCounts : List String :=
-  ["differ", "decisionsDiffer", "recDiffer", "recSkipDiffer", "elimDiffer", "leanRecDiffer",
-   "refused", "scopesRefused", "flatRefused", "belowRefused", "recRefused", "elimRefused",
+/-- Checked-path refusals and disagreement with the original Lean-layout
+    recursors must remain zero, including Prop-family installation. -/
+def checkedStopCounts : List String :=
+  ["leanRecDiffer", "refused", "scopesRefused", "flatRefused", "belowRefused", "recRefused", "elimRefused",
    "familyRefused"]
 
-/-- **AuxGen M5c's shadow leg** on a compiled fixture: `ix compile-lean` again
-    with every safe block's tail asking both kernels and using `Ix.Tc`'s
-    answers (`IX_AUXGEN_IXC=shadow`). Its output must be production's byte for
-    byte (production is `failClosed`: IxC's answers alone), and its traced
-    counts must hold the stop rule (`shadowStopCounts` at 0: every IxC answer
-    equal to `Ix.Tc`'s, nothing refused) on every block Source mode accepts,
-    and (AuxGen T3) on every unsafe block the tier installed, whose tail asks
-    IxC over the tier's answer view. Any other block it does not accept re-runs
-    on `fallback` in production (M5c's retry, its rows exempt unless identical),
-    so its tail is left out; the compile lists those blocks (`source service,
-    block not accepted: <block>: <why>`, at most 8: a ninth's refusals would
-    count, failing closed). The problems, and a summary. -/
-def shadowCheck (sh : IO.Process.Output) (shadowOut leanOut : System.FilePath) :
+/-- Strict checked-path trace validation. Missing fields cannot become zero;
+all tails, including unsafe and generation-only tails, stay in the census. -/
+def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat × Nat) := do
+  let required := #["queries", "answered", "refused", "scopesRefused", "flat", "below", "recWhnf", "recBeta",
+    "recRefused", "elim", "elimRefused", "leanRecSame", "leanRecDiffer", "family", "unsafe", "tier", "asked"]
+  let mut blocks : Std.HashSet String := {}
+  for line in text.splitOn "\n" do
+    if !line.startsWith "[auxgen-ixc] " || line.startsWith "[auxgen-ixc]   " then continue
+    let [head, body] := line.splitOn ": " | throw "checked trace: malformed tail header"
+    if !body.startsWith "queries " then throw "checked trace: malformed tail header"
+    let block := (head.drop "[auxgen-ixc] ".length).toString
+    if block.isEmpty || blocks.contains block then throw "checked trace: empty/duplicate tail key"
+    blocks := blocks.insert block
+    let words := (body.splitOn " ").filter (!·.isEmpty) |>.toArray
+    if words.size % 2 != 0 then throw "checked trace: dangling counter"
+    let mut fields : Std.HashSet String := {}
+    for i in [:words.size / 2] do
+      let key := words[2*i]!; let value := words[2*i+1]!
+      if fields.contains key then throw "checked trace: duplicate counter"
+      fields := fields.insert key
+      let parts := value.splitOn "/"
+      if parts.length != (if #["flat", "below", "family"].contains key then 2 else 1) then throw "checked trace: counter shape"
+      for part in parts do
+        let some n := part.toNat? | throw "checked trace: nonnumeric counter"
+        if toString n != part then throw "checked trace: noncanonical counter"
+    if !required.all fields.contains then throw "checked trace: missing required counter"
+    let (row, _) := tailCounts line
+    if row.getD "refused" 0 == 0 && row.getD "answered" 0 != row.getD "queries" 0 then
+      throw "checked trace: answered/query coverage differs"
+    if row.getD "unsafe" 0 != row.getD "tier" 0 then throw "checked trace: unsafe tail lacks its tier"
+  if blocks.isEmpty then throw "checked trace: no tail coverage"
+  let (counts, tails) := tailCounts text
+  for key in checkedStopCounts do
+    if counts.getD key 0 != 0 then throw s!"checked trace: {key} is nonzero"
+  if #["BelowNRec", "UnsafeI", "F5_SigmaNestedNested"].contains stem then
+    if ["queries", "recWhnf", "elim", "leanRecSame"].any (counts.getD · 0 == 0) then throw "checked trace: required real profile is empty"
+    if stem == "BelowNRec" && counts.getD "familyAdmitted" 0 == 0 then throw "checked trace: Prop family profile is empty"
+    if stem == "UnsafeI" && counts.getD "unsafe" 0 == 0 then throw "checked trace: unsafe profile is empty"
+    if stem == "F5_SigmaNestedNested" && counts.getD "recBeta" 0 == 0 then throw "checked trace: named beta profile is empty"
+  return (counts, tails)
+
+/-- Validate the supported checked CLI trace over every tail and compare its
+    bytes to the independently checked production output. Unsafe and
+    generation-only tails remain included; no bounded report waives a row. -/
+def checkedTraceCheck (stem : String) (sh : IO.Process.Output) (checkedOut leanOut : System.FilePath) :
     IO (Array String × String) := do
   let text := sh.stdout ++ sh.stderr
   if sh.exitCode != 0 then
-    return (#[s!"shadow compile (IX_AUXGEN_IXC=shadow): exit {sh.exitCode}: \
-      {(text.takeEnd 400).toString}"], "shadow failed")
+    return (#[s!"checked trace compile: exit {sh.exitCode}: {(text.takeEnd 400).toString}"], "checked trace failed")
   let mut problems : Array String := #[]
-  if (← sha256 shadowOut) != (← sha256 leanOut) then
-    problems := problems.push "shadow compile's output differs from production's"
+  unless ← checkedOut.pathExists do return (#["checked trace output is absent"], "checked trace failed")
+  if (← sha256 checkedOut) != (← sha256 leanOut) then
+    problems := problems.push "checked trace output differs from production's"
   let lines := text.splitOn "\n"
-  let marker := "source service, block not accepted: "
-  -- a tier-installed block (`tier-installed (…)`) stays in: T3 routes it to IxC
-  let notAccepted : List String := lines.filterMap fun l =>
-    let l := l.trimAscii.toString
-    if l.startsWith marker then
-      match (l.drop marker.length).toString.splitOn ": " with
-      | block :: why :: _ => if why.startsWith "tier-installed" then none else some block
-      | _ => none
-    else none
-  let (c, tails) := tailCounts text (notAccepted.contains ·)
-  for k in shadowStopCounts do
-    let v := c.getD k 0
-    if v != 0 then problems := problems.push s!"shadow: {k} {v} (stop rule)"
+  let (c, tails) ← match checkedTrace text stem with
+    | .ok result => pure result
+    | .error error => return (problems.push error, "checked trace invalid")
   if !problems.isEmpty then
     for l in (lines.filter (·.startsWith "[auxgen-ixc]   ")).take 4 do
-      problems := problems.push s!"shadow sample: {(l.drop 15).toString.take 300}"
-  return (problems, s!"shadow over {tails} tails ({notAccepted.length} of blocks Source does \
-    not accept left out): recursor whnf {c.getD "recWhnf" 0} (stuck after β \
+      problems := problems.push s!"checked sample: {(l.drop 15).toString.take 300}"
+  return (problems, s!"checked trace over all {tails} tails: recursor whnf {c.getD "recWhnf" 0} (stuck after β \
     {c.getD "recBeta" 0}), elimination {c.getD "elim" 0}, levels {c.getD "queries" 0}, \
     Prop-level .below families {c.getD "familyAdmitted" 0}, unsafe tails {c.getD "unsafe" 0} \
     (tier-installed {c.getD "tier" 0})")
@@ -709,13 +722,13 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       problems := problems.push s!"ix compile-lean --rust-check: exit {ln.exitCode}, no ALIGNED: {(lnText.takeEnd 400).toString}"
     else if (← sha256 rsOut) != (← sha256 leanOut) then
       problems := problems.push "two compiles differ: ix compile vs ix compile-lean --rust-check outputs"
-    -- AuxGen M5c's shadow leg (`shadowCheck`), alongside the checks below: the
+    -- The explicit checked trace, alongside the checks below: the
     -- fixture's module is built by now, so its nested `lake build` races nothing.
-    let shadowOut := dir / "shadow.ixe"
+    let shadowOut := dir / "checked-trace.ixe"
     let shadowTask ← if lnCode == 0 then
         some <$> IO.asTask (prio := .dedicated) (run ixExe
           (#["compile-lean", src, "--out", shadowOut.toString] ++ scope)
-          #[("IX_AUXGEN_IXC", some "shadow")])
+          #[("IX_AUXGEN_IXC", some "failClosed,asks=recursors")])
       else pure none
     -- `check-rs` needs only the output: run it alongside the certified checker.
     let rsCheckTask ← IO.asTask (prio := .dedicated)
@@ -800,8 +813,8 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
     let mut shadowSummary := ""
     if let some t := shadowTask then
       let shadow ← IO.ofExcept (← IO.wait t)
-      save "shadow" shadow
-      let (shProblems, summary) ← shadowCheck shadow shadowOut leanOut
+      save "checked-trace" shadow
+      let (shProblems, summary) ← checkedTraceCheck f.stem shadow shadowOut leanOut
       problems := problems ++ shProblems
       shadowSummary := s!"; {summary}"
     return (problems, s!"compiled, ALIGNED, {mine.length} names, {nKnown} recorded \

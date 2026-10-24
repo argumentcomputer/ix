@@ -1,22 +1,25 @@
 /-
   `ix compile-lean <path.lean> [--out out.ixe]`: compile a Lean file's
-  environment to a serialized Ixon `.ixe` through the PURE-LEAN pipeline
-  end-to-end — the `Ix.CompileM` counterpart of `ix compile` (which
+  environment to a serialized Ixon `.ixe` through the Lean pipeline
+  — the `Ix.CompileM` counterpart of `ix compile` (which
   drives the Rust FFI compiler). Phases: elaborate → canonicalize
   (`Ix.CanonM`) → reference graph (`Ix.GraphM`) → groundedness filter
-  (`Ix.Ground`) → Tarjan condense (`Ix.CondenseM`) → the driver, a pure
-  fold over waves (`Ix.CompileM.compileEnvFold`) → `Ixon.serEnv`.
+  (`Ix.Ground`) → Tarjan condense (`Ix.CondenseM`) → the driver with its
+  Source service (`Ix.CompileM.compileEnvFoldWithSource`) → `Ixon.serEnv`.
 
   `--rust-check` additionally compiles the same environment through the
   Rust FFI compiler (`rs_compile_env_bytes` — the exact bytes
   `ix compile` writes) and byte-compares the two outputs: this is the
-  ALIGNED gate. The comparison is cross-serializer (Rust `Env::put`
-  vs Lean `Ixon.serEnv`), which the serde gate guarantees agree on
-  identical environments — so byte equality here certifies the full
-  pipeline, not just the compiler core.
+  ALIGNED gate. The comparison covers both compilers and serializers
+  (Rust `Env::put` and Lean `Ixon.serEnv`) on this input. It is measured
+  whole-output parity, not a universal refinement or value-preservation
+  proof. `compileLeanInputValidated` runs the resource post-step; it does
+  not run `Ix.Cert.checkReport` or changed-cone certification.
 
-  Exit codes: 0 success (and aligned, when checked); 1 pipeline error or
-  divergence; 2 usage.
+  Exit codes: 0 success (including an explicitly allowed partial output,
+  and aligned when checked); 1 pipeline error, an unallowed block failure,
+  or divergence; 2 usage. The Lean output is written before `--rust-check`,
+  so a later divergence leaves that output on disk.
 -/
 module
 public import Cli

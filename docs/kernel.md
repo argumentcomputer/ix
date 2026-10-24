@@ -25,6 +25,50 @@ Nothing here certifies the Lean-to-Ixon compiler, the Rust checker, `Ix.Tc`
 or IxVM. An accepted environment has a model; that it is the environment
 the original Lean source meant is outside the claim.
 
+## Relation to compiler certification
+
+The compiler proof work in this PR is incomplete. In
+[`Ix/Cert/Statement.lean`](../Ix/Cert/Statement.lean), `CompileCorrect` is a
+`Prop` declaration, not a proved theorem. Its present statement uses nominal
+Source acceptance, executed Ixon acceptance and every target `ValueModel`.
+It has not yet been reconciled with the intended quotient-Source,
+reference-acceptance statement. Reference acceptance means acceptance at
+some fuel; it is not a guarantee that the executable checker succeeds at
+its fixed fuel.
+
+The intended value-preservation contract takes **every strong target model**
+and produces **one coherent Source value model** for the whole closure,
+preserving each published input's reading at every level and variable
+valuation. `ValueModel` does not contain all the laws of
+`Ix.Kernel.Cached.StrongModel`; replacing the current quantifier is an
+explicit statement correction, not an equivalence between these models.
+Full value preservation for the shipped permutations, images, occurrence
+passes and clique rows remains required in this PR and unproved.
+
+The agreed acceptance proof combines static renaming with certified checks
+of changed cones. Those checks and Source-form typing witnesses are the
+remaining CQ5.4 integration; successful typechecking of rewritten output
+does not prove that its value matches the source. `SourceAcceptsQ` already
+states quotient Source acceptance. `NominalQuotientAgree` (S4) is a named,
+unproved assumption for a nominal acceptance corollary. It supplies no
+relation between nominal and quotient value models.
+
+The command-line paths are also distinct. `ix compile` runs the Rust
+compiler. `ix compile-lean` runs the Lean driver followed by
+`compileLeanInputValidated` in
+[`Ix/CompileResource.lean`](../Ix/CompileResource.lean): it validates resources
+when semantic contracts or a resource profile require them, then checks
+original-input publication/failure accounting. Valid partial output remains
+allowed; missing, double or outside-input failure accounting is rejected.
+These checks rely on the actual compiler's retained input facts; they do not
+authenticate arbitrary caller-supplied fact maps. Bare compiler APIs remain
+unvalidated. This path does not invoke the full `Ix.Cert.checkReport` or the
+remaining CQ5.4 admission and Source-form typing checks. `--rust-check`
+compares the two serialized outputs for that input;
+byte parity is empirical evidence, not a universal compiler-refinement
+theorem. Metadata, including the records used for source reconstruction,
+is outside the certification claim.
+
 ## The certified entry
 
 ```lean
@@ -1197,8 +1241,8 @@ Both dependency paths are removed: the root Lake package `lean4lean`
 fetched `argumentcomputer/lean4ix` at
 `a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and TruthMines independently
 fetched `digama0/lean4lean` at `e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00`.
-The old verification trees and their consumers are gone; runtime `Ix.Tc`
-is unchanged.
+The old verification trees and their consumers are gone. Runtime `Ix.Tc`
+remains in the tree while its compiler consumers are being migrated.
 
 | Retired or remaining surface | Replacement or disposition | Status |
 | --- | --- | --- |
@@ -1241,7 +1285,7 @@ acceptance/rejection behavior or full `Nat.add_comm` certified parity.
 | Tag0/Tag2/Tag4 integer laws and their minimal-width checks | the TagN writer and reader laws `Ixon.Verify.Codec.{putTagN_writes, getTagN_reads}` over the byte specification `tagNBytes` (`IxC/Ixon/Verify/Basic.lean`), and `Ixon.Verify.TagN`: `runGetExact_getTagN_iff` (a read succeeds exactly on the written bytes), `putTagN_inj`, `getTagN_rejects_code`, `getTagN_rejects_overflow` (implemented) | Ixon v4 has one integer code, and it is bijective, so no minimal-width check remains |
 | `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | Checked resolution in the canonical decoder and the Ixon reader (a bad index or a missing payload is a malformed record) | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
 | Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader keeps `lam` and `all` contracts as identity data, conversion compares input contracts and not result contracts, and `let` contracts are erased ("Binder contracts" above) | No Lean4Lean interpretation is retained as a hidden premise; an accept checks no use of a variable against its contract |
-| Production compiler refinement/value-preservation and end-to-end semantic square | Retired; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
+| Production compiler refinement/value-preservation and end-to-end semantic square | Old proofs retired; the new `Ix.Cert` composition and full rewrite value preservation remain required in this PR and unproved ("Relation to compiler certification" above) | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
 
 These contracts are stated about the Ixon v4 codec (TagN integers), with the
 same names and statements as for v3, as is every codec lemma the byte stage

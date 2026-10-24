@@ -141,20 +141,22 @@ recursors). Empty when the head is not under a recursive inductive of the
 input (the structural transport then refuses). An error when the first
 member is not a `brecOn` application (`memberShape`): the clique is then not
 encoded. -/
-def authenticatedFamily (env : Ix.Environment) (members : Array Decl) :
+def authenticatedFamily (oracleFor : Ix.AuxGen.SourceFamilyOracle)
+    (env : Ix.Environment) (members : Array Decl) :
     Except String (Std.HashSet Name) := do
   let some m0 := members[0]? | throw "no member"
   let sh ← memberShape m0
   match familyCandidates env.get? sh.brecOnName with
   | none => pure {}
   | some (all, candidates) =>
-    pure ((Ix.AuxGen.SourceFamily.filterHeads env all candidates).foldl (·.insert ·) {})
+    return (← Ix.AuxGen.SourceFamily.filterHeadsChecked oracleFor env all candidates).foldl (·.insert ·) {}
 
 /-- The plan of a clique (`all`, Lean's order) with its carried equation
 lemmas (pure; every block of the clique computes the same one). `env` is the
 input (`const? := env.get?`), `addr?` the addresses of the clique's external
 references (the order compares them by address). -/
-def planClique (env : Ix.Environment) (addr? : Name → Option Address)
+def planClique (oracleFor : Ix.AuxGen.SourceFamilyOracle)
+    (env : Ix.Environment) (addr? : Name → Option Address)
     (all carried : Array Name) : CliqueOutcome := Id.run do
   let const? := env.get?
   if all.size < 2 then return .notEncoded "a single member"
@@ -173,7 +175,7 @@ def planClique (env : Ix.Environment) (addr? : Name → Option Address)
   -- the authenticated family of a structural clique's block
   let mut family : Std.HashSet Name := {}
   if enc == .structural then
-    match authenticatedFamily env members with
+    match authenticatedFamily oracleFor env members with
     | .ok f => family := f
     | .error why => return .notEncoded s!"structural: {why}"
   let some all0 := all[0]? | return .notEncoded "a single member"

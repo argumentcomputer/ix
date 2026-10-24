@@ -23,6 +23,7 @@ pub mod merkle;
 pub mod metadata;
 pub mod proof;
 pub mod resource;
+pub mod role_table;
 pub mod serialize;
 pub mod shard_claim;
 pub mod sharing_exact;

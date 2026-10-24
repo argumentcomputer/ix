@@ -2,12 +2,14 @@ import LSpec
 import Ix.Meta
 import Ix.CompileDriver
 import Tests.Ix.AuxGen.BelowIxc
+import Tests.Ix.AuxGen.CheckedKernel
+import Tests.Ix.AuxGen.ProbeReport
 
 /-! # Generated auxiliaries accepted by Source mode (`lake exe IxTests --ignored auxgen-acceptance-probe`)
 
 AuxGen M5a's library check, before its wiring (`auxgen-m5.md` §2). For every
 block that holds an inductive, on the fixtures and on Init+Std: the aux
-tail's patches (`generateAuxPatches` on `Ix.Tc`), then, over the block's
+tail's patches (`generateAuxPatches` on the checked IxC capability), then, over the block's
 oracle (a run-ahead with production's asks, the block folded):
 - a block whose layout is Lean's (no flat block) is left to the identity
   verdict (the input's own acceptance); its patches are counted against
@@ -19,8 +21,8 @@ oracle (a run-ahead with production's asks, the block folded):
   recursors, the `.brecOn` family (`go`, `brecOn`, `eq`); theorems as
   theorems;
 - an unsafe block is exempt.
-Printed: verdicts by route and kind, and the refusals. Asserts nothing (the
-stop rule is M5a's gate). -/
+Printed: complete typed outcomes/refusals and route/kind counts. Source
+refusals remain diagnostic outcomes; harness failures return a nonzero exit. -/
 
 namespace Tests.Ix.AuxGen.AcceptanceProbe
 
@@ -60,7 +62,7 @@ def order : Ix.AuxGen.PatchedConstant → Nat
     | _ => 5
   | .recr _ => 7
 
-/-- One block's generation on `Ix.Tc`: its classes, Lean's `all`, the
+/-- One block's checked IxC generation: its classes, Lean's `all`, the
 patches, and the Prop family's generated recursors (as CompileAux generates
 them, over an overlay). -/
 structure Gen where
@@ -95,7 +97,8 @@ def generate (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Name
     let classes := (classNames.map (·.filter inAll)).filter (!·.isEmpty)
     if classes.isEmpty then return none
     let maps := Ix.AuxGen.AddrMaps.ofCompileEnv (← Ix.CompileM.getCompileEnv)
-    let (out, _) ← (Ix.AuxGen.generateAuxPatches classes originalAll maps).run
+    let kernel ← checkedFamilyKernel cenv maps originalAll
+    let (out, ctx) ← (Ix.AuxGen.generateAuxPatches classes originalAll maps kernel).run
       Ix.AuxGen.AuxKernelCtx.new
     -- the Prop family, as CompileAux builds its overlay
     let belowRaw : Array Ix.AuxGen.BelowIndc := out.patches.fold (init := #[]) fun acc _ p =>
@@ -116,9 +119,14 @@ def generate (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Name
         overlay := overlay.insert ind.name (.inductInfo v)
         for c in ind.ctors do overlay := overlay.insert c.cnst.name (.ctorInfo c)
     let familyRecs ← if family.isEmpty then pure #[] else do
-      let (recs, _) ← (Ix.AuxGen.generateCanonicalRecursorsWithOverlay
-        (family.map fun (v, _) => #[v.cnst.name]) (some overlay) none (.tc maps)).run
-          Ix.AuxGen.AuxKernelCtx.new
+      let (recs, _) ← (do
+        let base := match ctx.canonical, ctx.canonicalOracle with
+          | some .installed, some oracle => Ix.AuxGen.AuxKernel.ixc maps oracle
+          | _, _ => kernel
+        let familyKernel ← base.withFamily family
+        Ix.AuxGen.generateCanonicalRecursorsWithOverlay
+          (family.map fun (p : Ix.InductiveVal × Array Ix.ConstructorVal) => #[p.1.cnst.name])
+          (some overlay) none familyKernel).run ctx
       pure recs.1
     return some { classes, originalAll, out, family, familyRecs }
   match Ix.CompileM.CompileM.run cenv blockEnv {} act with
@@ -146,71 +154,94 @@ def decls (g : Gen) : Array Ix.AuxGen.GeneratedDecl := Id.run do
   return out
 
 def measureOn (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (width : Nat) : IO Unit := do
+    (width : Nat) : IO Nat := do
   let t0 ← IO.monoMsNow
-  let (_, _, cenv) ← IO.ofExcept (← IO.lazyPure fun _ =>
-    Ix.CompileM.compileEnvFold env blocks (width := width))
+  let opts : Ix.CompileM.AuxIxcOptions := { mode := .failClosed, recursors := true, asks := .recursors, trace := true }
+  let ((_, _, cenv), source) ← IO.ofExcept (← IO.lazyPure fun _ =>
+    Ix.CompileM.compileEnvFoldWithSource env blocks (width := width) (aux := opts))
   let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
-  let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels
-    ({} : Ix.CompileM.AuxIxcOptions).asks
+  let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels opts.asks
   let t1 ← IO.monoMsNow
   IO.println s!"{label}: production fold {t1 - t0} ms"
   let mut counts : Std.HashMap String Nat := {}
   let mut samples : Array String := #[]
   let mut failures : Array String := #[]
+  if let some e := source.error then failures := failures.push s!"Source service: {e}"
+  if !ProbeReport.complete source then failures := failures.push "capture-completeness: Source report truncated/inconsistent"
+  for (n, why) in cenv.ungrounded do failures := failures.push s!"{n.pretty}: production fold: {why}"
   let bump (m : Std.HashMap String Nat) (k : String) := m.insert k (m.getD k 0 + 1)
   for (lo, members) in inductiveBlocks env blocks do
     let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
-    let some t := ra.runFor key | do failures := failures.push s!"{lo.pretty}: no level"; continue
+    ProbeReport.emit "acceptance-probe" [("scope", .str label), ("block", ProbeReport.name key),
+      ("members", .arr (members.map ProbeReport.name)), ("outcome", .str "selected")]
+    if (ra.runFor key).isNone then failures := failures.push s!"{lo.pretty}: no level"; continue
     match ← IO.lazyPure fun _ => generate cenv lo members with
-    | .error e => failures := failures.push s!"{lo.pretty}: generation: {e.take 200}"
-    | .ok none => pure ()
+    | .error e => failures := failures.push s!"{lo.pretty}: generation: {e}"
+    | .ok none => ProbeReport.emit "acceptance-probe" [("scope", .str label), ("block", ProbeReport.name lo), ("outcome", .str "no-generated-family")]
     | .ok (some g) =>
       let route := routeOf env.get? g.classes g.originalAll
       if route == "unsafe" then
         counts := bump counts s!"{route} | exempt (blocks)"
+        ProbeReport.emit "acceptance-probe" [("scope", .str label), ("block", ProbeReport.name lo), ("route", .str route), ("outcome", .str "exempt")]
         continue
       if route == "lean" then
         counts := bump counts s!"{route} | identity (blocks)"
+        ProbeReport.emit "acceptance-probe" [("scope", .str label), ("block", ProbeReport.name lo), ("route", .str route), ("outcome", .str "identity")]
         continue
-      let o := Ix.AuxGen.Ixc.oracleOfRun .fallback false (fun _ => t.get) (ra.membersFor key)
-        { recursors := true, lookup := env.get? }
+      let some o := opts.oracleFor ra env.get? key | do failures := failures.push s!"{lo.pretty}: original-service oracle absent"; continue
+      if o.mode != .failClosed || !o.recursors || o.retry.isSome then
+        failures := failures.push s!"{lo.pretty}: invalid original-service capability"; continue
       let mut o := o
+      let originalStatus := o.blockStatus ()
+      let mut flatResult : Option String := none
+      let mut flatOutcome := "not-needed"
       -- the canonical flat block (the generated recursors checked)
       match o.withFlat g.classes g.originalAll g.out.canonicalRecs with
       | .ok (some o') =>
+        flatOutcome := "accepted"
         o := o'
         counts := bump counts s!"{route} | rec (flat block) | accepted"
       | .ok none => counts := bump counts s!"{route} | rec (flat block) | not needed"
       | .error e =>
+        flatOutcome := "refused"
+        flatResult := some e
         counts := bump counts s!"{route} | rec (flat block) | refused"
-        samples := samples.push s!"{lo.pretty}: flat block: {e.take 240}"
+        samples := samples.push s!"{lo.pretty}: flat block: {e}"
+      ProbeReport.emit "acceptance-probe" [("scope", .str label), ("block", ProbeReport.name lo),
+        ("route", .str route), ("originalStatus", Lean.toJson originalStatus),
+        ("flatOutcome", .str flatOutcome), ("flatRefusal", Lean.toJson flatResult)]
       match o.admit (decls g) with
-      | .error e => failures := failures.push s!"{lo.pretty}: admit: {e.take 200}"
+      | .error e => failures := failures.push s!"{lo.pretty}: admit: {e}"
       | .ok (_, verdicts) =>
         for (n, why) in verdicts do
           let kind := match g.out.patches.get? n with
             | some p => kindOf p
             | none => "below (Prop family)"
+          ProbeReport.emit "acceptance-probe" [("scope", .str label), ("name", ProbeReport.name n), ("route", .str route),
+            ("kind", .str kind), ("outcome", .str (if why.isNone then "accepted" else "refused")), ("reason", Lean.toJson why)]
           match why with
           | none => counts := bump counts s!"{route} | {kind} | accepted"
           | some r =>
             counts := bump counts s!"{route} | {kind} | refused"
-            if samples.size < 40 then samples := samples.push s!"{n.pretty}: {r.take 240}"
+            samples := samples.push s!"{n.pretty}: {r}"
   for (k, n) in counts.toList.toArray.qsort (fun a b => a.1 < b.1) do
     IO.println s!"{label}: {k}: {n}"
   for s in samples do IO.println s!"{label}:   refused: {s}"
   for f in failures.extract 0 10 do IO.println s!"{label}:   failure: {f}"
   IO.println s!"{label}: {failures.size} harness failures"
+  ProbeReport.emit "acceptance-probe" [("scope", .str label), ("source", ProbeReport.source source),
+    ("counts", Lean.toJson (counts.toList.toArray.qsort (fun a b => a.1 < b.1))),
+    ("refusals", Lean.toJson samples), ("harnessFailures", Lean.toJson failures)]
+  return failures.size
 
 def run : IO UInt32 := do
   let (env, blocks) ← Tests.Ix.AuxGen.BelowIxc.fixtureInput
-  measureOn "fixtures" env blocks 16
+  let fixturesFailed ← measureOn "fixtures" env blocks 16
   let leanEnv ← getCompileEnv #[`Init, `Std]
   let consts := leanEnv.constants.toList.toArray
   let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts 32
   let blocks ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.condense env (parallel := true)
-  measureOn "Init+Std" env blocks 128
-  return 0
+  let initFailed ← measureOn "Init+Std" env blocks 128
+  return if fixturesFailed + initFailed == 0 then 0 else 1
 
 end Tests.Ix.AuxGen.AcceptanceProbe

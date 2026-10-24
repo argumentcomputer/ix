@@ -23,7 +23,9 @@
 //! ([`driver::edit_changed_block`]) and before a block compiles
 //! ([`driver::compile_block`]). No call-site plan is registered: the
 //! callers of a changed block's auxiliaries are rewritten through the images.
-//! The optimisation passes are not here.
+//! Occurrence optimisation runs through [`opt::engine`] in the order
+//! O11a, O2, O3, O4, O6. The driver supplies it to [`translate`] as the
+//! optimisation hook, before an image is inlined.
 
 pub mod build;
 pub mod clique;

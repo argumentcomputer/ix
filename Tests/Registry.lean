@@ -141,10 +141,19 @@ def problems (entries : List Entry) (workflows : List (String × String)) : List
 def workflowFiles : List System.FilePath :=
   [".github/workflows/ci.yml", ".github/workflows/merge-tests.yml"]
 
+/-- Retained behavior checks must occur exactly once in their required tier,
+including entries that would otherwise disappear silently from CI. -/
+def coverageProblems (entries : List Entry) (required : List (String × String)) : List String :=
+  required.filterMap fun (name, tier) =>
+    match entries.filter (·.name == name) with
+    | [entry] => if entry.tier.key == tier then none else
+        some s!"required entry {name} runs in {entry.tier.key}, expected {tier}"
+    | hits => some s!"required entry {name} is registered {hits.length} times"
+
 /-- The primary self-test `ixtests-registry`. -/
-def selfTest (entries : List Entry) : IO UInt32 := do
+def selfTest (entries : List Entry) (required : List (String × String) := []) : IO UInt32 := do
   let workflows ← workflowFiles.mapM fun f => do pure (f.toString, ← IO.FS.readFile f)
-  let ps := problems entries workflows
+  let ps := problems entries workflows ++ coverageProblems entries required
   for p in ps do IO.eprintln s!"[ixtests-registry] {p}"
   if ps.isEmpty then
     IO.println s!"[ixtests-registry] {entries.length} entries; CI jobs and workflows agree"
@@ -152,8 +161,8 @@ def selfTest (entries : List Entry) : IO UInt32 := do
   return 1
 
 /-- The registry with its own self-test in front. -/
-def withSelfTest (entries : List Entry) : List Entry :=
-  ⟨"ixtests-registry", .primary, .runner (selfTest entries)⟩ :: entries
+def withSelfTest (entries : List Entry) (required : List (String × String) := []) : List Entry :=
+  ⟨"ixtests-registry", .primary, .runner (selfTest entries required)⟩ :: entries
 
 structure Options where
   names : List String := []
@@ -211,9 +220,10 @@ def runEntry (getEnv : IO Lean.Environment) (e : Entry) : IO UInt32 := do
 
 /-- Run the selected entries; `loadEnv` is `get_env!` of `Tests/Main.lean`,
 run at most once. -/
-def run (registry : List Entry) (loadEnv : IO Lean.Environment) (args : List String) :
+def run (registry : List Entry) (loadEnv : IO Lean.Environment) (args : List String)
+    (required : List (String × String) := []) :
     IO UInt32 := do
-  let entries := withSelfTest registry
+  let entries := withSelfTest registry required
   let o ← match parseArgs args {} with
     | .ok o => pure o
     | .error msg => IO.eprintln s!"error: {msg}"; return 2
@@ -284,5 +294,13 @@ private def picks (args : List String) : List String :=
 #guard picks ["--tier", "ci:tc"] == ["error: a --tier selects no entry"]
 #guard picks ["--ignored", "--exclude=x,x-y,g,m"] == ["error: nothing selected"]
 #guard (problems demo [("w", "--tier ci:compile")]).length == CiJob.all.length - 1 + (CiJob.all.length - 1)
+
+#guard coverageProblems demo [("a", "primary"), ("x", "ci:compile")] == []
+#guard coverageProblems demo [("missing", "ci:compile")] ==
+  ["required entry missing is registered 0 times"]
+#guard coverageProblems (demo ++ demo) [("a", "primary")] ==
+  ["required entry a is registered 2 times"]
+#guard coverageProblems demo [("g", "ci:compile-pipeline")] ==
+  ["required entry g runs in landing, expected ci:compile-pipeline"]
 
 end Tests.Registry

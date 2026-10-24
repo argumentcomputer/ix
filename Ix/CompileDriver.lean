@@ -51,7 +51,9 @@ public import Ix.Compile.Pass.CliqueStep
 public import Ix.AuxGen.CompileAux
 public import Ix.AuxGen.SourceService
 public import Ix.AuxGen.IxcScope
+public import Ix.AuxGen.GenerationOnly
 public import Ix.Compile.SourceContract.Transport
+public import Ix.Compile.SourceGraph.Prepass
 public import Ix.Resource.Addressed
 public section
 
@@ -135,7 +137,7 @@ def recordDisplay (before : Array (Name × Address)) : CompileM Unit := do
     block state survives the throw), Source mode's status of the block is
     asked, and only then (`AuxOracle.blockStatus`):
     * a block Source mode does not accept (refused, blocked, or not folded: its
-      input is outside `SourceAccepts`) re-runs on `fallback` (`AuxOracle.retry`)
+      input is outside `SourceAccepts`) requests `CompileEnv.auxGenerationRetry`
       from the block state its tail started in, restored whole (the block
       state is `CompileM`'s only state, and the bridge context is fresh per
       run). Its generated auxiliaries are exempt with the status
@@ -145,7 +147,10 @@ def recordDisplay (before : Array (Name × Address)) : CompileM Unit := do
       scope, the question and IxC's reason, as an ordinary block failure
       (`ungrounded`). This is the stop rule, enforced by construction.
 
-    Any other failure, and a tail in any other mode, is as before. Called once
+    The checked capability must retain the original reason, use failClosed
+    with recursors enabled and have no nested retry. Diagnostic modes,
+    including recursors-off's old fallback, keep their existing behavior.
+    Any other failure stops before provider lookup. Called once
     by `compileBlockWithAux`, whose do-block keeps its shape for the proofs that
     walk it (`Ix.Cert.PassHooks.compileBlockWithAux_result`). -/
 def runAuxTail (lo : Name) (cs : Array MutConst) (sortedClasses : List (List MutConst))
@@ -165,13 +170,43 @@ def runAuxTail (lo : Name) (cs : Array MutConst) (sortedClasses : List (List Mut
       throw (.unsupportedExpr s!"AuxGen (failClosed): block {lo.pretty}, accepted by Source \
         mode: {refusal.render}")
     | some why =>
-      let some fallback := oracle.retry | throw e
+      let retryOracle ← if !oracle.recursors then do
+          let some fallback := oracle.retry | throw e
+          pure fallback
+        else do
+          let fail {α : Type} (cause : String) : CompileM α :=
+            throw (.unsupportedExpr s!"AuxGen (generation retry): block {lo.pretty}: {cause}")
+          let some provider := (← getCompileEnv).auxGenerationRetry
+            | fail "checked provider absent"
+          let candidate ← match provider lo with
+            | .error cause => fail cause
+            | .ok candidate => pure candidate
+          unless candidate.mode == .failClosed && candidate.recursors && candidate.retry.isNone do
+            fail "capability must be failClosed, recursors-on, without nested retry"
+          unless candidate.blockStatus () == some why do
+            fail "capability changed the original Source nonacceptance reason"
+          pure candidate
       modifyBlockState fun _ => saved
-      let (out, kctx) ← run (.ixc maps fallback)
+      let (out, kctx) ← run (.ixc maps retryOracle)
       modifyBlockState fun st => { st with auxReport := { st.auxReport with retried := some why } }
       let admitted :=
         Ix.AuxGen.AuxTable.withBlockStatus (some why) (kctx.generated.map (·.1)) kctx.admitted
       return (out, { kctx with admitted })
+
+/-- A missing required capability is a configuration error. Mutual
+definition blocks still register their Muts entry without asking a kernel. -/
+private def runConfiguredAuxTail (lo : Name) (cs : Array MutConst)
+    (sortedClasses : List (List MutConst)) (blockAddr : Address)
+    (maps : Ix.AuxGen.AddrMaps) (oracle? : Option Ix.AuxGen.AuxOracle) :
+    CompileM ((Option Ixon.AuxLayout × Ix.AuxGen.AuxTailRecs) × Ix.AuxGen.AuxKernelCtx) := do
+  match oracle? with
+  | some oracle => runAuxTail lo cs sortedClasses blockAddr maps (.ixc maps oracle)
+  | none =>
+    if cs.any (fun c => c matches .indc _) then
+      throw (.unsupportedExpr s!"AuxGen (configuration): block {lo.pretty}: IxC provider is absent")
+    (do
+      discard <| Ix.AuxGen.registerMutualAuxEntry sortedClasses blockAddr
+      pure (none, (default : Ix.AuxGen.AuxTailRecs))).run Ix.AuxGen.AuxKernelCtx.new
 
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
@@ -229,9 +264,9 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   let bstate ← getBlockState
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
     (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
-  -- The kernel AuxGen asks: IxC Source mode through the fold's oracle (AuxGen
-  -- M2b–M5c, `CompileEnv.auxOracle`), `Ix.Tc` over the bridge without one
-  -- (AuxGen M0). Since AuxGen T3 an unsafe block's tail asks it too: the
+  -- The kernel AuxGen asks: IxC Source mode through the fold's explicit
+  -- oracle (`CompileEnv.auxOracle`). An inductive tail without a provider
+  -- is a configuration error. Since AuxGen T3 an unsafe block's tail asks it too: the
   -- service's tier installs the block's groups typing only (M7 Q1), and its
   -- oracle answers over the tier's answer view; its auxiliaries stay outside
   -- every statement (`recordTailReport`). Under a measurement mode
@@ -240,16 +275,13 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     | .indc ind => !ind.isUnsafe
     | .recr rv => !rv.isUnsafe
     | .defn d => d.safety != .unsaf
-  let kernel : Ix.AuxGen.AuxKernel :=
-    match cenv.auxOracle.bind (· lo) with
-    | some oracle => .ixc maps oracle
-    | none => .tc maps
+  let oracle? := cenv.auxOracle.bind (· lo)
   -- AuxGen M5c: under `failClosed` (production), a block Source mode does
-  -- not accept re-runs on `fallback`; an IxC refusal on any other fails it
+  -- not accept can request a checked generation retry; any other refusal fails it
   -- (`runAuxTail`).
   let ((auxLayout?, recs), kctx) ←
-    runAuxTail lo cs sortedClasses blockResult.blockAddr maps kernel
-  if let .ixc _ oracle := kernel then
+    runConfiguredAuxTail lo cs sortedClasses blockResult.blockAddr maps oracle?
+  if let some oracle := oracle? then
     if oracle.trace then
       let tier := !safe && oracle.blockStatus () == some Ix.AuxGen.AuxOracle.tierBlockStatus
       let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0
@@ -1709,8 +1741,8 @@ def ServiceSupport.of (consts : List (Lean.Name × Lean.ConstantInfo)) : Service
 production's: `failClosed` since AuxGen M5c (IxC alone answers `.below`'s,
 `.brecOn`'s, the recursor generator's and the elimination decision's questions;
 a refusal fails the block, except that a block Source mode does not accept
-re-runs on `fallback`, `runAuxTail`; the Prop-level `.below` family's recursors
-still ask `Ix.Tc`, until M7), no trace, and the Source service asks for the blocks
+can request a checked generation-only retry through `runAuxTail`), no trace,
+and the Source service asks for the blocks
 with a Type-level `.below` and those the recursor generator can ask past the
 fast paths (`Asks.recursors`, M4b; M2b's `Asks.below` before). Other settings
 are AuxGen's measurement modes (the CLI's `IX_AUXGEN_IXC`, which also traces
@@ -1719,8 +1751,8 @@ production: IxC first, `Ix.Tc` behind a refusal, lazy since M3),
 `fallbackEager` (M2b's production: both kernels asked), other asks, the
 recursors on `Ix.Tc` (`recursors := false`, M3's production), and
 `measureOnly` (the service's work timed alone,
-`Ix.AuxGen.Source.measure`; the pipeline then compiles nothing). Whatever the
-setting, an unsafe block's tail asks `Ix.Tc` (`compileBlockWithAux`). -/
+`Ix.AuxGen.Source.measure`; the pipeline then compiles nothing). Unsafe blocks
+use the service's typing tier and remain outside logical acceptance. -/
 structure AuxIxcOptions where
   mode : Ix.AuxGen.IxcMode := .failClosed
   asks : Ix.AuxGen.Source.Asks := .recursors
@@ -1734,22 +1766,119 @@ structure AuxIxcOptions where
   recursors : Bool := true
   deriving Inhabited
 
-/-- **A block's IxC oracle** over the run-ahead `ra`, by the block's canonical
-key, in `aux`'s setting (`Ix.AuxGen.Ixc.oracleOfRun`): with AuxGen M4a's
-facts: whether the recursor generator asks IxC (`recursors`, production's
-since M4b), whether the run-ahead asked for the block, and the
-input's declarations (`get?`) for the lazy scopes' fast paths. -/
-def AuxIxcOptions.oracleFor (aux : AuxIxcOptions) (ra : Ix.AuxGen.Source.RunAhead)
-    (get? : Name → Option ConstantInfo) (key : Name) : Option Ix.AuxGen.AuxOracle :=
-  (ra.runFor key).map fun t =>
+/-- One lazy ensured snapshot per original schedule key, including errors.
+Ordinary scopes, generation retries and SourceFamily share these thunks. -/
+private def preparedSource (ra : Ix.AuxGen.Source.RunAhead) :
+    Std.HashMap Ix.AuxGen.Flat.NameKey (Thunk (Except String Ix.AuxGen.Source.Service)) :=
+  ra.levelOf.fold (init := {}) fun cache key _ =>
+    cache.insert key (Thunk.mk fun _ => do
+      let some task := ra.runFor key.name
+        | throw s!"scheduled Source task absent for {key.name.pretty}"
+      return (← task.get.service).ensureNames (ra.membersFor key.name))
+
+private def oracleFrom (aux : AuxIxcOptions) (ra : Ix.AuxGen.Source.RunAhead)
+    (get? : Name → Option ConstantInfo) (prepared : _root_.Std.HashMap
+      Ix.AuxGen.Flat.NameKey (Thunk (Except String Ix.AuxGen.Source.Service)))
+    (key : Name) : Option Ix.AuxGen.AuxOracle :=
+  (prepared.get? ⟨key⟩).map fun snapshot =>
     let members := ra.membersFor key
     let facts : Ix.AuxGen.Ixc.OracleFacts :=
-      { recursors := aux.recursors
+      { members, recursors := aux.recursors
         -- read by the trace only, so computed only when tracing
         asked := !aux.trace || (Ix.AuxGen.Source.holdsInductive get? members
           && aux.asks.selects get? members)
         lookup := get? }
-    Ix.AuxGen.Ixc.oracleOfRun aux.mode aux.trace (fun _ => t.get) members facts
+    let retry := if aux.mode == .failClosed && aux.recursors then none else
+      some (Ix.AuxGen.Ixc.oracleOf .fallback aux.trace facts none
+        Ix.AuxGen.Ixc.oracleFuel (fun _ => snapshot.get))
+    Ix.AuxGen.Ixc.oracleOf aux.mode aux.trace facts retry
+      Ix.AuxGen.Ixc.oracleFuel (fun _ => snapshot.get)
+
+/-- Original schedule members, validated against the input condensation. -/
+private def originalMembers (blocks : Ix.CondensedBlocks) (ra : Ix.AuxGen.Source.RunAhead)
+    (key : Name) : Except String (Array Name) := do
+  let some rep := blocks.lowLinks.get? key | throw "original key has no condensation entry"
+  let some members := blocks.blocks.get? rep | throw "original condensation block is absent"
+  unless members.contains key && Ix.Compile.ExactKey.nameEq (blockKey rep members) key do
+    throw "key is not the original canonical block key"
+  let scheduled := ra.membersFor key
+  unless scheduled.size == members.size && scheduled.all members.contains do
+    throw s!"scheduled members differ at {key.pretty}"
+  return scheduled
+
+private def generationRetryFrom (get? : Name → Option ConstantInfo)
+    (blocks : Ix.CondensedBlocks) (ra : Ix.AuxGen.Source.RunAhead)
+    (prepared : Std.HashMap Ix.AuxGen.Flat.NameKey
+      (Thunk (Except String Ix.AuxGen.Source.Service))) (trace : Bool) (key : Name) :
+    Except String Ix.AuxGen.AuxOracle := do
+  let members ← originalMembers blocks ra key
+  let mut owner : Option Name := none
+  for name in members do
+    let some ci := get? name | throw s!"original member absent: {name.pretty}"
+    unless Ix.Compile.ExactKey.nameEq ci.getCnst.name name do
+      throw s!"original member name differs: {name.pretty}"
+    if let .inductInfo ind := ci then
+      let some first := ind.all[0]? | throw "original mutual family is empty"
+      unless ind.all.contains name && ind.all.all members.contains do
+        throw "original mutual family is outside the scheduled block"
+      if let some prior := owner then
+        unless Ix.Compile.ExactKey.nameEq prior first do throw "original owner is ambiguous"
+      owner := some first
+  let some firstOwner := owner | throw "original inductive owner is absent"
+  let some snapshot := prepared.get? ⟨key⟩ | throw s!"scheduled snapshot absent at {key.pretty}"
+  Ix.AuxGen.GenerationOnly.ofService (← snapshot.get) firstOwner (trace := trace)
+
+/-- Fixed original-source capabilities for this compilation. Each scheduled
+snapshot (including a failure) is prepared at most once, on first use, from
+the existing run-ahead task. The source owner is resolved through the base
+condensation and its seed-order key, never through compiled classes. -/
+private def sourceFamilyFrom (get? : Name → Option ConstantInfo) (blocks : Ix.CondensedBlocks)
+    (ra : Ix.AuxGen.Source.RunAhead) (prepared : Std.HashMap Ix.AuxGen.Flat.NameKey
+      (Thunk (Except String Ix.AuxGen.Source.Service))) : Ix.AuxGen.SourceFamilyOracle :=
+  fun owner => (do
+    let some (.inductInfo ind) := get? owner | throw "original inductive owner is absent"
+    let some rep := blocks.lowLinks.get? owner | throw "original owner has no condensation entry"
+    let some members := blocks.blocks.get? rep | throw "original condensation block is absent"
+    unless members.contains owner do throw "original owner is outside its condensation block"
+    let key := blockKey rep members
+    let scheduled := ra.membersFor key
+    unless scheduled.size == members.size && scheduled.all members.contains do
+      throw s!"scheduled members differ at {key.pretty}"
+    let some snapshot := prepared.get? ⟨key⟩ | throw s!"scheduled snapshot absent at {key.pretty}"
+    let svc ← snapshot.get
+    unless !ind.all.isEmpty && ind.all.contains owner do throw "original mutual family is malformed"
+    for name in ind.all do
+      match svc.statusOf? name with
+      | none => throw s!"Source status absent for {name.pretty}"
+      | some .pending => throw s!"Source status pending for {name.pretty}"
+      | some _ => pure ()
+    if ind.all.all (fun name => (svc.statusOf? name).any Ix.AuxGen.Source.Status.isAccepted) || svc.tierBlock ind.all then
+      return Ix.AuxGen.Ixc.oracleOf .failClosed false
+        { recursors := true, lookup := get?, members := ind.all } none
+        Ix.AuxGen.Ixc.oracleFuel (fun _ => .ok svc)
+    Ix.AuxGen.GenerationOnly.ofService svc owner).mapError
+      (fun why => s!"source family {owner.pretty}: {why}")
+
+/-- A block's oracle; production defers checked retries to the driver. -/
+def AuxIxcOptions.oracleFor (aux : AuxIxcOptions) (ra : Ix.AuxGen.Source.RunAhead)
+    (get? : Name → Option ConstantInfo) (key : Name) : Option Ix.AuxGen.AuxOracle :=
+  oracleFrom aux ra get? (preparedSource ra) key
+
+/-- Fixed original-source family capabilities, prepared only on demand. -/
+def sourceFamilyProvider (get? : Name → Option ConstantInfo) (blocks : Ix.CondensedBlocks)
+    (ra : Ix.AuxGen.Source.RunAhead) : Ix.AuxGen.SourceFamilyOracle :=
+  sourceFamilyFrom get? blocks ra (preparedSource ra)
+
+/-- Install the three providers over one shared lazy original-source snapshot
+map. SourceFamily alone is retained after compilation for plan checks. -/
+def AuxIxcOptions.withSourceProviders (aux : AuxIxcOptions)
+    (get? : Name → Option ConstantInfo) (blocks : Ix.CondensedBlocks)
+    (ra : Ix.AuxGen.Source.RunAhead) (cenv : CompileEnv) : CompileEnv :=
+  let prepared := preparedSource ra
+  { cenv with
+    auxOracle := some (oracleFrom aux ra get? prepared)
+    auxGenerationRetry := some (generationRetryFrom get? blocks ra prepared aux.trace)
+    sourceFamilyOracle := some (sourceFamilyFrom get? blocks ra prepared) }
 
 /-- **The Source service's input**: the fold's lookups and condensation, with
 the literal support beside them when the input lacks it (generation side
@@ -1817,15 +1946,15 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
   let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
     aux.asks
-  let oracle : Name → Option Ix.AuxGen.AuxOracle := aux.oracleFor ra serviceGet?
-  let cenv₀ := { CompileEnv.new view with
-    unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle
+  let cenv₀ := aux.withSourceProviders serviceGet? blocks ra { CompileEnv.new view with
+    unmaterialized := env.consts.size + unmaterialized, sharingLimits
     p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans
     p3O11aPlans := sizePlan.2 }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let acc ← emitRows st.acc
   let (ixe, bytes, cenv) ← finalizeEnv acc
-  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
+  -- Keep the fixed original provider alive for returned-state plan checks.
+  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none, auxGenerationRetry := none }), ra.report)
 
 /-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/
 def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
@@ -1919,6 +2048,9 @@ structure LeanPipelineOut where
   /-- The condensation the driver compiled (the declaration groups and their
       references), for the changed set (`Ix.Compile.ChangedSet.ofCompile`). -/
   blocks : Ix.CondensedBlocks := default
+  /-- Complete original-input dependency facts, before grounding; no acceptance
+      verdict. `none` is unavailable, while `some {}` is an empty input. -/
+  sourceNodes? : Option (Ix.Map Name Ix.Compile.SourceGraph.Node) := none
 
 /-- Run the full pure-Lean compile pipeline over a constant list.
 
@@ -1970,23 +2102,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --     checks read only name-existence and is-it-a-ctor
   --     (`groundExpr`/`groundConst`), so two shared placeholder
   --     constants stand in for every value.
-  let placeholderCnst : Ix.ConstantVal :=
-    ⟨.mkAnon, #[], Ix.Expr.mkSort Ix.Level.mkZero⟩
-  let phAxiom : Ix.ConstantInfo :=
-    .axiomInfo { cnst := placeholderCnst, isUnsafe := false }
-  let phCtor : Ix.ConstantInfo := .ctorInfo
-    { cnst := placeholderCnst, induct := .mkAnon, cidx := 0
-      numParams := 0, numFields := 0, isUnsafe := false }
-  let mut leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo) := {}
-  let mut thinConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
-  let mut ixArr : Array (Ix.Name × Lean.ConstantInfo) := #[]
-  for (ln, lci) in constArr do
-    let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
-    leanByIx := leanByIx.insert ixn (ln, lci)
-    thinConsts := thinConsts.insert ixn
-      (if lci matches .ctorInfo _ then phCtor else phAxiom)
-    ixArr := ixArr.push (ixn, lci)
-  let thinEnv : Ix.Environment := { consts := thinConsts }
+  let ⟨leanByIx, thinConsts, ixArr⟩ ← IO.lazyPure fun _ =>
+    Ix.Compile.SourceGraph.Prepass.run constArr
   let t ← tick s!"canon names ({ixArr.size} consts)" t0
   -- 1b/2/3a. Streamed canon (chunk-parallel): canonicalize, take refs +
   --     immediate ground error + digest. PROOF bodies (`thmInfo` /
@@ -1998,42 +2115,11 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --     retention) are KEPT and materialized as the shared `consts`
   --     map: one shared structure instead of a fresh unshared copy per
   --     on-demand read.
-  let chunkSize := max 1 ((ixArr.size + numWorkers - 1) / numWorkers)
-  let chunkArr := Ix.CanonM.chunks ixArr chunkSize
-  let tasks := chunkArr.map fun chunk =>
-    Task.spawn fun _ => Id.run do
-      let mut state : Ix.CanonM.CanonState := {}
-      let mut out : Array
-        (Ix.Name × Ix.Set Ix.Name × Option Ix.GroundError × UInt64
-          × Option Ix.ConstantInfo × Bool) := #[]
-      for (ixn, lci) in chunk do
-        let (ci, state') := StateT.run (Ix.CanonM.canonConst lci) state
-        state := state'
-        let (refs, _) :=
-          Ix.GraphM.run { consts := {} } .init (Ix.graphConst ci)
-        let groundErr? := match Ix.groundConstCheck ci thinEnv with
-          | .ok _ => none
-          | .error e => some e
-        let keep? := match ci with
-          | .thmInfo _ | .opaqueInfo _ => none
-          | _ => some ci
-        out := out.push (ixn, refs, groundErr?, hash ci, keep?,
-          sourceHasReservedMetadata lci)
-      out
-  let mut outRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
-  let mut immediate : Ix.Map Ix.Name Ix.GroundError := {}
-  let mut digests : Std.HashMap Ix.Name UInt64 := {}
-  let mut codeConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
-  let mut reservedMetadata : Array Ix.Name := #[]
-  for task in tasks do
-    for (n, refs, gerr?, dig, keep?, reserved) in task.get do
-      if reserved then reservedMetadata := reservedMetadata.push n
-      outRefs := outRefs.insert n refs
-      if let some e := gerr? then
-        immediate := immediate.insert n e
-      digests := digests.insert n dig
-      if let some ci := keep? then
-        codeConsts := codeConsts.insert n ci
+  -- Destructure immediately: fallback retains only leanByIx; temporary thin,
+  -- label and task storage must not escape through a captured aggregate.
+  let ⟨⟨sourceNodes, codeConsts⟩, outRefs, immediate, digests, reservedMetadata⟩ ←
+    IO.lazyPure fun _ => Ix.Compile.SourceGraph.Stream.runLabelled
+      { consts := thinConsts } sourceHasReservedMetadata ixArr numWorkers
   let t ← tick s!"canon+graph+ground ({outRefs.size} nodes, \
 {codeConsts.size} code kept, {outRefs.size - codeConsts.size} proofs streamed)" t
   let mut inRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
@@ -2167,7 +2253,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         digests
         annotated
         source
-        blocks := condensed }
+        blocks := condensed
+        sourceNodes? := some sourceNodes }
 
 /-- Explicit frontend boundary: resolve occurrence contracts before
 canonicalization. Resources are validated by the caller's post-step

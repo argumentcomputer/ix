@@ -255,8 +255,9 @@ theorem authenticated_closed {env : Ix.Environment} {recipes : Array Recipe}
   exact visit_newClosed success member present (by simp)
 
 theorem filterHeads_closed_source {env : Ix.Environment} {all heads : Array Name} {name : Name}
-    (kept : name ∈ filterHeads env all heads) (derived : isDerived name = true) :
-    let recipes := (reconstruct env all (heads.any isBRecOn)).toOption.getD #[]
+    {oracleFor : Ix.AuxGen.SourceFamilyOracle}
+    (kept : name ∈ filterHeads oracleFor env all heads) (derived : isDerived name = true) :
+    let recipes := (reconstruct oracleFor env all (heads.any isBRecOn)).toOption.getD #[]
     ∃ visited : Array Name, name ∈ visited ∧
       AllChecked env recipes visited ∧
       ∀ member ∈ visited, DependenciesClosed recipes member visited := by
