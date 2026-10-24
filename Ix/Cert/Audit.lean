@@ -69,6 +69,7 @@ import Ix.Cert.RuleInputValues
 import Ix.CompileCert.O6PrefixValues
 import Ix.CompileCert.OptDispatchOrigin
 import Ix.CompileCert.OptShapeOrigin
+import Ix.CompileCert.ViewPublicationOrigin
 
 /-! # The certification statements, frozen
 
@@ -6123,3 +6124,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual O6 image call origins"
     (#[`o6_calls_images, `O6Images.calls, `passConfig_with_images].map
       (`Ix.CompileCert.OptShapeOrigin ++ ·))
+
+/-! ## Actual view queries and fresh publication entries
+
+The real empty-start loop supplies query/owner and exact cached-or-built
+origins. The actual absence guard forces a current build for every new entry. -/
+
+/-- info: [cert-audit] actual view query and publication origins: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual view query and publication origins"
+    (#[`viewOf_origin, `Origins.mono, `Origins.insert, `viewsOf_origins, `viewsOf_origin,
+      `newMemoViews_entries, `newMemoViews_built].map (`Ix.CompileCert.ViewPublicationOrigin ++ ·))
