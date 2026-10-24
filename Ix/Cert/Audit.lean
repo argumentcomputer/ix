@@ -54,6 +54,7 @@ import Ix.Cert.ContextValues
 import Ix.Cert.ApplicationFronts
 import Ix.CompileCert.O6ApplicationValues
 import Ix.CompileCert.O6Telescope
+import Ix.CompileCert.O6TelescopeOpened
 
 /-! # The certification statements, frozen
 
@@ -5760,3 +5761,18 @@ run_cmd do
       `DomainTraceFrom.length, `DomainTraceFrom.at, `ContextTrace.length,
       `paired_telescope_from, `DomainTrace.length, `DomainTrace.at,
       `paired_telescope].map (`Ix.CompileCert.O6Telescope ++ ·))
+
+/-! ## Actual O6 reduction under a shared dependent telescope
+
+Bulk opening preserves the derived selector body at its own binder cursor.
+The produced leaf checks and frames supply certified beta; the endpoint
+retains all original O6 pass, image and reader evidence. -/
+
+/-- info: [cert-audit] O6 dependent telescope reduction: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "O6 dependent telescope reduction"
+    (#[`strip_open_list, `BulkAnn.unique, `bulk_ann_pairs, `bulk_ann_apps,
+      `selectors_bulk_annotated, `bulk_opened_layout,
+      `o6_rec_under_telescope_opened_red].map (`Ix.CompileCert.O6TelescopeOpened ++ ·))
