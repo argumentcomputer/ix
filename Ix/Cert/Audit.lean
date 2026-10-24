@@ -70,6 +70,7 @@ import Ix.CompileCert.O6PrefixValues
 import Ix.CompileCert.OptDispatchOrigin
 import Ix.CompileCert.OptShapeOrigin
 import Ix.CompileCert.ViewPublicationOrigin
+import Ix.CompileCert.PrimaryAddressFrame
 
 /-! # The certification statements, frozen
 
@@ -6152,3 +6153,16 @@ run_cmd do
       `failAuxPromotion_views, `after_failure_query_origin, `PublicationOrigin.entry_built,
       `rewriteCliqueCanon_origin, `prepareBlock_origin, `compileImageBlock_origin,
       `merge_publication_origin].map (`Ix.CompileCert.ViewPublicationOrigin ++ ·))
+
+/-! ## Actual checked primary writes and ordered merge projection
+
+The claim walk covers local shadowing and duplicates; the merge executes
+the exact original serialization/hash/order, independently of other fields. -/
+
+/-- info: [cert-audit] actual primary write agreement and projection: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual primary write agreement and projection"
+    (#[`WalkOk.insert, `checkBlockClaims_primary_agrees, `checkCompiledBlock_primary_agrees,
+      `mergeCompiledBlock_primary].map (`Ix.CompileCert.PrimaryAddressFrame ++ ·))
