@@ -554,7 +554,8 @@ def report (errors lines : Array String) : IO (Bool × Nat × Nat × Option Stri
 
 /-! ## The fixtures -/
 
-def fixtureInput : IO (Ix.Environment × Ix.CondensedBlocks) := do
+/-- Retain the exact raw input for independent compiler measurements. -/
+def fixtureInputWithRaw : IO (List (Lean.Name × Lean.ConstantInfo) × Ix.Environment × Ix.CondensedBlocks) := do
   let leanEnv ← getCompileEnv (fixtureModules ++ #[`IxC.Kernel.PinGen.Certs])
   let idxs := fixtureModules.filterMap leanEnv.getModuleIdx?
   let seeds := leanEnv.constants.toList.toArray.filterMap fun (n, _) =>
@@ -563,7 +564,10 @@ def fixtureInput : IO (Ix.Environment × Ix.CondensedBlocks) := do
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv
     (seeds ++ certs ++ Tests.Ix.Kernel.SourceIngress.preludeNames))
   let env := Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray (workers := 4)
-  return (env, Ix.Cert.blocksOf env)
+  return (closed, env, Ix.Cert.blocksOf env)
+
+def fixtureInput : IO (Ix.Environment × Ix.CondensedBlocks) := do
+  return (← fixtureInputWithRaw).2
 
 def fixtures : TestSeq :=
   .individualIO "AuxGen M2a: .below's levels from IxC agree with Ix.Tc's; the measurement fold's bytes"
@@ -848,15 +852,19 @@ def suite : List TestSeq := [fixtures, egressFixtures, m5c]
 
 def workers : Nat := 32
 
+/-- The Init/Std input, without benchmark-file declarations or added support. -/
+def initStdInputWithRaw : IO (List (Lean.Name × Lean.ConstantInfo) × Ix.Environment × Ix.CondensedBlocks) := do
+  let leanEnv ← getCompileEnv #[`Init, `Std]
+  let consts := leanEnv.constants.toList.toArray
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts workers
+  let blocks ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.condense env (parallel := true)
+  return (consts.toList, env, blocks)
+
 def initStd : TestSeq :=
   .individualIO "AuxGen M2a on Init+Std: shadow agreement, the measurement fold, the service timed"
     none (do
       let t0 ← IO.monoMsNow
-      let leanEnv ← getCompileEnv #[`Init, `Std]
-      let consts := leanEnv.constants.toList.toArray
-      let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts workers
-      let blocks ← IO.lazyPure fun _ =>
-        Tests.Ix.Kernel.SourceIngressStep.condense env (parallel := true)
+      let (_, env, blocks) ← initStdInputWithRaw
       let t1 ← IO.monoMsNow
       IO.println s!"Init+Std: load, canon and condense {t1 - t0} ms"
       let (errors, lines) ← evaluate "Init+Std" env blocks (4 * workers)
