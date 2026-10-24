@@ -56,6 +56,7 @@ import Ix.CompileCert.O6ApplicationValues
 import Ix.CompileCert.O6Telescope
 import Ix.CompileCert.O6TelescopeOpened
 import Ix.CompileCert.O6TelescopeValues
+import Ix.Cert.ReferenceFronts
 
 /-! # The certification statements, frozen
 
@@ -5801,3 +5802,28 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "O6 whole telescope values"
     #[`Ix.CompileCert.O6TelescopeValues.o6_rec_under_telescope_values]
+
+/-! ## Indexed reference-stream definition fronts
+
+One actual accepted fuel supplies the exact prefix, declaration and suffix.
+Lookup persistence identifies the annotated body in the final environment. -/
+
+/-- info: [cert-audit] indexed reference definition fronts: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "indexed reference definition fronts"
+    (#[`reference_definition_front_at, `DefinitionFrontAt.unique,
+      `DefinitionFrontAt.denotes].map (`Ix.Cert.ReferenceFronts ++ ·))
+
+/-! ## Fronts of the exact prepared Ixon stream
+
+One actual preparation/evidence witness supplies every indexed definition
+front; no separately accepted environment or source-form check is chosen. -/
+
+/-- info: [cert-audit] prepared Ixon definition fronts: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "prepared Ixon definition fronts"
+    #[`Ix.Cert.ReferenceFronts.ixon_definition_fronts]
