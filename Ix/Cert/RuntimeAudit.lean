@@ -9,7 +9,7 @@ beyond `Init` and `Std`: the runtime audit
 (`Ix.Kernel.Audit.checkRuntimeWith`) with the `csimp` replacements of `Ix`
 modules admitted, each only when its theorem depends on the standard axioms
 alone, and nothing else. It reports every other replacement it reaches:
-* the Rust BLAKE3 primitives and `UInt64.toLEBytes` (`@[extern]`);
+* the Rust BLAKE3 primitives (`@[extern]`);
 * the `partial` definitions of the ground filter, AuxGen, the name and
   expression printers and the name-component walk.
 
@@ -31,6 +31,12 @@ The surgical expression compiler's seven `partial` definitions
 `compileBelowCallSite`, `compileExprSurgical`, `compileHeadRewriteCallSite`,
 `compileRecCallSite`) left it when the call-site surgery was deleted (CQ3.5,
 dead code since Pass 3: no compile registers a call-site plan).
+
+Retiring AuxGen's Tc backend removes twelve opaque conversion, restoration
+and scope helpers from this closure, together with `UInt64.toLEBytes`, which
+was reached through their literal encoding. Comparing the same runtime
+roots before and after retirement adds no execution replacement: all
+existing `csimp` entries, their targets and theorem axioms are unchanged.
 
 **AuxGen M1** (the drivers' Source service, `Ix.AuxGen.Source.Chain`): the
 wave fold carries IxC's verified fold over the Source ingress of its input,
@@ -57,7 +63,6 @@ symbol that no library defines, so a binary that links them fails. -/
 [Ix.groundExpr,
  Ix.groundLevel,
  Ixon.getTagN,
- UInt64.toLEBytes,
  Blake3.Rust.hasherFinalize,
  Blake3.Rust.hasherInit,
  Blake3.Rust.hasherUpdate,
@@ -65,12 +70,9 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.auxSpecEq,
  Ix.AuxGen.buildProofForRemaining,
  Ix.AuxGen.canonicalizeConstNames,
- Ix.AuxGen.collectLeanSourceNameHints,
  Ix.AuxGen.collectMemberRefs,
  Ix.AuxGen.consumeTypeAnnotations,
- Ix.AuxGen.ensureInKenvOfInner,
  Ix.AuxGen.exprContainsFVar,
- Ix.AuxGen.exprHasBVar,
  Ix.AuxGen.exprHasLooseBVar,
  Ix.AuxGen.getMaxArgsAux,
  Ix.AuxGen.handleSubstcoreStep,
@@ -80,10 +82,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.instantiateRevAt,
  Ix.AuxGen.isAlreadyNormalizedCheap,
  Ix.AuxGen.isNeverZero,
- Ix.AuxGen.kexprToLean,
- Ix.AuxGen.kunivToLevel,
- Ix.AuxGen.leanExprToKexprCached,
- Ix.AuxGen.leanLevelToKuniv,
  Ix.AuxGen.levelAlphaEqStruct,
  Ix.AuxGen.levelNormalize,
  Ix.AuxGen.levelPretty,
@@ -101,8 +99,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.replaceCtorResultHeadWithAux,
  Ix.AuxGen.replaceFVarsMap,
  Ix.AuxGen.replaceResultSortWithProp,
- Ix.AuxGen.restoreLeanSourceNameHints,
- Ix.AuxGen.restoreSourceNamesSameContent,
  Ix.AuxGen.rewriteNestedConstLevelsCached,
  Ix.AuxGen.rewriteNestedConstLevelsWalk,
  Ix.AuxGen.shiftVars,
@@ -112,7 +108,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.substFVar,
  Ix.AuxGen.substLevel,
  Ix.AuxGen.substLevels,
- Ix.AuxGen.toKexprStatic,
  Ix.Kernel.canonEqList,
  Ix.Kernel.structProjGuards,
  Ix.Name.pretty,
@@ -122,8 +117,6 @@ symbol that no library defines, so a binary that links them fails. -/
  _private.Ix.Environment.0.Ix.Expr.hashSyntax,
  Ix.AuxGen.RestoreCtx.replaceWalk,
  Ix.AuxGen.RestoreCtx.replaceWalkUncached,
- Ix.AuxGen.TcScopeSt.isNotZeroLevel,
- Ix.AuxGen.TcScopeSt.kunivToLevelWithConstLevels,
  Ix.Kernel.BinderMeta.shareAlways,
  Ix.Kernel.ConstantInfo.canonEq,
  Ix.Kernel.ConstantVal.canonEq,

@@ -95,7 +95,11 @@ private def wired : IO Nat := do
         rejected (CompileM.compileEnvFoldWithSource { consts := {} }
           { lowLinks := {}, blocks := {}, blockRefs := {} } (aux := opts))
           "AuxGen (configuration): measureOnly requires the IO measurement pipeline"
-        count := count + 1
+        let measured := "AuxGen M2a: service measured (IX_AUXGEN_IXC=measure); nothing compiled"
+        rejected (← CompileM.compileDecoratedConsts [] (numWorkers := 1) (opts := config)) measured
+        rejected (← CompileM.compileLeanInput input (numWorkers := 1) (opts := config)) measured
+        rejected (← CompileM.compileLeanConsts [] (numWorkers := 1) (opts := config)) measured
+        count := count + 4
     let cli := toString mode ++ (if recursors then "" else ",rec=off")
     match Ix.Cli.auxIxcOptionsOf cli, expected with
     | .error e, some (_, message) => require (e == message) "CLI configuration error differs"
@@ -150,7 +154,7 @@ private def wired : IO Nat := do
         count := count + 1
       rejected (AuxKernel.ixcElimDecision oracle #[] 0 0) message
       count := count + 1
-  require (badCapabilities == 15 && count == 251) s!"boundary coverage differs: {badCapabilities}/{count}"
+  require (badCapabilities == 15 && count == 254) s!"boundary coverage differs: {badCapabilities}/{count}"
   return count
 
 def suite : List TestSeq := [

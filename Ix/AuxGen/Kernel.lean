@@ -14,11 +14,10 @@ open Ix.CompileM (CompileM CompileError)
 
 /-! ## Address resolution (provisional) -/
 
-/-- Name→address view for the bridge. Mirrors Rust
-    `resolve_lean_name_addr` (kernel ingress.rs:2133): compiled address
-    (`name_to_addr`), then aux table, then the NAME HASH as a provisional
-    stand-in. Provisional addresses are internally consistent within one
-    bridge kenv — that is all the kernel needs. -/
+/-- Name→address view for compiled alias identification: compiled address,
+    then auxiliary table, then the name hash as a provisional stand-in.
+    A provisional identity does not supply the compiler's required address
+    for an emitted reference. -/
 structure AddrMaps where
   nameToAddr : Name → Option Address
   auxNameToAddr : Name → Option Address := fun _ => none
@@ -31,9 +30,8 @@ def AddrMaps.resolve (maps : AddrMaps) (name : Name) : Address :=
     | some a => a
     | none => name.getHash
 
-/-- The compile-env view (production callers thread `auxNameToAddr` from
-    block state once orchestration lands; mirrors `stt.resolve_addr`,
-    compile.rs:261-274). `primary` overlays the CURRENT block's member
+/-- The compile-env view, with auxiliary addresses from block state.
+    `primary` overlays the CURRENT block's member
     projection registrations (BlockState.blockNameToAddr) — Rust's
     `compile_mutual` inserts those into the global `name_to_addr` right
     before the aux tail runs, so the tail must see them on the
