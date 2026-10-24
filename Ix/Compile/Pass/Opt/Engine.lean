@@ -69,7 +69,7 @@ change kind and classes, and the shape of every Lean recursor's image. An
 image that fails to build has no shape (its passes decline; the baseline
 then reports the failure when it inlines). -/
 def optBlockOf (inp : ViewInput) (v : BlockView) : OptBlock := Id.run do
-  let mut classOf : Std.HashMap Name (Array Name) := {}
+  let mut classOf : Std.HashMap ExactKey.ExactName (Array Name) := {}
   for c in v.canon.components do
     for cls in c.classes do
       for m in cls do classOf := classOf.insert m cls
@@ -77,7 +77,7 @@ def optBlockOf (inp : ViewInput) (v : BlockView) : OptBlock := Id.run do
     match v.canonConsts.get? n with
     | some (.recInfo rv) => some rv
     | _ => none
-  let mut shapes : Std.HashMap Name RecShape := {}
+  let mut shapes : Std.HashMap ExactKey.ExactName RecShape := {}
   for r in imageKinds inp.const? v.all do
     let some (.recInfo rv) := inp.const? r | continue
     let .ok img := v.image inp r | continue

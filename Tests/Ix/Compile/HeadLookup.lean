@@ -104,6 +104,48 @@ def controls : List (String × Bool) := Id.run do
       entersRewrite (prepare userOriginal none))
   ]
 
-def suite : List TestSeq := controls.map fun (label, ok) => test s!"image head lookup: {label}" ok
+/-- The optimizer's inner tables retain distinct same-hash members, including
+replacement of one member without overwriting another member's payload. -/
+def optimizerControls : List (String × Bool) := Id.run do
+  let h : Address := ⟨⟨Array.replicate 32 7⟩⟩
+  let root : Name := .anonymous h
+  let x : Name := .str root "shape_x" h
+  let y : Name := .str root "shape_y" h
+  let absent : Name := .str root "shape_absent" h
+  let sx : Opt.RecShape := {
+    leanRec := x, levelParams := #[], np := 7, nm := 0, nmin := 0, ni := 0,
+    ixRec := x, ixLevels := #[], motiveSrc := #[], minorSrc := #[], minorTerms := #[] }
+  let sy := { sx with leanRec := y, np := 9 }
+  let one : Opt.OptBlock := {
+    all := #[x], change := default,
+    classOf := ({} : Std.HashMap ExactName (Array Name)).insert x #[x],
+    shapes := ({} : Std.HashMap ExactName Opt.RecShape).insert x sx }
+  let two := { one with
+    all := #[x, y]
+    classOf := one.classOf.insert y #[y, absent]
+    shapes := one.shapes.insert y sy }
+  let replaced := { two with
+    shapes := two.shapes.insert x { sx with np := 11 }
+    classOf := two.classOf.insert x #[x, x, x] }
+  let rebuilt : Name := .str (.anonymous h) "shape_x" h
+  return [
+    ("optimizer controls have different names with equal stored hashes",
+      x == y && !_root_.Ix.Compile.ExactKey.nameEq x y),
+    ("optimizer shape lookup rejects an absent same-hash name", (one.shapes.get? y).isNone),
+    ("optimizer class lookup rejects an absent same-hash name", (one.classOf.get? y).isNone),
+    ("optimizer shape insert retains both distinct payloads", two.shapes.size == 2 &&
+      (two.shapes.get? x).map (·.np) == some 7 && (two.shapes.get? y).map (·.np) == some 9),
+    ("optimizer class insert retains both distinct classes", two.classOf.size == 2 &&
+      (two.classOf.get? x).map (·.size) == some 1 && (two.classOf.get? y).map (·.size) == some 2),
+    ("optimizer tables reject an absent third same-hash key",
+      (two.shapes.get? absent).isNone && (two.classOf.get? absent).isNone),
+    ("optimizer tables accept a rebuilt equal name",
+      (two.shapes.get? rebuilt).map (·.np) == some 7 && (two.classOf.get? rebuilt).map (·.size) == some 1),
+    ("optimizer reinsertion replaces only the exact member", replaced.shapes.size == 2 &&
+      (replaced.shapes.get? x).map (·.np) == some 11 && (replaced.shapes.get? y).map (·.np) == some 9 &&
+      (replaced.classOf.get? x).map (·.size) == some 3 && (replaced.classOf.get? y).map (·.size) == some 2)]
+
+def suite : List TestSeq := (controls ++ optimizerControls).map fun (label, ok) =>
+  test s!"image head lookup: {label}" ok
 
 end Tests.Ix.Compile.HeadLookup
