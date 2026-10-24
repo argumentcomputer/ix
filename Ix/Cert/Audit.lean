@@ -6029,3 +6029,16 @@ run_cmd do
       `raw_literal_resolves, `result_resolves, `guarded_nat_op_readings].map
       (`Ix.Cert.PrefixNatOps ++ ·)) ++
       #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.prefix_nat_op_guards])
+
+/-! ## All rule inputs at the supplied final interpretation
+
+The original NatOpRow transfers through both actual readings. Nine proved
+fields retain EqLaw, exact valuations and the unchanged target package. -/
+
+/-- info: [cert-audit] actual fixed interpretation rule inputs: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual fixed interpretation rule inputs"
+    #[`Ix.Cert.PrefixNatOps.nat_op_preserved,
+      `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_rules_inputs]

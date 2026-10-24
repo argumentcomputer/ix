@@ -110,6 +110,23 @@ theorem guarded_nat_op_readings (guards : NatOpGuardLaw before)
     resolving_reading_eq acval φ d _ lookup slots (result_resolves guard result)⟩
   simp only [natOpStored, lookup found]
 
+universe w
+
+/-- The SAME final model supplies all fourteen operation laws. Original
+depth/context/raw/result/grade/Sat arguments and the reduct reading survive. -/
+theorem nat_op_preserved {V : Type w} [SetTheory V]
+    (M : Cached.StrongModel V final) (core : EnvModel V before)
+    (valuation : core.acval = M.internal.base2.acval) (guards : NatOpGuardLaw before)
+    (lookup : FindPreserved before final) (slots : StoredHeadSlots before final)
+    (φ : LevelParam → Nat) : Rules.NatOpRow core φ := by
+  intro d c wa wb r a b Δa ea member stored rawA rawB result reading grade
+  obtain ⟨storedFinal, subjectEq, resultEq⟩ := guarded_nat_op_readings guards lookup slots
+    M.internal.base2.acval φ d member stored rawA rawB result
+  obtain ⟨ra, readFinal, gradeR, equality⟩ := natOpRow_of M.internal φ member storedFinal
+    rawA rawB result (subjectEq.symm.trans (by simpa only [valuation] using reading)) grade
+  refine ⟨ra, ?_, gradeR, equality⟩
+  simpa only [valuation] using resultEq.trans readFinal
+
 end Ix.Cert.PrefixNatOps
 
 namespace Ix.Cert.ReferenceFronts
@@ -127,5 +144,42 @@ theorem DefinitionFrontAt.prefix_nat_op_guards
     NatOpGuardLaw before := by
   obtain ⟨_, _, prefixRun, _, _, _, _, _⟩ := front
   exact reference_nat_op_guards ⟨F, prefixRun⟩
+
+open Ix.Kernel.SetTheory
+open Ix.Kernel.Model.Rules (Graded)
+
+universe w
+
+/-- All nine RulesInputs fields at the supplied final interpretation.
+The SAME actual front supplies the run-only guards and prior rows; EqLaw,
+both valuation equalities and the target package remain. This is neither
+a prefix StrongModel nor baseline equality or final source composition. -/
+theorem DefinitionFrontAt.final_prefix_rules_inputs
+    (front : DefinitionFrontAt ev ds envA i cv raw hint F before expected checked)
+    (V : Type w) [SetTheory V] (M : Cached.StrongModel V envA) :
+    ∃ core : EnvModel V before,
+      core.acval = M.internal.base2.acval ∧ cvalOf core.acval = M.model.cval ∧
+      EqLaw core ∧ (∀ φ : LevelParam → Nat, Rules.RulesInputs V core φ) ∧
+      ∀ φ : LevelParam → Nat,
+        ∃ ha,
+          denoteMeta core.acval before φ 0 expected = some ha ∧ Graded V [] ha ∧
+          denoteMeta core.acval before φ 0 checked = some (core.acval cv.name φ) ∧
+          Graded V [] (core.acval cv.name φ) ∧
+          ∀ ρ : BVarIdx → V, interp V ρ (core.acval cv.name φ) ∈ˢ interp V ρ ha := by
+  obtain ⟨core, valuation, publicEq, valid, heads, eqLaw, definitions, types,
+      caps, succ, recs, towers, target⟩ := front.final_prefix_tower_ok V M
+  refine ⟨core, valuation, publicEq, eqLaw, ?_, target⟩
+  intro φ
+  exact {
+    const_ty := types φ
+    leaf_valid := valid
+    nat_heads := heads φ
+    defn := definitions
+    tower_ok := towers φ
+    rec_rules := recs φ
+    caps_ok := caps
+    nat_succ := succ φ
+    nat_op := nat_op_preserved M core valuation front.prefix_nat_op_guards
+      front.lookup_preserved front.stored_head_slots φ }
 
 end Ix.Cert.ReferenceFronts
