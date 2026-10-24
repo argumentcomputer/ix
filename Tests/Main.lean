@@ -638,10 +638,10 @@ def registry : List Entry := [
   .runner "compile-schedule-identity" .landing Tests.Ix.Compile.ScheduleIdentity.run,
   -- AuxGen M1: the Source service environment and the flat blocks on Init+Std, measured
   .runner "auxgen-flat-initstd" (.manual "the AuxGen lane's Init+Std measurement of the drivers' Source service (about 2 min), in the compiler gate's suites") Tests.Ix.AuxGen.FlatBlockInitStd.run,
-  -- AuxGen M2a: `.below`'s levels from IxC (shadow agreement), and the measurement fold's
-  -- bytes in each mode, on the fixtures; the same on Init+Std, timed, with the service measured
+  -- AuxGen checked queries, exact references and fold bytes on the actual fixtures;
+  -- the same checked query/table/byte contracts on Init+Std, with the service timed.
   .suite "auxgen-below-ixc" .landing Tests.Ix.AuxGen.BelowIxc.suite,
-  .suite "auxgen-below-initstd" (.manual "the AuxGen lane's M2a measurement on Init+Std (about 10 min): shadow agreement, the measurement fold in each mode, the Source service timed") Tests.Ix.AuxGen.BelowIxc.initStdSuite,
+  .suite "auxgen-below-initstd" (.manual "the AuxGen lane's Init+Std measurement: checked generation and fold bytes under supported asks, with the Source service timed") Tests.Ix.AuxGen.BelowIxc.initStdSuite,
   .runner "auxgen-closure-probe" (.manual "AuxGen M3's coverage probe: the Source service on selected closures of Init+Std, failClosed and traced") Tests.Ix.AuxGen.ClosureProbe.run,
   .runner "auxgen-acceptance-probe" (.manual "AuxGen M5a library check: generated auxiliaries of flat and nested blocks accepted by Source mode, by kind") Tests.Ix.AuxGen.AcceptanceProbe.run,
   -- Source evidence from the committed bundle unblocks the service's inductive blocks

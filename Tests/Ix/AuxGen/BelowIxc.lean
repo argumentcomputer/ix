@@ -10,54 +10,26 @@ import Tests.Ix.AuxGen.BelowPropReference
 `--ignored auxgen-below-initstd` (Init+Std, a measurement). The plans are
 `auxgen-m2.md` and `auxgen-m3.md`.
 
-AuxGen's `.below` asks its kernel the sort levels it emits into every
-Type-level `.below` value; `.brecOn` asks levels too, and its `.eq`'s unit-like
-test asks `inferType?`, `whnf?` and `isDefEq?`. Since AuxGen M2b (`.below`)
-and M3 (`.brecOn`, after the generated `.below` is admitted to IxC,
-`AuxOracle.admitBelow`) the compile driver answers them in IxC Source mode
-(`fallback`, safe blocks), over the Source service run ahead of the waves
-(`Ix.AuxGen.Source.RunAhead`, one snapshot per level of the schedule), with
-each block's own canonical flat block installed when its layout is not
-Lean's (`AuxKernel.withFlatBlock`).
+The per-block harness uses the original Source service through production's
+checked provider: `failClosed`, recursors enabled, explicit recursor asks.
+It exercises real level/expression/named-recursor/elimination questions,
+flat and Prop-family installation, and fixture named replay without refusal.
 
-1. **Shadow agreement.** Each block that holds an inductive has its aux
-   patches generated as the driver's tail generates them, with the IxC arm in
-   `shadow` mode over its level's snapshot: every IxC answer is compared with
-   `Ix.Tc`'s, spelling included (`Ix.Compile.ExactKey.levelEq`), each `isDefEq?`
-   decision exactly. Asserted: no answer or decision differs (the stop rule
-   of `auxgen-m2.md` §3: a spelling change would move Lean's output without
-   a Rust mirror). The counts are printed: queries, fast-path hits on each
-   side, answered, refused, flat blocks, decisions, expression questions,
-   the generated `.below` admitted.
-2. **The fold's bytes in each mode.** `compileEnvFoldWithSource` under each
-   measurement setting (`AuxIxcOptions`), against production's
-   (`compileEnvFold`: `fallback`, the recursors on IxC, the recursors' asks
-   since AuxGen M4b), by their serialized
-   environments. All asserted equal: `shadow` (`Ix.Tc`'s answers: production
-   gives the bytes `Ix.Tc` gives), `failClosed` (IxC alone: no refusal on
-   these corpora), both again with every inductive block asked, and
-   `fallbackEager` (M2b's production, both kernels asked; production's
-   `fallback` is lazy since M3).
-3. **Init+Std only, timed**: the production fold and the measurement fold's
-   compile phases, and the service's work alone
-   (`Ix.AuxGen.Source.measure`: as it runs; lowering, then folding (lever
-   P1); the `.below`-only asks (lever P2)).
-4. **Terms out of IxC** (fixtures, AuxGen M3): the decision-grade egress
-   round-trips, and IxC's `infer`, `whnf` and `isDefEq` agree with the
-   declarations (`egressFixtures`).
-5. **Recursors on IxC** (AuxGen M4a, measurement modes): the shadow also
-   runs the recursor generator's `whnf`s (named: the input when unreduced,
-   the named replay when reduced) and the elimination decision on IxC, and
-   checks the canonical block (flat install, or Lean-layout recursors equal
-   to Lean's). A field that names no member of the block skips
-   `findRecTarget`'s Phase 2; `Ix.Tc` still decides it in the shadow. Asserted:
-   no difference from `Ix.Tc` (`auxgen-m4.md` §3's stop rule; a skipped field
-   `Ix.Tc` finds recursive counts), no refusal, the replay exercised on the
-   fixtures; every measurement fold (recursors on IxC) has production's
-   bytes, and a fold that does not says where it differs (`foldDiff`).
-
-Asserted besides: no IxC refusal on these corpora (`failClosed` would fail a
-block on one; production falls back to `Ix.Tc`). -/
+1. Canonical verdicts match by exact block key, with the complete promotion
+   partition. Acceptance, identity, admission and display rows retain their
+   original rules and negative controls; original Source status is preserved.
+2. Both supported checked ask selectors (recursors and every inductive)
+   produce the actual production fold's complete serialized bytes, with
+   zero block failures. Independent Rust/Lean byte evidence is measured on
+   these exact retained fixture and bare Init/Std inputs, not a benchmark file.
+3. Fixture Prop tails retain the complete captured old-shadow output/state
+   as their expectation, their own checked reports/context, exact keyed
+   standalone failures, and real serializer-neutral state/layout controls.
+   The named accepted-owner refusal and false-status rejection remain live.
+4. Fixture egress roundtrips, inference, WHNF, defeq and the not-Prop negative
+   still use the actual declarations (`egressFixtures`).
+5. Init/Std retains the timed Source service measurements for all-inductive,
+   below-only and recursor asks, including lowering then folding. -/
 
 namespace Tests.Ix.AuxGen.BelowIxc
 
@@ -112,6 +84,16 @@ def statsLine (st : Ix.AuxGen.IxcStats) : String :=
     {st.leanRecDiffer}; Prop-level .below families installed {st.familyInstalled}, refused \
     {st.familyRefused}; unsafe blocks {st.unsafeBlock} (tier-installed {st.tier})"
 
+/-- Checked counters; the legacy formatter above remains for its other consumers. -/
+def checkedStatsLine (st : Ix.AuxGen.IxcStats) : String :=
+  s!"level queries {st.queries}, answered {st.answered}, IxC fast {st.ixcFast}, refused {st.refused}; \
+    scopes refused {st.scopesRefused}; flat {st.flatInstalled}/{st.flatRefused}; decisions {st.decisions}; \
+    infer/whnf {st.exprQueries}/{st.exprAnswered}; below {st.belowAdmitted}/{st.belowRefused}; \
+    recursor whnf {st.recWhnf} (stuck {st.recStuck}, beta {st.recBeta}, same {st.recSame}, replayed \
+    {st.recReplayed}, refused {st.recRefused}); skipped {st.recSkipped}, forced {st.recForced}; \
+    elimination {st.elim}/{st.elimRefused}; Lean layout {st.leanRecSame}/{st.leanRecDiffer}; \
+    Prop families {st.familyInstalled}/{st.familyRefused}; unsafe/tier {st.unsafeBlock}/{st.tier}; asked {st.asked}"
+
 /-- **One block's aux tail with the IxC arm**, as the driver's tail generates
 the patches (`sortConsts`, the classes restricted to Lean's `all`,
 `generateAuxPatches`), over `oracle`: the tail's counts and its canonical-block
@@ -152,25 +134,29 @@ def tailStats (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Nam
   | .ok (r, _) => .ok r
   | .error e => .error (toString e)
 
-/-- **Shadow agreement** over every block that holds an inductive, each over
+/-- **Checked generation** over every block that holds an inductive, each over
 its level's snapshot of a run-ahead over the input with production's asks: the
 counts summed, each block's canonical-block verdict by its canonical key (as
 the fold keys it), and the blocks whose tail failed. The harness runs a tail
 for every such block, including the ones production promotes without running
 their own tail (a family a parent's tail compiled). -/
-def shadow (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv : Ix.CompileM.CompileEnv) :
+def checked (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv : Ix.CompileM.CompileEnv) :
     IO (Ix.AuxGen.IxcStats × Array (Ix.Name × Ix.AuxGen.CanonicalVerdict) × Array String) := do
   let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
-  let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels ({} : Ix.CompileM.AuxIxcOptions).asks
+  let opts : Ix.CompileM.AuxIxcOptions := { mode := .failClosed, recursors := true, asks := .recursors, trace := false }
+  let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels opts.asks
+  let cenv := opts.withSourceProviders env.get? blocks ra cenv
   let mut total : Ix.AuxGen.IxcStats := {}
   let mut verdicts : Array (Ix.Name × Ix.AuxGen.CanonicalVerdict) := #[]
   let mut errors : Array String := #[]
   for (lo, members) in inductiveBlocks env blocks do
     let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
-    let some t := ra.runFor key
+    let some _ := ra.runFor key
       | do errors := errors.push s!"{lo.pretty}: in no level of the schedule"; continue
-    let oracle := Ix.AuxGen.Ixc.oracleOfRun .shadow false (fun _ => t.get) (ra.membersFor key)
-      { recursors := true, lookup := env.get? }
+    let some oracle := cenv.auxOracle.bind (· key)
+      | do errors := errors.push s!"{lo.pretty}: original-service oracle absent"; continue
+    unless oracle.mode == .failClosed && oracle.recursors && oracle.retry.isNone do
+      errors := errors.push s!"{lo.pretty}: invalid original-service capability"; continue
     match ← IO.lazyPure fun _ => tailStats cenv lo members oracle with
     | .error e => errors := errors.push s!"{lo.pretty}: aux generation: {e.take 200}"
     | .ok none => pure ()
@@ -213,6 +199,8 @@ def foldIxc (opts : Ix.CompileM.AuxIxcOptions) (env : Ix.Environment) (blocks : 
   match r with
   | .error e => return (false, s!"failed: {e.take 300}", t1 - t0)
   | .ok (out, report) =>
+    if !out.2.2.ungrounded.isEmpty || report.error.isSome then
+      return (false, s!"{report.summary}; {foldDiff prod out}", t1 - t0)
     match serialized (.ok out) with
     | .error e => return (false, s!"serialization failed: {e}", t1 - t0)
     | .ok bytes =>
@@ -222,21 +210,9 @@ def foldIxc (opts : Ix.CompileM.AuxIxcOptions) (env : Ix.Environment) (blocks : 
 
 /-- The modes the folds are compared in, with whether equality is asserted. -/
 def foldModes : Array (String × Ix.CompileM.AuxIxcOptions × Bool) :=
-  #[("shadow", { mode := .shadow, recursors := true }, true),
-    -- M4b–M5b's production (IxC first, `Ix.Tc` behind a refusal); production
-    -- is `failClosed` since AuxGen M5c
-    ("fallback", { mode := .fallback, recursors := true }, true),
-    ("shadow, every inductive block asked",
-      { mode := .shadow, asks := .inductive, recursors := true }, true),
+  #[("failClosed, recursor asks", { mode := .failClosed, asks := .recursors, recursors := true }, true),
     ("failClosed, every inductive block asked",
-      { mode := .failClosed, asks := .inductive, recursors := true }, true),
-    -- M2b's production (both kernels asked); production is lazy since AuxGen M3
-    ("fallbackEager", { mode := .fallbackEager, recursors := true }, true),
-    -- M3's production: the recursors on Ix.Tc, the `.below` asks (production
-    -- puts the recursors on IxC since AuxGen M4b)
-    ("M3's production (recursors on Ix.Tc, the .below asks)",
-      { mode := .fallback, recursors := false, asks := .below }, true),
-    ("failClosed, recursors on Ix.Tc", { mode := .failClosed, recursors := false }, true)]
+      { mode := .failClosed, asks := .inductive, recursors := true }, true)]
 
 /-- AuxGen M5: the acceptance table's lines (its counts, by kind and verdict,
 and the first refusals). -/
@@ -411,6 +387,7 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
   let prod ← IO.lazyPure fun _ => Ix.CompileM.compileEnvFold env blocks (width := width)
   let t1 ← IO.monoMsNow
   let (_, _, cenv) ← IO.ofExcept prod
+  if !cenv.ungrounded.isEmpty then errors := errors.push s!"production fold: {cenv.ungrounded.size} block failures"
   let expected ← IO.ofExcept (serialized prod)
   lines := lines.push s!"{label}: {env.consts.size} constants, {blocks.blocks.size} blocks; \
     production fold {t1 - t0} ms, {expected.size} bytes"
@@ -421,27 +398,17 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
       run-ahead: {report}"
     if asserted && !same then errors := errors.push s!"{name}: the fold's bytes differ from production"
   let t2 ← IO.monoMsNow
-  let (st, shadowVerdicts, tailErrors) ← shadow env blocks cenv
+  let (st, checkedVerdicts, tailErrors) ← checked env blocks cenv
   let t3 ← IO.monoMsNow
-  lines := lines.push s!"shadow, per block ({t3 - t2} ms): {statsLine st}"
+  lines := lines.push s!"checked, per block ({t3 - t2} ms): {checkedStatsLine st}"
   for s in st.samples do lines := lines.push s!"  {s.take 300}"
   for e in tailErrors do errors := errors.push e
-  if st.differ != 0 then
-    errors := errors.push s!"{st.differ} IxC answers spelled differently from Ix.Tc's (stop rule)"
   if st.queries == 0 then errors := errors.push "no level question was asked"
-  if st.decisionsDiffer != 0 then
-    errors := errors.push s!"{st.decisionsDiffer} isDefEq decisions differ from Ix.Tc's"
-  -- AuxGen M4a's stop rule (auxgen-m4.md §3)
-  if st.recDiffer != 0 then
-    errors := errors.push s!"{st.recDiffer} recursor whnf answers differ from Ix.Tc's (stop rule)"
-  if st.recSkipDiffer != 0 then
-    errors := errors.push s!"{st.recSkipDiffer} skipped fields Ix.Tc decided recursive (stop rule)"
-  if st.elimDiffer != 0 then
-    errors := errors.push s!"{st.elimDiffer} elimination decisions differ from Ix.Tc's (stop rule)"
+  if st.refused == 0 && st.answered != st.queries then errors := errors.push "checked level answers do not cover every query"
   if st.leanRecDiffer != 0 then
     errors := errors.push s!"{st.leanRecDiffer} Lean-layout canonical recursors differ from Lean's"
   -- AuxGen M4c: production records each block's canonical-block verdict
-  -- (`CompileEnv.auxReport`). Every recorded verdict is the shadow harness's
+  -- (`CompileEnv.auxReport`). Every recorded verdict is the checked harness's
   -- for the same block, none is a refusal or a difference, and production
   -- records a verdict for exactly the harness's blocks it did not promote: a
   -- block whose key a parent's aux tail compiled (`CompileEnv.auxGenExtraNames`)
@@ -459,20 +426,20 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
   let sameKey (a b : Ix.Name) : Bool := Ix.Compile.ExactKey.nameEq a b
   let mut disagree : Array String := #[]
   for (key, v) in cenv.auxReport.canonical do
-    match shadowVerdicts.find? (sameKey ·.1 key) with
+    match checkedVerdicts.find? (sameKey ·.1 key) with
     | some (_, w) =>
       if v != w then disagree := disagree.push s!"{key.pretty} ({repr v} vs {repr w})"
     | none => disagree := disagree.push s!"{key.pretty} (not checked by the harness)"
   if !disagree.isEmpty then
-    errors := errors.push s!"{disagree.size} production canonical verdicts are not the shadow \
+    errors := errors.push s!"{disagree.size} production canonical verdicts are not the checked \
       harness's: {", ".intercalate (disagree.extract 0 4).toList}"
   let recordedKey (k : Ix.Name) : Bool := cenv.auxReport.canonical.any (sameKey ·.1 k)
   let promoted (k : Ix.Name) : Bool := cenv.auxGenExtraNames.contains k
-  let unrecorded := shadowVerdicts.filter fun (k, _) => !recordedKey k
-  let promotedRecorded := shadowVerdicts.filter fun (k, _) => recordedKey k && promoted k
-  let dropped := shadowVerdicts.filter fun (k, _) => !recordedKey k && !promoted k
+  let unrecorded := checkedVerdicts.filter fun (k, _) => !recordedKey k
+  let promotedRecorded := checkedVerdicts.filter fun (k, _) => recordedKey k && promoted k
+  let dropped := checkedVerdicts.filter fun (k, _) => !recordedKey k && !promoted k
   lines := lines.push s!"canonical verdicts: production records {cenv.auxReport.canonical.size}, \
-    the harness has {shadowVerdicts.size}; {unrecorded.size} harness-only, all promoted without \
+    the harness has {checkedVerdicts.size}; {unrecorded.size} harness-only, all promoted without \
     their own tail: {", ".intercalate ((unrecorded.extract 0 8).map (·.1.pretty)).toList}"
   if !promotedRecorded.isEmpty then
     errors := errors.push s!"{promotedRecorded.size} promoted blocks have a verdict of their own: \
@@ -571,7 +538,7 @@ def fixtureInput : IO (Ix.Environment × Ix.CondensedBlocks) := do
   return (← fixtureInputWithRaw).2
 
 def fixtures : TestSeq :=
-  .individualIO "AuxGen M2a: .below's levels from IxC agree with Ix.Tc's; the measurement fold's bytes"
+  .individualIO "AuxGen: checked queries, canonical coverage, acceptance table and fold bytes"
     none (do
       let (env, blocks) ← fixtureInput
       let (errors, lines) ← evaluate "fixtures" env blocks 16
@@ -589,14 +556,11 @@ Over the fixtures' inductive blocks, through the driver's own tail:
    provider and gets its exact accepted-owner rejection. Actual unaccepted
    input closures supply the positive retry controls in GenerationOnlyDependencies.
 3. **The Prop-level `.below` family's recursors on IxC** (AuxGen T3). For each
-   block with a Prop-level `.below` family, the driver's own tail over the
-   block's oracle in `shadow` (both kernels, every answer compared): the family
-   installs (`AuxKernel.withFamily`), no answer differs from `Ix.Tc`'s and none
-   is refused, and the block state it leaves is the state production's
-   `failClosed` tail leaves from the same start (IxC alone; the same records).
-   Until T3 this item checked M5c's replay instead (the deferred `Ix.Tc`
-   bookkeeping, replayed before the family's `Ix.Tc` generation, left the eager
-   kenv); T3 deletes the replay with that generation. -/
+   measured block, the actual checked tail matches the complete captured
+   old-shadow output/state. Its raw report, context, original status and
+   promotion membership match the checked capture. Every standalone failure
+   matches its exact keyed cause; paired failure or a total is no allowance.
+   Family installation and all checked refusal/Lean-layout guards remain. -/
 
 /-- A block's aux-tail arguments as `compileBlockWithAux` makes them (its
 prologue, in the same block state): the members, their classes, the block's
@@ -662,7 +626,7 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
   let prod ← IO.lazyPure fun _ => Ix.CompileM.compileEnvFold env blocks (width := 16)
   let (ixe, _, cenv) ← IO.ofExcept prod
   let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
-  let opts : Ix.CompileM.AuxIxcOptions := {}
+  let opts : Ix.CompileM.AuxIxcOptions := { mode := .failClosed, recursors := true, asks := .recursors, trace := false }
   let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels opts.asks
   let cenv := opts.withSourceProviders env.get? blocks ra cenv
   let mut named := 0
@@ -670,7 +634,6 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
   let mut families := 0
   let mut familyStats : Ix.AuxGen.IxcStats := {}
   let mut notStandalone := 0
-  let shadowOpts : Ix.CompileM.AuxIxcOptions := { opts with mode := .shadow }
   let selected := inductiveBlocks env blocks
   let reference ← IO.ofExcept (BelowPropReference.read env blocks selected)
   for ((rep, members), i) in selected.zipIdx do
@@ -678,45 +641,29 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     let lo := key
     let some real := opts.oracleFor ra env.get? key
       | do errors := errors.push s!"{lo.pretty}: missing measured checked oracle"; continue
-    -- 3. the Prop-level `.below` family's recursors on IxC (T3): the driver's
-    -- tail in `shadow` (every answer compared with `Ix.Tc`'s) and in production's
-    -- `failClosed`, from the same block state
-    let some shadowO := shadowOpts.oracleFor ra env.get? key
-      | do errors := errors.push s!"{lo.pretty}: no shadow oracle"; continue
+    -- The real checked tail is bound to the complete old-shadow expectation.
     let famTail (o : Ix.AuxGen.AuxOracle) :
         Ix.CompileM.CompileM (Option BelowPropReference.Tail) := do
       let some (cs, sorted, addr, maps) ← tailArgs lo members | return none
       return some (← (Ix.AuxGen.compileMutualAuxTail cs sorted addr maps (.ixc maps o)).run
         Ix.AuxGen.AuxKernelCtx.new)
-    let sr ← IO.lazyPure fun _ => runIn cenv lo (famTail shadowO)
     let cr ← IO.lazyPure fun _ => runIn cenv lo (famTail real)
-    IO.ofExcept (BelowPropReference.check reference i rep key members (cenv.auxGenExtraNames.contains key)
-      shadowO real sr cr stateKey ixe)
-    match sr, cr with
-    | .error e, .error e' =>
-      -- The capture records 73 recursor registration and 12 alias conflicts
-      -- when rerunning over the completed environment; only 3 keys are promoted.
-      -- Keep this original paired-error comparison alongside the full reference.
-      if e == e' then notStandalone := notStandalone + 1
-      else errors := errors.push s!"{lo.pretty}: the tails fail differently: {e.take 160} / \
-        {e'.take 160}"
-    | .error e, .ok _ => errors := errors.push s!"{lo.pretty}: only the shadow tail fails: {e.take 200}"
-    | .ok _, .error e => errors := errors.push s!"{lo.pretty}: only the failClosed tail fails: \
-        {e.take 200}"
-    | .ok (none, _), _ | _, .ok (none, _) => pure ()
-    | .ok (some (_, sk), sst), .ok (some _, pst) =>
+    IO.ofExcept (BelowPropReference.checkChecked reference i rep key members (cenv.auxGenExtraNames.contains key)
+      real cr stateKey ixe)
+    match cr with
+    -- Reached only after the complete key/member/status/promotion/error match.
+    | .error _ => notStandalone := notStandalone + 1
+    | .ok (none, _) => errors := errors.push s!"{lo.pretty}: measured tail absent"
+    | .ok (some (_, sk), _) =>
       let st := sk.ixcStats
       if st.familyInstalled + st.familyRefused > 0 then
         families := families + 1
         familyStats := addStats familyStats st
-        let bad := st.familyRefused + st.differ + st.refused + st.decisionsDiffer + st.recDiffer
-          + st.recRefused + st.recDecisionDiffer + st.elimDiffer + st.elimRefused
+        let bad := st.familyRefused + st.refused + st.scopesRefused + st.flatRefused
+          + st.belowRefused + st.recRefused + st.elimRefused + st.leanRecDiffer
         if bad != 0 then
           errors := errors.push s!"{lo.pretty}: the tail with a Prop-level .below family, in \
-            shadow, differs from Ix.Tc or is refused: {statsLine st} {st.samples}"
-        if stateKey { sst with auxReport := {} } != stateKey { pst with auxReport := {} } then
-          errors := errors.push s!"{lo.pretty}: the shadow and failClosed tails leave different \
-            block states"
+            checked generation, is refused or has different Lean-layout recursors: {checkedStatsLine st} {st.samples}"
     -- 1 and 2 on the first blocks Source mode accepts
     if real.blockStatus () != none || named ≥ 8 then continue
     let tail (k : Ix.AuxGen.AddrMaps → Ix.AuxGen.AuxKernel) (viaDriver : Bool) :
@@ -743,9 +690,8 @@ def m5cEvaluate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
       else errors := errors.push s!"{lo.pretty}: wrong accepted-owner rejection: {e}"
     | .ok _ => errors := errors.push s!"{lo.pretty}: a false status bypassed the accepted-owner fence"
   lines := lines.push s!"M5c: named failures {named}, accepted-owner rejections {rejected}; T3: blocks with a \
-    Prop-level .below family on IxC in shadow {families} (blocks this harness cannot re-run \
-    alone, failing alike both ways: {notStandalone})"
-  lines := lines.push s!"T3, those tails in shadow: {statsLine familyStats}"
+    Prop-level .below family on IxC {families}; exact keyed standalone failures {notStandalone}"
+  lines := lines.push s!"T3, checked tails against full captured outputs: {checkedStatsLine familyStats}"
   if named == 0 then errors := errors.push "no planted refusal failed a block"
   if rejected == 0 then errors := errors.push "no forged nonacceptance was rejected"
   if families == 0 then errors := errors.push "no Prop-level .below family was compared"
@@ -868,7 +814,7 @@ def initStdInputWithRaw : IO (List (Lean.Name × Lean.ConstantInfo) × Ix.Enviro
   return (consts.toList, env, blocks)
 
 def initStd : TestSeq :=
-  .individualIO "AuxGen M2a on Init+Std: shadow agreement, the measurement fold, the service timed"
+  .individualIO "AuxGen on Init+Std: checked generation, fold bytes and the timed Source service"
     none (do
       let t0 ← IO.monoMsNow
       let (_, env, blocks) ← initStdInputWithRaw
