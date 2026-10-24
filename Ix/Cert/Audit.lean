@@ -61,6 +61,7 @@ import Ix.Cert.PrefixReadings
 import Ix.Cert.PrefixCore
 import Ix.Cert.PrefixDefinitions
 import Ix.Cert.PrefixConstType
+import Ix.Cert.PrefixCapabilities
 
 /-! # The certification statements, frozen
 
@@ -5943,3 +5944,18 @@ run_cmd do
       (`Ix.Cert.PrefixConstType ++ ·)) ++
       #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.stored_head_slots,
         `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_const_ty])
+
+/-! ## Capability and successor rows at the same final interpretation
+
+Positive family guards and resolving headers transport both capability
+halves. The successor argument uses only the supplied core; the unit law
+gains no eta-family premise and no prefix interpretation is chosen. -/
+
+/-- info: [cert-audit] fixed interpretation capability and successor rows: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed interpretation capability and successor rows"
+    ((#[`eta_family_preserved, `capabilities_preserved, `nat_succ_row].map
+      (`Ix.Cert.PrefixCapabilities ++ ·)) ++
+      #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_caps_succ])
