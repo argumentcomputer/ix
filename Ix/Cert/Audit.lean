@@ -67,6 +67,7 @@ import Ix.Cert.PrefixTowers
 import Ix.Cert.PrefixNatOps
 import Ix.Cert.RuleInputValues
 import Ix.CompileCert.O6PrefixValues
+import Ix.CompileCert.OptDispatchOrigin
 
 /-! # The certification statements, frozen
 
@@ -6069,3 +6070,16 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "indexed O6 final interpretation values"
     #[`Ix.CompileCert.O6PrefixValues.o6_rec_under_telescope_final_values]
+
+/-! ## The actual engine and passConfig branch origin
+
+First-success misses, the literal recursive fuel and all reports survive;
+the hook derives permission and its actual driver environment. -/
+
+/-- info: [cert-audit] actual optimization dispatch origins: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual optimization dispatch origins"
+    (#[`engineN_origin, `engineN_success_origin, `engine_origin, `passConfig_origin].map
+      (`Ix.CompileCert.OptDispatchOrigin ++ ·))
