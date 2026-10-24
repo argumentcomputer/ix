@@ -59,6 +59,8 @@ import Ix.CompileCert.O6TelescopeValues
 import Ix.Cert.ReferenceFronts
 import Ix.Cert.PrefixReadings
 import Ix.Cert.PrefixCore
+import Ix.Cert.PrefixDefinitions
+import Ix.Cert.PrefixConstType
 
 /-! # The certification statements, frozen
 
@@ -5880,3 +5882,64 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "actual final interpretation prefix package"
     #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_core]
+
+/-! ## Every stored definition's actual creating reference step
+
+All non-definition paths preserve the exact definition entries, including
+native settled/retry, modeled, basis, quotient and projection branches. -/
+
+/-- info: [cert-audit] universal stored definition origins: 17 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal stored definition origins"
+    (#[`definition_mem, `fold_definitions, `basis_definitions, `member_definitions,
+      `recs_definitions, `projection_definitions, `projection_step_definitions,
+      `modeled_definitions, `constructors_definitions, `native_table_definitions,
+      `native_pass_definitions, `native_tail_definitions, `native_definitions,
+      `checkDecl_definitions, `step_definition_origin, `fold_definition_origin,
+      `reference_stored_definition_origin].map (`Ix.Cert.PrefixDefinitions ++ ·))
+
+/-! ## Universal prefix unfolding at the supplied final interpretation
+
+Every stored definition uses its actual creating front/run and produced
+lookup. Paired readings and the same final model pin its exact leaf. -/
+
+/-- info: [cert-audit] universal fixed interpretation definition row: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal fixed interpretation definition row"
+    (#[`prefix_definitions_read, `final_prefix_defn].map (`Ix.Cert.ReferenceFronts.DefinitionFrontAt ++ ·))
+
+/-! ## Actual table origin and old-head projection slots
+
+Every new table's former was fresh in the original checker prefix; real
+growth then preserves all slots at already-stored heads, without an absence
+premise or membership-to-hit shortcut. -/
+
+/-- info: [cert-audit] actual old-head projection slots: 16 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual old-head projection slots"
+    (#[`table_mem, `TableOrigin.of_tables, `fold_tables, `basis_tables, `member_tables,
+      `recs_tables, `projection_tables, `modeled_tables, `constructors_tables,
+      `native_table_origin, `native_pass_origin, `native_tail_origin, `native_origin,
+      `step_table_origin, `checked_step_stored_slots,
+      `checked_suffix_stored_slots].map (`Ix.Cert.PrefixConstType ++ ·))
+
+/-! ## Every resolving header at the supplied final interpretation
+
+Actual growth derives subject-specific literal queries and both projection
+branches. The SAME final model supplies every constant type/level/depth row. -/
+
+/-- info: [cert-audit] universal fixed interpretation constant types: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "universal fixed interpretation constant types"
+    ((#[`query_eq, `nat_guard_eq, `string_queries_eq, `resolving_reading_eq].map
+      (`Ix.Cert.PrefixConstType ++ ·)) ++
+      #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.stored_head_slots,
+        `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_const_ty])
