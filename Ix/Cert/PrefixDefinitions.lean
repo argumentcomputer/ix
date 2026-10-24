@@ -304,3 +304,67 @@ theorem reference_stored_definition_origin
       simp only [Env.find?_cons, Ix.Kernel.ConstantInfo.name, Ix.Kernel.ConstantInfo.toConstantVal, ↓reduceIte]
 
 end Ix.Cert.PrefixDefinitions
+
+namespace Ix.Cert.ReferenceFronts
+
+open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model Ix.Kernel.SetTheory
+open Ix.Kernel.Model.Rules (Graded)
+open Ix.Cert.PrefixDefinitions Ix.Cert.PrefixReadings Ix.Cert.ConversionValues
+
+universe w
+variable {md : Mode} {ev : Evidences md} {ds : List (Declaration md)}
+  {envA before : Env md} {i F : Nat} {cv : Ix.Kernel.ConstantVal md}
+  {raw expected checked : Ix.Kernel.Expr md} {hint : ReducibilityHint}
+
+/-- EVERY stored prefix definition reads to the supplied FINAL model's
+own leaf. Actual all-kind origins supply the real full body runs and the
+positive lookups; membership is never silently inverted into a lookup. -/
+theorem DefinitionFrontAt.prefix_definitions_read
+    (front : DefinitionFrontAt ev ds envA i cv raw hint F before expected checked)
+    (V : Type w) [SetTheory V] (M : Cached.StrongModel V envA) :
+    ∀ (ψ : LevelParam → Nat) (dcv : Ix.Kernel.ConstantVal md) (body : Ix.Kernel.Expr md),
+      (∃ dhint, .defnInfo dcv body dhint ∈ before.consts) →
+      denoteMeta M.internal.base2.acval before ψ 0 body = some (M.internal.base2.acval dcv.name ψ) := by
+  have lookup : FindPreserved before envA := front.lookup_preserved
+  obtain ⟨_, _, prefixRun, _, _, _, _, _⟩ := front
+  have accepted : Cached.AcceptsRef .verified ev (ds.take i) before := ⟨F, prefixRun⟩
+  intro ψ dcv body ⟨dhint, member⟩
+  obtain ⟨j, rawCv, rawBody, fuel, origin, nameEq, levelsEq, created⟩ :=
+    reference_stored_definition_origin accepted member
+  have localLookup : FindPreserved origin before := created.lookup_preserved
+  have finalLookup : FindPreserved origin envA := by
+    intro n ci found
+    exact lookup (localLookup found)
+  obtain ⟨_, _, _, _, _, _, valueFront, stored⟩ := created
+  obtain ⟨_, bodyInfer, _⟩ := valueFront.2.2.2.2.2
+  obtain ⟨a, originRead, prefixRead⟩ := inferred_readings_preserved M.internal.base2.acval ψ
+    localLookup (valueFront_frame valueFront) bodyInfer
+  obtain ⟨b, originRead', finalRead⟩ := inferred_readings_preserved M.internal.base2.acval ψ
+    finalLookup (valueFront_frame valueFront) bodyInfer
+  have finalStored : envA.find? dcv.name = some (.defnInfo dcv body dhint) := by
+    simpa only [nameEq, levelsEq] using lookup stored
+  have pinned := M.internal.defn_reads ψ dcv body ⟨dhint, Semantics.Env.find?_mem finalStored⟩
+  exact prefixRead.trans (originRead.symm.trans (originRead'.trans (finalRead.symm.trans pinned)))
+
+/-- The actual front derives the UNIVERSAL definition-unfolding supplier
+at the exact final interpretation, retaining the core/basic target package.
+All other RulesInputs rows, baseline equality and source-form/translation
+obligations remain separate; no prefix model's semantic fields are used. -/
+theorem DefinitionFrontAt.final_prefix_defn
+    (front : DefinitionFrontAt ev ds envA i cv raw hint F before expected checked)
+    (V : Type w) [SetTheory V] (M : Cached.StrongModel V envA) :
+    ∃ core : EnvModel V before,
+      core.acval = M.internal.base2.acval ∧ cvalOf core.acval = M.model.cval ∧
+      AcvalValid core ∧ (∀ φ : LevelParam → Nat, NatHeads core φ) ∧ EqLaw core ∧
+      AcvalDefnInst core ∧
+      ∀ φ : LevelParam → Nat,
+        ∃ ha,
+          denoteMeta core.acval before φ 0 expected = some ha ∧ Graded V [] ha ∧
+          denoteMeta core.acval before φ 0 checked = some (core.acval cv.name φ) ∧
+          Graded V [] (core.acval cv.name φ) ∧
+          ∀ ρ : BVarIdx → V, interp V ρ (core.acval cv.name φ) ∈ˢ interp V ρ ha := by
+  obtain ⟨core, acvalEq, cvalEq, valid, heads, eqLaw, target⟩ := front.final_prefix_core V M
+  refine ⟨core, acvalEq, cvalEq, valid, heads, eqLaw, ?_, target⟩
+  simpa only [AcvalDefnInst, acvalEq] using front.prefix_definitions_read V M
+
+end Ix.Cert.ReferenceFronts
