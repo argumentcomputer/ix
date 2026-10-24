@@ -1,8 +1,10 @@
 import Ix.Cert.AdmittedTargetFronts
 import Ix.Cert.RecursorSupport
+import Ix.Cert.DefinitionSnapshots
 import Ix.Ixon.CheckOrder
 import Tests.Ix.Compile.Harness.Units
 import Tests.Ix.Kernel.Authentication
+import Tests.Ix.Kernel.EntryCaseDefs
 
 namespace Tests.Ix.Compile.SelectedAdmission
 open _root_.Ix.Kernel _root_.Ix.Kernel.Reader _root_.Ix.Kernel.Admission
@@ -53,12 +55,15 @@ private def candidate (ixe : Ixon.Env) (t : RoleTable) (pre : Prelude .anon) (ro
 -- Inspect the exact preparation after ONE public check; this replay adds no
 -- declaration, prefix, per-rewrite or inner-header checker invocation.
 private def fronts (binding : Binding) (t : RoleTable) (pre : Prelude .anon)
-    (ixe : Ixon.Env) (order : List Address) (root : Address) (envA : Env .anon) : IO (Nat × Nat) := do
+    (ixe : Ixon.Env) (order : List Address) (root : Address) (envA : Env .anon)
+    (receipt? : Option DefinitionSnapshots.Receipt := none) : IO (Nat × Nat) := do
   let records := recordsOf ixe order
   let blobs := blobsOf ixe order
   let hint := hintsOf ixe
   let constants ← IO.ofExcept ((decodeRecords limits records).mapError reprStr)
-  let (_, ds) ← IO.ofExcept ((prepareWith Address.admissionHash binding pre limits records blobs hint).mapError toString)
+  let (_, ds) ← match receipt? with
+    | some r => pure (r.ev, r.ds)
+    | none => IO.ofExcept ((prepareWith Address.admissionHash binding pre limits records blobs hint).mapError toString)
   let cx := streamContext Address.admissionHash t pre constants blobs hint
   let mut st := pre.state
   let mut decls : Array (Declaration .anon) := #[]
@@ -83,9 +88,18 @@ private def fronts (binding : Binding) (t : RoleTable) (pre : Prelude .anon)
   let mut moved := 0
   for (j, decl) in selected do
     let some i := ds.findIdx? (· == decl) | throw (IO.userError "prepared declaration missing")
-    let .defnDecl cv _ h := decl | throw (IO.userError "wrong front kind")
-    let some (.defnInfo got _ storedHint) := envA.find? cv.name | throw (IO.userError "checked definition missing")
+    let .defnDecl cv raw h := decl | throw (IO.userError "wrong front kind")
+    let some (.defnInfo got checked storedHint) := envA.find? cv.name | throw (IO.userError "checked definition missing")
     need (got.name == cv.name && got.levelParams == cv.levelParams && storedHint == h) "checked identity/levels/hint changed"
+    if let some r := receipt? then
+      let s ← IO.ofExcept (r.snapshot i)
+      need (s.position == i && s.cv == cv && s.raw == raw && s.hint == h &&
+        s.expected == got.type && s.checked == checked) "snapshot changed its declaration/header/body association"
+      need (s.before.consts.length == s.counter && s.view.env.consts == envA.consts &&
+        s.view.find? cv.name == none && s.before.find? cv.name == none &&
+        (s.view.env.find? cv.name).isSome) "snapshot confused final environment with the logical prefix"
+      need (s.before.consts.all (fun c => s.view.find? c.name == s.before.find? c.name)) "prefix lookup changed"
+      IO.println s!"  snapshot prepared={i} counter={s.counter} key={cv.name}"
     if i != j then moved := moved + 1
     IO.println s!"  front record={j} prepared={i} key={cv.name} levels={cv.levelParams.length}"
   return (selected.size, moved)
@@ -229,15 +243,15 @@ private def supportedCensus (out : _root_.Ix.CompileM.LeanPipelineOut) (binding 
         IO.println s!"{site} literal={literal.length} supported={order.length} missing-extra={missing} outcome={outcome}"
       else
         familyAgreed := familyAgreed + 1
-        match Ixon.Authenticated.checkBytes binding limits (recordsOf out.env order)
+        match DefinitionSnapshots.checkReceipt binding limits (recordsOf out.env order)
             (blobsOf out.env order) (hintsOf out.env) with
         | .error e =>
           outcome := reprStr e.outcome
           IO.println s!"{site} literal={literal.length} supported={order.length} missing-extra={missing} family-agreement=true outcome={outcome} {e}"
-        | .ok envA =>
+        | .ok receipt =>
           outcome := "accepted"
           IO.println s!"{site} literal={literal.length} supported={order.length} missing-extra={missing} family-agreement=true outcome=accepted"
-          let (n, _) ← fronts binding t pre out.env order r.address envA
+          let (n, _) ← fronts binding receipt.table receipt.pre out.env order r.address receipt.env (some receipt)
           witnessed := witnessed + n
     counts := counts.insert outcome (counts.getD outcome 0 + 1)
   need (counts.toList.foldl (fun n p => n + p.2) 0 == roots.length) "supported occurrence disappeared"
@@ -296,6 +310,46 @@ private def supportControls (binding : Binding) (t : RoleTable) (pre : Prelude .
   need ((Ixon.CheckOrder.recursorRecords (mutualP.context t pre).index block).contains mutualAddr) "mutual recursor origin lost"
   IO.println "support controls: Two supplied family, absent payload, exact first winner, all entry fields, missing/empty, fallback shadow and mutual record passed"
 
+private def snapshotControls (binding : Binding) (t : RoleTable) (pre : Prelude .anon) : IO Unit := do
+  let env ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
+  let raw := Tests.Ix.Compile.Harness.closureOf env [`Tests.Ix.Kernel.EntryCaseDefs.natAdd]
+  let out ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts raw (numWorkers := 1))
+  let some named := out.env.named.get? (_root_.Ix.Name.fromLeanName `Tests.Ix.Kernel.EntryCaseDefs.natAdd)
+    | throw (IO.userError "native operation control root not published")
+  let p ← IO.ofExcept ((RecursorSupport.catalogue out.env limits).mapError reprStr)
+  let (literal, _) ← IO.ofExcept (candidate out.env t pre named.addr)
+  let (order, _, _) ← IO.ofExcept (supportedCandidate p t pre named.addr literal)
+  let records := recordsOf out.env order
+  let blobs := blobsOf out.env order
+  let r ← IO.ofExcept ((DefinitionSnapshots.checkReceipt binding limits records blobs (hintsOf out.env)).mapError toString)
+  let native := r.ds.zipIdx.filterMap fun (d, i) => match d with
+    | .defnDecl cv _ _ => if natOpNames.contains cv.name || natDivModNames.contains cv.name then some i else none
+    | _ => none
+  need (!native.isEmpty) "native full-install definition control is vacuous"
+  for i in native do
+    let s ← IO.ofExcept (r.snapshot i)
+    need (s.view.find? s.cv.name == none && (r.env.find? s.cv.name).isSome) "native snapshot exposed itself"
+    IO.println s!"native snapshot prepared={i} counter={s.counter} key={s.cv.name}"
+  let some first := r.ds.findIdx? (fun | .defnDecl .. => true | _ => false) | throw (IO.userError "definition control absent")
+  let s ← IO.ofExcept (r.snapshot first)
+  need (s.counter != first) "declaration position incorrectly used as constant counter"
+  let some later := r.env.consts.head? | throw (IO.userError "checked environment empty")
+  need (later.name != s.cv.name && s.view.find? later.name == none) "later-key hiding control is vacuous or wrong"
+  need (!(r.snapshot r.ds.size).isOk) "out-of-range snapshot accepted"
+  let some other := r.ds.findIdx? (fun | .defnDecl .. => false | _ => true) | throw (IO.userError "mixed declaration control absent")
+  need (!(r.snapshot other).isOk) "non-definition snapshot accepted"
+  need (!({ r with index := { r.index with idx := r.index.idx.erase s.cv.name } }.snapshot first).isOk) "missing lookup accepted"
+  let wrong := { r with index := { r.index with idx := r.index.idx.insert s.cv.name (s.counter, .axiomInfo s.cv) } }
+  need (!(wrong.snapshot first).isOk) "wrong indexed kind accepted"
+  let badRecords := records.map fun (a, bytes) => (a, bytes.push 0)
+  let check := fun b l => DefinitionSnapshots.checkReceipt b l badRecords blobs (hintsOf out.env)
+  need (match check { binding with bytes := binding.bytes.push 0 } { limits with maxRecords := 0 } with
+    | .error (.binding _) => true | _ => false) "receipt changed binding error precedence"
+  need (match check binding { limits with maxRecords := 0 } with
+    | .error (.limit _) => true | _ => false) "receipt changed limit error precedence"
+  need (match check binding limits with | .error (.mismatch ..) => true | _ => false) "receipt changed byte error precedence"
+  IO.println "snapshot controls: native full-install, constant/declaration offsets, later-key hiding, missing/kind indices and exact error precedence passed"
+
 def runSupported : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
   let t ← IO.ofExcept ((admitBinding Address.admissionHash binding).mapError (toString ∘ Error.binding))
@@ -307,6 +361,7 @@ def runSupported : IO Unit := do
   controls out binding t pre
   supportedCensus out binding t pre
   supportControls binding t pre
+  snapshotControls binding t pre
 
 def run : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
@@ -344,4 +399,10 @@ def run : IO Unit := do
 #guard_msgs in #print axioms _root_.Ix.Cert.RecursorSupport.familyEq_iff
 /-- info: 'Ix.Cert.RecursorSupport.Catalogue.checkBatch_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.RecursorSupport.Catalogue.checkBatch_iff
+/-- info: 'Ix.Cert.DefinitionSnapshots.checkReceipt_env' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.DefinitionSnapshots.checkReceipt_env
+/-- info: 'Ix.Cert.DefinitionSnapshots.checkReceipt_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.DefinitionSnapshots.checkReceipt_ok
+/-- info: 'Ix.Cert.DefinitionSnapshots.snapshot_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.DefinitionSnapshots.snapshot_of_check
 end Tests.Ix.Compile.SelectedAdmission
