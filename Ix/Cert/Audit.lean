@@ -69,6 +69,8 @@ import Ix.Cert.RuleInputValues
 import Ix.CompileCert.O6PrefixValues
 import Ix.CompileCert.OptDispatchOrigin
 import Ix.CompileCert.OptShapeOrigin
+import Ix.CompileCert.ViewPublicationOrigin
+import Ix.CompileCert.PrimaryAddressFrame
 
 /-! # The certification statements, frozen
 
@@ -6123,3 +6125,57 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual O6 image call origins"
     (#[`o6_calls_images, `O6Images.calls, `passConfig_with_images].map
       (`Ix.CompileCert.OptShapeOrigin ++ ·))
+
+/-! ## Actual view queries and fresh publication entries
+
+The real empty-start loop supplies query/owner and exact cached-or-built
+origins. The actual absence guard forces a current build for every new entry. -/
+
+/-- info: [cert-audit] actual view query and publication origins: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual view query and publication origins"
+    (#[`viewOf_origin, `Origins.mono, `Origins.insert, `viewsOf_origins, `viewsOf_origin,
+      `newMemoViews_entries, `newMemoViews_built].map (`Ix.CompileCert.ViewPublicationOrigin ++ ·))
+
+/-! ## Actual view publication and transition values
+
+All three real producers supply their own build snapshots. Merges retain
+exact values; post-failure queries retain actual head/owner witnesses. -/
+
+/-- info: [cert-audit] actual view publication transitions: 11 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual view publication transitions"
+    (#[`memoMerge_keeps, `memoMerge_origin, `memoMerge_views_origin, `mergeCompiledBlock_views,
+      `failAuxPromotion_views, `after_failure_query_origin, `PublicationOrigin.entry_built,
+      `rewriteCliqueCanon_origin, `prepareBlock_origin, `compileImageBlock_origin,
+      `merge_publication_origin].map (`Ix.CompileCert.ViewPublicationOrigin ++ ·))
+
+/-! ## Actual checked primary writes and ordered merge projection
+
+The claim walk covers local shadowing and duplicates; the merge executes
+the exact original serialization/hash/order, independently of other fields. -/
+
+/-- info: [cert-audit] actual primary write agreement and projection: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual primary write agreement and projection"
+    (#[`WalkOk.insert, `checkBlockClaims_primary_agrees, `checkCompiledBlock_primary_agrees,
+      `mergeCompiledBlock_primary].map (`Ix.CompileCert.PrimaryAddressFrame ++ ·))
+
+/-! ## Checked primary-address value preservation
+
+The real guard and old primary hit derive exact post-merge lookup and
+resolution priority. The auxiliary-only query branch remains explicit. -/
+
+/-- info: [cert-audit] checked primary address frames: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "checked primary address frames"
+    (#[`PrimaryAgrees.foldl_keeps, `checked_merge_primary_frame, `checked_merge_query_partition].map
+      (`Ix.CompileCert.PrimaryAddressFrame ++ ·))

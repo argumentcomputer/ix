@@ -1,6 +1,8 @@
 import Ix.Cert.AdmittedTargetFronts
 import Ix.Cert.RecursorSupport
 import Ix.Cert.DefinitionSnapshots
+import Ix.Cert.CandidateValueFront
+import Ix.Cert.TheoremSnapshots
 import Ix.Ixon.CheckOrder
 import Tests.Ix.Compile.Harness.Units
 import Tests.Ix.Kernel.Authentication
@@ -56,7 +58,8 @@ private def candidate (ixe : Ixon.Env) (t : RoleTable) (pre : Prelude .anon) (ro
 -- declaration, prefix, per-rewrite or inner-header checker invocation.
 private def fronts (binding : Binding) (t : RoleTable) (pre : Prelude .anon)
     (ixe : Ixon.Env) (order : List Address) (root : Address) (envA : Env .anon)
-    (receipt? : Option DefinitionSnapshots.Receipt := none) : IO (Nat × Nat) := do
+    (receipt? : Option DefinitionSnapshots.Receipt := none)
+    (theorems? : Option (IO.Ref (Array String) × String) := none) : IO (Nat × Nat) := do
   let records := recordsOf ixe order
   let blobs := blobsOf ixe order
   let hint := hintsOf ixe
@@ -72,16 +75,36 @@ private def fronts (binding : Binding) (t : RoleTable) (pre : Prelude .anon)
     let r : Read .anon ← IO.ofExcept ((readRecord cx st a c).mapError reprStr)
     if a == root then
       if let .defn d := c.info then
-        if d.kind == .defn then
+        if d.kind == .defn || (d.kind == .thm && theorems?.isSome) then
           let key ← IO.ofExcept ((cx.memberKey (.member a 0)).mapError reprStr)
           let ty ← IO.ofExcept (((definitionReader cx a c d).read d.typ).mapError reprStr)
           let value ← IO.ofExcept (((definitionReader cx a c d).read d.value).mapError reprStr)
           let cv : _root_.Ix.Kernel.ConstantVal .anon := ⟨key, singletonLps d.lvls, ty⟩
-          let raw := (projRewrite st cv value).getD value
-          let some (.defnDecl got body h) := (r.decls[0]? : Option (Declaration .anon))
-            | throw (IO.userError "standalone read did not emit a definition")
-          need (got == cv && body == raw && r.decls == #[.defnDecl cv raw h]) "wire key/levels/projection body changed"
-          selected := selected.push (j, .defnDecl cv raw h)
+          let rewritten := projRewrite st cv value
+          let raw := rewritten.getD value
+          if d.kind == .thm then
+            let some receipt := receipt? | throw (IO.userError "theorem receipt absent")
+            let some (rows, label) := theorems? | throw (IO.userError "theorem census absent")
+            if label == "projection-control" then
+              let owner := match ty with | .forallE (.const n _) _ _ => some n | _ => none
+              IO.println s!"projection diagnostic: kind={repr d.kind} wire={repr d.value} body={repr (Frontend.lamBody value)} reader-owner={(owner.bind st.projOwners.get?).isSome} reader-level={(owner.bind fun n => st.projLevels[Frontend.projIotaName n 0]?).isSome}"
+              need ((owner.bind st.projOwners.get?).isSome &&
+                (owner.bind fun n => st.projLevels[Frontend.projIotaName n 0]?).isSome) "projection owner/level control is vacuous"
+            need (r.decls == #[.thmDecl cv raw]) "theorem wire/projection body changed"
+            let some i := ds.findIdx? (· == .thmDecl cv raw) | throw (IO.userError "prepared theorem missing")
+            let s ← IO.ofExcept (TheoremSnapshots.snapshot receipt i)
+            let some (.thmInfo got storedRaw) := envA.find? cv.name | throw (IO.userError "raw theorem missing")
+            need (s.position == i && s.cv == cv && s.raw == raw && storedRaw == raw &&
+              got.name == cv.name && got.levelParams == cv.levelParams && s.expected == got.type) "theorem identity/header/raw storage changed"
+            need (s.before.consts.length == s.counter && s.view.env.consts == envA.consts &&
+              s.before.find? cv.name == none && s.view.find? cv.name == none &&
+              s.before.consts.all (fun c => s.view.find? c.name == s.before.find? c.name)) "theorem prefix view changed"
+            rows.modify (·.push s!"theorem {label} record={j} prepared={i} counter={s.counter} key={cv.name} levels={cv.levelParams.length} projection={rewritten.isSome}")
+          else
+            let some (.defnDecl got body h) := (r.decls[0]? : Option (Declaration .anon))
+              | throw (IO.userError "standalone read did not emit a definition")
+            need (got == cv && body == raw && r.decls == #[.defnDecl cv raw h]) "wire key/levels/projection body changed"
+            selected := selected.push (j, .defnDecl cv raw h)
     decls := decls ++ r.decls
     st := st.commit r
   need (Frontend.preparePrelude pre.ix decls == ds) "reader replay differs from the actual preparation"
@@ -219,7 +242,7 @@ private def supportedCandidate {ixe : Ixon.Env} (p : RecursorSupport.Catalogue i
   return (order.toList, additions, missing.size)
 
 private def supportedCensus (out : _root_.Ix.CompileM.LeanPipelineOut) (binding : Binding)
-    (t : RoleTable) (pre : Prelude .anon) : IO Unit := do
+    (t : RoleTable) (pre : Prelude .anon) (theorems : IO.Ref (Array String)) : IO Unit := do
   let p ← IO.ofExcept ((RecursorSupport.catalogue out.env limits).mapError reprStr)
   let some nodes := out.sourceNodes? | throw (IO.userError "missing original facts")
   let cs := _root_.Ix.Compile.ChangedSet.ofCompile out.cenv.env out.blocks out.cenv.auxReport.table out.env
@@ -251,7 +274,8 @@ private def supportedCensus (out : _root_.Ix.CompileM.LeanPipelineOut) (binding 
         | .ok receipt =>
           outcome := "accepted"
           IO.println s!"{site} literal={literal.length} supported={order.length} missing-extra={missing} family-agreement=true outcome=accepted"
-          let (n, _) ← fronts binding receipt.table receipt.pre out.env order r.address receipt.env (some receipt)
+          let (n, _) ← fronts binding receipt.table receipt.pre out.env order r.address receipt.env
+            (some receipt) (some (theorems, site))
           witnessed := witnessed + n
     counts := counts.insert outcome (counts.getD outcome 0 + 1)
   need (counts.toList.foldl (fun n p => n + p.2) 0 == roots.length) "supported occurrence disappeared"
@@ -350,6 +374,96 @@ private def snapshotControls (binding : Binding) (t : RoleTable) (pre : Prelude 
   need (match check binding limits with | .error (.mismatch ..) => true | _ => false) "receipt changed byte error precedence"
   IO.println "snapshot controls: native full-install, constant/declaration offsets, later-key hiding, missing/kind indices and exact error precedence passed"
 
+def candidateTarget : Nat := 7
+
+-- Synthetic candidate controls only: zero is not the source form of seven.
+private def candidateControls (binding : Binding) (t : RoleTable) (pre : Prelude .anon) : IO Unit := do
+  let env ← getCompileEnv #[`Tests.Ix.Compile.SelectedAdmission]
+  let raw := Tests.Ix.Compile.Harness.closureOf env [``candidateTarget]
+  let out ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts raw (numWorkers := 1))
+  let some named := out.env.named.get? (_root_.Ix.Name.fromLeanName ``candidateTarget)
+    | throw (IO.userError "candidate target missing")
+  let p ← IO.ofExcept ((RecursorSupport.catalogue out.env limits).mapError reprStr)
+  let (literal, _) ← IO.ofExcept (candidate out.env t pre named.addr)
+  let (order, _, _) ← IO.ofExcept (supportedCandidate p t pre named.addr literal)
+  let records := recordsOf out.env order
+  let blobs := blobsOf out.env order
+  let r ← IO.ofExcept ((DefinitionSnapshots.checkReceipt binding limits records blobs (hintsOf out.env)).mapError toString)
+  let constants ← IO.ofExcept ((decodeRecords limits records).mapError reprStr)
+  let cx := streamContext Address.admissionHash r.table r.pre constants blobs (hintsOf out.env)
+  let key ← IO.ofExcept ((cx.memberKey (.member named.addr 0)).mapError reprStr)
+  let some i := r.ds.findIdx? (fun | .defnDecl cv .. => cv.name == key | _ => false)
+    | throw (IO.userError "candidate definition index missing")
+  let s ← IO.ofExcept (r.snapshot i)
+  need (s.cv.levelParams.isEmpty && !natOpNames.contains key && !natDivModNames.contains key)
+    "candidate control is not an ordinary monomorphic definition"
+  let natTy : _root_.Ix.Kernel.Expr .anon := .const natName []
+  let good : _root_.Ix.Kernel.Expr .anon := .const natZeroName []
+  need (good != s.raw) "candidate control copied the target body"
+  let .ok checked := CandidateValueFront.checkAt r i good | throw (IO.userError "distinct well-typed candidate refused")
+  need (!checked.hasFvar && checked != s.checked) "candidate result was confused with the target value"
+  let missing : Key .anon := .id (Tests.Ix.Kernel.Reader.address 999)
+  need (s.view.find? key == none && s.view.find? missing == none) "negative lookup controls are vacuous"
+  let bad : List (String × _root_.Ix.Kernel.Expr .anon) :=
+    [("wrong type", .sort .zero), ("loose variable", .bvar 0), ("free variable", .fvar 0 natTy),
+     ("current self", .const key []), ("unresolved", .const missing []), ("undeclared level", .sort (.param 999))]
+  for (label, value) in bad do
+    need (match CandidateValueFront.checkAt r i value with | .error (.value _) => true | _ => false)
+      s!"candidate {label} did not preserve a value error"
+  let .error expectedContext := r.snapshot r.ds.size | throw (IO.userError "missing-index control accepted")
+  need (match CandidateValueFront.checkAt r r.ds.size good with
+    | .error (.context got) => got == expectedContext | _ => false) "candidate context error changed"
+  let same ← IO.ofExcept (r.snapshot i)
+  need (same.checked == s.checked && same.expected == s.expected) "temporary candidate push changed the target receipt"
+  IO.println "candidate controls: distinct typed value only; wrong type, loose/free variables, self, unresolved and level errors; context error and target receipt preserved"
+
+structure TheoremBox where
+  witness : True
+  kids : List TheoremBox
+run_cmd do
+  let some (.thmInfo d) := (← Lean.getEnv).find? `Tests.Ix.Compile.SelectedAdmission.TheoremBox.witness
+    | throwError "primitive projection theorem missing"
+  Lean.Elab.Command.liftCoreM <| Lean.addDecl (.thmDecl
+    { name := `Tests.Ix.Compile.SelectedAdmission.theoremProjection,
+      levelParams := d.levelParams, type := d.type, value := d.value })
+
+open Tests.Ix.Kernel.Reader in
+private def theoremControls (binding : Binding) (t : RoleTable) (pre : Prelude .anon) : IO Unit := do
+  let env ← getCompileEnv #[`Tests.Ix.Compile.SelectedAdmission]
+  let input := Tests.Ix.Compile.Harness.closureOf env [`Tests.Ix.Compile.SelectedAdmission.theoremProjection]
+  let out ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts input (numWorkers := 1))
+  let some named := out.env.named.get? (_root_.Ix.Name.fromLeanName `Tests.Ix.Compile.SelectedAdmission.theoremProjection)
+    | throw (IO.userError "theorem projection control not published")
+  let p ← IO.ofExcept ((RecursorSupport.catalogue out.env limits).mapError reprStr)
+  let (literal, _) ← candidate out.env t pre named.addr |> IO.ofExcept
+  let (order, _, _) ← supportedCandidate p t pre named.addr literal |> IO.ofExcept
+  let r ← IO.ofExcept ((DefinitionSnapshots.checkReceipt binding limits (recordsOf out.env order)
+    (blobsOf out.env order) (hintsOf out.env)).mapError toString)
+  let rows ← IO.mkRef #[]
+  let _ ← fronts binding r.table r.pre out.env order named.addr r.env (some r) (some (rows, "projection-control"))
+  let observed ← rows.get
+  for row in observed do IO.println row
+  let some i := r.ds.findIdx? (fun | .thmDecl .. => true | _ => false) | throw (IO.userError "theorem control absent")
+  let s ← IO.ofExcept (TheoremSnapshots.snapshot r i)
+  let failure := fun r i msg => need (match TheoremSnapshots.snapshot r i with | .error e => e == msg | _ => false) msg
+  failure r r.ds.size "theorem snapshot: declaration index is unavailable"
+  let some other := r.ds.findIdx? (fun | .thmDecl .. => false | _ => true) | throw (IO.userError "other kind absent")
+  failure r other "theorem snapshot: declaration is not a theorem"
+  failure { r with index := { r.index with idx := r.index.idx.erase s.cv.name } } i
+    "theorem snapshot: theorem index entry is unavailable"
+  failure { r with index := { r.index with idx := r.index.idx.insert s.cv.name (s.counter, .axiomInfo s.cv) } } i
+    "theorem snapshot: indexed constant is not a theorem"
+  let bads := [(defn .thm (ref 0) (var 0) [nat], "type of theorem "),
+    (defn .thm (apps (ref 0 [0]) [ref 1, ref 2, ref 2]) (ref 2) [eq, nat, natZero] [one], "type mismatch in theorem ")]
+  for (bad, message) in bads do
+    let batch := (rekeyed [(address 230, bad)]).encoded
+    need (match DefinitionSnapshots.checkReceipt binding limits batch [] (fun _ => none) with
+      | .error (.kernel (.invalid m) _) => (Msg.render toString m).startsWith message
+      | _ => false) "theorem proposition-before-body or value error changed"
+  IO.println "theorem error controls: four context errors, proposition-before-body and theorem value refusal passed"
+  need (observed.size == 1 && observed.all (·.endsWith "projection=true")) "theorem projection rewrite control is vacuous"
+  IO.println "theorem controls: actual projection rewrite, raw storage, four context errors, proposition-before-body and theorem value refusal passed"
+
 def runSupported : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
   let t ← IO.ofExcept ((admitBinding Address.admissionHash binding).mapError (toString ∘ Error.binding))
@@ -359,9 +473,15 @@ def runSupported : IO Unit := do
   let (witnessed, moved) ← census "O2Split" out binding t pre
   need (witnessed == 11 && moved == 11) "frozen literal-batch front baseline changed"
   controls out binding t pre
-  supportedCensus out binding t pre
+  let theorems ← IO.mkRef #[]
+  supportedCensus out binding t pre theorems
   supportControls binding t pre
   snapshotControls binding t pre
+  candidateControls binding t pre
+  let rows ← theorems.get
+  need (rows.size == 15 && (rows.filter (·.contains "Reason.cascade")).size == 11) "15 theorem occurrences or reasons changed"
+  for row in rows do IO.println row
+  theoremControls binding t pre
 
 def run : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
@@ -405,4 +525,10 @@ def run : IO Unit := do
 #guard_msgs in #print axioms _root_.Ix.Cert.DefinitionSnapshots.checkReceipt_ok
 /-- info: 'Ix.Cert.DefinitionSnapshots.snapshot_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.DefinitionSnapshots.snapshot_of_check
+/-- info: 'Ix.Cert.CandidateValueFront.checkAt_front' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.CandidateValueFront.checkAt_front
+/-- info: 'Ix.Cert.TheoremSnapshots.selected_theorem_fronts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.TheoremSnapshots.selected_theorem_fronts
+/-- info: 'Ix.Cert.TheoremSnapshots.snapshot_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms _root_.Ix.Cert.TheoremSnapshots.snapshot_of_check
 end Tests.Ix.Compile.SelectedAdmission
