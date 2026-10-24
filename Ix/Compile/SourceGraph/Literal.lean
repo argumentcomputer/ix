@@ -152,11 +152,15 @@ theorem literalUseShared_eq (ci : ConstantInfo) : literalUseShared ci = literalU
   simp only [literalUseShared, (Literal.scanTerms Literal.empty (terms ci)).correct, literalUse]
 
 def captureUsingShared (ci : ConstantInfo) (direct : Ix.Set Name) : Node :=
-  { direct, literals := literalUseShared ci, grouping := (captureUsing ci direct).grouping }
+  { direct, literals := literalUseShared ci, grouping := match ci with
+    | .inductInfo v => .induct v.all
+    | .recInfo v => .recursor v.all
+    | _ => .plain }
 
 theorem captureUsingShared_eq (ci : ConstantInfo) (direct : Ix.Set Name) :
     captureUsingShared ci direct = captureUsing ci direct := by
   simp only [captureUsingShared, literalUseShared_eq, captureUsing]
+  cases ci <;> rfl
 
 def rowUsingShared (n : Name) (ci : ConstantInfo) (direct : Ix.Set Name) : Row :=
   ⟨n, captureUsingShared ci direct, keep ci⟩
