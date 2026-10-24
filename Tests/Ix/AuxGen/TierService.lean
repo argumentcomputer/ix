@@ -5,6 +5,7 @@ import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierIndDefs
 import Tests.Ix.AuxGen.BelowIxc
 import Batteries.Data.MLList.Basic
+import Tests.Ix.AuxGen.MLListReference
 
 /-! # The Source service's tier and an unsafe block's oracle (`lake test -- auxgen-tier-service`)
 
@@ -160,17 +161,18 @@ def mlListService : TestSeq :=
     let some (lo, members) := (Tests.Ix.AuxGen.FlatBlockSource.inductiveBlocks env blocks).find?
       (fun (_, members) => members.any (Ix.Compile.ExactKey.nameEq · key))
       | return (false, 0, 0, some "MLList block missing")
-    let oracle := Ixc.oracleOf .shadow false
+    let oracle mode := Ixc.oracleOf mode false
       { members, recursors := true, lookup := env.get? } none 4 (fun _ => .ok svc)
-    let tail : Ix.CompileM.CompileM (Option IxcStats) := do
+    let tail : Ix.CompileM.CompileM (Option MLListReference.Output) := do
       let some (cs, sorted, addr, maps) ← Tests.Ix.AuxGen.BelowIxc.tailArgs lo members
         | return none
-      let (_, ctx) ← (compileMutualAuxTail cs sorted addr maps (.ixc maps oracle)).run
+      let result ← (compileMutualAuxTail cs sorted addr maps (.ixc maps (oracle .shadow))).run
         AuxKernelCtx.new
-      return some ctx.ixcStats
-    let (st?, _) ← IO.ofExcept (← IO.lazyPure fun _ =>
+      return some result
+    let (shadow?, state) ← IO.ofExcept (← IO.lazyPure fun _ =>
       Tests.Ix.AuxGen.BelowIxc.runIn cenv lo tail)
-    let some st := st? | return (false, 0, 0, some "MLList tail missing")
+    let some shadow := shadow? | return (false, 0, 0, some "MLList tail missing")
+    let st := shadow.2.ixcStats
     let counts := Tests.Ix.AuxGen.BelowIxc.statsLine st
     IO.println s!"MLList: tier unsafe, not accepted; {counts}"
     let ok := st.queries > 0 && st.answered == st.queries && st.equal == st.queries &&
@@ -179,6 +181,10 @@ def mlListService : TestSeq :=
         st.decisionsDiffer, st.recDiffer, st.recDecisionDiffer, st.recSkipDiffer,
         st.elimDiffer, st.leanRecDiffer, st.belowRefused, st.recRefused, st.elimRefused,
         st.familyRefused].all (· == 0)
+    if ok then
+      let real := oracle .failClosed
+      let original := (shadow, state)
+      MLListReference.check env cenv svc n lo members real original
     return (ok, st.queries + st.recWhnf + st.elim, 0,
       if ok then none else some (counts ++ "\n" ++ "\n".intercalate st.samples.toList))) .done
 
