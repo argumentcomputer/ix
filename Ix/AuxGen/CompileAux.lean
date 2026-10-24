@@ -212,7 +212,7 @@ private def listHead (xs : List α) (what : String) : CompileM α :=
     against already-cleared block caches (the wrapper handles the fresh
     `BlockCache` model). -/
 private def compileAuxBlockCore (auxConsts : Array MutConst)
-    (kernel : AuxKernel) (nameRename : Option (Std.HashMap Name Name))
+    (nameRename : Option (Std.HashMap Name Name))
     (classOrderKey : Option (MutConst → UInt64)) : KBridgeM Unit := do
   -- Helper: canonical name → source name under the optional rename
   -- (mutual.rs:118-122).
@@ -290,10 +290,6 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
         auxInsertExtraName n
         -- Rust pushes `n` onto `stt.aux_gen_pending` here
         -- (mutual.rs:232-235) — scheduler machinery, next milestone.
-    -- Ingress all registered aux constants into the kernel environment
-    -- (mutual.rs:238-245).
-    for cnst in auxConsts do
-      kernel.admitSource #[cnst.name]
     return ()
 
   -- Compile the mutual block (mutual.rs:249-256).
@@ -379,11 +375,6 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
   -- Rust batch-pushes `pending_names` onto `stt.aux_gen_pending` here
   -- (mutual.rs:398-401) — scheduler machinery, next milestone.
 
-  -- Ingress all registered aux constants into the kernel environment
-  -- (mutual.rs:403-411).
-  for cnst in auxConsts do
-    kernel.admitSource #[cnst.name]
-
 /-- Like `compileAuxBlock`, but applies an optional canonical→source
     name-rename when registering named entries, and an optional
     `classOrderKey` reordering the `sortConsts` classes before block
@@ -396,7 +387,7 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
     cleared, and restored around the body; the stt-like fields
     accumulate. -/
 def compileAuxBlockWithRename (auxConsts : Array MutConst)
-    (kernel : AuxKernel) (nameRename : Option (Std.HashMap Name Name))
+    (nameRename : Option (Std.HashMap Name Name))
     (classOrderKey : Option (MutConst → UInt64)) : KBridgeM Unit := do
   if auxConsts.isEmpty then
     return ()
@@ -406,7 +397,7 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
     exprCache := {}, univCache := {},
     refs := #[], refsIndex := {}, univs := #[], univsIndex := {},
     arena := {} }) : CompileM _)
-  compileAuxBlockCore auxConsts kernel nameRename classOrderKey
+  compileAuxBlockCore auxConsts nameRename classOrderKey
   -- Drop the local cache (restore the caller's cache fields; the aux
   -- registrations and blob/name/hint accumulators persist).
   liftM (modifyBlockState (fun c => { c with
@@ -420,9 +411,9 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
     register into the block's `auxNameToAddr` (not the primary name map)
     so they don't interfere with scheduler dependency tracking. Mirrors
     Rust `compile_aux_block` (mutual.rs:60). -/
-def compileAuxBlock (auxConsts : Array MutConst) (kernel : AuxKernel)
+def compileAuxBlock (auxConsts : Array MutConst)
     : KBridgeM Unit :=
-  compileAuxBlockWithRename auxConsts kernel none none
+  compileAuxBlockWithRename auxConsts none none
 
 /-- The names a `MutConst` refers to (types, values, constructor types,
     rule right-hand sides), by the reference graph's rule
@@ -486,13 +477,13 @@ def auxComponents (consts : Array MutConst) : Except String (Array (Array MutCon
     time (`auxComponents`): each singleton component becomes a standalone
     constant, a genuine cycle one block. Mirrors Rust
     `compile_aux_components`. -/
-def compileAuxComponents (auxConsts : Array MutConst) (kernel : AuxKernel)
+def compileAuxComponents (auxConsts : Array MutConst)
     (nameRename : Option (Std.HashMap Name Name)) : KBridgeM Unit := do
   let comps ← match auxComponents auxConsts with
     | .ok cs => pure cs
     | .error e => liftM (throw (.invalidMutualBlock e) : CompileM _)
   for comp in comps do
-    compileAuxBlockWithRename comp kernel nameRename none
+    compileAuxBlockWithRename comp nameRename none
 
 /-! ## Alias registration (mutual.rs:420) -/
 
@@ -731,7 +722,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
     let keyMap := nameToPos
     let classOrderKey : MutConst → UInt64 := fun c =>
       (keyMap.get? c.name).getD u64Max
-    compileAuxBlockWithRename belowRecs kernel none (some classOrderKey)
+    compileAuxBlockWithRename belowRecs none (some classOrderKey)
 
   -- Regenerate `.below.casesOn` against the canonical below-recs
   -- (mirrors mutual.rs `compile_below_recursors`). Lean authors
@@ -776,7 +767,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
             safety := defSafety d.isUnsafe
             all := #[] })
   if !belowCases.isEmpty then
-    compileAuxComponents belowCases kernel none
+    compileAuxComponents belowCases none
   -- AuxGen M5: the regenerated `.below.casesOn` too, for the acceptance table
   return (recs, belowCases)
 
@@ -855,6 +846,7 @@ def admitGenerated (cs : Array MutConst) (patches : Std.HashMap Name PatchedCons
     (belowIndcs : Array MutConst) (belowRecs : Array (Name × RecursorVal))
     (belowCases : Array MutConst)
     (kernel : AuxKernel) : KBridgeM Unit := do
+  kernel.validate
   let mut generated : Array (Name × GeneratedKind) := #[]
   for (n, p) in patches do
     generated := generated.push (n, patchKind n p)
@@ -863,8 +855,7 @@ def admitGenerated (cs : Array MutConst) (patches : Std.HashMap Name PatchedCons
   for (n, _) in belowRecs do generated := generated.push (n, .belowRecursor)
   for c in belowCases do generated := generated.push (c.name, .casesOnDef)
   modify fun c => { c with generated }
-  let .ixc _ o := kernel | return
-  if !o.recursors then return
+  let .ixc _ o := kernel
   let ctx ← get
   -- the recursors: the canonical-block check's verdict
   let recVerdict? : Option AuxVerdict := match ctx.canonical with
@@ -1097,7 +1088,7 @@ for {perm.size} permutation entries")
     for c in recConsts do
       preClaims := preClaims.push
         (c.name, ← liftM (resolveAddr? c.name : CompileM _))
-    compileAuxBlockWithRename recConsts kernel (some auxNameRename)
+    compileAuxBlockWithRename recConsts (some auxNameRename)
       (some classOrderKey)
     for (name, preAddr) in preClaims do
       let postAddr ← liftM (resolveAddr? name : CompileM _)
@@ -1135,7 +1126,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !casesOnDefs.isEmpty then
-    compileAuxComponents casesOnDefs kernel none
+    compileAuxComponents casesOnDefs none
 
   -- Phase 2c: Compile .recOn definitions (arg-reordered .rec wrapper),
   -- after .rec (mutual.rs:761-783).
@@ -1154,7 +1145,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !recOnDefs.isEmpty then
-    compileAuxComponents recOnDefs kernel none
+    compileAuxComponents recOnDefs none
 
   -- Phase 3: Compile .below inductives (Prop-level); all .below names
   -- first for the mutual `all` field (mutual.rs:784-816).
@@ -1195,7 +1186,7 @@ source-indexed aux name")
   let belowIndcs : Array MutConst :=
     belowRaw.map (belowIndcToMutConst · allBelowNames)
   if !belowIndcs.isEmpty then
-    compileAuxBlockWithRename belowIndcs kernel (some auxNameRename) none
+    compileAuxBlockWithRename belowIndcs (some auxNameRename) none
     -- Note: constructor names are already correctly set by
     -- rename_below_indc during alias patching;
     -- register_below_ctor_aliases was removed because it created
@@ -1218,7 +1209,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !belowDefs.isEmpty then
-    compileAuxComponents belowDefs kernel (some auxNameRename)
+    compileAuxComponents belowDefs (some auxNameRename)
 
   -- Phase 5: Compile .below.rec for Prop-level .below inductives
   -- (mutual.rs:847-852).
@@ -1236,7 +1227,7 @@ source-indexed aux name")
             out := out.push (brecOnToMutConst d)
       return out
     if !defs.isEmpty then
-      compileAuxComponents defs kernel (some auxNameRename)
+      compileAuxComponents defs (some auxNameRename)
 
   liftM (registerAuxAliases auxOut.aliases
     s!"{blockLabel}/final" : CompileM _)
@@ -1292,6 +1283,7 @@ def compileMutualAuxTail (cs : Array MutConst)
     (sortedClasses : List (List MutConst)) (blockAddr : Address)
     (maps : AddrMaps) (kernel : AuxKernel)
     : KBridgeM (Option Ixon.AuxLayout × AuxTailRecs) := do
+  kernel.validate
   -- Primary `Muts` named entry (compile.rs:3986-4013); registered on the
   -- aux path only — the no-aux promotion pass reuses these entries.
   let (mutsName, mutsAll) ← registerMutualAuxEntry sortedClasses blockAddr

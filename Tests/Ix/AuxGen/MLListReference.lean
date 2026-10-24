@@ -170,8 +170,7 @@ private def encode (t : Tail) : Except String Json := completeTail t.1.1.1 t.1.1
 private def coverage (t : Tail) : IO Unit := do
   let s := t.1.2.ixcStats
   need (s.queries == 62 && s.recWhnf == 20 && s.elim == 1 && s.belowAdmitted == 2) "coverage changed from62/20/1/2; stop for explanation"
-  need (s.answered == s.queries && [s.differ, s.refused, s.scopesRefused, s.flatRefused,
-    s.decisionsDiffer, s.recDiffer, s.recDecisionDiffer, s.recSkipDiffer, s.elimDiffer,
+  need (s.answered == s.queries && [s.refused, s.scopesRefused, s.flatRefused,
     s.leanRecDiffer, s.belowRefused, s.recRefused, s.elimRefused, s.familyRefused].all (· == 0)) "genuine query/refusal/difference"
 private def genuine (why : String) (r : Except CompileM.CompileError Output × CompileM.BlockState) : IO Unit := do
   let (.error error, state) := r | throw (IO.userError "genuine-error control unexpectedly succeeded")
@@ -212,10 +211,10 @@ private def actualInput (env : Environment) (svc : Source.Service) (n : Lean.Nam
     ("recursorLevels", .arr (b.recs.toArray.map fun (cv, _, _) => .arr (cv.levelParams.toArray.map nat)))]
 private def inputCheck (expected actual : Json) : Except String Unit := ensure (expected == actual) "input/header binding differs"
 
-/-- Consume the original fixture and shadow result; all real operations still
-run on the checked path. The data is never returned as an oracle answer. -/
+/-- Consume the original fixture and actual checked baseline; all operations
+compute real answers against the captured complete expectation. The data is never returned as an oracle answer. -/
 def check (env : Environment) (cenv : CompileM.CompileEnv) (svc : Source.Service) (n : Lean.Name)
-    (lo : Name) (members : Array Name) (real : AuxOracle) (shadow : Tail) : IO Unit := do
+    (lo : Name) (members : Array Name) (real : AuxOracle) (baseline : Tail) : IO Unit := do
   MLListElimination.check env cenv lo (Name.fromLeanName n) members real
   let (input, rows, routes, expected) ← IO.ofExcept read
   let actual ← IO.ofExcept (actualInput env svc n lo members)
@@ -233,11 +232,10 @@ def check (env : Environment) (cenv : CompileM.CompileEnv) (svc : Source.Service
     IO.lazyPure fun _ => run cenv lo members o
   let checked ← IO.ofExcept (success (← invoke known))
   let direct ← IO.ofExcept (success (← IO.lazyPure fun _ => run cenv lo members real))
-  for t in #[shadow, checked, direct] do
+  for t in #[baseline, checked, direct] do
     coverage t; need (t.1.1.2.recs.size == 2 && t.1.2.ixcStats.recStuck == 20 && t.1.2.ixcStats.recForced == 0) "actual class/lazy boundary changed"
-    need ((← IO.ofExcept (encode t)) == expected) "complete legacy/wrapped/unwrapped tail differs"
-  for t in #[checked, direct] do need (t.2.auxReport.refusal.isNone && t.1.2.scopeEpoch == 0 && t.1.2.tcState.env.consts.isEmpty &&
-    t.1.2.ingressCache.isEmpty && t.1.2.auxIngressSeen.isEmpty && t.1.2.sourceNames.isEmpty) "final refusal/legacy activity"
+    need ((← IO.ofExcept (encode t)) == expected) "complete captured/baseline/wrapped/unwrapped tail differs"
+  for t in #[baseline, checked, direct] do need t.2.auxReport.refusal.isNone "final refusal"
   let reachable (catalogue : Catalogue) (p route : Json) : IO Bool := do
     let k ← IO.ofExcept (p.getObjVal? "key"); let r ← invoke (catalogue.erase k)
     match r.1 with

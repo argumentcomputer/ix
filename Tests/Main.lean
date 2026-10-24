@@ -85,7 +85,6 @@ import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
 import Tests.Ix.AuxGen.AuxKernelTests
 import Tests.Ix.AuxGen.ConfigurationTests
-import Tests.Ix.AuxGen.ElimRuleTests
 import Tests.Ix.AuxGen.PortableKernel
 import Tests.Ix.AuxGen.FlatBlockTests
 import Tests.Ix.AuxGen.LevelEgressTests
@@ -255,7 +254,7 @@ def registry : List Entry := [
   .suite "reserved-input" .primary Tests.Ix.Compile.ReservedInput.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite
-    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.PortableKernel.suite ++ Tests.AuxGen.FlatBlock.suite
+    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.PortableKernel.suite ++ Tests.AuxGen.FlatBlock.suite
     ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.LevelReference.suite ++ Tests.AuxGen.Components.suite
     ++ Tests.Ix.AuxGen.ConfigurationTests.suite),
   -- source-body recognition of casesOn/recOn: the comparison controls (Ix.AuxGen.SourceIdentity)
@@ -295,7 +294,7 @@ def registry : List Entry := [
   .suite "compiler-index-safety" .primary Tests.Ix.Compile.IndexSafety.suite,
   -- the aux kernel bridges refuse what they cannot convert (D-12)
   .suite "compiler-bridge-boundaries" .primary Tests.Ix.Compile.BridgeBoundaries.suite,
-  .suite "compiler-bridge-scopes" .primary (Tests.Ix.Compile.BridgeScopes.suite ++ Tests.Ix.Compile.BridgePortable.suite),
+  .suite "compiler-bridge-scopes" .primary Tests.Ix.Compile.BridgeScopes.suite,
   .suite "compiler-provenance" .primary Tests.Ix.Compile.BridgeProvenance.suite,
   .suite "table-worklist" .primary Tests.Ix.Compile.TableWorklist.suite,
   .suite "header-count" .primary Tests.Ix.Compile.HeaderCounts.suite,

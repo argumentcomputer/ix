@@ -70,7 +70,7 @@ private def rejected (result : Except String Unit) (wanted : String) : Except St
   | .ok _ => throw "nested reference: perturbation escaped the ordinary checker"
 
 /-- Bind each actual input context even though their complete tails agree.
-The original evaluator guards and legacy arms remain upstream. -/
+The original evaluator guards and historical full outputs remain binding. -/
 def check (i : Nat) (modules seeds : Array Lean.Name) (planted : Option Name)
     (env : Environment) (blocks : CondensedBlocks) (key : Name) (members : Array Name)
     (why : String) (retry direct : Tail) : Except String Unit := do
@@ -84,8 +84,7 @@ def check (i : Nat) (modules seeds : Array Lean.Name) (planted : Option Name)
     require (names (c.generated.map (·.1)) == rowNames && names (c.admitted.map (·.1)) == rowNames &&
       c.generated.all (fun (_, k) => k == .recursor))
       "generated/admitted row names or kinds differ"
-    require (c.ixcStats.recRefused == 0 && c.scopeEpoch == 0 && c.tcState.env.consts.isEmpty &&
-      c.ingressCache.isEmpty && c.auxIngressSeen.isEmpty && c.sourceNames.isEmpty) "checked tail refused or touched legacy state"
+    require (c.ixcStats.recRefused == 0 && c.ixcStats.recWhnf == 8) "checked query coverage or refusal differs"
   require (retry.2.auxReport.retried == some why && direct.2.auxReport.retried.isNone) "retry reason differs"
   let payload ← encode retry
   require (payload == (← encode direct)) "whole checked state rollback differs"

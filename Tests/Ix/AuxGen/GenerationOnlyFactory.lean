@@ -90,7 +90,6 @@ def evaluate : IO Unit := do
     { cenv with auxGenerationRetry := some (fun _ => .ok actual) } lo members original true)
   need (sameTail expected observed && observed.1.2.admitted == expected.1.2.admitted &&
     observed.2.auxReport.retried == some why && observed.1.2.generated.size == 2) "factory changed actual retry output/verdicts"
-  need (observed.1.2.scopeEpoch == 0 && observed.1.2.ingressCache.isEmpty && observed.1.2.tcState.env.consts.isEmpty) "factory retry used legacy scope"
   need ((svc.statusOf? dependent).any (fun | .blocked _ => true | _ => false)) "dependent fence changed"
   IO.println "factory: fixed failClosed/private capability; all callback successors retain refusal; exact negative errors; actual retry equals frozen spike (2 exempt rows)"
 

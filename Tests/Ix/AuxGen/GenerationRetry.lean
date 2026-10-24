@@ -55,11 +55,9 @@ def evaluate : IO Unit := do
     scope.infer (Expr.mkConst owner (ind.cnst.levelParams.map Level.mkParam)))
   let actual ← IO.ofExcept (provider key)
   need ((← IO.ofExcept (provider key)).blockStatus () == some why && Ixc.blockStatus? svc members == some why) "provider changed original status"
-  let some shadow := ({ opts with mode := .shadow }).oracleFor ra env.get? key | throw (IO.userError "shadow missing")
-  let legacy ← IO.ofExcept (runTail cenv key members shadow)
   let checked ← IO.ofExcept (runTail cenv key members ordinary true)
-  need (legacy.1.2.ixcStats.recRefused == 3 && checked.1.2.ixcStats.recRefused == 0 &&
-    checked.1.2.generated.size == 2 && sameTail legacy checked) "NestedSortUK three-query tail changed"
+  need (checked.1.2.ixcStats.recWhnf == 8 && checked.1.2.ixcStats.recRefused == 0 &&
+    checked.1.2.generated.size == 2) "NestedSortUK checked query/tail coverage changed"
   need (((svc.ensureNames #[Name.fromLeanName `NestedSortUK.t_rec]).statusOf? (Name.fromLeanName `NestedSortUK.t_rec)).any
     (fun | .blocked _ => true | _ => false)) "NestedSortUK dependent fence changed"
   let direct ← IO.ofExcept (runTail cenv key members actual)
@@ -68,9 +66,9 @@ def evaluate : IO Unit := do
     #[`NestedSortUK.T, `NestedSortUK.t_rec, ``TierTree] none env blocks key members why checked direct)
   IO.println "nested tail reference: retry-tier-tree binding, full output and rollback passed"
   let some recOff := ({ opts with recursors := false }).oracleFor ra env.get? key | throw (IO.userError "rec-off missing")
-  let some oldRetry := recOff.retry | throw (IO.userError "rec-off lost its diagnostic retry")
-  let diagnostic ← IO.ofExcept (runTail cenv key members (planted recOff (some why)) true)
-  need (!recOff.recursors && oldRetry.mode == .fallback && sameTail diagnostic (← IO.ofExcept (runTail cenv key members oldRetry))) "rec-off behavior changed"
+  need recOff.retry.isNone "retired rec-off request constructed a legacy retry"
+  refused (runTail cenv key members (planted recOff (some why)) true)
+    "unsupportedExpr: AuxGen (configuration): recursors must be enabled (rec=off is retired)"
   let run p (o := planted ordinary (some why)) := runTail { cenv with auxGenerationRetry := p } key members o true
   let failurePrefix := s!"unsupportedExpr: AuxGen (generation retry): block {key.pretty}: "
   refused (run none) (failurePrefix ++ "checked provider absent")
@@ -118,6 +116,6 @@ def evaluate : IO Unit := do
     let some oracle := cenv.auxOracle.bind (· key) | throw (IO.userError "unforced oracle absent")
     if n == Name.fromLeanName ``TierTree then need (oracle.blockStatus () == some AuxOracle.tierBlockStatus) "tier fixture lost its tier"
     let _ ← IO.ofExcept (runTail { cenv with auxGenerationRetry := some (fun _ => .error "unforced retry") } key ms.toArray oracle true)
-  IO.println "retry boundary: named failures/policy guards; cached statuses/errors; ordinary/tier unforced; width 1/4; NestedSortUK three queries/fence; rec-off unchanged"
+  IO.println "retry boundary: named failures/policy guards; cached statuses/errors; ordinary/tier unforced; width 1/4; NestedSortUK eight checked queries/fence; rec-off explicitly refused"
 
 end Tests.Ix.AuxGen.GenerationRetry

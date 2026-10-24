@@ -754,9 +754,6 @@ def findRecTarget (dom : Expr) (classes : Array FlatInfo)
       ty := instantiate1 body fv
     | _ => break
 
-  -- Pre-warm the kernel cache for `dom` (result discarded; see Rust doc).
-  scope.warm dom
-
   if let some ci := phase1Match then
     return (some ci, scope)
 
@@ -782,20 +779,13 @@ def findRecTarget (dom : Expr) (classes : Array FlatInfo)
   -- AuxGen M4: with the recursor generator on IxC, a field whose type names
   -- no member of the block's classes cannot reduce to one of them (the
   -- environment's definitions precede the block), so it is not recursive
-  -- and its Phase 2 asks nothing. Under `shadow` and `fallbackEager`,
-  -- `Ix.Tc` still decides it as before, and a disagreement is counted.
+  -- and its Phase 2 asks nothing.
   if scope.skipsUnmentioned then
     if !Ixc.mentionsConst dom (fun n => classes.any (·.allNames.any (· == n))) then
-      if scope.checksSkips then
-        let (tc?, scope') ← phase2 scope fun s e => s.whnfTcOrInput e
-        scope := scope'
-        if tc?.isSome then
-          bumpIxc fun st => (st.sample s!"skipped field decided recursive by Ix.Tc") |>
-            fun st => { st with recSkipDiffer := st.recSkipDiffer + 1 }
       bumpIxc fun st => { st with recSkipped := st.recSkipped + 1 }
       return (none, scope)
 
-  phase2 scope fun s e => s.whnfOrInput e (named := false)
+  phase2 scope fun s e => s.whnfOrInput e
 
 /-! ## Motive types (recursor.rs:1194) -/
 

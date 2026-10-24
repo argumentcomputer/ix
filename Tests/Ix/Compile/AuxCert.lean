@@ -426,11 +426,10 @@ def checkedStopCounts : List String :=
 /-- Strict checked-path trace validation. Missing fields cannot become zero;
 all tails, including unsafe and generation-only tails, stay in the census. -/
 def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat × Nat) := do
-  let required := #["queries", "tcFast", "ixcFast", "answered", "equal", "differ", "refused", "scopesRefused", "flat",
-    "decisions", "decisionsEqual", "decisionsDiffer", "exprQueries", "exprAnswered", "below", "recWhnf", "recStuck",
-    "recSame", "recReplayed", "recBeta", "recRefused", "recEqual", "recDiffer", "recDiffName", "recDiffInfo",
-    "recDiffLevel", "recDiffOther", "recDecisionDiffer", "recSkipped", "recSkipDiffer", "recForced", "elim",
-    "elimEqual", "elimDiffer", "elimRefused", "leanRecSame", "leanRecDiffer", "family", "unsafe", "tier", "asked"]
+  let required := #["queries", "ixcFast", "answered", "refused", "scopesRefused", "flat",
+    "decisions", "exprQueries", "exprAnswered", "below", "recWhnf", "recStuck",
+    "recSame", "recReplayed", "recBeta", "recRefused", "recSkipped", "recForced", "elim",
+    "elimRefused", "leanRecSame", "leanRecDiffer", "family", "unsafe", "tier", "asked"]
   let mut blocks : Std.HashSet String := {}
   for line in text.splitOn "\n" do
     if !line.startsWith "[auxgen-ixc] " || line.startsWith "[auxgen-ixc]   " then continue

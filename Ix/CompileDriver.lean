@@ -148,19 +148,21 @@ def recordDisplay (before : Array (Name × Address)) : CompileM Unit := do
       (`ungrounded`). This is the stop rule, enforced by construction.
 
     The checked capability must retain the original reason, use failClosed
-    with recursors enabled and have no nested retry. Diagnostic modes,
-    including recursors-off's old fallback, keep their existing behavior.
+    with recursors enabled and have no nested retry. Unsupported options
+    fail before any query-refusal or retry handling.
     Any other failure stops before provider lookup. Called once
     by `compileBlockWithAux`, whose do-block keeps its shape for the proofs that
     walk it (`Ix.Cert.PassHooks.compileBlockWithAux_result`). -/
 def runAuxTail (lo : Name) (cs : Array MutConst) (sortedClasses : List (List MutConst))
     (blockAddr : Address) (maps : Ix.AuxGen.AddrMaps) (kernel : Ix.AuxGen.AuxKernel) :
     CompileM ((Option Ixon.AuxLayout × Ix.AuxGen.AuxTailRecs) × Ix.AuxGen.AuxKernelCtx) := do
+  let .ixc _ oracle := kernel
+  match Ix.AuxGen.Configuration.validateCapability oracle with
+  | .error e => throw e.toCompileError
+  | .ok () => pure ()
   let run (k : Ix.AuxGen.AuxKernel) :=
     (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockAddr maps k).run
       Ix.AuxGen.AuxKernelCtx.new
-  let .ixc _ oracle := kernel | run kernel
-  if oracle.mode != .failClosed then return ← run kernel
   let saved ← getBlockState
   try run kernel
   catch e => do
@@ -170,22 +172,18 @@ def runAuxTail (lo : Name) (cs : Array MutConst) (sortedClasses : List (List Mut
       throw (.unsupportedExpr s!"AuxGen (failClosed): block {lo.pretty}, accepted by Source \
         mode: {refusal.render}")
     | some why =>
-      let retryOracle ← if !oracle.recursors then do
-          let some fallback := oracle.retry | throw e
-          pure fallback
-        else do
-          let fail {α : Type} (cause : String) : CompileM α :=
-            throw (.unsupportedExpr s!"AuxGen (generation retry): block {lo.pretty}: {cause}")
-          let some provider := (← getCompileEnv).auxGenerationRetry
-            | fail "checked provider absent"
-          let candidate ← match provider lo with
-            | .error cause => fail cause
-            | .ok candidate => pure candidate
-          unless candidate.mode == .failClosed && candidate.recursors && candidate.retry.isNone do
-            fail "capability must be failClosed, recursors-on, without nested retry"
-          unless candidate.blockStatus () == some why do
-            fail "capability changed the original Source nonacceptance reason"
-          pure candidate
+      let fail {α : Type} (cause : String) : CompileM α :=
+        throw (.unsupportedExpr s!"AuxGen (generation retry): block {lo.pretty}: {cause}")
+      let some provider := (← getCompileEnv).auxGenerationRetry
+        | fail "checked provider absent"
+      let candidate ← match provider lo with
+        | .error cause => fail cause
+        | .ok candidate => pure candidate
+      unless candidate.mode == .failClosed && candidate.recursors && candidate.retry.isNone do
+        fail "capability must be failClosed, recursors-on, without nested retry"
+      unless candidate.blockStatus () == some why do
+        fail "capability changed the original Source nonacceptance reason"
+      let retryOracle := candidate
       modifyBlockState fun _ => saved
       let (out, kctx) ← run (.ixc maps retryOracle)
       modifyBlockState fun st => { st with auxReport := { st.auxReport with retried := some why } }
@@ -1468,8 +1466,8 @@ asks `.below`'s, `.brecOn`'s and the recursor generator's questions of IxC
 over its level's run
 (`CompileEnv.auxOracle`, `AuxIxcOptions`: `failClosed` since AuxGen M5c, so IxC's
 answers are the compile's and a refusal fails the block, except for a block
-Source mode does not accept, which re-runs on `fallback`; a safe block only, an
-unsafe block's tail keeps `Ix.Tc`). `compileEnvFoldWithSource`
+Source mode does not accept, which requests a checked generation-only retry;
+unsafe blocks use the checked typing tier). `compileEnvFoldWithSource`
 waits for the run-ahead at the end and returns what Source mode accepted
 (`Ix.AuxGen.Source.Report`). -/
 
@@ -1745,14 +1743,10 @@ can request a checked generation-only retry through `runAuxTail`), no trace,
 and the Source service asks for the blocks
 with a Type-level `.below` and those the recursor generator can ask past the
 fast paths (`Asks.recursors`, M4b; M2b's `Asks.below` before). Other settings
-are AuxGen's measurement modes (the CLI's `IX_AUXGEN_IXC`, which also traces
-each tail's counts): `shadow` (`Ix.Tc`'s answers, compared), `fallback` (M4b–M5b's
-production: IxC first, `Ix.Tc` behind a refusal, lazy since M3),
-`fallbackEager` (M2b's production: both kernels asked), other asks, the
-recursors on `Ix.Tc` (`recursors := false`, M3's production), and
-`measureOnly` (the service's work timed alone,
-`Ix.AuxGen.Source.measure`; the pipeline then compiles nothing). Unsafe blocks
-use the service's typing tier and remain outside logical acceptance. -/
+are supported asks/trace settings and `measureOnly` (the service's work
+timed alone; the IO pipeline then compiles nothing). Historical modes and
+recursors-off requests are rejected explicitly. Unsafe blocks use the
+service's typing tier and remain outside logical acceptance. -/
 structure AuxIxcOptions where
   mode : Ix.AuxGen.IxcMode := .failClosed
   asks : Ix.AuxGen.Source.Asks := .recursors
@@ -1765,6 +1759,13 @@ structure AuxIxcOptions where
   as a measurement; production since M4b) -/
   recursors : Bool := true
   deriving Inhabited
+
+/-- Shared supported-option boundary, before compilation or measurement. -/
+def AuxIxcOptions.validate (aux : AuxIxcOptions) :
+    Except String Ix.AuxGen.Configuration.Intent :=
+  Ix.AuxGen.Configuration.validateRequest
+    { mode := aux.mode, recursors := aux.recursors, measureOnly := aux.measureOnly }
+    |>.mapError Ix.AuxGen.Configuration.Error.render
 
 /-- One lazy ensured snapshot per original schedule key, including errors.
 Ordinary scopes, generation retries and SourceFamily share these thunks. -/
@@ -1788,10 +1789,7 @@ private def oracleFrom (aux : AuxIxcOptions) (ra : Ix.AuxGen.Source.RunAhead)
         asked := !aux.trace || (Ix.AuxGen.Source.holdsInductive get? members
           && aux.asks.selects get? members)
         lookup := get? }
-    let retry := if aux.mode == .failClosed && aux.recursors then none else
-      some (Ix.AuxGen.Ixc.oracleOf .fallback aux.trace facts none
-        Ix.AuxGen.Ixc.oracleFuel (fun _ => snapshot.get))
-    Ix.AuxGen.Ixc.oracleOf aux.mode aux.trace facts retry
+    Ix.AuxGen.Ixc.oracleOf aux.mode aux.trace facts none
       Ix.AuxGen.Ixc.oracleFuel (fun _ => snapshot.get)
 
 /-- Original schedule members, validated against the input condensation. -/
@@ -1931,6 +1929,8 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
     (aux : AuxIxcOptions := {})
     (checkPlans : Bool := false)
     : Except String ((Ixon.Env × Nat × CompileEnv) × Ix.AuxGen.Source.Report) := do
+  if (← aux.validate) == .measure then
+    throw "AuxGen (configuration): measureOnly requires the IO measurement pipeline"
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
@@ -2082,6 +2082,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (opts : DriverOptions := {})
     : IO (Except String LeanPipelineOut) := do
+  if let .error e := (opts.auxIxc.getD {}).validate then return .error e
   let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
   for (name, source) in consts do
     if Ix.Compile.sourceHasAnnotations source then
@@ -2263,6 +2264,7 @@ def compileLeanInput (input : Ix.Compile.CompileInput)
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (opts : DriverOptions := {}) :
     IO (Except String LeanPipelineOut) := do
+  if let .error e := (opts.auxIxc.getD {}).validate then return .error e
   let constants ← match input.prepare with
     | .ok constants => pure constants
     | .error error => return .error error
@@ -2273,6 +2275,7 @@ def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (opts : DriverOptions := {}) :
     IO (Except String LeanPipelineOut) := do
+  if let .error e := (opts.auxIxc.getD {}).validate then return .error e
   let input ← match Ix.Compile.CompileInput.fromAnnotations consts with
     | .ok input => pure input
     | .error error => return .error (toString error)

@@ -136,10 +136,10 @@ def tierService : TestSeq :=
     return (errors.isEmpty, lines.size, 0, msg)) .done
 
 /-- The real polymorphic unsafe block that exposed the universe-order bug:
-its service status stays outside acceptance, while all AuxGen questions agree
-with the old kernel. This exercises the actual nested recursor and .below. -/
+its service status stays outside acceptance, while all actual questions and
+the full tail match their captured witnesses. This exercises its nested recursor and .below. -/
 def mlListService : TestSeq :=
-  .individualIO "MLList: tier install and every shadow answer" none (do
+  .individualIO "MLList: tier install and every captured checked answer" none (do
     let leanEnv ← getCompileEnv #[`Batteries.Data.MLList.Basic]
     let n := Lean.Name.str (Lean.Name.str (Lean.Name.num `_private.Batteries.Data.MLList.Basic 0)
       "MLList") "MLListImpl"
@@ -166,24 +166,22 @@ def mlListService : TestSeq :=
     let tail : Ix.CompileM.CompileM (Option MLListReference.Output) := do
       let some (cs, sorted, addr, maps) ← Tests.Ix.AuxGen.BelowIxc.tailArgs lo members
         | return none
-      let result ← (compileMutualAuxTail cs sorted addr maps (.ixc maps (oracle .shadow))).run
+      let result ← (compileMutualAuxTail cs sorted addr maps (.ixc maps (oracle .failClosed))).run
         AuxKernelCtx.new
       return some result
-    let (shadow?, state) ← IO.ofExcept (← IO.lazyPure fun _ =>
+    let (checked?, state) ← IO.ofExcept (← IO.lazyPure fun _ =>
       Tests.Ix.AuxGen.BelowIxc.runIn cenv lo tail)
-    let some shadow := shadow? | return (false, 0, 0, some "MLList tail missing")
-    let st := shadow.2.ixcStats
-    let counts := Tests.Ix.AuxGen.BelowIxc.statsLine st
+    let some checked := checked? | return (false, 0, 0, some "MLList tail missing")
+    let st := checked.2.ixcStats
+    let counts := Tests.Ix.AuxGen.BelowIxc.checkedStatsLine st
     IO.println s!"MLList: tier unsafe, not accepted; {counts}"
-    let ok := st.queries > 0 && st.answered == st.queries && st.equal == st.queries &&
-      st.recWhnf > 0 && st.recEqual == st.recWhnf && st.elim > 0 && st.elimEqual == st.elim &&
-      st.belowAdmitted > 0 && [st.differ, st.refused, st.scopesRefused, st.flatRefused,
-        st.decisionsDiffer, st.recDiffer, st.recDecisionDiffer, st.recSkipDiffer,
-        st.elimDiffer, st.leanRecDiffer, st.belowRefused, st.recRefused, st.elimRefused,
+    let ok := st.queries > 0 && st.answered == st.queries &&
+      st.recWhnf > 0 && st.elim > 0 &&
+      st.belowAdmitted > 0 && [st.refused, st.scopesRefused, st.flatRefused, st.leanRecDiffer, st.belowRefused, st.recRefused, st.elimRefused,
         st.familyRefused].all (· == 0)
     if ok then
       let real := oracle .failClosed
-      let original := (shadow, state)
+      let original := (checked, state)
       MLListReference.check env cenv svc n lo members real original
     return (ok, st.queries + st.recWhnf + st.elim, 0,
       if ok then none else some (counts ++ "\n" ++ "\n".intercalate st.samples.toList))) .done

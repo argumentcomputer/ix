@@ -1,5 +1,6 @@
 import LSpec
 import Ix.AuxGen.Configuration
+import Ix.Cli.DriverOptions
 
 namespace Tests.Ix.AuxGen.ConfigurationTests
 open LSpec _root_.Ix _root_.Ix.AuxGen
@@ -52,8 +53,7 @@ private def matrix : Except String Nat := do
   need (count == 32) "option/capability matrix was not exhausted"
   return count
 
-/-- Test the intended ordinary-error adapter locally; no production call site
-is wired. Catching it preserves existing bookkeeping and creates no refusal. -/
+/-- Catching an ordinary error preserves bookkeeping and creates no refusal. -/
 private def ordinaryState : Except String Unit := do
   let initial : CompileM.BlockState := { univsFinal := true, auxReport := { retried := some "preserved" } }
   let act : CompileM.CompileM Bool := do
@@ -71,11 +71,94 @@ private def ordinaryState : Except String Unit := do
     { all := {}, current := Name.mkAnon, mutCtx := default, univCtx := [] } initial act).mapError toString
   need (ok && after.auxReport.refusal.isNone && after.auxReport.retried == some "preserved") "configuration handling mutated state or made a query packet"
 
+/-- Exercise actual boundaries with empty inputs and refusing callbacks: neither
+an early empty return, measurement nor a retry region may bypass validation. -/
+private def wired : IO Nat := do
+  let require (ok : Bool) (why : String) : IO Unit := unless ok do throw (IO.userError why)
+  let rejected {α : Type} (r : Except String α) (want : String) : IO Unit := match r with
+    | .error e => require (e == want) s!"configuration route: expected {want}, got {e}"
+    | .ok _ => throw (IO.userError s!"configuration route accepted: {want}")
+  let input ← IO.ofExcept ((Compile.CompileInput.fromAnnotations []).mapError toString)
+  let mut count := 0
+  for (mode, recursors, expected) in policies do
+    for measureOnly in #[false, true] do
+      let opts : CompileM.AuxIxcOptions := { mode, recursors, measureOnly }
+      let config := { auxIxc := some opts : CompileM.DriverOptions }
+      if let some (_, message) := expected then
+        rejected (CompileM.compileEnvFoldWithSource { consts := {} }
+          { lowLinks := {}, blocks := {}, blockRefs := {} } (aux := opts)) message
+        rejected (← CompileM.compileDecoratedConsts [] (numWorkers := 1) (opts := config)) message
+        rejected (← CompileM.compileLeanInput input (numWorkers := 1) (opts := config)) message
+        rejected (← CompileM.compileLeanConsts [] (numWorkers := 1) (opts := config)) message
+        count := count + 4
+      else if measureOnly then
+        rejected (CompileM.compileEnvFoldWithSource { consts := {} }
+          { lowLinks := {}, blocks := {}, blockRefs := {} } (aux := opts))
+          "AuxGen (configuration): measureOnly requires the IO measurement pipeline"
+        count := count + 1
+    let cli := toString mode ++ (if recursors then "" else ",rec=off")
+    match Ix.Cli.auxIxcOptionsOf cli, expected with
+    | .error e, some (_, message) => require (e == message) "CLI configuration error differs"
+    | .ok opts, none => require (opts.mode == mode && opts.recursors && !opts.measureOnly && opts.trace) "CLI changed valid options"
+    | _, _ => throw (IO.userError "CLI mode matrix differs")
+    count := count + 1
+  for (value, expected) in #[
+      ("measure,rec=off", "AuxGen (configuration): recursors must be enabled (rec=off is retired)"),
+      ("unknown", "IX_AUXGEN_IXC: unknown mode 'unknown' (shadow, fallback, failClosed, fallbackEager, measure)"),
+      ("failClosed,asks=unknown", "IX_AUXGEN_IXC: unknown option 'asks=unknown' (asks=below, asks=inductive, asks=recursors, rec=off)")] do
+    rejected (Ix.Cli.auxIxcOptionsOf value) expected
+    count := count + 1
+  for asks in ["below", "inductive", "recursors"] do
+    let opts ← IO.ofExcept (Ix.Cli.auxIxcOptionsOf s!"measure,asks={asks}")
+    require (opts.measureOnly && opts.mode == .failClosed && opts.recursors && opts.trace) "measurement lost checked policy"
+    count := count + 1
+  let anchor := capability .failClosed true none
+  let initial : CompileM.BlockState := { univsFinal := true, auxReport := { retried := some "preserved" } }
+  let maps : AddrMaps := { nameToAddr := fun _ => none }
+  let mut badCapabilities := 0
+  for (mode, recursors, expected) in policies do
+    for retry in #[none, some anchor] do
+      let wanted := expected.map (·.2) |>.orElse fun _ =>
+        if retry.isSome then some "AuxGen (configuration): nested retry is unsupported" else none
+      let some message := wanted | continue
+      badCapabilities := badCapabilities + 1
+      let oracle := capability mode recursors retry
+      let kernel := AuxKernel.ixc maps oracle
+      let actions : Array (CompileM.CompileM Unit) :=
+        (#[.below, .brecOn, .recursor].map fun route =>
+          discard <| (AuxScope.new kernel #[] #[] route).run AuxKernelCtx.new) ++ #[
+          discard <| (kernel.elimDecision #[] 0 0).run AuxKernelCtx.new,
+          discard <| (kernel.withFamily #[]).run AuxKernelCtx.new,
+          discard <| (kernel.admitGenerated #[]).run AuxKernelCtx.new,
+          discard <| (kernel.withFlatBlockVerdict #[] #[] #[]).run AuxKernelCtx.new,
+          discard <| (kernel.checkCanonicalBlock #[] #[] #[]).run AuxKernelCtx.new,
+          discard <| (generateAuxPatches #[] #[] maps kernel).run AuxKernelCtx.new,
+          discard <| (compileMutualAuxTail #[] [] default maps kernel).run AuxKernelCtx.new,
+          discard <| CompileM.runAuxTail Name.mkAnon #[] [] default maps kernel]
+      require (actions.size == 11) "missing capability boundary"
+      for action in actions do
+        let caught : CompileM.CompileM Bool := do
+          try action; pure false catch e => do
+            let state ← CompileM.getBlockState
+            pure (e == .unsupportedExpr message && state.univsFinal &&
+              state.auxReport.refusal.isNone && state.auxReport.retried == some "preserved")
+        let (ok, after) ← IO.ofExcept ((CompileM.CompileM.run
+          { (default : CompileM.CompileEnv) with
+            auxGenerationRetry := some (fun _ => .error "retry callback escaped validation") }
+          { all := {}, current := Name.mkAnon, mutCtx := default, univCtx := [] } initial caught).mapError toString)
+        require (ok && after.auxReport.refusal.isNone) "configuration invoked callback or changed refusal/state"
+        count := count + 1
+      rejected (AuxKernel.ixcElimDecision oracle #[] 0 0) message
+      count := count + 1
+  require (badCapabilities == 15 && count == 251) s!"boundary coverage differs: {badCapabilities}/{count}"
+  return count
+
 def suite : List TestSeq := [
-  .individualIO "unwired checked configuration: exact options, measure intent and ordinary errors" none (do
+  .individualIO "checked configuration: exact options, live boundaries and ordinary errors" none (do
     let n ← IO.ofExcept matrix
     IO.ofExcept ordinaryState
-    IO.println "unwired configuration: 16 option +16 capability cases; ordinary errors preserve refusal/retry bookkeeping"
-    return (true, n + 1, 0, none)) .done]
+    let routes ← wired
+    IO.println s!"configuration: 16 option +16 capability cases; {routes} actual boundaries; ordinary errors preserve refusal/retry bookkeeping"
+    return (true, n + 1 + routes, 0, none)) .done]
 
 end Tests.Ix.AuxGen.ConfigurationTests

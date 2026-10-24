@@ -2,27 +2,10 @@ module
 
 public import LSpec
 public import Ix.AuxGen.LevelEgress
-public import Ix.AuxGen.Kernel
 
-/-!
-Tests of level egress (`Ix.AuxGen.LevelEgress`, AuxGen M1): an IxC level is
-spelled exactly as `Ix.Tc` builds the same level, so an IxC answer to
-`getLevel` emits the bytes and the metadata `Ix.Tc`'s answer emits.
-
-* **Egress against `Ix.Tc`, exhaustively.** Every IxC level of depth at most
-  two over two parameters and `0` (1,200 levels; `succ`, `max`, `imax` at
-  every node) is egressed, and built as `Ix.Tc` builds it (`KUniv.mkSucc`,
-  `mkMax`, `mkIMax`, positional parameters with the scope's names) and
-  spelled back by the bridge (`kunivToLevel`). The two are structurally
-  equal, hashes included.
-* **`normalize` against `Ix.Tc`'s ingress**: the same family of Lean levels
-  through `leanLevelToKuniv` then `kunivToLevel`.
-* **Refusal**: a parameter beyond the scope's names is
-  `AuxKernelError.levelParamIndex`, never a name.
-* Spot checks of each smart-constructor branch.
-
-Registered in `aux-gen-unit`.
--/
+/-! The complete 1200-level expectations are checked by LevelReference.
+This module retains the exact input corpus, range refusal and every branch
+spot check; only the retired Tc twin is removed. -/
 
 public section
 
@@ -48,24 +31,6 @@ private def layer (below : List Ix.Kernel.Level) : List Ix.Kernel.Level :=
 private def kernelLevels : List Ix.Kernel.Level :=
   layer (layer [.zero, .param 0, .param 1])
 
-/-- The level as `Ix.Tc` builds it: smart constructors, positional
-parameters carrying the scope's names. -/
-private def toKUniv : Ix.Kernel.Level → MKUniv
-  | .zero => Ix.Tc.KUniv.mkZero
-  | .succ u => Ix.Tc.KUniv.mkSucc (toKUniv u)
-  | .max u v => Ix.Tc.KUniv.mkMax (toKUniv u) (toKUniv v)
-  | .imax u v => Ix.Tc.KUniv.mkIMax (toKUniv u) (toKUniv v)
-  | .param i => Ix.Tc.KUniv.mkParam i.toUInt64 (lps[i]?.getD (nm "_"))
-
-private def sameAsTc (l : Ix.Kernel.Level) : Bool :=
-  match egressLevel lps l, kunivToLevel (toKUniv l) lps with
-  | .ok a, .ok b => levelEq a b
-  | _, _ => false
-
-private def egressAgrees : Bool := kernelLevels.all sameAsTc
-
-/-! ## `normalize` against `Ix.Tc`'s ingress -/
-
 /-- The same family as Lean levels over the names `u`, `v`, built raw. -/
 private def toLean : Ix.Kernel.Level → Level
   | .zero => Level.mkZero
@@ -73,13 +38,6 @@ private def toLean : Ix.Kernel.Level → Level
   | .max u v => Level.mkMax (toLean u) (toLean v)
   | .imax u v => Level.mkIMax (toLean u) (toLean v)
   | .param i => Level.mkParam (lps[i]?.getD (nm "_"))
-
-private def normalizeAgrees : Bool :=
-  kernelLevels.all fun l =>
-    let lean := toLean l
-    match leanLevelToKuniv lean lps >>= fun u => kunivToLevel u lps with
-    | .ok b => levelEq (normalize lean) b
-    | .error _ => false
 
 /-! ## Refusal and spot checks -/
 
@@ -113,9 +71,7 @@ private def spots : Bool :=
     && levelEq (tcIMax u v) (Level.mkIMax u v)
 
 def suite : List TestSeq := [
-  test s!"LevelEgress: egress spells all {kernelLevels.length} levels as Ix.Tc builds them"
-    egressAgrees
-  ++ test "LevelEgress: normalize is Ix.Tc's ingress rebuild" normalizeAgrees
+  test "LevelEgress: actual input corpus has 1200 positions" (kernelLevels.length == 1200)
   ++ test "LevelEgress: a parameter beyond the scope is refused" refusesOutOfRange
   ++ test "LevelEgress: the smart constructors' branches" spots
 ]

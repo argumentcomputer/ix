@@ -2,14 +2,9 @@ module
 public import Ix.AuxGen.Oracle
 public import Ix.CompileM
 
-/-! Pure validation for the planned checked-only boundary.
-
-This module is deliberately unwired: current CLI, pipeline, fold and scope
-callers keep their existing behavior until the coherent backend cut.
-Configuration failures are ordinary compiler errors, not IxC query refusals.
-The future caller must validate before measuring, generating or entering a
-query-refusal catch/retry region. No callback or compiler state is touched.
--/
+/-! Shared validation for checked generation and measurement. Configuration
+failures are ordinary compiler errors, not IxC query refusals. Callers
+validate before callbacks, measurement or query-refusal handling. -/
 
 public section
 namespace Ix.AuxGen.Configuration

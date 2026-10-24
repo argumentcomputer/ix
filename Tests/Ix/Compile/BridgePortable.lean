@@ -31,7 +31,6 @@ private def run (env : Environment) (action : KBridgeM α) : Except String (α �
 private def scope (k : AuxKernel) (locals : Array LocalDecl := #[]) (levels : Array Name := #[])
     (route : AuxRoute := .below) (overlay : Name → Option ConstantInfo := fun _ => none) : KBridgeM AuxScope := do
   let s ← AuxScope.new k locals levels (route := route) (overlay := overlay)
-  require (s.backend matches .ixc _) "scope selected a legacy backend"
   return s
 
 private def prepare : IO (Environment × Source.Service × AuxKernel) := do
@@ -181,7 +180,7 @@ private def addressCases (env : Environment) (kernel : AuxKernel) : IO Unit := d
 def evaluate : IO Unit := do
   let (env, svc, kernel) ← prepare
   let (queries, ctx) ← queryCases env svc kernel
-  let errors := queries ++ (← egressAndNaturals env svc)
+  let errors := queries
   for (label, cause) in errors do IO.println s!"portable bridge refusal {label}: {cause}"
   let atSite (question site cause : String) := s!"unsupportedExpr: aux kernel (IxC Source mode): {question} in {site}: {cause}"
   let inferHead label := s!"inferType of a term headed by {(fixture label).pretty}"
@@ -194,16 +193,19 @@ def evaluate : IO Unit := do
       s!"replay: the replayed term is not IxC's whnf (input head {(fixture "Left").pretty}, replay head Nat, IxC head {(fixture "Left").pretty}, equal after egress false)"),
     ("duplicate batch", atSite "the push of 2 locals (y, y)" ".below's scope at depth 2" "duplicate free variable y"),
     ("failed batch leaked no local", atSite "inferType of a term headed by local y" ".below's scope at depth 2" "ingress: free variable y"),
-    ("constant universe arity/0", arity), ("constant universe arity/1", arity), ("constant universe arity/2", arity),
-    ("egress fvar", "egress: free variable 1 beyond the context's 1"),
-    ("egress universe", "aux kernel bridge: kunivToLevel: universe parameter index 1 out of range")]
+    ("constant universe arity/0", arity), ("constant universe arity/1", arity), ("constant universe arity/2", arity)]
   need (errors == expected) "exact portable bridge refusal table differs"
+  need (ctx.ixcStats.recForced > 0 && ctx.ixcStats.recReplayed > 0)
+    "portable bridge never forced the checked named service"
+  IO.println "portable bridge provenance: checked names/overlays, batch isolation and universe arity"
+
+def evaluateBoundaries : IO Unit := do
+  let (env, svc, kernel) ← prepare
+  let errors ← egressAndNaturals env svc
+  need (errors == #[("egress fvar", "egress: free variable 1 beyond the context's 1"),
+    ("egress universe", "aux kernel bridge: kunivToLevel: universe parameter index 1 out of range")])
+    "exact egress refusal table differs"
   addressCases env kernel
-  IO.println s!"portable bridge state: epoch={ctx.scopeEpoch}, constants={ctx.tcState.env.consts.size}, ingress={ctx.ingressCache.size}, auxiliary={ctx.auxIngressSeen.size}, names={ctx.sourceNames.size}, recForced={ctx.ixcStats.recForced}, recReplayed={ctx.ixcStats.recReplayed}"
-  need (ctx.scopeEpoch == 0 && ctx.tcState.env.consts.isEmpty && ctx.ingressCache.isEmpty &&
-    ctx.auxIngressSeen.isEmpty && ctx.sourceNames.isEmpty && ctx.ixcStats.recForced > 0 && ctx.ixcStats.recReplayed > 0)
-    "portable bridge touched legacy state or never forced the checked named service"
-  IO.println "portable bridge: checked names/overlays, batch isolation, universe arity, full naturals and source address resolution"
 
 def suite : List TestSeq := [
   .individualIO "checked portable bridge names, scopes and boundary contracts" none

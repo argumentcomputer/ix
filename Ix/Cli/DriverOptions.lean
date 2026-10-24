@@ -16,19 +16,12 @@ the options here:
 - `IX_PASS3_CHECK_PLANS=1`: Pass 3's plan-table check
   (`DriverOptions.checkPlans`): every clique plan and row set a table
   supplies is recomputed and compared, and a difference fails the compile;
-- `IX_AUXGEN_IXC` (AuxGen's measurement modes, never needed otherwise;
-  `Ix.CompileM.AuxIxcOptions`): `shadow`, `fallback`, `failClosed` or
-  `fallbackEager` runs the wave fold with its aux tails asking IxC in that mode
-  (production's is `fallback`), each tail tracing its counts; `measure` times the Source
-  service's work alone and compiles nothing: the pipeline prints the
-  measurement and returns an error ("nothing compiled"), so `ix compile-lean`
-  exits 1 by design. A further `,asks=inductive` makes the service ask for
-  every block that holds an inductive, `,asks=below` only for the blocks with
-  a Type-level `.below` (M2b's production); production asks also for the
-  blocks the recursor generator can ask past the fast paths
-  (`,asks=recursors`, `Ix.AuxGen.Ixc.recursorsMayAsk`; AuxGen M4b). The
-  recursor generator and the elimination decision ask IxC as in production;
-  `,rec=off` leaves them on `Ix.Tc` (M3's production).
+- `IX_AUXGEN_IXC`: `failClosed` runs checked generation and traces each
+  tail; `measure` times the Source service alone, then returns the existing
+  "nothing compiled" error. `asks=below`, `asks=inductive` and
+  `asks=recursors` select the service's questions. Historical shadow/fallback
+  modes and `rec=off` are explicit configuration errors, including under
+  measurement. Production uses failClosed with recursors enabled.
 
 Under `IX_COMPILE_DBG` the pipeline prints the process's resident set size
 after the compile phase, read here.
@@ -62,6 +55,7 @@ def auxIxcOptionsOf (value : String) : Except String Ix.CompileM.AuxIxcOptions :
     else if w == "asks=recursors" then opts := { opts with asks := .recursors }
     else if w == "rec=off" then opts := { opts with recursors := false }
     else throw s!"IX_AUXGEN_IXC: unknown option '{w}' (asks=below, asks=inductive, asks=recursors, rec=off)"
+  discard <| opts.validate
   return opts
 
 /-- The drivers' options from the environment; `dbg` forces the debug

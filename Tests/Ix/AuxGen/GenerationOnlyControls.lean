@@ -102,23 +102,19 @@ def evaluate : IO Unit := do
   let some (lo, members) := (Tests.Ix.AuxGen.FlatBlockSource.inductiveBlocks env blocks).find?
     (fun (_, ms) => ms.any (Ix.Compile.ExactKey.nameEq · owner)) | throw (IO.userError "T block missing")
   let original (mode : IxcMode) := Ixc.oracleOf mode false { members, recursors := true, lookup := env.get? } none 8 (fun _ => .ok svc)
-  let legacy ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members (original .shadow))
-  need (legacy.1.2.ixcStats.recRefused == 3) s!"baseline refused {legacy.1.2.ixcStats.recRefused}, expected 3"
-  let shadow ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members (oracle .shadow gen 8))
-  let st := shadow.1.2.ixcStats
-  need (st.recWhnf == legacy.1.2.ixcStats.recWhnf && st.recRefused == 0 && st.recEqual == st.recWhnf) "generation shadow did not cover every original whnf"
-  need ([st.differ, st.refused, st.scopesRefused, st.flatRefused, st.decisionsDiffer, st.recDiffer, st.recDecisionDiffer,
-    st.recSkipDiffer, st.elimDiffer, st.leanRecDiffer, st.belowRefused, st.elimRefused, st.familyRefused].all (· == 0)) "generation shadow refusal/difference"
-  need (sameTail legacy shadow) "generation changed emitted bytes, named metadata or recursor records"
+  -- The captured original shadow had three refusals; the complete old
+  -- output remains the reference. Live checked queries must all succeed.
   let retryOracle := original .failClosed
   let cenv := { cenv with auxGenerationRetry := some (fun _ => .ok baseOracle) }
   let fresh ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members retryOracle true)
-  need (sameTail legacy fresh && fresh.2.auxReport.retried == some why) "generation retry changed output or lost rollback reason"
+  let st := fresh.1.2.ixcStats
+  need (st.recWhnf == 8 && st.recRefused == 0 && [st.refused, st.scopesRefused, st.flatRefused,
+    st.leanRecDiffer, st.belowRefused, st.elimRefused, st.familyRefused].all (· == 0)) "checked generation coverage/refusal changed"
+  need (fresh.2.auxReport.retried == some why) "generation retry lost rollback reason"
   need (fresh.1.2.generated.size == 2 && fresh.1.2.admitted.size == fresh.1.2.generated.size) "exemption coverage differs/incomplete"
   need (fresh.1.2.admitted.all fun (_, v) => v == .exempt s!"{AuxTable.notAcceptedPrefix}{why}") "a generation-only row was accepted"
-  need (fresh.1.2.scopeEpoch == 0 && fresh.1.2.ingressCache.isEmpty && fresh.1.2.auxIngressSeen.isEmpty &&
-    fresh.1.2.sourceNames.isEmpty && fresh.1.2.tcState.env.consts.isEmpty) "IxC-only retry touched legacy scopes"
   let direct ← IO.ofExcept (← IO.lazyPure fun _ => runTail cenv lo members baseOracle)
+  need (sameTail fresh direct) "checked direct/retry output differs"
   IO.ofExcept (NestedTailReference.check 0 #[`Tests.Ix.Compile.AuxCert.NestedSortUK] #[`NestedSortUK.T, `NestedSortUK.t_rec]
     (some blockedAlias) env blocks lo members why fresh direct)
   IO.println "nested tail reference: controls-planted-alias binding, full output and rollback passed"
@@ -127,8 +123,8 @@ def evaluate : IO Unit := do
   match stopped with
   | .error e => need ((e.splitOn "accepted by Source mode").length == 2) "accepted failure lost named cause"
   | _ => pure ()
-  IO.println s!"baseline recRefused=3; generation {Tests.Ix.AuxGen.BelowIxc.statsLine st}"
-  IO.println s!"retry: {fresh.1.2.generated.size} generated/exempt rows, exact bytes/metadata/recursors, zero legacy scope activity"
+  IO.println s!"historical capture recRefused=3; checked generation {Tests.Ix.AuxGen.BelowIxc.checkedStatsLine st}"
+  IO.println s!"retry: {fresh.1.2.generated.size} generated/exempt rows, exact bytes/metadata/recursors"
   IO.println s!"Source retained: {why}; actual and planted dependents remain blocked"
 
 end Tests.Ix.AuxGen.GenerationOnlySpike

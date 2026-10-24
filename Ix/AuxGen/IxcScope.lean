@@ -677,29 +677,11 @@ def oracleOfWith (mode : IxcMode) (trace : Bool) (facts : OracleFacts)
 /-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
 the first question; the drivers' snapshot is a task), in `mode` (tracing the
 tail's counts under `trace`), with `fuel` installs left (the flat block, the
-generated `.below`). `retry` is the block's oracle in `fallback` (AuxGen M5c,
-`AuxOracle.retry`): `none` on the oracles an install returns. -/
+generated `.below`). Historical retry fields remain expressible for exact
+configuration rejection; installed capabilities have no nested retry. -/
 def oracleOf (mode : IxcMode) (trace : Bool) (facts : OracleFacts)
     (retry : Option AuxOracle) : Nat → (Unit → Except String Service) → AuxOracle :=
   oracleOfWith mode trace facts retry false
-
-/-- **One block's oracle over the snapshot `run`** (a run of the drivers'
-service), with the block's `members` folded first (`Service.ensureNames`): a
-no-op when the run asked for the block, and otherwise its groups and what they
-depend on, folded on this block's copy of the snapshot, so a block the asks
-did not select is still answered. The service is taken once, at the first
-question, and shared by the block's scopes. `trace`: the tail traces its
-counts; `facts`: AuxGen M4's (production: recursors on `Ix.Tc`). Its `retry`
-(AuxGen M5c) is the same block's oracle in `fallback` over the same service
-value (built as closures; nothing is asked unless the tail re-runs), so a
-re-run costs no second fold. -/
-def oracleOfRun (mode : IxcMode) (trace : Bool) (run : Unit → Source.Run) (members : Array Name)
-    (facts : OracleFacts := {}) : AuxOracle :=
-  let svc : Thunk (Except String Service) :=
-    Thunk.mk fun _ => (run ()).service.map (·.ensureNames members)
-  let facts := { facts with members }
-  let retry := oracleOf .fallback trace facts none oracleFuel fun _ => svc.get
-  oracleOf mode trace facts (some retry) oracleFuel fun _ => svc.get
 
 end Ix.AuxGen.Ixc
 

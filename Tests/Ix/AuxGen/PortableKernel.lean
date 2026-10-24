@@ -4,7 +4,7 @@ import Ix.CompileDriver
 import Tests.Ix.Kernel.SourceIngress
 
 /-! Checked-source counterparts of AuxKernelTests and all eleven ElimRule
-cases. Their legacy assertions remain registered unchanged. Expanded or
+cases. Complete checked answers replace the retired backend comparisons. Expanded or
 malformed query views are never installed as Source declarations. -/
 
 namespace Tests.AuxGen.PortableKernel
@@ -28,14 +28,9 @@ private def run (env : Environment) (action : KBridgeM α) : Except String (α �
     { all := {}, current := nm "portable", mutCtx := default, univCtx := [] } {}
     (action.run AuxKernelCtx.new)).map (·.1)).mapError toString
 
-private def noLegacy (c : AuxKernelCtx) : Bool :=
-  c.scopeEpoch == 0 && c.ingressCache.isEmpty && c.auxIngressSeen.isEmpty &&
-  c.sourceNames.isEmpty && c.tcState.env.consts.isEmpty
-
 private def scope (k : AuxKernel) (locals : Array LocalDecl := #[])
     (levels : Array Name := #[]) (route : AuxRoute := .below) : KBridgeM AuxScope := do
   let s ← AuxScope.new k locals levels (route := route)
-  require (s.backend matches .ixc _) "new scope selected a legacy backend"
   return s
 
 private def refuses (action : KBridgeM α) (expected : String) : KBridgeM Unit := do
@@ -76,7 +71,6 @@ private def prepare : IO (Environment × AuxKernel) := do
   return (env, .ixc (AddrMaps.ofCompileEnv (CompileM.CompileEnv.new env)) oracle)
 
 private def answers (k : AuxKernel) : KBridgeM (Level × Level × Expr × Bool × Option Expr) := do
-  k.admitSource #[fixtureName "Pred"]
   let s ← AuxScope.new k #[alpha] #[nm "u"] (route := .recursor)
   let a := Expr.mkFVar alpha.fvarName
   let pred := Expr.mkApp (cn "Pred") a
@@ -176,9 +170,9 @@ private def eliminationCases (env : Environment) (k : AuxKernel) : IO Unit := do
   let zero := Level.mkIMax (.mkParam u) .mkZero
   let semantic := { p with ind := { p.ind with cnst := { p.ind.cnst with
     levelParams := #[u], type := Expr.mkSort zero } } }
-  let (zeroEqual, zeroCtx) ← IO.ofExcept (run env do
+  let (zeroEqual, _) ← IO.ofExcept (run env do
     let s ← scope k #[] #[u]; s.isDefEqOrFalse (Expr.mkSort zero) prop)
-  need (zeroEqual && noLegacy zeroCtx) "semantic-zero header equivalence or checked scope changed"
+  need (zeroEqual) "semantic-zero header equivalence or checked scope changed"
   let badResult := { p with ind := { p.ind with cnst := { p.ind.cnst with type := Expr.mkConst (nm "MissingResult") #[] } } }
   let flags xs := computeIsLargeAndK xs 1 0 k
   let cases : Array (String × KBridgeM (Bool × Bool × Bool) × Except String (Bool × Bool × Bool)) := #[
@@ -197,24 +191,25 @@ private def eliminationCases (env : Environment) (k : AuxKernel) : IO Unit := do
   for (label, action, expected) in cases do
     let result := run env action
     match result, expected with
-    | .ok (actual, ctx), .ok want => need (actual == want && noLegacy ctx) s!"{label}: wrong flags/legacy activity"
+    | .ok (actual, _), .ok want => need (actual == want) s!"{label}: wrong flags"
     | .error actual, .error want => need (actual == want) s!"{label}: expected {want}, got {actual}"
     | _, _ => throw (IO.userError s!"{label}: success/refusal changed")
     IO.println s!"portable elimination {label}: passed"
-  let (neighbor, ctx) ← IO.ofExcept (run env (flags #[polyOne]))
-  need (neighbor.1 && noLegacy ctx) "Sort-u singleton neighbor was not large"
+  let (neighbor, _) ← IO.ofExcept (run env (flags #[polyOne]))
+  need (neighbor.1) "Sort-u singleton neighbor was not large"
+
+def evaluateScopes : IO Unit := do
+  let (env, kernel) ← prepare
+  discard <| IO.ofExcept (run env (scopeCases kernel))
 
 def evaluate : IO Unit := do
   let (env, kernel) ← prepare
-  let expected ← IO.ofExcept (run env (answers (.tc kernel.maps)))
   let actual ← IO.ofExcept (run env (answers kernel))
-  need (expected.2.scopeEpoch > 0) "legacy reference did not open its actual bridge scope"
   let pi := Expr.mkForallE (nm "x") (Expr.mkFVar alpha.fvarName) prop .default
-  need (actual.1 == expected.1 && actual.1.1 == Level.mkSucc (.mkParam (nm "u")) &&
-    actual.1.2.2.1 == pi && actual.1.2.2.2.1 && actual.1.2.2.2.2 == some type0 && noLegacy actual.2)
-    "checked named queries/levels/local inference differ from the valid legacy fixture"
-  let (_, ctx) ← IO.ofExcept (run env (scopeCases kernel))
-  need (noLegacy ctx) "scope/error controls touched legacy state"
+  need (actual.1.1 == Level.mkSucc (.mkParam (nm "u")) &&
+    actual.1.2.1 == Level.mkMax (Level.mkSucc (Level.mkSucc Level.mkZero)) (Level.mkSucc (.mkParam (nm "u"))) &&
+    actual.1.2.2.1 == pi && actual.1.2.2.2.1 && actual.1.2.2.2.2 == some type0)
+    s!"checked named queries/levels/local inference differ: {repr actual.1}"
   let s ← IO.ofExcept (original env (fixtureName "S"))
   let alternate := Expr.mkApp (cn "Pred") (cn "T")
   let (_, ctx) ← IO.ofExcept (run env do
@@ -235,9 +230,9 @@ def evaluate : IO Unit := do
       | .ok v => pure v | .error e => throw (.unsupportedExpr e)
     discard <| kernel.elimDecision #[(one.ind, one.ctors)] 0 1
     require ((← retained.inferType? (Expr.mkFVar alpha.fvarName)) == some type0) "elimination invalidated an immutable scope")
-  need (noLegacy ctx && ctx.ixcStats.recForced > 0) "alias decision did not force its checked service"
+  need (ctx.ixcStats.recForced > 0) "alias decision did not force its checked service"
   eliminationCases env kernel
-  IO.println "portable kernel: checked names/queries/refusals and immutable scopes; eleven elimination cases; zero legacy activity"
+  IO.println "portable kernel: checked names/queries/refusals and immutable scopes; eleven elimination cases"
 
 def suite : List TestSeq := [
   .individualIO "checked-source portable AuxKernel and eleven elimination contracts" none

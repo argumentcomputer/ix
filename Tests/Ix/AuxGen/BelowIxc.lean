@@ -38,53 +38,25 @@ open Tests.Ix.AuxGen.FlatBlockSource (fixtureModules inductiveBlocks)
 
 /-- Two tails' counts together. -/
 def addStats (a b : Ix.AuxGen.IxcStats) : Ix.AuxGen.IxcStats :=
-  { queries := a.queries + b.queries, tcFast := a.tcFast + b.tcFast
+  { queries := a.queries + b.queries
     ixcFast := a.ixcFast + b.ixcFast, answered := a.answered + b.answered
-    equal := a.equal + b.equal, differ := a.differ + b.differ
     refused := a.refused + b.refused, scopesRefused := a.scopesRefused + b.scopesRefused
-    flatInstalled := a.flatInstalled + b.flatInstalled
-    flatRefused := a.flatRefused + b.flatRefused
-    decisions := a.decisions + b.decisions, decisionsEqual := a.decisionsEqual + b.decisionsEqual
-    decisionsDiffer := a.decisionsDiffer + b.decisionsDiffer
+    flatInstalled := a.flatInstalled + b.flatInstalled, flatRefused := a.flatRefused + b.flatRefused
+    decisions := a.decisions + b.decisions
     exprQueries := a.exprQueries + b.exprQueries, exprAnswered := a.exprAnswered + b.exprAnswered
     belowAdmitted := a.belowAdmitted + b.belowAdmitted, belowRefused := a.belowRefused + b.belowRefused
     recWhnf := a.recWhnf + b.recWhnf, recStuck := a.recStuck + b.recStuck
     recSame := a.recSame + b.recSame, recReplayed := a.recReplayed + b.recReplayed
-    recBeta := a.recBeta + b.recBeta
-    recRefused := a.recRefused + b.recRefused, recEqual := a.recEqual + b.recEqual
-    recDiffer := a.recDiffer + b.recDiffer, recDiffName := a.recDiffName + b.recDiffName
-    recDiffInfo := a.recDiffInfo + b.recDiffInfo, recDiffLevel := a.recDiffLevel + b.recDiffLevel
-    recDiffOther := a.recDiffOther + b.recDiffOther
-    recDecisionDiffer := a.recDecisionDiffer + b.recDecisionDiffer
-    recSkipped := a.recSkipped + b.recSkipped, recSkipDiffer := a.recSkipDiffer + b.recSkipDiffer
-    recForced := a.recForced + b.recForced, elim := a.elim + b.elim
-    elimEqual := a.elimEqual + b.elimEqual, elimDiffer := a.elimDiffer + b.elimDiffer
-    elimRefused := a.elimRefused + b.elimRefused, leanRecSame := a.leanRecSame + b.leanRecSame
-    leanRecDiffer := a.leanRecDiffer + b.leanRecDiffer, asked := a.asked + b.asked
-    familyInstalled := a.familyInstalled + b.familyInstalled
-    familyRefused := a.familyRefused + b.familyRefused
+    recBeta := a.recBeta + b.recBeta, recRefused := a.recRefused + b.recRefused
+    recSkipped := a.recSkipped + b.recSkipped, recForced := a.recForced + b.recForced
+    elim := a.elim + b.elim, elimRefused := a.elimRefused + b.elimRefused
+    leanRecSame := a.leanRecSame + b.leanRecSame, leanRecDiffer := a.leanRecDiffer + b.leanRecDiffer
+    asked := a.asked + b.asked
+    familyInstalled := a.familyInstalled + b.familyInstalled, familyRefused := a.familyRefused + b.familyRefused
     unsafeBlock := a.unsafeBlock + b.unsafeBlock, tier := a.tier + b.tier
     samples := (a.samples ++ b.samples).extract 0 24 }
 
-def statsLine (st : Ix.AuxGen.IxcStats) : String :=
-  s!"queries {st.queries} (fast path: Ix.Tc {st.tcFast}, IxC {st.ixcFast}); \
-    IxC answered {st.answered}: equal {st.equal}, differ {st.differ}; refused {st.refused}, \
-    scopes refused {st.scopesRefused}; flat blocks installed {st.flatInstalled}, \
-    refused {st.flatRefused}; isDefEq decisions {st.decisions}: equal {st.decisionsEqual}, \
-    differ {st.decisionsDiffer}; inferType/whnf {st.exprQueries}, IxC answered \
-    {st.exprAnswered}; generated .below admitted {st.belowAdmitted}, refused {st.belowRefused}; \
-    recursor whnf {st.recWhnf} (stuck {st.recStuck}, stuck after β {st.recBeta}, unreduced \
-    {st.recSame}, replayed \
-    {st.recReplayed}, refused {st.recRefused}): equal {st.recEqual}, differ {st.recDiffer} \
-    (binder name {st.recDiffName}, info {st.recDiffInfo}, level {st.recDiffLevel}, other \
-    {st.recDiffOther}, at decision sites {st.recDecisionDiffer}); fields skipped {st.recSkipped} \
-    (decided recursive by Ix.Tc {st.recSkipDiffer}); elimination {st.elim}: equal \
-    {st.elimEqual}, differ {st.elimDiffer}, refused {st.elimRefused}; questions needing the \
-    service {st.recForced}; Lean-layout recursors equal to Lean's {st.leanRecSame}, not \
-    {st.leanRecDiffer}; Prop-level .below families installed {st.familyInstalled}, refused \
-    {st.familyRefused}; unsafe blocks {st.unsafeBlock} (tier-installed {st.tier})"
-
-/-- Checked counters; the legacy formatter above remains for its other consumers. -/
+/-- Actual checked counters, with no retired comparison observations. -/
 def checkedStatsLine (st : Ix.AuxGen.IxcStats) : String :=
   s!"level queries {st.queries}, answered {st.answered}, IxC fast {st.ixcFast}, refused {st.refused}; \
     scopes refused {st.scopesRefused}; flat {st.flatInstalled}/{st.flatRefused}; decisions {st.decisions}; \

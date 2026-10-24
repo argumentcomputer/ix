@@ -45,31 +45,13 @@ def belowFamilyLeanExistsM (originalAll : Array Name) : CompileM Bool := do
       infos := infos.insert n ci
   return belowFamilyLeanExists (infos.get? ·) originalAll
 
-/-- Mirrors Rust `populate_canon_kenv_with_below` (aux_gen.rs:1017).
-
-    Populate the bridge kenv with canonical `.below` types and their
-    dependencies (parent inductives, constructors, PUnit, PProd). The
-    canonical `.below` types match the alpha-collapsed block structure
-    and may differ from the originals; Phase 3's TC uses the bridge kenv
-    exclusively, so it must see the CANONICAL types for
-    PProd(motive, I.below ...) inference.
-
-    (Defined before `generateAuxPatches` — its only caller — instead of
-    at its Rust source position after it; no semantic difference.) -/
+/-- Install canonical Type-level .below definitions before later queries.
+Both the current tail and SourceFamily use this operation. -/
 def populateCanonKenvWithBelow (belowConsts : Array BelowConstant)
     (sortedClasses : Array (Array Name)) (kernel : AuxKernel)
     : KBridgeM AuxKernel := do
-  -- Ensure PUnit and PProd are in kenv.
-  kernel.admitPrelude
-
-  -- Ensure parent inductives (and their constructors) are in the kenv —
-  -- the .below types reference these in their motive/major domains.
   for cls in sortedClasses do
-    let rep ← arrIdx cls 0 "populateCanonKenvWithBelow: class representative"
-    kernel.admitSource #[rep]
-
-  -- Insert canonical .below definitions/inductives; IxC's environment too on
-  -- the `ixc` arm (AuxGen M3), whose kernel Phase 3 asks.
+    discard <| arrIdx cls 0 "populateCanonKenvWithBelow: class representative"
   kernel.admitGenerated belowConsts
 
 /-- Alias-target lookup for original-order `_N` aux aliases. Mirrors the
@@ -108,6 +90,7 @@ def auxAliasFindTarget (patches : Std.HashMap Name PatchedConstant)
 def generateAuxPatches (sortedClasses : Array (Array Name))
     (originalAll : Array Name) (maps : AddrMaps) (kernel : AuxKernel)
     : KBridgeM AuxPatchesOutput := do
+  kernel.validate
   let patches : Std.HashMap Name PatchedConstant := {}
   let aliases : Std.HashMap Name Name := {}
 
@@ -117,9 +100,6 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
   let nClasses := sortedClasses.size
   let mut capturedPerm : Option (Array Nat) := none
   let mut capturedNCanonicalAux : Nat := 0
-
-  -- PUnit/PProd must be authoritative BEFORE any ingress (aux_gen.rs:229).
-  kernel.admitPrelude
 
   -- Phase 1: canonical recursors (aux_gen.rs:231-549).
   let orderedOriginals : Array Name ←

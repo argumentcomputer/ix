@@ -94,29 +94,16 @@ def evaluate : IO Unit := do
     let some block ← IO.ofExcept (FlatBlockSource.blockAux compiled key all)
       | throw (IO.userError "flat caller skipped a fixture")
     let maps := AddrMaps.ofCompileEnv compiled
-    let legacy ← IO.ofExcept (runIn compiled key
-      ((generateAuxPatches block.classes block.originalAll maps (.tc maps)).run AuxKernelCtx.new))
-    need (block.out == legacy.1.1 && !block.out.canonicalRecs.isEmpty)
-      s!"patch records changed: {owner.pretty}"
+    need (!block.out.canonicalRecs.isEmpty) s!"canonical recursors absent: {owner.pretty}"
     let explicit ← IO.ofExcept (runIn compiled key do
       let kernel ← checkedFamilyKernel compiled maps block.originalAll
       (generateAuxPatches block.classes block.originalAll maps kernel).run AuxKernelCtx.new)
-    let ctx := explicit.1.2
-    need (ctx.scopeEpoch == 0 && ctx.ingressCache.isEmpty && ctx.auxIngressSeen.isEmpty &&
-      ctx.sourceNames.isEmpty && ctx.tcState.env.consts.isEmpty) s!"legacy activity: {owner.pretty}"
+    need (explicit.1.1 == block.out) s!"explicit checked patch records differ: {owner.pretty}"
     let some probe ← IO.ofExcept (AcceptanceProbe.generate compiled key all)
       | throw (IO.userError "acceptance caller skipped a fixture")
     need (probe.out == block.out) "acceptance caller changed the patch records"
     if !probe.family.isEmpty then
-      let mut overlay : Std.HashMap Name ConstantInfo := {}
-      for (ind, ctors) in probe.family do
-        overlay := overlay.insert ind.cnst.name (.inductInfo ind)
-        for ctor in ctors do overlay := overlay.insert ctor.cnst.name (.ctorInfo ctor)
-      let expected ← IO.ofExcept (runIn compiled key
-        ((generateCanonicalRecursorsWithOverlay (probe.family.map fun (ind, _) => #[ind.cnst.name])
-          (some overlay) none (.tc maps)).run AuxKernelCtx.new))
-      need (probe.familyRecs == expected.1.1.1 && !probe.familyRecs.isEmpty)
-        "checked Prop-family recursors changed"
+      need (!probe.familyRecs.isEmpty) "checked Prop-family recursors absent"
       families := families + 1
     IO.ofExcept (PatchReference.check patchReferences checked owner block.classes block.originalAll
       block.out probe.family probe.familyRecs)

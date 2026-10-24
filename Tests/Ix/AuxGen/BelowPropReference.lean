@@ -18,8 +18,7 @@ run_cmd do
     unless found.size == 1 do throwError "Below Prop alias {stem}.{suffix}: {found}"
     Lean.Elab.Command.elabCommand (← `(abbrev $(Lean.mkIdent aliasName) := @$(Lean.mkIdent found[0]!)))
   let some info := Lean.getStructureInfo? env ``AuxKernelCtx | throwError "kernel context missing"
-  unless info.fieldNames == #[`tcState, `ingressCache, `sourceNames, `auxIngressSeen, `scopeEpoch,
-      `ixcStats, `canonical, `canonicalOracle, `generated, `admitted] && info.parentInfo.isEmpty do
+  unless info.fieldNames == #[`ixcStats, `canonical, `canonicalOracle, `generated, `admitted] && info.parentInfo.isEmpty do
     throwError "unmeasured kernel-context field: {info.fieldNames}"
 
 -- Derivation retains every stats field, including future additions.
@@ -53,13 +52,16 @@ private def numbers : Bool → Nat → Json → Except String Json
 private def retired : Array String := #["tcFast", "equal", "differ", "decisionsEqual", "decisionsDiffer",
   "recEqual", "recDiffer", "recDiffName", "recDiffInfo", "recDiffLevel", "recDiffOther",
   "recDecisionDiffer", "recSkipDiffer", "elimEqual", "elimDiffer"]
--- The live view retires only the shadow call/status and enumerated Tc fields.
--- Every checked report/context field remains; no whitelist or default zeros.
+private def retiredContext : Array String := #["scopeEpoch", "legacyConsts", "ingressCache", "auxIngressSeen", "sourceNames"]
+-- Drop exactly the removed call/status, stats and legacy storage fields.
+-- Every surviving and newly introduced field remains; no default zeros.
 private def project (row : Json) : Except String Json := do
   let .obj fields := row | throw "below reference: case object absent"
   let row := Json.mkObj (fields.toList.filter fun (k, _) => k != "shadow" && k != "shadowStatus")
   let result ← row.getObjVal? "checked"
   if let .ok context := result.getObjVal? "context" then
+    let .obj contextFields := context | throw "below reference: context object absent"
+    let context := Json.mkObj (contextFields.toList.filter fun (k, _) => !retiredContext.contains k)
     let .obj stats ← context.getObjVal? "stats" | throw "below reference: stats object absent"
     let kept := Json.mkObj (stats.toList.filter fun (k, _) => !retired.contains k)
     return row.setObjVal! "checked" (result.setObjVal! "context" (context.setObjVal! "stats" kept))
@@ -154,12 +156,10 @@ abbrev Tail := (Option Ixon.AuxLayout × AuxTailRecs) × AuxKernelCtx
 abbrev Output := Option Tail × CompileM.BlockState
 private def context (c : AuxKernelCtx) : Except String Json := do return Json.mkObj [
   ("admissionRows", rawReport { canonical := c.canonical, generated := c.generated, admitted := c.admitted }),
-  ("stats", ← numbers false 1024 (toJson c.ixcStats)), ("scopeEpoch", nat c.scopeEpoch),
+  ("stats", ← numbers false 1024 (toJson c.ixcStats)),
   ("canonicalOracle", match c.canonicalOracle with
     | none => .null | some o => Json.mkObj [("mode", .str (reprStr o.mode)), ("trace", .bool o.trace),
-      ("recursors", .bool o.recursors), ("asked", .bool o.asked), ("status", toJson (o.blockStatus ())), ("retry", .bool o.retry.isSome)]),
-  ("legacyConsts", nat c.tcState.env.consts.size), ("ingressCache", nat c.ingressCache.size),
-  ("auxIngressSeen", nat c.auxIngressSeen.size), ("sourceNames", nat c.sourceNames.size)]
+      ("recursors", .bool o.recursors), ("asked", .bool o.asked), ("status", toJson (o.blockStatus ())), ("retry", .bool o.retry.isSome)])]
 private def observed (stateKey : CompileM.BlockState → String) : Except String Output → Except String Json
   | .error e => pure (Json.mkObj [("outcome", .str "failure"), ("error", .str e)])
   | .ok (none, _) => throw "below reference: unmeasured no-tail outcome"

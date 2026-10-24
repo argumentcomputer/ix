@@ -21,7 +21,7 @@
     `Ix.AuxGen.Report`, which imports only `Ix.Environment`).
   * **AuxGen asks no more than these.** AuxGen's IxC arm
     (`Ix.AuxGen.AuxKernel.ixc`) only calls the closures; the fold builds
-    them (`Ix.AuxGen.Ixc.oracleOfRun`), so `Ix.Cert.compile` reaches IxC's
+    them (`Ix.CompileM.AuxIxcOptions.oracleFor`), so `Ix.Cert.compile` reaches IxC's
     checker through the fold (`Ix/Cert/RuntimeAudit.lean`), not through
     AuxGen.
 
@@ -50,8 +50,8 @@ public section
 
 namespace Ix.AuxGen
 
-/-- How AuxGen M2's IxC arm uses IxC's answers to `.below`'s level questions.
-`Ix.Tc` stays the kernel of every other generator. -/
+/-- Only failClosed is supported. Historical tags remain expressible for
+explicit configuration rejection; their comments describe retired behavior. -/
 inductive IxcMode where
   /-- Both kernels answer; `Ix.Tc`'s answer is used, and the two are
   compared. The compile is `Ix.Tc`'s, by construction. -/
@@ -65,9 +65,8 @@ inductive IxcMode where
   refusal need. Adopted on equal bytes with `fallbackEager` on the fixtures,
   Init+Std and Mathlib (`auxgen-m3.md` §11). -/
   | fallback
-  /-- IxC alone answers the routed questions; a refusal fails the block.
-  `Ix.Tc` is not asked them. Not production's until Source mode covers every
-  input the compiler takes (closures included). -/
+  /-- IxC alone answers. A refusal fails the block or requests an eligible
+  checked generation-only retry under its original Source status. -/
   | failClosed
   /-- Both kernels answer every question; IxC's answer is used where IxC
   answers, `Ix.Tc`'s where it refuses (AuxGen M2b's production mode; a
@@ -119,8 +118,7 @@ inductive CanonicalVerdict where
   /-- the block's layout is not Lean's: its canonical flat block, the generated
   recursors included, installed in Source mode (IxC's install is the check) -/
   | installed
-  /-- the canonical flat block refused by Source mode, and why (`fallback`
-  then keeps `Ix.Tc`'s answers for the block's tail) -/
+  /-- the canonical flat block refused by Source mode, and why -/
   | refused (why : String)
   /-- the block's layout is Lean's: each of its `n` generated recursors equals
   Lean's own, whose acceptance is the input's -/
@@ -214,7 +212,7 @@ structure BlockReport where
   the driver tells an IxC refusal from any other failure -/
   refusal : Option IxcRefusal := none
   /-- AuxGen M5c: why Source mode does not accept the block, when its tail
-  stopped on an IxC refusal and re-ran on `fallback` (`AuxOracle.retry`) -/
+  stopped on an IxC refusal and used the driver's checked generation retry -/
   retried : Option String := none
   deriving Inhabited
 
@@ -235,7 +233,7 @@ structure CompileReport where
   (`IdentityStats`) -/
   identity : Array (Name × Bool × Address) := #[]
   display : Array (Name × Name) := #[]
-  /-- AuxGen M5c: the blocks whose tail re-ran on `fallback` (not accepted by
+  /-- The blocks whose tail used a checked generation retry (not accepted by
   Source mode), by canonical key, with the reason and the block's generated
   auxiliaries -/
   retried : Array (Name × String × Array Name) := #[]
@@ -384,10 +382,9 @@ inductive GeneratedDecl where
   mode, if they are not (refused, blocked behind a refused group with that
   group's reason, or not folded; AuxGen M5b): the block's input is then outside
   `SourceAccepts`, so its auxiliaries are exempt.
-* `retry`: the block's oracle in `fallback` over the same service (AuxGen
-  M5c): a block Source mode does not accept, whose tail stopped on an IxC
-  refusal under `failClosed`, re-runs over it. `none` on the oracles an install
-  returns.
+* `retry`: a retired capability field, retained to reject nested retries
+  explicitly. Supported capabilities carry none; the driver owns the checked
+  generation provider and preserves the original Source reason.
 * `withFamily types` (M7 Q1): a family's types and constructors (a regenerated
   Prop-level `.below` family, the block's or an unsafe block's), with no
   recursors, installed typing only under fresh names through σ on the
