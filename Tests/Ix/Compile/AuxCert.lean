@@ -450,6 +450,8 @@ def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat ×
         if toString n != part then throw "checked trace: noncanonical counter"
     if !required.all fields.contains then throw "checked trace: missing required counter"
     let (row, _) := tailCounts line
+    if row.getD "refused" 0 == 0 && row.getD "answered" 0 != row.getD "queries" 0 then
+      throw "checked trace: answered/query coverage differs"
     if row.getD "unsafe" 0 != row.getD "tier" 0 then throw "checked trace: unsafe tail lacks its tier"
   if blocks.isEmpty then throw "checked trace: no tail coverage"
   let (counts, tails) := tailCounts text

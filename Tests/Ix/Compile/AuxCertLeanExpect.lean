@@ -87,6 +87,7 @@ private def traceControls : IO Unit := do
   for (text, why) in [("", "no tail coverage"), (good ++ "\n" ++ good, "empty/duplicate tail key"),
       (good.replace ": queries" ": query", "malformed tail header"),
       (good ++ " dangling", "dangling counter"), (good.replace "answered 1" "answered nope", "nonnumeric counter"),
+      (good.replace "answered 1" "answered 0", "answered/query coverage differs"),
       (good.replace " answered 1" "", "missing required counter"), (good.replace "below 0/0" "below 0", "counter shape"),
       (good ++ " queries 1", "duplicate counter"), (good.replace "refused 0" "refused 1", "refused is nonzero"),
       (good.replace "tier 1" "tier 0", "unsafe tail lacks its tier")] do refuses text "BelowNRec" why
