@@ -64,6 +64,7 @@ import Ix.Cert.PrefixConstType
 import Ix.Cert.PrefixCapabilities
 import Ix.Cert.PrefixRecRules
 import Ix.Cert.PrefixTowers
+import Ix.Cert.PrefixNatOps
 
 /-! # The certification statements, frozen
 
@@ -6013,3 +6014,18 @@ run_cmd do
   checkRoots (tag := "cert-audit") "universal fixed interpretation tower laws"
     #[`Ix.Cert.PrefixTowers.tower_ok_preserved,
       `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_tower_ok]
+
+/-! ## Actual Nat-operation guards and both fixed-acval readings
+
+Each creating POST guard survives its actual suffix. Original raw/result
+facts derive both readings, with no model or backwards support premise. -/
+
+/-- info: [cert-audit] actual prefix Nat-operation readings: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual prefix Nat-operation readings"
+    ((#[`guard_preserved, `reference_nat_op_guards, `binary_mem, `literal_resolves,
+      `raw_literal_resolves, `result_resolves, `guarded_nat_op_readings].map
+      (`Ix.Cert.PrefixNatOps ++ ·)) ++
+      #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.prefix_nat_op_guards])
