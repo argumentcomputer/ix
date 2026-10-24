@@ -80,6 +80,10 @@ def check (i : Nat) (modules seeds : Array Lean.Name) (planted : Option Name)
     require (c.generated.size == 2 && c.admitted.size == 2 &&
       c.admitted.all (fun (_, v) => v == .exempt s!"{AuxTable.notAcceptedPrefix}{why}") &&
       t.1.1.2.recs.size == 2 && t.1.1.2.belowRecs.isEmpty) "exemption/recursor coverage differs"
+    let rowNames := names (t.1.1.2.recs.map (·.1))
+    require (names (c.generated.map (·.1)) == rowNames && names (c.admitted.map (·.1)) == rowNames &&
+      c.generated.all (fun (_, k) => k == .recursor))
+      "generated/admitted row names or kinds differ"
     require (c.ixcStats.recRefused == 0 && c.scopeEpoch == 0 && c.tcState.env.consts.isEmpty &&
       c.ingressCache.isEmpty && c.auxIngressSeen.isEmpty && c.sourceNames.isEmpty) "checked tail refused or touched legacy state"
   require (retry.2.auxReport.retried == some why && direct.2.auxReport.retried.isNone) "retry reason differs"
