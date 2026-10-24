@@ -65,6 +65,7 @@ import Ix.Cert.PrefixCapabilities
 import Ix.Cert.PrefixRecRules
 import Ix.Cert.PrefixTowers
 import Ix.Cert.PrefixNatOps
+import Ix.Cert.RuleInputValues
 
 /-! # The certification statements, frozen
 
@@ -6042,3 +6043,16 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual fixed interpretation rule inputs"
     #[`Ix.Cert.PrefixNatOps.nat_op_preserved,
       `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_rules_inputs]
+
+/-! ## Actual checked values and root markers from rule inputs
+
+The fixed carrier and nine proved rows supply inference/Denotes and checked
+marker equality without a prefix StrongModel or an inner context witness. -/
+
+/-- info: [cert-audit] fixed interpretation checked value adapters: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "fixed interpretation checked value adapters"
+    (#[`frame_context, `infer_package, `reading_denotes, `defeq_readings,
+      `lambda_markers_eq_of_fronts, `markers_of_fronts].map (`Ix.Cert.RuleInputValues ++ ·))
