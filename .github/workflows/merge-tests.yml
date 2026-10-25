@@ -140,9 +140,6 @@ jobs:
             kind: lake
             test_args: --tier ci:misc
             zk_voting: true
-          - name: Ix.Tc unit and parity tests
-            kind: tc
-            test_args: --tier ci:tc
           - name: Certified kernel
             kind: kernel
     # On-demand rather than Spot: a reclaimed partition restarts from scratch
@@ -206,12 +203,6 @@ jobs:
       - name: Run ZK voting prover
         if: ${{ matrix.kind == 'lake' && matrix.zk_voting }}
         run: lake exe Apps.ZKVoting.Prover
-
-      - name: Run Ix.Tc unit, parity, and regression tests
-        if: ${{ matrix.kind == 'tc' }}
-        run: |
-          lake test --wfail -- tc-unit
-          lake test --wfail -- ${{ matrix.test_args }}
 
       # The certified kernel gate (docs/kernel.md): the standalone IxC
       # package build, which has no dependencies and so proves the kernel needs

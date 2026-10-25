@@ -1,6 +1,6 @@
 module
 
--- Private imports: `ensure`'s signature is just `IO FilePath`; these provide
+-- Private imports: `ensureSelected` returns only `IO FilePath`; these provide
 -- only its implementation. `Ix.Meta` re-exports `getFileEnv` and `Ix.CompileM`
 -- (`rsCompileEnvBytesFFI`). The transitive dep closure comes from the shared
 -- `Ix.EnvScope.collectDeps` (namespaced, so it can meet the same-named
@@ -10,7 +10,7 @@ import Ix.EnvScope
 import Ix.Cli.ConstsFile
 
 /-!
-Shared fixture for the typechecker parity tests (`tc-pins`, `tc-accel-diff`):
+Selected fixture for the IxC regression pins (`tc-pins`):
 the serialized `.ixe` env they check against. Compiled on demand from `Ix.lean`
 plus the checked-in seed list when the file isn't already present, so the tests
 run unconditionally instead of skipping when no fixture is supplied.
@@ -36,8 +36,8 @@ of `Ix.lean`'s closure (e.g. the benchmarks it also imports), and `getFileEnv`
 needs every olean present. Then it loads the env and hands the transitive seed
 closure to the same FFI compile step `ix compile` uses. A seed that no longer
 resolves is a hard error, not a skip. -/
-def ensureWith (selected : Bool) : IO System.FilePath := do
-  let out : System.FilePath := if selected then "tc-pins-ixc-v1.ixe" else "tc-parity.ixe"
+public def ensureSelected : IO System.FilePath := do
+  let out : System.FilePath := "tc-pins-ixc-v1.ixe"
   let constsFile := ".github/fixtures/tc-parity-consts.txt"
   if ← out.pathExists then
     match ← headerVersion? out with
@@ -59,22 +59,14 @@ def ensureWith (selected : Bool) : IO System.FilePath := do
       seeds := name :: seeds
     else
       throw <| IO.userError s!"tc-parity: seed constant not found in Ix.lean env: {s}"
-  let closed := if selected then Ix.EnvScope.collectSelectedDeps leanEnv seeds
-    else Ix.EnvScope.collectDeps leanEnv seeds
+  let closed := Ix.EnvScope.collectSelectedDeps leanEnv seeds
   -- Fail-closed (`allowPartial := false`): with `getFileEnv` always
   -- full-content, every referenced constant — `_private.*` proof auxiliaries
   -- included — must ground; a silent drop here is exactly how the
   -- exported-level trim regression hid until the tc gates fired.
   let status ← Ix.CompileM.rsCompileEnvBytesFFI closed out.toString false
-  if selected && !status.ungrounded.isEmpty then
+  if !status.ungrounded.isEmpty then
     throw (IO.userError s!"tc-pins: selected fixture compilation refused {status.ungrounded.size} constants")
   return out
-
-/-- Legacy raw fixture, unchanged for the remaining Ix.Tc consumers. -/
-public def ensure : IO System.FilePath := ensureWith false
-
-/-- Separate selected fixture for IxC: never reuse a raw-closure cache that
-lacks recursors or checker support. Envelope compatibility is shared. -/
-public def ensureSelected : IO System.FilePath := ensureWith true
 
 end Tests.Tc.ParityEnv

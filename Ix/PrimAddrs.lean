@@ -13,10 +13,17 @@ kernel-marker addresses, the Lean parity table and the membership set over
 them, moved verbatim out of `Ix.Tc.Primitive` (step 10) so that consumers
 that need only addresses (the resource validator's profile, the IxVM claim
 harness) do not import `Ix.Tc`. The names are unchanged (`Ix.Tc.PrimAddrs`,
-`Ix.Tc.reservedMarkerName`, `Ix.Tc.primAddrSet`); `Ix.Tc.Primitive` imports
-this module, so every existing user compiles as before. See
-`Ix.Tc.Primitive`'s documentation for the addresses' provenance
-(regenerate with `lake test -- --ignored rust-kernel-build-primitives`).
+`Ix.Tc.reservedMarkerName`, `Ix.Tc.primAddrSet`) for these address-only users.
+The addresses are hardcoded BLAKE3 hashes matching Rust's `PrimAddrs::new()`;
+regenerate with `lake test -- --ignored rust-kernel-build-primitives` and
+update both tables. The ordered live comparison is
+`Tests.Ix.Kernel.PrimitiveTable` in the `prim-addrs` entry.
+
+`Lean.reduceBool` and `Lean.reduceNat` dispatch by their real content
+addresses. `eagerReduce` is a synthetic kernel-only marker: Lean's real
+`eagerReduce` compiles to the same canonical content address as `id`, so
+address-only dispatch on that real constant would be unsound. The
+`pprod`/`pprodMk` addresses support nested-inductive recursor generation.
 -/
 
 public section

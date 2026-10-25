@@ -12,29 +12,30 @@ Mirror: crates/ixon/src/canon_univ.rs
 `canonUniv = linearize ∘ subsumption ∘ normalizeAux` — a total,
 deterministic canonical representative of a stored level's Géran
 semantic-equality class, kernel-free and next to the wire type so
-`Ix.CompileM`, the Tc egress, and probes can all use it. The Géran
-machinery is the transliteration of `Ix/Tc/Level.lean:227-472` onto
-`Ixon.Univ` (positional `var` indices; no metadata); the three kernel
-`NormLevel` implementations stay untouched and serve as the P4 oracle.
+`Ix.CompileM` and probes can use it. The Géran machinery was transliterated
+from the former `Ix/Tc/Level.lean:227-472` onto `Ixon.Univ` (positional
+`var` indices; no metadata). The old kernel comparison is historical.
 
 The frozen kernel `mk*` rule set (M1–M8 / I1–I6) is kept with its
 kernel-rebuild role: `reduceUniv` is the stage-1 decoration-presence
 test and the P6 oracle, and P3 (canonical forms are `mk*` fixpoints) is
 what makes kernel ingress the identity on canonical content.
-(`Ix.Tc.reduceIxonUniv` computes the same closure by rounding through
-the actual kernel constructors; `tc-unit` pins their agreement.)
+The former `Ix.Tc.reduceIxonUniv` twin checked the same closure through
+that backend's constructors; its implementation-specific comparison retired
+with the backend.
 
-Property set (tested in `Tests/Ix/Tc/Unit.lean` and the Rust twin;
+Property set (tested in `Tests/Ix/IxonUniverse.lean` and the Rust twin;
 Verify-layer proofs are the D7 follow-up): P0 value preservation
 (`canonUniv u` and `u` agree at every valuation of the params); P1
 idempotence; P2
 roundtrip-fixpoint (`normalize (linearize L) = L`, exact on non-empty
 entries — `subsumption` can leave EMPTY entries which `linearize`
-cannot and should not re-express); P3 `mk*`-fixpoint; P4 soundness vs
-kernel `univEq` (modulo the same empty-entry caveat — 3 of 3,253,373
-whole-Mathlib entries sit in classes distinguished only by the
-artifact); P5 byte parity with the Rust twin (FFI cross-check); P6
-`mk*` absorption.
+cannot and should not re-express); P3 `mk*`-fixpoint; P5 byte parity with the
+Rust twin (FFI cross-check); P6 `mk*` absorption. The historical P4 comparison
+against the former kernel's `univEq` had the same empty-entry caveat:
+3 of 3,253,373 measured whole-Mathlib entries occupied classes distinguished
+only by that artifact. The live semantic corpus preserves its exhaustive,
+witness and seeded inputs independently of that retired oracle.
 -/
 
 public section

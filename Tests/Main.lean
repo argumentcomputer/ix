@@ -143,20 +143,9 @@ import Tests.Ix.SourceContract.ImportCheck
 import Tests.Ix.SourceContract.SyntaxCheck
 import Tests.Ix.SourceContract.Driver
 import Tests.Ix.BenchMeasures
-import Tests.Ix.Tc.Unit
-import Tests.Ix.Tc.CanonicalCheck
-import Tests.Ix.Tc.Substrate
-import Tests.Ix.Tc.IxonFixtures
-import Tests.Ix.Tc.WhnfTests
-import Tests.Ix.Tc.InferDefEq
-import Tests.Ix.Tc.CheckTests
-import Tests.Ix.Tc.AnonDiff
-import Tests.Ix.Tc.InitScale
-import Tests.Ix.Tc.TutorialTc
-import Tests.Ix.Tc.Roundtrip
-import Tests.Ix.Tc.IngressMetaTests
+import Tests.Ix.IxonUniverse
 import Tests.Ix.Kernel.Pins
-import Tests.Ix.Tc.AccelDiff
+import Tests.Ix.Kernel.AccelSemantics
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -200,7 +189,7 @@ def registry : List Entry := [
   .suite "catalog" .primary Tests.Ix.Catalog.suite,
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
-  .suite "ixon" .primary Tests.Ixon.suite,
+  .suite "ixon" .primary (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite),
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
   .suite "claim" .primary Tests.Claim.suite,
   .suite "merkle" .primary Tests.Merkle.suite,
@@ -340,11 +329,6 @@ def registry : List Entry := [
   .suite "primitive-address-parity" .primary (Tests.Ix.Kernel.BuildPrimitives.paritySuite
     ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
   .suite "decompile-unit" .primary Tests.Decompile.unitSuite,
-  .suite "tc-unit" .primary (Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
-    ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
-    ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
-    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests
-    ++ Tests.Tc.CanonicalCheck.suite),
   -- getFileEnv body-inclusion regression guard (IO: loads a fixture file)
   .suiteIO "getfileenv-body" .primary (do return [← Tests.Ix.EnvBody.suite]),
   -- primary runners: quick suites kept as deferred `IO` actions (not
@@ -355,7 +339,7 @@ def registry : List Entry := [
   .runner "aiur-rust-syntax" .primary AiurTests.RustSyntax.run,
   -- Reductions no kernel may make beyond Lean's (class methods reduced
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
-  -- probe's closure through the Rust kernel, Ix.Tc and IxC (about 9 s).
+  -- probe's closure through the Rust kernel and IxC.
   .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
   -- The pure image generator (Ix.Compile.Image) on the prototype's fifteen sub-cases,
   -- with Lean's kernel as the oracle (Tests.Ix.Compile.Image).
@@ -443,11 +427,6 @@ def registry : List Entry := [
   .suite "kernel-check-tauceti-reduction" (.manual "self-contained, but in no gate yet") Tests.Ix.Kernel.CheckTauCetiReduction.suite,
   .suite "rust-kernel-build-primitives" (.ci .misc) Tests.Ix.Kernel.BuildPrimitives.suite,
   .suite "rust-kernel-build-prim-origs" (.ci .misc) Tests.Ix.Kernel.BuildPrimOrigs.suite,
-  .suite "tc-anon-diff" (.ci .tc) Tests.Tc.AnonDiff.suite,
-  .suite "tc-init" (.ci .tc) Tests.Tc.InitScale.suite,
-  .suite "tc-tutorial" (.ci .tc) Tests.Tc.TutorialTc.suite,
-  .suite "tc-roundtrip" (.ci .tc) Tests.Tc.Roundtrip.suite,
-  .suite "tc-ingress-meta" (.ci .tc) Tests.Tc.IngressMeta.suite,
   -- aux_gen on closure-only environments (`ix compile --consts`)
   .suite "aux-gen-closure" (.ci .compilePipeline) Tests.Ix.Compile.AuxGenClosure.suite,
   -- aux addresses do not depend on the compile set (closure vs whole env)
@@ -647,12 +626,10 @@ def registry : List Entry := [
   .runner "auxgen-acceptance-probe" (.manual "AuxGen M5a library check: generated auxiliaries of flat and nested blocks accepted by Source mode, by kind") Tests.Ix.AuxGen.AcceptanceProbe.run,
   -- Source evidence from the committed bundle unblocks the service's inductive blocks
   .runner "bundle-evidence-initstd" (.manual "AuxGen's Source service on Init+Std without the certificate module, at the input's evidence and at the committed bundle's (about 2 min)") Tests.Ix.Kernel.BundleEvidence.runInitStd,
-  -- Pure-Lean kernel regression pins against a real .ixe, compiled on
-  -- demand (see Tests.Tc.ParityEnv).
-  .runner "tc-pins" (.ci .tc) Tests.Tc.Pins.run,
-  -- Accelerated-vs-pure reduction differentials over that same real env
-  -- (see Tests.Tc.AccelDiff and TcState.noAccel).
-  .runner "tc-accel-diff" (.ci .tc) Tests.Tc.AccelDiff.run,
+  -- The existing eight IxC selected-producer pins and their subject budgets.
+  .runner "tc-pins" (.ci .compilerClosures) Tests.Tc.Pins.run,
+  -- Exact retained acceleration inputs, value/head witnesses and full closures.
+  .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,
   .runner "admission-hash-diff" .landing Tests.Ix.Kernel.AdmissionHashDiff.run,
   -- the Rust compiler's compile → decompile roundtrip over this binary's
   -- environment (Tests.Ix.RustCompile); before the registry, a special case

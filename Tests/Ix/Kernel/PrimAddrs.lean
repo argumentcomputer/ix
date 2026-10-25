@@ -33,6 +33,7 @@ import Ix.Aiur.Compiler
 import Ix.IxVM
 import Ix.IxVM.Toplevel
 import Ix.PrimAddrs
+import Tests.Ix.Kernel.PrimitiveTable
 import LSpec
 
 open LSpec
@@ -144,6 +145,6 @@ def suite : List TestSeq := Id.run do
       -- functions — see the zero-Addr tuple returns in Whnf/DefEq.)
       tests := tests ++
         test s!"{fnName}: {addr} not in canonical primitive table" false
-  return [tests]
+  return [tests] ++ Tests.Ix.Kernel.PrimitiveTable.suite
 
 end Tests.Ix.Kernel.PrimAddrs

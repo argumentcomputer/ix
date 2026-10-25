@@ -41,11 +41,10 @@ inductive CiJob where
   | compile
   | decompile
   | misc
-  | tc
   deriving DecidableEq, Repr
 
 def CiJob.all : List CiJob :=
-  [.cli, .compilePipeline, .compilerClosures, .compile, .decompile, .misc, .tc]
+  [.cli, .compilePipeline, .compilerClosures, .compile, .decompile, .misc]
 
 /-- The job's name on the command line (`--tier ci:<key>`) and in the workflows. -/
 def CiJob.key : CiJob → String
@@ -55,7 +54,6 @@ def CiJob.key : CiJob → String
   | .compile => "compile"
   | .decompile => "decompile"
   | .misc => "misc"
-  | .tc => "tc"
 
 /-- Where an entry runs. -/
 inductive Tier where
@@ -291,7 +289,8 @@ private def picks (args : List String) : List String :=
 #guard picks ["--ignored", "--tier", "landing", "a"] == ["a", "g"]
 #guard picks ["nope"] == ["error: no test entry named 'nope'"]
 #guard picks ["--tier", "ci:nope"] == ["error: unknown tier 'ci:nope' (primary, landing, manual, ci:<job>)"]
-#guard picks ["--tier", "ci:tc"] == ["error: a --tier selects no entry"]
+#guard picks ["--tier", "ci:tc"] == ["error: unknown tier 'ci:tc' (primary, landing, manual, ci:<job>)"]
+#guard picks ["--tier", "ci:decompile"] == ["error: a --tier selects no entry"]
 #guard picks ["--ignored", "--exclude=x,x-y,g,m"] == ["error: nothing selected"]
 #guard (problems demo [("w", "--tier ci:compile")]).length == CiJob.all.length - 1 + (CiJob.all.length - 1)
 

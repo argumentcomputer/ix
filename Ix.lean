@@ -22,7 +22,6 @@ public import Ix.Catalog
 public import Ix.ImportIxe
 public import Ix.IxEval
 public import Ix.KernelCheck
-public import Ix.Tc
 public import Ix.Claim
 public import Ix.Merkle
 public import Ix.AssumptionTree
