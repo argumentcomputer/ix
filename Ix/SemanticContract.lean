@@ -1,6 +1,7 @@
 module
 
 public import Ix.Ixon
+public import Ix.Compile.ExactKey
 
 /-!
 # Contracts inside the source expression pipeline
@@ -111,14 +112,14 @@ def Contract.lower (contract : Contract) (source : Ix.Expr) (compiled : Ixon.Exp
 
 /-- Inspect an entire source expression before rewrites can remove subterms. -/
 def inspect (top : Ix.Expr) : Except String Bool := do
-  let mut seen : Std.HashSet Ix.Expr := {}
+  let mut seen : Std.HashSet Ix.Compile.ExactKey.ExprKey := {}
   let mut stack := #[top]
   let mut annotated := false
   while !stack.isEmpty do
     let e := stack.back!
     stack := stack.pop
-    if seen.contains e then continue
-    seen := seen.insert e
+    if seen.contains ⟨e⟩ then continue
+    seen := seen.insert ⟨e⟩
     match e with
     | .app fn arg _ => stack := stack.push fn |>.push arg
     | .lam _ type body _ _ | .forallE _ type body _ _ =>

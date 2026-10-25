@@ -498,9 +498,46 @@ def rewritePrimitiveTests : TestSeq := Id.run do
         (instProbe poisoned value zero 0).any (fun r => eq r.1 bad) &&
         (instantiateWith poisoned ident #[value]).toOption.any fun (out, _) => eq out bad)
 
+def inspectionTests : TestSeq := Id.run do
+  let digest := fun (n : UInt8) => Address.mk (ByteArray.mk (Array.replicate 32 n))
+  let scalar := _root_.Ix.Expr.lit (.natVal 0) (digest 3)
+  let lam := _root_.Ix.Expr.lam _root_.Ix.Name.mkAnon scalar
+    (.bvar 0 (digest 4)) .default (digest 2)
+  let contract : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
+  let data := contract.ixMetadata
+  let frame := fun md => _root_.Ix.Expr.mdata md lam (digest 0)
+  let good := frame data
+  let codeKey := data[2]!.1
+  let unknown := match codeKey with
+    | .str parent _ hash => _root_.Ix.Name.str parent "unknown" hash | _ => codeKey
+  let malformed := "malformed semantic contract frame"
+  let misplaced := "semantic contract is not attached to its original binder"
+  let cases := #[
+    ("malformed payload", data.pop, malformed),
+    ("valid-size wrong-kind payload", { contract with kind := .all }.ixMetadata, misplaced),
+    ("nonnatural field", data.set! 2 (codeKey, .ofBool true), "semantic contract fields must be natural numbers"),
+    ("reserved bits", data.set! 2 (codeKey, .ofNat 16), "reserved semantic contract bits"),
+    ("aliased metadata-key hash", data.set! 2 (unknown, .ofNat 1), "unknown or duplicate semantic contract field")]
+  let inspect := _root_.Ix.SemanticContract.inspect
+  let eq := _root_.Ix.Compile.ExactKey.exprEq
+  let mut tests := TestSeq.done
+  for (label, md, message) in cases do
+    let bad := frame md
+    let refused := [bad, .app bad good (digest 1), .app good bad (digest 1)].all fun e =>
+      match inspect e with | .error actual => actual == message | _ => false
+    tests := tests ++ test s!"exact inspection rejects {label} despite equal digests in either visitation order"
+      (bad.getHash == good.getHash && !eq bad good && refused)
+  let twin := _root_.Ix.Expr.mdata contract.ixMetadata
+    (.lam _root_.Ix.Name.mkAnon scalar (.bvar 0 (digest 4)) .default (digest 2)) (digest 0)
+  let plain := _root_.Ix.Expr.mdata #[(_root_.Ix.Name.fromLeanName `native.hint, .ofNat 7)] lam (digest 0)
+  return tests ++ test "exact inspection accepts plain, equal and shared valid nodes"
+    ((inspect scalar).toOption == some false && (inspect plain).toOption == some false && eq good twin &&
+      (inspect (.app good good (digest 1))).toOption == some true &&
+      (inspect (.app good twin (digest 1))).toOption == some true)
+
 def suite : List TestSeq :=
   [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,
-    arityProducerTests, recordSubstitutionTests, rewritePrimitiveTests]
+    arityProducerTests, recordSubstitutionTests, rewritePrimitiveTests, inspectionTests]
 
 end Tests.Ix.SourceContract
 

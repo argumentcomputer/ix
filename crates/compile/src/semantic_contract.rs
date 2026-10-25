@@ -339,6 +339,66 @@ mod tests {
   use crate::mutual::MutCtx;
   use ix_common::env::{BinderInfo, Level};
   #[test]
+  fn inspection_rejects_raw_hash_aliases_in_both_orders() {
+    let domain = Source::sort(Level::zero());
+    let lam = Source::lam(
+      Name::anon(),
+      domain.clone(),
+      Source::bvar(0u64.into()),
+      BinderInfo::Default,
+    );
+    let contract = decode(0, 1).unwrap();
+    let data = contract.metadata();
+    let frame = |md| {
+      Source(Arc::new(ExprData::Mdata(
+        md,
+        lam.clone(),
+        blake3::Hash::from([0; 32]),
+      )))
+    };
+    let good = frame(data.clone());
+    let mut nonnat = data.clone();
+    nonnat[2].1 = DataValue::OfBool(true);
+    let mut bits = data.clone();
+    bits[2].1 = DataValue::OfNat(16u64.into());
+    let mut unknown = data.clone();
+    let NameData::Str(parent, _, hash) = data[2].0.as_data() else {
+      panic!("code field has no name")
+    };
+    unknown[2].0 =
+      Name(Arc::new(NameData::Str(parent.clone(), "unknown".into(), *hash)));
+    for (md, message) in [
+      (data[..2].to_vec(), "malformed semantic contract frame"),
+      (
+        decode(1, 1).unwrap().metadata(),
+        "semantic contract is not attached to its original binder",
+      ),
+      (nonnat, "semantic contract fields must be natural numbers"),
+      (bits, "reserved semantic contract bits"),
+      (unknown, "unknown or duplicate semantic contract field"),
+    ] {
+      let bad = frame(md);
+      assert_eq!(bad.get_hash(), good.get_hash());
+      assert_ne!(bad, good); // Rust's existing derived Eq is already structural.
+      for input in [
+        bad.clone(),
+        Source::app(bad.clone(), good.clone()),
+        Source::app(good.clone(), bad),
+      ] {
+        assert!(
+          matches!(inspect(&input), Err(CompileError::UnsupportedExpr { desc }) if desc == message)
+        );
+      }
+    }
+    let twin = frame(data);
+    assert!(!Arc::ptr_eq(&good.0, &twin.0));
+    assert!(good.same_raw(&twin));
+    assert!(inspect(&Source::app(good.clone(), good.clone())).unwrap());
+    assert!(inspect(&Source::app(good, twin)).unwrap());
+    assert!(!inspect(&domain).unwrap());
+  }
+
+  #[test]
   fn strict_metadata_and_all_contract_codes() {
     for (kind, count) in [(0, 16), (1, 64), (2, 32)] {
       for code in 0..count {

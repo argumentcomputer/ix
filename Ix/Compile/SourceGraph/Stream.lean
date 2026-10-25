@@ -1,4 +1,5 @@
 module
+public import Ix.CanonM
 public import Ix.Compile.SourceGraph.Literal
 public import Ix.Ground
 
