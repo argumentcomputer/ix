@@ -108,6 +108,12 @@ pub extern "C" fn rs_eq_env_serialization(
   };
 
   // Compare content: check that all items from decoded RawEnv are in the deserialized Env
+  if rust_env.role_binding != decoded.role_binding {
+    if debug {
+      eprintln!("[rs_eq_env_serialization] role binding mismatch");
+    }
+    return false;
+  }
   // Consts
   if rust_env.consts.len() != decoded.consts.len() {
     if debug {

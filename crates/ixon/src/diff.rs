@@ -147,6 +147,8 @@ pub struct EnvDiff {
   pub originals_changed: Vec<Address>,
   /// "absent" distinguishes no override from an explicit "none".
   pub original_hints_changed: Vec<(String, String, String)>,
+  /// Compared in both modes using the exact binding bytes as well as address.
+  pub role_binding_changed: Option<(Option<Address>, Option<Address>)>,
 }
 
 impl EnvDiff {
@@ -154,6 +156,7 @@ impl EnvDiff {
   /// populated).
   pub fn is_empty(&self) -> bool {
     self.main_changed.is_none()
+      && self.role_binding_changed.is_none()
       && self.assumptions_added.is_empty()
       && self.assumptions_removed.is_empty()
       && self.named_added.is_empty()
@@ -1116,6 +1119,12 @@ fn diff_envs_impl(
   let mut d = EnvDiff {
     stats_a: env_stats(a),
     stats_b: env_stats(b),
+    role_binding_changed: (a.role_binding != b.role_binding).then(|| {
+      (
+        a.role_binding.as_ref().map(|binding| binding.address.clone()),
+        b.role_binding.as_ref().map(|binding| binding.address.clone()),
+      )
+    }),
     ..EnvDiff::default()
   };
   if !matches!(source, MetaSource::None) {
