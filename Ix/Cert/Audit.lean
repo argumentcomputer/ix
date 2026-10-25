@@ -6263,3 +6263,15 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "actual image request keys"
     #[`Ix.CompileCert.ImageAuxOrigins.compileImageBlock_keys]
+
+/-! ## Actual image auxiliary hits stay in their request
+
+The same-run hit origin and real output-key bound supply structural
+membership, with no outer-scope, global-absence or address-value premise. -/
+
+/-- info: [cert-audit] actual image auxiliary request membership: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual image auxiliary request membership"
+    #[`Ix.CompileCert.ImageAuxOrigins.runImageBlock_aux_in_request]

@@ -240,4 +240,17 @@ theorem compileImageBlock_keys {producer : CompileEnv} {request : Ix.Set Name}
   · obtain ⟨_, failed, _⟩ := Loop.except_bind_ok.mp run; cases failed
   · cases run; exact bounded.2
 
+/-- Every actual auxiliary hit is a structural member of THIS request.
+A cross request is not identified with its outer scheduled scope. -/
+theorem runImageBlock_aux_in_request
+    {original : CompileEnv → Name → Ix.Set Name → Except CompileError (BlockResult × BlockState)}
+    {producer : CompileEnv} {request : Ix.Set Name} {lo : Name} {r : BlockResult}
+    {cache : BlockState} {pub : Published}
+    (run : runImageBlock original producer request lo = .ok (r, cache, pub)) :
+    ∀ (n : ExactName) addr, cache.auxNameToAddr.get? n = some addr → n ∈ request.toArray.toList := by
+  obtain ⟨imgs, _, _, _, images, _, _, _, _, _, _, _, origins⟩ := runImageBlock_aux_origins run
+  intro n addr hit
+  obtain ⟨image, state, _, _, _, member, _⟩ := origins n addr hit
+  exact compileImageBlock_keys images (n, image, state) member
+
 end Ix.CompileCert.ImageAuxOrigins
