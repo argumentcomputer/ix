@@ -76,19 +76,19 @@ pub(super) fn kexpr_to_lean(
       kexpr_to_lean(f, outer_depth, fvar_levels, local_depth, param_names),
       kexpr_to_lean(a, outer_depth, fvar_levels, local_depth, param_names),
     ),
-    KED::All(name, bi, d, b, _) => LeanExpr::all(
+    KED::All(name, bi, _, _, d, b, _) => LeanExpr::all(
       name.clone(),
       kexpr_to_lean(d, outer_depth, fvar_levels, local_depth, param_names),
       kexpr_to_lean(b, outer_depth, fvar_levels, local_depth + 1, param_names),
       bi.clone(),
     ),
-    KED::Lam(name, bi, d, b, _) => LeanExpr::lam(
+    KED::Lam(name, bi, _, d, b, _) => LeanExpr::lam(
       name.clone(),
       kexpr_to_lean(d, outer_depth, fvar_levels, local_depth, param_names),
       kexpr_to_lean(b, outer_depth, fvar_levels, local_depth + 1, param_names),
       bi.clone(),
     ),
-    KED::Let(name, ty, val, body, nd, _) => LeanExpr::letE(
+    KED::Let(name, ty, val, body, contract, _) => LeanExpr::letE(
       name.clone(),
       kexpr_to_lean(ty, outer_depth, fvar_levels, local_depth, param_names),
       kexpr_to_lean(val, outer_depth, fvar_levels, local_depth, param_names),
@@ -99,7 +99,7 @@ pub(super) fn kexpr_to_lean(
         local_depth + 1,
         param_names,
       ),
-      *nd,
+      contract.non_dep,
     ),
     KED::Prj(kid, field, val, _) => LeanExpr::proj(
       kid.name.clone(),

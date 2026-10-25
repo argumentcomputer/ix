@@ -180,6 +180,35 @@ fn structural_ids_match_kernel_equality_and_include_conversion_depth() {
 }
 
 #[test]
+fn source_contract_ids_and_aux_bridge_preserve_scalar_payloads() {
+  use ixon::contract::source::decode;
+  let stt = state();
+  let fvars = FxHashMap::default();
+  let addresses = FxHashMap::default();
+  let mut table =
+    ContentTable::<rustc_hash::FxBuildHasher>::new(&addresses, &fvars, &[]);
+  let prop = LeanExpr::sort(Level::zero());
+  let raw =
+    LeanExpr::all(name("binder"), prop.clone(), prop, BinderInfo::Default);
+  let roots: Vec<_> =
+    (0..64).map(|code| decode(1, code).unwrap().attach(raw.clone())).collect();
+  let mut ids = Vec::new();
+  for (code, root) in roots.iter().enumerate() {
+    let k = to_kexpr_static(root, &fvars, 0, &[], &stt).unwrap();
+    assert_eq!(k.source_contract(), Some(decode(1, code as u64).unwrap()));
+    let source = kexpr_to_lean(&k, 0, &fvars, 0, &[]).unwrap();
+    assert_eq!(to_kexpr_static(&source, &fvars, 0, &[], &stt).unwrap(), k);
+    ids.push(table.content(root, 0));
+  }
+  for i in 0..64 {
+    for j in 0..64 {
+      assert_eq!(ids[i] == ids[j], i == j);
+    }
+  }
+  assert_eq!(table.content(&raw, 0), ids[23]);
+}
+
+#[test]
 fn first_hint_wins_in_original_preorder() {
   let stt = state();
   let fvars = FxHashMap::from_iter([(name("x"), 0)]);

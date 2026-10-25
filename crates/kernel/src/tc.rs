@@ -589,9 +589,28 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     ty: KExpr<M>,
     body: &KExpr<M>,
   ) -> (KExpr<M>, FVarId) {
+    self.open_binder_contract(
+      name,
+      bi,
+      ixon::contract::BinderContract::default(),
+      ixon::contract::ValueContract::shared(),
+      ty,
+      body,
+    )
+  }
+
+  pub fn open_binder_contract(
+    &mut self,
+    name: M::MField<ix_common::env::Name>,
+    bi: M::MField<ix_common::env::BinderInfo>,
+    contract: ixon::contract::BinderContract,
+    result: ixon::contract::ValueContract,
+    ty: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, FVarId) {
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty, contract, result });
     let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
     (body_open, fv_id)
   }
@@ -622,7 +641,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   ) -> (KExpr<M>, KExpr<M>, FVarId) {
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    self.lctx.push(fv_id, LocalDecl::cdecl(name, bi, ty));
     let body_open =
       instantiate_rev(&mut self.env.intern, body, std::slice::from_ref(&fv));
     (body_open, fv, fv_id)
@@ -650,9 +669,26 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     val: KExpr<M>,
     body: &KExpr<M>,
   ) -> (KExpr<M>, FVarId) {
+    self.open_let_contract(
+      name,
+      ixon::contract::LetContract::plain(false),
+      ty,
+      val,
+      body,
+    )
+  }
+
+  pub fn open_let_contract(
+    &mut self,
+    name: M::MField<ix_common::env::Name>,
+    contract: ixon::contract::LetContract,
+    ty: KExpr<M>,
+    val: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, FVarId) {
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-    self.lctx.push(fv_id, LocalDecl::LDecl { name, ty, val });
+    self.lctx.push(fv_id, LocalDecl::LDecl { name, ty, val, contract });
     let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
     (body_open, fv_id)
   }
@@ -667,7 +703,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     let bi = M::meta_field(ix_common::env::BinderInfo::Default);
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    self.lctx.push(fv_id, LocalDecl::cdecl(name, bi, ty));
     (fv_id, fv)
   }
 
@@ -706,12 +742,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     e: &KExpr<M>,
   ) -> Result<(KExpr<M>, KExpr<M>), TcError<M>> {
     // Fast path: already a forall, skip WHNF + tick.
-    if let ExprData::All(_, _, a, b, _) = e.data() {
+    if let ExprData::All(_, _, _, _, a, b, _) = e.data() {
       return Ok((a.clone(), b.clone()));
     }
     let w = self.whnf(e)?;
     match w.data() {
-      ExprData::All(_, _, a, b, _) => Ok((a.clone(), b.clone())),
+      ExprData::All(_, _, _, _, a, b, _) => Ok((a.clone(), b.clone())),
       _ => Err(TcError::FunExpected { e: e.clone(), whnf: w }),
     }
   }
@@ -788,26 +824,32 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
         return Ok(r);
       },
 
-      ExprData::Lam(name, bi, ty, body, _) => {
+      ExprData::Lam(name, bi, contract, ty, body, _) => {
         let ty2 = self.inst_univ_inner(ty, us, cache)?;
         let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::lam(name.clone(), bi.clone(), ty2, body2)
+        KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, body2)
       },
 
-      ExprData::All(name, bi, ty, body, _) => {
+      ExprData::All(name, bi, contract, result, ty, body, _) => {
         let ty2 = self.inst_univ_inner(ty, us, cache)?;
         let body2 = self.inst_univ_inner(body, us, cache)?;
-        let r =
-          self.env.intern.intern_all(name.clone(), bi.clone(), &ty2, &body2);
+        let r = self.env.intern.intern_all_contract(
+          name.clone(),
+          bi.clone(),
+          *contract,
+          *result,
+          &ty2,
+          &body2,
+        );
         cache.insert(key, r.clone());
         return Ok(r);
       },
 
-      ExprData::Let(name, ty, val, body, nd, _) => {
+      ExprData::Let(name, ty, val, body, contract, _) => {
         let ty2 = self.inst_univ_inner(ty, us, cache)?;
         let val2 = self.inst_univ_inner(val, us, cache)?;
         let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::let_(name.clone(), ty2, val2, body2, *nd)
+        KExpr::let_contract(name.clone(), *contract, ty2, val2, body2)
       },
 
       ExprData::Prj(id, field, val, _) => {
@@ -1210,7 +1252,8 @@ fn expr_mentions_any_addr_impl<M: KernelMode>(
         stack.push(f);
         stack.push(a);
       },
-      ExprData::Lam(_, _, ty, body, _) | ExprData::All(_, _, ty, body, _) => {
+      ExprData::Lam(_, _, _, ty, body, _)
+      | ExprData::All(_, _, _, _, ty, body, _) => {
         stack.push(ty);
         stack.push(body);
       },

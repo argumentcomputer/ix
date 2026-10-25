@@ -92,19 +92,19 @@ pub(super) fn kexpr_content_hash(
       kexpr_content_hash(f, h);
       kexpr_content_hash(a, h);
     },
-    KED::Lam(_, _, t, b, _) => {
+    KED::Lam(_, _, _, t, b, _) => {
       h.write_u8(5);
       kexpr_content_hash(t, h);
       kexpr_content_hash(b, h);
     },
-    KED::All(_, _, t, b, _) => {
+    KED::All(_, _, _, _, t, b, _) => {
       h.write_u8(6);
       kexpr_content_hash(t, h);
       kexpr_content_hash(b, h);
     },
-    KED::Let(_, t, v, b, nd, _) => {
+    KED::Let(_, t, v, b, contract, _) => {
       h.write_u8(7);
-      h.write_u8(u8::from(*nd));
+      h.write_u8(u8::from(contract.non_dep));
       kexpr_content_hash(t, h);
       kexpr_content_hash(v, h);
       kexpr_content_hash(b, h);

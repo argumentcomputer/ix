@@ -17,7 +17,7 @@ fn mentions_reference<M: KernelMode>(e: &KExpr<M>, addr: &Address) -> bool {
         }
       },
       ExprData::App(f, a, _) => stack.extend([f, a]),
-      ExprData::Lam(_, _, t, b, _) | ExprData::All(_, _, t, b, _) => {
+      ExprData::Lam(_, _, _, t, b, _) | ExprData::All(_, _, _, _, t, b, _) => {
         stack.extend([t, b]);
       },
       ExprData::Let(_, t, v, b, _, _) => stack.extend([t, v, b]),

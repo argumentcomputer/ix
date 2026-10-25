@@ -2338,7 +2338,7 @@ impl<'a> TcScope<'a> {
           stack.push(f);
           stack.push(a);
         },
-        ZED::All(_, _, d, b, _) | ZED::Lam(_, _, d, b, _) => {
+        ZED::All(_, _, _, _, d, b, _) | ZED::Lam(_, _, _, d, b, _) => {
           stack.push(d);
           stack.push(b);
         },
@@ -2476,7 +2476,7 @@ impl<'a> TcScope<'a> {
     let mut cur = kty.clone();
     for _ in 0..args.len() {
       match cur.data() {
-        ZED::All(_, _, _, body, _) => cur = body.clone(),
+        ZED::All(_, _, _, _, _, body, _) => cur = body.clone(),
         _ => return Ok(None),
       }
     }
@@ -2804,24 +2804,24 @@ fn kexpr_to_lean_cached(
     KED::App(f, a, _) => {
       LeanExpr::app(go(f, local_depth, cache)?, go(a, local_depth, cache)?)
     },
-    KED::All(name, bi, d, b, _) => LeanExpr::all(
+    KED::All(name, bi, _, _, d, b, _) => LeanExpr::all(
       name.clone(),
       go(d, local_depth, cache)?,
       go(b, local_depth + 1, cache)?,
       bi.clone(),
     ),
-    KED::Lam(name, bi, d, b, _) => LeanExpr::lam(
+    KED::Lam(name, bi, _, d, b, _) => LeanExpr::lam(
       name.clone(),
       go(d, local_depth, cache)?,
       go(b, local_depth + 1, cache)?,
       bi.clone(),
     ),
-    KED::Let(name, ty, val, body, nd, _) => LeanExpr::letE(
+    KED::Let(name, ty, val, body, contract, _) => LeanExpr::letE(
       name.clone(),
       go(ty, local_depth, cache)?,
       go(val, local_depth, cache)?,
       go(body, local_depth + 1, cache)?,
-      *nd,
+      contract.non_dep,
     ),
     KED::Prj(kid, field, val, _) => LeanExpr::proj(
       kid.name.clone(),
@@ -2839,8 +2839,11 @@ fn kexpr_to_lean_cached(
   };
 
   // Re-wrap mdata layers, outermost first (matching egress_expr's order).
-  let result = expr
-    .mdata()
+  let layers = ixon::contract::source::egress_layers(
+    expr.source_contract(),
+    expr.mdata(),
+  )?;
+  let result = layers
     .iter()
     .rev()
     .fold(inner, |acc, kvs| LeanExpr::mdata(kvs.clone(), acc));
@@ -3231,7 +3234,15 @@ fn to_kexpr_cached(
         },
       }
     },
-    ExprData::Mdata(_, inner, _) => go(inner, ctx_depth, cache)?,
+    ExprData::Mdata(data, inner, _) => {
+      let converted = go(inner, ctx_depth, cache)?;
+      if crate::semantic_contract::has_metadata(data) {
+        let contract = ixon::contract::source::read_attached(data, inner)?;
+        converted.with_source_contract(contract).map_err(bridge_refusal)?
+      } else {
+        converted
+      }
+    },
     ExprData::Mvar(..) => {
       return Err(bridge_refusal(
         "to_kexpr_static: expression metavariable".into(),

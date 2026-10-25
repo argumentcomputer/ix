@@ -150,19 +150,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       // Avoid telescope-vector allocation on the existing single-binder
       // path. Telescopes can open their terminal body once per batch.
-      ExprData::Lam(_, _, _, body, _)
+      ExprData::Lam(_, _, _, _, body, _)
         if matches!(body.data(), ExprData::Lam(..)) =>
       {
         self.infer_lambda_telescope(e)?
       },
 
-      ExprData::All(_, _, _, body, _)
+      ExprData::All(_, _, _, _, _, body, _)
         if matches!(body.data(), ExprData::All(..)) =>
       {
         self.infer_forall_telescope(e)?
       },
 
-      ExprData::Lam(name, bi, ty, body, _) => {
+      ExprData::Lam(name, bi, contract, ty, body, _) => {
         if !infer_only {
           let t = self.infer(ty)?;
           self.ensure_sort(&t)?;
@@ -179,6 +179,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               name: name.clone(),
               bi: bi.clone(),
               ty: ty.clone(),
+              contract: *contract,
+              result: ixon::contract::ValueContract::shared(),
             },
           );
           let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
@@ -196,16 +198,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           // canonically.
           let abstracted =
             abstract_fvars(&mut tc.env.intern, &body_ty, &[fv_id]);
-          Ok(tc.intern(KExpr::all(
+          Ok(tc.intern(KExpr::all_contract(
             M::meta_field(ix_common::env::Name::anon()),
             M::meta_field(ix_common::env::BinderInfo::Default),
+            *contract,
+            ixon::contract::ValueContract::shared(),
             ty.clone(),
             abstracted,
           )))
         })?
       },
 
-      ExprData::All(name, bi, ty, body, _) => {
+      ExprData::All(name, bi, contract, result, ty, body, _) => {
         let ty_ty = self.infer(ty)?;
         let u1 = self.ensure_sort(&ty_ty)?;
         self.with_lctx_scope(|tc| {
@@ -227,6 +231,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               name: name.clone(),
               bi: bi.clone(),
               ty: ty.clone(),
+              contract: *contract,
+              result: *result,
             },
           );
           let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
@@ -237,7 +243,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         })?
       },
 
-      ExprData::Let(name, ty, val, body, _, _) => {
+      ExprData::Let(name, ty, val, body, contract, _) => {
         if !infer_only {
           let t = self.infer(ty)?;
           self.ensure_sort(&t)?;
@@ -260,6 +266,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               name: name.clone(),
               ty: ty.clone(),
               val: val.clone(),
+              contract: *contract,
             },
           );
           let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
@@ -435,12 +442,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     e: &KExpr<M>,
     err: &'static str,
   ) -> Result<(KExpr<M>, KExpr<M>), TcError<M>> {
-    if let ExprData::All(_, _, dom, body, _) = e.data() {
+    if let ExprData::All(_, _, _, _, dom, body, _) = e.data() {
       return Ok((dom.clone(), body.clone()));
     }
     let w = self.whnf(e)?;
     match w.data() {
-      ExprData::All(_, _, dom, body, _) => Ok((dom.clone(), body.clone())),
+      ExprData::All(_, _, _, _, dom, body, _) => {
+        Ok((dom.clone(), body.clone()))
+      },
       _ => Err(TcError::Other(err.into())),
     }
   }
@@ -472,7 +481,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for _ in 0..binders {
       let wr = self.whnf(&r)?;
       match wr.data() {
-        ExprData::All(_, _, _, body, _) => {
+        ExprData::All(_, _, _, _, _, body, _) => {
           r = body.clone();
         },
         _ => {
@@ -495,7 +504,7 @@ fn compact_expr<M: KernelMode>(e: &KExpr<M>) -> String {
 fn compact_expr_deep<M: KernelMode>(e: &KExpr<M>, depth: usize) -> String {
   if depth > 0 {
     match e.data() {
-      ExprData::Lam(_, _, ty, body, _) => {
+      ExprData::Lam(_, _, _, ty, body, _) => {
         return format!(
           "lam(ty={}, body={}) @{} lbr={}",
           compact_expr_deep(ty, depth - 1),
@@ -504,7 +513,7 @@ fn compact_expr_deep<M: KernelMode>(e: &KExpr<M>, depth: usize) -> String {
           e.lbr()
         );
       },
-      ExprData::All(_, _, ty, body, _) => {
+      ExprData::All(_, _, _, _, ty, body, _) => {
         return format!(
           "forall(ty={}, body={}) @{} lbr={}",
           compact_expr_deep(ty, depth - 1),
@@ -814,8 +823,7 @@ mod tests {
       let mut env = test_env();
       let mut tc = TypeChecker::new(&mut env);
       let outer_id = tc.fresh_fvar_id();
-      tc.lctx
-        .push(outer_id, LocalDecl::CDecl { name: (), bi: (), ty: sort0() });
+      tc.lctx.push(outer_id, LocalDecl::cdecl((), (), sort0()));
       let saved = tc.lctx.len();
 
       assert!(tc.infer(&expr).is_err(), "{kind} body must fail");

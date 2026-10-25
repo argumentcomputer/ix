@@ -69,9 +69,8 @@ fn definition_dependencies<M: KernelMode>(c: &KConst<M>) -> Vec<KId<M>> {
     match expr.data() {
       ExprData::Const(id, ..) => refs.push(id.clone()),
       ExprData::App(fun, arg, _) => pending.extend([arg, fun]),
-      ExprData::Lam(_, _, dom, body, _) | ExprData::All(_, _, dom, body, _) => {
-        pending.extend([body, dom])
-      },
+      ExprData::Lam(_, _, _, dom, body, _)
+      | ExprData::All(_, _, _, _, dom, body, _) => pending.extend([body, dom]),
       ExprData::Let(_, ty, val, body, _, _) => {
         pending.extend([body, val, ty]);
       },
@@ -846,7 +845,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           stack.push((f, depth));
           stack.push((a, depth));
         },
-        ExprData::Lam(_, _, ty, body, _) | ExprData::All(_, _, ty, body, _) => {
+        ExprData::Lam(_, _, _, ty, body, _)
+        | ExprData::All(_, _, _, _, ty, body, _) => {
           stack.push((ty, depth));
           let body_depth = depth.checked_add(1).ok_or_else(|| {
             TcError::Other("binder depth overflow during validation".into())
@@ -1163,7 +1163,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           stack.push(f);
           stack.push(a);
         },
-        ExprData::Lam(_, _, ty, body, _) | ExprData::All(_, _, ty, body, _) => {
+        ExprData::Lam(_, _, _, ty, body, _)
+        | ExprData::All(_, _, _, _, ty, body, _) => {
           stack.push(ty);
           stack.push(body);
         },

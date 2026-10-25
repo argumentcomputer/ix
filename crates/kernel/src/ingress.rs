@@ -32,6 +32,7 @@ use ixon::constant::DefKind;
 use ixon::constant::{
   Constant, ConstantInfo as IxonCI, MutConst as IxonMutConst,
 };
+use ixon::contract::{BinderContract, LetContract, ValueContract, source};
 use ixon::env::Env as IxonEnv;
 use ixon::expr::Expr as IxonExpr;
 use ixon::metadata::{
@@ -665,6 +666,7 @@ enum ExprFrame<M: KernelMode> {
   LamDone {
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
+    contract: BinderContract,
     mdata: M::MField<Vec<MData>>,
   },
   AllBody {
@@ -674,6 +676,8 @@ enum ExprFrame<M: KernelMode> {
   AllDone {
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
+    contract: BinderContract,
+    result: ValueContract,
     mdata: M::MField<Vec<MData>>,
   },
   LetVal {
@@ -689,7 +693,7 @@ enum ExprFrame<M: KernelMode> {
   },
   LetDone {
     name: M::MField<Name>,
-    nd: bool,
+    contract: LetContract,
     mdata: M::MField<Vec<MData>>,
   },
   PrjDone {
@@ -789,7 +793,13 @@ fn ingress_expr<M: KernelMode>(
           bump_convert_stat!(stats, mdata_kv_maps, mdata.len());
           let kv_t0 = if stats.enabled { Some(Instant::now()) } else { None };
           for kvm in mdata {
-            mdata_layers.push(resolve_kvmap(kvm, ixon_env));
+            let data = resolve_kvmap(kvm, ixon_env);
+            if M::HAS_META && source::has_metadata(&data) {
+              return Err(
+                "semantic contracts cannot come from optional metadata".into(),
+              );
+            }
+            mdata_layers.push(data);
           }
           if let Some(t0) = kv_t0 {
             stats.resolve_kvmap_ns += elapsed_ns(t0);
@@ -1003,9 +1013,9 @@ fn ingress_expr<M: KernelMode>(
               .push(ExprFrame::Process { expr: f.clone(), arena_idx: f_arena });
           },
 
-          // Kernel ingress checks erased Lean types. Resource claims additionally
-          // require the addressed validator in `crate::resource`.
-          IxonExpr::Lam(_, ty, body) => {
+          // Input contracts participate in conversion. Resource validity still
+          // requires the separate addressed validator in `crate::resource`.
+          IxonExpr::Lam(contract, ty, body) => {
             bump_convert_stat!(stats, lam_nodes);
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
@@ -1024,6 +1034,7 @@ fn ingress_expr<M: KernelMode>(
             stack.push(ExprFrame::LamDone {
               name: M::meta_field(name.clone()),
               bi: M::meta_field(bi),
+              contract: *contract,
               mdata,
             });
             stack.push(ExprFrame::BinderPop);
@@ -1035,7 +1046,7 @@ fn ingress_expr<M: KernelMode>(
             });
           },
 
-          IxonExpr::All(_, _, ty, body) => {
+          IxonExpr::All(contract, result, ty, body) => {
             bump_convert_stat!(stats, all_nodes);
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
@@ -1054,6 +1065,8 @@ fn ingress_expr<M: KernelMode>(
             stack.push(ExprFrame::AllDone {
               name: M::meta_field(name.clone()),
               bi: M::meta_field(bi),
+              contract: *contract,
+              result: *result,
               mdata,
             });
             stack.push(ExprFrame::BinderPop);
@@ -1065,7 +1078,7 @@ fn ingress_expr<M: KernelMode>(
             });
           },
 
-          IxonExpr::Let(nd, ty, val, body) => {
+          IxonExpr::Let(contract, ty, val, body) => {
             bump_convert_stat!(stats, let_nodes);
             let (name, ty_arena, val_arena, body_arena) = match node {
               ExprMetaData::LetBinder { name: addr, children } => (
@@ -1078,7 +1091,7 @@ fn ingress_expr<M: KernelMode>(
             };
             stack.push(ExprFrame::LetDone {
               name: M::meta_field(name.clone()),
-              nd: nd.non_dep,
+              contract: *contract,
               mdata,
             });
             stack.push(ExprFrame::BinderPop);
@@ -1231,15 +1244,15 @@ fn ingress_expr<M: KernelMode>(
           stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
-      ExprFrame::LamDone { name, bi, mdata } => {
+      ExprFrame::LamDone { name, bi, contract, mdata } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let key = super::env::ExprKey::Lam(*ty.addr(), *body.addr());
+        let key = super::env::ExprKey::Lam(contract, *ty.addr(), *body.addr());
         values.push(timed_intern_or_build(
           intern,
           &key,
-          || KExpr::lam_mdata(name, bi, ty, body, mdata),
+          || KExpr::lam_contract_mdata(name, bi, contract, ty, body, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1254,15 +1267,20 @@ fn ingress_expr<M: KernelMode>(
           stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
-      ExprFrame::AllDone { name, bi, mdata } => {
+      ExprFrame::AllDone { name, bi, contract, result, mdata } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let key = super::env::ExprKey::All(*ty.addr(), *body.addr());
+        let key =
+          super::env::ExprKey::All(contract, result, *ty.addr(), *body.addr());
         values.push(timed_intern_or_build(
           intern,
           &key,
-          || KExpr::all_mdata(name, bi, ty, body, mdata),
+          || {
+            KExpr::all_contract_mdata(
+              name, bi, contract, result, ty, body, mdata,
+            )
+          },
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1278,17 +1296,21 @@ fn ingress_expr<M: KernelMode>(
           stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
-      ExprFrame::LetDone { name, nd, mdata } => {
+      ExprFrame::LetDone { name, contract, mdata } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let val = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let key =
-          super::env::ExprKey::Let(*ty.addr(), *val.addr(), *body.addr(), nd);
+        let key = super::env::ExprKey::Let(
+          contract,
+          *ty.addr(),
+          *val.addr(),
+          *body.addr(),
+        );
         values.push(timed_intern_or_build(
           intern,
           &key,
-          || KExpr::let_mdata(name, ty, val, body, nd, mdata),
+          || KExpr::let_contract_mdata(name, contract, ty, val, body, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -2226,6 +2248,7 @@ enum LeanExprFrame<'a> {
   Finish {
     node: &'a LeanExprData,
     mdata: Vec<MData>,
+    source_contract: Option<source::Contract>,
     key: Option<(CtxAddr, CtxAddr)>,
     projection_id: Option<KId<Meta>>,
   },
@@ -2293,6 +2316,8 @@ pub fn lean_expr_to_zexpr_cached(
             cur = inner;
           }
           let node = cur.as_data();
+          let source_contract =
+            source::source_layers(cur, &mdata).map_err(|e| e.to_string())?;
           // Projection address resolution precedes its operand conversion;
           // field-index validation remains after that conversion.
           let projection_id = match node {
@@ -2302,7 +2327,13 @@ pub fn lean_expr_to_zexpr_cached(
             )),
             _ => None,
           };
-          stack.push(LeanExprFrame::Finish { node, mdata, key, projection_id });
+          stack.push(LeanExprFrame::Finish {
+            node,
+            mdata,
+            source_contract,
+            key,
+            projection_id,
+          });
           match node {
             LeanExprData::App(f, a, _) => {
               stack.push(LeanExprFrame::Visit(a));
@@ -2332,7 +2363,13 @@ pub fn lean_expr_to_zexpr_cached(
         LeanExprFrame::PopBinder => {
           binder_names.pop();
         },
-        LeanExprFrame::Finish { node, mdata, key, projection_id } => {
+        LeanExprFrame::Finish {
+          node,
+          mdata,
+          source_contract,
+          key,
+          projection_id,
+        } => {
           let e = match node {
             LeanExprData::Bvar(idx, _) => {
               let idx_u64 = idx.to_u64().ok_or_else(|| {
@@ -2370,18 +2407,51 @@ pub fn lean_expr_to_zexpr_cached(
             LeanExprData::Lam(name, _, _, bi, _) => {
               let body = values.pop().unwrap();
               let dom = values.pop().unwrap();
-              KExpr::lam_mdata(name.clone(), bi.clone(), dom, body, mdata)
+              KExpr::lam_contract_mdata(
+                name.clone(),
+                bi.clone(),
+                source_contract
+                  .map_or_else(BinderContract::default, |c| c.binder),
+                dom,
+                body,
+                mdata,
+              )
             },
             LeanExprData::ForallE(name, _, _, bi, _) => {
               let body = values.pop().unwrap();
               let dom = values.pop().unwrap();
-              KExpr::all_mdata(name.clone(), bi.clone(), dom, body, mdata)
+              KExpr::all_contract_mdata(
+                name.clone(),
+                bi.clone(),
+                source_contract
+                  .map_or_else(BinderContract::default, |c| c.binder),
+                source_contract
+                  .map_or_else(ValueContract::shared, |c| c.result),
+                dom,
+                body,
+                mdata,
+              )
             },
             LeanExprData::LetE(name, _, _, _, nd, _) => {
               let body = values.pop().unwrap();
               let val = values.pop().unwrap();
               let ty = values.pop().unwrap();
-              KExpr::let_mdata(name.clone(), ty, val, body, *nd, mdata)
+              let contract = source_contract.map_or_else(
+                || LetContract::plain(*nd),
+                |c| LetContract {
+                  non_dep: *nd,
+                  kind: c.let_kind,
+                  binder: c.binder,
+                },
+              );
+              KExpr::let_contract_mdata(
+                name.clone(),
+                contract,
+                ty,
+                val,
+                body,
+                mdata,
+              )
             },
             LeanExprData::Proj(name, idx, _, _) => {
               let value = values.pop().unwrap();
@@ -5893,14 +5963,15 @@ mod tests {
         } else {
           let k = result.unwrap();
           let body = match k.data() {
-            ExprData::Lam(n, bi, _, b, _) | ExprData::All(n, bi, _, b, _) => {
+            ExprData::Lam(n, bi, _, _, b, _)
+            | ExprData::All(n, bi, _, _, _, b, _) => {
               assert_eq!(n, &mk_name("inner"));
               assert_eq!(bi, &BinderInfo::Implicit);
               b
             },
             ExprData::Let(n, _, _, b, nd, _) => {
               assert_eq!(n, &mk_name("inner"));
-              assert!(*nd);
+              assert!(nd.non_dep);
               b
             },
             _ => panic!("expected binder"),

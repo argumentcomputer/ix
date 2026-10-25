@@ -170,6 +170,9 @@ pub mod tc;
 pub mod whnf;
 
 #[cfg(test)]
+mod contract_tests;
+
+#[cfg(test)]
 pub mod testing;
 #[cfg(test)]
 mod tutorial;

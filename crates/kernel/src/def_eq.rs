@@ -862,7 +862,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         false
       },
       (
-        ExprData::Let(name, ty1, v1, body1, _, _),
+        ExprData::Let(name, ty1, v1, body1, contract, _),
         ExprData::Let(_, ty2, v2, body2, _, _),
       ) => {
         // H3: Let should be zeta-reduced by whnf_core before reaching this
@@ -879,6 +879,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
                 name: name.clone(),
                 ty: ty1.clone(),
                 val: v1.clone(),
+                contract: *contract,
               },
             );
             let b1_open = instantiate_rev(
@@ -1326,18 +1327,23 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Ok(w) => w,
       Err(_) => return Ok(false),
     };
-    let (name, bi, ty) = match s_ty_whnf.data() {
-      ExprData::All(name, bi, ty, _, _) => {
-        (name.clone(), bi.clone(), ty.clone())
+    let (name, bi, contract, ty) = match s_ty_whnf.data() {
+      ExprData::All(name, bi, contract, _, ty, _, _) => {
+        (name.clone(), bi.clone(), *contract, ty.clone())
       },
       _ => return Ok(false),
     };
+    if let ExprData::Lam(_, _, input, ..) = t.data()
+      && *input != contract
+    {
+      return Ok(false);
+    }
     // Wrap s as λ(ty). s #0
     let s_lifted = lift(&mut self.env.intern, s, 1, 0);
     let v0 =
       self.intern(KExpr::var(0, M::meta_field(ix_common::env::Name::anon())));
     let body = self.intern(KExpr::app(s_lifted, v0));
-    let s_lam = self.intern(KExpr::lam(name, bi, ty, body));
+    let s_lam = self.intern(KExpr::lam_contract(name, bi, contract, ty, body));
     self.is_def_eq(t, &s_lam)
   }
 

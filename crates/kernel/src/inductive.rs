@@ -679,7 +679,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         for _ in 0..n_params {
           let w = self.whnf(&ty)?;
           match w.data() {
-            ExprData::All(_, _, dom, body, _) => {
+            ExprData::All(_, _, _, _, dom, body, _) => {
               self.push_local(dom.clone());
               ty = body.clone();
             },
@@ -690,7 +690,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         loop {
           let w = self.whnf(&ty)?;
           match w.data() {
-            ExprData::All(_, _, dom, body, _) => {
+            ExprData::All(_, _, _, _, dom, body, _) => {
               if expr_mentions_any_addr(dom, block_addrs) {
                 return Ok(true);
               }
@@ -780,7 +780,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         for j in 0..member.own_params {
           let w = self.whnf(&cur)?;
           match w.data() {
-            ExprData::All(_, _, _, body, _) => {
+            ExprData::All(_, _, _, _, _, body, _) => {
               let p = if u64_to_usize::<M>(j)? < member.spec_params.len() {
                 member.spec_params[u64_to_usize::<M>(j)?].clone()
               } else {
@@ -861,9 +861,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           work.push((sa.clone(), a.clone(), depth));
           work.push((sf.clone(), f.clone(), depth));
         },
-        (ExprData::Lam(_, _, st, sb, _), ExprData::Lam(_, _, ty, body, _))
-        | (ExprData::All(_, _, st, sb, _), ExprData::All(_, _, ty, body, _)) =>
-        {
+        (
+          ExprData::Lam(_, _, _, st, sb, _),
+          ExprData::Lam(_, _, _, ty, body, _),
+        )
+        | (
+          ExprData::All(_, _, _, _, st, sb, _),
+          ExprData::All(_, _, _, _, ty, body, _),
+        ) => {
           let body = self.open_nested_scan_body(body);
           work.push((sb.clone(), body, depth + 1));
           work.push((st.clone(), ty.clone(), depth));
@@ -1167,12 +1172,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let rw = self.whnf(rhs)?;
     match (lw.data(), rw.data()) {
       (
-        ExprData::Lam(_, _, lty, lbody, _),
-        ExprData::Lam(_, _, rty, rbody, _),
+        ExprData::Lam(_, _, _, lty, lbody, _),
+        ExprData::Lam(_, _, _, rty, rbody, _),
       )
       | (
-        ExprData::All(_, _, lty, lbody, _),
-        ExprData::All(_, _, rty, rbody, _),
+        ExprData::All(_, _, _, _, lty, lbody, _),
+        ExprData::All(_, _, _, _, rty, rbody, _),
       ) => {
         if !self.is_def_eq(lty, rty)? {
           eprintln!("[rule rhs diff] first diff {path}.dom");
@@ -1229,8 +1234,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let wc = self.whnf(&ct)?;
       match (wi.data(), wc.data()) {
         (
-          ExprData::All(_, _, i_dom, i_body, _),
-          ExprData::All(_, _, c_dom, c_body, _),
+          ExprData::All(_, _, _, _, i_dom, i_body, _),
+          ExprData::All(_, _, _, _, c_dom, c_body, _),
         ) => {
           if !self.is_def_eq(i_dom, c_dom)? {
             self.lctx.truncate(saved);
@@ -1272,7 +1277,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       for _ in 0..n_params {
         let w = self.whnf(&ty)?;
         match w.data() {
-          ExprData::All(_, _, dom, body, _) => {
+          ExprData::All(_, _, _, _, dom, body, _) => {
             let (open, fv, _) =
               self.open_binder_anon_with_fv(dom.clone(), body);
             param_fvars.push(fv);
@@ -1292,7 +1297,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       loop {
         let w = self.whnf(&ty)?;
         match w.data() {
-          ExprData::All(_, _, dom, body, _) => {
+          ExprData::All(_, _, _, _, dom, body, _) => {
             self.check_positivity_domain(dom, &groups, block_addrs)?;
             let (open, _) = self.open_binder_anon(dom.clone(), body);
             ty = open;
@@ -1468,7 +1473,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(());
     }
     match w.data() {
-      ExprData::All(_, _, inner_dom, inner_body, _) => {
+      ExprData::All(_, _, _, _, inner_dom, inner_body, _) => {
         // Inductive in domain of a Pi = negative position → reject
         if expr_mentions_any_addr(inner_dom, root_addrs) {
           return Err(TcError::Other("strict positivity violation".into()));
@@ -1647,7 +1652,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for _ in 0..n_params {
       let w = self.whnf(&ty)?;
       match w.data() {
-        ExprData::All(_, _, _, body, _) => ty = body.clone(),
+        ExprData::All(_, _, _, _, _, body, _) => ty = body.clone(),
         _ => {
           return Err(TcError::Other(
             "positivity: nested constructor has fewer parameter binders than declared"
@@ -1684,7 +1689,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ) -> Result<(), TcError<M>> {
     let w = self.whnf(ty)?;
     match w.data() {
-      ExprData::All(_, _, dom, body, _) => {
+      ExprData::All(_, _, _, _, dom, body, _) => {
         self.check_positivity_domain(dom, groups, active_addrs)?;
         let saved = self.lctx.len();
         let (open, _) = self.open_binder_anon(dom.clone(), body);
@@ -1716,7 +1721,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for _ in 0..n_params {
       let w = self.whnf(&ty)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
+        ExprData::All(_, _, _, _, dom, body, _) => {
           let (open, _) = self.open_binder_anon(dom.clone(), body);
           ty = open;
         },
@@ -1728,7 +1733,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     loop {
       let w = self.whnf(&ty)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
+        ExprData::All(_, _, _, _, dom, body, _) => {
           let dom_ty = self.infer(dom)?;
           let field_level = self.ensure_sort(&dom_ty)?;
           if !univ_geq(ind_level, &field_level) {
@@ -1780,7 +1785,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for i in 0..total_binders {
       let w = self.whnf(&ty)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
+        ExprData::All(_, _, _, _, dom, body, _) => {
           let (open, fv, _) = self.open_binder_anon_with_fv(dom.clone(), body);
           if i < n_params {
             param_fvars.push(fv);
@@ -1890,7 +1895,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       for i in 0..n {
         let w = self.whnf(&t)?;
         match w.data() {
-          ExprData::All(_, _, dom, body, _) => {
+          ExprData::All(_, _, _, _, dom, body, _) => {
             self.push_local(dom.clone());
             t = body.clone();
           },
@@ -1967,7 +1972,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         for i in 0..ctor_arity {
           let w = self.whnf(&ty)?;
           match w.data() {
-            ExprData::All(_, _, dom, body, _) => {
+            ExprData::All(_, _, _, _, dom, body, _) => {
               if i >= n_params {
                 // Check if this field's sort level is non-zero (semantically)
                 let dom_ty = self.with_infer_only(|tc| tc.infer(dom))?;
@@ -2298,7 +2303,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for j in 0..member.own_params {
       let w = self.whnf(&ty)?;
       match w.data() {
-        ExprData::All(_, _, _dom, body, _) => {
+        ExprData::All(_, _, _, _, _dom, body, _) => {
           let p = if u64_to_usize::<M>(j)? < member.spec_params.len() {
             // spec_params live in the recursor-param context (depth =
             // n_rec_params). We're at depth 0 here (no ctx pushes), so no
@@ -2321,7 +2326,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for _ in 0..member.n_indices {
       let w = self.whnf(&ty)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
+        ExprData::All(_, _, _, _, dom, body, _) => {
           index_doms.push(dom.clone());
           ty = body.clone();
         },
@@ -2444,7 +2449,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for j in 0..member.own_params {
       let w = self.whnf(&ty)?;
       match w.data() {
-        ExprData::All(_, _, _, body, _) => {
+        ExprData::All(_, _, _, _, _, body, _) => {
           let p = if !member.is_aux {
             // Original member: param j is the j-th recursor param binder.
             // It's at context level j, so Var index = depth - 1 - j.
@@ -2480,7 +2485,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     loop {
       let w = self.whnf(&ty)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
+        ExprData::All(_, _, _, _, dom, body, _) => {
           field_domains.push(dom.clone());
           // Field args reference block params at current pushed-local
           // depth; spec_params live at depth = n_rec_params (shared
@@ -2676,7 +2681,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         loop {
           let w = self.whnf(&inner_ty)?;
           match w.data() {
-            ExprData::All(_, _, inner_dom, inner_body, _) => {
+            ExprData::All(_, _, _, _, inner_dom, inner_body, _) => {
               let (h, _) = collect_app_spine(&w);
               if matches!(h.data(), ExprData::Const(id, _, _) if block_addrs.contains(&id.addr))
               {
@@ -2809,7 +2814,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let head_matches_flat = Self::has_flat_member_head(&ty, flat);
       let w = if head_matches_flat { ty.clone() } else { self.whnf(&ty)? };
       match w.data() {
-        ExprData::All(_, _, _, body, _) => ty = body.clone(),
+        ExprData::All(_, _, _, _, _, body, _) => ty = body.clone(),
         _ => {
           let (head, args) = collect_app_spine(&w);
           let head_addr = match head.data() {
@@ -2903,7 +2908,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for _ in 0..n_params {
       let w = self.whnf(&pty)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
+        ExprData::All(_, _, _, _, dom, body, _) => {
           domains.push(dom.clone());
           let _ = self.push_fvar_decl_anon(dom.clone());
           pty = body.clone();
@@ -2966,7 +2971,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for j in 0..di_member.own_params {
       let w = self.whnf(&ity)?;
       match w.data() {
-        ExprData::All(_, _, _, body, _) => {
+        ExprData::All(_, _, _, _, _, body, _) => {
           let p = if !di_member.is_aux {
             let depth = self.depth();
             KExpr::var(depth - 1 - j, anon())
@@ -2991,7 +2996,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for _ in 0..n_indices {
       let w = self.whnf(&ity)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
+        ExprData::All(_, _, _, _, dom, body, _) => {
           domains.push(dom.clone());
           let _ = self.push_fvar_decl_anon(dom.clone());
           ity = body.clone();
@@ -3145,7 +3150,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       for _ in 0..skip {
         match self.whnf(&cur) {
           Ok(w) => match w.data() {
-            ExprData::All(_, _, dom, b, _) => {
+            ExprData::All(_, _, _, _, dom, b, _) => {
               let _ = self.push_fvar_decl_anon(dom.clone());
               cur = b.clone();
             },
@@ -3156,7 +3161,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
       let mut matched = false;
       if let Ok(w) = self.whnf(&cur)
-        && let ExprData::All(_, _, dom, _, _) = w.data()
+        && let ExprData::All(_, _, _, _, dom, _, _) = w.data()
       {
         let (_, major_args) = collect_app_spine(dom);
         let n_par = match u64_to_usize::<M>(member.own_params) {
@@ -3483,7 +3488,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
     for _ in 0..member.own_params {
       let w = self.whnf(&count_ty)?;
       match w.data() {
-        ExprData::All(_, _, _, body, _) => count_ty = body.clone(),
+        ExprData::All(_, _, _, _, _, body, _) => count_ty = body.clone(),
         _ => break,
       }
     }
@@ -3498,7 +3503,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
       }
       let w = self.whnf(&tmp)?;
       match w.data() {
-        ExprData::All(_, _, _, body, _) => {
+        ExprData::All(_, _, _, _, _, body, _) => {
           n_fields = checked_metadata_sum::<M>(
             "generated recursor fields",
             &[n_fields, 1],
@@ -3591,7 +3596,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
     for j in 0..member.own_params {
       let w = self.whnf(&ty2)?;
       match w.data() {
-        ExprData::All(_, _, _, body2, _) => {
+        ExprData::All(_, _, _, _, _, body2, _) => {
           let p = if !member.is_aux {
             KExpr::var(total_lams - 1 - j, anon())
           } else if u64_to_usize::<M>(j)? < member.spec_params.len() {
@@ -3632,7 +3637,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
       }
       let w = self.whnf(&ty2)?;
       match w.data() {
-        ExprData::All(_, _, dom, body2, _) => {
+        ExprData::All(_, _, _, _, dom, body2, _) => {
           let dom = dom.clone();
           let body2 = body2.clone();
 
@@ -3687,14 +3692,14 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
       for _ in 0..skip_to_minor {
         let w = self.whnf(&cur)?;
         match w.data() {
-          ExprData::All(_, _, _, b, _) => cur = b.clone(),
+          ExprData::All(_, _, _, _, _, b, _) => cur = b.clone(),
           _ => break,
         }
       }
       // cur should be ∀ (minor_i : T_minor) ..., extract T_minor
       let w = self.whnf(&cur)?;
       match w.data() {
-        ExprData::All(_, _, dom, _, _) => dom.clone(),
+        ExprData::All(_, _, _, _, dom, _, _) => dom.clone(),
         _ => KExpr::sort(KUniv::zero()),
       }
     };
@@ -3718,7 +3723,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
     for fi in 0..n_fields {
       let w = self.whnf(&minor_cur)?;
       match w.data() {
-        ExprData::All(_, _, dom, b, _) => {
+        ExprData::All(_, _, _, _, dom, b, _) => {
           let lifted_dom = if field_dom_lift > 0 {
             lift(&mut self.env.intern, dom, field_dom_lift, fi)
           } else {
@@ -3754,7 +3759,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
     for _ in 0..pmm {
       let w = self.whnf(&rec_ty_cur)?;
       match w.data() {
-        ExprData::All(_, _, dom, b, _) => {
+        ExprData::All(_, _, _, _, dom, b, _) => {
           pmm_domains.push(dom.clone());
           rec_ty_cur = b.clone();
         },
@@ -3838,7 +3843,7 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
     let mut inner = wdom.clone();
     let mut forall_doms: Vec<KExpr<M>> = Vec::new();
 
-    while let ExprData::All(_, _, fd, fb, _) = inner.data() {
+    while let ExprData::All(_, _, _, _, fd, fb, _) = inner.data() {
       // Check if this forall's result type (after peeling) has a block
       // inductive as head. If inner itself IS a block inductive app, stop.
       let (h, _) = collect_app_spine(&inner);
@@ -4244,8 +4249,8 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
             loop {
               match (gc.data(), sc.data()) {
                 (
-                  ExprData::All(_, _, gd, gb, _),
-                  ExprData::All(_, _, sd, sb, _),
+                  ExprData::All(_, _, _, _, gd, gb, _),
+                  ExprData::All(_, _, _, _, sd, sb, _),
                 ) => {
                   if !self.is_def_eq(gd, sd).unwrap_or(false) {
                     let label = if bi < params {
@@ -5198,7 +5203,7 @@ mod tests {
     let count_lams = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
-      while let ExprData::Lam(_, _, _, body, _) = c.data() {
+      while let ExprData::Lam(_, _, _, _, body, _) = c.data() {
         n += 1;
         c = body.clone();
       }
@@ -5337,7 +5342,7 @@ mod tests {
     // Count binders in generated rec type
     let mut n = 0;
     let mut cur = generated[0].ty.clone();
-    while let ExprData::All(_, _, _, body, _) = cur.data() {
+    while let ExprData::All(_, _, _, _, _, body, _) = cur.data() {
       n += 1;
       cur = body.clone();
     }
@@ -5981,7 +5986,7 @@ mod tests {
     let count_binders = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
-      while let ExprData::All(_, _, _, b, _) = c.data() {
+      while let ExprData::All(_, _, _, _, _, b, _) = c.data() {
         n += 1;
         c = b.clone();
       }
@@ -6186,7 +6191,7 @@ mod tests {
     let count_binders = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
-      while let ExprData::All(_, _, _, b, _) = c.data() {
+      while let ExprData::All(_, _, _, _, _, b, _) = c.data() {
         n += 1;
         c = b.clone();
       }
@@ -6491,7 +6496,7 @@ mod tests {
     let count_binders = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
-      while let ExprData::All(_, _, _, b, _) = c.data() {
+      while let ExprData::All(_, _, _, _, _, b, _) = c.data() {
         n += 1;
         c = b.clone();
       }
@@ -6508,12 +6513,12 @@ mod tests {
     let mut cur = generated[0].ty.clone();
     for _ in 0..5 {
       // skip to binder 5
-      if let ExprData::All(_, _, _, body, _) = cur.data() {
+      if let ExprData::All(_, _, _, _, _, body, _) = cur.data() {
         cur = body.clone();
       }
     }
     let ident_minor_domain = match cur.data() {
-      ExprData::All(_, _, dom, _, _) => dom.clone(),
+      ExprData::All(_, _, _, _, dom, _, _) => dom.clone(),
       _ => panic!("expected forall at binder 5"),
     };
     let ident_inner_binders = count_binders(&ident_minor_domain);
@@ -6541,7 +6546,7 @@ mod tests {
     let count_binders = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
-      while let ExprData::All(_, _, _, b, _) = c.data() {
+      while let ExprData::All(_, _, _, _, _, b, _) = c.data() {
         n += 1;
         c = b.clone();
       }
@@ -6833,7 +6838,7 @@ mod tests {
     let count_binders = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
-      while let ExprData::All(_, _, _, b, _) = c.data() {
+      while let ExprData::All(_, _, _, _, _, b, _) = c.data() {
         n += 1;
         c = b.clone();
       }
@@ -6878,12 +6883,12 @@ mod tests {
       let mut cur = generated[2].ty.clone();
       // Skip to binder 9 (cons minor)
       for _ in 0..9 {
-        if let ExprData::All(_, _, _, body, _) = cur.data() {
+        if let ExprData::All(_, _, _, _, _, body, _) = cur.data() {
           cur = body.clone();
         }
       }
       let cons_minor_domain = match cur.data() {
-        ExprData::All(_, _, dom, _, _) => dom.clone(),
+        ExprData::All(_, _, _, _, dom, _, _) => dom.clone(),
         _ => panic!("expected forall at binder 9 for cons minor"),
       };
       // cons minor should have 4 inner binders:
@@ -7016,7 +7021,7 @@ mod tests {
     let count_binders = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
-      while let ExprData::All(_, _, _, b, _) = c.data() {
+      while let ExprData::All(_, _, _, _, _, b, _) = c.data() {
         n += 1;
         c = b.clone();
       }
@@ -7097,7 +7102,7 @@ mod tests {
     let _count_binders = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
-      while let ExprData::All(_, _, _, b, _) = c.data() {
+      while let ExprData::All(_, _, _, _, _, b, _) = c.data() {
         n += 1;
         c = b.clone();
       }

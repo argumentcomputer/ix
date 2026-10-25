@@ -14,6 +14,7 @@ use std::cell::OnceCell;
 
 use ix_common::address::Address;
 use ix_common::env::{BinderInfo, Name};
+use ixon::contract::{BinderContract, LetContract, ValueContract};
 
 use super::constant::{KConst, RecRule};
 use super::error::TcError;
@@ -55,6 +56,8 @@ pub type CtxAddr = blake3::Hash;
 /// and mdata are excluded — so interning semantics are unchanged for
 /// them. Children are identified by uid: within one table, equal keys ⇔
 /// structurally equal nodes (children canonical by induction).
+/// Binder input/result contracts and complete let contracts are included.
+/// Result-only conversion equivalence is never used as an intern key.
 ///
 /// `Sort`/`Const` additionally carry the level-spelling decoration
 /// ([`UnivDecor`], Meta mode only — always `None` in Anon mode): unlike
@@ -69,9 +72,9 @@ pub enum ExprKey {
   Sort(Addr, Option<UnivDecor>),
   Const(Address, Box<[Addr]>, Option<UnivDecor>),
   App(Addr, Addr),
-  Lam(Addr, Addr),
-  All(Addr, Addr),
-  Let(Addr, Addr, Addr, bool),
+  Lam(BinderContract, Addr, Addr),
+  All(BinderContract, ValueContract, Addr, Addr),
+  Let(LetContract, Addr, Addr, Addr),
   Prj(Address, u64, Addr),
   Nat(Address),
   Str(Address),
@@ -169,10 +172,12 @@ pub fn expr_key<M: KernelMode>(e: &KExpr<M>) -> ExprKey {
       M::meta_get(&i.univ_decor).cloned().flatten(),
     ),
     ExprData::App(f, a, _) => ExprKey::App(*f.addr(), *a.addr()),
-    ExprData::Lam(_, _, t, b, _) => ExprKey::Lam(*t.addr(), *b.addr()),
-    ExprData::All(_, _, t, b, _) => ExprKey::All(*t.addr(), *b.addr()),
-    ExprData::Let(_, t, v, b, nd, _) => {
-      ExprKey::Let(*t.addr(), *v.addr(), *b.addr(), *nd)
+    ExprData::Lam(_, _, c, t, b, _) => ExprKey::Lam(*c, *t.addr(), *b.addr()),
+    ExprData::All(_, _, c, r, t, b, _) => {
+      ExprKey::All(*c, *r, *t.addr(), *b.addr())
+    },
+    ExprData::Let(_, t, v, b, c, _) => {
+      ExprKey::Let(*c, *t.addr(), *v.addr(), *b.addr())
     },
     ExprData::Prj(id, f, v, _) => ExprKey::Prj(id.addr.clone(), *f, *v.addr()),
     ExprData::Nat(_, ba, _) => ExprKey::Nat(ba.clone()),
@@ -233,7 +238,9 @@ impl<M: KernelMode> InternTable<M> {
     })
   }
 
-  /// Allocate-on-miss counterpart of `intern_expr(KExpr::all(...))`.
+  /// Allocate-on-miss counterpart of the ordinary-Lean `KExpr::all`.
+  /// Rebuilding a supplied Pi uses `intern_all_contract` instead.
+  #[cfg(test)]
   pub(crate) fn intern_all(
     &mut self,
     name: M::MField<Name>,
@@ -241,13 +248,35 @@ impl<M: KernelMode> InternTable<M> {
     ty: &KExpr<M>,
     body: &KExpr<M>,
   ) -> KExpr<M> {
+    self.intern_all_contract(
+      name,
+      bi,
+      BinderContract::default(),
+      ValueContract::shared(),
+      ty,
+      body,
+    )
+  }
+
+  /// Preserve both Pi contracts in structural identity. Conversion's
+  /// result-only equivalence must never select an egress representative.
+  pub(crate) fn intern_all_contract(
+    &mut self,
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    contract: BinderContract,
+    result: ValueContract,
+    ty: &KExpr<M>,
+    body: &KExpr<M>,
+  ) -> KExpr<M> {
     crate::profile::bump_intern_nodes();
     let mut memo = InternMemo::default();
     let ct = self.intern_expr_cached(ty, &mut memo);
     let cb = self.intern_expr_cached(body, &mut memo);
-    self.intern_expr_with(ExprKey::All(*ct.addr(), *cb.addr()), || {
-      KExpr::all(name, bi, ct, cb)
-    })
+    self.intern_expr_with(
+      ExprKey::All(contract, result, *ct.addr(), *cb.addr()),
+      || KExpr::all_contract(name, bi, contract, result, ct, cb),
+    )
   }
 
   /// Private constructor gate: `key` MUST describe `make()` exactly, with
@@ -446,32 +475,54 @@ impl<M: KernelMode> InternTable<M> {
           KExpr::app_mdata(cf, ca, input.mdata().clone())
         }
       },
-      ExprData::Lam(n, bi, t, b, _) => {
+      ExprData::Lam(n, bi, contract, t, b, _) => {
         let ct = self.intern_expr_cached(t, memo);
         let cb = self.intern_expr_cached(b, memo);
         if ct.ptr_eq(t) && cb.ptr_eq(b) {
           input.clone()
         } else {
-          KExpr::lam_mdata(n.clone(), bi.clone(), ct, cb, input.mdata().clone())
+          KExpr::lam_contract_mdata(
+            n.clone(),
+            bi.clone(),
+            *contract,
+            ct,
+            cb,
+            input.mdata().clone(),
+          )
         }
       },
-      ExprData::All(n, bi, t, b, _) => {
+      ExprData::All(n, bi, contract, result, t, b, _) => {
         let ct = self.intern_expr_cached(t, memo);
         let cb = self.intern_expr_cached(b, memo);
         if ct.ptr_eq(t) && cb.ptr_eq(b) {
           input.clone()
         } else {
-          KExpr::all_mdata(n.clone(), bi.clone(), ct, cb, input.mdata().clone())
+          KExpr::all_contract_mdata(
+            n.clone(),
+            bi.clone(),
+            *contract,
+            *result,
+            ct,
+            cb,
+            input.mdata().clone(),
+          )
         }
       },
-      ExprData::Let(n, t, v, b, nd, _) => {
+      ExprData::Let(n, t, v, b, contract, _) => {
         let ct = self.intern_expr_cached(t, memo);
         let cv = self.intern_expr_cached(v, memo);
         let cb = self.intern_expr_cached(b, memo);
         if ct.ptr_eq(t) && cv.ptr_eq(v) && cb.ptr_eq(b) {
           input.clone()
         } else {
-          KExpr::let_mdata(n.clone(), ct, cv, cb, *nd, input.mdata().clone())
+          KExpr::let_contract_mdata(
+            n.clone(),
+            *contract,
+            ct,
+            cv,
+            cb,
+            input.mdata().clone(),
+          )
         }
       },
       ExprData::Prj(id, f, v, _) => {

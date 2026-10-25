@@ -232,15 +232,16 @@ pub fn compare_kexpr<M: KernelMode>(
     (ExprData::App(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::App(..)) => Ok(SOrd::gt(true)),
 
-    (ExprData::Lam(_, _, xt, xb, _), ExprData::Lam(_, _, yt, yb, _)) => {
+    (ExprData::Lam(_, _, _, xt, xb, _), ExprData::Lam(_, _, _, yt, yb, _)) => {
       Ok(compare_kexpr(xt, yt, ctx)?.compare(compare_kexpr(xb, yb, ctx)?))
     },
     (ExprData::Lam(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::Lam(..)) => Ok(SOrd::gt(true)),
 
-    (ExprData::All(_, _, xt, xb, _), ExprData::All(_, _, yt, yb, _)) => {
-      Ok(compare_kexpr(xt, yt, ctx)?.compare(compare_kexpr(xb, yb, ctx)?))
-    },
+    (
+      ExprData::All(_, _, _, _, xt, xb, _),
+      ExprData::All(_, _, _, _, yt, yb, _),
+    ) => Ok(compare_kexpr(xt, yt, ctx)?.compare(compare_kexpr(xb, yb, ctx)?)),
     (ExprData::All(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::All(..)) => Ok(SOrd::gt(true)),
 
@@ -255,7 +256,7 @@ pub fn compare_kexpr<M: KernelMode>(
         &[xt, xv, xb],
         &[yt, yv, yb],
       )?,
-      || Ok(SOrd::cmp(xnd, ynd)),
+      || Ok(SOrd::cmp(&xnd.non_dep, &ynd.non_dep)),
     ),
     (ExprData::Let(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::Let(..)) => Ok(SOrd::gt(true)),

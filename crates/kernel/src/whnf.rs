@@ -787,7 +787,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           head = f;
         },
 
-        ExprData::Lam(name, bi, ty, body, _) => {
+        ExprData::Lam(name, bi, contract, ty, body, _) => {
           if let Some(c) = spine.pop() {
             // Beta: O(1) environment push.
             self.tick()?;
@@ -801,9 +801,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             }
             let ty2 = clo_subst(&mut self.env.intern, ty, &env, 0);
             let body2 = clo_subst(&mut self.env.intern, body, &env, 1);
-            return Ok(self.intern(KExpr::lam(
+            return Ok(self.intern(KExpr::lam_contract(
               name.clone(),
               bi.clone(),
+              *contract,
               ty2,
               body2,
             )));
@@ -879,13 +880,20 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         // Pi value (or ill-typed Pi application): read back; outer loop
         // returns it (spine empty) or leaves it stuck (non-empty), as
         // the eager path did.
-        ExprData::All(name, bi, ty, body, _) => {
+        ExprData::All(name, bi, contract, result, ty, body, _) => {
           let h = if env.len() == 0 {
             head.clone()
           } else {
             let ty2 = clo_subst(&mut self.env.intern, ty, &env, 0);
             let body2 = clo_subst(&mut self.env.intern, body, &env, 1);
-            self.intern(KExpr::all(name.clone(), bi.clone(), ty2, body2))
+            self.intern(KExpr::all_contract(
+              name.clone(),
+              bi.clone(),
+              *contract,
+              *result,
+              ty2,
+              body2,
+            ))
           };
           return Ok(self.machine_exit(h, &spine));
         },
@@ -1539,7 +1547,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     transient: bool,
   ) -> KExpr<M> {
     if transient {
-      if let ExprData::Lam(_, _, _, body, _) = result.data() {
+      if let ExprData::Lam(_, _, _, _, body, _) = result.data() {
         let body = body.clone();
         return subst_no_intern(&body, arg, 0);
       }
@@ -2158,7 +2166,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let mut cur = val.clone();
     loop {
       match cur.data() {
-        ExprData::Lam(_, _, _, body, _) => {
+        ExprData::Lam(_, _, _, _, body, _) => {
           arity += 1;
           cur = body.clone();
         },
@@ -2215,7 +2223,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       for _ in 0..skip {
         let w = self.whnf(&ty)?;
         match w.data() {
-          ExprData::All(_, _, dom, body, _) => {
+          ExprData::All(_, _, _, _, dom, body, _) => {
             // Keep the peeled binder in scope. The body is open, and must not
             // resolve one of its Vars through an unrelated caller frame.
             self.push_local(dom.clone());
@@ -2234,7 +2242,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       for _ in 0..=MAX_EXTRA_FORALLS {
         let w = self.whnf(&ty)?;
         match w.data() {
-          ExprData::All(_, _, dom, body, _) => {
+          ExprData::All(_, _, _, _, dom, body, _) => {
             let head = app_head(dom);
             if let ExprData::Const(id, _, _) = head.data() {
               // Only accept if the head resolves to an inductive.
@@ -2574,10 +2582,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     step: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
     let step = self.whnf(step)?;
-    let ExprData::Lam(_, _, _, body, _) = step.data() else {
+    let ExprData::Lam(_, _, _, _, body, _) = step.data() else {
       return Ok(false);
     };
-    let ExprData::Lam(_, _, _, body, _) = body.data() else {
+    let ExprData::Lam(_, _, _, _, body, _) = body.data() else {
       return Ok(false);
     };
 

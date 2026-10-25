@@ -2,201 +2,23 @@
 //! Mirrors `Ix/SemanticContract.lean`; these frames are consumed into Ixon
 //! binders and never serve as a resource-validity certificate.
 
-use bignat::Nat;
-use ix_common::env::{DataValue, Expr as Source, ExprData, Name, NameData};
+use ix_common::env::{Expr as Source, ExprData};
 use ixon::CompileError;
 use ixon::contract::{BinderContract, LetKind, ValueContract};
 use ixon::expr::Expr;
 use std::sync::Arc;
 
+pub use ixon::contract::source::{
+  Contract, Kind, decode, has_metadata, read, reserved,
+};
+
+#[cfg(test)]
+use bignat::Nat;
+#[cfg(test)]
+use ix_common::env::{DataValue, Name};
+
 fn error(desc: &str) -> CompileError {
   CompileError::UnsupportedExpr { desc: desc.into() }
-}
-
-fn root(name: &Name) -> bool {
-  matches!(name.as_data(), NameData::Str(parent, text, _) if text == "contract" &&
-    matches!(parent.as_data(), NameData::Str(parent, text, _) if text == "ix" &&
-      matches!(parent.as_data(), NameData::Anonymous(_))))
-}
-
-pub fn reserved(mut name: &Name) -> bool {
-  loop {
-    if root(name) {
-      return true;
-    }
-    match name.as_data() {
-      NameData::Str(parent, ..) | NameData::Num(parent, ..) => name = parent,
-      NameData::Anonymous(_) => return false,
-    }
-  }
-}
-
-pub fn has_metadata(data: &[(Name, DataValue)]) -> bool {
-  data.iter().any(|(name, _)| reserved(name))
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-  Lam,
-  All,
-  Let,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Contract {
-  pub kind: Kind,
-  pub binder: BinderContract,
-  pub result: ValueContract,
-  pub let_kind: LetKind,
-}
-
-impl Contract {
-  pub fn kind_code(self) -> u64 {
-    match self.kind {
-      Kind::Lam => 0,
-      Kind::All => 1,
-      Kind::Let => 2,
-    }
-  }
-  pub fn code(self) -> u8 {
-    let low = self.binder.to_bits();
-    match self.kind {
-      Kind::Lam => low,
-      Kind::All => low | (self.result.to_bits() << 4),
-      Kind::Let => {
-        low | if self.let_kind == LetKind::BorrowShared { 16 } else { 0 }
-      },
-    }
-  }
-  pub fn order_key(self) -> u64 {
-    self.kind_code() * 64 + u64::from(self.code())
-  }
-  pub fn metadata(self) -> Vec<(Name, DataValue)> {
-    let key =
-      Name::str(Name::str(Name::anon(), "ix".into()), "contract".into());
-    // Lean's KVMap.set appends a new field.
-    vec![
-      (key.clone(), DataValue::OfNat(Nat::from(3u64))),
-      (
-        Name::str(key.clone(), "kind".into()),
-        DataValue::OfNat(Nat::from(self.kind_code())),
-      ),
-      (
-        Name::str(key, "code".into()),
-        DataValue::OfNat(Nat::from(u64::from(self.code()))),
-      ),
-    ]
-  }
-  pub fn attach(self, source: Source) -> Source {
-    Source::mdata(self.metadata(), source)
-  }
-  pub fn lower(
-    self,
-    source: &Source,
-    compiled: &Arc<Expr>,
-  ) -> Result<Arc<Expr>, CompileError> {
-    Ok(Arc::new(match (self.kind, source.as_data(), compiled.as_ref()) {
-      (Kind::Lam, ExprData::Lam(..), Expr::Lam(_, typ, body)) => {
-        Expr::Lam(self.binder, typ.clone(), body.clone())
-      },
-      (Kind::All, ExprData::ForallE(..), Expr::All(_, _, typ, body)) => {
-        Expr::All(self.binder, self.result, typ.clone(), body.clone())
-      },
-      (Kind::Let, ExprData::LetE(..), Expr::Let(c, typ, value, body)) => {
-        Expr::Let(
-          ixon::contract::LetContract {
-            binder: self.binder,
-            kind: self.let_kind,
-            ..*c
-          },
-          typ.clone(),
-          value.clone(),
-          body.clone(),
-        )
-      },
-      _ => {
-        return Err(error(
-          "semantic contract is not attached to its original binder",
-        ));
-      },
-    }))
-  }
-}
-
-pub fn decode(kind: u64, code: u64) -> Result<Contract, CompileError> {
-  let kind = match kind {
-    0 => Kind::Lam,
-    1 => Kind::All,
-    2 => Kind::Let,
-    _ => return Err(error("invalid semantic contract kind")),
-  };
-  let limit = match kind {
-    Kind::Lam => 16,
-    Kind::All => 64,
-    Kind::Let => 32,
-  };
-  if code >= limit {
-    return Err(error("reserved semantic contract bits"));
-  }
-  let code = u8::try_from(code)
-    .map_err(|_error| error("semantic contract code overflow"))?;
-  let binder = BinderContract::from_bits(code % 16)
-    .ok_or_else(|| error("invalid semantic binder contract"))?;
-  let result = if kind == Kind::All {
-    ValueContract::from_bits(code / 16)
-      .ok_or_else(|| error("invalid semantic result contract"))?
-  } else {
-    ValueContract::shared()
-  };
-  let let_kind = if kind == Kind::Let && code >= 16 {
-    LetKind::BorrowShared
-  } else {
-    LetKind::Value
-  };
-  if let_kind == LetKind::BorrowShared
-    && binder.value != ValueContract::local_shared()
-  {
-    return Err(error("shared borrow requires a shared local view"));
-  }
-  Ok(Contract { kind, binder, result, let_kind })
-}
-
-pub fn read(data: &[(Name, DataValue)]) -> Result<Contract, CompileError> {
-  if data.len() != 3 {
-    return Err(error("malformed semantic contract frame"));
-  }
-  let (mut version, mut kind, mut code) = (None, None, None);
-  for (name, value) in data {
-    let DataValue::OfNat(value) = value else {
-      return Err(error("semantic contract fields must be natural numbers"));
-    };
-    let value = value
-      .to_u64()
-      .ok_or_else(|| error("semantic contract field is too large"))?;
-    let slot = if root(name) {
-      &mut version
-    } else {
-      match name.as_data() {
-        NameData::Str(parent, text, _) if root(parent) && text == "kind" => {
-          &mut kind
-        },
-        NameData::Str(parent, text, _) if root(parent) && text == "code" => {
-          &mut code
-        },
-        _ => return Err(error("unknown or duplicate semantic contract field")),
-      }
-    };
-    if slot.replace(value).is_some() {
-      return Err(error("unknown or duplicate semantic contract field"));
-    }
-  }
-  if version != Some(3) {
-    return Err(error("unsupported semantic contract version"));
-  }
-  decode(
-    kind.ok_or_else(|| error("missing semantic contract kind"))?,
-    code.ok_or_else(|| error("missing semantic contract code"))?,
-  )
 }
 
 pub fn inspect(top: &Source) -> Result<bool, CompileError> {

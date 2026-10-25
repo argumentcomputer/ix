@@ -88,10 +88,10 @@ fn egress_expr(
   expr: &KExpr<Meta>,
   level_params: &[Name],
   cache: &mut Cache,
-) -> env::Expr {
+) -> Result<env::Expr, String> {
   let hk = expr.hash_key();
   if let Some(cached) = cache.get(&hk) {
-    return cached.clone();
+    return Ok(cached.clone());
   }
 
   let mdata: &Vec<MData> = expr.mdata();
@@ -128,28 +128,28 @@ fn egress_expr(
       env::Expr::cnst(id.name.clone(), lvls)
     },
     ExprData::App(f, a, _) => {
-      let ef = egress_expr(f, level_params, cache);
-      let ea = egress_expr(a, level_params, cache);
+      let ef = egress_expr(f, level_params, cache)?;
+      let ea = egress_expr(a, level_params, cache)?;
       env::Expr::app(ef, ea)
     },
-    ExprData::Lam(name, bi, ty, body, _) => {
-      let ety = egress_expr(ty, level_params, cache);
-      let ebody = egress_expr(body, level_params, cache);
+    ExprData::Lam(name, bi, _, ty, body, _) => {
+      let ety = egress_expr(ty, level_params, cache)?;
+      let ebody = egress_expr(body, level_params, cache)?;
       env::Expr::lam(name.clone(), ety, ebody, bi.clone())
     },
-    ExprData::All(name, bi, ty, body, _) => {
-      let ety = egress_expr(ty, level_params, cache);
-      let ebody = egress_expr(body, level_params, cache);
+    ExprData::All(name, bi, _, _, ty, body, _) => {
+      let ety = egress_expr(ty, level_params, cache)?;
+      let ebody = egress_expr(body, level_params, cache)?;
       env::Expr::all(name.clone(), ety, ebody, bi.clone())
     },
     ExprData::Let(name, ty, val, body, nd, _) => {
-      let ety = egress_expr(ty, level_params, cache);
-      let eval = egress_expr(val, level_params, cache);
-      let ebody = egress_expr(body, level_params, cache);
-      env::Expr::letE(name.clone(), ety, eval, ebody, *nd)
+      let ety = egress_expr(ty, level_params, cache)?;
+      let eval = egress_expr(val, level_params, cache)?;
+      let ebody = egress_expr(body, level_params, cache)?;
+      env::Expr::letE(name.clone(), ety, eval, ebody, nd.non_dep)
     },
     ExprData::Prj(id, field, val, _) => {
-      let eval = egress_expr(val, level_params, cache);
+      let eval = egress_expr(val, level_params, cache)?;
       env::Expr::proj(id.name.clone(), Nat::from(*field), eval)
     },
     ExprData::Nat(n, _, _) => env::Expr::lit(env::Literal::NatVal(n.clone())),
@@ -157,13 +157,16 @@ fn egress_expr(
   };
 
   // Re-wrap with mdata layers (innermost first via reverse iteration).
-  let result = mdata
+  let layers =
+    ixon::contract::source::egress_layers(expr.source_contract(), mdata)
+      .map_err(|e| e.to_string())?;
+  let result = layers
     .iter()
     .rev()
     .fold(inner, |acc, kvs| env::Expr::mdata(kvs.clone(), acc));
 
   cache.insert(hk, result.clone());
-  result
+  Ok(result)
 }
 
 fn zids_to_names(ids: &[KId<Meta>]) -> Vec<Name> {
@@ -171,10 +174,10 @@ fn zids_to_names(ids: &[KId<Meta>]) -> Vec<Name> {
 }
 
 /// Convert a kernel constant to a Lean `ConstantInfo`.
-pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
+pub fn egress_constant(zc: &KConst<Meta>) -> Result<LeanCI, String> {
   let mut cache = Cache::default();
 
-  match zc {
+  Ok(match zc {
     KConst::Defn {
       name,
       level_params,
@@ -190,9 +193,9 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
       let cnst = ConstantVal {
         name: name.clone(),
         level_params: lp.clone(),
-        typ: egress_expr(ty, lp, &mut cache),
+        typ: egress_expr(ty, lp, &mut cache)?,
       };
-      let value = egress_expr(val, lp, &mut cache);
+      let value = egress_expr(val, lp, &mut cache)?;
       let all = zids_to_names(lean_all);
       match kind {
         DefKind::Definition => LeanCI::DefnInfo(DefinitionVal {
@@ -218,7 +221,7 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
         cnst: ConstantVal {
           name: name.clone(),
           level_params: lp.clone(),
-          typ: egress_expr(ty, lp, &mut cache),
+          typ: egress_expr(ty, lp, &mut cache)?,
         },
         is_unsafe: *is_unsafe,
       })
@@ -230,7 +233,7 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
         cnst: ConstantVal {
           name: name.clone(),
           level_params: lp.clone(),
-          typ: egress_expr(ty, lp, &mut cache),
+          typ: egress_expr(ty, lp, &mut cache)?,
         },
         kind: *kind,
       })
@@ -252,7 +255,7 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
         cnst: ConstantVal {
           name: name.clone(),
           level_params: lp.clone(),
-          typ: egress_expr(ty, lp, &mut cache),
+          typ: egress_expr(ty, lp, &mut cache)?,
         },
         num_params: Nat::from(*params),
         num_indices: Nat::from(*indices),
@@ -282,7 +285,7 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
         cnst: ConstantVal {
           name: name.clone(),
           level_params: lp.clone(),
-          typ: egress_expr(ty, lp, &mut cache),
+          typ: egress_expr(ty, lp, &mut cache)?,
         },
         induct: induct.name.clone(),
         cidx: Nat::from(*cidx),
@@ -313,13 +316,15 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
       // so we just echo it out verbatim.
       let lean_rules: Vec<LeanRecRule> = rules
         .iter()
-        .map(|r| LeanRecRule {
-          ctor: r.ctor.clone(),
-          n_fields: Nat::from(r.fields),
-          rhs: egress_expr(&r.rhs, lp, &mut cache),
+        .map(|r| {
+          Ok::<_, String>(LeanRecRule {
+            ctor: r.ctor.clone(),
+            n_fields: Nat::from(r.fields),
+            rhs: egress_expr(&r.rhs, lp, &mut cache)?,
+          })
         })
-        .collect();
-      let typ = egress_expr(ty, lp, &mut cache);
+        .collect::<Result<_, _>>()?;
+      let typ = egress_expr(ty, lp, &mut cache)?;
       // Surgery permutation is deferred — no source_motive_perm / source_minor_groups
       LeanCI::RecInfo(RecursorVal {
         cnst: ConstantVal { name: name.clone(), level_params: lp.clone(), typ },
@@ -333,7 +338,7 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
         is_unsafe: *is_unsafe,
       })
     },
-  }
+  })
 }
 
 /// Convert the entire kernel environment to a Lean environment.
@@ -344,15 +349,16 @@ pub fn lean_egress(zenv: &KEnv<Meta>) -> Result<env::Env, String> {
   // area
   let egressed: DashMap<Name, LeanCI> = DashMap::with_capacity(entries.len());
   let groups: DashMap<Name, Vec<Name>> = DashMap::new();
-  entries.into_par_iter().for_each(|(id, zc)| {
-    let ci = egress_constant(&zc);
+  entries.into_par_iter().try_for_each(|(id, zc)| -> Result<(), String> {
+    let ci = egress_constant(&zc)?;
     if let LeanCI::InductInfo(v) = &ci
       && let Some(first) = v.all.first()
     {
       groups.entry(first.clone()).or_insert_with(|| v.all.clone());
     }
     egressed.insert(id.name.clone(), ci);
-  });
+    Ok(())
+  })?;
 
   // Stage 2: fixup the staged inductive flags which were stubbed
   let mut lean_env: env::Env = egressed.into_iter().collect();
@@ -632,21 +638,21 @@ fn kexpr_to_ixon(
       let a = kexpr_to_ixon(a, ctx)?;
       IxonExpr::app(f, a)
     },
-    ExprData::Lam(_, _, ty, body, _) => {
+    ExprData::Lam(_, _, contract, ty, body, _) => {
       let ty = kexpr_to_ixon(ty, ctx)?;
       let body = kexpr_to_ixon(body, ctx)?;
-      IxonExpr::lam(ty, body)
+      IxonExpr::lam_contract(*contract, ty, body)
     },
-    ExprData::All(_, _, ty, body, _) => {
+    ExprData::All(_, _, contract, result, ty, body, _) => {
       let ty = kexpr_to_ixon(ty, ctx)?;
       let body = kexpr_to_ixon(body, ctx)?;
-      IxonExpr::all(ty, body)
+      IxonExpr::all_contract(*contract, *result, ty, body)
     },
-    ExprData::Let(_, ty, val, body, nd, _) => {
+    ExprData::Let(_, ty, val, body, contract, _) => {
       let ty = kexpr_to_ixon(ty, ctx)?;
       let val = kexpr_to_ixon(val, ctx)?;
       let body = kexpr_to_ixon(body, ctx)?;
-      IxonExpr::let_(*nd, ty, val, body)
+      IxonExpr::let_contract(*contract, ty, val, body)
     },
     ExprData::Prj(id, field, val, _) => {
       let val = kexpr_to_ixon(val, ctx)?;
@@ -1480,7 +1486,169 @@ mod tests {
 
   fn do_egress(e: &KExpr<Meta>) -> env::Expr {
     let mut cache = Cache::default();
-    egress_expr(e, &[], &mut cache)
+    egress_expr(e, &[], &mut cache).unwrap()
+  }
+
+  #[test]
+  fn warm_result_only_conversion_preserves_original_egress() {
+    use ix_kernel::tc::TypeChecker;
+    use ixon::contract::{BinderContract, ValueContract};
+    use ixon::expr::Uses;
+
+    let input = BinderContract::plain(Uses::Linear);
+    for reverse in [false, true] {
+      let mut kernel = KEnv::<Meta>::new();
+      let make = |result| {
+        KExpr::all_contract(
+          mk_name("x"),
+          BinderInfo::Default,
+          input,
+          result,
+          sort0(),
+          sort0(),
+        )
+      };
+      let shared = kernel.intern.intern_expr(make(ValueContract::shared()));
+      let unique = kernel.intern.intern_expr(make(ValueContract::unique()));
+      assert_ne!(shared.addr(), unique.addr());
+      let (first, second) =
+        if reverse { (&unique, &shared) } else { (&shared, &unique) };
+      let mut checker = TypeChecker::new(&mut kernel);
+      assert!(checker.is_def_eq(first, second).unwrap());
+      assert!(checker.is_def_eq(second, first).unwrap());
+      assert!(checker.is_def_eq(first, second).unwrap());
+
+      // Conversion equivalence is not structural identity. Reconstructing
+      // after positive cache/union-find traffic must retain each result.
+      let rebuilt =
+        checker.env.intern.intern_expr(make(ValueContract::unique()));
+      assert_eq!(rebuilt.addr(), unique.addr());
+      assert_ne!(rebuilt.addr(), shared.addr());
+      let mut ctx = EgressCtx::new();
+      for (expr, result) in if reverse {
+        [(&unique, ValueContract::unique()), (&shared, ValueContract::shared())]
+      } else {
+        [(&shared, ValueContract::shared()), (&unique, ValueContract::unique())]
+      } {
+        let encoded = kexpr_to_ixon(expr, &mut ctx).unwrap();
+        assert_eq!(
+          encoded,
+          IxonExpr::all_contract(
+            input,
+            result,
+            IxonExpr::sort(0),
+            IxonExpr::sort(0)
+          )
+        );
+      }
+      let encoded = kexpr_to_ixon(&rebuilt, &mut ctx).unwrap();
+      assert_eq!(
+        encoded,
+        IxonExpr::all_contract(
+          input,
+          ValueContract::unique(),
+          IxonExpr::sort(0),
+          IxonExpr::sort(0)
+        )
+      );
+      // Lean egress and a cleared conversion cache retain the same payload.
+      checker.env.clear_reduction_caches();
+      checker.reset();
+      assert!(checker.is_def_eq(first, second).unwrap());
+      for expr in [&shared, &unique, &rebuilt] {
+        let source = do_egress(expr);
+        let roundtrip = ix_kernel::ingress::lean_expr_to_zexpr_with_kenv(
+          &source,
+          &[],
+          checker.env,
+          None,
+          None,
+        )
+        .unwrap();
+        assert_eq!(&roundtrip, expr);
+        assert_eq!(roundtrip.source_contract(), expr.source_contract());
+      }
+    }
+  }
+
+  #[test]
+  fn egress_uses_scalar_payload_and_preserves_all_three_binder_kinds() {
+    use ixon::contract::source::decode;
+    use ixon::contract::{BinderContract, LetContract, ValueContract};
+    use ixon::expr::Uses;
+    let input = BinderContract::from_bits(9).unwrap();
+    let result = ValueContract::local_unique();
+    let borrow = LetContract::borrow(true, Uses::Affine);
+    let term = KExpr::lam_contract(
+      mk_name("x"),
+      BinderInfo::Implicit,
+      input,
+      sort0(),
+      KExpr::all_contract(
+        mk_name("y"),
+        BinderInfo::Default,
+        input,
+        result,
+        sort0(),
+        KExpr::let_contract(mk_name("z"), borrow, sort0(), sort0(), sort0()),
+      ),
+    );
+    let expected = IxonExpr::lam_contract(
+      input,
+      IxonExpr::sort(0),
+      IxonExpr::all_contract(
+        input,
+        result,
+        IxonExpr::sort(0),
+        IxonExpr::let_contract(
+          borrow,
+          IxonExpr::sort(0),
+          IxonExpr::sort(0),
+          IxonExpr::sort(0),
+        ),
+      ),
+    );
+    assert_eq!(kexpr_to_ixon(&term, &mut EgressCtx::new()).unwrap(), expected);
+    let source = do_egress(&term);
+    let mut kernel = KEnv::new();
+    let roundtrip = ix_kernel::ingress::lean_expr_to_zexpr_with_kenv(
+      &source,
+      &[],
+      &mut kernel,
+      None,
+      None,
+    )
+    .unwrap();
+    assert_eq!(roundtrip, term);
+    assert_eq!(do_egress(&roundtrip), source);
+
+    let conflicting = KExpr::<Meta>::all_contract_mdata(
+      mk_name("x"),
+      BinderInfo::Default,
+      input,
+      result,
+      sort0(),
+      sort0(),
+      vec![decode(1, 23).unwrap().metadata()],
+    );
+    assert!(
+      egress_expr(&conflicting, &[], &mut Cache::default())
+        .unwrap_err()
+        .contains("conflicts with kernel payload")
+    );
+    // The authoritative Ixon output does not consult optional source metadata.
+    assert_eq!(
+      kexpr_to_ixon(&conflicting, &mut EgressCtx::new()).unwrap(),
+      IxonExpr::all_contract(
+        input,
+        result,
+        IxonExpr::sort(0),
+        IxonExpr::sort(0)
+      )
+    );
+    let default =
+      KExpr::<Meta>::all(mk_name("x"), BinderInfo::Default, sort0(), sort0());
+    assert!(matches!(do_egress(&default).as_data(), LeanExprData::ForallE(..)));
   }
 
   #[test]
@@ -1598,10 +1766,10 @@ mod tests {
   fn egress_expr_cache_returns_same_tree() {
     let k = KExpr::<Meta>::app(sort0(), sort0());
     let mut cache = Cache::default();
-    let e1 = egress_expr(&k, &[], &mut cache);
+    let e1 = egress_expr(&k, &[], &mut cache).unwrap();
     // The inner Sort 0 was hit by the cache after the first subexpr. Run
     // twice on the same cache and confirm deterministic output.
-    let e2 = egress_expr(&k, &[], &mut cache);
+    let e2 = egress_expr(&k, &[], &mut cache).unwrap();
     assert_eq!(e1.get_hash(), e2.get_hash());
   }
 
@@ -1631,7 +1799,7 @@ mod tests {
       lvls: 0,
       ty: sort0(),
     };
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     match ci {
       LeanCI::AxiomInfo(v) => {
         assert_eq!(v.cnst.name, mk_name("A"));
@@ -1645,7 +1813,7 @@ mod tests {
   #[test]
   fn egress_const_defn_kind_definition() {
     let kc = defn_meta("f");
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     match ci {
       LeanCI::DefnInfo(v) => {
         assert_eq!(v.cnst.name, mk_name("f"));
@@ -1663,7 +1831,7 @@ mod tests {
     if let KConst::Defn { kind, .. } = &mut kc {
       *kind = DefKind::Theorem;
     }
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     assert!(matches!(ci, LeanCI::ThmInfo(..)));
   }
 
@@ -1673,7 +1841,7 @@ mod tests {
     if let KConst::Defn { kind, .. } = &mut kc {
       *kind = DefKind::Opaque;
     }
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     assert!(matches!(ci, LeanCI::OpaqueInfo(..)));
   }
 
@@ -1684,7 +1852,7 @@ mod tests {
       *kind = DefKind::Opaque;
       *safety = DefinitionSafety::Unsafe;
     }
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     match ci {
       LeanCI::OpaqueInfo(v) => assert!(v.is_unsafe),
       other => panic!("expected OpaqueInfo, got {other:?}"),
@@ -1700,7 +1868,7 @@ mod tests {
       lvls: 1,
       ty: sort_succ(),
     };
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     match ci {
       LeanCI::QuotInfo(v) => {
         assert_eq!(v.kind, QuotKind::Type);
@@ -1725,7 +1893,7 @@ mod tests {
       ctors: vec![mk_id("A.mk")],
       lean_all: vec![mk_id("A")],
     };
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     match ci {
       LeanCI::InductInfo(v) => {
         assert_eq!(v.num_params.to_u64(), Some(2));
@@ -1754,7 +1922,7 @@ mod tests {
       fields: 4,
       ty: sort0(),
     };
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     match ci {
       LeanCI::CtorInfo(v) => {
         assert_eq!(v.cidx.to_u64(), Some(2));
@@ -1786,7 +1954,7 @@ mod tests {
       rules,
       lean_all: vec![mk_id("A")],
     };
-    let ci = egress_constant(&kc);
+    let ci = egress_constant(&kc).unwrap();
     match ci {
       LeanCI::RecInfo(v) => {
         assert_eq!(v.num_motives.to_u64(), Some(1));

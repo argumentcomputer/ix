@@ -80,6 +80,11 @@ enum ContentKey {
   Lam(ContentId, ContentId),
   All(ContentId, ContentId),
   Let(ContentId, ContentId, ContentId, bool),
+  /// Semantic source frames are content; unrelated Mdata remains display.
+  Contract(u64, u8, ContentId),
+  /// Invalid frames are never a cross-node hint. Ingress reports their error;
+  /// this cosmetic pass leaves them untouched if called independently.
+  OpaqueContract(usize, usize),
   Prj(Address, u64, ContentId),
   Nat(Nat),
   Str(String),
@@ -206,8 +211,21 @@ impl<'a, S: BuildHasher + Default> ContentTable<'a, S> {
       ),
       ExprData::Lit(Literal::NatVal(n), _) => ContentKey::Nat(n.clone()),
       ExprData::Lit(Literal::StrVal(s), _) => ContentKey::Str(s.clone()),
-      ExprData::Mdata(_, inner, _) => {
-        let id = self.content(inner, depth);
+      ExprData::Mdata(data, inner, _) => {
+        let inner_id = self.content(inner, depth);
+        let id = if crate::semantic_contract::has_metadata(data) {
+          match ixon::contract::source::read_attached(data, inner) {
+            Ok(contract) if contract.is_default() => inner_id,
+            Ok(contract) => self.intern(ContentKey::Contract(
+              contract.kind_code(),
+              contract.code(),
+              inner_id,
+            )),
+            Err(_) => self.intern(ContentKey::OpaqueContract(ptr(expr), depth)),
+          }
+        } else {
+          inner_id
+        };
         self.converted.insert(memo_key, id);
         return id;
       },

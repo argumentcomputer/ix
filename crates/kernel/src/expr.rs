@@ -1,7 +1,8 @@
 //! Expressions with optional metadata.
 //!
 //! `KExpr<M>` is an Arc-wrapped expression. Each variant carries an `ExprInfo<M>`
-//! with its blake3 hash, substitution annotations, and mdata.
+//! with its internal UID, substitution annotations, and mdata. Binder and let
+//! contracts are semantic payload, separate from display metadata.
 
 use std::fmt;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use bignat::Nat;
 use ix_common::address::Address;
 use ix_common::env::{BinderInfo, DataValue, Name};
+use ixon::contract::{BinderContract, LetContract, ValueContract};
 use ixon::univ::Univ as IxonUniv;
 
 use super::env::Addr;
@@ -103,11 +105,11 @@ impl MetaDisplay for UnivDecor {
   }
 }
 
-/// Per-expression metadata: blake3 hash, substitution annotations, and mdata.
+/// Per-expression metadata: internal UID, substitution annotations, and mdata.
 #[derive(Clone, Debug)]
 pub struct ExprInfo<M: KernelMode> {
-  /// Blake3 hash of semantic expression content. Metadata fields are stored
-  /// for diagnostics/egress but do not contribute to the hash.
+  /// Internal construction/intern identity. This is never a serialized
+  /// content address; the intern key includes every binder/let contract.
   pub addr: Addr,
   /// Loose bound variable range: upper bound on free de Bruijn indices.
   pub lbr: u64,
@@ -156,10 +158,28 @@ pub enum ExprData<M: KernelMode> {
   Sort(KUniv<M>, ExprInfo<M>),
   Const(KId<M>, Box<[KUniv<M>]>, ExprInfo<M>),
   App(KExpr<M>, KExpr<M>, ExprInfo<M>),
-  Lam(M::MField<Name>, M::MField<BinderInfo>, KExpr<M>, KExpr<M>, ExprInfo<M>),
-  All(M::MField<Name>, M::MField<BinderInfo>, KExpr<M>, KExpr<M>, ExprInfo<M>),
-  /// Let binding: name, type, value, body, non_dep flag.
-  Let(M::MField<Name>, KExpr<M>, KExpr<M>, KExpr<M>, bool, ExprInfo<M>),
+  /// Lambda input contract; a lambda has no result contract.
+  Lam(
+    M::MField<Name>,
+    M::MField<BinderInfo>,
+    BinderContract,
+    KExpr<M>,
+    KExpr<M>,
+    ExprInfo<M>,
+  ),
+  /// Pi input and result contracts. Both are identity data; conversion
+  /// compares only the input contract.
+  All(
+    M::MField<Name>,
+    M::MField<BinderInfo>,
+    BinderContract,
+    ValueContract,
+    KExpr<M>,
+    KExpr<M>,
+    ExprInfo<M>,
+  ),
+  /// Let binding: name, type, value, body, complete let contract.
+  Let(M::MField<Name>, KExpr<M>, KExpr<M>, KExpr<M>, LetContract, ExprInfo<M>),
   /// Projection: struct type id, field index, struct value.
   Prj(KId<M>, u64, KExpr<M>, ExprInfo<M>),
   Nat(Nat, Address, ExprInfo<M>),
@@ -220,6 +240,85 @@ impl<M: KernelMode> KExpr<M> {
     &self.info().mdata
   }
 
+  /// The authoritative source-frame payload of a binder, independent of its
+  /// optional display metadata. A lambda has no result contract.
+  pub fn source_contract(&self) -> Option<ixon::contract::source::Contract> {
+    use ixon::contract::{
+      LetKind,
+      source::{Contract, Kind},
+    };
+    Some(match self.data() {
+      ExprData::Lam(_, _, binder, ..) => Contract {
+        kind: Kind::Lam,
+        binder: *binder,
+        result: ValueContract::shared(),
+        let_kind: LetKind::Value,
+      },
+      ExprData::All(_, _, binder, result, ..) => Contract {
+        kind: Kind::All,
+        binder: *binder,
+        result: *result,
+        let_kind: LetKind::Value,
+      },
+      ExprData::Let(_, _, _, _, contract, _) => Contract {
+        kind: Kind::Let,
+        binder: contract.binder,
+        result: ValueContract::shared(),
+        let_kind: contract.kind,
+      },
+      _ => return None,
+    })
+  }
+
+  /// Apply an already validated direct-source frame. Rebuilding takes a fresh
+  /// UID; this never mutates the identity of an existing kernel node.
+  pub fn with_source_contract(
+    &self,
+    contract: ixon::contract::source::Contract,
+  ) -> Result<Self, String> {
+    use ixon::contract::source::Kind;
+    match (contract.kind, self.data()) {
+      (Kind::Lam, ExprData::Lam(n, bi, _, ty, body, _)) => {
+        Ok(Self::lam_contract_mdata(
+          n.clone(),
+          bi.clone(),
+          contract.binder,
+          ty.clone(),
+          body.clone(),
+          self.mdata().clone(),
+        ))
+      },
+      (Kind::All, ExprData::All(n, bi, _, _, ty, body, _)) => {
+        Ok(Self::all_contract_mdata(
+          n.clone(),
+          bi.clone(),
+          contract.binder,
+          contract.result,
+          ty.clone(),
+          body.clone(),
+          self.mdata().clone(),
+        ))
+      },
+      (Kind::Let, ExprData::Let(n, ty, value, body, prior, _)) => {
+        Ok(Self::let_contract_mdata(
+          n.clone(),
+          LetContract {
+            binder: contract.binder,
+            kind: contract.let_kind,
+            ..*prior
+          },
+          ty.clone(),
+          value.clone(),
+          body.clone(),
+          self.mdata().clone(),
+        ))
+      },
+      _ => {
+        Err("semantic contract is not attached to its original binder".into())
+      },
+    }
+  }
+
   /// Level-spelling decoration of this node (Meta-mode `Sort`/`Const`
   /// occurrences only; see [`UnivDecor`]).
   pub fn univ_decor(&self) -> &M::MField<Option<UnivDecor>> {
@@ -249,11 +348,12 @@ impl<M: KernelMode> KExpr<M> {
     self.ptr_eq(other) || self.addr() == other.addr()
   }
 
-  /// Structural equality mirroring exactly what the intern identity
-  /// covers: display names, binder info, and mdata are NOT compared
-  /// (matching the historical content-hash semantics). Equal interned
-  /// subtrees prune at the uid fast path, so canonical-vs-canonical
-  /// comparison is O(1).
+  /// Structural payload equality: display names, binder info, mdata and
+  /// universe-spelling decorations are not compared. Intern identity is
+  /// finer for decorations so egress can retain their spelling. Equal UIDs
+  /// prune a subtree; all binder/result/let contracts are compared here.
+  /// Result-only conversion equivalence belongs to the checker, not this
+  /// structural relation.
   fn structural_eq(&self, other: &Self) -> bool {
     if self.hash_eq(other) {
       return true;
@@ -270,15 +370,19 @@ impl<M: KernelMode> KExpr<M> {
       (ExprData::App(f1, a1, _), ExprData::App(f2, a2, _)) => {
         f1.structural_eq(f2) && a1.structural_eq(a2)
       },
-      (ExprData::Lam(_, _, t1, b1, _), ExprData::Lam(_, _, t2, b2, _))
-      | (ExprData::All(_, _, t1, b1, _), ExprData::All(_, _, t2, b2, _)) => {
-        t1.structural_eq(t2) && b1.structural_eq(b2)
-      },
       (
-        ExprData::Let(_, t1, v1, b1, nd1, _),
-        ExprData::Let(_, t2, v2, b2, nd2, _),
+        ExprData::Lam(_, _, c1, t1, b1, _),
+        ExprData::Lam(_, _, c2, t2, b2, _),
+      ) => c1 == c2 && t1.structural_eq(t2) && b1.structural_eq(b2),
+      (
+        ExprData::All(_, _, c1, r1, t1, b1, _),
+        ExprData::All(_, _, c2, r2, t2, b2, _),
+      ) => c1 == c2 && r1 == r2 && t1.structural_eq(t2) && b1.structural_eq(b2),
+      (
+        ExprData::Let(_, t1, v1, b1, c1, _),
+        ExprData::Let(_, t2, v2, b2, c2, _),
       ) => {
-        nd1 == nd2
+        c1 == c2
           && t1.structural_eq(t2)
           && v1.structural_eq(v2)
           && b1.structural_eq(b2)
@@ -572,14 +676,24 @@ impl<M: KernelMode> KExpr<M> {
     ty: KExpr<M>,
     body: KExpr<M>,
   ) -> Self {
-    Self::lam_mdata(name, bi, ty, body, no_mdata::<M>())
+    Self::lam_contract(name, bi, BinderContract::default(), ty, body)
   }
 
-  /// Compute the content hash for [`KExpr::lam_mdata`].
-  ///
-  fn lam_mdata_with_addr(
+  /// Construct a lambda with an explicit input contract and a fresh UID.
+  pub fn lam_contract(
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
+    contract: BinderContract,
+    ty: KExpr<M>,
+    body: KExpr<M>,
+  ) -> Self {
+    Self::lam_contract_mdata(name, bi, contract, ty, body, no_mdata::<M>())
+  }
+
+  fn lam_contract_mdata_with_addr(
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    contract: BinderContract,
     ty: KExpr<M>,
     body: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
@@ -592,7 +706,7 @@ impl<M: KernelMode> KExpr<M> {
       ty.has_fvars() || body.has_fvars(),
       mdata,
     );
-    KExpr::new(ExprData::Lam(name, bi, ty, body, info))
+    KExpr::new(ExprData::Lam(name, bi, contract, ty, body, info))
   }
 
   pub fn lam_mdata(
@@ -602,8 +716,30 @@ impl<M: KernelMode> KExpr<M> {
     body: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
+    Self::lam_contract_mdata(
+      name,
+      bi,
+      BinderContract::default(),
+      ty,
+      body,
+      mdata,
+    )
+  }
+
+  /// Rebuilders pass the existing contract explicitly. This constructor
+  /// always allocates a fresh UID, including when the contract changes.
+  pub fn lam_contract_mdata(
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    contract: BinderContract,
+    ty: KExpr<M>,
+    body: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+  ) -> Self {
     let addr = fresh_uid();
-    Self::lam_mdata_with_addr(name, bi, ty, body, mdata, addr)
+    Self::lam_contract_mdata_with_addr(
+      name, bi, contract, ty, body, mdata, addr,
+    )
   }
 
   pub fn all(
@@ -612,25 +748,35 @@ impl<M: KernelMode> KExpr<M> {
     ty: KExpr<M>,
     body: KExpr<M>,
   ) -> Self {
-    Self::all_mdata(name, bi, ty, body, no_mdata::<M>())
+    Self::all_contract(
+      name,
+      bi,
+      BinderContract::default(),
+      ValueContract::shared(),
+      ty,
+      body,
+    )
   }
 
-  fn all_mdata_with_addr(
+  /// Construct a Pi, retaining its result contract even though conversion
+  /// ignores that field. Inferred lambda types use a shared result contract.
+  pub fn all_contract(
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
+    contract: BinderContract,
+    result: ValueContract,
     ty: KExpr<M>,
     body: KExpr<M>,
-    mdata: M::MField<Vec<MData>>,
-    addr: Addr,
   ) -> Self {
-    let info = mk_info::<M>(
-      addr,
-      ty.lbr().max(body.lbr().saturating_sub(1)),
-      ty.count_0(),
-      ty.has_fvars() || body.has_fvars(),
-      mdata,
-    );
-    KExpr::new(ExprData::All(name, bi, ty, body, info))
+    Self::all_contract_mdata(
+      name,
+      bi,
+      contract,
+      result,
+      ty,
+      body,
+      no_mdata::<M>(),
+    )
   }
 
   pub fn all_mdata(
@@ -640,8 +786,35 @@ impl<M: KernelMode> KExpr<M> {
     body: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
+    Self::all_contract_mdata(
+      name,
+      bi,
+      BinderContract::default(),
+      ValueContract::shared(),
+      ty,
+      body,
+      mdata,
+    )
+  }
+
+  pub fn all_contract_mdata(
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    contract: BinderContract,
+    result: ValueContract,
+    ty: KExpr<M>,
+    body: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+  ) -> Self {
     let addr = fresh_uid();
-    Self::all_mdata_with_addr(name, bi, ty, body, mdata, addr)
+    let info = mk_info::<M>(
+      addr,
+      ty.lbr().max(body.lbr().saturating_sub(1)),
+      ty.count_0(),
+      ty.has_fvars() || body.has_fvars(),
+      mdata,
+    );
+    KExpr::new(ExprData::All(name, bi, contract, result, ty, body, info))
   }
 
   pub fn let_(
@@ -651,15 +824,25 @@ impl<M: KernelMode> KExpr<M> {
     body: KExpr<M>,
     non_dep: bool,
   ) -> Self {
-    Self::let_mdata(name, ty, val, body, non_dep, no_mdata::<M>())
+    Self::let_contract(name, LetContract::plain(non_dep), ty, val, body)
   }
 
-  fn let_mdata_with_addr(
+  pub fn let_contract(
     name: M::MField<Name>,
+    contract: LetContract,
     ty: KExpr<M>,
     val: KExpr<M>,
     body: KExpr<M>,
-    non_dep: bool,
+  ) -> Self {
+    Self::let_contract_mdata(name, contract, ty, val, body, no_mdata::<M>())
+  }
+
+  fn let_contract_mdata_with_addr(
+    name: M::MField<Name>,
+    contract: LetContract,
+    ty: KExpr<M>,
+    val: KExpr<M>,
+    body: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
     addr: Addr,
   ) -> Self {
@@ -670,7 +853,7 @@ impl<M: KernelMode> KExpr<M> {
       ty.has_fvars() || val.has_fvars() || body.has_fvars(),
       mdata,
     );
-    KExpr::new(ExprData::Let(name, ty, val, body, non_dep, info))
+    KExpr::new(ExprData::Let(name, ty, val, body, contract, info))
   }
 
   pub fn let_mdata(
@@ -681,8 +864,28 @@ impl<M: KernelMode> KExpr<M> {
     non_dep: bool,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
+    Self::let_contract_mdata(
+      name,
+      LetContract::plain(non_dep),
+      ty,
+      val,
+      body,
+      mdata,
+    )
+  }
+
+  pub fn let_contract_mdata(
+    name: M::MField<Name>,
+    contract: LetContract,
+    ty: KExpr<M>,
+    val: KExpr<M>,
+    body: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+  ) -> Self {
     let addr = fresh_uid();
-    Self::let_mdata_with_addr(name, ty, val, body, non_dep, mdata, addr)
+    Self::let_contract_mdata_with_addr(
+      name, contract, ty, val, body, mdata, addr,
+    )
   }
 
   pub fn prj(id: KId<M>, field: u64, val: KExpr<M>) -> Self {
@@ -820,7 +1023,7 @@ fn fmt_expr<M: KernelMode>(
       }
       write!(f, ")")
     },
-    ExprData::Lam(name, _, ty, body, _) => {
+    ExprData::Lam(name, _, _, ty, body, _) => {
       write!(f, "(fun (")?;
       if name.has_meta() {
         name.meta_fmt(f)?;
@@ -833,7 +1036,7 @@ fn fmt_expr<M: KernelMode>(
       fmt_expr(body, f, depth + 1)?;
       write!(f, ")")
     },
-    ExprData::All(name, _, ty, body, _) => {
+    ExprData::All(name, _, _, _, ty, body, _) => {
       write!(f, "((")?;
       if name.has_meta() {
         name.meta_fmt(f)?;

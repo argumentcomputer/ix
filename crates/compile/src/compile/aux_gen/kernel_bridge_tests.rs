@@ -142,7 +142,7 @@ fn kernel_bridge_cache_keys_include_binder_depth() {
   );
   let ingressed = to_kexpr_static(&source, &fvars, 1, &[], &stt).unwrap();
   let KED::App(outer, lam, _) = ingressed.data() else { panic!("app") };
-  let KED::Lam(_, _, _, inner, _) = lam.data() else { panic!("lam") };
+  let KED::Lam(_, _, _, _, inner, _) = lam.data() else { panic!("lam") };
   assert!(matches!(outer.data(), KED::Var(0, ..)));
   assert!(matches!(inner.data(), KED::Var(1, ..)));
   assert_same_lean(
