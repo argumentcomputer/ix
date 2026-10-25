@@ -31,6 +31,7 @@ import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.Pass3RustParity
 import Tests.Ix.Compile.O11aDecline
+import Tests.Ix.RoleCompile
 import Tests.Ix.Compile.O11aCopies
 import Tests.Ix.Compile.O11aPlanning
 import Tests.Ix.Compile.PlanCache
@@ -392,6 +393,7 @@ def registry : List Entry := [
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
+  .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
 
   -- expensive suites and runners (these require significant RAM)
   .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,

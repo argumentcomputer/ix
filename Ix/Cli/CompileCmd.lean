@@ -2,6 +2,7 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.CompileM
+public import Ix.RoleBinding.Compile
 public import Ix.Meta
 public import Ix.TracingTexray
 public import Ix.Benchmark.Results
@@ -40,7 +41,7 @@ private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α ×
   xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
 
 /-- The report describes this invocation's published envelope. An abort
-never opens a possibly pre-existing output file. Both supported headers are
+never opens a possibly pre-existing output file. The supported headers are
 one byte; checked object/claim versions are independent of this value. -/
 def Ix.Cli.publishedEnvelopeVersion (published : Bool) (path : FilePath) : IO (Option Nat) := do
   unless published do return none
@@ -49,6 +50,7 @@ def Ix.Cli.publishedEnvelopeVersion (published : Bool) (path : FilePath) : IO (O
   match (header[0]? : Option UInt8) with
   | some 0xE4 => return some 4
   | some 0xE5 => return some 5
+  | some 0xE6 => return some 6
   | _ => throw <| IO.userError s!"compile report: invalid published envelope header in {path}"
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -194,21 +196,34 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     TracingTexray.startSampler
     TracingTexray.resetPeakTreeRss
 
-  -- Rust compiles and writes the `.ixe` directly (streamed — no
-  -- env-sized ByteArray crosses the FFI; `<out>.tmp` + atomic rename).
-  -- The file is the canonical `Ixon.Env::put` format and round-trips
-  -- through `Ixon.Env::get`, so later runs (e.g. `ix check-ixon`) can
-  -- skip the Lean → IxOn compile step.
+  -- Keep the raw Rust stream private until its actual support, evidence and
+  -- binding are generated. Publication is atomic after final serialization.
   let allowPartial := p.hasFlag "allow-partial"
   let strictAnon := p.hasFlag "anon"
   let start ← IO.monoMsNow
-  let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv constList
+  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv leanEnv constList).mapError toString)
+  let constList ← IO.ofExcept input.prepare
   if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
     IO.eprintln s!"[compile] source contract preparation: {((← IO.monoMsNow) - start).formatMs}"
-  let status ← if strictAnon then
-      Ix.CompileM.rsCompileEnvBytesAnonFFI constList outPath allowPartial
-    else
-      Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
+  let status ← IO.FS.withTempDir fun dir => do
+    let rawPath := dir / "original.ixe"
+    let status ← Ix.CompileM.rsCompileEnvBytesFFI constList rawPath.toString allowPartial
+    if !allowPartial && !status.ungrounded.isEmpty then return status
+    let original ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile rawPath))
+    let artifact ← Ix.RoleBinding.Compile.finalize Ix.RoleBinding.Compile.rustBackend
+      leanEnv input original Ix.Resource.typingLimits
+    let artifact := if strictAnon then { artifact with
+      named := {}, names := {}, comms := {}, addrToName := {},
+      originals := {}, originalHintOverrides := {} } else artifact
+    let bytes ← IO.ofExcept (Ixon.serEnv artifact)
+    Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
+    let addresses := artifact.consts.toArray.map (·.1)
+    let root := (Ix.Merkle.merkleRootCanonical addresses).getD Ix.Merkle.zeroAddress
+    return { status with
+      bytes := bytes.size.toUInt64
+      named := artifact.named.size.toUInt64
+      uniqueAnon := artifact.consts.size.toUInt64
+      root := toString root }
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 

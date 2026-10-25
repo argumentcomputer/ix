@@ -29,6 +29,7 @@ public import Ix.CompileM
 public import Ix.CompileDriver
 public import Ix.Compile.ChangedSet
 public import Ix.CompileResource
+public import Ix.RoleBinding.Compile
 public import Ix.Cli.DriverOptions
 public import Ix.AuxGen.LiteralSupport
 public import Ix.Cli.ValidateCmd
@@ -90,7 +91,6 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println s!"[compile-lean] FAILED: {e}"
     return 1
   | .ok out =>
-    let elapsed := (← IO.monoMsNow) - t0
     -- Same exit policy as `ix compile`: fail-closed by default — any
     -- block failure means a nonzero exit and no output file, unless
     -- `--allow-partial` explicitly opts into the grounded subset.
@@ -102,7 +102,12 @@ serialize the grounded subset)"
       for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
       return 1
-    IO.FS.writeBinFile outPath out.bytes
+    let artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.leanBackend workers opts)
+      fe.env input out.env Ix.Resource.typingLimits
+    let out := { out with env := artifact, bytes := ← IO.ofExcept (Ixon.serEnv artifact) }
+    IO.ofExcept (Ix.CompileM.resourcePostStep out)
+    Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) out.bytes
+    let elapsed := (← IO.monoMsNow) - t0
     IO.println s!"[compile-lean] wrote {out.bytes.size} bytes to {outPath} \
 ({out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
 {ungroundedCount} block failures) in {elapsed}ms"
@@ -126,12 +131,13 @@ serialize the grounded subset)"
     if p.hasFlag "rust-check" then
       IO.println "[compile-lean] --rust-check: compiling via Rust FFI..."
       let tR ← IO.monoMsNow
-      let dir ← IO.FS.createTempDir
-      let rustOut := dir / "rust-check.ixe"
-      let constants ← IO.ofExcept input.prepare
-      let _ ← Ix.CompileM.rsCompileEnvBytesFFI constants rustOut.toString true
-      let rustBytes ← IO.FS.readBinFile rustOut
-      IO.FS.removeDirAll dir
+      let rustBytes ← IO.FS.withTempDir fun dir => do
+        let rustOut := dir / "rust-check.ixe"
+        let constants ← IO.ofExcept input.prepare
+        let _ ← Ix.CompileM.rsCompileEnvBytesFFI constants rustOut.toString true
+        let raw ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile rustOut))
+        let bound ← Ix.RoleBinding.Compile.finalize Ix.RoleBinding.Compile.rustBackend fe.env input raw Ix.Resource.typingLimits
+        IO.ofExcept (Ixon.serEnv bound)
       let tRe := (← IO.monoMsNow) - tR
       if rustBytes == out.bytes then
         IO.println s!"[compile-lean] ALIGNED: {out.bytes.size} bytes byte-identical with Rust ({tRe}ms)"

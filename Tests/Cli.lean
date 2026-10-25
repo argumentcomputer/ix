@@ -47,8 +47,8 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile report))
     let schema ← IO.ofExcept (json.getObjValAs? Nat "schemaVersion")
     let version ← IO.ofExcept (json.getObjValAs? Nat "ixeFormatVersion")
-    unless schema == 2 && version == 4 do
-      throw <| IO.userError "compile report did not identify its emitted v4 envelope under schema2"
+    unless schema == 2 && version == 6 do
+      throw <| IO.userError "compile report did not identify its emitted bound v6 envelope under schema2"
     for ext in ["olean", "c"] do
       if ← (source.withExtension ext).pathExists then
         throw <| IO.userError s!"compile --no-build unexpectedly wrote a .{ext} file"
