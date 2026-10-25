@@ -1046,6 +1046,13 @@ def Comm.commit (c : Comm) : Address := Address.blake3 (serCommTagged c)
 
 /-! ## Ixon Environment -/
 
+/-- Exact artifact role-binding bytes and their claimed address. This is
+transport data; certified consumers admit the section through RoleTable. -/
+structure RoleBinding where
+  address : Address
+  bytes : ByteArray
+  deriving Repr, Inhabited, BEq
+
 /-- The Ixon environment, containing all compiled constants.
     Mirrors Rust's `ix::ixon::env::Env` structure. -/
 structure Env where
@@ -1083,6 +1090,8 @@ structure Env where
   /-- Exact original hint overrides by name. A present none clears a hint;
       absence inherits Named.hints. Never merged through anonHints. -/
   originalHintOverrides : Std.HashMap Ix.Name (Option Lean.ReducibilityHints) := {}
+  /-- Anonymous artifact binding, retained independently of named metadata. -/
+  roleBinding : Option RoleBinding := none
   deriving Inhabited
 
 namespace Env
@@ -1354,7 +1363,7 @@ structure RawNameEntry where
 /-- Raw FFI environment structure using arrays instead of HashMaps.
     This is the array-based equivalent of `Env` for FFI compatibility.
     Field order matters: the Rust mirror (`LeanIxonRawEnv`) addresses
-    constructor slots positionally (0-9). -/
+    constructor slots positionally (0-10). -/
 structure RawEnv where
   consts : Array RawConst
   named : Array RawNamed
@@ -1370,6 +1379,7 @@ structure RawEnv where
   /-- Exact serialized original bytes; no materialization/default substitution. -/
   originals : Array RawBlob := #[]
   originalHintOverrides : Array (Ix.Name × Option Lean.ReducibilityHints) := #[]
+  roleBinding : Option RoleBinding := none
   deriving Repr, Inhabited, BEq
 
 namespace RawEnv
@@ -1434,7 +1444,8 @@ def toEnv (raw : RawEnv) : Env := Id.run do
     originals := raw.originals.foldl (fun m r =>
       m.insert r.addr (LazyConstant.ofSlice r.bytes 0 r.bytes.size)) {}
     originalHintOverrides := raw.originalHintOverrides.foldl
-      (fun m (n, h) => m.insert n h) {} }
+      (fun m (n, h) => m.insert n h) {}
+    roleBinding := raw.roleBinding }
 
 /-- Check the original-data array keys before map conversion can erase a
 duplicate. Payload and published-name validation belongs to the writer.
@@ -1484,6 +1495,7 @@ def toRawEnv (env : Env) : RawEnv := {
   anonHints := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
   originals := env.originals.toArray.map fun (addr, lc) => { addr, bytes := lc.rawBytes }
   originalHintOverrides := env.originalHintOverrides.toArray
+  roleBinding := env.roleBinding
 }
 
 /-- TagN (`f = 4`) header flag for Env (0xE). -/
@@ -1493,17 +1505,39 @@ def FLAG : UInt8 := 0xE
 def CHECKED_FORMAT_VERSION : UInt8 := 4
 def LEGACY_ENV_VERSION : UInt64 := 4
 def ORIGINALS_ENV_VERSION : UInt64 := 5
+def BINDING_ENV_VERSION : UInt64 := 6
 /-- Compatibility alias for the original envelope, not the selected writer version. -/
 def VERSION : UInt64 := LEGACY_ENV_VERSION
 def OBJECT_FORMAT : UInt8 := CHECKED_FORMAT_VERSION
 
 /-- Empty original-data tables preserve the exact legacy envelope. -/
 def envelopeVersion (env : Env) : UInt64 :=
-  if env.originals.isEmpty && env.originalHintOverrides.isEmpty then
+  if env.roleBinding.isSome then BINDING_ENV_VERSION
+  else if env.originals.isEmpty && env.originalHintOverrides.isEmpty then
     LEGACY_ENV_VERSION else ORIGINALS_ENV_VERSION
 
 def supportedEnvelopeVersion (version : UInt64) : Bool :=
-  version == LEGACY_ENV_VERSION || version == ORIGINALS_ENV_VERSION
+  version == LEGACY_ENV_VERSION || version == ORIGINALS_ENV_VERSION || version == BINDING_ENV_VERSION
+
+/-- Authenticate the raw pair without interpreting its role-table payload. -/
+def checkBinding (binding : RoleBinding) : Except String Unit := do
+  unless Address.admissionHash binding.bytes == binding.address do
+    throw s!"role binding: bytes hash mismatch for {binding.address}"
+
+def putBindingHeader (binding : Option RoleBinding) : PutM Unit := do
+  if let some binding := binding then
+    Serialize.put binding.address
+    putTagN 0 0 binding.bytes.size.toUInt64
+    putBytes binding.bytes
+
+def getBindingHeader (version : UInt64) : GetM (Option RoleBinding) := do
+  if version != BINDING_ENV_VERSION then return none
+  let address : Address ← Serialize.get
+  let length := (← getTagN 0).value.toNat
+  let bytes ← getBytes length
+  let binding : RoleBinding := ⟨address, bytes⟩
+  if let .error e := checkBinding binding then throw e
+  return some binding
 
 /-- Validate exact unchecked bytes without inserting them into `consts`. -/
 def checkOriginalPayload (addr : Address) (bytes : ByteArray) : Except String Unit := do
@@ -1553,7 +1587,8 @@ def putOriginalTrailer (env : Env) (nameIdx : NameIndex) : ExceptT String PutM U
 `hasOriginal` is supplied by the full §5 map or the lazy reader's existing
 §5 parse; no second whole-table metadata decode is needed. -/
 def getOriginalTrailer (env : Env) (nameRev : NameReverseIndex)
-    (names : Std.HashMap Address Ix.Name) (hasOriginal : Ix.Name → Bool) :
+    (names : Std.HashMap Address Ix.Name) (hasOriginal : Ix.Name → Bool)
+    (allowEmpty : Bool := false) :
     GetM Env := do
   let backing := (← get).bytes
   let mut env := env
@@ -1571,7 +1606,8 @@ def getOriginalTrailer (env : Env) (nameRev : NameReverseIndex)
     if let .error e := checkOriginalPayload addr bytes then throw e
     env := { env with originals := env.originals.insert addr (LazyConstant.ofSlice backing off len) }
   let hints := (← getTagN 0).value.toNat
-  if count == 0 && hints == 0 then throw "originals: empty v5 trailer; use the v4 envelope"
+  if count == 0 && hints == 0 && !allowEmpty then
+    throw "originals: empty v5 trailer; use the v4 envelope"
   let mut prevIdx : Option Nat := none
   for _ in [:hints] do
     let idx := (← getTagN 0).value.toNat
@@ -1702,6 +1738,8 @@ def namedChunk : Nat := 2048
     fail at write time (mirrors Rust `Env::put`). -/
 def putEnv (env : Env) : ExceptT String PutM Unit := do
   if let .error e := checkOriginalData env then throw e
+  if let some binding := env.roleBinding then
+    if let .error e := checkBinding binding then throw e
   putTagN 4 FLAG env.envelopeVersion
 
   -- Canonical merkle root over consts addresses (matches Rust Env::put).
@@ -1724,6 +1762,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   putTagN 0 0 assumptions.size.toUInt64
   for addr in assumptions do
     Serialize.put addr
+  putBindingHeader env.roleBinding
 
   -- Section 1: Blobs (Address -> bytes)
   let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
@@ -1828,7 +1867,7 @@ def getEnv : GetM Env := do
   if tag.flag != FLAG then
     throw s!"Env.get: expected flag 0x{FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
   unless supportedEnvelopeVersion tag.value do
-    throw s!"Env.get: unsupported .ixe envelope version {tag.value} (expected 4 or 5)"
+    throw s!"Env.get: unsupported .ixe envelope version {tag.value} (expected 4, 5 or 6)"
 
   -- Canonical merkle root (fixed 32 bytes). For empty const sets the
   -- stored value is `Ix.Merkle.zeroAddress`. Verified at end against
@@ -1853,8 +1892,10 @@ def getEnv : GetM Env := do
         throw "Env.get: assumptions not strictly ascending"
     assumptionArr := assumptionArr.push addr
 
+  let roleBinding ← getBindingHeader tag.value
   let mut env : Env := {
     main
+    roleBinding
     assumptions := assumptionArr.foldl (·.insert ·) {}
   }
 
@@ -1998,9 +2039,10 @@ def getEnv : GetM Env := do
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
 
-  if tag.value == ORIGINALS_ENV_VERSION then
+  if tag.value != LEGACY_ENV_VERSION then
     env ← getOriginalTrailer env nameRev namesLookup
       (fun name => (env.named[name]?).any (·.original.isSome))
+      (allowEmpty := tag.value == BINDING_ENV_VERSION)
   -- No bytes may follow the selected envelope's last section.
   let st ← get
   if st.idx != st.bytes.size then
@@ -2112,7 +2154,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   if tag.flag != Env.FLAG then
     throw s!"Env.get: expected flag 0x{Env.FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
   unless Env.supportedEnvelopeVersion tag.value do
-    throw s!"Env.get: unsupported .ixe envelope version {tag.value} (expected 4 or 5)"
+    throw s!"Env.get: unsupported .ixe envelope version {tag.value} (expected 4, 5 or 6)"
   let storedRoot : Address ← Serialize.get
   let mainTag ← getU8
   let main : Option Address ← match mainTag with
@@ -2128,6 +2170,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
       if !(compare prev addr).isLT then
         throw "Env.get: assumptions not strictly ascending"
     assumptionArr := assumptionArr.push addr
+  let roleBinding ← Env.getBindingHeader tag.value
   reserCheck "header" hdrStart <| runPut do
     putTagN 4 Env.FLAG tag.value
     Serialize.put storedRoot
@@ -2136,9 +2179,11 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     | some addr => do putU8 1; Serialize.put addr
     putTagN 0 0 assumptionArr.size.toUInt64
     for addr in assumptionArr do Serialize.put addr
+    Env.putBindingHeader roleBinding
 
   let mut env : Env := {
     main
+    roleBinding
     assumptions := assumptionArr.foldl (·.insert ·) {}
   }
 
@@ -2364,8 +2409,9 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
 
-  if tag.value == Env.ORIGINALS_ENV_VERSION then
+  if tag.value != Env.LEGACY_ENV_VERSION then
     env ← Env.getOriginalTrailer env nameRev namesLookup originalNames.contains
+      (allowEmpty := tag.value == Env.BINDING_ENV_VERSION)
 
   let st ← get
   if st.idx != st.bytes.size then
@@ -2499,7 +2545,7 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat × Nat 
   -- Original data is a separate trailer, absent in v4. Count payload bytes
   -- without constructing another buffer containing every original record.
   let mut originalBytes := 0
-  if env.envelopeVersion == Env.ORIGINALS_ENV_VERSION then
+  if env.envelopeVersion != Env.LEGACY_ENV_VERSION then
     originalBytes := (runPut do
       putTagN 0 0 env.originals.size.toUInt64
       putTagN 0 0 env.originalHintOverrides.size.toUInt64).size
@@ -2559,7 +2605,7 @@ structure RawNamedLite where
   deriving Inhabited
 
 /-- Metadata-light env returned by `rs_de_env_lazy`. Field order
-    matters: the Rust builder addresses constructor slots 0-5. -/
+    matters: the Rust builder addresses constructor slots 0-6. -/
 structure RawEnvLazy where
   consts : Array RawConstSlice
   named : Array RawNamedLite
@@ -2570,6 +2616,7 @@ structure RawEnvLazy where
   assumptions : Array Address := #[]
   /-- Reducibility hints (`Env.anonHints`) from the hints section. -/
   anonHints : Array (Address × Lean.ReducibilityHints) := #[]
+  roleBinding : Option RoleBinding := none
   deriving Inhabited
 
 /-- Reconstruct an `Env` from a `RawEnvLazy` and the original buffer `buf`.
@@ -2578,6 +2625,7 @@ structure RawEnvLazy where
     (offsets are relative to it). -/
 def RawEnvLazy.toEnv (raw : RawEnvLazy) (buf : ByteArray) : Env := Id.run do
   let mut env : Env := { main := raw.main
+                         roleBinding := raw.roleBinding
                          assumptions := raw.assumptions.foldl (·.insert ·) {}
                          anonHints := raw.anonHints.foldl
                            (fun m (a, h) => m.insert a h) {} }
@@ -2692,12 +2740,15 @@ structure EnvDiff where
   originalsChanged : Array Address
   /-- Labels distinguish an absent override from explicit `none`. -/
   originalHintsChanged : Array (String × String × String)
+  /-- Binding bytes and address are compared even without metadata mode. -/
+  roleBindingChanged : Option (Option Address × Option Address) := none
   deriving Inhabited, BEq
 
 /-- True when no difference was found (ignores `statsA`/`statsB`,
     which are always populated). -/
 def EnvDiff.isEmpty (d : EnvDiff) : Bool :=
   d.mainChanged.isNone
+  && d.roleBindingChanged.isNone
   && d.assumptionsAdded.isEmpty && d.assumptionsRemoved.isEmpty
   && d.namedAdded.isEmpty && d.namedRemoved.isEmpty
   && d.namedChanged.isEmpty && d.namedMetaOnly.isEmpty

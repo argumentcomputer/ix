@@ -202,6 +202,27 @@ def recordControls : List (String × Bool) := Id.run do
       (ingress substituted).toOption == some (.bvar 0))
   ]
 
-def suite : List TestSeq := (controls ++ recordControls).map fun (label, ok) => test s!"expression frame: {label}" ok
+def substitutionControls : List (String × Bool) := Id.run do
+  let zero := Expr.mkBVar 0
+  let one : Expr := .bvar 1 zero.getHash
+  let left : Expr := .mdata #[(_root_.Ix.Compile.Pass.inlineKey, .ofNat 0)] zero zero.getHash
+  let right : Expr := .mdata #[(_root_.Ix.Compile.Pass.inlineKey, .ofNat 1)] one zero.getHash
+  let records := ({} : Std.HashMap Nat (Nat × UInt64)).insert 0 (3, 7) |>.insert 1 (5, 11)
+  let expected := fun slot root body => Expr.mkMData #[
+    (_root_.Ix.Compile.Pass.inlineKey, .ofNat slot), (_root_.Ix.Compile.Pass.inlineMetaKey, .ofNat root)] body
+  let result := substRecords records (Expr.mkApp left right)
+  let exact := _root_.Ix.Compile.ExactKey.exprEq result
+    (Expr.mkApp (expected 3 7 zero) (expected 5 11 one))
+  let mut shared := left
+  let mut wanted := expected 3 7 zero
+  for _ in [:24] do
+    shared := Expr.mkApp shared shared
+    wanted := Expr.mkApp wanted wanted
+  return [("substitution distinguishes record nodes sharing a raw digest", exact),
+    ("substitution retains a deeply shared repeated record DAG",
+      _root_.Ix.Compile.ExactKey.exprEq (substRecords records shared) wanted)]
+
+def suite : List TestSeq := (controls ++ recordControls ++ substitutionControls).map fun (label, ok) =>
+  test s!"expression frame: {label}" ok
 
 end Tests.Ix.Compile.ExpressionFrame

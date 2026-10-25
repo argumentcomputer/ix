@@ -229,7 +229,8 @@ pub fn build_sub_env(
 #[cfg(not(target_arch = "riscv64"))]
 fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
   let closure = closure_addrs(source, roots);
-  let sub = IxonEnv::new();
+  let mut sub = IxonEnv::new();
+  sub.role_binding = source.role_binding.clone();
   for addr in &closure {
     if let Some(bytes) = source.get_const_bytes(addr) {
       sub.store_const_lazy(addr.clone(), bytes);

@@ -2,8 +2,10 @@ module
 
 public import Ix.Compile.SourceContract
 public import Ix.Compile.SourceContract.Transport
+public import Ix.CompileM
 public import Ix.CanonM
 public import Ix.LeanIngress.Expr
+public import Ix.Compile.Image.Develop
 public import LSpec
 public import Lean.Compiler.BorrowedAnnotation
 
@@ -332,8 +334,173 @@ def arityProducerTests : TestSeq := Id.run do
     test "actual theorem/opaque/axiom outputs preserve kind and optional-value boundaries" kinds ++
     test "decorator preserves plain metadata, removes source markers and refuses original semantic frames" metadata
 
+-- Internal record-frame fixtures exercise the pure decorator, not public
+-- compiler input admission or a designated baseline.
+def recordSubstitutionTests : TestSeq := Id.run do
+  let wrap := fun e => Expr.mdata (({} : MData).setNat `_ix.inline 0) e
+  let source := definition `recordIdentity
+    (.forallE `x natType (wrap natType) .default)
+    (.lam `x natType (wrap (wrap (.bvar 0))) .default)
+  let canonical := fun out => (Id.run ((_root_.Ix.CanonM.canonConst out).run {})).1
+  let pair := (resolveTelescope source #[{ binder := .position 0, uses := .linear, result := some .unique }]).toOption
+    |>.bind (fun c => c.decorate.toOption)
+  let mut inputs : Array _root_.Ix.Expr := #[]
+  if let some out := pair then
+    if let .defnInfo v := canonical out then inputs := #[v.cnst.type, v.value]
+  let binding := definition `recordLet natType (.letE `view natType (.lit (.natVal 0)) (wrap (.bvar 0)) false)
+  let borrow : SourceContract := { source := binding, binders := #[
+    { site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
+  if let some out := (borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption) then
+    if let .defnInfo v := canonical out then inputs := inputs.push v.value
+  let records := ({} : Std.HashMap Nat (Nat × UInt64)).insert 0 (7, 9)
+  let anchor := _root_.Ix.Expr.mkBVar 0
+  let payloadSame := fun (a b : _root_.Ix.Expr) => match a, b with
+    | .mdata data _ hash, .mdata other _ _ =>
+      _root_.Ix.Compile.ExactKey.exprEq (.mdata data anchor hash) (.mdata other anchor hash)
+    | _, _ => false
+  let stable := inputs.all fun e =>
+    let out := _root_.Ix.CompileM.substRecords records e
+    let before := _root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e
+    let after := _root_.Ix.LeanIngress.ingressExpr (fun _ => 0) out
+    before.isOk && before.toOption == after.toOption && payloadSame e out &&
+      !_root_.Ix.Compile.ExactKey.exprEq e out
+  return test "record substitution retains exact lam/all/let semantic arrays and successful readings"
+      (inputs.size == 3 && stable) ++
+    test "missing record entries retain actual decorated expressions exactly"
+      (inputs.size == 3 && inputs.all fun e =>
+        _root_.Ix.Compile.ExactKey.exprEq e (_root_.Ix.CompileM.substRecords {} e))
+
+-- These open source expressions exercise raw rewrite helpers. Resolving their
+-- contracts does not assert declaration admission or whole-program validity.
+open _root_.Ix.Compile.Image in
+def rewritePrimitiveTests : TestSeq := Id.run do
+  let domain := Expr.sort (.param `u)
+  let source := definition `rewriteOpen (.forallE `x domain (.bvar 1) .default)
+    (.lam `x domain (.bvar 1) .default)
+  let canonical := fun out => (Id.run ((_root_.Ix.CanonM.canonConst out).run {})).1
+  let mut inputs : Array _root_.Ix.Expr := #[]
+  let linear : TelescopeContract := { binder := .position 0, uses := .linear, result := some .unique }
+  if let some out := (resolveTelescope source #[linear]).toOption.bind (fun c => c.decorate.toOption) then
+    if let .defnInfo v := canonical out then inputs := #[v.cnst.type, v.value]
+  let binding := definition `rewriteLet domain (.letE `view domain (.bvar 0) (.bvar 1) false)
+  let borrow : SourceContract := { source := binding, binders := #[
+    { site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
+  if let some out := (borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption) then
+    if let .defnInfo v := canonical out then inputs := inputs.push v.value
+  let eq := _root_.Ix.Compile.ExactKey.exprEq
+  let anchor := _root_.Ix.Expr.mkBVar 0
+  let payloadSame := fun (a b : _root_.Ix.Expr) => match a, b with
+    | .mdata data _ hash, .mdata other _ _ => data.size == 3 &&
+      eq (.mdata data anchor hash) (.mdata other anchor hash)
+    | _, _ => false
+  let u := _root_.Ix.Name.fromLeanName `u
+  let v := _root_.Ix.Name.fromLeanName `v
+  let one := _root_.Ix.Level.mkSucc _root_.Ix.Level.mkZero
+  let domainIsOne := fun (e : _root_.Ix.Expr) => match e with
+    | .mdata _ (.lam _ ty _ _ _) _ | .mdata _ (.forallE _ ty _ _ _) _ |
+      .mdata _ (.letE _ ty _ _ _ _) _ => eq ty (_root_.Ix.Expr.mkSort one)
+    | _ => false
+  let shiftedBody := fun (e : _root_.Ix.Expr) => match e with
+    | .mdata _ (.lam _ _ (.bvar 3 _) _ _) _ |
+      .mdata _ (.forallE _ _ (.bvar 3 _) _ _) _ |
+      .mdata _ (.letE _ _ (.bvar 2 _) (.bvar 3 _) _ _) _ => true
+    | _ => false
+  let shifts := inputs.map fun e => (liftM e 2 0).run {}
+  let roundTrips := inputs.zip shifts |>.all fun (e, run) => match run with
+    | .ok (lifted, after) => shiftedBody lifted && !eq e lifted && payloadSame e lifted &&
+      ((lowerM lifted 2 0).run after).toOption.any (fun (out, _) => eq e out && payloadSame e out)
+    | .error _ => false
+  let warm := inputs.zip shifts |>.all fun (e, run) => match run with
+    | .ok (lifted, after) => after.lifted.size > 0 &&
+      ((liftM e 2 0).run after).toOption.any fun (again, state) => eq lifted again &&
+        state.lifted.size == after.lifted.size && state.range.size == after.range.size &&
+        state.nodes.size == after.nodes.size &&
+        ((lowerM lifted 2 0).run after).toOption.any fun (lowered, afterLower) =>
+          afterLower.lowered.size > 0 && eq lowered e &&
+          ((lowerM lifted 2 0).run afterLower).toOption.any fun (again, state) =>
+            eq lowered again && state.lowered.size == afterLower.lowered.size &&
+            state.range.size == afterLower.range.size && state.nodes.size == afterLower.nodes.size
+    | .error _ => false
+  let zero := _root_.Ix.Expr.mkBVar 0
+  let alias : _root_.Ix.Expr := .bvar 1 zero.getHash
+  let liftCollision := ((liftM zero 2 0).run {}).toOption.any fun (first, state) =>
+    ((liftM alias 2 0).run state).toOption.any fun (second, _) =>
+      eq first (_root_.Ix.Expr.mkBVar 2) && eq second (_root_.Ix.Expr.mkBVar 3)
+  let three : _root_.Ix.Expr := .bvar 3 zero.getHash
+  let four : _root_.Ix.Expr := .bvar 4 zero.getHash
+  let lowerCollision := ((lowerM three 2 0).run {}).toOption.any fun (first, state) =>
+    ((lowerM four 2 0).run state).toOption.any fun (second, _) =>
+      eq first (_root_.Ix.Expr.mkBVar 1) && eq second (_root_.Ix.Expr.mkBVar 2)
+  let seeded : DevState := { nodes := ({} : TotalMemo.Nodes).insert (hash zero) zero }
+  let ty := _root_.Ix.Expr.mkSort _root_.Ix.Level.mkZero
+  let lam := fun body => _root_.Ix.Expr.mkLam _root_.Ix.Name.mkAnon ty body .default
+  let ident := lam zero
+  let value := _root_.Ix.Expr.mkLit (.natVal 7)
+  let eta := lam (lam (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkBVar 1) zero))
+  let projection := lam (_root_.Ix.Expr.mkProj _root_.Ix.Compile.LibraryNames.nPProd 0 zero)
+  let pair := fun e => Canon.mkAppN
+    (_root_.Ix.Expr.mkConst _root_.Ix.Compile.LibraryNames.nPProdMk #[one, one]) #[ty, ty, e, value]
+  let develops := fun f args expected => (instantiateWith {} f args).toOption.any fun (out, _) => eq out expected
+  let history := inputs.all fun e => (instantiateWith {} ident #[e]).toOption.any fun (out, after) =>
+    eq e out && payloadSame e out && after.insts.size > 0 &&
+    (instProbe after e zero 0).any (fun r => eq r.1 e && r.2 == .direct) &&
+    (instantiateWith after ident #[e]).toOption.any fun (again, next) =>
+      eq out again && next.insts.size == after.insts.size
+  let instCollision := ((hinst 8 value 0 zero).run {}).toOption.any fun (first, after) =>
+    ((hinst 8 value 0 alias).run after).toOption.any fun (second, _) =>
+      eq first.1 value && first.2 == .direct && eq second.1 zero && second.2 == .no
+  -- This forged state is not an executed history from{}. Matching exact
+  -- keys alone does not certify its deliberately malformed retained result.
+  let badData := #[(_root_.Ix.Name.fromLeanName `ix.contract, _root_.Ix.DataValue.ofNat 3)]
+  let bad := _root_.Ix.Expr.mkMData badData zero
+  let poisoned : DevState := {
+    insts := ({} : Std.HashMap UInt64 InstEntry).insert (instBucket value zero 0)
+      ⟨value, zero, 0, (bad, .direct)⟩ }
+  return test "rewrite universe substitution retains exact lam/all/let frames and changes their domains"
+      (inputs.size == 3 && inputs.all fun e =>
+        let out := Canon.substLevels #[u] #[one] e
+        domainIsOne out && !eq e out && payloadSame e out) ++
+    test "rewrite universe substitution preserves empty and unequal-array branches"
+      (inputs.size == 3 && inputs.all fun e =>
+        eq e (Canon.substLevels #[] #[one] e) && eq e (Canon.substLevels #[u] #[] e) &&
+        eq e (Canon.substLevels #[v, u] #[one] e) &&
+        domainIsOne (Canon.substLevels #[u] #[one, _root_.Ix.Level.mkZero] e)) ++
+    test "actual lift/lower changes open variables and roundtrips exact semantic frames"
+      (inputs.size == 3 && roundTrips) ++
+    test "actual warm lift/lower caches retain exact outputs and table sizes" (inputs.size == 3 && warm) ++
+    test "actual zero-shift and range fast paths retain decorated inputs"
+      (inputs.size == 3 && inputs.all fun e => [liftM e 0 0, lowerM e 0 0,
+        liftM e 2 4, lowerM e 2 4].all fun action =>
+          (action.run {}).toOption.any fun (out, _) => eq e out && payloadSame e out) ++
+    test "actual lift cache rejects a distinct raw input with the same digest"
+      (hash zero == hash alias && !eq zero alias && liftCollision) ++
+    test "actual lower cache rejects a distinct raw input with the same digest"
+      (hash three == hash four && !eq three four && lowerCollision) ++
+    test "actual sharing confirms equal nodes, rejects raw digest aliases and fills empty tables"
+      ([zero, alias].all fun e => [share e, shareInput e].all fun action =>
+        [seeded, {}].all fun state => (action.run state).toOption.any fun (out, _) => eq e out) ++
+    test "actual cold/warm instantiateWith histories retain decorated results and exact hits"
+      (inputs.size == 3 && history) ++
+    test "actual hinst rebuilds semantic lam/all/let frames around changed children"
+      (inputs.size == 3 && inputs.all fun e => ((hinst 16 value 0 e).run {}).toOption.any
+        fun (r, _) => !eq e r.1 && payloadSame e r.1) ++
+    test "actual hereditary beta contracts the substituted function"
+      (develops (lam (_root_.Ix.Expr.mkApp zero value)) #[ident] value) ++
+    test "actual eta and constructor projection return the selected decorated expressions"
+      (inputs.size == 3 && inputs.all fun e => develops eta #[e] e && develops projection #[pair e] e) ++
+    test "actual hinst rejects different retained inputs at the same bucket"
+      (instBucket value zero 0 == instBucket value alias 0 && !eq zero alias && instCollision) ++
+    test "actual zero-fuel errors precede even a matching forged cache hit"
+      ((match (hinst 0 value 0 zero).run poisoned with | .error msg => msg == developExhausted | _ => false) &&
+        (match (happ 0 ident [value]).run poisoned with | .error msg => msg == developExhausted | _ => false)) ++
+    test "an arbitrary exact-key cache can return malformed frames and is outside the history contract"
+      (!(_root_.Ix.SemanticContract.read badData).isOk &&
+        (instProbe poisoned value zero 0).any (fun r => eq r.1 bad) &&
+        (instantiateWith poisoned ident #[value]).toOption.any fun (out, _) => eq out bad)
+
 def suite : List TestSeq :=
-  [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests, arityProducerTests]
+  [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,
+    arityProducerTests, recordSubstitutionTests, rewritePrimitiveTests]
 
 end Tests.Ix.SourceContract
 

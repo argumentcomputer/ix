@@ -257,6 +257,7 @@ instance : Shrinkable RawEnv where
 /-- Compare RawEnv with content-aware comparison.
     Checks array sizes and content matching by Address. -/
 def rawEnvEq (a b : RawEnv) : Bool :=
+  a.roleBinding == b.roleBinding &&
   a.consts.size == b.consts.size &&
   a.named.size == b.named.size &&
   a.blobs.size == b.blobs.size &&

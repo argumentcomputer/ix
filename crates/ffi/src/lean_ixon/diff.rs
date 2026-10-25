@@ -166,6 +166,13 @@ impl LeanIxonEnvDiff<LeanOwned> {
       );
     }
     ctor.set_obj(20, hints);
+    let binding_changed: LeanOwned = match &d.role_binding_changed {
+      None => LeanOption::none().into(),
+      Some((old, new)) => {
+        LeanOption::some(LeanProd::new(opt_addr(old), opt_addr(new))).into()
+      },
+    };
+    ctor.set_obj(21, binding_changed);
     ctor
   }
 }

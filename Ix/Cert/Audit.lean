@@ -75,6 +75,7 @@ import Ix.CompileCert.ViewPublicationOrigin
 import Ix.CompileCert.PrimaryAddressFrame
 import Ix.CompileCert.ImageAuxOrigins
 import Ix.CompileCert.DisplayAddressFrame
+import Ix.Cert.PrefixVisibility
 
 /-! # The certification statements, frozen
 
@@ -6275,3 +6276,16 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "actual image auxiliary request membership"
     #[`Ix.CompileCert.ImageAuxOrigins.runImageBlock_aux_in_request]
+
+/-! ## Actual receipt snapshot visibility
+
+Real cached acceptance supplies uniqueness; the real snapshot accessor
+and final index counters determine every logical-prefix lookup. -/
+
+/-- info: [cert-audit] actual snapshot prefix visibility: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual snapshot prefix visibility"
+    (#[`snapshot_lookup, `snapshot_visible_iff, `snapshot_present_of_lt, `snapshot_absent_of_ge].map
+      (`Ix.Cert.PrefixVisibility ++ ·))

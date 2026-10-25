@@ -1,5 +1,7 @@
 import Benchmarks.Kernel.CheckIxeStep
 import Ix.RoleEvidence
+import Ix.RoleBinding.Publication
+import Ix.RoleBinding.Evidence
 import Ix.Address.Admission
 import Ix.Meta
 import Ix.CanonM
@@ -125,118 +127,6 @@ def readOrdered (s : Setup) (addresses : Array Address) :
 
 /-! ## Theorem records from closed proofs -/
 
-/-- The writer's state: the record's tables and the blobs its literals need. -/
-structure Egress (md : Ix.Kernel.Mode) where
-  refs : Array Address := #[]
-  refIdx : Std.HashMap Address Nat := {}
-  univs : Array Ixon.Univ := #[]
-  univIdx : Std.HashMap Ixon.Univ Nat := {}
-  sharing : Array Ixon.Expr := #[]
-  shareIdx : Std.HashMap (CExpr md) Nat := {}
-  blobs : Array (Address × ByteArray) := #[]
-
-abbrev EgressM (md : Ix.Kernel.Mode) := StateT (Egress md) (Except String)
-
-def refOf {md : Ix.Kernel.Mode} (a : Address) : EgressM md UInt64 := do
-  if let some i := (← get).refIdx[a]? then return i.toUInt64
-  let i := (← get).refs.size
-  modify fun s => { s with refs := s.refs.push a, refIdx := s.refIdx.insert a i }
-  return i.toUInt64
-
-def convLevel : CLevel → Ixon.Univ
-  | .zero => .zero
-  | .succ u => .succ (convLevel u)
-  | .max u v => .max (convLevel u) (convLevel v)
-  | .imax u v => .imax (convLevel u) (convLevel v)
-  | .param i => .var i.toUInt64
-
-def univOf {md : Ix.Kernel.Mode} (l : CLevel) : EgressM md UInt64 := do
-  let u := convLevel l
-  if let some i := (← get).univIdx[u]? then return i.toUInt64
-  let i := (← get).univs.size
-  modify fun s => { s with univs := s.univs.push u, univIdx := s.univIdx.insert u i }
-  return i.toUInt64
-
-/-- A natural number's blob: little-endian bytes, no trailing zero (the
-reader's `natural`). -/
-def natBytes (n : Nat) : ByteArray := Id.run do
-  let mut out : ByteArray := .empty
-  let mut k := n
-  while k > 0 do
-    out := out.push (k % 256).toUInt8
-    k := k / 256
-  return out
-
-def blobOf {md : Ix.Kernel.Mode} (bytes : ByteArray) : EgressM md UInt64 := do
-  let a := hash bytes
-  unless (← get).blobs.any (·.1 == a) do
-    modify fun s => { s with blobs := s.blobs.push (a, bytes) }
-  refOf a
-
-/-- How often each node occurs in `e`'s DAG (each parent edge counted once
-per distinct parent). -/
-partial def countUses {md : Ix.Kernel.Mode} (e : CExpr md) : StateM (Std.HashMap (CExpr md) Nat) Unit := do
-  let seen := (← get)[e]?
-  modify fun m => m.insert e (seen.getD 0 + 1)
-  if seen.isSome then return
-  match e with
-  | .app f a => countUses f; countUses a
-  | .lam t b _ | .forallE t b _ => countUses t; countUses b
-  | .letE t v b _ => countUses t; countUses v; countUses b
-  | .proj _ _ x => countUses x
-  | .fvar _ t => countUses t
-  | _ => pure ()
-
-/-- An expression as an Ixon expression under the writer's tables: every
-node used more than once (and not a leaf) becomes a sharing entry, written
-after the entries it uses. `addrOf` names a constant's record. -/
-partial def egress {md : Ix.Kernel.Mode} (uses : Std.HashMap (CExpr md) Nat)
-    (addrOf : CName md → Option Address) (e : CExpr md) : EgressM md Ixon.Expr := do
-  let leaf := match e with
-    | .bvar _ | .sort _ | .const .. | .lit _ => true
-    | _ => false
-  if !leaf && uses.getD e 0 > 1 then
-    if let some i := (← get).shareIdx[e]? then return .share i.toUInt64
-    let x ← build
-    let i := (← get).sharing.size
-    modify fun s => { s with sharing := s.sharing.push x, shareIdx := s.shareIdx.insert e i }
-    return .share i.toUInt64
-  build
-where
-  build : EgressM md Ixon.Expr := do
-    match e with
-    | .bvar i => pure (.var i.toUInt64)
-    | .sort u => pure (.sort (← univOf u))
-    | .const n us =>
-      let some a := addrOf n | throw s!"no record for constant {n}"
-      pure (.ref (← refOf a) (← us.toArray.mapM univOf))
-    | .app f a => pure (.app (← egress uses addrOf f) (← egress uses addrOf a))
-    | .lam t b m => pure (.lam m.contract (← egress uses addrOf t) (← egress uses addrOf b))
-    | .forallE t b m =>
-      pure (.all m.contract m.result (← egress uses addrOf t) (← egress uses addrOf b))
-    | .letE t v b l =>
-      pure (.letE l.contract (← egress uses addrOf t) (← egress uses addrOf v) (← egress uses addrOf b))
-    | .lit (.natVal n) => pure (.nat (← blobOf (natBytes n)))
-    | .lit (.strVal s) => pure (.str (← blobOf s.toUTF8))
-    | .proj s i x =>
-      let some a := addrOf s | throw s!"no record for structure {s}"
-      pure (.prj (← refOf a) i.toUInt64 (← egress uses addrOf x))
-    | .fvar .. => throw "a free variable in a proof"
-
-/-- **A theorem record** with statement `type` and proof `value`: level
-monomorphic, safe, its constants named through `addrOf`. -/
-def theoremRecord {md : Ix.Kernel.Mode} (addrOf : CName md → Option Address) (type value : CExpr md) :
-    Except String (Ixon.Constant × Array (Address × ByteArray)) := do
-  let uses := ((countUses type *> countUses value).run {}).2
-  let ((typ, val), eg) ← (do
-      let t ← egress uses addrOf type
-      let v ← egress uses addrOf value
-      pure (t, v) : EgressM md _).run {}
-  let c : Ixon.Constant :=
-    { info := .defn { kind := .thm, safety := .safe, lvls := 0, typ, value := val },
-      sharing := eg.sharing, refs := eg.refs, univs := eg.univs }
-  pure (c, eg.blobs)
-
 /-! ## Source mode's evidence -/
 
 /-- The module of the certificate theorems. -/
@@ -307,31 +197,13 @@ def run (args : List String) : IO UInt32 := do
   IO.eprintln s!"pin-gen: {store.size} records loaded in {(← IO.monoMsNow) - started} ms"
   let lookup : Store := (store[·]?)
   -- 1: the bindings
-  let mut bound : Array (Role × Address) := #[]
-  let mut refOfRole : Std.HashMap Role (ConstRef Address) := {}
-  let mut roleOfRef : Std.HashMap (ConstRef Address) Role := {}
-  for r in Role.all do
-    let n := Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .anon) r)
-    let some named := env.named[Ix.Name.fromLeanName n]? | fail s!"no constant named {n}"
-    let some c := store[named.addr]? | fail s!"{n}: no record at {named.addr}"
-    let some ref := resolveSource lookup named.addr c | fail s!"{n}: {named.addr} does not resolve"
-    if let some other := roleOfRef[ref]? then
-      fail s!"{repr r} and {repr other} are the same constant ({named.addr})"
-    roleOfRef := roleOfRef.insert ref r
-    refOfRole := refOfRole.insert r ref
-    bound := bound.push (r, named.addr)
+  let publication ← IO.ofExcept (Ix.RoleBinding.publication env lookup Role.all)
+  let bound := publication.bound
+  let refOfRole := publication.refs
   let boundOnly := Ix.Kernel.RoleTable.ofEntries Ix.Kernel.specVersion bound.toList []
   IO.eprintln s!"pin-gen: {bound.size} roles bound"
   -- 2: the prelude records, in prelude order
-  let mut preludeAddrs : Array Address := #[]
-  for group in preludeGroups do
-    for r in group do
-      let a := (boundOnly.addressOf? r).getD default
-      let some c := store[a]? | fail s!"no prelude record for {repr r}"
-      for x in #[owner a c, a] do
-        unless preludeAddrs.contains x do preludeAddrs := preludeAddrs.push x
-  let preRecords : Array (Address × Ixon.Constant) := preludeAddrs.filterMap fun a =>
-    (store[a]?).map (a, ·)
+  let preRecords ← IO.ofExcept (Ix.RoleBinding.preludeRecords boundOnly lookup preludeGroups)
   for (a, c) in preRecords do
     let bytes := Ixon.serConstant c
     match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
@@ -407,7 +279,7 @@ def run (args : List String) : IO UInt32 := do
           | .thmDecl cv _ => if cv.name == k then some cv.type else none
           | _ => none)
         | fail s!"{t}: no statement"
-      let (c, blobs) ← match theoremRecord (addrOfName[·]?) type p with
+      let (c, blobs) ← match Ix.RoleBinding.Evidence.theoremRecord (addrOfName[·]?) type p with
         | .ok x => pure x
         | .error e => fail s!"{t}: {e}"
       let bytes := Ixon.serConstant c
@@ -565,7 +437,7 @@ def run (args : List String) : IO UInt32 := do
         if let some m := named[a]? then
           unless m == ln do fail s!"{k}: {m} and {ln} have one name address"
         named := named.insert a ln
-      let (c, blobs) ← match theoremRecord (fun n => some (nameAddress (Ix.RoleEvidence.toLeanName n))) type p with
+      let (c, blobs) ← match Ix.RoleBinding.Evidence.theoremRecord (fun n => some (nameAddress (Ix.RoleEvidence.toLeanName n))) type p with
         | .ok x => pure x
         | .error e => fail s!"{k}: {e}"
       let bytes := Ixon.serConstant c

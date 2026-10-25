@@ -1287,13 +1287,19 @@ fn egress_standalone(
 /// into the output `IxonEnv` is thread-safe because the env uses DashMaps.
 /// Every rebuilt constant is shared under `limits` (the compile's
 /// `CompileState::sharing_limits`); a sharing failure names its constant.
+/// A bound input retains its exact binding only when every constant is
+/// reproduced at the same address with the same bytes. Changed output needs
+/// a newly generated binding; this roundtrip API does not remap role evidence.
 pub fn ixon_egress(
   kenv: &KEnv<Meta>,
   original_env: &IxonEnv,
   limits: &ExactSharingLimits,
 ) -> Result<IxonEnv, String> {
   let t_start = std::time::Instant::now();
-  let out = IxonEnv::new();
+  let mut out = IxonEnv::new();
+  if let Some(binding) = &original_env.role_binding {
+    binding.check_hash()?;
+  }
 
   // Copy immutable content tables.
   for entry in original_env.blobs.iter() {
@@ -1399,6 +1405,21 @@ pub fn ixon_egress(
     },
   )?;
   eprintln!("[ixon_egress] standalone consts:   {:.2?}", t_solo.elapsed());
+  if let Some(binding) = &original_env.role_binding {
+    let unchanged = original_env.consts.len() == out.consts.len()
+      && original_env.consts.iter().all(|entry| {
+        out.consts.get(entry.key()).is_some_and(|rebuilt| {
+          entry.value().raw_bytes() == rebuilt.value().raw_bytes()
+        })
+      });
+    if !unchanged {
+      return Err(
+        "ixon_egress: changed bound constants require a new role binding"
+          .into(),
+      );
+    }
+    out.role_binding = Some(binding.clone());
+  }
   eprintln!("[ixon_egress] total:               {:.2?}", t_start.elapsed());
 
   Ok(out)
@@ -2003,6 +2024,83 @@ mod tests {
   }
 
   // ---- ixon egress: sharing limits ----
+
+  #[test]
+  fn ixon_egress_preserves_binding_only_for_identical_constants() {
+    use ixon::env::RoleBinding;
+    use ixon::role_table::RoleTable;
+    use std::sync::Arc;
+
+    let name = mk_name("Egress.Bound");
+    let id = mk_id("Egress.Bound");
+    let mut kenv = KEnv::<Meta>::new();
+    let axiom = |ty| KConst::<Meta>::Axio {
+      name: name.clone(),
+      level_params: vec![],
+      is_unsafe: false,
+      lvls: 0,
+      ty,
+    };
+    kenv.insert(id.clone(), axiom(sort0()));
+    let seed = IxonEnv::new();
+    seed.register_name(
+      name.clone(),
+      Named::new(id.addr.clone(), ixon::ConstantMeta::default()),
+    );
+    let limits = ExactSharingLimits::default();
+    let mut original = ixon_egress(&kenv, &seed, &limits).unwrap();
+    assert_eq!(original.consts.len(), 1);
+    assert!(original.role_binding.is_none());
+
+    let bytes = RoleTable { version: 2, bound: vec![], evidence: vec![] }
+      .to_bytes()
+      .unwrap();
+    let binding =
+      RoleBinding { address: Address::hash(&bytes), bytes: Arc::from(bytes) };
+    original.role_binding = Some(binding.clone());
+    let rebuilt = ixon_egress(&kenv, &original, &limits).unwrap();
+    assert_eq!(rebuilt.role_binding, Some(binding.clone()));
+    assert_eq!(rebuilt.consts.len(), 1);
+    assert_eq!(rebuilt.envelope_version(), 6);
+
+    // The same named constant now has different content and a new address.
+    kenv.insert(
+      id,
+      axiom(KExpr::all(mk_name("x"), BinderInfo::Default, sort0(), sort0())),
+    );
+    let error = ixon_egress(&kenv, &original, &limits).unwrap_err();
+    assert_eq!(
+      error,
+      "ixon_egress: changed bound constants require a new role binding"
+    );
+    original.role_binding = None;
+    let changed = ixon_egress(&kenv, &original, &limits).unwrap();
+    assert_ne!(
+      changed.lookup_name(&name).unwrap().addr,
+      original.lookup_name(&name).unwrap().addr
+    );
+    assert!(changed.role_binding.is_none());
+
+    // Losing an unnamed record also refuses to carry the old binding.
+    original.role_binding = Some(binding.clone());
+    original.named.clear();
+    assert_eq!(
+      ixon_egress(&kenv, &original, &limits).unwrap_err(),
+      "ixon_egress: changed bound constants require a new role binding"
+    );
+
+    // Authentication is checked even when the constant set is empty.
+    let mut empty = IxonEnv::new();
+    empty.role_binding = Some(RoleBinding {
+      address: Address::hash(b"different binding"),
+      ..binding
+    });
+    assert!(
+      ixon_egress(&KEnv::new(), &empty, &limits)
+        .unwrap_err()
+        .starts_with("role binding: bytes hash mismatch")
+    );
+  }
 
   /// A sharing failure while rebuilding a constant names the constant and
   /// keeps the compile error's category (here a resource limit).

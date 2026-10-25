@@ -8,6 +8,10 @@ import Ix.CompileCert.ExpressionCorrectness
 import Ix.CompileCert.RecordState
 import Ix.CompileCert.RecordRead
 import Ix.CompileCert.RecordSourceShape
+import Ix.CompileCert.RecordSubst
+import Ix.CompileCert.RecordSubstReading
+import Ix.CompileCert.RewriteArityPrimitives
+import Ix.CompileCert.DevelopmentArity
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -775,3 +779,48 @@ run_cmd do
   checkRoots (tag := "reading-audit") "source contract arity"
     #[`Ix.CompileCert.RecordSourceShape.decorate_constant, `Ix.CompileCert.RecordSourceShape.ingress,
       `Ix.CompileCert.RecordSourceShape.canonical_ingress]
+
+/-- info: [reading-audit] record substitution producer: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "record substitution producer"
+    #[`Ix.CompileCert.RecordSubst.produced]
+
+/-- info: [reading-audit] record substitution reading: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "record substitution reading"
+    #[`Ix.CompileCert.RecordSubst.substRecords_related, `Ix.CompileCert.RecordSubst.withRecords_read]
+
+/-- info: [reading-audit] rewrite arity primitives: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "rewrite arity primitives"
+    (#[`substLevels, `liftP, `lowerP, `liftM, `lowerM, `share, `shareInput, `decorated_levels,
+      `decorated_liftM].map (`Ix.CompileCert.RewriteArityPrimitives ++ ·))
+
+/-- info: [reading-audit] development arity leaves: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "development arity leaves"
+    (#[`empty, `insert, `probe, `helperFrames, `spine, `field, `shareAppN_run].map
+      (`Ix.CompileCert.DevelopmentArity ++ ·))
+
+/-- info: [reading-audit] development arity recursion: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "development arity recursion"
+    #[`Ix.CompileCert.DevelopmentArity.hinst_run, `Ix.CompileCert.DevelopmentArity.happ_run]
+
+/-- info: [reading-audit] development arity history: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "development arity history"
+    (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh].map
+      (`Ix.CompileCert.DevelopmentArity ++ ·))

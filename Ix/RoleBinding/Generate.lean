@@ -1,0 +1,237 @@
+module
+
+public import Ix.RoleBinding.Publication
+public import Ix.RoleBinding.Evidence
+public import Ix.RoleEvidence
+public import Ix.KernelCheck.Step
+
+/-! # Artifact-specific binding and proof-evidence generation
+
+The inputs are the actual compiled artifact and compiled certificate module.
+Required roles and prelude groups are explicit; missing publication is an
+error, with no default-table fallback. Generation is untrusted. A consumer
+must still admit the binding and check the actual declarations and evidence.
+This module does not choose compiler support inputs or a certified closure.
+-/
+
+@[expose] public section
+
+namespace Ix.RoleBinding
+
+open Ix.Kernel (Role ConstRef RoleTable)
+open Ix.Kernel.Reader
+open Benchmarks.Kernel.CheckIxeStep (RecordStore Hints Setup setup closure)
+
+def byteError (e : Ix.Kernel.Admission.ByteError) : String :=
+  toString (Ix.Kernel.Admission.Error.ofBytes e)
+
+/-- Read authenticated canonical bytes, never a materialized cache supplied
+beside different bytes. Bounds are supplied by the caller. -/
+def recordStore (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
+    Except String RecordStore := do
+  let records := (env.consts.toArray.map fun (a, c) => (a, c.rawBytes)).qsort
+    fun x y => x.1.cmpBytes y.1 == .lt
+  let blobs := (env.blobs.toArray.qsort fun x y => x.1.cmpBytes y.1 == .lt).toList
+  (Ix.Kernel.Admission.preflight limits records.toList blobs).mapError byteError
+  (Ix.Kernel.Admission.uniqueKeys records.toList blobs).mapError byteError
+  (Ix.Kernel.Admission.authenticate Address.admissionHash records.toList blobs).mapError byteError
+  let decoded ← (Ix.Kernel.Admission.decodeRecords limits records.toList).mapError byteError
+  return decoded.foldl (fun out (a, c) => out.insert a c) {}
+
+/-- Structural source spelling for certificate names, including duplicate
+spellings that a forged stored Ix.Name hash would otherwise distinguish. -/
+def sourceAddresses (env : Ixon.Env) : Except String (Std.HashMap Ix.Kernel.Name Address) := do
+  let mut out : Std.HashMap Ix.Kernel.Name Address := {}
+  for (name, named) in env.named.toList do
+    let key := Ix.LeanIngress.ingressName name
+    if out.contains key then throw s!"role generation: duplicate source spelling {key}"
+    out := out.insert key named.addr
+  return out
+
+def mergeRecords (left right : RecordStore) : Except String RecordStore := do
+  let mut out := left
+  for (address, record) in right.toList do
+    if let some old := out[address]? then
+      unless Ixon.serConstant old == Ixon.serConstant record do
+        throw s!"role generation: conflicting record bytes at {address}"
+    else out := out.insert address record
+  return out
+
+def readDeclarations (s : Setup) (addresses : Array Address) :
+    Except String (Array (CDecl .anon)) := do
+  let mut state : State .anon := {}
+  let mut out : Array (CDecl .anon) := #[]
+  for address in addresses do
+    let some record := s.store[address]?
+      | throw s!"role generation: missing closure record {address}"
+    let read ← (readRecord s.cx state address record).mapError
+      fun e => s!"role generation: reading {address}: {e}"
+    state := state.commit read
+    out := out ++ read.decls
+  return out
+
+structure Generated where
+  publication : Publication
+  table : RoleTable
+  prelude : Array (Address × Ixon.Constant)
+  evidence : Array (Address × Ixon.Constant)
+  blobs : Array (Address × ByteArray)
+  /-- Retained for independent reader roundtrip verification by the caller. -/
+  closed : Std.HashMap Address (CExpr .anon)
+
+/-- Generate evidence for the required, actually published roles. The
+certificate module's bound operations must have the artifact's addresses.
+Missing proofs, unreadable closure records and noncanonical output refuse. -/
+def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
+    (required : List Role) (groups : List (List Role)) : Except String Generated := do
+  let store ← recordStore limits env
+  let published ← publication env (store[·]?) required
+  let boundOnly := RoleTable.ofEntries Ix.Kernel.specVersion published.bound.toList []
+  let preRecords ← preludeRecords boundOnly (store[·]?) groups
+  let pre : Prelude .anon ← readPrelude boundOnly preRecords
+  let base := setup store (env.blobs[·]?) boundOnly pre (Hints.ofStore store env.anonHints).lookup
+  for (role, ref) in published.refs.toList do
+    unless (base.cx.memberKey ref).toOption == some (Ix.Kernel.roleKey role) do
+      throw s!"role generation: {repr role} is not read under its role key"
+
+  let certRecords ← recordStore limits certificates
+  let certNames ← sourceAddresses certificates
+  let certStore ← mergeRecords base.store certRecords
+  for (role, address) in published.bound do
+    if let some certAddress := certNames[role.leanName]? then
+      unless address == certAddress do
+        throw s!"role generation: shared role addresses differ for {repr role}"
+  for (address, bytes) in certificates.blobs.toList do
+    if let some old := env.blobs[address]? then
+      unless old == bytes do throw s!"role generation: conflicting blob bytes at {address}"
+  let selected := Ix.RoleEvidence.certTheorems.filter fun (r, _) => required.contains r
+  for (role, _) in selected do
+    let some address := certNames[role.leanName]?
+      | throw s!"role generation: certificate input has no {repr role}"
+    unless boundOnly.addressOf? role == some address do
+      throw s!"role generation: certificate and artifact addresses differ for {repr role}"
+  let cs := setup certStore (fun a => certificates.blobs[a]? <|> env.blobs[a]?) boundOnly pre
+    (Hints.ofStore certStore certificates.anonHints).lookup
+  let mut certAt : Std.HashMap Lean.Name Address := {}
+  let mut roots := preRecords.map (·.1)
+  for (role, theorems) in selected do
+    let some ref := published.refs[role]?
+      | throw s!"role generation: unresolved required operation {repr role}"
+    roots := roots.push ref.block
+    for name in theorems do
+      let some address := certNames[Ix.Kernel.Name.ofLeanName name]?
+        | throw s!"role generation: certificate input has no {name}"
+      unless certStore.contains address do
+        throw s!"role generation: missing certificate record for {name}"
+      certAt := certAt.insert name address
+      roots := roots.push address
+  let declarations ← readDeclarations cs (closure cs.store cs.extra roots)
+  let values : Ix.RoleEvidence.Universe .anon := declarations.foldl Ix.RoleEvidence.Universe.add {}
+  let lookup := Ix.RoleEvidence.lookupOf declarations
+  let mut addrOfName : Std.HashMap (CName .anon) Address := {}
+  for (address, _) in cs.store.toArray.qsort (fun x y => x.1.cmpBytes y.1 == .lt) do
+    if let .ok key := cs.cx.keyAt address then
+      unless addrOfName.contains key do addrOfName := addrOfName.insert key address
+  for (role, address) in published.bound do
+    addrOfName := addrOfName.insert (Ix.Kernel.roleKey role) address
+  let mut keys : Std.HashMap Lean.Name (CName .anon) := {}
+  for (name, address) in certAt.toList do
+    let key ← (cs.cx.keyAt address).mapError fun e => s!"role generation: {name}: {e}"
+    keys := keys.insert name key
+  let mut evidence := (Ix.RoleEvidence.defeqRoles.filter required.contains).toArray.map
+    fun r => (r, (Ix.RoleEvidence.defeqEvidence (K := Address) r).toArray)
+  let mut records : Array (Address × Ixon.Constant) := #[]
+  let mut blobs : Array (Address × ByteArray) := #[]
+  let mut closed : Std.HashMap Address (CExpr .anon) := {}
+  for (role, theorems) in selected do
+    -- The same closure operations as RoleEvidence.closedProofs, with a
+    -- fallible certificate-key lookup instead of its total key function.
+    let operation := Ix.Kernel.roleKey (md := .anon) role
+    let some operationValue := Ix.RoleEvidence.valueOf declarations operation
+      | throw s!"role generation: {repr role} is not a definition here"
+    let allowed := Ix.RoleEvidence.allowedFor (lookup[·]?) operation operationValue
+    let proofs ← theorems.mapM fun name => do
+      let some key := keys[name]? | throw s!"role generation: missing certificate key for {name}"
+      let some value := Ix.RoleEvidence.theoremOf declarations key
+        | throw s!"role generation: {name} is not a theorem here"
+      let proof ← (Ix.RoleEvidence.closeProof values allowed.contains value).mapError
+        fun e => s!"role generation: {name}: {e}"
+      pure (key, proof)
+    let mut entries : Array (Ix.Kernel.Evidence Address) := #[]
+    for (key, proof) in proofs do
+      let some type := declarations.findSome? (fun
+          | .thmDecl cv _ => if cv.name == key then some cv.type else none
+          | _ => none)
+        | throw s!"role generation: no theorem statement for {key}"
+      let (record, extraBlobs) ← Evidence.theoremRecord (addrOfName[·]?) type proof
+      let bytes := Ixon.serConstant record
+      let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
+      unless Ixon.serConstant decoded == bytes do throw "role generation: noncanonical proof record"
+      let address := Address.admissionHash bytes
+      records := records.push (address, record)
+      closed := closed.insert address proof
+      entries := entries.push (.proof address)
+      for (a, b) in extraBlobs do
+        if let some (_, old) := blobs.find? (·.1 == a) then
+          unless old == b do throw s!"role generation: conflicting generated blob at {a}"
+        else blobs := blobs.push (a, b)
+    evidence := evidence.push (role, entries)
+  let table := RoleTable.ofEntries Ix.Kernel.specVersion published.bound.toList evidence.toList
+  table.check
+  unless table.wireWF do throw "role generation: table exceeds the canonical wire domain"
+  let bytes := table.toBytes
+  let decoded ← (Ix.Kernel.Admission.admitBinding Address.admissionHash
+    ⟨Address.admissionHash bytes, bytes⟩).mapError fun e => toString (Ix.Kernel.Admission.Error.binding e)
+  unless decoded.toBytes == bytes do throw "role generation: binding does not roundtrip"
+  let finalPrelude : Prelude .anon ← readPrelude table preRecords records blobs.toList
+  let final := setup store (env.blobs[·]?) table finalPrelude (Hints.ofStore store env.anonHints).lookup
+  for (role, expected) in table.evidence do
+    let actual := ((final.evidence.find? (·.1 == role)).map (·.2)).getD []
+    unless actual.length == expected.size do
+      throw s!"role generation: evidence for {repr role} does not all read back"
+    for (want, got) in expected.toList.zip actual do
+      match want, got with
+      | .defeq, .defeq => pure ()
+      | .proof address, .proof (_, value) =>
+        unless closed[address]? == some value do
+          throw s!"role generation: proof at {address} does not read back as its closed value"
+      | _, _ => throw s!"role generation: evidence kind changed for {repr role}"
+  return { publication := published, table, prelude := preRecords, evidence := records, blobs, closed }
+
+/-- Insert generated proof records, literal blobs and the exact binding.
+This explicitly regenerates a binding: any previous binding is replaced only
+after the new table's source publications match this artifact. Existing record
+and blob bytes cannot be overwritten. The caller must still check the resulting
+artifact at the certified entry; a previous certificate does not transfer. -/
+def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
+    (env : Ixon.Env) : Except String Ixon.Env := do
+  generated.table.check
+  unless generated.table.wireWF do throw "role emission: noncanonical binding table"
+  let store ← recordStore limits env
+  let actual ← Ix.RoleBinding.publication env (store[·]?) (generated.table.bound.toList.map (·.1))
+  unless actual.bound == generated.table.bound do
+    throw "role emission: binding differs from this artifact's published roles"
+  let mut out := env
+  for (address, record) in generated.evidence do
+    let bytes := Ixon.serConstant record
+    unless Address.admissionHash bytes == address do throw s!"role emission: bad record address {address}"
+    let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
+    unless Ixon.serConstant decoded == bytes do throw s!"role emission: noncanonical record at {address}"
+    if let some old := out.consts[address]? then
+      unless old.rawBytes == bytes do throw s!"role emission: conflicting record at {address}"
+    else out := { out with consts := out.consts.insert address (Ixon.LazyConstant.ofConstant record) }
+  for (address, bytes) in generated.blobs do
+    unless Address.admissionHash bytes == address do throw s!"role emission: bad blob address {address}"
+    if let some old := out.blobs[address]? then
+      unless old == bytes do throw s!"role emission: conflicting blob at {address}"
+    else out := { out with blobs := out.blobs.insert address bytes }
+  for (address, record) in generated.evidence do
+    for dependency in record.refs do
+      unless out.consts.contains dependency || out.blobs.contains dependency do
+        throw s!"role emission: evidence {address} needs unavailable support {dependency}"
+  (Ix.Kernel.Admission.preflight limits
+    (out.consts.toList.map fun (a, c) => (a, c.rawBytes)) out.blobs.toList).mapError byteError
+  let bytes := generated.table.toBytes
+  return { out with roleBinding := some ⟨Address.admissionHash bytes, bytes⟩ }
+
+end Ix.RoleBinding

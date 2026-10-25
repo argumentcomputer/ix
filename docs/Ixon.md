@@ -1354,27 +1354,29 @@ these files; the default output name is the lowercased input file stem
 plus `.ixe`. See `crates/ixon/src/serialize.rs` (`Env::put`) for the
 byte-level layout.
 
-The .ixe layout is an `N4(0xE, VERSION)` header byte followed by a
-32-byte canonical merkle root, the bundle header fields, and then 6
-sections (hot data first, metadata last).
+The .ixe layout starts with an `N4(0xE, envelopeVersion)` header byte,
+a 32-byte canonical merkle root and the bundle header fields. Version 6
+then carries an artifact role binding. Six sections follow (hot data first,
+metadata last), with an original-data trailer in versions 5 and 6.
 
-The format has the stable identifier `ixon-v4`. The header value is the
-numeric **format version** (`Env::VERSION`, currently `4`, so the first byte
-of a v4 file is `0xE4`). Any change
-to serialized bytes bumps the version; every reader
-(`read_env_header` on the Rust side, `Ixon.getEnv` /
-`getEnvVerifiedLazy` on the Lean side) rejects a mismatch with an
-error naming both versions and asking for a recompile. There is no
-back-compat reading of old versions — `.ixe` files are regenerated
-artifacts. Versions 0–7 fit in the header byte; later versions use the
+The checked constant grammar retains the stable identifier `ixon-v4`.
+Environment readers accept these three envelope versions:
+
+| Version | First byte | Selected when |
+|---------|------------|---------------|
+| 4 | `0xE4` | No role binding and both original-data tables are empty |
+| 5 | `0xE5` | No role binding and at least one original-data table is nonempty |
+| 6 | `0xE6` | A role binding is present, including a present empty payload |
+
+The writer preserves the exact v4/v5 encoding for unbound environments.
+Unsupported envelope versions are rejected. `Env::VERSION` is a compatibility
+alias for 4; use `envelope_version` (Lean `envelopeVersion`) for the selected
+writer version. Versions 0–7 fit in one header byte; later versions use the
 multi-byte TagN rungs.
 
-Format version 4 also sets the object-format byte of claims, proofs and
-catalog manifests (`Ixon.Env.OBJECT_FORMAT`, Rust `Env::OBJECT_FORMAT`, equal
-to the version). Artifacts that cache `.ixe` files key them by the version:
-the TruthMines piece cache includes `ixe=<VERSION>` in its key, and the test
-environment `tc-parity.ixe` is recompiled when its header carries another
-version.
+The checked object-format byte of claims, proofs and catalog manifests stays
+4 (`Ixon.Env.OBJECT_FORMAT`, Rust `Env::OBJECT_FORMAT`). The envelope version
+does not change individual constant encodings or their content addresses.
 
 The version-4 header byte `0xE4` is the same byte as the Check claim tag
 `N4(0xE, 4)` (see [Proofs and Claims](#proofs-and-claims)), just as
@@ -1384,7 +1386,7 @@ header and a claim reader expects a claim. The byte alone does not identify
 the object kind.
 
 ```
-Header:      N4(0xE, VERSION)            -- 0xE4 for version 4
+Header:      N4(0xE, envelopeVersion)   -- 0xE4, 0xE5 or 0xE6
 Root:        32 bytes                     -- canonical merkle root over
                                             consts.keys(); for empty
                                             const sets this is the
@@ -1396,10 +1398,13 @@ Main:        1 byte (0x00 | 0x01) + 32 bytes if 0x01
 Assumptions: count (N0) + [Address (32 bytes)]*
                                           -- strictly ascending; the
                                             bundle trust boundary.
+Binding:     Address (32 bytes) + len (N0) + bytes
+                                          -- version 6 only; mandatory
+                                            in that version.
 ```
 
-The root is mandatory (non-optional): every env has a unique canonical
-identity recoverable from its file. Two envs with the same const set
+The root is mandatory (non-optional): it identifies the canonical constant
+set, not every field of the environment. Two envs with the same const set
 produce byte-identical roots regardless of construction order.
 Deserialization recomputes the root from `consts` and rejects any
 mismatch as tampered.
@@ -1410,6 +1415,24 @@ consumers holding an externally-expected address must compare), and
 the assumptions root, when a claim needs it, is recomputed as
 `merkle_root_canonical(leaves)` from the section (identical to the
 root `AssumptionTree::canonical` produces over the same leaves).
+
+The version-6 binding is independent of named metadata and the constant-set
+merkle root. Its address must equal BLAKE3 of its exact bytes. The payload
+uses the existing canonical `E8 03` role-table codec: specification version,
+role-to-constant addresses, and operation evidence. Generic environment
+readers check framing and the hash and retain the payload. Certified admission
+must additionally decode the canonical table, validate role/dependency/evidence
+structure, and check the bound declarations against the role specifications.
+A hash-correct payload is not by itself a certified binding; a claim must
+commit to the expected binding separately from the constant-set root.
+
+Full, anonymous, lazy, memory-mapped and FFI paths retain the exact binding.
+Closure extraction also retains it; evidence and role-support availability
+remain obligations of the certified consumer. Kernel roundtrip egress
+preserves it only if every constant retains its address and exact bytes;
+changed constants require a newly generated binding and that API refuses them.
+Compiler emission, consumer integration and host claim binding are separate
+requirements from this transport encoding.
 
 **Section 1: Blobs** (Address → raw bytes)
 ```
@@ -1500,10 +1523,9 @@ readers parse the blob and reject entries whose parsed size disagrees
 with `meta_len`.
 
 The `original` address (aux_gen provenance) stays a **raw 32 bytes**:
-the compiler records the address of Lean's source form but never stores
-that constant, so an original that differs from the entry's address is
-not in §2 (nor, after a prune cut, is an *assumed* one), which a §2
-index cannot represent.
+it may refer to a source-form record in the separate original-data trailer
+or to an assumed record after a prune cut. It need not occur in §2, so a
+§2 index cannot represent it.
 
 Because §2 order is load-bearing for §3/§5 index resolution, every
 reader enforces strictly ascending §2 addresses during its scan (this
@@ -1516,8 +1538,12 @@ count (N0)
 [Address (32 bytes) + secret_addr (32 bytes) + payload_addr (32 bytes)]*
 ```
 
-The full reader (`Env::get` / Lean `getEnv`) rejects trailing bytes
-after Section 6.
+Versions 5 and 6 append the existing original-data trailer after Section 6:
+the original-constant table, then the per-name original-hint override table.
+Original records remain outside the checked constant table and its merkle
+root. Version 5 requires at least one nonempty original-data table; version 6
+permits both counts to be zero. Version 4 has no trailer. Full readers reject
+bytes after the last section or trailer required by their envelope version.
 
 ### Anonymous-only loading
 
@@ -1716,6 +1742,8 @@ and proof statement. A claim with another object format is rejected with
 | Value | Bytes | Type | Payload |
 |------|------|------|---------|
 | 4 (format) | `0xE4` | Environment (`.ixe` context) | 32-byte merkle root + main/assumptions + 6 sections |
+| 5 (envelope) | `0xE5` | Environment with originals (`.ixe` context) | v4 body + original-data trailer |
+| 6 (envelope) | `0xE6` | Environment with binding (`.ixe` context) | root + main/assumptions + binding + 6 sections + original-data trailer |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
 | 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |

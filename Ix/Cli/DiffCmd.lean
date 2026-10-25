@@ -155,6 +155,11 @@ def runDiffCmd (p : Cli.Parsed) : IO UInt32 := do
       | none => "∅"
       | some a => shortAddr verbose a
     IO.println s!"main: {fmt oldMain} → {fmt newMain}"
+  if let some (oldBinding, newBinding) := d.roleBindingChanged then
+    let fmt : Option Address → String
+      | none => "∅"
+      | some a => shortAddr verbose a
+    IO.println s!"role binding: {fmt oldBinding} → {fmt newBinding}"
   unless d.assumptionsAdded.isEmpty && d.assumptionsRemoved.isEmpty do
     IO.println
       s!"assumptions: +{d.assumptionsAdded.size} −{d.assumptionsRemoved.size}"

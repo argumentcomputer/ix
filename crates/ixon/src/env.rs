@@ -405,10 +405,40 @@ pub struct LazyIndex {
   /// Unchecked original records, retained separately from checked constants.
   pub originals: Vec<LazyConstSlice>,
   pub original_hint_overrides: Vec<(Name, Option<ReducibilityHints>)>,
+  pub role_binding: Option<RoleBinding>,
   /// §4 positional index → name-component address, retained so §5
   /// entries can be re-parsed standalone (`get_named_indexed`) without
   /// re-walking §4. ~32 B per name.
   pub name_reverse_index: NameReverseIndex,
+}
+
+/// Exact artifact role-binding bytes and their claimed address.
+/// Transport does not assert semantic role or evidence admission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleBinding {
+  pub address: Address,
+  pub bytes: Arc<[u8]>,
+}
+
+impl RoleBinding {
+  /// Check the transported pair. Canonical decoding and semantic admission
+  /// remain the responsibility of the role-table consumer.
+  pub fn check_hash(&self) -> Result<(), String> {
+    Self::check_bytes(&self.address, self.bytes.as_ref())
+  }
+
+  pub(crate) fn check_bytes(
+    address: &Address,
+    bytes: &[u8],
+  ) -> Result<(), String> {
+    if Address::hash(bytes) != *address {
+      return Err(format!(
+        "role binding: bytes hash mismatch for {}",
+        address.hex()
+      ));
+    }
+    Ok(())
+  }
 }
 
 /// The Ixon environment.
@@ -467,6 +497,8 @@ pub struct Env {
   /// strictly ascending leaf list; `merkle_root_canonical` over it
   /// reproduces the root a `Claim::assumptions` field commits to.
   pub assumptions: FxHashSet<Address>,
+  /// Anonymous binding, preserved independently of named metadata.
+  pub role_binding: Option<RoleBinding>,
 }
 
 impl Env {
@@ -482,6 +514,7 @@ impl Env {
       original_hint_overrides: IxonMap::new(),
       main: None,
       assumptions: FxHashSet::default(),
+      role_binding: None,
     }
   }
 
@@ -677,6 +710,7 @@ impl Env {
   /// The non-const parts shared by both `from_lazy_index` variants.
   #[cfg(not(target_arch = "riscv64"))]
   fn fill_from_lazy_index(mut env: Env, index: &LazyIndex) -> Env {
+    env.role_binding = index.role_binding.clone();
     for n in &index.named {
       let mut named = Named::with_addr(n.addr.clone());
       named.set_hints(n.hints);
@@ -989,6 +1023,7 @@ impl Env {
     assumed: &FxHashSet<Address>,
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
+    out.role_binding = self.role_binding.clone();
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
     self.prune_fixpoint(
       &mut out,
@@ -1069,6 +1104,7 @@ impl Env {
     assumed: &FxHashSet<Address>,
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
+    out.role_binding = self.role_binding.clone();
     self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
     Ok(out)
   }

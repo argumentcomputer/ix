@@ -106,10 +106,15 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 /// Centralized so the four readers (`get`, `get_anon`, `get_anon_mmap`,
 /// `parse_lazy_index`) cannot drift. `ctx` labels errors with the
 /// calling reader.
-fn read_env_header(
-  buf: &mut &[u8],
-  ctx: &str,
-) -> Result<(u64, Address, Option<Address>, Vec<Address>), String> {
+struct EnvHeader {
+  version: u64,
+  stored_root: Address,
+  main: Option<Address>,
+  assumptions: Vec<Address>,
+  role_binding: Option<RoleBinding>,
+}
+
+fn read_env_header(buf: &mut &[u8], ctx: &str) -> Result<EnvHeader, String> {
   let tag = TagN::get(4, buf)?;
   if tag.flag != Env::FLAG {
     return Err(format!(
@@ -120,9 +125,10 @@ fn read_env_header(
   }
   if tag.value != Env::LEGACY_ENV_VERSION
     && tag.value != Env::ORIGINALS_ENV_VERSION
+    && tag.value != Env::BINDING_ENV_VERSION
   {
     return Err(format!(
-      "{ctx}: unsupported .ixe envelope version {} (expected 4 or 5)",
+      "{ctx}: unsupported .ixe envelope version {} (expected 4, 5 or 6)",
       tag.value
     ));
   }
@@ -159,7 +165,27 @@ fn read_env_header(
     }
     assumptions.push(addr);
   }
-  Ok((tag.value, stored_root, main, assumptions))
+  let role_binding = if tag.value == Env::BINDING_ENV_VERSION {
+    let address = get_address(buf)?;
+    let length = usize::try_from(get_u64(buf)?)
+      .map_err(|_| format!("{ctx}: role binding length exceeds memory size"))?;
+    let (bytes, remaining) = buf
+      .split_at_checked(length)
+      .ok_or_else(|| format!("{ctx}: truncated role binding section"))?;
+    RoleBinding::check_bytes(&address, bytes)?;
+    let binding = RoleBinding { address, bytes: Arc::from(bytes) };
+    *buf = remaining;
+    Some(binding)
+  } else {
+    None
+  };
+  Ok(EnvHeader {
+    version: tag.value,
+    stored_root,
+    main,
+    assumptions,
+    role_binding,
+  })
 }
 
 /// Read the §1 blob section, verifying `Address::hash(bytes) == addr`
@@ -1486,7 +1512,7 @@ impl<'a> NamedMetaCursor<'a> {
 // ============================================================================
 
 use super::comm::Comm;
-use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed};
+use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed, RoleBinding};
 #[cfg(not(target_arch = "riscv64"))]
 use super::merkle::merkle_root_canonical_sorted;
 use super::merkle::{merkle_root_canonical, zero_address};
@@ -1513,6 +1539,7 @@ fn read_original_trailer(
   buf: &mut &[u8],
   total_len: usize,
   consts: &[Address],
+  allow_empty: bool,
 ) -> Result<(Vec<LazyConstSlice>, OriginalHintRows), String> {
   let count = get_u64(buf)?;
   let mut originals: Vec<LazyConstSlice> =
@@ -1544,7 +1571,7 @@ fn read_original_trailer(
     }
     hints.push((key, unfuse_opt_hint(get_u64(buf)?)?));
   }
-  if originals.is_empty() && hints.is_empty() {
+  if originals.is_empty() && hints.is_empty() && !allow_empty {
     return Err("originals: empty v5 trailer; use the v4 envelope".into());
   }
   Ok((originals, hints))
@@ -1599,13 +1626,18 @@ impl Env {
   pub const CHECKED_FORMAT_VERSION: u8 = 4;
   pub const LEGACY_ENV_VERSION: u64 = 4;
   pub const ORIGINALS_ENV_VERSION: u64 = 5;
+  pub const BINDING_ENV_VERSION: u64 = 6;
   /// Compatibility alias for the original v4 envelope.
   pub const VERSION: u64 = Self::LEGACY_ENV_VERSION;
   /// Claim, proof, catalog and resource scopes still bind checked format 4.
   pub const OBJECT_FORMAT: u8 = Self::CHECKED_FORMAT_VERSION;
 
   pub fn envelope_version(&self) -> u64 {
-    if self.originals.is_empty() && self.original_hint_overrides.is_empty() {
+    if self.role_binding.is_some() {
+      Self::BINDING_ENV_VERSION
+    } else if self.originals.is_empty()
+      && self.original_hint_overrides.is_empty()
+    {
       Self::LEGACY_ENV_VERSION
     } else {
       Self::ORIGINALS_ENV_VERSION
@@ -1640,6 +1672,14 @@ impl Env {
       }
     }
     Ok(())
+  }
+
+  fn put_binding_header(&self, buf: &mut Vec<u8>) {
+    if let Some(binding) = &self.role_binding {
+      put_address(&binding.address, buf);
+      put_u64(binding.bytes.len() as u64, buf);
+      buf.extend_from_slice(binding.bytes.as_ref());
+    }
   }
 
   /// Emit per record so the streaming writer never buffers the whole trailer.
@@ -1716,6 +1756,9 @@ impl Env {
     let overall_start = std::time::Instant::now();
 
     self.check_original_data()?;
+    if let Some(binding) = &self.role_binding {
+      binding.check_hash()?;
+    }
     // Empty original data keeps the exact v4 envelope.
     TagN::put(4, Self::FLAG, self.envelope_version(), buf);
 
@@ -1763,6 +1806,7 @@ impl Env {
     for addr in &assumption_addrs {
       put_address(addr, buf);
     }
+    self.put_binding_header(buf);
 
     // ─────────────────────────────────────────────────────────────────────
     // Section 1: Blobs (Address -> bytes)
@@ -2069,6 +2113,9 @@ impl Env {
     let overall_start = std::time::Instant::now();
     let mut sec_start = std::time::Instant::now();
     self.check_original_data()?;
+    if let Some(binding) = &self.role_binding {
+      binding.check_hash()?;
+    }
     let file = std::fs::File::create(path)
       .map_err(|e| format!("Env::put_file: create {}: {e}", path.display()))?;
     let mut w = std::io::BufWriter::with_capacity(8 * 1024 * 1024, file);
@@ -2118,6 +2165,7 @@ impl Env {
     for addr in &assumption_addrs {
       put_address(addr, &mut buf);
     }
+    self.put_binding_header(&mut buf);
 
     // Section 1: Blobs
     let mut blob_addrs: Vec<Address> =
@@ -2347,12 +2395,13 @@ impl Env {
     // the recomputed root; empty const sets store `zero_address()`) +
     // bundle fields.
     let all_data = *buf;
-    let (version, stored_root, main, assumptions) =
+    let EnvHeader { version, stored_root, main, assumptions, role_binding } =
       read_env_header(buf, "Env::get")?;
 
     #[cfg_attr(not(target_arch = "riscv64"), allow(unused_mut))]
     let mut env = Env::new();
     env.main = main;
+    env.role_binding = role_binding;
     env.assumptions = assumptions.into_iter().collect();
 
     // Section 1: Blobs (hash-verified per entry)
@@ -2640,9 +2689,13 @@ impl Env {
       ));
     }
 
-    if version == Self::ORIGINALS_ENV_VERSION {
-      let (originals, hints) =
-        read_original_trailer(buf, all_data.len(), &consts_order)?;
+    if version != Self::LEGACY_ENV_VERSION {
+      let (originals, hints) = read_original_trailer(
+        buf,
+        all_data.len(),
+        &consts_order,
+        version == Self::BINDING_ENV_VERSION,
+      )?;
       for c in originals {
         env.originals.insert(
           c.addr,
@@ -2713,10 +2766,11 @@ impl Env {
     let mut buf: &[u8] = data;
 
     // Header: tag + merkle root + bundle fields.
-    let (version, stored_root, main, assumptions) =
+    let EnvHeader { version, stored_root, main, assumptions, role_binding } =
       read_env_header(&mut buf, "parse_lazy_index")?;
 
-    let mut index = LazyIndex { main, assumptions, ..LazyIndex::default() };
+    let mut index =
+      LazyIndex { main, assumptions, role_binding, ..LazyIndex::default() };
 
     // Section 1: Blobs (copied — small, and the kernel ingests their
     // bytes; hash-verified per entry).
@@ -2832,9 +2886,13 @@ impl Env {
 
     let const_addrs: Vec<Address> =
       index.consts.iter().map(|c| c.addr.clone()).collect();
-    if version == Self::ORIGINALS_ENV_VERSION {
-      let (originals, hints) =
-        read_original_trailer(&mut buf, data.len(), &const_addrs)?;
+    if version != Self::LEGACY_ENV_VERSION {
+      let (originals, hints) = read_original_trailer(
+        &mut buf,
+        data.len(),
+        &const_addrs,
+        version == Self::BINDING_ENV_VERSION,
+      )?;
       check_original_hint_targets(data, &index, &hints)?;
       index.originals = originals;
       let mut seen_names = FxHashSet::default();
@@ -2905,6 +2963,7 @@ impl Env {
     assumed: &FxHashSet<Address>,
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
+    out.role_binding = self.role_binding.clone();
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
     // §5 name → constant address, from the index (no metadata parse).
     let named_addrs: FxHashMap<&Name, &Address> =
@@ -3003,11 +3062,12 @@ impl Env {
   /// content addresses doesn't pay for metadata it will never consult.
   pub fn get_anon(buf: &mut &[u8]) -> Result<Self, String> {
     // Header (same as Env::get)
-    let (_, stored_root, main, assumptions) =
+    let EnvHeader { stored_root, main, assumptions, role_binding, .. } =
       read_env_header(buf, "Env::get_anon")?;
 
     let mut env = Env::new();
     env.main = main;
+    env.role_binding = role_binding;
     env.assumptions = assumptions.into_iter().collect();
 
     // Section 1: Blobs (kept; hash-verified per entry)
@@ -3165,11 +3225,12 @@ impl Env {
     let mut buf: &[u8] = mmap_full;
 
     // Header (same shape as Env::get_anon)
-    let (_, stored_root, main, assumptions) =
+    let EnvHeader { stored_root, main, assumptions, role_binding, .. } =
       read_env_header(&mut buf, "Env::get_anon_mmap")?;
 
     let mut env = Env::new();
     env.main = main;
+    env.role_binding = role_binding;
     env.assumptions = assumptions.into_iter().collect();
 
     // Section 1: Blobs (heap-copied; small, eagerly consumed;
@@ -3278,6 +3339,9 @@ impl Env {
   ) -> Result<(usize, usize, usize, usize, usize, usize, usize, usize), String>
   {
     self.check_original_data()?;
+    if let Some(binding) = &self.role_binding {
+      binding.check_hash()?;
+    }
     let mut buf = Vec::new();
 
     // Header: tag (flag=0xE, value=VERSION) + merkle root (32 bytes,
@@ -3297,6 +3361,7 @@ impl Env {
     for addr in &assumption_addrs {
       put_address(addr, &mut buf);
     }
+    self.put_binding_header(&mut buf);
     let header_size = buf.len();
 
     // Section 1: Blobs
@@ -3958,7 +4023,7 @@ mod tests {
     // A pre-versioning header (size 0), the previous version (3) and a
     // future version must all be rejected, with an error naming the
     // versions, on every reader path through `read_env_header`.
-    for wrong in [0u8, 3, Env::ORIGINALS_ENV_VERSION as u8 + 1] {
+    for wrong in [0u8, 3, Env::BINDING_ENV_VERSION as u8 + 1] {
       let mut bad = buf.clone();
       bad[0] = (Env::FLAG << 4) | wrong;
       for err in [
