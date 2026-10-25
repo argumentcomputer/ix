@@ -1,5 +1,7 @@
 import Ix.Compile.OriginalData
 import Ix.Cert.Statement
+import Ix.Cert.StrongCommutation
+import Ix.Cert.ProjectionMembers
 import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
 import Ix.CompileCert.ReadingAudit
@@ -72,6 +74,7 @@ import Ix.CompileCert.OptShapeOrigin
 import Ix.CompileCert.ViewPublicationOrigin
 import Ix.CompileCert.PrimaryAddressFrame
 import Ix.CompileCert.ImageAuxOrigins
+import Ix.CompileCert.DisplayAddressFrame
 
 /-! # The certification statements, frozen
 
@@ -6194,6 +6197,32 @@ run_cmd do
     (#[`compileImageBlock_calls, `runImageBlock_trace].map
       (`Ix.CompileCert.ImageAuxOrigins ++ ·))
 
+/-! ## Reserved display range and actual original-key removal
+
+Actual naming outputs are reserved. The ordered SideCar insert/erase loop
+removes selected nonreserved keys without a rename-injectivity premise. -/
+
+/-- info: [cert-audit] actual display range and original keys: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual display range and original keys"
+    (#[`appendComps_reserved, `ixAuxName_reserved, `sideCar_original_keys].map
+      (`Ix.CompileCert.DisplayAddressFrame ++ ·))
+
+/-! ## Actual move-to-display original-key equation
+
+The successful production move erases exactly the selected nonreserved local
+keys. This is not a frame or absence statement about the global address map. -/
+
+/-- info: [cert-audit] actual move-to-display original keys: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual move-to-display original keys"
+    (#[`moveToDisplay_eq, `moveToDisplay_original_keys].map
+      (`Ix.CompileCert.DisplayAddressFrame ++ ·))
+
 /-! ## Same-run image auxiliary hit origins
 
 One real image/original run supplies exact final map hits, Named addresses,
@@ -6206,3 +6235,43 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual image auxiliary hit origins"
     (#[`fold_hit_origin, `runImageBlock_aux_origins].map
       (`Ix.CompileCert.ImageAuxOrigins ++ ·))
+
+/-- info: [cert-audit] coherent strong target commutation: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "coherent strong target commutation"
+    #[`Ix.Cert.Commutes.toStrong, `Ix.Cert.CommutesStrong.alias, `Ix.Cert.IxonCommutes.toStrongRef]
+
+/-- info: [cert-audit] actual projection owner and member guards: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual projection owner and member guards"
+    (#[`captured, `traceOwner_read, `scanOwner_same, `member_original].map (`Ix.Cert.ProjectionRoots ++ ·))
+/-- info: 'Ix.Cert.ProjectionRoots.member_family_front' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.ProjectionRoots.member_family_front
+
+/-! ## Actual image output keys stay in the request
+
+The real declaration and retry loops retain structural membership;
+this does not identify a cross request with its outer scheduled scope. -/
+
+/-- info: [cert-audit] actual image request keys: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual image request keys"
+    #[`Ix.CompileCert.ImageAuxOrigins.compileImageBlock_keys]
+
+/-! ## Actual image auxiliary hits stay in their request
+
+The same-run hit origin and real output-key bound supply structural
+membership, with no outer-scope, global-absence or address-value premise. -/
+
+/-- info: [cert-audit] actual image auxiliary request membership: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual image auxiliary request membership"
+    #[`Ix.CompileCert.ImageAuxOrigins.runImageBlock_aux_in_request]

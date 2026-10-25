@@ -1,6 +1,9 @@
 module
 
 public import Ix.Compile.SourceContract
+public import Ix.Compile.SourceContract.Transport
+public import Ix.CanonM
+public import Ix.LeanIngress.Expr
 public import LSpec
 public import Lean.Compiler.BorrowedAnnotation
 
@@ -283,8 +286,54 @@ def markerTests : TestSeq := Id.run do
           !(changed.resolve marked).isOk
         | .error _ => false)
 
+def arityProducerTests : TestSeq := Id.run do
+  let canonical := fun source => (Id.run ((_root_.Ix.CanonM.canonConst source).run {})).1
+  let frame := fun (kind : _root_.Ix.SemanticContract.Kind) (e : _root_.Ix.Expr) => match e with
+    | .mdata data _ _ => data.size == 3 && ((_root_.Ix.SemanticContract.read data).toOption).any (·.kind == kind)
+    | _ => false
+  let readable := fun e => (_root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e).isOk
+  let linear := resolveTelescope identity #[{ binder := .position 0, uses := .linear, result := some .unique }]
+  let pair := linear.toOption.bind (fun c => c.decorate.toOption)
+  let pairOK := pair.any fun out => match canonical out with
+    | .defnInfo v => frame .all v.cnst.type && frame .lam v.value && readable v.cnst.type && readable v.value
+    | _ => false
+  let binding := definition `arityLet natType (.letE `view natType (.lit (.natVal 0)) (.bvar 0) false)
+  let borrow : SourceContract := {
+    source := binding
+    binders := #[{ site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
+  let letOK := ((borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
+    match canonical out with | .defnInfo v => frame .letE v.value && readable v.value | _ => false
+  let theoremSource : ConstantInfo := .thmInfo {
+    name := `arityTheorem, levelParams := [], type := .const `True [], value := .const `True.intro [], all := [`arityTheorem] }
+  let opaqueSource : ConstantInfo := .opaqueInfo {
+    name := `arityOpaque, levelParams := [], type := natType, value := .lit (.natVal 0), isUnsafe := false, all := [`arityOpaque] }
+  let axiomSource : ConstantInfo := .axiomInfo {
+    name := `arityAxiom, levelParams := [], type := natType, isUnsafe := false }
+  let kinds := [(theoremSource, 0), (opaqueSource, 1), (axiomSource, 2)].all fun (source, expected) =>
+    ((resolveTelescope source #[]).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
+      out.name == source.name && match canonical out, expected with
+      | .thmInfo v, 0 => readable v.cnst.type && readable v.value
+      | .opaqueInfo v, 1 => readable v.cnst.type && readable v.value
+      | .axiomInfo v, 2 => readable v.cnst.type && (sourceBody? out).isNone
+      | _, _ => false
+  let body := (sourceBody? identity).getD natType
+  let plain := ({} : MData).setNat `native.hint 7
+  let marker := ({ origin := 0, binder := `x, uses := .linear, value := .shared } : BinderAnnotation).toMetadata
+  let semantic : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
+  let metadata := (resolveTelescope identity #[]).toOption.any fun c =>
+    let kept := (decorateExpr c .body [] (.mdata plain body)).toOption
+    let stripped := (decorateExpr c .body [] (.mdata marker body)).toOption
+    (match kept with | some (.mdata data inner) => data.entries == plain.entries && inner == body | _ => false) &&
+    (match stripped with | some (.lam ..) => stripped == some body | _ => false) &&
+    (match decorateExpr c .body [] (semantic.attach body) with
+      | .error "source transport: reserved semantic metadata in unprocessed source" => true | _ => false)
+  return test "actual decorator and CanonM keep distinct type/value semantic frames readable" pairOK ++
+    test "actual borrow-let decoration has a readable three-field semantic frame" letOK ++
+    test "actual theorem/opaque/axiom outputs preserve kind and optional-value boundaries" kinds ++
+    test "decorator preserves plain metadata, removes source markers and refuses original semantic frames" metadata
+
 def suite : List TestSeq :=
-  [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests]
+  [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests, arityProducerTests]
 
 end Tests.Ix.SourceContract
 
