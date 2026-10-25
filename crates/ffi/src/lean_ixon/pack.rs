@@ -34,7 +34,8 @@ pub extern "C" fn rs_test_pack_env_modes(
     let data = input.as_bytes();
     let main =
       Address::from_slice(root.as_bytes()).map_err(|e| e.to_string())?;
-    let env = IxonEnv::get(&mut data.as_ref())?;
+    let mut cursor = data;
+    let env = IxonEnv::get(&mut cursor)?;
     let (index, names) = IxonEnv::parse_lazy_index_with_names(data)?;
     let lazy = IxonEnv::from_lazy_index(&index, data)?;
     let assumed = FxHashSet::default();
