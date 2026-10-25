@@ -156,14 +156,13 @@ end Ix.Cert.Canon
 
 The memo confirms a hit with `withPtrEq`, whose pure fallback decides that
 the stored source is the input. Lean gives `DecidableEq Lean.Name`; the
-instances below are derived, except `Lean.Syntax`'s, which nests through
+instances below (and Literal/BinderInfo in Common) are derived, except
+`Lean.Syntax`'s, which nests through
 `Array` and is written out. They add no `BEq` (`instBEqOfDecidableEq` has a
 lower priority than the `BEq` instances these types have), and at run time
 they are reached only if a confirmation's pointers differ, which a memo hit
 never does. -/
 
-deriving instance DecidableEq for Lean.Literal
-deriving instance DecidableEq for Lean.BinderInfo
 deriving instance DecidableEq for Lean.FVarId
 deriving instance DecidableEq for Lean.MVarId
 deriving instance DecidableEq for Lean.LevelMVarId

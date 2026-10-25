@@ -72,9 +72,12 @@ impl Drop for TempFile {
 }
 
 fn all_readers_reject(bytes: &[u8]) {
-  assert!(Env::get(&mut bytes.as_ref()).is_err());
-  assert!(Env::get_demoted_named(&mut bytes.as_ref()).is_err());
-  assert!(Env::get_anon(&mut bytes.as_ref()).is_err());
+  let mut input = bytes;
+  assert!(Env::get(&mut input).is_err());
+  input = bytes;
+  assert!(Env::get_demoted_named(&mut input).is_err());
+  input = bytes;
+  assert!(Env::get_anon(&mut input).is_err());
   assert!(Env::parse_lazy_index(bytes).is_err());
   let file = TempFile::new(bytes);
   assert!(Env::get_anon_mmap(&file.0).is_err());
@@ -83,7 +86,8 @@ fn all_readers_reject(bytes: &[u8]) {
 #[test]
 fn unbound_fixtures_remain_exact_and_bound_layout_is_independent() {
   for original in INPUTS {
-    let mut env = Env::get(&mut original.as_ref()).unwrap();
+    let mut input = original;
+    let mut env = Env::get(&mut input).unwrap();
     assert_eq!(original.len(), 122);
     assert_eq!(env.role_binding, None);
     assert_eq!(encode(&env), original);
@@ -111,7 +115,10 @@ fn unbound_fixtures_remain_exact_and_bound_layout_is_independent() {
       bytes.len()
     );
     let file = TempFile::new(&[]);
-    assert_eq!(env.put_file(&file.0).unwrap() as usize, bytes.len());
+    assert_eq!(
+      usize::try_from(env.put_file(&file.0).unwrap()).unwrap(),
+      bytes.len()
+    );
     assert_eq!(std::fs::read(&file.0).unwrap(), bytes);
 
     let full = Env::get(&mut bytes.as_slice()).unwrap();
@@ -131,7 +138,8 @@ fn unbound_fixtures_remain_exact_and_bound_layout_is_independent() {
 
 #[test]
 fn v6_keeps_originals_and_v5_still_refuses_an_empty_trailer() {
-  let mut env = Env::get(&mut INPUTS[0].as_ref()).unwrap();
+  let mut input = INPUTS[0];
+  let mut env = Env::get(&mut input).unwrap();
   let original = include_bytes!(
     "../../kernel/tests/fixtures/input_contracts/linear-match.const"
   );
@@ -204,7 +212,8 @@ fn framing_hash_and_presence_are_checked_on_every_header_path() {
 
 #[test]
 fn pruning_and_anonymous_diff_retain_exact_binding_identity() {
-  let mut env = Env::get(&mut INPUTS[0].as_ref()).unwrap();
+  let mut input = INPUTS[0];
+  let mut env = Env::get(&mut input).unwrap();
   env.role_binding = Some(canonical_binding(2));
   let root = env.consts.iter().next().unwrap().key().clone();
   let bytes = encode(&env);

@@ -1,9 +1,8 @@
 module
 public import Ix.Environment
--- `DecidableEq Lean.BinderInfo` and `Lean.Literal` are derived once, in
--- `Ix.CanonM` (CQ2.26); a second derivation here would clash in every module
--- that imports both.
-public import Ix.CanonM
+-- Shared Lean equality instances live below canonicalization so these keys
+-- can also protect the semantic-contract ingress scan.
+public import Ix.Common
 import all Init.Util
 
 public section
