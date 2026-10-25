@@ -1,4 +1,5 @@
 import Ix.CompileCert.PrimaryAddressFrame
+import Ix.CompileCert.Canon.QSort
 
 /-! # Auxiliary writes of the actual image-block producer
 
@@ -179,5 +180,64 @@ theorem runImageBlock_aux_origins
     exact ⟨r, bs, named, known, ci, actualMember, address,
       Ix.Cert.Claims.compileImageBlock_lone images (n, r, bs) actualMember,
       present, namedAddr.trans address, compiled⟩
+
+/-- The real declaration/round loops retain structural request membership,
+including memo hits, failed attempts, rest lists and the early-break branch. -/
+theorem compileImageBlock_keys {producer : CompileEnv} {request : Ix.Set Name}
+    {imgs : Array Image} {pub : Published}
+    (run : compileImageBlock producer request = .ok (imgs, pub)) :
+    ∀ x ∈ imgs, x.1 ∈ request.toArray.toList := by
+  unfold compileImageBlock at run
+  dsimp only at run
+  obtain ⟨_, _, run⟩ := Loop.except_bind_ok.mp run
+  obtain ⟨_, _, run⟩ := Loop.except_bind_ok.mp run
+  obtain ⟨declared, declarations, run⟩ := Loop.except_bind_ok.mp run
+  have declaredKeys : ∀ p ∈ declared.2.1, p.1 ∈ request.toArray.toList := by
+    refine Ix.Cert.Claims.forIn_array_inv (fun s : RwState × Array (Name × ConstantInfo) ×
+      Array (Name × Expansion × Ix.Expr) => ∀ p ∈ s.2.1, p.1 ∈ request.toArray.toList)
+      _ _ ?_ (fun _ absent => by simp at absent) declarations
+    intro a member s r held stepped
+    have original := Array.mem_toList_iff.mpr (Canon.mem_qsort.mp member)
+    repeat' first
+      | obtain ⟨_, _, stepped⟩ := Loop.except_bind_ok.mp stepped
+      | split at stepped
+    all_goals first
+      | (cases stepped; done)
+      | (cases stepped; exact held)
+      | (cases stepped
+         intro p present
+         rcases Array.mem_push.mp present with old | rfl
+         exacts [held p old, original])
+  obtain ⟨out, rounds, run⟩ := Loop.except_bind_ok.mp run
+  have bounded : (∀ p ∈ out.1, p.1 ∈ request.toArray.toList) ∧
+      ∀ x ∈ out.2.2.1, x.1 ∈ request.toArray.toList := by
+    refine Ix.Cert.Claims.forIn_range_inv (fun s : Array (Name × ConstantInfo) ×
+      Std.HashMap ExactName Address × Array Image × String =>
+        (∀ p ∈ s.1, p.1 ∈ request.toArray.toList) ∧
+        ∀ x ∈ s.2.2.1, x.1 ∈ request.toArray.toList) _ _ ?_
+      ⟨declaredKeys, fun _ absent => by simp at absent⟩ rounds
+    intro _ s r held stepped
+    split at stepped
+    · cases stepped; exact held
+    · obtain ⟨next, walked, stepped⟩ := Loop.except_bind_ok.mp stepped
+      cases stepped
+      refine Ix.Cert.Claims.forIn_array_inv (fun t : Std.HashMap ExactName Address ×
+        Array Image × String × Array (Name × ConstantInfo) =>
+          (∀ x ∈ t.2.1, x.1 ∈ request.toArray.toList) ∧
+          ∀ p ∈ t.2.2.2, p.1 ∈ request.toArray.toList) _ _ ?_
+        ⟨held.2, fun _ absent => by simp at absent⟩ walked |>.symm
+      intro x member u q prior step
+      split at step
+      · cases step
+        refine ⟨fun y present => ?_, prior.2⟩
+        rcases Array.mem_push.mp present with old | rfl
+        exacts [prior.1 y old, held.1 x member]
+      · cases step
+        refine ⟨prior.1, fun y present => ?_⟩
+        rcases Array.mem_push.mp present with old | rfl
+        exacts [prior.2 y old, held.1 x member]
+  split at run
+  · obtain ⟨_, failed, _⟩ := Loop.except_bind_ok.mp run; cases failed
+  · cases run; exact bounded.2
 
 end Ix.CompileCert.ImageAuxOrigins

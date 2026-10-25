@@ -6251,3 +6251,15 @@ run_cmd do
     (#[`captured, `traceOwner_read, `scanOwner_same, `member_original].map (`Ix.Cert.ProjectionRoots ++ ·))
 /-- info: 'Ix.Cert.ProjectionRoots.member_family_front' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.ProjectionRoots.member_family_front
+
+/-! ## Actual image output keys stay in the request
+
+The real declaration and retry loops retain structural membership;
+this does not identify a cross request with its outer scheduled scope. -/
+
+/-- info: [cert-audit] actual image request keys: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual image request keys"
+    #[`Ix.CompileCert.ImageAuxOrigins.compileImageBlock_keys]
