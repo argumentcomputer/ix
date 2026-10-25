@@ -69,7 +69,8 @@ def spell : ConstRef Address → String
   | .member b i => s!"{b} member {i}"
   | .ctor b i c => s!"{b} member {i} constructor {c}"
 
-/-- The size of the uncertified part of `ixe`'s typing (`Ix.Resource.uncertifiedOwners`). -/
+/-- Size of the initial uncertified split. The typing fallback may expand
+this set to include all tier owners; this helper does not observe that path. -/
 def uncertifiedSize (ixe : Ixon.Env) : Nat :=
   match Ix.Resource.typingInput ixe with
   | .error _ => 0
@@ -85,7 +86,7 @@ def verdict (label : String) (ixe : Ixon.Env) : Array String × Array String :=
   let errors := match ixc with
     | .error e => #[s!"{label}: the typing half declines: {e} (names: {named e})"]
     | .ok _ => #[]
-  (errors, #[s!"{label}: {ixe.consts.size} records, {uncertifiedSize ixe} in the uncertified part, \
+  (errors, #[s!"{label}: {ixe.consts.size} records, {uncertifiedSize ixe} in the initial uncertified split, \
     IxC {if ixc.toOption.isSome then "accepts" else "declines"}"])
 
 def hintsAndCoverage : IO (Array String × Array String) := do

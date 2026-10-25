@@ -27,7 +27,7 @@ true values of the non-canonical instances, and the reductions the removed
 rules short-cut, done honestly.
 
 `Tests.Ix.Kernel.FastPaths` (`kernel-fast-paths`) checks every probe's
-closure with the Rust kernel, `Ix.Tc` and IxC. In the `ixvm` runner, the
+closure with the Rust kernel and IxC. In the `ixvm` runner, the
 IxVM arena checks the registered cases subject-only (`verify_const`) and the
 exploit suite checks every probe's closure through `verify_claim`.
 -/

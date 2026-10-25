@@ -32,7 +32,7 @@ import Ix.Meta
 import Ix.Aiur.Compiler
 import Ix.IxVM
 import Ix.IxVM.Toplevel
-import Ix.Tc.Primitive
+import Ix.PrimAddrs
 import LSpec
 
 open LSpec

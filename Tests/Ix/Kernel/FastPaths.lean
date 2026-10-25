@@ -2,7 +2,6 @@ import LSpec
 import Ix.Meta
 import Ix.CompileDriver
 import Ix.KernelCheck
-import Ix.Tc
 import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.SourceIngressCompare
 import Tests.Ix.Kernel.FastPathDefs
@@ -10,12 +9,11 @@ import Tests.Ix.Kernel.FastPathDefs
 /-! # Reductions beyond Lean's, per kernel (`kernel-fast-paths`)
 
 Each probe of `Tests.Ix.Kernel.FastPathDefs` is checked with its whole
-dependency closure (recursors included), compiled once by Ix's compiler, by
-three kernels:
+dependency closure (recursors included) by two kernels:
 
 * the Rust kernel (`rsCheckConstsFFI`, every closure member by name);
-* `Ix.Tc` (`checkIxeBytesAnon` on the compiled bytes);
-* IxC, through the environment check (`SourceIngressCompare.ixonVerdicts`:
+* IxC on the Lean compiler's output, through the environment check
+  (`SourceIngressCompare.ixonVerdicts`:
   the verified fold one record at a time, under the default role table and
   its evidence).
 
@@ -23,8 +21,8 @@ A probe expected to be rejected names its culprit: the false or
 non-definitional equation itself, or, for a derivation of `False`, the
 equation it uses. Every kernel must reject the culprit, and nothing else in
 the closure may fail except the probe itself when it is a derivation (the
-Rust kernel and `Ix.Tc` check it with its dependencies trusted and accept
-it; IxC blocks it behind the culprit). A probe expected to be accepted must
+Rust kernel checks it with its dependencies trusted and accepts it;
+IxC blocks it behind the culprit). A probe expected to be accepted must
 have every closure member accepted. So the test fails both when a kernel
 accepts a proof of `False` and when a removed fast path's honest
 replacement stops reducing the canonical forms. -/
@@ -89,26 +87,13 @@ def rustVerdicts (closed : List (Lean.Name × Lean.ConstantInfo)) : IO Verdicts 
   let names := (closed.map (·.1)).toArray
   let results ← Ix.KernelCheck.rsCheckConstsFFI closed names
     (Array.replicate names.size true) true
+  unless results.size == names.size do
+    throw (IO.userError s!"Rust omitted closure verdicts: expected {names.size}, got {results.size}")
   let mut out : Verdicts := {}
   for i in [:names.size] do
     out := out.insert names[i]! <| match results[i]! with
       | none => .accept
       | some e => .reject e.message
-  return out
-
-/-- `Ix.Tc` on the compiled bytes, per address, read back by name. -/
-def tcVerdicts (compiled : Ix.CompileM.LeanPipelineOut) (names : List Lean.Name) :
-    IO Verdicts := do
-  let results ← IO.ofExcept (Ix.Tc.checkIxeBytesAnon compiled.bytes |>.mapError (s!"Ix.Tc: {·}"))
-  let byAddr : Std.HashMap Address (Option String) :=
-    results.foldl (init := {}) fun m r => m.insert r.addr r.err?
-  let mut out : Verdicts := {}
-  for n in names do
-    let some named := compiled.env.named[Ix.Name.fromLeanName n]? | continue
-    if let some err? := byAddr[named.addr]? then
-      out := out.insert n <| match err? with
-        | none => .accept
-        | some e => .reject e
   return out
 
 /-- IxC's environment check on the compiled environment, by name. -/
@@ -169,14 +154,12 @@ def run : IO UInt32 := do
   let t1 ← IO.monoMsNow
   let rust ← rustVerdicts closed
   let t2 ← IO.monoMsNow
-  let tc ← tcVerdicts compiled names
-  let t3 ← IO.monoMsNow
   let ixc ← ixcVerdicts compiled names
-  let t4 ← IO.monoMsNow
+  let t3 ← IO.monoMsNow
   IO.println s!"[kernel-fast-paths] compile {t1 - t0} ms, Rust {t2 - t1} ms, \
-    Ix.Tc {t3 - t2} ms, IxC {t4 - t3} ms"
+    IxC {t3 - t2} ms"
   let mut seq : TestSeq := .done
-  for (kernel, verdicts) in [("Rust", rust), ("Ix.Tc", tc), ("IxC", ixc)] do
+  for (kernel, verdicts) in [("Rust", rust), ("IxC", ixc)] do
     for p in probes do
       seq := seq ++ checkProbe kernel (closures.getD p.name []) verdicts p
   lspecIO (.ofList [("kernel-fast-paths", [seq])]) []
