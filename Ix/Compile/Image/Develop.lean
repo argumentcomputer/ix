@@ -13,7 +13,7 @@
   * **projection of a constructor**: `.proj PProd i s` / `.proj And i s`
     where `s` became `PProd.mk α β a b` / `And.intro p q a b` ↦ the field;
   * **η**: `λ y. x a₁ … aₙ y` with `x := g` (not a λ) and `y ∉ g a₁ … aₙ`
-    ↦ `g a₁ … aₙ`.
+    ↦ `g a₁ … aₙ`, unless semantic metadata immediately wraps that λ.
 
   Nothing else is reduced: redexes already present in `e` or in `v` are left
   as they are, and recursor applications are never ι-reduced (`ρ … (c fs)`
@@ -50,6 +50,7 @@
 -/
 module
 public import Ix.Environment
+public import Ix.SemanticContract
 public import Ix.Compile.Canon.Expr
 public import Ix.Compile.Image.Expr
 public import Ix.Compile.Image.TotalMemo
@@ -222,11 +223,24 @@ def hinst : Nat → Expr → Nat → Expr → DevM (Expr × Created)
         let (b', _) ← hinst fuel v (k + 1) b
         pure (← share (Expr.mkLetE n t' x' b' nd), .no)
       | .mdata md x _ => do
-        let (x', c) ← hinst fuel v k x
+        -- A semantic frame needs its binder, not an eta-reduced answer from
+        -- the unwrapped lambda's cache. The outer frame has its own exact key.
+        let (x', c) ← match x with
+          | .lam n t b bi _ =>
+            if Ix.SemanticContract.hasMetadata md then
+              match fuel with
+              | 0 => throw developExhausted
+              | innerFuel + 1 => do
+                let (t', _) ← hinst innerFuel v k t
+                let (b', _) ← hinst innerFuel v (k + 1) b
+                pure (← share (Expr.mkLam n t' b' bi), .no)
+            else hinst fuel v k x
+          | _ => hinst fuel v k x
         pure (← share (Expr.mkMData md x'), c)
       | _ => pure (e, .no)
     modify fun st => { st with insts := st.insts.insert (instBucket v e k) ⟨v, e, k, r⟩ }
     return r
+termination_by fuel _ _ _ => fuel
 
 /-- `f a₁ … aₙ` with the β-redexes at the head contracted hereditarily. -/
 def happ : Nat → Expr → List Expr → DevM Expr
@@ -235,6 +249,7 @@ def happ : Nat → Expr → List Expr → DevM Expr
     let (b', _) ← hinst fuel a 0 b
     happ fuel b' rest
   | _ + 1, f, args => shareAppN f args.toArray
+termination_by fuel _ _ => fuel
 end
 
 /-- The developed application `f args` (at a call site: `f` is the image

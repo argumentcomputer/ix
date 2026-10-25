@@ -171,12 +171,14 @@ private theorem workers (fuel : Nat) :
       Valid (fun r => ContractArity r.1) (hinst fuel v k e)) ∧
     (∀ f args, ContractArity f → (∀ a ∈ args, ContractArity a) →
       Valid ContractArity (happ fuel f args)) := by
-  induction fuel with
+  induction fuel using Nat.strongRecOn with | ind fuel below =>
+  cases fuel with
   | zero =>
     constructor
-    · intro _ _ _ _ _ _ _ _ _ run; cases run
-    · intro _ _ _ _ _ _ _ _ run; cases run
-  | succ fuel ih =>
+    · intro _ _ _ _ _ _ _ _ _ run; rw [hinst] at run; cases run
+    · intro _ _ _ _ _ _ _ _ run; rw [happ] at run; cases run
+  | succ fuel =>
+    have ih := below fuel (Nat.lt_succ_self fuel)
     constructor
     · intro v k e hv he
       rw [hinst]
@@ -254,14 +256,30 @@ private theorem workers (fuel : Nat) :
             apply bindV (ih.1 v (k + 1) b hv he.2.2); rintro ⟨b', c⟩ hb
             apply storeV; apply shareV; exact ⟨ht, hx, hb⟩
           | mdata data x hash =>
-            apply bindV (ih.1 v k x hv he.2); rintro ⟨x', c⟩ hx
-            apply storeV; apply shareV; exact ⟨he.1, hx⟩
+            cases x with
+            | lam n t b bi hash' =>
+              dsimp only
+              split
+              · cases fuel with
+                | zero => intro _ _ _ _ run; cases run
+                | succ innerFuel =>
+                  have inner := (below innerFuel (by omega)).1
+                  apply bindV (inner v k t hv he.2.1); rintro ⟨t', c⟩ ht
+                  apply bindV (inner v (k + 1) b hv he.2.2); rintro ⟨b', c⟩ hb
+                  apply bindV (shareV (Expr.mkLam n t' b' bi) ⟨ht, hb⟩)
+                  intro x' hx
+                  simp only [pure_bind]
+                  apply storeV; apply shareV; exact ⟨he.1, hx⟩
+              · apply bindV (ih.1 v k _ hv he.2); rintro ⟨x', c⟩ hx
+                apply storeV; apply shareV; exact ⟨he.1, hx⟩
+            | _ =>
+              apply bindV (ih.1 v k _ hv he.2); rintro ⟨x', c⟩ hx
+              apply storeV; apply shareV; exact ⟨he.1, hx⟩
           | _ => apply doneV; exact he
     · intro f args hf ha
-      cases f <;> cases args <;>
+      cases f <;> cases args <;> rw [happ.eq_def] <;> dsimp only <;>
         try exact fun b hb o t run => shareAppN_run _ _ hf (fun a h => ha a (List.mem_toArray.mp h)) hb run
       rename_i n ty body bi hash a rest
-      rw [happ]
       apply bindV (ih.1 a 0 body (ha a (by simp)) hf.2)
       rintro ⟨body', c⟩ hbody
       exact ih.2 body' rest hbody (fun x hx => ha x (by simp [hx]))
