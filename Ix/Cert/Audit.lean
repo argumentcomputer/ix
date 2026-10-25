@@ -6208,6 +6208,19 @@ run_cmd do
     (#[`appendComps_reserved, `ixAuxName_reserved, `sideCar_original_keys].map
       (`Ix.CompileCert.DisplayAddressFrame ++ ·))
 
+/-! ## Actual move-to-display original-key equation
+
+The successful production move erases exactly the selected nonreserved local
+keys. This is not a frame or absence statement about the global address map. -/
+
+/-- info: [cert-audit] actual move-to-display original keys: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual move-to-display original keys"
+    (#[`moveToDisplay_eq, `moveToDisplay_original_keys].map
+      (`Ix.CompileCert.DisplayAddressFrame ++ ·))
+
 /-! ## Same-run image auxiliary hit origins
 
 One real image/original run supplies exact final map hits, Named addresses,
