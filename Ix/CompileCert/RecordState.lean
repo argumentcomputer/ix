@@ -175,4 +175,26 @@ theorem compileExprMeta_preserves (aligned : ∀ a, cx.blob a = env.blobs.get? a
       · exact same (Preserves.modify core _ (fun _ => rfl))
       · intro _; exact Step.pure _
 
+private theorem arrayPlain (xs : Array α) (initial : β) (f : α → β → CompileM (ForInStep β))
+    (h : ∀ x b, S (f x b)) : S (forIn xs initial f) :=
+  arrayLoop xs initial (fun x _ b => f x b) (fun x _ b => h x b)
+
+/-- The actual record loop preserves the ordinary invariant and primary
+footprint on success and error, including after prior records have committed. -/
+theorem compileRecords_preserves (aligned : ∀ a, cx.blob a = env.blobs.get? a)
+    (ns : Array Nat) : S (compileRecords ns) := by
+  unfold compileRecords
+  with_reducible repeat' first
+    | exact Step.pure _
+    | exact same (action := throw _) (Preserves.throw core _)
+    | exact same (action := getBlockState) (Preserves.get core)
+    | exact same (action := getBlockEnv) (Preserves.read core)
+    | exact same (action := getCompileEnv) (Preserves.readCompile core)
+    | exact same (action := modifyBlockState _) (Preserves.modify core _ (fun _ => rfl))
+    | exact compileExprMeta_preserves aligned _
+    | refine Step.bind ?_ (fun _ => ?_)
+    | apply arrayPlain; intros
+    | split
+    | dsimp (config := { failIfUnchanged := true }) only
+
 end Ix.CompileCert.RecordState
