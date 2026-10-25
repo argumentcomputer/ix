@@ -5,7 +5,6 @@ import Ix.EnvScope
 import Ix.Resource.Validate
 import Ix.Cert.Statement
 import Tests.Ix.Kernel.SourceIngress
-import Tests.Ix.ResourceValidate
 import Tests.Ix.ContractPipeline
 import Tests.Ix.SourceContract.SyntaxFixture
 import Tests.Ix.Kernel.TierIndDefs
@@ -19,7 +18,7 @@ import Tests.Ix.Kernel.TierIndDefs
   through and around its projection record; hints are found both through a
   projection record and at a record itself. The input lists every record
   exactly once (`Ixon.CheckOrder.wholeEnv`).
-* **Verdicts, as `Ix.Tc` gives them** (step 10d: no divergence), on compiled
+* **Actual typing verdicts**, on compiled
   closures the typing half accepts: those fixtures (with assumption axioms),
   the source-contract syntax fixture (a contract input), the contract
   pipeline's input (an assumption axiom, `ContractA`) and the typing tier's
@@ -78,18 +77,16 @@ def uncertifiedSize (ixe : Ixon.Env) : Nat :=
     let unc := Ix.Resource.splitOf input
     (input.ordered.filter fun (a, c, _) => unc.contains (Ixon.CheckOrder.owner a c)).size
 
-/-- The typing half accepts `ixe`, as `Ix.Tc` does. -/
+/-- The typing half must accept the actual compiled `ixe`. -/
 def verdict (label : String) (ixe : Ixon.Env) : Array String × Array String :=
   let ixc := Ix.Resource.typeCheck ixe
-  let tc := Tests.ResourceValidate.tcAccepts ixe
   let named (e : String) : List String := ixe.named.toList.filterMap fun (n, nd) =>
     if (e.splitOn (toString nd.addr)).length > 1 then some (toString n) else none
-  let errors := (match ixc with
+  let errors := match ixc with
     | .error e => #[s!"{label}: the typing half declines: {e} (names: {named e})"]
-    | .ok _ => #[]) ++
-    (if ixc.toOption.isSome != tc then #[s!"{label}: IxC {ixc.toOption.isSome}, Ix.Tc {tc}"] else #[])
+    | .ok _ => #[]
   (errors, #[s!"{label}: {ixe.consts.size} records, {uncertifiedSize ixe} in the uncertified part, \
-    Ix.Tc {if tc then "accepts" else "declines"}"])
+    IxC {if ixc.toOption.isSome then "accepts" else "declines"}"])
 
 def hintsAndCoverage : IO (Array String × Array String) := do
   let leanEnv ← getCompileEnv #[defsModule, ownModule]
@@ -176,7 +173,7 @@ def report (name : String) (action : IO (Array String × Array String)) : TestSe
 
 def suite : List TestSeq := [
   report "the typing input's hints and coverage, and its verdict, on the compiled fixtures" hintsAndCoverage,
-  report "verdicts as Ix.Tc gives them: a contract input, an assumption axiom, unsafe inductives"
+  report "actual typing verdicts: a contract input, an assumption axiom, unsafe inductives"
     compiledVerdicts]
 
 end Tests.ResourceHints

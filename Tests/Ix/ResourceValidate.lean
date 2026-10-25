@@ -1,7 +1,6 @@
 module
 
 public import Ix.Resource.Validate
-public import Ix.Tc.Driver
 public import Tests.Ix.ResourceAddressed
 
 public section
@@ -44,29 +43,17 @@ def declines (label : String) (result : Except String α) (needle : String) : IO
     unless (e.splitOn needle).length > 1 do
       throw <| IO.userError s!"resource validator {label}: expected '{needle}' in: {e}"
 
-/-- `Ix.Tc`'s verdict on the same committed bytes (the typing half before
-step 10c): every constant checks. -/
-def tcAccepts (env : Ixon.Env) : Bool :=
-  let raw : Ixon.Env := {
-    consts := env.consts.fold (init := {}) fun m a lazy =>
-      let bytes := lazy.rawBytes
-      m.insert a (LazyConstant.ofSlice bytes 0 bytes.size)
-    blobs := env.blobs, anonHints := env.anonHints }
-  match Ix.Tc.checkEnvAnon raw { verifyHashes := true } with
-  | .ok results => results.all (·.err?.isNone)
-  | .error _ => false
-
-/-- The typing half and `Ix.Tc` agree on `env` (step 10d: no divergence). -/
-def agrees (label : String) (env : Ixon.Env) : IO Unit := do
-  let ixc := (typeCheck env).toOption.isSome
-  unless ixc == tcAccepts env do
-    let why := match typeCheck env with | .error e => e | .ok _ => "accepted"
-    throw <| IO.userError s!"resource validator {label}: IxC {ixc}, Ix.Tc {!ixc} ({why})"
+/-- Assert the actual typing result independently of resource validation. -/
+def expectTyping (label : String) (env : Ixon.Env) (accept : Bool) : IO Unit := do
+  let result := typeCheck env
+  unless result.toOption.isSome == accept do
+    let why := match result with | .error e => e | .ok _ => "accepted"
+    throw <| IO.userError s!"resource validator {label}: expected typing {accept}, got {why}"
 
 /-- The typing half: `partial` and `unsafe` definitions typed by the batch
-tier, ill-typed ones declined on either side; unsafe inductives and
+tier, ill-typed ones declined; unsafe inductives and
 assumption axioms typed uncertified (step 10d), and ill-typed ones declined;
-`Ix.Tc` agrees on every case. -/
+every actual typing result is checked explicitly. -/
 def runTier : IO Unit := do
   let (base, unit) := unitEnv
   let ctor := Addressed.commit (Addressed.constructorWrapper (Addressed.commit unitBlock) 0 0)
@@ -127,19 +114,20 @@ def runTier : IO Unit := do
     info := .defn ⟨.defn, .safe, 0, .ref 0 #[], .ref 1 #[]⟩
     sharing := #[], refs := #[unit, f], univs := #[] }
   cases := cases.push ("definition that misuses an assumption axiom", (store fEnv misuse).1, false)
+  unless cases.size == 16 do throw (IO.userError "resource typing corpus lost a case")
   for (label, env, accept) in cases do
     check label (validate env {}) accept
-    agrees label env
+    expectTyping label env accept
   IO.println s!"Combined resources: the typing half (the batch tier; unsafe inductives and assumption \
-    axioms uncertified) on {cases.size} cases, each as Ix.Tc decides, passed"
+    axioms uncertified) on {cases.size} explicit outcomes passed"
 
 def run : IO Unit := do
   let (base, unit) := unitEnv
   let (env, id) := store base (identity unit)
   check "combined identity" (validate env {}) true
-  agrees "combined identity" env
+  expectTyping "combined identity" env true
   -- the handoff's and the VM tests' escaping identity: typed, resource-invalid
-  agrees "escaping identity" (store base (identity unit linearLocal .shared)).1
+  expectTyping "escaping identity" (store base (identity unit linearLocal .shared)).1 true
   check "literal type pin" (validate env { natType := some unit }) false
   let bad : Constant := {
     info := .defn ⟨.defn, .safe, 0, .sort 0, .var 0⟩
@@ -147,7 +135,7 @@ def run : IO Unit := do
   let (malformed, address) := store env bad
   check "ordinary component skips resource analysis" (Addressed.checkResources malformed {}) true
   check "ordinary component still needs typing" (validate malformed {}) false
-  agrees "ordinary component still needs typing" malformed
+  expectTyping "ordinary component still needs typing" malformed false
   let forged := { LazyConstant.ofConstant bad with cache := some (identity unit) }
   check "typing also ignores materialized cache"
     (validate { malformed with consts := malformed.consts.insert address forged } {}) false

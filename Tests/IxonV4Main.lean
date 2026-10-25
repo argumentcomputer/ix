@@ -89,11 +89,9 @@ def main (args : List String) : IO Unit := do
     IO.println s!"Validating {env.consts.size} constants from the primitive closure"
     let resolved ← IO.ofExcept (Ix.Resource.validate env (Ix.Resource.standardProfile env))
     IO.println s!"Validated {resolved.addresses.size} addressed interfaces"
-    -- the typing half's cost against `Ix.Tc`'s on the same bytes, and their agreement
+    -- Time the actual typing check on the same committed primitive closure.
     let t0 ← IO.monoMsNow
-    let ixc ← IO.lazyPure fun _ => (Ix.Resource.typeCheck env).toOption.isSome
+    let typing ← IO.lazyPure fun _ => Ix.Resource.typeCheck env
     let t1 ← IO.monoMsNow
-    let tc ← IO.lazyPure fun _ => Tests.ResourceValidate.tcAccepts env
-    let t2 ← IO.monoMsNow
-    IO.println s!"Typing the primitive closure: IxC {t1 - t0} ms, Ix.Tc {t2 - t1} ms (both {ixc && tc})"
-    unless ixc == tc do throw <| IO.userError "primitive closure: IxC and Ix.Tc disagree"
+    discard <| IO.ofExcept typing
+    IO.println s!"Typing the primitive closure: IxC {t1 - t0} ms (accepted)"
