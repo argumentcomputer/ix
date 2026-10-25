@@ -6,9 +6,9 @@
   --local`, `--consts`, `--module`; the closure suites) can carry a `String`
   or `Nat` literal without the declarations IxC needs to type it
   (`Ix.Kernel.Reader.strLitSupportNames`, which include
-  `natLitSupportNames`). The drivers' Source service then refuses every
-  group with such a literal, and AuxGen falls back to `Ix.Tc` there
-  (`compile-closure-whole`'s `MCasesPat` closure).
+  `natLitSupportNames`). Without that support, the drivers' Source service
+  can refuse a group that uses such a literal. The migration exposed this
+  in `compile-closure-whole`'s `MCasesPat` closure.
 
   `literalSupportFor` gives the service those declarations from the Lean
   environment the closure was taken from: the selected closure of the

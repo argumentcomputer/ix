@@ -6,11 +6,11 @@
   generated terms, so their *spelling* is part of the output: the bytes
   carry canonical (Géran) universes, but `Named` metadata, the `.ixe`, the
   `aux-gen-diff` patch hashes and Lean–Rust lockstep see the spelling.
-  `Ix.Tc` builds every level through its smart constructors
+  The former `Ix.Tc` backend built every level through its smart constructors
   (`Ix.Tc.KUniv.mkMax`/`mkIMax`: at ingress, under substitution, in
-  ∀-inference), and the bridge spells its answer back raw
-  (`Ix.AuxGen.kunivToLevel`). IxC builds raw levels. So an IxC answer is
-  spelled as `Ix.Tc` would have built the same level: positional parameters
+  ∀-inference), and its bridge spelled the answer back raw
+  (`Ix.AuxGen.kunivToLevel`, since removed). IxC builds raw levels. Its answer
+  is spelled as `Ix.Tc` would have built the same level: positional parameters
   back to the scope's names, then `max`/`imax` rebuilt bottom-up through
   `tcMax`/`tcIMax`, which are `KUniv.mkMax`/`mkIMax` branch for branch on
   `Ix.Level`. The spike measured this equal to `Ix.Tc`'s answer on every
@@ -28,12 +28,14 @@
   bridge's own constructor (`AuxKernelError.levelParamIndex`), never spelled
   `u_{idx}`.
 
-  `normalize` is the same rebuild of a Lean level, `leanLevelToKuniv`
-  followed by `kunivToLevel`: what `Ix.Tc`'s ingress does to a level before
-  its fast path reads it (AuxGen's `ixcFastLevel`, M2).
+  `normalize` is the same rebuild of a Lean level as the former bridge's
+  `leanLevelToKuniv` followed by `kunivToLevel`: what `Ix.Tc`'s ingress did
+  before its fast path read a level. The current `Ixc.fastLevel` uses this
+  rebuild before substituting the head constant's universe arguments.
 
-  Nothing here depends on `Ix.Tc`, which AuxGen M7 deletes; the tests
-  compare it with `Ix.Tc` while both exist.
+  This module does not import `Ix.Tc`. `Tests.Ix.AuxGen.LevelReference`
+  checks all 1,200 ordered inputs against 2,400 complete recorded legacy
+  outputs; `LevelEgressTests` retains the branch and range-refusal checks.
 -/
 module
 public import Ix.Environment
