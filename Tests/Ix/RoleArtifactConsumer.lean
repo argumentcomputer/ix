@@ -88,7 +88,7 @@ private def checks : IO Nat := do
     let thin ← IO.ofExcept (serEnv thin)
     let thin ← checked (← prepareInput thin anon)
     ensure (match checkWhole thin .all none with
-      | .error (.refused _ message) => message.contains "thin artifact" | _ => false)
+      | .error (.artifact message) => message.contains "thin artifact" | _ => false)
       "unresolved thin input obtained a whole receipt"
 
   -- An unnamed bad theorem is absent from the meta inventory. Whole checking
@@ -97,7 +97,7 @@ private def checks : IO Nat := do
   let (badEnv, _) := insert env badProof
   let badBytes ← IO.ofExcept (serEnv badEnv)
   let bad ← checked (← prepareInput badBytes)
-  ensure (match ← runPrepared bad cfg .all with | .error (.refused "artifact" _) => true | _ => false)
+  ensure (match ← runPrepared bad cfg .all with | .error (.artifact _) => true | _ => false)
     "an unnamed invalid record escaped bound whole checking"
   let ix ← IO.FS.realPath ".lake/build/bin/ix"
   let dir ← IO.FS.createTempDir
@@ -117,7 +117,16 @@ private def checks : IO Nat := do
       let out ← IO.Process.output { cmd := ix.toString, args := #["check-lean", file.toString] ++ args, env := vars }
       ensure (out.exitCode == code && (out.stdout ++ out.stderr).contains text)
         s!"bound CLI control failed: {out.exitCode}\n{out.stdout}\n{out.stderr}"
-    return 4
+    let failures := dir / "aggregate-failures.txt"
+    let out ← IO.Process.output {
+      cmd := ix.toString
+      args := #["check-lean", badPath.toString, "--fail-out", failures.toString]
+      env := vars }
+    ensure (out.exitCode == 3 && out.stderr.contains "artifact") "aggregate refusal exit changed"
+    let lines := (← IO.FS.readFile failures).splitOn "\n" |>.map (·.trimAscii.toString)
+    ensure (lines.any (·.contains "artifact") && lines.all (fun line => line.isEmpty || line.startsWith "#"))
+      "aggregate refusal wrote a fabricated declaration selector"
+    return 5
   finally
     IO.FS.removeDirAll dir
 

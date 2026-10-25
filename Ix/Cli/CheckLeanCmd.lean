@@ -26,11 +26,13 @@ inductive DriverError where
   | usage (message : String)
   | infrastructure (message : String)
   | refused (label message : String)
+  /-- Aggregate refusal: there is no declaration selector for a fail file. -/
+  | artifact (message : String)
 
 def DriverError.message : DriverError → String
-  | .usage s | .infrastructure s => s | .refused n s => s!"{n}: {s}"
+  | .usage s | .infrastructure s | .artifact s => s | .refused n s => s!"{n}: {s}"
 def DriverError.exitCode : DriverError → UInt32
-  | .usage _ => 2 | .infrastructure _ => 1 | .refused .. => 3
+  | .usage _ => 2 | .infrastructure _ => 1 | .refused .. | .artifact _ => 3
 
 def targetError : CheckLeanTargets.Error → DriverError
   | .selector s => .usage s
@@ -69,7 +71,7 @@ def prepareInput (bytes : ByteArray) (anon : Bool := false) : IO (Except DriverE
     let parts ← (Ixon.deEnvVerifiedLazy bytes).mapError DriverError.infrastructure
     let boundInput ← if parts.env.roleBinding.isSome then
         (Ix.RoleBinding.Artifact.prepareRecords parts.env artifactLimits).map some
-          |>.mapError (DriverError.refused "artifact" ∘ toString)
+          |>.mapError (DriverError.artifact ∘ toString)
       else pure none
     let (table, pre) ← match boundInput with
       | some input => pure (input.prepared.table, input.prepared.pre)
@@ -141,14 +143,14 @@ def checkWhole (p : PreparedInput) (selection : Selection) (maxGroups : Option N
   | .all, none => pure ()
   | _, _ => return none
   unless p.parts.env.assumptions.isEmpty do
-    throw (.refused "artifact" "decline: thin artifact assumptions require explicit resolution")
+    throw (.artifact "artifact: decline: thin artifact assumptions require explicit resolution")
   if p.hasTier then
     let receipt ← (Ix.RoleBinding.Artifact.checkTiered p.parts.env artifactLimits).mapError
-      (DriverError.refused "artifact" ∘ toString)
+      (DriverError.artifact ∘ toString)
     return some (.tiered receipt.prepared.records.length receipt.tier.length)
   else
     let receipt ← (Ix.RoleBinding.Artifact.check p.parts.env artifactLimits).mapError
-      (DriverError.refused "artifact" ∘ toString)
+      (DriverError.artifact ∘ toString)
     return some (.logical receipt.prepared.records.length)
 
 def success (outcome : String) : Bool := outcome == "accept" || outcome == "typed"
