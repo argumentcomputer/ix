@@ -767,3 +767,11 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "reading-audit") "decorated contract arity"
     #[`Ix.CompileCert.RecordSourceShape.decorateExpr_canonical]
+
+/-- info: [reading-audit] source contract arity: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "source contract arity"
+    #[`Ix.CompileCert.RecordSourceShape.decorate_constant, `Ix.CompileCert.RecordSourceShape.ingress,
+      `Ix.CompileCert.RecordSourceShape.canonical_ingress]

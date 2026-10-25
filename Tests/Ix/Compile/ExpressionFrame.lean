@@ -151,6 +151,14 @@ def recordControls : List (String × Bool) := Id.run do
   let (annotated, _) := (compileExprMeta (Expr.mkMData contract.ixMetadata binder) cx).run seeded
   let malformed := Expr.mkMData #[(Name.fromLeanName `ix.contract, .ofNat 3)] bad
   let (contractError, _) := (compileExprMeta malformed cx).run seeded
+  -- Explicit raw-key forgery: no claim about canonical decorator output.
+  let semanticName := Name.fromLeanName `ix.contract
+  let forgedKey := match semanticName with
+    | .str parent text _ => Name.str parent text _root_.Ix.Compile.Pass.inlineKey.getHash
+    | _ => semanticName
+  let forged := Expr.mkMData #[(forgedKey, .ofNat 0)] f
+  let substituted := substRecords (({} : Std.HashMap Nat (Nat × UInt64)).insert 0 (0, 0)) forged
+  let ingress := _root_.Ix.LeanIngress.ingressExpr (fun _ => 0)
   let kept := fun (s : BlockState) => s.refs == seeded.refs && s.univs == seeded.univs &&
     s.refsIndex.get? oldAddr == some 0 && s.univsIndex.get? .zero == some 0 &&
     s.exprCache.size == seeded.exprCache.size && s.exprCache.get? f == seeded.exprCache.get? f &&
@@ -187,7 +195,11 @@ def recordControls : List (String × Bool) := Id.run do
     ("metadata compiler retains semantic binder contracts", match annotated with
       | .ok (.lam got (.sort 0) (.var 0), _) => got == contract.binder | _ => false),
     ("malformed semantic contract is rejected before its body", match contractError with
-      | .error (.unsupportedExpr "malformed semantic contract frame") => true | _ => false)
+      | .error (.unsupportedExpr "malformed semantic contract frame") => true | _ => false),
+    ("raw semantic-key alias witnesses why unconditional substitution erasure is false",
+      forgedKey == _root_.Ix.Compile.Pass.inlineKey && !(_root_.Ix.Name.beqRaw forgedKey _root_.Ix.Compile.Pass.inlineKey) &&
+      (match ingress forged with | .error (.contract "malformed semantic contract frame") => true | _ => false) &&
+      (ingress substituted).toOption == some (.bvar 0))
   ]
 
 def suite : List TestSeq := (controls ++ recordControls).map fun (label, ok) => test s!"expression frame: {label}" ok

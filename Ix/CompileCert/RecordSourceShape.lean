@@ -127,4 +127,91 @@ theorem decorateExpr_canonical (contract : ResolvedSourceContract) (root : Sourc
   rw [canonExpr_run]
   exact canonical out (decorated contract root path e run)
 
+/-- The actual returned constant's type and optional value, including the
+existing unsupported-kind refusals. No value is invented for an axiom. -/
+theorem decorate_constant (contract : ResolvedSourceContract) {out : Lean.ConstantInfo}
+    (run : contract.decorate = .ok out) (cache : Ix.CanonM.CanonState) :
+    let ci := (Id.run ((Ix.CanonM.canonConst out).run cache)).1
+    ContractArity ci.getCnst.type ∧
+      ∀ value, Ix.LeanIngress.definitionValue ci = some value → ContractArity value := by
+  rw [canonConst_run]
+  unfold ResolvedSourceContract.decorate at run
+  obtain ⟨type, typeRun, rest⟩ := Loop.except_bind_ok.mp run
+  have ht := canonical type (decorated contract .type [] contract.source.type typeRun)
+  cases source : contract.source <;> simp only [source] at rest
+  case quotInfo => cases rest
+  case inductInfo => cases rest
+  case ctorInfo => cases rest
+  case recInfo => cases rest
+  case axiomInfo info =>
+    cases Except.ok.inj rest
+    exact ⟨ht, by intro value absent; cases absent⟩
+  all_goals
+    obtain ⟨value, valueRun, returned⟩ := Loop.except_bind_ok.mp rest
+    cases Except.ok.inj returned
+    refine ⟨ht, ?_⟩
+    intro result found
+    cases Option.some.inj found
+    exact canonical value (decorated contract .body [] _ valueRun)
+
+private theorem read_size {data : Array (Ix.Name × Ix.DataValue)} {c : Contract}
+    (run : Ix.SemanticContract.read data = .ok c) : data.size = 3 := by
+  by_contra wrong
+  simp [Ix.SemanticContract.read, wrong] at run
+  cases run
+
+/-- Successful structural Source ingress supplies the arity fact for the
+SAME expression, not an original body standing in for a rewritten one. -/
+theorem ingress (σ : Ix.Name → Ix.Kernel.LevelParam) (e : Ix.Expr)
+    {converted : Ix.Kernel.Expr .source}
+    (run : Ix.LeanIngress.ingressExpr σ e = .ok converted) : ContractArity e := by
+  induction e generalizing converted
+  all_goals try exact True.intro
+  all_goals rw [Ix.LeanIngress.ingressExpr] at run
+  case app f a hash hf ha =>
+    obtain ⟨f', rf, tail⟩ := Loop.except_bind_ok.mp run
+    obtain ⟨a', ra, _⟩ := Loop.except_bind_ok.mp tail
+    exact ⟨hf rf, ha ra⟩
+  case lam n t b bi hash ht hb =>
+    obtain ⟨t', rt, tail⟩ := Loop.except_bind_ok.mp run
+    obtain ⟨b', rb, _⟩ := Loop.except_bind_ok.mp tail
+    exact ⟨ht rt, hb rb⟩
+  case forallE n t b bi hash ht hb =>
+    obtain ⟨t', rt, tail⟩ := Loop.except_bind_ok.mp run
+    obtain ⟨b', rb, _⟩ := Loop.except_bind_ok.mp tail
+    exact ⟨ht rt, hb rb⟩
+  case letE n t v b nd hash ht hv hb =>
+    obtain ⟨t', rt, tail⟩ := Loop.except_bind_ok.mp run
+    obtain ⟨v', rv, tail⟩ := Loop.except_bind_ok.mp tail
+    obtain ⟨b', rb, _⟩ := Loop.except_bind_ok.mp tail
+    exact ⟨ht rt, hv rv, hb rb⟩
+  case proj n i e hash ih =>
+    obtain ⟨e', re, _⟩ := Loop.except_bind_ok.mp run
+    exact ih re
+  case mdata data e hash ih =>
+    unfold Ix.LeanIngress.ingressMData at run
+    by_cases frame : hasMetadata data = true
+    · simp only [frame, ↓reduceIte] at run
+      obtain ⟨c, readRun, tail⟩ := Loop.except_bind_ok.mp run
+      have decoded : Ix.SemanticContract.read data = .ok c := by
+        cases h : Ix.SemanticContract.read data with
+        | error why => simp only [h, Except.mapError] at readRun; cases readRun
+        | ok value =>
+          have same : value = c := by simpa only [h, Except.mapError, Except.ok.injEq] using readRun
+          exact congrArg Except.ok same
+      obtain ⟨e', re, _⟩ := Loop.except_bind_ok.mp tail
+      exact ⟨fun _ => read_size decoded, ih re⟩
+    · simp only [frame] at run
+      exact ⟨fun present => False.elim (frame present), ih run⟩
+
+/-- The actual canonical output is tied to the successful direct Lean
+source reading and its numbering by the existing CanonM correspondence. -/
+theorem canonical_ingress (σ : Ix.Name → Ix.Kernel.LevelParam) (e : Lean.Expr)
+    {converted : Ix.Kernel.Expr .source} (run : leanExpr (σ ∘ nameS) e = .ok converted)
+    (cache : Ix.CanonM.CanonState) :
+    ContractArity (Id.run ((Ix.CanonM.canonExpr e).run cache)).1 := by
+  apply ingress σ
+  rw [ingressExpr_canonExpr]
+  exact run
+
 end Ix.CompileCert.RecordSourceShape
