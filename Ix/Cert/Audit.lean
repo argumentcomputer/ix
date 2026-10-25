@@ -72,6 +72,7 @@ import Ix.CompileCert.OptShapeOrigin
 import Ix.CompileCert.ViewPublicationOrigin
 import Ix.CompileCert.PrimaryAddressFrame
 import Ix.CompileCert.ImageAuxOrigins
+import Ix.CompileCert.DisplayAddressFrame
 
 /-! # The certification statements, frozen
 
@@ -6193,6 +6194,19 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual image auxiliary write traces"
     (#[`compileImageBlock_calls, `runImageBlock_trace].map
       (`Ix.CompileCert.ImageAuxOrigins ++ ·))
+
+/-! ## Reserved display range and actual original-key removal
+
+Actual naming outputs are reserved. The ordered SideCar insert/erase loop
+removes selected nonreserved keys without a rename-injectivity premise. -/
+
+/-- info: [cert-audit] actual display range and original keys: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual display range and original keys"
+    (#[`appendComps_reserved, `ixAuxName_reserved, `sideCar_original_keys].map
+      (`Ix.CompileCert.DisplayAddressFrame ++ ·))
 
 /-! ## Same-run image auxiliary hit origins
 
