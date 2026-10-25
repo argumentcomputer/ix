@@ -46,6 +46,12 @@ structure Prepared where
   blobs : Ix.Kernel.Ingress.Blobs
   hints : Hints
 
+/-- Authenticated records in the exact order supplied to either entry. The
+logical and tiered consumers share this byte/binding/prelude boundary. -/
+structure PreparedRecords where
+  prepared : Prepared
+  constants : List (Address × Ixon.Constant)
+
 /-- Every table entry must designate an actual member. Table well-formedness
 alone permits unused absent roles, and does not establish this coverage. -/
 def checkBindings (table : Ix.Kernel.RoleTable) (store : RecordStore) : Except Error Unit := do
@@ -80,7 +86,8 @@ def checkEvidence (table : Ix.Kernel.RoleTable) (evidence : Ix.Kernel.Evidences 
         | _ => false) do
       throw (.coverage s!"bound operation {repr role} is not a definition")
 
-def prepare (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) : Except Error Prepared := do
+def prepareRecords (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+    Except Error PreparedRecords := do
   let some raw := artifact.roleBinding | throw .missingBinding
   let binding : Ix.Kernel.Admission.Binding := ⟨raw.address, raw.bytes⟩
   let rawRecords := (artifact.consts.toArray.map fun (a, c) => (a, c.rawBytes)).qsort
@@ -101,16 +108,25 @@ def prepare (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) : Except
   unless order.size == rawRecords.size do throw (.coverage "record order does not cover the artifact")
   let mut seen : Std.HashSet Address := {}
   let mut ordered : Array (Address × ByteArray) := #[]
+  let mut decoded : Array (Address × Ixon.Constant) := #[]
   for address in order do
     if seen.contains address then throw (.coverage s!"duplicate ordered record {address}")
     let some record := artifact.consts[address]? | throw (.coverage s!"unknown ordered record {address}")
+    let some constant := store[address]? | throw (.coverage s!"unknown decoded record {address}")
     seen := seen.insert address
     ordered := ordered.push (address, record.rawBytes)
+    decoded := decoded.push (address, constant)
   let hints := Hints.ofStore store artifact.anonHints
-  let (evidence, declarations) ← (Ix.Kernel.Admission.prepareWith Address.admissionHash binding pre limits
-    ordered.toList blobs hints.lookup).mapError .admission
-  checkEvidence table evidence declarations
-  return { binding, table, pre, records := ordered.toList, blobs, hints }
+  return { prepared := { binding, table, pre, records := ordered.toList, blobs, hints }
+           constants := decoded.toList }
+
+def prepare (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) : Except Error Prepared := do
+  let input ← prepareRecords artifact limits
+  let p := input.prepared
+  let (evidence, declarations) ← (Ix.Kernel.Admission.prepareWith Address.admissionHash p.binding p.pre limits
+    p.records p.blobs p.hints.lookup).mapError .admission
+  checkEvidence p.table evidence declarations
+  return p
 
 /-- This is a receipt of these two actual runs, not an arbitrary stored
 verdict. It does not certify a host claim or a relation to a source program. -/

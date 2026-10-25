@@ -5,15 +5,16 @@ public import Ix.Common
 public import Ix.Cli.CheckLeanTargets
 public import Ix.KernelCheck.Run
 public import Ix.KernelCheck.Stream
+public import Ix.RoleBinding.ArtifactTiered
 public import Ix.Runtime.Thread
 public import Ix.Benchmark.Results
 
 public section
 
 /-! The IxC host record checker behind check-lean. Both modes authenticate
-input bytes. Selected declarations run with their complete supporting closure;
-actual emitted-key coverage is required. This harness reports accept/typed/
-reject/decline/blocked, not an aggregate certified byte-admission theorem. -/
+input bytes. Bound whole-artifact runs additionally require the actual logical
+or tiered entry. Selected/capped runs report only their selected declarations;
+actual emitted-key coverage is required in both modes. -/
 
 namespace Ix.Cli.CheckLeanCmd
 
@@ -25,11 +26,13 @@ inductive DriverError where
   | usage (message : String)
   | infrastructure (message : String)
   | refused (label message : String)
+  /-- Aggregate refusal: there is no declaration selector for a fail file. -/
+  | artifact (message : String)
 
 def DriverError.message : DriverError → String
-  | .usage s | .infrastructure s => s | .refused n s => s!"{n}: {s}"
+  | .usage s | .infrastructure s | .artifact s => s | .refused n s => s!"{n}: {s}"
 def DriverError.exitCode : DriverError → UInt32
-  | .usage _ => 2 | .infrastructure _ => 1 | .refused .. => 3
+  | .usage _ => 2 | .infrastructure _ => 1 | .refused .. | .artifact _ => 3
 
 def targetError : CheckLeanTargets.Error → DriverError
   | .selector s => .usage s
@@ -52,7 +55,13 @@ structure PreparedInput where
   hints : Hints
   inventory : Array Candidate
   anon : Bool
+  bound : Bool := false
+  hasTier : Bool := false
   prepareMs : Nat := 0
+
+/-- Explicit coverage limits for the complete artifact entry, shared by both
+display modes. These are the host's whole-library byte/expansion bounds. -/
+def artifactLimits : Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
 
 /-- Authenticate first; retain raw windows and reader skeletons. No metadata
 or original-data field is rebuilt through an incomplete Env literal. -/
@@ -60,21 +69,41 @@ def prepareInput (bytes : ByteArray) (anon : Bool := false) : IO (Except DriverE
   let start ← IO.monoMsNow
   let result : Except DriverError PreparedInput ← IO.lazyPure fun _ => do
     let parts ← (Ixon.deEnvVerifiedLazy bytes).mapError DriverError.infrastructure
-    let table ← defaultTable.mapError DriverError.infrastructure
-    let pre ← (preludeFor table : Except String (Prelude .anon)).mapError DriverError.infrastructure
+    let boundInput ← if parts.env.roleBinding.isSome then
+        (Ix.RoleBinding.Artifact.prepareRecords parts.env artifactLimits).map some
+          |>.mapError (DriverError.artifact ∘ toString)
+      else pure none
+    let (table, pre) ← match boundInput with
+      | some input => pure (input.prepared.table, input.prepared.pre)
+      | none => do
+        let table ← defaultTable.mapError DriverError.infrastructure
+        let pre ← (preludeFor table : Except String (Prelude .anon)).mapError DriverError.infrastructure
+        pure (table, pre)
+    -- Evidence is read through this store, so a bound theorem and its owner
+    -- must retain their real bodies instead of the diagnostic skeleton.
+    let mut proofRecords : Std.HashSet Address := {}
+    if boundInput.isSome then
+      for (_, entries) in table.evidence do
+        for entry in entries do
+          if let .proof address := entry then
+            proofRecords := proofRecords.insert address
+            if let some lazy := parts.env.consts[address]? then
+              let record ← lazy.get.mapError DriverError.infrastructure
+              proofRecords := proofRecords.insert (owner address record)
     let mut store : RecordStore := {}
     let mut literals := #[]
     for (a, lc) in parts.env.consts do
       let c ← lc.get.mapError DriverError.infrastructure
       let (nat, str) := literalKinds c
       if nat || str then literals := literals.push (a, Benchmarks.Kernel.CheckIxeStream.literalStandIn nat str)
-      store := store.insert a (Benchmarks.Kernel.CheckIxeStream.skeleton c)
+      store := store.insert a (if proofRecords.contains a then c else Benchmarks.Kernel.CheckIxeStream.skeleton c)
     let hints := Hints.ofStore store parts.env.anonHints
     let setup := Benchmarks.Kernel.CheckIxeStep.setup store (parts.env.blobs[·]?) table pre hints.lookup
       (literals := some literals)
     let inventory ← if anon then (anonymousCandidates store).mapError targetError else
       pure (namedCandidates store (parts.namedRows.map fun (r : Ixon.NamedRow) => (toString r.name, r.addr)))
-    pure { parts, setup, pre, hints, inventory, anon : PreparedInput }
+    pure { parts, setup, pre, hints, inventory, anon, bound := boundInput.isSome
+           hasTier := (boundInput.map (·.hasTier)).getD false : PreparedInput }
   let elapsed := (← IO.monoMsNow) - start
   return result.map fun p => { p with prepareMs := elapsed }
 
@@ -83,6 +112,11 @@ def PreparedInput.record (p : PreparedInput) (a : Address) : Except ReadError Ix
   | some lc => lc.get.mapError (.malformed ·)
   | none => match p.setup.store[a]? with
     | some c => .ok c | none => .error (.malformed "record is missing")
+
+inductive ArtifactAdmission where
+  | logical (records : Nat)
+  | tiered (records typed : Nat)
+  deriving BEq, Repr
 
 structure CheckReport where
   targets : Array TargetResult
@@ -95,6 +129,29 @@ structure CheckReport where
   subjectMicros : Nat
   supportMicros : Nat
   readMicros : Nat
+  bound : Bool := false
+  artifactAdmission : Option ArtifactAdmission := none
+  artifactMs : Nat := 0
+
+/-- Route from authenticated record headers before either entry runs. A
+failure never selects another checker. Selected/capped runs make no complete
+artifact claim, and unresolved thin bundles have no external-store fallback. -/
+def checkWhole (p : PreparedInput) (selection : Selection) (maxGroups : Option Nat) :
+    Except DriverError (Option ArtifactAdmission) := do
+  unless p.bound do return none
+  match selection, maxGroups with
+  | .all, none => pure ()
+  | _, _ => return none
+  unless p.parts.env.assumptions.isEmpty do
+    throw (.artifact "artifact: decline: thin artifact assumptions require explicit resolution")
+  if p.hasTier then
+    let receipt ← (Ix.RoleBinding.Artifact.checkTiered p.parts.env artifactLimits).mapError
+      (DriverError.artifact ∘ toString)
+    return some (.tiered receipt.prepared.records.length receipt.tier.length)
+  else
+    let receipt ← (Ix.RoleBinding.Artifact.check p.parts.env artifactLimits).mapError
+      (DriverError.artifact ∘ toString)
+    return some (.logical receipt.prepared.records.length)
 
 def success (outcome : String) : Bool := outcome == "accept" || outcome == "typed"
 def CheckReport.targetsCovered (r : CheckReport) : Nat := r.targets.size
@@ -197,13 +254,29 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
         if (p.setup.store[row.addr]?).any (fun c => included.contains (owner row.addr c)) then
           let named ← IO.ofExcept (row.materialize p.parts.backing p.parts.nameRev)
           env := { env with named := env.named.insert row.name named }
-      let pre : Prelude .meta ← IO.ofExcept (preludeFor p.setup.table)
+      let pre : Prelude .meta ← IO.ofExcept <| if p.bound then do
+          let pre ← readPrelude p.setup.table p.pre.records #[] p.pre.blobs
+          checkPreludeShape pre
+          checkFallbackRecursors pre
+          pure pre
+        else preludeFor p.setup.table
       let (cx, ev) := metaContext p.setup (env.blobs[·]?) p.setup.table pre p.hints.lookup
       let display := displayTable env cx
       let nc : Ix.KernelDisplay.NameCx := ⟨env.names, Ix.KernelDisplay.metaTable env cx⟩
       pure (runMode p cfg plan cx ev (fun k => Key.map (md := .meta) (md' := .anon) id k)
         (fun rd => (Ix.KernelDisplay.nameRead nc (withDisplay display rd)).1)
         (fun d => (nameTier nc d {}).1) (spellWith display) start failOut?)
+    let diagnostics := job
+    let job : IO (Except DriverError CheckReport) := do
+      let started ← IO.monoMsNow
+      let admitted ← IO.lazyPure fun _ => checkWhole p selection maxGroups
+      let elapsed := (← IO.monoMsNow) - started
+      match admitted with
+      | .error e => return .error e
+      | .ok admission =>
+        return (← diagnostics).map fun report => { report with
+          bound := p.bound, artifactAdmission := admission, artifactMs := elapsed
+          prepareMs := report.prepareMs - elapsed }
     if cfg.stackBytes != 0 then Ix.Tc.setLeanThreadStackSize (USize.ofNat cfg.stackBytes)
     IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) job))
   catch e => return .error (.infrastructure e.toString)
@@ -272,6 +345,13 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       return e.exitCode
     | .ok report =>
       if let some h := out then h.putStrLn s!"\n# total failures: {report.failures.size}"; h.flush
+      match report.artifactAdmission with
+      | some (.logical records) =>
+        IO.println s!"[check-lean] whole artifact: logical entry accepted all {records} records ({report.artifactMs}ms)"
+      | some (.tiered records typed) =>
+        IO.println s!"[check-lean] whole artifact: logical entry and typing tier accepted all {records} records; {typed} tier constants typed only ({report.artifactMs}ms)"
+      | none => if report.bound then
+          IO.println "[check-lean] selected checking only; no whole-artifact receipt"
       IO.println s!"[check-lean] {report.passed}/{report.targetsCovered} subjects passed ({report.typed} typed only), {report.records} checked/read records"
       IO.println s!"[check-lean] authenticated input {report.inputMs}ms; run preparation {report.prepareMs}ms; selected checker {report.subjectMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; reading {report.readMicros / 1000}ms; run {report.elapsedMs}ms"
       IO.println s!"##check-lean## {report.elapsedMs} {report.passed} {report.failures.size} {report.targetsCovered}"
@@ -283,7 +363,7 @@ end Ix.Cli.CheckLeanCmd
 open Ix.Cli.CheckLeanCmd in
 def checkLeanCmd : Cli.Cmd := `[Cli|
   "check-lean" VIA runCheckLeanCmd;
-  "Check authenticated .ixe declarations with IxC (meta by default; serial typing tier)"
+  "Check authenticated .ixe declarations with IxC (bound whole inputs use actual artifact admission; meta display by default)"
   FLAGS:
     anon; "Anonymous keys and #hex display labels"
     workers : Nat; "Requested workers (>0); the tier-capable path reports effective 1"

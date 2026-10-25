@@ -5,8 +5,9 @@
 //! contracts exactly the redexes the substitution forms at the substituted
 //! positions, hereditarily: beta at an application whose head became a
 //! lambda, projection of a `PProd.mk`/`And.intro`, and eta at a binder whose
-//! body became `x a1 ... an y` with `x` directly substituted. Nothing else is
-//! reduced (never iota). Every traversal is memoised per node, as on the Lean
+//! body became `x a1 ... an y` with `x` directly substituted. A lambda under
+//! immediate semantic metadata retains its binder. Nothing else is reduced
+//! (never iota). Every traversal is memoised per node, as on the Lean
 //! side; the results are those of the plain recursions.
 //!
 //! Every node the development builds is shared (`DevState::share`, Lean
@@ -355,7 +356,20 @@ impl DevState {
         (self.share(Expr::letE(n.clone(), t2, x2, b2, *nd)), Created::No)
       },
       ExprData::Mdata(md, x, _) => {
-        let (x2, c) = self.hinst(fuel, v, k, x)?;
+        // Protect the binder of a semantic frame under its own full key;
+        // an unwrapped lambda's cached result may already be eta-reduced.
+        let (x2, c) = match x.as_data() {
+          ExprData::Lam(n, t, b, bi, _)
+            if crate::semantic_contract::has_metadata(md) =>
+          {
+            let inner_fuel =
+              fuel.checked_sub(1).ok_or_else(develop_exhausted)?;
+            let (t2, _) = self.hinst(inner_fuel, v, k, t)?;
+            let (b2, _) = self.hinst(inner_fuel, v, k + 1, b)?;
+            (self.share(Expr::lam(n.clone(), t2, b2, bi.clone())), Created::No)
+          },
+          _ => self.hinst(fuel, v, k, x)?,
+        };
         (self.share(Expr::mdata(md.clone(), x2)), c)
       },
       _ => (e.clone(), Created::No),
@@ -426,4 +440,100 @@ pub fn subst_fvars(xs: &[Name], vs: &[Expr], e: &Expr) -> Result<Expr, String> {
     acc = st.hinst(DEVELOP_FUEL, v, 0, &acc)?.0;
   }
   Ok(acc)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::semantic_contract::{decode, inspect};
+  use ix_common::env::{BinderInfo, DataValue};
+  use std::sync::Arc;
+
+  #[test]
+  fn semantic_lambda_placement_cache_and_fuel() {
+    let name = |root, field| Name::str(Name::str(Name::anon(), root), field);
+    let ty = Expr::cnst(Name::str(Name::anon(), "Nat".into()), vec![]);
+    let g = Expr::cnst(name("Nat".into(), "succ".into()), vec![]);
+    let lam =
+      |body| Expr::lam(Name::anon(), ty.clone(), body, BinderInfo::Default);
+    let contract = decode(0, 1).unwrap();
+    let raw = lam(Expr::app(bvar(1), bvar(0)));
+    let frame = contract.attach(raw.clone());
+    let kept = lam(Expr::app(g.clone(), bvar(0)));
+    let expected = contract.attach(kept.clone());
+    let mut warm = DevState::default();
+    let (out, tag) = warm.hinst(4, &g, 0, &frame).unwrap();
+    assert!(out.same_raw(&expected));
+    assert_eq!(tag, Created::No);
+    assert!(inspect(&frame).unwrap() && inspect(&out).unwrap());
+    let size = warm.insts.map.len();
+    assert!(warm.hinst(1, &g, 0, &frame).unwrap().0.same_raw(&expected));
+    assert_eq!(warm.insts.map.len(), size);
+    assert!(warm.hinst(16, &g, 0, &raw).unwrap().0.same_raw(&g));
+    let mut plain_warm = DevState::default();
+    assert!(plain_warm.hinst(3, &g, 0, &raw).unwrap().0.same_raw(&g));
+    for fuel in 0..4 {
+      assert_eq!(
+        DevState::default().hinst(fuel, &g, 0, &frame).unwrap_err(),
+        develop_exhausted()
+      );
+    }
+    assert_eq!(warm.hinst(0, &g, 0, &frame).unwrap_err(), develop_exhausted());
+    for fuel in 1..3 {
+      assert_eq!(
+        plain_warm.hinst(fuel, &g, 0, &frame).unwrap_err(),
+        develop_exhausted()
+      );
+    }
+    assert!(plain_warm.hinst(3, &g, 0, &frame).unwrap().0.same_raw(&expected));
+    let function_ty =
+      Expr::all(Name::anon(), ty.clone(), ty.clone(), BinderInfo::Default);
+    let f =
+      Expr::lam(Name::anon(), function_ty, frame.clone(), BinderInfo::Default);
+    let mut state = DevState::default();
+    for _ in 0..2 {
+      assert!(
+        instantiate_with(&mut state, &f, std::slice::from_ref(&g))
+          .unwrap()
+          .same_raw(&expected)
+      );
+    }
+    for (root, field) in [("native", "hint"), ("_ix", "inline")] {
+      let md =
+        vec![(name(root.into(), field.into()), DataValue::OfNat(0u64.into()))];
+      for (input, output) in [(&raw, &g), (&frame, &expected)] {
+        let e = Expr::mdata(md.clone(), input.clone());
+        let expected = Expr::mdata(md.clone(), output.clone());
+        assert!(
+          DevState::default()
+            .hinst(16, &g, 0, &e)
+            .unwrap()
+            .0
+            .same_raw(&expected)
+        );
+      }
+    }
+    let nested =
+      contract.attach(lam(contract.attach(lam(Expr::app(bvar(2), bvar(0))))));
+    let nested_out = contract.attach(lam(expected));
+    assert!(
+      DevState::default()
+        .hinst(16, &g, 0, &nested)
+        .unwrap()
+        .0
+        .same_raw(&nested_out)
+    );
+    assert!(inspect(&nested_out).unwrap());
+    let mut bad_data = contract.metadata();
+    bad_data.pop();
+    let bad =
+      Expr(Arc::new(ExprData::Mdata(bad_data.clone(), raw, *frame.get_hash())));
+    let malformed = Expr::mdata(bad_data, kept);
+    assert!(!bad.same_raw(&frame));
+    assert!(warm.hinst(16, &g, 0, &bad).unwrap().0.same_raw(&malformed));
+    assert!(
+      matches!(inspect(&malformed), Err(ixon::CompileError::UnsupportedExpr { desc })
+      if desc == "malformed semantic contract frame")
+    );
+  }
 }

@@ -64,6 +64,13 @@ private def inputs (operation : Role) (complete : Bool := false) :
       addresses := addresses.push address
   return (env, certificates, required, addresses)
 
+/-- A complete generated fixture shared with the actual consumer/CLI controls.
+The committed bytes remain test inputs, never a production fallback. -/
+public def completeArtifact (operation : Role) : Except String (Env × Ix.RoleBinding.Generated) := do
+  let (env, certificates, required, _) ← inputs operation true
+  let generated ← Ix.RoleBinding.generate Ix.Resource.typingLimits env certificates required Ix.Kernel.preludeShape
+  return (← generated.emit Ix.Resource.typingLimits env, generated)
+
 private def checks (operation : Role) : Except String Unit := do
   let (env, certificates, required, proofAddresses) ← inputs operation
   let limits := Ix.Resource.typingLimits
