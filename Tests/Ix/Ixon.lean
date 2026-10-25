@@ -5,6 +5,7 @@ public import Tests.FFI.Ixon
 public import Tests.Ix.OriginalData
 public import Tests.Ix.RoleBinding
 public import Tests.Ix.RolePublication
+public import Tests.Ix.RoleGeneration
 
 open LSpec SlimCheck Gen Ixon
 open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSerialization rsEqEnvSerialization)
@@ -801,6 +802,7 @@ private def originalDataUnits (definition : Definition) : TestSeq :=
 
 public def Tests.Ixon.suite : List TestSeq := [
   envHeaderUnits,
+  Tests.Ix.RoleGeneration.units .natDiv,
   Tests.Ix.RoleBinding.units {
     sharing := #[], refs := #[], univs := #[.zero], info := .defn {
       kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } },
