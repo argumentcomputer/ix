@@ -12,6 +12,7 @@ import Ix.CompileCert.RecordSubst
 import Ix.CompileCert.RecordSubstReading
 import Ix.CompileCert.RewriteArityPrimitives
 import Ix.CompileCert.DevelopmentArity
+import Ix.CompileCert.SemanticFrames
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -824,3 +825,19 @@ run_cmd do
   checkRoots (tag := "reading-audit") "development arity history"
     (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh].map
       (`Ix.CompileCert.DevelopmentArity ++ ·))
+
+/-- info: [reading-audit] semantic inspection traversal: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "semantic inspection traversal"
+    (#[`frames_iff, `children_weight, `inspect_eq, `scan_eq, `step_fresh, `covered_frames,
+      `covered_seen, `covered_next, `initial, `next_decreases].map
+      (`Ix.CompileCert.SemanticFrames ++ ·))
+
+/-- info: [reading-audit] semantic inspection validity: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "semantic inspection validity"
+    #[`Ix.CompileCert.SemanticFrames.inspect_frames_iff]
