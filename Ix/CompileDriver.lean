@@ -54,6 +54,7 @@ public import Ix.AuxGen.IxcScope
 public import Ix.AuxGen.GenerationOnly
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Compile.SourceGraph.Prepass
+public import Ix.Compile.SourceInput
 public import Ix.Resource.Addressed
 public section
 
@@ -2051,6 +2052,9 @@ structure LeanPipelineOut where
   /-- Complete original-input dependency facts, before grounding; no acceptance
       verdict. `none` is unavailable, while `some {}` is an empty input. -/
   sourceNodes? : Option (Ix.Map Name Ix.Compile.SourceGraph.Node) := none
+  /-- Original prepared-input winners, shared with the lazy compiler fallback.
+      Production always supplies this; manually fabricated outputs may omit it. -/
+  originalSource? : Option Ix.Compile.SourceInput.Carrier := none
 
 /-- Run the full pure-Lean compile pipeline over a constant list.
 
@@ -2164,9 +2168,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --    128; the queue driver took 458.1 s). At most `min width pool` blocks
   --    compile at once. The fold's Source service (AuxGen M1) reads the same
   --    lookups; its report is printed under `dbg` and returned.
-  let fallback : Ix.Name → Option Ix.ConstantInfo := fun n =>
-    (leanByIx.get? n).bind fun (ln, lci) =>
-      ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)
+  let originalSource : Ix.Compile.SourceInput.Carrier := ⟨leanByIx⟩
+  let fallback : Ix.Name → Option Ix.ConstantInfo := originalSource.lookup?
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
   if dbg then
@@ -2255,7 +2258,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         annotated
         source
         blocks := condensed
-        sourceNodes? := some sourceNodes }
+        sourceNodes? := some sourceNodes
+        originalSource? := some originalSource }
 
 /-- Explicit frontend boundary: resolve occurrence contracts before
 canonicalization. Resources are validated by the caller's post-step
