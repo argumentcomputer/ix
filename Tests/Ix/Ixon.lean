@@ -803,6 +803,7 @@ private def originalDataUnits (definition : Definition) : TestSeq :=
 public def Tests.Ixon.suite : List TestSeq := [
   envHeaderUnits,
   Tests.Ix.RoleGeneration.units .natDiv,
+  Tests.Ix.RoleGeneration.artifactUnits .natDiv,
   Tests.Ix.RoleBinding.units {
     sharing := #[], refs := #[], univs := #[.zero], info := .defn {
       kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } },
