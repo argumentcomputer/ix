@@ -55,11 +55,14 @@ only the installed environment; `typeUncertified` takes that environment as
 its only input from the certified run and builds the answer view for the
 uncertified records' checks alone.
 
-An environment without unsafe inductives and assumption axioms has an empty
-uncertified part: its verdict is the certified entry's alone. With either, an
-accept states the certified part's theorem and IxC's uncertified typing of the
-rest (the resource tests report the uncertified part's size), and the claim
-string stays `resource-v1`, uncertified as a resource claim
+An environment without unsafe inductives and assumption axioms starts with
+an empty uncertified part. Its verdict is the certified entry's alone when
+the batch tier succeeds. If the batch tier refuses a tier record, `typeCheck`
+moves every tier record to the uncertified part and retries certified
+admission on the remaining logical records. The separate checker then types
+the tier transparently. A successful result with a nonempty uncertified part
+combines the certified part's theorem with IxC's uncertified typing of the
+rest. The claim string stays `resource-v1`, uncertified as a resource claim
 (`Ix.Resource.Claim`).
 
 The reading of an unsafe block (`readTierBlock`) is a separate entry: the

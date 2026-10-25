@@ -12,9 +12,11 @@
     decision can ask a block's question past these fast paths (M4's asks):
     the run-ahead folds such blocks ahead of their tails.
 
-  Nothing here is trusted: a fast path answers only what the kernel would,
-  by the kernels' own rules (`Ix.Tc`'s `tryInferAppSortLevel`, `whnfCore`'s
-  stuck heads), and the shadow compares every answer with `Ix.Tc`'s.
+  These generation-side shortcuts follow the former `Ix.Tc` backend's
+  `tryInferAppSortLevel` and `whnfCore` stuck-head rules. The migration's
+  shadow comparisons were differential checks; the checked-only path now
+  uses the shortcuts without an `Ix.Tc` comparison. Those comparisons do
+  not establish compiler value preservation.
 -/
 module
 public import Ix.AuxGen.ExprUtils

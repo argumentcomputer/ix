@@ -10,10 +10,9 @@
   universe manipulation helpers used across the recursor/below/brecOn
   generators.
 
-  The kernel-backed half of expr_utils.rs (TcScope, kenv ingress,
-  `decompose_inductive_type`, `kexpr_to_lean`, `to_kexpr_static`, the
-  WHNF source-name restore machinery) is intentionally NOT here — it is a
-  separate milestone that bridges to `Ix.Tc`.
+  Kernel questions and result spelling are provided by
+  `Ix.AuxGen.AuxKernel`, `Ix.AuxGen.IxcScope`, and `Ix.AuxGen.LevelEgress`.
+  This module supplies their shared expression operations.
 
   PARITY RULE: every constructed node goes through the hash-maintaining
   smart constructors in `Ix.Environment` (`Expr.mkApp`, `Level.mkMax`, ...)
