@@ -5,6 +5,7 @@ public import Ix.Compile.SourceContract.Transport
 public import Ix.CompileM
 public import Ix.CanonM
 public import Ix.LeanIngress.Expr
+public import Ix.Compile.Image.Develop
 public import LSpec
 public import Lean.Compiler.BorrowedAnnotation
 
@@ -369,9 +370,95 @@ def recordSubstitutionTests : TestSeq := Id.run do
       (inputs.size == 3 && inputs.all fun e =>
         _root_.Ix.Compile.ExactKey.exprEq e (_root_.Ix.CompileM.substRecords {} e))
 
+-- These open source expressions exercise raw rewrite helpers. Resolving their
+-- contracts does not assert declaration admission or whole-program validity.
+open _root_.Ix.Compile.Image in
+def rewritePrimitiveTests : TestSeq := Id.run do
+  let domain := Expr.sort (.param `u)
+  let source := definition `rewriteOpen (.forallE `x domain (.bvar 1) .default)
+    (.lam `x domain (.bvar 1) .default)
+  let canonical := fun out => (Id.run ((_root_.Ix.CanonM.canonConst out).run {})).1
+  let mut inputs : Array _root_.Ix.Expr := #[]
+  let linear : TelescopeContract := { binder := .position 0, uses := .linear, result := some .unique }
+  if let some out := (resolveTelescope source #[linear]).toOption.bind (fun c => c.decorate.toOption) then
+    if let .defnInfo v := canonical out then inputs := #[v.cnst.type, v.value]
+  let binding := definition `rewriteLet domain (.letE `view domain (.bvar 0) (.bvar 1) false)
+  let borrow : SourceContract := { source := binding, binders := #[
+    { site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
+  if let some out := (borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption) then
+    if let .defnInfo v := canonical out then inputs := inputs.push v.value
+  let eq := _root_.Ix.Compile.ExactKey.exprEq
+  let anchor := _root_.Ix.Expr.mkBVar 0
+  let payloadSame := fun (a b : _root_.Ix.Expr) => match a, b with
+    | .mdata data _ hash, .mdata other _ _ => data.size == 3 &&
+      eq (.mdata data anchor hash) (.mdata other anchor hash)
+    | _, _ => false
+  let u := _root_.Ix.Name.fromLeanName `u
+  let v := _root_.Ix.Name.fromLeanName `v
+  let one := _root_.Ix.Level.mkSucc _root_.Ix.Level.mkZero
+  let domainIsOne := fun (e : _root_.Ix.Expr) => match e with
+    | .mdata _ (.lam _ ty _ _ _) _ | .mdata _ (.forallE _ ty _ _ _) _ |
+      .mdata _ (.letE _ ty _ _ _ _) _ => eq ty (_root_.Ix.Expr.mkSort one)
+    | _ => false
+  let shiftedBody := fun (e : _root_.Ix.Expr) => match e with
+    | .mdata _ (.lam _ _ (.bvar 3 _) _ _) _ |
+      .mdata _ (.forallE _ _ (.bvar 3 _) _ _) _ |
+      .mdata _ (.letE _ _ (.bvar 2 _) (.bvar 3 _) _ _) _ => true
+    | _ => false
+  let shifts := inputs.map fun e => (liftM e 2 0).run {}
+  let roundTrips := inputs.zip shifts |>.all fun (e, run) => match run with
+    | .ok (lifted, after) => shiftedBody lifted && !eq e lifted && payloadSame e lifted &&
+      ((lowerM lifted 2 0).run after).toOption.any (fun (out, _) => eq e out && payloadSame e out)
+    | .error _ => false
+  let warm := inputs.zip shifts |>.all fun (e, run) => match run with
+    | .ok (lifted, after) => after.lifted.size > 0 &&
+      ((liftM e 2 0).run after).toOption.any fun (again, state) => eq lifted again &&
+        state.lifted.size == after.lifted.size && state.range.size == after.range.size &&
+        state.nodes.size == after.nodes.size &&
+        ((lowerM lifted 2 0).run after).toOption.any fun (lowered, afterLower) =>
+          afterLower.lowered.size > 0 && eq lowered e &&
+          ((lowerM lifted 2 0).run afterLower).toOption.any fun (again, state) =>
+            eq lowered again && state.lowered.size == afterLower.lowered.size &&
+            state.range.size == afterLower.range.size && state.nodes.size == afterLower.nodes.size
+    | .error _ => false
+  let zero := _root_.Ix.Expr.mkBVar 0
+  let alias : _root_.Ix.Expr := .bvar 1 zero.getHash
+  let liftCollision := ((liftM zero 2 0).run {}).toOption.any fun (first, state) =>
+    ((liftM alias 2 0).run state).toOption.any fun (second, _) =>
+      eq first (_root_.Ix.Expr.mkBVar 2) && eq second (_root_.Ix.Expr.mkBVar 3)
+  let three : _root_.Ix.Expr := .bvar 3 zero.getHash
+  let four : _root_.Ix.Expr := .bvar 4 zero.getHash
+  let lowerCollision := ((lowerM three 2 0).run {}).toOption.any fun (first, state) =>
+    ((lowerM four 2 0).run state).toOption.any fun (second, _) =>
+      eq first (_root_.Ix.Expr.mkBVar 1) && eq second (_root_.Ix.Expr.mkBVar 2)
+  let seeded : DevState := { nodes := ({} : TotalMemo.Nodes).insert (hash zero) zero }
+  return test "rewrite universe substitution retains exact lam/all/let frames and changes their domains"
+      (inputs.size == 3 && inputs.all fun e =>
+        let out := Canon.substLevels #[u] #[one] e
+        domainIsOne out && !eq e out && payloadSame e out) ++
+    test "rewrite universe substitution preserves empty and unequal-array branches"
+      (inputs.size == 3 && inputs.all fun e =>
+        eq e (Canon.substLevels #[] #[one] e) && eq e (Canon.substLevels #[u] #[] e) &&
+        eq e (Canon.substLevels #[v, u] #[one] e) &&
+        domainIsOne (Canon.substLevels #[u] #[one, _root_.Ix.Level.mkZero] e)) ++
+    test "actual lift/lower changes open variables and roundtrips exact semantic frames"
+      (inputs.size == 3 && roundTrips) ++
+    test "actual warm lift/lower caches retain exact outputs and table sizes" (inputs.size == 3 && warm) ++
+    test "actual zero-shift and range fast paths retain decorated inputs"
+      (inputs.size == 3 && inputs.all fun e => [liftM e 0 0, lowerM e 0 0,
+        liftM e 2 4, lowerM e 2 4].all fun action =>
+          (action.run {}).toOption.any fun (out, _) => eq e out && payloadSame e out) ++
+    test "actual lift cache rejects a distinct raw input with the same digest"
+      (hash zero == hash alias && !eq zero alias && liftCollision) ++
+    test "actual lower cache rejects a distinct raw input with the same digest"
+      (hash three == hash four && !eq three four && lowerCollision) ++
+    test "actual sharing confirms equal nodes, rejects raw digest aliases and fills empty tables"
+      ([zero, alias].all fun e => [share e, shareInput e].all fun action =>
+        [seeded, {}].all fun state => (action.run state).toOption.any fun (out, _) => eq e out)
+
 def suite : List TestSeq :=
   [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,
-    arityProducerTests, recordSubstitutionTests]
+    arityProducerTests, recordSubstitutionTests, rewritePrimitiveTests]
 
 end Tests.Ix.SourceContract
 
