@@ -7,6 +7,7 @@ import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionCorrectness
 import Ix.CompileCert.RecordState
 import Ix.CompileCert.RecordRead
+import Ix.CompileCert.RecordSourceShape
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -759,3 +760,10 @@ run_cmd do
   checkRoots (tag := "reading-audit") "record subrun"
     #[`Ix.CompileCert.RecordState.compileRecords_preserves, `Ix.CompileCert.RecordRead.ordinary_subrun,
       `Ix.CompileCert.RecordRead.withRecords_read]
+
+/-- info: [reading-audit] decorated contract arity: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "decorated contract arity"
+    #[`Ix.CompileCert.RecordSourceShape.decorateExpr_canonical]
