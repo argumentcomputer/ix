@@ -885,7 +885,11 @@ impl Env {
   /// block at `addr` — every member/constructor projection address
   /// (derived, not stored anywhere; `ingress_anon_block` computes
   /// these and requires them present in the env).
-  fn closure_edges(addr: &Address, c: &Constant, edges: &mut Vec<Address>) {
+  pub(crate) fn closure_edges(
+    addr: &Address,
+    c: &Constant,
+    edges: &mut Vec<Address>,
+  ) {
     edges.extend(c.refs.iter().cloned());
     match &c.info {
       ConstantInfo::IPrj(p) => edges.push(p.block.clone()),
@@ -959,6 +963,8 @@ impl Env {
   /// (names, `DataValue` blobs) is the writer's business —
   /// [`Self::prune_to_closure`] carries it; a receiver that only
   /// typechecks/evaluates never needs it.
+  /// Bound pruners additionally enforce binding/support availability; neither
+  /// check admits role specifications or proof evidence.
   pub fn validate_closed(&self) -> Result<(), String> {
     let Some(main) = self.main.clone() else {
       return Err("validate_closed: env has no main".to_string());
@@ -991,6 +997,9 @@ impl Env {
   /// - Reached constants are carried with their GENUINE bytes
   ///   (`store_const_lazy`), so the receiver's per-entry hash check
   ///   and consts merkle root hold; reached blobs are copied.
+  /// - A present binding is retained exactly, together with its members,
+  ///   proofs and the reader's recursor/literal support. Mandatory support
+  ///   cannot be assumed. This checks availability, not semantic admission.
   /// - Cut-points actually reached go to `out.assumptions` (minimal:
   ///   a declared-but-unreached assumption is not carried).
   /// - `anon_hints` are copied per carried constant (else a bundle
@@ -1024,6 +1033,10 @@ impl Env {
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
     out.role_binding = self.role_binding.clone();
+    let mut support = crate::binding_support::BindingSupport::new(self)?;
+    if let Some(support) = &mut support {
+      support.seed(self, assumed, &mut visited, &mut pending)?;
+    }
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
     self.prune_fixpoint(
       &mut out,
@@ -1031,7 +1044,11 @@ impl Env {
       &mut pending,
       &mut named_done,
       assumed,
+      support.as_mut(),
     )?;
+    if let Some(support) = support {
+      support.finish(self, &out)?;
+    }
     Ok(out)
   }
 
@@ -1045,10 +1062,17 @@ impl Env {
     pending: &mut VecDeque<Address>,
     named_done: &mut FxHashSet<Name>,
     assumed: &FxHashSet<Address>,
+    mut support: Option<&mut crate::binding_support::BindingSupport>,
   ) -> Result<(), String> {
     let mut originals_done = FxHashSet::default();
     loop {
-      self.prune_value_pass(out, visited, pending, assumed)?;
+      self.prune_value_pass(
+        out,
+        visited,
+        pending,
+        assumed,
+        support.as_deref_mut(),
+      )?;
 
       // ── Named pass: carry display metadata for every carried
       // constant. Metadata references content the value walk cannot
@@ -1095,7 +1119,8 @@ impl Env {
   /// `names`/`named` stay empty (§4/§5 serialize as empty sections).
   /// The result still passes [`Self::validate_closed`] (which checks
   /// the value pin only) — this is the minimal artifact a receiver
-  /// needs to typecheck/evaluate the pinned value. Host-only — see
+  /// needs for the value pin; a present binding also retains its required
+  /// reader/evidence support. Host-only — see
   /// `store_blob`.
   #[cfg(not(target_arch = "riscv64"))]
   pub fn prune_to_closure_anon(
@@ -1105,7 +1130,20 @@ impl Env {
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
     out.role_binding = self.role_binding.clone();
-    self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+    let mut support = crate::binding_support::BindingSupport::new(self)?;
+    if let Some(support) = &mut support {
+      support.seed(self, assumed, &mut visited, &mut pending)?;
+    }
+    self.prune_value_pass(
+      &mut out,
+      &mut visited,
+      &mut pending,
+      assumed,
+      support.as_mut(),
+    )?;
+    if let Some(support) = support {
+      support.finish(self, &out)?;
+    }
     Ok(out)
   }
 
@@ -1233,6 +1271,7 @@ impl Env {
     visited: &mut FxHashSet<Address>,
     pending: &mut VecDeque<Address>,
     assumed: &FxHashSet<Address>,
+    mut support: Option<&mut crate::binding_support::BindingSupport>,
   ) -> Result<(), String> {
     while let Some(addr) = pending.pop_front() {
       if assumed.contains(&addr) {
@@ -1244,9 +1283,28 @@ impl Env {
         if let Some(h) = self.anon_hints.get(&addr) {
           out.anon_hints.insert(addr.clone(), *h);
         }
-        let c = self.get_const(&addr).ok_or_else(|| {
-          format!("prune_to_closure: constant {} unparseable", addr.hex())
-        })?;
+        let c = if support.is_some() {
+          Arc::new(crate::binding_support::raw_constant(self, &addr)?)
+        } else {
+          self.get_const(&addr).ok_or_else(|| {
+            format!("prune_to_closure: constant {} unparseable", addr.hex())
+          })?
+        };
+        if let Some(support) = support.as_deref_mut() {
+          support.expand(self, &addr, &c, assumed, visited, pending)?;
+        }
+        // The same raw content address can occupy both tables. A literal
+        // blob must survive even when a constant has the identical address,
+        // including in legacy unbound environments.
+        if let Some(blob) = self.get_blob(&addr) {
+          if Address::hash(&blob) != addr {
+            return Err(format!(
+              "prune_to_closure: bad blob hash {}",
+              addr.hex()
+            ));
+          }
+          out.blobs.insert(addr.clone(), blob);
+        }
         let mut edges: Vec<Address> = Vec::new();
         Self::closure_edges(&addr, &c, &mut edges);
         for e in edges {
@@ -1255,6 +1313,9 @@ impl Env {
           }
         }
       } else if let Some(blob) = self.get_blob(&addr) {
+        if support.is_some() && Address::hash(&blob) != addr {
+          return Err(format!("binding support: bad blob hash {}", addr.hex()));
+        }
         out.blobs.insert(addr, blob);
       } else {
         return Err(format!(
