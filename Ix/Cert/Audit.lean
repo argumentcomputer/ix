@@ -1,5 +1,6 @@
 import Ix.Compile.OriginalData
 import Ix.Cert.Statement
+import Ix.Cert.StrongCommutation
 import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
 import Ix.CompileCert.ReadingAudit
@@ -6206,3 +6207,10 @@ run_cmd do
   checkRoots (tag := "cert-audit") "actual image auxiliary hit origins"
     (#[`fold_hit_origin, `runImageBlock_aux_origins].map
       (`Ix.CompileCert.ImageAuxOrigins ++ ·))
+
+/-- info: [cert-audit] coherent strong target commutation: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "coherent strong target commutation"
+    #[`Ix.Cert.Commutes.toStrong, `Ix.Cert.CommutesStrong.alias, `Ix.Cert.IxonCommutes.toStrongRef]
