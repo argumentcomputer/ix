@@ -2,6 +2,7 @@ module
 
 public import Ix.Resource.Validate
 public import Tests.Ix.ResourceAddressed
+public import Tests.Ix.RoleGeneration
 
 public section
 
@@ -121,6 +122,58 @@ def runTier : IO Unit := do
   IO.println s!"Combined resources: the typing half (the batch tier; unsafe inductives and assumption \
     axioms uncertified) on {cases.size} explicit outcomes passed"
 
+def runBound : IO Unit := do
+  let (env, generated) ← IO.ofExcept (Tests.Ix.RoleGeneration.completeArtifact .natDiv)
+  expectTyping "actual artifact binding and evidence" env true
+  let input ← IO.ofExcept (typingInput env)
+  let some raw := env.roleBinding | throw (IO.userError "fixture has no binding")
+  unless input.binding.bytes == raw.bytes && input.ordered.size == env.consts.size do
+    throw (IO.userError "resource preparation did not use the actual binding and full input")
+  let bind := fun (table : Ix.Kernel.RoleTable) =>
+    let bytes := table.toBytes
+    { env with roleBinding := some ⟨Address.admissionHash bytes, bytes⟩ }
+  let badHash := { raw with address := Address.admissionHash (raw.bytes.push 0) }
+  expectTyping "bad binding hash has no default fallback" { env with roleBinding := some badHash } false
+  let badBytes := raw.bytes.push 0
+  expectTyping "rehashing malformed binding does not rescue it"
+    { env with roleBinding := some ⟨Address.admissionHash badBytes, badBytes⟩ } false
+  expectTyping "missing actual prelude role has no committed fallback"
+    (bind { generated.table with bound := generated.table.bound.filter (·.1 != .nat) }) false
+  let some (proof, _) := generated.evidence[0]? | throw (IO.userError "fixture has no proof")
+  expectTyping "missing actual proof has no committed fallback" { env with consts := env.consts.erase proof } false
+  let wrongKind := bind { generated.table with bound := generated.table.bound.map fun (role, address) =>
+    (role, if role == .natDiv then proof else address) }
+  declines "unused bound operation must be a logical definition" (typeCheck wrongKind)
+    "bound operation"
+  let some zero := generated.table.addressOf? .natZero | throw (IO.userError "fixture has no Nat.zero")
+  let unresolved := bind { generated.table with evidence := generated.table.evidence.map fun (role, entries) =>
+    (role, entries.mapIdx fun i entry => if role == .natDiv && i == 0 then .proof zero else entry) }
+  declines "present non-theorem cannot supply actual proof evidence" (typeCheck unresolved)
+    "not every proof"
+  let some nat := generated.table.addressOf? .nat | throw (IO.userError "fixture has no Nat")
+  let some boolean := generated.table.addressOf? .bool | throw (IO.userError "fixture has no Bool")
+  let changed := bind { generated.table with bound := generated.table.bound.map fun (role, address) =>
+    (role, if role == .nat then boolean else if role == .bool then nat else address) }
+  unless (standardProfile changed).natType == some boolean do
+    throw (IO.userError "bound profile used a primitive pin instead of its actual role")
+  check "profile cannot redirect an artifact literal type"
+    (checkLiteralProfile changed (standardProfile env)) false
+  expectTyping "authenticated wrong basis cannot pass typing" changed false
+  check "wrong admitted table cannot reuse the prepared prelude"
+    (input.preludeFor { generated.table with bound := #[] }) false
+  let assumption : Constant := {
+    info := .axio ⟨false, 0, .ref 0 #[]⟩, sharing := #[], refs := #[nat], univs := #[] }
+  let (withAssumption, _) := store env assumption
+  expectTyping "bound artifact retains explicit assumption typing policy" withAssumption true
+  check "resource assumption typing is not whole logical admission"
+    ((Ix.RoleBinding.Artifact.check withAssumption typingLimits).mapError toString) false
+  let unsafeEnv := unsafeUnitEnv.1
+  let withUnsafe := { env with consts := unsafeEnv.consts.fold (fun m a c => m.insert a c) env.consts }
+  expectTyping "bound artifact retains explicit unsafe-inductive typing policy" withUnsafe true
+  check "resource unsafe typing is not whole logical admission"
+    ((Ix.RoleBinding.Artifact.check withUnsafe typingLimits).mapError toString) false
+  IO.println "Bound resource typing: actual table/prelude/evidence and literal identities; missing and forged inputs refused"
+
 def run : IO Unit := do
   let (base, unit) := unitEnv
   let (env, id) := store base (identity unit)
@@ -144,6 +197,7 @@ def run : IO Unit := do
     (validate { env with consts := env.consts.insert id forged } {}) true
   IO.println "Combined resources: typing, literal identities, and raw-byte validation passed"
   runTier
+  runBound
 
 end Tests.ResourceValidate
 

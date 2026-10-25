@@ -11,6 +11,7 @@ private def require (ok : Bool) (message : String) : IO Unit :=
   unless ok do throw (IO.userError message)
 
 private def checkArtifact (artifact : Ixon.Env) (roots : Array Address) : IO Unit := do
+  IO.ofExcept (Ix.Resource.typeCheck artifact)
   let input ← IO.ofExcept ((Ix.RoleBinding.Artifact.prepareRecords artifact Ix.Resource.typingLimits).mapError toString)
   let (logical, count) ← if input.hasTier then do
       -- Selected source closures retain their original _unsafe_rec companions.

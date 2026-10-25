@@ -184,6 +184,7 @@ lean_exe «source-contract-tests» where
 Scratch files live in `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
 lean_exe «ixon-v4-tests» where
   root := `Tests.IxonV4Main
+  supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 
 /-- Regenerate format-specific primitive identities from the installed Lean

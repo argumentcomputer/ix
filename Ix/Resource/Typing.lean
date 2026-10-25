@@ -2,6 +2,7 @@ module
 
 public import Ix.Address.Admission
 public import Ix.Ixon.CheckOrder
+public import Ix.RoleBinding.Artifact
 public import IxC.Kernel.Admission.Tier
 public import IxC.Kernel.Tier.Ind
 public import IxC.Kernel.Tier.Answer
@@ -11,11 +12,12 @@ public import IxC.Kernel.Tier.Answer
 `typeCheck` types every record of an Ixon environment as committed: its
 exact bytes (never a materialized cache), in an executable whole-environment
 check order (`Ixon.CheckOrder.wholeEnv`), with every blob, the compiler's
-reducibility hints and the default role table. It splits the records in two.
+reducibility hints and the artifact's admitted role table and actual prelude.
+Legacy unbound inputs retain the default table/prelude. It splits the records in two.
 
 **The certified part** is checked by IxC's tiered Ixon entry at BLAKE3,
-`Ix.Kernel.Admission.checkBytesTiered Address.admissionHash`, unchanged. Its
-accept is what `Ix.Kernel.Admission.checkBytesTiered_ok` states: every record
+`Ix.Kernel.Admission.checkBytesTieredUsing`, with the same prepared binding and
+guarded prelude. Its accept is what the entry's theorem states: every record
 and blob of the part authenticated, the logical environment model-backed, and
 the tier's `partial` and `unsafe` definitions, unsafe opaques and unsafe axioms
 typed with every tier constant opaque.
@@ -50,7 +52,7 @@ certified part's environment:
   records are read and re-checked here too, for their δ forms.
 
 **The certified part never reads the answer view.** `checkCertified` runs
-`checkBytesTiered` exactly as the entry and its theorem take it, and returns
+the tiered byte entry exactly as its theorem takes it, and returns
 only the installed environment; `typeUncertified` takes that environment as
 its only input from the certified run and builds the answer view for the
 uncertified records' checks alone.
@@ -94,6 +96,10 @@ def hintOf : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint
 committed bytes, every blob, the hints with the projection map they are read
 through, and the role table and prelude. -/
 structure TypingInput where
+  binding : Ix.Kernel.Admission.Binding
+  /-- A supplied artifact binding requires complete role/evidence coverage,
+  including operations unused by the requested resource program. -/
+  bound : Bool := false
   table : Ix.Kernel.RoleTable
   pre : Prelude .anon
   /-- every record, in check order: address, decoded record, committed bytes -/
@@ -113,12 +119,34 @@ rebuild the map at every call. -/
 def TypingInput.hint (input : TypingInput) (r : ConstRef Address) : Option Ix.Kernel.ReducibilityHint :=
   hintOf <$> input.hints.get? ((input.projections.get? r).getD r.block)
 
+/-- The entry uses the same admitted table and guarded prelude as preparation.
+The resource answer view remains confined to the separately typed part. -/
+def TypingInput.preludeFor (input : TypingInput) (table : Ix.Kernel.RoleTable) :
+    Except String (Prelude .anon) := do
+  unless table.toBytes == input.binding.bytes do
+    throw "resource validator: admitted table differs from prepared binding"
+  return input.pre
+
 /-- The typing half's input. Every record is decoded from its committed
 bytes (`lazy.rawBytes`: Lean's public `LazyConstant` record permits a
 conflicting materialized cache, which neither validator may trust in place of
 the committed bytes) by the entry's own canonical decoder; the entry decodes
 the same bytes again itself. -/
 def typingInput (env : Ixon.Env) : Except String TypingInput := do
+  if env.roleBinding.isSome then
+    let input ← (Ix.RoleBinding.Artifact.prepareRecords env typingLimits).mapError toString
+    let p := input.prepared
+    let bytes : Std.HashMap Address ByteArray := p.records.foldl (fun m (a, b) => m.insert a b) {}
+    let ordered ← input.constants.toArray.mapM fun (a, c) => do
+      let some raw := bytes[a]? | throw s!"resource validator: missing prepared bytes at {a}"
+      pure (a, c, raw)
+    let projections : Std.HashMap (ConstRef Address) Address := input.constants.foldl (init := {}) fun m (a, c) =>
+      match c.info with
+      | .dPrj p => m.insert (.member p.block p.idx.toNat) a
+      | _ => m
+    return { binding := p.binding, bound := true, table := p.table, pre := p.pre, ordered, projections
+             hints := env.anonHints, blobs := p.blobs }
+  let binding ← Ix.Kernel.Admission.defaultBinding
   let table ← defaultTable
   let pre : Prelude .anon ← preludeFor table
   let committed : Array (Address × ByteArray) :=
@@ -133,7 +161,7 @@ def typingInput (env : Ixon.Env) : Except String TypingInput := do
     match c.info with
     | .dPrj p => m.insert (.member p.block p.idx.toNat) a
     | _ => m
-  return { table, pre, ordered, projections, hints := env.anonHints
+  return { binding, table, pre, ordered, projections, hints := env.anonHints
            blobs := (env.blobs.toArray.qsort fun x y => x.1.cmpBytes y.1 == .lt).toList }
 
 /-! ## The split -/
@@ -448,18 +476,26 @@ def splitOf (input : TypingInput) : Std.HashSet Address :=
   let look : Store := fun a => store[a]? <|> (input.pre.records.find? (·.1 == a)).map (·.2) <|> evidence[a]?
   uncertifiedOwners (bindingsOf look input.table) input.ordered
 
-/-- **The certified part**: IxC's tiered entry at BLAKE3 under the default
-role table, over every record outside `unc`, exactly as the entry and its
-theorem (`Ix.Kernel.Admission.checkBytesTiered_ok`) take it. Its result is
+/-- **The certified part**: IxC's tiered entry at BLAKE3 under the input's
+actual binding and prelude, over every record outside `unc`, exactly as the
+entry and its theorem (`Ix.Kernel.Admission.checkBytesTieredUsing_ok`) take it. Its result is
 the installed logical environment; nothing here reads the answer view. A
 failure says whether it is the batch tier's (`TierError.tier`). -/
 def checkCertified (input : TypingInput) (unc : Std.HashSet Address) :
     Except (String × Bool) (Ix.Kernel.Env .anon) := do
-  let binding ← Ix.Kernel.Admission.defaultBinding.mapError
-    fun e => (s!"resource validator: erased typing failed: {e}", false)
   let records : Ix.Kernel.Admission.Records := input.ordered.toList.filterMap fun (a, c, b) =>
     if unc.contains (Ixon.CheckOrder.owner a c) then none else some (a, b)
-  match Ix.Kernel.Admission.checkBytesTiered Address.admissionHash binding typingLimits records
+  if input.bound then
+    let constants := input.ordered.toList.filterMap fun (a, c, _) =>
+      if unc.contains (Ixon.CheckOrder.owner a c) then none else some (a, c)
+    let (logical, _) := Ix.Kernel.Admission.partitionTier constants
+    let (evidence, declarations) ← (Ix.Kernel.Admission.readStream Address.admissionHash
+      input.table input.pre logical input.blobs input.hint).mapError
+        fun e => (s!"resource validator: bound evidence reading failed: {e}", false)
+    (Ix.RoleBinding.Artifact.checkEvidence input.table evidence
+      (Ix.Kernel.Frontend.preparePrelude input.pre.ix declarations)).mapError
+        fun e => (s!"resource validator: {e}", false)
+  match Ix.Kernel.Admission.checkBytesTieredUsing input.preludeFor Address.admissionHash input.binding typingLimits records
       input.blobs input.hint with
   | .ok (env, _) => pure env
   | .error e =>
