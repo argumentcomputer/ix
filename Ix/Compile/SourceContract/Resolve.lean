@@ -292,7 +292,7 @@ def MeasureHint.resolve (hint : MeasureHint) (actual : Lean.ConstantInfo) :
 
 /-- Resolve a complete input without consulting a Lean environment. The explicit
 registry is checked before a caller may canonicalize or merge source terms. -/
-def CompileInput.resolve (input : CompileInput) :
+@[expose] def CompileInput.resolve (input : CompileInput) :
     Except SourceContractError ResolvedCompileInput := do
   let mut selected : Std.HashMap Lean.Name Lean.ConstantInfo := {}
   for (name, source) in input.constants do
