@@ -1960,6 +1960,23 @@ fn ingress_muts_inductive<M: KernelMode>(
   Ok(results)
 }
 
+/// Serialized mutual units follow the certified reader's shape policy:
+/// definitions form their own block; inductives and recursors may share a
+/// family block. Direct Lean source grouping has a separate contract.
+pub(crate) fn validate_serialized_muts(
+  members: &[IxonMutConst],
+) -> Result<(), String> {
+  if members.is_empty() {
+    return Err("empty serialized mutual block".into());
+  }
+  let definitions =
+    members.iter().filter(|m| matches!(m, IxonMutConst::Defn(_))).count();
+  if definitions != 0 && definitions != members.len() {
+    return Err("unsupported serialized mutual block: definitions mixed with an inductive/recursor family".into());
+  }
+  Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn ingress_muts_block<M: KernelMode>(
   entry_name: &Name,
@@ -1981,6 +1998,7 @@ fn ingress_muts_block<M: KernelMode>(
     IxonCI::Muts(m) => m,
     _ => return Err(format!("constant at {} is not Muts", entry_addr.hex())),
   };
+  validate_serialized_muts(members)?;
 
   let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
   let mut local_dependencies = LocalDefnDependencies::default();
@@ -4551,9 +4569,8 @@ fn ingress_anon_inductive(
 /// `anon_env.consts` — missing → error (corrupted .ixe).
 ///
 /// Returns the KIds in member order. The first KId is the block's
-/// "primary" — `check_const` on it relies on the kernel's block
-/// coordination (`check_const_member` etc.) to check all members in one
-/// pass.
+/// "primary" — `check_ixon_const` checks the complete serialized unit,
+/// including both phases of an inductive/recursor family.
 pub fn ingress_anon_block(
   kenv: &mut KEnv<Anon>,
   anon_env: &IxonEnv,
@@ -4567,6 +4584,7 @@ pub fn ingress_anon_block(
       block_constant.info.variant()
     ));
   };
+  validate_serialized_muts(members)?;
 
   let block_id = KId::<Anon>::new(block_addr.clone(), ());
   let mut convert_stats = ConvertStats::new(false);
@@ -5514,6 +5532,66 @@ mod tests {
     match lean_ingress(lean_env) {
       Err(err) => assert!(err.contains(text), "{err:?} lacks {text:?}"),
       Ok(_) => panic!("expected lean_ingress to refuse with {text:?}"),
+    }
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn direct_lean_family_retains_member_checking() {
+    let source = unit_like_env(|_, _, rec| {
+      let u = mk_name("u");
+      let typ = LeanExpr::cnst(mk_name("T"), vec![]);
+      let ctor = LeanExpr::cnst(mk_name("T.mk"), vec![]);
+      let var = |i| LeanExpr::bvar(n_lit(i));
+      let motive = LeanExpr::all(
+        mk_name("x"),
+        typ.clone(),
+        LeanExpr::sort(Level::param(u.clone())),
+        BinderInfo::Default,
+      );
+      let minor = LeanExpr::app(var(0), ctor);
+      rec.cnst.level_params = vec![u];
+      rec.cnst.typ = LeanExpr::all(
+        mk_name("motive"),
+        motive.clone(),
+        LeanExpr::all(
+          mk_name("minor"),
+          minor.clone(),
+          LeanExpr::all(
+            mk_name("major"),
+            typ,
+            LeanExpr::app(var(2), var(0)),
+            BinderInfo::Default,
+          ),
+          BinderInfo::Default,
+        ),
+        BinderInfo::Default,
+      );
+      rec.rules[0].rhs = LeanExpr::lam(
+        mk_name("motive"),
+        motive,
+        LeanExpr::lam(mk_name("minor"), minor, var(0), BinderInfo::Default),
+        BinderInfo::Default,
+      );
+    });
+    let mut kernel = lean_ingress(&source).unwrap();
+    let ids: Vec<_> = ["T", "T.mk", "T.rec"]
+      .into_iter()
+      .map(|name| {
+        kernel
+          .consts
+          .keys()
+          .find(|id| id.name == mk_name(name))
+          .unwrap()
+          .clone()
+      })
+      .collect();
+    let mut checker = crate::tc::TypeChecker::new(&mut kernel);
+    assert!(
+      checker.coordinated_check_block_for_const(&ids[0]).unwrap().is_none()
+    );
+    for id in ids {
+      checker.check_const(&id).unwrap();
     }
   }
 

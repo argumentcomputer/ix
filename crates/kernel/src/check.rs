@@ -89,6 +89,7 @@ enum CheckBlockKind {
   Defn,
   Inductive,
   Recursor,
+  Family,
 }
 
 fn canonical_var<M: KernelMode>(idx: u64) -> KExpr<M> {
@@ -319,6 +320,37 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return result;
     }
 
+    self.check_const_member_fresh(id)
+  }
+
+  /// Check the complete serialized unit represented by an Ixon target.
+  /// Whole-unit success is cached only after every family phase succeeds.
+  /// Direct Lean source callers retain `check_const`'s member fallback.
+  pub fn check_ixon_const(&mut self, id: &KId<M>) -> Result<(), TcError<M>>
+  where
+    M::MField<Vec<Name>>: CheckDupLevelParams,
+  {
+    let c = self.get_const(id)?;
+    let block = match c {
+      KConst::Defn { block, .. }
+      | KConst::Indc { block, .. }
+      | KConst::Recr { block, .. } => Some(block),
+      KConst::Ctor { induct, .. } => match self.get_const(&induct)? {
+        KConst::Indc { block, .. } => Some(block),
+        _ => None,
+      },
+      KConst::Axio { .. } | KConst::Quot { .. } => None,
+    };
+    if let Some(block) = block
+      && self.try_get_block(&block)?.is_some()
+    {
+      if let Some(result) = self.env.block_check_results.get(&block).cloned() {
+        return result;
+      }
+      let result = self.check_block_body(&block, id);
+      self.env.block_check_results.insert(block, result.clone());
+      return result;
+    }
     self.check_const_member_fresh(id)
   }
 
@@ -564,8 +596,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       (true, false, false) => Ok(CheckBlockKind::Defn),
       (false, true, false) => Ok(CheckBlockKind::Inductive),
       (false, false, true) => Ok(CheckBlockKind::Recursor),
+      (false, true, true) => Ok(CheckBlockKind::Family),
       _ => Err(TcError::Other(
-        "unsupported mixed check block: expected only definitions, only inductives/constructors, or only recursors"
+        "unsupported mixed check block: definitions cannot mix with an inductive/recursor family"
           .into(),
       )),
     }
@@ -626,6 +659,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
       CheckBlockKind::Inductive => self.check_inductive_block(block, &members),
       CheckBlockKind::Recursor => self.check_recursor_block(block, &members),
+      CheckBlockKind::Family => {
+        let mut inductives = Vec::new();
+        let mut recursors = Vec::new();
+        for member in &members {
+          match self.get_const(member)? {
+            KConst::Indc { .. } | KConst::Ctor { .. } => {
+              inductives.push(member.clone())
+            },
+            KConst::Recr { .. } => recursors.push(member.clone()),
+            _ => {
+              return Err(TcError::Other(
+                "invalid serialized family member".into(),
+              ));
+            },
+          }
+        }
+        self.check_inductive_block(block, &inductives)?;
+        self.check_recursor_block(block, &recursors)
+      },
     };
     let body_elapsed = body_start.map(|s| s.elapsed());
 

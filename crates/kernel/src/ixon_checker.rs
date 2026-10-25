@@ -6,7 +6,7 @@
 //! kernel's address-verified ingress, which checks local definition cycles
 //! before admitting a block. External dependencies are Ixon content
 //! addresses, so checking a declaration need not rewalk their expression trees.
-//! As with `TypeChecker::check_const`, referenced declarations are assumptions;
+//! As with `TypeChecker::check_ixon_const`, referenced declarations are assumptions;
 //! check every work item to certify a complete environment.
 
 use ix_common::address::Address;
@@ -53,7 +53,7 @@ impl<'a> IxonChecker<'a> {
     if let Some(label) = &self.debug_label {
       checker.set_debug_label(label.clone());
     }
-    let result = checker.check_const(&KId::new(addr.clone(), ()));
+    let result = checker.check_ixon_const(&KId::new(addr.clone(), ()));
     self.last_check = CheckStats {
       fuel_used: checker.fuel_used(),
       def_eq_peak: checker.def_eq_peak,

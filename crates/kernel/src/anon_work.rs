@@ -40,7 +40,7 @@ use crate::ingress::{
   anon_recr_proj_addr,
 };
 
-/// A single anon-mode work item — one `tc.check_const(primary)` per
+/// A single anon-mode work item — one Ixon whole-unit check per
 /// item suffices to typecheck every address in `targets`.
 #[derive(Clone, Debug)]
 pub enum AnonWorkItem {
@@ -61,7 +61,7 @@ pub enum AnonWorkItem {
 }
 
 impl AnonWorkItem {
-  /// The address to pass to `tc.check_const`.
+  /// The address to pass to the Ixon whole-unit checking entry.
   pub fn primary(&self) -> &Address {
     match self {
       AnonWorkItem::Standalone { addr } => addr,
@@ -109,9 +109,8 @@ impl AnonWorkItem {
 /// constants. The total number of checked target addresses is
 /// `work.iter().map(|w| w.targets().len()).sum()`.
 ///
-/// Errors only on a corrupted env (missing const at an enumerated
-/// address, or a TagN head byte that doesn't correspond to a known
-/// `ConstantInfo` variant).
+/// Refuses corrupted entries and unsupported serialized mutual shapes before
+/// promising coverage for their member targets.
 pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
   use ConstVariantTag as Tag;
   use ixon::constant::ConstantInfo as CI;
@@ -151,6 +150,7 @@ pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
             addr.hex()
           ));
         };
+        crate::ingress::validate_serialized_muts(members)?;
         let mut targets: Vec<Address> = Vec::new();
         for (i, member) in members.iter().enumerate() {
           let i = i as u64;
@@ -165,9 +165,6 @@ pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
               targets.push(anon_ctor_proj_addr(&addr, i, cidx));
             }
           }
-        }
-        if targets.is_empty() {
-          continue;
         }
         let primary = targets[0].clone();
         work.push(AnonWorkItem::Block {

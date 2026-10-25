@@ -3469,8 +3469,9 @@ where
   let (result, peak): (Result<(), String>, u32) = {
     let mut tc = TypeChecker::new_with_lazy_ixon(kenv, ixon_env, lookups);
     tc.set_debug_label(display.clone());
-    let result =
-      tc.check_const(&kid).map_err(|e| format_tc_error(&e, ixon_env, lookups));
+    let result = tc
+      .check_ixon_const(&kid)
+      .map_err(|e| format_tc_error(&e, ixon_env, lookups));
     let peak = tc.def_eq_peak;
     tc.finish_constant_accounting();
     (result, peak)
