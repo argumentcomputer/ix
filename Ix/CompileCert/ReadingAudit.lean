@@ -9,6 +9,7 @@ import Ix.CompileCert.RecordState
 import Ix.CompileCert.RecordRead
 import Ix.CompileCert.RecordSourceShape
 import Ix.CompileCert.RecordSubst
+import Ix.CompileCert.RecordSubstReading
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -783,3 +784,10 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "reading-audit") "record substitution producer"
     #[`Ix.CompileCert.RecordSubst.produced]
+
+/-- info: [reading-audit] record substitution reading: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "record substitution reading"
+    #[`Ix.CompileCert.RecordSubst.substRecords_related, `Ix.CompileCert.RecordSubst.withRecords_read]
