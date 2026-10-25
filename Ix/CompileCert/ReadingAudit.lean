@@ -5,6 +5,7 @@ import Ix.CompileCert.PreseedValidation
 import Ix.CompileCert.WireTables
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionCorrectness
+import Ix.CompileCert.RecordState
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -741,3 +742,11 @@ open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
   checkRoots (tag := "reading-audit") "driver inductives" Ix.CompileCert.ReadingAudit.driverInductiveRoots
   checkRuntime (tag := "reading-audit") "driver inductives" Ix.CompileCert.ReadingAudit.driverInductiveRuntime
+
+/-- info: [reading-audit] metadata state: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "metadata state"
+    #[`Ix.CompileCert.RecordState.Step.pure, `Ix.CompileCert.RecordState.Step.bind,
+      `Ix.CompileCert.RecordState.compileExprMeta_preserves]
