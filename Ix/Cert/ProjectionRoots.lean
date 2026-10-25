@@ -80,28 +80,66 @@ def locateBytes (limits : Limits) (records : Records) (j : Nat) : Except String 
   | .error e => throw s!"projection: {repr e}"
   | .ok constants => return ⟨constants, decoded, ← locate constants j⟩
 
-private theorem lowered {md : Mode} {cx : Ctx md} {st : State md} {a : Address}
-    {c : Ixon.Constant} {ms : Array Ixon.MutConst} {r : Read md}
-    (run : readInductive cx st a c ms = .ok r) :
-    ∃ shape rb, cx.index.blocks[a]? = some shape ∧ lowerInductive st rb = .ok r := by
-  rw [Ix.CompileCert.InductiveReading.readInductive_eq] at run
-  unfold Ix.CompileCert.InductiveReading.readInductiveSpec at run
-  cases found : cx.index.blocks[a]? with
-  | none =>
-    simp only [found, declined, throw, throwThe, MonadExceptOf.throw] at run
-    cases run
-  | some shape =>
-    simp only [found] at run
-    iterate 4 all_goals first
-      | contradiction
-      | (split at run <;> try simp only [malformed, declined, throw, throwThe, MonadExceptOf.throw, Except.bind, bind] at run)
-    all_goals first
-      | contradiction
-      | (obtain ⟨types, _, run⟩ := Ix.CompileCert.Loop.except_bind_ok.mp run
-         obtain ⟨ctors, _, run⟩ := Ix.CompileCert.Loop.except_bind_ok.mp run
-         obtain ⟨recs, _, run⟩ := Ix.CompileCert.Loop.except_bind_ok.mp run
-         exact ⟨shape, _, rfl, run⟩)
+open Ix.CompileCert.InductiveReading
+private def observed {ε α : Type} (x : Except ε α) : Except ε { a // x = .ok a } :=
+  match x with | .error e => .error e | .ok a => .ok ⟨a, rfl⟩
+private theorem observed_bind {ε α β : Type} (x : Except ε α) (f : α → Except ε β) :
+    (observed x >>= fun a => f a.val) = (x >>= f) := by cases x <;> rfl
+private theorem observed_loops {md : Mode} (st : State md) (n : Nat)
+    (x : ReadM (Array (CVal md × Nat × Nat))) (y : ReadM (Array (CVal md × Nat × Nat) × Array (List (CName md))))
+    (z : ReadM (Array (CVal md × RecCounts × List (Ix.Kernel.RecRule md)))) :
+    (do let a ← observed x; let b ← observed y; let c ← observed z; lowerInductive st ⟨n, a.val, b.val.1, b.val.2, c.val⟩) =
+      (do let a ← x; let b ← y; let c ← z; lowerInductive st ⟨n, a, b.1, b.2, c⟩) := by cases x <;> cases y <;> cases z <;> rfl
 
+structure Trace {md : Mode} (cx : Ctx md) (st : State md) (a : Address) (c : Ixon.Constant) (ms : Array Ixon.MutConst) where
+  shape : BlockShape
+  first : Nat × Ixon.Inductive
+  rb : BlockRead md
+  read : Read md
+  found : cx.index.blocks[a]? = some shape
+  head : (shape.order.filterMap (indcAt ms))[0]? = some first
+  params : rb.numParams = first.2.params.toNat
+  types : forIn (shape.order.filterMap (indcAt ms)) #[] (typeStep cx a (.mk' cx c id (blockSelf cx a ms))) = .ok rb.types
+  ctors : forIn (shape.order.filterMap (indcAt ms)) (#[], #[]) (ctorClassStep cx a (.mk' cx c id (blockSelf cx a ms)) rb.numParams) = .ok (rb.ctors, rb.ctorNames)
+  recs : readRecursors cx (List.range first.2.lvls.toNat) shape.recs = .ok rb.recs
+  lowered : lowerInductive st rb = .ok read
+/-- Retain the actual loop outputs; their equations erase at runtime. -/
+def traceOwner {md : Mode} (cx : Ctx md) (st : State md) (a : Address) (c : Ixon.Constant)
+    (ms : Array Ixon.MutConst) : ReadM (Trace cx st a c ms) := do
+  match hs : cx.index.blocks[a]? with
+  | none => declined "inductive block without a recursor in the input"
+  | some shape =>
+    let indcs := shape.order.filterMap (indcAt ms)
+    unless indcs.size == shape.order.size do malformed "recursor motive is not a member of its block"
+    match hf : indcs[0]? with
+    | none => malformed "empty inductive block"
+    | some first =>
+      if indcs.any (·.2.isUnsafe) then declined "unsafe inductive declaration"
+      let nPd := first.2.params.toNat
+      unless indcs.all (·.2.params.toNat == nPd) do declined "inductive block whose type records disagree on numParams"
+      let mr := MemberReader.mk' cx c id (blockSelf cx a ms)
+      let types ← observed (forIn indcs #[] (typeStep cx a mr))
+      let ctors ← observed (forIn indcs (#[], #[]) (ctorClassStep cx a mr nPd))
+      let recs ← observed (readRecursors cx (List.range first.2.lvls.toNat) shape.recs)
+      let rb : BlockRead md := ⟨nPd, types.val, ctors.val.1, ctors.val.2, recs.val⟩
+      let out ← observed (lowerInductive st rb)
+      return { shape, first, rb, read := out.val, found := hs, head := hf, params := rfl,
+               types := by simpa only [rb] using types.property,
+               ctors := by simpa only [rb] using ctors.property,
+               recs := by simpa only [rb] using recs.property, lowered := out.property }
+theorem traceOwner_read {md : Mode} (cx : Ctx md) (st : State md) (a : Address)
+    (c : Ixon.Constant) (ms : Array Ixon.MutConst) :
+    (traceOwner cx st a c ms).map (·.read) = readInductive cx st a c ms := by
+  change (fun t => t.read) <$> traceOwner cx st a c ms = _
+  rw [readInductive_eq]
+  unfold traceOwner readInductiveSpec
+  iterate 5 all_goals first
+    | rfl
+    | (split <;> try simp_all only [map_bind, map_pure, observed_bind, bind_pure])
+  all_goals first
+    | rfl
+    | (rename_i shape hs size first hf safe params
+       exact observed_loops st first.2.params.toNat _ _ _)
 private theorem projection_empty {md : Mode} {cx : Ctx md} {st : State md} {a : Address}
     {c : Ixon.Constant} {ref : ConstRef Address} {r : Read md}
     (projected : projectionRef c.info = some ref) (run : readRecord cx st a c = .ok r) : r.decls = #[] := by
@@ -153,9 +191,34 @@ theorem captured {binding limits records blobs hint receipt j}
     rw [hit]; rfl
   have read := ownerTrace.2.choose_spec.choose_spec.2.1
   have family := (owner_read_eq l.ownerInfo l.hasInductive l.unmixed).symm.trans read
-  obtain ⟨shape, rb, found, loweredRun⟩ := lowered family
-  obtain ⟨gens, emitted, count, _, _⟩ := CtxAgree.lowerInductive_ok loweredRun
-  exact ⟨p, constants, table, pre, ev, ds, fin, rootState, rootRead, ownerState, ownerRead,
-    shape, rb, gens, stream, rootTrace, rootEmpty, ownerTrace, stored, family, found, loweredRun, emitted, count⟩
+  obtain ⟨tr, _, rfl⟩ := Except.map_eq_ok ((traceOwner_read _ _ _ _ _).trans family)
+  obtain ⟨gens, emitted, count, _, _⟩ := CtxAgree.lowerInductive_ok tr.lowered
+  exact ⟨p, constants, table, pre, ev, ds, fin, rootState, rootRead, ownerState, tr.read,
+    tr.shape, tr.rb, gens, stream, rootTrace, rootEmpty, ownerTrace, stored, family, tr.found, tr.lowered, emitted, count⟩
+def prefixState {md : Mode} (cx : Ctx md) : State md → Ingress.Constants → ReadM (State md)
+  | st, [] => pure st
+  | st, (a, c) :: rest => do let r ← readRecord cx st a c; prefixState cx (st.commit r) rest
+private theorem prefixState_eq {md : Mode} {cx : Ctx md} {st fin constants decls}
+    (run : StreamRead cx st constants fin decls) : prefixState cx st constants = .ok fin := by
+  induction run with
+  | nil => rfl
+  | cons read tail ih => simp only [prefixState, read, bind, Except.bind, ih]
+def scanOwner {md : Mode} {constants j} (cx : Ctx md) (start : State md) (l : Located constants j) :
+    ReadM (Σ st, Trace cx st l.reference.block l.owner l.members) := do
+  let st ← prefixState cx start (constants.take l.ownerPosition)
+  return ⟨st, ← traceOwner cx st l.reference.block l.owner l.members⟩
+theorem scanOwner_same {binding limits records blobs hint receipt j}
+    (accepted : DefinitionSnapshots.checkReceipt binding limits records blobs hint = .ok receipt)
+    (packet : Packet limits records j) (produced : locateBytes limits records j = .ok packet) :
+    let l := packet.location; let cx := streamContext Address.admissionHash receipt.table receipt.pre packet.constants blobs hint
+    ∃ fin decls st, ∃ tr : Trace cx st l.reference.block l.owner l.members,
+      RecordAt cx receipt.pre.state fin packet.constants decls l.ownerPosition l.reference.block l.owner st tr.read ∧
+      Frontend.preparePrelude receipt.pre.ix decls = receipt.ds ∧ scanOwner cx receipt.pre.state l = .ok ⟨st, tr⟩ := by
+  obtain ⟨p, cs, table, pre, _, ds, fin, _, _, st, r, _, _, _, _, _, _, atOwner, _, family, _, _, _, _⟩ := captured accepted packet produced
+  simp only [cs, table, pre] at atOwner family ds
+  obtain ⟨tr, run, same⟩ := Except.map_eq_ok ((traceOwner_read _ _ _ _ _).trans family)
+  refine ⟨fin, p.decls, st, tr, ?_, ds, ?_⟩
+  · simpa only [same] using atOwner
+  · rw [scanOwner, prefixState_eq atOwner.2.choose_spec.choose_spec.1]; simp only [bind, Except.bind, run, pure, Except.pure]
 
 end Ix.Cert.ProjectionRoots
