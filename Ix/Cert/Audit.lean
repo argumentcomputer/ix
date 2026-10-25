@@ -5887,3 +5887,5 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "actual projection owner and member guards"
     (#[`captured, `traceOwner_read, `scanOwner_same, `member_original].map (`Ix.Cert.ProjectionRoots ++ ·))
+/-- info: 'Ix.Cert.ProjectionRoots.member_family_front' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.ProjectionRoots.member_family_front

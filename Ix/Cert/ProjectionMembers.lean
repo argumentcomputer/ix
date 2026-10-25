@@ -169,4 +169,51 @@ theorem member_original {binding limits records blobs hint receipt j}
   cases Except.ok.inj (scanned.symm.trans run)
   exact ⟨fin, decls, atOwner, prepared, g.row_source tr⟩
 
+universe w
+/-- One actual accepting fuel, with no assumption about how many constants
+the current declaration installs or how their raw syntax is stored. -/
+def IndexedRun {md : Mode} (ev : Evidences md) (ds : List (Declaration md)) (final : Env md)
+    (i : Nat) (d : Declaration md) (F : Nat) (before after : Env md) : Prop :=
+  let step := checkDecl .verified (fueledOps .verified F) ev
+  ds[i]? = some d ∧ checkDeclsPure .verified (fueledOps .verified F) ev ds = .ok final ∧
+  (ds.take i).foldlM step Env.empty = .ok before ∧ step before d = .ok after ∧
+  (ds.drop (i + 1)).foldlM step after = .ok final
+
+private theorem indexed_run {md : Mode} {ev : Evidences md} {ds : List (Declaration md)}
+    {final : Env md} {i F : Nat} {d : Declaration md}
+    (whole : checkDeclsPure .verified (fueledOps .verified F) ev ds = .ok final)
+    (atDecl : ds[i]? = some d) : ∃ before after, IndexedRun ev ds final i d F before after := by
+  obtain ⟨bound, atValue⟩ := List.getElem?_eq_some_iff.mp atDecl
+  have split : ds = ds.take i ++ d :: ds.drop (i + 1) := by
+    have eq := List.take_append_drop i ds
+    rw [List.drop_eq_getElem_cons bound, atValue] at eq
+    exact eq.symm
+  have run := whole
+  unfold checkDeclsPure at run
+  rw [split] at run
+  obtain ⟨before, pref, rest⟩ := foldlM_append_ok run
+  rw [List.foldlM_cons] at rest
+  obtain ⟨after, current, suffix⟩ := except_bind_ok.mp rest
+  exact ⟨before, after, atDecl, whole, pref, current, suffix⟩
+
+/-- The SAME guarded family index and genuine receipt supply the actual
+family check trace. No checker executes here and no value claim is added. -/
+theorem member_family_front (V : Type w) [SetTheory V] {binding limits records blobs hint receipt j}
+    (accepted : DefinitionSnapshots.checkReceipt binding limits records blobs hint = .ok receipt)
+    (packet : Packet limits records j) (located : locateBytes limits records j = .ok packet) :
+    let l := packet.location; let cx := Admission.streamContext Address.admissionHash receipt.table receipt.pre packet.constants blobs hint
+    ∀ st (tr : Trace cx st l.reference.block l.owner l.members), scanOwner cx receipt.pre.state l = .ok ⟨st, tr⟩ →
+    ∀ g : MemberCheck cx l.address l.reference (tr.shape.order.filterMap (indcAt l.members)).toList tr.rb receipt.ds,
+      checkMember cx l.address l.reference (tr.shape.order.filterMap (indcAt l.members)).toList tr.rb receipt.ds = .ok g →
+      ∃ fin decls F before after, AdmittedTargetFronts.RecordAt cx receipt.pre.state fin packet.constants decls l.ownerPosition l.reference.block l.owner st tr.read ∧
+        Frontend.preparePrelude receipt.pre.ix decls = receipt.ds ∧ RowSource cx (.mk' cx l.owner id (blockSelf cx l.reference.block l.members)) tr.rb.numParams l.reference (tr.shape.order.filterMap (indcAt l.members)).toList g.choice ∧
+        IndexedRun receipt.ev receipt.ds.toList receipt.env g.choice.prepared (CtxAgree.indDeclOf tr.rb) F before after := by
+  intro l cx st tr scanned g checked
+  obtain ⟨fin, decls, owner, prepared, row⟩ := member_original accepted packet located st tr scanned g checked
+  obtain ⟨_, _, _, run, _⟩ := DefinitionSnapshots.checkReceipt_ok accepted
+  obtain ⟨F, whole⟩ := Cached.checkDecls_refines_ref V rfl run
+  have atDecl : receipt.ds.toList[g.choice.prepared]? = some (CtxAgree.indDeclOf tr.rb) := by simpa using g.valid.2.2
+  obtain ⟨before, after, front⟩ := indexed_run whole atDecl
+  exact ⟨fin, decls, F, before, after, owner, prepared, row, front⟩
+
 end Ix.Cert.ProjectionRoots
