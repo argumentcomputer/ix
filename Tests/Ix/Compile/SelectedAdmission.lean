@@ -3,6 +3,7 @@ import Ix.Cert.RecursorSupport
 import Ix.Cert.DefinitionSnapshots
 import Ix.Cert.CandidateValueFront
 import Ix.Cert.TheoremSnapshots
+import Ix.Cert.ProjectionMembers
 import Ix.Ixon.CheckOrder
 import Tests.Ix.Compile.Harness.Units
 import Tests.Ix.Kernel.Authentication
@@ -241,8 +242,75 @@ private def supportedCandidate {ixe : Ixon.Env} (p : RecursorSupport.Catalogue i
       if seen.contains b || pre.records.any (·.1 == b) then bad else bad.insert b) bad
   return (order.toList, additions, missing.size)
 
+private def needError {α : Type} (result : Except String α) (message : String) : IO Unit :=
+  need (match result with | .error e => e == message | _ => false) message
+open _root_.Ix.Cert.ProjectionRoots in
+private def projectionCase (ixe : Ixon.Env) (order : List Address) (root : Address)
+    (r : DefinitionSnapshots.Receipt) (label : String) (rows : IO.Ref (Array String)) (wantOrder := false) : IO Unit := do
+  let records := recordsOf ixe order
+  let some j := records.findIdx? (fun p => p.1 == root) | throw (IO.userError "projection root bytes missing")
+  let packet ← IO.ofExcept (locateBytes limits records j)
+  let l := packet.location
+  let cx := streamContext Address.admissionHash r.table r.pre packet.constants (blobsOf ixe order) (hintsOf ixe)
+  let ⟨_, tr⟩ ← IO.ofExcept ((scanOwner cx r.pre.state l).mapError toString)
+  let xs := (tr.shape.order.filterMap (_root_.Ix.CompileCert.InductiveReading.indcAt l.members)).toList
+  let g ← IO.ofExcept (checkMember cx root l.reference xs tr.rb r.ds)
+  let q := g.choice
+  need (root != l.reference.block) "projection root/owner distinction is vacuous"
+  needError (locate packet.constants packet.constants.length) "projection: input root is unavailable"
+  let missing := packet.constants.filter (fun p => p.1 != l.reference.block)
+  let some j' := missing.findIdx? (fun p => p.1 == root) | throw (IO.userError "deleted-owner control lost root")
+  needError (locate missing j') "projection: input owner is unavailable"
+  needError (checkMember cx root l.reference [] tr.rb r.ds) "projection member: motive is unavailable"
+  let empty := match l.reference with | .member .. => { tr.rb with types := #[] } | .ctor .. => { tr.rb with ctors := #[] }
+  needError (checkMember cx root l.reference xs empty r.ds) "projection member: emitted row is unavailable"
+  needError (checkMember cx root l.reference xs tr.rb #[]) "projection member: complete prepared family is unavailable"
+  let badRef := match l.reference with | .member b i => .member b (i + 1000000) | .ctor b i k => .ctor b i (k + 1000000)
+  need (!(checkMember cx root badRef xs tr.rb r.ds).isOk && !(checkMember cx l.reference.block l.reference xs tr.rb r.ds).isOk) "bad reference/root accepted"
+  let header := fun (f : CVal .anon → CVal .anon) => match l.reference with
+    | .member .. => { tr.rb with types := tr.rb.types.modify q.rowIndex fun (v, p, n) => (f v, p, n) }
+    | .ctor .. => { tr.rb with ctors := tr.rb.ctors.modify q.rowIndex fun (v, p, n) => (f v, p, n) }
+  let count := match l.reference with
+    | .member .. => { tr.rb with numParams := tr.rb.numParams + 1 }
+    | .ctor .. => { tr.rb with ctors := tr.rb.ctors.modify q.rowIndex fun (v, p, n) => (v, p, n + 1) }
+  for bad in [header (fun v => { v with type := .forallE (.sort .zero) v.type { pw := .never } }),
+      header (fun v => { v with levelParams := v.levelParams ++ [999999] }), count] do
+    need (decide (CtxAgree.indDeclOf bad ≠ CtxAgree.indDeclOf tr.rb)) "payload mutation is vacuous"
+    needError (checkMember cx root l.reference xs bad r.ds) "projection member: complete prepared family is unavailable"
+  for d in [.indDecl (familyList tr.rb) (tr.rb.numParams + 1), .indDecl (familyList tr.rb).reverse tr.rb.numParams] do
+    need (decide (d ≠ CtxAgree.indDeclOf tr.rb)) "prepared mutation is vacuous"
+    needError (checkMember cx root l.reference xs tr.rb (r.ds.modify q.prepared fun _ => d)) "projection member: complete prepared family is unavailable"
+  need (!decide (Matches l.reference xs tr.rb r.ds { q with prepared := r.ds.size })) "wrong prepared index accepted"
+  -- Deliberately untrusted raw context: keys agree, only address correspondence fails.
+  let fake : Ctx .anon := { cx with
+    roles := { names := cx.roles.names.insert l.reference q.row.1.name }
+    keys := {}
+    reconstruct := fun _ => some l.reference.block }
+  need ((fake.keyAt root).toOption == some q.row.1.name && (fake.memberKey l.reference).toOption == some q.row.1.name &&
+    (fake.addressOf l.reference).toOption == some l.reference.block) "address-only control is vacuous"
+  needError (checkMember fake root l.reference xs tr.rb r.ds) "projection member: key or address correspondence failed"
+  let ctorOrder := match l.reference with | .ctor .. => decide (tr.rb.ctors.size > 1) | _ => false
+  if ctorOrder then
+    let swapped := { tr.rb with ctors := tr.rb.ctors.swapIfInBounds q.rowIndex ((q.rowIndex + 1) % tr.rb.ctors.size) }
+    need (decide (CtxAgree.indDeclOf swapped ≠ CtxAgree.indDeclOf tr.rb) && !(checkMember cx root l.reference xs swapped r.ds).isOk) "constructor order control failed"
+  if wantOrder then
+    need (xs.length > 1) "nested multi-motive witness missing"
+    let other := (q.motive + 1) % xs.length
+    need (xs[q.motive]?.map Prod.fst != xs[other]?.map Prod.fst) "motive witness has duplicate indices"
+    need (!(checkMember cx root l.reference (xs.toArray.swapIfInBounds q.motive other).toList tr.rb r.ds).isOk) "motive order mutation accepted"
+    need (!(checkMember cx root l.reference xs { tr.rb with types := tr.rb.types.swapIfInBounds q.motive other } r.ds).isOk) "type order mutation accepted"
+    let some (pa, pc) := (r.pre.records ++ r.pre.evidence).find? (fun p => p.2.info matches .iPrj _) | throw (IO.userError "prelude projection witness missing")
+    let fallback := streamContext Address.admissionHash r.table r.pre [(pa, pc)] [] (fun _ => none)
+    need ((resolveSource fallback.store pa pc).isSome) "prelude-only owner does not resolve"
+    needError (locate [(pa, pc)] 0) "projection: input owner is unavailable"
+  let nonzero := match l.reference with | .ctor _ _ k => decide (k > 0) | _ => false
+  let line := s!"projection {label} root={root} record={j} owner={l.reference.block} owner-record={l.ownerPosition} raw={referenceText l.reference}"
+  rows.modify (·.push (line ++ s!" motive={q.motive} flat={q.rowIndex} family-slot={q.position} prepared={q.prepared} key={q.row.1.name}" ++
+    s!" order={repr tr.shape.order} types={tr.rb.types.size}:{repr (tr.rb.types.map fun x => toString x.1.name)}" ++
+    s!" nonzero-ctor={nonzero} ctor-order={ctorOrder} motive-order={wantOrder}"))
+
 private def supportedCensus (out : _root_.Ix.CompileM.LeanPipelineOut) (binding : Binding)
-    (t : RoleTable) (pre : Prelude .anon) (theorems : IO.Ref (Array String)) : IO Unit := do
+    (t : RoleTable) (pre : Prelude .anon) (theorems projections : IO.Ref (Array String)) : IO Unit := do
   let p ← IO.ofExcept ((RecursorSupport.catalogue out.env limits).mapError reprStr)
   let some nodes := out.sourceNodes? | throw (IO.userError "missing original facts")
   let cs := _root_.Ix.Compile.ChangedSet.ofCompile out.cenv.env out.blocks out.cenv.auxReport.table out.env
@@ -274,8 +342,10 @@ private def supportedCensus (out : _root_.Ix.CompileM.LeanPipelineOut) (binding 
         | .ok receipt =>
           outcome := "accepted"
           IO.println s!"{site} literal={literal.length} supported={order.length} missing-extra={missing} family-agreement=true outcome=accepted"
-          let (n, _) ← fronts binding receipt.table receipt.pre out.env order r.address receipt.env
-            (some receipt) (some (theorems, site))
+          let n ← if (recordAt out.env r.address).any (fun c => match c.info with | .iPrj _ | .cPrj _ => true | _ => false) then do
+              projectionCase out.env order r.address receipt site projections
+              pure 0
+            else Prod.fst <$> fronts binding receipt.table receipt.pre out.env order r.address receipt.env (some receipt) (some (theorems, site))
           witnessed := witnessed + n
     counts := counts.insert outcome (counts.getD outcome 0 + 1)
   need (counts.toList.foldl (fun n p => n + p.2) 0 == roots.length) "supported occurrence disappeared"
@@ -428,7 +498,7 @@ run_cmd do
       levelParams := d.levelParams, type := d.type, value := d.value })
 
 open Tests.Ix.Kernel.Reader in
-private def theoremControls (binding : Binding) (t : RoleTable) (pre : Prelude .anon) : IO Unit := do
+private def theoremControls (binding : Binding) (t : RoleTable) (pre : Prelude .anon) (projections : IO.Ref (Array String)) : IO Unit := do
   let env ← getCompileEnv #[`Tests.Ix.Compile.SelectedAdmission]
   let input := Tests.Ix.Compile.Harness.closureOf env [`Tests.Ix.Compile.SelectedAdmission.theoremProjection]
   let out ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts input (numWorkers := 1))
@@ -463,6 +533,26 @@ private def theoremControls (binding : Binding) (t : RoleTable) (pre : Prelude .
   IO.println "theorem error controls: four context errors, proposition-before-body and theorem value refusal passed"
   need (observed.size == 1 && observed.all (·.endsWith "projection=true")) "theorem projection rewrite control is vacuous"
   IO.println "theorem controls: actual projection rewrite, raw storage, four context errors, proposition-before-body and theorem value refusal passed"
+  let some typeRoot := out.env.named.get? (_root_.Ix.Name.fromLeanName `Tests.Ix.Compile.SelectedAdmission.TheoremBox)
+    | throw (IO.userError "nested type projection missing")
+  projectionCase out.env order typeRoot.addr r "nested-projection-control" projections
+
+private def mutualProjectionControl (binding : Binding) (t : RoleTable) (pre : Prelude .anon)
+    (projections : IO.Ref (Array String)) : IO Unit := do
+  let env ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
+  let input := Tests.Ix.Compile.Harness.closureOf env
+    [`Tests.Ix.Kernel.EntryCaseDefs.Tm, `Tests.Ix.Kernel.EntryCaseDefs.Args]
+  let out ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts input (numWorkers := 1))
+  need out.cenv.ungrounded.isEmpty "mutual projection control has compile failures"
+  let some named := out.env.named.get? (_root_.Ix.Name.fromLeanName `Tests.Ix.Kernel.EntryCaseDefs.Tm)
+    | throw (IO.userError "mutual projection root missing")
+  let p ← IO.ofExcept ((RecursorSupport.catalogue out.env limits).mapError reprStr)
+  let (literal, _) ← IO.ofExcept (candidate out.env t pre named.addr)
+  let (order, _, _) ← IO.ofExcept (supportedCandidate p t pre named.addr literal)
+  need (← IO.ofExcept ((p.checkBatch t pre order).mapError reprStr)) "mutual family agreement failed"
+  let r ← IO.ofExcept ((DefinitionSnapshots.checkReceipt binding limits (recordsOf out.env order)
+    (blobsOf out.env order) (hintsOf out.env)).mapError toString)
+  projectionCase out.env order named.addr r "mutual-order-control" projections true
 
 def runSupported : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
@@ -474,14 +564,23 @@ def runSupported : IO Unit := do
   need (witnessed == 11 && moved == 11) "frozen literal-batch front baseline changed"
   controls out binding t pre
   let theorems ← IO.mkRef #[]
-  supportedCensus out binding t pre theorems
+  let projections ← IO.mkRef #[]
+  supportedCensus out binding t pre theorems projections
   supportControls binding t pre
   snapshotControls binding t pre
   candidateControls binding t pre
   let rows ← theorems.get
   need (rows.size == 15 && (rows.filter (·.contains "Reason.cascade")).size == 11) "15 theorem occurrences or reasons changed"
   for row in rows do IO.println row
-  theoremControls binding t pre
+  theoremControls binding t pre projections
+  mutualProjectionControl binding t pre projections
+  let projectionRows ← projections.get
+  let selected := projectionRows.filter (·.startsWith "projection supported[")
+  need (projectionRows.size == 8 && selected.size == 6 && (selected.filter (·.contains "raw=member(")).size == 2 &&
+    (selected.filter (·.contains "raw=ctor(")).size == 4 && selected.any (·.contains "nonzero-ctor=true") &&
+    selected.any (·.contains "ctor-order=true") && projectionRows.any (fun s => s.startsWith "projection mutual-order-control" && s.contains "motive-order=true")) "projection census/order coverage changed"
+  for row in projectionRows do IO.println row
+  IO.println "projection census: six original roots (two types/four constructors), two extra control rows, one extra admission; actual order, prelude-only, unavailable, key/address, payload and prepared-family controls passed"
 
 def run : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
