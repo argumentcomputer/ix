@@ -3,7 +3,10 @@ import Lean.Data.Json
 
 /-! Canonical block order against Rust (`kernel-order`): for each case, the
 classes `Ixon.BlockOrder.canonicalClasses` computes and the Rust kernel's
-(`rs_kernel_canonical_classes`), one JSON row per case. -/
+(`rs_kernel_canonical_classes`), one JSON row per case. The accepted flag is
+canonical-order acceptance, not serialized-unit or kernel admission: empty and
+mixed-kind payloads remain in this comparator's domain. The Rust test feature
+uses the same conversion body while production ingress retains its shape guard. -/
 
 open Ix.Kernel Ixon.BlockOrder Tests.Ix.Kernel.BlockOrder
 open Tests.Ix.Kernel.IxonFixtures (address)

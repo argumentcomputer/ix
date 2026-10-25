@@ -1,7 +1,10 @@
 //! Test-only oracle for the certified adapter's canonical block ordering.
-//! Decode the original Ixon record, use native anonymous ingress and the
+//! Decode the original Ixon record, use the native anonymous conversion and
 //! production kernel comparator/refinement, and return member indices. The
-//! Lean implementation's projection keys and ordering are never inputs.
+//! comparator's domain includes shapes that serialized-unit admission rejects;
+//! its `accepted` flag means canonical order only. Production admission is
+//! exercised separately and never uses this feature-gated conversion entry.
+//! Lean projection keys and ordering are never inputs.
 
 use crate::lean::{LeanIxAddress, LeanIxonConstant};
 use ix_common::address::Address;
@@ -9,7 +12,7 @@ use ix_kernel::canonical_check::{
   sort_kconsts, validate_canonical_block_single_pass,
 };
 use ix_kernel::env::KEnv;
-use ix_kernel::ingress::ingress_anon_block;
+use ix_kernel::ingress::convert_anon_order_fixture;
 use ix_kernel::mode::Anon;
 use ixon::constant::{
   Constant, ConstantInfo, ConstructorProj, DefinitionProj, InductiveProj,
@@ -61,7 +64,7 @@ fn canonical_classes(
     env.store_const(key, Constant::new(info));
   }
   let mut kernel = KEnv::<Anon>::new();
-  let ids = ingress_anon_block(&mut kernel, env, source, owner)?;
+  let ids = convert_anon_order_fixture(&mut kernel, env, source, owner)?;
   let pairs = ids
     .iter()
     .map(|id| {

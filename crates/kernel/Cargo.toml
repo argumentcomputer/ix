@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Conversion-only access for the canonical-order differential oracle.
+# Production ingress keeps serialized-unit admission enabled.
+canonical-order-test = []
+
 [dependencies]
 bignat = { workspace = true }
 blake3 = { workspace = true }
