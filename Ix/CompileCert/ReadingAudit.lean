@@ -10,6 +10,7 @@ import Ix.CompileCert.RecordRead
 import Ix.CompileCert.RecordSourceShape
 import Ix.CompileCert.RecordSubst
 import Ix.CompileCert.RecordSubstReading
+import Ix.CompileCert.RewriteArityPrimitives
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -791,3 +792,11 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "reading-audit") "record substitution reading"
     #[`Ix.CompileCert.RecordSubst.substRecords_related, `Ix.CompileCert.RecordSubst.withRecords_read]
+
+/-- info: [reading-audit] rewrite arity primitives: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "rewrite arity primitives"
+    (#[`substLevels, `liftP, `lowerP, `liftM, `lowerM, `share, `shareInput, `decorated_levels,
+      `decorated_liftM].map (`Ix.CompileCert.RewriteArityPrimitives ++ ·))
