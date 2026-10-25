@@ -7,6 +7,8 @@
 //! - Cryptographic commitments for ZK proofs
 
 pub mod assumption_tree;
+#[cfg(not(target_arch = "riscv64"))]
+mod binding_support;
 pub mod canon_univ;
 pub mod catalog;
 pub mod comm;

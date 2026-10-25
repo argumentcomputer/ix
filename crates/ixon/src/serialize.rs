@@ -2964,6 +2964,10 @@ impl Env {
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
     out.role_binding = self.role_binding.clone();
+    let mut support = crate::binding_support::BindingSupport::new(self)?;
+    if let Some(support) = &mut support {
+      support.seed(self, assumed, &mut visited, &mut pending)?;
+    }
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
     // §5 name → constant address, from the index (no metadata parse).
     let named_addrs: FxHashMap<&Name, &Address> =
@@ -2978,7 +2982,11 @@ impl Env {
       &mut pending,
       &mut named_done,
       assumed,
+      support.as_mut(),
     )?;
+    if let Some(support) = support {
+      support.finish(self, &out)?;
+    }
     Ok(out)
   }
 
@@ -2998,10 +3006,17 @@ impl Env {
     pending: &mut std::collections::VecDeque<Address>,
     named_done: &mut FxHashSet<Name>,
     assumed: &FxHashSet<Address>,
+    mut support: Option<&mut crate::binding_support::BindingSupport>,
   ) -> Result<(), String> {
     let mut originals_done = FxHashSet::default();
     loop {
-      self.prune_value_pass(out, visited, pending, assumed)?;
+      self.prune_value_pass(
+        out,
+        visited,
+        pending,
+        assumed,
+        support.as_deref_mut(),
+      )?;
 
       // ── Named pass, streamed: every §5 entry is parsed (boundaries
       // require it — no length sidecar), but only entries whose

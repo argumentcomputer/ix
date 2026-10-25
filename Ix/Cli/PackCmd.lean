@@ -3,21 +3,22 @@
   bundle pinning one named constant, and write it as a standalone `.ixe`.
 
   A bundle is an `.ixe` whose `main` points at a distinguished constant;
-  because a constant's address is a merkle root over its whole dependency
-  DAG, `main`'s 32 bytes alone pin the value — the bundle is the
-  data-availability artifact that ships the bytes. `--assume` declares
+  its constant address pins the explicit value dependency DAG. A bound
+  artifact also carries its exact role binding and the reader/evidence support
+  needed to interpret it. `--assume` declares
   trust-boundary cut-points: reached cut-points are recorded in the
   bundle's `assumptions` instead of being carried (thin bundles).
 
-  The bundle is the root's transitive reference closure, including the
-  constants the compiler introduced into its references, and never its
-  compilation unit: a bundle carries only what is needed to check or
+  The bundle carries the root's transitive reference closure and, when bound,
+  its binding's members/proofs and required reader support, never its
+  compilation unit: a bundle carries what is needed to check or
   evaluate the root, and units exist for compilation parallelism over the
   DAG (owner, 2026-10-07). The closure is computed by Rust by address
   (`Env::prune_to_closure`, through `Ixon.rsPackEnv`: the 3-edge value
   closure of `main`, display metadata carried to fixpoint) followed by
-  `Env::validate_closed` — the same check a receiver runs — so a written
-  bundle is closed by construction. The `pack-units` runner
+  `Env::validate_closed`. Bound pruning also checks support availability and
+  refuses assumption cuts through mandatory support. Neither packing nor
+  value-closure checking is semantic role/proof admission. The `pack-units` runner
   (`Tests.Ix.Compile.PackUnits`) checks that a root's bundle omits a unit
   member the root does not reference.
 
@@ -66,11 +67,11 @@ end Ix.Cli.PackCmd
 open Ix.Cli.PackCmd in
 def packCmd : Cli.Cmd := `[Cli|
   pack VIA runPackCmd;
-  "Prune a `.ixe` env to the self-contained bundle pinning one constant (sets `main`; validated closed)"
+  "Pack one constant's value closure and bound checker support into a `.ixe` bundle"
 
   FLAGS:
-    anon;                   "Pack only anonymous structure — no names or metadata (§4/§5 empty; §3 hints still carried). The minimal artifact a receiver needs to typecheck/evaluate the pinned value."
-    assume        : String; "Comma-separated cut-point constants — displayed names or 64-hex addresses. Reached cut-points are recorded in the bundle's `assumptions` instead of carried (thin bundle)."
+    anon;                   "Pack anonymous structure, binding and checker support, without named/original metadata; anonymous hints remain."
+    assume        : String; "Comma-separated ordinary cut-points — displayed names or 64-hex addresses. Reached cuts become assumptions; mandatory bound reader/evidence support cannot be cut."
     "assume-file" : String; "Additionally read cut-points from a file (one per line; `#` comments and blank lines ignored). Unions with --assume."
     out           : String; "Output `.ixe` path. Defaults to `<name>.ixe` (e.g. `Nat.add.ixe`)."
     verbose;                "Print pack details (source stats, kept counts, bytes written) to stderr."

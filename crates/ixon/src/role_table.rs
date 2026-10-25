@@ -4,7 +4,8 @@
 //! `IxC/Kernel/Ixon/RoleTable.lean`). It neither authenticates the section nor
 //! admits its roles/evidence. In particular, any byte-sized version, repeated
 //! bound addresses, missing dependencies and unbound evidence can be canonical.
-//! Semantic admission is a separate check; this module is not wired into Env.
+//! Semantic admission is a separate check. Bound packing uses this codec only
+//! to select the artifact's actual role/evidence support addresses.
 
 use ix_common::address::Address;
 

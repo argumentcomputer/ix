@@ -1427,12 +1427,28 @@ A hash-correct payload is not by itself a certified binding; a claim must
 commit to the expected binding separately from the constant-set root.
 
 Full, anonymous, lazy, memory-mapped and FFI paths retain the exact binding.
-Closure extraction also retains it; evidence and role-support availability
-remain obligations of the certified consumer. Kernel roundtrip egress
+Bound closure extraction carries its role members, proof records, projection
+owners, recursors and literal support to a fixed point. It refuses assumption
+cuts through this mandatory support. These availability checks do not replace
+semantic admission. Kernel roundtrip egress
 preserves it only if every constant retains its address and exact bytes;
 changed constants require a newly generated binding and that API refuses them.
-Compiler emission, consumer integration and host claim binding are separate
-requirements from this transport encoding.
+
+Both compiler commands generate the binding and proof records from the actual
+published declarations and certificate sources before writing their output.
+Internal support compilation uses the same backend and preserves the original
+request's publication/failure accounting. Named metadata is removed only after
+generation for anonymous output. The ordinary `compile-lean --rust-check` gate
+compares the complete generated artifacts from both backends.
+
+For bound whole inputs, `check-lean` runs the actual authenticated logical or
+typing-tier entry, selected from record headers before checking. The logical
+part receives the kernel's model guarantee; tier declarations are typed only.
+Selected or capped runs report their narrower scope. Resource validation uses
+the artifact's admitted identities and evidence while retaining its explicit
+uncertified typing policy. Host claim commitments to the specification and
+binding remain separate work; target admission does not establish compiler
+value preservation.
 
 **Section 1: Blobs** (Address → raw bytes)
 ```
@@ -1568,11 +1584,10 @@ no metadata arena is ever parsed).
 A **bundle** is an `.ixe` whose `main` points at a distinguished
 constant (e.g. an anonymous `Defn` wrapping a value, produced by
 `Ix.Commit.compileDef`) and whose contents are closed up to
-`assumptions`. Because a constant's address is a merkle root over its
-entire dependency DAG (refs tables hold addresses of constants and
-literal blobs, recursively), `main`'s 32 bytes alone pin the value;
-the bundle is the data-availability artifact that ships the bytes
-behind those addresses.
+`assumptions`. The constant address commits to its explicit addressed dependency
+graph. A bound bundle also carries the role binding and checker support needed
+to interpret those records; a claim must commit to that binding separately.
+The bundle supplies the bytes behind the committed addresses.
 
 - `Env::prune_to_closure(main, assumed)` builds a bundle: the 3-edge
   closure of `main` (Expr refs; projection → `Muts` block; `Muts`
@@ -1580,6 +1595,9 @@ behind those addresses.
   constants (genuine bytes), blobs, per-constant hints, and display
   metadata (named entries, name components + string blobs, `DataValue`
   payload blobs, `meta_refs` extension edges, aux_gen originals).
+  A present binding additionally roots all of its members/proofs and the
+  reader's structural, recursor and literal support. Mandatory support is
+  carried even when absent from the root's ordinary value references.
 - `Env::validate_closed()` is the receiver-side check: `main ∈ consts`
   and every reachable address is carried (consts ∪ blobs) or assumed.
 - Whole-environment files are the degenerate case (`main` absent,
@@ -1596,17 +1614,22 @@ It resolves `<name>` (displayed form) against the env's `named` table,
 runs the prune, re-validates with `validate_closed`, and writes the
 bundle (default `<name>.ixe`). `--assume` entries — names or 64-hex
 constant addresses — declare trust-boundary cut points; the ones
-actually reached become the bundle's `assumptions` (thin bundle).
+actually reached become the bundle's `assumptions` (thin bundle). A cut reached
+by mandatory bound support is refused. Whole certified admission currently
+declines unresolved thin assumptions; packing does not supply an external
+resolver or certify those assumptions.
 
 The source env is memory-mapped and lazily loaded; display metadata is
 carried by **re-streaming §5 per prune fixpoint round**
 (`Env::prune_to_closure_streaming`) so resident metadata is
 O(survivors), not O(env) — byte-identical output to the in-memory
 `prune_to_closure`, which shares the same carry engine. `--anon` skips
-metadata entirely (`Env::prune_to_closure_anon`): value closure + §3
-hints, empty §4/§5 — the minimal artifact a receiver needs to
-typecheck/evaluate the pinned value, since `validate_closed` checks
-only the value pin. (`ix shard extract` is the non-bundle sibling: a
+metadata entirely (`Env::prune_to_closure_anon`), retaining value closure,
+anonymous hints, binding and mandatory checker support. Named entries,
+commitments and original-data metadata are absent; the wire grammar retains
+its anonymous-name sentinel. `validate_closed` checks the value closure;
+the actual artifact consumer checks the role specifications and evidence.
+(`ix shard extract` is the non-bundle sibling: a
 general sub-env for the kernel-check pipeline, no `main` root.)
 
 ### Diffing environments
