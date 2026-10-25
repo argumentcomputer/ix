@@ -73,10 +73,10 @@ fn resolve(env: &Env, address: &Address) -> Option<Member> {
   let index = usize::try_from(index).ok()?;
   match (kind, members.get(index)?) {
     (0, MutConst::Indc(i)) => {
-      if let Some(k) = constructor {
-        if i.ctors.get(usize::try_from(k).ok()?)?.cidx != k {
-          return None;
-        }
+      if let Some(k) = constructor
+        && i.ctors.get(usize::try_from(k).ok()?)?.cidx != k
+      {
+        return None;
       }
     },
     (1, MutConst::Recr(_)) | (2, MutConst::Defn(_)) => {},
@@ -503,13 +503,13 @@ impl BindingSupport {
         None
       };
       let blob = env.get_blob(&address);
-      if let Some(bytes) = &blob {
-        if Address::hash(bytes) != address {
-          return Err(format!(
-            "binding support: bad blob hash {}",
-            address.hex()
-          ));
-        }
+      if let Some(bytes) = &blob
+        && Address::hash(bytes) != address
+      {
+        return Err(format!(
+          "binding support: bad blob hash {}",
+          address.hex()
+        ));
       }
       if let Some(c) = constant {
         Env::closure_edges(&address, &c, &mut roots);
