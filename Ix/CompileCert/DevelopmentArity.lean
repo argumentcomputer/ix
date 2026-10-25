@@ -1,7 +1,8 @@
 import Ix.CompileCert.RewriteArityPrimitives
 
-/-! Actual development-state arity. Exact retained keys do not certify an
-arbitrary InstEntry.result; the eventual producer must start from history. -/
+/-! Frame-size preservation through actual development and cache history.
+This does not establish binder kind, contract validity, typing or values;
+matching retained keys alone does not certify an arbitrary InstEntry.result. -/
 namespace Ix.CompileCert.DevelopmentArity
 open Ix (Expr)
 open Ix.Compile.Image Ix.Compile.Canon
@@ -276,5 +277,58 @@ theorem happ_run (fuel : Nat) (f : Expr) (args : List Expr)
     (good : InstArity before) (run : (happ fuel f args).run before = .ok (out, after)) :
     InstArity after ∧ ContractArity out :=
   (workers fuel).2 f args hf ha before good out after run
+
+private theorem instantiateWith_run (f : Expr) (args : Array Expr) (hf : ContractArity f)
+    (ha : ∀ a ∈ args, ContractArity a) {before after : DevState} {out : Expr}
+    (good : InstArity before) (run : instantiateWith before f args = .ok (out, after)) :
+    InstArity after ∧ ContractArity out := by
+  have shared : Valid (fun es => ∀ a ∈ es, ContractArity a) (args.mapM shareInput) := by
+    rw [Array.mapM_eq_foldlM]
+    apply arrayFoldV args _ _ ?_ #[] (by simp)
+    intro a member acc held
+    rw [← bind_pure_comp]
+    apply bindV (frameV (helperFrames a 0 0).2.1
+      (fun _ _ _ ran => RewriteArityPrimitives.shareInput a (ha a member) ran))
+    intro out hout
+    apply pureV
+    intro x hx
+    rcases Array.mem_push.mp hx with old | rfl
+    · exact held x old
+    · exact hout
+  exact bindV shared (fun es hs => (workers developFuel).2 f es.toList hf
+    (fun a member => hs a (by simpa using member))) before good out after run
+
+/-- Only actual successful calls extend this history; their result arity and
+cache invariant are conclusions, never constructor premises. -/
+inductive History : DevState → Prop where
+  | empty : History {}
+  | call {before after : DevState} {f : Expr} {args : Array Expr} {out : Expr}
+      (previous : History before) (hf : ContractArity f) (ha : ∀ a ∈ args, ContractArity a)
+      (run : instantiateWith before f args = .ok (out, after)) : History after
+
+theorem history_sound {st : DevState} (history : History st) : InstArity st := by
+  induction history with
+  | empty => exact empty
+  | call previous hf ha run ih => exact (instantiateWith_run _ _ hf ha ih run).1
+
+theorem instantiateWith_produced (f : Expr) (args : Array Expr) (hf : ContractArity f)
+    (ha : ∀ a ∈ args, ContractArity a) {before after : DevState} {out : Expr}
+    (history : History before) (run : instantiateWith before f args = .ok (out, after)) :
+    ContractArity out ∧ History after :=
+  ⟨(instantiateWith_run f args hf ha (history_sound history) run).2, .call history hf ha run⟩
+
+theorem instantiateWith_fresh (f : Expr) (args : Array Expr) (hf : ContractArity f)
+    (ha : ∀ a ∈ args, ContractArity a) {after : DevState} {out : Expr}
+    (run : instantiateWith {} f args = .ok (out, after)) : ContractArity out ∧ History after :=
+  instantiateWith_produced f args hf ha .empty run
+
+theorem instantiate_fresh (f : Expr) (args : Array Expr) (hf : ContractArity f)
+    (ha : ∀ a ∈ args, ContractArity a) {out : Expr}
+    (run : instantiate f args = .ok out) : ContractArity out := by
+  cases actual : (happ developFuel f args.toList).run {} with
+  | error error => simp [instantiate, StateT.run'_eq, actual, Functor.map, Except.map] at run
+  | ok result =>
+    have same : result.1 = out := by simpa [instantiate, StateT.run'_eq, actual, Functor.map, Except.map] using run
+    exact same ▸ (happ_run developFuel f args.toList hf (by simpa using ha) empty actual).2
 
 end Ix.CompileCert.DevelopmentArity

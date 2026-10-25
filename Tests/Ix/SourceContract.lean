@@ -432,6 +432,30 @@ def rewritePrimitiveTests : TestSeq := Id.run do
     ((lowerM four 2 0).run state).toOption.any fun (second, _) =>
       eq first (_root_.Ix.Expr.mkBVar 1) && eq second (_root_.Ix.Expr.mkBVar 2)
   let seeded : DevState := { nodes := ({} : TotalMemo.Nodes).insert (hash zero) zero }
+  let ty := _root_.Ix.Expr.mkSort _root_.Ix.Level.mkZero
+  let lam := fun body => _root_.Ix.Expr.mkLam _root_.Ix.Name.mkAnon ty body .default
+  let ident := lam zero
+  let value := _root_.Ix.Expr.mkLit (.natVal 7)
+  let eta := lam (lam (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkBVar 1) zero))
+  let projection := lam (_root_.Ix.Expr.mkProj _root_.Ix.Compile.LibraryNames.nPProd 0 zero)
+  let pair := fun e => Canon.mkAppN
+    (_root_.Ix.Expr.mkConst _root_.Ix.Compile.LibraryNames.nPProdMk #[one, one]) #[ty, ty, e, value]
+  let develops := fun f args expected => (instantiateWith {} f args).toOption.any fun (out, _) => eq out expected
+  let history := inputs.all fun e => (instantiateWith {} ident #[e]).toOption.any fun (out, after) =>
+    eq e out && payloadSame e out && after.insts.size > 0 &&
+    (instProbe after e zero 0).any (fun r => eq r.1 e && r.2 == .direct) &&
+    (instantiateWith after ident #[e]).toOption.any fun (again, next) =>
+      eq out again && next.insts.size == after.insts.size
+  let instCollision := ((hinst 8 value 0 zero).run {}).toOption.any fun (first, after) =>
+    ((hinst 8 value 0 alias).run after).toOption.any fun (second, _) =>
+      eq first.1 value && first.2 == .direct && eq second.1 zero && second.2 == .no
+  -- This forged state is not an executed history from{}. Matching exact
+  -- keys alone does not certify its deliberately malformed retained result.
+  let badData := #[(_root_.Ix.Name.fromLeanName `ix.contract, _root_.Ix.DataValue.ofNat 3)]
+  let bad := _root_.Ix.Expr.mkMData badData zero
+  let poisoned : DevState := {
+    insts := ({} : Std.HashMap UInt64 InstEntry).insert (instBucket value zero 0)
+      ⟨value, zero, 0, (bad, .direct)⟩ }
   return test "rewrite universe substitution retains exact lam/all/let frames and changes their domains"
       (inputs.size == 3 && inputs.all fun e =>
         let out := Canon.substLevels #[u] #[one] e
@@ -454,7 +478,25 @@ def rewritePrimitiveTests : TestSeq := Id.run do
       (hash three == hash four && !eq three four && lowerCollision) ++
     test "actual sharing confirms equal nodes, rejects raw digest aliases and fills empty tables"
       ([zero, alias].all fun e => [share e, shareInput e].all fun action =>
-        [seeded, {}].all fun state => (action.run state).toOption.any fun (out, _) => eq e out)
+        [seeded, {}].all fun state => (action.run state).toOption.any fun (out, _) => eq e out) ++
+    test "actual cold/warm instantiateWith histories retain decorated results and exact hits"
+      (inputs.size == 3 && history) ++
+    test "actual hinst rebuilds semantic lam/all/let frames around changed children"
+      (inputs.size == 3 && inputs.all fun e => ((hinst 16 value 0 e).run {}).toOption.any
+        fun (r, _) => !eq e r.1 && payloadSame e r.1) ++
+    test "actual hereditary beta contracts the substituted function"
+      (develops (lam (_root_.Ix.Expr.mkApp zero value)) #[ident] value) ++
+    test "actual eta and constructor projection return the selected decorated expressions"
+      (inputs.size == 3 && inputs.all fun e => develops eta #[e] e && develops projection #[pair e] e) ++
+    test "actual hinst rejects different retained inputs at the same bucket"
+      (instBucket value zero 0 == instBucket value alias 0 && !eq zero alias && instCollision) ++
+    test "actual zero-fuel errors precede even a matching forged cache hit"
+      ((match (hinst 0 value 0 zero).run poisoned with | .error msg => msg == developExhausted | _ => false) &&
+        (match (happ 0 ident [value]).run poisoned with | .error msg => msg == developExhausted | _ => false)) ++
+    test "an arbitrary exact-key cache can return malformed frames and is outside the history contract"
+      (!(_root_.Ix.SemanticContract.read badData).isOk &&
+        (instProbe poisoned value zero 0).any (fun r => eq r.1 bad) &&
+        (instantiateWith poisoned ident #[value]).toOption.any fun (out, _) => eq out bad)
 
 def suite : List TestSeq :=
   [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,

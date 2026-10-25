@@ -816,3 +816,11 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "reading-audit") "development arity recursion"
     #[`Ix.CompileCert.DevelopmentArity.hinst_run, `Ix.CompileCert.DevelopmentArity.happ_run]
+
+/-- info: [reading-audit] development arity history: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "development arity history"
+    (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh].map
+      (`Ix.CompileCert.DevelopmentArity ++ ·))
