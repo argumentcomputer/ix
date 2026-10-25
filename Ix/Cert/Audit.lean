@@ -1,5 +1,6 @@
 import Ix.Compile.OriginalData
 import Ix.Cert.Statement
+import Ix.Cert.ProjectionMembers
 import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
 import Ix.CompileCert.ReadingAudit
@@ -5880,3 +5881,9 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "actual final interpretation prefix package"
     #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_core]
+/-- info: [cert-audit] actual projection owner and member guards: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "actual projection owner and member guards"
+    (#[`captured, `traceOwner_read, `scanOwner_same, `member_original].map (`Ix.Cert.ProjectionRoots ++ ·))
