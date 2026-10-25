@@ -809,3 +809,10 @@ run_cmd do
   checkRoots (tag := "reading-audit") "development arity leaves"
     (#[`empty, `insert, `probe, `helperFrames, `spine, `field, `shareAppN_run].map
       (`Ix.CompileCert.DevelopmentArity ++ ·))
+
+/-- info: [reading-audit] development arity recursion: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "development arity recursion"
+    #[`Ix.CompileCert.DevelopmentArity.hinst_run, `Ix.CompileCert.DevelopmentArity.happ_run]
