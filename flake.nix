@@ -101,14 +101,14 @@
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           # The Cargo files the workspace builds from.
           cargoSource = pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.);
-          # The Rust tests `include_bytes!` the `.ixe` files under
-          # `Tests/Fixtures`: environments serialized by Lean, read back to check
-          # both sides agree on the format.
+          # Rust format and kernel-boundary tests include immutable binary
+          # fixtures that cleanCargoSource does not retain by extension.
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               cargoSource
               ./Tests/Fixtures/ixon-v4
+              ./crates/kernel/tests/fixtures
             ];
           };
           # Rust code generation for the sandboxed builds. `.cargo/config.toml`
