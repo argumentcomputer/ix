@@ -11,6 +11,7 @@ import Ix.CompileCert.RecordSourceShape
 import Ix.CompileCert.RecordSubst
 import Ix.CompileCert.RecordSubstReading
 import Ix.CompileCert.RewriteArityPrimitives
+import Ix.CompileCert.DevelopmentArity
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -800,3 +801,11 @@ run_cmd do
   checkRoots (tag := "reading-audit") "rewrite arity primitives"
     (#[`substLevels, `liftP, `lowerP, `liftM, `lowerM, `share, `shareInput, `decorated_levels,
       `decorated_liftM].map (`Ix.CompileCert.RewriteArityPrimitives ++ ·))
+
+/-- info: [reading-audit] development arity leaves: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "development arity leaves"
+    (#[`empty, `insert, `probe, `helperFrames, `spine, `field, `shareAppN_run].map
+      (`Ix.CompileCert.DevelopmentArity ++ ·))
