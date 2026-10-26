@@ -7140,9 +7140,8 @@ fun env blocks cenv cenv₀ sched =>
                           Ix.Kernel.Reader.StreamRead (Ix.Cert.closureContext ixe tA preA order) preA.state
                               (Ix.Cert.Stream.decodedOf ixe order) st' decls ∧
                             preA.state.keepsPrelude st' = true ∧
-                              (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList.Perm
-                                  (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) ∧
-                                Ix.Kernel.Closed (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList -/
+                              (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList =
+                                List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.ReaderStreams
 
@@ -7250,14 +7249,6 @@ fun env blocks cenv cenv₀ sched =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.CliqueRows
 
-/-- info: def Ix.Cert.Obligation.ReorderAccepts : Prop :=
-∀ {md : Ix.Kernel.Mode} (μ : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences md) (A S : List (Ix.Kernel.Declaration md))
-  (envS : Ix.Kernel.Env md),
-  Ix.Kernel.Cached.AcceptsRef μ ev S envS →
-    A.Perm S → Ix.Kernel.Closed A → ∃ envA, Ix.Kernel.Cached.AcceptsRef μ ev A envA ∧ Ix.Cert.SameEnv envA envS -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.ReorderAccepts
-
 /-- info: def Ix.Cert.Obligation.EvidenceTransfer : Prop :=
 ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
   (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source)
@@ -7361,8 +7352,7 @@ fun env blocks cenv cenv₀ sched =>
   Ix.Cert.Obligation.ReaderStreams →
     Ix.Cert.Obligation.ReadingKeys →
       Ix.Cert.Obligation.ScheduleOwnership →
-        Ix.Cert.Obligation.ReorderAccepts →
-          Ix.Cert.Obligation.EvidenceTransfer → Ix.Cert.Obligation.UnchangedRules → Ix.Cert.CompileCorrectUnchanged -/
+        Ix.Cert.Obligation.EvidenceTransfer → Ix.Cert.Obligation.UnchangedRules → Ix.Cert.CompileCorrectUnchanged -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileCorrect_unchanged
 
@@ -7374,7 +7364,6 @@ fun env blocks cenv cenv₀ sched =>
           Ix.Cert.Obligation.PassValues →
             Ix.Cert.Obligation.ImageRules →
               Ix.Cert.Obligation.CliqueRows →
-                Ix.Cert.Obligation.ReorderAccepts →
                   Ix.Cert.Obligation.EvidenceTransfer →
                     Ix.Cert.Obligation.SeedUnion →
                       Ix.Cert.Obligation.SourceRestricts →
@@ -7393,6 +7382,7 @@ run_cmd do
     (#[`Premises,
       `CompileCorrectUnchanged,
       `SameEnv,
+      `SameEnv.refl,
       `DenoteSame,
       `ConstantAgrees,
       `RecStepsAgree,
@@ -7411,7 +7401,6 @@ run_cmd do
       `Obligation.PassValues,
       `Obligation.ImageRules,
       `Obligation.CliqueRows,
-      `Obligation.ReorderAccepts,
       `Obligation.EvidenceTransfer,
       `Obligation.SeedUnion,
       `Obligation.SourceRestricts,
