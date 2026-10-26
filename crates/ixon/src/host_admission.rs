@@ -50,7 +50,7 @@ fn get_address(input: &mut &[u8]) -> Result<Address, String> {
     input.split_at_checked(32).ok_or("host statement: truncated address")?;
   *input = rest;
   Address::from_slice(bytes)
-    .map_err(|_| "host statement: invalid address width".to_owned())
+    .map_err(|error| format!("host statement: invalid address width: {error}"))
 }
 
 fn get_option(input: &mut &[u8]) -> Result<Option<Address>, String> {
