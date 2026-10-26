@@ -30,9 +30,10 @@ def Prepared.preludeFor (p : Prepared) (table : Ix.Kernel.RoleTable) :
 def PreparedRecords.hasTier (input : PreparedRecords) : Bool :=
   input.constants.any fun (_, c) => Ix.Kernel.Admission.isTierInfo c.info
 
-def prepareTiered (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+def prepareTieredFor (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (requested : Option (Array Address)) :
     Except TierError Prepared := do
-  let input ← (prepareRecords artifact limits).mapError .preparation
+  let input ← (prepareRecordsFor artifact limits requested).mapError .preparation
   let p := input.prepared
   -- partitionTier preserves each input record in one arm, in input order;
   -- tier positions are positions in this same complete ordered batch.
@@ -46,6 +47,13 @@ def prepareTiered (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
   (checkEvidence p.table evidence
     (Ix.Kernel.Frontend.preparePrelude p.pre.ix declarations)).mapError .preparation
   return p
+
+def prepareTiered (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) : Except TierError Prepared :=
+  prepareTieredFor artifact limits none
+
+def prepareTieredAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (order : Array Address) : Except TierError Prepared :=
+  prepareTieredFor artifact limits (some order)
 
 /-- A receipt of preparation and the actual tiered check on every original
 raw record. It makes no Source-value or host assumption-root claim. -/
@@ -66,5 +74,26 @@ def checkTiered (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
         prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup with
     | .error e => .error (.admission e)
     | .ok (logical, tier) => .ok ⟨prepared, logical, tier, fromArtifact, checked⟩
+
+/-- Logical/tier partitioning, fence and evidence are recomputed in this
+chosen order. A logical failure is terminal; there is no fallback retry. -/
+structure OrderedTierReceipt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (order : Array Address) where
+  prepared : Prepared
+  logical : Ix.Kernel.Env .anon
+  tier : List (Ix.Kernel.Tier.TierConst .anon)
+  preparedFrom : prepareTieredAt artifact limits order = .ok prepared
+  checked : Ix.Kernel.Admission.checkBytesTieredUsing prepared.preludeFor Address.admissionHash
+    prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup = .ok (logical,tier)
+
+def checkTieredAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (order : Array Address) :
+    Except TierError (OrderedTierReceipt artifact limits order) :=
+  match fromArtifact : prepareTieredAt artifact limits order with
+  | .error e => .error e
+  | .ok prepared =>
+    match checked : Ix.Kernel.Admission.checkBytesTieredUsing prepared.preludeFor Address.admissionHash
+        prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup with
+    | .error e => .error (.admission e)
+    | .ok (logical,tier) => .ok ⟨prepared,logical,tier,fromArtifact,checked⟩
 
 end Ix.RoleBinding.Artifact

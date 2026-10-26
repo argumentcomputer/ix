@@ -1,5 +1,6 @@
 import Ix.RoleBinding.ArtifactTheorems
 import Ix.RoleBinding.ArtifactTieredTheorems
+import Ix.RoleBinding.ArtifactOrderTheorems
 import Ix.Ixon.Authenticated.Audit
 
 /-! The Env-based entry imports the host's existing proved TagN inlining
@@ -24,18 +25,25 @@ run_cmd do
         entry.thmName == ``Ixon.putTagN_eq_I) do
     throwError "artifact audit: the host csimp allowance is not exactly putTagN_eq_I"
 
-/- Shared prepareRecords adds its helper and one decoded-lookup diagnostic;
-the remaining ordinary-root changes rename prepare's specializations. The
-tier root replaces the four ordinary wrappers with the existing tier
-partition/fence/read/fold, the canonical table writer for exact prelude
-identity, and the new receipt wrappers. No runtime ruling changes. -/
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6015 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+/- The optional order selector and extracted materialization loop add six
+compiled functions to each default closure; all changed symbols belong to
+Artifact or its specializations. Explicit entries share these helpers and
+replace only their entry/preparation wrappers. No runtime ruling changes. -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6021 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6149 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6155 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
+
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6021 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
+
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6155 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
 #guard_kernel_axioms Ixon.putTagN_eq_I [propext, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.Receipt.strongModel [propext, Classical.choice, Quot.sound]
@@ -43,5 +51,18 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 #guard_kernel_axioms Ix.RoleBinding.Artifact.TierReceipt.strongModel [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.TierReceipt.authentic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.TierReceipt.typed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.materializeOrder_sound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.prepareRecordsAt_order [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.Materialized.complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.prepareRecordsAt_reading [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.prepareRecordsAt_complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.prepareAt_obligations [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.prepareTieredAt_obligations [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedReceipt.complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedTierReceipt.complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedReceipt.target_unique [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedTierReceipt.target_unique [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedReceipt.authentic [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedTierReceipt.authentic [propext, Classical.choice, Quot.sound]
 
 end Ix.RoleBinding.Artifact.Audit
