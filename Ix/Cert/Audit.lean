@@ -78,6 +78,7 @@ import Ix.CompileCert.ImageAuxOrigins
 import Ix.CompileCert.DisplayAddressFrame
 import Ix.Cert.PrefixVisibility
 import Ix.Cert.CompileCorrect
+import Ix.Cert.Composition
 
 /-! # The certification statements, frozen
 
@@ -6875,4 +6876,563 @@ run_cmd do
       `CompileCorrect.validated,
       `CompileCorrect.checked,
       `CompileCorrect.nominal].map
+      (`Ix.Cert ++ ·))
+
+/-! ## The composition skeleton
+
+`Ix.Cert.Composition` proves the final statement from named open obligations, each a
+`def … : Prop` on the compiler's actual objects (`compileReport`, the driver's fold,
+the certified reader, quotient Source's prepared stream): Source totality, the reader
+against the Source stream (streams, keys, renamed constants), scheduler ownership,
+per-pass values, image rows, clique rows, locality (reordering, the table's evidence,
+union, Source and seed restriction), assembly, and the Source laws (unchanged rules,
+rule correspondence). `compileCorrect_unchanged` is the unchanged-closure case;
+`compileCorrect_of_obligations` is the whole statement. Each obligation's statement is
+frozen here, so a restatement shows in review; the guard below checks that no theorem of
+the composition reaches an axiom outside the standard three. The fold's start
+(`Resolution.FoldRun`) is now named by the provenance and unchanged-closure claims it
+comes from (`compileUnchecked_provenance`, `compileReport_claim`,
+`HookFree.compileReport_hookFree`), so that the ownership obligation can be stated of this
+compile's fold; those three are guarded here at their new statements. -/
+
+/-- info: structure Ix.Cert.Premises (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
+  (failures : Ix.Cert.Failures) (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) : Prop
+number of parameters: 7
+fields:
+  Ix.Cert.Premises.table : Ix.Kernel.Reader.defaultTable = Except.ok t
+  Ix.Cert.Premises.source : Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ
+  Ix.Cert.Premises.compiled : Ix.Cert.compileReport env = Except.ok (ixe, failures)
+  Ix.Cert.Premises.none : Ix.Cert.NoFailure failures sub
+  Ix.Cert.Premises.bound : Ix.Cert.PublishedRolesBound t ixe
+  Ix.Cert.Premises.agree : Ix.Cert.PublishedAgree ixe
+  Ix.Cert.Premises.evidence : Ix.Cert.RoleClosure.RoleEvidenceChecks
+constructor:
+  Ix.Cert.Premises.mk {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
+    {failures : Ix.Cert.Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env Ix.Kernel.Mode.source}
+    (table : Ix.Kernel.Reader.defaultTable = Except.ok t)
+    (source : Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ)
+    (compiled : Ix.Cert.compileReport env = Except.ok (ixe, failures)) (none : Ix.Cert.NoFailure failures sub)
+    (bound : Ix.Cert.PublishedRolesBound t ixe) (agree : Ix.Cert.PublishedAgree ixe)
+    (evidence : Ix.Cert.RoleClosure.RoleEvidenceChecks) : Ix.Cert.Premises env roots sub ixe failures t envQ -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Premises
+
+/-- info: def Ix.Cert.CompileCorrectUnchanged.{w} : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    (Ix.Cert.changedSetOf env ixe).Avoids sub → Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.CompileCorrectUnchanged
+
+/-- info: def Ix.Cert.sourceEvidence : Ixon.Env → Ix.Kernel.RoleTable → Ix.Kernel.Evidences Ix.Kernel.Mode.source :=
+fun ixe t =>
+  Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
+    (Ix.RoleEvidence.bundleEvidence ()) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.sourceEvidence
+
+/-- info: def Ix.Cert.closureContext : Ixon.Env →
+  Ix.Kernel.RoleTable →
+    Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon → List Address → Ix.Kernel.Reader.Ctx Ix.Kernel.Mode.anon :=
+fun ixe tA preA order =>
+  Ix.Kernel.Admission.streamContext Address.admissionHash tA preA (Ix.Cert.Stream.decodedOf ixe order)
+    (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.closureContext
+
+/-- info: structure Ix.Cert.SameEnv {md : Ix.Kernel.Mode} (e e' : Ix.Kernel.Env md) : Prop
+number of parameters: 3
+fields:
+  Ix.Cert.SameEnv.mem : ∀ (c : Ix.Kernel.ConstantInfo md), c ∈ e.consts ↔ c ∈ e'.consts
+  Ix.Cert.SameEnv.find : ∀ (k : Ix.Kernel.Key md), e.find? k = e'.find? k
+constructor:
+  Ix.Cert.SameEnv.mk {md : Ix.Kernel.Mode} {e e' : Ix.Kernel.Env md}
+    (mem : ∀ (c : Ix.Kernel.ConstantInfo md), c ∈ e.consts ↔ c ∈ e'.consts)
+    (find : ∀ (k : Ix.Kernel.Key md), e.find? k = e'.find? k) : Ix.Cert.SameEnv e e' -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.SameEnv
+
+/-- info: def Ix.Cert.DenoteSame.{w} : {md : Ix.Kernel.Mode} →
+  {V : Type w} →
+    [Ix.Kernel.SetTheory V] →
+      (Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V) →
+        Ix.Kernel.Env md → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
+fun {md} {V} [Ix.Kernel.SetTheory V] cval env e e' =>
+  ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
+    ∃ X, Ix.Kernel.Denotes cval env φ ρ e X ∧ Ix.Kernel.Denotes cval env φ ρ e' X -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.DenoteSame
+
+/-- info: def Ix.Cert.InputKey : {md : Ix.Kernel.Mode} → Ix.Kernel.Key md → Prop :=
+fun {md} x =>
+  match x with
+  | base.aux d => False
+  | x => True -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.InputKey
+
+/-- info: def Ix.Cert.ConstantAgrees.{w} : {V : Type w} →
+  [inst : Ix.Kernel.SetTheory V] →
+    {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon} →
+      Ix.Kernel.Cached.StrongModel V envA →
+        (Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Prop :=
+fun {V} [Ix.Kernel.SetTheory V] {envA} M f c =>
+  ∃ c',
+    envA.find? (Ix.Kernel.Key.map f c.name) = some c' ∧
+      c'.toConstantVal.levelParams = c.toConstantVal.levelParams ∧
+        Ix.Cert.DenoteSame M.model.cval envA (Ix.Kernel.Expr.mapKeys f c.toConstantVal.type) c'.toConstantVal.type ∧
+          ∀ (cv : Ix.Kernel.ConstantVal Ix.Kernel.Mode.source) (v : Ix.Kernel.Expr Ix.Kernel.Mode.source)
+            (h : Ix.Kernel.ReducibilityHint),
+            c = Ix.Kernel.ConstantInfo.defnInfo cv v h →
+              ∃ cv' v' h',
+                c' = Ix.Kernel.ConstantInfo.defnInfo cv' v' h' ∧
+                  Ix.Cert.DenoteSame M.model.cval envA (Ix.Kernel.Expr.mapKeys f v) v' -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.ConstantAgrees
+
+/-- info: def Ix.Cert.RecStepsAgree.{w} : {V : Type w} →
+  [inst : Ix.Kernel.SetTheory V] →
+    {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon} →
+      Ix.Kernel.Cached.StrongModel V envA →
+        (Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) →
+          Ix.Kernel.Env Ix.Kernel.Mode.source → (Ix.Kernel.Key Ix.Kernel.Mode.source → Prop) → Prop :=
+fun {V} [Ix.Kernel.SetTheory V] {envA} M f envQ R =>
+  ∀ (c : Ix.Kernel.Key Ix.Kernel.Mode.source) (cv : Ix.Kernel.ConstantVal Ix.Kernel.Mode.source) (mI rP : Nat)
+    (rules : List (Ix.Kernel.RecRule Ix.Kernel.Mode.source)),
+    envQ.find? c = some (Ix.Kernel.ConstantInfo.recInfo cv mI rP rules) →
+      R c →
+        ∀ (rl : Ix.Kernel.RecRule Ix.Kernel.Mode.source),
+          rl ∈ rules →
+            rl.fire ≠ Ix.Kernel.RecRuleFire.inert →
+              ∀ (e e' : Ix.Kernel.Expr Ix.Kernel.Mode.source),
+                Ix.Cert.IotaStep envQ c cv mI rP rules rl e e' →
+                  Ix.Cert.DenoteAlike M.model.cval envA (Ix.Kernel.Expr.mapKeys f e) (Ix.Kernel.Expr.mapKeys f e') -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecStepsAgree
+
+/-- info: def Ix.Cert.CapStepsAgree.{w} : {V : Type w} →
+  [inst : Ix.Kernel.SetTheory V] →
+    {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon} →
+      Ix.Kernel.Cached.StrongModel V envA →
+        (Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
+fun {V} [Ix.Kernel.SetTheory V] {envA} M f envQ =>
+  (∀ (T : Ix.Kernel.Key Ix.Kernel.Mode.source) (cvT : Ix.Kernel.ConstantVal Ix.Kernel.Mode.source)
+      (caps : Ix.Kernel.IndCaps Ix.Kernel.Mode.source),
+      envQ.find? T = some (Ix.Kernel.ConstantInfo.indInfo cvT caps) →
+        ∀ (a b : Ix.Kernel.Expr Ix.Kernel.Mode.source),
+          Ix.Cert.StructEtaStep envQ T cvT caps a b →
+            Ix.Cert.DenoteAlike M.model.cval envA (Ix.Kernel.Expr.mapKeys f a) (Ix.Kernel.Expr.mapKeys f b)) ∧
+    (∀ (T : Ix.Kernel.Key Ix.Kernel.Mode.source) (cvT : Ix.Kernel.ConstantVal Ix.Kernel.Mode.source)
+        (caps : Ix.Kernel.IndCaps Ix.Kernel.Mode.source),
+        envQ.find? T = some (Ix.Kernel.ConstantInfo.indInfo cvT caps) →
+          ∀ (a b : Ix.Kernel.Expr Ix.Kernel.Mode.source),
+            Ix.Cert.StructUnitStep envQ T cvT caps a b →
+              Ix.Cert.DenoteAlike M.model.cval envA (Ix.Kernel.Expr.mapKeys f a) (Ix.Kernel.Expr.mapKeys f b)) ∧
+      ∀ (sn : Ix.Kernel.Key Ix.Kernel.Mode.source) (i : Nat) (e e' : Ix.Kernel.Expr Ix.Kernel.Mode.source),
+        Ix.Cert.ProjStep envQ sn i e e' →
+          Ix.Cert.DenoteAlike M.model.cval envA (Ix.Kernel.Expr.mapKeys f e) (Ix.Kernel.Expr.mapKeys f e') -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.CapStepsAgree
+
+/-- info: def Ix.Cert.RepOf : Ixon.Env →
+  Ix.Kernel.RoleTable → Ix.Environment → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Ix.Name → Prop :=
+fun ixe t sub c n => (sub.consts.get? n).isSome = true ∧ c.name = Ix.Cert.quotientKey ixe t n -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RepOf
+
+/-- info: def Ix.Cert.RewrittenConstant : Ix.Environment →
+  Ixon.Env → Ix.Environment → Ix.Kernel.RoleTable → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Prop :=
+fun env ixe sub t c =>
+  ∃ k n a, k.rewritesTerms = true ∧ Ix.Cert.KindRoot k env ixe sub n a ∧ Ix.Cert.RepOf ixe t sub c n -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RewrittenConstant
+
+/-- info: def Ix.Cert.CliqueConstant : Ix.Environment →
+  Ixon.Env → Ix.Environment → Ix.Kernel.RoleTable → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Prop :=
+fun env ixe sub t c => ∃ n a, Ix.Cert.KindRoot Ix.Cert.ChangeKind.clique env ixe sub n a ∧ Ix.Cert.RepOf ixe t sub c n -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.CliqueConstant
+
+/-- info: def Ix.Cert.ImageRecursor : Ix.Environment →
+  Ixon.Env → Ix.Environment → Ix.Kernel.RoleTable → Ix.Kernel.Key Ix.Kernel.Mode.source → Prop :=
+fun env ixe sub t c =>
+  ∃ n a,
+    Ix.Cert.KindRoot Ix.Cert.ChangeKind.image env ixe sub n a ∧
+      (sub.consts.get? n).isSome = true ∧ c = Ix.Cert.quotientKey ixe t n -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.ImageRecursor
+
+/-- info: def Ix.Cert.Owned : Ixon.Env → Ix.Cert.Failures → Ix.CompileM.CompileEnv → Prop :=
+fun ixe failures c =>
+  (∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address),
+      c.nameToAddr.get? n = some a →
+        c.auxNameToAddr.contains n = false →
+          failures.failed n = false → Option.map (fun x => x.addr) (ixe.named.get? n) = some a) ∧
+    ∀ (a : Address) (b : ByteArray), c.constants.get? a = some b → ixe.consts.get? a = some { buf := b, len := b.size } -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Owned
+
+/-- info: def Ix.Cert.ClaimsOwned : Ix.Environment → Ixon.Env → Ix.Cert.Failures → Ix.Environment → Prop :=
+fun env ixe failures sub =>
+  ∃ cenv,
+    Ix.Cert.compileUnchecked env = Except.ok (ixe, failures, cenv) ∧
+      ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address),
+        cenv.nameToAddr.get? n = some a →
+          cenv.auxNameToAddr.contains n = false →
+            (sub.consts.get? n).isSome = true →
+              ∃ snap rep all b,
+                Std.HashMap.get? (Ix.Cert.compileBlocks env).blocks rep = some all ∧
+                  (∀ (x : Ix.Name), Std.HashSet.contains all x = true → (sub.consts.get? x).isSome = true) ∧
+                    ixe.consts.get? a = some { buf := b, len := b.size } ∧
+                      Ix.Cert.Resolution.HookFree snap.cenv all (Ix.CompileM.blockKey rep all) ∧
+                        Ix.Cert.Resolution.BlockCompiled snap.cenv all (Ix.CompileM.blockKey rep all) n a b ∧
+                          Ix.Cert.Owned ixe failures snap.cenv -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.ClaimsOwned
+
+/-- info: def Ix.Cert.Resolution.FoldRun : Ix.Environment →
+  Ix.CondensedBlocks → Ix.CompileM.CompileEnv → Ix.CompileM.CompileEnv → Ix.CompileM.FoldSchedule → Prop :=
+fun env blocks cenv cenv₀ sched =>
+  ∃ st,
+    cenv₀.nameToAddr = ∅ ∧
+      (Ix.CompileM.FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := ∅, fallback? := some env.get? } ∧
+        Ix.Cert.Schedule.foldWavesSeq blocks sched (Std.HashMap.size blocks.blocks + 1)
+              (Ix.CompileM.FoldState.init cenv₀ blocks sched) =
+            Except.ok st ∧
+          cenv.nameToAddr = st.acc.cenv.nameToAddr ∧ Ix.Cert.Resolution.Mono st.acc.cenv cenv -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Resolution.FoldRun
+
+/-- info: def Ix.Cert.Obligation.SourceTotal : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source), c ∈ envQ.consts → envQ.find? c.name = some c) ∧
+      ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
+        sub.consts.get? n = some ci →
+          ∃ c,
+            c ∈ envQ.consts ∧
+              c.name = Ix.Cert.quotientKey ixe t n ∧
+                Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.SourceTotal
+
+/-- info: def Ix.Cert.Obligation.ReaderStreams : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source)
+  (pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.source) (ds : Array (Ix.Kernel.Declaration Ix.Kernel.Mode.source))
+  (b : Ix.RoleEvidence.Bundle),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    (Ix.Cert.changedSetOf env ixe).Avoids sub →
+      Ix.Cert.ClaimsOwned env ixe failures sub →
+        Ix.Kernel.Reader.builtinPrelude = Except.ok pre →
+          Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
+                (Ix.Cert.blocksOf sub) =
+              Except.ok ds →
+            Ix.RoleEvidence.committedBundle () = Except.ok b →
+              ∃ binding tA preA order st' decls,
+                Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
+                  Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok tA ∧
+                    Ix.Kernel.Reader.preludeFor tA = Except.ok preA ∧
+                      Ix.Cert.ClosureOrder ixe (Ix.Cert.Seed ixe sub) order ∧
+                        Ix.Cert.Stream.StoredCanonical ixe order ∧
+                          Ix.Kernel.Reader.StreamRead (Ix.Cert.closureContext ixe tA preA order) preA.state
+                              (Ix.Cert.Stream.decodedOf ixe order) st' decls ∧
+                            preA.state.keepsPrelude st' = true ∧
+                              (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList.Perm
+                                  (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) ∧
+                                Ix.Kernel.Closed (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.ReaderStreams
+
+/-- info: def Ix.Cert.Obligation.ReadingKeys : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
+  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
+  (b : Ix.RoleEvidence.Bundle),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
+      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
+        Ix.RoleEvidence.committedBundle () = Except.ok b →
+          ∃ cx,
+            Ix.Cert.admissionContext binding limits ixe order = some cx ∧
+              (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+                  c ∈ envQ.consts →
+                    ∀ (e : Ix.Kernel.Expr Ix.Kernel.Mode.anon),
+                      Ix.Cert.readingAt ixe t cx c = some e →
+                        e =
+                          Ix.Kernel.Expr.const (Ix.Kernel.Key.map (Ix.LeanIngress.evAddr ixe b) c.name)
+                            (List.map Ix.Kernel.Level.param c.toConstantVal.levelParams)) ∧
+                ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
+                  sub.consts.get? n = some ci →
+                    ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+                      c ∈ envQ.consts →
+                        c.name = Ix.Cert.quotientKey ixe t n → (Ix.Cert.readingAt ixe t cx c).isSome = true -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.ReadingKeys
+
+/-- info: def Ix.Cert.Obligation.RenamedAgree.{w} : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
+  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
+  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
+      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
+        Ix.RoleEvidence.committedBundle () = Except.ok b →
+          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+            ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+              c ∈ envQ.consts →
+                Ix.Cert.InputKey c.name →
+                  ¬Ix.Cert.RewrittenConstant env ixe sub t c →
+                    ¬Ix.Cert.CliqueConstant env ixe sub t c → Ix.Cert.ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.RenamedAgree
+
+/-- info: def Ix.Cert.Obligation.ScheduleOwnership : Prop :=
+∀ (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures) (cenv cenv₀ : Ix.CompileM.CompileEnv)
+  (sched : Ix.CompileM.FoldSchedule),
+  Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+    Ix.Cert.compileUnchecked env = Except.ok (ixe, failures, cenv) →
+      Ix.Cert.Resolution.FoldRun { consts := env.consts } (Ix.Cert.compileBlocks env) cenv cenv₀ sched →
+        ∀ (snap : Ix.CompileM.DriverAcc),
+          Ix.Cert.Resolution.Reach (Ix.Cert.compileBlocks env)
+              (Ix.CompileM.FoldState.init cenv₀ (Ix.Cert.compileBlocks env) sched).acc snap →
+            Ix.Cert.Resolution.Mono snap.cenv cenv → Ix.Cert.Owned ixe failures snap.cenv -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.ScheduleOwnership
+
+/-- info: def Ix.Cert.Obligation.PassValues.{w} : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
+  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
+  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
+      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
+        Ix.RoleEvidence.committedBundle () = Except.ok b →
+          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+            Ix.Cert.SourceFormInfers env ixe sub t →
+              ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+                c ∈ envQ.consts →
+                  Ix.Cert.RewrittenConstant env ixe sub t c → Ix.Cert.ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.PassValues
+
+/-- info: def Ix.Cert.Obligation.ImageRules.{w} : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
+  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
+  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
+      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
+        Ix.RoleEvidence.committedBundle () = Except.ok b →
+          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+            Ix.Cert.RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (Ix.Cert.ImageRecursor env ixe sub t) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.ImageRules
+
+/-- info: def Ix.Cert.Obligation.CliqueRows.{w} : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
+  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
+  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
+      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
+        Ix.RoleEvidence.committedBundle () = Except.ok b →
+          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+            ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+              c ∈ envQ.consts →
+                Ix.Cert.CliqueConstant env ixe sub t c → Ix.Cert.ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.CliqueRows
+
+/-- info: def Ix.Cert.Obligation.ReorderAccepts : Prop :=
+∀ {md : Ix.Kernel.Mode} (μ : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences md) (A S : List (Ix.Kernel.Declaration md))
+  (envS : Ix.Kernel.Env md),
+  Ix.Kernel.Cached.AcceptsRef μ ev S envS →
+    A.Perm S → Ix.Kernel.Closed A → ∃ envA, Ix.Kernel.Cached.AcceptsRef μ ev A envA ∧ Ix.Cert.SameEnv envA envS -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.ReorderAccepts
+
+/-- info: def Ix.Cert.Obligation.EvidenceTransfer : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source)
+  (pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.source) (ds : Array (Ix.Kernel.Declaration Ix.Kernel.Mode.source))
+  (b : Ix.RoleEvidence.Bundle) (binding : Ix.Kernel.Admission.Binding) (tA : Ix.Kernel.RoleTable)
+  (preA : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon) (order : List Address)
+  (st' : Ix.Kernel.Reader.State Ix.Kernel.Mode.anon) (decls : Array (Ix.Kernel.Declaration Ix.Kernel.Mode.anon))
+  (envR : Ix.Kernel.Env Ix.Kernel.Mode.anon),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    Ix.Kernel.Reader.builtinPrelude = Except.ok pre →
+      Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
+            (Ix.Cert.blocksOf sub) =
+          Except.ok ds →
+        Ix.RoleEvidence.committedBundle () = Except.ok b →
+          Ix.Kernel.Admission.defaultBinding = Except.ok binding →
+            Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok tA →
+              Ix.Kernel.Reader.preludeFor tA = Except.ok preA →
+                Ix.Kernel.Reader.StreamRead (Ix.Cert.closureContext ixe tA preA order) preA.state
+                    (Ix.Cert.Stream.decodedOf ixe order) st' decls →
+                  Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
+                      (Ix.Kernel.Evidences.mapKeys (Ix.LeanIngress.evAddr ixe b) (Ix.Cert.sourceEvidence ixe t))
+                      (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) envR →
+                    Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
+                      (Ix.Kernel.Reader.evidenceOf (Ix.Cert.closureContext ixe tA preA order) st' tA)
+                      (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) envR -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.EvidenceTransfer
+
+/-- info: def Ix.Cert.Obligation.SeedUnion : Prop :=
+∀ (env : Ix.Environment) (ixe : Ixon.Env) (binding : Ix.Kernel.Admission.Binding) (S : Address → Prop),
+  Ix.Cert.compile env = Except.ok ixe →
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
+      (∀ (a : Address), S a → Ix.Cert.RootAccepted binding ixe a) →
+        ∃ limits order envA, Ix.Cert.IxonAcceptsRef binding limits ixe S order envA -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.SeedUnion
+
+/-- info: def Ix.Cert.Obligation.SourceRestricts : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (n : Ix.Name),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    (sub.consts.get? n).isSome = true →
+      ¬Ix.Cert.SelectedRoots.AffectedName env (Ix.Cert.changedSetOf env ixe) n →
+        ∃ roots' sub' envQ',
+          Ix.Cert.Premises env roots' sub' ixe failures t envQ' ∧
+            (Ix.Cert.changedSetOf env ixe).Avoids sub' ∧ sub'.consts.get? n = sub.consts.get? n -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.SourceRestricts
+
+/-- info: def Ix.Cert.Obligation.RootRestricts : Prop :=
+∀ (binding : Ix.Kernel.Admission.Binding) (limits : Ix.Kernel.Admission.Limits) (ixe : Ixon.Env) (S : Address → Prop)
+  (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon) (a : Address),
+  Ix.Cert.IxonAcceptsRef binding limits ixe S order envA → S a → Ix.Cert.RootAccepted binding ixe a -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.RootRestricts
+
+/-- info: def Ix.Cert.Obligation.Assembly.{w} : Prop :=
+∀ (V : Type w) [inst : Ix.Kernel.SetTheory V] (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source)
+  (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon) (M : Ix.Kernel.Cached.StrongModel V envA)
+  (f : Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id),
+  (∃ ev ds, Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified ev ds envQ) →
+    (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+        c ∈ envQ.consts → Ix.Cert.InputKey c.name → Ix.Cert.ConstantAgrees M f c) →
+      (Ix.Cert.RecStepsAgree M f envQ fun x => True) →
+        Ix.Cert.CapStepsAgree M f envQ →
+          ∃ N,
+            ∀ (k : Ix.Kernel.Key Ix.Kernel.Mode.source),
+              Ix.Cert.InputKey k →
+                ∀ (φ : Ix.Kernel.LevelParam → Nat), N.cval k φ = M.model.cval (Ix.Kernel.Key.map f k) φ -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.Assembly
+
+/-- info: def Ix.Cert.Obligation.UnchangedRules.{w} : Prop :=
+∀ (V : Type w) [inst : Ix.Kernel.SetTheory V] (P : Ix.Kernel.Mode.source.Id → Prop)
+  (f : Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source)
+  (envR envA : Ix.Kernel.Env Ix.Kernel.Mode.anon) (M : Ix.Kernel.Cached.StrongModel V envA),
+  Ix.Kernel.EnvRel P f envQ envR →
+    Ix.Cert.SameEnv envA envR →
+      Ix.Cert.RecRuleLaws (Ix.Kernel.pullCval f M.model.cval) envQ ∧
+        Ix.Cert.CapabilityLaws (Ix.Kernel.pullCval f M.model.cval) envQ -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.UnchangedRules
+
+/-- info: def Ix.Cert.Obligation.RuleCorrespondence.{w} : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
+  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
+  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
+  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
+  Ix.Cert.Premises env roots sub ixe failures t envQ →
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
+      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
+        Ix.RoleEvidence.committedBundle () = Except.ok b →
+          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+            (Ix.Cert.RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ fun c =>
+                ¬Ix.Cert.ImageRecursor env ixe sub t c) ∧
+              Ix.Cert.CapStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Obligation.RuleCorrespondence
+
+/-- info: Ix.Cert.compileCorrect_unchanged : Ix.Cert.Obligation.SourceTotal →
+  Ix.Cert.Obligation.ReaderStreams →
+    Ix.Cert.Obligation.ReadingKeys →
+      Ix.Cert.Obligation.ScheduleOwnership →
+        Ix.Cert.Obligation.ReorderAccepts →
+          Ix.Cert.Obligation.EvidenceTransfer → Ix.Cert.Obligation.UnchangedRules → Ix.Cert.CompileCorrectUnchanged -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.compileCorrect_unchanged
+
+/-- info: Ix.Cert.compileCorrect_of_obligations : Ix.Cert.Obligation.SourceTotal →
+  Ix.Cert.Obligation.ReaderStreams →
+    Ix.Cert.Obligation.ReadingKeys →
+      Ix.Cert.Obligation.RenamedAgree →
+        Ix.Cert.Obligation.ScheduleOwnership →
+          Ix.Cert.Obligation.PassValues →
+            Ix.Cert.Obligation.ImageRules →
+              Ix.Cert.Obligation.CliqueRows →
+                Ix.Cert.Obligation.ReorderAccepts →
+                  Ix.Cert.Obligation.EvidenceTransfer →
+                    Ix.Cert.Obligation.SeedUnion →
+                      Ix.Cert.Obligation.SourceRestricts →
+                        Ix.Cert.Obligation.RootRestricts →
+                          Ix.Cert.Obligation.Assembly →
+                            Ix.Cert.Obligation.UnchangedRules →
+                              Ix.Cert.Obligation.RuleCorrespondence → Ix.Cert.CompileCorrect -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.compileCorrect_of_obligations
+
+/-- info: [cert-audit] composition skeleton: 45 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "composition skeleton"
+    (#[`Premises,
+      `CompileCorrectUnchanged,
+      `SameEnv,
+      `DenoteSame,
+      `ConstantAgrees,
+      `RecStepsAgree,
+      `CapStepsAgree,
+      `RewrittenConstant,
+      `CliqueConstant,
+      `ImageRecursor,
+      `Owned,
+      `ClaimsOwned,
+      `Resolution.FoldRun,
+      `Obligation.SourceTotal,
+      `Obligation.ReaderStreams,
+      `Obligation.ReadingKeys,
+      `Obligation.RenamedAgree,
+      `Obligation.ScheduleOwnership,
+      `Obligation.PassValues,
+      `Obligation.ImageRules,
+      `Obligation.CliqueRows,
+      `Obligation.ReorderAccepts,
+      `Obligation.EvidenceTransfer,
+      `Obligation.SeedUnion,
+      `Obligation.SourceRestricts,
+      `Obligation.RootRestricts,
+      `Obligation.Assembly,
+      `Obligation.UnchangedRules,
+      `Obligation.RuleCorrespondence,
+      `defaultTable_check,
+      `findProj_sameFind,
+      `Denotes.sameFind,
+      `ValueModel.transfer,
+      `const_denotes,
+      `inputKey_of_reading,
+      `claimsOwned,
+      `renamed_reading_denotes,
+      `causeKind_reason,
+      `kindRoot_of_reason,
+      `kindAccepted_root,
+      `compileCorrect_unchanged,
+      `compileCorrect_of_obligations,
+      `HookFree.compileReport_hookFree,
+      `Resolution.compileReport_claim,
+      `Resolution.compileUnchecked_provenance].map
       (`Ix.Cert ++ ·))
