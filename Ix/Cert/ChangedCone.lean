@@ -1,6 +1,7 @@
 import Ix.Cert.SelectedRoots
 import Ix.Cert.StrongCommutation
 import Ix.LeanIngress.Rename
+import Ix.Cert.Quotient
 
 /-! # The changed cone: change kinds, their validation hypotheses and the validator
 
@@ -161,10 +162,11 @@ def ChangeKind.rewritesTerms : ChangeKind → Bool
 
 /-! ## The records of a kind -/
 
-/-- **The changed set of a compile**: `Ix.Compile.ChangedSet.ofCompile` at the
-compile's own condensation and aux table. -/
+/-- **The changed set of a compile**: `Ix.Compile.ChangedSet.ofCompile` over the
+input the compile reads (its constants, `compileUnchecked`'s view, with no fallback),
+at the compile's own condensation and aux table. -/
 def changedSetOf (env : Ix.Environment) (ixe : Ixon.Env) : ChangedSet :=
-  Ix.Compile.ChangedSet.ofCompile env (compileBlocks env) (compileTable env) ixe
+  Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env) ixe
 
 /-- The reserved name of the row of computation rule `i` of the image of the Lean
 recursor `r`: `r._ix.rule.i`. -/
@@ -305,33 +307,78 @@ def ConeValidator.Sound (v : ConeValidator) : Prop :=
       IsClosure env roots sub → Ix.Kernel.Reader.defaultTable = .ok t →
       (∀ k, KindAccepted k env ixe sub) ∧ SourceFormInfers env ixe sub t
 
-/-- **The compile with the validator wired**: `compileReport`, then the validator on
-its result; its failure is the compile's. -/
-def compileValidated (v : ConeValidator) (env : Ix.Environment) :
+/-! ## The artifact's role binding and address map
+
+Two facts the final statement reads off the artifact are decided on it, with
+proved deciders (`Ix.Cert.publishedRolesBound_iff`, `Ix.Cert.publishedAgree_iff`):
+every published role name sits at its role's address in the default role table,
+and every published name agrees with the artifact's address map (two published
+names with one ingress name share an address). The validated compile runs them
+after `compileReport`. An input that holds a constant under a role's Lean name
+with other content is refused there. -/
+
+/-- **The artifact checks** at the role table `t`: every published role name sits
+at its role's address (`publishedRolesBound`), and every published name agrees with
+the artifact's address map (`publishedAgree`). -/
+def artifactCheck (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) : Except String Unit :=
+  if publishedRolesBound t ixe then
+    if publishedAgree ixe then .ok ()
+    else .error "artifact check: two published names with one ingress name are at different addresses"
+  else
+    .error "artifact check: a published role name is not at its role's address in the role table"
+
+/-- **The artifact checks are sound**: their success gives both facts. -/
+theorem artifactCheck_sound {t : Ix.Kernel.RoleTable} {ixe : Ixon.Env}
+    (h : artifactCheck t ixe = .ok ()) : PublishedRolesBound t ixe ∧ PublishedAgree ixe := by
+  unfold artifactCheck at h
+  split at h
+  · rename_i hb
+    split at h
+    · rename_i ha
+      exact ⟨(publishedRolesBound_iff t ixe).mp hb, (publishedAgree_iff ixe).mp ha⟩
+    · cases h
+  · cases h
+
+/-- **The compile with its checks wired**, at the role table `t` (the default one,
+`Ix.Kernel.Reader.defaultTable`, where a statement fixes it): `compileReport`, then
+the artifact checks (`artifactCheck`), then the changed-cone validator on its
+result; a failure of either check is the compile's. -/
+def compileValidated (v : ConeValidator) (t : Ix.Kernel.RoleTable) (env : Ix.Environment) :
     Except String (Ixon.Env × Failures) := do
   let out ← compileReport env
+  artifactCheck t out.1
   v (coneInput env out.1 out.2)
   pure out
 
-/-- A validated compile is a `compileReport` result that the validator passed. -/
-theorem compileValidated_ok {v : ConeValidator} {env : Ix.Environment} {ixe : Ixon.Env}
-    {failures : Failures} (h : compileValidated v env = .ok (ixe, failures)) :
-    compileReport env = .ok (ixe, failures) ∧ v (coneInput env ixe failures) = .ok () := by
-  have e : compileValidated v env = Except.bind (compileReport env) fun out =>
-      Except.bind (v (coneInput env out.1 out.2)) fun _ => Except.ok out := rfl
+/-- A validated compile is a `compileReport` result that the artifact checks and
+the validator passed. -/
+theorem compileValidated_ok {v : ConeValidator} {t : Ix.Kernel.RoleTable} {env : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} (h : compileValidated v t env = .ok (ixe, failures)) :
+    compileReport env = .ok (ixe, failures) ∧ artifactCheck t ixe = .ok () ∧
+      v (coneInput env ixe failures) = .ok () := by
+  have e : compileValidated v t env = Except.bind (compileReport env) fun out =>
+      Except.bind (artifactCheck t out.1) fun _ =>
+        Except.bind (v (coneInput env out.1 out.2)) fun _ => Except.ok out := rfl
   rw [e] at h
   cases hr : compileReport env with
   | error err => rw [hr] at h; cases h
   | ok out =>
     rw [hr] at h
-    change Except.bind (v (coneInput env out.1 out.2)) (fun _ => Except.ok out) =
-      Except.ok (ixe, failures) at h
-    cases hv : v (coneInput env out.1 out.2) with
-    | error err => rw [hv] at h; cases h
+    change Except.bind (artifactCheck t out.1) (fun _ =>
+      Except.bind (v (coneInput env out.1 out.2)) fun _ => Except.ok out) = Except.ok (ixe, failures) at h
+    cases hc : artifactCheck t out.1 with
+    | error err => rw [hc] at h; cases h
     | ok u =>
-      rw [hv] at h
-      change Except.ok out = Except.ok (ixe, failures) at h
-      cases h
-      exact ⟨rfl, hv⟩
+      rw [hc] at h
+      change Except.bind (v (coneInput env out.1 out.2)) (fun _ => Except.ok out) =
+        Except.ok (ixe, failures) at h
+      cases hv : v (coneInput env out.1 out.2) with
+      | error err => rw [hv] at h; cases h
+      | ok u' =>
+        rw [hv] at h
+        change Except.ok out = Except.ok (ixe, failures) at h
+        cases h
+        cases u
+        exact ⟨rfl, hc, hv⟩
 
 end Ix.Cert

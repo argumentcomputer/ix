@@ -60,10 +60,10 @@ Statements (`def … : Prop`) and the theorems proved now:
   construction: `compileReport` re-hashes them with the admission hash and
   fails on a mismatch (CQ2.27);
 * `ClosureCorrect`: the computed closure is the closure. Proved
-  (`closureCorrect`, in `Ix.Cert.Closure`);
-* `RenamingLemma`: the fold commutes with renaming a Source run's keys to
-  compiled ones by `Key.map f`, for every `f` injective on the run's ids
-  (`RenamingHyp`). Stated, not proved.
+  (`closureCorrect`, in `Ix.Cert.Closure`).
+
+That the fold commutes with renaming keys is IxC's, at the reference level
+(`Ix.Kernel.Cached.AcceptsRef.rename`).
 
 No reverse statement ("Ixon accepts, so Source accepts") is made. Source
 mode uses the committed `Ix.RoleEvidence.bundleEvidence`, independently of
@@ -1437,14 +1437,14 @@ theorem Commutes.alias {τ : Ix.Kernel.ConstantInfo .source → Option (Ix.Kerne
   let ρ : BVarIdx → V := fun _ => SetTheory.univChain 0
   exact Ix.Kernel.Denotes_functional (hN c₁ h₁ t e₁ φ ρ) (hN c₂ h₂ t e₂ φ ρ)
 
-/-! ## The renaming lemma
+/-! ## Renaming keys
 
-IXC-PLAN §12 and SP3-PARAMETRICITY §9: the fold commutes with renaming the
-input keys, a failure's keys included (its message is structured: prose and
-keys, `Ix.Kernel.Msg`, step 6). The bridge from Source to Ixon renames a
-source key to a compiled one by `Key.map f`, `f` taking a Lean name to the
-address the artifact publishes for it; it applies the lemma after an
-alias-collapse step, because that map is not injective. -/
+`Rename` renames every key of a term, constant, declaration, evidence entry or
+environment by a function on keys. At `σ = Key.map f` it is IxC's
+`Ix.Kernel.Expr.mapKeys f` (and its companions), over which IxC proves that the
+reference fold commutes with renaming (`Ix.Kernel.Cached.AcceptsRef.rename`), and
+the quotient Source run renamed to the artifact's addresses is accepted
+(`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`). -/
 
 namespace Rename
 
@@ -1515,102 +1515,6 @@ def evidences (ev : Ix.Kernel.Evidences md) : Ix.Kernel.Evidences md' :=
 
 def env (e : Env md) : Env md' := ⟨e.consts.map (constantInfo σ)⟩
 
-/-- A fold's result: an accepted environment renamed by `env`, a failure's
-keys by `CheckError.mapKeys`, at the same position. -/
-def result : Except (Ix.Kernel.CheckError md × Nat) (Env md) →
-    Except (Ix.Kernel.CheckError md' × Nat) (Env md')
-  | .ok e => .ok (env σ e)
-  | .error (e, i) => .error (e.mapKeys σ, i)
-
 end Rename
-
-/-! The constant keys a term, constant or declaration contains: the input
-keys of a run. -/
-
-namespace Keys
-
-def expr : Ix.Kernel.Expr md → List (Ix.Kernel.Key md)
-  | .fvar _ t => expr t
-  | .const n _ => [n]
-  | .app f a => expr f ++ expr a
-  | .lam t b _ => expr t ++ expr b
-  | .forallE t b _ => expr t ++ expr b
-  | .letE t v b _ => expr t ++ expr v ++ expr b
-  | .proj n _ e => n :: expr e
-  | _ => []
-
-def constantVal (cv : Ix.Kernel.ConstantVal md) : List (Ix.Kernel.Key md) :=
-  cv.name :: expr cv.type
-
-def recRule (r : Ix.Kernel.RecRule md) : List (Ix.Kernel.Key md) :=
-  r.ctor :: expr r.rhs ++ match r.fire with
-    | .nested _ pins => pins.flatMap expr
-    | _ => []
-
-def constantInfo : Ix.Kernel.ConstantInfo md → List (Ix.Kernel.Key md)
-  | .axiomInfo v => constantVal v
-  | .defnInfo v e _ => constantVal v ++ expr e
-  | .thmInfo v e => constantVal v ++ expr e
-  | .indInfo v caps => constantVal v ++ caps.etaCtor.toList
-  | .ctorInfo v _ _ => constantVal v
-  | .recInfo v _ _ rules => constantVal v ++ rules.flatMap recRule
-  | .projInfo tbl => tbl.structName :: tbl.ctor :: tbl.bodies.toList.flatMap expr
-
-def declaration : Ix.Kernel.Declaration md → List (Ix.Kernel.Key md)
-  | .axiomDecl v => constantVal v
-  | .defnDecl v e _ => constantVal v ++ expr e
-  | .thmDecl v e => constantVal v ++ expr e
-  | .opaqueDecl v e => constantVal v ++ expr e
-  | .basisDecl _ => []
-  | .indDecl block _ => block.flatMap constantInfo
-  | .quotDecl _ v => constantVal v
-
-def evidences (ev : Ix.Kernel.Evidences md) : List (Ix.Kernel.Key md) :=
-  ev.flatMap fun (_, es) => es.flatMap fun
-    | .defeq => []
-    | .proof (k, v) => k :: expr v
-
-end Keys
-
-/-- `n` is a key of the declarations `ds` or of the evidence `ev`. -/
-def InputKey (ev : Ix.Kernel.Evidences md) (ds : Array (Ix.Kernel.Declaration md))
-    (n : Ix.Kernel.Key md) : Prop :=
-  (∃ d ∈ ds, n ∈ Keys.declaration d) ∨ n ∈ Keys.evidences ev
-
-/-- The input ids a key names: its own, or its base's for a derived key. -/
-def keyIds : Ix.Kernel.Key md → List md.Id
-  | .id i => [i]
-  | .role _ => []
-  | .aux k _ => keyIds k
-
-/-- `i` is an id a key of the declarations `ds` or of the evidence `ev` (the
-role table's data) names. -/
-def InputId (ev : Ix.Kernel.Evidences md) (ds : Array (Ix.Kernel.Declaration md))
-    (i : md.Id) : Prop :=
-  ∃ k, InputKey ev ds k ∧ i ∈ keyIds k
-
-/-- **The renaming lemma's hypothesis** (IXC-PLAN §12): `f` is injective on
-the input's ids. The renaming is `Key.map f`, so the role keys are fixed, a
-derived key is renamed through its base and an input key stays an input key,
-by construction: SP3 §9's other hypotheses (pinned keys fixed, no input key
-renamed to a pinned one, derived keys commuting with the renaming, the front
-door's shape tests unchanged) hold of every such renaming. -/
-def RenamingHyp (f : Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon)
-    (ev : Ix.Kernel.Evidences .source) (ds : Array (Ix.Kernel.Declaration .source)) : Prop :=
-  ∀ i j, InputId ev ds i → InputId ev ds j → f i = f j → i = j
-
-/-- **The renaming lemma.** Stated, not proved: renaming a Source run's keys
-to compiled ones by `Key.map f`, `f` injective on the run's ids, renames the
-fold's result: the accepted environment, or the failure's keys at the same
-position (`Rename.result`). The failure is compared whole: its verdict, its
-position and its message, whose keys are renamed (structured errors,
-IXC-PLAN step 6; before them the lemma compared the verdict kind and the
-position only). -/
-def RenamingLemma : Prop :=
-  ∀ (f : Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon) (ev : Ix.Kernel.Evidences .source)
-    (ds : Array (Ix.Kernel.Declaration .source)), RenamingHyp f ev ds →
-      Ix.Kernel.Cached.checkDecls .verified (Rename.evidences (Ix.Kernel.Key.map f) ev)
-          (ds.map (Rename.declaration (Ix.Kernel.Key.map f))) =
-        Rename.result (Ix.Kernel.Key.map f) (Ix.Kernel.Cached.checkDecls .verified ev ds)
 
 end Ix.Cert

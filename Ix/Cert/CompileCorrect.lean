@@ -9,14 +9,17 @@ quotient Source at the compiled artifact (`SourceAcceptsQ`): Lean with its alias
 fibers collapsed, obtained per artifact from the executed quotient check
 (`sourceAcceptsQ_of_check`). Its premises are, besides the compile's own report:
 
-* the pinned role configuration: every published role name sits at its role's
-  address in the default table (`PublishedRolesBound`, decided), and the
-  table's certificates check on their committed closure
-  (`RoleClosure.RoleEvidenceChecks`, a closed proposition about the pinned data);
+* the artifact's role binding and address map: every published role name sits at
+  its role's address in the default table (`PublishedRolesBound`), and every
+  published name agrees with the artifact's address map (`PublishedAgree`); both
+  are decided on the artifact (`artifactCheck`);
+* the pinned role configuration: the table's certificates check on their
+  committed closure (`RoleClosure.RoleEvidenceChecks`, a closed proposition about
+  the pinned data, decided once by `RoleClosure.roleEvidenceCheck`);
 * one validation hypothesis per kind of change (`KindAccepted`), and the Source
   forms of the rewritten records inferring in their compiled closures
   (`SourceFormInfers`). The changed-cone validator discharges both on each
-  compile (`ConeValidator.Sound`, `CompileCorrect.validated`).
+  compile (`ConeValidator.Sound`).
 
 Its conclusion: the compiler published the closure, Ixon accepts the compiled
 closure at the reference level, every constant of the closure, a dropped alias
@@ -24,6 +27,11 @@ included, reads as a compiled constant (`ReadingCovers`), and for every strong
 model of the compiled environment there is one value model of quotient Source,
 for the whole closure, all levels and valuations, in which every constant
 denotes what its reading denotes (`CommutesStrong`).
+
+On executed checks only (`CompileCorrect.checked`): the computed closure, the
+quotient check, the compile with its checks and validator wired
+(`compileValidated`), the role table's certificate check and the report's failures
+give the conclusion, and with it `IxonCommutesStrongRef`.
 
 The reading takes a role key's address from the role table (`readingAt`). The
 older `reading` looks it up by the role's Lean name among the published names,
@@ -34,7 +42,7 @@ defined (`readingAt_of_reading`), so the conclusion gives
 
 The statement is partial correctness: a closure quotient Source does not accept,
 a compile that fails, a closure with a failed constant and a compile whose
-changed records fail validation are outside it. Nominal Source reaches it at the
+checks or changed records fail are outside it. Nominal Source reaches it at the
 instances where nominal and quotient Source agree (`CompileCorrect.nominal`). -/
 
 namespace Ix.Cert
@@ -98,11 +106,12 @@ def IxonCommutesCovering (ixe : Ixon.Env) (sub : Ix.Environment) (t : Ix.Kernel.
 table `t`. Suppose quotient Source accepts the closure `sub` of `roots` in `env` at
 the artifact `ixe`, grouped as the compiler groups it, installing `envQ`;
 `compileReport env` returns `ixe` with `failures`; no constant of `sub` failed; the
-published role names sit at the table's addresses and the table's certificates
-check; every kind of change passes its validation hypothesis on `sub`; and the
-Source forms of the rewritten records infer in their compiled closures. Then `ixe`
-publishes every constant of `sub`, and the compiled closure is accepted, reads every
-constant of `sub`, and commutes with `envQ` for every strong target model
+published role names sit at the table's addresses, the published names agree with
+the artifact's address map, and the table's certificates check; every kind of
+change passes its validation hypothesis on `sub`; and the Source forms of the
+rewritten records infer in their compiled closures. Then `ixe` publishes every
+constant of `sub`, and the compiled closure is accepted, reads every constant of
+`sub`, and commutes with `envQ` for every strong target model
 (`IxonCommutesCovering`). -/
 def CompileCorrect : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
@@ -112,6 +121,7 @@ def CompileCorrect : Prop :=
     compileReport env = .ok (ixe, failures) →
     NoFailure failures sub →
     PublishedRolesBound t ixe →
+    PublishedAgree ixe →
     RoleClosure.RoleEvidenceChecks →
     (∀ k, KindAccepted k env ixe sub) →
     SourceFormInfers env ixe sub t →
@@ -187,6 +197,7 @@ def CompileCorrectPublished : Prop :=
     compile env = .ok ixe →
     Published ixe sub →
     PublishedRolesBound t ixe →
+    PublishedAgree ixe →
     RoleClosure.RoleEvidenceChecks →
     (∀ k, KindAccepted k env ixe sub) →
     SourceFormInfers env ixe sub t →
@@ -196,9 +207,9 @@ def CompileCorrectPublished : Prop :=
 `Published`: the closure is published, so none of it failed. -/
 theorem CompileCorrect.published (hcov : CompileCovers) (h : CompileCorrect.{w}) :
     CompileCorrectPublished.{w} := by
-  intro env roots sub ixe t envQ table hs hc hp bound evidence kinds forms
+  intro env roots sub ixe t envQ table hs hc hp bound agree evidence kinds forms
   obtain ⟨failures, hr⟩ := compile_eq_ok.mp hc
-  refine (h env roots sub ixe failures t envQ table hs hr (fun n ci hn => ?_) bound evidence
+  refine (h env roots sub ixe failures t envQ table hs hr (fun n ci hn => ?_) bound agree evidence
     kinds forms).2
   exact (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mp (hp n ci hn)
 
@@ -206,34 +217,64 @@ theorem CompileCorrect.published (hcov : CompileCovers) (h : CompileCorrect.{w})
 `CompileCorrect`: a closure none of whose constants failed is published. -/
 theorem CompileCorrect.of_published (hcov : CompileCovers) (h : CompileCorrectPublished.{w}) :
     CompileCorrect.{w} := by
-  intro env roots sub ixe failures t envQ table hs hr hf bound evidence kinds forms
+  intro env roots sub ixe failures t envQ table hs hr hf bound agree evidence kinds forms
   have hp : Published ixe sub := fun n ci hn =>
     (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mpr (hf n ci hn)
   exact ⟨hp, h env roots sub ixe t envQ table hs (compile_eq_ok.mpr ⟨failures, hr⟩) hp bound
-    evidence kinds forms⟩
+    agree evidence kinds forms⟩
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**. -/
 theorem compileCorrect_iff_published : CompileCorrect.{w} ↔ CompileCorrectPublished.{w} :=
   ⟨CompileCorrect.published compileCovers, CompileCorrect.of_published compileCovers⟩
 
-/-! ## With the validator wired -/
+/-! ## With the checks wired -/
 
-/-- **The statement for the validated compile**: with a sound changed-cone
-validator wired after `compileReport` (`compileValidated`), the validation
-hypotheses are discharged by construction, and only the Source side, the report's
-failures and the pinned role configuration remain. -/
+/-- **The statement for the validated compile**: with the artifact checks and a
+sound changed-cone validator wired after `compileReport` (`compileValidated`), the
+artifact's role binding and address map and the validation hypotheses hold by
+construction, and only the Source side, the report's failures and the pinned role
+configuration remain. -/
 theorem CompileCorrect.validated (h : CompileCorrect.{w}) {v : ConeValidator} (sound : v.Sound)
     {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
     {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Env .source}
     (table : Ix.Kernel.Reader.defaultTable = .ok t)
     (source : SourceAcceptsQ blocksOf env roots sub ixe t envQ)
-    (compiled : compileValidated v env = .ok (ixe, failures))
-    (none : NoFailure failures sub) (bound : PublishedRolesBound t ixe)
-    (evidence : RoleClosure.RoleEvidenceChecks) :
-    Published ixe sub ∧ IxonCommutesCovering.{w} ixe sub t envQ := by
-  obtain ⟨report, passed⟩ := compileValidated_ok compiled
+    (compiled : compileValidated v t env = .ok (ixe, failures))
+    (none : NoFailure failures sub) (evidence : RoleClosure.RoleEvidenceChecks) :
+    Published ixe sub ∧ IxonCommutesCovering.{w} ixe sub t envQ ∧ PublishedRolesBound t ixe ∧
+      PublishedAgree ixe := by
+  obtain ⟨report, checked, passed⟩ := compileValidated_ok compiled
+  obtain ⟨bound, agree⟩ := artifactCheck_sound checked
   obtain ⟨kinds, forms⟩ := sound env ixe failures report passed roots sub t source.1 table
-  exact h env roots sub ixe failures t envQ table source report none bound evidence kinds forms
+  exact ⟨(h env roots sub ixe failures t envQ table source report none bound agree evidence kinds
+    forms).1, (h env roots sub ixe failures t envQ table source report none bound agree evidence
+    kinds forms).2, bound, agree⟩
+
+/-- **The statement on executed checks.** Take the computed closure of `roots`
+(`closure`, correct by `closureCorrect`), the default role table, the executed
+quotient check of that closure at the artifact, the compile with its artifact checks
+and a sound changed-cone validator wired (`compileValidated`), the role table's
+certificate check run once (`RoleClosure.roleEvidenceCheck`) and the report's
+failures, decided on the closure. Then the closure is published, its compiled
+closure is accepted, reads every constant of the closure and commutes with quotient
+Source for every strong target model, and it does so with the older reading too
+(`IxonCommutesStrongRef`). The set theory `V` is what the checks' refinement walks
+run in; the conclusion quantifies over every one. -/
+theorem CompileCorrect.checked (h : CompileCorrect.{w}) (V : Type w) [SetTheory V]
+    {v : ConeValidator} (sound : v.Sound) (evidence : RoleClosure.roleEvidenceCheck = true)
+    {env : Ix.Environment} {roots : List Ix.Name} {ixe : Ixon.Env} {failures : Failures}
+    {t : Ix.Kernel.RoleTable} {envQ : Env .source}
+    (table : Ix.Kernel.Reader.defaultTable = .ok t)
+    (quotient : Ix.LeanIngress.checkSourceCollapsedBundledAt ixe t (closure env roots)
+      (blocksOf (closure env roots)) = .ok envQ)
+    (compiled : compileValidated v t env = .ok (ixe, failures))
+    (none : ((closure env roots).consts.keys.all fun n => !failures.failed n) = true) :
+    Published ixe (closure env roots) ∧ IxonCommutesCovering.{w} ixe (closure env roots) t envQ ∧
+      IxonCommutesStrongRef.{w} ixe (closure env roots) envQ := by
+  have source := sourceAcceptsQ_of_check V (closureCorrect env roots) quotient
+  obtain ⟨published, covering, bound, agree⟩ := h.validated sound table source compiled
+    ((noFailure_iff failures _).mpr none) (RoleClosure.roleEvidenceChecks_of_check V evidence)
+  exact ⟨published, covering, covering.toStrongRef agree bound⟩
 
 /-! ## Nominal Source -/
 
@@ -246,15 +287,16 @@ theorem CompileCorrect.nominal (h : CompileCorrect.{w}) {env : Ix.Environment}
     {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {t : Ix.Kernel.RoleTable} {envS : Env .source}
     (table : Ix.Kernel.Reader.defaultTable = .ok t)
-    (agree : NominalQuotientAgreeAt env roots sub ixe t)
+    (agreeAt : NominalQuotientAgreeAt env roots sub ixe t)
     (nominal : SourceAccepts blocksOf env roots sub envS)
     (compiled : compileReport env = .ok (ixe, failures)) (none : NoFailure failures sub)
-    (bound : PublishedRolesBound t ixe) (evidence : RoleClosure.RoleEvidenceChecks)
+    (bound : PublishedRolesBound t ixe) (agree : PublishedAgree ixe)
+    (evidence : RoleClosure.RoleEvidenceChecks)
     (kinds : ∀ k, KindAccepted k env ixe sub) (forms : SourceFormInfers env ixe sub t) :
     ∃ envQ, SourceAcceptsQ blocksOf env roots sub ixe t envQ ∧
       Published ixe sub ∧ IxonCommutesCovering.{w} ixe sub t envQ := by
-  obtain ⟨envQ, quotient⟩ := agree envS nominal
-  exact ⟨envQ, quotient,
-    h env roots sub ixe failures t envQ table quotient compiled none bound evidence kinds forms⟩
+  obtain ⟨envQ, quotient⟩ := agreeAt envS nominal
+  exact ⟨envQ, quotient, h env roots sub ixe failures t envQ table quotient compiled none bound
+    agree evidence kinds forms⟩
 
 end Ix.Cert

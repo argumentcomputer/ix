@@ -108,8 +108,7 @@ Step 5b (the kernel's types indexed by a `Mode`) re-froze the statements
 with the modes made explicit and nothing else changed: Source mode installs
 an `Env .source`, Ixon mode an `Env .anon`, and the reading takes a source
 constant to a compiled term (`ConstantInfo .source → Option (Expr .anon)`).
-Value models, the renaming and the key sets it reads are generic in the
-mode (`{md : Mode}`), and `RenamingLemma` quantifies over it. With Ixon
+Value models and the renaming are generic in the mode (`{md : Mode}`). With Ixon
 addresses as `.anon` keys, the reading and the admission context were
 re-frozen: a source constant reads as the reader's key of its published
 address (`Ix.Kernel.Reader.Ctx.keyAt`), and the context carries the hash that
@@ -748,160 +747,21 @@ fun {md md'} σ e => { consts := List.map (Ix.Cert.Rename.constantInfo σ) e.con
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Rename.env
 
-/-- info: @Ix.Cert.Keys.expr.eq_def : ∀ {md : Ix.Kernel.Mode} (x : Ix.Kernel.Expr md),
-  Ix.Cert.Keys.expr x =
-    match x with
-    | Ix.Kernel.Expr.fvar idx t => Ix.Cert.Keys.expr t
-    | Ix.Kernel.Expr.const n us => [n]
-    | f.app a => Ix.Cert.Keys.expr f ++ Ix.Cert.Keys.expr a
-    | t.lam b m => Ix.Cert.Keys.expr t ++ Ix.Cert.Keys.expr b
-    | t.forallE b m => Ix.Cert.Keys.expr t ++ Ix.Cert.Keys.expr b
-    | t.letE v b l => Ix.Cert.Keys.expr t ++ Ix.Cert.Keys.expr v ++ Ix.Cert.Keys.expr b
-    | Ix.Kernel.Expr.proj n idx e => n :: Ix.Cert.Keys.expr e
-    | x => [] -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Cert.Keys.expr.eq_def
-
-/-- info: def Ix.Cert.Keys.constantVal : {md : Ix.Kernel.Mode} → Ix.Kernel.ConstantVal md → List (Ix.Kernel.Key md) :=
-fun {md} cv => cv.name :: Ix.Cert.Keys.expr cv.type -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Keys.constantVal
-
-/-- info: def Ix.Cert.Keys.recRule : {md : Ix.Kernel.Mode} → Ix.Kernel.RecRule md → List (Ix.Kernel.Key md) :=
-fun {md} r =>
-  r.ctor :: Ix.Cert.Keys.expr r.rhs ++
-    match r.fire with
-    | Ix.Kernel.RecRuleFire.nested lvls pins => List.flatMap Ix.Cert.Keys.expr pins
-    | x => [] -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Keys.recRule
-
-/-- info: def Ix.Cert.Keys.constantInfo : {md : Ix.Kernel.Mode} → Ix.Kernel.ConstantInfo md → List (Ix.Kernel.Key md) :=
-fun {md} x =>
-  match x with
-  | Ix.Kernel.ConstantInfo.axiomInfo v => Ix.Cert.Keys.constantVal v
-  | Ix.Kernel.ConstantInfo.defnInfo v e hint => Ix.Cert.Keys.constantVal v ++ Ix.Cert.Keys.expr e
-  | Ix.Kernel.ConstantInfo.thmInfo v e => Ix.Cert.Keys.constantVal v ++ Ix.Cert.Keys.expr e
-  | Ix.Kernel.ConstantInfo.indInfo v caps => Ix.Cert.Keys.constantVal v ++ caps.etaCtor.toList
-  | Ix.Kernel.ConstantInfo.ctorInfo v numParams numFields => Ix.Cert.Keys.constantVal v
-  | Ix.Kernel.ConstantInfo.recInfo v majorIdx rulePrefix rules =>
-    Ix.Cert.Keys.constantVal v ++ List.flatMap Ix.Cert.Keys.recRule rules
-  | Ix.Kernel.ConstantInfo.projInfo tbl =>
-    tbl.structName :: tbl.ctor :: List.flatMap Ix.Cert.Keys.expr tbl.bodies.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Keys.constantInfo
-
-/-- info: def Ix.Cert.Keys.declaration : {md : Ix.Kernel.Mode} → Ix.Kernel.Declaration md → List (Ix.Kernel.Key md) :=
-fun {md} x =>
-  match x with
-  | Ix.Kernel.Declaration.axiomDecl v => Ix.Cert.Keys.constantVal v
-  | Ix.Kernel.Declaration.defnDecl v e hint => Ix.Cert.Keys.constantVal v ++ Ix.Cert.Keys.expr e
-  | Ix.Kernel.Declaration.thmDecl v e => Ix.Cert.Keys.constantVal v ++ Ix.Cert.Keys.expr e
-  | Ix.Kernel.Declaration.opaqueDecl v e => Ix.Cert.Keys.constantVal v ++ Ix.Cert.Keys.expr e
-  | Ix.Kernel.Declaration.basisDecl kind => []
-  | Ix.Kernel.Declaration.indDecl block numParams => List.flatMap Ix.Cert.Keys.constantInfo block
-  | Ix.Kernel.Declaration.quotDecl kind v => Ix.Cert.Keys.constantVal v -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Keys.declaration
-
-/-- info: def Ix.Cert.Keys.evidences : {md : Ix.Kernel.Mode} → Ix.Kernel.Evidences md → List (Ix.Kernel.Key md) :=
-fun {md} ev =>
-  List.flatMap
-    (fun x =>
-      match x with
-      | (fst, es) =>
-        List.flatMap
-          (fun x =>
-            match x with
-            | Ix.Kernel.Evidence.defeq => []
-            | Ix.Kernel.Evidence.proof (k, v) => k :: Ix.Cert.Keys.expr v)
-          es)
-    ev -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Keys.evidences
-
-/-- info: def Ix.Cert.InputKey : {md : Ix.Kernel.Mode} →
-  Ix.Kernel.Evidences md → Array (Ix.Kernel.Declaration md) → Ix.Kernel.Key md → Prop :=
-fun {md} ev ds n => (∃ d, d ∈ ds ∧ n ∈ Ix.Cert.Keys.declaration d) ∨ n ∈ Ix.Cert.Keys.evidences ev -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.InputKey
-
-/-- info: def Ix.Cert.keyIds : {md : Ix.Kernel.Mode} → Ix.Kernel.Key md → List md.Id :=
-fun {md} x => Ix.Kernel.Key.brecOn x Ix.Cert.keyIds._f -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.keyIds
-
-/-- info: def Ix.Cert.InputId : {md : Ix.Kernel.Mode} →
-  Ix.Kernel.Evidences md → Array (Ix.Kernel.Declaration md) → md.Id → Prop :=
-fun {md} ev ds i => ∃ k, Ix.Cert.InputKey ev ds k ∧ i ∈ Ix.Cert.keyIds k -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.InputId
+-- The renaming lemma (`RenamingLemma`), its hypothesis (`RenamingHyp`), the
+-- failure renaming it compared (`Rename.result`) and the input-key sets its
+-- hypothesis read (`Keys`, `InputKey`, `keyIds`, `InputId`) are deleted: the
+-- lemma was stated, never proved and used by no theorem, and IxC proves the
+-- reference-level renaming the statements need (`Ix.Kernel.Cached.AcceptsRef.rename`,
+-- and the quotient Source run renamed to the artifact's addresses,
+-- `Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`). Their freezes go with
+-- them, and so do the freezes of IxC's message renaming (`MsgPart.mapKeys`,
+-- `Msg.mapKeys`, `CheckError.mapKeys`), which only `Rename.result` read. `Rename`
+-- stays (a test compares the ingress against it), and so does `Key.map`.
 
 /-- info: def Ix.Kernel.Key.map : {md md' : Ix.Kernel.Mode} → (md.Id → md'.Id) → Ix.Kernel.Key md → Ix.Kernel.Key md' :=
 fun {md md'} f x => Ix.Kernel.Key.brecOn x (Ix.Kernel.Key.map._f f) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Kernel.Key.map
-
-/-- info: def Ix.Cert.RenamingHyp : (Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) →
-  Ix.Kernel.Evidences Ix.Kernel.Mode.source → Array (Ix.Kernel.Declaration Ix.Kernel.Mode.source) → Prop :=
-fun f ev ds => ∀ (i j : Ix.Kernel.Mode.source.Id), Ix.Cert.InputId ev ds i → Ix.Cert.InputId ev ds j → f i = f j → i = j -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.RenamingHyp
-
--- Step 6: failures are structured (`Ix.Kernel.CheckError md`: a verdict and a
--- message of prose and keys), so the lemma maps a failure's keys
--- (`Rename.result`, `CheckError.mapKeys`) instead of comparing the verdict
--- kind and the position only; `ErrorKind` and `verdict` went.
--- Step 6b: a prose part carries the failure's display (`FailureDisplay`: the
--- terms and binders `.meta` and `.source` print), a subsingleton, so two
--- failures that differ only there are equal; a renaming drops it (the other
--- mode's display is the empty one, equal to any).
-/-- info: def Ix.Kernel.MsgPart.mapKeys : {md md' : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.MsgPart md → Ix.Kernel.MsgPart md' :=
-fun {md md'} σ x =>
-  match x with
-  | Ix.Kernel.MsgPart.text s display => Ix.Kernel.MsgPart.text s
-  | Ix.Kernel.MsgPart.key k => Ix.Kernel.MsgPart.key (σ k)
-  | Ix.Kernel.MsgPart.nat n => Ix.Kernel.MsgPart.nat n -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Kernel.MsgPart.mapKeys
-
-/-- info: def Ix.Kernel.Msg.mapKeys : {md md' : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.Msg md → Ix.Kernel.Msg md' :=
-fun {md md'} σ m => List.map (Ix.Kernel.MsgPart.mapKeys σ) m -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Kernel.Msg.mapKeys
-
-/-- info: def Ix.Kernel.CheckError.mapKeys : {md md' : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.CheckError md → Ix.Kernel.CheckError md' :=
-fun {md md'} σ x =>
-  match x with
-  | Ix.Kernel.CheckError.notImplemented m => Ix.Kernel.CheckError.notImplemented (Ix.Kernel.Msg.mapKeys σ m)
-  | Ix.Kernel.CheckError.invalid m => Ix.Kernel.CheckError.invalid (Ix.Kernel.Msg.mapKeys σ m)
-  | Ix.Kernel.CheckError.internal m => Ix.Kernel.CheckError.internal (Ix.Kernel.Msg.mapKeys σ m) -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Kernel.CheckError.mapKeys
-
-/-- info: def Ix.Cert.Rename.result : {md md' : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md') →
-    Except (Ix.Kernel.CheckError md × Nat) (Ix.Kernel.Env md) →
-      Except (Ix.Kernel.CheckError md' × Nat) (Ix.Kernel.Env md') :=
-fun {md md'} σ x =>
-  match x with
-  | Except.ok e => Except.ok (Ix.Cert.Rename.env σ e)
-  | Except.error (e, i) => Except.error (Ix.Kernel.CheckError.mapKeys σ e, i) -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Rename.result
-
-/-- info: def Ix.Cert.RenamingLemma : Prop :=
-∀ (f : Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) (ev : Ix.Kernel.Evidences Ix.Kernel.Mode.source)
-  (ds : Array (Ix.Kernel.Declaration Ix.Kernel.Mode.source)),
-  Ix.Cert.RenamingHyp f ev ds →
-    Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified (Ix.Cert.Rename.evidences (Ix.Kernel.Key.map f) ev)
-        (Array.map (Ix.Cert.Rename.declaration (Ix.Kernel.Key.map f)) ds) =
-      Ix.Cert.Rename.result (Ix.Kernel.Key.map f) (Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds) -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.RenamingLemma
 
 /-- info: def Ix.Cert.groundSplit : Ix.Environment → Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.GroundError :=
 fun env =>
@@ -1552,10 +1412,6 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: 'Ix.Cert.ClosureCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.ClosureCorrect
-
-/-- info: 'Ix.Cert.RenamingLemma' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.RenamingLemma
 
 /-- info: 'Ix.Cert.blocksOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -6287,8 +6143,10 @@ run_cmd do
 
 `Ix.Cert.CompileCorrect` is compiler correctness over quotient Source: per root,
 from quotient Source's acceptance at the compiled artifact (obtained per artifact by
-the executed check), the compile's report with no failure in the closure, the pinned
-role configuration (published role names at the table's addresses, the table's
+the executed check), the compile's report with no failure in the closure, the
+artifact's role binding and address map (published role names at the table's
+addresses, published names agreeing with the address map; both decided on the
+artifact by `artifactCheck`), the pinned role configuration (the table's
 certificates checking on their committed closure), one validation hypothesis per
 kind of change (`KindAccepted`) and the Source forms of the rewritten records
 inferring in their compiled closures (`SourceFormInfers`), it concludes that the
@@ -6298,14 +6156,17 @@ every strong target model gives one value model of quotient Source for the whole
 closure (`IxonCommutesCovering`). It replaces the nominal statement over the weak
 `Commutes`; the bridges to the statement hypothesised on `Published` are restated
 for it. The reading takes a role key's address from the role table (`readingAt`),
-and agrees with `reading` wherever that is defined (`readingAt_of_reading`).
+and agrees with `reading` wherever that is defined (`readingAt_of_reading`). On
+executed checks alone (`CompileCorrect.checked`) it gives the conclusion and
+`IxonCommutesStrongRef`.
 
 The change kinds cover the compiler's rewrites: changed components, regenerated
 auxiliaries, images and their computation-rule rows, rewritten call sites (each call
 site by the baseline development or one of O11a, O2, O3, O4, O6, `CallRewrite`),
 transported cliques and their rows, and the cascade. The changed-cone validator's
-interface (`ConeInput`, `ConeValidator.Sound`) and the compile with it wired
-(`compileValidated`, `CompileCorrect.validated`) are frozen with them. -/
+interface (`ConeInput`, `ConeValidator.Sound`), the artifact checks
+(`artifactCheck`) and the compile with both wired (`compileValidated`,
+`CompileCorrect.validated`) are frozen with them. -/
 
 /-- info: inductive Ix.Cert.CallRewrite : Type
 number of parameters: 0
@@ -6370,7 +6231,8 @@ fun x =>
 #print Ix.Cert.ChangeKind.rewritesTerms
 
 /-- info: def Ix.Cert.changedSetOf : Ix.Environment → Ixon.Env → Ix.Compile.ChangedSet.ChangedSet :=
-fun env ixe => Ix.Compile.ChangedSet.ofCompile env (Ix.Cert.compileBlocks env) (Ix.Cert.compileTable env) ixe -/
+fun env ixe =>
+  Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (Ix.Cert.compileBlocks env) (Ix.Cert.compileTable env) ixe -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.changedSetOf
 
@@ -6523,9 +6385,20 @@ fun v =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ConeValidator.Sound
 
-/-- info: def Ix.Cert.compileValidated : Ix.Cert.ConeValidator → Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
-fun v env => do
+/-- info: def Ix.Cert.artifactCheck : Ix.Kernel.RoleTable → Ixon.Env → Except String Unit :=
+fun t ixe =>
+  if Ix.Cert.publishedRolesBound t ixe = true then
+    if Ix.Cert.publishedAgree ixe = true then Except.ok ()
+    else Except.error "artifact check: two published names with one ingress name are at different addresses"
+  else Except.error "artifact check: a published role name is not at its role's address in the role table" -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.artifactCheck
+
+/-- info: def Ix.Cert.compileValidated : Ix.Cert.ConeValidator →
+  Ix.Kernel.RoleTable → Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
+fun v t env => do
   let out ← Ix.Cert.compileReport env
+  Ix.Cert.artifactCheck t out.fst
   v (Ix.Cert.coneInput env out.fst out.snd)
   pure out -/
 #guard_msgs (whitespace := lax) in
@@ -6585,10 +6458,11 @@ fun ixe sub t envQ =>
       Ix.Cert.compileReport env = Except.ok (ixe, failures) →
         Ix.Cert.NoFailure failures sub →
           Ix.Cert.PublishedRolesBound t ixe →
-            Ix.Cert.RoleClosure.RoleEvidenceChecks →
-              (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                Ix.Cert.SourceFormInfers env ixe sub t →
-                  Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+            Ix.Cert.PublishedAgree ixe →
+              Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+                  Ix.Cert.SourceFormInfers env ixe sub t →
+                    Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileCorrect
 
@@ -6600,9 +6474,10 @@ fun ixe sub t envQ =>
       Ix.Cert.compile env = Except.ok ixe →
         Ix.Cert.Published ixe sub →
           Ix.Cert.PublishedRolesBound t ixe →
-            Ix.Cert.RoleClosure.RoleEvidenceChecks →
-              (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                Ix.Cert.SourceFormInfers env ixe sub t → Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+            Ix.Cert.PublishedAgree ixe →
+              Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+                  Ix.Cert.SourceFormInfers env ixe sub t → Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileCorrectPublished
 
@@ -6614,10 +6489,16 @@ fun ixe sub t envQ =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.ChangeKind.mem_all
 
-/-- info: @Ix.Cert.compileValidated_ok : ∀ {v : Ix.Cert.ConeValidator} {env : Ix.Environment} {ixe : Ixon.Env}
-  {failures : Ix.Cert.Failures},
-  Ix.Cert.compileValidated v env = Except.ok (ixe, failures) →
-    Ix.Cert.compileReport env = Except.ok (ixe, failures) ∧ v (Ix.Cert.coneInput env ixe failures) = Except.ok () -/
+/-- info: @Ix.Cert.artifactCheck_sound : ∀ {t : Ix.Kernel.RoleTable} {ixe : Ixon.Env},
+  Ix.Cert.artifactCheck t ixe = Except.ok () → Ix.Cert.PublishedRolesBound t ixe ∧ Ix.Cert.PublishedAgree ixe -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.artifactCheck_sound
+
+/-- info: @Ix.Cert.compileValidated_ok : ∀ {v : Ix.Cert.ConeValidator} {t : Ix.Kernel.RoleTable} {env : Ix.Environment}
+  {ixe : Ixon.Env} {failures : Ix.Cert.Failures},
+  Ix.Cert.compileValidated v t env = Except.ok (ixe, failures) →
+    Ix.Cert.compileReport env = Except.ok (ixe, failures) ∧
+      Ix.Cert.artifactCheck t ixe = Except.ok () ∧ v (Ix.Cert.coneInput env ixe failures) = Except.ok () -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileValidated_ok
 
@@ -6657,13 +6538,32 @@ fun ixe sub t envQ =>
         {failures : Ix.Cert.Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
         Ix.Kernel.Reader.defaultTable = Except.ok t →
           Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
-            Ix.Cert.compileValidated v env = Except.ok (ixe, failures) →
+            Ix.Cert.compileValidated v t env = Except.ok (ixe, failures) →
               Ix.Cert.NoFailure failures sub →
-                Ix.Cert.PublishedRolesBound t ixe →
-                  Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                    Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+                Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                  Ix.Cert.Published ixe sub ∧
+                    Ix.Cert.IxonCommutesCovering ixe sub t envQ ∧
+                      Ix.Cert.PublishedRolesBound t ixe ∧ Ix.Cert.PublishedAgree ixe -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.validated
+
+/-- info: Ix.Cert.CompileCorrect.checked : Ix.Cert.CompileCorrect →
+  ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {v : Ix.Cert.ConeValidator},
+    v.Sound →
+      Ix.Cert.RoleClosure.roleEvidenceCheck = true →
+        ∀ {env : Ix.Environment} {roots : List Ix.Name} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+          {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+          Ix.Kernel.Reader.defaultTable = Except.ok t →
+            Ix.LeanIngress.checkSourceCollapsedBundledAt ixe t (Ix.Cert.closure env roots)
+                  (Ix.Cert.blocksOf (Ix.Cert.closure env roots)) =
+                Except.ok envQ →
+              Ix.Cert.compileValidated v t env = Except.ok (ixe, failures) →
+                ((Ix.Cert.closure env roots).consts.keys.all fun n => !failures.failed n) = true →
+                  Ix.Cert.Published ixe (Ix.Cert.closure env roots) ∧
+                    Ix.Cert.IxonCommutesCovering ixe (Ix.Cert.closure env roots) t envQ ∧
+                      Ix.Cert.IxonCommutesStrongRef ixe (Ix.Cert.closure env roots) envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.CompileCorrect.checked
 
 /-- info: Ix.Cert.CompileCorrect.nominal : Ix.Cert.CompileCorrect →
   ∀ {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
@@ -6674,24 +6574,48 @@ fun ixe sub t envQ =>
           Ix.Cert.compileReport env = Except.ok (ixe, failures) →
             Ix.Cert.NoFailure failures sub →
               Ix.Cert.PublishedRolesBound t ixe →
-                Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                  (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                    Ix.Cert.SourceFormInfers env ixe sub t →
-                      ∃ envQ,
-                        Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ ∧
-                          Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+                Ix.Cert.PublishedAgree ixe →
+                  Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                    (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+                      Ix.Cert.SourceFormInfers env ixe sub t →
+                        ∃ envQ,
+                          Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ ∧
+                            Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
 
-/-- info: [cert-audit] final statement: 26 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] final statement: 29 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "final statement"
-    (#[`CompileCorrect, `CompileCorrectPublished, `IxonCommutesCovering, `ReadingCovers, `readingAt,
-      `keyAddress, `KindAccepted, `KindRoot, `RootAccepted, `ImageRuleRequired, `ChangeKind.Present,
-      `SourceFormInfers, `quotientKey, `changedSetOf, `ConeValidator.Sound, `compileValidated,
-      `CallRewrite.mem_all, `ChangeKind.mem_all, `compileValidated_ok, `readingAt_of_reading,
-      `IxonCommutesCovering.toStrongRef, `CompileCorrect.published, `CompileCorrect.of_published,
-      `compileCorrect_iff_published, `CompileCorrect.validated, `CompileCorrect.nominal].map
+    (#[`CompileCorrect,
+      `CompileCorrectPublished,
+      `IxonCommutesCovering,
+      `ReadingCovers,
+      `readingAt,
+      `keyAddress,
+      `KindAccepted,
+      `KindRoot,
+      `RootAccepted,
+      `ImageRuleRequired,
+      `ChangeKind.Present,
+      `SourceFormInfers,
+      `quotientKey,
+      `changedSetOf,
+      `ConeValidator.Sound,
+      `artifactCheck,
+      `artifactCheck_sound,
+      `compileValidated,
+      `CallRewrite.mem_all,
+      `ChangeKind.mem_all,
+      `compileValidated_ok,
+      `readingAt_of_reading,
+      `IxonCommutesCovering.toStrongRef,
+      `CompileCorrect.published,
+      `CompileCorrect.of_published,
+      `compileCorrect_iff_published,
+      `CompileCorrect.validated,
+      `CompileCorrect.checked,
+      `CompileCorrect.nominal].map
       (`Ix.Cert ++ ·))
