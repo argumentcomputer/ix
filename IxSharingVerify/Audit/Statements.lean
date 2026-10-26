@@ -1,6 +1,7 @@
 import IxC.Kernel.Audit.Axioms
 import IxSharingVerify
 import IxSharingVerify.Builder
+import IxSharingVerify.ConstantNeverFails
 import Ix.LeanIngress.Expr
 
 /-!
@@ -80,6 +81,21 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Family.normalizeConstantSharingTiered_eq_family, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.normalizeConstantSharingTiered_reference_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.normalizeConstantSharingTiered_reference_bytes, standardAxioms := standard },
+  -- The production rule never fails: under some budget every refusal is
+  -- unreachable on its domain, larger budgets keep a successful run and its
+  -- result, and the output expands again.
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_ok, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_ok, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.normalizeConstantSharingTiered_ok, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.familyExpanded_ok, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_output_expands, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_output_expands,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Budget.canonicalSharingTiered_mono, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Budget.canonicalSharingTiered_budget_independent,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Budget.normalizeConstantSharingTiered_budget_independent,
+    standardAxioms := standard },
   -- The meaning of the canonical construction: the pointer cache, ingestion
   -- of the table and the roots, and canonical numbering preserve what each
   -- input expression denotes.

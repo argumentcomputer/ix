@@ -33,6 +33,7 @@ import IxSharingVerify.TieredWire
 import IxSharingVerify.TieredGuard
 import IxSharingVerify.CanonicalProduction
 import IxSharingVerify.FamilyExactConstant
+import IxSharingVerify.NeverFails
 
 /-!
 # Proofs of the canonical sharing construction
@@ -71,7 +72,21 @@ stronger optimality results.
   these results need no bound on telescope spine lengths, and the family
   route checks none. `FamilyFullWitness`, `FamilyResidual`,
   `FamilyLocalWriting` and `FamilyWritingBound` are groundwork for an
-  output-size bound. None of these modules proves that the rule never fails;
+  output-size bound;
+* `NeverFails` (namespace `Totality`), over `ExpandSuccess`, `BuildSuccess`,
+  `ReexpandSuccess`, `PinnedOrderSpec`, `FamilyComponents`, `FamilySuccess`,
+  `FinishSuccess`, `AllocateSuccess`, `KahnOrderSpec`, `TableSuccess`,
+  `WireSuccess` and `RematerializeSuccess`: no refusal of the production rule
+  is reachable. Under some budget it succeeds on Share-free roots of fewer
+  than `2^64` expression nodes whose references carry fewer than `2^64`
+  universes (`canonicalSharingTiered_ok`) and on every input that expands to
+  such a DAG (`canonicalSharingTieredTable_ok`), and its output expands
+  again (`canonicalSharingTiered_output_expands`). `BudgetMono` and
+  `FamilyBudget` (namespace `Budget`) prove that a larger budget keeps every
+  successful run and its result, so the budget decides only whether a run is
+  refused (`canonicalSharingTiered_budget_independent`). `ConstantNeverFails`
+  extends this to whole constants; it imports the compiler's builder, so this
+  root does not import it;
 * `CanonicalProduction`: the compiler-facing theorems of the production
   entry (`canonicalSharingTiered_meaning`, `_format`, `_serialized` and their
   table variants), derived from the `Family*` results with no further

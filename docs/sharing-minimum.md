@@ -2,7 +2,8 @@
 
 > **Status: `sharing-k16-greedy-v1` is the production route (§14).** Successful-run
 > proofs are attached to the Lean entry; §14.4 records the corpus evidence.
-> Totality, output-domain closure and cost bounds remain follow-up work (§14.3).
+> No refusal is reachable under a sufficient budget, and the output expands again (§14.3);
+> a cost bound for that budget remains follow-up work.
 > §14 supersedes §12's unbounded phase-1 search and its no-fallback claim. §1–§10 are the original plan. Its
 > target, the global byte minimum under the key of §3.3, was found infeasible at production
 > scale (§12.1) and is **superseded** by the decisions of §12 wherever the two differ. Read §12
@@ -1193,19 +1194,20 @@ the best table found so far.
 
 ### 14.2 Input domain and refusal
 
-The common domain for the follow-up totality theorem includes the existing `.ixe` framed
-constant-body bound: fewer than `2^64` bytes per constant. Standalone normalization and
-structured APIs must state that bound explicitly, alongside their ingestion and wire
-conditions. It does not follow from an arbitrary in-memory `Constant` or from individual
-UInt64-sized fields alone.
+The totality theorems (§14.3) state their domain explicitly. For Share-free roots it is
+fewer than `2^64` expression nodes in all, with fewer than `2^64` universes on every
+reference. For an input with a sharing table it is an input that expands, to a canonical
+DAG of fewer than `2^64` terms with fewer than `2^64` universes on every reference. The
+existing `.ixe` framed constant-body bound, fewer than `2^64` bytes per constant, implies
+these counts. Standalone normalization and structured APIs must state their domain
+explicitly; it does not follow from an arbitrary in-memory `Constant`.
 
-The production cutover retains checked arithmetic, resource limits and construction guards.
-In particular, the output-count/size checks and allocate/rematerialize checks remain. A
-failure returns an error. The family route has no telescope-spine guard: its cost identity
+The production route retains checked arithmetic, resource limits and construction guards.
+On the domain above none of them is reachable under a sufficient budget (§14.3); under a
+smaller budget a run returns an error. The family route has no telescope-spine guard: its cost identity
 and successful-output theorems hold for every spine length, so only the reference route keeps
 that guard (§12.17). A structural fallback is part of the rule; a fallback triggered by
-failure is not. The framed input bound by itself does not prove that the selected output fits
-its frame or that every guard succeeds.
+failure is not.
 
 ### 14.3 Proof scope and follow-up
 
@@ -1221,7 +1223,7 @@ or that the K16 cutover left every corpus constant unchanged (§14.4).
 
 The Lean cutover attaches these statements and the proved fast twins to the production
 entry and its audits, preserving compiler-facing meaning, format and codec theorems without
-new premises. Its audit has 184 theorem roots and checks all 30 compiler-path `csimp`
+new premises. Its audit has 193 theorem roots and checks all 30 compiler-path `csimp`
 equalities; the accepted unsafe set is unchanged. The old exact-optimum theorems remain
 on the reference path. Rust is a
 separately tested implementation; byte parity is not a universal refinement proof.
@@ -1233,13 +1235,24 @@ representation or opacity checks fail. Its two audited `csimp` equalities route 
 the production entry and the parameterized normalizer through this implementation;
 the component family, tie rules and resource limits are unchanged.
 
-The follow-up PR will prove success on the stated input domain with sufficient limits and
-a cost bound. Its remaining work includes carrying the full-endpoint writing bound
-through the selected output, output-domain closure and UInt64 representability, discharging
-all remaining guards, exact wide Rust arithmetic and wider IDs, traversal/teardown bounds,
-budget independence, and complete resource accounting including phase 2. Definitions of
-component call/work counts alone are not a cost theorem. None of this completes the separate
-Source acceptance, no-drop, paired-stream or `CompileCorrect` obligations.
+Totality is proved in `IxSharingVerify.NeverFails`. Under some budget the production entry
+succeeds on the domain of §14.2 (`canonicalSharingTiered_ok`), and so do the entry with a
+sharing table and constant normalization. No guard of the route is reachable there: the
+component partition check, the component and knapsack budgets, the model checks, the
+materialization and re-expansion checks of the uniform finisher, the first-tier search
+and the allocation's permutation and dependency checks, and the re-materialization's
+length, re-expansion and wire-domain checks. A larger budget keeps every successful run
+and its result (`Budget.canonicalSharingTiered_mono`), so two successful runs under any
+budgets return the same result (`canonicalSharingTiered_budget_independent`): the budget
+decides only whether a run is refused, never its bytes. The output, with its sharing
+table, expands again (`canonicalSharingTiered_output_expands`).
+
+The remaining follow-up work is a cost bound: an explicit budget as a function of the input
+size, with every loop of the fast implementations charged and the first-tier search
+bounded. Exact wide Rust arithmetic, wider Rust IDs and traversal/teardown bounds also
+remain, as does removing the guards the proofs make unreachable. Definitions of component
+call/work counts alone are not a cost theorem. None of this completes the separate Source
+acceptance, no-drop, paired-stream or `CompileCorrect` obligations.
 
 ### 14.4 Evidence and release gates
 

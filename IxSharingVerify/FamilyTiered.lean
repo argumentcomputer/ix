@@ -2,9 +2,9 @@ import IxSharingVerify.FamilyFinish
 import IxSharingVerify.TieredWire
 
 /-! Checked successful tiered family output. The phase-3 inequality below
-uses the executed rematerialization guard; it does not prove that the guard
-can never refuse a valid input. Totality and whole-constant encoding follow
-separately. No exact-search phase-1 success premise is used. -/
+uses the executed rematerialization guard; `NeverFails` proves that no guard
+of the route refuses on its domain under a sufficient budget. No exact-search
+phase-1 success premise is used. -/
 
 namespace Ix.Sharing.Family
 
