@@ -780,18 +780,20 @@ The audits are Lean modules that fail elaboration on a violation. The core
 kernel and codec audits are built by the strict standalone package `IxC/`
 (`lake -d IxC build --wfail`, sources from the repository, no dependency
 beyond the toolchain). The projection, block-order and authenticated-entry
-audits build in the root package, and the model audit builds in
-`Models/SetTheory`.
+audits, `Ix/Cert/RuntimeAudit.lean` and `Ix/Cert/ModuleAudit.lean` build in
+the root package, and the model audit builds in `Models/SetTheory`.
 
 | Module | Checks |
 | --- | --- |
 | `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 20, `fidelityRoots` 22, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
 | `IxC/Kernel/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
 | `IxC/Kernel/Audit/Roles.lean` | the specification set's shape, frozen: every role's kind, levels or equation count, evidence kinds, block and dependencies, and `specVersion` |
+| `IxC/Kernel/Audit/Modules.lean` | every safe declaration of every kernel module it imports (the kernel, and the theorems no root reaches: non-contradiction, the renaming and union development, unit hoisting, the in-model generators, the prelude shape, role-table injectivity) bounded by the three standard axioms (`#guard_module_axioms_under`, `Audit/Axioms.lean`); exact axioms of `nonContradiction`, `Cached.AcceptsRef.union` and the unit and hoisting theorems |
 | `Ix/SpecDigest.lean` | the specification digest (BLAKE3 of the set's canonical encoding), frozen |
 | `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports (no hasher), closures, extern differences (none for reconstruction) and statements, and the projection writer's guards |
 | `Ix/Ixon/Authenticated/Audit.lean` | the BLAKE3 entries' closure with exactly the assumed substitution (and its failure without it), the externs and `implemented_by` they add to the generic entries, their frozen definitions, their theorems' axioms and statements |
 | `Ix/Cert/RuntimeAudit.lean` | the compiler's (`Ix.Cert.compile`) runtime closure: every foreign primitive, `unsafe` implementation and `partial` definition it reaches beyond `Init` and `Std`, frozen by name (its axioms are frozen in `Ix/Cert/Audit.lean`) |
+| `Ix/Cert/ModuleAudit.lean` | every safe declaration of the proof modules that no statement reaches (Source grouping, ownership, metadata and uses; admission fronts; Source family and identity checks; the artifact and host admission theorems), and of every `Ix.Cert` and `Ix.CompileCert` module they import, bounded by the three standard axioms (`#guard_module_axioms`) |
 | `IxC/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
 | `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
 
@@ -894,7 +896,7 @@ re-records it states why the closure or the statement moved.
 
 1. the strict `IxC` build with the core kernel and codec audits;
 2. the host build of the root audits (`Ix/Ixon/{Projection,BlockOrder,
-   Authenticated}/Audit.lean`, `Ix/Cert/RuntimeAudit.lean`) and the kernel tests
+   Authenticated}/Audit.lean`, `Ix/Cert/{Runtime,Module}Audit.lean`) and the kernel tests
    (`Tests/Ix/Kernel/{Reader, CertifiedEntry, Authentication, Contracts,
    Projection, BlockOrder, AddressPure, ...}`), whose `#guard`s run at elaboration on
    fixtures re-keyed to their BLAKE3 addresses; the certified fixtures
