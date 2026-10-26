@@ -379,7 +379,7 @@ fn resolve_level_params(
 /// `addr` is the **projection-content address** under which the corresponding
 /// KConst is actually stored in `KEnv`.
 ///
-/// The callers (`build_mut_ctx`, `ingress_muts_inductive`'s `ctor_ids`, and
+/// The callers (`ingress_muts_inductive`'s `ctor_ids`, and
 /// `lean_all` reconstruction in `ingress_defn` / `ingress_recursor` /
 /// `ingress_muts_inductive`) pull addresses out of `ConstantMetaInfo::*::{all,
 /// ctx, ctors}`. Those fields store **name-hash** addresses (they were written
@@ -415,23 +415,6 @@ fn resolve_all<M: KernelMode>(
       Ok(KId::new(addr, M::meta_field(name)))
     })
     .collect()
-}
-
-fn get_ctx_addrs(meta: &ConstantMeta) -> &[Address] {
-  match &meta.info {
-    ConstantMetaInfo::Def { ctx, .. }
-    | ConstantMetaInfo::Indc { ctx, .. }
-    | ConstantMetaInfo::Rec { ctx, .. } => ctx,
-    _ => &[],
-  }
-}
-
-fn build_mut_ctx<M: KernelMode>(
-  meta: &ConstantMeta,
-  names: &FxHashMap<Address, Name>,
-  name_to_addr: &FxHashMap<Name, Address>,
-) -> Result<Vec<KId<M>>, String> {
-  resolve_all(get_ctx_addrs(meta), names, name_to_addr)
 }
 
 // ============================================================================
@@ -1384,10 +1367,10 @@ fn ingress_defn<M: KernelMode>(
   block: KId<M>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
-  // Anon callers compute `mut_ctx` structurally from sibling
-  // projection addresses; passing `Some(_)` skips the metadata-derived
-  // `build_mut_ctx` call. Meta callers pass `None`.
-  mut_ctx_override: Option<Vec<KId<M>>>,
+  // The semantic targets of `Expr::Rec`: the serialized owner's members
+  // (see `owner_mut_ctx`), or `[self_id]` for a standalone. Metadata
+  // never selects them.
+  mut_ctx: Vec<KId<M>>,
   local_dependencies: Option<&mut LocalDefnDependencies>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
@@ -1413,10 +1396,6 @@ fn ingress_defn<M: KernelMode>(
     _ => (vec![], &DEFAULT_ARENA, 0, 0, vec![]),
   };
 
-  let mut_ctx = match mut_ctx_override {
-    Some(m) => m,
-    None => build_mut_ctx(meta, names, name_to_addr)?,
-  };
   let ctx = Ctx {
     sharing,
     refs,
@@ -1496,9 +1475,8 @@ fn ingress_recursor<M: KernelMode>(
   block: KId<M>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
-  // Anon callers compute `mut_ctx` structurally; Meta callers pass
-  // `None` to fall back to the metadata-derived `build_mut_ctx`.
-  mut_ctx_override: Option<Vec<KId<M>>>,
+  // The semantic targets of `Expr::Rec`, as for `ingress_defn`.
+  mut_ctx: Vec<KId<M>>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
@@ -1523,10 +1501,6 @@ fn ingress_recursor<M: KernelMode>(
       _ => (vec![], &DEFAULT_ARENA, 0, vec![], vec![], vec![]),
     };
 
-  let mut_ctx = match mut_ctx_override {
-    Some(m) => m,
-    None => build_mut_ctx(meta, names, name_to_addr)?,
-  };
   let ctx = Ctx {
     sharing,
     refs,
@@ -1641,10 +1615,11 @@ fn ingress_standalone<M: KernelMode>(
         &constant.sharing,
         &constant.refs,
         &constant.univs,
-        self_id,
+        self_id.clone(),
         intern,
         stats,
-        None,
+        // A standalone is a singleton unit: `Rec(0)` is itself.
+        vec![self_id],
         Some(&mut local_dependencies),
       )?;
       local_dependencies.validate()?;
@@ -1763,10 +1738,10 @@ fn ingress_standalone<M: KernelMode>(
       &constant.sharing,
       &constant.refs,
       &constant.univs,
-      self_id,
+      self_id.clone(),
       intern,
       stats,
-      None,
+      vec![self_id],
     ),
 
     // Projections and Muts are handled in ingress_muts_block
@@ -1793,6 +1768,8 @@ fn ingress_muts_inductive<M: KernelMode>(
   block_constant: &Constant,
   block_id: KId<M>,
   member_idx: u64,
+  // The owner's members, the semantic targets of `Expr::Rec`.
+  mut_ctx: Vec<KId<M>>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
@@ -1810,7 +1787,6 @@ fn ingress_muts_inductive<M: KernelMode>(
 
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
-  let mut_ctx = build_mut_ctx(meta, names, name_to_addr)?;
   let ctx = Ctx {
     sharing: &block_constant.sharing,
     refs: &block_constant.refs,
@@ -2008,23 +1984,17 @@ fn ingress_muts_block<M: KernelMode>(
   };
   validate_serialized_muts(members)?;
 
-  let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
-  let mut local_dependencies = LocalDefnDependencies::default();
-
+  // The serialized owner defines its members: member `i`'s address is its
+  // projection from this owner, and `Expr::Rec(i)` denotes it. Metadata only
+  // names them: `all[i][0]` is the name-hash address of member `i`'s
+  // canonical Lean name, whose Named entry carries the member's own metadata
+  // (arena, type root, ...) and must agree with the owner-derived address.
+  // Error loudly if the Named entry is missing — the Muts-registration pass
+  // in `compile/mutual.rs` is supposed to emit one per member.
+  let mut member_ids: Vec<KId<M>> = Vec::with_capacity(members.len());
+  let mut member_metas: Vec<Arc<ConstantMeta>> =
+    Vec::with_capacity(members.len());
   for (i, member) in members.iter().enumerate() {
-    // `all[i][0]` is the name-hash address of this member's canonical Lean
-    // name; we read the per-member metadata (arena, type_root, etc.) from
-    // that Named entry. Note the address distinction: `primary_name_addr`
-    // is a *name-content* hash (Blake3 of the Lean name components),
-    // whereas `member_named.addr` is the *projection-constant* content
-    // hash (address of the IPrj/CPrj/RPrj/DPrj struct that projects this
-    // member out of the enclosing Muts block). We want the projection
-    // address for the `KId`, because that's the address under which every
-    // `Expr::Ref` to this member in the rest of the env was registered.
-    //
-    // Error loudly if the Named entry is missing — the Muts-registration
-    // pass in `compile/mutual.rs` is supposed to emit one per member, and
-    // a missing entry means the compile phase dropped work we need here.
     let primary_name_addr = all
       .get(i)
       .and_then(|cls| cls.first())
@@ -2045,10 +2015,17 @@ fn ingress_muts_block<M: KernelMode>(
         "Muts member '{member_name}' metadata address differs from owner/index {index}"
       ));
     }
-    let member_meta = &member_named.meta();
+    member_metas.push(member_named.meta());
+    member_ids.push(KId::new(member_addr, M::meta_field(member_name)));
+  }
+  let mut_ctx = member_ids.clone();
 
-    let self_id: KId<M> =
-      KId::new(member_addr, M::meta_field(member_name.clone()));
+  let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
+  let mut local_dependencies = LocalDefnDependencies::default();
+
+  for (i, member) in members.iter().enumerate() {
+    let self_id = member_ids[i].clone();
+    let member_meta = &member_metas[i];
 
     match member {
       IxonMutConst::Indc(ind) => {
@@ -2062,6 +2039,7 @@ fn ingress_muts_block<M: KernelMode>(
           &block_constant,
           block_id.clone(),
           i as u64,
+          mut_ctx.clone(),
           intern,
           stats,
         )?);
@@ -2080,7 +2058,7 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
-          None,
+          mut_ctx.clone(),
         )?);
       },
       IxonMutConst::Defn(def) => {
@@ -2097,7 +2075,7 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
-          None,
+          mut_ctx.clone(),
           Some(&mut local_dependencies),
         )?);
       },
@@ -4436,14 +4414,12 @@ fn anon_ctor_addrs(
 
 /// Anon ingress for a single standalone (non-mutual) constant.
 ///
-/// For `Defn` and `Recr` we pass an explicit `mut_ctx_override = [self_id]`
-/// to support self-recursive standalones that use `Expr::Rec(0, univs)` to
-/// refer to themselves. (Singleton-unwrapped self-recursive defs are emitted
-/// by the compiler as standalones, with their self-reference encoded as
-/// `Rec(0)` — same as a one-member mutual block would have used.) Without
-/// the override, `ingress_defn`/`ingress_recursor` falls back to
-/// `build_mut_ctx` on the empty meta, yielding an empty `mut_ctx` and
-/// "invalid Rec index 0" errors.
+/// For `Defn` and `Recr` the mutual context is the singleton `[self_id]`,
+/// so self-recursive standalones can use `Expr::Rec(0, univs)` to refer to
+/// themselves. (Singleton-unwrapped self-recursive defs are emitted by the
+/// compiler as standalones, with their self-reference encoded as `Rec(0)` —
+/// same as a one-member mutual block would have used.) Named ingress uses
+/// the same singleton.
 ///
 /// `Axio` and `Quot` cannot have `Rec`-references so we route them through
 /// `ingress_standalone` unchanged. Projections / `Muts` belong to a block
@@ -4475,7 +4451,7 @@ fn ingress_anon_standalone(
       self_id.clone(),
       &mut kenv.intern,
       &mut convert_stats,
-      Some(vec![self_id.clone()]),
+      vec![self_id.clone()],
       Some(&mut local_dependencies),
     )?,
     IxonCI::Recr(rec) => ingress_recursor::<Anon>(
@@ -4491,7 +4467,7 @@ fn ingress_anon_standalone(
       self_id.clone(),
       &mut kenv.intern,
       &mut convert_stats,
-      Some(vec![self_id.clone()]),
+      vec![self_id.clone()],
     )?,
     _ => ingress_standalone::<Anon>(
       &Name::anon(),
@@ -4747,7 +4723,7 @@ fn convert_anon_muts(
           block_id.clone(),
           &mut kenv.intern,
           &mut convert_stats,
-          Some(mut_ctx.clone()),
+          mut_ctx.clone(),
           Some(&mut local_dependencies),
         )?;
         all_entries.extend(entries);
@@ -4773,7 +4749,7 @@ fn convert_anon_muts(
           block_id.clone(),
           &mut kenv.intern,
           &mut convert_stats,
-          Some(mut_ctx.clone()),
+          mut_ctx.clone(),
         )?;
         all_entries.extend(entries);
       },

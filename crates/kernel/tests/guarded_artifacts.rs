@@ -245,3 +245,92 @@ fn cached_owner_members_do_not_authorize_absent_external_references() {
     assert_eq!(checker.check_const(&address).is_ok(), carry_projection);
   }
 }
+
+/// Register `label` as a named standalone definition at `address` whose
+/// metadata gives the mutual context `ctx` and the expression arena `arena`.
+fn name_standalone(
+  env: &Env,
+  label: &str,
+  address: &Address,
+  ctx: Vec<Address>,
+  arena: ExprMeta,
+  value_root: u64,
+) -> Name {
+  let named = name(label);
+  let own = name_address(&named);
+  env.store_name(own.clone(), named.clone());
+  env.register_name(
+    named.clone(),
+    Named::new(
+      address.clone(),
+      ConstantMeta {
+        info: ConstantMetaInfo::Def {
+          name: own.clone(),
+          lvls: vec![],
+          all: vec![own],
+          ctx,
+          arena,
+          type_root: 0,
+          value_root,
+        },
+        ..ConstantMeta::default()
+      },
+    ),
+  );
+  named
+}
+
+/// A standalone definition with member 0's type and the given value.
+fn standalone_like_member_0(
+  record: &Constant,
+  value: ixon::expr::Expr,
+  extra_ref: Option<Address>,
+) -> Constant {
+  let ConstantInfo::Muts(members) = &record.info else { unreachable!() };
+  let MutConst::Defn(definition) = &members[0] else { unreachable!() };
+  let mut definition = definition.clone();
+  definition.value = Arc::new(value);
+  let mut constant = Constant::new(ConstantInfo::Defn(definition));
+  constant.refs = record.refs.clone();
+  constant.refs.extend(extra_ref);
+  constant.univs = record.univs.clone();
+  constant.sharing = record.sharing.clone();
+  constant
+}
+
+/// `Expr::Rec` denotes a member of the serialized unit, never a constant
+/// that the metadata's mutual context names. A standalone is its own
+/// singleton unit, so `Rec(1)` is out of range in both modes, even though
+/// the metadata context `[f, member 0]` would resolve it to a well-typed
+/// constant.
+#[test]
+fn metadata_context_cannot_select_recursive_targets() {
+  let mut env = loaded(GOOD);
+  let (owner, record) = owner(&env);
+  let members = name_definitions(&env, &owner, &record, "good");
+  let f =
+    standalone_like_member_0(&record, ixon::expr::Expr::Rec(1, vec![]), None);
+  let f_address = f.commit().0;
+  env.store_const(f_address.clone(), f);
+  let f_label = name("f");
+  let f_name = name_standalone(
+    &env,
+    "f",
+    &f_address,
+    vec![name_address(&f_label), name_address(&members[0])],
+    ExprMeta::default(),
+    0,
+  );
+  empty_binding(&mut env);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  let mut named =
+    ArtifactChecker::<Meta>::from_named_source(Ok(source.clone()));
+  assert!(named.check_name(&members[0]).is_ok(), "the aliased member is valid");
+  let error = named.check_name(&f_name).unwrap_err();
+  assert!(
+    format!("{error}").contains("invalid Rec index 1"),
+    "named ingress took a recursive target from metadata: {error}"
+  );
+  let mut anon = ArtifactChecker::<Anon>::from_source(Ok(source));
+  assert!(anon.check_const(&f_address).is_err());
+}
