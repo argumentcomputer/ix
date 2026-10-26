@@ -247,7 +247,7 @@ fn every_transitive_record_and_blob_read_authenticates_its_own_bytes() {
   env.blobs.insert(bad_blob.clone(), b"other bytes".to_vec());
   let source = ArtifactSource::prepare(env).unwrap();
   let parent = source.record(&root).unwrap();
-  assert_eq!(parent.constant().refs, [bad.clone()]);
+  assert_eq!(parent.constant().refs.as_slice(), std::slice::from_ref(&bad));
   assert!(matches!(source.record(&bad), Err(Error::Record(_, _))));
   assert!(matches!(source.blob(&bad_blob), Err(Error::BlobHash(_))));
   let missing = Address::hash(b"not present");
