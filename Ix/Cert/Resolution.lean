@@ -1162,15 +1162,28 @@ theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks
         obtain ⟨rfl, -, rfl⟩ := h
         exact ⟨_, _, st, rows, rfl, rfl, rfl, hr, hc, hf, rfl, rfl, rfl, Mono.of_eq rfl rfl rfl⟩
 
+/-- **The fold's run**: the driver ran its waves over the condensation `blocks` of
+`env` from `cenv₀` under `sched`, from an empty resolution map and the input's
+view, to a state whose resolution map is the final environment `cenv`'s and which
+`cenv` follows. It names the start that the states the fold reaches
+(`Reach`) are reached from, so that facts about those states can be stated of this
+compile's fold. -/
+def FoldRun (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv cenv₀ : CompileEnv)
+    (sched : FoldSchedule) : Prop :=
+  ∃ st : FoldState, cenv₀.nameToAddr = {} ∧
+    (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
+    foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
+    cenv.nameToAddr = st.acc.cenv.nameToAddr ∧ Mono st.acc.cenv cenv
+
 /-- **The driver's final resolution map has provenance**: every entry is an
 aux name's, or a primary claim of a condensation block compiled during the
 fold, against a state the fold reached, whose record's bytes the assembled
-environment stores at its address. -/
+environment stores at its address. The fold's start is named (`FoldRun`). -/
 theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
     {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
     {bytes : Nat} {cenv : CompileEnv}
     (h : compileEnvFold env blocks dbg unmaterialized sharingLimits width = .ok (ixe, bytes, cenv)) :
-    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule),
+    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule), FoldRun env blocks cenv cenv₀ sched ∧
       (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
       ((FoldState.init cenv₀ blocks sched).acc.cenv.p3Cliques,
         (FoldState.init cenv₀ blocks sched).acc.cenv.p3CliqueRoots) =
@@ -1181,7 +1194,7 @@ theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedB
             ixe.consts.get? a = some { buf := b, len := b.size } := by
   obtain ⟨cenv₀, sched, st, rows, h₀, henv, hcl, hst, -, finalized, hmap, haux, -, hm⟩ := compileEnvFold_final h
   have frame := Ix.Compile.OriginalData.finalizeOriginals_frame finalized
-  refine ⟨cenv₀, sched, henv, hcl, fun n a hn => ?_⟩
+  refine ⟨cenv₀, sched, ⟨st, h₀, henv, hst, hmap, hm⟩, henv, hcl, fun n a hn => ?_⟩
   rw [hmap] at hn
   rw [haux]
   rcases reach_provenance (provenance_of_empty ((init_nameToAddr _ _ _).trans h₀))
@@ -1235,6 +1248,8 @@ theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {fai
     ∃ (bytes : Nat) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileEnvFold { consts := env.consts }
         (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) = .ok (ixe, bytes, cenv) ∧
+      FoldRun { consts := env.consts } (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) cenv
+        cenv₀ sched ∧
       (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.env =
         { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) } ∧
       ((FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.p3Cliques,
@@ -1249,8 +1264,8 @@ theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {fai
               cenv n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold h
-  obtain ⟨cenv₀, sched, henv, hcl, hp⟩ := compileEnvFold_provenance hf
-  exact ⟨bytes, cenv₀, sched, hf, henv, hcl, hp⟩
+  obtain ⟨cenv₀, sched, hrun, henv, hcl, hp⟩ := compileEnvFold_provenance hf
+  exact ⟨bytes, cenv₀, sched, hf, hrun, henv, hcl, hp⟩
 
 
 /-! ## The block compile behind a claim -/
@@ -1711,6 +1726,7 @@ theorem compileReport_claim {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
       blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
+      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         cenv.auxNameToAddr.contains n = false →
         (ixe.named.get? n).map (·.addr) = some a ∧
@@ -1723,8 +1739,8 @@ theorem compileReport_claim {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
           (HookFree snap.cenv A k → BlockCompiled snap.cenv A k n a b) := by
   obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
-  obtain ⟨bytes, cenv₀, sched, -, -, -, prov⟩ := compileUnchecked_provenance hu
-  refine ⟨cenv, _, cenv₀, sched, hu, rfl, fun n a hn hnaux => ⟨pub n a hn, ?_⟩⟩
+  obtain ⟨bytes, cenv₀, sched, -, hrun, -, -, prov⟩ := compileUnchecked_provenance hu
+  refine ⟨cenv, _, cenv₀, sched, hu, rfl, hrun, fun n a hn hnaux => ⟨pub n a hn, ?_⟩⟩
   rcases prov n a hn with hx | ⟨b, hc, hb⟩
   · rw [hnaux] at hx; cases hx
   · obtain ⟨snap, rep, all, A, k, r, c, layout, p, hsnap, hall, hm, sub, hr, hclaim⟩ := compiled_runBlock hc

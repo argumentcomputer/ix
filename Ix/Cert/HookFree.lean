@@ -549,6 +549,7 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
       blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
+      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         cenv.auxNameToAddr.contains n = false → (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧
@@ -562,8 +563,8 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
           HookFree snap.cenv all (blockKey rep all) ∧ BlockCompiled snap.cenv all (blockKey rep all) n a b := by
   obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
   have hf := final_of_report h hu
-  obtain ⟨bytes, cenv₀, sched, -, henv, htab, prov⟩ := compileUnchecked_provenance hu
-  refine ⟨cenv, _, cenv₀, sched, hu, rfl, fun n a hn hnaux hs => ⟨pub n a hn, ?_⟩⟩
+  obtain ⟨bytes, cenv₀, sched, -, hrun, henv, htab, prov⟩ := compileUnchecked_provenance hu
+  refine ⟨cenv, _, cenv₀, sched, hu, rfl, hrun, fun n a hn hnaux hs => ⟨pub n a hn, ?_⟩⟩
   rcases prov n a hn with hx | ⟨b, hc, hb⟩
   · rw [hnaux] at hx; cases hx
   obtain ⟨snap, pre, rep, all, hsnap, -, hm, hall, hpost, hclaim⟩ := hc
