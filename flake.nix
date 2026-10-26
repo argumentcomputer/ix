@@ -101,13 +101,14 @@
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           # The Cargo files the workspace builds from.
           cargoSource = pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.);
-          # Rust format and kernel-boundary tests include immutable binary
-          # fixtures that cleanCargoSource does not retain by extension.
+          # Rust format, host-admission and kernel-boundary tests include
+          # immutable fixtures that cleanCargoSource does not retain by extension.
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               cargoSource
               ./Tests/Fixtures/ixon-v4
+              ./Tests/Fixtures/host-admission-v1
               ./crates/kernel/tests/fixtures
             ];
           };
