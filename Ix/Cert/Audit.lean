@@ -1,4 +1,5 @@
 import Ix.Compile.OriginalData
+import Ix.SpecDigest.Audit
 import Ix.Cert.Statement
 import Ix.Cert.StrongCommutation
 import Ix.Cert.ProjectionMembers

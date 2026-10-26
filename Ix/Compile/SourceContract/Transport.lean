@@ -2,6 +2,7 @@ module
 
 public import Ix.Compile.SourceContract.Registry
 public import Ix.SemanticContract
+public import Ix.Compile.SourceContract.SemanticPresence
 
 /-! Resolve occurrence contracts against the original source, then decorate
 the corresponding binders before hashing, canonicalization, or sharing. -/
@@ -66,9 +67,7 @@ def ResolvedSourceContract.decorate (contract : ResolvedSourceContract) :
   | _ => throw s!"source transport: annotated inductive/constructor/recursor transformations are unsupported: {source.name}"
 
 def exprHasSemanticContracts (expr : Lean.Expr) : Bool :=
-  (expr.find? fun
-    | .mdata data _ => !(Ix.SemanticContract.leanFields data).isEmpty
-    | _ => false).isSome
+  SemanticPresence.run expr
 
 def sourceHasSemanticContracts (source : Lean.ConstantInfo) : Bool :=
   exprHasSemanticContracts source.type ||

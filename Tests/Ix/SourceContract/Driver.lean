@@ -67,7 +67,13 @@ private def placement : IO Bool := do
     (_root_.Ix.Expr.mkMData data (_root_.Ix.Expr.mkLam n ty
       (_root_.Ix.Expr.mkApp (_root_.Ix.Expr.mkBVar 2) zero) bi)) bi)
   let nestedOut := _root_.Ix.Expr.mkMData data (_root_.Ix.Expr.mkLam n ty expected bi)
+  let some original := sourceBody? source | return false
+  let some prepared := sourceBody? decorated | return false
   let checks := #[
+    ("actual prepared-source presence", [(source.type, false), (original, false),
+      (decorated.type, true), (prepared, true)].all fun (e, expected) =>
+        exprHasSemanticContracts e == expected && SemanticPresence.spec e == expected &&
+        SemanticPresence.runWith (fun _ => 0) e == expected),
     ("prepared source and preserved binder inspect", data.size == 3 &&
       (inspect cv.cnst.type).toOption == some true && (inspect cv.value).toOption == some true &&
       eq out expected && tag == .no && (inspect out).toOption == some true),

@@ -8,6 +8,7 @@ public import Tests.Ix.RolePublication
 public import Tests.Ix.RoleGeneration
 public import Tests.Ix.RoleArtifactConsumer
 public import Tests.Ix.RolePacking
+public import Tests.Ix.HostAdmission
 
 open LSpec SlimCheck Gen Ixon
 open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSerialization rsEqEnvSerialization)
@@ -808,6 +809,7 @@ public def Tests.Ixon.suite : List TestSeq := [
   Tests.Ix.RoleGeneration.artifactUnits .natDiv,
   Tests.Ix.RoleArtifactConsumer.units,
   Tests.Ix.RolePacking.units,
+  Tests.Ix.HostAdmission.units,
   Tests.Ix.RoleBinding.units {
     sharing := #[], refs := #[], univs := #[.zero], info := .defn {
       kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } },
