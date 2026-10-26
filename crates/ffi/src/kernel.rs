@@ -1009,8 +1009,15 @@ struct CheckWorkItem {
   aliases: Vec<usize>,
 }
 
+/// Group the requested names into kernel work items. Names share an item,
+/// and so a verdict, only when each one's carried record is authentically a
+/// member of the same carried owner (`ArtifactSource::member`, which checks
+/// the record's hash, the owner's record and the member's kind and index). A
+/// projection's own `block` field is not trusted: a projection that fails
+/// authentication gets an item of its own, whose check reports the defect.
 fn build_check_work(
   ixon_env: &IxonEnv,
+  source: &ArtifactSource,
   names: &[Name],
   expect_pass: &[bool],
   ungrounded: &FxHashMap<Name, String>,
@@ -1020,7 +1027,8 @@ fn build_check_work(
 
   for (i, name) in names.iter().enumerate() {
     let should_pass = expect_pass.get(i).copied().unwrap_or(true);
-    let block_key = check_schedule_block_addr(ixon_env, name, ungrounded);
+    let block_key =
+      check_schedule_block_addr(ixon_env, source, name, ungrounded);
     if let Some(block_key) = block_key {
       let key = (block_key, should_pass);
       if let Some(work_idx) = by_block.get(&key).copied() {
@@ -1039,6 +1047,7 @@ fn build_check_work(
 
 fn check_schedule_block_addr(
   ixon_env: &IxonEnv,
+  source: &ArtifactSource,
   name: &Name,
   ungrounded: &FxHashMap<Name, String>,
 ) -> Option<Address> {
@@ -1049,19 +1058,12 @@ fn check_schedule_block_addr(
   if matches!(named.meta().info, ConstantMetaInfo::Muts { .. }) {
     return None;
   }
-  let constant = ixon_env.get_const(&named.addr)?;
-  // Only collapse work by actual serialized kernel blocks. Projection
-  // constants carry the SCC block address directly; ordinary constants are
-  // singleton blocks. Do not use declaration-family `all` metadata here: it
-  // can include names that are not checked by the same kernel block.
-  match &constant.info {
-    IxonCI::IPrj(p) => Some(p.block.clone()),
-    IxonCI::CPrj(p) => Some(p.block.clone()),
-    IxonCI::RPrj(p) => Some(p.block.clone()),
-    IxonCI::DPrj(p) => Some(p.block.clone()),
-    IxonCI::Muts(_) => None,
-    _ => Some(named.addr),
-  }
+  // Only collapse work by actual serialized kernel units: a projection's
+  // authenticated owner, or the constant itself. Do not use
+  // declaration-family `all` metadata here: it can include names that are
+  // not checked by the same kernel block.
+  let member = source.member(&named.addr).ok()?;
+  Some(member.owner().map_or(named.addr, |owner| owner.address().clone()))
 }
 
 fn run_checks_on_large_stack<M: KernelMode>(
@@ -1081,7 +1083,12 @@ where
     return Ok(Vec::new());
   }
 
-  let work = build_check_work(&ixon_env, &names, &expect_pass, &ungrounded);
+  // Capture the input once, before planning: the plan and every worker read
+  // this same authenticated source.
+  let source =
+    ArtifactSource::snapshot(&ixon_env).map_err(|error| error.to_string())?;
+  let work =
+    build_check_work(&ixon_env, &source, &names, &expect_pass, &ungrounded);
   if work.len() == names.len() {
     eprintln!("[rs_kernel_check] checking {} constants...", names.len());
   } else {
@@ -1096,6 +1103,7 @@ where
   if worker_count == 1 {
     return run_checks_serial_on_large_stack::<M>(
       ixon_env,
+      source,
       lookups,
       names,
       expect_pass,
@@ -1108,6 +1116,7 @@ where
 
   run_checks_parallel_on_large_stacks::<M>(
     ixon_env,
+    source,
     lookups,
     names,
     expect_pass,
@@ -1121,6 +1130,7 @@ where
 
 fn run_checks_serial_on_large_stack<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
+  source: ArtifactSource,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
@@ -1137,6 +1147,7 @@ where
     .spawn(move || {
       check_consts_loop::<M>(
         ixon_env,
+        source,
         lookups,
         names,
         expect_pass,
@@ -1148,7 +1159,7 @@ where
     })
     .map_err(|e| format!("failed to spawn kernel-check thread: {e}"))?
     .join()
-    .map_err(|_panic| "kernel-check thread panicked".to_string())?
+    .map_err(|_panic| "kernel-check thread panicked".to_string())
 }
 
 // All by-value arguments below are immediately wrapped in `Arc` for sharing
@@ -1156,6 +1167,7 @@ where
 #[allow(clippy::needless_pass_by_value)]
 fn run_checks_parallel_on_large_stacks<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
+  source: ArtifactSource,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
@@ -1168,10 +1180,8 @@ fn run_checks_parallel_on_large_stacks<M: KernelMode>(
 where
   M::MField<Vec<Name>>: CheckDupLevelParams,
 {
-  // The loaded/compiled maps are quiescent during this single capture; workers
-  // share it and cannot mutate the input or inject a public KEnv success cache.
-  let source =
-    ArtifactSource::snapshot(&ixon_env).map_err(|error| error.to_string())?;
+  // Workers share the planner's single capture and cannot mutate the input
+  // or inject a public KEnv success cache.
   let total = names.len();
   let work_total = work.len();
   eprintln!(
@@ -3249,6 +3259,84 @@ mod tests {
   }
 }
 
+#[cfg(test)]
+mod planner_tests {
+  use super::build_check_work;
+  use ix_common::address::Address;
+  use ix_common::env::Name;
+  use ix_kernel::role_admission::ArtifactSource;
+  use ixon::constant::{ConstantInfo, defn_proj_address, defn_proj_constant};
+  use ixon::env::{Env, Named};
+  use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta};
+  use rustc_hash::FxHashMap;
+
+  const GOOD: &[u8] = include_bytes!(
+    "../../kernel/tests/fixtures/serialized_units/homogeneous-good.ixe"
+  );
+
+  fn register(env: &Env, label: &str, address: Address) -> Name {
+    let name = Name::str(Name::anon(), label.into());
+    let own = Address::from_blake3_hash(*name.get_hash());
+    env.store_name(own.clone(), name.clone());
+    env.register_name(
+      name.clone(),
+      Named::new(
+        address,
+        ConstantMeta {
+          info: ConstantMetaInfo::Def {
+            name: own.clone(),
+            lvls: vec![],
+            all: vec![own.clone()],
+            ctx: vec![own],
+            arena: ExprMeta::default(),
+            type_root: 0,
+            value_root: 0,
+          },
+          ..ConstantMeta::default()
+        },
+      ),
+    );
+    name
+  }
+
+  /// Names share a work item, and so a verdict, only through an
+  /// authenticated owner: a genuinely serialized projection whose `block`
+  /// field names a real owner but whose index that owner lacks is scheduled
+  /// on its own, not as an alias of the owner's valid members.
+  #[test]
+  fn invalid_projection_does_not_alias_its_claimed_owner() {
+    let mut input = GOOD;
+    let env = Env::get(&mut input).unwrap();
+    let owner = env
+      .consts
+      .iter()
+      .find_map(|entry| {
+        matches!(entry.value().get().unwrap().info, ConstantInfo::Muts(_))
+          .then(|| entry.key().clone())
+      })
+      .unwrap();
+    let invalid = defn_proj_constant(99, owner.clone());
+    let invalid_address = invalid.commit().0;
+    env.store_const(invalid_address.clone(), invalid);
+    let names = vec![
+      register(&env, "member0", defn_proj_address(0, &owner)),
+      register(&env, "member1", defn_proj_address(1, &owner)),
+      register(&env, "invalid", invalid_address),
+    ];
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    let work = build_check_work(
+      &env,
+      &source,
+      &names,
+      &[true, true, true],
+      &FxHashMap::default(),
+    );
+    let groups: Vec<Vec<usize>> =
+      work.iter().map(|item| item.aliases.clone()).collect();
+    assert_eq!(groups, vec![vec![0, 1], vec![2]]);
+  }
+}
+
 /// Default threshold at and above which a completed check is "slow" enough to
 /// keep a persistent line in quiet mode. Override with
 /// `IX_KERNEL_CHECK_SLOW_MS`.
@@ -3534,6 +3622,7 @@ where
 #[allow(clippy::needless_pass_by_value)]
 fn check_consts_loop<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
+  source: ArtifactSource,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
@@ -3541,7 +3630,7 @@ fn check_consts_loop<M: KernelMode>(
   work: Vec<CheckWorkItem>,
   quiet: bool,
   failure_log: Option<Arc<FailureLog>>,
-) -> Result<Vec<CheckRes>, String>
+) -> Vec<CheckRes>
 where
   M::MField<Vec<Name>>: CheckDupLevelParams,
 {
@@ -3553,8 +3642,6 @@ where
   // Terminal width is only needed for ephemeral clearing in quiet mode. In
   // verbose mode we never rewrite, so the value is ignored.
   let mut progress = Progress::new(quiet);
-  let source =
-    ArtifactSource::snapshot(&ixon_env).map_err(|error| error.to_string())?;
   let mut checker = ArtifactChecker::<M>::from_named_source(Ok(source));
   let clear_every = kernel_check_clear_every();
   let mut checks_since_clear = clear_every;
@@ -3635,20 +3722,15 @@ where
   // Clear any trailing ephemeral label before the summary lines print.
   progress.flush();
 
-  Ok(
-    results
-      .into_iter()
-      .enumerate()
-      .map(|(i, result)| {
-        result.unwrap_or_else(|| {
-          Err((
-            ErrKind::Kernel,
-            format!("kernel-check missed result index {i}"),
-          ))
-        })
+  results
+    .into_iter()
+    .enumerate()
+    .map(|(i, result)| {
+      result.unwrap_or_else(|| {
+        Err((ErrKind::Kernel, format!("kernel-check missed result index {i}")))
       })
-      .collect(),
-  )
+    })
+    .collect()
 }
 
 // =============================================================================
