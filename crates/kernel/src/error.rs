@@ -70,6 +70,12 @@ pub enum TcError<M: KernelMode> {
   /// here means a kernel path leaked an open expression into the
   /// canonical-ordering stage.
   UnexpectedFVarInComparator,
+  /// The declaration is, or refers to, one of Lean's native-evaluation
+  /// constants (`Lean.trustCompiler` and `Lean.reduceBool`,
+  /// `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`, which are
+  /// built on it). Evaluation by the compiler is outside the checked
+  /// theory, so the kernel declines them as the certified checker does.
+  NativeEvaluation(Address),
   Other(String),
 }
 
@@ -121,6 +127,12 @@ impl<M: KernelMode> std::fmt::Display for TcError<M> {
         f,
         "unexpected free variable in canonical-ordering comparator: \
          canonicalization must run before any binder opening"
+      ),
+      TcError::NativeEvaluation(addr) => write!(
+        f,
+        "native-evaluation constant {:.12}: evaluation by the compiler is \
+         outside the checked theory",
+        addr.hex()
       ),
       TcError::Other(s) => write!(f, "{s}"),
     }

@@ -264,7 +264,54 @@ def testPrimitivesParity : TestSeq :=
     return (total_problems == 0, passed, total_problems, msg)
   ) .done
 
-def paritySuite : List TestSeq := [testPrimitivesParity]
+/-- The native-evaluation constants the Rust kernel declines, in the order of
+    `ix_kernel::primitive::native_evaluation_addrs`. -/
+def nativeEvaluationConstants : Array String := #[
+  "Lean.trustCompiler", "Lean.reduceBool", "Lean.reduceNat",
+  "Lean.ofReduceBool", "Lean.ofReduceNat"
+]
+
+/-- FFI: the kernel's `(lean_name, hex_address)` table of the
+    native-evaluation constants it declines. -/
+@[extern "rs_native_evaluation_addrs"]
+opaque rsNativeEvaluationAddrsFFI : IO (Array (String × String))
+
+/-- Parity check: every address the Rust kernel declines as a
+    native-evaluation constant must be the address a live compile gives that
+    Lean declaration. A stale address would let the kernel accept the
+    declaration it is meant to decline. -/
+def testNativeEvaluationParity : TestSeq :=
+  .individualIO "native-evaluation address parity (kernel table vs live compile)" none (do
+    let leanEnv ← get_env!
+    let roots := nativeEvaluationConstants.map parseNameToLean
+    let needed := collectDeps leanEnv roots
+    let filtered := leanEnv.constants.toList.filter fun (name, _) =>
+      needed.contains name
+    let rawEnv ← Ix.CompileM.rsCompileEnvFFI filtered
+    let env : Ixon.Env := rawEnv.toEnv
+
+    let table ← rsNativeEvaluationAddrsFFI
+    let mut problems : Array String := #[]
+    let names := table.map (·.1)
+    if names != nativeEvaluationConstants then
+      problems := problems.push
+        s!"catalog mismatch: expected {nativeEvaluationConstants}, got {names}"
+    for (name, hex) in table do
+      match env.named[parseIxName name]? with
+      | none => problems := problems.push s!"{name}: missing from the compiled env"
+      | some named =>
+        let live := toString named.addr
+        if live != hex then
+          problems := problems.push s!"{name}: live={live} kernel={hex}"
+    for p in problems do
+      IO.eprintln s!"native-evaluation parity: {p}"
+    let size := nativeEvaluationConstants.size
+    let msg : Option String :=
+      if problems.isEmpty then none else some s!"{problems.size} problem(s)"
+    return (problems.isEmpty, size - min problems.size size, problems.size, msg)
+  ) .done
+
+def paritySuite : List TestSeq := [testPrimitivesParity, testNativeEvaluationParity]
 
 def suite : List TestSeq := [testBuildPrimitives]
 

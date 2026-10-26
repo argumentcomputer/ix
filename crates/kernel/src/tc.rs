@@ -17,6 +17,7 @@ use super::env::{Addr, CtxAddr, KEnv};
 use super::equiv::EquivManager;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, FVarId, KExpr};
+use super::extra_reductions::{ExtraReduction, ExtraReductions};
 use super::id::KId;
 use super::ingress::{
   IxonIngressLookups, ingress_addr_shallow_into_kenv_with_lookups,
@@ -153,8 +154,6 @@ pub struct TypeChecker<'a, M: KernelMode> {
   // -- Thread-local control --
   /// When true, `infer` skips def-eq checks (arg-type and let-value validation).
   pub infer_only: bool,
-  /// Re-entrancy guard for native reduction (prevents whnf → native → whnf loops).
-  pub in_native_reduce: bool,
   /// Counter incremented while inside def-eq's cheap projection reductions.
   /// Used by `is_def_eq` to route cheap false negatives into a cheap-only
   /// cache while projected values are reduced structurally instead of through
@@ -170,6 +169,12 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub(crate) in_binder_batch: bool,
   /// When true, the Bool.true fast-path in is_def_eq fires even on open terms.
   pub eager_reduce: bool,
+  /// The reductions outside the certified specification set that this
+  /// checker takes: none, except in unit tests of those reducers (see
+  /// [`crate::extra_reductions`]). Configuration, so `reset` keeps it. The
+  /// `KEnv` caches do not record it, so a checker that changes it must own
+  /// its environment.
+  pub(crate) extra_reductions: ExtraReductions,
   /// Current def-eq recursion depth.
   pub def_eq_depth: u32,
   /// Stack depth of active `IX_DEF_EQ_TRACE` outer frames. While > 0,
@@ -239,12 +244,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       ctx_id_stack: Vec::new(),
       equiv_manager: EquivManager::new(),
       infer_only: false,
-      in_native_reduce: false,
       cheap_recursion_depth: 0,
       in_projection_probe: false,
       in_app_congruence: false,
       in_binder_batch: false,
       eager_reduce: false,
+      extra_reductions: ExtraReductions::NONE,
       def_eq_depth: 0,
       def_eq_trace_depth: 0,
       def_eq_peak: 0,
@@ -385,15 +390,14 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// `ctx_addr_for_lbr(e.lbr())` to capture only the context suffix reachable
   /// from the term's loose bound variables.
   ///
-  /// Soundness: WHNF only consults the local context in three places, and
+  /// Soundness: WHNF only consults the local context in two places, and
   /// each is bounded by `e.lbr()`:
   /// (1) let-zeta: `Var(i)` reduction looks up `let_vals[level]` for `i < e.lbr`
   ///     — frames `≥ depth - e.lbr` are covered by the suffix and `ctx_addr_for_lbr`
   ///     transitively closes over their types and values;
   /// (2) recursive `infer` from `try_struct_eta_iota` / `synth_ctor_when_k` /
   ///     `try_proof_irrel` — those callees use their argument's own lbr, which
-  ///     is `≤ e.lbr`, so the WHNF suffix dominates;
-  /// (3) native reduction body unfold — closed body, no context dependence.
+  ///     is `≤ e.lbr`, so the WHNF suffix dominates.
   ///
   /// Sharing two distinct outer contexts that share a relevant suffix is the
   /// payoff: the same WHNF subterm can hit cache across them.
@@ -917,7 +921,6 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     self.ctx_id_stack.clear();
     self.equiv_manager.clear();
     self.infer_only = false;
-    self.in_native_reduce = false;
     self.cheap_recursion_depth = 0;
     self.in_projection_probe = false;
     self.in_app_congruence = false;
@@ -972,12 +975,11 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
         // This diagnostic is explicitly opt-in, so send its compact record
         // directly to stderr (the backtrace below stays behind `log`).
         eprintln!(
-          "[rec fuel] exhausted const={} depth={} def_eq_depth={} infer_only={} native_reduce={} eager_reduce={}",
+          "[rec fuel] exhausted const={} depth={} def_eq_depth={} infer_only={} eager_reduce={}",
           self.debug_label.as_deref().unwrap_or("<unknown>"),
           self.depth(),
           self.def_eq_depth,
           self.infer_only,
-          self.in_native_reduce,
           self.eager_reduce
         );
         self.dump_hot_misses();
@@ -1076,6 +1078,23 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     let result = f(self);
     self.infer_only = prev;
     result
+  }
+
+  // -----------------------------------------------------------------------
+  // Reductions outside the certified specification set
+  // -----------------------------------------------------------------------
+
+  /// Whether this checker takes the reductions of `group`.
+  #[inline]
+  pub(crate) fn takes_extra(&self, group: ExtraReduction) -> bool {
+    self.extra_reductions.allows(group)
+  }
+
+  /// Take every group of [`ExtraReduction`]. Only unit tests of those
+  /// reducers do, on their own environment.
+  #[cfg(test)]
+  pub(crate) fn enable_extra_reductions(&mut self) {
+    self.extra_reductions = ExtraReductions::ALL;
   }
 
   /// Run a closure in a free-variable local-context scope. Declarations
@@ -1850,7 +1869,6 @@ mod tests {
     tc.push_local(sort0());
     tc.push_let(sort1(), sort1());
     tc.infer_only = true;
-    tc.in_native_reduce = true;
     tc.eager_reduce = true;
     tc.def_eq_depth = 5;
     tc.def_eq_peak = 10;
@@ -1862,7 +1880,6 @@ mod tests {
     assert_eq!(tc.num_let_bindings, 0);
     assert_eq!(tc.ctx_id, empty_ctx_addr());
     assert!(!tc.infer_only);
-    assert!(!tc.in_native_reduce);
     assert!(!tc.eager_reduce);
     assert_eq!(tc.def_eq_depth, 0);
     assert_eq!(tc.def_eq_peak, 0);

@@ -65,6 +65,17 @@ private def isFixtureName (fixtures : Std.HashSet Lean.Name) (name : Lean.Name) 
     || name.toString.contains "_private.Tests.Ix.Kernel.StringReduction."
     || fixtures.contains name
 
+/-- Lean's native-evaluation constants. Evaluation by the compiler is outside
+    the checked theory, so the Rust kernel declines them, as the certified
+    checker does. -/
+private def nativeEvaluationNames : Std.HashSet Lean.Name :=
+  Std.HashSet.ofList [`Lean.trustCompiler, `Lean.reduceBool, `Lean.reduceNat,
+    `Lean.ofReduceBool, `Lean.ofReduceNat]
+
+/-- Whether `msg` is the Rust kernel's native-evaluation decline. -/
+private def isNativeEvaluationDecline (msg : String) : Bool :=
+  (msg.splitOn "native-evaluation constant").length > 1
+
 def testRustCheckEnv : TestSeq :=
   .individualIO "Rust kernel check_env" none (do
     let leanEnv ← get_env!
@@ -78,11 +89,13 @@ def testRustCheckEnv : TestSeq :=
     -- internally, so name lookup is an exact structural match.
     let allNames : Array Lean.Name :=
       allConsts.toArray.map fun (name, _) => name
-    -- Every env constant is expected to typecheck; `expect_pass` is an
-    -- FFI-side progress-log hint (see `src/ffi/kernel.rs`'s `ErrKind`
-    -- and `check_consts_loop`), but all-true keeps the `[ok]` / `[FAIL]`
-    -- log lines consistent.
-    let expectPass : Array Bool := Array.replicate allNames.size true
+    -- Every env constant except the native-evaluation ones is expected to
+    -- typecheck; those must be declined. `expect_pass` is an FFI-side
+    -- progress-log hint (see `src/ffi/kernel.rs`'s `ErrKind` and
+    -- `check_consts_loop`) that keeps the `[ok]` / `[FAIL]` log lines
+    -- consistent.
+    let expectPass : Array Bool :=
+      allNames.map fun name => !nativeEvaluationNames.contains name
     let skippedCount := envConsts.length - allConsts.length
 
     IO.println s!"[check-env] Environment has {envConsts.length} constants; checking {allNames.size} (skipping {skippedCount} fixture constants)"
@@ -100,10 +113,17 @@ def testRustCheckEnv : TestSeq :=
     let elapsed := (← IO.monoMsNow) - start
 
     let mut passed := 0
+    let mut declined := 0
     let mut failures : Array (Lean.Name × String) := #[]
     for i in [:allNames.size] do
+      let name := allNames[i]!
+      let native := nativeEvaluationNames.contains name
       match results[i]! with
-      | none => passed := passed + 1
+      | none =>
+        if native then
+          failures := failures.push (name, "accepted; native evaluation must be declined")
+        else
+          passed := passed + 1
       | some err =>
         -- Unpack the `CheckError` ctor manually; `repr err` on multi-line
         -- kernel messages is seconds-slow per call (see the same comment
@@ -111,21 +131,24 @@ def testRustCheckEnv : TestSeq :=
         let msg := match err with
           | .kernelException m => s!"kernel: {m}"
           | .compileError    m => s!"compile: {m}"
-        failures := failures.push (allNames[i]!, msg)
+        if native && isNativeEvaluationDecline msg then
+          declined := declined + 1
+        else
+          failures := failures.push (name, msg)
 
     IO.println s!"[check-env] Checked {allNames.size} constants in {elapsed}ms"
-    IO.println s!"[check-env] {passed}/{allNames.size} passed"
+    IO.println s!"[check-env] {passed}/{allNames.size} passed, {declined} native-evaluation constant(s) declined as required"
 
     if !failures.isEmpty then
       IO.println s!"[check-env] {failures.size} failure(s):"
       for (name, err) in failures[:min 30 failures.size] do
         IO.println s!"  ✗ {name}: {err}"
 
-    let total := passed + failures.size
+    let total := passed + declined + failures.size
     if failures.isEmpty then
-      return (true, passed, total, none)
+      return (true, passed + declined, total, none)
     else
-      return (false, passed, total,
+      return (false, passed + declined, total,
         some s!"Kernel check failed with {failures.size} failure(s)")
   ) .done
 

@@ -141,6 +141,7 @@ pub mod env;
 pub mod equiv;
 pub mod error;
 pub mod expr;
+pub mod extra_reductions;
 pub mod id;
 pub mod inductive;
 pub mod infer;

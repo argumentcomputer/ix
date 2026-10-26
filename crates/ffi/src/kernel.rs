@@ -760,6 +760,23 @@ pub extern "C" fn rs_prim_addrs_orig() -> LeanIOResult<LeanOwned> {
   build_prim_addrs_table(&table)
 }
 
+/// FFI: expose the canonical addresses of Lean's native-evaluation
+/// constants (`ix_kernel::primitive::native_evaluation_addrs`), which the
+/// kernel declines, as `(lean_name, hex_address)` pairs.
+///
+/// Used by `testNativeEvaluationParity`
+/// (`Tests/Ix/Kernel/BuildPrimitives.lean`) to compare them with a live
+/// compile of the Lean declarations.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_native_evaluation_addrs() -> LeanIOResult<LeanOwned> {
+  let table: Vec<(&'static str, String)> =
+    ix_kernel::primitive::native_evaluation_addrs()
+      .iter()
+      .map(|(name, addr)| (*name, addr.hex()))
+      .collect();
+  build_prim_addrs_table(&table)
+}
+
 fn build_prim_addrs_table(
   table: &[(&'static str, String)],
 ) -> LeanIOResult<LeanOwned> {

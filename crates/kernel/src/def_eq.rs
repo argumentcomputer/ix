@@ -521,22 +521,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         }
       }
 
-      // Native reduction inside lazy delta. Reference order is
-      // `is_def_eq_offset → reduce_nat (gated) → reduce_native → delta`
-      // (lean4 `type_checker.cpp:986-991`, lean4lean `TypeChecker.lean:625-628`).
-      // Ix-specific `try_reduce_decidable` runs after native to keep the
-      // reference-aligned segment tight.
-      if fam_a == PrimFamily::Native
-        && let Some(wa2) = self.try_reduce_native(wa)?
-      {
-        return self.is_def_eq(&wa2, wb).map(Some);
-      }
-      if fam_b == PrimFamily::Native
-        && let Some(wb2) = self.try_reduce_native(wb)?
-      {
-        return self.is_def_eq(wa, &wb2).map(Some);
-      }
-
+      // Reference order is `is_def_eq_offset → reduce_nat (gated) → delta`
+      // (lean4 `type_checker.cpp:986-991`, lean4lean
+      // `TypeChecker.lean:625-628`), without their native evaluation, which
+      // is outside the checked theory. Ix-specific `try_reduce_decidable`
+      // runs after the Nat step to keep the reference-aligned segment tight.
       if fam_a == PrimFamily::Decidable
         && let Some(wa2) = self.try_reduce_decidable(wa)?
       {
