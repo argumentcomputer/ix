@@ -16,6 +16,7 @@ import Ix.CompileCert.SemanticFrames
 import Ix.CompileCert.SemanticPresence
 import Ix.CompileCert.FramePrimitives
 import Ix.CompileCert.DevelopmentFrames
+import Ix.CompileCert.DevelopmentState
 import Ix.CompileCert.FrontendReceipts
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
@@ -894,3 +895,11 @@ run_cmd do
   checkRoots (tag := "reading-audit") "frontend and development call receipts"
     (#[`compileLeanInput_prefix, `compileDecoratedConsts_guards, `compileLeanInput_members,
       `compileLeanInput_frames, `development_call].map (`Ix.CompileCert.FrontendReceipts ++ ·))
+
+/-- info: [reading-audit] unconditional development cache preservation: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "unconditional development cache preservation"
+    (#[`insert_invalid, `hinst_state, `happ_state, `instantiateWith_state].map
+      (`Ix.CompileCert.DevelopmentState ++ ·))
