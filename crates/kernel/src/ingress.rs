@@ -35,9 +35,7 @@ use ixon::constant::{
 use ixon::contract::{BinderContract, LetContract, ValueContract, source};
 use ixon::env::Env as IxonEnv;
 use ixon::expr::Expr as IxonExpr;
-use ixon::metadata::{
-  ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData, resolve_kvmap,
-};
+use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData};
 use ixon::univ::Univ as IxonUniv;
 
 use super::constant::{KConst, RecRule};
@@ -720,7 +718,7 @@ fn ingress_expr<M: KernelMode>(
   root_arena: u64,
   ctx: &Ctx<'_, M>,
   intern: &mut InternTable<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   cache: &mut ExprCache<M>,
   univ_cache: &mut UnivCache<M>,
   stats: &mut ConvertStats,
@@ -793,7 +791,7 @@ fn ingress_expr<M: KernelMode>(
           bump_convert_stat!(stats, mdata_kv_maps, mdata.len());
           let kv_t0 = if stats.enabled { Some(Instant::now()) } else { None };
           for kvm in mdata {
-            let data = resolve_kvmap(kvm, ixon_env);
+            let data = ixon_env.mdata(kvm)?;
             if M::HAS_META && source::has_metadata(&data) {
               return Err(
                 "semantic contracts cannot come from optional metadata".into(),
@@ -1161,7 +1159,7 @@ fn ingress_expr<M: KernelMode>(
               })?)
               .ok_or_else(|| format!("invalid Str ref index {ref_idx}"))?;
             let gb_t0 = if stats.enabled { Some(Instant::now()) } else { None };
-            let blob = ixon_env.get_blob(addr).ok_or_else(|| {
+            let blob = ixon_env.blob(addr)?.ok_or_else(|| {
               format!("missing Str blob at addr {}", addr.hex())
             })?;
             if let Some(t0) = gb_t0 {
@@ -1190,7 +1188,7 @@ fn ingress_expr<M: KernelMode>(
               })?)
               .ok_or_else(|| format!("invalid Nat ref index {ref_idx}"))?;
             let gb_t0 = if stats.enabled { Some(Instant::now()) } else { None };
-            let blob = ixon_env.get_blob(addr).ok_or_else(|| {
+            let blob = ixon_env.blob(addr)?.ok_or_else(|| {
               format!("missing Nat blob at addr {}", addr.hex())
             })?;
             if let Some(t0) = gb_t0 {
@@ -1375,7 +1373,7 @@ fn ingress_defn<M: KernelMode>(
   def: &ixon::constant::Definition,
   self_id: KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   sharing: &[Arc<IxonExpr>],
@@ -1395,10 +1393,8 @@ fn ingress_defn<M: KernelMode>(
   // Hints live only in `Env::anon_hints`, keyed by the constant's own
   // address, in both anon and meta modes. Without an entry the kernel
   // falls back to `Regular(0)` — always correct, just more def-eq work.
-  let hints = ixon_env
-    .anon_hints
-    .get(&self_id.addr)
-    .map_or(ReducibilityHints::Regular(0), |r| *r);
+  let hints =
+    ixon_env.hint(&self_id.addr).unwrap_or(ReducibilityHints::Regular(0));
   let safety = def.safety;
   let local_refs = RefCell::new(FxHashSet::default());
   let (level_params, arena, type_root, value_root, all_addrs) = match &meta.info
@@ -1438,7 +1434,7 @@ fn ingress_defn<M: KernelMode>(
     type_root,
     &ctx,
     intern,
-    ixon_env,
+    ixon_env.into(),
     &mut cache,
     &mut univ_cache,
     stats,
@@ -1448,7 +1444,7 @@ fn ingress_defn<M: KernelMode>(
     value_root,
     &ctx,
     intern,
-    ixon_env,
+    ixon_env.into(),
     &mut cache,
     &mut univ_cache,
     stats,
@@ -1489,7 +1485,7 @@ fn ingress_recursor<M: KernelMode>(
   rec: &ixon::constant::Recursor,
   self_id: KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   sharing: &[Arc<IxonExpr>],
@@ -1548,7 +1544,7 @@ fn ingress_recursor<M: KernelMode>(
     type_root,
     &ctx,
     intern,
-    ixon_env,
+    ixon_env.into(),
     &mut cache,
     &mut univ_cache,
     stats,
@@ -1569,7 +1565,7 @@ fn ingress_recursor<M: KernelMode>(
         rhs_root,
         &ctx,
         intern,
-        ixon_env,
+        ixon_env.into(),
         &mut cache,
         &mut univ_cache,
         stats,
@@ -1621,7 +1617,7 @@ fn ingress_standalone<M: KernelMode>(
   addr: &Address,
   constant: &Constant,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   intern: &mut InternTable<M>,
@@ -1637,7 +1633,7 @@ fn ingress_standalone<M: KernelMode>(
         def,
         self_id.clone(),
         meta,
-        ixon_env,
+        ixon_env.into(),
         names,
         name_to_addr,
         &constant.sharing,
@@ -1680,7 +1676,7 @@ fn ingress_standalone<M: KernelMode>(
         type_root,
         &ctx,
         intern,
-        ixon_env,
+        ixon_env.into(),
         &mut cache,
         &mut univ_cache,
         stats,
@@ -1731,7 +1727,7 @@ fn ingress_standalone<M: KernelMode>(
         type_root,
         &ctx,
         intern,
-        ixon_env,
+        ixon_env.into(),
         &mut cache,
         &mut univ_cache,
         stats,
@@ -1759,7 +1755,7 @@ fn ingress_standalone<M: KernelMode>(
       rec,
       self_id.clone(),
       meta,
-      ixon_env,
+      ixon_env.into(),
       names,
       name_to_addr,
       &constant.sharing,
@@ -1789,7 +1785,7 @@ fn ingress_muts_inductive<M: KernelMode>(
   ind: &ixon::constant::Inductive,
   self_id: &KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   block_constant: &Constant,
@@ -1832,7 +1828,7 @@ fn ingress_muts_inductive<M: KernelMode>(
     type_root,
     &ctx,
     intern,
-    ixon_env,
+    ixon_env.into(),
     &mut cache,
     &mut univ_cache,
     stats,
@@ -1890,7 +1886,7 @@ fn ingress_muts_inductive<M: KernelMode>(
       format!("missing ctor_addrs entry for constructor index {cidx}")
     })?;
     let ctor_name = resolve_name(ctor_name_addr, names);
-    let ctor_named = ixon_env.lookup_name(&ctor_name).ok_or_else(|| {
+    let ctor_named = ixon_env.named(&ctor_name).ok_or_else(|| {
       format!(
         "missing Named entry for ctor '{ctor_name}' (cidx={cidx}) — \
          per-ctor metadata (arena, type_root, lvls) must be registered \
@@ -1935,7 +1931,7 @@ fn ingress_muts_inductive<M: KernelMode>(
       ctor_type_root,
       &ctor_ctx,
       intern,
-      ixon_env,
+      ixon_env.into(),
       &mut cache,
       &mut ctor_univ_cache,
       stats,
@@ -1982,7 +1978,7 @@ fn ingress_muts_block<M: KernelMode>(
   entry_name: &Name,
   entry_addr: &Address,
   all: &[Vec<Address>],
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   intern: &mut InternTable<M>,
@@ -1991,7 +1987,7 @@ fn ingress_muts_block<M: KernelMode>(
   let block_id: KId<M> =
     KId::new(entry_addr.clone(), M::meta_field(entry_name.clone()));
 
-  let block_constant = ixon_env.get_const(entry_addr).ok_or_else(|| {
+  let block_constant = ixon_env.constant(entry_addr)?.ok_or_else(|| {
     format!("missing Muts block constant {}", entry_addr.hex())
   })?;
   let members = match &block_constant.info {
@@ -2023,7 +2019,7 @@ fn ingress_muts_block<M: KernelMode>(
       .ok_or_else(|| format!("Muts block member {i} has no name in all"))?;
     let member_name = resolve_name(primary_name_addr, names);
 
-    let member_named = ixon_env.lookup_name(&member_name).ok_or_else(|| {
+    let member_named = ixon_env.named(&member_name).ok_or_else(|| {
       format!("Muts member '{member_name}' not found in named entries")
     })?;
     let member_addr = &member_named.addr;
@@ -2038,7 +2034,7 @@ fn ingress_muts_block<M: KernelMode>(
           ind,
           &self_id,
           member_meta,
-          ixon_env,
+          ixon_env.into(),
           names,
           name_to_addr,
           &block_constant,
@@ -2053,7 +2049,7 @@ fn ingress_muts_block<M: KernelMode>(
           rec,
           self_id,
           member_meta,
-          ixon_env,
+          ixon_env.into(),
           names,
           name_to_addr,
           &block_constant.sharing,
@@ -2070,7 +2066,7 @@ fn ingress_muts_block<M: KernelMode>(
           def,
           self_id,
           member_meta,
-          ixon_env,
+          ixon_env.into(),
           names,
           name_to_addr,
           &block_constant.sharing,
@@ -2592,7 +2588,7 @@ pub fn ingress_compiled_names(
           name,
           &named.addr,
           all,
-          ixon_env,
+          ixon_env.into(),
           name_map,
           addr_map,
           intern,
@@ -2631,7 +2627,7 @@ pub fn ingress_compiled_names(
       &named.addr,
       &constant,
       &named_meta,
-      ixon_env,
+      ixon_env.into(),
       name_map,
       addr_map,
       intern,
@@ -3209,7 +3205,7 @@ enum IngressWorkItem {
   Muts(Name),
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct IxonIngressLookups {
   names: FxHashMap<Address, Name>,
   name_to_addr: FxHashMap<Name, Address>,
@@ -3310,7 +3306,13 @@ pub fn ingress_const_into_kenv_with_lookups<M: KernelMode>(
   lookups: &IxonIngressLookups,
   name: &Name,
 ) -> Result<KId<M>, String> {
-  ingress_const_into_kenv_with_lookups_impl(kenv, ixon_env, lookups, name, true)
+  ingress_const_into_kenv_with_lookups_impl(
+    kenv,
+    ixon_env.into(),
+    lookups,
+    name,
+    true,
+  )
 }
 
 pub fn ingress_const_shallow_into_kenv_with_lookups<M: KernelMode>(
@@ -3320,7 +3322,11 @@ pub fn ingress_const_shallow_into_kenv_with_lookups<M: KernelMode>(
   name: &Name,
 ) -> Result<KId<M>, String> {
   ingress_const_into_kenv_with_lookups_impl(
-    kenv, ixon_env, lookups, name, false,
+    kenv,
+    ixon_env.into(),
+    lookups,
+    name,
+    false,
   )
 }
 
@@ -3330,25 +3336,43 @@ pub fn ingress_addr_shallow_into_kenv_with_lookups<M: KernelMode>(
   lookups: &IxonIngressLookups,
   addr: &Address,
 ) -> Result<bool, String> {
-  ingress_addr_set_into_kenv(kenv, ixon_env, lookups, addr, false)
+  ingress_addr_set_into_kenv(kenv, ixon_env.into(), lookups, addr, false)
+}
+
+pub(crate) fn ingress_addr_with_input<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  input: crate::input::Input<'_>,
+  lookups: &IxonIngressLookups,
+  addr: &Address,
+) -> Result<bool, String> {
+  ingress_addr_set_into_kenv(kenv, input, lookups, addr, false)
+}
+
+pub(crate) fn ingress_name_with_input<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  input: crate::input::Input<'_>,
+  lookups: &IxonIngressLookups,
+  name: &Name,
+) -> Result<KId<M>, String> {
+  ingress_const_into_kenv_with_lookups_impl(kenv, input, lookups, name, false)
 }
 
 fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
   kenv: &mut KEnv<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   lookups: &IxonIngressLookups,
   name: &Name,
   follow_refs: bool,
 ) -> Result<KId<M>, String> {
   let requested = ixon_env
-    .lookup_name(name)
+    .named(name)
     .ok_or_else(|| format!("{}: missing Named entry", name.pretty()))?;
   let requested_id =
     KId::new(requested.addr.clone(), M::meta_field(name.clone()));
 
   ingress_addr_set_into_kenv(
     kenv,
-    ixon_env,
+    ixon_env.into(),
     lookups,
     &requested.addr,
     follow_refs,
@@ -3362,7 +3386,7 @@ fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
 
 fn ingress_addr_set_into_kenv<M: KernelMode>(
   kenv: &mut KEnv<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   lookups: &IxonIngressLookups,
   seed_addr: &Address,
   follow_refs: bool,
@@ -3385,7 +3409,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
       continue;
     }
 
-    let Some(constant) = ixon_env.get_const(&addr) else {
+    let Some(constant) = ixon_env.constant(&addr)? else {
       // `Constant.refs` also contains blob addresses for string/nat payloads.
       continue;
     };
@@ -3401,7 +3425,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
 
     if follow_refs {
       for dep in &constant.refs {
-        if ixon_env.consts.contains_key(dep) {
+        if ixon_env.contains(dep) {
           worklist.push(IngressNeed::Addr(dep.clone()));
         }
       }
@@ -3423,7 +3447,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             entry_name,
             &addr,
             all,
-            ixon_env,
+            ixon_env.into(),
             &lookups.names,
             &lookups.name_to_addr,
             &mut kenv.intern,
@@ -3443,7 +3467,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             continue;
           }
           let named = ixon_env
-            .lookup_name(const_name)
+            .named(const_name)
             .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
           let mut convert_stats = ConvertStats::new(convert_stats_enabled);
           let entries = ingress_standalone(
@@ -3451,7 +3475,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             &addr,
             &constant,
             &named.meta(),
-            ixon_env,
+            ixon_env.into(),
             &lookups.names,
             &lookups.name_to_addr,
             &mut kenv.intern,
@@ -3984,7 +4008,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           &named.addr,
           &constant,
           &named.meta(),
-          ixon_env,
+          ixon_env.into(),
           &names,
           &name_to_addr,
           &mut intern,
@@ -4034,7 +4058,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           &entry_name,
           &named.addr,
           all,
-          ixon_env,
+          ixon_env.into(),
           &names,
           &name_to_addr,
           &mut intern,
@@ -4227,10 +4251,10 @@ use crate::mode::Anon;
 /// Fetch a constant with an explicit binding to its map key, including sources
 /// assembled in memory rather than loaded with deferred address verification.
 fn anon_constant(
-  env: &IxonEnv,
+  env: crate::input::Input<'_>,
   addr: &Address,
 ) -> Result<Option<Arc<Constant>>, String> {
-  env.consts.get(addr).map(|entry| entry.get_at(addr)).transpose()
+  env.constant(addr)
 }
 
 /// A content-addressed file cannot encode a cycle between distinct blocks
@@ -4300,10 +4324,9 @@ fn verify_proj_addr_in_env(
   block_addr: &Address,
   member_idx: u64,
   ctor_idx: Option<u64>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
 ) -> Result<(), String> {
-  if let Some(entry) = anon_env.consts.get(proj_addr) {
-    entry.get_at(proj_addr)?;
+  if anon_env.constant(proj_addr)?.is_some() {
     return Ok(());
   }
   match ctor_idx {
@@ -4376,7 +4399,7 @@ fn anon_ctor_addrs(
 /// and are not valid as standalone entries.
 fn ingress_anon_standalone(
   kenv: &mut KEnv<Anon>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
   addr: &Address,
   constant: &Constant,
 ) -> Result<KId<Anon>, String> {
@@ -4392,7 +4415,7 @@ fn ingress_anon_standalone(
       def,
       self_id.clone(),
       &empty_meta,
-      anon_env,
+      anon_env.into(),
       &empty_names,
       &empty_n2a,
       &constant.sharing,
@@ -4408,7 +4431,7 @@ fn ingress_anon_standalone(
       rec,
       self_id.clone(),
       &empty_meta,
-      anon_env,
+      anon_env.into(),
       &empty_names,
       &empty_n2a,
       &constant.sharing,
@@ -4424,7 +4447,7 @@ fn ingress_anon_standalone(
       addr,
       constant,
       &empty_meta,
-      anon_env,
+      anon_env.into(),
       &empty_names,
       &empty_n2a,
       &mut kenv.intern,
@@ -4446,7 +4469,7 @@ fn ingress_anon_standalone(
 fn ingress_anon_inductive(
   ind: &ixon::constant::Inductive,
   self_id: &KId<Anon>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
   block_constant: &Constant,
   block_id: KId<Anon>,
   member_idx: u64,
@@ -4488,7 +4511,7 @@ fn ingress_anon_inductive(
     0,
     &ctx,
     intern,
-    anon_env,
+    anon_env.into(),
     &mut cache,
     &mut univ_cache,
     stats,
@@ -4538,7 +4561,7 @@ fn ingress_anon_inductive(
       0,
       &ctor_ctx,
       intern,
-      anon_env,
+      anon_env.into(),
       &mut cache,
       &mut ctor_univ_cache,
       stats,
@@ -4577,6 +4600,15 @@ pub fn ingress_anon_block(
   block_constant: &Constant,
   block_addr: &Address,
 ) -> Result<Vec<KId<Anon>>, String> {
+  ingress_anon_block_input(kenv, anon_env.into(), block_constant, block_addr)
+}
+
+pub(crate) fn ingress_anon_block_input(
+  kenv: &mut KEnv<Anon>,
+  anon_env: crate::input::Input<'_>,
+  block_constant: &Constant,
+  block_addr: &Address,
+) -> Result<Vec<KId<Anon>>, String> {
   let IxonCI::Muts(members) = &block_constant.info else {
     return Err(format!(
       "ingress_anon_block: addr {} is not a Muts block (got variant {:?})",
@@ -4586,7 +4618,7 @@ pub fn ingress_anon_block(
   };
   validate_serialized_muts(members)?;
 
-  convert_anon_muts(kenv, anon_env, block_constant, block_addr, members)
+  convert_anon_muts(kenv, anon_env.into(), block_constant, block_addr, members)
 }
 
 /// Convert arbitrary mutual payloads for the test-only canonical-order
@@ -4603,12 +4635,12 @@ pub fn convert_anon_order_fixture(
   let IxonCI::Muts(members) = &block_constant.info else {
     return Err("canonical-order fixture must be a mutual block".into());
   };
-  convert_anon_muts(kenv, anon_env, block_constant, block_addr, members)
+  convert_anon_muts(kenv, anon_env.into(), block_constant, block_addr, members)
 }
 
 fn convert_anon_muts(
   kenv: &mut KEnv<Anon>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
   block_constant: &Constant,
   block_addr: &Address,
   members: &[IxonMutConst],
@@ -4655,7 +4687,7 @@ fn convert_anon_muts(
           def,
           self_id,
           &empty_meta,
-          anon_env,
+          anon_env.into(),
           &empty_names,
           &empty_n2a,
           &block_constant.sharing,
@@ -4681,7 +4713,7 @@ fn convert_anon_muts(
           rec,
           self_id,
           &empty_meta,
-          anon_env,
+          anon_env.into(),
           &empty_names,
           &empty_n2a,
           &block_constant.sharing,
@@ -4711,14 +4743,14 @@ fn convert_anon_muts(
             block_addr,
             idx,
             Some(cidx as u64),
-            anon_env,
+            anon_env.into(),
           )?;
         }
 
         let entries = ingress_anon_inductive(
           ind,
           &self_id,
-          anon_env,
+          anon_env.into(),
           block_constant,
           block_id.clone(),
           idx,
@@ -4748,7 +4780,15 @@ pub fn ingress_anon_addr_shallow(
   anon_env: &IxonEnv,
   addr: &Address,
 ) -> Result<bool, String> {
-  let Some(constant) = anon_constant(anon_env, addr)? else {
+  ingress_anon_addr_shallow_input(kenv, anon_env.into(), addr)
+}
+
+pub(crate) fn ingress_anon_addr_shallow_input(
+  kenv: &mut KEnv<Anon>,
+  anon_env: crate::input::Input<'_>,
+  addr: &Address,
+) -> Result<bool, String> {
+  let Some(constant) = anon_constant(anon_env.into(), addr)? else {
     return Ok(false);
   };
 
@@ -4779,19 +4819,19 @@ pub fn ingress_anon_addr_shallow(
       return Ok(true);
     }
     let block_const =
-      anon_constant(anon_env, &block_addr)?.ok_or_else(|| {
+      anon_constant(anon_env.into(), &block_addr)?.ok_or_else(|| {
         format!(
           "ingress_anon_addr_shallow: block {} (parent of {}) absent",
           block_addr.hex(),
           addr.hex()
         )
       })?;
-    ingress_anon_block(kenv, anon_env, &block_const, &block_addr)?;
+    ingress_anon_block_input(kenv, anon_env.into(), &block_const, &block_addr)?;
     return Ok(true);
   }
 
   // Standalone (Defn/Recr/Axio/Quot).
-  ingress_anon_standalone(kenv, anon_env, addr, &constant)?;
+  ingress_anon_standalone(kenv, anon_env.into(), addr, &constant)?;
   Ok(true)
 }
 
@@ -5123,7 +5163,7 @@ mod tests {
         &mk_name("Cycle"),
         &block_addr,
         &all,
-        &env,
+        (&env).into(),
         &names,
         &name_to_addr,
         &mut intern,
@@ -5204,7 +5244,7 @@ mod tests {
       0,
       &ctx,
       &mut InternTable::new(),
-      &IxonEnv::new(),
+      (&IxonEnv::new()).into(),
       &mut ExprCache::default(),
       &mut UnivCache::default(),
       &mut ConvertStats::default(),
@@ -5824,7 +5864,7 @@ mod tests {
       root,
       &ctx,
       &mut intern,
-      &ixon_env,
+      (&ixon_env).into(),
       &mut cache,
       &mut univ_cache,
       &mut stats,
@@ -5884,7 +5924,7 @@ mod tests {
         root,
         &ctx,
         &mut intern,
-        &ixon_env,
+        (&ixon_env).into(),
         &mut cache,
         &mut univ_cache,
         &mut stats,
@@ -5955,7 +5995,7 @@ mod tests {
       root,
       &ctx,
       &mut intern,
-      &ixon_env,
+      (&ixon_env).into(),
       &mut cache,
       &mut univ_cache,
       &mut stats,

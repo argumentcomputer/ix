@@ -977,13 +977,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     ty: &KExpr<M>,
   ) -> Result<(), TcError<M>> {
     // Validate address ↔ kind consistency
-    let expected_kind = if id.addr == self.prims.quot_type.addr {
+    let expected_kind = if id.addr == self.legacy_primitives()?.quot_type.addr {
       QuotKind::Type
-    } else if id.addr == self.prims.quot_ctor.addr {
+    } else if id.addr == self.legacy_primitives()?.quot_ctor.addr {
       QuotKind::Ctor
-    } else if id.addr == self.prims.quot_lift.addr {
+    } else if id.addr == self.legacy_primitives()?.quot_lift.addr {
       QuotKind::Lift
-    } else if id.addr == self.prims.quot_ind.addr {
+    } else if id.addr == self.legacy_primitives()?.quot_ind.addr {
       QuotKind::Ind
     } else {
       return Err(TcError::Other(format!(
@@ -1012,7 +1012,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       )));
     }
 
-    let expected_ty = canonical_quot_type(&self.prims, kind);
+    let expected_ty = canonical_quot_type(self.legacy_primitives()?, kind);
     if ty != &expected_ty {
       return Err(TcError::Other(format!(
         "check_quot: {:?} type is not canonical",
@@ -1032,12 +1032,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Verify the exact Eq/Eq.refl prerequisite checked by Lean before it
   /// installs the quotient primitives.
   fn check_eq_type(&self) -> Result<(), TcError<M>> {
+    let primitives = self.legacy_primitives()?;
     // Find Eq inductive in the environment by address.
     // Search all constants for one matching the Eq address.
     let eq_const = self
       .env
       .iter()
-      .find(|(id, _)| id.addr == self.prims.eq.addr)
+      .find(|(id, _)| id.addr == primitives.eq.addr)
       .map(|(id, c)| (id.clone(), c.clone()));
     let (_eq_id, eq_c) = eq_const.ok_or_else(|| {
       TcError::Other("check_eq_type: Eq not found in environment".into())
@@ -1074,7 +1075,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           )));
         }
         // Verify the constructor is Eq.refl
-        if ctors[0].addr != self.prims.eq_refl.addr {
+        if ctors[0].addr != self.legacy_primitives()?.eq_refl.addr {
           return Err(TcError::Other(
             "check_eq_type: Eq's constructor is not Eq.refl".into(),
           ));
@@ -1095,7 +1096,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let refl_c = self
       .env
       .iter()
-      .find(|(id, _)| id.addr == self.prims.eq_refl.addr)
+      .find(|(id, _)| id.addr == primitives.eq_refl.addr)
       .map(|(_, c)| c.clone())
       .ok_or_else(|| {
         TcError::Other("check_eq_type: Eq.refl not found".into())
@@ -1113,7 +1114,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       } => {
         if is_unsafe
           || lvls != 1
-          || induct.addr != self.prims.eq.addr
+          || induct.addr != self.legacy_primitives()?.eq.addr
           || cidx != 0
           || params != 2
           || fields != 0
@@ -1122,7 +1123,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             "check_eq_type: Eq.refl metadata is not canonical".into(),
           ));
         }
-        if ty != canonical_eq_refl_type(&self.prims) {
+        if ty != canonical_eq_refl_type(self.legacy_primitives()?) {
           return Err(TcError::Other(
             "check_eq_type: Eq.refl type is not canonical".into(),
           ));

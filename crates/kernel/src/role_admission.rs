@@ -2,7 +2,7 @@
 //! capabilities: wire decoding, candidate preparation and semantic admission
 //! are distinct boundaries. The actual dispatch cutover is a subsequent step.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use ix_common::address::Address;
 use ix_common::env::DefinitionSafety;
@@ -225,6 +225,8 @@ struct Source {
   env: Env,
   blobs: FxHashMap<Address, Arc<Vec<u8>>>,
   candidate: Option<BindingCandidate>,
+  lookups: OnceLock<Arc<crate::ingress::IxonIngressLookups>>,
+  owners: OnceLock<Result<FxHashMap<Address, Vec<Role>>, Error>>,
 }
 
 /// One privately owned input, shared cheaply between workers. No Env reference
@@ -232,6 +234,26 @@ struct Source {
 /// Record backing buffers retain the loader's immutable heap/mmap contract.
 #[derive(Clone, Debug)]
 pub struct ArtifactSource(Arc<Source>);
+
+impl ixon::resource::addressed::RawSource for ArtifactSource {
+  fn constants(&self) -> Vec<(Address, LazyConstant)> {
+    self
+      .0
+      .env
+      .consts
+      .iter()
+      .map(|entry| (entry.key().clone(), entry.value().clone()))
+      .collect()
+  }
+  fn blobs(&self) -> Vec<(Address, Vec<u8>)> {
+    self
+      .0
+      .blobs
+      .iter()
+      .map(|(address, bytes)| (address.clone(), bytes.as_ref().clone()))
+      .collect()
+  }
+}
 
 impl ArtifactSource {
   pub fn prepare(mut env: Env) -> Result<Self, Error> {
@@ -241,7 +263,13 @@ impl ArtifactSource {
       .into_iter()
       .map(|(address, bytes)| (address, Arc::new(bytes)))
       .collect();
-    let source = Self(Arc::new(Source { env, blobs, candidate }));
+    let source = Self(Arc::new(Source {
+      env,
+      blobs,
+      candidate,
+      lookups: OnceLock::new(),
+      owners: OnceLock::new(),
+    }));
     if let Some(binding) = source.binding() {
       for (_, address) in &binding.table.bound {
         source.member(address)?;
@@ -273,10 +301,113 @@ impl ArtifactSource {
     self.binding().ok_or(Error::Unbound)?.required(role)
   }
 
+  // Metadata is taken from the same captured input. These narrow views do not
+  // expose an Env/DashMap that could mutate admission's source or read caches.
+  pub(crate) fn contains_record(&self, address: &Address) -> bool {
+    self.0.env.consts.contains_key(address)
+  }
+  pub(crate) fn addresses(&self) -> Vec<Address> {
+    self.0.env.consts.iter().map(|entry| entry.key().clone()).collect()
+  }
+  pub(crate) fn record_tag(
+    &self,
+    address: &Address,
+  ) -> Result<ixon::lazy::ConstVariantTag, Error> {
+    self
+      .raw_record(address)?
+      .peek_variant()
+      .map_err(|reason| Error::Record(address.clone(), reason))
+  }
+  pub(crate) fn named(
+    &self,
+    name: &ix_common::env::Name,
+  ) -> Option<ixon::env::Named> {
+    self.0.env.lookup_name(name)
+  }
+  pub(crate) fn name(&self, address: &Address) -> Option<ix_common::env::Name> {
+    self.0.env.get_name(address)
+  }
+  pub(crate) fn hint(
+    &self,
+    address: &Address,
+  ) -> Option<ix_common::env::ReducibilityHints> {
+    self.0.env.anon_hints.get(address).map(|entry| *entry)
+  }
+  pub(crate) fn lookups(&self) -> Arc<crate::ingress::IxonIngressLookups> {
+    Arc::clone(self.0.lookups.get_or_init(|| {
+      Arc::new(crate::ingress::build_ixon_ingress_lookups(&self.0.env))
+    }))
+  }
+  pub(crate) fn unit_roles(&self, address: &Address) -> Result<&[Role], Error> {
+    let owners = self
+      .0
+      .owners
+      .get_or_init(|| {
+        let mut owners: FxHashMap<Address, Vec<Role>> = FxHashMap::default();
+        if let Some(binding) = self.binding() {
+          for (role, address) in &binding.table.bound {
+            let member = self.member(address)?;
+            let owner =
+              member.owner().unwrap_or(member.record()).address().clone();
+            owners.entry(owner).or_default().push(*role);
+          }
+        }
+        Ok(owners)
+      })
+      .as_ref()
+      .map_err(Clone::clone)?;
+    let record = self.record(address)?;
+    let owner = match &record.constant().info {
+      ConstantInfo::IPrj(p) => &p.block,
+      ConstantInfo::CPrj(p) => &p.block,
+      ConstantInfo::RPrj(p) => &p.block,
+      ConstantInfo::DPrj(p) => &p.block,
+      _ => address,
+    };
+    Ok(owners.get(owner).map(Vec::as_slice).unwrap_or(&[]))
+  }
+  pub fn block_of(&self, address: &Address) -> Result<Address, Error> {
+    let record = self.record(address)?;
+    Ok(match &record.constant().info {
+      ConstantInfo::IPrj(p) => p.block.clone(),
+      ConstantInfo::CPrj(p) => p.block.clone(),
+      ConstantInfo::RPrj(p) => p.block.clone(),
+      ConstantInfo::DPrj(p) => p.block.clone(),
+      _ => address.clone(),
+    })
+  }
+  pub fn closure(
+    &self,
+    roots: &[Address],
+  ) -> Result<FxHashSet<Address>, Error> {
+    let mut pending = roots.to_vec();
+    let mut seen = FxHashSet::default();
+    while let Some(address) = pending.pop() {
+      if !seen.insert(address.clone()) {
+        continue;
+      }
+      if self.contains_record(&address) {
+        let record = self.record(&address)?;
+        pending.extend(record.constant().refs.iter().cloned());
+        match &record.constant().info {
+          ConstantInfo::IPrj(p) => pending.push(p.block.clone()),
+          ConstantInfo::CPrj(p) => pending.push(p.block.clone()),
+          ConstantInfo::RPrj(p) => pending.push(p.block.clone()),
+          ConstantInfo::DPrj(p) => pending.push(p.block.clone()),
+          _ => {},
+        }
+      }
+      if self.0.blobs.contains_key(&address) {
+        self.blob(&address)?;
+      }
+    }
+    Ok(seen)
+  }
+
   /// Every later admission read, including transitive support, enters here.
   /// Authenticate exact raw bytes and decode them without LazyConstant::get,
   /// even if the compiler supplied an already materialized Constant cache.
-  pub fn record(&self, address: &Address) -> Result<Record, Error> {
+  fn raw_record(&self, address: &Address) -> Result<LazyConstant, Error> {
     let raw = self
       .0
       .env
@@ -284,11 +415,16 @@ impl ArtifactSource {
       .get(address)
       .map(|entry| entry.value().clone())
       .ok_or_else(|| Error::MissingRecord(address.clone()))?;
+    if Address::hash(raw.raw_bytes()) != *address {
+      return Err(Error::Record(address.clone(), "hash mismatch".into()));
+    }
+    Ok(raw)
+  }
+
+  pub fn record(&self, address: &Address) -> Result<Record, Error> {
+    let raw = self.raw_record(address)?;
     let bytes = raw.raw_bytes();
     let fail = |reason| Error::Record(address.clone(), reason);
-    if Address::hash(bytes) != *address {
-      return Err(fail("hash mismatch".into()));
-    }
     let mut input = bytes;
     let value = Constant::get(&mut input).map_err(fail)?;
     let mut canonical = Vec::new();
@@ -394,6 +530,9 @@ impl Record {
   }
   pub fn constant(&self) -> &Constant {
     &self.value
+  }
+  pub(crate) fn into_constant(self) -> Constant {
+    self.value
   }
 }
 
