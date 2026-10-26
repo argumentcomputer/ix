@@ -20,9 +20,10 @@
 >   (`Ix/Sharing.lean`, `crates/ixon/src/sharing.rs`) and its proofs are removed.
 > - **Format.** TagN replaces Tag0, Tag2 and Tag4 (§12.12, §12.16). Checked objects
 >   retain format 4 and the identifiers `ixon-v4` and `ixon-v4/resource-v1`.
->   The `.ixe` envelope is v4 (`0xE4`) or, when it carries M6D original records
->   or original-hint overrides, v5 (`0xE5`); this metadata extension is separate
->   from the sharing rule.
+>   The `.ixe` envelope is v4 (`0xE4`); v5 (`0xE5`) when it carries original
+>   records or original-hint overrides; v6 (`0xE6`) when it carries a role
+>   binding (`Ixon.md`). These envelope extensions are separate from the sharing
+>   rule.
 >   The IxVM circuit reads and writes TagN.
 > - **Proofs.** Family-relative phase-1 minimality, successful-output semantics and format,
 >   and conditional representation/byte compatibility are proved for the family entry (§14.3).

@@ -180,7 +180,7 @@ consistency. It is Ix's own kernel, derived from the verified checker of
 `Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
 environment it accepts the theorems give a set-theoretic model and no proof of
 `False`, on the standard axioms only. It does not certify the compiler, the
-Rust kernel, `Ix.Tc` or IxVM. [docs/kernel.md](docs/kernel.md) states what is
+Rust kernel or IxVM. [docs/kernel.md](docs/kernel.md) states what is
 proved, what is trusted and what the gate checks; `--with-model` also builds
 the Mathlib-based model package `Models/SetTheory`:
 

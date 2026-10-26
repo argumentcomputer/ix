@@ -18,9 +18,9 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
   old one;
 - references stay backward. Checked payloads and claims retain object format 4,
   the resource validator ID (`"ixon-v4/resource-v1"`) and `wireFormatId` (`"ixon-v4"`).
-  The environment envelope is v4 (`0xE4`) or v5 (`0xE5`) with M6D original records
-  or original-hint overrides;
-  that metadata extension does not change the checked payload grammar;
+  The environment envelope is v4 (`0xE4`), v5 (`0xE5`) with original records
+  or original-hint overrides, or v6 (`0xE6`) with a role binding;
+  these extensions do not change the checked payload grammar;
 - compiler limits are a safety net: metering and fail-closed errors stay, the defaults sit far
   above every corpus maximum, and `ix compile --sharing-limits` overrides them;
 - a `Share` inside a metadata expression is read in the extended index space of

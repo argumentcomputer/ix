@@ -682,9 +682,9 @@ decompiler's recompile check. It is the only sharing construction.
 The adopted canonicalization revision is **`sharing-k16-greedy-v1`**, with K = 16.
 It is recorded here and in [sharing-minimum §14](sharing-minimum.md#14-canonical-rule-revision-sharing-k16-greedy-v1).
 This is a change to the canonical choice of sharing, with no change to the wire grammar,
-checked-object/claim format 4, or the separate M6D metadata envelope version 5.
-The cutover candidates implement this revision; combined compiler gates remain pending. It replaces
-the previous unbounded phase-1 search; the table rules and phases 2 and 3 are unchanged.
+checked-object/claim format 4, or the environment envelope versions (4, 5 and 6).
+Both compilers implement this revision. It replaces the previous unbounded
+phase-1 search; the table rules and phases 2 and 3 are unchanged.
 
 The canonical table is the output of `Ix.Sharing.Exact.canonicalSharingTiered
 .tagN` (Lean, `Ix/Sharing/Exact/Tiered.lean`) and of
