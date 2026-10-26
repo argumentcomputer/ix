@@ -535,9 +535,29 @@ def inspectionTests : TestSeq := Id.run do
       (inspect (.app good good (digest 1))).toOption == some true &&
       (inspect (.app good twin (digest 1))).toOption == some true)
 
+def presenceMemoTests : TestSeq := Id.run do
+  let plain := Expr.lit (.natVal 0)
+  let binder := Expr.lam `x natType (.bvar 0) .default
+  let contract : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
+  let marked := contract.attach binder
+  let hinted := Expr.mdata (({} : MData).setNat `native.hint 7) binder
+  let bucket := fun (_ : Expr) => (0 : USize)
+  let mut memo : SemanticPresence.Memo := {}
+  let mut valid := true
+  for e in [plain, marked, hinted, plain, marked, marked] do
+    let (result, after) := Id.run ((SemanticPresence.go bucket e).run memo)
+    valid := valid && result.1 == SemanticPresence.spec e
+    memo := after
+  let seeded : SemanticPresence.Memo := ({} : SemanticPresence.Memo).insert 0
+    ⟨plain, SemanticPresence.spec plain, rfl⟩
+  return test "presence memo preserves real results through constant-bucket collisions, overwrites and warm hits" valid ++
+    test "presence memo confirms retained source and computes both positive and negative answers"
+      ((SemanticPresence.probe seeded 0 marked).isNone &&
+        SemanticPresence.runWith bucket marked && !SemanticPresence.runWith bucket hinted)
+
 def suite : List TestSeq :=
   [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,
-    arityProducerTests, recordSubstitutionTests, rewritePrimitiveTests, inspectionTests]
+    arityProducerTests, recordSubstitutionTests, rewritePrimitiveTests, inspectionTests, presenceMemoTests]
 
 end Tests.Ix.SourceContract
 
