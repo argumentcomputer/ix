@@ -23,6 +23,22 @@ impl<'a> From<&'a Env> for Input<'a> {
 }
 
 impl Input<'_> {
+  pub(crate) fn require_reference(
+    self,
+    address: &Address,
+  ) -> Result<(), String> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Self::Artifact(source) = self
+      && !source.contains_record(address)
+    {
+      return Err(format!(
+        "reference {} has no carried raw record",
+        address.hex()
+      ));
+    }
+    let _ = address;
+    Ok(())
+  }
   pub(crate) fn constant(
     self,
     address: &Address,

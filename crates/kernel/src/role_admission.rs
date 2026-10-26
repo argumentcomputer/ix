@@ -388,14 +388,7 @@ impl ArtifactSource {
       }
       if self.contains_record(&address) {
         let record = self.record(&address)?;
-        pending.extend(record.constant().refs.iter().cloned());
-        match &record.constant().info {
-          ConstantInfo::IPrj(p) => pending.push(p.block.clone()),
-          ConstantInfo::CPrj(p) => pending.push(p.block.clone()),
-          ConstantInfo::RPrj(p) => pending.push(p.block.clone()),
-          ConstantInfo::DPrj(p) => pending.push(p.block.clone()),
-          _ => {},
-        }
+        Env::closure_edges(&address, record.constant(), &mut pending);
       }
       if self.0.blobs.contains_key(&address) {
         self.blob(&address)?;

@@ -131,7 +131,7 @@ fn validate_source(
   let mut checker =
     crate::ixon_checker::IxonChecker::from_source(Ok(source.clone()));
   for item in work {
-    checker.check_const(item.primary()).map_err(|error| {
+    checker.check_work(&item).map_err(|error| {
       format!(
         "resource validator: erased typing failed at {}: {error:?}",
         item.primary().hex()
