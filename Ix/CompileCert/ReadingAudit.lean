@@ -22,6 +22,7 @@ import Ix.CompileCert.CurrentInputs
 import Ix.CompileCert.BlockStates
 import Ix.CompileCert.OptFrames
 import Ix.CompileCert.O11aMinorFrames
+import Ix.CompileCert.O11aFrames
 import Ix.CompileCert.FrontendReceipts
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
@@ -950,3 +951,11 @@ run_cmd do
     (#[`instantiate1At_frames, `instantiate1_frames, `batchAbstractWith_frames,
       `mkBinderChain_frames, `mkLambda_frames, `fresh_frames, `sizeOfMinor_frames].map
       (`Ix.CompileCert.O11aMinorFrames ++ ·))
+
+/-- info: [reading-audit] actual O11a output and hook frames: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "actual O11a output and hook frames"
+    (#[`applyWithE_frames, `applyWith_frames, `O11a_frames, `branch_frames,
+      `engineN_frame_cases, `passConfig_frame_cases].map (`Ix.CompileCert.O11aFrames ++ ·))
