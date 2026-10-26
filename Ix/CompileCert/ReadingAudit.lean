@@ -18,6 +18,7 @@ import Ix.CompileCert.FramePrimitives
 import Ix.CompileCert.DevelopmentFrames
 import Ix.CompileCert.DevelopmentState
 import Ix.CompileCert.RewriteCalls
+import Ix.CompileCert.CurrentInputs
 import Ix.CompileCert.FrontendReceipts
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
@@ -912,3 +913,12 @@ run_cmd do
   checkRoots (tag := "reading-audit") "actual rewrite development call chains"
     (#[`Chain.append, `Chain.preserves, `expansionOf_calls, `rw_calls,
       `expansionOf_state, `rw_state].map (`Ix.CompileCert.RewriteCalls ++ ·))
+
+/-- info: [reading-audit] current image inputs and wrapper state: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "current image inputs and wrapper state"
+    (#[`instantiateWith_frames, `rewriteConstM_state, `imageDecl_receipt, `imageDecl_state,
+      `expansion_defn_current, `expansion_thm_current, `expansion_defn_frames, `expansion_thm_frames].map
+      (`Ix.CompileCert.CurrentInputs ++ ·))
