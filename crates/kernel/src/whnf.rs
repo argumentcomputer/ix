@@ -72,6 +72,7 @@ const PRIM_REDUCER_OPEN_ARG_REC_FUEL: u64 = 4096;
 use super::constant::KConst;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
+use super::extra_reductions::ExtraReduction;
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
@@ -469,7 +470,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // (`Nat.shiftRight x k` unfolds to k nested `Nat.div _ 2`, which now
       // stay stuck.) Iota over such a major still works via
       // `cleanup_nat_offset_major`; def-eq decides offset pairs in
-      // `try_def_eq_offset`. Mirrors IxVM 5dcab7f/f7cfe23.
+      // `try_def_eq_offset`. Mirrors IxVM 5dcab7f/f7cfe23. The three go
+      // together as `ExtraReduction::NatOffsets`, which is off by default.
       if family == PrimFamily::Nat
         && let Some(stuck) = self.try_nat_offset_stuck(&cur)?
       {
@@ -1623,6 +1625,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.takes_extra(ExtraReduction::NatOffsets) {
+      return Ok(None);
+    }
     if self.eval_nat_offset_literal(e, 0).is_some() {
       return Ok(None);
     }
@@ -1663,7 +1668,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(Some((base, Nat(offset.0 + 1u64))));
     }
 
-    if id.addr == self.prims.nat_add.addr && args.len() == 2 {
+    // Reading `Nat.add base k` as an offset is part of the offset forms;
+    // without them, only `Nat.succ` layers count.
+    if id.addr == self.prims.nat_add.addr
+      && args.len() == 2
+      && self.takes_extra(ExtraReduction::NatOffsets)
+    {
       let Some(rhs) = self.eval_nat_offset_literal(&args[1], depth + 1) else {
         return Ok(None);
       };
@@ -1741,6 +1751,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.takes_extra(ExtraReduction::NatOffsets) {
+      return Ok(None);
+    }
     // Allocation-free quick reject: this probe runs once per delta-unfold
     // loop iteration, so don't collect a spine Vec unless the head constant
     // is one of the three Nat primitives.
@@ -1823,7 +1836,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// Rebuild `base + r` in the compact offset form used by
-  /// [`Self::try_nat_offset_stuck`].
+  /// [`Self::try_nat_offset_stuck`], or, without the offset forms, as the
+  /// `r` `Nat.succ` layers the decomposition read off the term.
   pub(super) fn nat_offset_rebuild(
     &mut self,
     base: Option<KExpr<M>>,
@@ -1833,6 +1847,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       None => self.nat_expr_from_value(r),
       Some(b) if r.0 == num_bigint::BigUint::ZERO => b,
       Some(b) => {
+        // Without the offset forms a base's offset counts its own `succ`
+        // layers, so it is small and the layers are rebuilt as they were.
+        if !self.takes_extra(ExtraReduction::NatOffsets)
+          && let Some(layers) = r.to_u64()
+        {
+          return self.nat_succ_n(b, layers);
+        }
         let lit = self.nat_expr_from_value(r);
         self.mk_nat_add(b, lit)
       },
@@ -2464,6 +2485,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     arg: &KExpr<M>,
     offset: &num_bigint::BigUint,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.takes_extra(ExtraReduction::NatRecLinear) {
+      return Ok(None);
+    }
     let Some(parts) = self.nat_rec_literal_parts(arg)? else {
       return Ok(None);
     };
@@ -2830,6 +2854,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.takes_extra(ExtraReduction::Decidable) {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
@@ -3091,6 +3118,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.takes_extra(ExtraReduction::BitVec) {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(None);
@@ -3277,6 +3307,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if !self.takes_extra(ExtraReduction::String) {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(None);
@@ -4133,6 +4166,7 @@ mod tests {
 
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let back = kt::ME::cnst(tc.prims.string_legacy_back.clone(), Box::new([]));
     let empty = kt::ME::str(String::new(), Address::hash(b""));
     let result = tc.whnf(&kt::ME::app(back, empty)).unwrap();
@@ -4158,6 +4192,7 @@ mod tests {
 
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let size =
       kt::ME::cnst(tc.prims.string_utf8_byte_size.clone(), Box::new([]));
     let s = kt::ME::str("L∃∀N".to_string(), Address::hash("L∃∀N".as_bytes()));
@@ -4178,6 +4213,7 @@ mod tests {
 
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let to_byte_array =
       kt::ME::cnst(tc.prims.string_to_byte_array.clone(), Box::new([]));
     let empty_string = kt::ME::str(String::new(), Address::hash(b""));
@@ -4800,6 +4836,7 @@ mod tests {
     insert_nat_add_model(&mut env, prims.nat_add.clone());
 
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
     let expr = app(app(add.clone(), var(0)), mk_nat(2));
     let result = tc.whnf(&expr).unwrap();
@@ -4965,6 +5002,7 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let bv_of_nat = kt::ME::cnst(tc.prims.bit_vec_of_nat.clone(), Box::new([]));
     let bv_ult = kt::ME::cnst(tc.prims.bit_vec_ult.clone(), Box::new([]));
     let zero = kt::apps(bv_of_nat, &[kt::var(1), mk_meta_nat(0)]);
@@ -4984,6 +5022,7 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let bv_of_nat = kt::ME::cnst(tc.prims.bit_vec_of_nat.clone(), Box::new([]));
     let bv_to_nat = kt::ME::cnst(tc.prims.bit_vec_to_nat.clone(), Box::new([]));
     let zero = kt::apps(bv_of_nat, &[kt::var(0), mk_meta_nat(0)]);
@@ -5008,6 +5047,7 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let width = kt::var(1);
     let bv_const = kt::ME::cnst(tc.prims.bit_vec.clone(), Box::new([]));
     let bv_of_nat = kt::ME::cnst(tc.prims.bit_vec_of_nat.clone(), Box::new([]));
@@ -5031,6 +5071,7 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let width = mk_meta_nat(8);
     let bv_const = kt::ME::cnst(tc.prims.bit_vec.clone(), Box::new([]));
     let of_nat = kt::ME::cnst(tc.prims.of_nat_of_nat.clone(), Box::new([]));
@@ -5515,6 +5556,88 @@ mod tests {
   }
 
   // =========================================================================
+  // Reductions outside the certified specification set are off by default
+  //
+  // Each test below mirrors a test of one group's reducer, which enables the
+  // group explicitly, and checks that a default checker does not take it.
+  // =========================================================================
+
+  #[test]
+  fn extra_reductions_are_off_by_default() {
+    use super::super::extra_reductions::ExtraReduction as G;
+    let mut env = KEnv::<Anon>::new();
+    let tc = TypeChecker::new(&mut env);
+    for group in
+      [G::Decidable, G::BitVec, G::String, G::NatOffsets, G::NatRecLinear]
+    {
+      assert!(!tc.takes_extra(group), "{group:?} must be off by default");
+    }
+  }
+
+  /// Without the offset forms `Nat.add x 2` is an ordinary definition and
+  /// unfolds, instead of staying in compact form.
+  #[test]
+  fn whnf_nat_add_symbolic_literal_rhs_unfolds_by_default() {
+    let mut env = nat_env();
+    let empty = KEnv::new();
+    let prims = Primitives::from_env(&empty);
+    insert_nat_add_model(&mut env, prims.nat_add.clone());
+
+    let mut tc = TypeChecker::new(&mut env);
+    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    let expr = app(app(add, var(0)), mk_nat(2));
+    let result = tc.whnf(&expr).unwrap();
+    assert_eq!(result, app(succ.clone(), app(succ, var(0))));
+  }
+
+  /// Without the BitVec group `BitVec.toNat (BitVec.ofNat w 0)` is not read
+  /// as a literal.
+  #[test]
+  fn whnf_bitvec_to_nat_ofnat_is_not_read_by_default() {
+    use super::super::testing as kt;
+
+    let mut env = KEnv::<Meta>::new();
+    let mut tc = TypeChecker::new(&mut env);
+    let bv_of_nat = kt::ME::cnst(tc.prims.bit_vec_of_nat.clone(), Box::new([]));
+    let bv_to_nat = kt::ME::cnst(tc.prims.bit_vec_to_nat.clone(), Box::new([]));
+    let zero = kt::apps(bv_of_nat, &[kt::var(0), mk_meta_nat(0)]);
+    let expr = kt::apps(bv_to_nat, &[kt::var(0), zero]);
+    let result = tc.whnf(&expr).unwrap();
+    assert!(
+      !matches!(result.data(), ExprData::Nat(..)),
+      "BitVec.toNat must not be read as a literal, got {result:?}"
+    );
+  }
+
+  /// Without the String group `String.ofList` of a literal character list
+  /// does not collapse to a string literal.
+  #[test]
+  fn whnf_string_of_list_does_not_collapse_by_default() {
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
+    let e = app(of_list, char_list_lit(&tc.prims, "ok"));
+    let result = tc.whnf(&e).unwrap();
+    assert!(
+      !matches!(result.data(), ExprData::Str(..)),
+      "String.ofList must not collapse to a literal, got {result:?}"
+    );
+  }
+
+  /// Without the Decidable group `Nat.decLe 3 5` reduces only by unfolding
+  /// its definition, which this environment does not have.
+  #[test]
+  fn whnf_nat_dec_le_literals_are_not_decided_by_default() {
+    let mut env = KEnv::<Anon>::new();
+    let mut tc = TypeChecker::new(&mut env);
+    let dec_le = AE::cnst(tc.prims.nat_dec_le.clone(), Box::new([]));
+    let expr = app(app(dec_le, mk_nat(3)), mk_nat(5));
+    let result = tc.whnf(&expr).unwrap();
+    assert_eq!(result, expr);
+  }
+
+  // =========================================================================
   // Large-Nat iota runaway guard
   //
   // The shared per-constant budget guards against unbounded expansion of Nat
@@ -5805,6 +5928,7 @@ mod tests {
   fn decidable_reduction_non_nat_arg_bails_out() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let dec_le = AE::cnst(tc.prims.nat_dec_le.clone(), Box::new([]));
     // Args are not Nat literals — decidable path must not panic, must
     // not reduce.
@@ -5818,6 +5942,7 @@ mod tests {
   fn decidable_reduction_underapplied_bails_out() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let dec_le = AE::cnst(tc.prims.nat_dec_le.clone(), Box::new([]));
     // Only 1 arg — path must bail out.
     let expr = AE::app(dec_le, mk_nat(3));
@@ -6458,6 +6583,7 @@ mod tests {
   fn whnf_string_of_list_literal_collapses_to_str() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
     let e = app(of_list, char_list_lit(&tc.prims, "ok"));
     let result = tc.whnf(&e).unwrap();
@@ -6476,6 +6602,7 @@ mod tests {
   fn whnf_string_of_list_empty_collapses_to_empty_str() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
     let e = app(of_list, char_list_lit(&tc.prims, ""));
     let result = tc.whnf(&e).unwrap();
@@ -6489,6 +6616,7 @@ mod tests {
   fn whnf_string_of_list_multibyte_chars_collapse() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
     let e = app(of_list, char_list_lit(&tc.prims, "L∃∀N"));
     let result = tc.whnf(&e).unwrap();
@@ -6505,6 +6633,7 @@ mod tests {
     // ordinary delta path must expose the ofByteArray constructor form.
     let (mut env, of_byte_array_id, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let char_ty = AE::cnst(tc.prims.char_type.clone(), Box::new([]));
     let bad_char =
       app(AE::cnst(tc.prims.char_of_nat.clone(), Box::new([])), mk_nat(0xD800));
@@ -6542,6 +6671,7 @@ mod tests {
     // the term stuck rather than produce the literal.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
     let e = apps_ae(append, &[str_lit("hello"), str_lit("!")]);
     let result = tc.whnf(&e).unwrap();
@@ -6563,6 +6693,7 @@ mod tests {
     // reduces natively end-to-end.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
     let ok = app(of_list, char_list_lit(&tc.prims, "ok"));
     let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
@@ -6583,6 +6714,7 @@ mod tests {
   fn whnf_string_append_symbolic_arg_stays_stuck() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
     let e = apps_ae(append, &[AE::var(0, ()), str_lit("!")]);
     let result = tc.whnf(&e).unwrap();
@@ -6732,6 +6864,7 @@ mod tests {
     // def-eq's no-delta layer.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
     let e = apps_ae(append, &[str_lit("a"), str_lit("b")]);
     assert!(tc.is_def_eq(&e, &str_lit("ab")).unwrap());
@@ -6778,6 +6911,7 @@ mod tests {
       },
     );
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let e = apps_ae(
       AE::cnst(tc.prims.string_dec_eq.clone(), Box::new([])),
       &[str_lit("ok"), str_lit("ok")],
@@ -6822,6 +6956,7 @@ mod tests {
       },
     );
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let e = apps_ae(
       AE::cnst(tc.prims.string_dec_eq.clone(), Box::new([])),
       &[str_lit("ok"), str_lit("no")],
@@ -6842,6 +6977,7 @@ mod tests {
     // it into the validity cascade.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.enable_extra_reductions();
     let back = AE::cnst(tc.prims.string_back.clone(), Box::new([]));
     let result = tc.whnf(&app(back, str_lit("abc"))).unwrap();
     let (head, args) = collect_app_spine(&result);

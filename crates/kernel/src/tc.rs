@@ -17,6 +17,7 @@ use super::env::{Addr, CtxAddr, KEnv};
 use super::equiv::EquivManager;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, FVarId, KExpr};
+use super::extra_reductions::{ExtraReduction, ExtraReductions};
 use super::id::KId;
 use super::ingress::{
   IxonIngressLookups, ingress_addr_shallow_into_kenv_with_lookups,
@@ -168,6 +169,12 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub(crate) in_binder_batch: bool,
   /// When true, the Bool.true fast-path in is_def_eq fires even on open terms.
   pub eager_reduce: bool,
+  /// The reductions outside the certified specification set that this
+  /// checker takes: none, except in unit tests of those reducers (see
+  /// [`crate::extra_reductions`]). Configuration, so `reset` keeps it. The
+  /// `KEnv` caches do not record it, so a checker that changes it must own
+  /// its environment.
+  pub(crate) extra_reductions: ExtraReductions,
   /// Current def-eq recursion depth.
   pub def_eq_depth: u32,
   /// Stack depth of active `IX_DEF_EQ_TRACE` outer frames. While > 0,
@@ -242,6 +249,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       in_app_congruence: false,
       in_binder_batch: false,
       eager_reduce: false,
+      extra_reductions: ExtraReductions::NONE,
       def_eq_depth: 0,
       def_eq_trace_depth: 0,
       def_eq_peak: 0,
@@ -1070,6 +1078,23 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     let result = f(self);
     self.infer_only = prev;
     result
+  }
+
+  // -----------------------------------------------------------------------
+  // Reductions outside the certified specification set
+  // -----------------------------------------------------------------------
+
+  /// Whether this checker takes the reductions of `group`.
+  #[inline]
+  pub(crate) fn takes_extra(&self, group: ExtraReduction) -> bool {
+    self.extra_reductions.allows(group)
+  }
+
+  /// Take every group of [`ExtraReduction`]. Only unit tests of those
+  /// reducers do, on their own environment.
+  #[cfg(test)]
+  pub(crate) fn enable_extra_reductions(&mut self) {
+    self.extra_reductions = ExtraReductions::ALL;
   }
 
   /// Run a closure in a free-variable local-context scope. Declarations
