@@ -437,9 +437,9 @@ def registry : List Entry := [
   -- aux addresses do not depend on the compile set (closure vs whole env)
   .suite "canon-closure-aux" (.ci .compilePipeline) Tests.Ix.Compile.AuxGenClosureCanon.suite,
   -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
-  .suite "cert-compile-parity-init" .landing Tests.Ix.Cert.Statement.initSuite,
-  .suite "cert-roles-initstd" .landing Tests.Ix.Cert.Statement.rolesInitStdSuite,
-  .suite "cert-noctor-initstd" .landing Tests.Ix.Cert.Statement.noCtorInitStdSuite,
+  .suite "cert-compile-parity-init" (.ci .landingInitStd) Tests.Ix.Cert.Statement.initSuite,
+  .suite "cert-roles-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.rolesInitStdSuite,
+  .suite "cert-noctor-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.noCtorInitStdSuite,
   -- A0 safety fixtures (collapse refusal, aux existence, single ownership,
   -- refused fallbacks): both compilers, both kernels, the certified checker
   .suite "aux-cert" (.ci .compilePipeline) Tests.Ix.Compile.AuxCert.suite,
@@ -544,11 +544,11 @@ def registry : List Entry := [
   -- The compiler's nested expansion against IxC's nested modeller (SP5):
   -- source order, canonical order, permutation, field kinds and verdicts
   -- on every nested fixture block (Tests.Ix.Compile.NestedAgreement).
-  .env "nested-agreement" .landing Tests.Ix.Compile.NestedAgreement.run,
+  .env "nested-agreement" (.ci .landingFixtures) Tests.Ix.Compile.NestedAgreement.run,
   -- Pass 1 (Ix.Compile.Canon) against the compiler's CondenseM / sortConsts /
   -- nested order on the same fixture corpus, the port fixes' neutrality, and
   -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
-  .env "canon-pass1" .landing Tests.Ix.Compile.Canon.run,
+  .env "canon-pass1" (.ci .landingFixtures) Tests.Ix.Compile.Canon.run,
   -- The changed set (H1): the change predicate's causes, the set on the
   -- fixture corpus against both compilers' Pass 3 edits (the components the
   -- first hook edits, the published heads, the decompile records' carriers),
@@ -558,7 +558,7 @@ def registry : List Entry := [
   -- facts `avoids_unchanged` proves single the set out, and `FirstsAgree` holds
   -- (Tests.Ix.Cert.Statement).
   .env "cert-unchanged" (.ci .compilePipeline) Tests.Ix.Cert.Statement.unchangedCorpus,
-  .runner "changed-set-initstd" .landing Tests.Ix.Compile.ChangedSet.runInitStd,
+  .runner "changed-set-initstd" (.ci .landingInitStd) Tests.Ix.Compile.ChangedSet.runInitStd,
   .env "changed-set-testenv" (.manual "two Rust compiles of the whole test environment; the calibration of the change predicate against the Rust artifact's Pass 3 edits") Tests.Ix.Compile.ChangedSet.runTestEnv,
   .env "decompile-diff" (.ci .compilePipeline) Tests.Compile.DecompileDiff.run,
   -- Non-canonical stored inductive flags: refused by both compilers
@@ -600,37 +600,37 @@ def registry : List Entry := [
   .runner "compiler-selected-admission" (.ci .compilerClosures) Tests.Ix.Compile.SelectedAdmission.run,
   -- Canonicity over twin presentations, exact against the non-canonical
   -- record under the records policy (Tests.Ix.Compile.Twins).
-  .runner "twins" .landing Tests.Ix.Compile.Twins.run,
+  .runner "twins" (.ci .landingFixtures) Tests.Ix.Compile.Twins.run,
   -- Pass 3's clique tables (plans, rows) are memos: the check mode
   -- (`IX_PASS3_CHECK_PLANS`) at 1, 4 and 32 workers writes the reference's
   -- bytes, with negative controls (Tests.Ix.Compile.PlanCache)
   .runner "pass3-plan-cache" (.ci .compilePipeline) Tests.Ix.Compile.PlanCache.run,
   -- The clique transport wired: every plan of the twins unit, and its rows and
   -- `_ix.src` copies published exactly (Tests.Ix.Compile.Pass3Cliques)
-  .runner "pass3-cliques" .landing Tests.Ix.Compile.Pass3Cliques.run,
+  .runner "pass3-cliques" (.ci .landingFixtures) Tests.Ix.Compile.Pass3Cliques.run,
   -- The clique-ownership cases compiled as units: plans over compiled addresses,
   -- WF8's caller refused by name, values, kernels, the Rust leg; the carried-lemma
   -- units (Tests.Ix.Compile.Clique.OwnershipUnits)
-  .runner "clique-ownership-units" .landing Tests.Ix.Compile.Clique.OwnershipUnits.run,
+  .runner "clique-ownership-units" (.ci .landingFixtures) Tests.Ix.Compile.Clique.OwnershipUnits.run,
   -- Pass 3 on every fixture family: names, decompile, the certified checker and the
   -- Rust kernel against the kernel-failure record, the images' computation rules,
   -- display names, block failures against the record (Tests.Ix.Compile.Pass3)
-  .env "pass3" .landing Tests.Ix.Compile.Pass3.run,
+  .env "pass3" (.ci .landingFixtures) Tests.Ix.Compile.Pass3.run,
   -- Its evidence and diagnostic tools, one per variable (Tests.Ix.Compile.Pass3Tools)
   .runner "pass3-tools" (.manual "one evidence or diagnostic tool of `pass3`, selected by exactly one PASS3_* variable; records nothing by itself and approves nothing") Tests.Ix.Compile.Pass3Tools.tools,
   -- Lean's own auxiliaries against the ones Ix regenerates, over the twin
   -- families with a canonical reference: the nested-order and packaging
   -- classes fail (Tests.Ix.Compile.Oracle).
-  .runner "aux-oracle" .landing Tests.Ix.Compile.Oracle.run,
+  .runner "aux-oracle" (.ci .landingFixtures) Tests.Ix.Compile.Oracle.run,
   -- The Lean compiler's output does not depend on the schedule: the fold at
   -- three widths, the reference schedule both ways and the pipeline at three
   -- worker counts, byte-identical (Tests.Ix.Compile.ScheduleIdentity).
-  .runner "compile-schedule-identity" .landing Tests.Ix.Compile.ScheduleIdentity.run,
+  .runner "compile-schedule-identity" (.ci .landingCompilers) Tests.Ix.Compile.ScheduleIdentity.run,
   -- AuxGen M1: the Source service environment and the flat blocks on Init+Std, measured
   .runner "auxgen-flat-initstd" (.manual "the AuxGen lane's Init+Std measurement of the drivers' Source service (about 2 min), in the compiler gate's suites") Tests.Ix.AuxGen.FlatBlockInitStd.run,
   -- AuxGen checked queries, exact references and fold bytes on the actual fixtures;
   -- the same checked query/table/byte contracts on Init+Std, with the service timed.
-  .suite "auxgen-below-ixc" .landing Tests.Ix.AuxGen.BelowIxc.suite,
+  .suite "auxgen-below-ixc" (.ci .landingFixtures) Tests.Ix.AuxGen.BelowIxc.suite,
   .suite "auxgen-below-initstd" (.manual "the AuxGen lane's Init+Std measurement: checked generation and fold bytes under supported asks, with the Source service timed") Tests.Ix.AuxGen.BelowIxc.initStdSuite,
   .runner "auxgen-closure-probe" (.manual "AuxGen M3's coverage probe: the Source service on selected closures of Init+Std, failClosed and traced") Tests.Ix.AuxGen.ClosureProbe.run,
   .runner "auxgen-acceptance-probe" (.manual "AuxGen M5a library check: generated auxiliaries of flat and nested blocks accepted by Source mode, by kind") Tests.Ix.AuxGen.AcceptanceProbe.run,
@@ -640,11 +640,11 @@ def registry : List Entry := [
   .runner "tc-pins" (.ci .compilerClosures) Tests.Tc.Pins.run,
   -- Exact retained acceleration inputs, value/head witnesses and full closures.
   .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,
-  .runner "admission-hash-diff" .landing Tests.Ix.Kernel.AdmissionHashDiff.run,
+  .runner "admission-hash-diff" (.ci .landingInitStd) Tests.Ix.Kernel.AdmissionHashDiff.run,
   -- the Rust compiler's compile → decompile roundtrip over this binary's
   -- environment (Tests.Ix.RustCompile); before the registry, a special case
   -- that ran alone and skipped every other name
-  .env "rust-compile" .landing Tests.Ix.RustCompile.run,
+  .env "rust-compile" (.ci .landingCompilers) Tests.Ix.RustCompile.run,
   .runner "rust-compile-coverage" .primary Tests.Ix.RustCompile.coverageControl,
   -- the 132-case, twice-executed `ix_aggr` activation matrix, kept out of the
   -- primary suite and independent of the large environment

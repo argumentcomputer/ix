@@ -140,6 +140,15 @@ jobs:
             kind: lake
             test_args: --tier ci:misc
             zk_voting: true
+          - name: Lake ignored tests (landing, fixtures)
+            kind: lake
+            test_args: --tier ci:landing-fixtures
+          - name: Lake ignored tests (landing, compilers)
+            kind: lake
+            test_args: --tier ci:landing-compilers
+          - name: Lake ignored tests (landing, Init+Std)
+            kind: lake
+            test_args: --tier ci:landing-initstd
           - name: Certified kernel
             kind: kernel
     # On-demand rather than Spot: a reclaimed partition restarts from scratch
@@ -158,7 +167,7 @@ jobs:
           TEST_KIND: ${{ matrix.kind }}
         run: |
           case "$TEST_KIND" in
-            lake|tc|kernel) ;;
+            lake|kernel) ;;
             *) echo "::error::Unknown merge-test variant: $TEST_KIND"; exit 1 ;;
           esac
 

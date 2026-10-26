@@ -5,14 +5,16 @@
   `Tests/Main.lean` declares the entries (`Tests.Main.registry`) and calls
   `Tests.Registry.main`. CI derives its partitions from the tiers
   (`--tier ci:<job>`); a primary self-test (`ixtests-registry`) checks the
-  registry against the workflows that name those jobs.
+  registry against the workflows that name those jobs. The three landing jobs
+  hold the end-to-end checks of the compiler and of the certification, which
+  are too slow for every pull request and run in the merge queue.
 
   Command line (`lake test -- <args>`, `lake exe IxTests <args>`):
   - no arguments: every primary entry;
   - `<name>…`: exactly the named entries, whatever their tier (names match
     exactly; an unknown name is an error);
   - `--tier <tier>` (repeatable): every entry of that tier, where `<tier>`
-    is `primary`, `landing`, `manual` or `ci:<job>`;
+    is `primary`, `manual`, `ci:<job>`, or `landing` for the three landing jobs;
   - `--ignored`: with no name and no `--tier`, every entry that is not
     primary; with a name or a `--tier`, nothing more (kept so that
     `--ignored <name>…` works as before);
@@ -41,10 +43,29 @@ inductive CiJob where
   | compile
   | decompile
   | misc
+  /-- End-to-end checks on the fixture families: both compilers, both kernels
+  and the certified checker on every family, the twins' non-canonical
+  record, the image pass and its clique transport, the auxiliary oracle,
+  and the canonical and nested orders. -/
+  | landingFixtures
+  /-- The compilers on everything at once: the Lean compiler's output does
+  not depend on its schedule, and the Rust compiler's compile, serialize and
+  decompile roundtrip over the test environment. -/
+  | landingCompilers
+  /-- End-to-end checks on Init+Std: the certified compiler against the
+  pipeline and the Rust compiler, role binding, a reading premise on every
+  inductive, the changed set, and the admission hash. -/
+  | landingInitStd
   deriving DecidableEq, Repr
 
 def CiJob.all : List CiJob :=
-  [.cli, .compilePipeline, .compilerClosures, .compile, .decompile, .misc]
+  [.cli, .compilePipeline, .compilerClosures, .compile, .decompile, .misc,
+   .landingFixtures, .landingCompilers, .landingInitStd]
+
+/-- The jobs that `--tier landing` selects together. -/
+def CiJob.isLanding : CiJob → Bool
+  | .landingFixtures | .landingCompilers | .landingInitStd => true
+  | _ => false
 
 /-- The job's name on the command line (`--tier ci:<key>`) and in the workflows. -/
 def CiJob.key : CiJob → String
@@ -54,6 +75,9 @@ def CiJob.key : CiJob → String
   | .compile => "compile"
   | .decompile => "decompile"
   | .misc => "misc"
+  | .landingFixtures => "landing-fixtures"
+  | .landingCompilers => "landing-compilers"
+  | .landingInitStd => "landing-initstd"
 
 /-- Where an entry runs. -/
 inductive Tier where
@@ -61,8 +85,6 @@ inductive Tier where
   | primary
   /-- Named by one CI job. -/
   | ci (job : CiJob)
-  /-- The compiler or kernel gate only (README §7.3), not CI. -/
-  | landing
   /-- Run by hand only; the reason says why it is in no gate. -/
   | manual (reason : String)
   deriving Repr
@@ -70,13 +92,12 @@ inductive Tier where
 def Tier.key : Tier → String
   | .primary => "primary"
   | .ci job => s!"ci:{job.key}"
-  | .landing => "landing"
   | .manual _ => "manual"
 
 /-- The tier a `--tier`/`--list-gate` argument names. -/
 def Tier.parse? (s : String) : Option (Tier → Bool) :=
   if s == "primary" then some fun | .primary => true | _ => false
-  else if s == "landing" then some fun | .landing => true | _ => false
+  else if s == "landing" then some fun | .ci j => j.isLanding | _ => false
   else if s == "manual" then some fun | .manual _ => true | _ => false
   else if s.startsWith "ci:" then
     let key := (s.drop 3).toString
@@ -268,7 +289,7 @@ def run (registry : List Entry) (loadEnv : IO Lean.Environment) (args : List Str
 private def demo : List Entry :=
   [.runner "a" .primary (pure 0), .runner "b" .primary (pure 0),
    .runner "x" (.ci .compile) (pure 0), .runner "x-y" (.ci .compile) (pure 0),
-   .runner "g" .landing (pure 0), .runner "m" (.manual "by hand") (pure 0)]
+   .runner "g" (.ci .landingFixtures) (pure 0), .runner "m" (.manual "by hand") (pure 0)]
 
 private def picks (args : List String) : List String :=
   match parseArgs args {} >>= select demo with
@@ -292,7 +313,7 @@ private def picks (args : List String) : List String :=
 #guard picks ["--tier", "ci:tc"] == ["error: unknown tier 'ci:tc' (primary, landing, manual, ci:<job>)"]
 #guard picks ["--tier", "ci:decompile"] == ["error: a --tier selects no entry"]
 #guard picks ["--ignored", "--exclude=x,x-y,g,m"] == ["error: nothing selected"]
-#guard (problems demo [("w", "--tier ci:compile")]).length == CiJob.all.length - 1 + (CiJob.all.length - 1)
+#guard (problems demo [("w", "--tier ci:compile")]).length == CiJob.all.length - 2 + (CiJob.all.length - 1)
 
 #guard coverageProblems demo [("a", "primary"), ("x", "ci:compile")] == []
 #guard coverageProblems demo [("missing", "ci:compile")] ==
@@ -300,6 +321,6 @@ private def picks (args : List String) : List String :=
 #guard coverageProblems (demo ++ demo) [("a", "primary")] ==
   ["required entry a is registered 2 times"]
 #guard coverageProblems demo [("g", "ci:compile-pipeline")] ==
-  ["required entry g runs in landing, expected ci:compile-pipeline"]
+  ["required entry g runs in ci:landing-fixtures, expected ci:compile-pipeline"]
 
 end Tests.Registry
