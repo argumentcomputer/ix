@@ -38,6 +38,7 @@ import Tests.Ix.Compile.O11aPlanning
 import Tests.Ix.Compile.PlanCache
 import Tests.Ix.Compile.Pass3Cliques
 import Tests.Ix.Compile.ChangedSet
+import Tests.Ix.Compile.ConeValidator
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -558,6 +559,12 @@ def registry : List Entry := [
   -- (Tests.Ix.Cert.Statement).
   .env "cert-unchanged" (.ci .compilePipeline) Tests.Ix.Cert.Statement.unchangedCorpus,
   .runner "changed-set-initstd" .landing Tests.Ix.Compile.ChangedSet.runInitStd,
+  -- The changed-cone validator: coverage of every change kind on the fixture
+  -- corpus, the refusal of unpublished image computation-rule rows, injected
+  -- defects refused at each step, and Init+Std end to end with the time of each
+  -- step (Tests.Ix.Compile.ConeValidator).
+  .env "cone-validator" (.ci .compilePipeline) Tests.Ix.Compile.ConeValidator.run,
+  .runner "cone-validator-initstd" .landing Tests.Ix.Compile.ConeValidator.runInitStd,
   .env "changed-set-testenv" (.manual "two Rust compiles of the whole test environment; the calibration of the change predicate against the Rust artifact's Pass 3 edits") Tests.Ix.Compile.ChangedSet.runTestEnv,
   .env "decompile-diff" (.ci .compilePipeline) Tests.Compile.DecompileDiff.run,
   -- Non-canonical stored inductive flags: refused by both compilers
