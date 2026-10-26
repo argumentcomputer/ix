@@ -1,10 +1,12 @@
 import MultiStark
+import MultiStark.FunctionGroups
 import Aiur.Execution.Encode
 import Aiur.Trace.Export
 
 open Aiur Lean
 
 unsafe def main (args : List String) : IO Unit := do
+  let groups := if args.contains "--ungrouped" then [] else MultiStark.functionGroups
   let mode := args.headD "check"
   unless ["check", "export", "export-trace"].contains mode do
     throw (IO.userError "usage: stark-export check|export|export-trace [output.json]")
@@ -29,7 +31,7 @@ unsafe def main (args : List String) : IO Unit := do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
     pure <| some (← IO.ofExcept (Trace.exportJson MultiStark.modulus ZMod.val
-      compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode))
+      compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode groups))
   else pure none
   let package := Json.mkObj ([("program", program)] ++ trace.toList.map ("trace", ·))
   let path := args[1]?.getD "/tmp/ix-recursion.json"

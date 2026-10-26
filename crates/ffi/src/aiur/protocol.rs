@@ -2316,7 +2316,7 @@ pub(super) fn ffi_catch_unwind(
   }
 }
 
-fn ffi_catch_unwind_except(
+pub(super) fn ffi_catch_unwind_except(
   context: &str,
   f: impl FnOnce() -> LeanExcept<LeanOwned>,
 ) -> LeanExcept<LeanOwned> {

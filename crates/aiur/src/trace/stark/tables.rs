@@ -11,6 +11,7 @@ pub(super) fn fixed_tables<B: WitnessField>(
   plan: &TracePlan<'_, B>,
   circuits: &mut Vec<CircuitInputs<Val>>,
   names: &mut Vec<String>,
+  log_blowup: usize,
 ) -> Result<Vec<FixedTable>, String> {
   let program = &plan.program.program;
   let mut groups: Vec<(usize, Vec<usize>)> = vec![];
@@ -103,12 +104,33 @@ pub(super) fn fixed_tables<B: WitnessField>(
       preprocessed,
       constraints,
       lookups,
+      // Linear fixed-table messages can share a cubic logUp step. Unlike
+      // function rows, their height is known here: trade an extra quotient
+      // column for fewer accumulators only when the FFT work decreases.
+      lookup_group_size: if pair_lookups(maps.len(), height, log_blowup) {
+        2
+      } else {
+        1
+      },
       ..Default::default()
     });
     names.push(format!("<table:{}>", input.name));
     result.push(FixedTable { maps, height });
   }
   Ok(result)
+}
+
+fn pair_lookups(count: usize, height: usize, log_blowup: usize) -> bool {
+  if log_blowup == 0 || count < 2 || height == 0 {
+    return false;
+  }
+  let fft = |n: u128| n * u128::from(n.max(2).ilog2());
+  let height = height as u128;
+  let blowup = 1u128 << log_blowup;
+  let saved_columns = 2 * (count - count.div_ceil(2)) as u128;
+  let savings = (blowup + 1) * saved_columns * fft(height);
+  let extra = 2 * (fft(2 * height) - fft(height)) + 2 * fft(blowup * height);
+  savings > extra
 }
 
 impl FixedTable {

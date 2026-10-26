@@ -237,6 +237,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       let retained_peak =
         margin(base + single + retained * shards.saturating_sub(1) as u128);
       let retention = match options.retention {
+        _ if self.gpu_lookup_only => RetentionPolicy::Regenerate,
         RetentionPolicy::Auto if retained_peak <= u128::from(budget) => {
           RetentionPolicy::Retain
         },

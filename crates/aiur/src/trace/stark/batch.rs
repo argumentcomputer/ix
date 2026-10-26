@@ -193,7 +193,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     if shards > 65536 {
       return Err("too many trace shards".into());
     }
-    let memory_start = self.plan.artifact.chips.len() + self.tables.len();
+    let memory_start = self.members.len() + self.tables.len();
     let mut messages = Vec::new();
     for trace in &traces[memory_start..] {
       let total = trace
@@ -219,6 +219,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     claims[0].push(claim);
     // Lookup rows depend on shard boundaries and are regenerated from each
     // slice, including the IsFirst/Last/Transition selectors.
+    let retention =
+      if self.gpu_lookup_only { Retention::Regenerate } else { retention };
     let proof = self.system.prove_batch_with(
       &self.key,
       &claims,
@@ -247,7 +249,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
             )
           })
           .collect();
-        SystemWitness::from_stage_1(sliced, &self.system)
+        self.witness_from_main(sliced)
       },
     );
     self.verify_batch(entry, args, output, &proof)?;

@@ -11,6 +11,8 @@ def client : Modules.Program Nat := aiur_library% Library.U8.templates "
 module Bytes {
     fn checked(value: Field) -> Field { UInt8::to_field(UInt8::from_field(value)) }
     fn less_than(a: Field, b: Field) -> Field { UInt8::raw_lt(a, b) }
+    fn and(a: Field, b: Field) -> Field { UInt8::to_field(UInt8::raw_and(a, b)) }
+    fn or(a: Field, b: Field) -> Field { UInt8::to_field(UInt8::raw_or(a, b)) }
     fn split(sum: Field) -> (Field, Field) {
         let (lo, carry) = UInt8::split_sum(sum);
         (UInt8::to_field(lo), UInt8::to_field(carry))
@@ -35,7 +37,7 @@ module Bytes {
     }
 }"
 
-def entries := ["Bytes::checked", "Bytes::less_than", "Bytes::split", "Bytes::add",
+def entries := ["Bytes::checked", "Bytes::less_than", "Bytes::and", "Bytes::or", "Bytes::split", "Bytes::add",
   "Bytes::sub", "Bytes::mul", "Bytes::join4", "Bytes::join7"]
 
 run_cmd do

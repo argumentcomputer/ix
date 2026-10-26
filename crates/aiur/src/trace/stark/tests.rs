@@ -1022,3 +1022,90 @@ fn resource_plan_matches_generated_trace_and_selects_retention() {
     Options { device: Some(0), ..Default::default() }.validate().is_err()
   );
 }
+#[test]
+fn lean_grouped_layout_shares_rows_and_preserves_proofs() {
+  #[derive(serde::Deserialize)]
+  struct Package {
+    program: crate::Program,
+    trace: crate::trace::TraceArtifact,
+  }
+  let package: Package = serde_json::from_str(include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/grouping.json"
+  )))
+  .unwrap();
+  assert_eq!(package.trace.groups.len(), 1);
+  let group = &package.trace.groups[0];
+  assert_eq!(group.members.len(), 3);
+  let selectors: Vec<_> = group.members.iter().map(|m| m.selector).collect();
+  let program = package.program.check().unwrap();
+  let mut plain = package.trace.clone();
+  plain.groups.clear();
+  let ungrouped = TracePlan::new(&program, plain).unwrap();
+  let plan = TracePlan::new(&program, package.trace).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let plain_backend = Backend::for_batch(&ungrouped, parameters()).unwrap();
+  assert_eq!(plain_backend.statistics().len(), backend.statistics().len() + 2);
+  assert!(backend.statistics().iter().all(|c| c.quotient_degree <= 2));
+  let entry = "Grouped::run";
+  let record = program.execute(entry, vec![3]).unwrap();
+  assert_eq!(record.output, vec![140]);
+  let reference = ungrouped.generate(&record, entry, &[3], true).unwrap();
+  ungrouped.check(&record, &reference, entry, &[3]).unwrap();
+  let converted = backend.witness(&record, &reference).unwrap();
+  let direct = backend.generate(&record, entry, &[3]).unwrap();
+  for (a, b) in converted.traces.iter().zip(&direct.traces) {
+    assert_eq!(a.width, b.width);
+    assert_eq!(a.values, b.values);
+  }
+  let ci =
+    backend.names.iter().position(|n| n == "arithmetic_and_memory").unwrap();
+  assert_eq!(direct.traces[ci].height(), 8);
+  assert!(
+    direct.traces[ci].values[5 * direct.traces[ci].width..]
+      .iter()
+      .all(|&v| v == Val::ZERO)
+  );
+  let expected_cells: u64 =
+    direct.traces.iter().map(|t| t.values.len() as u64).sum();
+  let budget =
+    backend.plan_batch(&record, &planning::Options::default()).unwrap();
+  assert_eq!(budget.stage1_cells, expected_cells);
+  let proof = backend
+    .prove_batch(
+      entry,
+      &[3],
+      &record.output,
+      direct.clone(),
+      2,
+      multi_stark::batch::Retention::Retain,
+    )
+    .unwrap();
+  backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
+  for attack in 0..3 {
+    let mut forged = direct.traces.clone();
+    let width = forged[ci].width;
+    let row = &mut forged[ci].values[..width];
+    let active = selectors.iter().position(|&s| row[s] == Val::ONE).unwrap();
+    match attack {
+      0 => row[selectors[active]] = Val::TWO,
+      1 => row[selectors[(active + 1) % selectors.len()]] = Val::ONE,
+      _ => {
+        // An inactive padding row cannot impersonate a provider.
+        forged[ci].values[5 * width + width - 1] = Val::ONE;
+      },
+    }
+    assert!(
+      backend
+        .prove_batch_stage_1(
+          entry,
+          &[3],
+          &record.output,
+          forged,
+          8,
+          multi_stark::batch::Retention::Retain
+        )
+        .is_err()
+    );
+  }
+}

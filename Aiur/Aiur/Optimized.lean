@@ -7,3 +7,4 @@ import Aiur.Optimized.Correctness
 import Aiur.Optimized.NativeCorrectness
 import Aiur.Optimized.Physical
 import Aiur.Optimized.Activation
+import Aiur.Optimized.Grouping.Compile

@@ -15,3 +15,7 @@ serde_json = { workspace = true }
 [features]
 parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda"]
+
+[dev-dependencies]
+ixvm = { path = "../ixvm" }
+ix-bench = { workspace = true }

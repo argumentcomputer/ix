@@ -1,6 +1,7 @@
 import Aiur.Trace.Compile
 import Aiur.Optimized.Activation
 import Aiur.Optimized.Physical
+import Aiur.Optimized.Grouping.Compile
 
 namespace Aiur.Trace
 open Optimized Lean
@@ -94,20 +95,45 @@ def functionJson [Field F] [DecidableEq F] (encode : F → Nat) (program : Progr
     ("witnesses", js degree.chip.roles.size), ("inputs", js (source.chip.inputs.flatMap WireValue.words)),
     ("output", js source.chip.output.words), ("steps", js steps), ("writes", js writes)]
 
+def groupJson [Field F] [DecidableEq F] (encode : F → Nat) (group : Grouping.Layout F) : Json :=
+  let poly := polynomialJson encode
+  obj [("name", js group.name), ("width", js group.width),
+    ("activation", poly group.activation), ("constraints", js (group.constraints.map poly)),
+    ("receive", js (group.receive.map poly)),
+    ("sends", js (group.sends.map fun s => obj [("enable", poly s.enable), ("args", js (s.args.map poly))])),
+    ("members", js (group.members.map fun m => obj [("name", js m.name), ("columns", js m.columns),
+      ("selector", js m.selector), ("writes", js (m.writes.map fun (column, value) =>
+        obj [("column", js column), ("value", poly value)]))]))]
+
 def exportPreparedJson [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
-    (bytecode : Execution.Bytecode F) : Except String Json := do
+    (bytecode : Execution.Bytecode F) (groups : List (String × List String) := []) : Except String Json := do
   unless program.functions.length == artifact.layouts.length && program.functions.length == bytecode.functions.length do
     throw "trace program/function count mismatch"
   let functions ← ((program.functions.zip artifact.layouts).zip bytecode.functions).mapM fun ((fn, layout), code) => do
     unless fn.name == code.name do throw "trace bytecode function order mismatch"
     let representative := physical.representative fn.name
     functionJson encode program artifact.config fn layout representative code (artifact.entries.contains fn.name)
+  let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
+  let id := fun name => if callableNames.contains name then pure (callableNames.idxOf name)
+    else throw s!"unknown grouped callable {name}"
+  let mut used : List String := []
+  let mut layouts := []
+  for (name, names) in groups do
+    let names := (names.map physical.representative).dedup
+    let chips := physical.system.chips.filter fun c =>
+      names.contains c.name && !used.contains c.name && !artifact.entries.contains c.name
+    if chips.length < 2 then continue
+    let group ← Grouping.compile name id (chips.map fun c => (Activation.compile c, c.numVars))
+    used := used ++ chips.map (·.name)
+    layouts := layouts ++ [groupJson encode group]
   return obj [("version", js (2 : Nat)), ("modulus", js modulus),
-    ("functions", js functions), ("chips", js (← physical.system.chips.mapM (chipJson encode)))]
+    ("functions", js functions), ("chips", js (← physical.system.chips.mapM (chipJson encode))),
+    ("groups", js layouts)]
 
 def exportJson [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
-    (program : Program F) (artifact : Optimized.Artifact F) (bytecode : Execution.Bytecode F) : Except String Json := do
-  exportPreparedJson modulus encode program artifact (← Physical.prepare artifact) bytecode
+    (program : Program F) (artifact : Optimized.Artifact F) (bytecode : Execution.Bytecode F)
+    (groups : List (String × List String) := []) : Except String Json := do
+  exportPreparedJson modulus encode program artifact (← Physical.prepare artifact) bytecode groups
 
 end Aiur.Trace

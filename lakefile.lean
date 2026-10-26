@@ -234,6 +234,9 @@ lean_exe «bench-ixvm» where
   root := `Benchmarks.LegacyIxVM
   supportInterpreter := true
 
+lean_exe «bench-compare-aiur» where
+  root := `Benchmarks.CompareAiur
+
 lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap
 

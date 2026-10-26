@@ -258,7 +258,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     entry: &str,
     args: &[B::Element],
   ) -> Result<SystemWitness<Val>, String> {
-    self.generate_with::<true>(record, entry, args)
+    if self.gpu_lookup_only {
+      Ok(self.witness_from_main(self.generate_stage_1(record, entry, args)?))
+    } else {
+      self.generate_with::<true>(record, entry, args)
+    }
   }
 
   /// Batch proving creates lookup buffers per shard. Avoid allocating their
@@ -288,10 +292,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let (table_counts, memory_counts) = self.auxiliary_counts(record)?;
     let memory_rows = self.rom.partition(record, &memory_counts)?;
     let generate = |ci: usize| {
-      if ci < self.plan.artifact.chips.len() {
+      if ci < self.members.len() {
         self.function_witness::<LOOKUPS>(ci, record, &memory)
       } else {
-        let table = ci - self.plan.artifact.chips.len();
+        let table = ci - self.members.len();
         let trace = if let Some(table) = self.tables.get(table) {
           table.witness(&table_counts)
         } else {
@@ -326,7 +330,6 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     record: &Execution<B>,
     memory: &FxHashMap<&[B::Element], usize>,
   ) -> Result<(RowMajorMatrix<Val>, LookupValues<Val>), String> {
-    let chip = &self.plan.artifact.chips[ci];
     let mut rows = vec![];
     for &function in &self.members[ci] {
       rows.extend(
@@ -339,7 +342,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     } else {
       rows.len().checked_next_power_of_two().ok_or("trace height overflow")?
     };
-    let width = chip.width + 1;
+    let width = self.system.circuits[ci].main_width;
     let mut values =
       Val::zero_vec(height.checked_mul(width).ok_or("trace size overflow")?);
     let lookup_plan = &self.lookup_plans[ci];
@@ -359,6 +362,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         if output.multiplicity >= Val::ORDER_U64 {
           return Err("function count reaches field characteristic".into());
         }
+        let placement = &self.placements[self.plan.members[function]];
         self.plan.fills[function]
           .fill_into(
             record,
@@ -366,7 +370,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
             memory,
             &mut worker.scratch,
             &mut worker.buffer,
-            |column, value| row[column] = B::into_stark(value),
+            |column, value| {
+              row[placement.columns[column]] = B::into_stark(value)
+            },
           )
           .map_err(|e| {
             format!(
@@ -374,8 +380,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
               self.plan.artifact.functions[function].name
             )
           })?;
-        row[chip.activation] = Val::ONE;
-        row[chip.width] = Val::from_u64(output.multiplicity);
+        placement.finish(row, output.multiplicity);
         if LOOKUPS {
           lookup_plan.fill(row, &[], worker, &mut lookups[i]);
         }

@@ -1,4 +1,5 @@
 import IxVM
+import IxVM.FunctionGroups
 import Aiur.Execution.Encode
 import Aiur.Optimized.Program
 import Aiur.Trace.Export
@@ -151,6 +152,7 @@ private def runHost (package : Json) (mode : String) : IO Unit :=
 
 unsafe def main (args : List String) : IO Unit := do
   let totalStart ← IO.monoMsNow
+  let groups := if args.contains "--ungrouped" then [] else IxVM.functionGroups
   let mode := args.headD "transitive"
   let profile := mode == "stats-profile"
   if mode == "propagation" || mode == "propagation-trace" then
@@ -193,7 +195,7 @@ unsafe def main (args : List String) : IO Unit := do
       IO.eprintln "Compiling claim circuits and witness population plans..."
       let compiled ← IO.ofExcept (prepared.compileOptimized {})
       pure <| some (← IO.ofExcept (Trace.exportJson modulus ZMod.val compiled.circuit.inlined.program
-        compiled.circuit.artifact exported.bytecode))
+        compiled.circuit.artifact exported.bytecode groups))
     else pure none
     let package := Json.mkObj ([("program", program)] ++ trace.toList.map ("trace", ·))
     let path := args[1]?.getD "/tmp/ix-claim.json"
@@ -213,7 +215,7 @@ unsafe def main (args : List String) : IO Unit := do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
     pure <| some (← IO.ofExcept (Trace.exportJson modulus ZMod.val compiled.circuit.inlined.program
-      compiled.circuit.artifact exported.bytecode))
+      compiled.circuit.artifact exported.bytecode groups))
   else pure none
   let package := Json.mkObj ([("program", program), ("address", toJson fixture.address),
     ("invalid_address", toJson fixture.invalidProof.address),

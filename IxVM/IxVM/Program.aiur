@@ -475,10 +475,10 @@ type U32 = UInt32::U32;
 
 
 
-  fn b3_pack_w(w: U32) -> Field {
+  inline fn b3_pack_w(w: U32) -> Field {
     UInt32::compact_field(UInt32::compact(w))
   }
-  fn b3_pack(h: [U32; 8]) -> [Field; 8] {
+  inline fn b3_pack(h: [U32; 8]) -> [Field; 8] {
     [b3_pack_w(h[0]), b3_pack_w(h[1]), b3_pack_w(h[2]), b3_pack_w(h[3]),
      b3_pack_w(h[4]), b3_pack_w(h[5]), b3_pack_w(h[6]), b3_pack_w(h[7])]
   }
@@ -6534,7 +6534,7 @@ let block_c = load_verified_constant(block_addr);
     }
   }
 
-  fn io_types_lookup(types: List<KExpr>, i: Field) -> KExpr {
+  inline fn io_types_lookup(types: List<KExpr>, i: Field) -> KExpr {
     let ty = list_lookup(types, i);
     expr_lift(ty, i + 1, 0)
   }

@@ -289,7 +289,7 @@ type U32 = UInt32::U32;
     1 - (hi_max * (1 - lo_zero))
   }
 
-  fn gl_to_bytes(v: Field) -> [U8; 8] {
+  inline fn gl_to_bytes(v: Field) -> [U8; 8] {
     let b = hint::<[Field; 8]>("bytes_le", v);
     let (c0, c1) = UInt8::from_fields(b[0], b[1]);
     let (c2, c3) = UInt8::from_fields(b[2], b[3]);
@@ -363,7 +363,7 @@ type U32 = UInt32::U32;
     (UInt64::to_field(val), s)
   }
 
-  fn limb_to_field(b: U64) -> Field {
+  inline fn limb_to_field(b: U64) -> Field {
     UInt8::to_field(b[0])
       + 256 * UInt8::to_field(b[1])
       + 65536 * UInt8::to_field(b[2])
@@ -392,13 +392,13 @@ type U32 = UInt32::U32;
     (UInt64::to_field(val), j)
   }
 
-  fn read_ext_at(i: Field) -> (Ext, Field) {
+  inline fn read_ext_at(i: Field) -> (Ext, Field) {
     let (a, j0) = read_u64_at(i);
     let (b, j1) = read_u64_at(j0);
     ([gl_val(a), gl_val(b)], j1)
   }
 
-  fn read_digest_at(i: Field) -> (Digest, Field) {
+  inline fn read_digest_at(i: Field) -> (Digest, Field) {
     let (a, j0) = read_u64_at(i);
     let (b, j1) = read_u64_at(j0);
     let (c, j2) = read_u64_at(j1);
@@ -406,7 +406,7 @@ type U32 = UInt32::U32;
     ([a, b, c, d], j3)
   }
 
-  fn read_u8_vec(i: Field) -> (List<U8>, Field) {
+  inline fn read_u8_vec(i: Field) -> (List<U8>, Field) {
     let (n, j) = read_count_at(i);
     read_u8_vec_n(j, n)
   }
@@ -462,7 +462,7 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_u64_vec_vec(i: Field) -> (List<List<U64>>, Field) {
+  inline fn read_u64_vec_vec(i: Field) -> (List<List<U64>>, Field) {
     let (n, j) = read_count_at(i);
     read_u64_vec_vec_n(j, n)
   }
@@ -476,7 +476,7 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_u64_vec_vec_vec(i: Field) -> (List<List<List<U64>>>, Field) {
+  inline fn read_u64_vec_vec_vec(i: Field) -> (List<List<List<U64>>>, Field) {
     let (n, j) = read_count_at(i);
     read_u64_vec_vec_vec_n(j, n)
   }
@@ -518,10 +518,10 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_merkle_cap_at(i: Field) -> (MerkleCap, Field) {
+  inline fn read_merkle_cap_at(i: Field) -> (MerkleCap, Field) {
     read_digest_vec_at(i)
   }
-  fn read_merkle_cap_vec(i: Field) -> (List<MerkleCap>, Field) {
+  inline fn read_merkle_cap_vec(i: Field) -> (List<MerkleCap>, Field) {
     let (n, j) = read_count_at(i);
     read_merkle_cap_vec_n(j, n)
   }
@@ -535,19 +535,19 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_commitments(i: Field) -> (Commitments, Field) {
+  inline fn read_commitments(i: Field) -> (Commitments, Field) {
     let (stage_1_trace, j0) = read_merkle_cap_at(i);
     let (stage_2_trace, j1) = read_merkle_cap_at(j0);
     let (quotient_chunks, j2) = read_merkle_cap_at(j1);
     (Commitments::Mk(stage_1_trace, stage_2_trace, quotient_chunks), j2)
   }
 
-  fn read_batch_opening(i: Field) -> (BatchMultiOpening, Field) {
+  inline fn read_batch_opening(i: Field) -> (BatchMultiOpening, Field) {
     let (opened_values, j0) = read_u64_vec_vec_vec(i);
     let (opening_proof, j1) = read_digest_vec_at(j0);
     (BatchMultiOpening::Mk(opened_values, opening_proof), j1)
   }
-  fn read_batch_opening_vec(i: Field) -> (List<BatchMultiOpening>, Field) {
+  inline fn read_batch_opening_vec(i: Field) -> (List<BatchMultiOpening>, Field) {
     let (n, j) = read_count_at(i);
     read_batch_opening_vec_n(j, n)
   }
@@ -561,13 +561,13 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_commit_phase_step(i: Field) -> (CommitPhaseMultiStep, Field) {
+  inline fn read_commit_phase_step(i: Field) -> (CommitPhaseMultiStep, Field) {
     let (log_arity, j0) = read_u8_at(i);
     let (sibling_values, j1) = read_ext_vec_vec(j0);
     let (opening_proof, j2) = read_digest_vec_at(j1);
     (CommitPhaseMultiStep::Mk(log_arity, sibling_values, opening_proof), j2)
   }
-  fn read_commit_phase_step_vec(i: Field) -> (List<CommitPhaseMultiStep>, Field) {
+  inline fn read_commit_phase_step_vec(i: Field) -> (List<CommitPhaseMultiStep>, Field) {
     let (n, j) = read_count_at(i);
     read_commit_phase_step_vec_n(j, n)
   }
@@ -581,7 +581,7 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_fri_proof(i: Field) -> (FriProof, Field) {
+  inline fn read_fri_proof(i: Field) -> (FriProof, Field) {
     let (commit_phase_commits, j0) = read_merkle_cap_vec(i);
     let (commit_pow_witnesses, j1) = read_u64_vec(j0);
     let (input_openings, j2) = read_batch_opening_vec(j1);
@@ -592,7 +592,7 @@ type U32 = UInt32::U32;
                  commit_phase_openings, final_poly, query_pow_witness), j5)
   }
 
-  fn read_active(i: Field) -> (List<Field>, Field) {
+  inline fn read_active(i: Field) -> (List<Field>, Field) {
     let (n, j) = read_count_at(i);
     read_active_n(j, n)
   }
@@ -631,14 +631,14 @@ type U32 = UInt32::U32;
               stage_1_opened_values, stage_2_opened_values), j7)
   }
 
-  fn read_header(i: Field) -> (ShardHeader, Field) {
+  inline fn read_header(i: Field) -> (ShardHeader, Field) {
     let (active, j0) = read_active(i);
     let (stage_1, j1) = read_merkle_cap_at(j0);
     let (log_degrees, j2) = read_u8_vec(j1);
     let (claims, j3) = read_u64_vec_vec(j2);
     (ShardHeader::Mk(active, stage_1, log_degrees, claims), j3)
   }
-  fn read_header_vec(i: Field) -> (List<ShardHeader>, Field) {
+  inline fn read_header_vec(i: Field) -> (List<ShardHeader>, Field) {
     let (n, j) = read_count_at(i);
     read_header_vec_n(j, n)
   }
@@ -652,12 +652,12 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_message(i: Field) -> (BatchMessage, Field) {
+  inline fn read_message(i: Field) -> (BatchMessage, Field) {
     let (args, j0) = read_u64_vec(i);
     let (multiplicity, j1) = read_u64_at(j0);
     (BatchMessage::Mk(args, multiplicity), j1)
   }
-  fn read_message_vec(i: Field) -> (List<BatchMessage>, Field) {
+  inline fn read_message_vec(i: Field) -> (List<BatchMessage>, Field) {
     let (n, j) = read_count_at(i);
     read_message_vec_n(j, n)
   }
@@ -671,7 +671,7 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_proof_vec(i: Field) -> (List<Proof>, Field) {
+  inline fn read_proof_vec(i: Field) -> (List<Proof>, Field) {
     let (n, j) = read_count_at(i);
     read_proof_vec_n(j, n)
   }
@@ -685,7 +685,7 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_batch(i: Field) -> (Batch, Field) {
+  inline fn read_batch(i: Field) -> (Batch, Field) {
     let (headers, j0) = read_header_vec(i);
     let (messages, j1) = read_message_vec(j0);
     let (proofs, j2) = read_proof_vec(j1);
@@ -740,7 +740,7 @@ type U32 = UInt32::U32;
     (gl_val(u), j)
   }
 
-  fn read_vk_digest(i: ByteStream) -> (Digest, ByteStream) {
+  inline fn read_vk_digest(i: ByteStream) -> (Digest, ByteStream) {
     let (a, j0) = read_vk_u64(i);
     let (b, j1) = read_vk_u64(j0);
     let (c, j2) = read_vk_u64(j1);
@@ -855,7 +855,7 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_sys_lookup(i: ByteStream) -> (SysLookup, ByteStream) {
+  inline fn read_sys_lookup(i: ByteStream) -> (SysLookup, ByteStream) {
     let (m, i1) = read_vk_u16(i);
     let (ac, i2) = read_vk_u16(i1);
     let (args, i3) = read_node_ids_n(i2, ac);
@@ -881,7 +881,7 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_sys_circuit(base: ByteStream) -> (SysCircuit, [U64; 7], ByteStream) {
+  inline fn read_sys_circuit(base: ByteStream) -> (SysCircuit, [U64; 7], ByteStream) {
     let (mw, mwl, c1) = read_vk_u16_limb(base);
     let (pw, pwl, c2) = read_vk_u16_limb(c1);
     let (ph, phl, c3) = read_vk_u32_limb(c2);
@@ -903,7 +903,7 @@ type U32 = UInt32::U32;
     (SysCircuit::Mk(nodes, ncount, zeros, md, lks, k, mw, pw, s2w),
      [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
   }
-  fn cons_shape7(l: [U64; 7], tail: List<U64>) -> List<U64> {
+  inline fn cons_shape7(l: [U64; 7], tail: List<U64>) -> List<U64> {
     store(Lists::Node::Cons(l[0], store(Lists::Node::Cons(l[1], store(Lists::Node::Cons(l[2],
     store(Lists::Node::Cons(l[3], store(Lists::Node::Cons(l[4], store(Lists::Node::Cons(l[5],
     store(Lists::Node::Cons(l[6], tail))))))))))))))
@@ -943,7 +943,7 @@ type U32 = UInt32::U32;
     }
   }
 
-  fn read_sys_params(i: ByteStream) -> (SysParams, List<U64>, ByteStream) {
+  inline fn read_sys_params(i: ByteStream) -> (SysParams, List<U64>, ByteStream) {
     let (p0, l0, j0) = read_vk_u16_limb(i);
     let (p1, l1, j1) = read_vk_u16_limb(j0);
     let (p2, l2, j2) = read_vk_u16_limb(j1);
@@ -958,7 +958,7 @@ type U32 = UInt32::U32;
      j6)
   }
 
-  fn read_system(i: ByteStream) -> (Sys, ByteStream) {
+  inline fn read_system(i: ByteStream) -> (Sys, ByteStream) {
     let (params, plimbs, j) = read_sys_params(i);
     let (n, nlimb, j1) = read_vk_u16_limb(j);
     let (circuits, climbs, j2) = read_sys_circuits_n(j1, n);
@@ -976,12 +976,12 @@ type U32 = UInt32::U32;
     store(Lists::Node::Cons(w[3], tail))))))))
   }
 
-  fn b3_flatten_onto(h: [U32; 8], tail: ByteStream) -> ByteStream {
+  inline fn b3_flatten_onto(h: [U32; 8], tail: ByteStream) -> ByteStream {
     b3_w4_onto(h[0], b3_w4_onto(h[1], b3_w4_onto(h[2], b3_w4_onto(h[3],
     b3_w4_onto(h[4], b3_w4_onto(h[5], b3_w4_onto(h[6], b3_w4_onto(h[7], tail))))))))
   }
 
-  fn b3_to_digest(h: [U32; 8]) -> Digest {
+  inline fn b3_to_digest(h: [U32; 8]) -> Digest {
     let h = [UInt32::to_bytes(h[0]), UInt32::to_bytes(h[1]), UInt32::to_bytes(h[2]), UInt32::to_bytes(h[3]), UInt32::to_bytes(h[4]), UInt32::to_bytes(h[5]), UInt32::to_bytes(h[6]), UInt32::to_bytes(h[7])];
     [[h[0][0], h[0][1], h[0][2], h[0][3], h[1][0], h[1][1], h[1][2], h[1][3]],
      [h[2][0], h[2][1], h[2][2], h[2][3], h[3][0], h[3][1], h[3][2], h[3][3]],
@@ -1116,7 +1116,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn b3_rows(rows: List<List<U64>>) -> [U32; 8] {
+  inline fn b3_rows(rows: List<List<U64>>) -> [U32; 8] {
     let IV = [UInt32::from_bytes([UInt8::BYTE_103, UInt8::BYTE_230, UInt8::BYTE_9, UInt8::BYTE_106]), UInt32::from_bytes([UInt8::BYTE_133, UInt8::BYTE_174, UInt8::BYTE_103, UInt8::BYTE_187]), UInt32::from_bytes([UInt8::BYTE_114, UInt8::BYTE_243, UInt8::BYTE_110, UInt8::BYTE_60]), UInt32::from_bytes([UInt8::BYTE_58, UInt8::BYTE_245, UInt8::BYTE_79, UInt8::BYTE_165]), UInt32::from_bytes([UInt8::BYTE_127, UInt8::BYTE_82, UInt8::BYTE_14, UInt8::BYTE_81]), UInt32::from_bytes([UInt8::BYTE_140, UInt8::BYTE_104, UInt8::BYTE_5, UInt8::BYTE_155]), UInt32::from_bytes([UInt8::BYTE_171, UInt8::BYTE_217, UInt8::BYTE_131, UInt8::BYTE_31]), UInt32::from_bytes([UInt8::BYTE_25, UInt8::BYTE_205, UInt8::BYTE_224, UInt8::BYTE_91])];
     Blake3::compress_layer(b3_rows_chunks(store(Lists::Node::Nil), rows, 0, store([UInt8::BYTE_0; 8]), store(IV), store(Blake3::LayerNode::Nil)))
   }
@@ -1283,7 +1283,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     eg_add(t1, t2)
   }
 
-  fn ro_x(index_bits: List<Field>, log_height: Field) -> Goldilocks {
+  inline fn ro_x(index_bits: List<Field>, log_height: Field) -> Goldilocks {
     7 * exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(Lists::Node::Nil)))
   }
 
@@ -1316,7 +1316,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
       Lists::Node::Cons(mat, rest) => {  points_onto(mat, round_onto(rest, tail)) } ,
     }
   }
-  fn prep_onto(prep_opt: PreprocessedOpt, tail: ByteStream) -> ByteStream {
+  inline fn prep_onto(prep_opt: PreprocessedOpt, tail: ByteStream) -> ByteStream {
     match prep_opt {
       PreprocessedOpt::NoPreprocessed => {  tail } ,
       PreprocessedOpt::SomePreprocessed(round) => {  round_onto(round, tail) } ,
@@ -1523,14 +1523,14 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn recon_evals(bit: Field, folded: Ext, sib: Ext) -> (Ext, Ext) {
+  inline fn recon_evals(bit: Field, folded: Ext, sib: Ext) -> (Ext, Ext) {
     match bit {
       0 => {  (folded, sib) } ,
       _ => {  (sib, folded) } ,
     }
   }
 
-  fn flatten2(e0: Ext, e1: Ext) -> List<U64> {
+  inline fn flatten2(e0: Ext, e1: Ext) -> List<U64> {
     store(Lists::Node::Cons(gl_to_bytes(e0[0]), store(Lists::Node::Cons(gl_to_bytes(e0[1]),
       store(Lists::Node::Cons(gl_to_bytes(e1[0]), store(Lists::Node::Cons(gl_to_bytes(e1[1]), store(Lists::Node::Nil)))))))))
   }
@@ -1717,7 +1717,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn pcs_fri_verify(post_zeta_input: ByteStream, stage1: OpenedRound, stage2: OpenedRound,
+  inline fn pcs_fri_verify(post_zeta_input: ByteStream, stage1: OpenedRound, stage2: OpenedRound,
       q_opened: OpenedRound, prep_opt: PreprocessedOpt, opening: FriProof,
       s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap, prep_commit: MerkleCap,
       prep_indices: List<OptIdx>, log_degrees: List<U8>,
@@ -1758,7 +1758,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     verify_commit_multi(commit_phase_openings, commit_phase_commits, fri_rows, indices, 0, log_gmax)
   }
 
-  fn ext_is_zero(e: Ext) -> Field {
+  inline fn ext_is_zero(e: Ext) -> Field {
     Fields::is_zero(e[0]) * Fields::is_zero(e[1])
   }
 
@@ -1768,7 +1768,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     store(Lists::Node::Cons(b[6], store(Lists::Node::Cons(b[7], tail))))))))))))))))
   }
 
-  fn digest_onto(d: Digest, tail: ByteStream) -> ByteStream {
+  inline fn digest_onto(d: Digest, tail: ByteStream) -> ByteStream {
     b8_onto(d[0], b8_onto(d[1], b8_onto(d[2], b8_onto(d[3], tail))))
   }
 
@@ -1876,7 +1876,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn seed_tag_onto(tail: ByteStream) -> ByteStream {
+  inline fn seed_tag_onto(tail: ByteStream) -> ByteStream {
     store(Lists::Node::Cons(UInt8::BYTE_109, store(Lists::Node::Cons(UInt8::BYTE_117, store(Lists::Node::Cons(UInt8::BYTE_108,
     store(Lists::Node::Cons(UInt8::BYTE_116, store(Lists::Node::Cons(UInt8::BYTE_105, store(Lists::Node::Cons(UInt8::BYTE_45,
     store(Lists::Node::Cons(UInt8::BYTE_115, store(Lists::Node::Cons(UInt8::BYTE_116, store(Lists::Node::Cons(UInt8::BYTE_97,
@@ -1892,7 +1892,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn opt_commit_cap(commit: OptCommit) -> MerkleCap {
+  inline fn opt_commit_cap(commit: OptCommit) -> MerkleCap {
     match commit {
       OptCommit::NoCommit => {  store(Lists::Node::Nil) } ,
       OptCommit::SomeCommit(c) => {  c } ,
@@ -1925,7 +1925,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn trace_vanishing(zeta: Ext, l: Field) -> Ext {
+  inline fn trace_vanishing(zeta: Ext, l: Field) -> Ext {
     eg_sub(ext_exp_pow2(zeta, l), [1, 0])
   }
 
@@ -1936,7 +1936,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn trace_selectors(zeta: Ext, l: Field) -> (Ext, Ext, Ext, Ext) {
+  inline fn trace_selectors(zeta: Ext, l: Field) -> (Ext, Ext, Ext, Ext) {
     let zh = trace_vanishing(zeta, l);
     let ginv = gl_inverse(two_adic_gen(l));
     let is_first = eg_div(zh, eg_sub(zeta, [1, 0]));
@@ -2089,7 +2089,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn ood_composition(nodes: List<SysNode>, zeros: List<Field>, lks: List<SysLookup>,
+  inline fn ood_composition(nodes: List<SysNode>, zeros: List<Field>, lks: List<SysLookup>,
       k: Field,
       main: List<Ext>, main_next: List<Ext>, prep: List<Ext>, prep_next: List<Ext>,
       s2: List<Ext>, s2next: List<Ext>, publics: List<Ext>,
@@ -2120,7 +2120,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn build_publics(lch: Ext, fch: Ext, accp: Ext, naccp: Ext) -> List<Ext> {
+  inline fn build_publics(lch: Ext, fch: Ext, accp: Ext, naccp: Ext) -> List<Ext> {
     store(Lists::Node::Cons([lch[0], 0], store(Lists::Node::Cons([lch[1], 0],
     store(Lists::Node::Cons([fch[0], 0], store(Lists::Node::Cons([fch[1], 0],
     store(Lists::Node::Cons([accp[0], 0], store(Lists::Node::Cons([accp[1], 0],
@@ -2147,7 +2147,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     }
   }
 
-  fn ood_prep_rows(prep_opt: PreprocessedOpt, oi: OptIdx) -> (List<Ext>, List<Ext>) {
+  inline fn ood_prep_rows(prep_opt: PreprocessedOpt, oi: OptIdx) -> (List<Ext>, List<Ext>) {
     match oi {
       OptIdx::NoIdx => {  (store(Lists::Node::Nil), store(Lists::Node::Nil)) } ,
       OptIdx::SomeIdx(j) => {
@@ -2561,7 +2561,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     batch_claims(headers)
   }
 
-  fn verify_batch_at(sys: Sys, idx: Field, len: Field, claims: List<List<U64>>) -> Field {
+  inline fn verify_batch_at(sys: Sys, idx: Field, len: Field, claims: List<List<U64>>) -> Field {
     let (batch, stop) = read_batch(idx);
     assert_eq!(stop, idx + len);
     let found = verify_batch(sys, batch);
@@ -2569,7 +2569,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     1
   }
 
-  fn read_claims(stream: ByteStream) -> (List<List<U64>>, ByteStream) {
+  inline fn read_claims(stream: ByteStream) -> (List<List<U64>>, ByteStream) {
     let (n, s) = read_count(stream);
     read_claims_n(s, n)
   }
@@ -2582,7 +2582,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
         (store(Lists::Node::Cons(c, rest)), s2) } ,
     }
   }
-  fn read_one_claim(stream: ByteStream) -> (List<U64>, ByteStream) {
+  inline fn read_one_claim(stream: ByteStream) -> (List<U64>, ByteStream) {
     let (m, s) = read_count(stream);
     read_claim_vals_n(s, m)
   }
@@ -2699,7 +2699,7 @@ fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
     Blake3::bytes_to_addr(store(Lists::Node::Cons(UInt8::BYTE_0, tail)))
   }
 
-  fn aggr_pack_be4(a: U8, b: U8, c: U8, d: U8) -> Field {
+  inline fn aggr_pack_be4(a: U8, b: U8, c: U8, d: U8) -> Field {
     ((UInt8::to_field(a) * 256 + UInt8::to_field(b)) * 256 + UInt8::to_field(c)) * 256
       + UInt8::to_field(d)
   }

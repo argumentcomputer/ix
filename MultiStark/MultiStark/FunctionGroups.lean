@@ -1,0 +1,27 @@
+/-! Measured legacy group policy, translated to the separate Aiur modules.
+Missing or inlined functions are skipped; physical deduplication is resolved
+before grouping. Entries always retain singleton circuits. -/
+namespace MultiStark
+
+def functionGroups : List (String × List String) := [
+  ("verifier_group_00", ["UInt32::less_than_fields", "UInt64::is_zero", "UInt64::wrapping_succ", "UInt64::to_field", "MultiStark::read_sys_lookups_n", "MultiStark::frontier_merge", "MultiStark::frontier_split", "MultiStark::frontier_sort", "MultiStark::frontier_leaves", "MultiStark::rows_at_round", "MultiStark::limbs_onto", "MultiStark::from_ext_basis"]),
+  ("verifier_group_02", ["MultiStark::read_u8", "MultiStark::read_digest_vec_at", "MultiStark::read_vk_u32_limb", "MultiStark::read_field", "MultiStark::lookup_groups_count", "MultiStark::assert_blowup_zero", "MultiStark::ext_exp_pow2", "MultiStark::reconstruct_ext_row", "MultiStark::assert_bits", "MultiStark::select_active_circuits", "MultiStark::select_active_prep", "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysCircuit\"}}]}"]),
+  ("verifier_group_03", ["MultiStark::read_u64", "Blake3::next_layer", "Blake3::compress_layer", "MultiStark::read_vk_u64", "MultiStark::mmcs_verify_multi", "MultiStark::pcs_check_witness", "MultiStark::open_prep_batch", "MultiStark::query_loop", "MultiStark::verify_commit_multi", "MultiStark::ch_sample_field", "MultiStark::ch_sample_ext", "MultiStark::snoc_b8", "MultiStark::logup_steps_fold"]),
+  ("verifier_group_04", ["MultiStark::read_count", "MultiStark::read_opened_round", "MultiStark::read_batch_opening_vec_n", "MultiStark::read_commit_phase_step_vec_n", "MultiStark::read_preprocessed", "MultiStark::mmcs_compress", "MultiStark::pcs_betas", "MultiStark::verify_query", "MultiStark::cap_onto", "MultiStark::ch_sample_bits", "MultiStark::fingerprint_vals", "MultiStark::read_claim_vals_n", "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::Bucket\"}}]}", "${\"name\":\"MultiStark::list_concat\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}"]),
+  ("verifier_group_05", ["MultiStark::read_count_at", "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysNode\"}}]}"]),
+  ("verifier_group_06", ["MultiStark::read_active_n", "MultiStark::read_u64_vec_vec_vec_n", "MultiStark::read_opened_round_n", "MultiStark::b3_w4_onto", "MultiStark::frontier_fold", "MultiStark::circ_has_height", "MultiStark::heights_all", "MultiStark::heights_prep", "MultiStark::batch_views_at", "MultiStark::step_views_at", "MultiStark::drop_index_bits", "MultiStark::take_bits"]),
+  ("verifier_group_07", ["MultiStark::read_u64_vec", "MultiStark::list_length.Ptr.U8_8_4"]),
+  ("verifier_group_08", ["MultiStark::read_ext_vec", "MultiStark::read_ext_vec_vec", "MultiStark::read_ext_vec_vec_n", "Blake3::pad_block", "MultiStark::read_vk_u16_limb", "MultiStark::has_height", "MultiStark::bits_to_num", "MultiStark::exp_by_bits", "MultiStark::points_onto", "MultiStark::round_onto", "MultiStark::log_degrees_onto"]),
+  ("verifier_group_09", ["MultiStark::read_ext_vec_n", "MultiStark::pair_mul"]),
+  ("verifier_group_10", ["MultiStark::read_digest_vec_at_n", "MultiStark::read_merkle_cap_vec_n", "MultiStark::read_opt_idx_n", "MultiStark::leaf_hash_at", "MultiStark::fri_fold2", "MultiStark::obs_log_arities", "MultiStark::build_buckets", "MultiStark::rollin", "MultiStark::sample_query_indices", "MultiStark::query_views", "MultiStark::snoc_cap", "MultiStark::two_adic_gen", "MultiStark::pow2", "MultiStark::quotient_eval", "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::CommitPhaseMultiStep\"}}]}"]),
+  ("verifier_group_11", ["MultiStark::read_u64_vec_vec_n", "MultiStark::read_node_ids_n"]),
+  ("verifier_group_12", ["Blake3::bytes_to_block", "Blake3::finish", "Blake3::compress_block", "MultiStark::read_sys_circuits_n", "MultiStark::ch_sample8", "MultiStark::ood_loop"]),
+  ("verifier_group_13", ["MultiStark::read_vk_cap_n", "MultiStark::read_opt_commit", "MultiStark::prep_count", "MultiStark::heights_max", "MultiStark::verify_one_query", "MultiStark::verify_input_multi", "MultiStark::quotient_degree_of", "MultiStark::claims_acc", "MultiStark::read_claims_n", "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::FrontierNode\"}}]}"]),
+  ("verifier_group_14", ["MultiStark::compress_ordered", "MultiStark::ood_fold"]),
+  ("verifier_group_15", ["MultiStark::select_rows_le", "MultiStark::frontier_level", "MultiStark::accs_onto"]),
+  ("verifier_group_16", ["MultiStark::inject_maybe", "MultiStark::rev_onto", "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}", "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}"]),
+  ("verifier_group_17", ["MultiStark::open_2pt_mat", "MultiStark::open_batch_2pt", "MultiStark::open_quotient", "MultiStark::open_prep", "MultiStark::fold_roots", "MultiStark::logup_fingerprint"]),
+  ("verifier_group_19", ["${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchOpening\"}}]}", "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::CommitPhaseProofStep\"}}]}", "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}"])
+]
+
+end MultiStark

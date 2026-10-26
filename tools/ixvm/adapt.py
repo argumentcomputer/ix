@@ -126,6 +126,39 @@ def transform_body(s, name, transform):
     return s[:begin] + transform(s[begin:end]) + s[end:]
 
 
+def inline_only_helpers(source):
+    """Match legacy's @-only call boundaries using ordinary proved inlining.
+
+    No helper reached through ordinary or unconstrained calls is selected.
+    Reject cycles conservatively, including cycles through retained helpers.
+    This translates source annotations, not native execution code.
+    """
+    hidden, _ = strings(uncomments(source))
+    bodies = {}
+    for match in re.finditer(r'\bfn (\w+)\b[^{}]*\{', hidden):
+        bodies[match[1]] = hidden[match.end():balance_end(hidden, match.end() - 1) - 1]
+    calls = {name: re.findall(r'([@#]?)(\b[a-z_]\w*)\s*(?:‹[^›]*›)?\(', body)
+             for name, body in bodies.items()}
+    uses = {name: set() for name in bodies}
+    for sites in calls.values():
+        for prefix, callee in sites:
+            if callee in uses:
+                uses[callee].add(prefix)
+
+    def cyclic(name):
+        seen, todo = set(), [callee for _, callee in calls[name]]
+        while todo:
+            callee = todo.pop()
+            if callee == name:
+                return True
+            if callee not in seen:
+                seen.add(callee)
+                todo.extend(child for _, child in calls.get(callee, []))
+        return False
+
+    return {name for name in bodies if uses[name] == {'@'} and not cyclic(name)}
+
+
 def use_opaque_words(s):
     # Word values stay opaque throughout the hash state, digests and ROM.
     # Remove the old implementations rather than retaining byte-array adapters
@@ -200,6 +233,7 @@ def wrap_arms(s):
 
 
 def adapt(s, semantic=True):
+    INLINE_HELPERS.update(inline_only_helpers(s))
     s, saved = strings(uncomments(s))
     if semantic:
         # Address-set keys are values, never prover-chosen ROM addresses.

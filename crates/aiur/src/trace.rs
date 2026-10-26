@@ -201,6 +201,41 @@ pub struct TraceArtifact {
   pub modulus: u64,
   pub functions: Vec<FunctionPlan>,
   pub chips: Vec<Chip>,
+  /// Physical function groups emitted by the Lean layout pass. Clearing this
+  /// list selects the identical logical program with singleton circuits.
+  #[serde(default)]
+  pub groups: Vec<FunctionGroup>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct GroupWrite {
+  pub column: usize,
+  pub value: Polynomial,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct GroupMember {
+  pub name: String,
+  pub columns: Vec<usize>,
+  pub selector: usize,
+  pub writes: Vec<GroupWrite>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct GroupLookup {
+  pub enable: Polynomial,
+  pub args: Vec<Polynomial>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct FunctionGroup {
+  pub name: String,
+  pub width: usize,
+  pub activation: Polynomial,
+  pub constraints: Vec<Polynomial>,
+  pub receive: Vec<Polynomial>,
+  pub sends: Vec<GroupLookup>,
+  pub members: Vec<GroupMember>,
 }
 
 /// Height is explicit: a zero-column circuit can still provide a claim.

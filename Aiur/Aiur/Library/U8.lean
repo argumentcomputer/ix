@@ -23,9 +23,6 @@ module UInt8 {
     table pair_inputs: (Field, Field) {}
     table pair_units: () {}
     table pair_xors: U8 {}
-    table pair_ands: U8 {}
-    table pair_ors: U8 {}
-    table pair_lts: Field {}
     table pair_adds: (U8, U8) {}
     table pair_subs: (U8, U8) {}
     table pair_muls: (U8, U8) {}
@@ -38,15 +35,28 @@ module UInt8 {
     map raw_bit_decomposition(x: Field) -> [Field; 8] = byte_inputs => byte_bits;
     map range_pair(a: Field, b: Field) -> () = pair_inputs => pair_units;
     map raw_xor(a: Field, b: Field) -> U8 = pair_inputs => pair_xors;
-    map raw_and(a: Field, b: Field) -> U8 = pair_inputs => pair_ands;
-    map raw_or(a: Field, b: Field) -> U8 = pair_inputs => pair_ors;
-    map raw_lt(a: Field, b: Field) -> Field = pair_inputs => pair_lts;
     map raw_add(a: Field, b: Field) -> (U8, U8) = pair_inputs => pair_adds;
     map raw_sub(a: Field, b: Field) -> (U8, U8) = pair_inputs => pair_subs;
     map raw_mul(a: Field, b: Field) -> (U8, U8) = pair_inputs => pair_muls;
     map raw_xor_split4(a: Field, b: Field) -> Parts4 = pair_inputs => pair_xor_parts4;
     map raw_xor_split7(a: Field, b: Field) -> Parts7 = pair_inputs => pair_xor_parts7;
     map raw_sum_byte(sum: Field) -> U8 = sum_inputs => sum_bytes;
+
+    // XOR/subtraction check both raw inputs. These identities reuse their
+    // fixed-table multiplicities, as in legacy's byte primitives. Division
+    // by two requires odd characteristic (as does a faithful byte embedding).
+    inline fn raw_and(a: Field, b: Field) -> U8 {
+        let x = raw_xor(a, b);
+        (a + b - x) / 2
+    }
+    inline fn raw_or(a: Field, b: Field) -> U8 {
+        let x = raw_xor(a, b);
+        (a + b + x) / 2
+    }
+    inline fn raw_lt(a: Field, b: Field) -> Field {
+        let (_, borrow) = raw_sub(a, b);
+        borrow
+    }
 
     inline fn to_field(byte: U8) -> Field { byte }
     inline fn from_fields(a: Field, b: Field) -> (U8, U8) { range_pair(a, b); (a, b) }
@@ -90,9 +100,6 @@ def tables : List (Generic.Table Nat) := Id.run do
     ⟨"pair_inputs", .tuple [.field, .field], inputs.map fun (a,b) => pair a b⟩,
     ⟨"pair_units", .tuple [], inputs.map fun _ => .tuple []⟩,
     ⟨"pair_xors", byte, inputs.map fun (a,b) => literal (Nat.xor a b)⟩,
-    ⟨"pair_ands", byte, inputs.map fun (a,b) => literal (Nat.land a b)⟩,
-    ⟨"pair_ors", byte, inputs.map fun (a,b) => literal (Nat.lor a b)⟩,
-    ⟨"pair_lts", .field, inputs.map fun (a,b) => literal (if a < b then 1 else 0)⟩,
     ⟨"pair_adds", two, inputs.map fun (a,b) => pair ((a+b)%256) ((a+b)/256)⟩,
     ⟨"pair_subs", two, inputs.map fun (a,b) => pair ((a+256-b)%256) (if a < b then 1 else 0)⟩,
     ⟨"pair_muls", two, inputs.map fun (a,b) => pair ((a*b)%256) ((a*b)/256)⟩,

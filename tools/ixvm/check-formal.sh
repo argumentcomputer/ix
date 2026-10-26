@@ -9,7 +9,9 @@ trap 'rm -rf "$formal_tmp"' EXIT
 python3 tools/ixvm/adapt.py --check
 python3 tools/ixvm/recursion.py --check
 python3 tools/ixvm/recursion.py --aggregate --check
-lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests
+lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests \
+  aiur/grouping_example aiur/Aiur.Library.U8Facts
+lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/grouping.json --check
 cargo build --release --locked -p ixvm -p stark-verifier --features parallel \
   --bin ixvm-proof --bin stark-verifier --example claim_fixture
 
@@ -78,4 +80,11 @@ PYCUDA
   target/formal-cuda/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json" \
     "$formal_tmp/cuda-outer" 65536 auto "$formal_tmp/cuda-options.json"
   target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/cuda-outer/public.json" "$formal_tmp/cuda-outer/proof.bin"
+  # Exercise graph-derived lookups as well as the default host-buffer fallback.
+  AIUR_TRACE_ONLY_LOOKUPS=1 target/formal-cuda/release/ixvm-proof prove "$IX_AIUR_ARTIFACT" "$formal_tmp/cuda-claim.json" \
+    "$formal_tmp/cuda-graph-proof" 65536 regenerate "$formal_tmp/cuda-options.json"
+  target/release/ixvm-proof verify "$IX_AIUR_ARTIFACT" "$formal_tmp/cuda-claim.json" "$formal_tmp/cuda-graph-proof"
+  AIUR_TRACE_ONLY_LOOKUPS=1 target/formal-cuda/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json" \
+    "$formal_tmp/cuda-graph-outer" 65536 regenerate "$formal_tmp/cuda-options.json"
+  target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/cuda-graph-outer/public.json" "$formal_tmp/cuda-graph-outer/proof.bin"
 fi

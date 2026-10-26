@@ -62,6 +62,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   for a in [0, 1, 15, 16, 127, 128, 254, 255] {
     for b in [0, 1, 15, 16, 127, 128, 254, 255] {
       check("Bytes::less_than", vec![a, b], vec![u64::from(a < b)])?;
+      check("Bytes::and", vec![a, b], vec![a & b])?;
+      check("Bytes::or", vec![a, b], vec![a | b])?;
       check("Bytes::add", vec![a, b], vec![(a + b) % 256, (a + b) / 256])?;
       check(
         "Bytes::sub",

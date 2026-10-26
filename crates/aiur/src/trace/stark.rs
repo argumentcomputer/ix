@@ -24,6 +24,7 @@ use rustc_hash::FxHashMap;
 use serde::Serialize;
 
 mod batch;
+mod grouping;
 pub mod planning;
 mod rom;
 mod tables;
@@ -93,8 +94,10 @@ pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   rom: rom::Rom,
   lookup_plans: Vec<witness::LookupPlan>,
   members: Vec<Vec<usize>>,
+  placements: Vec<grouping::Placement>,
   parameters: Parameters,
   segmented_memory: bool,
+  gpu_lookup_only: bool,
 }
 
 fn constant(x: u64) -> Expr<Val> {
@@ -165,6 +168,11 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     segmented_memory: bool,
     device: Option<i32>,
   ) -> Result<Self, String> {
+    let gpu_lookup_only =
+      std::env::var("AIUR_TRACE_ONLY_LOOKUPS").as_deref() == Ok("1");
+    if gpu_lookup_only && !cfg!(feature = "cuda") {
+      return Err("AIUR_TRACE_ONLY_LOOKUPS=1 requires a CUDA build".into());
+    }
     if device.is_some_and(|d| d < 0) {
       return Err("negative CUDA device".into());
     }
@@ -187,43 +195,14 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let rom = rom::Rom::new(plan);
     let mut inputs = vec![];
     let mut names = vec![];
-    for chip in &plan.artifact.chips {
-      if chip.width >= u32::MAX as usize {
-        return Err("too many circuit columns".into());
-      }
-      let mut args =
-        vec![constant(CALL), constant(plan.callables[&chip.name] as u64)];
-      args.extend(chip.inputs.iter().map(|&i| main_var(i)));
-      args.extend(chip.output.iter().map(lower));
-      let mut lookups = vec![Lookup::pull(main_var(chip.width), args)];
-      for send in &chip.sends {
-        let mut args =
-          vec![constant(CALL), constant(plan.callables[&send.channel] as u64)];
-        args.extend(send.args.iter().map(lower));
-        args.extend(send.result.iter().map(|&i| main_var(i)));
-        lookups.push(Lookup::push(lower(&send.enable), args));
-      }
-      for cell in &chip.memory {
-        lookups.push(rom.access(cell)?);
-      }
-      inputs.push(CircuitInputs {
-        main_width: chip.width + 1,
-        constraints: chip
-          .constraints
-          .iter()
-          .map(lower)
-          .chain([
-            // An inactive row cannot provide a claim, even if a prover
-            // forges its count independently of the row generator.
-            (constant(1) - main_var(chip.activation)) * main_var(chip.width),
-          ])
-          .collect(),
-        lookups,
-        ..Default::default()
-      });
-      names.push(chip.name.clone());
-    }
-    let tables = tables::fixed_tables(plan, &mut inputs, &mut names)?;
+    let placements = grouping::build(plan, &rom, &mut inputs, &mut names)?;
+    let function_circuits = inputs.len();
+    let tables = tables::fixed_tables(
+      plan,
+      &mut inputs,
+      &mut names,
+      parameters.log_blowup,
+    )?;
     rom.append_circuits(&mut inputs, &mut names, segmented_memory)?;
     // Fail with an error before System::new's degree assertion. Grouping
     // is tuned below using the backend's compiled (constant-folded) degrees.
@@ -286,9 +265,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       .iter()
       .map(|circuit| witness::LookupPlan::compile(&circuit.graph))
       .collect::<Result<_, _>>()?;
-    let mut members = vec![vec![]; plan.artifact.chips.len()];
+    let mut members = vec![vec![]; function_circuits];
     for (function, &chip) in plan.members.iter().enumerate() {
-      members[chip].push(function);
+      members[placements[chip].circuit].push(function);
     }
     Ok(Self {
       plan,
@@ -299,8 +278,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       rom,
       lookup_plans,
       members,
+      placements,
       parameters,
       segmented_memory,
+      gpu_lookup_only,
     })
   }
 
@@ -362,7 +343,30 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       self.convert_traces(record, trace, &table_counts, &memory_counts)?;
     let (active, degrees) = self.trace_shape(&traces)?;
     self.check_shape(&active, &degrees)?;
-    Ok(SystemWitness::from_stage_1(traces, &self.system))
+    Ok(self.witness_from_main(traces))
+  }
+
+  /// CUDA's graph evaluator derives lookup messages from committed rows.
+  /// Shape-only buffers deliberately fail closed if a CPU fallback tries to
+  /// consume them. Full host buffers remain the default for fallback support.
+  fn witness_from_main(
+    &self,
+    traces: Vec<RowMajorMatrix<Val>>,
+  ) -> SystemWitness<Val> {
+    if self.gpu_lookup_only {
+      let lookups = traces
+        .iter()
+        .zip(&self.system.circuits)
+        .map(|(trace, circuit)| {
+          let widths: Vec<_> =
+            circuit.graph.lookups.iter().map(|l| l.args.len()).collect();
+          multi_stark::lookup::LookupValues::shape_only(trace.height(), &widths)
+        })
+        .collect();
+      SystemWitness { traces, lookups }
+    } else {
+      SystemWitness::from_stage_1(traces, &self.system)
+    }
   }
 
   fn auxiliary_counts(
@@ -407,8 +411,36 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     table_counts: &[Vec<u64>],
     memory_counts: &[u64],
   ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
-    let mut traces = Vec::with_capacity(self.system.circuits.len());
-    for (chip, matrix) in self.plan.artifact.chips.iter().zip(&trace.matrices) {
+    let mut heights = vec![0usize; self.members.len()];
+    for (ci, matrix) in trace.matrices.iter().enumerate() {
+      let placement = &self.placements[ci];
+      let n = &mut heights[placement.circuit];
+      let height =
+        if placement.grouped { matrix.unpadded_height } else { matrix.height };
+      *n = n.checked_add(height).ok_or("group height overflow")?;
+    }
+    let mut traces = heights
+      .iter()
+      .enumerate()
+      .map(|(ci, &height)| {
+        let padded = if height == 0 {
+          0
+        } else {
+          height.checked_next_power_of_two().ok_or("group height overflow")?
+        };
+        let width = self.system.circuits[ci].main_width;
+        Ok(RowMajorMatrix::new(
+          Val::zero_vec(
+            padded.checked_mul(width).ok_or("group trace size overflow")?,
+          ),
+          width,
+        ))
+      })
+      .collect::<Result<Vec<_>, String>>()?;
+    let mut cursors = vec![0usize; self.members.len()];
+    for (ci, (chip, matrix)) in
+      self.plan.artifact.chips.iter().zip(&trace.matrices).enumerate()
+    {
       if matrix.chip != chip.name
         || matrix.width != chip.width
         || matrix.unpadded_height > matrix.height
@@ -420,26 +452,41 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       {
         return Err(format!("{}: malformed STARK trace", chip.name));
       }
-      let width = chip.width + 1;
-      let mut values = Vec::with_capacity(
-        matrix.height.checked_mul(width).ok_or("trace size overflow")?,
-      );
+      let placement = &self.placements[ci];
+      let output = &mut traces[placement.circuit];
+      let width = output.width;
       for r in 0..matrix.height {
         let row = matrix.row(r);
-        values.extend(row.iter().copied().map(B::into_stark));
-        values.push(Val::from_u64(matrix.multiplicities[r]));
-        if row[chip.activation] != self.plan.program.field.zero()
-          && row[chip.activation] != self.plan.program.field.one()
+        let active = row[chip.activation];
+        if active != self.plan.program.field.zero()
+          && active != self.plan.program.field.one()
         {
           return Err("non-boolean row activation".into());
         }
-        if row[chip.activation] == self.plan.program.field.zero()
+        if active == self.plan.program.field.zero()
           && matrix.multiplicities[r] != 0
         {
           return Err("inactive row provides a claim".into());
         }
+        if r >= matrix.unpadded_height {
+          if row.iter().any(|&x| x != self.plan.program.field.zero())
+            || matrix.multiplicities[r] != 0
+          {
+            return Err("nonzero trace padding".into());
+          }
+          continue;
+        }
+        if active != self.plan.program.field.one() {
+          return Err("inactive real row".into());
+        }
+        let cursor = &mut cursors[placement.circuit];
+        let dest = &mut output.values[*cursor * width..(*cursor + 1) * width];
+        for (&column, &value) in placement.columns.iter().zip(row) {
+          dest[column] = B::into_stark(value);
+        }
+        placement.finish(dest, matrix.multiplicities[r]);
+        *cursor += 1;
       }
-      traces.push(RowMajorMatrix::new(values, width));
     }
     for table in &self.tables {
       traces.push(table.witness(table_counts));

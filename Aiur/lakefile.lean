@@ -66,3 +66,6 @@ lean_exe u32_tests where
 
 lean_exe library_tests where
   root := `Examples.LibraryChecks
+
+lean_exe grouping_example where
+  root := `Examples.Grouping
