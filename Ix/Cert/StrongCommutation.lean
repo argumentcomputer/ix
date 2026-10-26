@@ -2,14 +2,15 @@ import Ix.Cert.ValueRows
 
 /-! # Coherent value transport from a supplied strong target model
 
-This is the strong-model interface required by the approved final compiler
-contract. It keeps one source ValueModel for the entire source environment,
-at every universe/variable valuation, for EACH supplied strong target model.
-It does not replace the old CompileCorrect declaration or prove compilation
-correct. Actual published-input reading totality and the rewrite/stream
-composition still have to be derived; a missing reading cannot discharge
-those obligations. No equivalence with the older weak-model quantifier is
-asserted, and S4 supplies no value-transport premise here.
+This is the strong-model interface of the final compiler statement
+(`Ix.Cert.CompileCorrect`). It keeps one source ValueModel for the entire
+source environment, at every universe/variable valuation, for EACH supplied
+strong target model. Nothing here proves compilation correct. Reading
+totality on the closure is a separate conjunct of the final statement
+(`Ix.Cert.ReadingCovers`), since a missing reading leaves a constant
+unconstrained here. No equivalence with the older weak-model quantifier is
+asserted, and the nominal-quotient link supplies no value-transport premise
+here.
 -/
 
 namespace Ix.Cert

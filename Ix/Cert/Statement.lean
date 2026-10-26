@@ -41,16 +41,20 @@ Statements (`def … : Prop`) and the theorems proved now:
   value model (`sourceValueSound`, `ixonValueSound`). The Source statements
   hold for every grouping function, and so at the compiler's, `blocksOf`
   (`sourceConsistent_blocksOf`, `sourceValueSound_blocksOf`);
-* `CompileCorrect`: if Source accepts a closure and no constant of it failed
-  in the compiler's report (`NoFailure`, decidable), the compiler published
-  the closure, Ixon accepts the compiled closure, and every value model of the
-  compiled environment, read through `reading`, is one of the source's
-  (`Commutes`). Stated, not proved;
+* `CompileCorrect` (in `Ix.Cert.CompileCorrect`, over the definitions here):
+  if quotient Source accepts a closure at the compiled artifact
+  (`SourceAcceptsQ`), no constant of it failed in the compiler's report
+  (`NoFailure`, decidable), and the changed records pass their validation
+  hypotheses (`Ix.Cert.KindAccepted`, `Ix.Cert.SourceFormInfers`), then the
+  compiler published the closure, Ixon accepts the compiled closure, every
+  constant of the closure reads as a compiled constant, and every strong model
+  of the compiled environment gives one value model of quotient Source through
+  that reading. Stated, not proved;
 * `CompileCovers`: the compiler publishes an input constant exactly when its
   report does not list it as failed. Proved (`compileCovers`), by
   construction: `compileReport` checks it and fails otherwise (CQ2.27). So
   `CompileCorrect` is equivalent to the same statement hypothesised on the
-  artifact publishing the closure (`compileCorrect_iff_published`);
+  artifact publishing the closure (`Ix.Cert.compileCorrect_iff_published`);
 * `CompileAuthentic`: every record and blob `compile` returns is stored under
   the pure BLAKE3 hash of its bytes. Proved (`compileAuthentic`), by
   construction: `compileReport` re-hashes them with the admission hash and
@@ -446,8 +450,17 @@ def reading (ixe : Ixon.Env) (cx : Ix.Kernel.Reader.Ctx .anon) (c : Ix.Kernel.Co
 /-- **Commutation.** Every value model of the compiled environment `envA`,
 read through `τ`, is a value model of the source environment `envS`: there
 is a value model of `envS` in which every source constant denotes what its
-reading denotes in the compiled model. So everything the source entails,
-including the value of each definition, holds of its compiled reading. -/
+reading denotes in the compiled model.
+
+What this transports is what a value model fixes (`ValueModel`): each source
+constant's membership in its type, `False`'s emptiness, `Eq` as equality, and
+each source definition's value. It transports no definitional law that a value
+model leaves free: recursor rules, structure eta, the quotient's computation
+rule, theorem and opaque values, and level-parameter irrelevance. A source
+theorem in the closure constrains the compiled reading only through its type.
+A constant whose reading is `none` is unconstrained. The final statement
+quantifies over strong target models instead and makes the reading total on
+the closure (`Ix.Cert.CommutesStrong`, `Ix.Cert.IxonCommutesCovering`). -/
 def Commutes (τ : Ix.Kernel.ConstantInfo .source → Option (Ix.Kernel.Expr .anon)) (envS : Env .source) (envA : Env .anon) : Prop :=
   ∀ (V : Type w) [SetTheory V] (M : ValueModel V envA), ∃ N : ValueModel V envS,
     ∀ c ∈ envS.consts, ∀ t, τ c = some t →
@@ -494,25 +507,6 @@ def IxonCommutes (ixe : Ixon.Env) (sub : Ix.Environment) (envS : Env .source) : 
     admissionContext binding limits ixe order = some cx ∧
       Commutes.{w} (reading ixe cx) envS envA
 
-/-- **Compiler correctness, forward, per root.** Suppose Source accepts the
-closure `sub` of `roots` in `env`, grouped as the compiler groups it,
-`compileReport env` returns `ixe` with `failures`, and no constant of `sub`
-failed (`NoFailure`, decidable from the report). Then `ixe` publishes every
-constant of `sub`, and the compiled closure is accepted and commutes with
-the source (`IxonCommutes`).
-
-This is partial correctness. A closure that Source rejects or declines, a
-compile that fails, and a closure with a failed constant are outside the
-statement. Under `CompileCovers`, which is proved (`compileCovers`), it is
-the statement hypothesised on `Published` instead of `NoFailure`
-(`CompileCorrect.published`, `CompileCorrect.of_published`,
-`compileCorrect_iff_published`). -/
-def CompileCorrect : Prop :=
-  ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
-    (ixe : Ixon.Env) (failures : Failures),
-    SourceAccepts blocksOf env roots sub envS → compileReport env = .ok (ixe, failures) →
-    NoFailure failures sub → Published ixe sub ∧ IxonCommutes.{w} ixe sub envS
-
 /-- `compile` succeeds exactly when `compileReport` does, with its
 environment. -/
 theorem compile_eq_ok {env : Ix.Environment} {ixe : Ixon.Env} :
@@ -536,29 +530,6 @@ theorem IsClosure.mem_env {env sub : Ix.Environment} {roots : List Ix.Name}
   by_cases hr : Reaches env roots n
   · rw [← (h n).1 hr]; exact hn
   · rw [(h n).2 hr] at hn; cases hn
-
-/-- Under `CompileCovers`, `CompileCorrect` gives the statement hypothesised
-on `Published`: the closure is published, so none of it failed. -/
-theorem CompileCorrect.published (hcov : CompileCovers) (h : CompileCorrect.{w}) :
-    ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
-      (ixe : Ixon.Env), SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe →
-      Published ixe sub → IxonCommutes.{w} ixe sub envS := by
-  intro env roots sub envS ixe hs hc hp
-  obtain ⟨failures, hr⟩ := compile_eq_ok.mp hc
-  refine (h env roots sub envS ixe failures hs hr fun n ci hn => ?_).2
-  exact (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mp (hp n ci hn)
-
-/-- Under `CompileCovers`, the statement hypothesised on `Published` gives
-`CompileCorrect`: a closure none of whose constants failed is published. -/
-theorem CompileCorrect.of_published (hcov : CompileCovers)
-    (h : ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment)
-      (envS : Env .source) (ixe : Ixon.Env), SourceAccepts blocksOf env roots sub envS →
-      compile env = .ok ixe → Published ixe sub → IxonCommutes.{w} ixe sub envS) :
-    CompileCorrect.{w} := by
-  intro env roots sub envS ixe failures hs hr hf
-  have hp : Published ixe sub := fun n ci hn =>
-    (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mpr (hf n ci hn)
-  exact ⟨hp, h env roots sub envS ixe hs (compile_eq_ok.mpr ⟨failures, hr⟩) hp⟩
 
 /-! ### Coverage and authenticity, by construction (CQ2.27)
 
@@ -1228,15 +1199,6 @@ theorem projectionsOne {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failu
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
   exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
-/-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
-(proved): with coverage proved, the statement hypothesised on `NoFailure`
-and the one hypothesised on `Published` are equivalent. -/
-theorem compileCorrect_iff_published : CompileCorrect.{w} ↔
-    ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
-      (ixe : Ixon.Env), SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe →
-      Published ixe sub → IxonCommutes.{w} ixe sub envS :=
-  ⟨CompileCorrect.published compileCovers, CompileCorrect.of_published compileCovers⟩
-
 /-! ## The theorems that hold now -/
 
 /-- **Source consistency, per root**: under every grouping function, nothing
@@ -1380,8 +1342,9 @@ to be a renaming onto the artifact's keys (`Ix.LeanIngress.prepareSourceCollapse
 every key a representative, the bundle disjoint from the artifact, every evidence
 key a representative or a bundle-only name). `SourceAcceptsQ` is that acceptance at
 the reference level; the executed check gives it (`sourceAcceptsQ_of_check`).
-Nominal acceptance implies it only through S4 (`NominalQuotientAgree`), a named
-assumption that no theorem uses silently. -/
+Nominal acceptance gives it only at the instances where the two agree
+(`NominalQuotientAgreeAt`). They do not agree at every input, so the link is
+stated per instance, and the executed check discharges it. -/
 
 /-- **Quotient Source acceptance, per root, at a role table**: the closure `sub` of
 `roots` in `env`, grouped by `condense sub`, ingressed at the artifact `ixe`'s
@@ -1413,18 +1376,33 @@ theorem sourceAcceptsQ_of_check (V : Type w) [SetTheory V] {condense : Ix.Enviro
     SourceAcceptsQ condense env roots sub ixe t envS :=
   ⟨closure, Ix.LeanIngress.checkSourceCollapsedBundledAt_ref V h⟩
 
-/-- **S4: nominal Source acceptance implies quotient Source acceptance** at the
-compiled artifact's alias fibers, the role read off the default table
-(`ALPHA-COLLAPSE.md` §5, §8.1). An assumption, not an axiom: unproved here, it is
-the documented follow-up (the non-injective renaming lemma: algorithmic 4–8k plus
-IxC changes, or semantic 10–25k). Its measured gap on Init+Std is 0: quotient
-Source's rows are nominal Source's. A corollary that uses it takes it as a
-hypothesis; no theorem depends on it silently. -/
-def NominalQuotientAgree : Prop :=
-  ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
-    (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable), SourceAccepts blocksOf env roots sub envS →
-      compile env = .ok ixe → Ix.Kernel.Reader.defaultTable = .ok t →
-        ∃ envQ, SourceAcceptsQ blocksOf env roots sub ixe t envQ
+/-- **Nominal and quotient Source agree at one instance**: if nominal Source accepts
+the closure `sub` of `roots` in `env`, quotient Source accepts it at the artifact
+`ixe`'s alias fibers, the role read off the table `t`.
+
+The link is stated per instance because it does not hold for every input. On
+deliberately aliased auxiliaries (the AuxDedup and AuxOwnership fixtures, copies
+of `Tests.Ix.Compile.Mutual`'s, 218 names) nominal Source and the Ixon side accept
+while quotient Source declines, on 22 collapse mismatches: a fiber inside one of
+Source's groups does not collapse to a renaming. A statement quantified over every
+input would be false there, and a corollary that assumed it would hold vacuously
+for every input. Per instance, the executed quotient check discharges it
+(`nominalQuotientAgreeAt_of_check`), and the nominal corollary of the final
+statement (`Ix.Cert.CompileCorrect.nominal`) says nothing about an instance where
+it fails. Neither form relates the nominal and the quotient value models. -/
+def NominalQuotientAgreeAt (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment)
+    (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) : Prop :=
+  ∀ envS, SourceAccepts blocksOf env roots sub envS →
+    ∃ envQ, SourceAcceptsQ blocksOf env roots sub ixe t envQ
+
+/-- **The executed quotient check gives the per-instance link** (whatever nominal
+Source does). -/
+theorem nominalQuotientAgreeAt_of_check (V : Type w) [SetTheory V] {env : Ix.Environment}
+    {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable}
+    {envQ : Env .source} (closure : IsClosure env roots sub)
+    (h : Ix.LeanIngress.checkSourceCollapsedBundledAt ixe t sub (blocksOf sub) = .ok envQ) :
+    NominalQuotientAgreeAt env roots sub ixe t :=
+  fun _ _ => ⟨envQ, sourceAcceptsQ_of_check V closure h⟩
 
 /-! The Source theorems hold for every grouping function, which is stronger
 than for the compiler's. At the compiler's own grouping, `blocksOf` (the one
