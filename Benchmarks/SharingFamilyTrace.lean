@@ -1,16 +1,17 @@
-import Ix.Sharing.FamilyPrototypeCached
+import Ix.Sharing.FamilyCached
 
-/-! Standalone experimental component traces from canonical constant bytes.
+/-! Standalone component-family traces from canonical constant bytes, at any
+exact-subset limit.
 Link natively using the workspace's existing executable objects/FFI linkage;
 the evaluator uses proved closure-local rows. Whole-width traces reuse
 component preparation; a filtered component uses the single-component twin. -/
 
-open Ix.Sharing.Exact Ix.Sharing.FamilyPrototype
+open Ix.Sharing.Exact Ix.Sharing.Family
 
 def main (args : List String) : IO UInt32 := do
   let path :: kText :: rest := args
-    | throw (IO.userError "usage: sharing-family-prototype <constant.ixn> <experimentK> [label [width [component]]]")
-  let some k := kText.toNat? | throw (IO.userError "experimentK must be a natural number")
+    | throw (IO.userError "usage: sharing-family-trace <constant.ixn> <exactLimit> [label [width [component]]]")
+  let some k := kText.toNat? | throw (IO.userError "exactLimit must be a natural number")
   unless rest.length ≤ 3 do throw (IO.userError "too many arguments")
   let label := rest.headD path
   let widthFilter ← rest[1]?.mapM fun s => match s.toNat? with
@@ -21,7 +22,7 @@ def main (args : List String) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile path
   let constant ← IO.ofExcept (Ixon.deConstant bytes)
   -- This is the existing budgeted ingestion API. Its refusal is explicit;
-  -- the prototype makes no totality claim about that input route.
+  -- this tool makes no totality claim about that input route.
   let expanded ← IO.ofExcept ((expand {} constant.sharing (constantInfoRoots constant.info) true).mapError toString)
   IO.println s!"header\tversion=1\tK={k}\ttie=set_prec\tevaluator=lean-phiEL2-closure-local\tnumeric=Nat/Int\tstatus=experimental"
   (← IO.getStdout).flush

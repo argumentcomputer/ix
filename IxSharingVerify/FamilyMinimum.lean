@@ -3,7 +3,7 @@ import IxSharingVerify.FamilyKnapsackOrigin
 /-! Family-relative minimum and canonical tie composition for the existing
 knapsack. The signed objective is internal; no `ulen` or finisher claim is made. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -282,13 +282,13 @@ theorem initial_knapsack_least (cfg : Config) (ex : Expanded) (width : Nat) (hwf
   obtain ⟨valid, separated, bound⟩ := initial_factors_partition ex width hwf checked
   exact family_knapsack_least valid separated bound rows run
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.products_iff [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.product_minimum_exists [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.FamilyResults.coherent [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.family_knapsack_minimum_compare [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.ProductMember.merge_sorted [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.family_knapsack_least [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_factors_partition [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_knapsack_least [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.products_iff [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.product_minimum_exists [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.FamilyResults.coherent [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.family_knapsack_minimum_compare [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.ProductMember.merge_sorted [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.family_knapsack_least [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_factors_partition [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_knapsack_least [propext, Classical.choice, Quot.sound]

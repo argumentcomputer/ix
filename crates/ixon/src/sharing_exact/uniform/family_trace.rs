@@ -1,8 +1,10 @@
-//! Offline family experiment, NOT a canonical format rule or totality claim.
-//! Initial components alone decide the family. All subsets are evaluated for
-//! size <= K; otherwise all counts of one greedy chain are retained. Arithmetic,
-//! input/output and phase-2/3 limits still fail closed. No work/time limit changes
-//! the family. The provisional greedy tie is the existing `set_prec`.
+//! Family normalization at a configurable exact-subset limit K, with a
+//! component and row trace. It is a unit-test control, not the canonical rule
+//! (which fixes K = 16 in `family.rs`) and not a totality claim. Initial
+//! components alone decide the family. All subsets are evaluated for size <= K;
+//! otherwise all counts of one greedy chain are retained. Arithmetic,
+//! input/output and phase-2/3 limits still fail closed. No work/time limit
+//! changes the family. The greedy tie is the existing `set_prec`.
 
 use super::super::tiered::{
   ShareLayout, TieredSharingResult, finish_candidates, normalize_tiered_with,
@@ -227,7 +229,7 @@ fn uniform_family(
     let mut best: Option<Choice> = None;
     for (count, row) in rows.iter().enumerate() {
       let (delta, selected) =
-        row.as_ref().ok_or_else(|| internal("EXPERIMENT missing count"))?;
+        row.as_ref().ok_or_else(|| internal("family trace: missing count"))?;
       observe(&Event::Row {
         width: w,
         index: j,
@@ -240,7 +242,7 @@ fn uniform_family(
         best = Some((*delta, selected.clone()));
       }
     }
-    let best = best.ok_or_else(|| internal("EXPERIMENT empty table"))?;
+    let best = best.ok_or_else(|| internal("family trace: empty table"))?;
     let bound = best.0.checked_add(stage.slack).ok_or_else(overflow)?;
     let trimmed: CTable =
       rows.into_iter().map(|r| r.filter(|(d, _)| *d <= bound)).collect();
@@ -249,7 +251,7 @@ fn uniform_family(
   drop(cx);
   // The reused combiner uses signed additions. Conservatively admit only
   // tables for which every prefix sum and final model addition fits i128;
-  // this prototype guard does not change the production numeric contract.
+  // this checked guard does not change the production numeric contract.
   let mut bound = 9u128; // largest TagN count header
   for table in results.iter().map(|(_, rows)| rows) {
     let magnitude =
@@ -268,9 +270,9 @@ fn uniform_family(
   combine_uniform(w, dag, prep, meter, stage, results)
 }
 
-/// Experimental output only. Production phase 2/3 and all validation remain;
+/// Test output only. Production phase 2/3 and all validation remain;
 /// their resource/format errors are reported, not converted to a success.
-/// No admitted family changes when a budget is exhausted. K is experiment
+/// No admitted family changes when a budget is exhausted. K is test
 /// data (0..=24), NOT a format identifier or default compiler option.
 pub(crate) fn normalize(
   c: &Constant,
@@ -279,7 +281,7 @@ pub(crate) fn normalize(
   observe: &mut Observe<'_>,
 ) -> Result<(Constant, TieredSharingResult), SharingError> {
   if k > 24 {
-    return Err(internal("EXPERIMENT unsupported K > 24"));
+    return Err(internal("family trace: unsupported K > 24"));
   }
   normalize_tiered_with(c, limits, |dag| {
     let prep = DagPrep::new(dag);
@@ -308,7 +310,7 @@ mod tests {
   // ordered (false before true), then integer cost. No set_prec or family
   // helper participates in choosing a reference row.
   #[test]
-  fn experimental_family_all_counts_oracle() {
+  fn family_trace_all_counts_oracle() {
     for n in 0..=7 {
       let members: Vec<TermId> = (0..n).map(|j| 3 * j + 2).collect();
       for seed in 0..20u64 {
@@ -355,7 +357,7 @@ mod tests {
   }
 
   #[test]
-  fn experimental_threshold_ties_and_refusals() {
+  fn family_trace_threshold_ties_and_refusals() {
     for n in [0u32, 1, 2, 12, 13, 16, 17] {
       let members: Vec<_> = (0..n).collect();
       for k in [0usize, 12, 16] {

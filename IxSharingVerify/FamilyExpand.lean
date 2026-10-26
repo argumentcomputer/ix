@@ -5,7 +5,7 @@ are unique; successful ingestion supplies the complete canonicalize_det
 contract, including exact interning. Previous tables may differ and contain
 unreachable valid entries. Resource success and statistics are not equated. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.SharingExact
@@ -155,15 +155,15 @@ theorem normalizeFamily_reexpanded {cfg : Config} {layout : ShareLayout} {limits
   obtain ⟨first, _, firstRun, _, _, _⟩ := normalizeFamily_parts normalized
   exact ⟨first, firstRun, normalizeFamily_expansion_eq normalized firstRun secondRun⟩
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.substShares_congr_on [propext]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.backward_interpretation_unique [propext]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.sharingMeaning_unique [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.ingestTable_meaning_eq [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.canonicalize_shared_ingested [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.expand_ingested_parts [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.expand_same_meaning [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.expand_equal_roots [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_expansion_eq [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_reexpanded [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.substShares_congr_on [propext]
+#guard_kernel_axioms Ix.Sharing.Family.backward_interpretation_unique [propext]
+#guard_kernel_axioms Ix.Sharing.Family.sharingMeaning_unique [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.ingestTable_meaning_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.canonicalize_shared_ingested [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.expand_ingested_parts [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.expand_same_meaning [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.expand_equal_roots [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_expansion_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_reexpanded [propext, Classical.choice, Quot.sound]

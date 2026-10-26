@@ -135,9 +135,9 @@ pub use uniform::UniformSharingResult;
 pub use uniform::{
   normalize_constant_sharing_uniform, optimize_sharing_uniform,
 };
-// Historical variable-K experiments are private unit-test controls.
+// Variable-K family traces are private unit-test controls.
 #[cfg(test)]
-pub(crate) use uniform::experimental;
+pub(crate) use uniform::family_trace;
 // The first-tier search of phase 2, for the tests; not part of the API.
 #[cfg(test)]
 pub(crate) use tiered::first_tier;

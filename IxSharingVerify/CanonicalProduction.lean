@@ -6,7 +6,7 @@ exact routes and their stronger optimizer contracts remain under Reference. -/
 
 namespace Ix.Sharing.Verify.CanonicalProduction
 
-open Ix.Sharing.Exact Ix.Sharing.FamilyPrototype
+open Ix.Sharing.Exact Ix.Sharing.Family
 open Ix.Sharing.Verify.UniformModel
 open Ix.Sharing.Verify.SharingExact (bind_eq_ok)
 
@@ -52,7 +52,7 @@ end Ix.Sharing.Verify.CanonicalProduction
 
 namespace Ix.Sharing.Verify.CanonicalMeaning
 
-open Ix.Sharing.Exact Ix.Sharing.FamilyPrototype Ix.Sharing.Verify.CanonicalProduction
+open Ix.Sharing.Exact Ix.Sharing.Family Ix.Sharing.Verify.CanonicalProduction
 
 /-- Production sharing preserves every ordered input root, with no new
 caller premise beyond the actual successful compiler-facing API run. -/
@@ -68,7 +68,7 @@ end Ix.Sharing.Verify.CanonicalMeaning
 
 namespace Ix.Sharing.Verify.Tiered
 
-open Ix.Sharing.Exact Ix.Sharing.FamilyPrototype Ix.Sharing.Verify.CanonicalProduction
+open Ix.Sharing.Exact Ix.Sharing.Family Ix.Sharing.Verify.CanonicalProduction
 
 theorem canonicalSharingTiered_format {layout : ShareLayout} {roots : Array Ixon.Expr}
     {limits : Limits} {r : TieredSharingResult} (h : canonicalSharingTiered layout roots limits = .ok r) :

@@ -5,7 +5,7 @@ encodings under the initial exact-family gate. Performance statistics are
 projected out; successful runs and the old default-search flag stay explicit.
 Complete constant serialization is a separate wrapper bridge. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -137,10 +137,10 @@ theorem familyExpanded_exact_encoding {cfg : Config} {layout : ShareLayout} {lim
     exact out
   exact newEncoded.symm.trans (same.trans oldEncoded)
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.uniformChoose_facts [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyUniform_exact_encoding [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.tieredPick_selection [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyAtWidth_exact_selection [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_exact_encoding [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.uniformChoose_facts [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyUniform_exact_encoding [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.tieredPick_selection [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyAtWidth_exact_selection [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_exact_encoding [propext, Classical.choice, Quot.sound]

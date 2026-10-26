@@ -6,7 +6,7 @@ component of their common expansion must be exact at widths 1, 2 and 3.
 The conclusion compares complete constants/bytes, never performance statistics.
 This is not unconditional success, global byte optimality or a production cutover. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.SharingExact (bind_eq_ok)
@@ -115,12 +115,12 @@ theorem normalizeConstantSharingTiered_reference_bytes {layout : ShareLayout} {l
     Ixon.serConstant fresh = Ixon.serConstant old :=
   congrArg Ixon.serConstant (normalizeConstantSharingTiered_reference_eq defaultSearch gates oldRun freshRun)
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.exactInput_of_expand [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_parts [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_exact_constant [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_exact_bytes [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_eq_family [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_reference_eq [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeConstantSharingTiered_reference_bytes [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.exactInput_of_expand [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeConstantSharingTiered_parts [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_exact_constant [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_exact_bytes [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeConstantSharingTiered_eq_family [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeConstantSharingTiered_reference_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeConstantSharingTiered_reference_bytes [propext, Classical.choice, Quot.sound]

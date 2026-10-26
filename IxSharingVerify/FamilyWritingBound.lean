@@ -10,7 +10,7 @@ an inline body for each table term, and one valid writing per ordered root.
 It does not assert UInt64 representability, table order/capacity, serialized
 bytes, or successful execution of a materializer. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -198,12 +198,12 @@ theorem fullStored_encoding_bound (cfg : Config) (ex : Expanded) (width : Nat)
   · rw [cost]
     exact Nat.le_trans bounded explicitBound
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.fullStored_nodup [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.mul_sum_map [propext]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.child_cost_sum [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.residual_flow_cost [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.residual_semantic_row [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.fullStored_ulen_le_residual [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.fullStored_encoding_bound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.fullStored_nodup [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.mul_sum_map [propext]
+#guard_kernel_axioms Ix.Sharing.Family.child_cost_sum [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.residual_flow_cost [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.residual_semantic_row [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.fullStored_ulen_le_residual [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.fullStored_encoding_bound [propext, Classical.choice, Quot.sound]

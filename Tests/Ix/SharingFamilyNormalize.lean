@@ -3,7 +3,7 @@ import Ix.Sharing.FamilyNormalizeArea
 
 namespace Tests.SharingFamilyNormalize
 
-open LSpec Ixon Ix.Sharing.Exact Ix.Sharing.FamilyPrototype Tests.SharingExact
+open LSpec Ixon Ix.Sharing.Exact Ix.Sharing.Family Tests.SharingExact
 
 private def ensure (b : Bool) (message : String) : IO Unit :=
   unless b do throw (IO.userError message)
@@ -83,13 +83,13 @@ private def normalizationControls : IO Nat := do
         "area normalization changed complete serialized bytes or mathematical charges"
       let after ← IO.ofExcept ((expand {} candidate.sharing (constantInfoRoots candidate.info) true).mapError toString)
       ensure (after.dag.nodes == before.dag.nodes && after.roots == before.roots)
-        "experimental normalization changed the expanded terms"
+        "family normalization changed the expanded terms"
       ensure (candidate.refs == constant.refs && candidate.univs == constant.univs &&
         (withRoots candidate.info roots).toOption == some constant.info)
-        "experimental normalization changed fixed fields or source tables"
+        "family normalization changed fixed fields or source tables"
       ensure (report.result.variableBytes == tag0Size candidate.sharing.size +
         exprsSize candidate.sharing + exprsSize (constantInfoRoots candidate.info))
-        "experimental output disagrees with serialized variable bytes"
+        "family output disagrees with serialized variable bytes"
       if k == 24 then
         ensure (serConstant candidate == serConstant exact) "all-exact bytes differ from the existing optimizer"
       let (again, _) ← IO.ofExcept ((normalizeFamily ⟨k⟩ .tagN candidate).mapError toString)
@@ -105,7 +105,7 @@ private def normalizationControls : IO Nat := do
   return tested
 
 def suite : List TestSeq := [
-  .individualIO "experimental family normalizer preserves bytes and checked failures" none (do
+  .individualIO "family normalizer preserves bytes and checked failures" none (do
     budgetControls
     let tested ← normalizationControls
     return (true, tested, 0, none)) .done]

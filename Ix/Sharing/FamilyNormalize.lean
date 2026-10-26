@@ -1,6 +1,6 @@
 module
 
-public import Ix.Sharing.FamilyPrototypeCached
+public import Ix.Sharing.FamilyCached
 public import Ix.Sharing.Exact.TieredFast
 import all Ix.Sharing.Exact.UniformSearch
 
@@ -16,20 +16,20 @@ and the exact sum of `phiE`'s existing work field (including that baseline).
 It does NOT claim complete native, allocation, telescope-scan or bit costs.
 No resource refusal changes the chosen family. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 
 /-- Calls made by the existing table recipe: exact subsets, or greedy
 extensions followed by one evaluation of each emitted chain row. -/
 def familyCalls (cfg : Config) (m : Nat) : Nat :=
-  if m ≤ cfg.experimentK then 2 ^ m else m * (m + 1) / 2 + m + 1
+  if m ≤ cfg.exactLimit then 2 ^ m else m * (m + 1) / 2 + m + 1
 
 /-- Sum of stored-set lengths over those calls. Exact subsets contribute
 `m * 2^(m-1)`; greedy extensions at size q occur `m-q+1` times, then the
 chain emits sizes 0..m. Nat subtraction at m=0 is harmless (factor m=0). -/
 def familyStoredSum (cfg : Config) (m : Nat) : Nat :=
-  if m ≤ cfg.experimentK then m * 2 ^ (m - 1)
+  if m ≤ cfg.exactLimit then m * 2 ^ (m - 1)
   else m * (m + 1) * (m + 2) / 6 + m * (m + 1) / 2
 
 def familyWork (cfg : Config) (m closure : Nat) : Nat :=
@@ -43,11 +43,11 @@ theorem phiE_work (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) :
 The explicit coherence check is useful to the separate entry-origin proof. -/
 def retainedResult (slack : Nat) (trace : ComponentTrace) : Except SharingError CompResult := do
   let bySize := trace.rows.trim slack
-  let some bestDelta := bySize.best | throw (.internal "experimental family has no row")
+  let some bestDelta := bySize.best | throw (.internal "component family has no row")
   let some bestSet := bestSetOf bySize bestDelta
-    | throw (.internal "experimental family has no best set")
+    | throw (.internal "component family has no best set")
   unless bySize[bestSet.size]! == some (bestDelta, bestSet) do
-    throw (.internal "experimental best row is not at its actual count")
+    throw (.internal "component family best row is not at its actual count")
   return { members := trace.members, bySize, bestDelta, bestSet }
 
 abbrev FamilyState := (Array CompResult × Nat × Nat) × Array Nat × Array Nat
@@ -128,4 +128,4 @@ def normalizeFamily (cfg : Config) (layout : ShareLayout) (constant : Ixon.Const
   let info ← withRoots constant.info result.result.roots
   return ({ constant with info, sharing := result.result.sharing }, result)
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family

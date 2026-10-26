@@ -37,7 +37,7 @@ def candidateAt (l : ShareLayout) (c : Constant) (w : Nat) :
   let prep := Prep.ofDag ex.dag
   uniformSpineCheck ex prep
   let facts := graphFacts ex.dag ex.roots
-  Ix.Sharing.FamilyPrototype.familyAtWidth canonicalFamilyConfig l {} ex prep facts (parentsOf ex.dag)
+  Ix.Sharing.Family.familyAtWidth canonicalFamilyConfig l {} ex prep facts (parentsOf ex.dag)
     (tieredCandidateCount ex.dag.size prep facts) w
 
 /-- Every recorded candidate length is that of the candidate run alone, and

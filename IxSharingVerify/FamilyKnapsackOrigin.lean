@@ -4,7 +4,7 @@ import IxSharingVerify.UniformOptimality
 /-! Exact entry witnesses for the existing knapsack. These lemmas preserve
 both signed deltas and merged sets, independently of optimality or a finisher. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -258,14 +258,14 @@ theorem uniformKnapsack_family {cfg : Config} {factors : List Factor} {limits : 
       delta + (tag0Size (kCS + set.size) : _root_.Int) = productObjective kCS factors sets :=
   EntryOrigin.family (uniformKnapsack_entry_origin run coherent) sound kCS
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.knapStep_entry_origin [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.knapFold_entry_origin [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.knapFold_origin [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.knapChoose_entry_origin [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.bestSetOf_row [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.uniformKnapsack_entry_origin [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.EntryOrigin.family [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.trimmed_family_tables [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.uniformKnapsack_family [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.knapStep_entry_origin [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.knapFold_entry_origin [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.knapFold_origin [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.knapChoose_entry_origin [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.bestSetOf_row [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.uniformKnapsack_entry_origin [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.EntryOrigin.family [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.trimmed_family_tables [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.uniformKnapsack_family [propext, Quot.sound]

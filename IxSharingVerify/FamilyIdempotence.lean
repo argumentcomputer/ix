@@ -4,7 +4,7 @@ import IxSharingVerify.FamilyEncoding
 normalizer. Ordered semantic roots and unchanged headers/tables are the
 inputs; equal canonical DAGs are derived, never assumed at this boundary. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.CanonicalMeaning (SharingMeaning)
@@ -131,13 +131,13 @@ theorem normalizeFamily_repeat_of_expand {cfg : Config} {layout : ShareLayout} {
   change Except.ok ({ middle with info := middle.info, sharing := first.result.sharing }, second) = .ok (middle, second)
   rw [← sharing]
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.withMutConstRoots_erase [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.withRoots_erase [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.withRoots_same_header [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_congr [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_bytes_congr [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_idempotent [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_idempotent_bytes [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_repeat_of_expand [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.withMutConstRoots_erase [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.withRoots_erase [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.withRoots_same_header [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_congr [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_bytes_congr [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_idempotent [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_idempotent_bytes [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_repeat_of_expand [propext, Classical.choice, Quot.sound]

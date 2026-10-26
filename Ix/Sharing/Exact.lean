@@ -293,20 +293,20 @@ end Reference
 
 /-- Frozen family parameter for `sharing-k16-greedy-v1`. This is a
 canonicalization rule, independent of the checked-object/envelope versions. -/
-def canonicalFamilyConfig : Ix.Sharing.FamilyPrototype.Config := ⟨16⟩
+def canonicalFamilyConfig : Ix.Sharing.Family.Config := ⟨16⟩
 
 /-- Production K16 family sharing of Share-free roots. The reference entry
 is compiled through its proved cached/area-local twin. -/
 def canonicalSharingTiered (layout : ShareLayout) (roots : Array Ixon.Expr)
     (limits : Limits := {}) : Except SharingError TieredSharingResult := do
   let ex ← expand limits #[] roots false
-  Ix.Sharing.FamilyPrototype.familyReferenceExpanded canonicalFamilyConfig layout limits ex
+  Ix.Sharing.Family.familyReferenceExpanded canonicalFamilyConfig layout limits ex
 
 /-- Production K16 family sharing with an existing backward sharing table. -/
 def canonicalSharingTieredTable (layout : ShareLayout) (sharing roots : Array Ixon.Expr)
     (limits : Limits := {}) : Except SharingError TieredSharingResult := do
   let ex ← expand limits sharing roots true
-  Ix.Sharing.FamilyPrototype.familyReferenceExpanded canonicalFamilyConfig layout limits ex
+  Ix.Sharing.Family.familyReferenceExpanded canonicalFamilyConfig layout limits ex
 
 /-- Re-share a complete constant with the frozen production rule. -/
 def normalizeConstantSharingTiered (layout : ShareLayout) (c : Constant)

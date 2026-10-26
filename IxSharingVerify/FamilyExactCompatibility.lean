@@ -6,14 +6,14 @@ agree when every INITIAL component uses the exact family. The old theorem
 requires uniformSubsetSearch=false, its production/default search path.
 Tiered encodings and complete constant-byte compatibility follow separately. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
 open Ix.Sharing.Verify.SharingExact (Desc)
 
 def ExactInitial (cfg : Config) (ex : Expanded) (width : Nat) : Prop :=
-  ∀ members ∈ (stg width ex).comps.toList, members.size ≤ cfg.experimentK
+  ∀ members ∈ (stg width ex).comps.toList, members.size ≤ cfg.exactLimit
 
 def ExactAllWidths (cfg : Config) (ex : Expanded) : Prop :=
   ∀ width ∈ [1, 2, 3], ExactInitial cfg ex width
@@ -169,12 +169,12 @@ theorem familyUniform_exact_match {cfg : Config} {limits : Limits} {ex : Expande
   have same : fresh.stored = old.stored := Array.toList_inj.mp (sorted_eq_of_mem freshSorted oldSorted sameMembers)
   exact ⟨same, by rw [finished.model, same, oldModel]⟩
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.partsChoices_member [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.partsChoices_perm [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.exact_minimum_represented [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.leL_antisymm_mem [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.merge_cs_leL [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.inClassCheck_ascending [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyUniform_exact_match [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.partsChoices_member [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.partsChoices_perm [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.exact_minimum_represented [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.leL_antisymm_mem [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.merge_cs_leL [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.inClassCheck_ascending [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyUniform_exact_match [propext, Classical.choice, Quot.sound]

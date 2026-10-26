@@ -4,7 +4,7 @@ import IxSharingVerify.FamilyProducer
 Component parts are recovered from product membership, not an assumption
 that the chosen set is an old global minimum. Finishing is separate. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -276,15 +276,15 @@ theorem familyComponents_model {cfg : Config} {limits : Limits} {ex : Expanded} 
   selected_model_eq wf spines roots reachable checked
     (familyComponents_least cfg limits ex width wf checked produced chosen)
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.ProductMember.part_perm [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_compParts_perm [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_component_delta [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_deltaSum [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_product_cost [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_merged_cost [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_minimum_cost [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.selected_model_eq [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.selected_model_nonnegative [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyComponents_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.ProductMember.part_perm [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_compParts_perm [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_component_delta [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_deltaSum [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_product_cost [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_merged_cost [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_minimum_cost [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.selected_model_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.selected_model_nonnegative [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyComponents_model [propext, Classical.choice, Quot.sound]

@@ -9,7 +9,7 @@ This checkpoint justifies the local payload allowance in `residualCharge`.
 The global flow cancellation, complete-encoding bound, wire representability
 and materializer/guard success remain separate. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -161,11 +161,11 @@ theorem uInl_le_local {p : Prep} (hp : PrepWF p) (width : Nat) (avail : Nat → 
   obtain ⟨out, valid, inline, cost⟩ := inline_local_writing hp width avail bound
   exact Nat.le_trans ((hp.valid_cost width avail valid bound).2 inline) cost
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.tag4Size_le_nine [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.telescope_graft [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.telescope_one_node [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.telescope_child_costs [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.inline_local_writing [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.uInl_le_local [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.tag4Size_le_nine [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.telescope_graft [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.telescope_one_node [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.telescope_child_costs [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.inline_local_writing [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.uInl_le_local [propext, Classical.choice, Quot.sound]

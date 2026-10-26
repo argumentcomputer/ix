@@ -1,10 +1,10 @@
 import IxSharingVerify.FamilyCost
 
-/-! A successful experimental uniform result retains the actual family
+/-! A successful `familyUniform` result retains the actual family
 selection, semantic model, pinned table and checked roots. Tiered allocation,
 rematerialization and whole-constant serialization are separate. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -193,12 +193,12 @@ theorem familyUniform_result_fields {cfg : Config} {limits : Limits} {ex : Expan
   obtain ⟨_, _, _, _, finished⟩ := familyUniform_finished wf spines roots reachable run
   exact ⟨finished.permutation, finished.model, finished.sizes.2.2, finished.reexpanded⟩
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyUniform_finish [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.uniformFinish_reexpanded [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.uniformFinish_finished [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.UniformFinished.sizes [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyUniform_finished [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyUniform_model_minimum [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyUniform_result_fields [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyUniform_finish [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.uniformFinish_reexpanded [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.uniformFinish_finished [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.UniformFinished.sizes [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyUniform_finished [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyUniform_model_minimum [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyUniform_result_fields [propext, Classical.choice, Quot.sound]

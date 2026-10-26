@@ -10,7 +10,7 @@ uncertain component contributes one of its declared family sets. No claim
 of global optimality, output representability or unconditional success is
 made here. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -142,10 +142,10 @@ theorem initial_product_cost_spineFree {cfg : Config} {ex : Expanded} {width : N
   unfold productObjective
   omega
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_theta_pos [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_cs_mem [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_cs_nodup [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.ulen_compParts_spineFree [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_product_cost_spineFree [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_theta_pos [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_cs_mem [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_cs_nodup [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.ulen_compParts_spineFree [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_product_cost_spineFree [propext, Classical.choice, Quot.sound]

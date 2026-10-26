@@ -4,7 +4,7 @@ import IxSharingVerify.CanonicalMeaning
 /-! Successful family entry guards, format/length and root meaning, independent
 of compiler builders. The constant wrapper imports these unchanged facts. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify
@@ -158,4 +158,4 @@ theorem familyExpanded_meaning {cfg : Config} {layout : ShareLayout} {limits : L
   rw [same] at meaning
   exact meaning
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family

@@ -135,7 +135,7 @@ mod reference;
 pub(crate) use reference::optimize_uniform_with;
 
 #[cfg(test)]
-pub(crate) mod experimental;
+pub(crate) mod family_trace;
 
 fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
@@ -1229,7 +1229,7 @@ impl DagPrep {
   }
 }
 
-/// Initial classification shared by the exact path and offline experiments.
+/// Initial classification shared by the exact path and the component families.
 struct Initial<'d> {
   up: UPrep<'d>,
   #[cfg(any(test, feature = "sharing-reference"))]

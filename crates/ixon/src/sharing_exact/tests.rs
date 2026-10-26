@@ -2031,8 +2031,8 @@ fn uniform_brute(dag: &SharingDag, w: u64, pool: &[u32]) -> (u64, Vec<u32>) {
 }
 
 #[test]
-fn experimental_family_exact_bytes_and_component_costs() {
-  use super::experimental::{self, Event};
+fn family_trace_exact_bytes_and_component_costs() {
+  use super::family_trace::{self, Event};
   let mut rows_checked = 0;
   for seed in 0..80 {
     let c = gen_constant(seed + 913, 1, 16, 3);
@@ -2045,7 +2045,7 @@ fn experimental_family_exact_bytes_and_component_costs() {
       normalize_constant_sharing_tiered(ShareLayout::TagN, &c, &lim).unwrap().0;
     for k in [0, 24] {
       let mut events = Vec::new();
-      let (candidate, _) = experimental::normalize(&c, &lim, k, &mut |e| {
+      let (candidate, _) = family_trace::normalize(&c, &lim, k, &mut |e| {
         events.push(e.clone());
         Ok(())
       })
@@ -2075,14 +2075,14 @@ fn experimental_family_exact_bytes_and_component_costs() {
 }
 
 #[test]
-fn experimental_classification_does_not_search_and_retains_source_metrics() {
-  use super::experimental::{self, Event};
+fn family_trace_classification_does_not_search_and_retains_source_metrics() {
+  use super::family_trace::{self, Event};
   let mut c = axiom(Expr::app(Expr::var(18), Expr::var(18)), 0);
   // This unreachable table payload must still count as source input.
   c.sharing.push(Arc::new(Expr::Ref(3, vec![u64::MAX; 17])));
   let lim = ExactSharingLimits { max_states: 0, max_work: 0, ..limits() };
   let mut events = Vec::new();
-  experimental::classify(&c, &lim, &mut |e| {
+  family_trace::classify(&c, &lim, &mut |e| {
     events.push(e.clone());
     Ok(())
   })
@@ -2098,9 +2098,9 @@ fn experimental_classification_does_not_search_and_retains_source_metrics() {
       .any(|e| matches!(e, Event::Input { interned_nodes, dag_nodes,
     table_entries: 1, .. } if *interned_nodes > *dag_nodes as u64))
   );
-  assert!(experimental::normalize(&c, &lim, 12, &mut |_| Ok(())).is_err());
+  assert!(family_trace::normalize(&c, &lim, 12, &mut |_| Ok(())).is_err());
   c.sharing[0] = Expr::share(1);
-  assert!(experimental::classify(&c, &lim, &mut |_| Ok(())).is_err());
+  assert!(family_trace::classify(&c, &lim, &mut |_| Ok(())).is_err());
 }
 
 #[test]

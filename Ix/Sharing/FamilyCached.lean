@@ -1,6 +1,6 @@
 module
 
-public import Ix.Sharing.FamilyPrototypeFast
+public import Ix.Sharing.FamilyFast
 import all Ix.Sharing.Exact.UniformSearchLocal
 
 @[expose] public section
@@ -11,7 +11,7 @@ found by `mkSCtxL`'s upward walk, and only touched positions are cleared.
 Every family and complete trace remains the existing reference's value.
 This module does not combine rows or normalize a constant. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 
@@ -20,7 +20,7 @@ def traceWithPhi (cfg : Config) (cx : SCtx) (width index : Nat)
   let baseline := (eval (fun _ => false) #[]).1
   let cost : Cost := fun set => ((eval set.contains set).1 : _root_.Int) - (baseline : _root_.Int)
   let m := members.size
-  let exact := m ≤ cfg.experimentK
+  let exact := m ≤ cfg.exactLimit
   { width, index, exact, members, areaSize := cx.area.size, closureSize := cx.closure.size,
     rows := table cfg cost members.toList,
     evaluations := if exact then 2 ^ m else m * (m + 1) / 2 + m + 1 }
@@ -197,4 +197,4 @@ def componentsCached (cfg : Config) (ex : Expanded) (width : Nat) : Array Compon
   funext cfg ex width
   exact (componentsCachedWith_eq cfg ex (uniformStage width ex (Prep.ofDag ex.dag)) width).symm
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
