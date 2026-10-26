@@ -533,11 +533,9 @@ theorem Valid.leaves_avail {p : Prep} {S : Nat → Bool} {x : Nat} {T : WTree}
 
 /-! ## The phase-1 writings -/
 
-open Ix.Sharing.Verify.SharingExact (materializeDependent_parts indexOfTable_spec) in
-/-- The phase-1 table bodies and roots are writings with the phase-1
-dictionary (its stored set, Shares by phase-1 index). -/
-theorem phase1_trees {w : Nat} {limits : Limits} {ex : Expanded} {u : UniformSharingResult}
-    (hu : optimizeUniformExpanded w limits ex = .ok u) :
+/-- The table bodies and roots of a uniform encoding are writings with its
+dictionary (its stored set, Shares by table index). -/
+def UniformTrees (ex : Expanded) (u : UniformSharingResult) : Prop :=
     DagWF ex.dag ∧ (∀ r ∈ ex.roots.toList, r < ex.dag.size) ∧
     (∀ t ∈ u.result.tableTerms.toList, t < ex.dag.size) ∧
     u.result.tableTerms.size < UInt64.size ∧
@@ -550,8 +548,14 @@ theorem phase1_trees {w : Nat} {limits : Limits} {ex : Expanded} {u : UniformSha
     List.Forall₂ (fun r e => ∃ T, TreeOf (Prep.ofDag ex.dag)
         (fun t => decide (t ∈ u.result.tableTerms.toList))
         (indexOfPairs ex.dag.size u.result.tableTerms.toList.zipIdx) false r e T)
-      ex.roots.toList u.result.roots.toList := by
-  obtain ⟨_, hwf, hroots, _, _, c, _, hfin⟩ := optimizeUniform_parts hu
+      ex.roots.toList u.result.roots.toList
+
+open Ix.Sharing.Verify.SharingExact (materializeDependent_parts indexOfTable_spec) in
+/-- A successful uniform finisher over a well-formed DAG returns writings
+with its dictionary. -/
+theorem uniformTrees_of_finish {w : Nat} {limits : Limits} {ex : Expanded} {c : UniformChoice}
+    {u : UniformSharingResult} (hwf : DagWF ex.dag) (hroots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
+    (hfin : uniformFinish w limits ex (Prep.ofDag ex.dag) c = .ok u) : UniformTrees ex u := by
   obtain ⟨hin, _, _, htable, _, work, hmat, _⟩ := uniformFinish_spec hfin
   have hp := prepWF_ofDag hwf
   have hperm : u.result.tableTerms.toList.Perm c.stored.toList := by
@@ -582,6 +586,13 @@ theorem phase1_trees {w : Nat} {limits : Limits} {ex : Expanded} {u : UniformSha
     exact hp.gBuild_tree _ hev index1 width1 hwidth hindex hidx _ true t e (hin' t ht) he
   · refine Ix.Sharing.Verify.Tiered.forall₂_imp_mem hrts fun r hr e he => ?_
     exact hp.gBuild_tree _ hev index1 width1 hwidth hindex hidx _ false r e (hroots r hr) he
+
+/-- The phase-1 table bodies and roots are writings with the phase-1
+dictionary (its stored set, Shares by phase-1 index). -/
+theorem phase1_trees {w : Nat} {limits : Limits} {ex : Expanded} {u : UniformSharingResult}
+    (hu : optimizeUniformExpanded w limits ex = .ok u) : UniformTrees ex u := by
+  obtain ⟨_, hwf, hroots, _, _, c, _, hfin⟩ := optimizeUniform_parts hu
+  exact uniformTrees_of_finish hwf hroots hfin
 
 end Ix.Sharing.Verify.UniformModel
 
@@ -721,16 +732,16 @@ for its phase-3 dictionary (the allocated order places every body reference
 first), each phase-3 part is a minimum for its dictionary, and the guard
 keeps the reference cost of the allocated order at most the phase-1
 order's. So `rematerialize`'s length check never fails. -/
-theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded} {w : Nat}
-    {u : UniformSharingResult} {a : Allocation} {entries rs : Array Ixon.Expr}
+theorem rematerialized_le_of_trees {layout : ShareLayout} {allocLimits tableLimits : Limits}
+    {ex : Expanded} {u : UniformSharingResult} {a : Allocation} {entries rs : Array Ixon.Expr}
     {predicted work : Nat}
-    (hu : optimizeUniformExpanded w limits ex = .ok u)
-    (ha : allocate layout limits ex.dag (graphFacts ex.dag ex.roots).deg u.result.tableTerms
+    (trees : UniformTrees ex u)
+    (ha : allocate layout allocLimits ex.dag (graphFacts ex.dag ex.roots).deg u.result.tableTerms
       u.result.sharing u.result.roots = .ok a)
-    (hm : materializeTable (Prep.ofDag ex.dag) a.order ex.roots limits layout.widthAt =
+    (hm : materializeTable (Prep.ofDag ex.dag) a.order ex.roots tableLimits layout.widthAt =
       .ok (entries, rs, predicted, work)) :
     predicted ≤ layoutBytes layout u.result.sharing u.result.roots := by
-  obtain ⟨hwf, hroots, hin1, hsize1, hindex1, hents, hrts⟩ := phase1_trees hu
+  obtain ⟨hwf, hroots, hin1, hsize1, hindex1, hents, hrts⟩ := trees
   obtain ⟨hnd1, -, hperm, hback, -, -, -, -, -, -⟩ := allocate_spec ha
   have hrcEq := (allocate_spec ha).2.2.2.2.2.1
   have hrfEq := (allocate_spec ha).2.2.2.2.2.2.1
@@ -997,6 +1008,18 @@ theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded
 
 
 
+
+/-- The bound for the reference route's uniform phase. -/
+theorem phase3_le_phase1 {layout : ShareLayout} {limits : Limits} {ex : Expanded} {w : Nat}
+    {u : UniformSharingResult} {a : Allocation} {entries rs : Array Ixon.Expr}
+    {predicted work : Nat}
+    (hu : optimizeUniformExpanded w limits ex = .ok u)
+    (ha : allocate layout limits ex.dag (graphFacts ex.dag ex.roots).deg u.result.tableTerms
+      u.result.sharing u.result.roots = .ok a)
+    (hm : materializeTable (Prep.ofDag ex.dag) a.order ex.roots limits layout.widthAt =
+      .ok (entries, rs, predicted, work)) :
+    predicted ≤ layoutBytes layout u.result.sharing u.result.roots :=
+  rematerialized_le_of_trees (phase1_trees hu) ha hm
 
 /-! ## Optimality of the allocation in the 2-byte tier -/
 
