@@ -178,18 +178,20 @@ def blockRecursors (first : Ix.InductiveVal) (candidates : Array Ix.RecursorVal)
 recursors that name the block (`candidates`). A block whose members,
 constructors or recursors are not as Lean lays them out is an invalid group
 claiming the names it would have declared. -/
-def inductiveGroup (env : Ix.Environment) (first : Ix.InductiveVal)
-    (candidates : Array Ix.RecursorVal) : Group := Id.run do
+def inductiveGroupUsing {m : Type → Type} [Monad m]
+    (lookup : Ix.Name → m (Option Ix.ConstantInfo)) (first : Ix.InductiveVal)
+    (candidates : Array Ix.RecursorVal) : m Group := do
   let block := first.all
-  let ctorsOf (n : Ix.Name) : Array Ix.Name :=
-    match env.consts.get? n with
+  let ctorsOf (n : Ix.Name) : m (Array Ix.Name) := do
+    return match ← lookup n with
     | some (.inductInfo v) => v.ctors
     | _ => #[]
-  let claim := block ++ block.flatMap ctorsOf ++ candidates.map (·.cnst.name)
+  let claimedCtors ← block.flatMapM ctorsOf
+  let claim := block ++ claimedCtors ++ candidates.map (·.cnst.name)
   let bad (e : ReadError) : Group := .invalid claim e
   let mut types : Array Ix.InductiveVal := #[]
   for n in block do
-    let some (.inductInfo v) := env.consts.get? n
+    let some (.inductInfo v) ← lookup n
       | return bad (.malformed s!"inductive block member {ingressName n} is missing or not an inductive")
     unless v.all.isEqv block Ix.Name.beqRaw do
       return bad (.malformed s!"inductive {ingressName n} names a different block")
@@ -198,7 +200,7 @@ def inductiveGroup (env : Ix.Environment) (first : Ix.InductiveVal)
   for v in types do
     let mut cs : Array Ix.ConstructorVal := #[]
     for (c, j) in v.ctors.zipIdx do
-      let some (.ctorInfo cv) := env.consts.get? c
+      let some (.ctorInfo cv) ← lookup c
         | return bad (.malformed s!"constructor {ingressName c} of {ingressName v.cnst.name} is \
             missing or not a constructor")
       unless Ix.Name.beqRaw cv.induct v.cnst.name do
@@ -209,6 +211,12 @@ def inductiveGroup (env : Ix.Environment) (first : Ix.InductiveVal)
   match blockRecursors first candidates with
   | .ok recs => return .inductive types ctors recs
   | .error _ => return bad (.declined "inductive block without a recursor in the input")
+
+/-- Existing callers retain the exact stored-map lookup and grouping policy.
+Effectful callers may propagate lookup errors without fabricating absence. -/
+def inductiveGroup (env : Ix.Environment) (first : Ix.InductiveVal)
+    (candidates : Array Ix.RecursorVal) : Group :=
+  Id.run (inductiveGroupUsing (m := Id) (env.consts.get? ·) first candidates)
 
 def isFamily : Ix.ConstantInfo → Bool
   | .inductInfo _ | .ctorInfo _ | .recInfo _ => true
@@ -240,18 +248,22 @@ def namesLt (names names' : Array Ix.Name) : Bool := Id.run do
 
 /-- The group of a strongly connected component's constants outside the
 inductive families (none if it has none), its members in Lean's name order. -/
-def componentGroup (env : Ix.Environment) (members : Ix.Set Ix.Name) : Option Group :=
-  let cis : Array Ix.ConstantInfo := members.toArray.filterMap (env.consts.get? ·)
+def componentGroupUsing {m : Type → Type} [Monad m]
+    (lookup : Ix.Name → m (Option Ix.ConstantInfo)) (members : Ix.Set Ix.Name) : m (Option Group) := do
+  let cis ← members.toArray.filterMapM lookup
   let others := (cis.filter (!isFamily ·)).qsort fun a b =>
     nameCmp a.getCnst.name b.getCnst.name == .lt
   let names := others.map (·.getCnst.name)
-  if others.isEmpty then none
+  return if others.isEmpty then none
   else if cis.any isFamily then some (.invalid names (.malformed "a block mixes inductives and definitions"))
   else if others.all isDefinition then some (.definitions others)
   else match others with
     | #[.axiomInfo v] => some (.axiom v)
     | #[.quotInfo v] => some (.quot v)
     | _ => some (.invalid names (.malformed "a cyclic block of axioms or quotients"))
+
+def componentGroup (env : Ix.Environment) (members : Ix.Set Ix.Name) : Option Group :=
+  Id.run (componentGroupUsing (m := Id) (env.consts.get? ·) members)
 
 /-- A constant no group claims: the reader's reason. -/
 def unplaced (n : Ix.Name) : Ix.ConstantInfo → Group
