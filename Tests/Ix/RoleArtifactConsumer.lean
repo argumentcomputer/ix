@@ -29,6 +29,43 @@ private def withTier (env : Env) (proof : Constant) : Except String (Env × Addr
   let (env, address) := insert env projection
   return (env, owner, address)
 
+private def orderedChecks (env tierEnv badEnv : Env) : IO Unit := do
+  let prepared ← IO.ofExcept ((prepareRecords env artifactLimits).mapError toString)
+  let order := (prepared.prepared.records.map Prod.fst).toArray
+  let ordinary ← IO.ofExcept ((check env artifactLimits).mapError toString)
+  let ordered ← IO.ofExcept ((checkAt env artifactLimits order).mapError toString)
+  ensure (ordered.prepared.records == prepared.prepared.records &&
+    ordered.target.consts.map (·.name) == ordinary.target.consts.map (·.name))
+    "explicit logical order changed raw rows or accepted declaration sequence"
+  let tierInput ← IO.ofExcept ((prepareRecords tierEnv artifactLimits).mapError toString)
+  let tierOrder := (tierInput.prepared.records.map Prod.fst).toArray
+  let defaultTier ← IO.ofExcept ((checkTiered tierEnv artifactLimits).mapError toString)
+  let orderedTier ← IO.ofExcept ((checkTieredAt tierEnv artifactLimits tierOrder).mapError toString)
+  ensure (orderedTier.prepared.records == tierInput.prepared.records &&
+    orderedTier.logical.consts.map (·.name) == defaultTier.logical.consts.map (·.name) &&
+    orderedTier.tier.length == defaultTier.tier.length)
+    "explicit tier order changed raw rows, logical declarations or tier census"
+  ensure (!(checkAt tierEnv artifactLimits tierOrder).isOk)
+    "explicit logical entry retried partial input through the tier"
+  for (artifact, actualOrder) in [(env, order), (tierEnv, tierOrder)] do
+    ensure (actualOrder.size > 1) "ordered fixture is unexpectedly small"
+    let missing := Address.admissionHash "ordered-entry-absent-record".toUTF8
+    ensure (!artifact.consts.contains missing) "missing-order control names an existing record"
+    let duplicate := actualOrder.set! 0 actualOrder[1]!
+    let unknown := actualOrder.set! 0 missing
+    for invalid in [actualOrder.pop, duplicate, unknown] do
+      ensure (match prepareRecordsAt artifact artifactLimits invalid with
+        | .error (.coverage _) => true | _ => false)
+        "explicit order admitted incomplete, duplicated or foreign records"
+      ensure (!(checkAt artifact artifactLimits invalid).isOk &&
+        !(checkTieredAt artifact artifactLimits invalid).isOk)
+        "an actual entry bypassed explicit-order coverage guards"
+  let badInput ← IO.ofExcept ((prepareRecords badEnv artifactLimits).mapError toString)
+  let badOrder := (badInput.prepared.records.map Prod.fst).toArray
+  ensure (!(checkAt badEnv artifactLimits badOrder).isOk &&
+    !(checkTieredAt badEnv artifactLimits badOrder).isOk)
+    "explicit-order admission accepted an invalid logical theorem"
+
 private def checks : IO Nat := do
   let (env, generated) ← IO.ofExcept (Tests.Ix.RoleGeneration.completeArtifact .natDiv)
   let some (proofAddress, proof) := generated.evidence[0]?
@@ -104,6 +141,7 @@ private def checks : IO Nat := do
   let bad ← checked (← prepareInput badBytes)
   ensure (match ← runPrepared bad cfg .all with | .error (.artifact _) => true | _ => false)
     "an unnamed invalid record escaped bound whole checking"
+  orderedChecks env tierEnv badEnv
   let ix ← IO.FS.realPath ".lake/build/bin/ix"
   let dir ← IO.FS.createTempDir
   try

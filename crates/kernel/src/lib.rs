@@ -151,6 +151,8 @@ pub mod level;
 pub mod mode;
 pub mod perf;
 pub mod primitive;
+#[cfg(not(target_arch = "riscv64"))]
+pub mod role_admission;
 // Sharding cost model + partitioner (out-of-circuit). `profile` records
 // per-block heartbeats + the delta-unfold graph (the cost graph); `shard`
 // partitions that graph into balanced, low-cross-ingress shards. Ported here

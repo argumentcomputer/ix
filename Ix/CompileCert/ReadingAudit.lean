@@ -16,6 +16,9 @@ import Ix.CompileCert.SemanticFrames
 import Ix.CompileCert.SemanticPresence
 import Ix.CompileCert.FramePrimitives
 import Ix.CompileCert.DevelopmentFrames
+import Ix.CompileCert.DevelopmentState
+import Ix.CompileCert.RewriteCalls
+import Ix.CompileCert.FrontendReceipts
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -870,3 +873,42 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "reading-audit") "semantic development cache"
     (#[`empty, `insert, `probe, `probe_fits, `spine, `field].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
+
+/-- info: [reading-audit] semantic development workers: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "semantic development workers"
+    (#[`shareAppN_run, `hinst_run, `happ_run].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
+
+/-- info: [reading-audit] semantic development histories: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "semantic development histories"
+    (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh,
+      `instantiateWith_inspected, `instantiateWith_fresh_inspected].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
+
+/-- info: [reading-audit] frontend and development call receipts: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "frontend and development call receipts"
+    (#[`compileLeanInput_prefix, `compileDecoratedConsts_guards, `compileLeanInput_members,
+      `compileLeanInput_frames, `development_call].map (`Ix.CompileCert.FrontendReceipts ++ ·))
+
+/-- info: [reading-audit] unconditional development cache preservation: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "unconditional development cache preservation"
+    (#[`insert_invalid, `hinst_state, `happ_state, `instantiateWith_state].map
+      (`Ix.CompileCert.DevelopmentState ++ ·))
+
+/-- info: [reading-audit] actual rewrite development call chains: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "actual rewrite development call chains"
+    (#[`Chain.append, `Chain.preserves, `expansionOf_calls, `rw_calls,
+      `expansionOf_state, `rw_state].map (`Ix.CompileCert.RewriteCalls ++ ·))
