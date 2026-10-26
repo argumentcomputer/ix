@@ -8,8 +8,11 @@ additional closure derives canonical roots and the current specification,
 encodes/decodes the separate host envelope, and compares replayed identities.
 The current specification's unchanged frozen-value guards are imported here
 and by the established certificate audit. -/
+/- Shared optional-order preparation and materialization add eight compiled
+functions to the combined host closure. All changed symbols are Artifact
+helpers or their specializations; every execution allowance is unchanged. -/
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 6406 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+ Ix.HostAdmission.verifyAddressed]: 6414 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]
