@@ -52,13 +52,21 @@ each one of the replacements IxC's own runtime audit rules on
 (`getTagN_eq_fast`, reading the committed prelude and evidence bundle; 1),
 each on the standard axioms. The in-model generator's nine `partial` definitions
 (`IxC/Kernel/Frontend/InModel*`) left the list when its walks became total (IxC, S1:
-the prerequisite of the generator's parametricity proof). Nothing the service
-computes reaches `compile`'s result.
+the prerequisite of the generator's parametricity proof).
 
-The O2 source transport prerequisite makes `shiftVars`, `instantiateRevAt`,
-`substLevels` and `consumeTypeAnnotations` total with their existing
-computation. The first three recurse structurally; the annotation consumer
-uses its actual application-argument subterm bound. These four leave the
+The service's answers do shape `compile`'s result: the levels IxC answers set
+the spelling of generated universes (`Ix/AuxGen/LevelEgress.lean`), its `whnf`
+results reach generated binder names (`Ix/AuxGen/IxcScope.lean`), and its
+refusals fail blocks. That is acceptable for the same reason as any other
+compiler output: the records `compile` emits are admitted only through the
+certified checker, which checks them again, so an answer can make a block
+fail or change its spelling but cannot get an ill-typed record admitted; and
+the code that runs is the code this module freezes and audits.
+
+Four expression helpers, `shiftVars`, `instantiateRevAt`, `substLevels` and
+`consumeTypeAnnotations`, are total with their existing computation. The
+first three recurse structurally; the annotation consumer uses its actual
+application-argument subterm bound. These four leave the
 opaque-code list; `substLevel` remains. The generated C entry bodies are
 unchanged, and the measured compiler replacement list loses exactly these
 four entries. No runtime ruling is broadened.
