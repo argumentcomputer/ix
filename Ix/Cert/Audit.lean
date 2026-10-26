@@ -6086,12 +6086,17 @@ run_cmd do
     (#[`fold_hit_origin, `runImageBlock_aux_origins].map
       (`Ix.CompileCert.ImageAuxOrigins ++ ·))
 
-/-- info: [cert-audit] coherent strong target commutation: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+-- The weak-to-strong adapters (`Commutes.toStrong`, `IxonCommutes.toStrongRef`) are
+-- deleted: strong commutation now produces a source model with the recursor rules and
+-- the capability laws (`LawModel`), which the weak value model does not give. Their
+-- roots go; the strong predicates and the Source laws are frozen in "The final
+-- statement".
+/-- info: [cert-audit] coherent strong target commutation: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "coherent strong target commutation"
-    #[`Ix.Cert.Commutes.toStrong, `Ix.Cert.CommutesStrong.alias, `Ix.Cert.IxonCommutes.toStrongRef]
+    #[`Ix.Cert.CommutesStrong.alias]
 
 /-- info: [cert-audit] actual projection owner and member guards: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -6152,8 +6157,9 @@ kind of change (`KindAccepted`) and the Source forms of the rewritten records
 inferring in their compiled closures (`SourceFormInfers`), it concludes that the
 closure is published, its compiled closure is accepted at the reference level, every
 constant of the closure (a dropped alias included) reads as a compiled constant, and
-every strong target model gives one value model of quotient Source for the whole
-closure (`IxonCommutesCovering`). It replaces the nominal statement over the weak
+every strong target model gives one model of quotient Source for the whole closure,
+with definition values, the recursor rules and the capability laws (`LawModel`,
+`CommutesStrong`, `IxonCommutesCovering`). It replaces the nominal statement over the weak
 `Commutes`; the bridges to the statement hypothesised on `Published` are restated
 for it. The reading takes a role key's address from the role table (`readingAt`),
 and agrees with `reading` wherever that is defined (`readingAt_of_reading`). On
@@ -6167,6 +6173,247 @@ transported cliques and their rows, and the cascade. The changed-cone validator'
 interface (`ConeInput`, `ConeValidator.Sound`), the artifact checks
 (`artifactCheck`) and the compile with both wired (`compileValidated`,
 `CompileCorrect.validated`) are frozen with them. -/
+
+/-- info: def Ix.Cert.DenoteAlike.{w} : {md : Ix.Kernel.Mode} →
+  {V : Type w} →
+    [Ix.Kernel.SetTheory V] →
+      (Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V) →
+        Ix.Kernel.Env md → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
+fun {md} {V} [Ix.Kernel.SetTheory V] cval env e e' =>
+  ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V) (v v' : V),
+    Ix.Kernel.Denotes cval env φ ρ e v → Ix.Kernel.Denotes cval env φ ρ e' v' → v = v' -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.DenoteAlike
+
+/-- info: def Ix.Cert.IotaStep : {md : Ix.Kernel.Mode} →
+  Ix.Kernel.Env md →
+    Ix.Kernel.Key md →
+      Ix.Kernel.ConstantVal md →
+        Nat → Nat → List (Ix.Kernel.RecRule md) → Ix.Kernel.RecRule md → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
+fun {md} env c cv mI rP rules rl e e' =>
+  ∃ us major cj usj cvj cnP cnF residual,
+    e.getAppFn = Ix.Kernel.Expr.const c us ∧
+      e.getAppArgs.length = mI + 1 ∧
+        us.length = cv.levelParams.length ∧
+          Ix.Kernel.Rules.Red env 0 (e.getAppArgs.getD mI (Ix.Kernel.Expr.bvar 0)) major ∧
+            major.getAppFn = Ix.Kernel.Expr.const cj usj ∧
+              env.find? cj = some (Ix.Kernel.ConstantInfo.ctorInfo cvj cnP cnF) ∧
+                List.find? (fun r' => r'.ctor == cj) rules = some rl ∧
+                  major.getAppArgs.length = rl.ctorParams + rl.nfields ∧
+                    rl.fire ≠ Ix.Kernel.RecRuleFire.inert ∧
+                      Ix.Kernel.Level.isEquivList usj
+                            (Ix.Kernel.recFireComparands rl cv.levelParams us cvj.levelParams e.getAppArgs rP).fst =
+                          some true ∧
+                        (rl.compareParams = true →
+                            Ix.Kernel.Rules.DefEqList env 0 (List.take rl.ctorParams major.getAppArgs)
+                              (Ix.Kernel.recFireComparands rl cv.levelParams us cvj.levelParams e.getAppArgs rP).snd) ∧
+                          Ix.Kernel.Rules.Certs env 0 true
+                              (Ix.Kernel.Expr.instantiateLevelParams cv.levelParams us cv.type)
+                              (List.take mI e.getAppArgs ++ [major]) ∧
+                            Ix.Kernel.Rules.Certs env 0 true
+                                (Ix.Kernel.Expr.instantiateLevelParams cvj.levelParams usj cvj.type) major.getAppArgs ∧
+                              (mI ≠ rP →
+                                  Ix.Kernel.piResidual
+                                      (Ix.Kernel.Expr.instantiateLevelParams cvj.levelParams usj cvj.type)
+                                      major.getAppArgs =
+                                    some residual) ∧
+                                (mI ≠ rP →
+                                    Ix.Kernel.Rules.DefEqList env 0 (List.drop rl.ctorParams residual.getAppArgs)
+                                      (List.drop rP (List.take mI e.getAppArgs))) ∧
+                                  e' =
+                                    (Ix.Kernel.Expr.instantiateLevelParams cv.levelParams us rl.rhs).mkAppN
+                                      (List.take rP e.getAppArgs ++ List.drop rl.ctorParams major.getAppArgs) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.IotaStep
+
+/-- info: def Ix.Cert.RecRuleLaws.{w} : {md : Ix.Kernel.Mode} →
+  {V : Type w} →
+    [Ix.Kernel.SetTheory V] → (Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V) → Ix.Kernel.Env md → Prop :=
+fun {md} {V} [Ix.Kernel.SetTheory V] cval env =>
+  ∀ (c : Ix.Kernel.Key md) (cv : Ix.Kernel.ConstantVal md) (mI rP : Nat) (rules : List (Ix.Kernel.RecRule md)),
+    env.find? c = some (Ix.Kernel.ConstantInfo.recInfo cv mI rP rules) →
+      ∀ (rl : Ix.Kernel.RecRule md),
+        rl ∈ rules →
+          rl.fire ≠ Ix.Kernel.RecRuleFire.inert →
+            ∀ (e e' : Ix.Kernel.Expr md),
+              Ix.Cert.IotaStep env c cv mI rP rules rl e e' → Ix.Cert.DenoteAlike cval env e e' -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecRuleLaws
+
+/-- info: def Ix.Cert.StructEtaStep : {md : Ix.Kernel.Mode} →
+  Ix.Kernel.Env md →
+    Ix.Kernel.Key md → Ix.Kernel.ConstantVal md → Ix.Kernel.IndCaps md → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
+fun {md} env T cvT caps a b =>
+  ∃ tb wtb c us cvc cnP cnF us',
+    Ix.Kernel.Rules.Infer env Ix.Kernel.Rules.Grade.io 0 b tb ∧
+      Ix.Kernel.Rules.Red env 0 tb wtb ∧
+        a.getAppFn = Ix.Kernel.Expr.const c us ∧
+          env.find? c = some (Ix.Kernel.ConstantInfo.ctorInfo cvc cnP cnF) ∧
+            a.getAppArgs.length = cnP + cnF ∧
+              wtb.getAppFn = Ix.Kernel.Expr.const T us' ∧
+                caps.eta = true ∧
+                  caps.etaCtor = some c ∧
+                    Ix.Kernel.reservedBasisNames.contains T = false ∧
+                      Ix.Kernel.reservedBasisNames.contains c = false ∧
+                        wtb.getAppArgs.length = caps.etaParams ∧
+                          us'.length = cvT.levelParams.length ∧
+                            cvc.levelParams = cvT.levelParams ∧
+                              (Ix.Kernel.towerSlotsAll env T caps.etaFields ||
+                                    Ix.Kernel.recSlotsAll env T caps.etaFields) =
+                                  true ∧
+                                Ix.Kernel.Level.isEquivList us us' = some true ∧
+                                  Ix.Kernel.Rules.Certs env 0 false
+                                      (Ix.Kernel.Expr.instantiateLevelParams cvT.levelParams us' cvT.type)
+                                      wtb.getAppArgs ∧
+                                    (Ix.Kernel.towerSlotsAll env T caps.etaFields = false →
+                                        Ix.Kernel.Rules.EtaProjCerts env 0 T us' wtb.getAppArgs b cvT.levelParams
+                                          (List.range caps.etaFields)) ∧
+                                      Ix.Kernel.Rules.DefEqList env 0 (List.take caps.etaParams a.getAppArgs)
+                                          wtb.getAppArgs ∧
+                                        Ix.Kernel.Rules.DefEqList env 0 (List.drop caps.etaParams a.getAppArgs)
+                                          (Ix.Kernel.etaProjs env T us' wtb.getAppArgs b caps.etaFields) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.StructEtaStep
+
+/-- info: def Ix.Cert.StructUnitStep : {md : Ix.Kernel.Mode} →
+  Ix.Kernel.Env md →
+    Ix.Kernel.Key md → Ix.Kernel.ConstantVal md → Ix.Kernel.IndCaps md → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
+fun {md} env T cvT caps a b =>
+  ∃ ta wta tb wtb us',
+    Ix.Kernel.Rules.Infer env Ix.Kernel.Rules.Grade.io 0 a ta ∧
+      Ix.Kernel.Rules.Red env 0 ta wta ∧
+        wta.getAppFn = Ix.Kernel.Expr.const T us' ∧
+          caps.unitlike = true ∧
+            Ix.Kernel.reservedBasisNames.contains T = false ∧
+              wta.getAppArgs.length = caps.unitParams ∧
+                us'.length = cvT.levelParams.length ∧
+                  Ix.Kernel.Rules.Infer env Ix.Kernel.Rules.Grade.io 0 b tb ∧
+                    Ix.Kernel.Rules.Red env 0 tb wtb ∧
+                      Ix.Kernel.Rules.DefEq env 0 wta wtb ∧
+                        Ix.Kernel.Rules.Certs env 0 false
+                          (Ix.Kernel.Expr.instantiateLevelParams cvT.levelParams us' cvT.type) wta.getAppArgs -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.StructUnitStep
+
+/-- info: def Ix.Cert.ProjStep : {md : Ix.Kernel.Mode} →
+  Ix.Kernel.Env md → Ix.Kernel.Key md → Nat → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
+fun {md} env sn i e e' =>
+  ∃ u entry us cvC nP nF,
+    e = Ix.Kernel.Expr.proj sn i u ∧
+      env.findProj? sn i = some entry ∧
+        u.getAppFn = Ix.Kernel.Expr.const entry.ctor us ∧
+          i < entry.numFields ∧
+            u.getAppArgs.length = entry.numParams + entry.numFields ∧
+              us.length = entry.levelParams.length ∧
+                entry.fireOk us = true ∧
+                  env.find? entry.ctor = some (Ix.Kernel.ConstantInfo.ctorInfo cvC nP nF) ∧
+                    Ix.Kernel.Rules.Certs env 0 true (Ix.Kernel.Expr.instantiateLevelParams cvC.levelParams us cvC.type)
+                        u.getAppArgs ∧
+                      e' = u.getAppArgs.getD (entry.numParams + i) (Ix.Kernel.Expr.bvar 0) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.ProjStep
+
+/-- info: def Ix.Cert.CapabilityLaws.{w} : {md : Ix.Kernel.Mode} →
+  {V : Type w} →
+    [Ix.Kernel.SetTheory V] → (Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V) → Ix.Kernel.Env md → Prop :=
+fun {md} {V} [Ix.Kernel.SetTheory V] cval env =>
+  (∀ (T : Ix.Kernel.Key md) (cvT : Ix.Kernel.ConstantVal md) (caps : Ix.Kernel.IndCaps md),
+      env.find? T = some (Ix.Kernel.ConstantInfo.indInfo cvT caps) →
+        ∀ (a b : Ix.Kernel.Expr md), Ix.Cert.StructEtaStep env T cvT caps a b → Ix.Cert.DenoteAlike cval env a b) ∧
+    (∀ (T : Ix.Kernel.Key md) (cvT : Ix.Kernel.ConstantVal md) (caps : Ix.Kernel.IndCaps md),
+        env.find? T = some (Ix.Kernel.ConstantInfo.indInfo cvT caps) →
+          ∀ (a b : Ix.Kernel.Expr md), Ix.Cert.StructUnitStep env T cvT caps a b → Ix.Cert.DenoteAlike cval env a b) ∧
+      ∀ (sn : Ix.Kernel.Key md) (i : Nat) (e e' : Ix.Kernel.Expr md),
+        Ix.Cert.ProjStep env sn i e e' → Ix.Cert.DenoteAlike cval env e e' -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.CapabilityLaws
+
+/-- info: structure Ix.Cert.LawModel.{w} {md : Ix.Kernel.Mode} (V : Type w) [Ix.Kernel.SetTheory V] (env : Ix.Kernel.Env md) :
+  Type w
+number of parameters: 4
+parents:
+  Ix.Cert.LawModel.toValueModel : Ix.Cert.ValueModel V env
+fields:
+  Ix.Kernel.Model.cval : Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V
+  Ix.Kernel.Model.mem : ∀ (c : Ix.Kernel.ConstantInfo md),
+      c ∈ env.consts →
+        ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
+          ∃ T,
+            Ix.Kernel.Denotes self.cval env φ ρ c.toConstantVal.type T ∧ Ix.Kernel.SetTheory.Mem (self.cval c.name φ) T
+  Ix.Kernel.Model.false_empty : ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V) (F : V),
+      Ix.Kernel.Denotes self.cval env φ ρ (Ix.Kernel.Expr.const Ix.Kernel.falseName []) F →
+        F = Ix.Kernel.SetTheory.empty
+  Ix.Kernel.Model.eq_equality : ∀ (u : Ix.Kernel.Level) (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V)
+      (E A a b : V),
+      Ix.Kernel.Denotes self.cval env φ ρ (Ix.Kernel.Expr.const Ix.Kernel.eqName [u]) E →
+        Ix.Kernel.SetTheory.Mem A (Ix.Kernel.SetTheory.univ (Ix.Kernel.Level.eval φ u)) →
+          Ix.Kernel.SetTheory.Mem a A →
+            Ix.Kernel.SetTheory.Mem b A →
+              Ix.Kernel.SetTheory.app (Ix.Kernel.SetTheory.app (Ix.Kernel.SetTheory.app E A) a) b =
+                Ix.Kernel.SetTheory.eqv a b
+  Ix.Cert.ValueModel.defn_value : ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md)
+      (hint : Ix.Kernel.ReducibilityHint),
+      Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
+        ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
+          Ix.Kernel.Denotes self.cval env φ ρ value (self.cval cv.name φ)
+  Ix.Cert.LawModel.rec_rule : Ix.Cert.RecRuleLaws self.cval env
+  Ix.Cert.LawModel.caps : Ix.Cert.CapabilityLaws self.cval env
+constructor:
+  Ix.Cert.LawModel.mk.{w} {md : Ix.Kernel.Mode} {V : Type w} [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env md}
+    (toValueModel : Ix.Cert.ValueModel V env) (rec_rule : Ix.Cert.RecRuleLaws toValueModel.cval env)
+    (caps : Ix.Cert.CapabilityLaws toValueModel.cval env) : Ix.Cert.LawModel V env
+field notation resolution order:
+  Ix.Cert.LawModel, Ix.Cert.ValueModel, Ix.Kernel.Model -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.LawModel
+
+/-- info: def Ix.Cert.CommutesStrong.{w} : (Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source →
+    Option (Ix.Kernel.Expr Ix.Kernel.Mode.anon)) →
+  Ix.Kernel.Env Ix.Kernel.Mode.source → Ix.Kernel.Env Ix.Kernel.Mode.anon → Prop :=
+fun read source target =>
+  ∀ (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V target),
+    ∃ N,
+      ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+        c ∈ source.consts →
+          ∀ (t : Ix.Kernel.Expr Ix.Kernel.Mode.anon),
+            read c = some t →
+              ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
+                Ix.Kernel.Denotes M.model.cval target φ ρ t (N.cval c.name φ) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.CommutesStrong
+
+/-- info: def Ix.Cert.IxonCommutesStrongRef.{w} : Ixon.Env → Ix.Environment → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
+fun ixe sub source =>
+  ∃ binding,
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
+      ∃ limits order target cx,
+        Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order target ∧
+          Ix.Cert.admissionContext binding limits ixe order = some cx ∧
+            Ix.Cert.CommutesStrong (Ix.Cert.reading ixe cx) source target -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.IxonCommutesStrongRef
+
+/-- info: @Ix.Cert.CommutesStrong.alias : ∀
+  {read : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Option (Ix.Kernel.Expr Ix.Kernel.Mode.anon)}
+  {source : Ix.Kernel.Env Ix.Kernel.Mode.source} {target : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Cert.CommutesStrong read source target →
+    ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V target),
+      ∃ N,
+        (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+            c ∈ source.consts →
+              ∀ (t : Ix.Kernel.Expr Ix.Kernel.Mode.anon),
+                read c = some t →
+                  ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
+                    Ix.Kernel.Denotes M.model.cval target φ ρ t (N.cval c.name φ)) ∧
+          ∀ (a : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+            a ∈ source.consts →
+              ∀ (b : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+                b ∈ source.consts →
+                  ∀ (t : Ix.Kernel.Expr Ix.Kernel.Mode.anon),
+                    read a = some t →
+                      read b = some t → ∀ (φ : Ix.Kernel.LevelParam → Nat), N.cval a.name φ = N.cval b.name φ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.CommutesStrong.alias
 
 /-- info: inductive Ix.Cert.CallRewrite : Type
 number of parameters: 0
@@ -6584,12 +6831,22 @@ fun ixe sub t envQ =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
 
-/-- info: [cert-audit] final statement: 29 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] final statement: 39 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "final statement"
-    (#[`CompileCorrect,
+    (#[`DenoteAlike,
+      `IotaStep,
+      `RecRuleLaws,
+      `StructEtaStep,
+      `StructUnitStep,
+      `ProjStep,
+      `CapabilityLaws,
+      `LawModel,
+      `CommutesStrong,
+      `IxonCommutesStrongRef,
+      `CompileCorrect,
       `CompileCorrectPublished,
       `IxonCommutesCovering,
       `ReadingCovers,

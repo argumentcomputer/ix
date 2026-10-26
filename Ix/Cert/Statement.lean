@@ -459,8 +459,10 @@ model leaves free: recursor rules, structure eta, the quotient's computation
 rule, theorem and opaque values, and level-parameter irrelevance. A source
 theorem in the closure constrains the compiled reading only through its type.
 A constant whose reading is `none` is unconstrained. The final statement
-quantifies over strong target models instead and makes the reading total on
-the closure (`Ix.Cert.CommutesStrong`, `Ix.Cert.IxonCommutesCovering`). -/
+quantifies over strong target models instead, asks the source model to satisfy
+the recursor rules and the capability laws as well (`Ix.Cert.LawModel`), and makes
+the reading total on the closure (`Ix.Cert.CommutesStrong`,
+`Ix.Cert.IxonCommutesCovering`). -/
 def Commutes (τ : Ix.Kernel.ConstantInfo .source → Option (Ix.Kernel.Expr .anon)) (envS : Env .source) (envA : Env .anon) : Prop :=
   ∀ (V : Type w) [SetTheory V] (M : ValueModel V envA), ∃ N : ValueModel V envS,
     ∀ c ∈ envS.consts, ∀ t, τ c = some t →

@@ -1,43 +1,45 @@
 import Ix.Cert.ValueRows
+import Ix.Cert.SourceLaws
 
 /-! # Coherent value transport from a supplied strong target model
 
 This is the strong-model interface of the final compiler statement
-(`Ix.Cert.CompileCorrect`). It keeps one source ValueModel for the entire
+(`Ix.Cert.CompileCorrect`). It keeps one source model for the entire
 source environment, at every universe/variable valuation, for EACH supplied
-strong target model. Nothing here proves compilation correct. Reading
-totality on the closure is a separate conjunct of the final statement
-(`Ix.Cert.ReadingCovers`), since a missing reading leaves a constant
-unconstrained here. No equivalence with the older weak-model quantifier is
-asserted, and the nominal-quotient link supplies no value-transport premise
-here.
--/
+strong target model. The source model is a value model with the Source laws
+(`LawModel`): definitions denote their values, and the recursor rules and the
+capability laws hold (`Ix.Cert.SourceLaws`); theorem and opaque values and the
+quotient's computation rule are not required. Nothing here proves compilation
+correct. Reading totality on the closure is a separate conjunct of the final
+statement (`Ix.Cert.ReadingCovers`), since a missing reading leaves a constant
+unconstrained here.
+
+The older weak predicate (`Commutes`: every target value model, some source value
+model) does not give this one: its source model need not satisfy the recursor
+rules or the capability laws. -/
 
 namespace Ix.Cert
 open Ix.Kernel
 universe w
 
+/-- **Strong commutation**: for every strong model `M` of the target environment,
+one model of the source environment with the Source laws (`LawModel`) in which
+every source constant denotes, at every level assignment and variable valuation,
+what its reading denotes in `M`. -/
 def CommutesStrong
     (read : Ix.Kernel.ConstantInfo .source → Option (Ix.Kernel.Expr .anon))
     (source : Env .source) (target : Env .anon) : Prop :=
   ∀ (V : Type w) [SetTheory V] (M : Cached.StrongModel V target),
-    ∃ N : ValueModel V source,
+    ∃ N : LawModel V source,
       ∀ c ∈ source.consts, ∀ t, read c = some t →
         ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
           Denotes M.model.cval target φ ρ t (N.cval c.name φ)
-
-/-- The older predicate implies the intended restriction. This adapter uses
-the given strong model's interpretation, never a different target model. -/
-theorem Commutes.toStrong {read source target} (h : Commutes.{w} read source target) :
-    CommutesStrong.{w} read source target := by
-  intro V _ M
-  exact ValueRows.commutes_strong h V M
 
 /-- Alias equalities use the SAME source model as all transported constants. -/
 theorem CommutesStrong.alias {read source target}
     (h : CommutesStrong.{w} read source target) (V : Type w) [SetTheory V]
     (M : Cached.StrongModel V target) :
-    ∃ N : ValueModel V source,
+    ∃ N : LawModel V source,
       (∀ c ∈ source.consts, ∀ t, read c = some t → ∀ φ ρ,
         Denotes M.model.cval target φ ρ t (N.cval c.name φ)) ∧
       ∀ a ∈ source.consts, ∀ b ∈ source.consts, ∀ t,
@@ -58,13 +60,5 @@ def IxonCommutesStrongRef (ixe : Ixon.Env) (sub : Ix.Environment)
       IxonAcceptsRef binding limits ixe (Seed ixe sub) order target ∧
       admissionContext binding limits ixe order = some cx ∧
       CommutesStrong.{w} (reading ixe cx) source target
-
-/-- Preserve every witness when moving the old executed predicate to the
-reference/strong interface. The reverse direction is not claimed. -/
-theorem IxonCommutes.toStrongRef (V : Type w) [SetTheory V] {ixe sub source}
-    (h : IxonCommutes.{w} ixe sub source) : IxonCommutesStrongRef.{w} ixe sub source := by
-  obtain ⟨binding, pinned, limits, order, target, cx, accepted, context, values⟩ := h
-  exact ⟨binding, pinned, limits, order, target, cx, ixonAccepts_ref V accepted,
-    context, values.toStrong⟩
 
 end Ix.Cert
