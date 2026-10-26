@@ -16,6 +16,7 @@ import Ix.CompileCert.SemanticFrames
 import Ix.CompileCert.SemanticPresence
 import Ix.CompileCert.FramePrimitives
 import Ix.CompileCert.DevelopmentFrames
+import Ix.CompileCert.FrontendReceipts
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -885,3 +886,11 @@ run_cmd do
   checkRoots (tag := "reading-audit") "semantic development histories"
     (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh,
       `instantiateWith_inspected, `instantiateWith_fresh_inspected].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
+
+/-- info: [reading-audit] frontend and development call receipts: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "frontend and development call receipts"
+    (#[`compileLeanInput_prefix, `compileDecoratedConsts_guards, `compileLeanInput_members,
+      `compileLeanInput_frames, `development_call].map (`Ix.CompileCert.FrontendReceipts ++ ·))
