@@ -17,6 +17,8 @@ pub mod diff;
 pub mod env;
 pub mod error;
 pub mod expr;
+#[cfg(not(target_arch = "riscv64"))]
+pub mod host_admission;
 pub mod lazy;
 pub mod map;
 pub mod merkle;

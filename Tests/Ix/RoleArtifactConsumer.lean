@@ -74,16 +74,21 @@ private def checks : IO Nat := do
     let logical ← checked (← runPrepared p cfg .all)
     ensure (logical.failures.isEmpty && logical.artifactAdmission == some (.logical env.consts.size))
       "bound whole check did not run the actual logical entry"
+    ensure (logical.hostStatement.any (·.kind == .logical))
+      "bound whole check omitted its receipt-derived host statement"
     let selected := if anon then toString (generated.table.addressOf? .natDiv).get! else "Nat.div"
     let selected ← checked (← runPrepared p cfg (.only #[selected]))
-    ensure (selected.failures.isEmpty && selected.artifactAdmission.isNone)
+    ensure (selected.failures.isEmpty && selected.artifactAdmission.isNone && selected.hostStatement.isNone)
       "selected proof-backed operation lost actual evidence or claimed whole admission"
     let capped ← checked (← runPrepared p cfg .all (some 1))
-    ensure capped.artifactAdmission.isNone "capped checking claimed complete artifact admission"
+    ensure (capped.artifactAdmission.isNone && capped.hostStatement.isNone)
+      "capped checking claimed complete artifact admission"
     let tp ← checked (← prepareInput tierBytes anon)
     let tr ← checked (← runPrepared tp cfg .all)
     ensure (tr.failures.isEmpty && tr.artifactAdmission == some (.tiered tierEnv.consts.size 1))
       "bound whole check did not run the actual tiered entry"
+    ensure (tr.hostStatement.any (fun s => match s.kind with | .tiered .. => true | _ => false))
+      "bound tier check omitted its receipt-derived partition commitments"
     let thin := { env with assumptions := ({} : Std.HashSet Address).insert tierAddress }
     let thin ← IO.ofExcept (serEnv thin)
     let thin ← checked (← prepareInput thin anon)

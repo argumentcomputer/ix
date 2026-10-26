@@ -23,6 +23,7 @@ import Ix.Cli.ShardCmd
 import Ix.Cli.TreeCmd
 import Ix.Cli.ValidateCmd
 import Ix.Cli.VerifyCmd
+import Ix.Cli.VerifyHostCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
 import Ix
@@ -55,6 +56,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     shardCmd;
     codegenCmd;
     verifyCmd;
+    verifyHostCmd;
     addrOfCmd;
     nameOfCmd;
     ingressCmd;

@@ -32,6 +32,7 @@ import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.Pass3RustParity
 import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.RoleCompile
+import Tests.Ix.HostAdmissionCli
 import Tests.Ix.Compile.O11aCopies
 import Tests.Ix.Compile.O11aPlanning
 import Tests.Ix.Compile.PlanCache
@@ -394,6 +395,7 @@ def registry : List Entry := [
   .runner "cli" (.ci .cli) Tests.Cli.suite,
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
   .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
+  .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
 
   -- expensive suites and runners (these require significant RAM)
   .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,
