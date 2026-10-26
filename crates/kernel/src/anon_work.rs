@@ -88,8 +88,9 @@ impl AnonWorkItem {
   /// a `Block`'s proven set also includes the block's own `consts` key:
   /// for a `Standalone` it's just its address; for a `Block` it's
   /// `block_addr` plus every projection target (members + ctors). The
-  /// union of `proven_targets()` over a full `build_anon_work` is exactly
-  /// `env.consts.keys()`.
+  /// set includes synthesized semantic members whose projection records the
+  /// input may omit. It is not a physical-record coverage set; a host checks
+  /// carried records separately and does not add synthetic bytes to its input.
   pub fn proven_targets(&self) -> Vec<Address> {
     match self {
       AnonWorkItem::Standalone { addr } => vec![addr.clone()],
@@ -146,7 +147,11 @@ pub fn build_artifact_work(
   let mut work = Vec::new();
   for address in &keys {
     match source.record_tag(address).map_err(|error| error.to_string())? {
-      Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {},
+      Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {
+        // Every carried projection must be genuine and resolve its actual
+        // owner/kind/index, even if no semantic subject selects it directly.
+        source.member(address).map_err(|error| error.to_string())?;
+      },
       Tag::Muts => {
         let record =
           source.record(address).map_err(|error| error.to_string())?;
@@ -162,8 +167,12 @@ pub fn build_artifact_work(
       _ => work.push(AnonWorkItem::Standalone { addr: address.clone() }),
     }
   }
-  let mut covered: Vec<_> =
-    work.iter().flat_map(AnonWorkItem::proven_targets).collect();
+  let carried: rustc_hash::FxHashSet<_> = keys.iter().cloned().collect();
+  let mut covered: Vec<_> = work
+    .iter()
+    .flat_map(AnonWorkItem::proven_targets)
+    .filter(|address| carried.contains(address))
+    .collect();
   covered.sort_unstable();
   if covered != keys {
     return Err(

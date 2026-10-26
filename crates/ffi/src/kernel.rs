@@ -71,6 +71,7 @@ use ix_kernel::ingress::{ixon_ingress, lean_ingress};
 use ix_kernel::mode::{CheckDupLevelParams, KernelMode, Meta};
 use ix_kernel::profile::{BlockProfile, OpCounts, ProfileBuilder, ProfileSink};
 use ix_kernel::role_admission::ArtifactSource;
+#[cfg(feature = "test-ffi")]
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as IxonCI;
 #[cfg(feature = "test-ffi")]
@@ -1355,7 +1356,7 @@ enum AnonWorkItem {
   /// the block (each member's projection + each ctor's CPrj of inductive
   /// members), all sharing the same check result via the kernel's
   /// block coordination.
-  Block { primary_addr: Address, result_idxs: Vec<usize> },
+  Block { block_addr: Address, primary_addr: Address, result_idxs: Vec<usize> },
 }
 
 /// One pass over `env.consts`: enumerate work items + the kernel-checkable
@@ -1383,11 +1384,15 @@ fn index_anon_work(
         addrs.push(addr.clone());
         work.push(AnonWorkItem::Standalone { result_idx, addr });
       },
-      KItem::Block { primary, targets, .. } => {
+      KItem::Block { block_addr, primary, targets } => {
         let start = addrs.len();
         let result_idxs: Vec<usize> = (start..start + targets.len()).collect();
         addrs.extend(targets);
-        work.push(AnonWorkItem::Block { primary_addr: primary, result_idxs });
+        work.push(AnonWorkItem::Block {
+          block_addr,
+          primary_addr: primary,
+          result_idxs,
+        });
       },
     }
   }
@@ -1481,7 +1486,7 @@ fn run_anon_checks_parallel(
             AnonWorkItem::Standalone { result_idx, addr } => {
               (addr.clone(), vec![*result_idx])
             },
-            AnonWorkItem::Block { primary_addr, result_idxs } => {
+            AnonWorkItem::Block { primary_addr, result_idxs, .. } => {
               (primary_addr.clone(), result_idxs.clone())
             },
           };
@@ -1495,7 +1500,10 @@ fn run_anon_checks_parallel(
             // attributes exactly this item (incl. TC setup + lazy ingress).
             let _ = ix_kernel::profile::take_op_counts();
           }
-          let check_res = checker.check_const(&primary_addr);
+          let check_res = match item {
+            AnonWorkItem::Block { block_addr, .. } => checker.check_owner(block_addr),
+            AnonWorkItem::Standalone { addr, .. } => checker.check_const(addr),
+          };
           let item_fuel = checker.last_check().fuel_used;
           let elapsed = tc_start.elapsed();
           if record_per_const {
@@ -2951,11 +2959,12 @@ fn run_anon_profile_parallel(
             checker.clear_releasing_memory();
             checks_since_clear = 0;
           }
-          let primary_addr = match &work[work_idx] {
-            AnonWorkItem::Standalone { addr, .. } => addr.clone(),
-            AnonWorkItem::Block { primary_addr, .. } => primary_addr.clone(),
+          let res = match &work[work_idx] {
+            AnonWorkItem::Block { block_addr, .. } => {
+              checker.check_owner(block_addr)
+            },
+            AnonWorkItem::Standalone { addr, .. } => checker.check_const(addr),
           };
-          let res = checker.check_const(&primary_addr);
           if res.is_ok() {
             passed.fetch_add(1, Ordering::Relaxed);
           } else {
@@ -3474,6 +3483,7 @@ where
   before_kernel_check(&prefix);
 
   let tc_start = Instant::now();
+  checker.set_debug_label(display.clone());
   let result = checker
     .check_name(name)
     .map_err(|error| format_tc_error(&error, ixon_env, lookups));

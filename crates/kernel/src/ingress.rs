@@ -930,6 +930,7 @@ fn ingress_expr<M: KernelMode>(
               )
               .ok_or_else(|| format!("invalid Ref index {ref_idx}"))?
               .clone();
+            ixon_env.require_reference(&addr)?;
             // Meta mode: walk the arena to find the Ref's Lean name.
             // Anon mode: the closure is never invoked — no arena walk,
             // no name construction, no resolve_name call.
@@ -1117,6 +1118,7 @@ fn ingress_expr<M: KernelMode>(
                 format!("invalid Prj type ref index {type_ref_idx}")
               })?
               .clone();
+            ixon_env.require_reference(&type_addr)?;
             // The arena holds both the struct name and the child arena
             // pointer (needed for the projected value's metadata walk).
             // Meta mode reads both; Anon mode skips the entire arena
@@ -1834,14 +1836,21 @@ fn ingress_muts_inductive<M: KernelMode>(
     stats,
   )?;
   let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
-  // Constructor KIds: `ctor_addrs` holds the **name-hash** addresses the
-  // compile pass stored in `ConstantMetaInfo::Indc::ctors`, but each Ctor
-  // `KConst` is registered in the kernel env under its **projection**
-  // address (`CPrj` content hash). We must therefore round-trip through
-  // the Lean name to look up the projection address — see `resolve_all`
-  // for the rationale. Calling `resolve_all` directly reuses that error
-  // handling (error on missing Named instead of guessing a name-hash).
+  // Metadata selects presentation names; the owner and constructor position
+  // determine semantic identity. Validate that each named address agrees
+  // before any payload can be installed under that address.
   let ctor_ids: Vec<KId<M>> = resolve_all(&ctor_addrs, names, name_to_addr)?;
+  if ctor_ids.len() != ind.ctors.len() {
+    return Err("constructor metadata count differs from its owner".into());
+  }
+  for (index, id) in ctor_ids.iter().enumerate() {
+    let index = u64::try_from(index).map_err(|error| error.to_string())?;
+    if id.addr != anon_ctor_proj_addr(&block_id.addr, member_idx, index) {
+      return Err(format!(
+        "constructor metadata address differs from owner/index ({member_idx}, {index})"
+      ));
+    }
+  }
 
   let name = resolve_name(
     match &meta.info {
@@ -1893,6 +1902,9 @@ fn ingress_muts_inductive<M: KernelMode>(
          for every constructor of this inductive block"
       )
     })?;
+    if ctor_named.addr != ctor_id.addr {
+      return Err(format!("ctor '{ctor_name}' metadata address changed"));
+    }
 
     let ctor_named_meta = ctor_named.meta();
     let (ctor_lvl_params, ctor_arena, ctor_type_root) =
@@ -2022,11 +2034,21 @@ fn ingress_muts_block<M: KernelMode>(
     let member_named = ixon_env.named(&member_name).ok_or_else(|| {
       format!("Muts member '{member_name}' not found in named entries")
     })?;
-    let member_addr = &member_named.addr;
+    let index = u64::try_from(i).map_err(|error| error.to_string())?;
+    let member_addr = match member {
+      IxonMutConst::Defn(_) => anon_defn_proj_addr(entry_addr, index),
+      IxonMutConst::Indc(_) => anon_indc_proj_addr(entry_addr, index),
+      IxonMutConst::Recr(_) => anon_recr_proj_addr(entry_addr, index),
+    };
+    if member_named.addr != member_addr {
+      return Err(format!(
+        "Muts member '{member_name}' metadata address differs from owner/index {index}"
+      ));
+    }
     let member_meta = &member_named.meta();
 
     let self_id: KId<M> =
-      KId::new(member_addr.clone(), M::meta_field(member_name.clone()));
+      KId::new(member_addr, M::meta_field(member_name.clone()));
 
     match member {
       IxonMutConst::Indc(ind) => {
@@ -4326,7 +4348,36 @@ fn verify_proj_addr_in_env(
   ctor_idx: Option<u64>,
   anon_env: crate::input::Input<'_>,
 ) -> Result<(), String> {
-  if anon_env.constant(proj_addr)?.is_some() {
+  if let Some(actual) = anon_env.constant(proj_addr)? {
+    let expected = match kind {
+      "DPrj" => {
+        ixon::constant::defn_proj_constant(member_idx, block_addr.clone())
+      },
+      "RPrj" => {
+        ixon::constant::recr_proj_constant(member_idx, block_addr.clone())
+      },
+      "IPrj" => {
+        ixon::constant::indc_proj_constant(member_idx, block_addr.clone())
+      },
+      "CPrj" => ixon::constant::ctor_proj_constant(
+        member_idx,
+        ctor_idx.ok_or("constructor projection has no constructor index")?,
+        block_addr.clone(),
+      ),
+      _ => return Err("unknown projection kind".into()),
+    };
+    if actual.as_ref() != &expected {
+      return Err(format!(
+        "carried {kind} {} differs from its owner/index",
+        proj_addr.hex()
+      ));
+    }
+    return Ok(());
+  }
+  #[cfg(not(target_arch = "riscv64"))]
+  if matches!(anon_env, crate::input::Input::Artifact(_)) {
+    // The authenticated owner defines these semantic members. Absence does
+    // not fabricate a raw record or authorize lookup of a missing reference.
     return Ok(());
   }
   match ctor_idx {

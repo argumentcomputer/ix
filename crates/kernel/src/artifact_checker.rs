@@ -229,6 +229,40 @@ impl<M: KernelMode> ArtifactChecker<M> {
 }
 
 impl ArtifactChecker<Anon> {
+  /// Drive an actual carried unit owner. Its semantic primary may have no
+  /// separate projection record; arbitrary missing-address lookup is unchanged.
+  pub fn check_owner(&mut self, owner: &Address) -> Result<(), TcError<Anon>> {
+    self.last_check = CheckStats::default();
+    let source = self.source_for(owner)?.clone();
+    let record = source
+      .record(owner)
+      .map_err(|error| TcError::Other(error.to_string()))?;
+    let members = crate::ingress::ingress_anon_block_input(
+      &mut self.kernel,
+      Input::Artifact(&source),
+      record.constant(),
+      owner,
+    )
+    .map_err(TcError::Other)?;
+    let primary = members
+      .first()
+      .ok_or_else(|| TcError::Other("empty owner unit".into()))?;
+    self.check_id(primary, &source)
+  }
+
+  pub fn check_work(
+    &mut self,
+    work: &crate::anon_work::AnonWorkItem,
+  ) -> Result<(), TcError<Anon>> {
+    match work {
+      crate::anon_work::AnonWorkItem::Standalone { addr } => {
+        self.check_const(addr)
+      },
+      crate::anon_work::AnonWorkItem::Block { block_addr, .. } => {
+        self.check_owner(block_addr)
+      },
+    }
+  }
   /// Capturing from an mmap retains the loader's immutable-file lifetime
   /// requirement. The anonymous worker never constructs metadata lookups.
   pub fn new(source: &Env) -> Self {
