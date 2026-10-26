@@ -17,6 +17,7 @@ import Ix.CompileCert.SemanticPresence
 import Ix.CompileCert.FramePrimitives
 import Ix.CompileCert.DevelopmentFrames
 import Ix.CompileCert.DevelopmentState
+import Ix.CompileCert.RewriteCalls
 import Ix.CompileCert.FrontendReceipts
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
@@ -903,3 +904,11 @@ run_cmd do
   checkRoots (tag := "reading-audit") "unconditional development cache preservation"
     (#[`insert_invalid, `hinst_state, `happ_state, `instantiateWith_state].map
       (`Ix.CompileCert.DevelopmentState ++ ·))
+
+/-- info: [reading-audit] actual rewrite development call chains: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "actual rewrite development call chains"
+    (#[`Chain.append, `Chain.preserves, `expansionOf_calls, `rw_calls,
+      `expansionOf_state, `rw_state].map (`Ix.CompileCert.RewriteCalls ++ ·))
