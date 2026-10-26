@@ -108,6 +108,7 @@
             fileset = pkgs.lib.fileset.unions [
               cargoSource
               ./Tests/Fixtures/ixon-v4
+              ./Tests/Fixtures/role-binding-v2
               ./crates/kernel/tests/fixtures
             ];
           };
