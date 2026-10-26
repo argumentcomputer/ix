@@ -237,7 +237,7 @@ theorem inductiveGroup_spec (env : Ix.Environment) (first : Ix.InductiveVal) (ca
     (h : inductiveGroup env first cands = .inductive types ctors recs) :
     List.Forall₂ (fun n v => memberValue env first.all n = some v) first.all.toList types.toList ∧
       List.Forall₂ (fun v cs => classValue env v = some cs) types.toList ctors.toList := by
-  unfold inductiveGroup at h
+  unfold inductiveGroup Ix.LeanIngress.inductiveGroupUsing at h
   simp only [Id.run, idBind, idPure] at h
   split at h
   · rename_i r heq
@@ -739,7 +739,7 @@ theorem inductiveGroup_cases (env : Ix.Environment) (first : Ix.InductiveVal) (c
     Invalid (inductiveGroup env first cands) ∨
       ∃ types ctors recs, inductiveGroup env first cands = .inductive types ctors recs := by
   generalize h : inductiveGroup env first cands = g
-  unfold inductiveGroup at h
+  unfold inductiveGroup Ix.LeanIngress.inductiveGroupUsing at h
   simp only [Id.run, idBind, idPure] at h
   split at h
   · rename_i r heq
