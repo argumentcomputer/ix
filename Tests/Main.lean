@@ -209,8 +209,8 @@ def registry : List Entry := [
   .suite "condense-unit" .primary Tests.Ix.CondenseM.suite,
   -- Pass 1's clique order: the pinned choice compares last
   .suite "canon-clique" .primary Tests.Ix.Compile.CanonClique.suite,
-  -- The clique transport library (Ix.Compile.Pass.Clique, not yet wired into
-  -- the compiler; these are its only coverage): its DAG helpers against the
+  -- The clique transport library (Ix.Compile.Pass.Clique, which the compiler
+  -- runs; a landing suite covers the wiring), on its own: its DAG helpers against the
   -- tree helpers and the memo's fuel and fresh-variable behaviour; on the
   -- clique twins and its own fixtures (loaded with the twins at run time),
   -- the recognisers and their adversarial negatives (encoding constants'
@@ -225,7 +225,7 @@ def registry : List Entry := [
   -- evaluated against Lean's (one fixpoint unfolding deep), the controls
   -- transported; the carried-lemma plans, eq_def regeneration and the memo
   -- by ownership mode (Tests.Ix.Compile.Clique.Ownership, library cases; the
-  -- compile units are the wiring step's; about 4 s)
+  -- compiled units are `clique-ownership-units`; about 4 s)
   .runner "clique-ownership" .primary Tests.Ix.Compile.Clique.Ownership.run,
   -- the Rust clique library against the Lean one (test-only FFI, Rust on the
   -- clique's closure): the bounds tables, and every field of the plan of each
@@ -234,8 +234,8 @@ def registry : List Entry := [
   .runner "clique-rust-parity" .primary Tests.Ix.Compile.Clique.RustParity.run,
   -- the equation rows of every transported well-founded fixture plan and the
   -- copies of its encoding, admitted by Lean's kernel, each row's swapped
-  -- right-hand side rejected (Tests.Ix.Compile.Clique.Rows; IxC admission of
-  -- emitted rows is the wiring step's)
+  -- right-hand side rejected (Tests.Ix.Compile.Clique.Rows; the fixture families'
+  -- landing suite checks the rows the compiler emits with both kernels)
   .runner "clique-rows" .primary Tests.Ix.Compile.Clique.Rows.run,
   -- the image generator's expression comparisons: raw-exact alpha equality, and motive
   -- matching up to canonical universes (Ix.Compile.Image)

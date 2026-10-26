@@ -6181,11 +6181,8 @@ mod tests {
       }
       let mut kenv = KEnv::new();
       let k = cached_for_frames(&e, &mut vec![], &mut kenv).unwrap();
-      eprintln!("deep kind {kind}: converted");
       drop(k);
-      eprintln!("deep kind {kind}: output dropped");
       drop(kenv);
-      eprintln!("deep kind {kind}: caches/interner dropped");
       while let LeanExprData::Lam(_, _, b, _, _)
       | LeanExprData::LetE(_, _, _, b, _, _)
       | LeanExprData::Proj(_, _, b, _) = e.as_data()
@@ -6195,7 +6192,6 @@ mod tests {
         e = next;
       }
       drop(e);
-      eprintln!("deep kind {kind}: input dropped");
     }
   }
 
