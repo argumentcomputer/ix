@@ -19,6 +19,7 @@ import Ix.CompileCert.DevelopmentFrames
 import Ix.CompileCert.DevelopmentState
 import Ix.CompileCert.RewriteCalls
 import Ix.CompileCert.CurrentInputs
+import Ix.CompileCert.BlockStates
 import Ix.CompileCert.FrontendReceipts
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
@@ -922,3 +923,11 @@ run_cmd do
     (#[`instantiateWith_frames, `rewriteConstM_state, `imageDecl_receipt, `imageDecl_state,
       `expansion_defn_current, `expansion_thm_current, `expansion_defn_frames, `expansion_thm_frames].map
       (`Ix.CompileCert.CurrentInputs ++ ·))
+
+/-- info: [reading-audit] actual block prefix states: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "actual block prefix states"
+    (#[`rewriteBlock_eq, `compileImageBlock_eq, `rewritePrefix_state, `imagePrefix_state,
+      `rewriteBlock_receipt, `compileImageBlock_receipt].map (`Ix.CompileCert.BlockStates ++ ·))
