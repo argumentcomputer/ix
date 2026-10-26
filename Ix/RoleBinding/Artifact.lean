@@ -86,7 +86,26 @@ def checkEvidence (table : Ix.Kernel.RoleTable) (evidence : Ix.Kernel.Evidences 
         | _ => false) do
       throw (.coverage s!"bound operation {repr role} is not a definition")
 
-def prepareRecords (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+/-- Preserve the requested order and the artifact's actual byte/decoded owners.
+The guards and their precedence are shared by default and explicit orders. -/
+def materializeOrder (artifact : Ixon.Env) (store : RecordStore) (order : Array Address) :
+    Except Error (Ix.Kernel.Admission.Records × List (Address × Ixon.Constant)) := do
+  let mut seen : Std.HashSet Address := {}
+  let mut ordered : Array (Address × ByteArray) := #[]
+  let mut decoded : Array (Address × Ixon.Constant) := #[]
+  for address in order do
+    if seen.contains address then throw (.coverage s!"duplicate ordered record {address}")
+    let some record := artifact.consts[address]? | throw (.coverage s!"unknown ordered record {address}")
+    let some constant := store[address]? | throw (.coverage s!"unknown decoded record {address}")
+    seen := seen.insert address
+    ordered := ordered.push (address, record.rawBytes)
+    decoded := decoded.push (address, constant)
+  return (ordered.toList,decoded.toList)
+
+/-- The order is selected before reading/checking, then subjected to the same
+complete artifact coverage, ownership and uniqueness guards. -/
+def prepareRecordsFor (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (requested : Option (Array Address)) :
     Except Error PreparedRecords := do
   let some raw := artifact.roleBinding | throw .missingBinding
   let binding : Ix.Kernel.Admission.Binding := ⟨raw.address, raw.bytes⟩
@@ -104,29 +123,38 @@ def prepareRecords (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
   let pre : Prelude .anon ← (readPrelude table preRecords #[] blobs).mapError .prelude
   (checkPreludeShape pre).mapError .prelude
   (checkFallbackRecursors pre).mapError .prelude
-  let order := Ixon.CheckOrder.wholeEnv table pre constants.toArray
+  let order := match requested with
+    | none => Ixon.CheckOrder.wholeEnv table pre constants.toArray
+    | some order => order
   unless order.size == rawRecords.size do throw (.coverage "record order does not cover the artifact")
-  let mut seen : Std.HashSet Address := {}
-  let mut ordered : Array (Address × ByteArray) := #[]
-  let mut decoded : Array (Address × Ixon.Constant) := #[]
-  for address in order do
-    if seen.contains address then throw (.coverage s!"duplicate ordered record {address}")
-    let some record := artifact.consts[address]? | throw (.coverage s!"unknown ordered record {address}")
-    let some constant := store[address]? | throw (.coverage s!"unknown decoded record {address}")
-    seen := seen.insert address
-    ordered := ordered.push (address, record.rawBytes)
-    decoded := decoded.push (address, constant)
+  let (ordered,decoded) ← materializeOrder artifact store order
   let hints := Hints.ofStore store artifact.anonHints
-  return { prepared := { binding, table, pre, records := ordered.toList, blobs, hints }
-           constants := decoded.toList }
+  return { prepared := { binding, table, pre, records := ordered, blobs, hints }
+           constants := decoded }
 
-def prepare (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) : Except Error Prepared := do
-  let input ← prepareRecords artifact limits
+/-- Existing callers retain the original wholeEnv policy. -/
+def prepareRecords (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) : Except Error PreparedRecords :=
+  prepareRecordsFor artifact limits none
+
+def prepareRecordsAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (order : Array Address) : Except Error PreparedRecords :=
+  prepareRecordsFor artifact limits (some order)
+
+def prepareFor (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (requested : Option (Array Address)) : Except Error Prepared := do
+  let input ← prepareRecordsFor artifact limits requested
   let p := input.prepared
   let (evidence, declarations) ← (Ix.Kernel.Admission.prepareWith Address.admissionHash p.binding p.pre limits
     p.records p.blobs p.hints.lookup).mapError .admission
   checkEvidence p.table evidence declarations
   return p
+
+def prepare (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) : Except Error Prepared :=
+  prepareFor artifact limits none
+
+def prepareAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (order : Array Address) : Except Error Prepared :=
+  prepareFor artifact limits (some order)
 
 /-- This is a receipt of these two actual runs, not an arbitrary stored
 verdict. It does not certify a host claim or a relation to a source program. -/
@@ -146,5 +174,25 @@ def check (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
         limits prepared.records prepared.blobs prepared.hints.lookup with
     | .error e => .error (.admission e)
     | .ok target => .ok ⟨prepared, target, fromArtifact, checked⟩
+
+/-- The order is part of this receipt's type. Its target is the result of the
+actual chosen-order entry, fixed before any supplied model is quantified. -/
+structure OrderedReceipt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
+    (order : Array Address) where
+  prepared : Prepared
+  target : Ix.Kernel.Env .anon
+  preparedFrom : prepareAt artifact limits order = .ok prepared
+  checked : Ix.Kernel.Admission.checkBytesWith Address.admissionHash prepared.binding prepared.pre
+    limits prepared.records prepared.blobs prepared.hints.lookup = .ok target
+
+def checkAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (order : Array Address) :
+    Except Error (OrderedReceipt artifact limits order) :=
+  match fromArtifact : prepareAt artifact limits order with
+  | .error e => .error e
+  | .ok prepared =>
+    match checked : Ix.Kernel.Admission.checkBytesWith Address.admissionHash prepared.binding prepared.pre
+        limits prepared.records prepared.blobs prepared.hints.lookup with
+    | .error e => .error (.admission e)
+    | .ok target => .ok ⟨prepared,target,fromArtifact,checked⟩
 
 end Ix.RoleBinding.Artifact
