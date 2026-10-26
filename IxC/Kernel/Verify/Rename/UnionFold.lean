@@ -283,7 +283,7 @@ theorem selfFrame {ns : List (Key md)} {env : Env md} (hg : FindGood (nameScope 
 theorem Grows.find_cases {Q : Key md → Prop} {env env' : Env md} (h : Grows Q env env')
     {k : Key md} {c : ConstantInfo md} (hk : env'.find? k = some c) :
     env.find? k = some c ∨ (Q k ∧ env.find? k = none) := by
-  obtain ⟨new, hn, hq⟩ := h
+  obtain ⟨new, hn, hq, -⟩ := h
   obtain ⟨cs'⟩ := env'
   simp only at hn
   subst hn
