@@ -190,8 +190,16 @@ The current trace writer populates stage-one matrices on the CPU. CUDA
 accelerates multi-stark's prover phases; this does not add GPU trace codegen.
 The CUDA CI job checks and links both separate hosts. On a GPU machine, run
 `IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh` to prove an IxVM claim and a
-recursive proof on CUDA, then verify both with the CPU hosts. CUDA was not
-compiled or run locally: this machine has neither the toolkit nor GPU hardware.
+recursive proof on CUDA, then verify both with the CPU hosts. Both hosts also
+compile and link locally in the CUDA 13.3.1 development container. This host
+has no NVIDIA device or driver, so GPU execution remains hardware-unvalidated.
+
+`AIUR_TRACE_ONLY_LOOKUPS=1` lets CUDA derive lookup messages from the committed
+stage-one rows using multi-stark's graph evaluator. It avoids host lookup
+buffers and selects regeneration at the batch barrier. Full host buffers remain
+the default because they support multi-stark's memory-pressure CPU fallback;
+shape-only buffers fail explicitly if a CPU fallback tries to consume them.
+The hardware integration gate exercises both modes and CPU-verifies the proofs.
 
 `tools/ixvm/adapt.py --check` checks reproducibility against the pinned source
 revision. `tools/ixvm/recursion.py --check` and `--aggregate --check` do the same
@@ -216,15 +224,29 @@ GPU flags (`IX_CUDA`, `IX_CUDA_TRACE_CODEGEN`) are retained independently.
 `ix codegen` and `trace-fixtures` still regenerate legacy artifacts at their
 new paths.
 
-Function grouping remains to be implemented before native codegen. The new
-compiler deduplicates identical circuits, and the backend groups lookup
-messages and fixed tables. It does not yet pack *different functions* into
-one shared chip as old Ix does. The intended implementation is a proved circuit
-transformation with disjoint function selectors, gated constraints/lookups,
-shared witness columns, preserved call identities, and valid all-zero padding.
-Trace population will dispatch each row to its function's prepared writer.
-Group selection should use widths, degrees, row counts and padding/FFT cost;
-fewer chips alone is not a sufficient objective.
+Function grouping is now enabled in the IxVM and recursive-verifier exports.
+The application policies translate legacy's measured groups; missing, inlined,
+or already deduplicated members are skipped, and entrypoints stay singleton.
+`--ungrouped` disables the policy when exporting either application. The generic
+Aiur library accepts an explicit policy and otherwise leaves functions separate.
+
+The Lean transformation shares data columns and reserves private columns to
+silence inactive members. It checks polynomial silence, gates the remaining
+constraints and lookup arguments, and preserves degree three, logical call
+identities, and all-zero padding. Selector exclusion is valid in arbitrary
+fields. Lean proves selected-row constraint projection from the emitted layout,
+inactive-member silence, selector exclusivity, and message superposition facts;
+the original compiler correctness graph still builds. Rust scatters each
+function's prepared row directly into the shared layout, including lifted
+lookup arguments. Shard planning and auxiliary placement use the grouped shapes.
+The Rust lowering and cryptographic backend retain their existing trust boundary.
+
+The port now preserves legacy's nonrecursive `@`-only helper boundaries through
+the existing proved inliner. Byte AND/OR share XOR's fixed table and less-than
+uses subtraction's borrow. Fixed-arity word hint closures accelerate legacy
+primitive counterparts without adding language primitives. Controlled bytecode
+comparisons, including each circuit's columns and FFT cost, are recorded in
+[the grouping comparison](formal-aiur-grouping-comparison.md).
 
 The final codegen phase will use Rust procedural macros, not a generation
 script. The macros should live in an optional `aiur-macros` crate,
