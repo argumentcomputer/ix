@@ -480,8 +480,10 @@ regenerated {c.regenerated}, clique {c.clique})"
 
 /-! ## The statement (H1)
 
-`Avoids` is the hypothesis shape `CompileCorrect` takes under H1: the closure
-`sub` meets no constant of the set. Then the compiled closure is a renaming of
+`Avoids` says that the closure `sub` meets no constant of the set. It selects
+the unchanged-closure case inside the proof of `Ix.Cert.CompileCorrect`, whose
+statement takes no such hypothesis (the changed records are validated instead,
+`Ix.Cert.KindAccepted`). Then the compiled closure is a renaming of
 its source up to the alias fibers that span Source's groups. Block-internal
 fibers (two names of one fiber in one Source group: an inductive block, or a
 definition component) are classified, not renamed: they are the `perm` kind
@@ -530,8 +532,8 @@ declaration in Lean's own form, in a component that does not collapse inside
 (no member of a changed component, no image head, no rewritten call site, and
 a regenerated auxiliary only at the address of its original form). -/
 
-/-- No constant of `sub` is in the set: the hypothesis of the static part of
-`CompileCorrect` (H1). -/
+/-- No constant of `sub` is in the set: the case of `Ix.Cert.CompileCorrect`'s proof in
+which the compiled closure is a renaming of its source. -/
 def ChangedSet.Avoids (cs : ChangedSet) (sub : Ix.Environment) : Prop :=
   ∀ n ci, sub.consts.get? n = some ci → cs.contains n = false
 

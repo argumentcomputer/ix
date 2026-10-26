@@ -7,7 +7,9 @@ import Ix.CompileCert.Canon.Ref
 
 `Ix.Compile.ChangedSet.ofCompile` classifies the input constants whose compiled
 form is not a renaming of their source. `ChangedSet.Avoids cs sub` (no constant
-of `sub` in the set) is the hypothesis `CompileCorrect` takes under H1. This
+of `sub` in the set) selects the unchanged-closure case inside the proof of
+`Ix.Cert.CompileCorrect`; the statement itself takes no such hypothesis (the
+changed records are validated instead, `Ix.Cert.KindAccepted`). This
 module reads it back as per-constant facts (`Unchanged`): a constant of `sub` is
 
 * in no changed component (`member`), and no constructor of a member of a
