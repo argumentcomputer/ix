@@ -76,6 +76,7 @@ import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.ClosurePhase4
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
+import Tests.Ix.Compile.SelectedAdmission
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.Oracle
 import Tests.Ix.Compile.ScheduleIdentity
@@ -592,6 +593,11 @@ def registry : List Entry := [
   .suite "compile-closure-phase4" .primary Tests.Ix.Compile.ClosurePhase4.suite,
   .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
   .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
+  -- Admission of selected compile targets (Tests.Ix.Compile.SelectedAdmission): the
+  -- definition, theorem and projection fronts that one authenticated check prepares
+  -- for the targets of a compiled unit, against their records, with the recursor-family,
+  -- snapshot, candidate-value and projection controls (fixtures loaded at run time)
+  .runner "compiler-selected-admission" (.ci .compilerClosures) Tests.Ix.Compile.SelectedAdmission.run,
   -- Canonicity over twin presentations, exact against the non-canonical
   -- record under the records policy (Tests.Ix.Compile.Twins).
   .runner "twins" .landing Tests.Ix.Compile.Twins.run,
