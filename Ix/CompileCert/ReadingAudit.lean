@@ -14,6 +14,8 @@ import Ix.CompileCert.RewriteArityPrimitives
 import Ix.CompileCert.DevelopmentArity
 import Ix.CompileCert.SemanticFrames
 import Ix.CompileCert.SemanticPresence
+import Ix.CompileCert.FramePrimitives
+import Ix.CompileCert.DevelopmentFrames
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -852,3 +854,19 @@ run_cmd do
       `Ix.Compile.SemanticPresence.run_eq_spec] ++
       (#[`spec_false_canonical, `production_absent, `source_absent, `guard_frames, `prepared_member_frames].map
         (`Ix.CompileCert.SemanticPresence ++ ·)))
+
+/-- info: [reading-audit] semantic frame primitives: 13 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "semantic frame primitives"
+    (#[`shell_refl, `fits_liftP, `fits_lowerP, `liftP, `lowerP, `fits_shell, `mdata_root_shell,
+      `substLevels, `abstractFVars, `liftM, `lowerM, `share_eq, `shareInput_eq].map
+      (`Ix.CompileCert.FramePrimitives ++ ·))
+
+/-- info: [reading-audit] semantic development cache: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "semantic development cache"
+    (#[`empty, `insert, `probe, `probe_fits, `spine, `field].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
