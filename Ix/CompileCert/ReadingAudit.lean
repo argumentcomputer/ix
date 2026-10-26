@@ -870,3 +870,18 @@ open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "reading-audit") "semantic development cache"
     (#[`empty, `insert, `probe, `probe_fits, `spine, `field].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
+
+/-- info: [reading-audit] semantic development workers: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "semantic development workers"
+    (#[`shareAppN_run, `hinst_run, `happ_run].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
+
+/-- info: [reading-audit] semantic development histories: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "semantic development histories"
+    (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh,
+      `instantiateWith_inspected, `instantiateWith_fresh_inspected].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
