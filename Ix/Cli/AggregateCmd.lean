@@ -134,7 +134,7 @@ private def runAggregateCmdNativeWith
 /-- Aggregate through the native controller. -/
 def runAggregateCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
-  if FormalAiur.selected p then return ← FormalAggregate.run p
+  if ← FormalAiur.selected p then return ← FormalAggregate.run p
   runAggregateCmdNativeWith recursionParameters p
 
 def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -151,11 +151,13 @@ def aggregateCmd : Cli.Cmd := `[Cli|
   "Wrap shard proofs and fold multi-shard manifests into one recursive aggregate"
 
   FLAGS:
-    "formal"; "Aggregate using the new Aiur bytecode runtime and certified compiler."
+    "gpu-device" : Nat; "Use this CUDA device with the new Aiur host (requires a CUDA build)."
+    "legacy"; "Use the retained legacy Aiur backend instead of the default certified backend."
+    "formal"; "Compatibility alias for the default certified Aiur backend; conflicts with --legacy."
     "aiur-artifact" : String; "Trusted formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
-    "shard-rows" : Nat; "Formal backend: maximum rows per function/memory chip per trace shard (default 65536)."
-    "retention" : String; "Formal backend: retain or regenerate (default regenerate)."
+    "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (default 65536; 0 lets the RAM planner choose)."
+    "retention" : String; "Aiur: auto, retain or regenerate (default auto)."
     "ixe" : String;  "Path to the serialized environment whose shards were proven."
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
     "plan-only";     "Validate coverage and print the wrap/join slot plan without loading or proving shard proofs."
@@ -163,15 +165,15 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "texray";        "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages of every slot) to stderr as each span closes."
     "no-write";      "Do not change the proof store or aggregate cache; useful with --reprove-slot for a read-only spot check."
     "reprove-slot" : Nat; "Recompute exactly Stage 2 slot N from verified cached immediate children, bypassing that slot's cache entry."
-    "jobs" : Nat;    "Maximum aggregate slots proving concurrently (default 0: all ready slots, subject to the RAM gate)."
-    "max-ram" : Nat; "Aggregate in-flight RAM budget in GiB (default: 92% of MemTotal). An estimated-oversized slot runs alone."
+    "jobs" : Nat;    "Maximum concurrent aggregate slots (Aiur default 1; 0 uses available cores). Budget and CPU threads are divided among jobs. Legacy default 0: all ready slots subject to its RAM gate."
+    "max-ram" : Nat; "Total in-flight RAM budget in GiB (Aiur default 85% of available memory; legacy default 92% of MemTotal). Aiur rejects slots that cannot fit through trace sharding."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
     "direct-joins";  "Keep LegacyIxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
     "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
     "exec-ahead" : Nat; "Slots executing ahead of the provers (default 1): a ready join executes and plans while the previous one proves, so one GPU prover never waits for an execution; each slot ahead holds its execution record. 0: each slot executes and proves on one worker, --jobs at a time."
     "wrap-root";     "Wrap the root proof, each wrap a proof that verifies the previous one, until the final proof is a single trace shard."
     "subtree" : Nat; "Prove only the plan subtree rooted at slot N (slot numbers as --plan-only prints them) from the proofs of the leaves under it, and print that slot's proof address; root validation and --wrap-root do not apply. The proof is published through the aggregate cache, where a later full run over every shard proof finds it and proves only what is above it. With --plan-only, print `subtree N shards: <ids>`, the --shards argument for `ix prove` over those leaves."
-    "range" : Nat;   "Wrap a shard proof of more than N trace shards as a range-sum tree — leaves verifying at most N shards each (--jobs at a time), joins, and a root with the wrap's statement — instead of one proof verifying every shard. 0 (default): with --trace-shards, two leaves per node slot (2 × --jobs), so each slot executes its next leaf while proving one; without, wrap whole."
+    "range" : Nat;   "Wrap a shard proof of more than N trace shards as a range-sum tree — leaves verifying at most N shards each (--jobs at a time), joins, and a root with the wrap's statement — instead of one proof verifying every shard. 0 (default): wrap whole on Aiur. Legacy: with --trace-shards use two leaves per node slot (2 × --jobs); otherwise wrap whole."
 
   ARGS:
     ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (one per nonempty shard, except --plan-only or replay with aggregate children)."

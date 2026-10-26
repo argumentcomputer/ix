@@ -68,18 +68,20 @@ evaluation, environment checking, reveal and membership claims. It contains
 bytecode functions including shared libraries. The generic Aiur proofs have
 not changed in this update.
 
-Use `--formal` on the ordinary commands:
+The ordinary commands now select new Aiur. Pass `--legacy` to use the retained
+implementation. `--formal` remains a compatibility alias and conflicts with
+`--legacy`:
 
 ```sh
-ix check --formal Nat.add_comm
-ix prove --formal Nat.add_comm
-ix verify --formal <proof-address>
+ix check Nat.add_comm
+ix prove Nat.add_comm
+ix verify <proof-address>
 
-ix prove --formal --ixe env.ixe --ixes env.ixes --shard-rows 65536
-ix verify --formal --ixe env.ixe --ixes env.ixes <shard-proof-address>...
-ix aggregate --formal --ixe env.ixe --ixes env.ixes \
+ix prove --ixe env.ixe --ixes env.ixes --shard-rows 65536
+ix verify --ixe env.ixe --ixes env.ixes <shard-proof-address>...
+ix aggregate --ixe env.ixe --ixes env.ixes \
   --shard-rows 1048576 --direct-joins --structural-above 0 <shard-proof-address>...
-ix verify --formal --aggregate --ixe env.ixe --ixes env.ixes \
+ix verify --aggregate --ixe env.ixe --ixes env.ixes \
   --structural-above 0 <aggregate-address>
 ```
 
@@ -103,19 +105,55 @@ The formal shard index and aggregate cache use separate namespaces from the
 legacy caches. Cache hits are verified before reuse. `--skip-proven`,
 `--no-index`, `--no-cache`, and `--no-write` apply to their corresponding formal
 paths. Aggregation supports wrap-first and direct joins, flat and structural
-folds, and manifest plan inspection. The host currently schedules folds
-sequentially; proving and trace population can use Rayon internally.
+folds, manifest plan inspection, subtree selection, and targeted reproving from
+verified cached children. Ready slots run in bounded waves. `--jobs` defaults to
+one; zero uses the available CPU count. The total RAM budget and CPU threads
+are divided among the jobs in each wave, so a single remaining job can use
+the full reservation. Every worker in a wave is joined before a failure is
+reported or the next wave starts. A verified cache hit cuts off its dependency
+subtree, including when no original shard proofs were supplied. Explicitly
+supplied aggregate proofs may also cover intermediate statements; their kind,
+key, public claim and position in the manifest plan are checked before reuse.
+
+`--range N` wraps large IxVM proofs through range leaves of at most N source
+trace shards, range joins, and a range root. The host only slices advice; Aiur
+shapes 10–12 verify the child proofs, preamble binding, contiguous coverage,
+residual sum, and original public claim. Range intermediates have a separate
+verified cache. `--wrap-root` forces fresh self-wraps until one trace shard
+remains, and stops with an error if the shard count stops decreasing.
 
 Batch proving partitions function and width-specific ROM rows. Channel 16
 closes memory intervals across shards, while the function channel is 1 and
 the ROM channel is 2. The verifier checks activation, fixed-table heights,
 Goldilocks domain/lookup bounds, exact claims, and ordered nonoverlapping memory
-intervals before calling multi-stark. `--retention regenerate` is the default;
-`retain` is also supported. Both policies produce identical proof bytes in the
-partition regression test. Stage-one-only population avoids allocating the
-whole-trace lookup buffers that batch proving recomputes per shard. The source
-record and stage-one matrices still reside in host memory; this is not a
-streaming executor or an automatic RAM-budget guarantee.
+intervals before calling multi-stark. `--retention auto` selects retain when
+the estimated batch fits its RAM budget and regenerate otherwise; both can
+also be requested explicitly. Both policies produce identical proof bytes in
+the partition regression test. Stage-one-only population avoids allocating the
+whole-trace lookup buffers that batch proving recomputes per shard. The
+execution record stays resident through trace generation, then is dropped
+before proving. The complete stage-one matrices remain in host memory.
+
+Both hosts share the same allocation-phase planner. It accounts for fixed
+tables, source matrices, lookup buffers, commitment data, and retained shard
+state, with a 25% allowance. It conservatively includes the observed RSS even
+after the execution record is dropped. This is an estimate, not a hard allocator
+limit or a calibrated peak-RSS bound. The execution itself happens before the
+record can be measured. An earlier artifact/fixed-table estimate rejects
+budgets that splitting cannot satisfy. Generated matrix sizes are checked
+against the plan before proving. `--max-ram` is the total new-backend budget in GiB;
+without it, the controller reserves 85% of available host memory, respecting a
+root-mounted cgroup v2 limit. Shard rows are capped at 65536 by default;
+`--shard-rows 0` lets the planner choose the cap.
+
+Manifest proving supports `--shards`, `--jobs`, `--skip-proven`, `--exec-only`,
+`--out-ixes`, and `--report`. An oversized claim is cut into whole blocks and
+its parts are executed and planned again. `--trace-shards` requires the original
+claim to fit through trace sharding and rejects it if source-record or trace
+residency prevents that. `ix check --ram-budget` runs the same planning and
+refinement loop without proving. Reports use `ix-formal-run/1` and contain
+per-part plans, timings, failures and proof addresses. A failed run does not
+publish a refined manifest. Ordinary `ix check` only executes.
 
 `MultiStark/MultiStark/Program.aiur` is the ordinary Aiur recursive verifier;
 `Aggregate.aiur` adds all thirteen current aggregation shapes, including range
@@ -126,23 +164,34 @@ there are no pointer identities or unconstrained calls. Application address
 sets also compare complete address contents, and 64-bit equality compares both
 limbs instead of reducing modulo Goldilocks.
 
-The standalone recursive host supports `execute`, `prove`, `verify`, and key
-export. A proof invocation supplies the key digest and claims digest publicly,
+The standalone recursive host supports `execute`, `plan`, `prove`, `verify`,
+key export, and range-advice export. A proof invocation supplies the key digest and claims digest publicly,
 and proof/key/claims streams privately. The output directory contains
 `proof.bin`, `key.bin`, `claims.bin`, `public.json` for independent verification,
 and `input.json` for feeding the proof into another recursive-verifier run.
 
 ## Legacy support and native builds
 
-The default commands still select the isolated legacy implementation, as
-requested during migration. Its automatic RAM planning, distributed execution
-records, multi-GPU lanes, range scheduling, execution-ahead scheduling, and
-subtree/reprove controller remain available there. Unsupported controller
-flags fail explicitly when combined with `--formal`. Range recursion is ported
-and tested at the program/API level; its automatic CLI scheduler remains legacy.
-CUDA features are wired from both new host crates to multi-stark and checked by
-the CUDA CI job, but were not compiled or run locally because this machine has
-no CUDA toolkit/GPU.
+`--legacy` retains the old execution, proving and verification paths, including
+old proof formats and caches. Distributed cross-record execution, the shared
+execution-ahead pool, multi-GPU lane orchestration, and texray remain behind
+that boundary; requesting their flags on the new backend fails explicitly.
+These are not silently replaced by independent claim proofs.
+
+The new hosts select multi-stark's CUDA prover with `--gpu-device N` or
+`IX_CUDA=1` (device from `MULTI_STARK_CUDA_DEVICE`, otherwise zero). CPU binaries
+live in `target/release`; CUDA binaries live in `target/formal-cuda/release` and
+are built with `--features parallel,cuda`. Override them independently with
+`IX_AIUR_HOST_CUDA` / `IX_STARK_HOST_CUDA`. Verification and key export use the
+CPU hosts. Device choice does not enter the verifying key or proof protocol.
+An explicit device request to a CPU-only Rust host fails.
+
+The current trace writer populates stage-one matrices on the CPU. CUDA
+accelerates multi-stark's prover phases; this does not add GPU trace codegen.
+The CUDA CI job checks and links both separate hosts. On a GPU machine, run
+`IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh` to prove an IxVM claim and a
+recursive proof on CUDA, then verify both with the CPU hosts. CUDA was not
+compiled or run locally: this machine has neither the toolkit nor GPU hardware.
 
 `tools/ixvm/adapt.py --check` checks reproducibility against the pinned source
 revision. `tools/ixvm/recursion.py --check` and `--aggregate --check` do the same
@@ -152,8 +201,9 @@ The compiler correctness proofs remain intact. Neither those proofs nor the
 port tests constitute a new formal proof of the cryptographic backend or
 discharge the existing memo-acyclicity hypothesis of the semantic model.
 
-Normal builds use legacy bytecode and leave generated native execution out of
-the dependency graph. To select the existing native kernels:
+Normal builds leave generated native execution out of the dependency graph.
+The retained legacy path uses bytecode by default. To select its existing
+native kernels:
 
 ```sh
 IX_NATIVE=1 lake build ix
@@ -166,12 +216,57 @@ GPU flags (`IX_CUDA`, `IX_CUDA_TRACE_CODEGEN`) are retained independently.
 `ix codegen` and `trace-fixtures` still regenerate legacy artifacts at their
 new paths.
 
-Future Aiur procedural macros should live in an optional `aiur-macros` crate,
+Function grouping remains to be implemented before native codegen. The new
+compiler deduplicates identical circuits, and the backend groups lookup
+messages and fixed tables. It does not yet pack *different functions* into
+one shared chip as old Ix does. The intended implementation is a proved circuit
+transformation with disjoint function selectors, gated constraints/lookups,
+shared witness columns, preserved call identities, and valid all-zero padding.
+Trace population will dispatch each row to its function's prepared writer.
+Group selection should use widths, degrees, row counts and padding/FFT cost;
+fewer chips alone is not a sufficient objective.
+
+The final codegen phase will use Rust procedural macros, not a generation
+script. The macros should live in an optional `aiur-macros` crate,
 with their IxVM expansion compiled in a separate optional `ixvm-native` crate.
 Neither belongs in the ordinary `aiur` or `ixvm` dependency graph. This change
 does not implement the future macro backend or create empty placeholder crates.
 
 ## Migration validation
+
+Default-backend/controller checks on 2026-10-26:
+
+- New CLI modules build with `--wfail`; Rust tests and Clippy pass. The compiler
+  theorem sources are unchanged. The integration gate checks default selection,
+  the explicit legacy bytecode path, real claims, recursive proofs, all thirteen
+  aggregation shapes, and wrong-claim/proof/identity/range rejection.
+- Two concurrent `Nat.add_comm` environment claims reproduce the prior proof
+  addresses and sizes, with four trace shards each. Independent partition
+  verification and `--skip-proven --shards 1` reuse pass. The controller emits
+  its measured-plan report and a valid refined manifest.
+- A 1 GiB total budget with two jobs is rejected before execution: each
+  512 MiB reservation is below the estimated artifact/fixed-table floor.
+  The failure report is written and no refined manifest is emitted. A separate
+  one-job, 1 GiB execution audit successfully refines the full environment
+  from one leaf into four fitting parts; the emitted manifest passes coverage
+  and aggregation-plan checks. No STARK is requested in that audit.
+- Real range leaves, joins, and roots were proved for both IxVM proofs using
+  `--range 2`. Their persisted intermediates were then independently verified
+  and supplied to `--reprove-slot 2`. The final structural join produced
+  20,583,260 proof bytes in sixteen trace shards. Independent aggregate
+  verification, root-cache replay with no input proofs, and supplied-proof
+  subtree replay pass; all 342 constants are covered without assumptions.
+  The root address is
+  `7cf439d1369a2523d435282d9c6b7496168157c8926fb444bc23841f01b4cf19`.
+- The targeted final join took 4m41s and `/usr/bin/time` reported 77.95 GiB peak
+  RSS for its largest process. This is a controller validation, not a new
+  performance comparison: the range hierarchy does more recursive work than
+  the earlier direct join. Its first run exposed a reservation bug at the
+  final single-job wave; the corrected scheduler gives that wave the full
+  128 GiB budget instead of half.
+- CUDA linking is covered by the updated CI job; hardware validation remains
+  pending. `IX_TEST_CUDA=1` enables CPU verification of GPU-produced proofs in
+  the integration gate.
 
 Current-port checks on 2026-10-22:
 

@@ -24,6 +24,7 @@ use rustc_hash::FxHashMap;
 use serde::Serialize;
 
 mod batch;
+pub mod planning;
 mod rom;
 mod tables;
 #[cfg(test)]
@@ -140,11 +141,40 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Self::with_memory_policy(plan, parameters, true)
   }
 
+  /// Explicit CUDA placement. CPU builds reject a requested device instead of
+  /// silently running a different backend. Device placement does not change keys.
+  pub fn for_batch_on_device(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    device: Option<i32>,
+  ) -> Result<Self, String> {
+    Self::build(plan, parameters, true, device)
+  }
+
   fn with_memory_policy(
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
     segmented_memory: bool,
   ) -> Result<Self, String> {
+    Self::build(plan, parameters, segmented_memory, None)
+  }
+
+  fn build(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    segmented_memory: bool,
+    device: Option<i32>,
+  ) -> Result<Self, String> {
+    if device.is_some_and(|d| d < 0) {
+      return Err("negative CUDA device".into());
+    }
+    #[cfg(not(feature = "cuda"))]
+    if device.is_some() {
+      return Err(
+        "GPU device requested from a CPU build; build with the cuda feature"
+          .into(),
+      );
+    }
     if plan.program.field.modulus() != Val::ORDER_U64 {
       return Err("multi-stark adapter requires the Goldilocks field".into());
     }
@@ -216,7 +246,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         ));
       }
     }
-    let config = GoldilocksBlake3Config::new(
+    let config = GoldilocksBlake3Config::with_device(
       CommitmentParameters { log_blowup: parameters.log_blowup, cap_height: 0 },
       FriParameters {
         log_final_poly_len: 0,
@@ -225,6 +255,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 0,
       },
+      device,
     );
     let (mut system, key) = System::new(config, inputs);
     // Group messages only if the existing quotient degree suffices. This

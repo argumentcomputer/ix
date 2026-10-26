@@ -922,3 +922,103 @@ fn native_field_witnesses_and_proofs_match_the_integer_backend() {
   assert!(backend.verify("root", &args, &[Val::from_u64(10)], &proof).is_err());
   compare_generated(&backend, &record, "root", &args);
 }
+
+#[test]
+fn resource_plan_matches_generated_trace_and_selects_retention() {
+  use super::planning::{Options, RetentionPolicy};
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let record = program.execute("root", vec![3]).unwrap();
+  let actual = backend.generate_stage_1(&record, "root", &[3]).unwrap();
+  let generous =
+    Options { max_ram_bytes: Some(u64::MAX), ..Default::default() };
+  let measured = backend.plan_batch(&record, &generous).unwrap();
+  assert_eq!(
+    measured.stage1_cells,
+    actual.iter().map(|m| m.values.len() as u64).sum::<u64>()
+  );
+  assert!(measured.fits);
+  let heights: Vec<_> =
+    backend
+      .system
+      .circuits
+      .iter()
+      .map(|c| {
+        if c.preprocessed_height == 0 { 32768 } else { c.preprocessed_height }
+      })
+      .collect();
+  let retained = backend
+    .plan_heights(
+      &heights,
+      &Options { max_rows: Some(256), ..generous.clone() },
+      0,
+    )
+    .unwrap();
+  let regenerated = backend
+    .plan_heights(
+      &heights,
+      &Options {
+        max_rows: Some(256),
+        retention: RetentionPolicy::Regenerate,
+        ..generous.clone()
+      },
+      0,
+    )
+    .unwrap();
+  assert_eq!(retained.shards, 128);
+  assert_eq!(retained.retention, RetentionPolicy::Retain);
+  assert!(retained.proving_peak_bytes > regenerated.proving_peak_bytes);
+  let automatic = backend
+    .plan_heights(
+      &heights,
+      &Options {
+        max_rows: Some(256),
+        max_ram_bytes: Some(
+          regenerated.proving_peak_bytes.max(regenerated.generation_peak_bytes),
+        ),
+        ..Default::default()
+      },
+      0,
+    )
+    .unwrap();
+  assert!(automatic.fits);
+  assert_eq!(automatic.retention, RetentionPolicy::Regenerate);
+  let impossible = backend
+    .plan_heights(
+      &heights,
+      &Options { max_ram_bytes: Some(1), ..Default::default() },
+      0,
+    )
+    .unwrap();
+  assert!(!impossible.fits);
+  assert!(impossible.suggested_parts > 1);
+  let floor = backend.plan_fixed(&generous, 0).unwrap();
+  assert_eq!(floor.shards, 1);
+  assert!(floor.stage1_cells < regenerated.stage1_cells);
+  assert!(
+    !backend
+      .plan_fixed(
+        &Options {
+          max_ram_bytes: Some(floor.proving_peak_bytes - 1),
+          ..Default::default()
+        },
+        0
+      )
+      .unwrap()
+      .fits
+  );
+  let mut wrong = heights;
+  let table = backend
+    .system
+    .circuits
+    .iter()
+    .position(|c| c.preprocessed_height > 0)
+    .unwrap();
+  wrong[table] *= 2;
+  assert!(backend.plan_heights(&wrong, &generous, 0).is_err());
+  #[cfg(not(feature = "cuda"))]
+  assert!(
+    Options { device: Some(0), ..Default::default() }.validate().is_err()
+  );
+}

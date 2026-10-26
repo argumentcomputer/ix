@@ -5,10 +5,10 @@ use aiur::{
   library::io::Invocation,
   trace::{
     TraceArtifact, TracePlan,
-    stark::{Backend, BatchProof, Parameters, VerifyingKey},
+    stark::{Backend, BatchProof, Parameters, VerifyingKey, planning::Options},
   },
 };
-use multi_stark::{batch::Retention, p3_field::PrimeField64, types::Val};
+use multi_stark::{p3_field::PrimeField64, types::Val};
 use std::{error::Error, time::Instant};
 
 const MAGIC: &[u8] = b"IXAIUR2\0";
@@ -27,15 +27,24 @@ struct Case {
 
 fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
+  if cli.get(1).is_some_and(|s| s == "resources") {
+    println!(
+      "{}",
+      serde_json::json!({"available_bytes":aiur::trace::stark::planning::available_memory(),
+      "cores":std::thread::available_parallelism().map_or(1, usize::from)})
+    );
+    return Ok(());
+  }
   if cli.len() < 4 {
-    return Err("usage: ixvm-proof execute|prove|verify ARTIFACT INPUT [PROOF] [SHARD_ROWS]".into());
+    return Err("usage: ixvm-proof execute|plan|prove|verify ARTIFACT INPUT [PROOF] [SHARD_ROWS] [RETENTION] [OPTIONS.json]".into());
   }
   let mode = cli[1].as_str();
-  if !["execute", "prove", "verify", "test", "key"].contains(&mode) {
+  if !["execute", "plan", "prove", "verify", "test", "key"].contains(&mode) {
     return Err("unknown mode".into());
   }
   let package: Package = aiur::decode_artifact(&std::fs::read(&cli[2])?)?;
   let program = package.program.check_field::<Val>()?;
+  let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "key" {
     let plan = TracePlan::new(
       &program,
@@ -100,9 +109,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Ok(());
   }
   let path = cli.get(4).ok_or("missing proof path")?;
+  let options = Options::read(cli.get(7), cli.get(5), cli.get(6))?;
+  let before_setup = aiur::trace::stark::planning::resident_memory();
   let plan =
     TracePlan::new(&program, package.trace.ok_or("artifact has no circuits")?)?;
-  let backend = Backend::for_batch(&plan, Parameters::default())?;
+  let backend =
+    Backend::for_batch_on_device(&plan, Parameters::default(), options.device)?;
   if mode == "verify" {
     let bytes = std::fs::read(path)?;
     let bytes = bytes.strip_prefix(MAGIC).ok_or("not a formal Aiur proof")?;
@@ -117,21 +129,54 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     return Ok(());
   }
-  let rows = cli.get(5).map(|s| s.parse()).transpose()?.unwrap_or(1 << 16);
-  let retention = match cli.get(6).map(String::as_str).unwrap_or("regenerate") {
-    "retain" => Retention::Retain,
-    "regenerate" => Retention::Regenerate,
-    _ => return Err("expected retention retain or regenerate".into()),
-  };
+  let static_resident = artifact_resident.saturating_add(
+    aiur::trace::stark::planning::resident_memory()
+      .saturating_sub(before_setup),
+  );
+  let fixed = backend.plan_fixed(&options, static_resident)?;
+  if !fixed.fits {
+    let report = serde_json::json!({"plan":fixed, "can_split":false, "verified":false,
+      "error":"budget is below the estimated artifact and fixed-table floor"});
+    std::fs::write(
+      format!("{path}.report.json"),
+      serde_json::to_vec_pretty(&report)?,
+    )?;
+    println!("{report}");
+    if mode == "plan" {
+      return Ok(());
+    }
+    std::process::exit(75);
+  }
   let hints = ixvm::prepare_streams(&program, &input.streams)?;
+  drop(input.streams);
   let start = Instant::now();
   let record = hints.execute(&input.entry, args.clone())?;
   let execute = start.elapsed().as_secs_f64();
   if !record.output.is_empty() {
     return Err("claim verifier returned a value".into());
   }
+  let batch = backend.plan_batch(&record, &options)?;
+  let mut report = serde_json::json!({"plan":batch, "execution_seconds":execute,
+    "queries":record.queries.len(), "instructions":record.instructions,
+    "circuits":backend.statistics(), "verified":false});
+  let report_path = format!("{path}.report.json");
+  std::fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
+  if mode == "plan" {
+    report.as_object_mut().unwrap().remove("circuits");
+    println!("{}", report);
+    return Ok(());
+  }
+  if !batch.fits {
+    eprintln!("proving estimate exceeds budget; see {report_path}");
+    std::process::exit(75);
+  }
   let start = Instant::now();
   let witness = backend.generate_stage_1(&record, &input.entry, &args)?;
+  if witness.iter().map(|m| m.values.len() as u64).sum::<u64>()
+    != batch.stage1_cells
+  {
+    return Err("generated trace differs from the resource plan".into());
+  }
   let trace = start.elapsed().as_secs_f64();
   drop(record);
   drop(hints);
@@ -141,8 +186,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     &args,
     &[],
     witness,
-    rows,
-    retention,
+    batch.max_rows,
+    batch.retention(),
   )?;
   let proving = start.elapsed().as_secs_f64();
   let raw = proof.to_bytes()?;
@@ -161,11 +206,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     claims.extend_from_slice(&v.as_canonical_u64().to_le_bytes());
   }
   std::fs::write(format!("{path}.claims"), claims)?;
-  println!(
-    "{}",
-    serde_json::json!({"verified":true, "execution_seconds":execute, "trace_seconds":trace,
-    "proving_seconds":proving, "shards":proof.proofs.len(), "proof_bytes":raw.len(),
-    "key_digest":blake3::hash(&key).to_hex().to_string()})
-  );
+  report["verified"] = true.into();
+  report["trace_seconds"] = trace.into();
+  report["proving_seconds"] = proving.into();
+  report["shards"] = proof.proofs.len().into();
+  report["proof_bytes"] = raw.len().into();
+  report["key_digest"] = blake3::hash(&key).to_hex().to_string().into();
+  std::fs::write(report_path, serde_json::to_vec_pretty(&report)?)?;
+  report.as_object_mut().unwrap().remove("circuits");
+  println!("{}", report);
   Ok(())
 }

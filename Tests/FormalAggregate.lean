@@ -25,6 +25,15 @@ private def test (ctx : Context) (label : String) (bytes : ByteArray) (io : Lega
     ("invocation", FormalAiur.invocation (pubInput ctx.allowed bytes) io "MultiStark::ix_aggr")]
 
 def main (args : List String) : IO Unit := do
+  let reservation : FormalAiur.HostOptions := { ram := 1024, threads := 4 }
+  unless (reservation.forWave 2 1).ram == 2048 && (reservation.forWave 2 2).threads == 4 do
+    throw (IO.userError "partial waves lost their RAM/CPU reservations")
+  let schedule ← IO.ofExcept (Reference.schedulePlan
+    #[.leaf 0, .leaf 1, .join 0 1, .leaf 2, .join 2 3] #[2, 3, 4] 4096)
+  unless (← IO.ofExcept (neededSlots schedule 2)) == #[true, true, true, false, false] do
+    throw (IO.userError "subtree scheduling escaped its dependency closure")
+  if (neededSlots schedule 5).toOption.isSome then
+    throw (IO.userError "out-of-range subtree was accepted")
   let path := args.headD "/tmp/ix-formal-aggregate-cases.json"
   IO.FS.withTempDir fun dir => do
     fixture (dir / "ixvm") (Array.replicate 8 0)

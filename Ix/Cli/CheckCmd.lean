@@ -26,7 +26,7 @@ namespace Ix.Cli.CheckCmd
 open Ix.Check Ix.Shard Ix.Shard.Check
 
 def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
-  if FormalAiur.selected p then return ← FormalAiur.run p false
+  if ← FormalAiur.selected p then return ← FormalAiur.run p false
   let interpMode : Option String := (p.flag? "interp").map (·.as! String)
   let interpSource := interpMode == some "source"
   let useBytecode := interpMode == some "bytecode"
@@ -147,10 +147,12 @@ end Ix.Cli.CheckCmd
 open Ix.Cli.CheckCmd in
 def checkCmd : Cli.Cmd := `[Cli|
   check VIA runCheckCmd;
-  "Typecheck Lean / `.ixe` constants through the LegacyIxVM LegacyAiur kernel"
+  "Typecheck Lean / `.ixe` constants through IxVM (new Aiur by default)"
 
   FLAGS:
-    "formal"; "Use the new certified Aiur compiler and bytecode runtime."
+    "gpu-device" : Nat; "Use this CUDA device with the new Aiur host (requires a CUDA build)."
+    "legacy"; "Use the retained legacy Aiur backend instead of the default certified backend."
+    "formal"; "Compatibility alias for the default certified Aiur backend; conflicts with --legacy."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     interp : String;        "Choose a legacy interpreter: `source` provides source-level diagnostics; `bytecode` explicitly uses legacy bytecode. Without this flag, the build uses bytecode by default or generated native kernels when built with IX_NATIVE=1."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
@@ -159,13 +161,13 @@ def checkCmd : Cli.Cmd := `[Cli|
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
-    "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
-    "json"      : String;   "With --ixes (no --shard): append one env-keyed results row (see Ix.Benchmark.Results) for the batch to this file — check-time, throughput, peak-rss, constants, shards. Used by `ix bench run --backend aiur-sharded-env`."
+    "jobs"      : Nat;      "Aiur: concurrent manifest claims, default 1 (0 = all cores), sharing the RAM budget and CPU threads. Legacy: with --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
+    "json"      : String;   "Aiur: append an ix-formal-run/1 report. Legacy with --ixes (no --shard): append one env-keyed results row (see Ix.Benchmark.Results) for the batch to this file — check-time, throughput, peak-rss, constants, shards. Used by `ix bench run --backend aiur-sharded-env`."
     "json-name" : String;   "Row key for the --json row (default: `env`)."
-    "ram-budget" : Nat;     "The destination prove box's per-shard RAM budget, GiB (with --ixes, no --shard): after the batch, cut every shard whose projected prover peak exceeds the budget into the peak model's suggested part count and re-batch the parts, wave by wave, until everything fits — the exec-only split audit. Under-filled partitions get a printed suggestion (the shard count the measured total says would fit), never an extra execution: re-shard with --shards N and let the next run's mandatory executions verify it inline. Same unit and model as `ix prove --max-ram`, but no auto-detection: the budget describes the prove box the partition is destined for, not the machine running the check. Omit for a plain check."
+    "ram-budget" : Nat;     "Aiur: total destination RAM budget in GiB, shared among jobs. Legacy: the destination prove box's per-shard RAM budget, GiB (with --ixes, no --shard): after the batch, cut every shard whose projected prover peak exceeds the budget into the peak model's suggested part count and re-batch the parts, wave by wave, until everything fits — the exec-only split audit. Under-filled partitions get a printed suggestion (the shard count the measured total says would fit), never an extra execution: re-shard with --shards N and let the next run's mandatory executions verify it inline. Same unit and model as `ix prove --max-ram`, but no auto-detection: the budget describes the prove box the partition is destined for, not the machine running the check. Omit for a plain check."
     "out-ixes"  : String;   "With --ram-budget: write the partition the wave loop actually validated as a refinement of the source manifest — untouched leaves keep their records, ids and aggregation-tree positions, each split leaf becomes a subtree over its parts. Skipped if any shard failed. The manifest the next run of this env should start from."
     "shards"    : String;   "With --ixes (no --shard): restrict the batch to these leaves — `K`, `a-b`, or a comma list of those. Every other leaf is left untouched (and, with --out-ixes, carried over unchanged)."
-    "report"    : String;   "With --ixes (no --shard): write the provisional JSON audit report (`ix-refine/0`: per-leaf status, predicted peaks, claim digests, split parts with their new ids, failures) to this path."
+    "report"    : String;   "Aiur: write the ix-formal-run/1 report. Legacy with --ixes (no --shard): write the provisional JSON audit report (`ix-refine/0`: per-leaf status, predicted peaks, claim digests, split parts with their new ids, failures) to this path."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."

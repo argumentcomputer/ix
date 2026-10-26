@@ -201,6 +201,8 @@ jobs:
           use-github-cache: false
       - name: Compile CUDA Rust targets
         run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ixvm/cuda,stark-verifier/cuda
+      - name: Link separate Aiur CUDA hosts
+        run: cargo build --release --locked --target-dir target/formal-cuda -p ixvm -p stark-verifier --features parallel,cuda --bin ixvm-proof --bin stark-verifier
       - name: Link a CUDA-enabled Lean executable
         run: IX_CUDA=1 lake build bench-typecheck
 

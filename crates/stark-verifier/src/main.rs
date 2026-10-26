@@ -2,11 +2,11 @@ use aiur::{
   field::FieldBackend,
   trace::{
     TraceArtifact, TracePlan,
-    stark::{Backend, Parameters},
+    stark::{Backend, Parameters, planning::Options},
   },
 };
 use multi_stark::{
-  batch::{Retention, ShardInput},
+  batch::ShardInput,
   expr::Expr,
   lookup::Lookup,
   p3_field::PrimeCharacteristicRing,
@@ -79,7 +79,10 @@ fn main() -> Result<(), Box<dyn Error>> {
   if mode == "fixture" {
     return fixture(Path::new(cli.get(2).ok_or("missing directory")?));
   }
-  if !["execute", "test", "prove", "verify", "key", "cases"]
+  if mode == "ranges" || mode == "inspect" {
+    return ranges(&cli);
+  }
+  if !["execute", "plan", "test", "prove", "verify", "key", "cases"]
     .contains(&mode.as_str())
   {
     return Err("unknown mode".into());
@@ -88,6 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     cli.get(2).ok_or("missing package")?,
   )?)?;
   let program = package.program.check_field::<Val>()?;
+  let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "cases" {
     #[derive(serde::Deserialize)]
     struct Case {
@@ -159,9 +163,45 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("verified recursive proof");
     return Ok(());
   }
+  let options = Options::read(cli.get(7), cli.get(5), cli.get(6))?;
+  let before_setup = aiur::trace::stark::planning::resident_memory();
+  let trace_plan = if mode == "execute" || mode == "test" {
+    None
+  } else {
+    Some(TracePlan::new(&program, package.trace)?)
+  };
+  let backend = trace_plan
+    .as_ref()
+    .map(|plan| {
+      Backend::for_batch_on_device(plan, Parameters::default(), options.device)
+    })
+    .transpose()?;
+  if let Some(backend) = &backend {
+    let static_resident = artifact_resident.saturating_add(
+      aiur::trace::stark::planning::resident_memory()
+        .saturating_sub(before_setup),
+    );
+    let fixed = backend.plan_fixed(&options, static_resident)?;
+    if !fixed.fits {
+      let out = Path::new(cli.get(4).ok_or("missing output directory")?);
+      std::fs::create_dir_all(out)?;
+      let report = serde_json::json!({"plan":fixed, "can_split":false, "verified":false,
+        "error":"budget is below the estimated artifact and fixed-table floor"});
+      std::fs::write(
+        out.join("report.json"),
+        serde_json::to_vec_pretty(&report)?,
+      )?;
+      println!("{report}");
+      if mode == "plan" {
+        return Ok(());
+      }
+      std::process::exit(75);
+    }
+  }
   let hints = stark_verifier::prepare(&program, &invocation.streams)?;
   let start = Instant::now();
   let record = hints.execute(&invocation.entry, args.clone())?;
+  let execute = start.elapsed().as_secs_f64();
   if !record.output.is_empty() {
     return Err("verifier returned a non-unit value".into());
   }
@@ -214,27 +254,45 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     return Ok(());
   }
-  let plan = TracePlan::new(&program, package.trace)?;
-  let backend = Backend::for_batch(&plan, Parameters::default())?;
+  drop(invocation.streams);
+  let backend = backend.ok_or("missing proving backend")?;
+  let out = Path::new(cli.get(4).ok_or("missing output directory")?);
+  std::fs::create_dir_all(out)?;
+  let batch = backend.plan_batch(&record, &options)?;
+  let mut report = serde_json::json!({"plan":batch, "execution_seconds":execute,
+    "queries":record.queries.len(), "instructions":record.instructions, "verified":false});
+  std::fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
+  if mode == "plan" {
+    println!("{}", report);
+    return Ok(());
+  }
+  if !batch.fits {
+    eprintln!(
+      "recursive proving estimate exceeds budget; see {}",
+      out.join("report.json").display()
+    );
+    std::process::exit(75);
+  }
+  let start = Instant::now();
   let witness = backend.generate_stage_1(&record, &invocation.entry, &args)?;
+  if witness.iter().map(|m| m.values.len() as u64).sum::<u64>()
+    != batch.stage1_cells
+  {
+    return Err("generated trace differs from the resource plan".into());
+  }
+  let trace = start.elapsed().as_secs_f64();
   drop(record);
   drop(hints);
-  let rows = cli.get(5).map(|s| s.parse()).transpose()?.unwrap_or(1 << 16);
-  let retention = match cli.get(6).map(String::as_str).unwrap_or("regenerate") {
-    "retain" => Retention::Retain,
-    "regenerate" => Retention::Regenerate,
-    _ => return Err("expected retention retain or regenerate".into()),
-  };
+  let start = Instant::now();
   let proof = backend.prove_batch_stage_1(
     &invocation.entry,
     &args,
     &[],
     witness,
-    rows,
-    retention,
+    batch.max_rows,
+    batch.retention(),
   )?;
-  let out = Path::new(cli.get(4).ok_or("missing output directory")?);
-  std::fs::create_dir_all(out)?;
+  let proving = start.elapsed().as_secs_f64();
   let key = backend.verifying_key_bytes()?;
   let claims = stark_verifier::claims_bytes(&[backend.claim(
     &invocation.entry,
@@ -253,6 +311,12 @@ fn main() -> Result<(), Box<dyn Error>> {
       streams: Default::default(),
     },
   )?;
+  report["verified"] = true.into();
+  report["trace_seconds"] = trace.into();
+  report["proving_seconds"] = proving.into();
+  report["proof_bytes"] = bytes.len().into();
+  report["shards"] = proof.proofs.len().into();
+  std::fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
   serde_json::to_writer(
     std::fs::File::create(out.join("input.json"))?,
     &stark_verifier::invocation(&key, &claims, &bytes),
@@ -262,5 +326,79 @@ fn main() -> Result<(), Box<dyn Error>> {
     bytes.len(),
     proof.proofs.len()
   );
+  Ok(())
+}
+
+/// Produce range advice, never a verification result. The controller verifies
+/// the source proof before calling this; the Aiur range circuit checks it again.
+fn ranges(cli: &[String]) -> Result<(), Box<dyn Error>> {
+  use aiur::trace::stark::BatchProof;
+  use stark_key::range::{
+    preamble_bytes, proofs_slice_bytes, range_residual, range_statement,
+  };
+  let bytes = std::fs::read(cli.get(2).ok_or("missing proof")?)?;
+  let proof = BatchProof::from_bytes(&bytes)?;
+  if proof.to_bytes()? != bytes || proof.proofs.is_empty() {
+    return Err("noncanonical, empty or trailing proof bytes".into());
+  }
+  if cli[1] == "inspect" {
+    println!("{}", serde_json::json!({"shards":proof.proofs.len()}));
+    return Ok(());
+  }
+  let out = Path::new(cli.get(3).ok_or("missing output directory")?);
+  let size: usize = cli.get(4).ok_or("missing range size")?.parse()?;
+  if size == 0 {
+    return Err("range size must be positive".into());
+  }
+  std::fs::create_dir_all(out)?;
+  let preamble = preamble_bytes(&proof)?;
+  let digest = blake3::hash(&preamble);
+  std::fs::write(out.join("preamble.bin"), preamble)?;
+  let mut specs = Vec::new();
+  let mut layer = Vec::new();
+  for lo in (0..proof.proofs.len()).step_by(size) {
+    let hi = lo.saturating_add(size).min(proof.proofs.len());
+    let id = specs.len();
+    std::fs::write(
+      out.join(format!("{id}.proofs")),
+      proofs_slice_bytes(&proof, lo, hi)?,
+    )?;
+    layer.push((id, lo, hi));
+    specs.push(serde_json::json!({"lo":lo, "hi":hi, "children":[]}));
+  }
+  while layer.len() > 1 {
+    let mut next = Vec::new();
+    for pair in layer.chunks(2) {
+      let [(left, lo, _), (right, _, hi)] = pair else {
+        next.push(pair[0]);
+        continue;
+      };
+      let id = specs.len();
+      next.push((id, *lo, *hi));
+      specs
+        .push(serde_json::json!({"lo":lo, "hi":hi, "children":[left,right]}));
+    }
+    layer = next;
+  }
+  for (id, spec) in specs.iter().enumerate() {
+    let lo = spec["lo"].as_u64().unwrap() as usize;
+    let hi = spec["hi"].as_u64().unwrap() as usize;
+    if proof.proofs[lo..hi]
+      .iter()
+      .any(|p| p.intermediate_accumulators.is_empty())
+    {
+      return Err("range contains a shard without accumulators".into());
+    }
+    std::fs::write(
+      out.join(format!("{id}.statement")),
+      range_statement(
+        digest.as_bytes(),
+        lo,
+        hi,
+        range_residual(&proof, lo, hi),
+      ),
+    )?;
+  }
+  std::fs::write(out.join("ranges.json"), serde_json::to_vec_pretty(&specs)?)?;
   Ok(())
 }

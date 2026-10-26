@@ -250,7 +250,9 @@ def reportPartition (proven : Array (Array Address × Nat)) (planned : Nat) : IO
       skip the splits next run"
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
-  if FormalAiur.selected p then return ← FormalAiur.run p true
+  if ← FormalAiur.selected p then return ← FormalAiur.run p true
+  if p.hasFlag "jobs" || p.hasFlag "report" then
+    throw (IO.userError "--jobs/--report use the default Aiur controller; legacy uses --exec-jobs")
   -- Streamed `[texray] <span>: <dur> ── RAM Δ/peak` lines on stderr as
   -- each `aiur/` / `stark/` span closes: the per-phase wall + RSS
   -- breakdown (execute vs witness vs STARK) of every prove in the run.
@@ -528,9 +530,13 @@ def proveCmd : Cli.Cmd := `[Cli|
   "Generate a STARK proof for an `Ix.Claim` (mirrors `ix check`'s CLI shape)"
 
   FLAGS:
-    "formal"; "Prove with the new certified Aiur compiler and bytecode runtime."
+    "gpu-device" : Nat; "Use this CUDA device with the new Aiur host (requires a CUDA build)."
+    "legacy"; "Use the retained legacy Aiur backend instead of the default certified backend."
+    "formal"; "Compatibility alias for the default certified Aiur backend; conflicts with --legacy."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
-    "shard-rows" : Nat; "Formal backend: maximum rows per function/memory chip per trace shard (power of two, default 65536)."
+    "jobs" : Nat; "Aiur: concurrent manifest claims (default 1; 0 uses available cores). The RAM budget and CPU threads are divided among jobs."
+    "report" : String; "Aiur: write per-part plans, timings and persisted proof addresses to this JSON file."
+    "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 65536; 0 lets the RAM planner choose)."
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
     "texray";           "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages) to stderr as each span closes."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
@@ -546,10 +552,10 @@ def proveCmd : Cli.Cmd := `[Cli|
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
     "lanes" : Nat;      "With --ixes and --trace-shards: prove on N GPUs using a shared execution pool. --max-ram and --exec-jobs are per-GPU values. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition. Prints the verified root address on stdout."
     "exec-jobs" : Nat;  "With --ixes and --trace-shards: how many shards execute at once ahead of the prover (default 0: one per core, or each worker's share of the cores with --lanes); peak host memory is the prover's budget plus the records in flight. With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
-    "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
+    "plan-only";        "Aiur: print selected manifest leaves and RAM reservations without execution. Legacy with --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
-    "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Omit to detect: 85% of the machine's available RAM."
+    "max-ram" : Nat;    "Aiur: total RAM budget across --jobs in GiB, default 85% of available memory. Legacy: per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Omit to detect: 85% of the machine's available RAM."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

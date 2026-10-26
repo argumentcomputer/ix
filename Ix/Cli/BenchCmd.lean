@@ -778,7 +778,7 @@ is not a benchmark run"
       IO.eprintln s!"[bench] ix shard failed (exit {exit})"
       return 1
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check", "--ixe", ixe, "--ixes", manifest, "--ram-budget", budgetGib,
+      #["check", "--legacy", "--ixe", ixe, "--ixes", manifest, "--ram-budget", budgetGib,
         "--json", out, "--json-name", info.name]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env aiur check failed (exit {exit})"
