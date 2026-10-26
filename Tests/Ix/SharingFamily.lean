@@ -1,9 +1,9 @@
 import Tests.Ix.SharingUniform
 import Ix.Sharing.FamilyNormalizeArea
 
-namespace Tests.SharingFamilyPrototype
+namespace Tests.SharingFamily
 
-open LSpec Ixon Ix.Sharing.Exact Ix.Sharing.FamilyPrototype Tests.SharingExact
+open LSpec Ixon Ix.Sharing.Exact Ix.Sharing.Family Tests.SharingExact
 
 private def ensure (condition : Bool) (why : String) : IO Unit :=
   unless condition do throw (IO.userError why)
@@ -60,8 +60,8 @@ private def modelControls : IO Nat := do
       -- Repeated/reordered components and an empty endpoint expose stale
       -- positions without requiring a large corpus or changing any family.
       let repeated := { stage with comps := stage.comps ++ stage.comps.reverse ++ #[#[]] }
-      for experimentK in [0, 3] do
-        let cfg : Config := ⟨experimentK⟩
+      for exactLimit in [0, 3] do
+        let cfg : Config := ⟨exactLimit⟩
         let reference := repeated.comps.mapIdx fun j ms => component cfg ex repeated width j ms
         let cached := componentsCachedWith cfg ex repeated width
         ensure (cached.map (·.tsv "cached") == reference.map (·.tsv "cached"))
@@ -116,7 +116,7 @@ private def modelControls : IO Nat := do
         tested := tested + 1
         if members.size > 1 then interacting := interacting + 1
   ensure (tested > 0 && interacting > 0) "model controls did not exercise uncertain interactions"
-  IO.println s!"family prototype: {tested} component/width cases; {interacting} non-singletons; exact/chain, actual deltas and area parity"
+  IO.println s!"family components: {tested} component/width cases; {interacting} non-singletons; exact/chain, actual deltas and area parity"
   return tested
 
 private def meterImage (outcome : Except SharingError MeterState) :=
@@ -204,10 +204,10 @@ private def areaControls : IO Nat := do
   return exercised
 
 def suite : List TestSeq := [
-  .individualIO "experimental component families preserve costs, counts and canonical ties" none (do
+  .individualIO "component families preserve costs, counts and canonical ties" none (do
     genericControls
     let tested ← modelControls
     let areaTested ← areaControls
     return (true, tested + areaTested, 0, none)) .done]
 
-end Tests.SharingFamilyPrototype
+end Tests.SharingFamily

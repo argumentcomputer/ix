@@ -1,6 +1,6 @@
 module
 
-public import Ix.Sharing.FamilyPrototype
+public import Ix.Sharing.Family
 import all Ix.Sharing.Exact.UniformSearchLocal
 
 @[expose] public section
@@ -14,7 +14,7 @@ The checks are representation checks, never a choice between families. A
 failed check retains the original evaluator. The area/TBase evaluator and
 hashed availability are deliberately outside this checkpoint. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 
@@ -74,16 +74,16 @@ def componentFast (cfg : Config) (ex : Expanded) (stage : UStage)
   let baseline := (eval (fun _ => false) #[]).1
   let cost : Cost := fun set => ((eval set.contains set).1 : _root_.Int) - (baseline : _root_.Int)
   let m := members.size
-  let exact := m ≤ cfg.experimentK
+  let exact := m ≤ cfg.exactLimit
   { width, index, exact, members, areaSize := cx.area.size, closureSize := cx.closure.size,
     rows := table cfg cost members.toList,
     evaluations := if exact then 2 ^ m else m * (m + 1) / 2 + m + 1 }
 
-/-- Compiled prototype calls prepare positions once per component. This is
+/-- Compiled component calls prepare positions once per component. This is
 equality of the whole trace, not only the selected rows or their costs. -/
 @[csimp] theorem component_eq_fast : @component = @componentFast := by
   funext cfg ex stage width index members
   simp only [component, componentFast, localPhi_eq]
   rfl
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family

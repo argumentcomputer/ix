@@ -6,7 +6,7 @@ uses the executed rematerialization guard; it does not prove that the guard
 can never refuse a valid input. Totality and whole-constant encoding follow
 separately. No exact-search phase-1 success premise is used. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -188,12 +188,12 @@ theorem familyExpanded_output {cfg : Config} {layout : ShareLayout} {limits : Li
   have checked := (familyExpanded_checked wf spines roots reachable run).2
   exact ⟨checked.format, checked.measured.trans checked.model, checked.phase3_le, checked.reexpanded⟩
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyAtWidth_parts [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.rematerialize_format [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.tieredResult_checked [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyAtWidth_checked [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_selected [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_checked [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_output [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyAtWidth_parts [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.rematerialize_format [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.tieredResult_checked [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyAtWidth_checked [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_selected [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_checked [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_output [propext, Classical.choice, Quot.sound]

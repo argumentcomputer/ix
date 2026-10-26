@@ -136,7 +136,7 @@ import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.SharingExact
 import Tests.Ix.SharingUniform
-import Tests.Ix.SharingFamilyPrototype
+import Tests.Ix.SharingFamily
 import Tests.Ix.SharingFamilyNormalize
 import Tests.Ix.SharingTiered
 import Tests.Ix.SharingExactFFI
@@ -200,7 +200,7 @@ def registry : List Entry := [
   .suite "canon" .primary [Tests.CanonM.suite],
   .suite "keccak" .primary Tests.Keccak.suite,
   .suite "exact-sharing" .primary (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
-  .suite "sharing-family-prototype" .primary Tests.SharingFamilyPrototype.suite,
+  .suite "sharing-family" .primary Tests.SharingFamily.suite,
   .suite "sharing-family-normalize" .primary Tests.SharingFamilyNormalize.suite,
   .suite "exact-sharing-ffi" .primary Tests.SharingExactFFI.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),

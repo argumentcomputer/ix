@@ -11,12 +11,12 @@ It claims neither a total semantic normalizer nor an operational/bit-cost
 bound: payload size, output witnesses and optional execution budgets belong
 to separate contracts. No budget selects a different family. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 
 structure Config where
-  experimentK : Nat
+  exactLimit : Nat
   deriving Repr, Inhabited
 
 abbrev Cost := Array Nat → _root_.Int
@@ -67,7 +67,7 @@ def choices : List Nat → List Nat → List (Array Nat)
   | m :: rest, chosen => choices rest chosen ++ choices rest (m :: chosen)
 
 def family (cfg : Config) (cost : Cost) (members : List Nat) : List (Array Nat) :=
-  if members.length ≤ cfg.experimentK then choices members [] else chain cost members
+  if members.length ≤ cfg.exactLimit then choices members [] else chain cost members
 
 /-- Enumerate admitted subsets with a bounded live recursion path and table;
 only the per-count winning rows survive, not every exact subset. -/
@@ -78,7 +78,7 @@ def foldChoices (visit : α → Array Nat → α) : List Nat → List Nat → α
 
 def foldFamily (cfg : Config) (cost : Cost) (members : List Nat)
     (visit : α → Array Nat → α) (acc : α) : α :=
-  if members.length ≤ cfg.experimentK then foldChoices visit members [] acc
+  if members.length ≤ cfg.exactLimit then foldChoices visit members [] acc
   else (chain cost members).foldl visit acc
 
 /-- Untrimmed best row at every family count; no slack theorem is assumed. -/
@@ -112,7 +112,7 @@ def component (cfg : Config) (ex : Expanded) (stage : UStage)
   let baseline := (cx.phiE (fun _ => false) #[]).1
   let cost := componentDelta cx baseline
   let m := members.size
-  let exact := m ≤ cfg.experimentK
+  let exact := m ≤ cfg.exactLimit
   { width, index, exact, members, areaSize := cx.area.size, closureSize := cx.closure.size,
     rows := table cfg cost members.toList,
     evaluations := if exact then 2 ^ m else m * (m + 1) / 2 + m + 1 }
@@ -124,7 +124,7 @@ def components (cfg : Config) (ex : Expanded) (width : Nat) : Array ComponentTra
 
 def ids (xs : Array Nat) : String := String.intercalate "," (xs.toList.map toString)
 
-/-- TSV v1 shared with the Rust experiment. The address is a caller label.
+/-- Component trace as TSV, version 1. The address is a caller label.
 Statistics are outside the encoding/compatibility contract. -/
 def ComponentTrace.tsv (t : ComponentTrace) (address : String) : String := Id.run do
   let mode := if t.exact then "exact" else "greedy"
@@ -136,4 +136,4 @@ def ComponentTrace.tsv (t : ComponentTrace) (address : String) : String := Id.ru
   out := out.push s!"work\t{stem}\t{t.evaluations}"
   return String.intercalate "\n" out.toList
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family

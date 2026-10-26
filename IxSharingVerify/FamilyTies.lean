@@ -1,10 +1,10 @@
-import IxSharingVerify.FamilyPrototype
+import IxSharingVerify.Family
 
-/-! Ascending experimental families and tie-preserving per-count tables.
-These are additive contracts for the actual prototype. Slack trimming,
+/-! Ascending component families and tie-preserving per-count tables.
+These are additive contracts for the actual family rule. Slack trimming,
 whole-component replacement and knapsack origin are separate obligations. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -101,7 +101,7 @@ theorem family_members (cfg : Config) (cost : Cost) (members : List Nat) (set : 
 /-- Under the initial size gate, the declared family is exactly all
 ascending subsets, not merely a sound list of some choices. -/
 theorem exact_family_iff (cfg : Config) (cost : Cost) {members : List Nat}
-    (hd : members.Nodup) (gate : members.length ≤ cfg.experimentK) (set : Array Nat) :
+    (hd : members.Nodup) (gate : members.length ≤ cfg.exactLimit) (set : Array Nat) :
     set ∈ family cfg cost members ↔
       set.toList.Pairwise (· < ·) ∧ ∀ x ∈ set.toList, x ∈ members := by
   constructor
@@ -114,7 +114,7 @@ theorem exact_family_iff (cfg : Config) (cost : Cost) {members : List Nat}
 theorem family_count (cfg : Config) (cost : Cost) {members : List Nat} (hd : members.Nodup)
     (k : Nat) (hk : k ≤ members.length) :
     ∃ set, set ∈ family cfg cost members ∧ set.size = k := by
-  by_cases gate : members.length ≤ cfg.experimentK
+  by_cases gate : members.length ≤ cfg.exactLimit
   · refine ⟨sorted (members.take k), (exact_family_iff cfg cost hd gate _).mpr ?_, ?_⟩
     · exact ⟨sorted_strict hd.take, fun x hx => List.mem_of_mem_take ((sorted_mem _ _).mp hx)⟩
     · simp [sorted_size, Nat.min_eq_left hk]
@@ -123,7 +123,7 @@ theorem family_count (cfg : Config) (cost : Cost) {members : List Nat} (hd : mem
 
 theorem family_empty (cfg : Config) (cost : Cost) {members : List Nat} (hd : members.Nodup) :
     #[] ∈ family cfg cost members := by
-  by_cases gate : members.length ≤ cfg.experimentK
+  by_cases gate : members.length ≤ cfg.exactLimit
   · exact (exact_family_iff cfg cost hd gate _).mpr ⟨by simp, by simp⟩
   · have member := (chain_mem cost members (chainSet cost members 0)).mpr ⟨0, by omega, rfl⟩
     simpa [family, gate, chainSet_zero] using member
@@ -132,7 +132,7 @@ theorem family_empty (cfg : Config) (cost : Cost) {members : List Nat} (hd : mem
 family endpoint, not a whole-output size witness. -/
 theorem family_full (cfg : Config) (cost : Cost) {members : List Nat} (hd : members.Nodup) :
     sorted members ∈ family cfg cost members := by
-  by_cases gate : members.length ≤ cfg.experimentK
+  by_cases gate : members.length ≤ cfg.exactLimit
   · exact (exact_family_iff cfg cost hd gate _).mpr
       ⟨sorted_strict hd, fun x hx => (sorted_mem members x).mp hx⟩
   · have hp := greedyOrder_perm cost members
@@ -190,14 +190,14 @@ theorem table_row_least (cfg : Config) (cost : Cost) {members : List Nat} (hd : 
 /-- The admitted exact branch ranges over every ascending subset, with
 the same least-row order; no global optimizer theorem is weakened. -/
 theorem exact_table_row_least (cfg : Config) (cost : Cost) {members : List Nat}
-    (hd : members.Nodup) (gate : members.length ≤ cfg.experimentK)
+    (hd : members.Nodup) (gate : members.length ≤ cfg.exactLimit)
     {k : Nat} {entry : Entry} (row : (table cfg cost members)[k]! = some entry)
     (set : Array Nat) (ascending : set.toList.Pairwise (· < ·))
     (subset : ∀ x ∈ set.toList, x ∈ members) (count : set.size = k) :
     TLe entry (cost set, set) :=
   table_row_least cfg cost hd row set ((exact_family_iff cfg cost hd gate set).mpr ⟨ascending, subset⟩) count
 
-/-- Specialization to the prototype's actual initial component context. -/
+/-- Specialization to the rule's actual initial component context. -/
 theorem component_ties (cfg : Config) (ex : Expanded) (stage : UStage)
     (width index : Nat) (members : Array Nat) (hd : members.toList.Nodup) :
     let cx := componentContext ex stage members
@@ -207,12 +207,12 @@ theorem component_ties (cfg : Config) (ex : Expanded) (stage : UStage)
         (component cfg ex stage width index members).rows := by
   exact table_ties cfg _ hd
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.exact_family_iff [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.family_sorted [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.family_count [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.family_full [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.table_tie_coverage [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.exact_table_row_least [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.component_ties [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.exact_family_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.family_sorted [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.family_count [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.family_full [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.table_tie_coverage [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.exact_table_row_least [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.component_ties [propext, Classical.choice, Quot.sound]

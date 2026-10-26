@@ -1,11 +1,11 @@
 import IxSharingVerify.FamilyDomain
 import Ix.CompileCert.SharingRoots
 
-/-! The actual experimental constant wrapper preserves unchanged fields,
+/-! The actual family constant wrapper preserves unchanged fields,
 writes its ordered roots back exactly and reports serialized VARIABLE bytes.
 This is not the total serialized constant size or a totality/compatibility claim. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify
@@ -94,16 +94,16 @@ theorem normalizeFamily_meaning {cfg : Config} {layout : ShareLayout} {limits : 
   rw [sharing, roots]
   exact familyExpanded_meaning normalized
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_domain [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_output_of_success [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_fields [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_format [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_wire_headers [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_wire [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_variableBytes [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.tableResult_meaning [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.expand_shared_meaning [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_meaning [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.normalizeFamily_meaning [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_domain [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_output_of_success [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_fields [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_format [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_wire_headers [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_wire [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_variableBytes [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.tableResult_meaning [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.expand_shared_meaning [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_meaning [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.normalizeFamily_meaning [propext, Classical.choice, Quot.sound]

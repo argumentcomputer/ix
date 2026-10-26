@@ -10,7 +10,7 @@ such a term can have many unfolded occurrences through a repeated parent.
 These facts do not yet bound the residual forest, total output, payloads,
 root costs or UInt64 fields. No runtime guard or canonical rule is changed. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -246,18 +246,18 @@ theorem initial_omitted_cases (cfg : Config) (ex : Expanded) (width : Nat)
   · exact Or.inr (initial_omitted_repeated_small cfg ex width wf roots reachable checked
       bound omitted (by omega))
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.fullChoices_member [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.fullChoices_selected_mem [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_full_member [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_full_selected_mem [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_full_merge [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_full_stored [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_full_stored_mem [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.occurrences_positive [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.degree_le_occurrences [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.excluded_size_lt_two [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_omitted_repeated_excluded [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_omitted_repeated_small [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_omitted_cases [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.fullChoices_member [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.fullChoices_selected_mem [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_full_member [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_full_selected_mem [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_full_merge [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_full_stored [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_full_stored_mem [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.occurrences_positive [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.degree_le_occurrences [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.excluded_size_lt_two [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_omitted_repeated_excluded [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_omitted_repeated_small [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_omitted_cases [propext, Classical.choice, Quot.sound]

@@ -3,7 +3,7 @@ module
 public import Ix.Sharing.FamilyNormalizeSpec
 public import Ix.Sharing.Exact.AreaSearchEq
 public import Ix.Sharing.Exact.AreaRowsRel
-import all Ix.Sharing.FamilyPrototypeCached
+import all Ix.Sharing.FamilyCached
 import all Ix.Sharing.Exact.TieredFast
 import all Ix.Sharing.Exact.AreaSearchEq
 import all Ix.Sharing.Exact.AreaCostEq
@@ -16,7 +16,7 @@ and precharging retain their original order. One truncated base table is shared
 by every component of a width; failed representation/opacity checks retain the
 closure evaluator. The equalities include full cost/work pairs and refusals. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 
@@ -320,6 +320,6 @@ def normalizeFamilyArea (cfg : Config) (layout : ShareLayout) (constant : Ixon.C
   unfold normalizeFamily normalizeFamilyArea
   rw [familyExpanded_eq_area]
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
 end

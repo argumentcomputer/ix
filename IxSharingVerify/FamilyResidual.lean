@@ -11,7 +11,7 @@ forest or materializer output. In particular, the local telescope allowance
 below is a charge to be justified by the later grafting proof, not an
 assertion that a wire encoding exists. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -230,15 +230,15 @@ theorem residualCharge_le (cfg : Config) (ex : Expanded) (width : Nat)
   unfold residualCharge
   exact Nat.add_le_add (Nat.add_le_add_left payload _) boundaryBound
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.residualIncoming_eq [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.degree_eq_edges [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.residualExpansions_le_one [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.residualIncoming_le_degree [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.edgeAll_eq_child_count [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.edgeAll_sum [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.degree_sum [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.residualIncoming_sum_le [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.residualBoundaryUnit_le [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.residualCharge_le [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.residualIncoming_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.degree_eq_edges [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.residualExpansions_le_one [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.residualIncoming_le_degree [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.edgeAll_eq_child_count [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.edgeAll_sum [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.degree_sum [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.residualIncoming_sum_le [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.residualBoundaryUnit_le [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.residualCharge_le [propext, Classical.choice, Quot.sound]

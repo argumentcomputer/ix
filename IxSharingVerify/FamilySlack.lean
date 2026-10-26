@@ -5,7 +5,7 @@ import IxSharingVerify.UniformChecks
 The objective is signed component deltas plus the Tag0 count header. No
 exact-search subgroup, global `IsMinimum`, or spine restriction is used. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -173,7 +173,7 @@ theorem minimum_retained (cfg : Config) {factors : List Factor} {sets : List (Ar
   have bounds := minimum_within_slack cfg valid minimum low high
   exact forall₂_imp_mem bounds (fun f hf s h => within_retained cfg _ f (valid f hf) s h)
 
-/-- The factors are precisely the initial prototype component contexts,
+/-- The factors are precisely the initial family component contexts,
 with their signed deltas relative to their own empty-subset baselines. -/
 def initialFactors (ex : Expanded) (stage : UStage) : List Factor :=
   stage.comps.toList.map fun members =>
@@ -254,13 +254,13 @@ theorem initial_minimum_slack (cfg : Config) (ex : Expanded) (width : Nat) (sets
   have retained := minimum_retained cfg valid minimum (Nat.le_refl stage.cs.size) high
   simpa only [slack] using And.intro within retained
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.ProductMember.replace [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.minimum_replacement_bound [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.table_best_exists [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.minimum_within_slack [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.within_retained [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.minimum_retained [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.checked_components_capacity [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.initial_minimum_slack [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.ProductMember.replace [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.minimum_replacement_bound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.table_best_exists [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.minimum_within_slack [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.within_retained [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.minimum_retained [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.checked_components_capacity [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_minimum_slack [propext, Classical.choice, Quot.sound]

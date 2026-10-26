@@ -1,11 +1,11 @@
 import IxSharingVerify.FamilyMinimum
 import Ix.Sharing.FamilyNormalize
 
-/-! Successful experimental production supplies the ordered family rows.
+/-! Successful family production supplies the ordered family rows.
 The cached-loop theorem is reused, including restoration of both buffers.
 This is not the semantic-length or finisher correspondence theorem. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -171,7 +171,7 @@ theorem familyComponents_least (cfg : Config) (limits : Limits) (ex : Expanded) 
   initial_knapsack_least cfg ex width wf checked results
     (familyComponents_rows (dagWF_childrenPrecede wf) produced) selected
 
-/-- A successful experimental uniform pipeline really consumed the produced
+/-- A successful `familyUniform` run really consumed the produced
 family rows and their least selection. This extracts its internal witness;
 it does not identify the semantic length or output of `uniformFinishF`. -/
 theorem familyUniform_selection (cfg : Config) (limits : Limits) (ex : Expanded) (width : Nat)
@@ -194,13 +194,13 @@ theorem familyUniform_selection (cfg : Config) (limits : Limits) (ex : Expanded)
     exact familyComponents_least cfg limits ex width wf (by simpa using checked) produced selected
   · cases run
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.retainedResult_fields [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyStep_cached [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyStep_reference [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyFold_rows [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyComponents_rows [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyComponents_count [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyComponents_least [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyUniform_selection [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.retainedResult_fields [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyStep_cached [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyStep_reference [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyFold_rows [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyComponents_rows [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyComponents_count [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyComponents_least [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyUniform_selection [propext, Classical.choice, Quot.sound]

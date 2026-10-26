@@ -1,10 +1,10 @@
 import IxSharingVerify.FamilyExpand
 
-/-! The actual experimental pipeline depends on an Expanded input's DAG
+/-! The actual family pipeline depends on an Expanded input's DAG
 and ordered root IDs for encoding and errors. Expansion statistics are
 transported explicitly; cfg, layout and limits remain fixed. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.Tiered (encodingOf)
@@ -145,16 +145,16 @@ theorem familyExpanded_same_encoding {cfg : Config} {layout : ShareLayout} {limi
   rw [leftRun, rightRun] at same
   exact Except.ok.inj same
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyComponents_stats [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.uniformFinishF_stats [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyUniform_stats [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyAtWidth_stats [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.tieredPick_stats [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.tieredCandidates_stats [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_stats [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_transport [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_encoding_congr [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_transport_success [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.familyExpanded_same_encoding [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyComponents_stats [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.uniformFinishF_stats [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyUniform_stats [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyAtWidth_stats [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.tieredPick_stats [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.tieredCandidates_stats [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_stats [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_transport [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_encoding_congr [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_transport_success [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.familyExpanded_same_encoding [propext, Classical.choice, Quot.sound]

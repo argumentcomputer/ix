@@ -1,12 +1,12 @@
-import Ix.Sharing.FamilyPrototype
+import Ix.Sharing.Family
 import IxSharingVerify.UniformTables
 import IxC.Kernel.Audit.Axioms
 
-/-! Additive family contracts. These facts describe the actual experimental
+/-! Additive family contracts. These facts describe the actual greedy
 chain and untrimmed rows; they do not establish slack preservation, global
 knapsack optimality, representation independence or a total normalizer. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
@@ -241,7 +241,7 @@ theorem table_minimum (cfg : Config) (cost : Cost) (members : List Nat) (set : A
   obtain ⟨size, inside, scored⟩ := meaning.sound set.size e row
   exact ⟨e.2, by simpa [← scored] using row, inside, size, by simpa [scored] using best⟩
 
-/-- The emitted experimental table uses the actual component evaluator,
+/-- The emitted family table uses the actual component evaluator,
 with its empty-subset baseline, rather than a standalone-gain heuristic. -/
 theorem component_meaning (cfg : Config) (ex : Expanded) (stage : UStage)
     (width index : Nat) (members : Array Nat) :
@@ -251,12 +251,12 @@ theorem component_meaning (cfg : Config) (ex : Expanded) (stage : UStage)
       (component cfg ex stage width index members).rows := by
   exact table_meaning cfg _ members.toList
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.pick_minimum [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.greedyOrder_perm [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.chainSet_distinct [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.chainSet_nodup [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.chainSet_mono [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.table_minimum [propext, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.FamilyPrototype.component_meaning [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.pick_minimum [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.greedyOrder_perm [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.chainSet_distinct [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.chainSet_nodup [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.chainSet_mono [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.table_minimum [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.component_meaning [propext, Classical.choice, Quot.sound]

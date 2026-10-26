@@ -202,8 +202,8 @@ lean_exe «uniform-hard» where
   root := `Benchmarks.UniformHard
 
 /-- Offline component-family traces; no production artifacts are emitted. -/
-lean_exe «sharing-family-prototype» where
-  root := `Benchmarks.SharingFamilyPrototype
+lean_exe «sharing-family-trace» where
+  root := `Benchmarks.SharingFamilyTrace
 
 /-- Offline captured-input normalization, using the proved production evaluator. -/
 lean_exe «sharing-family-normalize» where
@@ -483,11 +483,17 @@ end Scripts
 
 section IxSharingVerify
 
-/- Proofs of the canonical sharing construction (`Ix.Sharing.Exact`) and their
-audits: `IxSharingVerify` and every module under `IxSharingVerify/`, declaring
-the `Ix.Sharing.Verify` namespace. Not a default target; `lake lint` builds
-it. The module root is outside `Ix.` so that `Ix` never owns these modules.
-The runtime modules under `Ix.Sharing.Exact` belong to `Ix`. -/
+/- Proofs of the canonical sharing construction (`Ix.Sharing`) and their
+audits: `IxSharingVerify` and every module under `IxSharingVerify/`. They
+declare the `Ix.Sharing.Verify` namespace, and the `Family*` modules extend
+the production rule's namespace `Ix.Sharing.Family`. Not a default target;
+`lake build IxSharingVerify` and `lake lint` build all of it. The module root
+is outside `Ix.`, so the `Ix` library's root never claims these modules; the
+runtime modules under `Ix.Sharing` belong to `Ix`. The dependency is not
+one-way: the certification modules `Ix.CompileCert.SharingRoots` and
+`Ix.CompileCert.WireTables` import `IxSharingVerify.{CanonicalMeaning,Builder,
+BlockTables}`, so every target that builds them (for example `IxTests`) also
+builds those proof modules and their imports. -/
 lean_lib IxSharingVerify where
   roots := #[`IxSharingVerify]
   globs := #[.andSubmodules `IxSharingVerify]

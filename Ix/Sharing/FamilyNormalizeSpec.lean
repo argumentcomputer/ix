@@ -10,7 +10,7 @@ component loop uses the original context/evaluator; the compiled twin reuses
 cleared positions and the proved closure-local evaluator. Equality includes
 errors and resource-charge timing. Neither side changes a family on refusal. -/
 
-namespace Ix.Sharing.FamilyPrototype
+namespace Ix.Sharing.Family
 
 open Ix.Sharing.Exact
 
@@ -146,4 +146,4 @@ Every invalid input and every budget/error path has the same result. -/
     · simp only [uniformDagChecks, hcp] at checks
       cases checks
 
-end Ix.Sharing.FamilyPrototype
+end Ix.Sharing.Family
