@@ -171,14 +171,14 @@ fn eager_reduce_requires_exactly_two_arguments_and_correct_head() {
   let mut env = KEnv::<Meta>::new();
   let tc = TypeChecker::new(&mut env);
   for id in [
-    tc.prims.eager_reduce.clone(),
+    tc.legacy_primitives().unwrap().eager_reduce.clone(),
     KId::new(Address::hash(b"other"), Name::anon()),
   ] {
     let mut e = KExpr::cnst(id.clone(), Box::new([]));
     for arity in 0..5 {
       assert_eq!(
         tc.is_eager_reduce(&e),
-        arity == 2 && id == tc.prims.eager_reduce
+        arity == 2 && id == tc.legacy_primitives().unwrap().eager_reduce
       );
       e = KExpr::app(e, KExpr::var(0, Name::anon()));
     }

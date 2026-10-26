@@ -338,6 +338,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Full WHNF: loop of whnf_no_delta → delta (one step).
   pub fn whnf(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
+    self.check_input_context()?;
     self.whnf_with_nat_succ_mode(e, NatSuccMode::Collapse)
   }
 
@@ -1060,6 +1061,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<KExpr<M>, TcError<M>> {
+    self.check_input_context()?;
     self.whnf_no_delta_impl(e, WhnfFlags::FULL, NatSuccMode::Collapse)
   }
 
@@ -1429,7 +1431,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         }
       }
       major_was_nat_lit = true;
-      major_whnf = self.nat_to_constructor(&val.clone());
+      major_whnf = self.nat_to_constructor(&val.clone())?;
     }
     if let Some(cleaned) = self.cleanup_nat_offset_major(&major_whnf)? {
       major_whnf = cleaned;
@@ -1582,16 +1584,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(false);
+    }
     let (head, nargs) = Self::spine_head_and_len(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(false);
     };
-    if id.addr == self.prims.nat_rec.addr
-      || id.addr == self.prims.nat_cases_on.addr
+    if id.addr == self.legacy_primitives()?.nat_rec.addr
+      || id.addr == self.legacy_primitives()?.nat_cases_on.addr
     {
       return self.is_nat_literal_recursor_app(e);
     }
-    if id.addr == self.prims.nat_succ.addr
+    if id.addr == self.legacy_primitives()?.nat_succ.addr
       && nargs == 1
       && let ExprData::App(_, arg, _) = e.data()
     {
@@ -1604,14 +1609,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(false);
+    }
     // Cheap pre-filter first; only fall through to the allocating spine
     // collection + recursor lookup when the head can actually match.
     let (head, _) = Self::spine_head_and_len(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(false);
     };
-    if id.addr != self.prims.nat_rec.addr
-      && id.addr != self.prims.nat_cases_on.addr
+    if id.addr != self.legacy_primitives()?.nat_rec.addr
+      && id.addr != self.legacy_primitives()?.nat_cases_on.addr
     {
       return Ok(false);
     }
@@ -1657,9 +1665,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       base
     } else {
       let pred_lit = self.nat_expr_from_value(pred_offset);
-      self.mk_nat_add(base, pred_lit)
+      self.mk_nat_add(base, pred_lit)?
     };
-    Ok(Some(self.mk_nat_succ(pred)))
+    Ok(Some(self.mk_nat_succ(pred)?))
   }
 
   fn nat_offset(
@@ -1667,6 +1675,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     e: &KExpr<M>,
     depth: u16,
   ) -> Result<Option<(KExpr<M>, Nat)>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     const MAX_NAT_OFFSET_DEPTH: u16 = 256;
     if depth >= MAX_NAT_OFFSET_DEPTH {
       return Ok(None);
@@ -1677,12 +1688,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(None);
     };
 
-    if id.addr == self.prims.nat_succ.addr && args.len() == 1 {
+    if id.addr == self.legacy_primitives()?.nat_succ.addr && args.len() == 1 {
       let (base, offset) = self.nat_offset_or_zero(&args[0], depth + 1)?;
       return Ok(Some((base, Nat(offset.0 + 1u64))));
     }
 
-    if id.addr == self.prims.nat_add.addr && args.len() == 2 {
+    if id.addr == self.legacy_primitives()?.nat_add.addr && args.len() == 2 {
       let Some(rhs) = self.eval_nat_offset_literal(&args[1], depth + 1) else {
         return Ok(None);
       };
@@ -1722,7 +1733,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return None;
     }
 
-    if let Some(n) = extract_nat_value(e, &self.prims) {
+    if let Some(n) = extract_nat_value(e, self.optional_legacy_primitives()?) {
       return Some(n);
     }
 
@@ -1731,7 +1742,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return None;
     };
 
-    if id.addr == self.prims.nat_pred.addr && args.len() == 1 {
+    if id.addr == self.optional_legacy_primitives()?.nat_pred.addr
+      && args.len() == 1
+    {
       let n = self.eval_nat_offset_literal(&args[0], depth + 1)?;
       let result = if n.0 == num_bigint::BigUint::ZERO {
         Nat(num_bigint::BigUint::ZERO)
@@ -1744,7 +1757,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if self.is_nat_bin_arith_addr(&id.addr) && args.len() == 2 {
       let a = self.eval_nat_offset_literal(&args[0], depth + 1)?;
       let b = self.eval_nat_offset_literal(&args[1], depth + 1)?;
-      return compute_nat_bin(&id.addr, &self.prims, &a, &b);
+      return compute_nat_bin(
+        &id.addr,
+        self.optional_legacy_primitives()?,
+        &a,
+        &b,
+      );
     }
 
     None
@@ -1760,6 +1778,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     // Allocation-free quick reject: this probe runs once per delta-unfold
     // loop iteration, so don't collect a spine Vec unless the head constant
     // is one of the three Nat primitives.
@@ -1769,9 +1790,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         match cur.data() {
           ExprData::App(f, _, _) => cur = f,
           ExprData::Const(id, _, _) => {
-            if id.addr != self.prims.nat_add.addr
-              && id.addr != self.prims.nat_div.addr
-              && id.addr != self.prims.nat_mod.addr
+            if id.addr != self.legacy_primitives()?.nat_add.addr
+              && id.addr != self.legacy_primitives()?.nat_div.addr
+              && id.addr != self.legacy_primitives()?.nat_mod.addr
             {
               return Ok(None);
             }
@@ -1785,16 +1806,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(None);
     };
-    let is_add = id.addr == self.prims.nat_add.addr;
-    let is_divmod =
-      id.addr == self.prims.nat_div.addr || id.addr == self.prims.nat_mod.addr;
+    let is_add = id.addr == self.legacy_primitives()?.nat_add.addr;
+    let is_divmod = id.addr == self.legacy_primitives()?.nat_div.addr
+      || id.addr == self.legacy_primitives()?.nat_mod.addr;
     if (!is_add && !is_divmod) || args.len() != 2 {
       return Ok(None);
     }
     let Some(wb) = self.whnf_prim_arg(&args[1])? else {
       return Ok(None);
     };
-    let Some(n) = extract_nat_value(&wb, &self.prims) else {
+    let Some(n) = extract_nat_value(&wb, self.legacy_primitives()?) else {
       return Ok(None);
     };
     if n.0 == num_bigint::BigUint::ZERO {
@@ -1806,7 +1827,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let Some(wa) = self.whnf_prim_arg(&args[0])? else {
       return Ok(None);
     };
-    if extract_nat_value(&wa, &self.prims).is_some() {
+    if extract_nat_value(&wa, self.legacy_primitives()?).is_some() {
       // Both sides literal: this is closed arithmetic for `try_reduce_nat`,
       // not a stuck offset.
       return Ok(None);
@@ -1826,12 +1847,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<(Option<KExpr<M>>, Nat)>, TcError<M>> {
-    if let Some(v) = extract_nat_value(e, &self.prims) {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
+    if let Some(v) = extract_nat_value(e, self.legacy_primitives()?) {
       return Ok(Some((None, v)));
     }
     match self.nat_offset(e, 0)? {
       Some((base, off)) if off.0 > num_bigint::BigUint::ZERO => {
-        if let Some(bv) = extract_nat_value(&base, &self.prims) {
+        if let Some(bv) = extract_nat_value(&base, self.legacy_primitives()?) {
           Ok(Some((None, Nat(bv.0 + off.0))))
         } else {
           Ok(Some((Some(base), off)))
@@ -1847,26 +1871,38 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     base: Option<KExpr<M>>,
     r: Nat,
-  ) -> KExpr<M> {
-    match base {
-      None => self.nat_expr_from_value(r),
-      Some(b) if r.0 == num_bigint::BigUint::ZERO => b,
-      Some(b) => {
-        let lit = self.nat_expr_from_value(r);
-        self.mk_nat_add(b, lit)
-      },
-    }
+  ) -> Result<KExpr<M>, TcError<M>> {
+    Ok({
+      match base {
+        None => self.nat_expr_from_value(r),
+        Some(b) if r.0 == num_bigint::BigUint::ZERO => b,
+        Some(b) => {
+          let lit = self.nat_expr_from_value(r);
+          self.mk_nat_add(b, lit)?
+        },
+      }
+    })
   }
 
-  fn mk_nat_succ(&mut self, pred: KExpr<M>) -> KExpr<M> {
-    let succ = KExpr::cnst(self.prims.nat_succ.clone(), Box::new([]));
-    KExpr::app(succ, pred)
+  fn mk_nat_succ(&mut self, pred: KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
+    Ok({
+      let succ =
+        KExpr::cnst(self.legacy_primitives()?.nat_succ.clone(), Box::new([]));
+      KExpr::app(succ, pred)
+    })
   }
 
-  fn mk_nat_add(&mut self, a: KExpr<M>, b: KExpr<M>) -> KExpr<M> {
-    let add = KExpr::cnst(self.prims.nat_add.clone(), Box::new([]));
-    let result = KExpr::app(add, a);
-    KExpr::app(result, b)
+  fn mk_nat_add(
+    &mut self,
+    a: KExpr<M>,
+    b: KExpr<M>,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    Ok({
+      let add =
+        KExpr::cnst(self.legacy_primitives()?.nat_add.clone(), Box::new([]));
+      let result = KExpr::app(add, a);
+      KExpr::app(result, b)
+    })
   }
 
   fn try_struct_eta_iota(
@@ -2271,29 +2307,35 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// Convert a Nat literal to constructor form: 0 → Nat.zero, n+1 → Nat.succ(n-1).
-  fn nat_to_constructor(&mut self, val: &Nat) -> KExpr<M> {
-    use num_bigint::BigUint;
-    // Global diagnostic: count expansions and log every 100k. A legitimate
-    // `Nat.rec motive base step hugeFuel` where `step` only forces `ih`
-    // on `Poly.add` paths will fire a handful of times. A pathological
-    // linearly-recursing body would fire millions. Gated behind
-    // `IX_NAT_EXPAND_LOG=1` so normal runs stay quiet.
-    if *IX_NAT_EXPAND_LOG {
-      let n =
-        NAT_EXPAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-      if n.is_multiple_of(10_000) {
-        log::info!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
+  fn nat_to_constructor(&mut self, val: &Nat) -> Result<KExpr<M>, TcError<M>> {
+    Ok({
+      use num_bigint::BigUint;
+      // Global diagnostic: count expansions and log every 100k. A legitimate
+      // `Nat.rec motive base step hugeFuel` where `step` only forces `ih`
+      // on `Poly.add` paths will fire a handful of times. A pathological
+      // linearly-recursing body would fire millions. Gated behind
+      // `IX_NAT_EXPAND_LOG=1` so normal runs stay quiet.
+      if *IX_NAT_EXPAND_LOG {
+        let n =
+          NAT_EXPAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n.is_multiple_of(10_000) {
+          log::info!(
+            "[nat_to_constructor] count={n} val_bits={}",
+            val.0.bits()
+          );
+        }
       }
-    }
-    if val.0 == BigUint::ZERO {
-      KExpr::cnst(self.prims.nat_zero.clone(), Box::new([]))
-    } else {
-      let pred_val = Nat(&val.0 - BigUint::from(1u64));
-      let pred_addr = Address::hash(&pred_val.to_le_bytes());
-      let pred_expr = KExpr::nat(pred_val, pred_addr);
-      let succ = KExpr::cnst(self.prims.nat_succ.clone(), Box::new([]));
-      KExpr::app(succ, pred_expr)
-    }
+      if val.0 == BigUint::ZERO {
+        KExpr::cnst(self.legacy_primitives()?.nat_zero.clone(), Box::new([]))
+      } else {
+        let pred_val = Nat(&val.0 - BigUint::from(1u64));
+        let pred_addr = Address::hash(&pred_val.to_le_bytes());
+        let pred_expr = KExpr::nat(pred_val, pred_addr);
+        let succ =
+          KExpr::cnst(self.legacy_primitives()?.nat_succ.clone(), Box::new([]));
+        KExpr::app(succ, pred_expr)
+      }
+    })
   }
 
   fn nat_literal(&mut self, n: u64) -> KExpr<M> {
@@ -2306,6 +2348,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Classify `e`'s head constant into a primitive-reducer family.
   /// Allocation-free app-chain walk + per-address memo.
   pub(super) fn head_prim_family(&mut self, e: &KExpr<M>) -> PrimFamily {
+    let Some(primitives) = self.optional_legacy_primitives() else {
+      return PrimFamily::Other;
+    };
     let mut cur = e;
     loop {
       match cur.data() {
@@ -2314,7 +2359,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           if let Some(&fam) = self.env.prim_family_cache.get(&id.addr) {
             return fam;
           }
-          let fam = prim_family_uncached(&self.prims, &id.addr);
+          let fam = prim_family_uncached(primitives, &id.addr);
           self.env.prim_family_cache.insert(id.addr.clone(), fam);
           return fam;
         },
@@ -2335,13 +2380,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     e: &KExpr<M>,
     nat_succ_mode: NatSuccMode,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
       _ => return Ok(None),
     };
     // Nat.succ n → n + 1
-    if addr == self.prims.nat_succ.addr && args.len() == 1 {
+    if addr == self.legacy_primitives()?.nat_succ.addr && args.len() == 1 {
       if nat_succ_mode == NatSuccMode::Stuck {
         return Ok(None);
       }
@@ -2372,14 +2420,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
     self.dump_nat_trace("arg0-whnf", &wa);
     self.dump_nat_trace("arg1-whnf", &wb);
-    let a_val = match extract_nat_lit(&wa, &self.prims) {
+    let a_val = match extract_nat_lit(&wa, self.legacy_primitives()?) {
       Some(v) => v.clone(),
       None => {
         self.dump_nat_trace("arg0-not-nat", &wa);
         return Ok(None);
       },
     };
-    let b_val = match extract_nat_lit(&wb, &self.prims) {
+    let b_val = match extract_nat_lit(&wb, self.legacy_primitives()?) {
       Some(v) => v.clone(),
       None => {
         self.dump_nat_trace("arg1-not-nat", &wb);
@@ -2388,25 +2436,27 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
 
     let result_expr = if is_bin_arith {
-      let result = match compute_nat_bin(&addr, &self.prims, &a_val, &b_val) {
-        Some(r) => r,
-        None => {
-          self.dump_nat_trace("not-computed", e);
-          return Ok(None); // can't compute, leave unreduced
-        },
-      };
+      let result =
+        match compute_nat_bin(&addr, self.legacy_primitives()?, &a_val, &b_val)
+        {
+          Some(r) => r,
+          None => {
+            self.dump_nat_trace("not-computed", e);
+            return Ok(None); // can't compute, leave unreduced
+          },
+        };
       let blob_addr = Address::hash(&result.to_le_bytes());
       KExpr::nat(result, blob_addr)
     } else {
-      let b = if addr == self.prims.nat_beq.addr {
+      let b = if addr == self.legacy_primitives()?.nat_beq.addr {
         a_val == b_val
       } else {
         a_val <= b_val
       };
       let bool_id = if b {
-        self.prims.bool_true.clone()
+        self.legacy_primitives()?.bool_true.clone()
       } else {
-        self.prims.bool_false.clone()
+        self.legacy_primitives()?.bool_false.clone()
       };
       self.intern(KExpr::cnst(bool_id, Box::new([])))
     };
@@ -2422,6 +2472,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     arg: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     // Stuck-chain memo. The inner WHNF below runs in `NatSuccMode::Stuck`,
     // which bypasses the WHNF caches, so without this memo a stuck
     // `succ^k(x)` chain is re-peeled in full from every depth it is
@@ -2445,7 +2498,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       let w = self.whnf_with_nat_succ_mode(&cur, NatSuccMode::Stuck)?;
-      if let Some(n) = extract_nat_lit(&w, &self.prims) {
+      if let Some(n) = extract_nat_lit(&w, self.legacy_primitives()?) {
         let result = Nat(&n.0 + &offset);
         let blob_addr = Address::hash(&result.to_le_bytes());
         return Ok(Some(KExpr::nat(result, blob_addr)));
@@ -2453,7 +2506,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       let (head, args) = collect_app_spine(&w);
       if let ExprData::Const(id, _, _) = head.data()
-        && id.addr == self.prims.nat_succ.addr
+        && id.addr == self.legacy_primitives()?.nat_succ.addr
         && args.len() == 1
       {
         crate::perf::record_nat_succ_peel();
@@ -2483,6 +2536,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     arg: &KExpr<M>,
     offset: &num_bigint::BigUint,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let Some(parts) = self.nat_rec_literal_parts(arg)? else {
       return Ok(None);
     };
@@ -2513,7 +2569,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     let base = base.clone();
     let base_whnf = self.whnf(&base)?;
-    let Some(base_val) = extract_nat_value(&base_whnf, &self.prims) else {
+    let Some(base_val) =
+      extract_nat_value(&base_whnf, self.legacy_primitives()?)
+    else {
       // Symbolic base: collapse `succ^offset(Nat.rec base succ-step (Lit n))`
       // to the compact offset `Nat.add base (Lit (n + offset))` rather than
       // declining into n iota steps that materialize succ^n(base). Keeps the
@@ -2526,7 +2584,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
       let total = Nat(&parts.major.0 + offset);
       let lit = self.nat_expr_from_value(total);
-      let result = self.mk_nat_add(base_whnf, lit);
+      let result = self.mk_nat_add(base_whnf, lit)?;
       return Ok(Some(result));
     };
 
@@ -2542,11 +2600,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<NatRecLiteralParts<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let (head, spine) = collect_app_spine(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(None);
     };
-    if id.addr != self.prims.nat_rec.addr {
+    if id.addr != self.legacy_primitives()?.nat_rec.addr {
       return Ok(None);
     }
 
@@ -2581,6 +2642,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     step: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(false);
+    }
     let step = self.whnf(step)?;
     let ExprData::Lam(_, _, _, _, body, _) = step.data() else {
       return Ok(false);
@@ -2593,7 +2657,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(false);
     };
-    if id.addr != self.prims.nat_succ.addr || args.len() != 1 {
+    if id.addr != self.legacy_primitives()?.nat_succ.addr || args.len() != 1 {
       return Ok(false);
     }
     Ok(matches!(args[0].data(), ExprData::Var(0, _, _)))
@@ -2604,17 +2668,28 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     KExpr::nat(n, blob_addr)
   }
 
-  fn nat_succ_n(&mut self, mut e: KExpr<M>, n: u64) -> KExpr<M> {
-    for _ in 0..n {
-      let succ =
-        self.intern(KExpr::cnst(self.prims.nat_succ.clone(), Box::new([])));
-      e = self.intern(KExpr::app(succ, e));
-    }
-    e
+  fn nat_succ_n(
+    &mut self,
+    mut e: KExpr<M>,
+    n: u64,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    Ok({
+      for _ in 0..n {
+        let succ = self.intern(KExpr::cnst(
+          self.legacy_primitives()?.nat_succ.clone(),
+          Box::new([]),
+        ));
+        e = self.intern(KExpr::app(succ, e));
+      }
+      e
+    })
   }
 
   fn is_nat_bin_arith_addr(&self, addr: &Address) -> bool {
-    let p = &self.prims;
+    let Some(primitives) = self.optional_legacy_primitives() else {
+      return false;
+    };
+    let p = primitives;
     *addr == p.nat_add.addr
       || *addr == p.nat_sub.addr
       || *addr == p.nat_mul.addr
@@ -2630,7 +2705,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   fn is_nat_bin_pred_addr(&self, addr: &Address) -> bool {
-    *addr == self.prims.nat_beq.addr || *addr == self.prims.nat_ble.addr
+    let Some(primitives) = self.optional_legacy_primitives() else {
+      return false;
+    };
+    *addr == primitives.nat_beq.addr || *addr == primitives.nat_ble.addr
   }
 
   /// WHNF an argument of a native primitive reduction (Nat ops, string
@@ -2669,9 +2747,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// "BitVec.toNat"])` whose alpha-twin display names (e.g. `Lean.RBColor.rec`
   /// for `Bool.rec`) silently bypass the check under canonical hashing.
   fn is_nat_stuck_recursor_addr(&self, addr: &Address) -> bool {
-    *addr == self.prims.nat_rec.addr
-      || *addr == self.prims.nat_cases_on.addr
-      || *addr == self.prims.bit_vec_to_nat.addr
+    let Some(primitives) = self.optional_legacy_primitives() else {
+      return false;
+    };
+    *addr == primitives.nat_rec.addr
+      || *addr == primitives.nat_cases_on.addr
+      || *addr == primitives.bit_vec_to_nat.addr
   }
 
   fn try_reduce_nat_predicate(
@@ -2679,41 +2760,46 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     addr: &Address,
     args: &[KExpr<M>],
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let Some(wa) = self.whnf_prim_arg(&args[0])? else {
       return Ok(None);
     };
-    let Some(a_val) = extract_nat_lit(&wa, &self.prims) else {
+    let Some(a_val) = extract_nat_lit(&wa, self.legacy_primitives()?) else {
       return Ok(None);
     };
     let Some(wb) = self.whnf_prim_arg(&args[1])? else {
       return Ok(None);
     };
-    let Some(b_val) = extract_nat_lit(&wb, &self.prims) else {
+    let Some(b_val) = extract_nat_lit(&wb, self.legacy_primitives()?) else {
       return Ok(None);
     };
-    let decision = if *addr == self.prims.nat_beq.addr {
+    let decision = if *addr == self.legacy_primitives()?.nat_beq.addr {
       a_val == b_val
     } else {
       a_val <= b_val
     };
-    Ok(Some(self.nat_predicate_bool_result(decision, args)))
+    Ok(Some(self.nat_predicate_bool_result(decision, args)?))
   }
 
   fn nat_predicate_bool_result(
     &mut self,
     decision: bool,
     args: &[KExpr<M>],
-  ) -> KExpr<M> {
-    let bool_id = if decision {
-      self.prims.bool_true.clone()
-    } else {
-      self.prims.bool_false.clone()
-    };
-    let mut result = self.intern(KExpr::cnst(bool_id, Box::new([])));
-    for arg in args.iter().skip(2) {
-      result = self.intern(KExpr::app(result, arg.clone()));
-    }
-    result
+  ) -> Result<KExpr<M>, TcError<M>> {
+    Ok({
+      let bool_id = if decision {
+        self.legacy_primitives()?.bool_true.clone()
+      } else {
+        self.legacy_primitives()?.bool_false.clone()
+      };
+      let mut result = self.intern(KExpr::cnst(bool_id, Box::new([])));
+      for arg in args.iter().skip(2) {
+        result = self.intern(KExpr::app(result, arg.clone()));
+      }
+      result
+    })
   }
 
   /// A shallow Nat evaluator for bounded native helpers.
@@ -2734,11 +2820,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     e: &KExpr<M>,
     depth: u8,
   ) -> Result<Option<Nat>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     const MAX_PRED_NAT_EVAL_DEPTH: u8 = 64;
     if depth >= MAX_PRED_NAT_EVAL_DEPTH {
       return Ok(None);
     }
-    if let Some(n) = extract_nat_lit(e, &self.prims) {
+    if let Some(n) = extract_nat_lit(e, self.legacy_primitives()?) {
       return Ok(Some(n.clone()));
     }
 
@@ -2749,7 +2838,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let (head, args) = collect_app_spine(e);
     match head.data() {
       ExprData::Const(id, _, _) => {
-        if id.addr == self.prims.nat_succ.addr && args.len() == 1 {
+        if id.addr == self.legacy_primitives()?.nat_succ.addr && args.len() == 1
+        {
           let Some(pred) =
             self.try_eval_nat_value_for_pred_core(&args[0], depth + 1)?
           else {
@@ -2757,7 +2847,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           };
           return Ok(Some(Nat(pred.0 + 1u64)));
         }
-        if id.addr == self.prims.nat_pred.addr && args.len() == 1 {
+        if id.addr == self.legacy_primitives()?.nat_pred.addr && args.len() == 1
+        {
           let Some(n) =
             self.try_eval_nat_value_for_pred_core(&args[0], depth + 1)?
           else {
@@ -2781,7 +2872,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           else {
             return Ok(None);
           };
-          return Ok(compute_nat_bin(&id.addr, &self.prims, &a, &b));
+          return Ok(compute_nat_bin(
+            &id.addr,
+            self.legacy_primitives()?,
+            &a,
+            &b,
+          ));
         }
       },
       ExprData::Var(..)
@@ -2796,7 +2892,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     let w = self.whnf(e)?;
     self.dump_nat_trace("pred-arg-whnf", &w);
-    if let Some(n) = extract_nat_value(&w, &self.prims) {
+    if let Some(n) = extract_nat_value(&w, self.legacy_primitives()?) {
       return Ok(Some(n));
     }
     if &w == e {
@@ -2806,6 +2902,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   fn is_stuck_nat_predicate_probe(&self, e: &KExpr<M>) -> bool {
+    let Some(primitives) = self.optional_legacy_primitives() else {
+      return false;
+    };
     let head = app_head(e);
     match head.data() {
       ExprData::Const(id, _, _) => {
@@ -2813,7 +2912,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           || self.is_nat_stuck_recursor_addr(&id.addr)
       },
       ExprData::Prj(id, _, val, _) => {
-        if id.addr == self.prims.fin.addr {
+        if id.addr == primitives.fin.addr {
           return true;
         }
         let val_head = app_head(val);
@@ -2849,13 +2948,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
       _ => return Ok(None),
     };
 
-    let p = &self.prims;
+    let p = self.legacy_primitives()?;
     let is_dec_le = addr == p.nat_dec_le.addr;
     let is_dec_eq = addr == p.nat_dec_eq.addr;
     let is_dec_lt = addr == p.nat_dec_lt.addr;
@@ -2874,11 +2976,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     let wa = self.whnf(&args[0])?;
     let wb = self.whnf(&args[1])?;
-    let a_val = match extract_nat_value(&wa, &self.prims) {
+    let a_val = match extract_nat_value(&wa, self.legacy_primitives()?) {
       Some(v) => v,
       None => return Ok(None),
     };
-    let b_val = match extract_nat_value(&wb, &self.prims) {
+    let b_val = match extract_nat_value(&wb, self.legacy_primitives()?) {
       Some(v) => v,
       None => return Ok(None),
     };
@@ -2893,8 +2995,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let succ_a_addr = Address::hash(&succ_a.to_le_bytes());
       let succ_a_expr = self.intern(KExpr::nat(succ_a, succ_a_addr));
       // Build: Nat.decLe (n+1) m
-      let dec_le_const =
-        self.intern(KExpr::cnst(self.prims.nat_dec_le.clone(), Box::new([])));
+      let dec_le_const = self.intern(KExpr::cnst(
+        self.legacy_primitives()?.nat_dec_le.clone(),
+        Box::new([]),
+      ));
       let mut result = self.intern(KExpr::app(dec_le_const, succ_a_expr));
       result = self.intern(KExpr::app(result, args[1].clone()));
       for arg in args.iter().skip(2) {
@@ -2922,15 +3026,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let (b_result, proof_true_fn, proof_false_fn) = if is_dec_le {
       (
         a_val <= b_val,
-        &self.prims.nat_le_of_ble_eq_true,
-        &self.prims.nat_not_le_of_not_ble_eq_true,
+        &self.legacy_primitives()?.nat_le_of_ble_eq_true,
+        &self.legacy_primitives()?.nat_not_le_of_not_ble_eq_true,
       )
     } else {
       // is_dec_eq
       (
         a_val == b_val,
-        &self.prims.nat_eq_of_beq_eq_true,
-        &self.prims.nat_ne_of_beq_eq_false,
+        &self.legacy_primitives()?.nat_eq_of_beq_eq_true,
+        &self.legacy_primitives()?.nat_ne_of_beq_eq_false,
       )
     };
     let proof_true_fn = proof_true_fn.clone();
@@ -2939,13 +3043,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let result_expr = if b_result {
       // Decidable.isTrue prop (proof_fn n m (Eq.refl.{1} Bool Bool.true))
       let eq_refl = self.intern(KExpr::cnst(
-        self.prims.eq_refl.clone(),
+        self.legacy_primitives()?.eq_refl.clone(),
         Box::new([u1.clone()]),
       ));
-      let bool_ty =
-        self.intern(KExpr::cnst(self.prims.bool_type.clone(), Box::new([])));
-      let bool_true =
-        self.intern(KExpr::cnst(self.prims.bool_true.clone(), Box::new([])));
+      let bool_ty = self.intern(KExpr::cnst(
+        self.legacy_primitives()?.bool_type.clone(),
+        Box::new([]),
+      ));
+      let bool_true = self.intern(KExpr::cnst(
+        self.legacy_primitives()?.bool_true.clone(),
+        Box::new([]),
+      ));
       let refl_proof = self.intern(KExpr::app(eq_refl, bool_ty));
       let refl_proof = self.intern(KExpr::app(refl_proof, bool_true));
 
@@ -2958,7 +3066,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       // Build: Decidable.isTrue prop proof
       let is_true = self.intern(KExpr::cnst(
-        self.prims.decidable_is_true.clone(),
+        self.legacy_primitives()?.decidable_is_true.clone(),
         Box::new([]),
       ));
       let r = self.intern(KExpr::app(is_true, prop));
@@ -2966,13 +3074,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     } else if is_dec_eq {
       // Decidable.isFalse prop (Nat.ne_of_beq_eq_false n m (Eq.refl.{1} Bool Bool.false))
       let eq_refl = self.intern(KExpr::cnst(
-        self.prims.eq_refl.clone(),
+        self.legacy_primitives()?.eq_refl.clone(),
         Box::new([u1.clone()]),
       ));
-      let bool_ty =
-        self.intern(KExpr::cnst(self.prims.bool_type.clone(), Box::new([])));
-      let bool_false =
-        self.intern(KExpr::cnst(self.prims.bool_false.clone(), Box::new([])));
+      let bool_ty = self.intern(KExpr::cnst(
+        self.legacy_primitives()?.bool_type.clone(),
+        Box::new([]),
+      ));
+      let bool_false = self.intern(KExpr::cnst(
+        self.legacy_primitives()?.bool_false.clone(),
+        Box::new([]),
+      ));
       let refl_proof = self.intern(KExpr::app(eq_refl, bool_ty));
       let refl_proof = self.intern(KExpr::app(refl_proof, bool_false));
 
@@ -2984,7 +3096,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       // Build: Decidable.isFalse prop proof
       let is_false = self.intern(KExpr::cnst(
-        self.prims.decidable_is_false.clone(),
+        self.legacy_primitives()?.decidable_is_false.clone(),
         Box::new([]),
       ));
       let r = self.intern(KExpr::app(is_false, prop));
@@ -3008,32 +3120,35 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     addr: &Address,
     args: &[KExpr<M>],
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     if args.len() < 2 {
       return Ok(None);
     }
 
     let wa = self.whnf(&args[0])?;
     let wb = self.whnf(&args[1])?;
-    let Some(a_val) = extract_int_lit(&wa, &self.prims) else {
+    let Some(a_val) = extract_int_lit(&wa, self.legacy_primitives()?) else {
       return Ok(None);
     };
-    let Some(b_val) = extract_int_lit(&wb, &self.prims) else {
+    let Some(b_val) = extract_int_lit(&wb, self.legacy_primitives()?) else {
       return Ok(None);
     };
 
-    let a = intern_int_lit(self, a_val);
-    let b = intern_int_lit(self, b_val);
+    let a = intern_int_lit(self, a_val)?;
+    let b = intern_int_lit(self, b_val)?;
     if a.hash_key() == args[0].hash_key() && b.hash_key() == args[1].hash_key()
     {
       return Ok(None);
     }
 
-    let head_id = if *addr == self.prims.int_dec_eq.addr {
-      self.prims.int_dec_eq.clone()
-    } else if *addr == self.prims.int_dec_le.addr {
-      self.prims.int_dec_le.clone()
+    let head_id = if *addr == self.legacy_primitives()?.int_dec_eq.addr {
+      self.legacy_primitives()?.int_dec_eq.clone()
+    } else if *addr == self.legacy_primitives()?.int_dec_le.addr {
+      self.legacy_primitives()?.int_dec_le.clone()
     } else {
-      self.prims.int_dec_lt.clone()
+      self.legacy_primitives()?.int_dec_lt.clone()
     };
     let head = self.intern(KExpr::cnst(head_id, Box::new([])));
     let mut result = self.intern(KExpr::app(head, a));
@@ -3049,6 +3164,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
@@ -3057,12 +3175,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     // Quot.lift: 6 args, f at 3, major at 5
     // Quot.ind:  5 args, f at 3, major at 4
-    let (f_idx, major_idx) = if addr == self.prims.quot_lift.addr {
+    let (f_idx, major_idx) = if addr == self.legacy_primitives()?.quot_lift.addr
+    {
       if args.len() < 6 {
         return Ok(None);
       }
       (3usize, 5usize)
-    } else if addr == self.prims.quot_ind.addr {
+    } else if addr == self.legacy_primitives()?.quot_ind.addr {
       if args.len() < 5 {
         return Ok(None);
       }
@@ -3077,7 +3196,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       ExprData::Const(id, _, _) => &id.addr,
       _ => return Ok(None),
     };
-    if *mk_addr != self.prims.quot_ctor.addr {
+    if *mk_addr != self.legacy_primitives()?.quot_ctor.addr {
       return Ok(None);
     }
 
@@ -3110,19 +3229,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(None);
     };
 
-    if id.addr == self.prims.bit_vec_to_nat.addr && args.len() >= 2 {
+    if id.addr == self.legacy_primitives()?.bit_vec_to_nat.addr
+      && args.len() >= 2
+    {
       if let Some(result) = self.try_reduce_bitvec_to_nat(&args[1])? {
         return Ok(Some(self.finish_app_result(result, &args, 2)));
       }
       return Ok(None);
     }
 
-    if id.addr == self.prims.bit_vec_ult.addr && args.len() >= 3 {
+    if id.addr == self.legacy_primitives()?.bit_vec_ult.addr && args.len() >= 3
+    {
       if let Some(result) =
         self.try_reduce_bitvec_ult(&args[0], &args[1], &args[2])?
       {
@@ -3140,22 +3265,31 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     lhs: &KExpr<M>,
     rhs: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let lhs_nat = self.bitvec_to_nat_expr(width, lhs)?;
     let rhs_nat = self.bitvec_to_nat_expr(width, rhs)?;
     let rhs_nat_whnf = self.whnf(&rhs_nat)?;
-    if let Some(rhs_val) = extract_nat_value(&rhs_nat_whnf, &self.prims) {
+    if let Some(rhs_val) =
+      extract_nat_value(&rhs_nat_whnf, self.legacy_primitives()?)
+    {
       if rhs_val.0 == num_bigint::BigUint::ZERO {
-        let result =
-          self.intern(KExpr::cnst(self.prims.bool_false.clone(), Box::new([])));
+        let result = self.intern(KExpr::cnst(
+          self.legacy_primitives()?.bool_false.clone(),
+          Box::new([]),
+        ));
         return Ok(Some(result));
       }
 
       let lhs_nat_whnf = self.whnf(&lhs_nat)?;
-      if let Some(lhs_val) = extract_nat_value(&lhs_nat_whnf, &self.prims) {
+      if let Some(lhs_val) =
+        extract_nat_value(&lhs_nat_whnf, self.legacy_primitives()?)
+      {
         let result_id = if lhs_val.0 < rhs_val.0 {
-          self.prims.bool_true.clone()
+          self.legacy_primitives()?.bool_true.clone()
         } else {
-          self.prims.bool_false.clone()
+          self.legacy_primitives()?.bool_false.clone()
         };
         let result = self.intern(KExpr::cnst(result_id, Box::new([])));
         return Ok(Some(result));
@@ -3164,9 +3298,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     // `BitVec.ult x y` is definitionally `decide (x.toNat < y.toNat)`.
     // Kernel Nat LT reduces through `Nat.ble (Nat.succ x.toNat) y.toNat`.
-    let lhs_succ = self.nat_succ_n(lhs_nat, 1);
-    let ble =
-      self.intern(KExpr::cnst(self.prims.nat_ble.clone(), Box::new([])));
+    let lhs_succ = self.nat_succ_n(lhs_nat, 1)?;
+    let ble = self.intern(KExpr::cnst(
+      self.legacy_primitives()?.nat_ble.clone(),
+      Box::new([]),
+    ));
     let cmp_lhs = self.intern(KExpr::app(ble, lhs_succ));
     let cmp = self.intern(KExpr::app(cmp_lhs, rhs_nat));
     let result = self.whnf(&cmp)?;
@@ -3186,8 +3322,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(result);
     }
 
-    let head =
-      self.intern(KExpr::cnst(self.prims.bit_vec_to_nat.clone(), Box::new([])));
+    let head = self.intern(KExpr::cnst(
+      self.legacy_primitives()?.bit_vec_to_nat.clone(),
+      Box::new([]),
+    ));
     let with_width = self.intern(KExpr::app(head, width.clone()));
     Ok(self.intern(KExpr::app(with_width, value.clone())))
   }
@@ -3196,12 +3334,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     value: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let Some((width, n_expr)) = self.bitvec_of_nat_args(value) else {
       return Ok(None);
     };
 
     let n_whnf = self.whnf(&n_expr)?;
-    let Some(n) = extract_nat_value(&n_whnf, &self.prims) else {
+    let Some(n) = extract_nat_value(&n_whnf, self.legacy_primitives()?) else {
       return Ok(None);
     };
 
@@ -3234,7 +3375,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let ExprData::Const(id, _, _) = head.data() else {
       return None;
     };
-    if id.addr == self.prims.bit_vec_of_nat.addr && args.len() == 2 {
+    if id.addr == self.optional_legacy_primitives()?.bit_vec_of_nat.addr
+      && args.len() == 2
+    {
       Some((args[0].clone(), args[1].clone()))
     } else {
       None
@@ -3245,9 +3388,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let ExprData::Const(id, _, _) = e.data() else {
       return None;
     };
-    if id.addr == self.prims.bool_true.addr {
+    if id.addr == self.optional_legacy_primitives()?.bool_true.addr {
       Some(true)
-    } else if id.addr == self.prims.bool_false.addr {
+    } else if id.addr == self.optional_legacy_primitives()?.bool_false.addr {
       Some(false)
     } else {
       None
@@ -3281,6 +3424,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let head_addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
@@ -3291,8 +3437,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     // Lean.reduceBool / Lean.reduceNat: arg must be a single constant
-    let is_reduce_bool = head_addr == self.prims.reduce_bool.addr;
-    let is_reduce_nat = head_addr == self.prims.reduce_nat.addr;
+    let is_reduce_bool =
+      head_addr == self.legacy_primitives()?.reduce_bool.addr;
+    let is_reduce_nat = head_addr == self.legacy_primitives()?.reduce_nat.addr;
     if !is_reduce_bool && !is_reduce_nat {
       return Ok(None);
     }
@@ -3331,8 +3478,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         ExprData::Const(id, _, _) => &id.addr,
         _ => return Ok(None),
       };
-      if *result_addr == self.prims.bool_true.addr
-        || *result_addr == self.prims.bool_false.addr
+      if *result_addr == self.legacy_primitives()?.bool_true.addr
+        || *result_addr == self.legacy_primitives()?.bool_false.addr
       {
         Ok(Some(result))
       } else {
@@ -3377,6 +3524,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let (head, args) = collect_app_spine(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(None);
@@ -3386,8 +3536,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // String.ofList / String.mk: collapse a literal char-list argument.
     // The two names share one canonical address (see `PrimAddrs`) but
     // are distinct LEON addresses, so check both.
-    if *addr == self.prims.string_of_list.addr
-      || *addr == self.prims.string_mk.addr
+    if *addr == self.legacy_primitives()?.string_of_list.addr
+      || *addr == self.legacy_primitives()?.string_mk.addr
     {
       if args.len() != 1 {
         return Ok(None);
@@ -3400,7 +3550,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(Some(self.intern(KExpr::str(s, blob_addr))));
     }
 
-    if *addr == self.prims.string_append.addr {
+    if *addr == self.legacy_primitives()?.string_append.addr {
       if args.len() != 2 {
         return Ok(None);
       }
@@ -3412,17 +3562,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(Some(self.intern(KExpr::str(joined, blob_addr))));
     }
 
-    if *addr == self.prims.string_dec_eq.addr {
+    if *addr == self.legacy_primitives()?.string_dec_eq.addr {
       if args.len() != 2 {
         return Ok(None);
       }
       return self.try_reduce_string_dec_eq(e, &args);
     }
 
-    let is_back = *addr == self.prims.string_back.addr
-      || *addr == self.prims.string_legacy_back.addr;
-    let is_utf8_byte_size = *addr == self.prims.string_utf8_byte_size.addr;
-    let is_to_byte_array = *addr == self.prims.string_to_byte_array.addr;
+    let is_back = *addr == self.legacy_primitives()?.string_back.addr
+      || *addr == self.legacy_primitives()?.string_legacy_back.addr;
+    let is_utf8_byte_size =
+      *addr == self.legacy_primitives()?.string_utf8_byte_size.addr;
+    let is_to_byte_array =
+      *addr == self.legacy_primitives()?.string_to_byte_array.addr;
     if (!is_back && !is_utf8_byte_size && !is_to_byte_array) || args.len() != 1
     {
       return Ok(None);
@@ -3440,7 +3592,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if is_to_byte_array {
       if s.is_empty() {
         return Ok(Some(self.intern(KExpr::cnst(
-          self.prims.byte_array_empty.clone(),
+          self.legacy_primitives()?.byte_array_empty.clone(),
           Box::new([]),
         ))));
       }
@@ -3448,7 +3600,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     let codepoint = s.chars().last().map_or(65u32, u32::from);
-    Ok(Some(self.char_of_nat_expr(u64::from(codepoint))))
+    Ok(Some(self.char_of_nat_expr(u64::from(codepoint))?))
   }
 
   /// WHNF both arguments with the shared fuel-capped policy and require
@@ -3485,6 +3637,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     e: &KExpr<M>,
     args: &[KExpr<M>],
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(None);
+    }
     let Some((sa, sb)) = self.two_string_lit_args(&args[0], &args[1])? else {
       return Ok(None);
     };
@@ -3507,17 +3662,23 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     // Eq.refl.{1} String <lit> — String : Type = Sort 1, so u = 1.
     let u1 = KUniv::succ(KUniv::zero());
-    let eq_refl =
-      self.intern(KExpr::cnst(self.prims.eq_refl.clone(), Box::new([u1])));
-    let string_ty =
-      self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([])));
+    let eq_refl = self.intern(KExpr::cnst(
+      self.legacy_primitives()?.eq_refl.clone(),
+      Box::new([u1]),
+    ));
+    let string_ty = self.intern(KExpr::cnst(
+      self.legacy_primitives()?.string.clone(),
+      Box::new([]),
+    ));
     let lit_addr = Address::hash(sa.as_bytes());
     let lit = self.intern(KExpr::str(sa, lit_addr));
     let refl = self.intern(KExpr::app(eq_refl, string_ty));
     let refl = self.intern(KExpr::app(refl, lit));
 
-    let is_true = self
-      .intern(KExpr::cnst(self.prims.decidable_is_true.clone(), Box::new([])));
+    let is_true = self.intern(KExpr::cnst(
+      self.legacy_primitives()?.decidable_is_true.clone(),
+      Box::new([]),
+    ));
     let result = self.intern(KExpr::app(is_true, prop));
     Ok(Some(self.intern(KExpr::app(result, refl))))
   }
@@ -3534,6 +3695,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     list: &KExpr<M>,
     out: &mut String,
   ) -> Result<bool, TcError<M>> {
+    if self.optional_legacy_primitives().is_none() {
+      return Ok(false);
+    }
     let mut cur = list.clone();
     loop {
       let Some(w) = self.whnf_prim_arg(&cur)? else {
@@ -3544,11 +3708,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return Ok(false);
       };
       // List.nil.{u} α
-      if id.addr == self.prims.list_nil.addr {
+      if id.addr == self.legacy_primitives()?.list_nil.addr {
         return Ok(args.len() == 1);
       }
       // List.cons.{u} α head tail
-      if id.addr != self.prims.list_cons.addr || args.len() != 3 {
+      if id.addr != self.legacy_primitives()?.list_cons.addr || args.len() != 3
+      {
         return Ok(false);
       }
       let elem = match self.char_lit_value(&args[1]) {
@@ -3581,7 +3746,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let ExprData::Const(id, _, _) = f.data() else {
       return None;
     };
-    if id.addr != self.prims.char_of_nat.addr {
+    if id.addr != self.optional_legacy_primitives()?.char_of_nat.addr {
       return None;
     }
     let ExprData::Nat(n, _, _) = arg.data() else {
@@ -3591,13 +3756,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     u32::try_from(cp).ok().and_then(char::from_u32)
   }
 
-  fn char_of_nat_expr(&mut self, n: u64) -> KExpr<M> {
-    let char_of_nat =
-      self.intern(KExpr::cnst(self.prims.char_of_nat.clone(), Box::new([])));
-    let nat_val = Nat::from(n);
-    let nat_addr = Address::hash(&nat_val.to_le_bytes());
-    let nat_lit = self.intern(KExpr::nat(nat_val, nat_addr));
-    self.intern(KExpr::app(char_of_nat, nat_lit))
+  fn char_of_nat_expr(&mut self, n: u64) -> Result<KExpr<M>, TcError<M>> {
+    Ok({
+      let char_of_nat = self.intern(KExpr::cnst(
+        self.legacy_primitives()?.char_of_nat.clone(),
+        Box::new([]),
+      ));
+      let nat_val = Nat::from(n);
+      let nat_addr = Address::hash(&nat_val.to_le_bytes());
+      let nat_lit = self.intern(KExpr::nat(nat_val, nat_addr));
+      self.intern(KExpr::app(char_of_nat, nat_lit))
+    })
   }
 }
 
@@ -3829,7 +3998,7 @@ fn extract_int_lit<M: KernelMode>(
 fn intern_int_lit<M: KernelMode>(
   tc: &mut TypeChecker<'_, M>,
   v: IntVal,
-) -> KExpr<M> {
+) -> Result<KExpr<M>, TcError<M>> {
   use num_bigint::Sign;
   let (sign, magnitude) = v.into_parts();
   let nat_val = match sign {
@@ -3844,13 +4013,13 @@ fn intern_int_lit<M: KernelMode>(
   let nat_addr = Address::hash(&nat_val.to_le_bytes());
   let nat_expr = tc.intern(KExpr::nat(nat_val, nat_addr));
   let ctor_id = match sign {
-    Sign::Minus => tc.prims.int_neg_succ.clone(),
-    _ => tc.prims.int_of_nat.clone(),
+    Sign::Minus => tc.legacy_primitives()?.int_neg_succ.clone(),
+    _ => tc.legacy_primitives()?.int_of_nat.clone(),
   };
   let ctor = tc.intern(KExpr::cnst(ctor_id, Box::new([])));
   // With Sign::NoSign (zero) we use int_of_nat → Int.ofNat 0 = 0.
   // With non-negative => Int.ofNat n. With negative => Int.negSucc (n-1).
-  tc.intern(KExpr::app(ctor, nat_expr))
+  Ok(tc.intern(KExpr::app(ctor, nat_expr)))
 }
 
 #[cfg(test)]
@@ -4233,13 +4402,16 @@ mod tests {
 
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
-    let back = kt::ME::cnst(tc.prims.string_legacy_back.clone(), Box::new([]));
+    let back = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().string_legacy_back.clone(),
+      Box::new([]),
+    );
     let empty = kt::ME::str(String::new(), Address::hash(b""));
     let result = tc.whnf(&kt::ME::app(back, empty)).unwrap();
     let (head, args) = collect_app_spine(&result);
     match head.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.char_of_nat.addr)
+        assert_eq!(id.addr, tc.legacy_primitives().unwrap().char_of_nat.addr)
       },
       other => panic!("expected Char.ofNat head, got {:?}", other),
     }
@@ -4258,8 +4430,10 @@ mod tests {
 
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
-    let size =
-      kt::ME::cnst(tc.prims.string_utf8_byte_size.clone(), Box::new([]));
+    let size = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().string_utf8_byte_size.clone(),
+      Box::new([]),
+    );
     let s = kt::ME::str("L∃∀N".to_string(), Address::hash("L∃∀N".as_bytes()));
     let result = tc.whnf(&kt::ME::app(size, s)).unwrap();
     match result.data() {
@@ -4278,11 +4452,16 @@ mod tests {
 
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
-    let to_byte_array =
-      kt::ME::cnst(tc.prims.string_to_byte_array.clone(), Box::new([]));
+    let to_byte_array = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().string_to_byte_array.clone(),
+      Box::new([]),
+    );
     let empty_string = kt::ME::str(String::new(), Address::hash(b""));
     let lhs = kt::ME::app(to_byte_array, empty_string);
-    let rhs = kt::ME::cnst(tc.prims.byte_array_empty.clone(), Box::new([]));
+    let rhs = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().byte_array_empty.clone(),
+      Box::new([]),
+    );
     assert!(tc.is_def_eq(&lhs, &rhs).unwrap());
   }
 
@@ -4465,7 +4644,8 @@ mod tests {
     let mut tc = TypeChecker::new(&mut env);
     let string_to_list = AE::cnst(string_to_list_id, Box::new([]));
     let list_length = AE::cnst(list_length_id, Box::new([KUniv::zero()]));
-    let nat_ble = AE::cnst(tc.prims.nat_ble.clone(), Box::new([]));
+    let nat_ble =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_ble.clone(), Box::new([]));
 
     let sample = " 0123abcABC:,;`\\/";
     let str_lit = AE::str(sample.to_string(), Address::hash(sample.as_bytes()));
@@ -4476,7 +4656,7 @@ mod tests {
     let result = tc.whnf(&expr).unwrap();
     match result.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.bool_true.addr);
+        assert_eq!(id.addr, tc.legacy_primitives().unwrap().bool_true.addr);
       },
       other => panic!("expected Bool.true, got {other:?}"),
     }
@@ -4856,8 +5036,10 @@ mod tests {
     // application just because it syntactically contains a loose bvar.
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
-    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    let add =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_add.clone(), Box::new([]));
+    let succ =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_succ.clone(), Box::new([]));
     let ctor_num = app(succ, mk_nat(4));
     let dead_open_arg = app(lam(nat(), ctor_num), var(0));
     let expr = app(app(add, dead_open_arg), mk_nat(2));
@@ -4875,13 +5057,16 @@ mod tests {
     // Nat.ble 2^32 2^32 should reduce to Bool.true via try_reduce_nat
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let ble = AE::cnst(tc.prims.nat_ble.clone(), Box::new([]));
+    let ble =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_ble.clone(), Box::new([]));
     let big = mk_nat(1u64 << 32);
     let expr = app(app(ble, big.clone()), big);
     let result = tc.whnf(&expr).unwrap();
     // Should be Bool.true constant
     match result.data() {
-      ExprData::Const(id, _, _) => assert_eq!(id.addr, tc.prims.bool_true.addr),
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.legacy_primitives().unwrap().bool_true.addr)
+      },
       other => panic!("expected Bool.true, got {:?}", other),
     }
   }
@@ -4900,7 +5085,8 @@ mod tests {
     insert_nat_add_model(&mut env, prims.nat_add.clone());
 
     let mut tc = TypeChecker::new(&mut env);
-    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let add =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_add.clone(), Box::new([]));
     let expr = app(app(add.clone(), var(0)), mk_nat(2));
     let result = tc.whnf(&expr).unwrap();
     assert_eq!(result, app(app(add, var(0)), mk_nat(2)));
@@ -4917,8 +5103,10 @@ mod tests {
     insert_nat_add_model(&mut env, prims.nat_add.clone());
 
     let mut tc = TypeChecker::new(&mut env);
-    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
-    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    let add =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_add.clone(), Box::new([]));
+    let succ =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_succ.clone(), Box::new([]));
     let tower = app(succ.clone(), app(succ.clone(), var(0)));
     let compact = app(app(add, var(0)), mk_nat(2));
     assert!(tc.is_def_eq(&tower, &compact).unwrap());
@@ -4932,12 +5120,16 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
-    let nat_ty = kt::ME::cnst(tc.prims.nat.clone(), Box::new([]));
+    let nat_ty =
+      kt::ME::cnst(tc.legacy_primitives().unwrap().nat.clone(), Box::new([]));
     let ofnat_zero = kt::apps(
       kt::cnst("OfNat.ofNat", &[]),
       &[nat_ty, mk_meta_nat(0), kt::cnst("instOfNatNat", &[])],
     );
-    let add = kt::ME::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let add = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().nat_add.clone(),
+      Box::new([]),
+    );
     let expr = kt::apps(add, &[ofnat_zero, kt::var(0)]);
     let result = tc.whnf(&expr).unwrap();
     assert_eq!(result, expr);
@@ -4949,12 +5141,16 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
-    let nat_ty = kt::ME::cnst(tc.prims.nat.clone(), Box::new([]));
+    let nat_ty =
+      kt::ME::cnst(tc.legacy_primitives().unwrap().nat.clone(), Box::new([]));
     let ofnat_one = kt::apps(
       kt::cnst("OfNat.ofNat", &[]),
       &[nat_ty, mk_meta_nat(1), kt::cnst("instOfNatNat", &[])],
     );
-    let mul = kt::ME::cnst(tc.prims.nat_mul.clone(), Box::new([]));
+    let mul = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().nat_mul.clone(),
+      Box::new([]),
+    );
     let expr = kt::apps(mul, &[kt::var(0), ofnat_one]);
     let result = tc.whnf(&expr).unwrap();
     assert_eq!(result, expr);
@@ -4966,12 +5162,16 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
-    let nat_ty = kt::ME::cnst(tc.prims.nat.clone(), Box::new([]));
+    let nat_ty =
+      kt::ME::cnst(tc.legacy_primitives().unwrap().nat.clone(), Box::new([]));
     let ofnat_one = kt::apps(
       kt::cnst("OfNat.ofNat", &[]),
       &[nat_ty, mk_meta_nat(1), kt::cnst("instOfNatNat", &[])],
     );
-    let add = kt::ME::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let add = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().nat_add.clone(),
+      Box::new([]),
+    );
     let expr = kt::apps(add, &[ofnat_one, mk_meta_nat(2)]);
     assert!(tc.try_reduce_nat(&expr).unwrap().is_none());
   }
@@ -4980,7 +5180,8 @@ mod tests {
   fn whnf_nat_mul_symbolic_zero_rhs_stays_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let mul = AE::cnst(tc.prims.nat_mul.clone(), Box::new([]));
+    let mul =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_mul.clone(), Box::new([]));
     let expr = app(app(mul, var(0)), mk_nat(0));
     let result = tc.whnf(&expr).unwrap();
     assert_eq!(result, expr);
@@ -4993,11 +5194,15 @@ mod tests {
     tc.push_local(nat());
 
     for n in 0..=4 {
-      let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+      let add =
+        AE::cnst(tc.legacy_primitives().unwrap().nat_add.clone(), Box::new([]));
       let lhs = app(app(add, mk_nat(n)), var(0));
       let mut rhs = var(0);
       for _ in 0..n {
-        let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+        let succ = AE::cnst(
+          tc.legacy_primitives().unwrap().nat_succ.clone(),
+          Box::new([]),
+        );
         rhs = app(succ, rhs);
       }
 
@@ -5014,7 +5219,8 @@ mod tests {
     let mut tc = TypeChecker::new(&mut env);
     tc.push_local(nat());
 
-    let mul = AE::cnst(tc.prims.nat_mul.clone(), Box::new([]));
+    let mul =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_mul.clone(), Box::new([]));
     let x = var(0);
 
     let lhs_zero = app(app(mul.clone(), mk_nat(0)), x.clone());
@@ -5040,8 +5246,10 @@ mod tests {
   fn whnf_nat_mod_literal_by_symbolic_lower_bound_stays_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
-    let modu = AE::cnst(tc.prims.nat_mod.clone(), Box::new([]));
+    let add =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_add.clone(), Box::new([]));
+    let modu =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_mod.clone(), Box::new([]));
     let denom = app(app(add, var(0)), mk_nat(2));
     let expr = app(app(modu, mk_nat(1)), denom);
     let result = tc.whnf(&expr).unwrap();
@@ -5052,8 +5260,10 @@ mod tests {
   fn try_reduce_nat_sub_symbolic_literal_rhs_stays_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
-    let sub = AE::cnst(tc.prims.nat_sub.clone(), Box::new([]));
+    let add =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_add.clone(), Box::new([]));
+    let sub =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_sub.clone(), Box::new([]));
     let lhs = app(app(add, var(0)), mk_nat(2));
     let expr = app(app(sub, lhs), mk_nat(1));
     assert!(tc.try_reduce_nat(&expr).unwrap().is_none());
@@ -5065,14 +5275,20 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
-    let bv_of_nat = kt::ME::cnst(tc.prims.bit_vec_of_nat.clone(), Box::new([]));
-    let bv_ult = kt::ME::cnst(tc.prims.bit_vec_ult.clone(), Box::new([]));
+    let bv_of_nat = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().bit_vec_of_nat.clone(),
+      Box::new([]),
+    );
+    let bv_ult = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().bit_vec_ult.clone(),
+      Box::new([]),
+    );
     let zero = kt::apps(bv_of_nat, &[kt::var(1), mk_meta_nat(0)]);
     let ult = kt::apps(bv_ult, &[kt::var(1), kt::var(0), zero]);
     let result = tc.whnf(&ult).unwrap();
     match result.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.bool_false.addr)
+        assert_eq!(id.addr, tc.legacy_primitives().unwrap().bool_false.addr)
       },
       other => panic!("expected Bool.false, got {:?}", other),
     }
@@ -5084,8 +5300,14 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
-    let bv_of_nat = kt::ME::cnst(tc.prims.bit_vec_of_nat.clone(), Box::new([]));
-    let bv_to_nat = kt::ME::cnst(tc.prims.bit_vec_to_nat.clone(), Box::new([]));
+    let bv_of_nat = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().bit_vec_of_nat.clone(),
+      Box::new([]),
+    );
+    let bv_to_nat = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().bit_vec_to_nat.clone(),
+      Box::new([]),
+    );
     let zero = kt::apps(bv_of_nat, &[kt::var(0), mk_meta_nat(0)]);
     let expr = kt::apps(bv_to_nat, &[kt::var(0), zero]);
     let result = tc.whnf(&expr).unwrap();
@@ -5109,11 +5331,20 @@ mod tests {
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
     let width = kt::var(1);
-    let bv_const = kt::ME::cnst(tc.prims.bit_vec.clone(), Box::new([]));
-    let bv_of_nat = kt::ME::cnst(tc.prims.bit_vec_of_nat.clone(), Box::new([]));
-    let lt_lt = kt::ME::cnst(tc.prims.lt_lt.clone(), Box::new([]));
-    let dec_decide =
-      kt::ME::cnst(tc.prims.decidable_decide.clone(), Box::new([]));
+    let bv_const = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().bit_vec.clone(),
+      Box::new([]),
+    );
+    let bv_of_nat = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().bit_vec_of_nat.clone(),
+      Box::new([]),
+    );
+    let lt_lt =
+      kt::ME::cnst(tc.legacy_primitives().unwrap().lt_lt.clone(), Box::new([]));
+    let dec_decide = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().decidable_decide.clone(),
+      Box::new([]),
+    );
     let bv_ty = kt::apps(bv_const, std::slice::from_ref(&width));
     let zero = kt::apps(bv_of_nat, &[width, mk_meta_nat(0)]);
     let prop = kt::apps(lt_lt, &[bv_ty, kt::var(2), kt::var(0), zero]);
@@ -5132,9 +5363,18 @@ mod tests {
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
     let width = mk_meta_nat(8);
-    let bv_const = kt::ME::cnst(tc.prims.bit_vec.clone(), Box::new([]));
-    let of_nat = kt::ME::cnst(tc.prims.of_nat_of_nat.clone(), Box::new([]));
-    let bv_to_nat = kt::ME::cnst(tc.prims.bit_vec_to_nat.clone(), Box::new([]));
+    let bv_const = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().bit_vec.clone(),
+      Box::new([]),
+    );
+    let of_nat = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().of_nat_of_nat.clone(),
+      Box::new([]),
+    );
+    let bv_to_nat = kt::ME::cnst(
+      tc.legacy_primitives().unwrap().bit_vec_to_nat.clone(),
+      Box::new([]),
+    );
     let bv_ty = kt::apps(bv_const, std::slice::from_ref(&width));
     let five = kt::apps(of_nat, &[bv_ty, mk_meta_nat(5), kt::var(0)]);
     let expr = kt::apps(bv_to_nat, &[width, five]);
@@ -5152,9 +5392,10 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
-    let unit = kt::ME::cnst(tc.prims.unit.clone(), Box::new([]));
+    let unit =
+      kt::ME::cnst(tc.legacy_primitives().unwrap().unit.clone(), Box::new([]));
     let size_of = kt::ME::cnst(
-      tc.prims.size_of_size_of.clone(),
+      tc.legacy_primitives().unwrap().size_of_size_of.clone(),
       Box::new([kt::usucc(kt::uzero())]),
     );
     let expr = kt::apps(size_of, &[unit, kt::var(1), kt::var(0)]);
@@ -5175,7 +5416,7 @@ mod tests {
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
     let size_of_1 = kt::ME::cnst(
-      tc.prims.punit_size_of_1.clone(),
+      tc.legacy_primitives().unwrap().punit_size_of_1.clone(),
       Box::new([kt::usucc(kt::uzero())]),
     );
     let expr = kt::app(size_of_1, kt::var(0));
@@ -5194,10 +5435,11 @@ mod tests {
 
     let mut env = KEnv::<Meta>::new();
     let mut tc = TypeChecker::new(&mut env);
-    let fin = kt::ME::cnst(tc.prims.fin.clone(), Box::new([]));
+    let fin =
+      kt::ME::cnst(tc.legacy_primitives().unwrap().fin.clone(), Box::new([]));
     let fin3 = kt::app(fin, mk_meta_nat(3));
     let rec = kt::ME::cnst(
-      tc.prims.decidable_rec.clone(),
+      tc.legacy_primitives().unwrap().decidable_rec.clone(),
       Box::new([kt::usucc(kt::uzero())]),
     );
     let motive = kt::lam(kt::sort0(), fin3);
@@ -5205,7 +5447,8 @@ mod tests {
     let minor_g = kt::lam(kt::sort0(), kt::var(4));
     let rec_app =
       kt::apps(rec, &[kt::var(0), motive, minor_f, minor_g, kt::var(1)]);
-    let expr = kt::ME::prj(tc.prims.fin.clone(), 0, rec_app);
+    let expr =
+      kt::ME::prj(tc.legacy_primitives().unwrap().fin.clone(), 0, rec_app);
     let result = tc.whnf(&expr).unwrap();
     assert!(
       matches!(result.data(), ExprData::Prj(..)),
@@ -5444,8 +5687,10 @@ mod tests {
     // reduced to 64, which would make `numBits = 64` hold by `rfl`.
     let mut env = usize_env();
     let mut tc = TypeChecker::new(&mut env);
-    let num_bits =
-      AE::cnst(tc.prims.system_platform_num_bits.clone(), Box::new([]));
+    let num_bits = AE::cnst(
+      tc.legacy_primitives().unwrap().system_platform_num_bits.clone(),
+      Box::new([]),
+    );
     let result = tc.whnf(&num_bits).unwrap();
     assert_eq!(result, AE::cnst(mk_id("opaque.bits"), Box::new([])));
   }
@@ -5455,7 +5700,8 @@ mod tests {
     // Nat.pow 2 64 should reduce to 2^64
     let mut env = usize_env();
     let mut tc = TypeChecker::new(&mut env);
-    let pow_const = AE::cnst(tc.prims.nat_pow.clone(), Box::new([]));
+    let pow_const =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_pow.clone(), Box::new([]));
     let expr = app(app(pow_const, mk_nat(2)), mk_nat(64));
     let result = tc.whnf(&expr).unwrap();
     match result.data() {
@@ -5489,7 +5735,8 @@ mod tests {
     // Nat.sub USize.size 0 should reduce to 2^64
     let mut env = usize_env();
     let mut tc = TypeChecker::new(&mut env);
-    let sub_const = AE::cnst(tc.prims.nat_sub.clone(), Box::new([]));
+    let sub_const =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_sub.clone(), Box::new([]));
     let usize_size = AE::cnst(mk_id("USize.size"), Box::new([]));
     let expr = app(app(sub_const, usize_size), mk_nat(0));
     let result = tc.whnf(&expr).unwrap();
@@ -5507,7 +5754,8 @@ mod tests {
     // Nat.pred USize.size should reduce to 2^64 - 1
     let mut env = usize_env();
     let mut tc = TypeChecker::new(&mut env);
-    let pred_const = AE::cnst(tc.prims.nat_pred.clone(), Box::new([]));
+    let pred_const =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_pred.clone(), Box::new([]));
     let usize_size = AE::cnst(mk_id("USize.size"), Box::new([]));
     let expr = app(pred_const, usize_size);
     let result = tc.whnf(&expr).unwrap();
@@ -5527,8 +5775,10 @@ mod tests {
     let mut env = usize_env();
     let mut tc = TypeChecker::new(&mut env);
 
-    let sub_const = AE::cnst(tc.prims.nat_sub.clone(), Box::new([]));
-    let pred_const = AE::cnst(tc.prims.nat_pred.clone(), Box::new([]));
+    let sub_const =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_sub.clone(), Box::new([]));
+    let pred_const =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_pred.clone(), Box::new([]));
     let usize_size = AE::cnst(mk_id("USize.size"), Box::new([]));
 
     // LHS: Nat.pred (Nat.sub USize.size 0)
@@ -5584,7 +5834,10 @@ mod tests {
     // Set the guard — simulating an in-progress native reduction.
     tc.in_native_reduce = true;
 
-    let reduce_bool = AE::cnst(tc.prims.reduce_bool.clone(), Box::new([]));
+    let reduce_bool = AE::cnst(
+      tc.legacy_primitives().unwrap().reduce_bool.clone(),
+      Box::new([]),
+    );
     let body_true = AE::cnst(mk_id("BodyTrue"), Box::new([]));
     let expr = AE::app(reduce_bool, body_true);
     // With the guard set, try_reduce_native must not recurse. Because
@@ -5629,7 +5882,7 @@ mod tests {
   // Quotient reduction: `Quot.lift α r β f h (Quot.mk α r a) == f a`
   //
   // Sets up the Quot primitives at their canonical addresses so that
-  // `tc.prims.quot_ctor` / `quot_lift` / `quot_ind` resolve to real env
+  // `tc.legacy_primitives().unwrap().quot_ctor` / `quot_lift` / `quot_ind` resolve to real env
   // entries. Values are kept opaque — we only check that the head-spine
   // of the result matches `f a`.
   // =========================================================================
@@ -5702,7 +5955,10 @@ mod tests {
     let mk = AE::app(
       AE::app(
         AE::app(
-          AE::cnst(tc.prims.quot_ctor.clone(), Box::new([])),
+          AE::cnst(
+            tc.legacy_primitives().unwrap().quot_ctor.clone(),
+            Box::new([]),
+          ),
           alpha.clone(),
         ),
         r.clone(),
@@ -5716,7 +5972,10 @@ mod tests {
           AE::app(
             AE::app(
               AE::app(
-                AE::cnst(tc.prims.quot_lift.clone(), Box::new([])),
+                AE::cnst(
+                  tc.legacy_primitives().unwrap().quot_lift.clone(),
+                  Box::new([]),
+                ),
                 alpha,
               ),
               r,
@@ -5753,11 +6012,11 @@ mod tests {
     let apps = |head: AE, args: &[AE]| args.iter().cloned().fold(head, AE::app);
 
     let mk = apps(
-      AE::cnst(tc.prims.quot_ctor.clone(), Box::new([])),
+      AE::cnst(tc.legacy_primitives().unwrap().quot_ctor.clone(), Box::new([])),
       &[alpha.clone(), r.clone(), a.clone()],
     );
     let ind = apps(
-      AE::cnst(tc.prims.quot_ind.clone(), Box::new([])),
+      AE::cnst(tc.legacy_primitives().unwrap().quot_ind.clone(), Box::new([])),
       &[alpha, r, beta, f.clone(), mk, extra.clone()],
     );
 
@@ -5782,11 +6041,11 @@ mod tests {
     let apps = |head: AE, args: &[AE]| args.iter().cloned().fold(head, AE::app);
 
     let overapplied_mk = apps(
-      AE::cnst(tc.prims.quot_ctor.clone(), Box::new([])),
+      AE::cnst(tc.legacy_primitives().unwrap().quot_ctor.clone(), Box::new([])),
       &[alpha.clone(), r.clone(), a, extra],
     );
     let lift = apps(
-      AE::cnst(tc.prims.quot_lift.clone(), Box::new([])),
+      AE::cnst(tc.legacy_primitives().unwrap().quot_lift.clone(), Box::new([])),
       &[alpha, r, beta, f, h, overapplied_mk],
     );
 
@@ -5823,7 +6082,10 @@ mod tests {
           AE::app(
             AE::app(
               AE::app(
-                AE::cnst(tc.prims.quot_lift.clone(), Box::new([])),
+                AE::cnst(
+                  tc.legacy_primitives().unwrap().quot_lift.clone(),
+                  Box::new([]),
+                ),
                 alpha,
               ),
               r,
@@ -5843,7 +6105,7 @@ mod tests {
     let (head, _) = collect_app_spine(&result);
     match head.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.quot_lift.addr);
+        assert_eq!(id.addr, tc.legacy_primitives().unwrap().quot_lift.addr);
       },
       other => panic!("expected Quot.lift head, got {other:?}"),
     }
@@ -5860,7 +6122,13 @@ mod tests {
     let beta = AE::cnst(mk_id("β"), Box::new([]));
     let lift_partial = AE::app(
       AE::app(
-        AE::app(AE::cnst(tc.prims.quot_lift.clone(), Box::new([])), alpha),
+        AE::app(
+          AE::cnst(
+            tc.legacy_primitives().unwrap().quot_lift.clone(),
+            Box::new([]),
+          ),
+          alpha,
+        ),
         r,
       ),
       beta,
@@ -5870,7 +6138,7 @@ mod tests {
     assert_eq!(args.len(), 3, "under-applied Quot.lift must stay partial");
     match head.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.quot_lift.addr);
+        assert_eq!(id.addr, tc.legacy_primitives().unwrap().quot_lift.addr);
       },
       other => panic!("expected Quot.lift head, got {other:?}"),
     }
@@ -5889,7 +6157,10 @@ mod tests {
   fn decidable_reduction_non_nat_arg_bails_out() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let dec_le = AE::cnst(tc.prims.nat_dec_le.clone(), Box::new([]));
+    let dec_le = AE::cnst(
+      tc.legacy_primitives().unwrap().nat_dec_le.clone(),
+      Box::new([]),
+    );
     // Args are not Nat literals — decidable path must not panic, must
     // not reduce.
     let opaque1 = sort0();
@@ -5902,7 +6173,10 @@ mod tests {
   fn decidable_reduction_underapplied_bails_out() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let dec_le = AE::cnst(tc.prims.nat_dec_le.clone(), Box::new([]));
+    let dec_le = AE::cnst(
+      tc.legacy_primitives().unwrap().nat_dec_le.clone(),
+      Box::new([]),
+    );
     // Only 1 arg — path must bail out.
     let expr = AE::app(dec_le, mk_nat(3));
     let _ = tc.whnf(&expr).unwrap();
@@ -5972,7 +6246,11 @@ mod tests {
     let cases =
       [(0, 7, 7), (7, 0, 7), (2, 3, 5), (1_000_000, 2_000_000, 3_000_000)];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_add.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_add.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_nat_lit(&tc.whnf(&e).unwrap(), r);
     }
   }
@@ -5984,7 +6262,11 @@ mod tests {
     // Saturating: a < b ⇒ 0
     let cases = [(5, 3, 2), (5, 5, 0), (3, 5, 0), (5, 0, 5), (0, 0, 0)];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_sub.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_sub.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_nat_lit(&tc.whnf(&e).unwrap(), r);
     }
   }
@@ -5995,7 +6277,11 @@ mod tests {
     let mut tc = TypeChecker::new(&mut env);
     let cases = [(0, 7, 0), (7, 0, 0), (6, 7, 42), (1, 42, 42)];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_mul.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_mul.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_nat_lit(&tc.whnf(&e).unwrap(), r);
     }
   }
@@ -6007,7 +6293,11 @@ mod tests {
     // Lean convention: div by 0 ⇒ 0
     let cases = [(10, 2, 5), (7, 3, 2), (7, 0, 0), (0, 7, 0)];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_div.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_div.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_nat_lit(&tc.whnf(&e).unwrap(), r);
     }
   }
@@ -6019,7 +6309,11 @@ mod tests {
     // Lean convention: mod by 0 ⇒ a (the dividend)
     let cases = [(10, 2, 0), (7, 3, 1), (7, 0, 7), (0, 7, 0)];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_mod.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_mod.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_nat_lit(&tc.whnf(&e).unwrap(), r);
     }
   }
@@ -6030,7 +6324,11 @@ mod tests {
     let mut tc = TypeChecker::new(&mut env);
     let cases = [(0, 5, 0), (5, 0, 1), (2, 10, 1024), (1, 100, 1)];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_pow.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_pow.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_nat_lit(&tc.whnf(&e).unwrap(), r);
     }
   }
@@ -6041,7 +6339,11 @@ mod tests {
     let mut tc = TypeChecker::new(&mut env);
     let cases = [(0, 7, 7), (7, 0, 7), (9, 4, 1), (12, 18, 6)];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_gcd.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_gcd.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_nat_lit(&tc.whnf(&e).unwrap(), r);
     }
   }
@@ -6051,7 +6353,7 @@ mod tests {
     let mut env = nat_env();
     let prims_clone = {
       let tc = TypeChecker::new(&mut env);
-      tc.prims.clone()
+      tc.legacy_primitives().unwrap().clone()
     };
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
@@ -6063,7 +6365,11 @@ mod tests {
       (5, 3, false),
     ];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_beq.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_beq.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_bool_const(&tc.whnf(&e).unwrap(), r, &prims_clone);
     }
   }
@@ -6073,13 +6379,17 @@ mod tests {
     let mut env = nat_env();
     let prims_clone = {
       let tc = TypeChecker::new(&mut env);
-      tc.prims.clone()
+      tc.legacy_primitives().unwrap().clone()
     };
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
     let cases = [(0, 0, true), (3, 5, true), (5, 5, true), (5, 3, false)];
     for (a, b, r) in cases {
-      let e = nat_bin_op(tc.prims.nat_ble.clone(), mk_nat(a), mk_nat(b));
+      let e = nat_bin_op(
+        tc.legacy_primitives().unwrap().nat_ble.clone(),
+        mk_nat(a),
+        mk_nat(b),
+      );
       assert_bool_const(&tc.whnf(&e).unwrap(), r, &prims_clone);
     }
   }
@@ -6089,17 +6399,37 @@ mod tests {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
     // land
-    let e = nat_bin_op(tc.prims.nat_land.clone(), mk_nat(0xF0), mk_nat(0x0F));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_land.clone(),
+      mk_nat(0xF0),
+      mk_nat(0x0F),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 0);
-    let e = nat_bin_op(tc.prims.nat_land.clone(), mk_nat(0xFF), mk_nat(0x0F));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_land.clone(),
+      mk_nat(0xFF),
+      mk_nat(0x0F),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 0xF);
     // lor
-    let e = nat_bin_op(tc.prims.nat_lor.clone(), mk_nat(0xF0), mk_nat(0x0F));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_lor.clone(),
+      mk_nat(0xF0),
+      mk_nat(0x0F),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 0xFF);
     // xor
-    let e = nat_bin_op(tc.prims.nat_xor.clone(), mk_nat(0xFF), mk_nat(0xFF));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_xor.clone(),
+      mk_nat(0xFF),
+      mk_nat(0xFF),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 0);
-    let e = nat_bin_op(tc.prims.nat_xor.clone(), mk_nat(0xFF), mk_nat(0x0F));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_xor.clone(),
+      mk_nat(0xFF),
+      mk_nat(0x0F),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 0xF0);
   }
 
@@ -6108,14 +6438,30 @@ mod tests {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
     // shift_left
-    let e = nat_bin_op(tc.prims.nat_shift_left.clone(), mk_nat(1), mk_nat(4));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_shift_left.clone(),
+      mk_nat(1),
+      mk_nat(4),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 16);
-    let e = nat_bin_op(tc.prims.nat_shift_left.clone(), mk_nat(5), mk_nat(0));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_shift_left.clone(),
+      mk_nat(5),
+      mk_nat(0),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 5);
     // shift_right
-    let e = nat_bin_op(tc.prims.nat_shift_right.clone(), mk_nat(16), mk_nat(4));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_shift_right.clone(),
+      mk_nat(16),
+      mk_nat(4),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 1);
-    let e = nat_bin_op(tc.prims.nat_shift_right.clone(), mk_nat(5), mk_nat(0));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_shift_right.clone(),
+      mk_nat(5),
+      mk_nat(0),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 5);
   }
 
@@ -6126,8 +6472,13 @@ mod tests {
   fn nat_add_zero_ctor_left() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let zero = AE::cnst(tc.prims.nat_zero.clone(), Box::new([]));
-    let e = nat_bin_op(tc.prims.nat_add.clone(), zero, mk_nat(7));
+    let zero =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_zero.clone(), Box::new([]));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_add.clone(),
+      zero,
+      mk_nat(7),
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 7);
   }
 
@@ -6135,8 +6486,13 @@ mod tests {
   fn nat_mul_zero_ctor_right() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let zero = AE::cnst(tc.prims.nat_zero.clone(), Box::new([]));
-    let e = nat_bin_op(tc.prims.nat_mul.clone(), mk_nat(7), zero);
+    let zero =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_zero.clone(), Box::new([]));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_mul.clone(),
+      mk_nat(7),
+      zero,
+    );
     assert_nat_lit(&tc.whnf(&e).unwrap(), 0);
   }
 
@@ -6145,12 +6501,17 @@ mod tests {
     let mut env = nat_env();
     let prims_clone = {
       let tc = TypeChecker::new(&mut env);
-      tc.prims.clone()
+      tc.legacy_primitives().unwrap().clone()
     };
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let zero = AE::cnst(tc.prims.nat_zero.clone(), Box::new([]));
-    let e = nat_bin_op(tc.prims.nat_beq.clone(), zero, mk_nat(0));
+    let zero =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_zero.clone(), Box::new([]));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_beq.clone(),
+      zero,
+      mk_nat(0),
+    );
     assert_bool_const(&tc.whnf(&e).unwrap(), true, &prims_clone);
   }
 
@@ -6160,7 +6521,8 @@ mod tests {
   fn nat_succ_of_lit() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    let succ =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_succ.clone(), Box::new([]));
     let e = AE::app(succ, mk_nat(41));
     assert_nat_lit(&tc.whnf(&e).unwrap(), 42);
   }
@@ -6169,8 +6531,10 @@ mod tests {
   fn nat_succ_chain_of_zero() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
-    let zero = AE::cnst(tc.prims.nat_zero.clone(), Box::new([]));
+    let succ =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_succ.clone(), Box::new([]));
+    let zero =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_zero.clone(), Box::new([]));
     // Nat.succ (Nat.succ (Nat.succ Nat.zero))
     let chain =
       AE::app(succ.clone(), AE::app(succ.clone(), AE::app(succ, zero)));
@@ -6184,8 +6548,11 @@ mod tests {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
     let shift = (1u64 << 24) + 1;
-    let e =
-      nat_bin_op(tc.prims.nat_shift_left.clone(), mk_nat(1), mk_nat(shift));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_shift_left.clone(),
+      mk_nat(1),
+      mk_nat(shift),
+    );
     let r = tc.try_reduce_nat(&e).unwrap().expect("shiftLeft reduces");
     if let ExprData::Nat(v, _, _) = r.data() {
       assert_eq!(v.0.bits(), shift + 1);
@@ -6199,7 +6566,7 @@ mod tests {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
     let e = nat_bin_op(
-      tc.prims.nat_shift_right.clone(),
+      tc.legacy_primitives().unwrap().nat_shift_right.clone(),
       mk_nat(7),
       mk_nat((1u64 << 24) + 1),
     );
@@ -6213,8 +6580,11 @@ mod tests {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
     let shift = 1u64 << 24;
-    let e =
-      nat_bin_op(tc.prims.nat_shift_left.clone(), mk_nat(1), mk_nat(shift));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_shift_left.clone(),
+      mk_nat(1),
+      mk_nat(shift),
+    );
     let r = tc.try_reduce_nat(&e).unwrap().expect("shiftLeft reduces");
     if let ExprData::Nat(v, _, _) = r.data() {
       assert_eq!(v.0.bits(), shift + 1);
@@ -6229,8 +6599,11 @@ mod tests {
   fn nat_pow_over_cap_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e =
-      nat_bin_op(tc.prims.nat_pow.clone(), mk_nat(2), mk_nat((1u64 << 24) + 1));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_pow.clone(),
+      mk_nat(2),
+      mk_nat((1u64 << 24) + 1),
+    );
     let r = tc.try_reduce_nat(&e).unwrap();
     assert!(
       r.is_none(),
@@ -6243,7 +6616,11 @@ mod tests {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
     // 1^(2^24) = 1; cap is "b > 2^24", so b == 2^24 reduces.
-    let e = nat_bin_op(tc.prims.nat_pow.clone(), mk_nat(1), mk_nat(1u64 << 24));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_pow.clone(),
+      mk_nat(1),
+      mk_nat(1u64 << 24),
+    );
     let r = tc.try_reduce_nat(&e).unwrap().expect("at cap reduces");
     assert_nat_lit(&r, 1);
   }
@@ -6255,7 +6632,10 @@ mod tests {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
     for a in [5, 0, 1] {
-      let e = nat_unary_op(tc.prims.nat_pred.clone(), mk_nat(a));
+      let e = nat_unary_op(
+        tc.legacy_primitives().unwrap().nat_pred.clone(),
+        mk_nat(a),
+      );
       assert!(tc.try_reduce_nat(&e).unwrap().is_none());
     }
   }
@@ -6264,8 +6644,10 @@ mod tests {
   fn nat_pred_zero_ctor_stays_out_of_try_reduce_nat() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let zero = AE::cnst(tc.prims.nat_zero.clone(), Box::new([]));
-    let e = nat_unary_op(tc.prims.nat_pred.clone(), zero);
+    let zero =
+      AE::cnst(tc.legacy_primitives().unwrap().nat_zero.clone(), Box::new([]));
+    let e =
+      nat_unary_op(tc.legacy_primitives().unwrap().nat_pred.clone(), zero);
     assert!(tc.try_reduce_nat(&e).unwrap().is_none());
   }
 
@@ -6275,7 +6657,11 @@ mod tests {
   fn nat_mul_symbolic_zero_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e = nat_bin_op(tc.prims.nat_mul.clone(), AE::var(0, ()), mk_nat(0));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_mul.clone(),
+      AE::var(0, ()),
+      mk_nat(0),
+    );
     assert!(tc.try_reduce_nat(&e).unwrap().is_none());
   }
 
@@ -6283,7 +6669,11 @@ mod tests {
   fn nat_mul_zero_symbolic_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e = nat_bin_op(tc.prims.nat_mul.clone(), mk_nat(0), AE::var(0, ()));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_mul.clone(),
+      mk_nat(0),
+      AE::var(0, ()),
+    );
     assert!(tc.try_reduce_nat(&e).unwrap().is_none());
   }
 
@@ -6291,7 +6681,11 @@ mod tests {
   fn nat_add_symbolic_small_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e = nat_bin_op(tc.prims.nat_add.clone(), AE::var(0, ()), mk_nat(3));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_add.clone(),
+      AE::var(0, ()),
+      mk_nat(3),
+    );
     assert!(tc.try_reduce_nat(&e).unwrap().is_none());
   }
 
@@ -6299,7 +6693,11 @@ mod tests {
   fn nat_add_symbolic_large_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e = nat_bin_op(tc.prims.nat_add.clone(), AE::var(0, ()), mk_nat(100));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_add.clone(),
+      AE::var(0, ()),
+      mk_nat(100),
+    );
     let r = tc.try_reduce_nat(&e).unwrap();
     assert!(r.is_none(), "add with a symbolic argument should stay stuck");
   }
@@ -6308,8 +6706,11 @@ mod tests {
   fn nat_add_both_symbolic_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e =
-      nat_bin_op(tc.prims.nat_add.clone(), AE::var(0, ()), AE::var(1, ()));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_add.clone(),
+      AE::var(0, ()),
+      AE::var(1, ()),
+    );
     let r = tc.try_reduce_nat(&e).unwrap();
     assert!(r.is_none(), "both-symbolic add should be stuck");
   }
@@ -6318,7 +6719,11 @@ mod tests {
   fn nat_div_symbolic_stuck() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e = nat_bin_op(tc.prims.nat_div.clone(), AE::var(0, ()), mk_nat(2));
+    let e = nat_bin_op(
+      tc.legacy_primitives().unwrap().nat_div.clone(),
+      AE::var(0, ()),
+      mk_nat(2),
+    );
     let r = tc.try_reduce_nat(&e).unwrap();
     assert!(r.is_none(), "div with symbolic dividend should be stuck");
   }
@@ -6542,8 +6947,11 @@ mod tests {
   fn whnf_string_of_list_literal_collapses_to_str() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
-    let e = app(of_list, char_list_lit(&tc.prims, "ok"));
+    let of_list = AE::cnst(
+      tc.legacy_primitives().unwrap().string_of_list.clone(),
+      Box::new([]),
+    );
+    let e = app(of_list, char_list_lit(tc.legacy_primitives().unwrap(), "ok"));
     let result = tc.whnf(&e).unwrap();
     match result.data() {
       ExprData::Str(s, _, _) => assert_eq!(s, "ok"),
@@ -6560,8 +6968,11 @@ mod tests {
   fn whnf_string_of_list_empty_collapses_to_empty_str() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
-    let e = app(of_list, char_list_lit(&tc.prims, ""));
+    let of_list = AE::cnst(
+      tc.legacy_primitives().unwrap().string_of_list.clone(),
+      Box::new([]),
+    );
+    let e = app(of_list, char_list_lit(tc.legacy_primitives().unwrap(), ""));
     let result = tc.whnf(&e).unwrap();
     match result.data() {
       ExprData::Str(s, _, _) => assert_eq!(s, ""),
@@ -6573,8 +6984,12 @@ mod tests {
   fn whnf_string_of_list_multibyte_chars_collapse() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
-    let e = app(of_list, char_list_lit(&tc.prims, "L∃∀N"));
+    let of_list = AE::cnst(
+      tc.legacy_primitives().unwrap().string_of_list.clone(),
+      Box::new([]),
+    );
+    let e =
+      app(of_list, char_list_lit(tc.legacy_primitives().unwrap(), "L∃∀N"));
     let result = tc.whnf(&e).unwrap();
     match result.data() {
       ExprData::Str(s, _, _) => assert_eq!(s, "L∃∀N"),
@@ -6589,18 +7004,33 @@ mod tests {
     // ordinary delta path must expose the ofByteArray constructor form.
     let (mut env, of_byte_array_id, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let char_ty = AE::cnst(tc.prims.char_type.clone(), Box::new([]));
-    let bad_char =
-      app(AE::cnst(tc.prims.char_of_nat.clone(), Box::new([])), mk_nat(0xD800));
+    let char_ty =
+      AE::cnst(tc.legacy_primitives().unwrap().char_type.clone(), Box::new([]));
+    let bad_char = app(
+      AE::cnst(
+        tc.legacy_primitives().unwrap().char_of_nat.clone(),
+        Box::new([]),
+      ),
+      mk_nat(0xD800),
+    );
     let nil = app(
-      AE::cnst(tc.prims.list_nil.clone(), Box::new([AU::zero()])),
+      AE::cnst(
+        tc.legacy_primitives().unwrap().list_nil.clone(),
+        Box::new([AU::zero()]),
+      ),
       char_ty.clone(),
     );
     let list = apps_ae(
-      AE::cnst(tc.prims.list_cons.clone(), Box::new([AU::zero()])),
+      AE::cnst(
+        tc.legacy_primitives().unwrap().list_cons.clone(),
+        Box::new([AU::zero()]),
+      ),
       &[char_ty, bad_char, nil],
     );
-    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
+    let of_list = AE::cnst(
+      tc.legacy_primitives().unwrap().string_of_list.clone(),
+      Box::new([]),
+    );
     let result = tc.whnf(&app(of_list, list)).unwrap();
     let (head, args) = collect_app_spine(&result);
     match head.data() {
@@ -6626,7 +7056,10 @@ mod tests {
     // the term stuck rather than produce the literal.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
+    let append = AE::cnst(
+      tc.legacy_primitives().unwrap().string_append.clone(),
+      Box::new([]),
+    );
     let e = apps_ae(append, &[str_lit("hello"), str_lit("!")]);
     let result = tc.whnf(&e).unwrap();
     match result.data() {
@@ -6647,9 +7080,15 @@ mod tests {
     // reduces natively end-to-end.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
-    let ok = app(of_list, char_list_lit(&tc.prims, "ok"));
-    let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
+    let of_list = AE::cnst(
+      tc.legacy_primitives().unwrap().string_of_list.clone(),
+      Box::new([]),
+    );
+    let ok = app(of_list, char_list_lit(tc.legacy_primitives().unwrap(), "ok"));
+    let append = AE::cnst(
+      tc.legacy_primitives().unwrap().string_append.clone(),
+      Box::new([]),
+    );
     let e = apps_ae(append, &[ok, str_lit("!")]);
     let result = tc.whnf(&e).unwrap();
     match result.data() {
@@ -6667,7 +7106,10 @@ mod tests {
   fn whnf_string_append_symbolic_arg_stays_stuck() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
+    let append = AE::cnst(
+      tc.legacy_primitives().unwrap().string_append.clone(),
+      Box::new([]),
+    );
     let e = apps_ae(append, &[AE::var(0, ()), str_lit("!")]);
     let result = tc.whnf(&e).unwrap();
     assert!(
@@ -6682,14 +7124,19 @@ mod tests {
     // — it IS the native char value form.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e =
-      app(AE::cnst(tc.prims.char_of_nat.clone(), Box::new([])), mk_nat(111));
+    let e = app(
+      AE::cnst(
+        tc.legacy_primitives().unwrap().char_of_nat.clone(),
+        Box::new([]),
+      ),
+      mk_nat(111),
+    );
     let result = tc.whnf(&e).unwrap();
     assert!(
       result.ptr_eq(&tc.env.intern.intern_expr(e.clone())) || {
         let (head, args) = collect_app_spine(&result);
         matches!(head.data(), ExprData::Const(id, _, _)
-          if id.addr == tc.prims.char_of_nat.addr)
+          if id.addr == tc.legacy_primitives().unwrap().char_of_nat.addr)
           && args.len() == 1
       },
       "Char.ofNat literal should stay stuck as a value, got {result}"
@@ -6708,13 +7155,19 @@ mod tests {
     // proceeds — observable via the simplified body's Char.mk head.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let e =
-      app(AE::cnst(tc.prims.char_of_nat.clone(), Box::new([])), mk_nat(0xD800));
+    let e = app(
+      AE::cnst(
+        tc.legacy_primitives().unwrap().char_of_nat.clone(),
+        Box::new([]),
+      ),
+      mk_nat(0xD800),
+    );
     let result = tc.whnf(&e).unwrap();
     let (head, _) = collect_app_spine(&result);
     match head.data() {
       ExprData::Const(id, _, _) => assert_eq!(
-        id.addr, tc.prims.char_mk.addr,
+        id.addr,
+        tc.legacy_primitives().unwrap().char_mk.addr,
         "invalid Char.ofNat should delta-unfold structurally"
       ),
       other => panic!("expected Char.mk head, got {other:?}"),
@@ -6756,7 +7209,7 @@ mod tests {
     assert_eq!(f0_args.len(), 1);
     let (list_head, _) = collect_app_spine(&f0_args[0]);
     assert!(matches!(list_head.data(), ExprData::Const(id, _, _)
-      if id.addr == tc.prims.list_cons.addr));
+      if id.addr == tc.legacy_primitives().unwrap().list_cons.addr));
     assert!(
       tc.fuel_used() < STRING_FAST_PATH_TICKS,
       "Str-literal iota burned {} ticks",
@@ -6772,7 +7225,8 @@ mod tests {
     let (mut env, _, _) = string_env();
     let utf8_encode_addr = mk_addr("List.utf8Encode");
     let mut tc = TypeChecker::new(&mut env);
-    let string_kid = KId::<Anon>::new(tc.prims.string.addr.clone(), ());
+    let string_kid =
+      KId::<Anon>::new(tc.legacy_primitives().unwrap().string.addr.clone(), ());
     let e = AE::prj(string_kid, 0, str_lit("ok"));
     let result = tc.whnf(&e).unwrap();
     let (head, _) = collect_app_spine(&result);
@@ -6789,12 +7243,19 @@ mod tests {
   fn def_eq_str_literal_vs_of_list_constructor_form() {
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
-    let ctor_built = app(of_list.clone(), char_list_lit(&tc.prims, "ok"));
+    let of_list = AE::cnst(
+      tc.legacy_primitives().unwrap().string_of_list.clone(),
+      Box::new([]),
+    );
+    let ctor_built = app(
+      of_list.clone(),
+      char_list_lit(tc.legacy_primitives().unwrap(), "ok"),
+    );
     assert!(tc.is_def_eq(&str_lit("ok"), &ctor_built).unwrap());
     assert!(tc.is_def_eq(&ctor_built, &str_lit("ok")).unwrap());
     // …and a mismatched literal is definitionally distinct.
-    let ctor_built_no = app(of_list, char_list_lit(&tc.prims, "no"));
+    let ctor_built_no =
+      app(of_list, char_list_lit(tc.legacy_primitives().unwrap(), "no"));
     assert!(!tc.is_def_eq(&str_lit("ok"), &ctor_built_no).unwrap());
   }
 
@@ -6816,7 +7277,10 @@ mod tests {
     // def-eq's no-delta layer.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
+    let append = AE::cnst(
+      tc.legacy_primitives().unwrap().string_append.clone(),
+      Box::new([]),
+    );
     let e = apps_ae(append, &[str_lit("a"), str_lit("b")]);
     assert!(tc.is_def_eq(&e, &str_lit("ab")).unwrap());
     assert!(!tc.is_def_eq(&e, &str_lit("ba")).unwrap());
@@ -6863,14 +7327,20 @@ mod tests {
     );
     let mut tc = TypeChecker::new(&mut env);
     let e = apps_ae(
-      AE::cnst(tc.prims.string_dec_eq.clone(), Box::new([])),
+      AE::cnst(
+        tc.legacy_primitives().unwrap().string_dec_eq.clone(),
+        Box::new([]),
+      ),
       &[str_lit("ok"), str_lit("ok")],
     );
     let result = tc.whnf(&e).unwrap();
     let (head, args) = collect_app_spine(&result);
     match head.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.decidable_is_true.addr);
+        assert_eq!(
+          id.addr,
+          tc.legacy_primitives().unwrap().decidable_is_true.addr
+        );
       },
       other => panic!("expected Decidable.isTrue, got {other:?}"),
     }
@@ -6878,7 +7348,7 @@ mod tests {
     // Witness: Eq.refl.{1} String "ok"
     let (refl_head, refl_args) = collect_app_spine(&args[1]);
     assert!(matches!(refl_head.data(), ExprData::Const(id, _, _)
-      if id.addr == tc.prims.eq_refl.addr));
+      if id.addr == tc.legacy_primitives().unwrap().eq_refl.addr));
     assert_eq!(refl_args.len(), 2);
     assert!(matches!(refl_args[1].data(), ExprData::Str(s, _, _) if s == "ok"));
   }
@@ -6907,7 +7377,10 @@ mod tests {
     );
     let mut tc = TypeChecker::new(&mut env);
     let e = apps_ae(
-      AE::cnst(tc.prims.string_dec_eq.clone(), Box::new([])),
+      AE::cnst(
+        tc.legacy_primitives().unwrap().string_dec_eq.clone(),
+        Box::new([]),
+      ),
       &[str_lit("ok"), str_lit("no")],
     );
     let result = tc.whnf(&e).unwrap();
@@ -6926,11 +7399,14 @@ mod tests {
     // it into the validity cascade.
     let (mut env, _, _) = string_env();
     let mut tc = TypeChecker::new(&mut env);
-    let back = AE::cnst(tc.prims.string_back.clone(), Box::new([]));
+    let back = AE::cnst(
+      tc.legacy_primitives().unwrap().string_back.clone(),
+      Box::new([]),
+    );
     let result = tc.whnf(&app(back, str_lit("abc"))).unwrap();
     let (head, args) = collect_app_spine(&result);
     assert!(matches!(head.data(), ExprData::Const(id, _, _)
-      if id.addr == tc.prims.char_of_nat.addr));
+      if id.addr == tc.legacy_primitives().unwrap().char_of_nat.addr));
     assert_eq!(args.len(), 1);
     assert!(matches!(args[0].data(), ExprData::Nat(v, _, _)
       if v.0 == num_bigint::BigUint::from(99u64)));

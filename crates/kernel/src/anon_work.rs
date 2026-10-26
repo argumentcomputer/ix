@@ -103,6 +103,76 @@ impl AnonWorkItem {
   }
 }
 
+fn mutual_work(
+  address: &Address,
+  members: &[ixon::constant::MutConst],
+) -> Result<AnonWorkItem, String> {
+  use ixon::constant::MutConst;
+  crate::ingress::validate_serialized_muts(members)?;
+  let mut targets = Vec::new();
+  for (index, member) in members.iter().enumerate() {
+    let index = u64::try_from(index).map_err(|error| error.to_string())?;
+    targets.push(match member {
+      MutConst::Defn(_) => anon_defn_proj_addr(address, index),
+      MutConst::Indc(_) => anon_indc_proj_addr(address, index),
+      MutConst::Recr(_) => anon_recr_proj_addr(address, index),
+    });
+    if let MutConst::Indc(inductive) = member {
+      for constructor in 0..inductive.ctors.len() {
+        targets.push(anon_ctor_proj_addr(
+          address,
+          index,
+          u64::try_from(constructor).map_err(|error| error.to_string())?,
+        ));
+      }
+    }
+  }
+  Ok(AnonWorkItem::Block {
+    block_addr: address.clone(),
+    primary: targets[0].clone(),
+    targets,
+  })
+}
+
+/// Bound-host scheduling reads authenticated headers/owners, never cached ASTs.
+/// A whole walk also checks exact key coverage, including carried projections.
+#[cfg(not(target_arch = "riscv64"))]
+pub fn build_artifact_work(
+  source: &crate::role_admission::ArtifactSource,
+) -> Result<Vec<AnonWorkItem>, String> {
+  use ConstVariantTag as Tag;
+  let mut keys = source.addresses();
+  keys.sort_unstable();
+  let mut work = Vec::new();
+  for address in &keys {
+    match source.record_tag(address).map_err(|error| error.to_string())? {
+      Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {},
+      Tag::Muts => {
+        let record =
+          source.record(address).map_err(|error| error.to_string())?;
+        let ixon::constant::ConstantInfo::Muts(members) =
+          &record.constant().info
+        else {
+          return Err(
+            "authenticated mutual header differs from decoded record".into(),
+          );
+        };
+        work.push(mutual_work(address, members)?);
+      },
+      _ => work.push(AnonWorkItem::Standalone { addr: address.clone() }),
+    }
+  }
+  let mut covered: Vec<_> =
+    work.iter().flat_map(AnonWorkItem::proven_targets).collect();
+  covered.sort_unstable();
+  if covered != keys {
+    return Err(
+      "artifact work does not cover the exact raw record set once".into(),
+    );
+  }
+  Ok(work)
+}
+
 /// Enumerate the anon-mode kernel work set from `env.consts`.
 ///
 /// Returns one `AnonWorkItem` per kernel-checkable group of
@@ -114,7 +184,6 @@ impl AnonWorkItem {
 pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
   use ConstVariantTag as Tag;
   use ixon::constant::ConstantInfo as CI;
-  use ixon::constant::MutConst as MC;
 
   let mut work: Vec<AnonWorkItem> = Vec::new();
 
@@ -150,28 +219,7 @@ pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
             addr.hex()
           ));
         };
-        crate::ingress::validate_serialized_muts(members)?;
-        let mut targets: Vec<Address> = Vec::new();
-        for (i, member) in members.iter().enumerate() {
-          let i = i as u64;
-          let member_addr = match member {
-            MC::Defn(_) => anon_defn_proj_addr(&addr, i),
-            MC::Indc(_) => anon_indc_proj_addr(&addr, i),
-            MC::Recr(_) => anon_recr_proj_addr(&addr, i),
-          };
-          targets.push(member_addr);
-          if let MC::Indc(ind) = member {
-            for cidx in 0..ind.ctors.len() as u64 {
-              targets.push(anon_ctor_proj_addr(&addr, i, cidx));
-            }
-          }
-        }
-        let primary = targets[0].clone();
-        work.push(AnonWorkItem::Block {
-          block_addr: addr.clone(),
-          primary,
-          targets,
-        });
+        work.push(mutual_work(&addr, members)?);
       },
     }
   }
