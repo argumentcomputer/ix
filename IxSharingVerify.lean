@@ -67,7 +67,9 @@ stronger optimality results.
   fixed here. `FamilyExact*` proves byte equality with the reference route's
   default search when both succeed at the same limits and every initial
   component has at most 16 members.
-  `FamilyCostDomain`, `FamilyFullWitness`, `FamilyResidual`,
+  Apart from that comparison, which takes the bound from the reference run,
+  these results need no bound on telescope spine lengths, and the family
+  route checks none. `FamilyFullWitness`, `FamilyResidual`,
   `FamilyLocalWriting` and `FamilyWritingBound` are groundwork for an
   output-size bound. None of these modules proves that the rule never fails;
 * `CanonicalProduction`: the compiler-facing theorems of the production

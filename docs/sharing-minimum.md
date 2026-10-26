@@ -1200,10 +1200,12 @@ conditions. It does not follow from an arbitrary in-memory `Constant` or from in
 UInt64-sized fields alone.
 
 The production cutover retains checked arithmetic, resource limits and construction guards.
-In particular, the current telescope-spine guard, output-count/size checks and
-allocate/rematerialize checks remain. A failure returns an error. A structural fallback is
-part of the rule; a fallback triggered by failure is not. The framed input bound by itself
-does not prove that the selected output fits its frame or that every guard succeeds.
+In particular, the output-count/size checks and allocate/rematerialize checks remain. A
+failure returns an error. The family route has no telescope-spine guard: its cost identity
+and successful-output theorems hold for every spine length, so only the reference route keeps
+that guard (§12.17). A structural fallback is part of the rule; a fallback triggered by
+failure is not. The framed input bound by itself does not prove that the selected output fits
+its frame or that every guard succeeds.
 
 ### 14.3 Proof scope and follow-up
 
@@ -1232,7 +1234,7 @@ the production entry and the parameterized normalizer through this implementatio
 the component family, tie rules and resource limits are unchanged.
 
 The follow-up PR will prove success on the stated input domain with sufficient limits and
-a cost bound. Its remaining work includes connecting the spine-free cost/writing proofs
+a cost bound. Its remaining work includes carrying the full-endpoint writing bound
 through the selected output, output-domain closure and UInt64 representability, discharging
 all remaining guards, exact wide Rust arithmetic and wider IDs, traversal/teardown bounds,
 budget independence, and complete resource accounting including phase 2. Definitions of

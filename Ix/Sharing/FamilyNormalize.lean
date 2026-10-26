@@ -106,12 +106,13 @@ def familyAtWidth (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : 
   return tieredResultF layout width uniform allocation materialized candidates phase1
 
 /-- Width-independent data is prepared once; each width owns its component
-buffers. Selection and error ordering are the existing tieredCandidates rule. -/
+buffers. Selection and error ordering are the existing tieredCandidates rule.
+Unlike the reference route, there is no telescope-spine check: the family
+cost identity holds for every spine length (`initial_product_cost`). -/
 def familyExpanded (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expanded) :
     Except SharingError TieredSharingResult := do
   uniformDagChecks ex
   let prep := Prep.ofDag ex.dag
-  uniformSpineCheck ex prep
   let facts := graphFacts ex.dag ex.roots
   let parents := parentsOf ex.dag
   let candidates := tieredCandidateCount ex.dag.size prep facts

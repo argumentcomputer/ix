@@ -482,7 +482,8 @@ pub enum FormatBound {
   UniformWidth { w: u64 },
   /// A telescope spine of length at least `bound` (Lean's `formatBound
   /// "telescope spine length" teleSubaddEnd`): below it the TagN Share-flag
-  /// width is subadditive, which the uniform classes rely on.
+  /// width is subadditive, which the reference route's optimality argument
+  /// relies on. The production family route checks no spine bound.
   TelescopeSpine { bound: u64 },
 }
 

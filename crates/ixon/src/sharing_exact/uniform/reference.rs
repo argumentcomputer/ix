@@ -1056,6 +1056,15 @@ pub(crate) fn optimize_uniform_with(
   meter: &mut Meter<'_>,
 ) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
   let p = prof::scope(Phase::Classify);
+  // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
+  // before the search (Lean's `optimizeUniformExpanded`): the reference
+  // optimality argument needs subadditive telescope headers. A zero width
+  // is refused first, by `initial`.
+  if w != 0 && !spines_within_bound(&prep.spine_len) {
+    return Err(SharingError::FormatBound(FormatBound::TelescopeSpine {
+      bound: TELE_SUBADD_END,
+    }));
+  }
   let Initial {
     up,
     cand,

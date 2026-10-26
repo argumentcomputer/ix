@@ -1084,10 +1084,13 @@ fn knapsack_reference(tables: &[&CTable], cap: usize) -> Vec<Option<Choice>> {
 /// Bound on telescope spine lengths (Lean `teleSubaddEnd = Ixon.tagNEnd5 4`,
 /// 4,311,811,080): below it the TagN Share-flag width is subadditive
 /// (`tag4_len(a + b) <= tag4_len(a) + tag4_len(b)`), which the certain-excluded
-/// class relies on when two telescopes merge.
+/// class relies on when two telescopes merge. Only the reference route's
+/// optimality argument needs it; the family route checks no spine bound.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub(crate) const TELE_SUBADD_END: u64 = TagN::end5(4);
 
 /// Whether every telescope spine length is below [`TELE_SUBADD_END`].
+#[cfg(any(test, feature = "sharing-reference"))]
 pub(crate) fn spines_within_bound(spine_len: &[u64]) -> bool {
   spine_len.iter().all(|&l| l < TELE_SUBADD_END)
 }
@@ -1262,14 +1265,7 @@ fn initial<'d>(
   let nodes = dag.nodes();
   let n = nodes.len();
   let facts = &prep.facts;
-  // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
-  // before the search (Lean's `optimizeUniformExpanded`).
   let spine_len = &prep.spine_len;
-  if !spines_within_bound(spine_len) {
-    return Err(SharingError::FormatBound(FormatBound::TelescopeSpine {
-      bound: TELE_SUBADD_END,
-    }));
-  }
   // Predicate-sufficient min(C_0, cap); never reused as a general model cost.
   let size: &[u128] = prep.size.as_ref().map_err(Clone::clone)?;
   // Classes: certain-excluded, low degree, and the gain test on visible

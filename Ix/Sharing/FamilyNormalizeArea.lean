@@ -106,7 +106,6 @@ def familyExpandedArea (cfg : Config) (layout : ShareLayout) (limits : Limits) (
     Except SharingError TieredSharingResult := do
   uniformDagChecks ex
   let prep := Prep.ofDag ex.dag
-  uniformSpineCheck ex prep
   let facts := graphFacts ex.dag ex.roots
   let parents := parentsOf ex.dag
   let candidates := tieredCandidateCount ex.dag.size prep facts

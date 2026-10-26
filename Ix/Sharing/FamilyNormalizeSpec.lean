@@ -121,7 +121,6 @@ def familyReferenceExpanded (cfg : Config) (layout : ShareLayout) (limits : Limi
     Except SharingError TieredSharingResult := do
   uniformDagChecks ex
   let prep := Prep.ofDag ex.dag
-  uniformSpineCheck ex prep
   let facts := graphFacts ex.dag ex.roots
   let candidates := tieredCandidateCount ex.dag.size prep facts
   let result ← tieredCandidates ex.dag.size (familyReferenceAtWidth cfg layout limits ex prep facts candidates)

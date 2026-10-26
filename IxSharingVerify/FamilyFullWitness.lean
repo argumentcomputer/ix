@@ -1,4 +1,4 @@
-import IxSharingVerify.FamilyCostDomain
+import IxSharingVerify.FamilyCost
 
 /-! Ingredients for a full-endpoint output witness. Every initial component
 chooses its actual full family endpoint. Their merged terms are exactly the

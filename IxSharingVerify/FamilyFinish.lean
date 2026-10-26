@@ -137,7 +137,7 @@ theorem UniformFinished.sizes {width : Nat} {limits : Limits} {ex : Expanded} {o
 model, pinned table and checked roots. The semantic domain assumptions are
 explicit; neither production success nor byte/model equality is presumed. -/
 theorem familyUniform_finished {cfg : Config} {limits : Limits} {ex : Expanded} {width : Nat}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     {out : UniformSharingResult}
@@ -148,7 +148,7 @@ theorem familyUniform_finished {cfg : Config} {limits : Limits} {ex : Expanded} 
   obtain ⟨results, states, work, delta, set, lowerBracket, checked, produced, chosen, _, _, finish⟩ :=
     familyUniform_finish run
   have selected := familyComponents_least cfg limits ex width wf checked produced chosen
-  have cost := (selected_model_nonnegative wf spines roots reachable checked selected).2
+  have cost := (selected_model_nonnegative wf roots reachable checked selected).2
   have standard : uniformFinish width limits ex (Prep.ofDag ex.dag)
       (familyChoice ex width states work delta set lowerBracket) = .ok out := by
     rw [uniformFinish_eq_F]
@@ -159,7 +159,7 @@ theorem familyUniform_finished {cfg : Config} {limits : Limits} {ex : Expanded} 
 /-- The reported model of the returned uniform result is minimal over the
 same finite initial family product, with the initial CS fixed. -/
 theorem familyUniform_model_minimum {cfg : Config} {limits : Limits} {ex : Expanded} {width : Nat}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     {out : UniformSharingResult}
@@ -170,16 +170,16 @@ theorem familyUniform_model_minimum {cfg : Config} {limits : Limits} {ex : Expan
         (mergeSorted (stg width ex).cs (other.foldl mergeSorted #[])).toList := by
   obtain ⟨results, states, work, delta, set, lowerBracket, checked, produced, chosen, _, _, _⟩ :=
     familyUniform_finish run
-  obtain ⟨delta', set', selected, stored, finished⟩ := familyUniform_finished wf spines roots reachable run
+  obtain ⟨delta', set', selected, stored, finished⟩ := familyUniform_finished wf roots reachable run
   obtain ⟨sets, minimum, _, setEq, _, _⟩ := selected
   intro other member
   rw [finished.model, stored, setEq]
-  exact initial_minimum_cost wf spines roots reachable checked minimum other member
+  exact initial_minimum_cost wf roots reachable checked minimum other member
 
 /-- Named returned-field projection for later pipeline composition. It
 does not import an exact-search success premise or assert final serialization. -/
 theorem familyUniform_result_fields {cfg : Config} {limits : Limits} {ex : Expanded} {width : Nat}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     {out : UniformSharingResult}
@@ -190,7 +190,7 @@ theorem familyUniform_result_fields {cfg : Config} {limits : Limits} {ex : Expan
       out.result.roots.size = ex.roots.size ∧
       ∃ visits, reexpand limits ex.dag out.result.sharing out.result.roots =
         .ok (out.result.tableTerms, ex.roots, visits) := by
-  obtain ⟨_, _, _, _, finished⟩ := familyUniform_finished wf spines roots reachable run
+  obtain ⟨_, _, _, _, finished⟩ := familyUniform_finished wf roots reachable run
   exact ⟨finished.permutation, finished.model, finished.sizes.2.2, finished.reexpanded⟩
 
 end Ix.Sharing.Family

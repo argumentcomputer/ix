@@ -99,7 +99,7 @@ theorem tieredResult_checked {layout : ShareLayout} {limits : Limits} {ex : Expa
 /-- The real family phase-1 witness is retained beside the final checked
 tiered output; phase 3 is not asserted to be a global byte minimum. -/
 theorem familyAtWidth_checked {cfg : Config} {layout : ShareLayout} {limits : Limits} {ex : Expanded}
-    {width candidates : Nat} (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    {width candidates : Nat} (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     {out : TieredSharingResult}
@@ -109,7 +109,7 @@ theorem familyAtWidth_checked {cfg : Config} {layout : ShareLayout} {limits : Li
       out.phase1.stored = mergeSorted (stg width ex).cs set ∧ UniformFinished width limits ex out.phase1) ∧
       TieredOutput layout limits ex out := by
   obtain ⟨uniform, allocation, materialized, first, second, third, rfl⟩ := familyAtWidth_parts run
-  obtain ⟨delta, set, selected, stored, finished⟩ := familyUniform_finished wf spines roots reachable first
+  obtain ⟨delta, set, selected, stored, finished⟩ := familyUniform_finished wf roots reachable first
   exact ⟨⟨delta, set, selected, stored, finished⟩, tieredResult_checked wf roots finished second third⟩
 
 /-- The actual expanded wrapper returns a successful width-1/2/3 candidate,
@@ -122,7 +122,6 @@ theorem familyExpanded_selected {cfg : Config} {layout : ShareLayout} {limits : 
         width = .ok candidate ∧
       out = withExpansionStats ex { candidate with stats := { candidate.stats with candidateLengths := lengths } } := by
   unfold familyExpanded at run
-  obtain ⟨_, _, run⟩ := bind_eq_ok run
   obtain ⟨_, _, run⟩ := bind_eq_ok run
   obtain ⟨picked, selected, returned⟩ := bind_eq_ok run
   rw [tieredCandidates_eq] at selected
@@ -156,7 +155,7 @@ theorem TieredOutput.recordStats {layout : ShareLayout} {limits : Limits} {ex : 
 witness and all tiered output facts through statistics-only recording.
 Domain-guard discharge and unconditional success remain separate. -/
 theorem familyExpanded_checked {cfg : Config} {layout : ShareLayout} {limits : Limits} {ex : Expanded}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     {out : TieredSharingResult} (run : familyExpanded cfg layout limits ex = .ok out) :
@@ -166,7 +165,7 @@ theorem familyExpanded_checked {cfg : Config} {layout : ShareLayout} {limits : L
       TieredOutput layout limits ex out := by
   obtain ⟨width, candidate, lengths, admitted, candidateRun, rfl⟩ := familyExpanded_selected run
   obtain ⟨⟨delta, set, least, stored, finished⟩, checked⟩ :=
-    familyAtWidth_checked wf spines roots reachable candidateRun
+    familyAtWidth_checked wf roots reachable candidateRun
   refine ⟨⟨width, admitted, delta, set, least, stored, ?_⟩, checked.recordStats lengths⟩
   exact {
     inBounds := finished.inBounds, inClass := finished.inClass
@@ -176,7 +175,7 @@ theorem familyExpanded_checked {cfg : Config} {layout : ShareLayout} {limits : L
 /-- A compact exported format/semantics/length view of the successful
 expanded entry; no claim is made about whole-constant serialization. -/
 theorem familyExpanded_output {cfg : Config} {layout : ShareLayout} {limits : Limits} {ex : Expanded}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     {out : TieredSharingResult} (run : familyExpanded cfg layout limits ex = .ok out) :
@@ -185,7 +184,7 @@ theorem familyExpanded_output {cfg : Config} {layout : ShareLayout} {limits : Li
       out.result.modelBytes ≤ layoutBytes layout out.phase1.result.sharing out.phase1.result.roots ∧
       ∃ visits, reexpand limits ex.dag out.result.sharing out.result.roots =
         .ok (out.result.tableTerms, ex.roots, visits) := by
-  have checked := (familyExpanded_checked wf spines roots reachable run).2
+  have checked := (familyExpanded_checked wf roots reachable run).2
   exact ⟨checked.format, checked.measured.trans checked.model, checked.phase3_le, checked.reexpanded⟩
 
 end Ix.Sharing.Family
