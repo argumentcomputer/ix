@@ -151,7 +151,7 @@ pub fn check_claim(
   {
     let source =
       ArtifactSource::snapshot(env).map_err(|error| error.to_string())?;
-    return check_source_claim(&source, profile, claim);
+    check_source_claim(&source, profile, claim)
   }
   #[cfg(target_arch = "riscv64")]
   {
@@ -214,7 +214,7 @@ pub fn make_claim(
     let claim =
       ixon::proof::Claim::Resource { root, profile: profile.address()? };
     check_source_claim(&source, profile, &claim)?;
-    return Ok(claim);
+    Ok(claim)
   }
   #[cfg(target_arch = "riscv64")]
   {

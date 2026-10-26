@@ -364,7 +364,7 @@ impl ArtifactSource {
       ConstantInfo::DPrj(p) => &p.block,
       _ => address,
     };
-    Ok(owners.get(owner).map(Vec::as_slice).unwrap_or(&[]))
+    Ok(owners.get(owner).map_or(&[][..], Vec::as_slice))
   }
   pub fn block_of(&self, address: &Address) -> Result<Address, Error> {
     let record = self.record(address)?;
