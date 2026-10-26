@@ -15,7 +15,7 @@ use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::{KUniv, UnivData, univ_eq};
 use super::mode::{CheckDupLevelParams, KernelMode};
-use super::primitive::Primitives;
+use super::primitive::{Primitives, is_native_evaluation_addr};
 use super::tc::TypeChecker;
 
 /// Emit `[decl diff]` when a `Defn`'s value fails the `is_def_eq(val_ty,
@@ -373,6 +373,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   where
     M::MField<Vec<Name>>: CheckDupLevelParams,
   {
+    // `Lean.trustCompiler : True` mentions no native-evaluation constant, so
+    // the reference check in `infer` cannot reach it: decline these
+    // declarations by their own address.
+    if is_native_evaluation_addr(&id.addr) {
+      return Err(TcError::NativeEvaluation(id.addr.clone()));
+    }
+
     let phase_timing = *IX_PHASE_TIMING;
     let overall = if phase_timing { Some(Instant::now()) } else { None };
 
@@ -2211,5 +2218,99 @@ mod tests {
       Err(TcError::UnknownConst(_)) => {},
       other => panic!("expected UnknownConst, got {other:?}"),
     }
+  }
+
+  // =========================================================================
+  // Native evaluation is outside the checked theory
+  // =========================================================================
+
+  fn native_evaluation_id(name: &str) -> KId<Anon> {
+    let (_, addr) = super::super::primitive::native_evaluation_addrs()
+      .iter()
+      .find(|(n, _)| *n == name)
+      .expect("known native-evaluation constant");
+    KId::new(addr.clone(), ())
+  }
+
+  fn prop_axiom(env: &mut KEnv<Anon>, id: &KId<Anon>) {
+    env.insert(
+      id.clone(),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: sort0(),
+      },
+    );
+  }
+
+  fn prop_definition(env: &mut KEnv<Anon>, id: &KId<Anon>, val: AE) {
+    env.insert(
+      id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(0),
+        lvls: 0,
+        ty: sort0(),
+        val,
+        lean_all: (),
+        block: id.clone(),
+      },
+    );
+  }
+
+  /// Each of the five declarations is declined by its own address, even
+  /// when, like `Lean.trustCompiler : True`, its statement mentions none of
+  /// the others. The same axiom at another address is accepted.
+  #[test]
+  fn native_evaluation_declarations_decline() {
+    for (name, addr) in super::super::primitive::native_evaluation_addrs() {
+      let mut env = KEnv::<Anon>::new();
+      let id = KId::new(addr.clone(), ());
+      prop_axiom(&mut env, &id);
+      let control = mk_id("ordinary axiom");
+      prop_axiom(&mut env, &control);
+      let mut tc = TypeChecker::new(&mut env);
+      match tc.check_const(&id) {
+        Err(TcError::NativeEvaluation(declined)) => {
+          assert_eq!(declined, *addr, "{name}")
+        },
+        other => {
+          panic!("{name}: expected a native-evaluation decline, got {other:?}")
+        },
+      }
+      tc.check_const(&control).expect("an ordinary axiom is accepted");
+    }
+  }
+
+  /// A declaration that refers to a native-evaluation constant is declined,
+  /// as the certified checker blocks it; inference without validation still
+  /// reads the declared type.
+  #[test]
+  fn reference_to_native_evaluation_declines() {
+    let mut env = KEnv::<Anon>::new();
+    let trust = native_evaluation_id("Lean.trustCompiler");
+    let other = mk_id("ordinary axiom");
+    prop_axiom(&mut env, &trust);
+    prop_axiom(&mut env, &other);
+    let user = mk_id("user");
+    let control = mk_id("control");
+    prop_definition(&mut env, &user, AE::cnst(trust.clone(), Box::new([])));
+    prop_definition(&mut env, &control, AE::cnst(other, Box::new([])));
+    let mut tc = TypeChecker::new(&mut env);
+    match tc.check_const(&user) {
+      Err(TcError::NativeEvaluation(addr)) => assert_eq!(addr, trust.addr),
+      other => panic!("expected a native-evaluation decline, got {other:?}"),
+    }
+    tc.check_const(&control).expect("the same shape over an ordinary axiom");
+    let reference = AE::cnst(trust, Box::new([]));
+    let ty = tc
+      .with_infer_only(|tc| tc.infer(&reference))
+      .expect("inference without validation is unaffected");
+    assert_eq!(ty, sort0());
   }
 }

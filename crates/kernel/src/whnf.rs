@@ -146,7 +146,6 @@ enum KSynthOutcome<M: KernelMode> {
 /// `prim_family` dispatch memo.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrimFamily {
-  Native,
   BitVec,
   Nat,
   Decidable,
@@ -187,9 +186,6 @@ fn prim_family_uncached<M: KernelMode>(
   }
   if *addr == p.bit_vec_to_nat.addr || *addr == p.bit_vec_ult.addr {
     return PrimFamily::BitVec;
-  }
-  if *addr == p.reduce_bool.addr || *addr == p.reduce_nat.addr {
-    return PrimFamily::Native;
   }
   if *addr == p.string_back.addr
     || *addr == p.string_legacy_back.addr
@@ -410,19 +406,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // Primitive reduction, dispatched by memoized head family — the
-      // five recognizers below each collect their own spine and run their
-      // own address gauntlet, so probing all of them every iteration was
-      // a measurable tax on ordinary (Other-headed) terms. Semantics are
+      // recognizers below each collect their own spine and run their own
+      // address gauntlet, so probing all of them every iteration was a
+      // measurable tax on ordinary (Other-headed) terms. Semantics are
       // unchanged: the families' head-address sets are disjoint, so at
-      // most one recognizer could fire anyway. Reference order preserved
-      // (native before nat: lean4 `type_checker.cpp:667-672`).
+      // most one recognizer could fire anyway.
       let family = self.head_prim_family(&cur);
-      if family == PrimFamily::Native
-        && let Some(reduced) = self.try_reduce_native(&cur)?
-      {
-        cur = reduced;
-        continue;
-      }
 
       // BitVec definitions reduce through Nat comparisons. Keep this before
       // delta so small definitional facts such as `BitVec.ult x 0#w` collapse
@@ -496,7 +485,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       break;
     }
 
-    if !self.in_native_reduce && use_cache && !transient_nat_work {
+    if use_cache && !transient_nat_work {
       self.env.whnf_cache.insert(key, cur.clone());
     }
     Ok(cur)
@@ -1183,19 +1172,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         continue;
       }
 
-      // Native/string primitives must run before projection-definition
+      // String primitives must run before projection-definition
       // rewriting. In the compiled environment, wrappers such as
       // `String.toByteArray` are projection definitions;
       // once rewritten to `Prj`, the cheap primitive recognizers no longer
       // see the original head.
-      if family == PrimFamily::Native
-        && let Some(reduced) = self.try_reduce_native(&cur)?
-      {
-        cur = reduced;
-        continue;
-      }
-
-      // String literal primitives.
       if family == PrimFamily::Str
         && let Some(reduced) = self.try_reduce_string(&cur)?
       {
@@ -1219,7 +1200,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       break;
     }
 
-    if !self.in_native_reduce && use_cache && !transient_nat_work {
+    if use_cache && !transient_nat_work {
       if flags.is_full() {
         self.env.whnf_no_delta_cache.insert(key, cur.clone());
       } else {
@@ -3264,87 +3245,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       result = self.intern(KExpr::app(result, arg.clone()));
     }
     result
-  }
-
-  // -----------------------------------------------------------------------
-  // Native reduction (Lean.reduceBool, Lean.reduceNat)
-  // -----------------------------------------------------------------------
-
-  /// Try native reduction, matching C++ kernel's `reduce_native`.
-  /// - `Lean.reduceBool arg`: look up `arg` (a constant), evaluate its body, return Bool
-  /// - `Lean.reduceNat arg`: look up `arg` (a constant), evaluate its body, return Nat
-  ///
-  /// Nothing else reduces here. As in Lean's kernel, `System.Platform.numBits`
-  /// stays the value of the opaque `System.Platform.getNumBits ()`, and
-  /// `SizeOf.sizeOf` reduces through its instance like any class method.
-  pub(super) fn try_reduce_native(
-    &mut self,
-    e: &KExpr<M>,
-  ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    let (head, args) = collect_app_spine(e);
-    let head_addr = match head.data() {
-      ExprData::Const(id, _, _) => id.addr.clone(),
-      _ => return Ok(None),
-    };
-    if e.lbr() > 0 {
-      return Ok(None);
-    }
-
-    // Lean.reduceBool / Lean.reduceNat: arg must be a single constant
-    let is_reduce_bool = head_addr == self.prims.reduce_bool.addr;
-    let is_reduce_nat = head_addr == self.prims.reduce_nat.addr;
-    if !is_reduce_bool && !is_reduce_nat {
-      return Ok(None);
-    }
-    if args.len() != 1 {
-      return Ok(None);
-    }
-    // Re-entrancy guard: prevent whnf → native → whnf → native stack overflow
-    if self.in_native_reduce {
-      return Ok(None);
-    }
-
-    // The argument should be a constant whose definition we can evaluate
-    let arg_const = match args[0].data() {
-      ExprData::Const(id, us, _) => (id.clone(), us.clone()),
-      _ => return Ok(None),
-    };
-    let (arg_id, arg_us) = arg_const;
-
-    // Look up the constant's definition body
-    let body = match self.try_get_const(&arg_id)? {
-      Some(KConst::Defn { val, .. }) => val.clone(),
-      _ => return Ok(None),
-    };
-
-    // Instantiate universe params and fully evaluate (guarded)
-    let us_vec: Vec<_> = arg_us.to_vec();
-    let body = self.instantiate_univ_params(&body, &us_vec)?;
-    self.in_native_reduce = true;
-    let result = self.whnf(&body);
-    self.in_native_reduce = false;
-    let result = result?;
-
-    if is_reduce_bool {
-      // Result must be Bool.true or Bool.false
-      let result_addr = match result.data() {
-        ExprData::Const(id, _, _) => &id.addr,
-        _ => return Ok(None),
-      };
-      if *result_addr == self.prims.bool_true.addr
-        || *result_addr == self.prims.bool_false.addr
-      {
-        Ok(Some(result))
-      } else {
-        Ok(None) // not a Bool literal — leave unreduced
-      }
-    } else {
-      // reduceNat: result must be a Nat literal
-      match result.data() {
-        ExprData::Nat(..) => Ok(Some(result)),
-        _ => Ok(None),
-      }
-    }
   }
 
   // -----------------------------------------------------------------------
@@ -5546,24 +5446,22 @@ mod tests {
   }
 
   // =========================================================================
-  // Regression: native-reduce re-entrancy guard
+  // Native evaluation is outside the checked theory
   //
-  // `try_reduce_native` must short-circuit when `self.in_native_reduce` is
-  // set to prevent `whnf → native → whnf → native` stack overflow. The
-  // guard lives at line ~1222 in this file; exercise it here.
+  // Lean's `reduceBool`/`reduceNat` are opaques whose kernel reduction would
+  // run the compiler. The kernel has no such rule: an application stays in
+  // weak head normal form, as in the certified checker.
   // =========================================================================
 
   #[test]
-  fn native_reduce_reentrancy_guard_prevents_recursion() {
-    // Build an env with reduce_bool bound to a constant whose body is
-    // Bool.true. Under the guard, an outer call should still succeed
-    // normally, but an inner call during native reduction must see
-    // `in_native_reduce == true` and return `None`.
+  fn reduce_bool_application_stays_stuck() {
     let empty = KEnv::<Anon>::new();
     let prims = Primitives::from_env(&empty);
+    let bool_ty = AE::cnst(prims.bool_type.clone(), Box::new([]));
+    let bool_true = AE::cnst(prims.bool_true.clone(), Box::new([]));
 
     let mut env = KEnv::<Anon>::new();
-    // A definition whose body is Bool.true at the canonical Bool.true addr.
+    // `BodyTrue := Bool.true`, the constant `reduceBool` would evaluate.
     env.insert(
       mk_id("BodyTrue"),
       KConst::Defn {
@@ -5573,29 +5471,47 @@ mod tests {
         safety: DefinitionSafety::Safe,
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
-        ty: AE::cnst(prims.bool_type.clone(), Box::new([])),
-        val: AE::cnst(prims.bool_true.clone(), Box::new([])),
+        ty: bool_ty.clone(),
+        val: bool_true.clone(),
         lean_all: (),
         block: mk_id("BodyTrue"),
       },
     );
+    // `opaque reduceBool (b : Bool) : Bool := b`, at its canonical address.
+    env.insert(
+      prims.reduce_bool.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Opaque,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Opaque,
+        lvls: 0,
+        ty: AE::all((), (), bool_ty.clone(), bool_ty),
+        val: AE::lam(
+          (),
+          (),
+          AE::cnst(prims.bool_type.clone(), Box::new([])),
+          AE::var(0, ()),
+        ),
+        lean_all: (),
+        block: prims.reduce_bool.clone(),
+      },
+    );
 
     let mut tc = TypeChecker::new(&mut env);
-    // Set the guard — simulating an in-progress native reduction.
-    tc.in_native_reduce = true;
-
     let reduce_bool = AE::cnst(tc.prims.reduce_bool.clone(), Box::new([]));
-    let body_true = AE::cnst(mk_id("BodyTrue"), Box::new([]));
-    let expr = AE::app(reduce_bool, body_true);
-    // With the guard set, try_reduce_native must not recurse. Because
-    // the guard just short-circuits `try_reduce_native`, whnf falls
-    // through to the outer-level delta loop; that doesn't know about
-    // `reduce_bool`, so the result stays structurally as-applied.
-    let result = tc.whnf(&expr).unwrap();
-    // Sanity: result should be an App (no reduction fired under the
-    // guard) OR the body unfolded via delta. What must NOT happen is
-    // an infinite loop / panic.
-    let _ = result; // just verify no panic / no divergence
+    let expr = AE::app(reduce_bool, AE::cnst(mk_id("BodyTrue"), Box::new([])));
+    let whnf = tc.whnf(&expr).unwrap();
+    assert_eq!(
+      whnf.hash_key(),
+      expr.hash_key(),
+      "reduceBool must not evaluate"
+    );
+    assert!(
+      !matches!(tc.is_def_eq(&expr, &bool_true), Ok(true)),
+      "reduceBool BodyTrue must not convert to Bool.true"
+    );
   }
 
   // =========================================================================

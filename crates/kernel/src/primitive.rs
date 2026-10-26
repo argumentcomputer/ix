@@ -8,10 +8,13 @@
 //!
 //! `Primitives<M>` stores `KId<M>` values, resolved from the environment by
 //! address so that names match in both Meta and Anon modes. `Lean.reduceBool`
-//! and `Lean.reduceNat` are real primitive constants and are dispatched by
-//! content address. `eager_reduce` is a synthetic kernel-only marker because
-//! Lean's `eagerReduce` compiles to the same canonical content address as
-//! `id`; address-only dispatch on the real constant would be unsound.
+//! and `Lean.reduceNat` are real constants, recognized by content address so
+//! that the kernel can decline them (see [`native_evaluation_addrs`]).
+//! `eager_reduce` is a synthetic kernel-only marker because Lean's
+//! `eagerReduce` compiles to the same canonical content address as `id`;
+//! address-only dispatch on the real constant would be unsound.
+
+use std::sync::LazyLock;
 
 use ix_common::address::Address;
 
@@ -159,6 +162,51 @@ pub struct Primitives<M: KernelMode> {
 /// `ix-kernel` depends on `ixon`. Re-exported here because this is where
 /// kernel code has always named them.
 pub use ix_common::prim_addrs::{PrimAddrs, reserved_marker_name};
+
+/// Lean's native-evaluation constants, by canonical content address:
+/// `Lean.trustCompiler` and the interface built on it, `Lean.reduceBool`,
+/// `Lean.reduceNat`, `Lean.ofReduceBool` and `Lean.ofReduceNat`.
+///
+/// The checked theory is Lean with its three standard axioms; evaluation by
+/// the compiler is outside it. The kernel therefore declines each of these
+/// declarations and every declaration that refers to one of them, as the
+/// certified checker does: it declines `trustCompiler` as a non-standard
+/// axiom and blocks the four that depend on it.
+///
+/// `reduceBool` and `reduceNat` reuse their [`PrimAddrs`] entries. The other
+/// three live here rather than in `PrimAddrs`, whose parity table also
+/// scopes IxVM witnesses. `lake test -- primitive-address-parity` compares
+/// every entry with a live compile of the Lean declarations.
+pub fn native_evaluation_addrs() -> &'static [(&'static str, Address); 5] {
+  static ADDRS: LazyLock<[(&'static str, Address); 5]> = LazyLock::new(|| {
+    let pinned = PrimAddrs::new();
+    let h = |hex: &str| -> Address {
+      Address::from_hex(hex).expect("invalid native-evaluation address hex")
+    };
+    [
+      (
+        "Lean.trustCompiler",
+        h("78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2"),
+      ),
+      ("Lean.reduceBool", pinned.reduce_bool),
+      ("Lean.reduceNat", pinned.reduce_nat),
+      (
+        "Lean.ofReduceBool",
+        h("560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b"),
+      ),
+      (
+        "Lean.ofReduceNat",
+        h("1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b"),
+      ),
+    ]
+  });
+  &ADDRS
+}
+
+/// Whether `addr` is one of [`native_evaluation_addrs`].
+pub fn is_native_evaluation_addr(addr: &Address) -> bool {
+  native_evaluation_addrs().iter().any(|(_, a)| a == addr)
+}
 
 impl<M: KernelMode> Primitives<M> {
   /// Resolve primitives from the environment using the canonical

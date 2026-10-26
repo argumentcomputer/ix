@@ -7,6 +7,7 @@ use super::id::KId;
 use super::lctx::LocalDecl;
 use super::level::KUniv;
 use super::mode::KernelMode;
+use super::primitive::is_native_evaluation_addr;
 use super::subst::{abstract_fvars, cheap_beta_reduce, instantiate_rev, subst};
 use super::tc::{TypeChecker, collect_app_spine};
 
@@ -100,6 +101,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
 
       ExprData::Const(id, us, _) => {
+        // A checked declaration may not refer to a native-evaluation
+        // constant: the certified checker blocks such declarations.
+        // Inference without validation (`infer_only`, which also drives
+        // auxiliary-definition generation) is unaffected.
+        if !infer_only && is_native_evaluation_addr(&id.addr) {
+          return Err(TcError::NativeEvaluation(id.addr.clone()));
+        }
         let c = self.get_const(id)?;
         if u64_to_usize::<M>(c.lvls())? != us.len() {
           return Err(TcError::UnivParamMismatch {
