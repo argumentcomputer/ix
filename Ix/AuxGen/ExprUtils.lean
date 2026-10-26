@@ -206,7 +206,7 @@ def mkAppN (f : Expr) (args : Array Expr) : Expr :=
     Shift BVars UP by `amount` for BVars >= `cutoff`. Used internally by
     `instantiateRevAt` when substituting args under inner binders (each
     args element is re-shifted by the current depth). -/
-partial def shiftVars (expr : Expr) (amount : Nat) (cutoff : Nat) : Expr :=
+def shiftVars (expr : Expr) (amount : Nat) (cutoff : Nat) : Expr :=
   if amount == 0 then expr
   else match expr with
   | .bvar i _ =>
@@ -225,6 +225,7 @@ partial def shiftVars (expr : Expr) (amount : Nat) (cutoff : Nat) : Expr :=
   | .mdata kvs e _ =>
     Expr.mkMData kvs (shiftVars e amount cutoff)
   | _ => expr
+termination_by structural expr
 
 /-- Inverse of `shiftVars` for an expression known to have been lifted by
     `amount`: lower loose BVars while preserving variables bound inside the
@@ -285,7 +286,7 @@ def instantiate1 (body : Expr) (replacement : Expr) : Expr :=
   instantiate1At body replacement 0
 
 /-- Mirrors Rust `instantiate_rev_at` (aux_gen/expr_utils.rs:674). -/
-partial def instantiateRevAt (body : Expr) (args : Array Expr) (depth : Nat) : Expr :=
+def instantiateRevAt (body : Expr) (args : Array Expr) (depth : Nat) : Expr :=
   let n := args.size
   match body with
   | .bvar i _ =>
@@ -317,6 +318,7 @@ partial def instantiateRevAt (body : Expr) (args : Array Expr) (depth : Nat) : E
   | .mdata kvs e _ =>
     Expr.mkMData kvs (instantiateRevAt e args depth)
   | _ => body
+termination_by structural body
 
 /-- Mirrors Rust `instantiate_rev` (aux_gen/expr_utils.rs:667).
 
@@ -483,7 +485,7 @@ partial def substLevel (lvl : Level) (params : Array Name) (univs : Array Level)
 
 /-- Mirrors Rust `subst_levels` (aux_gen/expr_utils.rs:864).
     Substitute universe parameters in expressions. -/
-partial def substLevels (expr : Expr) (params : Array Name) (univs : Array Level) : Expr :=
+def substLevels (expr : Expr) (params : Array Name) (univs : Array Level) : Expr :=
   if params.isEmpty || univs.isEmpty then expr
   else match expr with
   | .sort lvl _ => Expr.mkSort (substLevel lvl params univs)
@@ -503,6 +505,7 @@ partial def substLevels (expr : Expr) (params : Array Name) (univs : Array Level
   | .mdata md e _ =>
     Expr.mkMData md (substLevels e params univs)
   | _ => expr
+termination_by structural expr
 
 /-! ## Diagnostics -/
 
@@ -966,8 +969,9 @@ end
     Strip type annotation wrappers from a type expression, matching Lean's
     `Expr.consumeTypeAnnotations`: `outParam α` / `semiOutParam α` /
     `optParam α default` / `autoParam α tactic` → recurse on `α`. -/
-partial def consumeTypeAnnotations (e : Expr) : Expr :=
-  let (head, args) := decomposeApps e
+def consumeTypeAnnotations (e : Expr) : Expr :=
+  match hApps : decomposeApps e with
+  | (head, args) =>
   match head with
   | .const name _ _ =>
     let n := name.pretty
@@ -979,6 +983,14 @@ partial def consumeTypeAnnotations (e : Expr) : Expr :=
       consumeTypeAnnotations (args[0]'(by have := h.2; omega))
     else e
   | _ => e
+termination_by sizeOf e
+decreasing_by
+  all_goals
+    have member : args[0]'(by omega) ∈ (decomposeApps e).2 := by
+      rw [hApps]
+      exact Array.getElem_mem _
+    have small := decomposeApps.go_mem e #[] member
+    simpa only [Array.not_mem_empty, or_false] using small
 
 /-- Mirrors Rust `subst_fvar` (aux_gen/expr_utils.rs:1552).
 

@@ -55,6 +55,14 @@ each on the standard axioms. The in-model generator's nine `partial` definitions
 the prerequisite of the generator's parametricity proof). Nothing the service
 computes reaches `compile`'s result.
 
+The O2 source transport prerequisite makes `shiftVars`, `instantiateRevAt`,
+`substLevels` and `consumeTypeAnnotations` total with their existing
+computation. The first three recurse structurally; the annotation consumer
+uses its actual application-argument subterm bound. These four leave the
+opaque-code list; `substLevel` remains. The generated C entry bodies are
+unchanged, and the measured compiler replacement list loses exactly these
+four entries. No runtime ruling is broadened.
+
 `lake run check-kernel` builds this module with the other root audits. No
 executable imports it: the runtime audit's controls declare an `@[extern]`
 symbol that no library defines, so a binary that links them fails. -/
@@ -71,7 +79,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.buildProofForRemaining,
  Ix.AuxGen.canonicalizeConstNames,
  Ix.AuxGen.collectMemberRefs,
- Ix.AuxGen.consumeTypeAnnotations,
  Ix.AuxGen.exprContainsFVar,
  Ix.AuxGen.exprHasLooseBVar,
  Ix.AuxGen.getMaxArgsAux,
@@ -79,7 +86,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.hasDeeperStr,
  Ix.AuxGen.hasIndOcc,
  Ix.AuxGen.hasLooseBVarInExplicitDomain,
- Ix.AuxGen.instantiateRevAt,
  Ix.AuxGen.isAlreadyNormalizedCheap,
  Ix.AuxGen.isNeverZero,
  Ix.AuxGen.levelAlphaEqStruct,
@@ -101,13 +107,11 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.replaceResultSortWithProp,
  Ix.AuxGen.rewriteNestedConstLevelsCached,
  Ix.AuxGen.rewriteNestedConstLevelsWalk,
- Ix.AuxGen.shiftVars,
  Ix.AuxGen.stripMdata,
  Ix.AuxGen.stripMdataRef,
  Ix.AuxGen.stripPrefixComponents,
  Ix.AuxGen.substFVar,
  Ix.AuxGen.substLevel,
- Ix.AuxGen.substLevels,
  Ix.Kernel.canonEqList,
  Ix.Kernel.structProjGuards,
  Ix.Name.pretty,
