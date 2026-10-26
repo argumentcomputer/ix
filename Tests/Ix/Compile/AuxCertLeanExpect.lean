@@ -119,6 +119,19 @@ private def traceControls : IO Unit := do
   for (stem, text, why) in [("BelowNRec", good.replace "family 1/0" "family 0/0", "Prop family profile is empty"),
       ("UnsafeI", good.replace "unsafe 1 tier 1" "unsafe 0 tier 0", "unsafe profile is empty"),
       ("F5_SigmaNestedNested", good.replace "recBeta 1" "recBeta 0", "named beta profile is empty")] do refuses text stem why
+  let internal (label text : String) := s!"[artifact-compile] begin {label}\n{text}\n[artifact-compile] end {label}"
+  let withScopes := good ++ "\n" ++ internal "support" good ++ "\n" ++ internal "certificates" good
+  let (_, scopedTails) ← IO.ofExcept (checkedTrace withScopes "BelowNRec")
+  ensure (scopedTails == 3) "internal compiler tails disappeared from trace coverage"
+  refuses (good ++ "\n" ++ internal "support" (good ++ "\n" ++ good)) "TraceProfile" "empty/duplicate tail key"
+  refuses (internal "support" good) "TraceProfile" "no original tail coverage"
+  refuses (good ++ "\n[artifact-compile] begin support") "TraceProfile" "unterminated internal scope"
+  refuses (good ++ "\n[artifact-compile] end support") "TraceProfile" "unmatched internal scope end"
+  refuses (good ++ "\n[artifact-compile] begin unknown") "TraceProfile" "unknown internal scope"
+  refuses (good ++ "\n" ++ internal "support" (internal "certificates" good)) "TraceProfile" "nested internal scope"
+  refuses (good ++ "\n" ++ internal "support" (good.replace "refused 0" "refused 1")) "TraceProfile" "refused is nonzero"
+  refuses (good.replace "recBeta 1" "recBeta 0" ++ "\n" ++ internal "support" good)
+    "F5_SigmaNestedNested" "named beta profile is empty"
   let complete := Tests.Ix.AuxGen.ProbeReport.complete
   ensure (complete {} && !complete { blocks := 1, accepted := 2 } &&
     !complete { blocks := 65, notAccepted := Array.replicate 64 (key, "refused") } &&

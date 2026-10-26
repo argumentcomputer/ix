@@ -91,11 +91,21 @@ def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
   let env := { env with consts := {} }
   let mut store : RecordStore := {}
   let mut lits : Array (Address × Ixon.Constant) := #[]
+  -- Input theorem records shadow fallback evidence at the same address.
+  -- Preserve their real values, including a projected theorem's owner.
+  let mut proofRecords : Std.HashSet Address := {}
+  for (_, entries) in table.evidence do
+    for entry in entries do
+      if let .proof address := entry then
+        proofRecords := proofRecords.insert address
+        if let some lazy := consts[address]? then
+          let record ← IO.ofExcept (Ixon.deConstant lazy.rawBytes)
+          proofRecords := proofRecords.insert (Ixon.CheckOrder.owner address record)
   for (address, lazy) in consts.toList do
     let c ← IO.ofExcept lazy.get
     let (nat, str) := literalKinds c
     if nat || str then lits := lits.push (address, literalStandIn nat str)
-    store := store.insert address (skeleton c)
+    store := store.insert address (if proofRecords.contains address then c else skeleton c)
   let preludeOnly := pre.records.foldl (init := {}) fun (acc : Std.HashSet Address) (a, _) =>
     if store.contains a then acc else acc.insert a
   let hints := Hints.ofStore store env.anonHints

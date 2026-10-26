@@ -126,7 +126,31 @@ private def checks : IO Nat := do
     let lines := (← IO.FS.readFile failures).splitOn "\n" |>.map (·.trimAscii.toString)
     ensure (lines.any (·.contains "artifact") && lines.all (fun line => line.isEmpty || line.startsWith "#"))
       "aggregate refusal wrote a fabricated declaration selector"
-    return 5
+    let kernel ← IO.FS.realPath ".lake/build/bin/kernel-check-ixe"
+    let neutral := #["CHECK_IXE_ROOTS", "CHECK_IXE_SKIP", "CHECK_IXE_READ_CACHE"].map (·, none)
+    let mut previous : Option (Array (String × String × String)) := none
+    for mode in ["stream", "eager"] do
+      let rowsPath := dir / s!"{mode}.jsonl"
+      let result ← IO.Process.output {
+        cmd := kernel.toString
+        args := #[path.toString, rowsPath.toString, "--load", mode, "--jobs", "2"]
+        env := neutral }
+      ensure (result.exitCode == 0) s!"bound diagnostic {mode} failed: {result.stdout}\n{result.stderr}"
+      let mut rows : Array (String × String × String) := #[]
+      for line in (← IO.FS.readFile rowsPath).splitOn "\n" do
+        if line.isEmpty then continue
+        let row ← IO.ofExcept (Lean.Json.parse line)
+        rows := rows.push (← IO.ofExcept (row.getObjValAs? String "address"),
+          ← IO.ofExcept (row.getObjValAs? String "outcome"), ← IO.ofExcept (row.getObjValAs? String "reason"))
+      ensure (!rows.isEmpty && rows.all (·.2.1 == "accept")) "actual bound proof/operation records were refused"
+      for (address, lazy) in env.consts.toList do
+        let record ← IO.ofExcept lazy.get
+        let owner := toString (Ixon.CheckOrder.owner address record)
+        ensure (rows.any (·.1 == owner)) s!"bound diagnostic omitted owner {owner}"
+      let sorted := rows.qsort (fun a b => a.1 < b.1)
+      if let some earlier := previous then ensure (earlier == sorted) "stream/eager bound diagnostic rows differ"
+      previous := some sorted
+    return 7
   finally
     IO.FS.removeDirAll dir
 

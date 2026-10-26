@@ -1,4 +1,5 @@
 import Ix.KernelCheck.Meta
+import Ix.KernelCheck.Binding
 import Ix.KernelDisplay.Peek
 
 /-! # `.meta`: the display table, the meta reader and the erasure run (untrusted harness)
@@ -197,9 +198,8 @@ unsafe def run (args : List String) : IO UInt32 := do
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let table ← IO.ofExcept defaultTable
-  let preA : Prelude .anon ← IO.ofExcept (preludeFor table)
-  let preM : Prelude .meta ← IO.ofExcept (preludeFor table)
+  let (table, preA) ← IO.ofExcept (Ix.KernelCheck.Binding.context env)
+  let preM ← IO.ofExcept (Ix.KernelCheck.Binding.metaPrelude env table preA)
   let hints := Hints.ofStore store env.anonHints
   let s := setup store (env.blobs[·]?) table preA hints.lookup
   let (cxM, evM) := metaContext s (env.blobs[·]?) table preM hints.lookup

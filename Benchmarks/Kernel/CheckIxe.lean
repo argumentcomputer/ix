@@ -2,6 +2,7 @@ import Benchmarks.Kernel.CheckIxeReadCache
 import Benchmarks.Kernel.CheckIxeStream
 import Benchmarks.Kernel.CheckIxePool
 import Benchmarks.Kernel.CheckIxeMeta
+import Ix.KernelCheck.Binding
 
 /-! # Environment check of a compiled Ixon environment (untrusted)
 
@@ -252,8 +253,8 @@ def run (args : List String) : IO UInt32 := do
       onThread (check plan.evidence plan.source (names.getD · #[]) (plan.addresses options.limit)
         fun _ _ _ => pure ())
     | none => do
-      let table ← IO.ofExcept defaultTable
-      let pre ← IO.ofExcept (preludeFor table)
+      let contextEnv ← IO.ofExcept (Ixon.deEnvAnon bytes)
+      let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv)
       match options.load with
       | .eager => do
         let env ← IO.ofExcept (Ixon.deEnv bytes)

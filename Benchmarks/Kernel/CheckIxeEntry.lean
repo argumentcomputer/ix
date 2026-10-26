@@ -34,12 +34,11 @@ def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<
 
 def millis (t0 t1 : Nat) : Nat := (t1 - t0) / 1000000
 
-/-- The entry's stages without authentication, at the default role table. -/
-def unauthenticated (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
+/-- The entry's stages without authentication, at the selected actual context. -/
+def unauthenticated (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
     Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) := do
-  let table ← defaultTable.mapError .prelude
-  let pre ← (preludeFor table).mapError .prelude
   (Ix.Kernel.Admission.preflight limits records blobs).mapError .ofBytes
   (Ix.Kernel.Admission.uniqueKeys records blobs).mapError .ofBytes
   let constants ← (Ix.Kernel.Admission.decodeRecords limits records).mapError .ofBytes
@@ -57,9 +56,10 @@ def run (args : List String) : IO UInt32 := do
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let table ← IO.ofExcept defaultTable
-  let binding ← IO.ofExcept Ix.Kernel.Admission.defaultBinding
-  let pre ← IO.ofExcept (preludeFor table)
+  let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context env)
+  let binding ← match env.roleBinding with
+    | some raw => pure (⟨raw.address, raw.bytes⟩ : Ix.Kernel.Admission.Binding)
+    | none => IO.ofExcept Ix.Kernel.Admission.defaultBinding
   let hints := Hints.ofStore store env.anonHints
   let s := setup store (env.blobs[·]?) table pre hints.lookup
   let (selected, dropped) ← IO.lazyPure fun _ => CheckIxeFold.acceptedRecords s
@@ -86,8 +86,9 @@ def run (args : List String) : IO UInt32 := do
   | "authenticated" | "unauthenticated" =>
     let t0 ← IO.monoNanosNow
     let result ← IO.lazyPure fun _ =>
-      if mode == "authenticated" then Ixon.Authenticated.checkBytes binding limits records blobs hints.lookup
-      else unauthenticated records blobs hints.lookup
+      if mode == "authenticated" then
+        Ix.Kernel.Admission.checkBytesWith Address.admissionHash binding pre limits records blobs hints.lookup
+      else unauthenticated table pre records blobs hints.lookup
     let t1 ← IO.monoNanosNow
     IO.eprintln s!"entry: {mode}: {verdict result} in {millis t0 t1} ms; \
       peak RSS {(← statusKb "VmHWM:") / 1024} MB"

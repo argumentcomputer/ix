@@ -423,21 +423,39 @@ def checkedStopCounts : List String :=
   ["leanRecDiffer", "refused", "scopesRefused", "flatRefused", "belowRefused", "recRefused", "elimRefused",
    "familyRefused"]
 
-/-- Strict checked-path trace validation. Missing fields cannot become zero;
-all tails, including unsafe and generation-only tails, stay in the census. -/
+/-- Strict checked-path trace validation. Tail keys are unique per compiler
+invocation. Every internal support/certificate tail remains checked, while
+fixture-specific coverage must come from the original input compilation. -/
 def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat × Nat) := do
   let required := #["queries", "ixcFast", "answered", "refused", "scopesRefused", "flat",
     "decisions", "exprQueries", "exprAnswered", "below", "recWhnf", "recStuck",
     "recSame", "recReplayed", "recBeta", "recRefused", "recSkipped", "recForced", "elim",
     "elimRefused", "leanRecSame", "leanRecDiffer", "family", "unsafe", "tier", "asked"]
-  let mut blocks : Std.HashSet String := {}
+  let mut blocks : Std.HashSet (Nat × String) := {}
+  let mut scope : Option (String × Nat) := none
+  let mut nextScope := 1
+  let mut original : Array String := #[]
   for line in text.splitOn "\n" do
+    if line.startsWith "[artifact-compile]" then
+      match line.splitOn " " with
+      | ["[artifact-compile]", "begin", label] =>
+        unless ["support", "certificates"].contains label do throw "checked trace: unknown internal scope"
+        if scope.isSome then throw "checked trace: nested internal scope"
+        scope := some (label, nextScope)
+        nextScope := nextScope + 1
+      | ["[artifact-compile]", "end", label] =>
+        unless (scope.map (·.1)) == some label do throw "checked trace: unmatched internal scope end"
+        scope := none
+      | _ => throw "checked trace: malformed internal scope"
+      continue
     if !line.startsWith "[auxgen-ixc] " || line.startsWith "[auxgen-ixc]   " then continue
     let [head, body] := line.splitOn ": " | throw "checked trace: malformed tail header"
     if !body.startsWith "queries " then throw "checked trace: malformed tail header"
     let block := (head.drop "[auxgen-ixc] ".length).toString
-    if block.isEmpty || blocks.contains block then throw "checked trace: empty/duplicate tail key"
-    blocks := blocks.insert block
+    let key := ((scope.map (·.2)).getD 0, block)
+    if block.isEmpty || blocks.contains key then throw "checked trace: empty/duplicate tail key"
+    blocks := blocks.insert key
+    if scope.isNone then original := original.push line
     let words := (body.splitOn " ").filter (!·.isEmpty) |>.toArray
     if words.size % 2 != 0 then throw "checked trace: dangling counter"
     let mut fields : Std.HashSet String := {}
@@ -462,15 +480,18 @@ def checkedTrace (text stem : String) : Except String (Std.HashMap String Nat ×
     -- Mutual-definition wrappers may be unasked and perform no IxC work.
     -- Every other value, including asked, pair halves and new fields, counts.
     if unsafeBlock == 1 && tier == 0 && !noWork then throw "checked trace: unsafe tail lacks its tier"
+  if scope.isSome then throw "checked trace: unterminated internal scope"
   if blocks.isEmpty then throw "checked trace: no tail coverage"
+  if original.isEmpty then throw "checked trace: no original tail coverage"
   let (counts, tails) := tailCounts text
   for key in checkedStopCounts do
     if counts.getD key 0 != 0 then throw s!"checked trace: {key} is nonzero"
+  let (inputCounts, _) := tailCounts (String.intercalate "\n" original.toList)
   if #["BelowNRec", "UnsafeI", "F5_SigmaNestedNested"].contains stem then
-    if ["queries", "recWhnf", "elim", "leanRecSame"].any (counts.getD · 0 == 0) then throw "checked trace: required real profile is empty"
-    if stem == "BelowNRec" && counts.getD "familyAdmitted" 0 == 0 then throw "checked trace: Prop family profile is empty"
-    if stem == "UnsafeI" && (counts.getD "unsafe" 0 == 0 || counts.getD "tier" 0 == 0) then throw "checked trace: unsafe profile is empty"
-    if stem == "F5_SigmaNestedNested" && counts.getD "recBeta" 0 == 0 then throw "checked trace: named beta profile is empty"
+    if ["queries", "recWhnf", "elim", "leanRecSame"].any (inputCounts.getD · 0 == 0) then throw "checked trace: required real profile is empty"
+    if stem == "BelowNRec" && inputCounts.getD "familyAdmitted" 0 == 0 then throw "checked trace: Prop family profile is empty"
+    if stem == "UnsafeI" && (inputCounts.getD "unsafe" 0 == 0 || inputCounts.getD "tier" 0 == 0) then throw "checked trace: unsafe profile is empty"
+    if stem == "F5_SigmaNestedNested" && inputCounts.getD "recBeta" 0 == 0 then throw "checked trace: named beta profile is empty"
   return (counts, tails)
 
 /-- Validate the supported checked CLI trace over every tail and compare its

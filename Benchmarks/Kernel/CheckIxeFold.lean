@@ -1,4 +1,5 @@
 import Benchmarks.Kernel.CheckIxeStep
+import Ix.KernelCheck.Binding
 import IxC.Kernel.Admission
 
 /-! # The batch fold over an environment check's accepted records (untrusted harness)
@@ -180,8 +181,7 @@ def run (args : List String) : IO UInt32 := do
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let table ← IO.ofExcept defaultTable
-  let pre ← IO.ofExcept (preludeFor table)
+  let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context env)
   let hints := Hints.ofStore store env.anonHints
   let s := setup store (env.blobs[·]?) table pre hints.lookup
   let tLoad ← IO.monoMsNow
