@@ -227,6 +227,10 @@ struct Source {
   candidate: Option<BindingCandidate>,
   lookups: OnceLock<Arc<crate::ingress::IxonIngressLookups>>,
   owners: OnceLock<Result<FxHashMap<Address, Vec<Role>>, Error>>,
+  /// Addresses whose carried record (and, for a projection, its owner and
+  /// position) has been authenticated. Authentication is a function of this
+  /// immutable source alone, so a success is shared by every worker.
+  references: dashmap::DashSet<Address>,
 }
 
 /// One privately owned input, shared cheaply between workers. No Env reference
@@ -269,6 +273,7 @@ impl ArtifactSource {
       candidate,
       lookups: OnceLock::new(),
       owners: OnceLock::new(),
+      references: dashmap::DashSet::new(),
     }));
     if let Some(binding) = source.binding() {
       for (_, address) in &binding.table.bound {
@@ -491,6 +496,23 @@ impl ArtifactSource {
       _ => return Err(fail("projection kind/index differs from owner")),
     }
     Ok(Member { record, owner: Some(owner), index: Some(index), constructor })
+  }
+
+  /// Authenticate the carried record a reference names: its bytes hash to
+  /// the address and decode canonically, and a projection is the member of
+  /// its owner at its index (see [`Self::member`]). Key presence alone is not
+  /// enough: a worker may already hold a declaration for the address, built
+  /// from an owner payload, which must not stand in for a corrupted record.
+  pub(crate) fn authenticate_reference(
+    &self,
+    address: &Address,
+  ) -> Result<(), Error> {
+    if self.0.references.contains(address) {
+      return Ok(());
+    }
+    self.member(address)?;
+    self.0.references.insert(address.clone());
+    Ok(())
   }
 
   /// Only raw theorem-kind/owner coverage is established here. Its value and

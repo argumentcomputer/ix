@@ -2005,15 +2005,40 @@ fn ingress_muts_block<M: KernelMode>(
       format!("Muts member '{member_name}' not found in named entries")
     })?;
     let index = u64::try_from(i).map_err(|error| error.to_string())?;
-    let member_addr = match member {
-      IxonMutConst::Defn(_) => anon_defn_proj_addr(entry_addr, index),
-      IxonMutConst::Indc(_) => anon_indc_proj_addr(entry_addr, index),
-      IxonMutConst::Recr(_) => anon_recr_proj_addr(entry_addr, index),
+    let (kind, member_addr) = match member {
+      IxonMutConst::Defn(_) => ("DPrj", anon_defn_proj_addr(entry_addr, index)),
+      IxonMutConst::Indc(_) => ("IPrj", anon_indc_proj_addr(entry_addr, index)),
+      IxonMutConst::Recr(_) => ("RPrj", anon_recr_proj_addr(entry_addr, index)),
     };
     if member_named.addr != member_addr {
       return Err(format!(
         "Muts member '{member_name}' metadata address differs from owner/index {index}"
       ));
+    }
+    // A carried projection record must be this member's, as in anonymous
+    // ingress; installing the owner's members must not shadow a corrupted
+    // one that a later reference would otherwise reach.
+    verify_proj_addr_in_env(
+      kind,
+      &member_addr,
+      entry_addr,
+      index,
+      None,
+      ixon_env,
+    )?;
+    if let IxonMutConst::Indc(ind) = member {
+      for (cidx, ctor_addr) in
+        anon_ctor_addrs(entry_addr, index, ind).iter().enumerate()
+      {
+        verify_proj_addr_in_env(
+          "CPrj",
+          ctor_addr,
+          entry_addr,
+          index,
+          Some(cidx as u64),
+          ixon_env,
+        )?;
+      }
     }
     member_metas.push(member_named.meta());
     member_ids.push(KId::new(member_addr, M::meta_field(member_name)));

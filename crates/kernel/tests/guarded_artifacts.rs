@@ -334,3 +334,55 @@ fn metadata_context_cannot_select_recursive_targets() {
   let mut anon = ArtifactChecker::<Anon>::from_source(Ok(source));
   assert!(anon.check_const(&f_address).is_err());
 }
+
+/// A reference must name an authentic carried record. Here the bytes under
+/// projection 0's key are projection 1's, so the reference fails
+/// authentication whether or not a worker has already installed the owner's
+/// genuine members; installing them also checks every carried projection, so
+/// the sibling's own check refuses the unit.
+#[test]
+fn present_corrupt_projection_is_authenticated_before_reuse() {
+  for corrupt in [false, true] {
+    let mut env = loaded(GOOD);
+    let (owner, record) = owner(&env);
+    let members = name_definitions(&env, &owner, &record, "good");
+    let target = defn_proj_address(0, &owner);
+    let index = u64::try_from(record.refs.len()).unwrap();
+    let dependent = standalone_like_member_0(
+      &record,
+      ixon::expr::Expr::Ref(index, vec![]),
+      Some(target.clone()),
+    );
+    let address = dependent.commit().0;
+    env.store_const(address.clone(), dependent);
+    let mut arena = ExprMeta::default();
+    arena.alloc(ixon::metadata::ExprMetaData::Leaf);
+    let value_root = arena.alloc(ixon::metadata::ExprMetaData::Ref {
+      name: name_address(&members[0]),
+    });
+    let dependent_name = name_standalone(
+      &env,
+      "dependent",
+      &address,
+      vec![name_address(&name("dependent"))],
+      arena,
+      value_root,
+    );
+    if corrupt {
+      let other =
+        env.consts.get(&defn_proj_address(1, &owner)).unwrap().value().clone();
+      env.consts.insert(target.clone(), other);
+    }
+    empty_binding(&mut env);
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    let cold = ArtifactChecker::<Meta>::from_named_source(Ok(source.clone()))
+      .check_name(&dependent_name)
+      .is_ok();
+    let mut warm = ArtifactChecker::<Meta>::from_named_source(Ok(source));
+    let primed = warm.check_name(&members[1]).is_ok();
+    let after_prime = warm.check_name(&dependent_name).is_ok();
+    assert_eq!(cold, !corrupt, "cold dependent (corrupt={corrupt})");
+    assert_eq!(primed, !corrupt, "sibling owning a corrupt projection");
+    assert_eq!(after_prime, !corrupt, "warm dependent (corrupt={corrupt})");
+  }
+}

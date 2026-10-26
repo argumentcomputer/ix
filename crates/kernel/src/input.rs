@@ -23,18 +23,18 @@ impl<'a> From<&'a Env> for Input<'a> {
 }
 
 impl Input<'_> {
+  /// A reference from a declaration being read must name an authentic
+  /// carried record, not merely a present key (see
+  /// `ArtifactSource::authenticate_reference`).
   pub(crate) fn require_reference(
     self,
     address: &Address,
   ) -> Result<(), String> {
     #[cfg(not(target_arch = "riscv64"))]
-    if let Self::Artifact(source) = self
-      && !source.contains_record(address)
-    {
-      return Err(format!(
-        "reference {} has no carried raw record",
-        address.hex()
-      ));
+    if let Self::Artifact(source) = self {
+      return source
+        .authenticate_reference(address)
+        .map_err(|error| format!("reference {}: {error}", address.hex()));
     }
     let _ = address;
     Ok(())
