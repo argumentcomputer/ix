@@ -1434,7 +1434,7 @@ fn ingress_defn<M: KernelMode>(
     type_root,
     &ctx,
     intern,
-    ixon_env.into(),
+    ixon_env,
     &mut cache,
     &mut univ_cache,
     stats,
@@ -1444,7 +1444,7 @@ fn ingress_defn<M: KernelMode>(
     value_root,
     &ctx,
     intern,
-    ixon_env.into(),
+    ixon_env,
     &mut cache,
     &mut univ_cache,
     stats,
@@ -1544,7 +1544,7 @@ fn ingress_recursor<M: KernelMode>(
     type_root,
     &ctx,
     intern,
-    ixon_env.into(),
+    ixon_env,
     &mut cache,
     &mut univ_cache,
     stats,
@@ -1565,7 +1565,7 @@ fn ingress_recursor<M: KernelMode>(
         rhs_root,
         &ctx,
         intern,
-        ixon_env.into(),
+        ixon_env,
         &mut cache,
         &mut univ_cache,
         stats,
@@ -1633,7 +1633,7 @@ fn ingress_standalone<M: KernelMode>(
         def,
         self_id.clone(),
         meta,
-        ixon_env.into(),
+        ixon_env,
         names,
         name_to_addr,
         &constant.sharing,
@@ -1676,7 +1676,7 @@ fn ingress_standalone<M: KernelMode>(
         type_root,
         &ctx,
         intern,
-        ixon_env.into(),
+        ixon_env,
         &mut cache,
         &mut univ_cache,
         stats,
@@ -1727,7 +1727,7 @@ fn ingress_standalone<M: KernelMode>(
         type_root,
         &ctx,
         intern,
-        ixon_env.into(),
+        ixon_env,
         &mut cache,
         &mut univ_cache,
         stats,
@@ -1755,7 +1755,7 @@ fn ingress_standalone<M: KernelMode>(
       rec,
       self_id.clone(),
       meta,
-      ixon_env.into(),
+      ixon_env,
       names,
       name_to_addr,
       &constant.sharing,
@@ -1828,7 +1828,7 @@ fn ingress_muts_inductive<M: KernelMode>(
     type_root,
     &ctx,
     intern,
-    ixon_env.into(),
+    ixon_env,
     &mut cache,
     &mut univ_cache,
     stats,
@@ -1931,7 +1931,7 @@ fn ingress_muts_inductive<M: KernelMode>(
       ctor_type_root,
       &ctor_ctx,
       intern,
-      ixon_env.into(),
+      ixon_env,
       &mut cache,
       &mut ctor_univ_cache,
       stats,
@@ -2034,7 +2034,7 @@ fn ingress_muts_block<M: KernelMode>(
           ind,
           &self_id,
           member_meta,
-          ixon_env.into(),
+          ixon_env,
           names,
           name_to_addr,
           &block_constant,
@@ -2049,7 +2049,7 @@ fn ingress_muts_block<M: KernelMode>(
           rec,
           self_id,
           member_meta,
-          ixon_env.into(),
+          ixon_env,
           names,
           name_to_addr,
           &block_constant.sharing,
@@ -2066,7 +2066,7 @@ fn ingress_muts_block<M: KernelMode>(
           def,
           self_id,
           member_meta,
-          ixon_env.into(),
+          ixon_env,
           names,
           name_to_addr,
           &block_constant.sharing,
@@ -3372,7 +3372,7 @@ fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
 
   ingress_addr_set_into_kenv(
     kenv,
-    ixon_env.into(),
+    ixon_env,
     lookups,
     &requested.addr,
     follow_refs,
@@ -3447,7 +3447,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             entry_name,
             &addr,
             all,
-            ixon_env.into(),
+            ixon_env,
             &lookups.names,
             &lookups.name_to_addr,
             &mut kenv.intern,
@@ -3475,7 +3475,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             &addr,
             &constant,
             &named.meta(),
-            ixon_env.into(),
+            ixon_env,
             &lookups.names,
             &lookups.name_to_addr,
             &mut kenv.intern,
@@ -4415,7 +4415,7 @@ fn ingress_anon_standalone(
       def,
       self_id.clone(),
       &empty_meta,
-      anon_env.into(),
+      anon_env,
       &empty_names,
       &empty_n2a,
       &constant.sharing,
@@ -4431,7 +4431,7 @@ fn ingress_anon_standalone(
       rec,
       self_id.clone(),
       &empty_meta,
-      anon_env.into(),
+      anon_env,
       &empty_names,
       &empty_n2a,
       &constant.sharing,
@@ -4447,7 +4447,7 @@ fn ingress_anon_standalone(
       addr,
       constant,
       &empty_meta,
-      anon_env.into(),
+      anon_env,
       &empty_names,
       &empty_n2a,
       &mut kenv.intern,
@@ -4511,7 +4511,7 @@ fn ingress_anon_inductive(
     0,
     &ctx,
     intern,
-    anon_env.into(),
+    anon_env,
     &mut cache,
     &mut univ_cache,
     stats,
@@ -4561,7 +4561,7 @@ fn ingress_anon_inductive(
       0,
       &ctor_ctx,
       intern,
-      anon_env.into(),
+      anon_env,
       &mut cache,
       &mut ctor_univ_cache,
       stats,
@@ -4618,7 +4618,7 @@ pub(crate) fn ingress_anon_block_input(
   };
   validate_serialized_muts(members)?;
 
-  convert_anon_muts(kenv, anon_env.into(), block_constant, block_addr, members)
+  convert_anon_muts(kenv, anon_env, block_constant, block_addr, members)
 }
 
 /// Convert arbitrary mutual payloads for the test-only canonical-order
@@ -4687,7 +4687,7 @@ fn convert_anon_muts(
           def,
           self_id,
           &empty_meta,
-          anon_env.into(),
+          anon_env,
           &empty_names,
           &empty_n2a,
           &block_constant.sharing,
@@ -4713,7 +4713,7 @@ fn convert_anon_muts(
           rec,
           self_id,
           &empty_meta,
-          anon_env.into(),
+          anon_env,
           &empty_names,
           &empty_n2a,
           &block_constant.sharing,
@@ -4743,14 +4743,14 @@ fn convert_anon_muts(
             block_addr,
             idx,
             Some(cidx as u64),
-            anon_env.into(),
+            anon_env,
           )?;
         }
 
         let entries = ingress_anon_inductive(
           ind,
           &self_id,
-          anon_env.into(),
+          anon_env,
           block_constant,
           block_id.clone(),
           idx,
@@ -4788,7 +4788,7 @@ pub(crate) fn ingress_anon_addr_shallow_input(
   anon_env: crate::input::Input<'_>,
   addr: &Address,
 ) -> Result<bool, String> {
-  let Some(constant) = anon_constant(anon_env.into(), addr)? else {
+  let Some(constant) = anon_constant(anon_env, addr)? else {
     return Ok(false);
   };
 
@@ -4819,19 +4819,19 @@ pub(crate) fn ingress_anon_addr_shallow_input(
       return Ok(true);
     }
     let block_const =
-      anon_constant(anon_env.into(), &block_addr)?.ok_or_else(|| {
+      anon_constant(anon_env, &block_addr)?.ok_or_else(|| {
         format!(
           "ingress_anon_addr_shallow: block {} (parent of {}) absent",
           block_addr.hex(),
           addr.hex()
         )
       })?;
-    ingress_anon_block_input(kenv, anon_env.into(), &block_const, &block_addr)?;
+    ingress_anon_block_input(kenv, anon_env, &block_const, &block_addr)?;
     return Ok(true);
   }
 
   // Standalone (Defn/Recr/Axio/Quot).
-  ingress_anon_standalone(kenv, anon_env.into(), addr, &constant)?;
+  ingress_anon_standalone(kenv, anon_env, addr, &constant)?;
   Ok(true)
 }
 

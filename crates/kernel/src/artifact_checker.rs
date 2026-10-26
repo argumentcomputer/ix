@@ -69,10 +69,10 @@ impl<M: KernelMode> ArtifactChecker<M> {
     make: MakeChecker<M>,
   ) -> Self {
     let lookups = if named {
-      source
-        .as_ref()
-        .map(ArtifactSource::lookups)
-        .unwrap_or_else(|_| Arc::new(IxonIngressLookups::default()))
+      source.as_ref().map_or_else(
+        |_| Arc::new(IxonIngressLookups::default()),
+        ArtifactSource::lookups,
+      )
     } else {
       Arc::new(IxonIngressLookups::default())
     };
@@ -145,7 +145,7 @@ impl<M: KernelMode> ArtifactChecker<M> {
         self.lookups.name_for_addr(address).cloned().unwrap_or_else(Name::anon),
       ),
     );
-    self.check_id(id, source.clone())
+    self.check_id(&id, &source.clone())
   }
 
   pub fn check_name(&mut self, name: &Name) -> Result<(), TcError<M>>
@@ -169,27 +169,27 @@ impl<M: KernelMode> ArtifactChecker<M> {
       name,
     )
     .map_err(TcError::Other)?;
-    self.check_id(id, source)
+    self.check_id(&id, &source)
   }
 
   fn check_id(
     &mut self,
-    id: KId<M>,
-    source: ArtifactSource,
+    id: &KId<M>,
+    source: &ArtifactSource,
   ) -> Result<(), TcError<M>>
   where
     M::MField<Vec<Name>>: CheckDupLevelParams,
   {
     let mut checker = (self.make)(
       &mut self.kernel,
-      &source,
+      source,
       &self.lookups,
       self.primitives.clone(),
     );
     if let Some(label) = &self.debug_label {
       checker.set_debug_label(label.clone());
     }
-    let result = checker.check_ixon_const(&id);
+    let result = checker.check_ixon_const(id);
     self.last_check = CheckStats {
       fuel_used: checker.fuel_used(),
       def_eq_peak: checker.def_eq_peak,
