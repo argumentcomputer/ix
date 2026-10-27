@@ -35,7 +35,7 @@
      d. pinned fixtures with their causes (`pinned`);
      e. the definition components that collapse inside are exactly
         `pinnedDefinitions`, each `collapsed`.
-  3. `changed-set-initstd` (landing): Init+Std, compiled by the statements'
+  3. `changed-set-initstd` (`ci:landing-initstd`): Init+Std, compiled by the statements'
      compiler (`Ix.Cert.compileReport`): no changed inductive component, the
      definition components of `initStdDefinitions` (none), and the fibers
      with two names in one Lean `all` (`initStdLeanMutualFibers`) out of the

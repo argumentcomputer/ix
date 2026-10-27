@@ -21,8 +21,8 @@ declarations are the ones the bytes encode, bounded resources), under which assu
 with which outcomes (accept, reject, decline; only an accept carries the
 theorems).
 
-Nothing here certifies the Lean-to-Ixon compiler, the Rust checker, `Ix.Tc`
-or IxVM. An accepted environment has a model; that it is the environment
+Nothing here certifies the Lean-to-Ixon compiler, the Rust checker or
+IxVM. An accepted environment has a model; that it is the environment
 the original Lean source meant is outside the claim.
 
 ## Relation to compiler certification
@@ -48,9 +48,10 @@ passes and clique rows remains required in this PR and unproved.
 The agreed acceptance proof combines static renaming with certified checks
 of changed cones. Those checks and Source-form typing witnesses are the
 remaining CQ5.4 integration; successful typechecking of rewritten output
-does not prove that its value matches the source. `SourceAcceptsQ` already
-states quotient Source acceptance. `NominalQuotientAgree` (S4) is a named,
-unproved assumption for a nominal acceptance corollary. It supplies no
+does not prove that its value matches the source. Acceptance is certified
+from quotient Source (`SourceAcceptsQ`); the link to nominal Source is
+checked per artifact, by the executed quotient check, rather than assumed
+for every environment. That link concerns acceptance only: it supplies no
 relation between nominal and quotient value models.
 
 The command-line paths are also distinct. `ix compile` runs the Rust
@@ -168,7 +169,7 @@ and binder contract, are not compared). A `let`'s nondependency bit
 compares the type, then the value, then the body, then the bit
 (`false < true`), each only when everything before it is equal
 (`Ixon.BlockOrder.compareExpr_letE`), as every canonical-order comparator
-does (the compilers', the Rust kernel's and `Ix.Tc`'s). Two members that
+does (the compilers' and the Rust kernel's). Two members that
 differ only in that bit are therefore two classes
 (`compareExpr_letE_nonDep`): a block that stores both is accepted in that
 order and refused (`.nonCanonical`) in the other, and a block that stores
@@ -219,7 +220,7 @@ record that contains a literal must follow the constants the literal names
 `String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a bound `Nat`
 operation must follow the constants its evidence references. A host order that violates
 this declines; it cannot cause an unsound accept. The environment check's
-order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
+order (`Ix/KernelCheck/Step.lean`, `Ixon.CheckOrder.order`) satisfies it.
 
 ## The theorems
 
@@ -353,8 +354,8 @@ increasing ω-chain of Grothendieck universes interpreting the universe
 tower. The Mathlib instance above supplies it from ω inaccessible
 cardinals, which its corollaries take as a hypothesis, not as an axiom.
 
-**Input policy.** The entry never falls back to `Ix.Tc` or the Rust
-checker; neither is in its closure ("Trust surface"). The certified theory
+**Input policy.** The entry never falls back to the Rust checker, which is
+not in its closure ("Trust surface"). The certified theory
 uses Lean's three standard axioms: `propext`, `Classical.choice` and
 `Quot.sound`. The compiler-trust axioms `Lean.trustCompiler`,
 `Lean.ofReduceBool` and `Lean.ofReduceNat` are non-standard axioms here and
@@ -490,8 +491,7 @@ Lean, through δ, β and instantiation:
   `nameExprs`, after `ingressExprs`; `nameExprs_eq` proves the result is the
   conversion), and `.meta` from the `.ixe`'s metadata arenas
   (`Ix/KernelDisplay/MetaNames.lean`, `nameRead`, after the reader): binder,
-  let, application and projection nodes, followed as
-  `Ix.Tc`'s meta ingress follows them. Missing or inconsistent metadata adds
+  let, application and projection nodes. Missing or inconsistent metadata adds
   nothing and is never an error;
 - a failure carries the terms it is about and the binders it was thrown under
   (`FailureDisplay`, a `Squash` on its message's first prose part), written
@@ -712,7 +712,7 @@ and the digest stay. Soundness does not depend on the table.
 
 The theorems are about the Lean functions. Trusted beneath them: Lean's
 kernel, compiler and runtime, and the inherited `Init`/`Std` primitives the
-compiled code reaches (the entry's closure reaches 115 inherited externs,
+compiled code reaches (the entry's closure reaches 113 inherited externs,
 for example `ByteArray` and `String` primitives and `lean_sarray_dec_eq`,
 which implements `ByteArray` equality and therefore `Address` equality).
 Among them are Lean's task primitives `Task.spawn` and `Task.get`
@@ -722,8 +722,8 @@ are the resolved task `⟨fn ()⟩` and its field, so the theorems read the
 sequential walk (`checkPendingTasks_eq`); execution trusts the runtime to run
 a pure closure on another thread, as it trusts it to run any closure. The
 runtime sizes the pool (`LEAN_NUM_THREADS`), and no size changes a verdict.
-Not in the closure: `ix_rs`, C or Rust BLAKE3, `Ix.Tc`, any JSON or
-lean4export parser. The entry and its variants hash only through their
+Not in the closure: `ix_rs`, C or Rust BLAKE3, any JSON or lean4export
+parser. The entry and its variants hash only through their
 `hash` parameter.
 
 The root library's authenticated entries (`Ixon.Authenticated`) add one
@@ -780,32 +780,36 @@ The audits are Lean modules that fail elaboration on a violation. The core
 kernel and codec audits are built by the strict standalone package `IxC/`
 (`lake -d IxC build --wfail`, sources from the repository, no dependency
 beyond the toolchain). The projection, block-order and authenticated-entry
-audits build in the root package, and the model audit builds in
-`Models/SetTheory`.
+audits, `Ix/Cert/RuntimeAudit.lean` and `Ix/Cert/ModuleAudit.lean` build in
+the root package, and the model audit builds in `Models/SetTheory`.
 
 | Module | Checks |
 | --- | --- |
 | `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 20, `fidelityRoots` 22, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
 | `IxC/Kernel/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
 | `IxC/Kernel/Audit/Roles.lean` | the specification set's shape, frozen: every role's kind, levels or equation count, evidence kinds, block and dependencies, and `specVersion` |
+| `IxC/Kernel/Audit/Modules.lean` | every safe declaration of every kernel module it imports (the kernel, and the theorems no root reaches: non-contradiction, the renaming and union development, unit hoisting, the in-model generators, the prelude shape, role-table injectivity) bounded by the three standard axioms (`#guard_module_axioms_under`, `Audit/Axioms.lean`); exact axioms of `nonContradiction`, `Cached.AcceptsRef.union` and the unit and hoisting theorems |
 | `Ix/SpecDigest.lean` | the specification digest (BLAKE3 of the set's canonical encoding), frozen |
 | `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports (no hasher), closures, extern differences (none for reconstruction) and statements, and the projection writer's guards |
 | `Ix/Ixon/Authenticated/Audit.lean` | the BLAKE3 entries' closure with exactly the assumed substitution (and its failure without it), the externs and `implemented_by` they add to the generic entries, their frozen definitions, their theorems' axioms and statements |
 | `Ix/Cert/RuntimeAudit.lean` | the compiler's (`Ix.Cert.compile`) runtime closure: every foreign primitive, `unsafe` implementation and `partial` definition it reaches beyond `Init` and `Std`, frozen by name (its axioms are frozen in `Ix/Cert/Audit.lean`) |
+| `Ix/Cert/ModuleAudit.lean` | every safe declaration of the proof modules that no statement reaches (Source grouping, ownership, metadata and uses; admission fronts; Source family and identity checks; the artifact and host admission theorems), and of every `Ix.Cert` and `Ix.CompileCert` module they import, bounded by the three standard axioms (`#guard_module_axioms`) |
 | `IxC/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
 | `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
 
-Frozen runtime closures (compiled functions; inherited externs):
+Frozen runtime closures (compiled functions; inherited externs), as the audits
+freeze them now; the notes below the table record earlier moves, and each
+audit states the cause of every later one beside its frozen value:
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3399 | 67 |
-| reader `readRecords`, `readStream` | 2134 | 89 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5799 | 113 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5796 | 113 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5821 | 113 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 6020 | 114 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 6039 | 117 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3496 | 67 |
+| reader `readRecords`, `readStream` | 2211 | 89 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5985 | 113 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5982 | 113 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 6007 | 113 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 6145 | 114 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 6164 | 117 |
 
 A `let`'s nondependency bit as a block-order key (`compareExpr_letE`) moved the
 block-order and BLAKE3 rows from 6022 and 6041 (their audit records): 2 more,
@@ -894,7 +898,7 @@ re-records it states why the closure or the statement moved.
 
 1. the strict `IxC` build with the core kernel and codec audits;
 2. the host build of the root audits (`Ix/Ixon/{Projection,BlockOrder,
-   Authenticated}/Audit.lean`, `Ix/Cert/RuntimeAudit.lean`) and the kernel tests
+   Authenticated}/Audit.lean`, `Ix/Cert/{Runtime,Module}Audit.lean`) and the kernel tests
    (`Tests/Ix/Kernel/{Reader, CertifiedEntry, Authentication, Contracts,
    Projection, BlockOrder, AddressPure, ...}`), whose `#guard`s run at elaboration on
    fixtures re-keyed to their BLAKE3 addresses; the certified fixtures
@@ -1010,7 +1014,7 @@ interleaved:
    `Tests/Fixtures/ixon-v4/primitives.tsv` differs from the live addresses;
    copy the file it names over the fixture. Mirror every changed address
    into `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`),
-   `Ix/Tc/Primitive.lean` and the IxVM literals in `Ix/IxVM/Kernel/*.lean`
+   `Ix/PrimAddrs.lean` and the IxVM literals in `Ix/IxVM/Kernel/*.lean`
    (search each old address in hex and in 32-byte array form). The suites
    `prim-addrs` and `primitive-address-parity` and
    `lake exe ixon-v4-tests --primitives` must pass.
@@ -1144,7 +1148,7 @@ The environment check measures coverage on a compiled environment (an
 `.ixe`, orders its primary constants (the prelude's first, then dependencies,
 `Nat`-operation grounds and literal edges), reads each constant with the Ixon
 reader and installs and checks it one constant at a time with an incremental
-step of the verified fold (`Benchmarks/Kernel/CheckIxeStep.lean`),
+step of the verified fold (`Ix/KernelCheck/Step.lean`),
 continuing past failures and reporting dependents of a failure as blocked.
 Hints are the compiler's. Each row is JSON (`address, names, kind, outcome,
 reason, micros, readMicros`).
@@ -1159,12 +1163,12 @@ CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max
 
 Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
 <output.jsonl> [limit]`. The records are streamed by default
-(`Benchmarks/Kernel/CheckIxeStream.lean`): the order and the record views
+(`Ix/KernelCheck/Stream.lean`): the order and the record views
 are built over record skeletons, and each record is decoded in full at its
 turn and dropped once it is read. `--load eager` decodes and keeps the whole
 environment up front. `--jobs <n>` installs every record first and then runs
 the recorded checks on `n` worker threads
-(`Benchmarks/Kernel/CheckIxePool.lean`). All three write the same rows
+(`Ix/KernelCheck/Pool.lean`). All three write the same rows
 (`kernel-check-ixe --compare` shows it); with `--jobs`, a row's `micros` is
 its install plus its checks. A checker failure's reason is rendered by
 `.meta`: its keys spelled with the names the `.ixe`'s metadata gives them and
@@ -1241,8 +1245,9 @@ Both dependency paths are removed: the root Lake package `lean4lean`
 fetched `argumentcomputer/lean4ix` at
 `a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and TruthMines independently
 fetched `digama0/lean4lean` at `e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00`.
-The old verification trees and their consumers are gone. Runtime `Ix.Tc`
-remains in the tree while its compiler consumers are being migrated.
+The old verification trees and their consumers are gone, and so is runtime
+`Ix.Tc`: its compiler consumers (AuxGen) moved to IxC, the decompiler needs no
+kernel, and the primitive addresses moved to `Ix/PrimAddrs.lean`.
 
 | Retired or remaining surface | Replacement or disposition | Status |
 | --- | --- | --- |

@@ -180,7 +180,7 @@ consistency. It is Ix's own kernel, derived from the verified checker of
 `Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
 environment it accepts the theorems give a set-theoretic model and no proof of
 `False`, on the standard axioms only. It does not certify the compiler, the
-Rust kernel, `Ix.Tc` or IxVM. [docs/kernel.md](docs/kernel.md) states what is
+Rust kernel or IxVM. [docs/kernel.md](docs/kernel.md) states what is
 proved, what is trusted and what the gate checks; `--with-model` also builds
 the Mathlib-based model package `Models/SetTheory`:
 
@@ -236,15 +236,19 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 
 Every test entry is registered once, with its tier, in `Tests/Main.lean`
 (the typed registry, `Tests/Registry.lean`). The tiers: `primary` (run by a
-bare `lake test`), `ci:<job>` (a CI partition: `cli`, `compile-pipeline`,
-`compiler-closures`, `compile`, `decompile`, `misc`, `tc`), `landing` (the
-landing gates) and `manual` (with a reason, e.g. a Mathlib-sized input).
+bare `lake test`), `ci:<job>` (a CI partition: `cli` in the CI job,
+`compile-pipeline`, `compiler-closures`, `compile`, `decompile`, `misc`,
+`landing-fixtures`, `landing-compilers` and `landing-initstd` in the merge
+queue) and `manual` (with a reason, e.g. a Mathlib-sized input). The three
+landing partitions hold the end-to-end checks of the compilers and of the
+certification, on the fixture families, the whole test environment and
+Init+Std; `--tier landing` selects all three.
 - `lake test` runs every primary entry. Every selected entry runs, even after
   a failure, with a result line each; the exit code is the first non-zero one.
 - `lake test -- <name>...` runs exactly the named entries, whatever their tier
   (names match exactly; an unknown name is an error)
 - `lake test -- --tier <tier>` runs every entry of a tier (`primary`,
-  `landing`, `manual`, or `ci:<job>`); CI's partitions run this way
+  `manual`, `ci:<job>`, or `landing`); CI's partitions run this way
 - `lake test -- --list` prints every entry with its tier; `lake test --
   --list-gate <tier>` prints the names of one tier
 - `lake test -- --ignored` runs every entry that is not primary; `--ignored

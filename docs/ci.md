@@ -28,6 +28,32 @@ Sticky disks restore with provisioned snapshot initialization; `lazy-init`
 makes first reads of cached binaries and oleans slow enough to dominate jobs
 that only run them.
 
+## Test tiers
+
+Every Lean test entry is registered once, with its tier, in
+`Tests/Main.lean` (the registry is `Tests/Registry.lean`). The tier says where
+the entry runs:
+
+| Tier | Where it runs | What it holds |
+| --- | --- | --- |
+| `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
+| `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
+| `ci:compile-pipeline` | a merge-tests partition | the Lean and Rust compilers against each other (canonicalization, condensation, serialization, decompilation, auxiliary generation), the changed set, and the compilers' refusals |
+| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, checker-support grounding, packing, admission of selected targets, and the certified checker's pinned subjects and acceleration inputs |
+| `ci:compile`, `ci:decompile` | one merge-tests partition each | the whole test environment through the compiler, and back |
+| `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, Init+Std compile fidelity, sharding, catalog and commit I/O, the primitives, and the IxVM suite |
+| `ci:landing-fixtures` | a merge-tests partition | end-to-end checks on the fixture families: both compilers, both kernels and the certified checker on every family, the twins' non-canonical record, the image pass and its clique transport, the auxiliary oracle, the canonical and nested orders |
+| `ci:landing-compilers` | a merge-tests partition | the Lean compiler's output independent of its schedule, on the twins and the fixture corpus; the Rust compiler's compile, serialize and decompile roundtrip over the test environment |
+| `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std: the certified compiler against the pipeline and the Rust compiler, role binding, a reading premise on every inductive, the changed set, the admission hash |
+| `manual` | by hand only | entries that need inputs outside the repository, or hours; each states its reason |
+
+`lake test -- --tier <tier>` runs one tier; `--tier landing` runs the three
+landing partitions. The registry's primary self-test, `ixtests-registry`,
+fails when a CI tier has no entry, when no workflow runs a CI tier, or when a
+workflow names a tier the registry does not define. A merge-tests partition
+must finish well within the merge queue's status-check timeout: split a tier
+into two jobs before it approaches it.
+
 ## Required checks
 
 The branch protection or ruleset for `main` must require these aggregate

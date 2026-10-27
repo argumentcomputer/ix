@@ -11,8 +11,10 @@ names; both missing and additional axioms fail, so a namespace migration
 cannot silently widen a recorded boundary.
 
 `#guard_kernel_axioms root [axioms]` fails elaboration unless the transitive
-axiom set of `root` is exactly the listed one. The negative controls at the
-end of this module exercise both rejection directions. -/
+axiom set of `root` is exactly the listed one. `#guard_module_axioms` and
+`#guard_module_axioms_under` bound every safe declaration of whole modules by
+the standard logical axioms (below). The negative controls at the end of this
+module exercise each rejection. -/
 
 open Lean Elab Command
 
@@ -97,6 +99,89 @@ elab_rules : command
       liftCoreM <| realizeGlobalConstNoOverloadWithInfo axiomSyntax
     checkAxioms rootName expected
 
+/-! ## Whole modules
+
+`#guard_module_axioms M₁ M₂ …` fails elaboration unless every safe
+declaration of each named module (every constant the module adds, auxiliary
+ones included) depends on no axiom beyond the standard logical axioms `propext`,
+`Classical.choice` and `Quot.sound`. Unsafe declarations (the implementations
+behind `implemented_by` and `partial`, which may use the compiler's `lcProof`)
+are outside the logic: no safe declaration can refer to one. A named module
+that is not imported, or that declares nothing safe, fails as well, so a
+listed module cannot drop out of the check unnoticed.
+`#guard_module_axioms_under P₁ P₂ …` checks every imported module whose name
+some `Pᵢ` prefixes, skips the ones that declare nothing safe, and fails if a
+`Pᵢ` prefixes no imported module.
+
+One traversal covers all the declarations at once; on a failure, each module
+is traversed again to name the declarations that reach the extra axiom. -/
+
+/-- The standard logical axioms. -/
+def logicalAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
+
+/-- The axioms that the closures of `decls` reach, together. -/
+def axiomsOf (env : Environment) (decls : Array Name) : Array Name :=
+  (((decls.forM visit).run env).run ({}, {})).2.1.axioms
+
+/-- The safe declarations of an imported module. -/
+def moduleDecls (env : Environment) (module : Name) : Option (Array Name) := do
+  let idx ← env.getModuleIdx? module
+  return (← env.header.moduleData[idx]?).constants.filterMap fun c =>
+    if c.isUnsafe then none else some c.name
+
+/-- At most `limit` declarations of `decls` whose closure reaches `ax`. -/
+def reaching (env : Environment) (decls : Array Name) (ax : Name) (limit : Nat := 5) :
+    Array Name := Id.run do
+  let mut out := #[]
+  let mut cache : Cache := {}
+  for d in decls do
+    if out.size ≥ limit then break
+    let (state, cache') := collectCached env d cache
+    cache := cache'
+    if state.axioms.contains ax then out := out.push d
+  return out
+
+/-- Fail unless every declaration of every module in `modules` depends on no
+axiom beyond `allowed`. With `allowEmpty`, a module that declares nothing is
+skipped; otherwise it fails. -/
+def checkModules (modules : Array Name) (allowEmpty : Bool := false)
+    (allowed : Array Name := logicalAxioms) : CommandElabM Unit := do
+  let env ← getEnv
+  let mut all : Array Name := #[]
+  let mut present : Array (Name × Array Name) := #[]
+  for m in modules do
+    let some decls := moduleDecls env m | throwError m!"module is not imported: {m}"
+    if decls.isEmpty then
+      if allowEmpty then continue
+      throwError m!"module declares nothing: {m}"
+    all := all ++ decls
+    present := present.push (m, decls)
+  if (axiomsOf env all).all allowed.contains then return
+  let mut lines : Array String := #[]
+  for (m, decls) in present do
+    for ax in (axiomsOf env decls).filter (!allowed.contains ·) do
+      lines := lines.push s!"  {m}: {ax}, reached from {reaching env decls ax}"
+  throwError m!"axiom boundary changed: beyond {allowed}\n{"\n".intercalate lines.toList}"
+
+/-- The imported modules whose names `pre` prefixes. -/
+def modulesUnder (env : Environment) (pre : Name) : Array Name :=
+  env.header.moduleNames.filter (pre.isPrefixOf ·)
+
+syntax (name := guardModuleAxioms) "#guard_module_axioms " ident+ : command
+syntax (name := guardModuleAxiomsUnder) "#guard_module_axioms_under " ident+ : command
+
+elab_rules : command
+  | `(#guard_module_axioms $modules:ident*) =>
+    checkModules (modules.map (·.getId))
+  | `(#guard_module_axioms_under $prefixes:ident*) => do
+    let env ← getEnv
+    let mut modules : Array Name := #[]
+    for p in prefixes.map (·.getId) do
+      let under := modulesUnder env p
+      if under.isEmpty then throwError m!"no imported module under {p}"
+      modules := modules ++ under
+    checkModules modules (allowEmpty := true)
+
 end Ix.Kernel.Audit
 
 /-! ## Controls
@@ -142,3 +227,25 @@ actual but unlisted: []
 /-- error: required root is missing: Ix.Kernel.Audit.doesNotExist -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkAxioms `Ix.Kernel.Audit.doesNotExist #[]
+
+/-! Whole modules: a clean module passes, a module that declares `sorryAx`
+fails and names it, and a missing module or prefix fails. -/
+
+#guard_module_axioms Init.Data.List.Lemmas
+#guard_module_axioms_under Init.Data.List
+
+run_cmd do
+  let rejected ← try
+      Ix.Kernel.Audit.checkModules #[`Init.Prelude]
+      pure false
+    catch e => pure ((← e.toMessageData.toString).contains "Init.Prelude: sorryAx")
+  unless rejected do
+    throwError "the module check accepted a module that declares sorryAx"
+
+/-- error: module is not imported: Ix.Kernel.Audit.NoSuchModule -/
+#guard_msgs (whitespace := lax) in
+#guard_module_axioms Ix.Kernel.Audit.NoSuchModule
+
+/-- error: no imported module under Ix.Kernel.Audit.NoSuchModule -/
+#guard_msgs (whitespace := lax) in
+#guard_module_axioms_under Ix.Kernel.Audit.NoSuchModule

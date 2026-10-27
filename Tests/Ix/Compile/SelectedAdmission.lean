@@ -6,8 +6,12 @@ import Ix.Cert.TheoremSnapshots
 import Ix.Cert.ProjectionMembers
 import Ix.Ixon.CheckOrder
 import Tests.Ix.Compile.Harness.Units
-import Tests.Ix.Kernel.Authentication
-import Tests.Ix.Kernel.EntryCaseDefs
+import Tests.Ix.Kernel.CertifiedEntry
+
+/-! The suite `compiler-selected-admission`. Its Lean sources
+(`Tests.Ix.Compile.SelectedAdmission.Fixtures` and
+`Tests.Ix.Kernel.EntryCaseDefs`) are loaded at run time, outside the
+`IxTests` environment; the `SelectedAdmissionFixtures` library builds them. -/
 
 namespace Tests.Ix.Compile.SelectedAdmission
 open _root_.Ix.Kernel _root_.Ix.Kernel.Reader _root_.Ix.Kernel.Admission
@@ -444,14 +448,17 @@ private def snapshotControls (binding : Binding) (t : RoleTable) (pre : Prelude 
   need (match check binding limits with | .error (.mismatch ..) => true | _ => false) "receipt changed byte error precedence"
   IO.println "snapshot controls: native full-install, constant/declaration offsets, later-key hiding, missing/kind indices and exact error precedence passed"
 
-def candidateTarget : Nat := 7
+/-- The fixtures' module, loaded at run time. -/
+private def fixtures : Lean.Name := `Tests.Ix.Compile.SelectedAdmission.Fixtures
+
+private def candidateTarget : Lean.Name := `Tests.Ix.Compile.SelectedAdmission.candidateTarget
 
 -- Synthetic candidate controls only: zero is not the source form of seven.
 private def candidateControls (binding : Binding) (t : RoleTable) (pre : Prelude .anon) : IO Unit := do
-  let env ← getCompileEnv #[`Tests.Ix.Compile.SelectedAdmission]
-  let raw := Tests.Ix.Compile.Harness.closureOf env [``candidateTarget]
+  let env ← getCompileEnv #[fixtures]
+  let raw := Tests.Ix.Compile.Harness.closureOf env [candidateTarget]
   let out ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts raw (numWorkers := 1))
-  let some named := out.env.named.get? (_root_.Ix.Name.fromLeanName ``candidateTarget)
+  let some named := out.env.named.get? (_root_.Ix.Name.fromLeanName candidateTarget)
     | throw (IO.userError "candidate target missing")
   let p ← IO.ofExcept ((RecursorSupport.catalogue out.env limits).mapError reprStr)
   let (literal, _) ← IO.ofExcept (candidate out.env t pre named.addr)
@@ -487,19 +494,9 @@ private def candidateControls (binding : Binding) (t : RoleTable) (pre : Prelude
   need (same.checked == s.checked && same.expected == s.expected) "temporary candidate push changed the target receipt"
   IO.println "candidate controls: distinct typed value only; wrong type, loose/free variables, self, unresolved and level errors; context error and target receipt preserved"
 
-structure TheoremBox where
-  witness : True
-  kids : List TheoremBox
-run_cmd do
-  let some (.thmInfo d) := (← Lean.getEnv).find? `Tests.Ix.Compile.SelectedAdmission.TheoremBox.witness
-    | throwError "primitive projection theorem missing"
-  Lean.Elab.Command.liftCoreM <| Lean.addDecl (.thmDecl
-    { name := `Tests.Ix.Compile.SelectedAdmission.theoremProjection,
-      levelParams := d.levelParams, type := d.type, value := d.value })
-
 open Tests.Ix.Kernel.Reader in
 private def theoremControls (binding : Binding) (t : RoleTable) (pre : Prelude .anon) (projections : IO.Ref (Array String)) : IO Unit := do
-  let env ← getCompileEnv #[`Tests.Ix.Compile.SelectedAdmission]
+  let env ← getCompileEnv #[fixtures]
   let input := Tests.Ix.Compile.Harness.closureOf env [`Tests.Ix.Compile.SelectedAdmission.theoremProjection]
   let out ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts input (numWorkers := 1))
   let some named := out.env.named.get? (_root_.Ix.Name.fromLeanName `Tests.Ix.Compile.SelectedAdmission.theoremProjection)
@@ -554,6 +551,9 @@ private def mutualProjectionControl (binding : Binding) (t : RoleTable) (pre : P
     (blobsOf out.env order) (hintsOf out.env)).mapError toString)
   projectionCase out.env order named.addr r "mutual-order-control" projections true
 
+/-- The admitted selected targets of a compiled fixture unit: the exact
+census of standalone definition fronts, the theorem and projection
+censuses, and every control. -/
 def runSupported : IO Unit := do
   let binding ← IO.ofExcept defaultBinding
   let t ← IO.ofExcept ((admitBinding Address.admissionHash binding).mapError (toString ∘ Error.binding))
@@ -582,7 +582,10 @@ def runSupported : IO Unit := do
   for row in projectionRows do IO.println row
   IO.println "projection census: six original roots (two types/four constructors), two extra control rows, one extra admission; actual order, prelude-only, unavailable, key/address, payload and prepared-family controls passed"
 
-def run : IO Unit := do
+/-- The registry entry `compiler-selected-admission`: the census of an
+ordinary standalone definition, then `runSupported`, whose exact census of
+the fixture unit and controls subsume the earlier lower bounds. -/
+def run : IO UInt32 := do
   let binding ← IO.ofExcept defaultBinding
   let t ← IO.ofExcept ((admitBinding Address.admissionHash binding).mapError (toString ∘ Error.binding))
   let pre : Prelude .anon ← IO.ofExcept (preludeFor t)
@@ -592,11 +595,8 @@ def run : IO Unit := do
       value := .sort .zero, hints := .abbrev, safety := .safe, all := [name] }
   let normal ← IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts [(name, tiny)] (numWorkers := 1))
   let _ ← census "ordinary" normal binding t pre
-  let unit ← Tests.Ix.Compile.Harness.unitOfFile "Tests/Ix/Compile/Pass/O2Split.lean"
-  let changed ← Tests.Ix.Compile.Harness.compileUnit unit 1
-  let (witnessed, moved) ← census "O2Split" changed binding t pre
-  need (witnessed > 0 && moved > 0) "no admitted selected standalone definition with a real prepared-index shift"
-  controls changed binding t pre
+  runSupported
+  return 0
 
 /-- info: 'Ix.Cert.AdmittedTargetFronts.prepared_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.AdmittedTargetFronts.prepared_of_check

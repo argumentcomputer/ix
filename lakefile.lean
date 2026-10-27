@@ -156,11 +156,19 @@ environment that the whole-environment suites compile. -/
 lean_lib TwinsFixtures where
   roots := #[`Tests.Ix.Compile.Twins.Fixtures]
 
+/-- The `compiler-selected-admission` suite's fixtures
+(`Tests.Ix.Compile.SelectedAdmission.Fixtures`) and the certified entry's host
+cases (`Tests.Ix.Kernel.EntryCaseDefs`), which it also compiles. `IxTests`
+builds them but does not import them: the suite imports them at run time,
+since some host cases are installed unchecked on purpose. -/
+lean_lib SelectedAdmissionFixtures where
+  roots := #[`Tests.Ix.Compile.SelectedAdmission.Fixtures, `Tests.Ix.Kernel.EntryCaseDefs]
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
-  needs := #[`@/ix, `@/«kernel-check-ixe», `@/TwinsFixtures]
+  needs := #[`@/ix, `@/«kernel-check-ixe», `@/TwinsFixtures, `@/SelectedAdmissionFixtures]
   moreLinkObjs := #[ix_rs_test]
 
 lean_exe «arena-exclude» where
@@ -605,7 +613,7 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure", "Tests.Ix.Kernel.DisplayRead"]
+  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure", "Tests.Ix.Kernel.DisplayRead"]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
