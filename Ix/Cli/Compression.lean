@@ -18,7 +18,7 @@ opaque describeSetup (devSrs : Bool) : IO String
 preprocessing and development SRS caches under `cacheRoot`. -/
 @[extern "rs_compression_run"]
 opaque compress (vk proof claim statement : @& ByteArray) (dir cacheRoot : @& String)
-  (devSrs : Bool) (logHeight : UInt32) : IO ByteArray
+  (devSrs : Bool) (logHeight : UInt32) (terminalPlonk : Bool) : IO ByteArray
 
 /-- Verify with the profile bundled under the packet's id, whose pinned
 aggregation program fixes the statement for `claim`, and return the setup

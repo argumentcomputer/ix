@@ -21,7 +21,7 @@ ix-common = { workspace = true }
 ix-compile = { workspace = true }
 ixon = { workspace = true }
 ix-kernel = { workspace = true }
-ix-proof-compression = { path = "../proof-compression", default-features = false }
+ix-proof-compression = { path = "../proof-compression", default-features = false, features = ["plonk"] }
 lean-ffi = { workspace = true }
 memmap2 = { workspace = true }
 multi-stark = { workspace = true }

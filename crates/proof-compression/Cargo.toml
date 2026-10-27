@@ -24,6 +24,7 @@ blake2b_simd = "1"
 num-bigint = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-texray = { workspace = true }
@@ -50,7 +51,8 @@ optional = true
 features = ["cuda"]
 
 [features]
-default = ["parallel"]
+plonk = []
+default = ["parallel", "plonk"]
 # GPU proving: multi-stark's Goldilocks backend for FRI compression and the
 # KZG kernels here. Needs the CUDA toolkit at build time and a visible GPU
 # at runtime; CPU-only builds neither compile sppark nor link CUDA.

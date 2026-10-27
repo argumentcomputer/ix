@@ -1,5 +1,10 @@
 //! Recursive KZG wrapper: staging and proving in one process, and the
 //! portable verifier its packets are checked with.
+#[cfg(feature = "plonk")]
+mod relation;
+#[cfg(feature = "plonk")]
+pub(in crate::pipeline) use relation::plonk::export as plonk_export;
+
 use super::super::stages::{
   construct::{self, Lowered},
   statement::Statement as StageStatement,
@@ -27,7 +32,7 @@ use multi_stark::{
 use std::{fs, path::Path};
 
 pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
-const OUTER_PROFILE_VERSION: u32 = 5;
+const OUTER_PROFILE_VERSION: u32 = 6;
 /// Largest admitted recursive computation trace. The development public
 /// degree of a staged profile covers exactly its own height.
 pub(super) const MAX_TRACE_LEN: usize = construct::RECURSIVE_HEIGHT;
@@ -107,7 +112,7 @@ impl Frontend {
     let setup = config
       .setup
       .for_stage(OUTER_SEED, height)?
-      .with_transcript(TranscriptKind::Keccak256);
+      .with_transcript(TranscriptKind::Blake3);
     let setup_id = setup.identity(height, 2)?;
     fs::create_dir_all(dir)?;
     setup.bind_stage(dir, height, 2)?;
@@ -192,7 +197,7 @@ fn packet_body<'a>(
   Ok(&packet[offset..])
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "plonk"))]
 fn packet_claims(
   packet: &[u8],
   profile: &[u8; 32],
@@ -346,7 +351,7 @@ fn prove(
     "pairing_bytes": keys.len() * 48,
     "profile_bytes": 32,
     "profile_version": OUTER_PROFILE_VERSION,
-    "transcript": "keccak256",
+    "transcript": "blake3",
     "total_seconds": start.elapsed().as_secs_f64(),
     "verify_seconds": verify_seconds,
     "srs_config_load_seconds": srs_config_load_seconds,
@@ -396,6 +401,19 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> storage::Result<T> {
 }
 
 impl VerifierProfile {
+  pub(crate) fn reencode_blake3(
+    bytes: &[u8],
+  ) -> PipelineResult<(Vec<u8>, [u8; 32])> {
+    let mut profile = Self::from_bytes(bytes)?;
+    profile.version = OUTER_PROFILE_VERSION;
+    profile.prepare()?;
+    let id = profile.id();
+    Ok((
+      bincode::serde::encode_to_vec(profile, bincode::config::standard())?,
+      id,
+    ))
+  }
+
   pub(crate) fn from_bytes(bytes: &[u8]) -> PipelineResult<Self> {
     let profile: Self = decode(bytes)?;
     profile.prepare()?;
@@ -451,7 +469,7 @@ impl VerifierProfile {
   fn system(&self) -> storage::Result<multi_stark::system::System<KzgConfig>> {
     use crate::kzg::VerifierParams;
     use multi_stark::system::{Circuit, System};
-    if self.version != OUTER_PROFILE_VERSION {
+    if !matches!(self.version, 5 | OUTER_PROFILE_VERSION) {
       return Err("unsupported recursive verifier profile".into());
     }
     if self
@@ -480,8 +498,13 @@ impl VerifierProfile {
       fixed.0.append(&mut commit.0);
     }
     Ok(System {
-      config: KzgConfig::verifier_only(params, 2)
-        .with_transcript(TranscriptKind::Keccak256),
+      config: KzgConfig::verifier_only(params, 2).with_transcript(
+        if self.version == 5 {
+          TranscriptKind::Keccak256
+        } else {
+          TranscriptKind::Blake3
+        },
+      ),
       circuits,
       preprocessed_commit: Some(fixed),
       preprocessed_indices: vec![Some(0), Some(1)],
@@ -661,7 +684,7 @@ mod tests {
     let lowered = circuit.lower_to_multi_stark(Scalar::from_u8(94)).unwrap();
     let config =
       KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(64, b"packet-outer")), 2)
-        .with_transcript(TranscriptKind::Keccak256);
+        .with_transcript(TranscriptKind::Blake3);
     let (system, key) =
       System::new(config, lowered.kzg_circuit_inputs(64, 2).unwrap());
     let codec = FixedProofCodec::new(
@@ -771,7 +794,7 @@ mod tests {
     fs::create_dir_all(dir)?;
     let height = compiled.main_height();
     SetupSource::development(OUTER_SEED, height - 1)?
-      .with_transcript(TranscriptKind::Keccak256)
+      .with_transcript(TranscriptKind::Blake3)
       .bind_stage(dir, height, 2)?;
     let mut encoded = vec![];
     keys.serialize_compressed(&mut encoded)?;
@@ -791,7 +814,7 @@ mod tests {
   fn fused_profiles_prove_and_portable_verifiers_round_trip()
   -> storage::Result<()> {
     let dir = std::env::temp_dir()
-      .join(format!("outer-staged-{}-v5", std::process::id()));
+      .join(format!("outer-staged-{}-v6", std::process::id()));
     fs::create_dir(&dir)?;
     let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
     let keys = vec![inner.g2, inner.tau_g2];
@@ -823,7 +846,7 @@ mod tests {
       storage::load(&first.join("manifest.bin"))?;
     assert_eq!(manifest.claims, claims);
     let setup = SetupSource::development(OUTER_SEED, height - 1)?
-      .with_transcript(TranscriptKind::Keccak256);
+      .with_transcript(TranscriptKind::Blake3);
     prove(&first, Lowered { compiled, assignment }, &cache, &setup)?;
     assert!(first.join("kzg/fixed-0.bin").exists());
     assert!(!first.join("kzg/main-0.bin").exists());
@@ -861,10 +884,10 @@ mod tests {
     assert_eq!(profile.version, OUTER_PROFILE_VERSION);
     assert_eq!(
       profile.system()?.config.transcript_kind(),
-      TranscriptKind::Keccak256
+      TranscriptKind::Blake3
     );
 
-    for version in [0, 4, 6] {
+    for version in [0, 4, 7] {
       let mut unsupported: VerifierProfile = decode(&portable)?;
       unsupported.version = version;
       let unsupported = bincode::serde::encode_to_vec(

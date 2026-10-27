@@ -34,7 +34,7 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
     let proof ← Compression.compress vk wrapper.proof (Ix.Claim.ser wrapper.claim) statement
       out (← Compression.cacheDir).toString
-      (p.hasFlag "dev-srs") height.toUInt32
+      (p.hasFlag "dev-srs") height.toUInt32 (p.hasFlag "plonk")
     let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
     let result ← StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
     IO.println (toString result)
@@ -53,6 +53,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "log-height" : Nat; "First KZG partition height: 24 (default) or 25."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
     "dev-srs"; "Use known-trapdoor development parameters; results are not production-secure."
+    "plonk"; "Add a terminal BLS12-381 PLONK proof using the Filecoin parameters."
   ARGS:
     proof : String; "Address of an aggregate Ixon.Proof in the ix store."
 ]

@@ -25,7 +25,23 @@ const AGGREGATE_PREFIX: [u64; 10] = [
   1176003176, 683533119, 3085659920,
 ];
 
-static VERIFIERS: [BundledVerifier; 2] = [
+static VERIFIERS: [BundledVerifier; 4] = [
+  BundledVerifier {
+    id: "4224c47197ed387320dfb9b8bbf2369fa326f72c54e1cbc65907f5e6e8541ca0",
+    digest: "12ce28356f86ba34afb11b8e3b2c142f47ab9259e9c3f5751069bd1c41609084",
+    statement_prefix: AGGREGATE_PREFIX,
+    setup: SetupClass::Filecoin,
+    bytes: include_bytes!("../../profiles/aggregate-filecoin-v6.bin"),
+    decoded: OnceLock::new(),
+  },
+  BundledVerifier {
+    id: "b0db3d47f5f9e08b3710499adaba92ad6c5bd160393d45aef1a505c5909cd580",
+    digest: "116c668b17db0a1bd95ea8cce9d080af14b16031db128c47a3dcd46443147678",
+    statement_prefix: AGGREGATE_PREFIX,
+    setup: SetupClass::Development,
+    bytes: include_bytes!("../../profiles/aggregate-development-v6.bin"),
+    decoded: OnceLock::new(),
+  },
   BundledVerifier {
     id: "4b033424efd56486ed972b04b773349149d9df6159d753e303f11aed89928302",
     digest: "8779b34ad026a9e7075c253f036f50e553348b9d3f5c7baab21ddf487301d7cb",
@@ -132,6 +148,20 @@ mod tests {
     development: bool,
   ) -> Result<SetupClass> {
     pipeline::verify(proof, claim, development)
+  }
+
+  #[test]
+  fn blake3_profiles_derive_from_authenticated_circuit_metadata() {
+    for (source, target) in [(2, 0), (3, 1)] {
+      let (bytes, id) =
+        VerifierProfile::reencode_blake3(VERIFIERS[source].bytes).unwrap();
+      assert_eq!(bytes, VERIFIERS[target].bytes);
+      assert_eq!(
+        blake3::Hash::from_bytes(id).to_hex().as_str(),
+        VERIFIERS[target].id
+      );
+      VERIFIERS[target].profile().unwrap();
+    }
   }
 
   #[test]

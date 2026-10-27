@@ -1,0 +1,8 @@
+{
+  "blake3": "187d35e08e47a1a33117a26a1bde25b0b9dfc2c0651c617d5226ec5096acc6fd",
+  "filecoinManifest": "185c556e5f5f0c67ddc0c8ac210c8b11d1a48574defbc44299dc712747a0507d",
+  "format": "ix-plonk-srs-export-v1",
+  "powers": 131,
+  "publicMaxDegree": 268435454,
+  "setupId": "48b74609da5ec9a9d59efb1d4c9d91d81815a304a8baab8ba35af4fe0145239f"
+}

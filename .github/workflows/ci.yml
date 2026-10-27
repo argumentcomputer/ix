@@ -42,6 +42,10 @@ jobs:
         with:
           codegen: portable
           use-github-cache: "false"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/bls-plonk-wrapper/go.mod
+          cache-dependency-path: tools/bls-plonk-wrapper/go.sum
       # lean-action runs `lake build`, then `lake test`, then `lake lint`.
       # The build-all lint driver compiles every lib/exe target with --wfail,
       # so a warning in any target (exes, benchmarks, Apps) — not just the
@@ -77,6 +81,23 @@ jobs:
         run: |
           lake exe ixon-v4-primitives
           lake exe ixon-v4-tests --primitives
+
+  plonk-test:
+    runs-on: runs-on=${{ github.run_id }}-plonk-test-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/bls-plonk-wrapper/go.mod
+          cache-dependency-path: tools/bls-plonk-wrapper/go.sum
+      - name: Test the CPU wrapper and authenticated Filecoin adapter
+        working-directory: tools/bls-plonk-wrapper
+        run: go test ./...
+      - name: Check Go formatting
+        working-directory: tools/bls-plonk-wrapper
+        run: test -z "$(gofmt -l .)"
 
   rust-test:
     runs-on: runs-on=${{ github.run_id }}-rust-test-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-rust-test-x86-64-v4:50gb/extras=s3-cache
@@ -165,6 +186,10 @@ jobs:
         with:
           codegen: portable
           cache-key: cuda-13.3.1-ubuntu26
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/bls-plonk-wrapper/go.mod
+          cache-dependency-path: tools/bls-plonk-wrapper/go.sum
       # S3 caching keeps the container independent of host bind mounts.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -210,7 +235,7 @@ jobs:
 
   ci-gate:
     if: ${{ always() }}
-    needs: [lean-test, rust-test, cuda-compile, lints]
+    needs: [lean-test, rust-test, plonk-test, cuda-compile, lints]
     permissions:
       actions: read
       checks: read
