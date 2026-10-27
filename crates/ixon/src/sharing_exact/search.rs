@@ -82,10 +82,6 @@ fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
 }
 
-fn tid(i: usize) -> TermId {
-  TermId::try_from(i).unwrap_or(TermId::MAX)
-}
-
 /// Per-DAG data shared by every state evaluation.
 pub(crate) struct Prepared {
   pub(crate) own: Vec<Len>,
@@ -210,7 +206,7 @@ pub(crate) fn prepare_with(
     let kids = kids.as_slice();
     for (i, &c) in kids.iter().enumerate() {
       if !kids[..i].contains(&c) {
-        parents[fill[ix(c)]] = tid(p);
+        parents[fill[ix(c)]] = p;
         fill[ix(c)] += 1;
       }
     }

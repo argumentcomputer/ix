@@ -1,15 +1,23 @@
 import IxC.Kernel.Audit.Axioms
 import IxSharingVerify
 import IxSharingVerify.Builder
+import IxSharingVerify.ConstantNeverFails
+import IxSharingVerify.FamilyCached
+import IxSharingVerify.FamilyFast
+import IxSharingVerify.FamilyNormalize
+import IxSharingVerify.FamilyNormalizeSpec
+import IxSharingVerify.FamilyWritingBound
+import IxSharingVerify.UniformCappedSize
 import Ix.LeanIngress.Expr
 
 /-!
 # Trust manifest for the sharing proofs
 
 These roots cover the TagN codec, the sharing construction (the exact core,
-the uniform optimizer, the tiered phases, the output format), the compiler's
-sharing builder, and every `@[csimp]` theorem by which compiled code runs a
-fast body in place of a sharing specification (`Audit.CompiledCode` fails the
+the uniform optimizer, the tiered phases, the output format, the production
+rule, its totality and its output-size bound), the compiler's sharing builder,
+and every `@[csimp]` theorem by which compiled code
+runs a fast body in place of a sharing specification (`Audit.CompiledCode` fails the
 build if one is missing). Each root's transitive axiom set must be exactly the
 listed one (`Ix.Kernel.Audit.checkAxioms`, the certified kernel's exact
 traversal of checked types and bodies), and only Lean's `propext`,
@@ -80,6 +88,102 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Family.normalizeConstantSharingTiered_eq_family, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.normalizeConstantSharingTiered_reference_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.normalizeConstantSharingTiered_reference_bytes, standardAxioms := standard },
+  -- The production rule never fails: under some budget every refusal is
+  -- unreachable on its domain, larger budgets keep a successful run and its
+  -- result, and the output expands again.
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_ok, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_ok, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.normalizeConstantSharingTiered_ok, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.familyExpanded_ok, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_output_expands, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_output_expands,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Budget.canonicalSharingTiered_mono, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Budget.canonicalSharingTiered_budget_independent,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Budget.normalizeConstantSharingTiered_budget_independent,
+    standardAxioms := standard },
+  -- The first-tier search of the slot allocation visits at most `(m + 1)^9`
+  -- states on a table of `m` entries.
+  { root := ``Ix.Sharing.Verify.Tiered.allocate_within, standardAxioms := standard },
+  -- The output is at most nine times the full endpoint's charge.
+  { root := ``Ix.Sharing.Family.selected_ulen_le_modelBound, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.familyExpanded_output_le, standardAxioms := standard },
+  -- A budget polynomial in the input size admits every Share-free input of
+  -- the domain, and every larger budget returns the same output.
+  { root := ``Ix.Sharing.Verify.Totality.familyCallTotal_le, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.familyWorkTotal_le, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.familyExpanded_within, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_limitsFor, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_above, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_limitsFor, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_above, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.normalizeConstantSharingTiered_limitsFor,
+    standardAxioms := standard },
+  -- Re-checks of the compiled family twins beside their definitions in
+  -- `Ix.Sharing` (`FamilyCached`, `FamilyFast`, `FamilyNormalize`, `FamilyNormalizeSpec`).
+  { root := ``Ix.Sharing.Family.cachedStep_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.componentsCachedWith_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.localPhi_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.phiE_work, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.cachedComponent_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.familyStep_eq_reference, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.familyFold_eq_reference, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.familyComponents_eq_reference, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.familyUniform_eq_reference, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.familyAtWidth_eq_reference, standardAxioms := standard },
+  -- Groundwork for an output-size bound (`FamilyFullWitness`, `FamilyResidual`,
+  -- `FamilyLocalWriting`, `FamilyWritingBound`) and the arithmetic contract of
+  -- Rust's capped classification cost (`UniformCappedSize`).
+  { root := ``Ix.Sharing.Family.fullChoices_member, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.fullChoices_selected_mem, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Family.initial_full_member, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.initial_full_selected_mem, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.initial_full_merge, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.initial_full_stored, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.initial_full_stored_mem, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.occurrences_positive, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.degree_le_occurrences, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.excluded_size_lt_two, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.initial_omitted_repeated_excluded, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.initial_omitted_repeated_small, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.initial_omitted_cases, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.residualIncoming_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.degree_eq_edges, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.residualExpansions_le_one, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.residualIncoming_le_degree, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.edgeAll_eq_child_count, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.edgeAll_sum, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.degree_sum, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.residualIncoming_sum_le, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.residualBoundaryUnit_le, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.residualCharge_le, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.tag4Size_le_nine, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Family.telescope_graft, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Family.telescope_one_node, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Family.telescope_child_costs, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Family.inline_local_writing, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.uInl_le_local, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.fullStored_nodup, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.mul_sum_map, standardAxioms := propextOnly },
+  { root := ``Ix.Sharing.Family.child_cost_sum, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.residual_flow_cost, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.residual_semantic_row, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.fullStored_ulen_le_residual, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.fullStored_encoding_bound, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CappedSize.excluded_div, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CappedSize.excluded_fast, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CappedSize.excluded_size_lt_two, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CappedSize.cap_size, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CappedSize.cap_occ, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CappedSize.classification_capped, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CappedSize.cap_add_u128_safe, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Verify.CappedSize.cap_add, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Verify.CappedSize.cap_fold, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Verify.CappedSize.cap_empty_telescope, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Verify.CappedSize.empty_no_cuts, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Verify.CappedSize.empty_telescope_natural, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Verify.CappedSize.certainExcludedTest_contract, standardAxioms := #[] },
   -- The meaning of the canonical construction: the pointer cache, ingestion
   -- of the table and the roots, and canonical numbering preserve what each
   -- input expression denotes.

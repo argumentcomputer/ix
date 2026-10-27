@@ -39,8 +39,8 @@ theorem familyUniform_exact_encoding {cfg : Config} {limits : Limits} {ex : Expa
     fresh.result.sharing = old.result.sharing ∧ fresh.result.roots = old.result.roots ∧
       fresh.result.tableTerms = old.result.tableTerms ∧ fresh.stored = old.stored := by
   have same := (familyUniform_exact_match defaultSearch gate oldRun freshRun).1
-  obtain ⟨_, wf, roots, marks, spines, choice, chosen, finish⟩ := optimizeUniform_parts oldRun
-  obtain ⟨_, _, _, _, finished⟩ := familyUniform_finished wf spines roots (reach_of_marks wf roots marks) freshRun
+  obtain ⟨_, wf, roots, marks, _, choice, chosen, finish⟩ := optimizeUniform_parts oldRun
+  obtain ⟨_, _, _, _, finished⟩ := familyUniform_finished wf roots (reach_of_marks wf roots marks) freshRun
   obtain ⟨_, _, stored, table, _, oldWork, oldMat, _⟩ := uniformFinish_spec finish
   have facts := uniformChoose_facts chosen
   have tableSame : fresh.result.tableTerms = old.result.tableTerms := by
@@ -117,7 +117,6 @@ theorem familyExpanded_exact_encoding {cfg : Config} {layout : ShareLayout} {lim
   obtain ⟨o2, old2, oldCore⟩ := bind_eq_ok oldCore
   obtain ⟨o3, old3, oldCore⟩ := bind_eq_ok oldCore
   unfold familyExpanded at newCore
-  obtain ⟨_, _, newCore⟩ := bind_eq_ok newCore
   obtain ⟨_, _, newCore⟩ := bind_eq_ok newCore
   obtain ⟨picked, pickedRun, returned⟩ := bind_eq_ok newCore
   rw [tieredCandidates_eq] at pickedRun

@@ -15,20 +15,16 @@ theorem retainedResult_fields {slack : Nat} {trace : ComponentTrace} {result : C
     (run : retainedResult slack trace = .ok result) :
     result.members = trace.members ∧ result.bySize = CTable.trim trace.rows slack ∧
       CTable.best result.bySize = some result.bestDelta ∧
-      bestSetOf result.bySize result.bestDelta = some result.bestSet ∧
-      result.bySize[result.bestSet.size]! = some (result.bestDelta, result.bestSet) := by
+      bestSetOf result.bySize result.bestDelta = some result.bestSet := by
   unfold retainedResult at run
   dsimp only at run
   split at run
   · rename_i delta best
     split at run
     · rename_i set chosen
-      split at run
-      · rename_i indexed
-        simp only [pure, Except.pure, Except.ok.injEq] at run
-        cases run
-        exact ⟨rfl, rfl, best, chosen, by simpa only [beq_iff_eq] using indexed⟩
-      · cases run
+      simp only [pure, Except.pure, Except.ok.injEq] at run
+      cases run
+      exact ⟨rfl, rfl, best, chosen⟩
     · cases run
   · cases run
 
@@ -86,7 +82,7 @@ theorem retainedResult_row {cfg : Config} {ex : Expanded} {sg : UStage} {width i
     (run : retainedResult sg.slack (component cfg ex sg width index members) = .ok result) :
     ResultRow cfg sg.slack (componentFactor ex sg members) result := by
   have fields := retainedResult_fields run
-  exact ⟨fields.2.1, fields.2.2.1, fields.2.2.2.1⟩
+  exact ⟨fields.2.1, fields.2.2.1, fields.2.2.2⟩
 
 /-- Every successful prefix appends exactly one retained row per component,
 in input order. The shared buffers are zero again at the fold boundary. -/
@@ -171,36 +167,12 @@ theorem familyComponents_least (cfg : Config) (limits : Limits) (ex : Expanded) 
   initial_knapsack_least cfg ex width wf checked results
     (familyComponents_rows (dagWF_childrenPrecede wf) produced) selected
 
-/-- A successful `familyUniform` run really consumed the produced
-family rows and their least selection. This extracts its internal witness;
-it does not identify the semantic length or output of `uniformFinishF`. -/
-theorem familyUniform_selection (cfg : Config) (limits : Limits) (ex : Expanded) (width : Nat)
-    (wf : DagWF ex.dag) {out : UniformSharingResult}
-    (run : familyUniform cfg limits ex (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots)
-      (parentsOf ex.dag) width = .ok out) :
-    let sg := uniformStage width ex (Prep.ofDag ex.dag)
-    ∃ results states work delta set lowerBracket,
-      familyComponents cfg limits ex sg width (parentsOf ex.dag) = .ok (results, states, work) ∧
-      uniformKnapsack limits sg.cs.size results = .ok (delta, set, lowerBracket) ∧
-      LeastProductOutput cfg sg.cs.size (initialFactors ex sg) delta set := by
-  unfold familyUniform at run
-  rw [← uniformStage_eq_F] at run
-  dsimp only at run
-  split at run
-  · rename_i checked
-    obtain ⟨⟨results, states, work⟩, produced, rest⟩ := bind_eq_ok run
-    obtain ⟨⟨delta, set, lowerBracket⟩, selected, _⟩ := bind_eq_ok rest
-    refine ⟨results, states, work, delta, set, lowerBracket, produced, selected, ?_⟩
-    exact familyComponents_least cfg limits ex width wf (by simpa using checked) produced selected
-  · cases run
-
 end Ix.Sharing.Family
 
-#guard_kernel_axioms Ix.Sharing.Family.retainedResult_fields [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.retainedResult_fields [propext, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.familyStep_cached [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.familyStep_reference [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.familyFold_rows [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.familyComponents_rows [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.familyComponents_count [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.familyComponents_least [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Sharing.Family.familyUniform_selection [propext, Classical.choice, Quot.sound]

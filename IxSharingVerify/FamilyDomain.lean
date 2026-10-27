@@ -16,7 +16,6 @@ structure ExpandedDomain (ex : Expanded) : Prop where
   wf : DagWF ex.dag
   roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size
   reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y
-  spines : SpinesFit (Prep.ofDag ex.dag)
 
 theorem uniformDagChecks_domain {ex : Expanded} (run : uniformDagChecks ex = .ok ()) :
     DagWF ex.dag ∧ (∀ r ∈ ex.roots.toList, r < ex.dag.size) ∧
@@ -40,32 +39,21 @@ theorem uniformDagChecks_domain {ex : Expanded} (run : uniformDagChecks ex = .ok
   · simp [uniformDagChecks, precede] at run
     all_goals cases run
 
-theorem uniformSpineCheck_domain {ex : Expanded}
-    (run : uniformSpineCheck ex (Prep.ofDag ex.dag) = .ok ()) : SpinesFit (Prep.ofDag ex.dag) := by
-  unfold uniformSpineCheck at run
-  split at run
-  · rename_i checked
-    intro t ht
-    exact of_decide_eq_true (List.all_eq_true.mp checked t (List.mem_range.mpr ht))
-  · cases run
-
 /-- These domain facts come from the actual successful entry's guards;
 they are no longer caller hypotheses at the wrapper endpoint. -/
 theorem familyExpanded_domain {cfg : Config} {layout : ShareLayout} {limits : Limits} {ex : Expanded}
     {out : TieredSharingResult} (run : familyExpanded cfg layout limits ex = .ok out) : ExpandedDomain ex := by
   unfold familyExpanded at run
-  obtain ⟨u, dag, run⟩ := bind_eq_ok run
-  cases u
-  obtain ⟨u, spine, _⟩ := bind_eq_ok run
+  obtain ⟨u, dag, _⟩ := bind_eq_ok run
   cases u
   obtain ⟨wf, roots, reachable⟩ := uniformDagChecks_domain dag
-  exact ⟨wf, roots, reachable, uniformSpineCheck_domain spine⟩
+  exact ⟨wf, roots, reachable⟩
 
 theorem familyExpanded_output_of_success {cfg : Config} {layout : ShareLayout} {limits : Limits}
     {ex : Expanded} {out : TieredSharingResult} (run : familyExpanded cfg layout limits ex = .ok out) :
     TieredOutput layout limits ex out := by
   have domain := familyExpanded_domain run
-  exact (familyExpanded_checked domain.wf domain.spines domain.roots domain.reachable run).2
+  exact (familyExpanded_checked domain.wf domain.roots domain.reachable run).2
 
 theorem familyAtWidth_serialized {cfg : Config} {limits : Limits} {ex : Expanded} {width candidates : Nat}
     {out : TieredSharingResult}

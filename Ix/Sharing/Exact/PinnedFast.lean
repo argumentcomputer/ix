@@ -7,8 +7,9 @@
   step (quadratic in the stored terms). `pinnedOrderFast` keeps the ready terms
   in a `Std.TreeSet` of priority keys (`pinnedKey`, in-degree descending then
   ID ascending) and, after each placement, adds the users of the placed term
-  that became ready: O((k + edges) log k). The nearest stored descendants are
-  still computed by `pinnedDeps`.
+  that became ready. Each wake rechecks all of a user's nearest stored
+  descendants, so the placement is O((k + Σ_u |deps u|²) log k). The nearest
+  stored descendants are still computed by `pinnedDeps`.
 
   `pinnedOrder_eq_fast : @pinnedOrder = @pinnedOrderFast` (`@[csimp]`) holds
   for every input: the fast placement runs when the stored terms are strictly

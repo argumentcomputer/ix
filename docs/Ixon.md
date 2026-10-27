@@ -812,7 +812,7 @@ Complete old/new bytes agree when both routes succeed with the same limits,
 all initial components at all three widths have at most 16 members, and the old
 route uses `uniformSubsetSearch = false`. Old-route success alone is not yet a proof
 of new-route success. [Sharing-minimum §14.3](sharing-minimum.md#143-proof-scope-and-follow-up)
-records the remaining totality, output-domain and cost obligations.
+records the totality and output-domain theorems and the remaining cost obligations.
 
 The detailed exact-search theorem inventory below describes the retained reference
 route and the common later phases. Its phase-1 global optimum must not be read as a
@@ -965,17 +965,23 @@ Not claimed:
   and requires identical serialized environments
   ([performance](sharing-minimum-performance.md)).
 - **Length range in Rust.** Lean computes lengths with arbitrary-precision
-  `Nat`. Rust retains checked 128-bit general costs and signed deltas, so
-  their overflow remains a possible refusal. The measured classification-only
-  overflow on small valid doubling DAGs is repaired: all 11 fixtures, including
-  depths 127–256, now have complete Rust/Lean byte parity. That predicate uses
-  a sufficient cap, not a saturated replacement for general costs; wider
-  arithmetic remains follow-up work (§14.3 of sharing-minimum).
-- **Failure.** The theorems describe successful runs. A run that exceeds a
-  limit returns an error. The follow-up totality domain includes ingestion/wire
-  conditions and fewer than `2^64` bytes per framed constant body; standalone and
-  structured APIs must state that bound explicitly. Input framing alone does not
-  prove output framing or that the remaining guards cannot fail.
+  `Nat`. Rust computes phase-1 costs and signed deltas in 128-bit integers
+  and, where a value leaves that range, again in exact integers, with the
+  same result wherever the 128-bit run succeeds (§12.18 of sharing-minimum),
+  so a long unshared length is no refusal. All 11 doubling fixtures,
+  including depths 127–256, have complete Rust/Lean byte parity, and the
+  Lean/Rust sharing suite compares four towers whose unshared length exceeds
+  `2^127` byte for byte.
+- **Failure.** A run that exceeds a limit returns an error. On the totality
+  domain (fewer than `2^64` input nodes and universes per reference, implied by
+  the framed constant-body bound) no guard is reachable under a sufficient
+  budget, a larger budget never changes a successful result, and the output
+  expands again (`IxSharingVerify.NeverFails`). One such budget is
+  `limitsFor N`, polynomial in the input size `N`: the expression nodes plus
+  universe arguments of the table and the roots as written, when table
+  entries reference only earlier entries and roots only entries
+  (`IxSharingVerify.SufficientBudget`). Standalone and structured APIs must
+  state that domain explicitly.
 
 ### Example
 

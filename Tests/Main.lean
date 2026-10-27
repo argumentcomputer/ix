@@ -139,6 +139,7 @@ import Tests.Ix.SharingExact
 import Tests.Ix.SharingUniform
 import Tests.Ix.SharingFamily
 import Tests.Ix.SharingFamilyNormalize
+import Tests.Ix.SharingComponents
 import Tests.Ix.SharingTiered
 import Tests.Ix.SharingExactFFI
 import Tests.Ix.SourceContract
@@ -216,6 +217,7 @@ def registry : List Entry := [
   .suite "exact-sharing" .primary (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
   .suite "sharing-family" .primary Tests.SharingFamily.suite,
   .suite "sharing-family-normalize" .primary Tests.SharingFamilyNormalize.suite,
+  .suite "sharing-components" .primary Tests.SharingComponents.suite,
   .suite "exact-sharing-ffi" .primary Tests.SharingExactFFI.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   .suite "graph-unit" .primary Tests.Ix.GraphM.suite,
@@ -423,6 +425,7 @@ def registry : List Entry := [
 
   -- expensive suites and runners (these require significant RAM)
   .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,
+  .suite "sharing-components-full" (.ci .misc) Tests.SharingComponents.fullSuite,
   .suite "compile-determinism" (.ci .compile) Tests.Ix.CompileDeterminism.suite,
   .suite "fidelity-initstd" (.ci .misc) Tests.Ix.CompileFidelity.initStdSuite,
   .suite "fidelity-flt" (.manual "needs FLT built in Benchmarks/Compile") Tests.Ix.CompileFidelity.fltSuite,

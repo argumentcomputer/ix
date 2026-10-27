@@ -146,7 +146,7 @@ pub(crate) fn classify(
   observe(&input_event(c, &dag, &m))?;
   let prep = DagPrep::new(&dag);
   for w in 1..=3 {
-    let stage = initial(w, &dag, &prep, &mut m)?;
+    let stage = initial::<Fast>(w, &dag, &prep, &mut m)?;
     observe(&width_event(w, &stage))?;
     for (j, members) in stage.comps.iter().enumerate() {
       let area = component_area(&stage.up, &prep.facts, members);
@@ -173,12 +173,12 @@ fn uniform_family(
   k: usize,
   observe: &mut Observe<'_>,
 ) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
-  let stage = initial(w, dag, prep, meter)?;
+  let stage = initial::<Fast>(w, dag, prep, meter)?;
   observe(&width_event(w, &stage))?;
   let n = dag.len();
   // Reuse the full-DAG stamp/value buffers across components. These are
   // scratch only; neither available bits nor chosen effects survive a row.
-  let mut cx = CompCtx {
+  let mut cx = CompCtx::<Fast> {
     up: &stage.up,
     members: Vec::new(),
     area: Vec::new(),
@@ -207,7 +207,7 @@ fn uniform_family(
       cx.area.iter().copied().filter(|&t| stage.up.opaq[ix(t)]).collect();
     let (base, work) = cx.phi(&[])?;
     meter.work(work)?;
-    let base = to_i(base)?;
+    let base = Fast::signed(&base)?;
     let mut evaluated_rows = 0u64;
     let rows = family_table(members, k, |chosen| {
       meter.state()?;
@@ -224,7 +224,7 @@ fn uniform_family(
       }
       let (value, work) = evaluated?;
       meter.work(work)?;
-      to_i(value)?.checked_sub(base).ok_or_else(overflow)
+      Fast::signed(&value)?.minus(&base)
     })?;
     let mut best: Option<Choice> = None;
     for (count, row) in rows.iter().enumerate() {
@@ -238,35 +238,17 @@ fn uniform_family(
         delta: *delta,
         selected: selected.clone(),
       })?;
-      if better(*delta, selected, best.as_ref()) {
+      if better(delta, selected, best.as_ref()) {
         best = Some((*delta, selected.clone()));
       }
     }
     let best = best.ok_or_else(|| internal("family trace: empty table"))?;
-    let bound = best.0.checked_add(stage.slack).ok_or_else(overflow)?;
+    let bound = best.0.plus(&stage.slack)?;
     let trimmed: CTable =
       rows.into_iter().map(|r| r.filter(|(d, _)| *d <= bound)).collect();
     results.push((best, trimmed));
   }
   drop(cx);
-  // The reused combiner uses signed additions. Conservatively admit only
-  // tables for which every prefix sum and final model addition fits i128;
-  // this checked guard does not change the production numeric contract.
-  let mut bound = 9u128; // largest TagN count header
-  for table in results.iter().map(|(_, rows)| rows) {
-    let magnitude =
-      table.iter().flatten().map(|(d, _)| d.unsigned_abs()).max().unwrap_or(0);
-    bound = bound.checked_add(magnitude).ok_or_else(overflow)?;
-  }
-  for value in dag
-    .roots()
-    .iter()
-    .map(|&r| stage.up.base[ix(r)].cost)
-    .chain(stage.cs.iter().map(|&c| stage.up.base[ix(c)].inl))
-  {
-    bound = bound.checked_add(value).ok_or_else(overflow)?;
-  }
-  let _ = to_i(bound)?;
   combine_uniform(w, dag, prep, meter, stage, results)
 }
 
@@ -308,12 +290,14 @@ mod tests {
 
   // Independent oracle: complete boolean-vector domain, lexicographically
   // ordered (false before true), then integer cost. No set_prec or family
-  // helper participates in choosing a reference row.
+  // helper participates in choosing a reference row. Odd seeds place the
+  // members on both sides of the old 32-bit term-ID limit.
   #[test]
   fn family_trace_all_counts_oracle() {
     for n in 0..=7 {
-      let members: Vec<TermId> = (0..n).map(|j| 3 * j + 2).collect();
       for seed in 0..20u64 {
+        let base: TermId = if seed % 2 == 1 { (1 << 32) - 10 } else { 0 };
+        let members: Vec<TermId> = (0..n).map(|j| base + 3 * j + 2).collect();
         let mut choices = Vec::new();
         for mask in 0..(1u64 << n) {
           let flags: Vec<bool> = (0..n).map(|j| (mask >> j) & 1 != 0).collect();
@@ -329,18 +313,18 @@ mod tests {
             .filter_map(|(&t, &b)| b.then_some(t))
             .collect::<Vec<_>>()
         };
-        for k in 0..=n as usize {
+        for k in 0..=n {
           let actual = family_table(&members, k, |s| {
             Ok(choices.iter().find(|(_, flags)| set(flags) == s).unwrap().0)
           })
           .unwrap();
-          let mut previous = vec![false; n as usize];
+          let mut previous = vec![false; n];
           for (count, row) in actual.iter().enumerate() {
             let expected = choices
               .iter()
               .find(|(_, flags)| {
                 flags.iter().filter(|&&b| b).count() == count
-                  && (n as usize <= k
+                  && (n <= k
                     || previous.iter().zip(flags).all(|(&a, &b)| !a || b))
               })
               .unwrap();
@@ -358,27 +342,24 @@ mod tests {
 
   #[test]
   fn family_trace_threshold_ties_and_refusals() {
-    for n in [0u32, 1, 2, 12, 13, 16, 17] {
+    for n in [0usize, 1, 2, 12, 13, 16, 17] {
       let members: Vec<_> = (0..n).collect();
       for k in [0usize, 12, 16] {
         let mut calls = 0;
         let rows = family_table(&members, k, |_| {
           calls += 1;
-          Ok(-3)
+          Ok(-3i128)
         })
         .unwrap();
-        assert_eq!(
-          calls,
-          if n as usize <= k { 1 << n } else { 1 + n * (n + 1) / 2 }
-        );
+        assert_eq!(calls, if n <= k { 1 << n } else { 1 + n * (n + 1) / 2 });
         for (q, row) in rows.iter().enumerate() {
           assert_eq!(row, &Some((-3, members[members.len() - q..].to_vec())));
         }
       }
     }
-    assert!(family_table(&[2, 2], 2, |_| Ok(0)).is_err());
-    assert!(family_table(&[2, 1], 2, |_| Ok(0)).is_err());
-    assert!(family_table(&[], 25, |_| Ok(0)).is_err());
-    assert!(family_table(&[1, 2], 0, |_| Err(overflow())).is_err());
+    assert!(family_table(&[2, 2], 2, |_| Ok(0i128)).is_err());
+    assert!(family_table(&[2, 1], 2, |_| Ok(0i128)).is_err());
+    assert!(family_table(&[], 25, |_| Ok(0i128)).is_err());
+    assert!(family_table(&[1, 2], 0, |_| Err::<i128, _>(overflow())).is_err());
   }
 }
