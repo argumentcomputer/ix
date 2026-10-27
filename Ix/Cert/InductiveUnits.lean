@@ -767,4 +767,63 @@ info: 'Ix.Cert.InductiveUnits.inductive_unit_reads' depends on axioms: [propext,
 #guard_msgs in
 #print axioms inductive_unit_reads
 
+/-! ## Recursor records -/
+
+/-- **A lone recursor's record declares nothing**, its recursor indexed: the block's record
+reads it. -/
+theorem recr_inert (cx : Ctx .anon) (st : State .anon) (owner : Address) (c : Ixon.Constant)
+    {r : Ixon.Recursor} (info : c.info = .recr r) (hindexed : cx.index.recs.contains (.member owner 0) = true) :
+    readRecord cx st owner c = .ok {} := by
+  unfold readRecord
+  rw [info]
+  simp [hindexed]
+  rfl
+
+/-- **A recursor family's record declares nothing**, its recursors indexed. -/
+theorem recrs_inert (cx : Ctx .anon) (st : State .anon) (owner : Address) (c : Ixon.Constant)
+    (rs : List Ixon.Recursor) (info : c.info = .muts (rs.map Ixon.MutConst.recr).toArray)
+    (hindexed : ∀ j < rs.length, cx.index.recs.contains (.member owner j) = true) :
+    readRecord cx st owner c = .ok {} := by
+  unfold readRecord
+  rw [info]
+  simp
+  rw [(LowerTransfer.forIn_unit_ok_iff _ (fun j => ConstRef.member owner j ∈ cx.index.recs) ?step ?yields _).mpr ?all]
+  · rfl
+  · intro j
+    by_cases h : ConstRef.member owner j ∈ cx.index.recs
+    · simp [h]
+      rfl
+    · simp [h, declined, throw, throwThe, MonadExceptOf.throw, Functor.map, Except.map]
+  · intro j r hr
+    by_cases h : ConstRef.member owner j ∈ cx.index.recs
+    · simp [h] at hr
+      exact (Except.ok.inj hr).symm
+    · simp [h, declined, throw, throwThe, MonadExceptOf.throw, Functor.map, Except.map] at hr
+  · intro j hj
+    simp only [List.mem_range'_1, Nat.zero_add] at hj
+    exact Std.HashMap.mem_iff_contains.mpr (hindexed j hj.2)
+
+theorem inert_empty : StreamRename.Inert ({} : Read .anon) := ⟨⟨rfl, rfl, rfl⟩, rfl⟩
+
+/-- **A compiled recursor family's record is an inert unit** (the `reads` of
+`StreamUnits.Units.inertRecord`): lone or several, its recursors indexed, it declares nothing
+from every state. -/
+theorem recursor_unit_reads {P : KeyScope .source} {stS : State .source} (cx : Ctx .anon) (owner : Address)
+    (c : Ixon.Constant)
+    (h : (∃ r, c.info = .recr r ∧ cx.index.recs.contains (.member owner 0) = true) ∨
+      ∃ rs : List Ixon.Recursor, c.info = .muts (rs.map Ixon.MutConst.recr).toArray ∧
+        ∀ j < rs.length, cx.index.recs.contains (.member owner j) = true) :
+    ∀ stA : State .anon, StreamRename.StateRen f P stS stA →
+      ∃ rA, readRecord cx stA owner c = .ok rA ∧ StreamRename.Inert rA := by
+  intro stA _
+  rcases h with ⟨r, info, hindexed⟩ | ⟨rs, info, hindexed⟩
+  · exact ⟨{}, recr_inert cx stA owner c info hindexed, inert_empty⟩
+  · exact ⟨{}, recrs_inert cx stA owner c rs info hindexed, inert_empty⟩
+
+/--
+info: 'Ix.Cert.InductiveUnits.recursor_unit_reads' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms recursor_unit_reads
+
 end Ix.Cert.InductiveUnits
