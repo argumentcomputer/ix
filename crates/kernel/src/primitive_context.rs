@@ -15,15 +15,26 @@ pub(crate) enum PrimitiveContext<M: KernelMode> {
   /// Unbound input: the pinned primitive addresses.
   Legacy(Arc<Primitives<M>>),
   /// A bound artifact, with the table built from its admitted roles and
-  /// the set of those roles.
+  /// what those roles allow.
   #[cfg(not(target_arch = "riscv64"))]
   Bound(
     crate::role_admission::ArtifactSource,
     Arc<Primitives<M>>,
-    Arc<FxHashSet<Role>>,
+    Arc<BoundRoles>,
   ),
   #[cfg(not(target_arch = "riscv64"))]
   UnpreparedBound,
+}
+
+/// What a bound artifact's admitted roles allow beyond its table.
+#[derive(Default)]
+pub(crate) struct BoundRoles {
+  admitted: FxHashSet<Role>,
+  /// The standard axioms in the table: `propext`, `Classical.choice` and
+  /// `Quot.sound`. These, and only these, may be used.
+  axioms: FxHashSet<Address>,
+  /// `sorryAx`, which may be declared but not used.
+  inert: FxHashSet<Address>,
 }
 
 impl<M: KernelMode> PrimitiveContext<M> {
@@ -57,11 +68,48 @@ impl<M: KernelMode> PrimitiveContext<M> {
   where
     F: FnMut(&Address) -> Option<ix_common::env::Name>,
   {
+    let in_table = |roles: &[Role]| -> FxHashSet<Address> {
+      roles.iter().filter_map(|role| table.get(role).cloned()).collect()
+    };
+    let roles = BoundRoles {
+      axioms: in_table(&[Role::Propext, Role::Choice, Role::QuotSound]),
+      inert: in_table(&[Role::SorryAx]),
+      admitted,
+    };
     let table = Primitives::from_admitted(
       |role| table.get(&role).cloned(),
       name_for_addr,
     );
-    Self::Bound(source, Arc::new(table), Arc::new(admitted))
+    Self::Bound(source, Arc::new(table), Arc::new(roles))
+  }
+
+  /// Whether the safe axiom at `address` may be used: any axiom in unbound
+  /// input; in a bound artifact only an admitted standard axiom. The
+  /// certified theory is Lean with its three standard axioms; unsafe axioms
+  /// are outside it (safe declarations cannot reference them).
+  pub(crate) fn axiom_usable(&self, address: &Address) -> bool {
+    match self {
+      Self::Legacy(_) => {
+        let _ = address;
+        true
+      },
+      #[cfg(not(target_arch = "riscv64"))]
+      Self::Bound(_, _, roles) => roles.axioms.contains(address),
+      #[cfg(not(target_arch = "riscv64"))]
+      Self::UnpreparedBound => false,
+    }
+  }
+
+  /// Whether the axiom at `address` may be declared: as usable, and also
+  /// `sorryAx`, which a bound artifact tolerates as a declaration only.
+  pub(crate) fn axiom_declarable(&self, address: &Address) -> bool {
+    match self {
+      #[cfg(not(target_arch = "riscv64"))]
+      Self::Bound(_, _, roles) => {
+        roles.inert.contains(address) || self.axiom_usable(address)
+      },
+      _ => self.axiom_usable(address),
+    }
   }
 
   /// The primitive table: the pinned one for unbound input, the admitted
@@ -85,7 +133,7 @@ impl<M: KernelMode> PrimitiveContext<M> {
         true
       },
       #[cfg(not(target_arch = "riscv64"))]
-      Self::Bound(_, _, roles) => roles.contains(&role),
+      Self::Bound(_, _, roles) => roles.admitted.contains(&role),
       #[cfg(not(target_arch = "riscv64"))]
       Self::UnpreparedBound => false,
     }

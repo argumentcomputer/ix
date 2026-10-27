@@ -119,6 +119,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             id.addr.hex()
           )));
         }
+        // Unsafe axioms belong to the unsafe tier, which safe declarations
+        // cannot reference; the policy is for the safe theory.
+        if !infer_only
+          && matches!(c, KConst::Axio { is_unsafe: false, .. })
+          && !self.prims.axiom_usable(&id.addr)
+        {
+          return Err(TcError::Other(format!(
+            "axiom {} is not an admitted standard axiom",
+            id.addr.hex()
+          )));
+        }
         if u64_to_usize::<M>(c.lvls())? != us.len() {
           return Err(TcError::UnivParamMismatch {
             expected: c.lvls(),

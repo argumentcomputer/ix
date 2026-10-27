@@ -172,6 +172,37 @@ const GROUPS: &[Group] = &[
       validate_structural_op(source, admitted, Role::NatBle)
     },
   },
+  Group {
+    roles: &[Role::True, Role::TrueIntro],
+    needs: &[],
+    validate: validate_true,
+  },
+  Group {
+    roles: &[Role::And, Role::AndIntro, Role::AndRec],
+    needs: &[],
+    validate: validate_and,
+  },
+  Group {
+    roles: &[Role::Iff, Role::IffIntro, Role::IffRec],
+    needs: &[],
+    validate: validate_iff,
+  },
+  Group {
+    roles: &[Role::Nonempty, Role::NonemptyIntro, Role::NonemptyRec],
+    needs: &[],
+    validate: validate_nonempty,
+  },
+  Group {
+    roles: &[Role::Propext],
+    needs: &[Role::Iff, Role::Eq],
+    validate: validate_propext,
+  },
+  Group {
+    roles: &[Role::Choice],
+    needs: &[Role::Nonempty],
+    validate: validate_choice,
+  },
+  Group { roles: &[Role::SorryAx], needs: &[], validate: validate_sorry },
 ];
 
 /// Admit every bound group of `source` that its validator accepts.
@@ -964,6 +995,7 @@ fn validate_quot(
     (Role::QuotMk, mk.clone()),
     (Role::QuotLift, lift.clone()),
     (Role::QuotInd, ind.clone()),
+    (Role::QuotSound, sound.clone()),
   ]
   .into_iter()
   .collect();
@@ -1318,4 +1350,237 @@ fn validate_structural_op(
     }
   }
   Ok(())
+}
+
+// -----------------------------------------------------------------------
+// The standard axioms and their families
+// -----------------------------------------------------------------------
+
+/// `True : Prop` and `True.intro : True`.
+fn validate_true(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let true_t = source
+    .required_role(Role::True)
+    .map_err(|error| error.to_string())?
+    .clone();
+  validate_anchors(
+    source,
+    admitted,
+    &[(Role::True, 0, prop()), (Role::TrueIntro, 0, cnst(&true_t, &[]))],
+  )
+}
+
+/// `And (a b : Prop) : Prop`, `And.intro {a b : Prop} (left : a)
+/// (right : b) : And a b` and `And.rec.{u} {a b : Prop}
+/// {motive : And a b → Sort u} (intro : (left : a) → (right : b) →
+/// motive (And.intro left right)) (t : And a b) : motive t`.
+fn validate_and(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let [and, intro] = bound(source, [Role::And, Role::AndIntro])?;
+  let and2 = |a: E, b: E| apps(cnst(&and, &[]), vec![a, b]);
+  let intro_ty =
+    pi(prop(), pi(prop(), pi(var(1), pi(var(1), and2(var(3), var(2))))));
+  let rec_ty = pi(
+    prop(),
+    pi(
+      prop(),
+      pi(
+        pi(and2(var(1), var(0)), sort(param(0))),
+        pi(
+          pi(
+            var(2),
+            pi(
+              var(2),
+              app(
+                var(2),
+                apps(cnst(&intro, &[]), vec![var(4), var(3), var(1), var(0)]),
+              ),
+            ),
+          ),
+          pi(and2(var(3), var(2)), app(var(2), var(0))),
+        ),
+      ),
+    ),
+  );
+  validate_anchors(
+    source,
+    admitted,
+    &[
+      (Role::And, 0, pi(prop(), pi(prop(), prop()))),
+      (Role::AndIntro, 0, intro_ty),
+      (Role::AndRec, 1, rec_ty),
+    ],
+  )
+}
+
+/// `Iff (a b : Prop) : Prop`, `Iff.intro (a b : Prop) (mp : a → b)
+/// (mpr : b → a) : Iff a b` and `Iff.rec.{u} (a b : Prop)
+/// (motive : Iff a b → Sort u) (intro : ∀ mp mpr, motive (Iff.intro a b mp
+/// mpr)) (t : Iff a b) : motive t`.
+fn validate_iff(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let [iff, intro] = bound(source, [Role::Iff, Role::IffIntro])?;
+  let iff2 = |a: E, b: E| apps(cnst(&iff, &[]), vec![a, b]);
+  let intro_ty = pi(
+    prop(),
+    pi(
+      prop(),
+      pi(pi(var(1), var(1)), pi(pi(var(1), var(3)), iff2(var(3), var(2)))),
+    ),
+  );
+  let minor = pi(
+    pi(var(2), var(2)),
+    pi(
+      pi(var(2), var(4)),
+      app(
+        var(2),
+        apps(cnst(&intro, &[]), vec![var(4), var(3), var(1), var(0)]),
+      ),
+    ),
+  );
+  let rec_ty = pi(
+    prop(),
+    pi(
+      prop(),
+      pi(
+        pi(iff2(var(1), var(0)), sort(param(0))),
+        pi(minor, pi(iff2(var(3), var(2)), app(var(2), var(0)))),
+      ),
+    ),
+  );
+  validate_anchors(
+    source,
+    admitted,
+    &[
+      (Role::Iff, 0, pi(prop(), pi(prop(), prop()))),
+      (Role::IffIntro, 0, intro_ty),
+      (Role::IffRec, 1, rec_ty),
+    ],
+  )
+}
+
+/// `Nonempty.{u} (α : Sort u) : Prop`, `Nonempty.intro.{u} (α : Sort u)
+/// (val : α) : Nonempty α` and `Nonempty.rec.{u} (α : Sort u)
+/// (motive : Nonempty α → Prop) (intro : ∀ val, motive (Nonempty.intro α
+/// val)) (t : Nonempty α) : motive t`.
+fn validate_nonempty(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let [nonempty, intro] = bound(source, [Role::Nonempty, Role::NonemptyIntro])?;
+  let u = param(0);
+  let nonempty_u = |e: E| app(cnst(&nonempty, std::slice::from_ref(&u)), e);
+  let intro_ty = pi(sort(u.clone()), pi(var(0), nonempty_u(var(1))));
+  let rec_ty = pi(
+    sort(u.clone()),
+    pi(
+      pi(nonempty_u(var(0)), prop()),
+      pi(
+        pi(
+          var(1),
+          app(
+            var(1),
+            apps(cnst(&intro, std::slice::from_ref(&u)), vec![var(2), var(0)]),
+          ),
+        ),
+        pi(nonempty_u(var(2)), app(var(2), var(0))),
+      ),
+    ),
+  );
+  validate_anchors(
+    source,
+    admitted,
+    &[
+      (Role::Nonempty, 1, pi(sort(u.clone()), prop())),
+      (Role::NonemptyIntro, 1, intro_ty),
+      (Role::NonemptyRec, 1, rec_ty),
+    ],
+  )
+}
+
+/// An axiom of the specified level count and, unless inert, type, checked
+/// as a declaration with only the groups admitted before (and itself as an
+/// axiom the policy allows).
+fn validate_axiom(
+  source: &ArtifactSource,
+  admitted: &Admission,
+  role: Role,
+  lvls: u64,
+  ty: Option<E>,
+) -> Result<(), String> {
+  let address =
+    source.required_role(role).map_err(|error| error.to_string())?.clone();
+  let member = source.member(&address).map_err(|error| error.to_string())?;
+  if member.owner().is_some()
+    || !matches!(member.record().constant().info, ConstantInfo::Axio(_))
+  {
+    return Err(differs(&address, "not an axiom"));
+  }
+  let mut kenv = ingress_records(source, &[&address])?;
+  match declared(&kenv, &address)? {
+    KConst::Axio { is_unsafe: false, lvls: found, ty: found_ty, .. }
+      if found == lvls =>
+    {
+      if ty.is_some_and(|ty| ty != found_ty) {
+        return Err(differs(&address, "type"));
+      }
+    },
+    _ => return Err(differs(&address, "safety or level count")),
+  }
+  let candidates: FxHashMap<Role, Address> =
+    std::iter::once((role, address.clone())).collect();
+  check_units_with(source, admitted, &candidates, &mut kenv, &[&address])
+}
+
+/// `propext {a b : Prop} : Iff a b → a = b`.
+fn validate_propext(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let iff = admitted.address(Role::Iff).ok_or("Iff is not admitted")?;
+  let eq = admitted_eq(admitted)?;
+  let ty = pi(
+    prop(),
+    pi(
+      prop(),
+      pi(
+        apps(cnst(iff, &[]), vec![var(1), var(0)]),
+        apps(
+          cnst(&eq, &[KUniv::succ(KUniv::zero())]),
+          vec![prop(), var(2), var(1)],
+        ),
+      ),
+    ),
+  );
+  validate_axiom(source, admitted, Role::Propext, 0, Some(ty))
+}
+
+/// `Classical.choice.{u} {α : Sort u} : Nonempty α → α`.
+fn validate_choice(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let nonempty =
+    admitted.address(Role::Nonempty).ok_or("Nonempty is not admitted")?;
+  let u = param(0);
+  let ty = pi(
+    sort(u.clone()),
+    pi(app(cnst(nonempty, std::slice::from_ref(&u)), var(0)), var(1)),
+  );
+  validate_axiom(source, admitted, Role::Choice, 1, Some(ty))
+}
+
+/// `sorryAx.{u}`: an inert axiom, tolerated as a declaration and refused at
+/// every use.
+fn validate_sorry(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  validate_axiom(source, admitted, Role::SorryAx, 1, None)
 }

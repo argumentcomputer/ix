@@ -399,7 +399,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let validate_elapsed = validate_start.map(|s| s.elapsed());
 
     match &c {
-      KConst::Axio { ty, .. } => {
+      KConst::Axio { ty, is_unsafe, .. } => {
+        if !is_unsafe && !self.prims.axiom_declarable(&id.addr) {
+          return Err(TcError::Other(format!(
+            "axiom {} is not a standard axiom of the checked theory",
+            id.addr.hex()
+          )));
+        }
         let t = self.infer(ty)?;
         self.ensure_sort(&t)?;
         Ok(())

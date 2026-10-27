@@ -217,13 +217,30 @@ fn a_misbound_block_is_refused_with_the_groups_that_need_it() {
 #[test]
 fn quotient_records_need_the_quot_group() {
   let mut env = loaded();
-  let sound = address_of(&env, "Quot.sound");
+  let quot = address_of(&env, "Quot");
+  let nat = address_of(&env, "Nat");
+  // `def : (Nat → Nat → Prop) → Type := @Quot.{1} Nat`.
+  let type1 = Arc::new(Univ::Succ(Arc::new(Univ::Zero)));
+  let relation =
+    pi(reference(1, vec![]), pi(reference(1, vec![]), arc(Expr::Sort(1))));
+  let definition = store(
+    &env,
+    ConstantInfo::Defn(Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      typ: pi(relation, arc(Expr::Sort(0))),
+      value: app(reference(0, vec![0]), reference(1, vec![])),
+    }),
+    vec![quot, nat],
+    vec![type1, Arc::new(Univ::Zero)],
+  );
   let roles = nat_roles(&env);
   bind(&mut env, roles);
   let error = ArtifactChecker::<Anon>::from_source(Ok(
     ArtifactSource::snapshot(&env).unwrap(),
   ))
-  .check_const(&sound)
+  .check_const(&definition)
   .unwrap_err();
   assert!(
     format!("{error}").contains("not an admitted quotient primitive"),
@@ -231,8 +248,8 @@ fn quotient_records_need_the_quot_group() {
   );
 }
 
-// Anchors are specified by type alone, so declarations of the specified
-// types serve: `Char : Type := Nat` and axioms for the rest.
+// Anchors are specified by type alone, so any safe declarations of the
+// specified types serve.
 
 fn arc(expr: Expr) -> Arc<Expr> {
   Arc::new(expr)
@@ -281,44 +298,78 @@ fn axiom(
   )
 }
 
-/// The literal-support anchors; `String.ofList` returns `Char` when
-/// `of_list_is_wrong`.
-fn literal_anchors(env: &Env, of_list_is_wrong: bool) -> Vec<(Role, Address)> {
-  let nat = address_of(env, "Nat");
-  let zero = Arc::new(Univ::Zero);
-  let one = Arc::new(Univ::Succ(zero.clone()));
-  let succ_param = Arc::new(Univ::Succ(Arc::new(Univ::Var(0))));
-  let char_t = store(
+fn lambda(domain: Arc<Expr>, body: Arc<Expr>) -> Arc<Expr> {
+  arc(Expr::Lam(BinderContract::default(), domain, body))
+}
+
+fn definition(
+  env: &Env,
+  lvls: u64,
+  typ: Arc<Expr>,
+  value: Arc<Expr>,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Address {
+  store(
     env,
     ConstantInfo::Defn(Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
-      lvls: 0,
-      typ: arc(Expr::Sort(0)),
-      value: reference(0, vec![]),
+      lvls,
+      typ,
+      value,
     }),
+    refs,
+    univs,
+  )
+}
+
+/// The literal-support anchors as definitions of the specified types, over
+/// `Nat` and `PUnit`: `Char := Nat`, `String := PUnit`, `List α := PUnit`.
+/// With `of_list_is_wrong`, `String.ofList : List Char → List Char`.
+fn literal_anchors(env: &Env, of_list_is_wrong: bool) -> Vec<(Role, Address)> {
+  let nat = address_of(env, "Nat");
+  let punit = address_of(env, "PUnit");
+  let unit = address_of(env, "PUnit.unit");
+  let zero = Arc::new(Univ::Zero);
+  let one = Arc::new(Univ::Succ(zero.clone()));
+  let succ_param = Arc::new(Univ::Succ(Arc::new(Univ::Var(0))));
+  let char_t = definition(
+    env,
+    0,
+    arc(Expr::Sort(0)),
+    reference(0, vec![]),
     vec![nat.clone()],
     vec![one.clone()],
   );
-  let string = axiom(env, 0, arc(Expr::Sort(0)), vec![], vec![one.clone()]);
+  let string = definition(
+    env,
+    0,
+    arc(Expr::Sort(0)),
+    reference(0, vec![0]),
+    vec![punit.clone()],
+    vec![one.clone()],
+  );
   // `Type u → Type u`; universe 0 is `u + 1`, universe 1 is `u`.
-  let list = axiom(
+  let list = definition(
     env,
     1,
     pi(arc(Expr::Sort(0)), arc(Expr::Sort(0))),
-    vec![],
+    lambda(arc(Expr::Sort(0)), reference(0, vec![0])),
+    vec![punit],
     vec![succ_param.clone()],
   );
   let list_u = |arg| app(reference(0, vec![1]), arg);
   let univs = vec![succ_param, Arc::new(Univ::Var(0))];
-  let nil = axiom(
+  let nil = definition(
     env,
     1,
     pi(arc(Expr::Sort(0)), list_u(arc(Expr::Var(0)))),
-    vec![list.clone()],
+    lambda(arc(Expr::Sort(0)), reference(1, vec![0])),
+    vec![list.clone(), unit.clone()],
     univs.clone(),
   );
-  let cons = axiom(
+  let cons = definition(
     env,
     1,
     pi(
@@ -328,28 +379,45 @@ fn literal_anchors(env: &Env, of_list_is_wrong: bool) -> Vec<(Role, Address)> {
         pi(list_u(arc(Expr::Var(1))), list_u(arc(Expr::Var(2)))),
       ),
     ),
-    vec![list.clone()],
+    lambda(
+      arc(Expr::Sort(0)),
+      lambda(
+        arc(Expr::Var(0)),
+        lambda(list_u(arc(Expr::Var(1))), reference(1, vec![0])),
+      ),
+    ),
+    vec![list.clone(), unit.clone()],
     univs,
   );
-  let of_nat = axiom(
+  let of_nat = definition(
     env,
     0,
     pi(reference(0, vec![]), reference(1, vec![])),
+    lambda(reference(0, vec![]), arc(Expr::Var(0))),
     vec![nat, char_t.clone()],
     vec![],
   );
-  // `List.{0} Char → String` (or `→ Char`).
-  let target = if of_list_is_wrong { 1 } else { 2 };
-  let of_list = axiom(
-    env,
-    0,
-    pi(
-      app(reference(0, vec![0]), reference(1, vec![])),
-      reference(target, vec![]),
-    ),
-    vec![list.clone(), char_t.clone(), string.clone()],
-    vec![zero],
-  );
+  // `List.{0} Char → String := fun _ => PUnit.unit.{1}`.
+  let list_char = || app(reference(0, vec![0]), reference(1, vec![]));
+  let of_list = if of_list_is_wrong {
+    definition(
+      env,
+      0,
+      pi(list_char(), list_char()),
+      lambda(list_char(), arc(Expr::Var(0))),
+      vec![list.clone(), char_t.clone()],
+      vec![zero],
+    )
+  } else {
+    definition(
+      env,
+      0,
+      pi(list_char(), reference(2, vec![])),
+      lambda(list_char(), reference(3, vec![1])),
+      vec![list.clone(), char_t.clone(), string.clone(), unit],
+      vec![zero, one],
+    )
+  };
   vec![
     (Role::Char, char_t),
     (Role::String, string),
@@ -447,7 +515,7 @@ fn string_literals_use_the_admitted_anchors() {
     "{error}"
   );
 
-  // `String.ofList : List Char → Char` is refused.
+  // `String.ofList : List Char → List Char` is refused.
   let (refused, _) = checked(true, true);
   assert_eq!(refused.len(), 1, "{refused:?}");
   assert_eq!(refused[0].0, Role::StringOfList);
@@ -558,5 +626,358 @@ fn an_operation_whose_equations_fail_is_refused_with_its_dependents() {
   assert!(refused[1].1.contains("needs the unadmitted"), "{refused:?}");
   for role in [Role::NatPred, Role::NatSub, Role::NatBeq, Role::NatBle] {
     assert!(source.is_admitted(role), "{role:?}");
+  }
+}
+
+/// The `True`, `And`, `Iff` and `Nonempty` anchors at their specified
+/// types, the type formers and introductions as impredicative encodings and
+/// the recursors as axioms (never used here), and the axioms `propext`,
+/// `Classical.choice` and `sorryAx`.
+fn axiom_roles(env: &Env) -> Vec<(Role, Address)> {
+  let eq = address_of(env, "Eq");
+  let zero = Arc::new(Univ::Zero);
+  let one = Arc::new(Univ::Succ(zero.clone()));
+  let param = Arc::new(Univ::Var(0));
+  let v = |i: u64| arc(Expr::Var(i));
+  // Universe 0 is always `Prop`; universe 1, where present, is `u`.
+  let prop = || arc(Expr::Sort(0));
+  let sort_u = || arc(Expr::Sort(1));
+  let props = vec![zero.clone(), param.clone()];
+  let both =
+    |r: u64, a: u64, b: u64| app(app(reference(r, vec![]), v(a)), v(b));
+  let four = |r: u64, args: [u64; 4]| {
+    args.iter().fold(reference(r, vec![]), |f, a| app(f, v(*a)))
+  };
+
+  // `True := ∀ p : Prop, p → p`, `True.intro := fun _ h => h`.
+  let true_t = definition(
+    env,
+    0,
+    prop(),
+    pi(prop(), pi(v(0), v(1))),
+    vec![],
+    vec![zero.clone()],
+  );
+  let true_intro = definition(
+    env,
+    0,
+    reference(0, vec![]),
+    lambda(prop(), lambda(v(0), v(0))),
+    vec![true_t.clone()],
+    vec![zero.clone()],
+  );
+
+  // `And a b := ∀ c : Prop, (a → b → c) → c`.
+  let binary = || pi(prop(), pi(prop(), prop()));
+  let and = definition(
+    env,
+    0,
+    binary(),
+    lambda(
+      prop(),
+      lambda(prop(), pi(prop(), pi(pi(v(2), pi(v(2), v(2))), v(1)))),
+    ),
+    vec![],
+    vec![zero.clone()],
+  );
+  let and_intro = definition(
+    env,
+    0,
+    pi(prop(), pi(prop(), pi(v(1), pi(v(1), both(0, 3, 2))))),
+    lambda(
+      prop(),
+      lambda(
+        prop(),
+        lambda(
+          v(1),
+          lambda(
+            v(1),
+            lambda(
+              prop(),
+              lambda(pi(v(4), pi(v(4), v(2))), app(app(v(0), v(3)), v(2))),
+            ),
+          ),
+        ),
+      ),
+    ),
+    vec![and.clone()],
+    vec![zero.clone()],
+  );
+  let and_rec = axiom(
+    env,
+    1,
+    pi(
+      prop(),
+      pi(
+        prop(),
+        pi(
+          pi(both(0, 1, 0), sort_u()),
+          pi(
+            pi(v(2), pi(v(2), app(v(2), four(1, [4, 3, 1, 0])))),
+            pi(both(0, 3, 2), app(v(2), v(0))),
+          ),
+        ),
+      ),
+    ),
+    vec![and.clone(), and_intro.clone()],
+    props.clone(),
+  );
+
+  // `Iff a b := ∀ c : Prop, ((a → b) → (b → a) → c) → c`.
+  let iff = definition(
+    env,
+    0,
+    binary(),
+    lambda(
+      prop(),
+      lambda(
+        prop(),
+        pi(prop(), pi(pi(pi(v(2), v(2)), pi(pi(v(2), v(4)), v(2))), v(1))),
+      ),
+    ),
+    vec![],
+    vec![zero.clone()],
+  );
+  let iff_intro = definition(
+    env,
+    0,
+    pi(
+      prop(),
+      pi(prop(), pi(pi(v(1), v(1)), pi(pi(v(1), v(3)), both(0, 3, 2)))),
+    ),
+    lambda(
+      prop(),
+      lambda(
+        prop(),
+        lambda(
+          pi(v(1), v(1)),
+          lambda(
+            pi(v(1), v(3)),
+            lambda(
+              prop(),
+              lambda(
+                pi(pi(v(4), v(4)), pi(pi(v(4), v(6)), v(2))),
+                app(app(v(0), v(3)), v(2)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+    vec![iff.clone()],
+    vec![zero.clone()],
+  );
+  let iff_rec = axiom(
+    env,
+    1,
+    pi(
+      prop(),
+      pi(
+        prop(),
+        pi(
+          pi(both(0, 1, 0), sort_u()),
+          pi(
+            pi(
+              pi(v(2), v(2)),
+              pi(pi(v(2), v(4)), app(v(2), four(1, [4, 3, 1, 0]))),
+            ),
+            pi(both(0, 3, 2), app(v(2), v(0))),
+          ),
+        ),
+      ),
+    ),
+    vec![iff.clone(), iff_intro.clone()],
+    props.clone(),
+  );
+
+  // `Nonempty.{u} α := ∀ p : Prop, (α → p) → p`.
+  let nonempty = definition(
+    env,
+    1,
+    pi(sort_u(), prop()),
+    lambda(sort_u(), pi(prop(), pi(pi(v(1), v(1)), v(1)))),
+    vec![],
+    props.clone(),
+  );
+  let nonempty_u = |e| app(reference(0, vec![1]), e);
+  let nonempty_intro = definition(
+    env,
+    1,
+    pi(sort_u(), pi(v(0), nonempty_u(v(1)))),
+    lambda(
+      sort_u(),
+      lambda(v(0), lambda(prop(), lambda(pi(v(2), v(1)), app(v(0), v(2))))),
+    ),
+    vec![nonempty.clone()],
+    props.clone(),
+  );
+  let nonempty_rec = axiom(
+    env,
+    1,
+    pi(
+      sort_u(),
+      pi(
+        pi(nonempty_u(v(0)), prop()),
+        pi(
+          pi(v(1), app(v(1), app(app(reference(1, vec![1]), v(2)), v(0)))),
+          pi(nonempty_u(v(2)), app(v(2), v(0))),
+        ),
+      ),
+    ),
+    vec![nonempty.clone(), nonempty_intro.clone()],
+    props.clone(),
+  );
+
+  // `propext {a b : Prop} : Iff a b → @Eq.{1} Prop a b`; universe 1 is `1`.
+  let propext = axiom(
+    env,
+    0,
+    pi(
+      prop(),
+      pi(
+        prop(),
+        pi(
+          both(0, 1, 0),
+          app(app(app(reference(1, vec![1]), prop()), v(2)), v(1)),
+        ),
+      ),
+    ),
+    vec![iff.clone(), eq],
+    vec![zero.clone(), one],
+  );
+  let choice = axiom(
+    env,
+    1,
+    pi(sort_u(), pi(nonempty_u(v(0)), v(1))),
+    vec![nonempty.clone()],
+    props.clone(),
+  );
+  let sorry = axiom(env, 1, pi(sort_u(), v(0)), vec![], props);
+  vec![
+    (Role::True, true_t),
+    (Role::TrueIntro, true_intro),
+    (Role::And, and),
+    (Role::AndIntro, and_intro),
+    (Role::AndRec, and_rec),
+    (Role::Iff, iff),
+    (Role::IffIntro, iff_intro),
+    (Role::IffRec, iff_rec),
+    (Role::Nonempty, nonempty),
+    (Role::NonemptyIntro, nonempty_intro),
+    (Role::NonemptyRec, nonempty_rec),
+    (Role::Propext, propext),
+    (Role::Choice, choice),
+    (Role::SorryAx, sorry),
+  ]
+}
+
+/// `theorem : True := e`, with `refs` for `e`'s references.
+fn proof_of_true(
+  env: &Env,
+  true_t: &Address,
+  value: Arc<Expr>,
+  mut refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Address {
+  refs.insert(0, true_t.clone());
+  store(
+    env,
+    ConstantInfo::Defn(Definition {
+      kind: DefKind::Theorem,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      typ: reference(0, vec![]),
+      value,
+    }),
+    refs,
+    univs,
+  )
+}
+
+#[test]
+fn only_the_standard_axioms_may_be_used() {
+  let mut env = loaded();
+  let roles = axiom_roles(&env);
+  let role = |r: Role| roles.iter().find(|(x, _)| *x == r).unwrap().1.clone();
+  let true_t = role(Role::True);
+  // `sorryAx.{0} True`, and a nonstandard `axiom : True`.
+  let zero = Arc::new(Univ::Zero);
+  let uses_sorry = proof_of_true(
+    &env,
+    &true_t,
+    app(reference(1, vec![0]), reference(0, vec![])),
+    vec![role(Role::SorryAx)],
+    vec![zero.clone()],
+  );
+  let nonstandard =
+    axiom(&env, 0, reference(0, vec![]), vec![true_t.clone()], vec![]);
+  let uses_nonstandard = proof_of_true(
+    &env,
+    &true_t,
+    reference(1, vec![]),
+    vec![nonstandard.clone()],
+    vec![],
+  );
+  // `def : ∀ {a b : Prop}, Iff a b → a = b := @propext`, and an unsafe
+  // axiom, which is outside the safe theory's policy.
+  let prop = || arc(Expr::Sort(0));
+  let uses_propext = store(
+    &env,
+    ConstantInfo::Defn(Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      typ: pi(
+        prop(),
+        pi(
+          prop(),
+          pi(
+            app(
+              app(reference(0, vec![]), arc(Expr::Var(1))),
+              arc(Expr::Var(0)),
+            ),
+            app(
+              app(app(reference(1, vec![1]), prop()), arc(Expr::Var(2))),
+              arc(Expr::Var(1)),
+            ),
+          ),
+        ),
+      ),
+      value: reference(2, vec![]),
+    }),
+    vec![role(Role::Iff), address_of(&env, "Eq"), role(Role::Propext)],
+    vec![zero, Arc::new(Univ::Succ(Arc::new(Univ::Zero)))],
+  );
+  let unsafe_axiom = store(
+    &env,
+    ConstantInfo::Axio(Axiom {
+      is_unsafe: true,
+      lvls: 0,
+      typ: reference(0, vec![]),
+    }),
+    vec![true_t.clone()],
+    vec![],
+  );
+  let mut bound = basis_roles(&env);
+  bound.extend(roles.iter().cloned());
+  bind(&mut env, bound);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  let refused = source.admission().refused();
+  assert!(refused.is_empty(), "{refused:?}");
+  let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source));
+  for declared in [Role::Propext, Role::Choice, Role::SorryAx] {
+    checker
+      .check_const(&role(declared))
+      .unwrap_or_else(|e| panic!("{declared:?}: {e}"));
+  }
+  checker.check_const(&uses_propext).unwrap();
+  checker.check_const(&unsafe_axiom).unwrap();
+  for (address, reason) in [
+    (&uses_sorry, "is not an admitted standard axiom"),
+    (&nonstandard, "is not a standard axiom of the checked theory"),
+    (&uses_nonstandard, "is not an admitted standard axiom"),
+  ] {
+    let error = checker.check_const(address).unwrap_err();
+    assert!(format!("{error}").contains(reason), "{error}");
   }
 }
