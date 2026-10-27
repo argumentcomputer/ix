@@ -734,6 +734,39 @@ is recognized), and an unsafe axiom is typed only. Nothing reduces natively:
 `Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and a
 claim that uses them depends on `Lean.trustCompiler`, which is declined.
 
+**IxC's reader obligations at IxVM's boundary.** Six obligations of IxC's
+frontend and reader are recorded for every second checker to mirror or rule
+out. IxVM rules each out by what it reads:
+
+- *The rest-only hoist and its split guard* (`hoistNatOpGround`,
+  `splitsUnit`, `IxC/Kernel/Frontend/NatOpGround.lean`) reorder IxC's input
+  stream so that a certified `Nat` operation's ground precedes it, without
+  moving the prelude front or splitting a generated unit. IxVM reads no
+  stream. A claim names constants by address and checks each with its
+  dependencies through the content-addressed reference graph, and an
+  operation's evidence is validated under the role groups before it, so
+  there is no input order to repair or to split.
+- *The whole-unit check* (`checkUnits`, `IxC/Kernel/Units.lean`) keeps a
+  mutual block's generated records together and closed by their block, and
+  refuses a base declared twice. IxVM checks a mutual block as one constant
+  (`check_muts_all`), its members' projections derived from the block's own
+  bytes; a generated auxiliary is an ordinary constant under its own
+  address, and content addressing makes a second declaration of a base the
+  same constant.
+- *The prelude shape and prelude-copy equality* (`checkPreludeShape`,
+  `State.keepsPrelude`) tie the reader's prelude to the role table: a role
+  is read from the prelude's own record, and a stream's own copy of a
+  prelude record must read alike. IxVM has no prelude and no second copy:
+  every role is the constant the binding names, validated against its
+  specification the first time a claim uses it.
+- *The inferer's fuel* (`inferFuel`, 4096, in the in-model generator) bounds
+  a syntactic inferer that runs before the fold and declines a block that
+  exhausts it. IxVM runs no generator. Its one bound, the lazy-delta loop's
+  fuel in definitional equality, only stops unfolding early, and the
+  comparison then falls back to its structural cases, which are sound on
+  their own; an execution that does not terminate yields no trace and so no
+  proof.
+
 ## Trust surface
 
 The theorems are about the Lean functions. Trusted beneath them: Lean's
