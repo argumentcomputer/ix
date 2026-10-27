@@ -97,8 +97,10 @@ theorem dagModel_termOf {dag : Dag} (hwf : DagWF dag) : DagModel dag (termOf dag
     rw [outside, node]
     rfl
 
-/-- **Re-expansion identifies the table and the roots.** -/
-theorem reexpand_ids {dag : Dag} (hwf : DagWF dag)
+/-- **Re-expansion identifies the table and the roots** under every budget
+that covers the expression nodes of the encoding (with the DAG's terms
+for the interner). -/
+theorem reexpand_ids_within {dag : Dag} (hwf : DagWF dag)
     (injective : ∀ a, a < dag.size → ∀ b, b < dag.size →
       termOf dag.nodes a = termOf dag.nodes b → a = b)
     {table roots : Array Nat} (tableIn : ∀ t ∈ table.toList, t < dag.size)
@@ -110,21 +112,20 @@ theorem reexpand_ids {dag : Dag} (hwf : DagWF dag)
       termOf dag.nodes t) table.toList es.toList)
     (rootRows : List.Forall₂ (fun r e => substShares (fun i => termOf dag.nodes table[i]!) e =
       termOf dag.nodes r) roots.toList rs.toList)
-    (capacity : es.size < wordBound) :
-    ∃ limits visits, reexpand limits dag es rs = .ok (table, roots, visits) := by
-  let total := rangeNodes es 0 es.size + rangeNodes rs 0 rs.size
-  let limits : Limits := { maxExprVisits := total, maxDepth := total, maxNodes := dag.size + total }
+    (capacity : es.size < wordBound) (limits : Limits)
+    (visitRoom : rangeNodes es 0 es.size + rangeNodes rs 0 rs.size ≤ limits.maxExprVisits)
+    (depthRoom : rangeNodes es 0 es.size + rangeNodes rs 0 rs.size ≤ limits.maxDepth)
+    (nodeRoom : dag.size + (rangeNodes es 0 es.size + rangeNodes rs 0 rs.size) ≤ limits.maxNodes) :
+    ∃ visits, reexpand limits dag es rs = .ok (table, roots, visits) := by
   have deepE : ∀ index, index < es.size → treeHeight es[index]! ≤ limits.maxDepth := by
     intro index bound
     have := treeHeight_lt es[index]!
     have := le_rangeNodes es es.size 0 index (by omega) (by omega)
-    change _ ≤ total
     omega
   have deepR : ∀ index, index < rs.size → treeHeight rs[index]! ≤ limits.maxDepth := by
     intro index bound
     have := treeHeight_lt rs[index]!
     have := le_rangeNodes rs rs.size 0 index (by omega) (by omega)
-    change _ ≤ total
     omega
   obtain ⟨resolved, out, after, ran, resolvedSize, outSize, -⟩ := ingestTable_ok limits es rs true
     { interner := Interner.ofNodes dag.nodes } capacity
@@ -136,8 +137,8 @@ theorem reexpand_ids {dag : Dag} (hwf : DagWF dag)
       change SharesIn (· < resolved.size) rs[index]!
       rw [size, esSize]
       exact rootsBelow _ (by rw [getElem!_pos rs index bound]; exact Array.getElem_mem_toList bound)))
-    deepE deepR (by change 0 + _ + _ ≤ total; omega)
-    (by change dag.nodes.size + _ + _ ≤ dag.size + total; simp only [Dag.size]; omega)
+    deepE deepR (by change 0 + _ + _ ≤ limits.maxExprVisits; omega)
+    (by change dag.nodes.size + _ + _ ≤ limits.maxNodes; simp only [Dag.size] at nodeRoom; omega)
   have result := ingestTable_correct limits es rs true _
     (good_seed (tableContext es.size true 0 #[]) rfl dag.nodes hwf.precede hwf.arity)
     resolved out after ran
@@ -186,14 +187,35 @@ theorem reexpand_ids {dag : Dag} (hwf : DagWF dag)
     rw [ids i hi', keep _ (tableLt i (by omega)), getElem!_pos table i (by omega)]
   have rootsEq : out = roots := Array.ext (by omega) (fun k h1 _ => rootIds k h1)
   rw [tableEq, rootsEq] at ran
-  refine ⟨limits, after.visits, ?_⟩
+  refine ⟨after.visits, ?_⟩
   unfold reexpand
   dsimp only
   rw [Budget.bind_ok_eq ran]
   rfl
 
+/-- **Re-expansion identifies the table and the roots.** -/
+theorem reexpand_ids {dag : Dag} (hwf : DagWF dag)
+    (injective : ∀ a, a < dag.size → ∀ b, b < dag.size →
+      termOf dag.nodes a = termOf dag.nodes b → a = b)
+    {table roots : Array Nat} (tableIn : ∀ t ∈ table.toList, t < dag.size)
+    (rootsIn : ∀ r ∈ roots.toList, r < dag.size)
+    {es rs : Array Ixon.Expr} (esSize : es.size = table.size) (rsSize : rs.size = roots.size)
+    (backward : ∀ k (hk : k < es.size), SharesIn (· < k) es[k])
+    (rootsBelow : ∀ r ∈ rs.toList, SharesIn (· < table.size) r)
+    (entries : List.Forall₂ (fun t e => substShares (fun i => termOf dag.nodes table[i]!) e =
+      termOf dag.nodes t) table.toList es.toList)
+    (rootRows : List.Forall₂ (fun r e => substShares (fun i => termOf dag.nodes table[i]!) e =
+      termOf dag.nodes r) roots.toList rs.toList)
+    (capacity : es.size < wordBound) :
+    ∃ limits visits, reexpand limits dag es rs = .ok (table, roots, visits) := by
+  let total := rangeNodes es 0 es.size + rangeNodes rs 0 rs.size
+  exact ⟨{ maxExprVisits := total, maxDepth := total, maxNodes := dag.size + total },
+    reexpand_ids_within hwf injective tableIn rootsIn esSize rsSize backward rootsBelow entries rootRows
+      capacity _ (Nat.le_refl _) (Nat.le_refl _) (Nat.le_refl _)⟩
+
 end Ix.Sharing.Verify.CanonicalMeaning
 
 #guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.expand_facts [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.dagModel_termOf [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.reexpand_ids_within [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.reexpand_ids [propext, Classical.choice, Quot.sound]

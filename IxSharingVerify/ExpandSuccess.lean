@@ -703,6 +703,109 @@ theorem canonicalize_size {source : Array Node} {roots : Array Nat} (run : Run s
   have := List.Nodup.length_le_of_subset nodup sub
   simpa [Dag.size] using this
 
+theorem nodeHeights_size (nodes : Array Node) : (nodeHeights nodes).size = nodes.size := by
+  unfold nodeHeights
+  have : ∀ (l : List Nat) (height : Array Nat),
+      (l.foldl (fun height t =>
+        height.set! t (nodes[t]!.children.foldl (fun acc c => max acc (height[c]! + 1)) 0)) height).size =
+        height.size := by
+    intro l
+    induction l with
+    | nil => intro height; rfl
+    | cons t l ih => intro height; rw [List.foldl_cons, ih]; simp
+  rw [this]
+  simp
+
+theorem foldl_max_le (l : List Nat) (bound : Nat) :
+    ∀ acc, acc ≤ bound → (∀ x ∈ l, x + 1 ≤ bound) →
+      l.foldl (fun acc x => max acc (x + 1)) acc ≤ bound := by
+  induction l with
+  | nil => intro acc h _; exact h
+  | cons y ys ih =>
+    intro acc h each
+    simp only [List.foldl_cons]
+    exact ih _ (Nat.max_le.mpr ⟨h, each y List.mem_cons_self⟩)
+      (fun x hx => each x (List.mem_cons_of_mem _ hx))
+
+/-- A node's height is at most its index when children precede parents. -/
+theorem nodeHeights_le {temp : Array Node} (hcp : Ix.Sharing.Verify.SharingExact.CP temp) :
+    ∀ t, t < temp.size → (nodeHeights temp)[t]! ≤ t := by
+  intro t
+  induction t using Nat.strongRecOn with
+  | _ t ih =>
+    intro ht
+    rw [Ix.Sharing.Verify.SharingExact.nodeHeights_spec hcp t ht,
+      Ix.Sharing.Verify.SharingExact.heightOf_eq_map]
+    by_cases zero : t = 0
+    · subst zero
+      apply foldl_max_le _ 0 0 (Nat.le_refl _)
+      intro x hx
+      obtain ⟨c, hc, -⟩ := List.mem_map.mp hx
+      have := hcp 0 ht c (Array.mem_toList_iff.mp hc)
+      omega
+    · apply foldl_max_le _ t 0 (Nat.zero_le _)
+      intro x hx
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
+      have lt := hcp t ht c (Array.mem_toList_iff.mp hc)
+      have := ih c lt (by omega)
+      omega
+
+/-- **Expansion never refuses** a table and roots whose Shares resolve and
+whose table fits the Share word, under every budget that covers their
+expression nodes, with at most one term per expression node. -/
+theorem expand_within (sharing roots : Array Ixon.Expr) (allowShare : Bool)
+    (capacity : sharing.size < wordBound)
+    (entries : ∀ index, index < sharing.size → ∀ acc : Array Nat, acc.size = index →
+      SharesValid (tableContext sharing.size allowShare index acc) sharing[index]!)
+    (rootsValid : ∀ index, index < roots.size → ∀ resolved : Array Nat, resolved.size = sharing.size →
+      SharesValid (rootContext sharing.size allowShare index resolved) roots[index]!)
+    (limits : Limits)
+    (visitRoom : rangeNodes sharing 0 sharing.size + rangeNodes roots 0 roots.size ≤ limits.maxExprVisits)
+    (depthRoom : rangeNodes sharing 0 sharing.size + rangeNodes roots 0 roots.size ≤ limits.maxDepth)
+    (nodeRoom : rangeNodes sharing 0 sharing.size + rangeNodes roots 0 roots.size ≤ limits.maxNodes) :
+    ∃ ex, expand limits sharing roots allowShare = .ok ex ∧
+      ex.dag.size ≤ rangeNodes sharing 0 sharing.size + rangeNodes roots 0 roots.size := by
+  have deepE : ∀ index, index < sharing.size → treeHeight sharing[index]! ≤ limits.maxDepth := by
+    intro index bound
+    have := treeHeight_lt sharing[index]!
+    have := le_rangeNodes sharing sharing.size 0 index (by omega) (by omega)
+    omega
+  have deepR : ∀ index, index < roots.size → treeHeight roots[index]! ≤ limits.maxDepth := by
+    intro index bound
+    have := treeHeight_lt roots[index]!
+    have := le_rangeNodes roots roots.size 0 index (by omega) (by omega)
+    omega
+  obtain ⟨resolved, out, state, ran, -, -, nodes⟩ := ingestTable_ok limits sharing roots allowShare {}
+    capacity entries rootsValid deepE deepR (by change 0 + _ + _ ≤ _; omega)
+    (by change 0 + _ + _ ≤ _; omega)
+  have run := ingestTable_run limits sharing roots allowShare resolved out state ran
+  obtain ⟨⟨dag, ids⟩, numbered⟩ := canonicalize_ok run
+  have dagSize := canonicalize_size run numbered
+  have result := canonicalize_correct _ _ run dag ids numbered
+  change _ ≤ 0 + _ + _ at nodes
+  have sizeBound : dag.nodes.size ≤ rangeNodes sharing 0 sharing.size + rangeNodes roots 0 roots.size := by
+    change dag.size ≤ _ at dagSize
+    simp only [Dag.size] at dagSize
+    omega
+  have shallow : ¬ ((nodeHeights dag.nodes).any (· > limits.maxDepth) = true) := by
+    intro high
+    obtain ⟨i, hi, gt⟩ := Array.any_eq_true.mp high
+    rw [nodeHeights_size] at hi
+    have := nodeHeights_le result.cp i hi
+    rw [getElem!_pos (nodeHeights dag.nodes) i (by rw [nodeHeights_size]; exact hi)] at this
+    simp only [decide_eq_true_eq] at gt
+    omega
+  refine ⟨⟨dag, ids, state.visits, state.interner.nodes.size⟩, ?_, ?_⟩
+  · unfold expand
+    rw [Budget.bind_ok_eq ran]
+    dsimp only
+    rw [Budget.bind_ok_eq numbered]
+    dsimp only
+    rw [ite_eq_right shallow]
+    rfl
+  · change dag.nodes.size ≤ _
+    exact sizeBound
+
 /-- **Expansion never refuses** a table and roots whose Shares resolve and
 whose table fits the Share word: under some limits, which
 `Budget.expand_mono` extends to every larger one, it succeeds, with at most
@@ -716,51 +819,10 @@ theorem expand_ok_of (sharing roots : Array Ixon.Expr) (allowShare : Bool)
     ∃ limits ex, expand limits sharing roots allowShare = .ok ex ∧
       ex.dag.size ≤ rangeNodes sharing 0 sharing.size + rangeNodes roots 0 roots.size := by
   let total := rangeNodes sharing 0 sharing.size + rangeNodes roots 0 roots.size
-  let first : Limits := { maxExprVisits := total, maxDepth := total, maxNodes := total }
-  have deepE : ∀ index, index < sharing.size → treeHeight sharing[index]! ≤ first.maxDepth := by
-    intro index bound
-    have := treeHeight_lt sharing[index]!
-    have := le_rangeNodes sharing sharing.size 0 index (by omega) (by omega)
-    change _ ≤ total
-    omega
-  have deepR : ∀ index, index < roots.size → treeHeight roots[index]! ≤ first.maxDepth := by
-    intro index bound
-    have := treeHeight_lt roots[index]!
-    have := le_rangeNodes roots roots.size 0 index (by omega) (by omega)
-    change _ ≤ total
-    omega
-  obtain ⟨resolved, out, state, ran, -, -, nodes⟩ := ingestTable_ok first sharing roots allowShare {}
-    capacity entries rootsValid deepE deepR (by change 0 + _ + _ ≤ total; omega)
-    (by change 0 + _ + _ ≤ total; omega)
-  have run := ingestTable_run first sharing roots allowShare resolved out state ran
-  obtain ⟨⟨dag, ids⟩, numbered⟩ := canonicalize_ok run
-  have dagSize := canonicalize_size run numbered
-  let tallest := (nodeHeights dag.nodes).toList.foldl max 0
-  let second : Limits := { first with maxDepth := max total tallest }
-  have le : Budget.LimitsLe first second :=
-    ⟨Nat.le_refl _, Nat.le_max_left _ _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _,
-      Nat.le_refl _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩
-  have shallow : ¬ ((nodeHeights dag.nodes).any (· > second.maxDepth) = true) := by
-    intro high
-    obtain ⟨i, hi, gt⟩ := Array.any_eq_true.mp high
-    have member : (nodeHeights dag.nodes)[i] ∈ (nodeHeights dag.nodes).toList :=
-      Array.mem_toList_iff.mpr (Array.getElem_mem hi)
-    have := (le_foldl_max _ 0).2 _ member
-    have := Nat.le_max_right total tallest
-    simp only [decide_eq_true_eq] at gt
-    change (nodeHeights dag.nodes)[i] > max total tallest at gt
-    omega
-  refine ⟨second, ⟨dag, ids, state.visits, state.interner.nodes.size⟩, ?_, ?_⟩
-  · unfold expand
-    rw [Budget.bind_ok_eq (Budget.ingestTable_refines le sharing roots allowShare {} _ ran)]
-    dsimp only
-    rw [Budget.bind_ok_eq numbered]
-    dsimp only
-    rw [ite_eq_right shallow]
-    rfl
-  · change dag.size ≤ total
-    change _ ≤ 0 + _ + _ at nodes
-    omega
+  obtain ⟨ex, ran, size⟩ := expand_within sharing roots allowShare capacity entries rootsValid
+    { maxExprVisits := total, maxDepth := total, maxNodes := total }
+    (Nat.le_refl _) (Nat.le_refl _) (Nat.le_refl _)
+  exact ⟨_, ex, ran, size⟩
 
 /-- **Expansion never refuses Share-free roots.** -/
 theorem expand_ok (roots : Array Ixon.Expr) (free : ∀ index, index < roots.size → ShareFree roots[index]!) :
@@ -779,5 +841,7 @@ end Ix.Sharing.Verify.CanonicalMeaning
 #guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.canonicalize_injective [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.ingestTable_ok [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.expand_ok [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.nodeHeights_le [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.expand_within [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.expand_ok_of [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Verify.CanonicalMeaning.canonicalize_size [propext, Classical.choice, Quot.sound]
