@@ -237,6 +237,9 @@ struct Source {
   admission: OnceLock<Admission>,
 }
 
+/// The stack of the thread that validates a source's groups.
+const ADMISSION_STACK_SIZE: usize = 256 * 1024 * 1024;
+
 /// The outcome of admitting a source's bound roles: each group is admitted
 /// whole, only after its validator has checked it, or not at all.
 #[derive(Debug, Default)]
@@ -343,7 +346,18 @@ impl ArtifactSource {
   /// bound group in dependency order with only the groups admitted before
   /// it available; every worker sharing this source reads the result.
   pub fn admission(&self) -> &Admission {
-    self.0.admission.get_or_init(|| groups::admit(self))
+    self.0.admission.get_or_init(|| {
+      // Validation runs the kernel; give it the stack a check gets.
+      std::thread::scope(|scope| {
+        std::thread::Builder::new()
+          .name("role-admission".into())
+          .stack_size(ADMISSION_STACK_SIZE)
+          .spawn_scoped(scope, || groups::admit(self))
+          .expect("spawn the role admission thread")
+          .join()
+          .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+      })
+    })
   }
   /// Whether `role`'s group has been admitted.
   pub fn is_admitted(&self, role: Role) -> bool {

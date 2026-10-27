@@ -11,7 +11,7 @@ use ixon::constant::{Axiom, Constant, ConstantInfo, DefKind, Definition};
 use ixon::contract::{BinderContract, ValueContract};
 use ixon::env::{Env, RoleBinding};
 use ixon::expr::Expr;
-use ixon::role_table::{Role, RoleTable};
+use ixon::role_table::{Evidence, Role, RoleTable};
 use ixon::univ::Univ;
 
 const BASIS: &[u8] = include_bytes!("fixtures/role_admission/basis.ixe");
@@ -36,10 +36,18 @@ fn address_of(env: &Env, dotted: &str) -> Address {
     .addr
 }
 
-fn bind(env: &mut Env, mut bound: Vec<(Role, Address)>) {
+fn bind(env: &mut Env, bound: Vec<(Role, Address)>) {
+  bind_with_evidence(env, bound, vec![]);
+}
+
+fn bind_with_evidence(
+  env: &mut Env,
+  mut bound: Vec<(Role, Address)>,
+  mut evidence: Vec<(Role, Vec<Evidence>)>,
+) {
   bound.sort_by_key(|(role, _)| role.index());
-  let raw =
-    RoleTable { version: 2, bound, evidence: vec![] }.to_bytes().unwrap();
+  evidence.sort_by_key(|(role, _)| role.index());
+  let raw = RoleTable { version: 2, bound, evidence }.to_bytes().unwrap();
   env.role_binding =
     Some(RoleBinding { address: Address::hash(&raw), bytes: raw.into() });
 }
@@ -444,4 +452,111 @@ fn string_literals_use_the_admitted_anchors() {
   assert_eq!(refused.len(), 1, "{refused:?}");
   assert_eq!(refused[0].0, Role::StringOfList);
   assert!(refused[0].1.contains("differs from the specification: type"));
+}
+
+/// The structural operations with the number of their recurrence equations.
+const STRUCTURAL: [(Role, &str, usize); 7] = [
+  (Role::NatPred, "Nat.pred", 2),
+  (Role::NatAdd, "Nat.add", 2),
+  (Role::NatSub, "Nat.sub", 2),
+  (Role::NatMul, "Nat.mul", 2),
+  (Role::NatPow, "Nat.pow", 2),
+  (Role::NatBeq, "Nat.beq", 4),
+  (Role::NatBle, "Nat.ble", 3),
+];
+
+fn bool_roles(env: &Env) -> Vec<(Role, Address)> {
+  vec![
+    (Role::Bool, address_of(env, "Bool")),
+    (Role::BoolFalse, address_of(env, "Bool.false")),
+    (Role::BoolTrue, address_of(env, "Bool.true")),
+    (Role::BoolRec, address_of(env, "Bool.rec")),
+  ]
+}
+
+/// The basis, `Bool` and the structural operations, with their evidence.
+fn bind_structural(env: &mut Env, swap_add_and_mul: bool) {
+  let mut roles = basis_roles(env);
+  roles.extend(bool_roles(env));
+  let mut evidence = vec![];
+  for (role, name, equations) in STRUCTURAL {
+    let name = match (swap_add_and_mul, name) {
+      (true, "Nat.add") => "Nat.mul",
+      (true, "Nat.mul") => "Nat.add",
+      _ => name,
+    };
+    roles.push((role, address_of(env, name)));
+    evidence.push((role, vec![Evidence::DefEq; equations]));
+  }
+  bind_with_evidence(env, roles, evidence);
+}
+
+/// `theorem : @Eq.{1} Nat (Nat.pow 2 64) 18446744073709551616 := Eq.refl _`,
+/// which only the admitted `Nat.pow` fast path checks in reasonable time.
+fn power_theorem(env: &Env) -> Address {
+  let two = env.store_blob(vec![2]);
+  let sixty_four = env.store_blob(vec![64]);
+  let mut big = vec![0; 8];
+  big.push(1);
+  let big = env.store_blob(big);
+  let refs = vec![
+    address_of(env, "Eq"),
+    address_of(env, "Eq.refl"),
+    address_of(env, "Nat"),
+    address_of(env, "Nat.pow"),
+    two,
+    sixty_four,
+    big,
+  ];
+  let univs = vec![Arc::new(Univ::Succ(Arc::new(Univ::Zero)))];
+  let power =
+    app(app(reference(3, vec![]), arc(Expr::Nat(4))), arc(Expr::Nat(5)));
+  let typ = app(
+    app(app(reference(0, vec![0]), reference(2, vec![])), power.clone()),
+    arc(Expr::Nat(6)),
+  );
+  let value = app(app(reference(1, vec![0]), reference(2, vec![])), power);
+  store(
+    env,
+    ConstantInfo::Defn(Definition {
+      kind: DefKind::Theorem,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      typ,
+      value,
+    }),
+    refs,
+    univs,
+  )
+}
+
+#[test]
+fn the_structural_operations_are_admitted_by_their_equations() {
+  let mut env = loaded();
+  let theorem = power_theorem(&env);
+  bind_structural(&mut env, false);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  let admission = source.admission();
+  assert!(admission.refused().is_empty(), "{:?}", admission.refused());
+  for (role, _, _) in STRUCTURAL {
+    assert!(source.is_admitted(role), "{role:?}");
+  }
+  ArtifactChecker::<Anon>::from_source(Ok(source))
+    .check_const(&theorem)
+    .unwrap();
+}
+
+#[test]
+fn an_operation_whose_equations_fail_is_refused_with_its_dependents() {
+  let mut env = loaded();
+  bind_structural(&mut env, true);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  let refused = source.admission().refused();
+  let roles: Vec<Role> = refused.iter().map(|(role, _)| *role).collect();
+  assert_eq!(roles, [Role::NatAdd, Role::NatMul, Role::NatPow], "{refused:?}");
+  assert!(refused[0].1.contains("does not hold"), "{refused:?}");
+  assert!(refused[1].1.contains("needs the unadmitted"), "{refused:?}");
+  for role in [Role::NatPred, Role::NatSub, Role::NatBeq, Role::NatBle] {
+    assert!(source.is_admitted(role), "{role:?}");
+  }
 }

@@ -20,8 +20,9 @@
 
 use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind};
+use ixon::constant::DefKind;
 use ixon::constant::{ConstantInfo, MutConst};
-use ixon::role_table::Role;
+use ixon::role_table::{Evidence, Role};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{Admission, ArtifactSource};
@@ -116,6 +117,60 @@ const GROUPS: &[Group] = &[
     roles: &[Role::StringOfList],
     needs: &[Role::List, Role::Char, Role::String],
     validate: validate_string_of_list,
+  },
+  Group {
+    roles: &[Role::Bool, Role::BoolFalse, Role::BoolTrue, Role::BoolRec],
+    needs: &[],
+    validate: validate_bool,
+  },
+  Group {
+    roles: &[Role::NatPred],
+    needs: &[Role::Nat],
+    validate: |source, admitted| {
+      validate_structural_op(source, admitted, Role::NatPred)
+    },
+  },
+  Group {
+    roles: &[Role::NatAdd],
+    needs: &[Role::Nat],
+    validate: |source, admitted| {
+      validate_structural_op(source, admitted, Role::NatAdd)
+    },
+  },
+  Group {
+    roles: &[Role::NatSub],
+    needs: &[Role::Nat, Role::NatPred],
+    validate: |source, admitted| {
+      validate_structural_op(source, admitted, Role::NatSub)
+    },
+  },
+  Group {
+    roles: &[Role::NatMul],
+    needs: &[Role::Nat, Role::NatAdd],
+    validate: |source, admitted| {
+      validate_structural_op(source, admitted, Role::NatMul)
+    },
+  },
+  Group {
+    roles: &[Role::NatPow],
+    needs: &[Role::Nat, Role::NatAdd, Role::NatMul],
+    validate: |source, admitted| {
+      validate_structural_op(source, admitted, Role::NatPow)
+    },
+  },
+  Group {
+    roles: &[Role::NatBeq],
+    needs: &[Role::Nat, Role::Bool],
+    validate: |source, admitted| {
+      validate_structural_op(source, admitted, Role::NatBeq)
+    },
+  },
+  Group {
+    roles: &[Role::NatBle],
+    needs: &[Role::Nat, Role::Bool],
+    validate: |source, admitted| {
+      validate_structural_op(source, admitted, Role::NatBle)
+    },
   },
 ];
 
@@ -1069,4 +1124,198 @@ fn validate_string_of_list(
       ),
     )],
   )
+}
+
+// -----------------------------------------------------------------------
+// Bool and the structural Nat operations
+// -----------------------------------------------------------------------
+
+/// `Bool : Type`, `Bool.false Bool.true : Bool` and
+/// `Bool.rec.{u} {motive : Bool → Sort u} (false : motive false)
+/// (true : motive true) (t : Bool) : motive t`, anchors specified by type.
+fn validate_bool(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let [bool_t, false_c, true_c] =
+    bound(source, [Role::Bool, Role::BoolFalse, Role::BoolTrue])?;
+  let bool_c = || cnst(&bool_t, &[]);
+  let rec_ty = pi(
+    pi(bool_c(), sort(param(0))),
+    pi(
+      app(var(0), cnst(&false_c, &[])),
+      pi(app(var(1), cnst(&true_c, &[])), pi(bool_c(), app(var(3), var(0)))),
+    ),
+  );
+  validate_anchors(
+    source,
+    admitted,
+    &[
+      (Role::Bool, 0, type1()),
+      (Role::BoolFalse, 0, bool_c()),
+      (Role::BoolTrue, 0, bool_c()),
+      (Role::BoolRec, 1, rec_ty),
+    ],
+  )
+}
+
+fn admitted_role(admitted: &Admission, role: Role) -> Result<E, String> {
+  admitted
+    .address(role)
+    .map(|address| cnst(address, &[]))
+    .ok_or_else(|| format!("{} is not admitted", role.lean_name()))
+}
+
+/// The type and recurrence equations of a structural `Nat` operation, the
+/// certified checker's: each equation over `x` (`#1`) and `y` (`#0`), with
+/// the operation itself as `op`.
+fn structural_spec(
+  role: Role,
+  admitted: &Admission,
+  op: &E,
+) -> Result<(E, Vec<(E, E)>), String> {
+  let nat = || admitted_role(admitted, Role::Nat);
+  let zero = admitted_role(admitted, Role::NatZero)?;
+  let succ = admitted_role(admitted, Role::NatSucc)?;
+  let (x, y) = (var(1), var(0));
+  let s = |e: E| app(succ.clone(), e);
+  let op2 = |a: E, b: E| apps(op.clone(), vec![a, b]);
+  let binary =
+    |cod: E| -> Result<E, String> { Ok(pi(nat()?, pi(nat()?, cod))) };
+  Ok(match role {
+    Role::NatPred => (
+      pi(nat()?, nat()?),
+      vec![
+        (app(op.clone(), zero.clone()), zero),
+        (app(op.clone(), s(x.clone())), x),
+      ],
+    ),
+    Role::NatAdd => (
+      binary(nat()?)?,
+      vec![
+        (op2(x.clone(), zero), x.clone()),
+        (op2(x.clone(), s(y.clone())), s(op2(x, y))),
+      ],
+    ),
+    Role::NatSub => {
+      let pred = admitted_role(admitted, Role::NatPred)?;
+      (
+        binary(nat()?)?,
+        vec![
+          (op2(x.clone(), zero), x.clone()),
+          (op2(x.clone(), s(y.clone())), app(pred, op2(x, y))),
+        ],
+      )
+    },
+    Role::NatMul => {
+      let add = admitted_role(admitted, Role::NatAdd)?;
+      (
+        binary(nat()?)?,
+        vec![
+          (op2(x.clone(), zero.clone()), zero),
+          (op2(x.clone(), s(y.clone())), apps(add, vec![op2(x.clone(), y), x])),
+        ],
+      )
+    },
+    Role::NatPow => {
+      let mul = admitted_role(admitted, Role::NatMul)?;
+      (
+        binary(nat()?)?,
+        vec![
+          (op2(x.clone(), zero.clone()), s(zero)),
+          (op2(x.clone(), s(y.clone())), apps(mul, vec![op2(x.clone(), y), x])),
+        ],
+      )
+    },
+    Role::NatBeq => {
+      let bool_t = admitted_role(admitted, Role::Bool)?;
+      let true_c = admitted_role(admitted, Role::BoolTrue)?;
+      let false_c = admitted_role(admitted, Role::BoolFalse)?;
+      (
+        binary(bool_t)?,
+        vec![
+          (op2(zero.clone(), zero.clone()), true_c),
+          (op2(zero.clone(), s(y.clone())), false_c.clone()),
+          (op2(s(x.clone()), zero), false_c),
+          (op2(s(x.clone()), s(y.clone())), op2(x, y)),
+        ],
+      )
+    },
+    Role::NatBle => {
+      let bool_t = admitted_role(admitted, Role::Bool)?;
+      let true_c = admitted_role(admitted, Role::BoolTrue)?;
+      let false_c = admitted_role(admitted, Role::BoolFalse)?;
+      (
+        binary(bool_t)?,
+        vec![
+          (op2(zero.clone(), y.clone()), true_c),
+          (op2(s(x.clone()), zero), false_c),
+          (op2(s(x.clone()), s(y.clone())), op2(x, y)),
+        ],
+      )
+    },
+    _ => return Err(format!("{role:?} is not a structural operation")),
+  })
+}
+
+/// A structural `Nat` operation: a safe, level-monomorphic definition of
+/// the specified type that checks, whose role evidence is one definitional
+/// entry per recurrence equation, and whose equations hold by definitional
+/// equality with its own references replaced by its value, checked with
+/// only the groups admitted before (so its own fast path cannot discharge
+/// them).
+fn validate_structural_op(
+  source: &ArtifactSource,
+  admitted: &Admission,
+  role: Role,
+) -> Result<(), String> {
+  let address =
+    source.required_role(role).map_err(|error| error.to_string())?.clone();
+  source.member(&address).map_err(|error| error.to_string())?;
+  let mut kenv = ingress_records(source, &[&address])?;
+  let KConst::Defn {
+    kind: DefKind::Definition,
+    safety: DefinitionSafety::Safe,
+    lvls: 0,
+    ty,
+    val,
+    ..
+  } = declared(&kenv, &address)?
+  else {
+    return Err(differs(&address, "not a safe level-monomorphic definition"));
+  };
+  let (spec_ty, equations) = structural_spec(role, admitted, &val)?;
+  if ty != spec_ty {
+    return Err(differs(&address, "type"));
+  }
+  let evidence =
+    source.binding().and_then(|binding| binding.evidence(role)).unwrap_or(&[]);
+  if evidence.len() != equations.len()
+    || evidence.iter().any(|entry| !matches!(entry, Evidence::DefEq))
+  {
+    return Err(format!(
+      "{}: the evidence is not one definitional entry per equation",
+      address.hex()
+    ));
+  }
+  check_units(source, admitted, &mut kenv, &[&address])?;
+
+  let nat = admitted_role(admitted, Role::Nat)?;
+  let context =
+    PrimitiveContext::bound(source.clone(), admitted.roles(), |_| None);
+  let lookups = IxonIngressLookups::default();
+  let mut checker =
+    TypeChecker::for_artifact_anon(&mut kenv, source, &lookups, context);
+  for (index, (lhs, rhs)) in equations.into_iter().enumerate() {
+    let close = |e: E| lam(nat.clone(), lam(nat.clone(), e));
+    checker.reset();
+    let holds =
+      checker.is_def_eq(&close(lhs), &close(rhs)).map_err(|error| {
+        format!("{}: equation {index} does not check: {error}", address.hex())
+      })?;
+    if !holds {
+      return Err(format!("{}: equation {index} does not hold", address.hex()));
+    }
+  }
+  Ok(())
 }
