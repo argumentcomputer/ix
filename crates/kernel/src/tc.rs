@@ -57,6 +57,16 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 /// budget does not replace external time or memory limits.
 pub const MAX_REC_FUEL: u64 = 100_000_000;
 
+/// Native stack, in bytes, a check keeps in reserve. Inference, WHNF and
+/// conversion recurse through each other with no bound a crafted input
+/// cannot exceed (a reduction whose major premise needs its own reduction,
+/// a million levels deep, takes a million native frames), and fuel bounds
+/// work, not depth. So each entry to them checks the stack its thread has
+/// left and declines with [`TcError::StackExhausted`] below this reserve.
+/// The bound is the thread's actual stack, whatever its size (the checker's
+/// workers have 256 MB); the reserve covers the frames between two entries.
+pub const STACK_RESERVE: usize = 1024 * 1024;
+
 static IX_MAX_REC_FUEL: crate::EnvOptU64 = crate::EnvOptU64::new(|| {
   crate::env_var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
 });
@@ -963,9 +973,23 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
   }
 
-  /// Consume one unit of shared recursive fuel. Returns Err if exhausted.
+  /// Decline when the thread has less than [`STACK_RESERVE`] of native stack
+  /// left. Where the stack cannot be measured, no bound applies.
+  #[inline]
+  pub(crate) fn check_stack(&self) -> Result<(), TcError<M>> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if stacker::remaining_stack().is_some_and(|left| left < STACK_RESERVE) {
+      return Err(TcError::StackExhausted);
+    }
+    Ok(())
+  }
+
+  /// Consume one unit of shared recursive fuel. Returns Err if exhausted,
+  /// or if the native stack is (see [`Self::check_stack`]): every recursive
+  /// WHNF and conversion entry ticks.
   #[inline]
   pub fn tick(&mut self) -> Result<(), TcError<M>> {
+    self.check_stack()?;
     if self.rec_fuel == 0 {
       self.dump_guard_stack("recursive-fuel");
       if crate::env_var("IX_REC_FUEL_DUMP").is_ok()

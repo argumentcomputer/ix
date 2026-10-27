@@ -49,6 +49,9 @@ pub enum TcError<M: KernelMode> {
   DefEqFailed,
   MaxRecDepth,
   MaxRecFuel,
+  /// The check's recursion came within [`crate::tc::STACK_RESERVE`] bytes
+  /// of the end of its thread's stack, and declined instead of overflowing.
+  StackExhausted,
   /// A stored mutual block fails the kernel's canonicity check: under the
   /// stored partition, an adjacent pair did not satisfy strict `Less`.
   ///
@@ -111,6 +114,9 @@ impl<M: KernelMode> std::fmt::Display for TcError<M> {
       TcError::DefEqFailed => write!(f, "definitional equality check failed"),
       TcError::MaxRecDepth => write!(f, "max recursion depth exceeded"),
       TcError::MaxRecFuel => write!(f, "recursive fuel exhausted"),
+      TcError::StackExhausted => {
+        write!(f, "recursion too deep for the native stack")
+      },
       TcError::NonCanonicalBlock { block, pos, ordering } => {
         let dir = match ordering {
           Ordering::Less => "Less",
