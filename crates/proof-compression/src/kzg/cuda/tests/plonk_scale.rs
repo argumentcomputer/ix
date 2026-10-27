@@ -536,10 +536,11 @@ fn fft_benchmark(report: &mut Report, log_size: usize, repeats: usize) {
   }
 }
 
+// The CPU references are only representative with the `parallel` feature.
+#[cfg(feature = "parallel")]
 #[test]
 #[ignore = "full-scale CUDA benchmark; set IX_PLONK_PRIMITIVE_OP and IX_PLONK_PRIMITIVE_REPORT and run this test alone"]
 fn bn254_plonk_scale_primitives() {
-  assert!(cfg!(feature = "parallel"), "build with parallel CPU references");
   let operation = std::env::var("IX_PLONK_PRIMITIVE_OP")
     .expect("explicit primitive operation required");
   assert!(matches!(

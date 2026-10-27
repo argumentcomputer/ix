@@ -170,7 +170,7 @@ fn compare_paths(log_size: usize) {
       0..rows,
     );
     let (traces, totals) = LookupValues::stage_2_traces(
-      &[lookup_values.clone()],
+      std::slice::from_ref(&lookup_values),
       &[circuit.lookup_group_size],
       beta,
       &gamma,

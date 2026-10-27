@@ -24,7 +24,8 @@ fn native_ntt_parameters_match_scalar_roots_without_large_allocations() {
   use multi_stark::traits::TwoAdicField;
   for lg in 0..=MAX_FFT_LOG {
     let mut output = [[0; 4]; 3];
-    let status = unsafe { ix_kzg_ntt_parameters(lg as u32, &mut output) };
+    let status =
+      unsafe { ix_kzg_ntt_parameters(u32::try_from(lg).unwrap(), &mut output) };
     assert_eq!(status, 0);
     let [root, inverse, scale] =
       output.map(|limbs| Fr::new_unchecked(BigInt(limbs)));
@@ -34,7 +35,12 @@ fn native_ntt_parameters_match_scalar_roots_without_large_allocations() {
   }
   let mut output = [[0; 4]; 3];
   assert_eq!(
-    unsafe { ix_kzg_ntt_parameters(MAX_FFT_LOG as u32 + 1, &mut output) },
+    unsafe {
+      ix_kzg_ntt_parameters(
+        u32::try_from(MAX_FFT_LOG).unwrap() + 1,
+        &mut output,
+      )
+    },
     1
   );
 }
@@ -138,7 +144,7 @@ fn oversized_fft_domains_fail_before_allocation_or_device_access() {
   let original = value;
   const INVALID_VALUE: i32 = 1;
   // Invalid domains must fail before the invalid ordinal is resolved.
-  for lg in [unsupported as u32, u32::MAX] {
+  for lg in [u32::try_from(unsupported).unwrap(), u32::MAX] {
     let code = unsafe { ix_kzg_fft(-1, &mut value, lg, false, &shift) };
     assert_eq!(code, INVALID_VALUE);
     let job = FftJob {
