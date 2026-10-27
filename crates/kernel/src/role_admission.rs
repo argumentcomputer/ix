@@ -265,6 +265,9 @@ struct Source {
   /// position) has been authenticated. Authentication is a function of this
   /// immutable source alone, so a success is shared by every worker.
   references: dashmap::DashSet<Address>,
+  /// Records whose bytes have been authenticated (hash and canonical
+  /// encoding); a function of this immutable source, shared by every worker.
+  authentic: dashmap::DashSet<Address>,
   /// The roles this source's binding has admitted, computed once by the
   /// group validators (see [`ArtifactSource::admission`]).
   admission: OnceLock<Admission>,
@@ -374,6 +377,7 @@ impl ArtifactSource {
       lookups: OnceLock::new(),
       owners: OnceLock::new(),
       references: dashmap::DashSet::new(),
+      authentic: dashmap::DashSet::new(),
       admission: OnceLock::new(),
     }));
     if let Some(binding) = source.binding() {
@@ -579,22 +583,30 @@ impl ArtifactSource {
       .get(address)
       .map(|entry| entry.value().clone())
       .ok_or_else(|| Error::MissingRecord(address.clone()))?;
-    if Address::hash(raw.raw_bytes()) != *address {
+    if !self.0.authentic.contains(address)
+      && Address::hash(raw.raw_bytes()) != *address
+    {
       return Err(Error::Record(address.clone(), "hash mismatch".into()));
     }
     Ok(raw)
   }
 
+  /// The record at `address`, authenticated: its bytes hash to the address
+  /// and are the canonical encoding of what they decode to. A source is
+  /// immutable, so each record is authenticated once and then only decoded.
   pub fn record(&self, address: &Address) -> Result<Record, Error> {
     let raw = self.raw_record(address)?;
     let bytes = raw.raw_bytes();
     let fail = |reason| Error::Record(address.clone(), reason);
     let mut input = bytes;
     let value = Constant::get(&mut input).map_err(fail)?;
-    let mut canonical = Vec::new();
-    value.put(&mut canonical);
-    if !input.is_empty() || canonical != bytes {
-      return Err(fail("noncanonical bytes".into()));
+    if !self.0.authentic.contains(address) {
+      let mut canonical = Vec::new();
+      value.put(&mut canonical);
+      if !input.is_empty() || canonical != bytes {
+        return Err(fail("noncanonical bytes".into()));
+      }
+      self.0.authentic.insert(address.clone());
     }
     Ok(Record { address: address.clone(), raw, value })
   }

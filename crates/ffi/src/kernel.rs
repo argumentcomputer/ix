@@ -1022,13 +1022,18 @@ fn build_check_work(
   expect_pass: &[bool],
   ungrounded: &FxHashMap<Name, String>,
 ) -> Vec<CheckWorkItem> {
+  use rayon::prelude::*;
   let mut work: Vec<CheckWorkItem> = Vec::with_capacity(names.len());
   let mut by_block: FxHashMap<(Address, bool), usize> = FxHashMap::default();
+  // Resolving a name's unit authenticates its record: do it in parallel,
+  // then group in order.
+  let block_keys: Vec<Option<Address>> = names
+    .par_iter()
+    .map(|name| check_schedule_block_addr(ixon_env, source, name, ungrounded))
+    .collect();
 
-  for (i, name) in names.iter().enumerate() {
+  for (i, block_key) in block_keys.into_iter().enumerate() {
     let should_pass = expect_pass.get(i).copied().unwrap_or(true);
-    let block_key =
-      check_schedule_block_addr(ixon_env, source, name, ungrounded);
     if let Some(block_key) = block_key {
       let key = (block_key, should_pass);
       if let Some(work_idx) = by_block.get(&key).copied() {
@@ -1085,11 +1090,15 @@ where
 
   // Capture the input once, before planning: the plan and every worker read
   // this same authenticated source.
+  let snapshot_start = Instant::now();
   let source =
     ArtifactSource::snapshot(&ixon_env).map_err(|error| error.to_string())?;
+  eprintln!("[rs_kernel_check] snapshot: {:.1?}", snapshot_start.elapsed());
   report_admission("rs_kernel_check", &source);
+  let plan_start = Instant::now();
   let work =
     build_check_work(&ixon_env, &source, &names, &expect_pass, &ungrounded);
+  eprintln!("[rs_kernel_check] plan: {:.1?}", plan_start.elapsed());
   if work.len() == names.len() {
     eprintln!("[rs_kernel_check] checking {} constants...", names.len());
   } else {
@@ -1442,11 +1451,13 @@ fn report_admission(label: &str, source: &ArtifactSource) {
   if source.binding().is_none() {
     return;
   }
+  let start = Instant::now();
   let admission = source.admission();
   eprintln!(
-    "[{label}] bound roles: {} admitted, {} group(s) refused",
+    "[{label}] bound roles: {} admitted, {} group(s) refused ({:.1?})",
     admission.admitted_count(),
-    admission.refused().len()
+    admission.refused().len(),
+    start.elapsed()
   );
   for (role, reason) in admission.refused() {
     eprintln!("[{label}]   {} group refused: {reason}", role.lean_name());
