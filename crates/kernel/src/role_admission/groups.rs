@@ -203,6 +203,108 @@ const GROUPS: &[Group] = &[
     validate: validate_choice,
   },
   Group { roles: &[Role::SorryAx], needs: &[], validate: validate_sorry },
+  Group {
+    roles: &[Role::NatDiv],
+    needs: &[
+      Role::Nat,
+      Role::NatPred,
+      Role::NatSub,
+      Role::NatBle,
+      Role::Bool,
+      Role::Eq,
+    ],
+    validate: |source, admitted| validate_wf_op(source, admitted, Role::NatDiv),
+  },
+  Group {
+    roles: &[Role::NatMod],
+    needs: &[
+      Role::Nat,
+      Role::NatPred,
+      Role::NatSub,
+      Role::NatBle,
+      Role::Bool,
+      Role::Eq,
+    ],
+    validate: |source, admitted| validate_wf_op(source, admitted, Role::NatMod),
+  },
+  Group {
+    roles: &[Role::NatGcd],
+    needs: &[Role::Nat, Role::NatBle, Role::NatMod, Role::Bool, Role::Eq],
+    validate: |source, admitted| validate_wf_op(source, admitted, Role::NatGcd),
+  },
+  Group {
+    roles: &[Role::NatLand],
+    needs: &[
+      Role::Nat,
+      Role::NatAdd,
+      Role::NatMul,
+      Role::NatBle,
+      Role::NatDiv,
+      Role::NatMod,
+      Role::Bool,
+      Role::Eq,
+    ],
+    validate: |source, admitted| {
+      validate_wf_op(source, admitted, Role::NatLand)
+    },
+  },
+  Group {
+    roles: &[Role::NatLor],
+    needs: &[
+      Role::Nat,
+      Role::NatAdd,
+      Role::NatSub,
+      Role::NatMul,
+      Role::NatBle,
+      Role::NatDiv,
+      Role::NatMod,
+      Role::Bool,
+      Role::Eq,
+    ],
+    validate: |source, admitted| validate_wf_op(source, admitted, Role::NatLor),
+  },
+  Group {
+    roles: &[Role::NatXor],
+    needs: &[
+      Role::Nat,
+      Role::NatAdd,
+      Role::NatMul,
+      Role::NatBle,
+      Role::NatDiv,
+      Role::NatMod,
+      Role::Bool,
+      Role::Eq,
+    ],
+    validate: |source, admitted| validate_wf_op(source, admitted, Role::NatXor),
+  },
+  Group {
+    roles: &[Role::NatShiftLeft],
+    needs: &[
+      Role::Nat,
+      Role::NatSub,
+      Role::NatMul,
+      Role::NatBle,
+      Role::Bool,
+      Role::Eq,
+    ],
+    validate: |source, admitted| {
+      validate_wf_op(source, admitted, Role::NatShiftLeft)
+    },
+  },
+  Group {
+    roles: &[Role::NatShiftRight],
+    needs: &[
+      Role::Nat,
+      Role::NatSub,
+      Role::NatBle,
+      Role::NatDiv,
+      Role::Bool,
+      Role::Eq,
+    ],
+    validate: |source, admitted| {
+      validate_wf_op(source, admitted, Role::NatShiftRight)
+    },
+  },
 ];
 
 /// Admit every bound group of `source` that its validator accepts.
@@ -1353,6 +1455,402 @@ fn validate_structural_op(
 }
 
 // -----------------------------------------------------------------------
+// The well-founded Nat operations
+// -----------------------------------------------------------------------
+
+/// The admitted constants a certificate statement mentions.
+struct Vocabulary {
+  nat: E,
+  zero: E,
+  succ: E,
+  boolean: E,
+  true_c: E,
+  false_c: E,
+  eq: E,
+  ble: E,
+  sub: Option<E>,
+  add: Option<E>,
+  mul: Option<E>,
+  div: Option<E>,
+  modulo: Option<E>,
+}
+
+impl Vocabulary {
+  fn of(admitted: &Admission) -> Result<Self, String> {
+    let optional = |role| admitted_role(admitted, role).ok();
+    Ok(Self {
+      nat: admitted_role(admitted, Role::Nat)?,
+      zero: admitted_role(admitted, Role::NatZero)?,
+      succ: admitted_role(admitted, Role::NatSucc)?,
+      boolean: admitted_role(admitted, Role::Bool)?,
+      true_c: admitted_role(admitted, Role::BoolTrue)?,
+      false_c: admitted_role(admitted, Role::BoolFalse)?,
+      eq: cnst(&admitted_eq(admitted)?, &[KUniv::succ(KUniv::zero())]),
+      ble: admitted_role(admitted, Role::NatBle)?,
+      sub: optional(Role::NatSub),
+      add: optional(Role::NatAdd),
+      mul: optional(Role::NatMul),
+      div: optional(Role::NatDiv),
+      modulo: optional(Role::NatMod),
+    })
+  }
+}
+
+fn needed(constant: &Option<E>, name: &str) -> Result<E, String> {
+  constant.clone().ok_or_else(|| format!("{name} is not admitted"))
+}
+
+/// The certificate statements of a well-founded `Nat` operation, the
+/// certified checker's: per certificate its hypotheses and its equation,
+/// over `x` and `y`, with the operation itself as `op`. Guards are spelled
+/// with `Nat.ble` and `1` as `Nat.succ Nat.zero`.
+fn wf_statements(
+  role: Role,
+  v: &Vocabulary,
+  op: &E,
+  x: &E,
+  y: &E,
+) -> Result<Vec<(Vec<E>, E)>, String> {
+  let s = |e: E| app(v.succ.clone(), e);
+  let one = s(v.zero.clone());
+  let two = s(one.clone());
+  let bin = |f: &E, a: E, b: E| apps(f.clone(), vec![a, b]);
+  let ble = |a: E, b: E| bin(&v.ble, a, b);
+  let eq_bool = |a: E, b: E| apps(v.eq.clone(), vec![v.boolean.clone(), a, b]);
+  let eq_nat = |a: E, b: E| apps(v.eq.clone(), vec![v.nat.clone(), a, b]);
+  let holds = |guard: E| eq_bool(guard, v.true_c.clone());
+  let fails = |guard: E| eq_bool(guard, v.false_c.clone());
+  let lhs = bin(op, x.clone(), y.clone());
+  let one_le = |e: &E| ble(one.clone(), e.clone());
+  Ok(match role {
+    Role::NatDiv | Role::NatMod => {
+      let sub = needed(&v.sub, "Nat.sub")?;
+      let rest = bin(op, bin(&sub, x.clone(), y.clone()), y.clone());
+      let (recursive, base) = if role == Role::NatDiv {
+        (s(rest), v.zero.clone())
+      } else {
+        (rest, x.clone())
+      };
+      vec![
+        (
+          vec![holds(ble(y.clone(), x.clone())), holds(one_le(y))],
+          eq_nat(lhs.clone(), recursive),
+        ),
+        (
+          vec![fails(ble(y.clone(), x.clone()))],
+          eq_nat(lhs.clone(), base.clone()),
+        ),
+        (vec![fails(one_le(y))], eq_nat(lhs, base)),
+      ]
+    },
+    Role::NatGcd => {
+      let modulo = needed(&v.modulo, "Nat.mod")?;
+      vec![
+        (
+          vec![holds(one_le(x))],
+          eq_nat(
+            lhs.clone(),
+            bin(op, bin(&modulo, y.clone(), x.clone()), x.clone()),
+          ),
+        ),
+        (vec![fails(one_le(x))], eq_nat(lhs, y.clone())),
+      ]
+    },
+    Role::NatShiftLeft => {
+      let (sub, mul) = (needed(&v.sub, "Nat.sub")?, needed(&v.mul, "Nat.mul")?);
+      vec![
+        (
+          vec![holds(one_le(y))],
+          eq_nat(
+            lhs.clone(),
+            bin(
+              op,
+              bin(&mul, two, x.clone()),
+              bin(&sub, y.clone(), one.clone()),
+            ),
+          ),
+        ),
+        (vec![fails(one_le(y))], eq_nat(lhs, x.clone())),
+      ]
+    },
+    Role::NatShiftRight => {
+      let (sub, div) = (needed(&v.sub, "Nat.sub")?, needed(&v.div, "Nat.div")?);
+      vec![
+        (
+          vec![holds(one_le(y))],
+          eq_nat(
+            lhs.clone(),
+            bin(
+              &div,
+              bin(op, x.clone(), bin(&sub, y.clone(), one.clone())),
+              two,
+            ),
+          ),
+        ),
+        (vec![fails(one_le(y))], eq_nat(lhs, x.clone())),
+      ]
+    },
+    Role::NatLand | Role::NatLor | Role::NatXor => {
+      let add = needed(&v.add, "Nat.add")?;
+      let mul = needed(&v.mul, "Nat.mul")?;
+      let div = needed(&v.div, "Nat.div")?;
+      let modulo = needed(&v.modulo, "Nat.mod")?;
+      let halves = bin(
+        op,
+        bin(&div, x.clone(), two.clone()),
+        bin(&div, y.clone(), two.clone()),
+      );
+      let x_bit = bin(&modulo, x.clone(), two.clone());
+      let y_bit = bin(&modulo, y.clone(), two.clone());
+      let low = match role {
+        Role::NatLand => bin(&mul, x_bit, y_bit),
+        Role::NatLor => {
+          let sub = needed(&v.sub, "Nat.sub")?;
+          bin(
+            &sub,
+            bin(&add, x_bit.clone(), y_bit.clone()),
+            bin(&mul, x_bit, y_bit),
+          )
+        },
+        _ => bin(&modulo, bin(&add, x_bit, y_bit), two.clone()),
+      };
+      let base = if role == Role::NatLand { v.zero.clone() } else { y.clone() };
+      vec![
+        (
+          vec![holds(one_le(x))],
+          eq_nat(lhs.clone(), bin(&add, bin(&mul, two, halves), low)),
+        ),
+        (vec![fails(one_le(x))], eq_nat(lhs, base)),
+      ]
+    },
+    _ => return Err(format!("{role:?} is not a well-founded operation")),
+  })
+}
+
+/// Replace every occurrence of the level-monomorphic constant `target` in
+/// `e` by the closed term `value`, under binders too (sharing preserved).
+fn replace_constant(
+  e: &E,
+  target: &Address,
+  value: &E,
+  memo: &mut FxHashMap<u64, E>,
+) -> E {
+  if let Some(done) = memo.get(&e.hash_key()) {
+    return done.clone();
+  }
+  let mut go = |e: &E| replace_constant(e, target, value, memo);
+  let out = match e.data() {
+    crate::expr::ExprData::Const(id, levels, _)
+      if &id.addr == target && levels.is_empty() =>
+    {
+      value.clone()
+    },
+    crate::expr::ExprData::App(f, a, _) => KExpr::app(go(f), go(a)),
+    // Anonymous mode: names and binder infos are `()`.
+    crate::expr::ExprData::Lam((), (), contract, ty, body, _) => {
+      KExpr::lam_contract((), (), *contract, go(ty), go(body))
+    },
+    crate::expr::ExprData::All((), (), contract, result, ty, body, _) => {
+      KExpr::all_contract((), (), *contract, *result, go(ty), go(body))
+    },
+    crate::expr::ExprData::Let((), ty, val, body, contract, _) => {
+      KExpr::let_contract((), *contract, go(ty), go(val), go(body))
+    },
+    crate::expr::ExprData::Prj(id, field, val, _) => {
+      KExpr::prj(id.clone(), *field, go(val))
+    },
+    _ => e.clone(),
+  };
+  memo.insert(e.hash_key(), out.clone());
+  out
+}
+
+/// The records reachable from `roots` through carried references: a
+/// projection reaches its unit, a unit everything its members mention. A
+/// unit is the granularity at which records are carried and checked.
+fn reference_closure(
+  source: &ArtifactSource,
+  roots: Vec<Address>,
+) -> FxHashSet<Address> {
+  let mut seen = FxHashSet::default();
+  let mut todo = roots;
+  while let Some(address) = todo.pop() {
+    if !seen.insert(address.clone()) {
+      continue;
+    }
+    // Literal blobs are references but not records.
+    let Ok(record) = source.record(&address) else { continue };
+    let constant = record.constant();
+    if let Some(block) = projection_unit(&constant.info) {
+      todo.push(block.clone());
+    }
+    todo.extend(constant.refs.iter().cloned());
+  }
+  seen
+}
+
+fn projection_unit(info: &ConstantInfo) -> Option<&Address> {
+  match info {
+    ConstantInfo::IPrj(p) => Some(&p.block),
+    ConstantInfo::CPrj(p) => Some(&p.block),
+    ConstantInfo::RPrj(p) => Some(&p.block),
+    ConstantInfo::DPrj(p) => Some(&p.block),
+    _ => None,
+  }
+}
+
+/// A well-founded `Nat` operation: a safe, level-monomorphic definition of
+/// type `Nat → Nat → Nat` that checks, whose role evidence is one proof per
+/// certificate statement. Each proof, with the operation's references
+/// replaced by its value, may mention only records in the reference
+/// closure of the operation and of the groups it needs, and, applied to
+/// `x`, `y` and the statement's hypotheses, must prove the statement's
+/// equation, checked with only the groups admitted before.
+fn validate_wf_op(
+  source: &ArtifactSource,
+  admitted: &Admission,
+  role: Role,
+) -> Result<(), String> {
+  let address =
+    source.required_role(role).map_err(|error| error.to_string())?.clone();
+  source.member(&address).map_err(|error| error.to_string())?;
+  let evidence: Vec<Address> = source
+    .binding()
+    .and_then(|binding| binding.evidence(role))
+    .unwrap_or(&[])
+    .iter()
+    .map(|entry| match entry {
+      Evidence::Proof(proof) => Ok(proof.clone()),
+      Evidence::DefEq => Err(format!(
+        "{}: definitional evidence for a well-founded operation",
+        address.hex()
+      )),
+    })
+    .collect::<Result<_, _>>()?;
+  let mut references: Vec<&Address> = vec![&address];
+  references.extend(evidence.iter());
+  let mut kenv = ingress_records(source, &references)?;
+  let KConst::Defn {
+    kind: DefKind::Definition,
+    safety: DefinitionSafety::Safe,
+    lvls: 0,
+    ty,
+    val,
+    ..
+  } = declared(&kenv, &address)?
+  else {
+    return Err(differs(&address, "not a safe level-monomorphic definition"));
+  };
+  let vocabulary = Vocabulary::of(admitted)?;
+  let nat = vocabulary.nat.clone();
+  if ty != pi(nat.clone(), pi(nat.clone(), nat.clone())) {
+    return Err(differs(&address, "type"));
+  }
+  let statement_count =
+    wf_statements(role, &vocabulary, &val, &var(1), &var(0))?.len();
+  if evidence.len() != statement_count {
+    return Err(format!(
+      "{}: the evidence is not one proof per certificate statement",
+      address.hex()
+    ));
+  }
+  check_units(source, admitted, &mut kenv, &[&address])?;
+
+  // Locality: the closure of the operation (its unit's references) and of
+  // the roles, with their blocks, that its specification depends on.
+
+  let mut roots: Vec<Address> = vec![address.clone()];
+  for dependency in super::dependencies(role) {
+    for member in super::block(*dependency) {
+      roots.extend(admitted.address(*member).cloned());
+    }
+  }
+  let closure = reference_closure(source, roots);
+  let local = |reference: &Address| {
+    closure.contains(reference)
+      || source.record(reference).ok().is_some_and(|r| {
+        projection_unit(&r.constant().info).is_some_and(|b| closure.contains(b))
+      })
+  };
+  for proof in &evidence {
+    let proof_record =
+      source.proof_record(proof).map_err(|error| error.to_string())?;
+    for reference in &proof_record.record().constant().refs {
+      if reference != &address
+        && source.record(reference).is_ok()
+        && !local(reference)
+      {
+        return Err(format!(
+          "{}: evidence {} mentions {} outside the operation's closure",
+          address.hex(),
+          proof.hex(),
+          reference.hex()
+        ));
+      }
+    }
+  }
+
+  let context =
+    PrimitiveContext::bound(source.clone(), admitted.roles(), |_| None);
+  let lookups = IxonIngressLookups::default();
+  let mut checker =
+    TypeChecker::for_artifact_anon(&mut kenv, source, &lookups, context);
+  for (index, proof) in evidence.iter().enumerate() {
+    let fail = |what: String| {
+      format!("{}: certificate {index} ({}) {what}", address.hex(), proof.hex())
+    };
+    let theorem = checker
+      .get_const(&KId::new(proof.clone(), ()))
+      .map_err(|error| fail(error.to_string()))?;
+    let KConst::Defn { kind: DefKind::Theorem, lvls: 0, val: value, .. } =
+      &theorem
+    else {
+      return Err(fail("is not a level-monomorphic theorem".into()));
+    };
+    checker
+      .validate_const_well_scoped(&theorem)
+      .map_err(|error| fail(error.to_string()))?;
+    let proof_term =
+      replace_constant(value, &address, &val, &mut FxHashMap::default());
+
+    // λ (x y : Nat) (h₁ … hₙ), proof x y h₁ … hₙ, against
+    // Π (x y : Nat) (h₁ … hₙ), equation.
+    let (hypotheses, _) =
+      &wf_statements(role, &vocabulary, &val, &var(1), &var(0))?[index];
+    let count = u64::try_from(hypotheses.len()).map_err(|e| e.to_string())?;
+    let at_depth = |depth: u64| {
+      wf_statements(role, &vocabulary, &val, &var(depth + 1), &var(depth))
+        .map(|statements| statements[index].clone())
+    };
+    let mut arguments = vec![var(count + 1), var(count)];
+    arguments.extend((0..count).rev().map(var));
+    let mut lambda = apps(proof_term, arguments);
+    let (_, mut pi_type) = at_depth(count)?;
+    for i in (0..count).rev() {
+      let (hypotheses, _) = at_depth(i)?;
+      let hypothesis =
+        hypotheses[usize::try_from(i).map_err(|e| e.to_string())?].clone();
+      lambda = lam(hypothesis.clone(), lambda);
+      pi_type = pi(hypothesis, pi_type);
+    }
+    for _ in 0..2 {
+      lambda = lam(nat.clone(), lambda);
+      pi_type = pi(nat.clone(), pi_type);
+    }
+    checker.reset();
+    let inferred =
+      checker.infer(&lambda).map_err(|error| fail(error.to_string()))?;
+    let proves = checker
+      .is_def_eq(&inferred, &pi_type)
+      .map_err(|error| fail(error.to_string()))?;
+    if !proves {
+      return Err(fail("does not prove its statement".into()));
+    }
+  }
+  Ok(())
+}
+
+// -----------------------------------------------------------------------
 // The standard axioms and their families
 // -----------------------------------------------------------------------
 
@@ -1583,4 +2081,28 @@ fn validate_sorry(
   admitted: &Admission,
 ) -> Result<(), String> {
   validate_axiom(source, admitted, Role::SorryAx, 1, None)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{GROUPS, Role};
+  use rustc_hash::FxHashSet;
+
+  #[test]
+  fn the_groups_are_the_specification_blocks_in_dependency_order() {
+    let mut seen: FxHashSet<Role> = FxHashSet::default();
+    for group in GROUPS {
+      let lead = group.roles[0];
+      assert_eq!(group.roles, super::super::block(lead), "{lead:?}");
+      let needs: FxHashSet<Role> = group.needs.iter().copied().collect();
+      let specified: FxHashSet<Role> =
+        super::super::dependencies(lead).iter().copied().collect();
+      assert_eq!(needs, specified, "{lead:?}");
+      assert!(needs.iter().all(|need| seen.contains(need)), "{lead:?}");
+      for role in group.roles {
+        assert!(seen.insert(*role), "{role:?} is in two groups");
+      }
+    }
+    assert_eq!(seen.len(), Role::ALL.len());
+  }
 }

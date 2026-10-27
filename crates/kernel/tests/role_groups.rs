@@ -981,3 +981,70 @@ fn only_the_standard_axioms_may_be_used() {
     assert!(format!("{error}").contains(reason), "{error}");
   }
 }
+
+/// Bind the basis, `Bool`, the structural operations and a `Nat.div` of
+/// `fun x _ => x` whose three evidence entries are the theorem `proof`;
+/// return why `Nat.div` was refused.
+fn refused_division(mut env: Env, proof: Address) -> String {
+  let nat = address_of(&env, "Nat");
+  let div = definition(
+    &env,
+    0,
+    pi(reference(0, vec![]), pi(reference(0, vec![]), reference(0, vec![]))),
+    lambda(
+      reference(0, vec![]),
+      lambda(reference(0, vec![]), arc(Expr::Var(1))),
+    ),
+    vec![nat],
+    vec![],
+  );
+  let mut roles = basis_roles(&env);
+  roles.extend(bool_roles(&env));
+  let mut evidence = vec![];
+  for (role, name, equations) in STRUCTURAL {
+    roles.push((role, address_of(&env, name)));
+    evidence.push((role, vec![Evidence::DefEq; equations]));
+  }
+  roles.push((Role::NatDiv, div));
+  evidence.push((Role::NatDiv, vec![Evidence::Proof(proof); 3]));
+  bind_with_evidence(&mut env, roles, evidence);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  assert!(!source.is_admitted(Role::NatDiv));
+  let refused = source.admission().refused();
+  assert_eq!(refused.len(), 1, "{refused:?}");
+  assert_eq!(refused[0].0, Role::NatDiv);
+  refused[0].1.clone()
+}
+
+#[test]
+fn a_well_founded_operation_needs_local_proofs_of_its_statements() {
+  // A proof that mentions records outside the operation's closure.
+  let env = loaded();
+  let roles = axiom_roles(&env);
+  let proof = proof_of_true(
+    &env,
+    &roles[0].1,
+    reference(1, vec![]),
+    vec![roles[1].1.clone()],
+    vec![],
+  );
+  let reason = refused_division(env, proof);
+  assert!(reason.contains("outside the operation's closure"), "{reason}");
+
+  // A local term that proves nothing.
+  let env = loaded();
+  let proof = store(
+    &env,
+    ConstantInfo::Defn(Definition {
+      kind: DefKind::Theorem,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      typ: reference(0, vec![]),
+      value: reference(1, vec![]),
+    }),
+    vec![address_of(&env, "Nat"), address_of(&env, "Nat.zero")],
+    vec![],
+  );
+  let reason = refused_division(env, proof);
+  assert!(reason.contains("certificate 0"), "{reason}");
+}
