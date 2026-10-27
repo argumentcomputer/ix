@@ -45,6 +45,7 @@ static INFER_COUNT: std::sync::atomic::AtomicUsize =
 
 impl<M: KernelMode> TypeChecker<'_, M> {
   pub fn infer(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
+    self.check_input_context()?;
     if *IX_INFER_COUNT_LOG {
       let n = INFER_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
@@ -110,6 +111,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           return Err(TcError::NativeEvaluation(id.addr.clone()));
         }
         let c = self.get_const(id)?;
+        // A quotient record means the quotient only at its primitive
+        // address: for a bound artifact, once the Quot group is admitted.
+        if matches!(c, KConst::Quot { .. }) && !self.is_quot_primitive(id)? {
+          return Err(TcError::Other(format!(
+            "quotient record {} is not an admitted quotient primitive",
+            id.addr.hex()
+          )));
+        }
+        // Unsafe axioms belong to the unsafe tier, which safe declarations
+        // cannot reference; the policy is for the safe theory.
+        if !infer_only
+          && matches!(c, KConst::Axio { is_unsafe: false, .. })
+          && !self.prims.axiom_usable(&id.addr)
+        {
+          return Err(TcError::Other(format!(
+            "axiom {} is not an admitted standard axiom",
+            id.addr.hex()
+          )));
+        }
         if u64_to_usize::<M>(c.lvls())? != us.len() {
           return Err(TcError::UnivParamMismatch {
             expected: c.lvls(),
@@ -300,8 +320,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         self.infer_proj(&struct_id, *field, val, &val_ty)?
       },
 
-      ExprData::Nat(..) => self.infer_nat_type(),
-      ExprData::Str(..) => self.infer_str_type(),
+      ExprData::Nat(..) => self.infer_nat_type()?,
+      ExprData::Str(..) => self.infer_str_type()?,
     };
 
     if !infer_only {
@@ -463,12 +483,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
   }
 
-  fn infer_nat_type(&mut self) -> KExpr<M> {
-    self.intern(KExpr::cnst(self.prims.nat.clone(), Box::new([])))
+  fn infer_nat_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
+    self.require_role(ixon::role_table::Role::Nat)?;
+    Ok({
+      self.intern(KExpr::cnst(self.primitives()?.nat.clone(), Box::new([])))
+    })
   }
 
-  fn infer_str_type(&mut self) -> KExpr<M> {
-    self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([])))
+  fn infer_str_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
+    self.require_role(ixon::role_table::Role::String)?;
+    Ok({
+      self.intern(KExpr::cnst(self.primitives()?.string.clone(), Box::new([])))
+    })
   }
 
   fn inductive_app_is_prop(
@@ -728,7 +754,7 @@ mod tests {
     let ty = tc.infer(&n).unwrap();
     // Nat literal type = Nat constant
     assert!(
-      matches!(ty.data(), ExprData::Const(id, _, _) if id.addr == tc.prims.nat.addr)
+      matches!(ty.data(), ExprData::Const(id, _, _) if id.addr == tc.primitives().unwrap().nat.addr)
     );
   }
 
@@ -938,7 +964,7 @@ mod tests {
     // Type should be `String` — a constant at the canonical string addr.
     match ty.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.string.addr);
+        assert_eq!(id.addr, tc.primitives().unwrap().string.addr);
       },
       other => panic!("expected Const(String), got {other:?}"),
     }

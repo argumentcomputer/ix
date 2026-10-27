@@ -188,12 +188,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let c = self.get_const(member)?;
       self.validate_const_well_scoped(&c)?;
       match c {
-        KConst::Indc { ty, .. } => {
+        KConst::Indc { ty, is_unsafe, .. } => {
+          self.fence_safe_type(&ty, is_unsafe)?;
           let t = self.infer(&ty)?;
           self.ensure_sort(&t)?;
           ind_ids.push(member.clone());
         },
-        KConst::Ctor { ty, .. } => {
+        KConst::Ctor { ty, is_unsafe, .. } => {
+          self.fence_safe_type(&ty, is_unsafe)?;
           let t = self.infer(&ty)?;
           self.ensure_sort(&t)?;
           ctor_ids.push(member.clone());

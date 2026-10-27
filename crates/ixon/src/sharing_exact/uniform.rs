@@ -88,10 +88,14 @@
 //!
 //! # Numeric domain
 //!
-//! Lean uses unbounded `Nat`. Here every such quantity is a `u128`; if any
-//! bound or cost saturates, the call fails with
-//! [`FormatBound::LengthOverflow`] instead of guessing. The exclusion test is
-//! evaluated exactly even when an occurrence count saturates.
+//! Lean uses unbounded `Nat` and `Int`, and so does this optimizer: costs,
+//! bounds, gains, component deltas and knapsack sums are computed in `u128`
+//! and `i128` first and, if a value leaves that range, again in `BigUint`
+//! and `BigInt` (`arith`), with the same result wherever the first run
+//! succeeds. The exclusion test is evaluated exactly even when an
+//! occurrence count saturates, and visible counts are `u128`, below `2^84`
+//! for any DAG held in memory. Only the model length of the chosen set must
+//! be a `u64`: it is the length of an output.
 
 use std::sync::Arc;
 
@@ -116,6 +120,8 @@ use crate::constant::Constant;
 use crate::expr::Expr;
 use crate::tag::TagN;
 
+mod arith;
+pub(crate) use arith::{Arith, Delta, Exact, Fast};
 mod family;
 #[cfg(test)]
 pub(crate) fn optimize_family_at_test(
@@ -126,6 +132,18 @@ pub(crate) fn optimize_family_at_test(
   k: usize,
 ) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
   family::optimize_at(w, dag, prep, meter, k)
+}
+/// [`optimize_family_at_test`] in the representation `A` only, without the
+/// exact retry.
+#[cfg(test)]
+pub(crate) fn optimize_family_in_test<A: Arith>(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+  k: usize,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  family::optimize_in::<A>(w, dag, prep, meter, k)
 }
 pub(crate) use family::optimize_family_with;
 
@@ -147,10 +165,6 @@ fn overflow() -> SharingError {
 
 fn len64(n: usize) -> u64 {
   u64::try_from(n).unwrap_or(u64::MAX)
-}
-
-fn tid(i: usize) -> TermId {
-  TermId::try_from(i).unwrap_or(TermId::MAX)
 }
 
 fn u(x: u64) -> u128 {
@@ -197,9 +211,10 @@ pub struct UniformSharingResult {
   /// Whether the table-count knapsack chose a lower TagN bracket.
   pub lower_bracket: bool,
   pub stats: ExactSharingStats,
-  /// Test-only view of retained per-count optima, including canonical ties.
+  /// Test-only view of retained per-count optima, including canonical ties,
+  /// with exact deltas.
   #[cfg(test)]
-  pub(crate) component_tables: Vec<CTable>,
+  pub(crate) component_tables: Vec<CTable<num_bigint::BigInt>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +237,7 @@ fn side_child(node: &Node) -> TermId {
   }
 }
 
-fn side_extra(node: &Node) -> u128 {
+fn side_extra(node: &Node) -> u64 {
   match node {
     Node::App(..) => 0,
     _ => 1,
@@ -230,17 +245,17 @@ fn side_extra(node: &Node) -> u128 {
 }
 
 /// Bytes a non-telescope node writes itself, excluding its children.
-fn own_bytes(node: &Node) -> Result<u128, SharingError> {
+fn own_bytes(node: &Node) -> Result<u64, SharingError> {
   match node.family() {
     Some(_) => Ok(0),
-    None => node.own_len().exact().map(u).ok_or_else(overflow),
+    None => node.own_len().exact().ok_or_else(overflow),
   }
 }
 
 // This cap is used ONLY for empty costs consumed by initial classification.
 // It covers 2*w for every public u64 width, not merely tiered widths 1..=3.
-// Proofs: IxSharingVerify.UniformCappedSize. General UPrep/phi/gains retain
-// their existing arithmetic; a capped value must never enter those paths.
+// Proofs: IxSharingVerify.UniformCappedSize. General UPrep/phi/gains use
+// exact arithmetic (`Arith`); a capped value must never enter those paths.
 const EMPTY_SIZE_CAP: u128 = (1u128 << 65) - 2;
 
 #[cfg(test)]
@@ -295,7 +310,7 @@ fn empty_sizes_capped(
       let next = spine_next(node);
       let continued = nodes[ix(next)].family() == node.family();
       sides[t] = empty_cap_add(
-        empty_cap_add(side_extra(node), cost[ix(side_child(node))]),
+        empty_cap_add(u(side_extra(node)), cost[ix(side_child(node))]),
         if continued { sides[ix(next)] } else { 0 },
       );
       cost[t] = empty_cap_add(
@@ -336,8 +351,10 @@ pub(crate) fn graph_facts(dag: &SharingDag) -> Facts {
     let kids = node.children();
     for &c in kids.as_slice() {
       deg[ix(c)] += 1;
-      if !parents[ix(c)].contains(&tid(t)) {
-        parents[ix(c)].push(tid(t));
+      // Parents are visited in increasing ID, so `t` can only repeat as the
+      // last entry: a constant-time check keeps this linear in the edges.
+      if parents[ix(c)].last() != Some(&t) {
+        parents[ix(c)].push(t);
       }
     }
   }
@@ -381,35 +398,60 @@ fn spine_tables(nodes: &[Node], stop: &[bool]) -> (Vec<u64>, Vec<TermId>) {
 // Truncated evaluation
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Default)]
-struct UVal {
-  cost: u128,
-  inl: u128,
-  sides: u128,
+/// One term's values under [`UPrep`]: its cost where it occurs, its cost
+/// with an inline top, the side bytes of its spine and the nearest
+/// available spine descendant.
+#[derive(Debug)]
+struct UVal<A: Arith = Fast> {
+  cost: A::U,
+  inl: A::U,
+  sides: A::U,
   below: Option<TermId>,
 }
 
+impl<A: Arith> Clone for UVal<A> {
+  fn clone(&self) -> Self {
+    UVal {
+      cost: self.cost.clone(),
+      inl: self.inl.clone(),
+      sides: self.sides.clone(),
+      below: self.below,
+    }
+  }
+}
+
+impl<A: Arith> Default for UVal<A> {
+  fn default() -> Self {
+    UVal {
+      cost: A::U::default(),
+      inl: A::U::default(),
+      sides: A::U::default(),
+      below: None,
+    }
+  }
+}
+
 /// Evaluation tables with `opaq` terms as `w`-byte leaves ending spines.
-struct UPrep<'d> {
+struct UPrep<'d, A: Arith = Fast> {
   nodes: &'d [Node],
-  w: u128,
+  w: A::U,
   opaq: Vec<bool>,
   t_len: Vec<u64>,
   t_tail: Vec<TermId>,
-  base: Vec<UVal>,
+  base: Vec<UVal<A>>,
 }
 
-impl<'d> UPrep<'d> {
+impl<'d, A: Arith> UPrep<'d, A> {
   fn new(
     nodes: &'d [Node],
-    w: u128,
+    w: A::U,
     opaq: Vec<bool>,
   ) -> Result<Self, SharingError> {
     let (t_len, t_tail) = spine_tables(nodes, &opaq);
     let mut up = UPrep { nodes, w, opaq, t_len, t_tail, base: Vec::new() };
-    let mut base: Vec<UVal> = Vec::with_capacity(nodes.len());
+    let mut base: Vec<UVal<A>> = Vec::with_capacity(nodes.len());
     for t in 0..nodes.len() {
-      let (v, _) = up.node(&|c| base[ix(c)], &|_| false, tid(t))?;
+      let (v, _) = up.node(&|c| &base[ix(c)], &|_| false, t)?;
       base.push(v);
     }
     up.base = base;
@@ -418,60 +460,64 @@ impl<'d> UPrep<'d> {
 
   /// One term's value given its children's values; also the number of
   /// available spine descendants visited.
-  fn node(
+  fn node<'v>(
     &self,
-    get: &dyn Fn(TermId) -> UVal,
+    get: &dyn Fn(TermId) -> &'v UVal<A>,
     avail: &dyn Fn(TermId) -> bool,
     t: TermId,
-  ) -> Result<(UVal, u64), SharingError> {
+  ) -> Result<(UVal<A>, u64), SharingError> {
     let node = &self.nodes[ix(t)];
     let mut steps = 0u64;
-    let mut v = UVal::default();
+    let mut v = UVal::<A>::default();
     if node.family().is_none() {
-      let mut inl = own_bytes(node)?;
+      let mut inl = A::u(own_bytes(node)?);
       for &c in node.children().as_slice() {
-        inl = inl.saturating_add(get(c).cost);
+        inl = A::add(&inl, &get(c).cost);
       }
       v.inl = inl;
     } else {
       let nxt = spine_next(node);
       let same =
         self.nodes[ix(nxt)].family() == node.family() && !self.opaq[ix(nxt)];
-      let s = side_extra(node)
-        .saturating_add(get(side_child(node)).cost)
-        .saturating_add(if same { get(nxt).sides } else { 0 });
+      let mut s = A::add(&A::u(side_extra(node)), &get(side_child(node)).cost);
+      if same {
+        s = A::add(&s, &get(nxt).sides);
+      }
       let bl = if same {
         if avail(nxt) { Some(nxt) } else { get(nxt).below }
       } else {
         None
       };
       let l = self.t_len[ix(t)];
-      let mut best = u(tag4_len(l))
-        .saturating_add(s)
-        .saturating_add(get(self.t_tail[ix(t)]).cost);
+      let mut best =
+        A::add(&A::add(&A::u(tag4_len(l)), &s), &get(self.t_tail[ix(t)]).cost);
       let mut cur = bl;
       for _ in 0..l {
         let Some(x) = cur else { break };
         steps += 1;
         let gx = get(x);
-        let cand = u(tag4_len(l - self.t_len[ix(x)]))
-          .saturating_add(s - gx.sides)
-          .saturating_add(self.w);
-        best = best.min(cand);
+        let cand = A::add(
+          &A::add(
+            &A::u(tag4_len(l - self.t_len[ix(x)])),
+            &A::sub(&s, &gx.sides),
+          ),
+          &self.w,
+        );
+        if cand < best {
+          best = cand;
+        }
         cur = gx.below;
       }
       v.inl = best;
       v.sides = s;
       v.below = bl;
     }
-    v.cost = if self.opaq[ix(t)] {
-      self.w
-    } else if avail(t) {
-      self.w.min(v.inl)
+    v.cost = if self.opaq[ix(t)] || (avail(t) && self.w < v.inl) {
+      self.w.clone()
     } else {
-      v.inl
+      v.inl.clone()
     };
-    if v.inl == u128::MAX || v.sides == u128::MAX || v.cost == u128::MAX {
+    if A::saturated(&v.inl) || A::saturated(&v.sides) || A::saturated(&v.cost) {
       return Err(overflow());
     }
     Ok((v, steps))
@@ -502,31 +548,46 @@ fn certainly_excluded(occ: u128, size: u128, w: u128) -> bool {
 /// telescope node inside a telescope running through it (no header);
 /// `head_lb`/`cont_lb`, the same at a head/continuation position when the
 /// term may be a Share.
-#[derive(Clone)]
-pub(crate) struct Bounds {
-  inl: Vec<u128>,
-  merged: Vec<u128>,
-  head_lb: Vec<u128>,
-  cont_lb: Vec<u128>,
+pub(crate) struct Bounds<A: Arith = Fast> {
+  inl: Vec<A::U>,
+  merged: Vec<A::U>,
+  head_lb: Vec<A::U>,
+  cont_lb: Vec<A::U>,
+}
+
+impl<A: Arith> Clone for Bounds<A> {
+  fn clone(&self) -> Self {
+    Bounds {
+      inl: self.inl.clone(),
+      merged: self.merged.clone(),
+      head_lb: self.head_lb.clone(),
+      cont_lb: self.cont_lb.clone(),
+    }
+  }
+}
+
+/// The lesser of `w` and `x`.
+fn at_most<A: Arith>(w: &A::U, x: &A::U) -> A::U {
+  if w < x { w.clone() } else { x.clone() }
 }
 
 /// One step of the bounds (Lean `boundsStep`): `[inl, merged, head_lb,
 /// cont_lb]` of `t` from its children's head/continuation bounds.
-fn bound_step(
+fn bound_step<'v, A: Arith>(
   nodes: &[Node],
   t: TermId,
-  w: u128,
+  w: &A::U,
   maybe: bool,
-  head: &dyn Fn(TermId) -> u128,
-  cont: &dyn Fn(TermId) -> u128,
-) -> Result<[u128; 4], SharingError> {
+  head: &dyn Fn(TermId) -> &'v A::U,
+  cont: &dyn Fn(TermId) -> &'v A::U,
+) -> Result<[A::U; 4], SharingError> {
   let node = &nodes[ix(t)];
   let (i, m) = if node.family().is_none() {
-    let mut i = own_bytes(node)?;
+    let mut i = A::u(own_bytes(node)?);
     for &c in node.children().as_slice() {
-      i = i.saturating_add(head(c));
+      i = A::add(&i, head(c));
     }
-    (i, i)
+    (i.clone(), i)
   } else {
     let nxt = spine_next(node);
     let rest = if nodes[ix(nxt)].family() == node.family() {
@@ -534,57 +595,62 @@ fn bound_step(
     } else {
       head(nxt)
     };
-    let m = side_extra(node)
-      .saturating_add(head(side_child(node)))
-      .saturating_add(rest);
-    (m.saturating_add(1), m)
+    let m =
+      A::add(&A::add(&A::u(side_extra(node)), head(side_child(node))), rest);
+    (A::add(&m, &A::u(1)), m)
   };
-  if i == u128::MAX {
+  if A::saturated(&i) {
     return Err(overflow());
   }
-  let (hl, cl) = if maybe { (w.min(i), w.min(m)) } else { (i, m) };
+  let (hl, cl) = if maybe {
+    (at_most::<A>(w, &i), at_most::<A>(w, &m))
+  } else {
+    (i.clone(), m.clone())
+  };
   Ok([i, m, hl, cl])
 }
 
-fn uniform_bounds(
+fn uniform_bounds<A: Arith>(
   nodes: &[Node],
-  w: u128,
+  w: &A::U,
   maybe: &[bool],
-) -> Result<Bounds, SharingError> {
+) -> Result<Bounds<A>, SharingError> {
   let n = nodes.len();
-  let mut b = Bounds {
-    inl: vec![0; n],
-    merged: vec![0; n],
-    head_lb: vec![0; n],
-    cont_lb: vec![0; n],
+  let mut b = Bounds::<A> {
+    inl: vec![A::U::default(); n],
+    merged: vec![A::U::default(); n],
+    head_lb: vec![A::U::default(); n],
+    cont_lb: vec![A::U::default(); n],
   };
   for (t, &mb) in maybe[..n].iter().enumerate() {
-    let v = {
-      let (hl, cl) = (&b.head_lb, &b.cont_lb);
-      bound_step(nodes, tid(t), w, mb, &|c| hl[ix(c)], &|c| cl[ix(c)])?
+    let [i, m, hl, cl] = {
+      let (hs, cs) = (&b.head_lb, &b.cont_lb);
+      bound_step::<A>(nodes, t, w, mb, &|c| &hs[ix(c)], &|c| &cs[ix(c)])?
     };
-    b.inl[t] = v[0];
-    b.merged[t] = v[1];
-    b.head_lb[t] = v[2];
-    b.cont_lb[t] = v[3];
+    b.inl[t] = i;
+    b.merged[t] = m;
+    b.head_lb[t] = hl;
+    b.cont_lb[t] = cl;
   }
   Ok(b)
 }
 
 /// Cap of the visible counts where they are passed on.
-const VISIBLE_CAP: u64 = 1 << 20;
+const VISIBLE_CAP: u128 = 1 << 20;
 
 /// Lean `propagateCounts`: per term, root occurrences plus, over the edges
 /// from each parent `y` (descending IDs), `weight(y, count of y)`; the second
-/// array counts only head (non-continuation) edges.
+/// array counts only head (non-continuation) edges. With weights at most
+/// `VISIBLE_CAP`, a count is below `2^20` times the edges and roots of the
+/// DAG, so below `2^84`: the additions are exact.
 fn propagate_counts(
   dag: &SharingDag,
-  weight: &dyn Fn(usize, u64) -> u64,
-) -> (Vec<u64>, Vec<u64>) {
+  weight: &dyn Fn(usize, u128) -> u128,
+) -> (Vec<u128>, Vec<u128>) {
   let nodes = dag.nodes();
   let n = nodes.len();
-  let mut all = vec![0u64; n];
-  let mut head = vec![0u64; n];
+  let mut all = vec![0u128; n];
+  let mut head = vec![0u128; n];
   for &r in dag.roots() {
     all[ix(r)] += 1;
     head[ix(r)] += 1;
@@ -593,9 +659,9 @@ fn propagate_counts(
     let wy = weight(y, all[y]);
     let node = &nodes[y];
     for (i, &c) in node.children().as_slice().iter().enumerate() {
-      all[ix(c)] = all[ix(c)].saturating_add(wy);
+      all[ix(c)] += wy;
       if !continuation_edge(node, i, &nodes[ix(c)]) {
-        head[ix(c)] = head[ix(c)].saturating_add(wy);
+        head[ix(c)] += wy;
       }
     }
   }
@@ -605,44 +671,35 @@ fn propagate_counts(
 /// Visible counts: lower bounds `(d, h)` on the inline occurrences (all /
 /// at head positions) of each term in every encoding of a set inside
 /// `maybe` that does not store it.
-fn visible_counts(dag: &SharingDag, maybe: &[bool]) -> (Vec<u64>, Vec<u64>) {
+fn visible_counts(dag: &SharingDag, maybe: &[bool]) -> (Vec<u128>, Vec<u128>) {
   propagate_counts(dag, &|y, c| if maybe[y] { 1 } else { c.min(VISIBLE_CAP) })
-}
-
-fn to_i(x: u128) -> Result<i128, SharingError> {
-  i128::try_from(x).map_err(|_e| overflow())
 }
 
 /// The certain-stored gain bound (Lean `storedGainC`) with `d` inline
 /// occurrences in all, `h` of them at head positions, and the term's bounds
 /// `inl`/`merged`.
-fn stored_gain(
+fn stored_gain<A: Arith>(
   node: &Node,
-  d: u64,
-  h: u64,
+  d: u128,
+  h: u128,
   spine_len: u64,
-  inl: u128,
-  merged: u128,
-  w: u128,
-) -> Result<i128, SharingError> {
-  let d = i128::from(d);
-  let dw = d.checked_mul(to_i(w)?);
+  inl: &A::U,
+  merged: &A::U,
+  w: &A::U,
+) -> Result<A::S, SharingError> {
+  let d = A::signed(&A::count(d))?;
+  let d1 = d.minus(&A::S::of(1))?;
+  let dw = d.times(&A::signed(w)?)?;
   let g = if node.family().is_none() {
-    (d - 1).checked_mul(to_i(inl)?).zip(dw).and_then(|(x, y)| x.checked_sub(y))
+    d1.times(&A::signed(inl)?)?
   } else if h >= 1 {
-    (d - 1)
-      .checked_mul(to_i(merged)?)
-      .and_then(|x| x.checked_add(i128::from(h) - 1))
-      .zip(dw)
-      .and_then(|(x, y)| x.checked_sub(y))
+    let h1 = A::signed(&A::count(h - 1))?;
+    d1.times(&A::signed(merged)?)?.plus(&h1)?
   } else {
-    (d - 1)
-      .checked_mul(to_i(merged)?)
-      .and_then(|x| x.checked_sub(i128::from(tag4_len(spine_len))))
-      .zip(dw)
-      .and_then(|(x, y)| x.checked_sub(y))
+    let header = A::S::of(i128::from(tag4_len(spine_len)));
+    d1.times(&A::signed(merged)?)?.minus(&header)?
   };
-  g.ok_or_else(overflow)
+  g.minus(&dw)
 }
 
 // ---------------------------------------------------------------------------
@@ -701,7 +758,7 @@ fn uncertain_components(
     std::collections::BTreeMap::new();
   for (t, c) in cls.iter().enumerate() {
     if *c == UniformClass::Uncertain {
-      groups.entry(uf_find(&uf, t)).or_default().push(tid(t));
+      groups.entry(uf_find(&uf, t)).or_default().push(t);
     }
   }
   let mut comps: Vec<Vec<TermId>> = groups.into_values().collect();
@@ -710,8 +767,8 @@ fn uncertain_components(
 }
 
 /// Members and their ancestors, not continuing above an opaque term.
-fn component_area(
-  up: &UPrep<'_>,
+fn component_area<A: Arith>(
+  up: &UPrep<'_, A>,
   facts: &Facts,
   members: &[TermId],
 ) -> Vec<TermId> {
@@ -758,37 +815,38 @@ fn merge_sorted(a: &[TermId], b: &[TermId]) -> Vec<TermId> {
   out
 }
 
-type Choice = (i128, Vec<TermId>);
+/// A component choice: its delta and its set of stored members.
+type Choice<D = i128> = (D, Vec<TermId>);
 
-fn better(delta: i128, set: &[TermId], cur: Option<&Choice>) -> bool {
+fn better<D: Ord>(delta: &D, set: &[TermId], cur: Option<&Choice<D>>) -> bool {
   match cur {
     None => true,
-    Some((d, s)) => delta < *d || (delta == *d && set_prec(set, s)),
+    Some((d, s)) => delta < d || (delta == d && set_prec(set, s)),
   }
 }
 
-struct CompCtx<'a, 'd> {
-  up: &'a UPrep<'d>,
+struct CompCtx<'a, 'd, A: Arith = Fast> {
+  up: &'a UPrep<'d, A>,
   #[cfg(any(test, feature = "sharing-reference"))]
   members: Vec<TermId>,
   area: Vec<TermId>,
-  root_mult: Vec<(TermId, u128)>,
+  root_mult: Vec<(TermId, A::U)>,
   stored_in: Vec<TermId>,
   #[cfg(any(test, feature = "sharing-reference"))]
-  phi0: u128,
+  phi0: A::U,
   #[cfg(any(test, feature = "sharing-reference"))]
-  slack: i128,
+  slack: A::S,
   /// Scratch: values of area terms, valid where `stamp == epoch`.
-  vals: Vec<UVal>,
+  vals: Vec<UVal<A>>,
   stamp: Vec<u32>,
   epoch: u32,
   avail: Vec<bool>,
 }
 
-impl CompCtx<'_, '_> {
+impl<A: Arith> CompCtx<'_, '_, A> {
   /// Cost of the component's parts with `avail` and `chosen` (entries of
   /// undecided members omitted), and the evaluation work.
-  fn phi(&mut self, chosen: &[TermId]) -> Result<(u128, u64), SharingError> {
+  fn phi(&mut self, chosen: &[TermId]) -> Result<(A::U, u64), SharingError> {
     if self.epoch == u32::MAX {
       self.stamp.fill(0);
       self.epoch = 0;
@@ -804,7 +862,7 @@ impl CompCtx<'_, '_> {
         let base = &self.up.base;
         let avail = &self.avail;
         let get = |c: TermId| {
-          if stamp[ix(c)] == ep { vals[ix(c)] } else { base[ix(c)] }
+          if stamp[ix(c)] == ep { &vals[ix(c)] } else { &base[ix(c)] }
         };
         let av = |c: TermId| avail[ix(c)];
         self.up.node(&get, &av, t)?
@@ -815,22 +873,22 @@ impl CompCtx<'_, '_> {
     }
     let get = |c: TermId| {
       if self.stamp[ix(c)] == ep {
-        self.vals[ix(c)]
+        &self.vals[ix(c)]
       } else {
-        self.up.base[ix(c)]
+        &self.up.base[ix(c)]
       }
     };
-    let mut total = 0u128;
-    for &(r, m) in &self.root_mult {
-      total = total.saturating_add(m.saturating_mul(get(r).cost));
+    let mut total = A::U::default();
+    for (r, m) in &self.root_mult {
+      total = A::add(&total, &A::mul(m, &get(*r).cost));
     }
     for &c in &self.stored_in {
-      total = total.saturating_add(get(c).inl);
+      total = A::add(&total, &get(c).inl);
     }
     for &x in chosen {
-      total = total.saturating_add(get(x).inl);
+      total = A::add(&total, &get(x).inl);
     }
-    if total == u128::MAX {
+    if A::saturated(&total) {
       return Err(overflow());
     }
     Ok((total, work))
@@ -842,7 +900,7 @@ impl CompCtx<'_, '_> {
 // ---------------------------------------------------------------------------
 
 /// Best `(delta, set)` per chosen count (index = set size).
-type CTable = Vec<Option<Choice>>;
+type CTable<D = i128> = Vec<Option<Choice<D>>>;
 
 #[cfg(any(test, feature = "sharing-reference"))]
 fn table_best(tb: &CTable) -> Option<i128> {
@@ -855,7 +913,7 @@ fn table_add(tb: &mut CTable, e: Choice) {
   if tb.len() <= k {
     tb.resize(k + 1, None);
   }
-  if better(e.0, &e.1, tb[k].as_ref()) {
+  if better(&e.0, &e.1, tb[k].as_ref()) {
     tb[k] = Some(e);
   }
 }
@@ -874,13 +932,14 @@ fn table_trim(tb: CTable, slack: i128) -> CTable {
 // Table-count knapsack
 // ---------------------------------------------------------------------------
 
-/// "No element": the first difference of two equal sets.
-const NO_DIFF: u32 = u32::MAX;
+/// "No element": the first difference of two equal sets (no term has this
+/// ID).
+const NO_DIFF: TermId = TermId::MAX;
 
 /// The least element of the symmetric difference of two ascending sets
 /// (`NO_DIFF` if they are equal): at the first position where the lists
 /// differ, the smaller element is in one set only.
-fn first_diff(a: &[TermId], b: &[TermId]) -> u32 {
+fn first_diff(a: &[TermId], b: &[TermId]) -> TermId {
   let (mut i, mut j) = (0, 0);
   loop {
     match (a.get(i), b.get(j)) {
@@ -899,21 +958,21 @@ fn first_diff(a: &[TermId], b: &[TermId]) -> u32 {
 /// One layer of [`Knapsack`]: per cell (total count) the least delta, the
 /// rank of the cell's set among the layer's sets (`set_prec` order), and a
 /// sparse table over the first differences of rank-adjacent sets.
-struct KnapsackLayer {
-  delta: Vec<Option<i128>>,
-  rank: Vec<u32>,
+struct KnapsackLayer<D = i128> {
+  delta: Vec<Option<D>>,
+  rank: Vec<usize>,
   /// `sparse[i][r]`: the least first difference among the rank-adjacent
   /// pairs `r .. r + 2^i`.
-  sparse: Vec<Vec<u32>>,
+  sparse: Vec<Vec<TermId>>,
 }
 
-impl KnapsackLayer {
+impl<D> KnapsackLayer<D> {
   /// The least element of the symmetric difference of the sets of two
   /// distinct cells. For sets in ascending `set_prec` order (lexicographic
   /// on their indicator vectors), it is the least first difference of the
   /// rank-adjacent pairs between them, as for sorted strings.
-  fn first_diff(&self, a: usize, b: usize) -> u32 {
-    let (ra, rb) = (self.rank[a] as usize, self.rank[b] as usize);
+  fn first_diff(&self, a: usize, b: usize) -> TermId {
+    let (ra, rb) = (self.rank[a], self.rank[b]);
     let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
     let level = (hi - lo).ilog2() as usize;
     self.sparse[level][lo].min(self.sparse[level][hi - (1 << level)])
@@ -935,22 +994,22 @@ impl KnapsackLayer {
 /// S_b` (from the previous layer's ranks) and that of `X, Y`; the set
 /// without it precedes. `back` keeps the entry each cell took, to rebuild
 /// the chosen set.
-struct Knapsack {
-  last: KnapsackLayer,
-  /// Per component, per cell: the count of the entry taken (`u32::MAX`
+struct Knapsack<D = i128> {
+  last: KnapsackLayer<D>,
+  /// Per component, per cell: the count of the entry taken (`usize::MAX`
   /// where the cell is empty).
-  back: Vec<Vec<u32>>,
+  back: Vec<Vec<usize>>,
 }
 
-impl Knapsack {
-  fn run(tables: &[&CTable], cap: usize) -> Knapsack {
+impl<D: Delta> Knapsack<D> {
+  fn run(tables: &[&CTable<D>], cap: usize) -> Result<Self, SharingError> {
     let mut layer = KnapsackLayer {
       delta: vec![None; cap + 1],
       rank: vec![0; cap + 1],
       sparse: Vec::new(),
     };
-    layer.delta[0] = Some(0);
-    let mut back: Vec<Vec<u32>> = Vec::with_capacity(tables.len());
+    layer.delta[0] = Some(D::of(0));
+    let mut back: Vec<Vec<usize>> = Vec::with_capacity(tables.len());
     for tab in tables {
       let prev = &layer;
       // Whether choice `(a, ka)` precedes `(b, kb)` (distinct choices).
@@ -967,18 +1026,18 @@ impl Knapsack {
           xa.as_ref().is_none_or(|(_, xa)| xa.binary_search(&new).is_err())
         }
       };
-      let mut delta: Vec<Option<i128>> = vec![None; cap + 1];
+      let mut delta: Vec<Option<D>> = vec![None; cap + 1];
       let mut choice: Vec<(usize, usize)> = vec![(0, 0); cap + 1];
-      let mut took: Vec<u32> = vec![u32::MAX; cap + 1];
+      let mut took: Vec<usize> = vec![usize::MAX; cap + 1];
       for c in 0..=cap {
-        let mut best: Option<(i128, usize, usize)> = None;
+        let mut best: Option<(D, usize, usize)> = None;
         for (k, entry) in tab.iter().enumerate().take(c + 1) {
           let Some((dk, _)) = entry else { continue };
           let a = c - k;
-          let Some(da) = prev.delta[a] else { continue };
-          let d = da + dk;
-          if best.is_none_or(|(bd, ba, bk)| {
-            d < bd || (d == bd && prec((a, k), (ba, bk)))
+          let Some(da) = &prev.delta[a] else { continue };
+          let d = da.plus(dk)?;
+          if best.as_ref().is_none_or(|(bd, ba, bk)| {
+            d < *bd || (d == *bd && prec((a, k), (*ba, *bk)))
           }) {
             best = Some((d, a, k));
           }
@@ -986,7 +1045,7 @@ impl Knapsack {
         if let Some((d, a, k)) = best {
           delta[c] = Some(d);
           choice[c] = (a, k);
-          took[c] = u32::try_from(k).unwrap_or(u32::MAX);
+          took[c] = k;
         }
       }
       // Rank the new sets and record the first differences of neighbours.
@@ -1001,11 +1060,11 @@ impl Knapsack {
           std::cmp::Ordering::Greater
         }
       });
-      let mut rank = vec![0u32; cap + 1];
+      let mut rank = vec![0usize; cap + 1];
       for (r, &c) in order.iter().enumerate() {
-        rank[c] = u32::try_from(r).unwrap_or(u32::MAX);
+        rank[c] = r;
       }
-      let adjacent: Vec<u32> = order
+      let adjacent: Vec<TermId> = order
         .windows(2)
         .map(|w| {
           let ((a, ka), (b, kb)) = (choice[w[0]], choice[w[1]]);
@@ -1024,7 +1083,7 @@ impl Knapsack {
         if below.len() <= width {
           break;
         }
-        let next: Vec<u32> = (0..below.len() - width)
+        let next: Vec<TermId> = (0..below.len() - width)
           .map(|r| below[r].min(below[r + width]))
           .collect();
         sparse.push(next);
@@ -1033,14 +1092,14 @@ impl Knapsack {
       layer = KnapsackLayer { delta, rank, sparse };
       back.push(took);
     }
-    Knapsack { last: layer, back }
+    Ok(Knapsack { last: layer, back })
   }
 
   /// The set of cell `c` of the last layer, ascending.
-  fn set(&self, tables: &[&CTable], mut c: usize) -> Vec<TermId> {
+  fn set(&self, tables: &[&CTable<D>], mut c: usize) -> Vec<TermId> {
     let mut out: Vec<TermId> = Vec::new();
     for (tab, took) in tables.iter().zip(&self.back).rev() {
-      let k = usize::try_from(took[c]).unwrap_or(0);
+      let k = took[c];
       if let Some(Some((_, s))) = tab.get(k) {
         out.extend_from_slice(s);
       }
@@ -1067,7 +1126,7 @@ fn knapsack_reference(tables: &[&CTable], cap: usize) -> Vec<Option<Choice>> {
           continue;
         }
         let cand = (d + dk, merge_sorted(s, sk));
-        if better(cand.0, &cand.1, ndp[c + k].as_ref()) {
+        if better(&cand.0, &cand.1, ndp[c + k].as_ref()) {
           ndp[c + k] = Some(cand);
         }
       }
@@ -1084,10 +1143,13 @@ fn knapsack_reference(tables: &[&CTable], cap: usize) -> Vec<Option<Choice>> {
 /// Bound on telescope spine lengths (Lean `teleSubaddEnd = Ixon.tagNEnd5 4`,
 /// 4,311,811,080): below it the TagN Share-flag width is subadditive
 /// (`tag4_len(a + b) <= tag4_len(a) + tag4_len(b)`), which the certain-excluded
-/// class relies on when two telescopes merge.
+/// class relies on when two telescopes merge. Only the reference route's
+/// optimality argument needs it; the family route checks no spine bound.
+#[cfg(any(test, feature = "sharing-reference"))]
 pub(crate) const TELE_SUBADD_END: u64 = TagN::end5(4);
 
 /// Whether every telescope spine length is below [`TELE_SUBADD_END`].
+#[cfg(any(test, feature = "sharing-reference"))]
 pub(crate) fn spines_within_bound(spine_len: &[u64]) -> bool {
   spine_len.iter().all(|&l| l < TELE_SUBADD_END)
 }
@@ -1230,71 +1292,64 @@ impl DagPrep {
 }
 
 /// Initial classification shared by the exact path and the component families.
-struct Initial<'d> {
-  up: UPrep<'d>,
+struct Initial<'d, A: Arith = Fast> {
+  up: UPrep<'d, A>,
   #[cfg(any(test, feature = "sharing-reference"))]
   cand: Vec<bool>,
   #[cfg(any(test, feature = "sharing-reference"))]
-  bounds: Bounds,
+  bounds: Bounds<A>,
   #[cfg(any(test, feature = "sharing-reference"))]
-  vis0: (Vec<u64>, Vec<u64>),
+  vis0: (Vec<u128>, Vec<u128>),
   #[cfg(any(test, feature = "sharing-reference"))]
-  theta: i128,
+  theta: A::S,
   cs: Vec<TermId>,
   ce_terms: Vec<TermId>,
   unc: Vec<TermId>,
   low: Vec<TermId>,
   comps: Vec<Vec<TermId>>,
-  slack: i128,
+  slack: A::S,
 }
 
 /// The initial canonical classification, before any recursive reclassification.
-fn initial<'d>(
+fn initial<'d, A: Arith>(
   w: u64,
   dag: &'d SharingDag,
   prep: &DagPrep,
   meter: &mut Meter<'_>,
-) -> Result<Initial<'d>, SharingError> {
+) -> Result<Initial<'d, A>, SharingError> {
   if w == 0 {
     return Err(SharingError::FormatBound(FormatBound::UniformWidth { w }));
   }
-  let wu = u(w);
+  let wu = A::u(w);
   let nodes = dag.nodes();
   let n = nodes.len();
   let facts = &prep.facts;
-  // Fail closed on a telescope spine of `TELE_SUBADD_END` or more steps,
-  // before the search (Lean's `optimizeUniformExpanded`).
   let spine_len = &prep.spine_len;
-  if !spines_within_bound(spine_len) {
-    return Err(SharingError::FormatBound(FormatBound::TelescopeSpine {
-      bound: TELE_SUBADD_END,
-    }));
-  }
   // Predicate-sufficient min(C_0, cap); never reused as a general model cost.
   let size: &[u128] = prep.size.as_ref().map_err(Clone::clone)?;
   // Classes: certain-excluded, low degree, and the gain test on visible
   // counts with threshold theta.
   let ce: Vec<bool> =
-    (0..n).map(|t| certainly_excluded(facts.occ[t], size[t], wu)).collect();
+    (0..n).map(|t| certainly_excluded(facts.occ[t], size[t], u(w))).collect();
   let cand: Vec<bool> = (0..n).map(|t| !ce[t] && facts.deg[t] >= 2).collect();
-  let bounds = uniform_bounds(nodes, wu, &cand)?;
+  let bounds = uniform_bounds::<A>(nodes, &wu, &cand)?;
   let vis0 = visible_counts(dag, &cand);
-  let classify = |theta: i128| -> Result<Vec<UniformClass>, SharingError> {
+  let classify = |theta: &A::S| -> Result<Vec<UniformClass>, SharingError> {
     let mut cls = Vec::with_capacity(n);
     for t in 0..n {
       cls.push(if ce[t] {
         UniformClass::CertainExcluded
       } else if facts.deg[t] < 2 {
         UniformClass::LowDegree
-      } else if stored_gain(
+      } else if stored_gain::<A>(
         &nodes[t],
         vis0.0[t],
         vis0.1[t],
         spine_len[t],
-        bounds.inl[t],
-        bounds.merged[t],
-        wu,
-      )? >= theta
+        &bounds.inl[t],
+        &bounds.merged[t],
+        &wu,
+      )? >= *theta
       {
         UniformClass::CertainStored
       } else {
@@ -1307,16 +1362,16 @@ fn initial<'d>(
   // grows the table count by at most that many bytes; 2 below 4311826560
   // candidates); 1 when every minimum lies in one count bracket.
   let n_cand = len64(cand.iter().filter(|&&c| c).count());
-  let theta_max = i128::from(tag0_step_bound(n_cand)) + 1;
-  let cls_max = classify(theta_max)?;
+  let theta_max = A::S::of(i128::from(tag0_step_bound(n_cand)) + 1);
+  let cls_max = classify(&theta_max)?;
   let n_cs_max = len64(
     cls_max.iter().filter(|&&c| c == UniformClass::CertainStored).count(),
   );
-  let theta: i128 =
-    if tag0_len(n_cand) == tag0_len(n_cs_max) { 1 } else { theta_max };
-  let cls = if theta == 1 { classify(1)? } else { cls_max };
+  let one_bracket = tag0_len(n_cand) == tag0_len(n_cs_max);
+  let theta = if one_bracket { A::S::of(1) } else { theta_max };
+  let cls = if one_bracket { classify(&theta)? } else { cls_max };
   let pick = |c: UniformClass| -> Vec<TermId> {
-    (0..n).filter(|&t| cls[t] == c).map(tid).collect()
+    (0..n).filter(|&t| cls[t] == c).collect()
   };
   let cs = pick(UniformClass::CertainStored);
   let ce_terms = pick(UniformClass::CertainExcluded);
@@ -1330,14 +1385,18 @@ fn initial<'d>(
   for &t in &cs {
     opaq[ix(t)] = true;
   }
-  let up = UPrep::new(nodes, wu, opaq)?;
+  let up = UPrep::<A>::new(nodes, wu, opaq)?;
   let comps = uncertain_components(dag, &cls);
   let k_cs = u64::try_from(cs.len()).unwrap_or(u64::MAX);
   let k_unc = u64::try_from(unc.len()).unwrap_or(u64::MAX);
   // Largest table-count difference between two candidate-only sets that
   // contain the certain-stored terms.
-  let slack = i128::from(tag0_len(k_cs.saturating_add(k_unc)))
-    - i128::from(tag0_len(k_cs));
+  let slack = A::S::of(
+    i128::from(tag0_len(k_cs.saturating_add(k_unc)))
+      - i128::from(tag0_len(k_cs)),
+  );
+  #[cfg(not(any(test, feature = "sharing-reference")))]
+  let _ = theta;
   Ok(Initial {
     up,
     #[cfg(any(test, feature = "sharing-reference"))]
@@ -1357,13 +1416,13 @@ fn initial<'d>(
   })
 }
 
-fn combine_uniform(
+fn combine_uniform<A: Arith>(
   w: u64,
   dag: &SharingDag,
   prep: &DagPrep,
   meter: &mut Meter<'_>,
-  stage: Initial<'_>,
-  results: Vec<(Choice, CTable)>,
+  stage: Initial<'_, A>,
+  results: Vec<(Choice<A::S>, CTable<A::S>)>,
 ) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
   let Initial { up, cs, ce_terms, unc, low, comps, .. } = stage;
   let nodes = dag.nodes();
@@ -1376,13 +1435,14 @@ fn combine_uniform(
   // The components are disjoint, so the union of their sets is their
   // concatenation, sorted once.
   let mut chosen_x: Vec<TermId> = Vec::new();
-  let mut chosen_delta: i128 = 0;
+  let mut chosen_delta = A::S::of(0);
   for ((d, s), _) in &results {
     chosen_x.extend_from_slice(s);
-    chosen_delta += d;
+    chosen_delta = chosen_delta.plus(d)?;
   }
   chosen_x.sort_unstable();
   let len_u64 = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
+  let count_len = |k: u64| A::S::of(i128::from(tag0_len(k)));
   let k0 = k_cs.saturating_add(len_u64(chosen_x.len()));
   let start = tag0_bracket_start(k0);
   let mut lower_bracket = false;
@@ -1397,20 +1457,22 @@ fn combine_uniform(
         limit: meter.limits().max_knapsack_cells,
       }));
     }
-    let tables: Vec<&CTable> = results.iter().map(|(_, t)| t).collect();
-    let ks = Knapsack::run(&tables, cap);
+    let tables: Vec<&CTable<A::S>> = results.iter().map(|(_, t)| t).collect();
+    let ks = Knapsack::run(&tables, cap)?;
     // The per-component optimum is replaced by the least cell under
     // (length, set_prec) when that cell precedes it: the least of the
     // optimum and every cell, as a scan of the cells in count order with
     // `set_prec` on ties keeps. The cells' ranks are their `set_prec` order.
-    let l0 =
-      chosen_delta + i128::from(tag0_len(k_cs + len_u64(chosen_x.len())));
-    let mut best: Option<(i128, u32, usize, i128)> = None;
+    let l0 = chosen_delta.plus(&count_len(k_cs + len_u64(chosen_x.len())))?;
+    let mut best: Option<(A::S, usize, usize, &A::S)> = None;
     for c in 0..=cap {
-      let Some(d) = ks.last.delta[c] else { continue };
-      let l = d + i128::from(tag0_len(k_cs + len_u64(c)));
+      let Some(d) = &ks.last.delta[c] else { continue };
+      let l = d.plus(&count_len(k_cs + len_u64(c)))?;
       let r = ks.last.rank[c];
-      if best.is_none_or(|(bl, br, _, _)| l < bl || (l == bl && r < br)) {
+      if best
+        .as_ref()
+        .is_none_or(|(bl, br, _, _)| l < *bl || (l == *bl && r < *br))
+      {
         best = Some((l, r, c, d));
       }
     }
@@ -1418,7 +1480,7 @@ fn combine_uniform(
       let s = ks.set(&tables, c);
       if l < l0 || (l == l0 && set_prec(&s, &chosen_x)) {
         chosen_x = s;
-        chosen_delta = d;
+        chosen_delta = d.clone();
         lower_bracket = true;
       }
     }
@@ -1426,22 +1488,24 @@ fn combine_uniform(
   drop(p);
   let p = prof::scope(Phase::UniformMaterialize);
   // Model length from the truncated evaluation.
-  let mut base_total = 0u128;
+  let mut base_total = A::U::default();
   for &r in dag.roots() {
-    base_total = base_total.saturating_add(up.base[ix(r)].cost);
+    base_total = A::add(&base_total, &up.base[ix(r)].cost);
   }
   for &c in &cs {
-    base_total = base_total.saturating_add(up.base[ix(c)].inl);
+    base_total = A::add(&base_total, &up.base[ix(c)].inl);
   }
-  if base_total == u128::MAX {
+  if A::saturated(&base_total) {
     return Err(overflow());
   }
   let k = k_cs + len_u64(chosen_x.len());
-  let model = to_i(base_total)? + chosen_delta + i128::from(tag0_len(k));
-  let model = u64::try_from(model).map_err(|_e| overflow())?;
-  if model == u64::MAX {
-    return Err(overflow());
-  }
+  // The model is the length of an output: it must be a `u64`.
+  let model = A::signed(&base_total)?
+    .plus(&chosen_delta)?
+    .plus(&count_len(k))?
+    .to_u64()
+    .filter(|&m| m < u64::MAX)
+    .ok_or_else(overflow)?;
   meter.output(model)?;
   // Materialize in the pinned order with the full evaluation and check.
   let stored = merge_sorted(&cs, &chosen_x);
@@ -1494,7 +1558,12 @@ fn combine_uniform(
     lower_bracket,
     stats: meter.stats.clone(),
     #[cfg(test)]
-    component_tables: results.into_iter().map(|(_, table)| table).collect(),
+    component_tables: results
+      .into_iter()
+      .map(|(_, table)| {
+        table.into_iter().map(|row| row.map(|(d, s)| (d.to_big(), s))).collect()
+      })
+      .collect(),
   };
   #[cfg(not(test))]
   drop(results);
@@ -1696,14 +1765,16 @@ mod knapsack_tests {
   }
 
   /// The rank-based knapsack returns the reference's least `(delta, set)`
-  /// in every cell, and its ranks order the cells' sets by `set_prec`.
+  /// in every cell, and its ranks order the cells' sets by `set_prec`; half
+  /// of the cases use term IDs on both sides of the old 32-bit ID limit.
   #[test]
   fn knapsack_matches_explicit_sets() {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     let mut cells_checked = 0usize;
     for case in 0..400 {
       // Disjoint components over a shuffled domain of term IDs.
-      let mut domain: Vec<TermId> = (0..300).collect();
+      let base: TermId = if case % 2 == 1 { (1 << 32) - 150 } else { 0 };
+      let mut domain: Vec<TermId> = (base..base + 300).collect();
       for i in (1..domain.len()).rev() {
         let j = rng.below(i as u64 + 1) as usize;
         domain.swap(i, j);
@@ -1739,7 +1810,7 @@ mod knapsack_tests {
       let cap = rng.below(total as u64 + 4) as usize;
       let refs: Vec<&CTable> = tables.iter().collect();
       let want = knapsack_reference(&refs, cap);
-      let got = Knapsack::run(&refs, cap);
+      let got = Knapsack::run(&refs, cap).unwrap();
       let mut some: Vec<usize> = Vec::new();
       for c in 0..=cap {
         assert_eq!(

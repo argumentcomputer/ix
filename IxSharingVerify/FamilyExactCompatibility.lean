@@ -1,5 +1,4 @@
 import IxSharingVerify.FamilyIdempotence
-import IxSharingVerify.FamilyCostDomain
 
 /-! First compatibility bridge: actual successful uniform-width selections
 agree when every INITIAL component uses the exact family. The old theorem
@@ -122,22 +121,22 @@ theorem familyUniform_exact_match {cfg : Config} {limits : Limits} {ex : Expande
     fresh.stored = old.stored ∧ fresh.result.modelBytes = old.result.modelBytes := by
   obtain ⟨_, wf, roots, marks, spines, oldChoice, _, oldFinish⟩ := optimizeUniform_parts oldRun
   have reachable := reach_of_marks wf roots marks
-  obtain ⟨_, _, _, _, _, _, checked, _, _, _, _, _⟩ := familyUniform_finish freshRun
-  obtain ⟨delta, chosen, least, stored, finished⟩ := familyUniform_finished wf spines roots reachable freshRun
+  obtain ⟨_, _, _, _, _, _, checked, _, _, _, _⟩ := familyUniform_finish wf freshRun
+  obtain ⟨delta, chosen, least, stored, finished⟩ := familyUniform_finished wf roots reachable freshRun
   obtain ⟨sets, minimum, _, chosenEq, _, tieLeast⟩ := least
   obtain ⟨oldMinimum, oldModel, oldLeast⟩ := optimizeUniform_least defaultSearch oldRun
   obtain ⟨oldSets, oldMember, oldRepresented⟩ :=
     exact_minimum_represented wf spines roots reachable checked gate oldMinimum
   have freshLe : ulen ex.dag width ex.roots fresh.stored.toList ≤ ulen ex.dag width ex.roots old.stored.toList := by
-    have bound := initial_minimum_cost wf spines roots reachable checked minimum oldSets oldMember
+    have bound := initial_minimum_cost wf roots reachable checked minimum oldSets oldMember
     rw [ulen_perm oldRepresented] at bound
     rw [stored, chosenEq]
     exact bound
   have oldLe := oldMinimum.2 fresh.stored.toList finished.inClass
   have freshMinimum : IsMinimum ex.dag width ex.roots fresh.stored.toList :=
     ⟨finished.inClass, fun candidate member => Nat.le_trans freshLe (oldMinimum.2 candidate member)⟩
-  have freshCost := initial_merged_cost wf spines roots reachable checked minimum.1
-  have oldCost := initial_merged_cost wf spines roots reachable checked oldMember
+  have freshCost := initial_merged_cost wf roots reachable checked minimum.1
+  have oldCost := initial_merged_cost wf roots reachable checked oldMember
   rw [← chosenEq, ← stored] at freshCost
   rw [ulen_perm oldRepresented] at oldCost
   have equalObjective : productObjective (stg width ex).cs.size (initialFactors ex (stg width ex)) oldSets =

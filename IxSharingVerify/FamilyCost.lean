@@ -155,11 +155,112 @@ theorem initial_deltaSum {cfg : Config} {ex : Expanded} {width : Nat} {sets : Li
   intro x hx
   exact (partOf_sub x ((parts j bound).mem_iff.mpr hx)).1
 
-/-- Signed accounting cancels the component baselines exactly. The reused
-decomposition requires bounded roots, reachability and `SpinesFit`; it is
-valid for arbitrary width Nat and arbitrary members of the finite families. -/
+/-- The initial threshold is positive directly from the stage rule; its
+proof does not package a global optimum or a telescope bound. -/
+theorem initial_theta_pos (width : Nat) (ex : Expanded) :
+    1 ≤ (stg width ex).theta := by
+  rcases (stage_cls_theta width ex).2 with threshold | ⟨threshold, _⟩
+  · rw [threshold]
+    unfold uthetaMax
+    omega
+  · rw [threshold]
+    omega
+
+/-- Initial CS membership is exactly the initial classification filter. -/
+theorem initial_cs_mem (width : Nat) (ex : Expanded) (t : Nat) :
+    t ∈ (stg width ex).cs.toList ↔
+      t < ex.dag.size ∧ (ucls ex.dag ex.roots width (stg width ex).theta)[t]! = .certainStored := by
+  rw [stage_cs, List.mem_filter, List.mem_range]
+  constructor
+  · rintro ⟨bound, stored⟩
+    exact ⟨bound, uclass_eq_of_beq stored⟩
+  · rintro ⟨bound, stored⟩
+    exact ⟨bound, by rw [stored]; exact uclass_beq_self _⟩
+
+/-- Filtering structural IDs cannot duplicate a certain-stored member. -/
+theorem initial_cs_nodup (width : Nat) (ex : Expanded) :
+    (stg width ex).cs.toList.Nodup := by
+  rw [stage_cs]
+  exact List.nodup_range.sublist List.filter_sublist
+
+/-- Each checked component adds its exact semantic cost change, without
+`SpinesFit`. This is the same prefix identity as `ulen_compParts`, using
+only the initial threshold/CS facts above and `ulen_split_component`.
+
+Reachability is retained in the public interface for compatibility with the
+actual family domain; this decomposition itself does not consume it. -/
+theorem ulen_compParts_initial {width : Nat} {ex : Expanded} (wf : DagWF ex.dag)
+    (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
+    (_reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
+    (checked : componentsChecked ex.dag (stg width ex).cls (stg width ex).opaq
+      (stg width ex).comps (componentLabels ex.dag.size (stg width ex).comps) = true)
+    (selected : List Nat) :
+    ∀ j, j ≤ (stg width ex).comps.size →
+      ulen ex.dag width ex.roots
+          ((stg width ex).cs.toList ++ compParts (stg width ex).comps selected j) +
+          tag0Size (stg width ex).cs.toList.length +
+          ((List.range j).map fun i => scost (compCx width ex i) ex.dag []).sum =
+        ulen ex.dag width ex.roots (stg width ex).cs.toList +
+          tag0Size ((stg width ex).cs.toList ++ compParts (stg width ex).comps selected j).length +
+          ((List.range j).map fun i =>
+            scost (compCx width ex i) ex.dag
+              (partOf selected (stg width ex).comps[i]!.toList)).sum := by
+  obtain ⟨members, _, _, separate⟩ := componentsChecked_spec wf checked
+  rw [(stage_cls_theta width ex).1] at members separate
+  let label : Nat → Nat := fun t =>
+    ((componentLabels ex.dag.size (stg width ex).comps)[t]!).getD 0
+  intro j
+  induction j with
+  | zero => intro _; simp [compParts]
+  | succ j ih =>
+    intro bound
+    have previous := ih (by omega)
+    have inside : j < (stg width ex).comps.size := by omega
+    have context := compCx_sctx wf checked inside
+    have thisPart : ∀ t ∈ partOf selected (stg width ex).comps[j]!.toList,
+        t ∈ (compCx width ex j).members.toList ∧ t < ex.dag.size ∧
+          (ucls ex.dag ex.roots width (stg width ex).theta)[t]! = .uncertain ∧ label t = j := by
+      intro t present
+      have own := (partOf_sub t present).1
+      obtain ⟨inDag, uncertain, labelled⟩ := members j inside t own
+      exact ⟨own, inDag, uncertain, by simp only [label]; rw [labelled]; rfl⟩
+    have earlier : ∀ t ∈ compParts (stg width ex).comps selected j,
+        t < ex.dag.size ∧
+          (ucls ex.dag ex.roots width (stg width ex).theta)[t]! = .uncertain ∧ label t ≠ j := by
+      intro t present
+      obtain ⟨i, before, own, _⟩ := mem_compParts.mp present
+      obtain ⟨inDag, uncertain, labelled⟩ := members i (by omega) t own
+      exact ⟨inDag, uncertain, by simp only [label]; rw [labelled]; simp; omega⟩
+    have splitCost := ulen_split_component wf ex.roots roots width (stg width ex).theta
+      (initial_theta_pos width ex) (opaq := (compCx width ex j).up.opaq)
+      (fun u => stage_opaq width ex u) (initial_cs_nodup width ex)
+      (fun t present => (initial_cs_mem width ex t).mp present)
+      (compCx width ex j).members label j
+      (fun a b inDag uncertainA uncertainB desc => by
+        simp only [label]
+        rw [separate a b inDag uncertainA uncertainB desc])
+      (V := partOf selected (stg width ex).comps[j]!.toList)
+      (R := compParts (stg width ex).comps selected j) thisPart earlier
+    rw [← context.cost_eq, ← context.cost_eq] at splitCost
+    have perm :
+        ((stg width ex).cs.toList ++ compParts (stg width ex).comps selected (j + 1)).Perm
+          ((stg width ex).cs.toList ++ partOf selected (stg width ex).comps[j]!.toList ++
+            compParts (stg width ex).comps selected j) := by
+      rw [compParts_succ]
+      simp only [List.append_assoc]
+      exact List.Perm.append_left _ List.perm_append_comm
+    rw [ulen_perm perm, perm.length_eq, List.range_succ, List.map_append, List.map_append,
+      List.sum_append, List.sum_append]
+    simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero]
+    simp only [List.length_append] at splitCost previous ⊢
+    omega
+
+/-- Signed accounting cancels the component baselines exactly. The
+decomposition needs bounded roots and the checked partition, but no
+telescope-size bound; it is valid for arbitrary width Nat and arbitrary
+members of the finite families. -/
 theorem initial_product_cost {cfg : Config} {ex : Expanded} {width : Nat} {sets : List (Array Nat)}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (checked : let sg := stg width ex
@@ -169,7 +270,7 @@ theorem initial_product_cost {cfg : Config} {ex : Expanded} {width : Nat} {sets 
       (csBase ex (Prep.ofDag ex.dag) (stg width ex) : _root_.Int) +
         productObjective (stg width ex).cs.size (initialFactors ex (stg width ex)) sets := by
   have parts := initial_compParts_perm wf checked member
-  have decomposition := ulen_compParts wf spines roots reachable checked (selectedTerms sets)
+  have decomposition := ulen_compParts_initial wf roots reachable checked (selectedTerms sets)
     (stg width ex).comps.size (Nat.le_refl _)
   have base := csBase_eq (w := width) wf roots
   rw [ulen_perm (parts.append_left (stg width ex).cs.toList), List.length_append,
@@ -189,7 +290,7 @@ theorem cs_merge_perm (cs : Array Nat) (sets : List (Array Nat)) :
 /-- The same equality for the actual ascending merged array consumed by
 the uniform finisher, rather than a reordered representative. -/
 theorem initial_merged_cost {cfg : Config} {ex : Expanded} {width : Nat} {sets : List (Array Nat)}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (checked : let sg := stg width ex
@@ -200,12 +301,12 @@ theorem initial_merged_cost {cfg : Config} {ex : Expanded} {width : Nat} {sets :
       (csBase ex (Prep.ofDag ex.dag) (stg width ex) : _root_.Int) +
         productObjective (stg width ex).cs.size (initialFactors ex (stg width ex)) sets := by
   rw [ulen_perm (cs_merge_perm _ sets)]
-  exact initial_product_cost wf spines roots reachable checked member
+  exact initial_product_cost wf roots reachable checked member
 
 /-- Family-relative objective minimization is uniform semantic cost
 minimization over this same declared product, with CS held fixed. -/
 theorem initial_minimum_cost {cfg : Config} {ex : Expanded} {width : Nat} {sets : List (Array Nat)}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (checked : let sg := stg width ex
@@ -215,15 +316,15 @@ theorem initial_minimum_cost {cfg : Config} {ex : Expanded} {width : Nat} {sets 
       ulen ex.dag width ex.roots (mergeSorted (stg width ex).cs (sets.foldl mergeSorted #[])).toList ≤
         ulen ex.dag width ex.roots (mergeSorted (stg width ex).cs (other.foldl mergeSorted #[])).toList := by
   intro other member
-  have first := initial_merged_cost wf spines roots reachable checked minimum.1
-  have second := initial_merged_cost wf spines roots reachable checked member
+  have first := initial_merged_cost wf roots reachable checked minimum.1
+  have second := initial_merged_cost wf roots reachable checked member
   have bound := minimum.2 other member
   omega
 
 /-- The model expression for an actual least selection is the semantic
 cost of CS merged with that same returned array. -/
 theorem selected_model_eq {cfg : Config} {ex : Expanded} {width : Nat}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (checked : let sg := stg width ex
@@ -234,7 +335,7 @@ theorem selected_model_eq {cfg : Config} {ex : Expanded} {width : Nat}
         (tag0Size ((stg width ex).cs.size + set.size) : _root_.Int) =
       (ulen ex.dag width ex.roots (mergeSorted (stg width ex).cs set).toList : _root_.Int) := by
   obtain ⟨sets, minimum, deltaEq, setEq, countEq, _⟩ := selected
-  have cost := initial_merged_cost wf spines roots reachable checked minimum.1
+  have cost := initial_merged_cost wf roots reachable checked minimum.1
   rw [← setEq] at cost
   unfold productObjective at cost
   rw [← deltaEq, ← countEq] at cost
@@ -243,7 +344,7 @@ theorem selected_model_eq {cfg : Config} {ex : Expanded} {width : Nat}
 /-- Signed accounting introduces neither a negative model nor a truncation
 error at the `Int.toNat` boundary. Output-size budgets remain runtime checks. -/
 theorem selected_model_nonnegative {cfg : Config} {ex : Expanded} {width : Nat}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (checked : let sg := stg width ex
@@ -253,7 +354,7 @@ theorem selected_model_nonnegative {cfg : Config} {ex : Expanded} {width : Nat}
     let model := (csBase ex (Prep.ofDag ex.dag) (stg width ex) : _root_.Int) + delta +
       (tag0Size ((stg width ex).cs.size + set.size) : _root_.Int)
     0 ≤ model ∧ model.toNat = ulen ex.dag width ex.roots (mergeSorted (stg width ex).cs set).toList := by
-  have eq := selected_model_eq wf spines roots reachable checked selected
+  have eq := selected_model_eq wf roots reachable checked selected
   dsimp only
   rw [eq]
   exact ⟨Int.natCast_nonneg _, Int.toNat_natCast _⟩
@@ -261,7 +362,7 @@ theorem selected_model_nonnegative {cfg : Config} {ex : Expanded} {width : Nat}
 /-- Actual successful family production and knapsack selection satisfy
 the semantic model equality without a caller delta/table-alignment premise. -/
 theorem familyComponents_model {cfg : Config} {limits : Limits} {ex : Expanded} {width : Nat}
-    (wf : DagWF ex.dag) (spines : SpinesFit (Prep.ofDag ex.dag))
+    (wf : DagWF ex.dag)
     (roots : ∀ r ∈ ex.roots.toList, r < ex.dag.size)
     (reachable : ∀ y, y < ex.dag.size → ∃ r ∈ ex.roots.toList, Desc ex.dag r y)
     (checked : let sg := stg width ex
@@ -273,7 +374,7 @@ theorem familyComponents_model {cfg : Config} {limits : Limits} {ex : Expanded} 
     (csBase ex (Prep.ofDag ex.dag) (stg width ex) : _root_.Int) + delta +
         (tag0Size ((stg width ex).cs.size + set.size) : _root_.Int) =
       (ulen ex.dag width ex.roots (mergeSorted (stg width ex).cs set).toList : _root_.Int) :=
-  selected_model_eq wf spines roots reachable checked
+  selected_model_eq wf roots reachable checked
     (familyComponents_least cfg limits ex width wf checked produced chosen)
 
 end Ix.Sharing.Family
@@ -282,6 +383,10 @@ end Ix.Sharing.Family
 #guard_kernel_axioms Ix.Sharing.Family.initial_compParts_perm [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.initial_component_delta [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.initial_deltaSum [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_theta_pos [propext, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_cs_mem [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.initial_cs_nodup [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Family.ulen_compParts_initial [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.initial_product_cost [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.initial_merged_cost [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.initial_minimum_cost [propext, Classical.choice, Quot.sound]

@@ -79,12 +79,9 @@ theorem familyComponents_eq_reference (cfg : Config) (limits : Limits) (ex : Exp
 def familyReferenceUniform (cfg : Config) (limits : Limits) (ex : Expanded) (p : Prep)
     (facts : GraphFacts) (width : Nat) : Except SharingError UniformSharingResult := do
   let sg := uniformStageF width ex p facts
-  unless componentsChecked ex.dag sg.cls sg.opaq sg.comps (componentLabels ex.dag.size sg.comps) do
-    throw (.internal "uncertain components are not a separated partition")
   let (results, states, costEvals) ← familyReferenceComponents cfg limits ex sg width
   let (delta, chosen, lowerBracket) ← uniformKnapsack limits sg.cs.size results
   let modelInt : _root_.Int := (csBase ex p sg : Nat) + delta + (tag0Size (sg.cs.size + chosen.size) : _root_.Int)
-  if modelInt < 0 then throw (.internal "negative model length")
   let model := modelInt.toNat
   if model > limits.maxOutputBytes then throw (.resourceExhausted .outputBytes limits.maxOutputBytes)
   let choice : UniformChoice :=
@@ -121,7 +118,6 @@ def familyReferenceExpanded (cfg : Config) (layout : ShareLayout) (limits : Limi
     Except SharingError TieredSharingResult := do
   uniformDagChecks ex
   let prep := Prep.ofDag ex.dag
-  uniformSpineCheck ex prep
   let facts := graphFacts ex.dag ex.roots
   let candidates := tieredCandidateCount ex.dag.size prep facts
   let result ← tieredCandidates ex.dag.size (familyReferenceAtWidth cfg layout limits ex prep facts candidates)

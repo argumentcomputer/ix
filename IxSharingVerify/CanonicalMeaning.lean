@@ -5,7 +5,8 @@ import IxSharingVerify.TieredIdem
 entry discharges the input invariants from production ingestion. Composed
 with checked re-expansion, the actual canonical sharing entry yields an
 encoding that unfolds to exactly the ordered input expressions. Certified
-reader/builder composition and totality remain separate. -/
+reader/builder composition remains separate; `ExpandSuccess` and
+`NeverFails` prove that expansion and the construction never refuse. -/
 
 namespace Ix.Sharing.Verify.CanonicalMeaning
 

@@ -35,7 +35,6 @@ def candidateAt (l : ShareLayout) (c : Constant) (w : Nat) :
   let ex ← expand {} c.sharing (constantInfoRoots c.info) true
   uniformDagChecks ex
   let prep := Prep.ofDag ex.dag
-  uniformSpineCheck ex prep
   let facts := graphFacts ex.dag ex.roots
   Ix.Sharing.Family.familyAtWidth canonicalFamilyConfig l {} ex prep facts (parentsOf ex.dag)
     (tieredCandidateCount ex.dag.size prep facts) w

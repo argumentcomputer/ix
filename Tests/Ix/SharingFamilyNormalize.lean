@@ -15,7 +15,6 @@ private def closureNormalize (cfg : Config) (constant : Constant) (limits : Limi
   let ex ← expand limits constant.sharing (constantInfoRoots constant.info) true
   uniformDagChecks ex
   let prep := Prep.ofDag ex.dag
-  uniformSpineCheck ex prep
   let facts := graphFacts ex.dag ex.roots
   let parents := parentsOf ex.dag
   let candidates := tieredCandidateCount ex.dag.size prep facts

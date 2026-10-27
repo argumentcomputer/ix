@@ -8,10 +8,6 @@ use super::dict::{DenseIndex, NoWidths, all_costs};
 fn internal(msg: impl Into<String>) -> SharingError {
   SharingError::Internal(msg.into())
 }
-fn tid(i: usize) -> TermId {
-  TermId::try_from(i).unwrap_or(TermId::MAX)
-}
-
 /// Expanded occurrence counts (saturating) of every term.
 pub(crate) fn occurrences(dag: &SharingDag) -> Vec<u64> {
   let nodes = dag.nodes();
@@ -34,10 +30,7 @@ pub(crate) fn occurrences(dag: &SharingDag) -> Vec<u64> {
 }
 
 pub(super) fn candidates_of(occ: &[u64], base: &[Len]) -> Vec<TermId> {
-  (0..occ.len())
-    .filter(|&t| occ[t] >= 2 && base[t] > Len::new(1))
-    .map(tid)
-    .collect()
+  (0..occ.len()).filter(|&t| occ[t] >= 2 && base[t] > Len::new(1)).collect()
 }
 
 /// The terms some minimum may store after reductions R1 (at least two
