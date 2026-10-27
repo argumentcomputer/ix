@@ -47,7 +47,7 @@ const pointLimbBytes = 24
 const g2ExportBytes = 96
 const anchorBytesLen = 240
 const srsMagic = "IXPSRS01"
-const profileFormat = "ix-bls-plonk-profile-v1"
+const vkFormat = "ix-bls-plonk-vk-v1"
 const artifactFormat = "ix-bls-plonk-artifacts-v1"
 const lagrangeFormat = "ix-plonk-lagrange-v1"
 

@@ -2,7 +2,7 @@
 
 use ix_proof_compression::{
   kzg::{KzgConfig, Scalar, Srs, compact::FixedProofCodec},
-  recursive::native_verifier::{self, Profile},
+  recursive::native_verifier::{self, InnerVerifyingKey},
 };
 use multi_stark::{
   config::ProofConfig,
@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .map_err(|error| format!("inner KZG verification failed: {error:?}"))?;
   let fixed =
     system.preprocessed_commit.as_ref().ok_or("missing fixed commitment")?;
-  let profile = Profile {
+  let vk = InnerVerifyingKey {
     circuits: &system.circuits,
     fixed,
     transcript_seed: system.config.transcript_seed(),
@@ -108,8 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tau_g2: srs.tau_g2,
     max_log_degree: system.config.max_log_degree(),
   };
-  let counts =
-    native_verifier::count(&profile, &proof, &claims, &[(0, 1), (0, 2)])?;
+  let counts = native_verifier::count(&vk, &proof, &claims, &[(0, 1), (0, 2)])?;
   let compact =
     FixedProofCodec::new(&system, &proof.log_degrees)?.encode(&proof)?;
   let mut previous = CircuitStats::default();

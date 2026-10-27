@@ -1,11 +1,11 @@
-//! Verifier profiles authenticated by a release bundle or an independent
-//! digest. Bundles pin an aggregation program; local profiles require its
+//! Verifier verifying keys authenticated by a release bundle or an independent
+//! digest. Bundles pin an aggregation program; local verifying keys require its
 //! independently supplied statement as well as the certificate claim.
 use super::{
   Result,
   setup::SetupClass,
   statement,
-  wrap::{PreparedVerifierProfile, VerifierProfile},
+  wrap::{PreparedVerifyingKey, VerifyingKey},
 };
 use std::sync::OnceLock;
 
@@ -13,13 +13,13 @@ struct BundledVerifier {
   id: &'static str,
   digest: &'static str,
   /// Backend and entrypoint words of the aggregation program whose roots
-  /// this profile compresses.
+  /// this verifying key compresses.
   statement_prefix: [u64; 10],
   setup: SetupClass,
   #[cfg(feature = "bn254")]
   ignition_admission: Option<BundledIgnitionAdmission>,
   bytes: &'static [u8],
-  decoded: OnceLock<std::result::Result<PreparedVerifierProfile, String>>,
+  decoded: OnceLock<std::result::Result<PreparedVerifyingKey, String>>,
 }
 
 #[cfg(feature = "bn254")]
@@ -51,7 +51,7 @@ static VERIFIERS: [BundledVerifier; 4] = [
     digest: "12ce28356f86ba34afb11b8e3b2c142f47ab9259e9c3f5751069bd1c41609084",
     statement_prefix: AGGREGATE_PREFIX,
     setup: SetupClass::Filecoin,
-    bytes: include_bytes!("../../profiles/aggregate-filecoin-v6.bin"),
+    bytes: include_bytes!("../../verifying-keys/aggregate-filecoin-v6.bin"),
     decoded: OnceLock::new(),
   },
   BundledVerifier {
@@ -59,7 +59,7 @@ static VERIFIERS: [BundledVerifier; 4] = [
     digest: "116c668b17db0a1bd95ea8cce9d080af14b16031db128c47a3dcd46443147678",
     statement_prefix: AGGREGATE_PREFIX,
     setup: SetupClass::Development,
-    bytes: include_bytes!("../../profiles/aggregate-development-v6.bin"),
+    bytes: include_bytes!("../../verifying-keys/aggregate-development-v6.bin"),
     decoded: OnceLock::new(),
   },
   BundledVerifier {
@@ -67,7 +67,7 @@ static VERIFIERS: [BundledVerifier; 4] = [
     digest: "8779b34ad026a9e7075c253f036f50e553348b9d3f5c7baab21ddf487301d7cb",
     statement_prefix: AGGREGATE_PREFIX,
     setup: SetupClass::Filecoin,
-    bytes: include_bytes!("../../profiles/aggregate-filecoin-v5.bin"),
+    bytes: include_bytes!("../../verifying-keys/aggregate-filecoin-v5.bin"),
     decoded: OnceLock::new(),
   },
   BundledVerifier {
@@ -75,7 +75,7 @@ static VERIFIERS: [BundledVerifier; 4] = [
     digest: "e3e06165a20328dbd48964a0539341dd54b2c3e89accba313a09f4321d2f48b9",
     statement_prefix: AGGREGATE_PREFIX,
     setup: SetupClass::Development,
-    bytes: include_bytes!("../../profiles/aggregate-development-v5.bin"),
+    bytes: include_bytes!("../../verifying-keys/aggregate-development-v5.bin"),
     decoded: OnceLock::new(),
   },
 ];
@@ -94,7 +94,7 @@ impl BundledVerifier {
     Ok(())
   }
 
-  fn profile(&self) -> Result<&PreparedVerifierProfile> {
+  fn vk(&self) -> Result<&PreparedVerifyingKey> {
     self
       .decoded
       .get_or_init(|| {
@@ -103,12 +103,10 @@ impl BundledVerifier {
         if blake3::hash(self.bytes).to_hex().as_str() != self.digest {
           return Err("bundled compression verifier digest differs".into());
         }
-        let profile = VerifierProfile::from_bytes(self.bytes)
+        let vk = VerifyingKey::from_bytes(self.bytes)
           .map_err(|error| error.to_string())?;
         #[cfg(not(feature = "bn254"))]
-        profile
-          .check_setup_class(self.setup)
-          .map_err(|error| error.to_string())?;
+        vk.check_setup_class(self.setup).map_err(|error| error.to_string())?;
         #[cfg(feature = "bn254")]
         {
           let admission = self
@@ -117,14 +115,13 @@ impl BundledVerifier {
             .ok_or("bundled Ignition verifier has no trusted admission")?
             .decode()
             .map_err(|error| error.to_string())?;
-          profile
-            .check_ignition_admission(&admission)
+          vk.check_ignition_admission(&admission)
             .map_err(|error| error.to_string())?;
         }
-        if blake3::Hash::from_bytes(profile.id()).to_hex().as_str() != self.id {
+        if blake3::Hash::from_bytes(vk.id()).to_hex().as_str() != self.id {
           return Err("bundled compression verifier metadata differs".into());
         }
-        profile.prepare().map_err(|error| error.to_string())
+        vk.prepare().map_err(|error| error.to_string())
       })
       .as_ref()
       .map_err(|error| error.clone().into())
@@ -136,7 +133,7 @@ fn bundled(id: &[u8; 32]) -> Option<&'static BundledVerifier> {
   VERIFIERS.iter().find(|verifier| verifier.id == id.as_str())
 }
 
-/// The statement prefix a bundled profile pins, if `id` names one.
+/// The statement prefix a bundled verifying key pins, if `id` names one.
 pub(super) fn bundled_prefix(id: &[u8; 32]) -> Option<&'static [u64; 10]> {
   bundled(id).map(|verifier| &verifier.statement_prefix)
 }
@@ -149,7 +146,7 @@ pub(super) fn verify(
   let id: [u8; 32] =
     packet.get(..32).ok_or("truncated compressed proof")?.try_into()?;
   let verifier = bundled(&id).ok_or(
-    "compressed proof uses a verifier profile not bundled with this application",
+    "compressed proof uses a verifying key not bundled with this application",
   )?;
   #[cfg(feature = "bn254")]
   verifier.check_release_class()?;
@@ -157,55 +154,55 @@ pub(super) fn verify(
     return Err("compressed proof uses the known-trapdoor development setup; pass --dev-srs to accept it (not production-secure)".into());
   }
   let statement = statement::with_claim(&verifier.statement_prefix, claim);
-  verifier.profile()?.verify(packet, &statement)?;
+  verifier.vk()?.verify(packet, &statement)?;
   Ok(verifier.setup)
 }
 
-/// Verify using an independently authenticated profile and expected statement.
-pub(super) fn verify_with_profile(
+/// Verify using an independently authenticated verifying key and expected statement.
+pub(super) fn verify_with_vk(
   packet: &[u8],
   claim: &[u8],
   expected: &statement::Statement,
-  profile: &[u8],
+  vk: &[u8],
   trusted_digest: &[u8; 32],
   allow_development: bool,
 ) -> Result<SetupClass> {
-  if blake3::hash(profile).as_bytes() != trusted_digest {
+  if blake3::hash(vk).as_bytes() != trusted_digest {
     return Err(
-      "local verifier profile digest differs from the trusted digest".into(),
+      "local verifying key digest differs from the trusted digest".into(),
     );
   }
   statement::bind_claim(claim, expected)?;
-  let profile = VerifierProfile::from_bytes(profile)?;
-  let setup = SetupClass::of(&profile.verifier_params()?);
-  profile.check_setup_class(setup)?;
+  let vk = VerifyingKey::from_bytes(vk)?;
+  let setup = SetupClass::of(&vk.verifier_params()?);
+  vk.check_setup_class(setup)?;
   if setup == SetupClass::Development && !allow_development {
     return Err("compressed proof uses the known-trapdoor development setup; pass --dev-srs to accept it (not production-secure)".into());
   }
-  profile.verify(packet, expected)?;
+  vk.verify(packet, expected)?;
   Ok(setup)
 }
 
-/// Verify with an independently authenticated profile and ceremony admission.
+/// Verify with an independently authenticated verifying key and ceremony admission.
 /// The admission contains the verifier anchors; no proving cache is required.
 #[cfg(feature = "bn254")]
 pub(super) fn verify_with_ignition_admission(
   packet: &[u8],
   claim: &[u8],
   expected: &statement::Statement,
-  profile: &[u8],
+  vk: &[u8],
   trusted_digest: &[u8; 32],
   admission: &crate::kzg::srs::ignition::IgnitionAdmission,
 ) -> Result<SetupClass> {
-  if blake3::hash(profile).as_bytes() != trusted_digest {
+  if blake3::hash(vk).as_bytes() != trusted_digest {
     return Err(
-      "local verifier profile digest differs from the trusted digest".into(),
+      "local verifying key digest differs from the trusted digest".into(),
     );
   }
   statement::bind_claim(claim, expected)?;
-  let profile = VerifierProfile::from_bytes(profile)?;
-  profile.check_ignition_admission(admission)?;
-  profile.verify(packet, expected)?;
+  let vk = VerifyingKey::from_bytes(vk)?;
+  vk.check_ignition_admission(admission)?;
+  vk.verify(packet, expected)?;
   Ok(SetupClass::Ignition)
 }
 
@@ -226,12 +223,12 @@ mod tests {
       (
         PACKET,
         SetupClass::Filecoin,
-        include_str!("../../profiles/aggregate-filecoin-v5.json"),
+        include_str!("../../verifying-keys/aggregate-filecoin-v5.json"),
       ),
       (
         DEVELOPMENT_PACKET,
         SetupClass::Development,
-        include_str!("../../profiles/aggregate-development-v5.json"),
+        include_str!("../../verifying-keys/aggregate-development-v5.json"),
       ),
     ]
   }
@@ -249,16 +246,16 @@ mod tests {
   }
 
   #[test]
-  fn blake3_profiles_derive_from_authenticated_circuit_metadata() {
+  fn blake3_vks_derive_from_authenticated_circuit_metadata() {
     for (source, target) in [(2, 0), (3, 1)] {
       let (bytes, id) =
-        VerifierProfile::reencode_blake3(VERIFIERS[source].bytes).unwrap();
+        VerifyingKey::reencode_blake3(VERIFIERS[source].bytes).unwrap();
       assert_eq!(bytes, VERIFIERS[target].bytes);
       assert_eq!(
         blake3::Hash::from_bytes(id).to_hex().as_str(),
         VERIFIERS[target].id
       );
-      VERIFIERS[target].profile().unwrap();
+      VERIFIERS[target].vk().unwrap();
     }
   }
 
@@ -274,7 +271,7 @@ mod tests {
   }
 
   #[test]
-  fn development_profile_requires_explicit_opt_in() {
+  fn development_vk_requires_explicit_opt_in() {
     assert!(
       verify(&envelope(DEVELOPMENT_PACKET), CLAIM, false)
         .unwrap_err()
@@ -298,7 +295,7 @@ mod tests {
       assert_eq!(verifier.setup, setup);
       assert_eq!(metadata["setup"], setup.label());
       assert_eq!(metadata["known_trapdoor"], setup == SetupClass::Development);
-      assert_eq!(metadata["profile_id"], verifier.id);
+      assert_eq!(metadata["vk_id"], verifier.id);
       assert_eq!(metadata["verifier_blake3"], verifier.digest);
       assert_eq!(
         metadata["packet_blake3"],
@@ -328,17 +325,17 @@ mod tests {
       let id = packet[..32].try_into().unwrap();
       let verifier = bundled(&id).unwrap();
       let statement = statement::with_claim(&verifier.statement_prefix, CLAIM);
-      let profile = verifier.profile().unwrap();
-      profile.verify(packet, &statement).unwrap();
+      let vk = verifier.vk().unwrap();
+      vk.verify(packet, &statement).unwrap();
       for index in 0..statement.len() {
         let mut wrong = statement;
         wrong[index] ^= 1;
-        assert!(profile.verify(packet, &wrong).is_err());
+        assert!(vk.verify(packet, &wrong).is_err());
       }
       for index in [0, 32 + 18 * 8, packet.len() - 1] {
         let mut packet = packet.to_vec();
         packet[index] ^= 1;
-        assert!(profile.verify(&packet, &statement).is_err());
+        assert!(vk.verify(&packet, &statement).is_err());
       }
     }
   }
@@ -359,7 +356,7 @@ mod tests {
   }
 
   #[test]
-  fn changed_profiles_points_and_proof_lengths_are_rejected() {
+  fn changed_vks_points_and_proof_lengths_are_rejected() {
     for (packet, _, _) in fixtures() {
       for index in [0, 32 + 10 * 8, 32 + 18 * 8, packet.len() - 1] {
         let mut packet = packet.to_vec();
@@ -398,7 +395,7 @@ mod bn254_tests {
       assert!(verifier.check_release_class().is_err());
       assert!(
         verifier
-          .profile()
+          .vk()
           .err()
           .unwrap()
           .to_string()
@@ -428,15 +425,15 @@ mod bn254_tests {
   }
 
   #[test]
-  fn bn254_requires_an_explicit_trusted_profile() {
+  fn bn254_requires_an_explicit_trusted_vk() {
     assert!(bundled(&[0; 32]).is_none());
     let bls_packet = include_bytes!(
       "../../tests/fixtures/aggregate-kzg/development-v5-packet.bin"
     );
     assert!(verify(bls_packet, b"claim", true).is_err());
     assert!(
-      VerifierProfile::from_bytes(include_bytes!(
-        "../../profiles/aggregate-development-v6.bin"
+      VerifyingKey::from_bytes(include_bytes!(
+        "../../verifying-keys/aggregate-development-v6.bin"
       ))
       .is_err()
     );

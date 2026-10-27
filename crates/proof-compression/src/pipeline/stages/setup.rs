@@ -46,10 +46,9 @@ pub(super) fn fri(
 }
 
 pub(super) fn foreign(verifier: &FriVerifier) -> Result<Circuit<Scalar>> {
-  let profile =
-    construct::fri_profile(&verifier.key, &verifier.statement.template)?;
+  let vk = construct::fri_profile(&verifier.key, &verifier.statement.template)?;
   let plan =
-    fri::VerifierPlan::validate(&verifier.key, profile, Default::default())?;
+    fri::VerifierPlan::validate(&verifier.key, vk, Default::default())?;
   let built =
     construct::FriConstruction::build(&plan, verifier.statement.schema())?;
   Ok(construct::translate(&built.circuit).circuit)

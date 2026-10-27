@@ -8,7 +8,7 @@
   "srsPowers": 131,
   "scope": "The witness covers the full Init verifier relation. The small SRS is only for backend and basis-conversion tests, not for proving the full wrapper.",
   "files": {
-    "profile.json": "7f10e1e87329b57d148c915f38e28bc777988b7df8ead7e88fab5ad96b62a991",
+    "vk.json": "f75d771d95dd704395c83bc0c6a641f6f50a18d2f424b5a9e32aa39de1be745a",
     "srs.bin": "5eb78499c386ce2dd170f773eaf6043741c83b9ddbb7c2e463f20532cbac6a29",
     "srs.json": "2693bbb8f0c54af048915738afed28dda6ff6262550653404102e2391a947c78",
     "witness-diagnostic.json": "83b65ceb2b2a20de824b0e4968ba6e85ec408e47eab49ba5be9d8f4de8733787",

@@ -12,7 +12,7 @@ import (
 	"github.com/zeebo/blake3"
 )
 
-func pairingBatchContext(p *profile) ([]byte, error) {
+func pairingBatchContext(p *verifyingKey) ([]byte, error) {
 	encoded, err := json.Marshal(p)
 	if err != nil {
 		return nil, err
@@ -53,18 +53,18 @@ func pairingBatchScalar(api frontend.API, u *uints.BinaryField[uints.U32], wide 
 }
 
 func (c *wrapperCircuit) batchedPairing(api frontend.API, u *uints.BinaryField[uints.U32], f *emulated.Field[baseField], s *emulated.Field[scalarField], curve *sw_emulated.Curve[baseField, scalarField], packetDigest []uints.U8, left, right *circuitG1) error {
-	outer, err := g2Keys(c.Profile.OuterKeys)
+	outer, err := g2Keys(c.VK.OuterKeys)
 	if err != nil {
 		return err
 	}
-	inner, err := g2Keys(c.Profile.DeferredKeys)
+	inner, err := g2Keys(c.VK.DeferredKeys)
 	if err != nil {
 		return err
 	}
 	if !outer[0].Equal(&inner[0]) || !outer[1].Equal(&inner[1]) {
 		return fmt.Errorf("pairing batching requires identical ordered G2 anchors")
 	}
-	context, err := pairingBatchContext(c.Profile)
+	context, err := pairingBatchContext(c.VK)
 	if err != nil {
 		return err
 	}

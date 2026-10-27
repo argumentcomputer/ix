@@ -123,12 +123,12 @@ func cpuProfileManifest(dir, expectedSHA256 string) (*manifest, error) {
 	if m.Format != artifactFormat || !m.KeysReady || m.Domain != 1<<24 || m.Constraints != 14689440 || m.PublicInputs != 2 || m.Commitments != 1 || len(m.Files) != 5 {
 		return nil, fmt.Errorf("profiling requires the prepared classic-GLV 2^24 BN254 wrapper")
 	}
-	for _, digest := range []string{m.ExecutableSHA256, m.ProfileSHA256, m.SRSBLAKE3} {
+	for _, digest := range []string{m.ExecutableSHA256, m.InnerVKSHA256, m.SRSBLAKE3} {
 		if _, err := cpuProfileDigest(digest); err != nil {
 			return nil, fmt.Errorf("invalid profiling manifest identity: %w", err)
 		}
 	}
-	for _, name := range []string{"circuit.bin", "proving-key.bin", "verifying-key.bin", "profile.json", "PlonkVerifier.sol"} {
+	for _, name := range []string{"circuit.bin", "proving-key.bin", "verifying-key.bin", "vk.json", "PlonkVerifier.sol"} {
 		want, ok := m.Files[name]
 		if !ok || want.Bytes <= 0 {
 			return nil, fmt.Errorf("missing profiling artifact %s", name)
@@ -147,8 +147,8 @@ func cpuProfileManifest(dir, expectedSHA256 string) (*manifest, error) {
 			return nil, err
 		}
 	}
-	if m.Files["profile.json"].SHA256 != m.ProfileSHA256 {
-		return nil, fmt.Errorf("profile identity differs from its artifact digest")
+	if m.Files["vk.json"].SHA256 != m.InnerVKSHA256 {
+		return nil, fmt.Errorf("verifying key identity differs from its artifact digest")
 	}
 	return &m, nil
 }
@@ -238,7 +238,7 @@ func TestBN254CPUProfile(t *testing.T) {
 	}
 	started := time.Now()
 	report := cpuProfileReport{
-		Format: "ix-bn254-plonk-cpu-profile-v1",
+		Format: "ix-bn254-plonk-cpu-verifying key-v1",
 		Scope:  "Authenticated existing 2^24 artifacts; one unmeasured warmup, followed by measured proofs in one process. CS/PK/VK/witness reused; fresh gnark randomness each proof; default CPU parallelism and natural GC. No accelerator, circuit compilation, SRS conversion or key setup.",
 		Stage:  "artifact-validation", StartedUTC: started.UTC().Format(time.RFC3339Nano),
 		Artifacts: dir, ManifestSHA256: expectedManifest, WitnessPath: witnessPath,
@@ -292,14 +292,14 @@ func TestBN254CPUProfile(t *testing.T) {
 		report.LoadSeconds[entry.name] = time.Since(loadStarted).Seconds()
 	}
 	loadStarted := time.Now()
-	p, err := loadProfile(filepath.Join(dir, "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join(dir, "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.checkFile(dir, "profile.json"); err != nil {
+	if err := m.checkFile(dir, "vk.json"); err != nil {
 		t.Fatal(err)
 	}
-	report.LoadSeconds["profile.json"] = time.Since(loadStarted).Seconds()
+	report.LoadSeconds["vk.json"] = time.Since(loadStarted).Seconds()
 	if ccs.GetNbConstraints() != m.Constraints || ccs.GetNbPublicVariables() != m.PublicInputs || ecc.NextPowerOfTwo(uint64(ccs.GetNbConstraints()+ccs.GetNbPublicVariables())) != m.Domain || len(ccs.GetCommitments().CommitmentIndexes()) != m.Commitments {
 		t.Fatal("loaded circuit metadata differs from the authenticated manifest")
 	}
@@ -325,7 +325,7 @@ func TestBN254CPUProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !nativeVK.Kzg.G1.Equal(&g1) || !nativeVK.Kzg.G2[0].Equal(&g2[0]) || !nativeVK.Kzg.G2[1].Equal(&g2[1]) {
-		t.Fatal("verifying key anchors differ from the authenticated profile")
+		t.Fatal("verifying key anchors differ from the authenticated verifying key")
 	}
 	report.Stage = "witness-setup"
 	witnessStarted := time.Now()

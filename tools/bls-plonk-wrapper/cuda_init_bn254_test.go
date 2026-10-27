@@ -102,11 +102,11 @@ func TestBN254CUDAInit(t *testing.T) {
 	if err := cpuProfileReadBinary(filepath.Join(dir, "verifying-key.bin"), m.Files["verifying-key.bin"], vk); err != nil {
 		t.Fatal(err)
 	}
-	p, err := loadProfile(filepath.Join(dir, "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join(dir, "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.checkFile(dir, "profile.json"); err != nil {
+	if err := m.checkFile(dir, "vk.json"); err != nil {
 		t.Fatal(err)
 	}
 	assignment, err := witnessAssignment(p, witnessPath)
@@ -210,17 +210,17 @@ func TestBN254CUDAInit(t *testing.T) {
 			}
 			profileThisRun := cpuProfile && len(runs) == 0
 			profilePath := ""
-			var profileFile *os.File
+			var vkFile *os.File
 			var profileStartSeconds, profileStopSeconds float64
 			if profileThisRun {
 				profileStarted := time.Now()
 				profilePath = filepath.Join(output, stem+".cpu.pprof")
-				profileFile, err = os.OpenFile(profilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+				vkFile, err = os.OpenFile(profilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 				if err != nil {
 					t.Fatal(err)
 				}
 				if err := pprof.StartCPUProfile(profileFile); err != nil {
-					profileFile.Close()
+					vkFile.Close()
 					t.Fatal(err)
 				}
 				profileStartSeconds = time.Since(profileStarted).Seconds()
@@ -230,7 +230,7 @@ func TestBN254CUDAInit(t *testing.T) {
 			var proveSeconds float64
 			var profileErr error
 			func() {
-				if profileFile != nil {
+				if vkFile != nil {
 					defer func() {
 						profileStopped := time.Now()
 						pprof.StopCPUProfile()

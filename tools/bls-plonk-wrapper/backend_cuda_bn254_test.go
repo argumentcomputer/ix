@@ -24,7 +24,7 @@ func TestCUDAProvingBackendFactory(t *testing.T) {
 	}
 	t.Setenv("IX_PLONK_BACKEND", "cuda")
 	t.Setenv("IX_PLONK_CUDA_MEMORY_GIB", "8")
-	p, err := loadProfile(filepath.Join("testdata", "bn254", "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

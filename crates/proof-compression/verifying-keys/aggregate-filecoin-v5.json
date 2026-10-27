@@ -1,11 +1,11 @@
 {
-  "setup": "development",
-  "known_trapdoor": true,
-  "profile_version": 5,
+  "setup": "filecoin",
+  "known_trapdoor": false,
+  "vk_version": 5,
   "first_stage_log_height": 24,
-  "profile_id": "304340325a2fff6bbfbca27e0b58b335cd9f0731b7698ef8e9d9f2f23fe408a1",
-  "verifier_blake3": "e3e06165a20328dbd48964a0539341dd54b2c3e89accba313a09f4321d2f48b9",
-  "packet_blake3": "6162de2ddcf6b5ac6cc783f653ead5815f8504683c4f83d2b301fd61b3cafe47",
+  "vk_id": "4b033424efd56486ed972b04b773349149d9df6159d753e303f11aed89928302",
+  "verifier_blake3": "8779b34ad026a9e7075c253f036f50e553348b9d3f5c7baab21ddf487301d7cb",
+  "packet_blake3": "80d136cbc7496a3436a2d9d291497025742a5573ffcd565a76bf1f21024c0b4c",
   "source_fri_verifier_blake3": "5f7db8e94c52f404df1c2658d4c686b7e1ccb5d95b473d47c0efda96141f89cf",
   "source_fri_proof_blake3": "c4c19524f0f633eccab88164cb1dd08e2fc877467ec7d0b45821f0c6791a11a6",
   "source_fri_fixture": "tests/fixtures/init-fri",
@@ -23,7 +23,7 @@
     683533119,
     3085659920
   ],
-  "scope": "Aggregate CheckEnv recursive circuit for the current CLI FRI verifier. The caller supplies the claim; its digest occupies the last eight public words. Development parameters require --dev-srs.",
+  "scope": "Aggregate CheckEnv recursive circuit for the current CLI FRI verifier. The caller supplies the claim; its digest occupies the last eight public words.",
   "root_verifier_blake3": "f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc",
   "claim": {
     "kind": "CheckEnv",
@@ -42,6 +42,6 @@
     "aggregate_proof_source": "multi-stark sb/kzg:experiments/kzg-cuda-validation/resume-20261009/root-artifacts/root-proof.bin",
     "aggregate_verification_passed": true
   },
-  "compressed_proof_address": "b6084ba2941da8a991afc978946ef63326148378addb6c1cd9d929a0e4a692c3",
+  "compressed_proof_address": "14cb1679032f43cba067ea52e9b8899e2e57f5a1cf8581bc4309dc07f30afa22",
   "producer_worker_sha256": "ab7403a0f222b1098c51622614693c0e3ff7a243ec6cd3323a65bf7febcc5626"
 }

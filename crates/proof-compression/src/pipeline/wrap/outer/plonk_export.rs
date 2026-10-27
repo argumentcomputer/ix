@@ -10,6 +10,7 @@ use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
 use multi_stark::{
   config::ProofConfig,
+  prover::Proof,
   system::System,
   traits::{Algebra, Pcs},
 };
@@ -47,41 +48,76 @@ pub(in crate::pipeline) fn export(
   if blake3::hash(&bytes).to_hex().as_str() != trusted_digest {
     return Err("trusted verifier digest differs".into());
   }
-  let profile = VerifierProfile::from_bytes(&bytes)?;
+  let vk = VerifyingKey::from_bytes(&bytes)?;
   #[cfg(not(feature = "bn254"))]
-  profile.check_setup_class(SetupClass::Filecoin)?;
+  vk.check_setup_class(SetupClass::Filecoin)?;
   #[cfg(feature = "bn254")]
   {
     let setup = super::super::super::setup::SetupConfig::from_env(false)?;
     let admission = setup
       .ignition_admission()
       .ok_or("PLONK export requires admitted Ignition parameters")?;
-    profile.check_ignition_admission(admission)?;
+    vk.check_ignition_admission(admission)?;
   }
-  write_export(
-    &profile,
-    &fs::read(packet)?,
-    expected,
-    directory,
-    "witness",
-    true,
-  )
+  write_export(&vk, &fs::read(packet)?, expected, directory, "witness", true)
+}
+
+/// How the verifier supplies each public scalar referenced by the claim rows.
+#[derive(Clone, Copy)]
+enum PublicSource {
+  Constant(Scalar),
+  Prefix(usize),
+  DigestWord(usize),
+  DeferredHalf(usize),
+}
+
+impl PublicSource {
+  fn json(self) -> Json {
+    match self {
+      Self::Constant(value) => json!({"constant": scalar(value)}),
+      Self::Prefix(index) => json!({"prefix": index}),
+      Self::DigestWord(index) => json!({"digestWord": index}),
+      Self::DeferredHalf(index) => json!({"deferredHalf": index}),
+    }
+  }
+}
+
+fn slot_json(slot: ir::ClaimSlot) -> Json {
+  match slot {
+    ir::ClaimSlot::Constant(value) => json!({"constant": scalar(value)}),
+    ir::ClaimSlot::Public(index) => json!({"public": index}),
+  }
+}
+
+struct Export<'a> {
+  system: &'a System<KzgConfig>,
+  proof: &'a Proof<KzgConfig>,
+  logs: &'a [u8],
+  slots: Vec<Vec<ir::ClaimSlot>>,
+  publics: Vec<PublicSource>,
+  vk_id: [u8; 32],
+  deferred_keys: Vec<G2Affine>,
+  deferred_bytes: &'a [u8],
+  packet: &'a [u8],
+  diagnostic: Json,
 }
 
 pub(super) fn write_export(
-  profile: &VerifierProfile,
+  vk: &VerifyingKey,
   packet: &[u8],
   expected: &Statement,
   directory: &Path,
   name: &str,
   valid_pairing: bool,
 ) -> Result<()> {
-  let system = profile.system()?;
+  let system = vk.system()?;
   if system.config.transcript_kind() != TranscriptKind::Blake3 {
-    return Err("PLONK wrapping requires a BLAKE3 final KZG profile".into());
+    return Err(
+      "PLONK wrapping requires a BLAKE3 final KZG verifying key".into(),
+    );
   }
-  let (claims, offset) = packet_claims(packet, &profile.id(), 2, expected)?;
-  let logs = profile
+  let (claims, offset) = packet_claims(packet, &vk.id(), 2, expected)?;
+  let logs = vk
     .heights
     .iter()
     .map(|h| u8::try_from(h.ilog2()))
@@ -89,10 +125,144 @@ pub(super) fn write_export(
   let proof =
     FixedProofCodec::new(&system, &logs)?.decode(&packet[offset..])?;
   let diagnostic = diagnostics(&system, &proof, &claims)?;
+  let deferred_bytes = &packet[32 + 18 * 8..offset];
+  if check_pairings(deferred_bytes, &vk.keys()?).is_ok() != valid_pairing {
+    return Err("unexpected deferred pairing result".into());
+  }
+  // The recursive statement: 23 rows `[94, 1, i, public_i]` whose public
+  // scalars are the constant prefix, the claim digest and the deferred
+  // pairing operands.
+  if claims.len() != RECURSIVE_PUBLIC_VALUES {
+    return Err("recursive packet claim count".into());
+  }
+  let slots = (0..RECURSIVE_PUBLIC_VALUES)
+    .map(|i| {
+      vec![
+        ir::ClaimSlot::Constant(Scalar::from_u8(94)),
+        ir::ClaimSlot::Constant(Scalar::ONE),
+        ir::ClaimSlot::Constant(Scalar::from_usize(i)),
+        ir::ClaimSlot::Public(i),
+      ]
+    })
+    .collect();
+  let publics = std::iter::once(PublicSource::Constant(Scalar::ZERO))
+    .chain((0..10).map(PublicSource::Prefix))
+    .chain((0..8).map(PublicSource::DigestWord))
+    .chain((0..PUBLIC_VALUES).map(PublicSource::DeferredHalf))
+    .collect();
+  write_vk(
+    &Export {
+      system: &system,
+      proof: &proof,
+      logs: &logs,
+      slots,
+      publics,
+      vk_id: vk.id(),
+      deferred_keys: vk.keys()?,
+      deferred_bytes,
+      packet,
+      diagnostic,
+    },
+    expected,
+    directory,
+    name,
+  )
+}
+
+/// Export the relation verifying a saved first KZG stage directly: every
+/// partition's circuit, the first-stage claim rows and no deferred pairing.
+/// The stage's setup is selected from the environment as the worker does.
+pub(in crate::pipeline) fn export_first(
+  stage: &Path,
+  expected: &Statement,
+  directory: &Path,
+  development: bool,
+) -> Result<()> {
+  let config = super::super::super::WorkerConfig::from_env("kzg", development)?;
+  let input = super::super::saved::Input::load(stage, &config)?;
+  let system = &input.system;
+  if system.config.transcript_kind() != TranscriptKind::Blake3 {
+    return Err(
+      "PLONK wrapping requires a BLAKE3 first-stage verifying key".into(),
+    );
+  }
+  if statement::from_rows(&input.claims)? != *expected {
+    return Err("first-stage claims differ from the expected statement".into());
+  }
+  let vk_id: [u8; 32] =
+    fs::read(stage.join("kzg/vk-id.bin"))?.try_into().map_err(
+      |bytes: Vec<u8>| format!("verifying key id of {} bytes", bytes.len()),
+    )?;
+  let packet = fs::read(stage.join("kzg/packet.bin"))?;
+  let mut composed = vk_id.to_vec();
+  for word in expected {
+    composed.extend(word.to_le_bytes());
+  }
+  composed.extend(&input.proof_bytes);
+  if packet != composed {
+    return Err(
+      "first-stage packet differs from its verifying key, statement and proof"
+        .into(),
+    );
+  }
+  let diagnostic = diagnostics(system, &input.proof, &input.claims)?;
+  // Rows 1..=18 carry the statement words at column 3; every other claim
+  // value, including the table and hash-trace anchors, is a constant.
+  let locations =
+    StageStatement::from_claims(&input.claims, statement::WORDS)?.locations;
+  let slots = input
+    .claims
+    .iter()
+    .enumerate()
+    .map(|(row, values)| {
+      values
+        .iter()
+        .enumerate()
+        .map(|(column, &value)| {
+          match locations.iter().position(|&l| l == (row, column)) {
+            Some(index) => ir::ClaimSlot::Public(index),
+            None => ir::ClaimSlot::Constant(value),
+          }
+        })
+        .collect()
+    })
+    .collect();
+  let publics = (0..10)
+    .map(PublicSource::Prefix)
+    .chain((0..8).map(PublicSource::DigestWord))
+    .collect();
+  write_vk(
+    &Export {
+      system,
+      proof: &input.proof,
+      logs: &input.logs,
+      slots,
+      publics,
+      vk_id,
+      deferred_keys: vec![],
+      deferred_bytes: &[],
+      packet: &packet,
+      diagnostic,
+    },
+    expected,
+    directory,
+    "witness",
+  )
+}
+
+fn write_vk(
+  export: &Export<'_>,
+  expected: &Statement,
+  directory: &Path,
+  name: &str,
+) -> Result<()> {
+  let Export { system, proof, logs, .. } = export;
+  #[cfg(not(feature = "bn254"))]
+  let diagnostic = export.diagnostic.clone();
   #[cfg(feature = "bn254")]
   let diagnostic = {
-    let mut value = diagnostic;
-    let encodings = proof_points(&proof)
+    let mut diagnostic = export.diagnostic.clone();
+    let encodings = proof_points(proof)
       .into_iter()
       .map(|point| {
         let mut bytes = Vec::new();
@@ -103,20 +273,16 @@ pub(super) fn write_export(
         hex_json(&bytes)
       })
       .collect::<Vec<_>>();
-    value["pointEncodings"] = json!(encodings);
-    value
+    diagnostic["pointEncodings"] = json!(encodings);
+    diagnostic
   };
-  let deferred_bytes = &packet[32 + 18 * 8..offset];
-  if check_pairings(deferred_bytes, &profile.keys()?).is_ok() != valid_pairing {
-    return Err("unexpected deferred pairing result".into());
-  }
-  let layout = codegen::OpeningLayout::new(profile, &system)?;
-  let program = ir::build(&system, &layout)?;
+  let layout = codegen::OpeningLayout::new_for_system(system, logs)?;
+  let program = ir::build(system, &layout, &export.slots)?;
   let params = system.config.pcs().verifier_params();
   let fixed: Vec<_> = system
     .preprocessed_commit
     .as_ref()
-    .unwrap()
+    .ok_or("missing fixed commitment")?
     .0
     .iter()
     .flatten()
@@ -129,7 +295,7 @@ pub(super) fn write_export(
   let circuits: Vec<_> = system.circuits.iter().enumerate().map(|(i, c)| {
     json!({
       "logDegree": logs[i],
-      "shape": [c.constraint_count(), c.max_constraint_degree(), profile.heights[i],
+      "shape": [c.constraint_count(), c.max_constraint_degree(), 1usize << logs[i],
         c.preprocessed_width, c.main_width, c.stage_2_width, c.lookup_group_size],
     })
   }).collect();
@@ -144,8 +310,8 @@ pub(super) fn write_export(
     })
     .collect();
   let exported = json!({
-    "format": if cfg!(feature = "bn254") { "ix-bn254-plonk-profile-v1" } else { "ix-bls-plonk-profile-v1" },
-    "profileId": hex_json(&profile.id()),
+    "format": if cfg!(feature = "bn254") { "ix-bn254-plonk-vk-v1" } else { "ix-bls-plonk-vk-v1" },
+    "vkId": hex_json(&export.vk_id),
     "setupId": hex_json(&params.public_setup.id),
     "publicMaxDegree": params.public_setup.max_degree,
     "prefix": &expected[..10],
@@ -156,25 +322,33 @@ pub(super) fn write_export(
     "fieldCount": layout.field_count,
     "witnessOffset": layout.commitment_count,
     "openingCount": layout.factors.len(),
+    "accumulatorCount": layout.accumulator_count,
+    "claims": export.slots.iter().map(|row| row.iter().copied().map(slot_json).collect::<Vec<_>>()).collect::<Vec<_>>(),
+    "publics": export.publics.iter().copied().map(PublicSource::json).collect::<Vec<_>>(),
     "fixed": fixed,
     "generator": point(params.g1[0]),
     "outerKeys": [key(&params.g2), key(&params.tau_g2)],
-    "deferredKeys": profile.keys()?.iter().map(key).collect::<Vec<_>>(),
+    "deferredKeys": export.deferred_keys.iter().map(key).collect::<Vec<_>>(),
     "program": program,
   });
-  let mut values = vec![proof.intermediate_accumulators[0]];
+  let mut values: Vec<Scalar> =
+    proof.intermediate_accumulators[..layout.accumulator_count].to_vec();
   for round in [
     &proof.stage_1_opened_values,
     &proof.stage_2_opened_values,
     &proof.quotient_opened_values,
-    proof.preprocessed_opened_values.as_ref().unwrap(),
+    proof
+      .preprocessed_opened_values
+      .as_ref()
+      .ok_or("missing fixed openings")?,
   ] {
     values.extend(round.iter().flatten().flatten().copied());
   }
   if values.len() != layout.field_count {
     return Err("exported scalar count differs".into());
   }
-  let deferred = deferred_bytes
+  let deferred = export
+    .deferred_bytes
     .as_chunks::<{ G1_COMPRESSED_BYTES }>()
     .0
     .iter()
@@ -189,13 +363,13 @@ pub(super) fn write_export(
     .collect::<Vec<_>>();
   let witness = json!({
     "claimDigest": hex_json(&digest),
-    "points": proof_points(&proof).into_iter().map(point).collect::<Vec<_>>(),
+    "points": proof_points(proof).into_iter().map(point).collect::<Vec<_>>(),
     "deferred": deferred,
     "values": values.into_iter().map(scalar).collect::<Vec<_>>(),
   });
   fs::create_dir_all(directory)?;
   storage::write_atomic(
-    &directory.join("profile.json"),
+    &directory.join("vk.json"),
     &serde_json::to_vec_pretty(&exported)?,
   )?;
   storage::write_atomic(
@@ -206,7 +380,7 @@ pub(super) fn write_export(
     &directory.join(format!("{name}-diagnostic.json")),
     &serde_json::to_vec_pretty(&diagnostic)?,
   )?;
-  storage::write_atomic(&directory.join(format!("{name}.bin")), packet)?;
+  storage::write_atomic(&directory.join(format!("{name}.bin")), export.packet)?;
   storage::write_atomic(
     &directory.join(format!("{name}-statement.json")),
     &serde_json::to_vec_pretty(expected)?,

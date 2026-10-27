@@ -1,12 +1,12 @@
 {
-  "profile_version": 6,
+  "vk_version": 6,
   "transcript": "blake3",
   "setup": "development",
   "known_trapdoor": true,
-  "profile_id": "b0db3d47f5f9e08b3710499adaba92ad6c5bd160393d45aef1a505c5909cd580",
+  "vk_id": "b0db3d47f5f9e08b3710499adaba92ad6c5bd160393d45aef1a505c5909cd580",
   "verifier_blake3": "116c668b17db0a1bd95ea8cce9d080af14b16031db128c47a3dcd46443147678",
-  "source_profile": "aggregate-development-v5.bin",
+  "source_vk": "aggregate-development-v5.bin",
   "source_verifier_blake3": "e3e06165a20328dbd48964a0539341dd54b2c3e89accba313a09f4321d2f48b9",
   "statement_prefix": [0, 293, 3008464260, 3936129970, 1088962797, 1141056675, 2347219926, 1176003176, 683533119, 3085659920],
-  "derivation": "The authenticated circuit metadata, fixed commitments and development setup anchors are unchanged; the profile version selects the BLAKE3 transcript. A fresh proof is required."
+  "derivation": "The authenticated circuit metadata, fixed commitments and development setup anchors are unchanged; the verifying key version selects the BLAKE3 transcript. A fresh proof is required."
 }

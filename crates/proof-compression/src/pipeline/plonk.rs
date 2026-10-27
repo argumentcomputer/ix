@@ -46,7 +46,7 @@ struct TrustedCatalog {
 struct TrustedKey {
   sha256: String,
   path: PathBuf,
-  inner_profile_id: String,
+  inner_vk_id: String,
   statement_prefix: [u64; 10],
   circuit_sha256: String,
   helper_sha256: String,
@@ -218,7 +218,7 @@ fn select_key(path: &Path, id: &[u8; 32]) -> Result<TrustedKey> {
   let mut seen = std::collections::BTreeSet::new();
   for key in catalog.keys {
     let key_id = digest(&key.sha256)?;
-    digest(&key.inner_profile_id)?;
+    digest(&key.inner_vk_id)?;
     digest(&key.circuit_sha256)?;
     digest(&key.helper_sha256)?;
     if !seen.insert(key_id) {
@@ -292,7 +292,9 @@ pub(super) fn verify(packet: &[u8], claim: &[u8]) -> Result<SetupClass> {
 }
 
 pub(crate) fn run(args: &[String]) -> Result<()> {
-  match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+  let development = args.iter().any(|arg| arg == "--dev-srs");
+  let args: Vec<_> = args.iter().filter(|arg| *arg != "--dev-srs").collect();
+  match args.iter().map(|s| s.as_str()).collect::<Vec<_>>().as_slice() {
     ["verify", proof, claim] => {
       let bytes = fs::read(proof)?;
       let packet = bytes.strip_prefix(PROOF_TAG).ok_or("unsupported PLONK proof curve or version")?;
@@ -304,21 +306,25 @@ pub(crate) fn run(args: &[String]) -> Result<()> {
       let expected = serde_json::from_slice(&fs::read(statement)?)?;
       wrap::plonk_export(Path::new(verifier), Path::new(packet), digest, &expected, Path::new(out))
     },
+    ["export-first", stage, statement, out] => {
+      let expected = serde_json::from_slice(&fs::read(statement)?)?;
+      wrap::plonk_export_first(Path::new(stage), &expected, Path::new(out), development)
+    },
     ["srs", domain, out] => export_srs(domain.parse()?, Path::new(out)),
     #[cfg(not(feature = "bn254"))]
-    ["profile-blake3", source, trusted, out] => {
+    ["vk-blake3", source, trusted, out] => {
       let source = fs::read(source)?;
-      if *blake3::hash(&source).as_bytes() != digest(trusted)? { return Err("trusted source profile digest differs".into()); }
-      let (bytes, id) = wrap::VerifierProfile::reencode_blake3(&source)?;
+      if *blake3::hash(&source).as_bytes() != digest(trusted)? { return Err("trusted source verifying key digest differs".into()); }
+      let (bytes, id) = wrap::VerifyingKey::reencode_blake3(&source)?;
       storage::write_atomic(Path::new(out), &bytes)?;
-      eprintln!("profile_id={} verifier_blake3={}", hex(&id), blake3::hash(&bytes).to_hex());
+      eprintln!("vk_id={} verifier_blake3={}", hex(&id), blake3::hash(&bytes).to_hex());
       Ok(())
     },
     ["wrap", verifier, packet, trusted, expected, cache, out] => {
       let expected = load_json(Path::new(expected))?;
       wrap_packet(Path::new(verifier), Path::new(packet), trusted, &expected, Path::new(cache), Path::new(out))
     },
-    _ => Err("usage: ix-compression-worker plonk export <verifier.bin> <packet.bin> <trusted-blake3> <expected-statement.json> <dir> | srs <plonk-domain> <output> | wrap <verifier.bin> <packet.bin> <trusted-verifier-blake3> <expected-statement.json> <cache> <out> | verify <proof.envelope.bin> <claim.bin>".into()),
+    _ => Err("usage: ix-compression-worker plonk export <verifier.bin> <packet.bin> <trusted-blake3> <expected-statement.json> <dir> | export-first <first-kzg-dir> <expected-statement.json> <dir> [--dev-srs] | srs <plonk-domain> <output> | wrap <verifier.bin> <packet.bin> <trusted-verifier-blake3> <expected-statement.json> <cache> <out> | verify <proof.envelope.bin> <claim.bin>".into()),
   }
 }
 
@@ -469,17 +475,17 @@ fn wrap_packet(
   }
   let input = out.join("input");
   wrap::plonk_export(verifier, packet, trusted_digest, expected, &input)?;
-  let profile_path = input.join("profile.json");
-  let exported: serde_json::Value = load_json(&profile_path)?;
+  let vk_path = input.join("vk.json");
+  let exported: serde_json::Value = load_json(&vk_path)?;
   let mut identity = blake3::Hasher::new();
   identity.update(b"ix/bls-plonk-cache/v1");
   identity.update(&fixed_cache::executable_digest()?);
   identity.update(&sha256(&helper)?);
-  identity.update(&sha256(&profile_path)?);
+  identity.update(&sha256(&vk_path)?);
   identity.update(&manifest);
   let cache =
     cache_root.join("circuits").join(identity.finalize().to_hex().as_str());
-  checked(Command::new(&helper).arg("compile").arg(&profile_path).arg(&cache))?;
+  checked(Command::new(&helper).arg("compile").arg(&vk_path).arg(&cache))?;
   let mut metadata: serde_json::Value =
     load_json(&cache.join("manifest.json"))?;
   let domain = usize::try_from(
@@ -553,7 +559,7 @@ fn wrap_packet(
     keys: vec![TrustedKey {
       sha256: key_hash.into(),
       path: "verifying-key.bin".into(),
-      inner_profile_id: metadata_string(&exported, "profileId")?.into(),
+      inner_vk_id: metadata_string(&exported, "vkId")?.into(),
       statement_prefix: expected[..10].try_into()?,
       circuit_sha256: metadata_string(
         &metadata["Files"]["circuit.bin"],
@@ -588,8 +594,8 @@ mod tests {
   fn key() -> TrustedKey {
     TrustedKey {
       sha256: hex(&[1; 32]),
-      path: "verifier.bin".into(),
-      inner_profile_id: hex(&[2; 32]),
+      path: "vk.bin".into(),
+      inner_vk_id: hex(&[2; 32]),
       statement_prefix: [0; 10],
       circuit_sha256: hex(&[3; 32]),
       helper_sha256: hex(&[4; 32]),
@@ -609,10 +615,7 @@ mod tests {
       storage::write_atomic(&path, &serde_json::to_vec(catalog).unwrap())
     };
     write(&catalog)?;
-    assert_eq!(
-      select_key(&path, &[1; 32])?.path,
-      scratch.0.join("verifier.bin")
-    );
+    assert_eq!(select_key(&path, &[1; 32])?.path, scratch.0.join("vk.bin"));
     assert!(select_key(&path, &[5; 32]).is_err());
     catalog.keys.push(key());
     write(&catalog)?;
@@ -671,7 +674,7 @@ mod bn254_tests {
       keys: vec![TrustedKey {
         sha256: hex(&[1; 32]),
         path: "key.bin".into(),
-        inner_profile_id: hex(&[2; 32]),
+        inner_vk_id: hex(&[2; 32]),
         statement_prefix: [0; 10],
         circuit_sha256: hex(&[3; 32]),
         helper_sha256: hex(&[4; 32]),

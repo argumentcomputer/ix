@@ -62,7 +62,7 @@ fn worker_traces_early_failures_and_keeps_stdout_machine_readable() {
 }
 
 #[test]
-fn worker_pipeline_requires_an_explicit_profile_digest_before_io() {
+fn worker_pipeline_requires_an_explicit_vk_digest_before_io() {
   let output = worker(false)
     .args([
       "pipeline",
@@ -70,7 +70,7 @@ fn worker_pipeline_requires_an_explicit_profile_digest_before_io() {
       "missing-proof",
       "missing-claim",
       "missing-claims",
-      "missing-profile",
+      "missing-vk",
       "not-a-digest",
       "--dev-srs",
     ])
@@ -93,7 +93,7 @@ fn ignition_verification_requires_both_pins_and_refuses_development_mode() {
     "missing-proof",
     "missing-claim",
     "missing-claims",
-    "missing-profile",
+    "missing-vk",
     pin.as_str(),
     "missing-admission",
   ];

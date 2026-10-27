@@ -112,9 +112,9 @@ or 33,045 bytes including its packet header and statement. The final recursive
 proof is 1,669 bytes, its packet is 1,909 bytes and the complete envelope is
 1,917 bytes. Independent verification against the original Init claim and
 root statement passed without a proving SRS or cache. Negative checks rejected
-the mathlib claim, its root statement, both together, an incorrect profile
-pin and omitted development opt-in. The profile pin came from the locally
-generated run; it is not an independently authorized production profile.
+the mathlib claim, its root statement, both together, an incorrect verifying key
+pin and omitted development opt-in. The verifying key pin came from the locally
+generated run; it is not an independently authorized production verifying key.
 
 At the recursive frontend boundaries, point validation accounts for 36.47
 million BLS rows versus 0.41 million BN254 rows; BN254's cofactor-one G1
@@ -321,8 +321,8 @@ as well as the original claim, expected root statement and admitted setup:
 ```sh
 "$IX_COMPRESSION_WORKER" pipeline verify-ignition \
   /path/to/run/proof.envelope.bin /path/to/claim.bin \
-  /path/to/root/root-claims.bin /path/to/run/final-kzg/verifier.bin \
-  "$BN254_PROFILE_DIGEST" /path/to/new-admission.json \
+  /path/to/root/root-claims.bin /path/to/run/final-kzg/vk.bin \
+  "$BN254_VK_DIGEST" /path/to/new-admission.json \
   "$IGNITION_ADMISSION_BLAKE3"
 ```
 
@@ -367,7 +367,7 @@ attributing differences from the development benchmark to the ceremony.
 The envelope is **1,917 bytes** and the portable verifying key is **1,542
 bytes**. Both are byte-identical between the cold and warm runs, as are the
 compact proofs from both KZG stages. The verifying key uses the same
-structure as BLS12-381, implemented by `VerifierProfile`, with BN254 version 7,
+structure as BLS12-381, implemented by `VerifyingKey`, with BN254 version 7,
 circuit metadata and both opening equations. Its locally pinned BLAKE3
 digest is
 `a4cf1b3b2489af6c939847d5060452bccb1f87ed8cff0fb90658e477549eafcd`.
@@ -431,22 +431,22 @@ and 20 seconds wall time for this preflight on the measurement host.
 the root statement. The top-level driver admits first-stage log-heights 24
 and 25, matching the saved recursive layout policy. Workers run in separate
 processes and are checked for the selected curve before proving. Each run
-writes `proof.envelope.bin`, `final-kzg/verifier.bin`,
+writes `proof.envelope.bin`, `final-kzg/vk.bin`,
 `expected-root-claims.bin` and `pipeline-report.json`; failed stages retain
 their checkpoints. Shared cache environment variables override the default
 per-run `cache/` directory.
 
 BN254 has no bundled verifying key catalog entry. Its packet and verifying
 key versions are separate from BLS, and generating a key does not authorize
-it. For local verification, set `BN254_PROFILE_DIGEST` to the independently
-reviewed BLAKE3 digest of `final-kzg/verifier.bin`, then supply that pin,
+it. For local verification, set `BN254_VK_DIGEST` to the independently
+reviewed BLAKE3 digest of `final-kzg/vk.bin`, then supply that pin,
 the original claim and independently expected root claims:
 
 ```sh
 "$IX_COMPRESSION_WORKER" pipeline verify \
   /path/to/bn254-run/proof.envelope.bin /path/to/claim.bin \
-  /path/to/root/root-claims.bin /path/to/bn254-run/final-kzg/verifier.bin \
-  "$BN254_PROFILE_DIGEST" --dev-srs
+  /path/to/root/root-claims.bin /path/to/bn254-run/final-kzg/vk.bin \
+  "$BN254_VK_DIGEST" --dev-srs
 ```
 
 Verification needs no proving SRS or cache. It checks the verifying key
@@ -455,7 +455,7 @@ KZG proof and deferred pairing. The generated report records the verifying
 key digest for inspection; the verifier never obtains its trusted pin from
 the proof.
 The library equivalents are `compress`, `compress_fri` and
-`verify_with_profile`. `ix verify` uses the catalog for its compiled curve;
+`verify_with_vk`. `ix verify` uses the catalog for its compiled curve;
 BN254 has no authorized entries yet, so use the worker command above with an
 explicit verifying key for development verification.
 
@@ -581,7 +581,7 @@ Fixed preprocessing and development SRS files are cached across runs under
 current aggregate key. Full proving needs hundreds of GiB of RAM.
 
 Verification uses the verifying keys compiled into the application from
-`profiles/`. `ix verify` selects a verifying key by the packet's ID and derives
+`verifying-keys/`. `ix verify` selects a verifying key by the packet's ID and derives
 the expected statement from that key's pinned aggregation-program prefix and
 the hash of the caller's serialized claim. It checks the compact proof and
 both pairing obligations without an external key file, registry, proving SRS
@@ -608,7 +608,7 @@ backend instead and fails if a bundled key pins a different program than
 the build it runs in, so a stale bundle is caught where the backend is available.
 
 Compression does not require a verifying key to be bundled before proving. It
-constructs its circuit, verifies its output and writes `final-kzg/verifier.bin`
+constructs its circuit, verifies its output and writes `final-kzg/vk.bin`
 as an output of the run. That file can be reviewed and bundled in a later
 application release; generating it does not register it for verification.
 
@@ -913,14 +913,14 @@ payloads use 32 bytes per coefficient:
 fixed coefficient bytes = 32 × sum(preprocessed_width × trace_height)
 ```
 
-For the bundled v5 recursive profiles, the computation trace has 15 fixed
+For the bundled v5 recursive verifying keys, the computation trace has 15 fixed
 columns at `2^27` rows and the table trace has four at `2^17` rows. Their
 combined coefficient payload is **60.015625 GiB**, excluding checkpoint
 metadata. Together with the Filecoin file, this already exceeds 72 GiB before
 first-stage preprocessing, intermediate artifacts, and filesystem headroom.
-This is a calculation from those profiles, not a measured disk high-water mark
+This is a calculation from those verifying keys, not a measured disk high-water mark
 for the current code. First-stage size depends on the layout; record the
-actual checkpoint sizes when provisioning a new profile.
+actual checkpoint sizes when provisioning a new verifying key.
 
 On one filesystem, cache entries and run checkpoints share storage through
 hard links. Deleting one directory does not free those bytes while another
@@ -930,7 +930,7 @@ eviction of old runs or cache entries. Retire them explicitly once no worker
 uses them. Use `df -h` on the selected mount to check available space.
 
 Before discarding ephemeral storage, preserve the stored proof with its claim
-and `final-kzg/verifier.bin` on durable storage. Keep intermediate proofs and
+and `final-kzg/vk.bin` on durable storage. Keep intermediate proofs and
 caches when they are useful for later runs. The 72 GiB `challenge_19` source
 is needed only for parameter import; normal proving uses the prefix cache.
 
@@ -1067,11 +1067,11 @@ densely, while BLS used passes.
 
 GPU memory was sampled every two seconds and includes allocator
 reservations. Both stages verified natively, including the deferred
-pairings. BN254's compact proofs, packets and profile match the completed
+pairings. BN254's compact proofs, packets and verifying key match the completed
 CPU run byte for byte; its 1,917-byte envelope also verifies with that CPU
-worker and its prior profile pin. The BLS envelope is 2,189 bytes and its
-profile matches the existing bundled development-v6 profile. Both portable
-envelopes verify with no GPU visible, and wrong profile pins and missing
+worker and its prior verifying key pin. The BLS envelope is 2,189 bytes and its
+verifying key matches the existing bundled development-v6 verifying key. Both portable
+envelopes verify with no GPU visible, and wrong verifying key pins and missing
 development opt-in are rejected.
 
 The local record is `target/gpu-parity/init-comparison.json`. Frozen workers,
@@ -1087,7 +1087,7 @@ BN254's fixed checkpoints total 114.79 GiB (84.77 GiB first stage and
 30.02 GiB recursive). Generating and writing them took 122.39 seconds in
 the fixed-preparation spans. These figures favor local generation and reuse
 on this hardware; downloading that volume is not necessarily cheaper.
-The current cache is trusted local data keyed by executable and profile.
+The current cache is trusted local data keyed by executable and verifying key.
 Distributing checkpoints would additionally require authenticated manifests
 and an explicit compatibility contract. Ceremony SRS distribution is a
 separate concern.
@@ -1111,9 +1111,9 @@ subtracting the cold fixed-preparation spans predicted 153.61 seconds,
 took 10.60 seconds for the first stage and 5.32 seconds for recursion;
 loading the saved coefficients during preparation adds further work.
 
-The compact proofs, packets, profiles and final 1,917-byte envelope match
+The compact proofs, packets, verifying keys and final 1,917-byte envelope match
 the cold run exactly. The original CPU worker independently verifies the
-warm envelope with the original claim, expected root claims and profile
+warm envelope with the original claim, expected root claims and verifying key
 pin, with no GPU visible. Peak process RSS was 175.28 GiB for the first
 stage and 63.17 GiB for recursion.
 
@@ -1131,7 +1131,7 @@ NVMe. Cold means empty fixed preprocessing; warm means reused preprocessing.
 Both used fresh worker processes and already-provisioned parameters. OS caches
 were uncontrolled. This historical result used the Init FRI fixture from
 `40c990ca`; the current fixture is regenerated by the current CLI. Use identical
-input fixtures when comparing binaries or profiles.
+input fixtures when comparing binaries or verifying keys.
 
 | Stage | Cold | Warm |
 | --- | ---: | ---: |
@@ -1159,10 +1159,10 @@ KZG commitment consumes the lowered circuit and assignment before proving.
 The remaining phase owns committed columns and verifier metadata, allowing
 frontend memory to be released before lookup and quotient allocation.
 Bundled and library recursive verification share validation and pairing checks.
-A bundled profile retains its prepared system, pairing keys and compact codec.
+A compiled-in verifying key retains its prepared system, pairing keys and compact codec.
 
 The library's `IXKZGV02` key encoding binds the transcript explicitly.
-The bundled v5 profile and packet encodings are unchanged.
+The bundled v5 verifying key and packet encodings are unchanged.
 
 ## Code and tests
 
@@ -1173,7 +1173,7 @@ proof witness. `Prepared::prove_fri`, `prepare_kzg`, `Prepared::prove_kzg` and
 `prepare_recursive` compose the stages with caller-selected bounds and SRS.
 These APIs return verifier-only metadata and keep the expected claim separate
 from the proof. They do not register a verifier in the application's bundled
-catalog. The CLI uses the worker and trusted profiles described above.
+catalog. The CLI uses the worker and trusted verifying keys described above.
 
 `fri` constrains FRI verification, `foreign` translates Goldilocks arithmetic
 into scalar-field constraints, `kzg` implements the commitment backend, and
@@ -1189,7 +1189,7 @@ lake build ix compression-cli-tests
 
 The lakefile compiles Cargo's C units as C17 so they stay compatible with
 Lean's bundled libc on hosts whose C compiler defaults to C23, and tracks
-that flag and the embedded profile bytes when deciding whether to rebuild
+that flag and the embedded verifying key bytes when deciding whether to rebuild
 the Rust archive.
 
 Tests cover small proving, tampering, CLI validation and proof identity.
@@ -1198,4 +1198,4 @@ The CLI test verifies both checked-in packets in a fresh home without a proving
 SRS or verifier import. Development proofs require `--dev-srs`; that flag also
 selects development parameters when a Filecoin cache is configured. Tests reject
 modified claims, proofs and pairing data even with development opt-in, and
-confirm that a local verifier registry cannot override the application's profiles.
+confirm that a local verifier registry cannot override the application's verifying keys.

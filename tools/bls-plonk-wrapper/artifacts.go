@@ -15,7 +15,7 @@ type artifact struct {
 	Bytes  int64
 }
 type manifest struct {
-	Format, ExecutableSHA256, ProfileSHA256 string
+	Format, ExecutableSHA256, InnerVKSHA256 string
 	SRSBLAKE3                               string
 	KeysReady                               bool
 	Domain                                  uint64
@@ -121,11 +121,11 @@ func loadManifest(dir string) (*manifest, error) {
 	if identity.SHA256 != m.ExecutableSHA256 {
 		return nil, fmt.Errorf("wrapper executable changed; recompile circuit and keys")
 	}
-	if err := m.checkFile(dir, "profile.json"); err != nil {
+	if err := m.checkFile(dir, "vk.json"); err != nil {
 		return nil, err
 	}
-	if m.Files["profile.json"].SHA256 != m.ProfileSHA256 {
-		return nil, fmt.Errorf("profile identity differs")
+	if m.Files["vk.json"].SHA256 != m.InnerVKSHA256 {
+		return nil, fmt.Errorf("verifying key identity differs")
 	}
 	return &m, nil
 }

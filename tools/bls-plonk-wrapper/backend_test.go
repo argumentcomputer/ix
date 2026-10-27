@@ -41,7 +41,7 @@ func (c *backendCircuit) Define(api frontend.API) error {
 }
 
 func TestFilecoinBackendAndProofCodec(t *testing.T) {
-	p, err := loadProfile(filepath.Join("testdata", "outer", "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join("testdata", "outer", "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

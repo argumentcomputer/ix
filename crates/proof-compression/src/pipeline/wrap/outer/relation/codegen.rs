@@ -1,6 +1,6 @@
-//! Fixed opening layouts and scalar arithmetic for authenticated profiles.
+//! Fixed opening layouts and scalar arithmetic for authenticated verifying keys.
 
-use super::{KzgConfig, Result, Scalar, System, VerifierProfile};
+use super::{KzgConfig, Result, Scalar, System};
 use multi_stark::{
   config::ProofConfig,
   expr::Source,
@@ -36,6 +36,9 @@ pub(in crate::pipeline::wrap::outer) struct OpeningLayout {
   pub(in crate::pipeline::wrap::outer) fixed_count: usize,
   pub(in crate::pipeline::wrap::outer) generator_index: usize,
   pub(in crate::pipeline::wrap::outer) coefficient_count: usize,
+  /// Intermediate lookup accumulators carried in the proof: one per circuit
+  /// except the last, whose accumulator is fixed to zero.
+  pub(in crate::pipeline::wrap::outer) accumulator_count: usize,
 }
 
 fn add(a: usize, b: usize) -> Result<usize> {
@@ -70,16 +73,17 @@ fn quotient_width(max_degree: usize) -> Result<usize> {
 }
 
 impl OpeningLayout {
-  pub(in crate::pipeline::wrap::outer) fn new(
-    profile: &VerifierProfile,
+
+  pub(in crate::pipeline::wrap::outer) fn new_for_system(
     system: &System<KzgConfig>,
+    logs: &[u8],
   ) -> Result<Self> {
-    if system.circuits.len() != 2 {
-      return Err("Solidity opening layout requires two circuits".into());
+    if logs.len() != system.circuits.len() {
+      return Err("trace logs must cover every circuit".into());
     }
-    let mut shapes = Vec::with_capacity(2);
+    let mut shapes = Vec::with_capacity(system.circuits.len());
     for (ci, circuit) in system.circuits.iter().enumerate() {
-      let height = profile.heights[ci];
+      let height = 1usize << logs[ci];
       log_degree(height)?;
       let domain = system.config.pcs().natural_domain_for_degree(height);
       shapes.push(CircuitShape {
@@ -100,9 +104,11 @@ impl OpeningLayout {
   }
 
   fn from_shapes(shapes: &[CircuitShape]) -> Result<Self> {
-    if shapes.len() != 2 {
-      return Err("Solidity opening layout requires two circuits".into());
+    let circuits = shapes.len();
+    if circuits < 2 {
+      return Err("opening layout requires at least two circuits".into());
     }
+    let accumulator_count = circuits - 1;
     for shape in shapes {
       let log = log_degree(shape.height)?;
       if shape.widths[1] == 0
@@ -117,11 +123,11 @@ impl OpeningLayout {
         return Err("Solidity domain generator has incorrect order".into());
       }
     }
-    let mut matrices = Vec::with_capacity(8);
+    let mut matrices = Vec::with_capacity(4 * circuits);
     let mut factors = Vec::with_capacity(3);
     let mut commitment_count = 0;
     let mut fixed_count = 0;
-    let mut field_count = 1;
+    let mut field_count = accumulator_count;
     for round in 0..4 {
       for shape in shapes {
         let width = shape.widths[round];
@@ -160,11 +166,11 @@ impl OpeningLayout {
         }
       }
     }
-    if !(2..=3).contains(&factors.len()) {
-      return Err("invalid Solidity evaluation-point count".into());
+    if factors.len() < 2 {
+      return Err("invalid evaluation-point count".into());
     }
     let point_count = add(commitment_count, factors.len())?;
-    for matrix in &mut matrices[6..] {
+    for matrix in &mut matrices[3 * circuits..] {
       matrix.point_offset = add(matrix.point_offset, point_count)?;
     }
     let generator_index = add(point_count, fixed_count)?;
@@ -182,6 +188,7 @@ impl OpeningLayout {
       fixed_count,
       generator_index,
       coefficient_count,
+      accumulator_count,
     })
   }
 
