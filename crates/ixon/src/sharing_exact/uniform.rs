@@ -351,7 +351,9 @@ pub(crate) fn graph_facts(dag: &SharingDag) -> Facts {
     let kids = node.children();
     for &c in kids.as_slice() {
       deg[ix(c)] += 1;
-      if !parents[ix(c)].contains(&t) {
+      // Parents are visited in increasing ID, so `t` can only repeat as the
+      // last entry: a constant-time check keeps this linear in the edges.
+      if parents[ix(c)].last() != Some(&t) {
         parents[ix(c)].push(t);
       }
     }
