@@ -140,10 +140,11 @@ def CapStepsAgree {V : Type w} [SetTheory V] {envA : Env .anon} (M : Ix.Kernel.C
   (∀ (sn : Ix.Kernel.Key .source) (i : Nat) (e e' : Ix.Kernel.Expr .source), ProjStep envQ sn i e e' →
     DenoteAlike M.model.cval envA (e.mapKeys f) (e'.mapKeys f))
 
-/-- `c` is the representative of the name `n` of the closure `sub`. -/
+/-- `c` is the representative of the name `n` that the closure `sub` stores a constant
+under (`ReadingCovers` explains why stored names). -/
 def RepOf (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (sub : Ix.Environment)
     (c : Ix.Kernel.ConstantInfo .source) (n : Ix.Name) : Prop :=
-  (sub.consts.get? n).isSome = true ∧ c.name = quotientKey ixe t n
+  (∃ ci, (n, ci) ∈ sub.consts.toList) ∧ c.name = quotientKey ixe t n
 
 /-- `c` represents a record whose terms the compiler rewrote. -/
 def RewrittenConstant (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment)
@@ -155,10 +156,12 @@ def CliqueConstant (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment
     (t : Ix.Kernel.RoleTable) (c : Ix.Kernel.ConstantInfo .source) : Prop :=
   ∃ n a, KindRoot .clique env ixe sub n a ∧ RepOf ixe t sub c n
 
-/-- `c` is the key of an imaged Source recursor of the closure. -/
+/-- `c` is the key of an imaged Source recursor of the closure, under the name the
+closure stores it under. -/
 def ImageRecursor (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment)
     (t : Ix.Kernel.RoleTable) (c : Ix.Kernel.Key .source) : Prop :=
-  ∃ n a, KindRoot .image env ixe sub n a ∧ (sub.consts.get? n).isSome = true ∧ c = quotientKey ixe t n
+  ∃ n a, KindRoot .image env ixe sub n a ∧ (∃ ci, (n, ci) ∈ sub.consts.toList) ∧
+    c = quotientKey ixe t n
 
 /-- **A driver state owns the artifact's resolution**: every name it resolves outside its
 aux map, and that the compile did not report failed, is published at the address it
@@ -238,7 +241,8 @@ def ReaderStreams : Prop :=
 
 /-- **(2) The reader keys every representative as its renaming.** In the reading context of
 an accepted compiled closure, a constant of quotient Source that reads, reads as its
-renamed key at its own level parameters, and every representative of the closure reads. -/
+renamed key at its own level parameters, and every representative of a name the closure
+stores a constant under reads. -/
 def ReadingKeys : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source)
@@ -251,7 +255,7 @@ def ReadingKeys : Prop :=
     ∃ cx, admissionContext binding limits ixe order = some cx ∧
       (∀ c ∈ envQ.consts, ∀ e, readingAt ixe t cx c = some e →
         e = .const (c.name.map (Ix.LeanIngress.evAddr ixe b)) (c.toConstantVal.levelParams.map .param)) ∧
-      ∀ n ci, sub.consts.get? n = some ci → ∀ c ∈ envQ.consts, c.name = quotientKey ixe t n →
+      ∀ n ci, (n, ci) ∈ sub.consts.toList → ∀ c ∈ envQ.consts, c.name = quotientKey ixe t n →
         (readingAt ixe t cx c).isSome = true
 
 /-- **(2) A constant the compiler did not rewrite reads as its renamed self**: in every
@@ -433,12 +437,6 @@ def RuleCorrespondence : Prop :=
 end Obligation
 
 /-! ## Helpers -/
-
-/-- A stored entry of an environment is what a lookup of its name returns. -/
-theorem stored_get {sub : Ix.Environment} {n : Ix.Name} {ci : Ix.ConstantInfo}
-    (h : (n, ci) ∈ sub.consts.toList) : sub.consts.get? n = some ci := by
-  rw [Std.HashMap.get?_eq_getElem?]
-  exact (Std.HashMap.mem_toList_iff_getKey?_eq_some_and_getElem?_eq_some.mp h).2
 
 /-- The default table passes its well-formedness check. -/
 theorem defaultTable_check {t : Ix.Kernel.RoleTable} (h : Ix.Kernel.Reader.defaultTable = .ok t) :
@@ -622,7 +620,7 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
     exact renamed_reading_denotes rel same unique hc M φ ρ
   · intro n ci hn hsorry
     obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
-    exact ⟨c, hc, hname, haddr, readsAll n ci (stored_get hn) c hc hname⟩
+    exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname⟩
 
 /-! ## The general case -/
 
@@ -702,6 +700,6 @@ theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obliga
     exact const_denotes hc' hl φ ρ
   · intro n ci hn hsorry
     obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
-    exact ⟨c, hc, hname, haddr, readsAll n ci (stored_get hn) c hc hname⟩
+    exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname⟩
 
 end Ix.Cert
