@@ -59,12 +59,10 @@ pub static IX_TIMING: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_TIMING").is_ok());
 
 /// Log every aux-name claim: alias insertions, canonical patch name
-/// registrations, evaporation decisions, and Pass 3's records of a changed
-/// block (`p3-edit`, `p3-move`, `p3-head`, `p3-rec` lines, by the component
-/// `scc=` that wrote them) — with full addresses and block context. The
-/// cross-SCC ownership of `all[0].rec_N`-style names is invisible in
-/// normal logs; this flag exists to attribute both claimants when a
-/// name is contested (see plans/aux-recursor-alias-collision.md).
+/// registrations, and evaporation decisions — with full addresses and
+/// block context. The cross-SCC ownership of `all[0].rec_N`-style names is
+/// invisible in normal logs; this flag exists to attribute both claimants
+/// when a name is contested.
 /// Set via IX_LOG_AUX_NAMES=1.
 pub static IX_LOG_AUX_NAMES: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_LOG_AUX_NAMES").is_ok());
@@ -242,31 +240,10 @@ pub struct BlockCache {
   pub univ_patches: Vec<UnivPatch>,
   /// Name of the constant currently being compiled (for error context).
   pub compiling: Option<Name>,
-  /// The current constant's `ConstantMeta.meta_sharing` accumulator: the
-  /// compiled source occurrences of its Pass 3 decompile records
-  /// (`pass3_compile_records`), and the collapsed arguments of a call-site
-  /// plan (registered by no compile any more; the decompiler's recompile
-  /// check and the unit tests still install plans). Drained after
-  /// compilation completes. Lean: `BlockState.metaSharing`.
+  /// The current constant's `ConstantMeta.meta_sharing` accumulator,
+  /// drained after compilation completes. The compiler adds no entries, so
+  /// the table is written empty. Lean: `BlockState.metaSharing`.
   pub surgery_sharing: Vec<Arc<Expr>>,
-  /// Pass 3: the block's members rewritten by the call-site rewrite
-  /// (`Ix.Compile.Pass.prepareBlock`'s overlay), read instead of the input.
-  pub p3_overlay: FxHashMap<Name, LeanConstantInfo>,
-  /// Pass 3: the source occurrence of each rewritten call site, by
-  /// placeholder index. Non-empty only in a block the rewrite changed.
-  pub p3_sources: FxHashMap<usize, LeanExpr>,
-  /// Pass 3: placeholder index to (`meta_sharing` index, arena root) of the
-  /// current constant's compiled decompile records.
-  pub p3_records: FxHashMap<usize, (u64, u64)>,
-  /// Pass 3: compiling a decompile record; references and universes outside
-  /// the primary tables go to the extension tables.
-  pub p3_meta_mode: bool,
-  /// Pass 3: the `exprs` inserts made in meta mode, each with the value it
-  /// replaced, undone newest first when the record is compiled (meta mode
-  /// reads the cache but leaves it as it found it).
-  pub p3_meta_undo: Vec<(ExprKey, Option<CachedExpr>)>,
-  /// Pass 3: the current constant's extension refs (`meta_refs`).
-  pub p3_meta_refs: indexmap::IndexSet<Address>,
 }
 
 #[derive(Debug)]
@@ -782,18 +759,6 @@ fn compile_univ_idx(
 ) -> Result<(u64, Option<u64>), CompileError> {
   let univ = compile_univ(level, univ_params, cache)?;
   let canon = canon_univ_cached(&univ, cache);
-  // Pass 3 decompile record: a universe outside the primary table goes to
-  // the extension (virtual index), never into the primary table (Lean
-  // `internUnivMeta`).
-  if cache.p3_meta_mode && !cache.univs.contains(&canon) {
-    let (slot, _) = cache.meta_univs.insert_full(canon.clone());
-    let cidx = (cache.univs.len() + slot) as u64;
-    if canon == univ {
-      return Ok((cidx, None));
-    }
-    let (slot2, _) = cache.meta_univs.insert_full(univ);
-    return Ok((cidx, Some((cache.univs.len() + slot2) as u64)));
-  }
   // V3 tripwire (canonicity §10.6): the primary table must not grow after
   // preseeding; a miss here would shift every virtual patch index minted so
   // far. Lean's `compileAndInternUnivCanon` refuses the same way, in every
@@ -1011,18 +976,8 @@ pub fn collect_mut_const_exprs<'a>(
 // Expression compilation
 // ===========================================================================
 
-/// Intern an address into the block's refs table, returning its index. While
-/// compiling a Pass 3 decompile record, an address outside the primary table
-/// goes to the constant's extension table (`meta_refs`, virtual index
-/// `refs.len() + j`) instead (Lean `internRefMeta`).
+/// Intern an address into the block's refs table, returning its index.
 fn intern_ref(cache: &mut BlockCache, addr: Address) -> usize {
-  if cache.p3_meta_mode {
-    if let Some(i) = cache.refs.get_index_of(&addr) {
-      return i;
-    }
-    let (j, _) = cache.p3_meta_refs.insert_full(addr);
-    return cache.refs.len() + j;
-  }
   cache.refs.insert_full(addr).0
 }
 
@@ -1038,102 +993,6 @@ fn collect_lean_telescope(e: &LeanExpr) -> (&LeanExpr, Vec<&LeanExpr>) {
   }
   args.reverse();
   (cur, args)
-}
-
-/// A placeholder index; `usize::MAX` when it does not fit (it then matches
-/// no record).
-fn nat_usize(n: &Nat) -> usize {
-  n.to_u64().and_then(|u| usize::try_from(u).ok()).unwrap_or(usize::MAX)
-}
-
-/// Pass 3: the placeholder indices of the rewritten call sites in `e`, in
-/// first-occurrence order, each once (Lean `pass3Placeholders`).
-fn pass3_placeholders(e: &LeanExpr, key: &Name) -> Vec<usize> {
-  let mut seen: FxHashSet<Address> = FxHashSet::default();
-  let mut out: Vec<usize> = Vec::new();
-  let mut stack = vec![e.clone()];
-  while let Some(x) = stack.pop() {
-    if !seen.insert(Address::from_blake3_hash(*x.get_hash())) {
-      continue;
-    }
-    match x.as_data() {
-      ExprData::Mdata(kvs, inner, _) => {
-        if let [(k, LeanDataValue::OfNat(n))] = kvs.as_slice()
-          && k == key
-        {
-          let n = nat_usize(n);
-          if !out.contains(&n) {
-            out.push(n);
-          }
-        }
-        stack.push(inner.clone());
-      },
-      ExprData::App(f, a, _) => {
-        stack.push(a.clone());
-        stack.push(f.clone());
-      },
-      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-        stack.push(b.clone());
-        stack.push(t.clone());
-      },
-      ExprData::LetE(_, t, v, b, _, _) => {
-        stack.push(b.clone());
-        stack.push(v.clone());
-        stack.push(t.clone());
-      },
-      ExprData::Proj(_, _, s, _) => stack.push(s.clone()),
-      _ => {},
-    }
-  }
-  out
-}
-
-/// Pass 3: compile the decompile record of every rewritten call site of `e`
-/// the current constant has not compiled yet: its source occurrence, into
-/// `meta_sharing`, in meta mode; the expression-cache inserts of meta mode
-/// are undone afterwards (Lean `pass3CompileRecords`).
-fn pass3_compile_records(
-  e: &LeanExpr,
-  univ_params: &[Name],
-  mut_ctx: &MutCtx,
-  cache: &mut BlockCache,
-  stt: &CompileState,
-) -> Result<(), CompileError> {
-  let key = pass3::names::inline_key();
-  for n in pass3_placeholders(e, &key) {
-    if cache.p3_records.contains_key(&n) {
-      continue;
-    }
-    let src = cache.p3_sources.get(&n).cloned().ok_or_else(|| {
-      CompileError::InvalidMutualBlock {
-        reason: format!(
-          "Pass 3: no source occurrence for call-site record {n}"
-        ),
-      }
-    })?;
-    cache.p3_meta_mode = true;
-    let res = compile_expr(&src, univ_params, mut_ctx, cache, stt);
-    cache.p3_meta_mode = false;
-    while let Some((key, old)) = cache.p3_meta_undo.pop() {
-      match old {
-        Some(v) => {
-          cache.exprs.insert(key, v);
-        },
-        None => {
-          cache.exprs.remove(&key);
-        },
-      }
-    }
-    let ix = res?;
-    let root = cache.arena_roots.pop().ok_or_else(|| {
-      CompileError::InvalidMutualBlock {
-        reason: "Pass 3: call-site record without an arena root".into(),
-      }
-    })?;
-    cache.p3_records.insert(n, (cache.surgery_sharing.len() as u64, root));
-    cache.surgery_sharing.push(ix);
-  }
-  Ok(())
 }
 
 fn compile_const_expr_raw(
@@ -1195,13 +1054,6 @@ pub fn compile_expr(
     WrapMdata(Vec<KVMap>),
     ApplyContract(crate::semantic_contract::Contract, LeanExpr),
     Cache(LeanExpr),
-  }
-
-  // Pass 3: the decompile records of the rewritten call sites in `expr`
-  // first (Lean `compileExpr` runs `pass3CompileRecords` before the term).
-  // Only a block the rewrite changed has sources.
-  if !cache.p3_meta_mode && !cache.p3_sources.is_empty() {
-    pass3_compile_records(expr, univ_params, mut_ctx, cache, stt)?;
   }
 
   // Exact source keys keep distinct terms with colliding digests separate.
@@ -1341,37 +1193,7 @@ pub fn compile_expr(
               stack.push(Frame::Compile(inner.clone()));
               continue;
             }
-            // Compile KV map. Pass 3: the placeholder `[(_ix.inline, n)]`
-            // becomes the decompile record `[(_ix.inline, s),
-            // (_ix.inline_meta, m)]` (Lean `compileKVMap`); only a block the
-            // rewrite changed has placeholders (the input's reserved keys
-            // are refused before compiling).
-            let mut kv_owned: Option<Vec<(Name, LeanDataValue)>> = None;
-            if !cache.p3_sources.is_empty()
-              && let [(k, LeanDataValue::OfNat(n))] = kv.as_slice()
-              && *k == pass3::names::inline_key()
-            {
-              let n = nat_usize(n);
-              let (s, m) =
-                cache.p3_records.get(&n).copied().ok_or_else(|| {
-                  CompileError::InvalidMutualBlock {
-                    reason: format!(
-                      "Pass 3: call-site record {n} was not compiled"
-                    ),
-                  }
-                })?;
-              kv_owned = Some(vec![
-                (
-                  pass3::names::inline_key(),
-                  LeanDataValue::OfNat(Nat::from(s)),
-                ),
-                (
-                  pass3::names::inline_meta_key(),
-                  LeanDataValue::OfNat(Nat::from(m)),
-                ),
-              ]);
-            }
-            let kv = kv_owned.as_ref().unwrap_or(kv);
+            // Compile KV map
             let mut pairs = Vec::new();
             for (k, v) in kv {
               let k_addr = compile_name(k, stt)?;
@@ -1488,12 +1310,7 @@ pub fn compile_expr(
           let arena_root =
             *cache.arena_roots.last().expect("Cache missing arena root");
           let entry = CachedExpr { expr: result.clone(), arena_root };
-          if cache.p3_meta_mode {
-            let old = cache.exprs.insert(e_key.clone(), entry);
-            cache.p3_meta_undo.push((e_key, old));
-          } else {
-            cache.exprs.insert(e_key, entry);
-          }
+          cache.exprs.insert(e_key, entry);
         }
       },
     }
@@ -1964,9 +1781,6 @@ pub fn compile_definition(
   // §10.6), clear for next constant
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
-  let p3_meta_refs: Vec<Address> =
-    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
-  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -2000,7 +1814,6 @@ pub fn compile_definition(
     value_root,
   });
   meta.meta_sharing = surgery_sharing;
-  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
   stt.record_hint(&def.name, Some(def.hints));
@@ -2061,9 +1874,6 @@ pub fn compile_recursor(
   // §10.6) drain on the same boundary for the same reason.
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
-  let p3_meta_refs: Vec<Address> =
-    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
-  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -2103,7 +1913,6 @@ pub fn compile_recursor(
     rule_roots,
   });
   meta.meta_sharing = surgery_sharing;
-  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -2134,9 +1943,6 @@ fn compile_constructor(
   // constructor.
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
-  let p3_meta_refs: Vec<Address> =
-    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
-  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -2167,7 +1973,6 @@ fn compile_constructor(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
-  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -2201,9 +2006,6 @@ pub fn compile_inductive(
   // §10.6) split on the same boundary.
   let indc_arena = std::mem::take(&mut cache.arena);
   let indc_surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
-  let p3_meta_refs: Vec<Address> =
-    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
-  cache.p3_records.clear();
   let indc_meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let indc_univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -2257,7 +2059,6 @@ pub fn compile_inductive(
     type_root,
   });
   meta.meta_sharing = indc_surgery_sharing;
-  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = indc_meta_univs;
   meta.univ_patches = indc_univ_patches;
 
@@ -2284,9 +2085,6 @@ fn compile_axiom(
   // the level-spelling channels (canonicity §10.6).
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
-  let p3_meta_refs: Vec<Address> =
-    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
-  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -2309,7 +2107,6 @@ fn compile_axiom(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
-  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -2336,9 +2133,6 @@ fn compile_quotient(
   // the level-spelling channels (canonicity §10.6).
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
-  let p3_meta_refs: Vec<Address> =
-    std::mem::take(&mut cache.p3_meta_refs).into_iter().collect();
-  cache.p3_records.clear();
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -2360,7 +2154,6 @@ fn compile_quotient(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
-  meta.meta_refs = p3_meta_refs;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -3515,18 +3308,14 @@ fn compile_const_inner_body(
   // `lean_env.get(name)` is a plain `Option<&ConstantInfo>` from an
   // `FxHashMap` (see `Env` alias in env.rs) — there's no guard to
   // release, so we clone the value and let the borrow expire on the
-  // next line through NLL. Pass 3: a member the call-site rewrite changed
-  // is read from the overlay.
-  let cnst: LeanConstantInfo = match cache.p3_overlay.get(name) {
-    Some(c) => c.clone(),
-    None => lean_env
-      .get(name)
-      .ok_or_else(|| CompileError::MissingConstant {
-        name: name.pretty(),
-        caller: "compile_const".into(),
-      })?
-      .clone(),
-  };
+  // next line through NLL.
+  let cnst: LeanConstantInfo = lean_env
+    .get(name)
+    .ok_or_else(|| CompileError::MissingConstant {
+      name: name.pretty(),
+      caller: "compile_const".into(),
+    })?
+    .clone();
 
   // Helper: compile a single definition/theorem/opaque (non-mutual case).
   // When `aux` is false (ephemeral compilation for metadata capture),
@@ -3741,31 +3530,19 @@ fn compile_mutual(
   let mut cs = Vec::new();
   for n in all {
     // Clone out of the `EnvEntry` guard so the block owns its constants
-    // and no env borrow is held across the compile below. Pass 3: a member
-    // the call-site rewrite changed is read from the overlay.
-    let const_info = match cache.p3_overlay.get(n) {
-      Some(c) => c.clone(),
-      None => match lean_env.get(n).map(|e| e.cloned()) {
-        Some(c) => c,
-        None => {
-          return Err(CompileError::MissingConstant {
-            name: n.pretty(),
-            caller: "compile_mutual".into(),
-          });
-        },
+    // and no env borrow is held across the compile below.
+    let const_info = match lean_env.get(n).map(|e| e.cloned()) {
+      Some(c) => c,
+      None => {
+        return Err(CompileError::MissingConstant {
+          name: n.pretty(),
+          caller: "compile_mutual".into(),
+        });
       },
     };
     let mut_const = match &const_info {
       LeanConstantInfo::InductInfo(val) => {
-        let mut ind = mk_indc(val, lean_env)?;
-        for c in &mut ind.ctors {
-          if let Some(LeanConstantInfo::CtorInfo(o)) =
-            cache.p3_overlay.get(&c.cnst.name)
-          {
-            *c = o.clone();
-          }
-        }
-        MutConst::Indc(ind)
+        MutConst::Indc(mk_indc(val, lean_env)?)
       },
       LeanConstantInfo::DefnInfo(val) => MutConst::Defn(Def::mk_defn(val)),
       LeanConstantInfo::OpaqueInfo(val) => MutConst::Defn(Def::mk_opaq(val)),
@@ -4106,7 +3883,6 @@ mod memory;
 pub mod mutual;
 pub mod nat_conv;
 pub mod original_data;
-pub mod pass3;
 mod publication;
 pub(crate) mod validation;
 pub use env::{

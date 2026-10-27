@@ -10,7 +10,6 @@ public import Ix.EnvScope
 public import Ix.GraphM
 public import Ix.Compile.Canon
 public import Ix.Compile.Image
-public import Ix.Compile.Pass.Names
 public import Ix.CondenseM
 public import Ix.CompileM
 public import Ix.DecompileM

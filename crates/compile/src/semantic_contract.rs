@@ -6,7 +6,6 @@ use ix_common::env::{Expr as Source, ExprData};
 use ixon::CompileError;
 use ixon::contract::{BinderContract, LetKind, ValueContract};
 use ixon::expr::Expr;
-use std::sync::Arc;
 
 pub use ixon::contract::source::{
   Contract, Kind, decode, has_metadata, read, reserved,
@@ -16,6 +15,8 @@ pub use ixon::contract::source::{
 use bignat::Nat;
 #[cfg(test)]
 use ix_common::env::{DataValue, Name, NameData};
+#[cfg(test)]
+use std::sync::Arc;
 
 fn error(desc: &str) -> CompileError {
   CompileError::UnsupportedExpr { desc: desc.into() }
@@ -121,37 +122,6 @@ pub fn of_ixon(expr: &Expr) -> Option<Contract> {
     || c.result != ValueContract::shared()
     || c.let_kind != LetKind::Value)
     .then_some(c)
-}
-
-/// Context-free presence scan only; never used as resource-validity evidence.
-/// A `Share` node met in index space `scope` is expanded by `resolve`, which
-/// returns the target and the index space the target's own `Share` nodes are
-/// read in (the decompiler's primary/metadata share scopes). Mirrors Lean
-/// `Ix.SemanticContract.containsIxon`.
-pub fn contains_ixon<S, E>(
-  expr: &Arc<Expr>,
-  scope: S,
-  mut resolve: impl FnMut(S, u64) -> Result<(Arc<Expr>, S), E>,
-) -> Result<bool, E>
-where
-  S: Copy + Eq + std::hash::Hash,
-{
-  let mut seen = rustc_hash::FxHashSet::default();
-  let mut stack = vec![(expr.clone(), scope)];
-  while let Some((e, s)) = stack.pop() {
-    if !seen.insert((Arc::as_ptr(&e), s)) {
-      continue;
-    }
-    if of_ixon(&e).is_some() {
-      return Ok(true);
-    }
-    if let Expr::Share(index) = e.as_ref() {
-      stack.push(resolve(s, *index)?);
-    } else {
-      stack.extend(e.children().into_iter().map(|c| (c.clone(), s)));
-    }
-  }
-  Ok(false)
 }
 
 #[cfg(test)]
@@ -409,52 +379,6 @@ mod tests {
       .unwrap();
       assert_eq!(result, term);
     }
-
-    // A Pass 3 decompile record is optional metadata: its replay may not
-    // drop a contract the compiled term carries, also behind sharing
-    // (before CQ3.6 this was pinned through the call-site replay).
-    let nested = Expr::lam_contract(
-      BinderContract {
-        uses: ixon::expr::Uses::Affine,
-        value: ValueContract::local_unique(),
-      },
-      Expr::sort(0),
-      Expr::var(0),
-    );
-    let nat = |n: u64| {
-      DataValue::OfNat(crate::compile::store_nat(&Nat::from(n), &stt).unwrap())
-    };
-    let key_addr = |n: &Name| crate::compile::compile_name(n, &stt).unwrap();
-    let record = vec![
-      (key_addr(&crate::compile::pass3::names::inline_key()), nat(0)),
-      (key_addr(&crate::compile::pass3::names::inline_meta_key()), nat(0)),
-    ];
-    let mut rec_arena = ExprMeta::default();
-    let rec_leaf = rec_arena.alloc(ExprMetaData::Leaf);
-    let rec_root = rec_arena
-      .alloc(ExprMetaData::Mdata { mdata: vec![record], child: rec_leaf });
-    let replay = |compiled: Arc<Expr>| {
-      let mut cache = DecompileCache {
-        sharing: vec![nested.clone()],
-        meta_sharing: vec![Expr::var(3)],
-        ..Default::default()
-      };
-      decompile_expr(
-        &compiled,
-        &rec_arena,
-        rec_root,
-        &[],
-        &mut cache,
-        &stt,
-        &DecompileState::default(),
-      )
-    };
-    let err = replay(Expr::app(Expr::var(0), Expr::share(0))).unwrap_err();
-    assert!(err.to_string().contains("semantic contract"), "{err}");
-    assert_eq!(
-      replay(Expr::app(Expr::var(0), Expr::var(1))).unwrap(),
-      Source::bvar(Nat::from(3u64))
-    );
 
     let mut arena = ExprMeta::default();
     let key =

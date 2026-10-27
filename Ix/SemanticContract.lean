@@ -157,31 +157,6 @@ def Contract.ixMetadata (contract : Contract) : Array (Ix.Name × Ix.DataValue) 
      (Ix.Name.mkStr key "kind", .ofNat contract.kindCode),
      (Ix.Name.mkStr key "code", .ofNat contract.code) ]
 
-/-- Read-only presence scan used to reject optional structural rewrites that
-would remove contracts, including contracts hidden behind sharing. A `share`
-node met in index space `scope` is expanded by `resolve`, which returns the
-target and the index space the target's own `share` nodes are read in (the
-decompiler's primary/metadata share scopes). -/
-def containsIxon {σ ε : Type} [BEq σ] [Hashable σ] [Inhabited σ]
-    (resolve : σ → UInt64 → Except ε (Ixon.Expr × σ)) (scope : σ)
-    (top : Ixon.Expr) : Except ε Bool := do
-  let mut seen : Std.HashSet (Ixon.Expr × σ) := {}
-  let mut stack := #[(top, scope)]
-  while !stack.isEmpty do
-    let (e, s) := stack.back!
-    stack := stack.pop
-    if seen.contains (e, s) then continue
-    seen := seen.insert (e, s)
-    if (ofIxon? e).isSome then return true
-    match e with
-    | .share index => stack := stack.push (← resolve s index)
-    | .app f a => stack := stack.push (f, s) |>.push (a, s)
-    | .lam _ t b | .all _ _ t b => stack := stack.push (t, s) |>.push (b, s)
-    | .letE _ t v b => stack := stack.push (t, s) |>.push (v, s) |>.push (b, s)
-    | .prj _ _ v => stack := stack.push (v, s)
-    | _ => pure ()
-  return false
-
 end Ix.SemanticContract
 
 end

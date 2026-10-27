@@ -1300,13 +1300,11 @@ theorem compileUnchecked_fold {env : Ix.Environment} {ixe : Ixon.Env} {failures 
   simp only [bind, Except.bind, pure, Except.pure] at h
   split at h
   · cases h
-  · split at h
-    · cases h
-    · rename_i r hr
-      obtain ⟨ixe', bytes, cenv⟩ := r
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨rfl, -, rfl⟩ := h
-      exact ⟨bytes, hr⟩
+  · rename_i r hr
+    obtain ⟨ixe', bytes, cenv⟩ := r
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -, rfl⟩ := h
+    exact ⟨bytes, hr⟩
 
 /-- **A failure recorded in the driver's final environment is reported**:
 `compileUnchecked`'s block failures are the final environment's `ungrounded`. -/
@@ -1317,13 +1315,11 @@ theorem compileUnchecked_ungrounded {env : Ix.Environment} {ixe : Ixon.Env} {fai
   simp only [bind, Except.bind, pure, Except.pure] at h
   split at h
   · cases h
-  · split at h
-    · cases h
-    · rename_i r hr
-      obtain ⟨ixe', bytes, cenv'⟩ := r
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨-, rfl, rfl⟩ := h
-      simp only [Failures.failed, hx, Bool.or_true]
+  · rename_i r hr
+    obtain ⟨ixe', bytes, cenv'⟩ := r
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, rfl, rfl⟩ := h
+    simp only [Failures.failed, hx, Bool.or_true]
 
 /-- **Where the resolution map of `compileUnchecked`'s environment comes
 from**: every entry is an aux name's (in the same environment's aux map),

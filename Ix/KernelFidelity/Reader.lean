@@ -3,7 +3,6 @@ module
 public import Ix.Environment
 public import Ix.SemanticContract
 public import Ix.IxonUniv
-public import Ix.Compile.Pass.Names
 public import Ix.CanonM
 public import Ix.KernelCheck.Step
 public import Ix.KernelCheck.Stream
@@ -101,18 +100,11 @@ No reader defect is known. Every difference on the fixture closure and on all of
   - *auxiliary regenerated*: `Named.original` is set: the compiler
     regenerated the constant in canonical form (the recursors, `recOn`,
     `below`, `brecOn` of a mutual block, whose members it orders
-    canonically), so its record is not Lean's term;
-  - *Pass 3 call-site records*: a call of an image-kind auxiliary of a
-    changed block was rewritten through its image, and the source occurrence
-    is kept as an `_ix.inline` decompile record (`hasInlineRecord`).
+    canonically), so its record is not Lean's term.
   These must still agree with the reference on kind, name, level parameters and
   counts (`weakAgree`); Ix.Tc's meta roundtrip skips the same classes. A
   block whose recursors are regenerated may also be in the compiler's member
   order (counted, not a problem).
-  - *Pass 3 image of a recursor*: the Lean name of a changed block's recursor
-    holds its image, a definition with `Named.original` whose type is the
-    recursor's (Def 3.4). It must agree with the reference on name, level
-    parameters and type (`CVal.beq`); its kind is a definition's.
   None of these occurs in `Init` and `Std`.
 * **Declines** the reader is expected to make (unsafe and partial constants).
 * Anything else is **unexplained** and fails the drivers. -/
@@ -483,10 +475,6 @@ structure Report where
   reorderedBlocks : Array Lean.Name := #[]
   /-- reader constants no Lean constant translates to -/
   unmatched : Array (CName .anon) := #[]
-  /-- reader constants of Pass 3's canonical constants of changed blocks
-  (published under reserved `_ix` names; the Lean names of the block's
-  recursors hold their images): no Lean constant translates to them by design -/
-  pass3Canonical : Nat := 0
   /-- names, shape data and pin-table checks: problems found -/
   problems : Array String := #[]
   /-- unexplained differences, with the Lean name -/
@@ -530,8 +518,6 @@ def Report.summary (r : Report) (shown : Nat := 25) : String := Id.run do
   lines := lines.push s!"reader constants of records outside the Lean environment: {r.foreign}"
   lines := lines.push s!"regenerated auxiliaries named off the Lean convention: {r.renamedAux}"
   lines := lines.push s!"inductive blocks in the compiler's canonical member order: {r.reorderedBlocks.size} {r.reorderedBlocks.extract 0 shown}"
-  lines := lines.push s!"reader constants of Pass 3's canonical `_ix` constants (no Lean \
-    constant by design): {r.pass3Canonical}"
   lines := lines.push s!"reader constants without a Lean constant: {r.unmatched.size}"
   for n in r.unmatched.extract 0 shown do lines := lines.push s!"  {n}"
   lines := lines.push s!"problems: {r.problems.size}"
@@ -659,7 +645,6 @@ and their expression tables are released after extracting these flags. -/
 structure NamedFacts where
   addr : Address
   original : Bool
-  inlineRecord : Bool
 
 /-! ## The closure of seeds -/
 
@@ -727,9 +712,6 @@ structure Cx where
   /-- record owners whose metadata names constants outside the Lean
   environment (the compiled source's own declarations) -/
   foreign : Std.HashSet Address
-  /-- the reader's keys of the constants published under reserved `_ix` names
-  (Pass 3's canonical constants of changed blocks) -/
-  pass3Keys : Std.HashSet (CName .anon) := {}
   /-- Trusted setup records absent from the compiled input. They still
   supply reader state; their unlabelled entries are not source comparisons. -/
   preludeOnly : Std.HashSet Address := {}
@@ -794,22 +776,6 @@ def weakAgree (a e : Entry) : Bool :=
       rs.all (fun x => ts.any (·.ctor == x.ctor)) && ts.all (fun y => rs.any (·.ctor == y.ctor))
   | _, _ => true
 
-/-- Whether a constant's metadata holds a Pass 3 decompile record: an `mdata`
-node with the key `_ix.inline` (`Ix.Compile.Pass.inlineKey`). -/
-def hasInlineRecord (cm : Ixon.ConstantMeta) : Bool :=
-  let arena := match cm.info with
-    | .defn _ _ _ _ a _ _ => a
-    | .axio _ _ a _ => a
-    | .quot _ _ a _ => a
-    | .indc _ _ _ _ _ a _ => a
-    | .ctor _ _ _ a _ => a
-    | .recr _ _ _ _ _ a _ _ => a
-    | .empty | .muts _ _ => {}
-  arena.nodes.any fun
-    | .mdata kvmaps _ => kvmaps.any fun kv => kv.any fun (k, _) =>
-      k == Ix.Compile.Pass.inlineKey.getHash
-    | _ => false
-
 /-- The verdict on one Lean constant against the reader's entry, at the
 reader's state before the record. -/
 def judge (cx : Cx) (st : State .anon) (n : Lean.Name) (actual : Entry) (expected : RefM Entry) : Verdict :=
@@ -840,16 +806,8 @@ def judge (cx : Cx) (st : State .anon) (n : Lean.Name) (actual : Entry) (expecte
         else
           let regenerated := (nd.map (·.original)).getD false
           let canon? : Option String :=
-            if regenerated then some "auxiliary regenerated"
-            else if (nd.map (·.inlineRecord)).getD false then
-              some "Pass 3 call-site records"
-            else none
+            if regenerated then some "auxiliary regenerated" else none
           match actual, expected, canon? with
-          | .defn acv _ _, .recr ecv _ _ _, some _ =>
-            -- Pass 3: the Lean name of a changed block's recursor holds its
-            -- image, a definition (with `Named.original`) of the recursor's type
-            if regenerated && CVal.beq acv ecv then .canonicalized "Pass 3 image of a recursor"
-            else .unexplained s!"{diff} (Pass 3 image of a recursor?, and the name, level parameters or type differ)"
           | _, _, some k =>
             -- the record is not Lean's term, but it is the same constant
             if weakAgree actual expected then .canonicalized k
@@ -872,8 +830,6 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
       if leans.isEmpty then
         if cx.foreign.contains address then
           report := { report with foreign := report.foreign + 1 }
-        else if cx.pass3Keys.contains actual.name then
-          report := { report with pass3Canonical := report.pass3Canonical + 1 }
         else unless cx.preludeOnly.contains address do
           report := { report with unmatched := report.unmatched.push actual.name }
         continue
@@ -904,14 +860,9 @@ def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .a
     let expectedNames := leanOrder.filterMap fun n => (cx.rcx.name n).toOption
     unless actualNames == expectedNames do
       let regenerated := leanOrder.any fun n => ((cx.named[n]?).map (·.original)).getD false
-      -- a changed block's canonical recursors are Pass 3 `_ix` constants: the
-      -- Lean names of its recursors hold their images (definitions), so each
-      -- stands in for one Lean recursor the block no longer holds
-      let canonical := actualNames.filter cx.pass3Keys.contains
-      let images := expectedNames.filter fun e => !actualNames.contains e
       if (regenerated && actualNames.length == expectedNames.length &&
-          actualNames.all (fun a => expectedNames.contains a || cx.pass3Keys.contains a) &&
-          canonical.length == images.length) || flatCollapseOrder cx iv block then
+          actualNames.all expectedNames.contains && expectedNames.all actualNames.contains) ||
+          flatCollapseOrder cx iv block then
         report := { report with reorderedBlocks := report.reorderedBlocks.push ln }
       else
         report := report.problem s!"block order of {ln}: reader {actualNames.take 6}…, \
@@ -963,8 +914,7 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
     unless nd.addr == address do
       throw (IO.userError s!"fidelity: metadata address changed for {n}")
     named := named.insert n {
-      addr := address, original := nd.original.isSome
-      inlineRecord := hasInlineRecord nd.constMeta }
+      addr := address, original := nd.original.isSome }
     let some r := resolve (store[·]?) address
       | throw (IO.userError s!"fidelity: source record {address} for {n} does not resolve")
     refs := refs.insert n r
@@ -999,19 +949,8 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
     foreign := foreign.insert (owner a c)
   let advisory (n : Lean.Name) : Option Ix.Kernel.ReducibilityHint := (refs[n]?).bind s.cx.hint
   let aliases (n : Lean.Name) : Nat := ((refs[n]?).map fun r => (byRef.getD r #[]).size).getD 0
-  -- Pass 3's canonical constants of changed blocks: published under reserved
-  -- `_ix` names, read with the block they belong to (whose members keep their
-  -- Lean names), so they are recognized by key, not by record
-  let pass3Keys : Std.HashSet (CName .anon) := input.headers.foldl (init := {}) fun acc (n, address) =>
-    if Ix.Compile.Pass.hasReserved n then
-      match resolve (store[·]?) address with
-      | some r => match (s.cx.memberKey r).toOption with
-        | some k => acc.insert k
-        | none => acc
-      | none => acc
-    else acc
   let cx : Cx := {
-    lean := input.lean, rcx, named, byName, foreign, pass3Keys, preludeOnly
+    lean := input.lean, rcx, named, byName, foreign, preludeOnly
     keep, advisory, aliases, recursorKey := canonicalRecursor s.cx }
   -- read in the check order, comparing each record's constants at the
   -- reader's state before it

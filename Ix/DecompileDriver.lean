@@ -51,12 +51,10 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
             isReflexive := flags.isReflexive })
   return .ok result
 
-/-- Read source records without changing canonical reference resolution.
-    Reserved `_ix` names are compiler support, not source declarations. -/
+/-- Read source records without changing canonical reference resolution. -/
 private def decompileOriginals (ixonEnv : Ixon.Env) (numWorkers : Nat)
     : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) × Unit :=
   let (decoded, errors) := decompileAllParallel (originalView ixonEnv) numWorkers
-    (skip := fun n _ => Ix.Compile.Pass.hasReserved n)
   match fixupInductiveFlags decoded with
   | .ok fixed => (fixed, errors, ())
   | .error err => (decoded, errors.push (Ix.Name.mkAnon, err), ())

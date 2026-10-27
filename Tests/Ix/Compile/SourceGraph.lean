@@ -34,7 +34,7 @@ private def facts (raw : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat)
     (out : _root_.Ix.CompileM.LeanPipelineOut) : IO Unit := do
   let input ← IO.ofExcept ((_root_.Ix.Compile.CompileInput.fromAnnotations raw).mapError toString)
   let prepared ← IO.ofExcept input.prepare
-  let (names, expected) := Prepass.produce _root_.Ix.CompileM.sourceHasReservedMetadata prepared.toArray workers
+  let (names, expected) := Prepass.produce prepared.toArray workers
   let some actual := out.sourceNodes? | throw (IO.userError "successful IO result omitted source facts")
   need (actual.size == expected.facts.nodes.size) "source graph domain size differs"
   for (n, expectedNode) in expected.facts.nodes do
@@ -112,7 +112,7 @@ def run : IO UInt32 := do
   let last : _root_.Ix.Name := .str (.anonymous h) "last" h
   for workers in [0, 1, 2, 8] do
     let out := Stream.runLabelled { consts := (Prepass.run raw.toArray).thinConsts }
-      _root_.Ix.CompileM.sourceHasReservedMetadata #[(first, d), (last, opaqueNat)] workers
+      #[(first, d), (last, opaqueNat)] workers
     need (decide (out.facts.nodes.getKey? first = some last) &&
       decide (out.outRefs.getKey? first = some last) && decide (out.digests.getKey? first = some last) &&
       out.facts.code.isEmpty) "streamed alias winner or stored representative changed"

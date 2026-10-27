@@ -17,7 +17,7 @@ private def same (a b : Report) : Bool :=
   a.counts.toArray == b.counts.toArray && a.projRewrites == b.projRewrites &&
   a.generated == b.generated && a.foreign == b.foreign && a.renamedAux == b.renamedAux &&
   a.reorderedBlocks == b.reorderedBlocks && a.unmatched == b.unmatched &&
-  a.pass3Canonical == b.pass3Canonical && a.problems == b.problems &&
+  a.problems == b.problems &&
   a.unexplained == b.unexplained && a.verdicts.toArray == b.verdicts.toArray &&
   a.pairs.toArray == b.pairs.toArray && a.examples.toArray == b.examples.toArray &&
   a.readMs == b.readMs && a.compareMs == b.compareMs && a.slow == b.slow

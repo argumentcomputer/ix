@@ -1764,13 +1764,11 @@ pub extern "C" fn rs_decompile_env(
 /// `Lean.ConstantInfo` objects — the production import path behind
 /// `import_ixe` (`Ix/ImportIxe.lean`).
 ///
-/// `names` selects source roots: empty ⇒ every original-source constant;
+/// `names` selects source roots: empty ⇒ every decompiled constant;
 /// nonempty ⇒ the requested source constants plus their full name-level
 /// reference closure over the decompiled env
-/// (`ix_compile::decompile::materialized_source_names`). Compiler support
-/// under reserved `_ix*` names stays in Ixon. An absent requested name, a
-/// requested support name, a source reference to support after
-/// decompilation, or a reference that resolves to nothing (which would
+/// (`ix_compile::decompile::materialized_source_names`). An absent
+/// requested name or a reference that resolves to nothing (which would
 /// fail kernel replay much later with a worse message) is an immediate
 /// error (fail closed), for a full selection too.
 ///
@@ -1861,8 +1859,8 @@ pub extern "C" fn rs_decompile_env_consts(
     },
   };
 
-  // Select the output set: every original-source constant, or the requested
-  // source closure. Reserved compiler support stays in the artifact.
+  // Select the output set: every decompiled constant, or the requested
+  // source closure.
   let selected = match ix_compile::decompile::materialized_source_names(
     &dstt.env, &requested,
   ) {

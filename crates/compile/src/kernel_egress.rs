@@ -500,12 +500,12 @@ impl EgressCtx {
   }
 
   /// Install the ORIGINAL constant's refs table, for the same reason as
-  /// [`Self::preseed_univs`]: Pass 3's decompile records (`_ix.inline`)
-  /// store their source occurrences in `ConstantMeta.meta_sharing`, whose
-  /// `Ref`/`Str`/`Nat` indices address the original table (primary
-  /// indices, then `refs.len() + j` into `meta_refs`), and the roundtrip
-  /// pairs the rebuilt constant with that original meta. Traversal interns
-  /// then hit the original positions instead of a first-use order.
+  /// [`Self::preseed_univs`]: the expressions of `ConstantMeta.meta_sharing`
+  /// address the original table with their `Ref`/`Str`/`Nat` indices
+  /// (primary indices, then `refs.len() + j` into `meta_refs`), and the
+  /// roundtrip pairs the rebuilt constant with that original meta.
+  /// Traversal interns then hit the original positions instead of a
+  /// first-use order.
   fn preseed_refs(&mut self, refs: &[Address]) {
     for r in refs {
       self.refs.insert(r.clone());

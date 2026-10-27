@@ -415,24 +415,6 @@ pub fn compile_env_with_profile(
     );
   }
 
-  // Reserved input: a grounded input constant with a reserved metadata
-  // key, then a grounded input name with a reserved component, is refused
-  // before compiling, naming the least message as the Lean IO pipeline does.
-  if let Some(desc) = scan
-    .reserved_metadata
-    .iter()
-    .filter(|n| !ungrounded_map.contains_key(*n))
-    .map(crate::compile::pass3::names::reserved_metadata_input)
-    .min()
-  {
-    return Err(CompileError::UnsupportedExpr { desc });
-  }
-  if let Some(desc) = crate::compile::pass3::names::reserved_input_in(
-    condensed.blocks.values().flat_map(|block| block.iter()),
-  ) {
-    return Err(CompileError::UnsupportedExpr { desc });
-  }
-
   // Domain restriction: reject environments with non-canonical inductive
   // flags. Groups come from the fused scan; only inductive families are
   // re-read here.
@@ -1870,79 +1852,5 @@ mod safety_tests {
     env.insert(h.clone(), axiom(&h, true));
     let groups = FxHashMap::default();
     assert!(validate_mutual_safety(&groups, &block(&[&f, &h]), &env).is_ok());
-  }
-}
-
-#[cfg(test)]
-mod reserved_input_tests {
-  use super::*;
-  use crate::compile::pass3::names::{
-    inline_key, reserved_input, reserved_metadata_input,
-  };
-  use bignat::Nat;
-  use ix_common::env::{
-    ConstantVal, DataValue, DefinitionVal, Expr as LeanExpr, Level,
-    ReducibilityHints,
-  };
-
-  fn dotted(s: &str) -> Name {
-    s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
-  }
-
-  /// `n : Sort 1 := Sort 0`, the value wrapped in `kvs` when there are any.
-  fn defn(n: &Name, kvs: Vec<(Name, DataValue)>) -> LeanConstantInfo {
-    let value = LeanExpr::sort(Level::zero());
-    LeanConstantInfo::DefnInfo(DefinitionVal {
-      cnst: ConstantVal {
-        name: n.clone(),
-        level_params: vec![],
-        typ: LeanExpr::sort(Level::succ(Level::zero())),
-      },
-      value: if kvs.is_empty() { value } else { LeanExpr::mdata(kvs, value) },
-      hints: ReducibilityHints::Opaque,
-      safety: DefinitionSafety::Safe,
-      all: vec![n.clone()],
-    })
-  }
-
-  fn compile(
-    consts: Vec<LeanConstantInfo>,
-  ) -> Result<CompileState, CompileError> {
-    let mut env = LeanEnv::default();
-    for c in consts {
-      env.insert(c.get_name().clone(), c);
-    }
-    compile_env(&Arc::new(env))
-  }
-
-  fn refusal(result: Result<CompileState, CompileError>) -> String {
-    match result {
-      Err(CompileError::UnsupportedExpr { desc }) => desc,
-      Err(e) => panic!("another refusal: {e:?}"),
-      Ok(_) => panic!("compiled"),
-    }
-  }
-
-  fn key(k: Name) -> Vec<(Name, DataValue)> {
-    vec![(k, DataValue::OfNat(Nat::from(0u64)))]
-  }
-
-  /// Reserved input names and metadata keys are refused by the least
-  /// message (a metadata message is less than any name message, so it
-  /// comes first); an ordinary key and the neighbour `_i` compile.
-  #[test]
-  fn compile_env_refuses_reserved_input() {
-    let (b, a) = (dotted("R.b._ix"), dotted("R.a._ixd"));
-    let names = vec![defn(&b, vec![]), defn(&a, vec![])];
-    assert_eq!(refusal(compile(names)), reserved_input(&a).unwrap());
-    let (d, c) = (dotted("M.d"), dotted("M.c"));
-    let keyed = vec![
-      defn(&d, key(inline_key())),
-      defn(&c, key(inline_key())),
-      defn(&b, vec![]),
-    ];
-    assert_eq!(refusal(compile(keyed)), reserved_metadata_input(&c));
-    let ordinary = vec![defn(&dotted("N._i"), key(dotted("user.key")))];
-    assert!(compile(ordinary).is_ok());
   }
 }

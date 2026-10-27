@@ -3673,26 +3673,6 @@ extern "C" fn rs_compile_validate_aux(
     // other form before declaring a name absent, so one seed list serves
     // both env flavors.
     //
-    // The canonicity question of this phase is about the Ix constants. Under
-    // Pass 3 the Lean name of a changed block's auxiliary holds its image
-    // (a definition of Lean's own type, so it depends on Lean's `all` order
-    // and on which member it eliminates into, by design), and the canonical
-    // Ix auxiliary is stored under the display name the side-car edit gave
-    // it (`pass3::names::ix_aux_name`, Lean `Ix.Compile.Pass.ixAuxName`):
-    // `x._ix.S` for Lean's `x.S`, and for a nested `all0.kind_j` at its
-    // canonical position, `rep0._ix.kind_i`. An auxiliary seed therefore
-    // resolves to its display name when the output has one, else to the Lean
-    // name (an unchanged block keeps its canonical auxiliary there). The
-    // Lean name of such a seed must still hold its image (checked below).
-    //
-    // The display name is recomputed from the output, as the edit computed
-    // it: the components of the seed's Lean block are the `Muts` entries
-    // whose classes hold a member of the block (a split block has one per
-    // SCC); a component's `rep0` is its first class's first member and its
-    // nested permutation is its layout's (`PERM_OUT_OF_SCC` is no
-    // position). The component whose layout places a nested seed's position
-    // owns it; any other gives the name `x._ix.S`.
-    //
     // The names a seed may have in the environment: as written, then with
     // the private prefix added or removed.
     let seed_names = |name: &str| -> Vec<Name> {
@@ -3708,122 +3688,11 @@ extern "C" fn rs_compile_validate_aux(
       }
       out
     };
-    let resolve_plain = |name: &str| -> Option<ix_common::address::Address> {
-      seed_names(name).iter().find_map(|n| stt.resolve_addr(n))
-    };
-    let name_hash =
-      |n: &Name| ix_common::address::Address::from_blake3_hash(*n.get_hash());
-    // every component of the output: its classes (name hashes) and nested
-    // permutation, indexed by member
-    let mut components: Vec<(
-      Vec<Vec<ix_common::address::Address>>,
-      Vec<Option<usize>>,
-    )> = Vec::new();
-    let mut components_of: FxHashMap<ix_common::address::Address, Vec<usize>> =
-      FxHashMap::default();
-    for entry in stt.env.named.iter() {
-      if let ixon::metadata::ConstantMetaInfo::Muts { all, aux_layout } =
-        &entry.value().meta().info
-      {
-        let perm: Vec<Option<usize>> =
-          aux_layout.as_ref().map_or_else(Vec::new, |l| {
-            l.perm
-              .iter()
-              .map(|p| {
-                (*p != ix_compile::compile::aux_gen::nested::PERM_OUT_OF_SCC)
-                  .then_some(*p)
-              })
-              .collect()
-          });
-        for h in all.iter().flatten() {
-          components_of.entry(h.clone()).or_default().push(components.len());
-        }
-        components.push((all.clone(), perm));
-      }
-    }
-    fn name_parent(n: &Name) -> Option<Name> {
-      match n.as_data() {
-        ix_common::env::NameData::Str(p, _, _)
-        | ix_common::env::NameData::Num(p, _, _) => Some(p.clone()),
-        ix_common::env::NameData::Anonymous(_) => None,
-      }
-    }
-    // The display names of auxiliary `n`, owners first: `ix_aux_name` over
-    // Lean's `all` of each inductive prefix of `n`, longest first, with each
-    // component of that block.
-    let display_names = |n: &Name| -> Vec<Name> {
-      use ix_compile::compile::pass3::names::ix_aux_name;
-      let (mut owned, mut plain): (Vec<Name>, Vec<Name>) = Default::default();
-      let mut prefix = name_parent(n);
-      while let Some(p) = prefix {
-        if let Some(ConstantInfo::InductInfo(v)) =
-          env.get(&p).map(|e| e.cloned())
-        {
-          let mut ks: Vec<usize> = v
-            .all
-            .iter()
-            .filter_map(|m| components_of.get(&name_hash(m)))
-            .flatten()
-            .copied()
-            .collect();
-          ks.sort_unstable();
-          ks.dedup();
-          for k in ks {
-            let (classes, perm) = &components[k];
-            let Some(rep0) = classes
-              .first()
-              .and_then(|c| c.first())
-              .and_then(|h| v.all.iter().find(|m| name_hash(m) == *h))
-            else {
-              continue;
-            };
-            let Some(d) = ix_aux_name(&v.all, rep0, perm, n) else {
-              continue;
-            };
-            let own = ix_aux_name(&v.all, rep0, &[], n).as_ref() != Some(&d);
-            let list = if own { &mut owned } else { &mut plain };
-            if !list.contains(&d) {
-              list.push(d);
-            }
-          }
-        }
-        prefix = name_parent(&p);
-      }
-      owned.extend(plain);
-      owned
-    };
-    let resolve_display = |name: &str| -> Option<ix_common::address::Address> {
-      seed_names(name)
-        .iter()
-        .find_map(|n| display_names(n).iter().find_map(|d| stt.resolve_addr(d)))
-    };
     let resolve_seed = |name: &str| -> Option<ix_common::address::Address> {
-      resolve_display(name).or_else(|| resolve_plain(name))
+      seed_names(name).iter().find_map(|n| stt.resolve_addr(n))
     };
 
     for group in groups {
-      // A seed whose canonical form moved to its display name keeps its
-      // Lean name: an image (a definition or theorem constant), or, for the
-      // `below` of a Prop block (an inductive, not an image kind), Lean's
-      // own inductive family.
-      for name in group.iter() {
-        if resolve_display(name).is_none() {
-          continue;
-        }
-        let image = resolve_plain(name).and_then(|a| stt.env.get_const(&a));
-        if !image.as_ref().is_some_and(|c| match &c.info {
-          ixon::constant::ConstantInfo::Defn(_) => true,
-          ixon::constant::ConstantInfo::IPrj(_) => name.ends_with(".below"),
-          _ => false,
-        }) {
-          p4b.record_fail(format!(
-            "{name}: its canonical auxiliary is under the display name, but \
-             the Lean name holds neither an image nor Lean's own `below` \
-             family ({})",
-            image.map_or("MISSING".to_string(), |c| format!("{:?}", c.info)),
-          ));
-        }
-      }
       let addrs: Vec<_> =
         group.iter().map(|name| (*name, resolve_seed(name))).collect();
 

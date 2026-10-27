@@ -9,7 +9,7 @@ namespace Ix.Compile.SourceGraph
 /-! Compact Source dependency facts, captured while a canonical record is live.
 The collector is unwired. It deliberately overwrites every summary and erases
 an older kept record when the new winner is streamed. The concrete row constructor
-drops theorem/opaque bodies; no grounding or reserved-input policy is implemented here.
+drops theorem/opaque bodies; no grounding policy is implemented here.
 -/
 
 inductive Grouping where
