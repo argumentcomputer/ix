@@ -9,6 +9,7 @@ import Ix.GraphM
 import Ix.CondenseM
 import Ix.LeanIngress
 import Ix.Cert.RoleClosurePrepare
+import IxC.Kernel.Verify.Rename.Basic
 
 /-! # The default role table, its evidence and the Ixon prelude, from Ixon (untrusted)
 
@@ -60,9 +61,19 @@ in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
    the module's `.olean`, which `lake -d IxC build` builds), written as
    theorem records whose references are names (`nameAddress`), with the
    names, and read back. Not the `.anon` records renamed: an Ixon address
-   is an alias fiber's, several Lean names.
+   is an alias fiber's, several Lean names, and plain Source keeps them apart.
+   And quotient Source's names (`Ix.RoleEvidence.quotientEvidence`): the table's
+   own evidence records, read by name, with a name for each address they cite
+   (`quotientNamesOf`): a role's constant by its role, any other by a Lean name the
+   compiled Init publishes there, in the Lean dependency closure of the operations
+   citing it. Quotient Source collapses each alias fiber onto one representative,
+   so one name per address serves it: read back, the names sent to their addresses
+   give the reader's proofs (`checkQuotientBundle`).
 
-Usage: `kernel-pin-gen <init.ixe> <certs.ixe> <RoleData.lean> [closure.jsonl]`. -/
+Usage: `kernel-pin-gen <init.ixe> <certs.ixe> <RoleData.lean> [closure.jsonl]`, or
+`kernel-pin-gen --quotient-names <init.ixe> <RoleData.lean>`: quotient Source's names
+only, from the committed table's evidence (`quotientOnly`), every other line left as it
+is. -/
 
 namespace Benchmarks.Kernel.PinGen
 
@@ -181,15 +192,233 @@ def nameTerm : Lean.Name → String
   | .str p s => s!"(.str {nameTerm p} {s.quote})"
   | .num p k => s!"(.num {nameTerm p} {k})"
 
+/-- **The theorem of an evidence record**, read as the reader reads evidence
+(`Ix.Kernel.Reader.evidenceValue?`, the same steps): its key, its statement and its proof. -/
+def evidenceTheorem? (cx : Ctx .anon) (st : State .anon) (a : Address) :
+    Option (CName .anon × CExpr .anon × CExpr .anon) := do
+  let ref ← resolve cx.store a
+  let .member owner i := ref | none
+  let c ← cx.store owner
+  let (d, self) ← match c.info with
+    | .defn d =>
+      if i == 0 then
+        some (d, fun j => if j == 0 then some (cx.memberKey (.member owner 0)) else none)
+      else none
+    | .muts ms =>
+      match ms[i]? with
+      | some (.defn d) => some (d, fun j => if j < ms.size then some (cx.memberKey (.member owner j)) else none)
+      | _ => none
+    | _ => none
+  unless d.kind == .thm do none
+  match readDefinition cx st (st.heights.getD · 0) ref (List.range d.lvls.toNat)
+      (.mk' cx c id self) d with
+  | .ok (.thmDecl cv value, _) => some (cv.name, cv.type, value)
+  | _ => none
+
+/-- The Lean names `roots` reach in `env`: each constant's type's and value's constants,
+an inductive's constructors and recursor, a constructor's inductive; transitively. -/
+def leanReach (env : Lean.Environment) (roots : List Lean.Name) : Lean.NameSet := Id.run do
+  let mut seen : Lean.NameSet := {}
+  let mut todo := roots
+  while !todo.isEmpty do
+    match todo with
+    | [] => break
+    | n :: rest =>
+      todo := rest
+      if seen.contains n then continue
+      seen := seen.insert n
+      let some ci := env.find? n | continue
+      let mut next := ci.getUsedConstantsAsSet.toList
+      match ci with
+      | .inductInfo v => next := next ++ v.ctors ++ [Lean.mkRecName n]
+      | .ctorInfo v => next := next ++ [v.induct]
+      | _ => pure ()
+      todo := next ++ todo
+  return seen
+
+/-- **The names of quotient Source's bundle, from the role table's evidence**. The
+bundle's records are the table's own evidence records (`records`, the proofs the table
+binds to the well-founded operations, `t.evidence`), and quotient Source reads each
+reference by the name this gives its address: a record's own address its theorem's name (`certTheorems`); a
+reference the reader keys by a role (`Ctx.keyAt` in `cx`) that role's name; any other a
+Lean name the compiled Init publishes at that address (`namesAt`) that the Lean
+dependency closure (`leanReach` in `leanEnv`, from the operation and the blocks of the
+roles its evidence check reads) of every operation citing it holds (of one citing it,
+failing that), the least by spelling. A reference no record reads as a constant (a
+literal's blob) gets no name. With the names, each choice among several (the address, the
+name chosen, the others). -/
+def quotientNamesOf (cx : Ctx .anon) (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Constant))
+    (namesAt : Address → Array Lean.Name) (leanEnv : Lean.Environment) :
+    Except String (Array (Address × Lean.Name) × Array (Address × Lean.Name × List Lean.Name)) := do
+  let recordAt : Std.HashMap Address Ixon.Constant := records.foldl (fun m (a, c) => m.insert a c) {}
+  let leanOf (s : Role) : Lean.Name := Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .anon) s)
+  let mut names : Std.HashMap Address Lean.Name := {}
+  -- the operations citing each reference that is no role's
+  let mut citers : Std.HashMap Address (Array Role) := {}
+  for (r, thms) in Ix.RoleEvidence.certTheorems do
+    let some (_, es) := t.evidence.toList.find? (·.1 == r) | throw s!"{repr r}: no evidence in the table"
+    let addrs := es.toList.filterMap fun
+      | .proof a => some a
+      | .defeq => none
+    unless addrs.length == thms.length do
+      throw s!"{repr r}: the table has {addrs.length} proofs for {thms.length} theorems"
+    for (a, thm) in addrs.zip thms do
+      if names.contains a then throw s!"{thm}: its record {a} is another theorem's"
+      names := names.insert a thm
+      let some c := recordAt[a]? | throw s!"{thm}: the table's record {a} is not among the evidence"
+      for x in c.refs do
+        match cx.keyAt x with
+        | .ok (.role s) => names := names.insert x (leanOf s)
+        | .ok (.id _) => citers := citers.insert x (((citers.getD x #[]).push r))
+        | .ok k => throw s!"{thm}: the reference {x} reads as the derived key {k}"
+        | .error _ =>
+          unless cx.blob x |>.isSome do throw s!"{thm}: the reference {x} is neither a constant nor a blob"
+  let mut reach : Std.HashMap Role Lean.NameSet := {}
+  for (r, _) in Ix.RoleEvidence.certTheorems do
+    reach := reach.insert r (leanReach leanEnv (leanOf r :: (r.deps.flatMap Role.block).map leanOf))
+  let mut choices := #[]
+  for (x, rs) in citers.toList do
+    if names.contains x then throw s!"the reference {x} is also a record or a role's"
+    let all := namesAt x
+    let inAll := all.filter fun n => rs.all fun r => (reach.getD r {}).contains n
+    let inSome := all.filter fun n => rs.any fun r => (reach.getD r {}).contains n
+    let cands := (if inAll.isEmpty then inSome else inAll).qsort fun m n => m.toString < n.toString
+    let some n := cands[0]?
+      | throw s!"no Lean name of {x} ({all.toList}) is in the closure of {rs.toList.map repr}"
+    if let .role _ := Ix.RoleEvidence.ofLeanName n then
+      throw s!"{n} names a role but sits at {x}, which the table does not bind"
+    if cands.size > 1 then choices := choices.push (x, n, (cands.extract 1 cands.size).toList)
+    names := names.insert x n
+  let rows := names.toArray.qsort fun (a, _) (b, _) => toString a < toString b
+  return (rows, choices)
+
+/-- **Quotient Source's bundle, read back**: the table's evidence records (`records`) with
+the names (`quotientNamesOf`) and the blobs, read as quotient Source reads the committed
+bundle (`Bundle.ofRows`, `evidenceReport`); required to give every well-founded operation its
+proofs, and each proof, its names sent to the addresses they name, to be the reader's
+reading of the record (`evidenceTheorem?` in `cx` at `st`). -/
+def checkQuotientBundle (cx : Ctx .anon) (st : State .anon) (t : Ix.Kernel.RoleTable)
+    (records : Array (Address × Ixon.Constant)) (names : Array (Address × Lean.Name))
+    (blobs : Array (Address × ByteArray)) : Except String Unit := do
+  let hexRows (xs : Array (Address × ByteArray)) : Array (String × String) :=
+    xs.map fun (a, b) => (toString a, hexOfBytes b)
+  let bundle ← (Ix.RoleEvidence.Bundle.ofRows (hexRows (records.map fun (a, c) => (a, Ixon.serConstant c)))
+    (names.map fun (a, n) => (toString a, n)) (hexRows blobs)).mapError (s!"the quotient bundle: " ++ ·)
+  let (ev, why) := bundle.evidenceReport
+  unless why.isEmpty do throw s!"the quotient bundle does not read: {why}"
+  let addrOf : Std.HashMap Ix.Kernel.Name Address :=
+    names.foldl (fun m (a, n) => m.insert (Ix.Kernel.Name.ofLeanName n) a) {}
+  for (r, thms) in Ix.RoleEvidence.certTheorems do
+    let some (_, es) := t.evidence.toList.find? (·.1 == r) | throw s!"{repr r}: no evidence in the table"
+    let addrs := es.toList.filterMap fun
+      | .proof a => some a
+      | .defeq => none
+    let srcs := (ev.find? (·.1 == r)).map (·.2) |>.getD []
+    unless srcs.length == thms.length && addrs.length == thms.length do
+      throw s!"{repr r}: {srcs.length} Source proofs, {addrs.length} records, {thms.length} theorems"
+    for ((a, e), thm) in (addrs.zip srcs).zip thms do
+      let .proof (_, p) := e | throw s!"{thm}: not a proof in the quotient bundle"
+      let some (_, _, v) := evidenceTheorem? cx st a | throw s!"{thm}: the table's record {a} does not read"
+      unless Ix.Kernel.Expr.mapKeys (fun n => addrOf.getD n default) p == v do
+        throw s!"{thm}: the quotient bundle's proof, at the addresses of its names, is not the record's reading"
+
+
+/-- A compiled environment's name as a Lean name. -/
+def ixToLean : Ix.Name → Lean.Name
+  | .anonymous _ => .anonymous
+  | .str p s _ => .str (ixToLean p) s
+  | .num p k _ => .num (ixToLean p) k
+
+/-- The Lean names a compiled environment publishes at each address. -/
+def initNames (env : Ixon.Env) : Std.HashMap Address (Array Lean.Name) :=
+  env.named.fold (init := {}) fun m n d => m.insert d.addr ((m.getD d.addr #[]).push (ixToLean n))
+
+/-- The table's evidence records for the well-founded operations, in `certTheorems`
+order. -/
+def proofRecords (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Constant)) :
+    Except String (Array (Address × Ixon.Constant)) := do
+  let recordAt : Std.HashMap Address Ixon.Constant := records.foldl (fun m (a, c) => m.insert a c) {}
+  let mut out := #[]
+  for (r, _) in Ix.RoleEvidence.certTheorems do
+    let some (_, es) := t.evidence.toList.find? (·.1 == r) | throw s!"{repr r}: no evidence in the table"
+    for e in es do
+      if let .proof a := e then
+        let some c := recordAt[a]? | throw s!"{repr r}: the record {a} is not among the evidence"
+        out := out.push (a, c)
+  return out
+
+/-- The generated file's account of quotient Source's names. -/
+def quotientParagraph : String :=
+  "`quotientNames`: quotient Source's evidence (`Ix.RoleEvidence.quotientEvidence`): the
+table's own evidence records (`evidence`, with `blobs`), read by name. Each record is named
+by its theorem, and each address the records cite as a constant by its role's name where
+the table binds a role there, otherwise by a Lean name the compiled Init publishes there,
+in the dependency closure of the operations citing it. Collapsed onto the fiber
+representatives and sent back to their addresses, the names give the reader's proofs:
+checked when this file was generated."
+
+/-- The generated rows of a names array: (address, name term). -/
+def nameRows (xs : Array (Address × Lean.Name)) : String :=
+  ",\n".intercalate (xs.toList.map fun (a, n) => s!"  ({(toString a).quote},\n   {nameTerm n})")
+
+/-- Put `block` (lines) in place of the block of `lines` that starts at the line `first`
+and runs to the next blank line, or, where no line is `first`, before the line `before`
+followed by a blank line. -/
+def putBlock (lines : Array String) (first before : String) (block : Array String) :
+    Except String (Array String) := do
+  match lines.findIdx? (· == first) with
+  | some i =>
+    let mut j := i
+    while j < lines.size && lines[j]! != "" do
+      j := j + 1
+    return lines.extract 0 i ++ block ++ lines.extract j lines.size
+  | none =>
+    let some i := lines.findIdx? (· == before) | throw s!"no line `{before}`"
+    return lines.extract 0 i ++ block ++ #[""] ++ lines.extract i lines.size
+
+/-- **Quotient Source's names only** (`--quotient-names`): over the compiled Init `input`,
+under the committed table and prelude (`defaultTable`, `preludeFor`), the names of the
+table's own evidence records (`quotientNamesOf`), read back (`checkQuotientBundle`) and
+written into `output` (the committed `RoleData.lean`) as its `quotientNames` section and
+paragraph, in place or before the closure's; every other line is left as it is. -/
+def quotientOnly (input output : String) : IO UInt32 := do
+  let started ← IO.monoMsNow
+  let (env, store) ← loadStore input
+  let t ← IO.ofExcept defaultTable
+  let pre : Prelude .anon ← IO.ofExcept (preludeFor t)
+  let hints := Hints.ofStore store env.anonHints
+  let s := setup store (env.blobs[·]?) t pre hints.lookup
+  let leanEnv ← getCompileEnv #[certsModule]
+  let records ← IO.ofExcept ((proofRecords t pre.evidence).mapError (s!"pin-gen: " ++ ·))
+  let (names, choices) ← IO.ofExcept ((quotientNamesOf s.cx t records ((initNames env).getD · #[])
+    leanEnv).mapError (s!"pin-gen: quotient names: " ++ ·))
+  for (x, n, others) in choices do
+    IO.eprintln s!"pin-gen: {x} named {n}, not {others}"
+  IO.ofExcept ((checkQuotientBundle s.cx pre.state t pre.evidence names pre.blobs.toArray).mapError
+    (s!"pin-gen: " ++ ·))
+  let lines := ((← IO.FS.readFile output).splitOn "\n").toArray
+  let lines ← IO.ofExcept (putBlock lines (quotientParagraph.splitOn "\n").head!
+    "`closure`: the well-founded `Nat` operations' dependency closure in the"
+    (quotientParagraph.splitOn "\n").toArray)
+  let header := "def quotientNames : Array (String × Lean.Name) := #["
+  let lines ← IO.ofExcept (putBlock lines header "def closure : Array (String × String) := #["
+    (#[header] ++ ((nameRows names ++ "]").splitOn "\n").toArray))
+  IO.FS.writeFile output ("\n".intercalate lines.toList)
+  IO.eprintln s!"pin-gen: quotient names: {names.size} names of {records.size} records' addresses; \
+    reads back as the reader's proofs; written to {output} in {(← IO.monoMsNow) - started} ms"
+  return 0
+
 /-! ## The run -/
 
 def run (args : List String) : IO UInt32 := do
+  if let ["--quotient-names", i, o] := args then return ← quotientOnly i o
   let parsed : Option (String × String × String × Option String) := match args with
     | [i, c, o] => some (i, c, o, none)
     | [i, c, o, r] => some (i, c, o, some r)
     | _ => none
   let some (input, certInput, output, rowsOut) := parsed
-    | IO.eprintln "usage: kernel-pin-gen <init.ixe> <certs.ixe> <RoleData.lean> [closure.jsonl]"
+    | IO.eprintln "usage: kernel-pin-gen <init.ixe> <certs.ixe> <RoleData.lean> [closure.jsonl] | \
+        --quotient-names <init.ixe> <RoleData.lean>"
       return 2
   let fail {α : Type} (msg : String) : IO α := throw (IO.userError s!"pin-gen: {msg}")
   let started ← IO.monoMsNow
@@ -469,6 +698,18 @@ def run (args : List String) : IO UInt32 := do
     fail s!"the Source bundle does not read back as the closed proofs: {readWhy}"
   IO.eprintln s!"pin-gen: Source evidence: {srcRecords.size} records, {srcNames.size} names, \
     {srcBlobs.size} more blobs; reads back; {(← IO.monoMsNow) - srcStarted} ms"
+  -- 4c: quotient Source's evidence (`Ix.RoleEvidence.quotientEvidence`): the table's own
+  -- evidence records, with a name for each address they cite (`quotientNamesOf`), read
+  -- back as the reader's proofs (`checkQuotientBundle`)
+  let qStarted ← IO.monoMsNow
+  let qRecords ← IO.ofExcept ((proofRecords table evRecords).mapError (s!"pin-gen: " ++ ·))
+  let (qNames, choices) ← IO.ofExcept ((quotientNamesOf s.cx table qRecords ((initNames env).getD · #[])
+    leanEnv).mapError (s!"pin-gen: quotient names: " ++ ·))
+  for (x, n, others) in choices do
+    IO.eprintln s!"pin-gen: {x} named {n}, not {others}"
+  IO.ofExcept ((checkQuotientBundle s.cx pre.state table evRecords qNames evBlobs).mapError (s!"pin-gen: " ++ ·))
+  IO.eprintln s!"pin-gen: quotient names: {qNames.size} names; reads back as the reader's proofs; \
+    {(← IO.monoMsNow) - qStarted} ms"
   -- 5: output
   let digest ← sha256 input
   let certDigest ← sha256 certInput
@@ -511,6 +752,8 @@ each reference's address (the generator's `nameAddress`) and each record (its th
 a literal's blob is in `blobs` or `sourceBlobs`. These were read back as the
 closed proofs when this file was generated.
 
+{quotientParagraph}
+
 `closure`: the well-founded `Nat` operations' dependency closure in the
 compiled Init, less the prelude (record address, canonical record bytes), in
 check order; `closureBlobs`: the blobs its literals reference; `closureHints`:
@@ -548,6 +791,9 @@ def sourceNames : Array (String × Lean.Name) := #[
 
 def sourceBlobs : Array (String × String) := #[
 {rowsOf srcBlobs}]
+
+def quotientNames : Array (String × Lean.Name) := #[
+{nameRows qNames}]
 
 def closure : Array (String × String) := #[
 {rowsOf (closureRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
