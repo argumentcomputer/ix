@@ -769,6 +769,43 @@ mod tests {
 
   #[cfg(feature = "bn254")]
   #[test]
+  #[cfg(feature = "plonk")]
+  fn plonk_recursive_export_includes_anchor_and_deferred_publics()
+  -> storage::Result<()> {
+    let (_, vk, packet) = ignition_vk_fixture()?;
+    let expected = init_claim::INIT_PUBLIC_WORDS;
+    let directory = std::env::temp_dir()
+      .join(format!("plonk-recursive-claims-{}", std::process::id()));
+    fs::create_dir(&directory)?;
+    plonk_export::write_export(
+      &vk, &packet, &expected, &directory, "witness", true,
+    )?;
+    let exported: serde_json::Value =
+      serde_json::from_slice(&fs::read(directory.join("vk.json"))?)?;
+    let claims = exported["claims"].as_array().unwrap();
+    assert_eq!(claims.len(), 23);
+    assert_eq!(exported["publics"].as_array().unwrap().len(), 23);
+    for (index, claim) in claims.iter().enumerate() {
+      assert_eq!(claim[3]["public"], index);
+    }
+    assert_eq!(exported["publics"][22]["deferredHalf"], 3);
+    let witness: serde_json::Value =
+      serde_json::from_slice(&fs::read(directory.join("witness.json"))?)?;
+    assert_eq!(witness["deferred"].as_array().unwrap().len(), 2);
+    let mut wrong = expected;
+    wrong[10] ^= 1;
+    assert!(
+      plonk_export::write_export(
+        &vk, &packet, &wrong, &directory, "wrong", true,
+      )
+      .is_err()
+    );
+    fs::remove_dir_all(directory)?;
+    Ok(())
+  }
+
+  #[cfg(feature = "bn254")]
+  #[test]
   fn ignition_staging_rejects_other_inner_keys_before_creating_files()
   -> storage::Result<()> {
     use crate::{

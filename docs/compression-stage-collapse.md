@@ -559,6 +559,25 @@ trace is now `2^21` rows because of the wider range table. All FRI,
 first-stage and recursive gadget tests pass against the patched dependency.
 
 
+## Refreshed terminal PLONK proof and Solidity verification
+
+The optimized Ignition recursive packet now has a regenerated PLONK key and
+GPU proof. The wrapper remains at 14,689,440 constraints and domain `2^24`,
+with both pairing checks retained. One fresh prover process took 33.872 s,
+including 11.557 s of core proving, on the same 32-CPU GPU host. One-time
+key preparation took 495.843 s and is excluded from proving time.
+
+An independent CPU helper verified the proof and rejected a changed claim
+and corrupted proof. The refreshed Solidity verifier and claim-digest adapter
+passed all 47 Anvil checks; the adapter transaction used 320,091 gas. Proof
+sizes remain 584 bytes native, 624 bytes enveloped and 864 bytes in Solidity
+encoding. The PLONK verifying-key SHA-256 is
+`32b357a1090e6508aae17b2925af2162079a2d133c1702516618a24705da2fac`.
+
+Combining the separately measured 120.9 s KZG stages
+with this 33.9 s wrapper gives about 155 s from saved FRI proof to PLONK;
+this is a sum of stage measurements, not a new end-to-end run.
+
 ## Upstream Plonky3 since the pin
 
 The pin is 31 August 2026; `main` is 18 October 2026, 362 commits later.
