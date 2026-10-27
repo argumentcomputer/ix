@@ -13,8 +13,10 @@
   ALIGNED gate. The comparison covers both compilers and serializers
   (Rust `Env::put` and Lean `Ixon.serEnv`) on this input. It is measured
   whole-output parity, not a universal refinement or value-preservation
-  proof. `compileLeanInputValidated` runs the resource post-step; it does
-  not run `Ix.Cert.checkReport` or changed-cone certification.
+  proof. `compileLeanInputValidated` runs the resource post-step and the
+  pure compiler's report checks (`Ix.Cert.checkReport`, through
+  `Ix.CompileM.reportPostStep`) on the compile, before the role binding is
+  added; a failed check refuses the compile and nothing is written.
 
   Exit codes: 0 success (including an explicitly allowed partial output,
   and aligned when checked); 1 pipeline error, an unallowed block failure,

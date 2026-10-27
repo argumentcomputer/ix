@@ -15,7 +15,10 @@ public section
 /-! The IxC host record checker behind check-lean. Both modes authenticate
 input bytes. Bound whole-artifact runs additionally require the actual logical
 or tiered entry. Selected/capped runs report only their selected declarations;
-actual emitted-key coverage is required in both modes. -/
+actual emitted-key coverage is required in both modes. A run that asks for the
+whole artifact of an artifact with no role binding cannot run the whole-artifact
+entry: it says so and exits with `exitPartial`, even when every declaration
+passed. -/
 
 namespace Ix.Cli.CheckLeanCmd
 
@@ -159,6 +162,35 @@ def CheckReport.passed (r : CheckReport) : Nat := (r.targets.filter (success ∘
 def CheckReport.typed (r : CheckReport) : Nat := (r.targets.filter (·.outcome == "typed")).size
 def CheckReport.failures (r : CheckReport) : Array (String × String) :=
   (r.targets.filter (!success ·.outcome)).map fun t => (t.target.label, s!"{t.outcome}: {t.reason}")
+
+/-- **The exit status of a partial check**: every declaration checked passed, but the
+whole-artifact admission the run asked for did not run, because the artifact carries
+no role binding. Distinct from success (0), a usage error (2) and a refusal (3). -/
+def exitPartial : UInt32 := 4
+
+/-- What a completed run did not check, if anything: a selected or capped run covers
+only its selection; a run that asked for the whole artifact (`wholeRequested`) of an
+artifact with no role binding covers only the per-declaration checks. -/
+def coverageNotice (report : CheckReport) (wholeRequested : Bool) : Option String :=
+  match report.artifactAdmission with
+  | some _ => none
+  | none =>
+    if report.bound then some "[check-lean] selected checking only; no whole-artifact receipt"
+    else if wholeRequested then
+      some s!"[check-lean] partial check: the artifact carries no role binding, so the \
+whole-artifact admission did not run; only the per-declaration checks ran \
+({report.targetsCovered} subjects)"
+    else
+      some "[check-lean] selected checking only; the artifact carries no role binding, so no \
+whole-artifact admission could run"
+
+/-- The exit status of a completed run: a refusal (`exitRejected`) when a checked
+declaration failed; otherwise `exitPartial` when the whole artifact was asked for and
+its admission did not run, else 0. -/
+def runExit (report : CheckReport) (wholeRequested : Bool) : UInt32 :=
+  if !report.failures.isEmpty then Ix.Benchmark.Results.exitRejected
+  else if wholeRequested && report.artifactAdmission.isNone then exitPartial
+  else 0
 
 /-- No persistent marking: each call owns fresh serial checker/reader state.
 The exact cached tier declarations and onRead values supply key observations. -/
@@ -327,6 +359,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     let only ← ConstsFile.gather p
     let selection := if (p.flag? "consts").isSome || (p.flag? "consts-file").isSome then Selection.only only else .all
     let cap := (p.flag? "max").map (·.as! Nat)
+    let wholeRequested := (match selection with | .all => true | .only _ => false) && cap.isNone
     let persistHost := p.hasFlag "host-out" || p.hasFlag "host-store"
     if persistHost && ((match selection with | .all => false | .only _ => true) || cap.isSome) then
       IO.eprintln "[check-lean] host statement output requires a complete bound artifact check"
@@ -358,8 +391,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.println s!"[check-lean] whole artifact: logical entry accepted all {records} records ({report.artifactMs}ms)"
       | some (.tiered records typed) =>
         IO.println s!"[check-lean] whole artifact: logical entry and typing tier accepted all {records} records; {typed} tier constants typed only ({report.artifactMs}ms)"
-      | none => if report.bound then
-          IO.println "[check-lean] selected checking only; no whole-artifact receipt"
+      | none => if let some notice := coverageNotice report wholeRequested then IO.println notice
       if let some statement := report.hostStatement then
         let hostBytes ← IO.ofExcept statement.bytes
         let address := Address.admissionHash hostBytes
@@ -373,7 +405,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"[check-lean] {report.passed}/{report.targetsCovered} subjects passed ({report.typed} typed only), {report.records} checked/read records"
       IO.println s!"[check-lean] authenticated input {report.inputMs}ms; run preparation {report.prepareMs}ms; selected checker {report.subjectMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; reading {report.readMicros / 1000}ms; run {report.elapsedMs}ms"
       IO.println s!"##check-lean## {report.elapsedMs} {report.passed} {report.failures.size} {report.targetsCovered}"
-      return if report.failures.isEmpty then 0 else Ix.Benchmark.Results.exitRejected
+      return runExit report wholeRequested
   catch e => IO.eprintln s!"[check-lean] {e}"; return 1
 
 end Ix.Cli.CheckLeanCmd
@@ -381,7 +413,7 @@ end Ix.Cli.CheckLeanCmd
 open Ix.Cli.CheckLeanCmd in
 def checkLeanCmd : Cli.Cmd := `[Cli|
   "check-lean" VIA runCheckLeanCmd;
-  "Check authenticated .ixe declarations with IxC (bound whole inputs use actual artifact admission; meta display by default)"
+  "Check authenticated .ixe declarations with IxC (bound whole inputs use actual artifact admission; meta display by default). Exit 0: everything asked for passed; 3: a declaration failed; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 2: usage; 1: infrastructure"
   FLAGS:
     anon; "Anonymous keys and #hex display labels"
     workers : Nat; "Requested workers (>0); the tier-capable path reports effective 1"

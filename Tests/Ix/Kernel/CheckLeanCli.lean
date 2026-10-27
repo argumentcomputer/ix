@@ -140,6 +140,30 @@ private def check : IO Nat := do
       let out ← IO.Process.output { cmd := ix.toString, args, env := neutral }
       expect out 1
       ensure (out.stderr.contains "hash mismatch") "CLI skipped byte authentication"
+    -- A whole-artifact run of an artifact with no role binding: the per-declaration
+    -- checks run, the whole-artifact admission cannot, and the run says so. With a
+    -- failing declaration the refusal (3) decides the exit; with none, the partial
+    -- check (4) does.
+    let whole ← call #[] #[]
+    expect whole 3
+    ensure (whole.stdout.contains "partial check: the artifact carries no role binding")
+      s!"unbound whole run hid its partial coverage\n{whole.stdout}"
+    let wholeReport ← checked (← runPrepared prepared cfg .all)
+    let failing : Std.HashSet String := wholeReport.failures.foldl (fun s (l, _) => s.insert l) {}
+    let mut clean := env
+    for (n, _) in env.named.toList do
+      if failing.contains (toString n) then clean := { clean with named := clean.named.erase n }
+    let cleanPath := dir / "clean.ixe"
+    IO.FS.writeBinFile cleanPath (← IO.ofExcept (Ixon.serEnv clean))
+    calls.modify (· + 1)
+    let partialRun ← IO.Process.output { cmd := ix.toString, args := #["check-lean", cleanPath.toString], env := neutral }
+    expect partialRun exitPartial
+    ensure (partialRun.stdout.contains "partial check: the artifact carries no role binding")
+      "partial whole run did not say so"
+    ensure (runExit { wholeReport with targets := #[] } true == exitPartial &&
+      runExit { wholeReport with targets := #[] } false == 0 &&
+      (coverageNotice { wholeReport with targets := #[] } false).any (·.contains "selected checking only"))
+      "partial-check exit or notice changed"
     let count ← calls.get
     IO.println s!"check-lean CLI: {count} process controls; modes, exact aliases/cap, all five outcomes, fail-out, usage/infra exits and diagnostic flags passed"
     return count
