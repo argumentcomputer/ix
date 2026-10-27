@@ -758,4 +758,14 @@ theorem readingKeys_stored {env : Ix.Environment} {roots : List Ix.Name} {sub : 
   intro n ci hn c _ _ haddr
   exact readingAt_isSome_stored P acc.1 A hn haddr
 
+/-- **The reader keys every representative as its renaming** (`Obligation.ReadingKeys`). -/
+theorem readingKeys : Obligation.ReadingKeys := by
+  intro env roots sub ixe failures t envQ binding limits order envA b P hbind acc hb
+  obtain ⟨cx, hcx, keys, reads⟩ := readingKeys_stored P hbind acc hb
+  exact ⟨cx, hcx, keys, reads⟩
+
+/-- info: 'Ix.Cert.ReadingKeys.readingKeys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms readingKeys
+
 end Ix.Cert.ReadingKeys

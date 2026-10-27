@@ -6976,7 +6976,11 @@ restated as `ReadingCovers` is (the closure's stored entries, `sorryAx` aside), 
 same reason; re-frozen with it: its print. The other definitions that key a closure's
 constant by its name's spelling (`RepOf`, `ImageRecursor`, and the reader's key
 obligation's coverage conjunct) range over the stored entries too, so that they say what
-is meant of a respelled lookup; re-frozen with them: their prints. -/
+is meant of a respelled lookup; re-frozen with them: their prints. The reader's key
+obligation's coverage conjunct also takes the representative's published address (the
+address Source totality gives it): a respelled stored name's quotient key is read off its
+spelling, and only Source totality ties it to the stream. Given that address, `sorryAx` needs
+no exception there. Re-frozen with it: its print. -/
 
 /-- info: structure Ix.Cert.Premises (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
   (failures : Ix.Cert.Failures) (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) : Prop
@@ -7251,7 +7255,9 @@ fun env blocks cenv cenv₀ sched =>
                   (n, ci) ∈ sub.consts.toList →
                     ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
                       c ∈ envQ.consts →
-                        c.name = Ix.Cert.quotientKey ixe t n → (Ix.Cert.readingAt ixe t cx c).isSome = true -/
+                        c.name = Ix.Cert.quotientKey ixe t n →
+                          Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) →
+                            (Ix.Cert.readingAt ixe t cx c).isSome = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.ReadingKeys
 
