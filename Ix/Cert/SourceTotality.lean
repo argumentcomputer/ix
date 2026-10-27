@@ -1,4 +1,5 @@
 import Ix.Cert.AcceptedKeys
+import Ix.Cert.ReadingKeys
 import Ix.Cert.SourceStoredNames
 
 /-! # Source totality
@@ -47,5 +48,13 @@ theorem sourceTotal_of_address (address : AddressEquation) : Obligation.SourceTo
 
 /-- info: 'Ix.Cert.SourceTotality.sourceTotal_of_address' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms sourceTotal_of_address
+
+/-- **Source totality**: the address equation is the reader's
+`ReadingKeys.keyAddress_quotientKey`. -/
+theorem sourceTotal : Obligation.SourceTotal :=
+  sourceTotal_of_address fun _ _ c b a _ _ h => ReadingKeys.keyAddress_quotientKey c b a h
+
+/-- info: 'Ix.Cert.SourceTotality.sourceTotal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms sourceTotal
 
 end Ix.Cert.SourceTotality

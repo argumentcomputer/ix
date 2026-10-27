@@ -82,6 +82,7 @@ import Ix.Cert.CompileCorrect
 import Ix.Cert.Composition
 import Ix.Cert.UnchangedRules
 import Ix.Cert.RunOwnership
+import Ix.Cert.SourceTotality
 
 /-! # The certification statements, frozen
 
