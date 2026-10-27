@@ -361,14 +361,9 @@ fn compile_env_inner(
     .map(|e| (e.key().pretty(), e.value().clone()))
     .collect();
   ungrounded.sort_by(|a, b| a.0.cmp(&b.0));
-  // Pass 3's non-canonical set (the recorded declines), the same order.
-  let mut non_canonical: Vec<(String, String)> = compile_stt
-    .p3
-    .non_canonical
-    .iter()
-    .map(|e| (e.key().pretty(), e.value().clone()))
-    .collect();
-  non_canonical.sort();
+  // The non-canonical set: empty, since nothing is rewritten. The field
+  // stays in the status until the Lean side drops it.
+  let non_canonical: Vec<(String, String)> = Vec::new();
 
   // Canonical consts merkle root — equals the serialized header root
   // when a file is written; still reported on a fail-closed abort so

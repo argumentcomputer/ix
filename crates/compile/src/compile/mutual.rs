@@ -443,7 +443,7 @@ pub fn compile_aux_block_with_rename(
       pending_names.push(n);
     }
     if !pending_names.is_empty() {
-      crate::compile::pass3::release_pending(stt, pending_names);
+      crate::compile::block_txn::release_pending(stt, pending_names);
     }
     // Ingress all registered aux constants into the kernel environment.
     for cnst in aux_consts {
@@ -581,7 +581,6 @@ pub fn compile_aux_block_with_rename(
     .collect();
   let muts_name = block_addr.muts_name(&first_name);
   compile_name(&muts_name, stt)?;
-  crate::compile::pass3::journal_muts(&muts_name);
   // Derived blocks (rec, below, brecOn, ...) leave aux_layout empty.
   // The primary inductive's Muts metadata carries the layout when present.
   // Rust decompile regeneration requests source-walk order independently;
@@ -599,7 +598,7 @@ pub fn compile_aux_block_with_rename(
 
   // Batch-push to pending queue (single lock acquisition).
   if !pending_names.is_empty() {
-    crate::compile::pass3::release_pending(stt, pending_names);
+    crate::compile::block_txn::release_pending(stt, pending_names);
   }
 
   // Ingress all registered aux constants into the kernel environment.
@@ -697,7 +696,7 @@ fn register_aux_aliases(
   }
 
   if !pending_names.is_empty() {
-    crate::compile::pass3::release_pending(stt, pending_names);
+    crate::compile::block_txn::release_pending(stt, pending_names);
   }
 
   Ok(())
@@ -823,15 +822,6 @@ pub fn generate_and_compile_aux_recursors(
   if patches.is_empty() {
     return Ok(None);
   }
-  // Pass 3: the canonical recursors are the image generator's input
-  // (journaled only while the driver edits this tail).
-  if crate::compile::pass3::journal_active() {
-    crate::compile::pass3::journal_recs(
-      crate::compile::pass3::driver::patch_recs(patches),
-      aux_out.n_canonical_aux,
-    );
-  }
-
   // Record the nested-auxiliary permutation mapping Lean's source-walk
   // aux position to our canonical aux position.
   //
@@ -1474,13 +1464,6 @@ fn compile_below_recursors(
   for (_, rec) in &recs {
     below_recs.push(MutConst::Recr(rec.clone()));
   }
-  // Pass 3: the family's canonical recursors, the image generator's input
-  // if the family is stored permuted
-  // (`driver::edit_permuted_below_family`).
-  crate::compile::pass3::journal_below_recs(
-    recs.iter().map(|(n, r)| (n.clone(), r.clone())).collect(),
-  );
-
   if !below_recs.is_empty() {
     // The below-rec block's storage order must align with the below
     // inductive block's member order (`classes`), exactly like the main
