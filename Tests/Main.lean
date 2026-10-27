@@ -401,6 +401,7 @@ def registry : List Entry := [
 
   -- expensive suites and runners (these require significant RAM)
   .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,
+  .suite "sharing-components-full" (.ci .misc) Tests.SharingComponents.fullSuite,
   .suite "compile-determinism" (.ci .compile) Tests.Ix.CompileDeterminism.suite,
   .suite "fidelity-initstd" (.ci .misc) Tests.Ix.CompileFidelity.initStdSuite,
   .suite "fidelity-flt" (.manual "needs FLT built in Benchmarks/Compile") Tests.Ix.CompileFidelity.fltSuite,

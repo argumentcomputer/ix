@@ -7,7 +7,10 @@ partition can be proved. The originals (a bounded loop, and a hash-map
 grouping sorted by smallest term) are kept here as test-only references:
 on generated sharing inputs at every width, on random classifications of
 the same DAGs and on arbitrary parent arrays, both versions must return the
-same values. -/
+same values. The primary suite compares 15 generated inputs and parent
+arrays within range; the `ci:misc` job runs 40 inputs and also parent arrays
+with pointers out of range, whose lookups panic (each printing a backtrace,
+about 80 s in all). -/
 
 namespace Tests.SharingComponents
 
@@ -68,23 +71,23 @@ private def genClasses (n : Nat) : RGen (Array UClass) := do
     out := out.push (← genClass)
   return out
 
-/-- Arbitrary parent arrays, including pointers up and out of range. -/
-private def genParents : RGen (Array Nat) := do
+/-- Arbitrary parent arrays with pointers up, and with `wild` also out of range. -/
+private def genParents (wild : Bool) : RGen (Array Nat) := do
   let n ← rand 12
   let mut out := #[]
   for i in [0:n] do
     let choice ← rand 4
     let below ← rand (i + 1)
-    let wild ← rand (n + 3)
+    let far ← rand (if wild then n + 3 else n)
     out := out.push (match choice with
       | 0 => i
       | 1 => below
-      | 2 => wild
+      | 2 => far
       | _ => i / 2)
   return out
 
-private def componentControls : IO Nat := do
-  let inputs := runGen 83 ((List.range 40).mapM fun _ => Tests.SharingUniform.genSearchRoots)
+private def componentControls (count : Nat) (wild : Bool) : IO Nat := do
+  let inputs := runGen 83 ((List.range count).mapM fun _ => Tests.SharingUniform.genSearchRoots)
   let mut tested := 0
   let mut nonempty := 0
   for (roots, seed) in inputs.zipIdx do
@@ -102,16 +105,25 @@ private def componentControls : IO Nat := do
         s!"random-class components differ from the hashed reference (input {seed}, trial {trial})"
       tested := tested + 1
   ensure (nonempty > 0) "no generated stage had an uncertain component"
-  let parents := runGen 97 ((List.range 400).mapM fun _ => genParents)
+  let parents := runGen 97 ((List.range 400).mapM fun _ => genParents wild)
   for parent in parents do
-    for x in [0:parent.size + 2] do
+    for x in [0:parent.size + (if wild then 2 else 0)] do
       ensure (ufFind parent x == ufFindLoop parent x) "ufFind differs from the loop reference"
   IO.println s!"uncertain components: {tested} DAG/classification cases, {parents.length} parent arrays; equal to the hashed reference"
   return tested
 
-def suite : List TestSeq := [
-  .individualIO "uncertain components match the original hashed grouping" none (do
-    let tested ← componentControls
+/-- The comparison over `count` generated inputs. -/
+def suiteOf (count : Nat) (wild : Bool) : List TestSeq := [
+  .individualIO s!"uncertain components match the original hashed grouping ({count} inputs)" none (do
+    let tested ← componentControls count wild
     return (true, tested, 0, none)) .done]
+
+/-- The primary run: 15 generated inputs and parent arrays within range. -/
+def suite : List TestSeq := suiteOf 15 false
+
+/-- The full run, in a CI job: 40 generated inputs, a superset of the primary
+ones, and parent arrays with pointers out of range, which the lookups report
+as panics. -/
+def fullSuite : List TestSeq := suiteOf 40 true
 
 end Tests.SharingComponents
