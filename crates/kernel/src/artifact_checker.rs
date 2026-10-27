@@ -116,6 +116,12 @@ impl<M: KernelMode> ArtifactChecker<M> {
       .as_ref()
       .map_err(|error| TcError::Other(error.to_string()))?;
     if source.binding().is_some() {
+      // The certified checker reads no stream whose prelude it cannot read.
+      if let Some(reason) = source.prelude_refusal() {
+        return Err(TcError::Other(format!(
+          "the artifact's prelude is not admitted: {reason}"
+        )));
+      }
       let roles = source
         .unit_roles(address)
         .map_err(|error| TcError::Other(error.to_string()))?;

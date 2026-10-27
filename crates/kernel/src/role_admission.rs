@@ -2,6 +2,39 @@
 //! admission are distinct boundaries: a prepared source authenticates its
 //! binding and every bound record, and only the group validators in
 //! `groups` admit roles, a whole specification group at a time.
+//!
+//! # The certified checker's frontend, as this kernel reads it
+//!
+//! The certified checker reads an artifact as a stream folded in order, with
+//! a committed prelude in front. Its frontend has six checks this kernel must
+//! match. This kernel reads an artifact as content-addressed units checked
+//! independently, with the bound roles admitted first, so each check is
+//! either enforced here or ruled out by that representation:
+//!
+//! - **The prelude's shape** (the prelude names the pinned prelude roles) and
+//!   **the prelude copy** (a stream may not hold, at a prelude key, anything
+//!   but the prelude's entry): every prelude role ([`PRELUDE`]) must be bound
+//!   and its group admitted, or no unit of the artifact is checked
+//!   ([`ArtifactSource::prelude_refusal`]). The prelude's records are not
+//!   compared with a committed copy: the group validators compare them with
+//!   the same specifications the committed prelude was checked against, and
+//!   a bound address holds exactly one record.
+//! - **The rest-only hoist** and **the hoist guard** reorder a stream so that a
+//!   `Nat` operation's ground precedes it, outside the prelude and without
+//!   splitting a unit. Nothing here depends on order: groups are admitted in
+//!   dependency order before any unit is checked, whatever order the records
+//!   come in, and units are never split or merged.
+//! - **The units check** declines a basis record of the fold's own, a unit out
+//!   of shape, a prelude role declared past the front, and two units declaring
+//!   a common base. This kernel has no fold-own records and no generated model
+//!   records; a unit is a serialized record, whose recursive targets come from
+//!   the unit itself; a role's records are its bound addresses, one record
+//!   each; and a projection is authenticated against the one owner its address
+//!   commits to, so no two units declare one declaration.
+//! - **The inferer's fuel** bounds the checker's untyped inference over model
+//!   records. This kernel has no untyped inference: every inference and
+//!   reduction is typed and bounded by fuel, the WHNF step limit and the stack
+//!   check, so a non-terminating head β in a declared type declines.
 
 use std::sync::{Arc, OnceLock};
 
@@ -268,6 +301,38 @@ impl Admission {
   }
 }
 
+/// The prelude's roles: the certified checker's prelude shape, the blocks of
+/// its committed prelude (Eq, Nat, PUnit, Empty, False, the quotient package,
+/// And and Bool). A bound artifact must bind and admit all of them.
+pub const PRELUDE: [Role; 26] = [
+  Role::Eq,
+  Role::EqRefl,
+  Role::EqRec,
+  Role::Nat,
+  Role::NatZero,
+  Role::NatSucc,
+  Role::NatRec,
+  Role::PUnit,
+  Role::PUnitUnit,
+  Role::PUnitRec,
+  Role::Empty,
+  Role::EmptyRec,
+  Role::False,
+  Role::FalseRec,
+  Role::Quot,
+  Role::QuotMk,
+  Role::QuotLift,
+  Role::QuotInd,
+  Role::QuotSound,
+  Role::And,
+  Role::AndIntro,
+  Role::AndRec,
+  Role::Bool,
+  Role::BoolFalse,
+  Role::BoolTrue,
+  Role::BoolRec,
+];
+
 /// One privately owned input, shared cheaply between workers. No Env reference
 /// escapes this API: its DashMaps must not become a mutable admission input.
 /// Record backing buffers retain the loader's immutable heap/mmap contract.
@@ -362,6 +427,17 @@ impl ArtifactSource {
   /// Whether `role`'s group has been admitted.
   pub fn is_admitted(&self, role: Role) -> bool {
     self.admission().address(role).is_some()
+  }
+  /// Why a bound artifact's units may not be checked, if they may not: a
+  /// prelude role ([`PRELUDE`]) that is unbound, or whose group was refused.
+  pub fn prelude_refusal(&self) -> Option<String> {
+    let binding = self.binding()?;
+    let role = PRELUDE.into_iter().find(|role| !self.is_admitted(*role))?;
+    Some(if binding.role(role).is_none() {
+      format!("the binding does not bind the prelude role {}", role.lean_name())
+    } else {
+      format!("the prelude role {} is not admitted", role.lean_name())
+    })
   }
   /// The capability to use `role`'s rules, issued only for an admitted role.
   pub fn capability(&self, role: Role) -> Option<AdmittedRole> {

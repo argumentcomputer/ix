@@ -7,16 +7,17 @@ use ix_common::env::Name;
 use ix_kernel::anon_work::{build_artifact_work, closure_addrs};
 use ix_kernel::artifact_checker::ArtifactChecker;
 use ix_kernel::mode::{Anon, Meta};
-use ix_kernel::role_admission::ArtifactSource;
+use ix_kernel::role_admission::{ArtifactSource, PRELUDE};
 use ixon::constant::{
   Constant, ConstantInfo, MutConst, defn_proj_address, defn_proj_constant,
 };
 use ixon::env::{Env, Named, RoleBinding};
 use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta};
-use ixon::role_table::RoleTable;
+use ixon::role_table::{Role, RoleTable};
 
 const GOOD: &[u8] =
   include_bytes!("fixtures/serialized_units/homogeneous-good.ixe");
+const BASIS: &[u8] = include_bytes!("fixtures/role_admission/basis.ixe");
 const BAD: &[u8] =
   include_bytes!("fixtures/serialized_units/homogeneous-bad-sibling.ixe");
 
@@ -39,10 +40,30 @@ fn owner(env: &Env) -> (Address, Arc<Constant>) {
     .unwrap()
 }
 
-fn empty_binding(env: &mut Env) {
-  let raw = RoleTable { version: 2, bound: vec![], evidence: vec![] }
-    .to_bytes()
-    .unwrap();
+/// Bind the prelude as a compiled artifact does: merge the compiled prelude's
+/// records into `env` and bind every prelude role to them, so the bound
+/// worker checks `env`'s own units.
+fn prelude_binding(env: &mut Env) {
+  let basis = loaded(BASIS);
+  for entry in basis.consts.iter() {
+    env.consts.insert(entry.key().clone(), entry.value().clone());
+  }
+  for entry in basis.blobs.iter() {
+    env.blobs.insert(entry.key().clone(), entry.value().clone());
+  }
+  let mut bound: Vec<(Role, Address)> = PRELUDE
+    .iter()
+    .map(|role| {
+      let name = role
+        .lean_name()
+        .split('.')
+        .fold(Name::anon(), |prefix, part| Name::str(prefix, part.into()));
+      (*role, basis.lookup_name(&name).unwrap().addr)
+    })
+    .collect();
+  bound.sort_by_key(|(role, _)| role.index());
+  let raw =
+    RoleTable { version: 2, bound, evidence: vec![] }.to_bytes().unwrap();
   env.role_binding =
     Some(RoleBinding { address: Address::hash(&raw), bytes: raw.into() });
 }
@@ -118,7 +139,7 @@ fn metadata_cannot_relabel_a_real_owner_payload_as_another_units_member() {
   }
   let good_names = name_definitions(&env, &good_owner, &good_record, "good");
   let bad_names = name_definitions(&env, &bad_owner, &bad_record, "bad");
-  empty_binding(&mut env);
+  prelude_binding(&mut env);
   let baseline = ArtifactSource::snapshot(&env).unwrap();
   let mut baseline = ArtifactChecker::<Meta>::from_named_source(Ok(baseline));
   assert!(baseline.check_name(&good_names[0]).is_ok());
@@ -156,9 +177,14 @@ fn owner_checks_accept_each_physical_projection_subset() {
         env.consts.remove(target);
       }
     }
-    empty_binding(&mut env);
+    prelude_binding(&mut env);
     let source = ArtifactSource::snapshot(&env).unwrap();
-    let work = build_artifact_work(&source).unwrap();
+    // The owner's unit is one work item; the rest are the prelude's.
+    let work: Vec<_> = build_artifact_work(&source)
+      .unwrap()
+      .into_iter()
+      .filter(|item| item.targets().iter().any(|t| targets.contains(t)))
+      .collect();
     assert_eq!(work.len(), 1);
     assert_eq!(work[0].targets(), targets);
     let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source.clone()));
@@ -183,7 +209,7 @@ fn physical_coverage_rejects_orphans_and_invalid_carried_projections() {
   let mut orphan = loaded(GOOD);
   let (owner, _) = owner(&orphan);
   orphan.consts.remove(&owner);
-  empty_binding(&mut orphan);
+  prelude_binding(&mut orphan);
   assert!(
     build_artifact_work(&ArtifactSource::snapshot(&orphan).unwrap()).is_err()
   );
@@ -192,7 +218,7 @@ fn physical_coverage_rejects_orphans_and_invalid_carried_projections() {
   let invalid = defn_proj_constant(99, owner);
   let address = invalid.commit().0;
   env.store_const(address, invalid);
-  empty_binding(&mut env);
+  prelude_binding(&mut env);
   assert!(
     build_artifact_work(&ArtifactSource::snapshot(&env).unwrap()).is_err()
   );
@@ -204,7 +230,7 @@ fn selected_closure_keeps_the_owners_other_projection_edges() {
   let (owner, _) = owner(&env);
   let primary = defn_proj_address(0, &owner);
   let other = defn_proj_address(1, &owner);
-  empty_binding(&mut env);
+  prelude_binding(&mut env);
   let source = ArtifactSource::snapshot(&env).unwrap();
   let roots = [other];
   let expected = closure_addrs(&env, &roots);
@@ -238,7 +264,7 @@ fn cached_owner_members_do_not_authorize_absent_external_references() {
     if !carry_projection {
       env.consts.remove(&target);
     }
-    empty_binding(&mut env);
+    prelude_binding(&mut env);
     let source = ArtifactSource::snapshot(&env).unwrap();
     let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source));
     checker.check_owner(&owner).unwrap();
@@ -321,7 +347,7 @@ fn metadata_context_cannot_select_recursive_targets() {
     ExprMeta::default(),
     0,
   );
-  empty_binding(&mut env);
+  prelude_binding(&mut env);
   let source = ArtifactSource::snapshot(&env).unwrap();
   let mut named =
     ArtifactChecker::<Meta>::from_named_source(Ok(source.clone()));
@@ -373,7 +399,7 @@ fn present_corrupt_projection_is_authenticated_before_reuse() {
         env.consts.get(&defn_proj_address(1, &owner)).unwrap().value().clone();
       env.consts.insert(target.clone(), other);
     }
-    empty_binding(&mut env);
+    prelude_binding(&mut env);
     let source = ArtifactSource::snapshot(&env).unwrap();
     let cold = ArtifactChecker::<Meta>::from_named_source(Ok(source.clone()))
       .check_name(&dependent_name)

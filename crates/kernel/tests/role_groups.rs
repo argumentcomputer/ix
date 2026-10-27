@@ -6,7 +6,7 @@ use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, Name};
 use ix_kernel::artifact_checker::ArtifactChecker;
 use ix_kernel::mode::Anon;
-use ix_kernel::role_admission::ArtifactSource;
+use ix_kernel::role_admission::{ArtifactSource, PRELUDE};
 use ixon::constant::{Axiom, Constant, ConstantInfo, DefKind, Definition};
 use ixon::contract::{BinderContract, ValueContract};
 use ixon::env::{Env, RoleBinding};
@@ -83,7 +83,8 @@ fn the_compiled_nat_block_is_admitted_with_its_literals() {
   let roles = nat_roles(&env);
   let nat = roles[0].1.clone();
   let definition = literal_definition(&env, &nat);
-  bind(&mut env, roles.clone());
+  let bound = with_prelude(&env, roles.clone());
+  bind(&mut env, bound);
   let source = ArtifactSource::snapshot(&env).unwrap();
   let admission = source.admission();
   assert!(admission.refused().is_empty(), "{:?}", admission.refused());
@@ -129,7 +130,8 @@ fn unbound_or_refused_nat_leaves_literals_refused() {
     let error = ArtifactChecker::<Anon>::from_source(Ok(source))
       .check_const(&definition)
       .unwrap_err();
-    assert!(format!("{error}").contains("Nat support is not admitted"));
+    // Nat is in the prelude: without it no unit is checked at all.
+    assert!(format!("{error}").contains("prelude is not admitted"), "{error}");
   }
 }
 
@@ -175,11 +177,12 @@ fn basis_roles(env: &Env) -> Vec<(Role, Address)> {
 fn the_compiled_basis_blocks_are_admitted() {
   let mut env = loaded();
   let roles = basis_roles(&env);
-  bind(&mut env, roles.clone());
+  let bound = with_prelude(&env, roles.clone());
+  bind(&mut env, bound.clone());
   let source = ArtifactSource::snapshot(&env).unwrap();
   let admission = source.admission();
   assert!(admission.refused().is_empty(), "{:?}", admission.refused());
-  assert_eq!(admission.admitted_count(), roles.len());
+  assert_eq!(admission.admitted_count(), bound.len());
   let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source));
   for (role, address) in &roles {
     checker.check_const(address).unwrap_or_else(|e| panic!("{role:?}: {e}"));
@@ -235,7 +238,20 @@ fn quotient_records_need_the_quot_group() {
     vec![quot, nat],
     vec![type1, Arc::new(Univ::Zero)],
   );
-  let roles = nat_roles(&env);
+  // The whole prelude but the quotient package.
+  let roles: Vec<_> = with_prelude(&env, nat_roles(&env))
+    .into_iter()
+    .filter(|(role, _)| {
+      !matches!(
+        role,
+        Role::Quot
+          | Role::QuotMk
+          | Role::QuotLift
+          | Role::QuotInd
+          | Role::QuotSound
+      )
+    })
+    .collect();
   bind(&mut env, roles);
   let error = ArtifactChecker::<Anon>::from_source(Ok(
     ArtifactSource::snapshot(&env).unwrap(),
@@ -243,7 +259,7 @@ fn quotient_records_need_the_quot_group() {
   .check_const(&definition)
   .unwrap_err();
   assert!(
-    format!("{error}").contains("not an admitted quotient primitive"),
+    format!("{error}").contains("does not bind the prelude role Quot"),
     "{error}"
   );
 }
@@ -493,6 +509,7 @@ fn string_literals_use_the_admitted_anchors() {
         .into_iter()
         .filter(|(role, _)| bind_of_list || *role != Role::StringOfList),
     );
+    let roles = with_prelude(&env, roles);
     bind(&mut env, roles);
     let source = ArtifactSource::snapshot(&env).unwrap();
     let refused = source.admission().refused().to_vec();
@@ -556,6 +573,7 @@ fn bind_structural(env: &mut Env, swap_add_and_mul: bool) {
     roles.push((role, address_of(env, name)));
     evidence.push((role, vec![Evidence::DefEq; equations]));
   }
+  let roles = with_prelude(env, roles);
   bind_with_evidence(env, roles, evidence);
 }
 
@@ -960,6 +978,7 @@ fn only_the_standard_axioms_may_be_used() {
   );
   let mut bound = basis_roles(&env);
   bound.extend(roles.iter().cloned());
+  let bound = with_prelude(&env, bound);
   bind(&mut env, bound);
   let source = ArtifactSource::snapshot(&env).unwrap();
   let refused = source.admission().refused();
@@ -1047,4 +1066,17 @@ fn a_well_founded_operation_needs_local_proofs_of_its_statements() {
   );
   let reason = refused_division(env, proof);
   assert!(reason.contains("certificate 0"), "{reason}");
+}
+
+/// `roles` with every prelude role it lacks bound to the compiled records.
+fn with_prelude(
+  env: &Env,
+  mut roles: Vec<(Role, Address)>,
+) -> Vec<(Role, Address)> {
+  for role in PRELUDE {
+    if !roles.iter().any(|(bound, _)| *bound == role) {
+      roles.push((role, address_of(env, role.lean_name())));
+    }
+  }
+  roles
 }

@@ -1413,6 +1413,9 @@ fn report_admission(label: &str, source: &ArtifactSource) {
   for (role, reason) in admission.refused() {
     eprintln!("[{label}]   {} group refused: {reason}", role.lean_name());
   }
+  if let Some(reason) = source.prelude_refusal() {
+    eprintln!("[{label}] no unit will be checked: {reason}");
+  }
 }
 
 fn index_anon_work(

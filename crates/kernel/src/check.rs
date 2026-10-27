@@ -1264,6 +1264,20 @@ mod tests {
   use ix_common::env::{DefinitionSafety, QuotKind, ReducibilityHints};
   use ixon::constant::DefKind;
 
+  /// The certified checker bounds its untyped inferer's fuel so that a
+  /// non-terminating head β in a declared type declines. Inference here is
+  /// typed, so the same type, `(fun x : Prop => x x) (fun x : Prop => x x)`,
+  /// declines as ill-typed rather than reducing.
+  #[test]
+  fn non_terminating_head_beta_in_a_declared_type_declines() {
+    use crate::testing as t;
+    let omega = || t::lam(t::sort0(), t::app(t::var(0), t::var(0)));
+    let (id, axiom) = t::mk_axiom("loops", 0, vec![], t::app(omega(), omega()));
+    let mut env = KEnv::new();
+    env.insert(id.clone(), axiom);
+    t::check_rejects(&mut env, &id);
+  }
+
   #[test]
   fn profile_sink_records_delta_edge_and_fuel() {
     use crate::mode::Meta;
