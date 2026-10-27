@@ -101,7 +101,7 @@ fn fri_stage_preserves_publics_through_foreign_translation() -> Result<()> {
 fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
   let config = || {
     GoldilocksBlake3Config::new(
-      CommitmentParameters { log_blowup: 1, cap_height: 0 },
+      CommitmentParameters { log_blowup: 2, cap_height: 0 },
       FriParameters {
         log_final_poly_len: 0,
         max_log_arity: 1,

@@ -41,6 +41,9 @@ p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89
 p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
+[dev-dependencies]
+rayon = { workspace = true }
+
 # The CUDA transform engine for the KZG backend. The fork supplies column
 # batching, borrowed streams, the device-selecting synchronization and the
 # MSM profiling hooks, and a runtime compatible with the Lean executable's

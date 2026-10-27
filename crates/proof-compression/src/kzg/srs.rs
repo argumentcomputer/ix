@@ -81,7 +81,7 @@ impl Srs {
     public_max_degree: usize,
     seed: &[u8],
     directory: impl AsRef<std::path::Path>,
-  ) -> std::io::Result<Self> {
+  ) -> io::Result<Self> {
     super::srs_cache::cached_in_directory(
       max_len,
       public_max_degree,

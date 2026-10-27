@@ -378,9 +378,15 @@ mod tests {
       tracing_texray::TeXRayLayer::new().streaming().writer(output.clone()),
     );
     tracing::subscriber::set_global_default(subscriber)?;
-    let partitions =
+    // A thread blocked inside the examined span can steal rayon jobs from
+    // concurrently running tests, whose spans would then be counted as its
+    // children. A private pool only runs this fixture's jobs.
+    let pool = rayon::ThreadPoolBuilder::new().build()?;
+    let partitions = pool.install(|| {
       tracing_texray::examine(tracing::info_span!("compression/test"))
-        .in_scope(parity_fixture)?;
+        .in_scope(parity_fixture)
+        .map_err(|e| e.to_string())
+    })?;
     let text = String::from_utf8(output.0.lock().unwrap().clone())?;
     for name in
       ["compression/trace", "compression/fixed", "compression/main_commit"]
