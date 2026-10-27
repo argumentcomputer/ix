@@ -1540,6 +1540,29 @@ def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
       errors := errors.push s!"evidence: {repr r}: the bundle's evidence has no proofs; the table resolves \
         {ps.length}"
     | none, none => errors := errors.push s!"evidence: {repr r}: no proofs on either side"
+  -- the evidence check (part of the artifact checks) on the closure's artifact
+  let started ← IO.monoMsNow
+  let checked ← IO.lazyPure fun _ => Ix.Cert.EvidenceCheck.evidenceCheck t ixe
+  match checked with
+  | .ok () => lines := lines.push s!"evidence: the evidence check passes on the closure's artifact \
+      ({(← IO.monoMsNow) - started} ms)"
+  | .error e => errors := errors.push s!"evidence: the evidence check refuses the closure's artifact: {e}"
+  -- and on the artifact of a closure that holds no well-founded operation
+  match Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[`List.length] with
+  | .error e => errors := errors.push s!"evidence: the closure of `List.length` does not compute: {e}"
+  | .ok closedSmall =>
+    match Ix.Compile.prepareRegisteredConstants leanEnv closedSmall with
+    | .error e => errors := errors.push s!"evidence: the closure of `List.length` does not prepare: {e}"
+    | .ok preparedSmall =>
+      let envSmall := Tests.Ix.Kernel.SourceIngressStep.canon preparedSmall.toArray
+      match Ix.Cert.compile envSmall with
+      | .error e => errors := errors.push s!"evidence: the closure of `List.length` does not compile: {e}"
+      | .ok ixeSmall =>
+        match Ix.Cert.EvidenceCheck.evidenceCheck t ixeSmall with
+        | .ok () => lines := lines.push s!"evidence: the evidence check passes on the artifact of `List.length`'s \
+            closure ({ixeSmall.consts.size} records), which holds no well-founded operation"
+        | .error e => errors := errors.push s!"evidence: the evidence check refuses the artifact of `List.length`'s \
+            closure: {e}"
   return (errors, lines)
 
 /-- Literal support in `DependsOn` (owner, 2026-10-20): the statement closure of a root
@@ -1651,6 +1674,25 @@ def rolesInitStdSuite : List TestSeq := [
         IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
       finally IO.FS.removeDirAll dir
     rolesCases "Init+Std" env ixe) 1]
+
+/-- `cert-evidence-initstd`: the evidence check (part of the artifact checks) on the compiled
+Init+Std, timed. -/
+def evidenceInitStdSuite : List TestSeq := [
+  report "the evidence check on the compiled Init+Std" (do
+    let leanEnv ← getCompileEnv #[`Init, `Std]
+    let dir ← IO.FS.createTempDir
+    let ixe ← try
+        let path := dir / "initstd.ixe"
+        let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
+        IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+      finally IO.FS.removeDirAll dir
+    let some t := defaultTable? | return (#["evidence: the default role table does not read"], #[])
+    let started ← IO.monoMsNow
+    let checked ← IO.lazyPure fun _ => Ix.Cert.EvidenceCheck.evidenceCheck t ixe
+    let ms := (← IO.monoMsNow) - started
+    match checked with
+    | .ok () => return (#[], #[s!"evidence check on Init+Std ({ixe.consts.size} records): passes in {ms} ms"])
+    | .error e => return (#[s!"evidence check on Init+Std refuses the artifact after {ms} ms: {e}"], #[])) 1]
 
 /-- `cert-noctor-initstd` (ignored): N-READS N4 (a)'s premise `NoCtorIn` on every inductive of
 Init+Std. -/

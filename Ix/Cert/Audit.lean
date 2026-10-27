@@ -6854,7 +6854,7 @@ fun v =>
 /-- info: def Ix.Cert.artifactCheck : Ix.Kernel.RoleTable → Ixon.Env → Except String Unit :=
 fun t ixe =>
   if Ix.Cert.publishedRolesBound t ixe = true then
-    if Ix.Cert.publishedAgree ixe = true then Except.ok ()
+    if Ix.Cert.publishedAgree ixe = true then Ix.Cert.EvidenceCheck.evidenceCheck t ixe
     else Except.error "artifact check: two published names with one ingress name are at different addresses"
   else Except.error "artifact check: a published role name is not at its role's address in the role table" -/
 #guard_msgs (whitespace := lax) in
@@ -6926,10 +6926,11 @@ fun ixe sub t envQ =>
         Ix.Cert.NoFailure failures sub →
           Ix.Cert.PublishedRolesBound t ixe →
             Ix.Cert.PublishedAgree ixe →
-              Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                  Ix.Cert.SourceFormInfers env ixe sub t →
-                    Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+              Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                  (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+                    Ix.Cert.SourceFormInfers env ixe sub t →
+                      Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileCorrect
 
@@ -6942,9 +6943,10 @@ fun ixe sub t envQ =>
         Ix.Cert.Published ixe sub →
           Ix.Cert.PublishedRolesBound t ixe →
             Ix.Cert.PublishedAgree ixe →
-              Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                  Ix.Cert.SourceFormInfers env ixe sub t → Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+              Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                  (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+                    Ix.Cert.SourceFormInfers env ixe sub t → Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileCorrectPublished
 
@@ -6957,7 +6959,8 @@ fun ixe sub t envQ =>
 #check @Ix.Cert.ChangeKind.mem_all
 
 /-- info: @Ix.Cert.artifactCheck_sound : ∀ {t : Ix.Kernel.RoleTable} {ixe : Ixon.Env},
-  Ix.Cert.artifactCheck t ixe = Except.ok () → Ix.Cert.PublishedRolesBound t ixe ∧ Ix.Cert.PublishedAgree ixe -/
+  Ix.Cert.artifactCheck t ixe = Except.ok () →
+    Ix.Cert.PublishedRolesBound t ixe ∧ Ix.Cert.PublishedAgree ixe ∧ Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.artifactCheck_sound
 
@@ -7042,12 +7045,13 @@ fun ixe sub t envQ =>
             Ix.Cert.NoFailure failures sub →
               Ix.Cert.PublishedRolesBound t ixe →
                 Ix.Cert.PublishedAgree ixe →
-                  Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                    (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                      Ix.Cert.SourceFormInfers env ixe sub t →
-                        ∃ envQ,
-                          Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ ∧
-                            Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+                  Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                    Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                      (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
+                        Ix.Cert.SourceFormInfers env ixe sub t →
+                          ∃ envQ,
+                            Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ ∧
+                              Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
 
@@ -7134,6 +7138,7 @@ fields:
   Ix.Cert.Premises.none : Ix.Cert.NoFailure failures sub
   Ix.Cert.Premises.bound : Ix.Cert.PublishedRolesBound t ixe
   Ix.Cert.Premises.agree : Ix.Cert.PublishedAgree ixe
+  Ix.Cert.Premises.quotient : Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe
   Ix.Cert.Premises.evidence : Ix.Cert.RoleClosure.RoleEvidenceChecks
 constructor:
   Ix.Cert.Premises.mk {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
@@ -7142,7 +7147,8 @@ constructor:
     (source : Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ)
     (compiled : Ix.Cert.compileReport env = Except.ok (ixe, failures)) (none : Ix.Cert.NoFailure failures sub)
     (bound : Ix.Cert.PublishedRolesBound t ixe) (agree : Ix.Cert.PublishedAgree ixe)
-    (evidence : Ix.Cert.RoleClosure.RoleEvidenceChecks) : Ix.Cert.Premises env roots sub ixe failures t envQ -/
+    (quotient : Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe) (evidence : Ix.Cert.RoleClosure.RoleEvidenceChecks) :
+    Ix.Cert.Premises env roots sub ixe failures t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Premises
 

@@ -68,6 +68,7 @@ structure Premises (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Envir
   none : NoFailure failures sub
   bound : PublishedRolesBound t ixe
   agree : PublishedAgree ixe
+  quotient : EvidenceCheck.EvidenceAgrees t ixe
   evidence : RoleClosure.RoleEvidenceChecks
 
 /-- **The final statement in the unchanged-closure case**: its conclusion, for a closure
@@ -663,9 +664,10 @@ theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obliga
     (h7d : Obligation.SourceRestricts) (h7e : Obligation.RootRestricts) (h8 : Obligation.Assembly.{w})
     (h9u : Obligation.UnchangedRules.{w}) (h9 : Obligation.RuleCorrespondence.{w}) :
     CompileCorrect.{w} := by
-  intro env roots sub ixe failures t envQ table source compiled none bound agree evidence kinds forms
+  intro env roots sub ixe failures t envQ table source compiled none bound agree quotient evidence kinds
+    forms
   have P : Premises env roots sub ixe failures t envQ :=
-    ⟨table, source, compiled, none, bound, agree, evidence⟩
+    ⟨table, source, compiled, none, bound, agree, quotient, evidence⟩
   have published : Published ixe sub := fun n ci hn =>
     (compileCovers env ixe failures compiled n ci (source.1.mem_env hn)).mpr (none n ci hn)
   obtain ⟨binding, hbind, -⟩ := (kinds .cascade).2

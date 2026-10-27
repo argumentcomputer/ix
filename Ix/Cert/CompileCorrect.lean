@@ -125,7 +125,9 @@ table `t`. Suppose quotient Source accepts the closure `sub` of `roots` in `env`
 the artifact `ixe`, grouped as the compiler groups it, installing `envQ`;
 `compileReport env` returns `ixe` with `failures`; no constant of `sub` failed; the
 published role names sit at the table's addresses, the published names agree with
-the artifact's address map, and the table's certificates check; every kind of
+the artifact's address map, quotient Source's evidence bundle agrees with the table's
+evidence on the artifact (`EvidenceCheck.EvidenceAgrees`), and the table's certificates
+check; every kind of
 change passes its validation hypothesis on `sub`; and the Source forms of the
 rewritten records infer in their compiled closures. Then `ixe` publishes every
 constant of `sub`, and the compiled closure is accepted, reads every constant of
@@ -140,6 +142,7 @@ def CompileCorrect : Prop :=
     NoFailure failures sub →
     PublishedRolesBound t ixe →
     PublishedAgree ixe →
+    EvidenceCheck.EvidenceAgrees t ixe →
     RoleClosure.RoleEvidenceChecks →
     (∀ k, KindAccepted k env ixe sub) →
     SourceFormInfers env ixe sub t →
@@ -216,6 +219,7 @@ def CompileCorrectPublished : Prop :=
     Published ixe sub →
     PublishedRolesBound t ixe →
     PublishedAgree ixe →
+    EvidenceCheck.EvidenceAgrees t ixe →
     RoleClosure.RoleEvidenceChecks →
     (∀ k, KindAccepted k env ixe sub) →
     SourceFormInfers env ixe sub t →
@@ -225,9 +229,9 @@ def CompileCorrectPublished : Prop :=
 `Published`: the closure is published, so none of it failed. -/
 theorem CompileCorrect.published (hcov : CompileCovers) (h : CompileCorrect.{w}) :
     CompileCorrectPublished.{w} := by
-  intro env roots sub ixe t envQ table hs hc hp bound agree evidence kinds forms
+  intro env roots sub ixe t envQ table hs hc hp bound agree quotient evidence kinds forms
   obtain ⟨failures, hr⟩ := compile_eq_ok.mp hc
-  refine (h env roots sub ixe failures t envQ table hs hr (fun n ci hn => ?_) bound agree evidence
+  refine (h env roots sub ixe failures t envQ table hs hr (fun n ci hn => ?_) bound agree quotient evidence
     kinds forms).2
   exact (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mp (hp n ci hn)
 
@@ -235,11 +239,11 @@ theorem CompileCorrect.published (hcov : CompileCovers) (h : CompileCorrect.{w})
 `CompileCorrect`: a closure none of whose constants failed is published. -/
 theorem CompileCorrect.of_published (hcov : CompileCovers) (h : CompileCorrectPublished.{w}) :
     CompileCorrect.{w} := by
-  intro env roots sub ixe failures t envQ table hs hr hf bound agree evidence kinds forms
+  intro env roots sub ixe failures t envQ table hs hr hf bound agree quotient evidence kinds forms
   have hp : Published ixe sub := fun n ci hn =>
     (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mpr (hf n ci hn)
   exact ⟨hp, h env roots sub ixe t envQ table hs (compile_eq_ok.mpr ⟨failures, hr⟩) hp bound
-    agree evidence kinds forms⟩
+    agree quotient evidence kinds forms⟩
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**. -/
 theorem compileCorrect_iff_published : CompileCorrect.{w} ↔ CompileCorrectPublished.{w} :=
@@ -262,11 +266,11 @@ theorem CompileCorrect.validated (h : CompileCorrect.{w}) {v : ConeValidator} (s
     Published ixe sub ∧ IxonCommutesCovering.{w} ixe sub t envQ ∧ PublishedRolesBound t ixe ∧
       PublishedAgree ixe := by
   obtain ⟨report, checked, passed⟩ := compileValidated_ok compiled
-  obtain ⟨bound, agree⟩ := artifactCheck_sound checked
+  obtain ⟨bound, agree, quotient⟩ := artifactCheck_sound checked
   obtain ⟨kinds, forms⟩ := sound env ixe failures report passed roots sub t source.1 table
-  exact ⟨(h env roots sub ixe failures t envQ table source report none bound agree evidence kinds
-    forms).1, (h env roots sub ixe failures t envQ table source report none bound agree evidence
-    kinds forms).2, bound, agree⟩
+  exact ⟨(h env roots sub ixe failures t envQ table source report none bound agree quotient evidence
+    kinds forms).1, (h env roots sub ixe failures t envQ table source report none bound agree quotient
+    evidence kinds forms).2, bound, agree⟩
 
 /-- **The statement on executed checks.** Take the computed closure of `roots`
 (`closure`, correct by `closureCorrect`), the default role table, the executed
@@ -309,12 +313,12 @@ theorem CompileCorrect.nominal (h : CompileCorrect.{w}) {env : Ix.Environment}
     (nominal : SourceAccepts blocksOf env roots sub envS)
     (compiled : compileReport env = .ok (ixe, failures)) (none : NoFailure failures sub)
     (bound : PublishedRolesBound t ixe) (agree : PublishedAgree ixe)
-    (evidence : RoleClosure.RoleEvidenceChecks)
+    (evidenceAgrees : EvidenceCheck.EvidenceAgrees t ixe) (evidence : RoleClosure.RoleEvidenceChecks)
     (kinds : ∀ k, KindAccepted k env ixe sub) (forms : SourceFormInfers env ixe sub t) :
     ∃ envQ, SourceAcceptsQ blocksOf env roots sub ixe t envQ ∧
       Published ixe sub ∧ IxonCommutesCovering.{w} ixe sub t envQ := by
   obtain ⟨envQ, quotient⟩ := agreeAt envS nominal
   exact ⟨envQ, quotient, h env roots sub ixe failures t envQ table quotient compiled none bound
-    agree evidence kinds forms⟩
+    agree evidenceAgrees evidence kinds forms⟩
 
 end Ix.Cert

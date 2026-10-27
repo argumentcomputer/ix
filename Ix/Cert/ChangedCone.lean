@@ -2,6 +2,7 @@ import Ix.Cert.SelectedRoots
 import Ix.Cert.StrongCommutation
 import Ix.LeanIngress.Rename
 import Ix.Cert.Quotient
+import Ix.Cert.EvidenceCheck
 
 /-! # The changed cone: change kinds, their validation hypotheses and the validator
 
@@ -366,27 +367,32 @@ every published role name sits at its role's address in the default role table,
 and every published name agrees with the artifact's address map (two published
 names with one ingress name share an address). The validated compile runs them
 after `compileReport`. An input that holds a constant under a role's Lean name
-with other content is refused there. -/
+with other content is refused there. A third check, on the artifact and the committed
+role data, makes quotient Source's evidence bundle the role table's evidence there
+(`Ix.Cert.EvidenceCheck.evidenceCheck`, sound by `evidenceCheck_sound`). -/
 
 /-- **The artifact checks** at the role table `t`: every published role name sits
-at its role's address (`publishedRolesBound`), and every published name agrees with
-the artifact's address map (`publishedAgree`). -/
+at its role's address (`publishedRolesBound`), every published name agrees with
+the artifact's address map (`publishedAgree`), and quotient Source's evidence bundle
+agrees with the role table's evidence on the artifact (`EvidenceCheck.evidenceCheck`). -/
 def artifactCheck (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) : Except String Unit :=
   if publishedRolesBound t ixe then
-    if publishedAgree ixe then .ok ()
+    if publishedAgree ixe then EvidenceCheck.evidenceCheck t ixe
     else .error "artifact check: two published names with one ingress name are at different addresses"
   else
     .error "artifact check: a published role name is not at its role's address in the role table"
 
-/-- **The artifact checks are sound**: their success gives both facts. -/
+/-- **The artifact checks are sound**: their success gives the three facts. -/
 theorem artifactCheck_sound {t : Ix.Kernel.RoleTable} {ixe : Ixon.Env}
-    (h : artifactCheck t ixe = .ok ()) : PublishedRolesBound t ixe ∧ PublishedAgree ixe := by
+    (h : artifactCheck t ixe = .ok ()) :
+    PublishedRolesBound t ixe ∧ PublishedAgree ixe ∧ EvidenceCheck.EvidenceAgrees t ixe := by
   unfold artifactCheck at h
   split at h
   · rename_i hb
     split at h
     · rename_i ha
-      exact ⟨(publishedRolesBound_iff t ixe).mp hb, (publishedAgree_iff ixe).mp ha⟩
+      exact ⟨(publishedRolesBound_iff t ixe).mp hb, (publishedAgree_iff ixe).mp ha,
+        EvidenceCheck.evidenceAgrees_of_check h⟩
     · cases h
   · cases h
 
