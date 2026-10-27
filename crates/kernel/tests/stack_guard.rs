@@ -61,9 +61,9 @@ fn nested_reduction(env: &Env, n: u64) -> E {
   recursor(motive(), zero.clone(), step, KExpr::nat(literal, literal_address))
 }
 
-fn reduce_on_small_stack(n: u64) -> Result<E, String> {
+fn reduce_on_stack(n: u64, stack: usize) -> Result<E, String> {
   std::thread::Builder::new()
-    .stack_size(16 * 1024 * 1024)
+    .stack_size(stack)
     .spawn(move || {
       let mut input = BASIS;
       let env = Env::get(&mut input).unwrap();
@@ -88,13 +88,16 @@ fn reduce_on_small_stack(n: u64) -> Result<E, String> {
 
 #[test]
 fn shallow_nested_reduction_completes() {
-  let result = reduce_on_small_stack(100).unwrap();
+  let result = reduce_on_stack(100, 16 << 20).unwrap();
   assert!(matches!(result.data(), ix_kernel::expr::ExprData::Const(..)));
 }
 
 #[test]
 fn deep_nested_reduction_declines_instead_of_overflowing() {
-  // A million levels need far more than 16 MB of stack; without the guard
-  // this aborts the test process with a stack overflow.
-  assert_eq!(reduce_on_small_stack(1_000_000).unwrap_err(), "stack");
+  // A million levels need far more than 16 MB of stack, or than the 2 MB a
+  // thread gets by default (where the reserve is at its smallest); without
+  // the stack check each aborts the test process with a stack overflow.
+  for stack in [16 << 20, 2 << 20] {
+    assert_eq!(reduce_on_stack(1_000_000, stack).unwrap_err(), "stack");
+  }
 }
