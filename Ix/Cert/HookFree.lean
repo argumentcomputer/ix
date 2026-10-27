@@ -333,7 +333,8 @@ theorem namedEnv_view {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
   rw [view_get, input_get, Std.HashMap.get?_eq_getElem?,
     Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hx
   obtain ⟨k, hxk, hk⟩ := hx
-  exact PartialEquivBEq.trans (inputsNamed h k ci hk) (BEq.symm hxk)
+  rw [inputsNamed h k ci hk]
+  exact BEq.symm hxk
 
 /-! ## What the final environment says -/
 

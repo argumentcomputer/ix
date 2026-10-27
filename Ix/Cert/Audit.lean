@@ -4763,7 +4763,19 @@ Init+Std, 36,870, and Mathlib, 237,499). With it, every name a block's
 compile claims is a member's or a member's constructor's. Re-frozen with it:
 `checkReport`'s print and `checkReport_ok` (a twelfth conjunct; its proof now
 walks the checks' branches instead of splitting every check's result). On a
-consistent run the result is unchanged. -/
+consistent run the result is unchanged.
+
+**The check compares exact spellings** (`Ix.nameCompareExact`, stored hashes
+included), not `Ix.Name`'s `==`, which compares the stored hashes only, so an
+own name that is a hash-equal respelling of its stored name is refused too.
+The compiler publishes a singleton constant under its stored name and a block
+member under its own name, and quotient Source keys every constant by its own
+name; with one spelling for both, the Source coverage statement can name the
+published constant by the closure's stored name. `misnamedInput_none` and
+`inputsNamed` now conclude equality. Re-frozen with it: `misnamedInput`'s
+print. Probe `p2src/20261027T003307Z-names-initstd2`: 0 on Init+Std's
+canonical input (117,694 constants, 215 ms); probe
+`p2src/20261027T003616Z-names-mathlib`: 0 on Mathlib's (783,115 constants, 1,493 ms). -/
 
 /-- info: [cert-audit] input names: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -4780,7 +4792,7 @@ fun env =>
   List.findSome?
     (fun x =>
       match x with
-      | (n, ci) => if (ci.getCnst.name == n) = true then none else some n)
+      | (n, ci) => if (Ix.nameCompareExact ci.getCnst.name n == Ordering.eq) = true then none else some n)
     env.consts.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.misnamedInput
