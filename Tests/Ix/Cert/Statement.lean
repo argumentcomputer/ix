@@ -1437,6 +1437,104 @@ def natDivClosure (leanEnv : Lean.Environment) : IO (Array String × Array Strin
       evidence accepts it ({envS.consts.length} kernel constants); at the input's own evidence, Source \
       {own}"])
 
+/-- The roles of the well-founded `Nat` operations (`Ix.Kernel.natDivModNames`). -/
+def wellFoundedRoles : List Ix.Kernel.Role :=
+  [.natDiv, .natMod, .natGcd, .natLand, .natLor, .natXor, .natShiftLeft, .natShiftRight]
+
+/-- The roles of the structural `Nat` operations (`Ix.Kernel.natOpNames`). -/
+def structuralRoles : List Ix.Kernel.Role :=
+  [.natPred, .natAdd, .natSub, .natMul, .natPow, .natBeq, .natBle]
+
+/-- **The role table's evidence against quotient Source's**, on the compiled closure of
+the well-founded `Nat` operations: the evidence the certified reader resolves from the
+default table in the closure's reading (`Ix.Kernel.Reader.evidenceOf`, through
+`Ix.Kernel.Admission.readStream`) against the bundle's evidence renamed onto the
+representatives and then to the artifact's addresses (`Ix.Cert.sourceEvidence`,
+`Ix.LeanIngress.evAddr`), compared where the fold's gates read them: a structural
+operation's `defeq` shape (`evidenceDefeqOk`) and a well-founded operation's proof terms
+(`evidenceProofs`; the theorems' keys are not read). -/
+def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let roots : Array Lean.Name :=
+    #[`Nat.div, `Nat.mod, `Nat.gcd, `Nat.land, `Nat.lor, `Nat.xor, `Nat.shiftLeft, `Nat.shiftRight]
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv roots)
+  let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
+  let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
+  let sub := Ix.Cert.closure env (roots.toList.map Ix.Name.fromLeanName)
+  let ixe ← match Ix.Cert.compile env with
+    | .ok ixe => pure ixe
+    | .error e => return (#[s!"evidence: the closure does not compile: {e}"], #[])
+  let some t := defaultTable? | return (#["evidence: the default role table does not read"], #[])
+  let .ok binding := Ix.Kernel.Admission.defaultBinding
+    | return (#["evidence: the default binding does not load"], #[])
+  let .ok tA := Ix.Kernel.Admission.admitBinding Address.admissionHash binding
+    | return (#["evidence: the default binding does not admit"], #[])
+  let .ok (preA : Ix.Kernel.Reader.Prelude .anon) := Ix.Kernel.Reader.preludeFor tA
+    | return (#["evidence: the committed prelude does not read"], #[])
+  let .ok b := Ix.RoleEvidence.committedBundle ()
+    | return (#["evidence: the committed bundle does not load"], #[])
+  let seeds : Array Address := sub.consts.toArray.filterMap fun (n, _) => (ixe.named.get? n).map (·.addr)
+  let order := (closureOrder ixe seeds).toList
+  let read := Ix.Kernel.Admission.readStream Address.admissionHash tA preA (Ix.Cert.Stream.decodedOf ixe order)
+    (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe)
+  let .ok (evR, _) := read | return (#[s!"evidence: the compiled closure does not read"], #[])
+  let evB := (Ix.Cert.sourceEvidence ixe t).mapKeys (Ix.LeanIngress.evAddr ixe b)
+  let byAddr : Std.HashMap Address Ix.Name := ixe.named.fold (fun m n d => m.insert d.addr n) {}
+  let keyName (k : Ix.Kernel.Key .anon) : String := match k with
+    | .id a => ((byAddr.get? a).map toString).getD s!"{a}"
+    | k => s!"{k}"
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  lines := lines.push s!"evidence: the well-founded operations' closure: {sub.consts.size} constants, \
+    {order.length} records read"
+  -- the renamed quotient Source run under each evidence (the transfer's conclusion, executed)
+  match Ix.Kernel.Reader.builtinPrelude (md := .source) with
+  | .error e => errors := errors.push s!"evidence: the Source prelude does not read: {e}"
+  | .ok pre =>
+    match Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub
+        (Ix.Cert.blocksOf sub) with
+    | .error e => errors := errors.push s!"evidence: quotient Source does not prepare the closure: {e}"
+    | .ok ds =>
+      let renamed := ds.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b))
+      let verdict (ev : Ix.Kernel.Evidences .anon) : String :=
+        match Ix.Kernel.Cached.checkDecls .verified ev renamed with
+        | .ok _ => "accepts"
+        | .error (e, i) => s!"declines at {i}: {e}"
+      lines := lines.push s!"evidence: the renamed quotient Source run ({renamed.size} declarations): \
+        at the bundle's evidence it {verdict evB}; at the table's it {verdict evR}"
+  for r in structuralRoles do
+    let k : Ix.Kernel.Key .anon := Ix.Kernel.roleKey r
+    let okR := Ix.Kernel.evidenceDefeqOk evR k
+    let okB := Ix.Kernel.evidenceDefeqOk evB k
+    lines := lines.push s!"evidence: {repr r}: defeq shape, table {okR}, bundle {okB}"
+    if okB && !okR then errors := errors.push s!"evidence: {repr r}: the bundle's defeq evidence passes, \
+      the table's does not"
+  for r in wellFoundedRoles do
+    let k : Ix.Kernel.Key .anon := Ix.Kernel.roleKey r
+    match Ix.Kernel.evidenceProofs evR k, Ix.Kernel.evidenceProofs evB k with
+    | some ps, some qs =>
+      if ps == qs then
+        lines := lines.push s!"evidence: {repr r}: {ps.length} proofs, equal"
+      else
+        let pairs := ps.zip qs
+        let same := (pairs.filter fun (p, q) => p == q).length
+        let keys (e : Ix.Kernel.Expr .anon) : List (Ix.Kernel.Key .anon) := e.constKeyList.eraseDups
+        let diffs := pairs.filterMap fun (p, q) =>
+          if p == q then none else
+            let kp := keys p
+            let kq := keys q
+            some s!"[table-only keys {((kp.filter (!kq.contains ·)).take 4).map keyName}, \
+              bundle-only keys {((kq.filter (!kp.contains ·)).take 4).map keyName}]"
+        lines := lines.push s!"evidence: {repr r}: table {ps.length} proofs, bundle {qs.length}; \
+          {same} equal; differing: {diffs.take 2}"
+    | none, some qs =>
+      lines := lines.push s!"evidence: {repr r}: the table's evidence resolves no proofs; the bundle has \
+        {qs.length}"
+    | some ps, none =>
+      lines := lines.push s!"evidence: {repr r}: the bundle's evidence has no proofs; the table resolves \
+        {ps.length}"
+    | none, none => lines := lines.push s!"evidence: {repr r}: no proofs on either side"
+  return (errors, lines)
+
 /-- Literal support in `DependsOn` (owner, 2026-10-20): the statement closure of a root
 with a `String` literal (`outOfBounds`, a `panic!` message) holds the constants IxC checks
 the literal against (`Ix.Cert.literalSupport`), and Source at the bundle evidence accepts it. -/
@@ -1517,6 +1615,13 @@ def suite : List TestSeq := [
     natDivClosure (← getCompileEnv #[defsModule, ownModule])) 1,
   report "a closure with a string literal holds its literal support (outOfBounds)" (do
     literalClosure (← getCompileEnv #[defsModule, ownModule]) `outOfBounds) 1]
+
+/-- `cert-evidence-agreement` (landing): the role table's evidence against quotient Source's on the
+well-founded operations' closure (`evidenceAgreement`); it compiles and reads the closure, so it
+stays out of the primary tier. -/
+def evidenceSuite : List TestSeq := [
+  report "the role table's evidence against quotient Source's, on the well-founded operations" (do
+    evidenceAgreement (← getCompileEnv #[defsModule, ownModule])) 1]
 
 /-- `cert-compile-parity-init` (ignored): the parity on `Init`. -/
 def initSuite : List TestSeq := [

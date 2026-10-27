@@ -439,6 +439,7 @@ def registry : List Entry := [
   -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
   .suite "cert-compile-parity-init" (.ci .landingInitStd) Tests.Ix.Cert.Statement.initSuite,
   .suite "cert-roles-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.rolesInitStdSuite,
+  .suite "cert-evidence-agreement" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceSuite,
   .suite "cert-noctor-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.noCtorInitStdSuite,
   -- A0 safety fixtures (collapse refusal, aux existence, single ownership,
   -- refused fallbacks): both compilers, both kernels, the certified checker
