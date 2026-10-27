@@ -5213,11 +5213,15 @@ mod tests {
   }
 
   /// `Nat.rec (fun _ => Nat) 0 (fun _ ih => Nat.rec (fun _ => Nat) 0
-  /// (fun _ _ => 0) ih) n`, reduced on a 16 MB thread: each level's major
-  /// premise is the next level's reduction, so this takes `n` native levels.
-  fn whnf_nested_recursors_on_small_stack(n: u64) -> Result<AE, TcError<Anon>> {
+  /// (fun _ _ => 0) ih) n`, reduced on a thread of `stack` bytes: each
+  /// level's major premise is the next level's reduction, so this takes `n`
+  /// native levels.
+  fn whnf_nested_recursors_on_stack(
+    n: u64,
+    stack: usize,
+  ) -> Result<AE, TcError<Anon>> {
     std::thread::Builder::new()
-      .stack_size(16 * 1024 * 1024)
+      .stack_size(stack)
       .spawn(move || {
         let mut env = nat_env();
         let mut tc = TypeChecker::new(&mut env);
@@ -5236,18 +5240,21 @@ mod tests {
 
   #[test]
   fn whnf_shallow_nested_recursors_reduce() {
-    let result = whnf_nested_recursors_on_small_stack(100).unwrap();
+    let result = whnf_nested_recursors_on_stack(100, 16 << 20).unwrap();
     assert!(matches!(result.data(), ExprData::Nat(..) | ExprData::Const(..)));
   }
 
   #[test]
   fn whnf_deep_nested_recursors_decline_instead_of_overflowing() {
-    // A million levels need far more than 16 MB of stack; without the stack
-    // check this aborts the test process with a stack overflow.
-    assert!(matches!(
-      whnf_nested_recursors_on_small_stack(1_000_000),
-      Err(TcError::StackExhausted)
-    ));
+    // A million levels need far more than 16 MB of stack, or than the 2 MB a
+    // thread gets by default (where the reserve is at its smallest); without
+    // the stack check each aborts the test process with a stack overflow.
+    for stack in [16 << 20, 2 << 20] {
+      assert!(matches!(
+        whnf_nested_recursors_on_stack(1_000_000, stack),
+        Err(TcError::StackExhausted)
+      ));
+    }
   }
 
   #[test]
