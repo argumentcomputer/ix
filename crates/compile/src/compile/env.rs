@@ -50,7 +50,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::admission::Admission;
 use crate::compile::pass3::Pass3State;
-use crate::compile::pass3::clique::table::{input_cliques, schedule_cliques};
 use crate::compile::{
   BlockCache, CompileOptions, CompileState,
   aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
@@ -408,7 +407,7 @@ pub fn compile_env_with_profile(
   };
 
   let phase_start = Instant::now();
-  let mut condensed = compute_sccs(&grounded_out_refs);
+  let condensed = compute_sccs(&grounded_out_refs);
   if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s{}",
@@ -462,29 +461,12 @@ pub fn compile_env_with_profile(
     );
   }
 
-  // Pass 3's clique transport (CQ5.2; Lean `scheduleCliques` in
-  // `compileEnvFoldWithSource`): the clique table and its scheduling edges.
-  // The edges only order the blocks; each block's own references (the refs
-  // `compile_block` reads, Lean `p3BlockRefs`) stay the condensation's, kept
-  // aside when the input has clique or sizeOf producer edges.
-  let const_of = |n: &Name| lean_env.get(n).map(|e| e.cloned());
-  let producer_heads = crate::compile::pass3::opt::size_of_producers(
-    scan.ind_groups.keys(),
-    &const_of,
-    &|n| grounded_out_refs.get(n).cloned().unwrap_or_default(),
-    &condensed.low_links,
-  );
-  let block_refs_orig = if input_cliques(&const_of, &condensed).is_empty()
-    && producer_heads.is_empty()
-  {
-    None
-  } else {
-    Some(condensed.block_refs.clone())
-  };
-  let (cliques, clique_roots) = schedule_cliques(&const_of, &mut condensed);
-  // Plan after clique-owner union; retain the raw SCCs and classification refs.
-  let o11a_blocked =
-    crate::compile::pass3::opt::plan_size_of(&producer_heads, &mut condensed);
+  // Lean's declarations compile as given: no clique table and no producer
+  // plan (Lean `compileEnvFoldWithSource`); the schedule is the
+  // condensation's.
+  let block_refs_orig: Option<RefMap> = None;
+  let (cliques, clique_roots) = Default::default();
+  let o11a_blocked = Default::default();
 
   // Pass 3's hooks run in every whole-environment compile (no mode, no
   // switch): the state is driver-prepared.

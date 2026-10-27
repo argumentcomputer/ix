@@ -526,13 +526,13 @@ theorem reach_rows {blocks : Ix.CondensedBlocks} {init acc : DriverAcc}
 
 open Ix.Cert.Schedule in
 /-- The report in a successful driver result is precisely the waves' report.
-Clique rows, assembly, original-data finalization and the final environment
-reset add no identity rows. The conclusion retains the finalizer's success. -/
+Assembly, original-data finalization and the final environment reset add no
+identity rows. The conclusion retains the finalizer's success. -/
 theorem compileEnvFold_report {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
     {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
     {bytes : Nat} {cenv : CompileEnv}
     (h : compileEnvFold env blocks dbg unmaterialized sharingLimits width = .ok (ixe, bytes, cenv)) :
-    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState) (rows : BlockState),
+    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
       (FoldState.init cenv₀ blocks sched).acc.cenv.auxReport.identity = #[] ∧
       (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
       ((FoldState.init cenv₀ blocks sched).acc.cenv.p3Cliques,
@@ -540,8 +540,7 @@ theorem compileEnvFold_report {env : Ix.Environment} {blocks : Ix.CondensedBlock
         (Ix.Compile.Pass.Clique.scheduleCliques { consts := {}, fallback? := some env.get? } blocks).2 ∧
       foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
       cenv.auxReport.identity = st.acc.cenv.auxReport.identity ∧
-      Ix.Compile.OriginalData.finalizeOriginals (mergeRows st.acc rows).originals
-        (assembleEnv (mergeRows st.acc rows)).1 = .ok ixe := by
+      Ix.Compile.OriginalData.finalizeOriginals st.acc.originals (assembleEnv st.acc).1 = .ok ixe := by
   rw [compileEnvFold_eq_seq] at h
   unfold compileEnvFoldSeq compileEnvFoldWithSourceSeq at h
   generalize missingBlockRefs? blocks = missing at h
@@ -554,20 +553,14 @@ theorem compileEnvFold_report {env : Ix.Environment} {blocks : Ix.CondensedBlock
   cases r with
   | error => cases h
   | ok st =>
-    simp only at h
-    unfold emitRows at h
-    generalize hc : Ix.Compile.Pass.cliqueRows st.acc.cenv = c at h
-    cases c with
+    simp only [bind, Except.bind, finalizeEnv] at h
+    generalize hf : Ix.Compile.OriginalData.finalizeOriginals _ _ = finalized at h
+    cases finalized with
     | error => cases h
-    | ok rows =>
-      simp only [Functor.map, Except.map, bind, Except.bind, finalizeEnv] at h
-      generalize hf : Ix.Compile.OriginalData.finalizeOriginals _ _ = finalized at h
-      cases finalized with
-      | error => cases h
-      | ok out =>
-        simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-        obtain ⟨rfl, -, rfl⟩ := h
-        exact ⟨_, _, st, rows, rfl, rfl, rfl, hr, rfl, hf⟩
+    | ok out =>
+      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, -, rfl⟩ := h
+      exact ⟨_, _, st, rfl, rfl, rfl, hr, rfl, hf⟩
 
 /-- The bytes physically stored in the final environment, independent of a
 lazy record's decode cache. -/
@@ -587,7 +580,7 @@ theorem compileEnvFold_identity {env : Ix.Environment} {blocks : Ix.CondensedBlo
       ∀ n a, (n, true, a) ∈ cenv.auxReport.identity →
         ∃ lo result, Original blocks (FoldState.init cenv₀ blocks sched).acc lo result ∧
           Compared (storedBytes ixe) lo result n a := by
-  obtain ⟨cenv₀, sched, st, rows, empty, source, cliques, folded, report, finalized⟩ :=
+  obtain ⟨cenv₀, sched, st, empty, source, cliques, folded, report, finalized⟩ :=
     compileEnvFold_report h
   have frame := Ix.Compile.OriginalData.finalizeOriginals_frame finalized
   refine ⟨cenv₀, sched, source, cliques, ?_⟩
@@ -598,7 +591,7 @@ theorem compileEnvFold_identity {env : Ix.Environment} {blocks : Ix.CondensedBlo
   refine ⟨lo, result, original, compared.mono ?_⟩
   intro address value stored
   unfold storedBytes
-  rw [frame.consts, assembleEnv_consts _ (mergeRows_constants stored)]
+  rw [frame.consts, assembleEnv_consts _ stored]
   simp [Ixon.LazyConstant.rawBytes]
 
 /-- **B9d: an identical verdict describes the final published bytes.** The

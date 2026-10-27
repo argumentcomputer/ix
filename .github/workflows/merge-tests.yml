@@ -140,9 +140,6 @@ jobs:
             kind: lake
             test_args: --tier ci:misc
             zk_voting: true
-          - name: Lake ignored tests (landing, fixtures)
-            kind: lake
-            test_args: --tier ci:landing-fixtures
           - name: Lake ignored tests (landing, compilers)
             kind: lake
             test_args: --tier ci:landing-compilers

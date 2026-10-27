@@ -551,10 +551,34 @@ private def mutualProjectionControl (binding : Binding) (t : RoleTable) (pre : P
     (blobsOf out.env order) (hintsOf out.env)).mapError toString)
   projectionCase out.env order named.addr r "mutual-order-control" projections true
 
-/-- The admitted selected targets of a compiled fixture unit: the exact
-census of standalone definition fronts, the theorem and projection
-censuses, and every control. -/
+/-- The admitted selected targets of a compiled fixture unit: every control
+over the unit's compile and over the fixture batches. -/
 def runSupported : IO Unit := do
+  let binding ← IO.ofExcept defaultBinding
+  let t ← IO.ofExcept ((admitBinding Address.admissionHash binding).mapError (toString ∘ Error.binding))
+  let pre : Prelude .anon ← IO.ofExcept (preludeFor t)
+  let unit ← Tests.Ix.Compile.Harness.unitOfFile "Tests/Ix/Compile/Pass/O2Split.lean"
+  let out ← Tests.Ix.Compile.Harness.compileUnit unit 1
+  controls out binding t pre
+  supportControls binding t pre
+  snapshotControls binding t pre
+  candidateControls binding t pre
+  let projections ← IO.mkRef #[]
+  theoremControls binding t pre projections
+  mutualProjectionControl binding t pre projections
+  let projectionRows ← projections.get
+  need (projectionRows.size == 2 && projectionRows.any (fun s =>
+    s.startsWith "projection mutual-order-control" && s.contains "motive-order=true"))
+    "projection control coverage changed"
+  for row in projectionRows do IO.println row
+  IO.println "projection controls: actual order, prelude-only, unavailable, key/address, payload and prepared-family controls passed"
+
+/-- The registry entry `compiler-selected-admission-originals`: the exact
+census of the fixture unit's selected original roots (the originals of the
+blocks the compile rewrites): standalone definition fronts, the supported
+batches, the theorem and projection occurrences. The compile keeps Lean's
+declarations, so it selects no original; the census is expected to retire. -/
+def runOriginals : IO UInt32 := do
   let binding ← IO.ofExcept defaultBinding
   let t ← IO.ofExcept ((admitBinding Address.admissionHash binding).mapError (toString ∘ Error.binding))
   let pre : Prelude .anon ← IO.ofExcept (preludeFor t)
@@ -562,29 +586,23 @@ def runSupported : IO Unit := do
   let out ← Tests.Ix.Compile.Harness.compileUnit unit 1
   let (witnessed, moved) ← census "O2Split" out binding t pre
   need (witnessed == 11 && moved == 11) "frozen literal-batch front baseline changed"
-  controls out binding t pre
   let theorems ← IO.mkRef #[]
   let projections ← IO.mkRef #[]
   supportedCensus out binding t pre theorems projections
-  supportControls binding t pre
-  snapshotControls binding t pre
-  candidateControls binding t pre
   let rows ← theorems.get
   need (rows.size == 15 && (rows.filter (·.contains "Reason.cascade")).size == 11) "15 theorem occurrences or reasons changed"
   for row in rows do IO.println row
-  theoremControls binding t pre projections
-  mutualProjectionControl binding t pre projections
-  let projectionRows ← projections.get
-  let selected := projectionRows.filter (·.startsWith "projection supported[")
-  need (projectionRows.size == 8 && selected.size == 6 && (selected.filter (·.contains "raw=member(")).size == 2 &&
+  let selected ← projections.get
+  need (selected.size == 6 && (selected.filter (·.contains "raw=member(")).size == 2 &&
     (selected.filter (·.contains "raw=ctor(")).size == 4 && selected.any (·.contains "nonzero-ctor=true") &&
-    selected.any (·.contains "ctor-order=true") && projectionRows.any (fun s => s.startsWith "projection mutual-order-control" && s.contains "motive-order=true")) "projection census/order coverage changed"
-  for row in projectionRows do IO.println row
-  IO.println "projection census: six original roots (two types/four constructors), two extra control rows, one extra admission; actual order, prelude-only, unavailable, key/address, payload and prepared-family controls passed"
+    selected.any (·.contains "ctor-order=true")) "projection census coverage changed"
+  for row in selected do IO.println row
+  IO.println "projection census: six original roots (two types/four constructors)"
+  return 0
 
 /-- The registry entry `compiler-selected-admission`: the census of an
-ordinary standalone definition, then `runSupported`, whose exact census of
-the fixture unit and controls subsume the earlier lower bounds. -/
+ordinary standalone definition, then `runSupported`, the controls over the
+fixture unit's compile and the fixture batches. -/
 def run : IO UInt32 := do
   let binding ← IO.ofExcept defaultBinding
   let t ← IO.ofExcept ((admitBinding Address.admissionHash binding).mapError (toString ∘ Error.binding))

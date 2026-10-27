@@ -163,7 +163,7 @@ theorem scheduleOwnership_of_stepKeeps (hk : StepKeeps) : Obligation.ScheduleOwn
   rw [hu] at hu'
   cases hu'
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold hu
-  obtain ⟨-, -, st₁, rows, -, -, -, -, -, finalized, -, -, hconsts₁, -⟩ := compileEnvFold_final hf
+  obtain ⟨-, -, st₁, -, -, -, -, finalized, -, -, hconsts₁, -⟩ := compileEnvFold_final hf
   have frame := Ix.Compile.OriginalData.finalizeOriginals_frame finalized
   refine ⟨fun n a hn _ hnf => ?_, fun a b hb => ?_⟩
   · rcases p.names n a hn with h | h

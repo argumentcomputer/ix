@@ -22,15 +22,16 @@ later pass (batch 5) adds its own:
   the condensation's references come first and decide it.)
 * `withMetaRefs_records`: the metadata patch changes no record, byte or
   address.
-* `runBlockWithAux_unreferenced`: so such a block's records are those of
-  `compileBlockWithAux` run from the empty block state;
+* `runBlockWithAux_unreferenced`: a block's records are those of
+  `compileBlockWithAux` run from the empty block state (`runBlockWithAux`
+  compiles every block from Lean's own declarations, with no hook);
 * `compileBlockWithAux_result`, `compileBlockWithAux_records`,
   `runBlockWithAux_records`: and those are the block compile's, a lone
-  constant's `compileConstantInfo` or `sortConsts` then `compileMutualBlock`
-  over the members, run from the empty block state (the member lookups and
-  `MutConst.mkIndc` change no state, `mkIndc_preserves`): the form the reading
-  theorems (N-READS) take. The aux tail and hook 1 run after the block's
-  `BlockResult` is computed and return it as it is (`Returns`).
+  constant's `compileConstantInfo` or `compileMutualBlock` over the members in
+  Lean's order (`sourceClasses`), run from the empty block state (the member
+  lookups and `MutConst.mkIndc` change no state, `mkIndc_preserves`): the form
+  the reading theorems take. The block's `Muts` entry is registered after its
+  `BlockResult` is computed, which it returns as it is (`Returns`).
 
 Hook 1 is not the identity on the block state: on a block that is not a plan
 change it runs `editPermutedBelowFamily`, which moves a permuted
@@ -103,12 +104,9 @@ theorem withMetaRefs_records (refs : Std.HashMap Ix.Compile.ExactKey.ExactName M
     · exact ⟨rfl, rfl⟩
     · simp [Array.map_map, Function.comp_def]
 
-/-- **A block the clique step and hook 2 leave alone compiles as
-`compileBlockWithAux`**, from the empty block state, with the same records
-and class order (the metadata aside). -/
+/-- **A block compiles as `compileBlockWithAux`**, from the empty block state,
+with the same records and class order. -/
 theorem runBlockWithAux_unreferenced {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
-    (clq : Ix.Compile.Pass.cliqueStep cenv all lo = .ok (cenv, {}, {}))
-    (prep : Ix.Compile.Pass.prepareBlock cenv all lo = .ok (cenv, {}))
     {r : BlockResult} {cache : BlockState} {layout? : Option Ixon.AuxLayout}
     {pub : Ix.Compile.Pass.Published}
     (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?, pub)) :
@@ -116,16 +114,13 @@ theorem runBlockWithAux_unreferenced {cenv : CompileEnv} {all : Ix.Set Ix.Name} 
         (compileBlockWithAux lo all) = .ok ((r', layout?, pub'), cache) ∧
       recordsOf r = recordsOf r' ∧ r.classNames = r'.classNames := by
   unfold runBlockWithAux at h
-  simp only [clq, bind, Except.bind] at h
-  rw [prep] at h
-  simp only at h
+  simp only [bind, Except.bind] at h
   split at h
   · cases h
   · rename_i v hv
     simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl, rfl, rfl⟩ := h
-    obtain ⟨recs, cls⟩ := withMetaRefs_records v.2.p3MetaRefs lo v.1.1
-    exact ⟨v.1.1, v.1.2.2, by rw [hv], recs, cls⟩
+    exact ⟨v.1.1, v.1.2.2, by rw [hv], rfl, rfl⟩
 
 
 /-! ## What `compileBlockWithAux` returns -/
@@ -221,15 +216,15 @@ theorem mkIndc_preserves (val : InductiveVal) : Preserves id (MutConst.mkIndc va
 
 /-- **The block `compileBlockWithAux` returns is the block compile's**: a
 lone non-inductive constant's `compileConstantInfo`, or the mutual block
-`compileMutualBlock` compiled from the members' classes, up to the class
-order it records (the aux tail and hook 1 run after it and return it as it
-is). -/
+`compileMutualBlock` compiled from the members in Lean's order
+(`sourceClasses`), up to the class order it records (the `Muts` entry is
+registered after it and returns it as it is). -/
 theorem compileBlockWithAux_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
     {s s' : BlockState} {r : BlockResult} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
     (h : rawRun (compileBlockWithAux lo all) ctx s = (.ok (r, layout?, pub), s')) :
     ∃ const s₁, rawRun (findConst lo) ctx s = (.ok const, s₁) ∧
       ((∃ s₂, rawRun (compileConstantInfo const) ctx s₁ = (.ok r, s₂)) ∨
-        ∃ cs s₂ sorted s₃ out s₄, rawRun (forIn all #[] fun n (acc : Array Ix.MutConst) => do
+        ∃ cs s₂ out s₄, rawRun (forIn all #[] fun n (acc : Array Ix.MutConst) => do
             match ← findConst n with
             | .inductInfo val => pure (ForInStep.yield (acc.push (← MutConst.mkIndc val)))
             | .defnInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromDefinitionVal val)))
@@ -237,8 +232,7 @@ theorem compileBlockWithAux_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name}
             | .thmInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromTheoremVal val)))
             | .recInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.recr val)))
             | _ => pure (ForInStep.yield acc)) ctx s₁ = (.ok cs, s₂) ∧
-          rawRun (sortConsts cs.toList) ctx s₂ = (.ok sorted, s₃) ∧
-          rawRun (compileMutualBlock (orderRecursorFamily sorted)) ctx s₃ = (.ok out, s₄) ∧
+          rawRun (compileMutualBlock (sourceClasses cs)) ctx s₂ = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
   unfold compileBlockWithAux at h
   obtain ⟨const, s₁, hc, h⟩ := bind_ok h
@@ -251,9 +245,8 @@ theorem compileBlockWithAux_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name}
     exact ⟨_, hr⟩
   · right
     obtain ⟨cs, s₂, hcs, h⟩ := bind_ok h
-    obtain ⟨sorted, s₃, hsorted, h⟩ := bind_ok h
     obtain ⟨out, s₄, hout, h⟩ := bind_ok h
-    refine ⟨cs, s₂, sorted, s₃, out, s₄, hcs, hsorted, hout, ?_⟩
+    refine ⟨cs, s₂, out, s₄, hcs, hout, ?_⟩
     revert h
     refine Returns.elim
       (P := fun (x : BlockResult × Option Ixon.AuxLayout × Ix.Compile.Pass.Published) =>
@@ -278,16 +271,17 @@ theorem forIn_set_state {γ : Type} {all : Ix.Set Ix.Name} {init : γ} {body : I
 
 /-- **`compileBlockWithAux_result` from the state it starts in**: the
 member lookups and the members' loop change no state, so the block compile
-(a lone constant's, or `sortConsts` then `compileMutualBlock`) runs from the
-state `compileBlockWithAux` starts from, the empty one in `runBlockWithAux`. -/
+(a lone constant's, or `compileMutualBlock` over the members in Lean's order)
+runs from the state `compileBlockWithAux` starts from, the empty one in
+`runBlockWithAux`. -/
 theorem compileBlockWithAux_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
     {s s' : BlockState} {r : BlockResult} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
     (h : rawRun (compileBlockWithAux lo all) ctx s = (.ok (r, layout?, pub), s')) :
     ∃ const, ctx.1.env.get? lo = some const ∧
       ((∃ s₂, rawRun (compileConstantInfo const) ctx s = (.ok r, s₂)) ∨
         ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s₄ : BlockState),
-          rawRun (sortConsts cs.toList >>= fun sorted => compileMutualBlock (orderRecursorFamily sorted)) ctx s =
-            (.ok out, s₄) ∧ recordsOf r = recordsOf out) := by
+          rawRun (compileMutualBlock (sourceClasses cs)) ctx s = (.ok out, s₄) ∧
+          recordsOf r = recordsOf out) := by
   obtain ⟨const, s₁, hc, rest⟩ := compileBlockWithAux_result h
   have h₁ : s₁ = s := by
     have := findConst_preserves lo ctx s
@@ -295,7 +289,7 @@ theorem compileBlockWithAux_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name
     exact this
   subst h₁
   refine ⟨const, findConst_ok hc, ?_⟩
-  rcases rest with single | ⟨cs, s₂, sorted, s₃, out, s₄, hcs, hsorted, hout, same⟩
+  rcases rest with single | ⟨cs, s₂, out, s₄, hcs, hout, same⟩
   · exact .inl single
   · have h₂ : s₂ = s₁ := forIn_set_state hcs fun n acc => by
       refine Preserves.bind (findConst_preserves n) fun c => ?_
@@ -303,19 +297,14 @@ theorem compileBlockWithAux_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name
       · exact Preserves.bind (mkIndc_preserves _) fun _ => Preserves.pure id _
       all_goals exact Preserves.pure id _
     subst h₂
-    refine .inr ⟨cs, out, s₄, ?_, same⟩
-    rw [Ix.CompileCert.rawRun_bind, hsorted]
-    exact hout
+    exact .inr ⟨cs, out, s₄, hout, same⟩
 
-/-- **A block hook 2 leaves alone publishes the block compile's records**:
-under the clique step's and `prepareBlock`'s identities (`cliqueStep_inert`,
-`prepareBlock_unreferenced`), the records
+/-- **A block publishes the block compile's records**: the records
 `runBlockWithAux` returns are those of the lone constant's
-`compileConstantInfo`, or of `sortConsts` then `compileMutualBlock` over the
-members, each run from the empty block state in the block's environment. -/
+`compileConstantInfo`, or of `compileMutualBlock` over the members in Lean's
+order (`sourceClasses`), each run from the empty block state in the block's
+environment. -/
 theorem runBlockWithAux_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
-    (clq : Ix.Compile.Pass.cliqueStep cenv all lo = .ok (cenv, {}, {}))
-    (prep : Ix.Compile.Pass.prepareBlock cenv all lo = .ok (cenv, {}))
     {r : BlockResult} {cache : BlockState} {layout? : Option Ixon.AuxLayout}
     {pub : Ix.Compile.Pass.Published}
     (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?, pub)) :
@@ -324,10 +313,10 @@ theorem runBlockWithAux_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo :
           (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok r', s₂) ∧
           recordsOf r = recordsOf r') ∨
         ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s₄ : BlockState),
-          rawRun (sortConsts cs.toList >>= fun sorted => compileMutualBlock (orderRecursorFamily sorted))
+          rawRun (compileMutualBlock (sourceClasses cs))
             (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
-  obtain ⟨r', pub', ran, same, -⟩ := runBlockWithAux_unreferenced clq prep h
+  obtain ⟨r', pub', ran, same, -⟩ := runBlockWithAux_unreferenced h
   obtain ⟨const, found, rest⟩ := compileBlockWithAux_records (Ix.CompileCert.run_success ran)
   refine ⟨const, found, ?_⟩
   rcases rest with ⟨s₂, single⟩ | ⟨cs, out, s₄, block, same₂⟩

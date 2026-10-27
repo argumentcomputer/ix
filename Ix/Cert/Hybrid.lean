@@ -183,13 +183,8 @@ theorem compileEnvFold_lookups {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e�
     cases r
     · rfl
     · simp only
-      generalize emitRows _ = e
-      cases e with
-      | error => rfl
-      | ok acc =>
-        simp only
-        generalize finalizeEnv acc = result
-        cases result <;> rfl
+      generalize finalizeEnv _ = result
+      cases result <;> rfl
 
 /-! ## The IO pipeline's environment -/
 

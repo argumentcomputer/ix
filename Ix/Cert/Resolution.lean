@@ -1299,28 +1299,24 @@ theorem mergeRows_constants {acc : DriverAcc} {rows : BlockState} {a : Address} 
 /-- **The driver's final state**: a fold that returns ran its waves from an
 initial state whose resolution map is empty, whose environment is the
 driver's view of the input and whose clique tables are the ones
-`scheduleCliques` computes from that view and the blocks, then the clique rows over the
-state the waves reached (`emitRows`: `cliqueRows`, then `mergeRows`), and
-returns a successful original-data finalization of the assembled merged state, with the waves'
-resolution map (the rows add none) and the merged aux map and stored
-records. -/
+`scheduleCliques` computes from that view and the blocks, and returns a
+successful original-data finalization of the assembled state the waves
+reached, with its resolution map, aux map and stored records. -/
 theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
     {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
     {bytes : Nat} {cenv : CompileEnv}
     (h : compileEnvFold env blocks dbg unmaterialized sharingLimits width = .ok (ixe, bytes, cenv)) :
-    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState) (rows : BlockState),
+    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
       cenv₀.nameToAddr = {} ∧
       (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
       ((FoldState.init cenv₀ blocks sched).acc.cenv.p3Cliques,
         (FoldState.init cenv₀ blocks sched).acc.cenv.p3CliqueRoots) =
         (Ix.Compile.Pass.Clique.scheduleCliques { consts := {}, fallback? := some env.get? } blocks).2 ∧
       foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
-      Ix.Compile.Pass.cliqueRows st.acc.cenv = .ok rows ∧
-      Ix.Compile.OriginalData.finalizeOriginals (mergeRows st.acc rows).originals
-        (assembleEnv (mergeRows st.acc rows)).1 = .ok ixe ∧
+      Ix.Compile.OriginalData.finalizeOriginals st.acc.originals (assembleEnv st.acc).1 = .ok ixe ∧
       cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
-      cenv.auxNameToAddr = (mergeRows st.acc rows).cenv.auxNameToAddr ∧
-      cenv.constants = (mergeRows st.acc rows).cenv.constants ∧ Mono st.acc.cenv cenv := by
+      cenv.auxNameToAddr = st.acc.cenv.auxNameToAddr ∧
+      cenv.constants = st.acc.cenv.constants ∧ Mono st.acc.cenv cenv := by
   rw [compileEnvFold_eq_seq] at h
   unfold compileEnvFoldSeq compileEnvFoldWithSourceSeq at h
   generalize missingBlockRefs? blocks = missing at h
@@ -1334,20 +1330,14 @@ theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks
   cases r with
   | error => cases h
   | ok st =>
-    simp only at h
-    unfold emitRows at h
-    generalize hc : Ix.Compile.Pass.cliqueRows st.acc.cenv = c at h
-    cases c with
+    simp only [bind, Except.bind, finalizeEnv] at h
+    generalize hf : Ix.Compile.OriginalData.finalizeOriginals _ _ = finalized at h
+    cases finalized with
     | error => cases h
-    | ok rows =>
-      simp only [Functor.map, Except.map, bind, Except.bind, finalizeEnv] at h
-      generalize hf : Ix.Compile.OriginalData.finalizeOriginals _ _ = finalized at h
-      cases finalized with
-      | error => cases h
-      | ok out =>
-        simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-        obtain ⟨rfl, -, rfl⟩ := h
-        exact ⟨_, _, st, rows, rfl, rfl, rfl, hr, hc, hf, rfl, rfl, rfl, Mono.of_eq rfl rfl rfl⟩
+    | ok out =>
+      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, -, rfl⟩ := h
+      exact ⟨_, _, st, rfl, rfl, rfl, hr, hf, rfl, rfl, rfl, Mono.of_eq rfl rfl rfl⟩
 
 /-- **The fold's run**: the driver ran its waves over the condensation `blocks` of
 `env` from `cenv₀` under `sched`, from an empty resolution map and the input's view, to a
@@ -1382,19 +1372,19 @@ theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedB
         cenv.nameToAddr.get? n = some a → cenv.auxNameToAddr.contains n = true ∨
           ∃ b, CompiledIn blocks (OnRun blocks sched (FoldState.init cenv₀ blocks sched)) cenv n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
-  obtain ⟨cenv₀, sched, st, rows, h₀, henv, hcl, hst, -, finalized, hmap, haux, hconsts, hm⟩ :=
+  obtain ⟨cenv₀, sched, st, h₀, henv, hcl, hst, finalized, hmap, haux, hconsts, hm⟩ :=
     compileEnvFold_final h
   have frame := Ix.Compile.OriginalData.finalizeOriginals_frame finalized
   have kept : ∀ a b, st.acc.cenv.constants.get? a = some b → cenv.constants.get? a = some b :=
-    fun a b hb => by rw [hconsts]; exact mergeRows_constants hb
+    fun a b hb => by rw [hconsts]; exact hb
   refine ⟨cenv₀, sched, ⟨st, h₀, henv, hst, hmap, kept, hm⟩, henv, hcl, fun n a hn => ?_⟩
   rw [hmap] at hn
   rw [haux]
   rcases waveStart_provenance (provenanceIn_of_empty ((init_nameToAddr _ _ _).trans h₀))
     (foldWavesSeq_waveStart _ _ _ hst) n a hn with haux | ⟨b, hc, hb⟩
-  · exact .inl (mergeRows_aux_contains haux)
+  · exact .inl haux
   · rw [frame.consts]
-    exact .inr ⟨b, hc.mono hm, assembleEnv_consts _ (mergeRows_constants hb)⟩
+    exact .inr ⟨b, hc.mono hm, assembleEnv_consts _ hb⟩
 
 /-- **`compileUnchecked` returns the driver's final environment**: a
 `compileUnchecked` that returns ran the fold on the ground part's
@@ -1584,9 +1574,8 @@ theorem auxBlockOutcome_cross {cenv : CompileEnv} {lo : Ix.Name} {all : Ix.Set I
 
 /-- Off an image block, `runBlock` is `runBlockWithAux`. -/
 theorem runBlock_of_not_image {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
-    (h : Ix.Compile.Pass.isImageBlock cenv all = false) :
-    runBlock cenv all lo = runBlockWithAux cenv all lo := by
-  simp [runBlock, h]
+    (_h : Ix.Compile.Pass.isImageBlock cenv all = false) :
+    runBlock cenv all lo = runBlockWithAux cenv all lo := rfl
 
 /-- Two results with the same records make the same primary claims. -/
 theorem claimWrites_records {k : Ix.Name} {r r' : BlockResult}
@@ -1621,9 +1610,9 @@ def HookFree (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k : Ix.Name) : Prop :=
   Ix.Compile.Pass.prepareBlock cenv A k = .ok (cenv, {}) ∧ Ix.Compile.Pass.isImageBlock cenv A = false ∧
     Ix.Compile.Pass.cliqueStep cenv A k = .ok (cenv, {}, {})
 
-/-- **Where the hooks are identities, a block's claims are the block
-compile's**: the lone constant's `compileConstantInfo`, or `sortConsts` then
-`compileMutualBlock` over the members, run from the empty block state
+/-- **A block's claims are the block compile's**: the lone constant's
+`compileConstantInfo`, or `compileMutualBlock` over the members in Lean's order
+(`sourceClasses`), run from the empty block state
 (`Ix.Cert.PassHooks.runBlockWithAux_records`). -/
 theorem hookFree_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {r : BlockResult}
     {c : BlockState} {layout : Option Ixon.AuxLayout} {p : Ix.Compile.Pass.Published}
@@ -1633,12 +1622,11 @@ theorem hookFree_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {
           (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok r', s₂) ∧
           claimWrites k r = claimWrites k r') ∨
         ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s₄ : BlockState),
-          Ix.CompileCert.rawRun (sortConsts cs.toList >>= fun sorted =>
-              compileMutualBlock (orderRecursorFamily sorted))
+          Ix.CompileCert.rawRun (compileMutualBlock (sourceClasses cs))
             (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           claimWrites k r = claimWrites k out) := by
   rw [runBlock_of_not_image hf.2.1] at h
-  obtain ⟨const, found, rest⟩ := Ix.Cert.PassHooks.runBlockWithAux_records hf.2.2 hf.1 h
+  obtain ⟨const, found, rest⟩ := Ix.Cert.PassHooks.runBlockWithAux_records h
   refine ⟨const, found, ?_⟩
   rcases rest with ⟨r', s₂, run, same⟩ | ⟨cs, out, s₄, run, same⟩
   · exact .inl ⟨r', s₂, run, claimWrites_records same⟩
@@ -1646,8 +1634,8 @@ theorem hookFree_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {
 
 /-- **`(n, a, b)` is a primary claim of the block compile** of the members
 `A` under the key `k`, run from the empty block state in `cenv`: the lone
-constant's `compileConstantInfo`, or `sortConsts` then `compileMutualBlock`
-over the members (the form the reading theorems, N-READS, take). -/
+constant's `compileConstantInfo`, or `compileMutualBlock` over the members in
+Lean's order (`sourceClasses`), the form the reading theorems take. -/
 def BlockCompiled (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k n : Ix.Name) (a : Address)
     (b : ByteArray) : Prop :=
   ∃ const, cenv.env.get? k = some const ∧
@@ -1655,8 +1643,7 @@ def BlockCompiled (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k n : Ix.Name) (a : 
         (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok r, s) ∧
         (n, a, b) ∈ claimWrites k r) ∨
       ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s : BlockState),
-        Ix.CompileCert.rawRun (sortConsts cs.toList >>= fun sorted =>
-            compileMutualBlock (orderRecursorFamily sorted))
+        Ix.CompileCert.rawRun (compileMutualBlock (sourceClasses cs))
           (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok out, s) ∧
         (n, a, b) ∈ claimWrites k out)
 

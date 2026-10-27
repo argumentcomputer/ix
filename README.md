@@ -238,11 +238,11 @@ Every test entry is registered once, with its tier, in `Tests/Main.lean`
 (the typed registry, `Tests/Registry.lean`). The tiers: `primary` (run by a
 bare `lake test`), `ci:<job>` (a CI partition: `cli` in the CI job,
 `compile-pipeline`, `compiler-closures`, `compile`, `decompile`, `misc`,
-`landing-fixtures`, `landing-compilers` and `landing-initstd` in the merge
-queue) and `manual` (with a reason, e.g. a Mathlib-sized input). The three
-landing partitions hold the end-to-end checks of the compilers and of the
-certification, on the fixture families, the whole test environment and
-Init+Std; `--tier landing` selects all three.
+`landing-compilers` and `landing-initstd` in the merge queue) and `manual`
+(with a reason, e.g. a Mathlib-sized input, or an entry expected to retire
+with the compiler's canonical rewriting). The two landing partitions hold
+the end-to-end checks of the compilers and of the certification, on the
+whole test environment and Init+Std; `--tier landing` selects both.
 - `lake test` runs every primary entry. Every selected entry runs, even after
   a failure, with a result line each; the exit code is the first non-zero one.
 - `lake test -- <name>...` runs exactly the named entries, whatever their tier

@@ -71,6 +71,31 @@ opaque-code list; `substLevel` remains. The generated C entry bodies are
 unchanged, and the measured compiler replacement list loses exactly these
 four entries. No runtime ruling is broadened.
 
+Compiling Lean's declarations as given takes AuxGen's generation and the
+Source service off `compile`'s path: a block's records are compiled from its
+Lean declarations. The AuxGen code that still runs is the registration of a
+block's `Muts` entry (`registerMutualAuxEntry`) and the inductive flags check
+(`validateIndGroup`). That removes 78 entries and adds none. AuxGen's
+generation loses 31 `partial` definitions
+(`abstractFVar`, `auxSpecEq`, `buildProofForRemaining`, `collectMemberRefs`,
+`exprContainsFVar`, `exprHasLooseBVar`, `getMaxArgsAux`,
+`handleSubstcoreStep`, `hasDeeperStr`, `hasLooseBVarInExplicitDomain`,
+`isAlreadyNormalizedCheap`, `isNeverZero`, `levelAlphaEqStruct`,
+`levelNormalize`, `levelPretty`, `levelPrettyAtom`, `metaDefeq`,
+`mkLevelSucc`, `mkPiUnit`, `nameAppendAfter`, `normLtAux`, `normLtMerge`,
+`normLtMergeSort`, `normalizeLevel`, `replaceConstNamesCached`,
+`replaceResultSortWithProp`, `rewriteNestedConstLevelsCached`,
+`rewriteNestedConstLevelsWalk`, `stripMdata`, `stripMdataRef`, `substFVar`)
+and the two restoration walks (`RestoreCtx.replaceWalk`,
+`RestoreCtx.replaceWalkUncached`). The Source service's 45 IxC kernel entries
+leave with it: the 21 `@[computed_field]` overrides and the 24 kernel
+`@[csimp]` replacements listed above. `Ixon.getTagN` stays, reached through
+the reference check's codec. The seven AuxGen definitions that remain
+(`canonicalizeConstNames`, `hasIndOcc`, `replaceAllNested`,
+`replaceCtorResultHeadWithAux`, `replaceFVarsMap`, `stripPrefixComponents`,
+`substLevel`) are the flags check's: `computeLeanIndFlags` counts nested
+occurrences through the nested expansion `expandNestedBlock`.
+
 `lake run check-kernel` builds this module with the other root audits. No
 executable imports it: the runtime audit's controls declare an `@[extern]`
 symbol that no library defines, so a binary that links them fails. -/
@@ -82,95 +107,17 @@ symbol that no library defines, so a binary that links them fails. -/
  Blake3.Rust.hasherFinalize,
  Blake3.Rust.hasherInit,
  Blake3.Rust.hasherUpdate,
- Ix.AuxGen.abstractFVar,
- Ix.AuxGen.auxSpecEq,
- Ix.AuxGen.buildProofForRemaining,
  Ix.AuxGen.canonicalizeConstNames,
- Ix.AuxGen.collectMemberRefs,
- Ix.AuxGen.exprContainsFVar,
- Ix.AuxGen.exprHasLooseBVar,
- Ix.AuxGen.getMaxArgsAux,
- Ix.AuxGen.handleSubstcoreStep,
- Ix.AuxGen.hasDeeperStr,
  Ix.AuxGen.hasIndOcc,
- Ix.AuxGen.hasLooseBVarInExplicitDomain,
- Ix.AuxGen.isAlreadyNormalizedCheap,
- Ix.AuxGen.isNeverZero,
- Ix.AuxGen.levelAlphaEqStruct,
- Ix.AuxGen.levelNormalize,
- Ix.AuxGen.levelPretty,
- Ix.AuxGen.levelPrettyAtom,
- Ix.AuxGen.metaDefeq,
- Ix.AuxGen.mkLevelSucc,
- Ix.AuxGen.mkPiUnit,
- Ix.AuxGen.nameAppendAfter,
- Ix.AuxGen.normLtAux,
- Ix.AuxGen.normLtMerge,
- Ix.AuxGen.normLtMergeSort,
- Ix.AuxGen.normalizeLevel,
  Ix.AuxGen.replaceAllNested,
- Ix.AuxGen.replaceConstNamesCached,
  Ix.AuxGen.replaceCtorResultHeadWithAux,
  Ix.AuxGen.replaceFVarsMap,
- Ix.AuxGen.replaceResultSortWithProp,
- Ix.AuxGen.rewriteNestedConstLevelsCached,
- Ix.AuxGen.rewriteNestedConstLevelsWalk,
- Ix.AuxGen.stripMdata,
- Ix.AuxGen.stripMdataRef,
  Ix.AuxGen.stripPrefixComponents,
- Ix.AuxGen.substFVar,
  Ix.AuxGen.substLevel,
- Ix.Kernel.canonEqList,
- Ix.Kernel.structProjGuards,
  Ix.Name.pretty,
  Ix.Name.toStringAux,
  Ixon.RawEnv.addNameComponentsWithBlobs,
  _private.Ix.Environment.0.Address.mutsName.go,
- _private.Ix.Environment.0.Ix.Expr.hashSyntax,
- Ix.AuxGen.RestoreCtx.replaceWalk,
- Ix.AuxGen.RestoreCtx.replaceWalkUncached,
- Ix.Kernel.BinderMeta.shareAlways,
- Ix.Kernel.ConstantInfo.canonEq,
- Ix.Kernel.ConstantVal.canonEq,
- Ix.Kernel.ConstantVal.matchesPin,
- Ix.Kernel.Expr.abstract1,
- Ix.Kernel.Expr.allLevelParamsDefined,
- Ix.Kernel.Expr.constsResolveBy,
- Ix.Kernel.Expr.constsResolveF,
- Ix.Kernel.Expr.hasFvar,
- Ix.Kernel.Expr.hasLooseBVarB,
- Ix.Kernel.Expr.instantiate1,
- Ix.Kernel.Expr.instantiate1Lift,
- Ix.Kernel.Expr.instantiateLevelParams,
- Ix.Kernel.Expr.instantiateList,
- Ix.Kernel.Expr.liftLooseBVars,
- Ix.Kernel.Expr.looseBVarsBounded,
- Ix.Kernel.Expr.lowerBVars,
- Ix.Kernel.Expr.mentionsConst,
- Ix.Kernel.Expr.mentionsFvar,
- Ix.Kernel.Expr.renameConsts,
- Ix.Kernel.Expr.resetMeta,
- Ix.Kernel.Msg.withTerms,
- Ix.Kernel.Expr.app._override,
- Ix.Kernel.Expr.bvar._override,
- Ix.Kernel.Expr.const._override,
- Ix.Kernel.Expr.forallE._override,
- Ix.Kernel.Expr.fvar._override,
- Ix.Kernel.Expr.lam._override,
- Ix.Kernel.Expr.letE._override,
- Ix.Kernel.Expr.lit._override,
- Ix.Kernel.Expr.proj._override,
- Ix.Kernel.Expr.sort._override,
- Ix.Kernel.Key.aux._override,
- Ix.Kernel.Key.id._override,
- Ix.Kernel.Key.role._override,
- Ix.Kernel.Level.hashData._override,
- Ix.Kernel.Level.imax._override,
- Ix.Kernel.Level.max._override,
- Ix.Kernel.Level.param._override,
- Ix.Kernel.Level.succ._override,
- Ix.Kernel.Name.hashData._override,
- Ix.Kernel.Name.num._override,
- Ix.Kernel.Name.str._override] -/
+ _private.Ix.Environment.0.Ix.Expr.hashSyntax] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { csimpModules := #[`Ix] }

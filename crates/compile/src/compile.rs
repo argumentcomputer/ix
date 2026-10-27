@@ -3140,6 +3140,59 @@ pub fn order_recursor_family(classes: &mut [Vec<&MutConst>]) {
   });
 }
 
+/// Lean's name order, structural: a name's prefix first, then its last
+/// component, a number before a string (`Lean.Name.cmp`). It reads no hash.
+/// Mirrors Lean `Ix.Name.leanCmp`.
+pub fn lean_name_cmp(a: &Name, b: &Name) -> Ordering {
+  match (a.as_data(), b.as_data()) {
+    (NameData::Anonymous(_), NameData::Anonymous(_)) => Ordering::Equal,
+    (NameData::Anonymous(_), _) | (NameData::Num(..), NameData::Str(..)) => {
+      Ordering::Less
+    },
+    (_, NameData::Anonymous(_)) | (NameData::Str(..), NameData::Num(..)) => {
+      Ordering::Greater
+    },
+    (NameData::Num(p1, i1, _), NameData::Num(p2, i2, _)) => {
+      lean_name_cmp(p1, p2).then_with(|| i1.cmp(i2))
+    },
+    (NameData::Str(p1, s1, _), NameData::Str(p2, s2, _)) => {
+      lean_name_cmp(p1, p2).then_with(|| s1.cmp(s2))
+    },
+  }
+}
+
+/// A member's position in its Lean block: its index in the block's `all`,
+/// or `all.len()` when `all` does not list it (only on input that is not
+/// Lean's). Mirrors Lean `Ix.blockPosition`.
+pub fn block_position(all: &[Name], name: &Name) -> u64 {
+  all.iter().position(|n| n == name).map_or(all.len() as u64, |p| p as u64)
+}
+
+/// The member order of a block, one member per class: Lean's order (Lean
+/// `Ix.sourceOrderLt`). An inductive is at its position in Lean's `all`, a
+/// recursor at its family's declared position (`recursor_family_position`),
+/// a definition at its position in its Lean `all` (restricted to the block).
+/// The order of a block is the source's, as the order of an inductive's
+/// constructors is, and alpha-equal members are never merged. Members whose
+/// positions and names tie (only on input that is not Lean's) keep their
+/// order in `cs`. Mirrors Lean `sourceClasses`.
+pub fn source_classes<'a>(cs: &[&'a MutConst]) -> Vec<Vec<&'a MutConst>> {
+  fn position(c: &MutConst) -> u64 {
+    match c {
+      MutConst::Indc(i) => block_position(&i.ind.all, &i.ind.cnst.name),
+      MutConst::Recr(r) => recursor_family_position(r),
+      MutConst::Defn(d) => block_position(&d.all, &d.name),
+    }
+  }
+  let mut members: Vec<&'a MutConst> = cs.to_vec();
+  members.sort_by(|a, b| {
+    position(a)
+      .cmp(&position(b))
+      .then_with(|| lean_name_cmp(&a.name(), &b.name()))
+  });
+  members.into_iter().map(|c| vec![c]).collect()
+}
+
 // ===========================================================================
 // Main compilation entry points
 // ===========================================================================
@@ -3716,10 +3769,9 @@ fn compile_mutual(
     cs.push(mut_const);
   }
 
-  // Sort constants; a recursor block in its family's flat order (D6)
-  let mut sorted_classes =
-    sort_consts(&cs.iter().collect::<Vec<_>>(), cache, stt)?;
-  order_recursor_family(&mut sorted_classes);
+  // Lean's order (`source_classes`): the order of a block is the source's.
+  let members: Vec<&MutConst> = cs.iter().collect();
+  let sorted_classes = source_classes(&members);
   let mut_ctx = MutConst::ctx(&sorted_classes);
 
   let mut exprs = Vec::new();
@@ -4027,10 +4079,10 @@ fn compile_mutual(
     );
   }
 
-  // Regenerate auxiliary constants for alpha-collapsed inductive blocks.
-  // Only runs when `aux` is true (i.e., not from compile_const_no_aux which
-  // compiles original Lean forms for metadata).
-  if aux {
+  // The block is compiled as Lean gives it: Lean's own recursors and
+  // auxiliaries compile as ordinary blocks of their own, so nothing is
+  // regenerated and no rewrite hook applies.
+  if false {
     let class_names: Vec<Vec<Name>> = sorted_classes
       .iter()
       .map(|class| class.iter().map(|c| c.name()).collect())
@@ -4900,10 +4952,10 @@ mod tests {
     assert_eq!(outputs[0], outputs[1]);
   }
 
-  /// Test that alpha-equivalent mutual definitions produce correct projection
-  /// indices. Two definitions with identical type/value structure (but different
-  /// names) should form one equivalence class, and projections should resolve
-  /// to the single representative in the Muts array.
+  /// Test that alpha-equivalent mutual definitions keep one class each. Two
+  /// definitions with identical type/value structure (but different names)
+  /// are two members of one block, in Lean's order, each with its own
+  /// projection.
   #[test]
   fn test_compile_mutual_alpha_equivalent_defs() {
     use ix_common::env::{
@@ -4959,29 +5011,29 @@ mod tests {
     assert!(stt.name_to_addr.contains_key(&name_f), "f not in name_to_addr");
     assert!(stt.name_to_addr.contains_key(&name_g), "g not in name_to_addr");
 
-    // Both should point to the same block address (same projection,
-    // since they're alpha-equivalent and share idx=0)
+    // The block is compiled as Lean gives it: alpha-equivalent members are
+    // not merged, so each keeps its own position and projection address.
     let addr_f = stt.name_to_addr.get(&name_f).unwrap().clone();
     let addr_g = stt.name_to_addr.get(&name_g).unwrap().clone();
-    assert_eq!(
+    assert_ne!(
       addr_f, addr_g,
-      "alpha-equivalent mutual defs should have same projection address"
+      "alpha-equivalent mutual defs keep their own projection addresses"
     );
 
-    // Alpha-equivalent mutual defs collapse to a singleton non-inductive
-    // class, which the compiler now unwraps to a standalone `Defn`
-    // Constant (no Muts wrapper, no block entry). Both Lean names
-    // point to the same standalone address (asserted above); no Ixon
-    // block is created.
-    assert!(
-      stt.blocks.is_empty(),
-      "singleton-unwrapped mutual should have no block entry"
-    );
+    // One block of two members, in Lean's order: an entry per member.
+    assert_eq!(stt.blocks.len(), 2, "expected an entry per member");
+    for entry in stt.blocks.iter() {
+      assert_eq!(
+        entry.value(),
+        &vec![vec![name_f.clone()], vec![name_g.clone()]],
+        "the block lists its members in Lean's order, one per class"
+      );
+    }
   }
 
   /// Test that alpha-equivalent defs in a mutual block with a non-equivalent
-  /// third definition produce correct indices: 2 classes → 2 Muts entries,
-  /// with projections indexing correctly into the array.
+  /// third definition keep one class each: 3 members → 3 Muts entries, in
+  /// Lean's order, with projections indexing correctly into the array.
   #[test]
   fn test_compile_mutual_alpha_equiv_with_different_third() {
     use ix_common::env::{
@@ -5059,12 +5111,13 @@ mod tests {
     assert!(stt.name_to_addr.contains_key(&name_g));
     assert!(stt.name_to_addr.contains_key(&name_h));
 
-    // f and g are alpha-equivalent → same projection address
+    // f and g are alpha-equivalent, but members of one block are not
+    // merged: each keeps its own projection address
     let addr_f = stt.name_to_addr.get(&name_f).unwrap().clone();
     let addr_g = stt.name_to_addr.get(&name_g).unwrap().clone();
-    assert_eq!(
+    assert_ne!(
       addr_f, addr_g,
-      "alpha-equivalent f and g should share projection address"
+      "alpha-equivalent f and g keep their own projection addresses"
     );
 
     // h is different → different projection address
@@ -5074,15 +5127,16 @@ mod tests {
       "h should have a different projection address than f/g"
     );
 
-    // Verify block has exactly 2 equivalence classes
-    assert!(!stt.blocks.is_empty(), "Expected at least one block entry");
+    // One block of three members, one per class, in Lean's order: an entry
+    // per member
+    assert_eq!(stt.blocks.len(), 3, "expected an entry per member");
+    let expected =
+      vec![vec![name_f.clone()], vec![name_g.clone()], vec![name_h.clone()]];
     for entry in stt.blocks.iter() {
-      let classes = entry.value();
       assert_eq!(
-        classes.len(),
-        2,
-        "2 equivalence classes should produce 2 classes, got {}",
-        classes.len()
+        entry.value(),
+        &expected,
+        "the block lists its members in Lean's order, one per class"
       );
     }
   }
@@ -6304,12 +6358,9 @@ mod tests {
     let stt = compile_env(&lean_env).expect("compile_env failed");
 
     // f and g are alpha-equivalent (both `λ x => other x` with the same
-    // type) so they collapse to a singleton non-inductive class. The
-    // compiler unwraps this to a standalone Defn — no Ixon block entry.
-    assert!(
-      stt.blocks.is_empty(),
-      "singleton-unwrapped mutual should have no block entry"
-    );
+    // type), but the block is compiled as Lean gives it: one block of two
+    // members, not merged.
+    assert_eq!(stt.blocks.len(), 2, "the mutual block has an entry per member");
 
     // Decompile
     let dstt = decompile_env(&stt).expect("decompile_env failed");

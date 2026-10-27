@@ -207,19 +207,16 @@ private def runConfiguredAuxTail (lo : Name) (cs : Array MutConst)
       discard <| Ix.AuxGen.registerMutualAuxEntry sortedClasses blockAddr
       pure (none, (default : Ix.AuxGen.AuxTailRecs))).run Ix.AuxGen.AuxKernelCtx.new
 
-/-- Compile one SCC block WITH the aux-generation tail. Mirrors the
-    `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
-    singleton non-inductive constants take the plain single-constant
-    path (no tail); mutual blocks and inductives (of any size) go
-    through `compileMutualBlock` followed by `compileMutualAuxTail`
-    (Rust `compile_mutual`, compile.rs:3719-4144), then Pass 3's hook
-    (`Ix.Compile.Pass.editBlock`), whose output the block returns.
+/-- Compile one block of the condensation. Mirrors the `aux=true` route of
+    `compile_const_inner` (compile.rs): singleton non-inductive constants take
+    the plain single-constant path; mutual blocks and inductives (of any size)
+    go through `compileMutualBlock` in Lean's order (`sourceClasses`) and
+    register their synthetic `Muts` entry (Rust `compile_mutual`). Nothing is
+    regenerated: Lean's own auxiliaries are blocks of their own.
 
-    Between the primary compile and the tail, the members' projection
-    addresses are inserted into `BlockState.blockNameToAddr` — Rust
-    writes them into the global `name_to_addr` at exactly that point
-    (compile.rs:3926/3946/3966), and the tail's aux compilation resolves
-    sibling members through them. -/
+    The members' projection addresses are inserted into
+    `BlockState.blockNameToAddr`, where Rust writes them into the global
+    `name_to_addr` (compile.rs). -/
 def compileBlockWithAux (lo : Name) (all : Set Name)
     : CompileM (BlockResult × Option Ixon.AuxLayout × Ix.Compile.Pass.Published) := do
   let const ← findConst lo
@@ -238,90 +235,44 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     | .thmInfo val => cs := cs.push (MutConst.fromTheoremVal val)
     | .recInfo val => cs := cs.push (.recr val)
     | _ => continue
-  let sortedClasses := orderRecursorFamily (← sortConsts cs.toList)
+  -- Lean's order (`sourceClasses`): the order of a block is the source's.
+  let sortedClasses := sourceClasses cs
   let blockResult ← compileMutualBlock sortedClasses
-  -- Alpha-collapsed standalone (single non-inductive class): Rust
-  -- returns BEFORE the Muts registration and the aux tail
-  -- (compile.rs:3872) — no synthetic Muts entry, no aux regeneration.
+  -- A standalone constant (a single non-inductive member): Rust returns
+  -- before the Muts registration (compile.rs) — no synthetic Muts entry.
   let isMuts := match blockResult.block.info with
     | .muts _ => true
     | _ => false
   if !isMuts then
     return (blockResult, none, {})
-  -- Primary member registrations, visible to the tail (compile.rs:3902+).
+  -- Primary member registrations (compile.rs).
   for (name, proj, _) in blockResult.projections do
     let projAddr := Address.admissionHash (Ixon.ser proj)
     modifyBlockState fun st =>
       { st with blockNameToAddr := st.blockNameToAddr.insert name projAddr }
-  -- Class ordering for `CompileEnv.blocks` (Rust `stt.blocks`,
-  -- compile.rs:4048-4057 — registered after the standalone early
-  -- return above, so only genuine mutual blocks record it).
+  -- Class ordering for `CompileEnv.blocks` (Rust `stt.blocks`).
   let blockResult := { blockResult with
     classNames := sortedClasses.toArray.map fun cls =>
       cls.toArray.map (·.name) }
-  let cenv ← getCompileEnv
-  let bstate ← getBlockState
-  let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
-    (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
-  -- The kernel AuxGen asks: IxC Source mode through the fold's explicit
-  -- oracle (`CompileEnv.auxOracle`). An inductive tail without a provider
-  -- is a configuration error. Since AuxGen T3 an unsafe block's tail asks it too: the
-  -- service's tier installs the block's groups typing only (M7 Q1), and its
-  -- oracle answers over the tier's answer view; its auxiliaries stay outside
-  -- every statement (`recordTailReport`). Under a measurement mode
-  -- (`IX_AUXGEN_IXC`) the tail's counts are traced.
-  let safe := cs.all fun
-    | .indc ind => !ind.isUnsafe
-    | .recr rv => !rv.isUnsafe
-    | .defn d => d.safety != .unsaf
-  let oracle? := cenv.auxOracle.bind (· lo)
-  -- AuxGen M5c: under `failClosed` (production), a block Source mode does
-  -- not accept can request a checked generation retry; any other refusal fails it
-  -- (`runAuxTail`).
-  let ((auxLayout?, recs), kctx) ←
-    runConfiguredAuxTail lo cs sortedClasses blockResult.blockAddr maps oracle?
-  if let some oracle := oracle? then
-    if oracle.trace then
-      let tier := !safe && oracle.blockStatus () == some Ix.AuxGen.AuxOracle.tierBlockStatus
-      let st := { kctx.ixcStats with asked := if oracle.asked then 1 else 0
-                                     unsafeBlock := if safe then 0 else 1
-                                     tier := if tier then 1 else 0 }
-      dbg_trace s!"{Ix.AuxGen.IxcStats.line lo st}"
-      pure ()
-  -- AuxGen M4c and M5: the tail's report (`recordTailReport`), and each
-  -- generated auxiliary's aux address before Pass 3's hook 1, to find the ones
-  -- it moves to their display names (`recordDisplay`). Each is one call, so
-  -- the block's do-block keeps its shape for the proofs that walk it
-  -- (`Ix.Cert.PassHooks.compileBlockWithAux_result`).
-  recordTailReport kctx safe
-  let before ← generatedAddrs kctx.generated
-  -- Pass 3, hook 1: a changed block's Ix auxiliaries to their display names
-  let published ← Ix.Compile.Pass.editBlock cs blockResult.classNames auxLayout?
-    recs.recs recs.belowRecs
-  recordDisplay before
-  return (blockResult, auxLayout?, published)
+  -- The block is compiled as Lean gives it: Lean's own recursors and
+  -- auxiliaries compile as ordinary blocks of their own, so nothing is
+  -- regenerated and no rewrite hook applies. Only the block's `Muts` entry is
+  -- registered.
+  discard <| (Ix.AuxGen.registerMutualAuxEntry sortedClasses blockResult.blockAddr).run
+    Ix.AuxGen.AuxKernelCtx.new
+  return (blockResult, none, {})
 
-/-- Run `compileBlockWithAux` purely, returning the tail outputs and the
-    final block state. Pass 3's clique step first: a block with a member of
-    a transported clique compiles from the members' transported values and
-    from a block state holding the canonical constants they reach
-    (`Ix.Compile.Pass.cliqueStep`; identity on any other block). Then hook 2:
-    a block that references an image-kind head compiles from its members
-    rewritten, with their decompile records (`Ix.Compile.Pass.prepareBlock`),
-    whose extension references go into the members' metadata
-    (`withMetaRefs`). Each step is one bind, so the proofs that walk this
-    function (`Ix.Cert.PassHooks`) rewrite each by its identity. -/
+/-- Run `compileBlockWithAux` purely, returning its outputs and the final
+    block state. The block compiles from Lean's own declarations: no clique
+    step and no rewrite hook. -/
 def runBlockWithAux (cenv : CompileEnv) (all : Set Name) (lo : Name)
     : Except CompileError
         (BlockResult × BlockState × Option Ixon.AuxLayout × Ix.Compile.Pass.Published) := do
-  let (cenv, init, cliques) ← Ix.Compile.Pass.cliqueStep cenv all lo
-  let (cenv, prepared) ← Ix.Compile.Pass.prepareBlock cenv all lo
   let blockEnv : BlockEnv :=
     { all, current := lo, mutCtx := default, univCtx := [] }
   let ((result, layout?, published), cache) ←
-    CompileM.run cenv blockEnv init (compileBlockWithAux lo all)
-  pure (Ix.Compile.Pass.withMetaRefs cache.p3MetaRefs lo result, cache, layout?,
-    cliques ++ prepared ++ published)
+    CompileM.run cenv blockEnv {} (compileBlockWithAux lo all)
+  pure (result, cache, layout?, published)
 
 /-! ## The no-aux (original-form) compile — compile.rs:3263-3440 -/
 
@@ -437,19 +388,11 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     return run all
   return run filtered
 
-/-- Compile one block: an image block (every member an image-kind head of a
-    changed block, `Ix.Compile.Pass.isImageBlock`) to its images, with
-    `Named.original` from Lean's own form (`Ix.Compile.Pass.runImageBlock`
-    over `compileConstNoAuxPure`); any other block with its aux tail
-    (`runBlockWithAux`). -/
+/-- Compile one block (`runBlockWithAux`). -/
 def runBlock (cenv : CompileEnv) (all : Set Name) (lo : Name)
     : Except CompileError
         (BlockResult × BlockState × Option Ixon.AuxLayout × Ix.Compile.Pass.Published) :=
-  if Ix.Compile.Pass.isImageBlock cenv all then
-    (fun (result, cache, published) => (result, cache, none, published)) <$>
-      Ix.Compile.Pass.runImageBlock compileConstNoAuxPure cenv all lo
-  else
-    runBlockWithAux cenv all lo
+  runBlockWithAux cenv all lo
 
 /-! ## Driver state and merges -/
 
@@ -1936,26 +1879,18 @@ def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks
   validateInductiveFlags env
   validateMutualSafety env blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
-  -- Pass 3's clique transport (CQ5.2): the clique table and its scheduling
-  -- edges, read through `view` (the input's lookups only). The edges only
-  -- order the blocks (the schedule); each block's own references
-  -- (`CompileEnv.p3BlockRefs`, `FoldState.init`) stay the condensation's.
-  -- With no input clique the blocks are unchanged.
+  -- Lean's declarations compile as given: no clique is transported, no
+  -- producer plan, no Source service; the schedule is the condensation's.
+  -- The input's clique table stays in the initial state, read by nothing,
+  -- until the clique code is removed.
   let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
-  let sizePlan := prepareSizeOfPlan view sc.1
-  let sched := FoldSchedule.of sizePlan.1
-  let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
-  let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
-    aux.asks
-  let cenv₀ := aux.withSourceProviders serviceGet? blocks ra { CompileEnv.new view with
+  let sched := FoldSchedule.of blocks
+  let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits
-    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans
-    p3O11aPlans := sizePlan.2 }
+    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := checkPlans }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
-  let acc ← emitRows st.acc
-  let (ixe, bytes, cenv) ← finalizeEnv acc
-  -- Keep the fixed original provider alive for returned-state plan checks.
-  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none, auxGenerationRetry := none }), ra.report)
+  let (ixe, bytes, cenv) ← finalizeEnv st.acc
+  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none, auxGenerationRetry := none }), {})
 
 /-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/
 def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)

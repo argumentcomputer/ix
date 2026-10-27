@@ -238,19 +238,13 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
   validateMutualSafety env blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
   let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
-  let sizePlan := prepareSizeOfPlan view sc.1
-  let sched := FoldSchedule.of sizePlan.1
-  let aux : AuxIxcOptions := {}
-  let (serviceGet?, serviceBlocks) := aux.serviceInput view.get? blocks
-  let ra := Ix.AuxGen.Source.RunAhead.start serviceGet? serviceBlocks (scheduleLevels blocks sched)
-    aux.asks
-  let cenv₀ := aux.withSourceProviders serviceGet? blocks ra { CompileEnv.new view with
+  let sched := FoldSchedule.of blocks
+  let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits
-    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3O11aPlans := sizePlan.2 }
+    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := false }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
-  let acc ← emitRows st.acc
-  let (ixe, bytes, cenv) ← finalizeEnv acc
-  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none, auxGenerationRetry := none }), ra.report)
+  let (ixe, bytes, cenv) ← finalizeEnv st.acc
+  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none, auxGenerationRetry := none }), {})
 
 /-- **The driver, sequentially**: `compileEnvFold` with its waves
 sequential (`foldWavesSeq`). It has no `width` and no `dbg`. -/

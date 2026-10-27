@@ -203,12 +203,13 @@ def localPhaseProblems (exitCode : UInt32) (phases : Array (String × String × 
 
 /-- 7. The local scope of a collapse fixture: the selected closure of the
 file's own constants (`ix compile --local`) compiles with no refusal, the Rust
-compile is byte-identical, it decompiles to the source, the references its
-output introduces are carried, and `ix validate-lean --ns LocalCollapse`
+compile is byte-identical, it decompiles to the source, its output introduces
+no reference, and `ix validate-lean --ns LocalCollapse`
 passes all five phases (compile, serde, projection/order fidelity,
-source/reader fidelity, decompile), read from its `--report`. Negative control: the same closure
-without the compiler's introduced references (recursors only, the scope
-`--local` had before them) is refused, naming one of them. M7's reader checks
+source/reader fidelity, decompile), read from its `--report`. The compile
+keeps Lean's declarations, so the closure with recursors only (the scope
+`--local` had before the compiler introduced references) also compiles with
+no refusal. The reader checks
 the flat collapse through its decoded member and recursor keys; the historical
 BB-F7 meta-roundtrip exclusion is retired. `workers` controls the CLI invocation;
 the full runner retains its existing default. -/
@@ -231,6 +232,8 @@ def localCollapse (dir : System.FilePath) (workers : Nat := 8) : IO (Array Strin
   let base := nameSet (Ix.EnvScope.collectDeps env own .selected)
   let (intro, bad) := introducedRefs outEnv base (nameSet full)
   errors := errors ++ bad.map (s!"local collapse: {·}")
+  unless intro.isEmpty do
+    errors := errors.push s!"local collapse: the output introduces references {sortedNames intro}"
   say s!"local collapse: references introduced by the output (derived): {sortedNames intro}"
   say s!"local collapse: closure {full.length} (without the introduced references \
     {noSupport.length}); {out.cenv.ungrounded.size} refusals; {summary}"
@@ -238,16 +241,10 @@ def localCollapse (dir : System.FilePath) (workers : Nat := 8) : IO (Array Strin
       let o ← compileClosure env noSupport
       pure (o.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
     catch e => pure [("compile", toString e)]
-  let support := ["True", "And", "PProd", "PUnit", "Eq"]
-  if neg.isEmpty then
-    errors := errors.push "local collapse: the negative control compiled (the fixture does not \
-      exercise the scope)"
-  else unless neg.any (fun (_, m) =>
-      support.any fun s => (m.splitOn s!"missingConstant: {s}").length > 1) do
-    errors := errors.push s!"local collapse: the negative control fails for another reason: \
-      {neg.head?}"
-  say s!"local collapse negative control (recursors only): {neg.length} refusal(s), first \
-    {neg.head?}"
+  unless neg.isEmpty do
+    errors := errors.push s!"local collapse: the closure with recursors only was refused: \
+      {neg.length} refusal(s), first {neg.head?}"
+  say s!"local collapse with recursors only: {neg.length} refusal(s)"
   let exe ← IO.FS.realPath (".lake" / "build" / "bin" / "ix")
   let report := dir / "local-collapse-validate-lean.json"
   let r ← IO.Process.output

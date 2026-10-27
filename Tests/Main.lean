@@ -181,6 +181,15 @@ run_cmd do
   if (← Lean.getEnv).header.moduleNames.contains `Tests.Ix.Compile.AuxCert.NestedSortUK then
     throwError "M7's NestedSortUK fixture must be loaded at runtime, outside Tests.Main"
 
+/-- The tier of an entry that asserts the compiler's canonical rewriting of
+Lean's declarations (class sorting and collapse, regenerated auxiliaries,
+caller rewrites, clique transport, original-form data), which the compile no
+longer does: it compiles Lean's declarations as given. The entry stays
+runnable by name until the code it tests is removed, and is removed with
+it. -/
+def expectedToRetire (why : String) : Tests.Registry.Tier :=
+  .manual s!"expected to retire: {why}"
+
 open Tests.Registry in
 /-- Every `IxTests` entry with its tier (`Tests/Registry.lean`): primary
 entries run with no arguments; the others are named, or selected by tier
@@ -191,6 +200,10 @@ def registry : List Entry := [
   .suite "meta-env" .primary Tests.Ix.MetaEnv.suite,
   .suite "catalog" .primary Tests.Ix.Catalog.suite,
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
+  .suite "import-ixe-collapsed"
+    (expectedToRetire "the alpha-equivalent mutual pair no longer collapses to one class, \
+      and its recursors are no longer `_ix` support")
+    Tests.Ix.ImportIxe.collapsedSuite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
   .suite "ixon" .primary (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite),
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
@@ -302,10 +315,18 @@ def registry : List Entry := [
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
   .suite "kernel-fidelity-access" .primary Tests.Ix.Kernel.FidelityAccess.suite,
-  .suite "kernel-reader-access" .primary Tests.Ix.Kernel.ReaderAccess.suite,
+  .suite "kernel-reader-access"
+    (expectedToRetire "its fixture needs compiled original-form data, projection \
+      rewrites and regenerated auxiliaries")
+    Tests.Ix.Kernel.ReaderAccess.suite,
   .suite "kernel-prelude-fidelity" .primary Tests.Ix.Kernel.PreludeFidelity.suite,
-  .suite "kernel-collapse-fidelity" .primary Tests.Ix.Kernel.CollapseFidelity.suite,
-  .suite "validate-lean-fidelity-cli" .primary Tests.Ix.Kernel.ValidateLeanCli.suite,
+  .suite "kernel-collapse-fidelity"
+    (expectedToRetire "it reads a block whose alpha-equivalent members the compile \
+      merged into one class")
+    Tests.Ix.Kernel.CollapseFidelity.suite,
+  .suite "validate-lean-fidelity-cli"
+    (expectedToRetire "its positive fixture needs compiled original-form data")
+    Tests.Ix.Kernel.ValidateLeanCli.suite,
   .suite "validate-lean-reader-cli" .primary Tests.Ix.Kernel.ValidateReaderCli.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
@@ -318,7 +339,9 @@ def registry : List Entry := [
   -- the well-founded operations' Init closure without the certificate theorems
   .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,
   -- AuxGen M1: the canonical flat blocks in Source mode, σ, the alias collapse resolved
-  .suite "auxgen-flat-source" .primary Tests.Ix.AuxGen.FlatBlockSource.suite,
+  .suite "auxgen-flat-source"
+    (expectedToRetire "the drivers' Source service no longer runs in the compile")
+    Tests.Ix.AuxGen.FlatBlockSource.suite,
   -- AuxGen M7 Q1 (T2): the Source service's tier, an unsafe block's oracle over the answer view,
   -- `withFamily`
   .suite "auxgen-tier-service" .primary Tests.Ix.AuxGen.TierService.suite,
@@ -433,7 +456,9 @@ def registry : List Entry := [
   .suite "rust-kernel-build-primitives" (.ci .misc) Tests.Ix.Kernel.BuildPrimitives.suite,
   .suite "rust-kernel-build-prim-origs" (.ci .misc) Tests.Ix.Kernel.BuildPrimOrigs.suite,
   -- aux_gen on closure-only environments (`ix compile --consts`)
-  .suite "aux-gen-closure" (.ci .compilePipeline) Tests.Ix.Compile.AuxGenClosure.suite,
+  .suite "aux-gen-closure"
+    (expectedToRetire "it packs regenerated auxiliaries by their original-form data")
+    Tests.Ix.Compile.AuxGenClosure.suite,
   -- aux addresses do not depend on the compile set (closure vs whole env)
   .suite "canon-closure-aux" (.ci .compilePipeline) Tests.Ix.Compile.AuxGenClosureCanon.suite,
   -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
@@ -444,7 +469,9 @@ def registry : List Entry := [
   .suite "cert-noctor-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.noCtorInitStdSuite,
   -- A0 safety fixtures (collapse refusal, aux existence, single ownership,
   -- refused fallbacks): both compilers, both kernels, the certified checker
-  .suite "aux-cert" (.ci .compilePipeline) Tests.Ix.Compile.AuxCert.suite,
+  .suite "aux-cert"
+    (expectedToRetire "it certifies regenerated auxiliaries by AuxGen's checked trace")
+    Tests.Ix.Compile.AuxCert.suite,
   .runner "aggregate-proof" (.manual "a proof round trip through the production ix_aggr circuit; minutes of proving") Tests.Aggr.proofRoundTrip,
   .runner "kernel-dependencies" (.manual "the IxVM definition-dependency checks alone; `ixvm` runs them too") (do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
@@ -535,27 +562,40 @@ def registry : List Entry := [
         (.ofList [("ixvm",
           [evalSeq, evalCompiledSeq, evalCommandSeq, evalDifficultSeq, evalDifferentialSeq,
            fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) [],
-  .env "validate-aux" (.ci .compilePipeline) runCompileValidateAux,
+  .env "validate-aux"
+    (expectedToRetire "it checks AuxGen's congruence and the canonical addresses of \
+      reordered twins")
+    runCompileValidateAux,
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
-  .env "aux-gen-diff" (.ci .compilePipeline) Tests.Compile.AuxGenDiff.run,
+  .env "aux-gen-diff"
+    (expectedToRetire "it compares AuxGen's regenerated auxiliaries with the compile's")
+    Tests.Compile.AuxGenDiff.run,
   -- Checked generation capabilities, actual nine-target retries, immutable
   -- Source state and explicit callers; the expensive replay runs once.
-  .runner "auxgen-checked-generation" (.ci .compilePipeline) Tests.Ix.AuxGen.CheckedGeneration.run,
+  .runner "auxgen-checked-generation"
+    (expectedToRetire "it checks AuxGen's generation in the compile")
+    Tests.Ix.AuxGen.CheckedGeneration.run,
   -- The compiler's nested expansion against IxC's nested modeller (SP5):
   -- source order, canonical order, permutation, field kinds and verdicts
   -- on every nested fixture block (Tests.Ix.Compile.NestedAgreement).
-  .env "nested-agreement" (.ci .landingFixtures) Tests.Ix.Compile.NestedAgreement.run,
+  .env "nested-agreement"
+    (expectedToRetire "it compares AuxGen's nested auxiliaries, read through the Source service")
+    Tests.Ix.Compile.NestedAgreement.run,
   -- Pass 1 (Ix.Compile.Canon) against the compiler's CondenseM / sortConsts /
   -- nested order on the same fixture corpus, the port fixes' neutrality, and
   -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
-  .env "canon-pass1" (.ci .landingFixtures) Tests.Ix.Compile.Canon.run,
+  .env "canon-pass1"
+    (expectedToRetire "it checks the canonical class order of mutual blocks")
+    Tests.Ix.Compile.Canon.run,
   -- The changed set (H1): the change predicate's causes, the set on the
   -- fixture corpus against both compilers' Pass 3 edits (the components the
   -- first hook edits, the published heads, the decompile records' carriers),
   -- and Init+Std empty (Tests.Ix.Compile.ChangedSet).
-  .env "changed-set" (.ci .compilePipeline) Tests.Ix.Compile.ChangedSet.run,
+  .env "changed-set"
+    (expectedToRetire "it predicts the blocks the compile rewrites")
+    Tests.Ix.Compile.ChangedSet.run,
   -- Route A B9a: on the same corpus, compiled by `Ix.Cert.compileReport`, the
   -- facts `avoids_unchanged` proves single the set out, and `FirstsAgree` holds
   -- (Tests.Ix.Cert.Statement).
@@ -578,16 +618,24 @@ def registry : List Entry := [
   .runner "aux-source-family" (.ci .compilePipeline) Tests.Ix.Compile.SourceFamily.run,
   -- Single ownership of compiled names: conflicting claims refused by both
   -- compilers (Tests.Ix.Compile.ClaimConflict).
-  .runner "compile-claim-conflict" (.ci .compilePipeline) Tests.Ix.Compile.ClaimConflict.run,
+  .runner "compile-claim-conflict"
+    (expectedToRetire "it checks regenerated auxiliaries' claims on source names")
+    Tests.Ix.Compile.ClaimConflict.run,
   -- The Rust Pass 3 core against Ix.Compile.Image (the images of image-gen's
   -- fixtures, test-only FFI) and against the Lean compiler on their callers (bytes)
   .runner "pass3-rust-parity" (.ci .compilePipeline) Tests.Ix.Compile.Pass3RustParity.run,
-  .runner "o11a-decline" (.ci .compilePipeline) Tests.Ix.Compile.O11aDecline.run,
+  .runner "o11a-decline"
+    (expectedToRetire "it checks a size-instance rewrite of split blocks")
+    Tests.Ix.Compile.O11aDecline.run,
   .runner "o11a-copies" (.ci .compilePipeline) Tests.Ix.Compile.O11aCopies.run,
-  .runner "o11a-planning" (.ci .compilePipeline) Tests.Ix.Compile.O11aPlanning.run,
+  .runner "o11a-planning"
+    (expectedToRetire "it checks the producer plans of split blocks")
+    Tests.Ix.Compile.O11aPlanning.run,
   -- Source ownership of auxiliary claims, independent of arrival order
   -- (Tests.Ix.Compile.ClaimOrder).
-  .runner "compile-claim-order" (.ci .compilePipeline) Tests.Ix.Compile.ClaimOrder.run,
+  .runner "compile-claim-order"
+    (expectedToRetire "it checks regenerated auxiliaries' claims on source names")
+    Tests.Ix.Compile.ClaimOrder.run,
   -- Selected closures (Tests.Ix.Compile.{SelectedClosure,ClosureWhole,CheckerSupport,PackUnits}):
   -- closure against whole, checker-support ground, and `ix pack` carrying the reference closure.
   .runner "compiler-selected-closure-e2e" (.ci .compilerClosures) Tests.Ix.Compile.SelectedClosure.run,
@@ -600,30 +648,45 @@ def registry : List Entry := [
   -- for the targets of a compiled unit, against their records, with the recursor-family,
   -- snapshot, candidate-value and projection controls (fixtures loaded at run time)
   .runner "compiler-selected-admission" (.ci .compilerClosures) Tests.Ix.Compile.SelectedAdmission.run,
+  .runner "compiler-selected-admission-originals"
+    (expectedToRetire "it censuses the selected originals of the blocks the compile rewrites")
+    Tests.Ix.Compile.SelectedAdmission.runOriginals,
   -- Canonicity over twin presentations, exact against the non-canonical
   -- record under the records policy (Tests.Ix.Compile.Twins).
-  .runner "twins" (.ci .landingFixtures) Tests.Ix.Compile.Twins.run,
+  .runner "twins"
+    (expectedToRetire "it checks that reordered twins compile to one address")
+    Tests.Ix.Compile.Twins.run,
   -- Pass 3's clique tables (plans, rows) are memos: the check mode
   -- (`IX_PASS3_CHECK_PLANS`) at 1, 4 and 32 workers writes the reference's
   -- bytes, with negative controls (Tests.Ix.Compile.PlanCache)
-  .runner "pass3-plan-cache" (.ci .compilePipeline) Tests.Ix.Compile.PlanCache.run,
+  .runner "pass3-plan-cache"
+    (expectedToRetire "it checks the memo tables of clique transport")
+    Tests.Ix.Compile.PlanCache.run,
   -- The clique transport wired: every plan of the twins unit, and its rows and
   -- `_ix.src` copies published exactly (Tests.Ix.Compile.Pass3Cliques)
-  .runner "pass3-cliques" (.ci .landingFixtures) Tests.Ix.Compile.Pass3Cliques.run,
+  .runner "pass3-cliques"
+    (expectedToRetire "it checks clique transport")
+    Tests.Ix.Compile.Pass3Cliques.run,
   -- The clique-ownership cases compiled as units: plans over compiled addresses,
   -- WF8's caller refused by name, values, kernels, the Rust leg; the carried-lemma
   -- units (Tests.Ix.Compile.Clique.OwnershipUnits)
-  .runner "clique-ownership-units" (.ci .landingFixtures) Tests.Ix.Compile.Clique.OwnershipUnits.run,
+  .runner "clique-ownership-units"
+    (expectedToRetire "it checks clique ownership")
+    Tests.Ix.Compile.Clique.OwnershipUnits.run,
   -- Pass 3 on every fixture family: names, decompile, the certified checker and the
   -- Rust kernel against the kernel-failure record, the images' computation rules,
   -- display names, block failures against the record (Tests.Ix.Compile.Pass3)
-  .env "pass3" (.ci .landingFixtures) Tests.Ix.Compile.Pass3.run,
+  .env "pass3"
+    (expectedToRetire "it checks the caller rewrite of changed blocks and their images")
+    Tests.Ix.Compile.Pass3.run,
   -- Its evidence and diagnostic tools, one per variable (Tests.Ix.Compile.Pass3Tools)
   .runner "pass3-tools" (.manual "one evidence or diagnostic tool of `pass3`, selected by exactly one PASS3_* variable; records nothing by itself and approves nothing") Tests.Ix.Compile.Pass3Tools.tools,
   -- Lean's own auxiliaries against the ones Ix regenerates, over the twin
   -- families with a canonical reference: the nested-order and packaging
   -- classes fail (Tests.Ix.Compile.Oracle).
-  .runner "aux-oracle" (.ci .landingFixtures) Tests.Ix.Compile.Oracle.run,
+  .runner "aux-oracle"
+    (expectedToRetire "it checks AuxGen's answers from the Source service")
+    Tests.Ix.Compile.Oracle.run,
   -- The Lean compiler's output does not depend on the schedule: the fold at
   -- three widths, the reference schedule both ways and the pipeline at three
   -- worker counts, byte-identical (Tests.Ix.Compile.ScheduleIdentity).
@@ -632,7 +695,9 @@ def registry : List Entry := [
   .runner "auxgen-flat-initstd" (.manual "the AuxGen lane's Init+Std measurement of the drivers' Source service (about 2 min), in the compiler gate's suites") Tests.Ix.AuxGen.FlatBlockInitStd.run,
   -- AuxGen checked queries, exact references and fold bytes on the actual fixtures;
   -- the same checked query/table/byte contracts on Init+Std, with the service timed.
-  .suite "auxgen-below-ixc" (.ci .landingFixtures) Tests.Ix.AuxGen.BelowIxc.suite,
+  .suite "auxgen-below-ixc"
+    (expectedToRetire "it checks AuxGen's below generation against IxC")
+    Tests.Ix.AuxGen.BelowIxc.suite,
   .suite "auxgen-below-initstd" (.manual "the AuxGen lane's Init+Std measurement: checked generation and fold bytes under supported asks, with the Source service timed") Tests.Ix.AuxGen.BelowIxc.initStdSuite,
   .runner "auxgen-closure-probe" (.manual "AuxGen M3's coverage probe: the Source service on selected closures of Init+Std, failClosed and traced") Tests.Ix.AuxGen.ClosureProbe.run,
   .runner "auxgen-acceptance-probe" (.manual "AuxGen M5a library check: generated auxiliaries of flat and nested blocks accepted by Source mode, by kind") Tests.Ix.AuxGen.AcceptanceProbe.run,
@@ -677,6 +742,8 @@ def main (args : List String) : IO UInt32 := do
     for msg in errors[:min 50 errors.size] do
       IO.println s!"  {msg}"
     return 1
+  -- both expected to retire (`expectedToRetire`): runnable by name until
+  -- the code they test is removed
   Tests.Registry.run registry get_env! args (required :=
-    [("auxgen-checked-generation", "ci:compile-pipeline"),
-     ("pass3-plan-cache", "ci:compile-pipeline")])
+    [("auxgen-checked-generation", "manual"),
+     ("pass3-plan-cache", "manual")])

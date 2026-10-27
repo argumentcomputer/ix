@@ -254,6 +254,8 @@ fn inspect_constant_references(
     ConstantInfo::InductInfo(val) => {
       keys |= collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
       acc.extend(val.ctors.iter().cloned());
+      // The other members of the Lean block: its order is structural.
+      acc.extend(val.all.iter().filter(|n| **n != val.cnst.name).cloned());
     },
     ConstantInfo::CtorInfo(val) => {
       keys |= collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
@@ -265,9 +267,32 @@ fn inspect_constant_references(
         acc.insert(rule.ctor.clone());
         keys |= collect_expr_references(&rule.rhs, &mut visited, &mut acc);
       }
+      // The other recursors of the family: its order is structural.
+      let motives = val.num_motives.to_u64().unwrap_or(0);
+      for r in recursor_family_names(&val.all, motives) {
+        if r != val.cnst.name {
+          acc.insert(r);
+        }
+      }
     },
   }
   (acc, keys)
+}
+
+/// The recursors of an inductive block, in the family's declared order:
+/// `X.rec` for each member `X` of `all`, then the nested auxiliary
+/// recursors `all[0].rec_N`, `N = 1 ..= num_motives - all.len()`. Mirrors
+/// Lean `Ix.recursorFamilyNames`.
+pub fn recursor_family_names(all: &[Name], num_motives: u64) -> Vec<Name> {
+  let mut out: Vec<Name> =
+    all.iter().map(|n| Name::str(n.clone(), "rec".to_string())).collect();
+  if let Some(head) = all.first() {
+    let nested = num_motives.saturating_sub(all.len() as u64);
+    for k in 1..=nested {
+      out.push(Name::str(head.clone(), format!("rec_{k}")));
+    }
+  }
+  out
 }
 
 /// The metadata keys a reference walk found.
@@ -936,11 +961,10 @@ mod tests {
   }
 
   #[test]
-  fn inductive_all_members_are_not_graph_edges() {
-    // `InductiveVal.all` is Lean source metadata. The canonical compiler
-    // must still split inductive declarations into their minimal SCCs, so
-    // members that do not structurally reference each other are not graph
-    // dependencies merely because Lean recorded them in the same `all` list.
+  fn inductive_all_members_are_graph_edges() {
+    // The members of a Lean block refer to each other: the block's order is
+    // structural, so the condensation keeps the block whole even when its
+    // members do not reference each other through their types.
     let mut env = Env::default();
     for name in ["A", "B"] {
       env.insert(
@@ -960,8 +984,21 @@ mod tests {
     }
 
     let graph = build_ref_graph(&env);
-    assert!(!graph.out_refs[&n("A")].contains(&n("B")));
-    assert!(!graph.out_refs[&n("B")].contains(&n("A")));
+    assert!(graph.out_refs[&n("A")].contains(&n("B")));
+    assert!(graph.out_refs[&n("B")].contains(&n("A")));
+    assert!(!graph.out_refs[&n("A")].contains(&n("A")));
+  }
+
+  #[test]
+  fn recursor_family_members_are_graph_edges() {
+    // A recursor refers to the other recursors of its family: `X.rec` for
+    // each member of the block, then the nested auxiliaries' `all[0].rec_N`.
+    let sub = |p: &str, s: &str| Name::str(n(p), s.to_string());
+    assert_eq!(
+      recursor_family_names(&[n("A"), n("B")], 3),
+      vec![sub("A", "rec"), sub("B", "rec"), sub("A", "rec_1")]
+    );
+    assert_eq!(recursor_family_names(&[n("A")], 1), vec![sub("A", "rec")]);
   }
 
   #[test]

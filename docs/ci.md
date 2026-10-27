@@ -42,12 +42,11 @@ the entry runs:
 | `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, checker-support grounding, packing, admission of selected targets, and the certified checker's pinned subjects and acceleration inputs |
 | `ci:compile`, `ci:decompile` | one merge-tests partition each | the whole test environment through the compiler, and back |
 | `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, Init+Std compile fidelity, sharding, catalog and commit I/O, the primitives, and the IxVM suite |
-| `ci:landing-fixtures` | a merge-tests partition | end-to-end checks on the fixture families: both compilers, both kernels and the certified checker on every family, the twins' non-canonical record, the image pass and its clique transport, the auxiliary oracle, the canonical and nested orders |
 | `ci:landing-compilers` | a merge-tests partition | the Lean compiler's output independent of its schedule, on the twins and the fixture corpus; the Rust compiler's compile, serialize and decompile roundtrip over the test environment |
 | `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std: the certified compiler against the pipeline and the Rust compiler, role binding, a reading premise on every inductive, the changed set, the admission hash |
-| `manual` | by hand only | entries that need inputs outside the repository, or hours; each states its reason |
+| `manual` | by hand only | entries that need inputs outside the repository, or hours, and the entries expected to retire with the compiler's canonical rewriting (runnable by name until the code they test is removed); each states its reason |
 
-`lake test -- --tier <tier>` runs one tier; `--tier landing` runs the three
+`lake test -- --tier <tier>` runs one tier; `--tier landing` runs the two
 landing partitions. The registry's primary self-test, `ixtests-registry`,
 fails when a CI tier has no entry, when no workflow runs a CI tier, or when a
 workflow names a tier the registry does not define. A merge-tests partition

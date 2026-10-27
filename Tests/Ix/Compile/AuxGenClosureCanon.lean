@@ -31,10 +31,10 @@
     raw collector, which reaches fewer family members.)
   - `raw`: the closure without family completion (`rawDeps`), which tests
     the compiler's per-family block membership on its own. Every address
-    must match except a nested block's class `.brecOn.eq`: its family
-    holds `<all0>.brecOn_N.eq`, which needs `List.casesOn`, not in
-    the raw closure, so the compiler refuses the block with "partial
-    auxiliary family" (A0, WB-E3), and those seeds must be refused.
+    must match: the compiler compiles Lean's auxiliaries as Lean declared
+    them, so a family-incomplete slice (a nested block's class
+    `.brecOn.eq`, whose family holds `<all0>.brecOn_N.eq`) compiles to the
+    whole compile's addresses.
   - `pack`: `ix pack` (`rsPackEnv`) of the reference to each auxiliary
     seed keeps the seed's address and type-checks (`rsCheckIxonFFI`).
 
@@ -292,16 +292,9 @@ def suite : List TestSeq := [
     -- reference's, every seed type-checks.
     let f1 ← runLeg env dir ref "collectDeps" seeds
       (fun s => Ix.EnvScope.collectDeps env [s]) (fun _ => none)
-    -- Leg 2, the compiler on family-incomplete slices: same, except a
-    -- nested block's class `.brecOn.eq`, whose canonical block needs
-    -- `List.casesOn` (not in the raw closure): the compiler refuses the
-    -- block, naming it (A0, WB-E3; it used to build the members present
-    -- with a warning, at addresses differing from the whole compile).
-    let nestedEq (s : Lean.Name) : Bool :=
-      s.toString.endsWith ".brecOn.eq" &&
-        [`T, `C, `D, `Rose].any (fun c => (fx ++ c).isPrefixOf s)
-    let f2 ← runLeg env dir ref "raw" seeds (fun s => rawDeps env [s])
-      (fun s => if nestedEq s then some "partial auxiliary family" else none)
+    -- Leg 2, the compiler on family-incomplete slices: same, a nested
+    -- block's class `.brecOn.eq` included.
+    let f2 ← runLeg env dir ref "raw" seeds (fun s => rawDeps env [s]) (fun _ => none)
     -- Leg 3, the pack-side closure (`ix pack`, `Env::prune_to_closure`):
     -- a block is one Ixon constant, so pruning the reference to an
     -- auxiliary keeps its whole block; the bundle must name the seed at the

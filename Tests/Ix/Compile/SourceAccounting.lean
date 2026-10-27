@@ -113,8 +113,10 @@ def run : IO Unit := do
       "validated wrapper changed successful bytes or discarded facts"
   let raw := _root_.Ix.EnvScope.collectDeps env [``ordinary, `Nat.rec, `Nat.brecOn, `List.rec]
   let normal ← compile env raw
+  -- Lean's recursors and auxiliaries are compiled as given: none of these
+  -- inputs is regenerated.
   let regenerated ← audit "ordinary/regenerated" normal
-  need (regenerated > 0) "regenerated input witness is empty"
+  need (regenerated == 0) "an input was regenerated"
   let groundRaw := GroundRefusal.closure env (· == `Nat.add)
   let partialOut ← compile env groundRaw 2
   let _ ← audit "ground-refusal partial" partialOut
@@ -125,7 +127,9 @@ def run : IO Unit := do
   for workers in [1, 4] do
     let out ← compile env conflicts workers
     let _ ← audit s!"claim-conflict/{workers}" out
-    need (!out.cenv.ungrounded.isEmpty) "claim-conflict census is vacuous"
+    -- No auxiliary is regenerated, so the closure's declarations named like
+    -- auxiliaries claim nothing of another's: the closure compiles whole.
+    need out.cenv.ungrounded.isEmpty "the claim-conflict closure was refused"
   need (ClaimConflict.promotionCases.all (·.2)) "existing promotion/withdrawal controls failed"
   let tierRaw := _root_.Ix.EnvScope.collectDeps env
     [`Tests.Ix.Kernel.TierIndDefs.spin, `Tests.Ix.Kernel.TierIndDefs.kdef]

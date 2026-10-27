@@ -4251,6 +4251,7 @@ mod tests {
   }
 
   #[test]
+  #[ignore = "expected to retire: members of one block no longer collapse"]
   fn test_alpha_collapse_compile_env_addresses_inductives_and_ctors() {
     use crate::compile::env::compile_env;
 
@@ -4653,6 +4654,7 @@ mod tests {
   /// promotions are still staged (`block_txn`): the requested name is not
   /// yet published, and nothing is stored or overwritten until the commit.
   #[test]
+  #[ignore = "expected to retire: original forms are no longer promoted"]
   fn test_original_mutual_result_precedes_promotion() {
     use crate::compile::{
       BlockCache, CompileOptions, KernelCtx, block_txn, compile_const_no_aux,
@@ -4859,6 +4861,7 @@ mod tests {
   /// alias and carry the collapsed content; placeholders cannot satisfy the
   /// shape and kernel assertions. Both contracts hold with 1 and 4 workers.
   #[test]
+  #[ignore = "expected to retire: auxiliaries are no longer regenerated"]
   fn test_aux_gen_compile_roundtrip() {
     use crate::compile::{CompileOptions, env::compile_env_with_options};
     use ix_kernel::{env::KEnv, id::KId, mode::Anon, tc::TypeChecker};
@@ -4985,6 +4988,7 @@ mod tests {
   /// declaration (`f` from its record, `A.rec` from the image's original),
   /// and the canonical recursors stay out of the source view.
   #[test]
+  #[ignore = "expected to retire: the compile no longer rewrites callers"]
   fn test_pass3_rewrites_callers_through_images() {
     use crate::compile::pass3::names::has_reserved;
     use crate::compile::{
@@ -5133,6 +5137,7 @@ mod tests {
   /// aux tail is refused (its Ix auxiliaries would keep Lean's names with no
   /// caller rewritten).
   #[test]
+  #[ignore = "expected to retire: the compile no longer runs the aux tail"]
   fn test_changed_block_tail_needs_a_prepared_state() {
     use crate::compile::{BlockCache, CompileState, KernelCtx, compile_const};
     use crate::graph::NameSet;

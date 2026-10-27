@@ -650,8 +650,6 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
 def suite : List TestSeq := [
   .individualIO "materialize ∘ compile is exact and root-stable" none
     (roundtripTest false) .done,
-  .individualIO "alpha-collapsed mutual materialization is exact and root-stable" none
-    (roundtripTest true) .done,
   .individualIO "only-scoped materialization returns the closure" none
     closureTest .done,
   .individualIO "materialization restores only source declarations" none
@@ -660,5 +658,12 @@ def suite : List TestSeq := [
     elabTest .done,
   .individualIO "commit + eval claim over imported constants (C9)" none
     zkPatternTest .done ]
+
+/-- The alpha-collapsed mutual pair: its members collapse to one class and
+its recursors are stored as `_ix` support, which the compile no longer does
+(it keeps Lean's declarations). -/
+def collapsedSuite : List TestSeq := [
+  .individualIO "alpha-collapsed mutual materialization is exact and root-stable" none
+    (roundtripTest true) .done ]
 
 end Tests.Ix.ImportIxe

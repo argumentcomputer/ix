@@ -39,7 +39,7 @@
   `Ix.Tc`; the reserved-name unit `ReservedIx`, whose drivers' check is
   `compile-reserved-mdata`'s.
 
-  Run with: `lake test -- pass3` (tier `ci:landing-fixtures`; it needs `ix` and
+  Run with: `lake test -- pass3` (expected to retire, `manual`; it needs `ix` and
   `kernel-check-ixe`, built as `IxTests`' needs). `PASS3_ONLY` restricts the
   units (comma-separated stems, `twins`, `corpus`); `PASS3_NAMES` adds a
   unit of named constants of the test environment; `PASS3_KEEP=<dir>` keeps

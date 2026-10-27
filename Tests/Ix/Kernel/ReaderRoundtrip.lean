@@ -24,13 +24,12 @@ constructor or a constructor count is never judged equal.
 
 The same compiled closure checks the kernel's output side
 (`Tests.Ix.Kernel.EgressFidelity`): every block's projection records as the
-certified writer writes them against the compiler's, every block's order
-(recursor blocks in motive order, among them `Rose.rec`/`Rose.rec_1` and
-`Args.rec`/`Tm.rec`, which are not in structural order; every one refused
-with two members swapped), and over two accepted batches the reader's
-declarations with written projections and the installed environments of
-`Admission.checkConstants`, `Projection.checkBytes` and
-`BlockOrder.checkBytes`, with every projection record naming an installed
+certified writer writes them against the compiler's, every recursor block's
+order (in motive order, among them `Rose.rec`/`Rose.rec_1` and
+`Tm.rec`/`Args.rec`; every one refused with two members swapped), and over
+two accepted batches the reader's declarations with written projections and
+the installed environments of `Admission.checkConstants` and
+`Projection.checkBytes`, with every projection record naming an installed
 constant of its kind.
 
 The whole of `Init` and `Std` runs through the same comparisons (projections and
@@ -79,17 +78,11 @@ def expected : List (Lean.Name × Verdict) := [
   (defs "Node", .equal), (defs "Node.mk", .equal), (defs "Node.rec", .equal),
   (defs "Node.val", .normalized "projection rewrite"),
   (defs "Node.kids", .normalized "projection rewrite"),
+  -- mutual blocks, stored in Lean's order with Lean's recursors
   (defs "Even", .equal), (defs "Odd", .equal), (defs "Odd.succ", .equal),
-  -- a changed block (members out of Lean's order): since Pass 3, the Lean name
-  -- of each recursor holds its image, a definition of the recursor's type
-  (defs "Even.rec", .canonicalized "Pass 3 image of a recursor"),
-  -- a mutual block of data types: the compiler regenerates its recursors in
-  -- canonical member order, Pass 3 stores each Lean recursor's image under its
-  -- name, and the definitions over it call the auxiliaries through the images
+  (defs "Even.rec", .equal),
   (defs "Tm", .equal), (defs "Args.cons", .equal),
-  (defs "Tm.rec", .canonicalized "Pass 3 image of a recursor"),
-  (defs "Args.rec", .canonicalized "Pass 3 image of a recursor"),
-  (defs "Tm.size", .canonicalized "Pass 3 call-site records"),
+  (defs "Tm.rec", .equal), (defs "Args.rec", .equal), (defs "Tm.size", .equal),
   (defs "Trivial", .equal), (defs "Trivial.rec", .equal),
   (defs "Both", .equal), (defs "Both.left", .equal),
   (defs "Pair", .equal), (defs "Pair.mk", .equal),
@@ -191,9 +184,8 @@ def evaluateReader (inp : Input) : IO (Report × Array String) := do
   return (report, errors)
 
 /-- The two batches of the entry checks: blocks nested through containers,
-mutual blocks and a nested structure (whose recursor blocks are in motive
-order but not in structural order: `Tests.Ix.Kernel.EgressFidelity`, "Block
-order"), and declarations without such blocks. All three certified entries
+mutual blocks and a nested structure (`Tests.Ix.Kernel.EgressFidelity`,
+"Block order"), and declarations without such blocks. Both certified entries
 must accept both with the same environment. -/
 def nestedSeeds : Array Lean.Name :=
   #[defs "Node", defs "Rose.size", defs "Tm.size", defs "ATree"]
@@ -220,14 +212,12 @@ def evaluateEgress (inp : Input) : IO (Array String × Array String) := do
     unless ent.problems.isEmpty do errors := errors.push s!"{label}: {ent.problems.size} entry problems"
     unless ent.projectionRecords > 0 && ent.projectionsInstalled == ent.projectionRecords do
       errors := errors.push s!"{label}: {ent.projectionsInstalled} of {ent.projectionRecords} projections installed"
-  -- the two recursor blocks that are in motive order but not in structural
-  -- order are among those the order check accepts (a changed block's
-  -- canonical recursors are published under Pass 3's `_ix` names, read here
-  -- without the reserved component: `Tm._ix.rec` as `Tm.rec`)
+  -- a nested and a mutual recursor block are among those the order check
+  -- accepts, each in its family's order
   let accepted := proj.motiveOrdered.toList.map fun a =>
-    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "." |>.filter (· != "_ix")
+    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "."
       |>.reverse |>.take 2 |>.reverse |> ".".intercalate)
-  for block in [["Rose.rec", "Rose.rec_1"], ["Args.rec", "Tm.rec"]] do
+  for block in [["Rose.rec", "Rose.rec_1"], ["Tm.rec", "Args.rec"]] do
     unless accepted.contains block do
       errors := errors.push s!"block order: the recursor block {block} is not accepted in motive order"
   return (#[proj.summary, s!"recursor blocks in motive order: {accepted}", s!"nested {nested.summary}",

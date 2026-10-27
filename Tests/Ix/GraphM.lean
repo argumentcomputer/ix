@@ -219,7 +219,7 @@ def testGraphConstRec : TestSeq :=
   let ty := mkConstExpr "T"
   let rhs := mkConstExpr "R"
   let recConst := Ix.ConstantInfo.recInfo {
-    cnst := mkConstVal "MyType.rec" ty,
+    cnst := { name := Ix.Name.mkStr (mkName "MyType") "rec", levelParams := #[], type := ty },
     all := #[mkName "MyType"],
     numParams := 0,
     numIndices := 0,
@@ -234,6 +234,29 @@ def testGraphConstRec : TestSeq :=
   test "rec refs ctor name" (refs.contains (mkName "MyType.mk")) ++
   test "rec refs rhs" (refs.contains (mkName "R")) ++
   test "rec has 3 refs" (refs.size == 3)
+
+/-- A recursor of a mutual block refers to its family: the other members'
+recursors and the nested auxiliaries' `rec_N`, not to itself. -/
+def testGraphConstRecFamily : TestSeq :=
+  let env : Ix.Environment := { consts := {} }
+  let a := mkName "A"
+  let b := mkName "B"
+  let recConst := Ix.ConstantInfo.recInfo {
+    cnst := { name := Ix.Name.mkStr b "rec", levelParams := #[], type := mkConstExpr "T" },
+    all := #[a, b],
+    numParams := 0,
+    numIndices := 0,
+    numMotives := 3,
+    numMinors := 0,
+    rules := #[],
+    k := false,
+    isUnsafe := false
+  }
+  let (refs, _) := Ix.GraphM.run env .init (Ix.graphConst recConst)
+  test "mutual rec refs its sibling's recursor" (refs.contains (Ix.Name.mkStr a "rec")) ++
+  test "mutual rec refs the nested auxiliary's recursor" (refs.contains (Ix.Name.mkStr a "rec_1")) ++
+  test "mutual rec does not ref itself" (!refs.contains (Ix.Name.mkStr b "rec")) ++
+  test "mutual rec has 3 refs" (refs.size == 3)
 
 /-! ## Test: GraphM.env builds complete graph -/
 
@@ -334,7 +357,8 @@ public def suite : List TestSeq := [
     testGraphConstQuot ++
     testGraphConstInduct ++
     testGraphConstCtor ++
-    testGraphConstRec
+    testGraphConstRec ++
+    testGraphConstRecFamily
   ),
   group "GraphM.env" (
     testGraphMEnv ++

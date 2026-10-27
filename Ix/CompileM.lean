@@ -1974,6 +1974,23 @@ def orderRecursorFamily (classes : List (List MutConst)) : List (List MutConst) 
     let sorted := decorated.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)
     (sorted.map (·.2.2)).toList
 
+/-- The member order of a block, one member per class: Lean's order
+(`Ix.sourceOrderLt`). An inductive is at its position in Lean's `all`, a
+recursor at its family's declared position (`recursorFamilyPosition`), a
+definition at its position in its Lean `all` (restricted to the block). The
+order of a block is the source's, as the order of an inductive's constructors
+is, and α-equal members are never merged. Members whose positions and names tie
+(only on input that is not Lean's) keep their order in `cs`. Mirrors Rust
+`source_classes`. -/
+def sourceClasses (cs : Array MutConst) : List (List MutConst) :=
+  let key : MutConst → Nat × Name := fun
+    | .indc i => (Ix.blockPosition i.all i.name, i.name)
+    | .recr r => ((recursorFamilyPosition r).toNat, r.cnst.name)
+    | .defn d => (Ix.blockPosition d.all d.name, d.name)
+  let before (a b : MutConst × Nat) : Bool :=
+    Ix.sourceOrderLt (key a.1) (key b.1) || (!Ix.sourceOrderLt (key b.1) (key a.1) && a.2 < b.2)
+  (cs.zipIdx.qsort before).toList.map fun e => [e.1]
+
 /-! ## Constant Building -/
 
 /-- Expressions rewritten by production sharing for one mutual member, in
@@ -3100,11 +3117,11 @@ def collectMutConsts : List Name → Array MutConst →
       | none => acc
     collectMutConsts rest acc
 
-/-- Resolve, canonically classify, and compile a non-singleton SCC. -/
+/-- Resolve, order (Lean's order, `sourceClasses`), and compile a non-singleton
+block. -/
 def compileMutualConstants (all : Set Name) : CompileM BlockResult := do
   let consts ← collectMutConsts all.toList #[]
-  let mutConsts := orderRecursorFamily (← sortConsts consts.toList)
-  compileMutualBlock mutConsts
+  compileMutualBlock (sourceClasses consts)
 
 /-- Compile a constant by name (looks it up in the environment).
     Uses the block's `all` set from BlockEnv (populated from SCC analysis). -/

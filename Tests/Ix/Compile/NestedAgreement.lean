@@ -59,7 +59,7 @@ one auxiliary of the compiled family. Not here: `Tests.Ix.Kernel.EntryCaseDefs`
 environment) and the aux-cert files (refusals and IxC declines by design;
 aux-cert checks them).
 
-Run with `lake test -- nested-agreement` (tier `ci:landing-fixtures`).
+Run with `lake test -- nested-agreement` (expected to retire, `manual`).
 `IX_NESTED_AGREEMENT_VERBOSE=1` prints every reading.
 -/
 

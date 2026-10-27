@@ -610,11 +610,21 @@ such a member lists. -/
 def MemberName (E : Ix.Environment) (all : Ix.Set Name) (x : Name) : Prop :=
   ∃ m, Member E all m ∧ (x = m.name ∨ ∃ ctor ∈ m.ctors, x = ctor.cnst.name)
 
+/-- **Lean's order only arranges a block's members**: every class
+`sourceClasses` returns holds members of its input. -/
+theorem mem_sourceClasses {cs : Array MutConst} {c : List MutConst} {x : MutConst}
+    (hc : c ∈ sourceClasses cs) (hx : x ∈ c) : x ∈ cs := by
+  unfold sourceClasses at hc
+  try dsimp only at hc
+  obtain ⟨e, he, rfl⟩ := List.mem_map.1 hc
+  have hx : x = e.1 := List.mem_singleton.1 hx
+  subst hx
+  exact Array.fst_mem_of_mem_zipIdx (Ix.CompileCert.Canon.mem_qsort.1 (Array.mem_toList_iff.1 he))
+
 /-- **The block compile's projections carry members' names**: a lone
 constant's compile has none (`constantInfo_lone`), and the mutual compile's
-are its sources' (`mutualBlock_names`), which the sort and the recursor
-order only regroup (`sortClasses_mem`, `orderRecursorFamily_perm`) and which
-the members loop reads (`members_post`). -/
+are its sources' (`mutualBlock_names`), which Lean's order only arranges
+(`mem_sourceClasses`) and which the members loop reads (`members_post`). -/
 theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {all : Ix.Set Name}
     {s s' : BlockState} {r : BlockResult} {layout? : Option Ixon.AuxLayout}
     {pub : Ix.Compile.Pass.Published}
@@ -636,7 +646,6 @@ theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {al
        rw [none] at hrow
        exact absurd hrow (by simp))
     | (obtain ⟨cs, s₂, hcs, h⟩ := bind_ok h
-       obtain ⟨sorted, s₃, hsorted, h⟩ := bind_ok h
        obtain ⟨out, s₄, hout, h⟩ := bind_ok h
        have same : Ix.Cert.PassHooks.recordsOf r = Ix.Cert.PassHooks.recordsOf out := by
          revert h
@@ -645,9 +654,7 @@ theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {al
              Ix.Cert.PassHooks.recordsOf x.1 = Ix.Cert.PassHooks.recordsOf out) ?_
          repeat returns_step
        have members := members_post ctx all s₁ cs s₂ hcs
-       obtain ⟨-, addresses, stats, sortedRun⟩ := Ix.CompileCert.ProjectionLayout.sort_run cs.toList hsorted
-       have regrouped := sortClasses_mem sortedRun
-       have names := mutualBlock_names (orderRecursorFamily sorted) ctx s₃ out s₄ hout
+       have names := mutualBlock_names (sourceClasses cs) ctx s₂ out s₄ hout
        intro row hrow
        unfold Ix.Cert.PassHooks.recordsOf at same
        have hmap : (row.1, row.2.1) ∈ out.projections.map (fun p => (p.1, p.2.1)) := by
@@ -655,8 +662,7 @@ theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {al
          exact Array.mem_map_of_mem hrow
        obtain ⟨row', hrow', he⟩ := Array.mem_map.1 hmap
        obtain ⟨src, ⟨c, hc', hsrc⟩, hname⟩ := names row' hrow'
-       have hc'' := (Ix.CompileCert.MutualArtifact.orderRecursorFamily_perm sorted).mem_iff.1 hc'
-       have hm := members src (Array.mem_toList_iff.1 (regrouped c hc'' src hsrc))
+       have hm := members src (mem_sourceClasses hc' hsrc)
        rw [← (Prod.mk.inj he).1]
        exact ⟨src, hm, hname⟩)
 
@@ -1000,36 +1006,24 @@ theorem memberName_owned {E E' : Ix.Environment} {all : Ix.Set Name} {x : Name} 
     rw [Std.HashSet.contains_congr hn₀]
     exact hin
 
-/-- **The claims of a block compile, with Pass 3's hooks in any state**:
-every projection name of `runBlockWithAux cenv all lo` hashes like a member
-of `all` or like a constructor an inductive member lists, when every
-constant of the environment carries its name (`cliqueStep_keeps`,
-`prepareBlock_agrees`, `compileBlockWithAux_names`). -/
+/-- **The claims of a block compile**: every projection name of
+`runBlockWithAux cenv all lo` hashes like a member of `all` or like a
+constructor an inductive member lists, when every constant of the environment
+carries its name (`compileBlockWithAux_names`). -/
 theorem runBlockWithAux_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
     {cache : BlockState} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
     (hn : NamedEnv cenv.env) (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?, pub)) :
     ∀ row ∈ r.projections, Owned cenv.env all row.1 := by
   unfold runBlockWithAux at h
-  obtain ⟨⟨cenv₁, init, cliques⟩, hclq, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  try dsimp only at h
-  obtain ⟨⟨cenv', prepared⟩, hprep, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  try dsimp only at h
   obtain ⟨⟨⟨result, layout', published⟩, cache'⟩, hrun, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
   try dsimp only at h
-  have hr : r = Ix.Compile.Pass.withMetaRefs cache'.p3MetaRefs lo result := by
+  have hr : r = result := by
     simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     exact h.1.symm
   subst hr
   have names := compileBlockWithAux_names (Ix.CompileCert.run_success hrun)
-  have same := (Ix.Cert.PassHooks.withMetaRefs_records cache'.p3MetaRefs lo result).1
-  unfold Ix.Cert.PassHooks.recordsOf at same
   intro row hrow
-  have hmap : (row.1, row.2.1) ∈ result.projections.map (fun p => (p.1, p.2.1)) := by
-    rw [← (Prod.mk.inj (Prod.mk.inj (Prod.mk.inj same).2).2).2]
-    exact Array.mem_map_of_mem hrow
-  obtain ⟨row', hrow', he⟩ := Array.mem_map.1 hmap
-  rw [← (Prod.mk.inj he).1]
-  exact memberName_owned ((cliqueStep_keeps hclq).trans (prepareBlock_agrees hprep)) hn (names row' hrow')
+  exact memberName_owned (Agrees.refl _) hn (names row hrow)
 
 end claims
 
@@ -1180,26 +1174,15 @@ theorem runImageBlock_lone
     exact hr _ hq
   · cases h
 
-/-- **The claims of a block compile, image blocks included**: every projection
-name of `runBlock cenv all lo` hashes like a member of `all` or like a
-constructor an inductive member lists, when every constant of `cenv.env`
-carries its name (`runBlockWithAux_owned`; an image block's result has none,
-`runImageBlock_lone`, so its only claim is its key). -/
+/-- **The claims of a block compile**: every projection name of
+`runBlock cenv all lo` hashes like a member of `all` or like a constructor an
+inductive member lists, when every constant of `cenv.env` carries its name
+(`runBlockWithAux_owned`). -/
 theorem runBlock_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
     {cache : BlockState} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
     (hn : NamedEnv cenv.env) (h : runBlock cenv all lo = .ok (r, cache, layout?, pub)) :
-    ∀ row ∈ r.projections, Owned cenv.env all row.1 := by
-  unfold runBlock at h
-  split at h
-  · cases hi : Ix.Compile.Pass.runImageBlock compileConstNoAuxPure cenv all lo with
-    | error e => rw [hi] at h; cases h
-    | ok v =>
-      rw [hi] at h
-      cases h
-      rw [runImageBlock_lone hi]
-      intro _ hrow
-      simp at hrow
-  · exact runBlockWithAux_owned hn h
+    ∀ row ∈ r.projections, Owned cenv.env all row.1 :=
+  runBlockWithAux_owned hn h
 
 end image
 

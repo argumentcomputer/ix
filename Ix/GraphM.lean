@@ -43,8 +43,24 @@ def graphExpr (expr: Ix.Expr) : GraphM (Set Ix.Name) := do
     | .proj typeName _ s _ => (.insert · typeName) <$> graphExpr s
     | _ => pure {}
 
+/-- The recursors of an inductive block, in the family's declared order: `X.rec` for
+each member `X` of `all`, then the nested auxiliary recursors `all[0].rec_N`,
+`N = 1 … numMotives - all.size`. -/
+def recursorFamilyNames (all : Array Ix.Name) (numMotives : Nat) : Array Ix.Name := Id.run do
+  let mut out := all.map (Ix.Name.mkStr · "rec")
+  if let some head := all[0]? then
+    for k in [1:numMotives - all.size + 1] do
+      out := out.push (Ix.Name.mkStr head s!"rec_{k}")
+  return out
+
 /-- Extract constant references from an Ix.ConstantInfo.
-    NOTE: Aligned with Rust's get_constant_info_references for cross-impl testing. -/
+    NOTE: Aligned with Rust's get_constant_info_references for cross-impl testing.
+
+    An inductive refers to the other members of its Lean block (`all`) and a
+    recursor to the other recursors of its family (`recursorFamilyNames`): the
+    order of a mutual inductive block and of its recursor family is structural,
+    so each is compiled as one block, in Lean's order, even when its members are
+    not strongly connected through their types. -/
 def graphConst: Ix.ConstantInfo -> GraphM (Set Ix.Name)
 | .axiomInfo val => graphExpr val.cnst.type
 | .defnInfo val => .union <$> graphExpr val.cnst.type <*> graphExpr val.value
@@ -52,23 +68,26 @@ def graphConst: Ix.ConstantInfo -> GraphM (Set Ix.Name)
 | .opaqueInfo val => .union <$> graphExpr val.cnst.type <*> graphExpr val.value
 | .quotInfo val => graphExpr val.cnst.type
 | .inductInfo val => do
-  -- Rust: type refs + constructor names (NOT constructor type refs)
+  -- Rust: type refs + constructor names (NOT constructor type refs) + block siblings
   let ctorNames : Set Ix.Name := val.ctors.foldl (init := {}) fun s n => s.insert n
   let type <- graphExpr val.cnst.type
-  return .union type ctorNames
+  let siblings := val.all.foldl (init := ctorNames) fun s n =>
+    if n == val.cnst.name then s else s.insert n
+  return .union type siblings
 | .ctorInfo val => do
   -- Rust: type refs + induct name
   let typeRefs <- graphExpr val.cnst.type
   return typeRefs.insert val.induct
 | .recInfo val => do
-  -- Rust: type refs + (ctor names + rhs refs for each rule)
+  -- Rust: type refs + (ctor names + rhs refs for each rule) + family siblings
   let t <- graphExpr val.cnst.type
   let mut rs := t
   for rule in val.rules do
     rs := rs.insert rule.ctor
     let rhsRefs <- graphExpr rule.rhs
     rs := rs.union rhsRefs
-  return rs
+  return (recursorFamilyNames val.all val.numMotives).foldl
+    (fun s r => if r != val.cnst.name then s.insert r else s) rs
 
 def GraphM.run (env: Ix.Environment) (stt: GraphState) (g: GraphM α)
   : α × GraphState
