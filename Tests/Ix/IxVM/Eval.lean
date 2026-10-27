@@ -37,13 +37,17 @@ private def storeDef (env : Ixon.Env) (ty value : Ixon.Expr)
 
 private def idOutput := definition idType idValue
 
+/-- The claims' context: the default role table's. -/
+private def evalCtx : Ix.ClaimContext :=
+  Ix.ClaimContext.ofDefaultTable.toOption.getD default
+
 private def witness (env : Ixon.Env) (input : Address) (out : Ixon.Constant)
     (tree : Option Ix.AssumptionTree := none) : IO ClaimWitness := do
   let (env, output) := storeConstant env out
   let trees := match tree with
     | none => {}
     | some t => ({} : Std.HashMap Address Ix.AssumptionTree).insert t.root t
-  IO.ofExcept (buildClaimWitness env (.eval input output (tree.map (·.root))) trees)
+  IO.ofExcept (buildClaimWitness env (.eval evalCtx input output (tree.map (·.root))) trees)
 
 private def execute (vm : Aiur.CompiledToplevel) (name : String)
     (w : ClaimWitness) (error : Option String := none) : TestSeq :=
@@ -69,9 +73,14 @@ private def execute (vm : Aiur.CompiledToplevel) (name : String)
 private def rawWitness (env : Ixon.Env) (input : Address) (bytes : ByteArray)
     (outputKey : Option Address := none) : ClaimWitness :=
   let output := outputKey.getD (Address.blake3 bytes)
-  let claimBytes := Ix.Claim.ser (.eval input output none)
+  let claimBytes := Ix.Claim.ser (.eval evalCtx input output none)
   let digest := packedDigestKey (Address.blake3 claimBytes)
-  let io := addEntries env (fun _ => true) default
+  -- The claim's context names the default table, which the circuit reads
+  -- before anything else.
+  let env := match withDefaultRoleBinding env with
+    | .ok bound => bound
+    | .error _ => env
+  let io := addEntries env (fun _ => true) (seedBinding env default)
   let io := io.extend 0 digest (claimBytes.data.map .ofUInt8)
   let io := io.extend 2 (output.hash.data.map Aiur.G.ofUInt8) (bytes.data.map .ofUInt8)
   { funcName := `verify_claim, input := digest, inputIOBuffer := io }
@@ -204,7 +213,7 @@ def tests (vm : Aiur.CompiledToplevel) : IO TestSeq := do
     seq := seq ++ execute vm s!"truncated output at {n}"
       (rawWitness env input (outputBytes.extract 0 n)) (some "")
   let w ← witness env input idOutput
-  let cb := Ix.Claim.ser (.eval input (Address.blake3 outputBytes) none)
+  let cb := Ix.Claim.ser (.eval evalCtx input (Address.blake3 outputBytes) none)
   for (label, bytes) in [
       ("wrong format", cb.set! 1 3), ("wrong validator", cb.set! 2 0),
       ("trailing claim bytes", cb.push 0)] do
@@ -540,9 +549,9 @@ transport both endpoints through ordinary bundles, then execute the claim. -/
 def commandTests (leanEnv : Lean.Environment) (vm : Aiur.CompiledToplevel) : IO TestSeq := do
   let phases ← compileClosure leanEnv #[``Fixtures.arithmetic]
   let base := Ix.Commit.mkCompileEnv phases
-  let (claim, cache) ← IO.ofExcept (Ix.Commit.evalClaimWithEnv base []
+  let (claim, cache) ← IO.ofExcept (Ix.Commit.evalClaimWithEnv evalCtx base []
     (Lean.mkConst ``Fixtures.arithmetic) (.lit (.natVal 42)) (Lean.mkConst ``Nat))
-  let .eval input output _ := claim | throw <| IO.userError "expected Eval claim"
+  let .eval _ input output _ := claim | throw <| IO.userError "expected Eval claim"
   let some bytes := cache.constants[input]? | throw <| IO.userError "missing command input"
   let c : Ixon.Constant ← IO.ofExcept (Ixon.de bytes)
   let env := phases.compileEnv.storeConst input c

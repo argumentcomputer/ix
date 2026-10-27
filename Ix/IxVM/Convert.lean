@@ -6,7 +6,7 @@ public section
 namespace IxVM
 
 /-- Erased Lean typing only. Contracts remain committed in the source bytes;
-`Check` and `CheckEnv` bind validator `erased-lean-v1`. Resource validity
+`Check` and `CheckEnv` bind validator `erased-lean-v2`. Resource validity
 requires the separate native `resource-v1` validator. -/
 def convert := ⟦
   -- ============================================================================

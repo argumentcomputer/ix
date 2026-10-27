@@ -1750,7 +1750,7 @@ fn prove_env_distributed(
   use aiur::execute::{Ownership, pointer_stride};
   use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
   use ixvm_codegen::aiur_ixvm_witness::{
-    EnvCheckStatement, addr_key, worker_callers, worker_scopes,
+    EnvCheckStatement, check_owned_key, worker_callers, worker_scopes,
   };
   use rustc_hash::FxHashSet;
 
@@ -1762,8 +1762,11 @@ fn prove_env_distributed(
   statement.claim.put(&mut claim_bytes);
   let input = statement.digest_key.clone();
   let toplevel = system.toplevel();
-  let owned_keys: Vec<FxHashSet<Vec<G>>> =
-    owners.iter().map(|owned| owned.iter().map(addr_key).collect()).collect();
+  let binding = statement.binding();
+  let owned_keys: Vec<FxHashSet<Vec<G>>> = owners
+    .iter()
+    .map(|owned| owned.iter().map(|a| check_owned_key(&binding, a)).collect())
+    .collect();
   let mut owner_of: FxHashMap<Vec<G>, usize> = FxHashMap::default();
   for (worker, keys) in owned_keys.iter().enumerate() {
     for key in keys {
@@ -1829,7 +1832,7 @@ fn prove_env_distributed(
       // walk and be replayed, double-counting its callees.
       let mut entries: Vec<Vec<G>> = Vec::new();
       for addr in &owners[worker] {
-        let key = addr_key(addr);
+        let key = check_owned_key(&binding, addr);
         let queries = &record.function_queries[check_owned_idx];
         // Reached already through another owned constant's walk.
         if queries

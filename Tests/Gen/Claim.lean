@@ -86,14 +86,17 @@ def genRevealConstantInfo : Gen RevealConstantInfo :=
 
 def genOptAddress : Gen (Option Address) := genOptional genAddress
 
+def genClaimContext : Gen Ix.ClaimContext :=
+  Ix.ClaimContext.mk <$> genAddress <*> genAddress <*> genOptAddress
+
 def genClaim : Gen Claim :=
   frequency [
-    (10, Claim.eval     <$> genAddress <*> genAddress <*> genOptAddress),
-    (10, Claim.check    <$> genAddress <*> genOptAddress),
-    (10, Claim.checkEnv <$> genAddress <*> genOptAddress),
+    (10, Claim.eval     <$> genClaimContext <*> genAddress <*> genAddress <*> genOptAddress),
+    (10, Claim.check    <$> genClaimContext <*> genAddress <*> genOptAddress),
+    (10, Claim.checkEnv <$> genClaimContext <*> genAddress <*> genOptAddress),
     (10, Claim.reveal   <$> genAddress <*> genRevealConstantInfo),
     (10, Claim.contains <$> genAddress <*> genAddress),
-    (10, Claim.catalog  <$> genAddress <*> genAddress <*> genOptAddress),
+    (10, Claim.catalog  <$> genClaimContext <*> genAddress <*> genAddress <*> genOptAddress),
     (10, Claim.resource <$> genAddress <*> genAddress),
   ]
 
@@ -123,17 +126,17 @@ instance : Shrinkable RevealConstantInfo where
 
 instance : Shrinkable Claim where
   shrink
-    | .check _ none => []
-    | .checkEnv _ none => []
-    | .check c (some _) => [.check c none]
-    | .checkEnv r (some _) => [.checkEnv r none]
-    | .eval input _ _ => [.check input none]
+    | .check _ _ none => []
+    | .checkEnv _ _ none => []
+    | .check ctx c (some _) => [.check ctx c none]
+    | .checkEnv ctx r (some _) => [.checkEnv ctx r none]
+    | .eval ctx input _ _ => [.check ctx input none]
     | .reveal comm info =>
-      (.reveal comm <$> Shrinkable.shrink info) ++ [.check comm none]
-    | .contains t _ => [.checkEnv t none]
-    | .catalog m _ none => [.checkEnv m none]
+      (.reveal comm <$> Shrinkable.shrink info) ++ [.check default comm none]
+    | .contains t _ => [.checkEnv default t none]
+    | .catalog ctx m _ none => [.checkEnv ctx m none]
     | .resource _ _ => []
-    | .catalog m c (some _) => [.catalog m c none]
+    | .catalog ctx m c (some _) => [.catalog ctx m c none]
 
 /-! ## SampleableExt instances -/
 

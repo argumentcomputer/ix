@@ -17,6 +17,7 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.Claim
+public import Ix.ClaimContext
 public import Ix.Store
 public import Ix.Cli.CatalogCmd
 
@@ -42,6 +43,16 @@ private def persistClaim (claim : Ix.Claim) : IO Address := do
   let bytes := Ix.Claim.ser claim
   StoreIO.toIO (Store.write bytes)
 
+/-- The context a typing claim is relative to: the role binding named by
+    `--binding`, or else the default role table's, with this specification
+    set and no axiom beyond the standard three. -/
+private def contextOf (p : Cli.Parsed) : IO Ix.ClaimContext := do
+  match p.flag? "binding" with
+  | some flag =>
+    let binding ← addrOfHex! "binding" (flag.as! String)
+    IO.ofExcept (Ix.ClaimContext.ofBinding binding)
+  | none => IO.ofExcept Ix.ClaimContext.ofDefaultTable
+
 /-! ## `ix claim check` -/
 
 def runClaimCheck (p : Cli.Parsed) : IO UInt32 := do
@@ -53,7 +64,7 @@ def runClaimCheck (p : Cli.Parsed) : IO UInt32 := do
     | some flag => do
       let root ← addrOfHex! "asm" (flag.as! String)
       pure (some root)
-  let claim := Ix.Claim.check const asm
+  let claim := Ix.Claim.check (← contextOf p) const asm
   let digest ← persistClaim claim
   IO.println (toString digest)
   return 0
@@ -64,6 +75,7 @@ def claimCheckCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already live in `~/.ix/store/` (build it with `ix tree canonical`). When set, the claim asserts well-typedness modulo the assumed leaves."
+    binding : String; "32-byte hex binding hash of the role table the claim reads primitives through (default: the default role table of the compiled Init)."
 
   ARGS:
     addr : String; "32-byte hex address of the constant being claimed well-typed."
@@ -80,7 +92,7 @@ def runClaimCheckEnv (p : Cli.Parsed) : IO UInt32 := do
     | some flag => do
       let r ← addrOfHex! "asm" (flag.as! String)
       pure (some r)
-  let claim := Ix.Claim.checkEnv root asm
+  let claim := Ix.Claim.checkEnv (← contextOf p) root asm
   let digest ← persistClaim claim
   IO.println (toString digest)
   return 0
@@ -91,6 +103,7 @@ def claimCheckEnvCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root (typically the env's axiom leaves). The tree must already live in `~/.ix/store/`."
+    binding : String; "32-byte hex binding hash of the role table the claim reads primitives through (default: the default role table of the compiled Init)."
 
   ARGS:
     root : String; "32-byte hex address of the env's canonical merkle root (build with `ix tree env <ixe>`)."
@@ -139,7 +152,7 @@ def runClaimEval (p : Cli.Parsed) : IO UInt32 := do
     | some flag => do
       let r ← addrOfHex! "asm" (flag.as! String)
       pure (some r)
-  let claim := Ix.Claim.eval input output asm
+  let claim := Ix.Claim.eval (← contextOf p) input output asm
   let digest ← persistClaim claim
   IO.println (toString digest)
   return 0
@@ -150,6 +163,7 @@ def claimEvalCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already live in `~/.ix/store/`."
+    binding : String; "32-byte hex binding hash of the role table the claim reads primitives through (default: the default role table of the compiled Init)."
 
   ARGS:
     input  : String; "32-byte hex address of the input constant."
@@ -180,7 +194,7 @@ def runClaimCatalog (p : Cli.Parsed) : IO UInt32 := do
     | some flag => do
       let r ← addrOfHex! "asm" (flag.as! String)
       pure (some r)
-  let claim := Ix.Claim.catalog members content asm
+  let claim := Ix.Claim.catalog (← contextOf p) members content asm
   let digest ← persistClaim claim
   IO.println (toString digest)
   return 0
@@ -191,6 +205,7 @@ def claimCatalogCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root (the catalog's declared trust leaves). The tree must already live in `~/.ix/store/`."
+    binding : String; "32-byte hex binding hash of the role table the claim reads primitives through (default: the default role table of the compiled Init)."
 
   ARGS:
     ixc : String; "Path to the .ixc directory whose roots the claim binds."

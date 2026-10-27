@@ -41,7 +41,7 @@ use crate::constant::{
 use crate::env::Env;
 use crate::expr::Expr;
 use crate::merkle::merkle_root_canonical;
-use crate::proof::Claim;
+use crate::proof::{Claim, ClaimContext};
 use ix_common::address::Address;
 
 /// Collect the `refs` indices this Expr uses as a CONSTANT: `Ref(i, _)`
@@ -169,11 +169,12 @@ pub fn thin_frontier(env: &Env, owned: &[Address]) -> Vec<Address> {
   v
 }
 
-/// Build the shard `CheckEnv` claim: root over the (sorted) owned set,
-/// assumptions over the thin frontier. Returns the claim plus the
+/// Build the shard `CheckEnv` claim under `ctx`: root over the (sorted) owned
+/// set, assumptions over the thin frontier. Returns the claim plus the
 /// frontier leaves (the caller ships the asm tree it commits to).
 /// `None` on an empty owned set.
 pub fn shard_check_env_claim(
+  ctx: &ClaimContext,
   env: &Env,
   owned: &[Address],
 ) -> Option<(Claim, Vec<Address>)> {
@@ -182,7 +183,7 @@ pub fn shard_check_env_claim(
   let root = merkle_root_canonical(&owned_sorted)?;
   let frontier = thin_frontier(env, owned);
   let assumptions = merkle_root_canonical(&frontier);
-  Some((Claim::CheckEnv { root, assumptions }, frontier))
+  Some((Claim::CheckEnv { ctx: ctx.clone(), root, assumptions }, frontier))
 }
 
 /// Error from `walk_check_set`: a walk-reachable constant in neither
@@ -378,9 +379,14 @@ mod tests {
   #[test]
   fn claim_deterministic_and_thin() {
     let (env, a, b, _, _) = chain_env();
+    let ctx = ClaimContext {
+      spec: crate::proof::spec_digest(),
+      binding: Address::hash(b"binding"),
+      axioms: None,
+    };
     let (claim1, f1) =
-      shard_check_env_claim(&env, std::slice::from_ref(&a)).unwrap();
-    let (claim2, f2) = shard_check_env_claim(&env, &[a]).unwrap();
+      shard_check_env_claim(&ctx, &env, std::slice::from_ref(&a)).unwrap();
+    let (claim2, f2) = shard_check_env_claim(&ctx, &env, &[a]).unwrap();
     assert_eq!(claim1, claim2);
     assert_eq!(f1, f2);
     assert_eq!(f1, vec![b]);

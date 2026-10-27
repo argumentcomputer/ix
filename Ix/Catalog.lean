@@ -32,6 +32,7 @@
 -/
 module
 
+public import Ix.Claim
 public import Ix.Ixon
 public import Ix.Merkle
 
@@ -44,9 +45,9 @@ open Ixon (PutM GetM putU8 getU8 putBytes getBytes runPut runGet)
 /-- Magic bytes at the head of every `.ixc` file. -/
 def MAGIC : ByteArray := String.toUTF8 "IXC" ++ ⟨#[0, 0, 0, 0, 0]⟩
 
-/-- Manifest v2 binds the Ixon object format (`Ixon.Env.OBJECT_FORMAT`)
-    and erased-lean-v1 catalog claims. -/
-def VERSION : UInt32 := 2
+/-- Manifest v3 binds the Ixon object format (`Ixon.Env.OBJECT_FORMAT`)
+    and erased-lean-v2 catalog claims (`Ix.Claim.VALIDATOR_ERASED_LEAN`). -/
+def VERSION : UInt32 := 3
 
 /-- Storage-profile flag: bit0 of the header `flags` word. -/
 def FLAG_CHUNKED : UInt32 := 1
@@ -187,7 +188,7 @@ def ser (c : Catalog) : ByteArray := runPut do
     | .chunked _ => FLAG_CHUNKED
     | .fat _ => 0)
   putU8 Ixon.Env.OBJECT_FORMAT
-  putU8 1
+  putU8 Ix.Claim.VALIDATOR_ERASED_LEAN
   putAddr c.membersRoot
   putAddr c.contentRoot
   putU32LE c.members.size.toUInt32
@@ -252,7 +253,8 @@ where
       unless format == Ixon.Env.OBJECT_FORMAT do
         throw s!"catalog: unsupported object format {format}, expected \
           {Ixon.Env.OBJECT_FORMAT} — regenerate the catalog"
-      unless (← getU8) == 1 do throw "catalog: wrong validator identity"
+      unless (← getU8) == Ix.Claim.VALIDATOR_ERASED_LEAN do
+        throw "catalog: wrong validator identity"
       let membersRoot ← getAddr
       let contentRoot ← getAddr
       let memberCount ← getU32LE

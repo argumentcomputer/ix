@@ -64,9 +64,9 @@ pub const CATALOG_MAGIC: &[u8; 8] = b"IXC\0\0\0\0\0";
 /// The manifest's filename inside a `.ixc` directory.
 pub const MANIFEST_FILE: &str = "manifest";
 
-/// Manifest v2 binds the Ixon object format (`Env::OBJECT_FORMAT`) and
-/// erased-lean-v1 catalog claims.
-pub const CATALOG_VERSION: u32 = 2;
+/// Manifest v3 binds the Ixon object format (`Env::OBJECT_FORMAT`) and
+/// erased-lean-v2 catalog claims (`proof::VALIDATOR_ERASED_LEAN`).
+pub const CATALOG_VERSION: u32 = 3;
 
 /// Storage-profile flag: bit0 of the header `flags` word.
 pub const FLAG_CHUNKED: u32 = 1;
@@ -229,8 +229,11 @@ impl Catalog {
     out.extend_from_slice(&CATALOG_VERSION.to_le_bytes());
     let flags: u32 = if self.is_chunked() { FLAG_CHUNKED } else { 0 };
     out.extend_from_slice(&flags.to_le_bytes());
-    // Ixon object format, erased-lean-v1.
-    out.extend_from_slice(&[crate::env::Env::OBJECT_FORMAT, 1]);
+    // Ixon object format, erased-lean-v2.
+    out.extend_from_slice(&[
+      crate::env::Env::OBJECT_FORMAT,
+      crate::proof::VALIDATOR_ERASED_LEAN,
+    ]);
     out.extend_from_slice(self.members_root.as_bytes());
     out.extend_from_slice(self.content_root.as_bytes());
     let count = u32::try_from(self.members.len())
@@ -317,7 +320,7 @@ impl Catalog {
         crate::env::Env::OBJECT_FORMAT
       ));
     }
-    if c.u8()? != 1 {
+    if c.u8()? != crate::proof::VALIDATOR_ERASED_LEAN {
       return Err("catalog: wrong validator identity".into());
     }
     let members_root = c.addr()?;

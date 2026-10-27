@@ -54,6 +54,13 @@ def childProgram : Source.Toplevel := ⟦
   }
 ⟧
 
+/-- A fixed claim context for the statements below: a stand-in specification
+    digest and binding hash, no axiom beyond the standard three. -/
+def testCtx : Ix.ClaimContext :=
+  { spec := Address.blake3 "aggregate-test-spec".toUTF8
+    binding := Address.blake3 "aggregate-test-binding".toUTF8
+    axioms := none }
+
 private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
   (Ix.AssumptionTree.canonical leaves).get!
 
@@ -125,10 +132,10 @@ def smokeSuite : IO UInt32 := do
   let d := Address.blake3 "aggr-d".toUTF8
   let e := Address.blake3 "aggr-extra".toUTF8
   let leftStatement : Aggr.CheckEnvTrees :=
-    { subjects := canonicalTree #[a, b]
+    { ctx := testCtx, subjects := canonicalTree #[a, b]
       assumptions := some (canonicalTree #[c, d]) }
   let rightStatement : Aggr.CheckEnvTrees :=
-    { subjects := canonicalTree #[c]
+    { ctx := testCtx, subjects := canonicalTree #[c]
       assumptions := some (canonicalTree #[a]) }
   let outputStatement := leftStatement.join rightStatement
   let adviceTrees := Aggr.CheckEnvTrees.adviceTrees
@@ -394,7 +401,7 @@ def smokeSuite : IO UInt32 := do
 
   -- Candidate d chooses carry, but this output omits it.
   let missingCarriedOutput : Aggr.CheckEnvTrees :=
-    { subjects := structuralOutput.subjects, assumptions := none }
+    { ctx := testCtx, subjects := structuralOutput.subjects, assumptions := none }
   let missingCarriedBytes := Ix.Claim.ser missingCarriedOutput.claim
   let missingCarried := run (Aggr.structuralShapeCode .ixvm .ixvm)
     #[leftIxvm, rightIxvm] missingCarriedBytes
@@ -462,9 +469,23 @@ def smokeSuite : IO UInt32 := do
     (preimages := #[leftClaimBytes, rightClaimBytes])
     (trees := Aggr.CheckEnvTrees.adviceTrees
       leftStatement rightStatement droppedStatement)
+  -- Children under different contexts do not fold: the right statement
+  -- names another role binding.
+  let otherCtxRight : Aggr.CheckEnvTrees :=
+    { rightStatement with
+      ctx := { testCtx with binding := Address.blake3 "aggr-other-binding".toUTF8 } }
+  let otherCtxRightBytes := Ix.Claim.ser otherCtxRight.claim
+  let otherCtxRightIxvm ← match mkIxvmChild otherCtxRightBytes with
+    | .error e => IO.eprintln s!"other-context IxVM proof advice encoding failed: {e}"; return 1
+    | .ok child => pure child
+  let contextMismatch := run (pairShape .ixvm .ixvm) #[leftIxvm, otherCtxRightIxvm]
+    outputClaimBytes (outClaim? := some outputClaimBytes)
+    (preimages := #[leftClaimBytes, otherCtxRightBytes])
+    (trees := Aggr.CheckEnvTrees.adviceTrees
+      leftStatement otherCtxRight outputStatement)
   -- A pair fold whose output subjects contain an extra address {e}.
   let paddedStatement : Aggr.CheckEnvTrees :=
-    { subjects := canonicalTree #[a, b, c, e]
+    { ctx := testCtx, subjects := canonicalTree #[a, b, c, e]
       assumptions := outputStatement.assumptions }
   let paddedBytes := Ix.Claim.ser paddedStatement.claim
   let extraSubject := run (pairShape .ixvm .ixvm) #[leftIxvm, rightIxvm]
@@ -495,6 +516,7 @@ def smokeSuite : IO UInt32 := do
     .node (.node (.leaf sortedOutputLeaves[2]!) (.leaf sortedOutputLeaves[1]!))
       (.leaf sortedOutputLeaves[0]!)
   let unsortedStatement : Aggr.CheckEnvTrees := {
+    ctx := testCtx
     subjects := unsortedSubjects
     assumptions := outputStatement.assumptions
   }
@@ -630,6 +652,8 @@ def smokeSuite : IO UInt32 := do
     expectErr "wrap output differing from the child statement is rejected"
       wrapMismatch,
     expectErr "pair output dropping an assumption is rejected" droppedAssumption,
+    expectErr "pair of children under different claim contexts is rejected"
+      contextMismatch,
     expectErr "pair output with an extra subject is rejected" extraSubject,
     expectErr "tree advice not reproducing its keyed root is rejected"
       mismatchedTree,

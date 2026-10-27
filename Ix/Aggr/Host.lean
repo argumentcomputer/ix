@@ -20,8 +20,10 @@ namespace Aggr
 Leaf and flat-pair subject trees are canonical; structural pairs use free-form
 root-of-roots subject trees. Assumption trees always remain canonical.
 `assumptions = none` is represented by no tree, never by an empty or
-padding-only serialization. -/
+padding-only serialization. `ctx` is the claim's context; a fold joins only
+statements under one context. -/
 structure CheckEnvTrees where
+  ctx : Ix.ClaimContext
   subjects : Ix.AssumptionTree
   assumptions : Option Ix.AssumptionTree
   deriving Repr
@@ -29,7 +31,7 @@ structure CheckEnvTrees where
 namespace CheckEnvTrees
 
 def claim (statement : CheckEnvTrees) : Ix.Claim :=
-  .checkEnv statement.subjects.root (statement.assumptions.map (·.root))
+  .checkEnv statement.ctx statement.subjects.root (statement.assumptions.map (·.root))
 
 def subjectCount (statement : CheckEnvTrees) : Nat :=
   statement.subjects.leaves.size
@@ -48,7 +50,7 @@ aggregation leaves: the wrapper's claim roots must match canonical trees
 reconstructed from the `.ixe` environment. -/
 def ofClaim (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree) : Except String CheckEnvTrees := do
-  let .checkEnv subjectRoot assumptionRoot? := claim
+  let .checkEnv ctx subjectRoot assumptionRoot? := claim
     | throw "aggr: expected a CheckEnv claim"
   let some subjectTree := trees.get? subjectRoot
     | throw s!"aggr: missing subject tree {subjectRoot}"
@@ -60,7 +62,7 @@ def ofClaim (claim : Ix.Claim)
         | throw s!"aggr: missing assumption tree {assumptionRoot}"
       pure (some (← canonicalizeAt "aggr assumptions"
         assumptionRoot assumptionTree))
-  pure { subjects, assumptions }
+  pure { ctx, subjects, assumptions }
 
 private def assumptionLeaves (statement : CheckEnvTrees) : Array Address :=
   statement.assumptions.map (·.leaves) |>.getD #[]
@@ -79,8 +81,9 @@ def assumptionCandidates (left right : CheckEnvTrees) : Array Address :=
 
 `assumptions = (assumptionsL ∪ assumptionsR) ∖ subjects`.
 
-The circuit independently verifies this relation with sorted linear merges;
-the host implementation uses a hash set only to construct the witness. -/
+The circuit independently verifies this relation with sorted linear merges,
+and that both children and the output share one context (the left child's
+here); the host implementation uses a hash set only to construct the witness. -/
 def join (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjectLeaves := left.subjects.leaves ++ right.subjects.leaves
   let subjects := (Ix.AssumptionTree.canonical subjectLeaves).get!
@@ -88,7 +91,7 @@ def join (left right : CheckEnvTrees) : CheckEnvTrees :=
     ({} : Std.HashSet Address)
   let remaining := assumptionCandidates left right |>.filter
     (fun addr => !subjectSet.contains addr)
-  { subjects, assumptions := Ix.AssumptionTree.canonical remaining }
+  { ctx := left.ctx, subjects, assumptions := Ix.AssumptionTree.canonical remaining }
 
 /-- Structural fold. Subjects are committed in O(1) as a free-form node over
 the two child roots. Assumptions retain canonical set semantics and drop
@@ -98,7 +101,7 @@ def joinStructural (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjects := Ix.AssumptionTree.join left.subjects right.subjects
   let remaining := assumptionCandidates left right |>.filter
     (fun addr => !subjects.contains addr)
-  { subjects, assumptions := Ix.AssumptionTree.canonical remaining }
+  { ctx := left.ctx, subjects, assumptions := Ix.AssumptionTree.canonical remaining }
 
 /-- One channel-6 choice per structural-pair candidate. `some path` discharges
 the candidate against the structural output root; `none` carries it into the
