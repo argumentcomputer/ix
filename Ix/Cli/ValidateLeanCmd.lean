@@ -8,7 +8,11 @@
     1. Compile (Lean → Ixon)          — the full pure-Lean pipeline
                                         (canon → graph → ground →
                                         condense → aux-aware parallel
-                                        compile → serialize)
+                                        compile → serialize), its
+                                        post-steps, and the role binding
+                                        `ix compile-lean` adds: the later
+                                        phases read the bytes compile-lean
+                                        writes
     2. Serde gate (pure)              — verified lazy parsing, with exact
                                         writer bytes per serialized unit
     3. Projection/block-order fidelity — IxC reconstructs the projections;
@@ -46,6 +50,9 @@ public import Ix.KernelFidelity.Egress
 public import Ix.KernelFidelity.Reader
 public import Ix.Meta
 public import Ix.Cli.ValidateCmd
+public import Ix.RoleBinding.Compile
+public import Ix.AuxGen.LiteralSupport
+public import Ix.SemanticContract
 
 public section
 
@@ -166,6 +173,10 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   -- constant — use it to debug a digest mismatch on a filtered (`--ns`) closure.
   let mut canonView? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none
   let mut canonDigests? : Option (Std.HashMap Ix.Name UInt64) := none
+  -- The records the role binding added to the compile (its support, certificate
+  -- theorems and evidence): no Lean constant of the input is their source, so the
+  -- source's reader comparison (phase 4) counts their constants as foreign.
+  let mut bindingRecords : Array Address := #[]
 
   match ixe?, path? with
   | some ixePath, _ =>
@@ -199,16 +210,47 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println "[validate-lean] phase 1: compiling (pure-Lean pipeline)..."
     (← IO.getStdout).flush
     -- Phase 1: compile through the PURE-LEAN pipeline (canon → graph →
-    -- ground → condense → aux-aware parallel compile → serialize).
+    -- ground → condense → aux-aware parallel compile → serialize), with its
+    -- post-steps, then add the role binding as `ix compile-lean` does
+    -- (`Ix.RoleBinding.Compile.finalize`), so that the later phases read the
+    -- bytes compile-lean writes.
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
     let t0 ← IO.monoMsNow
-    match ← Ix.CompileM.compileLeanConstsValidated constList
+    let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv leanEnv constList).mapError toString)
+    let opts := { opts with serviceSupport := Ix.AuxGen.literalSupportFor leanEnv constList }
+    match ← Ix.CompileM.compileLeanInputValidated input
         (numWorkers := compileWorkers) (opts := opts) with
     | .error e =>
       phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
         .failed s!"pure-Lean pipeline: {e}")
     | .ok out =>
-      bytes := out.bytes
+      let bound : Except String Ix.CompileM.LeanPipelineOut ← try
+          let artifact ← Ix.RoleBinding.Compile.finalize
+            (Ix.RoleBinding.Compile.leanBackend compileWorkers opts) leanEnv input out.env
+            Ix.Resource.typingLimits
+          let finalized := { out with env := artifact, bytes := ← IO.ofExcept (Ixon.serEnv artifact) }
+          IO.ofExcept (Ix.CompileM.resourcePostStep finalized)
+          pure (.ok finalized)
+        catch e => pure (.error e.toString)
+      let added : Array Ix.Name := match bound with
+        | .ok finalized => finalized.env.named.fold (init := #[]) fun acc n _ =>
+            if out.env.named.contains n then acc else acc.push n
+        | .error _ => #[]
+      bytes := (match bound with | .ok finalized => finalized.bytes | .error _ => out.bytes)
+      bindingRecords := match bound with
+        | .ok finalized => finalized.env.consts.fold (init := #[]) fun acc a _ =>
+            if out.env.consts.contains a then acc else acc.push a
+        | .error _ => #[]
+      -- The binding's own constants (role support and certificate theorems) are
+      -- compared with their sources too: those of the input's environment, and
+      -- the certificate theorems' (`IxC.Kernel.PinGen.Certs`).
+      let sources ← if added.all fun n => leanEnv.contains (Ix.SemanticContract.toLeanName n) then
+          pure #[leanEnv]
+        else pure #[leanEnv, ← getCompileEnv #[`IxC.Kernel.PinGen.Certs]]
+      let addedConsts : Array (Lean.Name × Lean.ConstantInfo) := added.filterMap fun n =>
+        let ln := Ix.SemanticContract.toLeanName n
+        (sources.findSome? (·.find? ln)).map (ln, ·)
+      let addedCanon := Ix.CanonM.canonChunk addedConsts
       if fullOracle then
         -- Materialize the whole canon view post-hoc (chunk-parallel).
         -- The streaming compile never builds it; canon is per-constant
@@ -223,23 +265,32 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
         for task in tasks do
           for (n, ci) in task.get do
             view := view.insert n ci
+        for (n, ci) in addedCanon do
+          unless view.contains n do view := view.insert n ci
         canonView? := some view
       else
         -- The streamed canon pass already digested every input
         -- constant; the whole-env canon map never existed.
-        canonDigests? := some out.digests
+        canonDigests? := some (addedCanon.foldl (init := out.digests) fun m (n, ci) =>
+          if m.contains n then m else m.insert n (hash ci))
       let t1 ← IO.monoMsNow
-      if out.cenv.ungrounded.size > 0 then
-        let shown := out.cenv.ungrounded.toList.take 3
-        let msgs := shown.map fun (n, m) => s!"    ✗ {n.pretty}: {m.take 160}"
+      match bound with
+      | .error e =>
         phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
-          .failed (s!"{out.cenv.ungrounded.size} per-block compile \
-failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
-            String.intercalate "\n" msgs))
-      else
-        phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
-          .passed s!"pure-Lean pipeline: {out.bytes.size} bytes, \
-{out.blockCount} blocks, {out.ungroundedCount} ungrounded ({t1 - t0}ms)")
+          .failed s!"role binding (as compile-lean adds it): {e}")
+      | .ok finalized =>
+        if out.cenv.ungrounded.size > 0 then
+          let shown := out.cenv.ungrounded.toList.take 3
+          let msgs := shown.map fun (n, m) => s!"    ✗ {n.pretty}: {m.take 160}"
+          phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
+            .failed (s!"{out.cenv.ungrounded.size} per-block compile \
+failure(s) ({finalized.bytes.size} bytes, {t1 - t0}ms)\n" ++
+              String.intercalate "\n" msgs))
+        else
+          phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
+            .passed s!"pure-Lean pipeline with the role binding compile-lean adds: \
+{finalized.bytes.size} bytes, {out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
+{added.size} names added by the binding ({addedCanon.size} with a source) ({t1 - t0}ms)")
   | none, none => unreachable!
 
   -- Phase 2: pure serde gate — streaming: every unit parsed with the
@@ -310,9 +361,11 @@ use IX_SKIP_PHASES=3 to skip this phase explicitly")
           -- wrapper. The default never materializes the full named store.
           let fullEnv ← IO.ofExcept parts.materializeAllNamed
           let input ← Tests.Ix.Kernel.ReaderFidelity.Input.ofEnv leanEnv fullEnv
-          return Tests.Ix.Kernel.ReaderFidelity.InputAccess.ofInput input
+          let access := Tests.Ix.Kernel.ReaderFidelity.InputAccess.ofInput input
+          return { access with foreign := access.foreign ++ bindingRecords }
         else
-          IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.InputAccess.ofParts leanEnv parts)
+          let access ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.InputAccess.ofParts leanEnv parts)
+          return { access with foreign := access.foreign ++ bindingRecords }
       phases ← pushPhase phases ("4. Source/reader fidelity", result)
 
   -- The Lean source env's job ends with phase 4 — release it before the
