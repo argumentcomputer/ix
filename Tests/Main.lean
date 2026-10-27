@@ -265,7 +265,12 @@ def registry : List Entry := [
     Tests.Ix.AuxGen.FlatBlockSource.suite,
   -- AuxGen M7 Q1 (T2): the Source service's tier, an unsafe block's oracle over the answer view,
   -- `withFamily`
-  .suite "auxgen-tier-service" .primary Tests.Ix.AuxGen.TierService.suite,
+  .suite "auxgen-tier-service" .primary [Tests.Ix.AuxGen.TierService.tierService],
+  -- The MLList tail against its captured reference, whose encoding still holds the
+  -- compile-state fields of the removed rewriting pipeline.
+  .suite "auxgen-mllist-reference"
+    (expectedToRetire "its reference captures compile-state fields the compiler no longer has")
+    [Tests.Ix.AuxGen.TierService.mlListService],
   -- the certification statements on the same fixtures: compile parity, and
   -- the per-root hypotheses and conclusion
   .suite "cert-statement" .primary Tests.Ix.Cert.Statement.suite,
