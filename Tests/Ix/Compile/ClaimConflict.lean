@@ -42,7 +42,6 @@
 import Ix.Meta
 import Ix.EnvScope
 import Ix.CompileDriver
-import Ix.Compile.OriginalCapture
 import Tests.Ix.Compile.ScheduleReference
 
 open Lean
@@ -315,20 +314,6 @@ def promotionCases : List (String × Bool) := Id.run do
     !bad && all.toList.all (fun n => ok.cenv.nameToAddr.get? n == some canonical) &&
     ((ok.cenv.nameToNamed.get? a).bind (·.original)) == some (original, .empty) &&
     ok.cenv.ungrounded.isEmpty && untouched ok)]
-  let definition : Ixon.Constant := { (default : Ixon.Constant) with info := .defn { (default : Ixon.Definition) with kind := .defn } }
-  let sourceCache : BlockState :=
-    { defHints := ({} : Std.HashMap _ _).insert a (.regular 7) }
-  let imageCache : BlockState := { defHints := ({} : Std.HashMap _ _).insert a .abbrev }
-  let getHints := Ix.Compile.OriginalData.capturedHints
-  let theoremRecord : Ixon.Constant := { (default : Ixon.Constant) with info := .defn { (default : Ixon.Definition) with kind := .thm } }
-  let block : Ixon.Constant := { (default : Ixon.Constant) with info := .muts #[.defn { (default : Ixon.Definition) with kind := .defn }] }
-  let projected : Ixon.Constant := { (default : Ixon.Constant) with info := .dPrj ⟨0, canonical⟩ }
-  let recursor : Ixon.Constant := { (default : Ixon.Constant) with info := .rPrj ⟨0, canonical⟩ }
-  cases := cases ++ [("missing definition hint stays unavailable",
-    (getHints default a definition definition).isNone),
-    ("theorem known absence is preserved", getHints default a theoremRecord theoremRecord == some none),
-    ("projection uses original member hint", getHints sourceCache a block projected == some (some (.regular 7))),
-    ("recursor never inherits image definition hints", getHints imageCache a block recursor == some none)]
   let sourceOwned := fun n => all.contains n
   cases := cases ++ [("source dependency waits despite provisional resolution",
     !auxDependencyReady sourceOwned acc.cenv {} a &&

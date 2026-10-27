@@ -47,8 +47,8 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile report))
     let schema ← IO.ofExcept (json.getObjValAs? Nat "schemaVersion")
     let version ← IO.ofExcept (json.getObjValAs? Nat "ixeFormatVersion")
-    unless schema == 2 && version == 6 do
-      throw <| IO.userError "compile report did not identify its emitted bound v6 envelope under schema2"
+    unless schema == 2 && version == 5 do
+      throw <| IO.userError "compile report did not identify its emitted bound v5 envelope under schema2"
     for ext in ["olean", "c"] do
       if ← (source.withExtension ext).pathExists then
         throw <| IO.userError s!"compile --no-build unexpectedly wrote a .{ext} file"
@@ -245,12 +245,8 @@ private def Tests.Cli.testCompileReportAbort : IO Unit := do
 private def Tests.Cli.testPublishedEnvelopeVersion : IO Unit :=
   IO.FS.withTempDir fun dir => do
     let path := dir / "version.ixe"
-    let c : Ixon.Constant := {
-      info := .quot { kind := .type, lvls := 0, typ := .sort 0 }, sharing := #[], refs := #[], univs := #[] }
-    let payload := Ixon.serConstant c
-    let originals := ({} : Std.HashMap Address Ixon.LazyConstant).insert (Address.blake3 payload)
-      (Ixon.LazyConstant.ofSlice payload 0 payload.size)
-    let env : Ixon.Env := { originals }
+    let payload := ByteArray.mk #[1, 2, 3]
+    let env : Ixon.Env := { roleBinding := some ⟨Address.admissionHash payload, payload⟩ }
     IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv env))
     unless (← Ix.Cli.publishedEnvelopeVersion true path) == some 5 do
       throw <| IO.userError "published report did not read v5"

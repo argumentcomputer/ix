@@ -20,7 +20,7 @@
     4. Source/reader fidelity         — IxC's reader compared with a direct
                                         translation of the Lean source;
                                         complete named-source coverage
-    5. Decompile (Ixon → Lean)        — stored originals read without a
+    5. Decompile (Ixon → Lean)        — stored records read without a
                                         kernel, then inductive flags, compared
                                         hash-identical against the
                                         canonicalized source
@@ -373,7 +373,7 @@ use IX_SKIP_PHASES=3 to skip this phase explicitly")
   -- compacted import region stays mapped either way).
   leanEnv? := none
 
-  -- Phase 5: read stored originals and restore inductive flags.
+  -- Phase 5: decompile the stored records and restore inductive flags.
   -- With a Lean source (path mode) the canonicalized env is the oracle:
   -- every reconstructed constant must match it, both directions — by
   -- per-name digest (default) or full structural BEq (`--full-oracle`).

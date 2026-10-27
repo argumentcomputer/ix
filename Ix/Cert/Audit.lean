@@ -1,4 +1,3 @@
-import Ix.Compile.OriginalData
 import Ix.SpecDigest.Audit
 import Ix.Cert.Statement
 import Ix.Cert.StrongCommutation
@@ -5268,16 +5267,6 @@ run_cmd do
     ((#[`fixed_addresses, `decoded_keys, `preludeFor_keys, `preludeFor_singletons,
       `context_coherent, `selected].map (`Ix.Cert.ReaderFallback ++ ·)) ++
       #[``Ix.Kernel.Reader.preludeFor_checks])
-
-/-! ## Original-data finalization: exact bytes and old-field frame -/
-
-/-- info: [cert-audit] original-data frame: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "original-data frame"
-    (#[`insertBytes_existing, `insertBytes_self, `insertBytes_keeps,
-      `finalizeOriginals_frame].map (`Ix.Compile.OriginalData ++ ·))
 
 /-! ## Generated declaration names: input-block base origins
 

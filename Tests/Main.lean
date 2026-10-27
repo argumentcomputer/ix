@@ -94,7 +94,6 @@ import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
-import Tests.Ix.Kernel.ReaderAccess
 import Tests.Ix.Kernel.PreludeFidelity
 import Tests.Ix.Kernel.CollapseFidelity
 import Tests.Ix.Kernel.SourceIngress
@@ -106,7 +105,6 @@ import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.Kernel.RecordCheck
 import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.Kernel.CheckLeanCli
-import Tests.Ix.Kernel.ValidateLeanCli
 import Tests.Ix.Kernel.ValidateReaderCli
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
@@ -245,18 +243,11 @@ def registry : List Entry := [
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
   .suite "kernel-fidelity-access" .primary Tests.Ix.Kernel.FidelityAccess.suite,
-  .suite "kernel-reader-access"
-    (expectedToRetire "its fixture needs compiled original-form data, projection \
-      rewrites and regenerated auxiliaries")
-    Tests.Ix.Kernel.ReaderAccess.suite,
   .suite "kernel-prelude-fidelity" .primary Tests.Ix.Kernel.PreludeFidelity.suite,
   .suite "kernel-collapse-fidelity"
     (expectedToRetire "it reads a block whose alpha-equivalent members the compile \
       merged into one class")
     Tests.Ix.Kernel.CollapseFidelity.suite,
-  .suite "validate-lean-fidelity-cli"
-    (expectedToRetire "its positive fixture needs compiled original-form data")
-    Tests.Ix.Kernel.ValidateLeanCli.suite,
   .suite "validate-lean-reader-cli" .primary Tests.Ix.Kernel.ValidateReaderCli.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,

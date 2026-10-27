@@ -1355,20 +1355,19 @@ plus `.ixe`. See `crates/ixon/src/serialize.rs` (`Env::put`) for the
 byte-level layout.
 
 The .ixe layout starts with an `N4(0xE, envelopeVersion)` header byte,
-a 32-byte canonical merkle root and the bundle header fields. Version 6
+a 32-byte canonical merkle root and the bundle header fields. Version 5
 then carries an artifact role binding. Six sections follow (hot data first,
-metadata last), with an original-data trailer in versions 5 and 6.
+metadata last); nothing follows the last one.
 
 The checked constant grammar retains the stable identifier `ixon-v4`.
-Environment readers accept these three envelope versions:
+Environment readers accept these two envelope versions:
 
 | Version | First byte | Selected when |
 |---------|------------|---------------|
-| 4 | `0xE4` | No role binding and both original-data tables are empty |
-| 5 | `0xE5` | No role binding and at least one original-data table is nonempty |
-| 6 | `0xE6` | A role binding is present, including a present empty payload |
+| 4 | `0xE4` | No role binding |
+| 5 | `0xE5` | A role binding is present, including a present empty payload |
 
-The writer preserves the exact v4/v5 encoding for unbound environments.
+The writer preserves the exact v4 encoding for unbound environments.
 Unsupported envelope versions are rejected. `Env::VERSION` is a compatibility
 alias for 4; use `envelope_version` (Lean `envelopeVersion`) for the selected
 writer version. Versions 0–7 fit in one header byte; later versions use the
@@ -1386,7 +1385,7 @@ header and a claim reader expects a claim. The byte alone does not identify
 the object kind.
 
 ```
-Header:      N4(0xE, envelopeVersion)   -- 0xE4, 0xE5 or 0xE6
+Header:      N4(0xE, envelopeVersion)   -- 0xE4 or 0xE5
 Root:        32 bytes                     -- canonical merkle root over
                                             consts.keys(); for empty
                                             const sets this is the
@@ -1399,7 +1398,7 @@ Assumptions: count (N0) + [Address (32 bytes)]*
                                           -- strictly ascending; the
                                             bundle trust boundary.
 Binding:     Address (32 bytes) + len (N0) + bytes
-                                          -- version 6 only; mandatory
+                                          -- version 5 only; mandatory
                                             in that version.
 ```
 
@@ -1539,8 +1538,8 @@ readers parse the blob and reject entries whose parsed size disagrees
 with `meta_len`.
 
 The `original` address (aux_gen provenance) stays a **raw 32 bytes**:
-it may refer to a source-form record in the separate original-data trailer
-or to an assumed record after a prune cut. It need not occur in §2, so a
+it may refer to a record that is not stored, or to an assumed record after a
+prune cut. It need not occur in §2, so a
 §2 index cannot represent it.
 
 Because §2 order is load-bearing for §3/§5 index resolution, every
@@ -1554,12 +1553,8 @@ count (N0)
 [Address (32 bytes) + secret_addr (32 bytes) + payload_addr (32 bytes)]*
 ```
 
-Versions 5 and 6 append the existing original-data trailer after Section 6:
-the original-constant table, then the per-name original-hint override table.
-Original records remain outside the checked constant table and its merkle
-root. Version 5 requires at least one nonempty original-data table; version 6
-permits both counts to be zero. Version 4 has no trailer. Full readers reject
-bytes after the last section or trailer required by their envelope version.
+Section 6 is the last section in both envelope versions. Full readers reject
+bytes after it.
 
 ### Anonymous-only loading
 
@@ -1594,7 +1589,7 @@ The bundle supplies the bytes behind the committed addresses.
   block → member/constructor projections), cut at `assumed`, carrying
   constants (genuine bytes), blobs, per-constant hints, and display
   metadata (named entries, name components + string blobs, `DataValue`
-  payload blobs, `meta_refs` extension edges, aux_gen originals).
+  payload blobs, `meta_refs` extension edges).
   A present binding additionally roots all of its members/proofs and the
   reader's structural, recursor and literal support. Mandatory support is
   carried even when absent from the root's ordinary value references.
@@ -1625,8 +1620,8 @@ carried by **re-streaming §5 per prune fixpoint round**
 O(survivors), not O(env) — byte-identical output to the in-memory
 `prune_to_closure`, which shares the same carry engine. `--anon` skips
 metadata entirely (`Env::prune_to_closure_anon`), retaining value closure,
-anonymous hints, binding and mandatory checker support. Named entries,
-commitments and original-data metadata are absent; the wire grammar retains
+anonymous hints, binding and mandatory checker support. Named entries
+and commitments are absent; the wire grammar retains
 its anonymous-name sentinel. `validate_closed` checks the value closure;
 the actual artifact consumer checks the role specifications and evidence.
 (`ix shard extract` is the non-bundle sibling: a
@@ -1765,8 +1760,7 @@ and proof statement. A claim with another object format is rejected with
 | Value | Bytes | Type | Payload |
 |------|------|------|---------|
 | 4 (format) | `0xE4` | Environment (`.ixe` context) | 32-byte merkle root + main/assumptions + 6 sections |
-| 5 (envelope) | `0xE5` | Environment with originals (`.ixe` context) | v4 body + original-data trailer |
-| 6 (envelope) | `0xE6` | Environment with binding (`.ixe` context) | root + main/assumptions + binding + 6 sections + original-data trailer |
+| 5 (envelope) | `0xE5` | Environment with binding (`.ixe` context) | root + main/assumptions + binding + 6 sections |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
 | 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |

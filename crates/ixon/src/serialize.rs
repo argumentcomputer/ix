@@ -102,12 +102,12 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 
 /// Read the `.ixe` header shared by every Env reader:
 /// `TagN(0xE, VERSION)`, the 32-byte consts merkle root, the bundle
-/// `main` pointer, and the strictly ascending assumptions list.
+/// `main` pointer, the strictly ascending assumptions list and, in the
+/// role-bound envelope, the role binding.
 /// Centralized so the four readers (`get`, `get_anon`, `get_anon_mmap`,
 /// `parse_lazy_index`) cannot drift. `ctx` labels errors with the
 /// calling reader.
 struct EnvHeader {
-  version: u64,
   stored_root: Address,
   main: Option<Address>,
   assumptions: Vec<Address>,
@@ -124,11 +124,10 @@ fn read_env_header(buf: &mut &[u8], ctx: &str) -> Result<EnvHeader, String> {
     ));
   }
   if tag.value != Env::LEGACY_ENV_VERSION
-    && tag.value != Env::ORIGINALS_ENV_VERSION
     && tag.value != Env::BINDING_ENV_VERSION
   {
     return Err(format!(
-      "{ctx}: unsupported .ixe envelope version {} (expected 4, 5 or 6)",
+      "{ctx}: unsupported .ixe envelope version {} (expected 4 or 5)",
       tag.value
     ));
   }
@@ -179,13 +178,7 @@ fn read_env_header(buf: &mut &[u8], ctx: &str) -> Result<EnvHeader, String> {
   } else {
     None
   };
-  Ok(EnvHeader {
-    version: tag.value,
-    stored_root,
-    main,
-    assumptions,
-    role_binding,
-  })
+  Ok(EnvHeader { stored_root, main, assumptions, role_binding })
 }
 
 /// Read the §1 blob section, verifying `Address::hash(bytes) == addr`
@@ -1118,7 +1111,10 @@ impl Constant {
 
 use bignat::Nat;
 use ix_common::env::{Name, NameData};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
+// Used only by the host-gated streaming prune's signature.
+#[cfg(not(target_arch = "riscv64"))]
+use rustc_hash::FxHashSet;
 
 /// Serialize a Name to bytes (full recursive serialization, for standalone use).
 pub fn put_name(name: &Name, buf: &mut Vec<u8>) {
@@ -1517,161 +1513,30 @@ use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed, RoleBinding};
 use super::merkle::merkle_root_canonical_sorted;
 use super::merkle::{merkle_root_canonical, zero_address};
 
-/// Validate unchecked original bytes without making them checker records.
-fn check_original_payload(addr: &Address, bytes: &[u8]) -> Result<(), String> {
-  if Address::hash(bytes) != *addr {
-    return Err(format!("originals: bytes hash mismatch for {}", addr.hex()));
-  }
-  let mut input = bytes;
-  let value = Constant::get(&mut input)?;
-  let mut canonical = Vec::new();
-  value.put(&mut canonical);
-  if !input.is_empty() || canonical != bytes {
-    return Err(format!("originals: noncanonical payload for {}", addr.hex()));
-  }
-  Ok(())
-}
-
-type OriginalHintRows = Vec<(usize, Option<ReducibilityHints>)>;
-
-/// Read the v5 trailer, keeping original bodies as windows into the input.
-fn read_original_trailer(
-  buf: &mut &[u8],
-  total_len: usize,
-  consts: &[Address],
-  allow_empty: bool,
-) -> Result<(Vec<LazyConstSlice>, OriginalHintRows), String> {
-  let count = get_u64(buf)?;
-  let mut originals: Vec<LazyConstSlice> =
-    Vec::with_capacity(capped_capacity(count, buf));
-  for _ in 0..count {
-    let addr = get_address(buf)?;
-    if originals.last().is_some_and(|p| p.addr >= addr) {
-      return Err("originals: addresses are not strictly ascending".into());
-    }
-    if consts.binary_search(&addr).is_ok() {
-      return Err(format!("originals: address {} overlaps consts", addr.hex()));
-    }
-    let len = usize::try_from(get_u64(buf)?)
-      .map_err(|_| "originals: length overflow")?;
-    let offset = total_len - buf.len();
-    let bytes = buf.get(..len).ok_or("originals: truncated payload")?;
-    check_original_payload(&addr, bytes)?;
-    *buf = &buf[len..];
-    originals.push(LazyConstSlice { addr, offset, len });
-  }
-  let count = get_u64(buf)?;
-  let mut hints: OriginalHintRows =
-    Vec::with_capacity(capped_capacity(count, buf));
-  for _ in 0..count {
-    let key = usize::try_from(get_u64(buf)?)
-      .map_err(|_| "original hints: index overflow")?;
-    if hints.last().is_some_and(|p| p.0 >= key) {
-      return Err("original hints: indices are not strictly ascending".into());
-    }
-    hints.push((key, unfuse_opt_hint(get_u64(buf)?)?));
-  }
-  if originals.is_empty() && hints.is_empty() && !allow_empty {
-    return Err("originals: empty v5 trailer; use the v4 envelope".into());
-  }
-  Ok((originals, hints))
-}
-
-/// Validate only the named metadata selected by original hint overrides.
-/// The other entries are skipped by framing, never decoded a second time.
-fn check_original_hint_targets(
-  data: &[u8],
-  index: &LazyIndex,
-  wanted: &OriginalHintRows,
-) -> Result<(), String> {
-  if wanted.is_empty() {
-    return Ok(());
-  }
-  let keys: FxHashSet<usize> = wanted.iter().map(|p| p.0).collect();
-  let mut found = FxHashSet::default();
-  let mut buf = &data[index.named_section_offset..];
-  let count = get_u64(&mut buf)?;
-  for _ in 0..count {
-    let key = get_u64(&mut buf)? as usize;
-    if keys.contains(&key) {
-      if !found.insert(key) {
-        return Err("original hints: duplicate named target".into());
-      }
-      let named = get_named_indexed(
-        &mut buf,
-        &index.name_reverse_index,
-        ConstGet::Slices(&index.consts),
-      )?;
-      if !named.has_original() {
-        return Err("original hints: target has no Named.original".into());
-      }
-    } else {
-      get_u64(&mut buf)?;
-      get_u64(&mut buf)?;
-      let len = get_u64(&mut buf)? as usize;
-      buf = buf.get(len..).ok_or("original hints: truncated named window")?;
-    }
-  }
-  if found.len() != keys.len() {
-    return Err("original hints: target is not a published name".into());
-  }
-  Ok(())
-}
-
 impl Env {
   /// TagN flag for Env (0xE).
   pub const FLAG: u8 = 0xE;
 
   /// Envelope storage versions are separate from the checked object format.
   pub const CHECKED_FORMAT_VERSION: u8 = 4;
+  /// The envelope without a role binding.
   pub const LEGACY_ENV_VERSION: u64 = 4;
-  pub const ORIGINALS_ENV_VERSION: u64 = 5;
-  pub const BINDING_ENV_VERSION: u64 = 6;
+  /// The role-bound envelope: the legacy layout with the role binding
+  /// (address, length, bytes) after the bundle header.
+  pub const BINDING_ENV_VERSION: u64 = 5;
   /// Compatibility alias for the original v4 envelope.
   pub const VERSION: u64 = Self::LEGACY_ENV_VERSION;
   /// Claim, proof, catalog and resource scopes still bind checked format 4.
   pub const OBJECT_FORMAT: u8 = Self::CHECKED_FORMAT_VERSION;
 
+  /// The envelope version the writers emit: the role-bound envelope when a
+  /// role binding is present, the legacy envelope otherwise.
   pub fn envelope_version(&self) -> u64 {
     if self.role_binding.is_some() {
       Self::BINDING_ENV_VERSION
-    } else if self.originals.is_empty()
-      && self.original_hint_overrides.is_empty()
-    {
-      Self::LEGACY_ENV_VERSION
     } else {
-      Self::ORIGINALS_ENV_VERSION
+      Self::LEGACY_ENV_VERSION
     }
-  }
-
-  fn check_original_data(&self) -> Result<(), String> {
-    for entry in self.originals.iter() {
-      let bytes = entry.value().raw_bytes();
-      check_original_payload(entry.key(), bytes)?;
-      if let Some(existing) = self.consts.get(entry.key()) {
-        let why = if existing.value().raw_bytes() == bytes {
-          "redundant"
-        } else {
-          "conflicting"
-        };
-        return Err(format!(
-          "originals: {why} bytes already in consts at {}",
-          entry.key().hex()
-        ));
-      }
-    }
-    for entry in self.original_hint_overrides.iter() {
-      let named = self.named.get(entry.key()).ok_or_else(|| {
-        format!("original hints: unpublished name {}", entry.key().pretty())
-      })?;
-      if named.value().original_checked()?.is_none() {
-        return Err(format!(
-          "original hints: {} has no Named.original",
-          entry.key().pretty()
-        ));
-      }
-    }
-    Ok(())
   }
 
   fn put_binding_header(&self, buf: &mut Vec<u8>) {
@@ -1680,55 +1545,6 @@ impl Env {
       put_u64(binding.bytes.len() as u64, buf);
       buf.extend_from_slice(binding.bytes.as_ref());
     }
-  }
-
-  /// Emit per record so the streaming writer never buffers the whole trailer.
-  fn put_original_trailer(
-    &self,
-    names: &NameIndex,
-    mut emit: impl FnMut(&[u8]) -> Result<(), String>,
-  ) -> Result<(), String> {
-    if self.envelope_version() == Self::LEGACY_ENV_VERSION {
-      return Ok(());
-    }
-    let mut keys: Vec<_> =
-      self.originals.iter().map(|e| e.key().clone()).collect();
-    keys.sort_unstable();
-    let mut buf = Vec::new();
-    put_u64(keys.len() as u64, &mut buf);
-    emit(&buf)?;
-    for addr in keys {
-      let entry =
-        self.originals.get(&addr).ok_or("originals: missing payload")?;
-      let bytes = entry.value().raw_bytes();
-      buf.clear();
-      put_address(&addr, &mut buf);
-      put_u64(bytes.len() as u64, &mut buf);
-      emit(&buf)?;
-      emit(bytes)?;
-    }
-    let mut hints: Vec<_> = self
-      .original_hint_overrides
-      .iter()
-      .map(|e| {
-        let addr = Address::from_blake3_hash(*e.key().get_hash());
-        let idx = names.get(&addr).copied().ok_or_else(|| {
-          format!("original hints: {} is absent from names", e.key().pretty())
-        })?;
-        Ok((idx, *e.value()))
-      })
-      .collect::<Result<_, String>>()?;
-    hints.sort_unstable_by_key(|p| p.0);
-    if hints.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
-      return Err("original hints: duplicate name index".into());
-    }
-    buf.clear();
-    put_u64(hints.len() as u64, &mut buf);
-    for (idx, hint) in hints {
-      put_u64(idx, &mut buf);
-      put_u64(fuse_opt_hint(hint), &mut buf);
-    }
-    emit(&buf)
   }
 
   /// Serialize an Env to bytes.
@@ -1755,11 +1571,10 @@ impl Env {
       || std::env::var("IX_COMPILE_DBG").is_ok();
     let overall_start = std::time::Instant::now();
 
-    self.check_original_data()?;
     if let Some(binding) = &self.role_binding {
       binding.check_hash()?;
     }
-    // Empty original data keeps the exact v4 envelope.
+    // Header: TagN with flag=0xE, value=the envelope version
     TagN::put(4, Self::FLAG, self.envelope_version(), buf);
 
     // ─────────────────────────────────────────────────────────────────────
@@ -2054,10 +1869,6 @@ impl Env {
       );
     }
 
-    self.put_original_trailer(&name_index, |bytes| {
-      buf.extend_from_slice(bytes);
-      Ok(())
-    })?;
     if verbose {
       eprintln!(
         "[Env::put] ALL DONE: {} bytes in {:.1}s",
@@ -2112,7 +1923,6 @@ impl Env {
       || std::env::var("IX_COMPILE_DBG").is_ok();
     let overall_start = std::time::Instant::now();
     let mut sec_start = std::time::Instant::now();
-    self.check_original_data()?;
     if let Some(binding) = &self.role_binding {
       binding.check_hash()?;
     }
@@ -2339,12 +2149,6 @@ impl Env {
     }
 
     emit!();
-    self.put_original_trailer(&name_index, |bytes| {
-      w.write_all(bytes)
-        .map_err(|e| format!("Env::put_file: original data: {e}"))?;
-      written += bytes.len() as u64;
-      Ok(())
-    })?;
     w.flush().map_err(|e| format!("Env::put_file: flush: {e}"))?;
     if verbose {
       eprintln!(
@@ -2394,8 +2198,7 @@ impl Env {
     // Header: tag + stored merkle root (verified at the end against
     // the recomputed root; empty const sets store `zero_address()`) +
     // bundle fields.
-    let all_data = *buf;
-    let EnvHeader { version, stored_root, main, assumptions, role_binding } =
+    let EnvHeader { stored_root, main, assumptions, role_binding } =
       read_env_header(buf, "Env::get")?;
 
     #[cfg_attr(not(target_arch = "riscv64"), allow(unused_mut))]
@@ -2689,39 +2492,8 @@ impl Env {
       ));
     }
 
-    if version != Self::LEGACY_ENV_VERSION {
-      let (originals, hints) = read_original_trailer(
-        buf,
-        all_data.len(),
-        &consts_order,
-        version == Self::BINDING_ENV_VERSION,
-      )?;
-      for c in originals {
-        env.originals.insert(
-          c.addr,
-          super::lazy::LazyConstant::from_bytes(Arc::from(
-            &all_data[c.offset..c.offset + c.len],
-          )),
-        );
-      }
-      for (idx, hint) in hints {
-        let addr = name_reverse_index
-          .get(idx)
-          .ok_or("original hints: name index out of range")?;
-        let name =
-          names_lookup.get(addr).ok_or("original hints: missing name")?;
-        let named =
-          env.named.get(name).ok_or("original hints: unpublished name")?;
-        if named.value().original_checked()?.is_none() {
-          return Err("original hints: target has no Named.original".into());
-        }
-        if env.original_hint_overrides.contains_key(name) {
-          return Err("original hints: duplicate resolved name".into());
-        }
-        env.original_hint_overrides.insert(name.clone(), hint);
-      }
-    }
-    // No bytes may follow the selected envelope's final section.
+    // Comms is the final section; anything after it is truncation
+    // damage or concatenated garbage.
     if !buf.is_empty() {
       return Err(format!(
         "Env::get: {} trailing bytes after final section",
@@ -2766,7 +2538,7 @@ impl Env {
     let mut buf: &[u8] = data;
 
     // Header: tag + merkle root + bundle fields.
-    let EnvHeader { version, stored_root, main, assumptions, role_binding } =
+    let EnvHeader { stored_root, main, assumptions, role_binding } =
       read_env_header(&mut buf, "parse_lazy_index")?;
 
     let mut index =
@@ -2884,31 +2656,6 @@ impl Env {
       index.comms.push((addr, comm));
     }
 
-    let const_addrs: Vec<Address> =
-      index.consts.iter().map(|c| c.addr.clone()).collect();
-    if version != Self::LEGACY_ENV_VERSION {
-      let (originals, hints) = read_original_trailer(
-        &mut buf,
-        data.len(),
-        &const_addrs,
-        version == Self::BINDING_ENV_VERSION,
-      )?;
-      check_original_hint_targets(data, &index, &hints)?;
-      index.originals = originals;
-      let mut seen_names = FxHashSet::default();
-      for (idx, hint) in hints {
-        let addr = index
-          .name_reverse_index
-          .get(idx)
-          .ok_or("original hints: name index out of range")?;
-        let name =
-          names_lookup.get(addr).ok_or("original hints: missing name")?;
-        if !seen_names.insert(name.clone()) {
-          return Err("original hints: duplicate resolved name".into());
-        }
-        index.original_hint_overrides.push((name.clone(), hint));
-      }
-    }
     // Every section consumed — enforce EOF like `Env::get`.
     if !buf.is_empty() {
       return Err(format!(
@@ -2920,6 +2667,8 @@ impl Env {
     // Re-verify the merkle root over const addresses (header
     // integrity). §2 ascending order was enforced during the scan, so
     // the collected addresses are already the sorted key set.
+    let const_addrs: Vec<Address> =
+      index.consts.iter().map(|c| c.addr.clone()).collect();
     let computed_root =
       merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
     if computed_root != stored_root {
@@ -3008,7 +2757,6 @@ impl Env {
     assumed: &FxHashSet<Address>,
     mut support: Option<&mut crate::binding_support::BindingSupport>,
   ) -> Result<(), String> {
-    let mut originals_done = FxHashSet::default();
     loop {
       self.prune_value_pass(
         out,
@@ -3037,7 +2785,7 @@ impl Env {
           &named,
           &|na| names.get(na).cloned(),
           &|ba| self.get_blob(ba),
-          &mut originals_done,
+          assumed,
           visited,
           pending,
           &mut named_refs,
@@ -3051,7 +2799,6 @@ impl Env {
       );
 
       if pending.is_empty() {
-        Self::dedup_originals(out)?;
         return Ok(());
       }
     }
@@ -3348,12 +3095,10 @@ impl Env {
   }
 
   /// Calculate serialized size with breakdown by section:
-  /// `(header, blobs, consts, anon_hints, names, named, comms, originals)`.
+  /// `(header, blobs, consts, anon_hints, names, named, comms)`.
   pub fn serialized_size_breakdown(
     &self,
-  ) -> Result<(usize, usize, usize, usize, usize, usize, usize, usize), String>
-  {
-    self.check_original_data()?;
+  ) -> Result<(usize, usize, usize, usize, usize, usize, usize), String> {
     if let Some(binding) = &self.role_binding {
       binding.check_hash()?;
     }
@@ -3468,11 +3213,6 @@ impl Env {
       entry.value().put(&mut buf);
     }
     let comms_size = buf.len() - before_comms;
-    let mut original_size = 0;
-    self.put_original_trailer(&name_index, |bytes| {
-      original_size += bytes.len();
-      Ok(())
-    })?;
 
     Ok((
       header_size,
@@ -3482,7 +3222,6 @@ impl Env {
       names_size,
       named_size,
       comms_size,
-      original_size,
     ))
   }
 }
@@ -4035,10 +3774,11 @@ mod tests {
     // Versions < 8 encode inline in the TagN head byte.
     assert_eq!(buf[0], (Env::FLAG << 4) | (Env::VERSION as u8));
     assert_eq!(buf[0], 0xE4, "the version 4 header is the byte 0xE4");
-    // A pre-versioning header (size 0), the previous version (3) and a
-    // future version must all be rejected, with an error naming the
-    // versions, on every reader path through `read_env_header`.
-    for wrong in [0u8, 3, Env::BINDING_ENV_VERSION as u8 + 1] {
+    // A pre-versioning header (size 0), the previous version (3) and the
+    // versions after the role-bound envelope (6, 7) must all be rejected,
+    // with an error naming the version, on every reader path through
+    // `read_env_header`.
+    for wrong in [0u8, 3, 6, 7] {
       let mut bad = buf.clone();
       bad[0] = (Env::FLAG << 4) | wrong;
       for err in [
@@ -5200,179 +4940,6 @@ mod tests {
 
   fn n_test(s: &str) -> Name {
     Name::str(Name::anon(), s.to_string())
-  }
-
-  fn original_data_fixture() -> (Env, Address, Vec<u8>) {
-    let env = Env::new();
-    let canonical = store_canonical(&env, defn_const(vec![]));
-    let (original, bytes) = defn_const_discriminator(vec![], 1).commit();
-    assert_ne!(canonical, original);
-    env.originals.insert(
-      original.clone(),
-      crate::lazy::LazyConstant::from_bytes(bytes.clone().into()),
-    );
-    for label in ["OriginalA", "OriginalClear"] {
-      let name = n_test(label);
-      env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
-      let mut named = Named::with_addr(canonical.clone());
-      named.set_hints(Some(ReducibilityHints::Abbrev));
-      named.set_original(original.clone(), ConstantMeta::default());
-      env.register_name(name, named);
-    }
-    env
-      .original_hint_overrides
-      .insert(n_test("OriginalA"), Some(ReducibilityHints::Regular(37)));
-    env.original_hint_overrides.insert(n_test("OriginalClear"), None);
-    (env, original, bytes)
-  }
-
-  fn restore_named_for_write(
-    env: &Env,
-    index: &LazyIndex,
-    data: &[u8],
-    names: &FxHashMap<Address, Name>,
-  ) {
-    for (addr, name) in names {
-      env.store_name(addr.clone(), name.clone());
-    }
-    let mut cursor = NamedMetaCursor::open(data, index).unwrap();
-    let mut count = 0;
-    while let Some((addr, named)) = cursor.next_entry().unwrap() {
-      env.register_name(names.get(&addr).unwrap().clone(), named);
-      count += 1;
-    }
-    assert_eq!(count, index.named.len());
-  }
-
-  #[test]
-  fn original_data_full_lazy_mmap_and_streaming_roundtrip() {
-    let (env, addr, payload) = original_data_fixture();
-    let mut bytes = Vec::new();
-    env.put(&mut bytes).unwrap();
-    assert_eq!(bytes[0], 0xe5);
-    assert_eq!(Env::OBJECT_FORMAT, 4);
-    let legacy = env.clone();
-    legacy.originals.clear();
-    legacy.original_hint_overrides.clear();
-    let mut base = Vec::new();
-    legacy.put(&mut base).unwrap();
-    assert_eq!(base[0], 0xe4);
-    assert_eq!(&base[1..], &bytes[1..base.len()]);
-    let (h, b, c, ah, n, nm, cm, orig) =
-      env.serialized_size_breakdown().unwrap();
-    assert_eq!(h + b + c + ah + n + nm + cm + orig, bytes.len());
-    assert_eq!(orig, bytes.len() - base.len());
-    assert_eq!(legacy.serialized_size_breakdown().unwrap().7, 0);
-    let full = Env::get(&mut bytes.as_slice()).unwrap();
-    let (index, names) = Env::parse_lazy_index_with_names(&bytes).unwrap();
-    assert_eq!(index.originals.len(), 1);
-    let lazy = Env::from_lazy_index(&index, &bytes).unwrap();
-    restore_named_for_write(&lazy, &index, &bytes, &names);
-    for loaded in [&full, &lazy] {
-      let record = loaded.originals.get(&addr).unwrap();
-      assert_eq!(record.raw_bytes(), payload.as_slice());
-      assert!(!record.is_materialized());
-      drop(record);
-      assert!(loaded.get_const(&addr).is_none());
-      assert_eq!(
-        *loaded.original_hint_overrides.get(&n_test("OriginalA")).unwrap(),
-        Some(ReducibilityHints::Regular(37))
-      );
-      assert_eq!(
-        *loaded.original_hint_overrides.get(&n_test("OriginalClear")).unwrap(),
-        None
-      );
-      let mut again = Vec::new();
-      loaded.put(&mut again).unwrap();
-      assert_eq!(again, bytes);
-    }
-    let path = std::env::temp_dir()
-      .join(format!("ix_original_data_{}.ixe", std::process::id()));
-    assert_eq!(env.put_file(&path).unwrap() as usize, bytes.len());
-    assert_eq!(std::fs::read(&path).unwrap(), bytes);
-    let file = std::fs::File::open(&path).unwrap();
-    // SAFETY: this test owns the file and never changes its contents while mapped.
-    let mmap =
-      Arc::new(unsafe { memmap2::MmapOptions::new().map(&file).unwrap() });
-    let (mapped_index, mapped_names) =
-      Env::parse_lazy_index_with_names(&mmap[..]).unwrap();
-    let mapped = Env::from_lazy_index_mmap(&mapped_index, &mmap).unwrap();
-    let window = &mapped_index.originals[0];
-    assert_eq!(
-      mapped.originals.get(&addr).unwrap().raw_bytes().as_ptr(),
-      mmap.as_ptr().wrapping_add(window.offset)
-    );
-    restore_named_for_write(&mapped, &mapped_index, &mmap[..], &mapped_names);
-    std::fs::remove_file(&path).unwrap();
-    drop(mmap);
-    drop(file);
-    let mut again = Vec::new();
-    mapped.put(&mut again).unwrap();
-    assert_eq!(again, bytes);
-    assert!(!mapped.originals.get(&addr).unwrap().is_materialized());
-    let anon = Env::get_anon(&mut bytes.as_slice()).unwrap();
-    assert!(
-      anon.originals.is_empty() && anon.original_hint_overrides.is_empty()
-    );
-  }
-
-  #[test]
-  fn original_data_malformed_and_overlap_controls() {
-    let (env, addr, payload) = original_data_fixture();
-    let mut bytes = Vec::new();
-    env.put(&mut bytes).unwrap();
-    let index = Env::parse_lazy_index(&bytes).unwrap();
-    let window = &index.originals[0];
-    assert!(payload.len() < 128, "fixture length must use one TagN byte");
-    assert_eq!(bytes[window.offset - 1] as usize, payload.len());
-    let trailer_start = window.offset - 1 - 32 - 1;
-    assert_eq!(bytes[trailer_start], 1, "fixture has one original record");
-    let rejected = |bad: &[u8]| {
-      let mut cursor = bad;
-      assert!(Env::get(&mut cursor).is_err());
-      assert!(Env::parse_lazy_index(bad).is_err());
-    };
-    for end in trailer_start..bytes.len() {
-      rejected(&bytes[..end]);
-    }
-    let mut trailing = bytes.clone();
-    trailing.push(0);
-    rejected(&trailing);
-    let mut tampered = bytes.clone();
-    tampered[window.offset] ^= 1;
-    rejected(&tampered);
-    let mut future = bytes.clone();
-    future[0] = 0xe6;
-    rejected(&future);
-    let malformed = vec![0xff, 0, 1];
-    let original_only = Env::new();
-    original_only.originals.insert(
-      Address::hash(&malformed),
-      crate::lazy::LazyConstant::from_bytes(malformed.into()),
-    );
-    assert!(original_only.put(&mut Vec::new()).is_err());
-    let mut noncanonical = payload.clone();
-    noncanonical.push(0);
-    let noncanonical_env = Env::new();
-    noncanonical_env.originals.insert(
-      Address::hash(&noncanonical),
-      crate::lazy::LazyConstant::from_bytes(noncanonical.into()),
-    );
-    assert!(noncanonical_env.put(&mut Vec::new()).is_err());
-    env.consts.insert(
-      addr.clone(),
-      crate::lazy::LazyConstant::from_constant(defn_const(vec![])),
-    );
-    assert!(env.put(&mut Vec::new()).unwrap_err().contains("conflicting"));
-    env
-      .consts
-      .insert(addr, crate::lazy::LazyConstant::from_bytes(payload.into()));
-    assert!(env.put(&mut Vec::new()).unwrap_err().contains("redundant"));
-    let targetless = Env::new();
-    targetless.original_hint_overrides.insert(n_test("Missing"), None);
-    assert!(
-      targetless.put(&mut Vec::new()).unwrap_err().contains("unpublished")
-    );
   }
 
   /// THE alias regression (validate-aux's 222 decompile mismatches):

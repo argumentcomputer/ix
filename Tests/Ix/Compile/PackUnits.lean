@@ -83,18 +83,6 @@ def run : IO UInt32 := do
     let mut namedDiffs := 0
     for (n, nd) in b.named.toList do
       if (src.named.get? n).map (·.addr) != some nd.addr then namedDiffs := namedDiffs + 1
-      unless b.originalHintOverrides.get? n == src.originalHintOverrides.get? n do
-        errors := errors.push s!"{r}: original hint was dropped for {n.pretty}"
-      if let some (original, _) := nd.original then
-        unless b.consts.contains original || b.originals.contains original do
-          errors := errors.push s!"{r}: missing original for {n.pretty}"
-    for (a, raw) in b.originals do
-      let source := (src.consts.get? a).orElse fun _ => src.originals.get? a
-      unless source.map Ixon.LazyConstant.rawBytes == some raw.rawBytes && !b.consts.contains a do
-        errors := errors.push s!"{r}: original bytes changed or entered canonical constants at {a}"
-    for (name, hint) in b.originalHintOverrides do
-      unless b.named.contains name && src.originalHintOverrides.get? name == some hint do
-        errors := errors.push s!"{r}: original hint changed or lost its retained name"
     IO.println s!"[pack-units] {r}: {b.consts.size} constants, {b.named.size} names; \
       byte differences {byteDiffs}; Named differences {namedDiffs}"
     unless (addr r).isSome && b.main == addr r do

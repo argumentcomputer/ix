@@ -50,7 +50,6 @@ def Ix.Cli.publishedEnvelopeVersion (published : Bool) (path : FilePath) : IO (O
   match (header[0]? : Option UInt8) with
   | some 0xE4 => return some 4
   | some 0xE5 => return some 5
-  | some 0xE6 => return some 6
   | _ => throw <| IO.userError s!"compile report: invalid published envelope header in {path}"
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -213,8 +212,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     let artifact ← Ix.RoleBinding.Compile.finalize Ix.RoleBinding.Compile.rustBackend
       leanEnv input original Ix.Resource.typingLimits
     let artifact := if strictAnon then { artifact with
-      named := {}, names := {}, comms := {}, addrToName := {},
-      originals := {}, originalHintOverrides := {} } else artifact
+      named := {}, names := {}, comms := {}, addrToName := {} } else artifact
     let bytes ← IO.ofExcept (Ixon.serEnv artifact)
     Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
     let addresses := artifact.consts.toArray.map (·.1)

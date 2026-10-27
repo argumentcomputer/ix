@@ -18,9 +18,8 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
   old one;
 - references stay backward. Checked payloads and claims retain object format 4,
   the resource validator ID (`"ixon-v4/resource-v1"`) and `wireFormatId` (`"ixon-v4"`).
-  The environment envelope is v4 (`0xE4`), v5 (`0xE5`) with original records
-  or original-hint overrides, or v6 (`0xE6`) with a role binding;
-  these extensions do not change the checked payload grammar;
+  The environment envelope is v4 (`0xE4`), or v5 (`0xE5`) with a role binding;
+  the extension does not change the checked payload grammar;
 - compiler limits are a safety net: metering and fail-closed errors stay, the defaults sit far
   above every corpus maximum, and `ix compile --sharing-limits` overrides them;
 - a `Share` inside a metadata expression is read in the extended index space of
@@ -317,7 +316,7 @@ The sharing-rule revision is separate again (§14 of `sharing-minimum.md`).
 
 | Item | Lean | Rust | Value |
 |---|---|---|---|
-| environment envelope version | `Ixon.Env.envelopeVersion` | `Env::envelope_version` | 4 (`0xE4`) with empty original-data tables; otherwise 5 (`0xE5`) |
+| environment envelope version | `Ixon.Env.envelopeVersion` | `Env::envelope_version` | 4 (`0xE4`) without a role binding; otherwise 5 (`0xE5`) |
 | object-format byte (claims, proofs, catalog manifests) | `Ixon.Env.OBJECT_FORMAT` | `Env::OBJECT_FORMAT` | 4 |
 | wire format ID | `Ixon.wireFormatId` | `WIRE_FORMAT_ID` | `"ixon-v4"` |
 | resource validator ID (profile prefix `<ID>/profile\0`) | `Ix.Resource.validatorId` | `resource::addressed::VALIDATOR_ID` | `"ixon-v4/resource-v1"` |

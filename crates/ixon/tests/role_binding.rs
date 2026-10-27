@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use ix_common::address::Address;
 use ixon::diff::diff_envs;
 use ixon::env::{Env, RoleBinding};
-use ixon::lazy::LazyConstant;
 use ixon::role_table::RoleTable;
 use ixon::tag::TagN;
 use rustc_hash::FxHashSet;
@@ -96,22 +95,21 @@ fn unbound_fixtures_remain_exact_and_bound_layout_is_independent() {
     assert_eq!(section.bytes.as_ref(), &[0xe8, 0x03, 2, 0, 0]);
     env.role_binding = Some(section.clone());
 
-    // Independent v6 assembly: the legacy empty main/assumptions header is
-    // 35 bytes; the existing six sections remain exact, followed by the
-    // empty original-data trailer required by v6.
+    // Independent v5 assembly: the legacy empty main/assumptions header is
+    // 35 bytes; the binding follows it, then the existing six sections
+    // remain exact, with nothing after section 6.
     let mut expected = original[..35].to_vec();
-    expected[0] = 0xe6;
+    expected[0] = 0xe5;
     expected.extend_from_slice(section.address.as_bytes());
     expected.push(5);
     expected.extend_from_slice(section.bytes.as_ref());
     expected.extend_from_slice(&original[35..]);
-    expected.extend_from_slice(&[0, 0]);
     let bytes = encode(&env);
     assert_eq!(bytes, expected);
-    let (header, blobs, consts, hints, names, named, comms, originals) =
+    let (header, blobs, consts, hints, names, named, comms) =
       env.serialized_size_breakdown().unwrap();
     assert_eq!(
-      header + blobs + consts + hints + names + named + comms + originals,
+      header + blobs + consts + hints + names + named + comms,
       bytes.len()
     );
     let file = TempFile::new(&[]);
@@ -136,43 +134,37 @@ fn unbound_fixtures_remain_exact_and_bound_layout_is_independent() {
   }
 }
 
+/// The role-bound envelope ends after section 6: the full and lazy readers
+/// reject any trailing bytes. A tag-5 envelope without a binding header and
+/// the tags after 5 are rejected on every reader path.
 #[test]
-fn v6_keeps_originals_and_v5_still_refuses_an_empty_trailer() {
+fn v5_ends_after_comms_and_other_tags_are_unsupported() {
   let mut input = INPUTS[0];
   let mut env = Env::get(&mut input).unwrap();
-  let original = include_bytes!(
-    "../../kernel/tests/fixtures/input_contracts/linear-match.const"
-  );
-  let addr = Address::hash(original);
-  env.originals.insert(
-    addr.clone(),
-    LazyConstant::from_bytes(Arc::from(original.as_slice())),
-  );
-  let v5 = encode(&env);
-  assert_eq!(v5[0], 0xe5);
   env.role_binding = Some(canonical_binding(2));
-  let v6 = encode(&env);
-  for loaded in [
-    Env::get(&mut v6.as_slice()).unwrap(),
-    Env::get_demoted_named(&mut v6.as_slice()).unwrap(),
-    Env::from_lazy_index(&Env::parse_lazy_index(&v6).unwrap(), &v6).unwrap(),
-  ] {
-    assert_eq!(loaded.role_binding, env.role_binding);
-    assert_eq!(loaded.originals.get(&addr).unwrap().raw_bytes(), original);
+  let bytes = encode(&env);
+  assert_eq!(bytes[0], 0xe5);
+  for tail in [&[0u8][..], &[0, 0][..]] {
+    let mut trailing = bytes.clone();
+    trailing.extend_from_slice(tail);
+    for error in [
+      Env::get(&mut trailing.as_slice()).unwrap_err(),
+      Env::get_demoted_named(&mut trailing.as_slice()).unwrap_err(),
+      Env::parse_lazy_index(&trailing).unwrap_err(),
+    ] {
+      assert!(error.contains("trailing bytes"), "{error}");
+    }
   }
-  env.role_binding = None;
-  assert_eq!(encode(&env), v5);
-  let mut empty_v5 = encode(&Env::new());
-  empty_v5[0] = 0xe5;
-  empty_v5.extend_from_slice(&[0, 0]);
-  assert!(
-    Env::get(&mut empty_v5.as_slice())
-      .unwrap_err()
-      .contains("empty v5 trailer")
-  );
-  assert!(
-    Env::parse_lazy_index(&empty_v5).unwrap_err().contains("empty v5 trailer")
-  );
+  let mut unbound = INPUTS[0].to_vec();
+  unbound[0] = 0xe5;
+  all_readers_reject(&unbound);
+  for tag in [0xe6, 0xe7] {
+    let mut other = bytes.clone();
+    other[0] = tag;
+    all_readers_reject(&other);
+    let error = Env::get(&mut other.as_slice()).unwrap_err();
+    assert!(error.contains("unsupported .ixe envelope version"), "{error}");
+  }
 }
 
 #[test]
@@ -203,7 +195,7 @@ fn framing_hash_and_presence_are_checked_on_every_header_path() {
   for payload in [&[][..], &[0xe8, 0x03, 2, 0, 0, 0][..]] {
     env.role_binding = Some(binding(payload));
     let encoded = encode(&env);
-    assert_eq!(encoded[0], 0xe6);
+    assert_eq!(encoded[0], 0xe5);
     let loaded = Env::get(&mut encoded.as_slice()).unwrap();
     assert_eq!(loaded.role_binding, env.role_binding);
     assert!(RoleTable::from_bytes(payload).is_err());

@@ -93,8 +93,8 @@ private def checks (operation : Role) : Except String Unit := do
     (admitted.toBytes == generated.table.toBytes)
   let bytes ← serEnv emitted
   let decoded ← deEnv bytes
-  need "generated artifact uses v6 and retains its exact binding"
-    (bytes.data[0]? == some 0xE6 && decoded.roleBinding == emitted.roleBinding)
+  need "generated artifact uses v5 and retains its exact binding"
+    (bytes.data[0]? == some 0xE5 && decoded.roleBinding == emitted.roleBinding)
 
   let noRole := { env with named := env.named.erase (sourceName operation) }
   need "missing required source role refuses generation"

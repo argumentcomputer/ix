@@ -34,13 +34,11 @@ use ixon::metadata::ConstantMeta;
 use rustc_hash::FxHashMap;
 
 use super::CompileState;
-use super::original_data::{Captured, Receipt};
 
 pub struct Promotion {
   pub name: Name,
   pub addr: Address,
   pub meta: ConstantMeta,
-  pub captured: Option<Captured>,
 }
 
 /// What a block entered into the published tables.
@@ -101,13 +99,12 @@ pub fn defer_promotion(promotion: Promotion) -> Option<Promotion> {
   })
 }
 
-/// Called only after every fallible check. Bind the captured data to the Named
-/// entry actually updated, not an earlier snapshot of another worker's entry.
-pub fn publish_promotion(stt: &CompileState, p: Promotion) -> Option<Receipt> {
-  let mut entry = stt.env.named.get_mut(&p.name)?;
-  let published = entry.addr.clone();
-  entry.value_mut().set_original(p.addr, p.meta);
-  p.captured.map(|data| data.at(p.name, published))
+/// Called only after every fallible check. Set the original metadata on the
+/// Named entry present now, not an earlier snapshot of another worker's entry.
+pub fn publish_promotion(stt: &CompileState, p: Promotion) {
+  if let Some(mut entry) = stt.env.named.get_mut(&p.name) {
+    entry.value_mut().set_original(p.addr, p.meta);
+  }
 }
 
 /// Check every address claim before publishing any original metadata. Claims
@@ -128,8 +125,9 @@ pub fn commit(stt: &CompileState) -> Result<(), CompileError> {
       stt.claim_compiled_name(&p.name, &addr)?;
     }
   }
-  let receipts: Vec<_> =
-    promotions.into_iter().filter_map(|p| publish_promotion(stt, p)).collect();
+  for p in promotions {
+    publish_promotion(stt, p);
+  }
   for (n, hint) in hints {
     match hint {
       Some(h) => {
@@ -140,7 +138,6 @@ pub fn commit(stt: &CompileState) -> Result<(), CompileError> {
       },
     }
   }
-  stt.original_receipts.lock().unwrap().extend(receipts);
   Ok(())
 }
 

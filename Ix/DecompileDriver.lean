@@ -59,11 +59,11 @@ private def decompileOriginals (ixonEnv : Ixon.Env) (numWorkers : Nat)
   | .ok fixed => (fixed, errors, ())
   | .error err => (decoded, errors.push (Ix.Name.mkAnon, err), ())
 
-/-- Full source decompile: read every stored original, then restore inductive
+/-- Full source decompile: read every stored record, then restore inductive
     flags. The historical sharing-limit/source-oracle arguments and triple
     shape remain for callers; decoding uses neither argument, and the retired
-    regeneration state is now `Unit`. Missing originals require recompilation
-    of the artifact and never trigger a kernel fallback. -/
+    regeneration state is now `Unit`. A missing record is an error and never
+    triggers a kernel fallback. -/
 def decompileEnvFull (ixonEnv : Ixon.Env)
     (sharingLimits : Ix.Sharing.Exact.Limits)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)

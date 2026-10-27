@@ -17,7 +17,6 @@ public import Ix.ImportIxe
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
-public import Tests.Ix.DecompileOriginals
 
 open LSpec
 
@@ -298,8 +297,7 @@ public def unitSuite : List TestSeq := [
       msAxiomUnreadEntryRejected
     ++ test "metadata share: tables without shares unchanged" msNoShares
     ++ test "metadata share: a valid shared table passes" msSharedTable
-    ++ test "metadata share: shared subterms are checked once" msSharedChain,
-  Tests.DecompileOriginals.suite
+    ++ test "metadata share: shared subterms are checked once" msSharedChain
 ]
 
 /-! ## Test Suite -/

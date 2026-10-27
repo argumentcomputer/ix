@@ -110,11 +110,10 @@ fn pack_env(
     .map_err(|e| format!("rs_pack_env: failed to load {path}: {e}"))?;
   if verbose {
     eprintln!(
-      "[rs_pack_env] source env: {} consts, {} named, {} blobs, {} originals",
+      "[rs_pack_env] source env: {} consts, {} named, {} blobs",
       src.consts.len(),
       src.named.len(),
-      src.blobs.len(),
-      src.originals.len()
+      src.blobs.len()
     );
   }
 
@@ -166,7 +165,7 @@ fn pack_env(
     eprintln!("[rs_pack_env] main {} ({main_str})", main.hex());
     eprintln!(
       "[rs_pack_env] kept {}/{} consts, {}/{} named, {}/{} blobs, \
-       {} assumption(s), {}/{} originals, {}/{} original hints{}",
+       {} assumption(s){}",
       bundle.consts.len(),
       src.consts.len(),
       bundle.named.len(),
@@ -174,10 +173,6 @@ fn pack_env(
       bundle.blobs.len(),
       src.blobs.len(),
       bundle.assumptions.len(),
-      bundle.originals.len(),
-      src.originals.len(),
-      bundle.original_hint_overrides.len(),
-      src.original_hint_overrides.len(),
       if anon { " [anon: no display metadata]" } else { "" }
     );
     eprintln!("[rs_pack_env] wrote {out} ({} bytes)", buf.len());

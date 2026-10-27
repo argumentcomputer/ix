@@ -2061,7 +2061,7 @@ mod tests {
     let rebuilt = ixon_egress(&kenv, &original, &limits).unwrap();
     assert_eq!(rebuilt.role_binding, Some(binding.clone()));
     assert_eq!(rebuilt.consts.len(), 1);
-    assert_eq!(rebuilt.envelope_version(), 6);
+    assert_eq!(rebuilt.envelope_version(), 5);
 
     // The same named constant now has different content and a new address.
     kenv.insert(

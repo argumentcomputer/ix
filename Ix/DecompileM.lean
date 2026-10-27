@@ -890,33 +890,30 @@ def decompileProjection (cnst : Constant) (cMeta : ConstantMeta)
 
 /-! ## Main Entry Points -/
 
-/-- Select the source address, metadata (including constructors), and exact
-    per-name hints. Keep the canonical address-to-name index: original bodies
-    still refer to canonical addresses. This view never adds checker records. -/
+/-- Select the source address and metadata (including constructors). Keep the
+    canonical address-to-name index: original bodies still refer to canonical
+    addresses. This view never adds checker records. -/
 def originalView (ixonEnv : Ixon.Env) : Ixon.Env :=
   let named := ixonEnv.named.fold (init := {}) fun m name entry =>
     let selected := match entry.original with
       | none => entry
-      | some (addr, constMeta) =>
-        { entry with
-          addr := addr
-          constMeta := constMeta
-          hints := ixonEnv.originalHintOverrides[name]?.getD entry.hints }
+      | some (addr, constMeta) => { entry with addr := addr, constMeta := constMeta }
     m.insert name selected
   { ixonEnv with named }
 
-/-- Read exact bytes from the canonical store first, then unchecked original
-    data. Validate the address and canonical encoding, ignoring a lazy value's
-    cache. This is a decoding check, not a typing judgment. -/
+/-- Read exact bytes from the canonical store. Validate the address and
+    canonical encoding, ignoring a lazy value's cache. This is a decoding check,
+    not a typing judgment. -/
 def readConstant (ixonEnv : Ixon.Env) (addr : Address) : Except String Constant := do
-  let some lc := ixonEnv.consts[addr]? <|> ixonEnv.originals[addr]?
-    | throw s!"missing constant/original at {addr}; recompile the artifact with original data"
+  let some lc := ixonEnv.consts[addr]?
+    | throw s!"missing constant at {addr}"
   let bytes := lc.rawBytes
-  if let some original := ixonEnv.originals[addr]? then
-    if original.rawBytes != bytes then
-      throw s!"conflicting original bytes at {addr}"
-  Ixon.Env.checkOriginalPayload addr bytes
-  Ixon.deConstantExact bytes
+  if Address.blake3 bytes != addr then
+    throw s!"constant bytes hash mismatch for {addr}"
+  let constant ← Ixon.deConstantExact bytes
+  if Ixon.serConstant constant != bytes then
+    throw s!"noncanonical constant bytes at {addr}"
+  pure constant
 
 /-- A compiler-created mutual container, not a source declaration, labelled
     `Ix.<addr>.*`.

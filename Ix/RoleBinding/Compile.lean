@@ -73,26 +73,6 @@ def supportInput (source : Lean.Environment) (artifact : Ixon.Env) :
     required := next
   throw "artifact support: role closure exceeded its finite domain"
 
-/-- Canonical original payloads retain their own channel unless the identical
-bytes are now carried by the checked store. Their named associations stay put. -/
-def mergeOriginals (limits : Ix.Kernel.Admission.Limits) (out : Ixon.Env)
-    (extra : Std.HashMap Address Ixon.LazyConstant) : Except String Ixon.Env := do
-  let mut originals := out.originals
-  for (address, value) in extra.toList ++ out.originals.toList do
-    let bytes := value.rawBytes
-    unless Address.admissionHash bytes == address do
-      throw s!"artifact support: original payload has bad address {address}"
-    let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
-    unless Ixon.serConstant decoded == bytes do
-      throw s!"artifact support: noncanonical original payload {address}"
-    if let some old := originals[address]? then
-      unless old.rawBytes == bytes do throw s!"artifact support: conflicting original payload {address}"
-    if let some checked := out.consts[address]? then
-      unless checked.rawBytes == bytes do throw s!"artifact support: original/checked bytes differ at {address}"
-      originals := originals.erase address
-    else originals := originals.insert address value
-  return { out with originals }
-
 /-- Merge authenticated support without replacing any original publication or
 its metadata. Structural names, rather than stored name hashes, decide overlap. -/
 def mergeSupport (limits : Ix.Kernel.Admission.Limits) (original support : Ixon.Env) :
@@ -117,8 +97,6 @@ def mergeSupport (limits : Ix.Kernel.Admission.Limits) (original support : Ixon.
       unless old == named.addr do throw s!"artifact support: published address changed for {name.pretty}"
     else
       out := { out with named := out.named.insert name named }
-      if let some hint := support.originalHintOverrides[name]? then
-        out := { out with originalHintOverrides := out.originalHintOverrides.insert name hint }
   for (address, name) in support.names.toList do
     if let some old := out.names[address]? then
       unless Ix.LeanIngress.ingressName old == Ix.LeanIngress.ingressName name do
@@ -137,7 +115,7 @@ def mergeSupport (limits : Ix.Kernel.Admission.Limits) (original support : Ixon.
       | some old => Ixon.mergeHints old hint
       | none => hint
     out := { out with anonHints := out.anonHints.insert address hint }
-  mergeOriginals limits out support.originals
+  return out
 
 /-- Adding internal support cannot hide a failed original request, change an
 original address, or replace its source contract input. -/
@@ -192,7 +170,6 @@ def finalize (backend : Backend) (source : Lean.Environment)
     internalTrace "certificates" (compileRequired backend certSource selected)
   let generated ← IO.ofExcept (generate limits merged certificates required Ix.Kernel.preludeShape)
   let emitted ← IO.ofExcept (generated.emit limits merged)
-  let emitted ← IO.ofExcept (mergeOriginals limits emitted {})
   IO.ofExcept (preserveRequested input artifact emitted)
   return emitted
 
