@@ -79,6 +79,7 @@ import Ix.CompileCert.DisplayAddressFrame
 import Ix.Cert.PrefixVisibility
 import Ix.Cert.CompileCorrect
 import Ix.Cert.Composition
+import Ix.Cert.RunOwnership
 
 /-! # The certification statements, frozen
 
