@@ -1223,7 +1223,7 @@ or that the K16 cutover left every corpus constant unchanged (§14.4).
 
 The Lean cutover attaches these statements and the proved fast twins to the production
 entry and its audits, preserving compiler-facing meaning, format and codec theorems without
-new premises. Its audit has 193 theorem roots and checks all 30 compiler-path `csimp`
+new premises. Its audit has 252 theorem roots and checks all 30 compiler-path `csimp`
 equalities; the accepted unsafe set is unchanged. The old exact-optimum theorems remain
 on the reference path. Rust is a
 separately tested implementation; byte parity is not a universal refinement proof.
