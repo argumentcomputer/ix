@@ -48,7 +48,7 @@ use ix_common::env::ReducibilityHints;
 use ix_common::prim_addrs::PrimAddrs;
 use ixon::Env;
 use ixon::assumption_tree::AssumptionTree;
-use ixon::proof::Claim;
+use ixon::proof::{Claim, ClaimContext};
 
 /// Append `data` to the per-channel arena and record `(idx, len)`
 /// in the `(channel, key)` info map.
@@ -183,8 +183,8 @@ fn add_entries_parallel(
   }
 }
 
-/// Build a `Check { const_addr, assumptions=None }` claim witness
-/// directly in Rust. Returns `(claim, claim_digest_input, io_buffer)`
+/// Build a `Check { ctx, const_addr, assumptions=None }` claim witness
+/// directly in Rust, with the context of `env`'s own role binding. Returns `(claim, claim_digest_input, io_buffer)`
 /// ready to feed to `crate::ix::aiur_ixvm_runner::execute_ixvm`.
 ///
 /// Mirrors `IxVM.ClaimHarness.buildClaimWitness` on the
@@ -198,7 +198,11 @@ pub fn build_claim_check_witness(
   let closure: FxHashSet<Address> =
     witness_scope(env, std::slice::from_ref(target));
 
-  let claim = Claim::Check { const_addr: target.clone(), assumptions: None };
+  let claim = Claim::Check {
+    ctx: ClaimContext::for_env(env)?,
+    const_addr: target.clone(),
+    assumptions: None,
+  };
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
@@ -304,7 +308,11 @@ impl EnvCheckStatement {
     all.sort();
     let tree = AssumptionTree::canonical(&all)
       .ok_or_else(|| "EnvCheckStatement: empty environment".to_string())?;
-    let claim = Claim::CheckEnv { root: tree.root(), assumptions: None };
+    let claim = Claim::CheckEnv {
+      ctx: ClaimContext::for_env(env)?,
+      root: tree.root(),
+      assumptions: None,
+    };
     let mut claim_bytes: Vec<u8> = Vec::new();
     claim.put(&mut claim_bytes);
     let digest_key = packed_digest_key(&Address::hash(&claim_bytes));
@@ -387,10 +395,11 @@ pub fn build_shard_check_env_witness(
   // single source of truth for shard CheckEnv digests (see
   // ixon::shard_claim; Lean mirror:
   // IxVM.ClaimHarness.shardCheckEnvClaimThin).
-  let (claim, frontier) = ixon::shard_claim::shard_check_env_claim(env, owned)
-    .ok_or_else(|| {
-      "build_shard_check_env_witness: empty owned set".to_string()
-    })?;
+  let ctx = ClaimContext::for_env(env)?;
+  let (claim, frontier) =
+    ixon::shard_claim::shard_check_env_claim(&ctx, env, owned).ok_or_else(
+      || "build_shard_check_env_witness: empty owned set".to_string(),
+    )?;
   let mut owned_sorted: Vec<Address> = owned.to_vec();
   owned_sorted.sort();
   let owned_tree =
@@ -401,6 +410,7 @@ pub fn build_shard_check_env_witness(
   debug_assert_eq!(
     claim,
     Claim::CheckEnv {
+      ctx,
       root: owned_tree.root(),
       assumptions: asm_tree.as_ref().map(|t| t.root()),
     }
@@ -538,7 +548,12 @@ mod tests {
   /// blob lookup, or the check aborts with `invalid IO key`.
   #[test]
   fn dual_use_address_is_seeded_on_both_channels() {
-    let env = Env::new();
+    let mut env = Env::new();
+    let section: Arc<[u8]> = Arc::from(&b"stand-in role binding section"[..]);
+    env.role_binding = Some(ixon::env::RoleBinding {
+      address: Address::hash(&section),
+      bytes: section,
+    });
     let target = Address::hash(b"target");
     let dual = Address::hash(b"dual");
     env.store_const(target.clone(), const_with_refs(vec![dual.clone()]));

@@ -18,6 +18,9 @@ pub(super) struct PreparedShard {
 }
 
 pub(super) struct PreparedRun {
+  /// The context every statement of the run is relative to: the environment's
+  /// role binding under this specification set.
+  pub(super) ctx: ixon::ClaimContext,
   pub(super) shards: Vec<PreparedShard>,
   pub(super) owner_by_address: FxHashMap<Address, usize>,
   pub(super) tree: AggNode,
@@ -43,6 +46,7 @@ pub(super) fn prepare_run(
   if manifest.shards.is_empty() {
     return Err("manifest contains no shards".into());
   }
+  let ctx = ixon::ClaimContext::for_env(env)?;
 
   let mut block_to_shard = FxHashMap::default();
   let mut id_to_index = FxHashMap::default();
@@ -183,7 +187,7 @@ pub(super) fn prepare_run(
         ShardSet::singleton(retained, retained_old.len()),
       )?;
       let assumptions = CanonicalTree::from_sorted(frontier)?;
-      let statement = Statement::new(subject_tree, assumptions);
+      let statement = Statement::new(ctx.clone(), subject_tree, assumptions);
       Ok(PreparedShard { original_id, statement })
     })
     .collect();
@@ -203,6 +207,7 @@ pub(super) fn prepare_run(
   );
 
   Ok(PreparedRun {
+    ctx,
     shards,
     owner_by_address,
     tree,
@@ -213,13 +218,17 @@ pub(super) fn prepare_run(
 }
 
 /// Check the semantic certificate attached to the root statement independently
-/// of any proof: every environment constant occurs exactly once, every retained
+/// of any proof: it is relative to the run's context, every environment
+/// constant occurs exactly once, every retained
 /// shard contributes, the canonicalized subject root is the environment root,
 /// and no assumption survives.
 pub(super) fn validate_root_statement(
   prepared: &PreparedRun,
   root: &Statement,
 ) -> Result<(), String> {
+  if root.ctx != prepared.ctx {
+    return Err("aggregate root is relative to another claim context".into());
+  }
   if root.subjects.count != prepared.env_count {
     return Err(format!(
       "aggregate root has {} subjects, environment has {}",

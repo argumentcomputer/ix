@@ -33,6 +33,7 @@ import Ix.Aiur.Compiler
 import Ix.IxVM
 import Ix.IxVM.Toplevel
 import Ix.PrimAddrs
+import Ix.SpecDigest
 import Tests.Ix.Kernel.PrimitiveTable
 import LSpec
 
@@ -120,6 +121,12 @@ def suite : List TestSeq := Id.run do
     -- AST shape change): the kernel is known to carry dozens of these.
     test s!"found {fns.size} address literals (expect ≥ 60)" (fns.size ≥ 60)
   for (fnName, addr) in fns do
+    -- The circuit's specification digest is a digest, not a primitive
+    -- address: it must equal `Ix.SpecDigest.specDigest`.
+    if (fnName.splitOn ".").getLast! == "spec_digest" then
+      tests := tests ++ test s!"{fnName} = Ix.SpecDigest.specDigest"
+        (Ix.SpecDigest.specDigest.toOption == some addr)
+      continue
     match canonical[addr]? with
     | some canonName =>
       -- Assert the function resolves to the constant its NAME claims.

@@ -233,6 +233,11 @@ mod tests {
         &env,
         &Profile::default(),
         &ixon::proof::Claim::CheckEnv {
+          ctx: ixon::proof::ClaimContext {
+            spec: ixon::proof::spec_digest(),
+            binding: Address::hash(b"binding"),
+            axioms: None,
+          },
           root: Address::hash(b"subject"),
           assumptions: None
         }

@@ -6,10 +6,10 @@ use super::super::{
   prepare::{prepare_run, validate_root_statement},
   statement::{CanonicalTree, ShardSet, Statement, SubjectTree},
 };
-use super::{addr, shard, store_axiom};
+use super::{addr, bound_env, shard, store_axiom, test_ctx};
 
 fn singleton() -> (ixon::Env, ShardManifest) {
-  let env = ixon::Env::new();
+  let env = bound_env();
   let address = store_axiom(&env, Expr::sort(0), vec![]);
   let manifest = ShardManifest {
     num_shards: 1,
@@ -69,7 +69,18 @@ fn root_validation_rejects_foreign_subjects_and_surviving_assumptions() {
   let prepared = prepare_run(&env, &manifest).unwrap();
   let valid = &prepared.shards[0].statement;
   validate_root_statement(&prepared, valid).unwrap();
+  let other_context = Statement::new(
+    test_ctx(),
+    valid.subjects.clone(),
+    valid.assumptions.clone(),
+  );
+  assert!(
+    validate_root_statement(&prepared, &other_context)
+      .unwrap_err()
+      .contains("another claim context")
+  );
   let foreign = Statement::new(
+    prepared.ctx.clone(),
     SubjectTree::canonical(vec![addr("foreign")], ShardSet::singleton(0, 1))
       .unwrap(),
     None,
@@ -80,6 +91,7 @@ fn root_validation_rejects_foreign_subjects_and_surviving_assumptions() {
       .contains("foreign subject")
   );
   let residual = Statement::new(
+    prepared.ctx.clone(),
     valid.subjects.clone(),
     CanonicalTree::from_sorted(vec![addr("assumption")]).unwrap(),
   );

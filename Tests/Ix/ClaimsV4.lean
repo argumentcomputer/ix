@@ -1,5 +1,6 @@
 module
 
+public import Ix.ClaimContext
 public import Ix.Resource.Claim
 public import Tests.Ix.ResourceAddressed
 public import Tests.Ix.Claim
@@ -12,9 +13,13 @@ def fixtures : Array (String × Ix.Claim) :=
   let a := Address.blake3 "a".toUTF8
   let b := Address.blake3 "b".toUTF8
   let asm := some (Address.blake3 "asm".toUTF8)
-  #[ ("eval", .eval a b asm), ("check", .check a none),
-     ("check_env", .checkEnv a asm), ("reveal", .reveal a (.axio none none none)),
-     ("contains", .contains a b), ("catalog", .catalog a b asm),
+  let ctx : Ix.ClaimContext :=
+    { spec := Ix.SpecDigest.specDigest.toOption.getD default
+      binding := Address.blake3 "binding".toUTF8
+      axioms := none }
+  #[ ("eval", .eval ctx a b asm), ("check", .check ctx a none),
+     ("check_env", .checkEnv ctx a asm), ("reveal", .reveal a (.axio none none none)),
+     ("contains", .contains a b), ("catalog", .catalog ctx a b asm),
      ("resource", .resource a b) ]
 
 def fixtureText : String := Id.run do
@@ -58,7 +63,9 @@ def run : IO Unit := do
   let claim ← IO.ofExcept (Ix.Resource.makeClaim env profile)
   let _ ← IO.ofExcept (Ix.Resource.checkClaim env profile claim)
   Tests.ResourceAddressed.check "resource claim rejects erased validator"
-    (Ix.Resource.checkClaim env profile (.checkEnv env.merkleRoot.get! none)) false
+    (Ix.Resource.checkClaim env profile
+      (.checkEnv (Ix.ClaimContext.ofDefaultTable.toOption.getD default) env.merkleRoot.get! none))
+    false
   Tests.ResourceAddressed.check "resource claim binds the entire subject"
     (Ix.Resource.checkClaim base profile claim) false
   Tests.ResourceAddressed.check "resource claim binds limits"

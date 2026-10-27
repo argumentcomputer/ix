@@ -75,7 +75,7 @@ impl Fixture {
       ShardSet::singleton(0, 1),
     )
     .unwrap();
-    let statement = Statement::new(subjects, None);
+    let statement = Statement::new(super::test_ctx(), subjects, None);
     let outer_claim =
       aggregate_outer_claim(0, b"test-identity", &statement.claim_bytes);
     let spec = SlotSpec {
@@ -165,7 +165,7 @@ fn cache_rejects_wrong_statement_and_malformed_proof() {
   let subjects =
     SubjectTree::canonical(vec![addr("other")], ShardSet::singleton(0, 1))
       .unwrap();
-  let other = Statement::new(subjects, None);
+  let other = Statement::new(super::test_ctx(), subjects, None);
   fixture.replace_wrapper(&ixon::Proof::new(
     other.claim.clone(),
     fixture.proof.to_bytes().unwrap(),

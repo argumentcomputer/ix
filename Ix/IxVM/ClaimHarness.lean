@@ -6,6 +6,7 @@ public import Ix.AssumptionTree
 public import Ix.CompileM
 public import Ix.Common
 public import Ix.PrimAddrs
+public import Ix.ClaimContext
 
 public section
 
@@ -76,6 +77,17 @@ def synthesizedPrimNames : Array Lean.Name :=
     -- Tier 1c / proj-head expansion fabricates Consts of these.
     `String, `String.ofList, `Char, `Char.ofNat, `List.nil, `List.cons]
 
+/-- `env` with the default role table (`Ix.Kernel.Reader.defaultTable`) as its
+    role binding when it carries none. A claim is relative to its
+    environment's binding (`Ix.ClaimContext.ofEnv`); environments compiled
+    here from Lean declarations have none of their own. For tests and the
+    command line, like that table. -/
+def withDefaultRoleBinding (env : Ixon.Env) : Except String Ixon.Env := do
+  if env.roleBinding.isSome then return env
+  let bytes ← Ix.Kernel.Reader.defaultTableBytes
+  let address ← Ix.Kernel.Reader.defaultTableAddress
+  return { env with roleBinding := some { address, bytes } }
+
 /-- Variant of loadIxonEnv: also seeds the constants the kernel's kernel
     fabricates during reduction (Bool.true/false + Nat.zero/succ), so
     their bytes are always in ch 2 even when the target's proof body
@@ -92,7 +104,7 @@ def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
           seen := seen.insert entry.fst
           deduped := deduped.push entry
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
-  pure rawEnv.toEnv
+  IO.ofExcept (withDefaultRoleBinding rawEnv.toEnv)
 
 /-- Compile the union of `names`'s transitive closures into one shared
     Ixon env. Drivers like `KernelArena.lean` use this to pay the
@@ -108,7 +120,7 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
         seen := seen.insert entry.fst
         deduped := deduped.push entry
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
-  pure rawEnv.toEnv
+  IO.ofExcept (withDefaultRoleBinding rawEnv.toEnv)
 
 /-- The `refs` indices `e` uses as a CONSTANT: `Ref i` and the type index
     of `Prj i`. `Str`/`Nat` index blob payloads and `Rec` resolves through
@@ -381,16 +393,16 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     | some r => seedTreeAt r trees buf
     | none => .ok buf
   match claim with
-  | .check addr asm =>
+  | .check _ addr asm =>
     ioBuffer := addEntries env (closureFrom env addr).contains ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .eval input output asm =>
+  | .eval _ input output asm =>
     let inputClosure := closureFrom env input
     let outputClosure := closureFrom env output
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .checkEnv root asm =>
+  | .checkEnv _ root asm =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
@@ -405,7 +417,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>
     ioBuffer ← seedTreeAt tree trees ioBuffer
-  | .catalog _ _ _ =>
+  | .catalog .. =>
     -- Deliberately unsupported: a catalog claim is verified by
     -- COMPOSITION of per-piece CheckEnv claims with set discharge
     -- (plan §5.3) — interpreting the whole catalog in one circuit run
@@ -466,7 +478,8 @@ def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address) :
   let some ownedTree := Ix.AssumptionTree.canonical owned
     | .error "shardCheckEnvClaim: empty owned set"
   let asmTree? := Ix.AssumptionTree.canonical frontier
-  let claim := Ix.Claim.checkEnv ownedTree.root (asmTree?.map (·.root))
+  let ctx ← Ix.ClaimContext.ofEnv env
+  let claim := Ix.Claim.checkEnv ctx ownedTree.root (asmTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
     ({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree
   match asmTree? with

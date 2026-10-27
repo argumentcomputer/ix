@@ -863,10 +863,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     let aggrVk := aggrSystem.vkBytes
     let allowed := Aggr.allowedBlob ixvmVk funIdx aggrVk aggrIdx
     let leftStatement : Aggr.CheckEnvTrees := {
+      ctx := left.statement.ctx
       subjects := left.statement.subjects
       assumptions := left.statement.assumptions
     }
     let rightStatement : Aggr.CheckEnvTrees := {
+      ctx := right.statement.ctx
       subjects := right.statement.subjects
       assumptions := right.statement.assumptions
     }

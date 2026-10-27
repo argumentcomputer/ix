@@ -578,6 +578,35 @@ def claim := ⟦
     }
   }
 
+  -- The specification digest this circuit implements
+  -- (`Ix.SpecDigest.specDigest`); the `prim-addrs` suite checks it against
+  -- the Lean value.
+  fn spec_digest() -> Addr {
+    store([0x52u8, 0x04u8, 0x9bu8, 0x9du8, 0x09u8, 0x53u8, 0x0cu8, 0x92u8,
+     0xcdu8, 0x2bu8, 0x02u8, 0x11u8, 0x5au8, 0x00u8, 0xefu8, 0x79u8,
+     0xf6u8, 0x4du8, 0x99u8, 0xe8u8, 0xb2u8, 0x79u8, 0xeeu8, 0x14u8,
+     0xc4u8, 0x2bu8, 0x8bu8, 0x3du8, 0xc9u8, 0xa9u8, 0x4bu8, 0x3fu8])
+  }
+
+  -- A typing claim's context (`Ix.ClaimContext`): the specification
+  -- digest, which must be this circuit's; the role binding's hash; and the
+  -- axioms beyond the standard three, which must be none, since the
+  -- circuit admits no other axiom. Returns the binding hash and the rest of
+  -- the stream.
+  fn get_claim_context(stream: ByteStream) -> (Addr, ByteStream) {
+    let (spec, s) = get_address(stream);
+    assert_eq!(address_eq(spec, spec_digest()), 1,
+      "claim: specification digest is not this circuit's");
+    let (binding, s2) = get_address(s);
+    let (axioms, s3) = get_opt_addr(s2);
+    match axioms {
+      Option.None => (binding, s3),
+      Option.Some(_) =>
+        assert_eq!(0, 1, "claim: axioms beyond the standard three are not admitted");
+        (binding, s3),
+    }
+  }
+
   -- ============================================================================
   -- Reveal claim (variant 6). Mirrors the Rust implementation in
   -- crates/kernel/src; the machinery is Ixon-level rather than
@@ -1273,11 +1302,12 @@ def claim := ⟦
 
   -- Claim dispatch. Loads claim bytes at ch 0 keyed by digest,
   -- blake3-verifies, and dispatches:
-  --   variant 3 (Eval input output asm?) → checked normalization.
-  --   variant 4 (Check target asm?)  → transitive check; with asm the
+  -- The typing variants 3-5 read their context first (`get_claim_context`):
+  --   variant 3 (Eval ctx input output asm?) → checked normalization.
+  --   variant 4 (Check ctx target asm?)  → transitive check; with asm the
   --     walk stops at frontier members (no owned-membership rule —
   --     Check claims target + everything reachable, no ownership set).
-  --   variant 5 (CheckEnv root asm?) → run_check_env: per-leaf
+  --   variant 5 (CheckEnv ctx root asm?) → run_check_env: per-leaf
   --     transitive walk, asm cutoff, strict owned-membership.
   --   variant 6 (Reveal comm info)   → run_reveal: selective field
   --     revelation of the committed constant.
@@ -1320,14 +1350,16 @@ def claim := ⟦
     let (validator, s) = read_byte(s);
     match variant {
       3 =>
-        assert_eq!(validator, 1u8, "claim: wrong validator identity");
+        assert_eq!(validator, 3u8, "claim: wrong validator identity");
+        let (_binding, s) = get_claim_context(s);
         let (input, s) = get_address(s);
         let (output, s) = get_address(s);
         let (asm, rest) = get_opt_addr(s);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         run_eval(input, output, asm),
       4 =>
-        assert_eq!(validator, 1u8, "claim: wrong validator identity");
+        assert_eq!(validator, 3u8, "claim: wrong validator identity");
+        let (_binding, s) = get_claim_context(s);
         let (target, s2) = get_address(s);
         let (asm, rest) = get_opt_addr(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
@@ -1339,7 +1371,8 @@ def claim := ⟦
             env_walk(target, RBTreeMap.Nil, asm_set, 0),
         },
       5 =>
-        assert_eq!(validator, 1u8, "claim: wrong validator identity");
+        assert_eq!(validator, 3u8, "claim: wrong validator identity");
+        let (_binding, s) = get_claim_context(s);
         let (root, s2) = get_address(s);
         let (asm, rest) = get_opt_addr(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
