@@ -182,7 +182,7 @@ def evaluate : IO (Array String × Array String) := do
   let table := cenv.auxReport.table
   for l in Tests.Ix.AuxGen.BelowIxc.acceptanceLines table do lines := lines.push l
   let (accErrors, accInfo) := Tests.Ix.AuxGen.BelowIxc.acceptanceErrors ixe table
-    (cenv.p3Heads.contains ·) (allowLate := false)
+    (fun _ => false) (allowLate := false)
   for l in accInfo do lines := lines.push l
   for e in accErrors do errors := errors.push e
   return (errors, lines)

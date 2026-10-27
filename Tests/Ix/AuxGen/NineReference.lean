@@ -27,12 +27,10 @@ run_cmd do
     (``Ix.Compile.ExactKey.UnivKey, #[`level, `params]), (``Ix.AuxGen.AuxTailRecs, #[`recs, `belowRecs]),
     (``Ix.AuxGen.BlockReport, #[`canonical, `generated, `admitted, `exempt, `display, `refusal, `retried]),
     (``Ix.CompileM.BlockResult, #[`block, `blockBytes, `blockAddr, `blockMeta, `projections, `classNames]),
-    (``Ix.Compile.Pass.Published, #[`heads, `blocks, `canonRecs, `views, `imageExps, `declines, `originals]),
     (``Ix.CompileM.BlockState, #[`exprCache, `univCache, `refs, `refsIndex, `univs, `univsIndex, `univsFinal,
       `canonUnivCache, `metaUnivs, `metaUnivsIndex, `univPatches, `blockBlobs, `blockNames, `defHints, `arena,
-      `blockNameToAddr, `auxNameToAddr, `auxConsts, `auxNamed, `auxGenExtraNames, `auxReport, `surgerySharing,
-      `p3Records, `p3MetaRefs, `p3MetaCache, `p3CliquePlans, `p3CliqueRows, `p3PlanReused])]
-  unless records.size == 15 do throwError "nine witness field census coverage differs"
+      `blockNameToAddr, `auxNameToAddr, `auxConsts, `auxNamed, `auxGenExtraNames, `auxReport, `surgerySharing])]
+  unless records.size == 14 do throwError "nine witness field census coverage differs"
   for (decl, expected) in records do
     let some info := Lean.getStructureInfo? env decl | throwError "encoded structure missing: {decl}"
     unless info.fieldNames == expected && info.parentInfo.isEmpty do
@@ -106,15 +104,9 @@ private def result (r : CompileM.BlockResult) : Except String Json := do
   let projections ← r.projections.mapM fun (n, c, m) => do return arr [name n, ← constant c, metadata m]
   return Json.mkObj [("block", ← constant r.block), ("blockBytes", bytes r.blockBytes), ("blockAddr", address r.blockAddr),
     ("blockMeta", metadata r.blockMeta), ("projections", .arr projections), ("classNames", .arr (r.classNames.map names))]
-private def published (p : Compile.Pass.Published) : Except String Json := do
-  ensure (p.views.isEmpty && p.imageExps.isEmpty && p.declines.isEmpty && p.originals.isEmpty) "nonempty unmeasured Published field"
-  return Json.mkObj [("heads", .arr (p.heads.map fun (a, b) => arr [name a, name b])),
-    ("blocks", .arr (p.blocks.map fun (n, ns) => arr [name n, names ns])), ("canonRecs", ← recursors p.canonRecs),
-    ("views", .arr #[]), ("imageExps", .arr #[]), ("declines", .arr #[]), ("originals", .arr #[])]
 private def state (s : CompileM.BlockState) : Except String Json := do
   -- These exact fields are empty in the measured corpus; never erase a value.
-  ensure (s.exprCache.isEmpty && s.p3Records.isEmpty && s.p3MetaRefs.isEmpty && s.p3MetaCache.isEmpty &&
-    s.p3CliquePlans.isEmpty && s.p3CliqueRows.isEmpty) "nonempty unmeasured BlockState field"
+  ensure s.exprCache.isEmpty "nonempty unmeasured BlockState field"
   ensure (s.auxReport.canonical.isNone && s.auxReport.generated.isEmpty && s.auxReport.admitted.isEmpty && s.auxReport.exempt.isNone && s.auxReport.display.isEmpty && s.auxReport.refusal.isNone && s.auxReport.retried.isNone) "caller did not perform the original auxReport normalization"
   let levels := s.univCache.toArray.map fun (k, v) => (arr [rawLevel k.level, names k.params.toArray], univ v)
   return Json.mkObj [("exprCache", .arr #[]), ("univCache", mapEntries levels), ("refs", addrs s.refs),
@@ -129,14 +121,12 @@ private def state (s : CompileM.BlockState) : Except String Json := do
     ("auxNameToAddr", mapEntries (s.auxNameToAddr.toArray.map fun (k, v) => (name k, address v))),
     ("auxConsts", ← anon s.auxConsts), ("auxNamed", namedEntries s.auxNamed),
     ("auxGenExtraNames", .arr ((s.auxGenExtraNames.toArray.qsort (fun a b => Name.cmpRaw a b == .lt)).map name)),
-    ("auxReport", .str "normalized-default"), ("surgerySharing", .arr (s.surgerySharing.map ixonExpr)),
-    ("p3Records", .arr #[]), ("p3MetaRefs", .arr #[]), ("p3MetaCache", .arr #[]),
-    ("p3CliquePlans", .arr #[]), ("p3CliqueRows", .arr #[]), ("p3PlanReused", nat s.p3PlanReused)]
+    ("auxReport", .str "normalized-default"), ("surgerySharing", .arr (s.surgerySharing.map ixonExpr))]
 private def tail (l : Option Ixon.AuxLayout) (r : AuxTailRecs) (s : CompileM.BlockState) : Except String Json := do
   return arr [optional layout l, ← recursors r.recs, ← recursors r.belowRecs, ← state { s with auxReport := {} }]
 private def full (r : CompileM.BlockResult) (s : CompileM.BlockState)
-    (l : Option Ixon.AuxLayout) (p : Compile.Pass.Published) : Except String Json := do
-  return arr [← result r, ← state { s with auxReport := {} }, optional layout l, ← published p]
+    (l : Option Ixon.AuxLayout) : Except String Json := do
+  return arr [← result r, ← state { s with auxReport := {} }, optional layout l]
 
 private def require (ok : Bool) (why : String) : Except String Unit :=
   unless ok do throw s!"nine reference: {why}"
@@ -144,10 +134,9 @@ private def encodingControls : Except String Unit := do
   let a : Ixon.AuxLayout := { perm := #[0], sourceCtorCounts := #[1], evaporated := #[] }
   require (layout a != layout { a with evaporated := #[0] } &&
     layout { a with evaporated := #[1] } != layout { a with evaporated := #[2] }) "raw evaporation distinctions lost"
-  match published { declines := #[(Name.mkAnon, "sentinel")] } with
-  | .error e => require (e == "nine witness: nonempty unmeasured Published field") "wrong Published refusal"
-  | .ok _ => throw "nine reference: nonempty Published escaped its guard"
-  match state { p3CliqueRows := #[(Name.mkAnon, (#[], #[]))] } with
+  let cached : Std.HashMap _root_.Ix.Compile.ExactKey.ExprKey (Ixon.Expr × UInt64) :=
+    ({} : Std.HashMap _ _).insert (_root_.Ix.Expr.mkBVar 0) (.var 0, 0)
+  match state { exprCache := cached } with
   | .error e => require (e == "nine witness: nonempty unmeasured BlockState field") "wrong state refusal"
   | .ok _ => throw "nine reference: nonempty state escaped its guard"
 
@@ -190,7 +179,7 @@ private def perturb (i : Nat) (row : Json) : Except String Json := do
 Every original legacy comparison and live checked rollback remains upstream. -/
 def check (rows : Array Json) (i : Nat) (target : String) (key : Name) (members : Array Name)
     (reason : String) (exempt : Nat) (observed : (Option Ixon.AuxLayout × AuxTailRecs) × CompileM.BlockState)
-    (compiled : CompileM.BlockResult × (CompileM.BlockState × (Option Ixon.AuxLayout × Compile.Pass.Published)))
+    (compiled : CompileM.BlockResult × (CompileM.BlockState × Option Ixon.AuxLayout))
     : Except String Unit := do
   require (rows.size == 9 && i < 9 && !members.isEmpty) "case index/input coverage differs"
   require (exempt == (#[0,15,18,18,18,18,18,17,27] : Array Nat)[i]! &&
@@ -198,7 +187,7 @@ def check (rows : Array Json) (i : Nat) (target : String) (key : Name) (members 
     observed.1.2.belowRecs.size == (#[0,2,2,2,2,2,2,2,0] : Array Nat)[i]!) s!"exemption/recursor coverage differs at {i}"
   let actual := Json.mkObj [("target", .str target), ("key", name key), ("members", names members), ("reason", .str reason),
     ("exempt", nat exempt), ("expected", arr [← tail observed.1.1 observed.1.2 observed.2,
-      ← full compiled.1 compiled.2.1 compiled.2.2.1 compiled.2.2.2])]
+      ← full compiled.1 compiled.2.1 compiled.2.2])]
   checkRow i rows[i]! actual
   if i == 0 || i == 1 then
     match checkRow i (← perturb i rows[i]!) actual with

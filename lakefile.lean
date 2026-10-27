@@ -156,19 +156,17 @@ environment that the whole-environment suites compile. -/
 lean_lib TwinsFixtures where
   roots := #[`Tests.Ix.Compile.Twins.Fixtures]
 
-/-- The `compiler-selected-admission` suite's fixtures
-(`Tests.Ix.Compile.SelectedAdmission.Fixtures`) and the certified entry's host
-cases (`Tests.Ix.Kernel.EntryCaseDefs`), which it also compiles. `IxTests`
-builds them but does not import them: the suite imports them at run time,
-since some host cases are installed unchecked on purpose. -/
-lean_lib SelectedAdmissionFixtures where
-  roots := #[`Tests.Ix.Compile.SelectedAdmission.Fixtures, `Tests.Ix.Kernel.EntryCaseDefs]
+/-- The certified entry's host cases (`Tests.Ix.Kernel.EntryCaseDefs`), built as a
+library of their own so that suites can import them at run time (some host cases
+are installed unchecked on purpose). -/
+lean_lib EntryCaseFixtures where
+  roots := #[`Tests.Ix.Kernel.EntryCaseDefs]
 
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
-  needs := #[`@/ix, `@/«kernel-check-ixe», `@/TwinsFixtures, `@/SelectedAdmissionFixtures]
+  needs := #[`@/ix, `@/«kernel-check-ixe», `@/TwinsFixtures, `@/EntryCaseFixtures]
   moreLinkObjs := #[ix_rs_test]
 
 lean_exe «arena-exclude» where

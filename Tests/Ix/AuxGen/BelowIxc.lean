@@ -424,7 +424,7 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
   let table := cenv.auxReport.table
   for l in acceptanceLines table do lines := lines.push l
   let (accErrors, accInfo) :=
-    acceptanceErrors pe table (cenv.p3Heads.contains ·) (allowLate := true)
+    acceptanceErrors pe table (fun _ => false) (allowLate := true)
   for l in accInfo do lines := lines.push l
   for e in accErrors do errors := errors.push e
   -- AuxGen B9d: production's identity rows against the final `named`: no

@@ -1,6 +1,6 @@
 import Ix.Compile.SourceGraph
-import Ix.Cert.SourceReverse
 import Ix.Cert.Canon
+import Ix.Cert.Closure
 
 /-! The concrete SourceGraph constructor and collector, not assumed summary
 correctness. Materialization below is a proof specification only; the runtime

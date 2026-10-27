@@ -163,8 +163,7 @@ theorem scheduleOwnership_of_stepKeeps (hk : StepKeeps) : Obligation.ScheduleOwn
   rw [hu] at hu'
   cases hu'
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold hu
-  obtain ⟨-, -, st₁, -, -, -, -, finalized, -, -, hconsts₁, -⟩ := compileEnvFold_final hf
-  have frame := Ix.Compile.OriginalData.finalizeOriginals_frame finalized
+  obtain ⟨-, -, st₁, -, -, -, finalized, -, -, hconsts₁, -⟩ := compileEnvFold_final hf
   refine ⟨fun n a hn _ hnf => ?_, fun a b hb => ?_⟩
   · rcases p.names n a hn with h | h
     · rw [← hmap] at h
@@ -174,7 +173,7 @@ theorem scheduleOwnership_of_stepKeeps (hk : StepKeeps) : Obligation.ScheduleOwn
       cases failed
   · have stored := hconsts a b (p.consts a b hb)
     rw [hconsts₁] at stored
-    rw [frame.consts]
+    rw [← finalized]
     exact assembleEnv_consts _ stored
 
 /-- info: 'Ix.Cert.RunOwnership.scheduleOwnership_of_stepKeeps' depends on axioms: [propext, Classical.choice, Quot.sound] -/

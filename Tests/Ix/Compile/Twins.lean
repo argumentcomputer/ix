@@ -437,7 +437,8 @@ structure DiffRec where
 structure Compiled where
   addr : Name → Option String
   /-- Whether a Lean name is an image-kind head of a changed block in this
-      compile (`CompileEnv.p3Heads`): the name holds the head's image. -/
+      compile: the name holds the head's image. The compiler compiles Lean's
+      declarations as given, so no name is one. -/
   isHead : Name → Bool := fun _ => false
 
 def nonCanonicalFor (record : List NonCanonicalEntry) (f : Family) (a b : Pres) :
@@ -684,18 +685,8 @@ def closeWithRecursors (env : Environment) (closure : List (Name × ConstantInfo
   if extra.isEmpty then return closure
   Ix.EnvScope.collectDeps env (closure.map (·.1) ++ extra.toList)
 
-/-- The prerequisites of the clique rows (`Ix.Compile.Pass.Clique.rowPrereqs`:
-    `Eq`, `funext`, `WellFounded.fix_eq`, …) as Lean names, those `env`
-    holds. A well-founded clique is transported only when they are in the
-    compile's input (`CliqueOutcome.wfOnly`, CQ5.2 (b)), so the twins'
-    closures carry them; a library compile has them anyway. -/
-def rowPrereqNames (env : Environment) : List Name :=
-  (Ix.Compile.Pass.Clique.rowPrereqs.toList.map
-    Tests.Ix.Compile.ClosureHarness.toLeanName).filter env.contains
-
 /-- The fixture constants of the families and the union of their closures
-    (with recursors, `closeWithRecursors`, and the clique rows' prerequisites,
-    `rowPrereqNames`). -/
+    (with recursors, `closeWithRecursors`). -/
 def familyClosure (env : Environment) (families : List Family) :
     Array Name × List (Name × ConstantInfo) := Id.run do
   let mut seeds : Array Name := #[]
@@ -703,7 +694,7 @@ def familyClosure (env : Environment) (families : List Family) :
     for p in f.pres do
       seeds := seeds ++ (presConsts env p).map (·.1)
   return (seeds, closeWithRecursors env
-    (Ix.EnvScope.collectDeps env (seeds.toList ++ rowPrereqNames env)))
+    (Ix.EnvScope.collectDeps env seeds.toList))
 
 /-! ## The fixtures' environment and the compiles -/
 
@@ -869,8 +860,9 @@ constants, {closure.length} in the closure (environment and closure {t1 - t0} ms
     (leanOut.env.getAddr? (_root_.Ix.Name.fromLeanName n)).map toString
   let rsAddr (n : Name) : Option String :=
     (rsEnv.getAddr? (_root_.Ix.Name.fromLeanName n)).map toString
-  let declines := (leanOut.cenv.p3NonCanonical.toArray.map fun (n, cause) =>
-    (n.pretty, cause)).qsort (·.1 < ·.1)
+  -- The Lean compiler compiles Lean's declarations as given and records no
+  -- declines; the Rust compiler must report none either.
+  let declines : Array (String × String) := #[]
   if declines != rsDeclines then
     failures := failures + 1
     IO.println s!"[twins] Lean/Rust decline reports differ: Lean {declines.toList}, Rust {rsDeclines.toList}"
@@ -889,8 +881,7 @@ constants, {closure.length} in the closure (environment and closure {t1 - t0} ms
   let record := Tests.Ix.Compile.NonCanonicalDefault.nonCanonical
   let (problems, rerecorded) ←
     pairsGate env families
-      { addr := leanAddr
-        isHead := fun n => leanOut.cenv.p3Heads.contains (_root_.Ix.Name.fromLeanName n) }
+      { addr := leanAddr }
       record refusedSet dumpDir
   failures := failures + problems
   if let some path := (← IO.getEnv "IX_TWINS_RECORD") then

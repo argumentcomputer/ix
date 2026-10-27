@@ -1,14 +1,14 @@
-import Ix.Cert.PassHooks
+import Ix.Cert.BlockRecords
 import Ix.CompileCert.MutualArtifact
 import Ix.CompileCert.EmissionBlocks
 import Ix.CompileCert.Canon.Refine
 
-/-! # The names a block's compile claims (Route A, B9b, `HookFree`'s discharge, step 3)
+/-! # The names a block's compile claims
 
 A block's compile (`Ix.runBlockWithAux`) claims the names of its result's
 projections (`Ix.Cert.Resolution.claimWrites`), or its key when there are
-none. This file shows, with Pass 3's hooks in any state, that each of them
-is a member's name or the name of a constructor an inductive member lists:
+none. This file shows that each of them is a member's name or the name of a
+constructor an inductive member lists:
 
 * the class sort (`Ix.Compile.Canon.sortClasses`) only regroups its members
   (`sortClasses_mem`), for any member names: the comparisons' answers do not
@@ -16,12 +16,8 @@ is a member's name or the name of a constructor an inductive member lists:
 * a mutual block's projections carry its members' names and their
   constructors' (`mutualBlock_names`), and a lone constant other than an
   inductive or a constructor has none (`constantInfo_lone`);
-* whatever Pass 3's hooks return (the clique step and hook 2 only replace
-  constants by others with the same names and constructors, `cliqueStep_keeps`,
-  `prepareBlock_agrees`), `runBlockWithAux`'s projections carry those
-  names (`runBlockWithAux_owned`), and an image block's result, the image of
-  its key, has none (`runImageBlock_lone`), so every claim of `runBlock` is
-  owned or the key (`runBlock_owned`). -/
+* so `runBlock`'s projections carry those names (`runBlockWithAux_owned`,
+  `runBlock_owned`). -/
 
 namespace Ix.Cert.Claims
 
@@ -518,7 +514,7 @@ theorem RunPost.throw {ctx : CompileEnv × BlockEnv} {P : α → Prop} (e : Comp
 
 theorem RunPost.findConst (ctx : CompileEnv × BlockEnv) (n : Name) :
     RunPost ctx (fun c => ctx.1.env.get? n = some c) (findConst n) :=
-  fun _ _ _ hr => Ix.Cert.PassHooks.findConst_ok hr
+  fun _ _ _ hr => Ix.Cert.BlockRecords.findConst_ok hr
 
 /-- A loop over a list keeps an invariant its body keeps. -/
 theorem RunPost.forIn (ctx : CompileEnv × BlockEnv) (I : σ → Prop) (body : γ → σ → CompileM (ForInStep σ)) :
@@ -627,8 +623,7 @@ are its sources' (`mutualBlock_names`), which Lean's order only arranges
 (`mem_sourceClasses`) and which the members loop reads (`members_post`). -/
 theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {all : Ix.Set Name}
     {s s' : BlockState} {r : BlockResult} {layout? : Option Ixon.AuxLayout}
-    {pub : Ix.Compile.Pass.Published}
-    (h : rawRun (compileBlockWithAux lo all) ctx s = (.ok (r, layout?, pub), s')) :
+    (h : rawRun (compileBlockWithAux lo all) ctx s = (.ok (r, layout?), s')) :
     ∀ row ∈ r.projections, MemberName ctx.1.env all row.1 := by
   unfold compileBlockWithAux at h
   obtain ⟨const, s₁, hc, h⟩ := bind_ok h
@@ -647,16 +642,16 @@ theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {al
        exact absurd hrow (by simp))
     | (obtain ⟨cs, s₂, hcs, h⟩ := bind_ok h
        obtain ⟨out, s₄, hout, h⟩ := bind_ok h
-       have same : Ix.Cert.PassHooks.recordsOf r = Ix.Cert.PassHooks.recordsOf out := by
+       have same : Ix.Cert.BlockRecords.recordsOf r = Ix.Cert.BlockRecords.recordsOf out := by
          revert h
-         refine Ix.Cert.PassHooks.Returns.elim
-           (P := fun (x : BlockResult × Option Ixon.AuxLayout × Ix.Compile.Pass.Published) =>
-             Ix.Cert.PassHooks.recordsOf x.1 = Ix.Cert.PassHooks.recordsOf out) ?_
+         refine Ix.Cert.BlockRecords.Returns.elim
+           (P := fun (x : BlockResult × Option Ixon.AuxLayout) =>
+             Ix.Cert.BlockRecords.recordsOf x.1 = Ix.Cert.BlockRecords.recordsOf out) ?_
          repeat returns_step
        have members := members_post ctx all s₁ cs s₂ hcs
        have names := mutualBlock_names (sourceClasses cs) ctx s₂ out s₄ hout
        intro row hrow
-       unfold Ix.Cert.PassHooks.recordsOf at same
+       unfold Ix.Cert.BlockRecords.recordsOf at same
        have hmap : (row.1, row.2.1) ∈ out.projections.map (fun p => (p.1, p.2.1)) := by
          rw [← (Prod.mk.inj (Prod.mk.inj (Prod.mk.inj same).2).2).2]
          exact Array.mem_map_of_mem hrow
@@ -668,314 +663,22 @@ theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {al
 
 end members
 
-/-! ## Pass 3's rewrite keeps names -/
+/-! ## The claims of a block compile -/
 
-section rewrite
+section claims
 
-open Ix.Compile.Pass (RwM RwConfig RwState)
-
-variable {α β : Type}
-
-/-- Every successful rewrite run returns a value satisfying `P`. -/
-def RwPost (P : α → Prop) (x : RwM α) : Prop :=
-  ∀ cfg st v st', (x.run cfg).run st = .ok (v, st') → P v
-
-theorem RwPost.pure {P : α → Prop} {a : α} (h : P a) : RwPost P (Pure.pure a : RwM α) := by
-  intro cfg st v st' hr
-  cases hr
-  exact h
-
-theorem RwPost.bind {x : RwM α} {f : α → RwM β} {q : α → Prop} {p : β → Prop}
-    (hx : RwPost q x) (hf : ∀ a, q a → RwPost p (f a)) : RwPost p (x >>= f) := by
-  intro cfg st v st' hr
-  rw [ReaderT.run_bind, StateT.run_bind] at hr
-  cases h : (x.run cfg).run st with
-  | error e => rw [h] at hr; cases hr
-  | ok r => rw [h] at hr; exact hf r.1 (hx cfg st r.1 r.2 h) cfg r.2 v st' hr
-
-theorem RwPost.bindAny {x : RwM α} {f : α → RwM β} {p : β → Prop} (hf : ∀ a, RwPost p (f a)) :
-    RwPost p (x >>= f) :=
-  RwPost.bind (q := fun _ => True) (fun _ _ _ _ _ => trivial) fun a _ => hf a
-
-theorem RwPost.ite {p : α → Prop} {c : Prop} [Decidable c] {a b : RwM α} (ha : RwPost p a)
-    (hb : RwPost p b) : RwPost p (if c then a else b) := by
-  by_cases hc : c
-  · simpa [hc] using ha
-  · simpa [hc] using hb
-
-/-- The rewrite keeps a constant's name and an inductive's constructors. -/
+/-- `ci'` keeps `ci`'s name and, for an inductive, its constructors. -/
 def Keeps (ci ci' : ConstantInfo) : Prop :=
   ci'.getCnst.name = ci.getCnst.name ∧
     ∀ iv', ci' = .inductInfo iv' → ∃ iv, ci = .inductInfo iv ∧ iv'.ctors = iv.ctors
 
-/-- **Pass 3's rewrite of a constant keeps its name and an inductive's
-constructors**: it rewrites the terms only (`Ix.Compile.Pass.rewriteConstM`). -/
-theorem rewriteConstM_keeps (expansion? : Name → Except String (Option Ix.Compile.Pass.Expansion))
-    (ci : ConstantInfo) :
-    RwPost (fun r => Keeps ci r.1) (Ix.Compile.Pass.rewriteConstM expansion? ci) := by
-  have cnst : ∀ c : Ix.ConstantVal, RwPost (fun r : Ix.ConstantVal × Bool => r.1.name = c.name)
-      (do let (t, ch) ← Ix.Compile.Pass.rw expansion? Ix.Compile.Pass.rewriteFuel true c.type
-          pure ({ c with type := t }, ch)) := fun c =>
-    RwPost.bindAny fun _ => RwPost.pure rfl
-  unfold Ix.Compile.Pass.rewriteConstM
-  cases ci <;>
-  · refine RwPost.bind (cnst _) fun r hr => ?_
-    repeat (first
-      | (with_reducible apply RwPost.bindAny); intro _
-      | (with_reducible apply RwPost.ite)
-      | split)
-    all_goals ((try dsimp only); exact RwPost.pure ⟨hr, fun iv' h => by
-      first | (cases h; done) | (cases h; exact ⟨_, rfl, rfl⟩)⟩)
-
-
-/-- **A block rewrite's overlay holds rewrites of its members**: each entry
-is a member's name with the rewrite of that member's constant. -/
-theorem rewriteBlock_overlay {expansion? : Name → Except String (Option Ix.Compile.Pass.Expansion)}
-    {members : Array (Name × ConstantInfo)} {cfg : RwConfig} {rwr : Ix.Compile.Pass.BlockRewrite}
-    (h : Ix.Compile.Pass.rewriteBlock expansion? members cfg = .ok rwr) :
-    ∀ p ∈ rwr.overlay, ∃ ci, (p.1, ci) ∈ members ∧ Keeps ci p.2 := by
-  unfold Ix.Compile.Pass.rewriteBlock at h
-  obtain ⟨res, hloop, hret⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  have inv := Ix.CompileCert.Loop.forIn_inv_array
-    (I := fun _ (s : RwState × Array (Name × ConstantInfo) × Array (Name × String)) =>
-      ∀ p ∈ s.2.1, ∃ ci, (p.1, ci) ∈ members ∧ Keeps ci p.2) _ members ?_ (by simp) hloop
-  · dsimp only at hret
-    cases hret
-    exact inv
-  · intro pre x post s r hx hI hstep
-    obtain ⟨n, ci⟩ := x
-    dsimp only at hstep
-    obtain ⟨⟨⟨ci', changed⟩, st'⟩, hrun, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep
-    have keeps : Keeps ci ci' := rewriteConstM_keeps expansion? ci cfg
-      { s.1 with declines := #[] } _ st' hrun
-    have hmem : (n, ci) ∈ members := Array.mem_toList_iff.1 (by rw [← hx]; simp)
-    dsimp only at hstep
-    split at hstep
-    · cases hstep
-      refine ⟨_, rfl, fun p hp => ?_⟩
-      rcases Array.mem_push.1 hp with hp | rfl
-      · exact hI p hp
-      · exact ⟨ci, hmem, keeps⟩
-    · cases hstep
-      exact ⟨_, rfl, hI⟩
-
-
-/-- `E'` holds, under each name, the rewrite of a constant `E` holds under a
-`==` name. -/
+/-- `E'` holds, under each name, a constant that keeps the name and constructors
+of a constant `E` holds under a `==` name. -/
 def Agrees (E E' : Ix.Environment) : Prop :=
   ∀ x ci', E'.get? x = some ci' → ∃ n ci, (n == x) = true ∧ E.get? n = some ci ∧ Keeps ci ci'
 
 theorem Agrees.refl (E : Ix.Environment) : Agrees E E :=
   fun x ci h => ⟨x, ci, BEq.rfl, h, rfl, fun iv' h' => ⟨iv', h', rfl⟩⟩
-
-theorem mapError_ok {ε ε' α : Type} {f : ε → ε'} {x : Except ε α} {v : α} (h : x.mapError f = .ok v) :
-    x = .ok v := by
-  cases x with
-  | error e => cases h
-  | ok a => cases h; rfl
-
-/-- A lookup in the overlay map finds an entry under a `==` name. -/
-theorem overlay_get (L : List (Name × ConstantInfo)) :
-    ∀ (l : List (Name × ConstantInfo)) (m : Std.HashMap Name ConstantInfo), (∀ y ∈ l, y ∈ L) →
-      (∀ k v, m.get? k = some v → ∃ n, (n, v) ∈ L ∧ (n == k) = true) →
-      ∀ k v, (l.foldl (fun m x => match x with | (n, ci) => m.insert n ci) m).get? k = some v →
-        ∃ n, (n, v) ∈ L ∧ (n == k) = true
-  | [], _, _, hm => hm
-  | (yn, yci) :: l, m, hl, hm => by
-    rw [List.foldl_cons]
-    refine overlay_get L l _ (fun y hy => hl y (List.mem_cons_of_mem _ hy)) (fun k v h => ?_)
-    rw [Std.HashMap.get?_insert] at h
-    split at h
-    · rename_i hy
-      cases h
-      exact ⟨yn, hl _ List.mem_cons_self, hy⟩
-    · exact hm k v h
-
-/-- **Hook 2 keeps the environment's names**: the environment `prepareBlock`
-returns is its input's, or the input overlaid with rewrites of members'
-constants (`rewriteBlock_overlay`). -/
-theorem prepareBlock_agrees {cenv cenv' : CompileEnv} {all : Ix.Set Name} {lo : Name}
-    {p : Ix.Compile.Pass.Published} (h : Ix.Compile.Pass.prepareBlock cenv all lo = .ok (cenv', p)) :
-    Agrees cenv.env cenv'.env := by
-  unfold Ix.Compile.Pass.prepareBlock at h
-  repeat' (first
-    | (cases h; exact Agrees.refl _)
-    | (dsimp only at h; split at h)
-    | split at h)
-  all_goals
-    obtain ⟨res, hloop, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-    have members : ∀ q ∈ res.1, cenv.env.get? q.1 = some q.2 := by
-      rw [Std.HashSet.forIn_eq_forIn_toList] at hloop
-      refine Ix.CompileCert.Loop.forIn_inv
-        (I := fun _ (s : Array (Name × ConstantInfo) × Array Name) => ∀ q ∈ s.1, cenv.env.get? q.1 = some q.2)
-        _ all.toList ?_ all.toList [] _ res rfl (by simp) hloop
-      intro pre x post s r _ hI hstep
-      try dsimp only at hstep
-      split at hstep
-      · rename_i ci hci
-        obtain ⟨used', -, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep
-        cases hstep
-        refine ⟨_, rfl, fun q hq => ?_⟩
-        rcases Array.mem_push.1 hq with hq | rfl
-        · exact hI q hq
-        · exact hci
-      · cases hstep
-        exact ⟨_, rfl, hI⟩
-    try dsimp only at h
-    split at h
-    · cases h
-      exact Agrees.refl _
-    · obtain ⟨views, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-      try dsimp only at h
-      obtain ⟨rwr, hrw, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-      have overlay := rewriteBlock_overlay (mapError_ok hrw)
-      split at h
-      · cases h
-        exact Agrees.refl _
-      · try dsimp only at h
-        cases h
-        intro x ci' hx
-        have e : (∅ : Std.HashMap Name ConstantInfo).get? x = none := by
-          rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty]
-        rw [Ix.Environment.get?] at hx
-        dsimp only at hx
-        rw [e] at hx
-        dsimp only at hx
-        cases ho : (rwr.overlay.foldl (fun m x => match x with | (n, ci) => m.insert n ci)
-            (∅ : Std.HashMap Name ConstantInfo)).get? x with
-        | none =>
-          rw [ho] at hx
-          exact ⟨x, ci', BEq.rfl, hx, rfl, fun iv' h' => ⟨iv', h', rfl⟩⟩
-        | some ci'' =>
-          rw [ho] at hx
-          cases hx
-          rw [← Array.foldl_toList] at ho
-          obtain ⟨n, hn, hnx⟩ := overlay_get rwr.overlay.toList rwr.overlay.toList ∅ (fun _ h => h)
-            (fun k v h => by simp at h) x ci' ho
-          obtain ⟨ci, hci, keeps⟩ := overlay (n, ci') (Array.mem_toList_iff.1 hn)
-          exact ⟨n, ci, hnx, members (n, ci) hci, keeps⟩
-
-end rewrite
-
-/-! ## The clique step keeps the environment's names -/
-
-section clique
-
-theorem Keeps.trans {a b c : ConstantInfo} (h₁ : Keeps a b) (h₂ : Keeps b c) : Keeps a c := by
-  refine ⟨h₂.1.trans h₁.1, fun iv'' hc => ?_⟩
-  obtain ⟨iv', hb, e₂⟩ := h₂.2 iv'' hc
-  obtain ⟨iv, ha, e₁⟩ := h₁.2 iv' hb
-  exact ⟨iv, ha, e₂.trans e₁⟩
-
-theorem Agrees.trans {E E' E'' : Ix.Environment} (h₁ : Agrees E E') (h₂ : Agrees E' E'') : Agrees E E'' := by
-  intro x ci'' hx
-  obtain ⟨n', ci', hn', hci', k₂⟩ := h₂ x ci'' hx
-  obtain ⟨n, ci, hn, hci, k₁⟩ := h₁ n' ci' hci'
-  exact ⟨n, ci, PartialEquivBEq.trans hn hn', hci, k₁.trans k₂⟩
-
-/-- A clique's transported value replaces a definition's or a theorem's value
-only (`Clique.withValue`): the name and an inductive's constructors stay. -/
-theorem keeps_withValue (ci : ConstantInfo) (e : Expr) : Keeps ci (Ix.Compile.Pass.Clique.withValue ci e) := by
-  refine ⟨?_, fun iv' h => ?_⟩
-  · cases ci <;> rfl
-  · cases ci <;> (try simp only [Ix.Compile.Pass.Clique.withValue] at h) <;> cases h
-    exact ⟨_, rfl, rfl⟩
-
-/-- An overlay of the clique step: each entry is a constant of the
-environment `E` under its name, with another value. -/
-def OverlayOk (E : Name → Option ConstantInfo) (ov : Array (Name × ConstantInfo)) : Prop :=
-  ∀ q ∈ ov, ∃ ci e, E q.1 = some ci ∧ q.2 = Ix.Compile.Pass.Clique.withValue ci e
-
-theorem OverlayOk.push {E : Name → Option ConstantInfo} {ov : Array (Name × ConstantInfo)}
-    (h : OverlayOk E ov) {n : Name} {ci : ConstantInfo} (hci : E n = some ci) (e : Expr) :
-    OverlayOk E (ov.push (n, Ix.Compile.Pass.Clique.withValue ci e)) := by
-  intro q hq
-  rcases Array.mem_push.1 hq with hq | rfl
-  · exact h q hq
-  · exact ⟨ci, e, hci, rfl⟩
-
-/-- **The clique hook's overlay holds input constants with other values**:
-every entry `Clique.prepareCliques` returns is a constant of the hook's
-environment under its name, with a transported value (`Clique.withValue`). -/
-theorem prepareCliques_overlay {h : Ix.Compile.Pass.Clique.HookEnv} {all refs : Ix.Set Name}
-    {p : Ix.Compile.Pass.Clique.CliquePrep} (hp : Ix.Compile.Pass.Clique.prepareCliques h all refs = .ok p) :
-    OverlayOk h.env.get? p.overlay := by
-  revert hp
-  unfold Ix.Compile.Pass.Clique.prepareCliques
-  split
-  · intro hp; cases hp; intro q hq; simp at hq
-  · intro hp
-    obtain ⟨⟨refusal?, fresh0, reused0⟩, -, hp⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hp
-    revert hp
-    dsimp only
-    split
-    · intro hp
-      obtain ⟨_, h1, -⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hp
-      cases h1
-    · intro hp
-      obtain ⟨res, hloop, hp⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hp
-      have inv : OverlayOk h.env.get? res.1 := by
-        refine Ix.CompileCert.Loop.forIn_inv_array (I := fun _ s => OverlayOk h.env.get? s.1) _ _ ?_
-          (by intro q hq; simp at hq) hloop
-        intro pre n post s r _ hI hstep
-        -- every branch yields the overlay as it is, or pushed with an input
-        -- constant under the member's name (`withValue`)
-        repeat' (first
-          | (cases hstep; done)
-          | (obtain ⟨_, _, hstep⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hstep)
-          | (split at hstep))
-        all_goals (cases hstep)
-        all_goals first
-          | exact ⟨_, rfl, hI⟩
-          | exact ⟨_, rfl, OverlayOk.push hI ‹_› _⟩
-      revert hp
-      split
-      · intro hp; cases hp; intro q hq; simp at hq
-      · intro hp
-        obtain ⟨order, -, hp⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hp
-        cases hp
-        exact inv
-
-/-- **The clique step keeps the environment's names**: the environment
-`cliqueStep` returns is its input's, or the input overlaid with transported
-members and carried lemmas, each an input constant with another value
-(`prepareCliques_overlay`, `keeps_withValue`). -/
-theorem cliqueStep_keeps {cenv cenv' : CompileEnv} {all : Ix.Set Name} {lo : Name} {st : BlockState}
-    {p : Ix.Compile.Pass.Published} (h : Ix.Compile.Pass.cliqueStep cenv all lo = .ok (cenv', st, p)) :
-    Agrees cenv.env cenv'.env := by
-  unfold Ix.Compile.Pass.cliqueStep at h
-  split at h
-  · cases h; exact Agrees.refl _
-  · obtain ⟨prep, hprep, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-    have ov : OverlayOk cenv.env.get? prep.overlay := prepareCliques_overlay (mapError_ok hprep)
-    try dsimp only at h
-    split at h
-    · cases h; exact Agrees.refl _
-    · obtain ⟨⟨init, published⟩, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-      cases h
-      intro x ci' hx
-      have e : (∅ : Std.HashMap Name ConstantInfo).get? x = none := by
-        rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty]
-      rw [Ix.Environment.get?] at hx
-      dsimp only at hx
-      rw [e] at hx
-      dsimp only at hx
-      unfold Option.orElse at hx
-      split at hx
-      · rename_i ci'' ho
-        cases hx
-        rw [← Array.foldl_toList] at ho
-        obtain ⟨n, hn, hnx⟩ := overlay_get prep.overlay.toList prep.overlay.toList ∅ (fun _ h => h)
-          (fun k v h => by simp at h) x _ ho
-        obtain ⟨ci, e', hci, rfl⟩ := ov (n, _) (Array.mem_toList_iff.1 hn)
-        exact ⟨n, ci, hnx, hci, keeps_withValue ci e'⟩
-      · exact ⟨x, ci', BEq.rfl, hx, rfl, fun iv' h' => ⟨iv', h', rfl⟩⟩
-
-end clique
-
-/-! ## The claims of a block compile, hooks or not -/
-
-section claims
 
 /-- Every constant `E` holds carries a name `==` the one it is held under. -/
 def NamedEnv (E : Ix.Environment) : Prop :=
@@ -1011,11 +714,11 @@ theorem memberName_owned {E E' : Ix.Environment} {all : Ix.Set Name} {x : Name} 
 constructor an inductive member lists, when every constant of the environment
 carries its name (`compileBlockWithAux_names`). -/
 theorem runBlockWithAux_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
-    {cache : BlockState} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
-    (hn : NamedEnv cenv.env) (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?, pub)) :
+    {cache : BlockState} {layout? : Option Ixon.AuxLayout}
+    (hn : NamedEnv cenv.env) (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?)) :
     ∀ row ∈ r.projections, Owned cenv.env all row.1 := by
   unfold runBlockWithAux at h
-  obtain ⟨⟨⟨result, layout', published⟩, cache'⟩, hrun, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
+  obtain ⟨⟨⟨result, layout'⟩, cache'⟩, hrun, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
   try dsimp only at h
   have hr : r = result := by
     simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
@@ -1027,163 +730,14 @@ theorem runBlockWithAux_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name
 
 end claims
 
-/-! ## Image blocks claim their key only -/
-
-section image
-
-/-- A constant other than an inductive or a constructor (`constantInfo_lone`'s
-premises). -/
-def Lone (ci : ConstantInfo) : Prop :=
-  (∀ v, ci = .inductInfo v → False) ∧ ∀ v, ci = .ctorInfo v → False
-
-/-- An invariant of a fallible loop's state, kept by every step from a
-member of the list, holds of its result (`done` or not). -/
-theorem forIn_list_inv {α σ ε : Type} (I : σ → Prop) (f : α → σ → Except ε (ForInStep σ)) :
-    ∀ (l : List α), (∀ x ∈ l, ∀ s r, I s → f x s = .ok r → I r.value) →
-      ∀ (s res : σ), I s → forIn l s f = .ok res → I res := by
-  intro l
-  induction l with
-  | nil => intro _ s res hs h; cases h; exact hs
-  | cons x l ih =>
-    intro step s res hs h
-    rw [List.forIn_cons] at h
-    obtain ⟨r, hr, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-    have hv := step x List.mem_cons_self s r hs hr
-    cases r with
-    | done b => cases h; exact hv
-    | yield b => exact ih (fun y hy => step y (List.mem_cons_of_mem _ hy)) b res hv h
-
-/-- `forIn_list_inv` over an array. -/
-theorem forIn_array_inv {α σ ε : Type} (I : σ → Prop) (f : α → σ → Except ε (ForInStep σ)) (xs : Array α)
-    (step : ∀ x ∈ xs, ∀ s r, I s → f x s = .ok r → I r.value) {s res : σ} (hs : I s)
-    (h : forIn xs s f = .ok res) : I res := by
-  rw [← Array.forIn_toList] at h
-  exact forIn_list_inv I f xs.toList (fun x hx => step x (Array.mem_toList_iff.1 hx)) s res hs h
-
-/-- `forIn_list_inv` over a range `[:n]` (a bounded `for`, `break` included). -/
-theorem forIn_range_inv {σ ε : Type} (I : σ → Prop) (f : Nat → σ → Except ε (ForInStep σ)) (n : Nat)
-    (step : ∀ x s r, I s → f x s = .ok r → I r.value) {s res : σ} (hs : I s)
-    (h : forIn [:n] s f = .ok res) : I res := by
-  rw [Std.Legacy.Range.forIn_eq_forIn_range'] at h
-  exact forIn_list_inv I f _ (fun x _ => step x) s res hs h
-
-/-- An image constant is a definition or a theorem. -/
-theorem imageInfo_lone (cenv : CompileEnv) (dv : Ix.DefinitionVal) :
-    Lone (Ix.Compile.Pass.imageInfo cenv dv) := by
-  unfold Ix.Compile.Pass.imageInfo
-  constructor <;> intro v h <;> split at h <;> cases h
-
-/-- An image compiles alone, to no projections. -/
-theorem compileImage_lone {cenv : CompileEnv} {known : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
-    {ci : ConstantInfo} {r : BlockResult} {bs : BlockState} (hk : Lone ci)
-    (h : Ix.Compile.Pass.compileImage cenv known ci = .ok (r, bs)) : r.projections = #[] := by
-  unfold Ix.Compile.Pass.compileImage at h
-  dsimp only at h
-  split at h
-  · rename_i r' heq
-    cases h
-    exact constantInfo_lone ci hk.1 hk.2 _ _ _ _ (Ix.CompileCert.run_success heq)
-  · cases h
-
-/-- **An image block's images have no projections**: each is `compileImage` of
-an `imageInfo` (a definition or a theorem, `constantInfo_lone`), through the
-declarations loop and the bounded rounds of `compileImageBlock`. -/
-theorem compileImageBlock_lone {cenv : CompileEnv} {all : Ix.Set Name}
-    {imgs : Array (Name × BlockResult × BlockState)} {pub : Ix.Compile.Pass.Published}
-    (h : Ix.Compile.Pass.compileImageBlock cenv all = .ok (imgs, pub)) :
-    ∀ x ∈ imgs, x.2.1.projections = #[] := by
-  unfold Ix.Compile.Pass.compileImageBlock at h
-  dsimp only at h
-  obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  obtain ⟨views, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  obtain ⟨s2, h2, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  have hd : ∀ p ∈ s2.2.1, Lone p.2 := by
-    refine forIn_array_inv (fun s : Ix.Compile.Pass.RwState × Array (Name × ConstantInfo) ×
-      Array (Name × Ix.Compile.Pass.Expansion × Expr) => ∀ p ∈ s.2.1, Lone p.2) _ _ ?_
-      (fun _ hp => by simp at hp) h2
-    intro a _ s r hs hr
-    repeat' (first
-      | (obtain ⟨_, _, hr⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hr)
-      | (split at hr))
-    all_goals first
-      | (cases hr; done)
-      | (cases hr; exact hs)
-      | (cases hr
-         intro p hp
-         rcases Array.mem_push.1 hp with hp | rfl
-         exacts [hs p hp, imageInfo_lone _ _])
-  obtain ⟨s3, h3, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  have ho : (∀ p ∈ s3.1, Lone p.2) ∧ ∀ x ∈ s3.2.2.1, x.2.1.projections = #[] := by
-    refine forIn_range_inv (fun s : Array (Name × ConstantInfo) × Std.HashMap Ix.Compile.ExactKey.ExactName Address ×
-      Array (Name × BlockResult × BlockState) × String =>
-        (∀ p ∈ s.1, Lone p.2) ∧ ∀ x ∈ s.2.2.1, x.2.1.projections = #[]) _ _ ?_
-      ⟨hd, fun _ hx => by simp at hx⟩ h3
-    intro _ s r hs hr
-    split at hr
-    · cases hr; exact hs
-    · obtain ⟨t, ht, hr⟩ := Ix.CompileCert.Loop.except_bind_ok.1 hr
-      cases hr
-      refine forIn_array_inv (fun t : Std.HashMap Ix.Compile.ExactKey.ExactName Address ×
-        Array (Name × BlockResult × BlockState) × String × Array (Name × ConstantInfo) =>
-          (∀ x ∈ t.2.1, x.2.1.projections = #[]) ∧ ∀ p ∈ t.2.2.2, Lone p.2) _ _ ?_
-        ⟨hs.2, fun _ hp => by simp at hp⟩ ht |>.symm
-      intro x hx u q hu hq
-      split at hq
-      · rename_i r bs hc
-        cases hq
-        refine ⟨fun y hy => ?_, hu.2⟩
-        rcases Array.mem_push.1 hy with hy | rfl
-        exacts [hu.1 y hy, compileImage_lone (hs.1 x hx) hc]
-      · cases hq
-        refine ⟨hu.1, fun y hy => ?_⟩
-        rcases Array.mem_push.1 hy with hy | rfl
-        exacts [hu.2 y hy, hs.1 _ hx]
-  split at h
-  · obtain ⟨_, h, -⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-    cases h
-  · cases h
-    exact ho.2
-
-/-- An image block's result, the image of its key, has no projections. -/
-theorem runImageBlock_lone
-    {original : CompileEnv → Name → Ix.Set Name → Except CompileError (BlockResult × BlockState)}
-    {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult} {cache : BlockState}
-    {pub : Ix.Compile.Pass.Published}
-    (h : Ix.Compile.Pass.runImageBlock original cenv all lo = .ok (r, cache, pub)) : r.projections = #[] := by
-  unfold Ix.Compile.Pass.runImageBlock at h
-  dsimp only at h
-  obtain ⟨⟨imgs, published⟩, himgs, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  have lone := compileImageBlock_lone (mapError_ok himgs)
-  obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  obtain ⟨s, hs, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-
-  have hr : ∀ q, s.2 = some q → q.projections = #[] := by
-    refine forIn_array_inv (fun s : BlockState × Option BlockResult => ∀ q, s.2 = some q → q.projections = #[])
-      _ _ ?_ (fun _ hq => by cases hq) hs
-    intro x hx u v hu hv
-    split at hv
-    · cases hv
-      intro q hq
-      cases hq
-      exact lone x hx
-    · cases hv
-      exact hu
-  split at h
-  · rename_i q hq
-    cases h
-    exact hr _ hq
-  · cases h
-
 /-- **The claims of a block compile**: every projection name of
 `runBlock cenv all lo` hashes like a member of `all` or like a constructor an
 inductive member lists, when every constant of `cenv.env` carries its name
 (`runBlockWithAux_owned`). -/
 theorem runBlock_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
-    {cache : BlockState} {layout? : Option Ixon.AuxLayout} {pub : Ix.Compile.Pass.Published}
-    (hn : NamedEnv cenv.env) (h : runBlock cenv all lo = .ok (r, cache, layout?, pub)) :
+    {cache : BlockState} {layout? : Option Ixon.AuxLayout}
+    (hn : NamedEnv cenv.env) (h : runBlock cenv all lo = .ok (r, cache, layout?)) :
     ∀ row ∈ r.projections, Owned cenv.env all row.1 :=
   runBlockWithAux_owned hn h
-
-end image
 
 end Ix.Cert.Claims

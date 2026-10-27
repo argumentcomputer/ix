@@ -653,8 +653,7 @@ names share a name hash, every `Muts` entry agrees with its block, every
 resolved name is published where it resolves, every published input
 inductive's component is seen, every input name of the aux map is published
 with an original-form record, every published input name is resolved or in the
-aux map, no resolved name outside the aux map is a cross-SCC claim, every Pass 3
-head is in the changed set, all in the driver's final environment `cenv`,
+aux map, no resolved name outside the aux map is a cross-SCC claim, all in the driver's final environment `cenv`,
 every input constant carries the name it is stored under, and every published
 input name's address holds a stored record that is not a block. -/
 theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
@@ -665,7 +664,7 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       unoriginalAux env cenv.auxNameToAddr out.1 = none ∧
       unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
       crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-      foreignHead env cenv.auxReport.table cenv.p3Heads out.1 = none ∧ misnamedInput env = none ∧
+      misnamedInput env = none ∧
       strayConstructor env = none ∧ strayFailure env cenv.ungrounded = none ∧
       identityMismatch cenv.auxReport.identity out.1 = none ∧
       projectionCollision out.1 = none ∧ unreadablePublished env out.1 = none := by
@@ -673,7 +672,7 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
   -- walk the checks in order: every failing branch is an error, so the one
   -- branch that returns has each check's equation in context
   repeat' (first | (split at h) | (focus (cases h; done)))
-  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
+  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -682,7 +681,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -1134,7 +1133,7 @@ theorem inputsNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → ci.getCnst.name = n := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact misnamedInput_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.1
+  exact misnamedInput_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1
 
 /-- What `strayConstructor = none` says: every constructor name of an input
 inductive is stored as a constructor whose inductive hashes like the name the
@@ -1168,7 +1167,7 @@ theorem ctorsBelong {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures
     ∀ (n : Ix.Name) (iv : Ix.InductiveVal), env.consts.get? n = some (.inductInfo iv) →
       ∀ c ∈ iv.ctors, ∃ cv, env.consts.get? c = some (.ctorInfo cv) ∧ (cv.induct == n) = true := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact strayConstructor_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.1
+  exact strayConstructor_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- What `strayFailure = none` says: every name `ungrounded` holds is one the
 input's map holds. -/
@@ -1198,7 +1197,7 @@ theorem failuresInput {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
     ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
       ∀ x, cenv.ungrounded.contains x = true → (env.consts.get? x).isSome = true := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+  exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.1⟩
 
 /-- What the identity check's success says: every row of one name
 key has one verdict and address, and every identical row is published there. -/
@@ -1243,7 +1242,7 @@ theorem identityRowsAgree {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fa
       (∀ n a, (n, true, a) ∈ cenv.auxReport.identity.toList →
         (ixe.named.get? n).map (·.addr) = some a) := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, identityMismatch_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+  exact ⟨cenv, hu, identityMismatch_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
 
 /-- What `projectionCollision = none` says: two stored definition projection
 records of one member are one address. -/
@@ -1277,7 +1276,7 @@ theorem projectionsOne {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failu
     ∀ e ∈ ixe.consts.toList, ∀ e' ∈ ixe.consts.toList, ∀ r a a',
       definitionProjection e = some (r, a) → definitionProjection e' = some (r, a') → a = a' := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- What `unreadablePublished = none` says: every published input name's address
 holds a stored record whose bytes do not open with a block header. -/
@@ -1307,7 +1306,7 @@ theorem publishedReadable {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fa
     ∀ n named, (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
       ∃ lc, ixe.consts.get? named.addr = some lc ∧ blockHeader lc.rawBytes = false := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact unreadablePublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  exact unreadablePublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-! ## The theorems that hold now -/
 

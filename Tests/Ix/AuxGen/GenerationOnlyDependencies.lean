@@ -11,10 +11,7 @@ namespace Tests.Ix.AuxGen.GenerationOnlyDependencies
 open _root_.Ix _root_.Ix.AuxGen
 open Tests.Ix.AuxGen.GenerationOnlySpike (runTail sameTail)
 
-deriving instance BEq for Ix.Compile.Pass.Clique.Decl,
-  Ix.Compile.Pass.Clique.CliquePlan, Ix.Compile.Pass.Clique.CliqueOutcome,
-  BlockReport, CompileM.MetaRefTable, CompileM.BlockState, CompileM.BlockResult,
-  Ix.Compile.OriginalData.Receipt, Ix.Compile.Pass.Published
+deriving instance BEq for BlockReport, CompileM.BlockState, CompileM.BlockResult
 
 -- Explicit test-only access, with exact unique private-name matching. No
 -- constructor, environment or guard hook is added to the production API.

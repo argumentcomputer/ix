@@ -15,10 +15,7 @@
      driver's merge, with two blocks of one wave claiming one name) and
      through `promoteRemaining`: a primary name over an aux claim, an aux
      claim over a compiled name, over an earlier aux claim and over itself
-     within one block, an identical re-claim (accepted), a conflicting Pass 3
-     record of each kind (a display name, an image-kind head, a Lean block,
-     a canonical recursor compared whole), Pass 3 over a failed block (a
-     missing-constant cascade, not an image error), and a second compiled
+     within one block, an identical re-claim (accepted), and a second compiled
      claim at another address. The messages must be Rust's, character for character. An
      alias of a promoted target does not borrow the target's `original`
      (its own promotion supplies one), so its metadata does not depend on
@@ -45,6 +42,7 @@
 import Ix.Meta
 import Ix.EnvScope
 import Ix.CompileDriver
+import Ix.Compile.OriginalCapture
 import Tests.Ix.Compile.ScheduleReference
 
 open Lean
@@ -102,20 +100,15 @@ private def auxCache (claims : List (Ix.Name × Address)) : BlockState := Id.run
 
 /-- What every driver does with a compiled block: `checkBlockClaims`, then
     `mergeCompiledBlock` if the check passes. -/
-private def merge (acc : DriverAcc) (lo : Ix.Name) (result : BlockResult) (cache : BlockState)
-    (published : Ix.Compile.Pass.Published := {}) : Except CompileError DriverAcc := do
-  checkBlockClaims acc.cenv (primaryClaims lo result) cache published
-  pure (mergeCompiledBlock acc lo result cache published)
+private def merge (acc : DriverAcc) (lo : Ix.Name) (result : BlockResult) (cache : BlockState) :
+    Except CompileError DriverAcc := do
+  checkBlockClaims acc.cenv (primaryClaims lo result) cache
+  pure (mergeCompiledBlock acc lo result cache)
 
 private def errOf : Except CompileError DriverAcc → Option String
   | .error (.invalidMutualBlock r) => some r
   | .error e => some s!"(another error) {e}"
   | .ok _ => none
-
-private def recursor (n : Ix.Name) (k : Bool) : Ix.RecursorVal :=
-  { cnst := { name := n, levelParams := #[], type := Ix.Expr.mkSort Ix.Level.mkZero }
-    all := #[n], numParams := 0, numIndices := 0, numMotives := 1, numMinors := 0,
-    rules := #[], k, isUnsafe := false }
 
 /-- The driver-API cases: (label, expected message or `none` for accepted,
     actual). -/
@@ -154,54 +147,6 @@ def driverCases : List (String × Option String × Option String) := Id.run do
     errOf (merge withCompiled n (loneResult y) default))]
   cases := cases ++ [("identical second compiled claim", none,
     errOf (merge withCompiled n (loneResult x) default))]
-  -- Pass 3's records (Rust `insert_once`, `move_to_display`): a display
-  -- name, an image-kind head, a Lean block and a canonical recursor are
-  -- insert-once against the live state and within the block
-  let k := ixName "Fx.A.rec"
-  let d := ixName "Fx.A._ix.rec"
-  let lo₃ := ixName "Fx.B"
-  let rec₁ := recursor k false
-  let rec₂ := recursor k true
-  let withP3 : DriverAcc := { cenv := { (default : CompileEnv) with
-    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert d x
-    p3Heads := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert k lo
-    p3Blocks := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert lo #[lo]
-    p3CanonRecs := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert k rec₁ } }
-  let display (a : Address) : BlockState :=
-    { (default : BlockState) with
-      auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert d a }
-  cases := cases ++ [("conflicting display name", some (rustConflict d x y),
-    errOf (merge withP3 lo₃ (loneResult (addr "t")) (display y)))]
-  cases := cases ++ [("conflicting image-kind head",
-    some s!"Pass 3: conflicting image-kind head '{k.pretty}'",
-    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { heads := #[(k, lo₃)] }))]
-  cases := cases ++ [("conflicting image-kind head in one block",
-    some s!"Pass 3: conflicting image-kind head '{d.pretty}'",
-    errOf (merge emptyAcc lo₃ (loneResult (addr "t")) default
-      { heads := #[(d, lo), (d, lo₃)] }))]
-  cases := cases ++ [("conflicting Lean block",
-    some s!"Pass 3: conflicting Lean block '{lo.pretty}'",
-    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { blocks := #[(lo, #[lo, lo₃])] }))]
-  cases := cases ++ [("conflicting canonical recursor (same type, other fields)",
-    some s!"Pass 3: conflicting canonical recursor '{k.pretty}'",
-    errOf (merge withP3 lo₃ (loneResult (addr "t")) default { canonRecs := #[(k, rec₂)] }))]
-  cases := cases ++ [("equal Pass 3 records", none,
-    errOf (merge withP3 lo₃ (loneResult (addr "t")) (display x)
-      { heads := #[(k, lo)], blocks := #[(lo, #[lo])], canonRecs := #[(k, rec₁)] }))]
-  -- the cascade rule (`Ix.Compile.Pass.pass3Failure`): an image block whose
-  -- Lean block has a member that did not compile fails as that member's
-  -- missing constant, like every other dependent of a failed block
-  let h := ixName "Fx.C.rec"
-  let key := ixName "Fx.C"
-  let failedBlock : CompileEnv := { (default : CompileEnv) with
-    p3Heads := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert h key
-    p3Blocks := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert key #[key] }
-  let cascade : Option String :=
-    match runBlock failedBlock (({} : Ix.Set Ix.Name).insert h) h with
-    | .ok _ => none
-    | .error e => some (toString e)
-  cases := cases ++ [("Pass 3 over a failed block: its cascade",
-    some s!"missingConstant: {key}", cascade)]
   -- the wave driver: two blocks of one wave, computed on one snapshot,
   -- claim `n` at different addresses; the second merge is refused and the
   -- block is reported failed (its dependents are released as failed)
@@ -209,9 +154,9 @@ def driverCases : List (String × Option String × Option String) := Id.run do
   let all₁ : Ix.Set Ix.Name := ({} : Ix.Set Ix.Name).insert lo
   let all₂ : Ix.Set Ix.Name := ({} : Ix.Set Ix.Name).insert lo₂
   let (acc₁, _, failed₁) := applyAuxBlockOutcome emptyAcc lo all₁
-    (.compiled (loneResult (addr "t")) (auxCache [(n, x)]) {})
+    (.compiled (loneResult (addr "t")) (auxCache [(n, x)]))
   let (acc₂, names₂, failed₂) := applyAuxBlockOutcome acc₁ lo₂ all₂
-    (.compiled (loneResult (addr "u")) (auxCache [(n, y)]) {})
+    (.compiled (loneResult (addr "u")) (auxCache [(n, y)]))
   let waveMsg : Option String :=
     if failed₁ || !failed₂ || !names₂.isEmpty || acc₂.cenv.auxNameToAddr.get? n != some x then
       some s!"wrong outcome: failed {failed₁}/{failed₂}, registered {names₂.size}, \
@@ -331,7 +276,7 @@ def promotionCases : List (String × Bool) := Id.run do
       defHints := ({} : Std.HashMap _ _).insert a .abbrev |>.insert other .opaque
       pending := #[a, b, other] }
   let withdrawn (out : DriverAcc) : Bool :=
-    out.originals.isEmpty && all.toList.all (fun n => (resolveAddrPure out.cenv n).isNone &&
+    all.toList.all (fun n => (resolveAddrPure out.cenv n).isNone &&
       !out.cenv.nameToNamed.contains n && !out.cenv.auxGenExtraNames.contains n &&
       out.cenv.ungrounded.contains n && !out.defHints.contains n && !out.pending.contains n)
   let untouched (out : DriverAcc) : Bool :=
@@ -363,36 +308,17 @@ def promotionCases : List (String × Bool) := Id.run do
     #[(other, default, .empty)] }
   let (claimFailure, names, bad) := finishAuxPromotion conflict a all
     (some (outside, default))
-  cases := cases ++ [("remaining-claim failure discards staged originals",
+  cases := cases ++ [("remaining-claim failure withdraws the whole block",
     bad && names.isEmpty && withdrawn claimFailure && untouched claimFailure)]
   let (ok, _, bad) := finishAuxPromotion acc a all (some (loneResult original, default))
   cases := cases ++ [("valid neighbor promotes canonical addresses and own original",
     !bad && all.toList.all (fun n => ok.cenv.nameToAddr.get? n == some canonical) &&
     ((ok.cenv.nameToNamed.get? a).bind (·.original)) == some (original, .empty) &&
-    ok.cenv.ungrounded.isEmpty && untouched ok && ok.originals.size == 1 &&
-    ok.originals[0]?.map (·.published) == some canonical &&
-    ok.originals[0]?.map (·.original.addr) == some original)]
-  let (retried, _, retryBad) := finishAuxPromotion
-    { acc with originals := claimFailure.originals } a all (some (loneResult original, default))
-  cases := cases ++ [("retry publishes only its own captured original",
-    !retryBad && retried.originals.size == 1)]
+    ok.cenv.ungrounded.isEmpty && untouched ok)]
   let definition : Ixon.Constant := { (default : Ixon.Constant) with info := .defn { (default : Ixon.Definition) with kind := .defn } }
-  let bytes := Ixon.ser definition
-  let sourceResult : BlockResult :=
-    { block := definition, blockBytes := bytes, blockAddr := Address.admissionHash bytes }
   let sourceCache : BlockState :=
     { defHints := ({} : Std.HashMap _ _).insert a (.regular 7) }
-  let captured := Ix.Compile.OriginalData.captureOriginals a sourceResult sourceCache
-    (fun n => if n == a then some canonical else none)
   let imageCache : BlockState := { defHints := ({} : Std.HashMap _ _).insert a .abbrev }
-  let imagePublished : Ix.Compile.Pass.Published := { originals := captured }
-  let image := mergeCompiledBlock emptyAcc a (loneResult canonical) imageCache imagePublished
-  let reclaimed := mergeCompiledBlock image a (loneResult canonical) imageCache imagePublished
-  cases := cases ++ [("image captures exact source bytes and hints before overrides",
-    image.originals.size == 1 && image.originals[0]?.map (·.original.bytes) == some bytes &&
-    image.originals[0]?.map (·.hints) == some (some (some (.regular 7))) &&
-    image.defHints.get? a == some .abbrev),
-    ("identical re-claim retains the owner's receipt", reclaimed.originals.size == 1)]
   let getHints := Ix.Compile.OriginalData.capturedHints
   let theoremRecord : Ixon.Constant := { (default : Ixon.Constant) with info := .defn { (default : Ixon.Definition) with kind := .thm } }
   let block : Ixon.Constant := { (default : Ixon.Constant) with info := .muts #[.defn { (default : Ixon.Definition) with kind := .defn }] }

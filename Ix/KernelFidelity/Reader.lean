@@ -3,7 +3,7 @@ module
 public import Ix.Environment
 public import Ix.SemanticContract
 public import Ix.IxonUniv
-public import Ix.Compile.Pass
+public import Ix.Compile.Pass.Names
 public import Ix.CanonM
 public import Ix.KernelCheck.Step
 public import Ix.KernelCheck.Stream

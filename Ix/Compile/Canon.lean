@@ -37,4 +37,3 @@ public import Ix.Compile.Canon.Order
 public import Ix.Compile.Canon.Classes
 public import Ix.Compile.Canon.Nested
 public import Ix.Compile.Canon.Block
-public import Ix.Compile.Canon.Clique

@@ -18,9 +18,8 @@ This module proves:
 
 The dispatch used to audit the declaration's call-site plan heads first,
 a no-op without plans (`surgeryFree`); the audits went with the call-site
-surgery (CQ3.5). Several statements keep their `surgeryFree` premise, now
-"no Pass 3 decompile records" (`p3Sources` empty); where a proof no longer
-reads it, it is bound as `_free`. -/
+surgery (CQ3.5). Several statements keep their `surgeryFree` premise, which
+always holds; where a proof no longer reads it, it is bound as `_free`. -/
 
 namespace Ix.CompileCert.EmissionDispatch
 

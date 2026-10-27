@@ -17,25 +17,12 @@ import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Compile.NestedAgreement
 import Tests.Ix.Compile.Canon
-import Tests.Ix.Compile.CanonClique
-import Tests.Ix.Compile.Clique.Dag
-import Tests.Ix.Compile.Clique.Ownership
-import Tests.Ix.Compile.Clique.OwnershipUnits
-import Tests.Ix.Compile.Clique.Recognition
-import Tests.Ix.Compile.Clique.Rows
-import Tests.Ix.Compile.Clique.Transport
 import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.Compile.Image
-import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.RoleCompile
 import Tests.Ix.HostAdmissionCli
-import Tests.Ix.Compile.O11aCopies
-import Tests.Ix.Compile.O11aPlanning
-import Tests.Ix.Compile.PlanCache
-import Tests.Ix.Compile.Pass3Cliques
-import Tests.Ix.Compile.ChangedSet
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -48,15 +35,9 @@ import Tests.Ix.Compile.ExpressionIndex
 import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.ExactKey
 import Tests.Ix.Compile.UniverseCache
-import Tests.Ix.Compile.RewriteRetry
-import Tests.Ix.Compile.Pass3Core
-import Tests.Ix.Compile.HeadLookup
 import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.LeanReportTests
 import Tests.Ix.Compile.AuxCertLeanExpect
-import Tests.Ix.Compile.KernelLegs
-import Tests.Ix.Compile.Pass3
-import Tests.Ix.Compile.Pass3Tools
 import Tests.Ix.Compile.DriverInput
 import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
@@ -74,12 +55,10 @@ import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.ClosurePhase4
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
-import Tests.Ix.Compile.SelectedAdmission
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.Oracle
 import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.SourceIdentity
-import Tests.Ix.Compile.AuxSource
 import Tests.Ix.Compile.SourceFamily
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
@@ -218,31 +197,6 @@ def registry : List Entry := [
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   .suite "graph-unit" .primary Tests.Ix.GraphM.suite,
   .suite "condense-unit" .primary Tests.Ix.CondenseM.suite,
-  -- Pass 1's clique order: the pinned choice compares last
-  .suite "canon-clique" .primary Tests.Ix.Compile.CanonClique.suite,
-  -- The clique transport library (Ix.Compile.Pass.Clique, which the compiler
-  -- runs; a landing suite covers the wiring), on its own: its DAG helpers against the
-  -- tree helpers and the memo's fuel and fresh-variable behaviour; on the
-  -- clique twins and its own fixtures (loaded with the twins at run time),
-  -- the recognisers and their adversarial negatives (encoding constants'
-  -- names on user bodies refused or ordinary), and the transport against the
-  -- twins' oracle, kernel-checked (Tests.Ix.Compile.Clique.{Dag,Recognition,
-  -- Transport}; about 2 s and 23 s)
-  .suite "clique-dag" .primary Tests.Ix.Compile.Clique.Dag.suite,
-  .runner "clique-recognition" .primary Tests.Ix.Compile.Clique.Recognition.run,
-  .runner "clique-transport" .primary Tests.Ix.Compile.Clique.Transport.run,
-  -- the transport and the plan on cliques whose user values have the shape of
-  -- their own encoding (both member orders): kernel-checked, every member
-  -- evaluated against Lean's (one fixpoint unfolding deep), the controls
-  -- transported; the carried-lemma plans, eq_def regeneration and the memo
-  -- by ownership mode (Tests.Ix.Compile.Clique.Ownership, library cases; the
-  -- compiled units are `clique-ownership-units`; about 4 s)
-  .runner "clique-ownership" .primary Tests.Ix.Compile.Clique.Ownership.run,
-  -- the equation rows of every transported well-founded fixture plan and the
-  -- copies of its encoding, admitted by Lean's kernel, each row's swapped
-  -- right-hand side rejected (Tests.Ix.Compile.Clique.Rows; the fixture families'
-  -- landing suite checks the rows the compiler emits with both kernels)
-  .runner "clique-rows" .primary Tests.Ix.Compile.Clique.Rows.run,
   -- the image generator's expression comparisons: raw-exact alpha equality, and motive
   -- matching up to canonical universes (Ix.Compile.Image)
   .suite "image-alpha-eq" .primary Tests.Ix.Compile.AlphaEq.suite,
@@ -257,8 +211,6 @@ def registry : List Entry := [
     ++ Tests.Ix.AuxGen.ConfigurationTests.suite),
   -- source-body recognition of casesOn/recOn: the comparison controls (Ix.AuxGen.SourceIdentity)
   .suite "aux-source-identity-unit" .primary Tests.Ix.Compile.SourceIdentity.suite,
-  -- `Ix.AuxSource`: telescopes and the split-minor helpers' temporary-variable supply (CQ5.1)
-  .suite "aux-source-unit" .primary Tests.Compile.AuxSource.suite,
   -- the scan, and the compile's named refusal of ungrounded input (Lean and Rust)
   .suite "ground-unit" .primary (Tests.Ground.suite ++ Tests.Ix.Compile.GroundRefusal.suite),
   -- expression wire indices that do not fit a UInt64 are refused, never wrapped
@@ -269,20 +221,10 @@ def registry : List Entry := [
   .suite "exact-expression-key" .primary Tests.Ix.Compile.ExactKey.suite,
   -- exact universe-cache keys: the level and its complete parameter context
   .suite "universe-cache" .primary Tests.Ix.Compile.UniverseCache.suite,
-  -- the call-site rewrite's retry after a proof-justified hit: generic callbacks keep
-  -- it, the production ordering may skip it (Ix.Compile.Pass.Translate)
-  .suite "rewrite-retry" .primary Tests.Ix.Compile.RewriteRetry.suite,
-  -- the Pass 3 core without the driver: the call-site rewrite, the side-car, the memo
-  -- shape and the views' equality (Ix.Compile.Pass)
-  .suite "pass3-core-unit" .primary Tests.Ix.Compile.Pass3Core.suite,
-  -- Pass 3's head table confirms the full name: a different name with a head's
-  -- stored hash takes no route of the hooks (Tests.Ix.Compile.HeadLookup)
-  .suite "image-head-lookup" .primary Tests.Ix.Compile.HeadLookup.suite,
   -- the strict readers of the checkers' reports (Tests.Ix.Compile.KernelReport)
   .suite "compiler-reports" .primary Tests.Ix.Compile.KernelReportTests.suite,
   .suite "compiler-lean-reports" .primary Tests.Ix.Compile.LeanReportTests.suite,
   .suite "aux-cert-lean-expect" .primary Tests.Ix.Compile.AuxCertLeanExpect.suite,
-  .suite "compiler-kernel-legs" .primary Tests.Ix.Compile.KernelLegs.suite,
   -- auxiliary dump inputs keyed by the canonical member, not the Tarjan representative
   .suite "aux-dump-inputs" .primary Tests.Compile.AuxGenDiff.suite,
   -- the compile drivers refuse a condensation block without a reference set
@@ -582,19 +524,6 @@ def registry : List Entry := [
   .env "canon-pass1"
     (expectedToRetire "it checks the canonical class order of mutual blocks")
     Tests.Ix.Compile.Canon.run,
-  -- The changed set (H1): the change predicate's causes, the set on the
-  -- fixture corpus against both compilers' Pass 3 edits (the components the
-  -- first hook edits, the published heads, the decompile records' carriers),
-  -- and Init+Std empty (Tests.Ix.Compile.ChangedSet).
-  .env "changed-set"
-    (expectedToRetire "it predicts the blocks the compile rewrites")
-    Tests.Ix.Compile.ChangedSet.run,
-  -- Route A B9a: on the same corpus, compiled by `Ix.Cert.compileReport`, the
-  -- facts `avoids_unchanged` proves single the set out, and `FirstsAgree` holds
-  -- (Tests.Ix.Cert.Statement).
-  .env "cert-unchanged" (.ci .compilePipeline) Tests.Ix.Cert.Statement.unchangedCorpus,
-  .runner "changed-set-initstd" (.ci .landingInitStd) Tests.Ix.Compile.ChangedSet.runInitStd,
-  .env "changed-set-testenv" (.manual "two Rust compiles of the whole test environment; the calibration of the change predicate against the Rust artifact's Pass 3 edits") Tests.Ix.Compile.ChangedSet.runTestEnv,
   .env "decompile-diff" (.ci .compilePipeline) Tests.Compile.DecompileDiff.run,
   -- Non-canonical stored inductive flags: refused by both compilers
   -- (Tests.Ix.Compile.IndFlags).
@@ -614,13 +543,6 @@ def registry : List Entry := [
   .runner "compile-claim-conflict"
     (expectedToRetire "it checks regenerated auxiliaries' claims on source names")
     Tests.Ix.Compile.ClaimConflict.run,
-  .runner "o11a-decline"
-    (expectedToRetire "it checks a size-instance rewrite of split blocks")
-    Tests.Ix.Compile.O11aDecline.run,
-  .runner "o11a-copies" (.ci .compilePipeline) Tests.Ix.Compile.O11aCopies.run,
-  .runner "o11a-planning"
-    (expectedToRetire "it checks the producer plans of split blocks")
-    Tests.Ix.Compile.O11aPlanning.run,
   -- Source ownership of auxiliary claims, independent of arrival order
   -- (Tests.Ix.Compile.ClaimOrder).
   .runner "compile-claim-order"
@@ -633,44 +555,11 @@ def registry : List Entry := [
   .suite "compile-closure-phase4" .primary Tests.Ix.Compile.ClosurePhase4.suite,
   .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
   .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
-  -- Admission of selected compile targets (Tests.Ix.Compile.SelectedAdmission): the
-  -- definition, theorem and projection fronts that one authenticated check prepares
-  -- for the targets of a compiled unit, against their records, with the recursor-family,
-  -- snapshot, candidate-value and projection controls (fixtures loaded at run time)
-  .runner "compiler-selected-admission" (.ci .compilerClosures) Tests.Ix.Compile.SelectedAdmission.run,
-  .runner "compiler-selected-admission-originals"
-    (expectedToRetire "it censuses the selected originals of the blocks the compile rewrites")
-    Tests.Ix.Compile.SelectedAdmission.runOriginals,
   -- Canonicity over twin presentations, exact against the non-canonical
   -- record under the records policy (Tests.Ix.Compile.Twins).
   .runner "twins"
     (expectedToRetire "it checks that reordered twins compile to one address")
     Tests.Ix.Compile.Twins.run,
-  -- Pass 3's clique tables (plans, rows) are memos: the check mode
-  -- (`IX_PASS3_CHECK_PLANS`) at 1, 4 and 32 workers writes the reference's
-  -- bytes, with negative controls (Tests.Ix.Compile.PlanCache)
-  .runner "pass3-plan-cache"
-    (expectedToRetire "it checks the memo tables of clique transport")
-    Tests.Ix.Compile.PlanCache.run,
-  -- The clique transport wired: every plan of the twins unit, and its rows and
-  -- `_ix.src` copies published exactly (Tests.Ix.Compile.Pass3Cliques)
-  .runner "pass3-cliques"
-    (expectedToRetire "it checks clique transport")
-    Tests.Ix.Compile.Pass3Cliques.run,
-  -- The clique-ownership cases compiled as units: plans over compiled addresses,
-  -- WF8's caller refused by name, values, kernels, the Rust leg; the carried-lemma
-  -- units (Tests.Ix.Compile.Clique.OwnershipUnits)
-  .runner "clique-ownership-units"
-    (expectedToRetire "it checks clique ownership")
-    Tests.Ix.Compile.Clique.OwnershipUnits.run,
-  -- Pass 3 on every fixture family: names, decompile, the certified checker and the
-  -- Rust kernel against the kernel-failure record, the images' computation rules,
-  -- display names, block failures against the record (Tests.Ix.Compile.Pass3)
-  .env "pass3"
-    (expectedToRetire "it checks the caller rewrite of changed blocks and their images")
-    Tests.Ix.Compile.Pass3.run,
-  -- Its evidence and diagnostic tools, one per variable (Tests.Ix.Compile.Pass3Tools)
-  .runner "pass3-tools" (.manual "one evidence or diagnostic tool of `pass3`, selected by exactly one PASS3_* variable; records nothing by itself and approves nothing") Tests.Ix.Compile.Pass3Tools.tools,
   -- Lean's own auxiliaries against the ones Ix regenerates, over the twin
   -- families with a canonical reference: the nested-order and packaging
   -- classes fail (Tests.Ix.Compile.Oracle).
@@ -735,5 +624,4 @@ def main (args : List String) : IO UInt32 := do
   -- both expected to retire (`expectedToRetire`): runnable by name until
   -- the code they test is removed
   Tests.Registry.run registry get_env! args (required :=
-    [("auxgen-checked-generation", "manual"),
-     ("pass3-plan-cache", "manual")])
+    [("auxgen-checked-generation", "manual")])

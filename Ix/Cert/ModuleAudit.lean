@@ -1,6 +1,6 @@
 import IxC.Kernel.Audit.Axioms
-import Ix.Cert.ArtifactFronts
-import Ix.Cert.CandidateValueFront
+import Ix.Cert.Closure
+import Ix.Cert.PrefixCore
 import Ix.Cert.RecursorSupport
 import Ix.Cert.SourceContext.Check
 import Ix.Cert.SourceContext.Maps
@@ -12,9 +12,9 @@ import Ix.Cert.SourceGroupView
 import Ix.Cert.SourceInput
 import Ix.Cert.SourceInput.Prepared
 import Ix.Cert.SourceMetadata
+import Ix.Cert.SourceOrder
 import Ix.Cert.SourceOwnership
 import Ix.Cert.SourceUses
-import Ix.Cert.UnchangedComponent
 import Ix.CompileCert.SourceFamily
 import Ix.CompileCert.SourceFamilyTraversal
 import Ix.CompileCert.SourceIdentity
@@ -32,13 +32,14 @@ import Ix.RoleBinding.ArtifactTieredTheorems
 
 `Ix/Cert/Audit.lean` fixes the axioms of the certification statements, and so
 bounds every declaration they reach. The modules named here are reached by
-none of them:
+none of them, or only in part:
 * the Source-side grouping, ownership, metadata and use facts
   (`Ix.Compile.SourceInput.*`, `Ix.Cert.Source*`);
-* the fronts of artifact admission and of admitted targets, recursor-family
-  support and candidate values (`Ix.Cert.ArtifactFronts`,
-  `Ix.Cert.RecursorSupport`, `Ix.Cert.CandidateValueFront`), and unchanged
-  components (`Ix.Cert.UnchangedComponent`);
+* recursor-family support (`Ix.Cert.RecursorSupport`);
+* the computed closure (`Ix.Cert.Closure`), the Source order's enumeration
+  (`Ix.Cert.SourceOrder`), and the stored prefix's readings at a final
+  interpretation (`Ix.Cert.PrefixCore`, with the reference fronts, conversion
+  values and value rows it imports);
 * the Source family and identity checks (`Ix.CompileCert.Source*`);
 * the theorems of the artifact and host admission entries
   (`Ix.RoleBinding.Artifact*Theorems`, `Ix.HostAdmission.Theorems`).
@@ -52,8 +53,8 @@ Every safe declaration of each named module, and of every `Ix.Cert` and
 imported or declares nothing. -/
 
 #guard_module_axioms
-  Ix.Cert.ArtifactFronts
-  Ix.Cert.CandidateValueFront
+  Ix.Cert.Closure
+  Ix.Cert.PrefixCore
   Ix.Cert.RecursorSupport
   Ix.Cert.SourceContext.Check
   Ix.Cert.SourceContext.Maps
@@ -65,9 +66,9 @@ imported or declares nothing. -/
   Ix.Cert.SourceInput
   Ix.Cert.SourceInput.Prepared
   Ix.Cert.SourceMetadata
+  Ix.Cert.SourceOrder
   Ix.Cert.SourceOwnership
   Ix.Cert.SourceUses
-  Ix.Cert.UnchangedComponent
   Ix.CompileCert.SourceFamily
   Ix.CompileCert.SourceFamilyTraversal
   Ix.CompileCert.SourceIdentity

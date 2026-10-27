@@ -2,7 +2,6 @@ import Ix.Compile.OriginalData
 import Ix.SpecDigest.Audit
 import Ix.Cert.Statement
 import Ix.Cert.StrongCommutation
-import Ix.Cert.ProjectionMembers
 import Ix.Cert.RecordHeaders
 import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
@@ -19,12 +18,10 @@ import Ix.Cert.RoleClosure
 import Ix.Cert.NoCtor
 import Ix.Cert.Quotient
 import Ix.Cert.LiteralOrder
-import Ix.Cert.Unchanged
 import Ix.Cert.ReaderUnits
-import Ix.Cert.PassHooks
+import Ix.Cert.BlockRecords
 import Ix.Cert.Resolution
-import Ix.Cert.OriginalBytes
-import Ix.Cert.HookFree
+import Ix.Cert.ClosureClaims
 import Ix.Cert.CtxAgree
 import Ix.Cert.CtxAgreeHints
 import Ix.Cert.SourcePrelude
@@ -43,23 +40,9 @@ import Ix.Cert.SourceOrigin
 import Ix.Cert.SourceOriginRead
 import Ix.Cert.ValueRows
 import Ix.Cert.ConversionValues
-import Ix.CompileCert.ImageOrigin
-import Ix.CompileCert.ImageShape
-import Ix.CompileCert.CliqueRowShape
-import Ix.CompileCert.CliqueRowsCoverage
-import Ix.CompileCert.O6RecRead
 import Ix.Cert.AnnotatedBeta
-import Ix.CompileCert.O6Annotation
-import Ix.Cert.CheckedBetaSpine
-import Ix.CompileCert.O6Values
-import Ix.CompileCert.O6Opened
-import Ix.CompileCert.O6LambdaValues
 import Ix.Cert.ContextValues
 import Ix.Cert.ApplicationFronts
-import Ix.CompileCert.O6ApplicationValues
-import Ix.CompileCert.O6Telescope
-import Ix.CompileCert.O6TelescopeOpened
-import Ix.CompileCert.O6TelescopeValues
 import Ix.Cert.ReferenceFronts
 import Ix.Cert.PrefixReadings
 import Ix.Cert.PrefixCore
@@ -70,14 +53,7 @@ import Ix.Cert.PrefixRecRules
 import Ix.Cert.PrefixTowers
 import Ix.Cert.PrefixNatOps
 import Ix.Cert.RuleInputValues
-import Ix.CompileCert.O6PrefixValues
-import Ix.CompileCert.OptDispatchOrigin
-import Ix.CompileCert.OptShapeOrigin
-import Ix.CompileCert.ViewPublicationOrigin
 import Ix.CompileCert.PrimaryAddressFrame
-import Ix.CompileCert.ImageAuxOrigins
-import Ix.CompileCert.DisplayAddressFrame
-import Ix.Cert.PrefixVisibility
 import Ix.Cert.CompileCorrect
 import Ix.Cert.Composition
 import Ix.Cert.UnchangedRules
@@ -1106,6 +1082,10 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.referenceCycle
 
+-- Re-frozen when the compiler stopped rewriting Lean: the heads check (`foreignHead`,
+-- the eleventh, with `regeneratedNames`) is deleted with the rewriting hooks whose
+-- heads it bounded, so the checks after it move up by one (sixteen checks), and
+-- `checkReport_ok` loses its conjunct.
 /-- info: def Ix.Cert.checkReport : Ix.Environment → Ix.CompileM.CompileEnv → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
 fun env cenv out =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
@@ -1126,58 +1106,54 @@ fun env cenv out =>
                 | none =>
                   match Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
                   | none =>
-                    match Ix.Cert.foreignHead env cenv.auxReport.table cenv.p3Heads out.fst with
+                    match Ix.Cert.misnamedInput env with
                     | none =>
-                      match Ix.Cert.misnamedInput env with
+                      match Ix.Cert.strayConstructor env with
                       | none =>
-                        match Ix.Cert.strayConstructor env with
+                        match Ix.Cert.strayFailure env cenv.ungrounded with
                         | none =>
-                          match Ix.Cert.strayFailure env cenv.ungrounded with
+                          match Ix.Cert.identityMismatch cenv.auxReport.identity out.fst with
                           | none =>
-                            match Ix.Cert.identityMismatch cenv.auxReport.identity out.fst with
+                            match Ix.Cert.projectionCollision out.fst with
                             | none =>
-                              match Ix.Cert.projectionCollision out.fst with
-                              | none =>
-                                match Ix.Cert.unreadablePublished env out.fst with
-                                | none => Except.ok ()
-                                | some n =>
-                                  Except.error
-                                    (toString "compileReport: readability check failed: the input name " ++ toString n.pretty ++
-                                      toString " is published at an address that holds no stored record, or a block record")
-                              | some (b, i) =>
+                              match Ix.Cert.unreadablePublished env out.fst with
+                              | none => Except.ok ()
+                              | some n =>
                                 Except.error
-                                  (toString "compileReport: projection check failed: member " ++ toString i ++
-                                        toString " of the block at " ++
-                                      toString b ++
-                                    toString " has more than one stored definition projection record")
-                            | some (n, same, a) =>
+                                  (toString "compileReport: readability check failed: the input name " ++
+                                      toString n.pretty ++
+                                    toString
+                                      " is published at an address that holds no stored record, or a block record")
+                            | some (b, i) =>
                               Except.error
-                                (toString "compileReport: identity check failed: the identity row of " ++
-                                            toString n.pretty ++
-                                          toString " (" ++
-                                        toString (if same = true then "identical" else "not identical") ++
-                                      toString " at " ++
-                                    toString a ++
-                                  toString
-                                    ") disagrees with another row of that name, or the name is not published at that address")
-                          | some f =>
+                                (toString "compileReport: projection check failed: member " ++ toString i ++
+                                      toString " of the block at " ++
+                                    toString b ++
+                                  toString " has more than one stored definition projection record")
+                          | some (n, same, a) =>
                             Except.error
-                              (toString "compileReport: failure check failed: the driver records the name " ++
-                                  toString f.pretty ++
-                                toString " as a failure, but no input constant is stored under it")
-                        | some c =>
+                              (toString "compileReport: identity check failed: the identity row of " ++
+                                          toString n.pretty ++
+                                        toString " (" ++
+                                      toString (if same = true then "identical" else "not identical") ++
+                                    toString " at " ++
+                                  toString a ++
+                                toString
+                                  ") disagrees with another row of that name, or the name is not published at that address")
+                        | some f =>
                           Except.error
-                            (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
-                              toString ", a constructor of an input inductive, is not stored as a constructor of it")
-                      | some n =>
+                            (toString "compileReport: failure check failed: the driver records the name " ++
+                                toString f.pretty ++
+                              toString " as a failure, but no input constant is stored under it")
+                      | some c =>
                         Except.error
-                          (toString "compileReport: name invariant failed: the input constant stored under " ++
-                              toString n.pretty ++
-                            toString " carries another name")
-                    | some h =>
+                          (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
+                            toString ", a constructor of an input inductive, is not stored as a constructor of it")
+                    | some n =>
                       Except.error
-                        (toString "compileReport: heads check failed: the Pass 3 head " ++ toString h.pretty ++
-                          toString " is not a regenerated published input name, so not known to be in the changed set")
+                        (toString "compileReport: name invariant failed: the input constant stored under " ++
+                            toString n.pretty ++
+                          toString " carries another name")
                   | some n =>
                     Except.error
                       (toString "compileReport: cross-SCC check failed: the name " ++ toString n.pretty ++
@@ -1360,13 +1336,12 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                   Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst = none ∧
                     Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
                       Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-                        Ix.Cert.foreignHead env cenv.auxReport.table cenv.p3Heads out.fst = none ∧
-                          Ix.Cert.misnamedInput env = none ∧
-                            Ix.Cert.strayConstructor env = none ∧
-                              Ix.Cert.strayFailure env cenv.ungrounded = none ∧
-                                Ix.Cert.identityMismatch cenv.auxReport.identity out.fst = none ∧
-                                  Ix.Cert.projectionCollision out.fst = none ∧
-                                    Ix.Cert.unreadablePublished env out.fst = none -/
+                        Ix.Cert.misnamedInput env = none ∧
+                          Ix.Cert.strayConstructor env = none ∧
+                            Ix.Cert.strayFailure env cenv.ungrounded = none ∧
+                              Ix.Cert.identityMismatch cenv.auxReport.identity out.fst = none ∧
+                                Ix.Cert.projectionCollision out.fst = none ∧
+                                  Ix.Cert.unreadablePublished env out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4387,68 +4362,6 @@ run_cmd do
   checkRoots (tag := "cert-audit") "string literal order"
     (#[`recordOk_iff, `orderedFrom_iff, `stringSupportOrdered_iff].map (`Ix.Cert.LiteralOrder ++ ·))
 
-/-! ## Route A, B9a: a constant outside the changed set
-
-`Ix.Cert.Unchanged.avoids_unchanged`: a constant of a closure that avoids the
-compile's changed set (`ChangedSet.Avoids`, H1's hypothesis) is in no class
-of a changed component and no constructor of a member of a changed inductive
-one, is no image head of a changed inductive component's Lean block, is in no
-condensation block whose references hold one, is in no clique of the input's
-clique table and in no condensation block whose references hold one of Lean's
-encoding constants of a clique, and, published with an original-form compile,
-is found identical by the compile's aux table. The proofs read `ofCompile`
-through its stages, identified with it by `rfl` (`ofCompile_eq`).
-`cert-unchanged` checks on the changed-set corpus, and
-`cert-statement`/`cert-compile-parity-init` on the fixtures and `Init`, that
-these facts single the set out.
-
-Re-frozen (2026-10-20, after push 91): `ofCompile` takes each changed
-inductive component's image heads from the component itself and counts every
-component, not through a map keyed by first name (a flagged, report-only edit;
-the set is identical on the corpus, the fixtures and Init+Std). The head and
-caller facts hold without `FirstsAgree`, which is gone with its decider and the
-first-loop map lemmas: 49 roots → 41.
-
-**Re-frozen (2026-10-21, CQ5.2 (b), flagged statement change): the changed set
-over the compile's condensation and aux table.** `ofCompile env condensed table
-ixe` (the compiler lane's commit 4) adds the clique stage (`cliqueStage`:
-`clique` entries for the clique table, `caller` entries for the members of a
-condensation block that references a clique's encoding), enters the callers
-of the heads by condensation block (`callerStage`, over `condensed.blockRefs`),
-and reads `regenerated` off the aux table (`AuxTable.identical`). So
-`Unchanged` takes `condensed` and `table`; `caller` is restated at block level;
-`clique` and `cliqueCaller` are new; `original` now says the table finds the
-record identical (a verdict on bytes; B9d reads it as bytes, with the 15th
-check). The stages are restated (`cliqueStage_eq`, `callerStage_eq`,
-`regenStage_eq`; the third loop's lemmas are replaced): 41 roots → 57, and
-the runtime list gains the two stages, the clique tables and
-`AuxTable.identical`. The statements read the set as
-`ofCompile { consts := env.consts } (compileBlocks env) (compileTable env) ixe`. -/
-
-/-- info: [cert-audit] unchanged: 57 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] unchanged: 9 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "unchanged"
-    (#[`forIn_grow, `forIn_hit, `ofCompile_eq, `forIn_grow_array, `forIn_hit_array, `Grows.refl,
-      `Grows.trans, `Grows.push, `memberStage_eq, `headStage_eq, `cliqueStage_eq, `callerStage_eq,
-      `regenStage_eq, `kind_beq, `ctorLoop_grows, `ctorLoop_hit, `memberBody_step, `memberBody_lands,
-      `classBody_step, `blockBody_step, `member_entry, `Grows₂.refl, `Grows₂.trans, `headStep_step,
-      `headBody_step, `headStage_grows, `heads_inv, `head_entry, `cliqueNameBody_step, `encMembers_grows,
-      `encRefBody_step, `encRefs_grows, `encBlockBody_step, `cliqueNames_grows, `encBlocks_grows,
-      `cliqueStage_grows, `clique_entry, `encCaller_entry, `callerMemberBody_step, `callerBlockBody_step,
-      `callerStage_grows, `headCaller_entry, `regenBody_step, `regenStage_grows, `regenerated_entry,
-      `sortEntries_eq, `dedupStep_spec, `dedup_keeps, `sortEntries_keeps, `names_contains,
-      `contains_of_entry, `leastName_none, `blocks_toList, `refs_getD, `toList_of_contains,
-      `unchanged_of_not_contains, `avoids_unchanged].map (`Ix.Cert.Unchanged ++ ·))
-  checkRuntime (tag := "cert-audit") "unchanged"
-    #[``Ix.Compile.ChangedSet.ofCompile, ``Ix.Compile.ChangedSet.sortEntries, ``Ix.Compile.ChangedSet.leastName,
-      ``Ix.Compile.ChangedSet.ChangedSet.contains, ``Ix.Compile.ChangedSet.Entry.beq,
-      ``Ix.Compile.ChangedSet.cliqueStage, ``Ix.Compile.ChangedSet.callerStage,
-      ``Ix.Compile.ChangedSet.cliqueTables, ``Ix.AuxGen.AuxTable.identical]
-
 /-! ## Distinct name hashes (B9's name keys; owner-approved check, 2026-10-20)
 
 `Ix.Name`'s `==` compares stored name hashes, and every map keyed by name (the
@@ -4768,82 +4681,6 @@ fun env resolved aux extras =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.crossClaimed
 
-/-! ## Pass 3's heads are in the changed set (B9b, `HookFree`'s discharge, (i); coordinator decision, 2026-10-21)
-
-A block's merge publishes Pass 3's heads (`CompileEnv.p3Heads`) from hook 1
-(`editBlock`), whose inputs come from the aux tail (AuxGen's `partial` code,
-which no proof follows), and hook 2 (`prepareBlock`) rewrites every block that
-references a head. `compileReport` now refuses a result in which a head of the
-driver's final environment is not in the compile's changed set
-(`checkReport`'s eleventh check, `foreignHead`, which computes the changed set
-only when there are heads; probe `ports/20261021T034341Z-hookprobe`: no heads
-on Init+Std; on Mathlib 329 heads, all among the 752 names of the changed
-set). With it, a block whose members and references avoid the changed set
-meets no head at block time (with the fold's monotonicity: a head leaves the
-heads only with its name among the failures). Re-frozen with it:
-`checkReport`'s print and `checkReport_ok` (an eleventh conjunct). On a
-consistent run the result is unchanged.
-
-**Re-frozen (2026-10-21, coordinator decision): the check reads the
-regenerated names.** Computing the changed set cost about 245 s on Mathlib,
-about half of the compile phase (`ports/20261021T065228Z-hookprobe`, quiet
-box). `foreignHead` now refuses a head that is not a regenerated published
-input name (`regeneratedNames`: a `Named` entry whose original-form record is
-at another address, of an input name), one pass over the published names.
-Each such name has a `regenerated` entry in the changed set whatever its
-changed components (`Unchanged.regenerated_entry`), so `foreignHead_none` and
-`headsChanged` keep their statements; they moved to `Ix.Cert.Unchanged`,
-which proves them through `regeneratedNames_spec`. Re-frozen with it:
-`foreignHead`'s print and `checkReport`'s print (the heads check's message).
-The check is stronger than the changed-set test it replaces; on valid input
-every head is regenerated (probe `ports/20261021T145130Z-gates-fh`: on Init+Std no
-heads; on Mathlib 329 heads, all 329 regenerated; no recorded failure on either). -/
-
-/-- info: [cert-audit] heads: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] heads: 1 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "heads"
-    (#[`foreignHead_none, `headsChanged].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "heads" #[``Ix.Cert.foreignHead]
-
-/-- info: def Ix.Cert.foreignHead : Ix.Environment →
-  Ix.AuxGen.AuxTable → Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name → Ixon.Env → Option Ix.Name :=
-fun env table heads ixe =>
-  if heads.isEmpty = true then none
-  else
-    have regenerated := Ix.Cert.regeneratedNames env table ixe;
-    List.findSome?
-      (fun x =>
-        match x with
-        | (h, snd) => if regenerated.contains h = true then none else some h)
-      heads.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.foreignHead
-
-/-- info: def Ix.Cert.regeneratedNames : Ix.Environment →
-  Ix.AuxGen.AuxTable → Ixon.Env → Std.HashSet Ix.Compile.ExactKey.ExactName :=
-fun env table ixe =>
-  Std.HashMap.fold
-    (fun s n named =>
-      if (named.original.isSome && (env.consts.get? n).isSome && !table.identical n) = true then s.insert n else s)
-    ∅ ixe.named -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.regeneratedNames
-
-/-! **Re-frozen (2026-10-21, CQ5.2 (b), flagged Cert path): the heads check follows
-the changed set's `regenerated` rule.** The changed set now reads `regenerated`
-off the compile's aux table (`Ix.AuxGen.AuxTable.identical`: a published input
-name with an original-form record that the table does not find identical), so
-`regeneratedNames` takes the table and reads that rule, and `checkReport` passes
-the final compile environment's table (`cenv.auxReport.table`; the statements'
-`compileTable env`, `compileTable_eq`). `foreignHead_none` and `headsChanged` are
-restated over `ofCompile { consts := env.consts } (compileBlocks env)
-(compileTable env) ixe`. Re-frozen with it: `foreignHead`'s and
-`regeneratedNames`' prints, `checkReport`'s print and `checkReport_ok`. -/
-
 /-! ## Input constants carry their names (B9b, `HookFree`'s discharge, membership; coordinator decision, 2026-10-21)
 
 The block compile names its projections by its members' own names
@@ -5085,87 +4922,86 @@ run_cmd do
       `convert_keys, `lower_lowering, `canonDecl_names, `lowerAll_lowerings, `scheduleOf_ok,
       `graph_converted_ok, `leanIngress_units, `GroupKeyOf.not_derived].map (`Ix.Cert.ReaderUnits ++ ·))
 
-/-! ## Route A, B9b piece 1: Pass 3's hooks on a block outside the changed set
+/-! ## A block's records are the block compile's
 
-`Ix.Cert.PassHooks`: the clique step (`cliqueStep`) returns the compile
-environment as it is and the empty block state on a block outside every
-clique (`cliqueStep_inert`); hook 2 (`prepareBlock`) returns the compile
-environment as it is when none of the block's condensation references is a
-head (`prepareBlock_unreferenced`); `withMetaRefs` changes no record; so the
-records `runBlockWithAux` returns are the block compile's, a lone constant's
-`compileConstantInfo` or `sortConsts` then `compileMutualBlock`, run from the
-empty block state (`runBlockWithAux_records`). Hook 1 and the aux tail run
-after the `BlockResult` and return it as it is. -/
+`Ix.Cert.BlockRecords`: `runBlockWithAux` compiles a block from Lean's own
+declarations, so its records are those of `compileBlockWithAux` run from the
+empty block state (`runBlockWithAux_compiles`), which are the block compile's,
+a lone constant's `compileConstantInfo` or `compileMutualBlock` over the
+members in Lean's order, run from the empty block state
+(`runBlockWithAux_records`). The member lookups and `MutConst.mkIndc` change
+no state; the block's `Muts` entry is registered after its `BlockResult` is
+computed, which it returns as it is.
 
-/-- info: [cert-audit] pass hooks: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+Re-frozen without the rewriting hooks: the clique step, the call-site
+preparation and the metadata-reference overlay are deleted, and with them
+`cliqueStep_inert`, `prepareBlock_unreferenced`, `withMetaRefs_records` and
+`runBlockWithAux_unreferenced`; `runBlockWithAux_compiles` states the run
+without them. 10 roots → 7. -/
+
+/-- info: [cert-audit] block records: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
-  checkRoots (tag := "cert-audit") "pass hooks"
-    (#[`cliqueStep_inert, `prepareBlock_unreferenced, `withMetaRefs_records,
-      `runBlockWithAux_unreferenced, `findConst_preserves, `mkIndc_preserves, `forIn_set_state,
-      `compileBlockWithAux_result, `compileBlockWithAux_records, `runBlockWithAux_records].map (`Ix.Cert.PassHooks ++ ·))
+  checkRoots (tag := "cert-audit") "block records"
+    (#[`runBlockWithAux_compiles, `findConst_preserves, `mkIndc_preserves, `forIn_set_state,
+      `compileBlockWithAux_result, `compileBlockWithAux_records, `runBlockWithAux_records].map
+      (`Ix.Cert.BlockRecords ++ ·))
 
-/-! ## Route A, B9b piece 2: where a resolved name's record comes from
+/-! ## Where a resolved name's record comes from
 
 `Ix.Cert.Resolution`: every entry of the driver's final resolution map is an
 aux name's or a primary claim of a block compiled during the fold, with the
 claimed record's bytes stored at its address (`compileUnchecked_provenance`);
 such a claim is one of `runBlock`'s on a subset of a condensation block's
 members, under a key, against a reached state (`compiled_runBlock`, with
-`auxBlockOutcome_cross`); the block references never change during the fold
-(`reach_p3BlockRefs`); where Pass 3's hooks are identities (`HookFree`), the
-claim is the block compile's (`hookFree_compiled`). `compileReport_claim` is
-B9b with `HookFree` as its premise. The claims' snapshots are states of the fold's own run
-(`OnRun`: `foldWavesSeq_waveStart`, `waveStart_provenance`, `applySeqList_provenance`,
-`provenanceIn_step`), each reached (`onRun_reach`). -/
+`auxBlockOutcome_cross`), and it is the block compile's
+(`runBlock_compiled`). `compileReport_claim` gives this for every resolved
+name outside the final aux map, with no premise. The claims' snapshots are
+states of the fold's own run (`OnRun`: `foldWavesSeq_waveStart`,
+`waveStart_provenance`, `applySeqList_provenance`, `provenanceIn_step`), each
+reached (`onRun_reach`).
 
-/-- info: [cert-audit] resolution: 12 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+Re-frozen without the rewriting hooks: the fold no longer carries the
+call-site block references, so the lemma that they never change during the fold
+is deleted, and a claim is the block compile's unconditionally
+(`runBlock_compiled` replaces `hookFree_compiled`). 12 roots → 11. -/
+
+/-- info: [cert-audit] resolution: 11 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "resolution"
     (#[`reach_provenance, `compileUnchecked_provenance, `auxBlockOutcome_cross, `compiled_runBlock,
-      `reach_p3BlockRefs, `hookFree_compiled, `compileReport_claim, `provenanceIn_step,
+      `runBlock_compiled, `compileReport_claim, `provenanceIn_step,
       `applySeqList_provenance, `foldWavesSeq_waveStart, `waveStart_provenance,
       `onRun_reach].map (`Ix.Cert.Resolution ++ ·))
 
-/-! ## Route A, B9b step 4: `HookFree` discharged
+/-! ## The claims of a closure
 
-`Ix.Cert.HookFree`: for a closure that avoids the changed set and has no
-failure, every resolved name of it outside the final aux map is a claim of a
-whole condensation block of the closure, compiled under its key against a
-reached state, with Pass 3's hooks identities there (`HookFree`), so the
-block compile's (`compileReport_hookFree`). A cross-SCC subset's claim is
-refuted by the tenth check (`cross_refuted`, `applyAuxBlockOutcome_cross_extras`);
-a compiled block's claims are its members' (`Ix.Cert.Claims.runBlock_owned`,
-image blocks included); no reference or member of a block of the closure is a
-snapshot head (`hookFree_of_sub`, from the eleventh and fourteenth checks,
-`final_of_report`). `Ix.Cert.Resolution`'s fold steps now also keep the input
-environment (`reach_env`).
+`Ix.Cert.ClosureClaims`: for a closure with no failure, every resolved name of
+it outside the final aux map is a claim of a whole condensation block of the
+closure, compiled under its key against a reached state, and the block
+compile's (`compileReport_owned`). A cross-SCC subset's claim is refuted by
+the tenth check (`cross_refuted`, `applyAuxBlockOutcome_cross_extras`); a
+compiled block's claims are its members' (`Ix.Cert.Claims.runBlock_owned`).
+`Ix.Cert.Resolution`'s fold steps keep the input environment (`reach_env`).
 
-**Re-frozen (2026-10-21, CQ5.2 (b)): `HookFree`'s third conjunct, the clique
-step.** `runBlockWithAux` runs the clique step (`cliqueStep`) first, so
-`HookFree` also says it is the identity, and `hookFree_of_sub` proves it from
-`cliqueInert`: no member is in the clique table and no reference of the block
-holding its key is one of Lean's encoding constants of a clique
-(`Unchanged.clique`, `Unchanged.cliqueCaller` from `Avoids`), against the
-tables the fold keeps (`Resolution.reach_cliques`; `Step` keeps `p3Cliques`
-and `p3CliqueRoots`, and the fold's initial tables are `scheduleCliques`',
-`cliqueTables_eq`). A claim's ownership holds through the clique step too
-(`Claims.cliqueStep_keeps`: its overlay holds input constants with other
-values, `Claims.prepareCliques_overlay`). The heads check reads the compile's
-aux table (`compileTable_eq`). 7 roots → 12. -/
+Re-frozen without the rewriting hooks: with no hooks to show inert, the
+closure needs no premise about changed constants, and the hook lemmas go
+(`final_of_report`, `hookFree_of_sub`, `cliqueTables_eq`,
+`Resolution.reach_cliques`, `Claims.cliqueStep_keeps`,
+`Claims.prepareCliques_overlay`, `compileTable_eq`); `compileReport_owned`
+replaces `compileReport_hookFree`. 12 roots → 5. -/
 
-/-- info: [cert-audit] hook-free: 12 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] closure claims: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
-  checkRoots (tag := "cert-audit") "hook-free"
-    ((#[`compileReport_hookFree, `final_of_report, `hookFree_of_sub, `cross_refuted,
-      `applyAuxBlockOutcome_cross_extras, `cliqueTables_eq].map (`Ix.Cert.HookFree ++ ·)) ++
-      #[``Ix.Cert.Claims.runBlock_owned, ``Ix.Cert.Resolution.reach_env, ``Ix.Cert.Resolution.reach_cliques,
-        ``Ix.Cert.Claims.cliqueStep_keeps, ``Ix.Cert.Claims.prepareCliques_overlay, ``Ix.Cert.compileTable_eq])
+  checkRoots (tag := "cert-audit") "closure claims"
+    ((#[`compileReport_owned, `cross_refuted,
+      `applyAuxBlockOutcome_cross_extras].map (`Ix.Cert.ClosureClaims ++ ·)) ++
+      #[``Ix.Cert.Claims.runBlock_owned, ``Ix.Cert.Resolution.reach_env])
 
 /-! ## S1's generated records: the statements half of `CtxAgree`
 
@@ -5226,26 +5062,6 @@ fun identity ixe =>
     identity.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.identityMismatch
-
-/-! ## B9d: final published bytes of an identical original form
-
-A table's identical verdict comes from a true identity row. That row's
-original-form compile is from a reached snapshot and condensation block;
-its compared singleton bytes, or projection and original-block bytes,
-survive every merge and withdrawal and are copied into the artifact.
-Check15 ties the row to the final published address. `unchanged_original`
-composes B9a's table verdict with this byte-level fact. No digest-injectivity
-or new final compiler-correctness premise is assumed; this does not claim
-semantic equivalence of changed code from target acceptance alone. -/
-
-/-- info: [cert-audit] original bytes: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "original bytes"
-    (#[`table_identical_origin, `originalIdentities_true, `Compared.mono,
-      `apply_rows, `auxBlockOutcome_original, `reach_rows, `compileEnvFold_report,
-      `compileEnvFold_identity, `compileReport_identical, `unchanged_original].map (`Ix.Cert.OriginalBytes ++ ·))
 
 /-! ## Projection hints: uniqueness from the compiler guard
 
@@ -5546,81 +5362,6 @@ run_cmd do
     (#[`infer_reading, `reading_denotes, `defeq_values, `defeq_denotations_eq,
       `checked_defeq_values, `definition_front, `valueFront_defeq_values].map (`Ix.Cert.ConversionValues ++ ·))
 
-/-! ## Actual image-generation prefix and production view provenance
-
-The successful StateT run supplies one coherent prefix through telescope,
-minor analysis and buildRecApp. The view retains its actual spec/canonical
-build and exact back-renaming. No rule simulation or recognition is assumed. -/
-
-/-- info: [cert-audit] image production origins: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "image production origins"
-    (#[`imageOf_origin, `view_image_origin, `buildViewWith_spec,
-      `buildView_origin].map (`Ix.CompileCert.ImageOrigin ++ ·))
-
-/-! ## Actual image-shape recognition and bounded selectors
-
-Successful loops recover the exact header and argument witnesses, preserving
-raw cached hashes. Optional lookups discharge bounds for every selected
-argument and retained minor term. Permutations and production provenance use
-the same recognition success; image completeness/simulation stay separate. -/
-
-/-- info: [cert-audit] image shape recognition: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "image shape recognition"
-    (#[`position_shape, `readShape_result, `readShape_permutations,
-      `readShape_reads, `production_origin].map (`Ix.CompileCert.ImageShape ++ ·))
-
-/-! ## Exact equation rows from successful production construction
-
-The row's source/value/universe, empty-state proof run and guard remain
-linked to its actual returned theorem. Source-copy header/value identities
-name only the producer operations; semantic faithfulness, required row
-existence, publication, reading and Eq-domain discharge remain separate. -/
-
-/-- info: [cert-audit] clique row producer shape: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "clique row producer shape"
-    (#[`rowOfWith_shape, `rowOf_shape, `srcCopy_header, `srcCopy_value,
-      `rowOfWith_header].map (`Ix.CompileCert.CliqueRowShape ++ ·))
-
-/-! ## Actual row/copy workers: positional coverage and multiplicity
-
-The real sorted arrays and task/mapM workers relate outputs positionally,
-with exact occurrence counts and both directions of provenance. The non-WF
-empty result is explicit; planner membership, publication/address coverage
-and semantic copy faithfulness are not inferred. -/
-
-/-- info: [cert-audit] clique row output coverage: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "clique row output coverage"
-    (#[`row_workers, `rowsOf_produced, `rowsOf_wf, `Produced.sizes,
-      `Produced.copy_of_input, `Produced.row_of_member, `Produced.input_of_copy,
-      `Produced.member_of_row, `Produced.copy_contents].map (`Ix.CompileCert.CliqueRowsCoverage ++ ·))
-
-/-! ## Actual closed O6 recursor branch: raw reader reduction
-
-The real successful pass, image/matcher provenance and both reader results
-yield raw kernel Red through a derived positional selector/pick relation.
-Universe arity and closed arguments remain explicit. Raw .never is not a
-checked annotation, and no value/under-binder/fallback claim is made. -/
-
-/-- info: [cert-audit] O6 raw reader reduction: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "O6 raw reader reduction"
-    (#[`related_unique, `Lambdas.beta, `o6_rec_output, `o5_subst_levels,
-      `data_picks, `selects_read, `o6_rec_raw_reader_red].map (`Ix.CompileCert.O6RecRead ++ ·))
-
 /-! ## Actual closed annotation/inference: certified beta and public values
 
 The exact application run supplies argument io inference and domain DefEq,
@@ -5636,80 +5377,23 @@ run_cmd do
     (#[`inferred_beta_certificate, `annotate_lam_trace, `annotate_beta_trace,
       `inferred_beta_values, `annotated_beta_values].map (`Ix.Cert.AnnotatedBeta ++ ·))
 
-/-! ## Actual O6 selector layout through annotation
-
-The real typed openings preserve the exact terminal selector body. Actual
-argument runs agree across fuels in one env/depth, yielding equality with
-the actual checked output, including repeated/reordered arguments and extras.
-No checked beta spine, value preservation or under-binder claim is inferred. -/
-
-/-- info: [cert-audit] O6 annotation layout: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "O6 annotation layout"
-    (#[`annotation_unique, `annotate_apps, `Flat.annotate, `open_close,
-      `annotate_selector_tail, `ReadAnn.unique, `read_ann_apps,
-      `selectors_annotated, `o6_rec_annotation_layout].map (`Ix.CompileCert.O6Annotation ++ ·))
-
-/-! ## Checked lambda spines from original full inference
-
-Actual head inference fixes every lambda/forall domain. The original
-application trace supplies each certified beta, including Prop, without
-intermediate-reduct inference. Bulk substitution and extra arguments are
-derived exactly; the O6 public-value wrapper remains separate. -/
-
-/-- info: [cert-audit] checked beta spines: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "checked beta spines"
-    (#[`domains_abstract, `inferred_lam_domains, `infer_apps, `trace_beta,
-      `checked_lambda_spine_red].map (`Ix.Cert.CheckedBetaSpine ++ ·))
-
-/-! ## Actual closed O6 recursor rewrite: public equal values
-
-The real pass/image/read/annotation trace and baseline full inference derive
-checked Red/DefEq. Every strong model of that same prefix env gives a common
-public value. No output/reduct inference, N-PERM, CQ5.4 or driver proof is assumed. -/
-
-/-- info: [cert-audit] O6 checked values: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "O6 checked values"
-    #[`Ix.CompileCert.O6Values.o6_rec_values]
-
-/-! ## Actual O6 body beneath one enclosing lambda
-
-Whole annotation/inference runs derive the common opener, reopening,
-Frame and inner inference. The real opened selector layout yields certified
-body Red/DefEq at depth one. Outer marker agreement and whole-lambda values
-remain separate; no final closed-occurrence restriction is introduced. -/
-
-/-- info: [cert-audit] O6 actual opened bodies: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "O6 actual opened bodies"
-    (#[`annotation_reopen, `trace_beta_at, `checked_spine_at, `OpenAnn.unique,
-      `selectors_open_annotated, `opened_layout,
-      `o6_rec_under_lam_opened_red].map (`Ix.CompileCert.O6Opened ++ ·))
-
-/-! ## Whole-lambda markers and actual O6 public values
+/-! ## Whole-lambda markers
 
 Two real value fronts against one checked header force marker agreement
-inside each supplied strong model, including empty binder domains. Actual
-body conversion and both reopening identities then give whole-lambda
-DefEq/public values. No model existence or context inhabitant is assumed. -/
+inside each supplied strong model, including empty binder domains. No model
+existence or context inhabitant is assumed.
 
-/-- info: [cert-audit] O6 whole lambda values: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+Re-frozen without the rewriting pipeline: the rewritten recursor's
+whole-lambda public value, which these markers fed, is deleted with it; the
+marker lemmas stay. 4 roots → 3. -/
+
+/-- info: [cert-audit] whole lambda markers: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
-  checkRoots (tag := "cert-audit") "O6 whole lambda values"
+  checkRoots (tag := "cert-audit") "whole lambda markers"
     (#[`lam_mem_pi_bits, `infer_package, `lambda_markers_eq_of_fronts].map
-      (`Ix.Cert.LambdaMarkers ++ ·) ++ #[`Ix.CompileCert.O6LambdaValues.o6_rec_under_lam_values])
+      (`Ix.Cert.LambdaMarkers ++ ·))
 
 /-! ## Internal context composition under valid valuations
 
@@ -5755,74 +5439,6 @@ run_cmd do
     #[`Ix.Cert.ContextValues.lambda_bits_of_header,
       `Ix.Cert.ContextValues.checked_lambda_congr_of_header,
       `Ix.Cert.ApplicationFronts.paired_app_lambda_arguments]
-
-/-! ## Actual O6 composition through a lambda argument and application
-
-Real enclosing checks and O6 producers derive the lambda shapes, local
-fronts/header and body comparison. Application congruence is consumed by
-the whole public-value endpoint; no unsupported body IH passes through. -/
-
-/-- info: [cert-audit] O6 whole application values: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "O6 whole application values"
-    (#[`app_argument, `o6_lambda_argument_values].map (`Ix.CompileCert.O6ApplicationValues ++ ·))
-
-/-! ## Actual shared dependent telescope producer
-
-Whole annotations and baseline full inference produce common typed domains,
-exact per-binder subcalls, bulk-opened leaf runs and frames. Every supplied
-strong model then gets a real context-extension trace, without a Sat witness. -/
-
-/-- info: [cert-audit] actual telescope producer: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual telescope producer"
-    (#[`openers_append_one, `annotation_reopen_at, `annotation_frame_at,
-      `DomainTraceFrom.length, `DomainTraceFrom.at, `ContextTrace.length,
-      `paired_telescope_from, `DomainTrace.length, `DomainTrace.at,
-      `paired_telescope].map (`Ix.CompileCert.O6Telescope ++ ·))
-
-/-! ## Actual O6 reduction under a shared dependent telescope
-
-Bulk opening preserves the derived selector body at its own binder cursor.
-The produced leaf checks and frames supply certified beta; the endpoint
-retains all original O6 pass, image and reader evidence. -/
-
-/-- info: [cert-audit] O6 dependent telescope reduction: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "O6 dependent telescope reduction"
-    (#[`strip_open_list, `BulkAnn.unique, `bulk_ann_pairs, `bulk_ann_apps,
-      `selectors_bulk_annotated, `bulk_opened_layout,
-      `o6_rec_under_telescope_opened_red].map (`Ix.CompileCert.O6TelescopeOpened ++ ·))
-
-/-! ## Closing actual paired lambda telescopes
-
-Actual full-inference chains propagate the root compatibility derived
-from real header/value fronts within each supplied strong model. -/
-
-/-- info: [cert-audit] checked telescope closing: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "checked telescope closing"
-    (#[`lamPw_abstract1, `markers_of_fronts, `close_telescope].map (`Ix.CompileCert.O6TelescopeValues ++ ·))
-
-/-! ## Whole O6 values under an arbitrary shared dependent telescope
-
-The frozen O6 leaf, real header and both whole value fronts derive every
-opening, inner run and marker fact. Conversion remains inside each model. -/
-
-/-- info: [cert-audit] O6 whole telescope values: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "O6 whole telescope values"
-    #[`Ix.CompileCert.O6TelescopeValues.o6_rec_under_telescope_values]
 
 /-! ## Indexed reference-stream definition fronts
 
@@ -6069,98 +5685,6 @@ run_cmd do
     (#[`frame_context, `infer_package, `reading_denotes, `defeq_readings,
       `lambda_markers_eq_of_fronts, `markers_of_fronts].map (`Ix.Cert.RuleInputValues ++ ·))
 
-/-! ## Actual indexed O6 values in the supplied final model
-
-The real target front and one same-prefix/header baseline front derive the
-telescope conversion; both checked subjects denote the final constant. -/
-
-/-- info: [cert-audit] indexed O6 final interpretation values: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "indexed O6 final interpretation values"
-    #[`Ix.CompileCert.O6PrefixValues.o6_rec_under_telescope_final_values]
-
-/-! ## The actual engine and passConfig branch origin
-
-First-success misses, the literal recursive fuel and all reports survive;
-the hook derives permission and its actual driver environment. -/
-
-/-- info: [cert-audit] actual optimization dispatch origins: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual optimization dispatch origins"
-    (#[`engineN_origin, `engineN_success_origin, `engine_origin, `passConfig_origin].map
-      (`Ix.CompileCert.OptDispatchOrigin ++ ·))
-
-/-! ## Actual outer-map/view and O6 call provenance
-
-The real exact-key fold supplies its view. Recovered O6 dispatch retains
-both rec/recOn and the actual guards, without inventing image or memo origin. -/
-
-/-- info: [cert-audit] actual O6 driver call origins: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual O6 driver call origins"
-    (#[`optBlocks_origin, `o6_lookup_origin, `driver_o6_origin, `passConfig_with_o6_origin].map
-      (`Ix.CompileCert.OptDispatchOrigin ++ ·))
-
-/-! ## Actual shape insertion origins under exact name keys
-
-Every positive hit retains its real source/image/recognizer calls through
-skipped attempts and overwrite, with exact query/name/level identification. -/
-
-/-- info: [cert-audit] actual optimizer shape insertion origins: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual optimizer shape insertion origins"
-    (#[`Origins.insert, `optBlockOf_origins, `optBlockOf_shape_origin].map
-      (`Ix.CompileCert.OptShapeOrigin ++ ·))
-
-/-! ## The actual hook's common O6 source/image/shape witnesses
-
-The repaired shape producer enriches the SAME view/query/shape tuple;
-all engine branches, reports and the rec/recOn distinction are retained. -/
-
-/-- info: [cert-audit] actual O6 image call origins: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual O6 image call origins"
-    (#[`o6_calls_images, `O6Images.calls, `passConfig_with_images].map
-      (`Ix.CompileCert.OptShapeOrigin ++ ·))
-
-/-! ## Actual view queries and fresh publication entries
-
-The real empty-start loop supplies query/owner and exact cached-or-built
-origins. The actual absence guard forces a current build for every new entry. -/
-
-/-- info: [cert-audit] actual view query and publication origins: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual view query and publication origins"
-    (#[`viewOf_origin, `Origins.mono, `Origins.insert, `viewsOf_origins, `viewsOf_origin,
-      `newMemoViews_entries, `newMemoViews_built].map (`Ix.CompileCert.ViewPublicationOrigin ++ ·))
-
-/-! ## Actual view publication and transition values
-
-All three real producers supply their own build snapshots. Merges retain
-exact values; post-failure queries retain actual head/owner witnesses. -/
-
-/-- info: [cert-audit] actual view publication transitions: 11 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual view publication transitions"
-    (#[`memoMerge_keeps, `memoMerge_origin, `memoMerge_views_origin, `mergeCompiledBlock_views,
-      `failAuxPromotion_views, `after_failure_query_origin, `PublicationOrigin.entry_built,
-      `rewriteCliqueCanon_origin, `prepareBlock_origin, `compileImageBlock_origin,
-      `merge_publication_origin].map (`Ix.CompileCert.ViewPublicationOrigin ++ ·))
-
 /-! ## Actual checked primary writes and ordered merge projection
 
 The claim walk covers local shadowing and duplicates; the merge executes
@@ -6176,68 +5700,21 @@ run_cmd do
 
 /-! ## Checked primary-address value preservation
 
-The real guard and old primary hit derive exact post-merge lookup and
-resolution priority. The auxiliary-only query branch remains explicit. -/
+An agreed write sequence keeps every exact old primary hit, through
+duplicates included (`PrimaryAgrees.foldl_keeps`).
 
-/-- info: [cert-audit] checked primary address frames: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+Re-frozen without the view publication: the two frames that read a merge
+through the publication view (`checked_merge_primary_frame`,
+`checked_merge_query_partition`) are deleted with it. 3 roots → 1. -/
+
+/-- info: [cert-audit] checked primary address frames: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "checked primary address frames"
-    (#[`PrimaryAgrees.foldl_keeps, `checked_merge_primary_frame, `checked_merge_query_partition].map
-      (`Ix.CompileCert.PrimaryAddressFrame ++ ·))
+    #[`Ix.CompileCert.PrimaryAddressFrame.PrimaryAgrees.foldl_keeps]
 
-/-! ## Actual image calls and ordered auxiliary output trace
-
-Successful round calls, paired Named writes and selected-primary lookup
-origins come from the same producer, with no live address equality claim. -/
-
-/-- info: [cert-audit] actual image auxiliary write traces: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual image auxiliary write traces"
-    (#[`compileImageBlock_calls, `runImageBlock_trace].map
-      (`Ix.CompileCert.ImageAuxOrigins ++ ·))
-
-/-! ## Reserved display range and actual original-key removal
-
-Actual naming outputs are reserved. The ordered SideCar insert/erase loop
-removes selected nonreserved keys without a rename-injectivity premise. -/
-
-/-- info: [cert-audit] actual display range and original keys: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual display range and original keys"
-    (#[`appendComps_reserved, `ixAuxName_reserved, `sideCar_original_keys].map
-      (`Ix.CompileCert.DisplayAddressFrame ++ ·))
-
-/-! ## Actual move-to-display original-key equation
-
-The successful production move erases exactly the selected nonreserved local
-keys. This is not a frame or absence statement about the global address map. -/
-
-/-- info: [cert-audit] actual move-to-display original keys: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual move-to-display original keys"
-    (#[`moveToDisplay_eq, `moveToDisplay_original_keys].map
-      (`Ix.CompileCert.DisplayAddressFrame ++ ·))
-
-/-! ## Same-run image auxiliary hit origins
-
-One real image/original run supplies exact final map hits, Named addresses,
-successful result-producing calls and the singleton primary claim. -/
-
-/-- info: [cert-audit] actual image auxiliary hit origins: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual image auxiliary hit origins"
-    (#[`fold_hit_origin, `runImageBlock_aux_origins].map
-      (`Ix.CompileCert.ImageAuxOrigins ++ ·))
+/-! ## Coherent strong target commutation -/
 
 -- The weak-to-strong adapters (`Commutes.toStrong`, `IxonCommutes.toStrongRef`) are
 -- deleted: strong commutation now produces a source model with the recursor rules and
@@ -6251,52 +5728,6 @@ run_cmd do
   checkRoots (tag := "cert-audit") "coherent strong target commutation"
     #[`Ix.Cert.CommutesStrong.alias]
 
-/-- info: [cert-audit] actual projection owner and member guards: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual projection owner and member guards"
-    (#[`captured, `traceOwner_read, `scanOwner_same, `member_original].map (`Ix.Cert.ProjectionRoots ++ ·))
-/-- info: 'Ix.Cert.ProjectionRoots.member_family_front' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms Ix.Cert.ProjectionRoots.member_family_front
-
-/-! ## Actual image output keys stay in the request
-
-The real declaration and retry loops retain structural membership;
-this does not identify a cross request with its outer scheduled scope. -/
-
-/-- info: [cert-audit] actual image request keys: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual image request keys"
-    #[`Ix.CompileCert.ImageAuxOrigins.compileImageBlock_keys]
-
-/-! ## Actual image auxiliary hits stay in their request
-
-The same-run hit origin and real output-key bound supply structural
-membership, with no outer-scope, global-absence or address-value premise. -/
-
-/-- info: [cert-audit] actual image auxiliary request membership: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual image auxiliary request membership"
-    #[`Ix.CompileCert.ImageAuxOrigins.runImageBlock_aux_in_request]
-
-/-! ## Actual receipt snapshot visibility
-
-Real cached acceptance supplies uniqueness; the real snapshot accessor
-and final index counters determine every logical-prefix lookup. -/
-
-/-- info: [cert-audit] actual snapshot prefix visibility: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual snapshot prefix visibility"
-    (#[`snapshot_lookup, `snapshot_visible_iff, `snapshot_present_of_lt, `snapshot_absent_of_ge].map
-      (`Ix.Cert.PrefixVisibility ++ ·))
-
 /-! ## The final statement
 
 `Ix.Cert.CompileCorrect` is compiler correctness over quotient Source: per root,
@@ -6305,9 +5736,7 @@ the executed check), the compile's report with no failure in the closure, the
 artifact's role binding and address map (published role names at the table's
 addresses, published names agreeing with the address map; both decided on the
 artifact by `artifactCheck`), the pinned role configuration (the table's
-certificates checking on their committed closure), one validation hypothesis per
-kind of change (`KindAccepted`) and the Source forms of the rewritten records
-inferring in their compiled closures (`SourceFormInfers`), it concludes that the
+certificates checking on their committed closure), it concludes that the
 closure is published, its compiled closure is accepted at the reference level, every
 constant of the closure (a dropped alias included) reads as a compiled constant, and
 every strong target model gives one model of quotient Source for the whole closure,
@@ -6338,13 +5767,23 @@ the coverage would claim a constant for it that neither side has. The statement 
 nothing about any constant published at `sorryAx`'s role address; any use of one is
 declined. Re-frozen with it: `ReadingCovers`' and Source totality's prints.
 
-The change kinds cover the compiler's rewrites: changed components, regenerated
-auxiliaries, images and their computation-rule rows, rewritten call sites (each call
-site by the baseline development or one of O11a, O2, O3, O4, O6, `CallRewrite`),
-transported cliques and their rows, and the cascade. The changed-cone validator's
-interface (`ConeInput`, `ConeValidator.Sound`), the artifact checks
-(`artifactCheck`) and the compile with both wired (`compileValidated`,
-`CompileCorrect.validated`) are frozen with them. -/
+The artifact checks (`artifactCheck`) and the compile with them wired
+(`compileChecked`, `CompileCorrect.artifactChecked`) are frozen with it.
+
+**Re-frozen when the compiler stopped rewriting Lean** (it compiles Lean's
+declarations as given). With no rewritten constants, the statement drops its two
+premises about them, one validation hypothesis per kind of change (`KindAccepted`)
+and the Source forms of the rewritten records inferring in their compiled
+closures (`SourceFormInfers`): `CompileCorrect`'s, `CompileCorrectPublished`'s,
+`CompileCorrect.checked`'s and `CompileCorrect.nominal`'s prints lose them. The
+change kinds and everything stated over them are deleted (`CallRewrite`,
+`ChangeKind`, `changedSetOf`, `KindRoot`, `RootAccepted`, `ImageRuleRequired`,
+`ChangeKind.Present`, the ground-reachability predicates, `declKeys`,
+`sourceFormTerms`), with the changed-cone validator's interface (`ConeInput`,
+`ConeValidator`, `ConeValidator.Sound`). The compile with the artifact checks is
+`compileChecked` (`compileChecked_ok`; it was `compileValidated`, which also ran a
+validator), and `CompileCorrect.artifactChecked` replaces `CompileCorrect.validated`.
+The final statement's roots: 40 → 30. -/
 
 /-- info: def Ix.Cert.DenoteAlike.{w} : {md : Ix.Kernel.Mode} →
   {V : Type w} →
@@ -6600,257 +6039,11 @@ fun ixe sub source =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CommutesStrong.alias
 
-/-- info: inductive Ix.Cert.CallRewrite : Type
-number of parameters: 0
-constructors:
-Ix.Cert.CallRewrite.inline : Ix.Cert.CallRewrite
-Ix.Cert.CallRewrite.o11a : Ix.Cert.CallRewrite
-Ix.Cert.CallRewrite.o2 : Ix.Cert.CallRewrite
-Ix.Cert.CallRewrite.o3 : Ix.Cert.CallRewrite
-Ix.Cert.CallRewrite.o4 : Ix.Cert.CallRewrite
-Ix.Cert.CallRewrite.o6 : Ix.Cert.CallRewrite -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.CallRewrite
-
-/-- info: def Ix.Cert.CallRewrite.ofEngine? : String → Option Ix.Cert.CallRewrite :=
-fun x =>
-  match x with
-  | "O11a" => some Ix.Cert.CallRewrite.o11a
-  | "O2" => some Ix.Cert.CallRewrite.o2
-  | "O3" => some Ix.Cert.CallRewrite.o3
-  | "O4" => some Ix.Cert.CallRewrite.o4
-  | "O6" => some Ix.Cert.CallRewrite.o6
-  | x => none -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.CallRewrite.ofEngine?
-
-/-- info: inductive Ix.Cert.ChangeKind : Type
-number of parameters: 0
-constructors:
-Ix.Cert.ChangeKind.block : Ix.Cert.ChangeKind
-Ix.Cert.ChangeKind.regenerated : Ix.Cert.ChangeKind
-Ix.Cert.ChangeKind.image : Ix.Cert.ChangeKind
-Ix.Cert.ChangeKind.imageRule : Ix.Cert.ChangeKind
-Ix.Cert.ChangeKind.callSite : Ix.Cert.ChangeKind
-Ix.Cert.ChangeKind.clique : Ix.Cert.ChangeKind
-Ix.Cert.ChangeKind.cliqueRow : Ix.Cert.ChangeKind
-Ix.Cert.ChangeKind.cascade : Ix.Cert.ChangeKind -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ChangeKind
-
-/-- info: def Ix.Cert.ChangeKind.reason? : Ix.Cert.ChangeKind → Option Ix.Cert.SelectedRoots.Reason :=
-fun x =>
-  match x with
-  | Ix.Cert.ChangeKind.block => some (Ix.Cert.SelectedRoots.Reason.direct Ix.Compile.ChangedSet.Cause.member)
-  | Ix.Cert.ChangeKind.regenerated => some (Ix.Cert.SelectedRoots.Reason.direct Ix.Compile.ChangedSet.Cause.regenerated)
-  | Ix.Cert.ChangeKind.image => some (Ix.Cert.SelectedRoots.Reason.direct Ix.Compile.ChangedSet.Cause.imageHead)
-  | Ix.Cert.ChangeKind.imageRule => none
-  | Ix.Cert.ChangeKind.callSite => some (Ix.Cert.SelectedRoots.Reason.direct Ix.Compile.ChangedSet.Cause.caller)
-  | Ix.Cert.ChangeKind.clique => some (Ix.Cert.SelectedRoots.Reason.direct Ix.Compile.ChangedSet.Cause.clique)
-  | Ix.Cert.ChangeKind.cliqueRow => some Ix.Cert.SelectedRoots.Reason.row
-  | Ix.Cert.ChangeKind.cascade => some Ix.Cert.SelectedRoots.Reason.cascade -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ChangeKind.reason?
-
-/-- info: def Ix.Cert.ChangeKind.rewritesTerms : Ix.Cert.ChangeKind → Bool :=
-fun x =>
-  match x with
-  | Ix.Cert.ChangeKind.regenerated => true
-  | Ix.Cert.ChangeKind.image => true
-  | Ix.Cert.ChangeKind.callSite => true
-  | x => false -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ChangeKind.rewritesTerms
-
-/-- info: def Ix.Cert.changedSetOf : Ix.Environment → Ixon.Env → Ix.Compile.ChangedSet.ChangedSet :=
-fun env ixe =>
-  Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (Ix.Cert.compileBlocks env) (Ix.Cert.compileTable env) ixe -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.changedSetOf
-
-/-- info: def Ix.Cert.imageRuleRowName : Ix.Name → Nat → Ix.Name :=
-fun r i =>
-  Ix.Compile.Pass.appendComps r
-    [Ix.Compile.Pass.Comp.s Ix.Compile.Pass.ixComponent, Ix.Compile.Pass.Comp.s "rule", Ix.Compile.Pass.Comp.n i] -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.imageRuleRowName
-
-/-- info: def Ix.Cert.ImageRuleRequired : Ix.Environment → Ixon.Env → Ix.Environment → Ix.Name → Nat → Prop :=
-fun env ixe sub head i =>
-  ∃ e,
-    e ∈ (Ix.Cert.changedSetOf env ixe).entries ∧
-      e.cause = Ix.Compile.ChangedSet.Cause.imageHead ∧
-        e.name = head ∧ ∃ rv, sub.consts.get? head = some (Ix.ConstantInfo.recInfo rv) ∧ i < rv.rules.size -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ImageRuleRequired
-
-/-- info: def Ix.Cert.KindRoot : Ix.Cert.ChangeKind → Ix.Environment → Ixon.Env → Ix.Environment → Ix.Name → Address → Prop :=
-fun k env ixe sub n a =>
-  if k = Ix.Cert.ChangeKind.cascade then
-    Ix.Cert.SelectedRoots.PublishedIn sub ixe n a ∧
-      Ix.Cert.GroundAffectedIn env ixe sub n ∧ (Ix.Cert.changedSetOf env ixe).contains n = false
-  else
-    match k.reason? with
-    | some reason =>
-      Ix.Cert.SelectedRoots.ClassifiedRoot env (Ix.Cert.changedSetOf env ixe) sub ixe
-        { source := n, address := a, reason := reason }
-    | none =>
-      ∃ head i,
-        Ix.Cert.ImageRuleRequired env ixe sub head i ∧
-          n = Ix.Cert.imageRuleRowName head i ∧ ∃ named, ixe.named.get? n = some named ∧ named.addr = a -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.KindRoot
-
-/-- info: def Ix.Cert.GroundEdgeIn : Ixon.Env → Ix.Environment → Ix.Name → Ix.Name → Prop :=
-fun ixe sub x y =>
-  (sub.consts.get? y).isSome = true ∧
-    ∃ t r s,
-      Ix.Kernel.Reader.defaultTable = Except.ok t ∧
-        Ix.Cert.quotientKey ixe t x = Ix.Kernel.Key.role r ∧
-          s ∈ Ix.Cert.groundRoles r ∧ Ix.Cert.quotientKey ixe t y = Ix.Kernel.Key.role s -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.GroundEdgeIn
-
-/-- info: inductive Ix.Cert.GroundReaches : Ix.Environment → Ixon.Env → Ix.Environment → List Ix.Name → Ix.Name → Prop
-number of parameters: 4
-constructors:
-Ix.Cert.GroundReaches.root : ∀ {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment} {roots : List Ix.Name}
-  {x : Ix.Name}, roots.contains x = true → Ix.Cert.GroundReaches env ixe sub roots x
-Ix.Cert.GroundReaches.step : ∀ {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment} {roots : List Ix.Name}
-  {x y : Ix.Name},
-  Ix.Cert.GroundReaches env ixe sub roots x →
-    Ix.Cert.DependsOn (Ix.Cert.SelectedRoots.logicalInput env) x y → Ix.Cert.GroundReaches env ixe sub roots y
-Ix.Cert.GroundReaches.ground : ∀ {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment} {roots : List Ix.Name}
-  {x y : Ix.Name},
-  Ix.Cert.GroundReaches env ixe sub roots x →
-    Ix.Cert.GroundEdgeIn ixe sub x y → Ix.Cert.GroundReaches env ixe sub roots y -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.GroundReaches
-
-/-- info: def Ix.Cert.GroundAffectedIn : Ix.Environment → Ixon.Env → Ix.Environment → Ix.Name → Prop :=
-fun env ixe sub n => ∃ m, Ix.Cert.GroundReaches env ixe sub [n] m ∧ (Ix.Cert.changedSetOf env ixe).contains m = true -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.GroundAffectedIn
-
-/-- info: def Ix.Cert.RootAccepted : Ix.Kernel.Admission.Binding → Ixon.Env → Address → Prop :=
-fun binding ixe a => ∃ limits order envA, Ix.Cert.IxonAcceptsRef binding limits ixe (fun x => x = a) order envA -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.RootAccepted
-
-/-- info: def Ix.Cert.ChangeKind.Present : Ix.Cert.ChangeKind → Ix.Environment → Ixon.Env → Ix.Environment → Prop :=
-fun k env ixe sub =>
-  match k with
-  | Ix.Cert.ChangeKind.imageRule =>
-    ∀ (head : Ix.Name) (i : Nat),
-      Ix.Cert.ImageRuleRequired env ixe sub head i →
-        ∃ named, ixe.named.get? (Ix.Cert.imageRuleRowName head i) = some named
-  | x => True -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ChangeKind.Present
-
-/-- info: def Ix.Cert.KindAccepted : Ix.Cert.ChangeKind → Ix.Environment → Ixon.Env → Ix.Environment → Prop :=
-fun k env ixe sub =>
-  k.Present env ixe sub ∧
-    ∃ binding,
-      Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
-        ∀ (n : Ix.Name) (a : Address), Ix.Cert.KindRoot k env ixe sub n a → Ix.Cert.RootAccepted binding ixe a -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.KindAccepted
-
 /-- info: def Ix.Cert.quotientKey : Ixon.Env → Ix.Kernel.RoleTable → Ix.Name → Ix.Kernel.Key Ix.Kernel.Mode.source :=
 fun ixe t n =>
   Ix.LeanIngress.Key.subst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) (Ix.LeanIngress.ingressKey n) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.quotientKey
-
-/-- info: def Ix.Cert.declKeys : {md : Ix.Kernel.Mode} → Ix.Kernel.Declaration md → List (Ix.Kernel.Key md) :=
-fun {md} x =>
-  match x with
-  | Ix.Kernel.Declaration.axiomDecl v => [v.name]
-  | Ix.Kernel.Declaration.defnDecl v value hint => [v.name]
-  | Ix.Kernel.Declaration.thmDecl v value => [v.name]
-  | Ix.Kernel.Declaration.opaqueDecl v value => [v.name]
-  | Ix.Kernel.Declaration.quotDecl kind v => [v.name]
-  | Ix.Kernel.Declaration.basisDecl kind => []
-  | Ix.Kernel.Declaration.indDecl block numParams => List.map (fun x => x.name) block -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.declKeys
-
-/-- info: def Ix.Cert.sourceFormTerms : {md : Ix.Kernel.Mode} → Ix.Kernel.Declaration md → List (Ix.Kernel.Expr md) :=
-fun {md} x =>
-  match x with
-  | Ix.Kernel.Declaration.axiomDecl v => [v.type]
-  | Ix.Kernel.Declaration.thmDecl v value => [v.type]
-  | Ix.Kernel.Declaration.opaqueDecl v value => [v.type]
-  | Ix.Kernel.Declaration.quotDecl kind v => [v.type]
-  | Ix.Kernel.Declaration.defnDecl v e hint => [v.type, e]
-  | Ix.Kernel.Declaration.basisDecl kind => []
-  | Ix.Kernel.Declaration.indDecl block numParams => List.map (fun x => x.toConstantVal.type) block -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.sourceFormTerms
-
-/-- info: def Ix.Cert.SourceFormInfers : Ix.Environment → Ixon.Env → Ix.Environment → Ix.Kernel.RoleTable → Prop :=
-fun env ixe sub t =>
-  ∃ binding,
-    Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
-      ∀ (pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.source)
-        (ds : Array (Ix.Kernel.Reader.CDecl Ix.Kernel.Mode.source)) (b : Ix.RoleEvidence.Bundle),
-        Ix.Kernel.Reader.builtinPrelude = Except.ok pre →
-          Ix.RoleEvidence.quotientBundle () = Except.ok b →
-            Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
-                  (Ix.Cert.blocksOf sub) =
-                Except.ok ds →
-              ∀ (k : Ix.Cert.ChangeKind) (n : Ix.Name) (a : Address),
-                k.rewritesTerms = true →
-                  Ix.Cert.KindRoot k env ixe sub n a →
-                    ∃ limits order envA,
-                      Ix.Cert.IxonAcceptsRef binding limits ixe (fun x => x = a) order envA ∧
-                        ∀ (d : Ix.Kernel.Reader.CDecl Ix.Kernel.Mode.source),
-                          d ∈ ds →
-                            Ix.Cert.quotientKey ixe t n ∈ Ix.Cert.declKeys d →
-                              ∀ (e : Ix.Kernel.Expr Ix.Kernel.Mode.anon),
-                                e ∈
-                                    Ix.Cert.sourceFormTerms
-                                      (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b) d) →
-                                  ∃ F type,
-                                    Ix.Kernel.inferTypeCore Ix.Kernel.CheckMode.verified envA F 0 e = Except.ok type -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.SourceFormInfers
-
-/-- info: structure Ix.Cert.ConeInput : Type
-number of parameters: 0
-fields:
-  Ix.Cert.ConeInput.env : Ix.Environment
-  Ix.Cert.ConeInput.ixe : Ixon.Env
-  Ix.Cert.ConeInput.failures : Ix.Cert.Failures
-  Ix.Cert.ConeInput.changed : Ix.Compile.ChangedSet.ChangedSet
-constructor:
-  Ix.Cert.ConeInput.mk (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
-    (changed : Ix.Compile.ChangedSet.ChangedSet) : Ix.Cert.ConeInput -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ConeInput
-
-/-- info: def Ix.Cert.coneInput : Ix.Environment → Ixon.Env → Ix.Cert.Failures → Ix.Cert.ConeInput :=
-fun env ixe failures => { env := env, ixe := ixe, failures := failures, changed := Ix.Cert.changedSetOf env ixe } -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.coneInput
-
-/-- info: @[reducible] def Ix.Cert.ConeValidator : Type :=
-Ix.Cert.ConeInput → Except String Unit -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ConeValidator
-
-/-- info: def Ix.Cert.ConeValidator.Sound : Ix.Cert.ConeValidator → Prop :=
-fun v =>
-  ∀ (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures),
-    Ix.Cert.compileReport env = Except.ok (ixe, failures) →
-      v (Ix.Cert.coneInput env ixe failures) = Except.ok () →
-        ∀ (roots : List Ix.Name) (sub : Ix.Environment) (t : Ix.Kernel.RoleTable),
-          Ix.Cert.IsClosure env roots sub →
-            Ix.Kernel.Reader.defaultTable = Except.ok t →
-              (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) ∧ Ix.Cert.SourceFormInfers env ixe sub t -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ConeValidator.Sound
 
 /-- info: def Ix.Cert.artifactCheck : Ix.Kernel.RoleTable → Ixon.Env → Except String Unit :=
 fun t ixe =>
@@ -6861,15 +6054,13 @@ fun t ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.artifactCheck
 
-/-- info: def Ix.Cert.compileValidated : Ix.Cert.ConeValidator →
-  Ix.Kernel.RoleTable → Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
-fun v t env => do
+/-- info: def Ix.Cert.compileChecked : Ix.Kernel.RoleTable → Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
+fun t env => do
   let out ← Ix.Cert.compileReport env
   Ix.Cert.artifactCheck t out.fst
-  v (Ix.Cert.coneInput env out.fst out.snd)
   pure out -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.compileValidated
+#print Ix.Cert.compileChecked
 
 /-- info: def Ix.Cert.keyAddress : Ixon.Env → Ix.Kernel.RoleTable → Ix.Kernel.Key Ix.Kernel.Mode.source → Option Address :=
 fun ixe t x =>
@@ -6929,8 +6120,6 @@ fun ixe sub t envQ =>
             Ix.Cert.PublishedAgree ixe →
               Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
                 Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                  (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                    Ix.Cert.SourceFormInfers env ixe sub t →
                       Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileCorrect
@@ -6946,18 +6135,9 @@ fun ixe sub t envQ =>
             Ix.Cert.PublishedAgree ixe →
               Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
                 Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                  (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                    Ix.Cert.SourceFormInfers env ixe sub t → Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
+                  Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileCorrectPublished
-
-/-- info: Ix.Cert.CallRewrite.mem_all : ∀ (r : Ix.Cert.CallRewrite), r ∈ Ix.Cert.CallRewrite.all -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Cert.CallRewrite.mem_all
-
-/-- info: Ix.Cert.ChangeKind.mem_all : ∀ (k : Ix.Cert.ChangeKind), k ∈ Ix.Cert.ChangeKind.all -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Cert.ChangeKind.mem_all
 
 /-- info: @Ix.Cert.artifactCheck_sound : ∀ {t : Ix.Kernel.RoleTable} {ixe : Ixon.Env},
   Ix.Cert.artifactCheck t ixe = Except.ok () →
@@ -6965,13 +6145,12 @@ fun ixe sub t envQ =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.artifactCheck_sound
 
-/-- info: @Ix.Cert.compileValidated_ok : ∀ {v : Ix.Cert.ConeValidator} {t : Ix.Kernel.RoleTable} {env : Ix.Environment}
-  {ixe : Ixon.Env} {failures : Ix.Cert.Failures},
-  Ix.Cert.compileValidated v t env = Except.ok (ixe, failures) →
-    Ix.Cert.compileReport env = Except.ok (ixe, failures) ∧
-      Ix.Cert.artifactCheck t ixe = Except.ok () ∧ v (Ix.Cert.coneInput env ixe failures) = Except.ok () -/
+/-- info: @Ix.Cert.compileChecked_ok : ∀ {t : Ix.Kernel.RoleTable} {env : Ix.Environment} {ixe : Ixon.Env}
+  {failures : Ix.Cert.Failures},
+  Ix.Cert.compileChecked t env = Except.ok (ixe, failures) →
+    Ix.Cert.compileReport env = Except.ok (ixe, failures) ∧ Ix.Cert.artifactCheck t ixe = Except.ok () -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.compileValidated_ok
+#check @Ix.Cert.compileChecked_ok
 
 /-- info: @Ix.Cert.readingAt_of_reading : ∀ {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable}
   {cx : Ix.Kernel.Reader.Ctx Ix.Kernel.Mode.anon},
@@ -7002,25 +6181,22 @@ fun ixe sub t envQ =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileCorrect_iff_published
 
-/-- info: Ix.Cert.CompileCorrect.validated : Ix.Cert.CompileCorrect →
-  ∀ {v : Ix.Cert.ConeValidator},
-    v.Sound →
-      ∀ {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
-        {failures : Ix.Cert.Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
-        Ix.Kernel.Reader.defaultTable = Except.ok t →
-          Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
-            Ix.Cert.compileValidated v t env = Except.ok (ixe, failures) →
-              Ix.Cert.NoFailure failures sub →
-                Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                  Ix.Cert.Published ixe sub ∧
-                    Ix.Cert.IxonCommutesCovering ixe sub t envQ ∧
-                      Ix.Cert.PublishedRolesBound t ixe ∧ Ix.Cert.PublishedAgree ixe -/
+/-- info: Ix.Cert.CompileCorrect.artifactChecked : Ix.Cert.CompileCorrect →
+  ∀ {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+    {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+    Ix.Kernel.Reader.defaultTable = Except.ok t →
+      Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
+        Ix.Cert.compileChecked t env = Except.ok (ixe, failures) →
+          Ix.Cert.NoFailure failures sub →
+            Ix.Cert.RoleClosure.RoleEvidenceChecks →
+              Ix.Cert.Published ixe sub ∧
+                Ix.Cert.IxonCommutesCovering ixe sub t envQ ∧
+                  Ix.Cert.PublishedRolesBound t ixe ∧ Ix.Cert.PublishedAgree ixe -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.CompileCorrect.validated
+#check @Ix.Cert.CompileCorrect.artifactChecked
 
 /-- info: Ix.Cert.CompileCorrect.checked : Ix.Cert.CompileCorrect →
-  ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {v : Ix.Cert.ConeValidator},
-    v.Sound →
+  ∀ (V : Type u_1) [Ix.Kernel.SetTheory V],
       Ix.Cert.RoleClosure.roleEvidenceCheck = true →
         ∀ {env : Ix.Environment} {roots : List Ix.Name} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
           {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
@@ -7028,7 +6204,7 @@ fun ixe sub t envQ =>
             Ix.LeanIngress.checkSourceCollapsedBundledAt ixe t (Ix.Cert.closure env roots)
                   (Ix.Cert.blocksOf (Ix.Cert.closure env roots)) =
                 Except.ok envQ →
-              Ix.Cert.compileValidated v t env = Except.ok (ixe, failures) →
+              Ix.Cert.compileChecked t env = Except.ok (ixe, failures) →
                 ((Ix.Cert.closure env roots).consts.keys.all fun n => !failures.failed n) = true →
                   Ix.Cert.Published ixe (Ix.Cert.closure env roots) ∧
                     Ix.Cert.IxonCommutesCovering ixe (Ix.Cert.closure env roots) t envQ ∧
@@ -7048,15 +6224,13 @@ fun ixe sub t envQ =>
                 Ix.Cert.PublishedAgree ixe →
                   Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
                     Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                      (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-                        Ix.Cert.SourceFormInfers env ixe sub t →
                           ∃ envQ,
                             Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ ∧
                               Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
 
-/-- info: [cert-audit] final statement: 40 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] final statement: 30 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
@@ -7078,27 +6252,17 @@ run_cmd do
       `ReadingCovers,
       `readingAt,
       `keyAddress,
-      `KindAccepted,
-      `KindRoot,
-      `RootAccepted,
-      `ImageRuleRequired,
-      `ChangeKind.Present,
-      `SourceFormInfers,
       `quotientKey,
-      `changedSetOf,
-      `ConeValidator.Sound,
       `artifactCheck,
       `artifactCheck_sound,
-      `compileValidated,
-      `CallRewrite.mem_all,
-      `ChangeKind.mem_all,
-      `compileValidated_ok,
+      `compileChecked,
+      `compileChecked_ok,
       `readingAt_of_reading,
       `IxonCommutesCovering.toStrongRef,
       `CompileCorrect.published,
       `CompileCorrect.of_published,
       `compileCorrect_iff_published,
-      `CompileCorrect.validated,
+      `CompileCorrect.artifactChecked,
       `CompileCorrect.checked,
       `CompileCorrect.nominal].map
       (`Ix.Cert ++ ·))
@@ -7108,26 +6272,41 @@ run_cmd do
 `Ix.Cert.Composition` proves the final statement from named open obligations, each a
 `def … : Prop` on the compiler's actual objects (`compileReport`, the driver's fold,
 the certified reader, quotient Source's prepared stream): Source totality, the reader
-against the Source stream (streams, keys, renamed constants), scheduler ownership,
-per-pass values, image rows, clique rows, locality (reordering, the table's evidence,
-union, Source and seed restriction), assembly, and the Source laws (unchanged rules,
-rule correspondence). `compileCorrect_unchanged` is the unchanged-closure case;
-`compileCorrect_of_obligations` is the whole statement. Each obligation's statement is
+against the Source stream (streams and keys), scheduler ownership, the table's
+evidence, and the Source laws (unchanged rules). `compileCorrect_unchanged` proves
+`CompileCorrect` from them. Each obligation's statement is
 frozen here, so a restatement shows in review; the guard below checks that no theorem of
 the composition reaches an axiom outside the standard three. The fold's start
-(`Resolution.FoldRun`) is now named by the provenance and unchanged-closure claims it
+(`Resolution.FoldRun`) is named by the provenance and closure claims it
 comes from (`compileUnchecked_provenance`, `compileReport_claim`,
-`HookFree.compileReport_hookFree`), so that the ownership obligation can be stated of this
+`ClosureClaims.compileReport_owned`), so that the ownership obligation can be stated of this
 compile's fold; those three are guarded here at their new statements. Source totality is
 restated as `ReadingCovers` is (the closure's stored entries, `sorryAx` aside), for the
-same reason; re-frozen with it: its print. The other definitions that key a closure's
-constant by its name's spelling (`RepOf`, `ImageRecursor`, and the reader's key
-obligation's coverage conjunct) range over the stored entries too, so that they say what
-is meant of a respelled lookup; re-frozen with them: their prints. The reader's key
-obligation's coverage conjunct also takes the representative's published address (the
+same reason; re-frozen with it: its print. The reader's key
+obligation's coverage conjunct ranges over the stored entries too, so that it says what
+is meant of a respelled lookup, and takes the representative's published address (the
 address Source totality gives it): a respelled stored name's quotient key is read off its
 spelling, and only Source totality ties it to the stream. Given that address, `sorryAx` needs
-no exception there. Re-frozen with it: its print. -/
+no exception there. Re-frozen with it: its print.
+
+**Re-frozen when the compiler stopped rewriting Lean.** With no rewritten constants,
+`CompileCorrectUnchanged` equals `CompileCorrect` and is deleted;
+`compileCorrect_unchanged` now concludes `CompileCorrect`, and
+`compileCorrect_of_obligations` is deleted. The obligations about rewritten
+constants are deleted with the definitions they read: the renamed constants'
+agreement (`RenamedAgree`, with `InputKey`, `ConstantAgrees`, `RecStepsAgree`,
+`CapStepsAgree`, `RepOf`, `inputKey_of_reading`), the per-pass values
+(`PassValues`, `RewrittenConstant`), the image and clique rows (`ImageRules`,
+`ImageRecursor`, `CliqueRows`, `CliqueConstant`), locality's seed union and Source and
+root restriction (`SeedUnion`, `SourceRestricts`, `RootRestricts`), assembly
+(`Assembly`) and rule correspondence (`RuleCorrespondence`), and the change-kind
+lemmas (`causeKind_reason`, `causeKind_ne_cascade`, `kindRoot_of_reason`,
+`kindRoot_cascade`, `groundReaches_of_reaches`, `groundAffectedIn_of_affected`,
+`kindAccepted_root`). The reader-stream obligation drops its premise that the closure
+avoids the changed set, `ClaimsOwned` drops its conjunct that the rewriting hooks are
+identities, and `claimsOwned` its argument for it; their prints are re-frozen.
+`ClosureClaims.compileReport_owned` replaces `HookFree.compileReport_hookFree`.
+The skeleton's roots: 50 → 25. -/
 
 /-- info: structure Ix.Cert.Premises (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
   (failures : Ix.Cert.Failures) (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) : Prop
@@ -7152,14 +6331,6 @@ constructor:
     Ix.Cert.Premises env roots sub ixe failures t envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Premises
-
-/-- info: def Ix.Cert.CompileCorrectUnchanged.{w} : Prop :=
-∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
-  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source),
-  Ix.Cert.Premises env roots sub ixe failures t envQ →
-    (Ix.Cert.changedSetOf env ixe).Avoids sub → Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.CompileCorrectUnchanged
 
 /-- info: def Ix.Cert.sourceEvidence : Ixon.Env → Ix.Kernel.RoleTable → Ix.Kernel.Evidences Ix.Kernel.Mode.source :=
 fun ixe t =>
@@ -7200,105 +6371,6 @@ fun {md} {V} [Ix.Kernel.SetTheory V] cval env e e' =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.DenoteSame
 
-/-- info: def Ix.Cert.InputKey : {md : Ix.Kernel.Mode} → Ix.Kernel.Key md → Prop :=
-fun {md} x =>
-  match x with
-  | base.aux d => False
-  | x => True -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.InputKey
-
-/-- info: def Ix.Cert.ConstantAgrees.{w} : {V : Type w} →
-  [inst : Ix.Kernel.SetTheory V] →
-    {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon} →
-      Ix.Kernel.Cached.StrongModel V envA →
-        (Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Prop :=
-fun {V} [Ix.Kernel.SetTheory V] {envA} M f c =>
-  ∃ c',
-    envA.find? (Ix.Kernel.Key.map f c.name) = some c' ∧
-      c'.toConstantVal.levelParams = c.toConstantVal.levelParams ∧
-        Ix.Cert.DenoteSame M.model.cval envA (Ix.Kernel.Expr.mapKeys f c.toConstantVal.type) c'.toConstantVal.type ∧
-          ∀ (cv : Ix.Kernel.ConstantVal Ix.Kernel.Mode.source) (v : Ix.Kernel.Expr Ix.Kernel.Mode.source)
-            (h : Ix.Kernel.ReducibilityHint),
-            c = Ix.Kernel.ConstantInfo.defnInfo cv v h →
-              ∃ cv' v' h',
-                c' = Ix.Kernel.ConstantInfo.defnInfo cv' v' h' ∧
-                  Ix.Cert.DenoteSame M.model.cval envA (Ix.Kernel.Expr.mapKeys f v) v' -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ConstantAgrees
-
-/-- info: def Ix.Cert.RecStepsAgree.{w} : {V : Type w} →
-  [inst : Ix.Kernel.SetTheory V] →
-    {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon} →
-      Ix.Kernel.Cached.StrongModel V envA →
-        (Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) →
-          Ix.Kernel.Env Ix.Kernel.Mode.source → (Ix.Kernel.Key Ix.Kernel.Mode.source → Prop) → Prop :=
-fun {V} [Ix.Kernel.SetTheory V] {envA} M f envQ R =>
-  ∀ (c : Ix.Kernel.Key Ix.Kernel.Mode.source) (cv : Ix.Kernel.ConstantVal Ix.Kernel.Mode.source) (mI rP : Nat)
-    (rules : List (Ix.Kernel.RecRule Ix.Kernel.Mode.source)),
-    envQ.find? c = some (Ix.Kernel.ConstantInfo.recInfo cv mI rP rules) →
-      R c →
-        ∀ (rl : Ix.Kernel.RecRule Ix.Kernel.Mode.source),
-          rl ∈ rules →
-            rl.fire ≠ Ix.Kernel.RecRuleFire.inert →
-              ∀ (e e' : Ix.Kernel.Expr Ix.Kernel.Mode.source),
-                Ix.Cert.IotaStep envQ c cv mI rP rules rl e e' →
-                  Ix.Cert.DenoteAlike M.model.cval envA (Ix.Kernel.Expr.mapKeys f e) (Ix.Kernel.Expr.mapKeys f e') -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.RecStepsAgree
-
-/-- info: def Ix.Cert.CapStepsAgree.{w} : {V : Type w} →
-  [inst : Ix.Kernel.SetTheory V] →
-    {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon} →
-      Ix.Kernel.Cached.StrongModel V envA →
-        (Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
-fun {V} [Ix.Kernel.SetTheory V] {envA} M f envQ =>
-  (∀ (T : Ix.Kernel.Key Ix.Kernel.Mode.source) (cvT : Ix.Kernel.ConstantVal Ix.Kernel.Mode.source)
-      (caps : Ix.Kernel.IndCaps Ix.Kernel.Mode.source),
-      envQ.find? T = some (Ix.Kernel.ConstantInfo.indInfo cvT caps) →
-        ∀ (a b : Ix.Kernel.Expr Ix.Kernel.Mode.source),
-          Ix.Cert.StructEtaStep envQ T cvT caps a b →
-            Ix.Cert.DenoteAlike M.model.cval envA (Ix.Kernel.Expr.mapKeys f a) (Ix.Kernel.Expr.mapKeys f b)) ∧
-    (∀ (T : Ix.Kernel.Key Ix.Kernel.Mode.source) (cvT : Ix.Kernel.ConstantVal Ix.Kernel.Mode.source)
-        (caps : Ix.Kernel.IndCaps Ix.Kernel.Mode.source),
-        envQ.find? T = some (Ix.Kernel.ConstantInfo.indInfo cvT caps) →
-          ∀ (a b : Ix.Kernel.Expr Ix.Kernel.Mode.source),
-            Ix.Cert.StructUnitStep envQ T cvT caps a b →
-              Ix.Cert.DenoteAlike M.model.cval envA (Ix.Kernel.Expr.mapKeys f a) (Ix.Kernel.Expr.mapKeys f b)) ∧
-      ∀ (sn : Ix.Kernel.Key Ix.Kernel.Mode.source) (i : Nat) (e e' : Ix.Kernel.Expr Ix.Kernel.Mode.source),
-        Ix.Cert.ProjStep envQ sn i e e' →
-          Ix.Cert.DenoteAlike M.model.cval envA (Ix.Kernel.Expr.mapKeys f e) (Ix.Kernel.Expr.mapKeys f e') -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.CapStepsAgree
-
-/-- info: def Ix.Cert.RepOf : Ixon.Env →
-  Ix.Kernel.RoleTable → Ix.Environment → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Ix.Name → Prop :=
-fun ixe t sub c n => (∃ ci, (n, ci) ∈ sub.consts.toList) ∧ c.name = Ix.Cert.quotientKey ixe t n -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.RepOf
-
-/-- info: def Ix.Cert.RewrittenConstant : Ix.Environment →
-  Ixon.Env → Ix.Environment → Ix.Kernel.RoleTable → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Prop :=
-fun env ixe sub t c =>
-  ∃ k n a, k.rewritesTerms = true ∧ Ix.Cert.KindRoot k env ixe sub n a ∧ Ix.Cert.RepOf ixe t sub c n -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.RewrittenConstant
-
-/-- info: def Ix.Cert.CliqueConstant : Ix.Environment →
-  Ixon.Env → Ix.Environment → Ix.Kernel.RoleTable → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Prop :=
-fun env ixe sub t c => ∃ n a, Ix.Cert.KindRoot Ix.Cert.ChangeKind.clique env ixe sub n a ∧ Ix.Cert.RepOf ixe t sub c n -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.CliqueConstant
-
-/-- info: def Ix.Cert.ImageRecursor : Ix.Environment →
-  Ixon.Env → Ix.Environment → Ix.Kernel.RoleTable → Ix.Kernel.Key Ix.Kernel.Mode.source → Prop :=
-fun env ixe sub t c =>
-  ∃ n a,
-    Ix.Cert.KindRoot Ix.Cert.ChangeKind.image env ixe sub n a ∧
-      (∃ ci, (n, ci) ∈ sub.consts.toList) ∧ c = Ix.Cert.quotientKey ixe t n -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ImageRecursor
-
 /-- info: def Ix.Cert.Owned : Ixon.Env → Ix.Cert.Failures → Ix.CompileM.CompileEnv → Prop :=
 fun ixe failures c =>
   (∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address),
@@ -7321,9 +6393,8 @@ fun env ixe failures sub =>
                 Std.HashMap.get? (Ix.Cert.compileBlocks env).blocks rep = some all ∧
                   (∀ (x : Ix.Name), Std.HashSet.contains all x = true → (sub.consts.get? x).isSome = true) ∧
                     ixe.consts.get? a = some { buf := b, len := b.size } ∧
-                      Ix.Cert.Resolution.HookFree snap.cenv all (Ix.CompileM.blockKey rep all) ∧
-                        Ix.Cert.Resolution.BlockCompiled snap.cenv all (Ix.CompileM.blockKey rep all) n a b ∧
-                          Ix.Cert.Owned ixe failures snap.cenv -/
+                      Ix.Cert.Resolution.BlockCompiled snap.cenv all (Ix.CompileM.blockKey rep all) n a b ∧
+                        Ix.Cert.Owned ixe failures snap.cenv -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ClaimsOwned
 
@@ -7404,24 +6475,23 @@ fun blocks sched st₀ acc =>
   (pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.source) (ds : Array (Ix.Kernel.Declaration Ix.Kernel.Mode.source))
   (b : Ix.RoleEvidence.Bundle),
   Ix.Cert.Premises env roots sub ixe failures t envQ →
-    (Ix.Cert.changedSetOf env ixe).Avoids sub →
-      Ix.Cert.ClaimsOwned env ixe failures sub →
-        Ix.Kernel.Reader.builtinPrelude = Except.ok pre →
-          Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
-                (Ix.Cert.blocksOf sub) =
-              Except.ok ds →
-            Ix.RoleEvidence.quotientBundle () = Except.ok b →
-              ∃ binding tA preA order st' decls,
-                Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
-                  Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok tA ∧
-                    Ix.Kernel.Reader.preludeFor tA = Except.ok preA ∧
-                      Ix.Cert.ClosureOrder ixe (Ix.Cert.Seed ixe sub) order ∧
-                        Ix.Cert.Stream.StoredCanonical ixe order ∧
-                          Ix.Kernel.Reader.StreamRead (Ix.Cert.closureContext ixe tA preA order) preA.state
-                              (Ix.Cert.Stream.decodedOf ixe order) st' decls ∧
-                            preA.state.keepsPrelude st' = true ∧
-                              (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList =
-                                List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList -/
+    Ix.Cert.ClaimsOwned env ixe failures sub →
+      Ix.Kernel.Reader.builtinPrelude = Except.ok pre →
+        Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
+              (Ix.Cert.blocksOf sub) =
+            Except.ok ds →
+          Ix.RoleEvidence.quotientBundle () = Except.ok b →
+            ∃ binding tA preA order st' decls,
+              Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
+                Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok tA ∧
+                  Ix.Kernel.Reader.preludeFor tA = Except.ok preA ∧
+                    Ix.Cert.ClosureOrder ixe (Ix.Cert.Seed ixe sub) order ∧
+                      Ix.Cert.Stream.StoredCanonical ixe order ∧
+                        Ix.Kernel.Reader.StreamRead (Ix.Cert.closureContext ixe tA preA order) preA.state
+                            (Ix.Cert.Stream.decodedOf ixe order) st' decls ∧
+                          preA.state.keepsPrelude st' = true ∧
+                            (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList =
+                              List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.ReaderStreams
 
@@ -7453,24 +6523,6 @@ fun blocks sched st₀ acc =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.ReadingKeys
 
-/-- info: def Ix.Cert.Obligation.RenamedAgree.{w} : Prop :=
-∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
-  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
-  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
-  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
-  Ix.Cert.Premises env roots sub ixe failures t envQ →
-    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
-      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.quotientBundle () = Except.ok b →
-          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-            ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
-              c ∈ envQ.consts →
-                Ix.Cert.InputKey c.name →
-                  ¬Ix.Cert.RewrittenConstant env ixe sub t c →
-                    ¬Ix.Cert.CliqueConstant env ixe sub t c → Ix.Cert.ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.RenamedAgree
-
 /-- info: def Ix.Cert.Obligation.ScheduleOwnership : Prop :=
 ∀ (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures) (cenv cenv₀ : Ix.CompileM.CompileEnv)
   (sched : Ix.CompileM.FoldSchedule),
@@ -7483,53 +6535,6 @@ fun blocks sched st₀ acc =>
             Ix.Cert.Owned ixe failures snap.cenv -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.ScheduleOwnership
-
-/-- info: def Ix.Cert.Obligation.PassValues.{w} : Prop :=
-∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
-  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
-  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
-  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
-  Ix.Cert.Premises env roots sub ixe failures t envQ →
-    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
-      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.quotientBundle () = Except.ok b →
-          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-            Ix.Cert.SourceFormInfers env ixe sub t →
-              ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
-                c ∈ envQ.consts →
-                  Ix.Cert.RewrittenConstant env ixe sub t c → Ix.Cert.ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.PassValues
-
-/-- info: def Ix.Cert.Obligation.ImageRules.{w} : Prop :=
-∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
-  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
-  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
-  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
-  Ix.Cert.Premises env roots sub ixe failures t envQ →
-    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
-      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.quotientBundle () = Except.ok b →
-          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-            Ix.Cert.RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (Ix.Cert.ImageRecursor env ixe sub t) -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.ImageRules
-
-/-- info: def Ix.Cert.Obligation.CliqueRows.{w} : Prop :=
-∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
-  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
-  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
-  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
-  Ix.Cert.Premises env roots sub ixe failures t envQ →
-    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
-      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.quotientBundle () = Except.ok b →
-          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-            ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
-              c ∈ envQ.consts →
-                Ix.Cert.CliqueConstant env ixe sub t c → Ix.Cert.ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.CliqueRows
 
 /-- info: def Ix.Cert.Obligation.EvidenceTransfer : Prop :=
 ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
@@ -7562,50 +6567,6 @@ fun blocks sched st₀ acc =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.EvidenceTransfer
 
-/-- info: def Ix.Cert.Obligation.SeedUnion : Prop :=
-∀ (env : Ix.Environment) (ixe : Ixon.Env) (binding : Ix.Kernel.Admission.Binding) (S : Address → Prop),
-  Ix.Cert.compile env = Except.ok ixe →
-    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
-      (∀ (a : Address), S a → Ix.Cert.RootAccepted binding ixe a) →
-        ∃ limits order envA, Ix.Cert.IxonAcceptsRef binding limits ixe S order envA -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.SeedUnion
-
-/-- info: def Ix.Cert.Obligation.SourceRestricts : Prop :=
-∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
-  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (n : Ix.Name),
-  Ix.Cert.Premises env roots sub ixe failures t envQ →
-    (sub.consts.get? n).isSome = true →
-      ¬Ix.Cert.GroundAffectedIn env ixe sub n →
-        ∃ roots' sub' envQ',
-          Ix.Cert.Premises env roots' sub' ixe failures t envQ' ∧
-            (Ix.Cert.changedSetOf env ixe).Avoids sub' ∧ sub'.consts.get? n = sub.consts.get? n -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.SourceRestricts
-
-/-- info: def Ix.Cert.Obligation.RootRestricts : Prop :=
-∀ (binding : Ix.Kernel.Admission.Binding) (limits : Ix.Kernel.Admission.Limits) (ixe : Ixon.Env) (S : Address → Prop)
-  (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon) (a : Address),
-  Ix.Cert.IxonAcceptsRef binding limits ixe S order envA → S a → Ix.Cert.RootAccepted binding ixe a -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.RootRestricts
-
-/-- info: def Ix.Cert.Obligation.Assembly.{w} : Prop :=
-∀ (V : Type w) [inst : Ix.Kernel.SetTheory V] (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source)
-  (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon) (M : Ix.Kernel.Cached.StrongModel V envA)
-  (f : Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id),
-  (∃ ev ds, Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified ev ds envQ) →
-    (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
-        c ∈ envQ.consts → Ix.Cert.InputKey c.name → Ix.Cert.ConstantAgrees M f c) →
-      (Ix.Cert.RecStepsAgree M f envQ fun x => True) →
-        Ix.Cert.CapStepsAgree M f envQ →
-          ∃ N,
-            ∀ (k : Ix.Kernel.Key Ix.Kernel.Mode.source),
-              Ix.Cert.InputKey k →
-                ∀ (φ : Ix.Kernel.LevelParam → Nat), N.cval k φ = M.model.cval (Ix.Kernel.Key.map f k) φ -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.Assembly
-
 /-- info: def Ix.Cert.Obligation.UnchangedRules.{w} : Prop :=
 ∀ (V : Type w) [inst : Ix.Kernel.SetTheory V] (P : Ix.Kernel.Mode.source.Id → Prop)
   (f : Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source)
@@ -7617,101 +6578,42 @@ fun blocks sched st₀ acc =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.UnchangedRules
 
-/-- info: def Ix.Cert.Obligation.RuleCorrespondence.{w} : Prop :=
-∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
-  (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (binding : Ix.Kernel.Admission.Binding)
-  (limits : Ix.Kernel.Admission.Limits) (order : List Address) (envA : Ix.Kernel.Env Ix.Kernel.Mode.anon)
-  (b : Ix.RoleEvidence.Bundle) (V : Type w) [inst : Ix.Kernel.SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
-  Ix.Cert.Premises env roots sub ixe failures t envQ →
-    Ix.Kernel.Admission.defaultBinding = Except.ok binding →
-      Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.quotientBundle () = Except.ok b →
-          (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
-            (Ix.Cert.RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ fun c =>
-                ¬Ix.Cert.ImageRecursor env ixe sub t c) ∧
-              Ix.Cert.CapStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.RuleCorrespondence
-
 /-- info: Ix.Cert.compileCorrect_unchanged : Ix.Cert.Obligation.SourceTotal →
   Ix.Cert.Obligation.ReaderStreams →
     Ix.Cert.Obligation.ReadingKeys →
       Ix.Cert.Obligation.ScheduleOwnership →
-        Ix.Cert.Obligation.EvidenceTransfer → Ix.Cert.Obligation.UnchangedRules → Ix.Cert.CompileCorrectUnchanged -/
+        Ix.Cert.Obligation.EvidenceTransfer → Ix.Cert.Obligation.UnchangedRules → Ix.Cert.CompileCorrect -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileCorrect_unchanged
 
-/-- info: Ix.Cert.compileCorrect_of_obligations : Ix.Cert.Obligation.SourceTotal →
-  Ix.Cert.Obligation.ReaderStreams →
-    Ix.Cert.Obligation.ReadingKeys →
-      Ix.Cert.Obligation.RenamedAgree →
-        Ix.Cert.Obligation.ScheduleOwnership →
-          Ix.Cert.Obligation.PassValues →
-            Ix.Cert.Obligation.ImageRules →
-              Ix.Cert.Obligation.CliqueRows →
-                  Ix.Cert.Obligation.EvidenceTransfer →
-                    Ix.Cert.Obligation.SeedUnion →
-                      Ix.Cert.Obligation.SourceRestricts →
-                        Ix.Cert.Obligation.RootRestricts →
-                          Ix.Cert.Obligation.Assembly →
-                            Ix.Cert.Obligation.UnchangedRules →
-                              Ix.Cert.Obligation.RuleCorrespondence → Ix.Cert.CompileCorrect -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Cert.compileCorrect_of_obligations
-
-/-- info: [cert-audit] composition skeleton: 50 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] composition skeleton: 25 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "composition skeleton"
     (#[`Premises,
-      `CompileCorrectUnchanged,
       `SameEnv,
       `SameEnv.refl,
       `DenoteSame,
-      `ConstantAgrees,
-      `RecStepsAgree,
-      `CapStepsAgree,
-      `RewrittenConstant,
-      `CliqueConstant,
-      `ImageRecursor,
       `Owned,
       `ClaimsOwned,
       `Resolution.FoldRun,
       `Obligation.SourceTotal,
       `Obligation.ReaderStreams,
       `Obligation.ReadingKeys,
-      `Obligation.RenamedAgree,
       `Obligation.ScheduleOwnership,
-      `Obligation.PassValues,
-      `Obligation.ImageRules,
-      `Obligation.CliqueRows,
       `Obligation.EvidenceTransfer,
-      `Obligation.SeedUnion,
-      `Obligation.SourceRestricts,
-      `Obligation.RootRestricts,
-      `Obligation.Assembly,
       `Obligation.UnchangedRules,
-      `Obligation.RuleCorrespondence,
       `defaultTable_check,
       `findProj_sameFind,
       `Denotes.sameFind,
       `ValueModel.transfer,
       `const_denotes,
-      `inputKey_of_reading,
       `claimsOwned,
       `renamed_reading_denotes,
-      `causeKind_reason,
-      `causeKind_ne_cascade,
-      `kindRoot_of_reason,
-      `kindRoot_cascade,
       `evidenceDepKeys_ground,
-      `groundReaches_of_reaches,
-      `groundAffectedIn_of_affected,
-      `kindAccepted_root,
       `compileCorrect_unchanged,
-      `compileCorrect_of_obligations,
-      `HookFree.compileReport_hookFree,
+      `ClosureClaims.compileReport_owned,
       `Resolution.compileReport_claim,
       `Resolution.compileUnchecked_provenance].map
       (`Ix.Cert ++ ·))

@@ -334,42 +334,6 @@ def arityProducerTests : TestSeq := Id.run do
     test "actual theorem/opaque/axiom outputs preserve kind and optional-value boundaries" kinds ++
     test "decorator preserves plain metadata, removes source markers and refuses original semantic frames" metadata
 
--- Internal record-frame fixtures exercise the pure decorator, not public
--- compiler input admission or a designated baseline.
-def recordSubstitutionTests : TestSeq := Id.run do
-  let wrap := fun e => Expr.mdata (({} : MData).setNat `_ix.inline 0) e
-  let source := definition `recordIdentity
-    (.forallE `x natType (wrap natType) .default)
-    (.lam `x natType (wrap (wrap (.bvar 0))) .default)
-  let canonical := fun out => (Id.run ((_root_.Ix.CanonM.canonConst out).run {})).1
-  let pair := (resolveTelescope source #[{ binder := .position 0, uses := .linear, result := some .unique }]).toOption
-    |>.bind (fun c => c.decorate.toOption)
-  let mut inputs : Array _root_.Ix.Expr := #[]
-  if let some out := pair then
-    if let .defnInfo v := canonical out then inputs := #[v.cnst.type, v.value]
-  let binding := definition `recordLet natType (.letE `view natType (.lit (.natVal 0)) (wrap (.bvar 0)) false)
-  let borrow : SourceContract := { source := binding, binders := #[
-    { site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
-  if let some out := (borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption) then
-    if let .defnInfo v := canonical out then inputs := inputs.push v.value
-  let records := ({} : Std.HashMap Nat (Nat × UInt64)).insert 0 (7, 9)
-  let anchor := _root_.Ix.Expr.mkBVar 0
-  let payloadSame := fun (a b : _root_.Ix.Expr) => match a, b with
-    | .mdata data _ hash, .mdata other _ _ =>
-      _root_.Ix.Compile.ExactKey.exprEq (.mdata data anchor hash) (.mdata other anchor hash)
-    | _, _ => false
-  let stable := inputs.all fun e =>
-    let out := _root_.Ix.CompileM.substRecords records e
-    let before := _root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e
-    let after := _root_.Ix.LeanIngress.ingressExpr (fun _ => 0) out
-    before.isOk && before.toOption == after.toOption && payloadSame e out &&
-      !_root_.Ix.Compile.ExactKey.exprEq e out
-  return test "record substitution retains exact lam/all/let semantic arrays and successful readings"
-      (inputs.size == 3 && stable) ++
-    test "missing record entries retain actual decorated expressions exactly"
-      (inputs.size == 3 && inputs.all fun e =>
-        _root_.Ix.Compile.ExactKey.exprEq e (_root_.Ix.CompileM.substRecords {} e))
-
 -- These open source expressions exercise raw rewrite helpers. Resolving their
 -- contracts does not assert declaration admission or whole-program validity.
 open _root_.Ix.Compile.Image in
@@ -557,7 +521,7 @@ def presenceMemoTests : TestSeq := Id.run do
 
 def suite : List TestSeq :=
   [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,
-    arityProducerTests, recordSubstitutionTests, rewritePrimitiveTests, inspectionTests, presenceMemoTests]
+    arityProducerTests, rewritePrimitiveTests, inspectionTests, presenceMemoTests]
 
 end Tests.Ix.SourceContract
 
