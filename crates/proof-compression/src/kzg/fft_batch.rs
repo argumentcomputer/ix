@@ -1,5 +1,5 @@
 use super::coefficients::Column;
-use ark_bls12_381::Fr;
+use super::curve::Fr;
 use ark_ff::{AdditiveGroup, Zero};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use p3_maybe_rayon::prelude::*;

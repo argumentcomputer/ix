@@ -4,7 +4,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/scs"
 	"github.com/consensys/gnark/std/math/uints"
@@ -44,11 +43,11 @@ func TestBlake3Boundaries(t *testing.T) {
 		circuit := &blakeCircuit{Input: make([]uints.U8, n)}
 		assignment := &blakeCircuit{Input: uints.NewU8Array(input)}
 		copy(assignment.Output[:], uints.NewU8Array(expected[:]))
-		if err := test.IsSolved(circuit, assignment, ecc.BLS12_381.ScalarField()); err != nil {
+		if err := test.IsSolved(circuit, assignment, curveID.ScalarField()); err != nil {
 			t.Fatalf("length %d: %v", n, err)
 		}
 		assignment.Output[95] = uints.NewU8(expected[95] ^ 1)
-		if err := test.IsSolved(circuit, assignment, ecc.BLS12_381.ScalarField()); err == nil {
+		if err := test.IsSolved(circuit, assignment, curveID.ScalarField()); err == nil {
 			t.Fatalf("length %d accepted changed XOF state", n)
 		}
 	}
@@ -63,11 +62,11 @@ func TestBlake3CompiledConstraints(t *testing.T) {
 	circuit := &blakeCircuit{Input: make([]uints.U8, len(input))}
 	assignment := &blakeCircuit{Input: uints.NewU8Array(input)}
 	copy(assignment.Output[:], uints.NewU8Array(expected[:]))
-	ccs, err := frontend.Compile(ecc.BLS12_381.ScalarField(), scs.NewBuilder, circuit)
+	ccs, err := frontend.Compile(curveID.ScalarField(), scs.NewBuilder, circuit)
 	if err != nil {
 		t.Fatal(err)
 	}
-	w, err := frontend.NewWitness(assignment, ecc.BLS12_381.ScalarField())
+	w, err := frontend.NewWitness(assignment, curveID.ScalarField())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +75,7 @@ func TestBlake3CompiledConstraints(t *testing.T) {
 	}
 	t.Logf("one-block BLAKE3 XOF: %d constraints", ccs.GetNbConstraints())
 	assignment.Input[0] = uints.NewU8(input[0] ^ 1)
-	w, err = frontend.NewWitness(assignment, ecc.BLS12_381.ScalarField())
+	w, err = frontend.NewWitness(assignment, curveID.ScalarField())
 	if err != nil {
 		t.Fatal(err)
 	}

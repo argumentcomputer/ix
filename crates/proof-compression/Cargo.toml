@@ -13,6 +13,7 @@ path = "src/bin/ix_compression_worker.rs"
 aiur = { workspace = true }
 multi-stark = { workspace = true }
 ark-bls12-381 = { version = "0.5", features = ["curve"] }
+ark-bn254 = { version = "0.5", features = ["curve"], optional = true }
 ark-ec = "0.5"
 ark-ff = { version = "0.5", features = ["asm"] }
 ark-poly = "0.5"
@@ -50,9 +51,21 @@ rev = "114feb69ebfe029e2caa5e6c2d372c695e5d4da8"
 optional = true
 features = ["cuda"]
 
+[[example]]
+name = "kzg_filecoin_import"
+required-features = ["bls12-381"]
+
+[[example]]
+name = "kzg_ignition_import"
+required-features = ["bn254"]
+
 [features]
+bls12-381 = []
+# BN254 accepts admitted Ignition or development setup; CUDA support is experimental.
+# Production parameters and terminal proof backends require separate profiles.
+bn254 = ["dep:ark-bn254"]
 plonk = []
-default = ["parallel", "plonk"]
+default = ["parallel", "bls12-381", "plonk"]
 # GPU proving: multi-stark's Goldilocks backend for FRI compression and the
 # KZG kernels here. Needs the CUDA toolkit at build time and a visible GPU
 # at runtime; CPU-only builds neither compile sppark nor link CUDA.

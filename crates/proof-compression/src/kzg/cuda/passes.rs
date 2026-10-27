@@ -27,6 +27,17 @@ struct NativePass {
   group: usize,
 }
 
+const _: () = {
+  assert!(size_of::<NativePass>() == 160 && align_of::<NativePass>() == 32);
+  assert!(std::mem::offset_of!(NativePass, columns) == 32);
+  assert!(std::mem::offset_of!(NativePass, nodes) == 56);
+  assert!(std::mem::offset_of!(NativePass, roots) == 72);
+  assert!(std::mem::offset_of!(NativePass, lookups) == 88);
+  assert!(std::mem::offset_of!(NativePass, args) == 104);
+  assert!(std::mem::offset_of!(NativePass, slots) == 120);
+  assert!(std::mem::offset_of!(NativePass, group) == 128);
+};
+
 pub(super) struct Pass {
   program: Program,
   pub(super) columns: Vec<Column>,

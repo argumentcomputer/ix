@@ -45,7 +45,7 @@ func compileProfile(path, dir string) error {
 		return err
 	}
 	start := time.Now()
-	ccs, err := frontend.Compile(ecc.BLS12_381.ScalarField(), scs.NewBuilder, newCircuit(p))
+	ccs, err := frontend.Compile(curveID.ScalarField(), scs.NewBuilder, newCircuit(p))
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func compileProfile(path, dir string) error {
 		return err
 	}
 	m := &manifest{
-		Format: "ix-bls-plonk-artifacts-v1", ExecutableSHA256: executable.SHA256,
+		Format: artifactFormat, ExecutableSHA256: executable.SHA256,
 		ProfileSHA256: profileHash.SHA256, Constraints: ccs.GetNbConstraints(),
 		PublicInputs: ccs.GetNbPublicVariables(),
 		Commitments:  len(ccs.GetCommitments().CommitmentIndexes()),
@@ -103,7 +103,7 @@ func loadCircuit(dir string) (*profile, constraint.ConstraintSystem, *manifest, 
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	ccs := plonk.NewCS(ecc.BLS12_381)
+	ccs := plonk.NewCS(curveID)
 	if err := readBinary(filepath.Join(dir, "circuit.bin"), ccs); err != nil {
 		return nil, nil, nil, err
 	}
@@ -140,7 +140,7 @@ func checkWitness(dir, path string) error {
 	if err != nil {
 		return err
 	}
-	w, err := frontend.NewWitness(assignment, ecc.BLS12_381.ScalarField())
+	w, err := frontend.NewWitness(assignment, curveID.ScalarField())
 	if err != nil {
 		return err
 	}
@@ -154,6 +154,9 @@ func checkWitness(dir, path string) error {
 }
 
 func run(args []string) error {
+	if len(args) == 5 && args[0] == "import-lagrange-sp1" {
+		return importLagrangeSP1(args[1], args[2], args[3], args[4])
+	}
 	if len(args) == 3 && args[0] == "compile" {
 		return compileProfile(args[1], args[2])
 	}
@@ -172,7 +175,7 @@ func run(args []string) error {
 	if len(args) == 6 && args[0] == "verify" {
 		return verify(args[1], args[2], args[3], args[4], args[5])
 	}
-	return fmt.Errorf("usage: ix-bls-plonk-wrapper compile <profile.json> <artifacts> | check-witness <artifacts> <witness.json> | prepare <artifacts> <ix-srs.bin> <trusted-srs-blake3> | prove <artifacts> <witness.json> <out> | verify <key.bin> <trusted-key-sha256> <proof.bin> <expected-claim-digest>")
+	return fmt.Errorf("usage: PLONK helper compile <profile.json> <artifacts> | check-witness <artifacts> <witness.json> | import-lagrange-sp1 <artifacts> <ix-srs.bin> <trusted-srs-blake3> <plonk_pk.bin> | prepare <artifacts> <ix-srs.bin> <trusted-srs-blake3> | prove <artifacts> <witness.json> <out> | verify <key.bin> <trusted-key-sha256> <proof.bin> <expected-claim-digest>")
 }
 
 func main() {

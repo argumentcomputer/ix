@@ -57,6 +57,4 @@ fn spawn_memory_monitor() {
   });
 }
 
-pub(super) use outer::verify_saved as verify;
-
 pub(super) use outer::{PreparedVerifierProfile, VerifierProfile};

@@ -1,7 +1,11 @@
 use super::*;
+use ark_ec::AffineRepr;
 use shape::Shape;
 
+#[cfg(not(feature = "bn254"))]
 const FRONTEND_VERSION: &[u8] = b"init-kzg-recursive/frontend/v1";
+#[cfg(feature = "bn254")]
+const FRONTEND_VERSION: &[u8] = b"init-kzg-recursive/bn254/frontend/v1";
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) enum ClaimSlot {
@@ -103,17 +107,22 @@ impl LayoutPolicy {
   pub(super) fn legacy() -> Self {
     Self {
       namespace: Scalar::from_u8(94),
-      max_computation_height: 1 << 29,
-      max_table_height: 1 << 29,
+      max_computation_height: 1 << 29.min(Scalar::TWO_ADICITY - 1),
+      max_table_height: 1 << 29.min(Scalar::TWO_ADICITY - 1),
     }
   }
 
   fn validate(self) -> Result<(), String> {
-    if [self.max_computation_height, self.max_table_height]
-      .iter()
-      .any(|&height| height < 2 || !height.is_power_of_two())
-    {
-      return Err("layout caps must be nontrivial powers of two".into());
+    if [self.max_computation_height, self.max_table_height].iter().any(
+      |&height| {
+        height < 2
+          || !height.is_power_of_two()
+          || height.ilog2() as usize > Scalar::TWO_ADICITY
+      },
+    ) {
+      return Err(
+        "layout caps must be powers of two within scalar two-adicity".into(),
+      );
     }
     Ok(())
   }
@@ -188,6 +197,12 @@ impl<'a> Plan<'a> {
     }
     layout.validate()?;
     let shape = Shape::new(profile, logs)?;
+    if profile.generator.is_zero()
+      || profile.g2.is_zero()
+      || profile.tau_g2.is_zero()
+    {
+      return Err("recursive verifier anchors must be nonidentity".into());
+    }
     for point in profile
       .fixed
       .0

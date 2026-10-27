@@ -26,10 +26,22 @@ struct alignas(32) QuotientParameters {
 };
 
 static_assert(sizeof(QuotientInstruction) == 64);
+static_assert(alignof(QuotientInstruction) == 32);
+static_assert(offsetof(QuotientInstruction, a) == 32);
+static_assert(offsetof(QuotientInstruction, out) == 44);
 static_assert(sizeof(QuotientLookup) == 12);
+static_assert(alignof(QuotientLookup) == 4);
+static_assert(offsetof(QuotientLookup, arg_count) == 8);
 static_assert(sizeof(QuotientColumn) == 96);
+static_assert(alignof(QuotientColumn) == 32);
+static_assert(offsetof(QuotientColumn, resident) == 8);
+static_assert(offsetof(QuotientColumn, count) == 16);
 static_assert(offsetof(QuotientColumn, constant) == 32);
+static_assert(offsetof(QuotientColumn, slot) == 64);
 static_assert(sizeof(QuotientParameters) == 192);
+static_assert(alignof(QuotientParameters) == 32);
+static_assert(offsetof(QuotientParameters, trace_log) == 160);
+static_assert(offsetof(QuotientParameters, blocks) == 180);
 
 __global__ void quotient_ones(fr_t* values, size_t count) {
     for (size_t i = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
@@ -168,7 +180,8 @@ extern "C" int ix_kzg_quotient(
         if (!parameters || !columns || !publics || !outputs || !coset_shifts || !inverse_vanishing)
             return cudaErrorInvalidValue;
         const auto p = *parameters;
-        if (p.trace_log < 10 || p.trace_log > p.quotient_log || p.quotient_log > MAX_LG_DOMAIN_SIZE
+        if (p.trace_log < 10 || p.trace_log > p.quotient_log || p.quotient_log > 28
+            || p.quotient_log > KZG_MAX_FFT_LOG
             || !p.slots || !p.blocks || p.blocks > 256 || !p.group_size || p.group_size > 8
             || p.stage2_start >= column_count || public_count < 4)
             return cudaErrorInvalidValue;

@@ -4,8 +4,8 @@
 //! The declared public degree is independent of the locally loaded prefix.
 //! [`Srs::unsafe_dev_setup`] reveals its trapdoor and is only for tests.
 
-use ark_bls12_381::{
-  Bls12_381, Fr, G1Affine, G1Projective, G2Affine, G2Projective,
+use super::curve::{
+  Fr, G1Affine, G1Projective, G2Affine, G2Projective, PairingCurve,
 };
 use ark_ec::{
   AffineRepr, CurveGroup, PrimeGroup, VariableBaseMSM, pairing::Pairing,
@@ -15,7 +15,25 @@ use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 use std::io::{self, Write};
 
+#[cfg(not(feature = "bn254"))]
 pub mod filecoin;
+#[cfg(feature = "bn254")]
+pub mod ignition;
+
+#[cfg(not(feature = "bn254"))]
+const PUBLIC_SETUP_DOMAIN: &[u8] =
+  b"multi-stark/kzg/known-trapdoor-public-degree/v1";
+#[cfg(feature = "bn254")]
+const PUBLIC_SETUP_DOMAIN: &[u8] =
+  b"multi-stark/kzg/bn254/known-trapdoor-public-degree/v1";
+#[cfg(not(feature = "bn254"))]
+const DEV_TAU_DOMAIN: &[u8] = b"multi-stark/kzg/dev-srs";
+#[cfg(feature = "bn254")]
+const DEV_TAU_DOMAIN: &[u8] = b"multi-stark/kzg/bn254/dev-srs";
+#[cfg(not(feature = "bn254"))]
+const VALIDATION_DOMAIN: &[u8] = b"multi-stark/kzg/srs-validate/v4";
+#[cfg(feature = "bn254")]
+const VALIDATION_DOMAIN: &[u8] = b"multi-stark/kzg/bn254/srs-validate/v4";
 
 /// Identity and maximum polynomial degree of the complete public parameter set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,7 +46,7 @@ impl PublicSetup {
   pub fn known_trapdoor(max_degree: usize, seed: &[u8]) -> Self {
     assert!(max_degree >= 1 && max_degree.checked_add(1).is_some());
     let mut hash = blake3::Hasher::new();
-    hash.update(b"multi-stark/kzg/known-trapdoor-public-degree/v1");
+    hash.update(PUBLIC_SETUP_DOMAIN);
     hash.update(&(max_degree as u64).to_le_bytes());
     hash.update(blake3::hash(seed).as_bytes());
     Self { max_degree, id: *hash.finalize().as_bytes() }
@@ -39,7 +57,7 @@ impl PublicSetup {
 pub(super) fn dev_tau(seed: &[u8]) -> Fr {
   let mut wide = [0u8; 64];
   blake3::Hasher::new()
-    .update(b"multi-stark/kzg/dev-srs")
+    .update(DEV_TAU_DOMAIN)
     .update(seed)
     .finalize_xof()
     .fill(&mut wide);
@@ -120,7 +138,7 @@ impl Srs {
     }
 
     // Preserve the validation challenge's exact encoding without retaining a
-    // second, serialized copy of all powers (12 GiB for a 2^28 SRS).
+    // second, serialized copy of all powers (12 GiB for a 2^28 BLS12-381 SRS).
     struct HashWriter(blake3::Hasher);
     impl Write for HashWriter {
       fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
@@ -132,7 +150,7 @@ impl Srs {
       }
     }
     let mut writer = HashWriter(blake3::Hasher::new());
-    writer.0.update(b"multi-stark/kzg/srs-validate/v4");
+    writer.0.update(VALIDATION_DOMAIN);
     writer.0.update(&self.public_setup.id);
     writer.0.update(&(self.public_setup.max_degree as u64).to_le_bytes());
     self.g1.serialize_compressed(&mut writer).expect("infallible hash writer");
@@ -185,7 +203,7 @@ impl Srs {
       }
     }
     // e(high, H) = e(low, τH)  ⇔  e(high, H)·e(−low, τH) = 1.
-    let check = Bls12_381::multi_pairing(
+    let check = PairingCurve::multi_pairing(
       [high.into_affine(), (-low).into_affine()],
       [self.g2, self.tau_g2],
     );
@@ -253,12 +271,44 @@ mod tests {
   use super::*;
 
   #[test]
+  fn development_identity_and_anchors_are_curve_specific() {
+    let seed = b"curve-specific-setup";
+    let srs = Srs::unsafe_dev_setup(4, seed);
+    let mut legacy_id = blake3::Hasher::new();
+    legacy_id.update(b"multi-stark/kzg/known-trapdoor-public-degree/v1");
+    legacy_id.update(&3u64.to_le_bytes());
+    legacy_id.update(blake3::hash(seed).as_bytes());
+    assert_eq!(
+      srs.public_setup.id == *legacy_id.finalize().as_bytes(),
+      !cfg!(feature = "bn254")
+    );
+
+    let mut wide = [0; 64];
+    blake3::Hasher::new()
+      .update(b"multi-stark/kzg/dev-srs")
+      .update(seed)
+      .finalize_xof()
+      .fill(&mut wide);
+    let legacy_tau = Fr::from_le_bytes_mod_order(&wide);
+    assert_eq!(dev_tau(seed) == legacy_tau, !cfg!(feature = "bn254"));
+    assert_eq!(
+      srs.g1[1] == (G1Projective::generator() * legacy_tau).into_affine(),
+      !cfg!(feature = "bn254")
+    );
+    assert_eq!(
+      srs.tau_g2 == (G2Projective::generator() * legacy_tau).into_affine(),
+      !cfg!(feature = "bn254")
+    );
+    srs.validate().unwrap();
+  }
+
+  #[test]
   fn development_powers_match_naive_at_chunk_boundaries() {
     let seed = b"chunk-powers";
     let srs = Srs::unsafe_dev_setup(1 << 16, seed);
     let mut wide = [0u8; 64];
     blake3::Hasher::new()
-      .update(b"multi-stark/kzg/dev-srs")
+      .update(DEV_TAU_DOMAIN)
       .update(seed)
       .finalize_xof()
       .fill(&mut wide);

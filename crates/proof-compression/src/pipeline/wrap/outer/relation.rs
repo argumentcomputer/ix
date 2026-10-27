@@ -1,12 +1,8 @@
-//! Verifier relations of authenticated recursive profiles: opening layouts,
-//! validated constraint graphs and native differential vectors for terminal
-//! proof exporters.
-
+//! Shared verifier layouts, graph validation and native differential vectors.
 use super::*;
-use ark_bls12_381::{Fq, G1Affine, G1Projective, G2Affine};
+use crate::kzg::curve::{Fq, G1Affine, G1Projective};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, PrimeField, Zero};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use multi_stark::{
   config::ProofConfig,
   eval::VarValues,
@@ -18,13 +14,9 @@ use multi_stark::{
 };
 use serde_json::{Value as Json, json};
 use std::fmt::Write as _;
-
-mod codegen;
-pub(in crate::pipeline) mod plonk;
-
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-fn hex(bytes: &[u8]) -> String {
+pub(super) mod codegen;
+pub(super) fn hex(bytes: &[u8]) -> String {
   let mut out = String::with_capacity(bytes.len() * 2);
   for byte in bytes {
     write!(&mut out, "{byte:02x}").unwrap();
@@ -32,26 +24,32 @@ fn hex(bytes: &[u8]) -> String {
   out
 }
 
-fn hex_json(bytes: &[u8]) -> String {
+pub(super) fn hex_json(bytes: &[u8]) -> String {
   format!("0x{}", hex(bytes))
 }
 
-fn scalar(value: Scalar) -> String {
+pub(super) fn scalar(value: Scalar) -> String {
   hex_json(&value.0.into_bigint().to_bytes_be())
 }
 
-fn fq(value: Fq) -> Vec<u8> {
+pub(super) fn fq(value: Fq) -> Vec<u8> {
   value.into_bigint().to_bytes_be()
 }
 
-fn g1(point: G1Affine) -> Vec<u8> {
+pub(super) fn g1(point: G1Affine) -> Vec<u8> {
   if point.is_zero() {
-    return vec![0; 128];
+    return vec![0; if cfg!(feature = "bn254") { 64 } else { 128 }];
   }
-  [vec![0; 16], fq(point.x), vec![0; 16], fq(point.y)].concat()
+  [
+    vec![0; if cfg!(feature = "bn254") { 0 } else { 16 }],
+    fq(point.x),
+    vec![0; if cfg!(feature = "bn254") { 0 } else { 16 }],
+    fq(point.y),
+  ]
+  .concat()
 }
 
-fn proof_points(proof: &Proof<KzgConfig>) -> Vec<G1Affine> {
+pub(super) fn proof_points(proof: &Proof<KzgConfig>) -> Vec<G1Affine> {
   [
     &proof.commitments.stage_1_trace,
     &proof.commitments.stage_2_trace,
@@ -64,23 +62,26 @@ fn proof_points(proof: &Proof<KzgConfig>) -> Vec<G1Affine> {
 }
 
 #[derive(Clone, Copy)]
-struct GraphMatrix {
-  index: usize,
-  width: usize,
-  rows: usize,
+pub(super) struct GraphMatrix {
+  pub(super) index: usize,
+  pub(super) width: usize,
+  pub(super) rows: usize,
 }
 
 /// Opening windows indexed by the graph's three variable sources.
 #[derive(Clone, Copy)]
-struct GraphInputs {
-  main: GraphMatrix,
-  preprocessed: GraphMatrix,
-  stage2: GraphMatrix,
-  public_count: usize,
+pub(super) struct GraphInputs {
+  pub(super) main: GraphMatrix,
+  pub(super) preprocessed: GraphMatrix,
+  pub(super) stage2: GraphMatrix,
+  pub(super) public_count: usize,
 }
 
 impl GraphInputs {
-  fn for_circuit(system: &System<KzgConfig>, index: usize) -> Result<Self> {
+  pub(super) fn for_circuit(
+    system: &System<KzgConfig>,
+    index: usize,
+  ) -> Result<Self> {
     if index >= 2 {
       return Err("Solidity graph requires one of two circuits".into());
     }
@@ -102,7 +103,7 @@ impl GraphInputs {
     })
   }
 
-  fn matrix(self, source: Source) -> GraphMatrix {
+  pub(super) fn matrix(self, source: Source) -> GraphMatrix {
     match source {
       Source::Main => self.main,
       Source::Preprocessed => self.preprocessed,
@@ -113,7 +114,7 @@ impl GraphInputs {
 
 /// Validated arithmetic with variable references resolved into opening windows.
 #[derive(Clone, Copy)]
-enum GraphInstruction {
+pub(super) enum GraphInstruction {
   Constant(Scalar),
   Opening { matrix: usize, offset: usize },
   Public(usize),
@@ -126,12 +127,12 @@ enum GraphInstruction {
   Neg(usize),
 }
 
-struct GraphProgram {
-  instructions: Vec<GraphInstruction>,
+pub(super) struct GraphProgram {
+  pub(super) instructions: Vec<GraphInstruction>,
 }
 
 impl GraphProgram {
-  fn compile(
+  pub(super) fn compile(
     graph: &ConstraintGraph<Scalar>,
     inputs: GraphInputs,
   ) -> Result<Self> {
@@ -143,8 +144,9 @@ impl GraphProgram {
         return Err("invalid Solidity graph opening window".into());
       }
     }
-    let mut program =
-      Self { instructions: Vec::with_capacity(graph.nodes.len()) };
+    let mut program = Self {
+      instructions: Vec::with_capacity(graph.nodes.len()),
+    };
     for (index, node) in graph.nodes.iter().enumerate() {
       let child = |id: multi_stark::graph::NodeId| -> Result<usize> {
         let child = id.index();
@@ -175,9 +177,15 @@ impl GraphProgram {
           }
           GraphInstruction::Public(index)
         },
-        Node::IsFirstRow => GraphInstruction::First,
-        Node::IsLastRow => GraphInstruction::Last,
-        Node::IsTransition => GraphInstruction::Transition,
+        Node::IsFirstRow => {
+          GraphInstruction::First
+        },
+        Node::IsLastRow => {
+          GraphInstruction::Last
+        },
+        Node::IsTransition => {
+          GraphInstruction::Transition
+        },
         Node::Add(a, b) => GraphInstruction::Add(child(a)?, child(b)?),
         Node::Sub(a, b) => GraphInstruction::Sub(child(a)?, child(b)?),
         Node::Mul(a, b) => GraphInstruction::Mul(child(a)?, child(b)?),
@@ -197,7 +205,8 @@ impl GraphProgram {
     Ok(program)
   }
 
-  fn evaluate<A: Algebra<Scalar> + Copy + From<Scalar>>(
+  #[cfg(feature = "plonk")]
+  pub(super) fn evaluate<A: Algebra<Scalar> + Copy + From<Scalar>>(
     &self,
     opening: impl Fn(usize, usize) -> A,
     publics: &[A],
@@ -222,6 +231,7 @@ impl GraphProgram {
     }
     values
   }
+
 }
 
 struct Batch {
@@ -230,7 +240,7 @@ struct Batch {
   values: Vec<Scalar>,
 }
 
-fn diagnostics(
+pub(super) fn diagnostics(
   system: &System<KzgConfig>,
   proof: &Proof<KzgConfig>,
   claims: &[Vec<Scalar>],

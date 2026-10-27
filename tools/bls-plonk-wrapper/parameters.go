@@ -10,9 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-
-	bls "github.com/consensys/gnark-crypto/ecc/bls12-381"
-	"github.com/consensys/gnark-crypto/ecc/bls12-381/kzg"
 )
 
 type lagrangeManifest struct {
@@ -21,24 +18,24 @@ type lagrangeManifest struct {
 	Points                                            artifact
 }
 
-func readAffinePoints(r io.Reader, count uint64) ([]bls.G1Affine, error) {
-	points := make([]bls.G1Affine, count)
+func readAffinePoints(r io.Reader, count uint64) ([]nativeG1, error) {
+	points := make([]nativeG1, count)
 	for i := range points {
-		var raw [96]byte
+		var raw [2 * baseBytes]byte
 		if _, err := io.ReadFull(r, raw[:]); err != nil {
 			return nil, err
 		}
-		if err := points[i].X.SetBytesCanonical(raw[:48]); err != nil {
+		if err := points[i].X.SetBytesCanonical(raw[:baseBytes]); err != nil {
 			return nil, err
 		}
-		if err := points[i].Y.SetBytesCanonical(raw[48:]); err != nil {
+		if err := points[i].Y.SetBytesCanonical(raw[baseBytes:]); err != nil {
 			return nil, err
 		}
 	}
 	return points, nil
 }
 
-func writeAffinePoints(w io.Writer, points []bls.G1Affine) error {
+func writeAffinePoints(w io.Writer, points []nativeG1) error {
 	b := bufio.NewWriterSize(w, 1<<20)
 	for _, point := range points {
 		x, y := point.X.Bytes(), point.Y.Bytes()
@@ -52,17 +49,41 @@ func writeAffinePoints(w io.Writer, points []bls.G1Affine) error {
 	return b.Flush()
 }
 
-func lagrangeParameters(root string, srs *kzg.SRS, domain uint64, setupID, receipt, executable string) (*kzg.SRS, bool, error) {
-	if domain < 2 || domain > 1<<26 || domain&(domain-1) != 0 || uint64(len(srs.Pk.G1)) < domain+3 {
-		return nil, false, fmt.Errorf("invalid Lagrange domain or monomial prefix")
-	}
-	want := lagrangeManifest{Format: "ix-plonk-lagrange-v1", SetupID: setupID, MonomialBLAKE3: receipt, ExecutableSHA256: executable, Domain: domain}
+func lagrangeLocation(root string, domain uint64, setupID, receipt, executable string) (lagrangeManifest, string, error) {
+	want := lagrangeManifest{Format: lagrangeFormat, SetupID: setupID, MonomialBLAKE3: receipt, ExecutableSHA256: executable, Domain: domain}
 	identity, err := json.Marshal(want)
 	if err != nil {
-		return nil, false, err
+		return want, "", err
 	}
 	digest := sha256.Sum256(identity)
 	dir := filepath.Join(root, strconv.FormatUint(domain, 10), hex.EncodeToString(digest[:]))
+	return want, dir, nil
+}
+
+func publishLagrange(dir string, want lagrangeManifest, points []nativeG1) error {
+	pointsPath, metadata := filepath.Join(dir, "points.bin"), filepath.Join(dir, "manifest.json")
+	var err error
+	if err := atomicFile(pointsPath, func(w io.Writer) error { return writeAffinePoints(w, points) }); err != nil {
+		return err
+	}
+	want.Points, err = fileHash(pointsPath)
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(metadata, want); err != nil {
+		return err
+	}
+	return nil
+}
+
+func lagrangeParameters(root string, srs *nativeSRS, domain uint64, setupID, receipt, executable string) (*nativeSRS, bool, error) {
+	if domain < 2 || domain > 1<<26 || domain&(domain-1) != 0 || uint64(len(srs.Pk.G1)) < domain+3 {
+		return nil, false, fmt.Errorf("invalid Lagrange domain or monomial prefix")
+	}
+	want, dir, err := lagrangeLocation(root, domain, setupID, receipt, executable)
+	if err != nil {
+		return nil, false, err
+	}
 	metadata := filepath.Join(dir, "manifest.json")
 	pointsPath := filepath.Join(dir, "points.bin")
 	if _, err := os.Stat(metadata); err == nil {
@@ -72,7 +93,7 @@ func lagrangeParameters(root string, srs *kzg.SRS, domain uint64, setupID, recei
 		}
 		pointsInfo := stored.Points
 		stored.Points = artifact{}
-		if stored != want || pointsInfo.Bytes != int64(96*domain) {
+		if stored != want || pointsInfo.Bytes != int64(2*baseBytes*domain) {
 			return nil, false, fmt.Errorf("Lagrange cache identity differs")
 		}
 		got, err := fileHash(pointsPath)
@@ -91,23 +112,16 @@ func lagrangeParameters(root string, srs *kzg.SRS, domain uint64, setupID, recei
 		if err != nil {
 			return nil, false, err
 		}
-		return &kzg.SRS{Pk: kzg.ProvingKey{G1: points}, Vk: srs.Vk}, true, nil
+		return &nativeSRS{Pk: nativeKzgProvingKey{G1: points}, Vk: srs.Vk}, true, nil
 	} else if !os.IsNotExist(err) {
 		return nil, false, err
 	}
-	points, err := kzg.ToLagrangeG1(srs.Pk.G1[:domain])
+	points, err := toLagrange(srs.Pk.G1[:domain])
 	if err != nil {
 		return nil, false, err
 	}
-	if err := atomicFile(pointsPath, func(w io.Writer) error { return writeAffinePoints(w, points) }); err != nil {
+	if err := publishLagrange(dir, want, points); err != nil {
 		return nil, false, err
 	}
-	want.Points, err = fileHash(pointsPath)
-	if err != nil {
-		return nil, false, err
-	}
-	if err := writeJSON(metadata, want); err != nil {
-		return nil, false, err
-	}
-	return &kzg.SRS{Pk: kzg.ProvingKey{G1: points}, Vk: srs.Vk}, false, nil
+	return &nativeSRS{Pk: nativeKzgProvingKey{G1: points}, Vk: srs.Vk}, false, nil
 }

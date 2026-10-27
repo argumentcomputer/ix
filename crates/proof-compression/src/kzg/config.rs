@@ -1,4 +1,4 @@
-//! [`ProofConfig`] instantiation for the KZG backend: BLS12-381
+//! [`ProofConfig`] instantiation for the KZG backend: the selected curve's
 //! scalar field (its own challenge field, `D = 1`), a selected transcript,
 //! monomial KZG commitments.
 
@@ -100,9 +100,15 @@ impl KzgConfig {
     max_quotient_degree: usize,
     kind: TranscriptKind,
   ) -> Vec<u8> {
+    #[cfg(not(feature = "bn254"))]
     let domain: &[u8] = match kind {
       TranscriptKind::Blake3 => b"multi-stark/kzg/v4",
       TranscriptKind::Keccak256 => b"multi-stark/kzg/keccak256/v1",
+    };
+    #[cfg(feature = "bn254")]
+    let domain: &[u8] = match kind {
+      TranscriptKind::Blake3 => b"multi-stark/kzg/bn254/blake3/v1",
+      TranscriptKind::Keccak256 => b"multi-stark/kzg/bn254/keccak256/v1",
     };
     let mut seed = domain.to_vec();
     for parameter in
@@ -326,10 +332,16 @@ impl ProofConfig for KzgConfig {
           )
         })
         .collect();
-      // Partitions the devices did not admit use the host path one at a
-      // time, keeping one trace-sized working set.
+      // Shapes and storage unsupported by the kernels use one host working
+      // set at a time. Device admission failures are errors.
       for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
         if part.is_none() {
+          tracing::info!(
+            curve = super::curve::NAME,
+            circuit = i,
+            reason = "shape or storage unsupported by CUDA lookup kernels",
+            "KZG lookup using CPU construction"
+          );
           *part = Some(self.host_lookup_part(i, input, beta, gamma));
         }
       }
@@ -378,6 +390,12 @@ impl ProofConfig for KzgConfig {
         .collect();
       for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
         if part.is_none() {
+          tracing::info!(
+            curve = super::curve::NAME,
+            circuit = i,
+            reason = "shape or storage unsupported by CUDA quotient kernels",
+            "KZG quotient using CPU construction"
+          );
           *part = Some(self.host_quotient_part(i, input, alpha));
         }
       }

@@ -193,7 +193,7 @@ impl Shape {
       }
     }
     points
-      .checked_mul(48)
+      .checked_mul(G1_COMPRESSED_BYTES)
       .and_then(|bytes| {
         fields.checked_mul(32).and_then(|fields| bytes.checked_add(fields))
       })

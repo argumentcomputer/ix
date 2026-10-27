@@ -1,11 +1,17 @@
 //! Portable KZG anchors and the complete public degree allowance.
-use super::{PublicSetup, Srs};
-use ark_bls12_381::{G1Affine, G2Affine};
+use super::curve::{G1Affine, G2Affine, PairingCurve};
+use super::{PublicSetup, Scalar, Srs};
 use ark_ec::{AffineRepr, pairing::Pairing};
 use ark_ff::Zero;
 use ark_serialize::{
   CanonicalDeserialize, CanonicalSerialize, SerializationError,
 };
+use multi_stark::traits::TwoAdicField;
+
+#[cfg(not(feature = "bn254"))]
+const VERSION: u64 = 4;
+#[cfg(feature = "bn254")]
+const VERSION: u64 = 0x424e0001;
 
 #[derive(Clone)]
 pub struct VerifierParams {
@@ -19,7 +25,7 @@ pub struct VerifierParams {
 fn valid_cap(cap: usize, setup: PublicSetup) -> bool {
   cap >= 2
     && cap.is_power_of_two()
-    && cap.ilog2() <= 32
+    && cap.ilog2() as usize <= Scalar::TWO_ADICITY
     && setup.max_degree >= cap - 1
     && setup.max_degree.checked_add(1).is_some()
 }
@@ -55,7 +61,7 @@ impl VerifierParams {
 
   pub fn to_bytes(&self) -> Result<Vec<u8>, SerializationError> {
     let mut out = vec![];
-    4u64.serialize_compressed(&mut out)?;
+    VERSION.serialize_compressed(&mut out)?;
     (self.max_trace_len as u64).serialize_compressed(&mut out)?;
     (self.public_setup.max_degree as u64).serialize_compressed(&mut out)?;
     self.public_setup.id.serialize_compressed(&mut out)?;
@@ -69,7 +75,7 @@ impl VerifierParams {
 
   /// Validated point decoding and shape checks; provenance is authenticated separately.
   pub fn from_bytes(mut input: &[u8]) -> Result<Self, SerializationError> {
-    if u64::deserialize_compressed(&mut input)? != 4 {
+    if u64::deserialize_compressed(&mut input)? != VERSION {
       return Err(SerializationError::InvalidData);
     }
     let max_trace_len =
@@ -94,8 +100,7 @@ impl VerifierParams {
       || g1.iter().any(AffineRepr::is_zero)
       || g2.is_zero()
       || tau_g2.is_zero()
-      || !ark_bls12_381::Bls12_381::multi_pairing([g1[1], -g1[0]], [g2, tau_g2])
-        .is_zero()
+      || !PairingCurve::multi_pairing([g1[1], -g1[0]], [g2, tau_g2]).is_zero()
     {
       return Err(SerializationError::InvalidData);
     }
@@ -106,6 +111,50 @@ impl VerifierParams {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn trace_cap_respects_scalar_two_adicity() {
+    #[cfg(feature = "bn254")]
+    assert_eq!(Scalar::TWO_ADICITY, 28);
+    #[cfg(not(feature = "bn254"))]
+    assert_eq!(Scalar::TWO_ADICITY, 32);
+    let Some(max_cap) =
+      1usize.checked_shl(u32::try_from(Scalar::TWO_ADICITY).unwrap())
+    else {
+      return;
+    };
+    let anchors =
+      Srs::unsafe_dev_setup_prefix(2, 2 * max_cap - 1, b"trace-cap");
+    let params = VerifierParams::with_max_trace_len(&anchors, max_cap);
+    assert_eq!(
+      VerifierParams::from_bytes(&params.to_bytes().unwrap())
+        .unwrap()
+        .max_trace_len(),
+      max_cap
+    );
+    let mut invalid = params;
+    invalid.max_trace_len = 2 * max_cap;
+    assert!(!valid_cap(invalid.max_trace_len, invalid.public_setup));
+    assert!(VerifierParams::from_bytes(&invalid.to_bytes().unwrap()).is_err());
+  }
+
+  #[test]
+  fn parameter_encoding_identifies_curve() {
+    use super::super::curve::{G1_COMPRESSED_BYTES, G2_COMPRESSED_BYTES};
+
+    let params =
+      VerifierParams::from_srs(&Srs::unsafe_dev_setup(2, b"curve-version"));
+    let mut encoded = params.to_bytes().unwrap();
+    assert_eq!(
+      encoded.len(),
+      3 * 8 + 32 + 2 * G1_COMPRESSED_BYTES + 2 * G2_COMPRESSED_BYTES
+    );
+    assert_eq!(&encoded[..8], &VERSION.to_le_bytes());
+    let other_curve_version: u64 =
+      if cfg!(feature = "bn254") { 4 } else { 0x424e0001 };
+    encoded[..8].copy_from_slice(&other_curve_version.to_le_bytes());
+    assert!(VerifierParams::from_bytes(&encoded).is_err());
+  }
 
   #[test]
   fn public_identity_and_degree_are_independent_of_loaded_prefix() {

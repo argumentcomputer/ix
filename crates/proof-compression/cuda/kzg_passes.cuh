@@ -16,6 +16,13 @@ struct alignas(32) ConstraintPass {
     size_t arg_count, slots, group;
 };
 static_assert(sizeof(ConstraintPass) == 160);
+static_assert(alignof(ConstraintPass) == 32);
+static_assert(offsetof(ConstraintPass, columns) == 32);
+static_assert(offsetof(ConstraintPass, nodes) == 56);
+static_assert(offsetof(ConstraintPass, roots) == 72);
+static_assert(offsetof(ConstraintPass, lookups) == 88);
+static_assert(offsetof(ConstraintPass, args) == 104);
+static_assert(offsetof(ConstraintPass, slots) == 120);
 static_assert(offsetof(ConstraintPass, group) == 128);
 
 struct PassShape {

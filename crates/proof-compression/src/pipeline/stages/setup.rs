@@ -1,6 +1,7 @@
 //! Deterministic verifier construction. No proof or witness is an input.
 use super::*;
 use aiur::vk_codec::AiurVerifyingKey;
+use multi_stark::traits::TwoAdicField;
 
 /// Derive a complete fixed compression verifier from locally trusted inputs.
 /// This performs circuit construction and preprocessing commitments, but no
@@ -63,6 +64,9 @@ pub(super) fn kzg(
     return Err(
       "partition height must be a power of two within the SRS range".into(),
     );
+  }
+  if height.ilog2() as usize + 1 > Scalar::TWO_ADICITY {
+    return Err("quotient domain exceeds scalar field two-adicity".into());
   }
   let public_count = circuit.public_values().len();
   let compiled = construct::lower_first(circuit, height, height)?;

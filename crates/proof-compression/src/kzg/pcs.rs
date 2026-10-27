@@ -1,4 +1,4 @@
-//! Monomial-basis KZG over BLS12-381 implementing [`Pcs`].
+//! Monomial-basis KZG implementing [`Pcs`].
 //!
 //! Each column has one G1 commitment under the declared full public degree.
 //! Domain sizes describe trace geometry; the public setup supplies the global
@@ -22,7 +22,10 @@
 
 use std::sync::Arc;
 
-use ark_bls12_381::{Bls12_381, Fr, G1Affine, G1Projective};
+use super::curve::{
+  Fr, G1_COMPRESSED_BYTES, G1Affine, G1Projective, PairingCurve,
+  read_g1_compressed,
+};
 use ark_ec::{CurveGroup, VariableBaseMSM, pairing::Pairing};
 use ark_ff::{AdditiveGroup, Field as ArkField, Zero};
 use ark_poly::{
@@ -39,6 +42,7 @@ use multi_stark::traits::OpenedValues;
 use multi_stark::traits::OpeningRounds;
 use multi_stark::traits::Pcs;
 use multi_stark::traits::Transcript;
+use multi_stark::traits::TwoAdicField;
 use multi_stark::traits::VerifyRounds;
 
 use super::coefficients::Column;
@@ -48,6 +52,11 @@ use super::domain::Radix2Coset;
 use super::field::Scalar;
 use super::srs::Srs;
 use super::transcript::KzgTranscript;
+
+#[cfg(not(feature = "bn254"))]
+const CHECKPOINT_MAGIC: &[u8; 8] = b"IXKZGCP4";
+#[cfg(feature = "bn254")]
+const CHECKPOINT_MAGIC: &[u8; 8] = b"IXBNCP01";
 
 /// Per-matrix column commitments.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,10 +105,10 @@ fn decode_commitment(
   let rows = count(&mut input, 8)?;
   let mut matrices = Vec::with_capacity(rows);
   for _ in 0..rows {
-    let width = count(&mut input, 48)?;
+    let width = count(&mut input, G1_COMPRESSED_BYTES)?;
     let mut points = Vec::with_capacity(width);
     for _ in 0..width {
-      points.push(G1Affine::deserialize_compressed(&mut input)?);
+      points.push(read_g1_compressed(&mut input)?);
     }
     matrices.push(points);
   }
@@ -246,7 +255,7 @@ impl KzgProverData {
     &self,
     mut out: impl std::io::Write,
   ) -> Result<(), ark_serialize::SerializationError> {
-    out.write_all(b"IXKZGCP4")?;
+    out.write_all(CHECKPOINT_MAGIC)?;
     self.commitment.0.serialize_compressed(&mut out)?;
     (self.matrices.len() as u64).serialize_compressed(&mut out)?;
     for matrix in &self.matrices {
@@ -276,7 +285,7 @@ impl KzgProverData {
   ) -> Result<Self, ark_serialize::SerializationError> {
     let mut magic = [0; 8];
     input.read_exact(&mut magic)?;
-    if &magic != b"IXKZGCP4" {
+    if &magic != CHECKPOINT_MAGIC {
       return Err(ark_serialize::SerializationError::InvalidData);
     }
     let commitment = KzgCommitment(Vec::deserialize_compressed(&mut input)?);
@@ -289,7 +298,7 @@ impl KzgProverData {
     for i in 0..count {
       let log_size = usize::try_from(u64::deserialize_compressed(&mut input)?)
         .map_err(|_error| ark_serialize::SerializationError::InvalidData)?;
-      if log_size > 32 {
+      if log_size > Scalar::TWO_ADICITY {
         return Err(ark_serialize::SerializationError::InvalidData);
       }
       let shift = Scalar(Fr::deserialize_compressed(&mut input)?);
@@ -338,7 +347,7 @@ impl KzgProverData {
     let mut reader = BufReader::with_capacity(1 << 20, &mut *guard);
     let mut magic = [0; 8];
     reader.read_exact(&mut magic)?;
-    if &magic != b"IXKZGCP4" {
+    if &magic != CHECKPOINT_MAGIC {
       return Err(SerializationError::InvalidData);
     }
     let commitment = KzgCommitment(Vec::deserialize_compressed(&mut reader)?);
@@ -350,7 +359,7 @@ impl KzgProverData {
     let mut matrices = Vec::with_capacity(count);
     for i in 0..count {
       let log = u64::deserialize_compressed(&mut reader)?;
-      if log > 32 {
+      if log > Scalar::TWO_ADICITY as u64 {
         return Err(SerializationError::InvalidData);
       }
       let log_size = usize::try_from(log)
@@ -460,6 +469,13 @@ impl KzgPcs {
         1 << 30,
       );
     }
+    #[cfg(feature = "cuda")]
+    tracing::debug!(
+      rows = domain.size(),
+      columns = selected.len(),
+      reason = "small domain or disk-backed columns",
+      "KZG FFT using CPU evaluation"
+    );
     let ark = Self::ark_domain(domain);
     let width = selected.len();
     let height = domain.size();
@@ -574,6 +590,7 @@ impl KzgPcs {
   ) -> Self {
     let verifier =
       super::VerifierParams::with_max_trace_len(&srs, max_trace_len);
+    Self::validate_quotient_domain(&verifier, max_quotient_degree);
     Self {
       #[cfg(feature = "cuda")]
       srs_owner: Some(cuda::srs_cache::Owner::new(Arc::clone(&srs))),
@@ -587,6 +604,7 @@ impl KzgPcs {
     verifier: super::VerifierParams,
     max_quotient_degree: usize,
   ) -> Self {
+    Self::validate_quotient_domain(&verifier, max_quotient_degree);
     Self {
       srs: None,
       #[cfg(feature = "cuda")]
@@ -594,6 +612,18 @@ impl KzgPcs {
       verifier,
       max_quotient_degree,
     }
+  }
+
+  fn validate_quotient_domain(
+    verifier: &super::VerifierParams,
+    max_quotient_degree: usize,
+  ) {
+    assert!(max_quotient_degree.is_power_of_two());
+    assert!(
+      verifier.max_trace_len().ilog2() + max_quotient_degree.ilog2()
+        <= <Fr as ark_ff::FftField>::TWO_ADICITY,
+      "trace and quotient domains exceed scalar two-adicity"
+    );
   }
 
   fn prover_srs(&self) -> &Srs {
@@ -737,6 +767,11 @@ impl KzgPcs {
       "proving requires the complete coefficient prefix"
     );
     if coeffs.iter().skip(1).all(Zero::is_zero) {
+      #[cfg(feature = "cuda")]
+      tracing::debug!(
+        reason = "constant polynomial",
+        "KZG commitment using CPU arithmetic"
+      );
       return self.prover_srs().g1[0]
         * coeffs.first().copied().unwrap_or(Fr::ZERO);
     }
@@ -751,6 +786,12 @@ impl KzgPcs {
       }
       return cuda::msm(&self.prover_srs().g1[..coeffs.len()], coeffs);
     }
+    #[cfg(feature = "cuda")]
+    tracing::debug!(
+      points = coeffs.len(),
+      reason = "small MSM",
+      "KZG commitment using CPU MSM"
+    );
     // Bound digit/bucket scratch and expose point-range parallelism in
     // addition to the MSM implementation's small number of scalar windows.
     const CHUNK: usize = 1 << 18;
@@ -821,6 +862,12 @@ impl KzgPcs {
       let _ = resident.set(all_residents);
       columns
     } else {
+      tracing::debug!(
+        rows = domain.size(),
+        columns = inputs.len(),
+        reason = "small domain",
+        "KZG interpolation using CPU FFT"
+      );
       Self::interpolate_on_host(domain, inputs)
     };
     #[cfg(not(feature = "cuda"))]
@@ -1010,6 +1057,13 @@ impl Pcs for KzgPcs {
               }
               continue;
             }
+            #[cfg(feature = "cuda")]
+            tracing::debug!(
+              column = column_index,
+              elements = column.len(),
+              reason = "small or disk-backed polynomial",
+              "KZG opening using CPU evaluation"
+            );
             // Decode a disk column once for all requested points.
             column
               .visit(|start, chunk| {
@@ -1224,7 +1278,7 @@ impl Pcs for KzgPcs {
       rhs += witness * r_power;
       r_power *= r;
     }
-    let check = Bls12_381::multi_pairing(
+    let check = PairingCurve::multi_pairing(
       [lhs.into_affine(), (-rhs).into_affine()],
       [self.verifier.g2, self.verifier.tau_g2],
     );
@@ -1283,6 +1337,12 @@ fn divide_by_linear(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
   if p.len() >= 1 << 16 {
     return cuda::divide(&p, z);
   }
+  #[cfg(feature = "cuda")]
+  tracing::debug!(
+    elements = p.len(),
+    reason = "small polynomial",
+    "KZG opening using CPU division"
+  );
   let n = p.len() - 1;
   if n <= POLYNOMIAL_BLOCK {
     let mut carry = Fr::ZERO;
@@ -1325,6 +1385,63 @@ fn divide_by_linear(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn trace_and_quotient_domains_fit_the_scalar_field() {
+    let max_domain = 1usize << Scalar::TWO_ADICITY;
+    let anchors =
+      Srs::unsafe_dev_setup_prefix(2, max_domain - 1, b"domain-cap");
+    let params = super::super::VerifierParams::with_max_trace_len(
+      &anchors,
+      max_domain / 2,
+    );
+    KzgPcs::verifier_only(params.clone(), 2);
+    for degree in [0, 3, 4] {
+      assert!(
+        std::panic::catch_unwind(|| {
+          KzgPcs::verifier_only(params.clone(), degree)
+        })
+        .is_err()
+      );
+    }
+    let params =
+      super::super::VerifierParams::with_max_trace_len(&anchors, max_domain);
+    KzgPcs::verifier_only(params.clone(), 1);
+    assert!(
+      std::panic::catch_unwind(|| { KzgPcs::verifier_only(params.clone(), 2) })
+        .is_err()
+    );
+    assert!(
+      std::panic::catch_unwind(|| {
+        KzgPcs::with_max_trace_len(Arc::new(anchors), max_domain, 2)
+      })
+      .is_err()
+    );
+  }
+
+  #[test]
+  fn checkpoints_reject_other_curves_and_oversized_domains() {
+    let pcs =
+      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(4, b"checkpoint-curve")), 2);
+    let domain = pcs.natural_domain_for_degree(4);
+    let (commitment, data) =
+      pcs.commit(vec![(domain, RowMajorMatrix::new_col(vec![Scalar::ONE; 4]))]);
+    let mut bytes = Vec::new();
+    data.write_checkpoint(&mut bytes).unwrap();
+    let decoded = KzgProverData::read_checkpoint(bytes.as_slice()).unwrap();
+    assert_eq!(decoded.commitment, commitment);
+
+    let mut wrong_curve = bytes.clone();
+    let other_magic =
+      if cfg!(feature = "bn254") { b"IXKZGCP4" } else { b"IXBNCP01" };
+    wrong_curve[..8].copy_from_slice(other_magic);
+    assert!(KzgProverData::read_checkpoint(wrong_curve.as_slice()).is_err());
+
+    let log_offset = 8 + commitment.0.compressed_size() + 8;
+    bytes[log_offset..log_offset + 8]
+      .copy_from_slice(&(Scalar::TWO_ADICITY as u64 + 1).to_le_bytes());
+    assert!(KzgProverData::read_checkpoint(bytes.as_slice()).is_err());
+  }
 
   #[test]
   fn commitment_metadata_rejects_impossible_counts() {

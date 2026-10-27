@@ -26,6 +26,9 @@ private def rejects (home : System.FilePath) (args : Array String) (message : St
     throw <| IO.userError s!"expected rejection ({message}): {args}\n{out.stdout}\n{out.stderr}"
 
 public def run : IO Unit := do
+  for tag in ["IXCMP", "IXBN"] do
+    unless Compression.isCompressed tag.toUTF8 do
+      throw <| IO.userError s!"unrecognized compressed proof family: {tag}"
   let home ← IO.FS.createTempDir
   try
     let help ← invoke home #["compress", "--help"]

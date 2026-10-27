@@ -18,12 +18,11 @@ use multi_stark::traits::LagrangeSelectors;
 use multi_stark::traits::TwoAdicField;
 use multi_stark::traits::batch_inverse;
 
-use super::field::Scalar;
+use super::{curve::Fr, field::Scalar};
 
 const ONE: Scalar = <Scalar as Algebra<Scalar>>::ONE;
 
-/// A coset `shift · H`, `|H| = 2^log_size`, over the BLS12-381 scalar
-/// field.
+/// A coset `shift · H`, `|H| = 2^log_size`, over the selected scalar field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Radix2Coset {
   pub log_size: usize,
@@ -54,6 +53,10 @@ impl EvaluationDomain for Radix2Coset {
 
   #[inline]
   fn size(&self) -> usize {
+    assert!(
+      self.log_size <= Scalar::TWO_ADICITY,
+      "domain exceeds scalar two-adicity"
+    );
     1 << self.log_size
   }
 
@@ -68,13 +71,17 @@ impl EvaluationDomain for Radix2Coset {
   }
 
   fn create_disjoint_domain(&self, min_size: usize) -> Self {
+    let log_size = p3_util::log2_ceil_usize(min_size);
+    assert!(
+      log_size <= Scalar::TWO_ADICITY,
+      "domain exceeds scalar two-adicity"
+    );
     // Multiplying the shift by the field's multiplicative generator
     // leaves the subgroup (and every subgroup coset reachable by
     // repeated application), exactly as in p3.
     Self {
-      log_size: p3_util::log2_ceil_usize(min_size),
-      shift: self.shift
-        * Scalar(<ark_bls12_381::Fr as ark_ff::FftField>::GENERATOR),
+      log_size,
+      shift: self.shift * Scalar(<Fr as ark_ff::FftField>::GENERATOR),
     }
   }
 
@@ -175,5 +182,27 @@ mod tests {
     for i in 0..points.len() - 1 {
       assert_eq!(domain.next_point(points[i]), points[i + 1]);
     }
+  }
+
+  #[test]
+  fn largest_domain_has_supported_order() {
+    let trace = Radix2Coset { log_size: Scalar::TWO_ADICITY, shift: ONE };
+    assert_eq!(trace.size(), 1usize << Scalar::TWO_ADICITY);
+    assert_eq!(trace.generator().exp_power_of_2(Scalar::TWO_ADICITY), ONE);
+    let coset = trace.create_disjoint_domain(trace.size());
+    assert_ne!(coset.shift.exp_power_of_2(Scalar::TWO_ADICITY), ONE);
+  }
+
+  #[test]
+  #[should_panic(expected = "domain exceeds scalar two-adicity")]
+  fn disjoint_domain_rejects_oversized_quotient() {
+    let trace = Radix2Coset { log_size: Scalar::TWO_ADICITY, shift: ONE };
+    trace.create_disjoint_domain(trace.size() + 1);
+  }
+
+  #[test]
+  #[should_panic(expected = "domain exceeds scalar two-adicity")]
+  fn rejects_oversized_domain() {
+    Radix2Coset { log_size: Scalar::TWO_ADICITY + 1, shift: ONE }.size();
   }
 }

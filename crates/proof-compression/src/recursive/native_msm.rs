@@ -1,10 +1,12 @@
-use crate::kzg::Scalar;
+use crate::kzg::{
+  Scalar,
+  curve::{Fr, G1Affine, G1Projective},
+};
 use crate::recursive::{
   native_curve::{Affine, PointInput},
-  native_field::{Builder, FqGadget, FqVar, fq_value},
+  native_field::{Builder, FqGadget, FqVar, L, fq_value},
   native_transcript::scalar_bytes,
 };
-use ark_bls12_381::{Fr, G1Affine, G1Projective};
 use ark_ec::{AdditiveGroup, AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, Field, PrimeField, Zero};
 use multi_stark::{
@@ -197,38 +199,43 @@ fn witness_offset(
         .chain([point.infinity.value(), scalar])
     })
     .collect();
-  let limbs = b.hint_many::<10>("nonexceptional MSM offset", &deps, move |v| {
-    let mut points = Vec::with_capacity(v.len() / 12);
-    let mut scalars = Vec::with_capacity(v.len() / 12);
-    for values in v.as_chunks::<12>().0 {
-      let infinity = values[10] == Scalar::ONE;
-      if values[10] != Scalar::ZERO && !infinity {
-        return Err("invalid point infinity flag".into());
+  let limbs =
+    b.hint_many::<{ 2 * L }>("nonexceptional MSM offset", &deps, move |v| {
+      let mut points = Vec::with_capacity(v.len() / (2 * L + 2));
+      let mut scalars = Vec::with_capacity(v.len() / (2 * L + 2));
+      for values in v.as_chunks::<{ 2 * L + 2 }>().0 {
+        let infinity = values[2 * L] == Scalar::ONE;
+        if values[2 * L] != Scalar::ZERO && !infinity {
+          return Err("invalid point infinity flag".into());
+        }
+        let point = if infinity {
+          G1Affine::generator()
+        } else {
+          G1Affine::new_unchecked(
+            fq_value(&values[..L]),
+            fq_value(&values[L..2 * L]),
+          )
+        };
+        if !point.is_on_curve()
+          || !point.is_in_correct_subgroup_assuming_on_curve()
+        {
+          return Err("invalid MSM point".into());
+        }
+        points.push(point);
+        scalars.push(if infinity {
+          Fr::from(0u8)
+        } else {
+          values[2 * L + 1].0
+        });
       }
-      let point = if infinity {
-        G1Affine::generator()
-      } else {
-        G1Affine::new_unchecked(
-          fq_value(&values[..5]),
-          fq_value(&values[5..10]),
-        )
-      };
-      if !point.is_on_curve()
-        || !point.is_in_correct_subgroup_assuming_on_curve()
-      {
-        return Err("invalid MSM point".into());
-      }
-      points.push(point);
-      scalars.push(if infinity { Fr::from(0u8) } else { values[11].0 });
-    }
-    let (offset, _) = choose_offset(&points, &scalars, first)?;
-    let x = FqGadget::witness_values(offset.x);
-    let y = FqGadget::witness_values(offset.y);
-    Ok(std::array::from_fn(|i| if i < 5 { x[i] } else { y[i - 5] }))
-  });
+      let (offset, _) = choose_offset(&points, &scalars, first)?;
+      let x = FqGadget::witness_values(offset.x);
+      let y = FqGadget::witness_values(offset.y);
+      Ok(std::array::from_fn(|i| if i < L { x[i] } else { y[i - L] }))
+    });
   let h = Affine {
-    x: FqVar(limbs[..5].try_into().unwrap()),
-    y: FqVar(limbs[5..].try_into().unwrap()),
+    x: FqVar(limbs[..L].try_into().unwrap()),
+    y: FqVar(limbs[L..].try_into().unwrap()),
   };
   for coordinate in [h.x, h.y] {
     f.bound(b, coordinate);
@@ -348,7 +355,7 @@ mod tests {
     let encoded =
       crate::recursive::native_transcript::point_bytes(&mut b, &bytes, result);
     let c = b.finish();
-    for (ns, ss) in [
+    let mut cases: Vec<_> = [
       ([2, 3, 7], [11, 0, 17]),
       ([0, 9, 11], [17, 91, 0]),
       ([2, 3, 7], [0, 0, 0]),
@@ -357,12 +364,24 @@ mod tests {
       ([2, -2, 7], [1, 1, 0]),
       ([2, 2, -2], [1, 1, 2]),
       ([-2, 2, -7], [-1, 2, 3]),
-    ] {
+    ]
+    .into_iter()
+    .map(|(ns, ss)| (ns.map(fr), ss.map(fr)))
+    .collect();
+    cases.push((
+      [fr(2), fr(3), fr(7)],
+      [
+        Fr::from(2u8).pow([u64::from(Fr::MODULUS_BIT_SIZE - 1)]),
+        -Fr::ONE,
+        Fr::ONE,
+      ],
+    ));
+    for (ns, ss) in cases {
       let mut w = c.witness();
       let mut expected = G1Projective::default();
       for i in 0..3 {
-        let p = (G1Affine::generator() * fr(ns[i])).into_affine();
-        let s = fr(ss[i]);
+        let p = (G1Affine::generator() * ns[i]).into_affine();
+        let s = ss[i];
         expected += p * s;
         for (v, n) in points[i].inputs(p) {
           w.set(v, n).unwrap();

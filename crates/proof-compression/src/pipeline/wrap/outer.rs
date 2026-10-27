@@ -1,9 +1,11 @@
 //! Recursive KZG wrapper: staging and proving in one process, and the
 //! portable verifier its packets are checked with.
 #[cfg(feature = "plonk")]
+mod plonk_export;
+#[cfg(feature = "plonk")]
 mod relation;
 #[cfg(feature = "plonk")]
-pub(in crate::pipeline) use relation::plonk::export as plonk_export;
+pub(in crate::pipeline) use plonk_export::export as plonk_export;
 
 use super::super::stages::{
   construct::{self, Lowered},
@@ -21,18 +23,28 @@ use super::{
 };
 use crate::{
   kzg::{
-    KzgCommitment, KzgConfig, Scalar, TranscriptKind, compact::FixedProofCodec,
+    KzgCommitment, KzgConfig, Scalar, TranscriptKind,
+    compact::FixedProofCodec,
+    curve::{G1_COMPRESSED_BYTES, G2_COMPRESSED_BYTES, G2Affine},
   },
-  recursive::native_verifier::Built,
+  recursive::{native_verifier::Built, pairing::PUBLIC_VALUES},
 };
 use multi_stark::{
   plonkish::{Assignment, MultiStarkCircuit},
-  traits::Field,
+  traits::{Field, TwoAdicField},
 };
 use std::{fs, path::Path};
 
+#[cfg(not(feature = "bn254"))]
 pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
+#[cfg(feature = "bn254")]
+pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-bn254-v1";
+#[cfg(not(feature = "bn254"))]
 const OUTER_PROFILE_VERSION: u32 = 6;
+#[cfg(feature = "bn254")]
+const OUTER_PROFILE_VERSION: u32 = 7;
+const PAIRING_BYTES: usize = 2 * G1_COMPRESSED_BYTES;
+const RECURSIVE_PUBLIC_VALUES: usize = statement::WORDS + PUBLIC_VALUES;
 /// Largest admitted recursive computation trace. The development public
 /// degree of a staged profile covers exactly its own height.
 pub(super) const MAX_TRACE_LEN: usize = construct::RECURSIVE_HEIGHT;
@@ -69,7 +81,7 @@ impl Frontend {
 
   pub(crate) fn new(
     circuit: multi_stark::plonkish::Circuit<Scalar>,
-    keys: &[ark_bls12_381::G2Affine],
+    keys: &[G2Affine],
     profile: &[u8],
     max_height: usize,
   ) -> storage::Result<Self> {
@@ -97,7 +109,7 @@ impl Frontend {
     statement: &Statement,
     config: &super::super::WorkerConfig,
   ) -> storage::Result<()> {
-    if assignment.public_values().len() != 18 + 2 * 2
+    if assignment.public_values().len() != RECURSIVE_PUBLIC_VALUES
       || assignment.public_values()[..18]
         .iter()
         .zip(statement)
@@ -113,6 +125,14 @@ impl Frontend {
       .setup
       .for_stage(OUTER_SEED, height)?
       .with_transcript(TranscriptKind::Blake3);
+    #[cfg(feature = "bn254")]
+    if let Some(admission) = setup.ignition_admission()
+      && decode_pairing_keys(&self.pairings)? != admission.pairing_keys()
+    {
+      return Err(
+        "recursive inner pairing anchors differ from Ignition admission".into(),
+      );
+    }
     let setup_id = setup.identity(height, 2)?;
     fs::create_dir_all(dir)?;
     setup.bind_stage(dir, height, 2)?;
@@ -139,29 +159,31 @@ impl Frontend {
   }
 }
 
-fn pairing_keys(dir: &Path) -> storage::Result<Vec<ark_bls12_381::G2Affine>> {
+fn pairing_keys(dir: &Path) -> storage::Result<Vec<G2Affine>> {
   let profile: Pairings = storage::load(&dir.join("pairings.bin"))?;
   decode_pairing_keys(&profile)
 }
 
-fn decode_pairing_keys(
-  profile: &Pairings,
-) -> storage::Result<Vec<ark_bls12_381::G2Affine>> {
+fn decode_pairing_keys(profile: &Pairings) -> storage::Result<Vec<G2Affine>> {
   use ark_ec::AffineRepr;
-  use ark_serialize::CanonicalDeserialize;
-  if profile.keys.len() != 8 + 2 * 96
+  use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+  if profile.keys.len() != 8 + 2 * G2_COMPRESSED_BYTES
     || profile.keys.get(..8) != Some(&2u64.to_le_bytes())
   {
     return Err("invalid pairing profile".into());
   }
   let mut input = profile.keys.as_slice();
-  let keys =
-    Vec::<ark_bls12_381::G2Affine>::deserialize_compressed(&mut input)?;
+  let keys = Vec::<G2Affine>::deserialize_compressed(&mut input)?;
   if !input.is_empty()
     || keys.len() != 2
     || keys.iter().any(AffineRepr::is_zero)
   {
     return Err("invalid pairing profile".into());
+  }
+  let mut canonical = Vec::new();
+  keys.serialize_compressed(&mut canonical)?;
+  if canonical != profile.keys {
+    return Err("noncanonical pairing profile".into());
   }
   Ok(keys)
 }
@@ -169,10 +191,7 @@ fn decode_pairing_keys(
 fn pairing_bytes(publics: &[Scalar]) -> storage::Result<Vec<u8>> {
   verification::pack_pairings(publics)
 }
-fn check_pairings(
-  bytes: &[u8],
-  keys: &[ark_bls12_381::G2Affine],
-) -> storage::Result<()> {
+fn check_pairings(bytes: &[u8], keys: &[G2Affine]) -> storage::Result<()> {
   verification::Pairings {
     keys: keys.try_into().map_err(|_keys| "pairing point count")?,
   }
@@ -184,7 +203,7 @@ fn packet_body<'a>(
   expected: &Statement,
 ) -> storage::Result<&'a [u8]> {
   let offset = 32 + statement::WORDS * 8;
-  if packet.len() < offset + 96 || packet[..32] != *profile {
+  if packet.len() < offset + PAIRING_BYTES || packet[..32] != *profile {
     return Err("packet profile mismatch".into());
   }
   for (bytes, &word) in
@@ -210,16 +229,16 @@ fn packet_claims(
   let body = packet_body(packet, profile, expected)?;
   let mut public: Vec<_> =
     expected.iter().copied().map(Scalar::from_u64).collect();
-  public.extend(verification::unpack_pairings(&body[..96])?);
+  public.extend(verification::unpack_pairings(&body[..PAIRING_BYTES])?);
   let claims = StageStatement::recursive(public.len()).claims(&public)?;
-  Ok((claims, 32 + statement::WORDS * 8 + 96))
+  Ok((claims, 32 + statement::WORDS * 8 + PAIRING_BYTES))
 }
 fn verify_packet(
   system: &multi_stark::system::System<KzgConfig>,
   codec: &FixedProofCodec,
   packet: &[u8],
   profile: &[u8; 32],
-  keys: &[ark_bls12_381::G2Affine],
+  keys: &[G2Affine],
   expected: &Statement,
 ) -> storage::Result<()> {
   let body = packet_body(packet, profile, expected)?;
@@ -229,7 +248,7 @@ fn verify_packet(
   verification::verify_recursive_bytes(
     system,
     codec,
-    &StageStatement::recursive(22),
+    &StageStatement::recursive(RECURSIVE_PUBLIC_VALUES),
     &pairings,
     body,
     &expected.iter().copied().map(Scalar::from_u64).collect::<Vec<_>>(),
@@ -240,11 +259,10 @@ fn staged_publics(
   claims: &[Vec<Scalar>],
   pairing_count: usize,
 ) -> storage::Result<Vec<Scalar>> {
-  let count = pairing_count
-    .checked_mul(2)
-    .and_then(|n| n.checked_add(18))
-    .ok_or("public count overflow")?;
-  StageStatement::recursive(count).public_values(claims)
+  if pairing_count != 2 {
+    return Err("pairing point count".into());
+  }
+  StageStatement::recursive(RECURSIVE_PUBLIC_VALUES).public_values(claims)
 }
 
 /// Commit the fixed and witness traces from memory, prove, verify the
@@ -265,10 +283,12 @@ fn prove(
     || manifest.widths.len() != 2
     || manifest.widths[0] != 3
     || manifest.widths[1] != 1
-    || manifest
-      .heights
-      .iter()
-      .any(|h| *h < 2 || !h.is_power_of_two() || *h > 1 << 28)
+    || manifest.heights.iter().any(|h| {
+      *h < 2
+        || !h.is_power_of_two()
+        || *h > 1 << 28
+        || h.ilog2() as usize >= Scalar::TWO_ADICITY
+    })
     || manifest.heights[1] > manifest.heights[0]
   {
     return Err("expected one computation trace and one merged table".into());
@@ -348,7 +368,7 @@ fn prove(
     "proof_bytes": bytes.len(),
     "packet_bytes": packet.len(),
     "claim_bytes": 144,
-    "pairing_bytes": keys.len() * 48,
+    "pairing_bytes": PAIRING_BYTES,
     "profile_bytes": 32,
     "profile_version": OUTER_PROFILE_VERSION,
     "transcript": "blake3",
@@ -376,7 +396,7 @@ fn prove(
   Ok(())
 }
 
-/// Recursive verifier metadata. Application verification accepts only bundled profiles.
+/// Recursive verifier metadata authenticated by a bundle or an independent digest.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub(crate) struct VerifierProfile {
   version: u32,
@@ -401,6 +421,7 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> storage::Result<T> {
 }
 
 impl VerifierProfile {
+  #[cfg(all(not(feature = "bn254"), any(test, feature = "plonk")))]
   pub(crate) fn reencode_blake3(
     bytes: &[u8],
   ) -> PipelineResult<(Vec<u8>, [u8; 32])> {
@@ -422,9 +443,11 @@ impl VerifierProfile {
 
   pub(crate) fn id(&self) -> [u8; 32] {
     let mut hash = blake3::Hasher::new();
-    hash.update(
-      format!("init-kzg-recursive-profile/v{}", self.version).as_bytes(),
-    );
+    #[cfg(not(feature = "bn254"))]
+    let namespace = "init-kzg-recursive-profile";
+    #[cfg(feature = "bn254")]
+    let namespace = "init-kzg-recursive-bn254-profile";
+    hash.update(format!("{namespace}/v{}", self.version).as_bytes());
     hash.update(OUTER_SEED);
     hash.update(&self.parameters);
     hash.update(&(self.heights[0] as u64).to_le_bytes());
@@ -435,7 +458,7 @@ impl VerifierProfile {
     *hash.finalize().as_bytes()
   }
 
-  fn keys(&self) -> storage::Result<Vec<ark_bls12_381::G2Affine>> {
+  fn keys(&self) -> storage::Result<Vec<G2Affine>> {
     decode_pairing_keys(&decode(&self.pairings)?)
   }
 
@@ -452,6 +475,12 @@ impl VerifierProfile {
     &self,
     expected: SetupClass,
   ) -> PipelineResult<()> {
+    #[cfg(feature = "bn254")]
+    if expected == SetupClass::Ignition {
+      return Err(
+        "Ignition verification requires an explicit trusted admission".into(),
+      );
+    }
     let parameters = self.verifier_params()?;
     if SetupClass::of(&parameters) != expected {
       return Err("bundled verifier setup class differs".into());
@@ -466,10 +495,29 @@ impl VerifierProfile {
     Ok(())
   }
 
+  /// Admit both opening equations against independently pinned ceremony data.
+  #[cfg(feature = "bn254")]
+  pub(crate) fn check_ignition_admission(
+    &self,
+    admission: &crate::kzg::srs::ignition::IgnitionAdmission,
+  ) -> PipelineResult<()> {
+    SetupClass::of_with_ignition(&self.verifier_params()?, admission)?;
+    if self.keys()? != admission.pairing_keys() {
+      return Err(
+        "Ignition verifier has different inner pairing anchors".into(),
+      );
+    }
+    Ok(())
+  }
+
   fn system(&self) -> storage::Result<multi_stark::system::System<KzgConfig>> {
     use crate::kzg::VerifierParams;
     use multi_stark::system::{Circuit, System};
-    if !matches!(self.version, 5 | OUTER_PROFILE_VERSION) {
+    #[cfg(not(feature = "bn254"))]
+    let supported = matches!(self.version, 5 | OUTER_PROFILE_VERSION);
+    #[cfg(feature = "bn254")]
+    let supported = self.version == OUTER_PROFILE_VERSION;
+    if !supported {
       return Err("unsupported recursive verifier profile".into());
     }
     if self
@@ -483,6 +531,11 @@ impl VerifierProfile {
     let params = VerifierParams::from_bytes(&self.parameters)?;
     if params.max_trace_len() != self.heights[0] {
       return Err("verifier SRS range mismatch".into());
+    }
+    if params.max_trace_len().ilog2() as usize >= Scalar::TWO_ADICITY {
+      return Err(
+        "trace and quotient domains exceed scalar two-adicity".into(),
+      );
     }
     let mut circuits = vec![];
     let mut fixed = KzgCommitment(vec![]);
@@ -516,7 +569,7 @@ impl VerifierProfile {
       id: self.id(),
       verifier: super::super::stages::RecursiveVerifier::from_parts(
         self.system()?,
-        StageStatement::recursive(22),
+        StageStatement::recursive(RECURSIVE_PUBLIC_VALUES),
         &self.keys()?,
         18,
       )?,
@@ -554,6 +607,7 @@ impl PreparedVerifierProfile {
 /// Verify a packet against the stage's portable verifier. Without an
 /// independently derived statement, the one the stage's own claim rows
 /// carry is used, so the check covers the proof but not the claim binding.
+#[cfg(test)]
 pub(crate) fn verify_saved(
   dir: &Path,
   packet: &[u8],
@@ -587,6 +641,7 @@ mod tests {
   };
   use std::sync::Arc;
 
+  #[cfg(not(feature = "bn254"))]
   #[test]
   fn bundled_and_public_recursive_verifiers_share_transport_validation()
   -> storage::Result<()> {
@@ -624,6 +679,7 @@ mod tests {
     Ok(())
   }
 
+  #[cfg(not(feature = "bn254"))]
   #[test]
   fn filecoin_bundle_requires_filecoin_inner_pairing_anchors() {
     use ark_serialize::CanonicalSerialize;
@@ -646,6 +702,221 @@ mod tests {
     assert!(profile.check_setup_class(SetupClass::Filecoin).is_err());
   }
 
+  #[cfg(feature = "bn254")]
+  fn ignition_profile_fixture() -> storage::Result<(
+    crate::kzg::srs::ignition::IgnitionAdmission,
+    VerifierProfile,
+    Vec<u8>,
+  )> {
+    use crate::kzg::{VerifierParams, srs::ignition::test_admission};
+    let (admission, srs) = test_admission(7, 256, 41);
+    let claims = init_packet_claims(&srs);
+    let publics = staged_publics(&claims, 2)?;
+    let mut builder = CircuitBuilder::new();
+    let table =
+      builder.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+    let one = builder.constant(Scalar::ONE);
+    builder.lookup(table, &[one]);
+    for claim in &claims[1..] {
+      let value = builder.constant(claim[3]);
+      builder.expose_public(value);
+    }
+    let compiled = builder
+      .finish()
+      .lower_to_multi_stark_sharded(Scalar::from_u8(94), 128)?
+      .merge_table_traces(128)?;
+    let assignment = compiled.witness().generate()?;
+    let height = compiled.main_height();
+    let parameters = VerifierParams::with_max_trace_len(&srs, height);
+    let config = KzgConfig::with_max_trace_len(Arc::new(srs), height, 2)
+      .with_transcript(TranscriptKind::Blake3)
+      .with_streaming_lookups()
+      .with_streaming_quotient();
+    let proved = Lowered { compiled, assignment }
+      .commit(config, None, 0)?
+      .prove(&claims)?;
+    assert_eq!(proved.system.circuits.len(), 2);
+    let fixed = proved.system.preprocessed_commit.as_ref().unwrap();
+    let encode_setup = |index: usize| -> storage::Result<Vec<u8>> {
+      Ok(bincode::serde::encode_to_vec(
+        (
+          &proved.system.circuits[index],
+          KzgCommitment(vec![fixed.0[index].clone()]),
+        ),
+        bincode::config::standard(),
+      )?)
+    };
+    let mut keys = Vec::new();
+    admission.pairing_keys().to_vec().serialize_compressed(&mut keys)?;
+    let profile = VerifierProfile {
+      version: OUTER_PROFILE_VERSION,
+      heights: [
+        proved.system.circuits[0].preprocessed_height,
+        proved.system.circuits[1].preprocessed_height,
+      ],
+      setup: [encode_setup(0)?, encode_setup(1)?],
+      pairings: bincode::serde::encode_to_vec(
+        Pairings { keys },
+        bincode::config::standard(),
+      )?,
+      parameters: parameters.to_bytes()?,
+    };
+    let mut packet = profile.id().to_vec();
+    for word in init_claim::INIT_PUBLIC_WORDS {
+      packet.extend(word.to_le_bytes());
+    }
+    packet.extend(pairing_bytes(&publics[18..])?);
+    packet.extend(&proved.bytes);
+    Ok((admission, profile, packet))
+  }
+
+  #[cfg(feature = "bn254")]
+  #[test]
+  fn ignition_staging_rejects_other_inner_keys_before_creating_files()
+  -> storage::Result<()> {
+    use crate::{
+      kzg::srs::ignition::test_admission,
+      pipeline::{WorkerConfig, setup::SetupConfig},
+    };
+    let (admission, _) = test_admission(7, 256, 44);
+    let inner = Srs::unsafe_dev_setup(2, b"ignition-stage-development-inner");
+    let claims = init_packet_claims(&inner);
+    let mut builder = CircuitBuilder::new();
+    let table =
+      builder.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+    let one = builder.constant(Scalar::ONE);
+    builder.lookup(table, &[one]);
+    for claim in &claims[1..] {
+      let value = builder.constant(claim[3]);
+      builder.expose_public(value);
+    }
+    let circuit = builder.finish();
+    let assignment = circuit.witness().generate()?;
+    let frontend = Frontend::new(
+      circuit,
+      &[inner.g2, inner.tau_g2],
+      b"ignition-stage-admission",
+      128,
+    )?;
+    let root = std::env::temp_dir()
+      .join(format!("ignition-stage-admission-{}", std::process::id(),));
+    assert!(!root.exists());
+    let config = WorkerConfig {
+      setup: SetupConfig::Ignition {
+        cache: root.join("absent-cache.bin"),
+        manifest: [0; 32],
+        admission: Arc::new(admission),
+      },
+      fixed_cache_root: None,
+      prefetch_bytes: 0,
+    };
+    let error = frontend
+      .stage(assignment, &root, &init_claim::INIT_PUBLIC_WORDS, &config)
+      .unwrap_err();
+    assert!(error.to_string().contains("inner pairing anchors differ"));
+    assert!(!root.exists());
+    Ok(())
+  }
+
+  #[cfg(feature = "bn254")]
+  #[test]
+  fn ignition_admission_authenticates_both_openings_without_a_cache()
+  -> storage::Result<()> {
+    use super::super::super::verifier::verify_with_ignition_admission;
+    use crate::kzg::{
+      VerifierParams,
+      srs::ignition::{IgnitionAdmission, test_admission},
+    };
+    let (admission, profile, packet) = ignition_profile_fixture()?;
+    let claim = include_bytes!(
+      "../../../tests/fixtures/aggregate-kzg/filecoin-claim.bin"
+    );
+    let expected = init_claim::INIT_PUBLIC_WORDS;
+    let portable =
+      bincode::serde::encode_to_vec(&profile, bincode::config::standard())?;
+    let trusted = *blake3::hash(&portable).as_bytes();
+    let verify = |packet: &[u8],
+                  claim: &[u8],
+                  expected: &_,
+                  trusted: &_,
+                  admission: &IgnitionAdmission| {
+      verify_with_ignition_admission(
+        packet, claim, expected, &portable, trusted, admission,
+      )
+    };
+    assert_eq!(
+      verify(&packet, claim, &expected, &trusted, &admission)?,
+      SetupClass::Ignition
+    );
+    assert!(profile.check_setup_class(SetupClass::Ignition).is_err());
+    assert_eq!(
+      SetupClass::of(&profile.verifier_params()?),
+      SetupClass::Development
+    );
+    assert!(verify(&packet, claim, &expected, &[0; 32], &admission).is_err());
+    assert!(
+      verify(&packet, b"wrong", &expected, &trusted, &admission).is_err()
+    );
+    let mut wrong_statement = expected;
+    wrong_statement[0] ^= 1;
+    assert!(
+      verify(&packet, claim, &wrong_statement, &trusted, &admission).is_err()
+    );
+    let mut bad_packet = packet.clone();
+    *bad_packet.last_mut().unwrap() ^= 1;
+    assert!(
+      verify(&bad_packet, claim, &expected, &trusted, &admission).is_err()
+    );
+    for (tau, count, marker) in [(11, 256, 41), (7, 512, 41), (7, 256, 42)] {
+      let (other, _) = test_admission(tau, count, marker);
+      assert!(verify(&packet, claim, &expected, &trusted, &other).is_err());
+    }
+    for change in [0, 1, 2] {
+      let mut changed: VerifierProfile = decode(&portable)?;
+      let mut parameters = changed.verifier_params()?;
+      match change {
+        0 => parameters.public_setup.id[0] ^= 1,
+        1 => parameters.public_setup.max_degree += 1,
+        2 => {
+          let (_, other) = test_admission(11, 256, 41);
+          parameters = VerifierParams::with_max_trace_len(
+            &other,
+            parameters.max_trace_len(),
+          );
+        },
+        _ => unreachable!(),
+      }
+      changed.parameters = parameters.to_bytes()?;
+      assert!(changed.check_ignition_admission(&admission).is_err());
+    }
+    let mut mixed: VerifierProfile = decode(&portable)?;
+    let development = Srs::unsafe_dev_setup(2, b"ignition-mixed-inner");
+    let mut keys = Vec::new();
+    vec![development.g2, development.tau_g2].serialize_compressed(&mut keys)?;
+    mixed.pairings = bincode::serde::encode_to_vec(
+      Pairings { keys },
+      bincode::config::standard(),
+    )?;
+    assert!(
+      mixed
+        .check_ignition_admission(&admission)
+        .unwrap_err()
+        .to_string()
+        .contains("inner pairing anchors")
+    );
+    let mut development_profile: VerifierProfile = decode(&portable)?;
+    let development = Srs::unsafe_dev_setup_prefix(
+      2,
+      255,
+      b"ignition-existing-development-profile",
+    );
+    development_profile.parameters =
+      VerifierParams::with_max_trace_len(&development, profile.heights[0])
+        .to_bytes()?;
+    assert!(development_profile.check_ignition_admission(&admission).is_err());
+    Ok(())
+  }
+
   #[test]
   fn packet_requires_outer_proof_claim_and_external_pairings() {
     let inner = Srs::unsafe_dev_setup(8, b"packet-inner");
@@ -657,7 +928,7 @@ mod tests {
         packet.extend(v.to_le_bytes());
       }
       let lhs = if wrong {
-        (inner.g1[1] * ark_bls12_381::Fr::from(2u8)).into_affine()
+        (inner.g1[1] * crate::kzg::curve::Fr::from(2u8)).into_affine()
       } else {
         inner.g1[1]
       };
@@ -789,7 +1060,7 @@ mod tests {
     cache_root: &Path,
     compiled: &MultiStarkCircuit<Scalar>,
     assignment: &Assignment<Scalar>,
-    keys: &[ark_bls12_381::G2Affine],
+    keys: &[G2Affine],
   ) -> storage::Result<fixed_cache::FixedCache> {
     fs::create_dir_all(dir)?;
     let height = compiled.main_height();
@@ -813,8 +1084,10 @@ mod tests {
   #[test]
   fn fused_profiles_prove_and_portable_verifiers_round_trip()
   -> storage::Result<()> {
-    let dir = std::env::temp_dir()
-      .join(format!("outer-staged-{}-v6", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+      "outer-staged-{}-v{OUTER_PROFILE_VERSION}",
+      std::process::id()
+    ));
     fs::create_dir(&dir)?;
     let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
     let keys = vec![inner.g2, inner.tau_g2];
@@ -880,6 +1153,36 @@ mod tests {
     assert!(staged_publics(&bad, keys.len()).is_err());
     assert!(staged_publics(&claims[..claims.len() - 1], keys.len()).is_err());
     let portable = fs::read(first.join("verifier.bin"))?;
+    let claim = include_bytes!(
+      "../../../tests/fixtures/aggregate-kzg/filecoin-claim.bin"
+    );
+    let trusted = *blake3::hash(&portable).as_bytes();
+    let verify_local = |claim: &[u8], expected, trusted: &[u8; 32], allow| {
+      super::super::super::verifier::verify_with_profile(
+        &packet, claim, expected, &portable, trusted, allow,
+      )
+    };
+    assert_eq!(
+      verify_local(claim, &init_claim::INIT_PUBLIC_WORDS, &trusted, true)?,
+      SetupClass::Development
+    );
+    assert!(
+      verify_local(claim, &init_claim::INIT_PUBLIC_WORDS, &trusted, false)
+        .is_err()
+    );
+    let mut wrong_digest = trusted;
+    wrong_digest[0] ^= 1;
+    assert!(
+      verify_local(claim, &init_claim::INIT_PUBLIC_WORDS, &wrong_digest, true)
+        .is_err()
+    );
+    assert!(
+      verify_local(b"wrong", &init_claim::INIT_PUBLIC_WORDS, &trusted, true)
+        .is_err()
+    );
+    let mut wrong_program = init_claim::INIT_PUBLIC_WORDS;
+    wrong_program[0] ^= 1;
+    assert!(verify_local(claim, &wrong_program, &trusted, true).is_err());
     let profile = VerifierProfile::from_bytes(&portable)?;
     assert_eq!(profile.version, OUTER_PROFILE_VERSION);
     assert_eq!(
@@ -887,7 +1190,11 @@ mod tests {
       TranscriptKind::Blake3
     );
 
-    for version in [0, 4, 7] {
+    #[cfg(not(feature = "bn254"))]
+    let unsupported_versions = [0, 4, 7];
+    #[cfg(feature = "bn254")]
+    let unsupported_versions = [0, 5, 6];
+    for version in unsupported_versions {
       let mut unsupported: VerifierProfile = decode(&portable)?;
       unsupported.version = version;
       let unsupported = bincode::serde::encode_to_vec(
@@ -903,6 +1210,32 @@ mod tests {
     let mut wrong_range: VerifierProfile = decode(&portable)?;
     wrong_range.heights[0] *= 2;
     assert!(wrong_range.system().is_err());
+    #[cfg(feature = "bn254")]
+    {
+      let max_domain = 1usize << Scalar::TWO_ADICITY;
+      let anchors =
+        Srs::unsafe_dev_setup_prefix(2, max_domain - 1, b"outer-domain-cap");
+      let params =
+        crate::kzg::VerifierParams::with_max_trace_len(&anchors, max_domain);
+      let mut oversized: VerifierProfile = decode(&portable)?;
+      oversized.heights = [max_domain; 2];
+      oversized.parameters = params.to_bytes()?;
+      for setup in &mut oversized.setup {
+        let (mut circuit, fixed): (
+          multi_stark::system::Circuit<Scalar>,
+          KzgCommitment,
+        ) = decode(setup)?;
+        circuit.preprocessed_height = max_domain;
+        *setup = bincode::serde::encode_to_vec(
+          (circuit, fixed),
+          bincode::config::standard(),
+        )?;
+      }
+      let bytes =
+        bincode::serde::encode_to_vec(oversized, bincode::config::standard())?;
+      let error = VerifierProfile::from_bytes(&bytes).err().unwrap();
+      assert!(error.to_string().contains("quotient domains exceed"));
+    }
     Ok(())
   }
 

@@ -1,7 +1,7 @@
 use super::verification::{Pairings, RecursiveVerifier};
 use super::{KzgVerifier, Prepared, Result, scalar_statement};
 use crate::kzg::{KzgConfig, Scalar, Srs};
-use crate::recursive::native_verifier;
+use crate::recursive::{native_verifier, pairing::PUBLIC_VALUES};
 use multi_stark::prover::Proof;
 use multi_stark::traits::Algebra;
 use multi_stark::types::Val;
@@ -120,7 +120,8 @@ pub(super) fn setup_recursive(
     .with_transcript(crate::kzg::TranscriptKind::Blake3)
     .with_streaming_lookups()
     .with_streaming_quotient();
-  let outer = super::setup::kzg_lowered(compiled, config, claim_len + 4)?;
+  let outer =
+    super::setup::kzg_lowered(compiled, config, claim_len + PUBLIC_VALUES)?;
   Ok(RecursiveVerifier {
     verifier: outer,
     pairings: Pairings {
@@ -136,8 +137,9 @@ pub(super) fn setup_recursive(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::{Fr, G1_COMPRESSED_BYTES};
+  use crate::recursive::pairing;
   use ark_ec::CurveGroup;
-  use ark_serialize::CanonicalSerialize;
   use multi_stark::plonkish::CircuitBuilder;
   use multi_stark::traits::Algebra;
   use multi_stark::traits::Field;
@@ -155,21 +157,9 @@ mod tests {
         let mut points = [inner.g1[1], -inner.g1[0]];
         let keys = [inner.g2, inner.tau_g2];
         if invalid_pairing {
-          points[0] = (points[0] * ark_bls12_381::Fr::from(2u8)).into_affine();
+          points[0] = (points[0] * Fr::from(2u8)).into_affine();
         }
-        let mut packed = vec![];
-        for point in points {
-          let mut bytes = vec![];
-          point.serialize_compressed(&mut bytes)?;
-          for chunk in bytes.as_chunks::<24>().0 {
-            let mut limbs = [0; 4];
-            for (limb, bytes) in limbs.iter_mut().zip(chunk.as_chunks::<8>().0)
-            {
-              *limb = u64::from_le_bytes(*bytes);
-            }
-            packed.push(Scalar::from_limbs_le(limbs));
-          }
-        }
+        let packed = pairing::encode(points);
         let expected: Vec<_> =
           (0..claim_len).map(|i| Val::from_usize(7 + i)).collect();
         let mut public = scalar_statement(&expected);
@@ -205,6 +195,13 @@ mod tests {
           let mut old_key = key_bytes.clone();
           old_key[..8].copy_from_slice(b"IXRECV01");
           assert!(RecursiveVerifier::from_bytes(&old_key).is_err());
+          let mut other_curve = key_bytes.clone();
+          other_curve[..8].copy_from_slice(if cfg!(feature = "bn254") {
+            b"IXRECV02"
+          } else {
+            b"IXBNRV02"
+          });
+          assert!(RecursiveVerifier::from_bytes(&other_curve).is_err());
           assert!(
             RecursiveVerifier::from_bytes(&key_bytes[..key_bytes.len() - 1])
               .is_err()
@@ -223,7 +220,7 @@ mod tests {
           extra.push(0);
           assert!(verifier.verify_bytes(&extra, &expected).is_err());
           let mut malformed = bytes.clone();
-          malformed[..48].fill(0xff);
+          malformed[..G1_COMPRESSED_BYTES].fill(0xff);
           assert!(verifier.verify_bytes(&malformed, &expected).is_err());
           let mut wrong = expected.clone();
           wrong[0] += Val::ONE;

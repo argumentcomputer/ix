@@ -1,0 +1,8 @@
+{
+  "blake3": "90b6709b32be44fb315ce6c1007bf7debe38526f430e50746481bc712f622d7e",
+  "format": "ix-bn254-plonk-srs-export-v1",
+  "ignitionManifest": "6b4a939d863d026ab045d3da2c8175abb9224889a58ccbf26bacb92f74248e6b",
+  "powers": 131,
+  "publicMaxDegree": 100799999,
+  "setupId": "07f80d0dc28ec7865299e8dcb795bf17f53de459d315416fd3c55fed475cd90b"
+}

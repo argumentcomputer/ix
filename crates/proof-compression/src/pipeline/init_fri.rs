@@ -1,6 +1,6 @@
 //! The saved intermediate FRI proof and the statement it exposes.
 use super::stages::statement::decode_claims;
-use ix_proof_compression::fri::*;
+use crate::fri::*;
 use multi_stark::prover::Proof;
 use multi_stark::types::GoldilocksBlake3Config;
 use multi_stark::types::Val;
@@ -45,7 +45,7 @@ pub(crate) fn load(dir: &Path) -> Result<Fixture, Box<dyn std::error::Error>> {
     .system()
     .verify_multiple_claims(&refs, &proof)
     .map_err(|e| format!("saved recursive proof: {e:?}"))?;
-  println!("Saved {}-byte recursive FRI proof verified", bytes.len());
+  eprintln!("Saved {}-byte recursive FRI proof verified", bytes.len());
   let profile = super::stages::construct::fri_profile(&key, &claims)?;
   if proof.active != profile.active || proof.log_degrees != profile.log_degrees
   {

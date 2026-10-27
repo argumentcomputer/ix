@@ -10,6 +10,10 @@ struct alignas(32) LookupParameters {
     uint32_t trace_log, slots, group_size, blocks;
 };
 static_assert(sizeof(LookupParameters) == 96);
+static_assert(alignof(LookupParameters) == 32);
+static_assert(offsetof(LookupParameters, gamma) == 32);
+static_assert(offsetof(LookupParameters, trace_log) == 64);
+static_assert(offsetof(LookupParameters, blocks) == 76);
 
 __device__ __forceinline__ void lookup_rational_row(
     fr_t* numerators, fr_t* denominators, fr_t* values, const fr_t* evaluations,

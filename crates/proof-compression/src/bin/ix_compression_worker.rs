@@ -9,7 +9,9 @@ use tracing_subscriber::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
   let args: Vec<String> = std::env::args().skip(1).collect();
   let Some((stage, rest)) = args.split_first() else {
-    return Err("usage: ix-compression-worker <fri|kzg|wrap> <args...>".into());
+    return Err(
+      "usage: ix-compression-worker <fri|kzg|wrap|pipeline> <args...>".into(),
+    );
   };
   let texray = std::env::var("IX_TEXRAY").as_deref() == Ok("1");
   let timing = texray.then(|| {
@@ -41,6 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     "fri" => tracing::info_span!("compression/fri"),
     "kzg" => tracing::info_span!("compression/kzg"),
     "wrap" => tracing::info_span!("compression/wrap"),
+    "pipeline" => tracing::info_span!("compression/pipeline"),
     #[cfg(feature = "plonk")]
     "plonk" => tracing::info_span!("compression/plonk"),
     _ => return Err("unknown compression stage".into()),

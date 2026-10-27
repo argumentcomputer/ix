@@ -14,12 +14,17 @@ use std::{fs, path::PathBuf, time::Instant};
 /// Compiled worker features for deployment checks.
 fn print_capabilities() {
   println!(
-    concat!(
-      "{{\"format\":\"ix-compression-capabilities/v1\",\"binary\":\"ix-compression-worker\",",
-      "\"cuda\":{},\"parallel\":{}}}"
-    ),
-    cfg!(feature = "cuda"),
-    cfg!(feature = "parallel"),
+    "{}",
+    serde_json::json!({
+      "format": "ix-compression-capabilities/v1",
+      "binary": "ix-compression-worker",
+      "curve": crate::kzg::curve::NAME,
+      "cuda": cfg!(feature = "cuda"),
+      "parallel": cfg!(feature = "parallel"),
+      "development_setup_only": false,
+      "ignition_setup": cfg!(feature = "bn254"),
+      "terminal_plonk": cfg!(feature = "plonk"),
+    })
   );
 }
 

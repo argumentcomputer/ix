@@ -1,11 +1,11 @@
-//! Fiat-Shamir transcripts over the BLS12-381 scalar field.
+//! Fiat-Shamir transcripts over the selected KZG curve's scalar field.
 //!
 //! BLAKE3 samples hash the chain state and buffered canonical observations,
 //! reduce 64 XOF bytes little-endian into the scalar field, take 32 more
 //! bytes as the next state, and clear the buffer. Keccak-256 uses separate
 //! digest domains for its wide challenge and next state.
 
-use ark_bls12_381::Fr;
+use super::curve::Fr;
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
 use tiny_keccak::{Hasher, Keccak};
@@ -169,7 +169,10 @@ impl Transcript for Blake3Transcript {
   }
 }
 
+#[cfg(not(feature = "bn254"))]
 const KECCAK256_DOMAIN: &[u8] = b"multi-stark/kzg/keccak256/v1";
+#[cfg(feature = "bn254")]
+const KECCAK256_DOMAIN: &[u8] = b"ix/kzg/bn254/keccak256/v1";
 
 fn keccak256(parts: &[&[u8]]) -> [u8; 32] {
   let mut hasher = Keccak::v256();
@@ -262,10 +265,11 @@ impl Transcript for Keccak256Transcript {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use ark_bls12_381::G1Affine;
+  use crate::kzg::curve::G1Affine;
   use ark_ec::AffineRepr;
   use ark_ff::BigInteger;
   use multi_stark::traits::Field;
+  use num_bigint::BigUint;
 
   #[test]
   fn deterministic_and_sensitive() {
@@ -286,6 +290,42 @@ mod tests {
     let mut t = Blake3Transcript::new();
     t.observe_field(Scalar::from_u64(7));
     assert_ne!(t.sample_challenge(), t.sample_challenge());
+  }
+
+  #[test]
+  fn blake3_challenges_match_integer_reduction() {
+    let mut t = Blake3Transcript::new();
+    t.observe_bytes(b"kzg-blake3-vector-v1");
+    t.observe_field(Scalar::from_u64(7));
+    t.observe_bytes(&(0u8..160).collect::<Vec<_>>());
+
+    let mut observed = b"kzg-blake3-vector-v1".to_vec();
+    observed.extend(7u64.to_le_bytes());
+    observed.extend([0; 24]);
+    observed.extend(0u8..160);
+    let modulus = BigUint::from_bytes_le(&Fr::MODULUS.to_bytes_le());
+    let mut state = [0u8; 32];
+    for round in 0..3 {
+      if round == 2 {
+        t.observe_bytes(b"after-squeeze");
+        t.observe_field(Scalar::NEG_ONE);
+        observed.extend(b"after-squeeze");
+        let mut field_bytes = (&modulus - 1u8).to_bytes_le();
+        field_bytes.resize(32, 0);
+        observed.extend(field_bytes);
+      }
+      let input: Vec<_> =
+        state.iter().copied().chain(observed.drain(..)).collect();
+      let mut output = [0; 96];
+      blake3::Hasher::new().update(&input).finalize_xof().fill(&mut output);
+      let reduced = BigUint::from_bytes_le(&output[..64]) % &modulus;
+      let mut expected = reduced.to_bytes_le();
+      expected.resize(32, 0);
+      state.copy_from_slice(&output[64..]);
+      assert_eq!(t.sample_challenge().0.into_bigint().to_bytes_le(), expected);
+      assert_eq!(t.state, state);
+      assert!(t.buffer.is_empty());
+    }
   }
 
   /// Slice observation must equal element-wise observation (trait
@@ -318,6 +358,7 @@ mod tests {
   }
 
   #[test]
+  #[cfg(not(feature = "bn254"))]
   fn keccak_transcript_matches_independent_vectors() {
     // PyCryptodome 3.23.0 Crypto.Hash.keccak, digest_bits=256, independently
     // generates each digest from the documented concatenation. Challenges

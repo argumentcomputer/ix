@@ -2,7 +2,7 @@
 
 use std::io::{self, Read, Write};
 
-use ark_bls12_381::Fr;
+use super::curve::Fr;
 use ark_ff::{BigInt, PrimeField};
 use p3_maybe_rayon::prelude::*;
 
@@ -100,7 +100,7 @@ pub fn read_scalars(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use ark_ff::Field;
+  use ark_ff::{BigInteger, Field};
   use ark_serialize::CanonicalSerialize;
 
   #[test]
@@ -121,6 +121,9 @@ mod tests {
 
   #[test]
   fn scalar_stream_rejects_invalid_and_truncated_fields() {
+    assert!(
+      read_scalars(&mut Fr::MODULUS.to_bytes_le().as_slice(), 1).is_err()
+    );
     assert!(read_scalars(&mut [255; 32].as_slice(), 1).is_err());
     assert!(read_scalars(&mut [0; 31].as_slice(), 1).is_err());
     assert!(read_scalars(&mut [].as_slice(), 0).unwrap().is_empty());

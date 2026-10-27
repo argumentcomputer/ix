@@ -1,6 +1,5 @@
 //! Bounded Fq arithmetic in a native Fr Plonkish circuit.
-use crate::kzg::Scalar;
-use ark_bls12_381::Fq;
+use crate::kzg::{Scalar, curve::Fq};
 use ark_ff::{BigInteger, PrimeField};
 use multi_stark::{
   plonkish::{CircuitBuilder, Table, Value},
@@ -10,9 +9,17 @@ use num_bigint::{BigInt, BigUint, Sign};
 use std::collections::BTreeMap;
 
 pub type Builder = CircuitBuilder<Scalar>;
-const W: usize = 80;
-const L: usize = 5;
+pub(super) const W: usize = 80;
+const FIELD_BITS: usize = Fq::MODULUS_BIT_SIZE as usize;
+pub(super) const L: usize = FIELD_BITS.div_ceil(W);
+const TOP_LIMB_BITS: usize = FIELD_BITS - W * (L - 1);
+const QUOTIENT_BITS: usize = FIELD_BITS + 3;
+const QUOTIENT_BIAS_BITS: usize = QUOTIENT_BITS - 1;
+const QUOTIENT_TOP_BITS: usize = QUOTIENT_BITS - W * (L - 1);
 const CARRY_BITS: usize = 89;
+const CARRY_BIAS_BITS: usize = CARRY_BITS - 1;
+const RELATION_ADVICE_LEN: usize = 2 * L - 1;
+const _: () = assert!(TOP_LIMB_BITS <= W && QUOTIENT_TOP_BITS <= W);
 
 mod advice;
 
@@ -152,17 +159,19 @@ impl FqGadget {
   }
   pub fn bound(&self, b: &mut Builder, v: FqVar) {
     for (i, &limb) in v.0.iter().enumerate() {
-      self.range(b, limb, if i == L - 1 { 61 } else { W });
+      self.range(b, limb, if i == L - 1 { TOP_LIMB_BITS } else { W });
     }
   }
   pub fn canonical(&self, b: &mut Builder, v: FqVar) {
     let p = digits(&(modulus() - 1u8));
     let p_hint = p.clone();
-    let advice =
-      b.hint_many_pure::<10>("Fq canonical subtraction", &v.0, move |values| {
+    let advice = b.hint_many_pure::<{ 2 * L }>(
+      "Fq canonical subtraction",
+      &v.0,
+      move |values| {
         let mut borrow = BigInt::from(0u8);
         let radix = BigInt::from(1u8) << W;
-        let mut out = [Scalar::ZERO; 10];
+        let mut out = [Scalar::ZERO; 2 * L];
         for i in 0..L {
           let mut d = BigInt::from(p_hint[i].clone())
             - BigInt::from(integer(values[i]))
@@ -175,7 +184,8 @@ impl FqGadget {
           out[L + i] = signed(&borrow);
         }
         Ok(out)
-      });
+      },
+    );
     let radix = scalar(&(BigUint::from(1u8) << W));
     let mut borrow = b.constant(Scalar::ZERO);
     for i in 0..L {
@@ -196,10 +206,14 @@ impl FqGadget {
     b.assert_zero(borrow);
   }
   /// Sum of bounded quadratic and linear terms is zero modulo Fq.
-  /// Each side has at most three unit-weight products. Limbs are <2^80,
-  /// field representatives <2^381, quotient+2^383 <2^384. Four signed
-  /// carries are biased by 2^88 and range-checked to 89 bits. Pairing two
-  /// radix-2^80 coefficients keeps every integer equality below 2^251 < Fr.
+  /// Each sign has total product and linear weight at most three. For
+  /// n-bit representatives, |quotient| < 2^(n+2) for either supported Fq;
+  /// biasing by 2^(n+2) therefore requires n+3 bits. Carries are biased by
+  /// 2^88 and range-checked to 89 bits. With B=2^80, each polynomial
+  /// coefficient has magnitude below A=4*L*B^2+3*B+4. Pairing coefficients
+  /// bounds an integer equality by (B+1)*A+(B^2+1)*2^88 < Fr, so a zero
+  /// field equation is also an integer equality. The integer-bound test
+  /// checks these inequalities against the selected curve's exact moduli.
   pub fn relation(
     &self,
     b: &mut Builder,
@@ -236,21 +250,24 @@ impl FqGadget {
     let p = &advice::constants().modulus_digits;
     #[cfg(test)]
     let reference_advice = self.reference_advice;
-    let advice =
-      b.hint_many_pure::<9>("Fq quotient and carries", &deps, move |values| {
+    let advice = b.hint_many_pure::<RELATION_ADVICE_LEN>(
+      "Fq quotient and carries",
+      &deps,
+      move |values| {
         #[cfg(test)]
         if reference_advice {
           return advice::relation_reference(values, &pc, &lc, constant, p);
         }
         advice::relation(values, &pc, &lc, constant)
-      });
+      },
+    );
     for (i, &v) in advice[..L].iter().enumerate() {
-      self.range(b, v, if i == L - 1 { 64 } else { W });
+      self.range(b, v, if i == L - 1 { QUOTIENT_TOP_BITS } else { W });
     }
     for &v in &advice[L..] {
       self.range(b, v, CARRY_BITS);
     }
-    let mut terms: Vec<Vec<(Scalar, Value)>> = vec![vec![]; 10];
+    let mut terms: Vec<Vec<(Scalar, Value)>> = vec![vec![]; 2 * L];
     let mut cached = BTreeMap::new();
     for &(c, a, d) in products {
       for i in 0..L {
@@ -269,8 +286,8 @@ impl FqGadget {
         terms.push((signed(&BigInt::from(c)), v));
       }
     }
-    let bias = digits(&(BigUint::from(1u8) << 383));
-    let mut constants = vec![BigInt::from(0u8); 10];
+    let bias = digits(&(BigUint::from(1u8) << QUOTIENT_BIAS_BITS));
+    let mut constants = vec![BigInt::from(0u8); 2 * L];
     constants[0] += constant;
     for i in 0..L {
       for j in 0..L {
@@ -280,8 +297,8 @@ impl FqGadget {
     }
     let radix = scalar(&(BigUint::from(1u8) << W));
     let block = radix * radix;
-    let carry_bias = scalar(&(BigUint::from(1u8) << 88));
-    for j in 0..5 {
+    let carry_bias = scalar(&(BigUint::from(1u8) << CARRY_BIAS_BITS));
+    for j in 0..L {
       let mut equation = terms[2 * j].clone();
       equation.extend(terms[2 * j + 1].iter().map(|&(c, v)| (c * radix, v)));
       let mut constant =
@@ -290,7 +307,7 @@ impl FqGadget {
         equation.push((Scalar::ONE, advice[L + j - 1]));
         constant -= carry_bias;
       }
-      if j < 4 {
+      if j < L - 1 {
         equation.push((-block, advice[L + j]));
         constant += block * carry_bias;
       }
@@ -379,7 +396,9 @@ mod tests {
     let f = FqGadget::new(&mut b);
     let x = f.input(&mut b, "x");
     let c = b.finish();
-    for n in [modulus(), modulus() + 1u8, (BigUint::from(1u8) << 381) - 1u8] {
+    for n in
+      [modulus(), modulus() + 1u8, (BigUint::from(1u8) << FIELD_BITS) - 1u8]
+    {
       let mut w = c.witness();
       for (v, n) in x.0.into_iter().zip(digits(&n)) {
         w.set(v, scalar(&n)).unwrap();
@@ -392,7 +411,10 @@ mod tests {
         w.set(
           v,
           if i == j {
-            scalar(&(BigUint::from(1u8) << if i == 4 { 61 } else { 80 }))
+            scalar(
+              &(BigUint::from(1u8)
+                << if i == L - 1 { TOP_LIMB_BITS } else { W }),
+            )
           } else {
             Scalar::ZERO
           },
@@ -422,17 +444,59 @@ mod tests {
   }
 
   #[test]
+  fn maximal_representatives_support_both_quotient_signs() {
+    let max = (BigUint::from(1u8) << FIELD_BITS) - 1u8;
+    let total = 3u8 * &max * &max + 3u8 * &max + 4u8;
+    let residue =
+      Fq::from_le_bytes_mod_order(&(&total % modulus()).to_bytes_le());
+    let mut b = Builder::new();
+    let f = FqGadget::new(&mut b);
+    let x = FqVar(std::array::from_fn(|i| b.input(format!("x{i}"))));
+    f.bound(&mut b, x);
+    let residue = f.constant(&mut b, residue);
+    f.relation(&mut b, &[(3, x, x)], &[(3, x), (-1, residue)], 4);
+    f.relation(&mut b, &[(-3, x, x)], &[(-3, x), (1, residue)], -4);
+    let c = b.finish();
+    let mut w = c.witness();
+    for (v, n) in x.0.into_iter().zip(digits(&max)) {
+      w.set(v, scalar(&n)).unwrap();
+    }
+    check_mutations(&c, &w.generate().unwrap());
+  }
+
+  #[test]
+  fn range_checks_reject_boundary_overflow_and_negative_integers() {
+    for bits in [TOP_LIMB_BITS, QUOTIENT_TOP_BITS, W, CARRY_BITS] {
+      let mut b = Builder::new();
+      let f = FqGadget::new(&mut b);
+      let x = b.input("x");
+      f.range(&mut b, x, bits);
+      let c = b.finish();
+      let limit = BigUint::from(1u8) << bits;
+      for (value, accepted) in [
+        (scalar(&(&limit - 1u8)), true),
+        (scalar(&limit), false),
+        (Scalar::NEG_ONE, false),
+      ] {
+        let mut w = c.witness();
+        w.set(x, value).unwrap();
+        assert_eq!(w.generate().is_ok(), accepted, "range width {bits}");
+      }
+    }
+  }
+
+  #[test]
   fn integer_bounds_do_not_wrap_fr() {
-    use ark_bls12_381::Fr;
+    use crate::kzg::curve::Fr;
     let one = BigUint::from(1u8);
-    let radix = &one << 80;
-    let max = (&one << 381) - 1u8;
+    let radix = &one << W;
+    let max = (&one << FIELD_BITS) - 1u8;
     let max_expression = 3u8 * &max * &max + 3u8 * &max + 4u8;
-    assert!(max_expression / modulus() < (&one << 383));
-    // Up to 15 products on either side of a coefficient, plus five
-    // quotient*modulus terms, three linear limbs, and a constant.
-    let coefficient_bound = 20u8 * &radix * &radix + 3u8 * &radix + 4u8;
-    let carry_bound = &one << 88;
+    assert!(max_expression / modulus() < (&one << QUOTIENT_BIAS_BITS));
+    // Each coefficient has at most 3*L product terms of either sign,
+    // L modulus times unbiased-quotient terms, and three linear terms.
+    let coefficient_bound = (4 * L) * &radix * &radix + 3u8 * &radix + 4u8;
+    let carry_bound = &one << CARRY_BIAS_BITS;
     let equation_bound: BigUint = (&radix + 1u8) * &coefficient_bound
       + (&radix * &radix + 1u8) * &carry_bound;
     let fr = BigUint::from_bytes_le(&Fr::MODULUS.to_bytes_le());

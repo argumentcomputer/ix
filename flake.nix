@@ -110,21 +110,81 @@
             file: file.hasExt "go" || file.hasExt "json" || file.hasExt "bin"
               || file.name == "go.mod" || file.name == "go.sum"
           ) ./tools/bls-plonk-wrapper;
-          plonkHelper = (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
-            pname = "ix-bls-plonk-wrapper";
+          plonkCudaSources = pkgs.lib.fileset.fileFilter (
+            file: file.hasExt "go" || file.hasExt "json" || file.hasExt "bin"
+              || file.hasExt "py" || file.hasExt "patch"
+              || file.name == "go.mod" || file.name == "go.sum"
+          ) ./tools/bls-plonk-wrapper;
+          plonkSppark = pkgs.fetchFromGitHub {
+            owner = "argumentcomputer";
+            repo = "sppark";
+            rev = "114feb69ebfe029e2caa5e6c2d372c695e5d4da8";
+            hash = "sha256-/KXq6RuAUpRT0xJsXCSZsT1iONhbeHnXWcmTJL4ltQs=";
+          };
+          plonkBlst = pkgs.fetchzip {
+            url = "https://static.crates.io/crates/blst/blst-0.3.16.crate";
+            extension = "tar.gz";
+            hash = "sha256-OHEKeKwl7RhPOiqILiRTZACmRLlmIaRuCE2qwKTfiIc=";
+          };
+          plonkCudaNative = pkgs.stdenv.mkDerivation {
+            pname = "ix-plonk-bn254-cuda";
+            version = "0.1.0";
+            src = pkgs.lib.fileset.toSource {
+              root = ./crates/proof-compression/cuda;
+              fileset = pkgs.lib.fileset.fileFilter (
+                file: builtins.any file.hasExt [ "cu" "cuh" "cpp" "h" "hpp" "py" "map" "json" "patch" ]
+              ) ./crates/proof-compression/cuda;
+            };
+            nativeBuildInputs = [ pkgs.python3 pkgs.patch cudaToolkit ];
+            CUDA_HOME = "${cudaToolkit}";
+            NVCC = "${cudaToolkit}/bin/nvcc";
+            IX_PLONK_CUDA_ARCHS = "120";
+            dontConfigure = true;
+            buildPhase = ''
+              runHook preBuild
+              python3 plonk/build.py --sppark ${plonkSppark} --blst ${plonkBlst}/blst --out native
+              runHook postBuild
+            '';
+            installPhase = ''
+              mkdir -p "$out/lib" "$out/include" "$out/share/ix-plonk-cuda"
+              cp native/libix_plonk_bn254_cuda.so "$out/lib/"
+              cp plonk/ix_plonk_bn254.h "$out/include/"
+              cp native/*.json "$out/share/ix-plonk-cuda/"
+            '';
+            meta.platforms = [ "x86_64-linux" ];
+          };
+          mkPlonkHelper = { bn254, cuda ? false }: (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
+            pname = (if bn254 then "ix-bn254-plonk-wrapper" else "ix-bls-plonk-wrapper")
+              + pkgs.lib.optionalString cuda "-cuda";
+            tags = pkgs.lib.optional bn254 "bn254" ++ pkgs.lib.optional cuda "cuda";
             version = "0.1.0";
             src = pkgs.lib.fileset.toSource {
               root = ./tools/bls-plonk-wrapper;
-              fileset = plonkSources;
+              fileset = if cuda then plonkCudaSources else plonkSources;
             };
             vendorHash = "sha256-bmRyQn7iMLGRATQStghs1KmlXwln70Sxzu5oSWR5pRU=";
             subPackages = [ "." ];
-            env.CGO_ENABLED = "0";
+            env.CGO_ENABLED = if cuda then "1" else "0";
             env.GOTOOLCHAIN = "local";
+            env.CGO_CFLAGS = pkgs.lib.optionalString cuda "-I${plonkCudaNative}/include";
+            env.CGO_LDFLAGS = pkgs.lib.optionalString cuda "-L${plonkCudaNative}/lib -Wl,-rpath,${plonkCudaNative}/lib -lix_plonk_bn254_cuda";
+            nativeBuildInputs = pkgs.lib.optionals cuda [ pkgs.python3 pkgs.patch ];
+            buildInputs = pkgs.lib.optional cuda plonkCudaNative;
+            postConfigure = pkgs.lib.optionalString cuda ''
+              chmod -R u+w vendor/github.com/consensys/gnark
+              python3 build_cuda.py --patch-vendor vendor/github.com/consensys/gnark
+            '';
             postInstall = ''
-              mv "$out/bin/bls-plonk-wrapper" "$out/bin/ix-bls-plonk-wrapper"
+              mv "$out/bin/bls-plonk-wrapper" "$out/bin/${if bn254 then "ix-bn254-plonk-wrapper" else "ix-bls-plonk-wrapper"}"
+            '' + pkgs.lib.optionalString cuda ''
+              mkdir -p "$out/lib"
+              ln -s ${plonkCudaNative}/lib/libix_plonk_bn254_cuda.so "$out/lib/"
             '';
           };
+
+          plonkHelper = mkPlonkHelper { bn254 = false; };
+          bn254PlonkHelper = mkPlonkHelper { bn254 = true; };
+          bn254PlonkCudaHelper = mkPlonkHelper { bn254 = true; cuda = true; };
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -390,6 +450,8 @@
             default = ixLib;
             ix = ixCLI;
             plonk-wrapper = plonkHelper;
+            plonk-wrapper-bn254 = bn254PlonkHelper;
+            plonk-wrapper-bn254-cuda = bn254PlonkCudaHelper;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
             # adding it to the default check set.
@@ -408,6 +470,7 @@
 
           checks = {
             plonk-wrapper = plonkHelper;
+            plonk-wrapper-bn254 = bn254PlonkHelper;
             # Lint the host workspace; warnings are errors.
             clippy = craneLib.cargoClippy (
               craneArgs

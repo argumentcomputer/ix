@@ -19,23 +19,23 @@ struct CircuitShape {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct MatrixLayout {
-  pub(super) width: usize,
-  pub(super) rows: usize,
-  pub(super) point_offset: usize,
-  pub(super) value_offset: usize,
-  pub(super) groups: [usize; 2],
+pub(in crate::pipeline::wrap::outer) struct MatrixLayout {
+  pub(in crate::pipeline::wrap::outer) width: usize,
+  pub(in crate::pipeline::wrap::outer) rows: usize,
+  pub(in crate::pipeline::wrap::outer) point_offset: usize,
+  pub(in crate::pipeline::wrap::outer) value_offset: usize,
+  pub(in crate::pipeline::wrap::outer) groups: [usize; 2],
 }
 
-pub(super) struct OpeningLayout {
-  pub(super) matrices: Vec<MatrixLayout>,
-  pub(super) factors: Vec<Scalar>,
-  pub(super) commitment_count: usize,
-  pub(super) point_count: usize,
-  pub(super) field_count: usize,
-  pub(super) fixed_count: usize,
-  pub(super) generator_index: usize,
-  pub(super) coefficient_count: usize,
+pub(in crate::pipeline::wrap::outer) struct OpeningLayout {
+  pub(in crate::pipeline::wrap::outer) matrices: Vec<MatrixLayout>,
+  pub(in crate::pipeline::wrap::outer) factors: Vec<Scalar>,
+  pub(in crate::pipeline::wrap::outer) commitment_count: usize,
+  pub(in crate::pipeline::wrap::outer) point_count: usize,
+  pub(in crate::pipeline::wrap::outer) field_count: usize,
+  pub(in crate::pipeline::wrap::outer) fixed_count: usize,
+  pub(in crate::pipeline::wrap::outer) generator_index: usize,
+  pub(in crate::pipeline::wrap::outer) coefficient_count: usize,
 }
 
 fn add(a: usize, b: usize) -> Result<usize> {
@@ -70,7 +70,7 @@ fn quotient_width(max_degree: usize) -> Result<usize> {
 }
 
 impl OpeningLayout {
-  pub(super) fn new(
+  pub(in crate::pipeline::wrap::outer) fn new(
     profile: &VerifierProfile,
     system: &System<KzgConfig>,
   ) -> Result<Self> {
@@ -184,6 +184,7 @@ impl OpeningLayout {
       coefficient_count,
     })
   }
+
 }
 
 #[cfg(test)]
