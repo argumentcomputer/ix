@@ -281,6 +281,60 @@ impl Expr {
     }
     count
   }
+
+  /// Move the contents of every uniquely owned child that has children of
+  /// its own to `stack`, leaving a leaf in its place.
+  fn detach_unique_children(&mut self, stack: &mut Vec<Expr>) {
+    let mut detach = |child: &mut Arc<Expr>| {
+      if Arc::strong_count(child) == 1
+        && let Some(inner) = Arc::get_mut(child)
+        && matches!(
+          inner,
+          Expr::Prj(..)
+            | Expr::App(..)
+            | Expr::Lam(..)
+            | Expr::All(..)
+            | Expr::Let(..)
+        )
+      {
+        stack.push(std::mem::replace(inner, Expr::Var(0)));
+      }
+    };
+    match self {
+      Self::Prj(_, _, a) => detach(a),
+      Self::App(a, b) | Self::Lam(_, a, b) | Self::All(_, _, a, b) => {
+        detach(a);
+        detach(b);
+      },
+      Self::Let(_, a, b, c) => {
+        detach(a);
+        detach(b);
+        detach(c);
+      },
+      Self::Sort(_)
+      | Self::Var(_)
+      | Self::Ref(..)
+      | Self::Rec(..)
+      | Self::Str(_)
+      | Self::Nat(_)
+      | Self::Share(_) => {},
+    }
+  }
+}
+
+/// Dropping an expression frees its uniquely owned descendants from an
+/// explicit stack, so the depth of an expression is bounded by memory, not
+/// by the thread's stack. A child that has other owners is only released.
+impl Drop for Expr {
+  fn drop(&mut self) {
+    let mut stack: Vec<Expr> = Vec::new();
+    self.detach_unique_children(&mut stack);
+    while let Some(mut e) = stack.pop() {
+      // Once its compound children are detached, dropping `e` frees only
+      // leaves and releases shared children: it does not recurse further.
+      e.detach_unique_children(&mut stack);
+    }
+  }
 }
 
 #[cfg(test)]
@@ -516,6 +570,38 @@ pub mod tests {
   #[quickcheck]
   fn prop_expr_roundtrip(e: ArbitraryExpr) -> bool {
     expr_roundtrip(&e.0)
+  }
+
+  /// Dropping a million-deep expression of every compound shape runs on a
+  /// 64 KiB stack; a shared subexpression survives the drop of one owner.
+  #[test]
+  fn deep_expressions_drop_without_recursion() {
+    let shared = Expr::app(Expr::var(7), Expr::sort(1));
+    let keep = shared.clone();
+    std::thread::Builder::new()
+      .stack_size(64 << 10)
+      .spawn(move || {
+        for shape in 0..5u64 {
+          let mut e = Expr::var(0);
+          for i in 0..1_000_000u64 {
+            let side =
+              if i == 500_000 { shared.clone() } else { Expr::var(i % 3) };
+            e = match shape {
+              0 => Expr::app(side, e),
+              1 => Expr::app(e, side),
+              2 => Expr::lam(side, e),
+              3 => Expr::let_(false, side, e, Expr::var(1)),
+              _ => Expr::prj(0, i % 2, e),
+            };
+          }
+          drop(e);
+        }
+      })
+      .unwrap()
+      .join()
+      .unwrap();
+    assert_eq!(Arc::strong_count(&keep), 1);
+    assert_eq!(*keep, Expr::App(Expr::var(7), Expr::sort(1)));
   }
 
   #[test]

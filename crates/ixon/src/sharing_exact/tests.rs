@@ -1933,6 +1933,39 @@ fn deep_inputs_are_handled_iteratively() {
   assert!(bytes.len() < put(&c).len());
 }
 
+/// Deep inputs normalize as bytes on a 1 MiB stack: the traversals use
+/// explicit stacks, and the decoded input and the outputs drop
+/// iteratively.
+#[test]
+fn deep_inputs_normalize_on_a_small_stack() {
+  std::thread::Builder::new()
+    .stack_size(1 << 20)
+    .spawn(|| {
+      let limits = ExactSharingLimits::default();
+      for shape in 0..2u64 {
+        let mut e = Expr::var(0);
+        for i in 0..100_000u64 {
+          e = if shape == 0 {
+            Expr::app(Expr::var(i % 2), e)
+          } else {
+            Expr::prj(0, i % 2, e)
+          };
+        }
+        let bytes = put(&axiom(e, 1));
+        let out =
+          normalize_constant_bytes_tiered(ShareLayout::TagN, &bytes, &limits)
+            .unwrap();
+        let again =
+          normalize_constant_bytes_tiered(ShareLayout::TagN, &out, &limits)
+            .unwrap();
+        assert_eq!(again, out);
+      }
+    })
+    .unwrap()
+    .join()
+    .unwrap();
+}
+
 #[test]
 fn candidate_terms_apply_r1_and_r2() {
   // T2 -> T2: Prop is one byte (R2), the root occurs once (R1).
