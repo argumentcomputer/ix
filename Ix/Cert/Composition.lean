@@ -22,8 +22,8 @@ reader, quotient Source's prepared stream), one per open obligation:
    the artifact publishes.
 4. `Obligation.PassValues`: a rewritten record (call sites, regenerated auxiliaries,
    image definitions) denotes what its renamed Source form denotes.
-5. `Obligation.ImageRules`: the ι steps of an imaged Source recursor hold of its image,
-   from the image computation-rule rows the checker verifies.
+5. `Obligation.ImageRules`: the value-level rules of an imaged Source recursor hold at the
+   compiled values, from the image computation-rule rows the checker verifies.
 6. `Obligation.CliqueRows`: a transported clique member denotes its Source value, by its
    row.
 7. Locality: `Obligation.ReorderAccepts` (a closed reordering of an accepted stream is
@@ -32,11 +32,12 @@ reader, quotient Source's prepared stream), one per open obligation:
    `Obligation.SourceRestricts` (an unaffected constant lies in an accepted closure that
    avoids the changed set), `Obligation.RootRestricts` (a seed of an accepted closure has
    an accepted closure).
-8. `Obligation.Assembly`: per-constant and per-step agreement give one Source model with
-   the laws.
-9. The laws: `Obligation.UnchangedRules` (a renamed environment's strong model gives the
-   Source laws) and `Obligation.RuleCorrespondence` (the Source laws' steps, renamed,
-   hold in the strong model, imaged recursors aside).
+8. `Obligation.Assembly`: per-constant agreement and the laws at the compiled values give
+   one Source model with the laws.
+9. The laws, at the level of values (`Ix.Cert.SourceLaws`): `Obligation.UnchangedRules` (a
+   renamed environment's strong model gives the Source laws) and
+   `Obligation.RuleCorrespondence` (the Source laws of recursors that are not imaged, and
+   the capability laws, hold at the compiled values).
 
 **The unchanged-closure case** (`compileCorrect_unchanged`) uses obligations 1, 2
 (streams and keys), 3, 7 (reordering and evidence) and `UnchangedRules`, with the
@@ -118,27 +119,21 @@ def ConstantAgrees {V : Type w} [SetTheory V] {envA : Env .anon} (M : Ix.Kernel.
     ∀ cv v h, c = .defnInfo cv v h →
       ∃ cv' v' h', c' = .defnInfo cv' v' h' ∧ DenoteSame M.model.cval envA (v.mapKeys f) v'
 
-/-- **The recursor steps of `envQ` at the recursors `R`, renamed by `f`, hold in `M`.** -/
-def RecStepsAgree {V : Type w} [SetTheory V] {envA : Env .anon} (M : Ix.Kernel.Cached.StrongModel V envA)
+/-- **The value-level recursor rules of `envQ` at the recursors `R` hold at the values
+`M` gives the renamed keys** (`RecRuleLaw` at `Ix.Kernel.pullCval f M.model.cval`). -/
+def RecLawsAgree {V : Type w} [SetTheory V] {envA : Env .anon} (M : Ix.Kernel.Cached.StrongModel V envA)
     (f : Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon) (envQ : Env .source)
     (R : Ix.Kernel.Key .source → Prop) : Prop :=
   ∀ (c : Ix.Kernel.Key .source) (cv : Ix.Kernel.ConstantVal .source) (mI rP : Nat)
     (rules : List (Ix.Kernel.RecRule .source)),
     envQ.find? c = some (.recInfo cv mI rP rules) → R c → ∀ rl ∈ rules, rl.fire ≠ .inert →
-      ∀ e e', IotaStep envQ c cv mI rP rules rl e e' →
-        DenoteAlike M.model.cval envA (e.mapKeys f) (e'.mapKeys f)
+      RecRuleLaw (Ix.Kernel.pullCval f M.model.cval) envQ c cv mI rP rl
 
-/-- **The capability steps of `envQ`, renamed by `f`, hold in `M`.** -/
-def CapStepsAgree {V : Type w} [SetTheory V] {envA : Env .anon} (M : Ix.Kernel.Cached.StrongModel V envA)
+/-- **The value-level capability laws of `envQ` hold at the values `M` gives the renamed
+keys.** -/
+def CapLawsAgree {V : Type w} [SetTheory V] {envA : Env .anon} (M : Ix.Kernel.Cached.StrongModel V envA)
     (f : Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon) (envQ : Env .source) : Prop :=
-  (∀ (T : Ix.Kernel.Key .source) (cvT : Ix.Kernel.ConstantVal .source) (caps : Ix.Kernel.IndCaps .source),
-    envQ.find? T = some (.indInfo cvT caps) → ∀ a b, StructEtaStep envQ T cvT caps a b →
-      DenoteAlike M.model.cval envA (a.mapKeys f) (b.mapKeys f)) ∧
-  (∀ (T : Ix.Kernel.Key .source) (cvT : Ix.Kernel.ConstantVal .source) (caps : Ix.Kernel.IndCaps .source),
-    envQ.find? T = some (.indInfo cvT caps) → ∀ a b, StructUnitStep envQ T cvT caps a b →
-      DenoteAlike M.model.cval envA (a.mapKeys f) (b.mapKeys f)) ∧
-  (∀ (sn : Ix.Kernel.Key .source) (i : Nat) (e e' : Ix.Kernel.Expr .source), ProjStep envQ sn i e e' →
-    DenoteAlike M.model.cval envA (e.mapKeys f) (e'.mapKeys f))
+  CapabilityLaws (Ix.Kernel.pullCval f M.model.cval) envQ
 
 /-- `c` is the representative of the name `n` of the closure `sub`. -/
 def RepOf (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (sub : Ix.Environment)
@@ -297,8 +292,10 @@ def PassValues : Prop :=
     ∀ c ∈ envQ.consts, RewrittenConstant env ixe sub t c → ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c
 
 /-- **(5) Image rows.** In every strong model of an accepted compiled closure whose changed
-records (the image computation-rule rows among them) passed validation, the ι steps of
-every imaged Source recursor, renamed, hold. -/
+records (the image computation-rule rows among them) passed validation, every fired rule of
+every imaged Source recursor holds at the level of values (`RecRuleLaw`), at the values the
+strong model gives the renamed keys. This is what the rows must give: for each rule, its
+equation at constructor values of fitting arguments. -/
 def ImageRules : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source)
@@ -309,7 +306,7 @@ def ImageRules : Prop :=
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA →
     Ix.RoleEvidence.committedBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
-    RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (ImageRecursor env ixe sub t)
+    RecLawsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (ImageRecursor env ixe sub t)
 
 /-- **(6) Clique rows.** In every strong model of an accepted compiled closure whose
 changed records (the clique rows among them) passed validation, every constant of quotient
@@ -389,20 +386,21 @@ def RootRestricts : Prop :=
 
 /-- **(8) Assembly.** For an accepted quotient Source environment and a strong model of the
 compiled environment: if every input-keyed constant agrees under the renaming, and the
-recursor and capability steps, renamed, hold, then one Source model with the laws gives
-every input key its renamed key's value. -/
+value-level recursor and capability laws hold at the values the strong model gives the
+renamed keys, then one Source model with the laws gives every input key its renamed key's
+value. -/
 def Assembly : Prop :=
   ∀ (V : Type w) [SetTheory V] (envQ : Env .source) (envA : Env .anon)
     (M : Ix.Kernel.Cached.StrongModel V envA) (f : Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon),
     (∃ ev ds, Ix.Kernel.Cached.AcceptsRef .verified ev ds envQ) →
     (∀ c ∈ envQ.consts, InputKey c.name → ConstantAgrees M f c) →
-    RecStepsAgree M f envQ (fun _ => True) → CapStepsAgree M f envQ →
+    RecLawsAgree M f envQ (fun _ => True) → CapLawsAgree M f envQ →
     ∃ N : LawModel V envQ, ∀ k, InputKey k → ∀ φ, N.cval k φ = M.model.cval (k.map f) φ
 
 /-- **(9) The Source laws of a renamed environment.** A strong model of an environment
-that installs the constants of a renaming of `envQ` gives `envQ`'s laws at the pulled-back
-values: the recursor rules through the strong model's own (`StrongModel.rec_rule`) and the
-rule correspondence under the renaming, and likewise the capability laws. -/
+that installs the constants of a renaming of `envQ` gives `envQ`'s value-level laws at the
+pulled-back values: the recursor rules from the strong model's own (`StrongModel.rec_rule`),
+the capability laws from its capability and projection-tower laws. -/
 def UnchangedRules : Prop :=
   ∀ (V : Type w) [SetTheory V] (P : Ix.Kernel.Mode.Id .source → Prop)
     (f : Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon) (envQ : Env .source) (envR envA : Env .anon)
@@ -412,8 +410,9 @@ def UnchangedRules : Prop :=
         CapabilityLaws (Ix.Kernel.pullCval f M.model.cval) envQ
 
 /-- **(9) Rule correspondence under the reader.** In every strong model of an accepted
-compiled closure whose changed records passed validation, the ι steps of every Source
-recursor that is not imaged, and every capability step, renamed, hold. -/
+compiled closure whose changed records passed validation, every fired rule of every Source
+recursor that is not imaged, and every capability law, holds at the level of values at the
+values the strong model gives the renamed keys. -/
 def RuleCorrespondence : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source)
@@ -424,8 +423,8 @@ def RuleCorrespondence : Prop :=
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA →
     Ix.RoleEvidence.committedBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
-    RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (fun c => ¬ ImageRecursor env ixe sub t c) ∧
-      CapStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ
+    RecLawsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (fun c => ¬ ImageRecursor env ixe sub t c) ∧
+      CapLawsAgree M (Ix.LeanIngress.evAddr ixe b) envQ
 
 end Obligation
 
@@ -680,11 +679,11 @@ theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obliga
     obtain ⟨recs, caps⟩ := h9 env roots sub ixe failures t envQ binding limits order envA b V M P hbind acc hb
       kinds
     have images := h5 env roots sub ixe failures t envQ binding limits order envA b V M P hbind acc hb kinds
-    have allRecs : RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (fun _ => True) := by
-      intro c cv mI rP rules hfind _ rl hrl hfire e e' hstep
+    have allRecs : RecLawsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (fun _ => True) := by
+      intro c cv mI rP rules hfind _ rl hrl hfire
       by_cases hi : ImageRecursor env ixe sub t c
-      · exact images c cv mI rP rules hfind hi rl hrl hfire e e' hstep
-      · exact recs c cv mI rP rules hfind hi rl hrl hfire e e' hstep
+      · exact images c cv mI rP rules hfind hi rl hrl hfire
+      · exact recs c cv mI rP rules hfind hi rl hrl hfire
     obtain ⟨N, hN⟩ := h8 V envQ envA M (Ix.LeanIngress.evAddr ixe b) ⟨_, _, run⟩ agrees allRecs caps
     refine ⟨N, fun c hc e he φ ρ => ?_⟩
     have hin := inputKey_of_reading he

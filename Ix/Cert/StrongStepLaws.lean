@@ -1,11 +1,12 @@
 import Ix.Cert.Composition
+import Ix.Cert.StepLaws
 import Ix.Cert.ConversionValues
 
-/-! # Strong models satisfy the Source laws
+/-! # Strong models satisfy the step laws
 
 A strong model of an environment (`Ix.Kernel.Cached.StrongModel`) satisfies the
-recursor rules and the capability laws of that environment (`RecRuleLaws`,
-`CapabilityLaws`) at its own public values. The proof has four steps:
+step-level recursor rules and capability laws of that environment
+(`StepRecRuleLaws`, `StepCapabilityLaws`) at its own public values. The proof has four steps:
 
 * **Each step is a rules-tier derivation.** An ι or projection step is a
   reduction (`Rules.Red.iota`, `Rules.Red.proj`). A structure-η or unit-like step
@@ -20,9 +21,9 @@ recursor rules and the capability laws of that environment (`RecRuleLaws`,
   So both sides denote, and they denote the same set (`DenoteSame`).
 
 The renamed form used for the unchanged-closure case is in
-`Ix.Cert.UnchangedRules`. -/
+`Ix.Cert.UnchangedStepLaws`. -/
 
-namespace Ix.Cert.StrongLaws
+namespace Ix.Cert.StrongStepLaws
 
 open Ix.Kernel Ix.Kernel.Rules Ix.Kernel.Semantics Ix.Kernel.Model
 open Ix.Kernel.Model.Rules (Frame Graded)
@@ -158,14 +159,14 @@ theorem _root_.Ix.Cert.StructUnitStep.defEq {T : Key md} {cvT : Ix.Kernel.Consta
 
 /-! ## The laws -/
 
-/-- **A strong model satisfies the recursor rules** of its environment. -/
-theorem recRuleLaws (M : Cached.StrongModel V env) : RecRuleLaws M.model.cval env :=
+/-- **A strong model satisfies the step-level recursor rules** of its environment. -/
+theorem recRuleLaws (M : Cached.StrongModel V env) : StepRecRuleLaws M.model.cval env :=
   fun _ _ _ _ _ hfind _ _ _ _ _ h => (red_denoteSame M h.1 (h.red hfind)).denoteAlike
 
-/-- **A strong model satisfies the capability laws** of its environment. -/
-theorem capabilityLaws (M : Cached.StrongModel V env) : CapabilityLaws M.model.cval env :=
+/-- **A strong model satisfies the step-level capability laws** of its environment. -/
+theorem capabilityLaws (M : Cached.StrongModel V env) : StepCapabilityLaws M.model.cval env :=
   ⟨fun _ _ _ hT _ _ h => (defeq_denoteSame M h.1 h.2.1 (h.defEq hT)).denoteAlike,
     fun _ _ _ hT _ _ h => (defeq_denoteSame M h.1 h.2.1 (h.defEq hT)).denoteAlike,
     fun _ _ _ _ h => (red_denoteSame M h.1 h.red).denoteAlike⟩
 
-end Ix.Cert.StrongLaws
+end Ix.Cert.StrongStepLaws
