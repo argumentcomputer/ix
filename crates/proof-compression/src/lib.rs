@@ -1,7 +1,7 @@
 //! FRI and KZG proof compression for Ix.
 #[cfg(all(feature = "bn254", feature = "bls12-381"))]
 compile_error!(
-  "BN254 KZG requires --no-default-features --features bn254; the BLS12-381 feature cannot be combined with it"
+  "select one KZG curve: BN254 is the default; BLS12-381 needs --no-default-features --features bls12-381"
 );
 
 mod circuit_metadata;

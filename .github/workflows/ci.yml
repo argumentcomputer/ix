@@ -76,6 +76,15 @@ jobs:
       - name: Test Ix CLI
         if: github.event_name != 'push'
         run: lake test --wfail -- cli
+      # The default build is BN254; the bundled verifying keys and packets
+      # are BLS12-381, so the CLI's bundled-proof checks run in a BLS build.
+      - name: Test the BLS12-381 compression CLI
+        if: github.event_name != 'push'
+        env:
+          IX_KZG_CURVE: bls12-381
+        run: |
+          lake build ix compression-cli-tests
+          lake exe compression-cli-tests
       - name: Test Ixon v4 contracts and consumers
         if: github.event_name != 'push'
         run: |
@@ -92,9 +101,12 @@ jobs:
         with:
           go-version-file: tools/bls-plonk-wrapper/go.mod
           cache-dependency-path: tools/bls-plonk-wrapper/go.sum
-      - name: Test the CPU wrapper and authenticated Filecoin adapter
+      - name: Test the BN254 CPU wrapper
         working-directory: tools/bls-plonk-wrapper
         run: go test ./...
+      - name: Test the BLS12-381 CPU wrapper and authenticated Filecoin adapter
+        working-directory: tools/bls-plonk-wrapper
+        run: go test -tags bls12381 ./...
       - name: Check Go formatting
         working-directory: tools/bls-plonk-wrapper
         run: test -z "$(gofmt -l .)"
@@ -140,39 +152,10 @@ jobs:
         run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile
       - name: Tests
         run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
-      - name: Check BN254 CPU KZG
-        run: cargo clippy --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel,plonk --lib --tests --example recursive_size --example kzg_ignition_import -- -D warnings
-      - name: Test BN254 CPU KZG
-        run: |
-          cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
-            --test bn254_kzg --test kzg_transcripts --test kzg_sharding --test kzg_streaming \
-            ${{ github.event_name == 'push' && '--no-run' || '' }}
-          cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
-            --lib kzg:: ${{ github.event_name == 'push' && '--no-run' || '' }} -- \
-            --skip development_powers_match_naive_at_chunk_boundaries \
-            --skip disk_coefficients_match_resident_and_detect_changes \
-            --skip chunked_commitment_matches_native_msm_with_tail \
-            --skip field_stream_matches_arkworks_across_blocks
-      - name: Test BN254 recursive verifier
-        run: |
-          for recursive_filter in native_field:: native_curve:: native_transcript:: native_msm:: pairing:: \
-            native_verifier::parallel_prefix_tests:: \
-            native_verifier::reuse_tests::recursive_witness_rejects_tampering_without_native_preverification \
-            native_verifier::reuse_tests::recursive_vk_rejects_identity_anchors_and_oversized_layout_caps; do
-            cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
-              --lib "recursive::$recursive_filter" ${{ github.event_name == 'push' && '--no-run' || '' }}
-          done
-      - name: Test BN254 worker and portable verifying keys
-        run: |
-          cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
-            --test worker_tracing ${{ github.event_name == 'push' && '--no-run' || '' }}
-          for pipeline_filter in driver:: tests:: setup:: stages::codec:: stages::verification:: stages::wrap:: \
-            verifier::bn254_tests:: wrap::outer::tests::fused_vks_prove_and_portable_verifiers_round_trip; do
-            cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
-              --lib "pipeline::$pipeline_filter" ${{ github.event_name == 'push' && '--no-run' || '' }}
-          done
-      - name: Test BN254 PLONK catalog
-        run: "cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel,plonk --lib pipeline::plonk:: ${{ github.event_name == 'push' && '--no-run' || '' }}"
+      - name: Check BLS12-381 KZG
+        run: cargo clippy --release --locked -p ix-proof-compression --no-default-features --features bls12-381,parallel,plonk --all-targets -- -D warnings
+      - name: Test BLS12-381 KZG
+        run: cargo nextest run --release --locked --profile ci -p ix-proof-compression --no-default-features --features bls12-381,parallel,plonk ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version
         if: github.event_name != 'push'
         run: |
@@ -234,7 +217,9 @@ jobs:
           auto-config: false
           use-github-cache: false
       - name: Compile CUDA Rust targets
-        run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda
+        run: |
+          cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda
+          cargo check --release --locked -p ix-proof-compression --all-targets --no-default-features --features bls12-381,parallel,plonk,cuda
       - name: Check CPU runtime linkage without a CUDA compiler
         run: IX_CUDA=0 IX_CUDA_TRACE_CODEGEN=0 NVCC=/nonexistent/nvcc lake build ix_cuda_runtime
       - name: Link CUDA-enabled Lean executables

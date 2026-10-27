@@ -60,12 +60,13 @@ name = "kzg_ignition_import"
 required-features = ["bn254"]
 
 [features]
-bls12-381 = []
-# BN254 accepts admitted Ignition or development setup; CUDA support is experimental.
-# Production parameters and terminal proof backends require separate vks.
+# The KZG curve. BN254 is the default; BLS12-381 builds with
+# `--no-default-features --features bls12-381,...`. Enabling both is a
+# compile error.
 bn254 = ["dep:ark-bn254"]
+bls12-381 = []
 plonk = []
-default = ["parallel", "bls12-381", "plonk"]
+default = ["parallel", "bn254", "plonk"]
 # GPU proving: multi-stark's Goldilocks backend for FRI compression and the
 # KZG kernels here. Needs the CUDA toolkit at build time and a visible GPU
 # at runtime; CPU-only builds neither compile sppark nor link CUDA.

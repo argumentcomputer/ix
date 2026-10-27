@@ -19,11 +19,15 @@ all three. `nix build .#ix` packages them, and `nix build .#plonk-wrapper` build
 and tests only this helper. Runtime proving and verification do not need Go or
 Cargo installed.
 
-`IX_KZG_CURVE=bn254 lake build ix` selects BN254 for the CLI, compression
-worker and `ix-bn254-plonk-wrapper` helper. Set the same selection for
-`lake run install`. Both helpers share this module; the `bn254` Go build tag
-selects BN254, and the default build selects BLS12-381. The standalone Nix
-helper package is `.#plonk-wrapper-bn254`; the default `.#ix` remains BLS.
+`lake build ix` selects BN254 for the CLI, compression worker and
+`ix-bn254-plonk-wrapper` helper; `IX_KZG_CURVE=bls12-381` selects BLS12-381
+and `ix-bls-plonk-wrapper`. Set the same selection for `lake run install`.
+Both helpers share this module; the default Go build selects BN254 and the
+`bls12381` build tag selects BLS12-381. The standalone Nix helper packages
+are `.#plonk-wrapper` (BN254) and `.#plonk-wrapper-bls12-381`; `.#ix` is
+BN254.
+
+A BLS12-381 build proves under the Filecoin powers of tau:
 
 ```sh
 export IX_KZG_FILECOIN_CACHE=/path/to/filecoin-prefix-2p27.bin
@@ -61,7 +65,7 @@ export IX_PLONK_BLST_SOURCE=/path/to/blst-0.3.16/blst
 export CUDA_HOME=/usr/local/cuda
 export NVCC="$CUDA_HOME/bin/nvcc"
 export IX_PLONK_CUDA_ARCHS=120
-IX_KZG_CURVE=bn254 IX_PLONK_CUDA=1 lake build ix_plonk_wrapper
+IX_PLONK_CUDA=1 lake build ix_plonk_wrapper
 ```
 
 The standalone equivalent is:
@@ -79,7 +83,7 @@ to private build copies, and records executable/library hashes. It leaves
 in `../lib` relative
 to the helper. Keep both artifacts together when installing; `lake run install`
 does this when `IX_PLONK_CUDA=1`. The optional Nix package is
-`.#plonk-wrapper-bn254-cuda`, targeting SM120. CPU packages remain independent of
+`.#plonk-wrapper-cuda`, targeting SM120. CPU packages remain independent of
 the CUDA toolkit.
 
 Select the runtime backend separately from building it:
@@ -239,7 +243,8 @@ The import command requires an exact domain match. For the current `2^24`
 circuit, `prepare` computes and caches a matching basis from the authenticated
 monomial powers unless an independently validated matching cache is present.
 
-Ordinary BN254 tests run with `go test -tags bn254 ./...`. They cover the real
+Ordinary BN254 tests run with `go test ./...`; BLS12-381 tests with
+`go test -tags bls12381 ./...`. They cover the real
 Init verifier witness and tampering, Arkworks-compatible transcript encodings,
 exceptional MSM inputs, small PLONK proofs, parameter caches and rejection of
 incorrect imported bases and malformed SP1 key containers.
@@ -274,7 +279,7 @@ BN254 also selects classic GLV, reducing its actual Init wrapper to
 batching measurement variant reaches 13,810,186 rows with classic GLV; batching
 with BN254's previous multiplication path reaches 17,530,148 rows. Batching
 is experimental and is not selected by the normal helper. Reproduce sizing
-with `IX_PLONK_SIZE=1 go test -tags bn254 -run TestOptimizationSizing -v`;
+with `IX_PLONK_SIZE=1 go test -run TestOptimizationSizing -v`;
 `IX_PLONK_SIZE_VK` selects a verifying key and `IX_PLONK_SIZE_REPORT` saves JSON.
 `IX_PLONK_SIZE_VARIANT` can select `baseline`, `batched`, `classic-glv` or
 `batched-classic-glv`. These are compilation results, separate from the

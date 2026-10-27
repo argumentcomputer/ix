@@ -60,6 +60,18 @@ public def run : IO Unit := do
       throw <| IO.userError "external verifier import remains available"
 
     let fixtures : System.FilePath := "crates/proof-compression/tests/fixtures/aggregate-kzg"
+    let curve ← Compression.curve
+    if curve != "bls12-381" then
+      -- The bundled packets are BLS12-381; another curve's build must refuse them.
+      let expected ← IO.ofExcept (Ix.Claim.de (← IO.FS.readBinFile (fixtures / "filecoin-claim.bin")))
+      let packet ← IO.FS.readBinFile (fixtures / "filecoin-v5-packet.bin")
+      let proof := ByteArray.mk #[73, 88, 67, 77, 80, 0, 0, 4] ++ packet
+      let blsAddr ← putProof home (Ixon.Proof.ser { claim := expected, proof })
+      rejects home #["verify", toString blsAddr] "unsupported compressed proof version"
+      rejects home #["verify", toString blsAddr, "--dev-srs"] "unsupported compressed proof version"
+      IO.println s!"compression CLI ({curve}): claim binding and BLS12-381 packet rejection passed"
+      return
+    let fixtures : System.FilePath := "crates/proof-compression/tests/fixtures/aggregate-kzg"
     let expected ← IO.ofExcept (Ix.Claim.de (← IO.FS.readBinFile (fixtures / "filecoin-claim.bin")))
     let packet ← IO.FS.readBinFile (fixtures / "filecoin-v5-packet.bin")
     let tag := ByteArray.mk #[73, 88, 67, 77, 80, 0, 0, 4]

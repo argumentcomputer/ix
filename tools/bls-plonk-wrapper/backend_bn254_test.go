@@ -1,4 +1,4 @@
-//go:build bn254
+//go:build !bls12381
 
 package main
 

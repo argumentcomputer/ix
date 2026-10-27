@@ -200,7 +200,7 @@ def build_helper(args, output, build):
     command = [args.go, "test", "-c"] if args.test_binary else [args.go, "build"]
     temporary_output = output.with_suffix(output.suffix + ".tmp")
     command += ["-buildvcs=false", "-trimpath", "-mod=readonly",
-                "-modfile=" + str(modfile), "-tags", "bn254,cuda",
+                "-modfile=" + str(modfile), "-tags", "cuda",
                 "-o", str(temporary_output), args.package]
     run(command, cwd=HERE, env=environment)
     temporary_output.replace(output)
