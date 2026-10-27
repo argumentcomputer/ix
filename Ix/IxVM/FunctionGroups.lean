@@ -45,13 +45,8 @@ def functionGroups : Array (String × Array String) := #[
     "relaxed_u64_succ",
     "quot_kind_tag",
     "klimbs_mod",
-    "str_addr",
     "convert_axiom",
-    "convert_quotient",
-    "quot_ctor_addr",
-    "quot_lift_addr_iota",
-    "quot_ind_addr",
-    "quot_type_addr"
+    "convert_quotient"
   ]),
   ("ixvm_group_03", #[
     "u64_add",
@@ -165,8 +160,6 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_14", #[
     "put_quot_kind",
     "pack_def_kind_safety",
-    "char_of_nat_addr",
-    "char_type_addr",
     "byte_array_empty_addr",
     "utf8_last_codepoint",
     "utf8_cont",
@@ -359,8 +352,7 @@ def functionGroups : Array (String × Array String) := #[
     "bitvec_prep_spine",
     "quot_extract_arg",
     "struct_block_member_addrs",
-    "try_eta_expand",
-    "check_eq_type"
+    "try_eta_expand"
   ]),
   ("ixvm_group_33", #[
     "get_constructor_list",
@@ -459,17 +451,10 @@ def functionGroups : Array (String × Array String) := #[
     "dec_finish"
   ]),
   ("ixvm_group_43", #[
-    "nat_zero_addr",
-    "nat_succ_addr_iota",
-    "nat_pred_addr",
-    "nat_sub_addr",
-    "nat_xor_addr",
-    "nat_shift_right_addr",
     "reduce_bool_addr",
     "reduce_nat_addr",
     "string_utf8_byte_size_addr",
     "string_append_addr",
-    "string_of_list_addr",
     "string_back_addr",
     "string_legacy_back_addr",
     "string_to_byte_array_addr",
@@ -478,17 +463,12 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_44", #[
     "int_of_nat_addr",
     "int_neg_succ_addr_dec",
-    "bool_true_addr",
-    "bool_false_addr",
     "bit_vec_of_nat_addr",
     "decidable_is_true_addr_dec",
     "decidable_is_false_addr_dec",
     "nat_le_of_ble_eq_true_addr_dec",
     "nat_eq_of_beq_eq_true_addr_dec",
-    "nat_ne_of_beq_eq_false_addr_dec",
-    "bool_type_addr_dec",
-    "eq_refl_addr_dec",
-    "eq_type_addr"
+    "nat_ne_of_beq_eq_false_addr_dec"
   ]),
   ("ixvm_group_45", #[
     "int_add_addr",
@@ -508,18 +488,6 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("ixvm_group_46", #[
     "int_sub_addr",
-    "nat_add_addr",
-    "nat_mul_addr",
-    "nat_pow_addr",
-    "nat_gcd_addr",
-    "nat_mod_addr",
-    "nat_div_addr",
-    "nat_land_addr",
-    "nat_lor_addr",
-    "nat_shift_left_addr",
-    "nat_beq_addr",
-    "nat_ble_addr",
-    "nat_addr_io",
     "nat_dec_le_addr_dec",
     "nat_dec_eq_addr_dec",
     "nat_dec_lt_addr_dec"
@@ -586,8 +554,6 @@ def functionGroups : Array (String × Array String) := #[
     "try_dec_dispatch"
   ]),
   ("ixvm_group_54", #[
-    "list_nil_addr",
-    "list_cons_addr",
     "nat_not_le_of_not_ble_eq_true_addr_dec"
   ]),
   ("ixvm_group_55", #[
@@ -647,7 +613,6 @@ def functionGroups : Array (String × Array String) := #[
     "apply_n_projs",
     "se_peel_tol",
     "se_mentions",
-    "count_foralls_at_least",
     "check_large_prop_ctor"
   ]),
   ("ixvm_group_62", #[

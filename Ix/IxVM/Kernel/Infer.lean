@@ -65,11 +65,11 @@ def infer := ⟦
   -- Context-trimmed memo wrapper (mirror Rust `infer_key`): key inference on
   -- the suffix of `types` reachable from `e`'s loose-bvar range, so a closed
   -- subterm (`lbr == 0`) shares its inferred type across every binder depth.
-  fn k_infer(e: KExpr, types: List‹KExpr›) -> KExpr {
+  fn k_infer(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KExpr {
     let base = expr_lbr(e);
     match base {
-      0 => k_infer_core(e, store(ListNode.Nil)),
-      _ => k_infer_rebase(e, types, base),
+      0 => k_infer_core(rc, e, store(ListNode.Nil)),
+      _ => k_infer_rebase(rc, e, types, base),
     }
   }
 
@@ -89,18 +89,18 @@ def infer := ⟦
   -- unreferenced frames). Unlike def-eq, which returns a bit,
   -- inference returns a TYPE valid in the context it ran in — so the
   -- result is lifted back by g.
-  fn k_infer_rebase(e: KExpr, types: List‹KExpr›, base: G) -> KExpr {
+  fn k_infer_rebase(rc: RoleCtx, e: KExpr, types: List‹KExpr›, base: G) -> KExpr {
     let g = lbr_min(expr_glb(e, 0), list_length(types));
     match g {
-      0 => k_infer_core(e, ctx_trim(types, base)),
+      0 => k_infer_core(rc, e, ctx_trim(types, base)),
       _ =>
-        let t = k_infer_core(expr_lower(e, g, 0),
+        let t = k_infer_core(rc, expr_lower(e, g, 0),
                     ctx_trim(list_drop(types, g), base - g));
         expr_lift(t, g, 0),
     }
   }
 
-  fn k_infer_core(e: KExpr, types: List‹KExpr›) -> KExpr {
+  fn k_infer_core(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => @types_lookup(types, i),
 
@@ -119,28 +119,28 @@ def infer := ⟦
       KExprNode.App(_, _) =>
         match collect_spine(e) {
           (head, args) =>
-            let head_ty = k_infer(head, types);
-            k_infer_app_spine_loop(head_ty, args, store(ListNode.Nil), types),
+            let head_ty = k_infer(rc, head, types);
+            k_infer_app_spine_loop(rc, head_ty, args, store(ListNode.Nil), types),
         },
 
       KExprNode.Lam(ty, body) =>
-        k_ensure_sort(ty, types);
+        k_ensure_sort(rc, ty, types);
         let types2 = store(ListNode.Cons(ty, types));
-        let body_ty = k_infer(body, types2);
+        let body_ty = k_infer(rc, body, types2);
         store(KExprNode.Forall(ty, body_ty)),
 
       KExprNode.Forall(ty, body) =>
-        let u1 = k_ensure_sort(ty, types);
+        let u1 = k_ensure_sort(rc, ty, types);
         let types2 = store(ListNode.Cons(ty, types));
-        let u2 = k_ensure_sort(body, types2);
+        let u2 = k_ensure_sort(rc, body, types2);
         store(KExprNode.Srt(level_imax(u1, u2))),
 
-      KExprNode.Let(ty, val, body) => k_infer_let_start(ty, val, body, types),
+      KExprNode.Let(ty, val, body) => k_infer_let_start(rc, ty, val, body, types),
 
       --  handlers:
-      KExprNode.Lit(lit) => k_infer_lit(lit),
+      KExprNode.Lit(lit) => k_infer_lit(rc, lit),
       KExprNode.Proj(struct_addr, fidx, e1) =>
-        k_infer_proj(struct_addr, fidx, e1, types),
+        k_infer_proj(rc, struct_addr, fidx, e1, types),
     }
   }
 
@@ -156,13 +156,13 @@ def infer := ⟦
   }
   type InferLetEnv = &InferLetEnvNode
 
-  fn k_infer_let_start(ty: KExpr, val: KExpr, body: KExpr,
+  fn k_infer_let_start(rc: RoleCtx, ty: KExpr, val: KExpr, body: KExpr,
                             types: List‹KExpr›) -> KExpr {
-    k_ensure_sort(ty, types);
-    k_check(val, ty, types);
+    k_ensure_sort(rc, ty, types);
+    k_check(rc, val, ty, types);
     let depth = list_length(types);
     let env = store(InferLetEnvNode.Id(types, depth));
-    k_infer_let_env(body, store(InferLetEnvNode.Let(ty, val, env, depth)), types, depth)
+    k_infer_let_env(rc, body, store(InferLetEnvNode.Let(ty, val, env, depth)), types, depth)
   }
 
   fn infer_let_var_type(env: InferLetEnv, i: G,
@@ -228,21 +228,21 @@ def infer := ⟦
     }
   }
 
-  fn k_infer_let_env(e: KExpr, env: InferLetEnv, types: List‹KExpr›, depth: G) -> KExpr {
+  fn k_infer_let_env(rc: RoleCtx, e: KExpr, env: InferLetEnv, types: List‹KExpr›, depth: G) -> KExpr {
     match expr_lbr(e) {
-      0 => k_infer(e, store(ListNode.Nil)),
+      0 => k_infer(rc, e, store(ListNode.Nil)),
       _ => match load(e) {
         -- Leave introductions delayed. Lowering a pure-let prefix can copy
         -- nested continuations without shrinking the real type context, so
         -- normalize applications only when a real local can be removed.
         KExprNode.App(_, _) => match infer_let_local_cutoff(env) {
-          0 => k_infer_let_env_core(e, env, types, depth),
+          0 => k_infer_let_env_core(rc, e, env, types, depth),
           cutoff => match has_bvar_in_range(e, 0, cutoff) {
-            1 => k_infer_let_env_core(e, env, types, depth),
-            0 => k_infer_let_env_rebase(e, env, types, depth),
+            1 => k_infer_let_env_core(rc, e, env, types, depth),
+            0 => k_infer_let_env_rebase(rc, e, env, types, depth),
           },
         },
-        _ => k_infer_let_env_core(e, env, types, depth),
+        _ => k_infer_let_env_core(rc, e, env, types, depth),
       },
     }
   }
@@ -262,12 +262,12 @@ def infer := ⟦
     }
   }
 
-  fn k_infer_let_env_rebase(e: KExpr, env: InferLetEnv,
+  fn k_infer_let_env_rebase(rc: RoleCtx, e: KExpr, env: InferLetEnv,
                           types: List‹KExpr›, depth: G) -> KExpr {
     let (outer, removed, locals) = infer_let_drop_unused(env, expr_glb(e, 0));
     let subject = expr_lower(e, removed, 0);
     let context = list_drop(types, locals);
-    let ty = k_infer_let_env_core(subject, outer, context, depth - locals);
+    let ty = k_infer_let_env_core(rc, subject, outer, context, depth - locals);
     expr_lift(ty, locals, 0)
   }
 
@@ -293,41 +293,41 @@ def infer := ⟦
     }
   }
 
-  fn k_infer_let_env_core(e: KExpr, env: InferLetEnv,
+  fn k_infer_let_env_core(rc: RoleCtx, e: KExpr, env: InferLetEnv,
                         types: List‹KExpr›, depth: G) -> KExpr {
     match load(e) {
         KExprNode.BVar(i) => @infer_let_var_type(env, i, types, depth),
         KExprNode.Lam(ty, body) =>
           let dom = infer_let_materialize(ty, env, depth, 0);
-          k_ensure_sort(dom, types);
+          k_ensure_sort(rc, dom, types);
           let inner_types = store(ListNode.Cons(dom, types));
           let inner_env = store(InferLetEnvNode.Local(dom, depth + 1, env));
-          let body_ty = k_infer_let_env(body, inner_env, inner_types, depth + 1);
+          let body_ty = k_infer_let_env(rc, body, inner_env, inner_types, depth + 1);
           store(KExprNode.Forall(dom, body_ty)),
         KExprNode.Forall(ty, body) =>
           let dom = infer_let_materialize(ty, env, depth, 0);
-          let u1 = k_ensure_sort(dom, types);
+          let u1 = k_ensure_sort(rc, dom, types);
           let inner_types = store(ListNode.Cons(dom, types));
           let inner_env = store(InferLetEnvNode.Local(dom, depth + 1, env));
-          let bt = k_infer_let_env(body, inner_env, inner_types, depth + 1);
-          let KExprNode.Srt(u2) = load(whnf(bt, inner_types));
+          let bt = k_infer_let_env(rc, body, inner_env, inner_types, depth + 1);
+          let KExprNode.Srt(u2) = load(whnf(rc, bt, inner_types));
           store(KExprNode.Srt(level_imax(u1, u2))),
         KExprNode.Let(ty, val, body) =>
           let dom = infer_let_materialize(ty, env, depth, 0);
-          k_ensure_sort(dom, types);
-          let val_ty = k_infer_let_env(val, env, types, depth);
-          assert_eq!(k_is_def_eq(val_ty, dom, types), 1, "delayed let value type mismatch");
-          k_infer_let_env(body, store(InferLetEnvNode.Let(dom, val, env, depth)), types, depth),
+          k_ensure_sort(rc, dom, types);
+          let val_ty = k_infer_let_env(rc, val, env, types, depth);
+          assert_eq!(k_is_def_eq(rc, val_ty, dom, types), 1, "delayed let value type mismatch");
+          k_infer_let_env(rc, body, store(InferLetEnvNode.Let(dom, val, env, depth)), types, depth),
         KExprNode.App(f, a) =>
-          let ft = k_infer_let_env(f, env, types, depth);
-          let KExprNode.Forall(dom, cod) = load(whnf(ft, types));
-          let arg_ty = k_infer_let_env(a, env, types, depth);
-          assert_eq!(k_is_def_eq(arg_ty, dom, types), 1, "delayed application type mismatch");
+          let ft = k_infer_let_env(rc, f, env, types, depth);
+          let KExprNode.Forall(dom, cod) = load(whnf(rc, ft, types));
+          let arg_ty = k_infer_let_env(rc, a, env, types, depth);
+          assert_eq!(k_is_def_eq(rc, arg_ty, dom, types), 1, "delayed application type mismatch");
           match has_bvar_in_range(cod, 0, 1) {
             0 => expr_lower(cod, 1, 1),
             _ => expr_inst1(cod, infer_let_materialize(a, env, depth, 0), 0),
           },
-        _ => k_infer(infer_let_materialize(e, env, depth, 0), types),
+        _ => k_infer(rc, infer_let_materialize(e, env, depth, 0), types),
     }
   }
 
@@ -341,7 +341,7 @@ def infer := ⟦
   -- When `load(t)` isn't a Forall, materialise via whnf on the concretised
   -- t (= prior subs applied to original t). Post-whnf dom/cod are in the
   -- OUTER context, so we restart the descent with subs_rev = [a].
-  fn k_infer_app_spine_loop(t: KExpr, args: List‹KExpr›,
+  fn k_infer_app_spine_loop(rc: RoleCtx, t: KExpr, args: List‹KExpr›,
                                 subs_rev: List‹KExpr›,
                                 types: List‹KExpr›) -> KExpr {
     match load(args) {
@@ -357,46 +357,33 @@ def infer := ⟦
               0 => dom,
               _ => expr_inst_many(dom, subs_rev, 0),
             };
-            k_check(a, dom_subst, types);
-            k_infer_app_spine_loop(cod, rest,
+            k_check(rc, a, dom_subst, types);
+            k_infer_app_spine_loop(rc, cod, rest,
               store(ListNode.Cons(a, subs_rev)), types),
           _ =>
             let t_concrete = match list_length(subs_rev) {
               0 => t,
               _ => expr_inst_many(t, subs_rev, 0),
             };
-            let t_w = whnf(t_concrete, types);
+            let t_w = whnf(rc, t_concrete, types);
             match load(t_w) {
               KExprNode.Forall(dom, cod) =>
-                k_check(a, dom, types);
-                k_infer_app_spine_loop(cod, rest,
+                k_check(rc, a, dom, types);
+                k_infer_app_spine_loop(rc, cod, rest,
                   store(ListNode.Cons(a, store(ListNode.Nil))), types),
             },
         },
     }
   }
 
-  -- Canonical primitive addrs (Nat / String). Mirrors
-  -- Ix.IxVM.Kernel.Primitive::nat_addr / str_addr — content-hashes
-  -- of the primitive constants' Ixon serializations.
-  fn nat_addr() -> Addr {
-    store([0x35u8, 0xe1u8, 0xccu8, 0x80u8, 0x9fu8, 0x6fu8, 0x07u8, 0x65u8,
-     0x21u8, 0xa4u8, 0x3fu8, 0x85u8, 0x06u8, 0x8du8, 0x55u8, 0x92u8,
-     0x22u8, 0x04u8, 0x07u8, 0xc0u8, 0x53u8, 0x2bu8, 0x6au8, 0x08u8,
-     0x95u8, 0x2fu8, 0x40u8, 0xd8u8, 0x52u8, 0x3du8, 0x04u8, 0xbcu8])
-  }
-
-  fn str_addr() -> Addr {
-    store([0x22u8, 0x16u8, 0x25u8, 0xa0u8, 0x0eu8, 0xe2u8, 0xd6u8, 0xb9u8,
-     0x62u8, 0x97u8, 0xe3u8, 0x4du8, 0x7eu8, 0x05u8, 0xbfu8, 0x7eu8,
-     0x4fu8, 0xd3u8, 0x8du8, 0x8du8, 0x99u8, 0xd3u8, 0xe1u8, 0xd6u8,
-     0x4au8, 0x7cu8, 0xd2u8, 0xe0u8, 0x6cu8, 0xa0u8, 0x75u8, 0x2du8])
-  }
-
-  fn k_infer_lit(lit: KLiteral) -> KExpr {
+  -- A literal's type is the binding's `Nat` or `String`: typing a `Nat`
+  -- literal needs the `Nat` role, a string literal the `String` role, which
+  -- the claim then depends on (`role_used_implicitly`).
+  fn k_infer_lit(rc: RoleCtx, lit: KLiteral) -> KExpr {
     match lit {
-      KLiteral.Nat(_) => store(KExprNode.Const(nat_addr(), store(ListNode.Nil))),
-      KLiteral.Str(_) => store(KExprNode.Const(str_addr(), store(ListNode.Nil))),
+      KLiteral.Nat(_) => store(KExprNode.Const(role_addr(rc, role_nat()), store(ListNode.Nil))),
+      KLiteral.Str(_) =>
+        store(KExprNode.Const(role_used_implicitly(rc, role_string()), store(ListNode.Nil))),
     }
   }
 
@@ -420,10 +407,10 @@ def infer := ⟦
   -- for each preceding field. At target field, return its dom.
   -- 1 iff the inductive's type, after peeling params+indices, lands in
   -- Sort 0. Mirror is_inductive_prop (Infer.lean:493).
-  fn is_inductive_prop(ind_ty: KExpr, lvls: List‹KLevel›, n_skip: G,
+  fn is_inductive_prop(rc: RoleCtx, ind_ty: KExpr, lvls: List‹KLevel›, n_skip: G,
                             types: List‹KExpr›) -> G {
     let ind_ty_inst = expr_inst_levels(ind_ty, lvls);
-    let result = peel_n_alls_whnf(ind_ty_inst, n_skip, types);
+    let result = peel_n_alls_whnf(rc, ind_ty_inst, n_skip, types);
     -- No fallthrough arm: an inductive whose type does not peel to a
     -- Sort is malformed, and both references that implement this ERROR
     -- rather than answering — Rust `inductive_app_is_prop`
@@ -445,15 +432,15 @@ def infer := ⟦
   }
 
   -- Peel `n` Foralls, calling `whnf` on each step. Returns the whnf'd body.
-  fn peel_n_alls_whnf(e: KExpr, n: G, types: List‹KExpr›) -> KExpr {
+  fn peel_n_alls_whnf(rc: RoleCtx, e: KExpr, n: G, types: List‹KExpr›) -> KExpr {
     match n {
-      0 => whnf(e, types),
+      0 => whnf(rc, e, types),
       _ =>
-        let ew = whnf(e, types);
+        let ew = whnf(rc, e, types);
         match load(ew) {
           KExprNode.Forall(dom, body) =>
             let t2 = store(ListNode.Cons(dom, types));
-            peel_n_alls_whnf(body, n - 1, t2),
+            peel_n_alls_whnf(rc, body, n - 1, t2),
           _ => ew,
         },
     }
@@ -466,12 +453,12 @@ def infer := ⟦
   --   * the TARGET field must itself be a Prop (Sort 0);
   --   * any data field skipped on the way must not be depended on by
   --     the remaining telescope (no loose bvars in the body).
-  fn check_prop_field_if_prop(is_prop: G, dom: KExpr,
+  fn check_prop_field_if_prop(rc: RoleCtx, is_prop: G, dom: KExpr,
                                    types: List‹KExpr›) {
     match is_prop {
       0 => (),
       _ =>
-        let lvl = k_ensure_sort(dom, types);
+        let lvl = k_ensure_sort(rc, dom, types);
         assert_eq!(level_equal(lvl, store(KLevelNode.Zero)), 1,
           "projection on a Prop structure: field is not a Prop");
         (),
@@ -482,12 +469,12 @@ def infer := ⟦
   -- For Prop structures: a preceding data field (sort != 0) whose body
   -- has any loose bvar (`body.lbr() > 0`) makes projection past it unsound.
   -- Matches Rust's `body.lbr() > 0` check exactly.
-  fn check_no_dep_data_field_if_prop(is_prop: G, dom: KExpr, body: KExpr,
+  fn check_no_dep_data_field_if_prop(rc: RoleCtx, is_prop: G, dom: KExpr, body: KExpr,
                                           types: List‹KExpr›) {
     match is_prop {
       0 => (),
       _ =>
-        let lvl = k_ensure_sort(dom, types);
+        let lvl = k_ensure_sort(rc, dom, types);
         match level_equal(lvl, store(KLevelNode.Zero)) {
           1 => (),
           _ =>
@@ -507,20 +494,20 @@ def infer := ⟦
   -- (a) preceding data field whose body depends on BVar(0) is forbidden
   -- (no projection past dependent data fields, mirror Rust line 433-444);
   -- (b) projected (target) field must itself be in Prop (mirror Rust line 418-427).
-  fn peel_field_loop(ty: KExpr, target: G, current: G,
+  fn peel_field_loop(rc: RoleCtx, ty: KExpr, target: G, current: G,
                          struct_addr: Addr, val: KExpr, is_prop: G,
                          types: List‹KExpr›) -> KExpr {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         match target - current {
           0 =>
-            check_prop_field_if_prop(is_prop, dom, types);
+            check_prop_field_if_prop(rc, is_prop, dom, types);
             dom,
           _ =>
-            check_no_dep_data_field_if_prop(is_prop, dom, body, types);
+            check_no_dep_data_field_if_prop(rc, is_prop, dom, body, types);
             let proj_expr = store(KExprNode.Proj(struct_addr, current, val));
             let body_substed = expr_inst1(body, proj_expr, 0);
-            peel_field_loop(body_substed, target, current + 1,
+            peel_field_loop(rc, body_substed, target, current + 1,
                                  struct_addr, val, is_prop, types),
         },
     }
@@ -529,10 +516,10 @@ def infer := ⟦
   -- Cold-extracted Proj arm: the widest arm of `k_infer_core` by far
   -- (~10 call sites) on a rare node kind.
   -- Mirror crates/kernel/src/infer.rs infer_proj.
-  fn k_infer_proj(struct_addr: Addr, fidx: G, e1: KExpr,
+  fn k_infer_proj(rc: RoleCtx, struct_addr: Addr, fidx: G, e1: KExpr,
                       types: List‹KExpr›) -> KExpr {
-    let val_ty = k_infer(e1, types);
-    let wty = whnf(val_ty, types);
+    let val_ty = k_infer(rc, e1, types);
+    let wty = whnf(rc, val_ty, types);
     match collect_spine(wty) {
       (head, args) =>
         match load(head) {
@@ -556,9 +543,9 @@ def infer := ⟦
                     let ctor_ty_inst = expr_inst_levels(ctor_ty, lvls);
                     let after_params = peel_params_subst(ctor_ty_inst, args, n_params);
                     -- Prop-valued structures get the projection gates.
-                    let is_prop = is_inductive_prop(ind_ty, lvls,
+                    let is_prop = is_inductive_prop(rc, ind_ty, lvls,
                                     n_params + n_indices, types);
-                    peel_field_loop(after_params, fidx, 0,
+                    peel_field_loop(rc, after_params, fidx, 0,
                                          struct_addr, e1, is_prop, types),
                 },
             },
@@ -571,18 +558,18 @@ def infer := ⟦
   -- `tc.rs:648-658`, returns `TcError::TypeExpected`; `Ix/Tc`
   -- `ensureSortWhnf` throws `.typeExpected`). Do not give it a default
   -- level — that would make an ill-typed `Lam` usable as a type.
-  fn k_ensure_sort(e: KExpr, types: List‹KExpr›) -> KLevel {
-    let t = k_infer(e, types);
-    let tw = whnf(t, types);
+  fn k_ensure_sort(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KLevel {
+    let t = k_infer(rc, e, types);
+    let tw = whnf(rc, t, types);
     match load(tw) {
       KExprNode.Srt(l) => l,
     }
   }
 
   -- Check: infer the expr's type, def-eq against expected.
-  fn k_check(e: KExpr, expected: KExpr, types: List‹KExpr›) {
-    let inferred = k_infer(e, types);
-    let d = k_is_def_eq(inferred, expected, types);
+  fn k_check(rc: RoleCtx, e: KExpr, expected: KExpr, types: List‹KExpr›) {
+    let inferred = k_infer(rc, e, types);
+    let d = k_is_def_eq(rc, inferred, expected, types);
     assert_eq!(d, 1, "inferred type is not def-eq to the expected type");
   }
 
@@ -658,20 +645,6 @@ def infer := ⟦
      0x75u8, 0xa4u8, 0x9bu8, 0x74u8, 0x96u8, 0xecu8, 0x8cu8, 0xadu8])
   }
 
-  fn bool_type_addr_dec() -> Addr {
-    store([0xe6u8, 0xebu8, 0xa3u8, 0xc8u8, 0xb4u8, 0xd1u8, 0x9fu8, 0x6au8,
-     0x10u8, 0x76u8, 0xb3u8, 0x9fu8, 0xa8u8, 0x9au8, 0xecu8, 0x61u8,
-     0xdcu8, 0xcbu8, 0xb9u8, 0x60u8, 0xf8u8, 0x3du8, 0x9au8, 0x62u8,
-     0xe6u8, 0xacu8, 0xf3u8, 0x5au8, 0x69u8, 0xc9u8, 0xa0u8, 0xa4u8])
-  }
-
-  fn eq_refl_addr_dec() -> Addr {
-    store([0xd4u8, 0x94u8, 0xdcu8, 0x60u8, 0x13u8, 0x86u8, 0xbau8, 0x8eu8,
-     0x8fu8, 0x0bu8, 0x71u8, 0x1fu8, 0xe6u8, 0x2au8, 0x2du8, 0x60u8,
-     0xabu8, 0x60u8, 0xc6u8, 0x48u8, 0x8cu8, 0x8cu8, 0xf6u8, 0xceu8,
-     0x97u8, 0x79u8, 0x6eu8, 0xbcu8, 0x3au8, 0xd5u8, 0xfeu8, 0xfbu8])
-  }
-
   fn int_dec_eq_addr_dec() -> Addr {
     store([0x35u8, 0xa9u8, 0xedu8, 0x72u8, 0x02u8, 0xe3u8, 0xc4u8, 0x38u8,
      0x57u8, 0xcdu8, 0xc4u8, 0x06u8, 0x3eu8, 0xacu8, 0x12u8, 0x3fu8,
@@ -707,7 +680,7 @@ def infer := ⟦
      0xebu8, 0xedu8, 0x45u8, 0x6eu8, 0x51u8, 0x35u8, 0x38u8, 0xccu8])
   }
 
-  fn is_dec_prim_addr(a: Addr) -> G {
+  fn is_dec_prim_addr(rc: RoleCtx, a: Addr) -> G {
     match address_eq(a, nat_dec_le_addr_dec()) {
       1 => 1,
       _ =>
@@ -734,7 +707,7 @@ def infer := ⟦
     }
   }
 
-  fn is_int_dec_prim_addr(a: Addr) -> G {
+  fn is_int_dec_prim_addr(rc: RoleCtx, a: Addr) -> G {
     match address_eq(a, int_dec_le_addr_dec()) {
       1 => 1,
       _ =>
@@ -751,7 +724,7 @@ def infer := ⟦
 
   -- Match `App(Const(int_of_nat|int_neg_succ), Lit(Nat _))`. Returns
   -- (found, sign, limbs). sign=0 for Int.ofNat, 1 for Int.negSucc.
-  fn try_extract_int(e: KExpr) -> (G, G, KLimbs) {
+  fn try_extract_int(rc: RoleCtx, e: KExpr) -> (G, G, KLimbs) {
     match load(e) {
       KExprNode.App(f, a) =>
         match load(f) {
@@ -777,7 +750,7 @@ def infer := ⟦
   }
 
   -- Build canonical `App(Const(int_of_nat | int_neg_succ), Lit(Nat n))`.
-  fn intern_int_lit(sign: G, kl: KLimbs) -> KExpr {
+  fn intern_int_lit(rc: RoleCtx, sign: G, kl: KLimbs) -> KExpr {
     let head_addr = match sign {
       0 => int_of_nat_addr_dec(),
       _ => int_neg_succ_addr_dec(),
@@ -792,7 +765,7 @@ def infer := ⟦
   -- extract, rebuild `App(head, canonical_a, canonical_b, ...post)`.
   -- Caller re-whnfs the rebuilt form; delta then unfolds Int.dec_* body
   -- against canonical inputs.
-  fn try_normalize_int_decidable(head_addr: Addr,
+  fn try_normalize_int_decidable(rc: RoleCtx, head_addr: Addr,
                                      head_lvls: List‹KLevel›,
                                      spine: List‹KExpr›,
                                      types: List‹KExpr›) -> (G, KExpr) {
@@ -801,30 +774,30 @@ def infer := ⟦
       _ =>
         let a0 = list_lookup(spine, 0);
         let a1 = list_lookup(spine, 1);
-        match try_extract_int(a0) {
+        match try_extract_int(rc, a0) {
           (1, _, _) =>
-            match try_extract_int(a1) {
+            match try_extract_int(rc, a1) {
               (1, _, _) => (0, store(KExprNode.BVar(0))),
-              _ => normalize_int_dec_rebuild(head_addr, head_lvls,
+              _ => normalize_int_dec_rebuild(rc, head_addr, head_lvls,
                                               spine, a0, a1, types),
             },
-          _ => normalize_int_dec_rebuild(head_addr, head_lvls,
+          _ => normalize_int_dec_rebuild(rc, head_addr, head_lvls,
                                           spine, a0, a1, types),
         },
     }
   }
 
-  fn normalize_int_dec_rebuild(head_addr: Addr, head_lvls: List‹KLevel›,
+  fn normalize_int_dec_rebuild(rc: RoleCtx, head_addr: Addr, head_lvls: List‹KLevel›,
                                 spine: List‹KExpr›, a0: KExpr, a1: KExpr,
                                 types: List‹KExpr›) -> (G, KExpr) {
-    let wa = whnf(a0, types);
-    let wb = whnf(a1, types);
-    match try_extract_int(wa) {
+    let wa = whnf(rc, a0, types);
+    let wb = whnf(rc, a1, types);
+    match try_extract_int(rc, wa) {
       (1, sa, na) =>
-        match try_extract_int(wb) {
+        match try_extract_int(rc, wb) {
           (1, sb, nb) =>
-            let a_e = intern_int_lit(sa, na);
-            let b_e = intern_int_lit(sb, nb);
+            let a_e = intern_int_lit(rc, sa, na);
+            let b_e = intern_int_lit(rc, sb, nb);
             let head = store(KExprNode.Const(head_addr, head_lvls));
             let r1 = store(KExprNode.App(head, a_e));
             let r2 = store(KExprNode.App(r1, b_e));
@@ -839,22 +812,22 @@ def infer := ⟦
   -- Entry point. Whnf calls this on Const-headed apps whose head addr
   -- passes is_dec_prim_addr. Returns (1, reduced) on success or
   -- (0, _) to fall through to Defn unfold.
-  fn try_dec_dispatch(head_addr: Addr, head_lvls: List‹KLevel›,
+  fn try_dec_dispatch(rc: RoleCtx, head_addr: Addr, head_lvls: List‹KLevel›,
                           spine: List‹KExpr›, types: List‹KExpr›)
                           -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
-        match is_int_dec_prim_addr(head_addr) {
-          1 => try_normalize_int_decidable(head_addr, head_lvls,
+        match is_int_dec_prim_addr(rc, head_addr) {
+          1 => try_normalize_int_decidable(rc, head_addr, head_lvls,
                                                 spine, types),
           _ =>
             let is_le = address_eq(head_addr, nat_dec_le_addr_dec());
             let is_eq = address_eq(head_addr, nat_dec_eq_addr_dec());
             let is_lt = address_eq(head_addr, nat_dec_lt_addr_dec());
             match is_lt {
-              1 => dec_rewrite_lt_to_le(head_lvls, spine, types),
-              _ => dec_dispatch_le_eq(is_le, is_eq, head_addr,
+              1 => dec_rewrite_lt_to_le(rc, head_lvls, spine, types),
+              _ => dec_dispatch_le_eq(rc, is_le, is_eq, head_addr,
                                        head_lvls, spine, types),
             },
         },
@@ -864,12 +837,12 @@ def infer := ⟦
   -- decLt n m → decLe (n+1) m: rewrite spine head + first arg, return
   -- (1, App(dec_le, succ_n_lit, m_e, ...post)). Whnf caller re-whnfs
   -- the rewritten form, which re-enters dispatch as the decLe arm.
-  fn dec_rewrite_lt_to_le(head_lvls: List‹KLevel›, spine: List‹KExpr›,
+  fn dec_rewrite_lt_to_le(rc: RoleCtx, head_lvls: List‹KLevel›, spine: List‹KExpr›,
                            types: List‹KExpr›) -> (G, KExpr) {
     let n_e = list_lookup(spine, 0);
     let m_e = list_lookup(spine, 1);
-    let n_w = whnf(n_e, types);
-    match try_extract_nat(n_w) {
+    let n_w = whnf(rc, n_e, types);
+    match try_extract_nat(rc, n_w) {
       (0, _) => (0, store(KExprNode.BVar(0))),
       (1, n_klimbs) =>
         let succ_lit = mk_nat_lit(klimbs_succ(n_klimbs));
@@ -882,31 +855,31 @@ def infer := ⟦
     }
   }
 
-  fn dec_dispatch_le_eq(is_le: G, is_eq: G,
+  fn dec_dispatch_le_eq(rc: RoleCtx, is_le: G, is_eq: G,
                          head_addr: Addr, head_lvls: List‹KLevel›,
                          spine: List‹KExpr›, types: List‹KExpr›)
                          -> (G, KExpr) {
     let n_e = list_lookup(spine, 0);
     let m_e = list_lookup(spine, 1);
-    let n_w = whnf(n_e, types);
-    let m_w = whnf(m_e, types);
-    match try_extract_nat(n_w) {
+    let n_w = whnf(rc, n_e, types);
+    let m_w = whnf(rc, m_e, types);
+    match try_extract_nat(rc, n_w) {
       (0, _) => (0, store(KExprNode.BVar(0))),
       (1, n_kl) =>
-        match try_extract_nat(m_w) {
+        match try_extract_nat(rc, m_w) {
           (0, _) => (0, store(KExprNode.BVar(0))),
           (1, m_kl) =>
             let verdict = match is_le {
               1 => klimbs_le(n_kl, m_kl),
               _ => klimbs_eq(n_kl, m_kl),
             };
-            dec_build_proof(is_le, is_eq, verdict, n_e, m_e,
+            dec_build_proof(rc, is_le, is_eq, verdict, n_e, m_e,
                             head_addr, head_lvls, spine, types),
         },
     }
   }
 
-  fn dec_build_proof(is_le: G, is_eq: G, verdict: G,
+  fn dec_build_proof(rc: RoleCtx, is_le: G, is_eq: G, verdict: G,
                       n_e: KExpr, m_e: KExpr,
                       head_addr: Addr, head_lvls: List‹KLevel›,
                       spine: List‹KExpr›, types: List‹KExpr›)
@@ -919,11 +892,11 @@ def infer := ⟦
         -- Eq.refl.{1} Bool (Bool.true|Bool.false)
         let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
         let eq_refl_lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
-        let eq_refl_c = store(KExprNode.Const(eq_refl_addr_dec(), eq_refl_lvls));
-        let bool_c = store(KExprNode.Const(bool_type_addr_dec(), store(ListNode.Nil)));
+        let eq_refl_c = store(KExprNode.Const(role_addr(rc, role_eq_refl()), eq_refl_lvls));
+        let bool_c = store(KExprNode.Const(role_addr(rc, role_bool()), store(ListNode.Nil)));
         let bool_lit_addr = match verdict {
-          1 => bool_true_addr(),
-          _ => bool_false_addr(),
+          1 => role_addr(rc, role_bool_true()),
+          _ => role_addr(rc, role_bool_false()),
         };
         let bool_lit_c = store(KExprNode.Const(bool_lit_addr, store(ListNode.Nil)));
         let r1 = store(KExprNode.App(eq_refl_c, bool_c));
@@ -944,7 +917,7 @@ def infer := ⟦
         let p1 = store(KExprNode.App(proof_c, n_e));
         let p2 = store(KExprNode.App(p1, m_e));
         let proof = store(KExprNode.App(p2, refl_proof));
-        dec_finish(verdict, proof, head_addr, head_lvls, spine, types),
+        dec_finish(rc, verdict, proof, head_addr, head_lvls, spine, types),
     }
   }
 
@@ -954,7 +927,7 @@ def infer := ⟦
   -- string primitive dispatch when head_addr matches string_dec_eq.
   --
   -- head_addr, spine assumed pre-whnf'd (caller runs whnf_spine).
-  fn try_str_dec_eq(head_addr: Addr, spine: List‹KExpr›,
+  fn try_str_dec_eq(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
                         types: List‹KExpr›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
@@ -971,7 +944,7 @@ def infer := ⟦
                       KLiteral.Str(sb) =>
                         match bytestream_eq(sa, sb) {
                           0 => (0, store(KExprNode.BVar(0))),
-                          _ => str_dec_eq_build(sa, head_addr, spine, types),
+                          _ => str_dec_eq_build(rc, sa, head_addr, spine, types),
                         },
                       _ => (0, store(KExprNode.BVar(0))),
                     },
@@ -984,12 +957,12 @@ def infer := ⟦
     }
   }
 
-  fn str_dec_eq_build(sa: ByteStream, head_addr: Addr, spine: List‹KExpr›,
+  fn str_dec_eq_build(rc: RoleCtx, sa: ByteStream, head_addr: Addr, spine: List‹KExpr›,
                        types: List‹KExpr›) -> (G, KExpr) {
     let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
     let eq_refl_lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
-    let eq_refl_c = store(KExprNode.Const(eq_refl_addr_dec(), eq_refl_lvls));
-    let str_c = store(KExprNode.Const(string_type_addr(),
+    let eq_refl_c = store(KExprNode.Const(role_addr(rc, role_eq_refl()), eq_refl_lvls));
+    let str_c = store(KExprNode.Const(role_addr(rc, role_string()),
                                         store(ListNode.Nil)));
     let lit = store(KExprNode.Lit(KLiteral.Str(sa)));
     let r1 = store(KExprNode.App(eq_refl_c, str_c));
@@ -998,8 +971,8 @@ def infer := ⟦
     let head_c = store(KExprNode.Const(head_addr, store(ListNode.Nil)));
     let two_args = list_take(spine, 2);
     let call_expr = apply_spine(head_c, two_args);
-    let call_ty = k_infer(call_expr, types);
-    let call_ty_w = whnf(call_ty, types);
+    let call_ty = k_infer(rc, call_expr, types);
+    let call_ty_w = whnf(rc, call_ty, types);
     match collect_spine(call_ty_w) {
       (_, dec_args) =>
         match u32_less_than(list_length(dec_args), 1) {
@@ -1018,7 +991,7 @@ def infer := ⟦
 
   -- Recover `prop` from `Decidable prop` type of the (head, n, m) call.
   -- Build `Decidable.isTrue prop proof` / `Decidable.isFalse prop proof`.
-  fn dec_finish(verdict: G, proof: KExpr, head_addr: Addr,
+  fn dec_finish(rc: RoleCtx, verdict: G, proof: KExpr, head_addr: Addr,
                  head_lvls: List‹KLevel›, spine: List‹KExpr›,
                  types: List‹KExpr›) -> (G, KExpr) {
     let dec_addr = match verdict {
@@ -1028,8 +1001,8 @@ def infer := ⟦
     let head_c = store(KExprNode.Const(head_addr, head_lvls));
     let two_args = list_take(spine, 2);
     let call_expr = apply_spine(head_c, two_args);
-    let call_ty = k_infer(call_expr, types);
-    let call_ty_w = whnf(call_ty, types);
+    let call_ty = k_infer(rc, call_expr, types);
+    let call_ty_w = whnf(rc, call_ty, types);
     match collect_spine(call_ty_w) {
       (_, dec_args) =>
         match u32_less_than(list_length(dec_args), 1) {

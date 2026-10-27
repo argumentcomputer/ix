@@ -104,8 +104,9 @@ private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
   | some addr =>
     -- Subject-only check via `verify_const`. Each fixture runs in
     -- isolation; we don't revalidate transitive deps N times.
-    let witness := buildVerifyConst ixonEnv addr
-    .ok (witness.input, witness.inputIOBuffer)
+    match buildVerifyConst ixonEnv addr with
+    | .ok witness => .ok (witness.input, witness.inputIOBuffer)
+    | .error e => .error e
 
 /-- Run the arena suite against `compiled` (already-compiled Aiur
     `IxVM.ixVMFull` toplevel) using a single shared Ixon env. Returns one
@@ -128,7 +129,7 @@ def arenaTests (env : Lean.Environment)
     (checks.map (·.name)).toList
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI
     (closed ++ rawConsts.toList.map fun ci => (ci.name, ci))
-  let ixonEnv := rawEnv.toEnv
+  let ixonEnv ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding rawEnv.toEnv)
   let mut tests : TestSeq := .done
   for c in checks do
     let label := s!"arena {if c.expectPass then "GOOD" else "BAD"} {c.name}"

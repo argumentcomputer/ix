@@ -35,6 +35,7 @@ public import Ix.Aiur.Stages.TraceCodegen
 public import Ix.Aiur.Stages.TraceCuda
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
+public import Ix.IxVM.RoleSpecGen
 public import MultiStark
 
 public section
@@ -102,6 +103,27 @@ def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
   IO.FS.writeFile t.outPath rustSource
   IO.println s!"[codegen] wrote {rustSource.length} bytes to {t.outPath} \
     ({compiled.bytecode.functions.size} aiur fns)"
+  return true
+
+/-- Where the IxVM role specifications are rendered (`IxVM.RoleSpecGen`). -/
+def roleSpecPath : String := "Ix/IxVM/Kernel/RoleSpec.lean"
+
+/-- Render the IxVM role specifications from IxC's; in `--check` mode,
+    compare against the file instead of writing it. The kernel reads the file,
+    so a regenerated file takes effect after the next build. -/
+def emitRoleSpecs (checkOnly : Bool) : IO Bool := do
+  let source ← match IxVM.RoleSpecGen.render with
+    | .ok s => pure s
+    | .error e => IO.eprintln s!"role specifications: {e}"; return false
+  if checkOnly then
+    let existing ← try pure (some (← IO.FS.readFile roleSpecPath)) catch _ => pure none
+    if existing == some source then
+      IO.println s!"[codegen --check] {roleSpecPath} up to date"
+      return true
+    IO.eprintln s!"[codegen --check] {roleSpecPath} STALE: re-run `ix codegen` and commit the result."
+    return false
+  IO.FS.writeFile roleSpecPath source
+  IO.println s!"[codegen] wrote {roleSpecPath}"
   return true
 
 /-- Circuits generated beyond the static rule, by circuit name per target:
@@ -235,6 +257,8 @@ def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
     | .ok source => IO.print source; return 0
     | .error error => IO.eprintln s!"{target.label} trace codegen: {error}"; return 1
   let mut ok := true
+  if selected.any (·.label == "ixvm") then
+    ok := (← emitRoleSpecs checkOnly) && ok
   for t in selected do
     ok := (← emitTarget checkOnly t) && ok
   return if ok then 0 else 1

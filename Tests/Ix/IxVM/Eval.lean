@@ -75,7 +75,12 @@ private def rawWitness (env : Ixon.Env) (input : Address) (bytes : ByteArray)
   let output := outputKey.getD (Address.blake3 bytes)
   let claimBytes := Ix.Claim.ser (.eval evalCtx input output none)
   let digest := packedDigestKey (Address.blake3 claimBytes)
-  let io := addEntries env (fun _ => true) default
+  -- The claim's context names the default table, which the circuit reads
+  -- before anything else.
+  let env := match withDefaultRoleBinding env with
+    | .ok bound => bound
+    | .error _ => env
+  let io := addEntries env (fun _ => true) (seedBinding env default)
   let io := io.extend 0 digest (claimBytes.data.map .ofUInt8)
   let io := io.extend 2 (output.hash.data.map Aiur.G.ofUInt8) (bytes.data.map .ofUInt8)
   { funcName := `verify_claim, input := digest, inputIOBuffer := io }

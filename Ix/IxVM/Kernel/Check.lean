@@ -156,108 +156,20 @@ def check := ⟦
     }
   }
 
-  -- Type-check one constant at `addr` given its KConstantInfo.
-  --  handles Axiom / Defn / Thm / Opaque / Quot. Ind/Ctor/Rec
-  -- deferred to .
-  fn quot_type_addr() -> Addr {
-    store([0x45u8, 0x04u8, 0x0bu8, 0x31u8, 0x26u8, 0x85u8, 0x51u8, 0x69u8,
-     0xdau8, 0xd9u8, 0x19u8, 0xa9u8, 0x70u8, 0xa9u8, 0xc7u8, 0x2cu8,
-     0xeeu8, 0x58u8, 0x75u8, 0x65u8, 0x8au8, 0xedu8, 0xb3u8, 0xbdu8,
-     0x1fu8, 0x89u8, 0xfcu8, 0xdfu8, 0x8cu8, 0x88u8, 0xedu8, 0xfau8])
-  }
-
-  fn quot_ctor_addr() -> Addr {
-    store([0x81u8, 0x16u8, 0x00u8, 0xdfu8, 0xa5u8, 0x9fu8, 0x36u8, 0x12u8,
-     0xcbu8, 0x03u8, 0xc0u8, 0xf0u8, 0x47u8, 0x5au8, 0xf1u8, 0x52u8,
-     0x39u8, 0x9du8, 0xefu8, 0xffu8, 0x92u8, 0x26u8, 0xc6u8, 0xe1u8,
-     0x9fu8, 0xd6u8, 0x48u8, 0x04u8, 0x1au8, 0x68u8, 0x99u8, 0xa9u8])
-  }
-
-  fn quot_lift_addr() -> Addr {
-    store([0x86u8, 0xb3u8, 0x65u8, 0xe7u8, 0x5bu8, 0xb4u8, 0x23u8, 0x0fu8,
-     0x04u8, 0xc6u8, 0xe4u8, 0xf3u8, 0xa7u8, 0xcau8, 0x69u8, 0x88u8,
-     0xadu8, 0xf5u8, 0x74u8, 0x61u8, 0x6du8, 0x79u8, 0xa3u8, 0xd7u8,
-     0x47u8, 0x7au8, 0xd6u8, 0x5cu8, 0xacu8, 0x10u8, 0x21u8, 0x10u8])
-  }
-
-  fn quot_ind_addr() -> Addr {
-    store([0x17u8, 0x45u8, 0x49u8, 0x1cu8, 0x0du8, 0x65u8, 0x1du8, 0xe0u8,
-     0xbeu8, 0xa5u8, 0x89u8, 0xd5u8, 0xffu8, 0xfbu8, 0xc9u8, 0xbcu8,
-     0x4du8, 0x7fu8, 0xbeu8, 0x89u8, 0x7cu8, 0x1du8, 0x80u8, 0x5bu8,
-     0x1fu8, 0x7fu8, 0x59u8, 0xcau8, 0x96u8, 0x96u8, 0xa6u8, 0xefu8])
-  }
-
-  fn eq_type_addr() -> Addr {
-    store([0xc3u8, 0x7du8, 0x62u8, 0x90u8, 0xe0u8, 0x0fu8, 0xb8u8, 0x65u8,
-     0xfbu8, 0x5du8, 0xb7u8, 0xbcu8, 0xe1u8, 0x8fu8, 0xd6u8, 0x9eu8,
-     0x6du8, 0x16u8, 0x74u8, 0xadu8, 0x57u8, 0x37u8, 0x24u8, 0xb8u8,
-     0x54u8, 0x66u8, 0xeau8, 0x9fu8, 0x75u8, 0x78u8, 0xa2u8, 0x07u8])
-  }
-
-  -- Returns 1 iff `ty` has at least `n` leading Foralls.
-  fn count_foralls_at_least(ty: KExpr, n: G, seen: G) -> G {
-    match n - seen {
-      0 => 1,
-      _ =>
-        match load(ty) {
-          KExprNode.Forall(_, body) =>
-            count_foralls_at_least(body, n, seen + 1),
-          _ => 0,
-        },
-    }
-  }
-
-  -- Mirror check_eq_type: assert Eq inductive shape (1 lvl, 2 params,
-  -- 1 ctor = Eq.refl). the kernel's KConstantInfo.Induct doesn't store
-  -- ctor_indices; we assert (num_lvls, n_params, num_ctors) then trust
-  -- the ctor identity check to fire when Eq.refl itself is checked as a
-  -- closure member (via check_ctor_return_type, which is  item 3).
-  -- Adversarial Eq → Quot.Lift unsound reduction only if Eq is also
-  -- forged in the closure; per-const gauntlet closes that.
-  fn check_eq_type() {
-    let eq_addr = eq_type_addr();
-    let eq_ci = load(get_ci(eq_addr));
-    match eq_ci {
-      KConstantInfo.Induct(num_lvls, _, n_params, _, num_ctors, _, _, _) =>
-        assert_eq!(num_lvls, 1, "Eq inductive: wrong universe param count");
-        assert_eq!(n_params, 2, "Eq inductive: wrong parameter count");
-        assert_eq!(num_ctors, 1, "Eq inductive: wrong constructor count");
-        (),
-    }
-  }
-
-  -- Mirror check_quot: address ↔ kind consistency + (expected_lvls,
-  -- expected_foralls) per variant. Quot.Lift extra: Eq inductive
-  -- well-shaped.
-  fn check_quot(self_addr: Addr, kind: QuotKind,
-                    num_lvls: G, ty: KExpr) {
-    let pair = match kind {
-      QuotKind.Typ =>
-        assert_eq!(address_eq(self_addr, quot_type_addr()), 1,
-          "Quot.Typ declared at a non-canonical address");
-        (1, 2),
-      QuotKind.Ctor =>
-        assert_eq!(address_eq(self_addr, quot_ctor_addr()), 1,
-          "Quot.mk declared at a non-canonical address");
-        (1, 3),
-      QuotKind.Lift =>
-        assert_eq!(address_eq(self_addr, quot_lift_addr()), 1,
-          "Quot.lift declared at a non-canonical address");
-        check_eq_type();
-        (2, 6),
-      QuotKind.Ind =>
-        assert_eq!(address_eq(self_addr, quot_ind_addr()), 1,
-          "Quot.ind declared at a non-canonical address");
-        (1, 5),
+  -- A quotient declaration is accepted only as the binding's quotient role
+  -- of its kind. Recognizing it admits the quotient group, whose
+  -- validation fixes each member's kind and type (and needs `Eq`), so the
+  -- quotient's iota rules apply to the specified constants only.
+  fn check_quot(rc: RoleCtx, self_addr: Addr, kind: QuotKind) {
+    let r = match kind {
+      QuotKind.Typ => role_quot(),
+      QuotKind.Ctor => role_quot_mk(),
+      QuotKind.Lift => role_quot_lift(),
+      QuotKind.Ind => role_quot_ind(),
     };
-    match pair {
-      (expected_lvls, expected_foralls) =>
-        assert_eq!(num_lvls, expected_lvls,
-          "Quot constant: wrong universe param count for its kind");
-        assert_eq!(count_foralls_at_least(ty, expected_foralls, 0), 1,
-          "Quot constant: type has too few foralls for its kind");
-        (),
-    }
+    assert_eq!(role_is(rc, self_addr, r), 1,
+      "a quotient constant is not the binding's quotient role of its kind");
+    ()
   }
 
   -- ============================================================================
@@ -416,7 +328,7 @@ def check := ⟦
     }
   }
 
-  fn check_param_agreement_go(ta: KExpr, tb: KExpr, n: G,
+  fn check_param_agreement_go(rc: RoleCtx, ta: KExpr, tb: KExpr, n: G,
                                    types: List‹KExpr›) {
     match n {
       0 => (),
@@ -425,11 +337,11 @@ def check := ⟦
           KExprNode.Forall(da, ba) =>
             match load(tb) {
               KExprNode.Forall(db, bb) =>
-                let eq = k_is_def_eq(da, db, types);
+                let eq = k_is_def_eq(rc, da, db, types);
                 assert_eq!(eq, 1,
                   "ctor parameter type disagrees with the inductive's");
                 let inner = store(ListNode.Cons(da, types));
-                check_param_agreement_go(ba, bb, n - 1, inner),
+                check_param_agreement_go(rc, ba, bb, n - 1, inner),
             },
         },
     }
@@ -437,15 +349,15 @@ def check := ⟦
 
   -- Walk first n Foralls of both types asserting domain def-eq under the
   -- accumulated param-binder context.
-  fn check_param_agreement(ta: KExpr, tb: KExpr, n: G) {
-    check_param_agreement_go(ta, tb, n, store(ListNode.Nil))
+  fn check_param_agreement(rc: RoleCtx, ta: KExpr, tb: KExpr, n: G) {
+    check_param_agreement_go(rc, ta, tb, n, store(ListNode.Nil))
   }
 
   -- Peel n (params + indices) Foralls; body must be Srt(l). Returns l.
   -- whnf per step: index binders can hide under defs.
-  fn get_result_sort_level(ind_ty: KExpr, n: G,
+  fn get_result_sort_level(rc: RoleCtx, ind_ty: KExpr, n: G,
                                 types: List‹KExpr›) -> KLevel {
-    let w = whnf(ind_ty, types);
+    let w = whnf(rc, ind_ty, types);
     match n {
       0 =>
         match load(w) {
@@ -454,45 +366,45 @@ def check := ⟦
       _ =>
         match load(w) {
           KExprNode.Forall(dom, body) =>
-            get_result_sort_level(body, n - 1,
+            get_result_sort_level(rc, body, n - 1,
               store(ListNode.Cons(dom, types))),
         },
     }
   }
 
-  fn check_field_universes_inner(ty: KExpr, ind_level: KLevel,
+  fn check_field_universes_inner(rc: RoleCtx, ty: KExpr, ind_level: KLevel,
                                       types: List‹KExpr›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let dom_level = k_ensure_sort(dom, types);
+        let dom_level = k_ensure_sort(rc, dom, types);
         assert_eq!(level_leq(dom_level, ind_level), 1,
           "ctor field lives in a universe above the inductive's");
-        check_field_universes_inner(body, ind_level,
+        check_field_universes_inner(rc, body, ind_level,
           store(ListNode.Cons(dom, types))),
       _ => (),
     }
   }
 
-  fn check_field_universes_skip_params(ctor_ty: KExpr, n_params: G,
+  fn check_field_universes_skip_params(rc: RoleCtx, ctor_ty: KExpr, n_params: G,
                                             ind_level: KLevel,
                                             types: List‹KExpr›) {
     match n_params {
-      0 => check_field_universes_inner(ctor_ty, ind_level, types),
+      0 => check_field_universes_inner(rc, ctor_ty, ind_level, types),
       _ =>
         match load(ctor_ty) {
           KExprNode.Forall(dom, body) =>
-            check_field_universes_skip_params(body, n_params - 1,
+            check_field_universes_skip_params(rc, body, n_params - 1,
               ind_level, store(ListNode.Cons(dom, types))),
         },
     }
   }
 
   -- Skipped for Prop (ind_level = Zero).
-  fn check_field_universes(ctor_ty: KExpr, n_params: G,
+  fn check_field_universes(rc: RoleCtx, ctor_ty: KExpr, n_params: G,
                                  ind_level: KLevel) {
     match load(ind_level) {
       KLevelNode.Zero => (),
-      _ => check_field_universes_skip_params(ctor_ty, n_params,
+      _ => check_field_universes_skip_params(rc, ctor_ty, n_params,
                                                   ind_level, store(ListNode.Nil)),
     }
   }
@@ -677,18 +589,18 @@ def check := ⟦
   -- ARGUMENTS away and restarts from an empty context, so there are no
   -- parameter binders left to match and the occurrence's args are
   -- arbitrary terms; it passes 0 and keeps the old head-identity accept.
-  fn check_positivity_aug(dom: KExpr, block_addrs: List‹Addr›,
+  fn check_positivity_aug(rc: RoleCtx, dom: KExpr, block_addrs: List‹Addr›,
                                types: List‹KExpr›, check_params: G) {
     match expr_mentions_block(dom, block_addrs) {
       0 => (),
       _ =>
-        let dom_w = whnf(dom, types);
+        let dom_w = whnf(rc, dom, types);
         match load(dom_w) {
           KExprNode.Forall(idom, ibody) =>
             assert_eq!(expr_mentions_block(idom, block_addrs), 0,
               "strict positivity: block occurs left of an arrow");
             let t2 = store(ListNode.Cons(idom, types));
-            check_positivity_aug(ibody, block_addrs, t2, check_params),
+            check_positivity_aug(rc, ibody, block_addrs, t2, check_params),
           _ =>
             match collect_spine(dom_w) {
               (head, args) =>
@@ -728,7 +640,7 @@ def check := ⟦
                                                               block_addrs));
                             let rev_params = list_reverse(
                               list_take(args, n_ctor_params));
-                            check_nested_ctors_positivity(ext_block_addr,
+                            check_nested_ctors_positivity(rc, ext_block_addr,
                               ext_ind_idx, ext_num_ctors, aug, 0,
                               n_ctor_params, rev_params),
                         },
@@ -760,7 +672,7 @@ def check := ⟦
   -- After stripping, `BVar 0` is the LAST (innermost) parameter, so the
   -- argument list is reversed — `expr_inst_many` maps `substs[i]` to
   -- `BVar(depth + i)`, the same convention as `simul_subst`.
-  fn check_nested_ctors_positivity(block_addr: Addr, ind_idx: G,
+  fn check_nested_ctors_positivity(rc: RoleCtx, block_addr: Addr, ind_idx: G,
                                         num_ctors: G, aug: List‹Addr›,
                                         cidx: G, n_params: G,
                                         rev_params: List‹KExpr›) {
@@ -776,22 +688,22 @@ def check := ⟦
                 -- Parameters are substituted away, so the field walk
                 -- starts with no binders in scope — and with no
                 -- parameter binders to match, hence `check_params = 0`.
-                check_positivity_fields(expr_inst_many(body, rev_params, 0),
+                check_positivity_fields(rc, expr_inst_many(body, rev_params, 0),
                   aug, store(ListNode.Nil), 0);
-                check_nested_ctors_positivity(block_addr, ind_idx,
+                check_nested_ctors_positivity(rc, block_addr, ind_idx,
                   num_ctors, aug, cidx + 1, n_params, rev_params),
             },
         },
     }
   }
 
-  fn check_positivity_fields(ty: KExpr, block_addrs: List‹Addr›,
+  fn check_positivity_fields(rc: RoleCtx, ty: KExpr, block_addrs: List‹Addr›,
                                   types: List‹KExpr›, check_params: G) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        check_positivity_aug(dom, block_addrs, types, check_params);
+        check_positivity_aug(rc, dom, block_addrs, types, check_params);
         let t2 = store(ListNode.Cons(dom, types));
-        check_positivity_fields(body, block_addrs, t2, check_params),
+        check_positivity_fields(rc, body, block_addrs, t2, check_params),
       _ => (),
     }
   }
@@ -802,12 +714,12 @@ def check := ⟦
   -- For mutual blocks, the initial positivity context is the full set of
   -- peer inductive idxs (derived via block_addr). Nested inductives are
   -- handled by augment_block_idxs walking ctor bodies recursively.
-  fn check_positivity(ctor_ty: KExpr, n_params: G,
+  fn check_positivity(rc: RoleCtx, ctor_ty: KExpr, n_params: G,
                           block_addr: Addr, types: List‹KExpr›) {
     let block_addrs = store(ListNode.Cons(block_addr, store(ListNode.Nil)));
     match peel_n_foralls_with_types(ctor_ty, n_params, types) {
       (body, types_after) =>
-        check_positivity_fields(body, block_addrs, types_after, 1),
+        check_positivity_fields(rc, body, block_addrs, types_after, 1),
     }
   }
 
@@ -825,18 +737,18 @@ def check := ⟦
   -- inductWrongCtorParams / reflOccLeft / … are silently accepted.
   -- Ctors resolve through get_ci_cprj (memoized), so a block's
   -- shape check costs one pass regardless of how many members ask.
-  fn check_inductive_shape(ty: KExpr, n_params: G, n_indices: G,
+  fn check_inductive_shape(rc: RoleCtx, ty: KExpr, n_params: G, n_indices: G,
                                 num_ctors: G, num_lvls: G,
                                 block_addr: Addr, ind_idx: G,
                                 is_unsafe: G) {
-    let ind_level = get_result_sort_level(ty, n_params + n_indices,
+    let ind_level = get_result_sort_level(rc, ty, n_params + n_indices,
                                                store(ListNode.Nil));
-    check_inductive_shape_ctors(ty, n_params, n_indices, num_ctors,
+    check_inductive_shape_ctors(rc, ty, n_params, n_indices, num_ctors,
                                      num_lvls, block_addr, ind_idx,
                                      ind_level, is_unsafe, 0)
   }
 
-  fn check_inductive_shape_ctors(ind_ty: KExpr, n_params: G,
+  fn check_inductive_shape_ctors(rc: RoleCtx, ind_ty: KExpr, n_params: G,
                                       n_indices: G, num_ctors: G,
                                       num_lvls: G, block_addr: Addr,
                                       ind_idx: G, ind_level: KLevel,
@@ -858,10 +770,10 @@ def check := ⟦
               "ctor's stored index differs from its position");
             assert_eq!(c_np, n_params,
               "ctor parameter count differs from the inductive's");
-            check_param_agreement(ind_ty, cty, n_params);
+            check_param_agreement(rc, ind_ty, cty, n_params);
             check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                         block_addr, ind_idx);
-            check_field_universes(cty, c_np, ind_level);
+            check_field_universes(rc, cty, c_np, ind_level);
             -- Strict positivity is SKIPPED for unsafe inductives (mirror
             -- inductive.rs:441 "Lean skips positivity for unsafe
             -- inductives"). Running it anyway aborted on Batteries'
@@ -869,11 +781,11 @@ def check := ⟦
             -- has a recursive occurrence under a BVar-headed application
             -- the positivity walker has no case for.
             match is_unsafe {
-              0 => check_positivity(cty, c_np, block_addr,
+              0 => check_positivity(rc, cty, c_np, block_addr,
                                          store(ListNode.Nil)),
               _ => (),
             };
-            check_inductive_shape_ctors(ind_ty, n_params, n_indices,
+            check_inductive_shape_ctors(rc, ind_ty, n_params, n_indices,
                                              num_ctors, num_lvls,
                                              block_addr, ind_idx,
                                              ind_level, is_unsafe,
@@ -885,11 +797,11 @@ def check := ⟦
   -- Run the inductive shape gauntlet on an already-loaded Induct KCI.
   -- Used by the Rec arm, where the parent inductive is resolved from
   -- the recursor's motive spine rather than from check_const's subject.
-  fn check_parent_inductive_shape(ind_ci: KConstantInfo) {
+  fn check_parent_inductive_shape(rc: RoleCtx, ind_ci: KConstantInfo) {
     match ind_ci {
       KConstantInfo.Induct(nlvls, ty, n_params, n_indices, num_ctors,
                             is_unsafe, block_addr, ind_idx) =>
-        check_inductive_shape(ty, n_params, n_indices, num_ctors,
+        check_inductive_shape(rc, ty, n_params, n_indices, num_ctors,
                                    nlvls, block_addr, ind_idx, is_unsafe),
       _ => (),
     }
@@ -903,7 +815,7 @@ def check := ⟦
   --   * First n_params leading Foralls' domains def-eq via
   --     check_param_agreement.
   --   * Result-universe (post params+indices) equal.
-  fn check_block_peer_param_agreement(ind_ci: KConstantInfo, addr: Addr) {
+  fn check_block_peer_param_agreement(rc: RoleCtx, ind_ci: KConstantInfo, addr: Addr) {
     match ind_ci {
       KConstantInfo.Induct(_, self_ty, self_np, self_ni, _, _,
                              block_addr, self_ind_idx) =>
@@ -915,7 +827,7 @@ def check := ⟦
               Constant.Mk(info, _, _, _) =>
                 match info {
                   ConstantInfo.Muts(members) =>
-                    peer_agree_walk(members, self_ty, self_np, self_ni,
+                    peer_agree_walk(rc, members, self_ty, self_np, self_ni,
                                          self_ind_idx, 0, block_addr),
                   _ => (),
                 },
@@ -925,7 +837,7 @@ def check := ⟦
     }
   }
 
-  fn peer_agree_walk(members: List‹MutConst›, self_ty: KExpr,
+  fn peer_agree_walk(rc: RoleCtx, members: List‹MutConst›, self_ty: KExpr,
                           self_np: G, self_ni: G,
                           self_ind_idx: G, pos: G, block_addr: Addr) {
     match load(members) {
@@ -936,7 +848,7 @@ def check := ⟦
             let is_self = eq_zero(pos - self_ind_idx);
             match is_self {
               1 =>
-                peer_agree_walk(rest, self_ty, self_np, self_ni,
+                peer_agree_walk(rc, rest, self_ty, self_np, self_ni,
                                      self_ind_idx, pos + 1, block_addr),
               _ =>
                 let peer_ci = load(get_ci_iprj(block_addr, pos));
@@ -945,22 +857,22 @@ def check := ⟦
                                          _, _, _, _) =>
                     assert_eq!(peer_np, self_np,
                       "mutual block peers disagree on parameter count");
-                    check_param_agreement(self_ty, peer_ty, self_np);
-                    let self_lvl = get_result_sort_level(self_ty,
+                    check_param_agreement(rc, self_ty, peer_ty, self_np);
+                    let self_lvl = get_result_sort_level(rc, self_ty,
                       self_np + self_ni, store(ListNode.Nil));
-                    let peer_lvl = get_result_sort_level(peer_ty,
+                    let peer_lvl = get_result_sort_level(rc, peer_ty,
                       peer_np + peer_ni, store(ListNode.Nil));
                     assert_eq!(level_equal(self_lvl, peer_lvl), 1,
                       "mutual block peers land in different universes");
-                    peer_agree_walk(rest, self_ty, self_np, self_ni,
+                    peer_agree_walk(rc, rest, self_ty, self_np, self_ni,
                                          self_ind_idx, pos + 1, block_addr),
                   _ =>
-                    peer_agree_walk(rest, self_ty, self_np, self_ni,
+                    peer_agree_walk(rc, rest, self_ty, self_np, self_ni,
                                          self_ind_idx, pos + 1, block_addr),
                 },
             },
           _ =>
-            peer_agree_walk(rest, self_ty, self_np, self_ni,
+            peer_agree_walk(rc, rest, self_ty, self_np, self_ni,
                                  self_ind_idx, pos + 1, block_addr),
         },
     }
@@ -971,7 +883,7 @@ def check := ⟦
   -- target any universe; 0 if it must target Prop.
   -- Takes the single ctor's KCI directly rather than looking it up — the
   -- caller already resolved it via get_ci_cprj.
-  fn is_large_eliminator(result_level: KLevel, num_ctors: G,
+  fn is_large_eliminator(rc: RoleCtx, result_level: KLevel, num_ctors: G,
                               single_ctor_opt: (G, KConstantInfo),
                               is_solo: G) -> G {
     match level_is_not_zero(result_level) {
@@ -1002,7 +914,7 @@ def check := ⟦
                                                 n_fields, _) =>
                             match n_fields {
                               0 => 1,
-                              _ => check_large_prop_ctor(ctor_ty, n_params,
+                              _ => check_large_prop_ctor(rc, ctor_ty, n_params,
                                                               n_fields,
                                                               store(ListNode.Nil)),
                             },
@@ -1022,17 +934,17 @@ def check := ⟦
   -- (those whose domain has sort != 0). Body after walk is the ctor's return
   -- type; check each data field's BVar appears in the return-type's spine
   -- args. If all do → large eliminator.
-  fn check_large_prop_ctor(ty: KExpr, n_params: G, n_fields: G,
+  fn check_large_prop_ctor(rc: RoleCtx, ty: KExpr, n_params: G, n_fields: G,
                                 types: List‹KExpr›) -> G {
     match n_params {
       0 =>
-        check_large_walk_fields(ty, n_fields, 0, types,
+        check_large_walk_fields(rc, ty, n_fields, 0, types,
                                      store(ListNode.Nil)),
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
             let inner = store(ListNode.Cons(dom, types));
-            check_large_prop_ctor(body, n_params - 1, n_fields, inner),
+            check_large_prop_ctor(rc, body, n_params - 1, n_fields, inner),
           _ => 0,
         },
     }
@@ -1041,7 +953,7 @@ def check := ⟦
   -- Walk `n_fields` Foralls, threading list of data-field BVars (de Bruijn
   -- indices in the post-walk ret context). After walk, collect ret spine
   -- args and verify every data BVar appears.
-  fn check_large_walk_fields(ty: KExpr, n_fields: G, field_idx: G,
+  fn check_large_walk_fields(rc: RoleCtx, ty: KExpr, n_fields: G, field_idx: G,
                                   types: List‹KExpr›,
                                   data_bvars: List‹G›) -> G {
     match n_fields - field_idx {
@@ -1052,7 +964,7 @@ def check := ⟦
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            let lvl = k_ensure_sort(dom, types);
+            let lvl = k_ensure_sort(rc, dom, types);
             let is_data = 1 - level_equal(lvl, store(KLevelNode.Zero));
             -- Parenthesized: Aiur `-` is right-associative, so the bare
             -- `n_fields - 1 - field_idx` reads as `n_fields - (1 - field_idx)`
@@ -1067,7 +979,7 @@ def check := ⟦
               _ => store(ListNode.Cons(bvar_idx, data_bvars)),
             };
             let inner = store(ListNode.Cons(dom, types));
-            check_large_walk_fields(body, n_fields, field_idx + 1,
+            check_large_walk_fields(rc, body, n_fields, field_idx + 1,
                                           inner, new_bvars),
           _ => 0,
         },
@@ -1110,7 +1022,7 @@ def check := ⟦
   -- addr (Muts wrappers set block_addr = wrapper addr, standalone sets
   -- it to self). Additionally load Muts if present and check
   -- member-count == 1 for singleton-Muts case.
-  fn compute_k_target(ind_ci: KConstantInfo, ind_addr: Addr) -> G {
+  fn compute_k_target(rc: RoleCtx, ind_ci: KConstantInfo, ind_addr: Addr) -> G {
     match ind_ci {
       KConstantInfo.Induct(_, ind_ty, n_params, n_indices, num_ctors,
                              _, block_addr, ind_idx) =>
@@ -1118,7 +1030,7 @@ def check := ⟦
         match is_solo {
           0 => 0,
           _ =>
-            let result_level = get_result_sort_level(ind_ty,
+            let result_level = get_result_sort_level(rc, ind_ty,
               n_params + n_indices, store(ListNode.Nil));
             match level_equal(result_level, store(KLevelNode.Zero)) {
               0 => 0,
@@ -1919,17 +1831,17 @@ def check := ⟦
   -- n_params + n_indices Foralls off the same declared type INTOLERANTLY
   -- (and whnf'd) before any of this runs, so reaching here with fewer
   -- binders than `n` is impossible for a block that passed validation.
-  fn collect_index_doms(ty: KExpr, n: G) -> List‹KExpr› {
+  fn collect_index_doms(rc: RoleCtx, ty: KExpr, n: G) -> List‹KExpr› {
     match n {
       0 => store(ListNode.Nil),
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
+            store(ListNode.Cons(dom, collect_index_doms(rc, body, n - 1))),
           _ =>
-            match load(whnf(ty, store(ListNode.Nil))) {
+            match load(whnf(rc, ty, store(ListNode.Nil))) {
               KExprNode.Forall(dom, body) =>
-                store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
+                store(ListNode.Cons(dom, collect_index_doms(rc, body, n - 1))),
               _ => store(ListNode.Nil),
             },
         },
@@ -1999,7 +1911,7 @@ def check := ⟦
   -- running out of Foralls means the declared arity disagrees with the
   -- inductive's, which must reject rather than silently produce a shorter
   -- telescope for the reconstruction to be compared against.
-  fn collect_n_doms_whnf(ty: KExpr, n: G) -> (List‹KExpr›, KExpr) {
+  fn collect_n_doms_whnf(rc: RoleCtx, ty: KExpr, n: G) -> (List‹KExpr›, KExpr) {
     match n {
       0 => (store(ListNode.Nil), ty),
       _ =>
@@ -2010,13 +1922,13 @@ def check := ⟦
         -- the telescope the reconstruction is built from.
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            match collect_n_doms_whnf(body, n - 1) {
+            match collect_n_doms_whnf(rc, body, n - 1) {
               (rest, after) => (store(ListNode.Cons(dom, rest)), after),
             },
           _ =>
-            match load(whnf(ty, store(ListNode.Nil))) {
+            match load(whnf(rc, ty, store(ListNode.Nil))) {
               KExprNode.Forall(dom, body) =>
-                match collect_n_doms_whnf(body, n - 1) {
+                match collect_n_doms_whnf(rc, body, n - 1) {
                   (rest, after) => (store(ListNode.Cons(dom, rest)), after),
                 },
               -- Tolerant, matching both reference kernels: stop early rather
@@ -2068,7 +1980,7 @@ def check := ⟦
   }
 
   -- Full motive type sig for one flat member.
-  fn build_motive_type_flat(member_addr: Addr, ind_ty: KExpr,
+  fn build_motive_type_flat(rc: RoleCtx, member_addr: Addr, ind_ty: KExpr,
                                   n_own_params: G, n_indices: G,
                                   occurrence_us: List‹KLevel›,
                                   elim_level: KLevel,
@@ -2078,7 +1990,7 @@ def check := ⟦
     let ind_ty_inst = expr_inst_levels(ind_ty, occurrence_us);
     let after_params = peel_motive_params_subst(ind_ty_inst, n_own_params,
       n_rec_params, is_aux, spec_params, 0);
-    let index_doms = collect_index_doms(after_params, n_indices);
+    let index_doms = collect_index_doms(rc, after_params, n_indices);
     let head = store(KExprNode.Const(member_addr, occurrence_us));
     let with_args = @build_major_args_for_member(head, n_rec_params,
       n_indices, is_aux, spec_params);
@@ -2091,10 +2003,10 @@ def check := ⟦
   -- Build all motive types for a flat block. Each member's motive is
   -- lifted by its position j in the flat list (later motives are under
   -- more binders in the recursor's outer Lam sequence).
-  fn build_all_motives(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
+  fn build_all_motives(rc: RoleCtx, flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                             elim_level: KLevel, n_rec_params: G)
                             -> List‹KExpr› {
-    build_all_motives_walk(flat, elim_level, n_rec_params, 0)
+    build_all_motives_walk(rc, flat, elim_level, n_rec_params, 0)
   }
 
   -- Apply head to motive BVars starting at `start` descending.
@@ -2148,7 +2060,7 @@ def check := ⟦
   -- and the type itself come from the Ixon record — so without comparing
   -- against this reconstruction a recursor may claim any conclusion at all,
   -- `False` included, while its rules still reconstruct correctly.
-  fn build_rec_type(ind_ty: KExpr, ind_nlvls: G, n_params: G, n_indices: G,
+  fn build_rec_type(rc: RoleCtx, ind_ty: KExpr, ind_nlvls: G, n_params: G, n_indices: G,
                           elim_level: KLevel, univ_offset: G,
                           flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                           flat_own_params: List‹G›, self_pos: G) -> KExpr {
@@ -2161,18 +2073,18 @@ def check := ⟦
       (prim_addr, _pia, _pisp, _piou) =>
         match load(get_ci(prim_addr)) {
           KConstantInfo.Induct(prim_nlvls, prim_ty, _, _, _, _, _, _) =>
-            build_rec_type_from(prim_ty, prim_nlvls, ind_ty, ind_nlvls,
+            build_rec_type_from(rc, prim_ty, prim_nlvls, ind_ty, ind_nlvls,
               n_params, n_indices, elim_level, univ_offset, flat,
               flat_own_params, self_pos),
           _ =>
-            build_rec_type_from(ind_ty, ind_nlvls, ind_ty, ind_nlvls,
+            build_rec_type_from(rc, ind_ty, ind_nlvls, ind_ty, ind_nlvls,
               n_params, n_indices, elim_level, univ_offset, flat,
               flat_own_params, self_pos),
         },
     }
   }
 
-  fn build_rec_type_from(prim_ty: KExpr, prim_nlvls: G,
+  fn build_rec_type_from(rc: RoleCtx, prim_ty: KExpr, prim_nlvls: G,
                                ind_ty: KExpr, ind_nlvls: G,
                                n_params: G, n_indices: G,
                                elim_level: KLevel, univ_offset: G,
@@ -2184,10 +2096,10 @@ def check := ⟦
     -- block was built with, so the reconstructed binders carry the levels
     -- the declared type must.
     let p_us = build_param_lvls_range(univ_offset, prim_nlvls, 0);
-    match collect_n_doms_whnf(expr_inst_levels(prim_ty, p_us), n_params) {
+    match collect_n_doms_whnf(rc, expr_inst_levels(prim_ty, p_us), n_params) {
       (param_doms, after_params) =>
-        let motive_doms = build_all_motives(flat, elim_level, n_params);
-        let minor_doms = build_all_minors(flat, flat_own_params, n_params,
+        let motive_doms = build_all_motives(rc, flat, elim_level, n_params);
+        let minor_doms = build_all_minors(rc, flat, flat_own_params, n_params,
           n_motives, motive_base);
         let n_minors = list_length(minor_doms);
         let (self_addr, self_is_aux, self_spec_params, self_occ_us) =
@@ -2208,7 +2120,7 @@ def check := ⟦
         let self_ty_inst = expr_inst_levels(self_ind_ty, self_occ_us);
         let self_after_params = peel_motive_params_subst(self_ty_inst,
           self_own_params, n_params, self_is_aux, self_spec_params, 0);
-        let index_doms_raw = collect_index_doms(self_after_params,
+        let index_doms_raw = collect_index_doms(rc, self_after_params,
           n_indices);
         let index_doms = list_lift_indices(index_doms_raw,
           n_motives + n_minors, 0);
@@ -2235,7 +2147,7 @@ def check := ⟦
     }
   }
 
-  fn check_recursor_canonical_full(rec_ci: KConstantInfo, addr: Addr,
+  fn check_recursor_canonical_full(rc: RoleCtx, rec_ci: KConstantInfo, addr: Addr,
                                           parent_ci: KConstantInfo,
                                           parent_addr: Addr) {
     match rec_ci {
@@ -2253,9 +2165,9 @@ def check := ⟦
                 (0, KConstantInfo.Axiom(0, store(KExprNode.Srt(
                   store(KLevelNode.Zero))), 0)),
             };
-            let result_level = get_result_sort_level(pty, pnp + pni,
+            let result_level = get_result_sort_level(rc, pty, pnp + pni,
               store(ListNode.Nil));
-            let univ_offset = is_large_eliminator(result_level,
+            let univ_offset = is_large_eliminator(rc, result_level,
               num_ctors, single_ctor_pair,
               ind_is_solo(parent_block_addr, parent_addr));
             let elim_level = match univ_offset {
@@ -2297,14 +2209,14 @@ def check := ⟦
                                                     rec_spec_params, 0);
             match kind_hit {
               (1, self_pos) =>
-                canonical_rules_at_pos(flat, self_pos, num_ctors,
+                canonical_rules_at_pos(rc, flat, self_pos, num_ctors,
                   parent_block_addr, parent_ind_idx, n_p, n_mot, n_min,
                   rec_lvls_list, peer_recs, flat_own_params, rules,
                   ty, pty, pnlvls, pni, elim_level, univ_offset),
               _ =>
                 match flat_find_pos(flat, parent_addr, 0) {
                   (1, self_pos) =>
-                    canonical_rules_at_pos(flat, self_pos, num_ctors,
+                    canonical_rules_at_pos(rc, flat, self_pos, num_ctors,
                       parent_block_addr, parent_ind_idx, n_p, n_mot,
                       n_min, rec_lvls_list, peer_recs, flat_own_params,
                       rules, ty, pty, pnlvls, pni, elim_level, univ_offset),
@@ -2320,7 +2232,7 @@ def check := ⟦
   -- `check_recursor_canonical_full` so both the kind-aware lookup and the
   -- address-only fallback can tail-call it (this compiler rejects a
   -- non-tail `match` bound by `let`).
-  fn canonical_rules_at_pos(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
+  fn canonical_rules_at_pos(rc: RoleCtx, flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                                  self_pos: G, num_ctors: G,
                                  parent_block_addr: Addr,
                                  parent_ind_idx: G, n_p: G, n_mot: G,
@@ -2339,9 +2251,9 @@ def check := ⟦
         -- to declare `... -> False` and still reconstruct every rule
         -- correctly. Both the kind-aware lookup and the address-only
         -- fallback route through here, so neither can skip this.
-        let canonical_ty = build_rec_type(pty, pnlvls, n_p, pni, elim_level,
+        let canonical_ty = build_rec_type(rc, pty, pnlvls, n_p, pni, elim_level,
           univ_offset, flat, flat_own_params, self_pos);
-        assert_eq!(k_is_def_eq(ty, canonical_ty, store(ListNode.Nil)), 1,
+        assert_eq!(k_is_def_eq(rc, ty, canonical_ty, store(ListNode.Nil)), 1,
           "recursor's declared type is not def-eq to the canonical reconstruction");
         -- The type check pins the SUM of the motive and minor binders, but
         -- not the SPLIT between them: a def-eq between two Pi telescopes
@@ -2353,18 +2265,18 @@ def check := ⟦
         -- against the reconstruction, as the reference does (`inductive.rs`
         -- check_recursor "arity metadata mismatch").
         let canon_n_motives = list_length(flat);
-        let canon_n_minors = list_length(build_all_minors(flat,
+        let canon_n_minors = list_length(build_all_minors(rc, flat,
           flat_own_params, n_p, canon_n_motives, n_p));
         assert_eq!(n_mot, canon_n_motives,
           "recursor motive count disagrees with the canonical reconstruction");
         assert_eq!(n_min, canon_n_minors,
           "recursor minor count disagrees with the canonical reconstruction");
         let self_ctors_offset = ctors_before_pos(flat, self_pos, 0);
-        let canonical = populate_rules(num_ctors, self_ctors_offset,
+        let canonical = populate_rules(rc, num_ctors, self_ctors_offset,
           parent_block_addr, parent_ind_idx, n_p, n_mot, n_min, occ_us,
           rec_lvls_list, flat, peer_recs, flat_own_params, is_aux,
           spec_params, 0);
-        compare_rules(rules, canonical, n_p, n_mot, n_min,
+        compare_rules(rc, rules, canonical, n_p, n_mot, n_min,
           parent_block_addr, parent_ind_idx, num_ctors, 0),
     }
   }
@@ -2393,7 +2305,7 @@ def check := ⟦
 
   -- Populate canonical rhs bodies for one recursor's rules (self's
   -- ctors only). ctor_minor_index = ctors_before_self + cidx.
-  fn populate_rules(num_ctors: G, self_ctors_offset: G,
+  fn populate_rules(rc: RoleCtx, num_ctors: G, self_ctors_offset: G,
                           block_addr: Addr, ind_idx: G,
                           n_params: G, n_motives: G, n_minors: G,
                           occurrence_us: List‹KLevel›,
@@ -2410,12 +2322,12 @@ def check := ⟦
         match ctor_ci {
           KConstantInfo.Ctor(_, ctor_ty, _, _, _, np, _, _) =>
             let ctor_minor_index = self_ctors_offset + cidx;
-            let rhs = build_rule_rhs(ctor_ty, ctor_minor_index,
+            let rhs = build_rule_rhs(rc, ctor_ty, ctor_minor_index,
               n_params, n_motives, n_minors, np, occurrence_us,
               rec_lvls_list, flat, peer_recs, flat_own_params,
               is_aux, spec_params);
             store(ListNode.Cons(rhs,
-              populate_rules(num_ctors, self_ctors_offset, block_addr,
+              populate_rules(rc, num_ctors, self_ctors_offset, block_addr,
                 ind_idx, n_params, n_motives, n_minors, occurrence_us,
                 rec_lvls_list, flat, peer_recs, flat_own_params, is_aux,
                 spec_params, cidx + 1))),
@@ -2427,7 +2339,7 @@ def check := ⟦
   -- Compare stored rules against canonical rhs list. Per rule: peel
   -- (n_p + n_mot + n_min + nf) Lams off stored rhs, def_eq against
   -- canonical body.
-  fn compare_rules(stored: List‹KRecRule›, canonical: List‹KExpr›,
+  fn compare_rules(rc: RoleCtx, stored: List‹KRecRule›, canonical: List‹KExpr›,
                         n_p: G, n_mot: G, n_min: G,
                         block_addr: Addr, ind_idx: G, num_ctors: G, pos: G) {
     match load(stored) {
@@ -2489,12 +2401,12 @@ def check := ⟦
                     -- against `BVar i` directly. Anything that instead
                     -- needs to INFER a bound variable's type now runs out
                     -- of context and aborts, which is the safe direction.
-                    assert_eq!(k_is_def_eq(stored_body, cbody,
+                    assert_eq!(k_is_def_eq(rc, stored_body, cbody,
                         store(ListNode.Nil)), 1,
                       "recursor rule rhs differs from canonical reconstruction");
                     (),
                 };
-                compare_rules(rest, crest, n_p, n_mot, n_min,
+                compare_rules(rc, rest, crest, n_p, n_mot, n_min,
                   block_addr, ind_idx, num_ctors, pos + 1),
             },
         },
@@ -2503,7 +2415,7 @@ def check := ⟦
 
   -- Full IH construction with peer_recs + flat_own_params + arbitrary
   -- n_motives / n_minors. Mirror apply_ihs (Inductive.lean:1729+).
-  fn apply_ihs_full(head: KExpr, rec_indices: List‹G›,
+  fn apply_ihs_full(rc: RoleCtx, head: KExpr, rec_indices: List‹G›,
                           rec_member_idxs: List‹G›,
                           field_doms: List‹KExpr›,
                           peer_recs: List‹Addr›,
@@ -2542,7 +2454,7 @@ def check := ⟦
             -- wrapper's arguments (`drop 1 [A, B] = [B]`) instead of the
             -- inductive's (`drop 1 [a] = []`), so the IH was applied to one
             -- argument too many.
-            match collect_spine(whnf(inner_body, store(ListNode.Nil))) {
+            match collect_spine(whnf(rc, inner_body, store(ListNode.Nil))) {
               (_dh, dargs) =>
                 let idx_args = list_drop(dargs, target_n_params);
                 let with_idx = apply_spine_expr(with_minors, idx_args);
@@ -2552,7 +2464,7 @@ def check := ⟦
                 let ih_inner = store(KExprNode.App(with_idx, field_app));
                 let ih = wrap_lams(ih_inner, forall_doms);
                 let new_head = store(KExprNode.App(head, ih));
-                apply_ihs_full(new_head, rest, rec_member_idxs,
+                apply_ihs_full(rc, new_head, rest, rec_member_idxs,
                   field_doms, peer_recs, flat_own_params, n_params,
                   n_motives, n_minors, n_fields, rec_lvls_list, k + 1),
             },
@@ -2563,7 +2475,7 @@ def check := ⟦
   -- Full canonical rule rhs BODY (all outer Lams peeled). Mirror
   -- build_rule_rhs (Inductive.lean:1641+). ctor_minor_index = global
   -- minor position (across all flat members' ctors).
-  fn build_rule_rhs(ctor_ty: KExpr, ctor_minor_index: G,
+  fn build_rule_rhs(rc: RoleCtx, ctor_ty: KExpr, ctor_minor_index: G,
                           n_params: G, n_motives: G, n_minors: G,
                           n_own_params: G,
                           occurrence_us: List‹KLevel›,
@@ -2583,11 +2495,11 @@ def check := ⟦
     -- Substituting body-frame indices here would apply that transport a
     -- second time, leaving every param reference that survives into a
     -- binder domain over-shifted.
-    let after_params = peel_ctor_params_subst(ctor_ty_inst, n_own_params,
+    let after_params = peel_ctor_params_subst(rc, ctor_ty_inst, n_own_params,
       n_own_params, 0, is_aux, spec_params, 0);
     -- spec_lift_by must name the same frame the spec_params are stored
     -- in; walk_fields_classify adds the walk depth itself.
-    match walk_fields_classify(after_params, flat, store(ListNode.Nil),
+    match walk_fields_classify(rc, after_params, flat, store(ListNode.Nil),
             store(ListNode.Nil), store(ListNode.Nil), 0, 0) {
       (field_doms, rec_indices, rec_member_idxs, _ret_ty) =>
         let minor_var = (body_depth - 1) - ((n_params + n_motives) +
@@ -2595,7 +2507,7 @@ def check := ⟦
         let base = store(KExprNode.BVar(minor_var));
         let with_fields = build_apply_field_bvars(base, n_fields,
           n_fields, 0);
-        apply_ihs_full(with_fields, rec_indices, rec_member_idxs,
+        apply_ihs_full(rc, with_fields, rec_indices, rec_member_idxs,
           field_doms, peer_recs, flat_own_params, n_params, n_motives,
           n_minors, n_fields, rec_lvls_list, 0),
     }
@@ -2724,7 +2636,7 @@ def check := ⟦
 
   -- Iterate ctors 0..num_ctors-1, build minor for each via
   -- build_minor_at_depth. Return list of minor doms.
-  fn build_minor_doms(member_addr: Addr, is_aux: G,
+  fn build_minor_doms(rc: RoleCtx, member_addr: Addr, is_aux: G,
                             spec_params: List‹KExpr›,
                             occurrence_us: List‹KLevel›,
                             flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
@@ -2741,12 +2653,12 @@ def check := ⟦
         match ctor_ci {
           KConstantInfo.Ctor(_, ctor_ty, _, _, _, np, _nf, _) =>
             let ctor_addr = projection_addr_ctor(ind_idx, cidx, block_addr);
-            let minor = build_minor_at_depth(ctor_addr, ctor_ty, np,
+            let minor = build_minor_at_depth(rc, ctor_addr, ctor_ty, np,
               is_aux, spec_params, occurrence_us, flat, flat_own_params,
               n_rec_params, n_motives, prev_minors, motive_base,
               self_mem_idx);
             store(ListNode.Cons(minor,
-              build_minor_doms(member_addr, is_aux, spec_params,
+              build_minor_doms(rc, member_addr, is_aux, spec_params,
                 occurrence_us, flat, flat_own_params, n_rec_params,
                 n_motives, motive_base, self_mem_idx, block_addr, ind_idx,
                 num_ctors, prev_minors + 1, cidx + 1))),
@@ -2761,11 +2673,11 @@ def check := ⟦
 
   -- Iterate flat, per member call build_minor_doms with appropriate
   -- block_addr/ind_idx (from member_addr's KCI).
-  fn build_all_minors(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
+  fn build_all_minors(rc: RoleCtx, flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                             flat_own_params: List‹G›,
                             n_rec_params: G, n_motives: G,
                             motive_base: G) -> List‹KExpr› {
-    build_all_minors_walk(flat, flat, flat_own_params, n_rec_params,
+    build_all_minors_walk(rc, flat, flat, flat_own_params, n_rec_params,
       n_motives, motive_base, 0, 0)
   }
 
@@ -2775,7 +2687,7 @@ def check := ⟦
   -- when matching spec_params. Passing the shrinking list down instead
   -- would make a later member's ctor-field classification blind to the
   -- members already consumed, silently dropping their induction hypotheses.
-  fn build_all_minors_walk(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
+  fn build_all_minors_walk(rc: RoleCtx, flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                                  full_flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                                  flat_own_params: List‹G›,
                                  n_rec_params: G, n_motives: G,
@@ -2790,17 +2702,17 @@ def check := ⟦
             match ci {
               KConstantInfo.Induct(_, _, _, _, num_ctors, _,
                                      mem_block_addr, mem_ind_idx) =>
-                let m_minors = build_minor_doms(member_addr, is_aux,
+                let m_minors = build_minor_doms(rc, member_addr, is_aux,
                   spec_params, occ_us, full_flat, flat_own_params,
                   n_rec_params, n_motives, motive_base, mem_pos,
                   mem_block_addr, mem_ind_idx, num_ctors, prev_minors, 0);
                 let added = list_length(m_minors);
-                let rest_minors = build_all_minors_walk(rest, full_flat,
+                let rest_minors = build_all_minors_walk(rc, rest, full_flat,
                   flat_own_params, n_rec_params, n_motives, motive_base,
                   prev_minors + added, mem_pos + 1);
                 list_concat(m_minors, rest_minors),
               _ =>
-                build_all_minors_walk(rest, full_flat, flat_own_params,
+                build_all_minors_walk(rc, rest, full_flat, flat_own_params,
                   n_rec_params, n_motives, motive_base, prev_minors,
                   mem_pos + 1),
             },
@@ -2838,7 +2750,7 @@ def check := ⟦
   -- (binders between the recursor-param frame and the peel point — NOT
   -- `depth`, which counts the params themselves too) when j < |spec|;
   -- BVar(depth-1-j) otherwise.
-  fn peel_ctor_params_subst(ty: KExpr, n: G, depth: G, spec_lift: G,
+  fn peel_ctor_params_subst(rc: RoleCtx, ty: KExpr, n: G, depth: G, spec_lift: G,
                                   is_aux: G, spec_params: List‹KExpr›,
                                   j: G) -> KExpr {
     match n {
@@ -2853,15 +2765,15 @@ def check := ⟦
             let p = ctor_subst_param_for(j, depth, spec_lift, is_aux,
               spec_params);
             let body_substed = expr_inst1(body, p, 0);
-            peel_ctor_params_subst(body_substed, n - 1, depth,
+            peel_ctor_params_subst(rc, body_substed, n - 1, depth,
               spec_lift, is_aux, spec_params, j + 1),
           _ =>
-            match load(whnf(ty, store(ListNode.Nil))) {
+            match load(whnf(rc, ty, store(ListNode.Nil))) {
               KExprNode.Forall(_, body) =>
                 let p = ctor_subst_param_for(j, depth, spec_lift, is_aux,
                   spec_params);
                 let body_substed = expr_inst1(body, p, 0);
-                peel_ctor_params_subst(body_substed, n - 1, depth,
+                peel_ctor_params_subst(rc, body_substed, n - 1, depth,
                   spec_lift, is_aux, spec_params, j + 1),
             },
         },
@@ -2870,7 +2782,7 @@ def check := ⟦
 
   -- Build minor binder type for one ctor. Mirror build_minor_at_depth
   -- (Inductive.lean:928-986).
-  fn build_minor_at_depth(ctor_addr: Addr, ctor_ty: KExpr,
+  fn build_minor_at_depth(rc: RoleCtx, ctor_addr: Addr, ctor_ty: KExpr,
                                 n_own_params: G,
                                 is_aux: G, spec_params: List‹KExpr›,
                                 occurrence_us: List‹KLevel›,
@@ -2882,9 +2794,9 @@ def check := ⟦
     let ctor_ty_inst = expr_inst_levels(ctor_ty, occurrence_us);
     let minor_saved = n_rec_params + n_motives + prev_minors;
     let below_params = n_motives + prev_minors;
-    let after_params = peel_ctor_params_subst(ctor_ty_inst, n_own_params,
+    let after_params = peel_ctor_params_subst(rc, ctor_ty_inst, n_own_params,
       minor_saved, below_params, is_aux, spec_params, 0);
-    match walk_fields_classify(after_params, flat, store(ListNode.Nil),
+    match walk_fields_classify(rc, after_params, flat, store(ListNode.Nil),
             store(ListNode.Nil), store(ListNode.Nil), 0, below_params) {
       (field_doms, rec_indices, rec_member_idxs, ret_ty) =>
         let n_fields = list_length(field_doms);
@@ -2905,7 +2817,7 @@ def check := ⟦
             let ctor_app = build_apply_field_bvars(with_params,
               n_fields, n_binders, 0);
             let conclusion = store(KExprNode.App(with_indices, ctor_app));
-            let ih_doms = build_ih_doms(rec_indices, rec_member_idxs,
+            let ih_doms = build_ih_doms(rc, rec_indices, rec_member_idxs,
               field_doms, flat_own_params, motive_base, n_fields,
               minor_saved, 0);
             let with_ihs = wrap_foralls(conclusion, ih_doms);
@@ -2943,7 +2855,7 @@ def check := ⟦
   -- Build IH dom per rec field. IH shape:
   --   ∀ (xs from Forall-in-dom peel), motive_ref (lifted_idx_args) (field_ref applied to xs)
   -- Mirror build_ih_doms (Inductive.lean:3286+).
-  fn build_ih_doms(rec_indices: List‹G›, rec_member_idxs: List‹G›,
+  fn build_ih_doms(rc: RoleCtx, rec_indices: List‹G›, rec_member_idxs: List‹G›,
                         field_doms: List‹KExpr›,
                         flat_own_params: List‹G›,
                         motive_base: G, n_fields: G, minor_saved: G,
@@ -2968,7 +2880,7 @@ def check := ⟦
             -- head, so its argument would be taken for an index and the
             -- induction hypothesis would apply the motive to one argument
             -- too many.
-            match collect_spine(whnf(inner_body, store(ListNode.Nil))) {
+            match collect_spine(whnf(rc, inner_body, store(ListNode.Nil))) {
               (_h, dom_args) =>
                 let idx_args = list_drop(dom_args, target_n_params);
                 let motive_ref = store(KExprNode.BVar(motive_bvar));
@@ -2978,7 +2890,7 @@ def check := ⟦
                 let ih_body = store(KExprNode.App(with_indices, field_app));
                 let ih_dom = wrap_foralls(ih_body, forall_doms);
                 store(ListNode.Cons(ih_dom,
-                  build_ih_doms(rest, rec_member_idxs, field_doms,
+                  build_ih_doms(rc, rest, rec_member_idxs, field_doms,
                     flat_own_params, motive_base, n_fields, minor_saved,
                     k + 1))),
             },
@@ -3042,10 +2954,10 @@ def check := ⟦
   -- spec_lift_by binders). Nested-forall dom (Acc.intro's h :
   -- ∀ y, r y x → Acc r y) — peel leading Foralls until ret type
   -- and check its head.
-  fn is_rec_field(dom: KExpr,
+  fn is_rec_field(rc: RoleCtx, dom: KExpr,
                        flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                        spec_lift_by: G) -> (G, G) {
-    is_rec_field_peel(dom, flat, spec_lift_by)
+    is_rec_field_peel(rc, dom, flat, spec_lift_by)
   }
 
   -- WHNF, peel ONE Forall, repeat. Reducing at every peel is what
@@ -3062,12 +2974,12 @@ def check := ⟦
   -- context built from local doms violates ctx-trim's frame
   -- well-formedness — a param-referencing dom's lbr exceeds the depth
   -- below it, running the context cut off the end of the list.
-  fn is_rec_field_peel(ty: KExpr, flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
+  fn is_rec_field_peel(rc: RoleCtx, ty: KExpr, flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                             spec_lift_by: G) -> (G, G) {
-    let w = whnf(ty, store(ListNode.Nil));
+    let w = whnf(rc, ty, store(ListNode.Nil));
     match load(w) {
       KExprNode.Forall(_, body) =>
-        is_rec_field_peel(body, flat, spec_lift_by),
+        is_rec_field_peel(rc, body, flat, spec_lift_by),
       _ =>
         match collect_spine(w) {
           (head, args) =>
@@ -3138,7 +3050,7 @@ def check := ⟦
   -- Walk ctor body's field Foralls, collect (field_doms, rec_indices,
   -- rec_member_idxs, ret_ty). Field is recursive iff dom targets a
   -- flat member.
-  fn walk_fields_classify(ty: KExpr,
+  fn walk_fields_classify(rc: RoleCtx, ty: KExpr,
                                 flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                                 doms_acc: List‹KExpr›, rec_acc: List‹G›,
                                 rec_mem_acc: List‹G›,
@@ -3153,16 +3065,16 @@ def check := ⟦
         -- prefix. The `+ fidx` is load-bearing: without it every recursive
         -- field after the first fails to match its aux flat member and
         -- silently loses its induction hypothesis.
-        let r = is_rec_field(dom, flat, spec_lift_by + fidx);
+        let r = is_rec_field(rc, dom, flat, spec_lift_by + fidx);
         let new_doms = store(ListNode.Cons(dom, doms_acc));
         match r {
           (1, mem_idx) =>
             let new_rec = store(ListNode.Cons(fidx, rec_acc));
             let new_mem = store(ListNode.Cons(mem_idx, rec_mem_acc));
-            walk_fields_classify(body, flat, new_doms, new_rec,
+            walk_fields_classify(rc, body, flat, new_doms, new_rec,
               new_mem, fidx + 1, spec_lift_by),
           _ =>
-            walk_fields_classify(body, flat, new_doms, rec_acc,
+            walk_fields_classify(rc, body, flat, new_doms, rec_acc,
               rec_mem_acc, fidx + 1, spec_lift_by),
         },
       _ => (list_reverse(doms_acc), list_reverse(rec_acc),
@@ -3170,7 +3082,7 @@ def check := ⟦
     }
   }
 
-  fn build_all_motives_walk(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
+  fn build_all_motives_walk(rc: RoleCtx, flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                                   elim_level: KLevel, n_rec_params: G,
                                   j: G) -> List‹KExpr› {
     match load(flat) {
@@ -3182,15 +3094,15 @@ def check := ⟦
             match ci {
               KConstantInfo.Induct(_, m_ind_ty, m_own_params, m_n_indices,
                                      _, _, _, _) =>
-                let mt = build_motive_type_flat(member_addr, m_ind_ty,
+                let mt = build_motive_type_flat(rc, member_addr, m_ind_ty,
                   m_own_params, m_n_indices, occ_us, elim_level,
                   n_rec_params, is_aux, spec_params);
                 let mt_lifted = expr_lift(mt, j, 0);
                 store(ListNode.Cons(mt_lifted,
-                  build_all_motives_walk(rest, elim_level, n_rec_params,
+                  build_all_motives_walk(rc, rest, elim_level, n_rec_params,
                     j + 1))),
               _ =>
-                build_all_motives_walk(rest, elim_level, n_rec_params, j),
+                build_all_motives_walk(rc, rest, elim_level, n_rec_params, j),
             },
         },
     }
@@ -3250,7 +3162,7 @@ def check := ⟦
   }
 
 
-  fn check_recursor_member(rec_ci: KConstantInfo, addr: Addr) {
+  fn check_recursor_member(rc: RoleCtx, rec_ci: KConstantInfo, addr: Addr) {
     match rec_ci {
       KConstantInfo.Rec(nlvls, ty, n_p, n_i, n_mot, n_min, rules, k_flag,
                           _uns, rec_block_addr, _rec_idx) =>
@@ -3305,7 +3217,7 @@ def check := ⟦
             -- `k_flag` is not part of the recursor's type, so the def-eq
             -- check cannot catch a forged one — and a wrong k_flag enables
             -- K-style reduction that the inductive does not license.
-            let computed_k = compute_k_target(parent_ci, parent_addr);
+            let computed_k = compute_k_target(rc, parent_ci, parent_addr);
             assert_eq!(k_flag, computed_k,
               "recursor k_flag disagrees with its inductive's K eligibility");
             -- A recursor's meaning is only well-defined over a well-formed
@@ -3313,9 +3225,9 @@ def check := ⟦
             -- the ctor telescopes. Under subject-only checking, `<ind>.rec`
             -- is reachable without ever checking `<ind>` itself (memoized
             -- per block — the inductive's own check_const hits the same rows).
-            check_parent_inductive_shape(parent_ci);
+            check_parent_inductive_shape(rc, parent_ci);
             -- Full canonical rules identity check via reference-parallel pipeline.
-            check_recursor_canonical_full(rec_ci, addr, parent_ci, parent_addr),
+            check_recursor_canonical_full(rc, rec_ci, addr, parent_ci, parent_addr),
         },
     }
   }
@@ -3694,7 +3606,7 @@ def check := ⟦
   -- Aux-flavored rule walk: per rule, synth aux ctor_ty (peel + subst
   -- with spec_params), compute canonical body using rec's own n_p +
   -- multi-block-addr detection, def_eq compare against stored rhs.
-  fn check_aux_rules_walk(rules: List‹KRecRule›,
+  fn check_aux_rules_walk(rc: RoleCtx, rules: List‹KRecRule›,
                                 parent_block_addr: Addr,
                                 parent_ind_idx: G, num_ctors: G,
                                 expected_cidx: G, parent_np: G,
@@ -3727,9 +3639,9 @@ def check := ⟦
                   parent_block_addr, rec_self_addr, rec_nlvls);
                 let types = build_dummy_types(total_lams,
                   store(ListNode.Nil));
-                assert_eq!(k_is_def_eq(rhs_body, canonical, types), 1,
+                assert_eq!(k_is_def_eq(rc, rhs_body, canonical, types), 1,
                   "aux recursor rule rhs differs from canonical reconstruction");
-                check_aux_rules_walk(rest, parent_block_addr,
+                check_aux_rules_walk(rc, rest, parent_block_addr,
                   parent_ind_idx, num_ctors, cidx + 1, parent_np,
                   parent_ni, spec_params, rec_np, rec_self_addr,
                   rec_nlvls, rec_block_addr),
@@ -3738,7 +3650,7 @@ def check := ⟦
     }
   }
 
-  fn check_rec_rules_walk(rules: List‹KRecRule›,
+  fn check_rec_rules_walk(rc: RoleCtx, rules: List‹KRecRule›,
                                block_addr: Addr, ind_idx: G,
                                num_ctors: G, expected_cidx: G,
                                ni: G, rec_self_addr: Addr,
@@ -3762,13 +3674,13 @@ def check := ⟦
                 -- + num_ctors (minors) + nf (fields).
                 let total_lams = ((np + 1) + num_ctors) + nf;
                 let rhs_body = peel_n_lams(rhs, total_lams);
-                maybe_canonical_norec_check(cidx, num_ctors, np, nf,
+                maybe_canonical_norec_check(rc, cidx, num_ctors, np, nf,
                                                   ctor_ty, rhs_body,
                                                   block_addr, ind_idx,
                                                   ni, rec_self_addr,
                                                   rec_nlvls, is_aux,
                                                   rec_block_addr);
-                check_rec_rules_walk(rest, block_addr, ind_idx,
+                check_rec_rules_walk(rc, rest, block_addr, ind_idx,
                                           num_ctors, cidx + 1, ni,
                                           rec_self_addr, rec_nlvls,
                                           is_aux, rec_block_addr),
@@ -3781,7 +3693,7 @@ def check := ⟦
   --   * parent isn't solo (Muts block w/ >1 Indc);
   --   * ctor has recursive fields (would require IH construction).
   -- Otherwise builds canonical body and def_eq compares to stored.
-  fn maybe_canonical_norec_check(cidx: G, num_ctors: G, np: G, nf: G,
+  fn maybe_canonical_norec_check(rc: RoleCtx, cidx: G, num_ctors: G, np: G, nf: G,
                                        ctor_ty: KExpr, rhs_body: KExpr,
                                        block_addr: Addr, ind_idx: G,
                                        ni: G, rec_self_addr: Addr,
@@ -3798,7 +3710,7 @@ def check := ⟦
           ctor_ty, block_addr, rec_self_addr, rec_nlvls, rec_block_addr);
         let types = build_ctor_rule_types(ctor_ty, np, nf,
           num_ctors, store(ListNode.Nil));
-        assert_eq!(k_is_def_eq(rhs_body, canonical, types), 1,
+        assert_eq!(k_is_def_eq(rc, rhs_body, canonical, types), 1,
           "non-recursive ctor rule rhs differs from canonical reconstruction");
         (),
     }
@@ -3997,45 +3909,45 @@ def check := ⟦
   }
 
   -- check_const: dispatch per KConstantInfo variant.
-  fn check_const(ci: KConstantInfo, addr: Addr) {
+  fn check_const(rc: RoleCtx, ci: KConstantInfo, addr: Addr) {
     let u = is_unsafe_ci(ci);
     match ci {
       KConstantInfo.Axiom(nlvls, ty, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(rc, ty, store(ListNode.Nil));
         assert_safety(u, ty),
       KConstantInfo.Defn(nlvls, ty, val, _, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         validate_expr_well_scoped(val, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(rc, ty, store(ListNode.Nil));
         assert_safety(u, ty);
         assert_safety(u, val);
-        k_check(val, ty, store(ListNode.Nil)),
+        k_check(rc, val, ty, store(ListNode.Nil)),
       KConstantInfo.Thm(nlvls, ty, val) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         validate_expr_well_scoped(val, 0, nlvls);
-        let lvl = k_ensure_sort(ty, store(ListNode.Nil));
+        let lvl = k_ensure_sort(rc, ty, store(ListNode.Nil));
         assert_eq!(level_equal(lvl, store(KLevelNode.Zero)), 1,
           "theorem's type is not a Prop");
         assert_safety(u, ty);
         assert_safety(u, val);
-        k_check(val, ty, store(ListNode.Nil)),
+        k_check(rc, val, ty, store(ListNode.Nil)),
       KConstantInfo.Opaque(nlvls, ty, val, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         validate_expr_well_scoped(val, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(rc, ty, store(ListNode.Nil));
         assert_safety(u, ty);
         assert_safety(u, val);
-        k_check(val, ty, store(ListNode.Nil)),
+        k_check(rc, val, ty, store(ListNode.Nil)),
       KConstantInfo.Quot(nlvls, ty, kind) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(rc, ty, store(ListNode.Nil));
         assert_safety(u, ty);
-        check_quot(addr, kind, nlvls, ty),
+        check_quot(rc, addr, kind),
       KConstantInfo.Induct(nlvls, ty, n_params, n_indices, num_ctors,
                             ind_is_unsafe, ind_block, ind_idx) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(rc, ty, store(ListNode.Nil));
         assert_safety(u, ty);
         -- No definition member alongside the inductives (see
         -- `check_block_member_kinds`). Memoized per block addr — runs
@@ -4044,14 +3956,14 @@ def check := ⟦
         -- Self-contained shape validation: result sort + the full
         -- per-ctor gauntlet. Without it, subject-only checking accepts
         -- an inductive whose badness lives in a ctor const.
-        check_inductive_shape(ty, n_params, n_indices, num_ctors,
+        check_inductive_shape(rc, ty, n_params, n_indices, num_ctors,
                                    nlvls, ind_block, ind_idx,
                                    ind_is_unsafe);
-        check_block_peer_param_agreement(ci, addr),
+        check_block_peer_param_agreement(rc, ci, addr),
       KConstantInfo.Ctor(nlvls, ty, block_addr, ind_idx, _cidx,
                          num_params, num_fields, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(rc, ty, store(ListNode.Nil));
         assert_safety(u, ty);
         let ind_ci = load(@ctor_parent_ind_ci(block_addr, ind_idx));
         match ind_ci {
@@ -4059,27 +3971,27 @@ def check := ⟦
                                 ind_n_indices, _, ind_is_unsafe, _, _) =>
             assert_eq!(num_params, ind_n_params,
               "ctor parameter count differs from its inductive's");
-            check_param_agreement(ind_ty, ty, ind_n_params);
+            check_param_agreement(rc, ind_ty, ty, ind_n_params);
             check_ctor_return_type(ty, num_params, ind_n_indices,
                                         num_fields, ind_nlvls, block_addr,
                                         ind_idx);
-            let ind_level = get_result_sort_level(ind_ty,
+            let ind_level = get_result_sort_level(rc, ind_ty,
               ind_n_params + ind_n_indices, store(ListNode.Nil));
-            check_field_universes(ty, num_params, ind_level);
+            check_field_universes(rc, ty, num_params, ind_level);
             -- Positivity skipped for unsafe inductives — see
             -- check_inductive_shape_ctors.
             match ind_is_unsafe {
-              0 => check_positivity(ty, num_params, block_addr,
+              0 => check_positivity(rc, ty, num_params, block_addr,
                                          store(ListNode.Nil)),
               _ => (),
             },
         },
       KConstantInfo.Rec(nlvls, ty, _, _, _, _, _, _, _, rec_block, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(rc, ty, store(ListNode.Nil));
         assert_safety(u, ty);
         check_block_member_kinds(rec_block);
-        check_recursor_member(ci, addr),
+        check_recursor_member(rc, ci, addr),
     }
   }
 ⟧

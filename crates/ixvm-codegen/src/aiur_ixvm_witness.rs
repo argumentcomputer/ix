@@ -49,6 +49,7 @@ use ix_common::prim_addrs::PrimAddrs;
 use ixon::Env;
 use ixon::assumption_tree::AssumptionTree;
 use ixon::proof::{Claim, ClaimContext};
+use ixon::role_table::{Evidence, RoleTable};
 
 /// Append `data` to the per-channel arena and record `(idx, len)`
 /// in the `(channel, key)` info map.
@@ -216,6 +217,7 @@ pub fn build_claim_check_witness(
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   // ch 2/3/4: per-const/hint/blob entries — parallel byte conversion.
   add_entries_parallel(env, &closure, &mut io);
+  seed_binding(env, &mut io);
 
   Ok((claim, digest_key, io))
 }
@@ -267,10 +269,54 @@ fn prim_addrs() -> Vec<Address> {
 /// Every witness builder goes through here, so the byte scope cannot
 /// drift apart per call site. Mirrors
 /// `Ix.IxVM.ClaimHarness.closureFrom`.
+/// The constants the role binding names: every bound role and every proof
+/// evidence theorem the environment carries. Role validation reads them.
+fn binding_roots(env: &Env) -> Vec<Address> {
+  let Some(binding) = env.role_binding.as_ref() else {
+    return Vec::new();
+  };
+  let Ok(table) = RoleTable::from_bytes(binding.bytes.as_ref()) else {
+    return Vec::new();
+  };
+  let mut roots: Vec<Address> =
+    table.bound.into_iter().map(|(_, address)| address).collect();
+  for (_, entries) in table.evidence {
+    for entry in entries {
+      if let Evidence::Proof(address) = entry {
+        roots.push(address);
+      }
+    }
+  }
+  roots.retain(|a| env.consts.contains_key(a));
+  roots
+}
+
+/// Seed the role binding's section on channel 6, keyed by its hash, where
+/// the circuit reads the claim's roles.
+fn seed_binding(env: &Env, io: &mut IOBuffer) {
+  if let Some(binding) = env.role_binding.as_ref() {
+    extend(
+      io,
+      G::from_u8(6),
+      addr_key(&binding.address),
+      bytes_to_g(binding.bytes.as_ref()),
+    );
+  }
+}
+
+/// The argument of `check_owned`: the binding hash, then the constant's
+/// address, one field element per byte.
+pub fn check_owned_key(binding: &Address, addr: &Address) -> Vec<G> {
+  let mut key = addr_key(binding);
+  key.extend(addr_key(addr));
+  key
+}
+
 fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
   let mut all_roots: Vec<Address> = roots.to_vec();
   all_roots
     .extend(prim_addrs().into_iter().filter(|a| env.consts.contains_key(a)));
+  all_roots.extend(binding_roots(env));
   env.bfs_closure(&all_roots)
 }
 
@@ -302,6 +348,16 @@ pub struct EnvCheckStatement {
 }
 
 impl EnvCheckStatement {
+  /// The binding hash the statement is relative to, which every worker's
+  /// `check_owned` calls take.
+  pub fn binding(&self) -> Address {
+    self
+      .claim
+      .context()
+      .map(|ctx| ctx.binding.clone())
+      .expect("an environment statement is a typing claim")
+  }
+
   pub fn new(env: &Env) -> Result<Self, String> {
     let mut all: Vec<Address> =
       env.consts.iter().map(|entry| entry.key().clone()).collect();
@@ -347,6 +403,7 @@ impl EnvCheckStatement {
       );
     }
     add_entries_parallel(env, &witness_scope(env, &owners[worker]), &mut io);
+    seed_binding(env, &mut io);
     io
   }
 }
@@ -427,6 +484,7 @@ pub fn build_shard_check_env_witness(
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   let byte_scope = witness_scope(env, owned);
   add_entries_parallel(env, &byte_scope, &mut io);
+  seed_binding(env, &mut io);
   extend(
     &mut io,
     G::ONE,
