@@ -15,8 +15,8 @@ import Ix.LeanIngress.Expr
 
 These roots cover the TagN codec, the sharing construction (the exact core,
 the uniform optimizer, the tiered phases, the output format, the production
-rule and its totality, and the groundwork for an output-size bound), the
-compiler's sharing builder, and every `@[csimp]` theorem by which compiled code
+rule, its totality and its output-size bound), the compiler's sharing builder,
+and every `@[csimp]` theorem by which compiled code
 runs a fast body in place of a sharing specification (`Audit.CompiledCode` fails the
 build if one is missing). Each root's transitive axiom set must be exactly the
 listed one (`Ix.Kernel.Audit.checkAxioms`, the certified kernel's exact
@@ -106,6 +106,9 @@ def roots : Array RootAllowance := #[
   -- The first-tier search of the slot allocation visits at most `(m + 1)^9`
   -- states on a table of `m` entries.
   { root := ``Ix.Sharing.Verify.Tiered.allocate_within, standardAxioms := standard },
+  -- The output is at most nine times the full endpoint's charge.
+  { root := ``Ix.Sharing.Family.selected_ulen_le_modelBound, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.familyExpanded_output_le, standardAxioms := standard },
   -- Re-checks of the compiled family twins beside their definitions in
   -- `Ix.Sharing` (`FamilyCached`, `FamilyFast`, `FamilyNormalize`, `FamilyNormalizeSpec`).
   { root := ``Ix.Sharing.Family.cachedStep_eq, standardAxioms := standard },

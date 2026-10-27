@@ -35,6 +35,7 @@ import IxSharingVerify.CanonicalProduction
 import IxSharingVerify.FamilyExactConstant
 import IxSharingVerify.NeverFails
 import IxSharingVerify.AllocateBudget
+import IxSharingVerify.OutputBound
 
 /-!
 # Proofs of the canonical sharing construction
@@ -72,8 +73,10 @@ stronger optimality results.
   Apart from that comparison, which takes the bound from the reference run,
   these results need no bound on telescope spine lengths, and the family
   route checks none. `FamilyFullWitness`, `FamilyResidual`,
-  `FamilyLocalWriting` and `FamilyWritingBound` are groundwork for an
-  output-size bound;
+  `FamilyLocalWriting`, `FamilyWritingBound` and `OutputBound` bound the
+  output: a successful run writes at most nine times `modelBound`, the full
+  endpoint's charge, a sum over the DAG's terms and edges
+  (`familyExpanded_output_le`);
 * `NeverFails` (namespace `Totality`), over `ExpandSuccess`, `BuildSuccess`,
   `ReexpandSuccess`, `PinnedOrderSpec`, `FamilyComponents`, `FamilySuccess`,
   `FinishSuccess`, `AllocateSuccess`, `KahnOrderSpec`, `TableSuccess`,
