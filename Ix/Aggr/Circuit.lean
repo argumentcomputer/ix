@@ -541,22 +541,59 @@ def circuit := ⟦
     }
   }
 
-  -- Strictly decode one complete `Claim::CheckEnv` byte string.
-  -- The fixed sequence (36 or 68 bytes) and final Nil check rule out cycles
-  -- in preimages and output claims without a separate depth traversal.
-  fn aggr_parse_check_env(bytes: ByteStream) -> (Addr, Option‹Addr›) {
-    -- TagN4(0xE, 5) is the one byte 0xE5; object format 4 is Ixon v4.
+  -- Strictly decode one complete `Claim::CheckEnv` byte string: its context
+  -- (specification digest, binding hash, axioms), root and assumptions.
+  -- The fixed sequence and final Nil check rule out cycles in preimages and
+  -- output claims without a separate depth traversal.
+  fn aggr_parse_check_env(bytes: ByteStream)
+      -> ((Addr, Addr, Option‹Addr›), Addr, Option‹Addr›) {
+    -- TagN4(0xE, 5) is the one byte 0xE5; object format 4 is Ixon v4;
+    -- validator 3 is erased-lean-v2, whose claims carry a context.
     let (tag, s) = aggr_read_byte(bytes);
     assert_eq!(tag, 0xE5u8, "aggr: claim is not CheckEnv");
     let (format, s) = aggr_read_byte(s);
     assert_eq!(format, 4u8, "aggr: unsupported object format");
     let (validator, s) = aggr_read_byte(s);
-    assert_eq!(validator, 1u8, "aggr: wrong validator identity");
+    assert_eq!(validator, 3u8, "aggr: wrong validator identity");
+    let (spec, s) = aggr_read_address(s);
+    let (binding, s) = aggr_read_address(s);
+    let (axioms, s) = aggr_get_opt_address(s);
     let (root, s2) = aggr_read_address(s);
     let (assumptions, stop) = aggr_get_opt_address(s2);
     assert_eq!(load(stop), ListNode.Nil,
       "aggr: trailing bytes after CheckEnv claim");
-    (root, assumptions)
+    ((spec, binding, axioms), root, assumptions)
+  }
+
+  fn aggr_opt_address_eq(a: Option‹Addr›, b: Option‹Addr›) -> G {
+    match a {
+      Option.None =>
+        match b {
+          Option.None => 1,
+          Option.Some(_) => 0,
+        },
+      Option.Some(x) =>
+        match b {
+          Option.None => 0,
+          Option.Some(y) => address_eq(x, y),
+        },
+    }
+  }
+
+  -- A fold states its children's typing under one context: both children
+  -- and the output must carry the same specification digest, binding hash
+  -- and axioms.
+  fn aggr_assert_same_context(a: (Addr, Addr, Option‹Addr›),
+      b: (Addr, Addr, Option‹Addr›)) {
+    let (spec_a, binding_a, axioms_a) = a;
+    let (spec_b, binding_b, axioms_b) = b;
+    assert_eq!(address_eq(spec_a, spec_b), 1,
+      "aggr: claims differ in specification digest");
+    assert_eq!(address_eq(binding_a, binding_b), 1,
+      "aggr: claims differ in binding hash");
+    assert_eq!(aggr_opt_address_eq(axioms_a, axioms_b), 1,
+      "aggr: claims differ in axioms");
+    ()
   }
 
   /- ## Digest-bound advice and claim decoding -/
@@ -698,9 +735,9 @@ def circuit := ⟦
       ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
     let right_digest = aggr_child_check_env_digest(right_kind, 1,
       ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
-    let (left_root, left_asm) =
+    let (left_ctx, left_root, left_asm) =
       aggr_parse_check_env(aggr_load_preimage(left_digest));
-    let (right_root, right_asm) =
+    let (right_ctx, right_root, right_asm) =
       aggr_parse_check_env(aggr_load_preimage(right_digest));
 
     -- Bind and decode this fold's output claim.
@@ -708,7 +745,9 @@ def circuit := ⟦
     let output_bytes = #read_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr: output claim digest mismatch");
-    let (output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    aggr_assert_same_context(left_ctx, right_ctx);
+    aggr_assert_same_context(left_ctx, output_ctx);
 
     let left_subjects = aggr_load_canonical_tree(left_root);
     let right_subjects = aggr_load_canonical_tree(right_root);
@@ -734,16 +773,18 @@ def circuit := ⟦
       ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
     let right_digest = aggr_child_check_env_digest(right_kind, 1,
       ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
-    let (left_root, left_asm) =
+    let (left_ctx, left_root, left_asm) =
       aggr_parse_check_env(aggr_load_preimage(left_digest));
-    let (right_root, right_asm) =
+    let (right_ctx, right_root, right_asm) =
       aggr_parse_check_env(aggr_load_preimage(right_digest));
 
     let (oidx, olen) = io_get_info(2, [2]);
     let output_bytes = #read_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr structural: output claim digest mismatch");
-    let (output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    aggr_assert_same_context(left_ctx, right_ctx);
+    aggr_assert_same_context(left_ctx, output_ctx);
 
     let expected_root = aggr_node_hash(left_root, right_root);
     assert_eq!(address_eq(output_root, expected_root), 1,

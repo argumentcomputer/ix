@@ -99,7 +99,7 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
     | .error e => IO.eprintln s!"error: {e}"; return 1
-  let .checkEnv _ _ := wrapper.claim | do
+  let .checkEnv .. := wrapper.claim | do
     IO.eprintln s!"error: aggregate proof {proofAddr} does not bundle a CheckEnv claim"
     return 1
   match expected? with
@@ -237,7 +237,11 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
         let some expectedTree := IxVM.ClaimHarness.envCanonicalTree env | do
           IO.eprintln "error: cannot verify an aggregate against an empty environment"
           return 1
+        let ctx ← match Ix.ClaimContext.ofEnv env with
+          | .error e => IO.eprintln s!"error: {e}"; return 1
+          | .ok ctx => pure ctx
         let statement : Aggr.CheckEnvTrees := {
+          ctx
           subjects := expectedTree
           assumptions := none
         }

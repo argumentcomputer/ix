@@ -9,27 +9,27 @@ namespace IxVM
 /-- Recursive normalization using the kernel's existing WHNF rules. Output
 definitions use ordinary constant transport and retain the input's type. -/
 def eval := ⟦
-  fn eval_nf(e: KExpr, types: List‹KExpr›) -> KExpr {
-    let w = whnf(e, types);
+  fn eval_nf(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KExpr {
+    let w = whnf(rc, e, types);
     match load(w) {
       KExprNode.Lam(t, b) =>
-        let nt = eval_nf(t, types);
-        store(KExprNode.Lam(nt, eval_nf(b, store(ListNode.Cons(t, types))))),
+        let nt = eval_nf(rc, t, types);
+        store(KExprNode.Lam(nt, eval_nf(rc, b, store(ListNode.Cons(t, types))))),
       KExprNode.Forall(t, b) =>
-        let nt = eval_nf(t, types);
-        store(KExprNode.Forall(nt, eval_nf(b, store(ListNode.Cons(t, types))))),
-      _ => eval_nf_spine(w, types),
+        let nt = eval_nf(rc, t, types);
+        store(KExprNode.Forall(nt, eval_nf(rc, b, store(ListNode.Cons(t, types))))),
+      _ => eval_nf_spine(rc, w, types),
     }
   }
 
   -- Preserve the head WHNF selected for the whole application. Unfolding
   -- an isolated primitive head would destroy compact stuck Nat forms.
-  fn eval_nf_spine(e: KExpr, types: List‹KExpr›) -> KExpr {
+  fn eval_nf_spine(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KExpr {
     match load(e) {
       KExprNode.App(f, a) =>
-        store(KExprNode.App(eval_nf_spine(f, types), eval_nf(a, types))),
+        store(KExprNode.App(eval_nf_spine(rc, f, types), eval_nf(rc, a, types))),
       KExprNode.Proj(addr, i, e) =>
-        store(KExprNode.Proj(addr, i, eval_nf(e, types))),
+        store(KExprNode.Proj(addr, i, eval_nf(rc, e, types))),
       _ => e,
     }
   }
@@ -57,19 +57,19 @@ def eval := ⟦
     convert_expr(value, sharing, refs, no_recur, univs)
   }
 
-  fn run_eval(input: Addr, output: Addr, asm: Option‹Addr›) {
+  fn run_eval(rc: RoleCtx, input: Addr, output: Addr, asm: Option‹Addr›) {
     -- Assumptions waive dependency checks, never the subject check.
-    run_check(input);
+    run_check(rc, input);
     match asm {
-      Option.None => run_check_transitive(input),
+      Option.None => run_check_transitive(rc, input),
       Option.Some(r) =>
         let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap.Nil);
         assert_eq!(addr_set_member(input, asm_set), 0, "Eval: input is an assumption");
-        env_walk(input, RBTreeMap.Nil, asm_set, 0),
+        env_walk(rc, input, RBTreeMap.Nil, asm_set, 0),
     };
     let (nlvls, ty, body) = eval_body(input);
     let expected = eval_output(output, nlvls, ty);
-    let result = eval_nf(body, store(ListNode.Nil));
+    let result = eval_nf(rc, body, store(ListNode.Nil));
     -- Hash-consed pointers compare decoded, erased terms structurally.
     -- Neither the proposed result nor its type is normalized here. Output
     -- typing follows from the checked input and type-preserving reduction.
