@@ -1253,6 +1253,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     s: &str,
   ) -> Result<KExpr<M>, TcError<M>> {
+    // A string literal denotes `String.ofList` of its `Char.ofNat` list.
+    for role in [
+      ixon::role_table::Role::StringOfList,
+      ixon::role_table::Role::CharOfNat,
+      ixon::role_table::Role::List,
+      ixon::role_table::Role::Nat,
+    ] {
+      self.require_role(role)?;
+    }
     Ok({
       let char_const = self.intern(KExpr::cnst(
         self.primitives()?.char_type.clone(),

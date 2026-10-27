@@ -1,6 +1,7 @@
-//! Authenticated inputs for native role admission. This module issues no rule
-//! capabilities: wire decoding, candidate preparation and semantic admission
-//! are distinct boundaries. The actual dispatch cutover is a subsequent step.
+//! Native role admission. Wire decoding, candidate preparation and semantic
+//! admission are distinct boundaries: a prepared source authenticates its
+//! binding and every bound record, and only the group validators in
+//! `groups` admit roles, a whole specification group at a time.
 
 use std::sync::{Arc, OnceLock};
 
@@ -231,6 +232,37 @@ struct Source {
   /// position) has been authenticated. Authentication is a function of this
   /// immutable source alone, so a success is shared by every worker.
   references: dashmap::DashSet<Address>,
+  /// The roles this source's binding has admitted, computed once by the
+  /// group validators (see [`ArtifactSource::admission`]).
+  admission: OnceLock<Admission>,
+}
+
+/// The outcome of admitting a source's bound roles: each group is admitted
+/// whole, only after its validator has checked it, or not at all.
+#[derive(Debug, Default)]
+pub struct Admission {
+  roles: FxHashMap<Role, Address>,
+  refused: Vec<(Role, String)>,
+}
+
+impl Admission {
+  /// The bound address of `role`, if its group was admitted.
+  pub fn address(&self, role: Role) -> Option<&Address> {
+    self.roles.get(&role)
+  }
+  /// The number of admitted roles.
+  pub fn admitted_count(&self) -> usize {
+    self.roles.len()
+  }
+  /// Every admitted role with its bound address.
+  pub(crate) fn roles(&self) -> &FxHashMap<Role, Address> {
+    &self.roles
+  }
+  /// Each bound group that was not admitted, by its first role, with the
+  /// reason.
+  pub fn refused(&self) -> &[(Role, String)] {
+    &self.refused
+  }
 }
 
 /// One privately owned input, shared cheaply between workers. No Env reference
@@ -274,6 +306,7 @@ impl ArtifactSource {
       lookups: OnceLock::new(),
       owners: OnceLock::new(),
       references: dashmap::DashSet::new(),
+      admission: OnceLock::new(),
     }));
     if let Some(binding) = source.binding() {
       for (_, address) in &binding.table.bound {
@@ -304,6 +337,21 @@ impl ArtifactSource {
   }
   pub fn required_role(&self, role: Role) -> Result<&Address, Error> {
     self.binding().ok_or(Error::Unbound)?.required(role)
+  }
+
+  /// The roles admitted for this source. Computed once, by validating each
+  /// bound group in dependency order with only the groups admitted before
+  /// it available; every worker sharing this source reads the result.
+  pub fn admission(&self) -> &Admission {
+    self.0.admission.get_or_init(|| groups::admit(self))
+  }
+  /// Whether `role`'s group has been admitted.
+  pub fn is_admitted(&self, role: Role) -> bool {
+    self.admission().address(role).is_some()
+  }
+  /// The capability to use `role`'s rules, issued only for an admitted role.
+  pub fn capability(&self, role: Role) -> Option<AdmittedRole> {
+    self.is_admitted(role).then(|| AdmittedRole { source: self.clone(), role })
   }
 
   // Metadata is taken from the same captured input. These narrow views do not
@@ -603,9 +651,11 @@ impl Member {
   }
 }
 
-/// Reserved for actual semantic admission. There is deliberately no constructor
-/// in this checkpoint, no Default/deserialize implementation, and no public
-/// fields. A decoded or authenticated candidate cannot create this capability.
+/// The capability to use one role's rules for one source. Only
+/// [`ArtifactSource::capability`] issues it, and only for a role whose group
+/// its validator admitted; there is no other constructor, no
+/// Default/deserialize implementation and no public field, so a decoded or
+/// authenticated candidate cannot create one.
 /// ```compile_fail
 /// use ix_kernel::role_admission::AdmittedRole;
 /// let rule: AdmittedRole = Default::default();
@@ -628,6 +678,8 @@ impl AdmittedRole {
     self.source.same_source(source)
   }
 }
+
+mod groups;
 
 #[cfg(test)]
 mod tests;

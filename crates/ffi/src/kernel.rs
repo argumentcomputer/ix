@@ -1087,6 +1087,7 @@ where
   // this same authenticated source.
   let source =
     ArtifactSource::snapshot(&ixon_env).map_err(|error| error.to_string())?;
+  report_admission("rs_kernel_check", &source);
   let work =
     build_check_work(&ixon_env, &source, &names, &expect_pass, &ungrounded);
   if work.len() == names.len() {
@@ -1397,6 +1398,23 @@ enum AnonWorkItem {
 /// Assign result slots to a set of kernel work items — the indexing step
 /// shared by the whole-env check (every item) and the per-constant closure
 /// check (a filtered subset).
+/// Report, for a bound source, which role groups were admitted and why any
+/// bound group was refused.
+fn report_admission(label: &str, source: &ArtifactSource) {
+  if source.binding().is_none() {
+    return;
+  }
+  let admission = source.admission();
+  eprintln!(
+    "[{label}] bound roles: {} admitted, {} group(s) refused",
+    admission.admitted_count(),
+    admission.refused().len()
+  );
+  for (role, reason) in admission.refused() {
+    eprintln!("[{label}]   {} group refused: {reason}", role.lean_name());
+  }
+}
+
 fn index_anon_work(
   kernel_work: Vec<ix_kernel::anon_work::AnonWorkItem>,
 ) -> (Vec<AnonWorkItem>, Vec<Address>) {
@@ -1712,6 +1730,7 @@ pub extern "C" fn rs_kernel_check_anon(
     Ok(source) => source,
     Err(error) => return LeanIOResult::error_string(&error.to_string()),
   };
+  report_admission("rs_kernel_check_anon", &source);
   let (work, addrs) = match ix_kernel::anon_work::build_artifact_work(&source)
     .map(index_anon_work)
   {
@@ -1861,6 +1880,7 @@ fn load_anon_seed_context(
   let t2 = Instant::now();
   let source =
     ArtifactSource::prepare(ixon_env).map_err(|error| error.to_string())?;
+  report_admission(label, &source);
   let kernel_work = ix_kernel::anon_work::build_artifact_work(&source)
     .map_err(|e| format!("{label}: build_anon_work: {e}"))?;
   let by_block: FxHashMap<Address, usize> = kernel_work
@@ -3048,6 +3068,7 @@ pub fn profile_anon_ixe(
   // Its mapped file must remain immutable until profiling and reporting end.
   let source =
     ArtifactSource::snapshot(&ixon_env).map_err(|error| error.to_string())?;
+  report_admission("rs_kernel_profile", &source);
   let (work, addrs) =
     index_anon_work(ix_kernel::anon_work::build_artifact_work(&source)?);
   let targets = addrs.len();

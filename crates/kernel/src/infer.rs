@@ -464,12 +464,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   fn infer_nat_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
+    self.require_role(ixon::role_table::Role::Nat)?;
     Ok({
       self.intern(KExpr::cnst(self.primitives()?.nat.clone(), Box::new([])))
     })
   }
 
   fn infer_str_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
+    self.require_role(ixon::role_table::Role::String)?;
     Ok({
       self.intern(KExpr::cnst(self.primitives()?.string.clone(), Box::new([])))
     })

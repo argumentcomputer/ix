@@ -1,7 +1,7 @@
 //! Sealed host workers. Source snapshots are shared; declaration/reduction
 //! caches are private to a worker and cannot be seeded by a public KEnv caller.
-//! Foundation admission is still pending, so bound role units explicitly
-//! refuse and no bound primitive capability is issued by this stage.
+//! A bound worker's primitive table holds only the roles its source has
+//! admitted, and a unit holding a role that is not admitted refuses.
 
 use std::sync::Arc;
 
@@ -77,9 +77,11 @@ impl<M: KernelMode> ArtifactChecker<M> {
       Arc::new(IxonIngressLookups::default())
     };
     let primitives = match &source {
-      Ok(source) if source.binding().is_some() => {
-        PrimitiveContext::Bound(source.clone())
-      },
+      Ok(source) if source.binding().is_some() => PrimitiveContext::bound(
+        source.clone(),
+        source.admission().roles(),
+        |address| lookups.name_for_addr(address).cloned(),
+      ),
       Ok(_) => PrimitiveContext::Legacy(Arc::new(Primitives::from_addr_names(
         |address| lookups.name_for_addr(address).cloned(),
       ))),
@@ -117,9 +119,10 @@ impl<M: KernelMode> ArtifactChecker<M> {
       let roles = source
         .unit_roles(address)
         .map_err(|error| TcError::Other(error.to_string()))?;
-      if let Some(role) = roles.first() {
-        // Addresses are available to future validators only as syntax. This
-        // stage has no admitted group and cannot reuse a prior cached success.
+      // A unit holding a bound role is checked only once that role's group
+      // has been admitted; its candidate address is otherwise only syntax.
+      if let Some(role) = roles.iter().find(|role| !source.is_admitted(**role))
+      {
         let candidate = self.primitives.candidate_address(*role);
         return Err(TcError::Other(format!(
           "bound unit requires unadmitted role {role:?} at {candidate:?}"

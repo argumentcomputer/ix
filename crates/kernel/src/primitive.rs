@@ -208,6 +208,17 @@ pub fn is_native_evaluation_addr(addr: &Address) -> bool {
   native_evaluation_addrs().iter().any(|(_, a)| a == addr)
 }
 
+/// The address that stands for a primitive a bound artifact has not
+/// admitted (see `Primitives::from_admitted`). It is not the hash of any
+/// known bytes, so no authenticated record or reference can carry it.
+pub const ABSENT_PRIMITIVE: &str =
+  "ff000000000000000000000000000000000000000000000000000000000000a0";
+
+/// [`ABSENT_PRIMITIVE`] as an address.
+pub fn absent_primitive() -> Address {
+  Address::from_hex(ABSENT_PRIMITIVE).expect("valid absent-primitive address")
+}
+
 impl<M: KernelMode> Primitives<M> {
   /// Resolve primitives from the environment using the canonical
   /// content-hash address table (`PrimAddrs::new`). This is the correct
@@ -236,6 +247,122 @@ impl<M: KernelMode> Primitives<M> {
   /// `lake test -- rust-kernel-build-prim-origs`.
   pub fn from_env_orig(env: &KEnv<M>) -> Self {
     Self::from_env_with(env, &PrimAddrs::new_orig())
+  }
+
+  /// The table for a bound artifact. A primitive whose role the artifact's
+  /// binding has admitted is its bound constant. Every other primitive (a role
+  /// not admitted, or a primitive with no role) is [`ABSENT_PRIMITIVE`], an
+  /// address no authenticated record has, so its acceleration never applies
+  /// and the term reduces by ordinary delta and iota. The synthetic
+  /// `eager_reduce` marker keeps its reserved address.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn from_admitted<A, F>(admitted: A, mut name_for_addr: F) -> Self
+  where
+    A: Fn(ixon::role_table::Role) -> Option<Address>,
+    F: FnMut(&Address) -> Option<ix_common::env::Name>,
+  {
+    use ixon::role_table::Role as R;
+    let absent = absent_primitive();
+    let role = |r: R| admitted(r).unwrap_or_else(|| absent.clone());
+    let a = PrimAddrs {
+      nat: role(R::Nat),
+      nat_zero: role(R::NatZero),
+      nat_succ: role(R::NatSucc),
+      nat_add: role(R::NatAdd),
+      nat_pred: role(R::NatPred),
+      nat_sub: role(R::NatSub),
+      nat_mul: role(R::NatMul),
+      nat_pow: role(R::NatPow),
+      nat_gcd: role(R::NatGcd),
+      nat_mod: role(R::NatMod),
+      nat_div: role(R::NatDiv),
+      nat_bitwise: absent.clone(),
+      nat_beq: role(R::NatBeq),
+      nat_ble: role(R::NatBle),
+      nat_land: role(R::NatLand),
+      nat_lor: role(R::NatLor),
+      nat_xor: role(R::NatXor),
+      nat_shift_left: role(R::NatShiftLeft),
+      nat_shift_right: role(R::NatShiftRight),
+      bool_type: role(R::Bool),
+      bool_true: role(R::BoolTrue),
+      bool_false: role(R::BoolFalse),
+      string: role(R::String),
+      string_mk: role(R::StringOfList),
+      char_type: role(R::Char),
+      char_mk: absent.clone(),
+      char_of_nat: role(R::CharOfNat),
+      string_of_list: role(R::StringOfList),
+      string_to_byte_array: absent.clone(),
+      byte_array_empty: absent.clone(),
+      list: role(R::List),
+      list_nil: role(R::ListNil),
+      list_cons: role(R::ListCons),
+      eq: role(R::Eq),
+      eq_refl: role(R::EqRefl),
+      quot_type: role(R::Quot),
+      quot_ctor: role(R::QuotMk),
+      quot_lift: role(R::QuotLift),
+      quot_ind: role(R::QuotInd),
+      reduce_bool: absent.clone(),
+      reduce_nat: absent.clone(),
+      eager_reduce: PrimAddrs::new().eager_reduce,
+      system_platform_num_bits: absent.clone(),
+      system_platform_get_num_bits: absent.clone(),
+      subtype_val: absent.clone(),
+      nat_dec_le: absent.clone(),
+      nat_dec_eq: absent.clone(),
+      nat_dec_lt: absent.clone(),
+      decidable_rec: absent.clone(),
+      decidable_is_true: absent.clone(),
+      decidable_is_false: absent.clone(),
+      nat_le_of_ble_eq_true: absent.clone(),
+      nat_not_le_of_not_ble_eq_true: absent.clone(),
+      nat_eq_of_beq_eq_true: absent.clone(),
+      nat_ne_of_beq_eq_false: absent.clone(),
+      fin: absent.clone(),
+      bool_no_confusion: absent.clone(),
+      int: absent.clone(),
+      int_of_nat: absent.clone(),
+      int_neg_succ: absent.clone(),
+      int_add: absent.clone(),
+      int_sub: absent.clone(),
+      int_mul: absent.clone(),
+      int_neg: absent.clone(),
+      int_emod: absent.clone(),
+      int_ediv: absent.clone(),
+      int_bmod: absent.clone(),
+      int_bdiv: absent.clone(),
+      int_nat_abs: absent.clone(),
+      int_pow: absent.clone(),
+      int_dec_eq: absent.clone(),
+      int_dec_le: absent.clone(),
+      int_dec_lt: absent.clone(),
+      punit: role(R::PUnit),
+      pprod: absent.clone(),
+      pprod_mk: absent.clone(),
+      nat_rec: role(R::NatRec),
+      nat_cases_on: absent.clone(),
+      bit_vec: absent.clone(),
+      bit_vec_to_nat: absent.clone(),
+      bit_vec_of_nat: absent.clone(),
+      bit_vec_ult: absent.clone(),
+      decidable_decide: absent.clone(),
+      lt_lt: absent.clone(),
+      of_nat_of_nat: absent.clone(),
+      unit: absent.clone(),
+      punit_size_of_1: absent.clone(),
+      size_of_size_of: absent.clone(),
+      string_back: absent.clone(),
+      string_legacy_back: absent.clone(),
+      string_utf8_byte_size: absent.clone(),
+      string_append: absent.clone(),
+      string_dec_eq: absent,
+    };
+    Self::from_addrs_with(&a, |addr| {
+      name_for_addr(addr)
+        .map(|name| KId::new(addr.clone(), M::meta_field(name)))
+    })
   }
 
   /// Resolve canonical primitive KIds from an external address → name

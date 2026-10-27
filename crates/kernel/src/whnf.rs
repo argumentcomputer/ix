@@ -2300,6 +2300,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Convert a Nat literal to constructor form: 0 → Nat.zero, n+1 → Nat.succ(n-1).
   fn nat_to_constructor(&mut self, val: &Nat) -> Result<KExpr<M>, TcError<M>> {
+    self.require_role(ixon::role_table::Role::Nat)?;
     Ok({
       use num_bigint::BigUint;
       // Global diagnostic: count expansions and log every 100k. A legitimate

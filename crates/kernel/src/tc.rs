@@ -282,6 +282,25 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     self.prims.table()
   }
 
+  /// Refuse unless rules that need `role` may run: always for unbound input,
+  /// and for a bound artifact only once its binding's group for `role` has
+  /// been admitted. Support that a check cannot do without (literal typing,
+  /// literal/constructor conversion) calls this; an optional acceleration
+  /// instead finds the role absent from the table and does not fire.
+  pub(crate) fn require_role(
+    &self,
+    role: ixon::role_table::Role,
+  ) -> Result<(), TcError<M>> {
+    if self.prims.admits(role) {
+      Ok(())
+    } else {
+      Err(TcError::Other(format!(
+        "{} support is not admitted for this bound artifact",
+        role.lean_name()
+      )))
+    }
+  }
+
   pub(super) fn check_input_context(&self) -> Result<(), TcError<M>> {
     match self.prims.entry_error() {
       Some(error) => Err(TcError::Other(error.into())),
