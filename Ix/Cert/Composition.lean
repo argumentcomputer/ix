@@ -348,7 +348,8 @@ def CliqueRows : Prop :=
 
 /-- **(7) Locality: the role table's evidence.** Where quotient Source's run, renamed to
 the artifact's addresses, is accepted under the bundle's evidence, it is accepted under the
-evidence the reader resolves from the default table for the compiled closure. -/
+evidence the reader resolves from the default table for the compiled closure: the closure
+of the run's seeds, read into the run's declarations. -/
 def EvidenceTransfer : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source)
@@ -364,8 +365,11 @@ def EvidenceTransfer : Prop :=
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     Ix.Kernel.Admission.admitBinding Address.admissionHash binding = .ok tA →
     Ix.Kernel.Reader.preludeFor tA = .ok preA →
+    ClosureOrder ixe (Seed ixe sub) order →
     Ix.Kernel.Reader.StreamRead (closureContext ixe tA preA order) preA.state
       (Stream.decodedOf ixe order) st' decls →
+    (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList =
+      ds.toList.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) →
     Ix.Kernel.Cached.AcceptsRef .verified ((sourceEvidence ixe t).mapKeys (Ix.LeanIngress.evAddr ixe b))
       (ds.toList.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b))) envR →
     Ix.Kernel.Cached.AcceptsRef .verified
@@ -629,7 +633,7 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
       (claimsOwned h3 P.compiled closure P.none avoids) hpre prepared hb
   -- the role table's evidence: the reader's prepared stream is the renamed run's
   have runA := h7b env roots sub ixe failures t envQ pre ds b binding tA preA order st' decls envR P hpre
-    prepared hb hbind admitted prelude reads runR
+    prepared hb hbind admitted prelude corder reads streams runR
   have accA : Ix.Kernel.Cached.AcceptsRef .verified
       (Ix.Kernel.Reader.evidenceOf (closureContext ixe tA preA order) st' tA)
       (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList envR := by

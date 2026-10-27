@@ -82,6 +82,7 @@ import Ix.Cert.CompileCorrect
 import Ix.Cert.Composition
 import Ix.Cert.UnchangedRules
 import Ix.Cert.RunOwnership
+import Ix.Cert.EvidenceTransfer
 import Ix.Cert.SourceTotality
 
 /-! # The certification statements, frozen
@@ -7547,14 +7548,17 @@ fun blocks sched st₀ acc =>
           Ix.Kernel.Admission.defaultBinding = Except.ok binding →
             Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok tA →
               Ix.Kernel.Reader.preludeFor tA = Except.ok preA →
-                Ix.Kernel.Reader.StreamRead (Ix.Cert.closureContext ixe tA preA order) preA.state
-                    (Ix.Cert.Stream.decodedOf ixe order) st' decls →
-                  Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
-                      (Ix.Kernel.Evidences.mapKeys (Ix.LeanIngress.evAddr ixe b) (Ix.Cert.sourceEvidence ixe t))
-                      (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) envR →
-                    Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
-                      (Ix.Kernel.Reader.evidenceOf (Ix.Cert.closureContext ixe tA preA order) st' tA)
-                      (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) envR -/
+                Ix.Cert.ClosureOrder ixe (Ix.Cert.Seed ixe sub) order →
+                  Ix.Kernel.Reader.StreamRead (Ix.Cert.closureContext ixe tA preA order) preA.state
+                      (Ix.Cert.Stream.decodedOf ixe order) st' decls →
+                    (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList =
+                        List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList →
+                      Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
+                          (Ix.Kernel.Evidences.mapKeys (Ix.LeanIngress.evAddr ixe b) (Ix.Cert.sourceEvidence ixe t))
+                          (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) envR →
+                        Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
+                          (Ix.Kernel.Reader.evidenceOf (Ix.Cert.closureContext ixe tA preA order) st' tA)
+                          (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) envR -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.EvidenceTransfer
 
