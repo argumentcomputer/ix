@@ -1,8 +1,42 @@
-//! Authenticated inputs for native role admission. This module issues no rule
-//! capabilities: wire decoding, candidate preparation and semantic admission
-//! are distinct boundaries. The actual dispatch cutover is a subsequent step.
+//! Native role admission. Wire decoding, candidate preparation and semantic
+//! admission are distinct boundaries: a prepared source authenticates its
+//! binding and every bound record, and only the group validators in
+//! `groups` admit roles, a whole specification group at a time.
+//!
+//! # The certified checker's frontend, as this kernel reads it
+//!
+//! The certified checker reads an artifact as a stream folded in order, with
+//! a committed prelude in front. Its frontend has six checks this kernel must
+//! match. This kernel reads an artifact as content-addressed units checked
+//! independently, with the bound roles admitted first, so each check is
+//! either enforced here or ruled out by that representation:
+//!
+//! - **The prelude's shape** (the prelude names the pinned prelude roles) and
+//!   **the prelude copy** (a stream may not hold, at a prelude key, anything
+//!   but the prelude's entry): every prelude role ([`PRELUDE`]) must be bound
+//!   and its group admitted, or no unit of the artifact is checked
+//!   ([`ArtifactSource::prelude_refusal`]). The prelude's records are not
+//!   compared with a committed copy: the group validators compare them with
+//!   the same specifications the committed prelude was checked against, and
+//!   a bound address holds exactly one record.
+//! - **The rest-only hoist** and **the hoist guard** reorder a stream so that a
+//!   `Nat` operation's ground precedes it, outside the prelude and without
+//!   splitting a unit. Nothing here depends on order: groups are admitted in
+//!   dependency order before any unit is checked, whatever order the records
+//!   come in, and units are never split or merged.
+//! - **The units check** declines a basis record of the fold's own, a unit out
+//!   of shape, a prelude role declared past the front, and two units declaring
+//!   a common base. This kernel has no fold-own records and no generated model
+//!   records; a unit is a serialized record, whose recursive targets come from
+//!   the unit itself; a role's records are its bound addresses, one record
+//!   each; and a projection is authenticated against the one owner its address
+//!   commits to, so no two units declare one declaration.
+//! - **The inferer's fuel** bounds the checker's untyped inference over model
+//!   records. This kernel has no untyped inference: every inference and
+//!   reduction is typed and bounded by fuel, the WHNF step limit and the stack
+//!   check, so a non-terminating head β in a declared type declines.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use ix_common::address::Address;
 use ix_common::env::DefinitionSafety;
@@ -225,13 +259,108 @@ struct Source {
   env: Env,
   blobs: FxHashMap<Address, Arc<Vec<u8>>>,
   candidate: Option<BindingCandidate>,
+  lookups: OnceLock<Arc<crate::ingress::IxonIngressLookups>>,
+  owners: OnceLock<Result<FxHashMap<Address, Vec<Role>>, Error>>,
+  /// Addresses whose carried record (and, for a projection, its owner and
+  /// position) has been authenticated. Authentication is a function of this
+  /// immutable source alone, so a success is shared by every worker.
+  references: dashmap::DashSet<Address>,
+  /// Records whose bytes have been authenticated (hash and canonical
+  /// encoding); a function of this immutable source, shared by every worker.
+  authentic: dashmap::DashSet<Address>,
+  /// The roles this source's binding has admitted, computed once by the
+  /// group validators (see [`ArtifactSource::admission`]).
+  admission: OnceLock<Admission>,
 }
+
+/// The stack of the thread that validates a source's groups.
+const ADMISSION_STACK_SIZE: usize = 256 * 1024 * 1024;
+
+/// The outcome of admitting a source's bound roles: each group is admitted
+/// whole, only after its validator has checked it, or not at all.
+#[derive(Debug, Default)]
+pub struct Admission {
+  roles: FxHashMap<Role, Address>,
+  refused: Vec<(Role, String)>,
+}
+
+impl Admission {
+  /// The bound address of `role`, if its group was admitted.
+  pub fn address(&self, role: Role) -> Option<&Address> {
+    self.roles.get(&role)
+  }
+  /// The number of admitted roles.
+  pub fn admitted_count(&self) -> usize {
+    self.roles.len()
+  }
+  /// Every admitted role with its bound address.
+  pub(crate) fn roles(&self) -> &FxHashMap<Role, Address> {
+    &self.roles
+  }
+  /// Each bound group that was not admitted, by its first role, with the
+  /// reason.
+  pub fn refused(&self) -> &[(Role, String)] {
+    &self.refused
+  }
+}
+
+/// The prelude's roles: the certified checker's prelude shape, the blocks of
+/// its committed prelude (Eq, Nat, PUnit, Empty, False, the quotient package,
+/// And and Bool). A bound artifact must bind and admit all of them.
+pub const PRELUDE: [Role; 26] = [
+  Role::Eq,
+  Role::EqRefl,
+  Role::EqRec,
+  Role::Nat,
+  Role::NatZero,
+  Role::NatSucc,
+  Role::NatRec,
+  Role::PUnit,
+  Role::PUnitUnit,
+  Role::PUnitRec,
+  Role::Empty,
+  Role::EmptyRec,
+  Role::False,
+  Role::FalseRec,
+  Role::Quot,
+  Role::QuotMk,
+  Role::QuotLift,
+  Role::QuotInd,
+  Role::QuotSound,
+  Role::And,
+  Role::AndIntro,
+  Role::AndRec,
+  Role::Bool,
+  Role::BoolFalse,
+  Role::BoolTrue,
+  Role::BoolRec,
+];
 
 /// One privately owned input, shared cheaply between workers. No Env reference
 /// escapes this API: its DashMaps must not become a mutable admission input.
 /// Record backing buffers retain the loader's immutable heap/mmap contract.
 #[derive(Clone, Debug)]
 pub struct ArtifactSource(Arc<Source>);
+
+impl ixon::resource::addressed::RawSource for ArtifactSource {
+  fn constants(&self) -> Vec<(Address, LazyConstant)> {
+    self
+      .0
+      .env
+      .consts
+      .iter()
+      .map(|entry| (entry.key().clone(), entry.value().clone()))
+      .collect()
+  }
+  fn blobs(&self) -> Vec<(Address, Vec<u8>)> {
+    self
+      .0
+      .blobs
+      .iter()
+      .map(|(address, bytes)| (address.clone(), bytes.as_ref().clone()))
+      .collect()
+  }
+}
 
 impl ArtifactSource {
   pub fn prepare(mut env: Env) -> Result<Self, Error> {
@@ -241,7 +370,16 @@ impl ArtifactSource {
       .into_iter()
       .map(|(address, bytes)| (address, Arc::new(bytes)))
       .collect();
-    let source = Self(Arc::new(Source { env, blobs, candidate }));
+    let source = Self(Arc::new(Source {
+      env,
+      blobs,
+      candidate,
+      lookups: OnceLock::new(),
+      owners: OnceLock::new(),
+      references: dashmap::DashSet::new(),
+      authentic: dashmap::DashSet::new(),
+      admission: OnceLock::new(),
+    }));
     if let Some(binding) = source.binding() {
       for (_, address) in &binding.table.bound {
         source.member(address)?;
@@ -273,10 +411,171 @@ impl ArtifactSource {
     self.binding().ok_or(Error::Unbound)?.required(role)
   }
 
+  /// The roles admitted for this source. Computed once, by validating each
+  /// bound group in dependency order with only the groups admitted before
+  /// it available; every worker sharing this source reads the result.
+  pub fn admission(&self) -> &Admission {
+    self.0.admission.get_or_init(|| {
+      // Validation runs the kernel; give it the stack a check gets.
+      std::thread::scope(|scope| {
+        std::thread::Builder::new()
+          .name("role-admission".into())
+          .stack_size(ADMISSION_STACK_SIZE)
+          .spawn_scoped(scope, || groups::admit(self))
+          .expect("spawn the role admission thread")
+          .join()
+          .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+      })
+    })
+  }
+  /// Whether `role`'s group has been admitted.
+  pub fn is_admitted(&self, role: Role) -> bool {
+    self.admission().address(role).is_some()
+  }
+  /// Whether the declaration at `address` is in the safety tier: partial or
+  /// unsafe, so that a check of it is the certified checker's `typed`
+  /// outcome (well-typed, with partial and unsafe constants opaque) rather
+  /// than acceptance into the logical theory.
+  pub fn in_safety_tier(&self, address: &Address) -> bool {
+    let Ok(member) = self.member(address) else { return false };
+    let info = match (member.owner(), member.index()) {
+      (Some(owner), Some(index)) => match &owner.constant().info {
+        ConstantInfo::Muts(members) => {
+          return match members.get(index) {
+            Some(MutConst::Defn(d)) => d.safety != DefinitionSafety::Safe,
+            Some(MutConst::Indc(i)) => i.is_unsafe,
+            Some(MutConst::Recr(r)) => r.is_unsafe,
+            None => false,
+          };
+        },
+        _ => return false,
+      },
+      _ => &member.record().constant().info,
+    };
+    match info {
+      ConstantInfo::Defn(d) => d.safety != DefinitionSafety::Safe,
+      ConstantInfo::Axio(a) => a.is_unsafe,
+      ConstantInfo::Recr(r) => r.is_unsafe,
+      _ => false,
+    }
+  }
+
+  /// Why a bound artifact's units may not be checked, if they may not: a
+  /// prelude role ([`PRELUDE`]) that is unbound, or whose group was refused.
+  pub fn prelude_refusal(&self) -> Option<String> {
+    let binding = self.binding()?;
+    let role = PRELUDE.into_iter().find(|role| !self.is_admitted(*role))?;
+    Some(if binding.role(role).is_none() {
+      format!("the binding does not bind the prelude role {}", role.lean_name())
+    } else {
+      format!("the prelude role {} is not admitted", role.lean_name())
+    })
+  }
+  /// The capability to use `role`'s rules, issued only for an admitted role.
+  pub fn capability(&self, role: Role) -> Option<AdmittedRole> {
+    self.is_admitted(role).then(|| AdmittedRole { source: self.clone(), role })
+  }
+
+  // Metadata is taken from the same captured input. These narrow views do not
+  // expose an Env/DashMap that could mutate admission's source or read caches.
+  pub(crate) fn contains_record(&self, address: &Address) -> bool {
+    self.0.env.consts.contains_key(address)
+  }
+  pub(crate) fn addresses(&self) -> Vec<Address> {
+    self.0.env.consts.iter().map(|entry| entry.key().clone()).collect()
+  }
+  pub(crate) fn record_tag(
+    &self,
+    address: &Address,
+  ) -> Result<ixon::lazy::ConstVariantTag, Error> {
+    self
+      .raw_record(address)?
+      .peek_variant()
+      .map_err(|reason| Error::Record(address.clone(), reason))
+  }
+  pub(crate) fn named(
+    &self,
+    name: &ix_common::env::Name,
+  ) -> Option<ixon::env::Named> {
+    self.0.env.lookup_name(name)
+  }
+  pub(crate) fn name(&self, address: &Address) -> Option<ix_common::env::Name> {
+    self.0.env.get_name(address)
+  }
+  pub(crate) fn hint(
+    &self,
+    address: &Address,
+  ) -> Option<ix_common::env::ReducibilityHints> {
+    self.0.env.anon_hints.get(address).map(|entry| *entry)
+  }
+  pub(crate) fn lookups(&self) -> Arc<crate::ingress::IxonIngressLookups> {
+    Arc::clone(self.0.lookups.get_or_init(|| {
+      Arc::new(crate::ingress::build_ixon_ingress_lookups(&self.0.env))
+    }))
+  }
+  pub(crate) fn unit_roles(&self, address: &Address) -> Result<&[Role], Error> {
+    let owners = self
+      .0
+      .owners
+      .get_or_init(|| {
+        let mut owners: FxHashMap<Address, Vec<Role>> = FxHashMap::default();
+        if let Some(binding) = self.binding() {
+          for (role, address) in &binding.table.bound {
+            let member = self.member(address)?;
+            let owner =
+              member.owner().unwrap_or(member.record()).address().clone();
+            owners.entry(owner).or_default().push(*role);
+          }
+        }
+        Ok(owners)
+      })
+      .as_ref()
+      .map_err(Clone::clone)?;
+    let record = self.record(address)?;
+    let owner = match &record.constant().info {
+      ConstantInfo::IPrj(p) => &p.block,
+      ConstantInfo::CPrj(p) => &p.block,
+      ConstantInfo::RPrj(p) => &p.block,
+      ConstantInfo::DPrj(p) => &p.block,
+      _ => address,
+    };
+    Ok(owners.get(owner).map_or(&[][..], Vec::as_slice))
+  }
+  pub fn block_of(&self, address: &Address) -> Result<Address, Error> {
+    let record = self.record(address)?;
+    Ok(match &record.constant().info {
+      ConstantInfo::IPrj(p) => p.block.clone(),
+      ConstantInfo::CPrj(p) => p.block.clone(),
+      ConstantInfo::RPrj(p) => p.block.clone(),
+      ConstantInfo::DPrj(p) => p.block.clone(),
+      _ => address.clone(),
+    })
+  }
+  pub fn closure(
+    &self,
+    roots: &[Address],
+  ) -> Result<FxHashSet<Address>, Error> {
+    let mut pending = roots.to_vec();
+    let mut seen = FxHashSet::default();
+    while let Some(address) = pending.pop() {
+      if !seen.insert(address.clone()) {
+        continue;
+      }
+      if self.contains_record(&address) {
+        let record = self.record(&address)?;
+        Env::closure_edges(&address, record.constant(), &mut pending);
+      }
+      if self.0.blobs.contains_key(&address) {
+        self.blob(&address)?;
+      }
+    }
+    Ok(seen)
+  }
+
   /// Every later admission read, including transitive support, enters here.
   /// Authenticate exact raw bytes and decode them without LazyConstant::get,
   /// even if the compiler supplied an already materialized Constant cache.
-  pub fn record(&self, address: &Address) -> Result<Record, Error> {
+  fn raw_record(&self, address: &Address) -> Result<LazyConstant, Error> {
     let raw = self
       .0
       .env
@@ -284,17 +583,30 @@ impl ArtifactSource {
       .get(address)
       .map(|entry| entry.value().clone())
       .ok_or_else(|| Error::MissingRecord(address.clone()))?;
+    if !self.0.authentic.contains(address)
+      && Address::hash(raw.raw_bytes()) != *address
+    {
+      return Err(Error::Record(address.clone(), "hash mismatch".into()));
+    }
+    Ok(raw)
+  }
+
+  /// The record at `address`, authenticated: its bytes hash to the address
+  /// and are the canonical encoding of what they decode to. A source is
+  /// immutable, so each record is authenticated once and then only decoded.
+  pub fn record(&self, address: &Address) -> Result<Record, Error> {
+    let raw = self.raw_record(address)?;
     let bytes = raw.raw_bytes();
     let fail = |reason| Error::Record(address.clone(), reason);
-    if Address::hash(bytes) != *address {
-      return Err(fail("hash mismatch".into()));
-    }
     let mut input = bytes;
     let value = Constant::get(&mut input).map_err(fail)?;
-    let mut canonical = Vec::new();
-    value.put(&mut canonical);
-    if !input.is_empty() || canonical != bytes {
-      return Err(fail("noncanonical bytes".into()));
+    if !self.0.authentic.contains(address) {
+      let mut canonical = Vec::new();
+      value.put(&mut canonical);
+      if !input.is_empty() || canonical != bytes {
+        return Err(fail("noncanonical bytes".into()));
+      }
+      self.0.authentic.insert(address.clone());
     }
     Ok(Record { address: address.clone(), raw, value })
   }
@@ -364,6 +676,23 @@ impl ArtifactSource {
     Ok(Member { record, owner: Some(owner), index: Some(index), constructor })
   }
 
+  /// Authenticate the carried record a reference names: its bytes hash to
+  /// the address and decode canonically, and a projection is the member of
+  /// its owner at its index (see [`Self::member`]). Key presence alone is not
+  /// enough: a worker may already hold a declaration for the address, built
+  /// from an owner payload, which must not stand in for a corrupted record.
+  pub(crate) fn authenticate_reference(
+    &self,
+    address: &Address,
+  ) -> Result<(), Error> {
+    if self.0.references.contains(address) {
+      return Ok(());
+    }
+    self.member(address)?;
+    self.0.references.insert(address.clone());
+    Ok(())
+  }
+
   /// Only raw theorem-kind/owner coverage is established here. Its value and
   /// certificate statement still require isolated semantic admission.
   pub fn proof_record(&self, address: &Address) -> Result<Member, Error> {
@@ -394,6 +723,9 @@ impl Record {
   }
   pub fn constant(&self) -> &Constant {
     &self.value
+  }
+  pub(crate) fn into_constant(self) -> Constant {
+    self.value
   }
 }
 
@@ -449,9 +781,11 @@ impl Member {
   }
 }
 
-/// Reserved for actual semantic admission. There is deliberately no constructor
-/// in this checkpoint, no Default/deserialize implementation, and no public
-/// fields. A decoded or authenticated candidate cannot create this capability.
+/// The capability to use one role's rules for one source. Only
+/// [`ArtifactSource::capability`] issues it, and only for a role whose group
+/// its validator admitted; there is no other constructor, no
+/// Default/deserialize implementation and no public field, so a decoded or
+/// authenticated candidate cannot create one.
 /// ```compile_fail
 /// use ix_kernel::role_admission::AdmittedRole;
 /// let rule: AdmittedRole = Default::default();
@@ -474,6 +808,8 @@ impl AdmittedRole {
     self.source.same_source(source)
   }
 }
+
+mod groups;
 
 #[cfg(test)]
 mod tests;

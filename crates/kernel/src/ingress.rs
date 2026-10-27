@@ -35,9 +35,7 @@ use ixon::constant::{
 use ixon::contract::{BinderContract, LetContract, ValueContract, source};
 use ixon::env::Env as IxonEnv;
 use ixon::expr::Expr as IxonExpr;
-use ixon::metadata::{
-  ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData, resolve_kvmap,
-};
+use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData};
 use ixon::univ::Univ as IxonUniv;
 
 use super::constant::{KConst, RecRule};
@@ -381,7 +379,7 @@ fn resolve_level_params(
 /// `addr` is the **projection-content address** under which the corresponding
 /// KConst is actually stored in `KEnv`.
 ///
-/// The callers (`build_mut_ctx`, `ingress_muts_inductive`'s `ctor_ids`, and
+/// The callers (`ingress_muts_inductive`'s `ctor_ids`, and
 /// `lean_all` reconstruction in `ingress_defn` / `ingress_recursor` /
 /// `ingress_muts_inductive`) pull addresses out of `ConstantMetaInfo::*::{all,
 /// ctx, ctors}`. Those fields store **name-hash** addresses (they were written
@@ -417,23 +415,6 @@ fn resolve_all<M: KernelMode>(
       Ok(KId::new(addr, M::meta_field(name)))
     })
     .collect()
-}
-
-fn get_ctx_addrs(meta: &ConstantMeta) -> &[Address] {
-  match &meta.info {
-    ConstantMetaInfo::Def { ctx, .. }
-    | ConstantMetaInfo::Indc { ctx, .. }
-    | ConstantMetaInfo::Rec { ctx, .. } => ctx,
-    _ => &[],
-  }
-}
-
-fn build_mut_ctx<M: KernelMode>(
-  meta: &ConstantMeta,
-  names: &FxHashMap<Address, Name>,
-  name_to_addr: &FxHashMap<Name, Address>,
-) -> Result<Vec<KId<M>>, String> {
-  resolve_all(get_ctx_addrs(meta), names, name_to_addr)
 }
 
 // ============================================================================
@@ -720,7 +701,7 @@ fn ingress_expr<M: KernelMode>(
   root_arena: u64,
   ctx: &Ctx<'_, M>,
   intern: &mut InternTable<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   cache: &mut ExprCache<M>,
   univ_cache: &mut UnivCache<M>,
   stats: &mut ConvertStats,
@@ -793,7 +774,7 @@ fn ingress_expr<M: KernelMode>(
           bump_convert_stat!(stats, mdata_kv_maps, mdata.len());
           let kv_t0 = if stats.enabled { Some(Instant::now()) } else { None };
           for kvm in mdata {
-            let data = resolve_kvmap(kvm, ixon_env);
+            let data = ixon_env.mdata(kvm)?;
             if M::HAS_META && source::has_metadata(&data) {
               return Err(
                 "semantic contracts cannot come from optional metadata".into(),
@@ -932,6 +913,7 @@ fn ingress_expr<M: KernelMode>(
               )
               .ok_or_else(|| format!("invalid Ref index {ref_idx}"))?
               .clone();
+            ixon_env.require_reference(&addr)?;
             // Meta mode: walk the arena to find the Ref's Lean name.
             // Anon mode: the closure is never invoked — no arena walk,
             // no name construction, no resolve_name call.
@@ -1119,6 +1101,7 @@ fn ingress_expr<M: KernelMode>(
                 format!("invalid Prj type ref index {type_ref_idx}")
               })?
               .clone();
+            ixon_env.require_reference(&type_addr)?;
             // The arena holds both the struct name and the child arena
             // pointer (needed for the projected value's metadata walk).
             // Meta mode reads both; Anon mode skips the entire arena
@@ -1161,7 +1144,7 @@ fn ingress_expr<M: KernelMode>(
               })?)
               .ok_or_else(|| format!("invalid Str ref index {ref_idx}"))?;
             let gb_t0 = if stats.enabled { Some(Instant::now()) } else { None };
-            let blob = ixon_env.get_blob(addr).ok_or_else(|| {
+            let blob = ixon_env.blob(addr)?.ok_or_else(|| {
               format!("missing Str blob at addr {}", addr.hex())
             })?;
             if let Some(t0) = gb_t0 {
@@ -1190,7 +1173,7 @@ fn ingress_expr<M: KernelMode>(
               })?)
               .ok_or_else(|| format!("invalid Nat ref index {ref_idx}"))?;
             let gb_t0 = if stats.enabled { Some(Instant::now()) } else { None };
-            let blob = ixon_env.get_blob(addr).ok_or_else(|| {
+            let blob = ixon_env.blob(addr)?.ok_or_else(|| {
               format!("missing Nat blob at addr {}", addr.hex())
             })?;
             if let Some(t0) = gb_t0 {
@@ -1375,7 +1358,7 @@ fn ingress_defn<M: KernelMode>(
   def: &ixon::constant::Definition,
   self_id: KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   sharing: &[Arc<IxonExpr>],
@@ -1384,10 +1367,10 @@ fn ingress_defn<M: KernelMode>(
   block: KId<M>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
-  // Anon callers compute `mut_ctx` structurally from sibling
-  // projection addresses; passing `Some(_)` skips the metadata-derived
-  // `build_mut_ctx` call. Meta callers pass `None`.
-  mut_ctx_override: Option<Vec<KId<M>>>,
+  // The semantic targets of `Expr::Rec`: the serialized owner's members
+  // (see `owner_mut_ctx`), or `[self_id]` for a standalone. Metadata
+  // never selects them.
+  mut_ctx: Vec<KId<M>>,
   local_dependencies: Option<&mut LocalDefnDependencies>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
@@ -1395,10 +1378,8 @@ fn ingress_defn<M: KernelMode>(
   // Hints live only in `Env::anon_hints`, keyed by the constant's own
   // address, in both anon and meta modes. Without an entry the kernel
   // falls back to `Regular(0)` — always correct, just more def-eq work.
-  let hints = ixon_env
-    .anon_hints
-    .get(&self_id.addr)
-    .map_or(ReducibilityHints::Regular(0), |r| *r);
+  let hints =
+    ixon_env.hint(&self_id.addr).unwrap_or(ReducibilityHints::Regular(0));
   let safety = def.safety;
   let local_refs = RefCell::new(FxHashSet::default());
   let (level_params, arena, type_root, value_root, all_addrs) = match &meta.info
@@ -1415,10 +1396,6 @@ fn ingress_defn<M: KernelMode>(
     _ => (vec![], &DEFAULT_ARENA, 0, 0, vec![]),
   };
 
-  let mut_ctx = match mut_ctx_override {
-    Some(m) => m,
-    None => build_mut_ctx(meta, names, name_to_addr)?,
-  };
   let ctx = Ctx {
     sharing,
     refs,
@@ -1489,7 +1466,7 @@ fn ingress_recursor<M: KernelMode>(
   rec: &ixon::constant::Recursor,
   self_id: KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   sharing: &[Arc<IxonExpr>],
@@ -1498,9 +1475,8 @@ fn ingress_recursor<M: KernelMode>(
   block: KId<M>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
-  // Anon callers compute `mut_ctx` structurally; Meta callers pass
-  // `None` to fall back to the metadata-derived `build_mut_ctx`.
-  mut_ctx_override: Option<Vec<KId<M>>>,
+  // The semantic targets of `Expr::Rec`, as for `ingress_defn`.
+  mut_ctx: Vec<KId<M>>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
@@ -1525,10 +1501,6 @@ fn ingress_recursor<M: KernelMode>(
       _ => (vec![], &DEFAULT_ARENA, 0, vec![], vec![], vec![]),
     };
 
-  let mut_ctx = match mut_ctx_override {
-    Some(m) => m,
-    None => build_mut_ctx(meta, names, name_to_addr)?,
-  };
   let ctx = Ctx {
     sharing,
     refs,
@@ -1621,7 +1593,7 @@ fn ingress_standalone<M: KernelMode>(
   addr: &Address,
   constant: &Constant,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   intern: &mut InternTable<M>,
@@ -1643,10 +1615,11 @@ fn ingress_standalone<M: KernelMode>(
         &constant.sharing,
         &constant.refs,
         &constant.univs,
-        self_id,
+        self_id.clone(),
         intern,
         stats,
-        None,
+        // A standalone is a singleton unit: `Rec(0)` is itself.
+        vec![self_id],
         Some(&mut local_dependencies),
       )?;
       local_dependencies.validate()?;
@@ -1765,10 +1738,10 @@ fn ingress_standalone<M: KernelMode>(
       &constant.sharing,
       &constant.refs,
       &constant.univs,
-      self_id,
+      self_id.clone(),
       intern,
       stats,
-      None,
+      vec![self_id],
     ),
 
     // Projections and Muts are handled in ingress_muts_block
@@ -1789,12 +1762,14 @@ fn ingress_muts_inductive<M: KernelMode>(
   ind: &ixon::constant::Inductive,
   self_id: &KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   block_constant: &Constant,
   block_id: KId<M>,
   member_idx: u64,
+  // The owner's members, the semantic targets of `Expr::Rec`.
+  mut_ctx: Vec<KId<M>>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
@@ -1812,7 +1787,6 @@ fn ingress_muts_inductive<M: KernelMode>(
 
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
-  let mut_ctx = build_mut_ctx(meta, names, name_to_addr)?;
   let ctx = Ctx {
     sharing: &block_constant.sharing,
     refs: &block_constant.refs,
@@ -1838,14 +1812,21 @@ fn ingress_muts_inductive<M: KernelMode>(
     stats,
   )?;
   let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
-  // Constructor KIds: `ctor_addrs` holds the **name-hash** addresses the
-  // compile pass stored in `ConstantMetaInfo::Indc::ctors`, but each Ctor
-  // `KConst` is registered in the kernel env under its **projection**
-  // address (`CPrj` content hash). We must therefore round-trip through
-  // the Lean name to look up the projection address — see `resolve_all`
-  // for the rationale. Calling `resolve_all` directly reuses that error
-  // handling (error on missing Named instead of guessing a name-hash).
+  // Metadata selects presentation names; the owner and constructor position
+  // determine semantic identity. Validate that each named address agrees
+  // before any payload can be installed under that address.
   let ctor_ids: Vec<KId<M>> = resolve_all(&ctor_addrs, names, name_to_addr)?;
+  if ctor_ids.len() != ind.ctors.len() {
+    return Err("constructor metadata count differs from its owner".into());
+  }
+  for (index, id) in ctor_ids.iter().enumerate() {
+    let index = u64::try_from(index).map_err(|error| error.to_string())?;
+    if id.addr != anon_ctor_proj_addr(&block_id.addr, member_idx, index) {
+      return Err(format!(
+        "constructor metadata address differs from owner/index ({member_idx}, {index})"
+      ));
+    }
+  }
 
   let name = resolve_name(
     match &meta.info {
@@ -1890,13 +1871,16 @@ fn ingress_muts_inductive<M: KernelMode>(
       format!("missing ctor_addrs entry for constructor index {cidx}")
     })?;
     let ctor_name = resolve_name(ctor_name_addr, names);
-    let ctor_named = ixon_env.lookup_name(&ctor_name).ok_or_else(|| {
+    let ctor_named = ixon_env.named(&ctor_name).ok_or_else(|| {
       format!(
         "missing Named entry for ctor '{ctor_name}' (cidx={cidx}) — \
          per-ctor metadata (arena, type_root, lvls) must be registered \
          for every constructor of this inductive block"
       )
     })?;
+    if ctor_named.addr != ctor_id.addr {
+      return Err(format!("ctor '{ctor_name}' metadata address changed"));
+    }
 
     let ctor_named_meta = ctor_named.meta();
     let (ctor_lvl_params, ctor_arena, ctor_type_root) =
@@ -1982,7 +1966,7 @@ fn ingress_muts_block<M: KernelMode>(
   entry_name: &Name,
   entry_addr: &Address,
   all: &[Vec<Address>],
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   intern: &mut InternTable<M>,
@@ -1991,7 +1975,7 @@ fn ingress_muts_block<M: KernelMode>(
   let block_id: KId<M> =
     KId::new(entry_addr.clone(), M::meta_field(entry_name.clone()));
 
-  let block_constant = ixon_env.get_const(entry_addr).ok_or_else(|| {
+  let block_constant = ixon_env.constant(entry_addr)?.ok_or_else(|| {
     format!("missing Muts block constant {}", entry_addr.hex())
   })?;
   let members = match &block_constant.info {
@@ -2000,37 +1984,73 @@ fn ingress_muts_block<M: KernelMode>(
   };
   validate_serialized_muts(members)?;
 
-  let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
-  let mut local_dependencies = LocalDefnDependencies::default();
-
+  // The serialized owner defines its members: member `i`'s address is its
+  // projection from this owner, and `Expr::Rec(i)` denotes it. Metadata only
+  // names them: `all[i][0]` is the name-hash address of member `i`'s
+  // canonical Lean name, whose Named entry carries the member's own metadata
+  // (arena, type root, ...) and must agree with the owner-derived address.
+  // Error loudly if the Named entry is missing — the Muts-registration pass
+  // in `compile/mutual.rs` is supposed to emit one per member.
+  let mut member_ids: Vec<KId<M>> = Vec::with_capacity(members.len());
+  let mut member_metas: Vec<Arc<ConstantMeta>> =
+    Vec::with_capacity(members.len());
   for (i, member) in members.iter().enumerate() {
-    // `all[i][0]` is the name-hash address of this member's canonical Lean
-    // name; we read the per-member metadata (arena, type_root, etc.) from
-    // that Named entry. Note the address distinction: `primary_name_addr`
-    // is a *name-content* hash (Blake3 of the Lean name components),
-    // whereas `member_named.addr` is the *projection-constant* content
-    // hash (address of the IPrj/CPrj/RPrj/DPrj struct that projects this
-    // member out of the enclosing Muts block). We want the projection
-    // address for the `KId`, because that's the address under which every
-    // `Expr::Ref` to this member in the rest of the env was registered.
-    //
-    // Error loudly if the Named entry is missing — the Muts-registration
-    // pass in `compile/mutual.rs` is supposed to emit one per member, and
-    // a missing entry means the compile phase dropped work we need here.
     let primary_name_addr = all
       .get(i)
       .and_then(|cls| cls.first())
       .ok_or_else(|| format!("Muts block member {i} has no name in all"))?;
     let member_name = resolve_name(primary_name_addr, names);
 
-    let member_named = ixon_env.lookup_name(&member_name).ok_or_else(|| {
+    let member_named = ixon_env.named(&member_name).ok_or_else(|| {
       format!("Muts member '{member_name}' not found in named entries")
     })?;
-    let member_addr = &member_named.addr;
-    let member_meta = &member_named.meta();
+    let index = u64::try_from(i).map_err(|error| error.to_string())?;
+    let (kind, member_addr) = match member {
+      IxonMutConst::Defn(_) => ("DPrj", anon_defn_proj_addr(entry_addr, index)),
+      IxonMutConst::Indc(_) => ("IPrj", anon_indc_proj_addr(entry_addr, index)),
+      IxonMutConst::Recr(_) => ("RPrj", anon_recr_proj_addr(entry_addr, index)),
+    };
+    if member_named.addr != member_addr {
+      return Err(format!(
+        "Muts member '{member_name}' metadata address differs from owner/index {index}"
+      ));
+    }
+    // A carried projection record must be this member's, as in anonymous
+    // ingress; installing the owner's members must not shadow a corrupted
+    // one that a later reference would otherwise reach.
+    verify_proj_addr_in_env(
+      kind,
+      &member_addr,
+      entry_addr,
+      index,
+      None,
+      ixon_env,
+    )?;
+    if let IxonMutConst::Indc(ind) = member {
+      for (cidx, ctor_addr) in
+        anon_ctor_addrs(entry_addr, index, ind).iter().enumerate()
+      {
+        verify_proj_addr_in_env(
+          "CPrj",
+          ctor_addr,
+          entry_addr,
+          index,
+          Some(cidx as u64),
+          ixon_env,
+        )?;
+      }
+    }
+    member_metas.push(member_named.meta());
+    member_ids.push(KId::new(member_addr, M::meta_field(member_name)));
+  }
+  let mut_ctx = member_ids.clone();
 
-    let self_id: KId<M> =
-      KId::new(member_addr.clone(), M::meta_field(member_name.clone()));
+  let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
+  let mut local_dependencies = LocalDefnDependencies::default();
+
+  for (i, member) in members.iter().enumerate() {
+    let self_id = member_ids[i].clone();
+    let member_meta = &member_metas[i];
 
     match member {
       IxonMutConst::Indc(ind) => {
@@ -2044,6 +2064,7 @@ fn ingress_muts_block<M: KernelMode>(
           &block_constant,
           block_id.clone(),
           i as u64,
+          mut_ctx.clone(),
           intern,
           stats,
         )?);
@@ -2062,7 +2083,7 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
-          None,
+          mut_ctx.clone(),
         )?);
       },
       IxonMutConst::Defn(def) => {
@@ -2079,7 +2100,7 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
-          None,
+          mut_ctx.clone(),
           Some(&mut local_dependencies),
         )?);
       },
@@ -2556,7 +2577,7 @@ pub fn ingress_compiled_names(
           name,
           &named.addr,
           all,
-          ixon_env,
+          ixon_env.into(),
           name_map,
           addr_map,
           intern,
@@ -2595,7 +2616,7 @@ pub fn ingress_compiled_names(
       &named.addr,
       &constant,
       &named_meta,
-      ixon_env,
+      ixon_env.into(),
       name_map,
       addr_map,
       intern,
@@ -3173,7 +3194,7 @@ enum IngressWorkItem {
   Muts(Name),
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct IxonIngressLookups {
   names: FxHashMap<Address, Name>,
   name_to_addr: FxHashMap<Name, Address>,
@@ -3274,7 +3295,13 @@ pub fn ingress_const_into_kenv_with_lookups<M: KernelMode>(
   lookups: &IxonIngressLookups,
   name: &Name,
 ) -> Result<KId<M>, String> {
-  ingress_const_into_kenv_with_lookups_impl(kenv, ixon_env, lookups, name, true)
+  ingress_const_into_kenv_with_lookups_impl(
+    kenv,
+    ixon_env.into(),
+    lookups,
+    name,
+    true,
+  )
 }
 
 pub fn ingress_const_shallow_into_kenv_with_lookups<M: KernelMode>(
@@ -3284,7 +3311,11 @@ pub fn ingress_const_shallow_into_kenv_with_lookups<M: KernelMode>(
   name: &Name,
 ) -> Result<KId<M>, String> {
   ingress_const_into_kenv_with_lookups_impl(
-    kenv, ixon_env, lookups, name, false,
+    kenv,
+    ixon_env.into(),
+    lookups,
+    name,
+    false,
   )
 }
 
@@ -3294,18 +3325,36 @@ pub fn ingress_addr_shallow_into_kenv_with_lookups<M: KernelMode>(
   lookups: &IxonIngressLookups,
   addr: &Address,
 ) -> Result<bool, String> {
-  ingress_addr_set_into_kenv(kenv, ixon_env, lookups, addr, false)
+  ingress_addr_set_into_kenv(kenv, ixon_env.into(), lookups, addr, false)
+}
+
+pub(crate) fn ingress_addr_with_input<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  input: crate::input::Input<'_>,
+  lookups: &IxonIngressLookups,
+  addr: &Address,
+) -> Result<bool, String> {
+  ingress_addr_set_into_kenv(kenv, input, lookups, addr, false)
+}
+
+pub(crate) fn ingress_name_with_input<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  input: crate::input::Input<'_>,
+  lookups: &IxonIngressLookups,
+  name: &Name,
+) -> Result<KId<M>, String> {
+  ingress_const_into_kenv_with_lookups_impl(kenv, input, lookups, name, false)
 }
 
 fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
   kenv: &mut KEnv<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   lookups: &IxonIngressLookups,
   name: &Name,
   follow_refs: bool,
 ) -> Result<KId<M>, String> {
   let requested = ixon_env
-    .lookup_name(name)
+    .named(name)
     .ok_or_else(|| format!("{}: missing Named entry", name.pretty()))?;
   let requested_id =
     KId::new(requested.addr.clone(), M::meta_field(name.clone()));
@@ -3326,7 +3375,7 @@ fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
 
 fn ingress_addr_set_into_kenv<M: KernelMode>(
   kenv: &mut KEnv<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   lookups: &IxonIngressLookups,
   seed_addr: &Address,
   follow_refs: bool,
@@ -3349,7 +3398,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
       continue;
     }
 
-    let Some(constant) = ixon_env.get_const(&addr) else {
+    let Some(constant) = ixon_env.constant(&addr)? else {
       // `Constant.refs` also contains blob addresses for string/nat payloads.
       continue;
     };
@@ -3365,7 +3414,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
 
     if follow_refs {
       for dep in &constant.refs {
-        if ixon_env.consts.contains_key(dep) {
+        if ixon_env.contains(dep) {
           worklist.push(IngressNeed::Addr(dep.clone()));
         }
       }
@@ -3407,7 +3456,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             continue;
           }
           let named = ixon_env
-            .lookup_name(const_name)
+            .named(const_name)
             .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
           let mut convert_stats = ConvertStats::new(convert_stats_enabled);
           let entries = ingress_standalone(
@@ -3948,7 +3997,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           &named.addr,
           &constant,
           &named.meta(),
-          ixon_env,
+          ixon_env.into(),
           &names,
           &name_to_addr,
           &mut intern,
@@ -3998,7 +4047,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           &entry_name,
           &named.addr,
           all,
-          ixon_env,
+          ixon_env.into(),
           &names,
           &name_to_addr,
           &mut intern,
@@ -4191,10 +4240,10 @@ use crate::mode::Anon;
 /// Fetch a constant with an explicit binding to its map key, including sources
 /// assembled in memory rather than loaded with deferred address verification.
 fn anon_constant(
-  env: &IxonEnv,
+  env: crate::input::Input<'_>,
   addr: &Address,
 ) -> Result<Option<Arc<Constant>>, String> {
-  env.consts.get(addr).map(|entry| entry.get_at(addr)).transpose()
+  env.constant(addr)
 }
 
 /// A content-addressed file cannot encode a cycle between distinct blocks
@@ -4264,10 +4313,38 @@ fn verify_proj_addr_in_env(
   block_addr: &Address,
   member_idx: u64,
   ctor_idx: Option<u64>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
 ) -> Result<(), String> {
-  if let Some(entry) = anon_env.consts.get(proj_addr) {
-    entry.get_at(proj_addr)?;
+  if let Some(actual) = anon_env.constant(proj_addr)? {
+    let expected = match kind {
+      "DPrj" => {
+        ixon::constant::defn_proj_constant(member_idx, block_addr.clone())
+      },
+      "RPrj" => {
+        ixon::constant::recr_proj_constant(member_idx, block_addr.clone())
+      },
+      "IPrj" => {
+        ixon::constant::indc_proj_constant(member_idx, block_addr.clone())
+      },
+      "CPrj" => ixon::constant::ctor_proj_constant(
+        member_idx,
+        ctor_idx.ok_or("constructor projection has no constructor index")?,
+        block_addr.clone(),
+      ),
+      _ => return Err("unknown projection kind".into()),
+    };
+    if actual.as_ref() != &expected {
+      return Err(format!(
+        "carried {kind} {} differs from its owner/index",
+        proj_addr.hex()
+      ));
+    }
+    return Ok(());
+  }
+  #[cfg(not(target_arch = "riscv64"))]
+  if matches!(anon_env, crate::input::Input::Artifact(_)) {
+    // The authenticated owner defines these semantic members. Absence does
+    // not fabricate a raw record or authorize lookup of a missing reference.
     return Ok(());
   }
   match ctor_idx {
@@ -4326,21 +4403,19 @@ fn anon_ctor_addrs(
 
 /// Anon ingress for a single standalone (non-mutual) constant.
 ///
-/// For `Defn` and `Recr` we pass an explicit `mut_ctx_override = [self_id]`
-/// to support self-recursive standalones that use `Expr::Rec(0, univs)` to
-/// refer to themselves. (Singleton-unwrapped self-recursive defs are emitted
-/// by the compiler as standalones, with their self-reference encoded as
-/// `Rec(0)` — same as a one-member mutual block would have used.) Without
-/// the override, `ingress_defn`/`ingress_recursor` falls back to
-/// `build_mut_ctx` on the empty meta, yielding an empty `mut_ctx` and
-/// "invalid Rec index 0" errors.
+/// For `Defn` and `Recr` the mutual context is the singleton `[self_id]`,
+/// so self-recursive standalones can use `Expr::Rec(0, univs)` to refer to
+/// themselves. (Singleton-unwrapped self-recursive defs are emitted by the
+/// compiler as standalones, with their self-reference encoded as `Rec(0)` —
+/// same as a one-member mutual block would have used.) Named ingress uses
+/// the same singleton.
 ///
 /// `Axio` and `Quot` cannot have `Rec`-references so we route them through
 /// `ingress_standalone` unchanged. Projections / `Muts` belong to a block
 /// and are not valid as standalone entries.
 fn ingress_anon_standalone(
   kenv: &mut KEnv<Anon>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
   addr: &Address,
   constant: &Constant,
 ) -> Result<KId<Anon>, String> {
@@ -4365,7 +4440,7 @@ fn ingress_anon_standalone(
       self_id.clone(),
       &mut kenv.intern,
       &mut convert_stats,
-      Some(vec![self_id.clone()]),
+      vec![self_id.clone()],
       Some(&mut local_dependencies),
     )?,
     IxonCI::Recr(rec) => ingress_recursor::<Anon>(
@@ -4381,7 +4456,7 @@ fn ingress_anon_standalone(
       self_id.clone(),
       &mut kenv.intern,
       &mut convert_stats,
-      Some(vec![self_id.clone()]),
+      vec![self_id.clone()],
     )?,
     _ => ingress_standalone::<Anon>(
       &Name::anon(),
@@ -4410,7 +4485,7 @@ fn ingress_anon_standalone(
 fn ingress_anon_inductive(
   ind: &ixon::constant::Inductive,
   self_id: &KId<Anon>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
   block_constant: &Constant,
   block_id: KId<Anon>,
   member_idx: u64,
@@ -4541,6 +4616,15 @@ pub fn ingress_anon_block(
   block_constant: &Constant,
   block_addr: &Address,
 ) -> Result<Vec<KId<Anon>>, String> {
+  ingress_anon_block_input(kenv, anon_env.into(), block_constant, block_addr)
+}
+
+pub(crate) fn ingress_anon_block_input(
+  kenv: &mut KEnv<Anon>,
+  anon_env: crate::input::Input<'_>,
+  block_constant: &Constant,
+  block_addr: &Address,
+) -> Result<Vec<KId<Anon>>, String> {
   let IxonCI::Muts(members) = &block_constant.info else {
     return Err(format!(
       "ingress_anon_block: addr {} is not a Muts block (got variant {:?})",
@@ -4567,12 +4651,12 @@ pub fn convert_anon_order_fixture(
   let IxonCI::Muts(members) = &block_constant.info else {
     return Err("canonical-order fixture must be a mutual block".into());
   };
-  convert_anon_muts(kenv, anon_env, block_constant, block_addr, members)
+  convert_anon_muts(kenv, anon_env.into(), block_constant, block_addr, members)
 }
 
 fn convert_anon_muts(
   kenv: &mut KEnv<Anon>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
   block_constant: &Constant,
   block_addr: &Address,
   members: &[IxonMutConst],
@@ -4628,7 +4712,7 @@ fn convert_anon_muts(
           block_id.clone(),
           &mut kenv.intern,
           &mut convert_stats,
-          Some(mut_ctx.clone()),
+          mut_ctx.clone(),
           Some(&mut local_dependencies),
         )?;
         all_entries.extend(entries);
@@ -4654,7 +4738,7 @@ fn convert_anon_muts(
           block_id.clone(),
           &mut kenv.intern,
           &mut convert_stats,
-          Some(mut_ctx.clone()),
+          mut_ctx.clone(),
         )?;
         all_entries.extend(entries);
       },
@@ -4712,6 +4796,14 @@ pub fn ingress_anon_addr_shallow(
   anon_env: &IxonEnv,
   addr: &Address,
 ) -> Result<bool, String> {
+  ingress_anon_addr_shallow_input(kenv, anon_env.into(), addr)
+}
+
+pub(crate) fn ingress_anon_addr_shallow_input(
+  kenv: &mut KEnv<Anon>,
+  anon_env: crate::input::Input<'_>,
+  addr: &Address,
+) -> Result<bool, String> {
   let Some(constant) = anon_constant(anon_env, addr)? else {
     return Ok(false);
   };
@@ -4750,7 +4842,7 @@ pub fn ingress_anon_addr_shallow(
           addr.hex()
         )
       })?;
-    ingress_anon_block(kenv, anon_env, &block_const, &block_addr)?;
+    ingress_anon_block_input(kenv, anon_env, &block_const, &block_addr)?;
     return Ok(true);
   }
 
@@ -5087,7 +5179,7 @@ mod tests {
         &mk_name("Cycle"),
         &block_addr,
         &all,
-        &env,
+        (&env).into(),
         &names,
         &name_to_addr,
         &mut intern,
@@ -5168,7 +5260,7 @@ mod tests {
       0,
       &ctx,
       &mut InternTable::new(),
-      &IxonEnv::new(),
+      (&IxonEnv::new()).into(),
       &mut ExprCache::default(),
       &mut UnivCache::default(),
       &mut ConvertStats::default(),
@@ -5788,7 +5880,7 @@ mod tests {
       root,
       &ctx,
       &mut intern,
-      &ixon_env,
+      (&ixon_env).into(),
       &mut cache,
       &mut univ_cache,
       &mut stats,
@@ -5848,7 +5940,7 @@ mod tests {
         root,
         &ctx,
         &mut intern,
-        &ixon_env,
+        (&ixon_env).into(),
         &mut cache,
         &mut univ_cache,
         &mut stats,
@@ -5919,7 +6011,7 @@ mod tests {
       root,
       &ctx,
       &mut intern,
-      &ixon_env,
+      (&ixon_env).into(),
       &mut cache,
       &mut univ_cache,
       &mut stats,

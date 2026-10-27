@@ -1,6 +1,7 @@
 //! Combined resource and erased-type validation for addressed Ixon.
 //! Kernel typechecking on its own makes no resource promise.
 
+#[cfg(any(test, target_arch = "riscv64"))]
 use crate::anon_work::build_anon_work;
 #[cfg(test)]
 use crate::env::KEnv;
@@ -9,13 +10,36 @@ use crate::id::KId;
 #[cfg(test)]
 use crate::mode::Anon;
 use crate::primitive::PrimAddrs;
+#[cfg(not(target_arch = "riscv64"))]
+use crate::role_admission::ArtifactSource;
 #[cfg(test)]
 use crate::tc::TypeChecker;
 use ixon::env::Env;
 use ixon::resource::addressed::{AddressedProgram, Profile, check_resources};
 
 /// Minimal built-in profile, restricted to interfaces present in the closure.
-pub fn standard_profile(env: &Env) -> Profile {
+pub fn standard_profile(env: &Env) -> Result<Profile, String> {
+  #[cfg(not(target_arch = "riscv64"))]
+  if env.role_binding.is_some() {
+    // A profile is untrusted input, not a semantic capability. Actual erased
+    // typing below still requires the same source's admitted literal roles.
+    let source =
+      ArtifactSource::snapshot(env).map_err(|error| error.to_string())?;
+    let binding =
+      source.binding().ok_or("resource profile: binding was lost")?;
+    use ixon::role_table::Role;
+    let mut shareable_types: Vec<_> = [Role::Nat, Role::Bool, Role::String]
+      .into_iter()
+      .filter_map(|role| binding.role(role).cloned())
+      .collect();
+    shareable_types.sort_unstable();
+    return Ok(Profile {
+      nat_type: binding.role(Role::Nat).cloned(),
+      string_type: binding.role(Role::String).cloned(),
+      shareable_types,
+      ..Default::default()
+    });
+  }
   let p = PrimAddrs::new();
   let mut shareable_types: Vec<_> =
     [p.nat.clone(), p.bool_type.clone(), p.string.clone()]
@@ -23,12 +47,12 @@ pub fn standard_profile(env: &Env) -> Profile {
       .filter(|a| env.consts.contains_key(a))
       .collect();
   shareable_types.sort_unstable();
-  Profile {
+  Ok(Profile {
     nat_type: env.consts.contains_key(&p.nat).then_some(p.nat),
     string_type: env.consts.contains_key(&p.string).then_some(p.string),
     shareable_types,
     ..Default::default()
-  }
+  })
 }
 
 pub fn check_literal_profile(profile: &Profile) -> Result<(), String> {
@@ -50,19 +74,69 @@ pub fn validate(
   env: &Env,
   profile: &Profile,
 ) -> Result<AddressedProgram, String> {
-  check_literal_profile(profile)?;
-  let resolved = check_resources(env, profile)?;
-  let work = build_anon_work(env)?;
-  let mut checker = crate::ixon_checker::IxonChecker::new(env);
+  #[cfg(not(target_arch = "riscv64"))]
+  {
+    // The borrowed maps must be quiescent during capture; all subsequent raw
+    // resource and typing reads use this same owned snapshot.
+    let source =
+      ArtifactSource::snapshot(env).map_err(|error| error.to_string())?;
+    validate_source(&source, profile)
+  }
+  #[cfg(target_arch = "riscv64")]
+  {
+    check_literal_profile(profile)?;
+    let resolved = check_resources(env, profile)?;
+    let work = build_anon_work(env)?;
+    let mut checker = crate::ixon_checker::IxonChecker::new(env);
+    for item in work {
+      checker.check_const(item.primary()).map_err(|error| {
+        format!(
+          "resource validator: erased typing failed at {}: {error:?}",
+          item.primary().hex()
+        )
+      })?;
+      // Retain structural declarations but keep reduction caches local to one
+      // work item, as in the existing anonymous driver.
+      checker.clear_reduction_caches();
+    }
+    Ok(resolved)
+  }
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+fn validate_source(
+  source: &ArtifactSource,
+  profile: &Profile,
+) -> Result<AddressedProgram, String> {
+  if let Some(binding) = source.binding() {
+    use ixon::role_table::Role;
+    for (selected, role) in
+      [(&profile.nat_type, Role::Nat), (&profile.string_type, Role::String)]
+    {
+      if selected
+        .as_ref()
+        .is_some_and(|address| binding.role(role) != Some(address))
+      {
+        return Err(
+          "resource validator: literal type differs from the actual binding"
+            .into(),
+        );
+      }
+    }
+  } else {
+    check_literal_profile(profile)?;
+  }
+  let resolved = check_resources(source, profile)?;
+  let work = crate::anon_work::build_artifact_work(source)?;
+  let mut checker =
+    crate::ixon_checker::IxonChecker::from_source(Ok(source.clone()));
   for item in work {
-    checker.check_const(item.primary()).map_err(|error| {
+    checker.check_work(&item).map_err(|error| {
       format!(
         "resource validator: erased typing failed at {}: {error:?}",
         item.primary().hex()
       )
     })?;
-    // Retain structural declarations but keep reduction caches local to one
-    // work item, as in the existing anonymous driver.
     checker.clear_reduction_caches();
   }
   Ok(resolved)
@@ -73,13 +147,49 @@ pub fn check_claim(
   profile: &Profile,
   claim: &ixon::proof::Claim,
 ) -> Result<AddressedProgram, String> {
+  #[cfg(not(target_arch = "riscv64"))]
+  {
+    let source =
+      ArtifactSource::snapshot(env).map_err(|error| error.to_string())?;
+    check_source_claim(&source, profile, claim)
+  }
+  #[cfg(target_arch = "riscv64")]
+  {
+    let ixon::proof::Claim::Resource { root, profile: expected_profile } =
+      claim
+    else {
+      return Err(
+        "resource validator: claim uses a different validator".into(),
+      );
+    };
+    let leaves: Vec<_> =
+      env.consts.iter().map(|entry| entry.key().clone()).collect();
+    if ixon::merkle::merkle_root_canonical(&leaves).as_ref() != Some(root) {
+      return Err("resource validator: claim subject differs from the complete constant set".into());
+    }
+    if &profile.address()? != expected_profile {
+      return Err(
+        "resource validator: claim profile differs from the supplied policy"
+          .into(),
+      );
+    }
+    validate(env, profile)
+  }
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+fn check_source_claim(
+  source: &ArtifactSource,
+  profile: &Profile,
+  claim: &ixon::proof::Claim,
+) -> Result<AddressedProgram, String> {
   let ixon::proof::Claim::Resource { root, profile: expected_profile } = claim
   else {
     return Err("resource validator: claim uses a different validator".into());
   };
-  let leaves: Vec<_> =
-    env.consts.iter().map(|entry| entry.key().clone()).collect();
-  if ixon::merkle::merkle_root_canonical(&leaves).as_ref() != Some(root) {
+  if ixon::merkle::merkle_root_canonical(&source.addresses()).as_ref()
+    != Some(root)
+  {
     return Err("resource validator: claim subject differs from the complete constant set".into());
   }
   if &profile.address()? != expected_profile {
@@ -88,21 +198,35 @@ pub fn check_claim(
         .into(),
     );
   }
-  validate(env, profile)
+  validate_source(source, profile)
 }
 
 pub fn make_claim(
   env: &Env,
   profile: &Profile,
 ) -> Result<ixon::proof::Claim, String> {
-  let leaves: Vec<_> =
-    env.consts.iter().map(|entry| entry.key().clone()).collect();
-  let root = ixon::merkle::merkle_root_canonical(&leaves)
-    .ok_or("resource validator: empty claim subject")?;
-  let claim =
-    ixon::proof::Claim::Resource { root, profile: profile.address()? };
-  check_claim(env, profile, &claim)?;
-  Ok(claim)
+  #[cfg(not(target_arch = "riscv64"))]
+  {
+    let source =
+      ArtifactSource::snapshot(env).map_err(|error| error.to_string())?;
+    let root = ixon::merkle::merkle_root_canonical(&source.addresses())
+      .ok_or("resource validator: empty claim subject")?;
+    let claim =
+      ixon::proof::Claim::Resource { root, profile: profile.address()? };
+    check_source_claim(&source, profile, &claim)?;
+    Ok(claim)
+  }
+  #[cfg(target_arch = "riscv64")]
+  {
+    let leaves: Vec<_> =
+      env.consts.iter().map(|entry| entry.key().clone()).collect();
+    let root = ixon::merkle::merkle_root_canonical(&leaves)
+      .ok_or("resource validator: empty claim subject")?;
+    let claim =
+      ixon::proof::Claim::Resource { root, profile: profile.address()? };
+    check_claim(env, profile, &claim)?;
+    Ok(claim)
+  }
 }
 
 #[cfg(test)]
