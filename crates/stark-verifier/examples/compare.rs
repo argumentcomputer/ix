@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
   if cli.len() < 5 {
     return Err(
-      "usage: compare PACKAGE INPUT OUTPUT SAMPLES [--ungrouped] [--prove]"
+      "usage: compare PACKAGE INPUT OUTPUT SAMPLES [--ungrouped] [--prove] [--counts-only] [--groups FILE]"
         .into(),
     );
   }
@@ -36,6 +36,25 @@ fn main() -> Result<(), Box<dyn Error>> {
   if cli.iter().any(|a| a == "--ungrouped") {
     package.trace.groups.clear();
   }
+  if let Some(at) = cli.iter().position(|a| a == "--groups") {
+    let path = cli.get(at + 1).ok_or("missing groups path")?;
+    package.trace.groups = aiur::decode_artifact(&std::fs::read(path)?)?;
+  }
+  let counts_only = cli.iter().any(|a| a == "--counts-only");
+  let functions: Vec<_> = package
+    .program
+    .functions
+    .iter()
+    .map(|f| {
+      let plan = package
+        .trace
+        .functions
+        .iter()
+        .find(|p| p.name == f.name)
+        .ok_or("missing function plan")?;
+      Ok((f.name.clone(), plan.chip.clone()))
+    })
+    .collect::<Result<_, &str>>()?;
   let start = Instant::now();
   let program = package.program.check_field::<Val>()?;
   let args = program.field().decode(&invocation.args)?;
@@ -52,10 +71,24 @@ fn main() -> Result<(), Box<dyn Error>> {
   let mut times = vec![];
   let mut circuits = vec![];
   let mut proof_report = serde_json::Value::Null;
-  for sample in 0..samples + 2 {
+  let mut function_rows = vec![];
+  let iterations = if counts_only { 1 } else { samples + 2 };
+  for sample in 0..iterations {
     let start = Instant::now();
     let record = hints.execute(&invocation.entry, args.clone())?;
     let execute = start.elapsed().as_secs_f64();
+    if counts_only {
+      let mut counts = vec![0_usize; functions.len()];
+      for key in record.queries.keys() {
+        if let Some(count) = counts.get_mut(key.function) {
+          *count += 1;
+        }
+      }
+      function_rows = functions.iter().enumerate().map(|(i, (name, chip))| {
+        json!({"name": name, "chip": chip, "rows": counts[i]})
+      }).collect();
+      break;
+    }
     let start = Instant::now();
     let witness = backend.generate(&record, &invocation.entry, &args)?;
     let trace = start.elapsed().as_secs_f64();
@@ -118,7 +151,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       }
     }
   }
-  let report = json!({"backend":"new-bytecode","thp_disabled":thp_disabled,"prepare_seconds":prepare,"setup_seconds":setup,"samples":times,"circuits":circuits,"proof":proof_report});
+  let report = json!({"backend":"new-bytecode","thp_disabled":thp_disabled,"prepare_seconds":prepare,"setup_seconds":setup,"samples":times,"circuits":circuits,"function_rows":function_rows,"proof":proof_report});
   std::fs::write(&cli[3], serde_json::to_vec_pretty(&report)?)?;
   println!("Wrote {}", cli[3]);
   Ok(())

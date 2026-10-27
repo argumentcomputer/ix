@@ -158,10 +158,10 @@ unsafe def main (args : List String) : IO Unit := do
   if mode == "propagation" || mode == "propagation-trace" then
     let some path := args[1]? | throw (IO.userError "propagation requires a chip snapshot path")
     return ← PropagationBench.run (F := F) path (mode == "propagation-trace")
-  unless ["transitive", "constant", "serde", "primitives", "check", "check-claim", "export-claim", "export-claim-trace", "export", "export-trace", "export-primitives", "stats", "stats-profile", "stats-no-propagation", "stats-reference", "dump-propagation"].contains mode do
-    throw (IO.userError s!"unknown mode '{mode}'; use transitive, constant, serde, primitives, check, export, export-trace, stats, stats-profile, stats-no-propagation, stats-reference, dump-propagation, propagation, or propagation-trace")
+  unless ["transitive", "constant", "serde", "primitives", "check", "check-claim", "export-claim", "export-claim-trace", "export", "export-trace", "export-primitives", "stats", "stats-profile", "stats-no-propagation", "stats-reference", "dump-propagation", "grouping-snapshot"].contains mode do
+    throw (IO.userError s!"unknown mode '{mode}'; use transitive, constant, serde, primitives, check, export, export-trace, stats, stats-profile, stats-no-propagation, stats-reference, grouping-snapshot, dump-propagation, propagation, or propagation-trace")
   let entry := match mode with
-    | "check-claim" | "export-claim" | "export-claim-trace" => "IxVM::verify_claim"
+    | "check-claim" | "export-claim" | "export-claim-trace" | "grouping-snapshot" => "IxVM::verify_claim"
     | "serde" => "IxVM::verify_serde"
     | "constant" => "IxVM::verify_constant"
     | "primitives" | "export-primitives" => "IxVM::check_primitives"
@@ -189,6 +189,15 @@ unsafe def main (args : List String) : IO Unit := do
   let exported ← IO.ofExcept prepared.exportExecution
   IO.eprintln s!"Exported {exported.bytecode.functions.length} functions."
   if mode == "check" || mode == "check-claim" then return
+  if mode == "grouping-snapshot" then
+    let compiled ← IO.ofExcept (prepared.compileOptimized {})
+    let physical ← IO.ofExcept (Optimized.Physical.prepare compiled.circuit.artifact)
+    let snapshot := Optimized.Grouping.Snapshot.capture compiled.circuit.artifact physical
+      (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name)) groups
+    let path := args[1]?.getD "/tmp/ixvm-grouping.json"
+    IO.FS.writeFile path (toJson snapshot).compress
+    IO.eprintln s!"Wrote grouping snapshot {path}"
+    return
   if mode == "export-claim" || mode == "export-claim-trace" then
     let program ← IO.ofExcept (exported.toJson modulus ZMod.val)
     let trace ← if mode == "export-claim-trace" then do

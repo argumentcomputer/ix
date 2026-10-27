@@ -1,0 +1,250 @@
+{
+  "ixvm-baseline": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.133206008,
+    "proof": {
+      "bytes": 6320763,
+      "prove_including_trace_seconds": 0.323813881,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.005475585,
+        "trace_with_lookups_seconds": 0.006909195
+      },
+      {
+        "execute_seconds": 0.005800192,
+        "trace_with_lookups_seconds": 0.006507144
+      },
+      {
+        "execute_seconds": 0.00550802,
+        "trace_with_lookups_seconds": 0.005713973
+      },
+      {
+        "execute_seconds": 0.005763812,
+        "trace_with_lookups_seconds": 0.004824658
+      },
+      {
+        "execute_seconds": 0.005714245,
+        "trace_with_lookups_seconds": 0.006683408
+      }
+    ],
+    "setup_seconds": 0.295478218,
+    "thp_disabled": true
+  },
+  "ixvm-selected": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.128174854,
+    "proof": {
+      "bytes": 5478175,
+      "prove_including_trace_seconds": 0.283005233,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.005826926,
+        "trace_with_lookups_seconds": 0.006289355
+      },
+      {
+        "execute_seconds": 0.005800293,
+        "trace_with_lookups_seconds": 0.00636884
+      },
+      {
+        "execute_seconds": 0.005752825,
+        "trace_with_lookups_seconds": 0.006187914
+      },
+      {
+        "execute_seconds": 0.005786026,
+        "trace_with_lookups_seconds": 0.005263984
+      },
+      {
+        "execute_seconds": 0.005600679,
+        "trace_with_lookups_seconds": 0.006062015
+      }
+    ],
+    "setup_seconds": 0.314618132,
+    "thp_disabled": true
+  },
+  "environment-baseline": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.133130814,
+    "proof": {
+      "bytes": 7227058,
+      "prove_including_trace_seconds": 3.61765854,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.35812349,
+        "trace_with_lookups_seconds": 0.155726205
+      },
+      {
+        "execute_seconds": 0.443671611,
+        "trace_with_lookups_seconds": 0.163751354
+      },
+      {
+        "execute_seconds": 0.406637502,
+        "trace_with_lookups_seconds": 0.162264424
+      },
+      {
+        "execute_seconds": 0.384674704,
+        "trace_with_lookups_seconds": 0.153248113
+      },
+      {
+        "execute_seconds": 0.393635062,
+        "trace_with_lookups_seconds": 0.161113585
+      }
+    ],
+    "setup_seconds": 0.305386995,
+    "thp_disabled": true
+  },
+  "environment-selected": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.128846202,
+    "proof": {
+      "bytes": 6557454,
+      "prove_including_trace_seconds": 3.3998496080000002,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.357373407,
+        "trace_with_lookups_seconds": 0.18560857
+      },
+      {
+        "execute_seconds": 0.355163402,
+        "trace_with_lookups_seconds": 0.173344043
+      },
+      {
+        "execute_seconds": 0.352991365,
+        "trace_with_lookups_seconds": 0.173092983
+      },
+      {
+        "execute_seconds": 0.359051829,
+        "trace_with_lookups_seconds": 0.17804781
+      },
+      {
+        "execute_seconds": 0.332571743,
+        "trace_with_lookups_seconds": 0.171257647
+      }
+    ],
+    "setup_seconds": 0.305855609,
+    "thp_disabled": true
+  },
+  "recursion-baseline": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.040000637,
+    "proof": {
+      "bytes": 3585743,
+      "prove_including_trace_seconds": 0.213947019,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.00252076,
+        "trace_with_lookups_seconds": 0.004051814
+      },
+      {
+        "execute_seconds": 0.002484614,
+        "trace_with_lookups_seconds": 0.004738907
+      },
+      {
+        "execute_seconds": 0.002367088,
+        "trace_with_lookups_seconds": 0.006182233
+      },
+      {
+        "execute_seconds": 0.003502531,
+        "trace_with_lookups_seconds": 0.006392397
+      },
+      {
+        "execute_seconds": 0.00220088,
+        "trace_with_lookups_seconds": 0.004143117
+      }
+    ],
+    "setup_seconds": 0.039555387,
+    "thp_disabled": true
+  },
+  "recursion-selected": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.039920021,
+    "proof": {
+      "bytes": 2972473,
+      "prove_including_trace_seconds": 0.20641283,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.002493089,
+        "trace_with_lookups_seconds": 0.004411169
+      },
+      {
+        "execute_seconds": 0.002547064,
+        "trace_with_lookups_seconds": 0.005531274
+      },
+      {
+        "execute_seconds": 0.002287803,
+        "trace_with_lookups_seconds": 0.005767196
+      },
+      {
+        "execute_seconds": 0.002388841,
+        "trace_with_lookups_seconds": 0.003679591
+      },
+      {
+        "execute_seconds": 0.003498959,
+        "trace_with_lookups_seconds": 0.004332047
+      }
+    ],
+    "setup_seconds": 0.041543849,
+    "thp_disabled": true
+  },
+  "recursion-real-baseline": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.101522772,
+    "proof": {
+      "bytes": 3845899,
+      "prove_including_trace_seconds": 54.841168009,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 7.659587048,
+        "trace_with_lookups_seconds": 3.5528092989999998
+      },
+      {
+        "execute_seconds": 7.6863125740000005,
+        "trace_with_lookups_seconds": 3.519352687
+      },
+      {
+        "execute_seconds": 7.667051882,
+        "trace_with_lookups_seconds": 3.560951336
+      }
+    ],
+    "setup_seconds": 0.036276874,
+    "thp_disabled": true
+  },
+  "recursion-real-selected": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.102368589,
+    "proof": {
+      "bytes": 3168863,
+      "prove_including_trace_seconds": 52.648571714,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 7.832905957,
+        "trace_with_lookups_seconds": 3.759408438
+      },
+      {
+        "execute_seconds": 7.963177618,
+        "trace_with_lookups_seconds": 3.7497445320000002
+      },
+      {
+        "execute_seconds": 7.994769895,
+        "trace_with_lookups_seconds": 3.794459276
+      }
+    ],
+    "setup_seconds": 0.035439834,
+    "thp_disabled": true
+  }
+}

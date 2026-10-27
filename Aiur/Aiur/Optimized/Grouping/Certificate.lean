@@ -22,6 +22,39 @@ theorem Implied.sound {cs : List (Polynomial F)} {p : Polynomial F} (h : Implied
   · exact h.denote a
   · exact (same.denote a).trans (valid q hq)
 
+/-- A cheap structural filter; coefficients are deliberately ignored so this
+does not require a hashing interface on the field. Collisions still undergo
+the full polynomial comparison and have no bearing on correctness. -/
+def equationKey : Polynomial F → UInt64
+  | .const _ => 1
+  | .var v => v.toUInt64 * 1099511628211 + 3
+  | .add a b => ((equationKey a * 1099511628211) ^^^ equationKey b) + 5
+  | .sub a b => ((equationKey a * 1099511628211) ^^^ equationKey b) + 7
+  | .mul a b => ((equationKey a * 1099511628211) ^^^ equationKey b) + 11
+
+/-- Normalize and fingerprint source equations once per member. The key only
+filters comparisons; the proposition remains full polynomial equality. -/
+def allImpliedDecidable (cs ps : List (Polynomial F)) (replacement : Nat → Polynomial F) :
+    Decidable (∀ p ∈ ps, Implied cs (p.subst replacement)) := by
+  let normalized := cs.map fun q => (equationKey q.normalForm, q.normalForm)
+  let wanted := ps.map fun p =>
+    let n := (p.subst replacement).normalForm
+    (equationKey n, n)
+  apply decidable_of_iff (∀ p ∈ wanted,
+    p.2 = Polynomial.normalForm (.const (0 : F)) ∨
+      ∃ q ∈ normalized, p.1 = q.1 ∧ p.2 = q.2)
+  simp only [wanted, List.forall_mem_map]
+  simp [normalized, Implied, Polynomial.Identical, eq_comm]
+  constructor
+  · intro h p hp
+    rcases h p hp with h | ⟨q, hq, _, same⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨q, hq, same⟩
+  · intro h p hp
+    rcases h p hp with h | ⟨q, hq, same⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨q, hq, congrArg equationKey same, same⟩
+
 /-- Finite checks over actual output expressions and actual constraints.
 All conditions are decidable polynomial/structural comparisons. -/
 structure Certificate (sources : List (Chip F)) (g : Layout F) : Prop where
@@ -43,6 +76,9 @@ structure Certificate (sources : List (Chip F)) (g : Layout F) : Prop where
   zero_constraints : Satisfies g.constraints (fun _ => 0)
 
 instance (sources : List (Chip F)) (g : Layout F) : Decidable (Certificate sources g) := by
+  letI (m : Member F) : Decidable (∀ p ∈ g.constraints,
+      Implied m.origin.constraints (p.subst m.embedding)) :=
+    allImpliedDecidable m.origin.constraints g.constraints m.embedding
   letI : Decidable (Satisfies g.constraints (fun _ => (0 : F))) := by
     unfold Satisfies Scalar.Circuit.Satisfies
     infer_instance

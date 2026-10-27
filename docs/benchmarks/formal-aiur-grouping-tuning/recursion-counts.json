@@ -1,0 +1,1131 @@
+{
+  "backend": "new-bytecode",
+  "circuits": [],
+  "function_rows": [
+    {
+      "chip": "MultiStark::verify_multi_stark_proof",
+      "name": "MultiStark::verify_multi_stark_proof",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::read_byte_stream",
+      "name": "MultiStark::read_byte_stream",
+      "rows": 131
+    },
+    {
+      "chip": "Blake3::compress_layer",
+      "name": "Blake3::compress_layer",
+      "rows": 13
+    },
+    {
+      "chip": "Blake3::next_layer",
+      "name": "Blake3::next_layer",
+      "rows": 0
+    },
+    {
+      "chip": "Blake3::compress",
+      "name": "Blake3::compress",
+      "rows": 176
+    },
+    {
+      "chip": "Blake3::compress_chunks",
+      "name": "Blake3::compress_chunks",
+      "rows": 946
+    },
+    {
+      "chip": "Blake3::finish",
+      "name": "Blake3::finish",
+      "rows": 11
+    },
+    {
+      "chip": "UInt64::is_zero",
+      "name": "UInt64::is_zero",
+      "rows": 1
+    },
+    {
+      "chip": "Blake3::bytes_to_block",
+      "name": "Blake3::bytes_to_block",
+      "rows": 18
+    },
+    {
+      "chip": "Blake3::pad_block",
+      "name": "Blake3::pad_block",
+      "rows": 226
+    },
+    {
+      "chip": "Blake3::compress_block",
+      "name": "Blake3::compress_block",
+      "rows": 9
+    },
+    {
+      "chip": "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+      "rows": 8
+    },
+    {
+      "chip": "UInt64::wrapping_succ",
+      "name": "UInt64::wrapping_succ",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::read_vk_u16_limb",
+      "name": "MultiStark::read_vk_u16_limb",
+      "rows": 11
+    },
+    {
+      "chip": "MultiStark::read_vk_u8",
+      "name": "MultiStark::read_vk_u8",
+      "rows": 81
+    },
+    {
+      "chip": "MultiStark::read_sys_circuits_n",
+      "name": "MultiStark::read_sys_circuits_n",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::read_vk_u32_limb",
+      "name": "MultiStark::read_vk_u32_limb",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::read_vk_tag",
+      "name": "MultiStark::read_vk_tag",
+      "rows": 8
+    },
+    {
+      "chip": "MultiStark::read_vk_u16",
+      "name": "MultiStark::read_vk_u16",
+      "rows": 19
+    },
+    {
+      "chip": "MultiStark::read_nodes_n",
+      "name": "MultiStark::read_nodes_n",
+      "rows": 8
+    },
+    {
+      "chip": "MultiStark::read_field",
+      "name": "MultiStark::read_field",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::read_vk_u64",
+      "name": "MultiStark::read_vk_u64",
+      "rows": 1
+    },
+    {
+      "chip": "UInt32::less_than_fields",
+      "name": "UInt32::less_than_fields",
+      "rows": 8
+    },
+    {
+      "chip": "MultiStark::read_node_ids_n",
+      "name": "MultiStark::read_node_ids_n",
+      "rows": 7
+    },
+    {
+      "chip": "MultiStark::read_sys_lookups_n",
+      "name": "MultiStark::read_sys_lookups_n",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::lookup_groups_count",
+      "name": "MultiStark::lookup_groups_count",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::read_opt_commit",
+      "name": "MultiStark::read_opt_commit",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::read_vk_cap_n",
+      "name": "MultiStark::read_vk_cap_n",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::read_opt_idx_n",
+      "name": "MultiStark::read_opt_idx_n",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_concat\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+      "name": "${\"name\":\"MultiStark::list_concat\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+      "rows": 8
+    },
+    {
+      "chip": "MultiStark::read_count",
+      "name": "MultiStark::read_count",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::read_u64",
+      "name": "MultiStark::read_u64",
+      "rows": 6
+    },
+    {
+      "chip": "MultiStark::read_u8",
+      "name": "MultiStark::read_u8",
+      "rows": 48
+    },
+    {
+      "chip": "UInt64::to_field",
+      "name": "UInt64::to_field",
+      "rows": 6
+    },
+    {
+      "chip": "MultiStark::read_claims_n",
+      "name": "MultiStark::read_claims_n",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::read_claim_vals_n",
+      "name": "MultiStark::read_claim_vals_n",
+      "rows": 5
+    },
+    {
+      "chip": "MultiStark::read_count_at",
+      "name": "MultiStark::read_count_at",
+      "rows": 132
+    },
+    {
+      "chip": "MultiStark::read_u64_at",
+      "name": "MultiStark::read_u64_at",
+      "rows": 273
+    },
+    {
+      "chip": "MultiStark::read_header_vec_n",
+      "name": "MultiStark::read_header_vec_n",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::read_active_n",
+      "name": "MultiStark::read_active_n",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::read_u8_at",
+      "name": "MultiStark::read_u8_at",
+      "rows": 5
+    },
+    {
+      "chip": "MultiStark::read_digest_vec_at",
+      "name": "MultiStark::read_digest_vec_at",
+      "rows": 7
+    },
+    {
+      "chip": "MultiStark::read_digest_vec_at_n",
+      "name": "MultiStark::read_digest_vec_at_n",
+      "rows": 11
+    },
+    {
+      "chip": "MultiStark::read_active_n",
+      "name": "MultiStark::read_u8_vec_n",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::read_u64_vec_vec_n",
+      "name": "MultiStark::read_u64_vec_vec_n",
+      "rows": 98
+    },
+    {
+      "chip": "MultiStark::read_u64_vec",
+      "name": "MultiStark::read_u64_vec",
+      "rows": 50
+    },
+    {
+      "chip": "MultiStark::read_u64_vec_n",
+      "name": "MultiStark::read_u64_vec_n",
+      "rows": 150
+    },
+    {
+      "chip": "MultiStark::read_message_vec_n",
+      "name": "MultiStark::read_message_vec_n",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::read_proof_vec_n",
+      "name": "MultiStark::read_proof_vec_n",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::read_proof",
+      "name": "MultiStark::read_proof",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::read_ext_vec",
+      "name": "MultiStark::read_ext_vec",
+      "rows": 7
+    },
+    {
+      "chip": "MultiStark::read_ext_vec_n",
+      "name": "MultiStark::read_ext_vec_n",
+      "rows": 19
+    },
+    {
+      "chip": "MultiStark::read_merkle_cap_vec_n",
+      "name": "MultiStark::read_merkle_cap_vec_n",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::read_batch_opening_vec_n",
+      "name": "MultiStark::read_batch_opening_vec_n",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::read_u64_vec_vec_vec_n",
+      "name": "MultiStark::read_u64_vec_vec_vec_n",
+      "rows": 51
+    },
+    {
+      "chip": "MultiStark::read_commit_phase_step_vec_n",
+      "name": "MultiStark::read_commit_phase_step_vec_n",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::read_ext_vec_vec",
+      "name": "MultiStark::read_ext_vec_vec",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::read_ext_vec_vec_n",
+      "name": "MultiStark::read_ext_vec_vec_n",
+      "rows": 8
+    },
+    {
+      "chip": "MultiStark::read_opened_round",
+      "name": "MultiStark::read_opened_round",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::read_opened_round_n",
+      "name": "MultiStark::read_opened_round_n",
+      "rows": 6
+    },
+    {
+      "chip": "MultiStark::read_preprocessed",
+      "name": "MultiStark::read_preprocessed",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::verify_batch",
+      "name": "MultiStark::verify_batch",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::assert_shard_count_ok",
+      "name": "MultiStark::assert_shard_count_ok",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::ShardHeader\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::ShardHeader\"}}]}",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::Proof\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::Proof\"}}]}",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::assert_closure_pairs",
+      "name": "MultiStark::assert_closure_pairs",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::three_limbs",
+      "name": "MultiStark::three_limbs",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::bytes8_le",
+      "name": "MultiStark::bytes8_le",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::le_step",
+      "name": "MultiStark::le_step",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::batch_fiat_shamir",
+      "name": "MultiStark::batch_fiat_shamir",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::messages_onto",
+      "name": "MultiStark::messages_onto",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::count_onto",
+      "name": "MultiStark::count_onto",
+      "rows": 5
+    },
+    {
+      "chip": "MultiStark::b8_onto",
+      "name": "MultiStark::b8_onto",
+      "rows": 57
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchMessage\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchMessage\"}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::messages_onto_each",
+      "name": "MultiStark::messages_onto_each",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+      "rows": 7
+    },
+    {
+      "chip": "MultiStark::limbs_onto",
+      "name": "MultiStark::limbs_onto",
+      "rows": 21
+    },
+    {
+      "chip": "MultiStark::headers_onto",
+      "name": "MultiStark::headers_onto",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::header_onto",
+      "name": "MultiStark::header_onto",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::active_onto",
+      "name": "MultiStark::active_onto",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::cap_onto",
+      "name": "MultiStark::cap_onto",
+      "rows": 5
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::log_degrees_onto",
+      "name": "MultiStark::log_degrees_onto",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::claims_onto",
+      "name": "MultiStark::claims_onto",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":8}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::claims_onto_each",
+      "name": "MultiStark::claims_onto_each",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::ch_sample_ext",
+      "name": "MultiStark::ch_sample_ext",
+      "rows": 5
+    },
+    {
+      "chip": "MultiStark::ch_sample_field",
+      "name": "MultiStark::ch_sample_field",
+      "rows": 10
+    },
+    {
+      "chip": "MultiStark::ch_sample8",
+      "name": "MultiStark::ch_sample8",
+      "rows": 26
+    },
+    {
+      "chip": "MultiStark::b3_w4_onto",
+      "name": "MultiStark::b3_w4_onto",
+      "rows": 72
+    },
+    {
+      "chip": "MultiStark::rev_onto",
+      "name": "MultiStark::rev_onto",
+      "rows": 297
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_concat\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_concat\",\"types\":[\"field\"]}",
+      "rows": 358
+    },
+    {
+      "chip": "MultiStark::messages_acc",
+      "name": "MultiStark::messages_acc",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::fingerprint_vals",
+      "name": "MultiStark::fingerprint_vals",
+      "rows": 5
+    },
+    {
+      "chip": "MultiStark::verify_shards",
+      "name": "MultiStark::verify_shards",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::verify_shard",
+      "name": "MultiStark::verify_shard",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "rows": 5
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":2}}],\"name\":\"Lists::Node\"}}}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::assert_bits",
+      "name": "MultiStark::assert_bits",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchMessage\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysCircuit\"}}]}",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::select_active_circuits",
+      "name": "MultiStark::select_active_circuits",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::select_active_prep",
+      "name": "MultiStark::select_active_prep",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::assert_same_bits",
+      "name": "MultiStark::assert_same_bits",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::assert_same_cap",
+      "name": "MultiStark::assert_same_cap",
+      "rows": 2
+    },
+    {
+      "chip": "UInt64::eq",
+      "name": "UInt64::eq",
+      "rows": 20
+    },
+    {
+      "chip": "MultiStark::assert_same_bits",
+      "name": "MultiStark::assert_same_u8s",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::assert_log_degrees_ok",
+      "name": "MultiStark::assert_log_degrees_ok",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::log_degree_ok",
+      "name": "MultiStark::log_degree_ok",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::count_ones",
+      "name": "MultiStark::count_ones",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::shard_fiat_shamir",
+      "name": "MultiStark::shard_fiat_shamir",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::snoc_b8",
+      "name": "MultiStark::snoc_b8",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::snoc_cap",
+      "name": "MultiStark::snoc_cap",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::accs_onto",
+      "name": "MultiStark::accs_onto",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::claims_acc",
+      "name": "MultiStark::claims_acc",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::ood_loop",
+      "name": "MultiStark::ood_loop",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::quotient_degree_of",
+      "name": "MultiStark::quotient_degree_of",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "rows": 5
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "rows": 5
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":2}}],\"name\":\"Lists::Node\"}}}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 3
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":2}}],\"name\":\"Lists::Node\"}}}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 3
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":2}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 5
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":2}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 5
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::OptIdx\"}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::OptIdx\"}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::ext_exp_pow2",
+      "name": "MultiStark::ext_exp_pow2",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::two_adic_gen",
+      "name": "MultiStark::two_adic_gen",
+      "rows": 33
+    },
+    {
+      "chip": "MultiStark::pow2",
+      "name": "MultiStark::pow2",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::fold_roots",
+      "name": "MultiStark::fold_roots",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::eval_at",
+      "name": "MultiStark::eval_at",
+      "rows": 7
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysNode\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysNode\"}}]}",
+      "rows": 7
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysNode\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysNode\"}}]}",
+      "rows": 7
+    },
+    {
+      "chip": "MultiStark::ood_fold",
+      "name": "MultiStark::ood_fold",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::logup_steps_fold",
+      "name": "MultiStark::logup_steps_fold",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::logup_fingerprint",
+      "name": "MultiStark::logup_fingerprint",
+      "rows": 5
+    },
+    {
+      "chip": "MultiStark::pair_mul",
+      "name": "MultiStark::pair_mul",
+      "rows": 7
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysLookup\"}}]}",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::reconstruct_ext_row",
+      "name": "MultiStark::reconstruct_ext_row",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::from_ext_basis",
+      "name": "MultiStark::from_ext_basis",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::quotient_eval",
+      "name": "MultiStark::quotient_eval",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"array\":{\"element\":{\"array\":{\"element\":\"field\",\"length\":8}},\"length\":4}}}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchMultiOpening\"}}]}",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::prep_count",
+      "name": "MultiStark::prep_count",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::CommitPhaseMultiStep\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::CommitPhaseMultiStep\"}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::round_onto",
+      "name": "MultiStark::round_onto",
+      "rows": 6
+    },
+    {
+      "chip": "MultiStark::points_onto",
+      "name": "MultiStark::points_onto",
+      "rows": 8
+    },
+    {
+      "chip": "MultiStark::accs_onto",
+      "name": "MultiStark::ext_row_onto",
+      "rows": 15
+    },
+    {
+      "chip": "MultiStark::pcs_betas",
+      "name": "MultiStark::pcs_betas",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::pcs_check_witness",
+      "name": "MultiStark::pcs_check_witness",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::ch_sample_bits",
+      "name": "MultiStark::ch_sample_bits",
+      "rows": 16
+    },
+    {
+      "chip": "MultiStark::b8_onto",
+      "name": "MultiStark::cons8",
+      "rows": 62
+    },
+    {
+      "chip": "MultiStark::take_bits",
+      "name": "MultiStark::take_bits",
+      "rows": 32
+    },
+    {
+      "chip": "MultiStark::bits_to_num",
+      "name": "MultiStark::bits_to_num",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::obs_log_arities",
+      "name": "MultiStark::obs_log_arities",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::sample_query_indices",
+      "name": "MultiStark::sample_query_indices",
+      "rows": 17
+    },
+    {
+      "chip": "MultiStark::verify_input_multi",
+      "name": "MultiStark::verify_input_multi",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::heights_all",
+      "name": "MultiStark::heights_all",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchMultiOpening\"}}]}",
+      "rows": 3
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchMultiOpening\"}}]}",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::mmcs_verify_multi",
+      "name": "MultiStark::mmcs_verify_multi",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":8}}],\"name\":\"Lists::Node\"}}}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 33
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[\"field\"],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 17
+    },
+    {
+      "chip": "MultiStark::frontier_sort",
+      "name": "MultiStark::frontier_sort",
+      "rows": 24
+    },
+    {
+      "chip": "MultiStark::frontier_split",
+      "name": "MultiStark::frontier_split",
+      "rows": 41
+    },
+    {
+      "chip": "MultiStark::frontier_merge",
+      "name": "MultiStark::frontier_merge",
+      "rows": 19
+    },
+    {
+      "chip": "MultiStark::digest_eq",
+      "name": "MultiStark::digest_eq",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::assert_same_claims",
+      "name": "MultiStark::assert_same_claims",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::assert_same_limbs",
+      "name": "MultiStark::assert_same_limbs",
+      "rows": 7
+    },
+    {
+      "chip": "MultiStark::frontier_leaves",
+      "name": "MultiStark::frontier_leaves",
+      "rows": 33
+    },
+    {
+      "chip": "MultiStark::leaf_hash_at",
+      "name": "MultiStark::leaf_hash_at",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::b3_rows_chunks",
+      "name": "MultiStark::b3_rows_chunks",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::rows_pop",
+      "name": "MultiStark::rows_pop",
+      "rows": 7
+    },
+    {
+      "chip": "MultiStark::select_rows",
+      "name": "MultiStark::select_rows",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::frontier_fold",
+      "name": "MultiStark::frontier_fold",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::frontier_level",
+      "name": "MultiStark::frontier_level",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::select_rows_le",
+      "name": "MultiStark::select_rows_le",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::inject_maybe",
+      "name": "MultiStark::inject_maybe",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::has_height",
+      "name": "MultiStark::has_height",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::mmcs_compress",
+      "name": "MultiStark::mmcs_compress",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::compress_ordered",
+      "name": "MultiStark::compress_ordered",
+      "rows": 0
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"ptr\":{\"target\":{\"array\":{\"element\":{\"array\":{\"element\":\"field\",\"length\":8}},\"length\":4}}}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::ShardHeader\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::FrontierNode\"}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"ptr\":{\"target\":{\"array\":{\"element\":{\"array\":{\"element\":\"field\",\"length\":8}},\"length\":4}}}}]}",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"ptr\":{\"target\":{\"array\":{\"element\":{\"array\":{\"element\":\"field\",\"length\":8}},\"length\":4}}}}]}",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::heights_prep",
+      "name": "MultiStark::heights_prep",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::heights_max",
+      "name": "MultiStark::heights_max",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::drop_index_bits",
+      "name": "MultiStark::drop_index_bits",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::query_views",
+      "name": "MultiStark::query_views",
+      "rows": 17
+    },
+    {
+      "chip": "MultiStark::batch_views_at",
+      "name": "MultiStark::batch_views_at",
+      "rows": 64
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":8}}],\"name\":\"Lists::Node\"}}}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 32
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":8}}],\"name\":\"Lists::Node\"}}}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 32
+    },
+    {
+      "chip": "MultiStark::step_views_at",
+      "name": "MultiStark::step_views_at",
+      "rows": 16
+    },
+    {
+      "chip": "MultiStark::query_loop",
+      "name": "MultiStark::query_loop",
+      "rows": 17
+    },
+    {
+      "chip": "MultiStark::verify_one_query",
+      "name": "MultiStark::verify_one_query",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::CommitPhaseProofStep\"}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchOpening\"}}]}",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::build_buckets",
+      "name": "MultiStark::build_buckets",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::circ_has_height",
+      "name": "MultiStark::circ_has_height",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchOpening\"}}]}",
+      "rows": 3
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchOpening\"}}]}",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::open_batch_2pt",
+      "name": "MultiStark::open_batch_2pt",
+      "rows": 8
+    },
+    {
+      "chip": "MultiStark::open_2pt_mat",
+      "name": "MultiStark::open_2pt_mat",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::ri_apply",
+      "name": "MultiStark::ri_apply",
+      "rows": 10
+    },
+    {
+      "chip": "MultiStark::exp_by_bits",
+      "name": "MultiStark::exp_by_bits",
+      "rows": 3
+    },
+    {
+      "chip": "MultiStark::rev_onto",
+      "name": "MultiStark::glist_rev",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::bucket_update",
+      "name": "MultiStark::bucket_update",
+      "rows": 10
+    },
+    {
+      "chip": "MultiStark::ro_fold",
+      "name": "MultiStark::ro_fold",
+      "rows": 15
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":8}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":8}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::open_quotient",
+      "name": "MultiStark::open_quotient",
+      "rows": 4
+    },
+    {
+      "chip": "MultiStark::open_prep_batch",
+      "name": "MultiStark::open_prep_batch",
+      "rows": 2
+    },
+    {
+      "chip": "MultiStark::open_prep",
+      "name": "MultiStark::open_prep",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::assert_blowup_zero",
+      "name": "MultiStark::assert_blowup_zero",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::verify_query",
+      "name": "MultiStark::verify_query",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::Bucket\"}}]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::Bucket\"}}]}",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::fri_fold2",
+      "name": "MultiStark::fri_fold2",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::rollin",
+      "name": "MultiStark::rollin",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::verify_commit_multi",
+      "name": "MultiStark::verify_commit_multi",
+      "rows": 1
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":2}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::rows_at_round",
+      "name": "MultiStark::rows_at_round",
+      "rows": 0
+    },
+    {
+      "chip": "MultiStark::last_acc",
+      "name": "MultiStark::last_acc",
+      "rows": 1
+    },
+    {
+      "chip": "MultiStark::batch_claims",
+      "name": "MultiStark::batch_claims",
+      "rows": 2
+    },
+    {
+      "chip": "${\"name\":\"MultiStark::list_concat\",\"types\":[\"field\"]}",
+      "name": "${\"name\":\"MultiStark::list_concat\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"array\":{\"element\":\"field\",\"length\":8}}],\"name\":\"Lists::Node\"}}}}]}",
+      "rows": 2
+    }
+  ],
+  "prepare_seconds": 0.042114704,
+  "proof": null,
+  "samples": [],
+  "setup_seconds": 0.041860872,
+  "thp_disabled": true
+}

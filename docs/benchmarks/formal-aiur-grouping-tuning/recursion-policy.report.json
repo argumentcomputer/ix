@@ -1,0 +1,1145 @@
+{
+  "initial": [
+    3739,
+    77,
+    315000,
+    11154380,
+    936297673,
+    81689846845
+  ],
+  "optimized": [
+    3010,
+    54,
+    229871,
+    8286135,
+    880415707,
+    77827446583
+  ],
+  "dimensions": [
+    "stage1_columns",
+    "function_circuits",
+    "cells_0",
+    "fft_0",
+    "cells_1",
+    "fft_1"
+  ],
+  "profiles": [
+    [
+      ".lake/grouping-tune/recursion-counts.json",
+      ".lake/formal-comparison/final/new-recursion-ungrouped.json"
+    ],
+    [
+      ".lake/grouping-tune/recursion-real-counts.json",
+      ".lake/formal-comparison/final/new-recursion-real-ungrouped.json"
+    ]
+  ],
+  "circuits": [
+    {
+      "members": [
+        "MultiStark::verify_multi_stark_proof"
+      ],
+      "shape": [
+        219,
+        96,
+        1
+      ],
+      "cost": [
+        219,
+        1,
+        219,
+        951,
+        219,
+        951
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_byte_stream",
+        "MultiStark::read_vk_u16",
+        "MultiStark::rev_onto"
+      ],
+      "shape": [
+        14,
+        8,
+        2
+      ],
+      "cost": [
+        14,
+        1,
+        7168,
+        365568,
+        14680064,
+        1648361472
+      ]
+    },
+    {
+      "members": [
+        "Blake3::compress_layer",
+        "Blake3::finish",
+        "MultiStark::read_vk_u64",
+        "MultiStark::active_onto",
+        "MultiStark::digest_eq"
+      ],
+      "shape": [
+        175,
+        28,
+        2
+      ],
+      "cost": [
+        175,
+        1,
+        5600,
+        99744,
+        1433600,
+        66232320
+      ]
+    },
+    {
+      "members": [
+        "Blake3::next_layer",
+        "MultiStark::assert_closure_pairs",
+        "MultiStark::verify_shard",
+        "MultiStark::ood_loop",
+        "MultiStark::verify_query",
+        "MultiStark::verify_commit_multi",
+        "MultiStark::last_acc"
+      ],
+      "shape": [
+        227,
+        108,
+        2
+      ],
+      "cost": [
+        227,
+        1,
+        1816,
+        24504,
+        3719168,
+        233472000
+      ]
+    },
+    {
+      "members": [
+        "Blake3::compress"
+      ],
+      "shape": [
+        501,
+        226,
+        2
+      ],
+      "cost": [
+        501,
+        1,
+        128256,
+        4494336,
+        525336576,
+        46003126272
+      ]
+    },
+    {
+      "members": [
+        "Blake3::compress_chunks"
+      ],
+      "shape": [
+        17,
+        6,
+        2
+      ],
+      "cost": [
+        17,
+        1,
+        17408,
+        841728,
+        35651584,
+        3592421376
+      ]
+    },
+    {
+      "members": [
+        "UInt64::is_zero",
+        "MultiStark::read_merkle_cap_vec_n",
+        "MultiStark::messages_onto_each",
+        "MultiStark::messages_acc",
+        "MultiStark::obs_log_arities",
+        "MultiStark::verify_input_multi",
+        "MultiStark::assert_blowup_zero",
+        "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::Bucket\"}}]}"
+      ],
+      "shape": [
+        52,
+        26,
+        2
+      ],
+      "cost": [
+        52,
+        1,
+        416,
+        6000,
+        106496,
+        5566464
+      ]
+    },
+    {
+      "members": [
+        "Blake3::bytes_to_block",
+        "MultiStark::read_digest_vec_at_n",
+        "MultiStark::batch_fiat_shamir",
+        "MultiStark::shard_fiat_shamir",
+        "MultiStark::logup_steps_fold"
+      ],
+      "shape": [
+        143,
+        130,
+        2
+      ],
+      "cost": [
+        143,
+        1,
+        4576,
+        133344,
+        4685824,
+        408846336
+      ]
+    },
+    {
+      "members": [
+        "Blake3::pad_block"
+      ],
+      "shape": [
+        8,
+        4,
+        2
+      ],
+      "cost": [
+        8,
+        1,
+        2048,
+        101376,
+        8192,
+        503808
+      ]
+    },
+    {
+      "members": [
+        "Blake3::compress_block",
+        "MultiStark::cap_onto",
+        "MultiStark::b3_rows_chunks",
+        "MultiStark::open_prep"
+      ],
+      "shape": [
+        240,
+        56,
+        2
+      ],
+      "cost": [
+        240,
+        1,
+        3840,
+        57792,
+        31457280,
+        2006974464
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+        "MultiStark::accs_onto",
+        "MultiStark::select_rows_le",
+        "MultiStark::inject_maybe"
+      ],
+      "shape": [
+        45,
+        26,
+        2
+      ],
+      "cost": [
+        45,
+        1,
+        1440,
+        36384,
+        5898240,
+        502923264
+      ]
+    },
+    {
+      "members": [
+        "UInt64::wrapping_succ",
+        "MultiStark::read_vk_cap_n",
+        "MultiStark::three_limbs",
+        "MultiStark::bytes8_le",
+        "MultiStark::le_step",
+        "MultiStark::assert_same_cap",
+        "MultiStark::pcs_betas",
+        "MultiStark::pcs_check_witness",
+        "MultiStark::heights_prep",
+        "MultiStark::fri_fold2"
+      ],
+      "shape": [
+        121,
+        20,
+        2
+      ],
+      "cost": [
+        121,
+        1,
+        484,
+        3528,
+        247808,
+        9824256
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_vk_u16_limb",
+        "${\"name\":\"MultiStark::list_drop\",\"types\":[\"field\"]}"
+      ],
+      "shape": [
+        10,
+        6,
+        2
+      ],
+      "cost": [
+        10,
+        1,
+        640,
+        23808,
+        655360,
+        63700992
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_vk_u8"
+      ],
+      "shape": [
+        5,
+        4,
+        1
+      ],
+      "cost": [
+        5,
+        1,
+        640,
+        30080,
+        5242880,
+        696254464
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_sys_circuits_n",
+        "MultiStark::read_proof",
+        "MultiStark::log_degree_ok",
+        "MultiStark::mmcs_compress",
+        "MultiStark::verify_one_query"
+      ],
+      "shape": [
+        121,
+        68,
+        2
+      ],
+      "cost": [
+        121,
+        1,
+        968,
+        13992,
+        1982464,
+        133005312
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_vk_u32_limb",
+        "MultiStark::read_field",
+        "MultiStark::read_sys_lookups_n",
+        "MultiStark::read_batch_opening_vec_n",
+        "MultiStark::claims_onto",
+        "MultiStark::claims_onto_each",
+        "MultiStark::snoc_b8",
+        "MultiStark::reconstruct_ext_row",
+        "MultiStark::prep_count"
+      ],
+      "shape": [
+        30,
+        12,
+        2
+      ],
+      "cost": [
+        30,
+        1,
+        480,
+        9024,
+        122880,
+        6832128
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_vk_tag"
+      ],
+      "shape": [
+        5,
+        4,
+        1
+      ],
+      "cost": [
+        5,
+        1,
+        40,
+        824,
+        655360,
+        74055680
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_nodes_n"
+      ],
+      "shape": [
+        44,
+        36,
+        2
+      ],
+      "cost": [
+        44,
+        1,
+        352,
+        6144,
+        5767168,
+        563085312
+      ]
+    },
+    {
+      "members": [
+        "UInt32::less_than_fields",
+        "MultiStark::select_rows"
+      ],
+      "shape": [
+        31,
+        14,
+        2
+      ],
+      "cost": [
+        31,
+        1,
+        496,
+        9600,
+        32505856,
+        3095396352
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_node_ids_n"
+      ],
+      "shape": [
+        11,
+        8,
+        2
+      ],
+      "cost": [
+        11,
+        1,
+        88,
+        1752,
+        720896,
+        73138176
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::lookup_groups_count",
+        "MultiStark::read_opt_idx_n",
+        "MultiStark::read_claims_n",
+        "MultiStark::log_degrees_onto"
+      ],
+      "shape": [
+        23,
+        10,
+        2
+      ],
+      "cost": [
+        23,
+        1,
+        184,
+        2760,
+        23552,
+        1148928
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_opt_commit",
+        "MultiStark::read_header_vec_n",
+        "MultiStark::read_message_vec_n",
+        "MultiStark::select_active_circuits",
+        "MultiStark::quotient_eval",
+        "MultiStark::rollin"
+      ],
+      "shape": [
+        40,
+        20,
+        2
+      ],
+      "cost": [
+        40,
+        1,
+        320,
+        4704,
+        81920,
+        4349952
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"MultiStark::list_concat\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+        "MultiStark::read_active_n",
+        "MultiStark::read_ext_vec",
+        "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::BatchMessage\"}}]}",
+        "MultiStark::heights_all",
+        "MultiStark::frontier_fold"
+      ],
+      "shape": [
+        28,
+        8,
+        2
+      ],
+      "cost": [
+        28,
+        1,
+        896,
+        19584,
+        114688,
+        5947392
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_count",
+        "MultiStark::read_proof_vec_n",
+        "MultiStark::assert_shard_count_ok",
+        "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::ShardHeader\"}}]}",
+        "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::Proof\"}}]}",
+        "MultiStark::claims_acc",
+        "MultiStark::pow2",
+        "${\"name\":\"MultiStark::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::CommitPhaseMultiStep\"}}]}",
+        "MultiStark::build_buckets"
+      ],
+      "shape": [
+        51,
+        10,
+        2
+      ],
+      "cost": [
+        51,
+        1,
+        816,
+        12672,
+        6528,
+        176256
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_u64",
+        "MultiStark::ri_apply"
+      ],
+      "shape": [
+        25,
+        18,
+        2
+      ],
+      "cost": [
+        25,
+        1,
+        400,
+        9216,
+        1638400,
+        148635648
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_u8",
+        "MultiStark::read_u8_at"
+      ],
+      "shape": [
+        9,
+        6,
+        2
+      ],
+      "cost": [
+        9,
+        1,
+        576,
+        22656,
+        9216,
+        595968
+      ]
+    },
+    {
+      "members": [
+        "UInt64::to_field",
+        "MultiStark::read_claim_vals_n",
+        "MultiStark::read_digest_vec_at",
+        "MultiStark::headers_onto",
+        "MultiStark::assert_same_bits",
+        "MultiStark::snoc_cap",
+        "MultiStark::bits_to_num",
+        "MultiStark::has_height"
+      ],
+      "shape": [
+        30,
+        8,
+        2
+      ],
+      "cost": [
+        30,
+        1,
+        960,
+        20544,
+        122880,
+        6242304
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_count_at",
+        "MultiStark::read_u64_at"
+      ],
+      "shape": [
+        20,
+        18,
+        2
+      ],
+      "cost": [
+        20,
+        1,
+        10240,
+        586752,
+        20971520,
+        2654994432
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_u64_vec_vec_n"
+      ],
+      "shape": [
+        11,
+        8,
+        2
+      ],
+      "cost": [
+        11,
+        1,
+        1408,
+        63360,
+        720896,
+        73138176
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_u64_vec",
+        "MultiStark::read_u64_vec_n",
+        "${\"name\":\"MultiStark::list_lookup\",\"types\":[\"field\"]}"
+      ],
+      "shape": [
+        20,
+        8,
+        2
+      ],
+      "cost": [
+        20,
+        1,
+        5120,
+        199680,
+        20971520,
+        2025848832
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_ext_vec_n",
+        "MultiStark::read_ext_vec_vec_n",
+        "MultiStark::fingerprint_vals"
+      ],
+      "shape": [
+        33,
+        10,
+        2
+      ],
+      "cost": [
+        33,
+        1,
+        1056,
+        22944,
+        1081344,
+        69697536
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_u64_vec_vec_vec_n",
+        "${\"name\":\"MultiStark::list_length\",\"types\":[\"field\"]}",
+        "MultiStark::b3_w4_onto",
+        "MultiStark::batch_views_at"
+      ],
+      "shape": [
+        19,
+        10,
+        2
+      ],
+      "cost": [
+        19,
+        1,
+        4864,
+        205824,
+        1245184,
+        104595456
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_commit_phase_step_vec_n",
+        "MultiStark::select_active_prep",
+        "MultiStark::ext_exp_pow2",
+        "MultiStark::heights_max",
+        "MultiStark::drop_index_bits"
+      ],
+      "shape": [
+        26,
+        12,
+        2
+      ],
+      "cost": [
+        26,
+        1,
+        104,
+        1056,
+        53248,
+        2863104
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_ext_vec_vec",
+        "MultiStark::read_opened_round_n",
+        "MultiStark::messages_onto",
+        "MultiStark::assert_bits",
+        "MultiStark::assert_log_degrees_ok",
+        "MultiStark::count_ones"
+      ],
+      "shape": [
+        19,
+        8,
+        2
+      ],
+      "cost": [
+        19,
+        1,
+        304,
+        6144,
+        38912,
+        2119680
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_opened_round",
+        "MultiStark::pair_mul",
+        "MultiStark::round_onto",
+        "MultiStark::compress_ordered"
+      ],
+      "shape": [
+        19,
+        8,
+        2
+      ],
+      "cost": [
+        19,
+        1,
+        304,
+        6144,
+        622592,
+        46104576
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::read_preprocessed",
+        "MultiStark::verify_batch",
+        "MultiStark::leaf_hash_at",
+        "MultiStark::frontier_level",
+        "MultiStark::circ_has_height",
+        "MultiStark::rows_at_round"
+      ],
+      "shape": [
+        64,
+        42,
+        2
+      ],
+      "cost": [
+        64,
+        1,
+        512,
+        8016,
+        1048576,
+        75890688
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::count_onto",
+        "MultiStark::frontier_merge",
+        "MultiStark::open_prep_batch",
+        "MultiStark::batch_claims"
+      ],
+      "shape": [
+        36,
+        20,
+        2
+      ],
+      "cost": [
+        36,
+        1,
+        1152,
+        29184,
+        294912,
+        19267584
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::b8_onto"
+      ],
+      "shape": [
+        19,
+        18,
+        1
+      ],
+      "cost": [
+        19,
+        1,
+        2432,
+        105344,
+        1245184,
+        122945536
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+        "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysNode\"}}]}"
+      ],
+      "shape": [
+        16,
+        6,
+        2
+      ],
+      "cost": [
+        16,
+        1,
+        256,
+        5184,
+        16777216,
+        1648361472
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::limbs_onto",
+        "MultiStark::frontier_sort",
+        "MultiStark::frontier_split",
+        "MultiStark::frontier_leaves"
+      ],
+      "shape": [
+        31,
+        16,
+        2
+      ],
+      "cost": [
+        31,
+        1,
+        3968,
+        138624,
+        507904,
+        35291136
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::header_onto",
+        "MultiStark::ch_sample8",
+        "MultiStark::verify_shards",
+        "MultiStark::quotient_degree_of",
+        "MultiStark::mmcs_verify_multi"
+      ],
+      "shape": [
+        78,
+        54,
+        2
+      ],
+      "cost": [
+        78,
+        1,
+        2496,
+        65664,
+        19968,
+        838656
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::ch_sample_ext",
+        "MultiStark::ch_sample_field",
+        "MultiStark::query_loop"
+      ],
+      "shape": [
+        44,
+        12,
+        2
+      ],
+      "cost": [
+        44,
+        1,
+        1408,
+        29184,
+        11264,
+        371712
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"MultiStark::list_concat\",\"types\":[\"field\"]}"
+      ],
+      "shape": [
+        10,
+        8,
+        1
+      ],
+      "cost": [
+        10,
+        1,
+        5120,
+        278528,
+        20480,
+        1359872
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"MultiStark::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+        "MultiStark::sample_query_indices",
+        "MultiStark::query_views",
+        "MultiStark::step_views_at"
+      ],
+      "shape": [
+        19,
+        10,
+        2
+      ],
+      "cost": [
+        19,
+        1,
+        1216,
+        38784,
+        622592,
+        49053696
+      ]
+    },
+    {
+      "members": [
+        "UInt64::eq",
+        "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}"
+      ],
+      "shape": [
+        30,
+        6,
+        2
+      ],
+      "cost": [
+        30,
+        1,
+        960,
+        19584,
+        983040,
+        59375616
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"MultiStark::list_lookup\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":2}}]}",
+        "MultiStark::fold_roots",
+        "MultiStark::logup_fingerprint",
+        "MultiStark::open_batch_2pt",
+        "MultiStark::open_2pt_mat",
+        "MultiStark::open_quotient"
+      ],
+      "shape": [
+        43,
+        14,
+        2
+      ],
+      "cost": [
+        43,
+        1,
+        1376,
+        29664,
+        5636096,
+        409337856
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::two_adic_gen"
+      ],
+      "shape": [
+        9,
+        2,
+        2
+      ],
+      "cost": [
+        9,
+        1,
+        576,
+        18048,
+        576,
+        18048
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::eval_at",
+        "MultiStark::assert_same_limbs"
+      ],
+      "shape": [
+        44,
+        10,
+        2
+      ],
+      "cost": [
+        44,
+        1,
+        704,
+        11328,
+        5767168,
+        389283840
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"MultiStark::list_drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"MultiStark::SysNode\"}}]}",
+        "MultiStark::ood_fold"
+      ],
+      "shape": [
+        13,
+        6,
+        2
+      ],
+      "cost": [
+        13,
+        1,
+        104,
+        1752,
+        1703936,
+        155320320
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::from_ext_basis",
+        "MultiStark::points_onto",
+        "MultiStark::assert_same_claims",
+        "MultiStark::exp_by_bits"
+      ],
+      "shape": [
+        18,
+        10,
+        2
+      ],
+      "cost": [
+        18,
+        1,
+        288,
+        6336,
+        294912,
+        22216704
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::ch_sample_bits"
+      ],
+      "shape": [
+        53,
+        24,
+        1
+      ],
+      "cost": [
+        53,
+        1,
+        848,
+        15232,
+        3392,
+        91264
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::take_bits"
+      ],
+      "shape": [
+        10,
+        8,
+        2
+      ],
+      "cost": [
+        10,
+        1,
+        320,
+        10944,
+        20480,
+        1511424
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::rows_pop"
+      ],
+      "shape": [
+        41,
+        8,
+        2
+      ],
+      "cost": [
+        41,
+        1,
+        328,
+        3912,
+        42991616,
+        3347054592
+      ]
+    },
+    {
+      "members": [
+        "MultiStark::bucket_update",
+        "MultiStark::ro_fold"
+      ],
+      "shape": [
+        40,
+        10,
+        2
+      ],
+      "cost": [
+        40,
+        1,
+        1280,
+        26304,
+        83886080,
+        7159676928
+      ]
+    }
+  ]
+}

@@ -3,6 +3,10 @@
 Measured 2026-10-26 on branch `migration/formal-aiur` in Ix. Both execution
 paths use bytecode. Native codegen remains deferred to the future macro backend.
 
+The [2026-10-27 grouping tuning](formal-aiur-grouping-tuning.md) supersedes the
+grouped new-Aiur sizes below, reducing IxVM to 8,018 main columns and the
+recursive verifier to 3,199. This report retains the original baseline data.
+
 ## What changed
 
 - Both application exports now group distinct functions into shared physical

@@ -69,3 +69,6 @@ lean_exe library_tests where
 
 lean_exe grouping_example where
   root := `Examples.Grouping
+
+lean_exe grouping_tune where
+  root := `Examples.GroupingTune

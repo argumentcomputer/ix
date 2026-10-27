@@ -1,17 +1,11 @@
 import Aiur.Optimized.Propagation
+import Aiur.Optimized.Grouping.Snapshot
 import Lean
 
 /-! Isolated physical-chip snapshots for profiling value propagation. -/
 namespace IxVM.PropagationBench
 open Aiur
 open Lean Optimized
-
-deriving instance ToJson, FromJson for Ty
-deriving instance ToJson, FromJson for WireValue
-deriving instance ToJson, FromJson for Scalar.Circuit.ArithExpr
-deriving instance ToJson, FromJson for Circuit.Send
-deriving instance ToJson, FromJson for Circuit.MemoryLookup
-deriving instance ToJson, FromJson for Circuit.Chip
 
 def write [ToJson F] (path : String) (chip : Circuit.Chip F) : IO Unit :=
   IO.FS.writeFile path (toJson chip).compress

@@ -27,6 +27,27 @@ private def expectRejection (label : String) (result : Except String α) : IO Un
   | .error _ => pure ()
   | .ok _ => throw (IO.userError s!"grouping certificate accepted {label}")
 
+/-- Complemented branch selectors used to lift every quadratic output into
+another witness column. Select the affine factor instead, and check both the
+size improvement and the full row/packet certificate. -/
+private def auditSelectedArguments : IO Unit := do
+  let masked := fun p : Optimized.Polynomial Library.U32.Goldilocks.F =>
+    Optimized.Polynomial.mul (.sub (.const 1) (.var 0)) p
+  let source : Circuit.Chip Library.U32.Goldilocks.F := {
+    name := "masked_left", numVars := 3
+    inputs := [.field 0, .field 1, .field 2]
+    output := .tuple [.field (masked (.var 1)), .field (masked (.var 2)),
+      .field (masked (.add (.var 1) (.var 2)))]
+    constraints := [.mul (.var 0) (.mul (.var 1) (.var 2))]
+    sends := [], memory := [] }
+  let sources := [source, {source with name := "masked_right"}]
+  let id := fun name => if name == "masked_left" then .ok 0 else .ok 1
+  let baseline ← IO.ofExcept (Optimized.Grouping.compile "baseline" id sources false)
+  let optimized ← IO.ofExcept (Optimized.Grouping.compile "selected" id sources)
+  unless optimized.layout.width < baseline.layout.width &&
+      optimized.layout.members.all (·.writes.isEmpty) do
+    throw (IO.userError "selected quadratic arguments still require lifted columns")
+
 /-- Check failures that source-constraint projection alone would miss: packet
 tags, unused sends, memory words, and coverage of the original system. -/
 private def auditCertificates (system : Circuit.System Library.U32.Goldilocks.F)
@@ -64,6 +85,7 @@ def main (args : List String) : IO Unit := do
   if args.contains "--check" then
     let previous ← IO.FS.readFile path
     unless previous == package.compress ++ "\n" do throw (IO.userError "grouping fixture is stale")
+    auditSelectedArguments
     let physical ← IO.ofExcept (Optimized.Physical.prepare compiled.circuit.artifact)
     auditCertificates physical.system
       (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name))

@@ -13,7 +13,26 @@ private def supports : Polynomial F → List (List Nat)
   | .add a b | .sub a b => supports a ++ supports b
   | .mul a b => (supports a).flatMap fun x => (supports b).map fun y => (x ++ y).dedup
 
-def privateColumns (source : Chip F) (selector : Nat) : Except String (List Nat) := do
+/-- Select the smallest-degree form while keeping the original expression
+order. In particular `(1 - branch) * x` can become `(member - branch) * x`
+when `branch` is private, avoiding a cubic lookup and its lifted column.
+The row and packet certificates check the resulting expressions. -/
+def selectArgument (selector : Nat) (privateCols : List Nat) (p : Polynomial F) : Polynomial F :=
+  let direct := (gate selector privateCols p).simplify
+  let better := fun a b : Polynomial F => if a.degree < b.degree then a else b
+  if direct.degree ≤ 1 || silent privateCols p then direct else match p with
+  | .add a b => better (Polynomial.simplify (.add (selectArgument selector privateCols a)
+      (selectArgument selector privateCols b))) direct
+  | .sub a b => better (Polynomial.simplify (.sub (selectArgument selector privateCols a)
+      (selectArgument selector privateCols b))) direct
+  | .mul a b =>
+      let left := Polynomial.simplify (.mul (selectArgument selector privateCols a) b)
+      let right := Polynomial.simplify (.mul a (selectArgument selector privateCols b))
+      better left (better right direct)
+  | _ => direct
+
+def privateColumns (source : Chip F) (selector : Nat)
+    (lookupArgs : List (Polynomial F) := []) : Except String (List Nat) := do
   let quiet := source.sends.map (·.enable) ++ source.memory.map (·.enable)
   let required := source.constraints.filter (·.degree > 2) ++ quiet
   let mut columns := [selector]
@@ -31,6 +50,21 @@ def privateColumns (source : Chip F) (selector : Nat) : Except String (List Nat)
   -- cheap for such uncommon chips, and the result is checked independently.
   for p in required do
     unless silent columns p do columns := (columns ++ Polynomial.vars p).dedup
+  -- One additional private factor can silence many quadratic arguments.
+  -- Keep only steps that remove at least one distinct materialization: the
+  -- private-plus-lifted width cannot increase, and the shared width can shrink.
+  let mut pending := (lookupArgs.filter fun p => (selectArgument selector columns p).degree > 2).dedup
+  for _ in List.range source.numVars do
+    let candidates := (pending.flatMap Polynomial.vars).dedup.filter fun v => !columns.contains v
+    let best := candidates.foldl (fun (best : Nat × Nat) v =>
+      let score := pending.countP fun p => (selectArgument selector (v :: columns) p).degree ≤ 2
+      if score > best.2 then (v, score) else best) (selector, 0)
+    if best.2 == 0 then break
+    let next := best.1 :: columns
+    let remaining := pending.filter fun p => (selectArgument selector next p).degree > 2
+    if remaining.length ≥ pending.length then break
+    columns := next
+    pending := remaining
   unless required.all (silent columns) do throw s!"cannot silence group member {source.name}"
   unless columns.all (· < source.numVars) do throw "group private column out of bounds"
   return columns.mergeSort (· ≤ ·)
@@ -38,10 +72,13 @@ def privateColumns (source : Chip F) (selector : Nat) : Except String (List Nat)
 /-- Members retain their call identities, even when several typed functions
 already share one physical chip. Activate each source before choosing columns. -/
 def candidate (name : String) (id : String → Except String Nat)
-    (sources : List (Chip F)) : Except String (Layout F) := do
+    (sources : List (Chip F)) (optimizeLookups : Bool := true) : Except String (Layout F) := do
   unless sources.length ≥ 2 do throw "a function group needs at least two members"
   let selected ← sources.mapM fun origin => do
-    return (origin, ← privateColumns (Activation.compile origin) origin.numVars)
+    let chip := Activation.compile origin
+    let (provided, required) ← messages id chip
+    let args := if optimizeLookups then provided ++ required.flatMap (·.args) else []
+    return (origin, ← privateColumns chip origin.numVars args)
   let shared := selected.foldl (fun n (origin, privateCols) =>
     max n (origin.numVars + 1 - privateCols.length)) 0
   let mut next := shared
@@ -65,8 +102,10 @@ def candidate (name : String) (id : String → Except String Nat)
       let mut out := []
       for p in args do
         unless p.degree ≤ 2 do throw s!"lookup degree exceeds two in {chip.name}"
-        let value ← if silent privateCols p || p.degree ≤ 1 then
-          pure (rename (gate selector privateCols p)).simplify
+        let selected := if optimizeLookups then selectArgument selector privateCols p
+          else (gate selector privateCols p).simplify
+        let value ← if selected.degree ≤ 2 then
+          pure (rename selected).simplify
         else do
           let p := rename p
           if let some (column, _) := writes.find? (fun (_, value) => value == p) then
@@ -96,8 +135,9 @@ def candidate (name : String) (id : String → Except String Nat)
 
 /-- The compiler returns a proof-bearing result; uncertified layouts cannot
 reach the exporter. Column selection remains an untrusted heuristic. -/
-def compile (name : String) (id : String → Except String Nat) (sources : List (Chip F)) :
+def compile (name : String) (id : String → Except String Nat) (sources : List (Chip F))
+    (optimizeLookups : Bool := true) :
     Except String (Checked sources id) := do
-  certify sources id (← candidate name id sources)
+  certify sources id (← candidate name id sources optimizeLookups)
 
 end Aiur.Optimized.Grouping

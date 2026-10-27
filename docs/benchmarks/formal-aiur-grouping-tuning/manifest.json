@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-27",
+  "base_revision": "ade9330c4a03728354bce67e968fc3ed60ccb01a",
+  "branch": "migration/formal-aiur",
+  "machine": "Intel Xeon 6975P-C, Linux x86-64",
+  "rustflags": "-Ctarget-cpu=native",
+  "rayon_threads": 8,
+  "transparent_hugepages_disabled": true,
+  "execution": "bytecode only, unchanged by grouping",
+  "warmups": 2,
+  "small_samples": 5,
+  "large_recursive_samples": 3,
+  "prove_samples": 1,
+  "prove_includes": "trace regeneration and proof verification; excludes execution and key setup",
+  "cost_model": "Exact multi-stark circuit shape and ix_bench FFT formula, checked per function circuit on all four workloads; FFT is an estimate, not elapsed time",
+  "policy_objective": "equal weighting of two workloads: normalized FFT + 0.2 cells, plus 0.05 columns + 0.01 circuit count; no workload cells or FFT above the starting layout budget; at most 16 members",
+  "legacy_column_reference": "../formal-aiur-grouping/summary.csv",
+  "artifact_sha256": {
+    "ixvm-baseline": "114311f43f6fb39a2d5ccc5c4e6fb279d4eb6c08655cd08731c949e7e537fabf",
+    "recursion-baseline": "ae96efa2ce33a07bd79fc5100395aa09a7f3d5f436ae04ee7be2f6bcd71e2afa",
+    "recursion-selected": "40e88dd1f84e4f119626189e83f8eb181f6ef9875c190f33cdd7853e83c5afe1",
+    "aggregate-baseline": "8f5f2d4e356656cec16ab9c22e11de4e9d4bee6d42d6497ba733d31c86039fae",
+    "aggregate-selected": "50638b554026d4db272e725cf07f70d27b280ca9e62b0323a197fa572f21cb60",
+    "ixvm-selected": "1f8c10da7b10587e985d5166b26ad0c7edd4f4cbdfe0978c7deb237cf6683d9a"
+  },
+  "input_sha256": {
+    "ixvm": "2733974cdf8d687799f678140ab967d3ab2c5a9f8768c8c3455bc86b5281a7b8",
+    "environment": "14a147c1d6141721547092a9a835249969aa1f82c8f57f9ed0a2b0522f7aaa56",
+    "recursion": "def7a0c827ef2d00d315d8770ec05faeb4e0e3f53acdb1f1e6c9551706418d1c",
+    "recursion-real": "2ecf2051d112503637b9d3c1a6201bd66f91df4568a95faff3cef068e3f96a1a"
+  },
+  "source_sha256": {
+    "Aiur/Aiur/Optimized/Grouping/Compile.lean": "77259c43003e8ca02c04d7f12de30a56478b0d34715b058d269fa49c122ffbaa",
+    "Aiur/Aiur/Optimized/Grouping/Certificate.lean": "995a790d174cd1b95b43e44653242739e38ac90be8263b856d7d712c12d6e8de",
+    "IxVM/IxVM/FunctionGroups.lean": "8e8d7448d2de18b03cff600b239115bfcf895cead68f0274497fd613a8d321c0",
+    "MultiStark/MultiStark/FunctionGroups.lean": "e0ce18a545bc6f8066c04bac82160cc49133f5bf042267deb3e4b626c3e042fc",
+    "tools/ixvm/tune-groups.py": "0d09ea6983bc06f6003ca0cfc8bbee8d623f5f28117ac58b2d0d0ae179fce85b"
+  },
+  "validation": [
+    "Lean full Aiur proof graph and application builds",
+    "grouping fixture freshness, rejection checks and masked-quadratic regression",
+    "axiom audit: propext, Classical.choice, Quot.sound only",
+    "Rust grouped proof/trace regression",
+    "tools/ixvm/check-formal.sh: claims, recursion, thirteen aggregation shapes and malformed-input rejection",
+    "All eight benchmark proof runs verified",
+    "Clippy for the comparison example with warnings denied",
+    "Saved metrics/counts/shapes reproduce both committed membership policies exactly",
+    "Normal IxVM, verifier and aggregation exports equal the artifacts used for integration and the groups used for benchmarks"
+  ]
+}
