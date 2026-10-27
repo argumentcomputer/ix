@@ -289,4 +289,232 @@ info: 'Ix.Cert.InductiveCompile.inductiveBlock_reads' depends on axioms: [propex
 #guard_msgs in
 #print axioms inductiveBlock_reads
 
+/-! ## Recursor families -/
+
+/-- **What a compiled recursor keeps of its source**: its safety, its `k`, its header and its
+rules' field counts. -/
+def RecPayload (r : Ix.RecursorVal) (t : Ixon.Recursor) : Prop :=
+  t.isUnsafe = r.isUnsafe ∧ t.k = r.k ∧ BlockEmission.RecHeader r t ∧
+    t.rules.toList.map (·.fields) = r.rules.toList.map (fun rule => rule.nfields.toUInt64)
+
+theorem recPayload_of {r : Ix.RecursorVal} {p : Ixon.MutConst} (h : PayloadOf (.recr r) p) :
+    ∃ t, p = .recr t ∧ RecPayload r t := by
+  obtain ⟨t, rfl, ht, fields, header⟩ := h
+  exact ⟨t, rfl, by rw [ht]; rfl, by rw [ht]; rfl, header, fields⟩
+
+theorem recPayload_erase {r : Ix.RecursorVal} {t t' : Ixon.Recursor} (h : RecPayload r t)
+    (e : SharingRoots.eraseMut (.recr t') = SharingRoots.eraseMut (.recr t)) : RecPayload r t' := by
+  simp only [SharingRoots.eraseMut, Ix.Sharing.Exact.mapMutConstRoots, Ixon.MutConst.recr.injEq,
+    Ixon.Recursor.mk.injEq] at e
+  obtain ⟨hk, hu, hl, hp, hi, hm, hn, -, hr⟩ := e
+  obtain ⟨unsafeEq, kEq, ⟨lvls, params, indices, motives, minors, bounded⟩, fields⟩ := h
+  have hr' : t'.rules.toList.map (fun rl => { rl with rhs := Ixon.Expr.sort 0 }) =
+      t.rules.toList.map (fun rl => { rl with rhs := Ixon.Expr.sort 0 }) := by
+    simpa using congrArg Array.toList hr
+  have hf : t'.rules.toList.map (·.fields) = t.rules.toList.map (·.fields) := by
+    have := congrArg (List.map (·.fields)) hr'
+    simpa [Function.comp_def] using this
+  exact ⟨hu.trans unsafeEq, hk.trans kEq, ⟨hl ▸ lvls, hp ▸ params, hi ▸ indices, hm ▸ motives, hn ▸ minors,
+    bounded⟩, hf.trans fields⟩
+
+theorem recrs_of_erase : ∀ (ms : List Ixon.MutConst) (ts : List Ixon.Recursor),
+    ms.map SharingRoots.eraseMut = ts.map (fun t => SharingRoots.eraseMut (.recr t)) →
+    ∃ ts' : List Ixon.Recursor, ms = ts'.map .recr ∧
+      List.Forall₂ (fun t' t => SharingRoots.eraseMut (.recr t') = SharingRoots.eraseMut (.recr t)) ts' ts
+  | [], [], _ => ⟨[], rfl, .nil⟩
+  | m :: ms, t :: ts, h => by
+    simp only [List.map_cons, List.cons.injEq] at h
+    obtain ⟨h₁, h₂⟩ := h
+    obtain ⟨ts', rfl, hr⟩ := recrs_of_erase ms ts h₂
+    cases m with
+    | recr t' => exact ⟨t' :: ts', rfl, .cons h₁ hr⟩
+    | defn d => simp [SharingRoots.eraseMut, Ix.Sharing.Exact.mapMutConstRoots] at h₁
+    | indc i => simp [SharingRoots.eraseMut, Ix.Sharing.Exact.mapMutConstRoots] at h₁
+  | [], _ :: _, h => by simp at h
+  | _ :: _, [], h => by simp at h
+
+/-- **A recursor family, as its record**: a lone recursor's or several's, keeping the
+payloads' skeletons. -/
+theorem erase_recrs {info : Ixon.ConstantInfo} {ts : List Ixon.Recursor}
+    (same : SharingRoots.erase info = SharingRoots.erase (blockInfo (ts.map .recr))) :
+    ∃ ts' : List Ixon.Recursor, info = blockInfo (ts'.map .recr) ∧
+      List.Forall₂ (fun t' t => SharingRoots.eraseMut (.recr t') = SharingRoots.eraseMut (.recr t)) ts' ts := by
+  rcases ts with _ | ⟨t, _ | ⟨t₂, rest⟩⟩
+  · have hb : blockInfo (([] : List Ixon.Recursor).map Ixon.MutConst.recr) = .muts #[] := rfl
+    rw [hb] at same
+    cases info with
+    | muts ms =>
+      simp only [SharingRoots.erase, Ix.Sharing.Exact.mapRoots, Ixon.ConstantInfo.muts.injEq] at same
+      have : ms = #[] := by simpa using congrArg Array.size same
+      exact ⟨[], by rw [this]; rfl, .nil⟩
+    | _ => simp [SharingRoots.erase, Ix.Sharing.Exact.mapRoots] at same
+  · have hb : blockInfo [Ixon.MutConst.recr t] = .recr t := rfl
+    rw [List.map_singleton, hb] at same
+    cases info with
+    | recr t' =>
+      refine ⟨[t'], rfl, .cons ?_ .nil⟩
+      simp only [SharingRoots.erase, Ix.Sharing.Exact.mapRoots, Ixon.ConstantInfo.recr.injEq] at same
+      simp only [SharingRoots.eraseMut, Ix.Sharing.Exact.mapMutConstRoots, same]
+    | _ => simp [SharingRoots.erase, Ix.Sharing.Exact.mapRoots] at same
+  · have hb : blockInfo ((t :: t₂ :: rest).map Ixon.MutConst.recr) =
+        .muts ((t :: t₂ :: rest).map Ixon.MutConst.recr).toArray := rfl
+    rw [hb] at same
+    cases info with
+    | muts ms =>
+      simp only [SharingRoots.erase, Ix.Sharing.Exact.mapRoots, Ixon.ConstantInfo.muts.injEq] at same
+      have hl : ms.toList.map SharingRoots.eraseMut =
+          (t :: t₂ :: rest).map (fun t => SharingRoots.eraseMut (.recr t)) := by
+        have := congrArg Array.toList same
+        simp only [Array.toList_map, List.map_map, Function.comp_def] at this
+        exact this
+      obtain ⟨ts', hms, hr⟩ := recrs_of_erase ms.toList _ hl
+      have hlen : ts'.length = rest.length + 2 := by simpa using forall₂_length hr
+      obtain ⟨u, u₂, rest', rfl⟩ : ∃ u u₂ rest', ts' = u :: u₂ :: rest' := by
+        rcases ts' with _ | ⟨u, _ | ⟨u₂, rest'⟩⟩ <;> simp at hlen
+        exact ⟨u, u₂, rest', rfl⟩
+      refine ⟨u :: u₂ :: rest', ?_, hr⟩
+      rw [show blockInfo ((u :: u₂ :: rest').map Ixon.MutConst.recr) =
+        .muts ((u :: u₂ :: rest').map Ixon.MutConst.recr).toArray from rfl, ← hms]
+    | _ => simp [SharingRoots.erase, Ix.Sharing.Exact.mapRoots] at same
+
+/-- The self references of a recursor family of `n` members in the closure's context, as the
+reader reads them (`RecursorReads.recSelf`): a lone recursor is its key, a member of a family of
+several its member key. -/
+def recSelfOf (cx : Ctx .anon) (owner : Address) (key : CName .anon) (n : Nat) : Nat → Option (ReadM (CName .anon)) :=
+  if n = 1 then fun i => if (i == 0) = true then some (pure key) else none
+  else fun i => if i < n then some (cx.memberKey (.member owner i)) else none
+
+theorem recSelf_eq (cx : Ctx .anon) (owner : Address) (key : CName .anon) {rc : Ixon.Constant}
+    {ts : List Ixon.Recursor} (hne : ts ≠ []) (hinfo : rc.info = blockInfo (ts.map .recr)) :
+    RecursorReads.recSelf cx rc owner key = recSelfOf cx owner key ts.length := by
+  funext i
+  rcases ts with _ | ⟨t, _ | ⟨t₂, rest⟩⟩
+  · exact absurd rfl hne
+  · have hb : blockInfo [Ixon.MutConst.recr t] = .recr t := rfl
+    rw [List.map_singleton, hb] at hinfo
+    simp [RecursorReads.recSelf, recSelfOf, hinfo]
+  · have hb : blockInfo ((t :: t₂ :: rest).map Ixon.MutConst.recr) =
+        .muts ((t :: t₂ :: rest).map Ixon.MutConst.recr).toArray := rfl
+    rw [hb] at hinfo
+    simp [RecursorReads.recSelf, recSelfOf, hinfo]
+
+/-- **A recursor family's self references**: a member's name is read as its key. -/
+theorem rec_scopes (context : CompileEnv × BlockEnv) (cx : Ctx .anon) (owner : Address) (key : CName .anon)
+    (recs : List Ix.RecursorVal)
+    (selfKeys : ∀ k (h : k < recs.length),
+      recSelfOf cx owner key recs.length k = some (.ok (srcKey ρ f recs[k].cnst.name)))
+    (distinct : Canon.KeysDistinct (recs.map MutConst.recr)) :
+    ∀ m ∈ recs.map MutConst.recr, ∀ e ∈ memberSources m,
+      ConstsSatisfy (SelfName (mutContext ((recs.map MutConst.recr).map ([·])) context).2
+        (recSelfOf cx owner key recs.length) (sourceNames ρ f)) e := by
+  intro m _ e _
+  refine constsSatisfy_of_forall (fun n index found => ?_) e
+  have hk : Canon.KeysDistinct ((recs.map MutConst.recr).map ([·])).flatten := by
+    rw [flatten_singletons]
+    exact distinct
+  simp only [mutContext] at found
+  rw [Std.TreeMap.get?_eq_getElem?] at found
+  obtain ⟨j, C, m', hC, hm', hcase⟩ := Canon.ctx_val hk found
+  simp only [List.getElem?_map, Option.map_eq_some_iff] at hC
+  obtain ⟨m0, ⟨x, hx, rfl⟩, rfl⟩ := hC
+  rw [List.mem_singleton] at hm'
+  subst hm'
+  have hj : j < recs.length := (List.getElem?_eq_some_iff.mp hx).1
+  have hxj : recs[j] = x := (List.getElem?_eq_some_iff.mp hx).2
+  rcases hcase with ⟨hname, rfl⟩ | ⟨k, c, hc, -, -⟩
+  · refine ⟨srcKey ρ f recs[index].cnst.name, selfKeys index hj, ?_⟩
+    show srcKey ρ f recs[index].cnst.name = (Ix.LeanIngress.Key.subst ρ (Ix.LeanIngress.ingressKey n)).map f
+    rw [hxj, ← hname]
+    rfl
+  · exact absurd hc (by simp [MutConst.ctors])
+
+/-- The relation a recursor family's terms are read in: related to their Lean terms, at
+quotient Source's names renamed and the family's numbering of its level parameters. -/
+abbrev recRel (lps : Array Ix.Name) (large : Bool) : Ix.Expr → CExpr .anon → Prop :=
+  Related (sourceNames ρ f) (LevelMeaning lps.toList (Numbering.mk lps large).pos
+    (recParam (Numbering.mk lps large).params))
+
+/-- **A recursor family compiled in family order, read in a closure**: the record is the
+family's, keeping its recursors' safety, `k`, headers and rules' field counts, and in the
+closure's context the reader reads every recursor's type and rules' right-hand sides as
+terms related to their Lean ones, given the compile run, the members' keys in the closure's
+context, distinct names, and the closure's context reading the record's references as the
+compile environment's does. -/
+theorem recursorBlock_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a) {bindings : Bindings}
+    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f)) (recs : List Ix.RecursorVal)
+    (hne : recs ≠ []) (lps : Array Ix.Name) (hlps : ∀ r ∈ recs, r.cnst.levelParams = lps) (large : Bool)
+    (owner : Address) (key : CName .anon)
+    (selfKeys : ∀ k (h : k < recs.length),
+      recSelfOf cx owner key recs.length k = some (.ok (srcKey ρ f recs[k].cnst.name)))
+    (distinct : Canon.KeysDistinct (recs.map MutConst.recr))
+    {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
+    (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after))
+    (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx) :
+    ∃ rIs : List Ixon.Recursor, output.block.info = blockInfo (rIs.map Ixon.MutConst.recr) ∧
+      List.Forall₂ (fun r rI => RecPayload r rI ∧
+        (∃ type, (RecursorReads.recReader cx output.block owner key (Numbering.mk lps large).params).read rI.typ =
+            .ok type ∧ recRel ρ f lps large r.cnst.type type) ∧
+        List.Forall₂ (fun (rule : Ix.RecursorRule) (rr : Ixon.RecursorRule) =>
+          ∃ rhs, (RecursorReads.recReader cx output.block owner key (Numbering.mk lps large).params).read rr.rhs =
+            .ok rhs ∧ recRel ρ f lps large rule.rhs rhs) r.rules.toList rI.rules.toList) recs rIs := by
+  obtain ⟨ps, payloads, erased, roots⟩ := BlockEmission.mutualBlock_correct cx₁
+    (recParam (Numbering.mk lps large).params) (recSelfOf cx owner key recs.length)
+    (sourceNames ρ f) (Numbering.mk lps large).pos bindings context free aligned external (recs.map MutConst.recr)
+    lps.toList (by
+      intro m hm
+      obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm
+      simp [memberLps, hlps r hr])
+    (rec_scopes ρ f context cx owner key recs selfKeys distinct) clean ran
+  have hps : ∀ {rs : List Ix.RecursorVal} {qs : List Ixon.MutConst},
+      List.Forall₂ PayloadOf (rs.map MutConst.recr) qs →
+      ∃ ts : List Ixon.Recursor, qs = ts.map Ixon.MutConst.recr ∧ List.Forall₂ RecPayload rs ts := by
+    intro rs
+    induction rs with
+    | nil => intro qs h; cases h; exact ⟨[], rfl, .nil⟩
+    | cons r rs ih =>
+      intro qs h
+      cases h with
+      | cons hq rest =>
+        obtain ⟨t, rfl, ht⟩ := recPayload_of hq
+        obtain ⟨ts, rfl, hts⟩ := ih rest
+        exact ⟨t :: ts, rfl, .cons ht hts⟩
+  obtain ⟨ts, rfl, hts⟩ := hps payloads
+  obtain ⟨ts', hinfo, hsame⟩ := erase_recrs erased
+  have facts : List.Forall₂ RecPayload recs ts' :=
+    forall₂_trans (R := RecPayload) (T := RecPayload) (fun _ _ _ h e => recPayload_erase h e) hts hsame
+  rw [hinfo, BlockEmission.blockInfo_roots] at roots
+  have lengths : List.Forall₂ (fun m q => (memberSources m).length = (mutConstRootExprs q).length)
+      (recs.map MutConst.recr) (ts'.map Ixon.MutConst.recr) := by
+    refine forall₂_map_map.mpr (forall₂_imp (fun r t h => ?_) facts)
+    have := congrArg List.length h.2.2.2
+    simp only [List.length_map, Array.length_toList] at this
+    simp [memberSources, mutConstRootExprs, this]
+  have members := forall₂_map_map.mp (members_read lengths roots)
+  have hlen : ts'.length = recs.length := (forall₂_length facts).symm
+  have hne' : ts' ≠ [] := by
+    intro h
+    rw [h] at hlen
+    exact hne (List.length_eq_zero_iff.mp hlen.symm)
+  have reader : RecursorReads.recReader cx output.block owner key (Numbering.mk lps large).params =
+      MemberReader.mk' cx output.block (recParam (Numbering.mk lps large).params)
+        (recSelfOf cx owner key recs.length) := by
+    unfold RecursorReads.recReader
+    rw [recSelf_eq cx owner key hne' hinfo, hlen]
+  refine ⟨ts', hinfo, forall₂_imp (fun r t h => ?_) (forall₂_and facts members)⟩
+  obtain ⟨hf, hr⟩ := h
+  simp only [memberSources, mutConstRootExprs] at hr
+  obtain ⟨⟨type, rel, read⟩, rest⟩ := InductiveReading.rootsRead_cons hr
+  rw [reader]
+  refine ⟨hf, ⟨type, RecordTransfer.read_le refs _ _ _ read, rel⟩, ?_⟩
+  refine forall₂_imp (fun rule rr hc => ?_) (forall₂_map_map.mp rest)
+  obtain ⟨rhs, rel, read⟩ := hc
+  exact ⟨rhs, RecordTransfer.read_le refs _ _ _ read, rel⟩
+
+/--
+info: 'Ix.Cert.InductiveCompile.recursorBlock_reads' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms recursorBlock_reads
+
 end Ix.Cert.InductiveCompile
