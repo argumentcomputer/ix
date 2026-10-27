@@ -2,8 +2,8 @@
 
 > **Status: `sharing-k16-greedy-v1` is the production route (§14).** Successful-run
 > proofs are attached to the Lean entry; §14.4 records the corpus evidence.
-> No refusal is reachable under a sufficient budget, which for Share-free roots is
-> polynomial in the input size, and the output expands again (§14.3).
+> No refusal is reachable under a sufficient budget, polynomial in the input size, and
+> the output expands again (§14.3).
 > §14 supersedes §12's unbounded phase-1 search and its no-fallback claim. §1–§10 are the original plan. Its
 > target, the global byte minimum under the key of §3.3, was found infeasible at production
 > scale (§12.1) and is **superseded** by the decisions of §12 wherever the two differ. Read §12
@@ -1225,7 +1225,7 @@ or that the K16 cutover left every corpus constant unchanged (§14.4).
 
 The Lean cutover attaches these statements and the proved fast twins to the production
 entry and its audits, preserving compiler-facing meaning, format and codec theorems without
-new premises. Its audit has 260 theorem roots and checks all 30 compiler-path `csimp`
+new premises. Its audit has 263 theorem roots and checks all 30 compiler-path `csimp`
 equalities; the accepted unsafe set is unchanged. The old exact-optimum theorems remain
 on the reference path. Rust is a
 separately tested implementation; byte parity is not a universal refinement proof.
@@ -1279,7 +1279,12 @@ theorems), and the counts are bounded by `N`:
 - the first-tier search visits at most `(m + 1)⁹` states on a table of `m` entries, since
   every inclusion adds at least one of at most eight terms (`allocate_within`).
 
-The entry with a sharing table and constant normalization have no explicit budget yet.
+With a sharing table whose entries reference only earlier entries, and roots that reference
+only entries, the same budget is sufficient when `N` counts the table and the roots as
+written (`canonicalSharingTieredTable_limitsFor`), and so for re-sharing a constant
+(`normalizeConstantSharingTiered_limitsFor`). The resolved expressions may be exponentially
+larger than the input; the counts above are of the expanded DAG, which has at most one term
+per input node.
 
 The budget bounds what the meters count. In the code that compiled code runs (after the
 `csimp` replacements), most loops are charged or are within a logarithmic factor of a charged

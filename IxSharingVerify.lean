@@ -90,7 +90,10 @@ stronger optimality results.
   `AllocateBudget` and `OutputBound`, names one budget: under `limitsFor N`,
   polynomial in the input size `N` (expression nodes plus universe
   arguments), it succeeds on Share-free roots
-  (`canonicalSharingTiered_limitsFor`). `BudgetMono` and
+  (`canonicalSharingTiered_limitsFor`) and on every table whose entries
+  reference only earlier entries (`canonicalSharingTieredTable_limitsFor`;
+  for constants, `normalizeConstantSharingTiered_limitsFor` in
+  `ConstantNeverFails`). `BudgetMono` and
   `FamilyBudget` (namespace `Budget`) prove that a larger budget keeps every
   successful run and its result, so the budget decides only whether a run is
   refused (`canonicalSharingTiered_budget_independent`). `ConstantNeverFails`

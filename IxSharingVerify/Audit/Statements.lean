@@ -116,6 +116,10 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Verify.Totality.familyExpanded_within, standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_limitsFor, standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_above, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_limitsFor, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_above, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.normalizeConstantSharingTiered_limitsFor,
+    standardAxioms := standard },
   -- Re-checks of the compiled family twins beside their definitions in
   -- `Ix.Sharing` (`FamilyCached`, `FamilyFast`, `FamilyNormalize`, `FamilyNormalizeSpec`).
   { root := ``Ix.Sharing.Family.cachedStep_eq, standardAxioms := standard },

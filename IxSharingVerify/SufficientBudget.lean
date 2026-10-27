@@ -10,7 +10,11 @@ module names one: `limitsFor N`, polynomial in the size `N` of the input
 (its expression nodes plus its universe arguments, `inputSize`), under which
 the production entry succeeds on Share-free roots
 (`canonicalSharingTiered_limitsFor`), with the same output under every
-larger budget (`canonicalSharingTiered_above`).
+larger budget (`canonicalSharingTiered_above`). With a sharing table whose
+entries reference only earlier entries, and roots that reference only
+entries, `N` counts the table and the roots as written
+(`canonicalSharingTieredTable_limitsFor`); constant normalization follows in
+`ConstantNeverFails`.
 
 Every stage is first shown to succeed under every budget that covers an
 explicit count of the DAG (the `*_within` theorems): the family calls and
@@ -1158,53 +1162,37 @@ def limitsFor (N : Nat) : Limits :=
     maxOracleTables := 0
     maxOracleVariants := 0 }
 
-open Ix.Sharing.Verify.CanonicalMeaning (nodeCount sharesValid_of_free expand_within expand_facts) in
-/-- **The production rule succeeds under `limitsFor N`** on Share-free roots
-whose size (expression nodes plus universe arguments) is at most
-`N < 2^64`. -/
-theorem canonicalSharingTiered_limitsFor (layout : ShareLayout) (roots : Array Ixon.Expr)
-    (free : ∀ i, i < roots.size → Ix.Sharing.Verify.CanonicalMeaning.ShareFree roots[i]!)
-    {N : Nat} (size : inputSize roots ≤ N) (small : N < UInt64.size) :
-    ∃ out, canonicalSharingTiered layout roots (limitsFor N) = .ok out := by
-  unfold inputSize at size
-  have nodesLe : (roots.toList.map nodeCount).sum ≤ N := by
-    have := sum_le_of_le roots.toList (f := nodeCount) (g := fun e => nodeCount e + univCount e)
-      (fun e _ => by omega)
-    omega
+open Ix.Sharing.Verify.SharingExact (SharesIn substShares) in
+/-- Resolving Shares keeps the universe bound when every resolved entry
+meets it. -/
+theorem refsWithin_substShares {K : Nat} {σ : Nat → Ixon.Expr} {P : Nat → Prop}
+    (hσ : ∀ i, P i → RefsWithin K (σ i)) :
+    ∀ e : Ixon.Expr, SharesIn P e → RefsWithin K e → RefsWithin K (substShares σ e)
+  | .share _, hs, _ => hσ _ hs
+  | .prj _ _ v, hs, hr => refsWithin_substShares hσ v hs hr
+  | .app f a, hs, hr => ⟨refsWithin_substShares hσ f hs.1 hr.1, refsWithin_substShares hσ a hs.2 hr.2⟩
+  | .lam _ t b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ b hs.2 hr.2⟩
+  | .all _ _ t b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ b hs.2 hr.2⟩
+  | .letE _ t v b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ v hs.2.1 hr.2.1,
+      refsWithin_substShares hσ b hs.2.2 hr.2.2⟩
+  | .ref _ _, _, hr => by simpa [substShares, RefsWithin] using hr
+  | .recur _ _, _, hr => by simpa [substShares, RefsWithin] using hr
+  | .sort _, _, _ | .var _, _, _ | .str _, _, _ | .nat _, _, _ => by simp [substShares, RefsWithin]
+
+/-- **The family route succeeds under `limitsFor N`** on an expanded DAG of
+at most `N` terms and roots whose references carry at most `N` universes. -/
+theorem familyExpanded_limitsFor (layout : ShareLayout) {ex : Expanded} (ok : ExpandedOK ex) {N : Nat}
+    (n : ex.dag.size ≤ N) (rootsLe : ex.roots.size ≤ N)
+    (heads : ∀ t, t < ex.dag.size → HeadWithin N (ex.dag.node t).head) (small : N < UInt64.size) :
+    ∃ out, familyExpanded canonicalFamilyConfig layout (limitsFor N) ex = .ok out := by
   have sq : (N + 1) ^ 2 = (N + 1) * (N + 1) := Nat.pow_two _
   have cube : (N + 1) ^ 3 = (N + 1) * (N + 1) * (N + 1) := by rw [Nat.pow_succ, Nat.pow_two]
   have sqExpand : (N + 1) * (N + 1) = N * N + 2 * N + 1 := by
     simp only [Nat.add_mul, Nat.mul_add, Nat.mul_one, Nat.one_mul]
     omega
   have sqCube : (N + 1) * (N + 1) ≤ (N + 1) * (N + 1) * (N + 1) := Nat.le_mul_of_pos_right _ (by omega)
-  have zero : rangeNodes (#[] : Array Ixon.Expr) 0 (#[] : Array Ixon.Expr).size = 0 := rfl
-  have total : rangeNodes roots 0 roots.size ≤ N := by rw [rangeNodes_all]; exact nodesLe
-  obtain ⟨ex, ran, dagSize⟩ := expand_within #[] roots false (by simp [wordBound])
-    (fun index bound => absurd bound (by simp))
-    (fun index bound resolved _ => sharesValid_of_free _ _ (free index bound)) (limitsFor N)
-    (by change _ ≤ 2 ^ 11 * (N + 1) ^ 2; omega)
-    (by change _ ≤ 2 ^ 11 * (N + 1) ^ 2; omega)
-    (by change _ ≤ 2 ^ 12 * (N + 1) ^ 2; omega)
-  have n : ex.dag.size ≤ N := by omega
-  have ok := expand_facts ran
-  obtain ⟨-, -, rows⟩ := Ix.Sharing.Verify.CanonicalMeaning.expand_unshared _ roots ex ran
-  have heads : ∀ t, t < ex.dag.size → HeadWithin N (ex.dag.node t).head := by
-    intro t ht
-    obtain ⟨r, hr, desc⟩ := ok.reachable t ht
-    obtain ⟨source, hs, rel⟩ := forall₂_mem_right' rows r hr
-    refine headWithin_of_desc ok.wf desc ?_
-    rw [rel.2]
-    apply refsWithin_univCount
-    have := le_sum_of_mem (fun e => nodeCount e + univCount e) hs
-    omega
   have fits : ∀ t, t < ex.dag.size → HeadFits (ex.dag.node t).head :=
     fun t ht => headFits_of_within small (heads t ht)
-  have rootsLe : ex.roots.size ≤ N := by
-    have lengths := forall₂_length rows
-    simp only [Array.length_toList] at lengths
-    have := length_le_sum nodeCount roots.toList (fun e _ => nodeCount_pos e)
-    simp only [Array.length_toList] at this
-    omega
   have model : modelBound ex 3 ≤ 64 * ((N + 1) * (N + 1)) := by
     have bound := modelBound_le ex ok.wf heads 3
     have scale := Nat.mul_le_mul_right (28 + 9 * N) n
@@ -1216,7 +1204,7 @@ theorem canonicalSharingTiered_limitsFor (layout : ShareLayout) (roots : Array I
   have work : (ex.dag.size + 1) * (ex.dag.size * (ex.dag.size + 1)) ≤ (N + 1) * (N + 1) * (N + 1) := by
     rw [Nat.mul_assoc]
     exact Nat.mul_le_mul (by omega) (Nat.mul_le_mul (by omega) (by omega))
-  obtain ⟨out, h⟩ := familyExpanded_within canonicalFamilyConfig layout ok fits (by omega) (limitsFor N)
+  exact familyExpanded_within canonicalFamilyConfig layout ok fits (by omega) (limitsFor N)
     (fun w => by
       have := familyCallTotal_le canonicalFamilyConfig ex w n
       rw [cfgLimit] at this
@@ -1243,6 +1231,60 @@ theorem canonicalSharingTiered_limitsFor (layout : ShareLayout) (roots : Array I
     (by change _ ≤ 2 ^ 11 * (N + 1) ^ 2; omega)
     (by change _ ≤ 2 ^ 11 * (N + 1) ^ 2; omega)
     (by change _ ≤ 2 ^ 12 * (N + 1) ^ 2; omega)
+
+/-- The node counts of an input fit in the walk budgets of `limitsFor N`. -/
+theorem walks_le {N total : Nat} (h : total ≤ N) :
+    total ≤ (limitsFor N).maxExprVisits ∧ total ≤ (limitsFor N).maxDepth ∧ total ≤ (limitsFor N).maxNodes := by
+  have sq : (N + 1) ^ 2 = (N + 1) * (N + 1) := Nat.pow_two _
+  have sqExpand : (N + 1) * (N + 1) = N * N + 2 * N + 1 := by
+    simp only [Nat.add_mul, Nat.mul_add, Nat.mul_one, Nat.one_mul]
+    omega
+  refine ⟨?_, ?_, ?_⟩
+  · change _ ≤ 2 ^ 11 * (N + 1) ^ 2; omega
+  · change _ ≤ 2 ^ 11 * (N + 1) ^ 2; omega
+  · change _ ≤ 2 ^ 12 * (N + 1) ^ 2; omega
+
+open Ix.Sharing.Verify.CanonicalMeaning (nodeCount sharesValid_of_free expand_within expand_facts) in
+/-- **The production rule succeeds under `limitsFor N`** on Share-free roots
+whose size (expression nodes plus universe arguments) is at most
+`N < 2^64`. -/
+theorem canonicalSharingTiered_limitsFor (layout : ShareLayout) (roots : Array Ixon.Expr)
+    (free : ∀ i, i < roots.size → Ix.Sharing.Verify.CanonicalMeaning.ShareFree roots[i]!)
+    {N : Nat} (size : inputSize roots ≤ N) (small : N < UInt64.size) :
+    ∃ out, canonicalSharingTiered layout roots (limitsFor N) = .ok out := by
+  unfold inputSize at size
+  have nodesLe : (roots.toList.map nodeCount).sum ≤ N := by
+    have := sum_le_of_le roots.toList (f := nodeCount) (g := fun e => nodeCount e + univCount e)
+      (fun e _ => by omega)
+    omega
+  have zero : rangeNodes (#[] : Array Ixon.Expr) 0 (#[] : Array Ixon.Expr).size = 0 := rfl
+  have zero0 : rangeNodes (#[] : Array Ixon.Expr) 0 0 = 0 := rfl
+  have total : rangeNodes roots 0 roots.size ≤ N := by rw [rangeNodes_all]; exact nodesLe
+  obtain ⟨visits, depth, nodes⟩ := walks_le (show rangeNodes (#[] : Array Ixon.Expr) 0 0 +
+    rangeNodes roots 0 roots.size ≤ N by omega)
+  obtain ⟨ex, ran, dagSize⟩ := expand_within #[] roots false (by simp [wordBound])
+    (fun index bound => absurd bound (by simp))
+    (fun index bound resolved _ => sharesValid_of_free _ _ (free index bound)) (limitsFor N)
+    visits depth nodes
+  have n : ex.dag.size ≤ N := by omega
+  have ok := expand_facts ran
+  obtain ⟨-, -, rows⟩ := Ix.Sharing.Verify.CanonicalMeaning.expand_unshared _ roots ex ran
+  have heads : ∀ t, t < ex.dag.size → HeadWithin N (ex.dag.node t).head := by
+    intro t ht
+    obtain ⟨r, hr, desc⟩ := ok.reachable t ht
+    obtain ⟨source, hs, rel⟩ := forall₂_mem_right' rows r hr
+    refine headWithin_of_desc ok.wf desc ?_
+    rw [rel.2]
+    apply refsWithin_univCount
+    have := le_sum_of_mem (fun e => nodeCount e + univCount e) hs
+    omega
+  have rootsLe : ex.roots.size ≤ N := by
+    have lengths := forall₂_length rows
+    simp only [Array.length_toList] at lengths
+    have := length_le_sum nodeCount roots.toList (fun e _ => nodeCount_pos e)
+    simp only [Array.length_toList] at this
+    omega
+  obtain ⟨out, h⟩ := familyExpanded_limitsFor layout ok n rootsLe heads small
   refine ⟨out, ?_⟩
   unfold canonicalSharingTiered
   rw [Budget.bind_ok_eq ran, Ix.Sharing.Family.familyReferenceExpanded_eq_cached]
@@ -1258,6 +1300,105 @@ theorem canonicalSharingTiered_above (layout : ShareLayout) (roots : Array Ixon.
       canonicalSharingTiered layout roots limits = .ok out := by
   obtain ⟨out, h⟩ := canonicalSharingTiered_limitsFor layout roots free size small
   exact ⟨out, h, Budget.canonicalSharingTiered_mono le layout roots h⟩
+
+open Ix.Sharing.Verify.CanonicalMeaning (nodeCount expand_within expand_facts expand_correct
+  sharesValid_of_below pairs_get) in
+open Ix.Sharing.Verify.Ingestion (expansion Represents rootContext) in
+open Ix.Sharing.Verify.SharingExact (SharesIn) in
+/-- **The production rule with a sharing table succeeds under `limitsFor N`**
+on every table whose entries reference only earlier entries, with roots that
+reference only entries, when the table and the roots together have size at
+most `N < 2^64`. The resolved expressions may be exponentially larger; the
+budget counts the input as written. -/
+theorem canonicalSharingTieredTable_limitsFor (layout : ShareLayout) (sharing roots : Array Ixon.Expr)
+    (backward : ∀ k (hk : k < sharing.size), SharesIn (· < k) sharing[k])
+    (rootsBack : ∀ e ∈ roots.toList, SharesIn (· < sharing.size) e)
+    {N : Nat} (size : inputSize sharing + inputSize roots ≤ N) (small : N < UInt64.size) :
+    ∃ out, canonicalSharingTieredTable layout sharing roots (limitsFor N) = .ok out := by
+  unfold inputSize at size
+  have nodesS := sum_le_of_le sharing.toList (f := nodeCount) (g := fun e => nodeCount e + univCount e)
+    (fun e _ => by omega)
+  have nodesR := sum_le_of_le roots.toList (f := nodeCount) (g := fun e => nodeCount e + univCount e)
+    (fun e _ => by omega)
+  have entriesLe := length_le_sum nodeCount sharing.toList (fun e _ => nodeCount_pos e)
+  have rootsCount := length_le_sum nodeCount roots.toList (fun e _ => nodeCount_pos e)
+  simp only [Array.length_toList] at entriesLe rootsCount
+  have capacity : sharing.size < wordBound := by unfold wordBound; omega
+  obtain ⟨visits, depth, nodes⟩ := walks_le (show rangeNodes sharing 0 sharing.size +
+    rangeNodes roots 0 roots.size ≤ N by rw [rangeNodes_all, rangeNodes_all]; omega)
+  obtain ⟨ex, ran, dagSize⟩ := expand_within sharing roots true capacity
+    (fun index bound acc accSize => sharesValid_of_below _ rfl _ (by
+      change SharesIn (· < acc.size) sharing[index]!
+      rw [accSize, getElem!_pos sharing index bound]
+      exact backward index bound))
+    (fun index bound resolved resolvedSize => sharesValid_of_below _ rfl _ (by
+      change SharesIn (· < resolved.size) roots[index]!
+      rw [resolvedSize]
+      exact rootsBack _ (by rw [getElem!_pos roots index bound]; exact Array.getElem_mem_toList bound)))
+    (limitsFor N) visits depth nodes
+  rw [rangeNodes_all, rangeNodes_all] at dagSize
+  have n : ex.dag.size ≤ N := by omega
+  have ok := expand_facts ran
+  obtain ⟨resolved, rawIds, state, table, result⟩ := expand_correct _ sharing roots true ex ran
+  have entryBelow : ∀ b i, i < b → i < sharing.size →
+      RefsWithin N (expansion (rootContext sharing.size true roots.size resolved) state.interner.nodes i) := by
+    intro b
+    induction b with
+    | zero => intro i below; omega
+    | succ b ih =>
+      intro i below hi
+      have hr : i < resolved.size := by rw [table.tableSize]; exact hi
+      have rep : Represents (rootContext sharing.size true roots.size resolved) state.interner.nodes
+          sharing.toList[i] resolved.toList[i] :=
+        pairs_get table.entries i (by simpa using hi) (by simpa using hr)
+      have entry : expansion (rootContext sharing.size true roots.size resolved) state.interner.nodes i =
+          termOf state.interner.nodes resolved[i] := by
+        simp [expansion, rootContext, hr]
+      rw [entry]
+      have meaning := rep.2.2
+      simp only [Array.getElem_toList] at meaning
+      rw [meaning]
+      refine refsWithin_substShares (P := (· < i)) (fun j hj => ih j (by omega) (by omega)) _ (backward i hi) ?_
+      apply refsWithin_univCount
+      have := le_sum_of_mem (fun e => nodeCount e + univCount e) (Array.getElem_mem_toList hi)
+      omega
+  have entryRefs : ∀ i, i < sharing.size →
+      RefsWithin N (expansion (rootContext sharing.size true roots.size resolved) state.interner.nodes i) :=
+    fun i hi => entryBelow (i + 1) i (by omega) hi
+  have rootRows : List.Forall₂ (Represents (rootContext sharing.size true roots.size resolved)
+      state.interner.nodes) roots.toList rawIds.toList := table.roots
+  have heads : ∀ t, t < ex.dag.size → HeadWithin N (ex.dag.node t).head := by
+    intro t ht
+    obtain ⟨r, hr, desc⟩ := ok.reachable t ht
+    obtain ⟨raw, hraw, rel⟩ := forall₂_mem_right' result.terms r hr
+    obtain ⟨source, hs, rep⟩ := forall₂_mem_right' rootRows raw hraw
+    refine headWithin_of_desc ok.wf desc ?_
+    rw [rel.2, rep.2.2]
+    refine refsWithin_substShares (P := (· < sharing.size)) entryRefs _ (rootsBack source hs) ?_
+    apply refsWithin_univCount
+    have := le_sum_of_mem (fun e => nodeCount e + univCount e) hs
+    omega
+  have rootsLe : ex.roots.size ≤ N := by
+    rw [result.size, table.rootSize]
+    omega
+  obtain ⟨out, h⟩ := familyExpanded_limitsFor layout ok n rootsLe heads small
+  refine ⟨out, ?_⟩
+  unfold canonicalSharingTieredTable
+  rw [Budget.bind_ok_eq ran, Ix.Sharing.Family.familyReferenceExpanded_eq_cached]
+  exact h
+
+open Ix.Sharing.Verify.SharingExact (SharesIn) in
+/-- **Every budget above `limitsFor N` admits the input with a sharing
+table**, with the same output. -/
+theorem canonicalSharingTieredTable_above (layout : ShareLayout) (sharing roots : Array Ixon.Expr)
+    (backward : ∀ k (hk : k < sharing.size), SharesIn (· < k) sharing[k])
+    (rootsBack : ∀ e ∈ roots.toList, SharesIn (· < sharing.size) e)
+    {N : Nat} (size : inputSize sharing + inputSize roots ≤ N) (small : N < UInt64.size)
+    {limits : Limits} (le : Budget.LimitsLe (limitsFor N) limits) :
+    ∃ out, canonicalSharingTieredTable layout sharing roots (limitsFor N) = .ok out ∧
+      canonicalSharingTieredTable layout sharing roots limits = .ok out := by
+  obtain ⟨out, h⟩ := canonicalSharingTieredTable_limitsFor layout sharing roots backward rootsBack size small
+  exact ⟨out, h, Budget.canonicalSharingTieredTable_mono le layout sharing roots h⟩
 
 
 end Ix.Sharing.Verify.Totality
@@ -1281,3 +1422,7 @@ end Ix.Sharing.Verify.Totality
 #guard_kernel_axioms Ix.Sharing.Verify.Totality.familyWorkTotal_le [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Verify.Totality.canonicalSharingTiered_limitsFor [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Verify.Totality.canonicalSharingTiered_above [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Verify.Totality.refsWithin_substShares [propext]
+#guard_kernel_axioms Ix.Sharing.Verify.Totality.familyExpanded_limitsFor [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_limitsFor [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Sharing.Verify.Totality.canonicalSharingTieredTable_above [propext, Classical.choice, Quot.sound]
