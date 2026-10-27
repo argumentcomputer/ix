@@ -6179,6 +6179,16 @@ and agrees with `reading` wherever that is defined (`readingAt_of_reading`). On
 executed checks alone (`CompileCorrect.checked`) it gives the conclusion and
 `IxonCommutesStrongRef`.
 
+**Coverage over stored names.** `ReadingCovers` quantifies over the closure's stored
+entries (`(n, ci) ∈ sub.consts.toList`) and leaves out the inert `sorryAx`. Quantified
+over every name a lookup of `sub` answers, it was false at every instance whose closure
+is not empty, and with it the statement. `Ix.Name`'s `==` compares stored hashes only,
+so the names `.num (.anonymous h) i h`, with `h` a stored key's hash, all answer a
+lookup. Each would need a published name of its own spelling, and an artifact publishes
+finitely many. A Lean proof of this refuted the earlier form. The checker installs
+nothing for `sorryAx`'s declaration, by design, so no reading of it is claimed.
+Re-frozen with it: `ReadingCovers`' print.
+
 The change kinds cover the compiler's rewrites: changed components, regenerated
 auxiliaries, images and their computation-rule rows, rewritten call sites (each call
 site by the baseline development or one of O11a, O2, O3, O4, O6, `CallRewrite`),
@@ -6689,12 +6699,13 @@ fun ixe t cx c => do
     Ix.Kernel.Reader.Ctx Ix.Kernel.Mode.anon → Ix.Environment → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
 fun ixe t cx sub envQ =>
   ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
-    sub.consts.get? n = some ci →
-      ∃ c,
-        c ∈ envQ.consts ∧
-          c.name = Ix.Cert.quotientKey ixe t n ∧
-            Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) ∧
-              (Ix.Cert.readingAt ixe t cx c).isSome = true -/
+    (n, ci) ∈ sub.consts.toList →
+      Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
+        ∃ c,
+          c ∈ envQ.consts ∧
+            c.name = Ix.Cert.quotientKey ixe t n ∧
+              Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) ∧
+                (Ix.Cert.readingAt ixe t cx c).isSome = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ReadingCovers
 
@@ -6905,7 +6916,9 @@ the composition reaches an axiom outside the standard three. The fold's start
 (`Resolution.FoldRun`) is now named by the provenance and unchanged-closure claims it
 comes from (`compileUnchecked_provenance`, `compileReport_claim`,
 `HookFree.compileReport_hookFree`), so that the ownership obligation can be stated of this
-compile's fold; those three are guarded here at their new statements. -/
+compile's fold; those three are guarded here at their new statements. Source totality is
+restated as `ReadingCovers` is (the closure's stored entries, `sorryAx` aside), for the
+same reason; re-frozen with it: its print. -/
 
 /-- info: structure Ix.Cert.Premises (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
   (failures : Ix.Cert.Failures) (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) : Prop
@@ -7122,11 +7135,12 @@ fun env blocks cenv cenv₀ sched =>
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source), c ∈ envQ.consts → envQ.find? c.name = some c) ∧
       ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
-        sub.consts.get? n = some ci →
-          ∃ c,
-            c ∈ envQ.consts ∧
-              c.name = Ix.Cert.quotientKey ixe t n ∧
-                Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) -/
+        (n, ci) ∈ sub.consts.toList →
+          Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
+            ∃ c,
+              c ∈ envQ.consts ∧
+                c.name = Ix.Cert.quotientKey ixe t n ∧
+                  Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.SourceTotal
 

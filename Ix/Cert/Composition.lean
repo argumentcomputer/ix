@@ -191,14 +191,17 @@ def ClaimsOwned (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) (s
 namespace Obligation
 
 /-- **(1) Source no-drop and totality.** Quotient Source installs each key once, and every
-constant of the closure has its representative installed, at the address the artifact
-publishes the constant at. -/
+constant of the closure, under the name the closure stores it under, has its
+representative installed, at the address the artifact publishes the constant at. As in
+`ReadingCovers`, the names are the stored ones (a lookup also answers hash-equal
+respellings, for which no artifact can publish every spelling), and the inert `sorryAx`,
+for which the checker installs nothing by design, is left out. -/
 def SourceTotal : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source),
     Premises env roots sub ixe failures t envQ →
     (∀ c ∈ envQ.consts, envQ.find? c.name = some c) ∧
-    ∀ n ci, sub.consts.get? n = some ci →
+    ∀ n ci, (n, ci) ∈ sub.consts.toList → Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
       ∃ c ∈ envQ.consts, c.name = quotientKey ixe t n ∧
         keyAddress ixe t c.name = (ixe.named.get? n).map (·.addr)
 
@@ -431,6 +434,12 @@ end Obligation
 
 /-! ## Helpers -/
 
+/-- A stored entry of an environment is what a lookup of its name returns. -/
+theorem stored_get {sub : Ix.Environment} {n : Ix.Name} {ci : Ix.ConstantInfo}
+    (h : (n, ci) ∈ sub.consts.toList) : sub.consts.get? n = some ci := by
+  rw [Std.HashMap.get?_eq_getElem?]
+  exact (Std.HashMap.mem_toList_iff_getKey?_eq_some_and_getElem?_eq_some.mp h).2
+
 /-- The default table passes its well-formedness check. -/
 theorem defaultTable_check {t : Ix.Kernel.RoleTable} (h : Ix.Kernel.Reader.defaultTable = .ok t) :
     t.check = .ok () := by
@@ -611,9 +620,9 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
     refine ⟨{ N₀ with rec_rule := rules, caps := caps }, fun c hc e he φ ρ => ?_⟩
     rw [keys c hc e he]
     exact renamed_reading_denotes rel same unique hc M φ ρ
-  · intro n ci hn
-    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn
-    exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname⟩
+  · intro n ci hn hsorry
+    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
+    exact ⟨c, hc, hname, haddr, readsAll n ci (stored_get hn) c hc hname⟩
 
 /-! ## The general case -/
 
@@ -691,8 +700,8 @@ theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obliga
     rw [keys c hc e he, hN c.name hin φ]
     obtain ⟨c', hc', hl, -, -⟩ := agrees c hc hin
     exact const_denotes hc' hl φ ρ
-  · intro n ci hn
-    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn
-    exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname⟩
+  · intro n ci hn hsorry
+    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
+    exact ⟨c, hc, hname, haddr, readsAll n ci (stored_get hn) c hc hname⟩
 
 end Ix.Cert
