@@ -4023,23 +4023,28 @@ run_cmd do
 RoleData. On it, under the default table and its committed prelude, every
 operation is defined and the pure fold accepts
 (`Ix.Cert.RoleClosure.RoleEvidenceChecks`): a closed proposition about the
-verifier's pinned configuration, not yet a premise of any statement.
-`cert-statement` checks it after every regeneration through the executed fold
-(`roleEvidenceCheck`, `roleEvidenceChecks_of_check`). -/
+verifier's pinned configuration, a premise of the final statement. It also stores
+every committed prelude and evidence row, the records the reader's store falls back
+on, at the admission hash of its bytes (`FallbackHashed`), which reading the committed
+file does not recompute; the reader's role keys need it. `cert-statement` checks it
+after every regeneration through the executed fold and hashes (`roleEvidenceCheck`,
+`roleEvidenceChecks_of_check`). Re-frozen with the hashes: the print below (a second
+conjunct) and the roots (`fallbackHashed_iff`). -/
 
 /-- info: def Ix.Cert.RoleClosure.RoleEvidenceChecks : Prop :=
-∃ ev ds env,
-  Ix.Cert.RoleClosure.preparedDefault = Except.ok (ev, ds) ∧
-    Ix.Cert.RoleClosure.DefinesAll ds ∧ Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified ev ds env -/
+(∃ ev ds env,
+    Ix.Cert.RoleClosure.preparedDefault = Except.ok (ev, ds) ∧
+      Ix.Cert.RoleClosure.DefinesAll ds ∧ Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified ev ds env) ∧
+  Ix.Cert.RoleClosure.FallbackHashed -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RoleClosure.RoleEvidenceChecks
 
-/-- info: [cert-audit] role closure: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] role closure: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "role closure"
-    (#[`definesAll_iff, `checks_of_closureCheck, `roleEvidenceChecks_of_check].map
+    (#[`definesAll_iff, `checks_of_closureCheck, `roleEvidenceChecks_of_check, `fallbackHashed_iff].map
       (`Ix.Cert.RoleClosure ++ ·))
 
 /-! ## N-READS, N4 (b): no constructor of a Source-accepted family in its types

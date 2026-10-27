@@ -16,8 +16,9 @@ the statement is closed: `RoleEvidenceChecks` mentions no input.
 * `RoleEvidenceChecks`: on the default table and its committed prelude and
   closure, the declarations include a definition of every well-founded operation,
   and the pure fold accepts them at some fuel (`Cached.AcceptsRef`), so every
-  operation's gate passed;
-* `roleEvidenceCheck`: the same with the executed fold, decided;
+  operation's gate passed; and every committed prelude and evidence row is stored at
+  the admission hash of its bytes (`FallbackHashed`);
+* `roleEvidenceCheck`: the same with the executed fold and hashes, decided;
   `roleEvidenceChecks_of_check` gives `RoleEvidenceChecks` from it, through the
   fold's refinement (`Cached.checkDecls_refines_ref`).
 
@@ -77,25 +78,52 @@ def preparedDefault : Except String (Evidences .anon × List (Declaration .anon)
   let pre ← preludeFor t
   prepareClosure t pre (← closureRecords) (← closureBlobs) (← closureHints)
 
-/-- **The shipped role table's certificates check** (Route A, B6b; until
-CQX.7): the committed closure, prepared under the default table behind its
-committed prelude, defines every well-founded `Nat` operation, and the pure
-fold accepts it at some fuel under the table's evidence. The fold reaches each
-operation's definition with its dependency closure installed and runs its
-evidence gate there (`checkDivModEvidence`), so every gate passed. A closed
-proposition about `IxC/Kernel/Ixon/RoleData.lean`, the verifier's pinned
-configuration: it mentions no input. Not yet a premise of any statement. -/
-def RoleEvidenceChecks : Prop :=
-  ∃ ev ds env, preparedDefault = .ok (ev, ds) ∧ DefinesAll ds ∧ Cached.AcceptsRef .verified ev ds env
+/-- **The committed fallback sits at its hashes**: every committed prelude and evidence
+row (`RoleData.prelude`, `RoleData.evidence`: the records the reader's store falls back
+on behind a stream's own) is stored at the admission hash of its bytes. Reading the
+committed file does not recompute these addresses (`decodeCommitted`), and the reader keys
+an address by the role bound to the reference it resolves to, so a fallback record under
+another address than its hash could lend a role to a stream record of the same
+constant. This is the run-time form of the fact `Tests/Ix/Kernel/Authentication.lean`
+guards; the kernel cannot decide it on the committed hex strings, which it expands
+quadratically. -/
+def FallbackHashed : Prop :=
+  ∀ row ∈ (RoleData.prelude ++ RoleData.evidence).toList,
+    (bytesOfHex row.2).map Address.admissionHash = addressOfHex row.1
 
-/-- `RoleEvidenceChecks`, with the executed fold, decided. -/
-def roleEvidenceCheck : Bool := closureCheck preparedDefault
+/-- `FallbackHashed`, decided. -/
+def fallbackHashed : Bool :=
+  (RoleData.prelude ++ RoleData.evidence).all fun row =>
+    (bytesOfHex row.2).map Address.admissionHash == addressOfHex row.1
+
+theorem fallbackHashed_iff : fallbackHashed = true ↔ FallbackHashed := by
+  unfold fallbackHashed FallbackHashed
+  rw [Array.all_eq_true_iff_forall_mem]
+  simp only [beq_iff_eq, Array.mem_toList_iff]
+
+/-- **The shipped role table's certificates check, and its committed fallback sits at
+its hashes**: the committed closure, prepared under the default table behind its
+committed prelude, defines every well-founded `Nat` operation, and the pure fold accepts
+it at some fuel under the table's evidence. The fold reaches each operation's definition
+with its dependency closure installed and runs its evidence gate there
+(`checkDivModEvidence`), so every gate passed. And every committed prelude and evidence
+row is stored at the admission hash of its bytes (`FallbackHashed`). A closed
+proposition about `IxC/Kernel/Ixon/RoleData.lean`, the verifier's pinned configuration:
+it mentions no input. -/
+def RoleEvidenceChecks : Prop :=
+  (∃ ev ds env, preparedDefault = .ok (ev, ds) ∧ DefinesAll ds ∧ Cached.AcceptsRef .verified ev ds env) ∧
+    FallbackHashed
+
+/-- `RoleEvidenceChecks`, with the executed fold and the executed hashes, decided. -/
+def roleEvidenceCheck : Bool := closureCheck preparedDefault && fallbackHashed
 
 /-- **The executed check gives `RoleEvidenceChecks`**, through the fold's
 refinement (the set theory is a hypothesis of that walk, not of the
 statement's meaning). -/
 theorem roleEvidenceChecks_of_check (V : Type w) [SetTheory V] (h : roleEvidenceCheck = true) :
-    RoleEvidenceChecks :=
-  checks_of_closureCheck V preparedDefault h
+    RoleEvidenceChecks := by
+  unfold roleEvidenceCheck at h
+  obtain ⟨closure, hashed⟩ := Bool.and_eq_true_iff.mp h
+  exact ⟨checks_of_closureCheck V preparedDefault closure, fallbackHashed_iff.mp hashed⟩
 
 end Ix.Cert.RoleClosure

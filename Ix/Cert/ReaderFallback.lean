@@ -57,7 +57,7 @@ theorem decoded_keys (what : String) (raw : Array (String × String))
         cases done
         rfl
 
-private theorem preludeFor_records {md : Mode} {t : RoleTable} {pre : Prelude md}
+theorem preludeFor_records {md : Mode} {t : RoleTable} {pre : Prelude md}
     (h : preludeFor t = .ok pre) :
     preludeRecords = .ok pre.records ∧ evidenceRecords = .ok pre.evidence := by
   have read := (preludeFor_checks h).1

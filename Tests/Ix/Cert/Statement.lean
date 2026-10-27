@@ -1248,11 +1248,24 @@ its executed check (`roleEvidenceCheck`, `roleEvidenceChecks_of_check`): the pin
 defines every well-founded `Nat` operation and the verified fold accepts it under the default
 table's evidence. Run after every regeneration (RoleData's header recipe). -/
 def roleEvidenceCase : IO (Array String × Array String) := do
+  -- the committed fallback rows at the hashes of their bytes, timed alone on rows read at
+  -- run time (`fallbackHashed` is a closed constant, computed once when the module loads)
+  let rows ← IO.lazyPure fun _ => Ix.Kernel.Reader.RoleData.prelude ++ Ix.Kernel.Reader.RoleData.evidence
+  let f0 ← IO.monoMsNow
+  let hashed ← IO.lazyPure fun _ => rows.all fun row =>
+    (bytesOfHex row.2).map Address.admissionHash == Ix.Kernel.Reader.addressOfHex row.1
+  let f1 ← IO.monoMsNow
+  unless hashed == Ix.Cert.RoleClosure.fallbackHashed do
+    return (#[s!"role evidence: the timed fallback hashes disagree with fallbackHashed"], #[])
+  unless hashed do
+    return (#[s!"role evidence: a committed prelude or evidence row is not stored at the hash of its bytes"], #[])
+  let hashedLine := s!"role evidence: the {Ix.Kernel.Reader.RoleData.prelude.size + Ix.Kernel.Reader.RoleData.evidence.size} committed \
+    fallback rows sit at the hashes of their bytes ({f1 - f0} ms)"
   match Ix.Cert.RoleClosure.preparedDefault with
   | .error e => return (#[s!"the committed role closure does not prepare: {e}"], #[])
   | .ok (ev, ds) =>
     if Ix.Cert.RoleClosure.roleEvidenceCheck then
-      return (#[], #[s!"role evidence: the pinned closure ({ds.length} declarations, \
+      return (#[], #[hashedLine, s!"role evidence: the pinned closure ({ds.length} declarations, \
         {ev.length} evidence entries) defines every well-founded operation and the verified fold \
         accepts it: RoleEvidenceChecks holds"])
     else
