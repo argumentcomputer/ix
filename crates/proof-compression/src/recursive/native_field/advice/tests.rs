@@ -19,7 +19,9 @@ pub(in crate::recursive::native_field) fn range_reference<const N: usize>(
   value: Scalar,
 ) -> [Scalar; N] {
   let n = integer_reference(value);
-  std::array::from_fn(|i| scalar(&((&n >> (16 * i)) & BigUint::from(65535u32))))
+  let bits = crate::recursive::native_field::RANGE_BITS;
+  let mask = (BigUint::from(1u8) << bits) - BigUint::from(1u8);
+  std::array::from_fn(|i| scalar(&((&n >> (bits * i)) & &mask)))
 }
 
 pub(in crate::recursive::native_field) fn relation_reference(

@@ -448,3 +448,101 @@ mod tests {
     assert!(rejects_changed_gate(&c, &a, result.point.y.0[0], Scalar::ONE));
   }
 }
+
+#[cfg(test)]
+mod cost_breakdown {
+  use super::*;
+  use multi_stark::plonkish::CircuitStats;
+
+  fn record(
+    out: &mut serde_json::Map<String, serde_json::Value>,
+    name: &str,
+    b: &Builder,
+    before: CircuitStats,
+  ) {
+    let s = b.stats();
+    out.insert(
+      name.into(),
+      serde_json::json!({
+        "gates": s.gates - before.gates,
+        "lookups": s.lookups - before.lookups,
+        "rows": (s.gates + s.lookups) - (before.gates + before.lookups),
+      }),
+    );
+  }
+
+  /// Row attribution of the opening-MSM gadget, printed as JSON.
+  /// Run with `--ignored --nocapture`.
+  #[test]
+  #[ignore = "cost report; run explicitly"]
+  fn report() {
+    let mut b = Builder::counting();
+    let f = FqGadget::new(&mut b);
+    let bytes = ByteGadgets::new(&mut b);
+    let p = PointInput::new(&mut b, &f, "p").nonzero(&mut b, &f);
+    let q = PointInput::new(&mut b, &f, "q").nonzero(&mut b, &f);
+    let mut out = serde_json::Map::new();
+    let before = b.stats();
+    f.mul(&mut b, p.x, q.x);
+    record(&mut out, "fq_mul", &b, before);
+    let before = b.stats();
+    f.hint_pure(&mut b, "h", &[p.x], |v| Ok(v[0]));
+    record(&mut out, "fq_hint_pure", &b, before);
+    let before = b.stats();
+    p.add(&mut b, &f, q);
+    record(&mut out, "affine_add", &b, before);
+    let before = b.stats();
+    p.double(&mut b, &f);
+    record(&mut out, "affine_double", &b, before);
+    let before = b.stats();
+    p.add_complete(&mut b, &f, q);
+    record(&mut out, "affine_add_complete", &b, before);
+    let before = b.stats();
+    let mut base = Base::new(PointInput::new(&mut b, &f, "v"), None);
+    let table_var = base.table(&mut b, &f);
+    record(&mut out, "table_variable_16", &b, before);
+    let before = b.stats();
+    let mut base =
+      Base::new(PointInput::new(&mut b, &f, "c"), Some(G1Affine::generator()));
+    let table_fixed = base.table(&mut b, &f);
+    record(&mut out, "table_fixed_16", &b, before);
+    let s = b.input("s");
+    let before = b.stats();
+    let enc = scalar_bytes(&mut b, &bytes, s);
+    let bits: Vec<_> =
+      enc.into_iter().flat_map(|v| bytes.bits(&mut b, v)).collect();
+    record(&mut out, "scalar_bytes_and_bits", &b, before);
+    let before = b.stats();
+    select(&mut b, &table_var, &bits[..4]);
+    record(&mut out, "select_16_variable", &b, before);
+    let before = b.stats();
+    select(&mut b, &table_fixed, &bits[..4]);
+    record(&mut out, "select_16_fixed", &b, before);
+    let before = b.stats();
+    constant_mul(&mut b, &f, p, correction_coefficients().0);
+    record(&mut out, "constant_mul_correction", &b, before);
+    for (nv, nf) in [(1usize, 0usize), (2, 0), (0, 1), (0, 2), (1, 1)] {
+      let mut b = Builder::counting();
+      let f = FqGadget::new(&mut b);
+      let bytes = ByteGadgets::new(&mut b);
+      let h = PointInput::new(&mut b, &f, "h").nonzero(&mut b, &f);
+      let mut bases: Vec<Base> = Vec::new();
+      for i in 0..nv {
+        bases
+          .push(Base::new(PointInput::new(&mut b, &f, &format!("v{i}")), None));
+      }
+      for i in 0..nf {
+        bases.push(Base::new(
+          PointInput::new(&mut b, &f, &format!("c{i}")),
+          Some((G1Affine::generator() * Fr::from(i as u64 + 2)).into_affine()),
+        ));
+      }
+      let terms: Vec<_> =
+        (0..nv + nf).map(|i| (i, b.input(format!("s{i}")))).collect();
+      let before = b.stats();
+      msm_with_offset(&mut b, &f, &bytes, &mut bases, &terms, h);
+      record(&mut out, &format!("msm_var{nv}_fixed{nf}"), &b, before);
+    }
+    println!("{}", serde_json::to_string_pretty(&out).unwrap());
+  }
+}
