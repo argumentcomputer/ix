@@ -7,8 +7,8 @@ Source's trace, unit by unit. This module builds that from the trace's order: th
 a prefix of addresses with no stored record (a projection's block left out of the store),
 then one segment per Source read, in the trace's order. A Source read that changes no entry
 has a segment of records each read to nothing from every state; any other has a segment that
-opens with its partner record, read from every state related to the Source state as the
-Source read renamed, followed by records read to nothing (`SegmentsRead`). Such segments read
+holds its partner record, read from every state related to the Source state as the Source
+read renamed, among records read to nothing (`SegmentsRead`). Such segments read
 as the trace's units (`units_of_segments`, `unitsRead_of_segments`), and the order respects
 the records' references whenever a rank that every reference descends orders it
 (`ordered_of_rank`). -/
@@ -29,15 +29,16 @@ def InertAddrs (ixe : Ixon.Env) (cx : Ctx md') (as : List Address) : Prop :=
   ∀ a ∈ as, ∀ c, recordAt ixe a = some c → InertAt cx a c
 
 /-- **A Source read's segment of the closure order**: an inert Source read with records read
-to nothing, or a Source read in the scope whose segment opens with its partner record, read
-from every related state as the Source read renamed, followed by records read to nothing. -/
+to nothing, or a Source read in the scope whose segment holds its partner record, read from
+every related state as the Source read renamed, between records read to nothing. -/
 def SegmentReads (f : md.Id → md'.Id) (P : KeyScope md) (cx : Ctx md') (ixe : Ixon.Env) (stS : State md)
     (rS : Read md) (seg : List Address) : Prop :=
   (StreamRename.Inert rS ∧ InertAddrs ixe cx seg) ∨
-    ∃ a rest c, seg = a :: rest ∧ recordAt ixe a = some c ∧ StreamUnits.ReadScoped P rS ∧
+    ∃ before a after c, seg = before ++ a :: after ∧ recordAt ixe a = some c ∧
+      StreamUnits.ReadScoped P rS ∧
       (∀ stA : State md', StreamRename.StateRen f P stS stA →
         ∃ rA, readRecord cx stA a c = .ok rA ∧ StreamUnits.ReadRen f rS rA) ∧
-      InertAddrs ixe cx rest
+      InertAddrs ixe cx before ∧ InertAddrs ixe cx after
 
 /-- **The segments of a trace**, one per Source read, each read from the Source state the
 reads before it leave. -/
@@ -74,10 +75,10 @@ theorem units_of_segments {f : md.Id → md'.Id} {P : KeyScope md} {cx : Ctx md'
   | nil => exact .nil
   | cons head _ ih =>
     rw [List.flatten_cons, decodedOf_append]
-    rcases head with ⟨inert, hseg⟩ | ⟨a, rest, c, rfl, hc, hscope, reads, hrest⟩
+    rcases head with ⟨inert, hseg⟩ | ⟨before, a, after, c, rfl, hc, hscope, reads, hbefore, hafter⟩
     · exact units_inert (.inertSource inert ih) hseg
-    · rw [Stream.decodedOf_cons, hc]
-      exact .record hscope reads (units_inert ih hrest)
+    · rw [decodedOf_append, Stream.decodedOf_cons, hc, List.append_assoc]
+      exact units_inert (.record hscope reads (units_inert ih hafter)) hbefore
 
 /-- **A closure order in the trace's order**: a prefix of addresses with no stored record,
 then the segments, read as the trace's units. -/
