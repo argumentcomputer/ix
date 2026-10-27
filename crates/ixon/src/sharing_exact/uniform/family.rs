@@ -108,18 +108,18 @@ pub(crate) fn optimize_family_with(
 /// complete subsets, no recursive search, pruning or partial-state evaluation.
 /// The greedy path evaluates each remaining one-member extension. Every count
 /// has a feasible row before trimming, even when its delta is negative or tied.
-pub(super) fn family_table(
+pub(super) fn family_table<D: Delta>(
   members: &[TermId],
   k: usize,
-  mut cost: impl FnMut(&[TermId]) -> Result<i128, SharingError>,
-) -> Result<CTable, SharingError> {
+  mut cost: impl FnMut(&[TermId]) -> Result<D, SharingError>,
+) -> Result<CTable<D>, SharingError> {
   if k > 24 {
     return Err(internal("unsupported K > 24"));
   }
   if !members.windows(2).all(|p| p[0] < p[1]) {
     return Err(internal("noncanonical component members"));
   }
-  let mut rows: CTable = vec![None; members.len() + 1];
+  let mut rows: CTable<D> = vec![None; members.len() + 1];
   if members.len() <= k {
     for mask in 0..(1u64 << members.len()) {
       let chosen: Vec<_> = members
@@ -129,7 +129,7 @@ pub(super) fn family_table(
         .collect();
       let d = cost(&chosen)?;
       let row = &mut rows[chosen.len()];
-      if better(d, &chosen, row.as_ref()) {
+      if better(&d, &chosen, row.as_ref()) {
         *row = Some((d, chosen));
       }
     }
@@ -143,7 +143,7 @@ pub(super) fn family_table(
         let mut next = chosen.clone();
         next.insert(at, t);
         let d = cost(&next)?;
-        if better(d, &next, best.as_ref()) {
+        if better(&d, &next, best.as_ref()) {
           best = Some((d, next));
         }
       }
@@ -155,7 +155,29 @@ pub(super) fn family_table(
   Ok(rows)
 }
 
+/// The fixed-family optimum at width `w` with family bound `k`: computed in
+/// `u128`/`i128` and, if a value leaves that range (`LengthOverflow`), again
+/// in exact integers from the meter as it was before the first run, so the
+/// counters and the result are those of one exact run (`arith`).
 pub(super) fn optimize_at(
+  w: u64,
+  dag: &SharingDag,
+  prep: &DagPrep,
+  meter: &mut Meter<'_>,
+  k: usize,
+) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
+  let before = meter.stats.clone();
+  match optimize_in::<Fast>(w, dag, prep, meter, k) {
+    Err(SharingError::FormatBound(FormatBound::LengthOverflow)) => {
+      meter.stats = before;
+      optimize_in::<Exact>(w, dag, prep, meter, k)
+    },
+    result => result,
+  }
+}
+
+/// [`optimize_at`] in the representation `A`.
+pub(super) fn optimize_in<A: Arith>(
   w: u64,
   dag: &SharingDag,
   prep: &DagPrep,
@@ -165,12 +187,12 @@ pub(super) fn optimize_at(
   if k > 24 {
     return Err(internal("unsupported K > 24"));
   }
-  let stage = initial(w, dag, prep, meter)?;
+  let stage = initial::<A>(w, dag, prep, meter)?;
   let n = dag.len();
   let mut closure = ClosureCount::new(n);
   // Reuse the full-DAG stamp/value buffers across components. These are
   // scratch only; neither available bits nor chosen effects survive a row.
-  let mut cx = CompCtx {
+  let mut cx = CompCtx::<A> {
     up: &stage.up,
     #[cfg(any(test, feature = "sharing-reference"))]
     members: Vec::new(),
@@ -178,9 +200,9 @@ pub(super) fn optimize_at(
     root_mult: Vec::new(),
     stored_in: Vec::new(),
     #[cfg(any(test, feature = "sharing-reference"))]
-    phi0: 0,
+    phi0: A::U::default(),
     #[cfg(any(test, feature = "sharing-reference"))]
-    slack: stage.slack,
+    slack: stage.slack.clone(),
     vals: vec![UVal::default(); n],
     stamp: vec![0; n],
     epoch: 0,
@@ -203,17 +225,17 @@ pub(super) fn optimize_at(
       Resource::Work,
     )?;
     cx.area = component_area(&stage.up, &prep.facts, members);
-    let mut roots = std::collections::BTreeMap::<TermId, u128>::new();
+    let mut roots = std::collections::BTreeMap::<TermId, u64>::new();
     for &r in dag.roots() {
       if cx.area.binary_search(&r).is_ok() {
         *roots.entry(r).or_default() += 1;
       }
     }
-    cx.root_mult = roots.into_iter().collect();
+    cx.root_mult = roots.into_iter().map(|(r, m)| (r, A::u(m))).collect();
     cx.stored_in =
       cx.area.iter().copied().filter(|&t| stage.up.opaq[ix(t)]).collect();
     let (base, _) = cx.phi(&[])?;
-    let base = to_i(base)?;
+    let base = A::signed(&base)?;
     let rows = family_table(members, k, |chosen| {
       for &t in chosen {
         cx.avail[ix(t)] = true;
@@ -223,41 +245,23 @@ pub(super) fn optimize_at(
         cx.avail[ix(t)] = false;
       }
       let (value, _) = evaluated?;
-      to_i(value)?.checked_sub(base).ok_or_else(overflow)
+      A::signed(&value)?.minus(&base)
     })?;
-    let mut best: Option<Choice> = None;
+    let mut best: Option<Choice<A::S>> = None;
     for row in &rows {
       let (delta, selected) =
         row.as_ref().ok_or_else(|| internal("missing count"))?;
-      if better(*delta, selected, best.as_ref()) {
-        best = Some((*delta, selected.clone()));
+      if better(delta, selected, best.as_ref()) {
+        best = Some((delta.clone(), selected.clone()));
       }
     }
     let best = best.ok_or_else(|| internal("empty table"))?;
-    let bound = best.0.checked_add(stage.slack).ok_or_else(overflow)?;
-    let trimmed: CTable =
+    let bound = best.0.plus(&stage.slack)?;
+    let trimmed: CTable<A::S> =
       rows.into_iter().map(|r| r.filter(|(d, _)| *d <= bound)).collect();
     results.push((best, trimmed));
   }
   drop(cx);
-  // The reused combiner uses signed additions. Conservatively admit only
-  // tables for which every prefix sum and final model addition fits i128;
-  // this checked guard does not change the production numeric contract.
-  let mut bound = 9u128; // largest TagN count header
-  for table in results.iter().map(|(_, rows)| rows) {
-    let magnitude =
-      table.iter().flatten().map(|(d, _)| d.unsigned_abs()).max().unwrap_or(0);
-    bound = bound.checked_add(magnitude).ok_or_else(overflow)?;
-  }
-  for value in dag
-    .roots()
-    .iter()
-    .map(|&r| stage.up.base[ix(r)].cost)
-    .chain(stage.cs.iter().map(|&c| stage.up.base[ix(c)].inl))
-  {
-    bound = bound.checked_add(value).ok_or_else(overflow)?;
-  }
-  let _ = to_i(bound)?;
   combine_uniform(w, dag, prep, meter, stage, results)
 }
 
@@ -340,7 +344,8 @@ mod tests {
     let limits = ExactSharingLimits::default();
     let dag = SharingDag::from_expanded_roots(&roots, &limits).unwrap();
     let prep = DagPrep::new(&dag);
-    let stage = initial(3, &dag, &prep, &mut Meter::new(&limits)).unwrap();
+    let stage =
+      initial::<Fast>(3, &dag, &prep, &mut Meter::new(&limits)).unwrap();
     assert_eq!(stage.comps.len(), 1);
     assert_eq!(stage.comps[0].len(), 1);
     let closure =

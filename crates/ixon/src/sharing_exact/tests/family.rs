@@ -117,8 +117,12 @@ fn check_product(
       rows.push((delta, selected.clone()));
     }
     let best = rows.iter().map(|r| r.0).min().unwrap();
-    let expected: Vec<_> =
-      rows.into_iter().map(|r| (r.0 <= best + slack).then_some(r)).collect();
+    let expected: Vec<_> = rows
+      .into_iter()
+      .map(|r| {
+        (r.0 <= best + slack).then(|| (num_bigint::BigInt::from(r.0), r.1))
+      })
+      .collect();
     assert_eq!(retained, &expected, "retained per-count rows w={w} k={k}");
     product = product
       .iter()

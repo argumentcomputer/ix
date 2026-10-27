@@ -146,7 +146,7 @@ pub(crate) fn classify(
   observe(&input_event(c, &dag, &m))?;
   let prep = DagPrep::new(&dag);
   for w in 1..=3 {
-    let stage = initial(w, &dag, &prep, &mut m)?;
+    let stage = initial::<Fast>(w, &dag, &prep, &mut m)?;
     observe(&width_event(w, &stage))?;
     for (j, members) in stage.comps.iter().enumerate() {
       let area = component_area(&stage.up, &prep.facts, members);
@@ -173,12 +173,12 @@ fn uniform_family(
   k: usize,
   observe: &mut Observe<'_>,
 ) -> Result<(UniformSharingResult, UniformPlan), SharingError> {
-  let stage = initial(w, dag, prep, meter)?;
+  let stage = initial::<Fast>(w, dag, prep, meter)?;
   observe(&width_event(w, &stage))?;
   let n = dag.len();
   // Reuse the full-DAG stamp/value buffers across components. These are
   // scratch only; neither available bits nor chosen effects survive a row.
-  let mut cx = CompCtx {
+  let mut cx = CompCtx::<Fast> {
     up: &stage.up,
     members: Vec::new(),
     area: Vec::new(),
@@ -207,7 +207,7 @@ fn uniform_family(
       cx.area.iter().copied().filter(|&t| stage.up.opaq[ix(t)]).collect();
     let (base, work) = cx.phi(&[])?;
     meter.work(work)?;
-    let base = to_i(base)?;
+    let base = Fast::signed(&base)?;
     let mut evaluated_rows = 0u64;
     let rows = family_table(members, k, |chosen| {
       meter.state()?;
@@ -224,7 +224,7 @@ fn uniform_family(
       }
       let (value, work) = evaluated?;
       meter.work(work)?;
-      to_i(value)?.checked_sub(base).ok_or_else(overflow)
+      Fast::signed(&value)?.minus(&base)
     })?;
     let mut best: Option<Choice> = None;
     for (count, row) in rows.iter().enumerate() {
@@ -238,35 +238,17 @@ fn uniform_family(
         delta: *delta,
         selected: selected.clone(),
       })?;
-      if better(*delta, selected, best.as_ref()) {
+      if better(delta, selected, best.as_ref()) {
         best = Some((*delta, selected.clone()));
       }
     }
     let best = best.ok_or_else(|| internal("family trace: empty table"))?;
-    let bound = best.0.checked_add(stage.slack).ok_or_else(overflow)?;
+    let bound = best.0.plus(&stage.slack)?;
     let trimmed: CTable =
       rows.into_iter().map(|r| r.filter(|(d, _)| *d <= bound)).collect();
     results.push((best, trimmed));
   }
   drop(cx);
-  // The reused combiner uses signed additions. Conservatively admit only
-  // tables for which every prefix sum and final model addition fits i128;
-  // this checked guard does not change the production numeric contract.
-  let mut bound = 9u128; // largest TagN count header
-  for table in results.iter().map(|(_, rows)| rows) {
-    let magnitude =
-      table.iter().flatten().map(|(d, _)| d.unsigned_abs()).max().unwrap_or(0);
-    bound = bound.checked_add(magnitude).ok_or_else(overflow)?;
-  }
-  for value in dag
-    .roots()
-    .iter()
-    .map(|&r| stage.up.base[ix(r)].cost)
-    .chain(stage.cs.iter().map(|&c| stage.up.base[ix(c)].inl))
-  {
-    bound = bound.checked_add(value).ok_or_else(overflow)?;
-  }
-  let _ = to_i(bound)?;
   combine_uniform(w, dag, prep, meter, stage, results)
 }
 
@@ -366,7 +348,7 @@ mod tests {
         let mut calls = 0;
         let rows = family_table(&members, k, |_| {
           calls += 1;
-          Ok(-3)
+          Ok(-3i128)
         })
         .unwrap();
         assert_eq!(calls, if n <= k { 1 << n } else { 1 + n * (n + 1) / 2 });
@@ -375,9 +357,9 @@ mod tests {
         }
       }
     }
-    assert!(family_table(&[2, 2], 2, |_| Ok(0)).is_err());
-    assert!(family_table(&[2, 1], 2, |_| Ok(0)).is_err());
-    assert!(family_table(&[], 25, |_| Ok(0)).is_err());
-    assert!(family_table(&[1, 2], 0, |_| Err(overflow())).is_err());
+    assert!(family_table(&[2, 2], 2, |_| Ok(0i128)).is_err());
+    assert!(family_table(&[2, 1], 2, |_| Ok(0i128)).is_err());
+    assert!(family_table(&[], 25, |_| Ok(0i128)).is_err());
+    assert!(family_table(&[1, 2], 0, |_| Err::<i128, _>(overflow())).is_err());
   }
 }

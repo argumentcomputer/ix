@@ -3,6 +3,11 @@
 
 use super::*;
 
+/// `x` as a delta; the reference refuses outside `i128`.
+fn to_i(x: u128) -> Result<i128, SharingError> {
+  Fast::signed(&x)
+}
+
 impl CompCtx<'_, '_> {
   /// Depth-first branch and bound over the members (ascending), "not
   /// stored" first. Returns the best choice and the best per set size.
@@ -23,14 +28,14 @@ impl CompCtx<'_, '_> {
       meter.work(work)?;
       let delta = to_i(phi)? - to_i(self.phi0)?;
       if i >= self.members.len() {
-        if better(delta, &chosen, best.as_ref()) {
+        if better(&delta, &chosen, best.as_ref()) {
           best = Some((delta, chosen.clone()));
         }
         let k = chosen.len();
         if by_size.len() <= k {
           by_size.resize(k + 1, None);
         }
-        if better(delta, &chosen, by_size[k].as_ref()) {
+        if better(&delta, &chosen, by_size[k].as_ref()) {
           by_size[k] = Some((delta, chosen));
         }
         continue;
@@ -447,6 +452,22 @@ impl Overlay<'_> {
       j => self.vals[j],
     }
   }
+
+  /// The `i`-th bound of `t`, as [`Overlay::get`].
+  fn bound(&self, t: TermId, i: usize) -> &u128 {
+    match self.pos[ix(t)] {
+      NO_POS => {
+        let k = ix(t);
+        match i {
+          0 => &self.base.inl[k],
+          1 => &self.base.merged[k],
+          2 => &self.base.head_lb[k],
+          _ => &self.base.cont_lb[k],
+        }
+      },
+      j => &self.vals[j][i],
+    }
+  }
 }
 
 /// The search of one component (Lean `SCtx`). Sets of decided members are
@@ -458,7 +479,7 @@ struct SCtx<'a, 'd> {
   facts: &'a Facts,
   cand: &'a [bool],
   b0: &'a Bounds,
-  vis0: &'a (Vec<u64>, Vec<u64>),
+  vis0: &'a (Vec<u128>, Vec<u128>),
   spine_len: &'a [u64],
   dag_size: usize,
   members: Vec<TermId>,
@@ -523,8 +544,8 @@ impl SCtx<'_, '_> {
       let (v, s) = {
         let (vals, base, pos) = (&self.vals, &self.up.base, self.pos);
         let get = |c: TermId| match pos[ix(c)] {
-          NO_POS => base[ix(c)],
-          j => vals[j],
+          NO_POS => &base[ix(c)],
+          j => &vals[j],
         };
         let av = |c: TermId| match pos[ix(c)] {
           NO_POS => false,
@@ -536,8 +557,8 @@ impl SCtx<'_, '_> {
       work = work.saturating_add(1 + s);
     }
     let get = |c: TermId| match self.pos[ix(c)] {
-      NO_POS => self.up.base[ix(c)],
-      j => self.vals[j],
+      NO_POS => &self.up.base[ix(c)],
+      j => &self.vals[j],
     };
     let mut total = 0u128;
     for &(r, m) in &self.root_mult {
@@ -571,13 +592,13 @@ impl SCtx<'_, '_> {
     for (j, &t) in self.area.iter().enumerate() {
       let v = {
         let ovr = &ov;
-        bound_step(
+        bound_step::<Fast>(
           self.up.nodes,
           t,
-          self.up.w,
+          &self.up.w,
           self.cand[ix(t)] && !out[j],
-          &|c| ovr.get(c)[2],
-          &|c| ovr.get(c)[3],
+          &|c| ovr.bound(c, 2),
+          &|c| ovr.bound(c, 3),
         )?
       };
       ov.vals.push(v);
@@ -586,10 +607,10 @@ impl SCtx<'_, '_> {
   }
 
   /// Visible counts of the area terms (by area position).
-  fn revisible(&self, out: &[bool]) -> Vec<(u64, u64)> {
-    let mut vis: Vec<(u64, u64)> = vec![(0, 0); self.area.len()];
+  fn revisible(&self, out: &[bool]) -> Vec<(u128, u128)> {
+    let mut vis: Vec<(u128, u128)> = vec![(0, 0); self.area.len()];
     for j in (0..self.area.len()).rev() {
-      let r = self.root_occ[j];
+      let r = u128::from(self.root_occ[j]);
       let (mut d, mut h) = (r, r);
       for &(q, qj, ma, mh) in &self.in_edges[j] {
         let wq = if self.maybe(out, q) {
@@ -601,8 +622,8 @@ impl SCtx<'_, '_> {
           }
           .min(VISIBLE_CAP)
         };
-        d = d.saturating_add(ma.saturating_mul(wq));
-        h = h.saturating_add(mh.saturating_mul(wq));
+        d = d.saturating_add(u128::from(ma).saturating_mul(wq));
+        h = h.saturating_add(u128::from(mh).saturating_mul(wq));
       }
       vis[j] = (d, h);
     }
@@ -923,14 +944,14 @@ impl SCtx<'_, '_> {
           .at(t)
           .map_or((self.vis0.0[ix(t)], self.vis0.1[ix(t)]), |j| vis[j]);
         let v = b.get(t);
-        let gt = stored_gain(
+        let gt = stored_gain::<Fast>(
           &self.up.nodes[ix(t)],
           d,
           h,
           self.spine_len[ix(t)],
-          v[0],
-          v[1],
-          self.up.w,
+          &v[0],
+          &v[1],
+          &self.up.w,
         )?;
         gains.push((t, gt));
       }
@@ -1076,7 +1097,7 @@ pub(crate) fn optimize_uniform_with(
     low,
     comps,
     slack,
-  } = initial(w, dag, prep, meter)?;
+  } = initial::<Fast>(w, dag, prep, meter)?;
   let nodes = dag.nodes();
   let n = nodes.len();
   let facts = &prep.facts;
@@ -1611,8 +1632,8 @@ mod context_tests {
     let facts = graph_facts(&dag);
     let cand: Vec<bool> = facts.deg.iter().map(|&d| d >= 2).collect();
     let members: Vec<_> = (0..n).filter(|&t| cand[t]).collect();
-    let up = UPrep::new(nodes, w, vec![false; n]).unwrap();
-    let b0 = uniform_bounds(nodes, w, &cand).unwrap();
+    let up = UPrep::<Fast>::new(nodes, w, vec![false; n]).unwrap();
+    let b0 = uniform_bounds::<Fast>(nodes, &w, &cand).unwrap();
     let vis0 = visible_counts(&dag, &cand);
     let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
     let pos: Vec<_> = (0..n).collect();

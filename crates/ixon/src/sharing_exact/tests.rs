@@ -39,6 +39,7 @@ use crate::univ::Univ;
 type E = Arc<Expr>;
 
 mod family;
+mod wide;
 
 fn hex(b: &[u8]) -> String {
   b.iter().map(|x| format!("{x:02x}")).collect()
@@ -2744,15 +2745,16 @@ fn retained_component_counts(
   u.component_tables
     .iter()
     .map(|table| {
-      let best = table.iter().flatten().map(|(d, _)| *d).min().unwrap();
+      let delta = |d: &num_bigint::BigInt| i128::try_from(d).unwrap();
+      let best = table.iter().flatten().map(|(d, _)| delta(d)).min().unwrap();
       table
         .iter()
         .enumerate()
         .filter_map(|(k, entry)| {
           entry
             .as_ref()
-            .filter(|(d, _)| *d <= best + slack)
-            .map(|(d, set)| (k, *d, set.clone()))
+            .filter(|(d, _)| delta(d) <= best + slack)
+            .map(|(d, set)| (k, delta(d), set.clone()))
         })
         .collect()
     })

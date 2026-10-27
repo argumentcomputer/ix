@@ -1081,10 +1081,12 @@ oracle) to the canonical path; in both languages the candidate count is recorded
 (Rust regression test: 70,000 distinct references used twice). `knapsack_cells` (2^28) is about
 27 times the largest knapsack on Init and Mathlib. The limits override is parsed by one grammar
 in both languages (digits only; 35 shared specifications) and read once per run. Rust's phase
-1 uses 128-bit lengths and fails closed (`LengthOverflow`) where Lean's `Nat` succeeds, e.g. on
-the chain `e(i+1) = App(e(i), e(i))` at depth 127 or more; this divergence is documented, not
-removed (no corpus constant is near it). The layout length equals the serialized length by
-theorem (§12.13), and the metadata table check is linear in both languages.
+1 computes in 128-bit integers and, where a value leaves that range, again in exact integers
+(`uniform/arith.rs`; the result is the same wherever the 128-bit run succeeds), so it agrees with
+Lean's `Nat` on inputs such as the chain `e(i+1) = App(e(i), e(i))` at depth 127 or more, whose
+unshared length exceeds `2^127` (the Lean/Rust sharing suite compares four such towers byte for
+byte). The layout length equals the serialized length by theorem (§12.13), and the metadata
+table check is linear in both languages.
 
 ## 13. Metadata sharing: the extended index space (owner decision 2026-10-01)
 
