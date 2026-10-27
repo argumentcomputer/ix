@@ -111,7 +111,6 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("ixvm_group_10", #[
     "put_u64_le",
-    "check_native_nat",
     "utf8_last_go",
     "char_lit_codepoint",
     "mk_nat_binop_stuck",
@@ -451,8 +450,6 @@ def functionGroups : Array (String × Array String) := #[
     "dec_finish"
   ]),
   ("ixvm_group_43", #[
-    "reduce_bool_addr",
-    "reduce_nat_addr",
     "string_utf8_byte_size_addr",
     "string_append_addr",
     "string_back_addr",
@@ -505,21 +502,18 @@ def functionGroups : Array (String × Array String) := #[
     "is_rec_field"
   ]),
   ("ixvm_group_48", #[
-    "is_native_prim_addr",
     "nl_add_var",
     "expr_lbr_let",
     "expr_lift_bvar",
     "validate_univ_params_seen"
   ]),
   ("ixvm_group_49", #[
-    "try_native_dispatch",
     "try_str_dispatch",
     "str_lit_to_ctor",
     "nlvars_add",
     "nlvars_subsume"
   ]),
   ("ixvm_group_50", #[
-    "check_native_bool",
     "bitvec_prep_spine_ult",
     "build_char_list",
     "char_lit_codepoint_syn",

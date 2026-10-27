@@ -193,7 +193,7 @@ def whnf := ⟦
   -- Primitive-family classification (mirror prim_family,
   -- Primitive.lean:1419): map a Const-head address to the ONE reducer
   -- family that could fire on it — 0 = none, 1 = nat, 2 = str,
-  -- 3 = bitvec, 4 = native, 5 = decidable, 6 = Int. Roles come from the
+  -- 3 = bitvec, 5 = decidable, 6 = Int. Roles come from the
   -- binding (`role_is`); the other families are the extras, which fire only
   -- while `extras_usable`, asked only of an extra's address so that a claim
   -- using none validates no group for them. Keyed on the role context and the ADDRESS ALONE:
@@ -226,13 +226,9 @@ def whnf := ⟦
         match is_bitvec_prim_addr(rc, a) {
           1 => 3,
           _ =>
-            match is_native_prim_addr(rc, a) {
-              1 => 4,
-              _ =>
-                match is_dec_prim_addr(rc, a) {
-                  1 => 5,
-                  _ => match is_int_prim_addr(rc, a) { 1 => 6, _ => 0, },
-                },
+            match is_dec_prim_addr(rc, a) {
+              1 => 5,
+              _ => match is_int_prim_addr(rc, a) { 1 => 6, _ => 0, },
             },
         },
     }
@@ -248,7 +244,6 @@ def whnf := ⟦
         let spine_w = whnf_spine(rc, spine, types);
         try_str_dispatch(rc, addr, spine_w, types),
       3 => try_bitvec_dispatch(rc, addr, spine, types),
-      4 => try_native_dispatch(rc, addr, spine, types),
       5 => try_dec_dispatch(rc, addr, lvls, spine, types),
       6 => try_int_prim_dispatch(rc, addr, spine, types),
       _ => (0, store(KExprNode.BVar(0))),

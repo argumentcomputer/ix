@@ -88,7 +88,6 @@ private def expectedAddrFns : Array String := #[
   "nat_eq_of_beq_eq_true_addr_dec", "nat_ne_of_beq_eq_false_addr_dec",
   "int_dec_eq_addr_dec", "int_dec_le_addr_dec", "int_dec_lt_addr_dec",
   "int_of_nat_addr_dec", "int_neg_succ_addr_dec",
-  "reduce_bool_addr", "reduce_nat_addr",
   -- the roles the extras were compiled against
   "nat_addr_pin", "bool_type_addr_pin", "bool_true_addr_pin", "bool_false_addr_pin",
   "eq_type_addr_pin", "eq_refl_addr_pin", "nat_beq_addr_pin", "nat_ble_addr_pin",
@@ -161,14 +160,13 @@ def suite : List TestSeq := Id.run do
     | some canonName =>
       -- Assert the function resolves to the constant its NAME claims.
       -- Membership alone is not enough: this map is keyed by address, so
-      -- a table where `nat_add_addr` held `Nat.mul`'s bytes would still
+      -- a table where `int_add_addr` held `Int.mul`'s bytes would still
       -- find a canonical entry and pass. That permutation is precisely
       -- the defect this suite exists to catch — the kernel would apply
       -- one primitive's native semantics under another's name.
-      -- The addr function may spell the constant fully (`nat_add_addr` ↔
-      -- `Nat.add`) or only its final component (`reduce_bool_addr` ↔
-      -- `Lean.reduceBool`); both are accepted, anything else must be
-      -- declared in `nameExceptions`.
+      -- The addr function may spell the constant fully (`int_add_addr` ↔
+      -- `Int.add`) or only its final component; both are accepted, anything
+      -- else must be declared in `nameExceptions`.
       let k := fnKey fnName
       let ok : Bool := match nameExceptions[k]? with
         | some want => canonName == want

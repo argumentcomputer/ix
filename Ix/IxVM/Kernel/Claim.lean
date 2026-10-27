@@ -259,7 +259,9 @@ def claim := ⟦
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
         match g_list_has(consts, i) {
-          1 => run_check_transitive(rc, a),
+          1 =>
+            assert_ref_allowed(rc, a);
+            run_check_transitive(rc, a),
           _ => (),
         };
         walk_refs_transitive(rc, rest, consts, i + 1),
@@ -451,7 +453,9 @@ def claim := ⟦
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
         match g_list_has(consts, i) {
-          1 => env_walk(rc, a, owned, asm, strict),
+          1 =>
+            assert_ref_allowed(rc, a);
+            env_walk(rc, a, owned, asm, strict),
           _ => (),
         };
         env_walk_refs(rc, rest, consts, i + 1, owned, asm, strict),
@@ -562,7 +566,9 @@ def claim := ⟦
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
         match g_list_has(consts, i) {
-          1 => check_owned(load(role_ctx_binding(rc)), load(a)),
+          1 =>
+            assert_ref_allowed(rc, a);
+            check_owned(load(role_ctx_binding(rc)), load(a)),
           _ => (),
         };
         env_walk_refs_all(rc, rest, consts, i + 1),

@@ -494,6 +494,67 @@ def roles := ⟦
         validate_op_equations(rc, tbl, r, rest, k + 1),
     }
   }
+
+  -- ==========================================================================
+  -- The axiom policy: Lean's theory over its standard axioms.
+  -- ==========================================================================
+
+  -- How a safe axiom at `a` stands in the claim's theory: 1 for a standard
+  -- axiom (`propext`, `Classical.choice`, `Quot.sound`, as the binding binds
+  -- them), 2 for the binding's `sorryAx`, which may be declared but not
+  -- used, and 0 for any other, which is declined. The one place a standard
+  -- axiom is recognized. Recognition admits the axiom's group like any
+  -- role's, under `rc`'s earlier-groups rule, and no other group: an
+  -- address that binds no axiom role admits nothing.
+  fn axiom_standing(rc: RoleCtx, a: Addr) -> G {
+    let tbl = role_ctx_table(rc);
+    let r1 = rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0);
+    let standing = axiom_role_standing(r1);
+    match standing {
+      0 => 0,
+      _ =>
+        match role_of(rc, a) {
+          0 => 0,
+          _ => standing,
+        },
+    }
+  }
+
+  -- The standing of 1 + role `r1` (0: no role).
+  fn axiom_role_standing(r1: G) -> G {
+    match r1 {
+      0 => 0,
+      _ =>
+        let r = r1 - 1;
+        match r - role_propext() {
+          0 => 1,
+          _ =>
+            match r - role_choice() {
+              0 => 1,
+              _ =>
+                match r - role_quot_sound() {
+                  0 => 1,
+                  _ =>
+                    match r - role_sorry_ax() {
+                      0 => 2,
+                      _ => 0,
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  -- A checked constant references `a` as a constant: `sorryAx` may be
+  -- declared but no constant may use it.
+  fn assert_ref_allowed(rc: RoleCtx, a: Addr) {
+    match axiom_standing(rc, a) {
+      2 =>
+        assert_eq!(0, 1, "a constant uses `sorryAx`");
+        (),
+      _ => (),
+    }
+  }
 ⟧
 
 end IxVM

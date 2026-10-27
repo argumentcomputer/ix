@@ -727,6 +727,12 @@ checked as the claim's dependencies, under the claim's context. The
 primitives IxC does not specify yet (the `Int`, `BitVec`, `String` and
 decision extras) stay recognized by address and fire only when the binding
 binds the roles they were compiled against to those constants.
+The axiom policy is IxC's: a safe axiom is declared only when the binding
+binds it as `propext`, `Classical.choice` or `Quot.sound`, or as `sorryAx`,
+which no constant may use (`axiom_standing`, the one place a standard axiom
+is recognized), and an unsafe axiom is typed only. Nothing reduces natively:
+`Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and a
+claim that uses them depends on `Lean.trustCompiler`, which is declined.
 
 ## Trust surface
 

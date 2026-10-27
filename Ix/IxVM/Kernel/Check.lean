@@ -3915,7 +3915,21 @@ def check := ⟦
       KConstantInfo.Axiom(nlvls, ty, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         k_ensure_sort(rc, ty, store(ListNode.Nil));
-        assert_safety(u, ty),
+        assert_safety(u, ty);
+        -- The claim's theory is Lean's over its standard axioms: a safe axiom
+        -- is declared only when it is one of them or the inert `sorryAx`
+        -- (`axiom_standing`). An unsafe axiom is outside the theory and
+        -- typed only.
+        match u {
+          1 => (),
+          _ =>
+            match axiom_standing(rc, addr) {
+              0 =>
+                assert_eq!(0, 1, "an axiom that is not one of Lean's standard axioms");
+                (),
+              _ => (),
+            },
+        },
       KConstantInfo.Defn(nlvls, ty, val, _, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         validate_expr_well_scoped(val, 0, nlvls);

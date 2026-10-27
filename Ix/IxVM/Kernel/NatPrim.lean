@@ -11,7 +11,7 @@ namespace IxVM
 
 /-! ## Nat primitive dispatch
 
-Nat/Str/BitVec/decidable/native reduction, mirroring
+Nat/Str/BitVec/decidable reduction, mirroring
 crates/kernel/src/primitive.rs. Recognizes Const-headed applications of
 Nat.succ / Nat.pred / Nat.add / Nat.sub / Nat.mul / Nat.div / Nat.mod /
 Nat.pow / Nat.gcd / Nat.land / Nat.lor / Nat.xor / Nat.shl / Nat.shr /
@@ -175,91 +175,12 @@ def natPrim := ⟦
   fn int_nat_abs_addr() -> Addr { store([0x01u8, 0xe7u8, 0xc7u8, 0x24u8, 0x50u8, 0x88u8, 0x97u8, 0xe0u8, 0x1eu8, 0x5du8, 0x0bu8, 0x8fu8, 0x72u8, 0xe2u8, 0xcfu8, 0xa2u8, 0x60u8, 0x7cu8, 0xeau8, 0x5fu8, 0xf0u8, 0xd3u8, 0x52u8, 0xd0u8, 0x08u8, 0xd0u8, 0xe7u8, 0x51u8, 0x2au8, 0xabu8, 0x2fu8, 0x46u8]) }
   fn int_pow_addr() -> Addr { store([0xa2u8, 0x89u8, 0x58u8, 0xd7u8, 0x47u8, 0xe8u8, 0x7bu8, 0x5au8, 0x60u8, 0xe4u8, 0xfau8, 0x07u8, 0xefu8, 0x7eu8, 0xd8u8, 0xd9u8, 0x49u8, 0xf6u8, 0x9au8, 0xdcu8, 0xbcu8, 0x44u8, 0xafu8, 0xe2u8, 0x95u8, 0x84u8, 0x82u8, 0xd3u8, 0xeeu8, 0x9bu8, 0x33u8, 0x65u8]) }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  -- Compiler-emitted native reduction primitives. Nothing else reduces
-  -- natively: as in Lean's kernel, `System.Platform.numBits` stays the value
-  -- of the opaque `getNumBits ()`, and `SizeOf.sizeOf` (with the `PUnit`
-  -- instance's `PUnit._sizeOf_1`) reduces through its definition.
-  fn reduce_bool_addr() -> Addr {
-    store([0xbau8, 0xccu8, 0x4cu8, 0x81u8, 0x4au8, 0x45u8, 0x72u8, 0xddu8,
-     0xfdu8, 0x96u8, 0x9au8, 0x18u8, 0x57u8, 0xadu8, 0xfeu8, 0x18u8,
-     0x23u8, 0x9eu8, 0xb6u8, 0xbdu8, 0x8bu8, 0x16u8, 0x27u8, 0xeeu8,
-     0x79u8, 0x74u8, 0x4au8, 0x6au8, 0x9bu8, 0x23u8, 0xb0u8, 0x30u8])
-  }
-
-  fn reduce_nat_addr() -> Addr {
-    store([0xb6u8, 0x32u8, 0x7du8, 0x9au8, 0x1bu8, 0xbbu8, 0x46u8, 0x1au8,
-     0x44u8, 0x7fu8, 0x0cu8, 0x97u8, 0x1eu8, 0x62u8, 0x2du8, 0xd9u8,
-     0xa3u8, 0x51u8, 0x32u8, 0xbdu8, 0x7du8, 0xe7u8, 0x5bu8, 0xf6u8,
-     0x9eu8, 0x20u8, 0x79u8, 0x4du8, 0x7au8, 0x0eu8, 0x85u8, 0x95u8])
-  }
-
-  fn is_native_prim_addr(rc: RoleCtx, a: Addr) -> G {
-    address_eq(a, reduce_bool_addr()) + address_eq(a, reduce_nat_addr())
-  }
-
-  -- Native reduce dispatch.
-  --   Lean.reduceBool arg    → whnf arg; accept Const(Bool.true|Bool.false)
-  --   Lean.reduceNat arg     → whnf arg; accept Lit(Nat _)
-  fn try_native_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
-                             types: List‹KExpr›) -> (G, KExpr) {
-    let is_rb = address_eq(head_addr, reduce_bool_addr());
-    let is_rn = address_eq(head_addr, reduce_nat_addr());
-    match is_rb + is_rn {
-      0 => (0, store(KExprNode.BVar(0))),
-      _ =>
-        match u32_less_than(list_length(spine), 1) {
-          1 => (0, store(KExprNode.BVar(0))),
-          _ =>
-            let arg = list_lookup(spine, 0);
-            let result = whnf(rc, arg, types);
-            match is_rb {
-              1 => check_native_bool(rc, result),
-              _ => check_native_nat(result),
-            },
-        },
-    }
-  }
-
-  fn check_native_bool(rc: RoleCtx, e: KExpr) -> (G, KExpr) {
-    match load(e) {
-      KExprNode.Const(caddr, _) =>
-        let is_t = role_is(rc, caddr, role_bool_true());
-        let is_f = role_is(rc, caddr, role_bool_false());
-        match is_t + is_f {
-          0 => (0, store(KExprNode.BVar(0))),
-          _ => (1, e),
-        },
-      _ => (0, store(KExprNode.BVar(0))),
-    }
-  }
-
-  fn check_native_nat(e: KExpr) -> (G, KExpr) {
-    match load(e) {
-      KExprNode.Lit(lit) =>
-        match lit {
-          KLiteral.Nat(_) => (1, e),
-          _ => (0, store(KExprNode.BVar(0))),
-        },
-      _ => (0, store(KExprNode.BVar(0))),
-    }
-  }
+  -- Nothing reduces natively. `Lean.reduceBool` and `Lean.reduceNat` are
+  -- ordinary opaques that never reduce (and a claim that uses them depends on
+  -- `Lean.trustCompiler`, which the axiom policy declines);
+  -- `System.Platform.numBits` stays the value of the opaque `getNumBits ()`,
+  -- as in Lean's kernel; and `SizeOf.sizeOf` (with the `PUnit` instance's
+  -- `PUnit._sizeOf_1`) reduces through its definition.
 
   -- BitVec primitives ()
   fn bit_vec_to_nat_addr() -> Addr {
