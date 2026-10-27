@@ -201,14 +201,16 @@ namespace Obligation
 constant of the closure, under the name the closure stores it under, has its
 representative installed, at the address the artifact publishes the constant at. As in
 `ReadingCovers`, the names are the stored ones (a lookup also answers hash-equal
-respellings, for which no artifact can publish every spelling), and the inert `sorryAx`,
-for which the checker installs nothing by design, is left out. -/
+respellings, for which no artifact can publish every spelling), and the constants
+represented by the inert `sorryAx` role, for which the checker installs nothing by
+design, are left out: the statement says nothing about a constant published at
+`sorryAx`'s role address, `sorryAx` itself or an axiom α-equal to it. -/
 def SourceTotal : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source),
     Premises env roots sub ixe failures t envQ →
     (∀ c ∈ envQ.consts, envQ.find? c.name = some c) ∧
-    ∀ n ci, (n, ci) ∈ sub.consts.toList → Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
+    ∀ n ci, (n, ci) ∈ sub.consts.toList → quotientKey ixe t n ≠ Ix.Kernel.sorryAxName →
       ∃ c ∈ envQ.consts, c.name = quotientKey ixe t n ∧
         keyAddress ixe t c.name = (ixe.named.get? n).map (·.addr)
 

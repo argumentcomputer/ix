@@ -23,7 +23,8 @@ fibers collapsed, obtained per artifact from the executed quotient check
 
 Its conclusion: the compiler published the closure, Ixon accepts the compiled
 closure at the reference level, every constant of the closure, a dropped alias
-included and the inert `sorryAx` aside, reads as a compiled constant
+included, reads as a compiled constant, except the constants represented by the inert
+`sorryAx` role (`sorryAx` and the axioms α-equal to it)
 (`ReadingCovers`), and for every strong
 model of the compiled environment there is one value model of quotient Source,
 for the whole closure, all levels and valuations, in which every constant
@@ -87,12 +88,16 @@ key reads the spelling. Quantified over those, the coverage would need a publish
 name for each of infinitely many spellings, and fails at every instance whose closure
 is not empty.
 
-`sorryAx` (`Ix.Kernel.sorryAxName`) is left out: the checker accepts its declaration
-and, by design, installs nothing for it (an inert role), so neither side has a
-constant for it and this statement says nothing about it. -/
+The constants represented by `sorryAx`'s role (`quotientKey ixe t n =
+Ix.Kernel.sorryAxName`) are left out: the checker accepts their declaration and, by
+design, installs nothing for it (an inert role), so neither side has a constant for
+them, and this statement says nothing about any constant the artifact publishes at
+`sorryAx`'s role address. These are `sorryAx` itself and any axiom α-equal to it, such
+as `axiom myAx (α : Sort u) (synthetic := false) : α`, which compiles to `sorryAx`'s
+record and so is represented by its role. Any use of one is declined. -/
 def ReadingCovers (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (cx : Ix.Kernel.Reader.Ctx .anon)
     (sub : Ix.Environment) (envQ : Env .source) : Prop :=
-  ∀ n ci, (n, ci) ∈ sub.consts.toList → Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
+  ∀ n ci, (n, ci) ∈ sub.consts.toList → quotientKey ixe t n ≠ Ix.Kernel.sorryAxName →
     ∃ c ∈ envQ.consts, c.name = quotientKey ixe t n ∧
       keyAddress ixe t c.name = (ixe.named.get? n).map (·.addr) ∧
       (readingAt ixe t cx c).isSome = true

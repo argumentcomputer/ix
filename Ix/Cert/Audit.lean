@@ -6320,6 +6320,15 @@ finitely many. A Lean proof of this refuted the earlier form. The checker instal
 nothing for `sorryAx`'s declaration, by design, so no reading of it is claimed.
 Re-frozen with it: `ReadingCovers`' print.
 
+**The `sorryAx` exception is on the representative** (`quotientKey ixe t n ≠
+sorryAxName`), not on the name's own key. An axiom α-equal to `sorryAx`, such as
+`axiom myAx (α : Sort u) (synthetic := false) : α`, compiles to `sorryAx`'s record, so
+the artifact publishes it at `sorryAx`'s role address and quotient Source renames it to
+`sorryAx`'s role, whose declaration installs nothing. With the exception on its own key,
+the coverage would claim a constant for it that neither side has. The statement says
+nothing about any constant published at `sorryAx`'s role address; any use of one is
+declined. Re-frozen with it: `ReadingCovers`' and Source totality's prints.
+
 The change kinds cover the compiler's rewrites: changed components, regenerated
 auxiliaries, images and their computation-rule rows, rewritten call sites (each call
 site by the baseline development or one of O11a, O2, O3, O4, O6, `CallRewrite`),
@@ -6879,7 +6888,7 @@ fun ixe t cx c => do
 fun ixe t cx sub envQ =>
   ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
     (n, ci) ∈ sub.consts.toList →
-      Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
+      Ix.Cert.quotientKey ixe t n ≠ Ix.Kernel.sorryAxName →
         ∃ c,
           c ∈ envQ.consts ∧
             c.name = Ix.Cert.quotientKey ixe t n ∧
@@ -7366,7 +7375,7 @@ fun blocks sched st₀ acc =>
     (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source), c ∈ envQ.consts → envQ.find? c.name = some c) ∧
       ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
         (n, ci) ∈ sub.consts.toList →
-          Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
+          Ix.Cert.quotientKey ixe t n ≠ Ix.Kernel.sorryAxName →
             ∃ c,
               c ∈ envQ.consts ∧
                 c.name = Ix.Cert.quotientKey ixe t n ∧
