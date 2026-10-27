@@ -5212,6 +5212,44 @@ mod tests {
     );
   }
 
+  /// `Nat.rec (fun _ => Nat) 0 (fun _ ih => Nat.rec (fun _ => Nat) 0
+  /// (fun _ _ => 0) ih) n`, reduced on a 16 MB thread: each level's major
+  /// premise is the next level's reduction, so this takes `n` native levels.
+  fn whnf_nested_recursors_on_small_stack(n: u64) -> Result<AE, TcError<Anon>> {
+    std::thread::Builder::new()
+      .stack_size(16 * 1024 * 1024)
+      .spawn(move || {
+        let mut env = nat_env();
+        let mut tc = TypeChecker::new(&mut env);
+        let recursor = |step: AE, major: AE| {
+          let rec = cnst("Nat.rec", &[AU::succ(AU::zero())]);
+          app(app(app(app(rec, lam(nat(), nat())), mk_nat(0)), step), major)
+        };
+        let constant_step = lam(nat(), lam(nat(), mk_nat(0)));
+        let step = lam(nat(), lam(nat(), recursor(constant_step, var(0))));
+        tc.whnf(&recursor(step, mk_nat(n)))
+      })
+      .unwrap()
+      .join()
+      .unwrap()
+  }
+
+  #[test]
+  fn whnf_shallow_nested_recursors_reduce() {
+    let result = whnf_nested_recursors_on_small_stack(100).unwrap();
+    assert!(matches!(result.data(), ExprData::Nat(..) | ExprData::Const(..)));
+  }
+
+  #[test]
+  fn whnf_deep_nested_recursors_decline_instead_of_overflowing() {
+    // A million levels need far more than 16 MB of stack; without the stack
+    // check this aborts the test process with a stack overflow.
+    assert!(matches!(
+      whnf_nested_recursors_on_small_stack(1_000_000),
+      Err(TcError::StackExhausted)
+    ));
+  }
+
   #[test]
   fn whnf_nat_rec_small() {
     // Nat.rec (motive) zero_case succ_case (Nat(3)) should reduce via iota
