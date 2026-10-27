@@ -4102,22 +4102,26 @@ on, at the admission hash of its bytes (`FallbackHashed`), which reading the com
 file does not recompute; the reader's role keys need it. `cert-statement` checks it
 after every regeneration through the executed fold and hashes (`roleEvidenceCheck`,
 `roleEvidenceChecks_of_check`). Re-frozen with the hashes: the print below (a second
-conjunct) and the roots (`fallbackHashed_iff`). -/
+conjunct) and the roots (`fallbackHashed_iff`). It also admits the default binding under the
+admission hash (`DefaultAdmits`), which the unchanged-closure reading names and the kernel
+cannot hash; re-frozen with it: the print (a third conjunct) and the roots
+(`defaultAdmits_sound`). -/
 
 /-- info: def Ix.Cert.RoleClosure.RoleEvidenceChecks : Prop :=
 (∃ ev ds env,
     Ix.Cert.RoleClosure.preparedDefault = Except.ok (ev, ds) ∧
       Ix.Cert.RoleClosure.DefinesAll ds ∧ Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified ev ds env) ∧
-  Ix.Cert.RoleClosure.FallbackHashed -/
+  Ix.Cert.RoleClosure.FallbackHashed ∧ Ix.Cert.RoleClosure.DefaultAdmits -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RoleClosure.RoleEvidenceChecks
 
-/-- info: [cert-audit] role closure: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] role closure: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "role closure"
-    (#[`definesAll_iff, `checks_of_closureCheck, `roleEvidenceChecks_of_check, `fallbackHashed_iff].map
+    (#[`definesAll_iff, `checks_of_closureCheck, `roleEvidenceChecks_of_check, `fallbackHashed_iff,
+      `defaultAdmits_sound].map
       (`Ix.Cert.RoleClosure ++ ·))
 
 /-! ## N-READS, N4 (b): no constructor of a Source-accepted family in its types

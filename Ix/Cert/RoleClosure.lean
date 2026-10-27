@@ -101,21 +101,52 @@ theorem fallbackHashed_iff : fallbackHashed = true ↔ FallbackHashed := by
   rw [Array.all_eq_true_iff_forall_mem]
   simp only [beq_iff_eq, Array.mem_toList_iff]
 
+/-- **The default role table's binding admits under the admission hash**: its committed
+section is stored at the admission hash of its bytes, decodes canonically and is well
+formed (`Admission.admitBinding`). This is the run-time form of the table row of the fact
+`Tests/Ix/Kernel/Authentication.lean` guards; the kernel cannot hash the committed hex. -/
+def DefaultAdmits : Prop :=
+  ∃ binding t, Admission.defaultBinding = .ok binding ∧
+    Admission.admitBinding Address.admissionHash binding = .ok t
+
+/-- Whether a binding source yields a binding that admits under the admission hash. -/
+def admitsOf (e : Except String Admission.Binding) : Bool :=
+  match e with
+  | .ok binding => (Admission.admitBinding Address.admissionHash binding).isOk
+  | .error _ => false
+
+theorem admitsOf_sound {e : Except String Admission.Binding} (h : admitsOf e = true) :
+    ∃ binding t, e = .ok binding ∧ Admission.admitBinding Address.admissionHash binding = .ok t := by
+  cases e with
+  | error _ => cases h
+  | ok binding =>
+    cases ha : Admission.admitBinding Address.admissionHash binding with
+    | error _ => simp [admitsOf, ha, Except.isOk, Except.toBool] at h
+    | ok t => exact ⟨binding, t, rfl, ha⟩
+
+/-- `DefaultAdmits`, decided. -/
+def defaultAdmits : Bool := admitsOf Admission.defaultBinding
+
+/-- The decision is sound, through `admitsOf_sound`: no proof step evaluates the committed
+binding. -/
+theorem defaultAdmits_sound (h : defaultAdmits = true) : DefaultAdmits :=
+  admitsOf_sound h
+
 /-- **The shipped role table's certificates check, and its committed fallback sits at
 its hashes**: the committed closure, prepared under the default table behind its
 committed prelude, defines every well-founded `Nat` operation, and the pure fold accepts
 it at some fuel under the table's evidence. The fold reaches each operation's definition
 with its dependency closure installed and runs its evidence gate there
 (`checkDivModEvidence`), so every gate passed. And every committed prelude and evidence
-row is stored at the admission hash of its bytes (`FallbackHashed`). A closed
-proposition about `IxC/Kernel/Ixon/RoleData.lean`, the verifier's pinned configuration:
+row is stored at the admission hash of its bytes (`FallbackHashed`), and the default binding
+admits under the admission hash (`DefaultAdmits`). A closed proposition about `IxC/Kernel/Ixon/RoleData.lean`, the verifier's pinned configuration:
 it mentions no input. -/
 def RoleEvidenceChecks : Prop :=
   (∃ ev ds env, preparedDefault = .ok (ev, ds) ∧ DefinesAll ds ∧ Cached.AcceptsRef .verified ev ds env) ∧
-    FallbackHashed
+    FallbackHashed ∧ DefaultAdmits
 
 /-- `RoleEvidenceChecks`, with the executed fold and the executed hashes, decided. -/
-def roleEvidenceCheck : Bool := closureCheck preparedDefault && fallbackHashed
+def roleEvidenceCheck : Bool := closureCheck preparedDefault && fallbackHashed && defaultAdmits
 
 /-- **The executed check gives `RoleEvidenceChecks`**, through the fold's
 refinement (the set theory is a hypothesis of that walk, not of the
@@ -123,7 +154,8 @@ statement's meaning). -/
 theorem roleEvidenceChecks_of_check (V : Type w) [SetTheory V] (h : roleEvidenceCheck = true) :
     RoleEvidenceChecks := by
   unfold roleEvidenceCheck at h
-  obtain ⟨closure, hashed⟩ := Bool.and_eq_true_iff.mp h
-  exact ⟨checks_of_closureCheck V preparedDefault closure, fallbackHashed_iff.mp hashed⟩
+  obtain ⟨⟨closure, hashed⟩, admits⟩ := Bool.and_eq_true_iff.mp h |>.imp_left Bool.and_eq_true_iff.mp
+  exact ⟨checks_of_closureCheck V preparedDefault closure, fallbackHashed_iff.mp hashed,
+    defaultAdmits_sound admits⟩
 
 end Ix.Cert.RoleClosure

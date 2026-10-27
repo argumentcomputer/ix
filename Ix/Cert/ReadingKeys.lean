@@ -518,7 +518,7 @@ theorem readingAt_renamed {env : Ix.Environment} {roots : List Ix.Name} {sub : I
   have auth : ∀ a c, cx.store a = some c → a = Address.admissionHash (Ixon.serConstant c) := by
     intro a c h
     rw [A.context] at h
-    exact context_authentic P.evidence.2 A.prelude A.authentic A.decoded h
+    exact context_authentic P.evidence.2.1 A.prelude A.authentic A.decoded h
   have roles : cx.roles = bindingsOf cx.store tA := by
     rw [A.context]
     rfl

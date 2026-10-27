@@ -1382,11 +1382,22 @@ def roleEvidenceCase : IO (Array String × Array String) := do
     return (#[s!"role evidence: a committed prelude or evidence row is not stored at the hash of its bytes"], #[])
   let hashedLine := s!"role evidence: the {Ix.Kernel.Reader.RoleData.prelude.size + Ix.Kernel.Reader.RoleData.evidence.size} committed \
     fallback rows sit at the hashes of their bytes ({f1 - f0} ms)"
+  -- the default binding admitted under the admission hash, timed alone on the binding read
+  -- at run time (`defaultAdmits` is a closed constant too)
+  let binding ← IO.lazyPure fun _ => Ix.Kernel.Admission.defaultBinding
+  let a0 ← IO.monoMsNow
+  let admits ← IO.lazyPure fun _ => Ix.Cert.RoleClosure.admitsOf binding
+  let a1 ← IO.monoMsNow
+  unless admits == Ix.Cert.RoleClosure.defaultAdmits do
+    return (#[s!"role evidence: the timed admission disagrees with defaultAdmits"], #[])
+  unless admits do
+    return (#[s!"role evidence: the default binding does not admit under the admission hash"], #[])
+  let admitsLine := s!"role evidence: the default binding admits under the admission hash ({a1 - a0} ms)"
   match Ix.Cert.RoleClosure.preparedDefault with
   | .error e => return (#[s!"the committed role closure does not prepare: {e}"], #[])
   | .ok (ev, ds) =>
     if Ix.Cert.RoleClosure.roleEvidenceCheck then
-      return (#[], #[hashedLine, s!"role evidence: the pinned closure ({ds.length} declarations, \
+      return (#[], #[hashedLine, admitsLine, s!"role evidence: the pinned closure ({ds.length} declarations, \
         {ev.length} evidence entries) defines every well-founded operation and the verified fold \
         accepts it: RoleEvidenceChecks holds"])
     else
