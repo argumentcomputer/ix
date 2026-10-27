@@ -79,6 +79,7 @@ import Ix.CompileCert.DisplayAddressFrame
 import Ix.Cert.PrefixVisibility
 import Ix.Cert.CompileCorrect
 import Ix.Cert.Composition
+import Ix.Cert.UnchangedRules
 
 /-! # The certification statements, frozen
 
@@ -6278,12 +6279,20 @@ fun {md} {V} [Ix.Kernel.SetTheory V] cval env e e' =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.DenoteAlike
 
+/-- info: def Ix.Cert.TypedClosed : {md : Ix.Kernel.Mode} → Ix.Kernel.Env md → Ix.Kernel.Expr md → Prop :=
+fun {md} env e =>
+  e.hasFvar = false ∧
+    Ix.Kernel.Expr.looseBVarsBounded 0 e = true ∧ ∃ t, Ix.Kernel.Rules.Infer env Ix.Kernel.Rules.Grade.full 0 e t -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.TypedClosed
+
 /-- info: def Ix.Cert.IotaStep : {md : Ix.Kernel.Mode} →
   Ix.Kernel.Env md →
     Ix.Kernel.Key md →
       Ix.Kernel.ConstantVal md →
         Nat → Nat → List (Ix.Kernel.RecRule md) → Ix.Kernel.RecRule md → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
 fun {md} env c cv mI rP rules rl e e' =>
+  Ix.Cert.TypedClosed env e ∧
   ∃ us major cj usj cvj cnP cnF residual,
     e.getAppFn = Ix.Kernel.Expr.const c us ∧
       e.getAppArgs.length = mI + 1 ∧
@@ -6337,6 +6346,8 @@ fun {md} {V} [Ix.Kernel.SetTheory V] cval env =>
   Ix.Kernel.Env md →
     Ix.Kernel.Key md → Ix.Kernel.ConstantVal md → Ix.Kernel.IndCaps md → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
 fun {md} env T cvT caps a b =>
+  Ix.Cert.TypedClosed env a ∧
+  Ix.Cert.TypedClosed env b ∧
   ∃ tb wtb c us cvc cnP cnF us',
     Ix.Kernel.Rules.Infer env Ix.Kernel.Rules.Grade.io 0 b tb ∧
       Ix.Kernel.Rules.Red env 0 tb wtb ∧
@@ -6372,6 +6383,8 @@ fun {md} env T cvT caps a b =>
   Ix.Kernel.Env md →
     Ix.Kernel.Key md → Ix.Kernel.ConstantVal md → Ix.Kernel.IndCaps md → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
 fun {md} env T cvT caps a b =>
+  Ix.Cert.TypedClosed env a ∧
+  Ix.Cert.TypedClosed env b ∧
   ∃ ta wta tb wtb us',
     Ix.Kernel.Rules.Infer env Ix.Kernel.Rules.Grade.io 0 a ta ∧
       Ix.Kernel.Rules.Red env 0 ta wta ∧
@@ -6391,6 +6404,7 @@ fun {md} env T cvT caps a b =>
 /-- info: def Ix.Cert.ProjStep : {md : Ix.Kernel.Mode} →
   Ix.Kernel.Env md → Ix.Kernel.Key md → Nat → Ix.Kernel.Expr md → Ix.Kernel.Expr md → Prop :=
 fun {md} env sn i e e' =>
+  Ix.Cert.TypedClosed env e ∧
   ∃ u entry us cvC nP nF,
     e = Ix.Kernel.Expr.proj sn i u ∧
       env.findProj? sn i = some entry ∧
@@ -6960,12 +6974,13 @@ fun ixe sub t envQ =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
 
-/-- info: [cert-audit] final statement: 39 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] final statement: 40 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "final statement"
     (#[`DenoteAlike,
+      `TypedClosed,
       `IotaStep,
       `RecRuleLaws,
       `StructEtaStep,
@@ -7564,3 +7579,18 @@ run_cmd do
       `Resolution.compileReport_claim,
       `Resolution.compileUnchecked_provenance].map
       (`Ix.Cert ++ ·))
+
+-- The Source laws of a renamed environment (`Obligation.UnchangedRules`): strong models
+-- satisfy the laws of their own environment, the rules tier commutes with renaming, and a
+-- renamed environment's strong model gives quotient Source's laws at the pulled-back values.
+/-- info: [cert-audit] laws of a renamed environment: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "laws of a renamed environment"
+    #[`Ix.Cert.unchangedRules,
+      `Ix.Cert.StrongLaws.recRuleLaws,
+      `Ix.Cert.StrongLaws.capabilityLaws,
+      `Ix.Cert.RulesRename.red_rename,
+      `Ix.Cert.RulesRename.defEq_rename,
+      `Ix.Cert.RulesRename.infer_rename]
