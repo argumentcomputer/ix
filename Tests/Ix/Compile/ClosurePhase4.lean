@@ -26,7 +26,7 @@ private def check : IO Nat := do
   ensure (localPhaseProblems 0 phases).isEmpty "actual all-phase report was refused"
   let some (_, _, source) := phases.find? (·.1.startsWith "4.")
     | throw (IO.userError "actual CLI omitted phase 4")
-  ensure (source.contains "source coverage: 254/254 named constants" &&
+  ensure (source.contains "source coverage: 269/269 named constants" &&
     source.contains "declined: partial definition") "actual source coverage/declines changed"
   let edit := fun name result detail => phases.map fun row =>
     if row.1.startsWith "4." then (name, result, detail) else row
@@ -37,10 +37,10 @@ private def check : IO Nat := do
     ("old scope", edit "4. Kernel meta roundtrip" "pass" source, "wrong phase-4 scope"),
     ("no coverage", edit "4. Source/reader fidelity" "pass" "no coverage", "nonzero source coverage"),
     ("zero", edit "4. Source/reader fidelity" "pass" "source coverage: 0/0 named constants", "nonzero source coverage"),
-    ("partial", edit "4. Source/reader fidelity" "pass" "source coverage: 253/254 named constants", "nonzero source coverage"),
-    ("malformed", edit "4. Source/reader fidelity" "pass" "source coverage: bad/254 named constants", "nonzero source coverage"),
+    ("partial", edit "4. Source/reader fidelity" "pass" "source coverage: 268/269 named constants", "nonzero source coverage"),
+    ("malformed", edit "4. Source/reader fidelity" "pass" "source coverage: bad/269 named constants", "nonzero source coverage"),
     ("duplicate coverage", edit "4. Source/reader fidelity" "pass"
-      (source ++ "\nsource coverage: 254/254 named constants"), "nonzero source coverage"),
+      (source ++ "\nsource coverage: 269/269 named constants"), "nonzero source coverage"),
     ("duplicate row", phases.push ("4. Source/reader fidelity", "pass", source), "phase 4."),
     ("phase 5", phases.map (fun (n, r, d) => if n.startsWith "5." then (n, "fail", d) else (n, r, d)), "5. Decompile: fail")]
   for (label, changed, message) in variants do
@@ -48,7 +48,7 @@ private def check : IO Nat := do
     ensure (rejected.any (·.contains message)) s!"{label} was accepted or failed for another reason: {rejected}"
   ensure ((localPhaseProblems 1 phases).any (·.contains "exit 1")) "nonzero CLI exit was ignored"
   ensure (variants.length == 11) "not every report control executed"
-  IO.println "LocalCollapse phase-4 gate: all 5 actual phases pass, 254/254 source coverage; 12 report refusals"
+  IO.println "LocalCollapse phase-4 gate: all 5 actual phases pass, 269/269 source coverage; 12 report refusals"
   return variants.length + 1
 
 def suite : List TestSeq := [
