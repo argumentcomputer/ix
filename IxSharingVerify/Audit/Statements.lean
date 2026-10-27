@@ -103,6 +103,9 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Budget.normalizeConstantSharingTiered_budget_independent,
     standardAxioms := standard },
+  -- The first-tier search of the slot allocation visits at most `(m + 1)^9`
+  -- states on a table of `m` entries.
+  { root := ``Ix.Sharing.Verify.Tiered.allocate_within, standardAxioms := standard },
   -- Re-checks of the compiled family twins beside their definitions in
   -- `Ix.Sharing` (`FamilyCached`, `FamilyFast`, `FamilyNormalize`, `FamilyNormalizeSpec`).
   { root := ``Ix.Sharing.Family.cachedStep_eq, standardAxioms := standard },

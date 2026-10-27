@@ -34,6 +34,7 @@ import IxSharingVerify.TieredGuard
 import IxSharingVerify.CanonicalProduction
 import IxSharingVerify.FamilyExactConstant
 import IxSharingVerify.NeverFails
+import IxSharingVerify.AllocateBudget
 
 /-!
 # Proofs of the canonical sharing construction

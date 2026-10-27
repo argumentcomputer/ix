@@ -180,14 +180,32 @@ theorem getElem_prefix {order : Array Nat} {a b : List Nat} {t : Nat} (same : or
   rw [← Array.getElem_toList, List.getElem_of_eq same]
   simp
 
-/-- **The slot allocation never refuses** a duplicate-free table of DAG
-terms whose bodies only reference earlier entries below them. -/
-theorem allocate_ok (layout : ShareLayout) {dag : Dag} (hwf : Ix.Sharing.Verify.UniformModel.DagWF dag)
+/-- Every body reference of the phase-1 table is to an earlier entry. -/
+theorem allocate_back {dag : Dag} {order1 : Array Nat} {entries1 : Array Ixon.Expr}
+    (deps : ∀ i (hi : i < order1.size), ∀ d ∈ (tierDeps order1 entries1).getD order1[i] [],
+      ∃ j, j < i ∧ order1[j]? = some d ∧ Ix.Sharing.Verify.SharingExact.Below dag order1[i] d) :
+    ∀ (a b : List Nat) (t : Nat), order1.toList = a ++ t :: b →
+      ∀ d ∈ (tierDeps order1 entries1).getD t [], d ∈ a := by
+  intro a b t same d hd
+  obtain ⟨hi, tAt⟩ := getElem_prefix same
+  obtain ⟨j, hj, hjd, _⟩ := deps a.length hi d (by rw [tAt]; exact hd)
+  obtain ⟨hjs, rfl⟩ := Array.getElem?_eq_some_iff.mp hjd
+  rw [← Array.getElem_toList, List.getElem_of_eq same, List.getElem_append_left hj]
+  exact List.getElem_mem _
+
+/-- The slot allocation succeeds under every budget under which its first
+tier does, on a duplicate-free table of DAG terms whose bodies only
+reference earlier entries below them. -/
+theorem allocate_of_firstTier (layout : ShareLayout) {dag : Dag}
+    (hwf : Ix.Sharing.Verify.UniformModel.DagWF dag)
     (deg : Array Nat) {order1 : Array Nat} (entries1 roots1 : Array Ixon.Expr)
     (nodup : order1.toList.Nodup) (inDag : ∀ t ∈ order1.toList, t < dag.size)
     (deps : ∀ i (hi : i < order1.size), ∀ d ∈ (tierDeps order1 entries1).getD order1[i] [],
-      ∃ j, j < i ∧ order1[j]? = some d ∧ Ix.Sharing.Verify.SharingExact.Below dag order1[i] d) :
-    ∃ limits a, allocate layout limits dag deg order1 entries1 roots1 = .ok a := by
+      ∃ j, j < i ∧ order1[j]? = some d ∧ Ix.Sharing.Verify.SharingExact.Below dag order1[i] d)
+    {first : Limits} {tier : Array Nat} {states : Nat}
+    (ft : firstTier order1 (fun t => (tierWeights order1 entries1 roots1).getD t 0)
+      (fun t => (tierDeps order1 entries1).getD t []) (min 8 order1.size) first = .ok (tier, states)) :
+    ∃ a, allocate layout first dag deg order1 entries1 roots1 = .ok a := by
   let weight := fun t => (tierWeights order1 entries1 roots1).getD t 0
   let dep := fun t => (tierDeps order1 entries1).getD t []
   have depFacts : ∀ t ∈ order1.toList, ∀ d ∈ dep t, d ∈ order1.toList ∧
@@ -196,14 +214,6 @@ theorem allocate_ok (layout : ShareLayout) {dag : Dag} (hwf : Ix.Sharing.Verify.
     obtain ⟨i, hi, rfl⟩ := Array.getElem_of_mem (Array.mem_toList_iff.mp ht)
     obtain ⟨j, _, hjd, below⟩ := deps i hi d hd
     exact ⟨Array.mem_toList_iff.mpr (Array.mem_of_getElem? hjd), below⟩
-  have back : ∀ (a b : List Nat) (t : Nat), order1.toList = a ++ t :: b → ∀ d ∈ dep t, d ∈ a := by
-    intro a b t same d hd
-    obtain ⟨hi, tAt⟩ := getElem_prefix same
-    obtain ⟨j, hj, hjd, _⟩ := deps a.length hi d (by rw [tAt]; exact hd)
-    obtain ⟨hjs, rfl⟩ := Array.getElem?_eq_some_iff.mp hjd
-    rw [← Array.getElem_toList, List.getElem_of_eq same, List.getElem_append_left hj]
-    exact List.getElem_mem _
-  obtain ⟨first, ⟨tier, states⟩, ft⟩ := firstTier_ok order1 weight dep (min 8 order1.size) nodup back
   obtain ⟨⟨tierNodup, tierIn, tierClosed, -⟩, -, -, -⟩ := firstTier_spec ft
   have storedPerm : (order1.toList.mergeSort (· ≤ ·)).toArray.toList.Perm order1.toList := by
     simpa using List.mergeSort_perm order1.toList (· ≤ ·)
@@ -297,7 +307,6 @@ theorem allocate_ok (layout : ShareLayout) {dag : Dag} (hwf : Ix.Sharing.Verify.
     intro k hk d hd
     obtain ⟨j, hj, hjd, _⟩ := deps k hk d hd
     exact ⟨j, hj, hjd⟩
-  refine ⟨first, ?_⟩
   unfold allocate
   dsimp only
   rw [Budget.bind_ok_eq ft]
@@ -308,6 +317,18 @@ theorem allocate_ok (layout : ShareLayout) {dag : Dag} (hwf : Ix.Sharing.Verify.
     exact ⟨_, rfl⟩
   · rw [checkInternal_true' _ (respectsDeps_ok (order2Perm.nodup_iff.mpr nodup) order2Resp)]
     exact ⟨_, rfl⟩
+
+/-- **The slot allocation never refuses** a duplicate-free table of DAG
+terms whose bodies only reference earlier entries below them. -/
+theorem allocate_ok (layout : ShareLayout) {dag : Dag} (hwf : Ix.Sharing.Verify.UniformModel.DagWF dag)
+    (deg : Array Nat) {order1 : Array Nat} (entries1 roots1 : Array Ixon.Expr)
+    (nodup : order1.toList.Nodup) (inDag : ∀ t ∈ order1.toList, t < dag.size)
+    (deps : ∀ i (hi : i < order1.size), ∀ d ∈ (tierDeps order1 entries1).getD order1[i] [],
+      ∃ j, j < i ∧ order1[j]? = some d ∧ Ix.Sharing.Verify.SharingExact.Below dag order1[i] d) :
+    ∃ limits a, allocate layout limits dag deg order1 entries1 roots1 = .ok a := by
+  obtain ⟨first, ⟨tier, states⟩, ft⟩ := firstTier_ok order1 _ _ (min 8 order1.size) nodup
+    (allocate_back deps)
+  exact ⟨first, allocate_of_firstTier layout hwf deg entries1 roots1 nodup inDag deps ft⟩
 
 end Ix.Sharing.Verify.Tiered
 
