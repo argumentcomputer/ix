@@ -32,13 +32,54 @@ def memberLps : MutConst → List Ix.Name
   | .indc i => i.levelParams.toList
   | .recr r => r.cnst.levelParams.toList
 
-/-- **The payload a member compiles to keeps its source's skeleton.** -/
+/-- A recursor payload's header: the source's counts, as natural numbers, and its rules' field
+counts in range. -/
+def RecHeader (source : Ix.RecursorVal) (target : Ixon.Recursor) : Prop :=
+  target.lvls.toNat = source.cnst.levelParams.size ∧ target.params.toNat = source.numParams ∧
+    target.indices.toNat = source.numIndices ∧ target.motives.toNat = source.numMotives ∧
+    target.minors.toNat = source.numMinors ∧ ∀ rule ∈ source.rules.toList, rule.nfields < UInt64.size
+
+/-- **The payload a member compiles to keeps its source's skeleton and headers.** -/
 def PayloadOf : MutConst → Ixon.MutConst → Prop
   | .defn d, p => ∃ target, p = .defn target ∧ target = Emission.definitionPayload d target.typ target.value
   | .indc i, p => ∃ target, p = .indc target ∧ target = Emission.inductivePayload i target.typ target.ctors ∧
-      List.Forall₂ (fun ctor t => t = Emission.constructorPayload ctor t.typ) i.ctors.toList target.ctors.toList
+      List.Forall₂ (fun ctor t => t = Emission.constructorPayload ctor t.typ) i.ctors.toList target.ctors.toList ∧
+      ProjectionLayout.IndHeader i target ∧
+      List.Forall₂ ProjectionLayout.CtorHeader i.ctors.toList target.ctors.toList
   | .recr r, p => ∃ target, p = .recr target ∧ target = Emission.recursorPayload r target.typ target.rules ∧
-      target.rules.toList.map (·.fields) = r.rules.toList.map (fun rule => rule.nfields.toUInt64)
+      target.rules.toList.map (·.fields) = r.rules.toList.map (fun rule => rule.nfields.toUInt64) ∧
+      RecHeader r target
+
+/-- The rule loop compiles only rules whose field counts are in range. -/
+theorem rules_bounded : ∀ (sources : List Ix.RecursorRule) (acc : RecursorRuleCompileState),
+    Emission.Yields (compileRecursorRules sources acc) (fun _ => ∀ rule ∈ sources, rule.nfields < UInt64.size)
+  | [], _ => Emission.Yields.pure (by simp)
+  | source :: rest, acc => by
+    rw [compileRecursorRules]
+    refine Emission.Yields.bind (first := fun _ => source.nfields < UInt64.size) ?_ fun value bounded => ?_
+    · unfold compileRecursorRule
+      exact Emission.Yields.bindAny _ fun _ =>
+        Emission.Yields.bind (Emission.Yields.count _ _) fun _ b => Emission.Yields.pure b
+    · intro context before output after ran
+      have tail := rules_bounded rest _ context before output after ran
+      intro rule member
+      rcases List.mem_cons.mp member with rfl | member
+      · exact bounded
+      · exact tail rule member
+
+/-- **The recursor emitter keeps its source's header.** -/
+theorem recursor_headers (source : Ix.RecursorVal) :
+    Emission.Yields (compileRecursor source) (fun output => RecHeader source output.1) := by
+  unfold compileRecursor
+  refine Emission.Yields.withCurrent _ (Emission.Yields.withUnivCtx _
+    (Emission.Yields.bindAny _ fun _ => Emission.Yields.bindAny _ fun typed => ?_))
+  obtain ⟨typeExpr, typeRoot⟩ := typed
+  dsimp only
+  refine Emission.Yields.bind (rules_bounded source.rules.toList {}) fun rules bounded => ?_
+  intro context before output after ran
+  obtain ⟨lvls, params, indices, motives, minors, _⟩ :=
+    Emission.recursorHeader source typeExpr typeRoot rules context before output after ran
+  exact ⟨lvls, params, indices, motives, minors, bounded⟩
 
 /-- The context the block's members run in. -/
 def mutContext (classes : List (List MutConst)) (context : CompileEnv × BlockEnv) :
@@ -130,7 +171,8 @@ theorem member_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
       bindings (Emission.current i.name context) free aligned external i (scope _ (by simp [memberSources]))
       (fun ctor hc => scope _ (by simp only [memberSources, List.mem_cons, List.mem_map]; exact .inr ⟨ctor, hc, rfl⟩))
       good outRan
-    refine ⟨cleanD, growth, ⟨out.1, hp, shape, ctorShapes⟩, ?_⟩
+    obtain ⟨header, ctorHeaders, -⟩ := ProjectionLayout.inductiveData_headers i _ _ _ _ outRan
+    refine ⟨cleanD, growth, ⟨out.1, hp, shape, ctorShapes, header, ctorHeaders⟩, ?_⟩
     rw [hp]
     exact read
   | recr r =>
@@ -139,7 +181,7 @@ theorem member_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
       (Emission.current r.cnst.name context) free aligned external r (scope _ (by simp [memberSources]))
       (fun rule hr => scope _ (by simp only [memberSources, List.mem_cons, List.mem_map]; exact .inr ⟨rule, hr, rfl⟩))
       good outRan
-    refine ⟨cleanD, growth, ⟨out.1, hp, shape, fields⟩, ?_⟩
+    refine ⟨cleanD, growth, ⟨out.1, hp, shape, fields, recursor_headers r _ _ _ _ outRan⟩, ?_⟩
     rw [hp]
     exact read
 
