@@ -226,16 +226,8 @@ def isDefinition : Ix.ConstantInfo → Bool
   | .defnInfo _ | .thmInfo _ | .opaqueInfo _ => true
   | _ => false
 
-/-- **Lean's name order**, structural: a name's prefix first, then its last
-component, a number before a string (`Lean.Name.cmp`). It reads no hash. -/
-def nameCmp : Ix.Name → Ix.Name → Ordering
-  | .anonymous _, .anonymous _ => .eq
-  | .anonymous _, _ => .lt
-  | _, .anonymous _ => .gt
-  | .num p₁ i₁ _, .num p₂ i₂ _ => (nameCmp p₁ p₂).then (compare i₁ i₂)
-  | .num .., .str .. => .lt
-  | .str .., .num .. => .gt
-  | .str p₁ s₁ _, .str p₂ s₂ _ => (nameCmp p₁ p₂).then (compare s₁ s₂)
+/-- **Lean's name order**, structural (`Ix.Name.leanCmp`). It reads no hash. -/
+abbrev nameCmp : Ix.Name → Ix.Name → Ordering := Ix.Name.leanCmp
 
 /-- `names` before `names'` in Lean's name order, first name first. -/
 def namesLt (names names' : Array Ix.Name) : Bool := Id.run do
@@ -247,12 +239,14 @@ def namesLt (names names' : Array Ix.Name) : Bool := Id.run do
   return names.size < names'.size
 
 /-- The group of a strongly connected component's constants outside the
-inductive families (none if it has none), its members in Lean's name order. -/
+inductive families (none if it has none), its members in Lean's order
+(`Ix.sourceOrderLt`: their positions in their Lean block's `all`, as the
+compiler lays the block out). -/
 def componentGroupUsing {m : Type → Type} [Monad m]
     (lookup : Ix.Name → m (Option Ix.ConstantInfo)) (members : Ix.Set Ix.Name) : m (Option Group) := do
   let cis ← members.toArray.filterMapM lookup
   let others := (cis.filter (!isFamily ·)).qsort fun a b =>
-    nameCmp a.getCnst.name b.getCnst.name == .lt
+    Ix.sourceOrderLt (a.blockPosition, a.getCnst.name) (b.blockPosition, b.getCnst.name)
   let names := others.map (·.getCnst.name)
   return if others.isEmpty then none
   else if cis.any isFamily then some (.invalid names (.malformed "a block mixes inductives and definitions"))

@@ -81,7 +81,8 @@ theorem componentGroup_stored {env : Ix.Environment} {members : Ix.Set Ix.Name} 
     obtain ⟨x, -, hx⟩ := Array.mem_filterMap.mp hm
     exact lookup_stored hx
   generalize hothers : (cis.filter (fun x => !isFamily x)).qsort
-    (fun a b => nameCmp a.getCnst.name b.getCnst.name == .lt) = others at h
+    (fun a b => Ix.sourceOrderLt (a.blockPosition, a.getCnst.name)
+      (b.blockPosition, b.getCnst.name)) = others at h
   have storedOthers : ∀ ci ∈ others, ∃ k, (k, ci) ∈ env.consts.toList := by
     intro ci hci
     rw [← hothers] at hci

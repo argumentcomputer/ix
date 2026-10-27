@@ -714,6 +714,40 @@ abbrev MutCtx := Std.TreeMap Name Nat nameCompareExact
 instance : Ord MutCtx where
   compare a b := compare a.toList b.toList
 
+/-! ## Lean's order on a block's members -/
+
+/-- **Lean's name order**, structural: a name's prefix first, then its last
+component, a number before a string (`Lean.Name.cmp`). It reads no hash. -/
+def Name.leanCmp : Name → Name → Ordering
+  | .anonymous _, .anonymous _ => .eq
+  | .anonymous _, _ => .lt
+  | _, .anonymous _ => .gt
+  | .num p₁ i₁ _, .num p₂ i₂ _ => (Name.leanCmp p₁ p₂).then (compare i₁ i₂)
+  | .num .., .str .. => .lt
+  | .str .., .num .. => .gt
+  | .str p₁ s₁ _, .str p₂ s₂ _ => (Name.leanCmp p₁ p₂).then (compare s₁ s₂)
+
+/-- A member's position in its Lean block: its index in the block's `all`, or
+`all.size` when `all` does not list it (only on input that is not Lean's). -/
+def blockPosition (all : Array Name) (n : Name) : Nat :=
+  (all.findIdx? (· == n)).getD all.size
+
+/-- **Lean's order on a block's members**, each given by its position (its
+`blockPosition`, or a recursor's position in its family) and its name: by
+position, then by Lean's name order (`Name.leanCmp`), which decides only on
+input that is not Lean's. The compiler lays a block out in this order, and
+Source mode orders a definition group by it. -/
+def sourceOrderLt (a b : Nat × Name) : Bool :=
+  a.1 < b.1 || (a.1 == b.1 && Name.leanCmp a.2 b.2 == .lt)
+
+/-- A definition's, theorem's or opaque's position in its Lean block
+(`blockPosition` over its `all`); `0` for any other constant. -/
+def ConstantInfo.blockPosition : ConstantInfo → Nat
+  | .defnInfo v => Ix.blockPosition v.all v.cnst.name
+  | .thmInfo v => Ix.blockPosition v.all v.cnst.name
+  | .opaqueInfo v => Ix.blockPosition v.all v.cnst.name
+  | _ => 0
+
 end Ix
 
 end
