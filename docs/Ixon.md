@@ -965,12 +965,13 @@ Not claimed:
   and requires identical serialized environments
   ([performance](sharing-minimum-performance.md)).
 - **Length range in Rust.** Lean computes lengths with arbitrary-precision
-  `Nat`. Rust retains checked 128-bit general costs and signed deltas, so
-  their overflow remains a possible refusal. The measured classification-only
-  overflow on small valid doubling DAGs is repaired: all 11 fixtures, including
-  depths 127–256, now have complete Rust/Lean byte parity. That predicate uses
-  a sufficient cap, not a saturated replacement for general costs; wider
-  arithmetic remains follow-up work (§14.3 of sharing-minimum).
+  `Nat`. Rust computes phase-1 costs and signed deltas in 128-bit integers
+  and, where a value leaves that range, again in exact integers, with the
+  same result wherever the 128-bit run succeeds (§12.18 of sharing-minimum),
+  so a long unshared length is no refusal. All 11 doubling fixtures,
+  including depths 127–256, have complete Rust/Lean byte parity, and the
+  Lean/Rust sharing suite compares four towers whose unshared length exceeds
+  `2^127` byte for byte.
 - **Failure.** A run that exceeds a limit returns an error. On the totality
   domain (fewer than `2^64` input nodes and universes per reference, implied by
   the framed constant-body bound) no guard is reachable under a sufficient
