@@ -1562,8 +1562,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   fn is_delta(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
     Ok(matches!(
       self.try_get_const(id)?,
-      Some(KConst::Defn { kind, .. })
-        if matches!(kind, DefKind::Definition | DefKind::Theorem)
+      Some(KConst::Defn { kind, safety, .. }) if self.unfolds(kind, safety)
     ))
   }
 
@@ -1593,6 +1592,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   fn def_rank_id(&mut self, id: &KId<M>) -> Result<(u8, u32), TcError<M>> {
     use ix_common::env::ReducibilityHints;
     Ok(match self.try_get_const(id)? {
+      Some(KConst::Defn { kind, safety, .. })
+        if !self.unfolds(kind, safety) =>
+      {
+        (0, 0)
+      },
       Some(KConst::Defn { kind, hints, .. }) => match kind {
         DefKind::Opaque | DefKind::Theorem => (0, 0),
         DefKind::Definition => match hints {

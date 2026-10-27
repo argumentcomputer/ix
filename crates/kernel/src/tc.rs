@@ -10,6 +10,8 @@ use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 
 use ix_common::address::Address;
+use ix_common::env::DefinitionSafety;
+use ixon::constant::DefKind;
 use ixon::env::Env as IxonEnv;
 
 use super::constant::{KConst, RecRule};
@@ -332,6 +334,38 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
         role.lean_name()
       )))
     }
+  }
+
+  /// Whether a definition of this kind and safety may be unfolded: a
+  /// definition or theorem, and under the safety tier not a partial one.
+  ///
+  /// The certified checker keeps unsafe definitions opaque too, but it also
+  /// declines unsafe inductives, which this kernel checks as Lean does. The
+  /// unsafe definitions over them (their generated recursion helpers and
+  /// equations, as in Mathlib's Aesop) are checked by unfolding; kept
+  /// opaque, their checks exhaust memory instead of failing. So unsafe
+  /// definitions unfold here, beside the unsafe-inductive divergence.
+  pub(crate) fn unfolds(
+    &self,
+    kind: DefKind,
+    safety: DefinitionSafety,
+  ) -> bool {
+    matches!(kind, DefKind::Definition | DefKind::Theorem)
+      && (safety != DefinitionSafety::Partial
+        || !self.prims.follows_safety_tier())
+  }
+
+  /// Under the safety tier, a safe inductive's or constructor's type may
+  /// not mention a partial or unsafe constant.
+  pub(crate) fn fence_safe_type(
+    &mut self,
+    ty: &KExpr<M>,
+    is_unsafe: bool,
+  ) -> Result<(), TcError<M>> {
+    if is_unsafe || !self.prims.follows_safety_tier() {
+      return Ok(());
+    }
+    self.check_no_unsafe_refs(ty, DefinitionSafety::Safe)
   }
 
   /// Whether `id` is one of the table's four quotient primitives.

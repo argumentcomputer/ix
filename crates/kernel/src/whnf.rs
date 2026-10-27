@@ -1224,8 +1224,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     // Bare constant
     if let ExprData::Const(id, us, _) = e.data()
-      && let Some(KConst::Defn { kind, val, .. }) = self.try_get_const(id)?
-      && matches!(kind, DefKind::Definition | DefKind::Theorem)
+      && let Some(KConst::Defn { kind, safety, val, .. }) =
+        self.try_get_const(id)?
+      && self.unfolds(kind, safety)
     {
       self.dump_delta_trace(id, 0, e);
       self.record_delta_target(id);
@@ -1249,11 +1250,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
 
     let val = match self.try_get_const(id)? {
-      Some(KConst::Defn {
-        kind: DefKind::Definition | DefKind::Theorem,
-        val,
-        ..
-      }) => {
+      Some(KConst::Defn { kind, safety, val, .. })
+        if self.unfolds(kind, safety) =>
+      {
         self.dump_delta_trace(id, args.len(), e);
         self.record_delta_target(id);
         val.clone()
@@ -2166,10 +2165,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(None);
     };
-    let val = match self.try_get_const(id)? {
-      Some(KConst::Defn { kind: DefKind::Definition, val, .. }) => val,
-      _ => return Ok(None),
-    };
+    let val =
+      match self.try_get_const(id)? {
+        Some(KConst::Defn {
+          kind: DefKind::Definition, safety, val, ..
+        }) if self.unfolds(DefKind::Definition, safety) => val,
+        _ => return Ok(None),
+      };
     let (arity, struct_id, field, struct_arg_idx) =
       match self.projection_definition_info(&val) {
         Some(info) => info,

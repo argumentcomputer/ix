@@ -83,6 +83,18 @@ impl<M: KernelMode> PrimitiveContext<M> {
     Self::Bound(source, Arc::new(table), Arc::new(roles))
   }
 
+  /// Whether checking follows the certified checker's safety tier: partial
+  /// definitions stay opaque, every safe declaration, not only a definition,
+  /// is fenced from partial and unsafe constants, and an opaque is checked as
+  /// safe. A bound artifact does; unbound input follows Lean's kernel.
+  pub(crate) fn follows_safety_tier(&self) -> bool {
+    match self {
+      #[cfg(not(target_arch = "riscv64"))]
+      Self::Bound(..) => true,
+      _ => false,
+    }
+  }
+
   /// Whether the safe axiom at `address` may be used: any axiom in unbound
   /// input; in a bound artifact only an admitted standard axiom. The
   /// certified theory is Lean with its three standard axioms; unsafe axioms

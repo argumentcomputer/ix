@@ -428,6 +428,34 @@ impl ArtifactSource {
   pub fn is_admitted(&self, role: Role) -> bool {
     self.admission().address(role).is_some()
   }
+  /// Whether the declaration at `address` is in the safety tier: partial or
+  /// unsafe, so that a check of it is the certified checker's `typed`
+  /// outcome (well-typed, with partial and unsafe constants opaque) rather
+  /// than acceptance into the logical theory.
+  pub fn in_safety_tier(&self, address: &Address) -> bool {
+    let Ok(member) = self.member(address) else { return false };
+    let info = match (member.owner(), member.index()) {
+      (Some(owner), Some(index)) => match &owner.constant().info {
+        ConstantInfo::Muts(members) => {
+          return match members.get(index) {
+            Some(MutConst::Defn(d)) => d.safety != DefinitionSafety::Safe,
+            Some(MutConst::Indc(i)) => i.is_unsafe,
+            Some(MutConst::Recr(r)) => r.is_unsafe,
+            None => false,
+          };
+        },
+        _ => return false,
+      },
+      _ => &member.record().constant().info,
+    };
+    match info {
+      ConstantInfo::Defn(d) => d.safety != DefinitionSafety::Safe,
+      ConstantInfo::Axio(a) => a.is_unsafe,
+      ConstantInfo::Recr(r) => r.is_unsafe,
+      _ => false,
+    }
+  }
+
   /// Why a bound artifact's units may not be checked, if they may not: a
   /// prelude role ([`PRELUDE`]) that is unbound, or whose group was refused.
   pub fn prelude_refusal(&self) -> Option<String> {

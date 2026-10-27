@@ -1080,3 +1080,117 @@ fn with_prelude(
   }
   roles
 }
+
+fn declare(
+  env: &Env,
+  kind: DefKind,
+  safety: DefinitionSafety,
+  typ: Arc<Expr>,
+  value: Arc<Expr>,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Address {
+  store(
+    env,
+    ConstantInfo::Defn(Definition { kind, safety, lvls: 0, typ, value }),
+    refs,
+    univs,
+  )
+}
+
+#[test]
+fn a_bound_artifact_follows_the_safety_tier() {
+  let mut env = loaded();
+  let nat = address_of(&env, "Nat");
+  let zero_blob = env.store_blob(vec![]);
+  let nat_t = || reference(0, vec![]);
+  let zero_of = |safety| {
+    declare(
+      &env,
+      DefKind::Definition,
+      safety,
+      nat_t(),
+      arc(Expr::Nat(1)),
+      vec![nat.clone(), zero_blob.clone()],
+      vec![],
+    )
+  };
+  // `partial def p : Nat := 0` and `unsafe def u : Nat := 0`.
+  let p = zero_of(DefinitionSafety::Partial);
+  let u = zero_of(DefinitionSafety::Unsafe);
+  // `def v : @Eq.{1} Nat c 0 := @Eq.refl.{1} Nat 0` at `v`'s safety, which
+  // needs `c` unfolded.
+  let one = Arc::new(Univ::Succ(Arc::new(Univ::Zero)));
+  let needs_unfolded = |c: &Address, safety| {
+    declare(
+      &env,
+      DefKind::Definition,
+      safety,
+      app(
+        app(
+          app(reference(0, vec![0]), reference(2, vec![])),
+          reference(3, vec![]),
+        ),
+        arc(Expr::Nat(4)),
+      ),
+      app(app(reference(1, vec![0]), reference(2, vec![])), arc(Expr::Nat(4))),
+      vec![
+        address_of(&env, "Eq"),
+        address_of(&env, "Eq.refl"),
+        nat.clone(),
+        c.clone(),
+        zero_blob.clone(),
+      ],
+      vec![one.clone()],
+    )
+  };
+  let unfolds_p = needs_unfolded(&p, DefinitionSafety::Partial);
+  let unfolds_u = needs_unfolded(&u, DefinitionSafety::Unsafe);
+  // `unsafe opaque o : Nat := u`: an opaque is checked as safe.
+  let opaque = declare(
+    &env,
+    DefKind::Opaque,
+    DefinitionSafety::Unsafe,
+    nat_t(),
+    reference(1, vec![]),
+    vec![nat.clone(), u.clone()],
+    vec![],
+  );
+  // A safe axiom whose type mentions `u`.
+  let mentions_u = axiom(
+    &env,
+    0,
+    pi(nat_t(), app(reference(2, vec![]), reference(1, vec![]))),
+    vec![nat.clone(), u.clone(), opaque.clone()],
+    vec![],
+  );
+
+  // Unbound, the kernel follows Lean's: partial and unsafe definitions
+  // unfold, and the fence covers definitions only.
+  let unbound = ArtifactSource::snapshot(&env).unwrap();
+  let mut checker = ArtifactChecker::<Anon>::from_source(Ok(unbound));
+  checker.check_const(&unfolds_p).unwrap();
+  checker.check_const(&unfolds_u).unwrap();
+  checker.check_const(&opaque).unwrap();
+
+  let roles = with_prelude(&env, vec![]);
+  bind(&mut env, roles);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  assert!(source.in_safety_tier(&p) && source.in_safety_tier(&u));
+  assert!(!source.in_safety_tier(&address_of(&env, "Nat.add")));
+  let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source));
+  checker.check_const(&p).unwrap();
+  // Partial definitions stay opaque; unsafe ones unfold, as in Lean.
+  assert!(checker.check_const(&unfolds_p).is_err());
+  checker.check_const(&unfolds_u).unwrap();
+  let error = checker.check_const(&opaque).unwrap_err();
+  assert!(
+    format!("{error}").contains("references unsafe definition"),
+    "{error}"
+  );
+  let error = checker.check_const(&mentions_u).unwrap_err();
+  assert!(
+    format!("{error}").contains("references unsafe definition"),
+    "{error}"
+  );
+}

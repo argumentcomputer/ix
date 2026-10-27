@@ -1101,8 +1101,13 @@ where
   }
 
   let worker_count = resolve_kernel_check_workers(work.len(), quiet);
-  if worker_count == 1 {
-    return run_checks_serial_on_large_stack::<M>(
+  let tier_source = source.clone();
+  let tier_names: Vec<Option<Address>> = names
+    .iter()
+    .map(|name| ixon_env.lookup_name(name).map(|named| named.addr))
+    .collect();
+  let results = if worker_count == 1 {
+    run_checks_serial_on_large_stack::<M>(
       ixon_env,
       source,
       lookups,
@@ -1112,21 +1117,54 @@ where
       work,
       quiet,
       failure_log,
-    );
-  }
+    )?
+  } else {
+    run_checks_parallel_on_large_stacks::<M>(
+      ixon_env,
+      source,
+      lookups,
+      names,
+      expect_pass,
+      ungrounded,
+      work,
+      quiet,
+      worker_count,
+      failure_log,
+    )?
+  };
+  report_safety_tier(
+    "rs_kernel_check",
+    &tier_source,
+    tier_names.iter().zip(&results).filter_map(|(address, result)| {
+      address.as_ref().filter(|_| result.is_ok())
+    }),
+  );
+  Ok(results)
+}
 
-  run_checks_parallel_on_large_stacks::<M>(
-    ixon_env,
-    source,
-    lookups,
-    names,
-    expect_pass,
-    ungrounded,
-    work,
-    quiet,
-    worker_count,
-    failure_log,
-  )
+/// Report, for a bound source, how many of the passing declarations are in
+/// the safety tier: partial or unsafe, checked with partial and unsafe
+/// constants opaque (the certified checker's `typed` outcome) rather than
+/// accepted into the logical theory.
+fn report_safety_tier<'a>(
+  label: &str,
+  source: &ArtifactSource,
+  passing: impl Iterator<Item = &'a Address>,
+) {
+  if source.binding().is_none() {
+    return;
+  }
+  let (mut passed, mut typed) = (0usize, 0usize);
+  for address in passing {
+    passed += 1;
+    if source.in_safety_tier(address) {
+      typed += 1;
+    }
+  }
+  eprintln!(
+    "[{label}] of {passed} passing, {} accepted and {typed} typed (partial or unsafe)",
+    passed - typed
+  );
 }
 
 fn run_checks_serial_on_large_stack<M: KernelMode>(
@@ -1771,6 +1809,7 @@ pub extern "C" fn rs_kernel_check_anon(
   // the runner clones internally for worker dispatch.
   let addrs_for_return = addrs.clone();
   let t3 = Instant::now();
+  let tier_source = source.clone();
   let results = match run_anon_checks_parallel(
     source,
     work,
@@ -1792,6 +1831,14 @@ pub extern "C" fn rs_kernel_check_anon(
   eprintln!(
     "[rs_kernel_check_anon] {passed}/{total} passed, {failed} failed ({:.1?})",
     t3.elapsed()
+  );
+  report_safety_tier(
+    "rs_kernel_check_anon",
+    &tier_source,
+    addrs_for_return
+      .iter()
+      .zip(&results)
+      .filter_map(|(address, result)| result.is_ok().then_some(address)),
   );
   eprintln!(
     "[rs_kernel_check_anon] total:       {:>8.1?}",

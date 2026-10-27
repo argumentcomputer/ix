@@ -400,6 +400,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     match &c {
       KConst::Axio { ty, is_unsafe, .. } => {
+        // Under the safety tier a safe axiom, like every safe declaration,
+        // may not mention a partial or unsafe constant.
+        if !is_unsafe && self.prims.follows_safety_tier() {
+          self.check_no_unsafe_refs(ty, DefinitionSafety::Safe)?;
+        }
         if !is_unsafe && !self.prims.axiom_declarable(&id.addr) {
           return Err(TcError::Other(format!(
             "axiom {} is not a standard axiom of the checked theory",
@@ -458,13 +463,21 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let t_safety_start = overall.map(|_| Instant::now());
         let mut safety_ty_elapsed = None;
         let mut safety_val_elapsed = None;
-        if *safety != DefinitionSafety::Unsafe {
+        // Under the safety tier an opaque is checked as safe whatever its
+        // own safety, as Lean's kernel adds opaques.
+        let fence =
+          if *kind == DefKind::Opaque && self.prims.follows_safety_tier() {
+            DefinitionSafety::Safe
+          } else {
+            *safety
+          };
+        if fence != DefinitionSafety::Unsafe {
           let t_safety_ty_start = overall.map(|_| Instant::now());
-          self.check_no_unsafe_refs(ty, *safety)?;
+          self.check_no_unsafe_refs(ty, fence)?;
           safety_ty_elapsed = t_safety_ty_start.map(|s| s.elapsed());
 
           let t_safety_val_start = overall.map(|_| Instant::now());
-          self.check_no_unsafe_refs(val, *safety)?;
+          self.check_no_unsafe_refs(val, fence)?;
           safety_val_elapsed = t_safety_val_start.map(|s| s.elapsed());
         }
         let safety_elapsed = t_safety_start.map(|s| s.elapsed());
@@ -1152,7 +1165,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// `caller_safety` is the safety level of the definition being checked.
   /// - Safe defs cannot reference unsafe or partial constants
   /// - Partial defs cannot reference unsafe constants
-  fn check_no_unsafe_refs(
+  pub(crate) fn check_no_unsafe_refs(
     &mut self,
     e: &KExpr<M>,
     caller_safety: DefinitionSafety,
