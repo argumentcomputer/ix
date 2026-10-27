@@ -1,4 +1,5 @@
 import Ix.Cert.RoleClosurePrepare
+import Ix.Cert.PreludeAgree
 
 /-! # The role table's certificates check on their own closure (Route A, B6b)
 
@@ -101,21 +102,104 @@ theorem fallbackHashed_iff : fallbackHashed = true ↔ FallbackHashed := by
   rw [Array.all_eq_true_iff_forall_mem]
   simp only [beq_iff_eq, Array.mem_toList_iff]
 
+/-- **The default role table's binding admits under the admission hash**: its committed
+section is stored at the admission hash of its bytes, decodes canonically and is well
+formed (`Admission.admitBinding`). This is the run-time form of the table row of the fact
+`Tests/Ix/Kernel/Authentication.lean` guards; the kernel cannot hash the committed hex. -/
+def DefaultAdmits : Prop :=
+  ∃ binding t, Admission.defaultBinding = .ok binding ∧
+    Admission.admitBinding Address.admissionHash binding = .ok t
+
+/-- Whether a binding source yields a binding that admits under the admission hash. -/
+def admitsOf (e : Except String Admission.Binding) : Bool :=
+  match e with
+  | .ok binding => (Admission.admitBinding Address.admissionHash binding).isOk
+  | .error _ => false
+
+theorem admitsOf_sound {e : Except String Admission.Binding} (h : admitsOf e = true) :
+    ∃ binding t, e = .ok binding ∧ Admission.admitBinding Address.admissionHash binding = .ok t := by
+  cases e with
+  | error _ => cases h
+  | ok binding =>
+    cases ha : Admission.admitBinding Address.admissionHash binding with
+    | error _ => simp [admitsOf, ha, Except.isOk, Except.toBool] at h
+    | ok t => exact ⟨binding, t, rfl, ha⟩
+
+/-- `DefaultAdmits`, decided. -/
+def defaultAdmits : Bool := admitsOf Admission.defaultBinding
+
+/-- The decision is sound, through `admitsOf_sound`: no proof step evaluates the committed
+binding. -/
+theorem defaultAdmits_sound (h : defaultAdmits = true) : DefaultAdmits :=
+  admitsOf_sound h
+
+/-- **The committed prelude reads alike at both modes**: under the default table it reads in
+Source and in anonymous mode, and the two readings agree with names erased
+(`PreludeAgree.preludeAgreeB`, a check on the two concrete readings). The agreement lifts to
+every renaming (`PreludeAgree.preludeAgree_decls`, `PreludeAgree.preludeAgree_state`). -/
+def PreludeAgrees : Prop :=
+  ∃ t preS preA, defaultTable = .ok t ∧ preludeFor (md := .source) t = .ok preS ∧
+    preludeFor (md := .anon) t = .ok preA ∧ PreludeAgree.preludeAgreeB preS preA = true
+
+/-- Whether two prelude readings agree, names erased. -/
+def agreesOfReadings (s : Except String (Prelude .source)) (a : Except String (Prelude .anon)) : Bool :=
+  match s, a with
+  | .ok preS, .ok preA => PreludeAgree.preludeAgreeB preS preA
+  | _, _ => false
+
+theorem agreesOfReadings_sound {s : Except String (Prelude .source)} {a : Except String (Prelude .anon)}
+    (h : agreesOfReadings s a = true) :
+    ∃ preS preA, s = .ok preS ∧ a = .ok preA ∧ PreludeAgree.preludeAgreeB preS preA = true := by
+  cases s with
+  | error _ => cases h
+  | ok preS =>
+    cases a with
+    | error _ => cases h
+    | ok preA => exact ⟨preS, preA, rfl, rfl, h⟩
+
+/-- Whether a table source's prelude reads alike at both modes. -/
+def preludeAgreesOf (table : Except String RoleTable) : Bool :=
+  match table with
+  | .ok t => agreesOfReadings (preludeFor (md := .source) t) (preludeFor (md := .anon) t)
+  | .error _ => false
+
+/-- The decision is sound. No proof step simplifies the prelude readings: simplifying
+through them makes Lean evaluate the committed prelude. -/
+theorem preludeAgreesOf_sound {e : Except String RoleTable} (h : preludeAgreesOf e = true) :
+    ∃ t preS preA, e = .ok t ∧ preludeFor (md := .source) t = .ok preS ∧
+      preludeFor (md := .anon) t = .ok preA ∧ PreludeAgree.preludeAgreeB preS preA = true := by
+  cases e with
+  | error _ => cases h
+  | ok t =>
+    obtain ⟨preS, preA, hS, hA, agree⟩ := agreesOfReadings_sound (s := preludeFor (md := .source) t)
+      (a := preludeFor (md := .anon) t) h
+    exact ⟨t, preS, preA, rfl, hS, hA, agree⟩
+
+/-- `PreludeAgrees`, decided. -/
+def preludeAgrees : Bool := preludeAgreesOf defaultTable
+
+/-- The decision is sound, through `preludeAgreesOf_sound`: no proof step evaluates the
+committed prelude. -/
+theorem preludeAgrees_sound (h : preludeAgrees = true) : PreludeAgrees :=
+  preludeAgreesOf_sound h
+
 /-- **The shipped role table's certificates check, and its committed fallback sits at
 its hashes**: the committed closure, prepared under the default table behind its
 committed prelude, defines every well-founded `Nat` operation, and the pure fold accepts
 it at some fuel under the table's evidence. The fold reaches each operation's definition
 with its dependency closure installed and runs its evidence gate there
 (`checkDivModEvidence`), so every gate passed. And every committed prelude and evidence
-row is stored at the admission hash of its bytes (`FallbackHashed`). A closed
-proposition about `IxC/Kernel/Ixon/RoleData.lean`, the verifier's pinned configuration:
+row is stored at the admission hash of its bytes (`FallbackHashed`), and the default binding
+admits under the admission hash (`DefaultAdmits`), and the committed prelude reads alike at
+both modes (`PreludeAgrees`). A closed proposition about `IxC/Kernel/Ixon/RoleData.lean`, the verifier's pinned configuration:
 it mentions no input. -/
 def RoleEvidenceChecks : Prop :=
   (∃ ev ds env, preparedDefault = .ok (ev, ds) ∧ DefinesAll ds ∧ Cached.AcceptsRef .verified ev ds env) ∧
-    FallbackHashed
+    FallbackHashed ∧ DefaultAdmits ∧ PreludeAgrees
 
 /-- `RoleEvidenceChecks`, with the executed fold and the executed hashes, decided. -/
-def roleEvidenceCheck : Bool := closureCheck preparedDefault && fallbackHashed
+def roleEvidenceCheck : Bool :=
+  closureCheck preparedDefault && fallbackHashed && defaultAdmits && preludeAgrees
 
 /-- **The executed check gives `RoleEvidenceChecks`**, through the fold's
 refinement (the set theory is a hypothesis of that walk, not of the
@@ -123,7 +207,10 @@ statement's meaning). -/
 theorem roleEvidenceChecks_of_check (V : Type w) [SetTheory V] (h : roleEvidenceCheck = true) :
     RoleEvidenceChecks := by
   unfold roleEvidenceCheck at h
-  obtain ⟨closure, hashed⟩ := Bool.and_eq_true_iff.mp h
-  exact ⟨checks_of_closureCheck V preparedDefault closure, fallbackHashed_iff.mp hashed⟩
+  obtain ⟨h₁, agrees⟩ := Bool.and_eq_true_iff.mp h
+  obtain ⟨h₂, admits⟩ := Bool.and_eq_true_iff.mp h₁
+  obtain ⟨closure, hashed⟩ := Bool.and_eq_true_iff.mp h₂
+  exact ⟨checks_of_closureCheck V preparedDefault closure, fallbackHashed_iff.mp hashed,
+    defaultAdmits_sound admits, preludeAgrees_sound agrees⟩
 
 end Ix.Cert.RoleClosure
