@@ -1303,11 +1303,11 @@ def checkSourceCollapsedBundledUsing (prelude : Except String (Ix.Kernel.Reader.
     Except SourceError (Ix.Kernel.Env .source) := do
   let pre ← prelude.mapError .prelude
   let decls ← prepareSourceCollapsed ρ hints pre env blocks
-  (Ix.Kernel.Cached.checkDecls .verified (evidenceSubst ρ (Ix.RoleEvidence.bundleEvidence ())) decls).mapError
+  (Ix.Kernel.Cached.checkDecls .verified (evidenceSubst ρ (Ix.RoleEvidence.quotientEvidence ())) decls).mapError
     fun (e, i) => .kernel e i
 
 /-- **Quotient Source at a compiled artifact, at the pinned bundle evidence**
-(`checkSourceCollapsed` at `Ix.RoleEvidence.bundleEvidence` renamed onto the fiber
+(`checkSourceCollapsed` at `Ix.RoleEvidence.quotientEvidence` renamed onto the fiber
 representatives, as `checkSourceBundled` is `checkSource` at it). -/
 def checkSourceCollapsedBundled (ixe : Ixon.Env) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Except SourceError (Ix.Kernel.Env .source) :=
@@ -1325,24 +1325,23 @@ def checkSourceCollapsedAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.
 
 /-! ## The bundle's evidence at the artifact's addresses
 
-Quotient Source checks with the committed bundle's evidence
-(`Ix.RoleEvidence.bundleEvidence`), whose proofs name the bundle's constants:
-the certificate theorems and the lemmas they cite, some of which the artifact
-does not publish. The bundle is a Source-mode artifact: its records reference
-constants by name, and the address its names table (`RoleData.sourceNames`)
-gives a name is the generator's **name hash** (`nameAddress`,
-`Benchmarks/Kernel/PinGen.lean`), not the constant's content address. The
-renaming onto the artifact's keys sends a published name to its content address
-(`addrOf`) and a bundle-only name to its name hash. Two facts make that
-injective: the names table is a map from addresses to names, so two names never
-share a name hash in it (`bundleAddrs_inj`, proved from the table, no collision
-resistance assumed); and no bundle-only name's hash is an address the artifact
-publishes (`bundleDisjointB`, decided, checked by `collapsedChecks`). Equality
-with the Ixon run's evidence keys (content addresses) is not claimed: it would
-need the bundle's names with their content addresses, a table the generator
-does not write. -/
+Quotient Source checks with the committed quotient bundle's evidence
+(`Ix.RoleEvidence.quotientEvidence`), whose proofs name the bundle's constants:
+the certificate theorems and the constants they cite, some of which the artifact
+does not publish. The bundle is the default table's own evidence records read by
+name: the address its names table (`RoleData.quotientNames`) gives a name is the
+content address in the compiled Init that the records cite. The renaming onto
+the artifact's keys sends a published name to its content address in the
+artifact (`addrOf`) and a bundle-only name to its **bundle address**, the one the
+names table gives it. Two facts make that injective: the names table is a map
+from addresses to names, so two names never share a bundle address in it
+(`bundleAddrs_inj`, proved from the table, no collision resistance assumed); and
+no bundle-only name's bundle address is an address the artifact publishes
+(`bundleDisjointB`, decided, checked by `collapsedChecks`). Where every published
+name the records cite sits at the address they cite, the renamed evidence is the
+Ixon run's. -/
 
-/-- **The bundle's name hashes by Source name** (the names table, inverted). -/
+/-- **The bundle's addresses by Source name** (the names table, inverted). -/
 def bundleAddrs (b : Ix.RoleEvidence.Bundle) : Std.HashMap Ix.Kernel.Name Address :=
   b.names.fold (fun m a n => m.insert (Ix.Kernel.Name.ofLeanName n) a) {}
 
@@ -1420,7 +1419,7 @@ def prepareSourceCollapsedAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable)
     (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
     (pre : Ix.Kernel.Reader.Prelude .source) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) : Except SourceError (Array (CDecl .source)) :=
-  prepareSourceCollapsedAtUsing (Ix.RoleEvidence.committedBundle ()) (Ix.RoleEvidence.bundleEvidence ())
+  prepareSourceCollapsedAtUsing (Ix.RoleEvidence.quotientBundle ()) (Ix.RoleEvidence.quotientEvidence ())
     ixe t hints pre env blocks
 
 /-- `checkSourceCollapsedBundledAt` over explicit sources: the prelude, the
@@ -1446,8 +1445,8 @@ checked prepared stream (`prepareSourceCollapsedAt`): at the committed prelude,
 bundle and evidence. -/
 def checkSourceCollapsedBundledAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) :=
-  checkSourceCollapsedBundledAtUsing Ix.Kernel.Reader.builtinPrelude (Ix.RoleEvidence.committedBundle ())
-    (Ix.RoleEvidence.bundleEvidence ()) ixe t env blocks
+  checkSourceCollapsedBundledAtUsing Ix.Kernel.Reader.builtinPrelude (Ix.RoleEvidence.quotientBundle ())
+    (Ix.RoleEvidence.quotientEvidence ()) ixe t env blocks
 
 /-! ## The typing tier: partial and unsafe declarations
 

@@ -42,7 +42,7 @@ theorem readerStreams_of_units {env : Ix.Environment} {roots : List Ix.Name}
     (hpre : builtinPrelude = .ok pre)
     (hds : Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((fiberHintsMap ixe)[·]?) pre sub
       (blocksOf sub) = .ok ds)
-    (hb : Ix.RoleEvidence.committedBundle () = .ok b)
+    (hb : Ix.RoleEvidence.quotientBundle () = .ok b)
     (units : ∀ (preA : Prelude .anon) rs fin s kb, preludeFor t = .ok preA →
       SourcePrelude.Trace (graphCollapsed (fiberAliasAt ixe (roleAtMap t)) ((fiberHintsMap ixe)[·]?)
           sub (blocksOf sub)) pre.state

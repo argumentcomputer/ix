@@ -67,7 +67,8 @@ That the fold commutes with renaming keys is IxC's, at the reference level
 (`Ix.Kernel.Cached.AcceptsRef.rename`).
 
 No reverse statement ("Ixon accepts, so Source accepts") is made. Source
-mode uses the committed `Ix.RoleEvidence.bundleEvidence`, independently of
+mode uses the committed `Ix.RoleEvidence.bundleEvidence` (quotient Source the
+table's own records by name, `Ix.RoleEvidence.quotientEvidence`), independently of
 which certificate theorems the input closure carries; Ixon mode resolves
 the admitted role table's evidence. The two front ends have distinct
 acceptance conditions, and fuel can run out on either side alone.
@@ -1472,7 +1473,7 @@ def SourceAcceptsQ (condense : Ix.Environment → Ix.CondensedBlocks) (env : Ix.
         ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub (condense sub) = .ok ds ∧
       Ix.Kernel.Cached.AcceptsRef .verified
         (Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
-          (Ix.RoleEvidence.bundleEvidence ())) ds.toList envS
+          (Ix.RoleEvidence.quotientEvidence ())) ds.toList envS
 
 /-- **The executed quotient check gives `SourceAcceptsQ`**
 (`Ix.LeanIngress.checkSourceCollapsedBundledAt_ref`, from

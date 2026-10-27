@@ -501,7 +501,7 @@ theorem readingAt_renamed {env : Ix.Environment} {roots : List Ix.Name} {sub : I
     (hbind : Admission.defaultBinding = .ok binding) {limits : Admission.Limits} {order : List Address}
     {tA : RoleTable} {pre : Prelude .anon} {constants : List (Address × Ixon.Constant)} {cx : Ctx .anon}
     (A : Accepted binding limits ixe order tA pre constants cx) {b : Ix.RoleEvidence.Bundle}
-    (hb : Ix.RoleEvidence.committedBundle () = .ok b) :
+    (hb : Ix.RoleEvidence.quotientBundle () = .ok b) :
     ∀ c ∈ envQ.consts, ∀ e, readingAt ixe t cx c = some e →
       e = .const (c.name.map (Ix.LeanIngress.evAddr ixe b)) (c.toConstantVal.levelParams.map .param) := by
   have checked := defaultTable_check P.table
@@ -746,7 +746,7 @@ theorem readingKeys_stored {env : Ix.Environment} {roots : List Ix.Name} {sub : 
     {b : Ix.RoleEvidence.Bundle} (P : Premises env roots sub ixe failures t envQ)
     (hbind : Admission.defaultBinding = .ok binding)
     (acc : IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA)
-    (hb : Ix.RoleEvidence.committedBundle () = .ok b) :
+    (hb : Ix.RoleEvidence.quotientBundle () = .ok b) :
     ∃ cx, admissionContext binding limits ixe order = some cx ∧
       (∀ c ∈ envQ.consts, ∀ e, readingAt ixe t cx c = some e →
         e = .const (c.name.map (Ix.LeanIngress.evAddr ixe b)) (c.toConstantVal.levelParams.map .param)) ∧

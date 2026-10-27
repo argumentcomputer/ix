@@ -1452,7 +1452,10 @@ default table in the closure's reading (`Ix.Kernel.Reader.evidenceOf`, through
 representatives and then to the artifact's addresses (`Ix.Cert.sourceEvidence`,
 `Ix.LeanIngress.evAddr`), compared where the fold's gates read them: a structural
 operation's `defeq` shape (`evidenceDefeqOk`) and a well-founded operation's proof terms
-(`evidenceProofs`; the theorems' keys are not read). -/
+(`evidenceProofs`; the theorems' keys are not read). Asserted: every structural operation's
+shape passes on both sides, every well-founded operation's proof terms are equal, and the
+renamed run is accepted at both. Quotient Source's bundle is the table's own evidence records
+read by name (`kernel-pin-gen --quotient-names`), so a drift between the two fails here. -/
 def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
   let roots : Array Lean.Name :=
     #[`Nat.div, `Nat.mod, `Nat.gcd, `Nat.land, `Nat.lor, `Nat.xor, `Nat.shiftLeft, `Nat.shiftRight]
@@ -1470,7 +1473,7 @@ def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
     | return (#["evidence: the default binding does not admit"], #[])
   let .ok (preA : Ix.Kernel.Reader.Prelude .anon) := Ix.Kernel.Reader.preludeFor tA
     | return (#["evidence: the committed prelude does not read"], #[])
-  let .ok b := Ix.RoleEvidence.committedBundle ()
+  let .ok b := Ix.RoleEvidence.quotientBundle ()
     | return (#["evidence: the committed bundle does not load"], #[])
   let seeds : Array Address := sub.consts.toArray.filterMap fun (n, _) => (ixe.named.get? n).map (·.addr)
   let order := (closureOrder ixe seeds).toList
@@ -1495,19 +1498,23 @@ def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
     | .error e => errors := errors.push s!"evidence: quotient Source does not prepare the closure: {e}"
     | .ok ds =>
       let renamed := ds.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b))
-      let verdict (ev : Ix.Kernel.Evidences .anon) : String :=
+      let verdict (ev : Ix.Kernel.Evidences .anon) : Option String :=
         match Ix.Kernel.Cached.checkDecls .verified ev renamed with
-        | .ok _ => "accepts"
-        | .error (e, i) => s!"declines at {i}: {e}"
+        | .ok _ => none
+        | .error (e, i) => some s!"declines at {i}: {e}"
+      let say (v : Option String) : String := v.getD "accepts"
       lines := lines.push s!"evidence: the renamed quotient Source run ({renamed.size} declarations): \
-        at the bundle's evidence it {verdict evB}; at the table's it {verdict evR}"
+        at the bundle's evidence it {say (verdict evB)}; at the table's it {say (verdict evR)}"
+      for (side, ev) in [("bundle's", evB), ("table's", evR)] do
+        if let some why := verdict ev then
+          errors := errors.push s!"evidence: the renamed quotient Source run at the {side} evidence {why}"
   for r in structuralRoles do
     let k : Ix.Kernel.Key .anon := Ix.Kernel.roleKey r
     let okR := Ix.Kernel.evidenceDefeqOk evR k
     let okB := Ix.Kernel.evidenceDefeqOk evB k
     lines := lines.push s!"evidence: {repr r}: defeq shape, table {okR}, bundle {okB}"
-    if okB && !okR then errors := errors.push s!"evidence: {repr r}: the bundle's defeq evidence passes, \
-      the table's does not"
+    unless okR && okB do errors := errors.push s!"evidence: {repr r}: the defeq shape, table {okR}, \
+      bundle {okB}"
   for r in wellFoundedRoles do
     let k : Ix.Kernel.Key .anon := Ix.Kernel.roleKey r
     match Ix.Kernel.evidenceProofs evR k, Ix.Kernel.evidenceProofs evB k with
@@ -1524,15 +1531,15 @@ def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
             let kq := keys q
             some s!"[table-only keys {((kp.filter (!kq.contains ·)).take 4).map keyName}, \
               bundle-only keys {((kq.filter (!kp.contains ·)).take 4).map keyName}]"
-        lines := lines.push s!"evidence: {repr r}: table {ps.length} proofs, bundle {qs.length}; \
+        errors := errors.push s!"evidence: {repr r}: table {ps.length} proofs, bundle {qs.length}; \
           {same} equal; differing: {diffs.take 2}"
     | none, some qs =>
-      lines := lines.push s!"evidence: {repr r}: the table's evidence resolves no proofs; the bundle has \
+      errors := errors.push s!"evidence: {repr r}: the table's evidence resolves no proofs; the bundle has \
         {qs.length}"
     | some ps, none =>
-      lines := lines.push s!"evidence: {repr r}: the bundle's evidence has no proofs; the table resolves \
+      errors := errors.push s!"evidence: {repr r}: the bundle's evidence has no proofs; the table resolves \
         {ps.length}"
-    | none, none => lines := lines.push s!"evidence: {repr r}: no proofs on either side"
+    | none, none => errors := errors.push s!"evidence: {repr r}: no proofs on either side"
   return (errors, lines)
 
 /-- Literal support in `DependsOn` (owner, 2026-10-20): the statement closure of a root

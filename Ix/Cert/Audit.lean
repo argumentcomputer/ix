@@ -4231,7 +4231,7 @@ fun condense env roots sub ixe t envS =>
             Except.ok ds ∧
           Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
             (Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
-              (Ix.RoleEvidence.bundleEvidence ()))
+              (Ix.RoleEvidence.quotientEvidence ()))
             ds.toList envS -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.SourceAcceptsQ
@@ -4323,12 +4323,12 @@ fun ixe =>
     t.check = Except.ok () →
       Ix.Cert.PublishedRolesBound t ixe →
         ∃ b,
-          Ix.RoleEvidence.committedBundle () = Except.ok b ∧
+          Ix.RoleEvidence.quotientBundle () = Except.ok b ∧
             ∃ ds envA,
               Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
                   (Ix.Kernel.Evidences.mapKeys (Ix.LeanIngress.evAddr ixe b)
                     (Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
-                      (Ix.RoleEvidence.bundleEvidence ())))
+                      (Ix.RoleEvidence.quotientEvidence ())))
                   (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) envA ∧
                 Ix.Kernel.EnvRel
                   (fun n =>
@@ -6795,7 +6795,7 @@ fun env ixe sub t =>
       ∀ (pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.source)
         (ds : Array (Ix.Kernel.Reader.CDecl Ix.Kernel.Mode.source)) (b : Ix.RoleEvidence.Bundle),
         Ix.Kernel.Reader.builtinPrelude = Except.ok pre →
-          Ix.RoleEvidence.committedBundle () = Except.ok b →
+          Ix.RoleEvidence.quotientBundle () = Except.ok b →
             Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
                   (Ix.Cert.blocksOf sub) =
                 Except.ok ds →
@@ -7157,7 +7157,7 @@ constructor:
 /-- info: def Ix.Cert.sourceEvidence : Ixon.Env → Ix.Kernel.RoleTable → Ix.Kernel.Evidences Ix.Kernel.Mode.source :=
 fun ixe t =>
   Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
-    (Ix.RoleEvidence.bundleEvidence ()) -/
+    (Ix.RoleEvidence.quotientEvidence ()) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.sourceEvidence
 
@@ -7403,7 +7403,7 @@ fun blocks sched st₀ acc =>
           Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
                 (Ix.Cert.blocksOf sub) =
               Except.ok ds →
-            Ix.RoleEvidence.committedBundle () = Except.ok b →
+            Ix.RoleEvidence.quotientBundle () = Except.ok b →
               ∃ binding tA preA order st' decls,
                 Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
                   Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok tA ∧
@@ -7426,7 +7426,7 @@ fun blocks sched st₀ acc =>
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = Except.ok binding →
       Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.committedBundle () = Except.ok b →
+        Ix.RoleEvidence.quotientBundle () = Except.ok b →
           ∃ cx,
             Ix.Cert.admissionContext binding limits ixe order = some cx ∧
               (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
@@ -7454,7 +7454,7 @@ fun blocks sched st₀ acc =>
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = Except.ok binding →
       Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.committedBundle () = Except.ok b →
+        Ix.RoleEvidence.quotientBundle () = Except.ok b →
           (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
             ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
               c ∈ envQ.consts →
@@ -7485,7 +7485,7 @@ fun blocks sched st₀ acc =>
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = Except.ok binding →
       Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.committedBundle () = Except.ok b →
+        Ix.RoleEvidence.quotientBundle () = Except.ok b →
           (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
             Ix.Cert.SourceFormInfers env ixe sub t →
               ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
@@ -7502,7 +7502,7 @@ fun blocks sched st₀ acc =>
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = Except.ok binding →
       Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.committedBundle () = Except.ok b →
+        Ix.RoleEvidence.quotientBundle () = Except.ok b →
           (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
             Ix.Cert.RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (Ix.Cert.ImageRecursor env ixe sub t) -/
 #guard_msgs (whitespace := lax) in
@@ -7516,7 +7516,7 @@ fun blocks sched st₀ acc =>
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = Except.ok binding →
       Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.committedBundle () = Except.ok b →
+        Ix.RoleEvidence.quotientBundle () = Except.ok b →
           (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
             ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
               c ∈ envQ.consts →
@@ -7537,7 +7537,7 @@ fun blocks sched st₀ acc =>
       Ix.LeanIngress.prepareSourceCollapsedAt ixe t (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub
             (Ix.Cert.blocksOf sub) =
           Except.ok ds →
-        Ix.RoleEvidence.committedBundle () = Except.ok b →
+        Ix.RoleEvidence.quotientBundle () = Except.ok b →
           Ix.Kernel.Admission.defaultBinding = Except.ok binding →
             Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok tA →
               Ix.Kernel.Reader.preludeFor tA = Except.ok preA →
@@ -7615,7 +7615,7 @@ fun blocks sched st₀ acc =>
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = Except.ok binding →
       Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA →
-        Ix.RoleEvidence.committedBundle () = Except.ok b →
+        Ix.RoleEvidence.quotientBundle () = Except.ok b →
           (∀ (k : Ix.Cert.ChangeKind), Ix.Cert.KindAccepted k env ixe sub) →
             (Ix.Cert.RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ fun c =>
                 ¬Ix.Cert.ImageRecursor env ixe sub t c) ∧

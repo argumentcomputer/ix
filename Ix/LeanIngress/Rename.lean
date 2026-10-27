@@ -520,7 +520,7 @@ theorem bundleAddrs_foldl :
       · exact Or.inl h
     · exact Or.inr ⟨q, List.mem_cons_of_mem _ hq, h1, h2⟩
 
-/-- **A bundle name hash is a bundle name's**. -/
+/-- **A bundle address is a bundle name's**. -/
 theorem bundleAddrs_spec {n : Ix.Kernel.Name} {a : Address} (h : (bundleAddrs b)[n]? = some a) :
     ∃ m, b.names[a]? = some m ∧ Ix.Kernel.Name.ofLeanName m = n := by
   unfold bundleAddrs at h
@@ -531,7 +531,7 @@ theorem bundleAddrs_spec {n : Ix.Kernel.Name} {a : Address} (h : (bundleAddrs b)
     subst h2
     exact ⟨m, Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hm, h1⟩
 
-/-- **Two bundle names at one name hash are one name**: the names table maps each
+/-- **Two bundle names at one bundle address are one name**: the names table maps each
 address to one name (no collision resistance assumed). -/
 theorem bundleAddrs_inj {i j : Ix.Kernel.Name} {a : Address} (hi : (bundleAddrs b)[i]? = some a)
     (hj : (bundleAddrs b)[j]? = some a) : i = j := by
@@ -599,7 +599,7 @@ def BundleOnly (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) (n : Ix.Kernel.Mode
   roleOf n = none ∧ (sourceAddrs ixe)[n]? = none ∧ ((bundleAddrs b)[n]?).isSome
 
 /-- **The joined renaming**: a published name to its address, a bundle name
-the artifact does not publish to its bundle name hash. -/
+the artifact does not publish to its bundle address. -/
 def evAddr (ixe : Ixon.Env) (b : Ix.RoleEvidence.Bundle) :
     Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon :=
   fun n => match (sourceAddrs ixe)[n]? with
@@ -1083,11 +1083,11 @@ theorem prepareSourceCollapsedAt_good
     {ds : Array (Ix.Kernel.Declaration .source)}
     (h : prepareSourceCollapsedAt ixe t hints pre env blocks = .ok ds) :
     prepareSourceCollapsed (fiberAliasAt ixe (roleAtMap t)) hints pre env blocks = .ok ds ∧
-      ∃ b, Ix.RoleEvidence.committedBundle () = .ok b ∧
+      ∃ b, Ix.RoleEvidence.quotientBundle () = .ok b ∧
         (∀ d ∈ ds, d.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t)))) ∧
         (∀ d ∈ ds, d.Good (KeyScope.ofId (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n))) ∧
         bundleDisjointB ixe b = true ∧
-        (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ())).Good
+        (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.quotientEvidence ())).Good
           (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) :=
   prepareSourceCollapsedAtUsing_good h
 
@@ -1124,11 +1124,11 @@ theorem acceptsRef_prepareSourceCollapsedAt (μ : Ix.Kernel.CheckMode)
     (h : prepareSourceCollapsedAt ixe t hints pre env blocks = .ok ds)
     {envS : Ix.Kernel.Env .source}
     (hacc : Ix.Kernel.Cached.AcceptsRef μ
-      (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ()))
+      (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.quotientEvidence ()))
       ds.toList envS) :
-    ∃ b, Ix.RoleEvidence.committedBundle () = .ok b ∧ ∃ envA,
+    ∃ b, Ix.RoleEvidence.quotientBundle () = .ok b ∧ ∃ envA,
       Ix.Kernel.Cached.AcceptsRef μ
-        ((evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ())).mapKeys
+        ((evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.quotientEvidence ())).mapKeys
           (evAddr ixe b))
         (ds.toList.map (Ix.Kernel.Declaration.mapKeys (evAddr ixe b))) envA ∧
       Ix.Kernel.EnvRel (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) (evAddr ixe b)
@@ -1172,7 +1172,7 @@ theorem checkSourceCollapsedBundledAt_ref (V : Type w) [SetTheory V]
     ∃ pre ds, Ix.Kernel.Reader.builtinPrelude = .ok pre ∧
       prepareSourceCollapsedAt ixe t ((fiberHintsMap ixe)[·]?) pre env blocks = .ok ds ∧
       Ix.Kernel.Cached.AcceptsRef .verified
-        (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ()))
+        (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.quotientEvidence ()))
         ds.toList envS :=
   checkSourceCollapsedBundledAtUsing_ref V h
 end At

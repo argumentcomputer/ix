@@ -308,7 +308,7 @@ def SourceFormInfers (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environme
     (t : Ix.Kernel.RoleTable) : Prop :=
   ∃ binding, Ix.Kernel.Admission.defaultBinding = .ok binding ∧
     ∀ pre ds b, Ix.Kernel.Reader.builtinPrelude = .ok pre →
-      Ix.RoleEvidence.committedBundle () = .ok b →
+      Ix.RoleEvidence.quotientBundle () = .ok b →
       Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub
         (blocksOf sub) = .ok ds →
       ∀ k n a, k.rewritesTerms = true → KindRoot k env ixe sub n a →

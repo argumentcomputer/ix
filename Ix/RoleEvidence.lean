@@ -442,4 +442,32 @@ def bundleEvidenceReport (_ : Unit) : Ix.Kernel.Evidences .source × List String
 /-- Source mode's evidence from the committed bundle (`bundleEvidenceReport`). -/
 def bundleEvidence (_ : Unit) : Ix.Kernel.Evidences .source := (bundleEvidenceReport ()).1
 
+/-! ## Quotient Source's evidence: the table's records, by name
+
+Quotient Source collapses each alias fiber onto one representative, so it can read the
+default table's own evidence records (`RoleData.evidence`) by name: one name per address
+serves it. `RoleData.quotientNames` names each record (its certificate theorem) and each
+address the records cite as a constant (a role's name where the table binds a role
+there, otherwise a Lean name the compiled Init publishes there); a literal's blob is in
+`RoleData.blobs`. Renamed onto an artifact's keys, its proofs are the ones the Ixon
+reader resolves from the table. Plain Source keeps the bundle above (`bundleEvidence`),
+whose proofs are closed at Source's own names. -/
+
+/-- The committed quotient bundle: `RoleData.evidence`, `RoleData.quotientNames` and
+`RoleData.blobs`. A function of `()`, decoded when asked for. -/
+def quotientBundle (_ : Unit) : Except String Bundle :=
+  Bundle.ofRows Ix.Kernel.Reader.RoleData.evidence Ix.Kernel.Reader.RoleData.quotientNames
+    Ix.Kernel.Reader.RoleData.blobs
+
+/-- **Quotient Source's evidence, independent of the input**: the quotient bundle's
+(`quotientBundle`), with the reason each well-founded operation without evidence has
+none. -/
+def quotientEvidenceReport (_ : Unit) : Ix.Kernel.Evidences .source × List String :=
+  match quotientBundle () with
+  | .ok b => b.evidenceReport
+  | .error e => (defeqRoles.map fun r => (r, defeqEvidence r), [s!"the quotient bundle: {e}"])
+
+/-- Quotient Source's evidence from the quotient bundle (`quotientEvidenceReport`). -/
+def quotientEvidence (_ : Unit) : Ix.Kernel.Evidences .source := (quotientEvidenceReport ()).1
+
 end Ix.RoleEvidence

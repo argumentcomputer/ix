@@ -424,7 +424,7 @@ inductive CollapseError where
   /-- the bundle's evidence names a key that is neither a representative nor a
   bundle-only name -/
   | evidence
-  /-- a bundle-only name's name hash is an address the artifact publishes
+  /-- a bundle-only name's bundle address is one the artifact publishes
   (`bundleDisjointB`) -/
   | bundleAlias
   deriving Repr
@@ -434,7 +434,7 @@ instance : ToString CollapseError where
     | .mismatch n r => s!"alias fiber mismatch: {n} renames to {r}, which an unequal declaration declares"
     | .notRepresentative => "a prepared declaration names a key that is not a representative"
     | .evidence => "the bundle's evidence names a key that is neither a representative nor bundle-only"
-    | .bundleAlias => "a bundle-only name's name hash is an address the artifact publishes"
+    | .bundleAlias => "a bundle-only name's bundle address is one the artifact publishes"
 
 /-- What a collapse keeps: the renamed declarations, one per fiber, and for every
 dropped declaration's names their representatives. -/

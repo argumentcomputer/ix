@@ -78,10 +78,10 @@ def CompileCorrectUnchanged : Prop :=
     Premises env roots sub ixe failures t envQ → (changedSetOf env ixe).Avoids sub →
       Published ixe sub ∧ IxonCommutesCovering.{w} ixe sub t envQ
 
-/-- Quotient Source's evidence: the pinned bundle's, renamed onto the representatives. -/
+/-- Quotient Source's evidence: the quotient bundle's, renamed onto the representatives. -/
 def sourceEvidence (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) : Ix.Kernel.Evidences .source :=
   Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
-    (Ix.RoleEvidence.bundleEvidence ())
+    (Ix.RoleEvidence.quotientEvidence ())
 
 /-- The reader's context of the compiled closure in `order`, under the table `tA` behind
 the prelude `preA` (`Ix.Kernel.Admission.streamContext` at the admission hash). -/
@@ -233,7 +233,7 @@ def ReaderStreams : Prop :=
     Ix.Kernel.Reader.builtinPrelude = .ok pre →
     Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub
       (blocksOf sub) = .ok ds →
-    Ix.RoleEvidence.committedBundle () = .ok b →
+    Ix.RoleEvidence.quotientBundle () = .ok b →
     ∃ (binding : Ix.Kernel.Admission.Binding) (tA : Ix.Kernel.RoleTable)
       (preA : Ix.Kernel.Reader.Prelude .anon) (order : List Address)
       (st' : Ix.Kernel.Reader.State .anon) (decls : Array (Ix.Kernel.Declaration .anon)),
@@ -260,7 +260,7 @@ def ReadingKeys : Prop :=
     Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA →
-    Ix.RoleEvidence.committedBundle () = .ok b →
+    Ix.RoleEvidence.quotientBundle () = .ok b →
     ∃ cx, admissionContext binding limits ixe order = some cx ∧
       (∀ c ∈ envQ.consts, ∀ e, readingAt ixe t cx c = some e →
         e = .const (c.name.map (Ix.LeanIngress.evAddr ixe b)) (c.toConstantVal.levelParams.map .param)) ∧
@@ -281,7 +281,7 @@ def RenamedAgree : Prop :=
     Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA →
-    Ix.RoleEvidence.committedBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
+    Ix.RoleEvidence.quotientBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
     ∀ c ∈ envQ.consts, InputKey c.name → ¬ RewrittenConstant env ixe sub t c →
       ¬ CliqueConstant env ixe sub t c → ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c
 
@@ -310,7 +310,7 @@ def PassValues : Prop :=
     Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA →
-    Ix.RoleEvidence.committedBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
+    Ix.RoleEvidence.quotientBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
     SourceFormInfers env ixe sub t →
     ∀ c ∈ envQ.consts, RewrittenConstant env ixe sub t c → ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c
 
@@ -326,7 +326,7 @@ def ImageRules : Prop :=
     Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA →
-    Ix.RoleEvidence.committedBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
+    Ix.RoleEvidence.quotientBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
     RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (ImageRecursor env ixe sub t)
 
 /-- **(6) Clique rows.** In every strong model of an accepted compiled closure whose
@@ -342,7 +342,7 @@ def CliqueRows : Prop :=
     Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA →
-    Ix.RoleEvidence.committedBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
+    Ix.RoleEvidence.quotientBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
     ∀ c ∈ envQ.consts, CliqueConstant env ixe sub t c → ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c
 
 /-- **(7) Locality: the role table's evidence.** Where quotient Source's run, renamed to
@@ -359,7 +359,7 @@ def EvidenceTransfer : Prop :=
     Ix.Kernel.Reader.builtinPrelude = .ok pre →
     Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub
       (blocksOf sub) = .ok ds →
-    Ix.RoleEvidence.committedBundle () = .ok b →
+    Ix.RoleEvidence.quotientBundle () = .ok b →
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     Ix.Kernel.Admission.admitBinding Address.admissionHash binding = .ok tA →
     Ix.Kernel.Reader.preludeFor tA = .ok preA →
@@ -439,7 +439,7 @@ def RuleCorrespondence : Prop :=
     Premises env roots sub ixe failures t envQ →
     Ix.Kernel.Admission.defaultBinding = .ok binding →
     IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA →
-    Ix.RoleEvidence.committedBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
+    Ix.RoleEvidence.quotientBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
     RecStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ (fun c => ¬ ImageRecursor env ixe sub t c) ∧
       CapStepsAgree M (Ix.LeanIngress.evAddr ixe b) envQ
 

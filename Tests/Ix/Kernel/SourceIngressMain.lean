@@ -15,7 +15,8 @@ import Tests.Ix.Kernel.SourceIngressCompare
   condensed (`Ix.GraphM`, `Ix.CondenseM`) on `n` workers (default 8), and
   checked in Source mode group by group (`Tests.Ix.Kernel.SourceIngressStep`)
   at Source mode's evidence (with `--bundle-evidence`, the committed bundle's,
-  `Ix.RoleEvidence.bundleEvidence`, whatever the input carries). The
+  `Ix.RoleEvidence.bundleEvidence`, and with `--collapse` too the quotient bundle's,
+  `Ix.RoleEvidence.quotientEvidence`, whatever the input carries). The
   certificate module's own constants are checked and reported like the
   others. The report (the input names of a derived shape the front door
   reserves, counts of constants and groups by outcome, constants by outcome
@@ -89,8 +90,10 @@ def main (args : List String) : IO UInt32 := do
     condense {t3 - t2} ms"
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
   let bundled : Option (Ix.Kernel.Evidences .source) ← if a.bundle then do
-      let (ev, whys) := Ix.RoleEvidence.bundleEvidenceReport ()
-      IO.println s!"evidence: the committed bundle's (`Ix.RoleEvidence.bundleEvidence`)"
+      let (ev, whys) := if a.collapse then Ix.RoleEvidence.quotientEvidenceReport ()
+        else Ix.RoleEvidence.bundleEvidenceReport ()
+      IO.println (if a.collapse then "evidence: the committed quotient bundle's (`Ix.RoleEvidence.quotientEvidence`)"
+        else "evidence: the committed bundle's (`Ix.RoleEvidence.bundleEvidence`)")
       for why in whys do IO.println s!"  bundle: {why}"
       pure (some ev)
     else pure none
@@ -134,8 +137,8 @@ def main (args : List String) : IO UInt32 := do
   if a.collapse && a.bundle then
     if let some ixon := artifact then
       let tC ← IO.monoMsNow
-      match Ix.LeanIngress.collapsedChecksUsing (Ix.RoleEvidence.committedBundle ())
-          (Ix.RoleEvidence.bundleEvidence ()) ixon table r.prepared with
+      match Ix.LeanIngress.collapsedChecksUsing (Ix.RoleEvidence.quotientBundle ())
+          (Ix.RoleEvidence.quotientEvidence ()) ixon table r.prepared with
       | .ok () =>
         IO.println s!"collapse checks: passed on {r.prepared.size} prepared declarations \
           (representatives, bundle disjoint, evidence) in {(← IO.monoMsNow) - tC} ms"
