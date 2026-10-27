@@ -234,9 +234,16 @@ The Lean transformation shares data columns and reserves private columns to
 silence inactive members. It checks polynomial silence, gates the remaining
 constraints and lookup arguments, and preserves degree three, logical call
 identities, and all-zero padding. Selector exclusion is valid in arbitrary
-fields. Lean proves selected-row constraint projection from the emitted layout,
-inactive-member silence, selector exclusivity, and message superposition facts;
-the original compiler correctness graph still builds. Rust scatters each
+fields. The compiler now returns a proof-bearing `Grouping.Checked` layout and
+the exporter checks a `Grouping.Plan` covering the entire source system.
+`Checked.localRule_iff` proves equivalence of finite grouped rows and original
+function rows. It derives selector properties and source memory validity from
+the emitted equations and shared lookup words. The raw packet theorems cover
+both projection and extension, including tags, widths, enables, unused slots,
+and zero padding. `Plan.derives_iff` proves whole-program equivalence, and
+`Physical.Prepared.grouped_native_heap_sound` composes grouping with source
+evaluation and heap representation. These proofs use no `sorry` or added
+axioms. Certification runs only during export. Rust scatters each
 function's prepared row directly into the shared layout, including lifted
 lookup arguments. Shard planning and auxiliary placement use the grouped shapes.
 The Rust lowering and cryptographic backend retain their existing trust boundary.

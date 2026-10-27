@@ -34,20 +34,50 @@ paths use bytecode. Native codegen remains deferred to the future macro backend.
 
 ## Correctness and CUDA boundaries
 
-The full Aiur compiler proof graph builds. New grouping proofs establish active
-member projection, inactive-member silence, field-independent selector
-exclusivity, lifted-value equations, and lookup superposition. The constraint
-projection theorem consumes the actual emitted layout constraints. These
-compose with the existing activated source-chip local rule; this is not a new
-formal proof of Rust's multi-stark lowering or of the cryptographic backend.
-The existing semantic memo-acyclicity hypothesis is unchanged.
+Grouping now has a checked equivalence theorem for the layout that is actually
+exported. `Grouping.compile` returns a `Checked` result: finite polynomial and
+structural checks certify the heuristic's output before it can reach JSON.
+The exporter also certifies the complete partition with `Grouping.preparePlan`,
+including functions that remain separate. A failed check rejects the export.
 
-The regression fixture is exported by Lean and checked for freshness. It tests
+`Checked.localRule_iff` proves that a finite grouped row, with exactly the
+exported width, implements precisely one of the original function row rules,
+in both directions. Selector Booleanity and exclusivity, inactive private
+zeros, and lifted argument equations follow from the emitted constraints.
+Source memory validity follows from the actual shared lookup words; it is no
+longer an extra premise supplied to the grouping theorem.
+
+`Checked.packet_sound` and `Checked.packet_complete` additionally cover every
+raw lookup word, including numeric channel/function IDs, memory widths, enables,
+unused slots, and zero-padded tails. `Checked.zero_padding` proves the all-zero
+row satisfies the equations and emits no lookup messages.
+`Plan.derives_iff` lifts row equivalence to whole-program finite derivations.
+`Physical.Prepared.grouped_native_heap_sound` composes this with the existing
+compiler theorem to obtain source evaluation and heap representation.
+
+These proofs introduce no `sorry`, new axioms, or `native_decide` obligations.
+Their axiom audit uses only Lean's standard `propext`, `Classical.choice`, and
+`Quot.sound`. They retain the existing finite-derivation/acyclicity and ROM
+contract. Rust's multi-stark lowering, serialization, and the cryptographic
+backend remain outside this Lean correctness theorem. The checks happen during
+export; they add no execution, trace-population, or proving operations.
+
+The regression fixture is exported by Lean and checked for freshness. Its Lean
+audit rejects changed packet tags and memory addresses, extra enabled sends,
+undersized physical rows, and omitted source functions. The Rust test covers
 shared branch/ROM rows, reference versus direct population, zero padding,
 sharding, a proof round trip, and rejection of forged selectors and inactive
 providers. The targeted Rust packages pass 90 tests. Clippy passes with warnings
 denied. Byte/word checks cover every byte pair, fixed-table versus accelerated
 outputs, invalid domains, dishonest hints, and real U64/Blake3 proof round trips.
+
+Validation of the complete grouping certificate rebuilt the full proof graph,
+passed the fixture freshness/rejection checks and grouped Rust proof test, and
+passed `tools/ixvm/check-formal.sh` (IxVM claims, recursive proving, all thirteen
+aggregation shapes, and malformed-input rejection). Re-exporting IxVM, the
+recursive verifier, and aggregation with all certificate checks enabled produced
+byte-identical artifacts, verified by SHA-256, so the column counts and measured
+runtime circuits below are unchanged.
 
 Both CUDA hosts compile and link with CUDA 13.3.1 in the NVIDIA development
 container. Stage-one trace population remains on the CPU. The optional

@@ -1,7 +1,7 @@
 import Aiur.Trace.Compile
 import Aiur.Optimized.Activation
 import Aiur.Optimized.Physical
-import Aiur.Optimized.Grouping.Compile
+import Aiur.Optimized.Grouping.Plan
 
 namespace Aiur.Trace
 open Optimized Lean
@@ -118,15 +118,17 @@ def exportPreparedJson [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
   let id := fun name => if callableNames.contains name then pure (callableNames.idxOf name)
     else throw s!"unknown grouped callable {name}"
   let mut used : List String := []
-  let mut layouts := []
+  let mut packed : List (Grouping.Packed F id) := []
   for (name, names) in groups do
     let names := (names.map physical.representative).dedup
     let chips := physical.system.chips.filter fun c =>
       names.contains c.name && !used.contains c.name && !artifact.entries.contains c.name
     if chips.length < 2 then continue
-    let group ← Grouping.compile name id (chips.map fun c => (Activation.compile c, c.numVars))
+    let group ← Grouping.compile name id chips
     used := used ++ chips.map (·.name)
-    layouts := layouts ++ [groupJson encode group]
+    packed := packed ++ [⟨chips, group⟩]
+  let plan ← Grouping.preparePlan physical.system id packed
+  let layouts := plan.groups.map fun p => groupJson encode p.checked.layout
   return obj [("version", js (2 : Nat)), ("modulus", js modulus),
     ("functions", js functions), ("chips", js (← physical.system.chips.mapM (chipJson encode))),
     ("groups", js layouts)]
