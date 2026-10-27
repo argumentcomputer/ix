@@ -89,8 +89,14 @@ fn const_safety(ci: &LeanConstantInfo) -> &'static str {
   }
 }
 
-/// Whether the members present in `env` share one safety.
+/// Whether the members present in `env` share one safety. A block of at most
+/// one member is uniform without a lookup, as in Lean's `uniformSafety`: on
+/// a lazy environment each lookup decodes the whole constant, and almost
+/// every block is a singleton.
 fn uniform_safety(members: &[Name], env: &LeanEnv) -> bool {
+  if members.len() <= 1 {
+    return true;
+  }
   let mut first: Option<&'static str> = None;
   for m in members {
     if let Some(c) = env.get(m) {
