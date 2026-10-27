@@ -12,6 +12,13 @@
 //! [`Pcs::max_quotient_degree`] bounds this evaluation budget. Requested
 //! evaluation domains must be at least as large as the committed trace;
 //! smaller-domain coefficient folding is unsupported.
+//!
+//! With the `cuda` feature, resident columns of sufficient size run their
+//! transforms, commitments, evaluations and opening divisions on the
+//! selected devices, retaining device copies within the residency budget.
+//! Only shapes below the device thresholds and disk-backed columns use the
+//! host implementation; a device that cannot admit an operation is an error.
+//! The proof bytes do not depend on the path taken.
 
 use std::sync::Arc;
 
@@ -35,6 +42,8 @@ use multi_stark::traits::Transcript;
 use multi_stark::traits::VerifyRounds;
 
 use super::coefficients::Column;
+#[cfg(feature = "cuda")]
+use super::cuda;
 use super::domain::Radix2Coset;
 use super::field::Scalar;
 use super::srs::Srs;
@@ -128,6 +137,8 @@ pub struct CommittedMatrix {
   /// the constant term are zero. Disk-backed columns are never flagged; the
   /// flag is an optimization.
   constants: Vec<bool>,
+  #[cfg(feature = "cuda")]
+  resident: std::sync::OnceLock<Vec<Option<Arc<cuda::ResidentPolynomial>>>>,
 }
 
 impl CommittedMatrix {
@@ -151,11 +162,61 @@ impl CommittedMatrix {
             .is_some_and(|values| values.iter().skip(1).all(Zero::is_zero))
       })
       .collect();
-    Self { domain, columns, constants }
+    Self {
+      domain,
+      columns,
+      constants,
+      #[cfg(feature = "cuda")]
+      resident: Default::default(),
+    }
   }
 
   fn constant_columns(&self) -> &[bool] {
     &self.constants
+  }
+
+  /// Every column as a host slice with its current device residency and
+  /// constant flag, or `None` when a column is disk-backed. A compact
+  /// constant column is the one-element slice of its constant term; device
+  /// consumers read only that term or zero-pad it to the trace length.
+  /// Residency is reported, not created; see [`Self::resident_columns`].
+  #[cfg(feature = "cuda")]
+  pub(super) fn cuda_columns(
+    &self,
+  ) -> Option<Vec<(&[Fr], Option<&cuda::ResidentPolynomial>, bool)>> {
+    let resident = self.resident.get();
+    self
+      .columns
+      .iter()
+      .enumerate()
+      .zip(&self.constants)
+      .map(|((index, column), &constant)| {
+        Some((
+          column.host_coefficients()?,
+          resident.and_then(|columns| columns[index].as_deref()),
+          constant,
+        ))
+      })
+      .collect()
+  }
+
+  /// Device copies of the non-constant resident columns, uploaded on first
+  /// use within the residency budget. Disk-backed columns stay host-only.
+  #[cfg(feature = "cuda")]
+  pub(super) fn resident_columns(
+    &self,
+  ) -> &[Option<Arc<cuda::ResidentPolynomial>>] {
+    self.resident.get_or_init(|| {
+      // A OnceLock initializer must not run Rayon work that can reenter it.
+      self
+        .columns
+        .iter()
+        .zip(&self.constants)
+        .map(|(column, &constant)| {
+          if constant { None } else { column.resident().and_then(cuda::retain) }
+        })
+        .collect()
+    })
   }
 }
 
@@ -166,6 +227,20 @@ pub struct KzgProverData {
 }
 
 impl KzgProverData {
+  #[cfg(all(test, feature = "cuda"))]
+  pub(super) fn coefficient_fixture(
+    domain: Radix2Coset,
+    columns: Vec<Vec<Fr>>,
+  ) -> Self {
+    Self {
+      commitment: KzgCommitment(vec![vec![]]),
+      matrices: vec![CommittedMatrix::new(
+        domain,
+        columns.into_iter().map(Column::from).collect(),
+      )],
+    }
+  }
+
   /// Save a local prover checkpoint. This is not a verifier-key format.
   pub fn write_checkpoint(
     &self,
@@ -335,6 +410,8 @@ pub enum KzgError {
 #[derive(Clone)]
 pub struct KzgPcs {
   srs: Option<Arc<Srs>>,
+  #[cfg(feature = "cuda")]
+  srs_owner: Option<Arc<cuda::srs_cache::Owner>>,
   verifier: super::VerifierParams,
   max_quotient_degree: usize,
 }
@@ -371,6 +448,18 @@ impl KzgPcs {
       domain.size(),
       self.max_quotient_degree
     );
+    #[cfg(feature = "cuda")]
+    if domain.size() >= 1 << 10
+      && let Some(views) = matrix.cuda_columns()
+    {
+      return Self::evaluate_columns_on_device(
+        matrix,
+        &views,
+        domain,
+        selected,
+        1 << 30,
+      );
+    }
     let ark = Self::ark_domain(domain);
     let width = selected.len();
     let height = domain.size();
@@ -414,6 +503,65 @@ impl KzgPcs {
     RowMajorMatrix::new(values, width)
   }
 
+  /// Coset-evaluate the selected columns through device FFT queues. The
+  /// destination holds the full matrix; simultaneous FFT outputs are bounded
+  /// by `scratch_bytes`, or one column when a column exceeds that budget.
+  #[cfg(feature = "cuda")]
+  fn evaluate_columns_on_device(
+    matrix: &CommittedMatrix,
+    views: &[(&[Fr], Option<&cuda::ResidentPolynomial>, bool)],
+    domain: Radix2Coset,
+    selected: &[usize],
+    scratch_bytes: usize,
+  ) -> RowMajorMatrix<Scalar> {
+    let _profile = cuda::ProfileRange::new(c"kzg/evaluation-reconstruction");
+    let started = std::time::Instant::now();
+    let constants = matrix.constant_columns();
+    let width = selected.len();
+    let height = domain.size();
+    let mut values = super::buffer::generate(width * height, |index| {
+      let column = selected[index % width];
+      if constants[column] {
+        Scalar(views[column].0[0])
+      } else {
+        Scalar(Fr::ZERO)
+      }
+    });
+    let active: Vec<_> =
+      (0..width).filter(|&position| !constants[selected[position]]).collect();
+    let batch_columns = (scratch_bytes / (height * size_of::<Fr>())).max(1);
+    let residents = matrix.resident_columns();
+    for batch in active.chunks(batch_columns) {
+      let inputs: Vec<_> = batch
+        .iter()
+        .map(|&position| {
+          let column = selected[position];
+          (views[column].0, residents[column].as_deref())
+        })
+        .collect();
+      let transformed =
+        cuda::fft_columns(&inputs, domain.log_size, false, domain.shift.0);
+      values.par_chunks_mut(width * (1 << 12)).enumerate().for_each(
+        |(tile, rows)| {
+          for (offset, row) in rows.chunks_mut(width).enumerate() {
+            let index = tile * (1 << 12) + offset;
+            for (&position, evaluations) in batch.iter().zip(&transformed) {
+              row[position] = Scalar(evaluations[index]);
+            }
+          }
+        },
+      );
+    }
+    tracing::info!(
+      width,
+      height,
+      batch_columns,
+      seconds = started.elapsed().as_secs_f64(),
+      "KZG evaluation reconstruction"
+    );
+    RowMajorMatrix::new(values, width)
+  }
+
   pub fn new(srs: Arc<Srs>, max_quotient_degree: usize) -> Self {
     let max_trace_len = srs.max_len();
     Self::with_max_trace_len(srs, max_trace_len, max_quotient_degree)
@@ -426,18 +574,74 @@ impl KzgPcs {
   ) -> Self {
     let verifier =
       super::VerifierParams::with_max_trace_len(&srs, max_trace_len);
-    Self { srs: Some(srs), verifier, max_quotient_degree }
+    Self {
+      #[cfg(feature = "cuda")]
+      srs_owner: Some(cuda::srs_cache::Owner::new(Arc::clone(&srs))),
+      srs: Some(srs),
+      verifier,
+      max_quotient_degree,
+    }
   }
 
   pub fn verifier_only(
     verifier: super::VerifierParams,
     max_quotient_degree: usize,
   ) -> Self {
-    Self { srs: None, verifier, max_quotient_degree }
+    Self {
+      srs: None,
+      #[cfg(feature = "cuda")]
+      srs_owner: None,
+      verifier,
+      max_quotient_degree,
+    }
   }
 
   fn prover_srs(&self) -> &Srs {
     self.srs.as_deref().expect("proving requires the full SRS")
+  }
+
+  #[cfg(feature = "cuda")]
+  fn srs_owner(&self) -> &Arc<cuda::srs_cache::Owner> {
+    self.srs_owner.as_ref().expect("proving requires the full SRS")
+  }
+
+  /// Commit device-generated coefficient columns of one trace-sized matrix.
+  #[cfg(feature = "cuda")]
+  pub(super) fn commit_trace_coefficients(
+    &self,
+    trace_log_size: usize,
+    columns: Vec<Vec<Fr>>,
+  ) -> KzgProverData {
+    let n = 1usize
+      .checked_shl(u32::try_from(trace_log_size).expect("trace log size"))
+      .unwrap();
+    assert!(
+      n <= self.verifier.max_trace_len() && n <= self.prover_srs().max_len()
+    );
+    assert!(!columns.is_empty());
+    assert!(columns.iter().all(|column| column.len() == n));
+    let matrix = CommittedMatrix::new(
+      Radix2Coset {
+        log_size: trace_log_size,
+        shift: multi_stark::traits::Algebra::<Scalar>::ONE,
+      },
+      columns.into_iter().map(Column::from).collect(),
+    );
+    let commitments = self.commit_matrix_columns(&matrix);
+    KzgProverData {
+      commitment: KzgCommitment(vec![commitments]),
+      matrices: vec![matrix],
+    }
+  }
+
+  #[cfg(feature = "cuda")]
+  pub(super) fn commit_quotient_coefficients(
+    &self,
+    trace_log_size: usize,
+    columns: Vec<Vec<Fr>>,
+  ) -> KzgProverData {
+    assert!(!columns.is_empty() && columns.len() <= self.max_quotient_degree);
+    self.commit_trace_coefficients(trace_log_size, columns)
   }
 
   /// The arkworks FFT domain realizing one of ours.
@@ -452,6 +656,51 @@ impl KzgPcs {
   }
 
   fn commit_matrix_columns(&self, matrix: &CommittedMatrix) -> Vec<G1Affine> {
+    #[cfg(feature = "cuda")]
+    if matrix.domain.size() >= 1 << 12
+      && let Some(views) = matrix.cuda_columns()
+    {
+      let count = matrix.domain.size();
+      assert!(
+        count <= self.verifier.max_trace_len()
+          && count <= self.prover_srs().max_len(),
+        "polynomial length {count} exceeds the trace cap or loaded SRS"
+      );
+      let constants = matrix.constant_columns();
+      let mut commits = vec![G1Projective::zero(); views.len()];
+      let active: Vec<_> =
+        (0..views.len()).filter(|&i| !constants[i]).collect();
+      for (i, (column, _, _)) in views.iter().enumerate() {
+        if constants[i] {
+          commits[i] = self.prover_srs().g1[0] * column[0];
+        }
+      }
+      if !active.is_empty() {
+        // Residency is retained from 2^16 rows, where repeated device use
+        // amortizes the upload; smaller columns are streamed from the host.
+        let residents = (count >= 1 << 16).then(|| matrix.resident_columns());
+        let inputs: Vec<_> = active
+          .iter()
+          .map(|&i| (views[i].0, residents.and_then(|r| r[i].as_deref())))
+          .collect();
+        let started = std::time::Instant::now();
+        let points = if cuda::srs_cache::enabled() {
+          cuda::srs_cache::msm_columns(self.srs_owner(), 0, &inputs)
+        } else {
+          cuda::msm_columns_resident(&self.prover_srs().g1[..count], &inputs)
+        };
+        for (i, point) in active.into_iter().zip(points) {
+          commits[i] = point;
+        }
+        tracing::debug!(
+          count,
+          columns = inputs.len(),
+          seconds = started.elapsed().as_secs_f64(),
+          "KZG column MSMs"
+        );
+      }
+      return G1Projective::normalize_batch(&commits);
+    }
     let commits: Vec<G1Projective> =
       matrix.columns.iter().map(|c| self.commit_column(c)).collect();
     G1Projective::normalize_batch(&commits)
@@ -490,6 +739,17 @@ impl KzgPcs {
     if coeffs.iter().skip(1).all(Zero::is_zero) {
       return self.prover_srs().g1[0]
         * coeffs.first().copied().unwrap_or(Fr::ZERO);
+    }
+    #[cfg(feature = "cuda")]
+    if coeffs.len() >= 1 << 12 {
+      if cuda::srs_cache::enabled() {
+        return cuda::srs_cache::msm_columns(
+          self.srs_owner(),
+          0,
+          &[(coeffs, None)],
+        )[0];
+      }
+      return cuda::msm(&self.prover_srs().g1[..coeffs.len()], coeffs);
     }
     // Bound digit/bucket scratch and expose point-range parallelism in
     // addition to the MSM implementation's small number of scalar windows.
@@ -548,6 +808,22 @@ impl KzgPcs {
         inputs.push(col);
       }
     }
+    #[cfg(feature = "cuda")]
+    let resident = std::sync::OnceLock::new();
+    #[cfg(feature = "cuda")]
+    let interpolated = if domain.size() >= 1 << 10 {
+      let (columns, residents) =
+        cuda::interpolate_columns(inputs, domain.log_size, domain.shift.0);
+      let mut all_residents = vec![None; width];
+      for (&i, resident) in active.iter().zip(residents) {
+        all_residents[i] = resident;
+      }
+      let _ = resident.set(all_residents);
+      columns
+    } else {
+      Self::interpolate_on_host(domain, inputs)
+    };
+    #[cfg(not(feature = "cuda"))]
     let interpolated = Self::interpolate_on_host(domain, inputs);
     for (i, column) in active.into_iter().zip(interpolated) {
       output[i] = Some(Column::from(column));
@@ -559,6 +835,8 @@ impl KzgPcs {
         .map(|column| column.expect("every column is interpolated"))
         .collect(),
       constants,
+      #[cfg(feature = "cuda")]
+      resident,
     }
   }
 
@@ -700,6 +978,10 @@ impl Pcs for KzgPcs {
         if !points.is_empty() {
           let zs: Vec<_> = points.iter().map(|z| z.0).collect();
           let constants = matrix.constant_columns();
+          #[cfg(feature = "cuda")]
+          let views = matrix.cuda_columns();
+          #[cfg(feature = "cuda")]
+          let residents = views.as_ref().map(|_| matrix.resident_columns());
           for (column_index, column) in matrix.columns.iter().enumerate() {
             if constants[column_index] {
               let value = match column {
@@ -710,6 +992,20 @@ impl Pcs for KzgPcs {
                   .unwrap_or(Fr::ZERO),
               };
               for row in &mut matrix_values {
+                row[column_index] = Scalar(value);
+              }
+              continue;
+            }
+            #[cfg(feature = "cuda")]
+            if let Some(views) = &views
+              && views[column_index].0.len() >= 1 << 12
+            {
+              let values = cuda::evaluate_resident(
+                views[column_index].0,
+                residents.and_then(|r| r[column_index].as_deref()),
+                &zs,
+              );
+              for (row, value) in matrix_values.iter_mut().zip(values) {
                 row[column_index] = Scalar(value);
               }
               continue;
@@ -940,6 +1236,21 @@ impl KzgPcs {
   /// The witness commitment `[(p(X) − p(z)) / (X − z)]·G` of one folded
   /// opening polynomial.
   fn witness(&self, combined: Vec<Fr>, z: Fr) -> G1Projective {
+    #[cfg(feature = "cuda")]
+    if combined.len() >= 1 << 16 {
+      let witness = if cuda::srs_cache::enabled() {
+        cuda::srs_cache::single_device_opening(self.srs_owner(), &combined, z)
+      } else {
+        cuda::single_device_opening(
+          &self.prover_srs().g1[..combined.len() - 1],
+          &combined,
+          z,
+        )
+      };
+      if let Some(witness) = witness {
+        return witness;
+      }
+    }
     self.msm(&divide_by_linear(combined, z))
   }
 }
@@ -967,6 +1278,10 @@ fn eval_poly(coeffs: &[Fr], z: Fr) -> Fr {
 fn divide_by_linear(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
   if p.len() <= 1 {
     return Vec::new();
+  }
+  #[cfg(feature = "cuda")]
+  if p.len() >= 1 << 16 {
+    return cuda::divide(&p, z);
   }
   let n = p.len() - 1;
   if n <= POLYNOMIAL_BLOCK {

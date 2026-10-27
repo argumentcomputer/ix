@@ -1,7 +1,7 @@
 //! The stage worker `ix compress` spawns: `ix-compression-worker <stage>
 //! <args...>` runs one FRI, first KZG or recursive KZG stage. Stages run in
-//! their own executable so the Lean executable links no KZG proving code,
-//! and so each heavy phase exits before the next starts.
+//! their own executable so the Lean executable links no KZG proving code or
+//! its CUDA runtime, and so each heavy phase exits before the next starts.
 use tracing_subscriber::{
   Layer, filter::FilterFn, layer::SubscriberExt, util::SubscriberInitExt,
 };

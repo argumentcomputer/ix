@@ -10,6 +10,8 @@ use p3_maybe_rayon::prelude::*;
 use multi_stark::config::ProofConfig;
 use multi_stark::traits::Pcs;
 
+#[cfg(feature = "cuda")]
+use super::cuda;
 use super::field::Scalar;
 use super::pcs::{KzgCommitment, KzgPcs, KzgProverData};
 use super::srs::Srs;
@@ -307,6 +309,33 @@ impl ProofConfig for KzgConfig {
     if !self.stream_lookups {
       return None;
     }
+    #[cfg(feature = "cuda")]
+    let results: Vec<(KzgProverData, Scalar)> = {
+      use rayon::prelude::*;
+      let mut parts: Vec<_> = inputs
+        .par_iter()
+        .map(|input| {
+          cuda::lookup::coefficients(input, beta, gamma).map(
+            |(columns, local)| {
+              let domain = input.stage_1.0.matrices[input.stage_1.1].domain;
+              (
+                self.pcs.commit_trace_coefficients(domain.log_size, columns),
+                local,
+              )
+            },
+          )
+        })
+        .collect();
+      // Partitions the devices did not admit use the host path one at a
+      // time, keeping one trace-sized working set.
+      for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
+        if part.is_none() {
+          *part = Some(self.host_lookup_part(i, input, beta, gamma));
+        }
+      }
+      parts.into_iter().map(Option::unwrap).collect()
+    };
+    #[cfg(not(feature = "cuda"))]
     let results: Vec<(KzgProverData, Scalar)> = inputs
       .iter()
       .enumerate()
@@ -333,6 +362,28 @@ impl ProofConfig for KzgConfig {
     if !self.stream_quotient {
       return None;
     }
+    #[cfg(feature = "cuda")]
+    {
+      use rayon::prelude::*;
+      let mut parts: Vec<_> = inputs
+        .par_iter()
+        .map(|input| {
+          cuda::quotient::coefficients(input, alpha).map(|columns| {
+            self.pcs.commit_quotient_coefficients(
+              input.trace_domain.log_size,
+              columns,
+            )
+          })
+        })
+        .collect();
+      for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
+        if part.is_none() {
+          *part = Some(self.host_quotient_part(i, input, alpha));
+        }
+      }
+      Some(KzgProverData::concatenate(parts.into_iter().map(Option::unwrap)))
+    }
+    #[cfg(not(feature = "cuda"))]
     {
       Some(KzgProverData::concatenate(
         inputs

@@ -18,7 +18,7 @@ use multi_stark::{
 use p3_matrix::Matrix;
 use std::{
   fs::{self, File},
-  io::{BufWriter, Write},
+  io::{BufReader, BufWriter, Write},
   path::Path,
   time::Instant,
 };
@@ -285,8 +285,10 @@ fn fixed_partition(
     file.flush()?;
     drop(file);
     storage::persist(&temp, &fixed)?;
-    drop(data);
-    data = read_checkpoint(&fixed)?;
+    if !cfg!(feature = "cuda") {
+      drop(data);
+      data = read_checkpoint(&fixed)?;
+    }
     storage::save(
       &meta,
       &(&circuit, local.preprocessed_commit.ok_or("missing fixed commitment")?),
@@ -295,9 +297,16 @@ fn fixed_partition(
   Ok((circuit, data))
 }
 
-/// CPU proving streams the fixed coefficients from disk.
+/// CUDA needs host coefficients; CPU proving can stream them from disk.
 fn read_checkpoint(path: &Path) -> Result<KzgProverData> {
-  Ok(KzgProverData::read_checkpoint_file(path)?)
+  Ok(if cfg!(feature = "cuda") {
+    KzgProverData::read_checkpoint(BufReader::with_capacity(
+      1 << 20,
+      File::open(path)?,
+    ))?
+  } else {
+    KzgProverData::read_checkpoint_file(path)?
+  })
 }
 
 // System::new asserts these conditions. Check caller-selected parameters

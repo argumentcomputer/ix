@@ -5,6 +5,8 @@ mod buffer;
 mod coefficients;
 pub mod compact;
 pub mod config;
+#[cfg(feature = "cuda")]
+pub mod cuda;
 pub mod domain;
 pub mod encoding;
 mod fft_batch;

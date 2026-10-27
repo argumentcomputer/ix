@@ -1,6 +1,12 @@
 mod outer;
 mod saved;
 
+/// Device bytes the recursive prover keeps resident per device unless
+/// `IX_KZG_CUDA_RESIDENT_GIB` overrides it. Its traces are the largest
+/// in the pipeline, so a wider reservation starves the constraint passes.
+#[cfg(feature = "cuda")]
+pub(super) const DEFAULT_CUDA_RESIDENT_BYTES: usize = 8 << 30;
+
 pub(super) fn run(
   args: &[String],
   config: &super::WorkerConfig,

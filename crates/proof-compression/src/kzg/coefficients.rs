@@ -56,6 +56,17 @@ impl Column {
     }
   }
 
+  /// Host coefficients without materializing a constant column: a constant
+  /// is the one-element slice of its constant term. Disk-backed columns
+  /// return `None`.
+  #[cfg(feature = "cuda")]
+  pub(super) fn host_coefficients(&self) -> Option<&[Fr]> {
+    match self {
+      Self::Constant { value, .. } => Some(std::slice::from_ref(value)),
+      _ => self.resident(),
+    }
+  }
+
   pub(super) fn len(&self) -> usize {
     match self {
       Self::Resident { range, .. } => range.len(),

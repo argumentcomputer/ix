@@ -99,6 +99,72 @@ impl WorkerConfig {
   }
 }
 
+/// Install the KZG CUDA backend settings from the environment before the
+/// first proving operation. Settings already installed in this process are
+/// kept. The recursive stage caps device residency unless the environment
+/// sets it, so its constraint passes can be admitted beside the resident
+/// columns.
+///
+/// The pipeline proves on one device unless the environment selects more.
+#[cfg(feature = "cuda")]
+fn configure_backend(stage: &str) -> Result<()> {
+  use crate::kzg::cuda::{PassMode, Settings};
+  let var = |name: &str| std::env::var(name).ok();
+  let devices = match var("IX_KZG_CUDA_DEVICES") {
+    Some(list) => list
+      .split(',')
+      .map(|id| id.trim().parse())
+      .collect::<std::result::Result<Vec<i32>, _>>()
+      .map_err(|_error| "IX_KZG_CUDA_DEVICES must list CUDA ordinals")?,
+    None => vec![0],
+  };
+  let mut settings = Settings { devices: Some(devices), ..Settings::default() };
+  if let Some(value) = var("IX_KZG_MSM_CHUNK_POINTS") {
+    settings.msm_chunk_points = value
+      .parse()
+      .ok()
+      .filter(|points| (1..=1 << 28).contains(points))
+      .ok_or("IX_KZG_MSM_CHUNK_POINTS must be in 1..=2^28")?;
+  }
+  if let Some(value) = var("IX_KZG_CUDA_RESIDENT_GIB") {
+    settings.resident_limit_bytes = Some(
+      value
+        .parse::<usize>()
+        .ok()
+        .and_then(|gib| gib.checked_mul(1 << 30))
+        .ok_or("IX_KZG_CUDA_RESIDENT_GIB must be a whole number of GiB")?,
+    );
+  } else if stage == "wrap" {
+    settings.resident_limit_bytes = Some(wrap::DEFAULT_CUDA_RESIDENT_BYTES);
+  }
+  let switch = |name: &str, on: &str, off: &str| -> Result<Option<bool>> {
+    match var(name).as_deref() {
+      None => Ok(None),
+      Some(value) if value == on => Ok(Some(true)),
+      Some(value) if value == off => Ok(Some(false)),
+      Some(other) => {
+        Err(format!("{name} must be {on} or {off}, not {other}").into())
+      },
+    }
+  };
+  if let Some(value) = switch("IX_KZG_CUDA_SRS_CACHE", "1", "0")? {
+    settings.srs_cache = value;
+  }
+  settings.passes = match var("IX_KZG_CUDA_PASSES").as_deref() {
+    None | Some("1") => PassMode::Fallback,
+    Some("0") => PassMode::Off,
+    Some("force") => PassMode::Force,
+    Some(other) => {
+      return Err(
+        format!("IX_KZG_CUDA_PASSES must be 0, 1 or force, not {other}").into(),
+      );
+    },
+  };
+  crate::kzg::cuda::configure(settings);
+  Ok(())
+}
+
+#[cfg(not(feature = "cuda"))]
 #[allow(clippy::unnecessary_wraps)]
 fn configure_backend(_stage: &str) -> Result<()> {
   Ok(())
@@ -109,7 +175,8 @@ pub const WORKER_EXECUTABLE: &str = "ix-compression-worker";
 
 /// The stage worker: `IX_COMPRESSION_WORKER` when set, otherwise the
 /// executable of that name beside the running one. Stages run there rather
-/// than in this process so the Lean executable links no KZG proving code.
+/// than in this process so the Lean executable links no KZG proving code or
+/// its CUDA runtime.
 fn worker_executable() -> Result<PathBuf> {
   if let Some(path) = std::env::var_os("IX_COMPRESSION_WORKER") {
     return Ok(PathBuf::from(path));

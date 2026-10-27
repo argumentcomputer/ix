@@ -438,7 +438,6 @@
               NVCC = "${cudaToolkit}/bin/nvcc";
               CUDA_HOME = "${cudaToolkit}";
               CUDA_PATH = "${cudaToolkit}";
-              MULTI_STARK_CUDA_ARCHS = "120";
               packages =
                 (with pkgs; [
                   pkg-config

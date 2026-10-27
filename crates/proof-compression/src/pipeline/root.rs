@@ -16,8 +16,9 @@ fn print_capabilities() {
   println!(
     concat!(
       "{{\"format\":\"ix-compression-capabilities/v1\",\"binary\":\"ix-compression-worker\",",
-      "\"parallel\":{}}}"
+      "\"cuda\":{},\"parallel\":{}}}"
     ),
+    cfg!(feature = "cuda"),
     cfg!(feature = "parallel"),
   );
 }

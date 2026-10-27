@@ -135,7 +135,72 @@ This profile makes a custom Ethereum verifier's transcript use native Keccak;
 it does not change the proof into a standard PLONK format or implement a
 Solidity verifier.
 
-## Profiling
+## GPU proving
+
+The `cuda` feature compiles the KZG kernels with nvcc and runs
+interpolation, commitments, coset evaluation, lookup and quotient
+construction and opening divisions on NVIDIA GPUs. It needs the CUDA
+toolkit at build time and a visible GPU at runtime; a CPU-only build
+neither compiles sppark nor links CUDA.
+
+```sh
+IX_CUDA=1 MULTI_STARK_CUDA_ARCHS=120 lake build ix
+cargo test --release -p ix-proof-compression --features cuda
+```
+
+`IX_CUDA=1` enables both multi-stark's Goldilocks backend for the Aiur
+prover and the KZG backend here; there is no separate switch. KZG-specific
+kernels are compiled into `ix-compression-worker`, the stage executable
+built beside `ix`. Both executables use multi-stark's shared CUDA backend.
+
+`IX_NO_PAR=1` builds without the `parallel` feature, and
+`IX_CUDA_TRACE_CODEGEN=1` adds the generated CUDA trace kernels described in
+[the GPU proving guide](../../docs/aiur-gpu-proving.md), implying `cuda`.
+
+See [the GPU proving guide](../../docs/aiur-gpu-proving.md) for shared CUDA
+backend packaging and host-toolchain requirements. When deploying the worker,
+copy `.lake/build/lib/libmulti_stark_cuda.so` into `../lib` relative to its
+executable, as for the CUDA-enabled Lean binaries.
+
+With the feature compiled, every proving operation above the size
+thresholds in the prover runs on the devices and a rejected memory
+admission is an error; tune the residency limit or chunk size below rather
+than expecting a host fallback. A CUDA build keeps every committed column
+in memory; a CPU build serves the fixed columns from their cache files and
+produces identical proof bytes. The worker installs its settings from the
+environment before the first proving operation:
+
+| Variable | Values | Default |
+| --- | --- | --- |
+| `IX_KZG_CUDA_DEVICES` | CUDA ordinals, comma separated, in preference order | `0`; the library itself defaults to every supported device |
+| `IX_KZG_MSM_CHUNK_POINTS` | `1..=2^28` | `2^24` |
+| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | first stage: up to half the device memory; recursive stage: `8` |
+| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `0` |
+| `IX_KZG_CUDA_PASSES` | `0`, `1`, `force` | `1`: constraint passes when the dense working set does not fit |
+| `IX_KZG_CUDA_PROFILE` | set to record NVTX ranges and transfer timings | unset |
+
+With several devices selected, each runs one native operation at a time
+and the work spreads by job: partitions prove concurrently, FFT queues and
+MSM chunks split across the devices, and resident coefficients are retained
+on whichever device has the most room. A lookup, quotient or constraint
+pass runs whole on one device that admits its working set, preferring the
+device holding most of its resident columns and uploading the others from
+the host; the first free admitted device is taken rather than waiting for
+the preferred one. Devices never exchange data directly, so there is no
+peer access to configure. The pipeline selects device `0` by default;
+set `IX_KZG_CUDA_DEVICES` to use additional devices.
+
+`IX_KZG_CUDA_ARCHS` selects the SM architectures at build time and falls
+back to `MULTI_STARK_CUDA_ARCHS`, so one variable configures both CUDA
+backends of a Lake build. Without either variable, the build detects the
+installed GPUs; set explicit targets for headless CI or cross builds.
+Device discovery admits only GPUs compatible with a compiled kernel image;
+an architecture excluded by the toolkit or an explicit selection is rejected
+before proving. The feature-compiled test suite
+needs a GPU host; device unit tests are marked ignored and run with
+`--ignored`. CPU/GPU proof-byte parity is checked by comparing the two builds' outputs.
+
+### Profiling
 
 The global `IX_TEXRAY=1` switch enables TeXRay for proving, aggregation,
 compression, and the Typecheck benchmark. On `ix compress` or a direct
@@ -148,9 +213,13 @@ lookup, quotient, and opening phases are included; `stark/fri_open` also
 names KZG openings in the generic prover. Prefetched trace generation can
 overlap commitment, so child durations should not be summed as wall time.
 
+`IX_KZG_CUDA_PROFILE=1` independently enables fine-grained NVTX ranges and
+per-device transfer/kernel timings. Use both switches to relate whole-stage
+costs to CUDA execution; GPU operation detail stays out of the TeXRay tree.
+
 ## Disk placement
 
-Use local NVMe where possible. Other filesystems are supported, but
+The recorded GPU runs used local NVMe. Other filesystems are supported, but
 parameter loading, checkpoint writes, integrity scans, and cache publication
 are part of proving wall time. Put stage output and fixed preprocessing on
 the **same filesystem** so cache publication and restoration can hard-link
@@ -165,8 +234,11 @@ duplicate storage even if both filesystems are on NVMe.
 | Stage proofs, claims, verifier metadata, and reports | `--out` | Retained between worker processes and after the run. |
 | Stored `Ixon.Proof` containing the final proof and claim | `~/.ix/store` | Written by `ix compress`; `--out` does not relocate the store. |
 
-Witness columns stay in memory. Workers index fixed checkpoints and stream
-their columns during proving. OS page-cache hits can reduce physical reads, so a warm
+CUDA proving retains committed coefficients in host RAM and selected columns
+in VRAM. Witness columns stay in memory. Fixed checkpoints are still written
+on a cold run; a warm CUDA worker loads them into RAM after the cache integrity
+scan. CPU workers instead index fixed checkpoints and stream their columns
+during proving. OS page-cache hits can reduce physical reads, so a warm
 preprocessing cache does not imply zero storage work.
 
 ### Capacity and retention
@@ -202,8 +274,9 @@ is needed only for parameter import; normal proving uses the prefix cache.
 ## Stage entries and caches
 
 `ix compress` invokes `ix-compression-worker <stage> <args>` for each stage.
-Each invocation runs one stage and exits, releasing its host memory.
-Reuse between invocations comes from the disk caches below.
+Each invocation runs one stage and exits, releasing its host memory and
+CUDA state. The separate executable keeps the KZG CUDA runtime outside
+Lean's process. Reuse between invocations comes from the disk caches below.
 The worker must be installed beside `ix`, or named by `IX_COMPRESSION_WORKER`.
 Maintainers can invoke a stage directly when diagnosing a saved input:
 
@@ -286,6 +359,30 @@ preprocessing-cache state; if uncontrolled, say so. Rebuilding the worker
 between the pair invalidates preprocessing reuse. For full compression from
 an aggregate root, time `ix compress` with a fresh `--out` directory and the
 same explicit cache placement instead.
+
+### Recorded Init KZG run
+
+One cold/warm pair used a saved compressed Init FRI proof, Filecoin parameters,
+one RTX PRO 6000 Blackwell with 96 GB VRAM, 32 vCPUs, 256 GiB RAM, and local
+NVMe. Cold means empty fixed preprocessing; warm means reused preprocessing.
+Both used fresh worker processes and already-provisioned parameters. OS caches
+were uncontrolled. This historical result used the Init FRI fixture from
+`40c990ca`; the current fixture is regenerated by the current CLI. Use identical
+input fixtures when comparing binaries or profiles.
+
+| Stage | Cold | Warm |
+| --- | ---: | ---: |
+| Compressed FRI → KZG | 300.33 s | 189.93 s |
+| Recursive KZG | 171.51 s | 119.11 s |
+| **Total** | **471.87 s** | **309.04 s** |
+
+The recorded scope includes SRS loading/authentication and verification, and
+excludes builds, parameter download, initial aggregation, and root-to-FRI
+compression. No SRS generation was performed. Warm was **1.53× faster**;
+both runs produced identical **2,181-byte packets**. Verification including
+pairings took **6.67 ms**, excluding loading and startup; peak host RSS was
+**236.51 GiB**. The record does not give a total disk high-water mark or a
+comparison against another storage device.
 
 ## Shared stage construction
 

@@ -19,7 +19,11 @@ fn unsupported_fri_profiles_fail_before_proving() {
         },
       )
     };
-    assert!(arithmetic(Val::ONE, 2).prove_fri(config(), 32).is_err());
+    if cfg!(feature = "cuda") && (cap != 0 || arity > 1) {
+      assert!(std::panic::catch_unwind(config).is_err());
+    } else {
+      assert!(arithmetic(Val::ONE, 2).prove_fri(config(), 32).is_err());
+    }
   }
 }
 

@@ -3,6 +3,11 @@ open System Lake DSL
 
 package ix where
   version := v!"0.1.0"
+  moreLinkObjs := #[⟨.packageTarget .anonymous `ix_cuda_runtime⟩]
+  -- The CUDA DSO resolves libc against the running system. Lean's link-time
+  -- glibc stubs can be older; the DSO itself is linked with -z defs.
+  moreLinkArgs := if System.Platform.isLinux then
+    #["-Wl,--allow-shlib-undefined", "-Wl,-rpath,$ORIGIN/../lib"] else #[]
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
@@ -33,7 +38,9 @@ The Rust static libraries use `target` + `moreLinkObjs` instead of `extern_lib` 
   from the `Ix` `lean_lib`.
 
 The compression stages run in `ix-compression-worker`, a Rust executable
-built beside `ix` by `ix_compression_worker`.
+built beside `ix` by `ix_compression_worker`. The KZG prover and its CUDA
+code are compiled only there, so the `cuda` feature of the static libraries
+covers the Aiur prover alone.
 
 The `ix_rs_test` and `ix_rs_net` targets fetch `ix_rs` first to guarantee ordering
 before Cargo overwrites its release archive, then snapshot distinct Lake artifacts.
@@ -84,7 +91,24 @@ def cargoEnvironment (environment : Array (String × Option String)) :
 /-- The native toolchain settings that change what Cargo produces. -/
 def nativeToolchainVariables : Array String :=
   #["CFLAGS", "NVCC", "CUDA_HOME", "CUDA_PATH", "NVCC_CCBIN",
-    "NVCC_PREPEND_FLAGS", "NVCC_APPEND_FLAGS", "MULTI_STARK_CUDA_ARCHS"]
+    "NVCC_PREPEND_FLAGS", "NVCC_APPEND_FLAGS", "MULTI_STARK_CUDA_ARCHS",
+    "IX_KZG_CUDA_ARCHS"]
+
+def usesCuda (features : Array String) : Bool :=
+  features.any fun feature => (feature.splitOn ",").any fun name =>
+    name == "cuda" || name == "cuda-trace-codegen"
+
+def cudaLibraryName := "libmulti_stark_cuda.so"
+
+/-- Cargo reports native build outputs even when the build is already fresh. -/
+def cargoCudaLibrary (messages : String) : Except String FilePath := do
+  for line in messages.splitOn "\n" do
+    let .ok message := Lean.Json.parse line | continue
+    let .ok libs := message.getObjValAs? (Array String) "linked_libs" | continue
+    if libs.contains "dylib=multi_stark_cuda" then
+      let directory ← message.getObjValAs? String "out_dir"
+      return System.FilePath.mk directory / cudaLibraryName
+  throw "Cargo did not report multi-stark's CUDA shared library"
 
 local instance : CheckExists (Array FilePath) where
   checkExists paths := paths.allM (·.pathExists)
@@ -94,7 +118,7 @@ local instance : GetMTime (Array FilePath) where
     paths.foldlM (fun oldest path => return min oldest (← getMTime path))
       (← getMTime paths[0]!)
 
-/-- Replacing the inode keeps an already-running copy of the output intact. -/
+/-- Replacing the inode keeps an already-loaded shared library intact. -/
 def copyNativeArtifact (source output : FilePath) (tag : String) : JobM Unit := do
   IO.FS.createDirAll output.parent.get!
   let temporary := output.addExtension s!"{tag}.tmp"
@@ -105,7 +129,8 @@ def copyNativeArtifact (source output : FilePath) (tag : String) : JobM Unit := 
 def rustSources (pkg : Package) : SpawnM (Job Unit) := do
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.extension == some "cu" ||
-    path.extension == some "cuh" || path.extension == some "h" ||
+    path.extension == some "cuh" || path.extension == some "cpp" ||
+    path.extension == some "h" ||
     path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
     path.fileName == "trace-manifest.json"
   let profiles ← inputDir (pkg.dir / "crates/proof-compression/profiles") false fun path =>
@@ -118,8 +143,8 @@ def rustSources (pkg : Package) : SpawnM (Job Unit) := do
   let sources := sources.zipWith (fun _ _ => ()) profiles
   return sources.zipWith (fun _ _ => ()) manifests
 
-/-- Build Cargo's archive or executable and copy it out of Cargo's target
-directory under a trace of the arguments and native toolchain. -/
+/-- Cargo's archive or executable and its native library are one build output.
+Both must exist before a cached result can be used. -/
 def buildCargoArtifact (pkg : Package) (args : Array String) (tag : String)
     (built output : FilePath) (before : Option (Job FilePath) := none) :
     SpawnM (Job FilePath) := do
@@ -129,7 +154,9 @@ def buildCargoArtifact (pkg : Package) (args : Array String) (tag : String)
     | none => deps
   let environment ← nativeToolchainVariables.mapM fun name => return (name, ← IO.getEnv name)
   let cargoEnv := cargoEnvironment environment
-  let outputs := #[output]
+  let native := pkg.buildDir / "lib" / cudaLibraryName
+  let cuda := usesCuda args
+  let outputs := if cuda then #[output, native] else #[output]
   deps.mapM fun _ => do
     addPureTrace (args, environment, cargoEnv) s!"cargo args: {args}; native toolchain: {environment}"
     buildUnlessUpToDate outputs (← getTrace) (output.addExtension "trace") do
@@ -140,6 +167,11 @@ def buildCargoArtifact (pkg : Package) (args : Array String) (tag : String)
         env := cargoEnv
       }
       unless result.stderr.isEmpty do logVerbose result.stderr
+      if cuda then
+        let source ← match cargoCudaLibrary result.stdout with
+          | .ok source => pure source
+          | .error message => error message
+        copyNativeArtifact source native tag
       copyNativeArtifact built output tag
     setTrace (← computeTrace outputs)
     return output
@@ -154,16 +186,30 @@ def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
 target ix_rs pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs) "default"
 
-/-- The compression worker executable that `ix compress` runs per stage. -/
+/-- The native library is built by multi-stark and packaged alongside the archive. -/
+target ix_cuda_runtime pkg : FilePath := do
+  unless usesCuda (← cargoFeatures) do
+    return ← buildStaticLib (pkg.buildDir / "lib" / "libix_cuda_runtime.a") #[]
+  let base ← ix_rs.fetch
+  base.mapM fun _ => do
+    let native := pkg.buildDir / "lib" / cudaLibraryName
+    setTrace (← computeTrace native)
+    return native
+
+/-- The compression worker and Lean executables use the same native library. -/
 target ix_compression_worker pkg : FilePath := do
   let features ← cargoFeatures
   let mut args := #["build", "--release", "-p", "ix-proof-compression",
     "--bin", "ix-compression-worker"]
   unless features.contains "parallel" do
     args := args.push "--no-default-features"
+  let mut before := none
+  if usesCuda features then
+    args := args ++ #["--features", "cuda"]
+    before := some (← ix_rs.fetch)
   buildCargoArtifact pkg args "worker"
     (pkg.dir / "target" / "release" / "ix-compression-worker")
-    (pkg.buildDir / "bin" / "ix-compression-worker")
+    (pkg.buildDir / "bin" / "ix-compression-worker") before
 
 /-- Cargo feature variants wait for the default archive before building. -/
 target ix_rs_test pkg : FilePath := do
