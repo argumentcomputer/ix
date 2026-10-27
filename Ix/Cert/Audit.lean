@@ -79,6 +79,7 @@ import Ix.CompileCert.DisplayAddressFrame
 import Ix.Cert.PrefixVisibility
 import Ix.Cert.CompileCorrect
 import Ix.Cert.Composition
+import Ix.Cert.UnchangedRules
 
 /-! # The certification statements, frozen
 
@@ -7450,3 +7451,18 @@ run_cmd do
       `Resolution.compileReport_claim,
       `Resolution.compileUnchecked_provenance].map
       (`Ix.Cert ++ ·))
+
+-- The Source laws of a renamed environment (`Obligation.UnchangedRules`): strong models
+-- satisfy the laws of their own environment, the rules tier commutes with renaming, and a
+-- renamed environment's strong model gives quotient Source's laws at the pulled-back values.
+/-- info: [cert-audit] laws of a renamed environment: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "laws of a renamed environment"
+    #[`Ix.Cert.unchangedRules,
+      `Ix.Cert.StrongLaws.recRuleLaws,
+      `Ix.Cert.StrongLaws.capabilityLaws,
+      `Ix.Cert.RulesRename.red_rename,
+      `Ix.Cert.RulesRename.defEq_rename,
+      `Ix.Cert.RulesRename.infer_rename]
