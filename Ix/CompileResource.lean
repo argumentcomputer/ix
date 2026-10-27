@@ -39,16 +39,39 @@ def resourcePostStep (out : LeanPipelineOut)
   (Ix.Compile.SourceGraph.Accounting.check nodes out.env.named out.cenv.ungrounded).mapError
     Ix.Compile.SourceGraph.Accounting.Issue.message
 
+/-- An input constant's header: a theorem's or opaque's value replaced by
+`Sort 0`, any other constant as it is. -/
+def headerRaw : Ix.Compile.SourceInput.Raw → Ix.Compile.SourceInput.Raw
+  | (n, .thmInfo v) => (n, .thmInfo { v with value := .sort .zero })
+  | (n, .opaqueInfo v) => (n, .opaqueInfo { v with value := .sort .zero })
+  | p => p
+
 /-- **The input the report checks read**: every original input constant (the
-retained source facts' names), canonical, as the pure compiler reads its input.
-A code constant is the materialized one; a theorem or opaque is canonicalized
-again through the compile's lazy lookup, so this materializes every proof body
-of the input at once. -/
+retained source facts' names), canonical, as the pure compiler reads its input,
+except that a theorem or opaque is read as its header (`headerRaw`): its value
+is not canonicalized. A code constant is the materialized one, read through the
+compile's lazy lookup; so is every constant when the output retains no original
+input (`LeanPipelineOut.originalSource?`).
+
+The headers leave the verdict unchanged: `Ix.Cert.checkReport` reads its input
+environment only through its keys (`uncovered`, `nameHashCollision`,
+`unoriginalAux`, `unresolvedPublished`, `regeneratedNames`, `strayFailure`,
+`unreadablePublished`), a constant's kind and own name (`unseenInductive`,
+`misnamedInput`), an inductive's constructors and a constructor's inductive
+(`extraCtors`, `strayConstructor`), and never a type or a value. Reading the
+values would hold every proof body of the input at once. -/
 def reportInput (out : LeanPipelineOut) : Except String Ix.Environment := do
   let some nodes := out.sourceNodes?
     | throw "report check: original input facts are unavailable"
+  let read (n : Ix.Name) : Option Ix.ConstantInfo :=
+    match out.originalSource?.bind (·.byName.get? n) with
+    | some raw =>
+      match raw.2 with
+      | .thmInfo _ | .opaqueInfo _ => Ix.Compile.SourceInput.canonical? (headerRaw raw)
+      | _ => out.cenv.env.get? n
+    | none => out.cenv.env.get? n
   let consts ← nodes.foldM (init := ({} : Std.HashMap Ix.Name Ix.ConstantInfo)) fun m n _ =>
-    match out.cenv.env.get? n with
+    match read n with
     | some ci => pure (m.insert n ci)
     | none => throw s!"report check: the input constant {n.pretty} could not be read"
   pure { consts }
