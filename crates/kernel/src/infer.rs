@@ -111,6 +111,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           return Err(TcError::NativeEvaluation(id.addr.clone()));
         }
         let c = self.get_const(id)?;
+        // A quotient record means the quotient only at its primitive
+        // address: for a bound artifact, once the Quot group is admitted.
+        if matches!(c, KConst::Quot { .. }) && !self.is_quot_primitive(id)? {
+          return Err(TcError::Other(format!(
+            "quotient record {} is not an admitted quotient primitive",
+            id.addr.hex()
+          )));
+        }
         if u64_to_usize::<M>(c.lvls())? != us.len() {
           return Err(TcError::UnivParamMismatch {
             expected: c.lvls(),

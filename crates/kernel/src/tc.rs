@@ -311,6 +311,19 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
   }
 
+  /// Whether `id` is one of the table's four quotient primitives.
+  pub(crate) fn is_quot_primitive(
+    &self,
+    id: &KId<M>,
+  ) -> Result<bool, TcError<M>> {
+    let p = self.primitives()?;
+    Ok(
+      [&p.quot_type, &p.quot_ctor, &p.quot_lift, &p.quot_ind]
+        .iter()
+        .any(|primitive| primitive.addr == id.addr),
+    )
+  }
+
   pub(super) fn check_input_context(&self) -> Result<(), TcError<M>> {
     match self.prims.entry_error() {
       Some(error) => Err(TcError::Other(error.into())),

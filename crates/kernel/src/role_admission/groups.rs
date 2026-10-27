@@ -1,24 +1,28 @@
-//! Group validators. Each admits one specification group of a binding (a
-//! basis block: an inductive with its constructors and recursor) for a
-//! source, or refuses it with a reason.
+//! Group validators. Each admits one specification group of a binding for a
+//! source, or refuses it with a reason. The groups and their specifications
+//! are the certified checker's:
 //!
-//! A group is admitted only when
-//! 1. every bound role of the group authenticates as a member of one
-//!    carried owner unit, at the positions the specification fixes, and the
-//!    unit holds nothing else;
-//! 2. the unit's declarations, read in a fresh anonymous environment, are
-//!    exactly the specified ones (the certified checker's basis blocks)
-//!    built from the bound addresses; and
-//! 3. the kernel checks the whole unit in that environment, with only the
-//!    groups admitted before this one available, so none of the group's
-//!    own rules can be used to check it.
+//! - a basis block (`Nat`, `Eq`, `PUnit`, `Empty`, `False`, `Quot`) is
+//!   admitted only when every bound role authenticates as the carried record
+//!   at the position the specification fixes (an inductive's unit holding
+//!   nothing else, its constructors by index, the quotient records by kind);
+//!   the declarations, read into a fresh anonymous environment, are exactly
+//!   the specified ones built from the bound addresses; and the kernel checks
+//!   them there with only the groups admitted before this one;
+//! - an anchor (the literal support) is admitted only when its record
+//!   authenticates, is not unsafe, has exactly the specified level count and
+//!   type, and that type checks as a type with only the groups admitted
+//!   before it. An anchor is specified by its type alone; its declaration is
+//!   checked like any other once admitted.
 //!
-//! The roles are then admitted together. Nothing outside this module
-//! creates an admission.
+//! A group is admitted whole or not at all, after the groups it needs.
+//! Nothing outside this module creates an admission.
 
 use ix_common::address::Address;
+use ix_common::env::{DefinitionSafety, QuotKind};
 use ixon::constant::{ConstantInfo, MutConst};
 use ixon::role_table::Role;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{Admission, ArtifactSource};
 use crate::constant::KConst;
@@ -37,7 +41,7 @@ type U = KUniv<Anon>;
 
 /// One specification group.
 struct Group {
-  /// Its roles, the inductive first.
+  /// Its roles, the lead first.
   roles: &'static [Role],
   /// The lead roles of the groups its specification mentions.
   needs: &'static [Role],
@@ -45,11 +49,75 @@ struct Group {
 }
 
 /// The groups, in an order that lists every group after those it needs.
-const GROUPS: &[Group] = &[Group {
-  roles: &[Role::Nat, Role::NatZero, Role::NatSucc, Role::NatRec],
-  needs: &[],
-  validate: validate_nat,
-}];
+const GROUPS: &[Group] = &[
+  Group {
+    roles: &[Role::Nat, Role::NatZero, Role::NatSucc, Role::NatRec],
+    needs: &[],
+    validate: validate_nat,
+  },
+  Group {
+    roles: &[Role::Eq, Role::EqRefl, Role::EqRec],
+    needs: &[],
+    validate: validate_eq,
+  },
+  Group {
+    roles: &[Role::PUnit, Role::PUnitUnit, Role::PUnitRec],
+    needs: &[],
+    validate: validate_punit,
+  },
+  Group {
+    roles: &[Role::Empty, Role::EmptyRec],
+    needs: &[],
+    validate: |source, admitted| {
+      validate_empty_like(
+        source,
+        admitted,
+        [Role::Empty, Role::EmptyRec],
+        type1(),
+      )
+    },
+  },
+  Group {
+    roles: &[Role::False, Role::FalseRec],
+    needs: &[],
+    validate: |source, admitted| {
+      validate_empty_like(
+        source,
+        admitted,
+        [Role::False, Role::FalseRec],
+        prop(),
+      )
+    },
+  },
+  Group {
+    roles: &[
+      Role::Quot,
+      Role::QuotMk,
+      Role::QuotLift,
+      Role::QuotInd,
+      Role::QuotSound,
+    ],
+    needs: &[Role::Eq],
+    validate: validate_quot,
+  },
+  Group { roles: &[Role::Char], needs: &[], validate: validate_char },
+  Group { roles: &[Role::String], needs: &[], validate: validate_string },
+  Group {
+    roles: &[Role::List, Role::ListNil, Role::ListCons],
+    needs: &[],
+    validate: validate_list,
+  },
+  Group {
+    roles: &[Role::CharOfNat],
+    needs: &[Role::Nat, Role::Char],
+    validate: validate_char_of_nat,
+  },
+  Group {
+    roles: &[Role::StringOfList],
+    needs: &[Role::List, Role::Char, Role::String],
+    validate: validate_string_of_list,
+  },
+];
 
 /// Admit every bound group of `source` that its validator accepts.
 pub(super) fn admit(source: &ArtifactSource) -> Admission {
@@ -187,8 +255,25 @@ fn check_units(
   kenv: &mut KEnv<Anon>,
   members: &[&Address],
 ) -> Result<(), String> {
+  check_units_with(source, admitted, &FxHashMap::default(), kenv, members)
+}
+
+/// [`check_units`], with the group's own `candidates` also in the
+/// primitive table but not admitted: the kernel recognises a quotient
+/// record only at its table address.
+fn check_units_with(
+  source: &ArtifactSource,
+  admitted: &Admission,
+  candidates: &FxHashMap<Role, Address>,
+  kenv: &mut KEnv<Anon>,
+  members: &[&Address],
+) -> Result<(), String> {
+  let mut table = admitted.roles().clone();
+  table
+    .extend(candidates.iter().map(|(role, address)| (*role, address.clone())));
+  let roles: FxHashSet<Role> = admitted.roles().keys().copied().collect();
   let context =
-    PrimitiveContext::bound(source.clone(), admitted.roles(), |_| None);
+    PrimitiveContext::bound_with_table(source.clone(), &table, roles, |_| None);
   let lookups = IxonIngressLookups::default();
   let mut checker =
     TypeChecker::for_artifact_anon(kenv, source, &lookups, context);
@@ -230,6 +315,9 @@ fn param(index: u64) -> U {
 }
 fn type1() -> E {
   sort(KUniv::succ(KUniv::zero()))
+}
+fn prop() -> E {
+  sort(KUniv::zero())
 }
 
 /// The specified shape of an inductive type.
@@ -473,4 +561,512 @@ fn validate_nat(
     },
   )?;
   check_units(source, admitted, &mut kenv, &[&nat, &rec])
+}
+
+// -----------------------------------------------------------------------
+// The Eq, PUnit, Empty and False bases
+// -----------------------------------------------------------------------
+
+/// `Eq.{u} {α : Sort u} (a : α) : α → Prop` with
+/// `Eq.refl.{u} {α : Sort u} (a : α) : Eq a a` and
+/// `Eq.rec.{u_1, u} {α : Sort u} {a : α}
+/// {motive : (b : α) → Eq a b → Sort u_1} (refl : motive a (Eq.refl a))
+/// {b : α} (t : Eq a b) : motive b t`, a K-like recursor whose rule returns
+/// `refl`.
+fn validate_eq(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let [eq, refl, rec] = bound(source, [Role::Eq, Role::EqRefl, Role::EqRec])?;
+  locate_inductive_unit(source, &eq, &[&refl], &[&rec])?;
+  let mut kenv = ingress_records(source, &[&eq, &rec])?;
+
+  // `Eq` and `Eq.refl` at their own level `u`.
+  let u = param(0);
+  expect_inductive(
+    &kenv,
+    &eq,
+    &InductiveSpec {
+      lvls: 1,
+      params: 2,
+      indices: 1,
+      ty: pi(sort(u.clone()), pi(var(0), pi(var(1), prop()))),
+      constructors: vec![refl.clone()],
+    },
+  )?;
+  expect_constructor(
+    &kenv,
+    &refl,
+    &eq,
+    &ConstructorSpec {
+      lvls: 1,
+      cidx: 0,
+      params: 2,
+      fields: 0,
+      ty: pi(
+        sort(u.clone()),
+        pi(var(0), apps(cnst(&eq, &[u]), vec![var(1), var(0), var(0)])),
+      ),
+    },
+  )?;
+
+  // `Eq.rec.{u_1, u}`: `u_1` is level 0, `u` level 1.
+  let (u1, u) = (param(0), param(1));
+  let eq_u = || cnst(&eq, std::slice::from_ref(&u));
+  // In the `α`, `a` binder context.
+  let motive = || {
+    pi(var(1), pi(apps(eq_u(), vec![var(2), var(1), var(0)]), sort(u1.clone())))
+  };
+  // In the `α`, `a`, `motive` binder context.
+  let minor = || {
+    app(
+      app(var(0), var(1)),
+      apps(cnst(&refl, std::slice::from_ref(&u)), vec![var(2), var(1)]),
+    )
+  };
+  let ty = pi(
+    sort(u.clone()),
+    pi(
+      var(0),
+      pi(
+        motive(),
+        pi(
+          minor(),
+          pi(
+            var(3),
+            pi(
+              apps(eq_u(), vec![var(4), var(3), var(0)]),
+              app(app(var(3), var(1)), var(0)),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  let rule =
+    lam(sort(u.clone()), lam(var(0), lam(motive(), lam(minor(), var(0)))));
+  expect_recursor(
+    &kenv,
+    &rec,
+    &RecursorSpec {
+      lvls: 2,
+      params: 2,
+      indices: 1,
+      motives: 1,
+      minors: 1,
+      k: true,
+      ty,
+      rules: vec![(0, rule)],
+    },
+  )?;
+  check_units(source, admitted, &mut kenv, &[&eq, &rec])
+}
+
+/// `PUnit.{u} : Sort u` with `PUnit.unit.{u} : PUnit.{u}` and
+/// `PUnit.rec.{u_1, u} {motive : PUnit.{u} → Sort u_1}
+/// (unit : motive PUnit.unit) (t : PUnit.{u}) : motive t`, whose rule
+/// returns `unit`.
+fn validate_punit(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let [punit, unit, rec] =
+    bound(source, [Role::PUnit, Role::PUnitUnit, Role::PUnitRec])?;
+  locate_inductive_unit(source, &punit, &[&unit], &[&rec])?;
+  let mut kenv = ingress_records(source, &[&punit, &rec])?;
+
+  let u = param(0);
+  expect_inductive(
+    &kenv,
+    &punit,
+    &InductiveSpec {
+      lvls: 1,
+      params: 0,
+      indices: 0,
+      ty: sort(u.clone()),
+      constructors: vec![unit.clone()],
+    },
+  )?;
+  expect_constructor(
+    &kenv,
+    &unit,
+    &punit,
+    &ConstructorSpec {
+      lvls: 1,
+      cidx: 0,
+      params: 0,
+      fields: 0,
+      ty: cnst(&punit, &[u]),
+    },
+  )?;
+
+  // `PUnit.rec.{u_1, u}`: `u_1` is level 0, `u` level 1.
+  let (u1, u) = (param(0), param(1));
+  let punit_t = || cnst(&punit, std::slice::from_ref(&u));
+  let motive = || pi(punit_t(), sort(u1.clone()));
+  let minor = || app(var(0), cnst(&unit, std::slice::from_ref(&u)));
+  let ty = pi(motive(), pi(minor(), pi(punit_t(), app(var(2), var(0)))));
+  let rule = lam(motive(), lam(minor(), var(0)));
+  expect_recursor(
+    &kenv,
+    &rec,
+    &RecursorSpec {
+      lvls: 2,
+      params: 0,
+      indices: 0,
+      motives: 1,
+      minors: 1,
+      k: false,
+      ty,
+      rules: vec![(0, rule)],
+    },
+  )?;
+  check_units(source, admitted, &mut kenv, &[&punit, &rec])
+}
+
+/// An inductive with no constructors and no parameters in sort `sort`
+/// (`Empty : Type`, `False : Prop`), with its recursor
+/// `rec.{u} (motive : T → Sort u) (t : T) : motive t`, which has no rules.
+fn validate_empty_like(
+  source: &ArtifactSource,
+  admitted: &Admission,
+  roles: [Role; 2],
+  sort_of_type: E,
+) -> Result<(), String> {
+  let [ty_address, rec] = bound(source, roles)?;
+  locate_inductive_unit(source, &ty_address, &[], &[&rec])?;
+  let mut kenv = ingress_records(source, &[&ty_address, &rec])?;
+  expect_inductive(
+    &kenv,
+    &ty_address,
+    &InductiveSpec {
+      lvls: 0,
+      params: 0,
+      indices: 0,
+      ty: sort_of_type,
+      constructors: vec![],
+    },
+  )?;
+  let t = || cnst(&ty_address, &[]);
+  expect_recursor(
+    &kenv,
+    &rec,
+    &RecursorSpec {
+      lvls: 1,
+      params: 0,
+      indices: 0,
+      motives: 1,
+      minors: 0,
+      k: false,
+      ty: pi(pi(t(), sort(param(0))), pi(t(), app(var(1), var(0)))),
+      rules: vec![],
+    },
+  )?;
+  check_units(source, admitted, &mut kenv, &[&ty_address, &rec])
+}
+
+// -----------------------------------------------------------------------
+// The Quot basis
+// -----------------------------------------------------------------------
+
+/// The four quotient records (`Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind`)
+/// of the kinds and types Lean installs, and the axiom `Quot.sound`.
+fn validate_quot(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let [quot, mk, lift, ind, sound] = bound(
+    source,
+    [Role::Quot, Role::QuotMk, Role::QuotLift, Role::QuotInd, Role::QuotSound],
+  )?;
+  for (address, kind) in [
+    (&quot, QuotKind::Type),
+    (&mk, QuotKind::Ctor),
+    (&lift, QuotKind::Lift),
+    (&ind, QuotKind::Ind),
+  ] {
+    let member = source.member(address).map_err(|e| e.to_string())?;
+    if member.owner().is_some()
+      || !matches!(&member.record().constant().info,
+        ConstantInfo::Quot(record) if record.kind == kind)
+    {
+      return Err(differs(address, &format!("not a {kind:?} quotient record")));
+    }
+  }
+  let member = source.member(&sound).map_err(|e| e.to_string())?;
+  if member.owner().is_some()
+    || !matches!(member.record().constant().info, ConstantInfo::Axio(_))
+  {
+    return Err(differs(&sound, "not an axiom"));
+  }
+  let mut kenv = ingress_records(source, &[&quot, &mk, &lift, &ind, &sound])?;
+
+  let (u, v) = (param(0), param(1));
+  let quot_u = || cnst(&quot, std::slice::from_ref(&u));
+  let mk_u = || cnst(&mk, std::slice::from_ref(&u));
+  // `α → α → Prop`, in the `α` binder context.
+  let relation = || pi(var(0), pi(var(1), prop()));
+  let quot_ty = pi(sort(u.clone()), pi(relation(), sort(u.clone())));
+  let mk_ty = pi(
+    sort(u.clone()),
+    pi(relation(), pi(var(1), apps(quot_u(), vec![var(2), var(1)]))),
+  );
+  // `Quot.lift.{u, v} {α} {r} {β : Sort v} (f : α → β)
+  // (h : ∀ a b, r a b → f a = f b) (q : Quot r) : β`.
+  let lift_f = pi(var(2), var(1));
+  let lift_h = pi(
+    var(3),
+    pi(
+      var(4),
+      pi(
+        apps(var(4), vec![var(1), var(0)]),
+        apps(
+          cnst(&admitted_eq(admitted)?, std::slice::from_ref(&v)),
+          vec![var(4), app(var(3), var(2)), app(var(3), var(1))],
+        ),
+      ),
+    ),
+  );
+  let lift_ty = pi(
+    sort(u.clone()),
+    pi(
+      relation(),
+      pi(
+        sort(v.clone()),
+        pi(
+          lift_f,
+          pi(lift_h, pi(apps(quot_u(), vec![var(4), var(3)]), var(3))),
+        ),
+      ),
+    ),
+  );
+  // `Quot.ind.{u} {α} {r} {β : Quot r → Prop}
+  // (mk : ∀ a, β (Quot.mk r a)) (q : Quot r) : β q`.
+  let ind_motive = pi(apps(quot_u(), vec![var(1), var(0)]), prop());
+  let ind_minor =
+    pi(var(2), app(var(1), apps(mk_u(), vec![var(3), var(2), var(0)])));
+  let ind_ty = pi(
+    sort(u.clone()),
+    pi(
+      relation(),
+      pi(
+        ind_motive,
+        pi(
+          ind_minor,
+          pi(apps(quot_u(), vec![var(3), var(2)]), app(var(2), var(0))),
+        ),
+      ),
+    ),
+  );
+  // `Quot.sound.{u} {α} {r} {a b : α} : r a b → Quot.mk r a = Quot.mk r b`.
+  let sound_ty = pi(
+    sort(u.clone()),
+    pi(
+      relation(),
+      pi(
+        var(1),
+        pi(
+          var(2),
+          pi(
+            apps(var(2), vec![var(1), var(0)]),
+            apps(
+              cnst(&admitted_eq(admitted)?, std::slice::from_ref(&u)),
+              vec![
+                apps(quot_u(), vec![var(4), var(3)]),
+                apps(mk_u(), vec![var(4), var(3), var(2)]),
+                apps(mk_u(), vec![var(4), var(3), var(1)]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  for (address, kind, lvls, ty) in [
+    (&quot, QuotKind::Type, 1, quot_ty),
+    (&mk, QuotKind::Ctor, 1, mk_ty),
+    (&lift, QuotKind::Lift, 2, lift_ty),
+    (&ind, QuotKind::Ind, 1, ind_ty),
+  ] {
+    match declared(&kenv, address)? {
+      KConst::Quot { kind: found, lvls: found_lvls, ty: found_ty, .. }
+        if found == kind && found_lvls == lvls =>
+      {
+        if found_ty != ty {
+          return Err(differs(address, "type"));
+        }
+      },
+      _ => return Err(differs(address, "kind or level count")),
+    }
+  }
+  match declared(&kenv, &sound)? {
+    KConst::Axio { is_unsafe: false, lvls: 1, ty, .. } if ty == sound_ty => {},
+    _ => return Err(differs(&sound, "safety, level count or type")),
+  }
+
+  let candidates: FxHashMap<Role, Address> = [
+    (Role::Quot, quot.clone()),
+    (Role::QuotMk, mk.clone()),
+    (Role::QuotLift, lift.clone()),
+    (Role::QuotInd, ind.clone()),
+  ]
+  .into_iter()
+  .collect();
+  check_units_with(
+    source,
+    admitted,
+    &candidates,
+    &mut kenv,
+    &[&quot, &mk, &lift, &ind, &sound],
+  )
+}
+
+fn admitted_eq(admitted: &Admission) -> Result<Address, String> {
+  admitted.address(Role::Eq).cloned().ok_or_else(|| "Eq is not admitted".into())
+}
+
+// -----------------------------------------------------------------------
+// The literal-support anchors
+// -----------------------------------------------------------------------
+
+/// Whether a declaration is unsafe.
+fn is_unsafe(constant: &KConst<Anon>) -> bool {
+  match constant {
+    KConst::Defn { safety, .. } => *safety == DefinitionSafety::Unsafe,
+    KConst::Recr { is_unsafe, .. }
+    | KConst::Axio { is_unsafe, .. }
+    | KConst::Indc { is_unsafe, .. }
+    | KConst::Ctor { is_unsafe, .. } => *is_unsafe,
+    KConst::Quot { .. } => false,
+  }
+}
+
+/// Admit anchors `(role, level count, type)`, which are specified by their
+/// types alone: each bound record authenticates, is not unsafe, has the
+/// level count and exactly the type, and that type is a type with only the
+/// groups admitted before.
+fn validate_anchors(
+  source: &ArtifactSource,
+  admitted: &Admission,
+  anchors: &[(Role, u64, E)],
+) -> Result<(), String> {
+  let mut addresses = Vec::with_capacity(anchors.len());
+  for (role, _, _) in anchors {
+    let address =
+      source.required_role(*role).map_err(|error| error.to_string())?.clone();
+    source.member(&address).map_err(|error| error.to_string())?;
+    addresses.push(address);
+  }
+  let references: Vec<&Address> = addresses.iter().collect();
+  let mut kenv = ingress_records(source, &references)?;
+  for ((_, lvls, ty), address) in anchors.iter().zip(&addresses) {
+    let constant = declared(&kenv, address)?;
+    if is_unsafe(&constant) {
+      return Err(differs(address, "unsafe"));
+    }
+    if constant.lvls() != *lvls {
+      return Err(differs(address, "level count"));
+    }
+    if constant.ty() != ty {
+      return Err(differs(address, "type"));
+    }
+  }
+  let context =
+    PrimitiveContext::bound(source.clone(), admitted.roles(), |_| None);
+  let lookups = IxonIngressLookups::default();
+  let mut checker =
+    TypeChecker::for_artifact_anon(&mut kenv, source, &lookups, context);
+  for ((_, _, ty), address) in anchors.iter().zip(&addresses) {
+    checker.reset();
+    let sort = checker.infer(ty).map_err(|error| {
+      format!("{}: the specified type does not check: {error}", address.hex())
+    })?;
+    checker.ensure_sort(&sort).map_err(|error| {
+      format!("{}: the specified type is not a type: {error}", address.hex())
+    })?;
+  }
+  Ok(())
+}
+
+/// `Char : Type`.
+fn validate_char(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  validate_anchors(source, admitted, &[(Role::Char, 0, type1())])
+}
+
+/// `String : Type`.
+fn validate_string(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  validate_anchors(source, admitted, &[(Role::String, 0, type1())])
+}
+
+/// `List.{u} : Type u → Type u`, `List.nil.{u} (α : Type u) : List α` and
+/// `List.cons.{u} (α : Type u) (head : α) (tail : List α) : List α`.
+fn validate_list(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let list = source
+    .required_role(Role::List)
+    .map_err(|error| error.to_string())?
+    .clone();
+  let type_u = || sort(KUniv::succ(param(0)));
+  let list_u = || cnst(&list, &[param(0)]);
+  validate_anchors(
+    source,
+    admitted,
+    &[
+      (Role::List, 1, pi(type_u(), type_u())),
+      (Role::ListNil, 1, pi(type_u(), app(list_u(), var(0)))),
+      (
+        Role::ListCons,
+        1,
+        pi(
+          type_u(),
+          pi(var(0), pi(app(list_u(), var(1)), app(list_u(), var(2)))),
+        ),
+      ),
+    ],
+  )
+}
+
+/// `Char.ofNat : Nat → Char`.
+fn validate_char_of_nat(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let nat = admitted.address(Role::Nat).ok_or("Nat is not admitted")?;
+  let char_t = admitted.address(Role::Char).ok_or("Char is not admitted")?;
+  validate_anchors(
+    source,
+    admitted,
+    &[(Role::CharOfNat, 0, pi(cnst(nat, &[]), cnst(char_t, &[])))],
+  )
+}
+
+/// `String.ofList : List.{0} Char → String`.
+fn validate_string_of_list(
+  source: &ArtifactSource,
+  admitted: &Admission,
+) -> Result<(), String> {
+  let list = admitted.address(Role::List).ok_or("List is not admitted")?;
+  let char_t = admitted.address(Role::Char).ok_or("Char is not admitted")?;
+  let string =
+    admitted.address(Role::String).ok_or("String is not admitted")?;
+  validate_anchors(
+    source,
+    admitted,
+    &[(
+      Role::StringOfList,
+      0,
+      pi(
+        app(cnst(list, &[KUniv::zero()]), cnst(char_t, &[])),
+        cnst(string, &[]),
+      ),
+    )],
+  )
 }

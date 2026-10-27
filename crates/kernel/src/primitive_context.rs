@@ -39,12 +39,29 @@ impl<M: KernelMode> PrimitiveContext<M> {
   where
     F: FnMut(&Address) -> Option<ix_common::env::Name>,
   {
+    let roles = admitted.keys().copied().collect();
+    Self::bound_with_table(source, admitted, roles, name_for_addr)
+  }
+
+  /// A bound context whose table holds `table` while only `admitted` roles
+  /// are admitted. The table may hold, besides the admitted roles, the
+  /// candidates of the group under validation, for declarations the kernel
+  /// recognises only at their table addresses (the quotient records).
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn bound_with_table<F>(
+    source: crate::role_admission::ArtifactSource,
+    table: &FxHashMap<Role, Address>,
+    admitted: FxHashSet<Role>,
+    name_for_addr: F,
+  ) -> Self
+  where
+    F: FnMut(&Address) -> Option<ix_common::env::Name>,
+  {
     let table = Primitives::from_admitted(
-      |role| admitted.get(&role).cloned(),
+      |role| table.get(&role).cloned(),
       name_for_addr,
     );
-    let roles = admitted.keys().copied().collect();
-    Self::Bound(source, Arc::new(table), Arc::new(roles))
+    Self::Bound(source, Arc::new(table), Arc::new(admitted))
   }
 
   /// The primitive table: the pinned one for unbound input, the admitted
