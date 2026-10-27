@@ -12,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::memory::{
-  GIB, Memory, MemoryReader, Pressure, budget_from_env, pressure,
+  GIB, Memory, MemoryReader, Pressure, budget_from_env, pressure, ramp_up,
   resource_error,
 };
 use ixon::CompileError;
@@ -35,7 +35,9 @@ impl Options {
       max_workers: max_workers.max(1),
       process_budget: budget_from_env("IX_COMPILE_MEMORY_GIB")?,
       tick: Duration::from_millis(250),
-      ramp_interval: Duration::from_secs(1),
+      // Two ticks: the growth forecast samples a raised limit before the
+      // next doubling (`ramp_up`).
+      ramp_interval: Duration::from_millis(500),
       recovery: Duration::from_secs(5),
       idle_timeout: Duration::from_secs(30),
       lookahead: Duration::from_secs(10),
@@ -128,7 +130,7 @@ impl Policy {
       && completed > self.completed
       && now.duration_since(self.ramped) >= options.ramp_interval
     {
-      self.limit = (self.limit + 1).min(options.max_workers);
+      self.limit = ramp_up(self.limit, options.max_workers);
       self.ramped = now;
     }
     self.previous = memory;
@@ -433,7 +435,43 @@ mod tests {
     assert!(!policy.open, "one healthy tick is not enough to recover");
     policy.sample(swapped, now + Duration::from_millis(20), 2, 2, opt);
     assert!(policy.open);
-    assert_eq!(policy.limit, 5);
+    // The recovered limit doubles (`ramp_up`), within the ceiling of 8.
+    assert_eq!(policy.limit, 8);
+  }
+
+  #[test]
+  fn healthy_ramp_doubles_each_interval_up_to_the_ceiling() {
+    let opt = options(64);
+    let now = Instant::now();
+    let mut policy = Policy::new(memory(), now, opt);
+    assert_eq!(policy.limit, 2);
+    let mut limits = Vec::new();
+    for step in 1..=7u32 {
+      // One sample per ramp interval, each with new completed work.
+      let at = now + opt.ramp_interval * step;
+      policy.sample(memory(), at, policy.limit, u64::from(step), opt);
+      limits.push(policy.limit);
+    }
+    assert_eq!(limits, [4, 8, 16, 32, 64, 64, 64]);
+    // A sample before the interval has elapsed does not ramp.
+    let mut early = Policy::new(memory(), now, opt);
+    early.sample(memory(), now + opt.ramp_interval / 2, 2, 1, opt);
+    assert_eq!(early.limit, 2);
+  }
+
+  #[test]
+  fn growth_after_a_doubling_halves_the_limit() {
+    let opt = options(64);
+    let now = Instant::now();
+    let mut policy = Policy::new(memory(), now, opt);
+    policy.limit = 32;
+    policy.sample(memory(), now + opt.ramp_interval, 32, 1, opt);
+    assert_eq!(policy.limit, 64);
+    // Ten seconds of the observed growth would not fit above the reserve.
+    let rising = Memory { process: 16 * GIB, available: 84 * GIB, ..memory() };
+    policy.sample(rising, now + opt.ramp_interval * 2, 64, 2, opt);
+    assert!(!policy.open);
+    assert_eq!(policy.limit, 32);
   }
 
   #[test]
