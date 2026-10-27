@@ -33,6 +33,7 @@ import Ix.Aiur.Compiler
 import Ix.IxVM
 import Ix.IxVM.Toplevel
 import Ix.PrimAddrs
+import Ix.SpecDigest
 import Tests.Ix.Kernel.PrimitiveTable
 import LSpec
 
@@ -67,6 +68,32 @@ private def collectAddrFns (t : Aiur.Source.Toplevel) :
       out := out.push (f.name.toName.toString, a)
   return out
 
+/-- The IxVM's address literals. Every primitive IxC specifies is a role, read
+    through the claim's role binding and validated against its specification;
+    only the extras, which IxC does not specify yet, are recognized by
+    address, together with the role constants they were compiled against
+    (`*_pin`, checked against the binding before any extra fires). -/
+private def expectedAddrFns : Array String := #[
+  -- the extras
+  "int_of_nat_addr", "int_neg_succ_addr", "int_add_addr", "int_sub_addr", "int_mul_addr",
+  "int_neg_addr", "int_emod_addr", "int_ediv_addr", "int_bmod_addr", "int_bdiv_addr",
+  "int_nat_abs_addr", "int_pow_addr",
+  "bit_vec_to_nat_addr", "bit_vec_of_nat_addr", "bit_vec_ult_addr",
+  "string_utf8_byte_size_addr", "string_append_addr", "string_back_addr",
+  "string_legacy_back_addr", "string_to_byte_array_addr", "byte_array_empty_addr",
+  "string_dec_eq_addr",
+  "nat_dec_le_addr_dec", "nat_dec_eq_addr_dec", "nat_dec_lt_addr_dec",
+  "decidable_is_true_addr_dec", "decidable_is_false_addr_dec",
+  "nat_le_of_ble_eq_true_addr_dec", "nat_not_le_of_not_ble_eq_true_addr_dec",
+  "nat_eq_of_beq_eq_true_addr_dec", "nat_ne_of_beq_eq_false_addr_dec",
+  "int_dec_eq_addr_dec", "int_dec_le_addr_dec", "int_dec_lt_addr_dec",
+  "int_of_nat_addr_dec", "int_neg_succ_addr_dec",
+  -- the roles the extras were compiled against
+  "nat_addr_pin", "bool_type_addr_pin", "bool_true_addr_pin", "bool_false_addr_pin",
+  "eq_type_addr_pin", "eq_refl_addr_pin", "nat_beq_addr_pin", "nat_ble_addr_pin",
+  "string_type_addr_pin", "char_type_addr_pin", "char_of_nat_addr_pin",
+  "list_nil_addr_pin", "list_cons_addr_pin", "string_of_list_addr_pin"]
+
 /-- The canonical address set, computed at test runtime from the Lean
     parity table + reserved markers — the same source the host closure
     walker (`Ix.Tc.primAddrSet`) consults. -/
@@ -94,7 +121,7 @@ private def dropSuffix (s suf : String) : String :=
     the kernel abbreviates `String`. -/
 private def fnKey (fnName : String) : String :=
   let base := (fnName.splitOn ".").getLast!
-  let base := ["_dec", "_io", "_iota"].foldl dropSuffix base
+  let base := ["_dec", "_io", "_iota", "_pin"].foldl dropSuffix base
   let base := dropSuffix base "_addr"
   let base := ["_type", "_ty"].foldl dropSuffix base
   let k := normKey base
@@ -116,22 +143,30 @@ def suite : List TestSeq := Id.run do
     | [test "IxVM toplevel builds" false]
   let fns := collectAddrFns toplevel
   let mut tests : TestSeq :=
-    -- Guard against the extractor silently matching nothing (e.g. an
-    -- AST shape change): the kernel is known to carry dozens of these.
-    test s!"found {fns.size} address literals (expect ≥ 60)" (fns.size ≥ 60)
+    -- Exactly the expected literals: the extras and their pins. A role
+    -- literal reappearing, or the extractor silently matching nothing (an
+    -- AST shape change), fails here.
+    test s!"address literals are exactly the extras and their pins ({fns.size})"
+      (((fns.map (·.1.splitOn "." |>.getLast!)).filter (· != "spec_digest")).qsort (· < ·)
+        == expectedAddrFns.qsort (· < ·))
   for (fnName, addr) in fns do
+    -- The circuit's specification digest is a digest, not a primitive
+    -- address: it must equal `Ix.SpecDigest.specDigest`.
+    if (fnName.splitOn ".").getLast! == "spec_digest" then
+      tests := tests ++ test s!"{fnName} = Ix.SpecDigest.specDigest"
+        (Ix.SpecDigest.specDigest.toOption == some addr)
+      continue
     match canonical[addr]? with
     | some canonName =>
       -- Assert the function resolves to the constant its NAME claims.
       -- Membership alone is not enough: this map is keyed by address, so
-      -- a table where `nat_add_addr` held `Nat.mul`'s bytes would still
+      -- a table where `int_add_addr` held `Int.mul`'s bytes would still
       -- find a canonical entry and pass. That permutation is precisely
       -- the defect this suite exists to catch — the kernel would apply
       -- one primitive's native semantics under another's name.
-      -- The addr function may spell the constant fully (`nat_add_addr` ↔
-      -- `Nat.add`) or only its final component (`reduce_bool_addr` ↔
-      -- `Lean.reduceBool`); both are accepted, anything else must be
-      -- declared in `nameExceptions`.
+      -- The addr function may spell the constant fully (`int_add_addr` ↔
+      -- `Int.add`) or only its final component; both are accepted, anything
+      -- else must be declared in `nameExceptions`.
       let k := fnKey fnName
       let ok : Bool := match nameExceptions[k]? with
         | some want => canonName == want

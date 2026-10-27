@@ -83,7 +83,7 @@ struct Prep {
 enum Item {
   Claim {
     shard: usize,
-    claim: Claim,
+    claim: Box<Claim>,
     claim_bytes: Vec<u8>,
     prepared: Box<PreparedProve>,
   },
@@ -224,7 +224,7 @@ fn prepare_loop(
           claim.put(&mut claim_bytes);
           Ok(Item::Claim {
             shard,
-            claim,
+            claim: Box::new(claim),
             claim_bytes,
             prepared: Box::new(prepared),
           })
@@ -288,7 +288,7 @@ fn prove_loop(
           let proof_bytes = proof
             .to_bytes()
             .map_err(|e| format!("proof serialization: {e}"))?;
-          let wrapper = IxonProof::new(claim, proof_bytes);
+          let wrapper = IxonProof::new(*claim, proof_bytes);
           let mut wrapper_bytes = Vec::new();
           wrapper.put(&mut wrapper_bytes);
           write_store(ctx.store_dir, &claim_bytes)?;

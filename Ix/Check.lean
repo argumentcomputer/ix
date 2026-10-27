@@ -43,10 +43,10 @@ def loadClaimAndTrees (claimHex : String) :
     throw <| IO.userError
       s!"error: claim bytes at {claimAddr} re-hash to {computed}"
   let treeRoots : Array Address := match claim with
-    | .check _ (some r)        => #[r]
-    | .eval _ _ (some r)       => #[r]
-    | .checkEnv root none      => #[root]
-    | .checkEnv root (some r)  => #[root, r]
+    | .check _ _ (some r)          => #[r]
+    | .eval _ _ _ (some r)         => #[r]
+    | .checkEnv _ root none        => #[root]
+    | .checkEnv _ root (some r)    => #[root, r]
     | .contains tree _         => #[tree]
     | _                        => #[]
   let mut trees : Std.HashMap Address Ix.AssumptionTree := {}
@@ -60,13 +60,39 @@ def loadClaimAndTrees (claimHex : String) :
     trees := trees.insert r tree
   return (claim, trees)
 
+/-- The `Check` claim on `addr` (full transitive typecheck of the target's
+    closure), relative to `ixonEnv`'s role binding. -/
+def checkClaimOf (ixonEnv : Ixon.Env) (addr : Address) : IO Ix.Claim := do
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)
+  return Ix.Claim.check ctx addr none
+
 /-- Build a `ClaimWitness` for the `verify_claim` entrypoint against
-    `Ix.Claim.check addr none` (full transitive typecheck of the
-    target's closure). -/
+    `checkClaimOf ixonEnv addr`. -/
 def mkWitness (addr : Address) (ixonEnv : Ixon.Env) :
     IO IxVM.ClaimHarness.ClaimWitness := do
+  let claim ← checkClaimOf ixonEnv addr
   IO.ofExcept <|
-    IxVM.ClaimHarness.buildClaimWitness ixonEnv (Ix.Claim.check addr none) {}
+    IxVM.ClaimHarness.buildClaimWitness ixonEnv claim {}
+
+/-- Load an `.ixe` for IxVM claims: its environment, given the default role
+    binding when the file carries none (`withDefaultRoleBinding`), and a
+    Rust handle over that same environment. -/
+def loadBoundIxe (path : String) : IO (Ixon.Env × Aiur.EnvHandle) := do
+  let bytes ← IO.FS.readBinFile path
+  let env ← match Ixon.deEnvAnon bytes with
+    | .error e => throw <| IO.userError s!"Failed to deserialize {path}: {e}"
+    | .ok env => pure env
+  if env.roleBinding.isSome then
+    match Aiur.EnvHandle.fromIxe path with
+    | .error e => throw <| IO.userError s!"EnvHandle.fromIxe {path}: {e}"
+    | .ok h => return (env, h)
+  let env ← IO.ofExcept (withDefaultRoleBinding env)
+  let envBytes ← match Ixon.serEnv env with
+    | .error e => throw <| IO.userError s!"serEnv {path}: {e}"
+    | .ok b => pure b
+  match Aiur.EnvHandle.fromBytes envBytes with
+  | .error e => throw <| IO.userError s!"EnvHandle.fromBytes {path}: {e}"
+  | .ok h => return (env, h)
 
 /-- Compute + emit per-circuit stats. With `statsOut = none` prints to
     stdout; with `some path` redirects stdout to the file for the
@@ -124,13 +150,7 @@ def runBatchCheck (ixePath : String) (names : List String) (jobs : Nat)
     match toplevel.compileWithGroups IxVM.functionGroups with
     | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
     | .ok c => pure c
-  let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
-    | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
-    | .ok h => pure h
-  let bytes ← IO.FS.readBinFile ixePath
-  let ixonEnv ← match Ixon.deEnvAnon bytes with
-    | .error e => IO.eprintln s!"Failed to deserialize {ixePath}: {e}"; return 1
-    | .ok env => pure env
+  let (ixonEnv, envHandle) ← loadBoundIxe ixePath
   IO.println s!"Loaded {ixePath}: {ixonEnv.namedCount} named, \
     {ixonEnv.constCount} consts, {ixonEnv.blobCount} blobs"
   -- Unresolved names are recorded and reported with the check
@@ -257,19 +277,11 @@ def forEachClaim
     -- Build the env once for the entire batch. The lazy index parse
     -- runs O(num_consts) once at handle construction; all per-name
     -- FFI calls below share the parsed env (no per-call re-mmap).
-    let envHandle ← match Aiur.EnvHandle.fromIxe path with
-      | .error e =>
-        IO.eprintln s!"EnvHandle.fromIxe {path}: {e}"; return 1
-      | .ok h => pure h
-    -- We still load a Lean-side Ixon.Env for `resolveIxeAddr` (the
-    -- name → address resolution used by `--claim` / per-name modes)
-    -- and for the rare non-`check addr none` claim-variant Lean
-    -- witness builder. Anon load is lazy zero-copy.
-    let bytes ← IO.FS.readBinFile path
-    let ixonEnv ← match Ixon.deEnvAnon bytes with
-      | .error e =>
-        IO.eprintln s!"Failed to deserialize {path}: {e}"; return 1
-      | .ok env => pure env
+    -- The Lean-side Ixon.Env serves `resolveIxeAddr` (the name → address
+    -- resolution used by `--claim` / per-name modes), the claims' context
+    -- and the rare non-`check addr none` claim-variant Lean witness
+    -- builder. Anon load is lazy zero-copy.
+    let (ixonEnv, envHandle) ← loadBoundIxe path
     IO.println s!"Loaded {path}: {ixonEnv.namedCount} named, \
       {ixonEnv.constCount} consts, {ixonEnv.blobCount} blobs"
     if let some hex := claimHex then
@@ -283,7 +295,7 @@ def forEachClaim
       -- path even for the fast-path shape — `.addr` targets are
       -- unreachable from `runInterp`.
       let target : Target ← match claim with
-        | .check addr none =>
+        | .check _ addr none =>
           if forceLeanWitness then
             let witness ← IO.ofExcept <|
               IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
@@ -301,7 +313,7 @@ def forEachClaim
       for (ixName, named) in sorted do
         let leanName := ixNameToLeanName ixName
         let label := toString leanName
-        let claim := Ix.Claim.check named.addr none
+        let claim ← checkClaimOf ixonEnv named.addr
         let target : Target ←
           if forceLeanWitness then
             let w ← mkWitness named.addr ixonEnv
@@ -319,7 +331,7 @@ def forEachClaim
           if !keepGoing then break
         | some addr =>
           let label := arg
-          let claim := Ix.Claim.check addr none
+          let claim ← checkClaimOf ixonEnv addr
           let target : Target ←
             if forceLeanWitness then
               let w ← mkWitness addr ixonEnv
@@ -345,7 +357,7 @@ def forEachClaim
       -- never references them.
       let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
       let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
-      let claim := Ix.Claim.check addr none
+      let claim ← checkClaimOf ixonEnv addr
       if forceLeanWitness then
         let w ← mkWitness addr ixonEnv
         runOne claim none (.leanW w) label

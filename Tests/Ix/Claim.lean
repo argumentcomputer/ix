@@ -4,6 +4,7 @@
 
 module
 public import Ix.Claim
+public import Ix.SpecDigest
 public import Tests.Gen.Claim
 
 open LSpec SlimCheck
@@ -24,23 +25,30 @@ private def addr1 : Address := Address.blake3 "hello".toUTF8
 private def addr2 : Address := Address.blake3 "world".toUTF8
 private def addr3 : Address := Address.blake3 "test".toUTF8
 
+/-- This specification set, a stand-in binding hash, the standard axioms only.
+    The same fixture as `test_ctx` in `crates/ixon/src/proof.rs`. -/
+private def ctx : Ix.ClaimContext :=
+  { spec := Ix.SpecDigest.specDigest.toOption.getD default
+    binding := Address.blake3 "binding".toUTF8
+    axioms := none }
+
 def claimUnits : TestSeq :=
   -- Typechecking claims: both no-asm and with-asm forms.
-  test "Eval no-asm roundtrip" (claimSerde (.eval addr1 addr2 none))
+  test "Eval no-asm roundtrip" (claimSerde (.eval ctx addr1 addr2 none))
   ++ test "Eval with-asm roundtrip"
-       (claimSerde (.eval addr1 addr2 (some addr3)))
-  ++ test "Check no-asm roundtrip" (claimSerde (.check addr1 none))
+       (claimSerde (.eval ctx addr1 addr2 (some addr3)))
+  ++ test "Check no-asm roundtrip" (claimSerde (.check ctx addr1 none))
   ++ test "Check with-asm roundtrip"
-       (claimSerde (.check addr1 (some addr2)))
-  ++ test "CheckEnv no-asm roundtrip" (claimSerde (.checkEnv addr1 none))
+       (claimSerde (.check ctx addr1 (some addr2)))
+  ++ test "CheckEnv no-asm roundtrip" (claimSerde (.checkEnv ctx addr1 none))
   ++ test "CheckEnv with-asm roundtrip"
-       (claimSerde (.checkEnv addr1 (some addr2)))
+       (claimSerde (.checkEnv ctx addr1 (some addr2)))
   -- Contains
   ++ test "Contains roundtrip" (claimSerde (.contains addr1 addr2))
   -- Catalog (the first multi-byte claim tag)
-  ++ test "Catalog no-asm roundtrip" (claimSerde (.catalog addr1 addr2 none))
+  ++ test "Catalog no-asm roundtrip" (claimSerde (.catalog ctx addr1 addr2 none))
   ++ test "Catalog with-asm roundtrip"
-       (claimSerde (.catalog addr1 addr2 (some addr3)))
+       (claimSerde (.catalog ctx addr1 addr2 (some addr3)))
   -- Reveal claim variants (carried over from previous suite)
   ++ test "Reveal defn safety-only" (claimSerde (.reveal addr1
     (.defn none (some .safe) none none none)))
@@ -70,34 +78,47 @@ def claimUnits : TestSeq :=
 
   Claim variants 3..=7 are single-byte TagN (`f = 4`) headers
   `0xE3`..`0xE7`, followed by the scope bytes (object format 4, then the
-  validator). Each claim has an opt byte (`0x00` for `none`,
+  validator). The typing claims (validator 3, erased-lean-v2) then carry
+  their context: specification digest, binding hash and an axioms opt byte,
+  65 bytes when there are no further axioms. Each claim has an opt byte (`0x00` for `none`,
   `0x01`+32-byte address for `some`).
 -/
 
 def claimEncodingTests : TestSeq :=
-  let evalBytes := Claim.ser (.eval addr1 addr2 none)
-  let evalWithAsm := Claim.ser (.eval addr1 addr2 (some addr3))
-  let checkBytes := Claim.ser (.check addr1 none)
-  let checkWithAsm := Claim.ser (.check addr1 (some addr2))
-  let checkEnvBytes := Claim.ser (.checkEnv addr1 none)
+  let evalBytes := Claim.ser (.eval ctx addr1 addr2 none)
+  let evalWithAsm := Claim.ser (.eval ctx addr1 addr2 (some addr3))
+  let checkBytes := Claim.ser (.check ctx addr1 none)
+  let checkWithAsm := Claim.ser (.check ctx addr1 (some addr2))
+  let checkEnvBytes := Claim.ser (.checkEnv ctx addr1 none)
   let containsBytes := Claim.ser (.contains addr1 addr2)
   let revealSafetyOnly := Claim.ser
     (.reveal addr1 (.defn none (some .safe) none none none))
   let revealAllFields := Claim.ser (.reveal addr1
     (.defn (some .defn) (some .safe) (some 3) (some addr2) (some addr3)))
-  -- Two scope bytes follow each claim tag. Eval = 68 bytes; with asm = 100
+  let retiredRefused : Bool := match Claim.de (checkBytes.set! 2 1) with
+    | .error e => (e.splitOn "erased-lean-v1 is retired").length > 1
+    | .ok _ => false
+  -- Two scope bytes follow each claim tag, then the 65-byte context.
+  -- Eval = 133 bytes; with asm = 165
   test "Eval tag byte is 0xE3" (evalBytes.data[0]! == 0xE3)
-  ++ test "Eval scope is object format 4, erased-lean-v1"
-       (evalBytes.data[1]! == 4 && evalBytes.data[2]! == 1)
-  ++ test "Eval no-asm size is 68" (evalBytes.size == 68)
-  ++ test "Eval with-asm size is 100" (evalWithAsm.size == 100)
-  -- Check: tag + scope + 32 + option = 36 bytes; with asm = 68
+  ++ test "Eval scope is object format 4, erased-lean-v2"
+       (evalBytes.data[1]! == 4 && evalBytes.data[2]! == 3)
+  ++ test "Eval context follows the scope"
+       (evalBytes.extract 3 35 == ctx.spec.hash
+         && evalBytes.extract 35 67 == ctx.binding.hash
+         && evalBytes.data[67]! == 0)
+  ++ test "Eval no-asm size is 133" (evalBytes.size == 133)
+  ++ test "Eval with-asm size is 165" (evalWithAsm.size == 165)
+  -- Check: tag + scope + context + 32 + option = 101 bytes; with asm = 133
   ++ test "Check tag byte is 0xE4" (checkBytes.data[0]! == 0xE4)
-  ++ test "Check no-asm size is 36" (checkBytes.size == 36)
-  ++ test "Check with-asm size is 68" (checkWithAsm.size == 68)
-  -- CheckEnv: tag + scope + 32 + option = 36 bytes
+  ++ test "Check no-asm size is 101" (checkBytes.size == 101)
+  ++ test "Check with-asm size is 133" (checkWithAsm.size == 133)
+  -- CheckEnv: tag + scope + context + 32 + option = 101 bytes
   ++ test "CheckEnv tag byte is 0xE5" (checkEnvBytes.data[0]! == 0xE5)
-  ++ test "CheckEnv no-asm size is 36" (checkEnvBytes.size == 36)
+  ++ test "CheckEnv no-asm size is 101" (checkEnvBytes.size == 101)
+  ++ test "Check for the retired erased-lean-v1 validator is refused" retiredRefused
+  ++ test "Check with an axioms commitment roundtrips"
+       (claimSerde (.check { ctx with axioms := some addr3 } addr1 none))
   -- Reveal claim: 0xE6
   ++ test "Reveal tag byte is 0xE6" (revealSafetyOnly.data[0]! == 0xE6)
   -- Reveal: tag + scope + commitment + variant + mask + safety = 38
@@ -124,12 +145,12 @@ private def catAsm : Address := Address.blake3 "assumptions".toUTF8
 
 /-- Must equal the Rust pin in `proof.rs::catalog_claim_wire_bytes_pinned`. -/
 private def catalogDigestPin : String :=
-  "8c4fa4fa2e88fc73c72fbb624696485ec252c6685247541b40a59b221f83dbf4"
+  "5f6f427ffe393beabc12bf64df64c32657d79d0dd925ec7a3e2ea9180fa85e03"
 
 def catalogClaimTests : TestSeq :=
-  let someBytes := Claim.ser (.catalog catMembers catContent (some catAsm))
-  let noneBytes := Claim.ser (.catalog catMembers catContent none)
-  let proof : Ixon.Proof := { claim := .catalog catMembers catContent none
+  let someBytes := Claim.ser (.catalog ctx catMembers catContent (some catAsm))
+  let noneBytes := Claim.ser (.catalog ctx catMembers catContent none)
+  let proof : Ixon.Proof := { claim := .catalog ctx catMembers catContent none
                               proof := .empty }
   let proofBytes := Ixon.Proof.ser proof
   let proofRoundtrips : Bool := match Ixon.Proof.de proofBytes with
@@ -137,10 +158,10 @@ def catalogClaimTests : TestSeq :=
     | .error _ => false
   test "Catalog tag is 2 bytes 0xE8 0x00 (TagN 4 0xE 8)"
     (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x00)
-  ++ test "Catalog scope is object format 4, erased-lean-v1"
-       (someBytes.data[2]! == 4 && someBytes.data[3]! == 1)
-  ++ test "Catalog no-asm size is 69" (noneBytes.size == 4 + 64 + 1)
-  ++ test "Catalog with-asm size is 101" (someBytes.size == 4 + 64 + 33)
+  ++ test "Catalog scope is object format 4, erased-lean-v2"
+       (someBytes.data[2]! == 4 && someBytes.data[3]! == 3)
+  ++ test "Catalog no-asm size is 134" (noneBytes.size == 4 + 65 + 64 + 1)
+  ++ test "Catalog with-asm size is 166" (someBytes.size == 4 + 65 + 64 + 33)
   ++ test "Catalog digest parity with Rust pin"
        (toString (Address.blake3 someBytes) == catalogDigestPin)
   ++ test "Catalog proof wrapper tag is single-byte 0xF5"

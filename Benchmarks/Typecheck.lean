@@ -571,11 +571,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       TracingTexray.resetPeakTreeRss
       let (res, execSec) ← timed fun _ =>
         if skipDeps then
-          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-          if useInterp then
-            compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
-          else
-            compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+          (IxVM.ClaimHarness.buildVerifyConst ixonEnv addr).bind fun witness =>
+            if useInterp then
+              compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
+            else
+              compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
         else if join then
           compiled.bytecode.shardCheckWithEnv funIdx envHandle
             (singletonOwnedBlob addr) useInterp
@@ -672,14 +672,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       TracingTexray.resetPeakTreeRss
       let (proveRes, proveSec) ← timed fun _ =>
         if skipDeps then
-          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-          let proveRes :=
-            if useInterp then
-              aiurSystem.prove funIdx witness.input witness.inputIOBuffer
-            else
-              aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
-          proveRes.map fun (claim, proof, ioBuf) =>
-            (claim, proof, ioBuf, (none : Option ByteArray))
+          (IxVM.ClaimHarness.buildVerifyConst ixonEnv addr).bind fun witness =>
+            let proveRes :=
+              if useInterp then
+                aiurSystem.prove funIdx witness.input witness.inputIOBuffer
+              else
+                aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
+            proveRes.map fun (claim, proof, ioBuf) =>
+              (claim, proof, ioBuf, (none : Option ByteArray))
         else if join || traceShards then
           match aiurSystem.shardProveWithEnv funIdx envHandle
               (singletonOwnedBlob addr) maxRamBytes false traceShards with
@@ -863,10 +863,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     let aggrVk := aggrSystem.vkBytes
     let allowed := Aggr.allowedBlob ixvmVk funIdx aggrVk aggrIdx
     let leftStatement : Aggr.CheckEnvTrees := {
+      ctx := left.statement.ctx
       subjects := left.statement.subjects
       assumptions := left.statement.assumptions
     }
     let rightStatement : Aggr.CheckEnvTrees := {
+      ctx := right.statement.ctx
       subjects := right.statement.subjects
       assumptions := right.statement.assumptions
     }

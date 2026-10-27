@@ -72,6 +72,13 @@ def knownIncompatible : Array (Lean.Name × String) := #[
    "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107")
 ]
 
+/-- Fixtures proved by `native_decide`, which the tutorial expects Lean's kernel
+    to accept by native evaluation. A claim's theory has none: `Lean.reduceBool`
+    never reduces, so IxVM rejects them. -/
+def nativeEvaluationFixtures : Array Lean.Name := #[
+  `Tests.Ix.Kernel.TutorialDefs.natBleTrue, `Tests.Ix.Kernel.TutorialDefs.natBleFalse,
+  `Tests.Ix.Kernel.TutorialDefs.natBeqTrue, `Tests.Ix.Kernel.TutorialDefs.natBeqFalse]
+
 private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run do
   let skipSet : Std.HashSet Lean.Name :=
     knownIncompatible.foldl (init := {}) (fun s (n, _) => s.insert n)
@@ -91,7 +98,7 @@ private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run 
       seen := seen.insert n
       if !env.constants.contains n && !rawNames.contains n then continue
       if skipSet.contains n then continue
-      out := out.push { name := n, expectPass := pass }
+      out := out.push { name := n, expectPass := pass && !nativeEvaluationFixtures.contains n }
   return out
 
 /-- Build the `verify_const` input for `name` against the shared
@@ -104,8 +111,9 @@ private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
   | some addr =>
     -- Subject-only check via `verify_const`. Each fixture runs in
     -- isolation; we don't revalidate transitive deps N times.
-    let witness := buildVerifyConst ixonEnv addr
-    .ok (witness.input, witness.inputIOBuffer)
+    match buildVerifyConst ixonEnv addr with
+    | .ok witness => .ok (witness.input, witness.inputIOBuffer)
+    | .error e => .error e
 
 /-- Run the arena suite against `compiled` (already-compiled Aiur
     `IxVM.ixVMFull` toplevel) using a single shared Ixon env. Returns one
@@ -128,7 +136,7 @@ def arenaTests (env : Lean.Environment)
     (checks.map (·.name)).toList
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI
     (closed ++ rawConsts.toList.map fun ci => (ci.name, ci))
-  let ixonEnv := rawEnv.toEnv
+  let ixonEnv ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding rawEnv.toEnv)
   let mut tests : TestSeq := .done
   for c in checks do
     let label := s!"arena {if c.expectPass then "GOOD" else "BAD"} {c.name}"
