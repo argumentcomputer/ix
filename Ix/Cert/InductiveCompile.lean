@@ -6,12 +6,20 @@ import Ix.CompileCert.Canon.Ctx
 
 `BlockEmission.mutualBlock_correct` reads a block compiled one member per class back as its
 members' sources, in the compile environment's reading context. This module splits that
-reading member by member and moves it to the closure's context (`RecordTransfer.read_le`), for
-an inductive block in Lean's order (`inductiveBlock_reads`): the record is a block of
-inductives keeping the members' headers, whose member reader in the closure's context reads
-every type and constructor as a term related to its Lean type. The block's self references
-are its members' keys in the closure's context; the constructors of the block occur in no
-member's types (`NoCtorIn`), so they need no self reference. -/
+reading member by member and moves it to the closure's context (`RecordTransfer.read_le`):
+
+* `inductiveBlock_reads`: an inductive block in Lean's order is a record of inductives keeping
+  the members' safety and headers (`IndFacts`), whose member reader in the closure's context
+  reads every type and constructor as a term related to its Lean type. The block's self
+  references are its members' keys in the closure's context; no constructor of the block
+  occurs in its members' types, so none needs a self reference (`scopes_of_noCtor`).
+* `recursorBlock_reads`: a recursor family in family order is a lone recursor's record or a
+  block of several (`RecPayload`), whose recursor reader reads every recursor's type and
+  rules' right-hand sides as terms related to their Lean ones.
+* `compiled_inductive_unit_reads`: with the closure's keys, block shape and recursor index,
+  these are the reader's facts of `InductiveUnits.inductive_unit_reads` (`typeFacts_of`,
+  `recFacts_of`), so an inductive group compiled in Lean's order reads as quotient Source's
+  unit renamed. -/
 
 namespace Ix.Cert.InductiveCompile
 
@@ -516,5 +524,383 @@ info: 'Ix.Cert.InductiveCompile.recursorBlock_reads' depends on axioms: [propext
 -/
 #guard_msgs in
 #print axioms recursorBlock_reads
+
+/-! ## The closure's lookups of the records -/
+
+theorem inductiveAt_block {cx : Ctx .anon} {owner : Address} {c : Ixon.Constant} {targets : List Ixon.Inductive}
+    (hstore : cx.store owner = some c) (hinfo : c.info = .muts (targets.map Ixon.MutConst.indc).toArray)
+    {mi : Nat} (hmi : mi < targets.length) : inductiveAt cx.store (.member owner mi) = some targets[mi] := by
+  simp [inductiveAt, hstore, hinfo, hmi]
+
+theorem find_swap {α : Type} : ∀ (l : List α) (k j : Nat) (h : j < l.length),
+    ((l.zipIdx k).map fun p => (p.2, p.1)).find? (·.1 == k + j) = some (k + j, l[j])
+  | [], _, _, h => absurd h (by simp)
+  | a :: l, k, 0, _ => by simp
+  | a :: l, k, j + 1, h => by
+    have hne : (k == k + (j + 1)) = false := by simp
+    rw [List.zipIdx_cons, List.map_cons, List.find?_cons]
+    simp only [hne]
+    have := find_swap l (k + 1) j (by simpa using h)
+    rw [show k + 1 + j = k + (j + 1) by omega] at this
+    simpa using this
+
+theorem recursorMembers_find {c : Ixon.Constant} {rIs : List Ixon.Recursor}
+    (hinfo : c.info = blockInfo (rIs.map Ixon.MutConst.recr)) {j : Nat} (hj : j < rIs.length) :
+    (recursorMembers c).find? (·.1 == j) = some (j, rIs[j]) := by
+  rcases rIs with _ | ⟨r, _ | ⟨r₂, rest⟩⟩
+  · exact absurd hj (by simp)
+  · have hb : blockInfo [Ixon.MutConst.recr r] = .recr r := rfl
+    rw [List.map_singleton, hb] at hinfo
+    have hj0 : j = 0 := by simpa using hj
+    subst hj0
+    simp [recursorMembers, hinfo]
+  · have hb : blockInfo ((r :: r₂ :: rest).map Ixon.MutConst.recr) =
+        .muts ((r :: r₂ :: rest).map Ixon.MutConst.recr).toArray := rfl
+    rw [hb] at hinfo
+    have hm : recursorMembers c = (((r :: r₂ :: rest).zipIdx 0).map fun p => (p.2, p.1)).toArray := by
+      simp only [recursorMembers, hinfo]
+      apply Array.ext'
+      simp only [Array.toList_filterMap, Array.toList_zipIdx]
+      rw [List.zipIdx_map]
+      simp only [List.filterMap_map]
+      apply InductiveBlocks.filterMap_eq_map
+      intro x _
+      rfl
+    rw [hm, List.find?_toArray]
+    simpa using find_swap (r :: r₂ :: rest) 0 j hj
+
+/-- Quotient Source's conversion of an inductive group refuses unsafe recursors. -/
+theorem convertInductive_recs_safe {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)}
+    {recs : Array Ix.RecursorVal} {conv : Ix.LeanIngress.Converted}
+    (ran : Ix.LeanIngress.convertInductive types ctors recs = .ok conv) : ∀ r ∈ recs.toList, r.isUnsafe = false := by
+  unfold Ix.LeanIngress.convertInductive at ran
+  split at ran
+  · simp only at ran
+    split at ran
+    · cases ran
+    · rename_i safe
+      intro r hr
+      cases hu : r.isUnsafe
+      · rfl
+      · refine absurd ?_ safe
+        rw [Bool.or_eq_true]
+        exact .inr (Array.any_eq_true'.mpr ⟨r, Array.mem_def.mpr hr, hu⟩)
+  · cases ran
+
+/-- An inductive group's member, as the compiler takes it (`MutConst.fromInductiveVal`). -/
+def indOf (v : Ix.InductiveVal) (cs : Array Ix.ConstructorVal) : Ix.Ind :=
+  ⟨v.cnst.name, v.cnst.levelParams, v.cnst.type, v.numParams, v.numIndices, v.all, cs, v.numNested, v.isRec,
+   v.isReflexive, v.isUnsafe⟩
+
+theorem fromInductiveVal_eq (v : Ix.InductiveVal) (cs : Array Ix.ConstructorVal) :
+    MutConst.fromInductiveVal v cs = .indc (indOf v cs) := rfl
+
+/-- An inductive group's members, as the compiler takes them, in Lean's order. -/
+def indsOf (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal)) : List Ix.Ind :=
+  List.zipWith indOf types.toList ctors.toList
+
+theorem indsOf_getElem {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)}
+    (hcsize : ctors.size = types.size) {i : Nat} (hi : i < (indsOf types ctors).length) :
+    (indsOf types ctors)[i] = indOf (types[i]'(by simp [indsOf, hcsize] at hi; exact hi))
+      (ctors[i]'(by simp [indsOf, hcsize] at hi; omega)) := by
+  simp [indsOf]
+
+theorem indsOf_length {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)}
+    (hcsize : ctors.size = types.size) : (indsOf types ctors).length = types.size := by
+  simp [indsOf, hcsize]
+
+theorem forall₂_getElem {α β : Type} {R : α → β → Prop} :
+    ∀ {l : List α} {m : List β}, List.Forall₂ R l m → ∀ i (h₁ : i < l.length) (h₂ : i < m.length), R l[i] m[i]
+  | [], [], .nil, _, h, _ => absurd h (by simp)
+  | _ :: _, _ :: _, .cons hab _, 0, _, _ => hab
+  | _ :: _, _ :: _, .cons _ rest, i + 1, h₁, h₂ =>
+    forall₂_getElem rest i (by simpa using h₁) (by simpa using h₂)
+
+theorem forall₂_of_getElem {α β : Type} {R : α → β → Prop} :
+    ∀ {l : List α} {m : List β}, l.length = m.length → (∀ i (h₁ : i < l.length) (h₂ : i < m.length), R l[i] m[i]) →
+      List.Forall₂ R l m
+  | [], [], _, _ => .nil
+  | _ :: _, _ :: _, hl, h => .cons (h 0 (by simp) (by simp))
+      (forall₂_of_getElem (by simpa using hl) fun i h₁ h₂ => h (i + 1) (by simpa using h₁) (by simpa using h₂))
+  | [], _ :: _, hl, _ => absurd hl (by simp)
+  | _ :: _, [], hl, _ => absurd hl (by simp)
+
+/-! ## An inductive group's unit, from its compile runs -/
+
+open Ix.Cert.InductiveUnits (TypeFacts CtorFacts RecFacts srcBlock)
+open Ix.Cert.SourceConversion (ownNum recNum motiveOf)
+open Ix.Cert.CtxAgree (numNestedOf)
+open Ix.Kernel (KeyScope InjOn Key)
+
+theorem ctorFacts_of {cx : Ctx .anon} {owner : Address} {mr : MemberReader .anon} {i j : Nat}
+    {c : Ix.ConstructorVal} {ct : Ixon.Constructor} {lps : Array Ix.Name} (hc : c.cnst.levelParams = lps)
+    (nodup : lps.toList.Nodup) (cidx : ct.cidx.toNat = j) (safe : ct.isUnsafe = false)
+    (key : cx.memberKey (.ctor owner i j) = .ok (srcKey ρ f c.cnst.name))
+    (hdr : ProjectionLayout.CtorHeader c ct)
+    (read : ∃ type, mr.read ct.typ = .ok type ∧ blockRel ρ f lps c.cnst.type type) :
+    CtorFacts ρ f cx owner mr i j c ct := by
+  obtain ⟨clvls, -, cparams, cfields⟩ := hdr
+  obtain ⟨type, read, rel⟩ := read
+  refine ⟨cidx, safe, key, ⟨type, read, ?_⟩, clvls, cparams, cfields, by rw [hc]; exact nodup⟩
+  show Related _ (LevelMeaning c.cnst.levelParams.toList (Numbering.mk c.cnst.levelParams false).pos id) _ _
+  rw [hc]
+  exact rel
+
+/-- **The reader's facts of a compiled type**, from the compile-side reading and the closure's
+keys. -/
+theorem typeFacts_of {cx : Ctx .anon} {owner : Address} {mr : MemberReader .anon} {i : Nat}
+    {v : Ix.InductiveVal} {cs : Array Ix.ConstructorVal} {t : Ixon.Inductive} {lps : Array Ix.Name}
+    (hv : v.cnst.levelParams = lps) (hcs : ∀ c ∈ cs.toList, c.cnst.levelParams = lps) (nodup : lps.toList.Nodup)
+    (safe : v.isUnsafe = false) (ctorSafe : ∀ c ∈ cs.toList, c.isUnsafe = false)
+    (positions : ∀ j (hj : j < cs.size), cs[j].cidx = j)
+    (key : cx.memberKey (.member owner i) = .ok (srcKey ρ f v.cnst.name))
+    (ctorKeys : ∀ j (hj : j < cs.size), cx.memberKey (.ctor owner i j) = .ok (srcKey ρ f cs[j].cnst.name))
+    (h : IndFacts (indOf v cs) t ∧ (∃ type, mr.read t.typ = .ok type ∧ blockRel ρ f lps (indOf v cs).type type) ∧
+      List.Forall₂ (fun c (ct : Ixon.Constructor) => ∃ type, mr.read ct.typ = .ok type ∧
+        blockRel ρ f lps c.cnst.type type) (indOf v cs).ctors.toList t.ctors.toList) :
+    TypeFacts ρ f cx owner mr i v cs t := by
+  obtain ⟨⟨unsafeEq, ⟨lvls, params, indices, -⟩, ctorFacts⟩, ⟨type, read, rel⟩, ctorReads⟩ := h
+  have hlen : t.ctors.size = cs.size := by
+    have := forall₂_length ctorFacts
+    simpa [indOf] using this.symm
+  refine ⟨key, ⟨type, read, ?_⟩, unsafeEq.trans safe, params, lvls, indices,
+    by rw [hv]; exact nodup, hlen, fun j hj hj' => ?_⟩
+  · show Related _ (LevelMeaning v.cnst.levelParams.toList (Numbering.mk v.cnst.levelParams false).pos id) _ _
+    rw [hv]
+    exact rel
+  have hj₁ : j < (indOf v cs).ctors.toList.length := by simpa [indOf] using hj
+  have hj₂ : j < t.ctors.toList.length := by simpa using hj'
+  obtain ⟨hdr, cunsafe⟩ := forall₂_getElem ctorFacts j hj₁ hj₂
+  have creads := forall₂_getElem ctorReads j hj₁ hj₂
+  have hmem : cs[j] ∈ cs.toList := Array.getElem_mem_toList hj
+  exact ctorFacts_of ρ f (hcs _ hmem) nodup (hdr.2.1.trans (positions j hj))
+    (cunsafe.trans (ctorSafe _ hmem)) (ctorKeys j hj) hdr creads
+
+theorem recReader_key (cx : Ctx .anon) (owner : Address) {rc : Ixon.Constant} {ts : List Ixon.Recursor}
+    (hne : ts ≠ []) (hinfo : rc.info = blockInfo (ts.map .recr)) (hn : ts.length ≠ 1) (k k' : CName .anon)
+    (lps : List LevelParam) : RecursorReads.recReader cx rc owner k lps = RecursorReads.recReader cx rc owner k' lps := by
+  unfold RecursorReads.recReader
+  rw [recSelf_eq cx owner k hne hinfo, recSelf_eq cx owner k' hne hinfo]
+  simp [recSelfOf, hn]
+
+/-- **The reader's facts of a compiled recursor**, from the compile-side reading, the
+closure's keys and the recursor index. -/
+theorem recFacts_of {cx : Ctx .anon} {blockLps : List LevelParam} {types : Array Ix.InductiveVal}
+    {first : Ix.InductiveVal} {nested : Prop} {rOwner : Address} {rc : Ixon.Constant} {rIs : List Ixon.Recursor}
+    {recs : List Ix.RecursorVal} (hlen : rIs.length = recs.length) (hstore : cx.store rOwner = some rc)
+    (hinfo : rc.info = blockInfo (rIs.map .recr)) {rlps : Array Ix.Name} {large : Bool} {key₀ : CName .anon}
+    (hkey₀ : ∀ r ∈ recs.head?, key₀ = srcKey ρ f r.cnst.name) {j : Nat} (hj : j < recs.length)
+    (hr : RecPayload recs[j] (rIs[j]'(hlen ▸ hj)) ∧
+      (∃ type, (RecursorReads.recReader cx rc rOwner key₀ (Numbering.mk rlps large).params).read
+        (rIs[j]'(hlen ▸ hj)).typ = .ok type ∧ recRel ρ f rlps large recs[j].cnst.type type) ∧
+      List.Forall₂ (fun (rule : Ix.RecursorRule) (rr : Ixon.RecursorRule) =>
+        ∃ rhs, (RecursorReads.recReader cx rc rOwner key₀ (Numbering.mk rlps large).params).read rr.rhs = .ok rhs ∧
+          recRel ρ f rlps large rule.rhs rhs) recs[j].rules.toList (rIs[j]'(hlen ▸ hj)).rules.toList)
+    (hnum : recNum first recs[j] = Numbering.mk rlps large) (safe : recs[j].isUnsafe = false)
+    (nodup : recs[j].cnst.levelParams.toList.Nodup)
+    (key : cx.memberKey (.member rOwner j) = .ok (srcKey ρ f recs[j].cnst.name))
+    {entry : RecEntry} (hentry : cx.index.recs[ConstRef.member rOwner j]? = some entry)
+    (hlpsE : recLps entry.large blockLps = (recNum first recs[j]).params) {major : Ixon.Inductive}
+    {mb : Address} {mi : Nat} (hmajor : inductiveAt cx.store entry.major = some major)
+    (hmb : entry.major = .member mb mi) (hmsize : major.ctors.size = recs[j].rules.size)
+    (ruleKeys : ∀ k (hk : k < recs[j].rules.size),
+      cx.memberKey (.ctor mb mi k) = .ok (srcKey ρ f recs[j].rules[k].ctor))
+    (motive : nested → some entry.motive = motiveOf types recs[j]) :
+    RecFacts ρ f cx blockLps types first nested (.member rOwner j) recs[j] := by
+  obtain ⟨⟨unsafeEq, kEq, ⟨-, params, indices, motives, minors, bounded⟩, fields⟩, ⟨type, read, rel⟩, rules⟩ := hr
+  have hjI : j < rIs.length := hlen ▸ hj
+  have hne : rIs ≠ [] := by
+    intro h
+    rw [h] at hjI
+    exact absurd hjI (by simp)
+  have hrlps : recs[j].cnst.levelParams = rlps := congrArg Numbering.names hnum
+  -- the reader at the recursor's own key
+  have hreader : RecursorReads.recReader cx rc rOwner (srcKey ρ f recs[j].cnst.name) (recNum first recs[j]).params =
+      RecursorReads.recReader cx rc rOwner key₀ (Numbering.mk rlps large).params := by
+    rw [hnum]
+    by_cases h1 : rIs.length = 1
+    · have hj0 : j = 0 := by omega
+      subst hj0
+      rw [hkey₀ recs[0] (by cases recs with
+        | nil => exact absurd hj (by simp)
+        | cons r rs => simp)]
+    · exact recReader_key cx rOwner hne hinfo h1 _ _ _
+  have hrel : ∀ {s : Ix.Expr} {t : CExpr .anon}, recRel ρ f rlps large s t →
+      Related (sourceNames ρ f) (LevelMeaning recs[j].cnst.levelParams.toList (recNum first recs[j]).pos
+        (recParam (recNum first recs[j]).params)) s t := by
+    intro s t h
+    rw [hnum, hrlps]
+    exact h
+  have hsize : (rIs[j]'hjI).rules.size = recs[j].rules.size := by
+    simpa using congrArg List.length fields
+  refine ⟨entry, rOwner, j, rc, j, rIs[j]'hjI, major, mb, mi, hentry, rfl, hstore,
+    recursorMembers_find hinfo hjI, unsafeEq.trans safe, key, hlpsE,
+    ⟨type, by rw [hreader]; exact read, hrel rel⟩, hmajor, hmsize.trans hsize.symm, hmb, hsize,
+    fun k hk hk' => ?_, params, motives, minors, indices, kEq, nodup, motive⟩
+  have hk₁ : k < recs[j].rules.toList.length := by simpa using hk'
+  have hk₂ : k < (rIs[j]'hjI).rules.toList.length := by simpa using hk
+  obtain ⟨rhs, rread, rrel⟩ := forall₂_getElem rules k hk₁ hk₂
+  have hf : (rIs[j]'hjI).rules[k].fields = recs[j].rules[k].nfields.toUInt64 := by
+    have := congrArg (·[k]?) fields
+    simpa [hk, hk'] using this
+  simp only [Array.getElem_toList] at rread rrel
+  refine ⟨ruleKeys k hk', ?_, ⟨rhs, by rw [hreader]; exact rread, hrel rrel⟩⟩
+  rw [hf]
+  exact Emission.exact_header _ (bounded _ (Array.getElem_mem_toList hk'))
+
+/-- **An inductive group compiled in Lean's order reads as quotient Source's unit renamed**,
+from every state related to the unit's (the `reads` of `StreamUnits.Units.record`).
+
+Premises: quotient Source's conversion and lowering of the group, with good keys; the group's
+Lean facts (shared level parameters, distinct, constructors at their positions, distinct
+names, no constructor in the members' types); the compile runs of the inductive block, in
+Lean's order, and of its recursor family, in family order, each from a clean state in a
+reading context aligned with its compile environment; and the closure's context: the two
+records in its store, reading their references as the compile environments do, the members',
+constructors' and recursors' keys, the block shape in Lean's order with the family's
+recursors, and each recursor's index entry. -/
+theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : InjOn f P)
+    {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
+    {conv : Ix.LeanIngress.Converted} (src : Ix.LeanIngress.convertInductive types ctors recs = .ok conv)
+    {first : Ix.InductiveVal} (hfirst : types[0]? = some first) (hcsize : ctors.size = types.size)
+    (lpsEq : ∀ v ∈ types.toList, v.cnst.levelParams = first.cnst.levelParams)
+    (ctorLps : ∀ cs ∈ ctors.toList, ∀ c ∈ cs.toList, c.cnst.levelParams = first.cnst.levelParams)
+    (nodup : first.cnst.levelParams.toList.Nodup)
+    (positions : ∀ i (hi : i < ctors.size) j (hj : j < ctors[i].size), ctors[i][j].cidx = j)
+    {rlps : Array Ix.Name} (recLpsEq : ∀ r ∈ recs.toList, r.cnst.levelParams = rlps)
+    (recNodup : rlps.toList.Nodup) (hrne : recs.toList ≠ [])
+    (distinct : Canon.KeysDistinct ((indsOf types ctors).map MutConst.indc))
+    (noCtor : ∀ i ∈ indsOf types ctors, ∀ e ∈ memberSources (.indc i),
+      ConstsSatisfy (fun n => ∀ i' ∈ indsOf types ctors, ∀ c ∈ i'.ctors.toList, n ≠ c.cnst.name) e)
+    (recDistinct : Canon.KeysDistinct (recs.toList.map MutConst.recr))
+    (context₁ : CompileEnv × BlockEnv) (free₁ : context₁.1.surgeryFree = true) {cx₁ : Ctx .anon}
+    (aligned₁ : ∀ a, cx₁.blob a = context₁.1.blobs.get? a) {bindings₁ : Bindings}
+    (external₁ : BindingsCorrect context₁.1 bindings₁ cx₁ (sourceNames ρ f))
+    {before₁ after₁ : BlockState} {out₁ : BlockResult} (clean₁ : Emission.Clean bindings₁ before₁)
+    (ran₁ : rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·]))) context₁ before₁ =
+      (.ok out₁, after₁))
+    (context₂ : CompileEnv × BlockEnv) (free₂ : context₂.1.surgeryFree = true) {cx₂ : Ctx .anon}
+    (aligned₂ : ∀ a, cx₂.blob a = context₂.1.blobs.get? a) {bindings₂ : Bindings}
+    (external₂ : BindingsCorrect context₂.1 bindings₂ cx₂ (sourceNames ρ f))
+    {before₂ after₂ : BlockState} {out₂ : BlockResult} (clean₂ : Emission.Clean bindings₂ before₂)
+    (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) context₂ before₂ =
+      (.ok out₂, after₂))
+    (cx : Ctx .anon) (owner rOwner : Address) (hstore₁ : cx.store owner = some out₁.block)
+    (hstore₂ : cx.store rOwner = some out₂.block)
+    (refs₁ : RecordTransfer.RefsLe out₁.block (ExpressionRead.withBlockBlobs cx₁ after₁) cx)
+    (refs₂ : RecordTransfer.RefsLe out₂.block (ExpressionRead.withBlockBlobs cx₂ after₂) cx)
+    (keys : ∀ i (hi : i < types.size), cx.memberKey (.member owner i) = .ok (srcKey ρ f types[i].cnst.name))
+    (ctorKeys : ∀ i (hi : i < ctors.size) j (hj : j < ctors[i].size),
+      cx.memberKey (.ctor owner i j) = .ok (srcKey ρ f ctors[i][j].cnst.name))
+    (recKeys : ∀ j (hj : j < recs.size), cx.memberKey (.member rOwner j) = .ok (srcKey ρ f recs[j].cnst.name))
+    {shape : BlockShape} (hindexed : cx.index.blocks[owner]? = some shape)
+    (order : shape.order = (List.range types.size).toArray)
+    (hrecs : shape.recs.toList = (List.range recs.size).map fun j => ConstRef.member rOwner j)
+    (entries : ∀ j (hj : j < recs.size), ∃ entry mi, ∃ hmi : mi < types.size,
+      cx.index.recs[ConstRef.member rOwner j]? = some entry ∧
+      recLps entry.large (List.range first.cnst.levelParams.size) = (recNum first recs[j]).params ∧
+      entry.major = .member owner mi ∧ recs[j].rules.size = (ctors[mi]'(hcsize ▸ hmi)).size ∧
+      (∀ k (hk : k < recs[j].rules.size),
+        cx.memberKey (.ctor owner mi k) = .ok (srcKey ρ f recs[j].rules[k].ctor)) ∧
+      (numNestedOf (srcBlock types ctors recs first) = 0 → some entry.motive = motiveOf types recs[j]))
+    (good : ∀ rb, conv.quotient ρ = .inductive rb → rb.Good P) {stS : State .source}
+    (typesGood : ∀ k : Key .source, k.Good P → ∀ p, stS.constTypes[k]? = some p → p.2.Good P)
+    (blocksGood : ∀ k : Key .source, k.Good P → ∀ b, stS.indBlocks[k]? = some b → b.Good P)
+    {rS : Read .source} (lowered : Ix.LeanIngress.lower stS (conv.quotient ρ) = .ok rS) :
+    ∀ stA : State .anon, StreamRename.StateRen f P stS stA →
+      ∃ rA, readRecord cx stA owner out₁.block = .ok rA ∧ StreamUnits.ReadRen f rS rA := by
+  obtain ⟨-, -, typeSafe, ctorSafe, -, -⟩ :=
+    Ix.CompileCert.SourceConstructorPositions.convertInductive_spec types ctors recs conv src
+  have recSafe := convertInductive_recs_safe src
+  have hlenI := indsOf_length hcsize
+  -- the inductive block
+  obtain ⟨targets, hinfo, hT⟩ := inductiveBlock_reads ρ f context₁ free₁ aligned₁ external₁ (indsOf types ctors)
+    first.cnst.levelParams (by
+      intro i hi
+      obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hi
+      rw [indsOf_getElem hcsize hk]
+      exact lpsEq _ (Array.getElem_mem_toList _))
+    owner (by
+      intro k hk
+      rw [indsOf_getElem hcsize hk]
+      exact keys k _)
+    distinct noCtor clean₁ ran₁ refs₁
+  have hlenT : targets.length = types.size := (forall₂_length hT).symm.trans hlenI
+  -- the recursor family
+  have hrsize : 0 < recs.size := by
+    rcases h : recs.toList with _ | ⟨r, rs⟩
+    · exact absurd h hrne
+    · have := congrArg List.length h
+      simp only [Array.length_toList, List.length_cons] at this
+      omega
+  obtain ⟨rIs, hrinfo, hR⟩ := recursorBlock_reads ρ f context₂ free₂ aligned₂ external₂ recs.toList hrne rlps
+    recLpsEq (rlps.size == first.cnst.levelParams.size + 1) rOwner (srcKey ρ f (recs[0]'hrsize).cnst.name)
+    (by
+      intro k hk
+      by_cases h1 : recs.toList.length = 1
+      · have hk0 : k = 0 := by omega
+        subst hk0
+        simp [recSelfOf, h1]
+        rfl
+      · simp only [recSelfOf, h1, ↓reduceIte, hk]
+        rw [recKeys k (by simpa using hk)]
+        simp)
+    recDistinct clean₂ ran₂ refs₂
+  have hlenR : rIs.length = recs.toList.length := (forall₂_length hR).symm
+  -- the unit's reading
+  refine InductiveUnits.inductive_unit_reads ρ f hP hf src hfirst cx owner out₁.block targets
+    (by
+      intro h
+      have hpos : 0 < types.size := (Array.getElem?_eq_some_iff.mp hfirst).1
+      rw [h] at hlenT
+      simp at hlenT
+      omega)
+    hinfo hindexed (by rw [order, hlenT]) hlenT hcsize ?typeFacts ?recFacts good typesGood blocksGood lowered
+  case typeFacts =>
+    intro i hi hi' hc
+    have hiI : i < (indsOf types ctors).length := hlenI ▸ hi
+    have h := forall₂_getElem hT i hiI hi'
+    rw [indsOf_getElem hcsize hiI] at h
+    exact typeFacts_of ρ f (lpsEq _ (Array.getElem_mem_toList hi))
+      (ctorLps _ (Array.getElem_mem_toList hc)) nodup (typeSafe _ (Array.getElem_mem_toList hi))
+      (ctorSafe _ (Array.getElem_mem_toList hc)) (positions i hc) (keys i hi) (ctorKeys i hc) h
+  case recFacts =>
+    rw [hrecs]
+    refine forall₂_of_getElem (by simp) fun j h₁ h₂ => ?_
+    have hj : j < recs.size := by simpa using h₂
+    obtain ⟨entry, mi, hmi, hentry, hlpsE, hmb, hrules, ruleKeys, motive⟩ := entries j hj
+    have hmiT : mi < targets.length := hlenT ▸ hmi
+    have hmajor := inductiveAt_block hstore₁ hinfo hmiT
+    have hTmi := forall₂_getElem hT mi (hlenI ▸ hmi) hmiT
+    rw [indsOf_getElem hcsize (hlenI ▸ hmi)] at hTmi
+    have hmsize : targets[mi].ctors.size = (ctors[mi]'(hcsize ▸ hmi)).size := by
+      have := forall₂_length hTmi.1.2.2
+      simpa [indOf] using this.symm
+    have hjl : j < recs.toList.length := by simpa using hj
+    have hRj := forall₂_getElem hR j hjl (hlenR ▸ hjl)
+    simp only [List.getElem_map, List.getElem_range, Array.getElem_toList] at hRj ⊢
+    have hmem : recs[j] ∈ recs.toList := Array.getElem_mem_toList hj
+    have hnum : recNum first recs[j] = Numbering.mk rlps (rlps.size == first.cnst.levelParams.size + 1) := by
+      simp [recNum, recLpsEq _ hmem]
+    exact recFacts_of ρ f hlenR hstore₂ hrinfo (by
+        intro r hr
+        rcases h : recs.toList with _ | ⟨r₀, rs⟩
+        · exact absurd h hrne
+        · rw [h] at hr
+          simp only [List.head?_cons, Option.mem_def, Option.some.injEq] at hr
+          subst hr
+          have : recs[0]'hrsize = r₀ := by
+            have := congrArg (·[0]?) h
+            simp only [Array.getElem?_toList, List.getElem?_cons_zero] at this
+            exact Option.some.inj ((Array.getElem?_eq_getElem hrsize).symm.trans this)
+          rw [this])
+      hjl hRj hnum (recSafe _ hmem) (by simp only [Array.getElem_toList]; rw [recLpsEq _ hmem]; exact recNodup) (recKeys j hj) hentry hlpsE
+      (by rw [hmb]; exact hmajor) hmb (hmsize.trans hrules.symm) ruleKeys motive
+
+/--
+info: 'Ix.Cert.InductiveCompile.compiled_inductive_unit_reads' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms compiled_inductive_unit_reads
 
 end Ix.Cert.InductiveCompile
