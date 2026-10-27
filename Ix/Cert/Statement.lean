@@ -29,7 +29,8 @@ the Source check is all or nothing, and every real environment has `partial` or
 `unsafe` constants, which decline, so a statement about a whole Init or
 Mathlib would be vacuous. A statement is about the closure of a list of roots
 under `DependsOn` (`IsClosure`), and on the Ixon side about the records that
-the closure's published addresses reach (`CompiledReach`).
+the closure's published addresses reach (`CompiledReach`, along references and the edges
+the fold follows without one, `GroundEdge`).
 
 Statements (`def … : Prop`) and the theorems proved now:
 
@@ -246,10 +247,86 @@ def RecordEdge (ixe : Ixon.Env) (a b : Address) : Prop :=
   ∃ c, recordAt ixe a = some c ∧
     ((ownerOf a c = b ∧ b ≠ a) ∨ (c.refs.contains b = true ∧ ixe.consts.contains b = true))
 
-/-- `a` is in the compiled closure of the seed addresses `S`. -/
+/-- The roles among the keys `ks`. -/
+def keyRoles {md : Ix.Kernel.Mode} (ks : List (Ix.Kernel.Key md)) : List Ix.Kernel.Role :=
+  ks.filterMap fun
+    | .role r => some r
+    | _ => none
+
+/-- **The roles the fold reads when it installs the role `r`**, beyond what the
+declaration mentions: for a `Nat` operation, the operations its recurrences and
+certificate statements are spelled over (`Ix.Kernel.natOpDeps`, which the install guards
+`natOpGuard` and `divModEnvGuard` require stored); nothing for any other role. -/
+def groundRoles (r : Ix.Kernel.Role) : List Ix.Kernel.Role :=
+  let k : Ix.Kernel.Key .anon := Ix.Kernel.roleKey r
+  if Ix.Kernel.natOpNames.contains k || Ix.Kernel.natDivModNames.contains k then
+    keyRoles (Ix.Kernel.natOpDeps k)
+  else []
+
+/-- **The roles a record's literals are checked against**: the `String` literal support
+when the record holds a `String` literal, otherwise the `Nat` basis when it holds a `Nat`
+literal (`Ix.Kernel.Reader.literalKinds`, `strLitSupportNames`, `natLitSupportNames`). -/
+def literalRoles (c : Ixon.Constant) : List Ix.Kernel.Role :=
+  let kinds := Ix.Kernel.Reader.literalKinds c
+  keyRoles (if kinds.2 then (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon))
+    else if kinds.1 then Ix.Kernel.Reader.natLitSupportNames else [])
+
+/-- **An edge the fold follows that the references do not show**, under the default role
+table: from a `Nat` operation's record (its bound address, or the block that holds it) to
+the record of a role its install reads (`groundRoles`: its certificate ground), and from a
+record with a literal to the record of a role the literal is checked against
+(`literalRoles`). The executable check order adds exactly these edges
+(`Ixon.CheckOrder.groundEdges` and `Ix.Kernel.Reader.literalEdges`, over the reader's
+bindings of the same table). The roles the evidence check reads besides (an operation's
+dependencies with their blocks, `Ix.Kernel.evidenceDepKeys`) are its ground or prelude
+roles (`evidenceDepKeys_ground`), and the prelude is the fixed front of every stream; the
+families a pinned axiom's check compares (`Iff` for `propext`, `Nonempty` for `choice`)
+are named by the axiom's type and installed with their blocks. -/
+def GroundEdge (ixe : Ixon.Env) (a b : Address) : Prop :=
+  ixe.consts.contains b = true ∧ ∃ t, Ix.Kernel.Reader.defaultTable = .ok t ∧
+    ∃ s, t.addressOf? s = some b ∧
+      ((∃ r p, t.addressOf? r = some p ∧ s ∈ groundRoles r ∧
+          (p = a ∨ ∃ c, recordAt ixe p = some c ∧ ownerOf p c = a)) ∨
+        ∃ c, recordAt ixe a = some c ∧ s ∈ literalRoles c)
+
+/-- **An operation's evidence closure adds no ground**: the roles the evidence check roots
+its closure at (an operation's dependencies with their blocks, `Ix.Kernel.evidenceDepKeys`)
+are the operation's ground (`groundRoles`) or prelude roles. -/
+theorem evidenceDepKeys_ground (r : Ix.Kernel.Role) (hr : groundRoles r ≠ []) :
+    ∀ s ∈ r.deps.flatMap Ix.Kernel.Role.block,
+      s ∈ groundRoles r ∨ (Ix.Kernel.roleKey s : Ix.Kernel.Key .anon).isPreludeRole = true := by
+  cases r <;> first | exact absurd (by decide) hr | decide
+
+/-- The artifact's stored records, decoded, in its store's order. -/
+def storedRecords (ixe : Ixon.Env) : Array (Address × Ixon.Constant) :=
+  ixe.consts.toArray.filterMap fun (a, lc) => lc.get?.map (a, ·)
+
+/-- **The artifact's recursor index**: every recursor of its records, by the inductive
+block it eliminates (`Ix.Kernel.Reader.buildIndex`, the reader's and the check order's
+own index). -/
+def artifactRecIndex (ixe : Ixon.Env) : Ix.Kernel.Reader.RecIndex :=
+  Ix.Kernel.Reader.buildIndex (recordAt ixe) (storedRecords ixe)
+
+/-- **A recursor of a block**: `b` is the record of a recursor that eliminates the
+inductive block at `a`. Records reference a block, never its recursors, and the reader
+declines an inductive block whose recursors the input lacks (`readInductive`); the check
+order reads them with their block (`Ixon.CheckOrder.recursorRecords` over the same
+index). -/
+def RecursorEdge (ixe : Ixon.Env) (a b : Address) : Prop :=
+  ixe.consts.contains b = true ∧ b ≠ a ∧
+    ∃ shape, (artifactRecIndex ixe).blocks[a]? = some shape ∧ ∃ r ∈ shape.recs, r.block = b
+
+/-- `a` is in the compiled closure of the seed addresses `S`: the records the seeds reach
+along the references and owners (`RecordEdge`), the edges the fold follows without a
+reference (`GroundEdge`: a `Nat` operation's certificate ground, literal support) and an
+inductive block's recursors (`RecursorEdge`). These are the edges the executable check
+order follows: `Ixon.CheckOrder`'s references and owners, `groundEdges`, `literalEdges` and
+`recursorRecords`. -/
 inductive CompiledReach (ixe : Ixon.Env) (S : Address → Prop) : Address → Prop
   | seed {a : Address} : S a → ixe.consts.contains a = true → CompiledReach ixe S a
   | step {a b : Address} : CompiledReach ixe S a → RecordEdge ixe a b → CompiledReach ixe S b
+  | ground {a b : Address} : CompiledReach ixe S a → GroundEdge ixe a b → CompiledReach ixe S b
+  | recursor {a b : Address} : CompiledReach ixe S a → RecursorEdge ixe a b → CompiledReach ixe S b
 
 /-- The record at `a` must follow `b`: a reference of `a` resolves to `b`,
 another record. -/
@@ -257,11 +334,10 @@ def RecordRef (ixe : Ixon.Env) (a b : Address) : Prop :=
   ∃ c, recordAt ixe a = some c ∧
     ∃ r ∈ c.refs, ∃ cr, recordAt ixe r = some cr ∧ ownerOf r cr = b ∧ b ≠ a
 
-/-- `order` lists the compiled closure of `S`, each record once, and no
-record before one it references. The fold also needs edges the references
-do not show (literal support, the `Nat` operations' certificate ground); an
-accepting order respects those too. Locality, a later proof, makes the
-verdict the same for every order that respects them all. -/
+/-- `order` lists the compiled closure of `S` (its ground included), each record once,
+and no record before one it references. The fold also needs the ground edges
+(`GroundEdge`) in order; the reader's preparation moves an operation's ground ahead of it
+(`Ix.Kernel.Frontend.hoistNatOpGround`), and an accepting order respects them. -/
 structure ClosureOrder (ixe : Ixon.Env) (S : Address → Prop) (order : List Address) : Prop where
   nodup : order.Nodup
   complete : ∀ a, a ∈ order ↔ CompiledReach ixe S a
@@ -1036,25 +1112,25 @@ theorem noCrossClaims {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
   exact ⟨cenv, hu, crossClaimed_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.1⟩
 
-/-- What `misnamedInput = none` says: every input constant's own name hashes
-like the name it is stored under. -/
+/-- What `misnamedInput = none` says: every input constant's own name is the
+name it is stored under. -/
 theorem misnamedInput_none {env : Ix.Environment} (h : misnamedInput env = none) :
-    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → (ci.getCnst.name == n) = true := by
+    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → ci.getCnst.name = n := by
   intro n ci hmem
   unfold misnamedInput at h
   rw [List.findSome?_eq_none_iff] at h
   have hfind := h (n, ci) hmem
   dsimp only at hfind
-  cases hb : (ci.getCnst.name == n)
+  cases hb : (Ix.nameCompareExact ci.getCnst.name n == .eq)
   · simp [hb] at hfind
-  · rfl
+  · exact Ix.CompileCert.Canon.nameCompareExact_eq_iff.mp (beq_iff_eq.mp hb)
 
 /-- **Input constants carry their names**: when `compileReport` returns,
-every input constant's own name hashes like the name it is stored under
+every input constant's own name is the name it is stored under
 (`checkReport`'s twelfth check). -/
 theorem inputsNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
-    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → (ci.getCnst.name == n) = true := by
+    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → ci.getCnst.name = n := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
   exact misnamedInput_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.1
 

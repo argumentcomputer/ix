@@ -770,14 +770,18 @@ and callers cost about half of Mathlib's compile phase
     let regenerated := regeneratedNames env table ixe
     heads.toList.findSome? fun (h, _) => if regenerated.contains h then none else some h
 
-/-- The first input constant whose own name (`ConstantVal.name`) does not hash
-like the name it is stored under, if any. The block compile names its
-projections by its members' own names (`MutConst`), while the condensation
-and the driver group and look them up by the names they are stored under. With
-no such constant, every name a block's compile claims is a member's or a
-member's constructor's. -/
+/-- The first input constant whose own name (`ConstantVal.name`) is not the
+name it is stored under, spelled exactly (`Ix.nameCompareExact`, stored hashes
+included), if any. The block compile names its projections by its members' own
+names (`MutConst`), while the condensation and the driver group and look them
+up by the names they are stored under. With no such constant, every name a
+block's compile claims is a member's or a member's constructor's, and a
+constant is published under one spelling whichever path compiles it. `Ix.Name`'s
+`==` compares stored hashes only, so it would let an own name be a respelling
+of the stored name that shares its hash. -/
 @[expose] def misnamedInput (env : Ix.Environment) : Option Ix.Name :=
-  env.consts.toList.findSome? fun (n, ci) => if ci.getCnst.name == n then none else some n
+  env.consts.toList.findSome? fun (n, ci) =>
+    if Ix.nameCompareExact ci.getCnst.name n == .eq then none else some n
 
 /-- The first constructor name (`InductiveVal.ctors`) of an input inductive
 that the input does not store as a constructor of that inductive
@@ -884,7 +888,7 @@ extra names, nor a constructor of an inductive among them (`crossClaimed`).
 **Heads are changed:** each of the driver's final
 Pass 3 heads (`cenv.p3Heads`) is a regenerated published input name, under
 the final aux table (`regeneratedNames`), so in the changed set (`foreignHead`). **Input
-constants carry their names:** each input constant's own name hashes like the
+constants carry their names:** each input constant's own name is spelled as the
 name it is stored under (`misnamedInput`). **Input constructors belong to their
 inductive:** each constructor an input inductive lists is stored as a
 constructor of it (`strayConstructor`). **Failures are input names:** each

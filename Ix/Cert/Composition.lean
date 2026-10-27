@@ -13,8 +13,8 @@ reader, quotient Source's prepared stream), one per open obligation:
    closure has its representative installed, at the address it is published at.
 2. The reader against the Source stream:
    * `Obligation.ReaderStreams`: a closure that avoids the changed set reads, record by
-     record, as quotient Source's prepared stream renamed to the artifact's addresses,
-     in another order;
+     record and in the Source stream's order, as quotient Source's prepared stream renamed
+     to the artifact's addresses;
    * `Obligation.ReadingKeys`: the reader keys every representative as its renaming;
    * `Obligation.RenamedAgree`: a constant the compiler did not rewrite reads as its
      renamed self in every strong model of the compiled environment.
@@ -26,12 +26,12 @@ reader, quotient Source's prepared stream), one per open obligation:
    from the image computation-rule rows the checker verifies.
 6. `Obligation.CliqueRows`: a transported clique member denotes its Source value, by its
    row.
-7. Locality: `Obligation.ReorderAccepts` (a closed reordering of an accepted stream is
-   accepted), `Obligation.EvidenceTransfer` (the role table's evidence passes where the
+7. Locality: `Obligation.EvidenceTransfer` (the role table's evidence passes where the
    bundle's does), `Obligation.SeedUnion` (accepted seed closures union),
    `Obligation.SourceRestricts` (an unaffected constant lies in an accepted closure that
    avoids the changed set), `Obligation.RootRestricts` (a seed of an accepted closure has
-   an accepted closure).
+   an accepted closure). Closures here hold the ground the fold reads without a reference
+   (`GroundEdge`, `GroundAffectedIn`).
 8. `Obligation.Assembly`: per-constant and per-step agreement give one Source model with
    the laws.
 9. The laws: `Obligation.UnchangedRules` (a renamed environment's strong model gives the
@@ -39,7 +39,7 @@ reader, quotient Source's prepared stream), one per open obligation:
    hold in the strong model, imaged recursors aside).
 
 **The unchanged-closure case** (`compileCorrect_unchanged`) uses obligations 1, 2
-(streams and keys), 3, 7 (reordering and evidence) and `UnchangedRules`, with the
+(streams and keys), 3, 7 (evidence) and `UnchangedRules`, with the
 existing leaves: the unchanged-closure claims (`HookFree.compileReport_hookFree`), the
 renamed quotient Source run (`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`),
 the reader's preparation (`Stream.closure_prepares`), coverage (`compileCovers`) and the
@@ -95,6 +95,10 @@ structure SameEnv {md : Ix.Kernel.Mode} (e e' : Env md) : Prop where
   mem : ∀ c, c ∈ e.consts ↔ c ∈ e'.consts
   find : ∀ k, e.find? k = e'.find? k
 
+/-- An environment installs the same constants as itself. -/
+theorem SameEnv.refl {md : Ix.Kernel.Mode} (e : Env md) : SameEnv e e :=
+  ⟨fun _ => Iff.rfl, fun _ => rfl⟩
+
 /-- **Two terms denote one set**: at every level assignment and variable valuation, both
 denote, and denote the same set. -/
 def DenoteSame {md : Ix.Kernel.Mode} {V : Type w} [SetTheory V]
@@ -140,10 +144,11 @@ def CapStepsAgree {V : Type w} [SetTheory V] {envA : Env .anon} (M : Ix.Kernel.C
   (∀ (sn : Ix.Kernel.Key .source) (i : Nat) (e e' : Ix.Kernel.Expr .source), ProjStep envQ sn i e e' →
     DenoteAlike M.model.cval envA (e.mapKeys f) (e'.mapKeys f))
 
-/-- `c` is the representative of the name `n` of the closure `sub`. -/
+/-- `c` is the representative of the name `n` that the closure `sub` stores a constant
+under (`ReadingCovers` explains why stored names). -/
 def RepOf (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (sub : Ix.Environment)
     (c : Ix.Kernel.ConstantInfo .source) (n : Ix.Name) : Prop :=
-  (sub.consts.get? n).isSome = true ∧ c.name = quotientKey ixe t n
+  (∃ ci, (n, ci) ∈ sub.consts.toList) ∧ c.name = quotientKey ixe t n
 
 /-- `c` represents a record whose terms the compiler rewrote. -/
 def RewrittenConstant (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment)
@@ -155,10 +160,12 @@ def CliqueConstant (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment
     (t : Ix.Kernel.RoleTable) (c : Ix.Kernel.ConstantInfo .source) : Prop :=
   ∃ n a, KindRoot .clique env ixe sub n a ∧ RepOf ixe t sub c n
 
-/-- `c` is the key of an imaged Source recursor of the closure. -/
+/-- `c` is the key of an imaged Source recursor of the closure, under the name the
+closure stores it under. -/
 def ImageRecursor (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment)
     (t : Ix.Kernel.RoleTable) (c : Ix.Kernel.Key .source) : Prop :=
-  ∃ n a, KindRoot .image env ixe sub n a ∧ (sub.consts.get? n).isSome = true ∧ c = quotientKey ixe t n
+  ∃ n a, KindRoot .image env ixe sub n a ∧ (∃ ci, (n, ci) ∈ sub.consts.toList) ∧
+    c = quotientKey ixe t n
 
 /-- **A driver state owns the artifact's resolution**: every name it resolves outside its
 aux map, and that the compile did not report failed, is published at the address it
@@ -191,23 +198,29 @@ def ClaimsOwned (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) (s
 namespace Obligation
 
 /-- **(1) Source no-drop and totality.** Quotient Source installs each key once, and every
-constant of the closure has its representative installed, at the address the artifact
-publishes the constant at. -/
+constant of the closure, under the name the closure stores it under, has its
+representative installed, at the address the artifact publishes the constant at. As in
+`ReadingCovers`, the names are the stored ones (a lookup also answers hash-equal
+respellings, for which no artifact can publish every spelling), and the inert `sorryAx`,
+for which the checker installs nothing by design, is left out. -/
 def SourceTotal : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source),
     Premises env roots sub ixe failures t envQ →
     (∀ c ∈ envQ.consts, envQ.find? c.name = some c) ∧
-    ∀ n ci, sub.consts.get? n = some ci →
+    ∀ n ci, (n, ci) ∈ sub.consts.toList → Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
       ∃ c ∈ envQ.consts, c.name = quotientKey ixe t n ∧
         keyAddress ixe t c.name = (ixe.named.get? n).map (·.addr)
 
 /-- **(2) The reader against the Source stream, unchanged closures.** For a closure that
 avoids the changed set and whose claims are owned, the compiled closure has an order that
-respects its references, its records decode canonically, and the reader reads them record
-by record under the default table, keeping the prelude; its prepared declarations are
-quotient Source's prepared declarations renamed to the artifact's addresses, in another
-order that is closed. -/
+respects its references (the order of quotient Source's stream), its records decode
+canonically, and the reader reads them record by record under the default table, keeping
+the prelude; its prepared declarations are exactly quotient Source's prepared declarations
+renamed to the artifact's addresses, in the same order. The fold reads more than a
+declaration mentions (a `Nat` operation's certificate ground, literal support), so two
+orders that both respect references need not both be accepted; reading in the Source
+stream's order keeps the order the Source run was accepted in. -/
 def ReaderStreams : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source)
@@ -229,13 +242,13 @@ def ReaderStreams : Prop :=
       Ix.Kernel.Reader.StreamRead (closureContext ixe tA preA order) preA.state
         (Stream.decodedOf ixe order) st' decls ∧
       Ix.Kernel.Reader.State.keepsPrelude preA.state st' = true ∧
-      (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList.Perm
-        (ds.toList.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b))) ∧
-      Ix.Kernel.Closed (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList
+      (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList =
+        ds.toList.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b))
 
 /-- **(2) The reader keys every representative as its renaming.** In the reading context of
 an accepted compiled closure, a constant of quotient Source that reads, reads as its
-renamed key at its own level parameters, and every representative of the closure reads. -/
+renamed key at its own level parameters, and every representative of a name the closure
+stores a constant under reads. -/
 def ReadingKeys : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source)
@@ -248,7 +261,7 @@ def ReadingKeys : Prop :=
     ∃ cx, admissionContext binding limits ixe order = some cx ∧
       (∀ c ∈ envQ.consts, ∀ e, readingAt ixe t cx c = some e →
         e = .const (c.name.map (Ix.LeanIngress.evAddr ixe b)) (c.toConstantVal.levelParams.map .param)) ∧
-      ∀ n ci, sub.consts.get? n = some ci → ∀ c ∈ envQ.consts, c.name = quotientKey ixe t n →
+      ∀ n ci, (n, ci) ∈ sub.consts.toList → ∀ c ∈ envQ.consts, c.name = quotientKey ixe t n →
         (readingAt ixe t cx c).isSome = true
 
 /-- **(2) A constant the compiler did not rewrite reads as its renamed self**: in every
@@ -327,14 +340,6 @@ def CliqueRows : Prop :=
     Ix.RoleEvidence.committedBundle () = .ok b → (∀ k, KindAccepted k env ixe sub) →
     ∀ c ∈ envQ.consts, CliqueConstant env ixe sub t c → ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c
 
-/-- **(7) Locality: reordering.** A reference accept of a stream gives one of every
-permutation of it that is closed in its order, installing the same constants. -/
-def ReorderAccepts : Prop :=
-  ∀ {md : Ix.Kernel.Mode} (μ : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences md)
-    (A S : List (Ix.Kernel.Declaration md)) (envS : Env md),
-    Ix.Kernel.Cached.AcceptsRef μ ev S envS → A.Perm S → Ix.Kernel.Closed A →
-      ∃ envA, Ix.Kernel.Cached.AcceptsRef μ ev A envA ∧ SameEnv envA envS
-
 /-- **(7) Locality: the role table's evidence.** Where quotient Source's run, renamed to
 the artifact's addresses, is accepted under the bundle's evidence, it is accepted under the
 evidence the reader resolves from the default table for the compiled closure. -/
@@ -362,7 +367,9 @@ def EvidenceTransfer : Prop :=
       (ds.toList.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b))) envR
 
 /-- **(7) Locality: the union of seed closures.** On a compiled artifact, if the compiled
-closure of every seed is accepted, so is the compiled closure of all of them. -/
+closure of every seed is accepted, so is the compiled closure of all of them. A compiled
+closure holds the ground of its `Nat` operations and its literals' support (`CompiledReach`
+along `GroundEdge`), so each closure here is closed under every edge the fold follows. -/
 def SeedUnion : Prop :=
   ∀ (env : Ix.Environment) (ixe : Ixon.Env) (binding : Ix.Kernel.Admission.Binding) (S : Address → Prop),
     compile env = .ok ixe → Ix.Kernel.Admission.defaultBinding = .ok binding →
@@ -370,18 +377,22 @@ def SeedUnion : Prop :=
     ∃ limits order envA, IxonAcceptsRef binding limits ixe S order envA
 
 /-- **(7) Locality: Source restriction.** A constant of an instance's closure that no
-change reaches lies in an instance's closure (of the same compile) that avoids the changed
-set. -/
+change reaches, its operations' ground included (`GroundAffectedIn`), lies in an instance's
+closure (of the same compile) that avoids the changed set. The ground matters: a closure
+that holds a `Nat` operation without the operations its install reads is declined by
+Source, so the restricted closure takes them in. -/
 def SourceRestricts : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source) (n : Ix.Name),
     Premises env roots sub ixe failures t envQ → (sub.consts.get? n).isSome = true →
-    ¬ SelectedRoots.AffectedName env (changedSetOf env ixe) n →
+    ¬ GroundAffectedIn env ixe sub n →
     ∃ roots' sub' envQ', Premises env roots' sub' ixe failures t envQ' ∧
       (changedSetOf env ixe).Avoids sub' ∧ sub'.consts.get? n = sub.consts.get? n
 
 /-- **(7) Locality: restriction to a seed.** A seed of an accepted compiled closure has an
-accepted compiled closure. -/
+accepted compiled closure. Both closures hold their operations' ground (`CompiledReach`
+along `GroundEdge`): a seed's closure by references alone can lack a ground that the
+larger closure holds, and is then declined. -/
 def RootRestricts : Prop :=
   ∀ (binding : Ix.Kernel.Admission.Binding) (limits : Ix.Kernel.Admission.Limits) (ixe : Ixon.Env)
     (S : Address → Prop) (order : List Address) (envA : Env .anon) (a : Address),
@@ -553,14 +564,32 @@ def causeKind : Cause → ChangeKind
 theorem causeKind_reason (c : Cause) : (causeKind c).reason? = some (.direct c) := by
   cases c <;> rfl
 
-/-- A classified root of a kind's reason is a root of that kind. -/
+/-- A direct cause's kind is not the cascade. -/
+theorem causeKind_ne_cascade (c : Cause) : causeKind c ≠ .cascade := by
+  cases c <;> decide
+
+/-- A classified root of a kind's reason is a root of that kind, the cascade aside. -/
 theorem kindRoot_of_reason {k : ChangeKind} {r : SelectedRoots.Reason} (hk : k.reason? = some r)
+    (hc : k ≠ .cascade)
     {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment} {n : Ix.Name} {a : Address}
     (h : SelectedRoots.ClassifiedRoot env (changedSetOf env ixe) sub ixe ⟨n, a, r⟩) :
     KindRoot k env ixe sub n a := by
   unfold KindRoot
-  rw [hk]
-  exact h
+  split
+  · exact absurd ‹_› hc
+  · rw [hk]
+    exact h
+
+/-- A published constant of the closure outside the changed set that meets it, its
+operations' ground included, is a root of the cascade. -/
+theorem kindRoot_cascade {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment}
+    {n : Ix.Name} {a : Address} (pub : SelectedRoots.PublishedIn sub ixe n a)
+    (affected : GroundAffectedIn env ixe sub n) (out : (changedSetOf env ixe).contains n = false) :
+    KindRoot .cascade env ixe sub n a := by
+  unfold KindRoot
+  split
+  · exact ⟨pub, affected, out⟩
+  · exact absurd rfl ‹_›
 
 /-- A root of a kind that passed validation is accepted under the default table. -/
 theorem kindAccepted_root {k : ChangeKind} {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment}
@@ -575,11 +604,11 @@ theorem kindAccepted_root {k : ChangeKind} {env : Ix.Environment} {ixe : Ixon.En
 /-! ## The unchanged-closure case -/
 
 /-- **The final statement for a closure that avoids the changed set**, from Source
-totality, the reader's streams and keys, ownership, reordering, the role table's evidence
-and the Source laws of a renamed environment. -/
+totality, the reader's streams and keys, ownership, the role table's evidence and the
+Source laws of a renamed environment. -/
 theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.ReaderStreams)
     (h2k : Obligation.ReadingKeys) (h3 : Obligation.ScheduleOwnership)
-    (h7a : Obligation.ReorderAccepts) (h7b : Obligation.EvidenceTransfer)
+    (h7b : Obligation.EvidenceTransfer)
     (h9 : Obligation.UnchangedRules.{w}) : CompileCorrectUnchanged.{w} := by
   intro env roots sub ixe failures t envQ P avoids
   have published : Published ixe sub := fun n ci hn =>
@@ -590,29 +619,33 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
     (tableBound_of (defaultTable_check P.table) P.bound) prepared run
   -- the reader's stream of the compiled closure
   obtain ⟨binding, tA, preA, order, st', decls, hbind, admitted, prelude, corder, canonical, reads, keeps,
-    perm, closed⟩ := h2 env roots sub ixe failures t envQ pre ds b P avoids
+    streams⟩ := h2 env roots sub ixe failures t envQ pre ds b P avoids
       (claimsOwned h3 P.compiled closure P.none avoids) hpre prepared hb
-  -- the role table's evidence, then the reader's order
+  -- the role table's evidence: the reader's prepared stream is the renamed run's
   have runA := h7b env roots sub ixe failures t envQ pre ds b binding tA preA order st' decls envR P hpre
     prepared hb hbind admitted prelude reads runR
-  obtain ⟨envA, accA, same⟩ := h7a .verified _ _ _ envR runA perm closed
+  have accA : Ix.Kernel.Cached.AcceptsRef .verified
+      (Ix.Kernel.Reader.evidenceOf (closureContext ixe tA preA order) st' tA)
+      (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList envR := by
+    rw [streams]; exact runA
   -- the preparation succeeds, so the compiled closure is accepted
   obtain ⟨limits, prep⟩ := Stream.closure_prepares (compile_eq_ok.mpr ⟨failures, P.compiled⟩)
     corder.nodup canonical admitted preA reads keeps
-  have acc : IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA :=
+  have acc : IxonAcceptsRef binding limits ixe (Seed ixe sub) order envR :=
     ⟨corder, tA, preA, _, _, admitted, prelude, prep, accA⟩
-  obtain ⟨cx, hcx, keys, readsAll⟩ := h2k env roots sub ixe failures t envQ binding limits order envA b P
+  have same : SameEnv envR envR := SameEnv.refl envR
+  obtain ⟨cx, hcx, keys, readsAll⟩ := h2k env roots sub ixe failures t envQ binding limits order envR b P
     hbind acc hb
   obtain ⟨unique, total⟩ := h1 env roots sub ixe failures t envQ P
-  refine ⟨published, binding, hbind, limits, order, envA, cx, acc, hcx, ?_, ?_⟩
+  refine ⟨published, binding, hbind, limits, order, envR, cx, acc, hcx, ?_, ?_⟩
   · intro V _ M
-    obtain ⟨rules, caps⟩ := h9 V _ (Ix.LeanIngress.evAddr ixe b) envQ envR envA M rel same
+    obtain ⟨rules, caps⟩ := h9 V _ (Ix.LeanIngress.evAddr ixe b) envQ envR envR M rel same
     let N₀ : ValueModel V envQ := ValueModel.pullback rel ((ValueRows.ofStrong M).transfer same)
     refine ⟨{ N₀ with rec_rule := rules, caps := caps }, fun c hc e he φ ρ => ?_⟩
     rw [keys c hc e he]
     exact renamed_reading_denotes rel same unique hc M φ ρ
-  · intro n ci hn
-    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn
+  · intro n ci hn hsorry
+    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
     exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname⟩
 
 /-! ## The general case -/
@@ -621,7 +654,7 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
 theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obligation.ReaderStreams)
     (h2k : Obligation.ReadingKeys) (h2c : Obligation.RenamedAgree.{w}) (h3 : Obligation.ScheduleOwnership)
     (h4 : Obligation.PassValues.{w}) (h5 : Obligation.ImageRules.{w}) (h6 : Obligation.CliqueRows.{w})
-    (h7a : Obligation.ReorderAccepts) (h7b : Obligation.EvidenceTransfer) (h7c : Obligation.SeedUnion)
+    (h7b : Obligation.EvidenceTransfer) (h7c : Obligation.SeedUnion)
     (h7d : Obligation.SourceRestricts) (h7e : Obligation.RootRestricts) (h8 : Obligation.Assembly.{w})
     (h9u : Obligation.UnchangedRules.{w}) (h9 : Obligation.RuleCorrespondence.{w}) :
     CompileCorrect.{w} := by
@@ -640,17 +673,17 @@ theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obliga
       obtain ⟨e, he, hen⟩ :=
         (SelectedRoots.contains_iff_entry env (compileBlocks env) (compileTable env) ixe n).mp hcs
       exact kindAccepted_root (kinds (causeKind e.cause)) hbind
-        (kindRoot_of_reason (causeKind_reason e.cause)
+        (kindRoot_of_reason (causeKind_reason e.cause) (causeKind_ne_cascade e.cause)
           ⟨e, he, rfl, rfl, (SelectedRoots.published_congr hen).mpr pub⟩)
-    · by_cases haff : SelectedRoots.AffectedName env (changedSetOf env ixe) n
+    · by_cases haff : GroundAffectedIn env ixe sub n
       · -- the cascade's validation
         exact kindAccepted_root (kinds .cascade) hbind
-          (kindRoot_of_reason (k := .cascade) rfl ⟨pub, haff, Bool.eq_false_iff.mpr hcs⟩)
-      · -- unaffected: an unchanged closure holds it
+          (kindRoot_cascade pub haff (Bool.eq_false_iff.mpr hcs))
+      · -- unaffected, its operations' ground included: an unchanged closure holds it
         obtain ⟨roots', sub', envQ', P', avoids', hn'⟩ :=
           h7d env roots sub ixe failures t envQ n P (by rw [hn]; rfl) haff
         obtain ⟨-, binding', hb', limits', order', envA', -, acc', -⟩ :=
-          compileCorrect_unchanged h1 h2 h2k h3 h7a h7b h9u env roots' sub' ixe failures t envQ' P'
+          compileCorrect_unchanged h1 h2 h2k h3 h7b h9u env roots' sub' ixe failures t envQ' P'
             avoids'
         rw [hbind] at hb'
         cases hb'
@@ -691,8 +724,8 @@ theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obliga
     rw [keys c hc e he, hN c.name hin φ]
     obtain ⟨c', hc', hl, -, -⟩ := agrees c hc hin
     exact const_denotes hc' hl φ ρ
-  · intro n ci hn
-    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn
+  · intro n ci hn hsorry
+    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
     exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname⟩
 
 end Ix.Cert

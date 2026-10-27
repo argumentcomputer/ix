@@ -281,9 +281,79 @@ constructors:
 Ix.Cert.CompiledReach.seed : ∀ {ixe : Ixon.Env} {S : Address → Prop} {a : Address},
   S a → ixe.consts.contains a = true → Ix.Cert.CompiledReach ixe S a
 Ix.Cert.CompiledReach.step : ∀ {ixe : Ixon.Env} {S : Address → Prop} {a b : Address},
-  Ix.Cert.CompiledReach ixe S a → Ix.Cert.RecordEdge ixe a b → Ix.Cert.CompiledReach ixe S b -/
+  Ix.Cert.CompiledReach ixe S a → Ix.Cert.RecordEdge ixe a b → Ix.Cert.CompiledReach ixe S b
+Ix.Cert.CompiledReach.ground : ∀ {ixe : Ixon.Env} {S : Address → Prop} {a b : Address},
+  Ix.Cert.CompiledReach ixe S a → Ix.Cert.GroundEdge ixe a b → Ix.Cert.CompiledReach ixe S b
+Ix.Cert.CompiledReach.recursor : ∀ {ixe : Ixon.Env} {S : Address → Prop} {a b : Address},
+  Ix.Cert.CompiledReach ixe S a → Ix.Cert.RecursorEdge ixe a b → Ix.Cert.CompiledReach ixe S b -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompiledReach
+
+/-- info: def Ix.Cert.keyRoles : {md : Ix.Kernel.Mode} → List (Ix.Kernel.Key md) → List Ix.Kernel.Role :=
+fun {md} ks =>
+  List.filterMap
+    (fun x =>
+      match x with
+      | Ix.Kernel.Key.role r => some r
+      | x => none)
+    ks -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.keyRoles
+
+/-- info: def Ix.Cert.groundRoles : Ix.Kernel.Role → List Ix.Kernel.Role :=
+fun r =>
+  have k := Ix.Kernel.roleKey r;
+  if (Ix.Kernel.natOpNames.contains k || Ix.Kernel.natDivModNames.contains k) = true then
+    Ix.Cert.keyRoles (Ix.Kernel.natOpDeps k)
+  else [] -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.groundRoles
+
+/-- info: def Ix.Cert.literalRoles : Ixon.Constant → List Ix.Kernel.Role :=
+fun c =>
+  have kinds := Ix.Kernel.Reader.literalKinds c;
+  Ix.Cert.keyRoles
+    (if kinds.snd = true then Ix.Kernel.Reader.strLitSupportNames
+    else if kinds.fst = true then Ix.Kernel.Reader.natLitSupportNames else []) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.literalRoles
+
+/-- info: def Ix.Cert.GroundEdge : Ixon.Env → Address → Address → Prop :=
+fun ixe a b =>
+  ixe.consts.contains b = true ∧
+    ∃ t,
+      Ix.Kernel.Reader.defaultTable = Except.ok t ∧
+        ∃ s,
+          t.addressOf? s = some b ∧
+            ((∃ r p,
+                t.addressOf? r = some p ∧
+                  s ∈ Ix.Cert.groundRoles r ∧
+                    (p = a ∨ ∃ c, Ix.Cert.recordAt ixe p = some c ∧ Ix.Cert.ownerOf p c = a)) ∨
+              ∃ c, Ix.Cert.recordAt ixe a = some c ∧ s ∈ Ix.Cert.literalRoles c) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.GroundEdge
+
+/-- info: def Ix.Cert.storedRecords : Ixon.Env → Array (Address × Ixon.Constant) :=
+fun ixe =>
+  Array.filterMap
+    (fun x =>
+      match x with
+      | (a, lc) => Option.map (fun x => (a, x)) lc.get?)
+    ixe.consts.toArray -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.storedRecords
+
+/-- info: def Ix.Cert.artifactRecIndex : Ixon.Env → Ix.Kernel.Reader.RecIndex :=
+fun ixe => Ix.Kernel.Reader.buildIndex (Ix.Cert.recordAt ixe) (Ix.Cert.storedRecords ixe) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.artifactRecIndex
+
+/-- info: def Ix.Cert.RecursorEdge : Ixon.Env → Address → Address → Prop :=
+fun ixe a b =>
+  ixe.consts.contains b = true ∧
+    b ≠ a ∧ ∃ shape, (Ix.Cert.artifactRecIndex ixe).blocks[a]? = some shape ∧ ∃ r, r ∈ shape.recs ∧ r.block = b -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecursorEdge
 
 /-- info: def Ix.Cert.RecordRef : Ixon.Env → Address → Address → Prop :=
 fun ixe a b =>
@@ -4763,7 +4833,19 @@ Init+Std, 36,870, and Mathlib, 237,499). With it, every name a block's
 compile claims is a member's or a member's constructor's. Re-frozen with it:
 `checkReport`'s print and `checkReport_ok` (a twelfth conjunct; its proof now
 walks the checks' branches instead of splitting every check's result). On a
-consistent run the result is unchanged. -/
+consistent run the result is unchanged.
+
+**The check compares exact spellings** (`Ix.nameCompareExact`, stored hashes
+included), not `Ix.Name`'s `==`, which compares the stored hashes only, so an
+own name that is a hash-equal respelling of its stored name is refused too.
+The compiler publishes a singleton constant under its stored name and a block
+member under its own name, and quotient Source keys every constant by its own
+name; with one spelling for both, the Source coverage statement can name the
+published constant by the closure's stored name. `misnamedInput_none` and
+`inputsNamed` now conclude equality. Re-frozen with it: `misnamedInput`'s
+print. Probe `p2src/20261027T003307Z-names-initstd2`: 0 on Init+Std's
+canonical input (117,694 constants, 215 ms); probe
+`p2src/20261027T003616Z-names-mathlib`: 0 on Mathlib's (783,115 constants, 1,493 ms). -/
 
 /-- info: [cert-audit] input names: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -4780,7 +4862,7 @@ fun env =>
   List.findSome?
     (fun x =>
       match x with
-      | (n, ci) => if (ci.getCnst.name == n) = true then none else some n)
+      | (n, ci) => if (Ix.nameCompareExact ci.getCnst.name n == Ordering.eq) = true then none else some n)
     env.consts.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.misnamedInput
@@ -6167,6 +6249,16 @@ and agrees with `reading` wherever that is defined (`readingAt_of_reading`). On
 executed checks alone (`CompileCorrect.checked`) it gives the conclusion and
 `IxonCommutesStrongRef`.
 
+**Coverage over stored names.** `ReadingCovers` quantifies over the closure's stored
+entries (`(n, ci) ∈ sub.consts.toList`) and leaves out the inert `sorryAx`. Quantified
+over every name a lookup of `sub` answers, it was false at every instance whose closure
+is not empty, and with it the statement. `Ix.Name`'s `==` compares stored hashes only,
+so the names `.num (.anonymous h) i h`, with `h` a stored key's hash, all answer a
+lookup. Each would need a published name of its own spelling, and an artifact publishes
+finitely many. A Lean proof of this refuted the earlier form. The checker installs
+nothing for `sorryAx`'s declaration, by design, so no reading of it is claimed.
+Re-frozen with it: `ReadingCovers`' print.
+
 The change kinds cover the compiler's rewrites: changed components, regenerated
 auxiliaries, images and their computation-rule rows, rewritten call sites (each call
 site by the baseline development or one of O11a, O2, O3, O4, O6, `CallRewrite`),
@@ -6502,16 +6594,51 @@ fun env ixe sub head i =>
 
 /-- info: def Ix.Cert.KindRoot : Ix.Cert.ChangeKind → Ix.Environment → Ixon.Env → Ix.Environment → Ix.Name → Address → Prop :=
 fun k env ixe sub n a =>
-  match k.reason? with
-  | some reason =>
-    Ix.Cert.SelectedRoots.ClassifiedRoot env (Ix.Cert.changedSetOf env ixe) sub ixe
-      { source := n, address := a, reason := reason }
-  | none =>
-    ∃ head i,
-      Ix.Cert.ImageRuleRequired env ixe sub head i ∧
-        n = Ix.Cert.imageRuleRowName head i ∧ ∃ named, ixe.named.get? n = some named ∧ named.addr = a -/
+  if k = Ix.Cert.ChangeKind.cascade then
+    Ix.Cert.SelectedRoots.PublishedIn sub ixe n a ∧
+      Ix.Cert.GroundAffectedIn env ixe sub n ∧ (Ix.Cert.changedSetOf env ixe).contains n = false
+  else
+    match k.reason? with
+    | some reason =>
+      Ix.Cert.SelectedRoots.ClassifiedRoot env (Ix.Cert.changedSetOf env ixe) sub ixe
+        { source := n, address := a, reason := reason }
+    | none =>
+      ∃ head i,
+        Ix.Cert.ImageRuleRequired env ixe sub head i ∧
+          n = Ix.Cert.imageRuleRowName head i ∧ ∃ named, ixe.named.get? n = some named ∧ named.addr = a -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.KindRoot
+
+/-- info: def Ix.Cert.GroundEdgeIn : Ixon.Env → Ix.Environment → Ix.Name → Ix.Name → Prop :=
+fun ixe sub x y =>
+  (sub.consts.get? y).isSome = true ∧
+    ∃ t r s,
+      Ix.Kernel.Reader.defaultTable = Except.ok t ∧
+        Ix.Cert.quotientKey ixe t x = Ix.Kernel.Key.role r ∧
+          s ∈ Ix.Cert.groundRoles r ∧ Ix.Cert.quotientKey ixe t y = Ix.Kernel.Key.role s -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.GroundEdgeIn
+
+/-- info: inductive Ix.Cert.GroundReaches : Ix.Environment → Ixon.Env → Ix.Environment → List Ix.Name → Ix.Name → Prop
+number of parameters: 4
+constructors:
+Ix.Cert.GroundReaches.root : ∀ {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment} {roots : List Ix.Name}
+  {x : Ix.Name}, roots.contains x = true → Ix.Cert.GroundReaches env ixe sub roots x
+Ix.Cert.GroundReaches.step : ∀ {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment} {roots : List Ix.Name}
+  {x y : Ix.Name},
+  Ix.Cert.GroundReaches env ixe sub roots x →
+    Ix.Cert.DependsOn (Ix.Cert.SelectedRoots.logicalInput env) x y → Ix.Cert.GroundReaches env ixe sub roots y
+Ix.Cert.GroundReaches.ground : ∀ {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment} {roots : List Ix.Name}
+  {x y : Ix.Name},
+  Ix.Cert.GroundReaches env ixe sub roots x →
+    Ix.Cert.GroundEdgeIn ixe sub x y → Ix.Cert.GroundReaches env ixe sub roots y -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.GroundReaches
+
+/-- info: def Ix.Cert.GroundAffectedIn : Ix.Environment → Ixon.Env → Ix.Environment → Ix.Name → Prop :=
+fun env ixe sub n => ∃ m, Ix.Cert.GroundReaches env ixe sub [n] m ∧ (Ix.Cert.changedSetOf env ixe).contains m = true -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.GroundAffectedIn
 
 /-- info: def Ix.Cert.RootAccepted : Ix.Kernel.Admission.Binding → Ixon.Env → Address → Prop :=
 fun binding ixe a => ∃ limits order envA, Ix.Cert.IxonAcceptsRef binding limits ixe (fun x => x = a) order envA -/
@@ -6677,12 +6804,13 @@ fun ixe t cx c => do
     Ix.Kernel.Reader.Ctx Ix.Kernel.Mode.anon → Ix.Environment → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
 fun ixe t cx sub envQ =>
   ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
-    sub.consts.get? n = some ci →
-      ∃ c,
-        c ∈ envQ.consts ∧
-          c.name = Ix.Cert.quotientKey ixe t n ∧
-            Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) ∧
-              (Ix.Cert.readingAt ixe t cx c).isSome = true -/
+    (n, ci) ∈ sub.consts.toList →
+      Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
+        ∃ c,
+          c ∈ envQ.consts ∧
+            c.name = Ix.Cert.quotientKey ixe t n ∧
+              Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) ∧
+                (Ix.Cert.readingAt ixe t cx c).isSome = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ReadingCovers
 
@@ -6893,7 +7021,12 @@ the composition reaches an axiom outside the standard three. The fold's start
 (`Resolution.FoldRun`) is now named by the provenance and unchanged-closure claims it
 comes from (`compileUnchecked_provenance`, `compileReport_claim`,
 `HookFree.compileReport_hookFree`), so that the ownership obligation can be stated of this
-compile's fold; those three are guarded here at their new statements. -/
+compile's fold; those three are guarded here at their new statements. Source totality is
+restated as `ReadingCovers` is (the closure's stored entries, `sorryAx` aside), for the
+same reason; re-frozen with it: its print. The other definitions that key a closure's
+constant by its name's spelling (`RepOf`, `ImageRecursor`, and the reader's key
+obligation's coverage conjunct) range over the stored entries too, so that they say what
+is meant of a respelled lookup; re-frozen with them: their prints. -/
 
 /-- info: structure Ix.Cert.Premises (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
   (failures : Ix.Cert.Failures) (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) : Prop
@@ -7037,7 +7170,7 @@ fun {V} [Ix.Kernel.SetTheory V] {envA} M f envQ =>
 
 /-- info: def Ix.Cert.RepOf : Ixon.Env →
   Ix.Kernel.RoleTable → Ix.Environment → Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Ix.Name → Prop :=
-fun ixe t sub c n => (sub.consts.get? n).isSome = true ∧ c.name = Ix.Cert.quotientKey ixe t n -/
+fun ixe t sub c n => (∃ ci, (n, ci) ∈ sub.consts.toList) ∧ c.name = Ix.Cert.quotientKey ixe t n -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RepOf
 
@@ -7059,7 +7192,7 @@ fun env ixe sub t c => ∃ n a, Ix.Cert.KindRoot Ix.Cert.ChangeKind.clique env i
 fun env ixe sub t c =>
   ∃ n a,
     Ix.Cert.KindRoot Ix.Cert.ChangeKind.image env ixe sub n a ∧
-      (sub.consts.get? n).isSome = true ∧ c = Ix.Cert.quotientKey ixe t n -/
+      (∃ ci, (n, ci) ∈ sub.consts.toList) ∧ c = Ix.Cert.quotientKey ixe t n -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ImageRecursor
 
@@ -7110,11 +7243,12 @@ fun env blocks cenv cenv₀ sched =>
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     (∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source), c ∈ envQ.consts → envQ.find? c.name = some c) ∧
       ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
-        sub.consts.get? n = some ci →
-          ∃ c,
-            c ∈ envQ.consts ∧
-              c.name = Ix.Cert.quotientKey ixe t n ∧
-                Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) -/
+        (n, ci) ∈ sub.consts.toList →
+          Ix.LeanIngress.ingressKey n ≠ Ix.Kernel.sorryAxName →
+            ∃ c,
+              c ∈ envQ.consts ∧
+                c.name = Ix.Cert.quotientKey ixe t n ∧
+                  Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.SourceTotal
 
@@ -7140,9 +7274,8 @@ fun env blocks cenv cenv₀ sched =>
                           Ix.Kernel.Reader.StreamRead (Ix.Cert.closureContext ixe tA preA order) preA.state
                               (Ix.Cert.Stream.decodedOf ixe order) st' decls ∧
                             preA.state.keepsPrelude st' = true ∧
-                              (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList.Perm
-                                  (List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList) ∧
-                                Ix.Kernel.Closed (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList -/
+                              (Ix.Kernel.Frontend.preparePrelude preA.ix decls).toList =
+                                List.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b)) ds.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.ReaderStreams
 
@@ -7165,7 +7298,7 @@ fun env blocks cenv cenv₀ sched =>
                           Ix.Kernel.Expr.const (Ix.Kernel.Key.map (Ix.LeanIngress.evAddr ixe b) c.name)
                             (List.map Ix.Kernel.Level.param c.toConstantVal.levelParams)) ∧
                 ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
-                  sub.consts.get? n = some ci →
+                  (n, ci) ∈ sub.consts.toList →
                     ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
                       c ∈ envQ.consts →
                         c.name = Ix.Cert.quotientKey ixe t n → (Ix.Cert.readingAt ixe t cx c).isSome = true -/
@@ -7250,14 +7383,6 @@ fun env blocks cenv cenv₀ sched =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.CliqueRows
 
-/-- info: def Ix.Cert.Obligation.ReorderAccepts : Prop :=
-∀ {md : Ix.Kernel.Mode} (μ : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences md) (A S : List (Ix.Kernel.Declaration md))
-  (envS : Ix.Kernel.Env md),
-  Ix.Kernel.Cached.AcceptsRef μ ev S envS →
-    A.Perm S → Ix.Kernel.Closed A → ∃ envA, Ix.Kernel.Cached.AcceptsRef μ ev A envA ∧ Ix.Cert.SameEnv envA envS -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Obligation.ReorderAccepts
-
 /-- info: def Ix.Cert.Obligation.EvidenceTransfer : Prop :=
 ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
   (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source)
@@ -7300,7 +7425,7 @@ fun env blocks cenv cenv₀ sched =>
   (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) (n : Ix.Name),
   Ix.Cert.Premises env roots sub ixe failures t envQ →
     (sub.consts.get? n).isSome = true →
-      ¬Ix.Cert.SelectedRoots.AffectedName env (Ix.Cert.changedSetOf env ixe) n →
+      ¬Ix.Cert.GroundAffectedIn env ixe sub n →
         ∃ roots' sub' envQ',
           Ix.Cert.Premises env roots' sub' ixe failures t envQ' ∧
             (Ix.Cert.changedSetOf env ixe).Avoids sub' ∧ sub'.consts.get? n = sub.consts.get? n -/
@@ -7361,8 +7486,7 @@ fun env blocks cenv cenv₀ sched =>
   Ix.Cert.Obligation.ReaderStreams →
     Ix.Cert.Obligation.ReadingKeys →
       Ix.Cert.Obligation.ScheduleOwnership →
-        Ix.Cert.Obligation.ReorderAccepts →
-          Ix.Cert.Obligation.EvidenceTransfer → Ix.Cert.Obligation.UnchangedRules → Ix.Cert.CompileCorrectUnchanged -/
+        Ix.Cert.Obligation.EvidenceTransfer → Ix.Cert.Obligation.UnchangedRules → Ix.Cert.CompileCorrectUnchanged -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileCorrect_unchanged
 
@@ -7374,7 +7498,6 @@ fun env blocks cenv cenv₀ sched =>
           Ix.Cert.Obligation.PassValues →
             Ix.Cert.Obligation.ImageRules →
               Ix.Cert.Obligation.CliqueRows →
-                Ix.Cert.Obligation.ReorderAccepts →
                   Ix.Cert.Obligation.EvidenceTransfer →
                     Ix.Cert.Obligation.SeedUnion →
                       Ix.Cert.Obligation.SourceRestricts →
@@ -7385,7 +7508,7 @@ fun env blocks cenv cenv₀ sched =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileCorrect_of_obligations
 
-/-- info: [cert-audit] composition skeleton: 45 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] composition skeleton: 50 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
@@ -7393,6 +7516,7 @@ run_cmd do
     (#[`Premises,
       `CompileCorrectUnchanged,
       `SameEnv,
+      `SameEnv.refl,
       `DenoteSame,
       `ConstantAgrees,
       `RecStepsAgree,
@@ -7411,7 +7535,6 @@ run_cmd do
       `Obligation.PassValues,
       `Obligation.ImageRules,
       `Obligation.CliqueRows,
-      `Obligation.ReorderAccepts,
       `Obligation.EvidenceTransfer,
       `Obligation.SeedUnion,
       `Obligation.SourceRestricts,
@@ -7428,7 +7551,12 @@ run_cmd do
       `claimsOwned,
       `renamed_reading_denotes,
       `causeKind_reason,
+      `causeKind_ne_cascade,
       `kindRoot_of_reason,
+      `kindRoot_cascade,
+      `evidenceDepKeys_ground,
+      `groundReaches_of_reaches,
+      `groundAffectedIn_of_affected,
       `kindAccepted_root,
       `compileCorrect_unchanged,
       `compileCorrect_of_obligations,

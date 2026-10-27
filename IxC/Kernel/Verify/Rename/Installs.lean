@@ -37,40 +37,66 @@ theorem Env.find?_none_of_append {new : List (ConstantInfo md)} {env : Env md} {
 
 /-- **Growth**: `env'` is `env` with constants in front, each named by a key
 satisfying `Q` and missing from `env` (so `env`'s lookups persist,
-`Grows.persist`). -/
+`Grows.persist`), no two of them under one name (so name uniqueness
+persists, `Grows.nodup`). -/
 def Grows (Q : Key md → Prop) (env env' : Env md) : Prop :=
   ∃ new : List (ConstantInfo md), env'.consts = new ++ env.consts ∧
-    ∀ c ∈ new, Q c.name ∧ env.find? c.name = none
+    (∀ c ∈ new, Q c.name ∧ env.find? c.name = none) ∧ (new.map (·.name)).Nodup
 
 theorem Grows.refl (Q : Key md → Prop) (env : Env md) : Grows Q env env :=
-  ⟨[], rfl, fun _ h => nomatch h⟩
+  ⟨[], rfl, (fun _ h => nomatch h), List.nodup_nil⟩
+
+/-- A name `env` misses is the name of none of its constants. -/
+theorem Env.find?_none_ne {env : Env md} {k : Key md} (h : env.find? k = none)
+    {c : ConstantInfo md} (hc : c ∈ env.consts) : c.name ≠ k := by
+  intro he
+  unfold Env.find? at h
+  exact (List.find?_eq_none.mp h) c hc (beq_iff_eq.mpr he)
 
 theorem Grows.trans {Q : Key md → Prop} {e₁ e₂ e₃ : Env md} (h₁ : Grows Q e₁ e₂)
     (h₂ : Grows Q e₂ e₃) : Grows Q e₁ e₃ := by
-  obtain ⟨n₁, h₁, q₁⟩ := h₁
-  obtain ⟨n₂, h₂, q₂⟩ := h₂
-  refine ⟨n₂ ++ n₁, by rw [h₂, h₁, List.append_assoc], fun c hc => ?_⟩
-  rcases List.mem_append.mp hc with hc | hc
-  · refine ⟨(q₂ c hc).1, ?_⟩
-    have h := (q₂ c hc).2
-    obtain ⟨cs₂⟩ := e₂
-    simp only at h₁
-    subst h₁
-    exact Env.find?_none_of_append h
-  · exact q₁ c hc
+  obtain ⟨n₁, h₁, q₁, d₁⟩ := h₁
+  obtain ⟨n₂, h₂, q₂, d₂⟩ := h₂
+  refine ⟨n₂ ++ n₁, by rw [h₂, h₁, List.append_assoc], fun c hc => ?_, ?_⟩
+  · rcases List.mem_append.mp hc with hc | hc
+    · refine ⟨(q₂ c hc).1, ?_⟩
+      have h := (q₂ c hc).2
+      obtain ⟨cs₂⟩ := e₂
+      simp only at h₁
+      subst h₁
+      exact Env.find?_none_of_append h
+    · exact q₁ c hc
+  · rw [List.map_append, List.nodup_append]
+    refine ⟨d₂, d₁, fun a ha b hb hab => ?_⟩
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp ha
+    obtain ⟨c', hc', rfl⟩ := List.mem_map.mp hb
+    have hmem : c' ∈ e₂.consts := by rw [h₁]; exact List.mem_append_left _ hc'
+    exact Env.find?_none_ne (q₂ c hc).2 hmem hab.symm
 
 theorem Grows.push {Q : Key md → Prop} {env : Env md} {c : ConstantInfo md} (hc : Q c.name)
     (hf : env.find? c.name = none) : Grows Q env ⟨c :: env.consts⟩ :=
-  ⟨[c], rfl, fun c' h => by rcases List.mem_singleton.mp h with rfl; exact ⟨hc, hf⟩⟩
+  ⟨[c], rfl, (fun c' h => by rcases List.mem_singleton.mp h with rfl; exact ⟨hc, hf⟩),
+    List.nodup_cons.mpr ⟨List.not_mem_nil, List.nodup_nil⟩⟩
 
 theorem Grows.mono {Q Q' : Key md → Prop} (hQ : ∀ k, Q k → Q' k) {env env' : Env md}
     (h : Grows Q env env') : Grows Q' env env' :=
-  let ⟨n, h, q⟩ := h; ⟨n, h, fun c hc => ⟨hQ _ (q c hc).1, (q c hc).2⟩⟩
+  let ⟨n, h, q, d⟩ := h; ⟨n, h, fun c hc => ⟨hQ _ (q c hc).1, (q c hc).2⟩, d⟩
+
+/-- **Growth keeps name uniqueness**: the names of `env'`'s constants are
+pairwise distinct when `env`'s are. -/
+theorem Grows.nodup {Q : Key md → Prop} {env env' : Env md} (h : Grows Q env env')
+    (hn : (env.consts.map (·.name)).Nodup) : (env'.consts.map (·.name)).Nodup := by
+  obtain ⟨n, h, q, d⟩ := h
+  rw [h, List.map_append, List.nodup_append]
+  refine ⟨d, hn, fun a ha b hb hab => ?_⟩
+  obtain ⟨c, hc, rfl⟩ := List.mem_map.mp ha
+  obtain ⟨c', hc', rfl⟩ := List.mem_map.mp hb
+  exact Env.find?_none_ne (q c hc).2 hc' hab.symm
 
 /-- **Growth keeps every lookup** of the old environment. -/
 theorem Grows.persist {Q : Key md → Prop} {env env' : Env md} (h : Grows Q env env')
     {k : Key md} {c : ConstantInfo md} (hk : env.find? k = some c) : env'.find? k = some c := by
-  obtain ⟨n, h, q⟩ := h
+  obtain ⟨n, h, q, -⟩ := h
   obtain ⟨cs'⟩ := env'
   simp only at h
   subst h
@@ -87,7 +113,7 @@ theorem Grows.persist {Q : Key md → Prop} {env env' : Env md} (h : Grows Q env
 /-- **A lookup outside the growth** is unchanged. -/
 theorem Grows.find_eq {Q : Key md → Prop} {env env' : Env md} (h : Grows Q env env') {k : Key md}
     (hk : ¬ Q k) : env'.find? k = env.find? k := by
-  obtain ⟨n, h, q⟩ := h
+  obtain ⟨n, h, q, -⟩ := h
   obtain ⟨cs⟩ := env'
   obtain ⟨cs₀⟩ := env
   simp only at h

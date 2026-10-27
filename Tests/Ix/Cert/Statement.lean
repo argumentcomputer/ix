@@ -4,6 +4,7 @@ import Ix.Cert.Audit
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.SourceContract.SyntaxFixture
 import Tests.Ix.Compile.ValidateAux
+import Ix.Ixon.CheckOrder
 
 /-! # The certification statements on the Source-mode fixtures (`lake test -- cert-statement`)
 
@@ -432,6 +433,24 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           invariant: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a misnamed input constant"
   | _ => errors := errors.push s!"{label}: fewer than two input definitions"
+  -- and the input with one definition whose own name is a respelling of the
+  -- name it is stored under that shares its stored hash (`==` cannot tell them
+  -- apart; the exact spelling can)
+  match defs with
+  | (n, .defnInfo v) :: _ =>
+    let respelled : Ix.Name := .str n "respelled" n.getHash
+    let ci' : Ix.ConstantInfo := .defnInfo { v with cnst := { v.cnst with name := respelled } }
+    let env' : Ix.Environment := { env with consts := env.consts.insert n ci' }
+    match Ix.Cert.checkReport env' cenv (ixe, failures) with
+    | .error e =>
+      if (e.splitOn "name invariant failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses an input definition whose own name is a \
+          hash-equal respelling of its stored name ({n.pretty})"
+      else
+        errors := errors.push s!"{label}: the respelled input is refused, but not by the name \
+          invariant: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a respelled own name"
+  | _ => errors := errors.push s!"{label}: no input definition"
   -- the constructor check (every constructor an input inductive lists is
   -- stored as a constructor of it), timed alone, then refusing, by its own
   -- message, the input with one constructor's inductive renamed to itself
@@ -596,34 +615,90 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       decoder on {disagree.length} record(s); first: {a}"
   return (errors, lines)
 
-/-- The records a record needs (`Ix.Cert.RecordEdge`): its block, for a
-projection, and the records of its reference table. -/
-def edges (ixe : Ixon.Env) (a : Address) : Array Address :=
-  match Ix.Cert.recordAt ixe a with
+/-- The default role table, decoded once. -/
+def defaultTable? : Option Ix.Kernel.RoleTable := Ix.Kernel.Reader.defaultTable.toOption
+
+/-- What the closure's steps read off the whole artifact, computed once: its recursor
+index (`Ix.Cert.artifactRecIndex`) and the certificate ground of each `Nat` operation,
+under the default table, at the operation's bound record and at the block that holds it. -/
+structure ClosureCx where
+  idx : Ix.Kernel.Reader.RecIndex
+  ground : Std.HashMap Address (Array Address)
+
+/-- The artifact's addresses of the roles `rs`, under the default table. -/
+def roleTargets (ixe : Ixon.Env) (rs : List Ix.Kernel.Role) : Array Address :=
+  match defaultTable? with
   | none => #[]
+  | some t => (rs.filterMap t.addressOf?).toArray.filter (ixe.consts.contains ·)
+
+def ClosureCx.of (ixe : Ixon.Env) : ClosureCx :=
+  let ground := match defaultTable? with
+    | none => {}
+    | some t => t.bound.foldl (init := ({} : Std.HashMap Address (Array Address))) fun m (r, p) =>
+      let ts := roleTargets ixe (Ix.Cert.groundRoles r)
+      if ts.isEmpty then m else
+        let m := m.insert p (m.getD p #[] ++ ts)
+        match Ix.Cert.recordAt ixe p with
+        | some c =>
+          let o := Ix.Cert.ownerOf p c
+          if o != p then m.insert o (m.getD o #[] ++ ts) else m
+        | none => m
+  ⟨Ix.Cert.artifactRecIndex ixe, ground⟩
+
+/-- The records the fold reads at the record `a` (decoded `c`, if stored) without a
+reference (`Ix.Cert.GroundEdge`), under the default table: the certificate ground of a
+`Nat` operation bound at `a` or at a projection whose block is `a`, and the support of
+`a`'s literals, wherever the artifact stores them. -/
+def groundTargets (ixe : Ixon.Env) (cx : ClosureCx) (a : Address) (c : Option Ixon.Constant) :
+    Array Address :=
+  cx.ground.getD a #[] ++ ((c.map Ix.Cert.literalRoles).map (roleTargets ixe)).getD #[]
+
+/-- The records a record needs before it (`Ix.Cert.CompiledReach`'s steps but the
+recursors'): its block, for a projection, the records of its reference table
+(`Ix.Cert.RecordEdge`), and the records the fold reads without a reference
+(`groundTargets`). -/
+def edges (ixe : Ixon.Env) (cx : ClosureCx) (a : Address) : Array Address :=
+  match Ix.Cert.recordAt ixe a with
+  | none => groundTargets ixe cx a none
   | some c =>
     let o := Ix.Cert.ownerOf a c
-    (if o != a then #[o] else #[]) ++ c.refs.filter (ixe.consts.contains ·)
+    (if o != a then #[o] else #[]) ++ c.refs.filter (ixe.consts.contains ·) ++
+      groundTargets ixe cx a (some c)
 
-/-- The compiled closure of `seeds`, dependencies first: a depth-first
-postorder over `edges`. -/
+/-- The recursor records of the inductive block at `a` (`Ix.Cert.RecursorEdge`, over the
+artifact's index). A recursor references its block, so it comes after it. -/
+def recursorTargets (ixe : Ixon.Env) (cx : ClosureCx) (a : Address) : Array Address :=
+  ((cx.idx.blocks[a]?.map (·.recs)).getD #[]).filterMap fun r =>
+    if r.block != a && ixe.consts.contains r.block then some r.block else none
+
+/-- The compiled closure of `seeds`, dependencies first: a depth-first postorder over
+`edges` from each seed, then from the recursors of every block it emits. A record is
+expanded once. -/
 def closureOrder (ixe : Ixon.Env) (seeds : Array Address) : Array Address := Id.run do
+  let cx := ClosureCx.of ixe
+  let mut expanded : Std.HashSet Address := {}
   let mut done : Std.HashSet Address := {}
   let mut out : Array Address := #[]
-  for root in seeds do
+  let mut roots : Array Address := seeds
+  let mut i := 0
+  while h : i < roots.size do
+    let root := roots[i]
+    i := i + 1
     unless ixe.consts.contains root do continue
     let mut stack : Array (Address × Bool) := #[(root, false)]
     while h : stack.size > 0 do
-      let (node, expanded) := stack[stack.size - 1]
+      let (node, post) := stack[stack.size - 1]
       stack := stack.pop
-      if expanded then
+      if post then
         unless done.contains node do
           done := done.insert node
           out := out.push node
-      else unless done.contains node do
+          roots := roots ++ recursorTargets ixe cx node
+      else unless expanded.contains node do
+        expanded := expanded.insert node
         stack := stack.push (node, true)
-        for d in edges ixe node do
-          unless done.contains d do stack := stack.push (d, false)
+        for d in edges ixe cx node do
+          unless expanded.contains d do stack := stack.push (d, false)
   return out
 
 /-- The artifact-wide checks the quotient renaming takes (step 7.3 (iv)): every published
@@ -945,7 +1020,8 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
 /-! ## The Ixon side of one closure -/
 
 /-- The compiled closure of `seeds` as a set, by a separate worklist. -/
-def reach (ixe : Ixon.Env) (seeds : Array Address) : Std.HashSet Address := Id.run do
+def reach (ixe : Ixon.Env) (seeds : Array Address) (cx : ClosureCx := ClosureCx.of ixe) :
+    Std.HashSet Address := Id.run do
   let mut seen : Std.HashSet Address := {}
   let mut todo := seeds.filter (ixe.consts.contains ·)
   while h : todo.size > 0 do
@@ -953,8 +1029,50 @@ def reach (ixe : Ixon.Env) (seeds : Array Address) : Std.HashSet Address := Id.r
     todo := todo.pop
     if seen.contains a then continue
     seen := seen.insert a
-    todo := todo ++ edges ixe a
+    todo := todo ++ edges ixe cx a ++ recursorTargets ixe cx a
   return seen
+
+/-- **The ground step against the executable check order's edges**: over the compiled
+closure of `seeds`, the blocks the statement's ground step reaches from each block
+(`groundTargets`, `Ix.Cert.GroundEdge`) are the blocks the check order's extra edges give
+it (`Ixon.CheckOrder.groundEdges` and `Ix.Kernel.Reader.literalEdges`, over the reader's
+bindings of the default table). -/
+def groundEdgeCases (label : String) (ixe : Ixon.Env) (seeds : Array Address) :
+    Array String × Array String := Id.run do
+  let some t := defaultTable? | return (#[s!"{label}: the default role table does not read"], #[])
+  let .ok (pre : Ix.Kernel.Reader.Prelude .anon) := Ix.Kernel.Reader.preludeFor t
+    | return (#[s!"{label}: the committed prelude does not read"], #[])
+  let all := Ix.Cert.storedRecords ixe
+  let cx := Ix.Kernel.Admission.streamContext Address.admissionHash t pre all.toList ixe.blobs.toList
+    (Ix.Cert.hintsOf ixe)
+  let extra := Ixon.CheckOrder.mergeEdges (Ixon.CheckOrder.groundEdges cx.roles.names)
+    (Ix.Kernel.Reader.literalEdges cx.roles.names all)
+  let owner (a : Address) : Address := ((Ix.Cert.recordAt ixe a).map (Ix.Cert.ownerOf a)).getD a
+  let closureCx := ClosureCx.of ixe
+  let reached := reach ixe seeds closureCx
+  -- the statement's ground step, by block
+  let mut ours : Std.HashMap Address (Std.HashSet Address) := {}
+  let mut owners : Std.HashSet Address := {}
+  for a in reached.toList do
+    let c := Ix.Cert.recordAt ixe a
+    let o := (c.map (Ix.Cert.ownerOf a)).getD a
+    owners := owners.insert o
+    let ts := (groundTargets ixe closureCx a c).map owner |>.filter (· != o)
+    ours := ours.insert o (ts.foldl (·.insert ·) (ours.getD o {}))
+  let mut differ : Array Address := #[]
+  let mut edgesSeen := 0
+  for o in owners.toList do
+    let mine := ours.getD o {}
+    let theirs := ((extra.getD o #[]).filter (· != o)).foldl (·.insert ·) ({} : Std.HashSet Address)
+    edgesSeen := edgesSeen + theirs.size
+    unless mine.size == theirs.size && mine.toList.all theirs.contains do
+      differ := differ.push o
+  if differ.isEmpty then
+    return (#[], #[s!"{label}: the ground step agrees with the check order's ground and \
+      literal edges on {reached.size} records ({edgesSeen} edges)"])
+  else
+    return (#[s!"{label}: the ground step and the check order's extra edges differ at \
+      {differ.size} blocks: {differ.toList.take 5}"], #[])
 
 /-- `ClosureOrder`'s three conditions, decided on one order: the failures. -/
 def closureOrderProblems (ixe : Ixon.Env) (seeds : Array Address) (order : Array Address) :
@@ -1061,6 +1179,9 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   let order := closureOrder ixe seeds
   for p in (closureOrderProblems ixe seeds order).toList.take 5 do
     errors := errors.push s!"ClosureOrder: {p}"
+  let (groundErrors, groundLines) := groundEdgeCases "closure" ixe seeds
+  errors := errors ++ groundErrors
+  lines := lines ++ groundLines
   -- S1's certificate-side `Closed` for string literals, on the order the closure is read in
   match Ix.Kernel.Reader.defaultTable with
   | .error e => errors := errors.push s!"the default role table does not read: {e}"

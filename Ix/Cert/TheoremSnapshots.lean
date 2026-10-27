@@ -81,7 +81,7 @@ theorem counter_prefix {ev : Evidences md} {ds : List (Declaration md)} {envA be
   obtain ⟨_, _, _, _, suffixRun, _, _, _, _⟩ := front
   have growth := foldlM_checkDecl_post .verified (fueledOps .verified F) ev
     (ds.drop (i + 1)) after envA suffixRun
-  obtain ⟨new, extent, fresh⟩ := growth
+  obtain ⟨new, extent, fresh, -⟩ := growth
   have atHead : after.find? cv.name = some stored := by
     simp [after, stored, Env.find?, Ix.Kernel.ConstantInfo.name, Ix.Kernel.ConstantInfo.toConstantVal]
   have other : ∀ c ∈ new, c.name ≠ cv.name := by
