@@ -432,6 +432,24 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           invariant: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a misnamed input constant"
   | _ => errors := errors.push s!"{label}: fewer than two input definitions"
+  -- and the input with one definition whose own name is a respelling of the
+  -- name it is stored under that shares its stored hash (`==` cannot tell them
+  -- apart; the exact spelling can)
+  match defs with
+  | (n, .defnInfo v) :: _ =>
+    let respelled : Ix.Name := .str n "respelled" n.getHash
+    let ci' : Ix.ConstantInfo := .defnInfo { v with cnst := { v.cnst with name := respelled } }
+    let env' : Ix.Environment := { env with consts := env.consts.insert n ci' }
+    match Ix.Cert.checkReport env' cenv (ixe, failures) with
+    | .error e =>
+      if (e.splitOn "name invariant failed").length > 1 then
+        lines := lines.push s!"{label}: checkReport refuses an input definition whose own name is a \
+          hash-equal respelling of its stored name ({n.pretty})"
+      else
+        errors := errors.push s!"{label}: the respelled input is refused, but not by the name \
+          invariant: {e}"
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a respelled own name"
+  | _ => errors := errors.push s!"{label}: no input definition"
   -- the constructor check (every constructor an input inductive lists is
   -- stored as a constructor of it), timed alone, then refusing, by its own
   -- message, the input with one constructor's inductive renamed to itself

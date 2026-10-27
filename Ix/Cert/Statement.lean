@@ -1037,25 +1037,25 @@ theorem noCrossClaims {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
   exact ⟨cenv, hu, crossClaimed_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.1⟩
 
-/-- What `misnamedInput = none` says: every input constant's own name hashes
-like the name it is stored under. -/
+/-- What `misnamedInput = none` says: every input constant's own name is the
+name it is stored under. -/
 theorem misnamedInput_none {env : Ix.Environment} (h : misnamedInput env = none) :
-    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → (ci.getCnst.name == n) = true := by
+    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → ci.getCnst.name = n := by
   intro n ci hmem
   unfold misnamedInput at h
   rw [List.findSome?_eq_none_iff] at h
   have hfind := h (n, ci) hmem
   dsimp only at hfind
-  cases hb : (ci.getCnst.name == n)
+  cases hb : (Ix.nameCompareExact ci.getCnst.name n == .eq)
   · simp [hb] at hfind
-  · rfl
+  · exact Ix.CompileCert.Canon.nameCompareExact_eq_iff.mp (beq_iff_eq.mp hb)
 
 /-- **Input constants carry their names**: when `compileReport` returns,
-every input constant's own name hashes like the name it is stored under
+every input constant's own name is the name it is stored under
 (`checkReport`'s twelfth check). -/
 theorem inputsNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
-    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → (ci.getCnst.name == n) = true := by
+    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → ci.getCnst.name = n := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
   exact misnamedInput_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.1
 
