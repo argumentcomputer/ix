@@ -2,6 +2,7 @@ module
 
 public import Ix.Common
 public import Ix.Environment
+public import Ix.Compile.ExactKey
 
 public section
 
@@ -14,8 +15,12 @@ namespace Ix
   The canonicalization should be done first (ideally via fast Rust FFI).
 -/
 
+/-- The graph walk's memo: each expression's references, keyed exactly
+(`Ix.Compile.ExactKey.ExprKey`: complete structural equality confirms a hit, as in
+the compiler's caches). A stored hash is not a content hash on every input, so a
+key compared by stored hashes alone could return another expression's references. -/
 structure GraphState where
-  exprCache: Map Ix.Expr (Set Ix.Name)
+  exprCache : Std.HashMap Ix.Compile.ExactKey.ExprKey (Set Ix.Name)
 
 def GraphState.init : GraphState := ⟨{}⟩
 
@@ -24,12 +29,12 @@ abbrev GraphM := ReaderT Ix.Environment <| StateT GraphState Id
 /-- Extract constant references from an Ix.Expr.
     NOTE: Aligned with Rust's get_expr_references for cross-impl testing. -/
 def graphExpr (expr: Ix.Expr) : GraphM (Set Ix.Name) := do
-  match (<- get).exprCache.get? expr with
+  match (<- get).exprCache.get? ⟨expr⟩ with
   | some x => pure x
   | none =>
     let refs <- go expr
     modifyGet fun stt => (refs, { stt with
-      exprCache := stt.exprCache.insert expr refs
+      exprCache := stt.exprCache.insert ⟨expr⟩ refs
     })
   where
     go : Ix.Expr -> GraphM (Set Ix.Name)
