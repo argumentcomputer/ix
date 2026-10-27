@@ -1393,11 +1393,22 @@ def roleEvidenceCase : IO (Array String × Array String) := do
   unless admits do
     return (#[s!"role evidence: the default binding does not admit under the admission hash"], #[])
   let admitsLine := s!"role evidence: the default binding admits under the admission hash ({a1 - a0} ms)"
+  -- the committed prelude read at both modes, names erased, timed alone on the table read at
+  -- run time (`preludeAgrees` is a closed constant too)
+  let table ← IO.lazyPure fun _ => Ix.Kernel.Reader.defaultTable
+  let p0 ← IO.monoMsNow
+  let agrees ← IO.lazyPure fun _ => Ix.Cert.RoleClosure.preludeAgreesOf table
+  let p1 ← IO.monoMsNow
+  unless agrees == Ix.Cert.RoleClosure.preludeAgrees do
+    return (#[s!"role evidence: the timed prelude agreement disagrees with preludeAgrees"], #[])
+  unless agrees do
+    return (#[s!"role evidence: the committed prelude does not read alike at both modes"], #[])
+  let agreesLine := s!"role evidence: the committed prelude reads alike at both modes, names erased ({p1 - p0} ms)"
   match Ix.Cert.RoleClosure.preparedDefault with
   | .error e => return (#[s!"the committed role closure does not prepare: {e}"], #[])
   | .ok (ev, ds) =>
     if Ix.Cert.RoleClosure.roleEvidenceCheck then
-      return (#[], #[hashedLine, admitsLine, s!"role evidence: the pinned closure ({ds.length} declarations, \
+      return (#[], #[hashedLine, admitsLine, agreesLine, s!"role evidence: the pinned closure ({ds.length} declarations, \
         {ev.length} evidence entries) defines every well-founded operation and the verified fold \
         accepts it: RoleEvidenceChecks holds"])
     else
