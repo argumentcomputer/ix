@@ -121,7 +121,7 @@ theorem familyUniform_exact_match {cfg : Config} {limits : Limits} {ex : Expande
     fresh.stored = old.stored ∧ fresh.result.modelBytes = old.result.modelBytes := by
   obtain ⟨_, wf, roots, marks, spines, oldChoice, _, oldFinish⟩ := optimizeUniform_parts oldRun
   have reachable := reach_of_marks wf roots marks
-  obtain ⟨_, _, _, _, _, _, checked, _, _, _, _, _⟩ := familyUniform_finish freshRun
+  obtain ⟨_, _, _, _, _, _, checked, _, _, _, _⟩ := familyUniform_finish wf freshRun
   obtain ⟨delta, chosen, least, stored, finished⟩ := familyUniform_finished wf roots reachable freshRun
   obtain ⟨sets, minimum, _, chosenEq, _, tieLeast⟩ := least
   obtain ⟨oldMinimum, oldModel, oldLeast⟩ := optimizeUniform_least defaultSearch oldRun

@@ -39,15 +39,12 @@ def familyWork (cfg : Config) (m closure : Nat) : Nat :=
 theorem phiE_work (cx : SCtx) (avail : Nat → Bool) (stored : Array Nat) :
     (cx.phiE avail stored).2 = cx.closure.size + stored.size := by rfl
 
-/-- Retain the same strict slack band and an actual indexed best row.
-The explicit coherence check is useful to the separate entry-origin proof. -/
+/-- Retain the same strict slack band and its best row. -/
 def retainedResult (slack : Nat) (trace : ComponentTrace) : Except SharingError CompResult := do
   let bySize := trace.rows.trim slack
   let some bestDelta := bySize.best | throw (.internal "component family has no row")
   let some bestSet := bestSetOf bySize bestDelta
     | throw (.internal "component family has no best set")
-  unless bySize[bestSet.size]! == some (bestDelta, bestSet) do
-    throw (.internal "component family best row is not at its actual count")
   return { members := trace.members, bySize, bestDelta, bestSet }
 
 abbrev FamilyState := (Array CompResult × Nat × Nat) × Array Nat × Array Nat
@@ -79,12 +76,9 @@ def familyUniform (cfg : Config) (limits : Limits) (ex : Expanded) (p : Prep)
     (facts : GraphFacts) (parents : Array (Array Nat)) (width : Nat) :
     Except SharingError UniformSharingResult := do
   let sg := uniformStageF width ex p facts
-  unless componentsChecked ex.dag sg.cls sg.opaq sg.comps (componentLabels ex.dag.size sg.comps) do
-    throw (.internal "uncertain components are not a separated partition")
   let (results, states, costEvals) ← familyComponents cfg limits ex sg width parents
   let (delta, chosen, lowerBracket) ← uniformKnapsack limits sg.cs.size results
   let modelInt : _root_.Int := (csBase ex p sg : Nat) + delta + tag0Size (sg.cs.size + chosen.size)
-  if modelInt < 0 then throw (.internal "negative model length")
   let model := modelInt.toNat
   if model > limits.maxOutputBytes then throw (.resourceExhausted .outputBytes limits.maxOutputBytes)
   let choice : UniformChoice :=

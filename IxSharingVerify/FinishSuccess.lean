@@ -294,12 +294,9 @@ theorem selected_stored {cfg : Config} {ex : Expanded} {width : Nat} (wf : DagWF
 theorem familyUniform_of_parts {cfg : Config} {limits : Limits} {ex : Expanded} {width : Nat}
     {results : Array CompResult} {states work : Nat} {delta : _root_.Int} {set : Array Nat}
     {lowerBracket : Bool} {out : UniformSharingResult}
-    (checked : componentsChecked ex.dag (stg width ex).cls (stg width ex).opaq (stg width ex).comps
-      (componentLabels ex.dag.size (stg width ex).comps) = true)
     (produced : familyComponents cfg limits ex (stg width ex) width (parentsOf ex.dag) =
       .ok (results, states, work))
     (chosen : uniformKnapsack limits (stg width ex).cs.size results = .ok (delta, set, lowerBracket))
-    (nonneg : 0 ≤ familyModel ex width delta set)
     (bounded : (familyModel ex width delta set).toNat ≤ limits.maxOutputBytes)
     (finish : uniformFinishF width limits ex (Prep.ofDag ex.dag) (graphFacts ex.dag ex.roots).deg
       (familyChoice ex width states work delta set lowerBracket) = .ok out) :
@@ -308,20 +305,14 @@ theorem familyUniform_of_parts {cfg : Config} {limits : Limits} {ex : Expanded} 
   unfold familyUniform
   rw [← uniformStage_eq_F]
   dsimp only
+  rw [Budget.bind_ok_eq produced]
+  dsimp only
+  rw [Budget.bind_ok_eq chosen]
+  dsimp only
   split
-  · rw [Budget.bind_ok_eq produced]
-    dsimp only
-    rw [Budget.bind_ok_eq chosen]
-    dsimp only
-    split
-    · rename_i negative
-      exact absurd negative (Int.not_lt.mpr nonneg)
-    · split
-      · rename_i tooLong
-        exact absurd tooLong (Nat.not_lt.mpr bounded)
-      · exact finish
-  · rename_i unchecked
-    exact absurd checked unchecked
+  · rename_i tooLong
+    exact absurd tooLong (Nat.not_lt.mpr bounded)
+  · exact finish
 
 /-- **The family phase never refuses** on a canonical DAG whose size fits
 a 64-bit index. -/
@@ -344,7 +335,7 @@ theorem familyUniform_ok (cfg : Config) {ex : Expanded} (ok : ExpandedOK ex) (wi
   have produced' := familyComponents_mono (LimitsLe.join_left first second) cfg ex _ width hcp produced
   have chosen' := uniformKnapsack_mono (LimitsLe.join_right first second) chosen
   have selected := familyComponents_least cfg joined ex width wf checked produced' chosen'
-  obtain ⟨nonneg, modelEq⟩ := selected_model_nonnegative wf ok.roots ok.reachable checked selected
+  have modelEq := (selected_model_nonnegative wf ok.roots ok.reachable checked selected).2
   obtain ⟨storedFacts, sorted⟩ := selected_stored wf checked selected
   let third : Limits := { maxOutputBytes := (familyModel ex width delta set).toNat }
   obtain ⟨fourth, out, finish⟩ := uniformFinishF_ok (w := width) ok (graphFacts ex.dag ex.roots).deg
@@ -353,9 +344,9 @@ theorem familyUniform_ok (cfg : Config) {ex : Expanded} (ok : ExpandedOK ex) (wi
   let all := Limits.join (Limits.join joined third) fourth
   have toAll : LimitsLe joined all :=
     LimitsLe.trans (LimitsLe.join_left joined third) (LimitsLe.join_left _ fourth)
-  refine ⟨all, out, familyUniform_of_parts checked
+  refine ⟨all, out, familyUniform_of_parts
     (familyComponents_mono toAll cfg ex _ width hcp produced')
-    (uniformKnapsack_mono toAll chosen') nonneg ?_
+    (uniformKnapsack_mono toAll chosen') ?_
     (uniformFinishF_mono (LimitsLe.join_right _ fourth) _ _ _ _ _ finish)⟩
   exact Nat.le_trans (Nat.le_refl _)
     ((LimitsLe.trans (LimitsLe.join_right joined third) (LimitsLe.join_left _ fourth)).outputBytes)

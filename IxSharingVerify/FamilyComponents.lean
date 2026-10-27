@@ -8,8 +8,8 @@ the uncertain terms reachable below it through terms that are neither
 certain-stored nor uncertain, then groups the uncertain terms by their final
 root. This module proves that the result is a sorted partition of the
 uncertain terms whose labels are separated by the certain-stored terms, so
-`componentsChecked` accepts it on every well-formed DAG: the family stage's
-partition check never refuses. -/
+`componentsChecked` accepts it on every well-formed DAG. The family route
+therefore runs no partition check; the reference route's never refuses. -/
 
 namespace Ix.Sharing.Verify.Components
 
@@ -922,7 +922,8 @@ namespace Ix.Sharing.Family
 open Ix.Sharing.Exact
 open Ix.Sharing.Verify.UniformModel
 
-/-- The family stage's partition check never refuses a well-formed DAG. -/
+/-- The family stage's components pass the partition check on every
+well-formed DAG. -/
 theorem stage_componentsChecked (width : Nat) (ex : Expanded) (wf : DagWF ex.dag) :
     componentsChecked ex.dag (stg width ex).cls (stg width ex).opaq (stg width ex).comps
       (componentLabels ex.dag.size (stg width ex).comps) = true := by

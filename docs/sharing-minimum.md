@@ -1240,10 +1240,12 @@ the component family, tie rules and resource limits are unchanged.
 Totality is proved in `IxSharingVerify.NeverFails`. Under some budget the production entry
 succeeds on the domain of §14.2 (`canonicalSharingTiered_ok`), and so do the entry with a
 sharing table and constant normalization. No guard of the route is reachable there: the
-component partition check, the component and knapsack budgets, the model checks, the
-materialization and re-expansion checks of the uniform finisher, the first-tier search
-and the allocation's permutation and dependency checks, and the re-materialization's
-length, re-expansion and wire-domain checks. A larger budget keeps every successful run
+component and knapsack budgets, the output-length check, the materialization and
+re-expansion checks of the uniform finisher, the first-tier search and the allocation's
+permutation and dependency checks, and the re-materialization's length, re-expansion and
+wire-domain checks. The component partition check, the negative-model check and the
+retained row's index check, which the same proofs make unreachable, are no longer run
+(below). A larger budget keeps every successful run
 and its result (`Budget.canonicalSharingTiered_mono`), so two successful runs under any
 budgets return the same result (`canonicalSharingTiered_budget_independent`): the budget
 decides only whether a run is refused, never its bytes. The output, with its sharing
@@ -1293,7 +1295,7 @@ length or a component size over the charged or linear counts:
 
 - the uncertain-component pass (`uncertainComponents`) uses a union-find without path
   compression and removes duplicate representatives by linear search, `O(n³)` in the
-  worst case; the partition check (`componentsChecked`) tests membership linearly, `O(n²)`;
+  worst case;
 - each component evaluation sets its member flags (`memberFlags`) by a linear membership
   test in the stored set and scans telescopes up to the stored-set size per term, while
   the precharge counts one step per closure term;
@@ -1337,9 +1339,35 @@ sharing code:
   than the 128-bit path. It runs only where a value leaves 128 bits.
 
 Rust has exact wide phase-1 arithmetic, word-sized term IDs and iterative expression
-teardown. Removing the guards the proofs make unreachable remains. None of this
-completes the separate Source acceptance, no-drop, paired-stream or `CompileCorrect`
-obligations.
+teardown.
+
+Of the internal guards the proofs make unreachable, the family route no longer runs three:
+the component partition check (`componentsChecked`, quadratic in the uncertain terms), the
+negative-model check, and the check that the retained best row sits at its own count. Each
+removal is byte-neutral and does no metered work, so refusals under every budget are
+unchanged; the proofs take the partition from `stage_componentsChecked` and the model's sign
+from `selected_model_nonnegative`. Rust has no counterpart of the first and third, and
+converts the model to a `u64`, a format bound rather than an internal check. The other
+guards stay:
+
+- the DAG checks (`uniformDagChecks`), which the `csimp` equalities of the compiled family
+  route need on an arbitrary `Expanded` input;
+- the wire-domain check of the re-materialized expressions, a genuine domain check: the
+  format, serialized-length and output-expansion theorems rely on it, and its passing
+  proof needs the input domain (fewer than `2^64` terms and universes per reference);
+- the two re-expansion checks, which charge expression visits (Rust charges the same
+  counts) and which the meaning theorem consumes;
+- the first-tier fuel, the row retention's option checks and the materializer's internal
+  checks, which are structural;
+- the uniform finisher's range, class and model-length checks, the allocation's
+  permutation and dependency checks, and the re-materialization's length checks. They are
+  unreachable and linear-time, but sit on functions shared with the reference route;
+  removing them needs family-only copies of the finisher and re-materializer, or a rework
+  of the reference route's proofs.
+
+Rust keeps its own self-checks: no proof covers the Rust implementation, and they fire
+only on a Rust defect. None of this completes the separate Source acceptance, no-drop,
+paired-stream or `CompileCorrect` obligations.
 
 ### 14.4 Evidence and release gates
 

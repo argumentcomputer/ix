@@ -131,8 +131,8 @@ theorem familyAtWidth_ok (cfg : Config) (layout : ShareLayout) {ex : Expanded} (
   have hwf := ok.wf
   have hcp := Ix.Sharing.Family.childrenPrecede_of_cp hwf.precede
   obtain ⟨first, u, hu⟩ := familyUniform_ok cfg ok width small
-  obtain ⟨results, states, work, delta, set, lowerBracket, -, -, -, -, -, finish⟩ :=
-    familyUniform_finish hu
+  obtain ⟨results, states, work, delta, set, lowerBracket, -, -, -, -, finish⟩ :=
+    familyUniform_finish hwf hu
   have std : uniformFinish width first ex (Prep.ofDag ex.dag)
       (familyChoice ex width states work delta set lowerBracket) = .ok u := by
     rw [uniformFinish_eq_F]

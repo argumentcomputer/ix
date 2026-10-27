@@ -139,25 +139,17 @@ theorem familyUniform_mono {a b : Limits} (le : LimitsLe a b) (cfg : Config) (ex
     familyUniform cfg b ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag) width = .ok out := by
   unfold familyUniform at ran ⊢
   dsimp only at ran ⊢
+  obtain ⟨⟨results, states, work⟩, produced, ran⟩ := bind_eq_ok ran
+  rw [bind_ok_eq (familyComponents_mono le cfg ex _ width hcp produced)]
+  dsimp only at ran ⊢
+  obtain ⟨⟨delta, chosen, lowerBracket⟩, picked, ran⟩ := bind_eq_ok ran
+  rw [bind_ok_eq (uniformKnapsack_mono le picked)]
+  dsimp only at ran ⊢
   split at ran
-  · rename_i checked
-    rw [ite_eq_left checked]
-    obtain ⟨⟨results, states, work⟩, produced, ran⟩ := bind_eq_ok ran
-    rw [bind_ok_eq (familyComponents_mono le cfg ex _ width hcp produced)]
-    dsimp only at ran ⊢
-    obtain ⟨⟨delta, chosen, lowerBracket⟩, picked, ran⟩ := bind_eq_ok ran
-    rw [bind_ok_eq (uniformKnapsack_mono le picked)]
-    dsimp only at ran ⊢
-    split at ran
-    · cases ran
-    · rename_i nonnegative
-      rw [ite_eq_right nonnegative]
-      split at ran
-      · cases ran
-      · rename_i bounded
-        rw [ite_eq_right (not_gt_mono le.outputBytes bounded)]
-        exact uniformFinishF_mono le _ _ _ _ _ ran
   · cases ran
+  · rename_i bounded
+    rw [ite_eq_right (not_gt_mono le.outputBytes bounded)]
+    exact uniformFinishF_mono le _ _ _ _ _ ran
 
 /-! ## Slot allocation -/
 

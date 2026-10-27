@@ -5,7 +5,7 @@ import IxSharingVerify.ExpandSuccess
 /-! Success of the family stage's internal checks.
 
 Row retention (`retainedResult`) never refuses a family table: the table has
-a best row, a least best set, and that set's row at its own count. The
+a best row and a least best set. The
 component loop (`familyReferenceComponents`, and so the compiled
 `familyComponents`) therefore succeeds whenever its two precharged budgets
 cover the declared call and work counts of every component. -/
@@ -104,24 +104,16 @@ theorem retainedResult_ok_of_table (cfg : Config) (slack : Nat) (trace : Compone
     (cost : Cost) (hd : trace.members.toList.Nodup)
     (rows : trace.rows = table cfg cost trace.members.toList) :
     ∃ result, retainedResult slack trace = .ok result := by
-  have meaning := table_meaning cfg cost trace.members.toList
   obtain ⟨best, hb, _, _⟩ := table_best_exists cfg ⟨trace.members.toList, cost⟩ hd
   have hb : (table cfg cost trace.members.toList).best = some best := hb
-  have sorted : SortedT (table cfg cost trace.members.toList) := fun k e row =>
-    family_sorted cfg cost trace.members.toList hd e.2 (meaning.sound k e row).2.1
-  have entries := trim_entries meaning.sound slack
-  have trimmedSorted := (trim_tie slack sorted).1
   have trimmedBest := trim_best hb slack
   obtain ⟨k, e, row, value⟩ := best_attained trimmedBest
   obtain ⟨set, chosen⟩ := bestSetOf_isSome row
   rw [value] at chosen
-  obtain ⟨k', row'⟩ := bestSetOf_row trimmedSorted chosen
-  have count : set.size = k' := (entries k' _ row').1
-  rw [← count] at row'
-  rw [← rows] at trimmedBest chosen row'
+  rw [← rows] at trimmedBest chosen
   refine ⟨CompResult.mk trace.members best set (trace.rows.trim slack), ?_⟩
   unfold retainedResult
-  simp [trimmedBest, chosen, row']
+  simp [trimmedBest, chosen]
   rfl
 
 /-- Row retention never refuses an actual component trace. -/

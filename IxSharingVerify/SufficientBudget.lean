@@ -245,7 +245,7 @@ theorem familyUniform_within (cfg : Config) {ex : Expanded} (ok : ExpandedOK ex)
   obtain ⟨⟨delta, set, lowerBracket⟩, chosen⟩ := uniformKnapsack_ok limits _ results
     (Nat.le_trans (knapsackCells_le cfg ex width wf produced) cellRoom)
   have selected := familyComponents_least cfg limits ex width wf checked produced chosen
-  obtain ⟨nonneg, modelEq⟩ := selected_model_nonnegative wf ok.roots ok.reachable checked selected
+  have modelEq := (selected_model_nonnegative wf ok.roots ok.reachable checked selected).2
   have bound := selected_ulen_le_modelBound cfg wf ok.roots ok.reachable checked selected
   obtain ⟨storedFacts, sorted⟩ := selected_stored wf checked selected
   have small : (familyModel ex width delta set).toNat ≤ modelBound ex width := by
@@ -259,7 +259,7 @@ theorem familyUniform_within (cfg : Config) {ex : Expanded} (ok : ExpandedOK ex)
     (by change 2 * (familyModel ex width delta set).toNat ≤ _; omega)
     (by change 2 * (familyModel ex width delta set).toNat ≤ _; omega)
     (by change _ + 2 * (familyModel ex width delta set).toNat ≤ _; omega)
-  exact ⟨out, familyUniform_of_parts checked produced chosen nonneg (by omega) finish⟩
+  exact ⟨out, familyUniform_of_parts produced chosen (by omega) finish⟩
 
 /-! ## Table materialization -/
 
@@ -601,8 +601,8 @@ theorem familyAtWidth_within (cfg : Config) (layout : ShareLayout) {ex : Expande
   have hwf := ok.wf
   obtain ⟨u, hu⟩ := familyUniform_within cfg ok hw (by unfold wordBound; omega) limits stateRoom
     workRoom cellRoom outputRoom (by omega) (by omega) (by omega) (by omega)
-  obtain ⟨results, states, work, delta, set, lowerBracket, checked, produced, chosen, -, -, finish⟩ :=
-    familyUniform_finish hu
+  obtain ⟨results, states, work, delta, set, lowerBracket, checked, produced, chosen, -, finish⟩ :=
+    familyUniform_finish ok.wf hu
   have selected := familyComponents_least cfg limits ex width hwf checked produced chosen
   have modelEq := (selected_model_nonnegative hwf ok.roots ok.reachable checked selected).2
   have modelLe := selected_ulen_le_modelBound cfg hwf ok.roots ok.reachable checked selected
