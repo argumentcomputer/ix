@@ -35,6 +35,10 @@ assumed.
   operation of `applyAuxBlockOutcome` is one;
 * `Provenance` and `reach_provenance`: on every reached state, every entry of
   the resolution map is an aux name's or `Compiled`;
+* `WaveStart`, `OnRun` and `waveStart_provenance`: the states of the fold's own run (its
+  wave starts, and the prefixes of each wave's sequential apply); every entry of a wave
+  start's resolution map is an aux name's or `CompiledIn` the run's states, and a state of
+  the run is reached (`onRun_reach`);
 * `compileEnvFold_final`, `compileEnvFold_provenance`, `compileUnchecked_fold`
   and `compileUnchecked_provenance`: the fold starts from an empty map, and
   `compileUnchecked`'s resolution map is the final state's, so every entry of
@@ -976,38 +980,74 @@ theorem foldWavesSeq_reach {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} 
 
 /-! ## Where the final resolution map's entries come from -/
 
-/-- **A primary claim of a block compiled during the fold**: `n ↦ a`, with
-the claimed record's bytes `b`, is one of the claims (`outcomeClaims`) of a
-condensation block's outcome, under its key, computed against a state the
-fold reached (`snap`) and applied to a reached state (`pre`) that follows it;
-the compile environment `c` follows the state the application made. -/
-def Compiled (blocks : Ix.CondensedBlocks) (init : DriverAcc) (c : CompileEnv) (n : Ix.Name)
+/-- **A primary claim of a block compiled during the fold**, among the states `R`: `n ↦ a`,
+with the claimed record's bytes `b`, is one of the claims (`outcomeClaims`) of a
+condensation block's outcome, under its key, computed against a state of `R` (`snap`) and
+applied to a state of `R` (`pre`) that follows it; the compile environment `c` follows the
+state the application made. -/
+def CompiledIn (blocks : Ix.CondensedBlocks) (R : DriverAcc → Prop) (c : CompileEnv) (n : Ix.Name)
     (a : Address) (b : ByteArray) : Prop :=
   ∃ (snap pre : DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name),
-    Reach blocks init snap ∧ Reach blocks init pre ∧ Mono snap.cenv pre.cenv ∧
+    R snap ∧ R pre ∧ Mono snap.cenv pre.cenv ∧
     blocks.blocks.get? rep = some all ∧
     Mono (applyAuxBlockOutcome pre (blockKey rep all) all
       (auxBlockOutcome snap.cenv (blockKey rep all) all)).1.cenv c ∧
     outcomeClaims (blockKey rep all) (auxBlockOutcome snap.cenv (blockKey rep all) all) n a b
 
-theorem Compiled.mono {blocks : Ix.CondensedBlocks} {init : DriverAcc} {c c' : CompileEnv} {n : Ix.Name}
-    {a : Address} {b : ByteArray} (h : Compiled blocks init c n a b) (m : Mono c c') :
-    Compiled blocks init c' n a b := by
+/-- `CompiledIn` among the states the fold reaches (`Reach`). -/
+abbrev Compiled (blocks : Ix.CondensedBlocks) (init : DriverAcc) : CompileEnv → Ix.Name → Address →
+    ByteArray → Prop :=
+  CompiledIn blocks (Reach blocks init)
+
+theorem CompiledIn.mono {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {c c' : CompileEnv}
+    {n : Ix.Name} {a : Address} {b : ByteArray} (h : CompiledIn blocks R c n a b) (m : Mono c c') :
+    CompiledIn blocks R c' n a b := by
   obtain ⟨snap, pre, rep, all, hsnap, hpre, hm, hall, hpost, hclaim⟩ := h
   exact ⟨snap, pre, rep, all, hsnap, hpre, hm, hall, hpost.trans m, hclaim⟩
 
-/-- Every entry of a driver state's resolution map is an aux name's, or
-`Compiled` with the claimed record's bytes stored at its address. -/
-def Provenance (blocks : Ix.CondensedBlocks) (init acc : DriverAcc) : Prop :=
+theorem Compiled.mono {blocks : Ix.CondensedBlocks} {init : DriverAcc} {c c' : CompileEnv} {n : Ix.Name}
+    {a : Address} {b : ByteArray} (h : Compiled blocks init c n a b) (m : Mono c c') :
+    Compiled blocks init c' n a b :=
+  CompiledIn.mono h m
+
+/-- Every entry of a driver state's resolution map is an aux name's, or `CompiledIn` the
+states `R` with the claimed record's bytes stored at its address. -/
+def ProvenanceIn (blocks : Ix.CondensedBlocks) (R : DriverAcc → Prop) (acc : DriverAcc) : Prop :=
   ∀ (n : ExactName) (a : Address), acc.cenv.nameToAddr.get? n = some a →
     acc.cenv.auxNameToAddr.contains n = true ∨
-      ∃ b, Compiled blocks init acc.cenv n a b ∧ acc.cenv.constants.get? a = some b
+      ∃ b, CompiledIn blocks R acc.cenv n a b ∧ acc.cenv.constants.get? a = some b
 
-theorem provenance_of_empty {blocks : Ix.CondensedBlocks} {init : DriverAcc}
-    (h : init.cenv.nameToAddr = {}) : Provenance blocks init init := by
+/-- `ProvenanceIn` among the states the fold reaches (`Reach`). -/
+abbrev Provenance (blocks : Ix.CondensedBlocks) (init acc : DriverAcc) : Prop :=
+  ProvenanceIn blocks (Reach blocks init) acc
+
+theorem provenanceIn_of_empty {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {acc : DriverAcc}
+    (h : acc.cenv.nameToAddr = {}) : ProvenanceIn blocks R acc := by
   intro n a hn
   rw [h, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at hn
   cases hn
+
+theorem provenance_of_empty {blocks : Ix.CondensedBlocks} {init : DriverAcc}
+    (h : init.cenv.nameToAddr = {}) : Provenance blocks init init :=
+  provenanceIn_of_empty h
+
+/-- **One application keeps provenance**: applying, to a state of `R` with provenance, the
+outcome of a condensation block computed against a state of `R` that it follows gives a
+state with provenance. -/
+theorem provenanceIn_step {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {snap acc : DriverAcc}
+    {rep : Ix.Name} {all : Ix.Set Ix.Name} (hsnap : R snap) (hacc : R acc) (hm : Mono snap.cenv acc.cenv)
+    (hall : blocks.blocks.get? rep = some all) (ih : ProvenanceIn blocks R acc) :
+    ProvenanceIn blocks R (applyAuxBlockOutcome acc (blockKey rep all) all
+      (auxBlockOutcome snap.cenv (blockKey rep all) all)).1 := by
+  intro n a hn
+  have st := applyAuxBlockOutcome_step acc (blockKey rep all) all
+    (auxBlockOutcome snap.cenv (blockKey rep all) all)
+  rcases st.2 n a hn with ⟨hold, keep⟩ | haux | ⟨b, hclaim, hb⟩
+  · rcases ih n a hold with haux | ⟨b, hc, hb⟩
+    · exact .inl (keep haux)
+    · exact .inr ⟨b, hc.mono st.1.2.2, st.1.1 a b hb⟩
+  · exact .inl haux
+  · exact .inr ⟨b, ⟨snap, acc, rep, all, hsnap, hacc, hm, hall, Mono.refl _, hclaim⟩, hb⟩
 
 /-- **Every reached state's resolution map has provenance**, when the
 initial one has: each entry is an aux name's, or a primary claim of a block
@@ -1017,15 +1057,162 @@ theorem reach_provenance {blocks : Ix.CondensedBlocks} {init acc : DriverAcc}
   induction h with
   | init => exact h₀
   | @step snap acc rep all hsnap hacc hm hall _ ih =>
-    intro n a hn
-    have st := applyAuxBlockOutcome_step acc (blockKey rep all) all
-      (auxBlockOutcome snap.cenv (blockKey rep all) all)
-    rcases st.2 n a hn with ⟨hold, keep⟩ | haux | ⟨b, hclaim, hb⟩
-    · rcases ih n a hold with haux | ⟨b, hc, hb⟩
-      · exact .inl (keep haux)
-      · exact .inr ⟨b, hc.mono st.1.2.2, st.1.1 a b hb⟩
-    · exact .inl haux
-    · exact .inr ⟨b, ⟨snap, acc, rep, all, hsnap, hacc, hm, hall, Mono.refl _, hclaim⟩, hb⟩
+    exact provenanceIn_step (R := Reach blocks init) hsnap hacc hm hall ih
+
+/-! ## The states of the fold's own run -/
+
+/-- The sequential apply step (`applySeq`) over a list of ready blocks. -/
+def applySeqList (snapshot : CompileEnv) (l : List (Ix.Name × Ix.Name × Ix.Set Ix.Name))
+    (acc : DriverAcc) : DriverAcc :=
+  l.foldl (fun acc (key, _, all) => (applyAuxBlockOutcome acc key all (auxBlockOutcome snapshot key all)).1) acc
+
+theorem applySeq_eq_list (snapshot : CompileEnv) (ready : Ready) (acc : DriverAcc) :
+    applySeq snapshot ready acc = applySeqList snapshot ready.toList acc := by
+  unfold applySeq applySeqList
+  rw [Array.foldl_toList]
+
+theorem applySeqList_append (snapshot : CompileEnv) (l l' : List (Ix.Name × Ix.Name × Ix.Set Ix.Name))
+    (acc : DriverAcc) :
+    applySeqList snapshot (l ++ l') acc = applySeqList snapshot l' (applySeqList snapshot l acc) := by
+  unfold applySeqList
+  rw [List.foldl_append]
+
+/-- **The wave starts of the run from `st₀`**: `st₀`, and the state each wave of the
+sequential fold makes from a wave start with blocks remaining. -/
+inductive WaveStart (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st₀ : FoldState) :
+    FoldState → Prop
+  | start : WaveStart blocks sched st₀ st₀
+  | wave {st st' : FoldState} : WaveStart blocks sched st₀ st → st.remaining ≠ 0 →
+      foldWaveSeq blocks sched st = .ok st' → WaveStart blocks sched st₀ st'
+
+/-- **A state the run from `st₀` passes through**: a wave start's driver state, or the state
+after a prefix of a wave's ready blocks has been applied against the wave start
+(`applySeq`). -/
+def OnRun (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st₀ : FoldState) (acc : DriverAcc) :
+    Prop :=
+  ∃ st, WaveStart blocks sched st₀ st ∧ (acc = st.acc ∨
+    ∃ (st' : FoldState) (ready : Ready) (pre post : List (Ix.Name × Ix.Name × Ix.Set Ix.Name)),
+      st.remaining ≠ 0 ∧ foldWaveSeq blocks sched st = .ok st' ∧ GoodReady blocks ready ∧
+      st'.acc = applySeq st.acc.cenv ready st.acc ∧ ready.toList = pre ++ post ∧
+      acc = applySeqList st.acc.cenv pre st.acc)
+
+theorem WaveStart.trans {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st₀ st₁ st : FoldState}
+    (h₁ : WaveStart blocks sched st₀ st₁) (h : WaveStart blocks sched st₁ st) :
+    WaveStart blocks sched st₀ st := by
+  induction h with
+  | start => exact h₁
+  | wave _ hr hw ih => exact .wave ih hr hw
+
+/-- **The fold's result is a wave start of its run.** -/
+theorem foldWavesSeq_waveStart {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} :
+    ∀ fuel (st₀ st : FoldState), foldWavesSeq blocks sched fuel st₀ = .ok st →
+      WaveStart blocks sched st₀ st := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro st₀ st h
+    unfold foldWavesSeq at h
+    split at h
+    · cases h; exact .start
+    · cases h
+  | succ fuel ih =>
+    intro st₀ st h
+    unfold foldWavesSeq at h
+    split at h
+    · cases h; exact .start
+    · rename_i hr
+      split at h
+      · cases h
+      · rename_i st₁ h₁
+        have hr' : st₀.remaining ≠ 0 := fun e => hr (by simp [e])
+        exact WaveStart.trans (.wave .start hr' h₁) (ih st₁ st h)
+
+/-- An application of a ready block's outcome against a snapshot the state follows keeps
+`Mono` from the snapshot. -/
+theorem applySeqList_mono {snapshot : CompileEnv} :
+    ∀ (l : List (Ix.Name × Ix.Name × Ix.Set Ix.Name)) (acc : DriverAcc), Mono snapshot acc.cenv →
+      Mono snapshot (applySeqList snapshot l acc).cenv
+  | [], _, h => h
+  | x :: l, acc, h => by
+    obtain ⟨key, rep, all⟩ := x
+    exact applySeqList_mono l _ (h.trans (applyAuxBlockOutcome_mono _ _ _ _))
+
+/-- **Provenance along a wave's sequential apply**: from a state with provenance that follows
+the wave's start, every prefix of the ready blocks applied keeps it, when the start and
+every prefix state are states of `R`. -/
+theorem applySeqList_provenance {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {snap : DriverAcc}
+    (hsnap : R snap) :
+    ∀ (l : List (Ix.Name × Ix.Name × Ix.Set Ix.Name)) (acc : DriverAcc),
+      (∀ x ∈ l, blocks.blocks.get? x.2.1 = some x.2.2 ∧ x.1 = blockKey x.2.1 x.2.2) →
+      (∀ pre post, l = pre ++ post → R (applySeqList snap.cenv pre acc)) →
+      Mono snap.cenv acc.cenv → ProvenanceIn blocks R acc →
+      ProvenanceIn blocks R (applySeqList snap.cenv l acc)
+  | [], _, _, _, _, h => h
+  | x :: l, acc, good, hR, hm, h => by
+    obtain ⟨key, rep, all⟩ := x
+    obtain ⟨hall, hkey⟩ := good (key, rep, all) List.mem_cons_self
+    simp only at hall hkey
+    subst hkey
+    have hacc : R acc := by simpa [applySeqList] using hR [] ((blockKey rep all, rep, all) :: l) rfl
+    have step := provenanceIn_step hsnap hacc hm hall h
+    exact applySeqList_provenance hsnap l _ (fun y hy => good y (List.mem_cons_of_mem _ hy))
+      (fun pre post e => by
+        have := hR ((blockKey rep all, rep, all) :: pre) post (by rw [e]; rfl)
+        simpa [applySeqList] using this)
+      (hm.trans (applyAuxBlockOutcome_mono _ _ _ _)) step
+
+/-- **Every wave start of the run has provenance among the run's states**, when the start
+of the run has. -/
+theorem waveStart_provenance {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st₀ st : FoldState}
+    (h₀ : ProvenanceIn blocks (OnRun blocks sched st₀) st₀.acc) (h : WaveStart blocks sched st₀ st) :
+    ProvenanceIn blocks (OnRun blocks sched st₀) st.acc := by
+  induction h with
+  | start => exact h₀
+  | @wave st st' hst hr hw ih =>
+    obtain ⟨ready, good, hacc⟩ := foldWaveWith_ready applySeq blocks sched st st' hw
+    rw [hacc, applySeq_eq_list]
+    refine applySeqList_provenance (R := OnRun blocks sched st₀) ⟨st, hst, .inl rfl⟩ _ _
+      (fun x hx => good x (Array.mem_toList_iff.mp hx)) (fun pre post e => ?_) (Mono.refl _) ih
+    exact ⟨st, hst, .inr ⟨st', ready, pre, post, hr, hw, good, hacc, e, rfl⟩⟩
+
+/-- A wave start of the run is reached. -/
+theorem waveStart_reach {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st₀ st : FoldState}
+    (h : WaveStart blocks sched st₀ st) : Reach blocks st₀.acc st.acc := by
+  induction h with
+  | start => exact .init
+  | wave _ _ hw ih => exact foldWaveSeq_reach hw ih
+
+/-- A prefix of a wave's sequential apply is reached, and follows the wave's start. -/
+theorem applySeqList_reach {blocks : Ix.CondensedBlocks} {init snap : DriverAcc} (hsnap : Reach blocks init snap) :
+    ∀ (l : List (Ix.Name × Ix.Name × Ix.Set Ix.Name)) (acc : DriverAcc),
+      (∀ x ∈ l, blocks.blocks.get? x.2.1 = some x.2.2 ∧ x.1 = blockKey x.2.1 x.2.2) →
+      Reach blocks init acc → Mono snap.cenv acc.cenv →
+      Reach blocks init (applySeqList snap.cenv l acc)
+  | [], _, _, h, _ => h
+  | x :: l, acc, good, h, hm => by
+    obtain ⟨key, rep, all⟩ := x
+    obtain ⟨hall, hkey⟩ := good (key, rep, all) List.mem_cons_self
+    simp only at hall hkey
+    subst hkey
+    exact applySeqList_reach hsnap l _ (fun y hy => good y (List.mem_cons_of_mem _ hy))
+      (Reach.step hsnap h hm hall) (hm.trans (applyAuxBlockOutcome_mono _ _ _ _))
+
+/-- **A state of the run is reached.** -/
+theorem onRun_reach {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st₀ : FoldState} {acc : DriverAcc}
+    (h : OnRun blocks sched st₀ acc) : Reach blocks st₀.acc acc := by
+  obtain ⟨st, hst, rfl | ⟨st', ready, pre, post, -, -, good, -, e, rfl⟩⟩ := h
+  · exact waveStart_reach hst
+  · have hreach := waveStart_reach hst
+    exact applySeqList_reach hreach pre _
+      (fun x hx => good x (Array.mem_toList_iff.mp (by rw [e]; exact List.mem_append_left _ hx)))
+      hreach (Mono.refl _)
+
+/-- `CompiledIn` the run's states is `Compiled` (among the reached states). -/
+theorem CompiledIn.reach {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st₀ : FoldState}
+    {c : CompileEnv} {n : Ix.Name} {a : Address} {b : ByteArray}
+    (h : CompiledIn blocks (OnRun blocks sched st₀) c n a b) : Compiled blocks st₀.acc c n a b := by
+  obtain ⟨snap, pre, rep, all, hsnap, hpre, hm, hall, hpost, hclaim⟩ := h
+  exact ⟨snap, pre, rep, all, onRun_reach hsnap, onRun_reach hpre, hm, hall, hpost, hclaim⟩
 
 /-- The fold's initial state keeps its compile environment's resolution map. -/
 theorem init_nameToAddr (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) :
@@ -1163,21 +1350,24 @@ theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks
         exact ⟨_, _, st, rows, rfl, rfl, rfl, hr, hc, hf, rfl, rfl, rfl, Mono.of_eq rfl rfl rfl⟩
 
 /-- **The fold's run**: the driver ran its waves over the condensation `blocks` of
-`env` from `cenv₀` under `sched`, from an empty resolution map and the input's
-view, to a state whose resolution map is the final environment `cenv`'s and which
-`cenv` follows. It names the start that the states the fold reaches
-(`Reach`) are reached from, so that facts about those states can be stated of this
-compile's fold. -/
+`env` from `cenv₀` under `sched`, from an empty resolution map and the input's view, to a
+state whose resolution map is the final environment `cenv`'s, whose stored records `cenv`
+stores, and which `cenv` follows. It names the start that the states of the run (`OnRun`)
+are states of, so that facts about those states can be stated of this compile's fold. A
+start with records the compile does not store is no start of a run: the store keeps every
+record. -/
 def FoldRun (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv cenv₀ : CompileEnv)
     (sched : FoldSchedule) : Prop :=
   ∃ st : FoldState, cenv₀.nameToAddr = {} ∧
     (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
     foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
-    cenv.nameToAddr = st.acc.cenv.nameToAddr ∧ Mono st.acc.cenv cenv
+    cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
+    (∀ a b, st.acc.cenv.constants.get? a = some b → cenv.constants.get? a = some b) ∧
+    Mono st.acc.cenv cenv
 
 /-- **The driver's final resolution map has provenance**: every entry is an
 aux name's, or a primary claim of a condensation block compiled during the
-fold, against a state the fold reached, whose record's bytes the assembled
+fold, against a state of the fold's own run, whose record's bytes the assembled
 environment stores at its address. The fold's start is named (`FoldRun`). -/
 theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
     {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
@@ -1190,15 +1380,18 @@ theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedB
         (Ix.Compile.Pass.Clique.scheduleCliques { consts := {}, fallback? := some env.get? } blocks).2 ∧
       ∀ (n : ExactName) (a : Address),
         cenv.nameToAddr.get? n = some a → cenv.auxNameToAddr.contains n = true ∨
-          ∃ b, Compiled blocks (FoldState.init cenv₀ blocks sched).acc cenv n a b ∧
+          ∃ b, CompiledIn blocks (OnRun blocks sched (FoldState.init cenv₀ blocks sched)) cenv n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
-  obtain ⟨cenv₀, sched, st, rows, h₀, henv, hcl, hst, -, finalized, hmap, haux, -, hm⟩ := compileEnvFold_final h
+  obtain ⟨cenv₀, sched, st, rows, h₀, henv, hcl, hst, -, finalized, hmap, haux, hconsts, hm⟩ :=
+    compileEnvFold_final h
   have frame := Ix.Compile.OriginalData.finalizeOriginals_frame finalized
-  refine ⟨cenv₀, sched, ⟨st, h₀, henv, hst, hmap, hm⟩, henv, hcl, fun n a hn => ?_⟩
+  have kept : ∀ a b, st.acc.cenv.constants.get? a = some b → cenv.constants.get? a = some b :=
+    fun a b hb => by rw [hconsts]; exact mergeRows_constants hb
+  refine ⟨cenv₀, sched, ⟨st, h₀, henv, hst, hmap, kept, hm⟩, henv, hcl, fun n a hn => ?_⟩
   rw [hmap] at hn
   rw [haux]
-  rcases reach_provenance (provenance_of_empty ((init_nameToAddr _ _ _).trans h₀))
-    (foldWavesSeq_reach _ _ _ hst Reach.init) n a hn with haux | ⟨b, hc, hb⟩
+  rcases waveStart_provenance (provenanceIn_of_empty ((init_nameToAddr _ _ _).trans h₀))
+    (foldWavesSeq_waveStart _ _ _ hst) n a hn with haux | ⟨b, hc, hb⟩
   · exact .inl (mergeRows_aux_contains haux)
   · rw [frame.consts]
     exact .inr ⟨b, hc.mono hm, assembleEnv_consts _ (mergeRows_constants hb)⟩
@@ -1259,8 +1452,9 @@ theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {fai
           (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)).2 ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         cenv.auxNameToAddr.contains n = true ∨
-          ∃ b, Compiled (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
-              (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc
+          ∃ b, CompiledIn (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
+              (OnRun (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched
+                (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched))
               cenv n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold h
@@ -1294,9 +1488,9 @@ theorem auxBlockOutcome_compiled {cenv : CompileEnv} {lo : Ix.Name} {all : Ix.Se
 `claimWrites` of a condensation block's own compile (`runBlock`, against a
 state the fold reached, which `fin` follows), or of the cross-SCC subset of a
 promoted block. -/
-theorem compiled_cases {blocks : Ix.CondensedBlocks} {init : DriverAcc} {fin : CompileEnv} {n : Ix.Name}
-    {a : Address} {b : ByteArray} (h : Compiled blocks init fin n a b) :
-    ∃ snap rep all, Reach blocks init snap ∧ blocks.blocks.get? rep = some all ∧ Mono snap.cenv fin ∧
+theorem compiled_cases {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {fin : CompileEnv} {n : Ix.Name}
+    {a : Address} {b : ByteArray} (h : CompiledIn blocks R fin n a b) :
+    ∃ snap rep all, R snap ∧ blocks.blocks.get? rep = some all ∧ Mono snap.cenv fin ∧
       ((∃ r c p layout, runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout, p) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r) ∨
         ∃ clo r c p cn cf im na nf,
@@ -1482,11 +1676,11 @@ theorem hookFree_compiled {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k n : Ix.Nam
 one of the `claimWrites` of `runBlock` on a subset `A` of a condensation
 block's members (all of them, or a promoted block's cross-SCC subset), under
 a key `k`, against a state the fold reached, which `fin` follows. -/
-theorem compiled_runBlock {blocks : Ix.CondensedBlocks} {init : DriverAcc} {fin : CompileEnv} {n : Ix.Name}
-    {a : Address} {b : ByteArray} (h : Compiled blocks init fin n a b) :
+theorem compiled_runBlock {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {fin : CompileEnv} {n : Ix.Name}
+    {a : Address} {b : ByteArray} (h : CompiledIn blocks R fin n a b) :
     ∃ (snap : DriverAcc) (rep : Ix.Name) (all A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult)
       (c : BlockState) (layout : Option Ixon.AuxLayout) (p : Ix.Compile.Pass.Published),
-      Reach blocks init snap ∧ blocks.blocks.get? rep = some all ∧ Mono snap.cenv fin ∧
+      R snap ∧ blocks.blocks.get? rep = some all ∧ Mono snap.cenv fin ∧
       (∀ x, A.contains x = true → all.contains x = true) ∧
       runBlock snap.cenv A k = .ok (r, c, layout, p) ∧ (n, a, b) ∈ claimWrites k r := by
   obtain ⟨snap, rep, all, hsnap, hall, hm, rest⟩ := compiled_cases h
@@ -1712,7 +1906,7 @@ theorem init_p3BlockRefs {cenv : CompileEnv} {blocks : Ix.CondensedBlocks} {sche
 * `n ↦ a`, with the bytes `b` of its record, is a primary claim of
   `runBlock` on a subset `A` of a condensation block's members (all of them,
   or a promoted block's cross-SCC subset) under a key `k`, against a state
-  `snap` the fold reached from its initial state, which the final environment
+  `snap` of the fold's own run (`OnRun`), which the final environment
   follows (`Mono`: a head of `snap` is a final head or a recorded failure);
 * `ixe.consts` stores `b` at `a`;
 * where Pass 3's hooks are identities at that compile (`HookFree`), the claim
@@ -1732,7 +1926,7 @@ theorem compileReport_claim {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult)
           (c : BlockState) (layout : Option Ixon.AuxLayout) (p : Ix.Compile.Pass.Published) (b : ByteArray),
-          Reach blocks (FoldState.init cenv₀ blocks sched).acc snap ∧ blocks.blocks.get? rep = some all ∧
+          OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧ blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧
           (∀ x, A.contains x = true → all.contains x = true) ∧
           runBlock snap.cenv A k = .ok (r, c, layout, p) ∧ (n, a, b) ∈ claimWrites k r ∧

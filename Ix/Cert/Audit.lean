@@ -80,6 +80,7 @@ import Ix.Cert.PrefixVisibility
 import Ix.Cert.CompileCorrect
 import Ix.Cert.Composition
 import Ix.Cert.UnchangedRules
+import Ix.Cert.RunOwnership
 
 /-! # The certification statements, frozen
 
@@ -5051,15 +5052,19 @@ members, under a key, against a reached state (`compiled_runBlock`, with
 `auxBlockOutcome_cross`); the block references never change during the fold
 (`reach_p3BlockRefs`); where Pass 3's hooks are identities (`HookFree`), the
 claim is the block compile's (`hookFree_compiled`). `compileReport_claim` is
-B9b with `HookFree` as its premise. -/
+B9b with `HookFree` as its premise. The claims' snapshots are states of the fold's own run
+(`OnRun`: `foldWavesSeq_waveStart`, `waveStart_provenance`, `applySeqList_provenance`,
+`provenanceIn_step`), each reached (`onRun_reach`). -/
 
-/-- info: [cert-audit] resolution: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] resolution: 12 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "resolution"
     (#[`reach_provenance, `compileUnchecked_provenance, `auxBlockOutcome_cross, `compiled_runBlock,
-      `reach_p3BlockRefs, `hookFree_compiled, `compileReport_claim].map (`Ix.Cert.Resolution ++ ·))
+      `reach_p3BlockRefs, `hookFree_compiled, `compileReport_claim, `provenanceIn_step,
+      `applySeqList_provenance, `foldWavesSeq_waveStart, `waveStart_provenance,
+      `onRun_reach].map (`Ix.Cert.Resolution ++ ·))
 
 /-! ## Route A, B9b step 4: `HookFree` discharged
 
@@ -7248,9 +7253,52 @@ fun env blocks cenv cenv₀ sched =>
         Ix.Cert.Schedule.foldWavesSeq blocks sched (Std.HashMap.size blocks.blocks + 1)
               (Ix.CompileM.FoldState.init cenv₀ blocks sched) =
             Except.ok st ∧
-          cenv.nameToAddr = st.acc.cenv.nameToAddr ∧ Ix.Cert.Resolution.Mono st.acc.cenv cenv -/
+          cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
+            (∀ (a : Address) (b : ByteArray), st.acc.cenv.constants.get? a = some b → cenv.constants.get? a = some b) ∧
+              Ix.Cert.Resolution.Mono st.acc.cenv cenv -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Resolution.FoldRun
+
+/-- info: def Ix.Cert.Resolution.applySeqList : Ix.CompileM.CompileEnv →
+  List (Ix.Name × Ix.Name × Ix.Set Ix.Name) → Ix.CompileM.DriverAcc → Ix.CompileM.DriverAcc :=
+fun snapshot l acc =>
+  List.foldl
+    (fun acc x =>
+      match x with
+      | (key, fst, all) =>
+        (Ix.CompileM.applyAuxBlockOutcome acc key all (Ix.CompileM.auxBlockOutcome snapshot key all)).fst)
+    acc l -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Resolution.applySeqList
+
+/-- info: inductive Ix.Cert.Resolution.WaveStart : Ix.CondensedBlocks →
+  Ix.CompileM.FoldSchedule → Ix.CompileM.FoldState → Ix.CompileM.FoldState → Prop
+number of parameters: 3
+constructors:
+Ix.Cert.Resolution.WaveStart.start : ∀ {blocks : Ix.CondensedBlocks} {sched : Ix.CompileM.FoldSchedule}
+  {st₀ : Ix.CompileM.FoldState}, Ix.Cert.Resolution.WaveStart blocks sched st₀ st₀
+Ix.Cert.Resolution.WaveStart.wave : ∀ {blocks : Ix.CondensedBlocks} {sched : Ix.CompileM.FoldSchedule}
+  {st₀ st st' : Ix.CompileM.FoldState},
+  Ix.Cert.Resolution.WaveStart blocks sched st₀ st →
+    st.remaining ≠ 0 →
+      Ix.Cert.Schedule.foldWaveSeq blocks sched st = Except.ok st' → Ix.Cert.Resolution.WaveStart blocks sched st₀ st' -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Resolution.WaveStart
+
+/-- info: def Ix.Cert.Resolution.OnRun : Ix.CondensedBlocks →
+  Ix.CompileM.FoldSchedule → Ix.CompileM.FoldState → Ix.CompileM.DriverAcc → Prop :=
+fun blocks sched st₀ acc =>
+  ∃ st,
+    Ix.Cert.Resolution.WaveStart blocks sched st₀ st ∧
+      (acc = st.acc ∨
+        ∃ st' ready pre post,
+          st.remaining ≠ 0 ∧
+            Ix.Cert.Schedule.foldWaveSeq blocks sched st = Except.ok st' ∧
+              Ix.Cert.Resolution.GoodReady blocks ready ∧
+                st'.acc = Ix.Cert.Schedule.applySeq st.acc.cenv ready st.acc ∧
+                  ready.toList = pre ++ post ∧ acc = Ix.Cert.Resolution.applySeqList st.acc.cenv pre st.acc) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Resolution.OnRun
 
 /-- info: def Ix.Cert.Obligation.SourceTotal : Prop :=
 ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
@@ -7345,9 +7393,9 @@ fun env blocks cenv cenv₀ sched =>
     Ix.Cert.compileUnchecked env = Except.ok (ixe, failures, cenv) →
       Ix.Cert.Resolution.FoldRun { consts := env.consts } (Ix.Cert.compileBlocks env) cenv cenv₀ sched →
         ∀ (snap : Ix.CompileM.DriverAcc),
-          Ix.Cert.Resolution.Reach (Ix.Cert.compileBlocks env)
-              (Ix.CompileM.FoldState.init cenv₀ (Ix.Cert.compileBlocks env) sched).acc snap →
-            Ix.Cert.Resolution.Mono snap.cenv cenv → Ix.Cert.Owned ixe failures snap.cenv -/
+          Ix.Cert.Resolution.OnRun (Ix.Cert.compileBlocks env) sched
+              (Ix.CompileM.FoldState.init cenv₀ (Ix.Cert.compileBlocks env) sched) snap →
+            Ix.Cert.Owned ixe failures snap.cenv -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.ScheduleOwnership
 
