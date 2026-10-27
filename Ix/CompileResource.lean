@@ -62,14 +62,15 @@ def recordedFailures (failures : Std.HashMap Ix.Name String) : String :=
   "; ".intercalate (ordered.take 3 |>.map fun (n, e) => s!"{n.pretty}: {(e.replace "\n" " ").take 200}")
 
 /-- **The compile's report, checked as the pure compiler checks its own**
-(`Ix.Cert.checkReport`, the sixteen checks behind `Ix.Cert.compileReport`): on the
+(`Ix.Cert.checkReport`, the checks behind `Ix.Cert.compileReport`): on the
 whole input (`reportInput`), the driver's final environment and the artifact with
 every recorded failure (the ground filter's refusals are among the driver's). A
 refusal names the compile's recorded failures too, root causes first: a check can
 fail because of a block that failed to compile.
 Coverage, authentic storage, an acyclic reference order, distinct name hashes,
-blocks that agree with their `Muts` entries, and the resolution and naming
-invariants hold of the emitted artifact, or the compile is refused. -/
+blocks that agree with their `Muts` entries, published input names at readable
+records (`Ix.Cert.unreadablePublished`), and the resolution and naming invariants
+hold of the emitted artifact, or the compile is refused. -/
 def reportPostStep (out : LeanPipelineOut) : Except String Unit := do
   let env ← reportInput out
   (Ix.Cert.checkReport env out.cenv (out.env, { blocks := out.cenv.ungrounded })).mapError fun e =>
