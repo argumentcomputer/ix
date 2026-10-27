@@ -625,7 +625,7 @@ def whnf := ⟦
                 let ind_ci = load(get_ci(ind_addr));
                 match ind_ci {
                   KConstantInfo.Induct(_, _, _, _, _, _, ind_block, ind_idx) =>
-                    let cprj = canon_cprj_addr(ind_block, ind_idx, cidx);
+                    let cprj = projection_addr_ctor(ind_idx, cidx, ind_block);
                     let ctor_head = store(KExprNode.Const(cprj, ctor_us));
                     let params = list_take(ty_args, nparams);
                     let ctor_app = apply_spine(ctor_head, params);

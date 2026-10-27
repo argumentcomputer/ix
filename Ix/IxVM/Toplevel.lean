@@ -18,7 +18,6 @@ public import Ix.IxVM.Kernel.Whnf
 public import Ix.IxVM.Kernel.InferOnly
 public import Ix.IxVM.Kernel.DefEq
 public import Ix.IxVM.Kernel.Infer
-public import Ix.IxVM.Kernel.CanonicalCheck
 public import Ix.IxVM.Kernel.Check
 public import Ix.IxVM.Kernel.Claim
 public import Ix.IxVM.Kernel.Eval
@@ -205,7 +204,6 @@ def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge inferOnly
   let vm ← vm.merge defEq
   let vm ← vm.merge infer
-  let vm ← vm.merge canonicalCheck
   let vm ← vm.merge check
   let vm ← vm.merge claim
   let vm ← vm.merge eval

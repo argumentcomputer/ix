@@ -3925,6 +3925,77 @@ def check := ⟦
     }
   }
 
+  -- ============================================================================
+  -- Mutual block member kinds.
+  --
+  -- Member order within a block is not checked. A block's members are
+  -- accepted in whatever order they are stored, which is Lean's own
+  -- order for compiled declarations: the order is part of the block's
+  -- content (members and their recursors are addressed by position), so
+  -- two orders of the same declarations are two different blocks, each
+  -- of which is checked on its own terms. Two members that are equal up
+  -- to the block's own renaming are likewise two members.
+  -- ============================================================================
+
+  -- 1 iff `members` contains a member of the requested kind:
+  -- `want_defn = 1` asks about Defn members, `want_defn = 0` about Indc.
+  -- Recr members answer neither.
+  fn muts_has_kind(members: List‹MutConst›, want_defn: G) -> G {
+    match load(members) {
+      ListNode.Nil => 0,
+      ListNode.Cons(m, rest) =>
+        let hit = match m {
+          MutConst.Defn(_) => want_defn,
+          MutConst.Indc(_) => 1 - want_defn,
+          MutConst.Recr(_) => 0,
+        };
+        match hit {
+          1 => 1,
+          _ => muts_has_kind(rest, want_defn),
+        },
+    }
+  }
+
+  -- Reject a block that mixes a definition member with inductive members.
+  -- Aiur-memoized per block address: called from every Induct and Rec
+  -- member check, it runs once. Non-Muts blocks pass.
+  fn check_block_member_kinds(block_addr: Addr) {
+    let c = load_verified_constant(block_addr);
+    match c {
+      Constant.Mk(info, _, _, _) =>
+        match info {
+          ConstantInfo.Muts(members) =>
+            -- Lean emits no such block: a `Declaration` is either
+            -- `mutualDefnDecl` (all definitions) or `inductDecl`
+            -- (inductives plus their recursors), and the auxiliaries an
+            -- inductive generates are separate constants or themselves
+            -- inductives.
+            --
+            -- This is what keeps strict positivity honest.
+            -- `check_positivity_aug` skips a constructor field whose
+            -- domain does not SYNTACTICALLY mention a block inductive,
+            -- and `caddr_is_peer` counts a `Const` only when its info is
+            -- an `Induct` — so a `Const` resolving to a definition scores
+            -- zero and the domain is never reduced. The occurrence is
+            -- therefore invisible whenever a definition stands between
+            -- the field and the inductive.
+            --
+            -- Content addressing already rules that out everywhere else:
+            -- for a definition `D` to mention this block's inductive, and
+            -- for a constructor field to be `D`, each address would have
+            -- to hash the other. The one way to have both without a cycle
+            -- is for `D` to be a MEMBER, addressed off the block like the
+            -- inductive is. Banning the mixture closes the class rather
+            -- than the instance, and costs one pass per block instead of
+            -- a reduction per field.
+            assert_eq!(muts_has_kind(members, 1) * muts_has_kind(members, 0), 0,
+              "mutual block mixes a definition member with inductives");
+            (),
+          _ => (),
+        },
+    }
+  }
+
   -- check_const: dispatch per KConstantInfo variant.
   fn check_const(ci: KConstantInfo, addr: Addr) {
     let u = is_unsafe_ci(ci);
@@ -3966,11 +4037,10 @@ def check := ⟦
         validate_expr_well_scoped(ty, 0, nlvls);
         k_ensure_sort(ty, store(ListNode.Nil));
         assert_safety(u, ty);
-        -- Canonical block member ordering (adversarial threat model:
-        -- reordered/alpha-colliding Muts members must be rejected).
-        -- Memoized per block addr — runs once even though every
-        -- member check invokes it.
-        check_canonical_block(ind_block);
+        -- No definition member alongside the inductives (see
+        -- `check_block_member_kinds`). Memoized per block addr — runs
+        -- once even though every member check invokes it.
+        check_block_member_kinds(ind_block);
         -- Self-contained shape validation: result sort + the full
         -- per-ctor gauntlet. Without it, subject-only checking accepts
         -- an inductive whose badness lives in a ctor const.
@@ -4008,7 +4078,7 @@ def check := ⟦
         validate_expr_well_scoped(ty, 0, nlvls);
         k_ensure_sort(ty, store(ListNode.Nil));
         assert_safety(u, ty);
-        check_canonical_block(rec_block);
+        check_block_member_kinds(rec_block);
         check_recursor_member(ci, addr),
     }
   }
