@@ -13,51 +13,43 @@ records, from a block member or constructor reference
 (`Ix.Kernel.Egress.writeProjection`), keyed by the entry's content hash of
 their serialization (`Ixon.Projection.address`), here the admission hash,
 BLAKE3 (`Ixon.Authenticated`). `Projection.reconstruct` writes a batch's
-projections from its `muts` blocks, and `BlockOrder` decides that a block's
-members are in canonical order with the same addresses. This module checks
-that output against real compiled environments:
+projections from its `muts` blocks, and `BlockOrder` decides that a block of
+recursors is in its motives' order. This module checks that output against
+real compiled environments:
 
 1. **Records written are the compiler's** (`projections`, every environment): for
    every `muts` record, the projections `Projection.reconstruct` writes for
    that block alone are exactly the compiler's projection records of that
    block, with the same keys (the admission hash against the compiler's) and the
    same canonical bytes, and every compiler projection record is written this
-   way. Every block also passes the certified order entry's check
-   (`BlockOrder.checkRecord`): the compiler's member order is the one it
-   accepts ("Block order" below).
+   way. Every recursor block also passes the motive-order check
+   (`BlockOrder.checkRecord`, "Block order" below).
 2. **Records written are re-read to the same declarations, and agree with the
    installed environment** (`entries`, the fixture): over a set of records the
    checker accepts,
    - the reader's declarations with the compiler's projections and with the
      reconstructed ones are equal (`Admission.readStream`);
-   - `Admission.checkConstants` with the compiler's projections,
+   - `Admission.checkConstants` with the compiler's projections and
      `Authenticated.checkBytesProjection` with the projections omitted
-     (reconstructed) and `Authenticated.checkBytesBlockOrder` (reconstructed,
-     order decided), both authenticating the supplied records, install the same
-     environment: the same constants, in the same order, of the same kinds,
-     with equal types;
+     (reconstructed), which authenticates the supplied records, install the
+     same environment: the same constants, in the same order, of the same
+     kinds, with equal types;
    - every projection record names a constant installed in that environment,
      of its own kind (a definition, theorem or opaque for a definition
      projection; an inductive, constructor or recursor for the others).
 
 ## Block order
 
-The block-order entry checks inductive, definition and mixed `muts` blocks
-against the canonical classes of `BlockOrder.canonicalClasses`, and a block of
-recursors in motive order (`BlockOrder.checkMotives`): the compiler stores it
-in the order of its motives (`T.rec`, `T.rec_1`, …; the members' own order for
-a mutual block), which is not always the structural order (2 of the 7
-recursor blocks of two or more members in the fixture closure, `Rose.rec` with
-`Rose.rec_1` and `Args.rec` with `Tm.rec`, are not; none of the 3 in `Init`
-and `Std`). A structural check would refuse compiled batches that contain
-those two; the Rust kernel checks
-only inductive blocks at ingress (`crates/kernel/src/ingress.rs`: "Skip Recr
-blocks (they contain primary + aux recursors, with the aux portion in
-kernel-computed canonical order, not stored sort_consts)"). Every block of
-every environment must pass (`ProjectionReport.refused` is a problem), the two
-named fixture blocks are required among the accepted recursor blocks
-(`Tests.Ix.Kernel.ReaderRoundtrip`), and every accepted recursor block with
-its first two members swapped must be refused for its motive order.
+The compiler stores every block in its source's order: an inductive block in
+the order of Lean's `all`, a definition block in its members' order there, and
+a block of recursors in its family's order (`T.rec` for each member, then
+`T.rec_1`, …), which is the order of its motives. Any member order of a
+non-recursor block is admissible, so only a recursor block's order is checked
+(`BlockOrder.checkMotives`). Every recursor block of two or more members must
+pass (`ProjectionReport.refused` is a problem), two fixture blocks (`Rose.rec`
+with `Rose.rec_1`, and `Tm.rec` with `Args.rec`) are required among the
+accepted ones (`Tests.Ix.Kernel.ReaderRoundtrip`), and every accepted recursor
+block with its first two members swapped must be refused for its motive order.
 
 **No environment egress exists.** Nothing writes an accepted `Ix.Kernel.Env`
 back to Ixon records. The installed terms are annotated (binder regimes
@@ -181,17 +173,19 @@ def projectionsAccess (input : _root_.Ix.KernelFidelity.RecordAccess) :
     if ms.size ≥ 2 then
       let kind := blockKind ms
       report := { report with ordered := report.ordered.insert kind (report.ordered.getD kind 0 + 1) }
-      match Ixon.BlockOrder.checkRecord Address.admissionHash {} input.blobs a c with
-      | .ok () =>
-        if kind == "recursor" then
+      -- Only a recursor block's order is checked (motive order): any other
+      -- block is stored in its source's order, which is admissible.
+      if kind == "recursor" then
+        match Ixon.BlockOrder.checkRecord Address.admissionHash {} input.blobs a c with
+        | .ok () =>
           report := { report with motiveOrdered := report.motiveOrdered.push a }
           -- the wrong order: the first two members swapped
           let swapped := { c with info := .muts (ms.swapIfInBounds 0 1) }
           if let .error (.motiveOrder ..) :=
               Ixon.BlockOrder.checkRecord Address.admissionHash {} input.blobs a swapped then
             report := { report with swapsRefused := report.swapsRefused + 1 }
-      | .error _ =>
-        report := { report with refused := report.refused.insert kind ((report.refused.getD kind #[]).push a) }
+        | .error _ =>
+          report := { report with refused := report.refused.insert kind ((report.refused.getD kind #[]).push a) }
   for (_, ps) in byOwner.toList do
     for (k, _) in ps do
       unless covered.contains k do
@@ -294,15 +288,6 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   report := { report with constants := env₁.consts.length }
   if let some d := envDiff env₁ env₂ then
     report := { report with problems := report.problems.push s!"projection entry: {d}" }
-  -- the block-order entry accepts the same batch with the same environment
-  match Ixon.Authenticated.checkBytesBlockOrder binding maxProjections limits {} bytes blobs hints.lookup with
-  | .ok env₃ =>
-    if let some d := envDiff env₁ env₃ then
-      report := { report with problems := report.problems.push s!"block-order entry: {d}" }
-  | .error (.order e) =>
-    report := { report with problems := report.problems.push s!"block-order entry: {reprStr e}" }
-  | .error (.checker e) =>
-    report := { report with problems := report.problems.push s!"block-order entry: {e}" }
   -- each projection record names an installed constant of its kind
   let cx := Ix.Kernel.Admission.streamContext Address.blake3Pure table pre compiled blobs hints.lookup
   let installed : Std.HashMap (CName .anon) String := env₁.consts.foldl

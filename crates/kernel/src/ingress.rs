@@ -2087,46 +2087,10 @@ fn ingress_muts_block<M: KernelMode>(
   }
   local_dependencies.validate()?;
 
-  // Canonicity validation for Indc-only blocks.
-  //
-  // Per `docs/ix_canonicity.md` §6.0, the inductive block's primary
-  // members ship in `sort_consts` canonical order. Take that ordering
-  // as the alleged partition (each member ↔ class index = its position)
-  // and reject any adjacent pair that doesn't satisfy strict `Less`.
-  //
-  // Skip Recr blocks (they contain primary + aux recursors, with the
-  // aux portion in kernel-computed canonical order, not stored
-  // sort_consts) and Defn blocks (the plan focuses on Indc; defn-block
-  // ordering can be added later if needed).
-  //
-  // Returns `TcError::NonCanonicalBlock` on failure, propagated as the
-  // string error variant `ingress_muts_block` already returns.
-  let mut indcs: Vec<(KId<M>, &KConst<M>)> = Vec::new();
-  for (id, c) in &results {
-    if matches!(c, KConst::Indc { .. }) {
-      indcs.push((id.clone(), c));
-    }
-  }
-  let all_primary_indc = !indcs.is_empty()
-    && indcs.len()
-      == members.iter().filter(|m| matches!(m, IxonMutConst::Indc(_))).count();
-  if all_primary_indc
-    && members.iter().all(|m| matches!(m, IxonMutConst::Indc(_)))
-  {
-    // Resolve a ctor by id by scanning the ingested results — simpler
-    // than threading the env, since the comparator only needs Ctor
-    // payloads for Indc ctors.
-    let results_ref: &Vec<(KId<M>, KConst<M>)> = &results;
-    let resolve_ctor = |cid: &KId<M>| -> Option<KConst<M>> {
-      results_ref.iter().find(|(rid, _)| rid == cid).map(|(_, c)| c.clone())
-    };
-    crate::canonical_check::validate_canonical_block_single_pass::<M>(
-      entry_addr,
-      &indcs,
-      &resolve_ctor,
-    )
-    .map_err(|e| format!("{e}"))?;
-  }
+  // No member-order check: an inductive block is stored in its source's
+  // order, which shapes its recursors (as constructor order does), so any
+  // member order is admissible. The recursor block is checked against the
+  // stored order position by position.
 
   Ok(results)
 }
