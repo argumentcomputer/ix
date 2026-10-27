@@ -864,7 +864,28 @@ is decoded once before the two passes over projection pairs. -/
     if m.contains r then m else m.insert r a
   entries.findSome? fun (r, a) => if decide (first[r]? = some a) then none else some r
 
-/-- `compileReport`'s sixteen checks on a compile's result, each an error on
+/-- Whether stored bytes open with the TagN header of a block record
+(`Ixon.Constant.FLAG_MUTS`). Only the first TagN is read. -/
+@[expose] def blockHeader (bytes : ByteArray) : Bool :=
+  match (Ixon.getTagN 4).run { idx := 0, bytes } with
+  | .ok tag _ => tag.flag == Ixon.Constant.FLAG_MUTS
+  | .error _ _ => false
+
+/-- The first published input name whose address holds no stored record, or a
+block record (`blockHeader`), if any. The reader keys an address only through a
+record that resolves to a reference, a singleton or a projection
+(`Ix.Kernel.Reader.resolveSource`), never through a block, so a published input
+name at such an address would read as no constant. A `Muts` entry's name is not
+an input name. -/
+@[expose] def unreadablePublished (env : Ix.Environment) (ixe : Ixon.Env) : Option Ix.Name :=
+  ixe.named.toList.findSome? fun (n, named) =>
+    if env.consts.contains n then
+      match ixe.consts.get? named.addr with
+      | some lc => if blockHeader lc.rawBytes then some n else none
+      | none => some n
+    else none
+
+/-- `compileReport`'s seventeen checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -897,7 +918,9 @@ is one the input's map holds (`strayFailure`). **Identity rows agree:** every
 row of a name agrees on its verdict and compared address, and an identical
 row names the final published address (`identityMismatch`). **One projection record per
 definition member:** no two stored definition projection records project one
-member (`projectionCollision`). -/
+member (`projectionCollision`). **Published input names are readable:** each
+published input name's address holds a stored record that is not a block
+(`unreadablePublished`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
@@ -929,7 +952,13 @@ member (`projectionCollision`). -/
                             match identityMismatch cenv.auxReport.identity out.1 with
                             | none =>
                               match projectionCollision out.1 with
-                              | none => .ok ()
+                              | none =>
+                                match unreadablePublished env out.1 with
+                                | none => .ok ()
+                                | some n =>
+                                  .error s!"compileReport: readability check failed: the input name \
+                                    {n.pretty} is published at an address that holds no stored record, \
+                                    or a block record"
                               | some (b, i) =>
                                 .error s!"compileReport: projection check failed: member {i} of the block at \
                                   {b} has more than one stored definition projection record"
@@ -987,7 +1016,7 @@ member (`projectionCollision`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with sixteen checks (`checkReport`):
+condensation it cannot schedule). It ends with seventeen checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -1002,18 +1031,20 @@ subset's claim; every Pass 3 head is in the changed set; every input
 constant carries the name it is stored under; every constructor an input
 inductive lists is stored as a constructor of it; every failure the driver
 records is an input name; identity rows agree with each other and identical
-rows name the final published address; and no two stored definition projection records
-project one member. Any inconsistency is an error, and no artifact is
+rows name the final published address; no two stored definition projection records
+project one member; and every published input name's address holds a stored record
+that is not a block. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that
 agree with their blocks, resolved names published where they resolve,
 inductive components the changed set sees, original-form records for the input
-names the aux map resolves, and resolved published input names, hold by
-construction
+names the aux map resolves, resolved published input names, and readable
+published records, hold by construction
 (`Ix.Cert.compileCovers`, `Ix.Cert.compileAuthentic`,
 `Ix.Cert.ClosureOrder`'s existence, `Ix.Cert.nameHashes_distinct`,
 `Ix.Cert.mutsMismatch_none`, `Ix.Cert.resolvedPublished`,
-`Ix.Cert.inductivesSeen`, `Ix.Cert.auxOriginal`, `Ix.Cert.publishedResolved`); on a
+`Ix.Cert.inductivesSeen`, `Ix.Cert.auxOriginal`, `Ix.Cert.publishedResolved`,
+`Ix.Cert.publishedReadable`); on a
 consistent run the result is
 `compileUnchecked`'s environment and failures, byte for byte. -/
 @[expose] def compileReport (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do

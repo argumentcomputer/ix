@@ -653,8 +653,9 @@ resolved name is published where it resolves, every published input
 inductive's component is seen, every input name of the aux map is published
 with an original-form record, every published input name is resolved or in the
 aux map, no resolved name outside the aux map is a cross-SCC claim, every Pass 3
-head is in the changed set, all in the driver's final environment `cenv`, and
-every input constant carries the name it is stored under. -/
+head is in the changed set, all in the driver's final environment `cenv`,
+every input constant carries the name it is stored under, and every published
+input name's address holds a stored record that is not a block. -/
 theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
     (h : checkReport env cenv out = .ok ()) :
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
@@ -666,12 +667,12 @@ theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {o
       foreignHead env cenv.auxReport.table cenv.p3Heads out.1 = none ∧ misnamedInput env = none ∧
       strayConstructor env = none ∧ strayFailure env cenv.ungrounded = none ∧
       identityMismatch cenv.auxReport.identity out.1 = none ∧
-      projectionCollision out.1 = none := by
+      projectionCollision out.1 = none ∧ unreadablePublished env out.1 = none := by
   unfold checkReport at h
   -- walk the checks in order: every failing branch is an error, so the one
   -- branch that returns has each check's equation in context
   repeat' (first | (split at h) | (focus (cases h; done)))
-  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
+  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -680,7 +681,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
+  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
   exact ⟨h₁, h₂, h₃, h₄, h₅⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
@@ -1275,7 +1276,37 @@ theorem projectionsOne {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failu
     ∀ e ∈ ixe.consts.toList, ∀ e' ∈ ixe.consts.toList, ∀ r a a',
       definitionProjection e = some (r, a) → definitionProjection e' = some (r, a') → a = a' := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- What `unreadablePublished = none` says: every published input name's address
+holds a stored record whose bytes do not open with a block header. -/
+theorem unreadablePublished_none {env : Ix.Environment} {ixe : Ixon.Env}
+    (h : unreadablePublished env ixe = none) :
+    ∀ n named, (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
+      ∃ lc, ixe.consts.get? named.addr = some lc ∧ blockHeader lc.rawBytes = false := by
+  intro n named hn hin
+  unfold unreadablePublished at h
+  rw [List.findSome?_eq_none_iff] at h
+  have found := h (n, named) hn
+  simp only [hin, ↓reduceIte] at found
+  cases hl : ixe.consts.get? named.addr with
+  | none => rw [hl] at found; cases found
+  | some lc =>
+    rw [hl] at found
+    refine ⟨lc, rfl, ?_⟩
+    cases hb : blockHeader lc.rawBytes with
+    | false => rfl
+    | true => simp [hb] at found
+
+/-- **Published input names are readable**: when `compileReport` returns, every
+published input name's address holds a stored record that is not a block
+(`checkReport`'s seventeenth check). -/
+theorem publishedReadable {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∀ n named, (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
+      ∃ lc, ixe.consts.get? named.addr = some lc ∧ blockHeader lc.rawBytes = false := by
+  obtain ⟨cenv, -, hc⟩ := compileReport_ok h
+  exact unreadablePublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-! ## The theorems that hold now -/
 

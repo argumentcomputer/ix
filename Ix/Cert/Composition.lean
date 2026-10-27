@@ -248,7 +248,8 @@ def ReaderStreams : Prop :=
 /-- **(2) The reader keys every representative as its renaming.** In the reading context of
 an accepted compiled closure, a constant of quotient Source that reads, reads as its
 renamed key at its own level parameters, and every representative of a name the closure
-stores a constant under reads. -/
+stores a constant under reads when its key sits at the name's published address (the
+address `SourceTotal` gives it). -/
 def ReadingKeys : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source)
@@ -262,6 +263,7 @@ def ReadingKeys : Prop :=
       (∀ c ∈ envQ.consts, ∀ e, readingAt ixe t cx c = some e →
         e = .const (c.name.map (Ix.LeanIngress.evAddr ixe b)) (c.toConstantVal.levelParams.map .param)) ∧
       ∀ n ci, (n, ci) ∈ sub.consts.toList → ∀ c ∈ envQ.consts, c.name = quotientKey ixe t n →
+        keyAddress ixe t c.name = (ixe.named.get? n).map (·.addr) →
         (readingAt ixe t cx c).isSome = true
 
 /-- **(2) A constant the compiler did not rewrite reads as its renamed self**: in every
@@ -647,7 +649,7 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
     exact renamed_reading_denotes rel same unique hc M φ ρ
   · intro n ci hn hsorry
     obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
-    exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname⟩
+    exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname haddr⟩
 
 /-! ## The general case -/
 
@@ -727,6 +729,6 @@ theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obliga
     exact const_denotes hc' hl φ ρ
   · intro n ci hn hsorry
     obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
-    exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname⟩
+    exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname haddr⟩
 
 end Ix.Cert
