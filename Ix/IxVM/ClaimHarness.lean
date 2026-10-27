@@ -509,6 +509,14 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>
     ioBuffer ← seedTreeAt tree trees ioBuffer
+  | .binding _ bound =>
+    -- Every bound role and evidence theorem, with their closures: the
+    -- circuit validates every group. The primitives the kernel fabricates
+    -- references to are seeded as `closureFrom` seeds them.
+    unless env.roleBinding.map (·.address) == some bound do
+      throw s!"the environment's role binding is not {bound}"
+    let roots := Ix.Tc.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env
+    ioBuffer := addEntries env (closureFromRoots env roots).contains ioBuffer
   | .catalog .. =>
     -- Deliberately unsupported: a catalog claim is verified by
     -- COMPOSITION of per-piece CheckEnv claims with set discharge

@@ -86,16 +86,24 @@ def genRevealConstantInfo : Gen RevealConstantInfo :=
 
 def genOptAddress : Gen (Option Address) := genOptional genAddress
 
+/-- A context that validates its binding. -/
 def genClaimContext : Gen Ix.ClaimContext :=
-  Ix.ClaimContext.mk <$> genAddress <*> genAddress <*> genOptAddress
+  (fun spec binding axioms => { spec, binding, axioms })
+    <$> genAddress <*> genAddress <*> genOptAddress
+
+/-- A context for `check` or `checkEnv`, which may assume its binding. -/
+def genAssumableContext : Gen Ix.ClaimContext :=
+  (fun ctx assumed => { ctx with bindingAssumed := assumed })
+    <$> genClaimContext <*> genBool
 
 def genClaim : Gen Claim :=
   frequency [
     (10, Claim.eval     <$> genClaimContext <*> genAddress <*> genAddress <*> genOptAddress),
-    (10, Claim.check    <$> genClaimContext <*> genAddress <*> genOptAddress),
-    (10, Claim.checkEnv <$> genClaimContext <*> genAddress <*> genOptAddress),
+    (10, Claim.check    <$> genAssumableContext <*> genAddress <*> genOptAddress),
+    (10, Claim.checkEnv <$> genAssumableContext <*> genAddress <*> genOptAddress),
     (10, Claim.reveal   <$> genAddress <*> genRevealConstantInfo),
     (10, Claim.contains <$> genAddress <*> genAddress),
+    (10, Claim.binding  <$> genAddress <*> genAddress),
     (10, Claim.catalog  <$> genClaimContext <*> genAddress <*> genAddress <*> genOptAddress),
     (10, Claim.resource <$> genAddress <*> genAddress),
   ]
@@ -136,6 +144,7 @@ instance : Shrinkable Claim where
     | .contains t _ => [.checkEnv default t none]
     | .catalog ctx m _ none => [.checkEnv ctx m none]
     | .resource _ _ => []
+    | .binding _ _ => []
     | .catalog ctx m c (some _) => [.catalog ctx m c none]
 
 /-! ## SampleableExt instances -/

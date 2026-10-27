@@ -14,14 +14,17 @@
 
 use aiur::synthesis::{AiurProof, AiurSystem};
 use ix_kernel::shard::ShardManifest;
+use ixon::{ClaimContext, Proof as IxonProof};
 use ixvm_codegen::env_handle::EnvHandle;
 use plan::{
   FoldPolicy, PlanIdentity, PlanOp, SlotSpec, build_specs,
   build_statement_specs, plan_replay, subtree_plan,
 };
-use prepare::{PreparedShard, prepare_run, validate_root_statement};
+use prepare::{
+  PreparedShard, prepare_run, prepare_run_with, validate_root_statement,
+};
 use protocol::{ChildKind, allowed_blob, inner_claim};
-use prove::{ProveContext, run_replay, wrap_root};
+use prove::{ProveContext, discharge_root, run_replay, wrap_root};
 use rayon::prelude::*;
 use scheduler::run_scheduler;
 use statement::Statement;
@@ -92,6 +95,10 @@ struct RunConfig<'a> {
   /// the leaves under it, and report that slot's proof; the root-only steps
   /// (root validation, wrapping) are skipped. `None` proves the whole plan.
   subtree: Option<usize>,
+  /// An IxVM proof of the `Binding` claim for the environment's binding.
+  /// When present, every claim of the run assumes its binding and the root
+  /// discharges that condition once, after any wrap.
+  binding_proof: Option<&'a IxonProof>,
 }
 
 fn expected_from_manifest(
@@ -175,7 +182,11 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   let manifest = ShardManifest::from_bytes(&manifest_bytes)
     .map_err(|error| format!("manifest parse failed: {error}"))?;
   let parsed_at = Instant::now();
-  let prepared = prepare_run(&config.env_handle.env, &manifest)?;
+  let prepared = prepare_run_with(
+    &config.env_handle.env,
+    &manifest,
+    config.binding_proof.is_some(),
+  )?;
   let prepared_at = Instant::now();
 
   let ixvm_vk = aiur::vk_codec::aiur_system_to_bytes(config.ixvm_system)
@@ -356,6 +367,30 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     if !failures.is_empty() {
       return Err(failures.join("; "));
     }
+    // Shard claims that assume their binding hold once the binding claim for
+    // their context does: verify that proof too.
+    if let Some(binding) = config.binding_proof {
+      let ctx = &prepared.ctx;
+      let expected = ixon::proof::Claim::Binding {
+        spec: ctx.spec.clone(),
+        binding: ctx.binding.clone(),
+      };
+      if binding.claim != expected {
+        return Err(
+          "the binding proof is not for the environment's binding".into(),
+        );
+      }
+      let (_, binding_bytes) = binding.claim.commit();
+      let inner = inner_claim(config.verify_idx, &binding_bytes);
+      let proof = AiurProof::from_bytes(&binding.proof)
+        .map_err(|error| format!("binding proof does not decode: {error}"))?;
+      config.ixvm_system.verify(&inner, &proof).map_err(|error| {
+        format!("binding proof fails verification: {error:?}")
+      })?;
+      eprintln!(
+        "[verify] binding proof verified: the shard claims' condition holds"
+      );
+    }
     eprintln!(
       "[verify] OK: composed verdict — all {shards} shards proven + disjoint cover ({shards} proofs verified natively in {:.1}s; claims {:.1}s)",
       proofs_at.elapsed().as_secs_f64(),
@@ -395,6 +430,7 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
       .then(|| config.ram_budget_bytes / config.jobs.max(1)),
     range_width: config.range_width,
     range_jobs: config.jobs.max(1),
+    binding_proof: config.binding_proof,
   };
   if let (Some(target), Some(plan)) =
     (config.reprove_slot, replay_plan.as_ref())
@@ -483,6 +519,35 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   config.aggr_system.verify(&root.outer_claim, proof).map_err(|error| {
     format!("aggregate root proof failed verification: {error:?}")
   })?;
+  // Claims that assume their binding: discharge once, here. The discharged
+  // claim is the one a run that validates its binding states.
+  if let Some(binding) = config.binding_proof {
+    let (discharged, _) = discharge_root(context, root, proof, binding)?;
+    let statement = Statement::new(
+      ClaimContext { binding_assumed: false, ..root.statement.ctx.clone() },
+      root.statement.subjects.clone(),
+      root.statement.assumptions.clone(),
+    );
+    let outer = protocol::aggregate_outer_claim(
+      config.aggr_idx,
+      &allowed,
+      &statement.claim_bytes,
+    );
+    config.aggr_system.verify(&outer, &discharged).map_err(|error| {
+      format!("binding discharge proof failed verification: {error:?}")
+    })?;
+    let (address, persisted) = if config.write_outputs {
+      (persist_wrapper(&store_dir, &statement, &discharged)?, true)
+    } else {
+      (wrapper_address(&statement, &discharged)?, false)
+    };
+    let disposition = if persisted { "" } else { " (not persisted)" };
+    eprintln!(
+      "[aggregate] root proof, binding discharged: {}{disposition}",
+      address.hex()
+    );
+    return Ok(address.hex());
+  }
   let (address, persisted) = match proof_address {
     Some(address) => (address.clone(), true),
     None if config.write_outputs => {

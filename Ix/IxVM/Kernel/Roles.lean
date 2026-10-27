@@ -85,9 +85,12 @@ def roles := ⟦
 
   type RoleTable = &RoleTableNode
 
-  -- A role context: a table, and the number of groups usable under it.
+  -- A role context: a table, and the number of groups usable under it; or
+  -- a table assumed to meet the specifications (a claim that assumes its
+  -- binding), under which every bound role is usable and none is admitted.
   enum RoleCtxNode {
-    Mk(RoleTable, G)
+    Mk(RoleTable, G),
+    Assumed(RoleTable)
   }
 
   type RoleCtx = &RoleCtxNode
@@ -184,9 +187,42 @@ def roles := ⟦
     store(RoleCtxNode.Mk(load_role_table(binding), group_count()))
   }
 
+  -- The context of a claim that assumes its binding meets the
+  -- specifications: its binding's table, read but not validated.
+  fn role_ctx_assumed(binding: Addr) -> RoleCtx {
+    store(RoleCtxNode.Assumed(load_role_table(binding)))
+  }
+
+  -- The context of a claim, by its validator: 3 validates the binding, 4
+  -- assumes it.
+  fn role_ctx_for_validator(binding: Addr, validator: G) -> RoleCtx {
+    match validator {
+      3 => role_ctx_of_binding(binding),
+      4 => role_ctx_assumed(binding),
+      _ =>
+        assert_eq!(0, 1, "claim: wrong validator identity");
+        role_ctx_of_binding(binding),
+    }
+  }
+
+  -- The validator a claim checked under `rc` names: 3, or 4 when it
+  -- assumes its binding.
+  fn role_ctx_validator(rc: RoleCtx) -> G {
+    3 + role_ctx_is_assumed(rc)
+  }
+
   fn role_ctx_table(rc: RoleCtx) -> RoleTable {
     match load(rc) {
       RoleCtxNode.Mk(tbl, _) => tbl,
+      RoleCtxNode.Assumed(tbl) => tbl,
+    }
+  }
+
+  -- 1 iff `rc` assumes its binding.
+  fn role_ctx_is_assumed(rc: RoleCtx) -> G {
+    match load(rc) {
+      RoleCtxNode.Mk(_, _) => 0,
+      RoleCtxNode.Assumed(_) => 1,
     }
   }
 
@@ -232,7 +268,8 @@ def roles := ⟦
   -- 1 + the role bound at `a` when its group is usable under `rc`, after
   -- admitting that group; 0 when `a` plays no usable role. Every use of a
   -- role's meaning goes through here or `role_addr`, so nothing is read from
-  -- a role that has not been validated.
+  -- a role that has not been validated, or, under an assumed binding, that
+  -- the claim's condition does not cover.
   fn role_of(rc: RoleCtx, a: Addr) -> G {
     match load(rc) {
       RoleCtxNode.Mk(tbl, limit) =>
@@ -247,6 +284,8 @@ def roles := ⟦
               _ => 0,
             },
         },
+      RoleCtxNode.Assumed(tbl) =>
+        rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0),
     }
   }
 
@@ -269,6 +308,7 @@ def roles := ⟦
         let a = role_bound_addr(tbl, r);
         group_admit(tbl, role_group(r));
         a,
+      RoleCtxNode.Assumed(tbl) => role_bound_addr(tbl, r),
     }
   }
 
@@ -291,6 +331,7 @@ def roles := ⟦
             group_admit(tbl, role_group(r));
             1,
         },
+      RoleCtxNode.Assumed(tbl) => role_is_bound(tbl, r),
     }
   }
 
@@ -347,6 +388,51 @@ def roles := ⟦
               _ => store(RoleCtxNode.Mk(tbl, group_validation_limit(g))),
             },
         },
+      RoleCtxNode.Assumed(_) => rc,
+    }
+  }
+
+  -- 1 iff a walk under `rc` leaves the constant at `a` to the binding claim:
+  -- under an assumed binding, a role whose admission checks it with its
+  -- dependencies (a basis inductive, constructor or recursor, or an
+  -- operation). The claim's condition, that the binding meets the
+  -- specifications, covers that check; anchors, quotient members and axioms,
+  -- which are validated by type, are still checked as dependencies.
+  fn walk_covered(rc: RoleCtx, a: Addr) -> G {
+    match load(rc) {
+      RoleCtxNode.Mk(_, _) => 0,
+      RoleCtxNode.Assumed(tbl) =>
+        let r1 = rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0);
+        match r1 {
+          0 => 0,
+          _ => role_admission_checks(r1 - 1),
+        },
+    }
+  }
+
+  -- Validate every group of the binding `binding`, which must bind every
+  -- role: what a `binding` claim states.
+  fn validate_binding(binding: Addr) {
+    let tbl = load_role_table(binding);
+    assert_all_roles_bound(tbl, 0);
+    admit_all_groups(tbl, 0)
+  }
+
+  fn assert_all_roles_bound(tbl: RoleTable, r: G) {
+    match r - role_count() {
+      0 => (),
+      _ =>
+        assert_eq!(role_is_bound(tbl, r), 1, "binding claim: a role is unbound");
+        assert_all_roles_bound(tbl, r + 1),
+    }
+  }
+
+  fn admit_all_groups(tbl: RoleTable, g: G) {
+    match g - group_count() {
+      0 => (),
+      _ =>
+        group_admit(tbl, g);
+        admit_all_groups(tbl, g + 1),
     }
   }
 

@@ -171,6 +171,7 @@ value with `Ixon.getTagN`:
 | `N4(0x2, 256)` (`Ref` with 256 universe arguments) | `28 F8` | 2 |
 | `N4(0xE, 4)` (the version-4 `.ixe` header) | `E4` | 1 |
 | `N4(0xE, 9)` (Resource claim) | `E8 01` | 2 |
+| `N4(0xE, 10)` (Binding claim) | `E8 02` | 2 |
 | `N2(3, 100)` (`Univ::Var(100)`) | `E0 44` | 2 |
 | `N0(42)` | `2A` | 1 |
 | `N0(128)` | `80 00` | 2 |
@@ -1779,10 +1780,12 @@ and proof statement. A claim with another object format is rejected with
 | 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
 | 8 | `0xE8 0x00` | Catalog claim | context + 2 addr (members root, content root) + opt assumptions |
 | 9 | `0xE8 0x01` | Resource claim | 2 addr (complete env root, resource profile) |
+| 10 | `0xE8 0x02` | Binding claim | 2 addr (specification digest, binding hash) |
 
 The claim payloads in this table follow the two scope bytes. Reveal and
-Contains require validator `0`; Eval, Check, CheckEnv, and Catalog require
-validator `3`; Resource requires validator `2`.
+Contains require validator `0`; Eval, Catalog and Binding require validator
+`3`; Check and CheckEnv take validator `3` or `4`; Resource requires validator
+`2`.
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
@@ -1806,6 +1809,17 @@ yet, and IxVM refuses a claim that lists any. It is a separate commitment from
 other claims; an axiom is never discharged by typing. A context is 65 bytes
 when there are no further axioms.
 
+A Check or CheckEnv claim with validator `4` (erased-lean-v2-assumed) has the
+same payload but assumes its binding instead of validating it: it states its
+typing only if the role table with the context's binding hash meets the
+context's specifications. The Binding claim states exactly that condition:
+the table binds every role and each bound constant meets its specification.
+Its proof validates every role once, and aggregation discharges the condition
+of a whole aggregate with it (`ix_aggr` shapes 13 and 14), which yields the
+same claim bytes with validator `3`. Validator `4` names no axiom and no
+typing assumption: the reserved axioms field and `assumptions` keep their
+meaning.
+
 The Catalog claim's two roots use two DISTINCT leaf vocabularies,
 never mixed: `members` leaves are member ENV ROOTS; `content` (and
 `assumptions`) leaves are CONSTANT ADDRESSES. See
@@ -1826,6 +1840,7 @@ the multi-byte-tag path.
 | 4 | `0xF4` | Contains proof | claim payload + N0 length + opaque ZK bytes |
 | 5 | `0xF5` | Catalog proof | claim payload + N0 length + opaque ZK bytes |
 | 6 | `0xF6` | Resource proof wrapper | claim payload + N0 length + opaque proof bytes |
+| 7 | `0xF7` | Binding proof | claim payload + N0 length + opaque ZK bytes |
 
 Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
@@ -1838,7 +1853,11 @@ context; aggregation folds only children whose contexts are equal.
 ### Claim Types
 
 ```rust
-pub struct ClaimContext { pub spec: Address, pub binding: Address, pub axioms: Option<Address> }
+pub struct ClaimContext {
+    pub spec: Address, pub binding: Address, pub axioms: Option<Address>,
+    /// Validator 4 on the wire (Check and CheckEnv only).
+    pub binding_assumed: bool,
+}
 
 pub enum Claim {
     /// `input` evaluates to `output`, optionally modulo `assumptions`.
@@ -1861,6 +1880,9 @@ pub enum Claim {
     Catalog { ctx: ClaimContext, members: Address, content: Address, assumptions: Option<Address> },
     /// Complete closure passes resource-v1 under the committed profile.
     Resource { root: Address, profile: Address },
+    /// The role table with hash `binding` binds every role and each bound
+    /// constant meets its specification in the set with digest `spec`.
+    Binding { spec: Address, binding: Address },
 }
 ```
 
@@ -1985,6 +2007,18 @@ E8 01                 -- N4(0xE, 9) (Resource): two-byte TagN rung
 [32 bytes]            -- resource profile address
 ```
 Total: 68 bytes.
+
+**Binding claim** (`0xE8 0x02`, 2 addresses):
+```
+E8 02                 -- N4(0xE, 10) (Binding): two-byte TagN rung
+04 03                 -- object format 4, erased-lean-v2
+[32 bytes]            -- specification digest
+[32 bytes]            -- binding hash
+```
+Total: 68 bytes.
+
+A Check or CheckEnv claim that assumes its binding is the validator-3 layout
+with `04 04` (object format 4, erased-lean-v2-assumed) as its scope bytes.
 
 The claims fixture `Tests/Fixtures/ixon-v4/claims.tsv` holds the canonical
 bytes and BLAKE3 digest of one claim of every variant; its headers and scope

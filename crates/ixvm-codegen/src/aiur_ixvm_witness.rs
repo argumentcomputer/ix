@@ -304,10 +304,16 @@ fn seed_binding(env: &Env, io: &mut IOBuffer) {
   }
 }
 
-/// The argument of `check_owned`: the binding hash, then the constant's
-/// address, one field element per byte.
-pub fn check_owned_key(binding: &Address, addr: &Address) -> Vec<G> {
+/// The argument of `check_owned`: the binding hash, one field element per
+/// byte; the claim's validator (3 validates the binding, 4 assumes it); then
+/// the constant's address, one field element per byte.
+pub fn check_owned_key(
+  binding: &Address,
+  validator: u8,
+  addr: &Address,
+) -> Vec<G> {
   let mut key = addr_key(binding);
+  key.push(G::from_u8(validator));
   key.extend(addr_key(addr));
   key
 }
@@ -358,17 +364,23 @@ impl EnvCheckStatement {
       .expect("an environment statement is a typing claim")
   }
 
+  /// The statement over `env` that validates its binding.
   pub fn new(env: &Env) -> Result<Self, String> {
+    Self::with_binding(env, false)
+  }
+
+  /// The statement over `env`, assuming its binding meets the
+  /// specifications when `assume_binding` (validator 4) and validating it
+  /// otherwise (validator 3).
+  pub fn with_binding(env: &Env, assume_binding: bool) -> Result<Self, String> {
     let mut all: Vec<Address> =
       env.consts.iter().map(|entry| entry.key().clone()).collect();
     all.sort();
     let tree = AssumptionTree::canonical(&all)
       .ok_or_else(|| "EnvCheckStatement: empty environment".to_string())?;
-    let claim = Claim::CheckEnv {
-      ctx: ClaimContext::for_env(env)?,
-      root: tree.root(),
-      assumptions: None,
-    };
+    let mut ctx = ClaimContext::for_env(env)?;
+    ctx.binding_assumed = assume_binding;
+    let claim = Claim::CheckEnv { ctx, root: tree.root(), assumptions: None };
     let mut claim_bytes: Vec<u8> = Vec::new();
     claim.put(&mut claim_bytes);
     let digest_key = packed_digest_key(&Address::hash(&claim_bytes));
@@ -448,11 +460,23 @@ pub fn build_shard_check_env_witness(
   env: &Env,
   owned: &[Address],
 ) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  build_shard_check_env_witness_with(env, owned, false)
+}
+
+/// [`build_shard_check_env_witness`], whose claim assumes the environment's
+/// binding meets the specifications when `assume_binding` (validator 4) and
+/// validates it otherwise (validator 3).
+pub fn build_shard_check_env_witness_with(
+  env: &Env,
+  owned: &[Address],
+  assume_binding: bool,
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
   // Claim + THIN frontier from the shared convention module — the
   // single source of truth for shard CheckEnv digests (see
   // ixon::shard_claim; Lean mirror:
   // IxVM.ClaimHarness.shardCheckEnvClaimThin).
-  let ctx = ClaimContext::for_env(env)?;
+  let mut ctx = ClaimContext::for_env(env)?;
+  ctx.binding_assumed = assume_binding;
   let (claim, frontier) =
     ixon::shard_claim::shard_check_env_claim(&ctx, env, owned).ok_or_else(
       || "build_shard_check_env_witness: empty owned set".to_string(),
