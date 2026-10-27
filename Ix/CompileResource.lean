@@ -2,10 +2,11 @@ module
 public import Ix.CompileDriver
 public import Ix.Compile.SourceGraph.Accounting
 public import Ix.Resource.Validate
+public import Ix.Cert.Compile
 public section
 
 /-!
-# The Lean pipeline's validated post-step
+# The Lean pipeline's validated post-steps
 
 `Ix.CompileM.compileLeanInput` compiles and serializes; it does not validate
 resources, so the compiler does not import `Ix.Resource.Validate` (and with it
@@ -14,9 +15,11 @@ a compile against a resource profile, is emitted only after this post-step:
 the requested closure must be complete (no recorded failure), and the
 compiled environment must validate (`Ix.Resource.validate`, against the given
 profile or the environment's standard one). Every result then checks original
-input publication/failure accounting from the compiler's retained facts.
-`ix compile-lean` and `ix validate-lean` use the validated wrappers before
-emission. Bare compileLeanInput/compileLeanConsts remain unvalidated.
+input publication/failure accounting from the compiler's retained facts, and
+the compile's report as the pure compiler checks its own (`reportPostStep`).
+`ix compile-lean`, `ix validate-lean` and the Lean backend of artifact support
+use the validated wrappers before emission. Bare compileLeanInput/compileLeanConsts
+remain unvalidated.
 This post-step does not authenticate caller-supplied Node maps.
 -/
 
@@ -36,8 +39,33 @@ def resourcePostStep (out : LeanPipelineOut)
   (Ix.Compile.SourceGraph.Accounting.check nodes out.env.named out.cenv.ungrounded).mapError
     Ix.Compile.SourceGraph.Accounting.Issue.message
 
-/-- `compileLeanInput` followed by the resource post-step: an output that
-    fails the post-step is an error, never a result to emit. -/
+/-- **The input the report checks read**: every original input constant (the
+retained source facts' names), canonical, as the pure compiler reads its input.
+A code constant is the materialized one; a theorem or opaque is canonicalized
+again through the compile's lazy lookup, so this materializes every proof body
+of the input at once. -/
+def reportInput (out : LeanPipelineOut) : Except String Ix.Environment := do
+  let some nodes := out.sourceNodes?
+    | throw "report check: original input facts are unavailable"
+  let consts ← nodes.foldM (init := ({} : Std.HashMap Ix.Name Ix.ConstantInfo)) fun m n _ =>
+    match out.cenv.env.get? n with
+    | some ci => pure (m.insert n ci)
+    | none => throw s!"report check: the input constant {n.pretty} could not be read"
+  pure { consts }
+
+/-- **The compile's report, checked as the pure compiler checks its own**
+(`Ix.Cert.checkReport`, the sixteen checks behind `Ix.Cert.compileReport`): on the
+whole input (`reportInput`), the driver's final environment and the artifact with
+every recorded failure (the ground filter's refusals are among the driver's).
+Coverage, authentic storage, an acyclic reference order, distinct name hashes,
+blocks that agree with their `Muts` entries, and the resolution and naming
+invariants hold of the emitted artifact, or the compile is refused. -/
+def reportPostStep (out : LeanPipelineOut) : Except String Unit := do
+  let env ← reportInput out
+  Ix.Cert.checkReport env out.cenv (out.env, { blocks := out.cenv.ungrounded })
+
+/-- `compileLeanInput` followed by the post-steps: an output that fails one is
+an error, never a result to emit. -/
 def compileLeanInputValidated (input : Ix.Compile.CompileInput)
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (opts : DriverOptions := {})
@@ -45,9 +73,18 @@ def compileLeanInputValidated (input : Ix.Compile.CompileInput)
     IO (Except String LeanPipelineOut) := do
   match ← compileLeanInput input rustRef numWorkers opts with
   | .error e => return .error e
-  | .ok out => return (resourcePostStep out resourceProfile).map fun _ => out
+  | .ok out =>
+    let t0 ← IO.monoMsNow
+    let checked ← IO.lazyPure fun _ =>
+      resourcePostStep out resourceProfile >>= fun _ => reportPostStep out
+    if opts.dbg then
+      IO.println s!"  [compile-lean] post-steps (resources, accounting, report checks): \
+{(← IO.monoMsNow) - t0}ms"
+      if let some read := opts.memory then
+        IO.println s!"  [compile-lean] rss after the post-steps: {← read}"
+    return checked.map fun _ => out
 
-/-- `compileLeanConsts` followed by the resource post-step. -/
+/-- `compileLeanConsts` followed by the post-steps. -/
 def compileLeanConstsValidated (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (opts : DriverOptions := {})
@@ -55,7 +92,8 @@ def compileLeanConstsValidated (consts : List (Lean.Name × Lean.ConstantInfo))
     IO (Except String LeanPipelineOut) := do
   match ← compileLeanConsts consts rustRef numWorkers opts with
   | .error e => return .error e
-  | .ok out => return (resourcePostStep out resourceProfile).map fun _ => out
+  | .ok out =>
+    return (resourcePostStep out resourceProfile >>= fun _ => reportPostStep out).map fun _ => out
 
 end Ix.CompileM
 
