@@ -41,9 +41,14 @@ private def minimalIxes (treeTail : Array UInt8) : ByteArray :=
   minimalIxesFor #[#[], #[]] treeTail
 
 /-- The test environments carry the default role binding, as every
-    environment a claim is made over must. -/
+    environment a claim is made over must: its section alone. They are
+    partitioned, planned and audited here, never checked, so they leave out
+    the records the circuit validates roles against
+    (`IxVM.ClaimHarness.withDefaultRoleBinding`), which no shard owns. -/
 private def bound (env : Ixon.Env) : Ixon.Env :=
-  (IxVM.ClaimHarness.withDefaultRoleBinding env).toOption.getD env
+  match Ix.Kernel.Reader.defaultTableBytes, Ix.Kernel.Reader.defaultTableAddress with
+  | .ok bytes, .ok address => { env with roleBinding := some { address, bytes } }
+  | _, _ => env
 
 /-- The claims' context: the default role table's. -/
 private def envCtx : Ix.ClaimContext :=
