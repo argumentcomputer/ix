@@ -254,6 +254,15 @@ def claim := ⟦
   -- CONSTANTS; everything else is a blob payload or unreferenced. The
   -- decision comes from `const_idxs_of`, i.e. from bytes already bound by
   -- blake3 — not from an IO probe the prover answers.
+  --
+  -- A ref bound to a role whose admission checks it (a basis inductive,
+  -- constructor or recursor, or an operation) is checked under the context
+  -- its group is validated in (`walk_ctx`), so a claim that also uses the
+  -- role checks it once, and one that does not admits nothing. Under the
+  -- standard axiom policy that declines such a constant whose dependencies
+  -- use a standard axiom whose group comes after its own (the axioms'
+  -- groups come after the structural operations'), even when the claim
+  -- never uses the role; this walk and the two below agree on it.
   fn walk_refs_transitive(rc: RoleCtx, refs: List‹Addr›, consts: List‹G›, i: G) {
     match load(refs) {
       ListNode.Nil => (),
@@ -261,7 +270,7 @@ def claim := ⟦
         match g_list_has(consts, i) {
           1 =>
             assert_ref_allowed(rc, a);
-            run_check_transitive(rc, a),
+            run_check_transitive(walk_ctx(rc, a), a),
           _ => (),
         };
         walk_refs_transitive(rc, rest, consts, i + 1),
@@ -455,7 +464,7 @@ def claim := ⟦
         match g_list_has(consts, i) {
           1 =>
             assert_ref_allowed(rc, a);
-            env_walk(rc, a, owned, asm, strict),
+            env_walk(walk_ctx(rc, a), a, owned, asm, strict),
           _ => (),
         };
         env_walk_refs(rc, rest, consts, i + 1, owned, asm, strict),
@@ -568,7 +577,14 @@ def claim := ⟦
         match g_list_has(consts, i) {
           1 =>
             assert_ref_allowed(rc, a);
-            check_owned(load(role_ctx_binding(rc)), load(a)),
+            -- A role checked by its admission is checked in this record,
+            -- under its group's context (`walk_ctx`); anything else may go
+            -- to the record that owns it.
+            let wc = walk_ctx(rc, a);
+            match ptr_val(wc) - ptr_val(rc) {
+              0 => check_owned(load(role_ctx_binding(rc)), load(a)),
+              _ => run_check_transitive(wc, a),
+            },
           _ => (),
         };
         env_walk_refs_all(rc, rest, consts, i + 1),

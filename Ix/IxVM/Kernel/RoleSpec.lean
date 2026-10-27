@@ -32,6 +32,10 @@ def roleSpec := ⟦
     34
   }
 
+  fn first_well_founded_group() -> G {
+    26
+  }
+
   fn role_nat() -> G {
     0
   }

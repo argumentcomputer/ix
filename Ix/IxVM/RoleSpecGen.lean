@@ -29,7 +29,9 @@ What is rendered, per role:
 The groups are validated in `groupOrder`: a group's roles are bound
 together (`Role.block`), and every role a group needs (`Role.deps`) is in an
 earlier group. The axioms come before the well-founded operations, whose
-certificates use `propext`. -/
+certificates use `propext`. The well-founded operations' groups come last,
+and the circuit validates them all under the groups before the first of
+them (`first_well_founded_group`). -/
 
 @[expose] public section
 
@@ -222,6 +224,22 @@ def equations (r : Role) : List (List (Expr .anon) × Expr .anon × Expr .anon) 
   | .ops _ eqs => eqs
   | _ => []
 
+/-- A group of well-founded operations: its equations are certificates,
+which carry hypotheses. -/
+def wellFounded (g : List Role) : Bool :=
+  g.any fun r => (equations r).any (!·.1.isEmpty)
+
+/-- The index of the first well-founded operation's group. Those groups
+come last: the circuit validates each under the groups before the first of
+them, so none comes before a group it could otherwise use. -/
+def firstWellFoundedGroup : Except String Nat := do
+  let some first := groups.findIdx? wellFounded
+    | throw "no well-founded operation's group"
+  for (g, i) in groups.zipIdx do
+    unless wellFounded g == decide (first ≤ i) do
+      throw s!"role group {i}: the well-founded operations' groups must come last"
+  pure first
+
 /-! ## The file -/
 
 def header : String := "module
@@ -269,6 +287,7 @@ def render : Except String String := do
   out := out ++ aiurFn "fn spec_digest() -> Addr" s!"    store([{", ".intercalate bytes}])"
   out := out ++ aiurFn "fn role_count() -> G" s!"    {Role.all.length}"
   out := out ++ aiurFn "fn group_count() -> G" s!"    {groups.length}"
+  out := out ++ aiurFn "fn first_well_founded_group() -> G" s!"    {← firstWellFoundedGroup}"
   for r in Role.all do
     out := out ++ aiurFn s!"fn role_{roleName r}() -> G" s!"    {roleIdx r}"
   out := out ++ aiurFn "fn role_group(r: G) -> G" (← byRole (fun r => pure (toString (groupOf r))) "0")

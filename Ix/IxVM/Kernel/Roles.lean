@@ -40,10 +40,25 @@ specifications group them (`Role.block`), in the order of the rendered
 
 A group is validated under a role context (`RoleCtx`) that admits only the
 groups before it, so an operation's own fast path cannot take part in
-validating it. Validation is lazy and memoized: it runs the first time a
-claim uses a role of the group, once per claim. A binding that does not meet
-the specifications makes every claim that uses the failing role abort; it
-never makes a role usable.
+validating it. The well-founded operations' groups come last and share one
+context, the one before the first of them (`group_validation_limit`): no
+well-founded operation's fast path takes part in validating any of them,
+and the dependencies they share (the well-founded recursion and the `Nat`
+lemmas their certificates use) are checked once. Validation is lazy and
+memoized: it runs the first time a claim uses a role of the group, once per
+claim. A binding that does not meet the specifications makes every claim
+that uses the failing role abort; it never makes a role usable.
+
+A walk over a claim's dependencies that reaches a bound role whose
+admission checks it with its dependencies (a basis inductive, constructor
+or recursor, or an operation) checks it under the context its group is
+validated in (`walk_ctx`), not the claim's. When the claim also uses the
+role, the check is the admission's own, done once; when it does not, the
+walk admits nothing and checks the constant as its group would. Checking
+under fewer usable roles is never weaker. Under the standard axiom policy it
+declines a little more: a constant bound to such a role whose dependencies
+use a standard axiom whose group comes after its own is declined even when
+the claim never uses the role, as its group's validation would decline it.
 
 A claim covers a constant's dependencies, not a whole environment, so the
 constants the kernel introduces into a claim's terms without the claim
@@ -283,8 +298,56 @@ def roles := ⟦
   -- of its roles under a context that admits only the earlier groups.
   fn group_admit(tbl: RoleTable, g: G) {
     group_admit_needs(tbl, group_needs(g));
-    let rc = store(RoleCtxNode.Mk(tbl, g));
+    let rc = store(RoleCtxNode.Mk(tbl, group_validation_limit(g)));
     validate_group_roles(rc, tbl, group_roles(g))
+  }
+
+  -- The number of groups usable while group `g` is validated: the groups
+  -- before it, or, for a well-founded operation's group, the groups before
+  -- the first of those.
+  fn group_validation_limit(g: G) -> G {
+    let first_wf = first_well_founded_group();
+    match u32_less_than(g, first_wf) {
+      1 => g,
+      _ => first_wf,
+    }
+  }
+
+  -- 1 iff role `r`'s admission checks its bound constant with its
+  -- dependencies: a basis inductive, constructor or recursor, or an
+  -- operation. Anchors, quotient members and axioms are validated by type.
+  fn role_admission_checks(r: G) -> G {
+    match role_spec_kind(r) {
+      0 =>
+        match role_member_kind(r) {
+          0 => 1,
+          1 => 1,
+          2 => 1,
+          _ => 0,
+        },
+      2 => 1,
+      _ => 0,
+    }
+  }
+
+  -- The context a walk under `rc` checks the constant at `a` in: for a role
+  -- usable under `rc` whose admission checks it, the context its group is
+  -- validated in, so the walk's check is the admission's own; otherwise
+  -- `rc`. Admits nothing.
+  fn walk_ctx(rc: RoleCtx, a: Addr) -> RoleCtx {
+    match load(rc) {
+      RoleCtxNode.Mk(tbl, limit) =>
+        let r1 = rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0);
+        match r1 {
+          0 => rc,
+          _ =>
+            let g = role_group(r1 - 1);
+            match u32_less_than(g, limit) * role_admission_checks(r1 - 1) {
+              0 => rc,
+              _ => store(RoleCtxNode.Mk(tbl, group_validation_limit(g))),
+            },
+        },
+    }
   }
 
   fn group_admit_needs(tbl: RoleTable, needs: List‹G›) {
