@@ -274,12 +274,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
   }
 
-  pub fn legacy_primitives(&self) -> Result<&Primitives<M>, TcError<M>> {
-    self.prims.legacy().ok_or_else(|| TcError::Other(self.prims.unavailable()))
+  pub fn primitives(&self) -> Result<&Primitives<M>, TcError<M>> {
+    self.prims.table().ok_or_else(|| TcError::Other(self.prims.unavailable()))
   }
 
-  pub(super) fn optional_legacy_primitives(&self) -> Option<&Primitives<M>> {
-    self.prims.legacy()
+  pub(super) fn optional_primitives(&self) -> Option<&Primitives<M>> {
+    self.prims.table()
   }
 
   pub(super) fn check_input_context(&self) -> Result<(), TcError<M>> {
@@ -1160,7 +1160,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
 
   /// Check if expression is of the form `eagerReduce _ _` (2 args applied to the eagerReduce const).
   pub fn is_eager_reduce(&self, e: &KExpr<M>) -> bool {
-    let Some(primitives) = self.optional_legacy_primitives() else {
+    let Some(primitives) = self.optional_primitives() else {
       return false;
     };
     let ExprData::App(f, _, _) = e.data() else { return false };

@@ -465,19 +465,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   fn infer_nat_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
     Ok({
-      self.intern(KExpr::cnst(
-        self.legacy_primitives()?.nat.clone(),
-        Box::new([]),
-      ))
+      self.intern(KExpr::cnst(self.primitives()?.nat.clone(), Box::new([])))
     })
   }
 
   fn infer_str_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
     Ok({
-      self.intern(KExpr::cnst(
-        self.legacy_primitives()?.string.clone(),
-        Box::new([]),
-      ))
+      self.intern(KExpr::cnst(self.primitives()?.string.clone(), Box::new([])))
     })
   }
 
@@ -738,7 +732,7 @@ mod tests {
     let ty = tc.infer(&n).unwrap();
     // Nat literal type = Nat constant
     assert!(
-      matches!(ty.data(), ExprData::Const(id, _, _) if id.addr == tc.legacy_primitives().unwrap().nat.addr)
+      matches!(ty.data(), ExprData::Const(id, _, _) if id.addr == tc.primitives().unwrap().nat.addr)
     );
   }
 
@@ -948,7 +942,7 @@ mod tests {
     // Type should be `String` — a constant at the canonical string addr.
     match ty.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.legacy_primitives().unwrap().string.addr);
+        assert_eq!(id.addr, tc.primitives().unwrap().string.addr);
       },
       other => panic!("expected Const(String), got {other:?}"),
     }

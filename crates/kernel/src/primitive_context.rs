@@ -18,7 +18,7 @@ pub(crate) enum PrimitiveContext<M: KernelMode> {
 }
 
 impl<M: KernelMode> PrimitiveContext<M> {
-  pub(crate) fn legacy(&self) -> Option<&Primitives<M>> {
+  pub(crate) fn table(&self) -> Option<&Primitives<M>> {
     match self {
       Self::Legacy(primitives) => Some(primitives),
       #[cfg(not(target_arch = "riscv64"))]

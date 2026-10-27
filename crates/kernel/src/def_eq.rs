@@ -887,11 +887,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         false
       },
       (ExprData::Nat(v1, _, _), ExprData::Nat(v2, _, _)) => {
-        self.legacy_primitives()?;
+        self.primitives()?;
         return Ok(v1 == v2);
       },
       (ExprData::Str(v1, _, _), ExprData::Str(v2, _, _)) => {
-        self.legacy_primitives()?;
+        self.primitives()?;
         return Ok(v1 == v2);
       },
       _ => false,
@@ -1061,7 +1061,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Check if an expression is a nat-like value (literal, Nat.zero, Nat.succ _).
   fn is_nat_like(&self, e: &KExpr<M>) -> bool {
-    let Some(primitives) = self.optional_legacy_primitives() else {
+    let Some(primitives) = self.optional_primitives() else {
       return false;
     };
     match e.data() {
@@ -1076,7 +1076,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Check if expression is nat zero (literal 0 or Nat.zero constructor).
   fn is_nat_zero(&self, e: &KExpr<M>) -> bool {
-    let Some(primitives) = self.optional_legacy_primitives() else {
+    let Some(primitives) = self.optional_primitives() else {
       return false;
     };
     match e.data() {
@@ -1090,7 +1090,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// a Nat literal, `Nat.zero`/`Nat.succ`, or an app whose head constant is
   /// `Nat.succ`/`Nat.add`. Walks the app chain by reference — no spine Vec.
   fn nat_offset_candidate(&self, e: &KExpr<M>) -> bool {
-    let Some(primitives) = self.optional_legacy_primitives() else {
+    let Some(primitives) = self.optional_primitives() else {
       return false;
     };
     let mut cur = e;
@@ -1123,7 +1123,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
       ExprData::App(f, arg, _) => match f.data() {
         ExprData::Const(id, _, _)
-          if id.addr == self.optional_legacy_primitives()?.nat_succ.addr =>
+          if id.addr == self.optional_primitives()?.nat_succ.addr =>
         {
           Some(arg.clone())
         },
@@ -1141,7 +1141,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
-    self.legacy_primitives()?;
+    self.primitives()?;
     // Fast path: both literals — compare by value directly
     if let (ExprData::Nat(va, _, _), ExprData::Nat(vb, _, _)) =
       (a.data(), b.data())
@@ -1172,7 +1172,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<Option<bool>, TcError<M>> {
-    if self.optional_legacy_primitives().is_none() {
+    if self.optional_primitives().is_none() {
       return Ok(None);
     }
     // Fast path: both literals — compare by value directly
@@ -1226,7 +1226,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     t: &KExpr<M>,
     s: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
-    if self.optional_legacy_primitives().is_none() {
+    if self.optional_primitives().is_none() {
       return Ok(false);
     }
     let str_val = match t.data() {
@@ -1255,28 +1255,28 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ) -> Result<KExpr<M>, TcError<M>> {
     Ok({
       let char_const = self.intern(KExpr::cnst(
-        self.legacy_primitives()?.char_type.clone(),
+        self.primitives()?.char_type.clone(),
         Box::new([]),
       ));
       let char_of_nat = self.intern(KExpr::cnst(
-        self.legacy_primitives()?.char_of_nat.clone(),
+        self.primitives()?.char_of_nat.clone(),
         Box::new([]),
       ));
       let string_mk = self.intern(KExpr::cnst(
-        self.legacy_primitives()?.string_of_list.clone(),
+        self.primitives()?.string_of_list.clone(),
         Box::new([]),
       ));
 
       // List.nil.{0} Char
       let list_nil_z = self.intern(KExpr::cnst(
-        self.legacy_primitives()?.list_nil.clone(),
+        self.primitives()?.list_nil.clone(),
         Box::new([KUniv::zero()]),
       ));
       let nil = self.intern(KExpr::app(list_nil_z, char_const.clone()));
 
       // List.cons.{0} Char
       let list_cons_z = self.intern(KExpr::cnst(
-        self.legacy_primitives()?.list_cons.clone(),
+        self.primitives()?.list_cons.clone(),
         Box::new([KUniv::zero()]),
       ));
       let cons = self.intern(KExpr::app(list_cons_z, char_const));
@@ -1538,7 +1538,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Check if expression is the Bool.true constant.
   fn is_bool_true(&self, e: &KExpr<M>) -> bool {
-    let Some(primitives) = self.optional_legacy_primitives() else {
+    let Some(primitives) = self.optional_primitives() else {
       return false;
     };
     match e.data() {
