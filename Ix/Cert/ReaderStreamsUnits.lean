@@ -1,16 +1,17 @@
-import Ix.Cert.StreamRename
+import Ix.Cert.StreamUnits
 import Ix.Cert.ReadingKeys
 import Ix.Cert.SourcePrelude
 
-/-! # The reader's streams for a closure read as plain units
+/-! # The reader's streams for a closure read unit by unit
 
 `Obligation.ReaderStreams` asks that the reader, from the anonymous prelude, read an
 accepted closure in a closure order of stored canonical records, keep the prelude's
 entries, and prepare quotient Source's prepared stream renamed. This module reduces that
 conclusion, for one closure, to its order and its units (`readerStreams_of_units`): a
 closure order of stored canonical records whose reading matches quotient Source's trace
-unit by unit as plain units (`UnitsRead`), the units of a closure of definitions, axioms
-and quotient constants.
+unit by unit (`UnitsRead`, `StreamUnits.Units`): definitions, axioms and quotient constants
+are plain units, an inductive block is its block record's reading and its projection records
+read to nothing.
 
 The rest comes from the premises: the default binding admits at the default table
 (`DefaultAdmits`), the committed prelude reads alike at both modes (`PreludeAgrees`), quotient
@@ -18,23 +19,23 @@ Source's trace keeps the prelude, its declarations name representatives, on whic
 renaming to addresses is injective (`evAddr_injOn`), and preparing commutes with the
 renaming (`preparePrelude_mapKeys`). -/
 
-namespace Ix.Cert.ReaderStreamsPlain
+namespace Ix.Cert.ReaderStreamsUnits
 
 open Ix.Kernel Ix.Kernel.Reader
 open Ix.LeanIngress (evAddr QRepAt roleAtMap fiberAliasAt fiberHintsMap graphCollapsed scheduleOf)
 
-/-- **What remains of the reader's streams for a closure read as plain units**: a closure
+/-- **What remains of the reader's streams for a closure read unit by unit**: a closure
 order of stored canonical records whose reading matches quotient Source's trace `rs` unit
 by unit. -/
 def UnitsRead (ixe : Ixon.Env) (sub : Ix.Environment) (t : RoleTable) (preA : Prelude .anon)
     (b : Ix.RoleEvidence.Bundle) (pre : Prelude .source) (rs : List (Read .source)) : Prop :=
   ∃ order, ClosureOrder ixe (Seed ixe sub) order ∧ Stream.StoredCanonical ixe order ∧
-    StreamRename.PlainUnits (evAddr ixe b) (KeyScope.ofId (QRepAt ixe (roleAtMap t)))
+    StreamUnits.Units (evAddr ixe b) (KeyScope.ofId (QRepAt ixe (roleAtMap t)))
       (closureContext ixe t preA order) pre.state rs (Stream.decodedOf ixe order)
 
-/-- **The reader's streams of a closure read as plain units**: the conclusion of
+/-- **The reader's streams of a closure read unit by unit**: the conclusion of
 `Obligation.ReaderStreams`, for a closure whose every quotient Source trace has a closure
-order read unit by unit as plain units. -/
+order read unit by unit. -/
 theorem readerStreams_of_units {env : Ix.Environment} {roots : List Ix.Name}
     {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures} {t : RoleTable}
     {envQ : Env .source} {pre : Prelude .source} {ds : Array (Declaration .source)}
@@ -95,14 +96,14 @@ theorem readerStreams_of_units {env : Ix.Environment} {roots : List Ix.Name}
     have := hkeepAll rs.length k hk
     rwa [List.take_length] at this
   obtain ⟨st', declsA, hread, hkeepA, hprep⟩ :=
-    StreamRename.plainUnits_conclusion hf hagree hunits hflat hgood hkeep
+    StreamUnits.units_conclusion hf hagree hunits hflat hgood hkeep
   exact ⟨binding, t', preA, order, st', declsA, hbind, hadm, hA, hord, hcanon, hread, hkeepA,
     by rw [hprep, hdsEq]⟩
 
 /--
-info: 'Ix.Cert.ReaderStreamsPlain.readerStreams_of_units' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: 'Ix.Cert.ReaderStreamsUnits.readerStreams_of_units' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs in
 #print axioms readerStreams_of_units
 
-end Ix.Cert.ReaderStreamsPlain
+end Ix.Cert.ReaderStreamsUnits
