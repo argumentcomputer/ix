@@ -32,7 +32,7 @@ otherwise (October 2026, one RTX PRO 6000 Blackwell, 48 logical CPUs).
   parameters; the warm recursive stage stays at about 41 s and verifies the
   patched proof. The warm Ignition pipeline from saved FRI proof to
   recursive packet is 134 s against the README's 181 s, and 121 s with the
-  lazy-nibble multi-stark patch measured below. The 40-query
+  lazy-nibble multi-stark change measured below. The 40-query
   configuration lowers the proven bound and is therefore excluded; its
   sizing results are diagnostic only. Fewer rows do not by themselves make
   the first proof wrappable: KZG commits per column, and the
@@ -521,12 +521,12 @@ after the opening reduction fix.
 
 ### Lazy byte nibbles in multi-stark
 
-A candidate multi-stark change on top of the pinned revision makes
-`ByteValue`'s nibble decomposition optional: `select`
+multi-stark `d8c950be` (branch `sb/kzg-core`, on top of `416be66`)
+makes `ByteValue`'s nibble decomposition optional: `select`
 produces a value-only byte, and the generic paths that read nibbles (XOR,
 word packing, comparisons) materialize them on demand with the same
 nibble-hint-and-lookup constraints they always had. Measured with the sizing
-example against the patched dependency:
+example against the same change on the previous `sb/kzg-core` base:
 
 | First stage, 100 queries | Before | Lazy nibbles |
 | --- | ---: | ---: |
@@ -536,9 +536,8 @@ example against the patched dependency:
 | Used rows | 77,070,160 | 60,590,416 |
 | Computation partitions at `2^24` | 5 | **4** |
 
-The patch is not applied in this repository; it needs an upstream
-multi-stark change and a pin bump. A CUDA worker built against the patched
-clone, with the 20-bit range limbs, ran the same warm Ignition sequence:
+This repository pins that revision. A CUDA worker built against the
+change, with the 20-bit range limbs, ran the same warm Ignition sequence:
 
 | Stage, warm, Ignition | README reference | Reduction patch | Plus lazy nibbles |
 | --- | ---: | ---: | ---: |
@@ -556,7 +555,7 @@ setup; the recursive packet is unchanged at 1,669 B. Warm first-stage spans:
 translate 16.6 s, lower 10.7 s, prepare 20.3 s, prove 24.1 s. The
 recursion still pads to `2^26`, so its time did not move; its merged table
 trace is now `2^21` rows because of the wider range table. All FRI,
-first-stage and recursive gadget tests pass against the patched dependency.
+first-stage and recursive gadget tests passed against the change.
 
 
 ## Refreshed terminal PLONK proof and Solidity verification
@@ -630,5 +629,5 @@ Relevant to this pipeline:
 
 Sources: `crates/proof-compression/README.md`,
 `docs/proof-benchmark-comparison.md`, the pipeline, recursive verifier and
-wrapper sources, multi-stark `416be66`, and Plonky3 `3152b14a` and `main` at
-`4615dcd`.
+wrapper sources, multi-stark `416be66` and `d8c950be`, and Plonky3
+`3152b14a` and `main` at `4615dcd`.
