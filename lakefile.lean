@@ -32,6 +32,9 @@ The Rust static libraries use `target` + `moreLinkObjs` instead of `extern_lib` 
 - Other application targets inherit `ix_rs` (`parallel`, plus opt-in `cuda`)
   from the `Ix` `lean_lib`.
 
+The compression stages run in `ix-compression-worker`, a Rust executable
+built beside `ix` by `ix_compression_worker`.
+
 The `ix_rs_test` and `ix_rs_net` targets fetch `ix_rs` first to guarantee ordering
 before Cargo overwrites its release archive, then snapshot distinct Lake artifacts.
 The second Cargo build is incremental — only feature-affected crates recompile.
@@ -41,9 +44,8 @@ The archives are built when native targets need them. Keeping Rust linkage on
 -/
 section FFI
 
-/-- Build args for `cargo build --release` with opt-in feature overrides.
-Cargo output is visible with `lake -v build`. -/
-def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
+/-- Rust feature selection shared by compilation and native runtime linkage. -/
+def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : BaseIO (Array String) := do
   -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA;
   -- IX_CUDA_TRACE_CODEGEN=1 enables generated trace kernels and implies CUDA.
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
@@ -57,63 +59,119 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
     features := features.push "cuda-trace-codegen"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
+  return features
+
+/-- Build args for `cargo build --release` with opt-in feature overrides.
+Cargo output is visible with `lake -v build`. -/
+def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
+  let features ← cargoFeatures testFfi net
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
 
-/-- Build and snapshot one feature selection of the Rust static library.
-The copied output has a Lake trace containing both Rust sources and Cargo
-arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
-archive from a previous invocation. -/
-def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
-    SpawnM (Job FilePath) := do
+/-- Environment for every Cargo build here. Lean's bundled toolchain links
+against glibc stubs older than 2.38, whose headers in C23 mode, the default
+of recent GCC, redirect `strtol` and its relatives to `__isoc23_*` symbols
+the stubs lack; compiling every C unit as C17 keeps the symbols the link
+can resolve. `CFLAGS` already in the environment are kept. -/
+def cargoEnvironment (environment : Array (String × Option String)) :
+    Array (String × Option String) :=
+  let existing := ((environment.find? (·.1 == "CFLAGS")).bind (·.2)).getD ""
+  let cflags := if existing.isEmpty then "-std=gnu17" else s!"{existing} -std=gnu17"
+  #[("CFLAGS", some cflags)]
+
+/-- The native toolchain settings that change what Cargo produces. -/
+def nativeToolchainVariables : Array String :=
+  #["CFLAGS", "NVCC", "CUDA_HOME", "CUDA_PATH", "NVCC_CCBIN",
+    "NVCC_PREPEND_FLAGS", "NVCC_APPEND_FLAGS", "MULTI_STARK_CUDA_ARCHS"]
+
+local instance : CheckExists (Array FilePath) where
+  checkExists paths := paths.allM (·.pathExists)
+
+local instance : GetMTime (Array FilePath) where
+  getMTime paths := do
+    paths.foldlM (fun oldest path => return min oldest (← getMTime path))
+      (← getMTime paths[0]!)
+
+/-- Replacing the inode keeps an already-running copy of the output intact. -/
+def copyNativeArtifact (source output : FilePath) (tag : String) : JobM Unit := do
+  IO.FS.createDirAll output.parent.get!
+  let temporary := output.addExtension s!"{tag}.tmp"
+  proc { cmd := "cp", args := #["-f", source.toString, temporary.toString] } (quiet := true)
+  IO.FS.rename temporary output
+
+/-- Every source, kernel, manifest and profile file the Cargo builds read. -/
+def rustSources (pkg : Package) : SpawnM (Job Unit) := do
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.extension == some "cu" ||
     path.extension == some "cuh" || path.extension == some "h" ||
     path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
     path.fileName == "trace-manifest.json"
+  let profiles ← inputDir (pkg.dir / "crates/proof-compression/profiles") false fun path =>
+    path.extension == some "bin"
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
-    ← inputTextFile (pkg.dir / "Cargo.lock")
+    ← inputTextFile (pkg.dir / "Cargo.lock"),
+    ← inputTextFile (pkg.dir / ".cargo/config.toml")
   ]
-  let deps := sources.zipWith (fun sourceFiles manifestFiles =>
-    (sourceFiles, manifestFiles)) manifests
-  let output := pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a"
-  buildFileAfterDep output deps (fun _ => do
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-    let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
-    copyFile built output
-  ) (extraDepTrace := pure <| .ofHash (pureHash args) s!"cargo args: {args}")
+  let sources := sources.zipWith (fun _ _ => ()) profiles
+  return sources.zipWith (fun _ _ => ()) manifests
+
+/-- Build Cargo's archive or executable and copy it out of Cargo's target
+directory under a trace of the arguments and native toolchain. -/
+def buildCargoArtifact (pkg : Package) (args : Array String) (tag : String)
+    (built output : FilePath) (before : Option (Job FilePath) := none) :
+    SpawnM (Job FilePath) := do
+  let deps ← rustSources pkg
+  let deps := match before with
+    | some before => deps.zipWith (fun _ _ => ()) before
+    | none => deps
+  let environment ← nativeToolchainVariables.mapM fun name => return (name, ← IO.getEnv name)
+  let cargoEnv := cargoEnvironment environment
+  let outputs := #[output]
+  deps.mapM fun _ => do
+    addPureTrace (args, environment, cargoEnv) s!"cargo args: {args}; native toolchain: {environment}"
+    buildUnlessUpToDate outputs (← getTrace) (output.addExtension "trace") do
+      let result ← captureProc' {
+        cmd := "cargo"
+        args := args.push "--message-format=json-render-diagnostics"
+        cwd := pkg.dir
+        env := cargoEnv
+      }
+      unless result.stderr.isEmpty do logVerbose result.stderr
+      copyNativeArtifact built output tag
+    setTrace (← computeTrace outputs)
+    return output
+
+def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
+    (before : Option (Job FilePath) := none) : SpawnM (Job FilePath) :=
+  buildCargoArtifact pkg args tag
+    (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi")
+    (pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a") before
 
 /-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs) "default"
 
-/-- Rebuild the Rust static lib with `test-ffi`.
-Used by `IxTests` and the focused `kernel-codec` differential runner.
-Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
-target ix_rs_test pkg : FilePath := do
-  let base ← ix_rs.fetch
-  base.mapM fun _ => do
-    let args ← cargoArgs (testFfi := true)
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-    let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
-    let output := pkg.buildDir / "lib" / "libix_ffi_test.a"
-    copyFile built output
-    return output
+/-- The compression worker executable that `ix compress` runs per stage. -/
+target ix_compression_worker pkg : FilePath := do
+  let features ← cargoFeatures
+  let mut args := #["build", "--release", "-p", "ix-proof-compression",
+    "--bin", "ix-compression-worker"]
+  unless features.contains "parallel" do
+    args := args.push "--no-default-features"
+  buildCargoArtifact pkg args "worker"
+    (pkg.dir / "target" / "release" / "ix-compression-worker")
+    (pkg.buildDir / "bin" / "ix-compression-worker")
 
-/-- Build the Rust static lib with `net` for the `ix` CLI.
-Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
+/-- Cargo feature variants wait for the default archive before building. -/
+target ix_rs_test pkg : FilePath := do
+  buildRustStatic pkg (← cargoArgs (testFfi := true)) "test" (some (← ix_rs.fetch))
+
+/-- Build the Rust static lib with `net` for the `ix` CLI. -/
 target ix_rs_net pkg : FilePath := do
-  let base ← ix_rs.fetch
-  base.mapM fun _ => do
-    let args ← cargoArgs (net := true)
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-    let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
-    let output := pkg.buildDir / "lib" / "libix_ffi_net.a"
-    copyFile built output
-    return output
+  buildRustStatic pkg (← cargoArgs (net := true)) "net" (some (← ix_rs.fetch))
 
 end FFI
 
@@ -140,6 +198,7 @@ lean_lib Ix where
 lean_exe ix where
   root := `Main
   supportInterpreter := true
+  needs := #[`@/ix_compression_worker]
   moreLinkObjs := #[ix_rs_net]
 
 section Tests
@@ -163,6 +222,12 @@ against. -/
 lean_exe «trace-fixtures» where
   root := `Tests.Aiur.TraceFixtures
   supportInterpreter := true
+
+/-- Compression CLI and stored-proof identity checks. -/
+lean_exe «compression-cli-tests» where
+  root := `Tests.CompressionCliMain
+  needs := #[`@/ix]
+  moreLinkObjs := #[ix_rs]
 
 /-- Focused source-contract checks, including fresh-module registration export. -/
 lean_exe «source-contract-tests» where

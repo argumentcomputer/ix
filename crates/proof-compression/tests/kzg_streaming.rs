@@ -3,6 +3,7 @@ use ix_proof_compression::foreign::KzgCircuitExt;
 use ix_proof_compression::kzg::KzgConfig;
 use ix_proof_compression::kzg::Scalar;
 use ix_proof_compression::kzg::Srs;
+use ix_proof_compression::kzg::compact::FixedProofCodec;
 use ix_proof_compression::kzg::pcs::KzgProverData;
 use multi_stark::config::ProofConfig;
 use multi_stark::lookup::LookupValues;
@@ -93,7 +94,8 @@ fn streamed_lookup_proof_matches_dense_and_checkpoint_roundtrip() {
   };
   let streamed = system.prove_committed(&key, &refs, stage);
   system.verify_multiple_claims(&refs, &streamed).unwrap();
-  assert_eq!(streamed.to_bytes().unwrap(), dense.to_bytes().unwrap());
+  let codec = FixedProofCodec::new(&system, &dense.log_degrees).unwrap();
+  assert_eq!(codec.encode(&streamed).unwrap(), codec.encode(&dense).unwrap());
   let mut wrong = claims;
   wrong[1][3] += Scalar::ONE;
   assert!(
@@ -164,7 +166,8 @@ fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
     &[],
     SystemWitness::from_stage_1(traces, &system),
   );
-  assert_eq!(streamed.to_bytes().unwrap(), dense.to_bytes().unwrap());
+  let codec = FixedProofCodec::new(&system, &dense.log_degrees).unwrap();
+  assert_eq!(codec.encode(&streamed).unwrap(), codec.encode(&dense).unwrap());
   system.verify_multiple_claims(&[], &streamed).unwrap();
 }
 
@@ -218,6 +221,7 @@ fn fixed_column_passes_preserve_weights_wide_constraints_and_lookup_carry() {
     &[],
     SystemWitness::from_stage_1(traces, &system),
   );
-  assert_eq!(streamed.to_bytes().unwrap(), dense.to_bytes().unwrap());
+  let codec = FixedProofCodec::new(&system, &dense.log_degrees).unwrap();
+  assert_eq!(codec.encode(&streamed).unwrap(), codec.encode(&dense).unwrap());
   system.verify_multiple_claims(&[], &streamed).unwrap();
 }

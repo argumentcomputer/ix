@@ -2,11 +2,10 @@
 use crate::kzg::Scalar;
 use ark_bls12_381::Fq;
 use ark_ff::{BigInteger, PrimeField};
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Table;
-use multi_stark::plonkish::Value;
-use multi_stark::traits::Algebra;
-use multi_stark::traits::Field;
+use multi_stark::{
+  plonkish::{CircuitBuilder, Table, Value},
+  traits::{Algebra, Field},
+};
 use num_bigint::{BigInt, BigUint, Sign};
 use std::collections::BTreeMap;
 
@@ -15,20 +14,25 @@ const W: usize = 80;
 const L: usize = 5;
 const CARRY_BITS: usize = 89;
 
+mod advice;
+
 #[derive(Clone, Copy, Debug)]
 pub struct FqVar(pub [Value; L]);
 
 pub struct FqGadget {
   range: Table,
+  #[cfg(test)]
+  reference_advice: bool,
 }
 
 pub fn integer(v: Scalar) -> BigUint {
-  BigUint::from_bytes_le(
-    &v.canonical_limbs_le()
-      .into_iter()
-      .flat_map(u64::to_le_bytes)
-      .collect::<Vec<_>>(),
-  )
+  let mut bytes = [0; 32];
+  for (output, word) in
+    bytes.as_chunks_mut::<8>().0.iter_mut().zip(v.canonical_limbs_le())
+  {
+    *output = word.to_le_bytes();
+  }
+  BigUint::from_bytes_le(&bytes)
 }
 pub fn scalar(v: &BigUint) -> Scalar {
   let digits = v.to_u64_digits();
@@ -64,6 +68,8 @@ impl FqGadget {
         "Fq u16",
         (0..=u16::MAX).map(|v| vec![Scalar::from_u16(v)]).collect(),
       ),
+      #[cfg(test)]
+      reference_advice: false,
     }
   }
   pub fn range(&self, b: &mut Builder, value: Value, bits: usize) {
@@ -84,11 +90,14 @@ impl FqGadget {
     bits: usize,
   ) {
     assert!(bits > 0 && bits <= N * 16);
-    let limbs = b.hint_many::<N>("bounded integer", &[value], |v| {
-      let n = integer(v[0]);
-      Ok(std::array::from_fn(|i| {
-        scalar(&((&n >> (16 * i)) & BigUint::from(65535u32)))
-      }))
+    #[cfg(test)]
+    let reference_advice = self.reference_advice;
+    let limbs = b.hint_many_pure::<N>("bounded integer", &[value], move |v| {
+      #[cfg(test)]
+      if reference_advice {
+        return Ok(advice::range_reference(v[0]));
+      }
+      Ok(advice::range_limbs(v[0]))
     });
     for &limb in &limbs {
       b.lookup(self.range, &[limb]);
@@ -121,7 +130,11 @@ impl FqGadget {
     digits(&BigUint::from_bytes_le(&value.into_bigint().to_bytes_le()))
       .map(|n| scalar(&n))
   }
-  pub fn hint(
+  /// The callback's values and errors must depend only on its arguments and
+  /// immutable captures, with no observable effects from execution order.
+  /// Invalid arguments must return an error rather than panic. Independent
+  /// callbacks may execute even when an earlier point block fails.
+  pub fn hint_pure(
     &self,
     b: &mut Builder,
     name: &str,
@@ -129,7 +142,7 @@ impl FqGadget {
     f: impl Fn(&[Fq]) -> Result<Fq, String> + Send + Sync + 'static,
   ) -> FqVar {
     let deps: Vec<_> = inputs.iter().flat_map(|v| v.0).collect();
-    let result = FqVar(b.hint_many(name, &deps, move |v| {
+    let result = FqVar(b.hint_many_pure(name, &deps, move |v| {
       let args: Vec<_> =
         v.as_chunks::<L>().0.iter().map(|v| fq_value(v)).collect();
       Ok(Self::witness_values(f(&args)?))
@@ -146,7 +159,7 @@ impl FqGadget {
     let p = digits(&(modulus() - 1u8));
     let p_hint = p.clone();
     let advice =
-      b.hint_many::<10>("Fq canonical subtraction", &v.0, move |values| {
+      b.hint_many_pure::<10>("Fq canonical subtraction", &v.0, move |values| {
         let mut borrow = BigInt::from(0u8);
         let radix = BigInt::from(1u8) << W;
         let mut out = [Scalar::ZERO; 10];
@@ -220,73 +233,16 @@ impl FqGadget {
       .collect();
     let pc: Vec<_> = products.iter().map(|(c, _, _)| *c).collect();
     let lc: Vec<_> = linear.iter().map(|(c, _)| *c).collect();
-    let p = digits(&modulus());
-    let p_hint = p.clone();
+    let p = &advice::constants().modulus_digits;
+    #[cfg(test)]
+    let reference_advice = self.reference_advice;
     let advice =
-      b.hint_many::<9>("Fq quotient and carries", &deps, move |values| {
-        let mut t = vec![BigInt::from(0u8); 10];
-        let mut at = 0;
-        for &c in &pc {
-          for i in 0..L {
-            for j in 0..L {
-              t[i + j] += BigInt::from(c)
-                * BigInt::from(integer(values[at + i]))
-                * BigInt::from(integer(values[at + L + j]));
-            }
-          }
-          at += 2 * L;
+      b.hint_many_pure::<9>("Fq quotient and carries", &deps, move |values| {
+        #[cfg(test)]
+        if reference_advice {
+          return advice::relation_reference(values, &pc, &lc, constant, p);
         }
-        for &c in &lc {
-          for i in 0..L {
-            t[i] += BigInt::from(c) * BigInt::from(integer(values[at + i]));
-          }
-          at += L;
-        }
-        t[0] += constant;
-        let total = t.iter().rev().fold(BigInt::from(0u8), |a, c| (a << W) + c);
-        let prime = BigInt::from(modulus());
-        if &total % &prime != BigInt::from(0u8) {
-          return Err("nonzero Fq relation".into());
-        }
-        let q: BigInt = total / prime + (BigInt::from(1u8) << 383usize);
-        let q = q.to_biguint().ok_or("negative biased quotient")?;
-        if q.bits() > 384 {
-          return Err("Fq quotient overflow".into());
-        }
-        let q = digits(&q);
-        let bias = digits(&(BigUint::from(1u8) << 383));
-        for i in 0..L {
-          for j in 0..L {
-            t[i + j] -= BigInt::from(p_hint[i].clone())
-              * (BigInt::from(q[j].clone()) - BigInt::from(bias[j].clone()));
-          }
-        }
-        let mut out = [Scalar::ZERO; 9];
-        for i in 0..L {
-          out[i] = scalar(&q[i]);
-        }
-        let radix = BigInt::from(1u8) << W;
-        let block_radix = &radix * &radix;
-        let mut carry = BigInt::from(0u8);
-        for j in 0..5 {
-          carry += &t[2 * j] + &radix * &t[2 * j + 1];
-          if &carry % &block_radix != BigInt::from(0u8) {
-            return Err("nonintegral Fq carry".into());
-          }
-          carry /= &block_radix;
-          if j < 4 {
-            let biased: BigInt = &carry + (BigInt::from(1u8) << 88usize);
-            let v = biased.to_biguint().ok_or("negative biased carry")?;
-            if v.bits() > CARRY_BITS as u64 {
-              return Err("Fq carry overflow".into());
-            }
-            out[L + j] = scalar(&v);
-          }
-        }
-        if carry != BigInt::from(0u8) {
-          return Err("nonzero final Fq carry".into());
-        }
-        Ok(out)
+        advice::relation(values, &pc, &lc, constant)
       });
     for (i, &v) in advice[..L].iter().enumerate() {
       self.range(b, v, if i == L - 1 { 64 } else { W });
@@ -343,7 +299,7 @@ impl FqGadget {
     }
   }
   pub fn mul(&self, b: &mut Builder, x: FqVar, y: FqVar) -> FqVar {
-    let result = self.hint(b, "Fq product", &[x, y], |v| Ok(v[0] * v[1]));
+    let result = self.hint_pure(b, "Fq product", &[x, y], |v| Ok(v[0] * v[1]));
     self.relation(b, &[(1, x, y)], &[(-1, result)], 0);
     result
   }
@@ -355,8 +311,7 @@ impl FqGadget {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::plonkish::Assignment;
-  use multi_stark::plonkish::Circuit;
+  use multi_stark::plonkish::{Assignment, Circuit};
   use std::collections::{HashMap, HashSet};
 
   pub(super) fn check_mutations(c: &Circuit<Scalar>, a: &Assignment<Scalar>) {

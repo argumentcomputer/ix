@@ -390,6 +390,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
 
 [[package]]
+name = "blake2b_simd"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3560a7b1951efe814fcd721938313adc56753ca39f4b23847d7e9a2402f5dbff"
+dependencies = [
+ "arrayvec",
+ "constant_time_eq",
+]
+
+[[package]]
 name = "blake3"
 version = "1.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -401,6 +411,8 @@ dependencies = [
  "cfg-if",
  "constant_time_eq",
  "cpufeatures 0.3.0",
+ "memmap2",
+ "rayon-core",
 ]
 
 [[package]]
@@ -1023,7 +1035,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2061,6 +2073,7 @@ dependencies = [
  "ark-poly",
  "ark-serialize",
  "bincode",
+ "blake2b_simd",
  "blake3",
  "multi-stark",
  "num-bigint 0.4.6",
@@ -2074,7 +2087,11 @@ dependencies = [
  "p3-symmetric",
  "p3-util",
  "serde",
+ "serde_json",
+ "tiny-keccak",
  "tracing",
+ "tracing-subscriber",
+ "tracing-texray",
 ]
 
 [[package]]
@@ -2320,7 +2337,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=63ecc52b0b54d765b886d7d9ebc98cd90005496b#63ecc52b0b54d765b886d7d9ebc98cd90005496b"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=2ed23ca070951461c4ba83a80d1a931850570484#2ed23ca070951461c4ba83a80d1a931850570484"
 dependencies = [
  "bincode",
  "itertools 0.14.0",
@@ -2595,7 +2612,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3682,7 +3699,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b55fb86dfd3a2f5f76ea78310a88f96c4ea21a3031f8d212443d56123fd0521"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3918,7 +3935,7 @@ dependencies = [
 [[package]]
 name = "sppark"
 version = "0.1.15"
-source = "git+https://github.com/argumentcomputer/sppark?rev=e10e107673aa22861f0f8b9758fc62169ab919ae#e10e107673aa22861f0f8b9758fc62169ab919ae"
+source = "git+https://github.com/argumentcomputer/sppark?rev=114feb69ebfe029e2caa5e6c2d372c695e5d4da8#114feb69ebfe029e2caa5e6c2d372c695e5d4da8"
 dependencies = [
  "cc",
  "which",
@@ -4031,7 +4048,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

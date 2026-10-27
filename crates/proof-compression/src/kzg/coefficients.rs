@@ -1,4 +1,4 @@
-//! Resident or checksummed, trusted-local coefficient storage.
+//! Compact constant, resident or checksummed, trusted-local coefficient storage.
 use std::{
   borrow::Cow,
   fs::File,
@@ -46,6 +46,16 @@ impl From<Vec<Fr>> for Column {
 }
 
 impl Column {
+  /// Host coefficients of a resident column; compact constant and
+  /// disk-backed columns return `None` and are read through [`Self::visit`]
+  /// or [`Self::load`].
+  pub(super) fn resident(&self) -> Option<&[Fr]> {
+    match self {
+      Self::Resident { values, range } => Some(&values[range.clone()]),
+      Self::Constant { .. } | Self::Disk { .. } => None,
+    }
+  }
+
   pub(super) fn len(&self) -> usize {
     match self {
       Self::Resident { range, .. } => range.len(),
