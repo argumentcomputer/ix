@@ -421,14 +421,14 @@ fn pick_branch(gains: &[(TermId, i128)]) -> Option<(TermId, i128)> {
 }
 
 /// Area position of no term (`SCtx::pos`).
-const NO_POS: u32 = u32::MAX;
+const NO_POS: usize = usize::MAX;
 
 /// Bounds of the area under a maybe-stored predicate, over the root-level
 /// bounds (Lean `SCtx.rebound`): `vals[j]` for the area term at position
 /// `j`, the root-level bounds elsewhere.
 struct Overlay<'b> {
   base: &'b Bounds,
-  pos: &'b [u32],
+  pos: &'b [usize],
   vals: Vec<[u128; 4]>,
 }
 
@@ -444,7 +444,7 @@ impl Overlay<'_> {
           self.base.cont_lb[k],
         ]
       },
-      j => self.vals[j as usize],
+      j => self.vals[j],
     }
   }
 }
@@ -460,16 +460,16 @@ struct SCtx<'a, 'd> {
   b0: &'a Bounds,
   vis0: &'a (Vec<u64>, Vec<u64>),
   spine_len: &'a [u64],
-  dag_size: u64,
+  dag_size: usize,
   members: Vec<TermId>,
   /// Member index of each area position (`NO_POS` for other terms).
-  member_of: Vec<u32>,
+  member_of: Vec<usize>,
   area: Vec<TermId>,
   /// Area position of every term of the DAG (`NO_POS` outside the area).
-  pos: &'a [u32],
+  pos: &'a [usize],
   /// Per area node: `(parent, its area position, edges, head edges)` per
   /// distinct parent.
-  in_edges: Vec<Vec<(TermId, u32, u64, u64)>>,
+  in_edges: Vec<Vec<(TermId, usize, u64, u64)>>,
   root_occ: Vec<u64>,
   root_mult: Vec<(TermId, u128)>,
   stored_in: Vec<TermId>,
@@ -479,7 +479,7 @@ struct SCtx<'a, 'd> {
   set_words: Option<usize>,
   // Completed group tables are immutable; memo hits share their per-count
   // choices instead of cloning every selected-term vector.
-  memo: FxHashMap<Vec<u64>, Arc<LocalTable>>,
+  memo: FxHashMap<Vec<usize>, Arc<LocalTable>>,
   memo_hits: u64,
   /// Scratch of `phi`: the value of each area term.
   vals: Vec<UVal>,
@@ -493,7 +493,7 @@ impl SCtx<'_, '_> {
   fn at(&self, t: TermId) -> Option<usize> {
     match self.pos.get(ix(t)).copied()? {
       NO_POS => None,
-      j => Some(j as usize),
+      j => Some(j),
     }
   }
 
@@ -524,11 +524,11 @@ impl SCtx<'_, '_> {
         let (vals, base, pos) = (&self.vals, &self.up.base, self.pos);
         let get = |c: TermId| match pos[ix(c)] {
           NO_POS => base[ix(c)],
-          j => vals[j as usize],
+          j => vals[j],
         };
         let av = |c: TermId| match pos[ix(c)] {
           NO_POS => false,
-          j => avail[j as usize],
+          j => avail[j],
         };
         self.up.node(&get, &av, t)?
       };
@@ -537,7 +537,7 @@ impl SCtx<'_, '_> {
     }
     let get = |c: TermId| match self.pos[ix(c)] {
       NO_POS => self.up.base[ix(c)],
-      j => self.vals[j as usize],
+      j => self.vals[j],
     };
     let mut total = 0u128;
     for &(r, m) in &self.root_mult {
@@ -597,7 +597,7 @@ impl SCtx<'_, '_> {
         } else {
           match qj {
             NO_POS => self.vis0.0[ix(q)],
-            qj => vis[qj as usize].0,
+            qj => vis[qj].0,
           }
           .min(VISIBLE_CAP)
         };
@@ -642,7 +642,7 @@ impl SCtx<'_, '_> {
     };
     let member = |j: usize| match self.member_of[j] {
       NO_POS => 0,
-      m => m as usize,
+      m => m,
     };
     for j in 0..self.area.len() {
       let y = self.area[j];
@@ -701,10 +701,9 @@ impl SCtx<'_, '_> {
     in_f: &[bool],
     out: &[bool],
     g: &[TermId],
-  ) -> (Vec<u64>, Vec<bool>) {
-    let code =
-      |q: TermId, j: usize| u64::from(q) * 3 + if opq[j] { 2 } else { 1 };
-    let mut entries: Vec<u64> = Vec::new();
+  ) -> (Vec<usize>, Vec<bool>) {
+    let code = |q: TermId, j: usize| q * 3 + if opq[j] { 2 } else { 1 };
+    let mut entries: Vec<usize> = Vec::new();
     let mut rel = vec![false; self.area.len()];
     let mut down_start: Vec<TermId> = g.to_vec();
     let mut seen = self.flags(g);
@@ -717,7 +716,7 @@ impl SCtx<'_, '_> {
         }
         seen[j] = true;
         if out[j] {
-          entries.push(u64::from(q) * 3);
+          entries.push(q * 3);
           rel[j] = true;
         } else if in_f[j] {
           entries.push(code(q, j));
@@ -742,7 +741,7 @@ impl SCtx<'_, '_> {
         seen[j] = true;
         if !rel[j] {
           if out[j] {
-            entries.push(u64::from(c) * 3);
+            entries.push(c * 3);
             rel[j] = true;
           } else if in_f[j] {
             entries.push(code(c, j));
@@ -755,7 +754,7 @@ impl SCtx<'_, '_> {
       }
     }
     entries.sort_unstable();
-    let mut key: Vec<u64> = g.iter().map(|&t| u64::from(t)).collect();
+    let mut key: Vec<usize> = g.to_vec();
     key.push(3 * self.dag_size + 3);
     key.extend(entries);
     (key, rel)
@@ -766,7 +765,7 @@ impl SCtx<'_, '_> {
   fn key_context(
     &self,
     g: &[TermId],
-    entries: &[u64],
+    entries: &[usize],
     in_f: &[bool],
     out: &[bool],
   ) -> Result<(Vec<TermId>, Vec<TermId>), SharingError> {
@@ -774,7 +773,7 @@ impl SCtx<'_, '_> {
       || internal("memo key context is not part of the decided context");
     let (mut in_red, mut out_red) = (Vec::new(), Vec::new());
     for &e in entries {
-      let t = TermId::try_from(e / 3).map_err(|_err| err())?;
+      let t: TermId = e / 3;
       if e % 3 == 0 {
         out_red.push(t);
       } else {
@@ -1086,7 +1085,7 @@ pub(crate) fn optimize_uniform_with(
   let search_area = |members: &Vec<TermId>,
                      area: Vec<TermId>,
                      meter: &mut Meter<'_>,
-                     pos: &[u32]|
+                     pos: &[usize]|
    -> Result<(Choice, CTable), SharingError> {
     let mut mult: std::collections::BTreeMap<TermId, u128> =
       std::collections::BTreeMap::new();
@@ -1117,15 +1116,14 @@ pub(crate) fn optimize_uniform_with(
       cx.phi0 = phi0;
       return cx.search(meter);
     }
-    let mut member_of: Vec<u32> = vec![NO_POS; area.len()];
+    let mut member_of: Vec<usize> = vec![NO_POS; area.len()];
     for (m, &t) in members.iter().enumerate() {
-      if let Some(j) =
-        usize::try_from(pos[ix(t)]).ok().filter(|&j| j < area.len())
-      {
-        member_of[j] = u32::try_from(m).unwrap_or(NO_POS);
+      let j = pos[ix(t)];
+      if j < area.len() {
+        member_of[j] = m;
       }
     }
-    let in_edges: Vec<Vec<(TermId, u32, u64, u64)>> = area
+    let in_edges: Vec<Vec<(TermId, usize, u64, u64)>> = area
       .iter()
       .map(|&y| {
         facts.parents[ix(y)]
@@ -1163,7 +1161,7 @@ pub(crate) fn optimize_uniform_with(
       b0: &bounds,
       vis0: &vis0,
       spine_len,
-      dag_size: len64(n),
+      dag_size: n,
       members: members.clone(),
       member_of,
       area,
@@ -1202,11 +1200,11 @@ pub(crate) fn optimize_uniform_with(
   // cleared afterwards, so one buffer serves every component.
   let search_one = |members: &Vec<TermId>,
                     meter: &mut Meter<'_>,
-                    pos: &mut [u32]|
+                    pos: &mut [usize]|
    -> Result<(Choice, CTable), SharingError> {
     let area = component_area(&up, facts, members);
     for (j, &t) in area.iter().enumerate() {
-      pos[ix(t)] = u32::try_from(j).unwrap_or(NO_POS);
+      pos[ix(t)] = j;
     }
     let res = search_area(members, area.clone(), meter, pos);
     for &t in &area {
@@ -1284,7 +1282,7 @@ mod convolution_tests {
   fn merged_streams_preserve_duplicates_prefixes_and_exact_ties() {
     let mut lists = vec![Vec::new()];
     for len in 1..=3u32 {
-      for mut code in 0..3u32.pow(len) {
+      for mut code in 0..3usize.pow(len) {
         let mut xs = Vec::new();
         for _ in 0..len {
           xs.push(code % 3);
@@ -1363,7 +1361,7 @@ mod convolution_tests {
     *seed % n
   }
 
-  fn random_table(seed: &mut u64, parity: Option<u32>) -> CTable {
+  fn random_table(seed: &mut u64, parity: Option<TermId>) -> CTable {
     (0..next(seed, 10))
       .map(|_| {
         if next(seed, 4) == 0 {
@@ -1420,7 +1418,7 @@ mod compact_choice_tests {
   #[test]
   fn compact_roundtrip_and_ties_cover_word_and_fallback_boundaries() {
     for n in [0, 1, 63, 64, 65, 127, 128, 511, 512, 513] {
-      let members: Vec<_> = (0..n).map(|i| 10 + 3 * tid(i)).collect();
+      let members: Vec<_> = (0..n).map(|i| 10 + 3 * i).collect();
       let codec = ComponentSets::new(&members, true);
       assert_eq!(codec.words.is_some(), n <= PACKED_MEMBERS);
       let mut cases = vec![
@@ -1526,7 +1524,7 @@ mod compact_choice_tests {
         let mut ids: Vec<_> = (0..next(seed, 12))
           .map(|_| {
             let i = next(seed, members.len() + 2);
-            members.get(i).copied().unwrap_or(1_000_000 + tid(i))
+            members.get(i).copied().unwrap_or(1_000_000 + i)
           })
           .collect();
         ids.sort_unstable();
@@ -1542,7 +1540,7 @@ mod compact_choice_tests {
   fn compact_tables_match_complete_listed_results() {
     let mut seed = 0x9E37_79B9_7F4A_7C15;
     for n in [0, 1, 63, 64, 65, 511, 512, 513] {
-      let members: Vec<_> = (0..n).map(|i| 17 + 5 * tid(i)).collect();
+      let members: Vec<_> = (0..n).map(|i| 17 + 5 * i).collect();
       for i in 0..100 {
         let a = table(&mut seed, &members, i % 2 == 0);
         let b = table(&mut seed, &members, i % 2 == 0);
@@ -1612,15 +1610,15 @@ mod context_tests {
     let n = nodes.len();
     let facts = graph_facts(&dag);
     let cand: Vec<bool> = facts.deg.iter().map(|&d| d >= 2).collect();
-    let members: Vec<_> = (0..n).filter(|&t| cand[t]).map(tid).collect();
+    let members: Vec<_> = (0..n).filter(|&t| cand[t]).collect();
     let up = UPrep::new(nodes, w, vec![false; n]).unwrap();
     let b0 = uniform_bounds(nodes, w, &cand).unwrap();
     let vis0 = visible_counts(&dag, &cand);
     let (spine_len, _) = spine_tables(nodes, &vec![false; n]);
-    let pos: Vec<_> = (0..n).map(tid).collect();
+    let pos: Vec<_> = (0..n).collect();
     let mut member_of = vec![NO_POS; n];
     for (i, &t) in members.iter().enumerate() {
-      member_of[ix(t)] = tid(i);
+      member_of[ix(t)] = i;
     }
     let in_edges = (0..n)
       .map(|y| {
@@ -1643,7 +1641,7 @@ mod context_tests {
       .iter()
       .enumerate()
       .filter(|(_, m)| **m != 0)
-      .map(|(t, &m)| (tid(t), u128::from(m)))
+      .map(|(t, &m)| (t, u128::from(m)))
       .collect();
     let set_words = ComponentSets::new(&members, true).words;
     let mut cx = SCtx {
@@ -1653,7 +1651,7 @@ mod context_tests {
       b0: &b0,
       vis0: &vis0,
       spine_len: &spine_len,
-      dag_size: len64(n),
+      dag_size: n,
       members,
       member_of,
       area: pos.clone(),
@@ -1747,9 +1745,9 @@ mod context_tests {
       let outside = cx.flags(&[]);
       for (group, entries) in [
         (vec![0, 0], vec![]),
-        (vec![0], vec![3 * u64::from(parent) + 2; 2]),
-        (vec![0], vec![3 * u64::from(parent)]),
-        (vec![0], vec![3 * u64::from(TermId::MAX) + 2]),
+        (vec![0], vec![3 * parent + 2; 2]),
+        (vec![0], vec![3 * parent]),
+        (vec![0], vec![3 * (TermId::MAX / 3 - 1) + 2]),
         (vec![parent], vec![]),
       ] {
         assert!(cx.key_context(&group, &entries, &inside, &outside).is_err());

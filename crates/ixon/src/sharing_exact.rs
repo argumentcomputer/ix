@@ -474,8 +474,6 @@ pub enum MalformedSharing {
 /// A value exceeds a representable index or length domain.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormatBound {
-  /// More distinct terms than the `u32` term-ID space.
-  TermIdSpace { nodes: u64 },
   /// A serialized length reaches `u64::MAX`.
   LengthOverflow,
   /// A uniform Share width of 0.

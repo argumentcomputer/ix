@@ -308,12 +308,14 @@ mod tests {
 
   // Independent oracle: complete boolean-vector domain, lexicographically
   // ordered (false before true), then integer cost. No set_prec or family
-  // helper participates in choosing a reference row.
+  // helper participates in choosing a reference row. Odd seeds place the
+  // members on both sides of the old 32-bit term-ID limit.
   #[test]
   fn family_trace_all_counts_oracle() {
     for n in 0..=7 {
-      let members: Vec<TermId> = (0..n).map(|j| 3 * j + 2).collect();
       for seed in 0..20u64 {
+        let base: TermId = if seed % 2 == 1 { (1 << 32) - 10 } else { 0 };
+        let members: Vec<TermId> = (0..n).map(|j| base + 3 * j + 2).collect();
         let mut choices = Vec::new();
         for mask in 0..(1u64 << n) {
           let flags: Vec<bool> = (0..n).map(|j| (mask >> j) & 1 != 0).collect();
@@ -329,18 +331,18 @@ mod tests {
             .filter_map(|(&t, &b)| b.then_some(t))
             .collect::<Vec<_>>()
         };
-        for k in 0..=n as usize {
+        for k in 0..=n {
           let actual = family_table(&members, k, |s| {
             Ok(choices.iter().find(|(_, flags)| set(flags) == s).unwrap().0)
           })
           .unwrap();
-          let mut previous = vec![false; n as usize];
+          let mut previous = vec![false; n];
           for (count, row) in actual.iter().enumerate() {
             let expected = choices
               .iter()
               .find(|(_, flags)| {
                 flags.iter().filter(|&&b| b).count() == count
-                  && (n as usize <= k
+                  && (n <= k
                     || previous.iter().zip(flags).all(|(&a, &b)| !a || b))
               })
               .unwrap();
@@ -358,7 +360,7 @@ mod tests {
 
   #[test]
   fn family_trace_threshold_ties_and_refusals() {
-    for n in [0u32, 1, 2, 12, 13, 16, 17] {
+    for n in [0usize, 1, 2, 12, 13, 16, 17] {
       let members: Vec<_> = (0..n).collect();
       for k in [0usize, 12, 16] {
         let mut calls = 0;
@@ -367,10 +369,7 @@ mod tests {
           Ok(-3)
         })
         .unwrap();
-        assert_eq!(
-          calls,
-          if n as usize <= k { 1 << n } else { 1 + n * (n + 1) / 2 }
-        );
+        assert_eq!(calls, if n <= k { 1 << n } else { 1 + n * (n + 1) / 2 });
         for (q, row) in rows.iter().enumerate() {
           assert_eq!(row, &Some((-3, members[members.len() - q..].to_vec())));
         }

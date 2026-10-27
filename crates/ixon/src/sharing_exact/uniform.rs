@@ -149,10 +149,6 @@ fn len64(n: usize) -> u64 {
   u64::try_from(n).unwrap_or(u64::MAX)
 }
 
-fn tid(i: usize) -> TermId {
-  TermId::try_from(i).unwrap_or(TermId::MAX)
-}
-
 fn u(x: u64) -> u128 {
   u128::from(x)
 }
@@ -336,8 +332,8 @@ pub(crate) fn graph_facts(dag: &SharingDag) -> Facts {
     let kids = node.children();
     for &c in kids.as_slice() {
       deg[ix(c)] += 1;
-      if !parents[ix(c)].contains(&tid(t)) {
-        parents[ix(c)].push(tid(t));
+      if !parents[ix(c)].contains(&t) {
+        parents[ix(c)].push(t);
       }
     }
   }
@@ -409,7 +405,7 @@ impl<'d> UPrep<'d> {
     let mut up = UPrep { nodes, w, opaq, t_len, t_tail, base: Vec::new() };
     let mut base: Vec<UVal> = Vec::with_capacity(nodes.len());
     for t in 0..nodes.len() {
-      let (v, _) = up.node(&|c| base[ix(c)], &|_| false, tid(t))?;
+      let (v, _) = up.node(&|c| base[ix(c)], &|_| false, t)?;
       base.push(v);
     }
     up.base = base;
@@ -561,7 +557,7 @@ fn uniform_bounds(
   for (t, &mb) in maybe[..n].iter().enumerate() {
     let v = {
       let (hl, cl) = (&b.head_lb, &b.cont_lb);
-      bound_step(nodes, tid(t), w, mb, &|c| hl[ix(c)], &|c| cl[ix(c)])?
+      bound_step(nodes, t, w, mb, &|c| hl[ix(c)], &|c| cl[ix(c)])?
     };
     b.inl[t] = v[0];
     b.merged[t] = v[1];
@@ -701,7 +697,7 @@ fn uncertain_components(
     std::collections::BTreeMap::new();
   for (t, c) in cls.iter().enumerate() {
     if *c == UniformClass::Uncertain {
-      groups.entry(uf_find(&uf, t)).or_default().push(tid(t));
+      groups.entry(uf_find(&uf, t)).or_default().push(t);
     }
   }
   let mut comps: Vec<Vec<TermId>> = groups.into_values().collect();
@@ -874,13 +870,14 @@ fn table_trim(tb: CTable, slack: i128) -> CTable {
 // Table-count knapsack
 // ---------------------------------------------------------------------------
 
-/// "No element": the first difference of two equal sets.
-const NO_DIFF: u32 = u32::MAX;
+/// "No element": the first difference of two equal sets (no term has this
+/// ID).
+const NO_DIFF: TermId = TermId::MAX;
 
 /// The least element of the symmetric difference of two ascending sets
 /// (`NO_DIFF` if they are equal): at the first position where the lists
 /// differ, the smaller element is in one set only.
-fn first_diff(a: &[TermId], b: &[TermId]) -> u32 {
+fn first_diff(a: &[TermId], b: &[TermId]) -> TermId {
   let (mut i, mut j) = (0, 0);
   loop {
     match (a.get(i), b.get(j)) {
@@ -901,10 +898,10 @@ fn first_diff(a: &[TermId], b: &[TermId]) -> u32 {
 /// sparse table over the first differences of rank-adjacent sets.
 struct KnapsackLayer {
   delta: Vec<Option<i128>>,
-  rank: Vec<u32>,
+  rank: Vec<usize>,
   /// `sparse[i][r]`: the least first difference among the rank-adjacent
   /// pairs `r .. r + 2^i`.
-  sparse: Vec<Vec<u32>>,
+  sparse: Vec<Vec<TermId>>,
 }
 
 impl KnapsackLayer {
@@ -912,8 +909,8 @@ impl KnapsackLayer {
   /// distinct cells. For sets in ascending `set_prec` order (lexicographic
   /// on their indicator vectors), it is the least first difference of the
   /// rank-adjacent pairs between them, as for sorted strings.
-  fn first_diff(&self, a: usize, b: usize) -> u32 {
-    let (ra, rb) = (self.rank[a] as usize, self.rank[b] as usize);
+  fn first_diff(&self, a: usize, b: usize) -> TermId {
+    let (ra, rb) = (self.rank[a], self.rank[b]);
     let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
     let level = (hi - lo).ilog2() as usize;
     self.sparse[level][lo].min(self.sparse[level][hi - (1 << level)])
@@ -937,9 +934,9 @@ impl KnapsackLayer {
 /// the chosen set.
 struct Knapsack {
   last: KnapsackLayer,
-  /// Per component, per cell: the count of the entry taken (`u32::MAX`
+  /// Per component, per cell: the count of the entry taken (`usize::MAX`
   /// where the cell is empty).
-  back: Vec<Vec<u32>>,
+  back: Vec<Vec<usize>>,
 }
 
 impl Knapsack {
@@ -950,7 +947,7 @@ impl Knapsack {
       sparse: Vec::new(),
     };
     layer.delta[0] = Some(0);
-    let mut back: Vec<Vec<u32>> = Vec::with_capacity(tables.len());
+    let mut back: Vec<Vec<usize>> = Vec::with_capacity(tables.len());
     for tab in tables {
       let prev = &layer;
       // Whether choice `(a, ka)` precedes `(b, kb)` (distinct choices).
@@ -969,7 +966,7 @@ impl Knapsack {
       };
       let mut delta: Vec<Option<i128>> = vec![None; cap + 1];
       let mut choice: Vec<(usize, usize)> = vec![(0, 0); cap + 1];
-      let mut took: Vec<u32> = vec![u32::MAX; cap + 1];
+      let mut took: Vec<usize> = vec![usize::MAX; cap + 1];
       for c in 0..=cap {
         let mut best: Option<(i128, usize, usize)> = None;
         for (k, entry) in tab.iter().enumerate().take(c + 1) {
@@ -986,7 +983,7 @@ impl Knapsack {
         if let Some((d, a, k)) = best {
           delta[c] = Some(d);
           choice[c] = (a, k);
-          took[c] = u32::try_from(k).unwrap_or(u32::MAX);
+          took[c] = k;
         }
       }
       // Rank the new sets and record the first differences of neighbours.
@@ -1001,11 +998,11 @@ impl Knapsack {
           std::cmp::Ordering::Greater
         }
       });
-      let mut rank = vec![0u32; cap + 1];
+      let mut rank = vec![0usize; cap + 1];
       for (r, &c) in order.iter().enumerate() {
-        rank[c] = u32::try_from(r).unwrap_or(u32::MAX);
+        rank[c] = r;
       }
-      let adjacent: Vec<u32> = order
+      let adjacent: Vec<TermId> = order
         .windows(2)
         .map(|w| {
           let ((a, ka), (b, kb)) = (choice[w[0]], choice[w[1]]);
@@ -1024,7 +1021,7 @@ impl Knapsack {
         if below.len() <= width {
           break;
         }
-        let next: Vec<u32> = (0..below.len() - width)
+        let next: Vec<TermId> = (0..below.len() - width)
           .map(|r| below[r].min(below[r + width]))
           .collect();
         sparse.push(next);
@@ -1040,7 +1037,7 @@ impl Knapsack {
   fn set(&self, tables: &[&CTable], mut c: usize) -> Vec<TermId> {
     let mut out: Vec<TermId> = Vec::new();
     for (tab, took) in tables.iter().zip(&self.back).rev() {
-      let k = usize::try_from(took[c]).unwrap_or(0);
+      let k = took[c];
       if let Some(Some((_, s))) = tab.get(k) {
         out.extend_from_slice(s);
       }
@@ -1312,7 +1309,7 @@ fn initial<'d>(
     if tag0_len(n_cand) == tag0_len(n_cs_max) { 1 } else { theta_max };
   let cls = if theta == 1 { classify(1)? } else { cls_max };
   let pick = |c: UniformClass| -> Vec<TermId> {
-    (0..n).filter(|&t| cls[t] == c).map(tid).collect()
+    (0..n).filter(|&t| cls[t] == c).collect()
   };
   let cs = pick(UniformClass::CertainStored);
   let ce_terms = pick(UniformClass::CertainExcluded);
@@ -1401,7 +1398,7 @@ fn combine_uniform(
     // `set_prec` on ties keeps. The cells' ranks are their `set_prec` order.
     let l0 =
       chosen_delta + i128::from(tag0_len(k_cs + len_u64(chosen_x.len())));
-    let mut best: Option<(i128, u32, usize, i128)> = None;
+    let mut best: Option<(i128, usize, usize, i128)> = None;
     for c in 0..=cap {
       let Some(d) = ks.last.delta[c] else { continue };
       let l = d + i128::from(tag0_len(k_cs + len_u64(c)));
@@ -1692,14 +1689,16 @@ mod knapsack_tests {
   }
 
   /// The rank-based knapsack returns the reference's least `(delta, set)`
-  /// in every cell, and its ranks order the cells' sets by `set_prec`.
+  /// in every cell, and its ranks order the cells' sets by `set_prec`; half
+  /// of the cases use term IDs on both sides of the old 32-bit ID limit.
   #[test]
   fn knapsack_matches_explicit_sets() {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     let mut cells_checked = 0usize;
     for case in 0..400 {
       // Disjoint components over a shuffled domain of term IDs.
-      let mut domain: Vec<TermId> = (0..300).collect();
+      let base: TermId = if case % 2 == 1 { (1 << 32) - 150 } else { 0 };
+      let mut domain: Vec<TermId> = (base..base + 300).collect();
       for i in (1..domain.len()).rev() {
         let j = rng.below(i as u64 + 1) as usize;
         domain.swap(i, j);
