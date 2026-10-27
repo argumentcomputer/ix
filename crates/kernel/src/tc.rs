@@ -57,6 +57,36 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 /// budget does not replace external time or memory limits.
 pub const MAX_REC_FUEL: u64 = 100_000_000;
 
+/// Native stack, in bytes, a check keeps in reserve. Inference, WHNF and
+/// conversion recurse through each other with no bound a crafted input
+/// cannot exceed (a reduction whose major premise needs its own reduction,
+/// a million levels deep, takes a million native frames), and fuel bounds
+/// work, not depth. So each entry to them checks the stack its thread has
+/// left and declines with [`TcError::StackExhausted`] below the checker's
+/// reserve. The bound is the thread's actual stack, whatever its size (the
+/// checker's workers have 256 MB).
+///
+/// The reserve must cover the stack one guarded step uses before the next
+/// check: over the kernel's tests at most about 166 KiB in a debug build
+/// and 33 KiB in release. It is an eighth of the stack left when the checker is
+/// created, between [`STACK_RESERVE_MIN`] and this maximum, so a 2 MB test
+/// thread keeps 256 KiB and gives the rest to the check.
+pub const STACK_RESERVE_MAX: usize = 1024 * 1024;
+
+/// The least stack reserve; see [`STACK_RESERVE_MAX`].
+pub const STACK_RESERVE_MIN: usize = 192 * 1024;
+
+/// The reserve for a checker created with the current thread's stack: an
+/// eighth of what is left, within [`STACK_RESERVE_MIN`] and
+/// [`STACK_RESERVE_MAX`].
+fn stack_reserve() -> usize {
+  #[cfg(not(target_arch = "riscv64"))]
+  if let Some(left) = stacker::remaining_stack() {
+    return (left / 8).clamp(STACK_RESERVE_MIN, STACK_RESERVE_MAX);
+  }
+  STACK_RESERVE_MAX
+}
+
 static IX_MAX_REC_FUEL: crate::EnvOptU64 = crate::EnvOptU64::new(|| {
   crate::env_var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
 });
@@ -184,6 +214,8 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub def_eq_peak: u32,
   /// Shared recursive fuel remaining for this constant check.
   pub rec_fuel: u64,
+  /// Native stack this checker keeps in reserve (see [`STACK_RESERVE_MAX`]).
+  stack_reserve: usize,
   /// Unspent outer fuel temporarily withheld by same-head probes. Only used
   /// to preserve the non-Regular startup window inside a larger Regular
   /// slice; it never increases the fuel available to a nested computation.
@@ -254,6 +286,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       def_eq_trace_depth: 0,
       def_eq_peak: 0,
       rec_fuel: max_rec_fuel(),
+      stack_reserve: stack_reserve(),
       same_head_fuel_reserve: 0,
       same_head_backoff: Default::default(),
       prefix_admission: Default::default(),
@@ -963,9 +996,24 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
   }
 
-  /// Consume one unit of shared recursive fuel. Returns Err if exhausted.
+  /// Decline when the thread has less native stack left than this checker's
+  /// reserve. Where the stack cannot be measured, no bound applies.
+  #[inline]
+  pub(crate) fn check_stack(&self) -> Result<(), TcError<M>> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if stacker::remaining_stack().is_some_and(|left| left < self.stack_reserve)
+    {
+      return Err(TcError::StackExhausted);
+    }
+    Ok(())
+  }
+
+  /// Consume one unit of shared recursive fuel. Returns Err if exhausted,
+  /// or if the native stack is (see [`Self::check_stack`]): every recursive
+  /// WHNF and conversion entry ticks.
   #[inline]
   pub fn tick(&mut self) -> Result<(), TcError<M>> {
+    self.check_stack()?;
     if self.rec_fuel == 0 {
       self.dump_guard_stack("recursive-fuel");
       if crate::env_var("IX_REC_FUEL_DUMP").is_ok()

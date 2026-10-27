@@ -25,6 +25,7 @@ smallvec = { workspace = true }
 [target.'cfg(not(target_arch = "riscv64"))'.dependencies]
 dashmap = { workspace = true, features = ["rayon"] }
 rayon = { workspace = true }
+stacker = { workspace = true }
 
 [dev-dependencies]
 quickcheck = { workspace = true }
