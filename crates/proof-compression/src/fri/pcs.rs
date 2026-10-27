@@ -424,6 +424,41 @@ pub(super) fn constrain_pcs(
   let zeta = algebra.challenges.zeta;
   let zero = Q::constant(b, [Val::ZERO; 2]);
   let one = Q::constant(b, [Val::ONE, Val::ZERO]);
+  // Alpha powers advance per height in (batch, matrix, point, column)
+  // order and do not depend on the query, nor do the alpha-weighted sums of
+  // the out-of-domain evaluations. Both are folded once here; each query
+  // then weights only its own opened row and pays one denominator product
+  // per (matrix, point) instead of one per value. This is the in-circuit
+  // form of the hoisted alpha ladder in Plonky3's native FRI verifier
+  // (PR #2015, commit a724a1aec0acab47384b34efc2a4d163e0351251); the
+  // reduced value and the alpha index of every column are unchanged.
+  let mut alpha_powers: BTreeMap<usize, Vec<Q>> = BTreeMap::new();
+  let mut cursors: BTreeMap<usize, usize> = BTreeMap::new();
+  let mut ood_terms: Vec<Vec<Vec<(usize, Q)>>> = Vec::new();
+  for batch in 0..4 {
+    let mut per_matrix = Vec::new();
+    for matrix in 0..shape.widths[batch].len() {
+      let height = shape.heights[batch][matrix];
+      let powers = alpha_powers.entry(height).or_insert_with(|| vec![one]);
+      let mut per_point = Vec::new();
+      for row in opening_rows(algebra, shape, batch, matrix) {
+        let start = cursors.get(&height).copied().unwrap_or(0);
+        let mut weighted = zero;
+        for (j, &at_z) in row.iter().enumerate() {
+          while powers.len() <= start + j {
+            let next = powers[powers.len() - 1].mul(b, alpha);
+            powers.push(next);
+          }
+          let term = powers[start + j].mul(b, at_z);
+          weighted = weighted.add(b, term);
+        }
+        cursors.insert(height, start + row.len());
+        per_point.push((start, weighted));
+      }
+      per_matrix.push(per_point);
+    }
+    ood_terms.push(per_matrix);
+  }
   for (offset, query) in pcs.queries.iter().enumerate() {
     let query_index = pcs.query_start + offset;
     let bits = &queries[query_index];
@@ -468,26 +503,26 @@ pub(super) fn constrain_pcs(
       );
       for (matrix, opened) in query.input_rows[batch].iter().enumerate() {
         let height = shape.heights[batch][matrix];
-        let (alpha_power, reduced) =
-          reductions.entry(height).or_insert((one, zero));
-        for (point, row) in
-          opening_rows(algebra, shape, batch, matrix).iter().enumerate()
+        let powers = &alpha_powers[&height];
+        let reduced = reductions.entry(height).or_insert(zero);
+        for (point, &(start, weighted)) in
+          ood_terms[batch][matrix].iter().enumerate()
         {
-          for (&at_x, &at_z) in opened.iter().zip(*row) {
-            let at_x = Q::from_base(b, at_x);
-            let difference = at_z.sub(b, at_x);
-            let term = difference.mul(b, denominators[&height][point]);
-            let term = alpha_power.mul(b, term);
-            *reduced = reduced.add(b, term);
-            *alpha_power = alpha_power.mul(b, alpha);
+          let mut at_x = zero;
+          for (j, &x) in opened.iter().enumerate() {
+            let term = powers[start + j].mul_base(b, x);
+            at_x = at_x.add(b, term);
           }
+          let difference = weighted.sub(b, at_x);
+          let term = difference.mul(b, denominators[&height][point]);
+          *reduced = reduced.add(b, term);
         }
       }
     }
-    if let Some((_, constant)) = reductions.get(&system.config.log_blowup()) {
+    if let Some(constant) = reductions.get(&system.config.log_blowup()) {
       constant.assert_equal(b, zero);
     }
-    let mut folded = reductions[&shape.log_lde].1;
+    let mut folded = reductions[&shape.log_lde];
     for (round, &beta) in betas.iter().enumerate() {
       let sibling = query.fri_siblings[round];
       let lo = Q::select(b, bits[round], sibling, folded);
@@ -513,7 +548,7 @@ pub(super) fn constrain_pcs(
         lo.sub(b, hi).mul_base(b, inv_x).scale(b, Val::ONE.halve());
       let odd = difference.mul(b, beta);
       folded = sum.add(b, odd);
-      if let Some((_, reduced)) = reductions.get(&(shape.log_lde - round - 1)) {
+      if let Some(reduced) = reductions.get(&(shape.log_lde - round - 1)) {
         let beta_squared = beta.mul(b, beta);
         let injected = beta_squared.mul(b, *reduced);
         folded = folded.add(b, injected);
