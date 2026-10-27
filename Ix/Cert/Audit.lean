@@ -3,6 +3,7 @@ import Ix.SpecDigest.Audit
 import Ix.Cert.Statement
 import Ix.Cert.StrongCommutation
 import Ix.Cert.ProjectionMembers
+import Ix.Cert.RecordHeaders
 import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
 import Ix.CompileCert.ReadingAudit
@@ -1062,7 +1063,13 @@ fun env cenv out =>
                             match Ix.Cert.identityMismatch cenv.auxReport.identity out.fst with
                             | none =>
                               match Ix.Cert.projectionCollision out.fst with
-                              | none => Except.ok ()
+                              | none =>
+                                match Ix.Cert.unreadablePublished env out.fst with
+                                | none => Except.ok ()
+                                | some n =>
+                                  Except.error
+                                    (toString "compileReport: readability check failed: the input name " ++ toString n.pretty ++
+                                      toString " is published at an address that holds no stored record, or a block record")
                               | some (b, i) =>
                                 Except.error
                                   (toString "compileReport: projection check failed: member " ++ toString i ++
@@ -1284,7 +1291,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
                             Ix.Cert.strayConstructor env = none ∧
                               Ix.Cert.strayFailure env cenv.ungrounded = none ∧
                                 Ix.Cert.identityMismatch cenv.auxReport.identity out.fst = none ∧
-                                  Ix.Cert.projectionCollision out.fst = none -/
+                                  Ix.Cert.projectionCollision out.fst = none ∧
+                                    Ix.Cert.unreadablePublished env out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4911,6 +4919,48 @@ fun ixe =>
     entries -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.projectionCollision
+
+/-! ## Published input names are readable
+
+The reader keys an address only through a record that resolves to a reference, a
+singleton or a projection (`Ix.Kernel.Reader.resolveSource`), never through a block,
+and the reading of every constant of a closure (`Ix.Cert.ReadingCovers`) needs its
+published address keyed. Nothing proved gives it: names the aux map resolves are
+published by code no proof follows. `compileReport` now refuses an artifact that
+publishes an input name at an address holding no stored record, or a block record
+(`checkReport`'s seventeenth check, `unreadablePublished`, which reads only the
+record's first TagN, `blockHeader`). A block record's canonical bytes open with the
+block header (`RecordHeaders.blockHeader_of_muts`). Re-frozen with it: `checkReport`'s
+print (the seventeenth check) and `checkReport_ok` (a seventeenth conjunct). On a
+consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] readable publications: 5 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] readable publications: 2 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "readable publications"
+    #[``Ix.Cert.unreadablePublished_none, ``Ix.Cert.publishedReadable,
+      ``Ix.Cert.RecordHeaders.blockHeader_of_muts, ``Ix.Cert.RecordHeaders.not_muts_of_header,
+      ``Ix.Cert.RecordHeaders.published_not_block]
+  checkRuntime (tag := "cert-audit") "readable publications"
+    #[``Ix.Cert.unreadablePublished, ``Ix.Cert.blockHeader]
+
+/-- info: def Ix.Cert.unreadablePublished : Ix.Environment → Ixon.Env → Option Ix.Name :=
+fun env ixe =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (n, named) =>
+        if env.consts.contains n = true then
+          match ixe.consts.get? named.addr with
+          | some lc => if Ix.Cert.blockHeader lc.rawBytes = true then some n else none
+          | none => some n
+        else none)
+    ixe.named.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.unreadablePublished
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

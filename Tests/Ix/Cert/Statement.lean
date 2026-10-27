@@ -544,6 +544,48 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a second projection record of a \
         definition member"
   | none => lines := lines.push s!"{label}: no definition projection record to plant a second of"
+  -- the readability check (every published input name at a stored record that
+  -- is not a block), timed alone on the compile's result, then refusing, by its
+  -- own message, a published input name moved, with its resolution, to a block's
+  -- address and to an unstored address (a name no `Muts` class lists, no
+  -- inductive, no head and with no identity row, so no earlier check sees it)
+  let u0 ← IO.monoMsNow
+  let unreadable? ← IO.lazyPure fun _ => Ix.Cert.unreadablePublished env ixe
+  let u1 ← IO.monoMsNow
+  match unreadable? with
+  | none => lines := lines.push s!"{label}: unreadablePublished finds every published input name \
+      at a stored record that is not a block ({ixe.named.size} published names, {u1 - u0} ms)"
+  | some n => errors := errors.push s!"{label}: unreadablePublished finds {n.pretty} in the \
+      compile's result"
+  let inMuts : Std.HashSet Address := entries.foldl (init := {}) fun s (_, nd) =>
+    match nd.constMeta.info with
+    | .muts all _ => all.foldl (init := s) fun s cls => cls.foldl (·.insert ·) s
+    | _ => s
+  let blockAddr? := entries.head?.map (·.2.addr)
+  let movable := resolved.toList.find? fun (k, _) =>
+    ixe.named.contains k && env.consts.contains k && !inMuts.contains (Ix.Name.getHash k) &&
+      !(env.consts.get? k matches some (.inductInfo _)) && !cenv.p3Heads.contains k &&
+      !cenv.auxReport.identity.any (·.1 == k)
+  match blockAddr?, movable with
+  | some blockAddr, some (k, _) =>
+    let some nd := ixe.named.get? k
+      | return (errors.push s!"{label}: a published resolved name has no entry", lines)
+    let unstored := Address.blake3Pure "planted-unstored-record".toUTF8
+    let mut byCheck := 0
+    for (what, addr) in [("at a block's address", blockAddr), ("at an unstored address", unstored)] do
+      let ixe' := { ixe with named := ixe.named.insert k { nd with addr := addr } }
+      if Ix.Cert.unreadablePublished env ixe' != some k then
+        errors := errors.push s!"{label}: unreadablePublished misses an input name published {what}"
+      match chk (resolved.insert k addr) aux (ixe', failures) with
+      | .error e =>
+        if (e.splitOn "readability check failed").length > 1 then byCheck := byCheck + 1
+        else errors := errors.push s!"{label}: an input name published {what} is refused, but not by \
+          the readability check: {e}"
+      | .ok () => errors := errors.push s!"{label}: checkReport accepts an input name published {what}"
+    lines := lines.push s!"{label}: checkReport refuses {byCheck} of 2 unreadable publications by the \
+      readability check"
+  | _, _ => errors := errors.push s!"{label}: no Muts entry, or no movable published input name, to \
+      plant an unreadable publication with"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find
