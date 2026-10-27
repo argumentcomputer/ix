@@ -30,7 +30,8 @@ reader, quotient Source's prepared stream), one per open obligation:
    bundle's does), `Obligation.SeedUnion` (accepted seed closures union),
    `Obligation.SourceRestricts` (an unaffected constant lies in an accepted closure that
    avoids the changed set), `Obligation.RootRestricts` (a seed of an accepted closure has
-   an accepted closure).
+   an accepted closure). Closures here hold the ground the fold reads without a reference
+   (`GroundEdge`, `GroundAffectedIn`).
 8. `Obligation.Assembly`: per-constant and per-step agreement give one Source model with
    the laws.
 9. The laws: `Obligation.UnchangedRules` (a renamed environment's strong model gives the
@@ -359,7 +360,9 @@ def EvidenceTransfer : Prop :=
       (ds.toList.map (Ix.Kernel.Declaration.mapKeys (Ix.LeanIngress.evAddr ixe b))) envR
 
 /-- **(7) Locality: the union of seed closures.** On a compiled artifact, if the compiled
-closure of every seed is accepted, so is the compiled closure of all of them. -/
+closure of every seed is accepted, so is the compiled closure of all of them. A compiled
+closure holds the ground of its `Nat` operations and its literals' support (`CompiledReach`
+along `GroundEdge`), so each closure here is closed under every edge the fold follows. -/
 def SeedUnion : Prop :=
   ∀ (env : Ix.Environment) (ixe : Ixon.Env) (binding : Ix.Kernel.Admission.Binding) (S : Address → Prop),
     compile env = .ok ixe → Ix.Kernel.Admission.defaultBinding = .ok binding →
@@ -367,18 +370,22 @@ def SeedUnion : Prop :=
     ∃ limits order envA, IxonAcceptsRef binding limits ixe S order envA
 
 /-- **(7) Locality: Source restriction.** A constant of an instance's closure that no
-change reaches lies in an instance's closure (of the same compile) that avoids the changed
-set. -/
+change reaches, its operations' ground included (`GroundAffectedIn`), lies in an instance's
+closure (of the same compile) that avoids the changed set. The ground matters: a closure
+that holds a `Nat` operation without the operations its install reads is declined by
+Source, so the restricted closure takes them in. -/
 def SourceRestricts : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source) (n : Ix.Name),
     Premises env roots sub ixe failures t envQ → (sub.consts.get? n).isSome = true →
-    ¬ SelectedRoots.AffectedName env (changedSetOf env ixe) n →
+    ¬ GroundAffectedIn env ixe sub n →
     ∃ roots' sub' envQ', Premises env roots' sub' ixe failures t envQ' ∧
       (changedSetOf env ixe).Avoids sub' ∧ sub'.consts.get? n = sub.consts.get? n
 
 /-- **(7) Locality: restriction to a seed.** A seed of an accepted compiled closure has an
-accepted compiled closure. -/
+accepted compiled closure. Both closures hold their operations' ground (`CompiledReach`
+along `GroundEdge`): a seed's closure by references alone can lack a ground that the
+larger closure holds, and is then declined. -/
 def RootRestricts : Prop :=
   ∀ (binding : Ix.Kernel.Admission.Binding) (limits : Ix.Kernel.Admission.Limits) (ixe : Ixon.Env)
     (S : Address → Prop) (order : List Address) (envA : Env .anon) (a : Address),
@@ -550,14 +557,32 @@ def causeKind : Cause → ChangeKind
 theorem causeKind_reason (c : Cause) : (causeKind c).reason? = some (.direct c) := by
   cases c <;> rfl
 
-/-- A classified root of a kind's reason is a root of that kind. -/
+/-- A direct cause's kind is not the cascade. -/
+theorem causeKind_ne_cascade (c : Cause) : causeKind c ≠ .cascade := by
+  cases c <;> decide
+
+/-- A classified root of a kind's reason is a root of that kind, the cascade aside. -/
 theorem kindRoot_of_reason {k : ChangeKind} {r : SelectedRoots.Reason} (hk : k.reason? = some r)
+    (hc : k ≠ .cascade)
     {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment} {n : Ix.Name} {a : Address}
     (h : SelectedRoots.ClassifiedRoot env (changedSetOf env ixe) sub ixe ⟨n, a, r⟩) :
     KindRoot k env ixe sub n a := by
   unfold KindRoot
-  rw [hk]
-  exact h
+  split
+  · exact absurd ‹_› hc
+  · rw [hk]
+    exact h
+
+/-- A published constant of the closure outside the changed set that meets it, its
+operations' ground included, is a root of the cascade. -/
+theorem kindRoot_cascade {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment}
+    {n : Ix.Name} {a : Address} (pub : SelectedRoots.PublishedIn sub ixe n a)
+    (affected : GroundAffectedIn env ixe sub n) (out : (changedSetOf env ixe).contains n = false) :
+    KindRoot .cascade env ixe sub n a := by
+  unfold KindRoot
+  split
+  · exact ⟨pub, affected, out⟩
+  · exact absurd rfl ‹_›
 
 /-- A root of a kind that passed validation is accepted under the default table. -/
 theorem kindAccepted_root {k : ChangeKind} {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment}
@@ -641,13 +666,13 @@ theorem compileCorrect_of_obligations (h1 : Obligation.SourceTotal) (h2 : Obliga
       obtain ⟨e, he, hen⟩ :=
         (SelectedRoots.contains_iff_entry env (compileBlocks env) (compileTable env) ixe n).mp hcs
       exact kindAccepted_root (kinds (causeKind e.cause)) hbind
-        (kindRoot_of_reason (causeKind_reason e.cause)
+        (kindRoot_of_reason (causeKind_reason e.cause) (causeKind_ne_cascade e.cause)
           ⟨e, he, rfl, rfl, (SelectedRoots.published_congr hen).mpr pub⟩)
-    · by_cases haff : SelectedRoots.AffectedName env (changedSetOf env ixe) n
+    · by_cases haff : GroundAffectedIn env ixe sub n
       · -- the cascade's validation
         exact kindAccepted_root (kinds .cascade) hbind
-          (kindRoot_of_reason (k := .cascade) rfl ⟨pub, haff, Bool.eq_false_iff.mpr hcs⟩)
-      · -- unaffected: an unchanged closure holds it
+          (kindRoot_cascade pub haff (Bool.eq_false_iff.mpr hcs))
+      · -- unaffected, its operations' ground included: an unchanged closure holds it
         obtain ⟨roots', sub', envQ', P', avoids', hn'⟩ :=
           h7d env roots sub ixe failures t envQ n P (by rw [hn]; rfl) haff
         obtain ⟨-, binding', hb', limits', order', envA', -, acc', -⟩ :=

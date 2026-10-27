@@ -259,6 +259,12 @@ theorem closureOrder_of_ordered {ixe : Ixon.Env} (h : RecordsOrdered ixe) (S : A
           rcases h with ⟨hown, -⟩ | ⟨-, hs⟩
           · exact List.mem_filterMap.2 ⟨_, mem_keys_of_stored ixe hc', by rw [hc', Option.map_some, hown]⟩
           · rw [hc] at hs; cases hs
+        | ground _ he =>
+          obtain ⟨hs, -⟩ := he
+          rw [hc] at hs; cases hs
+        | recursor _ he =>
+          obtain ⟨hs, -⟩ := he
+          rw [hc] at hs; cases hs
       · right
         exact ⟨rfl, by simpa using hr⟩
   · refine List.pairwise_append.2 ⟨?_, List.Pairwise.filter _ hLo,

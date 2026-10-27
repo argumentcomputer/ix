@@ -180,18 +180,76 @@ def ImageRuleRequired (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environm
   ∃ e ∈ (changedSetOf env ixe).entries, e.cause = .imageHead ∧ e.name = head ∧
     ∃ rv, sub.consts.get? head = some (.recInfo rv) ∧ i < rv.rules.size
 
+/-! ## Ground-aware affectedness
+
+The Source check of a `Nat` operation reads its certificate ground (`groundRoles`)
+without the operation's declaration mentioning it, so a constant whose closure holds an
+operation needs the operation's ground as well. A constant is affected when its closure,
+with the ground of every operation in it, meets the changed set. -/
+
+/-- **The quotient key of an input name**: its ingress key, renamed onto its
+alias fiber's representative under the table rule (`Ix.LeanIngress.fiberAliasAt`
+at the table `t`'s inverse), as quotient Source keys it. -/
+def quotientKey (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (n : Ix.Name) : Ix.Kernel.Key .source :=
+  Ix.LeanIngress.Key.subst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
+    (Ix.LeanIngress.ingressKey n)
+
+/-- **A ground edge within a closure**: quotient Source keys `x` as a role of the default
+table whose install reads (`groundRoles`) the role it keys `y`, a constant of `sub`, as. -/
+def GroundEdgeIn (ixe : Ixon.Env) (sub : Ix.Environment) (x y : Ix.Name) : Prop :=
+  (sub.consts.get? y).isSome = true ∧ ∃ t r s, Ix.Kernel.Reader.defaultTable = .ok t ∧
+    quotientKey ixe t x = .role r ∧ s ∈ groundRoles r ∧ quotientKey ixe t y = .role s
+
+/-- `y` is reached from `roots` along the closure relation over the input
+(`DependsOn`) and the ground edges within `sub` (`GroundEdgeIn`). -/
+inductive GroundReaches (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment)
+    (roots : List Ix.Name) : Ix.Name → Prop
+  | root {x : Ix.Name} : roots.contains x = true → GroundReaches env ixe sub roots x
+  | step {x y : Ix.Name} : GroundReaches env ixe sub roots x →
+      DependsOn (SelectedRoots.logicalInput env) x y → GroundReaches env ixe sub roots y
+  | ground {x y : Ix.Name} : GroundReaches env ixe sub roots x → GroundEdgeIn ixe sub x y →
+      GroundReaches env ixe sub roots y
+
+/-- **`n` meets the changed set within `sub`, its operations' ground included**: a
+changed constant is reached from `n` along the closure relation and the ground edges. -/
+def GroundAffectedIn (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment) (n : Ix.Name) :
+    Prop :=
+  ∃ m, GroundReaches env ixe sub [n] m ∧ (changedSetOf env ixe).contains m = true
+
+/-- The closure relation's reach is a ground-aware reach. -/
+theorem groundReaches_of_reaches {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment}
+    {roots : List Ix.Name} {m : Ix.Name} (h : Reaches (SelectedRoots.logicalInput env) roots m) :
+    GroundReaches env ixe sub roots m := by
+  induction h with
+  | root h => exact .root h
+  | step _ hd ih => exact .step ih hd
+
+/-- **Ground-aware affectedness widens affectedness.** -/
+theorem groundAffectedIn_of_affected {env : Ix.Environment} {ixe : Ixon.Env} {sub : Ix.Environment}
+    {n : Ix.Name} (h : SelectedRoots.AffectedName env (changedSetOf env ixe) n) :
+    GroundAffectedIn env ixe sub n := by
+  obtain ⟨m, hm, hc⟩ := h
+  exact ⟨m, groundReaches_of_reaches hm, hc⟩
+
 /-- **The records of kind `k` in the closure `sub`**: the published address `a` of
 the name `n`, for
 * a kind the selector enumerates, a root of that reason (`ClassifiedRoot`): an
-  entry of the changed set with that cause, a published clique row of a clique
-  entry, or a constant of `sub` outside the set whose closure meets it;
+  entry of the changed set with that cause, or a published clique row of a clique
+  entry;
+* the cascade: a constant of `sub` outside the set that meets it, its operations'
+  ground included (`GroundAffectedIn`, which widens the selector's
+  `SelectedRoots.AffectedName`, `groundAffectedIn_of_affected`);
 * image rule rows, the published row of a required rule. -/
 def KindRoot (k : ChangeKind) (env : Ix.Environment) (ixe : Ixon.Env) (sub : Ix.Environment)
     (n : Ix.Name) (a : Address) : Prop :=
-  match k.reason? with
-  | some reason => ClassifiedRoot env (changedSetOf env ixe) sub ixe ⟨n, a, reason⟩
-  | none => ∃ head i, ImageRuleRequired env ixe sub head i ∧ n = imageRuleRowName head i ∧
-      ∃ named, ixe.named.get? n = some named ∧ named.addr = a
+  if k = .cascade then
+    SelectedRoots.PublishedIn sub ixe n a ∧ GroundAffectedIn env ixe sub n ∧
+      (changedSetOf env ixe).contains n = false
+  else
+    match k.reason? with
+    | some reason => ClassifiedRoot env (changedSetOf env ixe) sub ixe ⟨n, a, reason⟩
+    | none => ∃ head i, ImageRuleRequired env ixe sub head i ∧ n = imageRuleRowName head i ∧
+        ∃ named, ixe.named.get? n = some named ∧ named.addr = a
 
 /-- **The record at `a` is accepted with its compiled closure**, at the reference
 level, under the role table `binding`. -/
@@ -217,13 +275,6 @@ def KindAccepted (k : ChangeKind) (env : Ix.Environment) (ixe : Ixon.Env) (sub :
       ∀ n a, KindRoot k env ixe sub n a → RootAccepted binding ixe a
 
 /-! ## Source forms -/
-
-/-- **The quotient key of an input name**: its ingress key, renamed onto its
-alias fiber's representative under the table rule (`Ix.LeanIngress.fiberAliasAt`
-at the table `t`'s inverse), as quotient Source keys it. -/
-def quotientKey (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (n : Ix.Name) : Ix.Kernel.Key .source :=
-  Ix.LeanIngress.Key.subst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t))
-    (Ix.LeanIngress.ingressKey n)
 
 /-- The keys a declaration installs. -/
 def declKeys {md : Ix.Kernel.Mode} : Ix.Kernel.Declaration md → List (Ix.Kernel.Key md)
