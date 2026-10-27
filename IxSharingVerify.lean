@@ -36,6 +36,7 @@ import IxSharingVerify.FamilyExactConstant
 import IxSharingVerify.NeverFails
 import IxSharingVerify.AllocateBudget
 import IxSharingVerify.OutputBound
+import IxSharingVerify.SufficientBudget
 
 /-!
 # Proofs of the canonical sharing construction
@@ -85,7 +86,11 @@ stronger optimality results.
   than `2^64` expression nodes whose references carry fewer than `2^64`
   universes (`canonicalSharingTiered_ok`) and on every input that expands to
   such a DAG (`canonicalSharingTieredTable_ok`), and its output expands
-  again (`canonicalSharingTiered_output_expands`). `BudgetMono` and
+  again (`canonicalSharingTiered_output_expands`). `SufficientBudget`, over
+  `AllocateBudget` and `OutputBound`, names one budget: under `limitsFor N`,
+  polynomial in the input size `N` (expression nodes plus universe
+  arguments), it succeeds on Share-free roots
+  (`canonicalSharingTiered_limitsFor`). `BudgetMono` and
   `FamilyBudget` (namespace `Budget`) prove that a larger budget keeps every
   successful run and its result, so the budget decides only whether a run is
   refused (`canonicalSharingTiered_budget_independent`). `ConstantNeverFails`

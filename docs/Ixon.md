@@ -976,9 +976,10 @@ Not claimed:
   domain (fewer than `2^64` input nodes and universes per reference, implied by
   the framed constant-body bound) no guard is reachable under a sufficient
   budget, a larger budget never changes a successful result, and the output
-  expands again (`IxSharingVerify.NeverFails`). Standalone and structured APIs
-  must state that domain explicitly. A cost bound for the budget is follow-up
-  work.
+  expands again (`IxSharingVerify.NeverFails`). For Share-free roots one such
+  budget is `limitsFor N`, polynomial in the input size `N` (expression nodes
+  plus universe arguments; `IxSharingVerify.SufficientBudget`). Standalone and
+  structured APIs must state that domain explicitly.
 
 ### Example
 

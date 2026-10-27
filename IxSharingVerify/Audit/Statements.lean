@@ -109,6 +109,13 @@ def roots : Array RootAllowance := #[
   -- The output is at most nine times the full endpoint's charge.
   { root := ``Ix.Sharing.Family.selected_ulen_le_modelBound, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.familyExpanded_output_le, standardAxioms := standard },
+  -- A budget polynomial in the input size admits every Share-free input of
+  -- the domain, and every larger budget returns the same output.
+  { root := ``Ix.Sharing.Verify.Totality.familyCallTotal_le, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.familyWorkTotal_le, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.familyExpanded_within, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_limitsFor, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Totality.canonicalSharingTiered_above, standardAxioms := standard },
   -- Re-checks of the compiled family twins beside their definitions in
   -- `Ix.Sharing` (`FamilyCached`, `FamilyFast`, `FamilyNormalize`, `FamilyNormalizeSpec`).
   { root := ``Ix.Sharing.Family.cachedStep_eq, standardAxioms := standard },

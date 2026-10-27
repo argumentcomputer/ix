@@ -2,8 +2,8 @@
 
 > **Status: `sharing-k16-greedy-v1` is the production route (§14).** Successful-run
 > proofs are attached to the Lean entry; §14.4 records the corpus evidence.
-> No refusal is reachable under a sufficient budget, and the output expands again (§14.3);
-> a cost bound for that budget remains follow-up work.
+> No refusal is reachable under a sufficient budget, which for Share-free roots is
+> polynomial in the input size, and the output expands again (§14.3).
 > §14 supersedes §12's unbounded phase-1 search and its no-fallback claim. §1–§10 are the original plan. Its
 > target, the global byte minimum under the key of §3.3, was found infeasible at production
 > scale (§12.1) and is **superseded** by the decisions of §12 wherever the two differ. Read §12
@@ -1225,7 +1225,7 @@ or that the K16 cutover left every corpus constant unchanged (§14.4).
 
 The Lean cutover attaches these statements and the proved fast twins to the production
 entry and its audits, preserving compiler-facing meaning, format and codec theorems without
-new premises. Its audit has 252 theorem roots and checks all 30 compiler-path `csimp`
+new premises. Its audit has 260 theorem roots and checks all 30 compiler-path `csimp`
 equalities; the accepted unsafe set is unchanged. The old exact-optimum theorems remain
 on the reference path. Rust is a
 separately tested implementation; byte parity is not a universal refinement proof.
@@ -1249,12 +1249,97 @@ budgets return the same result (`canonicalSharingTiered_budget_independent`): th
 decides only whether a run is refused, never its bytes. The output, with its sharing
 table, expands again (`canonicalSharingTiered_output_expands`).
 
-The remaining follow-up work is a cost bound: an explicit budget as a function of the input
-size, with every loop of the fast implementations charged and the first-tier search
-bounded. Exact wide Rust arithmetic, wider Rust IDs and traversal/teardown bounds also
-remain, as does removing the guards the proofs make unreachable. Definitions of component
-call/work counts alone are not a cost theorem. None of this completes the separate Source
-acceptance, no-drop, paired-stream or `CompileCorrect` obligations.
+`IxSharingVerify.SufficientBudget` names one such budget. The input size `N` counts the
+roots' expression nodes plus their universe arguments (`inputSize`). With `B = N + 1`,
+`limitsFor N` allows `2^11·B²` walked expression nodes and depth, `2^12·B²` DAG nodes,
+`2^17·B⁹` states, `B²` knapsack cells, `2^19·B³` cost evaluations, `2^6·B²` output bytes,
+`2^10·B²` materialized bytes and `2^11·B³` materialization work. It allows no transitions
+and no oracle work, which this route does not use. Under it the production entry succeeds
+on every Share-free input with `N < 2^64` (`canonicalSharingTiered_limitsFor`), and every
+larger budget returns the same output (`canonicalSharingTiered_above`). Each stage is
+proved to succeed under every budget that covers an explicit count (the `*_within`
+theorems), and the counts are bounded by `N`:
+
+- the DAG has at most `N` terms, and the uncertain components hold at most `N` terms in
+  all, so the component loop makes at most `2^17·B²` calls and precharges at most
+  `6·2^16·B³` work (`familyCallTotal_le`, `familyWorkTotal_le`);
+- the knapsack has at most `B²` cells;
+- the selected model is no longer than the full endpoint, the set storing every candidate,
+  whose charge `modelBound` is at most `64·B²` when every reference carries at most `N`
+  universes (`selected_ulen_le_modelBound`, `modelBound_le`). The route's output is at most
+  nine times that charge (`familyExpanded_output_le`), since a Share reference is at most
+  nine bytes and phase 3 is never longer than phase 1;
+- an evaluation works at most `n·(n + 1)` on `n` terms, one step per term and available
+  spine node, so materializing a table of at most `n` entries works at most
+  `B³ + 576·B²`;
+- an expression has fewer nodes than twice its length, which bounds the walks of the
+  re-expansion checks by the lengths;
+- the first-tier search visits at most `(m + 1)⁹` states on a table of `m` entries, since
+  every inclusion adds at least one of at most eight terms (`allocate_within`).
+
+The entry with a sharing table and constant normalization have no explicit budget yet.
+
+The budget bounds what the meters count. In the code that compiled code runs (after the
+`csimp` replacements), most loops are charged or are within a logarithmic factor of a charged
+or linear count. Charged: the ingestion and re-expansion walks (expression visits, depth,
+DAG nodes), the component loop (states, and precharged work that covers each component's
+context, area evaluations and stored sets), the first-tier search (one state per node,
+constant work each), the knapsack (cells, precharged) and the one-pass materialization
+(bytes and work). Uncharged but linear or within a logarithmic factor of linear, per width
+or component, on a DAG of `n` terms and `E` edges: preparation, graph facts,
+classification, the family tables, the allocation's weights and closures, layout pricing and
+the wire check. Some uncharged loops grow faster, by at most one factor of `n`, a spine
+length or a component size over the charged or linear counts:
+
+- the uncertain-component pass (`uncertainComponents`) uses a union-find without path
+  compression and removes duplicate representatives by linear search, `O(n³)` in the
+  worst case; the partition check (`componentsChecked`) tests membership linearly, `O(n²)`;
+- each component evaluation sets its member flags (`memberFlags`) by a linear membership
+  test in the stored set and scans telescopes up to the stored-set size per term, while
+  the precharge counts one step per closure term;
+- the dictionary evaluation counts its telescope work (`DictEval.work`), but only
+  materialization compares it with a limit; the base evaluation of each width, the
+  phase-1 base cost and the expression builders scan up to a spine length per term,
+  `O(n·L)`;
+- the pinned order rechecks a user's nearest stored descendants whenever one of them is
+  placed, `O(Σ |deps|²)`, up to `O(n³)`;
+- each knapsack cell compares the candidates of its component, `O(cap · Σ m²)`;
+- the nearest stored descendants of the pinned order cost `O(s·(n + E))` for `s` stored
+  terms, a component context sorts its area by quicksort (quadratic in the worst case),
+  and retaining a component's best row is quadratic in its size;
+- re-expansion looks a node up among its child's parents, `O(visits · n)` in the worst
+  case, and the Kahn order removes duplicate dependencies by list search.
+
+For Share-free roots `n ≤ N`, so the running time is polynomial in `N`: the charged
+first-tier search sets the degree (`B⁹` states, constant work each), and the uncharged work
+is at most `O(N³)` apart from the one extra factor on the charged component work.
+
+The bound is polynomial, not near-linear, and measured running times stay within it while
+growing faster than linearly on some shapes. These shapes also reach the production
+sharing code:
+
+- **A long `Lam` telescope.** Rust's telescope scan (`dict.rs`, `scan_telescope`) walks the
+  whole spine below each telescope node, in phase-1 materialization and phase-3 costs:
+  about 1 s at 10,000 binders, 4 s at 20,000 and 105 s at 100,000. The work is charged.
+  Lean's evaluator follows links to the next available spine node and is linear on this
+  shape when no spine node is stored. Porting those links to Rust is not a cheap,
+  byte-neutral change; it is follow-up work.
+- **A long argument chain.** Rust collected each term's distinct parents with a linear
+  search, quadratic in a chain's parents: 1.27 s for 200,000 arguments and 7.19 s for
+  400,000. It now compares only with the last parent recorded, since parents arrive in
+  increasing order (0.29 s and 0.60 s). On the Init+Std corpus the outputs are identical
+  and the time unchanged (median wall 52.4 s before, 52.3 s after, seven runs each).
+- **Many repeated references.** A probe with many repeated references grows
+  quadratically in Rust (80 ms at 1,000 repetitions, 357 ms at 2,000). The cause is not
+  yet isolated; the suspect is the representative lists of the uncertain-component pass,
+  which grow the same way in Lean (above).
+- **The exact continuation.** Rust's exact-integer continuation past 128 bits is slower
+  than the 128-bit path. It runs only where a value leaves 128 bits.
+
+Rust has exact wide phase-1 arithmetic, word-sized term IDs and iterative expression
+teardown. Removing the guards the proofs make unreachable remains. None of this
+completes the separate Source acceptance, no-drop, paired-stream or `CompileCorrect`
+obligations.
 
 ### 14.4 Evidence and release gates
 
