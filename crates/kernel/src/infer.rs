@@ -74,6 +74,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       self.env.perf.record_infer_only_miss();
       self.record_hot_miss("infer-only", e);
     }
+    self.check_stack()?;
 
     let ty = match e.data() {
       // Legacy de Bruijn lookup: still used by inductive validation paths
