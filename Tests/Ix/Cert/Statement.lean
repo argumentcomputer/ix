@@ -1278,6 +1278,42 @@ def literalClosure (leanEnv : Lean.Environment) (root : Lean.Name) : IO (Array S
       string literal, all {support.size} support constants; Source at the bundle evidence accepts it \
       ({envS.consts.length} kernel constants)"])
 
+/-- **An axiom α-equal to `sorryAx` is represented by `sorryAx`'s role.** A copy of
+`sorryAx` under another name compiles to `sorryAx`'s record, so the artifact
+publishes it at `sorryAx`'s address, and quotient Source keys it by `sorryAx`'s role
+(`Ix.Cert.quotientKey`), whose declaration installs nothing. The coverage statements
+therefore leave out every constant whose quotient key is that role, not only
+`sorryAx` itself. -/
+def sorryAliasCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let some (.axiomInfo sv) := leanEnv.find? ``sorryAx
+    | return (#["sorryAx alias: sorryAx is not an axiom of the test environment"], #[])
+  let aliasName : Lean.Name := `Tests.Ix.Cert.Statement.sorryAlias
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[``sorryAx])
+  let consts := closed ++ [(aliasName, .axiomInfo { sv with name := aliasName })]
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts.toArray 2
+  let (ixe, _) ← match Ix.Cert.compileReport env with
+    | .ok out => pure out
+    | .error e => return (#[s!"sorryAx alias: compileReport failed: {e}"], #[])
+  let t ← match Ix.Kernel.Reader.defaultTable with
+    | .ok t => pure t
+    | .error e => return (#[s!"sorryAx alias: the default role table failed: {e}"], #[])
+  let sorryN := Ix.Name.fromLeanName ``sorryAx
+  let aliasN := Ix.Name.fromLeanName aliasName
+  let addr (n : Ix.Name) : Option Address := (ixe.named.get? n).map (·.addr)
+  let mut errors : Array String := #[]
+  match addr sorryN, addr aliasN with
+  | some a, some b =>
+    unless a == b do
+      errors := errors.push s!"sorryAx alias: published at {b}, sorryAx at {a}"
+  | _, _ => errors := errors.push "sorryAx alias: sorryAx and its alias are not both published"
+  let key := Ix.Cert.quotientKey ixe t aliasN
+  unless key == Ix.Kernel.sorryAxName do
+    errors := errors.push s!"sorryAx alias: its quotient key is {key}, not sorryAx's role"
+  if errors.isEmpty then
+    return (#[], #[s!"sorryAx alias: published at sorryAx's address ({consts.length} constants), \
+      quotient key {key}"])
+  return (errors, #[])
+
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
     let (errors, lines) ← action
@@ -1289,6 +1325,8 @@ def suite : List TestSeq := [
   report "Ix.Cert.compile against the IO pipeline and the Rust compiler, on the fixtures" (do
     let leanEnv ← getCompileEnv #[defsModule, ownModule]
     parity "fixtures" (← fixtureConsts leanEnv) 4) 1,
+  report "an axiom α-equal to sorryAx is published at its address and keyed by its role" (do
+    sorryAliasCase (← getCompileEnv #[defsModule, ownModule])) 1,
   report "the statements' hypotheses and conclusion, per root, on the accepted fixtures" (do
     perRoot (← getCompileEnv #[defsModule, ownModule])) 1,
   report "binder contracts on both sides, on the resolved source-contract syntax fixtures" (do
