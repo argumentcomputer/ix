@@ -17,6 +17,9 @@ use super::memory::{
 };
 use ixon::CompileError;
 
+/// The largest ramp step when the growth forecast is close to the headroom.
+const RAMP_NEAR_STEP: usize = 8;
+
 #[derive(Clone, Copy)]
 struct Options {
   max_workers: usize,
@@ -130,7 +133,17 @@ impl Policy {
       && completed > self.completed
       && now.duration_since(self.ramped) >= options.ramp_interval
     {
-      self.limit = ramp_up(self.limit, options.max_workers);
+      // Double while the headroom above the Hold threshold covers four times
+      // the growth forecast. Closer to it, add at most `RAMP_NEAR_STEP`:
+      // doubling a large limit there starts a burst whose forecast closes
+      // admission for the whole recovery period.
+      let spare = headroom.saturating_sub(reserve.saturating_mul(3));
+      self.limit = if spare >= self.projected_growth.saturating_mul(4) {
+        ramp_up(self.limit, options.max_workers)
+      } else {
+        let step = self.limit.min(RAMP_NEAR_STEP);
+        self.limit.saturating_add(step).min(options.max_workers)
+      };
       self.ramped = now;
     }
     self.previous = memory;
@@ -457,6 +470,27 @@ mod tests {
     let mut early = Policy::new(memory(), now, opt);
     early.sample(memory(), now + opt.ramp_interval / 2, 2, 1, opt);
     assert_eq!(early.limit, 2);
+  }
+
+  #[test]
+  fn near_the_growth_forecast_the_ramp_adds_at_most_eight() {
+    let opt = options(64);
+    let now = Instant::now();
+    let base = Memory { available: 50 * GIB, ..memory() };
+    // Half a GiB per second of growth: a 5 GiB forecast, more than a quarter
+    // of the 12.5 GiB of headroom above the Hold threshold.
+    let mut near = Policy::new(base, now, opt);
+    near.limit = 16;
+    let growing = Memory { process: base.process + GIB / 2, ..base };
+    near.sample(growing, now + Duration::from_secs(1), 16, 1, opt);
+    assert_eq!(near.projected_growth, 5 * GIB);
+    assert!(near.open);
+    assert_eq!(near.limit, 24);
+    // Without growth, the same headroom doubles the limit.
+    let mut far = Policy::new(base, now, opt);
+    far.limit = 16;
+    far.sample(base, now + Duration::from_secs(1), 16, 1, opt);
+    assert_eq!(far.limit, 32);
   }
 
   #[test]
