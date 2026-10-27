@@ -274,15 +274,16 @@ def RenamedAgree : Prop :=
     ∀ c ∈ envQ.consts, InputKey c.name → ¬ RewrittenConstant env ixe sub t c →
       ¬ CliqueConstant env ixe sub t c → ConstantAgrees M (Ix.LeanIngress.evAddr ixe b) c
 
-/-- **(3) Scheduler and global ownership.** Every state the fold of a compile reaches, and
-that the final environment follows, owns the artifact's resolution. -/
+/-- **(3) Scheduler and global ownership.** Every state the fold of a compile passes through, from
+its own start under its own schedule (`Resolution.OnRun`, `Resolution.FoldRun`), owns the
+artifact's resolution. -/
 def ScheduleOwnership : Prop :=
   ∀ (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) (cenv cenv₀ : Ix.CompileM.CompileEnv)
     (sched : Ix.CompileM.FoldSchedule),
     compileReport env = .ok (ixe, failures) → compileUnchecked env = .ok (ixe, failures, cenv) →
     Resolution.FoldRun { consts := env.consts } (compileBlocks env) cenv cenv₀ sched →
-    ∀ snap, Resolution.Reach (compileBlocks env) (Ix.CompileM.FoldState.init cenv₀ (compileBlocks env) sched).acc
-      snap → Resolution.Mono snap.cenv cenv → Owned ixe failures snap.cenv
+    ∀ snap, Resolution.OnRun (compileBlocks env) sched
+      (Ix.CompileM.FoldState.init cenv₀ (compileBlocks env) sched) snap → Owned ixe failures snap.cenv
 
 /-- **(4) Per-pass value preservation.** In every strong model of an accepted compiled
 closure whose changed records passed validation, every constant of quotient Source that
@@ -526,10 +527,10 @@ theorem claimsOwned (h3 : Obligation.ScheduleOwnership) {env : Ix.Environment} {
     HookFree.compileReport_hookFree compiled closure none avoids
   subst hblocks
   refine ⟨cenv, hu, fun n a hn hnaux hs => ?_⟩
-  obtain ⟨-, snap, rep, all, r, c, layout, p, b, hsnap, hall, hmono, hsub, -, -, hstored, hfree,
+  obtain ⟨-, snap, rep, all, r, c, layout, p, b, hsnap, hall, -, hsub, -, -, hstored, hfree,
     hcompiled⟩ := claims n a hn hnaux hs
   exact ⟨snap, rep, all, b, hall, hsub, hstored, hfree, hcompiled,
-    h3 env ixe failures cenv cenv₀ sched compiled hu hrun snap hsnap hmono⟩
+    h3 env ixe failures cenv cenv₀ sched compiled hu hrun snap hsnap⟩
 
 /-- The renamed key of a constant of a renamed environment, read at its own level
 parameters, denotes the pulled-back value. -/

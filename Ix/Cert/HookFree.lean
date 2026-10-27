@@ -537,7 +537,7 @@ theorem final_of_report {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fail
 resolved name `n ↦ a` outside the final aux map that a closure `sub` holds,
 where `sub` avoids the changed set and has no failure, is published at `a`
 and is a primary claim of `runBlock` on a whole condensation block of `sub`
-under its key, against a state the fold reached that the final environment
+under its key, against a state of the fold's own run (`OnRun`) that the final environment
 follows; its bytes `b` are stored at `a`; Pass 3's hooks are identities at
 that compile (`HookFree`), and the claim is the block compile's
 (`BlockCompiled`). -/
@@ -555,7 +555,7 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult) (c : BlockState)
           (layout : Option Ixon.AuxLayout) (p : Ix.Compile.Pass.Published) (b : ByteArray),
-          Reach blocks (FoldState.init cenv₀ blocks sched).acc snap ∧ blocks.blocks.get? rep = some all ∧
+          OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧ blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧ (∀ x, all.contains x = true → (sub.consts.get? x).isSome = true) ∧
           runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout, p) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r ∧
@@ -567,7 +567,8 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
   refine ⟨cenv, _, cenv₀, sched, hu, rfl, hrun, fun n a hn hnaux hs => ⟨pub n a hn, ?_⟩⟩
   rcases prov n a hn with hx | ⟨b, hc, hb⟩
   · rw [hnaux] at hx; cases hx
-  obtain ⟨snap, pre, rep, all, hsnap, -, hm, hall, hpost, hclaim⟩ := hc
+  obtain ⟨snap, pre, rep, all, hrun_snap, -, hm, hall, hpost, hclaim⟩ := hc
+  have hsnap := onRun_reach hrun_snap
   have hE : ∀ x, snap.cenv.env.get? x = env.consts.get? x := fun x => by
     rw [reach_env hsnap, henv, view_get, input_get]
   have hnamed : Ix.Cert.Claims.NamedEnv snap.cenv.env := by
@@ -587,7 +588,7 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
     have hsub : ∀ x, all.contains x = true → InSub sub x := fun x hx =>
       closure_path hcl (condense_scc hall hmA hx) hms
     have hfree := hookFree_of_sub hf hcl nofail avoids hsnap htab hfinal hall hsub
-    exact ⟨snap, rep, all, r, c, layout, p, b, hsnap, hall, hfinal, hsub, hr, hclaim, hb, hfree,
+    exact ⟨snap, rep, all, r, c, layout, p, b, hrun_snap, hall, hfinal, hsub, hr, hclaim, hb, hfree,
       hookFree_compiled hfree hr hclaim⟩
   | promoted cs cn cf im na nf =>
     rcases cs with _ | ⟨clo, r, c, p⟩
