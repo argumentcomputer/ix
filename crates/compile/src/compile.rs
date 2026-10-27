@@ -180,15 +180,6 @@ pub struct CompileState {
   /// deserialized environment sets them with [`compiler_sharing_limits`].
   /// The default is [`ExactSharingLimits::default`].
   pub sharing_limits: ExactSharingLimits,
-  /// The driver prepared Pass 3's state: set by every whole-environment
-  /// compile (`compile_env_with_profile`), which runs Pass 3's hooks. A
-  /// hand-built state (the decompiler's recompile check, unit tests) leaves
-  /// it false and runs none of them; such a state compiles single blocks,
-  /// and the aux tail of a changed block is refused there
-  /// (`compile_mutual`). Lean: `CompileEnv.pass3`.
-  pub driver_prepared: bool,
-  /// Pass 3's records carried from block to block.
-  pub p3: pass3::Pass3State,
 }
 
 /// Cached compiled expression with arena root index.
@@ -300,8 +291,6 @@ impl Default for CompileState {
       def_hints: Default::default(),
       original_receipts: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
-      driver_prepared: false,
-      p3: Default::default(),
     }
   }
 }
@@ -364,7 +353,6 @@ impl CompileState {
       },
     };
     self.aux_gen_extra_names.insert(name.clone());
-    pass3::journal_claim(name);
     Ok(owns)
   }
 
@@ -1038,6 +1026,26 @@ fn intern_ref(cache: &mut BlockCache, addr: Address) -> usize {
   cache.refs.insert_full(addr).0
 }
 
+/// Collect a Lean App telescope: peel App nodes to get `(head, [a1, ..., aN])`.
+///
+/// Arguments are returned in application order (leftmost first).
+fn collect_lean_telescope(e: &LeanExpr) -> (&LeanExpr, Vec<&LeanExpr>) {
+  let mut args: Vec<&LeanExpr> = Vec::new();
+  let mut cur = e;
+  while let ExprData::App(f, a, _) = cur.as_data() {
+    args.push(a);
+    cur = f;
+  }
+  args.reverse();
+  (cur, args)
+}
+
+/// A placeholder index; `usize::MAX` when it does not fit (it then matches
+/// no record).
+fn nat_usize(n: &Nat) -> usize {
+  n.to_u64().and_then(|u| usize::try_from(u).ok()).unwrap_or(usize::MAX)
+}
+
 /// Pass 3: the placeholder indices of the rewritten call sites in `e`, in
 /// first-occurrence order, each once (Lean `pass3Placeholders`).
 fn pass3_placeholders(e: &LeanExpr, key: &Name) -> Vec<usize> {
@@ -1053,7 +1061,7 @@ fn pass3_placeholders(e: &LeanExpr, key: &Name) -> Vec<usize> {
         if let [(k, LeanDataValue::OfNat(n))] = kvs.as_slice()
           && k == key
         {
-          let n = pass3::expr::nat_usize(n);
+          let n = nat_usize(n);
           if !out.contains(&n) {
             out.push(n);
           }
@@ -1261,7 +1269,7 @@ pub fn compile_expr(
             // (right to left), then Compile(head). This compiles the same
             // result as the recursive one-App-at-a-time approach, but avoids
             // re-entering the App branch for inner nodes.
-            let (head_expr, args) = aux_source::collect_lean_telescope(&e);
+            let (head_expr, args) = collect_lean_telescope(&e);
             for &arg in args.iter().rev() {
               stack.push(Frame::BuildApp);
               stack.push(Frame::Compile(arg.clone()));
@@ -1343,7 +1351,7 @@ pub fn compile_expr(
               && let [(k, LeanDataValue::OfNat(n))] = kv.as_slice()
               && *k == pass3::names::inline_key()
             {
-              let n = pass3::expr::nat_usize(n);
+              let n = nat_usize(n);
               let (s, m) =
                 cache.p3_records.get(&n).copied().ok_or_else(|| {
                   CompileError::InvalidMutualBlock {
@@ -3434,8 +3442,7 @@ fn compile_const_inner(
 
 /// Compile a single definition, theorem or opaque standalone, storing and
 /// registering nothing: its address, metadata, serialized bytes and constant
-/// (the caller publishes them; Pass 3's image constants publish under their
-/// own claim rule, `pass3::driver`).
+/// (the caller publishes them).
 pub(crate) fn compile_single_def_parts(
   name: &Name,
   def: &Def,
@@ -3727,7 +3734,7 @@ fn compile_mutual(
   lean_env: &Arc<LeanEnv>,
   cache: &mut BlockCache,
   stt: &CompileState,
-  kctx: &mut KernelCtx,
+  _kctx: &mut KernelCtx,
   aux: bool,
 ) -> Result<Address, CompileError> {
   // Collect all constants in the mutual block
@@ -4079,116 +4086,6 @@ fn compile_mutual(
     );
   }
 
-  // The block is compiled as Lean gives it: Lean's own recursors and
-  // auxiliaries compile as ordinary blocks of their own, so nothing is
-  // regenerated and no rewrite hook applies.
-  if false {
-    let class_names: Vec<Vec<Name>> = sorted_classes
-      .iter()
-      .map(|class| class.iter().map(|c| c.name()).collect())
-      .collect();
-    // Pass 3: the tail's registrations are journaled (and their release to
-    // the scheduler deferred) so that a changed block's Ix auxiliaries can
-    // move to their `_ix` display names before any dependent sees them.
-    if stt.driver_prepared {
-      pass3::journal_start();
-    }
-    let tail = mutual::generate_and_compile_aux_recursors(
-      &cs,
-      &class_names,
-      lean_env,
-      stt,
-      kctx,
-    );
-    let journal =
-      if stt.driver_prepared { pass3::journal_take() } else { None };
-    let aux_layout_stored = tail?;
-
-    // The original inductive `all` list from any InductiveVal in the block,
-    // for the change predicate (`pass3::driver::is_changed`).
-    let original_all: Vec<Name> = cs
-      .iter()
-      .find_map(|c| match c {
-        MutConst::Indc(ind) => Some(ind.ind.all.clone()),
-        _ => None,
-      })
-      .unwrap_or_default();
-
-    // If the block carries an aux_layout, patch the primary Muts
-    // metadata so the layout travels with the block through serialize /
-    // decompile round-trip (spec §10.2 / §17.3). The layout returned by
-    // `generate_and_compile_aux_recursors` is deliberately block-local:
-    // SCC-split blocks from the same Lean mutual all share `all[0]`, so
-    // looking it up through a global `all[0]` side table lets one block's
-    // layout overwrite another's.
-    //
-    // The Muts name is `block_addr.muts_name(first_name)` — same key the
-    // initial registration used — and `DashMap::insert` overwrites.
-    if let Some(layout) = &aux_layout_stored {
-      let first_name = sorted_classes
-        .first()
-        .and_then(|c| c.first())
-        .map(|c| c.name())
-        .expect("compile_mutual invariant: at least one class");
-      let muts_name = block_addr.muts_name(&first_name);
-      let muts_all: Vec<Vec<Address>> = sorted_classes
-        .iter()
-        .map(|class| {
-          class
-            .iter()
-            .map(|c| Address::from_blake3_hash(*c.name().get_hash()))
-            .collect()
-        })
-        .collect();
-      stt.register_named(
-        muts_name,
-        Named::new(
-          block_addr.clone(),
-          ConstantMeta::new(ConstantMetaInfo::Muts {
-            all: muts_all,
-            aux_layout: Some(layout.clone()),
-          }),
-        ),
-      );
-    }
-
-    // Pass 3, hook 1: a changed block registers no call-site plan; its Ix
-    // auxiliaries move to their `_ix` display names and the block records
-    // its image-kind heads (`Driver.editChangedBlock`); an unchanged block's
-    // permuted `IndPredBelow` family is edited the same way. Only a
-    // driver-prepared state can do that (the journal runs under
-    // `driver_prepared`); a hand-built one would leave the Ix auxiliaries
-    // under Lean's names with no caller rewritten for them: refused, with
-    // the Lean side's text.
-    let changed = pass3::driver::is_changed(
-      &class_names,
-      &original_all,
-      aux_layout_stored.as_ref(),
-    );
-    if let Some(journal) = journal {
-      let release = if changed {
-        pass3::driver::edit_changed_block(
-          stt,
-          lean_env,
-          &original_all,
-          &class_names,
-          aux_layout_stored.as_ref(),
-          journal,
-        )?
-      } else {
-        pass3::driver::edit_permuted_below_family(
-          stt,
-          lean_env,
-          &original_all,
-          journal,
-        )?
-      };
-      pass3::release_pending(stt, release);
-    } else if changed {
-      return Err(pass3::driver::unprepared_changed_block(name));
-    }
-  }
-
   // Return this compilation's projection, independently of publication.
   // Original-form compilation stages promotions until the block transaction
   // commits; its requested name need not be in name_to_addr yet, and its
@@ -4202,7 +4099,6 @@ fn compile_mutual(
 
 mod admission;
 pub mod aux_gen;
-pub mod aux_source;
 pub mod block_txn;
 mod env;
 pub mod expr_key;
@@ -4254,6 +4150,25 @@ mod tests {
     let mut cache = BlockCache::default();
     let univ = compile_univ(&level, &[name], &mut cache).unwrap();
     assert!(matches!(univ.as_ref(), Univ::Var(0)));
+  }
+
+  #[test]
+  fn test_collect_lean_telescope() {
+    let n = |s: &str| Name::str(Name::anon(), s.to_string());
+    let f = LeanExpr::cnst(n("f"), vec![]);
+    let a1 = LeanExpr::bvar(Nat::from(0u64));
+    let a2 = LeanExpr::bvar(Nat::from(1u64));
+    let a3 = LeanExpr::bvar(Nat::from(2u64));
+    let app = LeanExpr::app(
+      LeanExpr::app(LeanExpr::app(f.clone(), a1.clone()), a2.clone()),
+      a3.clone(),
+    );
+    let (head, args) = collect_lean_telescope(&app);
+    assert_eq!(head.get_hash(), f.get_hash());
+    assert_eq!(args.len(), 3);
+    assert_eq!(args[0].get_hash(), a1.get_hash());
+    assert_eq!(args[1].get_hash(), a2.get_hash());
+    assert_eq!(args[2].get_hash(), a3.get_hash());
   }
 
   #[test]

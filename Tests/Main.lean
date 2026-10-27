@@ -23,13 +23,11 @@ import Tests.Ix.Compile.Clique.Ownership
 import Tests.Ix.Compile.Clique.OwnershipUnits
 import Tests.Ix.Compile.Clique.Recognition
 import Tests.Ix.Compile.Clique.Rows
-import Tests.Ix.Compile.Clique.RustParity
 import Tests.Ix.Compile.Clique.Transport
 import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.Compile.Image
-import Tests.Ix.Compile.Pass3RustParity
 import Tests.Ix.Compile.O11aDecline
 import Tests.Ix.RoleCompile
 import Tests.Ix.HostAdmissionCli
@@ -240,11 +238,6 @@ def registry : List Entry := [
   -- by ownership mode (Tests.Ix.Compile.Clique.Ownership, library cases; the
   -- compiled units are `clique-ownership-units`; about 4 s)
   .runner "clique-ownership" .primary Tests.Ix.Compile.Clique.Ownership.run,
-  -- the Rust clique library against the Lean one (test-only FFI, Rust on the
-  -- clique's closure): the bounds tables, and every field of the plan of each
-  -- fixture clique and of the adversarial inputs, under two addresses, and
-  -- the rows of each transported plan (Tests.Ix.Compile.Clique.RustParity)
-  .runner "clique-rust-parity" .primary Tests.Ix.Compile.Clique.RustParity.run,
   -- the equation rows of every transported well-founded fixture plan and the
   -- copies of its encoding, admitted by Lean's kernel, each row's swapped
   -- right-hand side rejected (Tests.Ix.Compile.Clique.Rows; the fixture families'
@@ -621,9 +614,6 @@ def registry : List Entry := [
   .runner "compile-claim-conflict"
     (expectedToRetire "it checks regenerated auxiliaries' claims on source names")
     Tests.Ix.Compile.ClaimConflict.run,
-  -- The Rust Pass 3 core against Ix.Compile.Image (the images of image-gen's
-  -- fixtures, test-only FFI) and against the Lean compiler on their callers (bytes)
-  .runner "pass3-rust-parity" (.ci .compilePipeline) Tests.Ix.Compile.Pass3RustParity.run,
   .runner "o11a-decline"
     (expectedToRetire "it checks a size-instance rewrite of split blocks")
     Tests.Ix.Compile.O11aDecline.run,

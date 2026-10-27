@@ -59,16 +59,8 @@ pub struct BlockTxn {
   pub compiled: Vec<Name>,
   /// Names newly entered into `aux_name_to_addr`.
   pub aux: Vec<Name>,
-  /// Pass 3 records newly entered (image-kind heads, Lean blocks, canonical
-  /// recursors, component records).
-  pub p3_heads: Vec<Name>,
-  pub p3_blocks: Vec<Name>,
-  pub p3_canon_recs: Vec<Name>,
-  pub p3_components: Vec<Name>,
   /// Names the block would have released to the scheduler early.
   pub pending: Vec<Name>,
-  /// Non-canonical outcomes become visible only after the whole block commits.
-  pub declines: Vec<(Name, String)>,
 }
 
 thread_local! {
@@ -193,22 +185,6 @@ pub fn holds_aux_claim(n: &Name) -> bool {
   TXN.with(|t| t.borrow().as_ref().is_some_and(|x| x.aux.contains(n)))
 }
 
-pub fn log_p3_head(n: &Name) {
-  with(|x| x.p3_heads.push(n.clone()));
-}
-
-pub fn log_p3_block(n: &Name) {
-  with(|x| x.p3_blocks.push(n.clone()));
-}
-
-pub fn log_p3_canon_rec(n: &Name) {
-  with(|x| x.p3_canon_recs.push(n.clone()));
-}
-
-pub fn log_p3_component(n: &Name) {
-  with(|x| x.p3_components.push(n.clone()));
-}
-
 /// Defer the release of `names` to the end of the block while logging;
 /// returns them back when no log is active (release now).
 pub fn defer_pending(names: Vec<Name>) -> Option<Vec<Name>> {
@@ -229,26 +205,6 @@ pub fn release_pending(stt: &CompileState, names: Vec<Name>) {
   }
 }
 
-/// Stage successful rewrite reports until the block's final commit. A
-/// direct caller outside a scheduled transaction publishes immediately.
-pub fn record_declines(stt: &CompileState, rows: Vec<(Name, String)>) {
-  if rows.is_empty() {
-    return;
-  }
-  let immediate = TXN.with(|t| match t.borrow_mut().as_mut() {
-    Some(x) => {
-      x.declines.extend(rows);
-      None
-    },
-    None => Some(rows),
-  });
-  if let Some(rows) = immediate {
-    for (name, cause) in rows {
-      stt.p3.non_canonical.insert(name, cause);
-    }
-  }
-}
-
 /// Remove what a failed block entered into the published tables.
 pub fn rollback(stt: &CompileState, txn: &BlockTxn) {
   for n in &txn.named {
@@ -264,18 +220,6 @@ pub fn rollback(stt: &CompileState, txn: &BlockTxn) {
     stt.aux_gen_extra_names.remove(n);
     stt.blocks.remove(n);
   }
-  for n in &txn.p3_heads {
-    stt.p3.heads.remove(n);
-  }
-  for n in &txn.p3_blocks {
-    stt.p3.blocks.remove(n);
-  }
-  for n in &txn.p3_canon_recs {
-    stt.p3.canon_recs.remove(n);
-  }
-  for n in &txn.p3_components {
-    stt.p3.components.remove(n);
-  }
 }
 
 /// End the block's log: on success commit its staged promotions and hints
@@ -287,40 +231,9 @@ pub fn finish(stt: &CompileState, failed: bool) -> Result<(), CompileError> {
   if let Some(txn) = take() {
     if failed || committed.is_err() {
       rollback(stt, &txn);
-    } else {
-      for (name, cause) in txn.declines {
-        stt.p3.non_canonical.insert(name, cause);
-      }
-      if !txn.pending.is_empty() {
-        stt.aux_gen_pending.lock().unwrap().extend(txn.pending);
-      }
+    } else if !txn.pending.is_empty() {
+      stt.aux_gen_pending.lock().unwrap().extend(txn.pending);
     }
   }
   committed
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::compile::pass3::expr::dotted;
-
-  #[test]
-  fn decline_reports_wait_for_commit_and_failed_blocks_drop_them() {
-    let stt = CompileState::default();
-    let name = dotted("declined");
-    start();
-    record_declines(&stt, vec![(name.clone(), "first".into())]);
-    assert!(stt.p3.non_canonical.is_empty());
-    finish(&stt, true).unwrap();
-    assert!(stt.p3.non_canonical.is_empty());
-
-    start();
-    record_declines(&stt, vec![(name.clone(), "committed".into())]);
-    assert!(stt.p3.non_canonical.is_empty());
-    finish(&stt, false).unwrap();
-    assert_eq!(
-      stt.p3.non_canonical.get(&name).map(|v| v.value().clone()),
-      Some("committed".into())
-    );
-  }
 }

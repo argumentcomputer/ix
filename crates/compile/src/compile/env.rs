@@ -31,10 +31,6 @@
 //!   term (FLT: +13 GiB for −8 % wall; Mathlib needs a large-memory
 //!   machine) to shave the last few percent on hardware with RAM to
 //!   spare.
-//!
-//! And one check, which changes no byte: `IX_PASS3_CHECK_PLANS=1`
-//! recomputes every clique plan and row set Pass 3's tables supply and
-//! fails the compile on a difference (Lean `DriverOptions.checkPlans`).
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -49,7 +45,6 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::admission::Admission;
-use crate::compile::pass3::Pass3State;
 use crate::compile::{
   BlockCache, CompileOptions, CompileState,
   aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
@@ -232,9 +227,6 @@ fn fail_aux_promotion(stt: &CompileState, all: &NameSet, msg: &str) {
     stt.aux_gen_extra_names.remove(n);
     stt.blocks.remove(n);
     stt.def_hints.remove(n);
-    stt.p3.heads.remove(n);
-    stt.p3.canon_recs.remove(n);
-    stt.p3.non_canonical.remove(n);
     stt.ungrounded.insert(n.clone(), msg.to_owned());
   }
   stt.aux_gen_pending.lock().unwrap().retain(|n| !all.contains(n));
@@ -467,29 +459,12 @@ pub fn compile_env_with_profile(
     );
   }
 
-  // Lean's declarations compile as given: no clique table and no producer
-  // plan (Lean `compileEnvFoldWithSource`); the schedule is the
-  // condensation's.
-  let block_refs_orig: Option<RefMap> = None;
-  let (cliques, clique_roots) = Default::default();
-  let o11a_blocked = Default::default();
-
-  // Pass 3's hooks run in every whole-environment compile (no mode, no
-  // switch): the state is driver-prepared.
+  // Lean's declarations compile as given: the schedule is the
+  // condensation's (Lean `compileEnvFoldWithSource`).
   let mut stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
-    driver_prepared: true,
-    p3: Pass3State {
-      o11a_blocked,
-      cliques,
-      clique_roots,
-      // Pass 3's plan-table check (Lean `DriverOptions.checkPlans`)
-      check_plans: std::env::var("IX_PASS3_CHECK_PLANS")
-        .is_ok_and(|v| v == "1"),
-      ..Default::default()
-    },
     ..Default::default()
   };
 
@@ -577,13 +552,9 @@ pub fn compile_env_with_profile(
         },
       )?;
 
-      // the block's own references (without the clique edges) for its
-      // compile; the scheduling dependencies (with them) for the queue
-      let refs =
-        block_refs_orig.as_ref().and_then(|m| m.get(*lo)).unwrap_or(deps);
       block_info.insert(
         (*lo).clone(),
-        ((*all).clone(), refs.clone(), Mutex::new(deps.clone())),
+        ((*all).clone(), deps.clone(), Mutex::new(deps.clone())),
       );
 
       for dep_name in deps {
@@ -894,10 +865,9 @@ pub fn compile_env_with_profile(
                         &cross_name,
                         "compile_const(cross-SCC)",
                         || {
-                          crate::compile::pass3::driver::compile_block(
+                          compile_const(
                             &cross_name,
                             &unresolved_set,
-                            None,
                             lean_env,
                             &mut cache,
                             stt_ref,
@@ -905,9 +875,6 @@ pub fn compile_env_with_profile(
                           )
                         },
                       );
-                      // a panic inside the aux tail can leave the Pass 3
-                      // journal open on this thread
-                      let _ = crate::compile::pass3::journal_take();
                       let res = crate::compile::block_txn::finish(
                         stt_ref,
                         res.is_err(),
@@ -1034,19 +1001,13 @@ pub fn compile_env_with_profile(
                 // entries are logged and removed on failure, and the names
                 // it releases early wait for its end
                 crate::compile::block_txn::start();
-                // Pass 3 (`pass3::driver::compile_block`): an image block
-                // compiles to its images, any other block after the
-                // call-site rewrite of its members; the block's references
-                // (the scheduler's, unchanged after setup) prefilter it
-                let block_refs = block_info_ref.get(&lo);
                 let res = run_compile_catching_panic(
                   &lo,
                   "compile_const",
                   || {
-                    crate::compile::pass3::driver::compile_block(
+                    compile_const(
                       &lo,
                       &all,
-                      block_refs.as_ref().map(|e| &e.value().1),
                       lean_env,
                       &mut cache,
                       stt_ref,
@@ -1054,10 +1015,6 @@ pub fn compile_env_with_profile(
                     )
                   },
                 );
-                drop(block_refs);
-                // a panic inside the aux tail can leave the Pass 3 journal
-                // open on this thread
-                let _ = crate::compile::pass3::journal_take();
                 // the staged promotions and hints are committed only if the
                 // block compiled; a failed commit fails the block
                 let res =
@@ -1318,17 +1275,6 @@ pub fn compile_env_with_profile(
     return Err(CompileError::InvalidMutualBlock {
       reason: "circular dependency or missing constant".into(),
     });
-  }
-
-  // Pass 3's clique rows (Lean `emitRows`, between the fold and the
-  // assembly): the rows and `_ix.src` copies of every transported clique
-  crate::compile::pass3::driver::emit_rows(lean_env, &stt)?;
-
-  // Pass 3's plan-table check fails the compile, not only a block (Lean
-  // `planCheckFailure?`, after the fold): the first (by name) block failure
-  // that carries the check's prefix, when the check is on
-  if let Some(msg) = crate::compile::pass3::driver::plan_check_failure(&stt) {
-    return Err(CompileError::InvalidMutualBlock { reason: msg });
   }
 
   stt.finalize_hints();
