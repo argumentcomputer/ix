@@ -1,14 +1,15 @@
 /-
-  CompileM: Lean Compiler for Ixon Format (Pure Implementation)
+  Pure per-block compilation from Lean declarations to Ixon.
 
   Architecture:
-  - CompileState: global immutable state (Reader)
+  - CompileEnv: shared compilation snapshot (Reader)
   - BlockEnv: per-block read-only context (Reader)
-  - BlockCache: per-block mutable state (State)
-  - Pure sequential compilation
+  - BlockState: per-block writes and caches (State)
 
-  This implementation is designed for correctness and formalization.
-  For performance, use the Rust implementation.
+  The certified default uses these operations. CompileDriver schedules
+  independent blocks on tasks and merges their outcomes in key order;
+  Ix.Cert.compileReport checks the assembled result. The Rust compiler
+  remains available through --rust and for differential checks.
 -/
 
 module
@@ -34,7 +35,7 @@ public section
 
 /-- Global compilation environment shared across all blocks. -/
 structure CompileEnv where
-  /-- Canonicalized Leon environment -/
+  /-- Canonicalized Lean environment -/
   env : Ix.Environment
   /-- Map from constant name to Named (address + metadata): the final NAMED
       REGISTRY (Rust `stt.env.named`), with the blocks' `Muts` entries. It
@@ -49,8 +50,7 @@ structure CompileEnv where
   /-- Compiled constants storage, SERIALIZED. Holding structured
       `Ixon.Constant`s here retained a whole-env-scale object graph for
       the entire compile; the serialized bytes (already computed when a
-      block merges) are the compact form — Rust's mathlib compile peaks
-      ~20 GiB largely because compiled output lives as bytes. Readers
+      block merges) retain the encoded form instead. Readers
       needing structure parse on demand (`Ixon.deConstantAt`); assembly
       wraps entries as byte-backed `Ixon.LazyConstant`s. -/
   constants : Std.HashMap Address ByteArray

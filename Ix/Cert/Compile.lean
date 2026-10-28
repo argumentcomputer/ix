@@ -8,8 +8,8 @@ public import Ix.LeanIngress
 /-! # The compiler as a pure function
 
 `compile` is the function the certification statements (`Ix.Cert.Statement`)
-are about. It is the compile pipeline after canonicalization, as
-`Ix.CompileM.compileDecoratedConsts` runs it, with the same stages:
+are about. Its checked report, `compileReport`, is the production default
+after canonicalization, with these stages:
 
 1. the reference graph (`Ix.GraphM`);
 2. the ground filter: the immediately ungrounded constants
@@ -19,8 +19,8 @@ are about. It is the compile pipeline after canonicalization, as
 3. the condensation (`Ix.CondenseM.run`), which `blocksOf` names because the
    Source-mode statements group by it too;
 4. the driver, `Ix.CompileM.compileEnvFold`: a fold over waves of ready
-   blocks, their outcomes applied in block-key order. The IO pipeline runs
-   the same function.
+   blocks, their outcomes applied in block-key order. Independent blocks
+   run on tasks; the streamed comparison pipeline uses this same driver.
 
 Its input is `Ix.Environment`, `Ix.CanonM`'s output, which is also Source
 mode's input (`Ix.LeanIngress`). Only `env.consts` is read: the streaming
@@ -33,17 +33,26 @@ BLAKE3 (`Address.blake3Pure`) in the logic, executed as the Rust BLAKE3
 `Ix.Expr`, which are map keys and never authenticated, stay the Rust
 BLAKE3's.
 
-What the IO pipeline does that this function does not:
-* it starts from Lean's constants: it resolves source contracts
-  (`Ix.Compile.CompileInput.prepare`), refuses unresolved binder contracts,
-  inspects semantic contracts and canonicalizes (`Ix.CanonM`) itself;
-* it compiles against a hybrid environment, in which theorem and opaque
-  bodies are canonicalized again on demand (`fallback?`) instead of
-  materialized;
-* it splits each wave of the driver into four tasks per `--workers` (the
-  value does not depend on the split) and
-  takes the sharing limits from its options (`DriverOptions`);
-* it serializes (`Ixon.serEnv`).
+The production CLI surrounds this function with `Ix.CompileM.compileCertified`:
+it prepares source contracts, canonicalizes consecutive input chunks on
+tasks (`canonInput`), calls `compileReport` at its fixed sharing limits, and
+checks source accounting and semantic resources. Role support, evidence and
+binding are added by `Ix.RoleBinding.Compile.finalize`, which checks the
+finalized artifact before serialization (`Ixon.serEnv`).
+
+Parallel execution also applies inside the certified core. `checkReportPar`
+runs independent checks on tasks, with `checkReport_eq_par` proving the same
+result. `compileReportShared` computes the ground split and condensation once
+for both compilation and checking; `compileReport_eq_shared` proves that
+sharing this work preserves the function. These are checked `csimp`
+replacements, not a separate compiler.
+
+The optional streamed pipeline (`--streamed`,
+`Ix.CompileM.compileLeanInputValidated`) retains a different front end: it
+canonicalizes theorem and opaque bodies on demand through a hybrid
+environment, and takes sharing limits and task widths from `DriverOptions`.
+Its driver is the same `compileEnvFold`; its front end is tested against the
+certified path and remains an uncertified comparison option.
 
 **Failures.** The compile records what it leaves out instead of dropping it:
 `compileReport` returns, with the environment, every constant the ground
@@ -55,7 +64,7 @@ dependent's `MissingConstant`). `compile` is its first component, so a
 failure leaves the result defined; `compileComplete` (the policy
 `requireComplete`) makes any failure an error instead.
 
-**Checks** (CQ2.27). `compileReport` ends by checking its own result
+**Checks.** `compileReport` ends by checking its own result
 (`checkReport`): every input constant is published or reported as failed,
 exactly one of the two, and every stored record and blob is at the admission
 hash of its bytes; the later checks are listed at `checkReport`. An
