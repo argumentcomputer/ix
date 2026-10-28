@@ -29,17 +29,15 @@ This file proves that the schedule is only a schedule:
 computed against the wave's snapshot (the state the previous wave left),
 then the outcomes are applied in key order. That this equals compiling each
 block against the live state in some dependency order (the reference
-schedule `Tests.Ix.Compile.ScheduleReference`, with its seed pre-pass) is a
+schedule `Tests.Ix.Compile.ScheduleReference`) is a
 property of the blocks' independence within a wave, tested by
 `compile-schedule-identity` and `cert-compile-parity-init`, not proved
 here.
 
 The driver is restated with its apply step as a parameter
 (`foldWaveWith`), by `rfl` (`foldWave_eq_with`): an edit of `foldWave`
-breaks the build here until the restatement follows. `compileEnvFold` is
-`compileEnvFoldWithSource`'s first component (`compileEnvFoldSeq`
-likewise), whose Source service runs ahead of the waves and whose oracle the
-aux tails read (AuxGen M2b): restated verbatim. -/
+breaks the build here until the restatement follows. `compileEnvFoldSeq`
+restates `compileEnvFold` verbatim, with `foldWavesSeq` for `foldWaves`. -/
 
 namespace Ix.Cert.Schedule
 
@@ -227,40 +225,30 @@ theorem foldWaves_eq (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width
 
 /-! ## The driver -/
 
-/-- The driver with its Source service's report (AuxGen M1,
-`compileEnvFoldWithSource`), its waves sequential (`foldWavesSeq`). -/
-def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (unmaterialized : Nat := 0)
+/-- **The driver, sequentially**: `compileEnvFold` with its waves
+sequential (`foldWavesSeq`). It has no `width` and no `dbg`. -/
+def compileEnvFoldSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
-    : Except String ((Ixon.Env × Nat × CompileEnv) × Ix.AuxGen.Source.Report) := do
+    : Except String (Ixon.Env × Nat × CompileEnv) := do
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
   let sched := FoldSchedule.of blocks
-  let cenv₀ := { CompileEnv.new view with
-    unmaterialized := env.consts.size + unmaterialized, sharingLimits }
+  let cenv₀ := { CompileEnv.new view with sharingLimits }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let (ixe, bytes, cenv) ← finalizeEnv st.acc
-  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none, auxGenerationRetry := none }), {})
-
-/-- **The driver, sequentially**: `compileEnvFold` with its waves
-sequential (`foldWavesSeq`). It has no `width` and no `dbg`. -/
-def compileEnvFoldSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (unmaterialized : Nat := 0)
-    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
-    : Except String (Ixon.Env × Nat × CompileEnv) :=
-  Prod.fst <$> compileEnvFoldWithSourceSeq env blocks unmaterialized sharingLimits
+  return (ixe, bytes, { cenv with env })
 
 /-- **Schedule = fold (CQP.4 a)**: the driver is its sequential form, for
 every `width` and `dbg`: within each wave, every ready block's outcome is
 computed against the wave's snapshot and the outcomes are applied one by
 one in block-key order. -/
 theorem compileEnvFold_eq_seq (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool)
-    (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat) :
-    compileEnvFold env blocks dbg unmaterialized sharingLimits width =
-      compileEnvFoldSeq env blocks unmaterialized sharingLimits := by
-  unfold compileEnvFold compileEnvFoldSeq compileEnvFoldWithSource compileEnvFoldWithSourceSeq
+    (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat) :
+    compileEnvFold env blocks dbg sharingLimits width =
+      compileEnvFoldSeq env blocks sharingLimits := by
+  unfold compileEnvFold compileEnvFoldSeq
   simp only [foldWaves_eq]
   rfl
 
@@ -268,12 +256,11 @@ theorem compileEnvFold_eq_seq (env : Ix.Environment) (blocks : Ix.CondensedBlock
 tasks per wave) and `dbg` (the per-wave trace) change nothing. So
 `Ix.Cert.compile`'s fold (width `foldWaveTasks`, no trace) and the IO
 pipeline's (width `4 * numWorkers`, its options' trace) are one function of
-the environment, the condensation, the count of unmaterialized constants
-and the sharing limits. -/
+the environment, the condensation and the sharing limits. -/
 theorem compileEnvFold_width (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool)
-    (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat) :
-    compileEnvFold env blocks dbg unmaterialized sharingLimits width =
-      compileEnvFold env blocks dbg' unmaterialized sharingLimits width' := by
+    (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat) :
+    compileEnvFold env blocks dbg sharingLimits width =
+      compileEnvFold env blocks dbg' sharingLimits width' := by
   rw [compileEnvFold_eq_seq, compileEnvFold_eq_seq]
 
 /-- The IO pipeline's wrapper (`compileDecoratedConsts` runs the driver

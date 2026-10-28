@@ -64,7 +64,7 @@ def kernelPrimitives : Array String := #[
   "Int.bmod", "Int.bdiv",
   "Int.natAbs", "Int.pow",
   "Int.decEq", "Int.decLe", "Int.decLt",
-  -- Below/brecOn dependencies — referenced by aux_gen, not Primitives<M>
+  -- Below/brecOn dependencies — referenced by Lean's auxiliaries, not Primitives<M>
   -- directly. Kept here so the dump is complete enough to debug drift.
   "PUnit", "PProd", "PProd.mk",
   -- Names previously matched via `is_const_named` (string compare on

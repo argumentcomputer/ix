@@ -15,7 +15,7 @@ use ix_common::env::{
 };
 use ixon::constant::DefKind;
 
-use crate::compile::aux_gen::nested::compute_lean_ind_flags;
+use crate::compile::ind_flags::compute_lean_ind_flags;
 use dashmap::DashMap;
 use ix_kernel::constant::KConst;
 use ix_kernel::env::KEnv;
@@ -902,20 +902,13 @@ fn build_mut_const(
 }
 
 /// Build a fresh `Named` entry for a reconstructed constant, preserving
-/// the original's `meta`, `hints`, and `original` (aux_gen regeneration
-/// hint) fields but with an updated `addr`.
+/// the input entry's `meta`, `hints`, and `original` fields but with an
+/// updated `addr`, so the egressed environment carries the same per-name
+/// metadata as its input.
 ///
-/// Decompile's Pass 2 relies on `named.has_original()` to decide which
-/// entries are aux_gen-regenerated — we MUST copy that field over, or
-/// otherwise every `.brecOn*` / `.below` / `.brecOn_N.eq` gets dropped.
-///
-/// The per-name `hints` channel must survive too: decompile reconstructs
+/// The per-name `hints` channel matters to decompilation: it reconstructs
 /// `DefinitionVal.hints` from `Named.hints` (absent → `Opaque`), and the
-/// aux-regen roundtrip validates the decompiled constant's Lean-level
-/// hash — which includes hints — against the source env. Dropping the
-/// channel here made every regenerated `.casesOn`/`.recOn`/`.below`/
-/// `.brecOn` fail that validation (`Opaque` vs `Abbrev`) on the kernel
-/// egress leg, discarding the metadata-restored form.
+/// Lean-level hash of a definition includes its hints.
 fn rebuild_named(addr: Address, original: &Named) -> Named {
   let mut named = Named::new(addr, (*original.meta()).clone());
   named.set_hints(original.hints());
@@ -927,7 +920,7 @@ fn rebuild_named(addr: Address, original: &Named) -> Named {
 
 /// Register a member `Named` pointing at the appropriate address:
 /// - If `is_singleton_class`, the member lives directly at `block_addr`
-///   (no projection: compile/mutual.rs singleton-class branch).
+///   (no projection: `compile_mutual`'s singleton-class branch).
 /// - Otherwise emit the appropriate projection (`IPrj` / `CPrj` / `RPrj`
 ///   / `DPrj`), store it, and register the name with the projection addr.
 #[allow(clippy::too_many_arguments)]
@@ -1038,7 +1031,7 @@ fn egress_muts_block(
   let mut mut_consts: Vec<IxonMutConst> = Vec::with_capacity(all.len());
   // Track whether any class is inductive. An Indc anywhere forces the
   // block into the "multi-class-or-inductive" register-as-projection
-  // branch below (mirroring compile/mutual.rs::mutual's logic).
+  // branch below (mirroring `compile_mutual`'s logic).
   let mut has_indc = false;
   for (i, cls) in all.iter().enumerate() {
     let name_addr = cls.first().ok_or_else(|| {
@@ -1101,9 +1094,8 @@ fn egress_muts_block(
   let block_addr = content_address_of(&result);
   out.store_const(block_addr.clone(), result);
 
-  // Register the synthetic Muts Named entry at the new block_addr. Preserve
-  // the original `meta` / `original` fields — decompile's Pass 2 keys off
-  // `named.has_original()` to identify aux_gen entries.
+  // Register the synthetic Muts Named entry at the new block_addr,
+  // preserving the input entry's fields (`rebuild_named`).
   out.register_name(
     muts_name.clone(),
     rebuild_named(block_addr.clone(), muts_named),

@@ -120,13 +120,11 @@ theorem reach_encoded {blocks : Ix.CondensedBlocks} {init : DriverAcc}
   | init => exact start
   | step hsnap hacc hm hall _ ih => exact steps _ _ _ _ hsnap hacc hm hall ih
 
-/-- **The fold's start**: its store, resolution map, aux map and extra names are empty, it has
-no surgery sources, and it views the input. -/
+/-- **The fold's start**: its store and resolution map are empty, it has no surgery
+sources, and it views the input. -/
 structure FoldStart (env : Ix.Environment) (cenv₀ : CompileEnv) : Prop where
   constants : cenv₀.constants = {}
   nameToAddr : cenv₀.nameToAddr = {}
-  auxNameToAddr : cenv₀.auxNameToAddr = {}
-  auxGenExtraNames : cenv₀.auxGenExtraNames = {}
   surgeryFree : cenv₀.surgeryFree = true
   view : cenv₀.env = { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) }
 
@@ -145,19 +143,19 @@ theorem compileReport_start {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
   obtain ⟨cenv, hu, -⟩ := compileReport_ok h
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold hu
   rw [compileEnvFold_eq_seq] at hf
-  unfold compileEnvFoldSeq compileEnvFoldWithSourceSeq at hf
+  unfold compileEnvFoldSeq at hf
   generalize missingBlockRefs? _ = missing at hf
   generalize validateInductiveFlags _ = flags at hf
   generalize validateMutualSafety _ _ = safety at hf
   cases missing <;> cases flags <;> cases safety <;>
-    simp only [bind, Except.bind, pure, Except.pure, Functor.map, Except.map] at hf <;> try cases hf
+    simp only [bind, Except.bind, pure, Except.pure] at hf <;> try cases hf
   generalize hr : foldWavesSeq _ _ _ _ = r at hf
   cases r with
   | error => cases hf
   | ok st =>
     simp only [finalizeEnv, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hf
     obtain ⟨rfl, -, -⟩ := hf
-    exact ⟨_, _, st, ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩, hr, fun a lc hlc => assembleEnv_consts_inv _ hlc⟩
+    exact ⟨_, _, st, ⟨rfl, rfl, rfl, rfl⟩, hr, fun a lc hlc => assembleEnv_consts_inv _ hlc⟩
 
 /-- **A compile whose fold keeps its store encoded is stored canonically**, in every order:
 from a start like the fold's (`FoldStart`), every outcome the fold applies keeps the store

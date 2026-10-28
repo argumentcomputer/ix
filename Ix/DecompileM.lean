@@ -16,7 +16,6 @@ public import Ix.SemanticContract
 public import Ix.Address
 public import Ix.Environment
 public import Ix.Common
-public import Ix.AuxGen.ExprUtils
 
 public section
 

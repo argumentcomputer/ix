@@ -3,14 +3,11 @@
 
   Pass 1 (`Ix.Compile.Canon.*`) is written as total pure functions over the
   compiler's own data types (`Ix.Name`, `Ix.Level`, `Ix.Expr`,
-  `Ix.ConstantInfo`). The compiler's helpers it needs (`Ix.AuxGen.ExprUtils`,
-  `Ix.AuxGen.Nested`) are `partial` or loop-based, so the ones Pass 1 uses are
-  restated here by structural recursion, with the same results:
+  `Ix.ConstantInfo`), by structural recursion:
 
-  * names: `namePretty` (`Ix.Name.pretty`), `nameReplacePrefix`
-    (`Ix.AuxGen.nameReplacePrefix`), and `nameKey`, the digest-free key
-    (`Ix.AuxGen.nameKey`);
-  * applications: `getAppFnArgs` (`Ix.AuxGen.decomposeApps`), `mkAppN`;
+  * names: `namePretty` (`Ix.Name.pretty`), `nameReplacePrefix`, and
+    `nameKey`, the digest-free key;
+  * applications: `getAppFnArgs` (`Ix.CompileM.decomposeApps`), `mkAppN`;
   * de Bruijn arithmetic: `liftLoose` (`shiftVars`), `lowerLoose`
     (`lowerVars`), `instantiateRevAt`/`instantiateRev` (both have Lean's
     `instantiate` semantics: `bvar i` becomes `args[i]`),
@@ -54,7 +51,7 @@ def namePretty : Name → String
   | .num p n _ => s!"{namePretty p}.{n}"
 
 /-- The digest-free key of a name: its components as a `Lean.Name`
-(`Ix.AuxGen.nameKey`). Two names have equal keys exactly when their
+Two names have equal keys exactly when their
 components are equal; a stored digest never decides the comparison. -/
 def nameKey : Name → Lean.Name
   | .anonymous _ => .anonymous
@@ -71,8 +68,7 @@ def stripPrefix (name pre : Name) : Option (List (String ⊕ Nat)) :=
     | .anonymous _ => none
 
 /-- Replace the prefix `old` of `name` by `new` (`A.B.mk`, `A.B` ↦ `X.Y`
-gives `X.Y.mk`); a name not extending `old` is returned unchanged.
-`Ix.AuxGen.nameReplacePrefix`. -/
+gives `X.Y.mk`); a name not extending `old` is returned unchanged. -/
 def nameReplacePrefix (name old new : Name) : Name :=
   match stripPrefix name old with
   | some suffix => suffix.foldl (init := new) fun acc c =>
@@ -138,7 +134,7 @@ where
 
 /-- Replace loose `bvar (depth + i)` (`i < args.size`) by `args[i]` lifted by
 `depth`, and lower the loose variables past them by `args.size`
-(`Ix.AuxGen.instantiateRevAt`; Lean's `instantiate`, not its
+(`Ix.IndFlags.instantiateRevAt`; Lean's `instantiate`, not its
 `instantiateRev`). -/
 def instantiateRevAt (args : Array Expr) : Expr → Nat → Expr
   | .bvar i _, depth =>
@@ -163,7 +159,7 @@ def instantiateRev (body : Expr) (args : Array Expr) : Expr :=
   if args.isEmpty then body else instantiateRevAt args body 0
 
 /-- Peel `n` leading `∀`s of `typ`, substituting `args[i]` for the `i`-th
-(`Ix.AuxGen.instantiatePiParams`; stops at the first non-`∀`, without
+(`Ix.IndFlags.instantiatePiParams`; stops at the first non-`∀`, without
 looking through `mdata`). The arguments may have loose variables: they are
 lifted under the binders that remain. -/
 def instantiatePiParams (typ : Expr) (n : Nat) (args : Array Expr) : Expr :=
@@ -182,7 +178,7 @@ def stripMdata : Expr → Expr
 abbrev Binder := Name × Expr × Lean.BinderInfo
 
 /-- Peel up to `n` leading `∀` binders, stripping `mdata` before each (the
-shape of `Ix.AuxGen.forallTelescope`), without instantiating: the body keeps
+shape of `Ix.IndFlags.forallTelescope`), without instantiating: the body keeps
 the peeled binders as loose variables, `bvar 0` the last. -/
 def peelForalls : Nat → Expr → Array Binder → Array Binder × Expr
   | 0, e, acc => (acc, e)
@@ -208,7 +204,7 @@ def levelExplicitOffset (l : Level) : Option Nat :=
   | _ => none
 
 /-- Level equality ignoring every stored digest
-(`Ix.AuxGen.levelSameStructure`, Rust `Level::same_structure`). -/
+(`Ix.IndFlags.levelSameStructure`, Rust `Level::same_structure`). -/
 def levelSameStructure : Level → Level → Bool
   | .zero _, .zero _ => true
   | .succ a _, .succ b _ => levelSameStructure a b
@@ -218,7 +214,7 @@ def levelSameStructure : Level → Level → Bool
   | .mvar a _, .mvar b _ => nameKey a == nameKey b
   | _, _ => false
 
-/-- `Ix.AuxGen.levelMaxSmart` (Rust `Level::max_smart`). -/
+/-- `Ix.IndFlags.levelMaxSmart` (Rust `Level::max_smart`). -/
 def levelMaxSmart (x y : Level) : Level :=
   match levelExplicitOffset x, levelExplicitOffset y with
   | some ox, some oy => if ox ≥ oy then x else y
@@ -243,7 +239,7 @@ def levelMaxSmart (x y : Level) : Level :=
             if levelSameStructure bx by_ then (if ox ≥ oy then x else y)
             else Level.mkMax x y
 
-/-- `Ix.AuxGen.levelImaxSmart` (Rust `Level::imax_smart`). -/
+/-- `Ix.IndFlags.levelImaxSmart` (Rust `Level::imax_smart`). -/
 def levelImaxSmart (x y : Level) : Level :=
   match y with
   | .succ .. => levelMaxSmart x y
@@ -254,7 +250,7 @@ def levelImaxSmart (x y : Level) : Level :=
     | .succ (.zero _) _ => y
     | _ => if levelSameStructure x y then x else Level.mkIMax x y
 
-/-- `Ix.AuxGen.substLevel`: parameters by their digest-free name, the first
+/-- `Ix.IndFlags.substLevel`: parameters by their digest-free name, the first
 parameter with a level; through the smart constructors. -/
 def substLevel (params : Array Name) (univs : Array Level) : Level → Level
   | .succ l _ => Level.mkSucc (substLevel params univs l)
@@ -266,7 +262,7 @@ def substLevel (params : Array Name) (univs : Array Level) : Level → Level
     | none => l
   | l => l
 
-/-- `Ix.AuxGen.substLevels`. -/
+/-- `Ix.IndFlags.substLevels`. -/
 def substLevels (params : Array Name) (univs : Array Level) (e : Expr) : Expr :=
   if params.isEmpty || univs.isEmpty then e else go e
 where
@@ -281,14 +277,14 @@ where
     | .mdata md x _ => Expr.mkMData md (go x)
     | e => e
 
-/-- `Ix.AuxGen.normalizeLevel`: bottom-up through the smart constructors. -/
+/-- Normalize a level bottom-up through the smart constructors. -/
 def normalizeLevel : Level → Level
   | .succ l _ => Level.mkSucc (normalizeLevel l)
   | .max a b _ => levelMaxSmart (normalizeLevel a) (normalizeLevel b)
   | .imax a b _ => levelImaxSmart (normalizeLevel a) (normalizeLevel b)
   | l => l
 
-/-- `Ix.AuxGen.levelAlphaEqStruct`: structural, any two parameters equal. -/
+/-- Structural level equality, any two parameters equal. -/
 def levelAlphaEqStruct : Level → Level → Bool
   | .zero _, .zero _ => true
   | .succ a _, .succ b _ => levelAlphaEqStruct a b
@@ -303,7 +299,7 @@ def levelAlphaEq (a b : Level) : Bool :=
 /-! ## Name rewriting -/
 
 /-- Rename constants and projection structure names
-(`Ix.AuxGen.replaceConstNamesCached`). -/
+by `map`. -/
 def replaceConstNames (map : Std.HashMap Name Name) (e : Expr) : Expr :=
   if map.isEmpty then e else go e
 where
@@ -318,7 +314,7 @@ where
     | e => e
 
 /-- Rename constants only, keeping projection structure names
-(`Ix.AuxGen.canonicalizeConstNames`). -/
+by `map`. -/
 def canonicalizeConstNames (map : Std.HashMap Name Name) (e : Expr) : Expr :=
   if map.isEmpty then e else go e
 where
@@ -336,7 +332,7 @@ where
     | e => e
 
 /-- Some constant or projection structure name of `e` is in `names`
-(`Ix.AuxGen.exprMentionsAnyName`). -/
+(`Ix.IndFlags.exprMentionsAnyName`). -/
 def mentionsAnyName (names : Std.HashSet Name) (e : Expr) : Bool :=
   !names.isEmpty && go e
 where

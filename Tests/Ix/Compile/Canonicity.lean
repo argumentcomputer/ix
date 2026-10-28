@@ -2,8 +2,7 @@
   Cross-namespace canonicity twin fixtures.
 
   Each twin pair declares structurally identical Lean types in different
-  namespaces with different names.  The validate-aux Phase 4b asserts that
-  corresponding constants compile to the **same** content address.
+  namespaces with different names.
 
   See `docs/ix_canonicity.md` for the theory and testing plan.
 -/

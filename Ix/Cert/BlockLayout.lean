@@ -31,8 +31,8 @@ so its output is wire-valid only for wire-valid tables (`Ix.Sharing.Verify.Block
 the compile keeps from its empty start, `EmissionWire.Safe`) and a well-formed header
 (`ConstantInfoHeaderWF`). -/
 def BlocksWire : Prop :=
-  ∀ (cenv : CompileEnv) (all : Ix.Set Ix.Name) (lo : Ix.Name) (r : BlockResult) (c : BlockState)
-    (layout : Option Ixon.AuxLayout), runBlock cenv all lo = .ok (r, c, layout) → r.block.wireWF
+  ∀ (cenv : CompileEnv) (all : Ix.Set Ix.Name) (lo : Ix.Name) (r : BlockResult) (c : BlockState),
+    runBlock cenv all lo = .ok (r, c) → r.block.wireWF
 
 /-- An info that is no projection. -/
 def NotPrj : Ixon.ConstantInfo → Prop
@@ -254,9 +254,9 @@ theorem compileConstantInfo_shape (const : Ix.ConstantInfo) :
 /-- **A block `runBlock` returns has this shape**: its records are a lone constant's or a mutual
 block's compile's. -/
 theorem runBlock_shape {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} {r : BlockResult}
-    {c : BlockState} {layout : Option Ixon.AuxLayout} (h : runBlock cenv all lo = .ok (r, c, layout)) :
+    {c : BlockState} (h : runBlock cenv all lo = .ok (r, c)) :
     ResultShape r := by
-  obtain ⟨const, -, rest⟩ := BlockRecords.runBlockWithAux_records h
+  obtain ⟨const, -, rest⟩ := BlockRecords.runBlock_records h
   have transfer : ∀ out, ResultShape out → BlockRecords.recordsOf r = BlockRecords.recordsOf out → ResultShape r := by
     intro out shape same
     simp only [BlockRecords.recordsOf, Prod.mk.injEq] at same
@@ -279,8 +279,8 @@ theorem runBlock_shape {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
 `runBlock` returned, the block's own record stored too. -/
 def ClaimedAt (ixe : Ixon.Env) (n : Ix.Name) (a : Address) : Prop :=
   ∃ (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult) (c : BlockState)
-    (layout : Option Ixon.AuxLayout) (b : ByteArray),
-    runBlock cenv A k = .ok (r, c, layout) ∧ (n, a, b) ∈ Resolution.claimWrites k r ∧
+    (b : ByteArray),
+    runBlock cenv A k = .ok (r, c) ∧ (n, a, b) ∈ Resolution.claimWrites k r ∧
     ixe.consts.get? a = some { buf := b, len := b.size } ∧
     ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size }
 
@@ -293,9 +293,9 @@ theorem recordAt_ser {ixe : Ixon.Env} {a : Address} {c : Ixon.Constant} (wire : 
 /-- **A claimed record's block is stored and is its own block.** -/
 theorem claim_block (bw : BlocksWire) {ixe : Ixon.Env} {n : Ix.Name} {a : Address} (h : ClaimedAt ixe n a) :
     ∃ c, recordAt ixe (blockAt ixe a) = some c ∧ ownerOf (blockAt ixe a) c = blockAt ixe a := by
-  obtain ⟨cenv, A, k, r, c, layout, b, hr, hclaim, ha, hb⟩ := h
+  obtain ⟨cenv, A, k, r, c, b, hr, hclaim, ha, hb⟩ := h
   have shape := runBlock_shape hr
-  have wire := bw _ _ _ _ _ _ hr
+  have wire := bw _ _ _ _ _ hr
   have blockRec : recordAt ixe r.blockAddr = some r.block := by
     rw [shape.bytes] at hb
     exact recordAt_ser wire hb

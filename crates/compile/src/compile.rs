@@ -6,7 +6,7 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_precision_loss)]
 
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{cmp::Ordering, sync::Arc};
 
@@ -52,19 +52,10 @@ use crate::{
 pub use expr_key::{ExprKey, UnivKey};
 use expr_key::{PreseedKey, UnivContext};
 
-/// Whether to output timing diagnostics for slow blocks and aux_gen phases.
+/// Whether to output timing diagnostics for slow blocks.
 /// Set via IX_TIMING=1 environment variable.
 pub static IX_TIMING: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_TIMING").is_ok());
-
-/// Log every aux-name claim: alias insertions, canonical patch name
-/// registrations, and evaporation decisions — with full addresses and
-/// block context. The cross-SCC ownership of `all[0].rec_N`-style names is
-/// invisible in normal logs; this flag exists to attribute both claimants
-/// when a name is contested.
-/// Set via IX_LOG_AUX_NAMES=1.
-pub static IX_LOG_AUX_NAMES: std::sync::LazyLock<bool> =
-  std::sync::LazyLock::new(|| std::env::var("IX_LOG_AUX_NAMES").is_ok());
 
 /// Options controlling whole-environment compilation.
 #[derive(Clone, Copy, Debug, Default)]
@@ -74,55 +65,8 @@ pub struct CompileOptions {
   pub max_workers: Option<usize>,
 }
 
-/// Worker-local kernel context for aux_gen sort-level inference.
-pub struct KernelCtx {
-  /// Worker-local **canonical** kernel environment. Populated incrementally by
-  /// aux_gen's Phase 1+ (`compute_is_large_and_k`, `ingress_field_deps`,
-  /// etc.) with aux-substituted types at `resolve_lean_name_addr`-derived
-  /// addresses that may shift as alpha-collapse reassigns addresses over
-  /// the course of compilation.
-  pub kenv: ix_kernel::env::KEnv<ix_kernel::mode::Meta>,
-  /// Ids whose `ingress_aux_gen_dep` dispatch has already run against
-  /// `kenv`. The dispatch is a deterministic function of the constant's
-  /// kind, so once an id is here its kenv entry is at final fidelity and
-  /// the walkers skip re-expanding its whole reference closure (that
-  /// re-expansion was Θ(blocks × closure) when the set lived per call).
-  /// Keyed by resolved `KId` — not bare `Name` — so an address shifted
-  /// by later aux registration reads as unseen and re-ingresses under
-  /// the new id, exactly as the per-call sets healed it. Must be cleared
-  /// together with `kenv` (the entries it vouches for die with it).
-  pub aux_ingress_seen: FxHashSet<ix_kernel::id::KId<ix_kernel::mode::Meta>>,
-  /// Forward source provenance (Lean `AuxKernelCtx.sourceNames`): every
-  /// source name the bridge's inputs referenced, by the address it was
-  /// ingressed at. All identities are kept: a Meta `KId` includes the name,
-  /// so another alias at the same address cannot stand in for a missing
-  /// one. `fault_in_addr` loads only from here, never from ambient compiled
-  /// aliases or a reverse scan. Fresh with the context and cleared with
-  /// `kenv`.
-  pub source_names: SourceNames,
-}
-
-/// Forward source provenance: ingress address → the source names
-/// referenced at it (see [`KernelCtx::source_names`]).
-pub type SourceNames = FxHashMap<Address, FxHashSet<Name>>;
-
-impl Default for KernelCtx {
-  fn default() -> Self {
-    Self::new()
-  }
-}
-
-impl KernelCtx {
-  pub fn new() -> Self {
-    KernelCtx {
-      kenv: ix_kernel::env::KEnv::new(),
-      aux_ingress_seen: FxHashSet::default(),
-      source_names: FxHashMap::default(),
-    }
-  }
-}
-
 /// Compile state for building the Ixon environment.
+#[derive(Default)]
 pub struct CompileState {
   /// Ixon environment being built
   pub env: IxonEnv,
@@ -137,30 +81,13 @@ pub struct CompileState {
   /// Populated in two phases:
   /// 1. Pre-compile grounding: `ground_consts` identifies constants unreachable
   ///    from axioms/primitives.
-  /// 2. During scheduling: per-block compile failures (e.g. `compute_is_large_and_k`
-  ///    rejecting an ill-formed inductive) are recorded here instead of
-  ///    aborting the scheduler, so the rest of the env still compiles and
-  ///    callers can report each failure per-constant.
+  /// 2. During scheduling: per-block compile failures are recorded here
+  ///    instead of aborting the scheduler, so the rest of the env still
+  ///    compiles and callers can report each failure per-constant.
   ///
   /// `DashMap` (rather than `FxHashMap`) because scheduler workers insert
   /// concurrently on per-block failure paths.
   pub ungrounded: DashMap<Name, String>,
-  /// Persistent set of names compiled by aux_gen. Used for membership
-  /// checks (e.g., "is this name aux_gen-rewritten?") throughout compilation.
-  /// Never drained — callers rely on `.contains()` long after insertion.
-  pub aux_gen_extra_names: DashSet<Name>,
-  /// Pending aux_gen names awaiting scheduler dependency resolution.
-  /// Drained after each block completion. Separated from the persistent
-  /// `aux_gen_extra_names` to avoid O(N×M) re-iteration of the full set
-  /// on every block completion.
-  pub aux_gen_pending: std::sync::Mutex<Vec<Name>>,
-  /// Fallback name->addr map for constants compiled by aux_gen or pre-compiled
-  /// during a parent inductive's compilation. Visible to later compilations
-  /// so expressions referencing them resolve.
-  pub aux_name_to_addr: DashMap<Name, Address>,
-  /// Original Lean environment, if available. Used by the decompiler for
-  /// aux_gen comparison (verifying regenerated constants match originals).
-  pub lean_env: Option<Arc<LeanEnv>>,
   /// Reducibility hints per definition NAME, recorded by
   /// `compile_definition` (the only place the Lean-side hints are in
   /// scope — hints are not part of `ConstantMeta`). The constant
@@ -169,7 +96,7 @@ pub struct CompileState {
   /// `env.named` into `env.anon_hints` once compilation completes.
   pub def_hints: DashMap<Name, ReducibilityHints>,
   /// Resource limits of every canonical sharing construction run against
-  /// this state: compilation, and the decompiler's recompile check.
+  /// this state.
   /// `compile_env` sets them once, from [`SHARING_LIMITS_ENV`], before it
   /// schedules any block; an entry point that builds a state from a
   /// deserialized environment sets them with [`compiler_sharing_limits`].
@@ -251,23 +178,6 @@ pub struct CompileStateStats {
   pub blocks: usize,
 }
 
-impl Default for CompileState {
-  fn default() -> Self {
-    CompileState {
-      env: Default::default(),
-      name_to_addr: Default::default(),
-      blocks: Default::default(),
-      ungrounded: Default::default(),
-      aux_gen_extra_names: Default::default(),
-      aux_gen_pending: std::sync::Mutex::new(Vec::new()),
-      aux_name_to_addr: Default::default(),
-      lean_env: None,
-      def_hints: Default::default(),
-      sharing_limits: ExactSharingLimits::default(),
-    }
-  }
-}
-
 impl CompileState {
   /// Create an empty compile state for testing (no environment).
   pub fn new_empty() -> Self {
@@ -283,47 +193,7 @@ impl CompileState {
     }
   }
 
-  /// Claim `name` for an aux_gen product at `addr` (A0: single ownership).
-  ///
-  /// Insert-once: the first claim wins and an identical re-claim is a no-op,
-  /// but a claim at a different address — by another aux block, or on a
-  /// name a non-aux block has already compiled — is a hard error instead of
-  /// a schedule-dependent overwrite (the `FieldBelowRace` shape, WB-C1).
-  ///
-  /// Returns whether the caller owns `name`'s `Named` entry: its claim
-  /// entered `aux_name_to_addr`, now or earlier in the same block
-  /// (`block_txn`). An identical re-claim of a name another block claimed
-  /// owns nothing (`claim_and_register_aux`).
-  pub fn claim_aux_name(
-    &self,
-    name: &Name,
-    addr: &Address,
-  ) -> Result<bool, CompileError> {
-    if let Some(existing) = self.name_to_addr.get(name)
-      && *existing.value() != *addr
-    {
-      return Err(name_claim_conflict(name, existing.value(), addr));
-    }
-    let owns = match self.aux_name_to_addr.entry(name.clone()) {
-      dashmap::mapref::entry::Entry::Occupied(e) => {
-        if e.get() != addr {
-          return Err(name_claim_conflict(name, e.get(), addr));
-        }
-        block_txn::holds_aux_claim(name)
-      },
-      dashmap::mapref::entry::Entry::Vacant(e) => {
-        e.insert(addr.clone());
-        block_txn::log_aux(name);
-        true
-      },
-    };
-    self.aux_gen_extra_names.insert(name.clone());
-    Ok(owns)
-  }
-
-  /// Claim `name` for the block that compiles it (aux mode) at `addr`.
-  /// A name aux_gen has claimed at another address is a hard error: two
-  /// producers would otherwise race for it.
+  /// Claim `name` for the block that compiles it at `addr`.
   ///
   /// Returns whether the caller owns `name`'s `Named` entry: its claim
   /// entered `name_to_addr`, now or earlier in the same block
@@ -334,16 +204,11 @@ impl CompileState {
     name: &Name,
     addr: &Address,
   ) -> Result<bool, CompileError> {
-    if let Some(existing) = self.aux_name_to_addr.get(name)
-      && *existing.value() != *addr
-    {
-      return Err(name_claim_conflict(name, existing.value(), addr));
-    }
-    // A second compiled claim at another address is the same conflict (a
-    // name assigned twice is an error unless both assignments are equal).
-    // It was an overwrite, so the address a name kept depended on which
-    // block claimed last; an identical re-claim stays a no-op, so valid
-    // input registers the same values.
+    // A second claim at another address is a conflict (a name assigned
+    // twice is an error unless both assignments are equal), not an
+    // overwrite whose surviving address would depend on which block claimed
+    // last; an identical re-claim stays a no-op, so valid input registers
+    // the same values.
     let owns = match self.name_to_addr.entry(name.clone()) {
       dashmap::mapref::entry::Entry::Occupied(e) => {
         if e.get() != addr {
@@ -363,10 +228,9 @@ impl CompileState {
   /// Register `name`'s `Named` entry, logging it for the failed-block
   /// rollback when the entry is new (`block_txn`).
   ///
-  /// A claimed name is registered through `claim_and_register_compiled` or
-  /// `claim_and_register_aux`, so that only its owner writes the entry. The
-  /// unclaimed synthetic `Muts` entries are registered here directly; the
-  /// aux-layout patch re-registers the block's own entry.
+  /// A claimed name is registered through `claim_and_register_compiled`, so
+  /// that only its owner writes the entry. The unclaimed synthetic `Muts`
+  /// entries are registered here directly.
   pub fn register_named(&self, name: Name, named: Named) {
     if !self.env.named.contains_key(&name) {
       block_txn::log_named(&name);
@@ -378,13 +242,12 @@ impl CompileState {
   /// (`claim_compiled_name`) and register `named` if the claim owns the
   /// name.
   ///
-  /// An identical re-claim of a name another block owns registers nothing
-  /// (CQ2.24 b, R03-16's residual): the owner's entry, with the original
-  /// and hints its promotion set, is kept, which entry a name keeps no
-  /// longer depends on which block registered last, and a later failure of
-  /// the re-claiming block has nothing of the owner's to roll back. The
-  /// claim precedes the registration, so a refused claim writes nothing
-  /// either. Mirrors the Lean drivers' `mergeCompiledBlock`.
+  /// An identical re-claim of a name another block owns registers nothing:
+  /// the owner's entry is kept, which entry a name keeps does not depend on
+  /// which block registered last, and a later failure of the re-claiming
+  /// block has nothing of the owner's to roll back. The claim precedes the
+  /// registration, so a refused claim writes nothing either. Mirrors the
+  /// Lean drivers' `mergeCompiledBlock`.
   pub fn claim_and_register_compiled(
     &self,
     name: &Name,
@@ -392,63 +255,18 @@ impl CompileState {
   ) -> Result<(), CompileError> {
     if self.claim_compiled_name(name, &named.addr)? {
       self.register_named(name.clone(), named);
-    } else {
-      self.log_kept_owner_entry(name, &named);
     }
     Ok(())
-  }
-
-  /// Claim `name` at `named.addr` for an aux_gen product
-  /// (`claim_aux_name`) and register `named` if the claim owns the name;
-  /// see `claim_and_register_compiled`.
-  pub fn claim_and_register_aux(
-    &self,
-    name: &Name,
-    named: Named,
-  ) -> Result<(), CompileError> {
-    if self.claim_aux_name(name, &named.addr)? {
-      self.register_named(name.clone(), named);
-    } else {
-      self.log_kept_owner_entry(name, &named);
-    }
-    Ok(())
-  }
-
-  /// `IX_LOG_AUX_NAMES`: an identical re-claim that kept another block's
-  /// entry, and whether the two entries' metadata agree.
-  fn log_kept_owner_entry(&self, name: &Name, named: &Named) {
-    if *IX_LOG_AUX_NAMES {
-      let same_meta =
-        self.env.lookup_name(name).map(|owner| owner.meta() == named.meta());
-      eprintln!(
-        "[aux-names] identical re-claim of {} at {:.12} keeps the owner's \
-         Named (same metadata: {same_meta:?})",
-        name.pretty(),
-        named.addr.hex(),
-      );
-    }
   }
 
   /// Look up a compiled constant's address by name.
-  /// Checks `name_to_addr` first, then `aux_name_to_addr` when `aux` is true.
-  pub fn resolve_addr_aux(&self, name: &Name, aux: bool) -> Option<Address> {
-    if let Some(r) = self.name_to_addr.get(name) {
-      return Some(r.value().clone());
-    }
-    if aux && let Some(r) = self.aux_name_to_addr.get(name) {
-      return Some(r.value().clone());
-    }
-    None
-  }
-
-  /// Look up a compiled constant's address (with `aux_name_to_addr` fallback).
   pub fn resolve_addr(&self, name: &Name) -> Option<Address> {
-    self.resolve_addr_aux(name, true)
+    self.name_to_addr.get(name).map(|r| r.value().clone())
   }
 
   /// Record `name`'s reducibility hint (`None` removes it). Scheduled
-  /// blocks publish hints only after all compilation and promotion checks
-  /// succeed (`block_txn::commit`); direct callers write immediately.
+  /// blocks publish hints only after the whole block has compiled
+  /// (`block_txn::commit`); direct callers write immediately.
   pub fn record_hint(&self, name: &Name, hint: Option<ReducibilityHints>) {
     if block_txn::defer_hint(name, hint) {
       return;
@@ -490,71 +308,6 @@ impl CompileState {
         self.env.register_hint(named.addr.clone(), *entry.value());
       }
     }
-  }
-
-  /// Promote a constant from `aux_name_to_addr` to `name_to_addr`, setting
-  /// `Named.original` to the given `(orig_addr, orig_meta)` from the
-  /// ephemeral no-aux compilation. The existing aux_gen `Named` entry keeps
-  /// its canonical `addr`/`meta`; `original` captures the Lean-native form.
-  /// The promotion claims `name` at its aux address: a name already compiled
-  /// at another address is a conflict, not an overwrite. During a scheduled
-  /// block the claim and the metadata are deferred until the whole block has
-  /// succeeded (`block_txn::commit`).
-  ///
-  /// Errors with `CompileError::InvalidMutualBlock` if the metadata's
-  /// self-name address does not match `name`'s compiled address — that
-  /// mismatch is structural corruption (the address map and the name
-  /// table disagree about which constant this `meta` describes) and
-  /// silently continuing would splice foreign metadata into `name`'s
-  /// Named entry.
-  pub fn promote_aux(
-    &self,
-    name: &Name,
-    orig_addr: Address,
-    orig_meta: ConstantMeta,
-  ) -> Result<(), CompileError> {
-    // Verify that the metadata's own name address matches the constant
-    // being promoted. A mismatch means we're about to attach metadata
-    // that describes some other constant.
-    let meta_name_addr = match &orig_meta.info {
-      ConstantMetaInfo::Def { name: a, .. }
-      | ConstantMetaInfo::Axio { name: a, .. }
-      | ConstantMetaInfo::Quot { name: a, .. }
-      | ConstantMetaInfo::Indc { name: a, .. }
-      | ConstantMetaInfo::Ctor { name: a, .. }
-      | ConstantMetaInfo::Rec { name: a, .. } => Some(a),
-      _ => None,
-    };
-    if let Some(meta_addr) = meta_name_addr {
-      let expected_addr = compile_name(name, self)?;
-      if *meta_addr != expected_addr {
-        return Err(CompileError::InvalidMutualBlock {
-          reason: format!(
-            "promote_aux: name mismatch for '{}' — compile_name address \
-             is {:.12} but meta name address is {:.12}",
-            name.pretty(),
-            expected_addr.hex(),
-            meta_addr.hex(),
-          ),
-        });
-      }
-    }
-
-    // During a scheduled block the claim and the original metadata wait until
-    // the whole block has succeeded (`block_txn::commit`).
-    let Some(promotion) = block_txn::defer_promotion(block_txn::Promotion {
-      name: name.clone(),
-      addr: orig_addr,
-      meta: orig_meta,
-    }) else {
-      return Ok(());
-    };
-    let aux_addr = self.aux_name_to_addr.get(name).map(|r| r.value().clone());
-    if let Some(aux_addr) = aux_addr {
-      self.claim_compiled_name(name, &aux_addr)?;
-    }
-    block_txn::publish_promotion(self, promotion);
-    Ok(())
   }
 }
 
@@ -2519,8 +2272,8 @@ pub fn compare_ctor(
 /// Compare two inductives by universe-parameter count, params, indices,
 /// constructor count, type, then constructors, matching Lean's `compareInd`.
 ///
-/// Recursion and safety flags remain inputs to validation, serialization and
-/// auxiliary generation; they are not ordering keys. This comparator does not
+/// Recursion and safety flags remain inputs to validation and serialization;
+/// they are not ordering keys. This comparator does not
 /// validate a raw mutual block's flags.
 pub fn compare_indc(
   x: &Ind,
@@ -2872,35 +2625,6 @@ pub fn recursor_family_position(rec: &ix_common::env::RecursorVal) -> u64 {
   u64::MAX
 }
 
-/// A block of recursors is laid out in its family's flat order (the order
-/// the kernel's `populate_recursor_rules_from_block` pairs with the
-/// inductive block's flat members), not in `sort_consts` order. The
-/// regenerated families get this from `compile_aux_block_with_rename`'s
-/// class-order key; this applies the same rule to a recursor block compiled
-/// from Lean's own declarations (`Named.original`, and decompile's
-/// verification recompile), using Lean's `RecursorVal.all`. On a block that
-/// canonicalisation leaves unchanged the two layouts coincide, so Lean's
-/// form and the Ix form of each recursor have one address (D6). The sort is
-/// stable; other classes keep their `sort_consts` order. Mirrors Lean
-/// `orderRecursorFamily`.
-pub fn order_recursor_family(classes: &mut [Vec<&MutConst>]) {
-  if classes.is_empty()
-    || !classes.iter().flatten().all(|c| matches!(c, MutConst::Recr(_)))
-  {
-    return;
-  }
-  classes.sort_by_key(|class| {
-    class
-      .iter()
-      .map(|c| match c {
-        MutConst::Recr(r) => recursor_family_position(r),
-        _ => u64::MAX,
-      })
-      .min()
-      .unwrap_or(u64::MAX)
-  });
-}
-
 /// Lean's name order, structural: a name's prefix first, then its last
 /// component, a number before a string (`Lean.Name.cmp`). It reads no hash.
 /// Mirrors Lean `Ix.Name.leanCmp`.
@@ -2957,241 +2681,6 @@ pub fn source_classes<'a>(cs: &[&'a MutConst]) -> Vec<Vec<&'a MutConst>> {
 // ===========================================================================
 // Main compilation entry points
 // ===========================================================================
-
-/// Compile a single constant.
-pub fn compile_const(
-  name: &Name,
-  all: &NameSet,
-  lean_env: &Arc<LeanEnv>,
-  cache: &mut BlockCache,
-  stt: &CompileState,
-  kctx: &mut KernelCtx,
-) -> Result<Address, CompileError> {
-  compile_const_inner(name, all, lean_env, cache, stt, kctx, true)
-}
-
-/// The original-form phase of an aux-generated constant
-/// (`compile_const_no_aux`; Lean `NoAuxPhase`).
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum NoAuxPhase {
-  Rec,
-  BelowIndc,
-  BelowDef,
-  BelowRec,
-  BrecOn,
-}
-
-/// A component naming a member of a Lean `IndPredBelow` family: `below` or
-/// `below_N`.
-fn is_below_component(s: &str) -> bool {
-  s == "below" || s.starts_with("below_")
-}
-
-/// The phase of the aux-generated constant `n` (Lean `compileConstNoAuxPure`):
-/// the recursor of any `below` family member, `X.below.rec` or
-/// `X.below_N.rec`, is a `below` recursor, as in Lean.
-fn no_aux_phase(n: &Name, ci: &LeanConstantInfo) -> Option<NoAuxPhase> {
-  match ci {
-    LeanConstantInfo::RecInfo(_) => {
-      // Distinguish .rec from the recursor of a `below` family member
-      if matches!(n.as_data(), NameData::Str(p, _, _)
-        if p.last_str().is_some_and(is_below_component))
-      {
-        Some(NoAuxPhase::BelowRec)
-      } else {
-        Some(NoAuxPhase::Rec)
-      }
-    },
-    LeanConstantInfo::InductInfo(_) => Some(NoAuxPhase::BelowIndc),
-    LeanConstantInfo::DefnInfo(_) | LeanConstantInfo::ThmInfo(_) => {
-      if n.last_str().is_some_and(is_below_component) {
-        Some(NoAuxPhase::BelowDef)
-      } else {
-        Some(NoAuxPhase::BrecOn)
-      }
-    },
-    _ => None,
-  }
-}
-
-/// Compile a constant without aux_gen: no `aux_name_to_addr` fallback,
-/// no aux_gen side effects. Used to compile the original Lean form of
-/// aux_gen-rewritten constants for metadata preservation. A newly compiled
-/// result returns its original-form address before the deferred promotions
-/// commit (`block_txn::commit`).
-pub fn compile_const_no_aux(
-  name: &Name,
-  all: &NameSet,
-  lean_env: &Arc<LeanEnv>,
-  cache: &mut BlockCache,
-  stt: &CompileState,
-  kctx: &mut KernelCtx,
-) -> Result<Address, CompileError> {
-  // Expand the SCC `all` to include same-phase aux_gen constants from
-  // the full Lean mutual block. Each constant's `.all` field determines
-  // its mutual block. We filter by the constant kind so the no-aux block
-  // matches what `roundtrip_block` produces during decompilation:
-  //
-  //   .rec         → expand via .all, keep only RecInfo
-  //   .below (Indc)→ expand via .below's own .all, keep only InductInfo
-  //   .below (Def) → expand via .all as-is
-  //   .below.rec   → expand via .below.rec's .all, keep only RecInfo
-  //   .brecOn/*    → expand via .all as-is
-
-  // The members in canonical order (Lean `aliasPrecedes`: by name hash), so
-  // that the first matches below are a function of the member set, not of
-  // the set's iteration order.
-  let mut members: Vec<&Name> = all.iter().collect();
-  members.sort_unstable_by(|a, b| {
-    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
-  });
-
-  // First, collect the Lean .all names from any constant in the SCC.
-  let mut lean_all: Vec<Name> = Vec::new();
-  for n in members.iter().copied() {
-    if let Some(ci) = lean_env.get(n) {
-      let block_all = match &*ci {
-        LeanConstantInfo::InductInfo(v) => &v.all,
-        LeanConstantInfo::RecInfo(v) => &v.all,
-        LeanConstantInfo::DefnInfo(v) => &v.all,
-        LeanConstantInfo::ThmInfo(v) => &v.all,
-        _ => continue,
-      };
-      if lean_all.is_empty() {
-        lean_all = block_all.clone();
-      }
-      break;
-    }
-  }
-
-  // Determine phase from the first aux_gen constant in the SCC.
-  let phase = members.iter().copied().find_map(|n| {
-    if !stt.aux_gen_extra_names.contains(n) {
-      return None;
-    }
-    no_aux_phase(n, lean_env.get(n).as_deref()?)
-  });
-
-  let Some(phase) = phase else {
-    // No aux_gen constants found — just compile as-is.
-    return compile_const_inner(name, all, lean_env, cache, stt, kctx, false);
-  };
-
-  // Build the filtered set from the .all field based on phase.
-  let mut filtered = NameSet::default();
-  match phase {
-    NoAuxPhase::Rec => {
-      // All .rec and .rec_N from the mutual block that are in the current SCC.
-      // lean_all only contains inductive names (from RecursorVal.all), not the
-      // mutually-referencing recursor names. The scheduler's `all` has the full
-      // SCC including rec_N names.
-      for n in all {
-        if stt.aux_gen_extra_names.contains(n)
-          && matches!(
-            lean_env.get(n).as_deref(),
-            Some(LeanConstantInfo::RecInfo(_))
-          )
-        {
-          filtered.insert(n.clone());
-        }
-      }
-    },
-    NoAuxPhase::BelowIndc => {
-      // Use .below's own .all, keep only inductives + their ctors.
-      for n in members.iter().copied() {
-        if let Some(LeanConstantInfo::InductInfo(v)) =
-          lean_env.get(n).as_deref()
-        {
-          for a in &v.all {
-            if stt.aux_gen_extra_names.contains(a)
-              && let Some(LeanConstantInfo::InductInfo(bi)) =
-                lean_env.get(a).as_deref()
-            {
-              filtered.insert(a.clone());
-              for ctor in &bi.ctors {
-                filtered.insert(ctor.clone());
-              }
-            }
-          }
-          break;
-        }
-      }
-    },
-    NoAuxPhase::BelowDef => {
-      // lean_all for BelowDef already contains .below names
-      // (from DefnInfo.all = [EqC.below]), so use directly.
-      for a in &lean_all {
-        if stt.aux_gen_extra_names.contains(a)
-          && matches!(
-            lean_env.get(a).as_deref(),
-            Some(LeanConstantInfo::DefnInfo(_))
-          )
-        {
-          filtered.insert(a.clone());
-        }
-      }
-    },
-    NoAuxPhase::BelowRec => {
-      // lean_all for .below.rec already contains .below names
-      // (from RecursorVal.all = [A.below, B.below]), so just append ".rec".
-      for ind_name in &lean_all {
-        let below_rec = Name::str(ind_name.clone(), "rec".to_string());
-        if stt.aux_gen_extra_names.contains(&below_rec)
-          && matches!(
-            lean_env.get(&below_rec).as_deref(),
-            Some(LeanConstantInfo::RecInfo(_))
-          )
-        {
-          filtered.insert(below_rec);
-        }
-      }
-    },
-    NoAuxPhase::BrecOn => {
-      // Use .all as-is — include all .brecOn/.brecOn.go/.brecOn.eq.
-      for n in all {
-        if stt.aux_gen_extra_names.contains(n) {
-          filtered.insert(n.clone());
-        }
-      }
-      for a in &lean_all {
-        for suffix in &["brecOn"] {
-          let base = Name::str(a.clone(), suffix.to_string());
-          if stt.aux_gen_extra_names.contains(&base) {
-            filtered.insert(base.clone());
-          }
-          for sub in &["go", "eq"] {
-            let sub_name = Name::str(base.clone(), sub.to_string());
-            if stt.aux_gen_extra_names.contains(&sub_name) {
-              filtered.insert(sub_name);
-            }
-          }
-        }
-      }
-      // Note: _N auxiliary brecOn (brecOn_1, brecOn_1.go, etc.) are NOT
-      // included here. They're separate Lean constants with their own SCCs.
-    },
-  }
-
-  if filtered.is_empty() {
-    return compile_const_inner(name, all, lean_env, cache, stt, kctx, false);
-  }
-
-  compile_const_inner(name, &filtered, lean_env, cache, stt, kctx, false)
-}
-
-/// `aux = false` is the original-form compile of a regenerated auxiliary
-/// (`Named.original` provenance): its constants are never stored.
-fn compile_const_inner(
-  name: &Name,
-  all: &NameSet,
-  lean_env: &Arc<LeanEnv>,
-  cache: &mut BlockCache,
-  stt: &CompileState,
-  kctx: &mut KernelCtx,
-  aux: bool,
-) -> Result<Address, CompileError> {
-  compile_const_inner_body(name, all, lean_env, cache, stt, kctx, aux)
-}
 
 /// Compile a single definition, theorem or opaque standalone, storing and
 /// registering nothing: its address, metadata, serialized bytes and constant
@@ -3252,16 +2741,15 @@ pub(crate) fn compile_single_def_parts(
   Ok((addr, meta, bytes, constant))
 }
 
-fn compile_const_inner_body(
+/// Compile a single constant together with the rest of its block `all`.
+pub fn compile_const(
   name: &Name,
   all: &NameSet,
   lean_env: &Arc<LeanEnv>,
   cache: &mut BlockCache,
   stt: &CompileState,
-  kctx: &mut KernelCtx,
-  aux: bool,
 ) -> Result<Address, CompileError> {
-  if let Some(cached) = stt.resolve_addr_aux(name, aux) {
+  if let Some(cached) = stt.resolve_addr(name) {
     return Ok(cached);
   }
 
@@ -3278,56 +2766,44 @@ fn compile_const_inner_body(
     .clone();
 
   // Helper: compile a single definition/theorem/opaque (non-mutual case).
-  // When `aux` is false (ephemeral compilation for metadata capture),
-  // skip storing the Ixon blob, Named entry, and block stats.
   fn compile_single_def(
     name: &Name,
     def: &Def,
     cache: &mut BlockCache,
     stt: &CompileState,
-    aux: bool,
-  ) -> Result<(Address, ConstantMeta), CompileError> {
+  ) -> Result<Address, CompileError> {
     let (addr, meta, bytes, constant) =
       compile_single_def_parts(name, def, cache, stt)?;
-    if aux {
-      stt.store_const_bytes(addr.clone(), bytes, constant)?;
-      // Claim before registering: a refused claim leaves the owner's
-      // `Named` entry as it was.
-      stt.claim_and_register_compiled(
-        name,
-        Named::new(addr.clone(), meta.clone()),
-      )?;
-    } else {
-      // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
-      // original (addr, meta) in Named.original for decompilation metadata.
-      stt.promote_aux(name, addr.clone(), meta.clone())?;
-    }
-    Ok((addr, meta))
+    stt.store_const_bytes(addr.clone(), bytes, constant)?;
+    // Claim before registering: a refused claim leaves the owner's
+    // `Named` entry as it was.
+    stt.claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
+    Ok(addr)
   }
 
   // Handle each constant type
   let addr = match &cnst {
     LeanConstantInfo::DefnInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_defn(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_defn(val), cache, stt)?
       } else {
-        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
+        compile_mutual(name, all, lean_env, cache, stt)?
       }
     },
 
     LeanConstantInfo::ThmInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_theo(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_theo(val), cache, stt)?
       } else {
-        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
+        compile_mutual(name, all, lean_env, cache, stt)?
       }
     },
 
     LeanConstantInfo::OpaqueInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_opaq(val), cache, stt, aux)?.0
+        compile_single_def(name, &Def::mk_opaq(val), cache, stt)?
       } else {
-        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
+        compile_mutual(name, all, lean_env, cache, stt)?
       }
     },
 
@@ -3351,11 +2827,8 @@ fn compile_const_inner_body(
       let mut bytes = Vec::new();
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
-      if aux {
-        stt.store_const_bytes(addr.clone(), bytes, constant)?;
-        stt
-          .claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
-      }
+      stt.store_const_bytes(addr.clone(), bytes, constant)?;
+      stt.claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
       addr
     },
 
@@ -3379,16 +2852,13 @@ fn compile_const_inner_body(
       let mut bytes = Vec::new();
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
-      if aux {
-        stt.store_const_bytes(addr.clone(), bytes, constant)?;
-        stt
-          .claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
-      }
+      stt.store_const_bytes(addr.clone(), bytes, constant)?;
+      stt.claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
       addr
     },
 
     LeanConstantInfo::InductInfo(_) => {
-      compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
+      compile_mutual(name, all, lean_env, cache, stt)?
     },
 
     LeanConstantInfo::RecInfo(val) => {
@@ -3416,18 +2886,12 @@ fn compile_const_inner_body(
         let mut bytes = Vec::new();
         constant.put(&mut bytes);
         let addr = Address::hash(&bytes);
-        if aux {
-          stt.store_const_bytes(addr.clone(), bytes, constant)?;
-          stt.claim_and_register_compiled(
-            name,
-            Named::new(addr.clone(), meta.clone()),
-          )?;
-        } else {
-          stt.promote_aux(name, addr.clone(), meta)?;
-        }
+        stt.store_const_bytes(addr.clone(), bytes, constant)?;
+        stt
+          .claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
         addr
       } else {
-        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
+        compile_mutual(name, all, lean_env, cache, stt)?
       }
     },
 
@@ -3436,10 +2900,7 @@ fn compile_const_inner_body(
       if let Some(LeanConstantInfo::InductInfo(_)) =
         lean_env.get(&val.induct).as_deref()
       {
-        // The constructor's own projection, as this compilation computed it
-        // (an original-form compile stages its promotions, so the name need
-        // not be published yet).
-        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
+        compile_mutual(name, all, lean_env, cache, stt)?
       } else {
         return Err(CompileError::MissingConstant {
           name: val.induct.pretty(),
@@ -3449,24 +2910,17 @@ fn compile_const_inner_body(
     },
   };
 
-  if aux {
-    stt.claim_compiled_name(name, &addr)?;
-  }
+  stt.claim_compiled_name(name, &addr)?;
   Ok(addr)
 }
 
 /// Compile a mutual block.
-///
-/// When `aux` is true, auxiliary constants (`.rec`, `.below`, `.brecOn`) are
-/// regenerated for alpha-collapsed blocks via `generate_and_compile_aux_recursors`.
 fn compile_mutual(
   name: &Name,
   all: &NameSet,
   lean_env: &Arc<LeanEnv>,
   cache: &mut BlockCache,
   stt: &CompileState,
-  _kctx: &mut KernelCtx,
-  aux: bool,
 ) -> Result<Address, CompileError> {
   // Collect all constants in the mutual block
   let mut cs = Vec::new();
@@ -3590,25 +3044,14 @@ fn compile_mutual(
     standalone_constant.put(&mut bytes);
     let addr = Address::hash(&bytes);
 
-    if aux {
-      stt.store_const_bytes(addr.clone(), bytes, standalone_constant)?;
-      for class in &sorted_classes {
-        for cnst in class {
-          let n = cnst.name();
-          // `remove`, not `get().cloned()`: each name is consumed exactly
-          // once, and ConstantMeta is an arena-sized deep clone.
-          let meta = all_metas.remove(&n).unwrap_or_default();
-          stt
-            .claim_and_register_compiled(&n, Named::new(addr.clone(), meta))?;
-        }
-      }
-    } else {
-      for class in &sorted_classes {
-        for cnst in class {
-          let n = cnst.name();
-          let meta = all_metas.remove(&n).unwrap_or_default();
-          stt.promote_aux(&n, addr.clone(), meta)?;
-        }
+    stt.store_const_bytes(addr.clone(), bytes, standalone_constant)?;
+    for class in &sorted_classes {
+      for cnst in class {
+        let n = cnst.name();
+        // `remove`, not `get().cloned()`: each name is consumed exactly
+        // once, and ConstantMeta is an arena-sized deep clone.
+        let meta = all_metas.remove(&n).unwrap_or_default();
+        stt.claim_and_register_compiled(&n, Named::new(addr.clone(), meta))?;
       }
     }
     return Ok(addr);
@@ -3618,35 +3061,30 @@ fn compile_mutual(
     compile_mutual_block(&stt.sharing_limits, ixon_mutuals, refs, univs)?;
   let block_addr = compiled.addr.clone();
 
-  if aux {
-    stt.store_const_bytes(
-      block_addr.clone(),
-      compiled.bytes,
-      compiled.constant,
-    )?;
-    // Register class ordering for each inductive name in the block.
-    let class_ordering: Vec<Vec<Name>> = sorted_classes
-      .iter()
-      .map(|class| class.iter().map(|c| c.name()).collect())
-      .collect();
-    for class in &sorted_classes {
-      for cnst in class {
-        stt.blocks.insert(cnst.name(), class_ordering.clone());
-      }
+  stt.store_const_bytes(
+    block_addr.clone(),
+    compiled.bytes,
+    compiled.constant,
+  )?;
+  // Register class ordering for each inductive name in the block.
+  let class_ordering: Vec<Vec<Name>> = sorted_classes
+    .iter()
+    .map(|class| class.iter().map(|c| c.name()).collect())
+    .collect();
+  for class in &sorted_classes {
+    for cnst in class {
+      stt.blocks.insert(cnst.name(), class_ordering.clone());
     }
   }
 
-  // Create projections for each constant.
-  // When aux=true: store Ixon blobs and register Named entries (normal path).
-  // When aux=false: promote from aux_name_to_addr, setting Named.original
-  // with the original (proj_addr, meta) for decompilation roundtrip.
+  // Create projections for each constant: store their Ixon blobs and
+  // register their Named entries.
   let mut idx = 0u64;
   let mut requested_addr = None;
   for class in &sorted_classes {
     for cnst in class {
       let n = cnst.name();
-      // `remove`: consumed once per name (either the register_name arm
-      // or the promote_aux arm below), so no deep clone is needed.
+      // `remove`: consumed once per name, so no deep clone is needed.
       let meta = all_metas.remove(&n).unwrap_or_default();
 
       let proj = match cnst {
@@ -3660,15 +3098,11 @@ fn compile_mutual(
           if n == *name {
             requested_addr = Some(proj_addr.clone());
           }
-          if aux {
-            stt.store_const_bytes(proj_addr.clone(), proj_bytes, indc_proj)?;
-            stt.claim_and_register_compiled(
-              &n,
-              Named::new(proj_addr.clone(), meta),
-            )?;
-          } else {
-            stt.promote_aux(&n, proj_addr, meta)?;
-          }
+          stt.store_const_bytes(proj_addr.clone(), proj_bytes, indc_proj)?;
+          stt.claim_and_register_compiled(
+            &n,
+            Named::new(proj_addr.clone(), meta),
+          )?;
 
           // Constructor projections
           for (cidx, ctor) in ind.ctors.iter().enumerate() {
@@ -3682,19 +3116,11 @@ fn compile_mutual(
             if ctor.cnst.name == *name {
               requested_addr = Some(ctor_addr.clone());
             }
-            if aux {
-              stt.store_const_bytes(
-                ctor_addr.clone(),
-                ctor_bytes,
-                ctor_proj,
-              )?;
-              stt.claim_and_register_compiled(
-                &ctor.cnst.name,
-                Named::new(ctor_addr.clone(), ctor_meta),
-              )?;
-            } else {
-              stt.promote_aux(&ctor.cnst.name, ctor_addr, ctor_meta)?;
-            }
+            stt.store_const_bytes(ctor_addr.clone(), ctor_bytes, ctor_proj)?;
+            stt.claim_and_register_compiled(
+              &ctor.cnst.name,
+              Named::new(ctor_addr.clone(), ctor_meta),
+            )?;
           }
 
           continue;
@@ -3708,15 +3134,9 @@ fn compile_mutual(
       if n == *name {
         requested_addr = Some(proj_addr.clone());
       }
-      if aux {
-        stt.store_const_bytes(proj_addr.clone(), proj_bytes, proj)?;
-        stt.claim_and_register_compiled(
-          &n,
-          Named::new(proj_addr.clone(), meta),
-        )?;
-      } else {
-        stt.promote_aux(&n, proj_addr, meta)?;
-      }
+      stt.store_const_bytes(proj_addr.clone(), proj_bytes, proj)?;
+      stt
+        .claim_and_register_compiled(&n, Named::new(proj_addr.clone(), meta))?;
     }
     idx += 1;
   }
@@ -3728,45 +3148,33 @@ fn compile_mutual(
   // `ingress_muts_block`. Without this entry, each member's projection-typed
   // named entry falls through ingress silently and none of its content
   // reaches the kernel env.
-  //
-  // Only register on `aux=true` since that's the path that actually stores
-  // the block constant (`stt.store_const_bytes(block_addr, ...)` above is
-  // guarded by `if aux`). The `aux=false` promotion path reuses entries
-  // that were already registered in a prior `aux=true` call.
-  if aux {
-    let first_name = sorted_classes
-      .first()
-      .and_then(|c| c.first())
-      .map(|c| c.name())
-      .expect("compile_mutual invariant: at least one class with one member");
-    let muts_all: Vec<Vec<Address>> = sorted_classes
-      .iter()
-      .map(|class| {
-        class
-          .iter()
-          .map(|c| Address::from_blake3_hash(*c.name().get_hash()))
-          .collect()
-      })
-      .collect();
-    let muts_name = block_addr.muts_name(&first_name);
-    compile_name(&muts_name, stt)?;
-    stt.register_named(
-      muts_name,
-      Named::new(
-        block_addr.clone(),
-        ConstantMeta::new(ConstantMetaInfo::Muts {
-          all: muts_all,
-          aux_layout: None,
-        }),
-      ),
-    );
-  }
+  let first_name = sorted_classes
+    .first()
+    .and_then(|c| c.first())
+    .map(|c| c.name())
+    .expect("compile_mutual invariant: at least one class with one member");
+  let muts_all: Vec<Vec<Address>> = sorted_classes
+    .iter()
+    .map(|class| {
+      class
+        .iter()
+        .map(|c| Address::from_blake3_hash(*c.name().get_hash()))
+        .collect()
+    })
+    .collect();
+  let muts_name = block_addr.muts_name(&first_name);
+  compile_name(&muts_name, stt)?;
+  stt.register_named(
+    muts_name,
+    Named::new(
+      block_addr.clone(),
+      ConstantMeta::new(ConstantMetaInfo::Muts {
+        all: muts_all,
+        aux_layout: None,
+      }),
+    ),
+  );
 
-  // Return this compilation's projection, independently of publication.
-  // Original-form compilation stages promotions until the block transaction
-  // commits; its requested name need not be in name_to_addr yet, and its
-  // original projection can differ from the canonical address published
-  // there.
   requested_addr.ok_or_else(|| CompileError::MissingConstant {
     name: name.pretty(),
     caller: "compile_mutual(result)".into(),
@@ -3774,12 +3182,11 @@ fn compile_mutual(
 }
 
 mod admission;
-pub mod aux_gen;
 pub mod block_txn;
 mod env;
 pub mod expr_key;
+pub mod ind_flags;
 mod memory;
-pub mod mutual;
 pub mod nat_conv;
 mod publication;
 pub(crate) mod validation;
@@ -3792,6 +3199,9 @@ mod c6_flags_tests;
 
 #[cfg(test)]
 mod compare_const_tests;
+
+#[cfg(test)]
+mod source_recursor_tests;
 
 #[cfg(test)]
 mod tests {
@@ -3866,64 +3276,12 @@ mod tests {
     assert_eq!(cache.univs.len(), 1, "the refused form was not interned");
   }
 
-  /// The original-form phase classifies the recursor of every member of a
-  /// Lean `IndPredBelow` family, `X.below.rec` and `X.below_N.rec`, as a
-  /// `below` recursor, as Lean's `compileConstNoAuxPure` does.
+  /// A recursor's declared position is its family's flat order (`X.rec` at
+  /// its `all` position, `all0.rec_N` after the members), and a block of
+  /// recursors is laid out in it; malformed `rec_N` suffixes have no
+  /// position.
   #[test]
-  fn no_aux_phase_classifies_below_family_recursors() {
-    use ix_common::env::{
-      ConstantVal, DefinitionSafety, DefinitionVal, RecursorVal,
-      ReducibilityHints,
-    };
-    let nm = |s: &str| {
-      s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
-    };
-    let cv = |n: &str| ConstantVal {
-      name: nm(n),
-      level_params: vec![],
-      typ: LeanExpr::sort(Level::zero()),
-    };
-    let rec = |n: &str| {
-      LeanConstantInfo::RecInfo(RecursorVal {
-        cnst: cv(n),
-        all: vec![],
-        num_params: Nat::from(0u64),
-        num_indices: Nat::from(0u64),
-        num_motives: Nat::from(1u64),
-        num_minors: Nat::from(0u64),
-        rules: vec![],
-        k: false,
-        is_unsafe: false,
-      })
-    };
-    let defn = |n: &str| {
-      LeanConstantInfo::DefnInfo(DefinitionVal {
-        cnst: cv(n),
-        value: LeanExpr::sort(Level::zero()),
-        hints: ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
-        all: vec![nm(n)],
-      })
-    };
-    for (n, ci, want) in [
-      ("X.rec", rec("X.rec"), NoAuxPhase::Rec),
-      ("X.rec_1", rec("X.rec_1"), NoAuxPhase::Rec),
-      ("X.below.rec", rec("X.below.rec"), NoAuxPhase::BelowRec),
-      ("X.below_1.rec", rec("X.below_1.rec"), NoAuxPhase::BelowRec),
-      ("X.below", defn("X.below"), NoAuxPhase::BelowDef),
-      ("X.below_2", defn("X.below_2"), NoAuxPhase::BelowDef),
-      ("X.brecOn", defn("X.brecOn"), NoAuxPhase::BrecOn),
-    ] {
-      assert_eq!(no_aux_phase(&nm(n), &ci), Some(want), "{n}");
-    }
-  }
-
-  /// D6: a recursor block compiled from Lean's form is laid out in its
-  /// family's flat order (`X.rec` at its `all` position, `all0.rec_N` after
-  /// the members); malformed `rec_N` suffixes and mixed blocks keep the
-  /// `sort_consts` order.
-  #[test]
-  fn order_recursor_family_lays_out_flat_order() {
+  fn recursor_family_position_lays_out_flat_order() {
     use ix_common::env::{ConstantVal, RecursorVal};
     let nm = |s: &str| {
       s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
@@ -3958,8 +3316,7 @@ mod tests {
     }
     assert_eq!(pos("A.rec_18446744073709551615"), u64::MAX);
     let (ar, br, a1) = (rec("A.rec"), rec("B.rec"), rec("A.rec_1"));
-    let mut classes = vec![vec![&a1], vec![&br], vec![&ar]];
-    order_recursor_family(&mut classes);
+    let classes = source_classes(&[&a1, &br, &ar]);
     let order: Vec<String> =
       classes.iter().map(|c| c[0].name().pretty()).collect();
     assert_eq!(order, ["A.rec", "B.rec", "A.rec_1"]);
@@ -4221,14 +3578,7 @@ mod tests {
     let mut all = NameSet::default();
     all.insert(name.clone());
 
-    let result = compile_const(
-      &name,
-      &all,
-      &lean_env,
-      &mut cache,
-      &stt,
-      &mut KernelCtx::new(),
-    );
+    let result = compile_const(&name, &all, &lean_env, &mut cache, &stt);
     assert!(result.is_ok(), "compile_const failed: {:?}", result.err());
 
     let addr = result.unwrap();
@@ -4268,14 +3618,7 @@ mod tests {
     all.insert(name.clone());
 
     // This will fail because nat_name isn't in name_to_addr, but let's see the error
-    let result = compile_const(
-      &name,
-      &all,
-      &lean_env,
-      &mut cache,
-      &stt,
-      &mut KernelCtx::new(),
-    );
+    let result = compile_const(&name, &all, &lean_env, &mut cache, &stt);
     // We expect this to fail with MissingConstant for Nat
     match result {
       Err(CompileError::MissingConstant { name: missing, .. }) => {
@@ -4322,14 +3665,7 @@ mod tests {
     all.insert(name.clone());
 
     // This should work because it's a single self-referential def
-    let result = compile_const(
-      &name,
-      &all,
-      &lean_env,
-      &mut cache,
-      &stt,
-      &mut KernelCtx::new(),
-    );
+    let result = compile_const(&name, &all, &lean_env, &mut cache, &stt);
     assert!(result.is_ok(), "compile_const failed: {:?}", result.err());
 
     let addr = result.unwrap();
@@ -6405,7 +5741,7 @@ mod tests {
     lean_env.insert(g.clone(), def(&g, &f));
     let lean_env = Arc::new(lean_env);
     let stt = CompileState::default();
-    // `g` is owned by another block, with its original form promoted
+    // `g` is owned by another block, and its entry carries an original form
     let owner = Address::hash(b"owner");
     let owner_original = Address::hash(b"owner-original");
     let mut named = Named::new(owner.clone(), ConstantMeta::default());
@@ -6414,16 +5750,10 @@ mod tests {
     stt.register_named(g.clone(), named);
     let all: NameSet = [f.clone(), g.clone()].into_iter().collect();
     block_txn::start();
-    let err = compile_const(
-      &f,
-      &all,
-      &lean_env,
-      &mut BlockCache::default(),
-      &stt,
-      &mut KernelCtx::new(),
-    )
-    .unwrap_err()
-    .to_string();
+    let err =
+      compile_const(&f, &all, &lean_env, &mut BlockCache::default(), &stt)
+        .unwrap_err()
+        .to_string();
     let txn = block_txn::take().unwrap();
     block_txn::rollback(&stt, &txn);
     assert!(err.contains("conflicting claims for name 'g'"), "{err}");
@@ -6433,21 +5763,6 @@ mod tests {
     assert_eq!(stt.name_to_addr.get(&g).map(|r| r.clone()), Some(owner));
     assert!(!stt.env.named.contains_key(&f));
     assert!(!stt.name_to_addr.contains_key(&f));
-  }
-
-  /// Claim `n` with `named` through the registration path of a compiled
-  /// (`aux == false`) or an aux_gen (`aux == true`) block.
-  fn claim_and_register(
-    stt: &CompileState,
-    aux: bool,
-    n: &Name,
-    named: Named,
-  ) -> Result<(), CompileError> {
-    if aux {
-      stt.claim_and_register_aux(n, named)
-    } else {
-      stt.claim_and_register_compiled(n, named)
-    }
   }
 
   fn axio_meta(tag: &[u8]) -> ConstantMeta {
@@ -6461,109 +5776,90 @@ mod tests {
 
   #[test]
   fn identical_reclaim_keeps_the_owner_named() {
-    // CQ2.24 b (R03-16's residual): a later block's identical re-claim of a
-    // name another block owns registers nothing. The owner's entry (its
-    // metadata, the original its promotion set, its hints) is kept, and
-    // the re-claiming block's rollback leaves it as it was. For both claim
-    // kinds.
+    // A later block's identical re-claim of a name another block owns
+    // registers nothing. The owner's entry (its metadata, its original form,
+    // its hints) is kept, and the re-claiming block's rollback leaves it as
+    // it was.
     use ix_common::env::ReducibilityHints;
     let n = Name::str(Name::anon(), "n".to_string());
     let addr = Address::hash(b"shared");
     let owner_original = Address::hash(b"owner-original");
-    for aux in [false, true] {
-      let stt = CompileState::default();
-      // the owner's block, then its promotion and hints
-      block_txn::start();
-      claim_and_register(
-        &stt,
-        aux,
+    let stt = CompileState::default();
+    // the owner's block, then its original form and hints
+    block_txn::start();
+    stt
+      .claim_and_register_compiled(
         &n,
         Named::new(addr.clone(), axio_meta(b"owner")),
       )
       .unwrap();
-      block_txn::finish(&stt, false).unwrap();
-      {
-        let mut entry = stt.env.named.get_mut(&n).unwrap();
-        entry
-          .value_mut()
-          .set_original(owner_original.clone(), ConstantMeta::default());
-        entry.value_mut().set_hints(Some(ReducibilityHints::Abbrev));
-      }
-      let check = |stage: &str| {
-        let kept =
-          stt.env.named.get(&n).map(|r| r.clone()).expect("owner named");
-        assert_eq!(kept.addr, addr, "aux={aux} {stage}");
-        assert_eq!(*kept.meta(), axio_meta(b"owner"), "aux={aux} {stage}");
-        assert_eq!(
-          kept.original().map(|(a, _)| a),
-          Some(owner_original.clone()),
-          "aux={aux} {stage}"
-        );
-        assert_eq!(
-          kept.hints(),
-          Some(ReducibilityHints::Abbrev),
-          "aux={aux} {stage}"
-        );
-        assert_eq!(
-          stt.resolve_addr(&n),
-          Some(addr.clone()),
-          "aux={aux} {stage}"
-        );
-      };
-      // a later block re-claims `n` at the same address with other metadata
-      block_txn::start();
-      claim_and_register(
-        &stt,
-        aux,
+    block_txn::finish(&stt, false);
+    {
+      let mut entry = stt.env.named.get_mut(&n).unwrap();
+      entry
+        .value_mut()
+        .set_original(owner_original.clone(), ConstantMeta::default());
+      entry.value_mut().set_hints(Some(ReducibilityHints::Abbrev));
+    }
+    let check = |stage: &str| {
+      let kept = stt.env.named.get(&n).map(|r| r.clone()).expect("owner named");
+      assert_eq!(kept.addr, addr, "{stage}");
+      assert_eq!(*kept.meta(), axio_meta(b"owner"), "{stage}");
+      assert_eq!(
+        kept.original().map(|(a, _)| a),
+        Some(owner_original.clone()),
+        "{stage}"
+      );
+      assert_eq!(kept.hints(), Some(ReducibilityHints::Abbrev), "{stage}");
+      assert_eq!(stt.resolve_addr(&n), Some(addr.clone()), "{stage}");
+    };
+    // a later block re-claims `n` at the same address with other metadata
+    block_txn::start();
+    stt
+      .claim_and_register_compiled(
         &n,
         Named::new(addr.clone(), axio_meta(b"later")),
       )
       .unwrap();
-      check("after the identical re-claim");
-      // ... and fails: its rollback has nothing of the owner's to undo
-      block_txn::finish(&stt, true).unwrap();
-      check("after the re-claiming block's rollback");
-      // outside a block transaction (direct callers) the same holds
-      claim_and_register(
-        &stt,
-        aux,
+    check("after the identical re-claim");
+    // ... and fails: its rollback has nothing of the owner's to undo
+    block_txn::finish(&stt, true);
+    check("after the re-claiming block's rollback");
+    // outside a block transaction (direct callers) the same holds
+    stt
+      .claim_and_register_compiled(
         &n,
         Named::new(addr.clone(), axio_meta(b"direct")),
       )
       .unwrap();
-      check("after a direct identical re-claim");
-    }
+    check("after a direct identical re-claim");
   }
 
   #[test]
   fn reclaim_within_one_block_reregisters() {
     // A name one block claims twice is still that block's: the later
-    // registration wins (the Lean drivers keep the last `auxNamed` entry per
-    // name), and the block's failure removes the entry with its claim.
+    // registration wins, and the block's failure removes the entry with its
+    // claim.
     let n = Name::str(Name::anon(), "n".to_string());
     let addr = Address::hash(b"own");
-    for aux in [false, true] {
-      let stt = CompileState::default();
-      block_txn::start();
-      claim_and_register(
-        &stt,
-        aux,
+    let stt = CompileState::default();
+    block_txn::start();
+    stt
+      .claim_and_register_compiled(
         &n,
         Named::new(addr.clone(), axio_meta(b"first")),
       )
       .unwrap();
-      claim_and_register(
-        &stt,
-        aux,
+    stt
+      .claim_and_register_compiled(
         &n,
         Named::new(addr.clone(), axio_meta(b"second")),
       )
       .unwrap();
-      let named = stt.env.named.get(&n).map(|r| r.clone()).expect("own named");
-      assert_eq!(*named.meta(), axio_meta(b"second"), "aux={aux}");
-      block_txn::finish(&stt, true).unwrap();
-      assert!(!stt.env.named.contains_key(&n), "aux={aux}");
-      assert!(stt.resolve_addr(&n).is_none(), "aux={aux}");
-    }
+    let named = stt.env.named.get(&n).map(|r| r.clone()).expect("own named");
+    assert_eq!(*named.meta(), axio_meta(b"second"));
+    block_txn::finish(&stt, true);
+    assert!(!stt.env.named.contains_key(&n));
+    assert!(stt.resolve_addr(&n).is_none());
   }
 }

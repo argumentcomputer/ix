@@ -521,9 +521,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         // `check_recursor` runs the full kernel-driven verification:
         // coherence (major inductive passes A1–A4, K-target flag matches),
         // plus generated-canonical-vs-stored rule comparison via
-        // `is_def_eq`. The rule generator is shared between the kernel and
-        // the compile-time aux_gen, with the nested-aux ordering selected
-        // by `KEnv::recursor_aux_order`, so the syntactic compare is sound
+        // `is_def_eq`. The nested-aux ordering is selected by
+        // `KEnv::recursor_aux_order`, so the syntactic compare is sound
         // against the canonical aux-restored env produced by `ixon_ingress`.
         self.check_recursor_member(id)?;
         Ok(())

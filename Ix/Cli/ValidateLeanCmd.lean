@@ -1,13 +1,12 @@
 /-
   `ix validate-lean <file.lean>`: run the pure-Lean Ix pipeline validation
-  against the Lean environment for any file. `ix validate` drives the
-  Rust implementation's separate 8-phase pipeline.
+  against the Lean environment for any file.
 
   Phases (all pure-Lean):
 
     1. Compile (Lean → Ixon)          — the full pure-Lean pipeline
                                         (canon → graph → ground →
-                                        condense → aux-aware parallel
+                                        condense → parallel
                                         compile → serialize), its
                                         post-steps, and the role binding
                                         `ix compile-lean` adds: the later
@@ -25,13 +24,13 @@
                                         hash-identical against the
                                         canonicalized source
 
-  Starting from a Lean FILE (like `ix validate`) is what makes phase 4
+  Starting from a Lean FILE is what makes phase 4
   possible: the elaborated environment is the comparison oracle. For an
   external `.ixe` with no Lean source (`--ixe`), only the oracle-free
   phases 2–3 run without an oracle; 1/4 report skipped and 5 checks
   decompilation errors without a source comparison.
 
-  Separate from the `lake test` binary for the same reason as `validate`:
+  Separate from the `lake test` binary:
   large files' transitive imports (e.g. Mathlib via
   `Benchmarks/Compile/CompileMathlib.lean`) must not become compile-time
   deps of the test suite.
@@ -51,7 +50,6 @@ public import Ix.KernelFidelity.Reader
 public import Ix.Meta
 public import Ix.Cli.ValidateCmd
 public import Ix.RoleBinding.Compile
-public import Ix.AuxGen.LiteralSupport
 public import Ix.SemanticContract
 
 public section
@@ -128,8 +126,8 @@ def retiredAnonOptions : IO (Array String) :=
   #["IX_ANON_CAP", "IX_ANON_STAGE", "IX_ANON_SEQ", "IX_ANON_HOLD"].filterM fun key =>
     return (← IO.getEnv key).isSome
 
-/-- Append a phase result AND emit its section heading immediately, in
-    `ix validate`'s style (`[validate-aux] Phase: … / n pass, m fail`),
+/-- Append a phase result AND emit its section heading immediately
+    (`[validate-lean] Phase: …` and its result line),
     flushing stdout. Incremental + flushed output is load-bearing: the
     stage-1 whole-Mathlib run was OOM-killed mid-phase with every
     completed phase's result still sitting in the block-buffered stdout,
@@ -190,7 +188,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     let fe ← getFileEnvCore pathStr
     let leanEnv := fe.env
     leanEnv? := some leanEnv
-    -- Optional namespace filter, same semantics as `ix validate`.
+    -- Optional namespace filter (`parsePrefixes`).
     let constList ← match p.flag? "ns" with
       | none => defaultConstList fe pathStr
       | some flag =>
@@ -210,14 +208,13 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println "[validate-lean] phase 1: compiling (pure-Lean pipeline)..."
     (← IO.getStdout).flush
     -- Phase 1: compile through the PURE-LEAN pipeline (canon → graph →
-    -- ground → condense → aux-aware parallel compile → serialize), with its
+    -- ground → condense → parallel compile → serialize), with its
     -- post-steps, then add the role binding as `ix compile-lean` does
     -- (`Ix.RoleBinding.Compile.finalize`), so that the later phases read the
     -- bytes compile-lean writes.
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
     let t0 ← IO.monoMsNow
     let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv leanEnv constList).mapError toString)
-    let opts := { opts with serviceSupport := Ix.AuxGen.literalSupportFor leanEnv constList }
     match ← Ix.CompileM.compileLeanInputValidated input
         (numWorkers := compileWorkers) (opts := opts) with
     | .error e =>
@@ -466,7 +463,7 @@ missing; {nMatch} matched ({t1 - t0}ms) — rerun with --full-oracle \
 0 errors ({t1 - t0}ms)")
 
   -- Recap (each phase already printed its section heading when it
-  -- completed), then a `RESULT:` line matching `ix validate`'s.
+  -- completed), then a `RESULT:` line.
   IO.println ""
   IO.println "[validate-lean] phase summary:"
   for (name, result) in phases do

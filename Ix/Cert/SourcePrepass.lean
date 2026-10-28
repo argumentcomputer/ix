@@ -246,16 +246,15 @@ theorem produced_fold (input : Array Raw) (workers : Nat)
     (blocks : Ix.CondensedBlocks) (dbg : Bool) (limits : Ix.Sharing.Exact.Limits) (width : Nat) :
     let code := (produce input workers).2.facts.code
     let names := (run input).leanByIx
-    Ix.CompileM.compileEnvFold (Hybrid.hybridEnv code names) blocks dbg (names.size - code.size) limits width =
-      Hybrid.restore (Hybrid.hybridEnv code names) (names.size - code.size) <$>
-        Ix.CompileM.compileEnvFold (SourceGraph.full (SourceStream.canonical input)) blocks false 0 limits
+    Ix.CompileM.compileEnvFold (Hybrid.hybridEnv code names) blocks dbg limits width =
+      Hybrid.restore (Hybrid.hybridEnv code names) <$>
+        Ix.CompileM.compileEnvFold (SourceGraph.full (SourceStream.canonical input)) blocks false limits
           Ix.CompileM.foldWaveTasks := by
   apply Hybrid.pipeline_fold
   · intro n; rw [full_get]; exact canonical_lookup input n
   · intro n ci stored
     rw [← produced_hybrid_lookup input workers n]
     simp only [Hybrid.hybridEnv, Ix.Environment.get?, stored]
-  · exact ⟨code_size input workers, canonical_size input⟩
   · exact stored_inductives input workers
 
 end Ix.Cert.SourcePrepass

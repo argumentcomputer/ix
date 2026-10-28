@@ -96,7 +96,7 @@ def expected : List (Lean.Name × String) := [
   (reduced "a_rec", "accept"),
   (reduced "S", "accept"), (reduced "S.mk", "accept"), (reduced "s_rec", "accept"),
   -- the converse: a mutual field whose recursive occurrence whnf reveals
-  -- (`C.a : Id' D → C`, aux-cert's `SurgAlias`; Lean's `C.rec` gives it a
+  -- (`C.a : Id' D → C`; Lean's `C.rec` gives it a
   -- hypothesis)
   (reduced "C", "accept"), (reduced "C.a", "accept"), (reduced "D.rec", "accept"),
   (reduced "c_rec", "accept"), (reduced "c_rec_a", "accept"),

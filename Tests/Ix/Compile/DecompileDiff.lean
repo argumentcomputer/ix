@@ -1,27 +1,15 @@
 /-
-  Cross-compiler decompilation inventory for the decompiler port.
+  Cross-compiler decompilation inventory for the decompiler.
 
-  Rust-compiles the shared aux fixture corpus (`validateAuxClosure` — the
-  same corpus the aux-gen-diff gates run on), decompiles the resulting
-  Ixon env with the pure-Lean `Ix.DecompileM`, and compares every
-  reconstructed constant against the SOURCE `Ix.Environment` by full
+  Rust-compiles the shared fixture corpus (`validateAuxClosure`), decompiles
+  the resulting Ixon env with the pure-Lean `Ix.DecompileM`, and compares
+  every reconstructed constant against the SOURCE `Ix.Environment` by full
   structural equality (`ConstantInfo` BEq — hash-based at the
-  Name/Level/Expr leaves, so this is Rust `check_decompile`'s
-  `get_hash` comparison at full fidelity).
+  Name/Level/Expr leaves, so this is Rust `check_decompile`'s `get_hash`
+  comparison at full fidelity).
 
-  Failures are classified into buckets, each with its own gate (all
-  gates must be ZERO now that Pass-2 original recovery is ported; the
-  `callsite` error bucket went with the call-site metadata, CQ3.6, and a
-  failed Pass 3 record replay lands in the buckets below):
-
-    - `aux` names (`isAuxGenSuffix`) — decompiled from the REGENERATED
-      canonical constants and restored to the source's Lean-native
-      originals by Pass-2 recovery;
-    - `plain` mismatches / other errors — plain decompile fidelity.
-
-  Coverage is checked in both directions: decompiled-but-not-in-source
-  (synthetic/alias artifacts) and in-source-but-not-decompiled (skipped
-  kinds), each bucketed aux/plain.
+  The gate is total: no mismatch, no decompile error, no decompiled constant
+  outside the source and no source constant missing from the decompile.
 
   Invoked via `lake test -- --ignored decompile-diff`.
 -/
@@ -29,29 +17,14 @@ import Ix.Common
 import Ix.CompileM
 import Ix.DecompileM
 import Ix.DecompileDriver
-import Ix.AuxSource
 import Lean
 import LSpec
 import Tests.Ix.Compile.ValidateAux
-import Tests.Ix.Compile.AuxGenDiff
 
 namespace Tests.Compile.DecompileDiff
 
 private def sample (xs : Array Ix.Name) (n : Nat := 12) : String :=
   ", ".intercalate ((xs.toList.take n).map (·.pretty))
-
-/-- Aux-family by LINEAGE: the name itself carries an aux-gen suffix, or
-    any ancestor does — covering the constructors of synthesized `.below`
-    inductives (`Even.below.zero`), which Rust's Pass 2 recovers together
-    with their parent. -/
-private partial def isAuxLineage (n : Ix.Name) : Bool :=
-  if Ix.AuxGen.isAuxGenSuffix n then
-    true
-  else
-    match n with
-    | .str parent _ _ => isAuxLineage parent
-    | .num parent _ _ => isAuxLineage parent
-    | .anonymous _ => false
 
 def run (env : Lean.Environment) : IO UInt32 := do
   IO.println "[decompile-diff] collecting fixture closure..."
@@ -64,7 +37,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let rustEnv := raw.compileEnv.toEnv
   IO.println s!"[decompile-diff] Rust: {rustEnv.named.size} named, {rustEnv.consts.size} consts"
 
-  IO.println "[decompile-diff] Lean decompile (full driver: Pass 1 → 1.5 → 2)..."
+  IO.println "[decompile-diff] Lean decompile (full driver)..."
   let t0 ← IO.monoMsNow
   let origView : Std.HashMap Ix.Name Ix.ConstantInfo := rawEnv.consts
   -- The limits the Rust compile above read (`IX_SHARING_LIMITS`).
@@ -74,83 +47,46 @@ def run (env : Lean.Environment) : IO UInt32 := do
       (sharingLimits := sharingLimits)
   IO.println s!"[decompile-diff]   {decompiled.size} constants, {errors.size} errors in {(← IO.monoMsNow) - t0}ms"
 
-  -- Error classification.
-  let mut auxErrs : Array Ix.Name := #[]
-  let mut otherErrs : Array (Ix.Name × String) := #[]
-  for (n, e) in errors do
-    if isAuxLineage n then
-      auxErrs := auxErrs.push n
-    else
-      otherErrs := otherErrs.push (n, e)
-
   -- Forward comparison: every decompiled constant vs the source env.
-  let mut plainMatch := (0 : Nat)
-  let mut auxMatch := (0 : Nat)
-  let mut plainMismatch : Array Ix.Name := #[]
-  let mut auxMismatch : Array Ix.Name := #[]
+  let mut matched := (0 : Nat)
+  let mut mismatched : Array Ix.Name := #[]
   let mut notInSource : Array Ix.Name := #[]
   for (name, info) in decompiled do
     match rawEnv.consts.get? name with
     | none => notInSource := notInSource.push name
     | some orig =>
-      if info == orig then
-        if isAuxLineage name then
-          auxMatch := auxMatch + 1
-        else
-          plainMatch := plainMatch + 1
-      else
-        if isAuxLineage name then
-          auxMismatch := auxMismatch.push name
-        else
-          plainMismatch := plainMismatch.push name
+      if info == orig then matched := matched + 1
+      else mismatched := mismatched.push name
 
-  -- Reverse coverage: source constants never reconstructed. Errored
-  -- names are already counted above; exclude them here so the buckets
-  -- partition cleanly.
+  -- Reverse coverage: source constants never reconstructed. Errored names
+  -- are already counted above; exclude them here so the buckets partition
+  -- cleanly.
   let mut errNames : Ix.Set Ix.Name := {}
   for (n, _) in errors do
     errNames := errNames.insert n
-  let mut missingAux : Array Ix.Name := #[]
-  let mut missingPlain : Array Ix.Name := #[]
+  let mut missing : Array Ix.Name := #[]
   for (name, _) in rawEnv.consts do
     if !decompiled.contains name && !errNames.contains name then
-      if isAuxLineage name then
-        missingAux := missingAux.push name
-      else
-        missingPlain := missingPlain.push name
+      missing := missing.push name
 
   IO.println ""
   IO.println s!"[decompile-diff] decompiled {decompiled.size} constants, {errors.size} errors"
-  IO.println s!"[decompile-diff]   plain: {plainMatch} matched, {plainMismatch.size} mismatched  (plain-fidelity gate — must be 0)"
-  if !plainMismatch.isEmpty then
-    IO.println s!"[decompile-diff]     mismatch e.g. {sample plainMismatch}"
-  IO.println s!"[decompile-diff]   aux-family: {auxMatch} matched, {auxMismatch.size} mismatched  (aux-fidelity gate — must be 0)"
-  if !auxMismatch.isEmpty then
-    IO.println s!"[decompile-diff]     mismatch e.g. {sample auxMismatch}"
-  IO.println s!"[decompile-diff]   aux errors: {auxErrs.size}  (aux-fidelity gate — must be 0)"
-  if !auxErrs.isEmpty then
-    IO.println s!"[decompile-diff]     e.g. {sample auxErrs}"
-    for (n, e) in (errors.filter fun (n, _) => auxErrs.contains n).toList.take 3 do
-      IO.println s!"[decompile-diff]       {n}: {e.take 300}"
-  IO.println s!"[decompile-diff]   other errors: {otherErrs.size}  (plain-fidelity gate — must be 0)"
-  for (n, e) in otherErrs.toList.take 8 do
-    IO.println s!"[decompile-diff]     {n.pretty}: {e.take 200}"
-  IO.println s!"[decompile-diff]   decompiled-not-in-source: {notInSource.size}"
+  IO.println s!"[decompile-diff]   {matched} matched, {mismatched.size} mismatched (must be 0)"
+  if !mismatched.isEmpty then
+    IO.println s!"[decompile-diff]     mismatch e.g. {sample mismatched}"
+  IO.println s!"[decompile-diff]   errors: {errors.size} (must be 0)"
+  for (n, e) in errors.toList.take 8 do
+    IO.println s!"[decompile-diff]     {n.pretty}: {e.take 300}"
+  IO.println s!"[decompile-diff]   decompiled-not-in-source: {notInSource.size} (must be 0)"
   if !notInSource.isEmpty then
     IO.println s!"[decompile-diff]     e.g. {sample notInSource}"
-  IO.println s!"[decompile-diff]   missing from decompile: {missingAux.size} aux, {missingPlain.size} plain"
-  if !missingPlain.isEmpty then
-    IO.println s!"[decompile-diff]     plain e.g. {sample missingPlain}"
+  IO.println s!"[decompile-diff]   missing from decompile: {missing.size} (must be 0)"
+  if !missing.isEmpty then
+    IO.println s!"[decompile-diff]     e.g. {sample missing}"
 
-  let gateOk := plainMismatch.isEmpty && otherErrs.isEmpty
-    && notInSource.isEmpty && missingPlain.isEmpty
+  let gateOk := mismatched.isEmpty && errors.isEmpty && notInSource.isEmpty && missing.isEmpty
   IO.println ""
-  IO.println s!"[decompile-diff] plain fidelity gate: {if gateOk then "PASS" else "FAIL"}"
-
-  -- Aux-fidelity gate: aux-family fidelity must be total.
-  let d3Ok := auxMismatch.isEmpty && auxErrs.isEmpty && missingAux.isEmpty
-  IO.println s!"[decompile-diff] aux-fidelity gate: {if d3Ok then "PASS" else "FAIL"}"
-
-  return if gateOk && d3Ok then 0 else 1
+  IO.println s!"[decompile-diff] fidelity gate: {if gateOk then "PASS" else "FAIL"}"
+  return if gateOk then 0 else 1
 
 end Tests.Compile.DecompileDiff

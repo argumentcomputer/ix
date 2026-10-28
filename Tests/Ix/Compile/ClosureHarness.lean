@@ -29,18 +29,13 @@
   exist on this line, so a closure is compiled by the ordinary compiler.
   The `check-rs` and `check-lean` legs of `kernelRun` are dropped: the
   suites keep the certified leg only (plan §4.1).
-
-  Depends on `Tests.Ix.Compile.AuxCert.recordOf` (CQ2.19 commit 4,
-  `cq219-80071705-auxcert.patch`).
 -/
 import Ix.Meta
 import Ix.EnvScope
 import Ix.CompileM
 import Ix.CompileDriver
 import Ix.DecompileDriver
-import Ix.AuxGen.LiteralSupport
 import Ix.Ixon
-import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.KernelReport
 
 open Lean
@@ -84,11 +79,7 @@ in `out.cenv.ungrounded`; the caller decides what to do with them. -/
 def compileClosure (env : Environment) (closure : List (Name × ConstantInfo))
     (workers : Nat := 32) : IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
-  -- AuxGen M3: the literal support the closure lacks, for the drivers' Source
-  -- service only, as `ix compile-lean` gives it (generation side).
-  let opts : Ix.CompileM.DriverOptions :=
-    { sharingLimits := (← compilerLimits)
-      serviceSupport := Ix.AuxGen.literalSupportFor env closure }
+  let opts : Ix.CompileM.DriverOptions := { sharingLimits := (← compilerLimits) }
   match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (opts := opts) with
   | .ok o => pure o
   | .error e => throw (IO.userError s!"Lean compile failed: {e}")
@@ -191,13 +182,33 @@ def certify (dir : System.FilePath) (label : String) (bytes : ByteArray) (jobs :
     throw (IO.userError s!"kernel-check-ixe wrote no rows for {label} (exit {out.exitCode})")
   IO.ofExcept (KernelReport.parse (← IO.FS.readFile rows) out.exitCode)
 
+/-- The record the certified checker reports the constant at `addr` under:
+the block of a projection, else the constant itself (mirrors
+`Benchmarks.Kernel.CheckIxeStep.owner`). -/
+def recordOf (env : Ixon.Env) (addr : Address) : Address :=
+  match (env.consts.get? addr).bind (·.get?) with
+  | some c => match c.info with
+    | .dPrj p => p.block
+    | .iPrj p => p.block
+    | .rPrj p => p.block
+    | .cPrj p => p.block
+    | _ => addr
+  | none => addr
+
+/-- The certified checker's documented decline classes (`docs/kernel.md`,
+the audits): unsafe and partial declarations, and the modeller's
+reflexive/nested limitations. -/
+def documentedDecline (reason : String) : Bool :=
+  ["unsafe", "partial", "reflexive", "nested inductive"].any fun pat =>
+    (reason.splitOn pat).length > 1
+
 /-- The verdict of the record that owns `name` in the compiled `env`: a
-projection's block, else the constant (`AuxCert.recordOf`). The report must
+projection's block, else the constant (`recordOf`). The report must
 cover that record (`KernelReport.checkCoverage`). -/
 def verdictOf (report : KernelReport.Report) (env : Ixon.Env) (name : Name) :
     Except String KernelReport.Verdict := do
   let some nd := env.named[ixN name]? | throw s!"the output has no {name}"
-  let address := toString (AuxCert.recordOf env nd.addr)
+  let address := toString (recordOf env nd.addr)
   KernelReport.checkCoverage report #[(toString name, address)]
   let some verdict := report[address]? | throw s!"no verdict for {name}@{address}"
   return verdict

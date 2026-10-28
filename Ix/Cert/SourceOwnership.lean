@@ -163,15 +163,14 @@ theorem named_found {index : PhysicalIndex} {entries : Ix.Map Ix.Name Ixon.Named
       (entry.original.map fun original => probeAddress index original.1) := by
   simp only [probeNamed,found]
 
-/-- Four separate literal CURRENT lookup equations. None identifies the
-compiler's final named registry with primary/aux resolution or the artifact. -/
+/-- Three separate literal CURRENT lookup equations. None identifies the
+compiler's final named registry with primary resolution or the artifact. -/
 theorem publication_fields (cenv : Ix.CompileM.CompileEnv) (artifact : Ixon.Env) (index : PhysicalIndex)
     (query : Ix.Name) :
     (probeName cenv artifact index query).primary = probePublication index (cenv.nameToAddr.get? query) ∧
-    (probeName cenv artifact index query).auxiliary = probePublication index (cenv.auxNameToAddr.get? query) ∧
     (probeName cenv artifact index query).compilerNamed = probeNamed index cenv.nameToNamed query ∧
     (probeName cenv artifact index query).artifactNamed = probeNamed index artifact.named query :=
-  ⟨rfl,rfl,rfl,rfl⟩
+  ⟨rfl,rfl,rfl⟩
 
 theorem source_fields (carrier : Carrier) (cenv : Ix.CompileM.CompileEnv) (artifact : Ixon.Env)
     (index : PhysicalIndex) (query : Ix.Name) :

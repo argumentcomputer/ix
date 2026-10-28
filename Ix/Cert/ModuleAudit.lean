@@ -15,9 +15,6 @@ import Ix.Cert.SourceMetadata
 import Ix.Cert.SourceOrder
 import Ix.Cert.SourceOwnership
 import Ix.Cert.SourceUses
-import Ix.CompileCert.SourceFamily
-import Ix.CompileCert.SourceFamilyTraversal
-import Ix.CompileCert.SourceIdentity
 import Ix.Compile.SourceInput.GroupPlan
 import Ix.Compile.SourceInput.GroupView
 import Ix.Compile.SourceInput.Metadata
@@ -40,7 +37,6 @@ none of them, or only in part:
   (`Ix.Cert.SourceOrder`), and the stored prefix's readings at a final
   interpretation (`Ix.Cert.PrefixCore`, with the reference fronts, conversion
   values and value rows it imports);
-* the Source family and identity checks (`Ix.CompileCert.Source*`);
 * the theorems of the artifact and host admission entries
   (`Ix.RoleBinding.Artifact*Theorems`, `Ix.HostAdmission.Theorems`).
 
@@ -69,9 +65,6 @@ imported or declares nothing. -/
   Ix.Cert.SourceOrder
   Ix.Cert.SourceOwnership
   Ix.Cert.SourceUses
-  Ix.CompileCert.SourceFamily
-  Ix.CompileCert.SourceFamilyTraversal
-  Ix.CompileCert.SourceIdentity
   Ix.Compile.SourceInput.GroupPlan
   Ix.Compile.SourceInput.GroupView
   Ix.Compile.SourceInput.Metadata

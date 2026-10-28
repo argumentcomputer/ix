@@ -104,17 +104,16 @@ inductive Related {md : Mode} (names : Ix.Name → CName md → Prop)
 /-! ## External references -/
 
 abbrev Bindings :=
-  Std.HashMap Ix.Compile.ExactKey.ExactName Address × Std.HashMap Ix.Compile.ExactKey.ExactName Address
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address
 
-/-- The block's own binding maps, which expression compilation never
-writes. -/
-def bindingView (state : BlockState) : Bindings := (state.blockNameToAddr, state.auxNameToAddr)
+/-- The block's own binding map (its primary registrations), which expression
+compilation never writes. -/
+def bindingView (state : BlockState) : Bindings := state.blockNameToAddr
 
-/-- The production precedence among local, published and auxiliary
-bindings (`Ix.CompileM.lookupConstAddr`). -/
+/-- The production precedence between local and published bindings
+(`Ix.CompileM.lookupConstAddr`). -/
 def lookupBinding (env : CompileEnv) (bindings : Bindings) (name : Ix.Name) : Option Address :=
-  (bindings.1.get? name).orElse fun _ => (env.nameToAddr.get? name).orElse fun _ =>
-    (bindings.2.get? name).orElse fun _ => env.auxNameToAddr.get? name
+  (bindings.get? name).orElse fun _ => env.nameToAddr.get? name
 
 theorem lookupConstAddr_run (name : Ix.Name) (context : CompileEnv × BlockEnv) (before : BlockState) :
     rawRun (lookupConstAddr name) context before =
@@ -124,13 +123,7 @@ theorem lookupConstAddr_run (name : Ix.Name) (context : CompileEnv × BlockEnv) 
   simp only [lookupConstAddr, rawRun_bind, rawRun_read, rawRun_get, lookupBinding, bindingView]
   cases before.blockNameToAddr.get? name with
   | some address => rfl
-  | none =>
-    cases context.1.nameToAddr.get? name with
-    | some address => rfl
-    | none =>
-      cases before.auxNameToAddr.get? name with
-      | some address => rfl
-      | none => cases context.1.auxNameToAddr.get? name <;> rfl
+  | none => cases context.1.nameToAddr.get? name <;> rfl
 
 theorem lookupConstAddr_state (name : Ix.Name) (context : CompileEnv × BlockEnv) (before : BlockState) :
     (rawRun (lookupConstAddr name) context before).2 = before := by

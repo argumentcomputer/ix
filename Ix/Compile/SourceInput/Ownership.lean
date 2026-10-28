@@ -79,16 +79,14 @@ def probeNamed (index : PhysicalIndex) (entries : Ix.Map Ix.Name Ixon.Named) (qu
 
 structure NameObservation where
   primary : Publication
-  auxiliary : Publication
   compilerNamed : NamedPublication
   artifactNamed : NamedPublication
 
-/-- These are four CURRENT lookup channels. The final named registries may
+/-- These are three CURRENT lookup channels. The final named registries may
 differ from primary resolution; no historical block-local lookup is inferred. -/
 def probeName (cenv : Ix.CompileM.CompileEnv) (artifact : Ixon.Env) (index : PhysicalIndex)
     (query : Ix.Name) : NameObservation :=
   ⟨probePublication index (cenv.nameToAddr.get? query),
-   probePublication index (cenv.auxNameToAddr.get? query),
    probeNamed index cenv.nameToNamed query,probeNamed index artifact.named query⟩
 
 structure Observation where

@@ -34,15 +34,14 @@ private def facts (raw : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat)
     (out : _root_.Ix.CompileM.LeanPipelineOut) : IO Unit := do
   let input ← IO.ofExcept ((_root_.Ix.Compile.CompileInput.fromAnnotations raw).mapError toString)
   let prepared ← IO.ofExcept input.prepare
-  let (names, expected) := Prepass.produce prepared.toArray workers
+  let (_, expected) := Prepass.produce prepared.toArray workers
   let some actual := out.sourceNodes? | throw (IO.userError "successful IO result omitted source facts")
   need (actual.size == expected.facts.nodes.size) "source graph domain size differs"
   for (n, expectedNode) in expected.facts.nodes do
     let some node := actual.get? n | throw (IO.userError s!"source graph omitted {n.pretty}")
     need (nodeEq node expectedNode && decide (actual.getKey? n = expected.facts.nodes.getKey? n))
       s!"source graph changed facts or representative at {n.pretty}"
-  need (out.cenv.env.consts.size == expected.facts.code.size &&
-    out.cenv.unmaterialized == names.leanByIx.size - expected.facts.code.size) "kept/count fields differ"
+  need (out.cenv.env.consts.size == expected.facts.code.size) "kept fields differ"
   need (out.digests.size == expected.digests.size && expected.digests.toList.all
     (fun (n, d) => out.digests.get? n == some d)) "input digests differ"
 
@@ -148,8 +147,8 @@ def run : IO UInt32 := do
     (name, ci)
   let streamed ← compile many 8
   facts many 8 streamed
-  need (streamed.cenv.ungrounded.isEmpty && streamed.cenv.env.consts.isEmpty &&
-    streamed.cenv.unmaterialized == 128) "streamed-body control retained canonical code or failed"
+  need (streamed.cenv.ungrounded.isEmpty && streamed.cenv.env.consts.isEmpty)
+    "streamed-body control retained canonical code or failed"
   SourceAccounting.run
   IO.println "source graph IO: complete/empty/failure facts; materialized reference; worker bytes; streamed fallback; digests/counts"
   return 0

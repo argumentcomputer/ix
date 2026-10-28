@@ -261,9 +261,8 @@ lean_exe «sharing-study» where
 
 /-- The Lean names whose address differs between two compiled environments,
 grouped by block with a one-word cause (packaging, nested order, cascade,
-content); `--originals` lists the regenerated auxiliaries whose
-`Named.original` differs from their address: `ixe-diff <old.ixe> <new.ixe>
-[--names] [--tsv <rows.tsv>]` (`Benchmarks/Canon/IxeDiff.lean`). -/
+content): `ixe-diff <old.ixe> <new.ixe> [--names] [--tsv <rows.tsv>]`
+(`Benchmarks/Canon/IxeDiff.lean`). -/
 lean_exe «ixe-diff» where
   root := `Benchmarks.Canon.IxeDiff
   moreLinkObjs := #[ix_rs]
@@ -336,19 +335,7 @@ def moduleExclusions : Array ModuleExclusion := #[
     kind := .script },
   { module := `Benchmarks.Kernel.IxEnv
     reason := "`import Ix` as an `ix compile` input: the environment of Ix itself"
-    kind := .compileInput },
-  { module := `Tests.Ix.Compile.AuxCert.PropEvap
-    reason := "WB §9 reproducer; nothing reaches either compiler"
-    kind := .rejectedFixture "aux-cert" "Application type mismatch" },
-  { module := `Tests.Ix.Compile.AuxCert.SortU
-    reason := "WB-B8 note reproducer; nothing reaches either compiler"
-    kind := .rejectedFixture "aux-cert" "Invalid universe polymorphic resulting type" },
-  { module := `Tests.Ix.Compile.AuxCert.SortURec
-    reason := "WB-B8 note reproducer; nothing reaches either compiler"
-    kind := .rejectedFixture "aux-cert" "Invalid universe polymorphic resulting type" },
-  { module := `Tests.Ix.Compile.AuxCert.SortUOpt
-    reason := "WB-B8 note reproducer; nothing reaches either compiler"
-    kind := .rejectedFixture "aux-cert" "Unknown constant `SortUOpt.SU.ctorIdx`" }]
+    kind := .compileInput }]
 
 /-- The directories whose modules `check-modules` builds, with the root files.
 `IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and

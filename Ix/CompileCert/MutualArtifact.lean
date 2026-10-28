@@ -311,7 +311,7 @@ theorem ordered_agree {classes : List (List MutConst)} (agree : MutualProjection
 /-- **A sorted, family-ordered and compiled mutual block is a correct
 artifact, with no class premise** (N-READS, N5 a): the driver's steps for a
 mutual block, `sortConsts`, `orderRecursorFamily` and `compileMutualBlock`
-(`Ix.CompileDriver.compileBlockWithAux`), under an environment without
+(`Ix.CompileM.compileBlock`), under an environment without
 Pass 3 records and from a state whose tables are on the wire, return classes
 that partition the members and a block that decodes exactly, whose
 projections decode exactly, and whose rows read, in any store holding the

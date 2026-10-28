@@ -165,8 +165,9 @@ impl Name {
 
   /// Raw equality: the same components and the same stored digest at every
   /// node, which is the derived `==`, iteratively and pointer-first. The
-  /// exact cache keys (`expr_key`) and the aux-gen memos confirm hits with
-  /// it: a stored digest is data of the compiled metadata, so raw equality,
+  /// exact cache keys (`expr_key`) and the inductive-flag transform memos
+  /// confirm hits with it: a stored digest is data of the compiled
+  /// metadata, so raw equality,
   /// not the digest-blind [`Name::same_structure`], is what a hit must keep.
   pub fn same_raw(&self, other: &Self) -> bool {
     let (mut a, mut b) = (self, other);
@@ -930,8 +931,8 @@ impl Expr {
   /// and name nodes), iteratively, pointer-first, and linear in the DAG,
   /// where the derived recursion is exponential on distinct allocations of a
   /// shared DAG. The only expression comparison of the exact cache keys
-  /// (`expr_key::ExprKey`, `PreseedKey`) and the aux-gen memo confirmations
-  /// (R03-21).
+  /// (`expr_key::ExprKey`, `PreseedKey`) and the inductive-flag transform
+  /// memo confirmations.
   pub fn same_raw(&self, other: &Self) -> bool {
     if Arc::ptr_eq(&self.0, &other.0) {
       return true;
@@ -1987,7 +1988,7 @@ pub mod arbitrary {
 mod scalar_structure_tests {
   use super::*;
 
-  /// Name tables (`name_to_addr`, `aux_name_to_addr`, `MutCtx`) hash a
+  /// Name tables (`name_to_addr`, `MutCtx`) hash a
   /// name by its digest and confirm a hit with the derived `==`, which
   /// compares the components: two names that share a digest are two keys.
   /// The Lean compiler's tables are keyed the same way since CQ2.25

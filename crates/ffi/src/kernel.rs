@@ -348,11 +348,9 @@ pub extern "C" fn rs_kernel_check_consts(
 /// recursor rule in the compiled Ixon payload, then check that exact malformed
 /// Ixon with the kernel.
 ///
-/// This is intentionally separate from `rs_kernel_check_consts`: the normal
-/// compile path may regenerate aux recursors, which is correct production
-/// behavior but masks tests whose point is "reject this stored recursor
-/// payload." Mutating after compile gives the tutorial suite a precise
-/// regression hook without weakening aux generation for real inputs.
+/// This is intentionally separate from `rs_kernel_check_consts`: mutating
+/// the compiled payload, rather than the Lean source, gives the tutorial
+/// suite a precise "reject this stored recursor payload" regression hook.
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_check_malformed_rec_rule_ixon(
@@ -4356,16 +4354,12 @@ fn build_uniform_error(count: usize, msg: &str) -> LeanIOResult<LeanOwned> {
 // and compare each constant's type/value against the original by content
 // hash.
 //
-// Unlike the earlier direct `KEnv → lean_egress` variant, this path lets the
-// validated `decompile_env` (the same pass `validate-aux` and `rust-compile`
-// cover) regenerate the aux_gen auxiliaries (`.brecOn*`, `.brecOn_N.eq`,
-// etc.) from the kernel-canonicalized Ixon form. That's the critical step
-// for closing the `.brecOn*` binder-name / alpha-collapse drift: the prior
-// direct path was a second decompiler with no aux_gen awareness.
+// The Lean side comes from the same `decompile_env` that `rust-compile`
+// covers, run over the kernel's Ixon form, so the comparison checks the
+// kernel round trip rather than a second decompiler.
 //
 // If `ixon_egress` is structurally faithful (kenv → ixon inversion preserves
-// the original addressing) and decompile_env regenerates aux_gen correctly,
-// this test should report zero mismatches.
+// the original addressing), this test should report zero mismatches.
 //
 // Test-only: this and the no-compile variant below import `egress` and
 // `decompile_env`, which the production CLI path (`rs_kernel_check_consts`)
@@ -4544,9 +4538,7 @@ pub extern "C" fn rs_kernel_roundtrip(
   // reads from `stt.env.named` / `stt.env.get_const` / `stt.env.get_blob` —
   // the egressed env preserves all of those (meta is copied from the
   // original; constants are re-synthesized from kenv; blobs/names are
-  // cloned). `stt.blocks`, `stt.kctx`, `stt.aux_gen_extra_names`, etc.
-  // remain untouched so decompile's Pass 2 (aux_gen regeneration) has the
-  // block structure it expects.
+  // cloned).
   compile_state.env = egressed_ixon;
 
   let t4 = Instant::now();
@@ -4593,29 +4585,21 @@ pub extern "C" fn rs_kernel_roundtrip(
 }
 
 /// The round trip's completeness errors besides `compare_envs`' content
-/// diffs: Pass 2's regeneration errors (`DecompileState::aux_gen_errors`,
-/// which `decompile_env` reports without failing) and every original
-/// constant absent from the decompiled env other than the compile's
-/// ungrounded inputs.
+/// diffs: every original constant absent from the decompiled env other than
+/// the compile's ungrounded inputs.
 #[cfg(feature = "test-ffi")]
 fn decompile_completeness_errors(
   original: &ix_common::env::Env,
   dstt: &ix_compile::decompile::DecompileState,
   ungrounded: &rustc_hash::FxHashSet<Name>,
 ) -> Vec<String> {
-  let mut errors: Vec<String> = dstt
-    .aux_gen_errors
-    .iter()
-    .map(|e| format!("aux_gen roundtrip error: {e}"))
-    .collect();
   let mut absent: Vec<String> = original
     .iter()
     .filter(|(n, _)| !dstt.env.contains_key(*n) && !ungrounded.contains(*n))
     .map(|(n, _)| format!("absent from decompiled: {}", n.pretty()))
     .collect();
   absent.sort();
-  errors.extend(absent);
-  errors
+  absent
 }
 
 /// Compare the original env against a decompiled/egressed side for

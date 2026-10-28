@@ -12,13 +12,7 @@ reads no environment variable and no `/proc` file; it takes
 the options here:
 - `IX_SHARING_LIMITS` (set by `--sharing-limits`, or directly): the sharing
   construction's limits;
-- `IX_COMPILE_DBG`: phase timings and the per-wave trace;
-- `IX_AUXGEN_IXC`: `failClosed` runs checked generation and traces each
-  tail; `measure` times the Source service alone, then returns the existing
-  "nothing compiled" error. `asks=below`, `asks=inductive` and
-  `asks=recursors` select the service's questions. Historical shadow/fallback
-  modes and `rec=off` are explicit configuration errors, including under
-  measurement. Production uses failClosed with recursors enabled.
+- `IX_COMPILE_DBG`: phase timings and the per-wave trace.
 
 Under `IX_COMPILE_DBG` the pipeline prints the process's resident set size
 after the compile phase, read here.
@@ -36,40 +30,15 @@ def residentSetSize : IO String := do
     return (rss.getD "?").trimAscii.toString
   catch _ => return "?"
 
-/-- AuxGen's measurement mode from `IX_AUXGEN_IXC` (see the module
-    docstring); an unknown word is an error naming it. -/
-def auxIxcOptionsOf (value : String) : Except String Ix.CompileM.AuxIxcOptions := do
-  let words := (value.splitOn ",").map (·.trimAscii.toString)
-  let mut opts : Ix.CompileM.AuxIxcOptions := { trace := true, recursors := true }
-  for (w, i) in words.zipIdx do
-    if i == 0 then
-      if w == "measure" then opts := { opts with measureOnly := true }
-      else match Ix.AuxGen.IxcMode.ofString? w with
-        | some mode => opts := { opts with mode }
-        | none => throw s!"IX_AUXGEN_IXC: unknown mode '{w}' (shadow, fallback, failClosed, fallbackEager, measure)"
-    else if w == "asks=below" then opts := { opts with asks := .below }
-    else if w == "asks=inductive" then opts := { opts with asks := .inductive }
-    else if w == "asks=recursors" then opts := { opts with asks := .recursors }
-    else if w == "rec=off" then opts := { opts with recursors := false }
-    else throw s!"IX_AUXGEN_IXC: unknown option '{w}' (asks=below, asks=inductive, asks=recursors, rec=off)"
-  discard <| opts.validate
-  return opts
-
 /-- The drivers' options from the environment; `dbg` forces the debug
-    traces on. An invalid `IX_SHARING_LIMITS` or `IX_AUXGEN_IXC` is an error
-    naming it. -/
+    traces on. An invalid `IX_SHARING_LIMITS` is an error naming it. -/
 def driverOptionsFromEnv (dbg : Bool := false) :
     IO (Except String Ix.CompileM.DriverOptions) := do
   match ← Ix.CompileM.compilerSharingLimitsFromEnv with
   | .error e => return .error e
   | .ok sharingLimits =>
     let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
-    let auxIxc ← match ← IO.getEnv "IX_AUXGEN_IXC" with
-      | none => pure none
-      | some v => match auxIxcOptionsOf v with
-        | .ok o => pure (some o)
-        | .error e => return .error e
-    return .ok { sharingLimits, dbg, auxIxc
+    return .ok { sharingLimits, dbg
                  memory := if dbg then some residentSetSize else none }
 
 end Ix.Cli

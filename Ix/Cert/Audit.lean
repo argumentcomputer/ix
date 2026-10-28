@@ -1,5 +1,6 @@
 import Ix.SpecDigest.Audit
 import Ix.Cert.Statement
+import Ix.Cert.ReportChecks
 import Ix.Cert.StrongCommutation
 import Ix.Cert.RecordHeaders
 import Ix.Cert.Closure
@@ -1062,6 +1063,17 @@ fun ixe =>
 -- the eleventh, with `regeneratedNames`) is deleted with the rewriting hooks whose
 -- heads it bounded, so the checks after it move up by one (sixteen checks), and
 -- `checkReport_ok` loses its conjunct.
+-- Re-frozen when the compiler stopped regenerating auxiliaries: the aux-map, cross-SCC
+-- and identity-row checks are deleted with the regenerated records and promotion rows they
+-- guarded, the publication check reads the resolution map alone, and two checks are added:
+-- no address holds both a blob and a record (literal bytes and records share the address
+-- space), and every recursor the recursor index attaches to an inductive block is a
+-- published recursor of the family of every input name published there (checkReport
+-- refuses an indexed recursor that is not a published recursor of its block's family),
+-- and under the default role table the stored record at a bound `Nat` operation's address
+-- is a standalone definition and at a bound axiom role's address an axiom (checkReport
+-- refuses a record of the wrong kind at a bound Nat-operation or axiom role address).
+-- Sixteen checks; `checkReport_ok` concludes `CheckReportOk`, one field each.
 /-- info: def Ix.Cert.checkReport : Ix.Environment → Ix.CompileM.CompileEnv → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
 fun env cenv out =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
@@ -1076,73 +1088,84 @@ fun env cenv out =>
           | none =>
             match Ix.Cert.unseenInductive env out.fst with
             | none =>
-              match Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst with
+              match Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst with
               | none =>
-                match Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst with
+                match Ix.Cert.misnamedInput env with
                 | none =>
-                  match Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
+                  match Ix.Cert.strayConstructor env with
                   | none =>
-                    match Ix.Cert.misnamedInput env with
+                    match Ix.Cert.strayFailure env cenv.ungrounded with
                     | none =>
-                      match Ix.Cert.strayConstructor env with
+                      match Ix.Cert.projectionCollision out.fst with
                       | none =>
-                        match Ix.Cert.strayFailure env cenv.ungrounded with
+                        match Ix.Cert.unreadablePublished env out.fst with
                         | none =>
-                          match Ix.Cert.identityMismatch cenv.auxReport.identity out.fst with
+                          match Ix.Cert.blobRecordCollision out.fst with
                           | none =>
-                            match Ix.Cert.projectionCollision out.fst with
-                            | none =>
-                              match Ix.Cert.unreadablePublished env out.fst with
-                              | none => Except.ok ()
-                              | some n =>
-                                Except.error
-                                  (toString "compileReport: readability check failed: the input name " ++
-                                      toString n.pretty ++
-                                    toString
-                                      " is published at an address that holds no stored record, or a block record")
-                            | some (b, i) =>
+                            match Ix.Cert.unownedRecursor env out.fst, Ix.Cert.roleRecordKind out.fst with
+                            | none, none => Except.ok ()
+                            | none, some (r, p) =>
                               Except.error
-                                (toString "compileReport: projection check failed: member " ++ toString i ++
-                                      toString " of the block at " ++
+                                (toString "compileReport: role check failed: the record stored at " ++ toString p ++
+                                      toString ", the default role table's address of the role " ++
+                                    toString (repr r) ++
+                                  toString
+                                    ", is not of its specification's kind (a standalone definition for a Nat operation, an axiom for an axiom role)")
+                            | some (b, x, none), x_1 =>
+                              Except.error
+                                (toString "compileReport: recursor check failed: the input name " ++
+                                        toString x.pretty ++
+                                      toString ", published in the inductive block at " ++
                                     toString b ++
-                                  toString " has more than one stored definition projection record")
-                          | some (n, same, a) =>
+                                  toString
+                                    " that the recursor index attaches recursors to, is not an inductive, constructor or recursor of a family")
+                            | some (b, x, some r), x_1 =>
+                              have pos :=
+                                match r with
+                                | Ix.Kernel.ConstRef.member b j => j
+                                | Ix.Kernel.ConstRef.ctor b i c => i;
+                              Except.error
+                                (toString "compileReport: recursor check failed: the recursor at member " ++
+                                                toString pos ++
+                                              toString " of the record " ++
+                                            toString r.block ++
+                                          toString ", indexed under the inductive block at " ++
+                                        toString b ++
+                                      toString ", is not a published recursor of the family of " ++
+                                    toString x.pretty ++
+                                  toString ", published in that block")
+                          | some a =>
                             Except.error
-                              (toString "compileReport: identity check failed: the identity row of " ++
-                                          toString n.pretty ++
-                                        toString " (" ++
-                                      toString (if same = true then "identical" else "not identical") ++
-                                    toString " at " ++
-                                  toString a ++
-                                toString
-                                  ") disagrees with another row of that name, or the name is not published at that address")
-                        | some f =>
+                              (toString "compileReport: blob check failed: the address " ++ toString a ++
+                                toString " holds both a stored blob and a stored record")
+                        | some n =>
                           Except.error
-                            (toString "compileReport: failure check failed: the driver records the name " ++
-                                toString f.pretty ++
-                              toString " as a failure, but no input constant is stored under it")
-                      | some c =>
+                            (toString "compileReport: readability check failed: the input name " ++ toString n.pretty ++
+                              toString " is published at an address that holds no stored record, or a block record")
+                      | some (b, i) =>
                         Except.error
-                          (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
-                            toString ", a constructor of an input inductive, is not stored as a constructor of it")
-                    | some n =>
+                          (toString "compileReport: projection check failed: member " ++ toString i ++
+                                toString " of the block at " ++
+                              toString b ++
+                            toString " has more than one stored definition projection record")
+                    | some f =>
                       Except.error
-                        (toString "compileReport: name invariant failed: the input constant stored under " ++
-                            toString n.pretty ++
-                          toString " carries another name")
-                  | some n =>
+                        (toString "compileReport: failure check failed: the driver records the name " ++
+                            toString f.pretty ++
+                          toString " as a failure, but no input constant is stored under it")
+                  | some c =>
                     Except.error
-                      (toString "compileReport: cross-SCC check failed: the name " ++ toString n.pretty ++
-                        toString
-                          " resolves outside the aux map and is among the extra names or is a constructor of an inductive among them, so a cross-SCC subset may have claimed it")
+                      (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
+                        toString ", a constructor of an input inductive, is not stored as a constructor of it")
                 | some n =>
                   Except.error
-                    (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
-                      toString " is published but neither resolved nor in the aux map")
+                    (toString "compileReport: name invariant failed: the input constant stored under " ++
+                        toString n.pretty ++
+                      toString " carries another name")
               | some n =>
                 Except.error
-                  (toString "compileReport: original-form check failed: the input name " ++ toString n.pretty ++
-                    toString " resolves through the aux map but is not published with an original-form record")
+                  (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
+                    toString " is published but not resolved")
             | some n =>
               Except.error
                 (toString "compileReport: component check failed: the input inductive " ++ toString n.pretty ++
@@ -1301,25 +1324,46 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #check @Ix.Cert.compileReport_ok
 
 /-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Ix.Cert.Failures},
-  Ix.Cert.checkReport env cenv out = Except.ok () →
-    Ix.Cert.uncovered env out.fst out.snd = [] ∧
-      Ix.Cert.unauthentic out.fst = [] ∧
-        Ix.Cert.referenceCycle out.fst = none ∧
-          Ix.Cert.nameHashCollision env out.fst = none ∧
-            Ix.Cert.mutsMismatch out.fst = none ∧
-              Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst = none ∧
-                Ix.Cert.unseenInductive env out.fst = none ∧
-                  Ix.Cert.unoriginalAux env cenv.auxNameToAddr out.fst = none ∧
-                    Ix.Cert.unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.fst = none ∧
-                      Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-                        Ix.Cert.misnamedInput env = none ∧
-                          Ix.Cert.strayConstructor env = none ∧
-                            Ix.Cert.strayFailure env cenv.ungrounded = none ∧
-                              Ix.Cert.identityMismatch cenv.auxReport.identity out.fst = none ∧
-                                Ix.Cert.projectionCollision out.fst = none ∧
-                                  Ix.Cert.unreadablePublished env out.fst = none -/
+  Ix.Cert.checkReport env cenv out = Except.ok () → Ix.Cert.CheckReportOk env cenv out -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
+
+/-- info: structure Ix.Cert.CheckReportOk (env : Ix.Environment) (cenv : Ix.CompileM.CompileEnv)
+  (out : Ixon.Env × Ix.Cert.Failures) : Prop
+number of parameters: 3
+fields:
+  Ix.Cert.CheckReportOk.covered : Ix.Cert.uncovered env out.fst out.snd = []
+  Ix.Cert.CheckReportOk.authentic : Ix.Cert.unauthentic out.fst = []
+  Ix.Cert.CheckReportOk.acyclic : Ix.Cert.referenceCycle out.fst = none
+  Ix.Cert.CheckReportOk.hashes : Ix.Cert.nameHashCollision env out.fst = none
+  Ix.Cert.CheckReportOk.muts : Ix.Cert.mutsMismatch out.fst = none
+  Ix.Cert.CheckReportOk.resolution : Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst = none
+  Ix.Cert.CheckReportOk.inductives : Ix.Cert.unseenInductive env out.fst = none
+  Ix.Cert.CheckReportOk.resolved : Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst = none
+  Ix.Cert.CheckReportOk.named : Ix.Cert.misnamedInput env = none
+  Ix.Cert.CheckReportOk.constructors : Ix.Cert.strayConstructor env = none
+  Ix.Cert.CheckReportOk.failures : Ix.Cert.strayFailure env cenv.ungrounded = none
+  Ix.Cert.CheckReportOk.projections : Ix.Cert.projectionCollision out.fst = none
+  Ix.Cert.CheckReportOk.readable : Ix.Cert.unreadablePublished env out.fst = none
+  Ix.Cert.CheckReportOk.blobs : Ix.Cert.blobRecordCollision out.fst = none
+  Ix.Cert.CheckReportOk.recursors : Ix.Cert.unownedRecursor env out.fst = none
+  Ix.Cert.CheckReportOk.roles : Ix.Cert.roleRecordKind out.fst = none
+constructor:
+  Ix.Cert.CheckReportOk.mk {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Ix.Cert.Failures}
+    (covered : Ix.Cert.uncovered env out.fst out.snd = []) (authentic : Ix.Cert.unauthentic out.fst = [])
+    (acyclic : Ix.Cert.referenceCycle out.fst = none) (hashes : Ix.Cert.nameHashCollision env out.fst = none)
+    (muts : Ix.Cert.mutsMismatch out.fst = none)
+    (resolution : Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst = none)
+    (inductives : Ix.Cert.unseenInductive env out.fst = none)
+    (resolved : Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst = none)
+    (named : Ix.Cert.misnamedInput env = none) (constructors : Ix.Cert.strayConstructor env = none)
+    (failures : Ix.Cert.strayFailure env cenv.ungrounded = none)
+    (projections : Ix.Cert.projectionCollision out.fst = none)
+    (readable : Ix.Cert.unreadablePublished env out.fst = none) (blobs : Ix.Cert.blobRecordCollision out.fst = none)
+    (recursors : Ix.Cert.unownedRecursor env out.fst = none) (roles : Ix.Cert.roleRecordKind out.fst = none) :
+    Ix.Cert.CheckReportOk env cenv out -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.CheckReportOk
 
 /-- info: Ix.Cert.compileCovers : Ix.Cert.CompileCovers -/
 #guard_msgs (whitespace := lax) in
@@ -3561,16 +3605,16 @@ fun snapshot ready acc =>
 #print Ix.Cert.Schedule.applySeq
 
 /-- info: Ix.Cert.Schedule.compileEnvFold_eq_seq : ∀ (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool)
-  (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
-  Ix.CompileM.compileEnvFold env blocks dbg unmaterialized sharingLimits width =
-    Ix.Cert.Schedule.compileEnvFoldSeq env blocks unmaterialized sharingLimits -/
+  (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
+  Ix.CompileM.compileEnvFold env blocks dbg sharingLimits width =
+    Ix.Cert.Schedule.compileEnvFoldSeq env blocks sharingLimits -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Schedule.compileEnvFold_eq_seq
 
 /-- info: Ix.Cert.Schedule.compileEnvFold_width : ∀ (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool)
-  (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat),
-  Ix.CompileM.compileEnvFold env blocks dbg unmaterialized sharingLimits width =
-    Ix.CompileM.compileEnvFold env blocks dbg' unmaterialized sharingLimits width' -/
+  (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat),
+  Ix.CompileM.compileEnvFold env blocks dbg sharingLimits width =
+    Ix.CompileM.compileEnvFold env blocks dbg' sharingLimits width' -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Schedule.compileEnvFold_width
 
@@ -3595,38 +3639,35 @@ fun snapshot ready acc =>
 The driver and its validations read the environment through
 `Ix.Environment.get?` only, apart from the order of the inductive groups
 they check (`Ix.Cert.Hybrid.groupOrder`). So two environments with the same
-lookups, the same group order and the same source count compile alike under
+lookups and the same group order compile alike under
 every schedule (`compileEnvFold_lookups`), and the IO pipeline's hybrid
 environment (`hybridEnv`), whose fallback computes the canonicalization's
 specification (`fallback_spec`, from C1), folds as `Ix.Cert.compile`'s
 materialized environment does (`pipeline_fold`), given that the latter is
 the input's canonicalization and the code constants are its own and hold
 exactly its inductives; the validations' group order follows
-(`groupOrder_eq`, `hybrid_heads`) and is no longer a premise. The
-restatement's bound on the source-claim walk changes nothing
-(`sourceClaimOwned_fuel`, `pipeline_walk`). The IO pipeline's own loops,
+(`groupOrder_eq`, `hybrid_heads`) and is no longer a premise. The IO
+pipeline's own loops,
 its front end (canonicalization, graph, ground filter, condensation) and
 the blocks' independence within a wave stay tested. -/
 
 -- groupOrder (2026-10-19): the runtime check lists the production edit's
 -- `groupHeads` (which replaces `inductiveGroups`), `groupAll` and `orderedGroups`
 -- (8 → 10 safe definitions).
-/-- info: [cert-audit] hybrid: 23 roots; axioms used: [propext, Classical.choice, Quot.sound]
+/-- info: [cert-audit] hybrid: 11 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] hybrid: 10 safe definitions, no runtime substitution -/
+info: [cert-audit] hybrid: 9 safe definitions, no runtime substitution -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
   checkRoots (tag := "cert-audit") "hybrid"
     (#[`uniformSafety_eq, `mixedSafetyMessage_eq, `validateMutualSafety_eq, `validateInductiveFlags_eq,
-      `compileEnvFold_lookups, `fallback_spec, `hybrid_lookups, `pipeline_fold, `filter_length_mono,
-      `filter_length_lt, `measure_push, `idBind, `fuel_exit, `forIn_measure, `sourceClaimOwned_fuel,
-      `sourceClaimOwned_lookups, `view_get, `hybrid_invariant, `hybrid_covers,
-      `pipeline_walk, `mem_groupHeads, `groupOrder_eq, `hybrid_heads].map (`Ix.Cert.Hybrid ++ ·))
+      `compileEnvFold_lookups, `fallback_spec, `hybrid_lookups, `pipeline_fold, `mem_groupHeads,
+      `groupOrder_eq, `hybrid_heads].map (`Ix.Cert.Hybrid ++ ·))
   checkRuntime (tag := "cert-audit") "hybrid"
     #[``Ix.CompileM.validateInductiveFlags, ``Ix.CompileM.validateMutualSafety, ``Ix.CompileM.uniformSafety,
       ``Ix.CompileM.mixedSafetyMessage, ``Ix.CompileM.groupHeads, ``Ix.CompileM.groupAll,
-      ``Ix.CompileM.orderedGroups, ``Ix.AuxGen.sourceClaimOwned, ``Ix.Environment.get?,
+      ``Ix.CompileM.orderedGroups, ``Ix.Environment.get?,
       ``Ix.CanonM.canonChunk]
 
 -- groupOrder (2026-10-19, flagged production edit in Ix/CompileDriver.lean): the
@@ -3653,12 +3694,9 @@ fun codeConsts leanByIx =>
 /-- info: @Ix.Cert.Hybrid.compileEnvFold_lookups : ∀ {e₁ e₂ : Ix.Environment},
   (∀ (n : Ix.Name), e₁.get? n = e₂.get? n) →
     Ix.Cert.Hybrid.groupOrder e₁ = Ix.Cert.Hybrid.groupOrder e₂ →
-      ∀ {u₁ u₂ : Nat},
-        e₁.consts.size + u₁ = e₂.consts.size + u₂ →
-          ∀ (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool) (sharingLimits : Ix.Sharing.Exact.Limits)
-            (width width' : Nat),
-            Ix.CompileM.compileEnvFold e₁ blocks dbg u₁ sharingLimits width =
-              Ix.Cert.Hybrid.restore e₁ u₁ <$> Ix.CompileM.compileEnvFold e₂ blocks dbg' u₂ sharingLimits width' -/
+      ∀ (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat),
+        Ix.CompileM.compileEnvFold e₁ blocks dbg sharingLimits width =
+          Ix.Cert.Hybrid.restore e₁ <$> Ix.CompileM.compileEnvFold e₂ blocks dbg' sharingLimits width' -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Hybrid.compileEnvFold_lookups
 
@@ -3670,31 +3708,15 @@ fun codeConsts leanByIx =>
   (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)),
   (∀ (n : Ix.Name), full.get? n = Option.map (fun p => Ix.Cert.Canon.constS p.snd) (leanByIx.get? n)) →
     (∀ (n : Ix.Name) (ci : Ix.ConstantInfo), codeConsts.get? n = some ci → full.get? n = some ci) →
-      codeConsts.size ≤ leanByIx.size ∧ full.consts.size = leanByIx.size →
-        (∀ (n : Ix.Name) (v : Ix.InductiveVal),
-            (n, Ix.ConstantInfo.inductInfo v) ∈ codeConsts.toList ↔
-              (n, Ix.ConstantInfo.inductInfo v) ∈ full.consts.toList) →
-          ∀ (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
-            Ix.CompileM.compileEnvFold (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) blocks dbg
-                (leanByIx.size - codeConsts.size) sharingLimits width =
-              Ix.Cert.Hybrid.restore (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx)
-                  (leanByIx.size - codeConsts.size) <$>
-                Ix.CompileM.compileEnvFold full blocks false 0 sharingLimits -/
+      (∀ (n : Ix.Name) (v : Ix.InductiveVal),
+          (n, Ix.ConstantInfo.inductInfo v) ∈ codeConsts.toList ↔
+            (n, Ix.ConstantInfo.inductInfo v) ∈ full.consts.toList) →
+        ∀ (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
+          Ix.CompileM.compileEnvFold (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) blocks dbg sharingLimits width =
+            Ix.Cert.Hybrid.restore (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) <$>
+              Ix.CompileM.compileEnvFold full blocks false sharingLimits -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Hybrid.pipeline_fold
-
-/-- info: Ix.Cert.Hybrid.pipeline_walk : ∀ (codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
-  (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)),
-  (∀ (n : Ix.Name), codeConsts.contains n = true → leanByIx.contains n = true) →
-    ∀ (owners : Std.HashSet Ix.Name) (name : Ix.Name) {k k' : Nat},
-      leanByIx.size ≤ k →
-        leanByIx.size ≤ k' →
-          Ix.AuxGen.sourceClaimOwned
-                { consts := ∅, fallback? := some (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx).get? } owners name k =
-              Ix.AuxGen.sourceClaimOwned (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) owners name k' ∧
-            ∃ b, Ix.AuxGen.sourceClaimOwned (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) owners name k' = Except.ok b -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Cert.Hybrid.pipeline_walk
 
 /-- info: 'Ix.Cert.Hybrid.compileEnvFold_lookups' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -3704,13 +3726,6 @@ fun codeConsts leanByIx =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Hybrid.pipeline_fold
 
-/-- info: 'Ix.Cert.Hybrid.sourceClaimOwned_fuel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.Hybrid.sourceClaimOwned_fuel
-
-/-- info: 'Ix.Cert.Hybrid.pipeline_walk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.Hybrid.pipeline_walk
 
 /-! ## Route A, B3: the reader succeeds over the compiled closure's stream
 
@@ -4376,8 +4391,8 @@ fun env ixe =>
 /-! ## `Muts` entries agree with their blocks (B9c (c2); coordinator decision, 2026-10-20)
 
 The changed set reads a compiled component's classes off its `Muts` entry,
-which the aux tail registers before AuxGen's pipeline runs (`partial` code no
-proof can follow). `compileReport` now refuses a result in which a `Muts` entry
+which the block compile registers after its projections (`registerMutsEntry`)
+and a later `Named` entry may override. `compileReport` now refuses a result in which a `Muts` entry
 lists, in class `i`, a name not published at member `i`'s projection of its
 block (`checkReport`'s fifth check, `mutsMismatch`); the projections are
 `buildMutualProjections`', proved code. So on its result the classes the
@@ -4420,10 +4435,9 @@ fun ixe =>
 /-! ## Resolved names are published where they resolve (B9b, check 3a; coordinator decision, 2026-10-20)
 
 A block's merge registers each of its names in the driver's resolution map
-(`CompileEnv.nameToAddr`) and its `Named` table at one address, but the aux
-tail's `Named` entries, registered after AuxGen's `partial` code, are merged
-after them and override a name's entry, so no proof bounds which names a later
-block's entries overwrite. `compileReport` now refuses a result in which a name
+(`CompileEnv.nameToAddr`) and its `Named` table at one address, but later
+merges write the `Named` table without the resolution map's single-ownership
+check, so no proof bounds which names a later block's entries overwrite. `compileReport` now refuses a result in which a name
 of the resolution map at the end of the fold is not published at the address it
 resolves to (`checkReport`'s sixth check, `resolutionMismatch`); B9b's merge
 invariant is about the resolution map, and with this check it speaks of the
@@ -4460,9 +4474,8 @@ fun resolved ixe =>
 /-! ## Every inductive component is seen (B9b's (c3); coordinator decision, 2026-10-20)
 
 The changed set reads an inductive component only through its block's `Muts`
-entry (`Ix.Compile.ChangedSet.mutsRecords`), which the aux tail registers
-before AuxGen's `partial` code, and a later `Named` entry may override, so a
-component could escape the classifier. `compileReport` now refuses a result in
+entry (`Ix.Compile.ChangedSet.mutsRecords`), which a later `Named` entry may
+override, so a component could escape the classifier. `compileReport` now refuses a result in
 which a published input inductive is not published at an inductive projection
 of a block with a `Muts` entry at its address (`checkReport`'s seventh check,
 `unseenInductive`). It reads the published input inductives' records, not every
@@ -4514,62 +4527,14 @@ fun env ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unseenInductive
 
-/-! ## Aux-resolved input names have original-form records (B9b's gap 2; coordinator decision, 2026-10-21)
-
-The driver resolves a name through its aux map (`CompileEnv.auxNameToAddr`)
-when another block's aux tail compiled it, AuxGen's `partial` code, which no
-proof follows. Its promotion grafts the original-form compile's record onto
-the name's entry (`promoteAuxWrites`), but the remaining members of a promoted
-block (`promoteRemainingWrites`) get none, so such an input name would be
-neither a primary claim of its own block's compile (B9b) nor a name the
-classifier's regenerated rule reads (B9d). `compileReport` now refuses a result
-in which an input name of the driver's final aux map is not published with
-`Named.original` (`checkReport`'s eighth check, `unoriginalAux`; on Init+Std,
-3,428 aux names, all input, all with one; on Mathlib, 22,842 aux names, 22,513
-input, all with one). `compileUnchecked` also returns the final aux map.
-Re-frozen with it: `compileUnchecked`'s, `checkReport`'s and `compileReport`'s
-prints, `compileReport_ok` (the aux map beside the resolution map) and
-`checkReport_ok` (an eighth conjunct). On a consistent run the result is
-unchanged. -/
-
-/-- info: [cert-audit] original-form records: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] original-form records: 1 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "original-form records"
-    (#[`unoriginalAux_none, `auxOriginal].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "original-form records" #[``Ix.Cert.unoriginalAux]
-
-/-- info: def Ix.Cert.unoriginalAux : Ix.Environment →
-  Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env → Option Ix.Name :=
-fun env aux ixe =>
-  List.findSome?
-    (fun x =>
-      match x with
-      | (n, snd) =>
-        if (env.consts.contains n && !Option.any (fun x => x.original.isSome) (ixe.named.get? n)) = true then some n
-        else none)
-    aux.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.unoriginalAux
-
 /-! ## Published input names are resolved (B9b, `HookFree`'s discharge, (v); coordinator decision, 2026-10-21)
 
-A `Named` entry can come from a block's aux tail (`BlockState.auxNamed`,
-written after AuxGen's `partial` code, which no proof follows), so a published
-input name need not be one the driver resolved. `compileReport` now refuses a
-result in which a published input name is neither in the driver's final
-resolution map nor in its final aux map (`checkReport`'s ninth check,
-`unresolvedPublished`; probe `ports/20261021T034341Z-hookprobe`: on Init+Std,
-117,694 published input names, on Mathlib 783,115, all resolved or in the aux
-map). So every published input name is a
-primary claim of a block compiled during the fold
-(`Ix.Cert.Resolution.compileReport_claim`) or resolves through the aux map
-with an original-form record (`auxOriginal`). Re-frozen with it:
-`checkReport`'s print and `checkReport_ok` (a ninth
-conjunct). On a consistent run the result is unchanged. -/
+A `Named` entry can come from a block's `Muts` entry (`BlockState.mutsNamed`),
+so a published input name need not be one the driver resolved. `compileReport`
+refuses a result in which a published input name is not in the driver's final
+resolution map (`checkReport`'s eighth check, `unresolvedPublished`). So every
+published input name is a primary claim of a block compiled during the fold
+(`Ix.Cert.Resolution.compileReport_claim`). -/
 
 /-- info: [cert-audit] publication: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -4582,80 +4547,15 @@ run_cmd do
   checkRuntime (tag := "cert-audit") "publication" #[``Ix.Cert.unresolvedPublished]
 
 /-- info: def Ix.Cert.unresolvedPublished : Ix.Environment →
-  Std.HashMap Ix.Compile.ExactKey.ExactName Address →
-    Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env → Option Ix.Name :=
-fun env resolved aux ixe =>
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address → Ixon.Env → Option Ix.Name :=
+fun env resolved ixe =>
   List.findSome?
     (fun x =>
       match x with
-      | (n, snd) => if (env.consts.contains n && !resolved.contains n && !aux.contains n) = true then some n else none)
+      | (n, snd) => if (env.consts.contains n && !resolved.contains n) = true then some n else none)
     ixe.named.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unresolvedPublished
-
-/-! ## No cross-SCC claims; `compileUnchecked` returns the driver's final environment (B9b, `HookFree`'s discharge, (iv); coordinator decision, 2026-10-21)
-
-A promoted block's cross-SCC subset is compiled under its own key, which is
-not one of the condensation's block keys, so Pass 3's hook 2 (`prepareBlock`)
-does not find the block's references and walks its members' terms, a loop no
-proof unfolds: hook 2 cannot be shown the identity there. The subset's merge
-puts each of its names among the extra names (`CompileEnv.auxGenExtraNames`),
-and only a withdrawal, which also erases the name's resolution, removes one.
-`compileReport` now refuses a result in which a resolved name outside the aux
-map is among the extra names (`checkReport`'s tenth check, `crossClaimed`;
-probe `ports/20261021T034341Z-hookprobe`: 0 on Init+Std, 117,694 resolved
-names, and on Mathlib, 783,082). With it, `compileUnchecked` returns the
-driver's final environment instead of its resolution and aux maps, and
-`checkReport` reads the maps it needs from it (`nameToAddr`, `auxNameToAddr`,
-`auxGenExtraNames`; each check takes only its maps). Re-frozen with it:
-`compileUnchecked`'s, `checkReport`'s and `compileReport`'s prints,
-`compileReport_ok` (the environment instead of the two maps) and
-`checkReport_ok` (the maps read from the environment, and a tenth conjunct).
-On a consistent run the result is unchanged.
-
-**Amended (coordinator decision, 2026-10-21 ~05:05): constructors.** The
-subset's compile also claims the constructors of its inductives, and a
-constructor resolved before the subset compiled is not one of its members, so
-not among the extra names. The check also refuses a resolved name outside the
-aux map that is a constructor (`InductiveVal.ctors`) of an input inductive
-among the extra names (`extraCtors`, `extraCtors_contains`); it takes the input
-environment. Re-frozen with it: `crossClaimed`'s, `checkReport`'s and
-`checkReport_ok`'s prints, and this section (a third root, a second runtime
-definition, the print of `extraCtors`). -/
-
-/-- info: [cert-audit] cross-SCC claims: 3 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] cross-SCC claims: 2 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "cross-SCC claims"
-    (#[`crossClaimed_none, `extraCtors_contains, `noCrossClaims].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "cross-SCC claims" #[``Ix.Cert.crossClaimed, ``Ix.Cert.extraCtors]
-
-/-- info: def Ix.Cert.extraCtors : Ix.Environment → Std.HashSet Ix.Name → Std.HashSet Ix.Name :=
-fun env extras =>
-  Std.HashSet.fold
-    (fun s e =>
-      match env.consts.get? e with
-      | some (Ix.ConstantInfo.inductInfo iv) => Array.foldl (fun s c => s.insert c) s iv.ctors
-      | x => s)
-    ∅ extras -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.extraCtors
-
-/-- info: def Ix.Cert.crossClaimed : Ix.Environment →
-  Std.HashMap Ix.Compile.ExactKey.ExactName Address →
-    Std.HashMap Ix.Compile.ExactKey.ExactName Address → Std.HashSet Ix.Name → Option Ix.Name :=
-fun env resolved aux extras =>
-  have ctors := Ix.Cert.extraCtors env extras;
-  List.findSome?
-    (fun x =>
-      match x with
-      | (n, snd) => if (!aux.contains n && (extras.contains n || ctors.contains n)) = true then some n else none)
-    resolved.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.crossClaimed
 
 /-! ## Input constants carry their names (B9b, `HookFree`'s discharge, membership; coordinator decision, 2026-10-21)
 
@@ -4836,14 +4736,11 @@ fun ixe =>
 The reader keys an address only through a record that resolves to a reference, a
 singleton or a projection (`Ix.Kernel.Reader.resolveSource`), never through a block,
 and the reading of every constant of a closure (`Ix.Cert.ReadingCovers`) needs its
-published address keyed. Nothing proved gives it: names the aux map resolves are
-published by code no proof follows. `compileReport` now refuses an artifact that
-publishes an input name at an address holding no stored record, or a block record
-(`checkReport`'s seventeenth check, `unreadablePublished`, which reads only the
+published address keyed. `compileReport` refuses an artifact that publishes an
+input name at an address holding no stored record, or a block record
+(`checkReport`'s thirteenth check, `unreadablePublished`, which reads only the
 record's first TagN, `blockHeader`). A block record's canonical bytes open with the
-block header (`RecordHeaders.blockHeader_of_muts`). Re-frozen with it: `checkReport`'s
-print (the seventeenth check) and `checkReport_ok` (a seventeenth conjunct). On a
-consistent run the result is unchanged. -/
+block header (`RecordHeaders.blockHeader_of_muts`). -/
 
 /-- info: [cert-audit] readable publications: 5 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -4873,6 +4770,155 @@ fun env ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unreadablePublished
 
+/-! ## No address holds both a blob and a record
+
+Blobs (literal bytes) and records share one address space,
+`Address.admissionHash` with no domain separation, and a record's reference
+table lists its literals' blob addresses beside the records it references: a
+literal whose bytes are another record's serialization would make that record
+look referenced. `compileReport` refuses an artifact in which an address holds
+both a stored blob and a stored record (`checkReport`'s fourteenth check,
+`blobRecordCollision`, one lookup per blob). Its meaning, `BlobsApart`, holds
+of every artifact `compileReport` returns (`blobsApart`). -/
+
+/-- info: [cert-audit] blobs apart from records: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] blobs apart from records: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "blobs apart from records"
+    #[``Ix.Cert.blobRecordCollision_none, ``Ix.Cert.blobsApart]
+  checkRuntime (tag := "cert-audit") "blobs apart from records" #[``Ix.Cert.blobRecordCollision]
+
+/-- info: def Ix.Cert.blobRecordCollision : Ixon.Env → Option Address :=
+fun ixe =>
+  List.findSome?
+    (fun x =>
+      match x with
+      | (a, snd) => if ixe.consts.contains a = true then some a else none)
+    ixe.blobs.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.blobRecordCollision
+
+/-- info: def Ix.Cert.BlobsApart : Ixon.Env → Prop :=
+fun ixe => ∀ (a : Address), (ixe.blobs.get? a).isSome = true → (ixe.consts.get? a).isSome = true → False -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.BlobsApart
+
+/-- info: Ix.Cert.blobsApart {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.BlobsApart ixe -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.blobsApart
+
+/-! ## Indexed recursors belong to their block's family
+
+The recursor index (`Ix.Kernel.Reader.buildIndex`) files a recursor under the
+inductive block its type's first motive carrier names and keeps the first per
+motive in store order: a recursor record of another family whose type
+eliminates a block's motive could take the place of the block's own.
+`compileReport` refuses an artifact in which an input name published in a block
+the index attaches recursors to has no family (it is not an inductive,
+constructor or recursor), or one of those recursors is not a published recursor
+of that family (`checkReport`'s fifteenth check, `unownedRecursor`). Its meaning,
+`RecursorsOwned` (over `ClosureLayout`'s published records, so stated with the
+other artifact checks' meanings in `Ix.Cert.ReportChecks`), holds of every
+artifact `compileReport` returns (`recursorsOwned`). The check builds the index
+over the stored records with a recursor member only, which is the artifact's
+index (`recursorIndex_eq`). -/
+
+/-- info: [cert-audit] recursors owned: 14 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] recursors owned: 9 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "recursors owned"
+    #[``Ix.Cert.parMap_map, ``Ix.Cert.forIn_filter_skip, ``Ix.Cert.storedRecursorRecords_eq,
+      ``Ix.Cert.recursorIndex_eq, ``Ix.Cert.recordBlock_eq, ``Ix.Cert.publishedRecords_eq,
+      ``Ix.Cert.familyFirst_of, ``Ix.Cert.familyFirst?_congr, ``Ix.Cert.published_entry,
+      ``Ix.Cert.unownedRecursor_entry, ``Ix.Cert.owns_of_entry, ``Ix.Cert.owned_of_owns,
+      ``Ix.Cert.unownedRecursor_none, ``Ix.Cert.recursorsOwned]
+  checkRuntime (tag := "cert-audit") "recursors owned"
+    #[``Ix.Cert.storedRecursorRecords, ``Ix.Cert.recordBlock, ``Ix.Cert.publishedRecords,
+      ``Ix.Cert.familyFirst?, ``Ix.Cert.familyRecursorAt, ``Ix.Cert.familyRecursors,
+      ``Ix.Cert.familyOwns, ``Ix.Cert.unownedRecursorOf, ``Ix.Cert.unownedRecursor]
+
+/-- info: def Ix.Cert.FamilyFirst : Ix.Environment → Ix.Name → Ix.Name → Prop :=
+fun env x first =>
+  (∃ iv, env.consts.get? x = some (Ix.ConstantInfo.inductInfo iv) ∧ iv.all[0]? = some first) ∨
+    (∃ cv iv,
+        env.consts.get? x = some (Ix.ConstantInfo.ctorInfo cv) ∧
+          env.consts.get? cv.induct = some (Ix.ConstantInfo.inductInfo iv) ∧ iv.all[0]? = some first) ∨
+      ∃ rv i iv,
+        env.consts.get? x = some (Ix.ConstantInfo.recInfo rv) ∧
+          rv.all[0]? = some i ∧ env.consts.get? i = some (Ix.ConstantInfo.inductInfo iv) ∧ iv.all[0]? = some first -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.FamilyFirst
+
+/-- info: def Ix.Cert.RecursorsOwned : Ix.Environment → Ixon.Env → Prop :=
+fun env ixe =>
+  ∀ (a : Address) (shape : Ix.Kernel.Reader.BlockShape),
+    (Ix.Cert.artifactRecIndex ixe).blocks[a]? = some shape →
+      ∀ (x : Ix.Name) (p : Address),
+        env.consts.contains x = true →
+          Ix.Cert.ClosureLayout.addrOf ixe x = some p →
+            Ix.Cert.ClosureLayout.blockAt ixe p = a →
+              ∃ first,
+                Ix.Cert.FamilyFirst env x first ∧
+                  ∀ (r : Ix.Kernel.ConstRef Address),
+                    r ∈ shape.recs →
+                      ∃ rn rv,
+                        env.consts.get? rn = some (Ix.ConstantInfo.recInfo rv) ∧
+                          rv.all[0]? = some first ∧ r.block ∈ Ix.Cert.ClosureLayout.nameRecords ixe rn -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecursorsOwned
+
+/-- info: Ix.Cert.recursorsOwned {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.RecursorsOwned env ixe -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.recursorsOwned
+
+/-! ## Bound roles' records have their kinds
+
+The default role table binds each role to an address. `compileReport` refuses an
+artifact in which the stored record at a bound `Nat` operation's address is not a
+standalone definition, or at a bound axiom role's address (`propext`,
+`Classical.choice`, `sorryAx`) not an axiom (`checkReport`'s sixteenth check,
+`roleRecordKind`, over every bound entry of the decoded table, `roleTableBound`). Its meaning, `RoleRecordKinds`, holds of
+every artifact `compileReport` returns (`roleRecordKinds`). -/
+
+/-- info: [cert-audit] role record kinds: 9 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] role record kinds: 6 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "role record kinds"
+    #[``Ix.Cert.bound_of_addressOf, ``Ix.Cert.roleKind_eq, ``Ix.Cert.roleRecordKindOk_spec,
+      ``Ix.Cert.roleTableBound_eq, ``Ix.Cert.roleAddrs_of, ``Ix.Cert.roleRecordKindAt_none,
+      ``Ix.Cert.roleRecordKind_entry, ``Ix.Cert.roleRecordKind_none, ``Ix.Cert.roleRecordKinds]
+  checkRuntime (tag := "cert-audit") "role record kinds"
+    #[``Ix.Cert.roleKind, ``Ix.Cert.roleRecordKindOk, ``Ix.Cert.roleTableBound, ``Ix.Cert.roleAddrs,
+      ``Ix.Cert.roleRecordKindAt, ``Ix.Cert.roleRecordKind]
+
+/-- info: def Ix.Cert.RoleRecordKinds : Ixon.Env → Prop :=
+fun ixe =>
+  ∀ (t : Ix.Kernel.RoleTable),
+    Ix.Kernel.Reader.defaultTable = Except.ok t →
+      ∀ (r : Ix.Kernel.Role) (p : Address) (c : Ixon.Constant),
+        t.addressOf? r = some p →
+          ((ixe.consts.get? p).bind fun x => x.get?) = some c →
+            (r.spec.kind = Ix.Kernel.SpecKind.ops → ∃ d, c.info = Ixon.ConstantInfo.defn d ∧ d.kind = Ix.DefKind.defn) ∧
+              (r.spec.kind = Ix.Kernel.SpecKind.axiom → ∃ ax, c.info = Ixon.ConstantInfo.axio ax) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RoleRecordKinds
+
+/-- info: Ix.Cert.roleRecordKinds {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.RoleRecordKinds ixe -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.roleRecordKinds
+
 /-! ## S1's units, (R1): each record's and each group's lowering
 
 `Ix.Cert.ReaderUnits`: the stream the Ixon reader decodes is its records'
@@ -4900,40 +4946,39 @@ run_cmd do
 
 /-! ## A block's records are the block compile's
 
-`Ix.Cert.BlockRecords`: `runBlockWithAux` compiles a block from Lean's own
-declarations, so its records are those of `compileBlockWithAux` run from the
-empty block state (`runBlockWithAux_compiles`), which are the block compile's,
-a lone constant's `compileConstantInfo` or `compileMutualBlock` over the
-members in Lean's order, run from the empty block state
-(`runBlockWithAux_records`). The member lookups and `MutConst.mkIndc` change
+`Ix.Cert.BlockRecords`: `runBlock` compiles a block from Lean's own
+declarations, so its records are those of `compileBlock` run from the empty
+block state (`runBlock_compiles`), which are the block compile's, a lone
+constant's `compileConstantInfo` or `compileMutualBlock` over the members in
+Lean's order, run from the empty block state (`runBlock_records`). The member lookups and `MutConst.mkIndc` change
 no state; the block's `Muts` entry is registered after its `BlockResult` is
 computed, which it returns as it is.
 
 Re-frozen without the rewriting hooks: the clique step, the call-site
 preparation and the metadata-reference overlay are deleted, and with them
 `cliqueStep_inert`, `prepareBlock_unreferenced`, `withMetaRefs_records` and
-`runBlockWithAux_unreferenced`; `runBlockWithAux_compiles` states the run
-without them. 10 roots → 7. -/
+the block compile's unreferenced-hook lemma; `runBlock_compiles` states the run
+without them. 10 roots → 7. The block compile returns no auxiliary layout
+(`compileBlock`, `runBlock`), and the roots are renamed with it. -/
 
 /-- info: [cert-audit] block records: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "block records"
-    (#[`runBlockWithAux_compiles, `findConst_preserves, `mkIndc_preserves, `forIn_set_state,
-      `compileBlockWithAux_result, `compileBlockWithAux_records, `runBlockWithAux_records].map
+    (#[`runBlock_compiles, `findConst_preserves, `mkIndc_preserves, `forIn_set_state,
+      `compileBlock_result, `compileBlock_records, `runBlock_records].map
       (`Ix.Cert.BlockRecords ++ ·))
 
 /-! ## Where a resolved name's record comes from
 
-`Ix.Cert.Resolution`: every entry of the driver's final resolution map is an
-aux name's or a primary claim of a block compiled during the fold, with the
-claimed record's bytes stored at its address (`compileUnchecked_provenance`);
-such a claim is one of `runBlock`'s on a subset of a condensation block's
-members, under a key, against a reached state (`compiled_runBlock`, with
-`auxBlockOutcome_cross`), and it is the block compile's
+`Ix.Cert.Resolution`: every entry of the driver's final resolution map is a
+primary claim of a block compiled during the fold, with the claimed record's
+bytes stored at its address (`compileUnchecked_provenance`); such a claim is
+one of `runBlock`'s on a condensation block's members, under its key, against
+a reached state (`compiled_runBlock`), and it is the block compile's
 (`runBlock_compiled`). `compileReport_claim` gives this for every resolved
-name outside the final aux map, with no premise. The claims' snapshots are
+name, with no premise. The claims' snapshots are
 states of the fold's own run (`OnRun`: `foldWavesSeq_waveStart`,
 `waveStart_provenance`, `applySeqList_provenance`, `provenanceIn_step`), each
 reached (`onRun_reach`).
@@ -4941,26 +4986,26 @@ reached (`onRun_reach`).
 Re-frozen without the rewriting hooks: the fold no longer carries the
 call-site block references, so the lemma that they never change during the fold
 is deleted, and a claim is the block compile's unconditionally
-(`runBlock_compiled` replaces `hookFree_compiled`). 12 roots → 11. -/
+(`runBlock_compiled` replaces `hookFree_compiled`). 12 roots → 11. Every
+block is compiled once, under its key, so the lemma placing a promoted block's
+subset compile in its block goes. 11 roots → 10. -/
 
-/-- info: [cert-audit] resolution: 11 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] resolution: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "resolution"
-    (#[`reach_provenance, `compileUnchecked_provenance, `auxBlockOutcome_cross, `compiled_runBlock,
+    (#[`reach_provenance, `compileUnchecked_provenance, `compiled_runBlock,
       `runBlock_compiled, `compileReport_claim, `provenanceIn_step,
       `applySeqList_provenance, `foldWavesSeq_waveStart, `waveStart_provenance,
       `onRun_reach].map (`Ix.Cert.Resolution ++ ·))
 
 /-! ## The claims of a closure
 
-`Ix.Cert.ClosureClaims`: for a closure with no failure, every resolved name of
-it outside the final aux map is a claim of a whole condensation block of the
-closure, compiled under its key against a reached state, and the block
-compile's (`compileReport_owned`). A cross-SCC subset's claim is refuted by
-the tenth check (`cross_refuted`, `applyAuxBlockOutcome_cross_extras`); a
-compiled block's claims are its members' (`Ix.Cert.Claims.runBlock_owned`).
+`Ix.Cert.ClosureClaims`: for a closure, every resolved name of it is a claim
+of a whole condensation block of the closure, compiled under its key against a
+reached state, and the block compile's (`compileReport_owned`); a compiled
+block's claims are its members' (`Ix.Cert.Claims.runBlock_owned`).
 `Ix.Cert.Resolution`'s fold steps keep the input environment (`reach_env`).
 
 Re-frozen without the rewriting hooks: with no hooks to show inert, the
@@ -4968,15 +5013,16 @@ closure needs no premise about changed constants, and the hook lemmas go
 (`final_of_report`, `hookFree_of_sub`, `cliqueTables_eq`,
 `Resolution.reach_cliques`, `Claims.cliqueStep_keeps`,
 `Claims.prepareCliques_overlay`, `compileTable_eq`); `compileReport_owned`
-replaces `compileReport_hookFree`. 12 roots → 5. -/
+replaces `compileReport_hookFree`. 12 roots → 5. Every block is compiled once,
+under its key, so the refutation of a promoted block's subset claims goes, and
+with it the premise that the closure has no failure. 5 roots → 3. -/
 
-/-- info: [cert-audit] closure claims: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] closure claims: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "closure claims"
-    ((#[`compileReport_owned, `cross_refuted,
-      `applyAuxBlockOutcome_cross_extras].map (`Ix.Cert.ClosureClaims ++ ·)) ++
+    ((#[`compileReport_owned].map (`Ix.Cert.ClosureClaims ++ ·)) ++
       #[``Ix.Cert.Claims.runBlock_owned, ``Ix.Cert.Resolution.reach_env])
 
 /-! ## S1's generated records: the statements half of `CtxAgree`
@@ -5001,43 +5047,6 @@ run_cmd do
       `occursConstFast_eq, `nonAuxAgree_of_reads, `hints_agree, `fiberHintsMap_named,
       `hintsOf_projection, `hintsOf_block].map (`Ix.Cert.CtxAgree ++ ·))
 
-
-/-! ## Identity rows: the promotion's compared address survives publication (B9d, check 15)
-
-`checkReport` refuses identity rows that disagree under one name key on their
-verdict or compared address, and an identical row whose address is not the
-name's final published address (`identityMismatch`). Agreeing duplicates
-remain valid. `identityMismatch_none` and `identityRowsAgree` expose both
-facts; the provenance and preservation of the bytes compared remain B9d.
-The report's print and success theorem are re-frozen for this new branch and
-conjunct. The existing projection refusal is now check 16. No final
-compiler-correctness statement gains a premise. -/
-
-/-- info: [cert-audit] identity rows: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] identity rows: 1 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "identity rows"
-    (#[`identityMismatch_none, `identityRowsAgree].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "identity rows" #[``Ix.Cert.identityMismatch]
-
-/-- info: def Ix.Cert.identityMismatch : Array (Ix.Name × Bool × Address) → Ixon.Env → Option (Ix.Name × Bool × Address) :=
-fun identity ixe =>
-  have first :=
-    Array.foldl
-      (fun m x =>
-        match x with
-        | (n, s, a) => if m.contains n = true then m else m.insert n (s, a))
-      ∅ identity;
-  List.find?
-    (fun x =>
-      match x with
-      | (n, s, a) => first.get? n != some (s, a) || s && Option.map (fun x => x.addr) (ixe.named.get? n) != some a)
-    identity.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.identityMismatch
 
 /-! ## Projection hints: uniqueness from the compiler guard
 
@@ -6341,8 +6350,7 @@ fun {md} {V} [Ix.Kernel.SetTheory V] cval env e e' =>
 fun ixe failures c =>
   (∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address),
       c.nameToAddr.get? n = some a →
-        c.auxNameToAddr.contains n = false →
-          failures.failed n = false → Option.map (fun x => x.addr) (ixe.named.get? n) = some a) ∧
+        failures.failed n = false → Option.map (fun x => x.addr) (ixe.named.get? n) = some a) ∧
     ∀ (a : Address) (b : ByteArray), c.constants.get? a = some b → ixe.consts.get? a = some { buf := b, len := b.size } -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Owned
@@ -6353,14 +6361,13 @@ fun env ixe failures sub =>
     Ix.Cert.compileUnchecked env = Except.ok (ixe, failures, cenv) ∧
       ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address),
         cenv.nameToAddr.get? n = some a →
-          cenv.auxNameToAddr.contains n = false →
-            (sub.consts.get? n).isSome = true →
-              ∃ snap rep all b,
-                Std.HashMap.get? (Ix.Cert.compileBlocks env).blocks rep = some all ∧
-                  (∀ (x : Ix.Name), Std.HashSet.contains all x = true → (sub.consts.get? x).isSome = true) ∧
-                    ixe.consts.get? a = some { buf := b, len := b.size } ∧
-                      Ix.Cert.Resolution.BlockCompiled snap.cenv all (Ix.CompileM.blockKey rep all) n a b ∧
-                        Ix.Cert.Owned ixe failures snap.cenv -/
+          (sub.consts.get? n).isSome = true →
+            ∃ snap rep all b,
+              Std.HashMap.get? (Ix.Cert.compileBlocks env).blocks rep = some all ∧
+                (∀ (x : Ix.Name), Std.HashSet.contains all x = true → (sub.consts.get? x).isSome = true) ∧
+                  ixe.consts.get? a = some { buf := b, len := b.size } ∧
+                    Ix.Cert.Resolution.BlockCompiled snap.cenv all (Ix.CompileM.blockKey rep all) n a b ∧
+                      Ix.Cert.Owned ixe failures snap.cenv -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ClaimsOwned
 

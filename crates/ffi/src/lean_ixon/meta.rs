@@ -734,8 +734,8 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
 impl LeanIxonNamed<LeanOwned> {
   /// Build Ixon.Named { addr, constMeta, original, hints }.
   ///
-  /// The third field encodes `Option (Address × ConstantMeta)` for
-  /// pre-aux_gen roundtrip fidelity and the fourth the per-name
+  /// The third field encodes the optional original form,
+  /// `Option (Address × ConstantMeta)`, and the fourth the per-name
   /// reducibility hints (see `Ix/Ixon.lean` `structure Named`).
   /// Regression test: `Ixon.Named roundtrip` in `Tests/FFI/Ixon.lean`.
   pub fn build(
@@ -876,7 +876,7 @@ pub extern "C" fn rs_roundtrip_ixon_constant_meta(
   LeanIxonConstantMeta::build(&meta)
 }
 
-/// Round-trip Ixon.Named (with real metadata and optional pre-aux_gen
+/// Round-trip Ixon.Named (with real metadata and optional
 /// original form).
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]

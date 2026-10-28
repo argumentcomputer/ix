@@ -148,8 +148,7 @@ def testCrossImpl : TestSeq :=
     IO.println ""
 
     -- Step 2: Compile with Lean using Rust's rawEnv and condensed blocks
-    -- (the driver, `compileEnvFold`: aux tails, promotion +
-    -- no-aux originals — full production semantics).
+    -- (the driver, `compileEnvFold`, with the production semantics).
     IO.println s!"[Step 2] Running the Lean driver (compileEnvFold)..."
     let leanStart ← IO.monoMsNow
 

@@ -9,9 +9,6 @@
 -/
 module
 public import Ix.Meta
--- the image generator's declaration of the references its output introduces
--- (`introducedSupport`)
-public import Ix.Compile.Image.Expr
 -- The checker-support ground is derived from the kernel's role table
 -- (CQX.3): host → kernel is the layering fence's allowed direction
 -- (`Ix/SpecDigest.lean` does the same). This links `IxC.Kernel.Roles`'s
@@ -299,20 +296,15 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
             worklist := r :: worklist
   env.constants.toList.filter fun (n, _) => needed.contains n
 
-/-- The library constants the compiler's output may reference although the
-selected declarations' Lean terms do not (design document §6.3, obligation 2
-of a pass whose output adds a reference: every closure producer carries the
-target): the Pass 3 images' packing and rule constants
-(`Ix.Compile.Image.imageSupport`: `And`/`True` for a Prop block's family,
-`PProd`/`PUnit` for a Type block's, `Eq` for the computation rules). Read
-from the compiler's own declaration, so a constant a pass starts to introduce
-is carried once it is declared there. Only the ones the environment has. -/
+/-- The library constants every selected closure carries besides its seeds'
+dependencies (design document §6.3): the `And`/`True` and `PProd`/`PUnit`
+packings and `Eq` with its reflexivity, the support of the recursion
+principles' auxiliary families. Only the ones the environment has. Changing
+this list changes the contents of selected closures, and so the artifacts
+compiled from them. -/
 def introducedSupport (env : Lean.Environment) : List Lean.Name :=
-  let rec toLean : Ix.Name → Lean.Name
-    | .anonymous _ => .anonymous
-    | .str p s _ => .str (toLean p) s
-    | .num p i _ => .num (toLean p) i
-  (Ix.Compile.Image.imageSupport.toList.map toLean).eraseDups.filter env.contains
+  [``And, ``And.intro, ``True, ``True.intro, ``PProd, ``PProd.mk, ``PProd.fst,
+    ``PProd.snd, ``PUnit, ``PUnit.unit, ``Eq, ``Eq.refl].filter env.contains
 
 /-- **The string-literal support**, as Lean names: the constants IxC types a
 `String` literal with (`Ix.Kernel.Reader.strLitSupportNames`, `Nat`'s
@@ -336,7 +328,7 @@ def hasStringLiteral (ci : Lean.ConstantInfo) : Bool :=
 `ClosureOptions.selected`, so recursors, whole logical units and
 checker-support ground close to the same fixed point as ordinary
 references, mutual `all` members and auxiliary-family siblings, seeded with
-the compiler's introduced references (`introducedSupport`) and their units.
+the always-carried library support (`introducedSupport`) and their units.
 
 The closure is **self-contained for IxC**: when a closed constant holds a
 `String` literal and the closure lacks some of the string-literal support

@@ -8,22 +8,6 @@
                     lean-toolchain, Drivers/<Q>.lean per member)
     spec [--mini]   print the member/driver table (qualifier, driver
                     module, roots) for the full or mini tier
-    validate [--mini] [--only Q[,Q…]] [--jobs N] [--ceiling-gb N]
-             [--no-watchdog]
-                    per-library METADATA fidelity: run the 8-phase
-                    `ix validate` pipeline (aux-gen congruence, alpha
-                    canonicity, decompile both ways, per-constant
-                    roundtrip) over each member's Benchmarks/Compile
-                    driver — the same import closure its piece compiles
-                    from, so the records stay the only pin source. The
-                    full tier also validates Palomar.ix as one aggregate
-                    library. Exit-code gated, no report artifacts. Heavy members
-                    (mathlib-class) hold two compile+decompile states
-                    at once, so the default is one member at a time
-                    under the box-level ceiling. Sweeps first prebuild
-                    their selected drivers in one Lake process, then run
-                    --jobs validators with `--no-build` over the quiescent
-                    shared package store.
     build [--mini] [--out DIR.ixc] [--jobs N] [--ceiling-gb N]
           [--no-watchdog] [--no-cache] [--palomar-ixc DIR.ixc]
                     gen-check, build the member root oleans (network +
@@ -80,9 +64,7 @@ private def usage : String :=
   "usage: lake exe truthmines <gen [--check] | spec [--mini] | build \
 [--mini] [--out DIR.ixc] [--jobs N] [--ceiling-gb N] [--no-watchdog] \
 [--no-cache] [--palomar-ixc DIR.ixc] | check [--mini] [--ixc DIR.ixc] \
-[--only Q[,Q…]] [--jobs N] | \
-validate [--mini] [--only Q[,Q…]] [--jobs N] [--ceiling-gb N] \
-[--no-watchdog]>"
+[--only Q[,Q…]] [--jobs N]>"
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 
@@ -613,126 +595,6 @@ build{if options.mini then " --mini" else ""}` first"
 kernel-clean{if failures.isEmpty then "" else s!"; failed: {failures}"}"
   return if failures.isEmpty then 0 else 1
 
-private structure ValidateOptions where
-  only : Option (List String) := none
-  jobs? : Option Nat := none
-  ceilingGb : Option Nat := none
-  noWatchdog : Bool := false
-  mini : Bool := false
-
-private structure ValidationLib where
-  qualifier : String
-  driver : System.FilePath
-deriving Inhabited
-
-private def parseValidate : List String → Except String ValidateOptions
-  | [] => .ok {}
-  | "--only" :: value :: rest => do
-    let qs := (value.splitOn ",").filter (!·.isEmpty)
-    if qs.isEmpty then .error "--only needs at least one qualifier" else
-    pure { ← parseValidate rest with only := some qs }
-  | "--jobs" :: value :: rest => do
-    let some n := value.toNat? | .error s!"--jobs needs a number, got `{value}`"
-    if n == 0 then .error "--jobs must be at least 1" else
-    pure { ← parseValidate rest with jobs? := some n }
-  | "--ceiling-gb" :: value :: rest => do
-    let some gb := value.toNat? | .error s!"--ceiling-gb needs a number, got `{value}`"
-    pure { ← parseValidate rest with ceilingGb := some gb }
-  | "--no-watchdog" :: rest => do
-    pure { ← parseValidate rest with noWatchdog := true }
-  | "--mini" :: rest => do
-    pure { ← parseValidate rest with mini := true }
-  | arg :: _ => .error s!"unknown validate argument `{arg}`"
-
-/-- Per-library metadata-fidelity sweep: the 8-phase `ix validate` pipeline
-    over each native member's `Benchmarks/Compile` driver plus Palomar.ix as
-    one aggregate library in the full tier. Exit-code gated (the validator's
-    phase table goes to stdout); no artifacts. -/
-private def runValidate (options : ValidateOptions) : IO UInt32 := do
-  let tier := if options.mini then "mini" else "corpus"
-  let spec := if options.mini then catalogMiniSpec else catalogSpec
-  let stale ← stalePaths
-  unless stale.isEmpty do
-    IO.eprintln s!"stale generated workspace files {stale} — \
-run `lake exe truthmines gen` first"
-    return 1
-  unless (← ixExe.pathExists) do
-    IO.eprintln s!"{ixExe} missing — run `lake build ix` first"
-    return 1
-  let available := spec.libs.map fun lib => {
-    qualifier := lib.qualifier.toString (escape := false)
-    driver := compileMemberModulePath lib.qualifier
-  }
-  let available := if options.mini then available else available.push {
-    qualifier := "Palomar"
-    driver := compilePalomarModulePath
-  }
-  let libs ← match options.only with
-    | none => pure available
-    | some wanted => do
-      for w in wanted do
-        unless available.any (·.qualifier == w) do
-          IO.eprintln s!"--only names `{w}`, which is not a {tier} library"
-          return 1
-      pure <| available.filter fun lib => wanted.contains lib.qualifier
-  let ceiling? : Option Nat ←
-    if options.noWatchdog then
-      pure none
-    else if ← Ix.Watchdog.available then
-      match options.ceilingGb with
-      | some gb => pure (some gb)
-      | none => pure (some (← Ix.Watchdog.defaultCeilingGb))
-    else do
-      IO.eprintln "RAM watchdog unavailable — pass --no-watchdog to run \
-unprotected"
-      return 1
-  -- Validation holds two compile states plus a decompile state at
-  -- mathlib scale: one member at a time under the box ceiling is the
-  -- safe default. Validation must never race separate Lake builds against
-  -- the shared package store: prebuild every selected driver in one Lake
-  -- process, then tell each validator to skip its implicit build. This also
-  -- makes the single-job path use the same deterministic boundary.
-  let jobs := options.jobs?.getD 1
-  stageLine s!"[truthmines] prebuilding {libs.size} selected driver(s) in one Lake process…"
-  let buildArgs := #["build"] ++ libs.map fun lib => s!"Members.{lib.qualifier}"
-  let buildExit ← watched ceiling? "lake" buildArgs compileWorkspaceDir
-  if buildExit != 0 then
-    reportOom buildExit ceiling? "validate prebuild"
-    IO.eprintln s!"selected-driver prebuild failed ({buildExit})"
-    return 1
-  let exe ← IO.FS.realPath ixExe
-  let root ← IO.currentDir
-  stageLine s!"[truthmines] validate: {libs.size} libraries, {jobs} in \
-flight ({tier} tier; 8-phase ix validate per Benchmarks/Compile driver)"
-  let runOne (lib : ValidationLib) : IO MemberOutcome := do
-    let exit ← watched ceiling? exe.toString
-      #["validate", lib.driver.toString, "--no-build"] root
-    return { qualifier := lib.qualifier, cached := false, exit }
-  let mut pending := libs.toList
-  let mut inFlight : Array (Task (Except IO.Error MemberOutcome)) := #[]
-  let mut failures : List String := []
-  let mut passed := 0
-  while !pending.isEmpty || !inFlight.isEmpty do
-    while !pending.isEmpty && inFlight.size < jobs do
-      let lib := pending.head!
-      pending := pending.tail!
-      stageLine s!"[truthmines] validating {lib.qualifier}…"
-      inFlight := inFlight.push (← IO.asTask (runOne lib))
-    let some task := inFlight[0]? | break
-    inFlight := inFlight.eraseIdx! 0
-    let outcome ← IO.ofExcept task.get
-    if outcome.exit == 0 then
-      passed := passed + 1
-      stageLine s!"[truthmines] {outcome.qualifier}: fidelity ok"
-    else
-      reportOom outcome.exit ceiling? s!"validate {outcome.qualifier}"
-      failures := failures ++ [s!"{outcome.qualifier} ({outcome.exit})"]
-      stageLine s!"[truthmines] {outcome.qualifier}: fidelity FAILED \
-({outcome.exit})"
-  stageLine s!"[truthmines] validate done: {passed}/{libs.size} libraries \
-clean{if failures.isEmpty then "" else s!"; failed: {failures}"}"
-  return if failures.isEmpty then 0 else 1
-
 private def runSpec (mini : Bool) : IO UInt32 := do
   let spec := if mini then catalogMiniSpec else catalogSpec
   for lib in spec.libs do
@@ -757,9 +619,5 @@ def main (args : List String) : IO UInt32 := do
   | "check" :: rest =>
     match parseCheck rest with
     | .ok options => runCheck options
-    | .error message => IO.eprintln message; IO.eprintln usage; return 1
-  | "validate" :: rest =>
-    match parseValidate rest with
-    | .ok options => runValidate options
     | .error message => IO.eprintln message; IO.eprintln usage; return 1
   | _ => IO.eprintln usage; return 1

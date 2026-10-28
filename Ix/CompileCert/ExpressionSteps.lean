@@ -9,7 +9,7 @@ reads as a term related to the source, given the same of each child's
 compile (`Checked`). Errors keep the invariant and every earlier reading.
 
 The App arm compiles the head and the arguments of the whole spine
-(`Ix.AuxGen.decomposeApps`) and folds the applications
+(`Ix.CompileM.decomposeApps`) and folds the applications
 (`app_step_eq`: a `foldlM` of `appStep`); a spine reads as the head's
 reading applied to the arguments' (`spine_related`). -/
 
@@ -816,20 +816,20 @@ theorem metadata_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt
 /-! ## Applications -/
 
 theorem decomposeApps_go (e : Ix.Expr) (acc : Array Ix.Expr) :
-    Ix.AuxGen.decomposeApps.go e acc =
-      ((Ix.AuxGen.decomposeApps e).1, (Ix.AuxGen.decomposeApps e).2 ++ acc.reverse) := by
+    Ix.CompileM.decomposeApps.go e acc =
+      ((Ix.CompileM.decomposeApps e).1, (Ix.CompileM.decomposeApps e).2 ++ acc.reverse) := by
   induction e generalizing acc with
   | app f a h ihf _ =>
-    show Ix.AuxGen.decomposeApps.go f (acc.push a) =
-      ((Ix.AuxGen.decomposeApps.go f (#[].push a)).1, (Ix.AuxGen.decomposeApps.go f (#[].push a)).2 ++ acc.reverse)
+    show Ix.CompileM.decomposeApps.go f (acc.push a) =
+      ((Ix.CompileM.decomposeApps.go f (#[].push a)).1, (Ix.CompileM.decomposeApps.go f (#[].push a)).2 ++ acc.reverse)
     rw [ihf (acc.push a), ihf (#[].push a)]
     simp [Array.reverse_push]
-  | _ => simp [Ix.AuxGen.decomposeApps, Ix.AuxGen.decomposeApps.go]
+  | _ => simp [Ix.CompileM.decomposeApps, Ix.CompileM.decomposeApps.go]
 
 theorem decomposeApps_app (f a : Ix.Expr) (h : Address) :
-    Ix.AuxGen.decomposeApps (.app f a h) =
-      ((Ix.AuxGen.decomposeApps f).1, (Ix.AuxGen.decomposeApps f).2.push a) := by
-  show Ix.AuxGen.decomposeApps.go f (#[].push a) = _
+    Ix.CompileM.decomposeApps (.app f a h) =
+      ((Ix.CompileM.decomposeApps f).1, (Ix.CompileM.decomposeApps f).2.push a) := by
+  show Ix.CompileM.decomposeApps.go f (#[].push a) = _
   rw [decomposeApps_go]
   simp
 
@@ -837,8 +837,8 @@ theorem decomposeApps_app (f a : Ix.Expr) (h : Address) :
 keep every property of the spine's constant occurrences. -/
 theorem constsSatisfy_spine {P : Ix.Name → Prop} :
     ∀ (e : Ix.Expr), ConstsSatisfy P e →
-      ConstsSatisfy P (Ix.AuxGen.decomposeApps e).1 ∧
-        ∀ x ∈ (Ix.AuxGen.decomposeApps e).2, ConstsSatisfy P x := by
+      ConstsSatisfy P (Ix.CompileM.decomposeApps e).1 ∧
+        ∀ x ∈ (Ix.CompileM.decomposeApps e).2, ConstsSatisfy P x := by
   intro e
   induction e with
   | app f a h ihf _ =>
@@ -853,7 +853,7 @@ theorem constsSatisfy_spine {P : Ix.Name → Prop} :
     · exact aScope
   | _ =>
     intro scope
-    simp only [Ix.AuxGen.decomposeApps, Ix.AuxGen.decomposeApps.go, Array.reverse_empty]
+    simp only [Ix.CompileM.decomposeApps, Ix.CompileM.decomposeApps.go, Array.reverse_empty]
     exact ⟨scope, fun x member => by simp at member⟩
 
 theorem forall₂_snoc {R : α → β → Prop} {items : List α} {item : α} {targets : List β}
@@ -877,8 +877,8 @@ theorem forall₂_snoc {R : α → β → Prop} {items : List α} {item : α} {t
 theorem spine_related (applications : ∀ f a h tf ta, related f tf → related a ta →
       related (.app f a h) (.app tf ta)) :
     ∀ (e : Ix.Expr) (head : CExpr md) (targets : List (CExpr md)),
-      related (Ix.AuxGen.decomposeApps e).1 head →
-      List.Forall₂ related (Ix.AuxGen.decomposeApps e).2.toList targets →
+      related (Ix.CompileM.decomposeApps e).1 head →
+      List.Forall₂ related (Ix.CompileM.decomposeApps e).2.toList targets →
       related e (targets.foldl .app head) := by
   intro e
   induction e with
@@ -891,7 +891,7 @@ theorem spine_related (applications : ∀ f a h tf ta, related f tf → related 
     exact applications f a h _ _ (ihf head init headRel initRel) lastRel
   | _ =>
     intro head targets headRel argsRel
-    simp only [Ix.AuxGen.decomposeApps, Ix.AuxGen.decomposeApps.go, Array.reverse_empty,
+    simp only [Ix.CompileM.decomposeApps, Ix.CompileM.decomposeApps.go, Array.reverse_empty,
       Array.toList_empty] at headRel argsRel
     cases argsRel
     exact headRel
@@ -906,8 +906,8 @@ def appBody (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (acc : Ixon.E
 theorem app_step_eq (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (fn arg : Ix.Expr)
     (hash : Address) :
     step compile (.app fn arg hash) = (do
-      let head ← compile (Ix.AuxGen.decomposeApps (.app fn arg hash)).1
-      let spine ← forIn' (Ix.AuxGen.decomposeApps (.app fn arg hash)).2 ((head.1, head.2) : Ixon.Expr × UInt64)
+      let head ← compile (Ix.CompileM.decomposeApps (.app fn arg hash)).1
+      let spine ← forIn' (Ix.CompileM.decomposeApps (.app fn arg hash)).2 ((head.1, head.2) : Ixon.Expr × UInt64)
         fun x _ (acc : Ixon.Expr × UInt64) => appBody compile acc x
       pure (spine.1, spine.2)) := rfl
 
@@ -977,9 +977,9 @@ theorem app_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) 
     (hash : Address) (context : CompileEnv × BlockEnv) (before : BlockState)
     (good : Good cx param self related bindings before)
     (headCorrect : ∀ state, Good cx param self related bindings state →
-      Checked cx param self related bindings (Ix.AuxGen.decomposeApps (.app fn arg hash)).1 state
-        (rawRun (compile (Ix.AuxGen.decomposeApps (.app fn arg hash)).1) context state))
-    (argsCorrect : ∀ x ∈ (Ix.AuxGen.decomposeApps (.app fn arg hash)).2, ∀ state,
+      Checked cx param self related bindings (Ix.CompileM.decomposeApps (.app fn arg hash)).1 state
+        (rawRun (compile (Ix.CompileM.decomposeApps (.app fn arg hash)).1) context state))
+    (argsCorrect : ∀ x ∈ (Ix.CompileM.decomposeApps (.app fn arg hash)).2, ∀ state,
       Good cx param self related bindings state →
       Checked cx param self related bindings x state (rawRun (compile x) context state))
     (applications : ∀ f a h tf ta, related f tf → related a ta → related (.app f a h) (.app tf ta)) :
@@ -993,10 +993,10 @@ theorem app_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) 
   rw [forIn'_eq_forIn _ _ _ (fun x acc => appBody compile acc x) (fun _ _ _ => rfl),
     ← Array.forIn_toList, rawRun_bind]
   have loop := appLoop_checked cx param self related bindings compile context
-    (Ix.AuxGen.decomposeApps (.app fn arg hash)).2.toList
+    (Ix.CompileM.decomposeApps (.app fn arg hash)).2.toList
     (fun x member => argsCorrect x (Array.mem_toList_iff.mp member))
     (head.1, head.2) th state stateGood readHead
-  cases ran : rawRun (forIn (Ix.AuxGen.decomposeApps (.app fn arg hash)).2.toList (head.1, head.2)
+  cases ran : rawRun (forIn (Ix.CompileM.decomposeApps (.app fn arg hash)).2.toList (head.1, head.2)
       (fun x acc => appBody compile acc x)) context state with
   | mk outcome after =>
     rw [ran] at loop

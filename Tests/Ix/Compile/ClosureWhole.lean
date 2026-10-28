@@ -41,21 +41,18 @@
      back from their bytes (`Ixon.rsDeEnv`), so the stored-file and
      in-process modes compare one representation;
   5. every constant of the closure is in the closure's output;
-  6. **introduced references**: every closure carries the compiler's
-     introduced references (`Ix.EnvScope.introducedSupport`, read from the
-     image generator's own declaration `Ix.Compile.Image.imageSupport`:
-     the Pass 3 images' packing and rule constants), and, derived from the
-     output, every constant the closure's output references that the
-     closure without them does not account for is carried (the set observed
-     is printed);
+  6. **carried support**: every closure carries the library support every
+     selected closure carries (`Ix.EnvScope.introducedSupport`), and,
+     derived from the output, every constant the closure's output references
+     that the closure without that support does not account for is carried
+     (the set observed is printed);
   7. **local scope** of a collapse fixture
      (`Tests/Ix/Compile/Fixtures/LocalCollapse.lean`): its selected closure
      (the `--local` scope) compiles with no refusal, the Rust compile is
-     byte-identical, it decompiles to the source, its derived references
-     are carried, and `ix validate-lean --ns LocalCollapse` passes its
-     all five phases, including source/reader fidelity; the same
-     closure without the introduced references is refused naming one of
-     them (negative control);
+     byte-identical, it decompiles to the source, its output introduces no
+     reference, and `ix validate-lean --ns LocalCollapse` passes its all
+     five phases, including source/reader fidelity; the same closure with
+     recursors only (without that support) also compiles with no refusal;
   8. **the Rust compiler**: the Rust compile of every closure
      (`rsCompileEnvBytesFFI`) is the Lean compile's artifact, byte for
      byte.
@@ -145,7 +142,7 @@ def constRefs (env : Ixon.Env) (addr : Address) : Array Address :=
     | _ => c.refs
 
 /-- 6. The references the closure's output makes that no constant of the
-closure *without* the compiler's introduced references (`base`) accounts
+closure *without* the carried library support (`base`) accounts
 for: derived from the output, not from a list. Every such reference must be
 carried by the producer's closure (`full`). `_ix` names (the compiler's own
 canonical constants) are not references into the input. -/
@@ -286,7 +283,7 @@ def run : IO UInt32 := do
   let units := Ix.EnvScope.unitIndex env.constants
   let mut closures : Array (Name × List (Name × ConstantInfo) × Std.HashSet Name) := #[]
   let mut unitChecks := 0
-  -- 6: the compiler's introduced references
+  -- 6: the carried library support
   let support := Ix.EnvScope.introducedSupport env
   for r in roots do
     let c := Ix.EnvScope.collectSelectedDeps env [r]

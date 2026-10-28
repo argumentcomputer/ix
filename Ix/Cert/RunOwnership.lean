@@ -49,7 +49,7 @@ theorem Persists.refl (c : CompileEnv) : Persists c c :=
 
 theorem Persists.trans {c₁ c₂ c₃ : CompileEnv} (h₁ : Persists c₁ c₂) (h₂ : Persists c₂ c₃) :
     Persists c₁ c₃ :=
-  ⟨fun n a h => (h₁.names n a h).elim (fun h => h₂.names n a h) (fun f => .inr (h₂.mono.1 n f)),
+  ⟨fun n a h => (h₁.names n a h).elim (fun h => h₂.names n a h) (fun f => .inr (h₂.mono n f)),
     fun a b h => h₂.consts a b (h₁.consts a b h), h₁.mono.trans h₂.mono⟩
 
 /-- **A step persists**, given `StepKeeps`: its stored records and failures are
@@ -163,12 +163,12 @@ theorem scheduleOwnership_of_stepKeeps (hk : StepKeeps) : Obligation.ScheduleOwn
   rw [hu] at hu'
   cases hu'
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold hu
-  obtain ⟨-, -, st₁, -, -, -, finalized, -, -, hconsts₁, -⟩ := compileEnvFold_final hf
-  refine ⟨fun n a hn _ hnf => ?_, fun a b hb => ?_⟩
+  obtain ⟨-, -, st₁, -, -, -, finalized, -, hconsts₁, -⟩ := compileEnvFold_final hf
+  refine ⟨fun n a hn hnf => ?_, fun a b hb => ?_⟩
   · rcases p.names n a hn with h | h
     · rw [← hmap] at h
       exact pub n a h
-    · have failed := compileUnchecked_ungrounded hu (hm.1 n h)
+    · have failed := compileUnchecked_ungrounded hu (hm n h)
       rw [hnf] at failed
       cases failed
   · have stored := hconsts a b (p.consts a b hb)

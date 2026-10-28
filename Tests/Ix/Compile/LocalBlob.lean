@@ -1,5 +1,6 @@
 import LSpec
 import Ix.CompileM
+import Ix.Compile.Publication
 
 /-! The block's blob writes are checked against the block's own blobs and the
 published ones (`Ix.CompileM.storeBlob`): a reused address must hold the same
@@ -58,7 +59,16 @@ def controls : List (String × Bool) := Id.run do
   let syntaxAddress := Address.admissionHash (ByteArray.mk #[0])
   let (syntaxDatum, syntaxAfter) := raw (compileDataValue (.ofSyntax .missing)) {
     blockBlobs := ({} : Std.HashMap Address ByteArray).insert syntaxAddress old }
+  -- The merge-time check (`checkBlobContent`, part of `checkCompiledBlock`): a block's blob
+  -- at an address the published store holds with other bytes is refused before the merge
+  -- writes it; the same bytes are accepted.
+  let mergeConflict : Bool := match checkBlobContent prior acceptedAfter with
+    | .error e => conflict (.error e : Except CompileError Unit)
+    | .ok () => false
+  let mergeAgree := (checkBlobContent matching acceptedAfter).toOption.isSome
   return [
+    ("merge refuses a block blob the published store holds with other bytes", mergeConflict),
+    ("merge accepts a block blob the published store holds with the same bytes", mergeAgree),
     ("local conflict is rejected without replacement",
       conflict localResult && localAfter.blockBlobs.get? address == some old),
     ("ambient conflict is rejected before shadowing",

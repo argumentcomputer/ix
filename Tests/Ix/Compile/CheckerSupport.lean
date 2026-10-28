@@ -128,7 +128,7 @@ def run : IO UInt32 := do
   for name in seeds do
     let row ← verdict positive closed.env name
     require (row.outcome == "accept" ||
-        (row.outcome == "decline" && Tests.Ix.Compile.AuxCert.documentedDecline row.reason))
+        (row.outcome == "decline" && Tests.Ix.Compile.ClosureHarness.documentedDecline row.reason))
       s!"selected: fixture {name}: {row.outcome}: {row.reason}"
   -- the raw closure: the exact decline, and the helpers blocked
   let rawReport ← certify dir "raw" negative.bytes

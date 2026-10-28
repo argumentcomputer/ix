@@ -1,25 +1,24 @@
 /-
   Ix.DecompileDriver: kernel-free decompilation of stored source records.
 
-  Pass 1 selects original addresses, metadata and hints, then decodes each
-  source declaration in parallel. Pass 1.5 recomputes inductive flags from
-  those decoded declarations. No auxiliary is regenerated or recompiled.
+  The stored source declarations are selected (original addresses, metadata
+  and hints) and decoded in parallel; their inductive flags are then
+  recomputed from the decoded declarations. No auxiliary is regenerated or
+  recompiled.
 -/
 module
 public import Ix.DecompileM
-public import Ix.AuxGen.Nested
+public import Ix.IndFlags
 public section
 
 namespace Ix.DecompileM
 
-/-- Pass 1.5: restore Lean-faithful inductive flags. Ixon deliberately
+/-- Restore Lean-faithful inductive flags. Ixon deliberately
     does not store `numNested`/`isRec`/`isReflexive` (they are derivable),
     so `decompileInductive` stubs them; this pass recomputes them per
-    original mutual group FROM THE DECOMPILED CONSTANTS via the aux-gen
-    expansion machinery — mirroring Rust `decompile_env`'s Pass 1.5
-    (decompile.rs:5030-5058), which calls the same
-    `compute_lean_ind_flags` (ported as `Ix.AuxGen.computeLeanIndFlags`,
-    nested.rs:1416).
+    original mutual group FROM THE DECOMPILED CONSTANTS
+    (`Ix.IndFlags.computeLeanIndFlags`), mirroring Rust `decompile_env`, which
+    calls the same `compute_lean_ind_flags`.
 
     Groups key on `all[0]` (every member carries the same `all`, so
     first-seen insertion order is irrelevant). The flags computation runs
@@ -39,7 +38,7 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
     let blockEnv : Ix.CompileM.BlockEnv :=
       { all := {}, current := key, mutCtx := default, univCtx := [] }
     match Ix.CompileM.CompileM.run cenv blockEnv {}
-        (Ix.AuxGen.computeLeanIndFlags all) with
+        (Ix.IndFlags.computeLeanIndFlags all) with
     | .error e =>
       return .error s!"ind-flags fixup for block '{key.pretty}': {e}"
     | .ok (flags, _) =>

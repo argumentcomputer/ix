@@ -10,11 +10,9 @@
   string/bool/nat/name payloads, `Expr.proj`), theorems, axioms with
   max/imax level polymorphism, and opaques.
 
-  The alpha-collapsed mutual pair (a changed block: Pass 3 stores its
-  canonical recursors as `TIxImp.A._ix.rec`/`TIxImp.B._ix.rec` and images
-  under the Lean names) is checked with Pass 3's declared image-support
-  closure (`Ix.Compile.Image.imageSupport`) replayed into the empty
-  environment first. The ordinary fixture's distinct pair is its
+  The alpha-equivalent mutual pair is checked with the library support every
+  selected closure carries (`Ix.EnvScope.introducedSupport`) replayed into
+  the empty environment first. The ordinary fixture's distinct pair is its
   support-free neighbour.
 
   Gates:
@@ -56,7 +54,6 @@ public import Ix.CompileM
 public import Ix.Commit
 public import Ix.Meta
 public import Ix.EnvScope
-public import Ix.Compile.Image.Expr
 public import Tests.Ix.Compile.KernelReport
 
 public section
@@ -210,17 +207,14 @@ private def buildFixtureConsts (collapsed : Bool := false) :
   let env ← Lean.mkEmptyEnvironment
   let mut kenv := env.toKernelEnv
   if collapsed then
-    -- The image generator's declared support (`imageSupport`) and its
-    -- closure with recursors, replayed from Init; importing Init wholesale
-    -- would lose this fixture's empty-environment replay check.
+    -- The library support every selected closure carries
+    -- (`Ix.EnvScope.introducedSupport`) and its closure with recursors,
+    -- replayed from Init; importing Init wholesale would lose this fixture's
+    -- empty-environment replay check.
     Lean.initSearchPath (← Lean.findSysroot)
     let supportEnv ← Lean.importModules #[{ module := `Init }] {}
-    let rec toLean : Ix.Name → Lean.Name
-      | .anonymous _ => .anonymous
-      | .str p s _ => .str (toLean p) s
-      | .num p i _ => .num (toLean p) i
     let support := Ix.EnvScope.collectDeps supportEnv
-      (Ix.Compile.Image.imageSupport.toList.map toLean) { recursors := true }
+      (Ix.EnvScope.introducedSupport supportEnv) { recursors := true }
     let supportMap := support.foldl (fun m (n, ci) => m.insert n ci)
       ({} : Lean.NameMap Lean.ConstantInfo)
     let supportPlan ← IO.ofExcept (Ix.Replay.planDeclarations supportMap supportMap.find?)

@@ -16,7 +16,7 @@ The term half of the Source-mode ingress (`Ix.LeanIngress`): an
 `Ix.Kernel.Expr` with nothing hashed and nothing rewritten.
 
 It is a `module`, its API public and the specification's bodies exposed,
-so that other modules (the compiler's `Ix.AuxGen`) share the conversion
+so that other modules share the conversion
 instead of repeating it; the rest of the Source-mode ingress
 (`Ix.LeanIngress`: grouping, order, lowering) imports it.
 

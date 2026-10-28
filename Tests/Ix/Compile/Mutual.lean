@@ -211,7 +211,6 @@ end OverMergedStructs2
 
 
 -- Nested inductive: single type nesting through List.
--- No alpha-collapse (single inductive), so aux_gen doesn't run.
 -- Serves as a baseline: Lean's original nested auxiliaries (.rec_1, .below_1,
 -- .brecOn_1) compile without interference from our pipeline.
 namespace NestedSimple
@@ -427,10 +426,8 @@ end HigherOrderRec
 -- count vs binder count itself depends on how Lean resolves `motive t`
 -- where `t`'s type reduces to a Pi.
 --
--- These fixtures exist so validate-aux can reproduce the failure in
--- isolation while we work out the right fix. The aux_gen pipeline must
--- generate `.rec` / `.below` / `.brecOn` that typecheck against Lean's
--- originals — no shortcuts.
+-- These fixtures keep the shape in the fixture corpus: Lean's `.rec` /
+-- `.below` / `.brecOn` of these blocks compile and check as given.
 -- Inductives whose target type is a reducible alias. Minimal reproducers
 -- (no Mathlib dependency) for the `build_below_def` mismatch on Mathlib's
 -- `εNFA.εClosure` and `FiniteInter.finiteInterClosure`.
@@ -445,9 +442,8 @@ end HigherOrderRec
 -- while `num_indices` counts post-reduction arrows. Our arity-based
 -- binder-chain peeling in `build_below_def` trips on this mismatch.
 --
--- These fixtures exist so validate-aux can reproduce the failure in
--- isolation. The aux_gen pipeline must generate `.rec` / `.below` /
--- `.brecOn` that typecheck against Lean's originals — no shortcuts.
+-- These fixtures keep the shape in the fixture corpus: Lean's `.rec` /
+-- `.below` / `.brecOn` of these blocks compile and check as given.
 namespace ReducibleAliasTarget
 
 public abbrev MySet (α : Type) := α → Prop
@@ -499,17 +495,12 @@ end
 
 end AuxDedupMixed
 
--- Cross-SCC ownership of source-indexed auxiliary names
--- (plans/aux-recursor-alias-collision.md, TruthMines handoff repro).
+-- Source-indexed auxiliary names across SCCs.
 --
 -- Lean hangs every nested-aux name off `InductiveVal.all[0]` of the
--- ORIGINAL mutual block. When the block splits into SCCs, the spec
--- inductive's SCC can compile a position as a canonical aux (claiming
--- `all0.rec_N`) while the owner's SCC independently decides the same
--- position "evaporated" and aliases the same name to the external
--- container's generic recursor. Two claimants, one name:
---   invalid mutual block: aux_gen alias 'O.rec_1' already resolves to
---   <canonical patch>, expected <NE.rec> via 'NE.rec'
+-- ORIGINAL mutual block, so when the block splits into SCCs the owner's and
+-- the spec inductive's components carry auxiliaries named off one prefix
+-- (`all0.rec_N`). The compiler compiles each as Lean declares it.
 namespace AuxOwnership
 
 -- External single-motive container (the HaskellSpec `NonEmpty` shape).
@@ -557,7 +548,7 @@ end TwoSpecs
 -- canonically and {M}'s evaporation to `NE.rec`/`List.rec` is correct.
 -- Unlike AuxDedupMixed, {M}'s own expansion has NO nested occurrence at
 -- all (`NE B` doesn't mention M), exercising the metadata-only
--- disagreement path (aux_gen.rs "metadata-only" branch).
+-- disagreement path.
 namespace Evap
 mutual
   public inductive M where
@@ -792,8 +783,7 @@ end TypeBrecOnEqDef
 -- motive lambda, but valid under the kernel's infer-only proof checking),
 -- discharged by `Eq.refl` and consumed by `Eq.ndrec`+`Eq.symm` in the
 -- minors — where the non-unit-like shape uses `HEq`/`HEq.refl`/
--- `eq_of_heq`. The regenerated `.brecOn.eq` must reproduce Lean's choice
--- (validate-aux Phase 2 congruence + roundtrip). `Ar`'s major stays `HEq`
+-- `eq_of_heq`; Lean's `.brecOn.eq` makes this choice. `Ar`'s major stays `HEq`
 -- (`List Un` is not unit-like), so this block exercises both kinds at
 -- once. Order-independent (no mirrored twin needed).
 namespace TypeBrecOnEqDefUnit
@@ -831,9 +821,9 @@ set_option linter.defProp false in
 def arWkEqDef := @Ar.wk.eq_def
 -- No `Tm.wk.eq_def` forcing: `lit`'s concrete return index makes the
 -- match dependent and Lean fails to realize the equation lemma for it.
--- The `.brecOn.eq` coverage doesn't need it — aux_gen regenerates the
--- brecOn family for the block regardless; eq_def surgery is covered by
--- `TypeBrecOnEqDef` and by `arWkEqDef` above.
+-- The `.brecOn.eq` coverage doesn't need it: Lean declares the brecOn
+-- family for the block regardless, and `TypeBrecOnEqDef` and `arWkEqDef`
+-- above cover `eq_def`.
 
 end TypeBrecOnEqDefUnit
 

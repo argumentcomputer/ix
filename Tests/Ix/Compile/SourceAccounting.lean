@@ -130,7 +130,7 @@ def run : IO Unit := do
     -- No auxiliary is regenerated, so the closure's declarations named like
     -- auxiliaries claim nothing of another's: the closure compiles whole.
     need out.cenv.ungrounded.isEmpty "the claim-conflict closure was refused"
-  need (ClaimConflict.promotionCases.all (·.2)) "existing promotion/withdrawal controls failed"
+  need (ClaimConflict.readinessCases.all (·.2)) "existing readiness controls failed"
   let tierRaw := _root_.Ix.EnvScope.collectDeps env
     [`Tests.Ix.Kernel.TierIndDefs.spin, `Tests.Ix.Kernel.TierIndDefs.kdef]
   let tier ← compile env tierRaw

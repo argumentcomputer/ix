@@ -187,7 +187,7 @@ mod tests {
 
   #[test]
   fn compilation_refuses_a_poisoned_prior_record_before_registering_the_name() {
-    use crate::compile::{BlockCache, KernelCtx, block_txn, compile_const};
+    use crate::compile::{BlockCache, block_txn, compile_const};
     use crate::graph::NameSet;
     use ix_common::env::{
       AxiomVal, ConstantInfo as LeanConstantInfo, ConstantVal, Env,
@@ -211,14 +211,7 @@ mod tests {
     let env = Arc::new(env);
     let all: NameSet = [name.clone()].into_iter().collect();
     let run = |stt: &CompileState| {
-      compile_const(
-        &name,
-        &all,
-        &env,
-        &mut BlockCache::default(),
-        stt,
-        &mut KernelCtx::new(),
-      )
+      compile_const(&name, &all, &env, &mut BlockCache::default(), stt)
     };
     let key = run(&CompileState::default()).unwrap();
     let stt = CompileState::default();

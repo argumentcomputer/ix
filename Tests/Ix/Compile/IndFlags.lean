@@ -4,8 +4,8 @@
   ones (Rust `validate_ind_groups`, Lean `Ix.CompileM.validateInductiveFlags`),
   and compile the same closure with the true flags byte-identically.
 
-  The closure is `T` (a recursive inductive) with its recursor and the
-  aux-gen seeds; the refused neighbour stores `isRec := false` on `T`. The
+  The closure is `T` (a recursive inductive) with its recursor; the
+  refused neighbour stores `isRec := false` on `T`. The
   Lean refusal is checked on both Lean drivers: the IO pipeline
   (`compileLeanConsts`, the parallel driver) and the pure compiler
   (`Ix.Cert.compile`, the sequential driver).
@@ -72,15 +72,10 @@ end Fixture
 
 def tName : Name := ``Fixture.T
 
-/-- The aux-gen seed names (`Ix.CompileM.auxGenSeedNames`), as Lean names. -/
-def auxSeeds : List Name :=
-  [``PUnit, ``PProd, ``Eq, ``Eq.refl, ``Eq.symm, ``Eq.ndrec, ``rfl, ``HEq,
-    ``HEq.refl, ``eq_of_heq, ``True, ``And]
-
 /-- The closure of `T`, with `T`'s stored `isRec` replaced by `isRec`. -/
 def closure (env : Environment) (isRec : Bool) :
     Except String (List (Name × ConstantInfo)) := do
-  let base := Ix.EnvScope.collectDeps env ([tName, tName ++ `rec] ++ auxSeeds)
+  let base := Ix.EnvScope.collectDeps env [tName, tName ++ `rec]
   let some (.inductInfo v) := env.find? tName | throw "T missing"
   unless v.isRec do throw "T is not recursive"
   return base.map fun (n, ci) =>
@@ -122,9 +117,9 @@ def pure (cs : List (Name × ConstantInfo)) : Except String ByteArray := do
 
 /-! ## Mixed safety -/
 
-/-- A closure with the aux-gen seeds. -/
+/-- The closure of `roots`. -/
 def closureOf (env : Environment) (roots : List Name) : List (Name × ConstantInfo) :=
-  Ix.EnvScope.collectDeps env (roots ++ auxSeeds)
+  Ix.EnvScope.collectDeps env roots
 
 /-- Forge inductive `n`'s safety: the inductive, its constructors and its
     recursor. -/

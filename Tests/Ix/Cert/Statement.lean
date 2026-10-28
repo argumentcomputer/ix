@@ -91,18 +91,16 @@ it, each of which they must refuse. The reference check alone
 the cycles planted in four copies of it (two decoded, two as bytes only), and
 its refs-only reader (`Ix.Cert.RecordRefs.lazyRefs`) is compared with the
 decoder on every record of the result. `resolved` is the driver's
-resolution map at the end of the fold (`Ix.Cert.compileUnchecked`'s third
-component), which the resolution check reads; `aux` is its aux map (the fourth
-component), which the original-form check reads. -/
+resolution map at the end of the fold (from `Ix.Cert.compileUnchecked`'s third
+component), which the resolution and publication checks read. -/
 def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     (failures : Ix.Cert.Failures) (cenv : Ix.CompileM.CompileEnv) :
     IO (Array String × Array String) := do
   let resolved := cenv.nameToAddr
-  let aux := cenv.auxNameToAddr
-  -- `checkReport` on the driver's final environment with its resolution and
-  -- aux maps replaced (the planted cases)
-  let chk := fun (r a : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (out : Ixon.Env × Ix.Cert.Failures) =>
-    Ix.Cert.checkReport env { cenv with nameToAddr := r, auxNameToAddr := a } out
+  -- `checkReport` on the driver's final environment with its resolution map
+  -- replaced (the planted cases)
+  let chk := fun (r : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (out : Ixon.Env × Ix.Cert.Failures) =>
+    Ix.Cert.checkReport env { cenv with nameToAddr := r } out
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   let t0 ← IO.monoMsNow
@@ -141,7 +139,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     ("a blob's bytes changed", { ixe with blobs := ixe.blobs.insert b (bytes.push 0) }, failures)]
   let mut refused := 0
   for (what, ixe', failures') in tampered do
-    match chk resolved aux (ixe', failures') with
+    match chk resolved (ixe', failures') with
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a tampered report: {what}"
     | .error _ => refused := refused + 1
   lines := lines.push s!"{label}: checkReport refuses {refused} of {tampered.length} tampered reports"
@@ -155,7 +153,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       ({env.consts.size} input and {ixe.named.size} published names, {h1 - h0} ms)"
   | some (x, y) => errors := errors.push s!"{label}: nameHashCollision finds {x.pretty} and \
       {y.pretty} in the compile's result"
-  match chk resolved aux ({ ixe with named := ixe.named.insert twin named }, failures) with
+  match chk resolved ({ ixe with named := ixe.named.insert twin named }, failures) with
   | .error e =>
     unless (e.splitOn "name check failed").length > 1 do
       errors := errors.push s!"{label}: the planted name-hash twin is refused, but not by the name check: {e}"
@@ -181,7 +179,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     | .muts all layout =>
       let planted : Ixon.Named := { nd with constMeta := { nd.constMeta with
         info := .muts (all.push #[Address.blake3Pure "planted-muts-class".toUTF8]) layout } }
-      match chk resolved aux ({ ixe with named := ixe.named.insert entry planted }, failures) with
+      match chk resolved ({ ixe with named := ixe.named.insert entry planted }, failures) with
       | .error e =>
         if (e.splitOn "Muts check failed").length > 1 then
           lines := lines.push s!"{label}: checkReport refuses a Muts entry with a planted class \
@@ -193,7 +191,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   -- the resolution check (every name the driver resolves is published at that
   -- address), timed alone on the compile's result, then refusing, by its own
   -- message, a resolution map moved off a published name's address, a published
-  -- name's entry moved off its resolved address (as a later block's aux entry
+  -- name's entry moved off its resolved address (as a later block's `Muts` entry
   -- would; a name no `Muts` class lists, so the Muts check does not see it), and
   -- a resolved name that is not published
   let s0 ← IO.monoMsNow
@@ -224,7 +222,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
         resolved.insert unpublished nd.addr, ixe)]
     let mut byCheck := 0
     for (what, resolved', ixe') in planted do
-      match chk resolved' aux (ixe', failures) with
+      match chk resolved' (ixe', failures) with
       | .error e =>
         if (e.splitOn "resolution check failed").length > 1 then byCheck := byCheck + 1
         else errors := errors.push s!"{label}: {what} is refused, but not by the resolution check: {e}"
@@ -256,7 +254,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     let dropped := ixe.named.filter fun _ nd => match nd.constMeta.info with
       | .muts .. => nd.addr != block
       | _ => true
-    match chk resolved aux ({ ixe with named := dropped }, failures) with
+    match chk resolved ({ ixe with named := dropped }, failures) with
     | .error e =>
       if (e.splitOn "component check failed").length > 1 then
         lines := lines.push s!"{label}: checkReport refuses a block's Muts entry dropped by the \
@@ -264,122 +262,31 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       else
         errors := errors.push s!"{label}: the dropped Muts entry is refused, but not by the component check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a block's Muts entry dropped"
-  -- the original-form check (every input name of the driver's final aux map
-  -- published with `Named.original`), timed alone on the compile's result,
-  -- then refusing, by its own message, the result with a published input name
-  -- that has no original-form record planted in the aux map
-  let o0 ← IO.monoMsNow
-  let unoriginal? ← IO.lazyPure fun _ => Ix.Cert.unoriginalAux env aux ixe
-  let o1 ← IO.monoMsNow
-  let auxInputs := aux.toList.filter fun (n, _) => env.consts.contains n
-  match unoriginal? with
-  | none => lines := lines.push s!"{label}: unoriginalAux finds every input name of the aux map \
-      published with an original-form record ({aux.size} aux names, {auxInputs.length} input, \
-      {o1 - o0} ms)"
-  | some n => errors := errors.push s!"{label}: unoriginalAux finds {n.pretty} in the compile's result"
-  let plantable := env.consts.toList.findSome? fun (n, _) =>
-    (ixe.named.get? n).bind fun nd => if nd.original.isNone then some (n, nd.addr) else none
-  match plantable with
-  | none => errors := errors.push s!"{label}: no published input name without an original-form record"
-  | some (n, a) =>
-    match chk resolved (aux.insert n a) (ixe, failures) with
-    | .error e =>
-      if (e.splitOn "original-form check failed").length > 1 then
-        lines := lines.push s!"{label}: checkReport refuses an input name without an original-form \
-          record planted in the aux map ({n.pretty})"
-      else
-        errors := errors.push s!"{label}: the planted aux name is refused, but not by the \
-          original-form check: {e}"
-    | .ok () => errors := errors.push s!"{label}: checkReport accepts an input name without an \
-        original-form record in the aux map"
-  -- the publication check (every published input name resolved or in the
-  -- driver's final aux map), timed alone on the compile's result, then
-  -- refusing, by its own message, the result with a published input name
-  -- dropped from both maps
+  -- the publication check (every published input name resolved), timed alone
+  -- on the compile's result, then refusing, by its own message, the result with
+  -- a published input name dropped from the resolution map
   let p0 ← IO.monoMsNow
-  let unresolved? ← IO.lazyPure fun _ => Ix.Cert.unresolvedPublished env resolved aux ixe
+  let unresolved? ← IO.lazyPure fun _ => Ix.Cert.unresolvedPublished env resolved ixe
   let p1 ← IO.monoMsNow
   match unresolved? with
   | none => lines := lines.push s!"{label}: unresolvedPublished finds every published input name \
-      resolved or in the aux map ({ixe.named.size} published names, {p1 - p0} ms)"
+      resolved ({ixe.named.size} published names, {p1 - p0} ms)"
   | some n => errors := errors.push s!"{label}: unresolvedPublished finds {n.pretty} in the compile's result"
   let droppable := env.consts.toList.findSome? fun (n, _) =>
     if ixe.named.contains n && resolved.contains n then some n else none
   match droppable with
   | none => errors := errors.push s!"{label}: no published, resolved input name"
   | some n =>
-    match chk (resolved.erase n) (aux.erase n) (ixe, failures) with
+    match chk (resolved.erase n) (ixe, failures) with
     | .error e =>
       if (e.splitOn "publication check failed").length > 1 then
         lines := lines.push s!"{label}: checkReport refuses a published input name dropped from \
-          the resolution and aux maps ({n.pretty})"
+          the resolution map ({n.pretty})"
       else
         errors := errors.push s!"{label}: the dropped published name is refused, but not by the \
           publication check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a published input name \
-        neither resolved nor in the aux map"
-  -- the cross-SCC check (no resolved name outside the aux map among the extra
-  -- names), timed alone on the driver's final environment, then refusing, by
-  -- its own message, the environment with such a name planted among the extra
-  -- names
-  let c0 ← IO.monoMsNow
-  let cross? ← IO.lazyPure fun _ =>
-    Ix.Cert.crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames
-  let c1 ← IO.monoMsNow
-  match cross? with
-  | none => lines := lines.push s!"{label}: crossClaimed finds no resolved name outside the aux map \
-      among the extra names or the constructors of their inductives ({resolved.size} resolved, \
-      {cenv.auxGenExtraNames.size} extra names, {c1 - c0} ms)"
-  | some n => errors := errors.push s!"{label}: crossClaimed finds {n.pretty} in the compile's result"
-  let primary := resolved.toList.findSome? fun (n, _) => if aux.contains n then none else some n
-  match primary with
-  | none => errors := errors.push s!"{label}: no resolved name outside the aux map"
-  | some n =>
-    let cenv' := { cenv with auxGenExtraNames := cenv.auxGenExtraNames.insert (n : Ix.Name) }
-    match Ix.Cert.checkReport env cenv' (ixe, failures) with
-    | .error e =>
-      if (e.splitOn "cross-SCC check failed").length > 1 then
-        lines := lines.push s!"{label}: checkReport refuses a resolved name outside the aux map \
-          planted among the extra names ({(n : Ix.Name).pretty})"
-      else
-        errors := errors.push s!"{label}: the planted extra name is refused, but not by the \
-          cross-SCC check: {e}"
-    | .ok () => errors := errors.push s!"{label}: checkReport accepts a resolved name outside the \
-        aux map among the extra names"
-  -- a resolved constructor outside the aux map whose inductive is planted
-  -- among the extra names: refused by the cross-SCC check; and, alone in a
-  -- resolution map without its inductive, found by `crossClaimed`
-  let ctorCase := resolved.toList.findSome? fun (n, a) =>
-    if aux.contains n then none else
-    match env.consts.get? (n : Ix.Name) with
-    | some (.ctorInfo cv) =>
-      match env.consts.get? cv.induct with
-      | some (.inductInfo iv) => if iv.ctors.contains (n : Ix.Name) then some (n, a, cv.induct) else none
-      | _ => none
-    | _ => none
-  match ctorCase with
-  | none => errors := errors.push s!"{label}: no resolved constructor outside the aux map"
-  | some (n, a, ind) =>
-    let cenv' := { cenv with auxGenExtraNames := cenv.auxGenExtraNames.insert ind }
-    match Ix.Cert.checkReport env cenv' (ixe, failures) with
-    | .error e =>
-      if (e.splitOn "cross-SCC check failed").length > 1 then
-        lines := lines.push s!"{label}: checkReport refuses a resolved constructor outside the aux map \
-          whose inductive is planted among the extra names ({(n : Ix.Name).pretty} of {ind.pretty})"
-      else
-        errors := errors.push s!"{label}: the planted inductive is refused, but not by the cross-SCC \
-          check: {e}"
-    | .ok () => errors := errors.push s!"{label}: checkReport accepts a resolved constructor outside \
-        the aux map whose inductive is among the extra names"
-    let only : Std.HashMap Ix.Compile.ExactKey.ExactName Address := ({} : Std.HashMap _ _).insert n a
-    match Ix.Cert.crossClaimed env only {} (({} : Std.HashSet Ix.Name).insert ind) with
-    | some m =>
-      if m == (n : Ix.Name) then
-        lines := lines.push s!"{label}: crossClaimed finds the constructor {m.pretty} through its \
-          inductive {ind.pretty} among the extra names"
-      else errors := errors.push s!"{label}: crossClaimed finds {m.pretty}, not the constructor"
-    | none => errors := errors.push s!"{label}: crossClaimed misses a resolved constructor whose \
-        inductive is among the extra names"
+        that is not resolved"
   -- the name invariant (every input constant carries the name it is stored
   -- under), timed alone, then refusing, by its own message, the input with one
   -- definition stored under another definition's name
@@ -469,38 +376,6 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     else
       errors := errors.push s!"{label}: the stray failure is refused, but not by the failure check: {e}"
   | .ok () => errors := errors.push s!"{label}: checkReport accepts a failure that is not an input name"
-  -- Identity rows: duplicates agree on both verdict and compared address,
-  -- and an identical row names its final published address.
-  let id0 ← IO.monoMsNow
-  let identity? ← IO.lazyPure fun _ => Ix.Cert.identityMismatch cenv.auxReport.identity ixe
-  let id1 ← IO.monoMsNow
-  match identity? with
-  | none => lines := lines.push s!"{label}: identityMismatch finds consistent identity rows at their \
-      published addresses ({cenv.auxReport.identity.size} rows, {id1 - id0} ms)"
-  | some (n, _, _) => errors := errors.push s!"{label}: identityMismatch finds a mismatch at {n.pretty}"
-  match ixe.named.toList.head? with
-  | none => errors := errors.push s!"{label}: no published name for identity-row controls"
-  | some (n, named) =>
-    let prior := cenv.auxReport.identity.filter fun row => !(row.1 == n)
-    let badAddress : Address := ⟨ByteArray.empty⟩
-    let duplicates := prior ++ #[(n, true, named.addr), (n, true, named.addr)]
-    if (Ix.Cert.identityMismatch duplicates ixe).isSome then
-      errors := errors.push s!"{label}: identity check refuses two agreeing identical rows"
-    else
-      lines := lines.push s!"{label}: identity check permits duplicate agreeing rows"
-    for (reason, rows) in
-        [("unpublished address", prior.push (n, true, badAddress)),
-         ("conflicting verdicts", prior ++ #[(n, true, named.addr), (n, false, named.addr)]),
-         ("conflicting compared addresses", prior ++ #[(n, false, named.addr), (n, false, badAddress)])] do
-      let cenvI := { cenv with auxReport := { cenv.auxReport with identity := rows } }
-      match Ix.Cert.checkReport env cenvI (ixe, failures) with
-      | .error e =>
-        if (e.splitOn "identity check failed").length > 1 then
-          lines := lines.push s!"{label}: checkReport refuses identity rows with {reason}"
-        else
-          errors := errors.push s!"{label}: identity rows with {reason} refused by another check: {e}"
-      | .ok () => errors := errors.push s!"{label}: checkReport accepts identity rows with {reason}"
-
   -- the projection check (one stored definition projection record per member),
   -- timed alone, then refusing, by its own message, a second authentic record
   -- projecting a member (an existing projection with its univs grown, stored at
@@ -537,7 +412,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   -- is not a block), timed alone on the compile's result, then refusing, by its
   -- own message, a published input name moved, with its resolution, to a block's
   -- address and to an unstored address (a name no `Muts` class lists, no
-  -- inductive, no head and with no identity row, so no earlier check sees it)
+  -- inductive and no head, so no earlier check sees it)
   let u0 ← IO.monoMsNow
   let unreadable? ← IO.lazyPure fun _ => Ix.Cert.unreadablePublished env ixe
   let u1 ← IO.monoMsNow
@@ -553,8 +428,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   let blockAddr? := entries.head?.map (·.2.addr)
   let movable := resolved.toList.find? fun (k, _) =>
     ixe.named.contains k && env.consts.contains k && !inMuts.contains (Ix.Name.getHash k) &&
-      !(env.consts.get? k matches some (.inductInfo _)) &&
-      !cenv.auxReport.identity.any (·.1 == k)
+      !(env.consts.get? k matches some (.inductInfo _))
   match blockAddr?, movable with
   | some blockAddr, some (k, _) =>
     let some nd := ixe.named.get? k
@@ -565,7 +439,7 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       let ixe' := { ixe with named := ixe.named.insert k { nd with addr := addr } }
       if Ix.Cert.unreadablePublished env ixe' != some k then
         errors := errors.push s!"{label}: unreadablePublished misses an input name published {what}"
-      match chk (resolved.insert k addr) aux (ixe', failures) with
+      match chk (resolved.insert k addr) (ixe', failures) with
       | .error e =>
         if (e.splitOn "readability check failed").length > 1 then byCheck := byCheck + 1
         else errors := errors.push s!"{label}: an input name published {what} is refused, but not by \
@@ -575,6 +449,85 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       readability check"
   | _, _ => errors := errors.push s!"{label}: no Muts entry, or no movable published input name, to \
       plant an unreadable publication with"
+  -- the blob check (no address holds both a stored blob and a stored record),
+  -- timed alone on the compile's result, then refusing, by its own message, a
+  -- blob stored at a record's address with the record's bytes (what a literal
+  -- whose bytes are that record's serialization stores)
+  let bl0 ← IO.monoMsNow
+  let blobRecord? ← IO.lazyPure fun _ => Ix.Cert.blobRecordCollision ixe
+  let bl1 ← IO.monoMsNow
+  match blobRecord? with
+  | none => lines := lines.push s!"{label}: blobRecordCollision finds no address holding both a \
+      blob and a record ({ixe.blobs.size} blobs, {bl1 - bl0} ms)"
+  | some a => errors := errors.push s!"{label}: blobRecordCollision finds {a} in the compile's result"
+  match chk resolved ({ ixe with blobs := ixe.blobs.insert a₁ lc₁.rawBytes }, failures) with
+  | .error e =>
+    if (e.splitOn "blob check failed").length > 1 then
+      lines := lines.push s!"{label}: checkReport refuses a blob stored at a record's address with \
+        the record's bytes"
+    else
+      errors := errors.push s!"{label}: the planted blob is refused, but not by the blob check: {e}"
+  | .ok () => errors := errors.push s!"{label}: checkReport accepts a blob stored at a record's address"
+  -- the recursor check (every input name published in an inductive block the index
+  -- attaches recursors to has a family, of which each of those recursors is a
+  -- published recursor), timed alone on the compile's result, then refusing, by its
+  -- own message, an input recursor indexed under its family's block, the family's
+  -- only one, whose `all` is rewritten to name another input inductive: a recursor
+  -- with `all = [J]` in `I`'s motive slot
+  let rc0 ← IO.monoMsNow
+  let unowned? ← IO.lazyPure fun _ => Ix.Cert.unownedRecursor env ixe
+  let rc1 ← IO.monoMsNow
+  let idx := Ix.Kernel.Reader.buildIndex (Ix.Cert.storedRecord ixe) (Ix.Cert.storedRecursorRecords ixe)
+  match unowned? with
+  | none => lines := lines.push s!"{label}: unownedRecursor finds every indexed recursor published \
+      for its block's family ({idx.blocks.size} indexed blocks, {rc1 - rc0} ms)"
+  | some (b, x, none) => errors := errors.push s!"{label}: unownedRecursor finds {x.pretty}, \
+      published in the indexed block {b}, without a family in the compile's result"
+  | some (b, x, some r) => errors := errors.push s!"{label}: unownedRecursor finds the recursor \
+      record {r.block} under the block {b} not published for the family of {x.pretty} in the \
+      compile's result"
+  let indexed : Std.HashSet Address := idx.blocks.fold (init := {}) fun s _ shape =>
+    shape.recs.foldl (fun s r => s.insert r.block) s
+  let familySize : Std.HashMap Address Nat := env.consts.fold (init := {}) fun m _ ci =>
+    match ci with
+    | .recInfo rv =>
+      match rv.all[0]? with
+      | some f => m.insert f.getHash (m.getD f.getHash 0 + 1)
+      | none => m
+    | _ => m
+  let target := env.consts.toList.findSome? fun (rn, ci) =>
+    match ci with
+    | .recInfo rv =>
+      match rv.all[0]? with
+      | some f =>
+        if (Ix.Cert.publishedRecords ixe rn).any indexed.contains && familySize.getD f.getHash 0 == 1 then
+          some (rn, rv, f)
+        else none
+      | none => none
+    | _ => none
+  match target with
+  | some (rn, rv, f) =>
+    let other := env.consts.toList.findSome? fun (n, ci) =>
+      match ci with
+      | .inductInfo iv => if (iv.all[0]?.map (·.getHash)) != some f.getHash then some n else none
+      | _ => none
+    match other with
+    | some j =>
+      let env' : Ix.Environment :=
+        { env with consts := env.consts.insert rn (.recInfo { rv with all := #[j] }) }
+      match Ix.Cert.checkReport env' cenv (ixe, failures) with
+      | .error e =>
+        if (e.splitOn "recursor check failed").length > 1 then
+          lines := lines.push s!"{label}: checkReport refuses the recursor {rn.pretty} of an indexed \
+            block with its `all` rewritten to [{j.pretty}]"
+        else
+          errors := errors.push s!"{label}: the rewritten recursor {rn.pretty} is refused, but not by \
+            the recursor check: {e}"
+      | .ok () => errors := errors.push s!"{label}: checkReport accepts the recursor {rn.pretty} of an \
+          indexed block with its `all` rewritten to [{j.pretty}]"
+    | none => errors := errors.push s!"{label}: no input inductive of another family to rewrite a \
+        recursor's `all` to"
+  | none => errors := errors.push s!"{label}: no indexed input recursor alone in its family to rewrite"
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find
@@ -1505,6 +1458,116 @@ def sorryAliasCase (leanEnv : Lean.Environment) : IO (Array String × Array Stri
       quotient key {key}"])
   return (errors, #[])
 
+/-- **A literal whose bytes are a record's serialization is refused** by
+`compileReport`'s blob check: a target axiom compiles alone to a record `R`,
+and a definition whose value is the `Nat` literal with `R`'s serialization as
+its little-endian bytes stores a blob at `R`'s address beside `R` itself. The
+first candidate target whose record does not end with a zero byte is used,
+so that the literal's bytes are exactly the record's. -/
+def blobRecordCase : IO (Array String × Array String) := do
+  let target : Lean.Name := `Tests.Ix.Cert.Statement.blobTarget
+  let literal : Lean.Name := `Tests.Ix.Cert.Statement.blobLiteral
+  -- `Sort u` first: its universe table ends with a parameter, whose tag byte is nonzero
+  for (params, lvl) in [([`u], Lean.Level.param `u), ([], Lean.Level.succ .zero)] do
+    let targetC : Lean.ConstantInfo :=
+      .axiomInfo { name := target, levelParams := params, type := .sort lvl, isUnsafe := false }
+    let alone ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon #[(target, targetC)]
+    let (ixe₀, _) ← match Ix.Cert.compileReport alone with
+      | .ok out => pure out
+      | .error e => return (#[s!"blob/record: the target alone failed to compile: {e}"], #[])
+    let some named := ixe₀.named.get? (Ix.Name.fromLeanName target)
+      | return (#["blob/record: the target is not published"], #[])
+    let some lc := ixe₀.consts.get? named.addr
+      | return (#["blob/record: the target's record is not stored"], #[])
+    let bytes := lc.rawBytes
+    let n := Nat.fromBytesLE bytes.data
+    unless Nat.toBytesLE n == bytes.data do continue
+    let literalC : Lean.ConstantInfo := .defnInfo
+      { name := literal, levelParams := [], type := .const target (params.map fun _ => .zero),
+        value := .lit (.natVal n),
+        hints := .abbrev, safety := .safe, all := [literal] }
+    let env ← IO.lazyPure fun _ =>
+      Tests.Ix.Kernel.SourceIngressStep.canon #[(target, targetC), (literal, literalC)]
+    match Ix.Cert.compileReport env with
+    | .error e =>
+      if (e.splitOn "blob check failed").length > 1 then
+        return (#[], #[s!"blob/record: compileReport refuses a Nat literal whose bytes are another \
+          constant's record ({bytes.size} bytes)"])
+      return (#[s!"blob/record: the literal is refused, but not by the blob check: {e}"], #[])
+    | .ok _ => return (#["blob/record: compileReport accepts a Nat literal whose bytes are another \
+        constant's record"], #[])
+  return (#["blob/record: every candidate target's record ends with a zero byte"], #[])
+
+/-- **A recursor in another family's motive slot is refused** by `compileReport`'s
+recursor check: `PUnit.rec` given `Bool.rec`'s type, rules and levels, with
+`all = [PUnit]`, beside `Bool` and `PUnit` and without `Bool.rec`. The recursor
+index attaches it to `Bool`'s block, whose motive its type eliminates, and no
+recursor of `Bool`'s family is published there. -/
+def recursorFamilyCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let mut consts : Array (Lean.Name × Lean.ConstantInfo) := #[]
+  for n in [``Bool, ``Bool.false, ``Bool.true, ``PUnit, ``PUnit.unit] do
+    let some ci := leanEnv.find? n
+      | return (#[s!"recursor family: {n} is not in the test environment"], #[])
+    consts := consts.push (n, ci)
+  let some (.recInfo rv) := leanEnv.find? ``Bool.rec
+    | return (#["recursor family: Bool.rec is not a recursor of the test environment"], #[])
+  let planted : Lean.Name := ``PUnit.rec
+  consts := consts.push (planted, .recInfo { rv with name := planted, all := [``PUnit] })
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts
+  match Ix.Cert.compileReport env with
+  | .error e =>
+    if (e.splitOn "recursor check failed").length > 1 then
+      return (#[], #[s!"recursor family: compileReport refuses a recursor with all = [PUnit] in \
+        Bool's motive slot: {e}"])
+    return (#[s!"recursor family: the recursor is refused, but not by the recursor check: {e}"], #[])
+  | .ok _ => return (#["recursor family: compileReport accepts a recursor with all = [PUnit] in \
+      Bool's motive slot"], #[])
+
+/-- **A record of the wrong kind at a bound role's address is refused** by
+`compileReport`'s role check: the closure of `propext` and `Nat.add` compiles to
+records at the addresses the default role table binds, and each such record of a
+`Nat` operation or axiom role, read as a record of the other kind (a decoded
+record that disagrees with its bytes, which the authenticity check does not
+read), is refused. -/
+def roleKindCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let t ← match Ix.Kernel.Reader.defaultTable with
+    | .ok t => pure t
+    | .error e => return (#[s!"role kinds: the default role table failed: {e}"], #[])
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[``propext, ``Nat.add])
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  let (ixe, failures, cenv) ← match Ix.Cert.compileUnchecked env with
+    | .ok out => pure out
+    | .error e => return (#[s!"role kinds: the closure failed to compile: {e}"], #[])
+  if let .error e := Ix.Cert.checkReport env cenv (ixe, failures) then
+    return (#[s!"role kinds: checkReport refuses the closure's own result: {e}"], #[])
+  let mut errors : Array String := #[]
+  let mut refused : Array String := #[]
+  for (r, p) in t.bound do
+    let some lc := ixe.consts.get? p | continue
+    let some c := lc.get? | continue
+    let other : Option Ixon.ConstantInfo :=
+      match (Ix.Kernel.Role.spec (md := .anon) r).kind, c.info with
+      | .ops, .defn d => some (.axio { isUnsafe := false, lvls := d.lvls, typ := d.typ })
+      | .axiom, .axio ax =>
+        some (.defn { kind := .defn, safety := .safe, lvls := ax.lvls, typ := ax.typ, value := ax.typ })
+      | _, _ => none
+    let some info := other | continue
+    let ixe' : Ixon.Env := { ixe with consts := ixe.consts.insert p { lc with cache := some { c with info } } }
+    match Ix.Cert.checkReport env cenv (ixe', failures) with
+    | .error e =>
+      if (e.splitOn "role check failed").length > 1 then refused := refused.push s!"{repr r}"
+      else errors := errors.push s!"role kinds: the record of the wrong kind at {repr r}'s address is \
+        refused, but not by the role check: {e}"
+    | .ok () => errors := errors.push s!"role kinds: checkReport accepts a record of the wrong kind at \
+        {repr r}'s address"
+  if refused.isEmpty && errors.isEmpty then
+    errors := errors.push "role kinds: the closure's artifact stores no record at a bound Nat \
+      operation's or axiom role's address"
+  if errors.isEmpty then
+    return (#[], #[s!"role kinds: checkReport refuses a record of the wrong kind at the bound \
+      address of {refused.toList}"])
+  return (errors, #[])
+
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
     let (errors, lines) ← action
@@ -1527,7 +1590,13 @@ def suite : List TestSeq := [
   report "a closure with a well-founded Nat operation, at the bundle evidence (Nat.div)" (do
     natDivClosure (← getCompileEnv #[defsModule, ownModule])) 1,
   report "a closure with a string literal holds its literal support (outOfBounds)" (do
-    literalClosure (← getCompileEnv #[defsModule, ownModule]) `outOfBounds) 1]
+    literalClosure (← getCompileEnv #[defsModule, ownModule]) `outOfBounds) 1,
+  report "a Nat literal whose bytes are another constant's record is refused (blob check)"
+    blobRecordCase 1,
+  report "a recursor with all = [J] in I's motive slot is refused (recursor check)" (do
+    recursorFamilyCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "a record of the wrong kind at a bound role's address is refused (role check)" (do
+    roleKindCase (← getCompileEnv #[defsModule, ownModule])) 1]
 
 /-- `cert-evidence-agreement` (landing): the role table's evidence against quotient Source's on the
 well-founded operations' closure (`evidenceAgreement`); it compiles and reads the closure, so it

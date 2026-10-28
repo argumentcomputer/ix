@@ -1,4 +1,5 @@
 import Ix.Cert.Compile
+import Ix.Cert.Schedule
 import Ix.Cert.ProjectionRead
 import Ix.LeanIngress.Theorems
 import Ix.Ixon.Authenticated.Theorems
@@ -458,7 +459,7 @@ instance NoFailure.instDecidable (failures : Failures) (sub : Ix.Environment) :
 /-- **Coverage.** `compileReport` accounts for every input constant once:
 it is published (`Ixon.Env.named`) exactly when it did not fail. The ground
 filter records what it removes; the driver records every member of a block
-that failed, including a refused claim or payload and a withdrawn promotion
+that failed, including a refused claim or payload
 (CQ2.3, CQ2.4, CQ2.6); and the readiness rule (CQ2.6) fails a block whose
 dependency failed instead of leaving it unscheduled. A failed block publishes
 nothing (CQ2.4b, CQ2.6). Proved (`compileCovers`): `compileReport` checks it
@@ -618,7 +619,7 @@ invariant of the driver's loop. -/
 
 /-- `compileReport` succeeds only through its checks: its result is
 `compileUnchecked`'s environment and failures, and passes `checkReport`
-against the driver's resolution map and aux map that `compileUnchecked`
+against the driver's final environment that `compileUnchecked`
 returns with them. -/
 theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
     (h : compileReport env = .ok out) :
@@ -647,32 +648,49 @@ theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
       subst ho
       exact ⟨cenv, rfl, hc⟩
 
+/-- What `checkReport` passing says: each of its checks found nothing, in the
+driver's final environment `cenv`. A field per check, so a consumer names the
+check it reads. -/
+structure CheckReportOk (env : Ix.Environment) (cenv : Ix.CompileM.CompileEnv)
+    (out : Ixon.Env × Failures) : Prop where
+  covered : uncovered env out.1 out.2 = []
+  authentic : unauthentic out.1 = []
+  acyclic : referenceCycle out.1 = none
+  hashes : nameHashCollision env out.1 = none
+  muts : mutsMismatch out.1 = none
+  resolution : resolutionMismatch cenv.nameToAddr out.1 = none
+  inductives : unseenInductive env out.1 = none
+  resolved : unresolvedPublished env cenv.nameToAddr out.1 = none
+  named : misnamedInput env = none
+  constructors : strayConstructor env = none
+  failures : strayFailure env cenv.ungrounded = none
+  projections : projectionCollision out.1 = none
+  readable : unreadablePublished env out.1 = none
+  blobs : blobRecordCollision out.1 = none
+  recursors : unownedRecursor env out.1 = none
+  roles : roleRecordKind out.1 = none
+
 /-- `checkReport` passes exactly when nothing is uncovered, nothing is
 unauthentic, no stored record is on a reference cycle, no two different
 names share a name hash, every `Muts` entry agrees with its block, every
 resolved name is published where it resolves, every published input
-inductive's component is seen, every input name of the aux map is published
-with an original-form record, every published input name is resolved or in the
-aux map, no resolved name outside the aux map is a cross-SCC claim, all in the driver's final environment `cenv`,
-every input constant carries the name it is stored under, and every published
-input name's address holds a stored record that is not a block. -/
+inductive's block is found, every published input name is resolved, all in
+the driver's final environment `cenv`, every input constant carries the name
+it is stored under, every input constructor belongs to its inductive, every
+recorded failure is an input name, no definition member has two projection
+records, every published input name's address holds a stored record that is
+not a block, no address holds both a blob and a record, every input name
+published in an inductive block the recursor index attaches recursors to has a
+family of which each of those recursors is a published recursor, and every stored
+record at a bound role's address has its specification's kind. -/
 theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
-    (h : checkReport env cenv out = .ok ()) :
-    uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
-      nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none ∧
-      resolutionMismatch cenv.nameToAddr out.1 = none ∧ unseenInductive env out.1 = none ∧
-      unoriginalAux env cenv.auxNameToAddr out.1 = none ∧
-      unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 = none ∧
-      crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames = none ∧
-      misnamedInput env = none ∧
-      strayConstructor env = none ∧ strayFailure env cenv.ungrounded = none ∧
-      identityMismatch cenv.auxReport.identity out.1 = none ∧
-      projectionCollision out.1 = none ∧ unreadablePublished env out.1 = none := by
+    (h : checkReport env cenv out = .ok ()) : CheckReportOk env cenv out := by
   unfold checkReport at h
   -- walk the checks in order: every failing branch is an error, so the one
-  -- branch that returns has each check's equation in context
+  -- branch that returns has each check's equation in context; each field is one of
+  -- them, found syntactically (the checks are not unfolded to compare them)
   repeat' (first | (split at h) | (focus (cases h; done)))
-  exact ⟨‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›, ‹_›⟩
+  constructor <;> with_reducible assumption
 
 /-- The checks `compileReport`'s result passed that read only the result
 (`checkReport_ok`'s first five). -/
@@ -681,8 +699,8 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
       nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  obtain ⟨h₁, h₂, h₃, h₄, h₅, -, -, -, -, -, -, -, -, -, -, -⟩ := checkReport_ok hc
-  exact ⟨h₁, h₂, h₃, h₄, h₅⟩
+  have ok := checkReport_ok hc
+  exact ⟨ok.covered, ok.authentic, ok.acyclic, ok.hashes, ok.muts⟩
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
 constant exactly when it does not report it as failed. -/
@@ -864,14 +882,14 @@ result comes with the driver's resolution map at the end of the fold
 (`CompileEnv.nameToAddr` of the driver's final environment, which
 `compileUnchecked` returns), and every
 name it holds is published at the address it resolves to (`checkReport`'s
-sixth check). So a `Named` entry the aux tail registered after code no
-proof follows cannot leave a resolved name published elsewhere. -/
+sixth check). So a later `Named` entry cannot leave a resolved name published
+elsewhere. -/
 theorem resolvedPublished {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
       ∀ n a, cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, resolutionMismatch_none (checkReport_ok hc).2.2.2.2.2.1⟩
+  exact ⟨cenv, hu, resolutionMismatch_none (checkReport_ok hc).resolution⟩
 
 /-- An address of `mutsAddrs` is one at which a `Muts` entry is published. -/
 theorem mutsAddrs_contains {ixe : Ixon.Env} {a : Address} (h : (mutsAddrs ixe).contains a = true) :
@@ -946,172 +964,36 @@ theorem inductivesSeen {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failu
         ∃ entry e all layout, (entry, e) ∈ ixe.named.toList ∧ e.addr = p.block ∧
           e.constMeta.info = .muts all layout := by
   obtain ⟨_, -, hc⟩ := compileReport_ok h
-  exact unseenInductive_none (checkReport_ok hc).2.2.2.2.2.2.1
-
-/-- What `unoriginalAux = none` says: every input name of `aux` is published
-with an original-form record. -/
-theorem unoriginalAux_none {env : Ix.Environment}
-    {aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address} {ixe : Ixon.Env}
-    (h : unoriginalAux env aux ixe = none) :
-    ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), aux.get? n = some a →
-      env.consts.contains n = true →
-        ∃ named, ixe.named.get? n = some named ∧ named.original.isSome = true := by
-  intro n a hn hin
-  unfold unoriginalAux at h
-  rw [List.findSome?_eq_none_iff] at h
-  have hmem : (n, a) ∈ aux.toList := by
-    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
-    exact hn
-  have hfind := h (n, a) hmem
-  dsimp only at hfind
-  cases hg : ixe.named.get? n with
-  | none => simp [hin, hg] at hfind
-  | some named =>
-    refine ⟨named, rfl, ?_⟩
-    cases ho : named.original.isSome
-    · simp [hin, hg, ho] at hfind
-    · rfl
-
-/-- **Input names the aux map resolves have original-form records**:
-`compileReport`'s result comes with the driver's final aux map
-(`CompileEnv.auxNameToAddr` of the driver's final environment), and every
-input name it holds is published with `Named.original` (`checkReport`'s eighth
-check). So an input name the driver resolved through the aux map is one the
-classifier's regenerated rule reads (B9d); every other resolved name is a
-primary claim of its own block's compile (`Ix.Cert.Resolution`). -/
-theorem auxOriginal {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    (h : compileReport env = .ok (ixe, failures)) :
-    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), cenv.auxNameToAddr.get? n = some a →
-        env.consts.contains n = true →
-          ∃ named, ixe.named.get? n = some named ∧ named.original.isSome = true := by
-  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, unoriginalAux_none (checkReport_ok hc).2.2.2.2.2.2.2.1⟩
+  exact unseenInductive_none (checkReport_ok hc).inductives
 
 /-- What `unresolvedPublished = none` says: every published input name is in
-`resolved` or in `aux`. -/
+`resolved`. -/
 theorem unresolvedPublished_none {env : Ix.Environment}
-    {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address} {ixe : Ixon.Env}
-    (h : unresolvedPublished env resolved aux ixe = none) :
+    {resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address} {ixe : Ixon.Env}
+    (h : unresolvedPublished env resolved ixe = none) :
     ∀ (n : Ix.Name) (named : Ixon.Named), (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
-      resolved.contains n = true ∨ aux.contains n = true := by
+      resolved.contains n = true := by
   intro n named hmem hin
   unfold unresolvedPublished at h
   rw [List.findSome?_eq_none_iff] at h
   have hfind := h (n, named) hmem
   dsimp only at hfind
   cases hr : resolved.contains n
-  · cases ha : aux.contains n
-    · simp [hin, hr, ha] at hfind
-    · exact .inr rfl
-  · exact .inl rfl
+  · simp [hin, hr] at hfind
+  · rfl
 
 /-- **Published input names are resolved**: `compileReport`'s result comes
-with the driver's final environment, whose resolution and aux maps
-(`nameToAddr`, `auxNameToAddr`) hold every published input name
-(`checkReport`'s ninth check). So a published input name is a primary claim of
-a block compiled during the fold (`Ix.Cert.Resolution.compileReport_claim`),
-or resolves through the aux map with an original-form record (`auxOriginal`). -/
+with the driver's final environment, whose resolution map (`nameToAddr`)
+holds every published input name (`checkReport`'s eighth check). So a
+published input name is a primary claim of a block compiled during the fold
+(`Ix.Cert.Resolution.compileReport_claim`). -/
 theorem publishedResolved {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
       ∀ (n : Ix.Name) (named : Ixon.Named), (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
-        cenv.nameToAddr.contains n = true ∨ cenv.auxNameToAddr.contains n = true := by
+        cenv.nameToAddr.contains n = true := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, unresolvedPublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2.1⟩
-
-/-- What `crossClaimed = none` says: no name of `resolved` outside `aux` is
-among `extras`, or among the constructors of the input inductives among them. -/
-theorem crossClaimed_none {env : Ix.Environment}
-    {resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
-    {extras : Std.HashSet Ix.Name} (h : crossClaimed env resolved aux extras = none) :
-    ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), resolved.get? n = some a →
-      aux.contains n = false → extras.contains n = false ∧ (extraCtors env extras).contains n = false := by
-  intro n a hn haux
-  unfold crossClaimed at h
-  rw [List.findSome?_eq_none_iff] at h
-  have hmem : (n, a) ∈ resolved.toList := by
-    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
-    exact hn
-  have hfind := h (n, a) hmem
-  dsimp only at hfind
-  cases he : extras.contains n <;> cases hc : (extraCtors env extras).contains n
-  · exact ⟨rfl, rfl⟩
-  all_goals simp [haux, he, hc] at hfind
-
-theorem set_foldl_insert_mono {l : List Ix.Name} {s : Std.HashSet Ix.Name} {n : Ix.Name}
-    (h : s.contains n = true) : (l.foldl (fun s c => s.insert c) s).contains n = true := by
-  induction l generalizing s with
-  | nil => exact h
-  | cons x l ih => exact ih (by rw [Std.HashSet.contains_insert, h, Bool.or_true])
-
-theorem set_foldl_insert_mem {l : List Ix.Name} {s : Std.HashSet Ix.Name} {c n : Ix.Name}
-    (hc : c ∈ l) (hcn : (c == n) = true) : (l.foldl (fun s c => s.insert c) s).contains n = true := by
-  induction l generalizing s with
-  | nil => cases hc
-  | cons x l ih =>
-    rw [List.foldl_cons]
-    rcases List.mem_cons.mp hc with rfl | hc
-    · exact set_foldl_insert_mono (by rw [Std.HashSet.contains_insert, hcn, Bool.true_or])
-    · exact ih hc
-
-/-- A fold over a list whose steps keep `n` in the set, and whose step at
-`e` puts it there, ends with `n` in the set when `e` is in the list. -/
-theorem foldl_contains_of {f : Std.HashSet Ix.Name → Ix.Name → Std.HashSet Ix.Name} {n e : Ix.Name}
-    (mono : ∀ s x, s.contains n = true → (f s x).contains n = true)
-    (hit : ∀ s, (f s e).contains n = true) :
-    ∀ (l : List Ix.Name) (s : Std.HashSet Ix.Name), e ∈ l → (l.foldl f s).contains n = true := by
-  have keep : ∀ (l : List Ix.Name) (s : Std.HashSet Ix.Name), s.contains n = true →
-      (l.foldl f s).contains n = true := by
-    intro l
-    induction l with
-    | nil => intro s h; exact h
-    | cons x l ih => intro s h; exact ih _ (mono s x h)
-  intro l
-  induction l with
-  | nil => intro _ h; cases h
-  | cons x l ih =>
-    intro s h
-    rw [List.foldl_cons]
-    rcases List.mem_cons.mp h with rfl | h
-    · exact keep _ _ (hit s)
-    · exact ih _ h
-
-/-- **The constructors of an inductive among the extra names are in
-`extraCtors`**: for an extra name `e` stored in the input as an inductive, a
-name that hashes like one of its constructors is in `extraCtors env extras`. -/
-theorem extraCtors_contains {env : Ix.Environment} {extras : Std.HashSet Ix.Name} {e c n : Ix.Name}
-    {iv : Ix.InductiveVal} (he : extras.contains e = true) (hi : env.consts.get? e = some (.inductInfo iv))
-    (hc : c ∈ iv.ctors) (hcn : (c == n) = true) : (extraCtors env extras).contains n = true := by
-  unfold extraCtors
-  rw [Std.HashSet.fold_eq_foldl_toList]
-  obtain ⟨e', he', ee'⟩ := List.contains_iff_exists_mem_beq.mp
-    ((Std.HashSet.contains_toList (m := extras)).trans he)
-  have hi' : env.consts.get? e' = some (.inductInfo iv) := by
-    rw [← hi, Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?]
-    exact (Std.HashMap.getElem?_congr ee').symm
-  refine foldl_contains_of (fun s x h => ?_) (fun s => ?_) _ _ he'
-  · split
-    · rw [← Array.foldl_toList]; exact set_foldl_insert_mono h
-    · exact h
-  · rw [hi']
-    dsimp only
-    rw [← Array.foldl_toList]
-    exact set_foldl_insert_mem (Array.mem_toList_iff.mpr hc) hcn
-
-/-- **No cross-SCC claims**: in the driver's final environment, which
-`compileUnchecked` returns, no resolved name outside the aux map is among the
-extra names, where a cross-SCC subset's merge puts its members, or among the
-constructors of the input inductives among them (`checkReport`'s tenth
-check). -/
-theorem noCrossClaims {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    (h : compileReport env = .ok (ixe, failures)) :
-    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-        cenv.auxNameToAddr.contains n = false → cenv.auxGenExtraNames.contains n = false ∧
-          (extraCtors env cenv.auxGenExtraNames).contains n = false := by
-  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, crossClaimed_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.1⟩
+  exact ⟨cenv, hu, unresolvedPublished_none (checkReport_ok hc).resolved⟩
 
 /-- What `misnamedInput = none` says: every input constant's own name is the
 name it is stored under. -/
@@ -1128,12 +1010,12 @@ theorem misnamedInput_none {env : Ix.Environment} (h : misnamedInput env = none)
 
 /-- **Input constants carry their names**: when `compileReport` returns,
 every input constant's own name is the name it is stored under
-(`checkReport`'s twelfth check). -/
+(`checkReport`'s ninth check). -/
 theorem inputsNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → ci.getCnst.name = n := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact misnamedInput_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1
+  exact misnamedInput_none (checkReport_ok hc).named
 
 /-- What `strayConstructor = none` says: every constructor name of an input
 inductive is stored as a constructor whose inductive hashes like the name the
@@ -1161,13 +1043,13 @@ theorem strayConstructor_none {env : Ix.Environment} (h : strayConstructor env =
 
 /-- **Input constructors belong to their inductive**: when `compileReport`
 returns, every constructor name of an input inductive is stored as a
-constructor of it (`checkReport`'s thirteenth check). -/
+constructor of it (`checkReport`'s tenth check). -/
 theorem ctorsBelong {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ (n : Ix.Name) (iv : Ix.InductiveVal), env.consts.get? n = some (.inductInfo iv) →
       ∀ c ∈ iv.ctors, ∃ cv, env.consts.get? c = some (.ctorInfo cv) ∧ (cv.induct == n) = true := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact strayConstructor_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.1
+  exact strayConstructor_none (checkReport_ok hc).constructors
 
 /-- What `strayFailure = none` says: every name `ungrounded` holds is one the
 input's map holds. -/
@@ -1191,58 +1073,13 @@ theorem strayFailure_none {env : Ix.Environment} {ungrounded : Std.HashMap Ix.Na
 
 /-- **Recorded failures are input names**: when `compileReport` returns,
 every name the driver's final environment records as a failure is one the
-input's map holds (`checkReport`'s fourteenth check). -/
+input's map holds (`checkReport`'s eleventh check). -/
 theorem failuresInput {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
       ∀ x, cenv.ungrounded.contains x = true → (env.consts.get? x).isSome = true := by
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.1⟩
-
-/-- What the identity check's success says: every row of one name
-key has one verdict and address, and every identical row is published there. -/
-theorem identityMismatch_none {identity : Array (Ix.Name × Bool × Address)} {ixe : Ixon.Env}
-    (h : identityMismatch identity ixe = none) :
-    (∀ x ∈ identity.toList, ∀ y ∈ identity.toList, (x.1 == y.1) = true → x.2 = y.2) ∧
-    (∀ n a, (n, true, a) ∈ identity.toList → (ixe.named.get? n).map (·.addr) = some a) := by
-  let first : Std.HashMap Ix.Name (Bool × Address) :=
-    identity.foldl (init := {}) fun m (n, s, a) => if m.contains n then m else m.insert n (s, a)
-  change identity.toList.find? (fun (n, s, a) =>
-    first.get? n != some (s, a) || (s && (ixe.named.get? n).map (·.addr) != some a)) = none at h
-  have checked : ∀ x ∈ identity.toList, first.get? x.1 = some x.2 ∧
-      (x.2.1 = true → (ixe.named.get? x.1).map (·.addr) = some x.2.2) := by
-    rintro ⟨n, same, a⟩ hx
-    have hx := Bool.eq_false_iff.mpr (List.find?_eq_none.mp h _ hx)
-    simp only [Bool.or_eq_false_iff] at hx
-    refine ⟨by simpa using hx.1, ?_⟩
-    intro hs
-    change same = true at hs
-    have hi := hx.2
-    rw [hs] at hi
-    simpa using hi
-  constructor
-  · intro x hx y hy same
-    have ex := (checked x hx).1
-    have ey := (checked y hy).1
-    rw [Std.HashMap.get?_eq_getElem?] at ex ey
-    have eq := Std.HashMap.getElem?_congr (m := first) same
-    rw [ex, ey] at eq
-    exact Option.some.inj eq
-  · intro n a hn
-    exact (checked (n, true, a) hn).2 rfl
-
-/-- **The compiler's identity rows agree**, and every identical row's compared
-address is the name's final published address (`checkReport`'s fifteenth
-check). The byte provenance of those comparisons is B9d's separate proof. -/
-theorem identityRowsAgree {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    (h : compileReport env = .ok (ixe, failures)) :
-    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      (∀ x ∈ cenv.auxReport.identity.toList, ∀ y ∈ cenv.auxReport.identity.toList,
-        (x.1 == y.1) = true → x.2 = y.2) ∧
-      (∀ n a, (n, true, a) ∈ cenv.auxReport.identity.toList →
-        (ixe.named.get? n).map (·.addr) = some a) := by
-  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, identityMismatch_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+  exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).failures⟩
 
 /-- What `projectionCollision = none` says: two stored definition projection
 records of one member are one address. -/
@@ -1270,13 +1107,13 @@ theorem projectionCollision_none {ixe : Ixon.Env} (h : projectionCollision ixe =
 
 /-- **One projection record per definition member**: when `compileReport`
 returns, two stored definition projection records of one member are one
-address (`checkReport`'s sixteenth check). -/
+address (`checkReport`'s twelfth check). -/
 theorem projectionsOne {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ e ∈ ixe.consts.toList, ∀ e' ∈ ixe.consts.toList, ∀ r a a',
       definitionProjection e = some (r, a) → definitionProjection e' = some (r, a') → a = a' := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact projectionCollision_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  exact projectionCollision_none (checkReport_ok hc).projections
 
 /-- What `unreadablePublished = none` says: every published input name's address
 holds a stored record whose bytes do not open with a block header. -/
@@ -1300,13 +1137,20 @@ theorem unreadablePublished_none {env : Ix.Environment} {ixe : Ixon.Env}
 
 /-- **Published input names are readable**: when `compileReport` returns, every
 published input name's address holds a stored record that is not a block
-(`checkReport`'s seventeenth check). -/
+(`checkReport`'s thirteenth check). -/
 theorem publishedReadable {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ n named, (n, named) ∈ ixe.named.toList → env.consts.contains n = true →
       ∃ lc, ixe.consts.get? named.addr = some lc ∧ blockHeader lc.rawBytes = false := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
-  exact unreadablePublished_none (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  exact unreadablePublished_none (checkReport_ok hc).readable
+
+/-- `parMap` is `Array.map`, whatever the tasks (`Ix.Cert.Schedule.slices_map`). -/
+theorem parMap_map {α β : Type} (f : α → β) (xs : Array α) : parMap f xs = xs.map f := by
+  unfold parMap
+  simp only [Array.map_map, Function.comp_def]
+  exact Ix.Cert.Schedule.slices_map _ xs _ _
+    (Ix.Cert.Schedule.chunks_cover xs.size recordTasks (by decide))
 
 /-! ## The theorems that hold now -/
 

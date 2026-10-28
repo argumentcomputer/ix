@@ -250,8 +250,8 @@ theorem nameEqImpl_eq (a b : Ix.Name) : nameEqImpl a b = decide (a = b) := by
 theorem nameEq_iff (a b : Ix.Name) : nameEq a b = true ↔ a = b := by
   simp [nameEq]
 
-/-- A key of the compiler's name tables (`CompileEnv.nameToAddr` and
-`auxNameToAddr`, `BlockState.blockNameToAddr` and `auxNameToAddr`): a name
+/-- A key of the compiler's name tables (`CompileEnv.nameToAddr`,
+`BlockState.blockNameToAddr`): a name
 compared structurally (`nameEq`, whose stored hash is only its fast path) and
 hashed by its stored hash. `Ix.Name`'s own `==` compares the stored hashes
 only, so a table keyed by it holds two names with one hash field as one entry

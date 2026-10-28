@@ -67,7 +67,7 @@ impl MetaRepr {
 
 /// One §5 named-entry window kept verbatim from the file: the
 /// `meta_len`-framed bytes holding the entry's metadata plus optional
-/// aux_gen original, in the *indexed* name encoding, together with the
+/// original form, in the *indexed* name encoding, together with the
 /// file's §4 reverse index to resolve name references. Built by
 /// [`Env::get_demoted_named`]'s lazy load path; decoded on demand
 /// through the grammar helpers in `serialize` (the same ones
@@ -182,10 +182,10 @@ pub struct Named {
   /// field). Private repr: structured, or demoted to serialized bytes —
   /// read through [`Self::meta`].
   meta: MetaRepr,
-  /// For aux_gen-rewritten constants: the original Lean constant's compiled
-  /// form (address + metadata). Ingress uses `addr`/`meta` (the canonical
-  /// aux_gen form). Decompile uses `original` for faithful roundtrip of
-  /// binder names and other cosmetic metadata.
+  /// An optional original form of the constant: a second compiled form
+  /// (address + metadata) recorded beside `addr`/`meta`, which ingress
+  /// uses. Serialization, pruning and diffing carry it as provenance; the
+  /// compiler does not record one.
   original: Option<(Address, MetaRepr)>,
 }
 
@@ -224,7 +224,7 @@ impl Named {
     self.meta.decode()
   }
 
-  /// The aux_gen original form, if recorded (see field docs).
+  /// The original form, if recorded (see field docs).
   pub fn original(&self) -> Option<(Address, Arc<ConstantMeta>)> {
     if let MetaRepr::Window(w) = &self.meta {
       debug_assert!(self.original.is_none());
@@ -261,7 +261,7 @@ impl Named {
     }
   }
 
-  /// Record the aux_gen original form. Stored in the same repr as
+  /// Record an original form. Stored in the same repr as
   /// `self.meta`, so demoted entries stay fully demoted.
   pub fn set_original(&mut self, addr: Address, meta: ConstantMeta) {
     self.materialize_window();
@@ -979,7 +979,7 @@ impl Env {
   ///   `named` entries (all of them — alpha-equivalent names may
   ///   share one address), the name components they reference (with
   ///   full parent chains and string-component blobs), `DataValue`
-  ///   payload blobs, `meta_refs` extension DAG edges, and aux_gen
+  ///   payload blobs, `meta_refs` extension DAG edges, and
   ///   `original` constants when the source stores them (a compiled
   ///   env never stores an original that differs from its canonical
   ///   address; the `Named` row keeps the address as provenance — see
@@ -1138,7 +1138,7 @@ impl Env {
 
   /// Whether a prune can resolve `addr` against this source under the
   /// cut `assumed`: the source stores it (constant or blob), or it is
-  /// a declared cut-point. Gates the aux_gen `original` edge (see
+  /// a declared cut-point. Gates the `original` edge (see
   /// [`Self::carry_named_entry`]).
   #[cfg(not(target_arch = "riscv64"))]
   pub(crate) fn holds_or_assumed(
@@ -1222,11 +1222,10 @@ impl Env {
   /// the `Named` row, its name's component chain, every
   /// metadata-referenced name component and blob, and (via
   /// `visited`/`pending`) any new constant DAG edges (`meta_refs`, and
-  /// aux `original`s the source holds) for the next value pass.
+  /// `original`s the source holds) for the next value pass.
   ///
-  /// An aux_gen `original` address is provenance, not a reference: the
-  /// compiler computes the Lean-source form's address but never stores
-  /// that constant (`compile_const_no_aux` is ephemeral). It is followed
+  /// An `original` address is provenance, not a reference: the constant
+  /// it names need not be stored. It is followed
   /// only when the source holds it or it is assumed
   /// ([`Self::holds_or_assumed`]); otherwise the `Named` row still carries
   /// the address and its metadata, exactly as the full env does.
@@ -2084,10 +2083,8 @@ mod tests {
     assert!(!anon.consts.contains_key(&even_c), "anon: value closure only");
   }
 
-  /// A regenerated auxiliary (`.rec`/`.below`/`.brecOn` of a reordered,
-  /// alpha-collapsed or nested block) records in `Named.original` the
-  /// address of Lean's source form, which the compiler never stores
-  /// (`compile_const_no_aux` is ephemeral). `Foo.rec` here is such an
+  /// A `Named.original` may record the address of a form the environment
+  /// does not store. `Foo.rec` here is such an
   /// entry, and `Bar.rec` shares its canonical constant (as `Nat.rec`
   /// does with an alpha-collapsed user recursor) with an original equal
   /// to its address. Packing either must succeed on both prune paths,

@@ -3,19 +3,17 @@ import Ix.CompileCert.RawRun
 
 /-! # A block's records are the block compile's
 
-`runBlockWithAux` compiles every block from Lean's own declarations. Its
-records are those of the block compile, a lone constant's
-`compileConstantInfo` or `compileMutualBlock` over the members in Lean's order
-(`sourceClasses`), run from the empty block state: the form the reading
-theorems take.
+`runBlock` compiles every block from Lean's own declarations. Its records are
+those of the block compile, a lone constant's `compileConstantInfo` or
+`compileMutualBlock` over the members in Lean's order (`sourceClasses`), run
+from the empty block state: the form the reading theorems take.
 
-* `runBlockWithAux_compiles`: a block's records are those of
-  `compileBlockWithAux` run from the empty block state;
-* `compileBlockWithAux_result`, `compileBlockWithAux_records`,
-  `runBlockWithAux_records`: and those are the block compile's (the member
-  lookups and `MutConst.mkIndc` change no state, `mkIndc_preserves`). The
-  block's `Muts` entry is registered after its `BlockResult` is computed,
-  which it returns as it is (`Returns`). -/
+* `runBlock_compiles`: a block's records are those of `compileBlock` run from
+  the empty block state;
+* `compileBlock_result`, `compileBlock_records`, `runBlock_records`: and those
+  are the block compile's (the member lookups and `MutConst.mkIndc` change no
+  state, `mkIndc_preserves`). The block's `Muts` entry is registered after its
+  `BlockResult` is computed, which it returns as it is (`Returns`). -/
 
 namespace Ix.Cert.BlockRecords
 
@@ -27,22 +25,14 @@ def recordsOf (r : BlockResult) :
     Ixon.Constant × ByteArray × Address × Array (Ix.Name × Ixon.Constant) :=
   (r.block, r.blockBytes, r.blockAddr, r.projections.map fun p => (p.1, p.2.1))
 
-/-- **A block compiles as `compileBlockWithAux`**, from the empty block state. -/
-theorem runBlockWithAux_compiles {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
-    {r : BlockResult} {cache : BlockState} {layout? : Option Ixon.AuxLayout}
-    (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?)) :
+/-- **A block compiles as `compileBlock`**, from the empty block state. -/
+theorem runBlock_compiles {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
+    {r : BlockResult} {cache : BlockState}
+    (h : runBlock cenv all lo = .ok (r, cache)) :
     CompileM.run cenv { all, current := lo, mutCtx := default, univCtx := [] } {}
-      (compileBlockWithAux lo all) = .ok ((r, layout?), cache) := by
-  unfold runBlockWithAux at h
-  simp only [bind, Except.bind] at h
-  split at h
-  · cases h
-  · rename_i v hv
-    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, rfl, rfl⟩ := h
-    rw [hv]
+      (compileBlock lo all) = .ok (r, cache) := h
 
-/-! ## What `compileBlockWithAux` returns -/
+/-! ## What `compileBlock` returns -/
 
 open Ix.CompileCert (rawRun rawRun_pure bind_ok)
 
@@ -133,14 +123,14 @@ theorem mkIndc_preserves (val : InductiveVal) : Preserves id (MutConst.mkIndc va
   unfold MutConst.mkIndc
   exact Preserves.bind (collectMutConstConstructors_preserves _ _) fun _ => Preserves.pure id _
 
-/-- **The block `compileBlockWithAux` returns is the block compile's**: a
+/-- **The block `compileBlock` returns is the block compile's**: a
 lone non-inductive constant's `compileConstantInfo`, or the mutual block
 `compileMutualBlock` compiled from the members in Lean's order
 (`sourceClasses`), up to the class order it records (the `Muts` entry is
 registered after it and returns it as it is). -/
-theorem compileBlockWithAux_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
-    {s s' : BlockState} {r : BlockResult} {layout? : Option Ixon.AuxLayout}
-    (h : rawRun (compileBlockWithAux lo all) ctx s = (.ok (r, layout?), s')) :
+theorem compileBlock_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
+    {s s' : BlockState} {r : BlockResult}
+    (h : rawRun (compileBlock lo all) ctx s = (.ok r, s')) :
     ∃ const s₁, rawRun (findConst lo) ctx s = (.ok const, s₁) ∧
       ((∃ s₂, rawRun (compileConstantInfo const) ctx s₁ = (.ok r, s₂)) ∨
         ∃ cs s₂ out s₄, rawRun (forIn all #[] fun n (acc : Array Ix.MutConst) => do
@@ -153,23 +143,20 @@ theorem compileBlockWithAux_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name}
             | _ => pure (ForInStep.yield acc)) ctx s₁ = (.ok cs, s₂) ∧
           rawRun (compileMutualBlock (sourceClasses cs)) ctx s₂ = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
-  unfold compileBlockWithAux at h
+  unfold compileBlock at h
   obtain ⟨const, s₁, hc, h⟩ := bind_ok h
   refine ⟨const, s₁, hc, ?_⟩
   rcases rawRun_ite h with h | h
   · left
-    obtain ⟨result, s₂, hr, h⟩ := bind_ok h
-    rw [rawRun_pure] at h
-    cases h
-    exact ⟨_, hr⟩
+    exact ⟨_, h⟩
   · right
     obtain ⟨cs, s₂, hcs, h⟩ := bind_ok h
     obtain ⟨out, s₄, hout, h⟩ := bind_ok h
     refine ⟨cs, s₂, out, s₄, hcs, hout, ?_⟩
     revert h
     refine Returns.elim
-      (P := fun (x : BlockResult × Option Ixon.AuxLayout) =>
-        recordsOf x.1 = recordsOf out) ?_
+      (P := fun (x : BlockResult) =>
+        recordsOf x = recordsOf out) ?_
     repeat returns_step
 
 
@@ -188,20 +175,20 @@ theorem forIn_set_state {γ : Type} {all : Ix.Set Ix.Name} {init : γ} {body : I
   rw [← Std.HashSet.forIn_eq_forIn_toList, h] at key
   exact key
 
-/-- **`compileBlockWithAux_result` from the state it starts in**: the
+/-- **`compileBlock_result` from the state it starts in**: the
 member lookups and the members' loop change no state, so the block compile
 (a lone constant's, or `compileMutualBlock` over the members in Lean's order)
-runs from the state `compileBlockWithAux` starts from, the empty one in
-`runBlockWithAux`. -/
-theorem compileBlockWithAux_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
-    {s s' : BlockState} {r : BlockResult} {layout? : Option Ixon.AuxLayout}
-    (h : rawRun (compileBlockWithAux lo all) ctx s = (.ok (r, layout?), s')) :
+runs from the state `compileBlock` starts from, the empty one in
+`runBlock`. -/
+theorem compileBlock_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
+    {s s' : BlockState} {r : BlockResult}
+    (h : rawRun (compileBlock lo all) ctx s = (.ok r, s')) :
     ∃ const, ctx.1.env.get? lo = some const ∧
       ((∃ s₂, rawRun (compileConstantInfo const) ctx s = (.ok r, s₂)) ∨
         ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s₄ : BlockState),
           rawRun (compileMutualBlock (sourceClasses cs)) ctx s = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
-  obtain ⟨const, s₁, hc, rest⟩ := compileBlockWithAux_result h
+  obtain ⟨const, s₁, hc, rest⟩ := compileBlock_result h
   have h₁ : s₁ = s := by
     have := findConst_preserves lo ctx s
     rw [hc] at this
@@ -219,13 +206,13 @@ theorem compileBlockWithAux_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name
     exact .inr ⟨cs, out, s₄, hout, same⟩
 
 /-- **A block publishes the block compile's records**: the records
-`runBlockWithAux` returns are those of the lone constant's
+`runBlock` returns are those of the lone constant's
 `compileConstantInfo`, or of `compileMutualBlock` over the members in Lean's
 order (`sourceClasses`), each run from the empty block state in the block's
 environment. -/
-theorem runBlockWithAux_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
-    {r : BlockResult} {cache : BlockState} {layout? : Option Ixon.AuxLayout}
-    (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?)) :
+theorem runBlock_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
+    {r : BlockResult} {cache : BlockState}
+    (h : runBlock cenv all lo = .ok (r, cache)) :
     ∃ const, cenv.env.get? lo = some const ∧
       ((∃ (r' : BlockResult) (s₂ : BlockState), rawRun (compileConstantInfo const)
           (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok r', s₂) ∧
@@ -235,7 +222,7 @@ theorem runBlockWithAux_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo :
             (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
   obtain ⟨const, found, rest⟩ :=
-    compileBlockWithAux_records (Ix.CompileCert.run_success (runBlockWithAux_compiles h))
+    compileBlock_records (Ix.CompileCert.run_success (runBlock_compiles h))
   refine ⟨const, found, ?_⟩
   rcases rest with ⟨s₂, single⟩ | ⟨cs, out, s₄, block, same⟩
   · exact .inl ⟨r, s₂, single, rfl⟩

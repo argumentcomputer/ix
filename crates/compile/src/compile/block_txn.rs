@@ -3,62 +3,40 @@
 //! and its claims pass).
 //!
 //! The Rust compiler publishes a block's results into the shared compile
-//! state as it goes: the primary projections are registered before the
-//! auxiliary tail runs, and the tail registers its auxiliaries as each one
-//! compiles. While a scheduled block compiles, every name it newly enters
-//! into a published table is logged here (thread-local: a block compiles on
-//! one thread), and the names it would release to the scheduler early are
-//! deferred to the block's end. Original metadata and hint writes are staged
-//! until [`commit`] has checked every promotion claim. When the block fails,
-//! [`rollback`] removes exactly what it entered, so nothing of it is visible
-//! to a dependent, which then fails with a missing constant, as on the Lean
-//! side, and the deferred names are dropped (the Lean drivers release nothing
-//! of a failed block).
+//! state as it goes: each member's projection is registered as it compiles.
+//! While a scheduled block compiles, every name it newly enters into a
+//! published table is logged here (thread-local: a block compiles on one
+//! thread), and its hint writes are staged until [`commit`]. When the block
+//! fails, [`rollback`] removes exactly what it entered, so nothing of it is
+//! visible to a dependent, which then fails with a missing constant, as on
+//! the Lean side.
 //!
 //! Only names a block *newly* entered are logged (an insert into a vacant
 //! entry), so a name another block owns (an identical re-claim) is never
 //! removed. Nor is its `Named` entry ever replaced: an identical re-claim
-//! does not own the entry ([`holds_compiled_claim`], [`holds_aux_claim`]),
-//! so the re-claiming block registers nothing for it, and its rollback has
-//! nothing of the owner's to restore (`CompileState::claim_and_register_*`).
+//! does not own the entry ([`holds_compiled_claim`]), so the re-claiming
+//! block registers nothing for it, and its rollback has nothing of the
+//! owner's to restore (`CompileState::claim_and_register_compiled`).
 //! Anonymous constants and blobs the failed block stored stay in the
 //! content-addressed tables: no name refers to them, and another block may
 //! have stored the same content.
 
 use std::cell::RefCell;
 
-use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
-use ixon::CompileError;
-use ixon::metadata::ConstantMeta;
 use rustc_hash::FxHashMap;
 
 use super::CompileState;
 
-pub struct Promotion {
-  pub name: Name,
-  pub addr: Address,
-  pub meta: ConstantMeta,
-}
-
 /// What a block entered into the published tables.
 #[derive(Default)]
 pub struct BlockTxn {
-  /// Original metadata is not published until the entire block succeeds.
-  /// A source family can include members outside the scheduled block;
-  /// rolling back old snapshots could otherwise overwrite another worker's
-  /// promotion.
-  pub promotions: Vec<Promotion>,
   /// Final per-name hints, including removals, before publication.
   pub hints: FxHashMap<Name, Option<ReducibilityHints>>,
   /// Names newly registered in `env.named`.
   pub named: Vec<Name>,
   /// Names newly entered into `name_to_addr`.
   pub compiled: Vec<Name>,
-  /// Names newly entered into `aux_name_to_addr`.
-  pub aux: Vec<Name>,
-  /// Names the block would have released to the scheduler early.
-  pub pending: Vec<Name>,
 }
 
 thread_local! {
@@ -87,47 +65,15 @@ pub fn log_named(n: &Name) {
   with(|x| x.named.push(n.clone()));
 }
 
-/// Stage original metadata while a transaction is active. Outside a scheduled
-/// block, return the payload to the direct caller for immediate promotion.
-pub fn defer_promotion(promotion: Promotion) -> Option<Promotion> {
-  TXN.with(|t| match t.borrow_mut().as_mut() {
-    Some(x) => {
-      x.promotions.push(promotion);
-      None
-    },
-    None => Some(promotion),
-  })
-}
-
-/// Called only after every fallible check. Set the original metadata on the
-/// Named entry present now, not an earlier snapshot of another worker's entry.
-pub fn publish_promotion(stt: &CompileState, p: Promotion) {
-  if let Some(mut entry) = stt.env.named.get_mut(&p.name) {
-    entry.value_mut().set_original(p.addr, p.meta);
-  }
-}
-
-/// Check every address claim before publishing any original metadata. Claims
-/// entered here remain in the active transaction's rollback log on error.
-/// No existing metadata is restored from an earlier concurrent snapshot.
-pub fn commit(stt: &CompileState) -> Result<(), CompileError> {
-  let (promotions, hints) = TXN.with(|t| {
+/// Publish the active block's staged hints. Called only once the block has
+/// compiled.
+pub fn commit(stt: &CompileState) {
+  let hints = TXN.with(|t| {
     t.borrow_mut()
       .as_mut()
-      .map(|x| {
-        (std::mem::take(&mut x.promotions), std::mem::take(&mut x.hints))
-      })
+      .map(|x| std::mem::take(&mut x.hints))
       .unwrap_or_default()
   });
-  for p in &promotions {
-    let addr = stt.aux_name_to_addr.get(&p.name).map(|r| r.value().clone());
-    if let Some(addr) = addr {
-      stt.claim_compiled_name(&p.name, &addr)?;
-    }
-  }
-  for p in promotions {
-    publish_promotion(stt, p);
-  }
   for (n, hint) in hints {
     match hint {
       Some(h) => {
@@ -138,11 +84,10 @@ pub fn commit(stt: &CompileState) -> Result<(), CompileError> {
       },
     }
   }
-  Ok(())
 }
 
-/// Preserve the compiler's last write, without exposing a failed original
-/// compilation's hints (including writes for other source-family members).
+/// Preserve the compiler's last write, without exposing a failed block's
+/// hints.
 pub fn defer_hint(n: &Name, hint: Option<ReducibilityHints>) -> bool {
   TXN.with(|t| match t.borrow_mut().as_mut() {
     Some(x) => {
@@ -163,10 +108,6 @@ pub fn log_compiled(n: &Name) {
   with(|x| x.compiled.push(n.clone()));
 }
 
-pub fn log_aux(n: &Name) {
-  with(|x| x.aux.push(n.clone()));
-}
-
 /// Whether the active transaction entered `n` into `name_to_addr` itself
 /// ([`log_compiled`]): an identical re-claim later in the same block still
 /// owns the name's `Named` entry. `false` outside a transaction. Read only on
@@ -174,32 +115,6 @@ pub fn log_aux(n: &Name) {
 /// path.
 pub fn holds_compiled_claim(n: &Name) -> bool {
   TXN.with(|t| t.borrow().as_ref().is_some_and(|x| x.compiled.contains(n)))
-}
-
-/// Whether the active transaction entered `n` into `aux_name_to_addr`
-/// itself ([`log_aux`]); see [`holds_compiled_claim`].
-pub fn holds_aux_claim(n: &Name) -> bool {
-  TXN.with(|t| t.borrow().as_ref().is_some_and(|x| x.aux.contains(n)))
-}
-
-/// Defer the release of `names` to the end of the block while logging;
-/// returns them back when no log is active (release now).
-pub fn defer_pending(names: Vec<Name>) -> Option<Vec<Name>> {
-  TXN.with(|t| match t.borrow_mut().as_mut() {
-    Some(x) => {
-      x.pending.extend(names);
-      None
-    },
-    None => Some(names),
-  })
-}
-
-/// Release `names` to the scheduler: at the end of the block when a log is
-/// active ([`defer_pending`]), now otherwise.
-pub fn release_pending(stt: &CompileState, names: Vec<Name>) {
-  if let Some(names) = defer_pending(names) {
-    stt.aux_gen_pending.lock().unwrap().extend(names);
-  }
 }
 
 /// Remove what a failed block entered into the published tables.
@@ -212,25 +127,17 @@ pub fn rollback(stt: &CompileState, txn: &BlockTxn) {
     stt.name_to_addr.remove(n);
     stt.blocks.remove(n);
   }
-  for n in &txn.aux {
-    stt.aux_name_to_addr.remove(n);
-    stt.aux_gen_extra_names.remove(n);
-    stt.blocks.remove(n);
-  }
 }
 
-/// End the block's log: on success commit its staged promotions and hints
-/// ([`commit`]) and release its deferred names to the scheduler; on failure,
-/// a failed commit included, roll back what it entered and drop the deferred
-/// names. Returns the commit's error, if the block had compiled.
-pub fn finish(stt: &CompileState, failed: bool) -> Result<(), CompileError> {
-  let committed = if failed { Ok(()) } else { commit(stt) };
-  if let Some(txn) = take() {
-    if failed || committed.is_err() {
-      rollback(stt, &txn);
-    } else if !txn.pending.is_empty() {
-      stt.aux_gen_pending.lock().unwrap().extend(txn.pending);
-    }
+/// End the block's log: on success publish its staged hints ([`commit`]);
+/// on failure roll back what it entered and drop its hints.
+pub fn finish(stt: &CompileState, failed: bool) {
+  if !failed {
+    commit(stt);
   }
-  committed
+  if let Some(txn) = take()
+    && failed
+  {
+    rollback(stt, &txn);
+  }
 }

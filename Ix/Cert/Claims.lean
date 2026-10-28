@@ -5,7 +5,7 @@ import Ix.CompileCert.Canon.Refine
 
 /-! # The names a block's compile claims
 
-A block's compile (`Ix.runBlockWithAux`) claims the names of its result's
+A block's compile (`Ix.CompileM.runBlock`) claims the names of its result's
 projections (`Ix.Cert.Resolution.claimWrites`), or its key when there are
 none. This file shows that each of them is a member's name or the name of a
 constructor an inductive member lists:
@@ -16,7 +16,7 @@ constructor an inductive member lists:
 * a mutual block's projections carry its members' names and their
   constructors' (`mutualBlock_names`), and a lone constant other than an
   inductive or a constructor has none (`constantInfo_lone`);
-* so `runBlock`'s projections carry those names (`runBlockWithAux_owned`,
+* so `runBlock`'s projections carry those names (`compileBlock_names`,
   `runBlock_owned`). -/
 
 namespace Ix.Cert.Claims
@@ -621,22 +621,19 @@ theorem mem_sourceClasses {cs : Array MutConst} {c : List MutConst} {x : MutCons
 constant's compile has none (`constantInfo_lone`), and the mutual compile's
 are its sources' (`mutualBlock_names`), which Lean's order only arranges
 (`mem_sourceClasses`) and which the members loop reads (`members_post`). -/
-theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {all : Ix.Set Name}
-    {s s' : BlockState} {r : BlockResult} {layout? : Option Ixon.AuxLayout}
-    (h : rawRun (compileBlockWithAux lo all) ctx s = (.ok (r, layout?), s')) :
+theorem compileBlock_names {ctx : CompileEnv × BlockEnv} {lo : Name} {all : Ix.Set Name}
+    {s s' : BlockState} {r : BlockResult}
+    (h : rawRun (compileBlock lo all) ctx s = (.ok r, s')) :
     ∀ row ∈ r.projections, MemberName ctx.1.env all row.1 := by
-  unfold compileBlockWithAux at h
+  unfold compileBlock at h
   obtain ⟨const, s₁, hc, h⟩ := bind_ok h
   dsimp only at h
   -- the kind test, then the lone test
   split at h <;> split at h
   all_goals first
     | (rename_i hcond; simp at hcond; done)
-    | (obtain ⟨result, s₂, hr, h⟩ := bind_ok h
-       have none := constantInfo_lone _ (by assumption) (by assumption)
-         ctx s₁ result s₂ hr
-       rw [rawRun_pure] at h
-       cases h
+    | (have none := constantInfo_lone _ (by assumption) (by assumption)
+         ctx s₁ r s' h
        intro row hrow
        rw [none] at hrow
        exact absurd hrow (by simp))
@@ -645,8 +642,8 @@ theorem compileBlockWithAux_names {ctx : CompileEnv × BlockEnv} {lo : Name} {al
        have same : Ix.Cert.BlockRecords.recordsOf r = Ix.Cert.BlockRecords.recordsOf out := by
          revert h
          refine Ix.Cert.BlockRecords.Returns.elim
-           (P := fun (x : BlockResult × Option Ixon.AuxLayout) =>
-             Ix.Cert.BlockRecords.recordsOf x.1 = Ix.Cert.BlockRecords.recordsOf out) ?_
+           (P := fun (x : BlockResult) =>
+             Ix.Cert.BlockRecords.recordsOf x = Ix.Cert.BlockRecords.recordsOf out) ?_
          repeat returns_step
        have members := members_post ctx all s₁ cs s₂ hcs
        have names := mutualBlock_names (sourceClasses cs) ctx s₂ out s₄ hout
@@ -709,35 +706,19 @@ theorem memberName_owned {E E' : Ix.Environment} {all : Ix.Set Name} {x : Name} 
     rw [Std.HashSet.contains_congr hn₀]
     exact hin
 
-/-- **The claims of a block compile**: every projection name of
-`runBlockWithAux cenv all lo` hashes like a member of `all` or like a
-constructor an inductive member lists, when every constant of the environment
-carries its name (`compileBlockWithAux_names`). -/
-theorem runBlockWithAux_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
-    {cache : BlockState} {layout? : Option Ixon.AuxLayout}
-    (hn : NamedEnv cenv.env) (h : runBlockWithAux cenv all lo = .ok (r, cache, layout?)) :
-    ∀ row ∈ r.projections, Owned cenv.env all row.1 := by
-  unfold runBlockWithAux at h
-  obtain ⟨⟨⟨result, layout'⟩, cache'⟩, hrun, h⟩ := Ix.CompileCert.Loop.except_bind_ok.1 h
-  try dsimp only at h
-  have hr : r = result := by
-    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-    exact h.1.symm
-  subst hr
-  have names := compileBlockWithAux_names (Ix.CompileCert.run_success hrun)
-  intro row hrow
-  exact memberName_owned (Agrees.refl _) hn (names row hrow)
-
 end claims
 
 /-- **The claims of a block compile**: every projection name of
 `runBlock cenv all lo` hashes like a member of `all` or like a constructor an
 inductive member lists, when every constant of `cenv.env` carries its name
-(`runBlockWithAux_owned`). -/
+(`compileBlock_names`). -/
 theorem runBlock_owned {cenv : CompileEnv} {all : Ix.Set Name} {lo : Name} {r : BlockResult}
-    {cache : BlockState} {layout? : Option Ixon.AuxLayout}
-    (hn : NamedEnv cenv.env) (h : runBlock cenv all lo = .ok (r, cache, layout?)) :
-    ∀ row ∈ r.projections, Owned cenv.env all row.1 :=
-  runBlockWithAux_owned hn h
+    {cache : BlockState}
+    (hn : NamedEnv cenv.env) (h : runBlock cenv all lo = .ok (r, cache)) :
+    ∀ row ∈ r.projections, Owned cenv.env all row.1 := by
+  have names := compileBlock_names
+    (Ix.CompileCert.run_success (Ix.Cert.BlockRecords.runBlock_compiles h))
+  intro row hrow
+  exact memberName_owned (Agrees.refl _) hn (names row hrow)
 
 end Ix.Cert.Claims

@@ -11,9 +11,8 @@ declined such blocks; it now tests the field after rewriting its carriers
 into the auxiliary family, whose install by the fold tests positivity after
 whnf, as Lean does.
 
-The blocks are built with `addDecl`, as lane P's reproducer
-(`Tests/Ix/Compile/AuxCert/NestedSortUK.lean`), and checked by Lean's kernel
-when this module builds:
+The blocks are built with `addDecl` and checked by Lean's kernel when this
+module builds:
 
 * `V : Type`: nested through `BoxT : Type → Type`,
   `V.mk : K True (BoxT V) → V`, whose expanded block has the auxiliary
@@ -22,7 +21,7 @@ when this module builds:
 * `A`, `B`: mutual, `A.mk : K True B → A` (the modeller's mutual rung);
 * `S`: a single inductive, `S.mk : K True S → S` (the native route, which
   already tests after whnf: a regression check);
-* `T`, `U`: lane P's reproducer and aux-cert's `NestedSortU`, nested at
+* `T`, `U`: nested at
   `Sort u` through the `Sort u`-polymorphic `Box`. Lean gives them a
   `Prop`-only recursor (the level may be zero and the expanded block has two
   members), and the modeller declines a non-`Prop` nested block with a small
@@ -69,7 +68,7 @@ run_meta do
     InductiveType.mk `Tests.Ix.Kernel.SourceIngressReducedDefs.T (mkSort u) [ctor]
   addDecl (Declaration.inductDecl [`u] 0 [it] false)
 
--- `U.{u} : Sort u` with `mk : K' (Box U) → U` (aux-cert's `NestedSortU`).
+-- `U.{u} : Sort u` with `mk : K' (Box U) → U`.
 run_meta do
   let u : Level := Level.param `u
   let t := mkConst `Tests.Ix.Kernel.SourceIngressReducedDefs.U [u]
@@ -159,7 +158,7 @@ end Tests.Ix.Kernel.SourceIngressReducedDefs
 
 /-! ## A field whose recursive occurrence whnf reveals
 
-The converse case (aux-cert's `SurgAlias`, AuxGen M3): `C.a : Id' D → C`
+The converse case: `C.a : Id' D → C`
 mentions the mutual member `D` only behind a reducible alias, which Lean's
 kernel unfolds before it tests positivity, so the field is recursive and
 Lean's `C.rec` gives it an inductive hypothesis. The modeller's mutual rung

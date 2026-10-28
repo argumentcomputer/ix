@@ -134,7 +134,7 @@ fn differing_flags_do_not_hide_comparison_errors() {
 
 #[test]
 fn recursion_flag_validation_still_rejects_before_compilation() {
-  use super::aux_gen::nested::validate_lean_ind_flags;
+  use super::ind_flags::validate_lean_ind_flags;
   let good = empty_ind("C6Empty");
   assert!(validate_lean_ind_flags(&env_of(&good)).is_ok());
   let mut bad = good.clone();

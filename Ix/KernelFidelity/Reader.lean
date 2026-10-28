@@ -96,11 +96,11 @@ No reader defect is known. Every difference on the fixture closure and on all of
     on Init and Std: `GT.gt`, `GE.ge`, `id`, …);
   - the modeller's generated records (`Read.generated`) have no Lean
     counterpart; they are counted, not compared.
-* **Ixon canonicalizations** of the compiler (`Ix.CompileM`, `Ix.AuxGen`):
-  - *auxiliary regenerated*: `Named.original` is set: the compiler
-    regenerated the constant in canonical form (the recursors, `recOn`,
-    `below`, `brecOn` of a mutual block, whose members it orders
-    canonically), so its record is not Lean's term.
+* **Ixon canonicalizations** of an artifact's compiler:
+  - *auxiliary regenerated*: `Named.original` is set: the constant was
+    regenerated in canonical form, so its record is not Lean's term. The
+    compiler (`Ix.CompileM`) compiles Lean's declarations as given and sets
+    no `Named.original`; the class covers artifacts that carry one.
   These must still agree with the reference on kind, name, level parameters and
   counts (`weakAgree`); Ix.Tc's meta roundtrip skips the same classes. A
   block whose recursors are regenerated may also be in the compiler's member

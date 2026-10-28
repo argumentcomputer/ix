@@ -268,11 +268,11 @@ theorem Safe.step (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
         Safe.seq (Safe.internRef address) fun _ => Safe.finishReference _ _ _
   | app fn arg hash =>
     rw [ExpressionState.app_step_eq]
-    refine Safe.seq (each _ (Ix.AuxGen.decomposeApps_app_head_lt fn arg hash)) (fun head => ?_)
+    refine Safe.seq (each _ (Ix.CompileM.decomposeApps_app_head_lt fn arg hash)) (fun head => ?_)
     rw [forIn'_eq_forIn _ _ _ (fun x acc => ExpressionState.appBody compile acc x) (fun _ _ _ => rfl)]
     refine Safe.seq (Safe.forIn_array _ _ _ (fun x member acc => ?_)) (fun _ => Safe.pure _)
     unfold ExpressionState.appBody
-    exact Safe.seq (each x (Ix.AuxGen.decomposeApps_app_mem_lt fn arg hash member)) fun _ =>
+    exact Safe.seq (each x (Ix.CompileM.decomposeApps_app_mem_lt fn arg hash member)) fun _ =>
       Safe.seq (Safe.alloc _) fun _ => Safe.pure _
   | lam name type body info hash =>
     rw [show ExpressionState.step compile (.lam name type body info hash) = _ from

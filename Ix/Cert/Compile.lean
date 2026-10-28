@@ -1,6 +1,8 @@
 module
 
 public import Ix.CompileDriver
+public import IxC.Kernel.Ixon.Reader
+public import IxC.Kernel.Ixon.Prelude
 
 /-! # The compiler as a pure function
 
@@ -36,8 +38,7 @@ What the IO pipeline does that this function does not:
   inspects semantic contracts and canonicalizes (`Ix.CanonM`) itself;
 * it compiles against a hybrid environment, in which theorem and opaque
   bodies are canonicalized again on demand (`fallback?`) instead of
-  materialized, and passes the count of constants it leaves to the fallback
-  (`compileEnvFold`'s `unmaterialized`);
+  materialized;
 * it splits each wave of the driver into four tasks per `--workers` (the
   value does not depend on the split) and
   takes the sharing limits from its options (`DriverOptions`);
@@ -48,8 +49,7 @@ What the IO pipeline does that this function does not:
 filter removed, with its named refusal (`Ix.GroundError.refusal`, the text
 the IO pipeline and the Rust compiler record), and every constant of a block
 that failed to compile, with the driver's error (`CompileEnv.ungrounded`: the
-block's own failure, including a refused claim or payload and a failed
-promotion or cross-SCC subset, which withdraws the whole block, or a
+block's own failure, including a refused claim or payload, or a
 dependent's `MissingConstant`). `compile` is its first component, so a
 failure leaves the result defined; `compileComplete` (the policy
 `requireComplete`) makes any failure an error instead.
@@ -122,8 +122,8 @@ structure Failures where
 /-- The compile and its failures, before `compileReport`'s checks, with the
 driver's compile environment at the end of the fold, whose maps the checks
 read: the resolution map (`CompileEnv.nameToAddr`: the address each name the
-compile registered resolves to), the aux map (`CompileEnv.auxNameToAddr`), the
-extra names (`CompileEnv.auxGenExtraNames`). A block that fails to compile is recorded, with its
+compile registered resolves to) and the recorded failures
+(`CompileEnv.ungrounded`). A block that fails to compile is recorded, with its
 dependents, and left out of the environment; the result is an error only when
 the driver itself fails (a refused input, or a condensation it cannot
 schedule). -/
@@ -144,16 +144,6 @@ exactly these blocks (its `blocks`, by `rfl`; it computes the ground split
 once, for its failures too). -/
 @[expose] def compileBlocks (env : Ix.Environment) : Ix.CondensedBlocks :=
   Ix.CondenseM.run (groundSplit { consts := env.consts }).1
-
-/-- **The compile's aux table**: the driver's verdicts, on bytes, on the
-regenerated auxiliaries (`Ix.AuxGen.AuxTable`, from the report of
-`compileUnchecked`'s final compile environment); the empty
-table when the compile fails (every regenerated auxiliary then counts as not
-identical). -/
-@[expose] def compileTable (env : Ix.Environment) : Ix.AuxGen.AuxTable :=
-  match compileUnchecked env with
-  | .ok (_, _, cenv) => cenv.auxReport.table
-  | .error _ => {}
 
 /-- The compile reports `n` as failed: the ground filter removed it, or its
 block failed to compile. -/
@@ -587,12 +577,11 @@ with no mismatch they are the block's own, as its projections publish them. -/
 address, the first met, if any: the name, the address it resolves to
 (`resolved`, the driver's resolution map at the end of the fold,
 `CompileEnv.nameToAddr`), and the address `ixe.named` publishes it at, if
-any. A block's merge registers its names in both tables at one address. The
-aux tail's `Named` entries, registered after code no proof can follow
-(AuxGen's `partial` definitions), are merged after them and override a
-name's entry, so a later block could leave a name published at another
-address than the one the compile resolved it to. With no mismatch, every
-name the compile resolves is published at that address. -/
+any. A block's merge registers its names in both tables at one address, and
+later merges (another block's names, or its `Muts` entry) write `ixe.named`
+without the resolution map's single-ownership check, so a name could end
+published at another address than the one the compile resolved it to. With no
+mismatch, every name the compile resolves is published at that address. -/
 @[expose] def resolutionMismatch (resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
     (ixe : Ixon.Env) : Option (Ix.Name × Address × Option Address) :=
   resolved.toList.findSome? fun (n, a) =>
@@ -606,15 +595,12 @@ name the compile resolves is published at that address. -/
     | .muts .. => s.insert named.addr
     | _ => s
 
-/-- A published input inductive whose component the changed set cannot see,
-the first met, if any: one whose published record is not an inductive
-projection, or whose block has no `Muts` entry published at its address
-(`mutsAddrs`). The changed set reads an inductive component only through its
-block's `Muts` entry, which the aux tail
-registers before code no proof can follow (AuxGen's `partial` definitions),
-and a later `Named` entry may override. With none, every published input
-inductive's block has its `Muts` entry, so no component escapes the changed
-set's classifier. -/
+/-- A published input inductive whose block a reader cannot find, the first
+met, if any: one whose published record is not an inductive projection, or
+whose block has no `Muts` entry published at its address (`mutsAddrs`).
+Kernel ingress finds an inductive's block only through the block's `Muts`
+entry, which a later `Named` entry may override. With none, every published
+input inductive's block has its `Muts` entry. -/
 @[expose] def unseenInductive (env : Ix.Environment) (ixe : Ixon.Env) : Option Ix.Name :=
   let muts := mutsAddrs ixe
   env.consts.toList.findSome? fun (n, ci) =>
@@ -628,62 +614,17 @@ set's classifier. -/
         | _ => some n
     | _ => none
 
-/-- The first input name of the driver's final aux map (`aux`,
-`CompileEnv.auxNameToAddr`) that is not published with an original-form
-record (`Named.original`), if any. A name resolves through the aux map when
-another block's aux tail compiled it (AuxGen's `partial` code, which no proof
-follows), and its promotion grafts the original-form compile's record onto
-its entry (`promoteAuxWrites`); the remaining members of a promoted block
-(`promoteRemainingWrites`) get none. With no such name, every input name the
-aux map resolves has an original-form record, which the classifier's
-regenerated rule reads (B9d), and every other resolved input name is a
-primary claim of its own block's compile (`Ix.Cert.Resolution`). -/
-@[expose] def unoriginalAux (env : Ix.Environment)
-    (aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (ixe : Ixon.Env) : Option Ix.Name :=
-  aux.toList.findSome? fun (n, _) =>
-    if env.consts.contains n && !((ixe.named.get? n).any (·.original.isSome)) then some n else none
-
-/-- The first input name published in `ixe` that is neither in the driver's
-final resolution map (`resolved`) nor in its final aux map (`aux`), if any. A
-`Named` entry can come from a block's aux tail (`BlockState.auxNamed`, written
-after AuxGen's `partial` code, which no proof follows), so publication alone
-says nothing of where a name's record came from. With no such name, every
-published input name is a primary claim of a block compiled during the fold
-(`Ix.Cert.Resolution.compileReport_claim`) or resolves through the aux map,
-with an original-form record (`unoriginalAux`). -/
+/-- The first input name published in `ixe` that is not in the driver's final
+resolution map (`resolved`), if any. A `Named` entry can come from a block's
+`Muts` entry (`BlockState.mutsNamed`), so publication alone says nothing of
+where a name's record came from. With no such name, every published input
+name is a primary claim of a block compiled during the fold
+(`Ix.Cert.Resolution.compileReport_claim`). -/
 @[expose] def unresolvedPublished (env : Ix.Environment)
-    (resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (ixe : Ixon.Env) :
+    (resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address) (ixe : Ixon.Env) :
     Option Ix.Name :=
   ixe.named.toList.findSome? fun (n, _) =>
-    if env.consts.contains n && !resolved.contains n && !aux.contains n then some n else none
-
-/-- The constructors (`InductiveVal.ctors`) of the input inductives among
-`extras`. -/
-@[expose] def extraCtors (env : Ix.Environment) (extras : Std.HashSet Ix.Name) : Std.HashSet Ix.Name :=
-  extras.fold (init := {}) fun s e =>
-    match env.consts.get? e with
-    | some (.inductInfo iv) => iv.ctors.foldl (fun s c => s.insert c) s
-    | _ => s
-
-/-- The first name of the driver's final resolution map (`resolved`), not in
-its final aux map (`aux`), that is among its final extra names (`extras`,
-`CompileEnv.auxGenExtraNames`) or is a constructor of an input inductive among
-them (`extraCtors`), if any. A promoted block's cross-SCC subset
-(`AuxBlockOutcome.promoted`'s `crossScc`) is compiled under its own key,
-which is not one of the condensation's block keys, so Pass 3's hook 2
-(`prepareBlock`) does not find the block's references (`p3BlockRefs`) and walks
-its members' terms, a loop no proof unfolds. Its merge adds each of its members
-to the extra names (`applyAuxBlockOutcome`), and only a withdrawal
-(`failAuxPromotion`) removes one, from the resolution map too; it claims its
-members and the constructors of its inductives, and a constructor resolved
-before the subset compiled is not one of its members. With no such name, no
-resolved name outside the aux map is a cross-SCC subset's claim. -/
-@[expose] def crossClaimed (env : Ix.Environment)
-    (resolved aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
-    (extras : Std.HashSet Ix.Name) : Option Ix.Name :=
-  let ctors := extraCtors env extras
-  resolved.toList.findSome? fun (n, _) =>
-    if !aux.contains n && (extras.contains n || ctors.contains n) then some n else none
+    if env.consts.contains n && !resolved.contains n then some n else none
 
 /-- The first input constant whose own name (`ConstantVal.name`) is not the
 name it is stored under, spelled exactly (`Ix.nameCompareExact`, stored hashes
@@ -717,24 +658,189 @@ every closure that holds it. -/
 /-- The first name the driver's final environment records as a failure
 (`CompileEnv.ungrounded`, the `ungrounded` argument) that the input's map does
 not hold, if any. The driver records failures of a block's members (a failed
-compile, a conflicting claim, a withdrawn promotion and its Pass 3 heads), so
-on valid input there is none. With none, a name the closure references that
-was a Pass 3 head when a block compiled, and was withdrawn later, is an input
-name, so a constant of the closure, which did not fail. -/
+compile, a conflicting claim), so on valid input there is none. With none,
+every recorded failure is an input name. -/
 @[expose] def strayFailure (env : Ix.Environment) (ungrounded : Std.HashMap Ix.Name String) :
     Option Ix.Name :=
   ungrounded.toList.findSome? fun (n, _) => if (env.consts.get? n).isSome then none else some n
 
-/-- The first identity row that disagrees with another row under the same
-name key, on the verdict or compared address, or says `identical` at an
-address the final artifact does not publish the name at. Duplicate agreeing
-rows are allowed: several original-form promotions can reach one name. -/
-@[expose] def identityMismatch (identity : Array (Ix.Name × Bool × Address)) (ixe : Ixon.Env) :
-    Option (Ix.Name × Bool × Address) :=
-  let first : Std.HashMap Ix.Name (Bool × Address) :=
-    identity.foldl (init := {}) fun m (n, s, a) => if m.contains n then m else m.insert n (s, a)
-  identity.toList.find? fun (n, s, a) =>
-    first.get? n != some (s, a) || (s && (ixe.named.get? n).map (·.addr) != some a)
+/-- The first address that holds both a stored blob and a stored record, if
+any. Blobs (literal bytes) and records share one address space,
+`Address.admissionHash` with no domain separation, and a record's reference
+table lists its literals' blob addresses beside the records it references: a
+literal whose bytes are another record's serialization would make that record
+look referenced. With none, no blob address is a record's. -/
+@[expose] def blobRecordCollision (ixe : Ixon.Env) : Option Address :=
+  ixe.blobs.toList.findSome? fun (a, _) => if ixe.consts.contains a then some a else none
+
+/-- The stored records with a recursor member
+(`Ix.Kernel.Reader.recursorMembers`), in `ixe.consts`' order: each record
+decoded once, on tasks (`parMap`). The recursor index
+(`Ix.Kernel.Reader.buildIndex`) reads nothing of the other records in its scan,
+so over these it is the artifact's index (`Ix.Cert.recursorIndex_eq`). -/
+@[expose] def storedRecursorRecords (ixe : Ixon.Env) : Array (Address × Ixon.Constant) :=
+  (parMap (fun (e : Address × Ixon.LazyConstant) =>
+    match e.2.get? with
+    | some c => if (Ix.Kernel.Reader.recursorMembers c).isEmpty then none else some (e.1, c)
+    | none => none) ixe.consts.toArray).filterMap id
+
+/-- The block of the record stored at `a`: a projection's block, otherwise
+`a` itself (`Ix.Cert.ClosureLayout.blockAt`), read without the record's
+expressions (`storedRefs`). -/
+@[expose] def recordBlock (ixe : Ixon.Env) (a : Address) : Address :=
+  match storedRefs ixe a with
+  | some (_, owner) => owner
+  | none => a
+
+/-- A name's published record and that record's block
+(`Ix.Cert.ClosureLayout.nameRecords`). -/
+@[expose] def publishedRecords (ixe : Ixon.Env) (n : Ix.Name) : List Address :=
+  match ixe.named.get? n with
+  | some named => [named.addr, recordBlock ixe named.addr]
+  | none => []
+
+/-- The first inductive of the family of an input inductive, constructor or
+recursor: its `all[0]`, its inductive's, or its `all[0]`'s; `none` for any other
+name. -/
+@[expose] def familyFirst? (env : Ix.Environment) (x : Ix.Name) : Option Ix.Name :=
+  match env.consts.get? x with
+  | some (.inductInfo iv) => iv.all[0]?
+  | some (.ctorInfo cv) =>
+    match env.consts.get? cv.induct with
+    | some (.inductInfo iv) => iv.all[0]?
+    | _ => none
+  | some (.recInfo rv) =>
+    match rv.all[0]? with
+    | some i =>
+      match env.consts.get? i with
+      | some (.inductInfo iv) => iv.all[0]?
+      | _ => none
+    | none => none
+  | _ => none
+
+/-- Whether the input name `rn` is a recursor of the family whose first
+inductive is `first`, published at the record `blk` or at a projection of it. -/
+@[expose] def familyRecursorAt (env : Ix.Environment) (ixe : Ixon.Env) (first rn : Ix.Name)
+    (blk : Address) : Bool :=
+  match env.consts.get? rn with
+  | some (.recInfo rv) => decide (rv.all[0]? = some first) && decide (blk ∈ publishedRecords ixe rn)
+  | _ => false
+
+/-- The input recursors, by the name hash of their family's first inductive:
+the candidates `unownedRecursor` tries for a family. Each candidate is checked
+in full (`familyRecursorAt`), so the table only narrows the search. -/
+@[expose] def familyRecursors (env : Ix.Environment) : Std.HashMap Address (Array Ix.Name) :=
+  env.consts.fold (init := {}) fun m n ci =>
+    match ci with
+    | .recInfo rv =>
+      match rv.all[0]? with
+      | some first => m.insert first.getHash ((m.getD first.getHash #[]).push n)
+      | none => m
+    | _ => m
+
+/-- Whether a recursor of the family whose first inductive is `first` is published
+at the record `blk` or at a projection of it (`cands`, `familyRecursors`, gives the
+candidates). -/
+@[expose] def familyOwns (env : Ix.Environment) (ixe : Ixon.Env)
+    (cands : Std.HashMap Address (Array Ix.Name)) (first : Ix.Name) (blk : Address) : Bool :=
+  (cands.getD first.getHash #[]).any fun rn => familyRecursorAt env ixe first rn blk
+
+/-- For the published name `x` (its entry `named`), if it is an input name and
+its record's block has recursors in the index `idx`: the block and `x`, with no
+recursor if `x` has no family (`familyFirst?`), otherwise with the first of the
+block's recursors that is not a published recursor of `x`'s family
+(`familyOwns`), if any. -/
+@[expose] def unownedRecursorOf (env : Ix.Environment) (ixe : Ixon.Env)
+    (idx : Ix.Kernel.Reader.RecIndex) (cands : Std.HashMap Address (Array Ix.Name))
+    (x : Ix.Name) (named : Ixon.Named) :
+    Option (Address × Ix.Name × Option (Ix.Kernel.ConstRef Address)) :=
+  if env.consts.contains x then
+    match idx.blocks[recordBlock ixe named.addr]? with
+    | some shape =>
+      match familyFirst? env x with
+      | some first =>
+        (shape.recs.find? fun r => !familyOwns env ixe cands first r.block).map fun r =>
+          (recordBlock ixe named.addr, x, some r)
+      | none => some (recordBlock ixe named.addr, x, none)
+    | none => none
+  else none
+
+/-- An inductive block the recursor index (`Ix.Kernel.Reader.buildIndex`) attaches
+recursors to and an input name published in that block (at the block or a
+projection of it) that has no family, or with a recursor attached there that is
+not a published recursor of the name's family: the first met, if any. The index files a recursor under the
+block its type's first motive carrier names and keeps the first per motive in
+store order, so a recursor record of another family whose type eliminates a
+block's motive could take the place of the block's own. Published input names
+are read on tasks (`parMap`). With none, every input name published in a block
+the index attaches recursors to has a family (it is an inductive, constructor or
+recursor), and every recursor the index attaches there is a published recursor
+of that family (`Ix.Cert.RecursorsOwned`). -/
+@[expose] def unownedRecursor (env : Ix.Environment) (ixe : Ixon.Env) :
+    Option (Address × Ix.Name × Option (Ix.Kernel.ConstRef Address)) :=
+  let idx := Ix.Kernel.Reader.buildIndex (storedRecord ixe) (storedRecursorRecords ixe)
+  let cands := familyRecursors env
+  (parMap (fun (e : Ix.Name × Ixon.Named) => unownedRecursorOf env ixe idx cands e.1 e.2)
+    ixe.named.toList.toArray).findSome? id
+
+/-- The kind of the specification of the role `r` (`(Ix.Kernel.Role.spec r).kind`,
+`Ix.Cert.roleKind_eq`), without building the specification's expressions. -/
+@[expose] def roleKind : Ix.Kernel.Role → Ix.Kernel.SpecKind
+  | .nat | .natZero | .natSucc | .natRec | .eq | .eqRefl | .eqRec | .punit | .punitUnit | .punitRec
+  | .empty | .emptyRec | .false | .falseRec | .quot | .quotMk | .quotLift | .quotInd | .quotSound =>
+    .block
+  | .natPred | .natAdd | .natSub | .natMul | .natPow | .natBeq | .natBle | .natDiv | .natMod
+  | .natGcd | .natLand | .natLor | .natXor | .natShiftLeft | .natShiftRight => .ops
+  | .propext | .choice | .sorryAx => .axiom
+  | _ => .anchor
+
+/-- Whether the record `c` has the kind the specification of the role `r` asks
+of the record stored at its bound address: a standalone definition for a `Nat`
+operation (an `ops` specification), an axiom for an axiom role (`propext`,
+`Classical.choice`, `sorryAx`); any kind for every other role. -/
+@[expose] def roleRecordKindOk (r : Ix.Kernel.Role) (c : Ixon.Constant) : Bool :=
+  match roleKind r, c.info with
+  | .ops, .defn d => decide (d.kind = .defn)
+  | .ops, _ => false
+  | .axiom, .axio _ => true
+  | .axiom, _ => false
+  | _, _ => true
+
+/-- The bound entries of the default role table's binding section, decoded
+canonically (`Ix.Kernel.Reader.defaultTable`'s decoding, without its
+well-formedness check, which builds the roles' specifications); none if it
+does not decode. -/
+@[expose] def roleTableBound : Array (Ix.Kernel.Role × Address) :=
+  ((Ix.Kernel.Reader.defaultTableBytes.toOption.bind Ix.Kernel.RoleTable.ofBytes).map
+    (·.bound)).getD #[]
+
+/-- The addresses of the bound entries `bound`. -/
+@[expose] def roleAddrs (bound : Array (Ix.Kernel.Role × Address)) : Std.HashSet Address :=
+  Std.HashSet.ofList (bound.toList.map (·.2))
+
+/-- The first role of the bound entries `bound` bound to the address `p` whose
+specification asks another kind of record than `c` (`roleRecordKindOk`), if any.
+Every entry is read, so whichever entry a lookup of the role finds is covered. -/
+@[expose] def roleRecordKindAt (bound : Array (Ix.Kernel.Role × Address)) (p : Address)
+    (c : Ixon.Constant) : Option Ix.Kernel.Role :=
+  (bound.toList.find? fun e => e.2 == p && !roleRecordKindOk e.1 c).map (·.1)
+
+/-- A stored record at an address the default role table binds
+(`roleTableBound`) whose kind is not the one a role bound there asks
+(`roleRecordKindAt`), with that role, the first met, if any. Only records at
+bound addresses are decoded. An address the artifact stores nothing at, and a
+table that does not decode, are unconstrained. With none, the stored record at
+a bound `Nat` operation's address is a standalone definition and at a bound
+axiom role's address an axiom (`Ix.Cert.RoleRecordKinds`). -/
+@[expose] def roleRecordKind (ixe : Ixon.Env) : Option (Ix.Kernel.Role × Address) :=
+  let bound := roleTableBound
+  let addrs := roleAddrs bound
+  ixe.consts.toList.findSome? fun (p, lc) =>
+    if addrs.contains p then
+      match lc.get? with
+      | some c => (roleRecordKindAt bound p c).map fun r => (r, p)
+      | none => none
+    else none
 
 /-- A stored record's definition projection: the member it projects (its block's
 address and its index) and the record's address. -/
@@ -812,27 +918,28 @@ agree with the blocks:** each name a `Muts` entry lists in class `i` is
 published at member `i`'s projection of its block (`mutsMismatch`).
 **Resolved names are published where they resolve:** each name of the
 driver's final resolution map (`cenv.nameToAddr`) is published at the address it resolves
-to (`resolutionMismatch`). **Every inductive component is seen:** each
+to (`resolutionMismatch`). **Every inductive block is found:** each
 published input inductive is published at an inductive projection of a block
-with a `Muts` entry at its address (`unseenInductive`). **Aux-resolved input
-names have original-form records:** each input name of the driver's final aux
-map (`cenv.auxNameToAddr`) is published with `Named.original`
-(`unoriginalAux`). **Published input names are resolved:** each published
-input name is in the resolution map or in the aux map (`unresolvedPublished`).
-**No cross-SCC claims:** no resolved name outside the aux map is among the
-extra names, nor a constructor of an inductive among them (`crossClaimed`). **Input
-constants carry their names:** each input constant's own name is spelled as the
-name it is stored under (`misnamedInput`). **Input constructors belong to their
-inductive:** each constructor an input inductive lists is stored as a
-constructor of it (`strayConstructor`). **Failures are input names:** each
-name the driver's final environment records as a failure (`cenv.ungrounded`)
-is one the input's map holds (`strayFailure`). **Identity rows agree:** every
-row of a name agrees on its verdict and compared address, and an identical
-row names the final published address (`identityMismatch`). **One projection record per
-definition member:** no two stored definition projection records project one
-member (`projectionCollision`). **Published input names are readable:** each
+with a `Muts` entry at its address (`unseenInductive`). **Published input
+names are resolved:** each published input name is in the resolution map
+(`unresolvedPublished`). **Input constants carry their names:** each input
+constant's own name is spelled as the name it is stored under
+(`misnamedInput`). **Input constructors belong to their inductive:** each
+constructor an input inductive lists is stored as a constructor of it
+(`strayConstructor`). **Failures are input names:** each name the driver's
+final environment records as a failure (`cenv.ungrounded`) is one the input's
+map holds (`strayFailure`). **One projection record per definition member:**
+no two stored definition projection records project one member
+(`projectionCollision`). **Published input names are readable:** each
 published input name's address holds a stored record that is not a block
-(`unreadablePublished`). -/
+(`unreadablePublished`). **Blobs and records apart:** no address holds both a
+stored blob and a stored record (`blobRecordCollision`). **Indexed recursors
+belong to their block's family:** every input name published in an inductive
+block the recursor index attaches recursors to has a family, and each of those
+recursors is a published recursor of it (`unownedRecursor`). **Bound roles'
+records have their kinds:** under the default role table, the stored record at a
+bound `Nat` operation's address is a standalone definition, and at a bound axiom
+role's address an axiom (`roleRecordKind`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
@@ -847,54 +954,62 @@ published input name's address holds a stored record that is not a block
           | none =>
             match unseenInductive env out.1 with
             | none =>
-              match unoriginalAux env cenv.auxNameToAddr out.1 with
+              match unresolvedPublished env cenv.nameToAddr out.1 with
               | none =>
-                match unresolvedPublished env cenv.nameToAddr cenv.auxNameToAddr out.1 with
+                match misnamedInput env with
                 | none =>
-                  match crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
+                  match strayConstructor env with
                   | none =>
-                    match misnamedInput env with
+                    match strayFailure env cenv.ungrounded with
                     | none =>
-                      match strayConstructor env with
+                      match projectionCollision out.1 with
                       | none =>
-                        match strayFailure env cenv.ungrounded with
+                        match unreadablePublished env out.1 with
                         | none =>
-                          match identityMismatch cenv.auxReport.identity out.1 with
+                          match blobRecordCollision out.1 with
                           | none =>
-                            match projectionCollision out.1 with
-                            | none =>
-                              match unreadablePublished env out.1 with
-                              | none => .ok ()
-                              | some n =>
-                                .error s!"compileReport: readability check failed: the input name \
-                                  {n.pretty} is published at an address that holds no stored record, \
-                                  or a block record"
-                            | some (b, i) =>
-                              .error s!"compileReport: projection check failed: member {i} of the block at \
-                                {b} has more than one stored definition projection record"
-                          | some (n, same, a) =>
-                            .error s!"compileReport: identity check failed: the identity row of \
-                              {n.pretty} ({if same then "identical" else "not identical"} at {a}) \
-                              disagrees with another row of that name, or the name is not published at that address"
-                        | some f =>
-                          .error s!"compileReport: failure check failed: the driver records the name \
-                            {f.pretty} as a failure, but no input constant is stored under it"
-                      | some c =>
-                        .error s!"compileReport: constructor check failed: the name {c.pretty}, a \
-                          constructor of an input inductive, is not stored as a constructor of it"
-                    | some n =>
-                      .error s!"compileReport: name invariant failed: the input constant stored \
-                        under {n.pretty} carries another name"
-                  | some n =>
-                    .error s!"compileReport: cross-SCC check failed: the name {n.pretty} resolves \
-                      outside the aux map and is among the extra names or is a constructor of an inductive \
-                      among them, so a cross-SCC subset may have claimed it"
+                            match unownedRecursor env out.1, roleRecordKind out.1 with
+                            | none, none => .ok ()
+                            | none, some (r, p) =>
+                              .error s!"compileReport: role check failed: the record stored at {p}, \
+                                the default role table's address of the role {repr r}, is not of its \
+                                specification's kind (a standalone definition for a Nat operation, \
+                                an axiom for an axiom role)"
+                            | some (b, x, none), _ =>
+                              .error s!"compileReport: recursor check failed: the input name \
+                                {x.pretty}, published in the inductive block at {b} that the recursor \
+                                index attaches recursors to, is not an inductive, constructor or \
+                                recursor of a family"
+                            | some (b, x, some r), _ =>
+                              let pos := match r with
+                                | .member _ j => j
+                                | .ctor _ i _ => i
+                              .error s!"compileReport: recursor check failed: the recursor at member \
+                                {pos} of the record {r.block}, indexed under the inductive block at {b}, \
+                                is not a published recursor of the family of {x.pretty}, published in \
+                                that block"
+                          | some a =>
+                            .error s!"compileReport: blob check failed: the address {a} holds both \
+                              a stored blob and a stored record"
+                        | some n =>
+                          .error s!"compileReport: readability check failed: the input name \
+                            {n.pretty} is published at an address that holds no stored record, \
+                            or a block record"
+                      | some (b, i) =>
+                        .error s!"compileReport: projection check failed: member {i} of the block at \
+                          {b} has more than one stored definition projection record"
+                    | some f =>
+                      .error s!"compileReport: failure check failed: the driver records the name \
+                        {f.pretty} as a failure, but no input constant is stored under it"
+                  | some c =>
+                    .error s!"compileReport: constructor check failed: the name {c.pretty}, a \
+                      constructor of an input inductive, is not stored as a constructor of it"
                 | some n =>
-                  .error s!"compileReport: publication check failed: the input name {n.pretty} \
-                    is published but neither resolved nor in the aux map"
+                  .error s!"compileReport: name invariant failed: the input constant stored \
+                    under {n.pretty} carries another name"
               | some n =>
-                .error s!"compileReport: original-form check failed: the input name {n.pretty} \
-                  resolves through the aux map but is not published with an original-form record"
+                .error s!"compileReport: publication check failed: the input name {n.pretty} \
+                  is published but not resolved"
             | some n =>
               .error s!"compileReport: component check failed: the input inductive {n.pretty} is \
                 not published at an inductive projection of a block with a Muts entry"
@@ -931,27 +1046,29 @@ published names share a name hash; every `Muts` entry lists in class `i`
 only names published at member `i`'s projection of its block; every name
 the driver resolves is published at the address it resolves to; every
 published input inductive is published at an inductive projection of a
-block with a `Muts` entry; and every input name of the driver's final aux map
-is published with an original-form record; every published input name is
-resolved or in the aux map; no resolved name outside the aux map is a cross-SCC
-subset's claim; every input
-constant carries the name it is stored under; every constructor an input
-inductive lists is stored as a constructor of it; every failure the driver
-records is an input name; identity rows agree with each other and identical
-rows name the final published address; no two stored definition projection records
-project one member; and every published input name's address holds a stored record
-that is not a block. Any inconsistency is an error, and no artifact is
-returned. So coverage, authenticity, an order of the records in which none
-precedes a record it references, distinct name hashes, `Muts` entries that
-agree with their blocks, resolved names published where they resolve,
-inductive components the changed set sees, original-form records for the input
-names the aux map resolves, resolved published input names, and readable
-published records, hold by construction
-(`Ix.Cert.compileCovers`, `Ix.Cert.compileAuthentic`,
-`Ix.Cert.ClosureOrder`'s existence, `Ix.Cert.nameHashes_distinct`,
-`Ix.Cert.mutsMismatch_none`, `Ix.Cert.resolvedPublished`,
-`Ix.Cert.inductivesSeen`, `Ix.Cert.auxOriginal`, `Ix.Cert.publishedResolved`,
-`Ix.Cert.publishedReadable`); on a
+block with a `Muts` entry; every published input name is resolved; every
+input constant carries the name it is stored under; every constructor an
+input inductive lists is stored as a constructor of it; every failure the
+driver records is an input name; no two stored definition projection records
+project one member; every published input name's address holds a stored
+record that is not a block; no address holds both a stored blob and a stored
+record; every input name published in an inductive block the recursor index
+attaches recursors to has a family, and each of those recursors is a published
+recursor of it;
+and under the default role table, the stored record at a bound `Nat` operation's
+address is a standalone definition and at a bound axiom role's address an
+axiom. Any inconsistency is an error, and no artifact is returned. So
+coverage, authenticity, an order of the records in which none precedes a
+record it references, distinct name hashes, `Muts` entries that agree with
+their blocks, resolved names published where they resolve, found inductive
+blocks, resolved published input names, readable published records, blobs
+apart from records, indexed recursors of their blocks' families, and bound
+roles' records of their kinds hold by construction (`Ix.Cert.compileCovers`,
+`Ix.Cert.compileAuthentic`, `Ix.Cert.ClosureOrder`'s existence,
+`Ix.Cert.nameHashes_distinct`, `Ix.Cert.mutsMismatch_none`,
+`Ix.Cert.resolvedPublished`, `Ix.Cert.inductivesSeen`,
+`Ix.Cert.publishedResolved`, `Ix.Cert.publishedReadable`,
+`Ix.Cert.blobsApart`, `Ix.Cert.recursorsOwned`, `Ix.Cert.roleRecordKinds`); on a
 consistent run the result is
 `compileUnchecked`'s environment and failures, byte for byte. -/
 @[expose] def compileReport (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do

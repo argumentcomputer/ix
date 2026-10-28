@@ -222,7 +222,7 @@ pub fn absent_primitive() -> Address {
 impl<M: KernelMode> Primitives<M> {
   /// Resolve primitives from the environment using the canonical
   /// content-hash address table (`PrimAddrs::new`). This is the correct
-  /// call for `kctx.kenv` (the incrementally-compiled canonical
+  /// call for a kenv ingressed from compiled Ixon (the canonical
   /// environment).
   ///
   /// Addresses that don't resolve fall back to a synthetic KId with the

@@ -112,8 +112,8 @@ theorem compileExprNoSurgery_scoped {md : Mode} (cx : Ctx md) (param : Nat → L
     | app fn arg hash =>
       obtain ⟨headScope, argsScope⟩ := constsSatisfy_spine _ scope
       exact app_step_checked cx param self _ bindings _ fn arg hash context before good
-        (children _ (Ix.AuxGen.decomposeApps_app_head_lt fn arg hash) headScope)
-        (fun x member => children x (Ix.AuxGen.decomposeApps_app_mem_lt fn arg hash member)
+        (children _ (Ix.CompileM.decomposeApps_app_head_lt fn arg hash) headScope)
+        (fun x member => children x (Ix.CompileM.decomposeApps_app_mem_lt fn arg hash member)
           (argsScope x member))
         (fun _ _ h _ _ fnRel argRel => .app h fnRel argRel)
     | lam name type body info hash =>

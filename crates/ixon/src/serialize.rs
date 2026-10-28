@@ -1383,7 +1383,7 @@ pub fn get_named_indexed(
 }
 
 /// Decode the metadata part of a §5 window (the `meta_len`-framed blob
-/// holding meta + optional aux_gen original). Returns the meta and its
+/// holding meta + optional original form). Returns the meta and its
 /// encoded length within the window. The window grammar lives in these
 /// three helpers — `get_named_indexed` and the lazy
 /// [`crate::env::LazyMetaWindow`] both parse through them.
@@ -4942,7 +4942,7 @@ mod tests {
     Name::str(Name::anon(), s.to_string())
   }
 
-  /// THE alias regression (validate-aux's 222 decompile mismatches):
+  /// The alias regression:
   /// alpha-identical definitions under different names share one
   /// constant address, so the per-address §3 channel min-merges their
   /// hints — but the per-name §5 channel must preserve each name's

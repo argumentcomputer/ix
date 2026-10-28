@@ -137,7 +137,7 @@ impl PrimAddrs {
 
   /// Canonical content-hash addresses, hardcoded from the Ixon-compiled
   /// form of each primitive. Used by `Primitives::from_env` to resolve
-  /// primitives against a `kctx.kenv` whose KIds live at canonical
+  /// primitives against a kenv whose KIds live at canonical
   /// addresses. Regenerate with
   /// `lake test -- --ignored rust-kernel-build-primitives`.
   pub fn new() -> Self {

@@ -238,13 +238,13 @@ def chainTo (par : Parents) (m t : String) : String := Id.run do
 /-! ## The answers fence (M7 Q1)
 
 `IxC.Kernel.Tier.Answer` builds the typing tier's **answer view**, where tier
-definitions unfold and a tier block's recursors fire: what AuxGen's questions
-about an unsafe block need, and what no check may see. It is a leaf of the
+definitions unfold and a tier block's recursors fire: what a question
+about an unsafe block needs, and what no check may see. It is a leaf of the
 kernel and of every checking and certified path: no module under
 `IxC/Kernel/`, `Ix/Cert/`, `Ix/CompileCert/` or `Ix/Resource/`, and no
 `Ix.LeanIngress` module, imports it (by any import kind), except the one
-module `answersAllowed` names. Its consumers are the Source service's
-answering scopes (`Ix/AuxGen/*`), that one module and the tests. -/
+module `answersAllowed` names. Its consumers are that one module and the
+tests. -/
 
 /-- The fenced module. -/
 def answersModule : String := "IxC.Kernel.Tier.Answer"
@@ -277,10 +277,10 @@ def answersFence (imports : Array (String × Array String)) : Array (String × S
 
 /-- **The fence's self-test**: a planted import from a certified module and
 one from a resource module beside the exception are found; the allowed ones
-(the Source service's, the exception's) are not. -/
+(a test's, the exception's) are not. -/
 def answersFenceSelfTest : Bool :=
   answersFence #[("Ix.Cert.Planted", #["Init", answersModule]),
-      ("Ix.AuxGen.SourceEnv", #[answersModule]), ("IxC.Kernel.Tier.Check", #["IxC.Kernel.Tier.Basic"]),
+      ("Tests.Ix.Kernel.Planted", #[answersModule]), ("IxC.Kernel.Tier.Check", #["IxC.Kernel.Tier.Basic"]),
       ("Ix.Resource.Typing", #[answersModule]), ("Ix.Resource.Validate", #[answersModule])] ==
     #[("Ix.Cert.Planted", answersModule), ("Ix.Resource.Validate", answersModule)]
 
@@ -388,7 +388,7 @@ def run (args : List String) : IO UInt32 := do
       fenced := fenced.push (modName rel, findImports src ["public", "private", "meta"] false)
   let answersv := answersFence fenced
   fail := (← report "a checking or certified module importing the answer view" answersv
-    s!"{answersModule} (δ and ι on tier constants) serves the Source service's answers only; \
+    s!"{answersModule} (δ and ι on tier constants) serves tier answers outside checking only; \
     no module under {", ".intercalate answersFenced} may import it, except \
     {", ".intercalate answersAllowed} (resource-v1's uncertified part).") || fail
   if fail then return 1

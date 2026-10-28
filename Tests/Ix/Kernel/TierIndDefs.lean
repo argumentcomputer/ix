@@ -38,8 +38,8 @@ unsafe inductive B
   | b : A → B
 end
 
-/-- A family installed without its recursor (as AuxGen's regenerated
-Prop-level `.below` family is, before its recursors exist). -/
+/-- A family installed without its recursor (as a Prop-level `.below`
+family is, before its recursors exist). -/
 inductive PF : Bool → Prop
   | t : PF true
 
@@ -48,8 +48,7 @@ unsafe inductive Big : Type 1
 
 unsafe def kdef : Bool := true
 
-/-- A partial definition (its `_unsafe_rec` companion is the tier's stage 0;
-the Source service's tier, `Tests.Ix.AuxGen.TierService`). -/
+/-- A partial definition (its `_unsafe_rec` companion is the tier's stage 0). -/
 partial def spin (n : Nat) : Nat := if n == 0 then 0 else spin (n - 1)
 
 /-! The queries: each value is a term asked about. -/

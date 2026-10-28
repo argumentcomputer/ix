@@ -81,24 +81,24 @@ def DenoteSame {md : Ix.Kernel.Mode} {V : Type w} [SetTheory V]
     (cval : Ix.Kernel.Key md → (LevelParam → Nat) → V) (env : Env md) (e e' : Ix.Kernel.Expr md) : Prop :=
   ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), ∃ X, Denotes cval env φ ρ e X ∧ Denotes cval env φ ρ e' X
 
-/-- **A driver state owns the artifact's resolution**: every name it resolves outside its
-aux map, and that the compile did not report failed, is published at the address it
-resolves to, and every record it stores is the artifact's. -/
+/-- **A driver state owns the artifact's resolution**: every name it resolves, and that
+the compile did not report failed, is published at the address it resolves to, and every
+record it stores is the artifact's. -/
 def Owned (ixe : Ixon.Env) (failures : Failures) (c : Ix.CompileM.CompileEnv) : Prop :=
   (∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), c.nameToAddr.get? n = some a →
-    c.auxNameToAddr.contains n = false → failures.failed n = false →
+    failures.failed n = false →
       (ixe.named.get? n).map (·.addr) = some a) ∧
   ∀ (a : Address) (b : ByteArray), c.constants.get? a = some b →
     ixe.consts.get? a = some { buf := b, len := b.size }
 
-/-- **The closure's claims, owned**: every name of the closure resolved outside the aux
-map is a claim of the block compile of a block of the closure, against a fold state that
-owns the artifact's resolution. -/
+/-- **The closure's claims, owned**: every name of the closure the compile resolves is a
+claim of the block compile of a block of the closure, against a fold state that owns the
+artifact's resolution. -/
 def ClaimsOwned (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) (sub : Ix.Environment) :
     Prop :=
   ∃ cenv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
     ∀ (n : Ix.Compile.ExactKey.ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-      cenv.auxNameToAddr.contains n = false → (sub.consts.get? n).isSome = true →
+      (sub.consts.get? n).isSome = true →
       ∃ (snap : Ix.CompileM.DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name) (b : ByteArray),
         (compileBlocks env).blocks.get? rep = some all ∧
         (∀ x, all.contains x = true → (sub.consts.get? x).isSome = true) ∧
@@ -308,14 +308,14 @@ theorem const_denotes {md : Ix.Kernel.Mode} {V : Type w} [SetTheory V] {env : En
 (`ClosureClaims.compileReport_owned`) and the ownership obligation. -/
 theorem claimsOwned (h3 : Obligation.ScheduleOwnership) {env : Ix.Environment} {ixe : Ixon.Env}
     {failures : Failures} {roots : List Ix.Name} {sub : Ix.Environment}
-    (compiled : compileReport env = .ok (ixe, failures)) (closure : IsClosure env roots sub)
-    (none : NoFailure failures sub) : ClaimsOwned env ixe failures sub := by
+    (compiled : compileReport env = .ok (ixe, failures)) (closure : IsClosure env roots sub) :
+    ClaimsOwned env ixe failures sub := by
   obtain ⟨cenv, blocks, cenv₀, sched, hu, hblocks, hrun, claims⟩ :=
-    ClosureClaims.compileReport_owned compiled closure none
+    ClosureClaims.compileReport_owned compiled closure
   subst hblocks
-  refine ⟨cenv, hu, fun n a hn hnaux hs => ?_⟩
-  obtain ⟨-, snap, rep, all, r, c, layout, b, hsnap, hall, -, hsub, -, -, hstored, hcompiled⟩ :=
-    claims n a hn hnaux hs
+  refine ⟨cenv, hu, fun n a hn hs => ?_⟩
+  obtain ⟨-, snap, rep, all, r, c, b, hsnap, hall, -, hsub, -, -, hstored, hcompiled⟩ :=
+    claims n a hn hs
   exact ⟨snap, rep, all, b, hall, hsub, hstored, hcompiled,
     h3 env ixe failures cenv cenv₀ sched compiled hu hrun snap hsnap⟩
 
@@ -354,7 +354,7 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
   -- the reader's stream of the compiled closure
   obtain ⟨binding, tA, preA, order, st', decls, hbind, admitted, prelude, corder, canonical, reads, keeps,
     streams⟩ := h2 env roots sub ixe failures t envQ pre ds b P
-      (claimsOwned h3 P.compiled closure P.none) hpre prepared hb
+      (claimsOwned h3 P.compiled closure) hpre prepared hb
   -- the role table's evidence: the reader's prepared stream is the renamed run's
   have runA := h7b env roots sub ixe failures t envQ pre ds b binding tA preA order st' decls envR P hpre
     prepared hb hbind admitted prelude corder reads streams runR

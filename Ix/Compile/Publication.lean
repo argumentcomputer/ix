@@ -14,13 +14,13 @@ Rust compiler compares and inserts under one map entry
 
 namespace Ix.CompileM
 
-/-- Exact anonymous writes made by the aux-aware driver's block merge. -/
-def blockRecordWrites (result : BlockResult) (cache : BlockState) :
+/-- Exact anonymous writes made by the driver's block merge: the block record and
+its projections. -/
+def blockRecordWrites (result : BlockResult) :
     List (Address × ByteArray) :=
   (result.blockAddr, result.blockBytes) ::
     (result.projections.toList.map fun (_, projection, _) =>
-      (Address.admissionHash (Ixon.ser projection), Ixon.ser projection)) ++
-    (cache.auxConsts.toList.map fun (address, constant) => (address, Ixon.ser constant))
+      (Address.admissionHash (Ixon.ser projection), Ixon.ser projection))
 
 /-- Check successive writes against a small store of already-seen payloads. -/
 def checkContentWrites (seen : Std.HashMap Address ByteArray) :
@@ -45,7 +45,7 @@ def checkBlobContent (cenv : CompileEnv) (cache : BlockState) : Except CompileEr
 /-- A block's records and blobs agree with the published ones. -/
 def checkBlockContent (cenv : CompileEnv) (result : BlockResult)
     (cache : BlockState) : Except CompileError Unit :=
-  if checkAnonymousWrites cenv.constants (blockRecordWrites result cache) then
+  if checkAnonymousWrites cenv.constants (blockRecordWrites result) then
     checkBlobContent cenv cache
   else .error (.invalidMutualBlock "anonymous publication: conflicting constant payload")
 

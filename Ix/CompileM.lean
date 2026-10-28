@@ -17,7 +17,6 @@ public import Ix.Ixon
 public import Ix.IxonUniv
 public import IxC.Ixon.WireCheck
 public import Ix.Environment
-public import Ix.AuxGen.Oracle
 public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Sharing.Exact
@@ -29,7 +28,6 @@ public import Ix.CondenseM
 public import Ix.SOrder
 public import Ix.Compile.Canon.Classes
 public import Ix.Compile.ExactKey
-public import Ix.AuxSource
 public import Ix.CanonM
 
 namespace Ix.CompileM
@@ -39,17 +37,15 @@ public section
 structure CompileEnv where
   /-- Canonicalized Leon environment -/
   env : Ix.Environment
-  /-- Map from constant name to Named (address + metadata). This is the
-      final NAMED REGISTRY (Rust `stt.env.named`): the aux tail's
-      re-registrations override member entries here. It is NOT the
-      resolution map — `compileExpr` resolves through `nameToAddr`,
-      which keeps the PRIMARY projection addresses (Rust
-      `stt.name_to_addr` is never touched by the tail). -/
+  /-- Map from constant name to Named (address + metadata): the final NAMED
+      REGISTRY (Rust `stt.env.named`), with the blocks' `Muts` entries. It
+      is NOT the resolution map — `compileExpr` resolves through
+      `nameToAddr`. -/
   nameToNamed : Std.HashMap Name Ixon.Named
   /-- Resolution map from constant name to compiled address (Rust
-      `stt.name_to_addr`): primary block/projection registrations plus
-      `promote_aux` copies. First hop of `lookupConstAddr`. Keys are
-      compared structurally (`ExactName`, CQ2.25). -/
+      `stt.name_to_addr`): the primary block/projection registrations.
+      First hop of `lookupConstAddr`. Keys are compared structurally
+      (`ExactName`). -/
   nameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
   /-- Compiled constants storage, SERIALIZED. Holding structured
       `Ixon.Constant`s here retained a whole-env-scale object graph for
@@ -63,64 +59,24 @@ structure CompileEnv where
   blobs : Std.HashMap Address ByteArray
   /-- Total bytes of serialized constants (for profiling) -/
   totalBytes : Nat
-  /-- Aux-generated name→address view merged from previously compiled
-      blocks (Rust `stt.aux_name_to_addr`; scheduler-visible only after
-      the driver merges each block's registrations). -/
-  auxNameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
-  /-- Persistent set of names compiled by aux-gen (Rust
-      `stt.aux_gen_extra_names`); merged from block tails by the driver
-      and consulted by the scheduler's promotion pass. -/
-  auxGenExtraNames : Std.HashSet Name := {}
   /-- Constants that couldn't be compiled, name → error description
       (Rust `stt.ungrounded`): pre-compile grounding rejections plus
       per-block compile failures recorded by the scheduler. -/
   ungrounded : Std.HashMap Name String := {}
-  /-- Mutual-block canonical class ordering, keyed by every member name
-      in the block (Rust `stt.blocks`, compile.rs:4048-4057; the driver
-      merges each block's `BlockResult.classNames` here on completion).
-      Read by the evaporation claim probe
-      (`Ix.AuxGen.positionClaimedBySpecScc`) to rebuild a spec-member
-      SCC's canonical expansion — scheduler dependency order guarantees
-      the entry exists before any dependent block compiles. -/
+  /-- Mutual-block class ordering, keyed by every member name in the block
+      (Rust `stt.blocks`; the driver merges each block's
+      `BlockResult.classNames` here on completion). -/
   blocks : Std.HashMap Name (Array (Array Name)) := {}
-  /-- The number of input constants `env.consts` does not hold: the
-      streaming driver leaves theorem and opaque bodies to `env.fallback?`,
-      and the wave fold looks every constant up through a view whose map is
-      empty (`compileEnvFold`). With `env.consts.size` it bounds the
-      source-claim walk (`checkAuxSourceClaim`). A materialized environment
-      outside the fold has none. -/
-  unmaterialized : Nat := 0
   /-- Resource limits of the canonical sharing construction
       (`buildBlockConstant`, `finishMutualCompilation`): `compilerSharingLimits`
       unless a driver's options set others (`DriverOptions.sharingLimits`,
       which the CLI parses from `IX_SHARING_LIMITS`). Limits decide only whether a block
       compiles, never its bytes. -/
   sharingLimits : Ix.Sharing.Exact.Limits := {}
-  /-- AuxGen M2: the IxC oracle a block's aux tail asks `.below`'s levels of,
-      by the block's canonical key (`Ix.AuxGen.Oracle`), set by the wave fold
-      (`compileEnvFoldWithSource`); `none` outside it. -/
-  auxOracle : Option (Name → Option Ix.AuxGen.AuxOracle) := none
-  /-- Checked generation retry, requested only after an IxC refusal on an
-      unaccepted block. The key is the original schedule's canonical block
-      key, never a rewritten tail name or canonical class. Tail-only. -/
-  auxGenerationRetry : Option (Name → Except String Ix.AuxGen.AuxOracle) := none
-  /-- Original-source capabilities, retained for post-compile plan checks. -/
-  sourceFamilyOracle : Option Ix.AuxGen.SourceFamilyOracle := none
-  /-- AuxGen M4c: AuxGen's part of the compile report (`Ix.AuxGen.CompileReport`:
-      each block's canonical-block verdict, by the block's canonical key),
-      merged from the blocks that compile (`BlockState.auxReport`,
-      `mergeCompiledBlock`). No byte depends on it. -/
-  auxReport : Ix.AuxGen.CompileReport := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
   { env, nameToNamed := {}, constants := {}, blobs := {}, totalBytes := 0 }
-
-/-- A missing compiler provider is a named configuration error when used. -/
-def CompileEnv.familyOracle (cenv : CompileEnv) : Ix.AuxGen.SourceFamilyOracle := fun owner =>
-  match cenv.sourceFamilyOracle with
-  | some provider => provider owner
-  | none => .error s!"source family {owner.pretty}: original-source provider is absent"
 
 instance : Inhabited CompileEnv where
   default := { env := { consts := {} }, nameToNamed := {}, constants := {}, blobs := {}, totalBytes := 0 }
@@ -213,30 +169,17 @@ structure BlockState where
   /-- Arena-based expression metadata for the current constant -/
   arena : Ixon.ExprMetaArena := {}
   /-- Primary name→address registrations of the CURRENT block (member
-      projection addresses), inserted after the primary block compiles
-      and BEFORE the aux tail runs — Rust's `compile_mutual` writes them
-      into the global `stt.name_to_addr` at exactly that point
-      (compile.rs:3926/3946/3966), so the tail's aux compilation
-      resolves sibling members through them. The driver merges these
+      projection addresses), inserted after the primary block compiles —
+      Rust's `compile_mutual` writes them into the global
+      `stt.name_to_addr` at that point (compile.rs). The driver merges these
       into `CompileEnv.nameToAddr` on block completion. -/
   blockNameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
-  /-- Aux-generation outputs of the CURRENT block (Rust mutates
-      `stt.aux_name_to_addr` / `stt.env` globally; the pure model collects
-      per block and the driver merges). Within-block phases resolve
-      earlier phases' constants through `auxNameToAddr` via
-      `lookupConstAddr`'s fallback chain. -/
-  auxNameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
-  /-- `stt.env.store_const` calls (blocks + projections), in order. -/
-  auxConsts : Array (Address × Ixon.Constant) := #[]
-  /-- `stt.env.register_name` calls (incl. synthetic `Muts` entries), in
-      order; later entries for a name override earlier (DashMap insert). -/
-  auxNamed : Array (Name × Ixon.Named) := #[]
-  /-- `stt.aux_gen_extra_names` membership (Rust mutual.rs). -/
-  auxGenExtraNames : Std.HashSet Name := {}
-  /-- AuxGen M4c: what the block's aux tail reports (`Ix.AuxGen.BlockReport`:
-      the canonical-block verdict, when the check ran); the driver merges it
-      into `CompileEnv.auxReport`. No byte depends on it. -/
-  auxReport : Ix.AuxGen.BlockReport := {}
+  /-- The CURRENT block's synthetic `Muts` named entry (Rust
+      `register_named` in `compile_mutual`), registered after the members'
+      projections; later entries for a name override earlier. Empty for a
+      block without a `Muts` record. The driver merges it into
+      `CompileEnv.nameToNamed` after the members' entries. -/
+  mutsNamed : Array (Name × Ixon.Named) := #[]
   /-- Compiled Ixon expressions for collapsed call-site args, accumulated
       by surgered `compileExpr` calls within the current constant and
       drained into `ConstantMeta.metaSharing` when the constant's
@@ -563,30 +506,19 @@ def internRef (addr : Address) : CompileM UInt64 := do
     let (state', idx) := state.internRef addr
     (idx, state')
 
-/-- Look up a constant's address: compiled names first, then the current
-    block's aux registrations, then previously merged aux names. Mirrors
-    Rust `stt.resolve_addr` (compile.rs:261-274 — `name_to_addr` with
-    `aux_name_to_addr` fallback; the block-local layer stands in for
-    Rust's global DashMap being visible mid-block). -/
+/-- Look up a constant's address: the current block's primary registrations,
+    then the merged resolution map. Mirrors Rust `stt.resolve_addr`
+    (compile.rs — `name_to_addr`; the block-local layer stands in for Rust's
+    global DashMap being visible mid-block). -/
 def lookupConstAddr (name : Name) : CompileM Address := do
   let env ← getCompileEnv
   let bstate ← getBlockState
-  -- Rust `stt.resolve_addr` (compile.rs:261-274): `name_to_addr` first
-  -- (the Lean model splits it into the current block's primary
-  -- registrations plus the driver-merged map), then `aux_name_to_addr`
-  -- (current block's aux registrations, then driver-merged).
   match bstate.blockNameToAddr.get? name with
   | some addr => pure addr
   | none =>
   match env.nameToAddr.get? name with
   | some addr => pure addr
-  | none =>
-    match bstate.auxNameToAddr.get? name with
-    | some addr => pure addr
-    | none =>
-      match env.auxNameToAddr.get? name with
-      | some addr => pure addr
-      | none => throw (.missingConstant s!"{name}")
+  | none => throw (.missingConstant s!"{name}")
 
 /-- Find a constant in the Ix environment (through the streaming
     fallback when the driver runs canon-on-demand). -/
@@ -813,6 +745,57 @@ def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap :
 
 /-! ## Expression Compilation -/
 
+/-- Decompose an application spine: `f a1 a2 ... an` → `(f, #[a1, ..., an])`
+    (Rust `decompose_apps`). The structural tail recursion keeps the
+    push/reverse traversal while exposing its subterm bounds to the ordinary
+    expression compiler (`compileExprNoSurgeryStep`). -/
+def decomposeApps.go (expr : Expr) (args : Array Expr) : Expr × Array Expr :=
+  match expr with
+  | .app f a _ => decomposeApps.go f (args.push a)
+  | head => (head, args.reverse)
+
+/-- Application head and arguments, in application order. -/
+def decomposeApps (expr : Expr) : Expr × Array Expr := decomposeApps.go expr #[]
+
+theorem decomposeApps.go_head_le (expr : Expr) (args : Array Expr) :
+    sizeOf (decomposeApps.go expr args).1 ≤ sizeOf expr := by
+  induction expr generalizing args <;> simp only [decomposeApps.go]
+  case app fn arg hash ihfn iharg =>
+    have small := ihfn (args.push arg)
+    simp only [Expr.app.sizeOf_spec]
+    omega
+  all_goals exact Nat.le_refl _
+
+theorem decomposeApps.go_mem (expr : Expr) (args : Array Expr) {x : Expr}
+    (mem : x ∈ (decomposeApps.go expr args).2) : sizeOf x < sizeOf expr ∨ x ∈ args := by
+  induction expr generalizing args <;> simp only [decomposeApps.go] at mem
+  case app fn arg hash ihfn iharg =>
+    rcases ihfn (args.push arg) mem with small | prior
+    · left
+      simp only [Expr.app.sizeOf_spec]
+      omega
+    · simp only [Array.mem_push] at prior
+      rcases prior with prior | rfl
+      · exact Or.inr prior
+      · left
+        simp only [Expr.app.sizeOf_spec]
+        omega
+  all_goals exact Or.inr (Array.mem_reverse.mp mem)
+
+/-- The head of an application spine is a strict subterm of it. -/
+theorem decomposeApps_app_head_lt (fn arg : Expr) (hash : Address) :
+    sizeOf (decomposeApps (.app fn arg hash)).1 < sizeOf (Expr.app fn arg hash) := by
+  have small := decomposeApps.go_head_le fn (#[].push arg)
+  simp only [decomposeApps, decomposeApps.go, Expr.app.sizeOf_spec]
+  omega
+
+/-- Every argument of an application spine is a strict subterm of it. -/
+theorem decomposeApps_app_mem_lt (fn arg : Expr) (hash : Address) {x : Expr}
+    (mem : x ∈ (decomposeApps (.app fn arg hash)).2) :
+    sizeOf x < sizeOf (Expr.app fn arg hash) := by
+  have small := decomposeApps.go_mem (.app fn arg hash) #[] mem
+  simpa only [Array.not_mem_empty, or_false] using small
+
 /-- Whether expression compilation takes the kernel-visible ordinary path.
     It always does: the compiler writes no decompile records. The reading
     theorems keep it as a premise, which holds by `rfl`. -/
@@ -865,14 +848,14 @@ def compileExprNoSurgeryStep (e : Expr)
       -- One flattened App spine: `compile` only for the head and the
       -- arguments, so partial-spine App nodes are allocated but never
       -- expression-cached (Rust `compile_expr`).
-      let parts := Ix.AuxGen.decomposeApps (.app fn arg hash)
+      let parts := decomposeApps (.app fn arg hash)
       let (h, hRoot) ← compile parts.1
-        (Ix.AuxGen.decomposeApps_app_head_lt fn arg hash)
+        (decomposeApps_app_head_lt fn arg hash)
       let mut acc := h
       let mut accRoot := hRoot
       for hmem : x in parts.2 do
         let (a, aRoot) ← compile x
-          (Ix.AuxGen.decomposeApps_app_mem_lt fn arg hash hmem)
+          (decomposeApps_app_mem_lt fn arg hash hmem)
         let root ← allocArenaNode (.app accRoot aRoot)
         acc := .app acc a
         accRoot := root
@@ -1427,23 +1410,16 @@ least-name-hash representative. The pure functions are the definition; what
 follows only converts between them and `CompileM`. -/
 
 /-- The compiled address of a constant as `lookupConstAddr` resolves it
-(current block's primary registrations, the merged name map, the current
-block's auxiliary registrations, the merged auxiliary map), as a pure
-function of the current state. Sorting writes none of these maps, so a
-snapshot taken before a sort answers every lookup the sort makes. -/
+(current block's primary registrations, then the merged name map), as a pure
+function of the current state. Sorting writes neither map, so a snapshot
+taken before a sort answers every lookup the sort makes. -/
 def constAddrLookup : CompileM (Name → Option Address) := do
   let env ← getCompileEnv
   let bstate ← getBlockState
   pure fun name =>
     match bstate.blockNameToAddr.get? name with
     | some addr => some addr
-    | none =>
-    match env.nameToAddr.get? name with
-    | some addr => some addr
-    | none =>
-    match bstate.auxNameToAddr.get? name with
-    | some addr => some addr
-    | none => env.auxNameToAddr.get? name
+    | none => env.nameToAddr.get? name
 
 /-- Raise the error a Pass 1 comparison failure stands for, with the kind
 and text the former comparator raised (`lookupConstAddr`'s
@@ -1519,13 +1495,9 @@ def recursorFamilyPosition (r : RecursorVal) : UInt64 :=
 
 /-- A block of recursors is laid out in its family's flat order (the
 order the kernel pairs with the inductive block's flat members), not in
-`sortConsts` order; other blocks are returned unchanged. The regenerated
-families get this from `compileAuxBlockWithRename`'s class-order key; this
-applies the same rule to a recursor block compiled from Lean's own
-declarations (`Named.original`, decompile's verification recompile), so
-that on a block canonicalisation leaves unchanged Lean's form and the Ix
-form of each recursor have one address (D6). Stable: classes with equal
-keys keep their `sortConsts` order. Mirrors Rust `order_recursor_family`. -/
+`sortConsts` order; other blocks are returned unchanged. Stable: classes with
+equal keys keep their `sortConsts` order. Mirrors Rust
+`order_recursor_family`. -/
 def orderRecursorFamily (classes : List (List MutConst)) : List (List MutConst) :=
   if classes.isEmpty || !classes.all (·.all fun c => c matches .recr _) then classes
   else
@@ -2766,21 +2738,6 @@ opaque rsCompileEnvBytesFFI
 opaque rsCompileEnvBytesAnonFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
   → IO CompileEnvStatus
-
-/-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
-    decompile + roundtrip + alpha-equivalence + nested-detect checks).
-    Returns total failure count across all phases. The second argument
-    is a report path: non-empty ⇒ the Rust side writes the
-    machine-readable phase-table JSON there (on completion and on
-    abort paths alike); empty ⇒ no report.
-
-    Shared between the `ix validate` CLI subcommand (`Ix.Cli.ValidateCmd`)
-    and the `validate-aux` test runner (`Tests.Ix.Compile.ValidateAux`).
-    The underlying Rust function is `rs_compile_validate_aux` in
-    `crates/ffi/src/lean_env.rs`. -/
-@[extern "rs_compile_validate_aux"]
-opaque rsCompileValidateAuxFFI
-  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → USize
 
 /-- Compile a Lean environment and write the serialized Ixon.Env bytes
     to `outPath` using the Rust compiler. Fail-closed by default: any

@@ -59,7 +59,7 @@ theorem WalkOk.insert {before done checked} (held : WalkOk before done checked)
 /-- The actual first loop checks EVERY ordered write, including repeated
 keys whose earlier local entry shadows the old primary lookup. -/
 theorem checkBlockClaims_primary_agrees {before : CompileEnv} {writes : Array (Name × Address)}
-    {cache : BlockState} (run : checkBlockClaims before writes cache = .ok ()) :
+    (run : checkBlockClaims before writes = .ok ()) :
     PrimaryAgrees before writes := by
   unfold checkBlockClaims at run
   obtain ⟨checked, walk, tail⟩ := Loop.except_bind_ok.mp run
@@ -73,19 +73,9 @@ theorem checkBlockClaims_primary_agrees {before : CompileEnv} {writes : Array (N
         intro old found
         by_contra different
         have bad : (old != addr) = true := by simp [different]
-        cases auxiliary : before.auxNameToAddr.get? key with
-        | none =>
-          simp only [auxiliary, found, bad, ↓reduceIte, bind, Except.bind,
-            throw, throwThe, MonadExceptOf.throw] at ran
-          cases ran
-        | some a =>
-          by_cases denied : (a != addr) = true
-          · simp only [auxiliary, denied, ↓reduceIte, bind, Except.bind,
-              throw, throwThe, MonadExceptOf.throw] at ran
-            cases ran
-          · simp only [auxiliary, denied, found, bad, ↓reduceIte, bind, Except.bind,
-              throw, throwThe, MonadExceptOf.throw] at ran
-            cases ran
+        simp only [found, bad, ↓reduceIte, bind, Except.bind,
+          throw, throwThe, MonadExceptOf.throw] at ran
+        cases ran
       have returned : step = .yield (table.insert key addr) := by
         repeat' first
           | split at ran
@@ -126,21 +116,10 @@ private theorem loop_field_bind {α σ β γ : Type} (xs : Array α) (init : σ)
   rw [Loop.forIn_id_array body continues, ← Array.foldl_hom field (fun s x => (step s x).symm)]
 
 set_option hygiene false in
-local macro "finish_primary" held:term : tactic => `(tactic| (
-  refine Ix.Cert.Resolution.loop_bind
-    (P := fun d : DriverAcc => d.cenv.nameToAddr = goalMap)
-    (I := fun _ : Array Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
-  intro _ _; exact $held))
-
-set_option hygiene false in
 local macro "merge_primary_tail" held:term : tactic => `(tactic| (
   refine Ix.Cert.Resolution.loop_bind
     (P := fun d : DriverAcc => d.cenv.nameToAddr = goalMap)
-    (I := fun c : CompileEnv => c.nameToAddr = goalMap) _ _ _ _ $held (fun _ _ _ h => h) ?_
-  intro L hL
-  refine Ix.Cert.Resolution.loop_bind
-    (P := fun d : DriverAcc => d.cenv.nameToAddr = goalMap)
-    (I := fun c : CompileEnv => c.nameToAddr = goalMap) _ _ _ _ hL ?_ ?_
+    (I := fun c : CompileEnv => c.nameToAddr = goalMap) _ _ _ _ $held ?_ ?_
   · intro _ _ _ h; split <;> exact h
   · intro L' hL'
     split
@@ -150,8 +129,8 @@ local macro "merge_primary_tail" held:term : tactic => `(tactic| (
       · intro cls _ s hs
         exact Ix.Cert.Resolution.forIn_inv_array
           (fun c : CompileEnv => c.nameToAddr = goalMap) _ cls (by intros; assumption) s hs
-      · intro _ h; finish_primary h
-    · finish_primary hL'))
+      · intro _ h; exact h
+    · exact hL'))
 
 /-- Exact serialization, hash, duplicates and order of the ACTUAL primary
 registrations. Reclaimed-name checks affect only the Named map. -/

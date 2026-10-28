@@ -1,7 +1,6 @@
 import Ix.Meta
 import Ix.CompileDriver
 import Ix.KernelCheck
-import Ix.AuxGen.IxcScope
 import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.SourceIngressCompare
@@ -9,8 +8,8 @@ import Tests.Ix.Kernel.AccelSemanticsDefs
 
 /-! Semantic inputs retained from Tc.AccelDiff, without its deleted backend
 switch or internal term addresses. Rust and IxC check the complete selected
-closure, including Lean-checked value/head witnesses and Nat.decLe itself.
-Actual IxC queries additionally inspect the four weak-head results. -/
+closure, including Lean-checked value/head witnesses (each a `rfl` the
+checkers reduce) and Nat.decLe itself. -/
 
 namespace Tests.Ix.Kernel.AccelSemantics
 
@@ -54,26 +53,7 @@ def run : IO UInt32 := do
     let some (outcome, reason) := checked[key]?
       | throw (IO.userError s!"IxC omitted {name}")
     need (outcome == "accept") s!"IxC did not accept {name}: {outcome}: {reason}"
-  let source ← Tests.Ix.Kernel.SourceIngress.envOf leanEnv roots
-  let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError toString)
-  let sourceRoots := roots.map Ix.Name.fromLeanName
-  let service := (Ix.AuxGen.Source.Service.create pre source
-    (Tests.Ix.Kernel.SourceIngressStep.condense source)
-    (evidence := some (Ix.RoleEvidence.bundleEvidence ()))).ensureNames sourceRoots
-  need ((Ix.AuxGen.Ixc.blockStatus? service sourceRoots).isNone)
-    s!"Source semantic roots were not accepted: {Ix.AuxGen.Ixc.blockStatus? service sourceRoots}"
-  let scope ← IO.ofExcept (Ix.AuxGen.Ixc.Scope.new service.env #[])
-  let query (s : String) := Ix.Expr.mkConst (Ix.Name.fromLeanName (fixture s)) #[]
-  let (nat, _) ← IO.ofExcept (scope.whnfExpr (query "bitNat"))
-  need (Ix.Compile.ExactKey.exprEq nat (Ix.Expr.mkLit (.natVal 5))) "BitVec.toNat 8/5 did not produce 5"
-  for (label, head) in [("bitUlt", ``Bool.true), ("natLe", ``Decidable.isTrue),
-      ("natEq", ``Decidable.isFalse)] do
-    let (result, _) ← IO.ofExcept (scope.whnfExpr (query label))
-    let .const actual _ _ := (Ix.AuxGen.decomposeApps result).1
-      | throw (IO.userError s!"{label}: result has no constructor head")
-    need (Ix.Compile.ExactKey.nameEq actual (Ix.Name.fromLeanName head)) s!"{label}: wrong head {actual}"
-    IO.println s!"retained acceleration {label}: {head}"
-  IO.println s!"retained acceleration: all four exact inputs, real WHNF results and Nat.decLe admission; {names.size} complete Rust/IxC closure verdicts"
+  IO.println s!"retained acceleration: all four exact inputs, their value/head witnesses and Nat.decLe admission; {names.size} complete Rust/IxC closure verdicts"
   return 0
 
 end Tests.Ix.Kernel.AccelSemantics

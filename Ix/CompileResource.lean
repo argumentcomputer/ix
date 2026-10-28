@@ -55,10 +55,9 @@ input (`LeanPipelineOut.originalSource?`).
 
 The headers leave the verdict unchanged: `Ix.Cert.checkReport` reads its input
 environment only through its keys (`uncovered`, `nameHashCollision`,
-`unoriginalAux`, `unresolvedPublished`, `regeneratedNames`, `strayFailure`,
-`unreadablePublished`), a constant's kind and own name (`unseenInductive`,
-`misnamedInput`), an inductive's constructors and a constructor's inductive
-(`extraCtors`, `strayConstructor`), and never a type or a value. Reading the
+`unresolvedPublished`, `strayFailure`, `unreadablePublished`), a constant's kind
+and own name (`unseenInductive`, `misnamedInput`), an inductive's constructors
+and a constructor's inductive (`strayConstructor`), and never a type or a value. Reading the
 values would hold every proof body of the input at once. -/
 def reportInput (out : LeanPipelineOut) : Except String Ix.Environment := do
   let some nodes := out.sourceNodes?

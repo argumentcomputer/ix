@@ -5,11 +5,11 @@ import Ix.CompileCert.SourceConstructorPositions
 
 /-! # Inductives through the driver's mutual path (N-READS, N5 b)
 
-The driver (`Ix.CompileM.compileBlockWithAux`) compiles every inductive block,
+The driver (`Ix.CompileM.compileBlock`) compiles every inductive block,
 singletons included, through `compileMutualBlock` over `MutConst.mkIndc`
 members, not through `compileConstantInfo (.inductInfo …)` (the
 `compileInductiveFamilyBlock` emitter, which `InductiveReading.inductive_reads`
-covers; only `compileConstNoAuxPure` takes it). This module carries the family
+covers). This module carries the family
 reading over to the mutual path, for a block of one inductive (stage A; a
 family of several, R10b proper, is stage B).
 

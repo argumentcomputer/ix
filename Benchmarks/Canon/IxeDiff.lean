@@ -5,10 +5,9 @@
 
   ```
   ixe-diff <old.ixe> <new.ixe> [--names] [--tsv <rows.tsv>]
-  ixe-diff --originals <file.ixe> [--names] [--tsv <rows.tsv>]
   ```
 
-  Two-environment mode. The join and the per-field classification are
+  The join and the per-field classification are
   `Ixon.rsDiffEnvFiles` (both files memory-mapped, anonymous structure
   only; the ripple verdict marks a row whose change is explained by
   re-addressed dependencies). Each changed name is then placed in a group
@@ -28,13 +27,6 @@
   Printed: totals per cause, one line per group (first member, size,
   counts per cause), added and removed names, and with `--names` every
   changed name. `--tsv` writes `name, group, cause, old kind, new kind`.
-
-  `--originals` mode reads one environment and lists the names whose
-  `Named.original` (the compile of Lean's own form of a regenerated
-  auxiliary) has another address than `Named.addr`, grouped the same way
-  (by the block of `addr`), with the cause `packaging` when the two are
-  a projection and a standalone constant (or blocks of different sizes),
-  `content` otherwise.
 
   Untrusted measurement tooling; it never writes an environment.
 -/
@@ -201,56 +193,8 @@ def diffMode (oldPath newPath : String) (names : Bool) (tsv? : Option String) : 
   IO.eprintln s!"[ixe-diff] done ({(← IO.monoMsNow) - t0} ms)"
   return if rows.isEmpty && added.isEmpty && removed.isEmpty then 0 else 1
 
-def originalsMode (path : String) (names : Bool) (tsv? : Option String) : IO UInt32 := do
-  let t0 ← IO.monoMsNow
-  let bytes ← IO.FS.readBinFile path
-  let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy bytes)
-  IO.eprintln s!"[ixe-diff] {path}: {parts.namedRows.size} named ({(← IO.monoMsNow) - t0} ms)"
-  let consts := parts.env.consts
-  let get? (a : Address) : Option Constant := (consts.get? a).bind (·.get?)
-  let cache ← IO.mkRef ({} : Std.HashMap Address Nat)
-  let shape (a : Address) : IO Shape := do
-    let some c := get? a | return .missing
-    let blockSize (b : Address) : IO Nat := do
-      if let some n := (← cache.get).get? b then return n
-      let n := match get? b with
-        | some { info := .muts ms, .. } => ms.size
-        | _ => 0
-      cache.modify (·.insert b n)
-      return n
-    match c.info with
-    | .dPrj p => return .proj "dprj" p.block p.idx (← blockSize p.block)
-    | .rPrj p => return .proj "rprj" p.block p.idx (← blockSize p.block)
-    | .iPrj p => return .proj "iprj" p.block p.idx (← blockSize p.block)
-    | .cPrj p => return .proj "cprj" p.block p.idx (← blockSize p.block)
-    | .defn _ => return .standalone "defn"
-    | .recr _ => return .standalone "recr"
-    | _ => return .standalone "other"
-  let mut total := 0
-  let mut rows : Array Row := #[]
-  for row in parts.namedRows do
-    let named ← IO.ofExcept (row.materialize parts.backing parts.nameRev)
-    let some (orig, _) := named.original | continue
-    total := total + 1
-    if orig == named.addr then continue
-    let a ← shape named.addr
-    -- the original's bytes are never stored: its shape is unknown unless an
-    -- identical constant happens to be stored
-    let o ← shape orig
-    let cause := if o == .missing then
-        (match a with | .proj .. => "packaging" | _ => "content")
-      else if isPackaging o a then "packaging" else "content"
-    rows := rows.push { name := toString row.name, group := groupKey (toString row.name) .missing a,
-                        cause, oldKind := o.kind, newKind := a.kind }
-  IO.println s!"# ixe-diff --originals {path}"
-  IO.println s!"names with Named.original: {total}; equal to Named.addr: {total - rows.size}; differ: {rows.size}"
-  report rows names
-  if let some p := tsv? then writeTsv p rows
-  IO.eprintln s!"[ixe-diff] done ({(← IO.monoMsNow) - t0} ms)"
-  return 0
-
 def usage : String :=
-  "usage: ixe-diff <old.ixe> <new.ixe> [--names] [--tsv <rows.tsv>]\n       ixe-diff --originals <file.ixe> [--names] [--tsv <rows.tsv>]"
+  "usage: ixe-diff <old.ixe> <new.ixe> [--names] [--tsv <rows.tsv>]"
 
 def main (args : List String) : IO UInt32 := do
   let rec flags (acc : Bool × Option String) : List String → Option (Bool × Option String)
@@ -259,9 +203,6 @@ def main (args : List String) : IO UInt32 := do
     | "--tsv" :: p :: rest => flags (acc.1, some p) rest
     | _ => none
   match args with
-  | "--originals" :: path :: rest =>
-    let some (names, tsv?) := flags (false, none) rest | IO.eprintln usage; return 2
-    originalsMode path names tsv?
   | a :: b :: rest =>
     let some (names, tsv?) := flags (false, none) rest | IO.eprintln usage; return 2
     diffMode a b names tsv?

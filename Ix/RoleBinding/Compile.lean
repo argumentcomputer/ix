@@ -2,7 +2,6 @@ module
 
 public import Ix.RoleBinding.Generate
 public import Ix.CompileResource
-public import Ix.AuxGen.LiteralSupport
 public import Ix.EnvScope
 public import Ix.Meta
 public import IxC.Kernel.PinGen.Certs
@@ -25,8 +24,7 @@ open Ix.Kernel (Role)
 The finalizer also checks every requested support/certificate publication. -/
 abbrev Backend := Lean.Environment → Ix.Compile.CompileInput → IO Ixon.Env
 
-def leanBackend (workers : Nat) (opts : Ix.CompileM.DriverOptions) : Backend := fun source input => do
-  let opts := { opts with serviceSupport := Ix.AuxGen.literalSupportFor source input.constants }
+def leanBackend (workers : Nat) (opts : Ix.CompileM.DriverOptions) : Backend := fun _ input => do
   let out ← IO.ofExcept (← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers) (opts := opts))
   unless out.cenv.ungrounded.isEmpty && out.ungroundedCount == 0 do
     throw (IO.userError "artifact support: incomplete Lean compilation")
@@ -137,22 +135,13 @@ def compileRequired (backend : Backend) (source : Lean.Environment)
       throw (IO.userError s!"artifact support: internal compilation did not publish {name}")
   return out
 
-/-- Keep every internal compiler trace, delimiting its invocation so callers
-can distinguish repeated blocks from duplicate work within one compilation. -/
-def internalTrace (label : String) (action : IO α) : IO α := do
-  let traced := (← IO.getEnv "IX_AUXGEN_IXC").isSome
-  if traced then IO.eprintln s!"[artifact-compile] begin {label}"
-  try action
-  finally
-    if traced then IO.eprintln s!"[artifact-compile] end {label}"
-
 /-- Generate from real certificate source, compiled by the same raw backend.
 No committed/default role table or certificate store supplies missing inputs. -/
 def finalize (backend : Backend) (source : Lean.Environment)
     (input : Ix.Compile.CompileInput) (artifact : Ixon.Env)
     (limits : Ix.Kernel.Admission.Limits) : IO Ixon.Env := do
   let (required, selected) ← IO.ofExcept (supportInput source artifact)
-  let support ← internalTrace "support" (compileRequired backend source selected)
+  let support ← compileRequired backend source selected
   let merged ← IO.ofExcept (mergeSupport limits artifact support)
   IO.ofExcept (preserveRequested input artifact merged)
   let actual := publishedRoles merged
@@ -167,7 +156,7 @@ def finalize (backend : Backend) (source : Lean.Environment)
       | _ => throw (IO.userError s!"artifact evidence: source theorem unavailable: {name}")
     let constants := Ix.EnvScope.collectSelectedDeps certSource theorems
     let selected ← IO.ofExcept ((Ix.Compile.compileInputFromEnv certSource constants).mapError toString)
-    internalTrace "certificates" (compileRequired backend certSource selected)
+    compileRequired backend certSource selected
   let generated ← IO.ofExcept (generate limits merged certificates required Ix.Kernel.preludeShape)
   let emitted ← IO.ofExcept (generated.emit limits merged)
   IO.ofExcept (preserveRequested input artifact emitted)

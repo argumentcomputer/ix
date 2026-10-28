@@ -1990,7 +1990,7 @@ fn ingress_muts_block<M: KernelMode>(
   // canonical Lean name, whose Named entry carries the member's own metadata
   // (arena, type root, ...) and must agree with the owner-derived address.
   // Error loudly if the Named entry is missing — the Muts-registration pass
-  // in `compile/mutual.rs` is supposed to emit one per member.
+  // in `compile_mutual` is supposed to emit one per member.
   let mut member_ids: Vec<KId<M>> = Vec::with_capacity(members.len());
   let mut member_metas: Vec<Arc<ConstantMeta>> =
     Vec::with_capacity(members.len());
@@ -2641,9 +2641,7 @@ pub fn ingress_compiled_names(
 //   * `lean_name_to_addr` for `KId.addr`s — the same name-hash scheme that
 //     `resolve_lean_name_addr` falls back to when both maps are `None`, so
 //     `Const`-reference addresses inside expressions match constant keys.
-//   * `lean_expr_to_zexpr_with_kenv` for expression ingress — the very same
-//     helper aux_gen already uses after regeneration, so any binder-name /
-//     const-ref semantics are shared between the two paths.
+//   * `lean_expr_to_zexpr_with_kenv` for expression ingress.
 //   * `kenv.intern` is populated in-place (no separate `InternTable` to
 //     swap in the way `ixon_ingress` requires).
 
@@ -2694,11 +2692,8 @@ pub fn build_leon_addr_map(lean_env: &LeanEnv) -> DashMap<Name, Address> {
   //
   // The map type stays `DashMap` (rather than `FxHashMap`) because
   // downstream signatures (`lean_expr_to_zexpr_cached`,
-  // `resolve_lean_name_addr`) share the `n2a` parameter slot with
-  // `aux_n2a`, which is concurrently *written* during the scheduler
-  // phase from `src/ix/compile/aux_gen.rs:823`. Splitting the two into
-  // different types would propagate a signature change through ~5
-  // functions with no matching perf win.
+  // `resolve_lean_name_addr`) take their `n2a` and `aux_n2a` name maps as
+  // `DashMap`s.
   let entries: Vec<_> = lean_env.iter().collect();
   let map = DashMap::with_capacity(lean_env.len());
   entries.par_iter().for_each(|(name, ci)| {
@@ -2963,9 +2958,7 @@ fn lean_recursor_order(
 
 /// Direct ingress: build a `KEnv<Meta>` from a Lean `Env` without going
 /// through Ixon compilation. Used by the `kernel-lean-roundtrip`
-/// diagnostic test and by `compile_env` to produce the `orig_kenv`
-/// used for original-constant verification (see `src/ix/compile.rs::
-/// KernelCtx::orig_kenv`).
+/// diagnostic test.
 ///
 /// # Addressing
 ///
@@ -3074,7 +3067,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> Result<KEnv<Meta>, String> {
   //
   // Declaration order is *not* the canonical structural order that
   // `sort_consts` produces during compilation — that second order
-  // only shows up in the compiled `kctx.kenv`, not here. Iterating
+  // only shows up in a kenv ingressed from Ixon, not here. Iterating
   // `lean_env` directly to push each constant's `self_kid` gave
   // random (FxHashMap iteration) order; we now seed each block with
   // its `all` list the first time any member is observed, then
@@ -3082,12 +3075,11 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> Result<KEnv<Meta>, String> {
   // inductive and recursor subsequences must align positionally with the
   // flat block (original `.all` members, then source-walk nested auxes).
   //
-  // `ixon_ingress` builds an analogous list for `kctx.kenv`, but
-  // there the ordering comes from `sort_consts`' equivalence-class
-  // output (structural, not declarational). The two paths diverge on
-  // purpose: `orig_kenv` carries Lean's source-order recursor
-  // expectations, `kctx.kenv` carries the canonical-compile recursor
-  // expectations.
+  // `ixon_ingress` builds an analogous list, but there the ordering
+  // comes from `sort_consts`' equivalence-class output (structural, not
+  // declarational). The two paths diverge on purpose: this kenv carries
+  // Lean's source-order recursor expectations, an Ixon-ingressed kenv
+  // the canonical-compile recursor expectations.
   //
   // For singleton inductives, the block is keyed at `self_kid`; for
   // multi-member mutuals, at the representative (first name in `all`).

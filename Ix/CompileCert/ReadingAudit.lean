@@ -6,13 +6,8 @@ import Ix.CompileCert.WireTables
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionCorrectness
 import Ix.CompileCert.RecordSourceShape
-import Ix.CompileCert.RewriteArityPrimitives
-import Ix.CompileCert.DevelopmentArity
 import Ix.CompileCert.SemanticFrames
 import Ix.CompileCert.SemanticPresence
-import Ix.CompileCert.FramePrimitives
-import Ix.CompileCert.DevelopmentFrames
-import Ix.CompileCert.DevelopmentState
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -521,7 +516,7 @@ def expressionRuntime : Array Lean.Name :=
   #[``Ix.CompileM.compileExprNoSurgery, ``Ix.CompileM.compileExprNoSurgeryStep, ``Ix.CompileM.compileExpr,
     ``Ix.CompileM.CompileEnv.surgeryFree, ``Ix.CompileM.compileConstExprRaw, ``Ix.CompileM.lookupConstAddr,
     ``Ix.CompileM.allocArenaNode, ``Ix.CompileM.pushUnivPatch, ``Ix.CompileM.compileAndInternUnivCanon,
-    ``Ix.AuxGen.decomposeApps, ``Ix.AuxGen.decomposeApps.go, ``Ix.SemanticContract.hasMetadata,
+    ``Ix.CompileM.decomposeApps, ``Ix.CompileM.decomposeApps.go, ``Ix.SemanticContract.hasMetadata,
     ``Ix.SemanticContract.read, ``Ix.SemanticContract.Contract.lower, ``Ix.LeanIngress.ingressExpr,
     ``Ix.LeanIngress.ingressMData, ``Ix.LeanIngress.withContract, ``Ix.LeanIngress.ingressLevel,
     ``Ix.LeanIngress.ingressKey]
@@ -765,37 +760,6 @@ run_cmd do
     #[`Ix.CompileCert.RecordSourceShape.decorate_constant, `Ix.CompileCert.RecordSourceShape.ingress,
       `Ix.CompileCert.RecordSourceShape.canonical_ingress]
 
-/-- info: [reading-audit] rewrite arity primitives: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "rewrite arity primitives"
-    (#[`substLevels, `liftP, `lowerP, `liftM, `lowerM, `share, `shareInput, `decorated_levels,
-      `decorated_liftM].map (`Ix.CompileCert.RewriteArityPrimitives ++ ·))
-
-/-- info: [reading-audit] development arity leaves: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "development arity leaves"
-    (#[`empty, `insert, `probe, `helperFrames, `spine, `field, `shareAppN_run].map
-      (`Ix.CompileCert.DevelopmentArity ++ ·))
-
-/-- info: [reading-audit] development arity recursion: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "development arity recursion"
-    #[`Ix.CompileCert.DevelopmentArity.hinst_run, `Ix.CompileCert.DevelopmentArity.happ_run]
-
-/-- info: [reading-audit] development arity history: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "development arity history"
-    (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh].map
-      (`Ix.CompileCert.DevelopmentArity ++ ·))
-
 /-- info: [reading-audit] semantic inspection traversal: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
@@ -822,41 +786,3 @@ run_cmd do
       (#[`spec_false_canonical, `production_absent, `source_absent, `guard_frames, `prepared_member_frames].map
         (`Ix.CompileCert.SemanticPresence ++ ·)))
 
-/-- info: [reading-audit] semantic frame primitives: 13 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "semantic frame primitives"
-    (#[`shell_refl, `fits_liftP, `fits_lowerP, `liftP, `lowerP, `fits_shell, `mdata_root_shell,
-      `substLevels, `abstractFVars, `liftM, `lowerM, `share_eq, `shareInput_eq].map
-      (`Ix.CompileCert.FramePrimitives ++ ·))
-
-/-- info: [reading-audit] semantic development cache: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "semantic development cache"
-    (#[`empty, `insert, `probe, `probe_fits, `spine, `field].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
-
-/-- info: [reading-audit] semantic development workers: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "semantic development workers"
-    (#[`shareAppN_run, `hinst_run, `happ_run].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
-
-/-- info: [reading-audit] semantic development histories: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "semantic development histories"
-    (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh,
-      `instantiateWith_inspected, `instantiateWith_fresh_inspected].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
-
-/-- info: [reading-audit] unconditional development cache preservation: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "unconditional development cache preservation"
-    (#[`insert_invalid, `hinst_state, `happ_state, `instantiateWith_state].map
-      (`Ix.CompileCert.DevelopmentState ++ ·))

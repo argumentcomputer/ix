@@ -58,13 +58,11 @@ def knownIncompatible : Array (Lean.Name × String) := #[
   -- kernel via `has_duplicate_level_params` (Meta-mode only).
   (`tut06_bad01,
    "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107"),
-  -- AdvNat.rec is a malformed raw recursor payload that aux-gen would
-  -- sanitize before it reaches Ixon. Tests.Ix.Kernel.Tutorial uses a
-  -- dedicated FFI (`rs_kernel_check_malformed_rec_rule_ixon`) to inject
-  -- the bad rule post-aux-gen. Standard Lean→Ixon→Aiur path never
-  -- exposes the malformed rule.
+  -- AdvNat.rec is a malformed raw recursor payload. Tests.Ix.Kernel.Tutorial
+  -- checks it through a dedicated FFI (`rs_kernel_check_malformed_rec_rule_ixon`)
+  -- that injects the bad rule into Ixon.
   (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec,
-   "malformed rec rule sanitized by aux-gen; Tutorial uses bespoke FFI"),
+   "malformed rec rule; Tutorial uses bespoke FFI"),
   -- Same reason as tut06_bad01: duplicate levelParams is Meta-mode
   -- hygiene; Ixon Anon stores only the `lvls` COUNT, so the duplication
   -- pattern is erased before the Aiur kernel can see it.

@@ -15,7 +15,7 @@
      `matcher`'s unit, so a closure of the bare `matcher` carries it. The
      caller `carriedProof` is outside the unit and is not pulled.
   3. **Mutual siblings.** The closure of each `mutual` member of
-     `Tests.Ix.Compile.AuxGenClosure.mutualSeeds` holds its sibling.
+     `Tests.Ix.Compile.AuxiliaryClosure.mutualSeeds` holds its sibling.
   4. **Checker support** (`checkerSupportOf`, derived from
      `IxC.Kernel.Roles` `Role.deps`; CQX.3). `Nat.land`'s support holds
      `Nat.mul` (`natOpDeps`). It is drawn from existing records only. The
@@ -58,7 +58,7 @@
 import LSpec
 import Ix.Meta
 import Ix.EnvScope
-import Tests.Ix.Compile.AuxGenClosure
+import Tests.Ix.Compile.AuxiliaryClosure
 import Tests.Ix.Compile.ClosureHarness
 import IxC.Kernel.CoreDefs
 import IxC.Kernel.Roles
@@ -187,7 +187,7 @@ def suite : List TestSeq := [
       errors := errors.push "the bare matcher pulled its caller carriedProof"
     checked := checked + 1
     -- 3. mutual siblings
-    for (root, sibling) in Tests.Ix.Compile.AuxGenClosure.mutualSeeds do
+    for (root, sibling) in Tests.Ix.Compile.AuxiliaryClosure.mutualSeeds do
       checked := checked + 1
       unless (nameSet (Ix.EnvScope.collectSelectedDeps env [root])).contains sibling do
         errors := errors.push s!"{root}: missing its sibling {sibling}"

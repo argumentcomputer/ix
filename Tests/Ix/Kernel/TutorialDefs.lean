@@ -1269,9 +1269,8 @@ Lean's elaborator rejects this declaration (nested occurrences must
 use only the block's fixed params), so it is hand-built here with its
 actual recursor headers and rules. `F.rec` has one motive and a minor with
 the two constructor fields, without a nested induction hypothesis.
-The compiler's `has_invalid_spec_ref` check
-(`crates/compile/src/compile/aux_gen/nested.rs`) skips the `P n F`
-occurrence the same way the Rust kernel does. Presence-only recursor stubs
+The nested expansion's spec check (`Ix.IndFlags.hasInvalidSpecRef`) skips the
+`P n F` occurrence the same way the Rust kernel does. Presence-only recursor stubs
 have no structural owner dependency and must not enter this scheduled
 full-pipeline test. -/
 
