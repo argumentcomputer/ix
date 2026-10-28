@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.CheckerBase
+public import IxC.Kernel.Cached.ExprOpsC
 
 @[expose] public section
 

@@ -245,8 +245,9 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
         unless closed[address]? == some value do
           throw s!"role generation: proof at {address} does not read back as its closed value"
       | _, _ => throw s!"role generation: evidence kind changed for {repr role}"
-  return { publication := published, table, prelude := preRecords, evidence := records, blobs, closed,
-    support, supportBlobs, supportHints }
+  return {
+    publication := published, table, prelude := preRecords, evidence := records
+    blobs, closed, support, supportBlobs, supportHints }
 
 /-- Insert generated proof records, literal blobs and the exact binding.
 This explicitly regenerates a binding: any previous binding is replaced only
