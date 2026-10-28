@@ -511,12 +511,13 @@ open Ix.Cert.DefinitionDeps (ConstOcc)
 quotient Source's, as quotient Source's group renamed.**
 
 The block is compiled in its members' order (`defs`, the compiler's views of `members`), one
-member per class, from a clean state in which no member is bound; the compile run's reading
-context `cx₁` reads the environment's names as quotient Source's renamed, and the closure's
-context `cx` reads the record's references as `cx₁` does, the members' keys as quotient
-Source's renamed and their hints as quotient Source's hints. The members' names are distinct,
-each member's level parameters distinct, and a name a member's terms mention with a member's
-ingress key is that member. -/
+member per class, from a clean state in which no member is bound: neither in the resolution map
+(`unresolved`) nor in the aux map (`unaliased`), the block's own or the environment's. The
+compile run's reading context `cx₁` reads the environment's names as quotient Source's renamed,
+and the closure's context `cx` reads the record's references as `cx₁` does, the members' keys as
+quotient Source's renamed and their hints as quotient Source's hints. The members' names are
+distinct, quotient Source's declarations of the group have distinct level positions, and a name
+a member's terms mention with a member's ingress key is that member. -/
 theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     {P : KeyScope .source} (hP : P.Pre) (hf : InjOn f P)
     {members : Array Ix.ConstantInfo} (two : 2 ≤ members.size) {defs : List Ix.Def}
@@ -530,7 +531,8 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     (clean : Emission.Clean bindings before)
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
       (.ok output, after))
-    (unbound : ∀ d ∈ defs, lookupBinding context.1 bindings d.name = none)
+    (unresolved : ∀ d ∈ defs, bindings.1.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
+    (unaliased : ∀ d ∈ defs, bindings.2.get? d.name = none ∧ context.1.auxNameToAddr.get? d.name = none)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
     (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f))
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx)
@@ -610,7 +612,10 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
       | some j =>
         exfalso
         obtain ⟨hj, hname⟩ := ctx_defs_val distinct hc
-        rw [← hname, unbound _ (List.getElem_mem hj)] at hb
+        have hd := List.getElem_mem hj
+        rw [← hname] at hb
+        simp only [lookupBinding, (unresolved _ hd).1, (unresolved _ hd).2, (unaliased _ hd).1,
+          (unaliased _ hd).2, Option.orElse] at hb
         cases hb
     obtain ⟨key, hk, -⟩ := external n a hb
     exact ⟨key, hk, by simp only [taggedNames, hnone]; exact ⟨a, hb, hk⟩⟩
