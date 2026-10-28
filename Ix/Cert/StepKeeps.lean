@@ -18,7 +18,10 @@ the step makes to the resolution map keeps it so, for every outcome:
 
 So the promotion branch is handled, not assumed away: whether or not the fold reaches
 it, it keeps the resolution. With `RunOwnership.scheduleOwnership_of_stepKeeps` this
-proves `Obligation.ScheduleOwnership` (`scheduleOwnership`). -/
+proves `Obligation.ScheduleOwnership` (`scheduleOwnership`).
+
+A step also keeps every blob (`stepBlobs`): only a merge and the original-form promotion
+write blobs, and both fold the block's blobs into the store (`mergeCompiledBlock_blobs`). -/
 
 namespace Ix.Cert.StepKeeps
 
@@ -59,24 +62,77 @@ theorem get?_insert_cases {t : Std.HashMap ExactName Address} {m n : ExactName} 
 
 /-! ## The relation a step keeps -/
 
-/-- **`c'` keeps `c`'s resolution and moves its failures as `Mono` says.** -/
-def KR (c c' : CompileEnv) : Prop := Keeps c c' ∧ Mono c c'
+/-- `c'` holds every blob `c` holds. -/
+def BlobsGrow (c c' : CompileEnv) : Prop := ∀ a, c.blobs.contains a = true → c'.blobs.contains a = true
 
-theorem KR.refl (c : CompileEnv) : KR c c := ⟨fun _ _ h => .inl h, Mono.refl c⟩
+/-- An inserting fold keeps every key of its start. -/
+theorem fold_insert_keep {m src : Std.HashMap Address ByteArray} {a : Address} (h : m.contains a = true) :
+    (src.fold (fun m k v => m.insert k v) m).contains a = true := by
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  suffices key : ∀ (l : List (Address × ByteArray)) (m : Std.HashMap Address ByteArray), m.contains a = true →
+      (l.foldl (fun m p => m.insert p.1 p.2) m).contains a = true from key _ _ h
+  intro l
+  induction l with
+  | nil => intro _ h; exact h
+  | cons p l ih =>
+    intro m h
+    exact ih _ (by rw [Std.HashMap.contains_insert, h, Bool.or_true])
+
+/-- An inserting fold holds every key of its source. -/
+theorem fold_insert_add {m src : Std.HashMap Address ByteArray} {a : Address} (h : src.contains a = true) :
+    (src.fold (fun m k v => m.insert k v) m).contains a = true := by
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  obtain ⟨b, hb⟩ := Option.isSome_iff_exists.mp
+    (show (src.get? a).isSome = true by
+      rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]; exact h)
+  have hm : (a, b) ∈ src.toList := by
+    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]; exact hb
+  suffices key : ∀ (l : List (Address × ByteArray)) (m : Std.HashMap Address ByteArray), (a, b) ∈ l →
+      (l.foldl (fun m p => m.insert p.1 p.2) m).contains a = true from key _ _ hm
+  have keep : ∀ (l : List (Address × ByteArray)) (m : Std.HashMap Address ByteArray), m.contains a = true →
+      (l.foldl (fun m p => m.insert p.1 p.2) m).contains a = true := by
+    intro l
+    induction l with
+    | nil => intro _ h; exact h
+    | cons p l ih =>
+      intro m h
+      exact ih _ (by rw [Std.HashMap.contains_insert, h, Bool.or_true])
+  intro l
+  induction l with
+  | nil => intro _ h; cases h
+  | cons p l ih =>
+    intro m hp
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp hp with rfl | hp
+    · exact keep _ _ Std.HashMap.contains_insert_self
+    · exact ih _ hp
+
+/-- **`c'` keeps `c`'s resolution, moves its failures as `Mono` says, and keeps its
+blobs.** -/
+def KR (c c' : CompileEnv) : Prop := Keeps c c' ∧ Mono c c' ∧ BlobsGrow c c'
+
+theorem KR.refl (c : CompileEnv) : KR c c := ⟨fun _ _ h => .inl h, Mono.refl c, fun _ h => h⟩
 
 theorem KR.trans {c₁ c₂ c₃ : CompileEnv} (h₁ : KR c₁ c₂) (h₂ : KR c₂ c₃) : KR c₁ c₃ :=
-  ⟨fun n a h => (h₁.1 n a h).elim (fun h => h₂.1 n a h) (fun f => .inr (h₂.2.1 n f)),
-    h₁.2.trans h₂.2⟩
+  ⟨fun n a h => (h₁.1 n a h).elim (fun h => h₂.1 n a h) (fun f => .inr (h₂.2.1.1 n f)),
+    h₁.2.1.trans h₂.2.1, fun a h => h₂.2.2 a (h₁.2.2 a h)⟩
 
-/-- An operation that leaves the resolution map. -/
-theorem KR.keep {c c' : CompileEnv} (hn : c'.nameToAddr = c.nameToAddr) (hm : Mono c c') : KR c c' :=
-  ⟨fun n a h => .inl (by rw [hn]; exact h), hm⟩
+/-- An operation that leaves the resolution map and grows the blobs. -/
+theorem KR.grow {c c' : CompileEnv} (hn : c'.nameToAddr = c.nameToAddr) (hm : Mono c c')
+    (hb : BlobsGrow c c') : KR c c' :=
+  ⟨fun n a h => .inl (by rw [hn]; exact h), hm, hb⟩
+
+/-- An operation that leaves the resolution map and the blobs. -/
+theorem KR.keep {c c' : CompileEnv} (hn : c'.nameToAddr = c.nameToAddr) (hm : Mono c c')
+    (hb : c'.blobs = c.blobs := by rfl) : KR c c' :=
+  KR.grow hn hm fun a h => by rw [hb]; exact h
 
 /-- An operation that erases a name from the resolution map while recording it as
 failed. -/
 theorem KR.erase {c c' : CompileEnv} {m : ExactName} (h₁ : c'.nameToAddr = c.nameToAddr.erase m)
-    (hf : c'.ungrounded.contains m = true) (hm : Mono c c') : KR c c' := by
-  refine ⟨fun n a h => ?_, hm⟩
+    (hf : c'.ungrounded.contains m = true) (hm : Mono c c') (hb : c'.blobs = c.blobs := by rfl) :
+    KR c c' := by
+  refine ⟨fun n a h => ?_, hm, fun a h => by rw [hb]; exact h⟩
   by_cases e : m = n
   · subst e
     exact .inr hf
@@ -88,12 +144,54 @@ theorem KR.erase {c c' : CompileEnv} {m : ExactName} (h₁ : c'.nameToAddr = c.n
 resolves to, if it resolves at all. -/
 theorem KR.insert {c c' : CompileEnv} {m : ExactName} {v : Address}
     (h₁ : c'.nameToAddr = c.nameToAddr.insert m v)
-    (agree : ∀ a, c.nameToAddr.get? m = some a → a = v) (hm : Mono c c') : KR c c' := by
-  refine ⟨fun n a h => .inl ?_, hm⟩
+    (agree : ∀ a, c.nameToAddr.get? m = some a → a = v) (hm : Mono c c')
+    (hb : c'.blobs = c.blobs := by rfl) : KR c c' := by
+  refine ⟨fun n a h => .inl ?_, hm, fun a h => by rw [hb]; exact h⟩
   rw [h₁]
   refine get?_insert_of_agree (fun e => ?_) h
   subst e
   exact (agree a h).symm
+
+set_option hygiene false in
+/-- `mergeCompiledBlock`'s loops after its first write: none touches the blobs. -/
+local macro "blobs_tail" held:term : tactic => `(tactic| (
+  refine loop_bind (P := fun d : DriverAcc => d.cenv.blobs = goal)
+    (I := fun c : CompileEnv => c.blobs = goal) _ _ _ _ $held (fun _ _ _ h => h) ?_
+  intro L hL
+  refine loop_bind (P := fun d : DriverAcc => d.cenv.blobs = goal)
+    (I := fun c : CompileEnv => c.blobs = goal) _ _ _ _ hL ?_ ?_
+  · intro _ _ _ h; split <;> exact h
+  · intro L' hL'
+    split
+    · refine loop_bind (P := fun d : DriverAcc => d.cenv.blobs = goal)
+        (I := fun c : CompileEnv => c.blobs = goal) _ _ _ _ hL' ?_ ?_
+      · intro cls _ s hs
+        exact forIn_inv_array (fun c : CompileEnv => c.blobs = goal) _ cls (by intros; assumption) s hs
+      · intro _ h
+        refine loop_bind (P := fun d : DriverAcc => d.cenv.blobs = goal)
+          (I := fun _ : Array Ix.Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
+        intro _ _; exact h
+    · refine loop_bind (P := fun d : DriverAcc => d.cenv.blobs = goal)
+        (I := fun _ : Array Ix.Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
+      intro _ _; exact hL'))
+
+/-- **A merge's blobs are the block's folded into the state's.** -/
+theorem mergeCompiledBlock_blobs (acc : DriverAcc) (lo : Ix.Name) (result : BlockResult) (cache : BlockState) :
+    (mergeCompiledBlock acc lo result cache).cenv.blobs =
+      cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs := by
+  let goal := cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs
+  change _ = goal
+  unfold mergeCompiledBlock
+  simp only [Id.run]
+  split
+  · split
+    · blobs_tail rfl
+    · blobs_tail rfl
+  · refine loop_bind (P := fun d : DriverAcc => d.cenv.blobs = goal)
+      (I := fun c : CompileEnv => c.blobs = goal) _ _ _ _ rfl ?_ ?_
+    · intro _ _ _ h; split <;> exact h
+    · intro L hL
+      blobs_tail hL
 
 /-! ## The pieces of a step -/
 
@@ -237,7 +335,7 @@ theorem promoteOriginalWrites_kr {acc : DriverAcc} {lo : Ix.Name} {result : Bloc
     · rw [haux] at h
       exact .inr h
   · intro L hL
-    exact hL.1.trans (KR.keep rfl (Mono.of_eq rfl rfl))
+    exact hL.1.trans (KR.grow rfl (Mono.of_eq rfl rfl) fun _ h => fold_insert_keep h)
 
 /-- **The remaining members' writes keep the resolution**: they write only unresolved
 members. -/
@@ -316,7 +414,8 @@ theorem mergeCompiledBlock_kr {acc : DriverAcc} {lo : Ix.Name} {result : BlockRe
     {cache : BlockState} (hc : checkCompiledBlock acc.cenv lo result cache = .ok ()) :
     KR acc.cenv (mergeCompiledBlock acc lo result cache).cenv := by
   refine ⟨fun n a h => .inl ?_,
-    (mergeCompiledBlock_step acc lo result cache (checkCompiledBlock_content hc)).1.2.2⟩
+    (mergeCompiledBlock_step acc lo result cache (checkCompiledBlock_content hc)).1.2.2,
+    fun a h => by rw [mergeCompiledBlock_blobs]; exact fold_insert_keep h⟩
   rw [Ix.CompileCert.PrimaryAddressFrame.mergeCompiledBlock_primary]
   exact (Ix.CompileCert.PrimaryAddressFrame.checkCompiledBlock_primary_agrees hc).foldl_keeps h
 
@@ -451,6 +550,11 @@ theorem applyAuxBlockOutcome_kr (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set I
 
 /-- **One driver step keeps the resolution.** -/
 theorem stepKeeps : StepKeeps := fun acc lo all o => (applyAuxBlockOutcome_kr acc lo all o).1
+
+/-- **One driver step keeps the blobs.** -/
+theorem stepBlobs (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name) (o : AuxBlockOutcome) :
+    BlobsGrow acc.cenv (applyAuxBlockOutcome acc lo all o).1.cenv :=
+  (applyAuxBlockOutcome_kr acc lo all o).2.2
 
 /-- **Schedule ownership**: every state of the fold's run owns the artifact's resolution
 and store. -/
