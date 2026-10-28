@@ -453,6 +453,55 @@ def registry : List Entry := [
   .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit
 ]
 
+/-- The entries that must stay registered once, in their tier
+(`Tests.Registry.coverageProblems`): the checks the certification, the
+compilers' agreement and the proof system's claims rest on. Moving one to the
+manual tier, or deleting it, fails `ixtests-registry`; so does a CI tier
+with no required entry. -/
+def required : List (String × String) := [
+  ("cert-statement", "primary"),
+  ("ix-aggr", "primary"),
+  ("lean-export", "primary"),
+  ("io-ingress", "primary"),
+  ("kernel-source-ingress", "primary"),
+  ("kernel-reader-roundtrip", "primary"),
+  ("kernel-bundle-evidence", "primary"),
+  ("resource-hints", "primary"),
+  ("compiler-reports", "primary"),
+  ("ground-unit", "primary"),
+  ("prim-addrs", "primary"),
+  ("exact-sharing", "primary"),
+  -- the Lean decoders' reject-parity entry, required once it is registered:
+  -- ("ixon-reject-parity", "primary"),
+  ("ixvm-tagn", "primary"),
+  ("ixes-manifest", "primary"),
+  ("rust-compile-coverage", "primary"),
+  ("cli", "ci:cli"),
+  ("kernel-check-lean-cli", "ci:cli"),
+  ("artifact-compile-cli", "ci:cli"),
+  ("host-admission-cli", "ci:cli"),
+  ("rust-serialize", "ci:compile-pipeline"),
+  ("decompile-diff", "ci:compile-pipeline"),
+  ("compile-ind-flags", "ci:compile-pipeline"),
+  ("compile-claim-conflict", "ci:compile-pipeline"),
+  ("compile-closure-whole", "ci:compiler-closures"),
+  ("checker-support-regression", "ci:compiler-closures"),
+  ("tc-pins", "ci:compiler-closures"),
+  ("kernel-accel-semantics", "ci:compiler-closures"),
+  ("compile", "ci:compile"),
+  ("compile-determinism", "ci:compile"),
+  ("decompile", "ci:decompile"),
+  ("ixvm", "ci:misc"),
+  ("kernel-check-env", "ci:misc"),
+  ("kernel-tutorial", "ci:misc"),
+  ("compile-schedule-identity", "ci:landing-compilers"),
+  ("rust-compile", "ci:landing-compilers"),
+  ("cert-compile-parity-init", "ci:landing-initstd"),
+  ("cert-roles-initstd", "ci:landing-initstd"),
+  ("cert-evidence-initstd", "ci:landing-initstd"),
+  ("cert-noctor-initstd", "ci:landing-initstd"),
+  ("admission-hash-diff", "ci:landing-initstd")]
+
 def main (args : List String) : IO UInt32 := do
   -- Namespace-filtered kernel ixon roundtrip diagnostic.
   -- `kernel-roundtrip-ns=Nat.le` runs the same pipeline as the
@@ -477,4 +526,4 @@ def main (args : List String) : IO UInt32 := do
     for msg in errors[:min 50 errors.size] do
       IO.println s!"  {msg}"
     return 1
-  Tests.Registry.run registry get_env! args
+  Tests.Registry.run registry required get_env! args

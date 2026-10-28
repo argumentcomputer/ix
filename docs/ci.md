@@ -48,8 +48,13 @@ the entry runs:
 
 `lake test -- --tier <tier>` runs one tier; `--tier landing` runs the two
 landing partitions. The registry's primary self-test, `ixtests-registry`,
-fails when a CI tier has no entry, when no workflow runs a CI tier, or when a
-workflow names a tier the registry does not define. A merge-tests partition
+fails when a CI tier has no entry, when no workflow runs a CI tier (comments
+do not count), or when a workflow names a tier the registry does not define.
+It also fails when an entry of `required` in `Tests/Main.lean` is missing,
+registered twice or in another tier, and when that list names no entry of
+some tier that runs in CI; moving a required check to `manual` therefore
+means editing the list in the same change. The check of the workflows is
+textual: a step disabled by an `if:` still counts. A merge-tests partition
 must finish well within the merge queue's status-check timeout: split a tier
 into two jobs before it approaches it.
 
