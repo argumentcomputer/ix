@@ -1669,6 +1669,8 @@ def suite : List TestSeq := [
     perRoot (← getCompileEnv #[defsModule, ownModule])) 1,
   report "CompileCorrect.checked's premises hold on the closures of Nat.add and List.length" (do
     Tests.Ix.Cert.ExecutedChecks.checkedCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "the evidence check refuses a misbound table and a replaced fallback record" (do
+    Tests.Ix.Cert.ExecutedChecks.evidenceRefusals (← getCompileEnv #[defsModule, ownModule])) 1,
   report "binder contracts on both sides, on the resolved source-contract syntax fixtures" (do
     contractAgreement (← getCompileEnv #[syntaxModule])) 1,
   report "the shipped role table's certificates check on their pinned closure (Route A, B6b)"

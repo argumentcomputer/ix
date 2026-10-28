@@ -15,7 +15,10 @@ import Tests.Ix.Kernel.SourceIngressStep
 
 `checkedCase` runs each premise, as the theorem states it, on the closures of
 `Nat.add` and of `List.length`, and requires every one to hold: the theorem
-applies to real closures, not only to none. -/
+applies to real closures, not only to none.
+
+`evidenceRefusals` gives the evidence check, one of the artifact checks, crafted
+inputs it must refuse (the other two have planted cases in `cert-statement`). -/
 
 namespace Tests.Ix.Cert.ExecutedChecks
 
@@ -60,6 +63,57 @@ def checkedCase (leanEnv : Lean.Environment) : IO (Array String × Array String)
     let (e, l) ← premisesAt leanEnv root
     errors := errors ++ e
     lines := lines ++ l
+  return (errors, lines)
+
+/-- **The evidence check refuses crafted inputs** (`Ix.Cert.EvidenceCheck.evidenceCheck`,
+one of the artifact checks `compileChecked` runs). On the compiled closure of
+`List.length`, which it accepts, it refuses:
+* the artifact against a role table with one role's address replaced by
+  another role's (the table it is compiled under must be the admitted
+  default table);
+* the artifact with a fallback record of the prelude replaced, at its address,
+  by another record's bytes (a fallback record the artifact holds, it must
+  hold identically). -/
+def evidenceRefusals (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[``List.length])
+  let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
+  let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
+  let .ok t := Ix.Kernel.Reader.defaultTable
+    | return (#["evidence refusals: the default role table does not read"], #[])
+  let .ok (ixe, _) := Ix.Cert.compileChecked t env
+    | return (#["evidence refusals: compileChecked refuses the closure of List.length"], #[])
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  match Ix.Cert.EvidenceCheck.evidenceCheck t ixe with
+  | .ok () => lines := lines.push s!"evidence check: passes on the compiled closure of List.length \
+      ({ixe.consts.size} records)"
+  | .error e => errors := errors.push s!"evidence check: refuses the compiled closure of List.length: {e}"
+  -- the table with its first role bound at another role's address
+  match t.bound[0]? with
+  | some (r, a0) =>
+    let other := ((t.bound.toList.find? (·.2 != a0)).map (·.2)).getD a0
+    let t' := { t with bound := t.bound.set! 0 (r, other) }
+    match Ix.Cert.EvidenceCheck.evidenceCheck t' ixe with
+    | .ok () => errors := errors.push s!"evidence check: accepts a table with {repr r} at another \
+        role's address"
+    | .error _ => lines := lines.push s!"evidence check: refuses a table with {repr r} at another \
+        role's address"
+  | none => errors := errors.push "evidence check: the default table binds no role"
+  -- a fallback record of the prelude replaced, at its address, by another record's bytes
+  let .ok (pre : Ix.Kernel.Reader.Prelude .anon) := Ix.Kernel.Reader.preludeFor t
+    | return (errors.push "evidence check: the committed prelude does not read", lines)
+  match pre.records[0]? with
+  | none => errors := errors.push "evidence check: the prelude has no fallback record to replace"
+  | some (a, c) =>
+    match ixe.consts.toList.find? fun (_, lc) => lc.get? != some c with
+    | none => errors := errors.push "evidence check: no record differs from the prelude's first"
+    | some (_, other) =>
+      let planted := { ixe with consts := ixe.consts.insert a other }
+      match Ix.Cert.EvidenceCheck.evidenceCheck t planted with
+      | .ok () => errors := errors.push s!"evidence check: accepts another record's bytes at the \
+          fallback record {a}"
+      | .error _ => lines := lines.push s!"evidence check: refuses another record's bytes at the \
+          fallback record {a}"
   return (errors, lines)
 
 end Tests.Ix.Cert.ExecutedChecks
