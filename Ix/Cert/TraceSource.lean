@@ -32,7 +32,11 @@ that come from quotient Source's acceptance of its prepared stream.
   group's `indDecl` as a pinned block, whose members match the pins canonically (a pin's member
   with two parameters has a canonical type that mentions the second, which a term numbered under
   two equal names cannot), or through its modeled or native route, which checks every type
-  former's and recursor's level positions distinct (`member_names_nodup`). -/
+  former's and recursor's level positions distinct (`member_names_nodup`).
+* `family_levels` (`InductiveNeeds.lpsEq`, `ctorLps`, and `recLevels`' sharing): a lowered
+  inductive group's types and constructors have its first type's level-parameter names, and its
+  recursors one list, under the compile-report check `FamilyLevelParams` (quotient Source numbers
+  each constant by its own list and cannot see the names). -/
 
 namespace Ix.Cert.TraceSource
 
@@ -1035,6 +1039,81 @@ theorem recLevels_of {recs : Array Ix.RecursorVal} (nodup : ∀ r ∈ recs.toLis
 
 end Families
 
+/-! ## Inductive groups: shared level-parameter names
+
+Quotient Source numbers each constant of a family by its own list, so it cannot see whether a
+family's members, constructors and recursors share names; the compile can (a constructor compiles
+under its inductive's list). A compile-report check makes them shared (`FamilyLevelParams`), and a
+lowered group's lists are then its first type's (`family_levels`). -/
+
+/-- **A family shares its level-parameter names**: every member an input inductive lists and
+every constructor it lists have its names; recursors of one family (one `all[0]`) have one
+list. (A compile-report check.) -/
+def FamilyLevelParams (env : Ix.Environment) : Prop :=
+  (∀ n iv, env.consts.get? n = some (.inductInfo iv) →
+    (∀ m ∈ iv.all, ∀ iv', env.consts.get? m = some (.inductInfo iv') →
+      iv'.cnst.levelParams = iv.cnst.levelParams) ∧
+    (∀ c ∈ iv.ctors, ∀ cv, env.consts.get? c = some (.ctorInfo cv) →
+      cv.cnst.levelParams = iv.cnst.levelParams)) ∧
+  ∀ x y rx ry first, env.consts.get? x = some (.recInfo rx) → env.consts.get? y = some (.recInfo ry) →
+    rx.all[0]? = some first → ry.all[0]? = some first → rx.cnst.levelParams = ry.cnst.levelParams
+
+/-- **A lowered inductive group shares its first type's level-parameter names**
+(`InductiveNeeds.lpsEq`, `ctorLps`), **and its recursors share one list** (`recLevels`' sharing),
+under the family check: the group's types are the inductives its head lists, its constructors
+theirs, and its recursors those of its head's family (`FamilyGroups.inductiveGroup_shape`). -/
+theorem family_levels {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : RoleTable} {envQ : Env .source}
+    (P : Premises env roots sub ixe failures t envQ) (flp : FamilyLevelParams env)
+    {hints : CName .source → Option ReducibilityHint} {ρ : FiberMap} {start : State .source}
+    {ls : List Scheduled} {rs : List (Read .source)} {ℓ : Nat} {y : Scheduled}
+    {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
+    {c : Converted} {stS : State .source} {raw rd : Read .source}
+    (low : LoweredAt (ClosureLayout.quotientGraph ixe t hints sub) ρ hints start ls rs ℓ y
+      (.inductive types ctors recs) c stS raw rd)
+    {first : Ix.InductiveVal} (hfirst : types[0]? = some first) :
+    (∀ v ∈ types.toList, v.cnst.levelParams = first.cnst.levelParams) ∧
+      (∀ cs ∈ ctors.toList, ∀ ct ∈ cs.toList, ct.cnst.levelParams = first.cnst.levelParams) ∧
+      ∀ r ∈ recs.toList, ∀ r' ∈ recs.toList, r.cnst.levelParams = r'.cnst.levelParams := by
+  have hcl : IsClosure env roots sub := P.source.1
+  have hmem : Ix.LeanIngress.Group.inductive types ctors recs ∈ Ix.LeanIngress.groupsOf sub (blocksOf sub) := by
+    have hgroups : (ClosureLayout.quotientGraph ixe t hints sub).groups =
+        Ix.LeanIngress.groupsOf sub (blocksOf sub) := ReaderUnits.graph_groups sub (blocksOf sub)
+    rw [← hgroups]
+    exact Array.mem_of_getElem? low.group
+  obtain ⟨n, v, hnv, -, hg⟩ := FamilyGroups.inductive_origin hmem
+  rcases FamilyGroups.inductiveGroup_shape hg with ⟨_, _, e⟩ | ⟨types', ctors', recs', e, htypes, hctors, hrecs⟩
+  · cases e
+  cases e
+  have hnE : env.consts.get? n = some (.inductInfo v) := hcl.mem_env (SourceStoredNames.stored_get hnv)
+  obtain ⟨famT, famR⟩ := flp
+  -- every type is an inductive the head lists, stored
+  have typeAt : ∀ w ∈ types.toList, ∃ m ∈ v.all, env.consts.get? m = some (.inductInfo w) := by
+    intro w hw
+    obtain ⟨m, hm, hget, -⟩ := ReaderUnits.forall₂_mem_right htypes w hw
+    exact ⟨m, Array.mem_toList_iff.mp hm, hcl.mem_env hget⟩
+  have typeLps : ∀ w ∈ types.toList, w.cnst.levelParams = v.cnst.levelParams := by
+    intro w hw
+    obtain ⟨m, hm, hget⟩ := typeAt w hw
+    exact (famT n v hnE).1 m hm w hget
+  have firstLps : first.cnst.levelParams = v.cnst.levelParams :=
+    typeLps first (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hfirst))
+  refine ⟨fun w hw => (typeLps w hw).trans firstLps.symm, fun cs hcs ct hct => ?_, fun r hr r' hr' => ?_⟩
+  · obtain ⟨w, hw, row⟩ := ReaderUnits.forall₂_mem_right hctors cs hcs
+    obtain ⟨x, hx, hxget, -, -⟩ := ReaderUnits.forall₂_mem_right row ct hct
+    obtain ⟨m, -, hwget⟩ := typeAt w hw
+    have hxc : x.1 ∈ w.ctors :=
+      Array.mem_of_getElem? (Array.mem_zipIdx_iff_getElem?.mp (Array.mem_toList_iff.mp hx))
+    rw [(famT m w hwget).2 x.1 hxc ct (hcl.mem_env hxget), typeLps w hw, firstLps]
+  · have cand : ∀ r ∈ recs.toList, ∃ k, env.consts.get? k = some (.recInfo r) ∧ r.all[0]? = some n := by
+      intro r hr
+      obtain ⟨k, hk, hall⟩ := FamilyGroups.recsTable_mem
+        (SourceStoredNames.blockRecursors_mem hrecs r (Array.mem_toList_iff.mp hr))
+      exact ⟨k, SourceStoredNames.stored_get (SourceStoredNames.stored_input P hk), hall⟩
+    obtain ⟨k, hk, hall⟩ := cand r hr
+    obtain ⟨k', hk', hall'⟩ := cand r' hr'
+    exact famR k k' r r' n hk hk' hall hall'
+
 
 /--
 info: 'Ix.Cert.TraceSource.kept_levels' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -1071,5 +1150,11 @@ info: 'Ix.Cert.TraceSource.inductive_nodup' depends on axioms: [propext, Classic
 -/
 #guard_msgs in
 #print axioms inductive_nodup
+
+/--
+info: 'Ix.Cert.TraceSource.family_levels' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms family_levels
 
 end Ix.Cert.TraceSource
