@@ -28,9 +28,9 @@ def claim := ⟦
   -- typechecks it. Every ref discovered during typechecking is
   -- resolved via nested `get_ci`, faulting bytes from IOBuffer
   -- on first touch.
-  fn run_check(addr: Addr) {
+  fn run_check(rc: RoleCtx, addr: Addr) {
     let ci = load(get_ci(addr));
-    check_const(ci, addr)
+    check_const(rc, ci, addr)
   }
 
   -- Which entries of a constant's `refs` are CONSTANT addresses — the
@@ -213,40 +213,40 @@ def claim := ⟦
   -- indices `const_idxs_of` saw used as constants, and a claim target or a
   -- block address is a constant reference by convention. The decision to
   -- check is never taken from IO-buffer metadata.
-  fn run_check_transitive(addr: Addr) {
+  fn run_check_transitive(rc: RoleCtx, addr: Addr) {
     let c = load_verified_constant(addr);
     match c {
       Constant.Mk(info, _, refs, _) =>
         match info {
           ConstantInfo.Muts(members) =>
-            check_muts_all(addr, members, members, 0),
+            check_muts_all(rc, addr, members, members, 0),
           ConstantInfo.DPrj(dprj) =>
             match dprj {
               DefinitionProj.Mk(_, block_addr) =>
-                run_check(addr);
-                run_check_transitive(block_addr),
+                run_check(rc, addr);
+                run_check_transitive(rc, block_addr),
             },
           ConstantInfo.IPrj(iprj) =>
             match iprj {
               InductiveProj.Mk(_, block_addr) =>
-                run_check(addr);
-                run_check_transitive(block_addr),
+                run_check(rc, addr);
+                run_check_transitive(rc, block_addr),
             },
           ConstantInfo.CPrj(cprj) =>
             match cprj {
               ConstructorProj.Mk(_, _, block_addr) =>
-                run_check(addr);
-                run_check_transitive(block_addr),
+                run_check(rc, addr);
+                run_check_transitive(rc, block_addr),
             },
           ConstantInfo.RPrj(rprj) =>
             match rprj {
               RecursorProj.Mk(_, block_addr) =>
-                run_check(addr);
-                run_check_transitive(block_addr),
+                run_check(rc, addr);
+                run_check_transitive(rc, block_addr),
             },
-          _ => run_check(addr),
+          _ => run_check(rc, addr),
         };
-        walk_refs_transitive(refs, const_idxs_of(c), 0),
+        walk_refs_transitive(rc, refs, const_idxs_of(c), 0),
     }
   }
 
@@ -254,37 +254,48 @@ def claim := ⟦
   -- CONSTANTS; everything else is a blob payload or unreferenced. The
   -- decision comes from `const_idxs_of`, i.e. from bytes already bound by
   -- blake3 — not from an IO probe the prover answers.
-  fn walk_refs_transitive(refs: List‹Addr›, consts: List‹G›, i: G) {
+  --
+  -- A ref bound to a role whose admission checks it (a basis inductive,
+  -- constructor or recursor, or an operation) is checked under the context
+  -- its group is validated in (`walk_ctx`), so a claim that also uses the
+  -- role checks it once, and one that does not admits nothing. Under the
+  -- standard axiom policy that declines such a constant whose dependencies
+  -- use a standard axiom whose group comes after its own (the axioms'
+  -- groups come after the structural operations'), even when the claim
+  -- never uses the role; this walk and the two below agree on it.
+  fn walk_refs_transitive(rc: RoleCtx, refs: List‹Addr›, consts: List‹G›, i: G) {
     match load(refs) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
         match g_list_has(consts, i) {
-          1 => run_check_transitive(a),
+          1 =>
+            assert_ref_allowed(rc, a);
+            run_check_transitive(walk_ctx(rc, a), a),
           _ => (),
         };
-        walk_refs_transitive(rest, consts, i + 1),
+        walk_refs_transitive(rc, rest, consts, i + 1),
     }
   }
 
   -- Check every member of a Muts block. Each member is checked through
   -- the projection ci (via get_ci_iprj/cprj/rprj/dprj) so all block
   -- members get their full soundness gauntlet.
-  fn check_muts_all(block_addr: Addr, all_members: List‹MutConst›,
+  fn check_muts_all(rc: RoleCtx, block_addr: Addr, all_members: List‹MutConst›,
                           cur: List‹MutConst›, pos: G) {
     match load(cur) {
       ListNode.Nil => (),
       ListNode.Cons(m, rest) =>
-        check_muts_member_at(block_addr, all_members, m, pos);
-        check_muts_all(block_addr, all_members, rest, pos + 1),
+        check_muts_member_at(rc, block_addr, all_members, m, pos);
+        check_muts_all(rc, block_addr, all_members, rest, pos + 1),
     }
   }
 
-  fn check_muts_member_at(block_addr: Addr,
+  fn check_muts_member_at(rc: RoleCtx, block_addr: Addr,
                                 all_members: List‹MutConst›,
                                 m: MutConst, pos: G) {
     let member_addr = projection_addr(all_members, block_addr, pos);
     let ci = load(get_ci(member_addr));
-    check_const(ci, member_addr)
+    check_const(rc, ci, member_addr)
   }
 
   -- ============================================================================
@@ -387,7 +398,7 @@ def claim := ⟦
     rbtree_map_lookup_or_default(ptr_val(a), tree, 0)
   }
 
-  fn env_walk(addr: Addr, owned: RBTreeMap‹G›, asm: RBTreeMap‹G›,
+  fn env_walk(rc: RoleCtx, addr: Addr, owned: RBTreeMap‹G›, asm: RBTreeMap‹G›,
                   strict: G) {
     -- Every address reaching here is a constant: the caller admits only
     -- indices the referring constant's own Exprs use as constants, and a
@@ -412,59 +423,61 @@ def claim := ⟦
           Constant.Mk(info, _, refs, _) =>
             match info {
               ConstantInfo.Muts(members) =>
-                check_muts_all(addr, members, members, 0),
+                check_muts_all(rc, addr, members, members, 0),
               ConstantInfo.DPrj(dprj) =>
                 match dprj {
                   DefinitionProj.Mk(_, block_addr) =>
-                    run_check(addr);
-                    env_walk(block_addr, owned, asm, strict),
+                    run_check(rc, addr);
+                    env_walk(rc, block_addr, owned, asm, strict),
                 },
               ConstantInfo.IPrj(iprj) =>
                 match iprj {
                   InductiveProj.Mk(_, block_addr) =>
-                    run_check(addr);
-                    env_walk(block_addr, owned, asm, strict),
+                    run_check(rc, addr);
+                    env_walk(rc, block_addr, owned, asm, strict),
                 },
               ConstantInfo.CPrj(cprj) =>
                 match cprj {
                   ConstructorProj.Mk(_, _, block_addr) =>
-                    run_check(addr);
-                    env_walk(block_addr, owned, asm, strict),
+                    run_check(rc, addr);
+                    env_walk(rc, block_addr, owned, asm, strict),
                 },
               ConstantInfo.RPrj(rprj) =>
                 match rprj {
                   RecursorProj.Mk(_, block_addr) =>
-                    run_check(addr);
-                    env_walk(block_addr, owned, asm, strict),
+                    run_check(rc, addr);
+                    env_walk(rc, block_addr, owned, asm, strict),
                 },
-              _ => run_check(addr),
+              _ => run_check(rc, addr),
             };
-            env_walk_refs(refs, const_idxs_of(c), 0, owned, asm, strict),
+            env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, strict),
         },
     }
   }
 
-  fn env_walk_refs(refs: List‹Addr›, consts: List‹G›, i: G,
+  fn env_walk_refs(rc: RoleCtx, refs: List‹Addr›, consts: List‹G›, i: G,
                        owned: RBTreeMap‹G›,
                        asm: RBTreeMap‹G›, strict: G) {
     match load(refs) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
         match g_list_has(consts, i) {
-          1 => env_walk(a, owned, asm, strict),
+          1 =>
+            assert_ref_allowed(rc, a);
+            env_walk(walk_ctx(rc, a), a, owned, asm, strict),
           _ => (),
         };
-        env_walk_refs(rest, consts, i + 1, owned, asm, strict),
+        env_walk_refs(rc, rest, consts, i + 1, owned, asm, strict),
     }
   }
 
-  fn env_walk_leaves(leaves: List‹Addr›, owned: RBTreeMap‹G›,
+  fn env_walk_leaves(rc: RoleCtx, leaves: List‹Addr›, owned: RBTreeMap‹G›,
                          asm: RBTreeMap‹G›) {
     match load(leaves) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
-        env_walk(a, owned, asm, 1);
-        env_walk_leaves(rest, owned, asm),
+        env_walk(rc, a, owned, asm, 1);
+        env_walk_leaves(rc, rest, owned, asm),
     }
   }
 
@@ -474,7 +487,7 @@ def claim := ⟦
   -- declared type without checking it: being loaded is not evidence of
   -- being well-typed, so every constant the claim covers must be
   -- reached by this walk or assumed via the frontier.
-  fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
+  fn run_check_env(rc: RoleCtx, env_root: Addr, asm: Option‹Addr›) {
     match asm {
       Option.None =>
         -- The whole environment: every constant under `env_root` is
@@ -491,79 +504,90 @@ def claim := ⟦
         -- (the sharded walk below aborts instead), so a claim without
         -- assumptions proves every constant its tree reaches, not only
         -- those it lists. For an environment's tree the two coincide.
-        walk_leaves_owned(load_assumption_tree(env_root)),
+        walk_leaves_owned(rc, load_assumption_tree(env_root)),
       Option.Some(r) =>
         let owned = load_assumption_tree(env_root);
         let owned_set = addr_set_build(owned, RBTreeMap.Nil);
         let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap.Nil);
-        env_walk_leaves(owned, owned_set, asm_set),
+        env_walk_leaves(rc, owned, owned_set, asm_set),
     }
   }
 
-  fn walk_leaves_owned(leaves: List‹Addr›) {
+  fn walk_leaves_owned(rc: RoleCtx, leaves: List‹Addr›) {
     match load(leaves) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
-        check_owned(load(a));
-        walk_leaves_owned(rest),
+        check_owned(load(role_ctx_binding(rc)), load(a));
+        walk_leaves_owned(rc, rest),
     }
   }
 
   -- Check the constant with address `bytes` and, transitively, everything
   -- it references (the unsharded walk of `env_walk`, without the owned and
-  -- assumption sets). An entry, so that a worker record can run it over
-  -- the leaves it owns; a caller in another record reaches the same row
-  -- through the executor's deferred call.
-  pub fn check_owned(bytes: [U8; 32]) {
-    env_walk_all(store(bytes))
+  -- assumption sets), under the role binding with hash `binding`. An
+  -- entry, so that a worker record can run it over the leaves it owns; a
+  -- caller in another record reaches the same row through the executor's
+  -- deferred call. Both arguments are bytes rather than interned pointers,
+  -- which are per record.
+  pub fn check_owned(binding: [U8; 32], bytes: [U8; 32]) {
+    env_walk_all(role_ctx_of_binding(store(binding)), store(bytes))
   }
 
-  fn env_walk_all(addr: Addr) {
+  fn env_walk_all(rc: RoleCtx, addr: Addr) {
     let c = load_verified_constant(addr);
     match c {
       Constant.Mk(info, _, refs, _) =>
         match info {
           ConstantInfo.Muts(members) =>
-            check_muts_all(addr, members, members, 0),
+            check_muts_all(rc, addr, members, members, 0),
           ConstantInfo.DPrj(dprj) =>
             match dprj {
               DefinitionProj.Mk(_, block_addr) =>
-                run_check(addr);
-                check_owned(load(block_addr)),
+                run_check(rc, addr);
+                check_owned(load(role_ctx_binding(rc)), load(block_addr)),
             },
           ConstantInfo.IPrj(iprj) =>
             match iprj {
               InductiveProj.Mk(_, block_addr) =>
-                run_check(addr);
-                check_owned(load(block_addr)),
+                run_check(rc, addr);
+                check_owned(load(role_ctx_binding(rc)), load(block_addr)),
             },
           ConstantInfo.CPrj(cprj) =>
             match cprj {
               ConstructorProj.Mk(_, _, block_addr) =>
-                run_check(addr);
-                check_owned(load(block_addr)),
+                run_check(rc, addr);
+                check_owned(load(role_ctx_binding(rc)), load(block_addr)),
             },
           ConstantInfo.RPrj(rprj) =>
             match rprj {
               RecursorProj.Mk(_, block_addr) =>
-                run_check(addr);
-                check_owned(load(block_addr)),
+                run_check(rc, addr);
+                check_owned(load(role_ctx_binding(rc)), load(block_addr)),
             },
-          _ => run_check(addr),
+          _ => run_check(rc, addr),
         };
-        env_walk_refs_all(refs, const_idxs_of(c), 0),
+        env_walk_refs_all(rc, refs, const_idxs_of(c), 0),
     }
   }
 
-  fn env_walk_refs_all(refs: List‹Addr›, consts: List‹G›, i: G) {
+  fn env_walk_refs_all(rc: RoleCtx, refs: List‹Addr›, consts: List‹G›, i: G) {
     match load(refs) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
         match g_list_has(consts, i) {
-          1 => check_owned(load(a)),
+          1 =>
+            assert_ref_allowed(rc, a);
+            -- A role checked by its admission is checked in this record,
+            -- under its group's context (`walk_ctx`); anything else may go
+            -- to the record that owns it.
+            let wc = walk_ctx(rc, a);
+            match ptr_val(wc) - ptr_val(rc) {
+              0 => check_owned(load(role_ctx_binding(rc)), load(a)),
+              _ => run_check_transitive(wc, a),
+            },
           _ => (),
         };
-        env_walk_refs_all(rest, consts, i + 1),
+        env_walk_refs_all(rc, rest, consts, i + 1),
     }
   }
 
@@ -575,6 +599,25 @@ def claim := ⟦
       1 =>
         let (addr, s2) = get_address(s);
         (Option.Some(addr), s2),
+    }
+  }
+
+  -- A typing claim's context (`Ix.ClaimContext`): the specification
+  -- digest, which must be this circuit's; the role binding's hash; and the
+  -- axioms beyond the standard three, which must be none, since the
+  -- circuit admits no other axiom. Returns the binding hash and the rest of
+  -- the stream.
+  fn get_claim_context(stream: ByteStream) -> (Addr, ByteStream) {
+    let (spec, s) = get_address(stream);
+    assert_eq!(address_eq(spec, spec_digest()), 1,
+      "claim: specification digest is not this circuit's");
+    let (binding, s2) = get_address(s);
+    let (axioms, s3) = get_opt_addr(s2);
+    match axioms {
+      Option.None => (binding, s3),
+      Option.Some(_) =>
+        assert_eq!(0, 1, "claim: axioms beyond the standard three are not admitted");
+        (binding, s3),
     }
   }
 
@@ -1273,11 +1316,12 @@ def claim := ⟦
 
   -- Claim dispatch. Loads claim bytes at ch 0 keyed by digest,
   -- blake3-verifies, and dispatches:
-  --   variant 3 (Eval input output asm?) → checked normalization.
-  --   variant 4 (Check target asm?)  → transitive check; with asm the
+  -- The typing variants 3-5 read their context first (`get_claim_context`):
+  --   variant 3 (Eval ctx input output asm?) → checked normalization.
+  --   variant 4 (Check ctx target asm?)  → transitive check; with asm the
   --     walk stops at frontier members (no owned-membership rule —
   --     Check claims target + everything reachable, no ownership set).
-  --   variant 5 (CheckEnv root asm?) → run_check_env: per-leaf
+  --   variant 5 (CheckEnv ctx root asm?) → run_check_env: per-leaf
   --     transitive walk, asm cutoff, strict owned-membership.
   --   variant 6 (Reveal comm info)   → run_reveal: selective field
   --     revelation of the committed constant.
@@ -1320,30 +1364,36 @@ def claim := ⟦
     let (validator, s) = read_byte(s);
     match variant {
       3 =>
-        assert_eq!(validator, 1u8, "claim: wrong validator identity");
+        assert_eq!(validator, 3u8, "claim: wrong validator identity");
+        let (binding, s) = get_claim_context(s);
+        let rc = role_ctx_of_binding(binding);
         let (input, s) = get_address(s);
         let (output, s) = get_address(s);
         let (asm, rest) = get_opt_addr(s);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
-        run_eval(input, output, asm),
+        run_eval(rc, input, output, asm),
       4 =>
-        assert_eq!(validator, 1u8, "claim: wrong validator identity");
+        assert_eq!(validator, 3u8, "claim: wrong validator identity");
+        let (binding, s) = get_claim_context(s);
+        let rc = role_ctx_of_binding(binding);
         let (target, s2) = get_address(s);
         let (asm, rest) = get_opt_addr(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         match asm {
-          Option.None => run_check_transitive(target),
+          Option.None => run_check_transitive(rc, target),
           Option.Some(r) =>
             let asm_leaves = load_assumption_tree(r);
             let asm_set = addr_set_build(asm_leaves, RBTreeMap.Nil);
-            env_walk(target, RBTreeMap.Nil, asm_set, 0),
+            env_walk(rc, target, RBTreeMap.Nil, asm_set, 0),
         },
       5 =>
-        assert_eq!(validator, 1u8, "claim: wrong validator identity");
+        assert_eq!(validator, 3u8, "claim: wrong validator identity");
+        let (binding, s) = get_claim_context(s);
+        let rc = role_ctx_of_binding(binding);
         let (root, s2) = get_address(s);
         let (asm, rest) = get_opt_addr(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
-        run_check_env(root, asm),
+        run_check_env(rc, root, asm),
       6 =>
         assert_eq!(validator, 0u8, "claim: wrong validator identity");
         let (comm, s2) = get_address(s);

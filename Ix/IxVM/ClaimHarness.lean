@@ -6,6 +6,7 @@ public import Ix.AssumptionTree
 public import Ix.CompileM
 public import Ix.Common
 public import Ix.PrimAddrs
+public import Ix.ClaimContext
 
 public section
 
@@ -76,6 +77,82 @@ def synthesizedPrimNames : Array Lean.Name :=
     -- Tier 1c / proj-head expansion fabricates Consts of these.
     `String, `String.ofList, `Char, `Char.ofNat, `List.nil, `List.cons]
 
+/-- The Lean names of the roles' constants (`Ix.Kernel.Role.leanName`). Test
+    environments compile them with their closures, so a claim finds the record
+    of every role the default table binds when it validates the role's group. -/
+def roleNames : Array Lean.Name :=
+  Ix.Kernel.Role.all.toArray.map fun r => r.leanName.toString.toName
+
+/-- The records, blobs and hints the default role table's roles and evidence
+    are validated against (`IxC/Kernel/Ixon/RoleData.lean`): the prelude's
+    basis records, the evidence theorems and the well-founded operations'
+    dependency closure in the compiled `Init`. -/
+def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×
+    Array (Address × ByteArray) × Array (Address × Lean.ReducibilityHints)) := do
+  let closure := Ix.Kernel.Reader.RoleData.closure
+  let records := (← Ix.Kernel.Reader.preludeRecords) ++ (← Ix.Kernel.Reader.evidenceRecords)
+    ++ (← Ix.Kernel.Reader.decodeCommitted "closure" closure)
+  let blobs ← (Ix.Kernel.Reader.RoleData.blobs ++ Ix.Kernel.Reader.RoleData.closureBlobs).mapM
+    fun (hex, bytes) => do
+      let some a := Ix.Kernel.Reader.addressOfHex hex
+        | throw s!"default table blob: bad address {hex}"
+      let some b := bytesOfHex bytes | throw s!"default table blob: bad bytes at {hex}"
+      pure (a, b)
+  let hints ← Ix.Kernel.Reader.RoleData.closureHints.mapM fun (hex, h) => do
+    let some a := Ix.Kernel.Reader.addressOfHex hex
+      | throw s!"default table hint: bad address {hex}"
+    let hint : Lean.ReducibilityHints ← match h with
+      | "opaque" => pure .opaque
+      | "abbrev" => pure .abbrev
+      | n => match n.toNat? with
+        | some k => pure (.regular k.toUInt32)
+        | none => throw s!"default table hint: bad hint {n} at {hex}"
+    pure (a, hint)
+  pure (records, blobs, hints)
+
+/-- `env` bound to the role table `bytes` (its binding section), together with
+    the records the default table's roles and evidence are validated against
+    (`defaultTableSupport`, each with the projection records of its blocks)
+    wherever `env` lacks them. A table that rebinds roles among those
+    constants needs no other support. -/
+def withRoleTable (env : Ixon.Env) (bytes : ByteArray) : Except String Ixon.Env := do
+  let (records, blobs, hints) ← defaultTableSupport
+  let mut env := { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
+  let wrapper (info : Ixon.ConstantInfo) : Address × Ixon.Constant :=
+    let c : Ixon.Constant := ⟨info, #[], #[], #[]⟩
+    (Address.blake3 (Ixon.ser c), c)
+  for (a, c) in records do
+    let mut entries : Array (Address × Ixon.Constant) := #[(a, c)]
+    if let .muts members := c.info then
+      for (m, i) in members.zipIdx do
+        let i := i.toUInt64
+        match m with
+        | .defn _ => entries := entries.push (wrapper (.dPrj ⟨i, a⟩))
+        | .recr _ => entries := entries.push (wrapper (.rPrj ⟨i, a⟩))
+        | .indc ind =>
+          entries := entries.push (wrapper (.iPrj ⟨i, a⟩))
+          for (_, cidx) in ind.ctors.zipIdx do
+            entries := entries.push (wrapper (.cPrj ⟨i, cidx.toUInt64, a⟩))
+    for (addr, record) in entries do
+      unless env.consts.contains addr do
+        env := env.storeConst addr record
+  for (a, b) in blobs do
+    unless env.blobs.contains a do
+      env := { env with blobs := env.blobs.insert a b }
+  for (a, h) in hints do
+    unless env.anonHints.contains a do
+      env := { env with anonHints := env.anonHints.insert a h }
+  return env
+
+/-- `env` with the default role table (`Ix.Kernel.Reader.defaultTable`) as its
+    role binding when it carries none (`withRoleTable`). A claim is relative
+    to its environment's binding (`Ix.ClaimContext.ofEnv`); environments
+    compiled here from Lean declarations have none of their own. For tests
+    and the command line, like that table. -/
+def withDefaultRoleBinding (env : Ixon.Env) : Except String Ixon.Env := do
+  if env.roleBinding.isSome then return env
+  withRoleTable env (← Ix.Kernel.Reader.defaultTableBytes)
+
 /-- Variant of loadIxonEnv: also seeds the constants the kernel's kernel
     fabricates during reduction (Bool.true/false + Nat.zero/succ), so
     their bytes are always in ch 2 even when the target's proof body
@@ -84,7 +161,7 @@ def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
     IO Ixon.Env := do
   let mut seen : Lean.NameSet := {}
   let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
-  let names : Array Lean.Name := #[name] ++ synthesizedPrimNames
+  let names : Array Lean.Name := #[name] ++ synthesizedPrimNames ++ roleNames
   for n in names do
     if leanEnv.constants.contains n then
       for entry in Lean.collectDependencies n leanEnv.constants do
@@ -92,7 +169,7 @@ def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
           seen := seen.insert entry.fst
           deduped := deduped.push entry
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
-  pure rawEnv.toEnv
+  IO.ofExcept (withDefaultRoleBinding rawEnv.toEnv)
 
 /-- Compile the union of `names`'s transitive closures into one shared
     Ixon env. Drivers like `KernelArena.lean` use this to pay the
@@ -102,13 +179,13 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
     IO Ixon.Env := do
   let mut seen : Lean.NameSet := {}
   let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
-  for n in names do
+  for n in names ++ roleNames.filter leanEnv.constants.contains do
     for entry in Lean.collectDependencies n leanEnv.constants do
       if !seen.contains entry.fst then
         seen := seen.insert entry.fst
         deduped := deduped.push entry
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
-  pure rawEnv.toEnv
+  IO.ofExcept (withDefaultRoleBinding rawEnv.toEnv)
 
 /-- The `refs` indices `e` uses as a CONSTANT: `Ref i` and the type index
     of `Prj i`. `Str`/`Nat` index blob payloads and `Rec` resolves through
@@ -219,7 +296,7 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
 /-! ## IxVM IOBuffer interface
 
 This section is the normative description of the host↔kernel interface.
-The host seeds payloads on channels 0–5; the Aiur kernel consumes
+The host seeds payloads on channels 0–6; the Aiur kernel consumes
 them via `io_get_info` + `#read_byte_stream`. Each channel carries one
 value shape and each key is the content address of the value it maps to
 — no overloading, no in-band discriminators.
@@ -232,8 +309,11 @@ value shape and each key is the content address of the value it maps to
 | 3       | Defn reducibility hint | Defn addr             | single G     |
 | 4       | blob raw bytes         | blob addr             | raw bytes    |
 | 5       | resource profile       | profile addr          | profile bytes |
+| 6       | role binding section   | binding hash          | `E8 03` bytes |
 
-Channel 5 reserves the native resource-claim witness layout. IxVM currently
+Channel 6 carries the role table a typing claim's context names, keyed by its
+binding hash (`Ix.ClaimContext.binding`); the circuit reads its roles there
+(`Ix/IxVM/Kernel/Roles.lean`). Channel 5 reserves the native resource-claim witness layout. IxVM currently
 rejects `resource-v1` claims explicitly: a native validation result cannot be
 used as a circuit proof. Its `Check` and `CheckEnv` claims assert erased Lean
 typing and bind that validator identity in their hashed claim bytes.
@@ -249,7 +329,7 @@ the first time the check touches its address, and the reducibility hint
 and blob payload follow from that same fault. Nothing is walked up
 front, so what actually gets read is a subset of what the host seeds.
 
-Binding. On channels 0, 2, and 4 the kernel re-hashes the bytes it read
+Binding. On channels 0, 2, 4, and 6 the kernel re-hashes the bytes it read
 and asserts blake3 equality against the key, so the host cannot
 substitute a payload. Channel 1 is bound the same way in effect but by a
 different derivation: the kernel parses the tree and recomputes its
@@ -347,9 +427,31 @@ private def seedTreeAt (root : Address)
     .ok (ioBuffer.extend 1 (addrKey tree.root) (bytes.data.map .ofUInt8))
   | none => .error s!"no assumption tree supplied for root {root}"
 
+/-- The constants the role binding names: every bound role and every proof
+    evidence theorem the environment carries. Role validation reads them, so
+    they and their closures are in every witness's byte scope. Mirrors Rust
+    `binding_roots`. -/
+def bindingRoots (env : Ixon.Env) : Array Address := Id.run do
+  let some binding := env.roleBinding | return #[]
+  let some table := Ix.Kernel.RoleTable.ofBytes binding.bytes | return #[]
+  let mut roots := table.bound.map (·.2)
+  for (_, entries) in table.evidence do
+    for e in entries do
+      if let .proof a := e then roots := roots.push a
+  return roots.filter env.consts.contains
+
+/-- Seed the environment's role binding on channel 6, keyed by its hash: the
+    circuit reads a claim's roles there. -/
+def seedBinding (env : Ixon.Env) (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer :=
+  match env.roleBinding with
+  | some binding =>
+    ioBuffer.extend 6 (addrKey binding.address) (binding.bytes.data.map .ofUInt8)
+  | none => ioBuffer
+
 /-- The full witness byte scope for `target`: the closure of `target`
-    together with every primitive address present in `env`, all as walk
-    ROOTS. Mirrors Rust `witness_scope`.
+    together with every primitive address present in `env` and the role
+    binding's constants (`bindingRoots`), all as walk ROOTS. Mirrors Rust
+    `witness_scope`.
 
     Primitives are seeded because the kernel fabricates
     `Const(Std(prim_addr))` refs inline via `mk_prim_const`
@@ -363,7 +465,8 @@ private def seedTreeAt (root : Address)
     key`. -/
 def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
   closureFromRoots env
-    (#[target] ++ Ix.Tc.primAddrSet.toArray.filter env.consts.contains)
+    (#[target] ++ Ix.Tc.primAddrSet.toArray.filter env.consts.contains
+      ++ bindingRoots env)
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
     populates the IOBuffer with the `closureFrom` byte scope of every
@@ -373,24 +476,25 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {})
     (profiles : Std.HashMap Address ByteArray := {}) :
     Except String ClaimWitness := do
+  let env ← withDefaultRoleBinding env
   let claimBytes := Ix.Claim.ser claim
   let digestKey := packedDigestKey (Address.blake3 claimBytes)
-  let mut ioBuffer : Aiur.IOBuffer := default
+  let mut ioBuffer : Aiur.IOBuffer := seedBinding env default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
   let seedAsm asm buf := match asm with
     | some r => seedTreeAt r trees buf
     | none => .ok buf
   match claim with
-  | .check addr asm =>
+  | .check _ addr asm =>
     ioBuffer := addEntries env (closureFrom env addr).contains ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .eval input output asm =>
+  | .eval _ input output asm =>
     let inputClosure := closureFrom env input
     let outputClosure := closureFrom env output
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .checkEnv root asm =>
+  | .checkEnv _ root asm =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
@@ -405,7 +509,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>
     ioBuffer ← seedTreeAt tree trees ioBuffer
-  | .catalog _ _ _ =>
+  | .catalog .. =>
     -- Deliberately unsupported: a catalog claim is verified by
     -- COMPOSITION of per-piece CheckEnv claims with set discharge
     -- (plan §5.3) — interpreting the whole catalog in one circuit run
@@ -435,6 +539,7 @@ composition of per-piece check-env claims"
     between the Rust prover and this verifier. -/
 def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let env ← withDefaultRoleBinding env
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
   let frontier : Array Address := Id.run do
     let mut fs : Std.HashSet Address := {}
@@ -466,7 +571,8 @@ def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address) :
   let some ownedTree := Ix.AssumptionTree.canonical owned
     | .error "shardCheckEnvClaim: empty owned set"
   let asmTree? := Ix.AssumptionTree.canonical frontier
-  let claim := Ix.Claim.checkEnv ownedTree.root (asmTree?.map (·.root))
+  let ctx ← Ix.ClaimContext.ofEnv env
+  let claim := Ix.Claim.checkEnv ctx ownedTree.root (asmTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
     ({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree
   match asmTree? with
@@ -481,9 +587,10 @@ def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address) :
     same shared dependency core. -/
 def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
+  let env ← withDefaultRoleBinding env
   let (claim, trees) ← shardCheckEnvClaimTrees env owned
   let primitiveRoots := Ix.Tc.primAddrSet.toArray.filter env.consts.contains
-  let closure := closureFromRoots env (owned ++ primitiveRoots)
+  let closure := closureFromRoots env (owned ++ primitiveRoots ++ bindingRoots env)
   pure (claim, closure, trees)
 
 /-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
@@ -492,10 +599,11 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
     synthesizes via kernel-side blake3 as forward Muts→wrapper edges. -/
 def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × ClaimWitness) := do
+  let env ← withDefaultRoleBinding env
   let (claim, closure, trees) ← shardCheckEnvClaim env owned
   let claimBytes := Ix.Claim.ser claim
   let digestKey := packedDigestKey (Address.blake3 claimBytes)
-  let mut ioBuffer : Aiur.IOBuffer := default
+  let mut ioBuffer : Aiur.IOBuffer := seedBinding env default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
   ioBuffer := addEntries env closure.contains ioBuffer
   for (root, _) in trees do
@@ -511,12 +619,16 @@ def envCanonicalTree (env : Ixon.Env) : Option Ix.AssumptionTree :=
 
 /-- Subject-only `verify_const` witness: the `closureFrom` byte scope
     (which carries the kernel-side blake3-synthesized projection
-    wrappers as forward edges) faulted from ch 2. -/
-def buildVerifyConst (env : Ixon.Env) (target : Address) : ClaimWitness :=
+    wrappers as forward edges) faulted from ch 2, under the environment's
+    role binding (seeded on ch 6). -/
+def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWitness := do
+  let env ← withDefaultRoleBinding env
+  let some binding := env.roleBinding
+    | throw "verify_const: the environment carries no role binding"
   let closure := closureFrom env target
-  let ioBuffer := addEntries env closure.contains default
-  { funcName := `verify_const
-    input := addrKey target, inputIOBuffer := ioBuffer }
+  let ioBuffer := addEntries env closure.contains (seedBinding env default)
+  return { funcName := `verify_const
+           input := addrKey binding.address ++ addrKey target, inputIOBuffer := ioBuffer }
 
 end IxVM.ClaimHarness
 

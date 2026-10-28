@@ -33,7 +33,8 @@ private def block (definitions : Array Ixon.Definition)
 
 private def asCase (name intent : String) (fixture : Ixon.Env × Address)
     (accept : Bool := false) : ExploitCase :=
-  { name, intent, env := fixture.1, claim := .check fixture.2 none
+  { name, intent, env := fixture.1
+    claim := .check (Ix.ClaimContext.ofDefaultTable.toOption.getD default) fixture.2 none
     expectAccept := accept }
 
 /-- Hand-authored, hash-bound Ixon environments for the Rust soundness fix.
@@ -100,7 +101,7 @@ def rustTests : IO TestSeq := do
       let bytes ← IO.ofExcept (Ixon.serEnv c.env)
       IO.FS.writeBinFile path bytes
       let rows ← Ix.KernelCheck.rsCheckAnonFFI path.toString true ""
-      let .check target _ := c.claim | throw <| IO.userError "expected a Check claim"
+      let .check _ target _ := c.claim | throw <| IO.userError "expected a Check claim"
       let row := rows.find? (fun row => row.1 == toString target)
       let correct : Bool := match row with
         | none => false

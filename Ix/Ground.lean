@@ -25,6 +25,7 @@ module
 
 public import Ix.Common
 public import Ix.Environment
+public import Ix.Compile.ExactKey
 public import Std.Data.HashMap
 public import Std.Data.HashSet
 
@@ -100,12 +101,15 @@ def GroundError.refusal (e : GroundError) (isUngrounded : Name → Bool) : Strin
     expression reached at a different de Bruijn depth is re-checked. The
     univ cache keys on the level alone, which is sound because `univs`
     is fixed for the lifetime of one `GroundState` (a fresh state is
-    created per constant in `groundConstCheck`). Both `Ix.Expr` and
-    `Ix.Level` hash/compare by their embedded blake3 address, matching
-    the Rust `Hash`/`Eq` behavior. -/
+    created per constant in `groundConstCheck`). Both caches compare their
+    keys exactly (`Ix.Compile.ExactKey.ExprKey`, `LevelKey`: the embedded
+    blake3 address only selects a bucket), as the Rust walk's derived
+    structural `Eq` does. A stored hash is not a content hash on every
+    input, so a key compared by stored hashes alone could skip a different
+    expression or level, and miss an ungrounded reference in it. -/
 structure GroundState where
-  exprCache : Std.HashSet (Nat × Expr)
-  univCache : Std.HashSet Level
+  exprCache : Std.HashSet (Nat × Ix.Compile.ExactKey.ExprKey)
+  univCache : Std.HashSet Ix.Compile.ExactKey.LevelKey
 
 /-- Mirrors Rust `GroundState::default()`. -/
 def GroundState.init : GroundState := ⟨{}, {}⟩
@@ -137,7 +141,7 @@ def constUnivs : ConstantInfo → Array Name
     cache-hit returns Ok, cache insert happens BEFORE the match;
     `param` not in `univs` and `mvar` both fail with `.level`. -/
 partial def groundLevel (level : Level) (univs : Array Name) : GroundM Unit := do
-  let key := level
+  let key : Ix.Compile.ExactKey.LevelKey := ⟨level⟩
   if (← get).univCache.contains key then
     return ()
   modify fun stt => { stt with univCache := stt.univCache.insert key }
@@ -169,7 +173,7 @@ partial def groundLevel (level : Level) (univs : Array Name) : GroundM Unit := d
       `.var expr binds`. -/
 partial def groundExpr (expr : Expr) (env : Environment) (univs : Array Name)
     (binds : Nat) : GroundM Unit := do
-  let key := (binds, expr)
+  let key : Nat × Ix.Compile.ExactKey.ExprKey := (binds, ⟨expr⟩)
   if (← get).exprCache.contains key then
     return ()
   modify fun stt => { stt with exprCache := stt.exprCache.insert key }

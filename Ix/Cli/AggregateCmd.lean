@@ -149,7 +149,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
   "Wrap shard proofs and fold multi-shard manifests into one recursive aggregate"
 
   FLAGS:
-    "ixe" : String;  "Path to the serialized environment whose shards were proven."
+    "ixe" : String;  "Path to the serialized environment whose shards were proven. It must carry the role binding the shard claims are relative to."
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
     "plan-only";     "Validate coverage and print the wrap/join slot plan without loading or proving shard proofs."
     "no-cache";      "Bypass aggregate cache reads and intermediate cache writes; the root wrapper is still persisted unless --no-write."

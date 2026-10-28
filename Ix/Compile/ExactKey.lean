@@ -429,6 +429,23 @@ instance : LawfulBEq ExprKey where
     change exprEq a.expr a.expr = true
     simp [exprEq]
 
+/-- A level-cache key. Hashes index candidates; equality is the levels' own, so colliding
+digests do not identify different levels. -/
+structure LevelKey where
+  level : Ix.Level
+  deriving DecidableEq
+
+instance : BEq LevelKey := ⟨fun a b => levelEq a.level b.level⟩
+instance : Hashable LevelKey := ⟨fun key => hash key.level⟩
+
+instance : LawfulBEq LevelKey where
+  eq_of_beq {a b} equal := by
+    cases a with
+    | mk a =>
+      cases b with
+      | mk b => exact congrArg LevelKey.mk ((levelEq_iff a b).mp equal)
+  rfl {a} := (levelEq_iff a.level a.level).mpr rfl
+
 /-- A visited collector node retains its expression and complete positional
 parameter context. The supplied context digest only selects a hash bucket;
 equal digests cannot identify different expressions or parameter lists. -/

@@ -420,7 +420,8 @@ public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
   -- memoization ensures every reachable const/block gets checked exactly
   -- once, and the FFT cost stays pure typecheck cost with no tree
   -- hash-verify overhead folded in.
-  let claim := Ix.Claim.check target none
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)
+  let claim := Ix.Claim.check ctx target none
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv claim {}
   pure { functionName := witness.funcName, label := s!"Kernel check {name}"
          input := witness.input, inputIOBuffer := witness.inputIOBuffer
@@ -600,7 +601,8 @@ public def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let some tree := Ix.AssumptionTree.canonical depLeaves
     | throw <| IO.userError "deps unexpectedly empty for Nat.zero"
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.check target (some tree.root)) (singletonTrees tree)
+    (Ix.Claim.check (← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)) target (some tree.root))
+    (singletonTrees tree)
   pure (asTestCase "Claim Check with-asm (Nat.zero)" witness)
 
 /-- the kernel CheckEnv, self-contained: owned tree = every env constant.
@@ -610,7 +612,8 @@ public def claimCheckEnvFull (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let some tree := envCanonicalTree ixonEnv
     | throw <| IO.userError "envCanonicalTree empty"
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.checkEnv tree.root none) (singletonTrees tree)
+    (Ix.Claim.checkEnv (← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)) tree.root none)
+    (singletonTrees tree)
   pure (asTestCase "CheckEnv self-contained (shared smoke env)" witness)
 
 /-- the kernel CheckEnv with a thin frontier asm: owned = {Nat.add_comm},
@@ -630,7 +633,8 @@ public def claimCheckEnvFrontier (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     | throw <| IO.userError "asm (frontier) tree build failed"
   let trees := (singletonTrees ownedTree).insert asmTree.root asmTree
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.checkEnv ownedTree.root (some asmTree.root)) trees
+    (Ix.Claim.checkEnv (← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)) ownedTree.root
+      (some asmTree.root)) trees
   pure (asTestCase "CheckEnv frontier-asm (Nat.add_comm)" witness)
 
 /-- the kernel `Reveal` Defn (kind+safety) — coverage. -/

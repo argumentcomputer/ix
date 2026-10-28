@@ -30,6 +30,7 @@ public import Lean
 public meta import Ix.Replay
 public meta import Ix.CompileM
 public meta import Ix.Commit
+public meta import Ix.ClaimContext
 
 public section
 
@@ -77,7 +78,10 @@ meta def elabIxEval : CommandElab := fun stx => do
             work := work.push r
       let phases ← Ix.CompileM.rsCompilePhasesOf closure
       let compileEnv := Ix.Commit.mkCompileEnv phases
-      let claim ← match Ix.Commit.evalClaim compileEnv lvls input output
+      let ctx ← match Ix.ClaimContext.ofDefaultTable with
+        | .ok ctx => pure ctx
+        | .error e => throwError "#ixeval: {e}"
+      let claim ← match Ix.Commit.evalClaim ctx compileEnv lvls input output
           type with
         | .ok claim => pure claim
         | .error e => throwError "#ixeval: claim build failed: {e}"
