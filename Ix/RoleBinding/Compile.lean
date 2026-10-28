@@ -232,6 +232,7 @@ def finalize (backend : Backend) (source : Lean.Environment)
     let constants := Ix.EnvScope.collectSelectedDeps certSource theorems
     let selected ← IO.ofExcept ((Ix.Compile.compileInputFromEnv certSource constants).mapError toString)
     compileRequired backend certSource selected
+  IO.ofExcept (checkCertificateContent merged certificates)
   -- The support already contains every selected role and its source closure.
   -- Evidence generation needs only that closure and the certificate closure;
   -- emission below checks its binding against the complete merged artifact.
