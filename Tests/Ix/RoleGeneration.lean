@@ -92,6 +92,12 @@ private def checks (operation : Role) : Except String Unit := do
   need "emitted binding passes real canonical and structural admission"
     (admitted.toBytes == generated.table.toBytes)
   let bytes ← serEnv emitted
+  let store ← Ix.RoleBinding.recordStore limits env
+  let cached ← Ix.RoleBinding.generate limits env certificates required Ix.Kernel.preludeShape
+    (store? := some store)
+  let cachedArtifact ← cached.emit limits env (store? := some store)
+  need "reusing authenticated records preserves the complete emitted bytes"
+    ((← serEnv cachedArtifact) == bytes)
   let decoded ← deEnv bytes
   need "generated artifact uses v5 and retains its exact binding"
     (bytes.data[0]? == some 0xE5 && decoded.roleBinding == emitted.roleBinding)
@@ -101,6 +107,11 @@ private def checks (operation : Role) : Except String Unit := do
     (!(Ix.RoleBinding.generate limits noRole certificates required Ix.Kernel.preludeShape).isOk)
   need "emission cannot reuse a binding after publication changes"
     (!(generated.emit limits noRole).isOk)
+  need "cached records do not bypass the generation publication check"
+    (!(Ix.RoleBinding.generate limits noRole certificates required Ix.Kernel.preludeShape
+      (store? := some store)).isOk)
+  need "cached records do not bypass the emission publication check"
+    (!(cached.emit limits noRole (store? := some store)).isOk)
   let some zero := env.named[sourceName .natZero]? | throw "fixture has no Nat.zero"
   let otherRole := { certificates with named := certificates.named.insert (sourceName operation) zero }
   need "certificate/artifact operation mismatch refuses generation"

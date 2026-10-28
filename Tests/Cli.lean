@@ -31,6 +31,7 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
   let dir ← IO.FS.createTempDir
   let source := dir / "NoBuild.lean"
   let output := dir / "no-build.ixe"
+  let leanOutput := dir / "no-build-lean.ixe"
   let report := dir / "compile.json"
   try
     -- No Lake project or compiled target exists here. Only the toolchain's
@@ -49,6 +50,13 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     let version ← IO.ofExcept (json.getObjValAs? Nat "ixeFormatVersion")
     unless schema == 2 && version == 5 do
       throw <| IO.userError "compile report did not identify its emitted bound v5 envelope under schema2"
+    let leanArgs := #["compile-lean", source.toString, "--consts", "noBuildProof",
+      "--out", leanOutput.toString]
+    let leanBuilt ← IO.Process.output { cmd := ix.toString, args := leanArgs.push "--no-build" }
+    unless leanBuilt.exitCode == 0 do
+      throw <| IO.userError s!"compile-lean --no-build failed:\n{leanBuilt.stdout}\n{leanBuilt.stderr}"
+    unless (← leanOutput.pathExists) && (← IO.FS.readBinFile leanOutput) == (← IO.FS.readBinFile output) do
+      throw <| IO.userError "compile-lean --no-build differs from the certified compile output"
     for ext in ["olean", "c"] do
       if ← (source.withExtension ext).pathExists then
         throw <| IO.userError s!"compile --no-build unexpectedly wrote a .{ext} file"
@@ -56,13 +64,20 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     let defaultRun ← IO.Process.output { cmd := ix.toString, args }
     if defaultRun.exitCode == 0 then
       throw <| IO.userError "compile without --no-build unexpectedly skipped the Lake build"
+    let leanDefault ← IO.Process.output { cmd := ix.toString, args := leanArgs }
+    if leanDefault.exitCode == 0 then
+      throw <| IO.userError "compile-lean without --no-build unexpectedly skipped the Lake build"
     -- Missing imports must fail instead of silently fetching/building them.
     IO.FS.removeFile output
+    IO.FS.removeFile leanOutput
     IO.FS.writeFile source "import IxCliNoBuildMissingImport\n"
     let missing ← IO.Process.output { cmd := ix.toString, args := args.push "--no-build" }
     if missing.exitCode == 0 || (← output.pathExists) then
       throw <| IO.userError "compile --no-build accepted a missing import"
-    IO.println "compile --no-build: source elaboration, output, default build, and missing-import checks passed"
+    let leanMissing ← IO.Process.output { cmd := ix.toString, args := leanArgs.push "--no-build" }
+    if leanMissing.exitCode == 0 || (← leanOutput.pathExists) then
+      throw <| IO.userError "compile-lean --no-build accepted a missing import"
+    IO.println "compile and compile-lean --no-build: output parity, default builds, and missing-import checks passed"
   finally
     IO.FS.removeDirAll dir
 

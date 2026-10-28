@@ -51,3 +51,11 @@ symbol that no library defines, so a binary that links them fails. -/
  _private.Ix.Environment.0.Ix.Expr.hashSyntax] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { csimpModules := #[`Ix] }
+
+/-- info: 'Ix.Cert.checkReport_eq_par' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.checkReport_eq_par
+
+/-- info: 'Ix.Cert.compileReport_eq_shared' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.compileReport_eq_shared
