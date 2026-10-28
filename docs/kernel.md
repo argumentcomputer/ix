@@ -21,53 +21,61 @@ declarations are the ones the bytes encode, bounded resources), under which assu
 with which outcomes (accept, reject, decline; only an accept carries the
 theorems).
 
-Nothing here certifies the Lean-to-Ixon compiler, the Rust checker or
-IxVM. An accepted environment has a model; that it is the environment
-the original Lean source meant is outside the claim.
+This entry does not by itself certify the Lean-to-Ixon compiler, the Rust
+checker or IxVM. An accepted environment has a model; that it is the
+environment the original Lean source meant is outside this entry's claim;
+for the Lean compiler's output, the compiler theorem (next section) relates
+the two.
 
 ## Relation to compiler certification
 
-The compiler proof work in this PR is incomplete. In
-[`Ix/Cert/Statement.lean`](../Ix/Cert/Statement.lean), `CompileCorrect` is a
-`Prop` declaration, not a proved theorem. Its present statement uses nominal
-Source acceptance, executed Ixon acceptance and every target `ValueModel`.
-It has not yet been reconciled with the intended quotient-Source,
-reference-acceptance statement. Reference acceptance means acceptance at
-some fuel; it is not a guarantee that the executable checker succeeds at
-its fixed fuel.
+The Lean compiler is proved correct against this page's entry, in `Ix/Cert`.
+The statement is `Ix.Cert.CompileCorrect`
+([`Ix/Cert/CompileCorrect.lean`](../Ix/Cert/CompileCorrect.lean)), proved by
+`Ix.Cert.ReaderStreamsTrace.compileCorrect`
+([`Ix/Cert/CompileCorrectProof.lean`](../Ix/Cert/CompileCorrectProof.lean))
+on `propext`, `Classical.choice` and `Quot.sound` only. It is stated per
+closure. When quotient Source accepts the closure (`SourceAcceptsQ`), the
+compile (`Ix.Cert.compileReport`) reports no failure for it, and the
+artifact checks hold (the published role names sit at the default table's
+addresses, the published names agree with the artifact's address map,
+quotient Source's evidence agrees with the table's, and the table's
+certificates check), then:
 
-The intended value-preservation contract takes **every strong target model**
-and produces **one coherent Source value model** for the whole closure,
-preserving each published input's reading at every level and variable
-valuation. `ValueModel` does not contain all the laws of
-`Ix.Kernel.Cached.StrongModel`; replacing the current quantifier is an
-explicit statement correction, not an equivalence between these models.
-Full value preservation for the shipped permutations, images, occurrence
-passes and clique rows remains required in this PR and unproved.
+- the artifact publishes every constant of the closure;
+- Ixon accepts the compiled closure at the reference level
+  (`IxonAcceptsRef`): this entry's binding admission, byte stages and reader,
+  then the verified fold at some fuel, under the default binding and in an
+  order that respects references. Reference acceptance is not a guarantee
+  that the executable checker succeeds at its fixed fuel;
+- every constant of the closure reads as a compiled constant
+  (`ReadingCovers`);
+- every strong model of the compiled environment
+  (`Ix.Kernel.Cached.StrongModel`) gives **one value model of quotient
+  Source** for the whole closure, in which every constant denotes what its
+  reading denotes, at every level and variable valuation (`CommutesStrong`).
 
-The agreed acceptance proof combines static renaming with certified checks
-of changed cones. Those checks and Source-form typing witnesses are the
-remaining CQ5.4 integration; successful typechecking of rewritten output
-does not prove that its value matches the source. Acceptance is certified
-from quotient Source (`SourceAcceptsQ`); the link to nominal Source is
-checked per artifact, by the executed quotient check, rather than assumed
-for every environment. That link concerns acceptance only: it supplies no
+The statement is partial correctness: a compile that fails, a closure with a
+failed constant, and a closure quotient Source does not accept are outside
+it. The compiler compiles Lean verbatim (each block in Lean's grouping and
+member order, every declaration as Lean declared it) and collapses
+α-equivalent constants to one address, so acceptance is certified from
+quotient Source, where alias fibers are collapsed. The link to nominal Source
+is not assumed for every environment: `CompileCorrect.checked` gets it per
+artifact from the executed quotient check, and `CompileCorrect.nominal` takes
+it as a hypothesis. That link concerns acceptance only: it supplies no
 relation between nominal and quotient value models.
 
-The command-line paths are also distinct. `ix compile` runs the Rust
-compiler. `ix compile-lean` runs the Lean driver followed by
-`compileLeanInputValidated` in
+The command-line paths are distinct. `ix compile` runs the Rust compiler,
+which has no counterpart of the report checks. `ix compile-lean` runs the
+Lean driver followed by `compileLeanInputValidated` in
 [`Ix/CompileResource.lean`](../Ix/CompileResource.lean): it validates resources
-when semantic contracts or a resource profile require them, then checks
-original-input publication/failure accounting. Valid partial output remains
-allowed; missing, double or outside-input failure accounting is rejected.
-These checks rely on the actual compiler's retained input facts; they do not
-authenticate arbitrary caller-supplied fact maps. Bare compiler APIs remain
-unvalidated. This path does not invoke the full `Ix.Cert.checkReport` or the
-remaining CQ5.4 admission and Source-form typing checks. `--rust-check`
-compares the two serialized outputs for that input;
-byte parity is empirical evidence, not a universal compiler-refinement
-theorem. Metadata, including the records used for source reconstruction,
+when semantic contracts or a resource profile require them, then runs the
+compile-report checks (`Ix.Cert.checkReport`, the checks behind
+`compileReport`) on the compile; a failed check refuses the compile and
+nothing is written. Bare compiler APIs remain unvalidated. `--rust-check`
+compares the two serialized outputs for that input; byte parity is empirical
+evidence, not a compiler-refinement theorem for the Rust compiler. Metadata
 is outside the certification claim.
 
 ## The certified entry
@@ -96,7 +104,7 @@ and the command line; every theorem holds for every table.
 `hash` is the content hash every address is authenticated against. The
 kernel admits no hasher (its import fence, below), so the entry and every
 theorem about it are generic in `hash`. The root library instantiates the
-entry and its two variants at `Address.admissionHash`
+entry and its projection variant at `Address.admissionHash`
 (`Ix/Address/Admission.lean`), which is pure BLAKE3 (`Address.blake3Pure`)
 for every theorem and executes as the Rust BLAKE3 (`Address.blake3`); that
 substitution is an assumption ("Trust surface").
@@ -113,8 +121,8 @@ Each entry has one runnable module, which holds definitions only, and its
 theorems and audit beside it: `IxC/Kernel/Admission.lean` (the entry, its
 `Error` and `Outcome`), `IxC/Kernel/Admission/Bytes.lean` (the byte stage
 and its `ByteError`), `IxC/Kernel/Admission/{Theorems,Bytes/Theorems,
-Audit}.lean`; the variants `Ix/Ixon/{Projection,BlockOrder}.lean` with
-`Ix/Ixon/{Projection,BlockOrder}/{Theorems,Audit}.lean`; the instantiations
+Audit}.lean`; the projection variant `Ix/Ixon/Projection.lean` with
+`Ix/Ixon/Projection/{Theorems,Audit}.lean`; the instantiations
 at BLAKE3 `Ix/Ixon/Authenticated.lean` with
 `Ix/Ixon/Authenticated/{Theorems,Audit}.lean`. Running the entry
 does not build the proof tree: the import closure of
@@ -149,35 +157,24 @@ reads the prelude under the table (`checkBytesUsing`), then runs
 `prepareWith` runs the byte stages, admits the binding again (the theorems
 read the table off it), decodes and reads; `checkConstants{,With}`
 start from decoded records under an admitted table, and `checkConstantsAt`
-admits a binding first. Two variants share the
-byte stage and the checker, and take the same `hash`:
-`Ixon.Projection.checkBytes` reconstructs omitted projection records
-(addresses by `hash` of their canonical bytes) before checking, and
-`Ixon.BlockOrder.checkBytes` also checks the
-order of mutual blocks: an inductive, definition or mixed block in canonical
-structural order (`canonicalClasses`, as Rust's `canonical_check.rs`), a block
-of recursors in motive order (member `j` eliminates motive `j`, read off its
-type as the reader reads it, `recursorMotive_of_analyse`), which is the order
-the compiler stores it in and not always the structural one (a structural
-check would refuse 2 of the 7 compiled recursor blocks of the fidelity
-fixture, `Rose.rec`/`Rose.rec_1` and `Args.rec`/`Tm.rec`).
+admits a binding first. One variant shares the byte stage and the checker,
+and takes the same `hash`: `Ixon.Projection.checkBytes` reconstructs omitted
+projection records (addresses by `hash` of their canonical bytes) before
+checking.
 
-The structural order's keys (`Ixon.BlockOrder.compareExpr`) are the members'
-Ixon content up to binder contracts (a binder's contract, and a `let`'s kind
-and binder contract, are not compared). A `let`'s nondependency bit
-(`LetContract.nonDep`, Lean's `let` against `have`) is a key: the `let` arm
-compares the type, then the value, then the body, then the bit
-(`false < true`), each only when everything before it is equal
-(`Ixon.BlockOrder.compareExpr_letE`), as every canonical-order comparator
-does (the compilers' and the Rust kernel's). Two members that
-differ only in that bit are therefore two classes
-(`compareExpr_letE_nonDep`): a block that stores both is accepted in that
-order and refused (`.nonCanonical`) in the other, and a block that stores
-two members equal under every key is refused uncollapsed. The check sees the
-stored members, not the names a member stands for: a block that stores one
-member for two names is a canonical singleton, so not collapsing members
-that differ in a key is the compiler's obligation, under the same keys
-(`Ix/Compile/Canon/Order.lean`).
+**Block order.** The entry does not check the member order of a mutual
+block. The compiler stores every block in Lean's order: an inductive block in
+the order of Lean's `all`, a definition block in its members' order there,
+and a block of recursors in its family's order (`T.rec` for each member,
+then `T.rec_1`, …), which is the order of its motives. The one order the
+root library checks is a recursor block's: `Ixon.BlockOrder.checkRecord`
+(`Ix/Ixon/BlockOrder.lean`, with `Ix/Ixon/BlockOrder/{Theorems,Audit}.lean`)
+accepts a block of recursors only in motive order (member `j` eliminates
+motive `j`, read off its type as the reader reads it,
+`recursorMotive_of_analyse`, and declares one motive per member), and every
+other record as it is (`checkRecord_ok_iff`, `OrderedRecord`). It is not an
+entry: the fidelity suite (`Ix/KernelFidelity/Egress.lean`) runs it over
+compiled environments.
 
 **Outcomes.** `Admission.Error.outcome` (called as `e.outcome`) classifies
 every failure as a reject (the input is wrong) or a decline (the checker
@@ -194,18 +191,17 @@ does not certify it):
 | `.prelude` | decline | a corrupted committed prelude |
 | `.kernel` | decline | every checker verdict: the checker reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
 
-The variants keep their own errors (`Ixon.Projection.CheckError`,
-`Ixon.BlockOrder.CheckError`) and the same classifier, `e.outcome`: a
-checker failure (`.checker e`) as above, the byte stage
-(`Admission.ByteError.outcome`) as `.limit`, `.duplicate`, `.mismatch` and
-`.decode` above, and their own failures as follows.
+The projection variant keeps its own error (`Ixon.Projection.CheckError`)
+and the same classifier, `e.outcome`: a checker failure (`.checker e`) as
+above, the byte stage (`Admission.ByteError.outcome`) as `.limit`,
+`.duplicate`, `.mismatch` and `.decode` above, and its own failures as
+follows.
 
 | Error | Outcome | Why |
 | --- | --- | --- |
-| `Projection.Error.limit`, `BlockOrder.Error.exhausted` | decline | coverage bounds (projection requests; comparison and refinement fuel) |
+| `Projection.Error.limit` | decline | a coverage bound (projection requests) |
 | `Projection.Error.ownerWidth`, `.conflict`, `.projection (.malformed _)` | reject | an owner key that is not a 32-byte hash, a supplied record that differs from the derived one at its key, a projection the writer finds malformed |
 | `Projection.Error.projection` (any other search failure) | decline | the writer did not establish the projection |
-| `BlockOrder.Error.malformed`, `.nonCanonical`, `.motiveOrder` | reject | a malformed block, or a block out of canonical (or motive) order |
 
 Only an accept carries the theorems below.
 
@@ -243,9 +239,9 @@ root depends on exactly `propext`, `Classical.choice` and `Quot.sound`.
 | `checkBytes_reading` | the binding admits as some `t` and the prelude reads under it (`preludeFor t = .ok pre`); `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `Authentic hash records blobs`; `BindingAdmitted hash binding t`; `RecordsRead limits records constants` for some `constants`; `Hashed hash constants`; and `Installed t pre constants blobs hint env` |
 | `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
 
-The variants have the same theorems at every `hash`
-(`Ixon.{Projection,BlockOrder}.checkBytes_{ok_iff,reading,authentic,has_model,no_proof_of_False}`);
-their `checkBytes_authentic` adds that every record the checker read, supplied
+The projection variant has the same theorems at every `hash`
+(`Ixon.Projection.checkBytes_{ok_iff,reading,authentic,has_model,no_proof_of_False}`);
+its `checkBytes_authentic` adds that every record the checker read, supplied
 or reconstructed, is stored under `hash` of its serialization
 (`Projection.Expanded.hashed`). `Ixon.Authenticated.Theorems` states them at
 the specification hash `Address.blake3Pure` for the BLAKE3 entries (for
@@ -334,13 +330,9 @@ Not proved:
   verification, not a theorem; the no-False theorems are stated at
   `False`'s role key and hold for any table.
 
-The projection and block-order variants have the same shape:
+The projection variant has the same shape:
 `Ixon.Projection.checkBytes_{run_iff, ok_iff, of_expansion, reading,
-has_model, no_proof_of_False}` and `Ixon.BlockOrder.checkBytes_{run_iff,
-ok_iff, of_ordered, reading, has_model, no_proof_of_False}`, each with
-`UniqueKeys` in its reading; the block-order variant also states its
-comparison's `let` arm (`Ixon.BlockOrder.compareExpr_letE`; the nondependency
-bit is a key: `compareExpr_letE_nonDep`, `compareExpr_letE_sameBit`). The
+has_model, no_proof_of_False}`, with `UniqueKeys` in its reading. The
 separate package `Models/SetTheory` (Mathlib) provides `IxSetTheoryModel.zfSetTheoryOfCarneiro`, a
 `Ix.Kernel.SetTheory ZFSet` instance under `OmegaInaccessibles`, and the
 corollaries `IxSetTheoryModel.checkBytes_has_ZFSet_model` and
@@ -866,7 +858,7 @@ the root package, and the model audit builds in `Models/SetTheory`.
 | `IxC/Kernel/Audit/Roles.lean` | the specification set's shape, frozen: every role's kind, levels or equation count, evidence kinds, block and dependencies, and `specVersion` |
 | `IxC/Kernel/Audit/Modules.lean` | every safe declaration of every kernel module it imports (the kernel, and the theorems no root reaches: non-contradiction, the renaming and union development, unit hoisting, the in-model generators, the prelude shape, role-table injectivity) bounded by the three standard axioms (`#guard_module_axioms_under`, `Audit/Axioms.lean`); exact axioms of `nonContradiction`, `Cached.AcceptsRef.union` and the unit and hoisting theorems |
 | `Ix/SpecDigest.lean` | the specification digest (BLAKE3 of the set's canonical encoding), frozen |
-| `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports (no hasher), closures, extern differences (none for reconstruction) and statements, and the projection writer's guards |
+| `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the projection variant's and the recursor-order check's imports (no hasher), closures, extern differences (none for either) and statements, and the projection writer's guards |
 | `Ix/Ixon/Authenticated/Audit.lean` | the BLAKE3 entries' closure with exactly the assumed substitution (and its failure without it), the externs and `implemented_by` they add to the generic entries, their frozen definitions, their theorems' axioms and statements |
 | `Ix/Cert/RuntimeAudit.lean` | the compiler's (`Ix.Cert.compile`) runtime closure: every foreign primitive, `unsafe` implementation and `partial` definition it reaches beyond `Init` and `Std`, frozen by name (its axioms are frozen in `Ix/Cert/Audit.lean`) |
 | `Ix/Cert/ModuleAudit.lean` | every safe declaration of the proof modules that no statement reaches (Source grouping, ownership, metadata and uses; admission fronts; Source family and identity checks; the artifact and host admission theorems), and of every `Ix.Cert` and `Ix.CompileCert` module they import, bounded by the three standard axioms (`#guard_module_axioms`) |
@@ -880,19 +872,17 @@ audit states the cause of every later one beside its frozen value:
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
 | fold `Ix.Kernel.Cached.checkDecls` | 3496 | 67 |
-| reader `readRecords`, `readStream` | 2211 | 89 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5985 | 113 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5982 | 113 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 6007 | 113 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 6145 | 114 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 6164 | 117 |
+| reader `readRecords`, `readStream` | 2230 | 89 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 6000 | 113 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5997 | 113 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 6022 | 113 |
+| recursor block order: `BlockOrder.checkRecord` | 27 | 13 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection}`, `Address.admissionHash` | 6038 | 116 |
 
-A `let`'s nondependency bit as a block-order key (`compareExpr_letE`) moved the
-block-order and BLAKE3 rows from 6022 and 6041 (their audit records): 2 more,
-`compareExpr`'s own compiler-generated lambdas. CQX.8's field test in the in-model
-generator (a non-recursive field is tested after the auxiliary rewrite) then
-moved them from 6024 and 6043: four of `genNested`'s code-generator
-specialisations are gone (`IxC/Kernel/Audit/Roots.lean`).
+Removing the block-order entry (`Authenticated.checkBytesBlockOrder`, and the
+structural order check it ran before the checker) moved the BLAKE3 row from
+6179 functions and 117 externs: `String.compare` was reached only by that
+check (`Ix/Ixon/Authenticated/Audit.lean`).
 
 The validation of the four install anchors (`Bool.rec`, `And`, `And.intro`,
 `And.rec`; owner, 2026-10-15) moved them from 3352, 5788, 5785, 5810, 5944 and
@@ -980,8 +970,7 @@ re-records it states why the closure or the statement moved.
    fixtures re-keyed to their BLAKE3 addresses; the certified fixtures
    (`IxC/Fixtures/*`, authenticated under a hasher-free fixture hash) were
    already built in step 1;
-3. `kernel-codec` (production codec against Rust) and `kernel-order`
-   (canonical block order against Rust);
+3. `kernel-codec` (production codec against Rust);
 4. with `--with-model`, the `Models/SetTheory` build and its audit;
 5. `kernel-layering` (`Tests/Ix/Kernel/Layering.lean`, derived from
    con-leche's `tests/layering.sh`): the kernel's import layering, each file
@@ -1329,8 +1318,9 @@ fetched `argumentcomputer/lean4ix` at
 `a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and TruthMines independently
 fetched `digama0/lean4lean` at `e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00`.
 The old verification trees and their consumers are gone, and so is runtime
-`Ix.Tc`: its compiler consumers (AuxGen) moved to IxC, the decompiler needs no
-kernel, and the primitive addresses moved to `Ix/PrimAddrs.lean`.
+`Ix.Tc`: its compiler consumer (auxiliary generation, since removed) moved
+to IxC, the decompiler needs no kernel, and the primitive addresses moved to
+`Ix/PrimAddrs.lean`.
 
 | Retired or remaining surface | Replacement or disposition | Status |
 | --- | --- | --- |
