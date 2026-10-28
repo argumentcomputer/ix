@@ -1,4 +1,6 @@
 import Ix.Cert.DefinitionBlockReads
+import Ix.Cert.Order
+import Ix.Cert.ClosureLayout
 
 /-! # A compiled definition block references its members' mentioned names' bindings
 
@@ -231,6 +233,38 @@ theorem related_occ {names : Ix.Name → CName .anon → Prop} {levels : Ix.Leve
       obtain ⟨k, hk, ho⟩ := bodyIH h
       exact ⟨k, hk, by rw [DefinitionDeps.withContract_occurs lowered]; exact ho⟩
 
+
+/-! ## No record references itself -/
+
+open Ix.CompileCert.Canon (Edge filt edge_filt condensation_cover) in
+/-- **No record references a record whose owner is itself**, when the reference check passed:
+such a record would be a component of the record graph with an edge to itself. -/
+theorem no_self_reference {ixe : Ixon.Env} (h : referenceCycle ixe = none) {b : Address}
+    {cb : Ixon.Constant} (hb : recordAt ixe b = some cb) {r : Address} (hr : r ∈ cb.refs)
+    {cr : Ixon.Constant} (hcr : recordAt ixe r = some cr) (howner : ownerOf r cr = b) : False := by
+  have hbk : b ∈ ixe.consts.keys := Order.mem_keys_of_stored ixe hb
+  have hi : ixe.consts.keys.idxOf b < ixe.consts.keys.length := List.idxOf_lt_length_iff.2 hbk
+  have hki : ixe.consts.keys[ixe.consts.keys.idxOf b] = b := List.getElem_idxOf _
+  have edge := Order.recordGraph_edge ixe hi (by rw [hki]; exact hb) hr hcr
+    (by rw [Order.refOwner_eq, howner]; exact hbk)
+  rw [Order.refOwner_eq, howner, edge_filt] at edge
+  have hsize := Order.recordGraph_size ixe
+  unfold referenceCycle at h
+  generalize hG : recordGraph ixe = G at h edge hsize
+  obtain ⟨addrs, adj⟩ := G
+  simp only at h edge hsize
+  cases hc : Ix.Compile.Canon.condensation adj with
+  | none => rw [hc] at h; cases h
+  | some C =>
+    rw [hc] at h
+    obtain ⟨c, hcm, hvc⟩ := condensation_cover hc _ (by rw [hsize]; exact hi)
+    have := List.find?_eq_none.1 (Option.map_eq_none_iff.1 h) c (Array.mem_toList_iff.2 hcm)
+    simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, Decidable.not_not, Array.any_eq_true,
+      not_exists] at this
+    obtain ⟨j, hj, hcj⟩ := Array.mem_iff_getElem.mp hvc
+    apply this.2 j hj
+    rw [hcj]
+    exact Array.contains_iff_mem.mpr edge.1
 /--
 info: 'Ix.Cert.BlockRefs.refs_read' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
@@ -325,4 +359,60 @@ info: 'Ix.Cert.BlockRefs.mentioned_binding_ref' depends on axioms: [propext, Cla
 -/
 #guard_msgs in
 #print axioms mentioned_binding_ref
+
+/-! ## `exactNames` -/
+
+/-- **A name a definition block's members mention, with a member's ingress key, is that
+member** (`DefinitionBlockReads.definition_block_reads`'s `exactNames`), from the compile of the
+block and the artifact: the block's record `B` is stored; each member is published at a record
+that `B` owns, members at distinct addresses (`apart`); a name the compile binds is published
+at its binding (`published`); quotient Source publishes names of one ingress key alike
+(`sameKey`); and no record references itself (`referenceCycle = none`). A mentioned non-member
+of a member's ingress key would make `B` reference that member's record, owned by `B`. -/
+theorem exactNames_of (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    {bindings : Bindings} {before after : BlockState} {output : BlockResult}
+    (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
+    (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
+    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
+      (.ok output, after))
+    (unresolved : ∀ d ∈ defs, bindings.1.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
+    (unaliased : ∀ d ∈ defs, bindings.2.get? d.name = none ∧ context.1.auxNameToAddr.get? d.name = none)
+    {ixe : Ixon.Env} (acyclic : referenceCycle ixe = none) {B : Address}
+    (stored : recordAt ixe B = some output.block)
+    (owned : ∀ j (hj : j < defs.length), ∃ P c, ClosureLayout.addrOf ixe defs[j].name = some P ∧
+      recordAt ixe P = some c ∧ ownerOf P c = B)
+    (apart : ∀ j (hj : j < defs.length) k (hk : k < defs.length),
+      ClosureLayout.addrOf ixe defs[j].name = ClosureLayout.addrOf ixe defs[k].name → j = k)
+    (published : ∀ n a, lookupBinding context.1 bindings n = some a → ClosureLayout.addrOf ixe n = some a)
+    (sameKey : ∀ i (hi : i < defs.length) n, (ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value) →
+      ∀ j (hj : j < defs.length), Ix.LeanIngress.ingressKey n = Ix.LeanIngress.ingressKey defs[j].name →
+        ClosureLayout.addrOf ixe n = ClosureLayout.addrOf ixe defs[j].name) :
+    ∀ i (hi : i < defs.length) j (hj : j < defs.length) n,
+      (ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value) →
+        Ix.LeanIngress.ingressKey n = Ix.LeanIngress.ingressKey defs[j].name → n = defs[j].name := by
+  intro i hi j hj n hn hkey
+  have same := sameKey i hi n hn j hj hkey
+  cases hc : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+  | some k =>
+    -- another member: members are published apart
+    obtain ⟨hk, hname⟩ := ctx_defs_val distinct hc
+    rw [← hname] at same
+    obtain rfl := apart k hk j hj same
+    exact hname.symm
+  | none =>
+    -- a non-member: the block would reference member `j`'s record
+    exfalso
+    obtain ⟨a, hb, hmem⟩ := mentioned_binding_ref context free clean two distinct ran unresolved unaliased hi hn hc
+    obtain ⟨P, c, hP, hrec, hown⟩ := owned j hj
+    have ha : a = P := by
+      rw [published n a hb, hP] at same
+      exact Option.some.inj same
+    subst ha
+    exact no_self_reference acyclic stored hmem hrec hown
+
+/--
+info: 'Ix.Cert.BlockRefs.exactNames_of' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms exactNames_of
 end Ix.Cert.BlockRefs
