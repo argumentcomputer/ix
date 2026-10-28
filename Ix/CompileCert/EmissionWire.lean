@@ -353,9 +353,6 @@ theorem Safe.expression (source : Ix.Expr) : Safe (compileExpr source) := by
 theorem Safe.takeArena : Safe takeArena := by
   unfold Ix.CompileM.takeArena; exact Safe.modifyGet _ (fun _ => rfl)
 
-theorem Safe.takeSurgerySharing : Safe takeSurgerySharing := by
-  unfold Ix.CompileM.takeSurgerySharing; exact Safe.modifyGet _ (fun _ => rfl)
-
 theorem Safe.takeUnivPatches : Safe takeUnivPatches := by
   unfold Ix.CompileM.takeUnivPatches; exact Safe.modifyGet _ (fun _ => rfl)
 
@@ -378,7 +375,6 @@ local macro "safe_finish" : tactic => `(tactic|
   with_reducible repeat' first
     | exact Safe.pure _
     | exact Safe.takeArena
-    | exact Safe.takeSurgerySharing
     | exact Safe.takeUnivPatches
     | exact Safe.clearExprCache
     | exact Safe.checkedCount _ _

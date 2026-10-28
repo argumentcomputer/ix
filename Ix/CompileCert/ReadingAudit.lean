@@ -226,7 +226,7 @@ def emissionWireRoots : Array Lean.Name :=
     `Safe.checkedIndex, `Safe.checkedCount, `Safe.mapM_list, `Safe.mapM_array, `Safe.forIn_list,
     `Safe.forIn_array, `Safe.compileLevel, `Safe.internRef, `Safe.lookup, `Safe.blob, `Safe.namesBlobs,
     `Safe.compileName, `Safe.compileNames, `Safe.kvmap, `Safe.alloc, `Safe.patch, `Safe.finishReference,
-    `Safe.step, `Safe.noSurgery, `Safe.expression, `Safe.takeArena, `Safe.takeSurgerySharing,
+    `Safe.step, `Safe.noSurgery, `Safe.expression, `Safe.takeArena,
     `Safe.takeUnivPatches, `Safe.clearExprCache, `Safe.resetArena, `Safe.recordDefHints,
     `Safe.mutCtxAddrs, `Safe.finishDefinition, `Safe.definitionData, `Safe.finishAxiom,
     `Safe.axiomPayload, `Safe.finishQuotient, `Safe.quotientPayload, `Safe.rule, `Safe.rules,
@@ -251,7 +251,7 @@ definition, axiom, quotient, constructor, inductive and recursor emitters. -/
 def emissionRoots : Array Lean.Name :=
   #[`Clean.good, `Frame.tidy, `Frame.same, `Frame.display, `Frame.namesBlobs, `Frame.compileName,
     `Frame.compileNames, `Frame.checkedCount, `Frame.checkedIndex, `Frame.readBlock, `Frame.mutCtxAddrs,
-    `Frame.takeArena, `Frame.takeSurgerySharing, `Frame.recordDefHints, `Frame.takeUnivPatches, `clear_tidy,
+    `Frame.takeArena, `Frame.recordDefHints, `Frame.takeUnivPatches, `clear_tidy,
     `finishDefinition_tidy, `finishAxiom_tidy, `finishQuotient_tidy, `finishConstructor_tidy,
     `finishRecursor_tidy, `inductiveMetadata_tidy, `finishInductiveData_tidy, `finish_clean, `Yields.pure,
     `Yields.bind, `Yields.bindAny, `Yields.count, `Yields.index, `exact_header, `definitionHeader,
@@ -466,7 +466,7 @@ def readerRuntime : Array Lean.Name :=
 /-- The payload emitters, their finishers and drains, which the emission
 proofs unfold. -/
 def emissionRuntime : Array Lean.Name :=
-  #[``Ix.CompileM.takeArena, ``Ix.CompileM.takeSurgerySharing, ``Ix.CompileM.takeUnivPatches,
+  #[``Ix.CompileM.takeArena, ``Ix.CompileM.takeUnivPatches,
     ``Ix.CompileM.clearExprCache, ``Ix.CompileM.resetArena, ``Ix.CompileM.recordDefHints,
     ``Ix.CompileM.getMutCtxAddrs, ``Ix.CompileM.withCurrent, ``Ix.CompileM.withMutCtx,
     ``Ix.CompileM.withBlockEnv, ``Ix.CompileM.finishDefinitionDataCompilation,

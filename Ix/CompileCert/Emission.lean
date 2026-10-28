@@ -89,7 +89,7 @@ theorem Frame.same {action : CompileM α} (same : ∀ state, (rawRun action cont
 /-- The display-only fields: the arena, the spelling patches, the call-site
 sharing and the reducibility hints. -/
 def withoutDisplay (state : BlockState) : BlockState :=
-  { state with arena := {}, univPatches := #[], surgerySharing := #[], defHints := {} }
+  { state with arena := {}, univPatches := #[], defHints := {} }
 
 theorem Frame.display {action : CompileM α} (frame : Preserves withoutDisplay action) :
     Frame cx param self bindings context action := by
@@ -149,10 +149,6 @@ theorem Frame.takeArena : Frame cx param self bindings context Ix.CompileM.takeA
   unfold Ix.CompileM.takeArena
   exact Frame.display (Preserves.modifyGet _ _ (fun _ => rfl))
 
-theorem Frame.takeSurgerySharing : Frame cx param self bindings context Ix.CompileM.takeSurgerySharing := by
-  unfold Ix.CompileM.takeSurgerySharing
-  exact Frame.display (Preserves.modifyGet _ _ (fun _ => rfl))
-
 theorem Frame.recordDefHints (name : Ix.Name) (hints : Lean.ReducibilityHints) :
     Frame cx param self bindings context (Ix.CompileM.recordDefHints name hints) := by
   unfold Ix.CompileM.recordDefHints
@@ -180,7 +176,6 @@ theorem clear_tidy {base : Ix.Kernel.Reader.ECx md} {cleared : Prop} :
 local macro "tidy_steps" : tactic => `(tactic|
   with_reducible repeat' first
     | exact Frame.tidy Frame.takeArena
-    | exact Frame.tidy Frame.takeSurgerySharing
     | exact Frame.tidy Frame.takeUnivPatches
     | exact clear_tidy
     | exact Frame.tidy (Frame.checkedCount _ _)
