@@ -1143,14 +1143,13 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
       have hkd := erase_defn_kind erased hd
       rw [hk] at hkd
       change [some definition.kind] = _ at kinds
-      generalize hL : classes = L at kinds
-      rcases L with _ | ⟨x, _ | ⟨y, L⟩⟩
+      rcases classes with _ | ⟨x, _ | ⟨y, rest⟩⟩
       · simp at kinds
       · simp only [List.map_cons, List.map_nil, List.cons.injEq, and_true] at kinds
-        have hx : x ∈ classes := hL ▸ List.mem_singleton_self x
+        have hx : x ∈ [x] := List.mem_singleton_self x
         refine ⟨x, rfl, by rw [← kinds, ← hkd], ?_, ?_⟩
         · intro he
-          have hm : (x.name, block) ∈ (buildStandaloneMutualProjections classes block metas).toList.map
+          have hm : (x.name, block) ∈ (buildStandaloneMutualProjections [x] block metas).toList.map
               (fun p => (p.1, p.2.1)) := by
             rw [← MutualProjections.logicalRows, MutualProjections.standalone_rows]
             exact List.mem_map.mpr ⟨x, hx, rfl⟩
@@ -1184,7 +1183,7 @@ theorem compileMutualBlock_defn (classes : List MutConst) :
 
 /-- Ordering preserves membership in the source array. -/
 theorem sourceMembers_mem (cs : Array MutConst) :
-    ∀ y ∈ sourceMembers cs, y ∈ cs := Claims.mem_sourceMembers
+    ∀ y ∈ sourceMembers cs, y ∈ cs := fun _ h => Claims.mem_sourceMembers h
 
 /-- An invariant a loop's steps keep holds of its result. -/
 theorem forIn_rawRun_inv {α σ : Type} (I : σ → Prop) {body : α → σ → CompileM (ForInStep σ)}
