@@ -1,7 +1,7 @@
 module
 
 public import Ix.Address.Admission
-public import Ix.Ixon.BlockOrder
+public import Ix.Ixon.Projection
 public import IxC.Kernel.Admission.Tier
 
 @[expose] public section
@@ -10,8 +10,8 @@ public import IxC.Kernel.Admission.Tier
 
 The certified entries take their content hash as a parameter: the kernel
 admits no hasher (`Ix.Kernel.Admission.checkBytes`), and the root library's
-variants are generic in it too (`Ixon.Projection.checkBytes`,
-`Ixon.BlockOrder.checkBytes`). These are the three at the admission hash
+variants are generic in it too (`Ixon.Projection.checkBytes`). These are the
+entries at the admission hash
 `Address.admissionHash`, which is pure BLAKE3 (`Address.blake3Pure`) for
 every theorem and executes as the Rust BLAKE3 (`Address.blake3`); that
 substitution is the one assumption the authenticated entries add to the
@@ -47,16 +47,6 @@ def checkBytesProjection (binding : Admission.Binding) (maxProjections : Nat)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Projection.CheckError (Ix.Kernel.Env .anon) :=
   Projection.checkBytes Address.admissionHash binding maxProjections limits records blobs hint
-
-/-- The entry with canonical block order, at BLAKE3
-(`Ixon.BlockOrder.checkBytes` at `Address.admissionHash`). -/
-def checkBytesBlockOrder (binding : Admission.Binding) (maxProjections : Nat)
-    (limits : Admission.Limits) (orderLimits : BlockOrder.Limits) (records : Admission.Records)
-    (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except BlockOrder.CheckError (Ix.Kernel.Env .anon) :=
-  BlockOrder.checkBytes Address.admissionHash binding maxProjections limits orderLimits records blobs
-    hint
 
 /-- **The tiered Ixon entry at BLAKE3** (`Ix.Kernel.Admission.checkBytesTiered`
 at `Address.admissionHash`): the logical check, then the typing tier. -/

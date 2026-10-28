@@ -10,7 +10,7 @@ checks run each entry on the reader fixtures re-keyed to their BLAKE3
 addresses (`Tests.Ix.Kernel.Reader`):
 
 - a record, and a blob, under a key that is not its hash is refused, as a
-  reject, at its position, by all three entries;
+  reject, at its position, by both entries;
 - an omitted projection is reconstructed under its BLAKE3 address (the pure
   implementation's and the Rust backend's alike), and the entry accepts the
   batch; a supplied projection under another key is refused;
@@ -38,10 +38,9 @@ def litBlobs : List (Address × ByteArray) := (rekeyed [(address 42, litEq)] [(a
 
 /-! ## Unauthentic records and blobs are refused -/
 
--- the controls: the re-keyed fixtures are accepted by all three entries
+-- the controls: the re-keyed fixtures are accepted by both entries
 #guard (Ixon.Authenticated.checkBytes builtinBinding limits (records definitions) []).isOk
 #guard (Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits (records definitions) []).isOk
-#guard (Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} (records definitions) []).isOk
 #guard (Ixon.Authenticated.checkBytes builtinBinding limits litRecords litBlobs).isOk
 
 -- a record under another record's key, under a stand-in key, or with its
@@ -64,9 +63,6 @@ def litBlobs : List (Address × ByteArray) := (rekeyed [(address 42, litEq)] [(a
 #guard match Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits (rekeyAt (records definitions) 0 (address 10)) [] with
   | .error e@(.reconstruction (.admission (.mismatch .records 0 a))) => a == address 10 && e.outcome == .rejected
   | _ => false
-#guard match Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} (rekeyAt (records definitions) 0 (address 10)) [] with
-  | .error e@(.order (.admission (.mismatch .records 0 a))) => a == address 10 && e.outcome == .rejected
-  | _ => false
 
 -- a blob under a key that is not its hash, and a blob's bytes changed under
 -- its key (the literal's value would change)
@@ -78,9 +74,6 @@ def litBlobs : List (Address × ByteArray) := (rekeyed [(address 42, litEq)] [(a
   | _ => false
 #guard match Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits litRecords (litBlobs.map fun (a, _) => (a, ⟨#[3]⟩)) with
   | .error e@(.reconstruction (.admission (.mismatch .blobs 0 _))) => e.outcome == .rejected
-  | _ => false
-#guard match Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} litRecords (litBlobs.map fun (a, _) => (a, ⟨#[3]⟩)) with
-  | .error e@(.order (.admission (.mismatch .blobs 0 _))) => e.outcome == .rejected
   | _ => false
 
 /-! ## Omitted projections are reconstructed and authenticated -/
@@ -154,10 +147,5 @@ example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteAr
     ∃ output, (∀ entry ∈ output, entry.1 = Address.blake3Pure (Ixon.serConstant entry.2)) ∧
       Ix.Kernel.Admission.checkConstantsAt Address.blake3Pure builtinBinding output blobs = .ok env :=
   (Ixon.Authenticated.checkBytesProjection_authentic h).2
-
-example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
-    (h : Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} records blobs = .ok env) :
-    ∀ entry ∈ blobs, entry.1 = Address.blake3Pure entry.2 :=
-  (Ixon.Authenticated.checkBytesBlockOrder_authentic h).1.2
 
 end Tests.Ix.Kernel.Authentication

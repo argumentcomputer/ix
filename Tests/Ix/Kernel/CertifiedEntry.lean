@@ -6,9 +6,8 @@ import Tests.Ix.Kernel.Reader
 
 The public entries — `Ixon.Authenticated.checkBytes`, the certified entry
 `Ix.Kernel.Admission.checkBytes` at the admission hash (BLAKE3), and its
-projection-reconstructing and block-ordering variants
-`Ixon.Authenticated.checkBytesProjection` and
-`Ixon.Authenticated.checkBytesBlockOrder` — run the verified checker behind
+projection-reconstructing variant `Ixon.Authenticated.checkBytesProjection` —
+run the verified checker behind
 the Ixon reader. These fixtures are the reader fixtures
 (`Tests.Ix.Kernel.Reader`, re-keyed to their BLAKE3 addresses) through the
 public names, the failure classification at the Ix API (`e.outcome`), a
@@ -169,20 +168,6 @@ def twoAgain : Ix.Kernel.Admission.Records := omitted ++ (omitted.filter (·.1 =
   | .error (.reconstruction (.admission (.duplicate .records 3 _))) => true
   | _ => false
 
-/-! ## Block order -/
-
-#guard (Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} omitted []).isOk
-#guard match Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} omitted
-    [(address 43, ⟨#[2]⟩), (address 43, ⟨#[2]⟩)] with
-  | .error e@(.order (.admission (.duplicate .blobs 1 _))) => e.outcome == .rejected
-  | _ => false
-#guard match Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} twoAgain [] with
-  | .error (.order (.admission (.duplicate .records 3 _))) => true
-  | _ => false
-#guard match Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits ⟨0, 0⟩ omitted [] with
-  | .error (.order _) => true
-  | _ => false
-
 /-! ## The public theorems, applied -/
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
@@ -252,12 +237,6 @@ example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Record
     (h : Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits records blobs = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytesProjection_has_model V h
-
-example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
-    (h : Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} records blobs = .ok env) :
-    Nonempty (Ix.Kernel.Model V env) :=
-  Ixon.Authenticated.checkBytesBlockOrder_has_model V h
 
 /-! ## The prelude's shape (S1, fact (ii))
 

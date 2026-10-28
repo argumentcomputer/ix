@@ -1,6 +1,7 @@
 module
 
 public import Ix.Ixon.Authenticated
+public import Ix.Ixon.BlockOrder
 public import Ix.KernelFidelity.Reader
 public import Ix.KernelFidelity.Access
 
@@ -176,13 +177,13 @@ def projectionsAccess (input : _root_.Ix.KernelFidelity.RecordAccess) :
       -- Only a recursor block's order is checked (motive order): any other
       -- block is stored in its source's order, which is admissible.
       if kind == "recursor" then
-        match Ixon.BlockOrder.checkRecord Address.admissionHash {} input.blobs a c with
+        match Ixon.BlockOrder.checkRecord a c with
         | .ok () =>
           report := { report with motiveOrdered := report.motiveOrdered.push a }
           -- the wrong order: the first two members swapped
           let swapped := { c with info := .muts (ms.swapIfInBounds 0 1) }
           if let .error (.motiveOrder ..) :=
-              Ixon.BlockOrder.checkRecord Address.admissionHash {} input.blobs a swapped then
+              Ixon.BlockOrder.checkRecord a swapped then
             report := { report with swapsRefused := report.swapsRefused + 1 }
         | .error _ =>
           report := { report with refused := report.refused.insert kind ((report.refused.getD kind #[]).push a) }
