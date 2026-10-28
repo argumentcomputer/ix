@@ -867,17 +867,44 @@ the kernel's name keys. -/
 @[expose] def literalRoleIxName (s : Ix.Kernel.Role) : Ix.Name :=
   Ix.Name.fromLeanName (literalLeanName s)
 
-/-- A literal-support role of the default role table (`roleTableBound`) at whose address
-the artifact stores a record while the role's name (`literalRoleIxName`) is not an input
-constant published at that address, with that address, the first met, if any. With none,
-a stored literal-support role's record is its name's (`Ix.Cert.LiteralRolesNamed`). -/
+/-- The roles a `Nat` literal is checked against: the `Nat` basis (the roles of
+`Ix.Kernel.Reader.natLitSupportNames`). -/
+@[expose] def natLiteralRoles : List Ix.Kernel.Role :=
+  [.nat, .natZero, .natSucc]
+
+/-- Whether some stored record holds a `Nat` literal, and whether some holds a `String`
+literal (`Ix.Kernel.Reader.literalKinds` of each stored record, decoded on tasks). -/
+@[expose] def storedLiteralKinds (ixe : Ixon.Env) : Bool × Bool :=
+  let kinds := parMap (fun (e : Address × Ixon.LazyConstant) =>
+    match e.2.get? with
+    | some c => Ix.Kernel.Reader.literalKinds c
+    | none => (false, false)) ixe.consts.toArray
+  (kinds.any (·.1), kinds.any (·.2))
+
+/-- The roles the stored records' literals are checked against: the string support when
+some stored record holds a `String` literal, otherwise the `Nat` basis when some holds a
+`Nat` literal, otherwise none. -/
+@[expose] def storedLiteralRoles (ixe : Ixon.Env) : List Ix.Kernel.Role :=
+  let kinds := storedLiteralKinds ixe
+  if kinds.2 then literalSupportRoles else if kinds.1 then natLiteralRoles else []
+
+/-- A literal-support role of the default role table (`roleTableBound`) that a stored
+record's literal is checked against (`storedLiteralRoles`), at whose address the artifact
+stores a record while the role's name (`literalRoleIxName`) is not an input constant
+published at that address, with that address, the first met, if any. The stored records'
+literals are read only when some bound literal-support role is stored unnamed. With none,
+a literal's support role stored in the artifact is its name's
+(`Ix.Cert.LiteralRolesNamed`). -/
 @[expose] def literalRoleUnnamed (env : Ix.Environment) (ixe : Ixon.Env) :
     Option (Ix.Kernel.Role × Address) :=
-  roleTableBound.toList.findSome? fun (s, b) =>
-    if literalSupportRoles.contains s && ixe.consts.contains b &&
-        !(env.consts.contains (literalRoleIxName s) &&
-          (ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b)
-    then some (s, b) else none
+  let unnamed := roleTableBound.toList.filter fun (s, b) =>
+    literalSupportRoles.contains s && ixe.consts.contains b &&
+      !(env.consts.contains (literalRoleIxName s) &&
+        (ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b)
+  if unnamed.isEmpty then none
+  else
+    let roles := storedLiteralRoles ixe
+    unnamed.find? fun (s, _) => roles.contains s
 
 /-- A stored record's definition projection: the member it projects (its block's
 address and its index) and the record's address. -/
@@ -977,8 +1004,9 @@ recursors is a published recursor of it (`unownedRecursor`). **Bound roles'
 records have their kinds:** under the default role table, the stored record at a
 bound `Nat` operation's address is a standalone definition, and at a bound axiom
 role's address an axiom (`roleRecordKind`). **Literal-support roles are named:**
-under the default role table, a literal-support role whose address the artifact
-stores a record at is an input constant published at that address
+under the default role table, a role a stored record's literal is checked against
+(the `Nat` basis, and the string support for a `String` literal) whose address the
+artifact stores a record at is an input constant published at that address
 (`literalRoleUnnamed`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
@@ -1014,8 +1042,8 @@ stores a record at is an input constant published at that address
                             | none, none, some (s, b) =>
                               .error s!"compileReport: literal-role check failed: the artifact stores \
                                 a record at {b}, the default role table's address of the literal-support \
-                                role {repr s}, but {(literalRoleIxName s).pretty} is not an input constant \
-                                published there"
+                                role {repr s}, which a stored record's literal is checked against, but \
+                                {(literalRoleIxName s).pretty} is not an input constant published there"
                             | none, some (r, p), _ =>
                               .error s!"compileReport: role check failed: the record stored at {p}, \
                                 the default role table's address of the role {repr r}, is not of its \
@@ -1103,8 +1131,8 @@ attaches recursors to has a family, and each of those recursors is a published
 recursor of it;
 and under the default role table, the stored record at a bound `Nat` operation's
 address is a standalone definition and at a bound axiom role's address an
-axiom, and a literal-support role whose address holds a stored record is an input
-constant published there. Any inconsistency is an error, and no artifact is returned. So
+axiom, and a role a stored record's literal is checked against whose address holds
+a stored record is an input constant published there. Any inconsistency is an error, and no artifact is returned. So
 coverage, authenticity, an order of the records in which none precedes a
 record it references, distinct name hashes, `Muts` entries that agree with
 their blocks, resolved names published where they resolve, found inductive

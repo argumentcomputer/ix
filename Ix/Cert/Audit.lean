@@ -1078,6 +1078,9 @@ fun ixe =>
 -- at that address (checkReport refuses a stored literal-support role's record that its
 -- name does not publish: a literal's support is then reached by name). `CheckReportOk`
 -- gains `literals`.
+-- Re-frozen when the literal-role check was narrowed to the roles a stored record's
+-- literal is checked against: its message says so (an α-copy of `Nat` without `Nat` and
+-- beside no literal is accepted; one beside a `Nat` literal is still refused).
 -- Seventeen checks; `checkReport_ok` concludes `CheckReportOk`, one field each.
 /-- info: def Ix.Cert.checkReport : Ix.Environment → Ix.CompileM.CompileEnv → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
 fun env cenv out =>
@@ -1117,7 +1120,7 @@ fun env cenv out =>
                                             toString b ++
                                           toString ", the default role table's address of the literal-support role " ++
                                         toString (repr s) ++
-                                      toString ", but " ++
+                                      toString ", which a stored record's literal is checked against, but " ++
                                     toString (Ix.Cert.literalRoleIxName s).pretty ++
                                   toString " is not an input constant published there")
                             | none, some (r, p), x =>
@@ -4938,38 +4941,45 @@ fun ixe =>
 
 /-! ## Literal-support roles are named
 
-The default role table binds the roles a literal is checked against (the `Nat` basis and
-the string support). `compileReport` refuses an artifact that stores a record at such a
-role's address while the role's name is not an input constant published there
-(`checkReport`'s seventeenth check, `literalRoleUnnamed`, over every bound entry of the
-decoded table, `roleTableBound`): a literal's support is then reached by its name. Its
-meaning, `LiteralRolesNamed`, holds of every artifact `compileReport` returns
-(`literalRolesNamed`). -/
+The default role table binds the roles a literal is checked against (the `Nat` basis, and
+the string support for a `String` literal). `compileReport` refuses an artifact that stores
+a record at such a role's address while a stored record holds a literal checked against
+that role and the role's name is not an input constant published there (`checkReport`'s
+seventeenth check, `literalRoleUnnamed`, over every bound entry of the decoded table,
+`roleTableBound`; the stored records' literals are read only when such a role is stored
+unnamed, `storedLiteralRoles`): a literal's support is then reached by its name. A copy of
+`Nat` without `Nat`, beside no literal, is accepted. Its meaning, `LiteralRolesNamed`, holds
+of every artifact `compileReport` returns (`literalRolesNamed`). -/
 
-/-- info: [cert-audit] literal roles named: 4 roots; axioms used: [propext, Classical.choice, Quot.sound]
+/-- info: [cert-audit] literal roles named: 8 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] literal roles named: 4 safe definitions, no runtime substitution -/
+info: [cert-audit] literal roles named: 7 safe definitions, no runtime substitution -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
   checkRoots (tag := "cert-audit") "literal roles named"
-    #[``Ix.Cert.keyRoles_strLitSupportNames, ``Ix.Cert.literalRoleName_eq,
+    #[``Ix.Cert.literalRoleName_eq, ``Ix.Cert.keyRoles_strLitSupportNames,
+      ``Ix.Cert.keyRoles_natLitSupportNames, ``Ix.Cert.storedLiteralKinds_of,
+      ``Ix.Cert.literalRoles_stored, ``Ix.Cert.literalRoles_support,
       ``Ix.Cert.literalRoleUnnamed_none, ``Ix.Cert.literalRolesNamed]
   checkRuntime (tag := "cert-audit") "literal roles named"
     #[``Ix.Cert.literalSupportRoles, ``Ix.Cert.literalLeanName, ``Ix.Cert.literalRoleIxName,
+      ``Ix.Cert.natLiteralRoles, ``Ix.Cert.storedLiteralKinds, ``Ix.Cert.storedLiteralRoles,
       ``Ix.Cert.literalRoleUnnamed]
 
 /-- info: def Ix.Cert.LiteralRolesNamed : Ix.Environment → Ixon.Env → Prop :=
 fun env ixe =>
   ∀ (t : Ix.Kernel.RoleTable),
     Ix.Kernel.Reader.defaultTable = Except.ok t →
-      ∀ (s : Ix.Kernel.Role),
-        s ∈ Ix.Cert.keyRoles Ix.Kernel.Reader.strLitSupportNames →
-          ∀ (b : Address),
-            t.addressOf? s = some b →
-              ixe.consts.contains b = true →
-                env.consts.contains (Ix.Cert.literalRoleName s) = true ∧
-                  Ix.Cert.ClosureLayout.addrOf ixe (Ix.Cert.literalRoleName s) = some b -/
+      ∀ (a : Address) (c : Ixon.Constant),
+        Ix.Cert.recordAt ixe a = some c →
+          ∀ (s : Ix.Kernel.Role),
+            s ∈ Ix.Cert.literalRoles c →
+              ∀ (b : Address),
+                t.addressOf? s = some b →
+                  ixe.consts.contains b = true →
+                    env.consts.contains (Ix.Cert.literalRoleName s) = true ∧
+                      Ix.Cert.ClosureLayout.addrOf ixe (Ix.Cert.literalRoleName s) = some b -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.LiteralRolesNamed
 
