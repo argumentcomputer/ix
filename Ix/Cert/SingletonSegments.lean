@@ -16,7 +16,7 @@ namespace Ix.Cert.SingletonSegments
 open Ix.Kernel Ix.Kernel.Reader
 open Ix.CompileM Ix.CompileCert Ix.CompileCert.ExpressionState
 open Ix.Cert.ClosureSegments (SegmentReads InertAddrs)
-open Ix.Cert.BlockContext (BoundResolve)
+open Ix.Cert.BlockContext (BoundResolve lone)
 open Ix.LeanIngress (evAddr QRepAt roleAtMap fiberAliasAt ingressKey)
 
 /-! ## One declaration through the collapse -/
@@ -256,6 +256,139 @@ theorem quotient_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Envir
     rw [RecordReadings.quotientHeader_eq]
     exact qkey_good (defaultTable_check P.table) P.bound P.agree hn
 
+/-! ## Where a singleton's segment lies -/
+
+/-- **A published closure name's record resolves in the artifact's store**: a projection's
+block is a block record holding a member of the projection's kind. -/
+def PublishedResolve (ixe : Ixon.Env) (sub : Ix.Environment) : Prop :=
+  ∀ n ci named, (n, ci) ∈ sub.consts.toList → ixe.named.get? n = some named → ∀ c,
+    recordAt ixe named.addr = some c → (resolveSource (recordAt ixe) named.addr c).isSome = true
+
+theorem filter_single : ∀ {L : List Address} {p : Address → Bool} {B : Address}, L.Nodup → B ∈ L →
+    (∀ a ∈ L, p a = true ↔ a = B) → L.filter p = [B]
+  | [], _, _, _, h, _ => nomatch h
+  | x :: xs, p, B, hnd, hB, hp => by
+    rw [List.nodup_cons] at hnd
+    by_cases e : x = B
+    · subst e
+      rw [List.filter_cons_of_pos ((hp x List.mem_cons_self).mpr rfl),
+        List.filter_eq_nil_iff.mpr fun a ha hpa => by
+          have := (hp a (List.mem_cons_of_mem _ ha)).mp hpa
+          subst this
+          exact hnd.1 ha]
+    · have hx : ¬ p x = true := fun h => e ((hp x List.mem_cons_self).mp h)
+      rw [List.filter_cons_of_neg hx]
+      exact filter_single hnd.2 ((List.mem_cons.mp hB).resolve_left (Ne.symm e))
+        fun a ha => hp a (List.mem_cons_of_mem _ ha)
+
+/-- A record that resolves in the artifact's store, and whose owner holds a lone record, is its
+own owner. -/
+theorem owner_lone {ixe : Ixon.Env} {P : Address} {cm : Ixon.Constant}
+    (hres : (resolveSource (recordAt ixe) P cm).isSome = true) {c : Ixon.Constant}
+    (hc : recordAt ixe (ownerOf P cm) = some c) (single : lone c.info = true) : ownerOf P cm = P := by
+  cases hi : cm.info with
+  | defn _ | recr _ | axio _ | quot _ | muts _ => simp [ownerOf, hi]
+  | dPrj p | iPrj p | rPrj p | cPrj p =>
+    simp only [ownerOf, hi] at hc ⊢
+    simp only [resolveSource, hi, hc] at hres
+    cases hci : c.info <;> simp_all [lone]
+
+/-- **A kept singleton's segment is its record**: no earlier lowered group has the record, since
+an earlier name at the record's address has the singleton's quotient key, which the singleton's
+read keeps and no earlier read declares (`Steps`), and an earlier name's record projecting from
+the record would not resolve. -/
+theorem singleton_place {ixe : Ixon.Env} {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {failures : Failures} {t : RoleTable} {envQ : Env .source} (P : Premises env roots sub ixe failures t envQ)
+    {hints : CName .source → Option ReducibilityHint} {start : State .source} {ls : List SourcePrelude.Scheduled}
+    {rs : List (Read .source)} (steps : ClosureLayout.Steps (ClosureLayout.quotientGraph ixe t hints sub) start ls rs)
+    (inTrace : ∀ y ∈ ls, y ∈ (Ix.LeanIngress.scheduleOf (ClosureLayout.quotientGraph ixe t hints sub)).zipIdx.toList)
+    {L : List Address} (hnd : L.Nodup) (hmem : ∀ a, a ∈ L ↔ ixe.consts.contains a = true)
+    (resolves : PublishedResolve ixe sub) {ℓ : Nat} {y : SourcePrelude.Scheduled} {r : Read .source}
+    (hy : ls[ℓ]? = some y) (hr : rs[ℓ]? = some r) {n : Ix.Name}
+    (hnames : ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y = #[n]) {B : Address}
+    (hB : ClosureLayout.addrOf ixe n = some B) {c : Ixon.Constant} (hc : recordAt ixe B = some c)
+    (single : lone c.info = true)
+    (hdecl : ∃ d ∈ r.decls.toList, ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) n ∈ d.names) :
+    (ClosureLayout.segmentsOf L (ls.map fun y =>
+      ClosureLayout.groupRecords ixe (ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y)) [])[ℓ]? =
+        some [B] := by
+  obtain ⟨hlen, stepsAt⟩ := steps
+  have tb := tableBound_of (defaultTable_check P.table) P.bound
+  have hblk : ClosureLayout.blockAt ixe B = B := by
+    unfold ClosureLayout.blockAt
+    rw [hc]
+    cases hi : c.info <;> simp_all [lone, ownerOf]
+  have hC : (ls.map fun y =>
+      ClosureLayout.groupRecords ixe (ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y))[ℓ]? =
+        some [B, B] := by
+    rw [List.getElem?_map, hy]
+    simp [ClosureLayout.groupRecords, hnames, ClosureLayout.nameRecords, hB, hblk]
+  rw [ClosureLayout.segmentsOf_get L _ [] ℓ _ hC]
+  congr 1
+  refine filter_single hnd ((hmem B).mpr (ClosureLayout.recordAt_contains hc)) fun a _ => ?_
+  simp only [decide_eq_true_eq, List.mem_cons, List.not_mem_nil, or_false, or_self,
+    List.nil_append]
+  refine ⟨fun h => h.1, ?_⟩
+  intro hab
+  rw [hab]
+  refine ⟨rfl, fun hprev => ?_⟩
+  -- the record of an earlier lowered group's name
+  rw [← List.map_take] at hprev
+  obtain ⟨C, hCm, hBC⟩ := List.mem_flatten.mp hprev
+  obtain ⟨y', hy'm, rfl⟩ := List.mem_map.mp hCm
+  obtain ⟨j, hj, hjy⟩ := List.mem_iff_getElem.mp hy'm
+  have hjℓ : j < ℓ := by simp at hj; omega
+  have hℓ : ℓ < ls.length := (List.getElem?_eq_some_iff.mp hy).1
+  have hy' : ls[j]? = some y' := by rw [← hjy, List.getElem_take]; exact List.getElem?_eq_getElem _
+  obtain ⟨r', hr'⟩ : ∃ r', rs[j]? = some r' := ⟨_, List.getElem?_eq_getElem (by omega)⟩
+  obtain ⟨conv', raw', -, -, -, -, -, hc', hl', -, -, hraw', -⟩ := stepsAt j y' r' hy' hr'
+  obtain ⟨conv, -, -, -, -, -, -, hconv, -, -, -, -, fresh⟩ := stepsAt ℓ y r hy hr
+  have hy'x := inTrace y' (List.mem_of_getElem? hy')
+  have hyx := inTrace y (List.mem_of_getElem? hy)
+  obtain ⟨m, hm, hBm⟩ := List.mem_flatMap.mp hBC
+  have hm' := Array.mem_toList_iff.mp hm
+  -- `m`'s quotient key is declared before the singleton's read
+  obtain ⟨d, hd, hkd⟩ := ClosureLayout.lowered_declares hy'x hc' hl' m hm'
+  obtain ⟨d', hd', hkd'⟩ := hraw' d hd _ hkd
+  have hd'ℓ : d' ∈ (rs.take ℓ).flatMap (·.decls.toList) := by
+    obtain ⟨r'', hr'', hdr⟩ := List.mem_flatMap.mp hd'
+    have htk : rs.take (j + 1) = (rs.take ℓ).take (j + 1) := by rw [List.take_take]; congr 1; omega
+    rw [htk] at hr''
+    exact List.mem_flatMap.mpr ⟨r'', List.mem_of_mem_take hr'', hdr⟩
+  -- both names are published closure names
+  obtain ⟨gr', c', hgr', hcv', -⟩ := ClosureLayout.scheduled_conversion hy'x hc'
+  obtain ⟨gr, c0, hgr, hcv, -⟩ := ClosureLayout.scheduled_conversion hyx hconv
+  have hnm' : ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y' = gr'.names := by
+    unfold ClosureLayout.namesAt; rw [ClosureLayout.getElem!_of_getElem? hgr']
+  have hnm : ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y = gr.names := by
+    unfold ClosureLayout.namesAt; rw [ClosureLayout.getElem!_of_getElem? hgr]
+  obtain ⟨cim, hcim⟩ := ClosureLayout.converted_names_stored P hgr' hcv' m (hnm' ▸ hm')
+  obtain ⟨cin, hcin⟩ := ClosureLayout.converted_names_stored P hgr hcv n (by rw [← hnm, hnames]; simp)
+  obtain ⟨namedm, hmm, hgetm⟩ := SourceStoredNames.stored_published P hcim
+  obtain ⟨namedn, hmn, hgetn⟩ := SourceStoredNames.stored_published P hcin
+  have hBn : namedn.addr = B := by
+    unfold ClosureLayout.addrOf at hB; rw [hgetn] at hB; exact Option.some.inj hB
+  -- the record is `m`'s own
+  have hP : namedm.addr = B := by
+    unfold ClosureLayout.nameRecords ClosureLayout.addrOf at hBm
+    rw [hgetm] at hBm
+    simp only [Option.map_some, List.mem_cons, List.not_mem_nil, or_false] at hBm
+    rcases hBm with e | e
+    · exact e.symm
+    · unfold ClosureLayout.blockAt at e
+      cases hcm : recordAt ixe namedm.addr with
+      | none => rw [hcm] at e; exact e.symm
+      | some cm =>
+        rw [hcm] at e
+        dsimp only at e
+        rw [owner_lone (resolves m cim namedm hcim hgetm cm hcm) (by rw [← e]; exact hc) single] at e
+        exact e.symm
+  -- so it has the singleton's quotient key
+  have hkey : ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) m = ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) n :=
+    Ix.LeanIngress.fiberAliasAt_addr_inj tb (by rw [P.agree m namedm hmm, hP]) (by rw [P.agree n namedn hmn, hBn])
+  obtain ⟨dn, hdn, hkdn⟩ := hdecl
+  exact fresh dn hdn _ hkdn d' hd'ℓ (hkey ▸ hkd')
+
 /--
 info: 'Ix.Cert.SingletonSegments.definition_segment' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
@@ -273,5 +406,11 @@ info: 'Ix.Cert.SingletonSegments.quotient_segment' depends on axioms: [propext, 
 -/
 #guard_msgs in
 #print axioms quotient_segment
+
+/--
+info: 'Ix.Cert.SingletonSegments.singleton_place' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms singleton_place
 
 end Ix.Cert.SingletonSegments
