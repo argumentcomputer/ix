@@ -121,7 +121,9 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
     IO.FS.removeDirAll dir
 
 /-- `ix compile --sharing-limits`: a malformed override is rejected before
-    compiling (nothing written), a valid one (Lean and Rust keys mixed)
+    compiling (nothing written). The certified compiler, whose theorem fixes
+    the default limits, refuses a valid override, given or inherited, and
+    writes nothing. Under `--streamed` a valid one (Lean and Rust keys mixed)
     compiles, and a limit no constant fits in fails the compile naming the
     limit (so an override that never reached the compiler would be caught).
     An invalid `IX_SHARING_LIMITS` set directly fails the compile once. -/
@@ -138,12 +140,22 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
     let args := #["compile", source.toString, "--no-build", "--consts", "limitsProof",
       "--out", output.toString]
     let run := fun (spec : String) => IO.Process.output {
-      cmd := ix.toString, args := args ++ #["--sharing-limits", spec] }
+      cmd := ix.toString, args := args ++ #["--streamed", "--sharing-limits", spec] }
     let bad ← run "bogus=1"
     if bad.exitCode == 0 || (← output.pathExists) then
       throw <| IO.userError s!"compile accepted --sharing-limits bogus=1:\n{bad.stdout}\n{bad.stderr}"
     unless (bad.stderr.splitOn "unknown sharing limit bogus").length > 1 do
       throw <| IO.userError s!"--sharing-limits bogus=1: unexpected error:\n{bad.stderr}"
+    -- The certified compiler refuses a valid override, as a flag or inherited.
+    for (flags, env) in [(#["--sharing-limits", "states=2^44"], #[]),
+        (#[], #[("IX_SHARING_LIMITS", some "states=2^44")])] do
+      let refused ← IO.Process.output { cmd := ix.toString, args := args ++ flags, env }
+      if refused.exitCode == 0 || (← output.pathExists) then
+        throw <| IO.userError s!"the certified compiler accepted a sharing-limit override:\n\
+          {refused.stdout}\n{refused.stderr}"
+      unless occurrences refused "runs at the default sharing limits" > 0 do
+        throw <| IO.userError s!"certified sharing-limit override: unexpected error:\n\
+          {refused.stdout}\n{refused.stderr}"
     -- Every serialized constant is longer than one byte: the override must
     -- reach the compiler and fail it, naming the limit to raise.
     let tight ← run "output_bytes=1"
@@ -166,8 +178,9 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
     let good ← run "states=2^44, depth=2^22, work=max"
     unless good.exitCode == 0 && (← output.pathExists) do
       throw <| IO.userError s!"compile --sharing-limits failed:\n{good.stdout}\n{good.stderr}"
-    IO.println "compile --sharing-limits: malformed override rejected, tight limit enforced, \
-      invalid IX_SHARING_LIMITS rejected once, valid override compiled"
+    IO.println "compile --sharing-limits: malformed override rejected, certified compiler \
+      refuses an override, tight limit enforced under --streamed, invalid IX_SHARING_LIMITS \
+      rejected once, valid override compiled under --streamed"
   finally
     IO.FS.removeDirAll dir
 

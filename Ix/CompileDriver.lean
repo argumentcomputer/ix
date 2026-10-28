@@ -839,17 +839,25 @@ def inspectSemanticSource (source : Lean.ConstantInfo) : Except String Unit := d
   | .axiomInfo _ => pure ()
   | _ => throw s!"annotated inductive/constructor/recursor transformations are unsupported: {source.name}"
 
+/-- **The checks of a prepared source list** (`Ix.Compile.CompileInput.prepare`'s
+output), made before it is canonicalized: no binder contract is left
+unresolved, and every semantic contract inspects (`inspectSemanticSource`).
+The result says whether the list carries semantic contracts; such a list's
+output is emitted only after resource validation. -/
+def checkPreparedSource (consts : List (Lean.Name × Lean.ConstantInfo)) : Except String Bool := do
+  for (name, source) in consts do
+    if Ix.Compile.sourceHasAnnotations source then
+      throw s!"unresolved source binder contracts: {name}"
+    inspectSemanticSource source
+  return consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
+
 def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (opts : DriverOptions := {})
     : IO (Except String LeanPipelineOut) := do
-  let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
-  for (name, source) in consts do
-    if Ix.Compile.sourceHasAnnotations source then
-      return .error s!"unresolved source binder contracts: {name}"
-    match inspectSemanticSource source with
+  let annotated ← match checkPreparedSource consts with
+    | .ok annotated => pure annotated
     | .error error => return .error error
-    | .ok _ => pure ()
   let dbg := opts.dbg
   let tick (label : String) (t0 : Nat) : IO Nat := do
     let t1 ← IO.monoMsNow

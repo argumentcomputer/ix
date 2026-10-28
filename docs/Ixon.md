@@ -775,7 +775,9 @@ recorded but not limited on this path in either language: Rust's
 a test oracle, which is also the only meter of `transitions`.
 
 `ix compile --sharing-limits SPEC` (also `ix compile-lean --sharing-limits`)
-overrides the defaults. It sets the `IX_SHARING_LIMITS` environment variable,
+overrides the defaults for the uncertified compilers (`--rust`, `--streamed`);
+the certified compiler, whose correctness theorem fixes the defaults, refuses an
+override. It sets the `IX_SHARING_LIMITS` environment variable,
 which both compilers read once per run: Rust once per compile or decompile
 entry point (`CompileState::sharing_limits`), Lean in the CLI's driver options (`Ix.Cli.driverOptionsFromEnv`)
 and `decompileEnvFullParallel`. An invalid value therefore fails the run once,
