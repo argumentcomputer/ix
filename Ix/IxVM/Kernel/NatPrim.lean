@@ -572,10 +572,11 @@ def natPrim := ⟦
   -- Walk byte stream forward decoding UTF-8; return last codepoint.
   -- Empty → 65 ('A') per Rust default.
   -- Validate an entire byte stream as UTF-8, aborting on the first
-  -- malformed scalar. `utf8_decode_one` already rejects out-of-range
-  -- continuation bytes, stray continuations as leaders, and overlong
-  -- forms, so walking the stream with it is exactly the reference
-  -- kernels' `String::from_utf8` check at ingress.
+  -- malformed scalar. `utf8_decode_one` rejects out-of-range
+  -- continuation bytes, stray continuations as leaders, overlong forms,
+  -- surrogates and code points above 0x10FFFF, so walking the stream with
+  -- it is exactly the reference kernels' `String::from_utf8` check at
+  -- ingress: the accepted literals are the encodings of Lean strings.
   --
   -- Needed at Str-literal CONVERSION, not just during string reduction:
   -- `KLiteral.Str` is typed `String` by `k_infer_lit` without inspecting
@@ -632,11 +633,13 @@ def natPrim := ⟦
   -- and (b) the per-length overlong minimum, so a codepoint that has a
   -- shorter valid encoding cannot also be produced by a longer one. The
   -- reference kernels validate the whole blob as UTF-8 at ingress; this is
-  -- the same rejection, done per scalar. Surrogates and codepoints beyond
-  -- 0x10FFFF are NOT rejected here: they produce unique codepoints that no
-  -- valid char reaches, so they cannot alias, and the downstream
-  -- `Char.ofNat` scalar guard leaves them stuck rather than folding them
-  -- into a valid char.
+  -- the same rejection, done per scalar. It also rejects what is not a
+  -- Unicode scalar value: surrogates [0xD800, 0xDFFF] in the three-byte
+  -- form, and code points of 0x110000 and above in the four-byte form
+  -- (every leader from 0xF5 up gives one). Such a literal corresponds to
+  -- no Lean `String`: its `String.ofList` expansion has a `Char.ofNat`
+  -- that is `'\0'`, so a native rule that reads the bytes (the byte
+  -- length) would disagree with the expansion's definitional value.
   fn utf8_decode_one(b0: U8, rest: ByteStream) -> (G, ByteStream) {
     match u8_less_than(b0, 128u8) {
       1 => (to_field(b0), rest),
@@ -670,7 +673,16 @@ def natPrim := ⟦
                             -- [0xE0,0x80,0x80] -> 0, which would alias
                             -- the one-byte NUL).
                             match u32_less_than(cp, 2048) {
-                              0 => (cp, r2),
+                              0 =>
+                                -- Surrogates [0xD800, 0xDFFF] are not
+                                -- scalar values.
+                                match u32_less_than(cp, 55296) {
+                                  1 => (cp, r2),
+                                  0 =>
+                                    match u32_less_than(cp, 57344) {
+                                      0 => (cp, r2),
+                                    },
+                                },
                             },
                         },
                     },
@@ -688,7 +700,11 @@ def natPrim := ⟦
                                 -- Overlong: a real four-byte scalar is
                                 -- >= 0x10000.
                                 match u32_less_than(cp, 65536) {
-                                  0 => (cp, r3),
+                                  0 =>
+                                    -- The last scalar value is 0x10FFFF.
+                                    match u32_less_than(cp, 1114112) {
+                                      1 => (cp, r3),
+                                    },
                                 },
                             },
                         },

@@ -111,7 +111,7 @@ unsafe extern "C" {
   pub(super) fn aiur_trace_ixvm_827(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
   pub(super) fn aiur_trace_ixvm_828(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
 }
-pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([119, 86, 255, 227, 162, 227, 132, 3, 242, 140, 164, 89, 240, 102, 174, 28, 63, 9, 235, 208, 101, 149, 6, 132, 7, 73, 211, 214, 41, 59, 28, 108], aiur_trace_ixvm_contract, aiur_trace_ixvm_schema, &[
+pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([3, 196, 147, 87, 246, 199, 57, 240, 29, 109, 133, 11, 146, 130, 229, 1, 23, 189, 231, 77, 87, 37, 158, 49, 71, 108, 77, 183, 154, 4, 25, 209], aiur_trace_ixvm_contract, aiur_trace_ixvm_schema, &[
 None,
 None,
 None,
