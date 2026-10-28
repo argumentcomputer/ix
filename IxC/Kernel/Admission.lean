@@ -253,8 +253,8 @@ def checkConstants (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (con
 
 /-- `checkConstants` under a role table's section: the table admitted
 (`admitBinding`: authentic under `hash`, canonical, well formed), then
-`checkConstants`. The root library's variants (`Ixon.Projection`,
-`Ixon.BlockOrder`) end in it. -/
+`checkConstants`. The root library's projection variant
+(`Ixon.Projection`) ends in it. -/
 def checkConstantsAt (hash : ByteArray → Address) (binding : Binding)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
@@ -299,8 +299,7 @@ def Error.outcome : Error → Outcome
 /-- The classification of a byte-stage failure, as `Error.outcome` makes it:
 a batch limit declines; a key used twice in one table, a key that is not the
 hash of its bytes and a record that does not decode canonically reject. The
-variants (`Ixon.Projection`, `Ixon.BlockOrder`) classify their byte stage
-with it. -/
+projection variant (`Ixon.Projection`) classifies its byte stage with it. -/
 def ByteError.outcome : ByteError → Outcome
   | .limit _ => .declined
   | .duplicate .. => .rejected
