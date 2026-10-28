@@ -118,7 +118,7 @@ theorem rows_names (owner : Address) :
   | [], _ => rfl
   | members :: rest, k => by
     simp only [List.zipIdx_cons, List.flatMap_cons, List.map_append, rows_names owner rest (k + 1),
-      List.flatten_cons, List.flatMap_append, List.map_flatMap, sourceRows_names]
+      sourceRows_names]
 
 theorem expectedRows_names (owner : Address) (sources : List MutConst) :
     (MutualProjections.expectedRows owner sources).map Prod.fst = sources.flatMap srcNames :=
