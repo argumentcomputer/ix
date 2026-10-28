@@ -53,6 +53,74 @@ def certTheorems : List (Ix.Kernel.Role × List Lean.Name) :=
    (.natShiftLeft, [`Ix.Kernel.PinGen.shiftLeftRecCert, `Ix.Kernel.PinGen.shiftLeftBaseCert]),
    (.natShiftRight, [`Ix.Kernel.PinGen.shiftRightRecCert, `Ix.Kernel.PinGen.shiftRightBaseCert])]
 
+/-- **The evidence of the definitions specified by their equations**
+(`Ix.Kernel.Spec.eqns`): per role, per equation in order, `none` for a
+definitional entry or the certificate theorem of `IxC/Kernel/PinGen/Certs.lean`
+that proves it. An unconditional equation may take either kind; these are the
+kinds that hold on every supported toolchain (the decision procedures' equations
+hold by definition only where `Decidable` is a structure). -/
+def eqnsEvidence : List (Ix.Kernel.Role × List (Option Lean.Name)) :=
+  [(.decidableDecide, [none, none, some `Ix.Kernel.PinGen.decideExtCert]),
+   (.natDecEq, [some `Ix.Kernel.PinGen.natDecEqCert]),
+   (.natDecLe, [some `Ix.Kernel.PinGen.natDecLeCert]),
+   (.natDecLt, [none]),
+   (.intNegOfNat, [none, none]),
+   (.intSubNatNat, [some `Ix.Kernel.PinGen.intSubNatNatGeCert,
+     some `Ix.Kernel.PinGen.intSubNatNatLtCert]),
+   (.intNeg, [none, none]),
+   (.intAdd, [none, none, none, none]),
+   (.intSub, [none]),
+   (.intMul, [none, none, none, none]),
+   (.intNatAbs, [none, none]),
+   (.intEdiv, [none, none, none, none, none]),
+   (.intEmod, [none, none, none, none]),
+   (.intPow, [none, some `Ix.Kernel.PinGen.intPowEvenCert, some `Ix.Kernel.PinGen.intPowOddCert]),
+   (.bitVecToNat, [none]),
+   (.bitVecUlt, [some `Ix.Kernel.PinGen.bitVecUltCert]),
+   (.stringDecEq, [some `Ix.Kernel.PinGen.stringDecEqCert]),
+   (.stringToByteArray, [none]),
+   (.listAppend, [none, none]),
+   (.stringAppend, [some `Ix.Kernel.PinGen.stringAppendCert]),
+   (.ifThenElse, [none, none]),
+   (.intDecEq, [some `Ix.Kernel.PinGen.intDecEqOfNatCert, none, none,
+     some `Ix.Kernel.PinGen.intDecEqNegSuccCert]),
+   (.intDecLe, [some `Ix.Kernel.PinGen.intDecLeOfNatCert,
+     some `Ix.Kernel.PinGen.intDecLeOfNatNegSuccCert, none, some `Ix.Kernel.PinGen.intDecLeNegSuccCert]),
+   (.intDecLt, [none]),
+   (.intBmod, [none]),
+   (.intBdiv, [none]),
+   (.charUtf8Size, [some `Ix.Kernel.PinGen.charUtf8Size1Cert, some `Ix.Kernel.PinGen.charUtf8Size2Cert,
+     some `Ix.Kernel.PinGen.charUtf8Size3Cert, some `Ix.Kernel.PinGen.charUtf8Size3HighCert,
+     some `Ix.Kernel.PinGen.charUtf8Size4Cert]),
+   (.stringUtf8ByteSize, [none, some `Ix.Kernel.PinGen.stringUtf8ByteSizeConsCert]),
+   (.stringBack, [none, some `Ix.Kernel.PinGen.stringBackOneCert,
+     some `Ix.Kernel.PinGen.stringBackConsCert])]
+
+/-- The definitions' certificate theorems (`eqnsEvidence`), per role that has any. -/
+def eqnsTheorems : List (Ix.Kernel.Role × List Lean.Name) :=
+  (eqnsEvidence.map fun (r, es) => (r, es.filterMap id)).filter (!·.2.isEmpty)
+
+/-- Every certificate theorem of the role table: the well-founded operations'
+(`certTheorems`) and the definitions' (`eqnsTheorems`). -/
+def allCertTheorems : List (Ix.Kernel.Role × List Lean.Name) := certTheorems ++ eqnsTheorems
+
+/-- **A role's evidence entries**, given its closed proofs' entries in order: for a
+definition (`eqnsEvidence`), a definitional entry at each `none` and the next
+proof at each certificate; for a well-founded operation, the proofs. -/
+def evidenceEntries {K : Type} (r : Ix.Kernel.Role) (proofs : Array (Ix.Kernel.Evidence K)) :
+    Array (Ix.Kernel.Evidence K) :=
+  match eqnsEvidence.find? (·.1 == r) with
+  | none => proofs
+  | some (_, es) => (es.foldl (init := ((#[] : Array (Ix.Kernel.Evidence K)), 0)) fun (acc, i) e =>
+      match e with
+      | none => (acc.push .defeq, i)
+      | some _ => (acc.push (proofs.getD i .defeq), i + 1)).1
+
+/-- The definitions whose equations all hold by definition, with their evidence. -/
+def defeqDefinitions {K : Type} : List (Ix.Kernel.Role × Array (Ix.Kernel.Evidence K)) :=
+  (eqnsEvidence.filter fun (_, es) => es.all Option.isNone).map fun (r, es) =>
+    (r, (es.map fun _ => Ix.Kernel.Evidence.defeq).toArray)
+
 /-- The structural operations: their evidence is one `defeq` entry per
 recurrence equation. -/
 def defeqRoles : List Ix.Kernel.Role :=
@@ -115,6 +183,24 @@ def allowedFor (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (op : CN
     Std.HashSet (CName md) :=
   (Ix.Kernel.refClosureGo look Ix.Kernel.walkFuel
     (opValue.constKeyList ++ Ix.Kernel.evidenceDepKeys op) {}).insert op
+
+/-- **What a proof of the definition `r` may mention** (`eqnsEvidence`): the
+dependency closure of its value, of its dependencies' roles and of the basis
+roles (`Ix.Kernel.preludeShape`), with their blocks, and `r` itself. Nothing
+checks this locality: IxVM checks a definition's certificate with its own
+dependencies. Closing a proof over it keeps the certificate small and
+self-contained in the artifact that publishes the definition. -/
+def allowedForDefinition (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (r : Ix.Kernel.Role)
+    (value : CExpr md) : Std.HashSet (CName md) :=
+  let roots := (r.deps ++ Ix.Kernel.preludeShape.flatten).flatMap Ix.Kernel.Role.block
+  (Ix.Kernel.refClosureGo look Ix.Kernel.walkFuel
+    (value.constKeyList ++ roots.map Ix.Kernel.roleKey) {}).insert (Ix.Kernel.roleKey r)
+
+/-- **What may stay a reference in a definition's certificate** (`eqnsEvidence`):
+`allowedForDefinition`'s constants, and every constant without a value (an
+inductive, a constructor, a recursor, an axiom), which closing cannot inline. -/
+def keptInDefinitionProof (u : Universe md) (allowed : Std.HashSet (CName md)) (n : CName md) : Bool :=
+  allowed.contains n || !u.values.contains n
 
 /-! ## Expression surgery (memoized over the DAG) -/
 
@@ -289,12 +375,13 @@ def closedProofs (decls : Array (CDecl md)) (uni : Universe md)
     (r : Ix.Kernel.Role) : Except String (List (CName md × CExpr md)) := do
   let op := Ix.Kernel.roleKey r
   let some opValue := valueOf decls op | throw s!"{op} is not a definition here"
-  let allowed := allowedFor look op opValue
-  let thms := ((certTheorems.find? (·.1 == r)).map (·.2)).getD []
+  let keep : CName md → Bool := if certTheorems.any (·.1 == r) then (allowedFor look op opValue).contains
+    else keptInDefinitionProof uni (allowedForDefinition look r opValue)
+  let thms := ((allCertTheorems.find? (·.1 == r)).map (·.2)).getD []
   thms.mapM fun t => do
     let k := key t
     let some v := theoremOf decls k | throw s!"{k} is not a theorem here"
-    let p ← (closeProof uni allowed.contains v).mapError (s!"{k}: " ++ ·)
+    let p ← (closeProof uni keep v).mapError (s!"{k}: " ++ ·)
     pure (k, p)
 
 /-! ## Source evidence from the committed bundle

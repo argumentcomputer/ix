@@ -111,7 +111,6 @@ pub struct PrimAddrs {
   pub punit_size_of_1: Address,
   pub size_of_size_of: Address,
   pub string_back: Address,
-  pub string_legacy_back: Address,
   pub string_utf8_byte_size: Address,
   pub string_append: Address,
   pub string_dec_eq: Address,
@@ -422,9 +421,6 @@ impl PrimAddrs {
       string_back: h(
         "6a47d4c02a7bd096323488f1c115081fb0dfe8fc9651751de02e00ca6e0a68f1",
       ),
-      string_legacy_back: h(
-        "e125361735d91a2490f9ff74d51a2115d65ba6f9feab368f18046c45352e22ee",
-      ),
       string_utf8_byte_size: h(
         "4c086826cc679df3b6aa57a29f3d093a8a92d0de4edecef46a908d8398733dc0",
       ),
@@ -553,7 +549,6 @@ impl PrimAddrs {
       ("PUnit._sizeOf_1", p.punit_size_of_1.hex()),
       ("SizeOf.sizeOf", p.size_of_size_of.hex()),
       ("String.back", p.string_back.hex()),
-      ("String.Legacy.back", p.string_legacy_back.hex()),
       ("String.utf8ByteSize", p.string_utf8_byte_size.hex()),
       ("String.append", p.string_append.hex()),
       ("String.decEq", p.string_dec_eq.hex()),
@@ -850,9 +845,6 @@ impl PrimAddrs {
       ),
       string_back: h(
         "54317bf07a28017fbfccf7d9f11c97846c106be220ab98ce1e1b58a196c12be8",
-      ),
-      string_legacy_back: h(
-        "2943dd3d52e8db4fc5b68543ec64d786ba8c70c1f304fe1c0164cc80f2aaaf17",
       ),
       string_utf8_byte_size: h(
         "06ba07154a1cd0e1e9eec2b6e27b195a6fc3ae20a70d1ced7643a61e4e3e6d0f",

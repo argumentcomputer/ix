@@ -24,14 +24,21 @@ What is rendered, per role:
 - the specified type, with every role key read through the binding table;
 - for an operation, its equations closed over `x y : Nat`, and for a
   well-founded one its certificate statements closed over `x y` and the
-  hypotheses.
+  hypotheses;
+- for a definition specified by its equations, each unconditional equation's
+  sides closed over its typed variables, and every equation's statement
+  (`Π vars, Π hyps, Eq lhs rhs`), which a proof must meet;
+- the family of native rules that fires on the role's constant
+  (`role_prim_family`), which is IxVM's, not the specification's.
 
 The groups are validated in `groupOrder`: a group's roles are bound
 together (`Role.block`), and every role a group needs (`Role.deps`) is in an
 earlier group. The axioms come before the well-founded operations, whose
-certificates use `propext`. The well-founded operations' groups come last,
-and the circuit validates them all under the groups before the first of
-them (`first_well_founded_group`). -/
+certificates use `propext`. The tail comes last: the well-founded operations'
+groups, the groups of the definitions specified by their equations, and the
+groups that need them. The circuit validates every tail group under the groups
+before the tail (`first_well_founded_group`), so that no operation's or
+definition's fast path takes part in validating another. -/
 
 @[expose] public section
 
@@ -43,8 +50,14 @@ open Ix.Kernel
 def groupOrder : List Role :=
   [.nat, .eq, .punit, .empty, .false, .quot, .char, .string, .list, .charOfNat,
    .stringOfList, .bool, .natPred, .natAdd, .natSub, .natMul, .natPow, .natBeq,
-   .natBle, .true, .and, .iff, .nonempty, .propext, .choice, .sorryAx, .natDiv,
-   .natMod, .natGcd, .natLand, .natLor, .natXor, .natShiftLeft, .natShiftRight]
+   .natBle, .true, .and, .iff, .nonempty, .propext, .choice, .sorryAx,
+   .notProp, .decidable, .natLe, .int, .intLe, .bitVec, .byteArray,
+   .natDiv, .natMod, .natGcd, .natLand, .natLor, .natXor, .natShiftLeft, .natShiftRight,
+   .decidableDecide, .ofDecideEqTrue, .ofDecideEqFalse, .natDecEq, .natDecLe, .natDecLt,
+   .intNegOfNat, .intSubNatNat, .intNeg, .intAdd, .intSub, .intMul, .intNatAbs, .intEdiv,
+   .intEmod, .intPow, .bitVecToNat, .bitVecUlt, .stringDecEq, .stringToByteArray,
+   .listAppend, .stringAppend, .ifThenElse, .intDecEq, .intDecLe, .intDecLt, .intBmod, .intBdiv,
+   .charUtf8Size, .stringUtf8ByteSize, .stringBack]
 
 def groups : List (List Role) := groupOrder.map Role.block
 
@@ -193,13 +206,15 @@ def ctorCount (r : Role) : Except String Nat := do
   pure count
 
 /-- 0 block member, 1 anchor, 2 operation, 3 standard axiom, 4 the inert
-axiom `sorryAx` (tolerated as a declaration, never usable). -/
+axiom `sorryAx` (tolerated as a declaration, never usable), 5 definition
+specified by its equations. -/
 def specKind (r : Role) : Nat :=
   match r.spec (md := .anon) with
   | .block _ => 0
   | .anchor .. => 1
   | .ops .. => 2
   | .axiom .. => if r == .sorryAx then 4 else 3
+  | .eqns .. => 5
 
 def levels (r : Role) : Except String Nat := do
   match r.spec (md := .anon) with
@@ -207,6 +222,7 @@ def levels (r : Role) : Except String Nat := do
   | .anchor n _ => pure n
   | .ops .. => pure 0
   | .axiom n _ => pure n
+  | .eqns n _ _ => pure n
 
 /-- The specified type; an axiom of any type has none (`Sort 0` stands in). -/
 def specType (r : Role) : Except String String := do
@@ -218,10 +234,17 @@ def specType (r : Role) : Except String String := do
   | .ops t _ => expr [] 0 t
   | .axiom n (some t) => expr (List.range n) 0 t
   | .axiom _ none => pure "store(KExprNode.Srt(store(KLevelNode.Zero)))"
+  | .eqns n t _ => expr (List.range n) 0 t
 
 def equations (r : Role) : List (List (Expr .anon) × Expr .anon × Expr .anon) :=
   match r.spec (md := .anon) with
   | .ops _ eqs => eqs
+  | _ => []
+
+/-- A definition's equations (`Spec.eqns`). -/
+def eqnsEquations (r : Role) : List (Equation .anon) :=
+  match r.spec (md := .anon) with
+  | .eqns _ _ eqs => eqs
   | _ => []
 
 /-- A group of well-founded operations: its equations are certificates,
@@ -229,16 +252,67 @@ which carry hypotheses. -/
 def wellFounded (g : List Role) : Bool :=
   g.any fun r => (equations r).any (!·.1.isEmpty)
 
-/-- The index of the first well-founded operation's group. Those groups
-come last: the circuit validates each under the groups before the first of
-them, so none comes before a group it could otherwise use. -/
+/-- A group that must be validated in the tail: a well-founded operation's,
+or a definition's specified by its equations, so that no operation's or
+definition's fast path takes part in validating another. -/
+def tailOnly (g : List Role) : Bool :=
+  wellFounded g || g.any fun r => specKind r == 5
+
+/-- The index of the first group of the tail. The tail comes last: the
+circuit validates each of its groups under the groups before the tail, so
+none comes before a group it could otherwise use. Every group that must be
+in the tail is (`tailOnly`), and so is every group that needs a tail group;
+no other group is. -/
 def firstWellFoundedGroup : Except String Nat := do
-  let some first := groups.findIdx? wellFounded
+  let some first := groups.findIdx? tailOnly
     | throw "no well-founded operation's group"
   for (g, i) in groups.zipIdx do
-    unless wellFounded g == decide (first ≤ i) do
-      throw s!"role group {i}: the well-founded operations' groups must come last"
+    let needsTail := (groupNeeds g).any fun r => first ≤ groupOf r
+    unless (tailOnly g || needsTail) == decide (first ≤ i) do
+      throw s!"role group {i}: the tail must be exactly the groups that need it"
   pure first
+
+/-- An equation's levels: positional, as for its definition. -/
+def eqnLevels (r : Role) : List LevelParam := List.range (levels r |>.toOption.getD 0)
+
+/-- `λ vars, side`: an unconditional equation's side, closed over its
+variables. -/
+def closeEqnSide (r : Role) (e : Equation .anon) (side : Expr .anon) : Except String String := do
+  let ps := eqnLevels r
+  let mut body ← expr ps e.vars.length side
+  for (t, i) in e.vars.zipIdx.reverse do
+    body := s!"store(KExprNode.Lam({← expr ps i t}, {body}))"
+  pure body
+
+/-- `Π vars, Π hyps, @Eq.{level} carrier lhs rhs`: an equation's statement,
+which a proof's type must meet. -/
+def closeEqnStatement (r : Role) (e : Equation .anon) : Except String String := do
+  let ps := eqnLevels r
+  let n := e.vars.length
+  let depth := n + e.hyps.length
+  let eqHead := s!"store(KExprNode.Const(role_bound_addr(tbl, {roleIdx .eq}), \
+    {list [← level ps e.level]}))"
+  let mut body := s!"store(KExprNode.App(store(KExprNode.App(store(KExprNode.App({eqHead}, \
+    {← expr ps depth e.carrier})), {← expr ps depth e.lhs})), {← expr ps depth e.rhs}))"
+  for (h, j) in e.hyps.zipIdx.reverse do
+    body := s!"store(KExprNode.Forall({← expr ps (n + j) h}, {body}))"
+  for (t, i) in e.vars.zipIdx.reverse do
+    body := s!"store(KExprNode.Forall({← expr ps i t}, {body}))"
+  pure body
+
+/-- The family of native rules that fires on a role's constant: 1 `Nat`
+operations, 2 `String`, 3 `BitVec`, 5 decision procedures, 6 `Int`; 0 none. -/
+def primFamily : Role → Nat
+  | .natSucc | .natPred | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natPow
+  | .natGcd | .natBeq | .natBle | .natLand | .natLor | .natXor | .natShiftLeft
+  | .natShiftRight => 1
+  | .stringOfList | .stringUtf8ByteSize | .stringAppend | .stringBack | .stringToByteArray
+  | .stringDecEq => 2
+  | .bitVecToNat | .bitVecUlt => 3
+  | .natDecEq | .natDecLe | .natDecLt | .intDecEq | .intDecLe | .intDecLt => 5
+  | .intAdd | .intSub | .intMul | .intNeg | .intNatAbs | .intEdiv | .intEmod | .intBmod | .intBdiv
+  | .intPow => 6
+  | _ => 0
 
 /-! ## The file -/
 
@@ -258,6 +332,7 @@ public section
 
 namespace IxVM
 
+set_option maxRecDepth 16384 in
 def roleSpec := ⟦
 "
 
@@ -342,6 +417,32 @@ def render : Except String String := do
     s!"    match 64 * r + k \{\n{rhsArms}      _ => {dummy},\n    }"
   out := out ++ aiurFn "fn op_certificate(tbl: RoleTable, r: G, k: G) -> KExpr"
     s!"    match 64 * r + k \{\n{certArms}      _ => {dummy},\n    }"
+  -- Definitions specified by their equations, by role and equation index.
+  out := out ++ aiurFn "fn eqns_equation_count(r: G) -> G"
+    (← byRole (fun r => pure (toString (eqnsEquations r).length)) "0")
+  let mut condArms := ""
+  let mut eLhsArms := ""
+  let mut eRhsArms := ""
+  let mut stmtArms := ""
+  for r in Role.all do
+    for (e, k) in (eqnsEquations r).zipIdx do
+      let key := 64 * roleIdx r + k
+      stmtArms := stmtArms ++ s!"      {key} => {← closeEqnStatement r e},\n"
+      if e.hyps.isEmpty then
+        eLhsArms := eLhsArms ++ s!"      {key} => {← closeEqnSide r e e.lhs},\n"
+        eRhsArms := eRhsArms ++ s!"      {key} => {← closeEqnSide r e e.rhs},\n"
+      else
+        condArms := condArms ++ s!"      {key} => 1,\n"
+  out := out ++ aiurFn "fn eqns_conditional(r: G, k: G) -> G"
+    s!"    match 64 * r + k \{\n{condArms}      _ => 0,\n    }"
+  out := out ++ aiurFn "fn eqns_lhs(tbl: RoleTable, r: G, k: G) -> KExpr"
+    s!"    match 64 * r + k \{\n{eLhsArms}      _ => {dummy},\n    }"
+  out := out ++ aiurFn "fn eqns_rhs(tbl: RoleTable, r: G, k: G) -> KExpr"
+    s!"    match 64 * r + k \{\n{eRhsArms}      _ => {dummy},\n    }"
+  out := out ++ aiurFn "fn eqns_statement(tbl: RoleTable, r: G, k: G) -> KExpr"
+    s!"    match 64 * r + k \{\n{stmtArms}      _ => {dummy},\n    }"
+  out := out ++ aiurFn "fn role_prim_family(r: G) -> G"
+    (← byRole (fun r => pure (toString (primFamily r))) "0")
   pure (out ++ footer)
 
 end IxVM.RoleSpecGen

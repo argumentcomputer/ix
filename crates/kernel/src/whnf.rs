@@ -189,7 +189,6 @@ fn prim_family_uncached<M: KernelMode>(
     return PrimFamily::BitVec;
   }
   if *addr == p.string_back.addr
-    || *addr == p.string_legacy_back.addr
     || *addr == p.string_utf8_byte_size.addr
     || *addr == p.string_to_byte_array.addr
     || *addr == p.string_of_list.addr
@@ -3471,8 +3470,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return self.try_reduce_string_dec_eq(e, &args);
     }
 
-    let is_back = *addr == self.primitives()?.string_back.addr
-      || *addr == self.primitives()?.string_legacy_back.addr;
+    let is_back = *addr == self.primitives()?.string_back.addr;
     let is_utf8_byte_size =
       *addr == self.primitives()?.string_utf8_byte_size.addr;
     let is_to_byte_array =
@@ -4294,14 +4292,14 @@ mod tests {
   }
 
   #[test]
-  fn whnf_string_legacy_back_empty_literal() {
+  fn whnf_string_back_empty_literal() {
     use super::super::testing as kt;
 
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
     tc.enable_extra_reductions();
     let back = kt::ME::cnst(
-      tc.primitives().unwrap().string_legacy_back.clone(),
+      tc.primitives().unwrap().string_back.clone(),
       Box::new([]),
     );
     let empty = kt::ME::str(String::new(), Address::hash(b""));

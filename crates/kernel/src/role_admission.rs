@@ -91,17 +91,19 @@ impl std::fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 
-static ALL_ROLES: [Role; 59] = Role::ALL;
+static ALL_ROLES: [Role; 103] = Role::ALL;
 
-// Exactly Role.block/deps and Spec.evidenceKinds in IxC/Kernel/Roles.lean.
+// Exactly Role.block/deps and Spec.evidenceAllowed in IxC/Kernel/Roles.lean.
 // These describe candidate well-formedness, not declaration specifications.
 fn block(role: Role) -> &'static [Role] {
   use Role::{
-    And, AndIntro, AndRec, Bool, BoolFalse, BoolRec, BoolTrue, Empty, EmptyRec,
-    Eq, EqRec, EqRefl, False, FalseRec, Iff, IffIntro, IffRec, List, ListCons,
-    ListNil, Nat, NatRec, NatSucc, NatZero, Nonempty, NonemptyIntro,
-    NonemptyRec, PUnit, PUnitRec, PUnitUnit, Quot, QuotInd, QuotLift, QuotMk,
-    QuotSound, True, TrueIntro,
+    And, AndIntro, AndRec, BitVec, BitVecOfNat, Bool, BoolFalse, BoolRec,
+    BoolTrue, ByteArray, ByteArrayEmpty, Decidable, DecidableIsFalse,
+    DecidableIsTrue, Empty, EmptyRec, Eq, EqRec, EqRefl, False, FalseRec, Iff,
+    IffIntro, IffRec, Int, IntNegSucc, IntOfNat, List, ListCons, ListNil, Nat,
+    NatRec, NatSucc, NatZero, Nonempty, NonemptyIntro, NonemptyRec, PUnit,
+    PUnitRec, PUnitUnit, Quot, QuotInd, QuotLift, QuotMk, QuotSound, True,
+    TrueIntro,
   };
   match role {
     Nat | NatZero | NatSucc | NatRec => &[Nat, NatZero, NatSucc, NatRec],
@@ -122,16 +124,29 @@ fn block(role: Role) -> &'static [Role] {
     Quot | QuotMk | QuotLift | QuotInd | QuotSound => {
       &[Quot, QuotMk, QuotLift, QuotInd, QuotSound]
     },
+    Decidable | DecidableIsTrue | DecidableIsFalse => {
+      &[Decidable, DecidableIsTrue, DecidableIsFalse]
+    },
+    Int | IntOfNat | IntNegSucc => &[Int, IntOfNat, IntNegSucc],
+    BitVec | BitVecOfNat => &[BitVec, BitVecOfNat],
+    ByteArray | ByteArrayEmpty => &[ByteArray, ByteArrayEmpty],
     _ => &ALL_ROLES[usize::from(role.index())..=usize::from(role.index())],
   }
 }
 
 fn dependencies(role: Role) -> &'static [Role] {
   use Role::{
-    Bool, Char, CharOfNat, Choice, Eq, Iff, List, Nat, NatAdd, NatBeq, NatBle,
-    NatDiv, NatGcd, NatLand, NatLor, NatMod, NatMul, NatPow, NatPred,
-    NatShiftLeft, NatShiftRight, NatSub, NatXor, Nonempty, Propext, Quot,
-    QuotInd, QuotLift, QuotMk, QuotSound, SorryAx, String, StringOfList,
+    BitVec, BitVecOfNat, BitVecToNat, BitVecUlt, Bool, ByteArray, Char,
+    CharOfNat, CharUtf8Size, Choice, Decidable, DecidableDecide,
+    DecidableIsFalse, Eq, Iff, IfThenElse, Int, IntAdd, IntBdiv, IntBmod,
+    IntDecEq, IntDecLe, IntDecLt, IntEdiv, IntEmod, IntLe, IntMul, IntNatAbs,
+    IntNeg, IntNegOfNat, IntNegSucc, IntOfNat, IntPow, IntSub, IntSubNatNat,
+    List, ListAppend, Nat, NatAdd, NatBeq, NatBle, NatDecEq, NatDecLe,
+    NatDecLt, NatDiv, NatGcd, NatLand, NatLe, NatLor, NatMod, NatMul, NatPow,
+    NatPred, NatShiftLeft, NatShiftRight, NatSub, NatXor, Nonempty, Not,
+    OfDecideEqFalse, OfDecideEqTrue, Propext, Quot, QuotInd, QuotLift, QuotMk,
+    QuotSound, SorryAx, String, StringAppend, StringBack, StringDecEq, StringOfList,
+    StringToByteArray, StringUtf8ByteSize,
   };
   match role {
     Quot | QuotMk | QuotLift | QuotInd | QuotSound => &[Eq],
@@ -153,24 +168,84 @@ fn dependencies(role: Role) -> &'static [Role] {
     Propext => &[Iff, Eq],
     Choice => &[Nonempty],
     SorryAx => &[Bool],
+    DecidableIsFalse => &[Not],
+    OfDecideEqTrue => &[Decidable, DecidableDecide, Bool, Eq],
+    OfDecideEqFalse => &[Decidable, DecidableDecide, Not, Bool, Eq],
+    DecidableDecide => &[Decidable, Not, Bool, Eq],
+    NatLe | IntOfNat | IntNegSucc | BitVec | BitVecOfNat => &[Nat],
+    NatDecEq => &[Nat, Bool, Eq, Decidable, DecidableDecide, NatBeq],
+    NatDecLe => &[Nat, Bool, Eq, Decidable, DecidableDecide, NatLe, NatBle],
+    NatDecLt => &[Nat, Eq, Decidable, NatLe, NatDecLe],
+    IntNegOfNat | IntNatAbs => &[Nat, Int, Eq],
+    IntSubNatNat => &[Nat, Int, Bool, Eq, NatPred, NatSub, NatBle],
+    IntNeg => &[Nat, Int, Eq, IntNegOfNat],
+    IntAdd => &[Nat, Int, Eq, NatAdd, IntSubNatNat],
+    IntSub => &[Int, Eq, IntAdd, IntNeg],
+    IntMul => &[Nat, Int, Eq, NatMul, IntNegOfNat],
+    IntEdiv => &[Nat, Int, Eq, NatDiv, IntNeg],
+    IntEmod => &[Nat, Int, Eq, NatMod, IntSubNatNat],
+    IntPow => &[Nat, Int, Bool, Eq, NatPow, NatMod, NatBeq, IntNeg],
+    BitVecToNat => &[Nat, Eq, BitVec, NatMod, NatPow],
+    BitVecUlt => &[Nat, Bool, Eq, BitVec, NatMod, NatPow, NatBle],
+    StringDecEq => &[String, Bool, Eq, Decidable, DecidableDecide],
+    StringToByteArray => &[String, List, Char, StringOfList, Eq, ByteArray],
+    ListAppend => &[List, Eq],
+    StringAppend => &[String, List, Char, StringOfList, Eq, ListAppend],
+    IfThenElse => &[Decidable, Not, Eq],
+    IntLe => &[Int],
+    IntDecEq => &[Nat, Int, Bool, Eq, Decidable, DecidableDecide, NatBeq],
+    IntDecLe => &[Nat, Int, Bool, Eq, Decidable, DecidableDecide, IntLe, NatBle],
+    IntDecLt => &[Nat, Int, Eq, Decidable, IntLe, IntAdd, IntDecLe],
+    IntBmod => {
+      &[Nat, Int, Eq, IfThenElse, IntLe, IntAdd, IntSub, IntEdiv, IntEmod, IntDecLt]
+    },
+    IntBdiv => &[
+      Nat, Int, Eq, IfThenElse, IntLe, IntAdd, IntEdiv, IntEmod, IntDecLt, NatDecEq,
+    ],
+    CharUtf8Size => &[Nat, Char, CharOfNat, Bool, Eq, NatMul, NatBle],
+    StringUtf8ByteSize => {
+      &[Nat, String, List, Char, StringOfList, Eq, NatAdd, CharUtf8Size]
+    },
+    StringBack => &[Nat, String, List, Char, CharOfNat, StringOfList, Eq, NatMul],
     _ => &[],
   }
 }
 
-fn evidence_shape(role: Role) -> (usize, bool) {
+// Exactly Spec.evidenceAllowed: per equation, `Some(true)` a definitional entry
+// only, `Some(false)` a proof only, `None` either. Empty for a role without
+// equations.
+fn evidence_allowed(role: Role) -> &'static [Option<bool>] {
   use Role::{
-    NatAdd, NatBeq, NatBle, NatDiv, NatGcd, NatLand, NatLor, NatMod, NatMul,
-    NatPow, NatPred, NatShiftLeft, NatShiftRight, NatSub, NatXor,
+    BitVecToNat, BitVecUlt, CharUtf8Size, DecidableDecide, IfThenElse, IntAdd,
+    IntBdiv, IntBmod, IntDecEq, IntDecLe, IntDecLt, IntEdiv, IntEmod, IntMul,
+    IntNatAbs, IntNeg, IntNegOfNat, IntPow, IntSub, IntSubNatNat, ListAppend,
+    NatAdd, NatBeq, NatBle, NatDecEq, NatDecLe, NatDecLt, NatDiv, NatGcd,
+    NatLand, NatLor, NatMod, NatMul, NatPow, NatPred, NatShiftLeft,
+    NatShiftRight, NatSub, NatXor, StringAppend, StringBack, StringDecEq,
+    StringToByteArray, StringUtf8ByteSize,
   };
+  const D: Option<bool> = Some(true);
+  const P: Option<bool> = Some(false);
+  const E: Option<bool> = None;
   match role {
-    NatPred | NatAdd | NatSub | NatMul | NatPow => (2, true),
-    NatBeq => (4, true),
-    NatBle => (3, true),
-    NatDiv | NatMod => (3, false),
-    NatGcd | NatLand | NatLor | NatXor | NatShiftLeft | NatShiftRight => {
-      (2, false)
-    },
-    _ => (0, false),
+    NatPred | NatAdd | NatSub | NatMul | NatPow => &[D, D],
+    NatBeq => &[D, D, D, D],
+    NatBle => &[D, D, D],
+    NatDiv | NatMod => &[P, P, P],
+    NatGcd | NatLand | NatLor | NatXor | NatShiftLeft | NatShiftRight => &[P, P],
+    DecidableDecide => &[E, E, P],
+    NatDecEq | NatDecLe | NatDecLt | IntSub | BitVecToNat | BitVecUlt
+    | StringDecEq | StringToByteArray | StringAppend | IntDecLt | IntBmod
+    | IntBdiv => &[E],
+    IntNegOfNat | IntNeg | IntNatAbs | ListAppend | IfThenElse
+    | StringUtf8ByteSize => &[E, E],
+    IntSubNatNat => &[P, P],
+    IntAdd | IntMul | IntEmod | IntDecEq | IntDecLe => &[E, E, E, E],
+    IntEdiv => &[E, E, E, E, E],
+    IntPow => &[E, P, P],
+    StringBack => &[E, E, E],
+    CharUtf8Size => &[P, P, P, P, P],
+    _ => &[],
   }
 }
 
@@ -210,14 +285,14 @@ impl BindingCandidate {
     }
     let mut evidence_roles = FxHashSet::default();
     for (role, evidence) in &table.evidence {
-      let (count, defeq) = evidence_shape(*role);
+      let allowed = evidence_allowed(*role);
       if !roles.contains(role)
         || !evidence_roles.insert(*role)
-        || count == 0
-        || evidence.len() != count
-        || evidence
-          .iter()
-          .any(|entry| matches!(entry, Evidence::DefEq) != defeq)
+        || allowed.is_empty()
+        || evidence.len() != allowed.len()
+        || evidence.iter().zip(allowed).any(|(entry, kind)| {
+          kind.is_some_and(|defeq| matches!(entry, Evidence::DefEq) != defeq)
+        })
       {
         return Err(Error::Binding(format!(
           "evidence does not match {role:?}'s specification"
@@ -225,7 +300,7 @@ impl BindingCandidate {
       }
     }
     for role in roles {
-      if evidence_shape(role).0 != 0 && !evidence_roles.contains(&role) {
+      if !evidence_allowed(role).is_empty() && !evidence_roles.contains(&role) {
         return Err(Error::Binding(format!(
           "operation {role:?} has no evidence"
         )));

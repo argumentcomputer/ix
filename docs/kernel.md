@@ -570,34 +570,43 @@ its recursors in motive order, and the stream's index-count check pairs the
 recursor of motive `m` with the block's type `m` (`RecCounts.motive`).
 
 **Roles and their specifications** (`IxC/Kernel/Roles.lean`). The checker
-knows 59 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
+knows 103 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
 `Empty`, `False`, the `Quot` package, every member), `Bool`, `True`, `And`,
 `Iff`, `Nonempty` with their constructors and recursors, the literal support
 (`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`,
 `Char.ofNat`), the fifteen certified `Nat` operations (`pred`, `add`, `sub`,
 `mul`, `pow`, `beq`, `ble` structural; `div`, `mod`, `gcd`, `land`, `lor`,
 `xor`, `shiftLeft`, `shiftRight` well-founded), the standard axioms and
-`sorryAx`.
+`sorryAx`, and the definitions IxVM evaluates natively: `ite`, `Decidable`
+and `decide`, the `Nat`, `Int` and `String` decision procedures, the `Int`
+operations (with `Int.bmod` and `Int.bdiv`), `BitVec.toNat` and `BitVec.ult`,
+and `String.append`, `String.toByteArray`, `String.utf8ByteSize` (with
+`Char.utf8Size`) and `String.back`, with the anchors their equations need.
 Each has a fixed specification (`Role.spec`): a closed term over role keys
-and positional levels, of one of four kinds (a `block`'s declarations, for
-the basis and the standard axioms' families `Iff` and `Nonempty`; an
-`anchor`'s type; an operation's type and characterizing equations, `ops`;
-an `axiom`'s exact type, which for the inert `sorryAx` fixes only which
-declaration is tolerated), its block
-(`Role.block`, the roles bound together) and its dependencies (`Role.deps`).
+and positional levels, of one of five kinds (a `block`'s declarations, for the basis and the standard axioms' families;
+an `anchor`'s type; an operation's type and characterizing equations,
+`ops`; an `axiom`'s exact type, including the inert `sorryAx`; a
+definition's type and equations over a typed telescope, `eqns`, each
+unconditional one holding by definition or by a certificate theorem, each
+conditional one by a certificate), its block (`Role.block`, the roles bound
+together), its dependencies (`Role.deps`) and whether the checker introduces
+it into terms with no referenced constant determining it
+(`Role.usedImplicitly`: the literal support and the standard axioms).
 The specifications are today's checks
 respelled, not new ones (`Role.spec_*` are `rfl` against the data the
 checker compares). They carry no address and no input key, so one set
 serves every toolchain. Specification version 2 removes the five
 compiler-trust/native-evaluation roles and the `identity` specification
-kind. Version 3 makes `Iff`, `Nonempty` and their constructors and
-recursors `block` roles (every role a standard axiom's type mentions,
-transitively, is a block role: a type-only `Nonempty` would let
-`Classical.choice` prove `False`) and gives `sorryAx` its type. The
-canonical encoding (`Ix.SpecDigest.specBytes`) is 9365 bytes.
+kind. Version 3 specifies `Iff`, `Nonempty` and their constructors and
+recursors as blocks, gives the inert `sorryAx` its type over `Bool`, and adds
+the `eqns` kind, the native definitions above and
+`Role.usedImplicitly`. IxC carries the `eqns` specifications in the digest
+and takes no fast path through them; IxVM validates them and keys its native
+`Int`, `BitVec`, `String` and decision rules on them.
+The canonical encoding (`Ix.SpecDigest.specBytes`) is 17058 bytes.
 Its BLAKE3 digest, computed in the root library because the kernel admits
 no hasher, is
-`f09825902503729718c7ab437405b9f87efb97024085f8f2ea10e1e3ca378ba3`
+`2fc3874462090c7e652d69497d8bf1fb31f2c36ba5c36d500072f3e8d0d8d950`
 (`Ix/SpecDigest.lean` freezes it; `IxC/Kernel/Audit/Roles.lean` freezes the
 set's shape). Four anchors that no use site validates, `Bool.rec`, `And`,
 `And.intro` and `And.rec`, and the inert `sorryAx` are validated at install
@@ -744,11 +753,12 @@ validated by type, as here. One difference follows from what a claim covers: an 
 checks a constant with its dependencies, not a whole environment, so the
 constants the circuit introduces into a claim's terms without the claim
 referencing them (a string literal's type and its constructor form's
-`String.ofList`, `List.nil`, `List.cons`, `Char` and `Char.ofNat`) are
-checked as the claim's dependencies, under the claim's context. The
-primitives IxC does not specify yet (the `Int`, `BitVec`, `String` and
-decision extras) stay recognized by address and fire only when the binding
-binds the roles they were compiled against to those constants.
+`String.ofList`, `List.nil`, `List.cons`, `Char` and `Char.ofNat`, and the
+constants a native rule builds its result from) are checked as the claim's
+dependencies, under the claim's context. Every native rule fires on a role:
+the `Int`, `BitVec`, `String` and decision rules on definitions validated
+against their `eqns` specifications, each result an instance of the head's
+equations.
 The axiom policy is IxC's: a safe axiom is declared only when the binding
 binds it as `propext`, `Classical.choice` or `Quot.sound`, or as `sorryAx`,
 which no constant may use (`axiom_standing`, the one place a standard axiom
@@ -1102,17 +1112,13 @@ interleaved:
    `Tests/Fixtures/ixon-v4/primitives.tsv` differs from the live addresses;
    copy the file it names over the fixture. Mirror every changed address
    into `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`),
-   `Ix/PrimAddrs.lean` and the IxVM literals in `Ix/IxVM/Kernel/*.lean`
-   (search each old address in hex and in 32-byte array form). IxVM reads
-   every role through the claim's binding; its only literals are the
-   extras IxC does not specify yet and, beside them, the role constants
-   they were compiled against (`*_pin` in `Ix/IxVM/Kernel/NatPrim.lean`),
-   which `prim-addrs` lists exactly. The suites
+   `Ix/PrimAddrs.lean`. IxVM reads every primitive through the claim's
+   binding and has no address literal but its specification digest, which
+   `prim-addrs` checks. The suites
    `prim-addrs` and `primitive-address-parity` and
    `lake exe ixon-v4-tests --primitives` must pass.
 3. **Generated IxVM Rust.** `lake exe ix codegen` regenerates
-   `crates/ixvm-codegen/src/*.rs` from the IxVM sources (the literals of step
-   2 among them) and `Ix/IxVM/Kernel/RoleSpec.lean`, the role specifications
+   `crates/ixvm-codegen/src/*.rs` from the IxVM sources and `Ix/IxVM/Kernel/RoleSpec.lean`, the role specifications
    rendered as circuit terms (`Ix/IxVM/RoleSpecGen.lean`), which also
    changes with `specVersion` or the specification digest; `lake exe ix
    codegen --check` must pass.

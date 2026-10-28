@@ -19,8 +19,7 @@ pub enum ExtraReduction {
   /// `BitVec.toNat (BitVec.ofNat w n)` and `BitVec.ult` on literals.
   BitVec,
   /// `String` operations on literals: the `String.ofList` collapse,
-  /// `append`, `decEq`, `back`, `Legacy.back`, `utf8ByteSize`, and
-  /// `toByteArray ""`.
+  /// `append`, `decEq`, `back`, `utf8ByteSize`, and `toByteArray ""`.
   String,
   /// The `Nat` offset forms, one unit: `x + k`, `x / k` and `x % k` kept
   /// stuck in WHNF, the recursor-major cleanup of `x + (k+1)` to

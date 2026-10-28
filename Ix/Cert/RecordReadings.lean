@@ -427,6 +427,7 @@ section Definition
 open Ix.CompileM Ix.CompileCert Ix.CompileCert.ExpressionState Ix.CompileCert.UniversePipeline
 open Ix.Sharing.Verify (BlockWireTablesWF)
 
+set_option maxRecDepth 8192 in
 /-- **A compiled definition reads, in a closure's context and from any state related to
 quotient Source's, as quotient Source's declaration renamed.**
 
@@ -556,6 +557,7 @@ theorem quotientHeader_eq (ρ : FiberMap) (cv : CVal .source) :
   rw [quotientHeader, canonValM_run]
   rfl
 
+set_option maxRecDepth 8192 in
 /-- **A compiled axiom reads, in a closure's context and from any state, as quotient
 Source's declaration renamed**, under the compile-side reading theorem's premises
 (`HeaderReading.axiom_reads`) at quotient Source's names renamed, with the closure's context
@@ -604,6 +606,7 @@ theorem axiom_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
   rw [htypeEq, quotientHeader_eq, params_nodup nodup]
   rfl
 
+set_option maxRecDepth 8192 in
 /-- **A compiled quotient constant reads, in a closure's context and from any state, as
 quotient Source's declaration renamed** (`HeaderReading.quotient_reads`'s premises). -/
 theorem quotient_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}

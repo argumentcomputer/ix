@@ -576,268 +576,57 @@ def infer := ⟦
   -- ============================================================================
   -- Decidable dispatch.
   --
-  -- Handles `Nat.decLe`/`Nat.decLt`/`Nat.decEq` on literal args. Builds
-  -- `Decidable.isTrue prop proof` / `Decidable.isFalse prop proof` with
-  -- compiler-emitted witness helpers. `prop` recovered via k_infer on the
-  -- (head, arg0, arg1) call expression under the current types context.
+  -- The decision procedures are roles (`natDecEq`, `natDecLe`, `natDecLt`),
+  -- each specified by one equation through `Decidable.decide`: `decide (d x y)`
+  -- is a certified `Bool` operation of `x y`. On literal arguments the rule
+  -- evaluates that operation to `v` and returns `isTrue P (of_decide_eq_true P
+  -- (d a c) rfl)` or `isFalse P (of_decide_eq_false P (d a c) rfl)`. `decide`'s
+  -- equations give that result the `decide` of `d a c`, and its
+  -- extensionality makes them equal, so the rule computes an instance of the
+  -- validated equations whatever shape the binding's `Decidable` has. `P` is
+  -- built from the specification's type, not inferred.
   -- ============================================================================
 
-  fn nat_dec_le_addr_dec() -> Addr {
-    store([0x7bu8, 0xb6u8, 0x59u8, 0x87u8, 0x66u8, 0x71u8, 0xe0u8, 0x3du8,
-     0x07u8, 0x31u8, 0xc4u8, 0x56u8, 0xe8u8, 0x94u8, 0xceu8, 0x9eu8,
-     0x6fu8, 0x7du8, 0xe8u8, 0x25u8, 0x0au8, 0xb4u8, 0xaeu8, 0x70u8,
-     0x11u8, 0x3du8, 0xc0u8, 0x8eu8, 0x24u8, 0x53u8, 0x21u8, 0x27u8])
-  }
-
-  fn nat_dec_eq_addr_dec() -> Addr {
-    store([0xf1u8, 0xdeu8, 0x71u8, 0x03u8, 0x80u8, 0x2eu8, 0xbcu8, 0x53u8,
-     0x09u8, 0x04u8, 0x1bu8, 0xdau8, 0xadu8, 0xeau8, 0x4au8, 0x65u8,
-     0x65u8, 0x2du8, 0x54u8, 0xafu8, 0x37u8, 0xe6u8, 0x6au8, 0xaau8,
-     0xf4u8, 0x17u8, 0x87u8, 0xb1u8, 0xd8u8, 0x91u8, 0x95u8, 0x57u8])
-  }
-
-  fn nat_dec_lt_addr_dec() -> Addr {
-    store([0xafu8, 0x58u8, 0x6bu8, 0x07u8, 0x54u8, 0x6eu8, 0x1fu8, 0xcau8,
-     0x9au8, 0xb0u8, 0x78u8, 0x0du8, 0x1cu8, 0x23u8, 0x6au8, 0xf8u8,
-     0xd3u8, 0x60u8, 0xc4u8, 0xc6u8, 0xbbu8, 0x32u8, 0xbbu8, 0x0cu8,
-     0xd0u8, 0x3eu8, 0xc9u8, 0xcau8, 0x63u8, 0xd3u8, 0xdau8, 0x96u8])
-  }
-
-  fn decidable_is_true_addr_dec() -> Addr {
-    store([0x36u8, 0x3du8, 0x07u8, 0x11u8, 0x82u8, 0xbeu8, 0x41u8, 0x4eu8,
-     0x1au8, 0x58u8, 0x59u8, 0x9bu8, 0x83u8, 0xf5u8, 0xe1u8, 0x9fu8,
-     0x9bu8, 0x87u8, 0x37u8, 0x23u8, 0x05u8, 0x4fu8, 0x42u8, 0x87u8,
-     0xbau8, 0x69u8, 0x70u8, 0x5au8, 0xafu8, 0xefu8, 0x27u8, 0xdau8])
-  }
-
-  fn decidable_is_false_addr_dec() -> Addr {
-    store([0x8cu8, 0xc0u8, 0xe1u8, 0x36u8, 0x0cu8, 0x1bu8, 0x29u8, 0x10u8,
-     0x8du8, 0xabu8, 0x3du8, 0x61u8, 0x72u8, 0xe7u8, 0xfcu8, 0xe8u8,
-     0xa9u8, 0xaau8, 0x96u8, 0x40u8, 0xdau8, 0xa4u8, 0xbbu8, 0xe9u8,
-     0x9bu8, 0xa1u8, 0x30u8, 0x5du8, 0x96u8, 0x23u8, 0x62u8, 0x4bu8])
-  }
-
-  fn nat_le_of_ble_eq_true_addr_dec() -> Addr {
-    store([0x5cu8, 0x99u8, 0xdcu8, 0x61u8, 0x88u8, 0x9eu8, 0x4au8, 0x1eu8,
-     0x06u8, 0xffu8, 0x6fu8, 0x24u8, 0xd1u8, 0x84u8, 0xdcu8, 0x65u8,
-     0x53u8, 0x02u8, 0x8cu8, 0xc6u8, 0x2bu8, 0x89u8, 0xfau8, 0x61u8,
-     0xbcu8, 0x23u8, 0x11u8, 0x5bu8, 0x6au8, 0x76u8, 0x20u8, 0x68u8])
-  }
-
-  fn nat_not_le_of_not_ble_eq_true_addr_dec() -> Addr {
-    store([0x93u8, 0xc0u8, 0xeau8, 0x70u8, 0xc5u8, 0xc3u8, 0x3fu8, 0x7bu8,
-     0xceu8, 0xcdu8, 0x40u8, 0x5du8, 0xfdu8, 0xeeu8, 0x5cu8, 0x54u8,
-     0x71u8, 0xf7u8, 0x4au8, 0xeeu8, 0x61u8, 0xf8u8, 0xbbu8, 0x61u8,
-     0x0bu8, 0x25u8, 0x52u8, 0xd7u8, 0xffu8, 0xe2u8, 0x81u8, 0x83u8])
-  }
-
-  fn nat_eq_of_beq_eq_true_addr_dec() -> Addr {
-    store([0xc4u8, 0x4cu8, 0x52u8, 0x85u8, 0x78u8, 0xdau8, 0xb3u8, 0x90u8,
-     0x30u8, 0x88u8, 0xd0u8, 0x64u8, 0xccu8, 0x9bu8, 0x67u8, 0x9du8,
-     0x2cu8, 0x0eu8, 0xb3u8, 0xfeu8, 0x73u8, 0xdau8, 0x3cu8, 0x1cu8,
-     0xe1u8, 0xccu8, 0x9du8, 0x1bu8, 0x8fu8, 0x2cu8, 0xadu8, 0xd3u8])
-  }
-
-  fn nat_ne_of_beq_eq_false_addr_dec() -> Addr {
-    store([0x6au8, 0x77u8, 0x39u8, 0xcau8, 0x74u8, 0xfdu8, 0x00u8, 0x33u8,
-     0xddu8, 0xcbu8, 0x1cu8, 0x4du8, 0x98u8, 0xcdu8, 0xe4u8, 0x19u8,
-     0x20u8, 0xf1u8, 0x73u8, 0xd3u8, 0xb8u8, 0xa6u8, 0xfau8, 0xdeu8,
-     0x75u8, 0xa4u8, 0x9bu8, 0x74u8, 0x96u8, 0xecu8, 0x8cu8, 0xadu8])
-  }
-
-  fn int_dec_eq_addr_dec() -> Addr {
-    store([0x35u8, 0xa9u8, 0xedu8, 0x72u8, 0x02u8, 0xe3u8, 0xc4u8, 0x38u8,
-     0x57u8, 0xcdu8, 0xc4u8, 0x06u8, 0x3eu8, 0xacu8, 0x12u8, 0x3fu8,
-     0xe7u8, 0xb7u8, 0x7fu8, 0x06u8, 0x31u8, 0x15u8, 0x4au8, 0xc5u8,
-     0x40u8, 0xdbu8, 0xa2u8, 0xc9u8, 0x97u8, 0xbdu8, 0xf2u8, 0x24u8])
-  }
-
-  fn int_dec_le_addr_dec() -> Addr {
-    store([0x17u8, 0x10u8, 0x03u8, 0x4au8, 0x51u8, 0x7fu8, 0x24u8, 0x9fu8,
-     0x5cu8, 0x82u8, 0x65u8, 0xe8u8, 0xe2u8, 0x78u8, 0x3bu8, 0xe6u8,
-     0x06u8, 0x19u8, 0xf0u8, 0xc8u8, 0xe8u8, 0x5fu8, 0x4eu8, 0xabu8,
-     0x62u8, 0x5eu8, 0x85u8, 0x98u8, 0x3au8, 0xbdu8, 0x72u8, 0x2eu8])
-  }
-
-  fn int_dec_lt_addr_dec() -> Addr {
-    store([0x53u8, 0x18u8, 0x87u8, 0x7au8, 0xe6u8, 0x1eu8, 0x1du8, 0xa3u8,
-     0x79u8, 0x80u8, 0xd8u8, 0x0cu8, 0x11u8, 0xe3u8, 0xe4u8, 0x7au8,
-     0x36u8, 0xd8u8, 0x50u8, 0xc3u8, 0xe4u8, 0x3eu8, 0x99u8, 0x71u8,
-     0x61u8, 0x22u8, 0xf1u8, 0xe6u8, 0xefu8, 0xf0u8, 0x1eu8, 0x9fu8])
-  }
-
-  fn int_of_nat_addr_dec() -> Addr {
-    store([0x0au8, 0x99u8, 0xf4u8, 0x9cu8, 0xc7u8, 0x3au8, 0xb9u8, 0xf4u8,
-     0x27u8, 0x83u8, 0x09u8, 0x2eu8, 0x71u8, 0x20u8, 0x61u8, 0x32u8,
-     0x25u8, 0x67u8, 0x0bu8, 0xabu8, 0x89u8, 0xb9u8, 0xd6u8, 0x35u8,
-     0x33u8, 0xd1u8, 0xadu8, 0xefu8, 0xc8u8, 0x76u8, 0x18u8, 0x2fu8])
-  }
-
-  fn int_neg_succ_addr_dec() -> Addr {
-    store([0xf7u8, 0x13u8, 0x0du8, 0x58u8, 0x64u8, 0xe1u8, 0xbau8, 0x77u8,
-     0xb0u8, 0xf6u8, 0xa7u8, 0x33u8, 0x8fu8, 0x92u8, 0x15u8, 0x9cu8,
-     0x35u8, 0xbdu8, 0x51u8, 0x47u8, 0xe0u8, 0xfeu8, 0xbcu8, 0xf1u8,
-     0xebu8, 0xedu8, 0x45u8, 0x6eu8, 0x51u8, 0x35u8, 0x38u8, 0xccu8])
-  }
-
-  fn is_dec_prim_addr(rc: RoleCtx, a: Addr) -> G {
-    match address_eq(a, nat_dec_le_addr_dec()) {
-      1 => 1,
-      _ =>
-      match address_eq(a, nat_dec_eq_addr_dec()) {
-        1 => 1,
-        _ =>
-        match address_eq(a, nat_dec_lt_addr_dec()) {
-          1 => 1,
-          _ =>
-          match address_eq(a, int_dec_le_addr_dec()) {
-            1 => 1,
-            _ =>
-            match address_eq(a, int_dec_eq_addr_dec()) {
-              1 => 1,
-              _ =>
-              match address_eq(a, int_dec_lt_addr_dec()) {
-                1 => 1,
-                _ => 0,
-              },
-            },
-          },
-        },
-      },
-    }
-  }
-
-  fn is_int_dec_prim_addr(rc: RoleCtx, a: Addr) -> G {
-    match address_eq(a, int_dec_le_addr_dec()) {
-      1 => 1,
-      _ =>
-      match address_eq(a, int_dec_eq_addr_dec()) {
-        1 => 1,
-        _ =>
-        match address_eq(a, int_dec_lt_addr_dec()) {
-          1 => 1,
-          _ => 0,
-        },
-      },
-    }
-  }
-
-  -- Match `App(Const(int_of_nat|int_neg_succ), Lit(Nat _))`. Returns
-  -- (found, sign, limbs). sign=0 for Int.ofNat, 1 for Int.negSucc.
-  fn try_extract_int(rc: RoleCtx, e: KExpr) -> (G, G, KLimbs) {
-    match load(e) {
-      KExprNode.App(f, a) =>
-        match load(f) {
-          KExprNode.Const(caddr, _) =>
-            let is_ofnat = address_eq(caddr, int_of_nat_addr_dec());
-            let is_negsucc = address_eq(caddr, int_neg_succ_addr_dec());
-            match is_ofnat + is_negsucc {
-              0 => (0, 0, store(ListNode.Nil)),
-              _ =>
-                match load(a) {
-                  KExprNode.Lit(lit) =>
-                    match lit {
-                      KLiteral.Nat(limbs) => (1, is_negsucc, limbs),
-                      _ => (0, 0, store(ListNode.Nil)),
-                    },
-                  _ => (0, 0, store(ListNode.Nil)),
-                },
-            },
-          _ => (0, 0, store(ListNode.Nil)),
-        },
-      _ => (0, 0, store(ListNode.Nil)),
-    }
-  }
-
-  -- Build canonical `App(Const(int_of_nat | int_neg_succ), Lit(Nat n))`.
-  fn intern_int_lit(rc: RoleCtx, sign: G, kl: KLimbs) -> KExpr {
-    let head_addr = match sign {
-      0 => int_of_nat_addr_dec(),
-      _ => int_neg_succ_addr_dec(),
-    };
-    let head = store(KExprNode.Const(head_addr, store(ListNode.Nil)));
-    let lit = store(KExprNode.Lit(KLiteral.Nat(kl)));
-    store(KExprNode.App(head, lit))
-  }
-
-  -- Normalize Int.decLe/decLt/decEq spine args to canonical Int lit
-  -- form. If both already canonical, bail (0, _). Otherwise whnf both,
-  -- extract, rebuild `App(head, canonical_a, canonical_b, ...post)`.
-  -- Caller re-whnfs the rebuilt form; delta then unfolds Int.dec_* body
-  -- against canonical inputs.
-  fn try_normalize_int_decidable(rc: RoleCtx, head_addr: Addr,
-                                     head_lvls: List‹KLevel›,
-                                     spine: List‹KExpr›,
-                                     types: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
-      1 => (0, store(KExprNode.BVar(0))),
-      _ =>
-        let a0 = list_lookup(spine, 0);
-        let a1 = list_lookup(spine, 1);
-        match try_extract_int(rc, a0) {
-          (1, _, _) =>
-            match try_extract_int(rc, a1) {
-              (1, _, _) => (0, store(KExprNode.BVar(0))),
-              _ => normalize_int_dec_rebuild(rc, head_addr, head_lvls,
-                                              spine, a0, a1, types),
-            },
-          _ => normalize_int_dec_rebuild(rc, head_addr, head_lvls,
-                                          spine, a0, a1, types),
-        },
-    }
-  }
-
-  fn normalize_int_dec_rebuild(rc: RoleCtx, head_addr: Addr, head_lvls: List‹KLevel›,
-                                spine: List‹KExpr›, a0: KExpr, a1: KExpr,
-                                types: List‹KExpr›) -> (G, KExpr) {
-    let wa = whnf(rc, a0, types);
-    let wb = whnf(rc, a1, types);
-    match try_extract_int(rc, wa) {
-      (1, sa, na) =>
-        match try_extract_int(rc, wb) {
-          (1, sb, nb) =>
-            let a_e = intern_int_lit(rc, sa, na);
-            let b_e = intern_int_lit(rc, sb, nb);
-            let head = store(KExprNode.Const(head_addr, head_lvls));
-            let r1 = store(KExprNode.App(head, a_e));
-            let r2 = store(KExprNode.App(r1, b_e));
-            let post = list_drop(spine, 2);
-            (1, apply_spine(r2, post)),
-          _ => (0, store(KExprNode.BVar(0))),
-        },
-      _ => (0, store(KExprNode.BVar(0))),
-    }
-  }
-
-  -- Entry point. Whnf calls this on Const-headed apps whose head addr
-  -- passes is_dec_prim_addr. Returns (1, reduced) on success or
-  -- (0, _) to fall through to Defn unfold.
+  -- Entry point. Whnf calls this on Const-headed apps of family 5, the
+  -- decision roles. Returns
+  -- (1, reduced) on success or (0, _) to fall through to Defn unfold.
   fn try_dec_dispatch(rc: RoleCtx, head_addr: Addr, head_lvls: List‹KLevel›,
                           spine: List‹KExpr›, types: List‹KExpr›)
                           -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
-        match is_int_dec_prim_addr(rc, head_addr) {
-          1 => try_normalize_int_decidable(rc, head_addr, head_lvls,
-                                                spine, types),
+        match role_is(rc, head_addr, role_nat_dec_lt()) {
+          1 => dec_rewrite_lt_to_le(rc, spine, types),
           _ =>
-            let is_le = address_eq(head_addr, nat_dec_le_addr_dec());
-            let is_eq = address_eq(head_addr, nat_dec_eq_addr_dec());
-            let is_lt = address_eq(head_addr, nat_dec_lt_addr_dec());
-            match is_lt {
-              1 => dec_rewrite_lt_to_le(rc, head_lvls, spine, types),
-              _ => dec_dispatch_le_eq(rc, is_le, is_eq, head_addr,
-                                       head_lvls, spine, types),
-            },
+        match role_is(rc, head_addr, role_nat_dec_le()) {
+          1 => dec_nat(rc, 1, head_addr, head_lvls, spine, types),
+          _ =>
+        match role_is(rc, head_addr, role_nat_dec_eq()) {
+          1 => dec_nat(rc, 0, head_addr, head_lvls, spine, types),
+          _ =>
+        match role_is(rc, head_addr, role_int_dec_lt()) {
+          1 => dec_rewrite_int_lt_to_le(rc, spine, types),
+          _ =>
+        match role_is(rc, head_addr, role_int_dec_le()) {
+          1 => dec_int(rc, 1, head_addr, head_lvls, spine, types),
+          _ =>
+        match role_is(rc, head_addr, role_int_dec_eq()) {
+          1 => dec_int(rc, 0, head_addr, head_lvls, spine, types),
+          _ => (0, store(KExprNode.BVar(0))),
+        },
+        },
+        },
+        },
+        },
         },
     }
   }
 
-  -- decLt n m → decLe (n+1) m: rewrite spine head + first arg, return
-  -- (1, App(dec_le, succ_n_lit, m_e, ...post)). Whnf caller re-whnfs
-  -- the rewritten form, which re-enters dispatch as the decLe arm.
-  fn dec_rewrite_lt_to_le(rc: RoleCtx, head_lvls: List‹KLevel›, spine: List‹KExpr›,
+  -- decLt n m → decLe (n+1) m, by `natDecLt`'s equation `decLt x y =
+  -- decLe (succ x) y`: return (1, App(dec_le, succ_n_lit, m_e, ...post)).
+  -- Whnf re-whnfs the rewritten form, which re-enters dispatch as decLe.
+  fn dec_rewrite_lt_to_le(rc: RoleCtx, spine: List‹KExpr›,
                            types: List‹KExpr›) -> (G, KExpr) {
     let n_e = list_lookup(spine, 0);
     let m_e = list_lookup(spine, 1);
@@ -847,7 +636,7 @@ def infer := ⟦
       (1, n_klimbs) =>
         let succ_lit = mk_nat_lit(klimbs_succ(n_klimbs));
         let dec_le_head = store(KExprNode.Const(
-          nat_dec_le_addr_dec(), head_lvls));
+          role_addr(rc, role_nat_dec_le()), store(ListNode.Nil)));
         let app1 = store(KExprNode.App(dec_le_head, succ_lit));
         let app2 = store(KExprNode.App(app1, m_e));
         let post = list_drop(spine, 2);
@@ -855,10 +644,11 @@ def infer := ⟦
     }
   }
 
-  fn dec_dispatch_le_eq(rc: RoleCtx, is_le: G, is_eq: G,
-                         head_addr: Addr, head_lvls: List‹KLevel›,
-                         spine: List‹KExpr›, types: List‹KExpr›)
-                         -> (G, KExpr) {
+  -- `Nat.decLe n m` (is_le = 1) or `Nat.decEq n m` (is_le = 0) on literals:
+  -- `decide` of it is `Nat.ble n m` or `Nat.beq n m` (the role's equation),
+  -- evaluated natively. `P` is `Nat.le n m` or `@Eq Nat n m`.
+  fn dec_nat(rc: RoleCtx, is_le: G, head_addr: Addr, head_lvls: List‹KLevel›,
+              spine: List‹KExpr›, types: List‹KExpr›) -> (G, KExpr) {
     let n_e = list_lookup(spine, 0);
     let m_e = list_lookup(spine, 1);
     let n_w = whnf(rc, n_e, types);
@@ -873,57 +663,122 @@ def infer := ⟦
               1 => klimbs_le(n_kl, m_kl),
               _ => klimbs_eq(n_kl, m_kl),
             };
-            dec_build_proof(rc, is_le, is_eq, verdict, n_e, m_e,
-                            head_addr, head_lvls, spine, types),
+            let prop = match is_le {
+              1 =>
+                let le_c = store(KExprNode.Const(role_used_implicitly(rc, role_nat_le()),
+                  store(ListNode.Nil)));
+                store(KExprNode.App(store(KExprNode.App(le_c, n_e)), m_e)),
+              _ => mk_eq1(rc, store(KExprNode.Const(role_addr(rc, role_nat()),
+                  store(ListNode.Nil))), n_e, m_e),
+            };
+            let call = store(KExprNode.App(store(KExprNode.App(
+              store(KExprNode.Const(head_addr, head_lvls)), n_e)), m_e));
+            (1, apply_spine(dec_result(rc, verdict, prop, call), list_drop(spine, 2))),
         },
     }
   }
 
-  fn dec_build_proof(rc: RoleCtx, is_le: G, is_eq: G, verdict: G,
-                      n_e: KExpr, m_e: KExpr,
-                      head_addr: Addr, head_lvls: List‹KLevel›,
-                      spine: List‹KExpr›, types: List‹KExpr›)
-                      -> (G, KExpr) {
-    -- Bail decLe-false (needs Bool.noConfusion helper not exposed).
-    let bail = is_le * (1 - verdict);
-    match bail {
-      1 => (0, store(KExprNode.BVar(0))),
-      _ =>
-        -- Eq.refl.{1} Bool (Bool.true|Bool.false)
-        let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
-        let eq_refl_lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
-        let eq_refl_c = store(KExprNode.Const(role_addr(rc, role_eq_refl()), eq_refl_lvls));
-        let bool_c = store(KExprNode.Const(role_addr(rc, role_bool()), store(ListNode.Nil)));
-        let bool_lit_addr = match verdict {
-          1 => role_addr(rc, role_bool_true()),
-          _ => role_addr(rc, role_bool_false()),
-        };
-        let bool_lit_c = store(KExprNode.Const(bool_lit_addr, store(ListNode.Nil)));
-        let r1 = store(KExprNode.App(eq_refl_c, bool_c));
-        let refl_proof = store(KExprNode.App(r1, bool_lit_c));
-        let proof_fn_addr = match is_le {
-          1 =>
-            match verdict {
-              1 => nat_le_of_ble_eq_true_addr_dec(),
-              _ => nat_not_le_of_not_ble_eq_true_addr_dec(),
-            },
-          _ =>
-            match verdict {
-              1 => nat_eq_of_beq_eq_true_addr_dec(),
-              _ => nat_ne_of_beq_eq_false_addr_dec(),
-            },
-        };
-        let proof_c = store(KExprNode.Const(proof_fn_addr, store(ListNode.Nil)));
-        let p1 = store(KExprNode.App(proof_c, n_e));
-        let p2 = store(KExprNode.App(p1, m_e));
-        let proof = store(KExprNode.App(p2, refl_proof));
-        dec_finish(rc, verdict, proof, head_addr, head_lvls, spine, types),
+  -- `Int.decLt a b` → `Int.decLe (a + 1) b`, by `intDecLt`'s equation, with
+  -- `a + 1` evaluated natively on a literal `a` (`intAdd`'s equations).
+  -- Whnf re-whnfs the rewritten form, which re-enters dispatch as decLe.
+  fn dec_rewrite_int_lt_to_le(rc: RoleCtx, spine: List‹KExpr›,
+                               types: List‹KExpr›) -> (G, KExpr) {
+    let a_e = list_lookup(spine, 0);
+    let b_e = list_lookup(spine, 1);
+    let a_w = whnf(rc, a_e, types);
+    match try_extract_int_prim(rc, a_w) {
+      (0, _, _) => (0, store(KExprNode.BVar(0))),
+      (1, sa, na) =>
+        let one = store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+          store(ListNode.Nil)));
+        let succ_a = int_add_prim(rc, sa, na, 0, one);
+        let dec_le_head = store(KExprNode.Const(
+          role_addr(rc, role_int_dec_le()), store(ListNode.Nil)));
+        let app2 = store(KExprNode.App(store(KExprNode.App(dec_le_head, succ_a)), b_e));
+        (1, apply_spine(app2, list_drop(spine, 2))),
     }
   }
 
-  -- String.decEq on two Lit(Str)-whnf'd args → Decidable.isTrue prop
-  -- (Eq.refl.{1} String lit) when bytestreams equal. Unequal bails
-  -- (no String.noConfusion helper). Entry point invoked from Whnf's
+  -- `Int.decLe a b` (is_le = 1) or `Int.decEq a b` (is_le = 0) on literals.
+  -- The role's equations give `decide` of it at the four constructor pairs;
+  -- the rule evaluates the same comparison in sign-magnitude form (`sign`
+  -- 1 for `negSucc`, whose magnitude is at least 1). `P` is `Int.le a b` or
+  -- `@Eq Int a b`.
+  fn dec_int(rc: RoleCtx, is_le: G, head_addr: Addr, head_lvls: List‹KLevel›,
+              spine: List‹KExpr›, types: List‹KExpr›) -> (G, KExpr) {
+    let a_e = list_lookup(spine, 0);
+    let b_e = list_lookup(spine, 1);
+    let a_w = whnf(rc, a_e, types);
+    let b_w = whnf(rc, b_e, types);
+    match try_extract_int_prim(rc, a_w) {
+      (0, _, _) => (0, store(KExprNode.BVar(0))),
+      (1, sa, na) =>
+        match try_extract_int_prim(rc, b_w) {
+          (0, _, _) => (0, store(KExprNode.BVar(0))),
+          (1, sb, nb) =>
+            let verdict = match is_le {
+              1 => int_le_verdict(sa, na, sb, nb),
+              _ => (1 - (sa - sb) * (sa - sb)) * klimbs_eq(na, nb),
+            };
+            let prop = match is_le {
+              1 =>
+                let le_c = store(KExprNode.Const(role_used_implicitly(rc, role_int_le()),
+                  store(ListNode.Nil)));
+                store(KExprNode.App(store(KExprNode.App(le_c, a_e)), b_e)),
+              _ => mk_eq1(rc, store(KExprNode.Const(role_used_implicitly(rc, role_int()),
+                  store(ListNode.Nil))), a_e, b_e),
+            };
+            let call = store(KExprNode.App(store(KExprNode.App(
+              store(KExprNode.Const(head_addr, head_lvls)), a_e)), b_e));
+            (1, apply_spine(dec_result(rc, verdict, prop, call), list_drop(spine, 2))),
+        },
+    }
+  }
+
+  -- `a ≤ b` for sign-magnitude integers.
+  fn int_le_verdict(sa: G, na: KLimbs, sb: G, nb: KLimbs) -> G {
+    match sa {
+      0 => match sb { 0 => klimbs_le(na, nb), _ => 0, },
+      _ => match sb { 0 => 1, _ => klimbs_le(nb, na), },
+    }
+  }
+
+  -- `@Eq.{1} ty a b`.
+  fn mk_eq1(rc: RoleCtx, ty: KExpr, a: KExpr, b: KExpr) -> KExpr {
+    let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
+    let eq_c = store(KExprNode.Const(role_addr(rc, role_eq()),
+      store(ListNode.Cons(one_lvl, store(ListNode.Nil)))));
+    store(KExprNode.App(store(KExprNode.App(store(KExprNode.App(eq_c, ty)), a)), b))
+  }
+
+  -- The value of a decision `call : Decidable prop` whose `decide` is
+  -- `verdict`: `Decidable.isTrue prop (of_decide_eq_true prop call (Eq.refl
+  -- true))` or `Decidable.isFalse prop (of_decide_eq_false prop call (Eq.refl
+  -- false))`. The constants it introduces are checked as the claim's
+  -- dependencies.
+  fn dec_result(rc: RoleCtx, verdict: G, prop: KExpr, call: KExpr) -> KExpr {
+    let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
+    let eq_refl_c = store(KExprNode.Const(role_addr(rc, role_eq_refl()),
+      store(ListNode.Cons(one_lvl, store(ListNode.Nil)))));
+    let bool_c = store(KExprNode.Const(role_addr(rc, role_bool()), store(ListNode.Nil)));
+    let refl = store(KExprNode.App(store(KExprNode.App(eq_refl_c, bool_c)), mk_bool(rc, verdict)));
+    let of_decide = match verdict {
+      1 => role_used_implicitly(rc, role_of_decide_eq_true()),
+      _ => role_used_implicitly(rc, role_of_decide_eq_false()),
+    };
+    let ctor = match verdict {
+      1 => role_used_implicitly(rc, role_decidable_is_true()),
+      _ => role_used_implicitly(rc, role_decidable_is_false()),
+    };
+    let proof = store(KExprNode.App(store(KExprNode.App(store(KExprNode.App(
+      store(KExprNode.Const(of_decide, store(ListNode.Nil))), prop)), call)), refl));
+    store(KExprNode.App(store(KExprNode.App(
+      store(KExprNode.Const(ctor, store(ListNode.Nil))), prop)), proof))
+  }
+
+  -- String.decEq on two Lit(Str)-whnf'd args, when the bytestreams are equal:
+  -- the generic decision result for `decide (String.decEq s s) = true`, the
+  -- role's equation. Unequal bails. Entry point invoked from Whnf's
   -- string primitive dispatch when head_addr matches string_dec_eq.
   --
   -- head_addr, spine assumed pre-whnf'd (caller runs whnf_spine).
@@ -944,7 +799,13 @@ def infer := ⟦
                       KLiteral.Str(sb) =>
                         match bytestream_eq(sa, sb) {
                           0 => (0, store(KExprNode.BVar(0))),
-                          _ => str_dec_eq_build(rc, sa, head_addr, spine, types),
+                          _ =>
+                            let str_c = store(KExprNode.Const(role_addr(rc, role_string()),
+                              store(ListNode.Nil)));
+                            let call = store(KExprNode.App(store(KExprNode.App(
+                              store(KExprNode.Const(head_addr, store(ListNode.Nil))), a0)), a1));
+                            (1, apply_spine(dec_result(rc, 1, mk_eq1(rc, str_c, a0, a1), call),
+                              list_drop(spine, 2))),
                         },
                       _ => (0, store(KExprNode.BVar(0))),
                     },
@@ -953,67 +814,6 @@ def infer := ⟦
               _ => (0, store(KExprNode.BVar(0))),
             },
           _ => (0, store(KExprNode.BVar(0))),
-        },
-    }
-  }
-
-  fn str_dec_eq_build(rc: RoleCtx, sa: ByteStream, head_addr: Addr, spine: List‹KExpr›,
-                       types: List‹KExpr›) -> (G, KExpr) {
-    let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
-    let eq_refl_lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
-    let eq_refl_c = store(KExprNode.Const(role_addr(rc, role_eq_refl()), eq_refl_lvls));
-    let str_c = store(KExprNode.Const(role_addr(rc, role_string()),
-                                        store(ListNode.Nil)));
-    let lit = store(KExprNode.Lit(KLiteral.Str(sa)));
-    let r1 = store(KExprNode.App(eq_refl_c, str_c));
-    let refl = store(KExprNode.App(r1, lit));
-    -- Recover prop from Decidable prop = infer(head, a0, a1).
-    let head_c = store(KExprNode.Const(head_addr, store(ListNode.Nil)));
-    let two_args = list_take(spine, 2);
-    let call_expr = apply_spine(head_c, two_args);
-    let call_ty = k_infer(rc, call_expr, types);
-    let call_ty_w = whnf(rc, call_ty, types);
-    match collect_spine(call_ty_w) {
-      (_, dec_args) =>
-        match u32_less_than(list_length(dec_args), 1) {
-          1 => (0, store(KExprNode.BVar(0))),
-          _ =>
-            let prop = list_lookup(dec_args, 0);
-            let dec_c = store(KExprNode.Const(decidable_is_true_addr_dec(),
-                                                store(ListNode.Nil)));
-            let d1 = store(KExprNode.App(dec_c, prop));
-            let d2 = store(KExprNode.App(d1, refl));
-            let post = list_drop(spine, 2);
-            (1, apply_spine(d2, post)),
-        },
-    }
-  }
-
-  -- Recover `prop` from `Decidable prop` type of the (head, n, m) call.
-  -- Build `Decidable.isTrue prop proof` / `Decidable.isFalse prop proof`.
-  fn dec_finish(rc: RoleCtx, verdict: G, proof: KExpr, head_addr: Addr,
-                 head_lvls: List‹KLevel›, spine: List‹KExpr›,
-                 types: List‹KExpr›) -> (G, KExpr) {
-    let dec_addr = match verdict {
-      1 => decidable_is_true_addr_dec(),
-      _ => decidable_is_false_addr_dec(),
-    };
-    let head_c = store(KExprNode.Const(head_addr, head_lvls));
-    let two_args = list_take(spine, 2);
-    let call_expr = apply_spine(head_c, two_args);
-    let call_ty = k_infer(rc, call_expr, types);
-    let call_ty_w = whnf(rc, call_ty, types);
-    match collect_spine(call_ty_w) {
-      (_, dec_args) =>
-        match u32_less_than(list_length(dec_args), 1) {
-          1 => (0, store(KExprNode.BVar(0))),
-          _ =>
-            let prop = list_lookup(dec_args, 0);
-            let dec_c = store(KExprNode.Const(dec_addr, store(ListNode.Nil)));
-            let d1 = store(KExprNode.App(dec_c, prop));
-            let d2 = store(KExprNode.App(d1, proof));
-            let post = list_drop(spine, 2);
-            (1, apply_spine(d2, post)),
         },
     }
   }

@@ -104,7 +104,7 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
   for (address, bytes) in certificates.blobs.toList do
     if let some old := env.blobs[address]? then
       unless old == bytes do throw s!"role generation: conflicting blob bytes at {address}"
-  let selected := Ix.RoleEvidence.certTheorems.filter fun (r, _) => required.contains r
+  let selected := Ix.RoleEvidence.allCertTheorems.filter fun (r, _) => required.contains r
   for (role, _) in selected do
     let some address := certNames[role.leanName]?
       | throw s!"role generation: certificate input has no {repr role}"
@@ -139,7 +139,8 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     let key ← (cs.cx.keyAt address).mapError fun e => s!"role generation: {name}: {e}"
     keys := keys.insert name key
   let mut evidence := (Ix.RoleEvidence.defeqRoles.filter required.contains).toArray.map
-    fun r => (r, (Ix.RoleEvidence.defeqEvidence (K := Address) r).toArray)
+    (fun r => (r, (Ix.RoleEvidence.defeqEvidence (K := Address) r).toArray)) ++
+      (Ix.RoleEvidence.defeqDefinitions (K := Address)).toArray.filter (required.contains ·.1)
   let mut records : Array (Address × Ixon.Constant) := #[]
   let mut blobs : Array (Address × ByteArray) := #[]
   let mut closed : Std.HashMap Address (CExpr .anon) := {}
@@ -149,12 +150,15 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     let operation := Ix.Kernel.roleKey (md := .anon) role
     let some operationValue := Ix.RoleEvidence.valueOf declarations operation
       | throw s!"role generation: {repr role} is not a definition here"
-    let allowed := Ix.RoleEvidence.allowedFor (lookup[·]?) operation operationValue
+    let keep : CName .anon → Bool := if Ix.RoleEvidence.certTheorems.any (·.1 == role) then
+        (Ix.RoleEvidence.allowedFor (lookup[·]?) operation operationValue).contains
+      else Ix.RoleEvidence.keptInDefinitionProof values
+        (Ix.RoleEvidence.allowedForDefinition (lookup[·]?) role operationValue)
     let proofs ← theorems.mapM fun name => do
       let some key := keys[name]? | throw s!"role generation: missing certificate key for {name}"
       let some value := Ix.RoleEvidence.theoremOf declarations key
         | throw s!"role generation: {name} is not a theorem here"
-      let proof ← (Ix.RoleEvidence.closeProof values allowed.contains value).mapError
+      let proof ← (Ix.RoleEvidence.closeProof values keep value).mapError
         fun e => s!"role generation: {name}: {e}"
       pure (key, proof)
     let mut entries : Array (Ix.Kernel.Evidence Address) := #[]
@@ -175,7 +179,7 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
         if let some (_, old) := blobs.find? (·.1 == a) then
           unless old == b do throw s!"role generation: conflicting generated blob at {a}"
         else blobs := blobs.push (a, b)
-    evidence := evidence.push (role, entries)
+    evidence := evidence.push (role, Ix.RoleEvidence.evidenceEntries role entries)
   let table := RoleTable.ofEntries Ix.Kernel.specVersion published.bound.toList evidence.toList
   table.check
   unless table.wireWF do throw "role generation: table exceeds the canonical wire domain"

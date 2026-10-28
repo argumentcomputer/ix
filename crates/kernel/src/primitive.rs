@@ -143,7 +143,6 @@ pub struct Primitives<M: KernelMode> {
   pub punit_size_of_1: KId<M>,
   pub size_of_size_of: KId<M>,
   pub string_back: KId<M>,
-  pub string_legacy_back: KId<M>,
   pub string_utf8_byte_size: KId<M>,
 
   // -- Native string-value fast paths --
@@ -354,7 +353,6 @@ impl<M: KernelMode> Primitives<M> {
       punit_size_of_1: absent.clone(),
       size_of_size_of: absent.clone(),
       string_back: absent.clone(),
-      string_legacy_back: absent.clone(),
       string_utf8_byte_size: absent.clone(),
       string_append: absent.clone(),
       string_dec_eq: absent,
@@ -505,7 +503,6 @@ impl<M: KernelMode> Primitives<M> {
       punit_size_of_1: r(&a.punit_size_of_1),
       size_of_size_of: r(&a.size_of_size_of),
       string_back: r(&a.string_back),
-      string_legacy_back: r(&a.string_legacy_back),
       string_utf8_byte_size: r(&a.string_utf8_byte_size),
       string_append: r(&a.string_append),
       string_dec_eq: r(&a.string_dec_eq),
@@ -622,7 +619,6 @@ mod tests {
       ("punit_size_of_1", &a.punit_size_of_1),
       ("size_of_size_of", &a.size_of_size_of),
       ("string_back", &a.string_back),
-      ("string_legacy_back", &a.string_legacy_back),
       ("string_utf8_byte_size", &a.string_utf8_byte_size),
       ("string_append", &a.string_append),
       ("string_dec_eq", &a.string_dec_eq),

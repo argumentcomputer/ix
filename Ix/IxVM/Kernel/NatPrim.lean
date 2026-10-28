@@ -22,11 +22,10 @@ ctor chains) and reduces them to a Nat or Bool literal via the
 Recognition of a role (`Nat` and its operations, `Bool`, the literal support)
 is by the claim's role binding (`role_is`, `role_addr`, `Ix/IxVM/Kernel/Roles.lean`):
 a constant is `Nat.add` because the binding binds it to that role and the role
-validated against its specification, never because of its address. The
-extras, which IxC does not specify yet, are recognized by the addresses of
-the compiled `Init` constants, hardcoded below and guarded by
-`Tests/Ix/Kernel/PrimAddrs.lean`; they fire only when the binding agrees with
-the constants they were compiled against (`extras_usable`).
+validated against its specification, never because of its address. The same
+holds for the `Int`, `BitVec`, `String` and decision rules: each fires on a
+role specified by its equations (`Spec.eqns`), and computes an instance of
+them. No address is hardcoded.
 
 Beyond literal-on-literal folding, the dispatch also produces "stuck
 compact forms" for symbolic bases (`Nat.add x 3`, `x / n`): reducing
@@ -38,178 +37,12 @@ compared structurally instead.
 set_option maxRecDepth 16384 in
 def natPrim := ⟦
 
-  -- ==========================================================================
-  -- The extras: primitives with no IxC role (Int, BitVec, the String and
-  -- ByteArray extras, and the `Nat`/`Int` decision procedures), recognized
-  -- by the addresses of the constants of the compiled `Init` they were taken
-  -- from. They are trusted by address until IxC specifies them. Their
-  -- results are built from those constants and from the roles below, and
-  -- the string extras read a literal as that `Init`'s string (its
-  -- constructor form over `String.ofList`, `List` and `Char.ofNat`), so an
-  -- extra fires only when the claim's binding binds each of these roles to
-  -- the constant the extras were compiled against (`extras_usable`). A
-  -- binding that binds them elsewhere loses the extras, never soundness.
-  -- ==========================================================================
-  fn nat_addr_pin() -> Addr {
-    store([0x35u8, 0xe1u8, 0xccu8, 0x80u8, 0x9fu8, 0x6fu8, 0x07u8, 0x65u8,
-     0x21u8, 0xa4u8, 0x3fu8, 0x85u8, 0x06u8, 0x8du8, 0x55u8, 0x92u8,
-     0x22u8, 0x04u8, 0x07u8, 0xc0u8, 0x53u8, 0x2bu8, 0x6au8, 0x08u8,
-     0x95u8, 0x2fu8, 0x40u8, 0xd8u8, 0x52u8, 0x3du8, 0x04u8, 0xbcu8])
-  }
-  fn bool_true_addr_pin() -> Addr {
-    store([0xa2u8, 0x9au8, 0x63u8, 0x61u8, 0x76u8, 0xcfu8, 0x11u8, 0x35u8,
-     0xd0u8, 0x77u8, 0xebu8, 0x07u8, 0x47u8, 0x98u8, 0xf9u8, 0x00u8,
-     0x7cu8, 0x78u8, 0xe7u8, 0x80u8, 0x13u8, 0x83u8, 0xe9u8, 0xcfu8,
-     0xf3u8, 0x63u8, 0xbau8, 0xe5u8, 0xedu8, 0xf0u8, 0x57u8, 0x62u8])
-  }
-  fn bool_false_addr_pin() -> Addr {
-    store([0xddu8, 0xa1u8, 0x2bu8, 0xcbu8, 0x33u8, 0x07u8, 0x27u8, 0xf6u8,
-     0xdfu8, 0xb8u8, 0x16u8, 0xbcu8, 0x97u8, 0x52u8, 0xaau8, 0xbdu8,
-     0x05u8, 0x20u8, 0xe6u8, 0x51u8, 0x5bu8, 0x79u8, 0xfcu8, 0x8au8,
-     0x5au8, 0x9eu8, 0x71u8, 0x38u8, 0x66u8, 0xf4u8, 0xc6u8, 0x3eu8])
-  }
-  fn bool_type_addr_pin() -> Addr {
-    store([0xe6u8, 0xebu8, 0xa3u8, 0xc8u8, 0xb4u8, 0xd1u8, 0x9fu8, 0x6au8,
-     0x10u8, 0x76u8, 0xb3u8, 0x9fu8, 0xa8u8, 0x9au8, 0xecu8, 0x61u8,
-     0xdcu8, 0xcbu8, 0xb9u8, 0x60u8, 0xf8u8, 0x3du8, 0x9au8, 0x62u8,
-     0xe6u8, 0xacu8, 0xf3u8, 0x5au8, 0x69u8, 0xc9u8, 0xa0u8, 0xa4u8])
-  }
-  fn eq_type_addr_pin() -> Addr {
-    store([0xc3u8, 0x7du8, 0x62u8, 0x90u8, 0xe0u8, 0x0fu8, 0xb8u8, 0x65u8,
-     0xfbu8, 0x5du8, 0xb7u8, 0xbcu8, 0xe1u8, 0x8fu8, 0xd6u8, 0x9eu8,
-     0x6du8, 0x16u8, 0x74u8, 0xadu8, 0x57u8, 0x37u8, 0x24u8, 0xb8u8,
-     0x54u8, 0x66u8, 0xeau8, 0x9fu8, 0x75u8, 0x78u8, 0xa2u8, 0x07u8])
-  }
-  fn eq_refl_addr_pin() -> Addr {
-    store([0xd4u8, 0x94u8, 0xdcu8, 0x60u8, 0x13u8, 0x86u8, 0xbau8, 0x8eu8,
-     0x8fu8, 0x0bu8, 0x71u8, 0x1fu8, 0xe6u8, 0x2au8, 0x2du8, 0x60u8,
-     0xabu8, 0x60u8, 0xc6u8, 0x48u8, 0x8cu8, 0x8cu8, 0xf6u8, 0xceu8,
-     0x97u8, 0x79u8, 0x6eu8, 0xbcu8, 0x3au8, 0xd5u8, 0xfeu8, 0xfbu8])
-  }
-  fn nat_beq_addr_pin() -> Addr {
-    store([0xd3u8, 0xd8u8, 0xffu8, 0x92u8, 0x4au8, 0xf9u8, 0xdcu8, 0x4bu8,
-     0x5cu8, 0xd8u8, 0x69u8, 0x76u8, 0x06u8, 0x15u8, 0xb3u8, 0xe7u8,
-     0xeeu8, 0x80u8, 0x91u8, 0x6bu8, 0xb6u8, 0x17u8, 0x25u8, 0x9du8,
-     0x45u8, 0x89u8, 0x0cu8, 0x69u8, 0xf4u8, 0x12u8, 0x83u8, 0x37u8])
-  }
-  fn nat_ble_addr_pin() -> Addr {
-    store([0x9eu8, 0x44u8, 0x5bu8, 0x9du8, 0x5fu8, 0x82u8, 0x52u8, 0x77u8,
-     0x23u8, 0x47u8, 0x87u8, 0x2eu8, 0x90u8, 0x9bu8, 0x5du8, 0xb4u8,
-     0xe7u8, 0xecu8, 0xa7u8, 0x08u8, 0x6cu8, 0xedu8, 0xf4u8, 0xfeu8,
-     0xc6u8, 0xdeu8, 0x84u8, 0x0fu8, 0x6bu8, 0x7bu8, 0x5fu8, 0x92u8])
-  }
-  fn string_type_addr_pin() -> Addr {
-    store([0x22u8, 0x16u8, 0x25u8, 0xa0u8, 0x0eu8, 0xe2u8, 0xd6u8, 0xb9u8,
-     0x62u8, 0x97u8, 0xe3u8, 0x4du8, 0x7eu8, 0x05u8, 0xbfu8, 0x7eu8,
-     0x4fu8, 0xd3u8, 0x8du8, 0x8du8, 0x99u8, 0xd3u8, 0xe1u8, 0xd6u8,
-     0x4au8, 0x7cu8, 0xd2u8, 0xe0u8, 0x6cu8, 0xa0u8, 0x75u8, 0x2du8])
-  }
-  fn char_type_addr_pin() -> Addr {
-    store([0x06u8, 0x5fu8, 0xc8u8, 0xb4u8, 0x13u8, 0x93u8, 0xf5u8, 0x25u8,
-     0xc1u8, 0xe5u8, 0x41u8, 0xb9u8, 0xd4u8, 0xbcu8, 0x97u8, 0xc2u8,
-     0x0cu8, 0x13u8, 0xbfu8, 0x23u8, 0xa7u8, 0x20u8, 0x9au8, 0x20u8,
-     0x93u8, 0xb6u8, 0xf4u8, 0x52u8, 0x73u8, 0x30u8, 0x11u8, 0x4au8])
-  }
-  fn char_of_nat_addr_pin() -> Addr {
-    store([0xcfu8, 0xf8u8, 0x75u8, 0x91u8, 0x4fu8, 0x3fu8, 0x8bu8, 0x4fu8,
-     0x00u8, 0x14u8, 0xd1u8, 0xeau8, 0xa2u8, 0x23u8, 0xc6u8, 0xb9u8,
-     0xdau8, 0x72u8, 0x01u8, 0x23u8, 0x9bu8, 0xc5u8, 0x97u8, 0x6eu8,
-     0x14u8, 0x0bu8, 0x69u8, 0xd9u8, 0x9cu8, 0xd1u8, 0xf3u8, 0x57u8])
-  }
-  fn list_nil_addr_pin() -> Addr {
-    store([0x39u8, 0x94u8, 0xbcu8, 0x51u8, 0xe3u8, 0x68u8, 0x6fu8, 0x30u8,
-     0xa1u8, 0xd4u8, 0x83u8, 0xd6u8, 0x9du8, 0x0au8, 0x83u8, 0x5au8,
-     0x7bu8, 0x48u8, 0x4du8, 0x89u8, 0x23u8, 0x93u8, 0xc0u8, 0x84u8,
-     0xf8u8, 0x7au8, 0x58u8, 0x49u8, 0xdeu8, 0x54u8, 0xf3u8, 0x02u8])
-  }
-  fn list_cons_addr_pin() -> Addr {
-    store([0xb3u8, 0xa7u8, 0xd8u8, 0x02u8, 0x49u8, 0xfdu8, 0x82u8, 0x31u8,
-     0x00u8, 0xeeu8, 0x03u8, 0x62u8, 0x62u8, 0x32u8, 0xd1u8, 0x41u8,
-     0x2au8, 0x0eu8, 0x83u8, 0x35u8, 0x27u8, 0x5du8, 0x5du8, 0xf5u8,
-     0x3bu8, 0x92u8, 0x94u8, 0x38u8, 0x87u8, 0xb6u8, 0x50u8, 0xf7u8])
-  }
-  fn string_of_list_addr_pin() -> Addr {
-    store([0x45u8, 0xdcu8, 0xb3u8, 0xc5u8, 0xe5u8, 0xadu8, 0xa3u8, 0xbcu8,
-     0x0cu8, 0xa5u8, 0x2du8, 0x62u8, 0xa6u8, 0x6fu8, 0x7fu8, 0x9du8,
-     0xdau8, 0x35u8, 0x07u8, 0xdfu8, 0x71u8, 0x06u8, 0x1au8, 0x5cu8,
-     0x20u8, 0x0au8, 0xdeu8, 0xa0u8, 0xcfu8, 0x24u8, 0x10u8, 0x14u8])
-  }
-
-  -- 1 iff every role the extras build on is usable under `rc` and bound to
-  -- the constant the extras were compiled against.
-  fn extras_usable(rc: RoleCtx) -> G {
-    extras_pin(rc, role_nat(), nat_addr_pin()) *
-    extras_pin(rc, role_bool(), bool_type_addr_pin()) *
-    extras_pin(rc, role_bool_true(), bool_true_addr_pin()) *
-    extras_pin(rc, role_bool_false(), bool_false_addr_pin()) *
-    extras_pin(rc, role_eq(), eq_type_addr_pin()) *
-    extras_pin(rc, role_eq_refl(), eq_refl_addr_pin()) *
-    extras_pin(rc, role_nat_beq(), nat_beq_addr_pin()) *
-    extras_pin(rc, role_nat_ble(), nat_ble_addr_pin()) *
-    extras_pin(rc, role_string(), string_type_addr_pin()) *
-    extras_pin(rc, role_char(), char_type_addr_pin()) *
-    extras_pin(rc, role_char_of_nat(), char_of_nat_addr_pin()) *
-    extras_pin(rc, role_list_nil(), list_nil_addr_pin()) *
-    extras_pin(rc, role_list_cons(), list_cons_addr_pin()) *
-    extras_pin(rc, role_string_of_list(), string_of_list_addr_pin())
-  }
-
-  fn extras_pin(rc: RoleCtx, r: G, pin: Addr) -> G {
-    match role_usable(rc, r) {
-      0 => 0,
-      _ => address_eq(role_bound_addr(role_ctx_table(rc), r), pin),
-    }
-  }
-
-  -- The extras' own addresses. Guarded by Tests/Ix/Kernel/PrimAddrs.lean.
-  fn int_of_nat_addr() -> Addr { store([0x0au8, 0x99u8, 0xf4u8, 0x9cu8, 0xc7u8, 0x3au8, 0xb9u8, 0xf4u8, 0x27u8, 0x83u8, 0x09u8, 0x2eu8, 0x71u8, 0x20u8, 0x61u8, 0x32u8, 0x25u8, 0x67u8, 0x0bu8, 0xabu8, 0x89u8, 0xb9u8, 0xd6u8, 0x35u8, 0x33u8, 0xd1u8, 0xadu8, 0xefu8, 0xc8u8, 0x76u8, 0x18u8, 0x2fu8]) }
-  fn int_neg_succ_addr() -> Addr { store([0xf7u8, 0x13u8, 0x0du8, 0x58u8, 0x64u8, 0xe1u8, 0xbau8, 0x77u8, 0xb0u8, 0xf6u8, 0xa7u8, 0x33u8, 0x8fu8, 0x92u8, 0x15u8, 0x9cu8, 0x35u8, 0xbdu8, 0x51u8, 0x47u8, 0xe0u8, 0xfeu8, 0xbcu8, 0xf1u8, 0xebu8, 0xedu8, 0x45u8, 0x6eu8, 0x51u8, 0x35u8, 0x38u8, 0xccu8]) }
-  fn int_add_addr() -> Addr { store([0xb6u8, 0x66u8, 0x92u8, 0x5bu8, 0x10u8, 0x47u8, 0x3fu8, 0xbeu8, 0x1au8, 0x76u8, 0x30u8, 0xecu8, 0x49u8, 0x6fu8, 0xe0u8, 0x7du8, 0x79u8, 0x9cu8, 0x52u8, 0x48u8, 0x66u8, 0x7du8, 0xb1u8, 0xe2u8, 0x30u8, 0x2fu8, 0xcau8, 0x5fu8, 0xe4u8, 0xc5u8, 0x0cu8, 0xb6u8]) }
-  fn int_sub_addr() -> Addr { store([0x7cu8, 0x60u8, 0x04u8, 0x3du8, 0x60u8, 0x16u8, 0xe2u8, 0xf0u8, 0xefu8, 0x5du8, 0x76u8, 0x4eu8, 0x1au8, 0xb7u8, 0x92u8, 0x39u8, 0x68u8, 0xd4u8, 0x3du8, 0x5cu8, 0x38u8, 0x81u8, 0x86u8, 0xddu8, 0xf6u8, 0xc8u8, 0x3cu8, 0x28u8, 0xf0u8, 0x24u8, 0x01u8, 0x7au8]) }
-  fn int_mul_addr() -> Addr { store([0x9du8, 0xffu8, 0x94u8, 0x9eu8, 0x4du8, 0x02u8, 0x82u8, 0x39u8, 0x32u8, 0x13u8, 0x04u8, 0x2au8, 0x36u8, 0xa6u8, 0x9au8, 0xf4u8, 0xb7u8, 0x1au8, 0x58u8, 0x70u8, 0x90u8, 0x96u8, 0xeau8, 0xa3u8, 0xdeu8, 0x51u8, 0x30u8, 0xbau8, 0xe0u8, 0xafu8, 0x84u8, 0xf3u8]) }
-  fn int_neg_addr() -> Addr { store([0x19u8, 0xc8u8, 0x76u8, 0x49u8, 0xf9u8, 0xa1u8, 0x78u8, 0x09u8, 0xf2u8, 0x48u8, 0xbeu8, 0xffu8, 0x7bu8, 0xc3u8, 0x7fu8, 0x56u8, 0x9fu8, 0x54u8, 0x8eu8, 0x24u8, 0xa9u8, 0x8du8, 0x8au8, 0x7cu8, 0xddu8, 0xd5u8, 0xb8u8, 0x2eu8, 0xb8u8, 0x08u8, 0xe5u8, 0xa6u8]) }
-  fn int_emod_addr() -> Addr { store([0x13u8, 0xc9u8, 0x7eu8, 0x84u8, 0xfbu8, 0x8au8, 0xc3u8, 0xeeu8, 0x81u8, 0x20u8, 0xe9u8, 0x23u8, 0xd6u8, 0x1fu8, 0xcau8, 0x6fu8, 0x7eu8, 0x6bu8, 0xb9u8, 0x24u8, 0x1eu8, 0xc3u8, 0xaau8, 0x5du8, 0x35u8, 0x9bu8, 0xa5u8, 0xdcu8, 0xe5u8, 0x42u8, 0xaau8, 0x11u8]) }
-  fn int_ediv_addr() -> Addr { store([0x53u8, 0xe4u8, 0x04u8, 0xf5u8, 0xddu8, 0x3cu8, 0x53u8, 0x69u8, 0x3bu8, 0xc3u8, 0xb5u8, 0xbfu8, 0xaeu8, 0x58u8, 0x2bu8, 0x04u8, 0x96u8, 0xecu8, 0x3cu8, 0x05u8, 0xafu8, 0x0cu8, 0xeeu8, 0x0au8, 0x46u8, 0xc3u8, 0x8au8, 0xb6u8, 0x62u8, 0xc5u8, 0x7fu8, 0xdfu8]) }
-  fn int_bmod_addr() -> Addr { store([0xd0u8, 0x38u8, 0x0du8, 0xc9u8, 0xb6u8, 0x3au8, 0xfeu8, 0xebu8, 0x32u8, 0x35u8, 0xa7u8, 0x7au8, 0xdeu8, 0xb3u8, 0x55u8, 0xa8u8, 0xb5u8, 0x2bu8, 0x07u8, 0x30u8, 0x97u8, 0x15u8, 0x95u8, 0x09u8, 0x37u8, 0x41u8, 0xecu8, 0x2cu8, 0x6du8, 0x57u8, 0xcdu8, 0x49u8]) }
-  fn int_bdiv_addr() -> Addr { store([0x20u8, 0x9au8, 0xcau8, 0x62u8, 0xccu8, 0x1fu8, 0x9du8, 0xd2u8, 0xc0u8, 0xa9u8, 0x28u8, 0xcdu8, 0x84u8, 0xd7u8, 0x2bu8, 0xb4u8, 0x15u8, 0x70u8, 0xaau8, 0x97u8, 0xc1u8, 0xfdu8, 0x83u8, 0x3eu8, 0x5fu8, 0xffu8, 0xc5u8, 0x67u8, 0xc1u8, 0xc6u8, 0x40u8, 0x1fu8]) }
-  fn int_nat_abs_addr() -> Addr { store([0x01u8, 0xe7u8, 0xc7u8, 0x24u8, 0x50u8, 0x88u8, 0x97u8, 0xe0u8, 0x1eu8, 0x5du8, 0x0bu8, 0x8fu8, 0x72u8, 0xe2u8, 0xcfu8, 0xa2u8, 0x60u8, 0x7cu8, 0xeau8, 0x5fu8, 0xf0u8, 0xd3u8, 0x52u8, 0xd0u8, 0x08u8, 0xd0u8, 0xe7u8, 0x51u8, 0x2au8, 0xabu8, 0x2fu8, 0x46u8]) }
-  fn int_pow_addr() -> Addr { store([0xa2u8, 0x89u8, 0x58u8, 0xd7u8, 0x47u8, 0xe8u8, 0x7bu8, 0x5au8, 0x60u8, 0xe4u8, 0xfau8, 0x07u8, 0xefu8, 0x7eu8, 0xd8u8, 0xd9u8, 0x49u8, 0xf6u8, 0x9au8, 0xdcu8, 0xbcu8, 0x44u8, 0xafu8, 0xe2u8, 0x95u8, 0x84u8, 0x82u8, 0xd3u8, 0xeeu8, 0x9bu8, 0x33u8, 0x65u8]) }
-
   -- Nothing reduces natively. `Lean.reduceBool` and `Lean.reduceNat` are
   -- ordinary opaques that never reduce (and a claim that uses them depends on
   -- `Lean.trustCompiler`, which the axiom policy declines);
   -- `System.Platform.numBits` stays the value of the opaque `getNumBits ()`,
   -- as in Lean's kernel; and `SizeOf.sizeOf` (with the `PUnit` instance's
   -- `PUnit._sizeOf_1`) reduces through its definition.
-
-  -- BitVec primitives ()
-  fn bit_vec_to_nat_addr() -> Addr {
-    store([0xfau8, 0xdeu8, 0x2du8, 0xbfu8, 0xb1u8, 0xd7u8, 0xf7u8, 0x7cu8,
-     0x30u8, 0xc2u8, 0x47u8, 0xd5u8, 0x2du8, 0xf1u8, 0x28u8, 0xbfu8,
-     0x51u8, 0x6eu8, 0xedu8, 0xceu8, 0x01u8, 0xf8u8, 0x17u8, 0xd3u8,
-     0x63u8, 0xceu8, 0x88u8, 0xdau8, 0x13u8, 0xcfu8, 0xacu8, 0x2bu8])
-  }
-
-  fn bit_vec_of_nat_addr() -> Addr {
-    store([0x67u8, 0x16u8, 0x0bu8, 0x97u8, 0x67u8, 0x93u8, 0x06u8, 0xd2u8,
-     0x82u8, 0x04u8, 0x45u8, 0x38u8, 0x3au8, 0x6du8, 0x74u8, 0x0eu8,
-     0x6fu8, 0xe9u8, 0x83u8, 0x9cu8, 0x25u8, 0x45u8, 0xeau8, 0x48u8,
-     0x68u8, 0x0fu8, 0xf2u8, 0xa7u8, 0x7bu8, 0x0bu8, 0xe9u8, 0x86u8])
-  }
-
-  fn bit_vec_ult_addr() -> Addr {
-    store([0x2fu8, 0x9cu8, 0x9cu8, 0x36u8, 0x90u8, 0x45u8, 0x03u8, 0x6du8,
-     0x9au8, 0x35u8, 0xffu8, 0x7bu8, 0x38u8, 0x28u8, 0x5du8, 0xcau8,
-     0x3bu8, 0x97u8, 0x64u8, 0x26u8, 0xc8u8, 0x1au8, 0x8fu8, 0x36u8,
-     0x6fu8, 0xceu8, 0x11u8, 0x61u8, 0xb0u8, 0x90u8, 0xd6u8, 0x0du8])
-  }
-
-  fn is_bitvec_prim_addr(rc: RoleCtx, a: Addr) -> G {
-    match address_eq(a, bit_vec_to_nat_addr()) {
-      1 => 1,
-      _ => address_eq(a, bit_vec_ult_addr()),
-    }
-  }
 
   -- Bool value (0/1) → Const(Bool.false/Bool.true).
   fn mk_bool(rc: RoleCtx, g: G) -> KExpr {
@@ -272,7 +105,7 @@ def natPrim := ⟦
       (head, args) =>
         match load(head) {
           KExprNode.Const(caddr, _) =>
-            match address_eq(caddr, bit_vec_of_nat_addr()) {
+            match role_is(rc, caddr, role_bit_vec_of_nat()) {
               1 =>
                 match list_length(args) - 2 {
                   0 => (1, list_lookup(args, 0), list_lookup(args, 1)),
@@ -291,7 +124,7 @@ def natPrim := ⟦
   -- y)` take their value from the instance, so neither is read here.
   fn try_bitvec_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
                               types: List‹KExpr›) -> (G, KExpr) {
-    match address_eq(head_addr, bit_vec_to_nat_addr()) {
+    match role_is(rc, head_addr, role_bit_vec_to_nat()) {
       1 =>
         match u32_less_than(list_length(spine), 2) {
           1 => (0, store(KExprNode.BVar(0))),
@@ -305,7 +138,7 @@ def natPrim := ⟦
             },
         },
       _ =>
-        match address_eq(head_addr, bit_vec_ult_addr()) {
+        match role_is(rc, head_addr, role_bit_vec_ult()) {
           1 =>
             let spine_p = bitvec_prep_spine_ult(rc, spine, types);
             try_reduce_bit_vec_ult(rc, spine_p),
@@ -345,92 +178,10 @@ def natPrim := ⟦
     }
   }
 
-  -- String primitives ()
-  fn string_utf8_byte_size_addr() -> Addr {
-    store([0x4cu8, 0x08u8, 0x68u8, 0x26u8, 0xccu8, 0x67u8, 0x9du8, 0xf3u8,
-     0xb6u8, 0xaau8, 0x57u8, 0xa2u8, 0x9fu8, 0x3du8, 0x09u8, 0x3au8,
-     0x8au8, 0x92u8, 0xd0u8, 0xdeu8, 0x4eu8, 0xdeu8, 0xceu8, 0xf4u8,
-     0x6au8, 0x90u8, 0x8du8, 0x83u8, 0x98u8, 0x73u8, 0x3du8, 0xc0u8])
-  }
-
   -- Native string-value fast paths (mirror crates/kernel/src/primitive.rs
   -- `string_append` / `string_dec_eq`): literal append and literal
   -- decidable equality reduce natively in whnf, keeping evaluator-grade
   -- string values out of the structural ByteArray/UTF-8 model.
-  fn string_append_addr() -> Addr {
-    store([0x0eu8, 0xaeu8, 0x69u8, 0xf3u8, 0xf8u8, 0xb1u8, 0x98u8, 0xd1u8,
-     0xffu8, 0xacu8, 0x67u8, 0xb9u8, 0xe8u8, 0x8du8, 0x39u8, 0x52u8,
-     0x6bu8, 0x1bu8, 0x03u8, 0x9fu8, 0xf5u8, 0x19u8, 0xcdu8, 0x87u8,
-     0xeeu8, 0xc1u8, 0x06u8, 0xf6u8, 0x39u8, 0x74u8, 0x86u8, 0x0cu8])
-  }
-
-  fn string_back_addr() -> Addr {
-    store([0x6au8, 0x47u8, 0xd4u8, 0xc0u8, 0x2au8, 0x7bu8, 0xd0u8, 0x96u8,
-     0x32u8, 0x34u8, 0x88u8, 0xf1u8, 0xc1u8, 0x15u8, 0x08u8, 0x1fu8,
-     0xb0u8, 0xdfu8, 0xe8u8, 0xfcu8, 0x96u8, 0x51u8, 0x75u8, 0x1du8,
-     0xe0u8, 0x2eu8, 0x00u8, 0xcau8, 0x6eu8, 0x0au8, 0x68u8, 0xf1u8])
-  }
-
-  fn string_legacy_back_addr() -> Addr {
-    store([0xe1u8, 0x25u8, 0x36u8, 0x17u8, 0x35u8, 0xd9u8, 0x1au8, 0x24u8,
-     0x90u8, 0xf9u8, 0xffu8, 0x74u8, 0xd5u8, 0x1au8, 0x21u8, 0x15u8,
-     0xd6u8, 0x5bu8, 0xa6u8, 0xf9u8, 0xfeu8, 0xabu8, 0x36u8, 0x8fu8,
-     0x18u8, 0x04u8, 0x6cu8, 0x45u8, 0x35u8, 0x2eu8, 0x22u8, 0xeeu8])
-  }
-
-  fn string_to_byte_array_addr() -> Addr {
-    store([0xdeu8, 0x01u8, 0x30u8, 0x24u8, 0xc5u8, 0x98u8, 0xe5u8, 0xf0u8,
-     0xc3u8, 0xdcu8, 0xd0u8, 0x67u8, 0xf5u8, 0x06u8, 0xe1u8, 0xd2u8,
-     0xe3u8, 0x27u8, 0x49u8, 0x57u8, 0x35u8, 0x22u8, 0xacu8, 0xb5u8,
-     0x39u8, 0xb6u8, 0x14u8, 0x00u8, 0x62u8, 0x7cu8, 0xf8u8, 0x97u8])
-  }
-
-  fn byte_array_empty_addr() -> Addr {
-    store([0x4du8, 0xa6u8, 0x61u8, 0x91u8, 0x7au8, 0x58u8, 0x15u8, 0x2fu8,
-     0x5cu8, 0xa9u8, 0x74u8, 0xd2u8, 0x25u8, 0x6du8, 0x98u8, 0xefu8,
-     0xa9u8, 0xd7u8, 0x22u8, 0xc4u8, 0xf1u8, 0x63u8, 0x82u8, 0xe9u8,
-     0xcdu8, 0xf0u8, 0x16u8, 0xdfu8, 0x4cu8, 0x57u8, 0x43u8, 0x68u8])
-  }
-
-  fn string_dec_eq_addr() -> Addr {
-    store([0xdau8, 0x7bu8, 0xb3u8, 0x31u8, 0xe0u8, 0x98u8, 0xf9u8, 0xbfu8,
-     0x5cu8, 0xdau8, 0xbcu8, 0xb9u8, 0x60u8, 0x9au8, 0x7eu8, 0x95u8,
-     0x3du8, 0xffu8, 0xc6u8, 0x09u8, 0xadu8, 0x9du8, 0x90u8, 0x87u8,
-     0x1au8, 0x14u8, 0xc0u8, 0x16u8, 0xc5u8, 0x2au8, 0x30u8, 0x11u8])
-  }
-
-  -- Address is a string primitive.
-  fn is_str_prim_addr(rc: RoleCtx, a: Addr) -> G {
-    match address_eq(a, string_utf8_byte_size_addr()) {
-      1 => 1,
-      _ =>
-      match address_eq(a, string_append_addr()) {
-        1 => 1,
-        _ =>
-        match role_is(rc, a, role_string_of_list()) {
-          1 => 1,
-          _ =>
-          match address_eq(a, string_back_addr()) {
-            1 => 1,
-            _ =>
-            match address_eq(a, string_legacy_back_addr()) {
-              1 => 1,
-              _ =>
-              match address_eq(a, string_to_byte_array_addr()) {
-                1 => 1,
-                _ =>
-                match address_eq(a, string_dec_eq_addr()) {
-                  1 => 1,
-                  _ => 0,
-                },
-              },
-            },
-          },
-        },
-      },
-    }
-  }
-
 
   -- String primitive dispatch. Handles:
   -- - String.utf8ByteSize (Lit(Str))          -> Lit(Nat len)
@@ -452,7 +203,7 @@ def natPrim := ⟦
           _ => (0, store(KExprNode.BVar(0))),
         },
       _ =>
-    match address_eq(head_addr, string_utf8_byte_size_addr()) {
+    match role_is(rc, head_addr, role_string_utf8_byte_size()) {
       1 =>
         match u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
@@ -475,19 +226,16 @@ def natPrim := ⟦
             },
         },
       _ =>
-    match address_eq(head_addr, string_back_addr()) {
+    match role_is(rc, head_addr, role_string_back()) {
       1 => try_str_back(rc, spine),
       _ =>
-    match address_eq(head_addr, string_legacy_back_addr()) {
-      1 => try_str_back(rc, spine),
-      _ =>
-    match address_eq(head_addr, string_to_byte_array_addr()) {
+    match role_is(rc, head_addr, role_string_to_byte_array()) {
       1 => try_str_to_byte_array(rc, spine),
       _ =>
-    match address_eq(head_addr, string_dec_eq_addr()) {
+    match role_is(rc, head_addr, role_string_dec_eq()) {
       1 => try_str_dec_eq(rc, head_addr, spine, types),
       _ =>
-        match address_eq(head_addr, string_append_addr()) {
+        match role_is(rc, head_addr, role_string_append()) {
           1 =>
             match u32_less_than(spine_len, 2) {
               1 => (0, store(KExprNode.BVar(0))),
@@ -519,11 +267,10 @@ def natPrim := ⟦
     },
     },
     },
-    },
     }
   }
 
-  -- String.back / legacy_back over Lit(Str(bs)) →
+  -- String.back over Lit(Str(bs)) →
   -- App(Const(char_of_nat), Lit(Nat last_cp)). Empty bs → 65 ('A').
   fn try_str_back(rc: RoleCtx, spine: List‹KExpr›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 1) {
@@ -558,7 +305,7 @@ def natPrim := ⟦
               KLiteral.Str(bs) =>
                 match load(bs) {
                   ListNode.Nil =>
-                    (1, store(KExprNode.Const(byte_array_empty_addr(),
+                    (1, store(KExprNode.Const(role_used_implicitly(rc, role_byte_array_empty()),
                                                 store(ListNode.Nil)))),
                   _ => (0, store(KExprNode.BVar(0))),
                 },
@@ -1023,84 +770,6 @@ def natPrim := ⟦
   }
 
   -- ============================================================================
-  -- Family classification
-  -- ============================================================================
-  fn is_nat_prim_addr(rc: RoleCtx, a: Addr) -> G {
-    match role_is(rc, a, role_nat_succ()) {
-      1 => 1,
-      _ =>
-      match role_is(rc, a, role_nat_pred()) {
-        1 => 1,
-        _ =>
-        match role_is(rc, a, role_nat_add()) {
-          1 => 1,
-          _ =>
-          match role_is(rc, a, role_nat_sub()) {
-            1 => 1,
-            _ =>
-            match role_is(rc, a, role_nat_mul()) {
-              1 => 1,
-              _ =>
-              match role_is(rc, a, role_nat_div()) {
-                1 => 1,
-                _ =>
-                match role_is(rc, a, role_nat_mod()) {
-                  1 => 1,
-                  _ =>
-                  match role_is(rc, a, role_nat_pow()) {
-                    1 => 1,
-                    _ =>
-                    match role_is(rc, a, role_nat_gcd()) {
-                      1 => 1,
-                      _ =>
-                      match role_is(rc, a, role_nat_beq()) {
-                        1 => 1,
-                        _ =>
-                        match role_is(rc, a, role_nat_ble()) {
-                          1 => 1,
-                          _ =>
-                          match role_is(rc, a, role_nat_land()) {
-                            1 => 1,
-                            _ =>
-                            match role_is(rc, a, role_nat_lor()) {
-                              1 => 1,
-                              _ =>
-                              match role_is(rc, a, role_nat_xor()) {
-                                1 => 1,
-                                _ =>
-                                match role_is(rc, a, role_nat_shift_left()) {
-                                  1 => 1,
-                                  _ =>
-                                  match role_is(rc, a, role_nat_shift_right()) {
-                                    1 => 1,
-                                    _ => 0,
-                                  },
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    }
-  }
-
-  fn is_int_prim_addr(rc: RoleCtx, a: Addr) -> G {
-    address_eq(a, int_add_addr()) + address_eq(a, int_sub_addr())
-      + address_eq(a, int_mul_addr()) + address_eq(a, int_neg_addr())
-      + address_eq(a, int_emod_addr()) + address_eq(a, int_ediv_addr())
-      + address_eq(a, int_bmod_addr()) + address_eq(a, int_bdiv_addr())
-      + address_eq(a, int_nat_abs_addr()) + address_eq(a, int_pow_addr())
-  }
-
-  -- ============================================================================
   -- Extract Nat literal from KExpr
   -- ============================================================================
   fn try_extract_nat(rc: RoleCtx, e: KExpr) -> (G, KLimbs) {
@@ -1148,9 +817,9 @@ def natPrim := ⟦
     match load(e) {
       KExprNode.App(f, a) => match load(f) {
         KExprNode.Const(caddr, _) => match try_extract_nat(rc, a) {
-          (1, n) => match address_eq(caddr, int_of_nat_addr()) {
+          (1, n) => match role_is(rc, caddr, role_int_of_nat()) {
             1 => (1, 0, klimbs_normalize(n)),
-            _ => match address_eq(caddr, int_neg_succ_addr()) {
+            _ => match role_is(rc, caddr, role_int_neg_succ()) {
               1 => (1, 1, klimbs_normalize(klimbs_succ(n))),
               _ => (0, 0, store(ListNode.Nil)),
             },
@@ -1166,7 +835,10 @@ def natPrim := ⟦
   fn mk_int_prim(rc: RoleCtx, sign: G, magnitude: KLimbs) -> KExpr {
     let mag = klimbs_normalize(magnitude);
     let neg = sign * (1 - klimbs_is_zero(mag));
-    let caddr = match neg { 0 => int_of_nat_addr(), _ => int_neg_succ_addr(), };
+    let caddr = match neg {
+      0 => role_used_implicitly(rc, role_int_of_nat()),
+      _ => role_used_implicitly(rc, role_int_neg_succ()),
+    };
     let arg = match neg { 0 => mag, _ => klimbs_normalize(klimbs_dec(mag)), };
     store(KExprNode.App(store(KExprNode.Const(caddr, store(ListNode.Nil))), mk_nat_lit(arg)))
   }
@@ -1253,13 +925,13 @@ def natPrim := ⟦
                                 types: List‹KExpr›) -> (G, KExpr) {
     let sw = whnf_spine(rc, spine, types);
     let n = list_length(sw);
-    let unary = address_eq(head_addr, int_neg_addr()) + address_eq(head_addr, int_nat_abs_addr());
+    let unary = role_is(rc, head_addr, role_int_neg()) + role_is(rc, head_addr, role_int_nat_abs());
     match unary {
       1 => match u32_less_than(n, 1) {
         1 => (0, store(KExprNode.BVar(0))),
         _ => match try_extract_int_prim(rc, list_lookup(sw, 0)) {
           (1, s, a) =>
-            let v = match address_eq(head_addr, int_nat_abs_addr()) {
+            let v = match role_is(rc, head_addr, role_int_nat_abs()) {
               1 => mk_nat_lit(a),
               _ => mk_int_prim(rc, (1 - s) * (1 - klimbs_is_zero(a)), a),
             };
@@ -1279,14 +951,14 @@ def natPrim := ⟦
 
   fn try_int_prim_second(rc: RoleCtx, head_addr: Addr, sw: List‹KExpr›,
                               sa: G, a: KLimbs) -> (G, KExpr) {
-    let rhs_nat = address_eq(head_addr, int_bmod_addr())
-      + address_eq(head_addr, int_bdiv_addr()) + address_eq(head_addr, int_pow_addr());
+    let rhs_nat = role_is(rc, head_addr, role_int_bmod())
+      + role_is(rc, head_addr, role_int_bdiv()) + role_is(rc, head_addr, role_int_pow());
     match rhs_nat {
       1 => match try_extract_nat(rc, list_lookup(sw, 1)) {
         (1, b) =>
-          let v = match address_eq(head_addr, int_bmod_addr()) {
+          let v = match role_is(rc, head_addr, role_int_bmod()) {
             1 => int_bmod_prim(rc, sa, a, b),
-            _ => match address_eq(head_addr, int_bdiv_addr()) {
+            _ => match role_is(rc, head_addr, role_int_bdiv()) {
               1 => int_bdiv_prim(rc, sa, a, b),
               _ =>
                 let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
@@ -1299,14 +971,14 @@ def natPrim := ⟦
       },
       _ => match try_extract_int_prim(rc, list_lookup(sw, 1)) {
         (1, sb, b) =>
-          let v = match address_eq(head_addr, int_add_addr()) {
+          let v = match role_is(rc, head_addr, role_int_add()) {
             1 => int_add_prim(rc, sa, a, sb, b),
-            _ => match address_eq(head_addr, int_sub_addr()) {
+            _ => match role_is(rc, head_addr, role_int_sub()) {
               1 => int_add_prim(rc, sa, a, (1 - sb) * (1 - klimbs_is_zero(b)), b),
-              _ => match address_eq(head_addr, int_mul_addr()) {
+              _ => match role_is(rc, head_addr, role_int_mul()) {
                 1 => mk_int_prim(rc, (sa + sb - 2 * sa * sb)
                   * (1 - klimbs_is_zero(a)) * (1 - klimbs_is_zero(b)), klimbs_mul(a, b)),
-                _ => match address_eq(head_addr, int_emod_addr()) {
+                _ => match role_is(rc, head_addr, role_int_emod()) {
                   1 => int_emod_prim(rc, sa, a, b),
                   _ => int_ediv_prim(rc, sa, a, sb, b),
                 },

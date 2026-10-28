@@ -101,6 +101,18 @@ open BasisDSL
 
 /-! ## Specifications -/
 
+/-- **One equation of a definition's specification** (`Spec.eqns`): over the variables
+`vars` (`fvar i` is the `i`-th; its type, `vars[i]`, may mention the earlier ones),
+under the hypotheses `hyps`, `@Eq.{level} carrier lhs rhs`. -/
+structure Equation (md : Mode) where
+  vars : List (Expr md)
+  hyps : List (Expr md)
+  level : Level
+  carrier : Expr md
+  lhs : Expr md
+  rhs : Expr md
+  deriving Repr, Inhabited
+
 /-- One role's specification (IXC-PLAN §8.1). -/
 inductive Spec (md : Mode) where
   /-- The exact declarations, up to `ConstantInfo.canon` (a basis block; every
@@ -118,11 +130,16 @@ inductive Spec (md : Mode) where
   `Classical.choice` are, while `sorryAx` is inert: tolerated as a
   declaration, it installs nothing, and any use declines. -/
   | axiom (levels : Nat) (type : Option (Expr md))
+  /-- A definition of `levels` universe parameters whose type is `type` up to
+  definitional equality, and whose equations hold: an unconditional one by
+  definition or by a proof, a conditional one by a proof. Its self-reference is
+  `.const (roleKey r) us`. -/
+  | eqns (levels : Nat) (type : Expr md) (eqs : List (Equation md))
   deriving Repr, Inhabited
 
 /-- The specification kinds, for summaries and the table's checks. -/
 inductive SpecKind where
-  | block | anchor | ops | axiom
+  | block | anchor | ops | axiom | eqns
   deriving DecidableEq, Repr, Inhabited
 
 def Spec.kind : Spec md → SpecKind
@@ -130,12 +147,23 @@ def Spec.kind : Spec md → SpecKind
   | .anchor .. => .anchor
   | .ops .. => .ops
   | .axiom .. => .axiom
+  | .eqns .. => .eqns
 
 /-- The evidence an operation's equations take, in order: `true` for an
 unconditional equation (definitional equality), `false` for a conditional one
 (a proof). Every other kind takes none. -/
 def Spec.evidenceKinds : Spec md → List Bool
   | .ops _ eqs => eqs.map (·.1.isEmpty)
+  | _ => []
+
+/-- The evidence each equation may take, in order: `some true` a definitional entry
+only, `some false` a proof only, `none` either. An operation's kinds are fixed
+(`evidenceKinds`); a definition's unconditional equation takes either kind, so
+that each toolchain uses definitional evidence where it holds, and a conditional
+one takes a proof. Every other kind takes none. -/
+def Spec.evidenceAllowed : Spec md → List (Option Bool)
+  | .ops _ eqs => eqs.map fun e => some e.1.isEmpty
+  | .eqns _ _ eqs => eqs.map fun e => if e.hyps.isEmpty then none else some false
   | _ => []
 
 /-! ## Evidence -/
@@ -155,6 +183,11 @@ equality)? -/
 def Evidence.isDefeqKind {K : Type} : Evidence K → Bool → Bool
   | .defeq, b => b
   | .proof _, b => !b
+
+/-- Does this entry take an allowed kind (`Spec.evidenceAllowed`)? -/
+def Evidence.allowedBy {K : Type} (e : Evidence K) : Option Bool → Bool
+  | none => true
+  | some b => e.isDefeqKind b
 
 /-- **What the fold is given of a role table**: per role, its evidence, a
 proof entry carrying the theorem's key and its proof term (a theorem's value,
@@ -352,6 +385,443 @@ def boolCvA : ConstantVal md := ⟨boolName, [], .sort (.succ .zero)⟩
 /-- `sorryAx.{u} (α : Sort u) (synthetic : Bool) : α`. -/
 def sorryAxSpecTy : Expr md := pi "α" (srt u) <| pi "synthetic" (cnst boolName) (bv 1)
 
+/-! ## The definitions specified by their equations (version 3)
+
+The decision procedures, `Int`, `BitVec` and the `String` operations that
+IxVM evaluates natively. Each is a definition specified by its type and by
+equations at constructor patterns (`Spec.eqns`); the types the equations need
+and the constants results are built from are type-only anchors. A native rule
+that fires on one of these roles computes an instance of an equation its
+bound constant was validated against, so its result is the definitional
+unfolding's. `Decidable` is never specified by its shape: a decision
+procedure is specified through `Decidable.decide`, whose two computation
+equations and extensionality determine a `Decidable p` value by its `decide`.
+Specifications contain no literals: `2` is `succ (succ zero)`. -/
+
+/-- A role's constant. -/
+def specC (r : Role) (us : List Level := []) : Expr md := .const (roleKey r) us
+
+/-- `Eq.{1} α a b`. -/
+def specEq1 (α a b : Expr md) : Expr md := ap3 (cnst eqName [.succ .zero]) α a b
+
+/-- `Nat`, `Bool`, `true`, `false`, `Nat.zero`, `Nat.succ n` and `2`. -/
+def specNat : Expr md := cnst natName
+def specBool : Expr md := cnst boolName
+def specTrue : Expr md := cnst boolTrueName
+def specFalse : Expr md := cnst boolFalseName
+def specZero : Expr md := cnst natZeroName
+def specSucc (n : Expr md) : Expr md := .app (cnst natSuccName) n
+def specTwo : Expr md := specSucc (specSucc specZero)
+
+/-- `Decidable p`, `Decidable.decide p inst` and `Not p`. -/
+def specDec (p : Expr md) : Expr md := .app (specC .decidable) p
+def specDecide (p inst : Expr md) : Expr md := ap2 (specC .decidableDecide) p inst
+def specNot (p : Expr md) : Expr md := .app (specC .notProp) p
+
+/-- `Int`, `Int.ofNat n`, `Int.negSucc n`. -/
+def specInt : Expr md := specC .int
+def specOfNat (n : Expr md) : Expr md := .app (specC .intOfNat) n
+def specNegSucc (n : Expr md) : Expr md := .app (specC .intNegSucc) n
+
+/-- A binary `Nat` operation's application. -/
+def specNatOp (r : Role) (a b : Expr md) : Expr md := ap2 (specC r) a b
+
+/-- An unconditional equation in `Type` over `vars`. -/
+def specEqn (vars : List (Expr md)) (carrier lhs rhs : Expr md) : Equation md :=
+  { vars, hyps := [], level := .succ .zero, carrier, lhs, rhs }
+
+/-- A conditional equation in `Type` over `vars`. -/
+def specCert (vars hyps : List (Expr md)) (carrier lhs rhs : Expr md) : Equation md :=
+  { vars, hyps, level := .succ .zero, carrier, lhs, rhs }
+
+/-- Variable `i` of an equation, of type `ty`. -/
+def specVar (i : Nat) (ty : Expr md) : Expr md := .fvar i ty
+
+/-- `Decidable : Prop → Type`. -/
+def decidableSpecTy : Expr md := piA prop type1
+
+/-- `Decidable.isTrue {p : Prop} (h : p) : Decidable p`. -/
+def decidableIsTrueSpecTy : Expr md := piI "p" prop <| pi "h" (bv 0) (specDec (bv 1))
+
+/-- `Decidable.isFalse {p : Prop} (h : Not p) : Decidable p`. -/
+def decidableIsFalseSpecTy : Expr md :=
+  piI "p" prop <| pi "h" (specNot (bv 0)) (specDec (bv 1))
+
+/-- `Not : Prop → Prop`. -/
+def notSpecTy : Expr md := piA prop prop
+
+/-- `Decidable.decide (p : Prop) [h : Decidable p] : Bool`. -/
+def decideSpecTy : Expr md := pi "p" prop <| piI "h" (specDec (bv 0)) specBool
+
+/-- `of_decide_eq_true {p : Prop} [inst : Decidable p] : decide p = true → p`. -/
+def ofDecideEqTrueSpecTy : Expr md :=
+  piI "p" prop <| piI "inst" (specDec (bv 0)) <|
+  piA (specEq1 specBool (specDecide (bv 1) (bv 0)) specTrue) (bv 2)
+
+/-- `of_decide_eq_false {p : Prop} [inst : Decidable p] : decide p = false → Not p`. -/
+def ofDecideEqFalseSpecTy : Expr md :=
+  piI "p" prop <| piI "inst" (specDec (bv 0)) <|
+  piA (specEq1 specBool (specDecide (bv 1) (bv 0)) specFalse) (specNot (bv 2))
+
+/-- `decide`'s equations: `decide p (isTrue h) = true`, `decide p (isFalse h) = false`,
+and extensionality, `decide p a = decide p b → a = b`. -/
+def decideEqns : List (Equation md) :=
+  let p : Expr md := specVar 0 prop
+  let a : Expr md := specVar 1 (specDec p)
+  let b : Expr md := specVar 2 (specDec p)
+  [specEqn [prop, p] specBool (specDecide p (ap2 (specC .decidableIsTrue) p (specVar 1 p))) specTrue,
+   specEqn [prop, specNot p] specBool
+     (specDecide p (ap2 (specC .decidableIsFalse) p (specVar 1 (specNot p)))) specFalse,
+   specCert [prop, specDec p, specDec p] [specEq1 specBool (specDecide p a) (specDecide p b)]
+     (specDec p) a b]
+
+/-- `Nat → Nat → Prop`. -/
+def natRelSpecTy : Expr md := piA specNat (piA specNat prop)
+
+/-- `(n m : Nat) → Decidable (P n m)`. -/
+def natDecSpecTy (P : Expr md → Expr md → Expr md) : Expr md :=
+  pi "n" specNat <| pi "m" specNat (specDec (P (bv 1) (bv 0)))
+
+/-- A `Nat` decision procedure `d` for `P`, whose `decide` is the `Bool` operation `b`. -/
+def natDecEqns (d : Role) (P : Expr md → Expr md → Expr md) (b : Role) : List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  let y : Expr md := specVar 1 specNat
+  [specEqn [specNat, specNat] specBool (specDecide (P x y) (specNatOp d x y)) (specNatOp b x y)]
+
+/-- `n = m` and `Nat.le n m`. -/
+def natEqP (a b : Expr md) : Expr md := specEq1 specNat a b
+def natLeP (a b : Expr md) : Expr md := specNatOp .natLe a b
+
+/-- `Nat.decLt x y = Nat.decLe (succ x) y`. -/
+def natDecLtEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  let y : Expr md := specVar 1 specNat
+  [specEqn [specNat, specNat] (specDec (natLeP (specSucc x) y)) (specNatOp .natDecLt x y)
+    (specNatOp .natDecLe (specSucc x) y)]
+
+/-- `Nat → Int`, `Int → Int`, `Int → Int → Int`, `Nat → Nat → Int`. -/
+def natIntSpecTy : Expr md := piA specNat specInt
+def intUnSpecTy : Expr md := piA specInt specInt
+def intBinSpecTy : Expr md := piA specInt (piA specInt specInt)
+def natNatIntSpecTy : Expr md := piA specNat (piA specNat specInt)
+
+/-- Equations over `x y : Nat` (`f x y`), unconditional. -/
+def natNatEqns (carrier : Expr md) (sides : List ((Expr md → Expr md → Expr md) × (Expr md → Expr md → Expr md))) :
+    List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  let y : Expr md := specVar 1 specNat
+  sides.map fun (l, r) => specEqn [specNat, specNat] carrier (l x y) (r x y)
+
+/-- `Int.negOfNat`: `negOfNat 0 = ofNat 0`, `negOfNat (succ x) = negSucc x`. -/
+def intNegOfNatEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  [specEqn [] specInt (.app (specC .intNegOfNat) specZero) (specOfNat specZero),
+   specEqn [specNat] specInt (.app (specC .intNegOfNat) (specSucc x)) (specNegSucc x)]
+
+/-- `Int.subNatNat x y`: `ofNat (x - y)` when `y ≤ x`, else `negSucc (pred (y - x))`. -/
+def intSubNatNatEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  let y : Expr md := specVar 1 specNat
+  let lhs : Expr md := specNatOp .intSubNatNat x y
+  let guard (v : Expr md) : Expr md := specEq1 specBool (specNatOp .natBle y x) v
+  [specCert [specNat, specNat] [guard specTrue] specInt lhs (specOfNat (specNatOp .natSub x y)),
+   specCert [specNat, specNat] [guard specFalse] specInt lhs
+     (specNegSucc (.app (specC .natPred) (specNatOp .natSub y x)))]
+
+/-- `Int.neg` at the two constructors. -/
+def intNegEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  [specEqn [specNat] specInt (.app (specC .intNeg) (specOfNat x)) (.app (specC .intNegOfNat) x),
+   specEqn [specNat] specInt (.app (specC .intNeg) (specNegSucc x)) (specOfNat (specSucc x))]
+
+/-- `Int.natAbs` at the two constructors. -/
+def intNatAbsEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  [specEqn [specNat] specNat (.app (specC .intNatAbs) (specOfNat x)) x,
+   specEqn [specNat] specNat (.app (specC .intNatAbs) (specNegSucc x)) (specSucc x)]
+
+/-- `Int.sub a b = Int.add a (Int.neg b)`. -/
+def intSubEqns : List (Equation md) :=
+  let a : Expr md := specVar 0 specInt
+  let b : Expr md := specVar 1 specInt
+  [specEqn [specInt, specInt] specInt (specNatOp .intSub a b)
+    (specNatOp .intAdd a (.app (specC .intNeg) b))]
+
+/-- A binary `Int` operation `op` at constructor patterns. -/
+def intOp (op : Role) (a b : Expr md) : Expr md := specNatOp op a b
+
+/-- `Int.add`, `Int.mul`, `Int.ediv` and `Int.emod` at constructor patterns. -/
+def intAddEqns : List (Equation md) :=
+  natNatEqns specInt
+    [(fun x y => intOp .intAdd (specOfNat x) (specOfNat y), fun x y => specOfNat (specNatOp .natAdd x y)),
+     (fun x y => intOp .intAdd (specOfNat x) (specNegSucc y),
+       fun x y => specNatOp .intSubNatNat x (specSucc y)),
+     (fun x y => intOp .intAdd (specNegSucc x) (specOfNat y),
+       fun x y => specNatOp .intSubNatNat y (specSucc x)),
+     (fun x y => intOp .intAdd (specNegSucc x) (specNegSucc y),
+       fun x y => specNegSucc (specSucc (specNatOp .natAdd x y)))]
+
+def intMulEqns : List (Equation md) :=
+  natNatEqns specInt
+    [(fun x y => intOp .intMul (specOfNat x) (specOfNat y), fun x y => specOfNat (specNatOp .natMul x y)),
+     (fun x y => intOp .intMul (specOfNat x) (specNegSucc y),
+       fun x y => .app (specC .intNegOfNat) (specNatOp .natMul x (specSucc y))),
+     (fun x y => intOp .intMul (specNegSucc x) (specOfNat y),
+       fun x y => .app (specC .intNegOfNat) (specNatOp .natMul (specSucc x) y)),
+     (fun x y => intOp .intMul (specNegSucc x) (specNegSucc y),
+       fun x y => specOfNat (specNatOp .natMul (specSucc x) (specSucc y)))]
+
+def intEdivEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  natNatEqns specInt
+    [(fun x y => intOp .intEdiv (specOfNat x) (specOfNat y), fun x y => specOfNat (specNatOp .natDiv x y)),
+     (fun x y => intOp .intEdiv (specOfNat x) (specNegSucc y),
+       fun x y => .app (specC .intNeg) (specOfNat (specNatOp .natDiv x (specSucc y))))] ++
+  [specEqn [specNat] specInt (intOp .intEdiv (specNegSucc x) (specOfNat specZero)) (specOfNat specZero)] ++
+  natNatEqns specInt
+    [(fun x y => intOp .intEdiv (specNegSucc x) (specOfNat (specSucc y)),
+       fun x y => specNegSucc (specNatOp .natDiv x (specSucc y))),
+     (fun x y => intOp .intEdiv (specNegSucc x) (specNegSucc y),
+       fun x y => specOfNat (specSucc (specNatOp .natDiv x (specSucc y))))]
+
+def intEmodEqns : List (Equation md) :=
+  natNatEqns specInt
+    [(fun x y => intOp .intEmod (specOfNat x) (specOfNat y), fun x y => specOfNat (specNatOp .natMod x y)),
+     (fun x y => intOp .intEmod (specOfNat x) (specNegSucc y),
+       fun x y => specOfNat (specNatOp .natMod x (specSucc y))),
+     (fun x y => intOp .intEmod (specNegSucc x) (specOfNat y),
+       fun x y => specNatOp .intSubNatNat y (specSucc (specNatOp .natMod x y))),
+     (fun x y => intOp .intEmod (specNegSucc x) (specNegSucc y),
+       fun x y => specNatOp .intSubNatNat (specSucc y) (specSucc (specNatOp .natMod x (specSucc y))))]
+
+/-- `Int.pow`: `ofNat x ^ y = ofNat (x ^ y)`; `negSucc x ^ y` by the parity of `y`. -/
+def intPowEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specNat
+  let y : Expr md := specVar 1 specNat
+  let pow (a : Expr md) : Expr md := ap2 (specC .intPow) a y
+  let mag : Expr md := specNatOp .natPow (specSucc x) y
+  let parity (v : Expr md) : Expr md :=
+    specEq1 specBool (specNatOp .natBeq (specNatOp .natMod y specTwo) specZero) v
+  [specEqn [specNat, specNat] specInt (pow (specOfNat x)) (specOfNat (specNatOp .natPow x y)),
+   specCert [specNat, specNat] [parity specTrue] specInt (pow (specNegSucc x)) (specOfNat mag),
+   specCert [specNat, specNat] [parity specFalse] specInt (pow (specNegSucc x))
+     (.app (specC .intNeg) (specOfNat mag))]
+
+/-- `BitVec : Nat → Type`, `BitVec.ofNat (n : Nat) (i : Nat) : BitVec n`. -/
+def bitVecSpecTy : Expr md := piA specNat type1
+def bitVecOfNatSpecTy : Expr md := pi "n" specNat <| piA specNat (.app (specC .bitVec) (bv 1))
+
+/-- `BitVec.toNat {w : Nat} (x : BitVec w) : Nat`. -/
+def bitVecToNatSpecTy : Expr md := piI "w" specNat <| piA (.app (specC .bitVec) (bv 0)) specNat
+
+/-- `BitVec.ult {n : Nat} (x y : BitVec n) : Bool`. -/
+def bitVecUltSpecTy : Expr md :=
+  piI "n" specNat <| piA (.app (specC .bitVec) (bv 0)) <| piA (.app (specC .bitVec) (bv 1)) specBool
+
+/-- `x % 2 ^ w`. -/
+def specMod2Pow (x w : Expr md) : Expr md := specNatOp .natMod x (specNatOp .natPow specTwo w)
+
+/-- `toNat (ofNat w x) = x % 2 ^ w`. -/
+def bitVecToNatEqns : List (Equation md) :=
+  let w : Expr md := specVar 0 specNat
+  let x : Expr md := specVar 1 specNat
+  [specEqn [specNat, specNat] specNat (ap2 (specC .bitVecToNat) w (ap2 (specC .bitVecOfNat) w x))
+    (specMod2Pow x w)]
+
+/-- `ult (ofNat w x) (ofNat w y) = ble (succ (x % 2 ^ w)) (y % 2 ^ w)`. -/
+def bitVecUltEqns : List (Equation md) :=
+  let w : Expr md := specVar 0 specNat
+  let x : Expr md := specVar 1 specNat
+  let y : Expr md := specVar 2 specNat
+  [specEqn [specNat, specNat, specNat] specBool
+    (ap3 (specC .bitVecUlt) w (ap2 (specC .bitVecOfNat) w x) (ap2 (specC .bitVecOfNat) w y))
+    (specNatOp .natBle (specSucc (specMod2Pow x w)) (specMod2Pow y w))]
+
+/-- `String`, `List.{0} Char`, `String.ofList l`. -/
+def specString : Expr md := cnst stringName
+def specCharList : Expr md := .app (cnst listName [.zero]) (cnst charName)
+def specOfList (l : Expr md) : Expr md := .app (cnst stringOfListName) l
+
+/-- `String.decEq (a b : String) : Decidable (a = b)`. -/
+def stringDecEqSpecTy : Expr md :=
+  pi "a" specString <| pi "b" specString (specDec (specEq1 specString (bv 1) (bv 0)))
+
+/-- `decide (String.decEq s s) = true`. -/
+def stringDecEqEqns : List (Equation md) :=
+  let s : Expr md := specVar 0 specString
+  [specEqn [specString] specBool (specDecide (specEq1 specString s s) (ap2 (specC .stringDecEq) s s))
+    specTrue]
+
+/-- `String.toByteArray : String → ByteArray`, and its value at `""`. -/
+def stringToByteArraySpecTy : Expr md := piA specString (specC .byteArray)
+def stringToByteArrayEqns : List (Equation md) :=
+  [specEqn [] (specC .byteArray)
+    (.app (specC .stringToByteArray) (specOfList (.app (cnst listNilName [.zero]) (cnst charName))))
+    (specC .byteArrayEmpty)]
+
+/-- `List.append.{u} {α : Type u} (xs ys : List α) : List α`. -/
+def listAppendSpecTy : Expr md :=
+  piI "α" (srt (.succ u)) <|
+  piA (.app (cnst listName [u]) (bv 0)) <|
+  piA (.app (cnst listName [u]) (bv 1)) (.app (cnst listName [u]) (bv 2))
+
+/-- `[] ++ ys = ys`, `(a :: as) ++ ys = a :: (as ++ ys)`. -/
+def listAppendEqns : List (Equation md) :=
+  let ty : Expr md := srt (.succ u)
+  let α : Expr md := specVar 0 ty
+  let L : Expr md := .app (cnst listName [u]) α
+  let app (a b : Expr md) : Expr md := ap3 (specC .listAppend [u]) α a b
+  let nil : Expr md := .app (cnst listNilName [u]) α
+  let cons (h t : Expr md) : Expr md := ap3 (cnst listConsName [u]) α h t
+  let ys1 : Expr md := specVar 1 L
+  let a : Expr md := specVar 1 α
+  let as : Expr md := specVar 2 L
+  let ys3 : Expr md := specVar 3 L
+  [{ vars := [ty, L], hyps := [], level := .succ u, carrier := L, lhs := app nil ys1, rhs := ys1 },
+   { vars := [ty, α, L, L], hyps := [], level := .succ u, carrier := L,
+     lhs := app (cons a as) ys3, rhs := cons a (app as ys3) }]
+
+/-- `String.append (ofList xs) (ofList ys) = ofList (xs ++ ys)`. -/
+def stringAppendEqns : List (Equation md) :=
+  let xs : Expr md := specVar 0 specCharList
+  let ys : Expr md := specVar 1 specCharList
+  [specEqn [specCharList, specCharList] specString
+    (ap2 (specC .stringAppend) (specOfList xs) (specOfList ys))
+    (specOfList (ap3 (specC .listAppend [.zero]) (cnst charName) xs ys))]
+
+/-! ### `ite`, the `Int` decision procedures, `Int.bmod`, `Int.bdiv` and the
+`String` size and last character
+
+`ite` is specified by its two computation equations, so a native rule may
+choose a branch by the condition's decision. The `Int` decision procedures are
+specified, like the `Nat` ones, by `decide` at the four constructor pairs.
+`Int.bmod` and `Int.bdiv` are specified by their definitional unfoldings,
+through `ite` and those decisions. A string's size and last character are
+specified over `String.ofList`, `Char.utf8Size` over the ranges of Unicode
+scalar values (IxVM's literals are exactly the encodings of `Char` lists). -/
+
+/-- `n` as `Nat.zero`, `Nat.succ` and doubling (`Nat.mul 2`), within `fuel` steps:
+a short term for a large bound. -/
+def specNumGo : Nat → Nat → Expr md
+  | 0, _ => specZero
+  | fuel + 1, n =>
+    if n == 0 then specZero
+    else if n % 2 == 0 then specNatOp .natMul specTwo (specNumGo fuel (n / 2))
+    else specSucc (specNumGo fuel (n - 1))
+
+/-- A numeral below `2 ^ 32` (`specNumGo` with enough fuel). -/
+def specNum (n : Nat) : Expr md := specNumGo 64 n
+
+/-- `ite.{u} {α : Sort u} (c : Prop) [h : Decidable c] (t e : α) : α`. -/
+def iteSpecTy : Expr md :=
+  piI "α" (srt u) <| pi "c" prop <| piI "h" (specDec (bv 0)) <| piA (bv 2) <| piA (bv 3) (bv 4)
+
+/-- `ite c (isTrue h) t e = t`, `ite c (isFalse h) t e = e`. -/
+def iteEqns : List (Equation md) :=
+  let α : Expr md := specVar 0 (srt u)
+  let c : Expr md := specVar 1 prop
+  let t : Expr md := specVar 3 α
+  let e : Expr md := specVar 4 α
+  let ite (h : Expr md) : Expr md := ap3 (ap2 (specC .ifThenElse [u]) α c) h t e
+  [{ vars := [srt u, prop, c, α, α], hyps := [], level := u, carrier := α,
+     lhs := ite (ap2 (specC .decidableIsTrue) c (specVar 2 c)), rhs := t },
+   { vars := [srt u, prop, specNot c, α, α], hyps := [], level := u, carrier := α,
+     lhs := ite (ap2 (specC .decidableIsFalse) c (specVar 2 (specNot c))), rhs := e }]
+
+/-- `1`, `a = b` and `a < b` (`Int.lt a b` is `Int.le (a + 1) b`) over `Int`. -/
+def specOne : Expr md := specSucc specZero
+def intEqP (a b : Expr md) : Expr md := specEq1 specInt a b
+def intLeP (a b : Expr md) : Expr md := ap2 (specC .intLe) a b
+def intLtP (a b : Expr md) : Expr md := intLeP (specNatOp .intAdd a (specOfNat specOne)) b
+
+/-- `(a b : Int) → Decidable (P a b)`. -/
+def intDecSpecTy (P : Expr md → Expr md → Expr md) : Expr md :=
+  pi "a" specInt <| pi "b" specInt (specDec (P (bv 1) (bv 0)))
+
+/-- An `Int` decision procedure `d` for `P` at the four constructor pairs
+(`ofNat`/`negSucc` of `x`, then of `y`): `decide (d A B)` is the given `Bool`. -/
+def intDecEqns (d : Role) (P : Expr md → Expr md → Expr md)
+    (oo on no nn : Expr md → Expr md → Expr md) : List (Equation md) :=
+  let side (A B : Expr md) : Expr md := specDecide (P A B) (specNatOp d A B)
+  natNatEqns specBool
+    [(fun x y => side (specOfNat x) (specOfNat y), oo),
+     (fun x y => side (specOfNat x) (specNegSucc y), on),
+     (fun x y => side (specNegSucc x) (specOfNat y), no),
+     (fun x y => side (specNegSucc x) (specNegSucc y), nn)]
+
+/-- `Int.decLt a b = Int.decLe (a + 1) b`. -/
+def intDecLtEqns : List (Equation md) :=
+  let a : Expr md := specVar 0 specInt
+  let b : Expr md := specVar 1 specInt
+  [specEqn [specInt, specInt] (specDec (intLtP a b)) (specNatOp .intDecLt a b)
+    (specNatOp .intDecLe (specNatOp .intAdd a (specOfNat specOne)) b)]
+
+/-- `let r := x % m; if r < (m + 1) / 2 then t else e`, over `Int`. -/
+def bmodIte (x m t e : Expr md) : Expr md :=
+  let r : Expr md := specNatOp .intEmod x (specOfNat m)
+  let q : Expr md :=
+    specNatOp .intEdiv (specNatOp .intAdd (specOfNat m) (specOfNat specOne)) (specOfNat specTwo)
+  ap3 (ap2 (specC .ifThenElse [.succ .zero]) specInt (intLtP r q)) (specNatOp .intDecLt r q) t e
+
+/-- `Int.bmod x m`, by definition. -/
+def intBmodEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specInt
+  let m : Expr md := specVar 1 specNat
+  let r : Expr md := specNatOp .intEmod x (specOfNat m)
+  [specEqn [specInt, specNat] specInt (specNatOp .intBmod x m)
+    (bmodIte x m r (specNatOp .intSub r (specOfNat m)))]
+
+/-- `Int.bdiv x m`, by definition. -/
+def intBdivEqns : List (Equation md) :=
+  let x : Expr md := specVar 0 specInt
+  let m : Expr md := specVar 1 specNat
+  let q : Expr md := specNatOp .intEdiv x (specOfNat m)
+  [specEqn [specInt, specNat] specInt (specNatOp .intBdiv x m)
+    (ap3 (ap2 (specC .ifThenElse [.succ .zero]) specInt (specEq1 specNat m specZero))
+      (specNatOp .natDecEq m specZero) (specOfNat specZero)
+      (bmodIte x m q (specNatOp .intAdd q (specOfNat specOne))))]
+
+/-- `Char`, `[] : List Char`, `c :: l`, `Char.ofNat n`. -/
+def specChar : Expr md := cnst charName
+def specCharNil : Expr md := .app (cnst listNilName [.zero]) specChar
+def specCharCons (c l : Expr md) : Expr md := ap3 (cnst listConsName [.zero]) specChar c l
+def specCharOfNat (n : Expr md) : Expr md := .app (cnst charOfNatName) n
+
+/-- `Char.utf8Size (Char.ofNat n)` over the ranges of scalar values: 1 below
+`0x80`, 2 below `0x800`, 3 below `0xD800` and in `[0xE000, 0x10000)`, 4 below
+`0x110000`. -/
+def charUtf8SizeEqns : List (Equation md) :=
+  let n : Expr md := specVar 0 specNat
+  let size : Expr md := .app (specC .charUtf8Size) (specCharOfNat n)
+  let lt (b : Nat) : Expr md := specEq1 specBool (specNatOp .natBle (specSucc n) (specNum b)) specTrue
+  let ge (b : Nat) : Expr md := specEq1 specBool (specNatOp .natBle (specNum b) n) specTrue
+  [specCert [specNat] [lt 0x80] specNat size (specNum 1),
+   specCert [specNat] [ge 0x80, lt 0x800] specNat size (specNum 2),
+   specCert [specNat] [ge 0x800, lt 0xD800] specNat size (specNum 3),
+   specCert [specNat] [ge 0xE000, lt 0x10000] specNat size (specNum 3),
+   specCert [specNat] [ge 0x10000, lt 0x110000] specNat size (specNum 4)]
+
+/-- `utf8ByteSize (ofList []) = 0`, `utf8ByteSize (ofList (c :: cs)) = c.utf8Size + utf8ByteSize (ofList cs)`. -/
+def stringUtf8ByteSizeEqns : List (Equation md) :=
+  let c : Expr md := specVar 0 specChar
+  let cs : Expr md := specVar 1 specCharList
+  let size (l : Expr md) : Expr md := .app (specC .stringUtf8ByteSize) (specOfList l)
+  [specEqn [] specNat (size specCharNil) specZero,
+   specEqn [specChar, specCharList] specNat (size (specCharCons c cs))
+     (specNatOp .natAdd (.app (specC .charUtf8Size) c) (size cs))]
+
+/-- `back (ofList []) = Char.ofNat 65` (the default `Char`), `back (ofList [c]) = c`,
+`back (ofList (c :: d :: ds)) = back (ofList (d :: ds))`. -/
+def stringBackEqns : List (Equation md) :=
+  let c : Expr md := specVar 0 specChar
+  let d : Expr md := specVar 1 specChar
+  let ds : Expr md := specVar 2 specCharList
+  let back (l : Expr md) : Expr md := .app (specC .stringBack) (specOfList l)
+  [specEqn [] specChar (back specCharNil) (specCharOfNat (specNum 65)),
+   specEqn [specChar] specChar (back (specCharCons c specCharNil)) c,
+   specEqn [specChar, specChar, specCharList] specChar
+     (back (specCharCons c (specCharCons d ds))) (back (specCharCons d ds))]
+
 /-! ## The specification of every role -/
 
 /-- **The specification set.** -/
@@ -398,6 +868,54 @@ def Role.spec : Role → Spec md
   | .propext => .axiom 0 (some propextRaw.type)
   | .choice => .axiom 1 (some choiceRaw.type)
   | .sorryAx => .axiom 1 (some sorryAxSpecTy)
+  | .decidable => .anchor 0 decidableSpecTy
+  | .decidableIsTrue => .anchor 0 decidableIsTrueSpecTy
+  | .decidableIsFalse => .anchor 0 decidableIsFalseSpecTy
+  | .notProp => .anchor 0 notSpecTy
+  | .ofDecideEqTrue => .anchor 0 ofDecideEqTrueSpecTy
+  | .ofDecideEqFalse => .anchor 0 ofDecideEqFalseSpecTy
+  | .decidableDecide => .eqns 0 decideSpecTy decideEqns
+  | .natLe => .anchor 0 natRelSpecTy
+  | .natDecEq => .eqns 0 (natDecSpecTy natEqP) (natDecEqns .natDecEq natEqP .natBeq)
+  | .natDecLe => .eqns 0 (natDecSpecTy natLeP) (natDecEqns .natDecLe natLeP .natBle)
+  | .natDecLt => .eqns 0 (natDecSpecTy fun a b => natLeP (specSucc a) b) natDecLtEqns
+  | .int => .anchor 0 type1
+  | .intOfNat => .anchor 0 natIntSpecTy
+  | .intNegSucc => .anchor 0 natIntSpecTy
+  | .intNegOfNat => .eqns 0 natIntSpecTy intNegOfNatEqns
+  | .intSubNatNat => .eqns 0 natNatIntSpecTy intSubNatNatEqns
+  | .intNeg => .eqns 0 intUnSpecTy intNegEqns
+  | .intAdd => .eqns 0 intBinSpecTy intAddEqns
+  | .intSub => .eqns 0 intBinSpecTy intSubEqns
+  | .intMul => .eqns 0 intBinSpecTy intMulEqns
+  | .intNatAbs => .eqns 0 (piA specInt specNat) intNatAbsEqns
+  | .intEdiv => .eqns 0 intBinSpecTy intEdivEqns
+  | .intEmod => .eqns 0 intBinSpecTy intEmodEqns
+  | .intPow => .eqns 0 (piA specInt (piA specNat specInt)) intPowEqns
+  | .bitVec => .anchor 0 bitVecSpecTy
+  | .bitVecOfNat => .anchor 0 bitVecOfNatSpecTy
+  | .bitVecToNat => .eqns 0 bitVecToNatSpecTy bitVecToNatEqns
+  | .bitVecUlt => .eqns 0 bitVecUltSpecTy bitVecUltEqns
+  | .stringDecEq => .eqns 0 stringDecEqSpecTy stringDecEqEqns
+  | .byteArray => .anchor 0 type1
+  | .byteArrayEmpty => .anchor 0 (specC .byteArray)
+  | .stringToByteArray => .eqns 0 stringToByteArraySpecTy stringToByteArrayEqns
+  | .listAppend => .eqns 1 listAppendSpecTy listAppendEqns
+  | .stringAppend => .eqns 0 (piA specString (piA specString specString)) stringAppendEqns
+  | .ifThenElse => .eqns 1 iteSpecTy iteEqns
+  | .intLe => .anchor 0 (piA specInt (piA specInt prop))
+  | .intDecEq => .eqns 0 (intDecSpecTy intEqP)
+      (intDecEqns .intDecEq intEqP (specNatOp .natBeq) (fun _ _ => specFalse) (fun _ _ => specFalse)
+        (specNatOp .natBeq))
+  | .intDecLe => .eqns 0 (intDecSpecTy intLeP)
+      (intDecEqns .intDecLe intLeP (specNatOp .natBle) (fun _ _ => specFalse) (fun _ _ => specTrue)
+        (fun x y => specNatOp .natBle y x))
+  | .intDecLt => .eqns 0 (intDecSpecTy intLtP) intDecLtEqns
+  | .intBmod => .eqns 0 (piA specInt (piA specNat specInt)) intBmodEqns
+  | .intBdiv => .eqns 0 (piA specInt (piA specNat specInt)) intBdivEqns
+  | .charUtf8Size => .eqns 0 (piA specChar specNat) charUtf8SizeEqns
+  | .stringUtf8ByteSize => .eqns 0 (piA specString specNat) stringUtf8ByteSizeEqns
+  | .stringBack => .eqns 0 (piA specString specChar) stringBackEqns
 
 /-- **The roles bound together with `r`**: the members of its block (itself
 included), in the block's order. A role table binds all of them or none. -/
@@ -415,6 +933,11 @@ def Role.block : Role → List Role
   | .list | .listNil | .listCons => [.list, .listNil, .listCons]
   | .quot | .quotMk | .quotLift | .quotInd | .quotSound =>
     [.quot, .quotMk, .quotLift, .quotInd, .quotSound]
+  | .decidable | .decidableIsTrue | .decidableIsFalse =>
+    [.decidable, .decidableIsTrue, .decidableIsFalse]
+  | .int | .intOfNat | .intNegSucc => [.int, .intOfNat, .intNegSucc]
+  | .bitVec | .bitVecOfNat => [.bitVec, .bitVecOfNat]
+  | .byteArray | .byteArrayEmpty => [.byteArray, .byteArrayEmpty]
   | r => [r]
 
 /-- **The roles `r`'s specification mentions and its validation needs**,
@@ -442,20 +965,77 @@ def Role.deps : Role → List Role
   | .propext => [.iff, .eq]
   | .choice => [.nonempty]
   | .sorryAx => [.bool]
+  | .decidableIsFalse => [.notProp]
+  | .ofDecideEqTrue => [.decidable, .decidableDecide, .bool, .eq]
+  | .ofDecideEqFalse => [.decidable, .decidableDecide, .notProp, .bool, .eq]
+  | .decidableDecide => [.decidable, .notProp, .bool, .eq]
+  | .natLe => [.nat]
+  | .natDecEq => [.nat, .bool, .eq, .decidable, .decidableDecide, .natBeq]
+  | .natDecLe => [.nat, .bool, .eq, .decidable, .decidableDecide, .natLe, .natBle]
+  | .natDecLt => [.nat, .eq, .decidable, .natLe, .natDecLe]
+  | .intOfNat | .intNegSucc => [.nat]
+  | .intNegOfNat => [.nat, .int, .eq]
+  | .intSubNatNat => [.nat, .int, .bool, .eq, .natPred, .natSub, .natBle]
+  | .intNeg => [.nat, .int, .eq, .intNegOfNat]
+  | .intAdd => [.nat, .int, .eq, .natAdd, .intSubNatNat]
+  | .intSub => [.int, .eq, .intAdd, .intNeg]
+  | .intMul => [.nat, .int, .eq, .natMul, .intNegOfNat]
+  | .intNatAbs => [.nat, .int, .eq]
+  | .intEdiv => [.nat, .int, .eq, .natDiv, .intNeg]
+  | .intEmod => [.nat, .int, .eq, .natMod, .intSubNatNat]
+  | .intPow => [.nat, .int, .bool, .eq, .natPow, .natMod, .natBeq, .intNeg]
+  | .bitVec | .bitVecOfNat => [.nat]
+  | .bitVecToNat => [.nat, .eq, .bitVec, .natMod, .natPow]
+  | .bitVecUlt => [.nat, .bool, .eq, .bitVec, .natMod, .natPow, .natBle]
+  | .stringDecEq => [.string, .bool, .eq, .decidable, .decidableDecide]
+  | .stringToByteArray => [.string, .list, .char, .stringOfList, .eq, .byteArray]
+  | .listAppend => [.list, .eq]
+  | .stringAppend => [.string, .list, .char, .stringOfList, .eq, .listAppend]
+  | .ifThenElse => [.decidable, .notProp, .eq]
+  | .intLe => [.int]
+  | .intDecEq => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .natBeq]
+  | .intDecLe => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .intLe, .natBle]
+  | .intDecLt => [.nat, .int, .eq, .decidable, .intLe, .intAdd, .intDecLe]
+  | .intBmod => [.nat, .int, .eq, .ifThenElse, .intLe, .intAdd, .intSub, .intEdiv, .intEmod, .intDecLt]
+  | .intBdiv => [.nat, .int, .eq, .ifThenElse, .intLe, .intAdd, .intEdiv, .intEmod, .intDecLt,
+      .natDecEq]
+  | .charUtf8Size => [.nat, .char, .charOfNat, .bool, .eq, .natMul, .natBle]
+  | .stringUtf8ByteSize => [.nat, .string, .list, .char, .stringOfList, .eq, .natAdd, .charUtf8Size]
+  | .stringBack => [.nat, .string, .list, .char, .charOfNat, .stringOfList, .eq, .natMul]
   | _ => []
 
 /-- **The version of the specification set.** It changes exactly when
-`Role`, `Role.spec`, `Role.block` or `Role.deps` change, together with the
-specification digest (`Ix.SpecDigest.specDigest`), which the root library
-freezes (`Ix/SpecDigest.lean`). Version 2 (2026-10-20, `ALPHA-COLLAPSE.md` §8.2):
+`Role`, `Role.spec`, `Role.block`, `Role.deps` or `Role.usedImplicitly` change,
+together with the specification digest (`Ix.SpecDigest.specDigest`), which the
+root library freezes (`Ix/SpecDigest.lean`). Version 2 (2026-10-20, `ALPHA-COLLAPSE.md` §8.2):
 the five compiler-trust roles (`Lean.trustCompiler`, `Lean.reduceBool`,
 `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) and the `identity`
 specification kind are gone; the certified theory is Lean with its three
-standard axioms. Version 3: the standard axioms' families (`Iff`, `Nonempty`,
-their constructors and recursors) are `block` roles, as the checker already
-compares them (`stdAxiomOk`), not type-only anchors; `sorryAx` has its type,
-which depends on `Bool`. -/
+standard axioms. Version 3 specifies the standard axioms' families `Iff` and
+`Nonempty` as blocks, gives the inert `sorryAx` its type over `Bool`, and adds
+the definitions IxVM evaluates natively
+(`ite`; the `Nat`, `Int` and `String` decision procedures; the `Int` operations
+with `Int.bmod` and `Int.bdiv`; `BitVec.toNat` and `BitVec.ult`; and `String.append`,
+`String.toByteArray`, `String.utf8ByteSize` with `Char.utf8Size`, and `String.back`)
+are roles, specified by their equations (`Spec.eqns`), with the anchors those
+equations need; and each role records whether the checker uses
+it implicitly (`Role.usedImplicitly`). -/
 def specVersion : Nat := 3
+
+/-- **The roles the checker uses implicitly**: those it introduces into a term
+with no referenced constant that determines them. They are the literals' types
+and constructor forms (`Nat`, `Nat.zero`, `Nat.succ`; a string literal's expansion
+over `String.ofList`, `List`, `List.nil`, `List.cons`, `Char` and `Char.ofNat`,
+with `String`) and the standard axioms recognized through the binding (`propext`,
+`Classical.choice`). Every other role enters a term only through a native rule
+that fires on a referenced head bound to a validated role, whose equations cover
+the rule's result, so the result is that head's definitional unfolding under
+any binding. These roles are what a claim proved under one binding must share
+with another binding to discharge its assumptions (the literal class). -/
+def Role.usedImplicitly : Role → Bool
+  | .nat | .natZero | .natSucc | .string | .stringOfList | .list | .listNil | .listCons
+  | .char | .charOfNat | .propext | .choice => Bool.true
+  | _ => Bool.false
 
 /-! ## The evidence of an operation, as the fold reads it -/
 

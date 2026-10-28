@@ -98,7 +98,7 @@ def regenerate : List String :=
   ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --no-build --out .lake/envs/initstd.ixe",
    "lake -d IxC build IxC.Kernel.PinGen.Certs",
    s!"lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --out .lake/envs/certs.ixe --consts \\\n      \
-    {",".intercalate (Ix.RoleEvidence.certTheorems.flatMap (·.2) |>.map toString)}",
+    {",".intercalate (Ix.RoleEvidence.allCertTheorems.flatMap (·.2) |>.map toString)}",
    "lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \\\n      \
     IxC/Kernel/Ixon/RoleData.lean",
    "lake exe IxTests cert-statement   # then: RoleEvidenceChecks on the committed file"]
@@ -454,7 +454,7 @@ def run (args : List String) : IO UInt32 := do
     unless certStore.contains a do
       certStore := certStore.insert a c
       added := added + 1
-  for (r, _) in Ix.RoleEvidence.certTheorems do
+  for (r, _) in Ix.RoleEvidence.allCertTheorems do
     let lean := Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .anon) r))
     let some named := certEnv.named[lean]? | fail s!"{certInput} has no {repr r}"
     let some initNamed := env.named[lean]? | fail s!"the Init has no {repr r}"
@@ -466,7 +466,7 @@ def run (args : List String) : IO UInt32 := do
   -- the readings: the prelude, the operations' closures and the theorems' closures
   let mut certAt : Std.HashMap Lean.Name Address := {}
   let mut roots : Array Address := preRecords.map (·.1)
-  for (r, thms) in Ix.RoleEvidence.certTheorems do
+  for (r, thms) in Ix.RoleEvidence.allCertTheorems do
     if let some ref := refOfRole[r]? then roots := roots.push ref.block
     for t in thms do
       let some named := certEnv.named[Ix.Name.fromLeanName t]? | fail s!"{certInput} has no {t}"
@@ -494,11 +494,12 @@ def run (args : List String) : IO UInt32 := do
     | some a => (cs.cx.keyAt a).toOption.getD (Ix.Kernel.roleKey .sorryAx)
     | none => Ix.Kernel.roleKey .sorryAx
   let mut evidence : Array (Role × Array (Ix.Kernel.Evidence Address)) :=
-    Ix.RoleEvidence.defeqRoles.toArray.map fun r => (r, (Ix.RoleEvidence.defeqEvidence r).toArray)
+    Ix.RoleEvidence.defeqRoles.toArray.map (fun r => (r, (Ix.RoleEvidence.defeqEvidence r).toArray)) ++
+      Ix.RoleEvidence.defeqDefinitions.toArray
   let mut evRecords : Array (Address × Ixon.Constant) := #[]
   let mut evBlobs : Array (Address × ByteArray) := #[]
   let mut closed : Std.HashMap Address (CExpr .anon) := {}
-  for (r, thms) in Ix.RoleEvidence.certTheorems do
+  for (r, thms) in Ix.RoleEvidence.allCertTheorems do
     let proofs ← match Ix.RoleEvidence.closedProofs allDecls uni look keyOf r with
       | .ok ps => pure ps
       | .error e => fail s!"{repr r}: {e}"
@@ -522,7 +523,7 @@ def run (args : List String) : IO UInt32 := do
       closed := closed.insert a p
       entries := entries.push (.proof a)
     IO.eprintln s!"pin-gen: {repr r}: {entries.size} certificates closed and written"
-    evidence := evidence.push (r, entries)
+    evidence := evidence.push (r, Ix.RoleEvidence.evidenceEntries r entries)
   let table := Ix.Kernel.RoleTable.ofEntries Ix.Kernel.specVersion bound.toList evidence.toList
   IO.ofExcept (table.check.mapError (s!"pin-gen: the table is not well formed: " ++ ·))
   let tableBytes := table.toBytes
