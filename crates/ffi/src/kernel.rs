@@ -1447,6 +1447,10 @@ enum AnonWorkItem {
 /// bound group was refused.
 fn report_admission(label: &str, source: &ArtifactSource) {
   if source.binding().is_none() {
+    eprintln!(
+      "[{label}] no role binding: checked under the legacy policy, in which \
+       every axiom is usable"
+    );
     return;
   }
   let start = Instant::now();

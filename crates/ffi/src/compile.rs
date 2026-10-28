@@ -302,8 +302,8 @@ pub extern "C" fn rs_compile_env_full(
 /// `LeanIxCompileEnvStatus`): root (64-hex canonical consts merkle
 /// root — matches the serialized header, computed even when nothing is
 /// written), ungrounded (`Array (String × String)` of pretty-name /
-/// reason, sorted by name), nonCanonical (Pass 3's non-canonical set,
-/// `Array (String × String)` of pretty-name / cause, sorted by name),
+/// reason, sorted by name), nonCanonical (`Array (String × String)`,
+/// always empty: the compiler rewrites no block),
 /// bytes (0 when not written), named count, unique anon count.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
