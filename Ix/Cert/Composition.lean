@@ -27,8 +27,9 @@ The numbers are the obligations' original ones; the others belonged to the
 rewriting compiler and are gone with it.
 
 The compiler publishes every constant as the compile of its Lean declaration, in
-Lean's order, so every closure is a renaming of its Source form. `compileCorrect_unchanged`
-composes the obligations with the existing leaves: the closure's claims
+Lean's order, so every closure is a renaming of its Source form, and the conclusion says so
+(`RenamesSource`: the renamed Source run's environment, `EnvRel`, with the reader's keys).
+`compileCorrect_unchanged` composes the obligations with the existing leaves: the closure's claims
 (`ClosureClaims.compileReport_owned`), the renamed quotient Source run
 (`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`), the reader's preparation
 (`Stream.closure_prepares`), coverage (`compileCovers`) and the pulled-back value model
@@ -374,7 +375,10 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
   obtain ⟨cx, hcx, keys, readsAll⟩ := h2k env roots sub ixe failures t envQ binding limits order envR b P
     hbind acc hb
   obtain ⟨unique, total⟩ := h1 env roots sub ixe failures t envQ P
-  refine ⟨published, binding, hbind, limits, order, envR, cx, acc, hcx, ?_, ?_⟩
+  refine ⟨published, binding, hbind, limits, order, envR, cx, acc, hcx, ?_, ?_, ?_⟩
+  · -- the installed environment is quotient Source's, renamed, and every constant reads as
+    -- its renamed key
+    exact ⟨b, hb, rel, fun c hc e he => ⟨keys c hc e he, rel.find_some (unique c hc)⟩⟩
   · intro V _ M
     obtain ⟨rules, caps⟩ := h9 V _ (Ix.LeanIngress.evAddr ixe b) envQ envR envR M rel same
     let N₀ : ValueModel V envQ := ValueModel.pullback rel ((ValueRows.ofStrong M).transfer same)
