@@ -920,10 +920,11 @@ Premises: quotient Source's conversion and lowering of the group, with good keys
 Lean facts (shared level parameters, distinct, constructors at their positions, distinct
 names, no constructor in the members' types); the compile runs of the inductive block, in
 Lean's order, and of its recursor family, in family order, each from a clean state in a
-reading context aligned with its compile environment; and the closure's context: the two
-records in its store, reading their references as the compile environments do, the members',
-constructors' and recursors' keys, the block shape in Lean's order with the family's
-recursors, and each recursor's index entry. -/
+reading context aligned with its compile environment; and the closure's context: the family's
+record in its store, both records' references read as the compile environments read them, the
+members', constructors' and recursors' keys, the block shape in Lean's order with the family's
+recursors, and each recursor's index entry, whose major premise is an inductive of the store (of
+this block, or a nested family's container) with a constructor per rule. -/
 theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : InjOn f P)
     {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
     {conv : Ix.LeanIngress.Converted} (src : Ix.LeanIngress.convertInductive types ctors recs = .ok conv)
@@ -946,7 +947,7 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
     {before₁ after₁ : BlockState} {out₁ : BlockResult} (clean₁ : Emission.Clean bindings₁ before₁)
     (ran₁ : rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·]))) context₁ before₁ =
       (.ok out₁, after₁))
-    (cx : Ctx .anon) (owner rOwner : Address) (hstore₁ : cx.store owner = some out₁.block)
+    (cx : Ctx .anon) (owner rOwner : Address)
     {rc : Ixon.Constant} (hstore₂ : cx.store rOwner = some rc)
     (refs₁ : RecordTransfer.RefsLe out₁.block (ExpressionRead.withBlockBlobs cx₁ after₁) cx)
     {key₀ : CName .anon} (hkey₀ : ∀ r ∈ recs.toList.head?, key₀ = srcKey ρ f r.cnst.name)
@@ -958,12 +959,13 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
     {shape : BlockShape} (hindexed : cx.index.blocks[owner]? = some shape)
     (order : shape.order = (List.range types.size).toArray)
     (hrecs : shape.recs.toList = (List.range recs.size).map fun j => ConstRef.member rOwner j)
-    (entries : ∀ j (hj : j < recs.size), ∃ entry mi, ∃ hmi : mi < types.size,
+    (entries : ∀ j (hj : j < recs.size), ∃ (entry : RecEntry) (mb : Address) (mi : Nat) (major : Ixon.Inductive),
       cx.index.recs[ConstRef.member rOwner j]? = some entry ∧
       recLps entry.large (List.range first.cnst.levelParams.size) = (recNum first recs[j]).params ∧
-      entry.major = .member owner mi ∧ recs[j].rules.size = (ctors[mi]'(hcsize ▸ hmi)).size ∧
+      entry.major = .member mb mi ∧ inductiveAt cx.store entry.major = some major ∧
+      major.ctors.size = recs[j].rules.size ∧
       (∀ k (hk : k < recs[j].rules.size),
-        cx.memberKey (.ctor owner mi k) = .ok (srcKey ρ f recs[j].rules[k].ctor)) ∧
+        cx.memberKey (.ctor mb mi k) = .ok (srcKey ρ f recs[j].rules[k].ctor)) ∧
       (numNestedOf (srcBlock types ctors recs first) = 0 → some entry.motive = motiveOf types recs[j]))
     (good : ∀ rb, conv.quotient ρ = .inductive rb → rb.Good P) {stS : State .source}
     (typesGood : ∀ k : Key .source, k.Good P → ∀ p, stS.constTypes[k]? = some p → p.2.Good P)
@@ -1016,14 +1018,7 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
     rw [hrecs]
     refine forall₂_of_getElem (by simp) fun j h₁ h₂ => ?_
     have hj : j < recs.size := by simpa using h₂
-    obtain ⟨entry, mi, hmi, hentry, hlpsE, hmb, hrules, ruleKeys, motive⟩ := entries j hj
-    have hmiT : mi < targets.length := hlenT ▸ hmi
-    have hmajor := inductiveAt_block hstore₁ hinfo hmiT
-    have hTmi := forall₂_getElem hT mi (hlenI ▸ hmi) hmiT
-    rw [indsOf_getElem hcsize (hlenI ▸ hmi)] at hTmi
-    have hmsize : targets[mi].ctors.size = (ctors[mi]'(hcsize ▸ hmi)).size := by
-      have := forall₂_length hTmi.1.2.2
-      simpa [indOf] using this.symm
+    obtain ⟨entry, mb, mi, major, hentry, hlpsE, hmb, hmajor, hmsize, ruleKeys, motive⟩ := entries j hj
     have hjl : j < recs.toList.length := by simpa using hj
     have hRj := forall₂_getElem hR j hjl (hlenR ▸ hjl)
     simp only [List.getElem_map, List.getElem_range, Array.getElem_toList] at hRj ⊢
@@ -1032,7 +1027,7 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
       simp [recNum, recLpsEq _ hmem]
     exact recFacts_of ρ f hlenR hstore₂ hrinfo hkey₀
       hjl hRj hnum (recSafe _ hmem) (by simp only [Array.getElem_toList]; rw [recLpsEq _ hmem]; exact recNodup) (recKeys j hj) hentry hlpsE
-      (by rw [hmb]; exact hmajor) hmb (hmsize.trans hrules.symm) ruleKeys motive
+      hmajor hmb hmsize ruleKeys motive
 
 /--
 info: 'Ix.Cert.InductiveCompile.compiled_inductive_unit_reads' depends on axioms: [propext, Classical.choice, Quot.sound]

@@ -578,12 +578,13 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     {shape : BlockShape} (hindexed : (closureContext ixe t preA order).index.blocks[out₁.blockAddr]? = some shape)
     (hshape : shape.order = (List.range types.size).toArray)
     (hrecs : shape.recs.toList = (List.range recs.size).map fun j => ConstRef.member out₂.blockAddr j)
-    (entries : ∀ j (hj : j < recs.size), ∃ entry mi, ∃ hmi : mi < types.size,
+    (entries : ∀ j (hj : j < recs.size), ∃ (entry : RecEntry) (mb : Address) (mi : Nat) (major : Ixon.Inductive),
       (closureContext ixe t preA order).index.recs[ConstRef.member out₂.blockAddr j]? = some entry ∧
       recLps entry.large (List.range first.cnst.levelParams.size) = (SourceConversion.recNum first recs[j]).params ∧
-      entry.major = .member out₁.blockAddr mi ∧ recs[j].rules.size = (ctors[mi]'(hcsize ▸ hmi)).size ∧
+      entry.major = .member mb mi ∧ inductiveAt (closureContext ixe t preA order).store entry.major = some major ∧
+      major.ctors.size = recs[j].rules.size ∧
       (∀ k (hk : k < recs[j].rules.size),
-        (closureContext ixe t preA order).memberKey (.ctor out₁.blockAddr mi k) =
+        (closureContext ixe t preA order).memberKey (.ctor mb mi k) =
           .ok (InductiveUnits.srcKey (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) recs[j].rules[k].ctor)) ∧
       (CtxAgree.numNestedOf (InductiveUnits.srcBlock types ctors recs first) = 0 →
         some entry.motive = SourceConversion.motiveOf types recs[j]))
@@ -788,7 +789,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     have hlenR := InductiveCompile.forall₂_length hR
     have hne' : rIs ≠ [] := fun h => hrne (List.eq_nil_of_length_eq_zero (by simp [hlenR, h]))
     refine recursor_inert (family_info hrinfo hne') (List.length_pos_iff.mpr hne') fun j hj => ?_
-    obtain ⟨entry, -, -, hentry, -⟩ := entries j (by rw [← hlenR] at hj; simpa using hj)
+    obtain ⟨entry, -, -, -, hentry, -⟩ := entries j (by rw [← hlenR] at hj; simpa using hj)
     rw [Std.HashMap.contains_eq_isSome_getElem?, hentry]
     rfl
   -- quotient Source's read lies in the scope
@@ -810,7 +811,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     (cenv₁, benv₁) rfl (fun _ => rfl) external₁ (fun i hi => .inl ⟨⟨i, hi, rfl⟩, rfl⟩)
     (fun i hi e he n key hn h => agree₁ n key ⟨i, hi, e, he, hn⟩ h) BlockStart.clean_empty ran₁
     (closureContext ixe t preA order) out₁.blockAddr out₂.blockAddr
-    (ClosureKeying.closure_store corder.nodup hB₁ stored₁) (ClosureKeying.closure_store corder.nodup hB₂ stored₂)
+    (ClosureKeying.closure_store corder.nodup hB₂ stored₂)
     refs₁ hkey₀ family (fun i hi => by obtain ⟨_, -, -, hkey⟩ := typeKeys i hi; exact hkey) ctorKeys
     (fun j hj => by obtain ⟨_, -, _, -, -, hkey⟩ := recKeys j hj; exact hkey)
     hindexed hshape hrecs entries good typesGood blocksGood lowered
