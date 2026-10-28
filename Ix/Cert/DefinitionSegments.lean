@@ -567,12 +567,11 @@ theorem block_fresh {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
     {rs : List (Read .source)} (steps : ClosureLayout.Steps (ClosureLayout.quotientGraph ixe t hints sub) start ls rs)
     (inTrace : ∀ y ∈ ls, y ∈ (Ix.LeanIngress.scheduleOf (ClosureLayout.quotientGraph ixe t hints sub)).zipIdx.toList)
     {ℓ : Nat} {y : SourcePrelude.Scheduled} {r : Read .source} (hy : ls[ℓ]? = some y) (hr : rs[ℓ]? = some r)
-    {defs : List Ix.Def} (insub : ∀ j (hj : j < defs.length), ∃ ci, (defs[j].name, ci) ∈ sub.consts.toList)
+    {isMember : Ix.Name → Prop} (insub : ∀ n, isMember n → ∃ ci, (n, ci) ∈ sub.consts.toList)
     {B : Address}
     (member : ∀ m cim, (m, cim) ∈ sub.consts.toList → B ∈ ClosureLayout.nameRecords ixe m →
-      ∃ (i : Nat) (_ : i < defs.length), ClosureLayout.addrOf ixe defs[i].name = ClosureLayout.addrOf ixe m)
-    (hdecl : ∀ j (hj : j < defs.length),
-      ∃ d ∈ r.decls.toList, ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) defs[j].name ∈ d.names) :
+      ∃ n, isMember n ∧ ClosureLayout.addrOf ixe n = ClosureLayout.addrOf ixe m)
+    (hdecl : ∀ n, isMember n → ∃ d ∈ r.decls.toList, ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) n ∈ d.names) :
     B ∉ ((ls.map fun y =>
       ClosureLayout.groupRecords ixe (ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y)).take ℓ).flatten := by
   obtain ⟨hlen, stepsAt⟩ := steps
@@ -605,18 +604,18 @@ theorem block_fresh {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
     unfold ClosureLayout.namesAt; rw [ClosureLayout.getElem!_of_getElem? hgr']
   obtain ⟨cim, hcim⟩ := ClosureLayout.converted_names_stored P hgr' hcv' m (hnm' ▸ hm')
   obtain ⟨namedm, hmm, hgetm⟩ := SourceStoredNames.stored_published P hcim
-  obtain ⟨i, hi, hPi⟩ := member m cim hcim hBm
+  obtain ⟨n, hn, hPi⟩ := member m cim hcim hBm
   -- so it has that member's quotient key
-  obtain ⟨ci, hci⟩ := insub i hi
+  obtain ⟨ci, hci⟩ := insub n hn
   obtain ⟨namedi, hmi, hgeti⟩ := SourceStoredNames.stored_published P hci
   have hai : namedi.addr = namedm.addr := by
     unfold ClosureLayout.addrOf at hPi
     rw [hgeti, hgetm] at hPi
     exact Option.some.inj hPi
   have hkey : ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) m =
-      ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) defs[i].name :=
+      ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) n :=
     Ix.LeanIngress.fiberAliasAt_addr_inj tb (by rw [P.agree m namedm hmm]) (by rw [P.agree _ namedi hmi, hai])
-  obtain ⟨dn, hdn, hkdn⟩ := hdecl i hi
+  obtain ⟨dn, hdn, hkdn⟩ := hdecl n hn
   exact keptFresh dn hdn _ hkdn d' hd'ℓ (hkey ▸ hkd')
 
 /-- **A filtered segment that holds `B` holds it once, among elements its candidates allow**: the
@@ -702,9 +701,12 @@ theorem block_place {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
     refine List.mem_flatMap.mpr ⟨defs[0].name, Array.mem_toList_iff.mpr ((hnames _).mpr ⟨0, by omega, rfl⟩), ?_⟩
     rw [recs 0 (by omega) Pa hPa]
     simp
-  have fresh := block_fresh P steps inTrace hy hr insub
-    (fun m cim hcim hBm => member_of_block P prelude corder canonical resolves stored hinfo hms hdefs each' hcim hBm)
-    hdecl
+  have fresh := block_fresh (isMember := fun n => ∃ (j : Nat) (_ : j < defs.length), defs[j].name = n) P steps
+    inTrace hy hr (fun n ⟨j, hj, e⟩ => e ▸ insub j hj)
+    (fun m cim hcim hBm => by
+      obtain ⟨i, hi, h⟩ := member_of_block P prelude corder canonical resolves stored hinfo hms hdefs each' hcim hBm
+      exact ⟨_, ⟨i, hi, rfl⟩, h⟩)
+    (fun n ⟨j, hj, e⟩ => e ▸ hdecl j hj)
   have hC : (ls.map fun y =>
       ClosureLayout.groupRecords ixe (ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y))[ℓ]? =
         some (ClosureLayout.groupRecords ixe (ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y)) := by
