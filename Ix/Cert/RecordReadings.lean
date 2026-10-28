@@ -5,6 +5,7 @@ import Ix.CompileCert.CanonLevelReading
 import Ix.CompileCert.DefinitionReading
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.Canon.Ref
+import Ix.Cert.GraphWalk
 
 /-! # Singleton records read as quotient Source's declarations renamed
 
@@ -101,6 +102,36 @@ renamed. -/
 def sourceNames (ρ : FiberMap) (f : Mode.Id .source → Mode.Id .anon) (n : Ix.Name)
     (k : CName .anon) : Prop :=
   k = (Ix.LeanIngress.Key.subst ρ (ingressKey n)).map f
+
+/-- **A relation reads only the names the term mentions**: two name relations that agree on
+the term's mentions (`GraphWalk.Refs`: the constants it applies and the structures it projects)
+relate it alike. -/
+theorem related_mono {md : Mode} {names names' : Ix.Name → CName md → Prop}
+    {levels : Ix.Level → Ix.Kernel.Level → Prop} {s : Ix.Expr} {t : CExpr md}
+    (h : Related names levels s t) (agree : ∀ n k, GraphWalk.Refs n s → names n k → names' n k) :
+    Related names' levels s t := by
+  have self : ∀ n : Ix.Name, (n == n) = true := fun n => Address.beq_iff_eq.mpr rfl
+  induction h with
+  | bvar index hash => exact .bvar index hash
+  | sort hash meaning => exact .sort hash meaning
+  | const hash sources targets mapped universes =>
+    exact .const hash sources targets (agree _ _ (.const (self _)) mapped) universes
+  | app hash _ _ ihf iha =>
+    exact .app hash (ihf fun n k r => agree n k (.appF r)) (iha fun n k r => agree n k (.appA r))
+  | lam name info hash _ _ iht ihb =>
+    exact .lam name info hash (iht fun n k r => agree n k (.lamT r)) (ihb fun n k r => agree n k (.lamB r))
+  | all name info hash _ _ iht ihb =>
+    exact .all name info hash (iht fun n k r => agree n k (.allT r)) (ihb fun n k r => agree n k (.allB r))
+  | letE name nonDep hash _ _ _ iht ihv ihb =>
+    exact .letE name nonDep hash (iht fun n k r => agree n k (.letT r)) (ihv fun n k r => agree n k (.letV r))
+      (ihb fun n k r => agree n k (.letB r))
+  | nat value hash => exact .nat value hash
+  | str value hash => exact .str value hash
+  | proj field hash mapped _ ih =>
+    exact .proj field hash (agree _ _ (.projName (self _)) mapped) (ih fun n k r => agree n k (.projStruct r))
+  | mdata data hash plain _ ih => exact .mdata data hash plain (ih fun n k r => agree n k (.mdata r))
+  | contract data hash c frame read _ lowered ih =>
+    exact .contract data hash c frame read (ih fun n k r => agree n k (.mdata r)) lowered
 
 /-- **A term related to a Lean term at quotient Source's names renamed is the term's
 quotient Source conversion renamed**, at a numbering that keeps the constant's level
@@ -415,9 +446,12 @@ theorem definition_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     (safe : safetyDeclineOf source.kind source.safety = none)
     (ran : rawRun (compileConstantInfo ci) context before = (.ok output, after))
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f))
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (keyed : cx₁.memberKey (.member output.blockAddr 0) =
       .ok ((Ix.LeanIngress.Key.subst ρ (ingressKey source.name)).map f))
+    (self : names source.name ((Ix.LeanIngress.Key.subst ρ (ingressKey source.name)).map f))
+    (agree : ∀ n k, (GraphWalk.Refs n source.type ∨ GraphWalk.Refs n source.value) → names n k →
+      sourceNames ρ f n k)
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx)
     (sameKey : cx.memberKey (.member output.blockAddr 0) = cx₁.memberKey (.member output.blockAddr 0))
     {h : ReducibilityHint} (hint : cx.hint (.member output.blockAddr 0) = some h)
@@ -434,22 +468,22 @@ theorem definition_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     ∃ rA, readRecord cx stA output.blockAddr output.block = .ok rA ∧ StreamRename.Plain rA ∧
       rA.decls = #[declS.mapKeys f] := by
   have aliases : DefinitionReading.SelfAliases source.name
-      ((Ix.LeanIngress.Key.subst ρ (ingressKey source.name)).map f) (sourceNames ρ f) := by
+      ((Ix.LeanIngress.Key.subst ρ (ingressKey source.name)).map f) names := by
     intro query hq
     rw [Ix.CompileCert.Canon.nameCompareExact_eq_iff.mp hq]
-    rfl
+    exact self
   -- the compile-side reading
   obtain ⟨-, -, result, declaration, type, value, read, decls, typeRel, valueRel, ddecl⟩ :=
-    DefinitionReading.constant_reads (cx := cx₁) (names := sourceNames ρ f) (σ := (Numbering.mk source.levelParams false).pos)
+    DefinitionReading.constant_reads (cx := cx₁) (names := names) (σ := (Numbering.mk source.levelParams false).pos)
       (bindings := bindings) context free aligned external ci source view stA keyed aliases clean
       wire safe ran
   -- the record is a definition record
   have selfSound := DefinitionReading.singleton_self cx₁ output.blockAddr source.name context
-    (sourceNames ρ f) keyed aliases
+    names keyed aliases
   have ran' := ran
   rw [EmissionDispatch.definition_run context free ci source view] at ran'
   obtain ⟨-, -, -, erased, -⟩ := EmissionBlocks.definitionInfo_correct cx₁ id
-    (DefinitionReading.selfAt cx₁ output.blockAddr) (sourceNames ρ f) (Numbering.mk source.levelParams false).pos bindings
+    (DefinitionReading.selfAt cx₁ output.blockAddr) names (Numbering.mk source.levelParams false).pos bindings
     (EmissionDispatch.singletonContext source.name context) free aligned external source
     (constsSatisfy_of_forall (fun name => selfSound name) _)
     (constsSatisfy_of_forall (fun name => selfSound name) _) clean ran'
@@ -481,8 +515,10 @@ theorem definition_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
   rw [hlps, htype] at ht'
   rw [hlps] at hv'
   -- the reading's terms are quotient Source's renamed
-  obtain ⟨convT, hconvT, htypeEq⟩ := related_renamed (pos_inj nodup) (pos_aligned nodup) typeRel
-  obtain ⟨convV, hconvV, hvalueEq⟩ := related_renamed (pos_inj nodup) (pos_aligned nodup) valueRel
+  obtain ⟨convT, hconvT, htypeEq⟩ := related_renamed (pos_inj nodup) (pos_aligned nodup) 
+    (related_mono typeRel fun n k r hn => agree n k (.inl r) hn)
+  obtain ⟨convV, hconvV, hvalueEq⟩ := related_renamed (pos_inj nodup) (pos_aligned nodup)
+    (related_mono valueRel fun n k r hn => agree n k (.inr r) hn)
   rw [ht', Except.ok.injEq] at hconvT
   rw [hv', Except.ok.injEq] at hconvV
   subst hconvT hconvV
@@ -531,11 +567,12 @@ theorem axiom_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.axiomInfo v)) context before = (.ok output, after))
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f))
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (keyed : cx₁.memberKey (.member output.blockAddr 0) =
       .ok ((Ix.LeanIngress.Key.subst ρ (ingressKey v.cnst.name)).map f))
     (scope : ConstsSatisfy (SelfName (EmissionDispatch.singletonContext v.cnst.name context).2
-      (fun _ => none) (sourceNames ρ f)) v.cnst.type)
+      (fun _ => none) names) v.cnst.type)
+    (agree : ∀ n k, GraphWalk.Refs n v.cnst.type → names n k → sourceNames ρ f n k)
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx)
     (sameKey : cx.memberKey (.member output.blockAddr 0) = cx₁.memberKey (.member output.blockAddr 0))
     (sameHint : cx.hint (.member output.blockAddr 0) = cx₁.hint (.member output.blockAddr 0))
@@ -547,19 +584,20 @@ theorem axiom_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
   simp only [Ix.LeanIngress.Converted.axiom.injEq] at hc
   subst hc
   obtain ⟨-, -, type, typeRel, read⟩ :=
-    HeaderReading.axiom_reads (cx := cx₁) (names := sourceNames ρ f)
+    HeaderReading.axiom_reads (cx := cx₁) (names := names)
       (σ := (Numbering.mk v.cnst.levelParams false).pos) (bindings := bindings) context free aligned
       external v stA keyed scope clean wire safe ran
   have ran' := ran
   rw [EmissionDispatch.axiom_run context free] at ran'
   obtain ⟨-, -, -, erased, -⟩ := EmissionBlocks.axiomInfo_correct cx₁ id (fun _ => none)
-    (sourceNames ρ f) (Numbering.mk v.cnst.levelParams false).pos bindings
+    names (Numbering.mk v.cnst.levelParams false).pos bindings
     (EmissionDispatch.singletonContext v.cnst.name context) free aligned external v scope clean ran'
   obtain ⟨target, hinfo, -, -⟩ :=
     HeaderReading.erase_axio (payload := Emission.axiomPayload v (.sort 0)) erased
   have readA := RecordTransfer.readRecord_le refs sameKey sameHint (by rw [hinfo]; rfl) read
   refine ⟨_, readA, ⟨rfl, rfl, rfl⟩, ?_⟩
-  obtain ⟨convT, hconvT, htypeEq⟩ := related_renamed (pos_inj nodup) (pos_aligned nodup) typeRel
+  obtain ⟨convT, hconvT, htypeEq⟩ := related_renamed (pos_inj nodup) (pos_aligned nodup)
+    (related_mono typeRel agree)
   rw [ht', Except.ok.injEq] at hconvT
   subst hconvT
   rw [params_map_pos, params_nodup nodup] at htypeEq
@@ -575,11 +613,12 @@ theorem quotient_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.quotInfo v)) context before = (.ok output, after))
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f))
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (keyed : cx₁.memberKey (.member output.blockAddr 0) =
       .ok ((Ix.LeanIngress.Key.subst ρ (ingressKey v.cnst.name)).map f))
     (scope : ConstsSatisfy (SelfName (EmissionDispatch.singletonContext v.cnst.name context).2
-      (fun _ => none) (sourceNames ρ f)) v.cnst.type)
+      (fun _ => none) names) v.cnst.type)
+    (agree : ∀ n k, GraphWalk.Refs n v.cnst.type → names n k → sourceNames ρ f n k)
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx)
     (sameKey : cx.memberKey (.member output.blockAddr 0) = cx₁.memberKey (.member output.blockAddr 0))
     (sameHint : cx.hint (.member output.blockAddr 0) = cx₁.hint (.member output.blockAddr 0))
@@ -591,18 +630,19 @@ theorem quotient_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
   simp only [Ix.LeanIngress.Converted.quot.injEq] at hc
   obtain ⟨rfl, rfl⟩ := hc
   obtain ⟨-, -, type, typeRel, read⟩ :=
-    HeaderReading.quotient_reads (cx := cx₁) (names := sourceNames ρ f)
+    HeaderReading.quotient_reads (cx := cx₁) (names := names)
       (σ := (Numbering.mk v.cnst.levelParams false).pos) (bindings := bindings) context free aligned
       external v stA keyed scope clean wire ran
   have ran' := ran
   rw [EmissionDispatch.quotient_run context free] at ran'
   obtain ⟨-, -, -, erased, -⟩ := EmissionBlocks.quotientInfo_correct cx₁ id (fun _ => none)
-    (sourceNames ρ f) (Numbering.mk v.cnst.levelParams false).pos bindings
+    names (Numbering.mk v.cnst.levelParams false).pos bindings
     (EmissionDispatch.singletonContext v.cnst.name context) free aligned external v scope clean ran'
   obtain ⟨target, hinfo, -, -⟩ := HeaderReading.erase_quot erased
   have readA := RecordTransfer.readRecord_le refs sameKey sameHint (by rw [hinfo]; rfl) read
   refine ⟨_, readA, ⟨rfl, rfl, rfl⟩, ?_⟩
-  obtain ⟨convT, hconvT, htypeEq⟩ := related_renamed (pos_inj nodup) (pos_aligned nodup) typeRel
+  obtain ⟨convT, hconvT, htypeEq⟩ := related_renamed (pos_inj nodup) (pos_aligned nodup)
+    (related_mono typeRel agree)
   rw [ht', Except.ok.injEq] at hconvT
   subst hconvT
   rw [params_map_pos, params_nodup nodup] at htypeEq
@@ -640,9 +680,12 @@ theorem definition_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .
     (safe : safetyDeclineOf source.kind source.safety = none)
     (ran : rawRun (compileConstantInfo ci) context before = (.ok output, after))
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f))
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (keyed : cx₁.memberKey (.member output.blockAddr 0) =
       .ok ((Ix.LeanIngress.Key.subst ρ (ingressKey source.name)).map f))
+    (self : names source.name ((Ix.LeanIngress.Key.subst ρ (ingressKey source.name)).map f))
+    (agree : ∀ n k, (GraphWalk.Refs n source.type ∨ GraphWalk.Refs n source.value) → names n k →
+      sourceNames ρ f n k)
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx)
     (sameKey : cx.memberKey (.member output.blockAddr 0) = cx₁.memberKey (.member output.blockAddr 0))
     {h : ReducibilityHint} (hint : cx.hint (.member output.blockAddr 0) = some h)
@@ -664,7 +707,7 @@ theorem definition_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .
     rfl
   rw [hhint] at lowS
   obtain ⟨rA, read, plain, decls⟩ := definition_reads hP hf view nodup context free clean wire safe ran
-    aligned external keyed refs sameKey hint sameHint conv hst ownersGood typeGood valueGood lowS
+    aligned external keyed self agree refs sameKey hint sameHint conv hst ownersGood typeGood valueGood lowS
   exact ⟨rA, read, plain, by rw [decls]; simp⟩
 
 /-- **A compiled axiom's record reads as quotient Source's unit renamed**, from every state. -/
@@ -675,11 +718,12 @@ theorem axiom_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.axiomInfo v)) context before = (.ok output, after))
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f))
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (keyed : cx₁.memberKey (.member output.blockAddr 0) =
       .ok ((Ix.LeanIngress.Key.subst ρ (ingressKey v.cnst.name)).map f))
     (scope : ConstsSatisfy (SelfName (EmissionDispatch.singletonContext v.cnst.name context).2
-      (fun _ => none) (sourceNames ρ f)) v.cnst.type)
+      (fun _ => none) names) v.cnst.type)
+    (agree : ∀ n k, GraphWalk.Refs n v.cnst.type → names n k → sourceNames ρ f n k)
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx)
     (sameKey : cx.memberKey (.member output.blockAddr 0) = cx₁.memberKey (.member output.blockAddr 0))
     (sameHint : cx.hint (.member output.blockAddr 0) = cx₁.hint (.member output.blockAddr 0))
@@ -695,7 +739,7 @@ theorem axiom_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
   rw [unfolded, Except.ok.injEq] at lowered
   subst lowered
   obtain ⟨rA, read, plain, decls⟩ := axiom_reads nodup context free clean wire ran aligned external
-    keyed scope refs sameKey sameHint conv stA
+    keyed scope agree refs sameKey sameHint conv stA
   exact ⟨rA, read, plain, by rw [decls]; simp⟩
 
 /-- **A compiled quotient constant's record reads as quotient Source's unit renamed**, from
@@ -707,11 +751,12 @@ theorem quotient_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .an
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.quotInfo v)) context before = (.ok output, after))
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f))
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (keyed : cx₁.memberKey (.member output.blockAddr 0) =
       .ok ((Ix.LeanIngress.Key.subst ρ (ingressKey v.cnst.name)).map f))
     (scope : ConstsSatisfy (SelfName (EmissionDispatch.singletonContext v.cnst.name context).2
-      (fun _ => none) (sourceNames ρ f)) v.cnst.type)
+      (fun _ => none) names) v.cnst.type)
+    (agree : ∀ n k, GraphWalk.Refs n v.cnst.type → names n k → sourceNames ρ f n k)
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx)
     (sameKey : cx.memberKey (.member output.blockAddr 0) = cx₁.memberKey (.member output.blockAddr 0))
     (sameHint : cx.hint (.member output.blockAddr 0) = cx₁.hint (.member output.blockAddr 0))
@@ -728,7 +773,7 @@ theorem quotient_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .an
   rw [unfolded, Except.ok.injEq] at lowered
   subst lowered
   obtain ⟨rA, read, plain, decls⟩ := quotient_reads nodup context free clean wire ran aligned
-    external keyed scope refs sameKey sameHint conv stA
+    external keyed scope agree refs sameKey sameHint conv stA
   exact ⟨rA, read, plain, by rw [decls]; simp⟩
 
 end Definition
