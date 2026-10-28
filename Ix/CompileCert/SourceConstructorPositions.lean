@@ -262,6 +262,28 @@ theorem inductiveGroup_spec (env : Ix.Environment) (first : Ix.InductiveVal) (ca
         exact ⟨members, classes⟩
       · cases h
 
+/-- **The recursors of a laid-out block are the ones `blockRecursors` finds** among the
+candidates. -/
+theorem inductiveGroup_recursors (env : Ix.Environment) (first : Ix.InductiveVal) (cands : Array Ix.RecursorVal)
+    (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal)) (recs : Array Ix.RecursorVal)
+    (h : inductiveGroup env first cands = .inductive types ctors recs) :
+    Ix.LeanIngress.blockRecursors first cands = .ok recs := by
+  unfold inductiveGroup Ix.LeanIngress.inductiveGroupUsing at h
+  simp only [Id.run, idBind, idPure] at h
+  split at h
+  · rename_i r heq
+    obtain ⟨_, _, rfl⟩ := exit_of_fst (R := Invalid) (H := memberValue env first.all) heq (by member_step)
+    cases h
+  · split at h
+    · rename_i r heq
+      obtain ⟨_, _, rfl⟩ := exit_of_fst (R := Invalid) (H := classValue env) heq (by class_step)
+      cases h
+    · split at h
+      · rename_i found
+        injection h with _ _ same
+        rw [found, same]
+      · cases h
+
 /-! ## The conversion: the reader's checks -/
 
 section Conversion

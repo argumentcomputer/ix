@@ -221,12 +221,13 @@ structure InductiveCompiled (t : RoleTable) (preA : Prelude .anon) (order : List
   index : ∃ shape : BlockShape, (closureContext ixe t preA order).index.blocks[out₁.blockAddr]? = some shape ∧
     shape.order = (List.range types.size).toArray ∧
     shape.recs.toList = (List.range recs.size).map fun j => ConstRef.member out₂.blockAddr j
-  entries : ∀ j (hj : j < recs.size), ∃ entry mi, ∃ hmi : mi < types.size,
+  entries : ∀ j (hj : j < recs.size), ∃ (entry : RecEntry) (mb : Address) (mi : Nat) (major : Ixon.Inductive),
     (closureContext ixe t preA order).index.recs[ConstRef.member out₂.blockAddr j]? = some entry ∧
     recLps entry.large (List.range first.cnst.levelParams.size) = (SourceConversion.recNum first recs[j]).params ∧
-    entry.major = .member out₁.blockAddr mi ∧ recs[j].rules.size = (ctors[mi]'(hcsize ▸ hmi)).size ∧
+    entry.major = .member mb mi ∧ inductiveAt (closureContext ixe t preA order).store entry.major = some major ∧
+    major.ctors.size = recs[j].rules.size ∧
     (∀ k (hk : k < recs[j].rules.size),
-      (closureContext ixe t preA order).memberKey (.ctor out₁.blockAddr mi k) =
+      (closureContext ixe t preA order).memberKey (.ctor mb mi k) =
         .ok (InductiveUnits.srcKey (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) recs[j].rules[k].ctor)) ∧
     (CtxAgree.numNestedOf (InductiveUnits.srcBlock types ctors recs first) = 0 →
       some entry.motive = SourceConversion.motiveOf types recs[j])
