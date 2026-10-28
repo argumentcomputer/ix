@@ -712,15 +712,16 @@ pub fn compile_env_with_profile(
               // Compile this block
               let cc_start = Instant::now();
               let mut cache = BlockCache::default();
-              // a failed block publishes nothing (`block_txn`): its entries
-              // are logged and removed on failure
+              // Stage the complete block; compilation or commit failure
+              // drops its output before any dependent is released.
               crate::compile::block_txn::start();
               let res =
                 run_compile_catching_panic(&lo, "compile_const", || {
                   compile_const(&lo, &all, lean_env, &mut cache, stt_ref)
                 });
-              // the staged hints are committed only if the block compiled
-              crate::compile::block_txn::finish(stt_ref, res.is_err());
+              let publication =
+                crate::compile::block_txn::finish(stt_ref, res.is_err());
+              let res = res.and_then(|addr| publication.map(|()| addr));
               if let Err(e) = res {
                 // Record the failure per-member and fall through. The
                 // scheduler keeps running so other constants can still
@@ -1011,8 +1012,7 @@ mod hint_tests {
     stt.record_hint(&n, None);
     assert_eq!(stt.recorded_hint(&n), None);
     stt.record_hint(&n, Some(ReducibilityHints::Regular(7)));
-    block_txn::commit(&stt);
-    let _ = block_txn::take().unwrap();
+    block_txn::finish(&stt, false).unwrap();
     assert_eq!(stt.recorded_hint(&n), Some(ReducibilityHints::Regular(7)));
   }
 
@@ -1025,7 +1025,7 @@ mod hint_tests {
     block_txn::start();
     stt.record_hint(&kept, None);
     stt.record_hint(&fresh, Some(ReducibilityHints::Abbrev));
-    block_txn::finish(&stt, true);
+    block_txn::finish(&stt, true).unwrap();
     assert_eq!(stt.recorded_hint(&kept), Some(ReducibilityHints::Opaque));
     assert_eq!(stt.recorded_hint(&fresh), None);
   }

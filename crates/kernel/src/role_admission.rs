@@ -138,21 +138,23 @@ fn dependencies(role: Role) -> &'static [Role] {
   use Role::{
     BitVec, BitVecOfNat, BitVecToNat, BitVecUlt, Bool, ByteArray, Char,
     CharOfNat, CharUtf8Size, Choice, Decidable, DecidableDecide,
-    DecidableIsFalse, Eq, Iff, IfThenElse, Int, IntAdd, IntBdiv, IntBmod,
+    DecidableIsFalse, Eq, IfThenElse, Iff, Int, IntAdd, IntBdiv, IntBmod,
     IntDecEq, IntDecLe, IntDecLt, IntEdiv, IntEmod, IntLe, IntMul, IntNatAbs,
     IntNeg, IntNegOfNat, IntNegSucc, IntOfNat, IntPow, IntSub, IntSubNatNat,
     List, ListAppend, Nat, NatAdd, NatBeq, NatBle, NatDecEq, NatDecLe,
     NatDecLt, NatDiv, NatGcd, NatLand, NatLe, NatLor, NatMod, NatMul, NatPow,
     NatPred, NatShiftLeft, NatShiftRight, NatSub, NatXor, Nonempty, Not,
     OfDecideEqFalse, OfDecideEqTrue, Propext, Quot, QuotInd, QuotLift, QuotMk,
-    QuotSound, SorryAx, String, StringAppend, StringBack, StringDecEq, StringOfList,
-    StringToByteArray, StringUtf8ByteSize,
+    QuotSound, SorryAx, String, StringAppend, StringBack, StringDecEq,
+    StringOfList, StringToByteArray, StringUtf8ByteSize,
   };
   match role {
     Quot | QuotMk | QuotLift | QuotInd | QuotSound => &[Eq],
     StringOfList => &[List, Char, String],
     CharOfNat => &[Nat, Char],
-    NatPred | NatAdd => &[Nat],
+    NatPred | NatAdd | NatLe | IntOfNat | IntNegSucc | BitVec | BitVecOfNat => {
+      &[Nat]
+    },
     NatSub => &[Nat, NatPred],
     NatMul => &[Nat, NatAdd],
     NatPow => &[Nat, NatAdd, NatMul],
@@ -172,7 +174,6 @@ fn dependencies(role: Role) -> &'static [Role] {
     OfDecideEqTrue => &[Decidable, DecidableDecide, Bool, Eq],
     OfDecideEqFalse => &[Decidable, DecidableDecide, Not, Bool, Eq],
     DecidableDecide => &[Decidable, Not, Bool, Eq],
-    NatLe | IntOfNat | IntNegSucc | BitVec | BitVecOfNat => &[Nat],
     NatDecEq => &[Nat, Bool, Eq, Decidable, DecidableDecide, NatBeq],
     NatDecLe => &[Nat, Bool, Eq, Decidable, DecidableDecide, NatLe, NatBle],
     NatDecLt => &[Nat, Eq, Decidable, NatLe, NatDecLe],
@@ -194,19 +195,25 @@ fn dependencies(role: Role) -> &'static [Role] {
     IfThenElse => &[Decidable, Not, Eq],
     IntLe => &[Int],
     IntDecEq => &[Nat, Int, Bool, Eq, Decidable, DecidableDecide, NatBeq],
-    IntDecLe => &[Nat, Int, Bool, Eq, Decidable, DecidableDecide, IntLe, NatBle],
-    IntDecLt => &[Nat, Int, Eq, Decidable, IntLe, IntAdd, IntDecLe],
-    IntBmod => {
-      &[Nat, Int, Eq, IfThenElse, IntLe, IntAdd, IntSub, IntEdiv, IntEmod, IntDecLt]
+    IntDecLe => {
+      &[Nat, Int, Bool, Eq, Decidable, DecidableDecide, IntLe, NatBle]
     },
+    IntDecLt => &[Nat, Int, Eq, Decidable, IntLe, IntAdd, IntDecLe],
+    IntBmod => &[
+      Nat, Int, Eq, IfThenElse, IntLe, IntAdd, IntSub, IntEdiv, IntEmod,
+      IntDecLt,
+    ],
     IntBdiv => &[
-      Nat, Int, Eq, IfThenElse, IntLe, IntAdd, IntEdiv, IntEmod, IntDecLt, NatDecEq,
+      Nat, Int, Eq, IfThenElse, IntLe, IntAdd, IntEdiv, IntEmod, IntDecLt,
+      NatDecEq,
     ],
     CharUtf8Size => &[Nat, Char, CharOfNat, Bool, Eq, NatMul, NatBle],
     StringUtf8ByteSize => {
       &[Nat, String, List, Char, StringOfList, Eq, NatAdd, CharUtf8Size]
     },
-    StringBack => &[Nat, String, List, Char, CharOfNat, StringOfList, Eq, NatMul],
+    StringBack => {
+      &[Nat, String, List, Char, CharOfNat, StringOfList, Eq, NatMul]
+    },
     _ => &[],
   }
 }
@@ -232,14 +239,14 @@ fn evidence_allowed(role: Role) -> &'static [Option<bool>] {
     NatBeq => &[D, D, D, D],
     NatBle => &[D, D, D],
     NatDiv | NatMod => &[P, P, P],
-    NatGcd | NatLand | NatLor | NatXor | NatShiftLeft | NatShiftRight => &[P, P],
+    NatGcd | NatLand | NatLor | NatXor | NatShiftLeft | NatShiftRight
+    | IntSubNatNat => &[P, P],
     DecidableDecide => &[E, E, P],
     NatDecEq | NatDecLe | NatDecLt | IntSub | BitVecToNat | BitVecUlt
     | StringDecEq | StringToByteArray | StringAppend | IntDecLt | IntBmod
     | IntBdiv => &[E],
     IntNegOfNat | IntNeg | IntNatAbs | ListAppend | IfThenElse
     | StringUtf8ByteSize => &[E, E],
-    IntSubNatNat => &[P, P],
     IntAdd | IntMul | IntEmod | IntDecEq | IntDecLe => &[E, E, E, E],
     IntEdiv => &[E, E, E, E, E],
     IntPow => &[E, P, P],

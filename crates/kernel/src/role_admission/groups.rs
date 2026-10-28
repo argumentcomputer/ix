@@ -47,6 +47,11 @@ use crate::tc::TypeChecker;
 type E = KExpr<Anon>;
 type U = KUniv<Anon>;
 
+#[path = "equations.rs"]
+mod equations;
+#[path = "specs.rs"]
+mod specs;
+
 /// One specification group.
 struct Group {
   /// Its roles, the lead first.
@@ -56,8 +61,9 @@ struct Group {
   validate: fn(&ArtifactSource, &Admission) -> Result<(), String>,
 }
 
-/// The groups, in an order that lists every group after those it needs.
-const GROUPS: &[Group] = &[
+/// Validators with declaration-shape or recurrence-specific checks. The
+/// generated group order also includes definitions checked by their equations.
+const SPECIALIZED_GROUPS: &[Group] = &[
   Group {
     roles: &[Role::Nat, Role::NatZero, Role::NatSucc, Role::NatRec],
     needs: &[],
@@ -324,7 +330,7 @@ pub(super) fn admit(source: &ArtifactSource) -> Admission {
   let Some(binding) = source.binding() else {
     return admission;
   };
-  for group in GROUPS {
+  for group in specs::GROUPS {
     let lead = group.roles[0];
     if binding.role(lead).is_none() {
       continue;
@@ -336,7 +342,16 @@ pub(super) fn admit(source: &ArtifactSource) -> Admission {
       .filter(|role| admission.address(*role).is_none())
       .collect();
     let outcome = if missing.is_empty() {
-      (group.validate)(source, &admission)
+      match SPECIALIZED_GROUPS
+        .iter()
+        .find(|existing| existing.roles == group.roles)
+      {
+        Some(existing) if existing.needs != group.needs => Err(
+          "generated dependencies differ from the existing validator".into(),
+        ),
+        Some(existing) => (existing.validate)(source, &admission),
+        None => equations::validate_group(source, &admission, group.roles),
+      }
     } else {
       Err(format!("needs the unadmitted group(s) {missing:?}"))
     };
@@ -1710,13 +1725,54 @@ fn projection_unit(info: &ConstantInfo) -> Option<&Address> {
   }
 }
 
+/// Evidence may mention only the operation and the reference closure of its
+/// definition and dependency groups. The theorem and its body are checked
+/// separately by the operation's validator.
+fn check_evidence_locality(
+  source: &ArtifactSource,
+  admitted: &Admission,
+  role: Role,
+  address: &Address,
+  evidence: &[Address],
+) -> Result<(), String> {
+  let mut roots: Vec<Address> = vec![address.clone()];
+  for dependency in super::dependencies(role) {
+    for member in super::block(*dependency) {
+      roots.extend(admitted.address(*member).cloned());
+    }
+  }
+  let closure = reference_closure(source, roots);
+  let local = |reference: &Address| {
+    closure.contains(reference)
+      || source.record(reference).ok().is_some_and(|r| {
+        projection_unit(&r.constant().info).is_some_and(|b| closure.contains(b))
+      })
+  };
+  for proof in evidence {
+    let proof_record =
+      source.proof_record(proof).map_err(|error| error.to_string())?;
+    for reference in &proof_record.record().constant().refs {
+      if reference != address
+        && source.record(reference).is_ok()
+        && !local(reference)
+      {
+        return Err(format!(
+          "{}: evidence {} mentions {} outside the operation's closure",
+          address.hex(),
+          proof.hex(),
+          reference.hex()
+        ));
+      }
+    }
+  }
+  Ok(())
+}
+
 /// A well-founded `Nat` operation: a safe, level-monomorphic definition of
 /// type `Nat → Nat → Nat` that checks, whose role evidence is one proof per
-/// certificate statement. Each proof, with the operation's references
-/// replaced by its value, may mention only records in the reference
-/// closure of the operation and of the groups it needs, and, applied to
-/// `x`, `y` and the statement's hypotheses, must prove the statement's
-/// equation, checked with only the groups admitted before.
+/// certificate statement. Each local proof, with the operation's references
+/// replaced by its value, must prove its equation over the statement's
+/// variables and hypotheses, with only the groups admitted before.
 fn validate_wf_op(
   source: &ArtifactSource,
   admitted: &Admission,
@@ -1770,36 +1826,7 @@ fn validate_wf_op(
   // Locality: the closure of the operation (its unit's references) and of
   // the roles, with their blocks, that its specification depends on.
 
-  let mut roots: Vec<Address> = vec![address.clone()];
-  for dependency in super::dependencies(role) {
-    for member in super::block(*dependency) {
-      roots.extend(admitted.address(*member).cloned());
-    }
-  }
-  let closure = reference_closure(source, roots);
-  let local = |reference: &Address| {
-    closure.contains(reference)
-      || source.record(reference).ok().is_some_and(|r| {
-        projection_unit(&r.constant().info).is_some_and(|b| closure.contains(b))
-      })
-  };
-  for proof in &evidence {
-    let proof_record =
-      source.proof_record(proof).map_err(|error| error.to_string())?;
-    for reference in &proof_record.record().constant().refs {
-      if reference != &address
-        && source.record(reference).is_ok()
-        && !local(reference)
-      {
-        return Err(format!(
-          "{}: evidence {} mentions {} outside the operation's closure",
-          address.hex(),
-          proof.hex(),
-          reference.hex()
-        ));
-      }
-    }
-  }
+  check_evidence_locality(source, admitted, role, &address, &evidence)?;
 
   let context =
     PrimitiveContext::bound(source.clone(), admitted.roles(), |_| None);
@@ -2189,18 +2216,23 @@ fn validate_sorry(
 
 #[cfg(test)]
 mod tests {
-  use super::{GROUPS, Role};
+  use super::{Role, SPECIALIZED_GROUPS, specs};
   use rustc_hash::FxHashSet;
 
   #[test]
   fn the_groups_are_the_specification_blocks_in_dependency_order() {
     let mut seen: FxHashSet<Role> = FxHashSet::default();
-    for group in GROUPS {
+    for group in specs::GROUPS {
       let lead = group.roles[0];
       assert_eq!(group.roles, super::super::block(lead), "{lead:?}");
       let needs: FxHashSet<Role> = group.needs.iter().copied().collect();
-      let specified: FxHashSet<Role> =
-        super::super::dependencies(lead).iter().copied().collect();
+      let specified: FxHashSet<Role> = group
+        .roles
+        .iter()
+        .flat_map(|role| super::super::dependencies(*role))
+        .filter(|role| !group.roles.contains(role))
+        .copied()
+        .collect();
       assert_eq!(needs, specified, "{lead:?}");
       assert!(needs.iter().all(|need| seen.contains(need)), "{lead:?}");
       for role in group.roles {
@@ -2208,5 +2240,12 @@ mod tests {
       }
     }
     assert_eq!(seen.len(), Role::ALL.len());
+    for specialized in SPECIALIZED_GROUPS {
+      let generated = specs::GROUPS
+        .iter()
+        .find(|group| group.roles == specialized.roles)
+        .unwrap();
+      assert_eq!(specialized.needs, generated.needs);
+    }
   }
 }
