@@ -330,13 +330,13 @@ theorem buildIndex_singleton_order (store : Store) (records : Array (Address × 
 open Ix.CompileM in
 /-- **Public dispatch of an inductive plus the index**: a compiled
 standalone family stored at its address is indexed at member 0 exactly. -/
-theorem compiled_order (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem compiled_order (context : CompileEnv × BlockEnv)
     (source : InductiveVal) {before after : BlockState} {output : BlockResult}
     (ran : rawRun (compileConstantInfo (.inductInfo source)) context before = (.ok output, after))
     (store : Store) (records : Array (Address × Ixon.Constant)) (shape : BlockShape)
     (stored : store output.blockAddr = some output.block)
     (indexed : (buildIndex store records).blocks[output.blockAddr]? = some shape) : shape.order = #[0] := by
-  obtain ⟨_, _, target, _, _, kind, _⟩ := ProjectionLayout.dispatch_layout context free source ran
+  obtain ⟨_, _, target, _, _, kind, _⟩ := ProjectionLayout.dispatch_layout context source ran
   exact buildIndex_singleton_order store records output.blockAddr output.block target shape stored kind indexed
 
 /-! ## Provenance and grouping -/

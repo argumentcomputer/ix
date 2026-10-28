@@ -33,7 +33,7 @@ CT-16's `InductiveReading`, re-derived against `readInductive` = `BlockRead`
 `lowerInductive`'s now, so the statement is the `BlockRead` itself. The
 reader's loops are restated as named steps (`typeStep`, `ctorStep`,
 `ctorClassStep`, `recursorStep`) and `readInductive` is that statement by
-`rfl` (`readInductive_eq`). Under `surgeryFree` until CQ3.5. -/
+`rfl` (`readInductive_eq`). -/
 
 namespace Ix.CompileCert.InductiveReading
 
@@ -678,7 +678,7 @@ constructor of the family occurring in the types (`NoCtorIn`; N-READS N4: proved
 from Source acceptance by `Ix.Cert.NoCtor.noCtor_of_checkSourceWith`); and a
 well-formed source (safe, constructors at their positions, each constructor's type a
 telescope of the parameters and its fields). -/
-theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductive_reads (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : InductiveVal)
     (constructors : Array ConstructorVal) {before after : BlockState} {output : BlockResult}
@@ -704,23 +704,23 @@ theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.sur
           readRecursors (ExpressionRead.withBlockBlobs cx after) (List.range source.cnst.levelParams.size)
               shape.recs >>= fun recs =>
             lowerInductive state (sourceBlock key ctorKey type ctorTypes source constructors recs) := by
-  have codec := EmissionDispatch.constant_codec context free _ wire ran
+  have codec := EmissionDispatch.constant_codec context _ wire ran
   have sameCtors : ∀ other, rawRun (lookupInductiveConstructors source)
       (EmissionDispatch.singletonContext source.cnst.name context) before = (.ok other, before) →
       other = constructors := by
     intro other run
     rw [run] at found
     exact Except.ok.inj found
-  obtain ⟨layoutCtors, layoutLookup, layout⟩ := ProjectionLayout.dispatch_layout context free source ran
+  obtain ⟨layoutCtors, layoutLookup, layout⟩ := ProjectionLayout.dispatch_layout context source ran
   cases sameCtors layoutCtors layoutLookup
-  rw [EmissionDispatch.inductive_run context free] at ran
+  rw [EmissionDispatch.inductive_run context] at ran
   obtain ⟨familyCtors, familyLookup, compiled⟩ :=
-    EmissionDispatch.family_run (EmissionDispatch.singletonContext source.cnst.name context) free source ran
+    EmissionDispatch.family_run (EmissionDispatch.singletonContext source.cnst.name context) source ran
   cases sameCtors familyCtors familyLookup
   obtain ⟨_, _, _, erased, roots⟩ := EmissionBlocks.familyInfo_correct cx id (inductiveSelf cx output.blockAddr)
     names σ bindings
     (EmissionDispatch.familyContext source constructors (EmissionDispatch.singletonContext source.cnst.name context))
-    free aligned external source constructors
+    aligned external source constructors
     (scope_of_noCtor cx names source constructors context output.blockAddr keyed selfKey typeNoCtor)
     (fun ctor present => scope_of_noCtor cx names source constructors context output.blockAddr keyed selfKey
       (ctorNoCtor ctor present)) clean compiled
@@ -765,7 +765,7 @@ theorem inductive_reads (context : CompileEnv × BlockEnv) (free : context.1.sur
 /-- **`inductive_reads` over the reader's own index**: in a context whose
 index is the reader's (`buildIndex`) over a store holding the block, the
 block's shape is at member 0 by `ReaderIndex.compiled_order`. -/
-theorem inductive_reads_indexed (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductive_reads_indexed (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : InductiveVal)
     (constructors : Array ConstructorVal) {before after : BlockState} {output : BlockResult}
@@ -793,19 +793,19 @@ theorem inductive_reads_indexed (context : CompileEnv × BlockEnv) (free : conte
           readRecursors (ExpressionRead.withBlockBlobs cx after) (List.range source.cnst.levelParams.size)
               shape.recs >>= fun recs =>
             lowerInductive state (sourceBlock key ctorKey type ctorTypes source constructors recs) := by
-  have order := ReaderIndex.compiled_order context free source ran cx.store records shape stored
+  have order := ReaderIndex.compiled_order context source ran cx.store records shape stored
     (indexBuilt ▸ indexed)
-  exact inductive_reads cx names σ bindings context free aligned external source constructors found state indexed
+  exact inductive_reads cx names σ bindings context aligned external source constructors found state indexed
     order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor safe ctorSafe positions arity clean wire ran
 
 /-- **A compiled inductive with no recursor in the input declines.** -/
-theorem inductive_declines_unindexed (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductive_declines_unindexed (context : CompileEnv × BlockEnv)
     (source : InductiveVal) {before after : BlockState} {output : BlockResult} (state : State md)
     (unindexed : cx.index.blocks[output.blockAddr]? = none)
     (ran : rawRun (compileConstantInfo (.inductInfo source)) context before = (.ok output, after)) :
     readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
       .error (.declined "inductive block without a recursor in the input") := by
-  obtain ⟨_, _, target, _, _, info, _⟩ := ProjectionLayout.dispatch_layout context free source ran
+  obtain ⟨_, _, target, _, _, info, _⟩ := ProjectionLayout.dispatch_layout context source ran
   rw [readRecord_inductive _ state output.blockAddr output.block target info, readInductive_eq]
   unfold readInductiveSpec
   rw [show (ExpressionRead.withBlockBlobs cx after).index.blocks[output.blockAddr]? = none from unindexed]

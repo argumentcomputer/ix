@@ -437,7 +437,7 @@ def preseedRuntime : Array Lean.Name :=
 Source mode's term conversion the correspondence is about. -/
 def expressionRuntime : Array Lean.Name :=
   #[``Ix.CompileM.compileExprNoSurgery, ``Ix.CompileM.compileExprNoSurgeryStep, ``Ix.CompileM.compileExpr,
-    ``Ix.CompileM.CompileEnv.surgeryFree, ``Ix.CompileM.compileConstExprRaw, ``Ix.CompileM.lookupConstAddr,
+    ``Ix.CompileM.compileConstExprRaw, ``Ix.CompileM.lookupConstAddr,
     ``Ix.CompileM.allocArenaNode, ``Ix.CompileM.pushUnivPatch, ``Ix.CompileM.compileAndInternUnivCanon,
     ``Ix.CompileM.decomposeApps, ``Ix.CompileM.decomposeApps.go, ``Ix.SemanticContract.hasMetadata,
     ``Ix.SemanticContract.read, ``Ix.SemanticContract.Contract.lower, ``Ix.LeanIngress.ingressExpr,

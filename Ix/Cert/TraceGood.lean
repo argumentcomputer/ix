@@ -383,42 +383,42 @@ theorem lone_names {ci : Ix.ConstantInfo} {cenv : CompileEnv} {benv : BlockEnv} 
   have aligned : ∀ address, cx.blob address = cenv.blobs.get? address := fun _ => rfl
   cases ci with
   | axiomInfo v =>
-    rw [EmissionDispatch.axiom_run (cenv, benv) rfl] at ran
+    rw [EmissionDispatch.axiom_run (cenv, benv)] at ran
     obtain ⟨-, -, -, -, roots⟩ := EmissionBlocks.axiomInfo_correct cx (fun _ => default) selfAny
-      (BoundOr cenv (· = v.cnst.name)) (fun _ => default) {} _ rfl aligned
+      (BoundOr cenv (· = v.cnst.name)) (fun _ => default) {} _ aligned
       (boundOr_external cenv _ _) v (singleton_scope _ _ cenv _) BlockStart.clean_empty ran
     exact (rootsRead_names roots (by simpa [termsOf, Ix.ConstantInfo.getCnst] using he) hn).elim fun _ h => h
   | quotInfo v =>
-    rw [EmissionDispatch.quotient_run (cenv, benv) rfl] at ran
+    rw [EmissionDispatch.quotient_run (cenv, benv)] at ran
     obtain ⟨-, -, -, -, roots⟩ := EmissionBlocks.quotientInfo_correct cx (fun _ => default) selfAny
-      (BoundOr cenv (· = v.cnst.name)) (fun _ => default) {} _ rfl aligned
+      (BoundOr cenv (· = v.cnst.name)) (fun _ => default) {} _ aligned
       (boundOr_external cenv _ _) v (singleton_scope _ _ cenv _) BlockStart.clean_empty ran
     exact (rootsRead_names roots (by simpa [termsOf, Ix.ConstantInfo.getCnst] using he) hn).elim fun _ h => h
   | recInfo v =>
-    rw [EmissionDispatch.recursor_run (cenv, benv) rfl] at ran
+    rw [EmissionDispatch.recursor_run (cenv, benv)] at ran
     obtain ⟨-, -, -, -, roots⟩ := EmissionBlocks.recursorInfo_correct cx (fun _ => default) selfAny
-      (BoundOr cenv (· = v.cnst.name)) (fun _ => default) {} _ rfl aligned
+      (BoundOr cenv (· = v.cnst.name)) (fun _ => default) {} _ aligned
       (boundOr_external cenv _ _) v (singleton_scope _ _ cenv _) (fun _ _ => singleton_scope _ _ cenv _)
       BlockStart.clean_empty ran
     exact (rootsRead_names roots (by simpa [termsOf] using he) hn).elim fun _ h => h
   | defnInfo v =>
-    rw [EmissionDispatch.definition_run (cenv, benv) rfl _ _ rfl] at ran
+    rw [EmissionDispatch.definition_run (cenv, benv) _ _ rfl] at ran
     obtain ⟨-, -, -, -, roots⟩ := EmissionBlocks.definitionInfo_correct cx (fun _ => default) selfAny
-      (BoundOr cenv (· = (definitionValData v).name)) (fun _ => default) {} _ rfl aligned
+      (BoundOr cenv (· = (definitionValData v).name)) (fun _ => default) {} _ aligned
       (boundOr_external cenv _ _) _ (singleton_scope _ _ cenv _) (singleton_scope _ _ cenv _)
       BlockStart.clean_empty ran
     exact (rootsRead_names roots (by simpa [termsOf, definitionValData] using he) hn).elim fun _ h => h
   | thmInfo v =>
-    rw [EmissionDispatch.definition_run (cenv, benv) rfl _ _ rfl] at ran
+    rw [EmissionDispatch.definition_run (cenv, benv) _ _ rfl] at ran
     obtain ⟨-, -, -, -, roots⟩ := EmissionBlocks.definitionInfo_correct cx (fun _ => default) selfAny
-      (BoundOr cenv (· = (theoremValData v).name)) (fun _ => default) {} _ rfl aligned
+      (BoundOr cenv (· = (theoremValData v).name)) (fun _ => default) {} _ aligned
       (boundOr_external cenv _ _) _ (singleton_scope _ _ cenv _) (singleton_scope _ _ cenv _)
       BlockStart.clean_empty ran
     exact (rootsRead_names roots (by simpa [termsOf, theoremValData] using he) hn).elim fun _ h => h
   | opaqueInfo v =>
-    rw [EmissionDispatch.definition_run (cenv, benv) rfl _ _ rfl] at ran
+    rw [EmissionDispatch.definition_run (cenv, benv) _ _ rfl] at ran
     obtain ⟨-, -, -, -, roots⟩ := EmissionBlocks.definitionInfo_correct cx (fun _ => default) selfAny
-      (BoundOr cenv (· = (opaqueValData v).name)) (fun _ => default) {} _ rfl aligned
+      (BoundOr cenv (· = (opaqueValData v).name)) (fun _ => default) {} _ aligned
       (boundOr_external cenv _ _) _ (singleton_scope _ _ cenv _) (singleton_scope _ _ cenv _)
       BlockStart.clean_empty ran
     exact (rootsRead_names roots (by simpa [termsOf, opaqueValData] using he) hn).elim fun _ h => h
@@ -493,7 +493,7 @@ theorem block_names {ms : List MutConst} {cenv : CompileEnv} {benv : BlockEnv} {
   unfold compileMutConsts at payloadRan
   obtain ⟨state, middle', classesRan, -⟩ := bind_ok payloadRan
   obtain ⟨-, ps, -, each⟩ := DefinitionEmission.classes_each cx param selfAny names {} σOf
-    (BlockEmission.mutContext (ms.map ([·])) (cenv, benv)) rfl (fun _ => rfl) (boundOr_external cenv _ _) ms {}
+    (BlockEmission.mutContext (ms.map ([·])) (cenv, benv)) (fun _ => rfl) (boundOr_external cenv _ _) ms {}
     (fun _ _ e _ => block_scope ms _ cenv e) kept classesRan
   obtain ⟨_, -, -, -, roots⟩ := InductiveUnits.forall₂_mem_left each m hm
   exact (rootsRead_names roots he hn).elim fun _ h => h

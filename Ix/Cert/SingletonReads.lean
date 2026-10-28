@@ -284,7 +284,7 @@ theorem closure_definition_reads {env : Ix.Environment} {roots : List Ix.Name} {
   have shape := BlockLayout.compileConstantInfo_shape ci _ _ _ _ ran
   obtain ⟨mk, mk₁, -⟩ := lone_keys P prelude corder canonical b (blob := fun a => cenv.blobs.get? a) shape hB stored
     hn haddr input
-  exact RecordReadings.definition_unit_reads (fun _ _ => trivial) hf view nodup (cenv, benv) rfl
+  exact RecordReadings.definition_unit_reads (fun _ _ => trivial) hf view nodup (cenv, benv)
     BlockStart.clean_empty BlockStart.wire_empty (safe_of_lower view conv lowered) ran (fun _ => rfl)
     (external corder hB stored (blob := fun a => cenv.blobs.get? a) bound source.name _) mk₁ (.inl ⟨rfl, rfl⟩)
     (fun n k hm hk => agree P prelude corder canonical b bound source.name published n k hm hk)
@@ -331,7 +331,7 @@ theorem closure_axiom_reads {env : Ix.Environment} {roots : List Ix.Name} {sub :
   have shape := BlockLayout.compileConstantInfo_shape _ _ _ _ _ ran
   obtain ⟨mk, mk₁, -⟩ := lone_keys P prelude corder canonical b (blob := fun a => cenv.blobs.get? a) shape hB stored
     hn haddr input
-  exact RecordReadings.axiom_unit_reads nodup (cenv, benv) rfl BlockStart.clean_empty BlockStart.wire_empty ran
+  exact RecordReadings.axiom_unit_reads nodup (cenv, benv) BlockStart.clean_empty BlockStart.wire_empty ran
     (fun _ => rfl) (external corder hB stored (blob := fun a => cenv.blobs.get? a) bound v.cnst.name _) mk₁
     (scope_of noSelf) (fun n k hm hk => agree P prelude corder canonical b bound v.cnst.name published n k hm hk)
     (lone_refs hB stored blobs) (mk.trans mk₁.symm) rfl conv lowered
@@ -362,7 +362,7 @@ theorem closure_quotient_reads {env : Ix.Environment} {roots : List Ix.Name} {su
   have shape := BlockLayout.compileConstantInfo_shape _ _ _ _ _ ran
   obtain ⟨mk, mk₁, -⟩ := lone_keys P prelude corder canonical b (blob := fun a => cenv.blobs.get? a) shape hB stored
     hn haddr input
-  exact RecordReadings.quotient_unit_reads nodup (cenv, benv) rfl BlockStart.clean_empty BlockStart.wire_empty ran
+  exact RecordReadings.quotient_unit_reads nodup (cenv, benv) BlockStart.clean_empty BlockStart.wire_empty ran
     (fun _ => rfl) (external corder hB stored (blob := fun a => cenv.blobs.get? a) bound v.cnst.name _) mk₁
     (scope_of noSelf) (fun n k hm hk => agree P prelude corder canonical b bound v.cnst.name published n k hm hk)
     (lone_refs hB stored blobs) (mk.trans mk₁.symm) rfl conv lowered

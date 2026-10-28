@@ -526,7 +526,7 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     (exactNames : ∀ i (hi : i < defs.length) j (hj : j < defs.length) n,
       ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value →
         ingressKey n = ingressKey defs[j].name → n = defs[j].name)
-    (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before)
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
@@ -602,7 +602,7 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     rw [← hname]
     exact self index hj
   obtain ⟨ts, hinfo, each⟩ := DefinitionEmission.defsBlock_each cx₁ id (blockSelf cx owner defs.length)
-    names bindings (fun m => (Numbering.mk m.levelParams false).pos) context free aligned external
+    names bindings (fun m => (Numbering.mk m.levelParams false).pos) context aligned external
     defs (by omega) scopesA clean ran
   have hlenT : ts.length = defs.length := (DefinitionBlocks.forall₂_length each).symm
   -- the compiled block, read with each member as a fresh key
@@ -633,7 +633,7 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
       by simp only [taggedNames, found]⟩
   obtain ⟨ts', hinfo', eachT⟩ := DefinitionEmission.defsBlock_each cx₁ id
     (DefinitionOrder.tagSelf defs.length (DefinitionOrder.freshKey cx₁)) (taggedNames defs context.1 bindings cx₁)
-    bindings (fun m => (Numbering.mk m.levelParams false).pos) context free aligned externalT defs (by omega)
+    bindings (fun m => (Numbering.mk m.levelParams false).pos) context aligned externalT defs (by omega)
     scopesT clean ran
   have hts : ts' = ts := by
     rw [hinfo] at hinfo'

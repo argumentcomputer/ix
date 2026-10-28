@@ -117,7 +117,7 @@ local notation "reader" => ExpressionRead.blockReader cx param self
 `compileMutualBlock`: `EmissionBlocks.familyBlock_correct`'s conclusions, with
 the mutual path's projections (`buildMutualProjections`) and the member run in
 the class's mutual context (`mutContext`). -/
-theorem singletonBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem singletonBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (d : Ix.Ind)
     (scope : ConstsSatisfy (SelfName (mutContext [[.indc d]] context).2 self names) d.type)
@@ -148,7 +148,7 @@ theorem singletonBlock_correct (context : CompileEnv × BlockEnv) (free : contex
   obtain ⟨out, outRan, members, metas⟩ := mutConsts_indc d payloadRan
   obtain ⟨ind, indMeta, pairs, exprs⟩ := out
   obtain ⟨cleanD, growth, shape, ctorShapes, _, roots⟩ := Emission.inductiveData_correct cx param self names σ
-    bindings (Emission.current d.name (mutContext [[.indc d]] context)) free aligned external d scope ctorScope
+    bindings (Emission.current d.name (mutContext [[.indc d]] context)) aligned external d scope ctorScope
     kept.1 outRan
   obtain ⟨same, _, built⟩ := ProjectionLayout.finish_mutual_ok _ _ _ _ finished
   subst same
@@ -239,7 +239,7 @@ its constructors). The premises are `inductive_reads`': the self references
 (the family's own name related to its key, `selfKey`, R13's half, and no
 constructor of the family in its types, `NoCtorIn`) serve the class's mutual
 context, which is the family's (`mutBlock_family`). -/
-theorem inductive_reads_mutual (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductive_reads_mutual (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : InductiveVal)
     (constructors : Array ConstructorVal) {before after : BlockState} {output : BlockResult}
@@ -265,7 +265,7 @@ theorem inductive_reads_mutual (context : CompileEnv × BlockEnv) (free : contex
           InductiveReading.readRecursors (ExpressionRead.withBlockBlobs cx after)
               (List.range source.cnst.levelParams.size) shape.recs >>= fun recs =>
             lowerInductive state (InductiveReading.sourceBlock key ctorKey type ctorTypes source constructors recs) := by
-  have codec := EmissionDispatch.mutualBlock_codec context free _ wire ran
+  have codec := EmissionDispatch.mutualBlock_codec context _ wire ran
   have scope : ∀ {e : Ix.Expr}, InductiveReading.NoCtorIn constructors e →
       ConstsSatisfy (SelfName (mutContext [[.indc (Emission.sourceData source constructors)]] context).2
         (InductiveReading.inductiveSelf cx output.blockAddr) names) e := by
@@ -273,7 +273,7 @@ theorem inductive_reads_mutual (context : CompileEnv × BlockEnv) (free : contex
     rw [mutBlock_family]
     exact InductiveReading.scope_of_noCtor cx names source constructors context output.blockAddr keyed selfKey noCtor
   obtain ⟨_, _, _, erased, roots⟩ := singletonBlock_correct cx id (InductiveReading.inductiveSelf cx output.blockAddr)
-    names σ bindings context free aligned external (Emission.sourceData source constructors) (scope typeNoCtor)
+    names σ bindings context aligned external (Emission.sourceData source constructors) (scope typeNoCtor)
     (fun ctor present => scope (ctorNoCtor ctor present)) clean ran
   obtain ⟨target, info, indHeader, ctorHeaders⟩ :=
     singleton_headers (Emission.sourceData source constructors) _ before output after ran

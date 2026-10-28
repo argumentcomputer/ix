@@ -23,10 +23,7 @@ quotient, recursor, constructor and inductive emitters:
   with its roots read by the in-flight reader as terms `Related` to the
   source's (`SharingRoots.RootsRead`), ends `Clean`, and extends the
   reader. The recursor's rules keep the warm memo across the rule loop;
-  the inductive's constructors start and end clean (CT-15's `*Emission`).
-
-Every theorem assumes an environment without Pass 3 records
-(`CompileEnv.surgeryFree`), until CQ3.5 deletes the surgery. -/
+  the inductive's constructors start and end clean (CT-15's `*Emission`). -/
 
 namespace Ix.CompileCert.Emission
 
@@ -490,22 +487,21 @@ theorem reset_good {related : Ix.Expr → CExpr md → Prop} {state : BlockState
     good.1.2.1, good.1.2.2⟩, good.2⟩
 
 /-- The production entry compiles a source expression to a value the
-reader reads as a related term (`ExpressionState.compileExprNoSurgery_scoped`
-under `surgeryFree`). -/
-theorem compileExpr_checked (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+reader reads as a related term (`ExpressionState.compileExprNoSurgery_scoped`). -/
+theorem compileExpr_checked (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : Ix.Expr)
     (scope : ConstsSatisfy (SelfName context.2 self names) source) (before : BlockState)
     (good : Good cx param self (related param names σ context) bindings before) :
     Checked cx param self (related param names σ context) bindings source before
       (rawRun (compileExpr source) context before) := by
-  rw [compileExpr_surgeryFree source context free]
+  rw [compileExpr_surgeryFree source context]
   exact compileExprNoSurgery_scoped cx param self names σ bindings context aligned external source scope
     before good
 
 /-- One compiled root: a successful run of `compileExpr` keeps `Good`,
 extends the reader and reads as a related term. -/
-theorem compiled_root (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem compiled_root (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) {source : Ix.Expr}
     (scope : ConstsSatisfy (SelfName context.2 self names) source) {before middle : BlockState}
@@ -514,7 +510,7 @@ theorem compiled_root (context : CompileEnv × BlockEnv) (free : context.1.surge
     Good cx param self (related param names σ context) bindings middle ∧
       ExpressionRead.Extends (reader before).ecx (reader middle).ecx ∧
       ∃ target, related param names σ context source target ∧ (reader middle).read value.1 = .ok target := by
-  have checked := compileExpr_checked cx param self names σ bindings context free aligned external source scope
+  have checked := compileExpr_checked cx param self names σ bindings context aligned external source scope
     before good
   rw [ran] at checked
   exact ⟨checked.1, checked.2.1, checked.2.2 value rfl⟩
@@ -525,7 +521,7 @@ theorem compiled_root (context : CompileEnv × BlockEnv) (free : context.1.surge
 (for the declaration's relation), a successful run returns the payload the
 source describes, whose type and value read as terms related to the
 source's, ends `Clean`, and extends the reader. -/
-theorem definition_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem definition_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : Ix.Def)
     (typeScope : ConstsSatisfy (SelfName context.2 self names) source.type)
@@ -545,13 +541,13 @@ theorem definition_correct (context : CompileEnv × BlockEnv) (free : context.1.
   have start := prepared_good cx param self bindings good
   obtain ⟨typed, middle, typeRan, rest⟩ := bind_ok body
   obtain ⟨typeGood, typeGrowth, typeTarget, typeRel, typeRead⟩ :=
-    compiled_root cx param self names σ bindings (inner source.name source.levelParams.toList context) free
+    compiled_root cx param self names σ bindings (inner source.name source.levelParams.toList context)
       aligned external typeScope start typeRan
   obtain ⟨typeExpr, typeRoot⟩ := typed
   dsimp only at rest
   obtain ⟨valued, compiled, valueRan, finished⟩ := bind_ok rest
   obtain ⟨valueGood, valueGrowth, valueTarget, valueRel, valueRead⟩ :=
-    compiled_root cx param self names σ bindings (inner source.name source.levelParams.toList context) free
+    compiled_root cx param self names σ bindings (inner source.name source.levelParams.toList context)
       aligned external valueScope typeGood valueRan
   obtain ⟨valueExpr, valueRoot⟩ := valued
   dsimp only at finished
@@ -579,7 +575,7 @@ theorem definitionData_header (source : Ix.Def) :
 
 /-- **A one-root emitter reads back as its source**: compile the root, then
 a finisher of the `Tidy` shape. -/
-theorem single_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem single_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) {source : Ix.Expr}
     (scope : ConstsSatisfy (SelfName context.2 self names) source)
@@ -595,13 +591,13 @@ theorem single_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
         SharingRoots.RootsRead (reader after) (related param names σ context) [source] [type] := by
   obtain ⟨typed, middle, typeRan, finished⟩ := bind_ok ran
   obtain ⟨typeGood, typeGrowth, typeTarget, typeRel, typeRead⟩ :=
-    compiled_root cx param self names σ bindings context free aligned external scope good typeRan
+    compiled_root cx param self names σ bindings context aligned external scope good typeRan
   obtain ⟨clean, finalGrowth, shaped⟩ :=
     finish_clean (fun base => finishes typed.1 typed.2 base) typeGood.1 finished
   exact ⟨clean, extends_trans typeGrowth finalGrowth, typed.1, shaped,
     .cons ⟨typeTarget, typeRel, read_grows cx param self finalGrowth typeRead⟩ .nil⟩
 
-theorem axiom_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem axiom_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : AxiomVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -616,7 +612,7 @@ theorem axiom_correct (context : CompileEnv × BlockEnv) (free : context.1.surge
         [source.cnst.type] [output.1.typ] := by
   unfold compileAxiom at ran
   obtain ⟨clean, growth, type, ⟨shape, root⟩, roots⟩ := single_correct cx param self names σ bindings
-    (inner source.cnst.name source.cnst.levelParams.toList context) free aligned external scope
+    (inner source.cnst.name source.cnst.levelParams.toList context) aligned external scope
     (fun type root base => finishAxiom_tidy
       (context := inner source.cnst.name source.cnst.levelParams.toList context) aligned source type root base)
     (prepared_good cx param self bindings good) (enter_ok ran)
@@ -629,7 +625,7 @@ theorem axiomPayload_header (source : AxiomVal) :
   exact Yields.withCurrent _ (Yields.withUnivCtx _ (Yields.bindAny _ fun _ => Yields.bindAny _ fun typed =>
     axiomHeader source typed.1 typed.2))
 
-theorem quotient_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem quotient_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : QuotVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -644,7 +640,7 @@ theorem quotient_correct (context : CompileEnv × BlockEnv) (free : context.1.su
         [source.cnst.type] [output.1.typ] := by
   unfold compileQuotient at ran
   obtain ⟨clean, growth, type, ⟨shape, root⟩, roots⟩ := single_correct cx param self names σ bindings
-    (inner source.cnst.name source.cnst.levelParams.toList context) free aligned external scope
+    (inner source.cnst.name source.cnst.levelParams.toList context) aligned external scope
     (fun type root base => finishQuotient_tidy
       (context := inner source.cnst.name source.cnst.levelParams.toList context) aligned source type root base)
     (prepared_good cx param self bindings good) (enter_ok ran)
@@ -659,7 +655,7 @@ theorem quotientPayload_header (source : QuotVal) :
 
 /-- **A constructor reads back as its source**, in its family's universe
 context, from a clean state to a clean state. -/
-theorem constructor_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem constructor_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : ConstructorVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -671,7 +667,7 @@ theorem constructor_correct (context : CompileEnv × BlockEnv) (free : context.1
       SharingRoots.RootsRead (reader after) (related param names σ context) [source.cnst.type] [output.1.typ] := by
   unfold compileConstructor at ran
   obtain ⟨cleaned, growth, type, ⟨shape, root⟩, roots⟩ := single_correct cx param self names σ bindings
-    (current source.cnst.name context) free aligned external scope
+    (current source.cnst.name context) aligned external scope
     (fun type root base => finishConstructor_tidy (context := current source.cnst.name context) aligned
       source type root base)
     (reset_good cx param self bindings (clean.good cx param self _)) (current_ok ran)
@@ -681,7 +677,7 @@ theorem constructor_correct (context : CompileEnv × BlockEnv) (free : context.1
 /-- **The constructor loop**: from a clean state, every constructor reads
 back as its source in the final reader, in source order, and the loop
 appends exactly their payloads and types. -/
-theorem constructors_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem constructors_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) :
     ∀ (sources : List ConstructorVal),
@@ -706,7 +702,7 @@ theorem constructors_correct (context : CompileEnv × BlockEnv) (free : context.
     rw [compileInductiveConstructors] at ran
     obtain ⟨compiled, middle, first, last⟩ := bind_ok ran
     obtain ⟨headClean, headGrowth, shape, root, headRoots⟩ := constructor_correct cx param self names σ bindings
-      context free aligned external source (scope source (by simp)) clean first
+      context aligned external source (scope source (by simp)) clean first
     obtain ⟨tailClean, tailGrowth, targets, payloads, exprs, shapes, tailRoots⟩ :=
       ih (fun source member => scope source (List.mem_cons_of_mem _ member)) _ headClean last
     refine ⟨tailClean, extends_trans headGrowth tailGrowth, compiled.1 :: targets, ?_, ?_, .cons shape shapes, ?_⟩
@@ -728,7 +724,7 @@ theorem compileInductive_eq (source : InductiveVal) (constructors : Array Constr
 constructor, in source order, read as related terms in the final reader;
 the payload is the one the source describes; its expression roots are the
 type then the constructor types. -/
-theorem inductiveData_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductiveData_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : Ix.Ind)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.type)
@@ -751,7 +747,7 @@ theorem inductiveData_correct (context : CompileEnv × BlockEnv) (free : context
   have start := prepared_good cx param self bindings good
   obtain ⟨typed, middle, typeRan, rest⟩ := bind_ok body
   obtain ⟨typeGood, typeGrowth, typeTarget, typeRel, typeRead⟩ :=
-    compiled_root cx param self names σ bindings (inner source.name source.levelParams.toList context) free
+    compiled_root cx param self names σ bindings (inner source.name source.levelParams.toList context)
       aligned external scope start typeRan
   obtain ⟨typeExpr, typeRoot⟩ := typed
   dsimp only at rest
@@ -761,7 +757,7 @@ theorem inductiveData_correct (context : CompileEnv × BlockEnv) (free : context
   obtain ⟨built, compiled, ctorRan, finished⟩ := bind_ok rest
   obtain ⟨ctorClean, ctorGrowth, targets, payloads, exprs, shapes, ctorRoots⟩ :=
     constructors_correct cx param self names σ bindings (inner source.name source.levelParams.toList context)
-      free aligned external source.ctors.toList ctorScope { ctorExprs := #[typeExpr] }
+      aligned external source.ctors.toList ctorScope { ctorExprs := #[typeExpr] }
       ⟨drainDone.1, drainDone.2.2 trivial⟩ ctorRan
   have finalDone := finishInductiveData_tidy (context := inner source.name source.levelParams.toList context)
     aligned source typeExpr typeRoot metadata built (reader compiled).ecx
@@ -790,7 +786,7 @@ theorem inductiveData_correct (context : CompileEnv × BlockEnv) (free : context
 /-- **The rule loop**: with the warm memo, every rule body reads as a term
 related to the source's in the final reader, in source order, and the loop
 appends exactly the rules with their field counts. -/
-theorem rules_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem rules_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) :
     ∀ (sources : List RecursorRule),
@@ -817,7 +813,7 @@ theorem rules_correct (context : CompileEnv × BlockEnv) (free : context.1.surge
     unfold compileRecursorRule at first
     obtain ⟨body, bodyState, bodyRan, ruleRest⟩ := bind_ok first
     obtain ⟨headGood, headGrowth, target, rel, read⟩ :=
-      compiled_root cx param self names σ bindings context free aligned external (scope source (by simp)) good
+      compiled_root cx param self names σ bindings context aligned external (scope source (by simp)) good
         bodyRan
     obtain ⟨rhs, root⟩ := body
     dsimp only at ruleRest
@@ -839,7 +835,7 @@ theorem rules_correct (context : CompileEnv × BlockEnv) (free : context.1.surge
 rule body, in source order, read as related terms in the final reader, with
 the memo kept warm across the rule loop; the payload is the one the source
 describes, with the rules' field counts. -/
-theorem recursor_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem recursor_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : RecursorVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -861,13 +857,13 @@ theorem recursor_correct (context : CompileEnv × BlockEnv) (free : context.1.su
   obtain ⟨typed, middle, typeRan, rest⟩ := bind_ok body
   obtain ⟨typeGood, typeGrowth, typeTarget, typeRel, typeRead⟩ :=
     compiled_root cx param self names σ bindings (inner source.cnst.name source.cnst.levelParams.toList context)
-      free aligned external scope start typeRan
+      aligned external scope start typeRan
   obtain ⟨typeExpr, typeRoot⟩ := typed
   dsimp only at rest
   obtain ⟨rules, ruled, rulesRan, finished⟩ := bind_ok rest
   obtain ⟨rulesGood, rulesGrowth, targets, ruleList, fields, ruleRoots⟩ :=
     rules_correct cx param self names σ bindings (inner source.cnst.name source.cnst.levelParams.toList context)
-      free aligned external source.rules.toList ruleScope {} typeGood rulesRan
+      aligned external source.rules.toList ruleScope {} typeGood rulesRan
   obtain ⟨clean, finalGrowth, shape, root⟩ :=
     finish_clean (fun base => finishRecursor_tidy
       (context := inner source.cnst.name source.cnst.levelParams.toList context) aligned source typeExpr typeRoot rules

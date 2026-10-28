@@ -657,7 +657,7 @@ theorem lone_header {r : Ix.RecursorVal} {context : CompileEnv × BlockEnv} {bef
     {output : BlockResult} (ran : rawRun (compileConstantInfo (.recInfo r)) context before = (.ok output, after)) :
     ∃ t, SharingRoots.erase output.block.info = SharingRoots.erase (BlockEmission.blockInfo [.recr t]) ∧
       BlockEmission.RecHeader r t := by
-  rw [EmissionDispatch.recursor_run context rfl r before] at ran
+  rw [EmissionDispatch.recursor_run context r before] at ran
   unfold compileRecursorInfo at ran
   obtain ⟨_, _, _, compiled⟩ := bind_ok ran
   unfold compileRecursorBlock at compiled

@@ -699,7 +699,7 @@ variable head is the source body's. -/
 theorem compiled_telescope_variable (cx : Ctx md) (param : Nat → Ix.Kernel.LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → Ix.Kernel.LevelParam) (bindings : ExpressionState.Bindings)
-    (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) (free : context.1.surgeryFree = true)
+    (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : ExpressionState.BindingsCorrect context.1 bindings cx names) (source : RecursorVal)
     (scope : ExpressionState.ConstsSatisfy (ExpressionState.SelfName context.2 self names) source.cnst.type)
@@ -721,7 +721,7 @@ theorem compiled_telescope_variable (cx : Ctx md) (param : Nat → Ix.Kernel.Lev
         (UniversePipeline.LevelMeaning source.cnst.levelParams.toList σ param)) types rawTypes ∧
       appHead (ExpressionRead.blockReader cx param self after).ecx.src spineFuel residual = .var rawIndex ∧
       rawIndex.toNat = index := by
-  obtain ⟨_, _, _, _, _, roots⟩ := Emission.recursor_correct cx param self names σ bindings context free
+  obtain ⟨_, _, _, _, _, roots⟩ := Emission.recursor_correct cx param self names σ bindings context
     aligned external source scope ruleScope good ran
   obtain ⟨params, indices, motives, minors⟩ := recursor_counts source context before output after ran
   have depthEq : ReaderSpines.depth output.1 = sourceDepth source := by

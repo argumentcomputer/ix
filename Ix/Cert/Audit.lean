@@ -2317,7 +2317,6 @@ Ix.CompileCert.ExpressionState.Related.contract : ∀ {md : Ix.Kernel.Mode}
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         Ix.CompileCert.ExpressionState.SelfCorrect context.snd self names →
@@ -2391,7 +2390,6 @@ table final, after which universe compilation does not grow it
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         Ix.CompileCert.ExpressionState.SelfCorrect context.snd self names →
@@ -2463,12 +2461,11 @@ fun state => Ix.Sharing.Verify.BlockWireTablesWF state ∧ state.univsFinal = tr
 /-- info: def Ix.CompileCert.EmissionWire.Safe : {α : Type} →
   Ix.CompileM.CompileM α → (optParam (α → Prop) fun x => True) → Prop :=
 fun {α} action post =>
-  ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-    context.fst.surgeryFree = true →
-      ∀ (before : Ix.CompileM.BlockState) (value : α) (after : Ix.CompileM.BlockState),
-        Ix.CompileCert.EmissionWire.Valid before →
-          Ix.CompileCert.rawRun action context before = (Except.ok value, after) →
-            Ix.CompileCert.EmissionWire.Valid after ∧ post value -/
+  ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) (before : Ix.CompileM.BlockState) (value : α)
+    (after : Ix.CompileM.BlockState),
+    Ix.CompileCert.EmissionWire.Valid before →
+      Ix.CompileCert.rawRun action context before = (Except.ok value, after) →
+        Ix.CompileCert.EmissionWire.Valid after ∧ post value -/
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.EmissionWire.Safe
 
@@ -2602,7 +2599,6 @@ fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state �
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.Def),
@@ -2636,7 +2632,6 @@ fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state �
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.RecursorVal),
@@ -2714,7 +2709,6 @@ fun source =>
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.Def),
@@ -2742,13 +2736,11 @@ fun source =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionBlocks.definitionInfo_correct
 
-/-- info: Ix.CompileCert.EmissionBlocks.definitionInfo_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (source : Ix.Def) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source) context before =
-            (Except.ok output, after) →
-          Ix.Sharing.Verify.BlockResultCodecWF output -/
+/-- info: Ix.CompileCert.EmissionBlocks.definitionInfo_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (source : Ix.Def) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source) context before = (Except.ok output, after) →
+      Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionBlocks.definitionInfo_codec
 
@@ -2785,32 +2777,29 @@ and for a mutual block, a successful compile from tables on the wire returns a
 block that decodes exactly. Every lemma behind them is audited in
 `Ix.CompileCert.ReadingAudit`. -/
 
-/-- info: Ix.CompileCert.EmissionDispatch.constant_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (info : Ix.ConstantInfo) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before = (Except.ok output, after) →
-          Ix.Sharing.Verify.BlockResultCodecWF output -/
+/-- info: Ix.CompileCert.EmissionDispatch.constant_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (info : Ix.ConstantInfo) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before = (Except.ok output, after) →
+      Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionDispatch.constant_codec
 
-/-- info: Ix.CompileCert.EmissionDispatch.mutualBlock_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (classes : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
-          Ix.Sharing.Verify.BlockResultCodecWF output -/
+/-- info: Ix.CompileCert.EmissionDispatch.mutualBlock_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (classes : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
+      Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionDispatch.mutualBlock_codec
 
-/-- info: Ix.CompileCert.EmissionDispatch.definition_run : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (info : Ix.ConstantInfo) (source : Ix.Def),
-      Ix.CompileCert.EmissionDispatch.sourceData info = some source →
-        ∀ (state : Ix.CompileM.BlockState),
-          Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context state =
-            Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source)
-              (Ix.CompileCert.EmissionDispatch.singletonContext source.name context) state -/
+/-- info: Ix.CompileCert.EmissionDispatch.definition_run : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (info : Ix.ConstantInfo) (source : Ix.Def),
+  Ix.CompileCert.EmissionDispatch.sourceData info = some source →
+    ∀ (state : Ix.CompileM.BlockState),
+      Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context state =
+        Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source)
+          (Ix.CompileCert.EmissionDispatch.singletonContext source.name context) state -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionDispatch.definition_run
 
@@ -2839,7 +2828,6 @@ declined. Every lemma behind them is audited in
 /-- info: @Ix.CompileCert.DefinitionReading.constant_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (info : Ix.ConstantInfo) (source : Ix.Def),
@@ -2877,7 +2865,6 @@ declined. Every lemma behind them is audited in
 /-- info: @Ix.CompileCert.HeaderReading.axiom_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.AxiomVal) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult}
@@ -2987,7 +2974,6 @@ recursor's result-variable walk is the source's
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.RecursorVal),
@@ -3127,23 +3113,21 @@ fun sources =>
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.MutualProjections.ClassesAgree
 
-/-- info: Ix.CompileCert.MutualArtifact.mutual_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (sources : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
-          Ix.CompileCert.MutualProjections.ClassesAgree sources →
-            (∀ (source : Ix.MutConst),
-                source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
-              Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before =
-                  (Except.ok output, after) →
-                Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                  Ix.CompileCert.MutualProjections.ProjectionWire output ∧
-                    ∀ (store : Ix.Kernel.Reader.Store),
-                      store output.blockAddr = some output.block →
-                        Ix.CompileCert.MutualProjections.readRows store
-                            (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
-                          Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr sources -/
+/-- info: Ix.CompileCert.MutualArtifact.mutual_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (sources : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
+      Ix.CompileCert.MutualProjections.ClassesAgree sources →
+        (∀ (source : Ix.MutConst),
+            source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
+          Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before = (Except.ok output, after) →
+            Ix.Sharing.Verify.BlockResultCodecWF output ∧
+              Ix.CompileCert.MutualProjections.ProjectionWire output ∧
+                ∀ (store : Ix.Kernel.Reader.Store),
+                  store output.blockAddr = some output.block →
+                    Ix.CompileCert.MutualProjections.readRows store
+                        (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
+                      Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr sources -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.MutualArtifact.mutual_correct
 
@@ -3280,7 +3264,6 @@ fun constructors =>
 /-- info: @Ix.CompileCert.InductiveReading.inductive_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.InductiveVal) (constructors : Array Ix.ConstructorVal) {before after : Ix.CompileM.BlockState}
@@ -3387,28 +3370,27 @@ fun env first =>
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.SourceConstructorPositions.Admits
 
-/-- info: Ix.CompileCert.SourceConstructorPositions.source_premises : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ {env : Ix.Environment} {first : Ix.InductiveVal},
-      Ix.CompileCert.SourceConstructorPositions.Admits env first →
-        ∀ {source : Ix.InductiveVal},
-          source.cnst.name ∈ first.all.toList →
-            env.consts.get? source.cnst.name = some (Ix.ConstantInfo.inductInfo source) →
-              (∀ (n : Ix.Name), n ∈ source.ctors.toList → context.fst.env.get? n = env.consts.get? n) →
-                ∀ {constructors : Array Ix.ConstructorVal} {before : Ix.CompileM.BlockState},
-                  (Ix.CompileCert.rawRun (Ix.CompileM.lookupInductiveConstructors source)
-                          (Ix.CompileCert.EmissionDispatch.singletonContext source.cnst.name context) before).fst =
-                      Except.ok constructors →
-                    source.isUnsafe = false ∧
-                      (∀ (ctor : Ix.ConstructorVal), ctor ∈ constructors.toList → ctor.isUnsafe = false) ∧
-                        (∀ (j : Nat) (inside : j < constructors.size), constructors[j].cidx = j) ∧
-                          ∀ (ctor : Ix.ConstructorVal),
-                            ctor ∈ constructors.toList →
-                              ∃ types body,
-                                Ix.CompileCert.ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields)
-                                      ctor.cnst.type =
-                                    some (types, body) ∧
-                                  Ix.CompileCert.ReaderSourceSpines.SourceNonForall body -/
+/-- info: Ix.CompileCert.SourceConstructorPositions.source_premises : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  {env : Ix.Environment} {first : Ix.InductiveVal},
+  Ix.CompileCert.SourceConstructorPositions.Admits env first →
+    ∀ {source : Ix.InductiveVal},
+      source.cnst.name ∈ first.all.toList →
+        env.consts.get? source.cnst.name = some (Ix.ConstantInfo.inductInfo source) →
+          (∀ (n : Ix.Name), n ∈ source.ctors.toList → context.fst.env.get? n = env.consts.get? n) →
+            ∀ {constructors : Array Ix.ConstructorVal} {before : Ix.CompileM.BlockState},
+              (Ix.CompileCert.rawRun (Ix.CompileM.lookupInductiveConstructors source)
+                      (Ix.CompileCert.EmissionDispatch.singletonContext source.cnst.name context) before).fst =
+                  Except.ok constructors →
+                source.isUnsafe = false ∧
+                  (∀ (ctor : Ix.ConstructorVal), ctor ∈ constructors.toList → ctor.isUnsafe = false) ∧
+                    (∀ (j : Nat) (inside : j < constructors.size), constructors[j].cidx = j) ∧
+                      ∀ (ctor : Ix.ConstructorVal),
+                        ctor ∈ constructors.toList →
+                          ∃ types body,
+                            Ix.CompileCert.ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields)
+                                  ctor.cnst.type =
+                                some (types, body) ∧
+                              Ix.CompileCert.ReaderSourceSpines.SourceNonForall body -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.SourceConstructorPositions.source_premises
 

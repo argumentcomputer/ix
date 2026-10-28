@@ -242,7 +242,7 @@ theorem lone_projections {context : CompileEnv × BlockEnv} {before after : Bloc
     {r : Ix.RecursorVal}
     (ran : rawRun (compileConstantInfo (.recInfo r)) context before = (.ok output, after)) :
     output.projections = #[] := by
-  rw [EmissionDispatch.recursor_run context rfl r before] at ran
+  rw [EmissionDispatch.recursor_run context r before] at ran
   unfold compileRecursorInfo at ran
   obtain ⟨_, _, _, compiled⟩ := bind_ok ran
   unfold compileRecursorBlock at compiled
@@ -700,7 +700,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
       ∃ r ∈ recs.toList, ∃ e ∈ BlockEmission.memberSources (.recr r), GraphWalk.Refs m e) published₂ m k hm h
   -- the constructors' count fits the wire: the inductive block keeps its sources' headers
   obtain ⟨targets, -, hT⟩ := InductiveCompile.inductiveBlock_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b)
-    (cenv₁, benv₁) rfl (fun _ => rfl) external₁ (indsOf types ctors)
+    (cenv₁, benv₁) (fun _ => rfl) external₁ (indsOf types ctors)
     (fun k hk => by
       refine .inl ⟨⟨k, by omega, ?_⟩, ?_⟩
       · simp [indsOf, InductiveCompile.indOf]
@@ -768,7 +768,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
       (InductiveUnits.srcKey (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) r₀.cnst.name) rlps
       (rlps.size == first.cnst.levelParams.size + 1) recs.toList out₂.block := by
     rcases ran₂ with ranM | ⟨r, hr1, -, ranL⟩
-    · exact InductiveCompile.mutualFamily_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) (cenv₂, benv₂) rfl
+    · exact InductiveCompile.mutualFamily_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) (cenv₂, benv₂)
         (fun _ => rfl) external₂ recs.toList (fun j hj => .inl ⟨⟨j, by simpa using hj, by simp⟩, rfl⟩)
         (fun r hr e he n key hn h => agree₂ n key ⟨r, hr, e, he, hn⟩ h) hrne rlps recLpsEq _ out₂.blockAddr hkey₀
         (fun j hj => by
@@ -779,7 +779,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     · rw [hrs] at hr1
       obtain ⟨rfl, rfl⟩ := List.cons.inj hr1
       rw [hrs]
-      exact InductiveCompile.loneRecursor_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) (cenv₂, benv₂) rfl
+      exact InductiveCompile.loneRecursor_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) (cenv₂, benv₂)
         (fun _ => rfl) external₂ r₀ _ (.inl ⟨⟨0, h0, by rw [hrec0]⟩, rfl⟩)
         (fun e he n k hn h => agree₂ n k ⟨r₀, by rw [hrs]; exact List.mem_cons_self, e, he, hn⟩ h) rlps
         (recLpsEq r₀ (by rw [hrs]; exact List.mem_cons_self)) _ out₂.blockAddr BlockStart.clean_empty ranL refs₂
@@ -808,7 +808,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
   exact InductiveCompile.compiled_inductive_unit_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b)
     (P := KeyScope.ofId (QRepAt ixe (roleAtMap t))) (fun _ _ => trivial) hf src hfirst hcsize lpsEq ctorLps nodup
     positions recLpsEq recNodup distinct noCtor
-    (cenv₁, benv₁) rfl (fun _ => rfl) external₁ (fun i hi => .inl ⟨⟨i, hi, rfl⟩, rfl⟩)
+    (cenv₁, benv₁) (fun _ => rfl) external₁ (fun i hi => .inl ⟨⟨i, hi, rfl⟩, rfl⟩)
     (fun i hi e he n key hn h => agree₁ n key ⟨i, hi, e, he, hn⟩ h) BlockStart.clean_empty ran₁
     (closureContext ixe t preA order) out₁.blockAddr out₂.blockAddr
     (ClosureKeying.closure_store corder.nodup hB₂ stored₂)

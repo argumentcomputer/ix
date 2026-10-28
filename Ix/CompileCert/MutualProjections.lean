@@ -21,8 +21,7 @@ CT-15's `MutualProjections` (R9a), ported from the donor `a9cf3607`:
   declare their positions (`ConstructorPositions`).
 
 Adapted: `Address.admissionHash` for `Address.blake3`, the mutual
-finisher's inversion (`ProjectionLayout.finish_mutual_ok`), dispatch under
-`surgeryFree`. -/
+finisher's inversion (`ProjectionLayout.finish_mutual_ok`). -/
 
 namespace Ix.CompileCert.MutualProjections
 
@@ -296,13 +295,13 @@ theorem mutual_projection_wire (sources : List (List MutConst)) :
 /-- **A mutual block and all its projections decode exactly**: under an
 environment without Pass 3 records, a successful compile from a state
 whose tables are on the wire. -/
-theorem mutual_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem mutual_codec (context : CompileEnv × BlockEnv)
     (sources : List (List MutConst)) {before after : BlockState} {output : BlockResult}
     (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
     (ran : rawRun (compileMutualBlock sources) context before = (.ok output, after)) :
     Ix.Sharing.Verify.BlockResultCodecWF output ∧ ProjectionWire output ∧
       ∀ row ∈ output.projections, Ixon.deConstant (Ixon.ser row.2.1) = .ok row.2.1 := by
-  have main := EmissionDispatch.mutualBlock_codec context free sources wire ran
+  have main := EmissionDispatch.mutualBlock_codec context sources wire ran
   have projections := mutual_projection_wire sources context before output after ran main.1
   exact ⟨main, projections, fun row present => Ixon.Verify.deConstant_serConstant row.2.1 (projections row present)⟩
 

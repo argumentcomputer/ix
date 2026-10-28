@@ -145,7 +145,7 @@ abbrev rel (lps : List Ix.Name) : Ix.Expr → CExpr md → Prop :=
   Related names (LevelMeaning lps σ param)
 
 /-- **One member, compiled from a clean state, keeps its skeleton and reads its roots.** -/
-theorem member_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem member_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (m : MutConst)
     (scope : ∀ e ∈ memberSources m, ConstsSatisfy (SelfName context.2 self names) e)
@@ -160,7 +160,7 @@ theorem member_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
   | defn d =>
     obtain ⟨out, outRan, hp⟩ := member_defn d ran
     obtain ⟨cleanD, growth, shape, roots, read⟩ := Emission.definition_correct cx param self names σ bindings
-      (Emission.current d.name context) free aligned external d (scope _ (by simp [memberSources]))
+      (Emission.current d.name context) aligned external d (scope _ (by simp [memberSources]))
       (scope _ (by simp [memberSources])) good outRan
     refine ⟨cleanD, growth, ⟨out.1, hp, shape⟩, ?_⟩
     rw [hp]
@@ -168,7 +168,7 @@ theorem member_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
   | indc i =>
     obtain ⟨out, outRan, hp⟩ := member_indc i ran
     obtain ⟨cleanD, growth, shape, ctorShapes, _, read⟩ := Emission.inductiveData_correct cx param self names σ
-      bindings (Emission.current i.name context) free aligned external i (scope _ (by simp [memberSources]))
+      bindings (Emission.current i.name context) aligned external i (scope _ (by simp [memberSources]))
       (fun ctor hc => scope _ (by simp only [memberSources, List.mem_cons, List.mem_map]; exact .inr ⟨ctor, hc, rfl⟩))
       good outRan
     obtain ⟨header, ctorHeaders, -⟩ := ProjectionLayout.inductiveData_headers i _ _ _ _ outRan
@@ -178,7 +178,7 @@ theorem member_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
   | recr r =>
     obtain ⟨out, outRan, hp⟩ := member_recr r ran
     obtain ⟨cleanD, growth, shape, fields, _, read⟩ := Emission.recursor_correct cx param self names σ bindings
-      (Emission.current r.cnst.name context) free aligned external r (scope _ (by simp [memberSources]))
+      (Emission.current r.cnst.name context) aligned external r (scope _ (by simp [memberSources]))
       (fun rule hr => scope _ (by simp only [memberSources, List.mem_cons, List.mem_map]; exact .inr ⟨rule, hr, rfl⟩))
       good outRan
     refine ⟨cleanD, growth, ⟨out.1, hp, shape, fields, recursor_headers r _ _ _ _ outRan⟩, ?_⟩
@@ -187,7 +187,7 @@ theorem member_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
 
 /-- **The members of a block, one per class, compiled from a clean state**: each keeps its
 skeleton, and the final in-flight reader reads every member's roots, in member order. -/
-theorem classes_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem classes_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (lps : List Ix.Name) :
     ∀ (ms : List MutConst) (acc : MutConstCompileState) {before after : BlockState}
@@ -213,9 +213,9 @@ theorem classes_correct (context : CompileEnv × BlockEnv) (free : context.1.sur
     rw [compileEquivalentMutConsts, rawRun_pure] at equivRan
     cases equivRan
     have hm := hlps m List.mem_cons_self
-    obtain ⟨clean₁, growth₁, payload₁, roots₁⟩ := member_correct cx param self names σ bindings context free
+    obtain ⟨clean₁, growth₁, payload₁, roots₁⟩ := member_correct cx param self names σ bindings context
       aligned external m (scopes m List.mem_cons_self) (by rw [hm]; exact good) memberRan
-    obtain ⟨growth₂, ps, hps, payloads, roots₂⟩ := classes_correct context free aligned external lps ms
+    obtain ⟨growth₂, ps, hps, payloads, roots₂⟩ := classes_correct context aligned external lps ms
       _ (fun m' hm => hlps m' (List.mem_cons_of_mem _ hm))
       (fun m' hm => scopes m' (List.mem_cons_of_mem _ hm)) (clean₁.good cx param self _) restRan
     refine ⟨extends_trans growth₁ growth₂, member.payload :: ps, ?_, .cons payload₁ payloads, ?_⟩
@@ -250,7 +250,7 @@ theorem blockInfo_roots (ps : List Ixon.MutConst) :
 /-- **A block compiled one member per class reads back as its sources**: the emitted record
 keeps its payloads' skeletons, and its member reader reads every member's roots, in member
 order, as terms related to the members' sources. -/
-theorem mutualBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem mutualBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (ms : List MutConst) (lps : List Ix.Name)
     (hlps : ∀ m ∈ ms, memberLps m = lps)
@@ -277,7 +277,7 @@ theorem mutualBlock_correct (context : CompileEnv × BlockEnv) (free : context.1
   rw [rawRun_pure] at finish
   cases finish
   obtain ⟨_, ps, hps, payloads, roots⟩ := classes_correct cx param self names σ bindings
-    (mutContext (ms.map ([·])) context) free aligned external lps ms {} hlps scopes kept.1 classesRan
+    (mutContext (ms.map ([·])) context) aligned external lps ms {} hlps scopes kept.1 classesRan
   obtain ⟨same, _, built⟩ := ProjectionLayout.finish_mutual_ok _ _ _ _ finished
   subst same
   simp only [hps] at built

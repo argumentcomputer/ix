@@ -186,7 +186,7 @@ theorem compileExprNoSurgery_read {md : Mode} (cx : Ctx md) (param : Nat → Lev
 
 /-- **The production expression compiler is the ordinary one.** -/
 theorem compileExpr_surgeryFree (source : Ix.Expr) (context : CompileEnv × BlockEnv)
-    (_free : context.1.surgeryFree = true) (before : BlockState) :
+    (before : BlockState) :
     rawRun (compileExpr source) context before = rawRun (compileExprNoSurgery source) context before :=
   rfl
 
@@ -194,7 +194,6 @@ theorem compileExpr_surgeryFree (source : Ix.Expr) (context : CompileEnv × Bloc
 theorem compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)
-    (free : context.1.surgeryFree = true)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (selfSound : SelfCorrect context.2 self names)
     (source : Ix.Expr) (before : BlockState)
@@ -203,7 +202,7 @@ theorem compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (ran : rawRun (compileExpr source) context before = (.ok value, after)) :
     ∃ target, Related names (LevelMeaning context.2.univCtx σ param) source target ∧
       (ExpressionRead.blockReader cx param self after).read value.1 = .ok target := by
-  rw [compileExpr_surgeryFree source context free] at ran
+  rw [compileExpr_surgeryFree source context] at ran
   exact compileExprNoSurgery_read cx param self names σ bindings context aligned external selfSound source
     before good ran
 

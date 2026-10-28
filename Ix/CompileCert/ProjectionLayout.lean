@@ -559,15 +559,15 @@ theorem familyInfo_layout (source : InductiveVal) (constructors : Array Construc
 
 /-- **Public dispatch of an inductive** returns its standalone family's
 layout, over the constructors the dispatch resolves. -/
-theorem dispatch_layout (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem dispatch_layout (context : CompileEnv × BlockEnv)
     (source : InductiveVal) {before after : BlockState} {output : BlockResult}
     (ran : rawRun (compileConstantInfo (.inductInfo source)) context before = (.ok output, after)) :
     ∃ constructors, rawRun (lookupInductiveConstructors source)
         (EmissionDispatch.singletonContext source.cnst.name context) before = (.ok constructors, before) ∧
       InductiveLayout source constructors output := by
-  rw [EmissionDispatch.inductive_run context free] at ran
+  rw [EmissionDispatch.inductive_run context] at ran
   obtain ⟨constructors, found, compiled⟩ :=
-    EmissionDispatch.family_run (EmissionDispatch.singletonContext source.cnst.name context) free source ran
+    EmissionDispatch.family_run (EmissionDispatch.singletonContext source.cnst.name context) source ran
   exact ⟨constructors, found, familyInfo_layout source constructors _ before output after compiled⟩
 
 /-! ## The family's projections resolve -/

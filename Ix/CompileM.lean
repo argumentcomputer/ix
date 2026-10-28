@@ -795,11 +795,6 @@ theorem decomposeApps_app_mem_lt (fn arg : Expr) (hash : Address) {x : Expr}
   have small := decomposeApps.go_mem (.app fn arg hash) #[] mem
   simpa only [Array.not_mem_empty, or_false] using small
 
-/-- Whether expression compilation takes the kernel-visible ordinary path.
-    It always does: the compiler writes no decompile records. The reading
-    theorems keep it as a premise, which holds by `rfl`. -/
-def CompileEnv.surgeryFree (_env : CompileEnv) : Bool := true
-
 /-- One cache-miss step of ordinary expression compilation, parameterized by
     the recursive compiler, which it calls only on strict source subterms of
     `e` (the bound is its argument). Factoring the constructor transition
