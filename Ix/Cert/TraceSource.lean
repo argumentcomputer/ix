@@ -3,6 +3,7 @@ import Ix.Cert.DefinitionPremises
 import Ix.CompileCert.CanonUnivScope
 import Ix.Cert.NoCtor
 import Ix.Cert.FamilyGroups
+import Ix.Cert.CheckedConsts
 
 /-! # Quotient Source's side of the trace's segments
 
@@ -20,6 +21,10 @@ that come from quotient Source's acceptance of its prepared stream.
   level parameters are distinct. Its record matches its pin canonically; `Quot.lift`'s pin has
   two parameters and its canonical type mentions the second, which a term numbered under two
   equal names cannot (`pinned_quot_nodup`).
+* `axiom_noSelf`, `quotient_noSelf` (`HeaderNeeds.noSelf`): a kept axiom's or quotient constant's
+  type names no constant by its own name. The checker's front door accepts an axiom only in an
+  environment without it that holds every constant of its type (`CheckedConsts`), and installs
+  the pinned records only when they match pins whose types do not name them.
 * `inductive_noCtor` (`InductiveNeeds.noCtor`): no constructor of a kept inductive group occurs in
   its types or its constructors' types, for any number of types: the checker's shape guard on
   the group's `indDecl` (`Semantics.checkDecl_noCtor`), back through the renaming and the
@@ -505,6 +510,141 @@ theorem quotient_nodup {μ : CheckMode} {ev : Evidences .source} {envS : Env .so
   · cases he
 
 end Positions
+
+/-! ## Axioms and quotient constants: no self-reference
+
+The checker installs an axiom through its front door, whose environment does not hold the axiom
+and holds every constant of its type (`CheckedConsts.constantValRun_noSelf`), or compares the
+pinned quotient soundness record with its pin; it installs a quotient constant only when it
+matches its pin. No pin's type names the pin. So a kept axiom's or quotient constant's type
+names no constant by its own name (`axiom_noSelf`, `quotient_noSelf`). -/
+
+section NoSelf
+
+open Ix.LeanIngress (Numbering ingressExpr ingressKey quotKindOf)
+open Ix.Cert.CheckedConsts (ConstsAll constsAll_of_mentions constsAll_canonExpr)
+
+/-- No quotient pin's canonical type names the pin. -/
+theorem quotPin_noSelf (k : Ix.Kernel.QuotKind) :
+    (canonExpr (canonNameMap ((BasisKind.quotK.decls (md := .source)).getD k.slot
+        (.axiomInfo default)).toConstantVal.levelParams)
+      ((BasisKind.quotK.decls (md := .source)).getD k.slot (.axiomInfo default)).toConstantVal.type).mentionsConst
+      ((BasisKind.quotK.decls (md := .source)).getD k.slot (.axiomInfo default)).toConstantVal.name = false := by
+  cases k <;> decide
+
+/-- The pinned quotient soundness axiom's canonical type does not name it. -/
+theorem quotSoundPin_noSelf :
+    (Ix.Kernel.ConstantInfo.canon (quotBasis.getD 4 (.axiomInfo default) : Ix.Kernel.ConstantInfo .source)
+      ).toConstantVal.type.mentionsConst
+      quotSoundName = false := by
+  decide
+
+/-- **An accepted axiom's type names no constant by the axiom's name**: the front door's
+environment does not hold it and holds every constant of its type, or it is the pinned
+quotient soundness record, which matches its pin canonically. -/
+theorem accepted_axiom_noSelf {μ : CheckMode} {ev : Evidences .source} {ds : List (Declaration .source)}
+    {env : Env .source} (h : Cached.AcceptsRef μ ev ds env) {cv : Ix.Kernel.ConstantVal .source}
+    (hd : .axiomDecl cv ∈ ds) : ConstsAll (· ≠ cv.name) cv.type := by
+  obtain ⟨F, hF⟩ := h
+  unfold checkDeclsPure at hF
+  obtain ⟨e, e', he⟩ := DefinitionPremises.foldlM_steps _ ds _ env hF _ hd
+  by_cases hq : cv.name = quotSoundName
+  · simp only [checkDecl, hq, ↓reduceIte] at he
+    split at he
+    · rename_i hc
+      have hc' := of_decide_eq_true hc
+      have hty : canonExpr (canonNameMap cv.levelParams) cv.type =
+          (Ix.Kernel.ConstantInfo.canon (quotBasis.getD 4 (.axiomInfo default))).toConstantVal.type :=
+        congrArg (fun c => c.toConstantVal.type) hc'
+      have hpin := quotSoundPin_noSelf
+      rw [← hty] at hpin
+      rw [hq]
+      exact (constsAll_canonExpr _).mp (constsAll_of_mentions hpin)
+    · cases he
+  · have run := Semantics.checkDeclRun_ofEnvFactsE he
+    rcases run with ⟨hn, -⟩ | ⟨type', hcv, -⟩
+    · exact absurd hn hq
+    · exact CheckedConsts.constantValRun_noSelf hcv
+
+/-- **A quotient header whose type names no constant by its key comes from a source type that
+names no constant by its name.** -/
+theorem noSelf_of_header {ρ : FiberMap} {σ : Numbering} {name : Ix.Name} {e : Ix.Expr}
+    {t' : Ix.Kernel.Expr .source} (ht' : ingressExpr σ.pos e = .ok t')
+    (h : ConstsAll (· ≠ (RecordReadings.quotientHeader ρ ⟨ingressKey name, σ.params, t'⟩).name)
+      (RecordReadings.quotientHeader ρ ⟨ingressKey name, σ.params, t'⟩).type) :
+    Ix.CompileCert.ExpressionState.ConstsSatisfy (fun m => m ≠ name) e := by
+  simp only [RecordReadings.quotientHeader_eq, CheckedConsts.constsAll_mapLevels,
+    CheckedConsts.constsAll_substKeys] at h
+  exact Ix.CompileCert.ExpressionState.constsSatisfy_mono (fun n hn same => hn (by rw [same]))
+    _ ((CheckedConsts.ingress_constsAll ht').mp h)
+
+/-- **A kept axiom's type names no constant by its name** (`HeaderNeeds.noSelf` for axioms),
+when the prepared stream is accepted. -/
+theorem axiom_noSelf {μ : CheckMode} {ev : Evidences .source} {envS : Env .source} {pre : Prelude .source}
+    {decls ds : Array (Declaration .source)} {rs : List (Read .source)}
+    (acc : Cached.AcceptsRef μ ev ds.toList envS)
+    (hflat : decls.toList = rs.flatMap (·.decls.toList)) (hds : ds = Frontend.preparePrelude pre.ix decls)
+    {g : Graph} {ρ : FiberMap} {hints : CName .source → Option ReducibilityHint} {start : State .source}
+    {ls : List Scheduled} {ℓ : Nat} {y : Scheduled} {v : Ix.AxiomVal} {c : Converted} {stS : State .source}
+    {raw rd : Read .source} (low : LoweredAt g ρ hints start ls rs ℓ y (.axiom v) c stS raw rd) :
+    rd = raw → Ix.CompileCert.ExpressionState.ConstsSatisfy (fun m => m ≠ v.cnst.name) v.cnst.type := by
+  intro e
+  obtain ⟨-, hr, -, hconv, -, -, hl, -⟩ := low
+  obtain ⟨t', -, ht', rfl⟩ := RecordReadings.convert_axiom hconv
+  have unfolded : Ix.LeanIngress.lower stS (((Converted.axiom
+      ⟨ingressKey v.cnst.name, (Numbering.mk v.cnst.levelParams false).params, t'⟩).withHints hints).quotient ρ) =
+      .ok { decls := #[.axiomDecl (RecordReadings.quotientHeader ρ
+        ⟨ingressKey v.cnst.name, (Numbering.mk v.cnst.levelParams false).params, t'⟩)] } := rfl
+  have hraw := Except.ok.inj (unfolded.symm.trans hl)
+  subst e
+  have hmem := kept_mem hflat hds hr (d := .axiomDecl (RecordReadings.quotientHeader ρ
+    ⟨ingressKey v.cnst.name, (Numbering.mk v.cnst.levelParams false).params, t'⟩)) (by rw [← hraw]; simp)
+  exact noSelf_of_header ht' (accepted_axiom_noSelf acc hmem)
+
+/-- **A kept quotient constant's type names no constant by its name** (`HeaderNeeds.noSelf` for
+quotient constants), when the prepared stream is accepted: the checker installs it only when it
+matches its pin canonically, which keeps its name and its type's constants. -/
+theorem quotient_noSelf {μ : CheckMode} {ev : Evidences .source} {envS : Env .source} {pre : Prelude .source}
+    {decls ds : Array (Declaration .source)} {rs : List (Read .source)}
+    (acc : Cached.AcceptsRef μ ev ds.toList envS)
+    (hflat : decls.toList = rs.flatMap (·.decls.toList)) (hds : ds = Frontend.preparePrelude pre.ix decls)
+    {g : Graph} {ρ : FiberMap} {hints : CName .source → Option ReducibilityHint} {start : State .source}
+    {ls : List Scheduled} {ℓ : Nat} {y : Scheduled} {v : Ix.QuotVal} {c : Converted} {stS : State .source}
+    {raw rd : Read .source} (low : LoweredAt g ρ hints start ls rs ℓ y (.quot v) c stS raw rd) :
+    rd = raw → Ix.CompileCert.ExpressionState.ConstsSatisfy (fun m => m ≠ v.cnst.name) v.cnst.type := by
+  intro e
+  obtain ⟨-, hr, -, hconv, -, -, hl, -⟩ := low
+  obtain ⟨t', ht', rfl⟩ := RecordReadings.convert_quot hconv
+  have unfolded : Ix.LeanIngress.lower stS (((Converted.quot (quotKindOf v.kind)
+      ⟨ingressKey v.cnst.name, (Numbering.mk v.cnst.levelParams false).params, t'⟩).withHints
+        hints).quotient ρ) =
+      .ok { decls := #[.quotDecl (quotKindOf v.kind) (RecordReadings.quotientHeader ρ
+        ⟨ingressKey v.cnst.name, (Numbering.mk v.cnst.levelParams false).params, t'⟩)] } :=
+    rfl
+  have hraw := Except.ok.inj (unfolded.symm.trans hl)
+  subst e
+  have hmem := kept_mem hflat hds hr (d := .quotDecl (quotKindOf v.kind)
+    (RecordReadings.quotientHeader ρ
+      ⟨ingressKey v.cnst.name, (Numbering.mk v.cnst.levelParams false).params, t'⟩))
+    (by rw [← hraw]; simp)
+  obtain ⟨F, hF⟩ := acc
+  unfold checkDeclsPure at hF
+  obtain ⟨e₀, e₁, he⟩ := DefinitionPremises.foldlM_steps _ _ _ _ hF _ hmem
+  simp only [checkDecl] at he
+  split at he
+  · rename_i hpin
+    refine noSelf_of_header (ρ := ρ) ht' ?_
+    unfold quotPinHit ConstantVal.canonEq at hpin
+    have hc := of_decide_eq_true hpin
+    have hname := congrArg Ix.Kernel.ConstantVal.name hc
+    have hty := congrArg Ix.Kernel.ConstantVal.type hc
+    simp only [Ix.Kernel.ConstantVal.canon] at hname hty
+    have hself := quotPin_noSelf (quotKindOf v.kind)
+    rw [← hty, ← hname] at hself
+    exact (constsAll_canonExpr _).mp (constsAll_of_mentions hself)
+  · cases he
+
+end NoSelf
 
 /-! ## Inductive groups: no constructor in the family's types -/
 
@@ -1156,5 +1296,17 @@ info: 'Ix.Cert.TraceSource.family_levels' depends on axioms: [propext, Classical
 -/
 #guard_msgs in
 #print axioms family_levels
+
+/--
+info: 'Ix.Cert.TraceSource.axiom_noSelf' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms axiom_noSelf
+
+/--
+info: 'Ix.Cert.TraceSource.quotient_noSelf' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms quotient_noSelf
 
 end Ix.Cert.TraceSource
