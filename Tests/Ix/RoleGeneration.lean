@@ -128,8 +128,7 @@ private def checks (operation : Role) : Except String Unit := do
   need "raw record authentication precedes generation"
     (!(Ix.RoleBinding.generate limits unauthenticated certificates required Ix.Kernel.preludeShape).isOk)
 
-  -- An empty input cannot make its old records reject before these new-record
-  -- limits are tested. This reference-free definition is Prop : Type.
+  -- This reference-free definition is Prop : Type.
   let small : Constant := {
     sharing := #[], refs := #[], univs := #[.zero, .succ .zero]
     info := .defn { kind := .defn, safety := .safe, lvls := 0, typ := .sort 1, value := .sort 0 }
@@ -146,16 +145,17 @@ private def checks (operation : Role) : Except String Unit := do
     ((← serEnv closureArtifact) == (← serEnv fullArtifact))
   let malformedBytes := ByteArray.mk #[255]
   let malformedAddress := Address.admissionHash malformedBytes
-  let malformed := { larger with consts := larger.consts.insert malformedAddress
-    { buf := malformedBytes, len := malformedBytes.size } }
+  let malformedRecord : LazyConstant := { buf := malformedBytes, len := malformedBytes.size }
+  let malformed := { larger with consts := larger.consts.insert malformedAddress malformedRecord }
   need "whole-artifact validation refuses an authenticated malformed orphan"
     (!(Ix.RoleBinding.checkedStore limits malformed).isOk)
   let paddedBytes := smallBytes.push 0
   let paddedAddress := Address.admissionHash paddedBytes
-  let noncanonical := { larger with consts := larger.consts.insert paddedAddress
-    { buf := paddedBytes, len := paddedBytes.size } }
+  let paddedRecord : LazyConstant := { buf := paddedBytes, len := paddedBytes.size }
+  let noncanonical := { larger with consts := larger.consts.insert paddedAddress paddedRecord }
   need "whole-artifact validation refuses an authenticated noncanonical orphan"
     (!(Ix.RoleBinding.checkedStore limits noncanonical).isOk)
+  -- An empty input cannot make its old records reject before new-record limits.
   let separate : Ix.RoleBinding.Generated := {
     publication := { bound := #[], refs := {} }
     table := { version := Ix.Kernel.specVersion, bound := #[], evidence := #[] }
