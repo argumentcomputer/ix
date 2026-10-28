@@ -1,31 +1,13 @@
 import Ix.CompileCert.EmissionDispatch
 
-/-! # Mutual layout: the folds' shapes, the write-back, the family's projections
+/-! # Mutual layout: payload shapes, sharing and family projections
 
-What the compiler's folds keep of the source, and what the sharing
-build's write-back keeps of the payload (CT-15's `ProjectionLayout`, R9a):
-
-* the constructor fold keeps every constructor's header, as natural numbers
-  (`constructors_headers`), and its registration name;
-* the class fold retains one payload per class, its first member, so a
-  mutual payload has one member per class with the representative's kind
-  and constructor positions (`payload_shapes`, `payload_count`), and the
-  mutual guard bounds the class count (`mutual_block_capacity`);
-* the write-back keeps every member's kind and constructor positions
-  (`writeback_shape`, `sharing_shape`): both are fields `erase` keeps, so
-  they follow from R7b's one inversion (`SharingRoots.withRoots_inv`,
-  `build_roots`);
-* the standalone inductive family's block is `.muts #[.indc target]` with
-  the source's constructor positions (`family_layout`), and its projection
-  records resolve under the certified reader to the block's member and its
-  constructors (`inductive_projection_resolves`,
-  `constructor_projection_resolves`).
-
-Ported from the donor `a9cf3607`, adapted: `Emission.Yields` for the
-donor's `DeclarationHeaders.Returns`, `Address.admissionHash` for
-`Address.blake3`, the write-back facts through `erase` (R07-17), no
-`timedC`/`PhaseTimers`, and the mutual block's plan-head audit passed over
-(a successful run passed it). -/
+The ordered member fold preserves each source member's kind and constructor
+positions. Its successful payload count is bounded by the mutual wire guard.
+Sharing's write-back preserves those shapes. The standalone inductive family
+uses the same layout, so its member and constructor projections resolve under
+the certified reader to the corresponding source positions.
+-/
 
 namespace Ix.CompileCert.ProjectionLayout
 
@@ -93,64 +75,33 @@ theorem constructors_layout (sources : List ConstructorVal) (initial : Inductive
   refine ⟨?_, names⟩
   rw [ctors, List.map_append, headers_indices headers]
 
-/-! ## Class and payload counts -/
+/-! ## Member and payload counts -/
 
-theorem equivalents_count (sources : List MutConst) (initial : MutConstCompileState) :
-    Emission.Yields (compileEquivalentMutConsts sources initial)
-      (fun output => output.payloads.size = initial.payloads.size) := by
+theorem members_count (sources : List MutConst) (initial : MutConstCompileState) :
+    Emission.Yields (compileMutConstMembers sources initial)
+      (fun output => output.payloads.size = initial.payloads.size + sources.length) := by
   induction sources generalizing initial with
-  | nil => exact Emission.Yields.pure rfl
-  | cons source rest ih =>
-    rw [compileEquivalentMutConsts]
-    exact Emission.Yields.bindAny _ fun member => ih (initial.addEquivalent member)
-
-theorem class_count (sources : List MutConst) (initial : MutConstCompileState) :
-    Emission.Yields (compileMutConstClass sources initial)
-      (fun output => output.payloads.size = initial.payloads.size + if sources.isEmpty then 0 else 1) := by
-  cases sources with
   | nil => exact Emission.Yields.pure (by simp)
-  | cons source rest =>
-    rw [compileMutConstClass]
+  | cons source rest ih =>
+    rw [compileMutConstMembers]
     apply Emission.Yields.bindAny
-    intro member
-    simpa [MutConstCompileState.addRepresentative] using equivalents_count rest (initial.addRepresentative member)
+    intro member context before output after ran
+    have count := ih (initial.addMember member) context before output after ran
+    simpa [MutConstCompileState.addMember, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using count
 
-theorem classes_count (sources : List (List MutConst)) (initial : MutConstCompileState) :
-    Emission.Yields (compileMutConstClasses sources initial)
-      (fun output => output.payloads.size = initial.payloads.size +
-        (sources.filter fun members => !members.isEmpty).length) := by
-  induction sources generalizing initial with
-  | nil => exact Emission.Yields.pure (by simp)
-  | cons source rest ih =>
-    intro context before output after ran
-    rw [compileMutConstClasses] at ran
-    obtain ⟨middle, state, firstRun, lastRun⟩ := bind_ok ran
-    have first := class_count source initial context before middle state firstRun
-    have last := ih middle context state output after lastRun
-    cases source <;> simp_all
-    omega
-
-/-- **One payload per class**: a block of non-empty classes compiles to as
-many payloads as classes. -/
-theorem payload_count (sources : List (List MutConst))
-    (nonempty : ∀ members ∈ sources, members ≠ []) :
+/-- Every source member contributes exactly one payload, in source order. -/
+theorem payload_count (sources : List MutConst) :
     Emission.Yields (compileMutConsts sources) (fun output => output.1.size = sources.length) := by
-  have filtered : (sources.filter fun members => !members.isEmpty) = sources := by
-    apply List.filter_eq_self.mpr
-    intro members present
-    cases members with
-    | nil => exact False.elim (nonempty [] present rfl)
-    | cons _ _ => rfl
   unfold compileMutConsts
-  exact Emission.Yields.bind (classes_count sources {}) fun compiled count =>
-    Emission.Yields.pure (by simpa [filtered] using count)
+  exact Emission.Yields.bind (members_count sources {}) fun compiled count =>
+    Emission.Yields.pure (by simpa using count)
 
 /-! ## The mutual finisher -/
 
 /-- **The mutual finisher's inversion**: it changes no state, its count
 guard admits the payload's headers, and it returns the pure builder's
 result over the block's tables. -/
-theorem finish_mutual_ok (context : CompileEnv × BlockEnv) (classes : List (List MutConst))
+theorem finish_mutual_ok (context : CompileEnv × BlockEnv) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) {before after : BlockState}
     {output : BlockResult}
     (ran : rawRun (finishMutualCompilation classes members metadata) context before = (.ok output, after)) :
@@ -179,37 +130,35 @@ theorem finish_mutual_ok (context : CompileEnv × BlockEnv) (classes : List (Lis
     cases Except.ok.inj values
     exact ⟨states.symm, bounds, rfl⟩
 
-theorem mutual_class_capacity (sources : List (List MutConst))
-    (nonempty : ∀ members ∈ sources, members ≠ []) :
+theorem mutual_member_capacity (sources : List MutConst) :
     Emission.Yields (compileMutualPayload sources) (fun _ => sources.length < UInt64.size) := by
   intro context before output after ran
   unfold compileMutualPayload at ran
   obtain ⟨compiled, middle, first, last⟩ := bind_ok ran
-  have count := payload_count sources nonempty context before compiled middle first
+  have count := payload_count sources context before compiled middle first
   obtain ⟨_, bounded, _⟩ := finish_mutual_ok context sources compiled.1 compiled.2.2 last
   exact count ▸ bounded.1
 
 /-- A successful mutual block is entered through the block's mutual context
 and preseed. -/
-theorem mutual_block (post : BlockResult → Prop) (sources : List (List MutConst))
+theorem mutual_block (post : BlockResult → Prop) (sources : List MutConst)
     (payload : Emission.Yields (compileMutualPayload sources) post) :
     Emission.Yields (compileMutualBlock sources) post := by
   unfold compileMutualBlock withMutCtx
   exact Emission.Yields.withBlockEnv _
     (Emission.Yields.bindAny (preseedExprTables (mutualPreseedExprs sources)) fun _ => payload)
 
-theorem mutual_block_capacity (sources : List (List MutConst))
-    (nonempty : ∀ members ∈ sources, members ≠ []) :
+theorem mutual_block_capacity (sources : List MutConst) :
     Emission.Yields (compileMutualBlock sources) (fun _ => sources.length < UInt64.size) :=
-  mutual_block _ sources (mutual_class_capacity sources nonempty)
+  mutual_block _ sources (mutual_member_capacity sources)
 
-theorem mutual_class_index (sources : List (List MutConst))
-    (nonempty : ∀ members ∈ sources, members ≠ []) (context : CompileEnv × BlockEnv)
+theorem mutual_member_index (sources : List MutConst)
+    (context : CompileEnv × BlockEnv)
     (before after : BlockState) (output : BlockResult)
     (ran : rawRun (compileMutualBlock sources) context before = (.ok output, after))
     (index : Nat) (inside : index < sources.length) : index.toUInt64.toNat = index :=
   Emission.exact_header index
-    (Nat.lt_trans inside (mutual_block_capacity sources nonempty context before output after ran))
+    (Nat.lt_trans inside (mutual_block_capacity sources context before output after ran))
 
 /-! ## Member shapes -/
 
@@ -304,48 +253,24 @@ theorem member_shape (source : MutConst) : Emission.Yields (compileMutConstMembe
     exact Emission.Yields.bind (Emission.Yields.withCurrent value.name (inductiveData_layout value))
       fun compiled layout => Emission.Yields.pure (congrArg MemberShape.indc layout.1)
 
-theorem equivalents_payloads (sources : List MutConst) (initial : MutConstCompileState) :
-    Emission.Yields (compileEquivalentMutConsts sources initial)
-      (fun output => output.payloads = initial.payloads) := by
-  induction sources generalizing initial with
-  | nil => exact Emission.Yields.pure rfl
-  | cons source rest ih =>
-    rw [compileEquivalentMutConsts]
-    exact Emission.Yields.bindAny _ fun member => ih (initial.addEquivalent member)
-
-theorem class_shapes (sources : List MutConst) (initial : MutConstCompileState) :
-    Emission.Yields (compileMutConstClass sources initial) (fun output =>
+theorem members_shapes (sources : List MutConst) (initial : MutConstCompileState) :
+    Emission.Yields (compileMutConstMembers sources initial) (fun output =>
       output.payloads.toList.map memberShape = initial.payloads.toList.map memberShape ++
-        sources.head?.toList.map sourceShape) := by
-  cases sources with
-  | nil => exact Emission.Yields.pure (by simp)
-  | cons source rest =>
-    rw [compileMutConstClass]
-    exact Emission.Yields.bind (member_shape source) fun member shape =>
-      fun context before output after ran => by
-        have same := equivalents_payloads rest (initial.addRepresentative member) context before output after ran
-        simp [same, MutConstCompileState.addRepresentative, shape]
-
-theorem classes_shapes (sources : List (List MutConst)) (initial : MutConstCompileState) :
-    Emission.Yields (compileMutConstClasses sources initial) (fun output =>
-      output.payloads.toList.map memberShape = initial.payloads.toList.map memberShape ++
-        (sources.filterMap List.head?).map sourceShape) := by
+        sources.map sourceShape) := by
   induction sources generalizing initial with
   | nil => exact Emission.Yields.pure (by simp)
   | cons source rest ih =>
-    intro context before output after ran
-    rw [compileMutConstClasses] at ran
-    obtain ⟨middle, state, firstRun, lastRun⟩ := bind_ok ran
-    have first := class_shapes source initial context before middle state firstRun
-    have last := ih middle context state output after lastRun
-    cases source <;> simpa [first, List.append_assoc, List.filterMap] using last
+    rw [compileMutConstMembers]
+    apply Emission.Yields.bind (member_shape source)
+    intro member shape context before output after ran
+    have restShape := ih (initial.addMember member) context before output after ran
+    simpa [MutConstCompileState.addMember, shape, List.append_assoc] using restShape
 
-/-- **The retained payloads have the representatives' shapes**, one per
-non-empty class, in class order. -/
-theorem payload_shapes (sources : List (List MutConst)) : Emission.Yields (compileMutConsts sources)
-    (fun output => output.1.toList.map memberShape = (sources.filterMap List.head?).map sourceShape) := by
+/-- The payloads have their sources' shapes in the same order. -/
+theorem payload_shapes (sources : List MutConst) : Emission.Yields (compileMutConsts sources)
+    (fun output => output.1.toList.map memberShape = sources.map sourceShape) := by
   unfold compileMutConsts
-  exact Emission.Yields.bind (classes_shapes sources {}) fun compiled shape =>
+  exact Emission.Yields.bind (members_shapes sources {}) fun compiled shape =>
     Emission.Yields.pure (by simpa using shape)
 
 /-! ## The write-back keeps shapes -/
@@ -440,7 +365,7 @@ theorem standalone_shape (members : Array Ixon.MutConst) (info : Ixon.ConstantIn
         cases Option.some.inj chosen
         rfl
 
-theorem build_mutual_shape (limits : Ix.Sharing.Exact.Limits) (classes : List (List MutConst))
+theorem build_mutual_shape (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
     (output : BlockResult) (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output) :
     blockShape output.block.info = some (members.toList.map memberShape) := by
@@ -457,7 +382,7 @@ theorem build_mutual_shape (limits : Ix.Sharing.Exact.Limits) (classes : List (L
     cases Except.ok.inj returned
     exact sharing_shape limits (.muts members) state.refs state.univs block built
 
-theorem finish_mutual_shape (classes : List (List MutConst)) (members : Array Ixon.MutConst)
+theorem finish_mutual_shape (classes : List MutConst) (members : Array Ixon.MutConst)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) :
     Emission.Yields (finishMutualCompilation classes members metadata)
       (fun output => blockShape output.block.info = some (members.toList.map memberShape)) := by
@@ -465,8 +390,8 @@ theorem finish_mutual_shape (classes : List (List MutConst)) (members : Array Ix
   obtain ⟨rfl, _, built⟩ := finish_mutual_ok context classes members metadata ran
   exact build_mutual_shape _ classes members metadata _ output built
 
-theorem mutual_shape (sources : List (List MutConst)) : Emission.Yields (compileMutualPayload sources)
-    (fun output => blockShape output.block.info = some ((sources.filterMap List.head?).map sourceShape)) := by
+theorem mutual_shape (sources : List MutConst) : Emission.Yields (compileMutualPayload sources)
+    (fun output => blockShape output.block.info = some (sources.map sourceShape)) := by
   intro context before output after ran
   unfold compileMutualPayload at ran
   obtain ⟨compiled, middle, first, last⟩ := bind_ok ran
@@ -474,11 +399,10 @@ theorem mutual_shape (sources : List (List MutConst)) : Emission.Yields (compile
   exact (finish_mutual_shape sources compiled.1 compiled.2.2 context middle output after last).trans
     (congrArg some shape)
 
-/-- **A mutual block has one member per class, with its representative's
-kind and constructor positions** (or collapses to a lone definition or
-recursor). -/
-theorem mutual_block_shape (sources : List (List MutConst)) : Emission.Yields (compileMutualBlock sources)
-    (fun output => blockShape output.block.info = some ((sources.filterMap List.head?).map sourceShape)) :=
+/-- A mutual block preserves every member's kind and constructor positions,
+or collapses to a lone definition or recursor with the same shape. -/
+theorem mutual_block_shape (sources : List MutConst) : Emission.Yields (compileMutualBlock sources)
+    (fun output => blockShape output.block.info = some (sources.map sourceShape)) :=
   mutual_block _ sources (mutual_shape sources)
 
 /-! ## The standalone family -/

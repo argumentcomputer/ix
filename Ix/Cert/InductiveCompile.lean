@@ -172,10 +172,6 @@ theorem forall₂_map_map {α β γ δ : Type} {R : γ → δ → Prop} {g : α 
     simp only [List.map_cons, List.forall₂_cons]
     exact and_congr Iff.rfl forall₂_map_map
 
-theorem flatten_singletons {α : Type} : ∀ l : List α, (l.map ([·])).flatten = l
-  | [] => rfl
-  | a :: l => by simp [flatten_singletons l]
-
 /-! ## The inductive block -/
 
 /-- The self references of a block of `n` members in the closure's context. -/
@@ -199,21 +195,16 @@ theorem scopes_of_noCtor (context : CompileEnv × BlockEnv) (cx : Ctx .anon) (ow
     (noCtor : ∀ i ∈ inds, ∀ e ∈ memberSources (.indc i),
       ConstsSatisfy (fun n => ∀ i' ∈ inds, ∀ c ∈ i'.ctors.toList, n ≠ c.cnst.name) e) :
     ∀ m ∈ inds.map MutConst.indc, ∀ e ∈ memberSources m,
-      ConstsSatisfy (SelfName (mutContext ((inds.map MutConst.indc).map ([·])) context).2
+      ConstsSatisfy (SelfName (mutContext (inds.map MutConst.indc) context).2
         (selfOf cx owner inds.length) names) e := by
   intro m hm e he
   obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hm
   refine constsSatisfy_mono (fun n hn index found => ?_) e (noCtor i hi e he)
-  have hk : Canon.KeysDistinct ((inds.map MutConst.indc).map ([·])).flatten := by
-    rw [flatten_singletons]
-    exact distinct
   simp only [mutContext] at found
   rw [Std.TreeMap.get?_eq_getElem?] at found
-  obtain ⟨j, C, m', hC, hm', hcase⟩ := Canon.ctx_val hk found
+  obtain ⟨j, m', hC, hcase⟩ := Canon.ctx_val distinct found
   simp only [List.getElem?_map, Option.map_eq_some_iff] at hC
-  obtain ⟨m0, ⟨x, hx, rfl⟩, rfl⟩ := hC
-  rw [List.mem_singleton] at hm'
-  subst hm'
+  obtain ⟨x, hx, rfl⟩ := hC
   have hj : j < inds.length := (List.getElem?_eq_some_iff.mp hx).1
   have hxj : inds[j] = x := (List.getElem?_eq_some_iff.mp hx).2
   rcases hcase with ⟨hname, rfl⟩ | ⟨k, c, hc, hcn, -⟩
@@ -253,7 +244,7 @@ theorem inductiveBlock_reads (context : CompileEnv × BlockEnv)
     (noCtor : ∀ i ∈ inds, ∀ e ∈ memberSources (.indc i),
       ConstsSatisfy (fun n => ∀ i' ∈ inds, ∀ c ∈ i'.ctors.toList, n ≠ c.cnst.name) e)
     {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
-    (ran : rawRun (compileMutualBlock ((inds.map MutConst.indc).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (inds.map MutConst.indc)) context before = (.ok output, after))
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx) :
     ∃ targets : List Ixon.Inductive, output.block.info = .muts (targets.map Ixon.MutConst.indc).toArray ∧
       List.Forall₂ (fun i t => IndFacts i t ∧
@@ -432,20 +423,15 @@ theorem rec_scopes (context : CompileEnv × BlockEnv) (cx : Ctx .anon) (owner : 
       recSelfOf cx owner key recs.length k = some (.ok (srcKey ρ f recs[k].cnst.name)))
     (distinct : Canon.KeysDistinct (recs.map MutConst.recr)) :
     ∀ m ∈ recs.map MutConst.recr, ∀ e ∈ memberSources m,
-      ConstsSatisfy (SelfName (mutContext ((recs.map MutConst.recr).map ([·])) context).2
+      ConstsSatisfy (SelfName (mutContext (recs.map MutConst.recr) context).2
         (recSelfOf cx owner key recs.length) names) e := by
   intro m _ e _
   refine constsSatisfy_of_forall (fun n index found => ?_) e
-  have hk : Canon.KeysDistinct ((recs.map MutConst.recr).map ([·])).flatten := by
-    rw [flatten_singletons]
-    exact distinct
   simp only [mutContext] at found
   rw [Std.TreeMap.get?_eq_getElem?] at found
-  obtain ⟨j, C, m', hC, hm', hcase⟩ := Canon.ctx_val hk found
+  obtain ⟨j, m', hC, hcase⟩ := Canon.ctx_val distinct found
   simp only [List.getElem?_map, Option.map_eq_some_iff] at hC
-  obtain ⟨m0, ⟨x, hx, rfl⟩, rfl⟩ := hC
-  rw [List.mem_singleton] at hm'
-  subst hm'
+  obtain ⟨x, hx, rfl⟩ := hC
   have hj : j < recs.length := (List.getElem?_eq_some_iff.mp hx).1
   have hxj : recs[j] = x := (List.getElem?_eq_some_iff.mp hx).2
   rcases hcase with ⟨hname, rfl⟩ | ⟨k, c, hc, -, -⟩
@@ -480,7 +466,7 @@ theorem recursorBlock_reads (context : CompileEnv × BlockEnv)
       recSelfOf cx owner key recs.length k = some (.ok (srcKey ρ f recs[k].cnst.name)))
     (distinct : Canon.KeysDistinct (recs.map MutConst.recr))
     {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
-    (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (recs.map MutConst.recr)) context before = (.ok output, after))
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx) :
     ∃ rIs : List Ixon.Recursor, output.block.info = blockInfo (rIs.map Ixon.MutConst.recr) ∧
       List.Forall₂ (fun r rI => RecPayload r rI ∧
@@ -586,7 +572,7 @@ theorem mutualFamily_reads (context : CompileEnv × BlockEnv)
     (keys : ∀ k (h : k < recs.length), cx.memberKey (.member owner k) = .ok (srcKey ρ f recs[k].cnst.name))
     (distinct : Canon.KeysDistinct (recs.map MutConst.recr))
     {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
-    (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (recs.map MutConst.recr)) context before = (.ok output, after))
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx) :
     FamilyReads ρ f cx owner key lps large recs output.block :=
   recursorBlock_reads ρ f context aligned external recs self agree hne lps hlps large owner key
@@ -945,7 +931,7 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
     (agree₁ : ∀ i ∈ indsOf types ctors, ∀ e ∈ memberSources (.indc i), ∀ n key, GraphWalk.Refs n e →
       names₁ n key → sourceNames ρ f n key)
     {before₁ after₁ : BlockState} {out₁ : BlockResult} (clean₁ : Emission.Clean bindings₁ before₁)
-    (ran₁ : rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·]))) context₁ before₁ =
+    (ran₁ : rawRun (compileMutualBlock ((indsOf types ctors).map MutConst.indc)) context₁ before₁ =
       (.ok out₁, after₁))
     (cx : Ctx .anon) (owner rOwner : Address)
     {rc : Ixon.Constant} (hstore₂ : cx.store rOwner = some rc)

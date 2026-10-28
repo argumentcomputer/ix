@@ -232,8 +232,7 @@ def emissionWireRoots : Array Lean.Name :=
     `Safe.axiomPayload, `Safe.finishQuotient, `Safe.quotientPayload, `Safe.rule, `Safe.rules,
     `Safe.finishRecursor, `Safe.recursorPayload, `Safe.finishConstructor, `Safe.constructorPayload,
     `Safe.constructors, `Safe.inductiveMetadata, `Safe.finishInductive, `Safe.inductivePayload,
-    `Safe.finishInductiveData, `Safe.inductiveData, `Safe.member, `Safe.equivalents, `Safe.constClass,
-    `Safe.classes, `Safe.mutConsts, `seeded_valid].map (`Ix.CompileCert.EmissionWire ++ ·)
+    `Safe.finishInductiveData, `Safe.inductiveData, `Safe.member, `Safe.members, `Safe.mutConsts, `seeded_valid].map (`Ix.CompileCert.EmissionWire ++ ·)
 
 /-- Canonical sharing preserves the reading of every root (R07-01/02): the
 certified reader against a sharing substitution, the root write-back's
@@ -323,10 +322,9 @@ positions, and the standalone
 family's projections resolve. -/
 def layoutRoots : Array Lean.Name :=
   #[`constructor_header, `constructor_index, `constructors_headers, `headers_indices, `constructors_layout,
-    `equivalents_count, `class_count, `classes_count, `payload_count, `finish_mutual_ok, `mutual_class_capacity,
-    `mutual_block, `mutual_block_capacity, `mutual_class_index, `finish_inductive_layout, `finish_inductiveData_layout, `inductiveData_headers,
-    `inductiveData_layout, `inductive_layout, `member_shape, `equivalents_payloads, `class_shapes,
-    `classes_shapes, `payload_shapes, `memberShape_erase, `blockShape_erase, `writeback_member_shape,
+    `members_count, `payload_count, `finish_mutual_ok, `mutual_member_capacity,
+    `mutual_block, `mutual_block_capacity, `mutual_member_index, `finish_inductive_layout, `finish_inductiveData_layout, `inductiveData_headers,
+    `inductiveData_layout, `inductive_layout, `member_shape, `members_shapes, `payload_shapes, `memberShape_erase, `blockShape_erase, `writeback_member_shape,
     `writeback_shape, `erase_muts, `writeback_mutual_shape, `sharing_shape, `sharing_mutual_shape,
     `standalone_shape, `build_mutual_shape, `finish_mutual_shape, `mutual_shape, `mutual_block_shape,
     `singleton_inductive_shape, `shared_inductive_shape, `familyFinish_pairs, `finish_inductive_shape,
@@ -337,14 +335,13 @@ def layoutRoots : Array Lean.Name :=
 their wire validity and codec, and what the certified reader resolves them
 to. -/
 def projectionRoots : Array Lean.Name :=
-  (#[`indexed_rows, `constructor_rows, `memberStep_yield, `memberStep_rows, `members_rows, `classes_rows,
-    `build_rows, `pushed_rows, `standalone_classes_rows, `standalone_rows, `empty_tables_wire, `member_wire,
+  (#[`indexed_rows, `constructor_rows, `memberStep_yield, `memberStep_rows, `members_rows,
+    `build_rows, `pushed_rows, `standalone_rows, `empty_tables_wire, `member_wire,
     `constructor_wire, `source_rows_wire, `build_rows_wire, `build_rows_codec, `standalone_rows_wire,
     `build_projection_wire, `finish_projection_wire, `payload_projection_wire, `mutual_projection_wire,
-    `mutual_codec, `member_resolves, `constructor_resolves, `selected_member, `class_member,
-    `source_rows_resolve, `build_resolves].map (`Ix.CompileCert.MutualProjections ++ ·)) ++
+    `mutual_codec, `member_resolves, `constructor_resolves, `selected_member, `source_rows_resolve, `build_resolves].map (`Ix.CompileCert.MutualProjections ++ ·)) ++
   (#[`standalone_erase, `writeback_standalone, `sharing_standalone, `chosen_standalone, `build_cases,
-    `selected_length, `no_ctor_references, `collapsed_references, `standalone_resolves, `build_resolves,
+    `no_ctor_references, `collapsed_references, `standalone_resolves, `build_resolves,
     `finish_references, `payload_references, `mutual_references,
     `mutual_correct].map (`Ix.CompileCert.MutualArtifact ++ ·))
 
@@ -415,11 +412,11 @@ def canonOrderRoots : Array Lean.Name :=
 
 /-- The class context `MutConst.ctx` as a fold of insertions, and the values
 of its member and constructor names when those names are pairwise distinct. -/
-def canonClassRoots : Array Lean.Name :=
-  #[`ctx_eq, `foldl_max, `ctor_fold, `class_fold, `classes_fold, `ctx_fold, `treeMap_insert_self,
+def canonMemberRoots : Array Lean.Name :=
+  #[`ctx_eq, `ctor_fold, `members_fold, `ctx_fold, `treeMap_insert_self,
     `treeMap_insert_ne, `foldl_insP_getElem?, `KeysDistinct.perm, `map_zipIdx_fst, `keys_pairsOf, `offs_zero,
     `offs_cons_succ, `keys_ctxPairs, `mem_pairsOf, `mem_ctxPairs, `default_getElem?, `KeysDistinct.ne,
-    `ctx_lookup, `ctx_member, `ctx_ctor, `ctx_val, `ctx_dom, `maxC_ge, `offs_succ, `offs_mono,
+    `ctx_lookup, `ctx_member, `ctx_ctor, `ctx_val, `ctx_dom, `offs_succ, `offs_mono,
     `slot_disjoint].map (`Ix.CompileCert.Canon ++ ·)
 
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
@@ -478,8 +475,7 @@ def emissionRuntime : Array Lean.Name :=
     ``Ix.CompileM.compileInductiveConstructors, ``Ix.CompileM.takeInductiveTypeCompileMeta,
     ``Ix.CompileM.finishInductiveCompilation, ``Ix.CompileM.compileInductive,
     ``Ix.CompileM.finishInductiveDataCompilation, ``Ix.CompileM.compileInductiveData,
-    ``Ix.CompileM.compileMutConstMember, ``Ix.CompileM.compileEquivalentMutConsts,
-    ``Ix.CompileM.compileMutConstClass, ``Ix.CompileM.compileMutConstClasses,
+    ``Ix.CompileM.compileMutConstMember, ``Ix.CompileM.compileMutConstMembers,
     ``Ix.CompileM.compileMutConsts]
 
 /-- The sharing builder's root extraction and write-back, which the sharing
@@ -590,7 +586,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRoots
   checkRoots (tag := "reading-audit") "loops" Ix.CompileCert.ReadingAudit.loopRoots
   checkRoots (tag := "reading-audit") "canon order" Ix.CompileCert.ReadingAudit.canonOrderRoots
-  checkRoots (tag := "reading-audit") "canon classes" Ix.CompileCert.ReadingAudit.canonClassRoots
+  checkRoots (tag := "reading-audit") "canon members" Ix.CompileCert.ReadingAudit.canonMemberRoots
   checkRoots (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime

@@ -492,34 +492,18 @@ theorem Safe.member (source : MutConst) : Safe (compileMutConstMember source) :=
   · exact Safe.seq (Safe.withCurrent _ (Safe.inductiveData _)) fun _ => Safe.pure _
   · exact Safe.seq (Safe.withCurrent _ (Safe.recursorPayload _)) fun _ => Safe.pure _
 
-theorem Safe.equivalents (sources : List MutConst) (initial : MutConstCompileState) :
-    Safe (compileEquivalentMutConsts sources initial) := by
+theorem Safe.members (sources : List MutConst) (initial : MutConstCompileState) :
+    Safe (compileMutConstMembers sources initial) := by
   induction sources generalizing initial with
   | nil => exact Safe.pure _
   | cons source rest ih =>
-    rw [compileEquivalentMutConsts]
+    rw [compileMutConstMembers]
     exact Safe.seq (Safe.member source) (fun _ => ih _)
 
-theorem Safe.constClass (sources : List MutConst) (initial : MutConstCompileState) :
-    Safe (compileMutConstClass sources initial) := by
-  cases sources with
-  | nil => exact Safe.pure _
-  | cons source rest =>
-    rw [compileMutConstClass]
-    exact Safe.seq (Safe.member source) (fun _ => Safe.equivalents rest _)
-
-theorem Safe.classes (sources : List (List MutConst)) (initial : MutConstCompileState) :
-    Safe (compileMutConstClasses sources initial) := by
-  induction sources generalizing initial with
-  | nil => exact Safe.pure _
-  | cons source rest ih =>
-    rw [compileMutConstClasses]
-    exact Safe.seq (Safe.constClass source initial) (fun _ => ih _)
-
 /-- **Every mutual payload keeps the tables on the wire** on success. -/
-theorem Safe.mutConsts (sources : List (List MutConst)) : Safe (compileMutConsts sources) := by
+theorem Safe.mutConsts (sources : List MutConst) : Safe (compileMutConsts sources) := by
   unfold compileMutConsts
-  exact Safe.seq (Safe.classes sources {}) (fun _ => Safe.pure _)
+  exact Safe.seq (Safe.members sources {}) (fun _ => Safe.pure _)
 
 /-! ## The preseed establishes `Valid` -/
 

@@ -734,38 +734,20 @@ theorem Holds.member (source : MutConst) (cov : MutCovers M source) :
   · exact Holds.seq (Triple.withCurrent _ (Holds.inductiveData _ cov.1 cov.2)) fun _ => Holds.pure _
   · exact Holds.seq (Triple.withCurrent _ (Holds.recursorPayload _ cov.1 cov.2)) fun _ => Holds.pure _
 
-theorem Holds.equivalents (sources : List MutConst) (initial : MutConstCompileState)
-    (cov : ∀ c ∈ sources, MutCovers M c) : Holds (RefsOK M B) (compileEquivalentMutConsts sources initial) := by
+theorem Holds.members (sources : List MutConst) (initial : MutConstCompileState)
+    (cov : ∀ c ∈ sources, MutCovers M c) :
+    Holds (RefsOK M B) (compileMutConstMembers sources initial) := by
   induction sources generalizing initial with
   | nil => exact Holds.pure _
   | cons source rest ih =>
-    rw [compileEquivalentMutConsts]
+    rw [compileMutConstMembers]
     exact Holds.seq (Holds.member source (cov source (by simp)))
       (fun _ => ih _ (fun c member => cov c (List.mem_cons_of_mem _ member)))
 
-theorem Holds.constClass (sources : List MutConst) (initial : MutConstCompileState)
-    (cov : ∀ c ∈ sources, MutCovers M c) : Holds (RefsOK M B) (compileMutConstClass sources initial) := by
-  cases sources with
-  | nil => exact Holds.pure _
-  | cons source rest =>
-    rw [compileMutConstClass]
-    exact Holds.seq (Holds.member source (cov source (by simp)))
-      (fun _ => Holds.equivalents rest _ (fun c member => cov c (List.mem_cons_of_mem _ member)))
-
-theorem Holds.classes (sources : List (List MutConst)) (initial : MutConstCompileState)
-    (cov : ∀ cls ∈ sources, ∀ c ∈ cls, MutCovers M c) :
-    Holds (RefsOK M B) (compileMutConstClasses sources initial) := by
-  induction sources generalizing initial with
-  | nil => exact Holds.pure _
-  | cons source rest ih =>
-    rw [compileMutConstClasses]
-    exact Holds.seq (Holds.constClass source initial (cov source (by simp)))
-      (fun _ => ih _ (fun cls member => cov cls (List.mem_cons_of_mem _ member)))
-
-theorem Holds.mutConsts (sources : List (List MutConst)) (cov : ∀ cls ∈ sources, ∀ c ∈ cls, MutCovers M c) :
+theorem Holds.mutConsts (sources : List MutConst) (cov : ∀ c ∈ sources, MutCovers M c) :
     Holds (RefsOK M B) (compileMutConsts sources) := by
   unfold compileMutConsts
-  exact Holds.seq (Holds.classes sources {} cov) (fun _ => Holds.pure _)
+  exact Holds.seq (Holds.members sources {} cov) (fun _ => Holds.pure _)
 
 /-! ## The block finishers: the block's table is the state's -/
 
@@ -819,7 +801,7 @@ theorem Holds.finishInductiveFamily (source : InductiveVal) (ind : Ixon.Inductiv
   cases done
   exact ⟨hI, build_refs (BlockLayout.buildBlockConstant_ok hb)⟩
 
-theorem mutual_refs {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
+theorem mutual_refs {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
     out.block.refs = cache.refs := by
@@ -836,7 +818,7 @@ theorem mutual_refs {limits : Ix.Sharing.Exact.Limits} {classes : List (List Mut
     cases Except.ok.inj returned
     exact build_refs hb
 
-theorem Holds.finishMutual (classes : List (List MutConst)) (payloads : Array Ixon.MutConst)
+theorem Holds.finishMutual (classes : List MutConst) (payloads : Array Ixon.MutConst)
     (metas : Array (Ix.Name × Ixon.ConstantMeta)) :
     Holds (RefsOK M B) (finishMutualCompilation classes payloads metas) (fun _ s r => r.block.refs = s.refs) := by
   intro context before value after hI _ ran
@@ -844,7 +826,7 @@ theorem Holds.finishMutual (classes : List (List MutConst)) (payloads : Array Ix
   subst same
   exact ⟨hI, mutual_refs built⟩
 
-theorem Holds.mutualPayload (classes : List (List MutConst)) (cov : ∀ cls ∈ classes, ∀ c ∈ cls, MutCovers M c) :
+theorem Holds.mutualPayload (classes : List MutConst) (cov : ∀ c ∈ classes, MutCovers M c) :
     Holds (RefsOK M B) (compileMutualPayload classes) (fun _ s r => r.block.refs = s.refs) := by
   unfold compileMutualPayload
   refine Holds.seq (Holds.mutConsts classes cov) fun compiled => ?_
@@ -1171,29 +1153,18 @@ theorem memberInputs_covers {c : MutConst} (cov : MutCovers M c) :
     · exact cov.1
     · exact cov.2 rule hrule
 
-theorem mutualInputs_covers : ∀ (classes : List (List MutConst)), (∀ cls ∈ classes, ∀ c ∈ cls, MutCovers M c) →
-    ∀ root ∈ mutualPreseedInputs classes, Covers M root.1
+theorem mutualInputs_covers : ∀ (members : List MutConst), (∀ c ∈ members, MutCovers M c) →
+    ∀ root ∈ mutualPreseedInputs members, Covers M root.1
   | [], _, root, hr => by simp [mutualPreseedInputs] at hr
-  | cls :: rest, cov, root, hr => by
+  | source :: rest, cov, root, hr => by
     rw [mutualPreseedInputs, List.mem_append] at hr
     rcases hr with hr | hr
-    · have classInputs : ∀ (l : List MutConst), (∀ c ∈ l, MutCovers M c) →
-          ∀ root ∈ mutConstClassPreseedInputs l, Covers M root.1 := by
-        intro l
-        induction l with
-        | nil => intro _ root hr; simp [mutConstClassPreseedInputs] at hr
-        | cons c l ih =>
-          intro hl root hr
-          rw [mutConstClassPreseedInputs, List.mem_append] at hr
-          rcases hr with hr | hr
-          · exact memberInputs_covers (hl c (by simp)) root hr
-          · exact ih (fun c' h => hl c' (List.mem_cons_of_mem _ h)) root hr
-      exact classInputs cls (cov cls (by simp)) root hr
-    · exact mutualInputs_covers rest (fun cls h => cov cls (List.mem_cons_of_mem _ h)) root hr
+    · exact memberInputs_covers (cov source (by simp)) root hr
+    · exact mutualInputs_covers rest (fun c h => cov c (List.mem_cons_of_mem _ h)) root hr
 
 /-- **A mutual block compile keeps the invariant**, for its members' terms, and returns a block
 whose table is the final state's. -/
-theorem Holds.mutualBlock (classes : List (List MutConst)) (cov : ∀ cls ∈ classes, ∀ c ∈ cls, MutCovers M c) :
+theorem Holds.mutualBlock (classes : List MutConst) (cov : ∀ c ∈ classes, MutCovers M c) :
     Holds (RefsOK M B) (compileMutualBlock classes) (fun _ s r => r.block.refs = s.refs) := by
   unfold compileMutualBlock
   dsimp only
@@ -1283,8 +1254,8 @@ theorem compileBlock_refs {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : I
          · exact Preserves.bind (BlockRecords.mkIndc_preserves _) fun _ => Preserves.pure id _
          all_goals exact Preserves.pure id _
        subst h₂
-       obtain ⟨hI, refs⟩ := Holds.mutualBlock (B := bindingView {}) (sourceClasses cs)
-         (fun cls hcls c hc => members c (Claims.mem_sourceClasses hcls hc)) ctx {} out s₄ refsOK_empty trivial hout
+       obtain ⟨hI, refs⟩ := Holds.mutualBlock (B := bindingView {}) (sourceMembers cs)
+         (fun c hc => members c (Claims.mem_sourceMembers hc)) ctx {} out s₄ refsOK_empty trivial hout
        exact ⟨s₄, fun a ha => hI.2 a (by rw [← refs, ← block]; exact ha)⟩)
     | (obtain ⟨hI, same⟩ := Holds.constantInfo (B := bindingView {})
          (N := fun x => all.contains x = true ∨ x = lo) found (Or.inr rfl)

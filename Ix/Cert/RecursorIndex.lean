@@ -330,7 +330,7 @@ level-parameter count. -/
 theorem inductive_block_first {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)}
     (hcsize : ctors.size = types.size) {first : Ix.InductiveVal} (hfirst : types[0]? = some first)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
-    (ran : rawRun (compileMutualBlock (((InductiveCompile.indsOf types ctors).map MutConst.indc).map ([·])))
+    (ran : rawRun (compileMutualBlock ((InductiveCompile.indsOf types ctors).map MutConst.indc))
       context before = (.ok output, after)) :
     ∃ ms, output.block.info = .muts ms ∧ (inductives ms).size = types.size ∧
       ∀ slot t₀, (inductives ms)[0]? = some (slot, t₀) → t₀.lvls.toNat = first.cnst.levelParams.size := by
@@ -360,7 +360,7 @@ theorem inductive_block_first {types : Array Ix.InductiveVal} {ctors : Array (Ar
 path, each with its header. -/
 theorem family_block_members {recs : Array Ix.RecursorVal} (hrne : recs.toList ≠ []) {key₂ : Ix.Name}
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
-    (ran : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) context before =
+    (ran : rawRun (compileMutualBlock (recs.toList.map MutConst.recr)) context before =
         (.ok output, after) ∨
       ∃ r, recs.toList = [r] ∧ key₂ = r.cnst.name ∧
         rawRun (compileConstantInfo (.recInfo r)) context before = (.ok output, after)) :
@@ -801,7 +801,7 @@ theorem closure_recursor_index {env : Ix.Environment} {roots : List Ix.Name} {su
     (recsIn : ∀ j (hj : j < recs.size), ∃ ci, (recs[j].cnst.name, ci) ∈ sub.consts.toList)
     -- the inductive block
     {cenv₁ : CompileEnv} {benv₁ : BlockEnv} {out₁ : BlockResult} {after₁ : BlockState}
-    (ran₁ : rawRun (compileMutualBlock (((InductiveCompile.indsOf types ctors).map MutConst.indc).map ([·])))
+    (ran₁ : rawRun (compileMutualBlock ((InductiveCompile.indsOf types ctors).map MutConst.indc))
       (cenv₁, benv₁) {} = (.ok out₁, after₁))
     {cenvR₁ : CompileEnv} {all₁ : Ix.Set Ix.Name} {key₁ : Ix.Name} {r₁ : BlockResult} {cache₁ : BlockState}
     (hr₁ : runBlock cenvR₁ all₁ key₁ = .ok (r₁, cache₁))
@@ -811,7 +811,7 @@ theorem closure_recursor_index {env : Ix.Environment} {roots : List Ix.Name} {su
     {cenvR₂ : CompileEnv} {all₂ : Ix.Set Ix.Name} {key₂ : Ix.Name} {r₂ : BlockResult} {cache₂ : BlockState}
     (hr₂ : runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂))
     (pub₂ : BlockPublication.Published ixe sub key₂ r₂) (hrec₂ : BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out₂)
-    (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) (cenv₂, benv₂) {} =
+    (ran₂ : rawRun (compileMutualBlock (recs.toList.map MutConst.recr)) (cenv₂, benv₂) {} =
         (.ok out₂, after₂) ∨
       ∃ r, recs.toList = [r] ∧ key₂ = r.cnst.name ∧
         rawRun (compileConstantInfo (.recInfo r)) (cenv₂, benv₂) {} = (.ok out₂, after₂))

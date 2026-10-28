@@ -33,7 +33,7 @@ theorem built_muts {limits : Ix.Sharing.Exact.Limits} {ms : Array Ixon.MutConst}
   cases hi : out.info <;> simp_all [SharingRoots.erase, Ix.Sharing.Exact.mapRoots]
 
 /-- **A mutual build's rows are its block, or its block is a block record.** -/
-theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
+theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
     (∀ p ∈ out.projections, p.2.1 = out.block) ∨ ∃ ms, out.block.info = .muts ms := by
@@ -57,7 +57,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List (Lis
     exact .inr (built_muts hb)
 
 /-- `buildMutual_rows` for the mutual block compile. -/
-theorem compileMutualBlock_rows (classes : List (List MutConst)) :
+theorem compileMutualBlock_rows (classes : List MutConst) :
     BlockRecords.Returns (fun out : BlockResult => (∀ p ∈ out.projections, p.2.1 = out.block) ∨
       ∃ ms, out.block.info = .muts ms) (compileMutualBlock classes) := by
   intro ctx s x s' ran

@@ -53,18 +53,16 @@ def blockKey (lo : Name) (all : Set Name) : Name :=
 
 /-- Register the synthetic `Muts` named entry of a mutual block (Rust
     `compile_mutual`): the block's address under `Ix.<hex>.<first member>`
-    (`Address.mutsName`), with each class's member name hashes. Kernel
+    (`Address.mutsName`), with singleton groups of member name hashes. Kernel
     ingress discovers a mutual block through this entry. The entry goes to
     `BlockState.mutsNamed`, which the driver merges after the members'
     entries. -/
-def registerMutsEntry (sortedClasses : List (List MutConst)) (blockAddr : Address) :
+def registerMutsEntry (orderedMembers : List MutConst) (blockAddr : Address) :
     CompileM Unit := do
-  let some firstClass := sortedClasses.head?
+  let some first := orderedMembers.head?
     | throw (.invalidMutualBlock "registerMutsEntry: block without a class")
-  let some first := firstClass.head?
-    | throw (.invalidMutualBlock "registerMutsEntry: class without a member")
-  let mutsAll : Array (Array Address) := sortedClasses.toArray.map fun cls =>
-    cls.toArray.map fun c => c.name.getHash
+  let mutsAll : Array (Array Address) := orderedMembers.toArray.map fun member =>
+    #[member.name.getHash]
   let mutsName := blockAddr.mutsName first.name
   compileName mutsName
   modifyBlockState fun st =>
@@ -74,7 +72,7 @@ def registerMutsEntry (sortedClasses : List (List MutConst)) (blockAddr : Addres
 /-- Compile one block of the condensation. Mirrors `compile_const_inner`
     (compile.rs): singleton non-inductive constants take the plain
     single-constant path; mutual blocks and inductives (of any size) go
-    through `compileMutualBlock` in Lean's order (`sourceClasses`) and
+    through `compileMutualBlock` in Lean's order (`sourceMembers`) and
     register their synthetic `Muts` entry (Rust `compile_mutual`).
 
     The members' projection addresses are inserted into
@@ -97,9 +95,9 @@ def compileBlock (lo : Name) (all : Set Name) : CompileM BlockResult := do
     | .thmInfo val => cs := cs.push (MutConst.fromTheoremVal val)
     | .recInfo val => cs := cs.push (.recr val)
     | _ => continue
-  -- Lean's order (`sourceClasses`): the order of a block is the source's.
-  let sortedClasses := sourceClasses cs
-  let blockResult ← compileMutualBlock sortedClasses
+  -- Lean's order (`sourceMembers`): the order of a block is the source's.
+  let orderedMembers := sourceMembers cs
+  let blockResult ← compileMutualBlock orderedMembers
   -- A standalone constant (a single non-inductive member): Rust returns
   -- before the Muts registration (compile.rs) — no synthetic Muts entry.
   let isMuts := match blockResult.block.info with
@@ -112,11 +110,10 @@ def compileBlock (lo : Name) (all : Set Name) : CompileM BlockResult := do
     let projAddr := Address.admissionHash (Ixon.ser proj)
     modifyBlockState fun st =>
       { st with blockNameToAddr := st.blockNameToAddr.insert name projAddr }
-  -- Class ordering for `CompileEnv.blocks` (Rust `stt.blocks`).
+  -- Preserve singleton grouping at the serialized metadata boundary.
   let blockResult := { blockResult with
-    classNames := sortedClasses.toArray.map fun cls =>
-      cls.toArray.map (·.name) }
-  registerMutsEntry sortedClasses blockResult.blockAddr
+    classNames := orderedMembers.toArray.map fun member => #[member.name] }
+  registerMutsEntry orderedMembers blockResult.blockAddr
   return blockResult
 
 /-- Every emitted record fits the aggregate universe-expansion budget used

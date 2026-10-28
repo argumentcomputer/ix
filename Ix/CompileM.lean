@@ -1420,22 +1420,22 @@ def recursorFamilyPosition (r : RecursorVal) : UInt64 :=
     | none => recursorFamilyNoPosition
   | _ => recursorFamilyNoPosition
 
-/-- The member order of a block, one member per class: Lean's order
+/-- The member order of a block: Lean's order
 (`Ix.sourceOrderLt`). An inductive is at its position in Lean's `all`, a
 recursor at its family's declared position (`recursorFamilyPosition`), a
 definition at its position in its Lean `all` (restricted to the block). The
 order of a block is the source's, as the order of an inductive's constructors
 is, and α-equal members are never merged. Members whose positions and names tie
 (only on input that is not Lean's) keep their order in `cs`. Mirrors Rust
-`source_classes`. -/
-def sourceClasses (cs : Array MutConst) : List (List MutConst) :=
+`source_members`. -/
+def sourceMembers (cs : Array MutConst) : List MutConst :=
   let key : MutConst → Nat × Name := fun
     | .indc i => (Ix.blockPosition i.all i.name, i.name)
     | .recr r => ((recursorFamilyPosition r).toNat, r.cnst.name)
     | .defn d => (Ix.blockPosition d.all d.name, d.name)
   let before (a b : MutConst × Nat) : Bool :=
     Ix.sourceOrderLt (key a.1) (key b.1) || (!Ix.sourceOrderLt (key b.1) (key a.1) && a.2 < b.2)
-  (cs.zipIdx.qsort before).toList.map fun e => [e.1]
+  (cs.zipIdx.qsort before).toList.map (·.1)
 
 /-! ## Constant Building -/
 
@@ -2038,15 +2038,13 @@ def compileRecursorData (r : RecursorVal) :
 
 /-! ## Mutual Block Compilation -/
 
-/-- The complete result of compiling one source mutual member.  Every member
-is compiled for metadata; the class fold decides whether its payload and
-sharing roots are retained as the class representative. -/
+/-- The payload, sharing roots and metadata of one source mutual member. -/
 structure CompiledMutConstMember where
   payload : Ixon.MutConst
   roots : Array Ixon.Expr
   metas : Array (Name × Ixon.ConstantMeta)
 
-/-- Compile one mutual member independently of representative selection. -/
+/-- Compile one mutual member. -/
 def compileMutConstMember : MutConst → CompileM CompiledMutConstMember
   | .indc i => do
     let (ind, constMeta, ctorMetaPairs, exprs) ←
@@ -2070,83 +2068,50 @@ def compileMutConstMember : MutConst → CompileM CompiledMutConstMember
       roots := #[typeExpr] ++ recursor.rules.map (·.rhs)
       metas := #[(r.cnst.name, constMeta)] }
 
-/-- Accumulator for the mutual member and equivalence-class folds. -/
+/-- Accumulator for the ordered mutual members. -/
 structure MutConstCompileState where
   payloads : Array Ixon.MutConst := #[]
   roots : Array Ixon.Expr := #[]
   metas : Array (Name × Ixon.ConstantMeta) := #[]
 
-def MutConstCompileState.addRepresentative
+def MutConstCompileState.addMember
     (state : MutConstCompileState) (member : CompiledMutConstMember) :
     MutConstCompileState :=
   { payloads := state.payloads.push member.payload
     roots := state.roots ++ member.roots
     metas := state.metas ++ member.metas }
 
-def MutConstCompileState.addEquivalent
-    (state : MutConstCompileState) (member : CompiledMutConstMember) :
-    MutConstCompileState :=
-  { state with metas := state.metas ++ member.metas }
-
-/-- Compile the non-representative tail of one equivalence class. -/
-def compileEquivalentMutConsts :
-    List MutConst → MutConstCompileState → CompileM MutConstCompileState
+/-- Compile each member in source order, retaining every payload. -/
+def compileMutConstMembers :
+    List MutConst → MutConstCompileState →
+      CompileM MutConstCompileState
   | [], state => pure state
   | source :: rest, state => do
     let member ← compileMutConstMember source
-    compileEquivalentMutConsts rest (state.addEquivalent member)
+    compileMutConstMembers rest (state.addMember member)
 
-/-- Compile one equivalence class, retaining the first member as its payload
-representative while still retaining metadata from every later member. -/
-def compileMutConstClass :
-    List MutConst → MutConstCompileState → CompileM MutConstCompileState
-  | [], state => pure state
-  | representative :: equivalents, state => do
-    let member ← compileMutConstMember representative
-    compileEquivalentMutConsts equivalents (state.addRepresentative member)
-
-/-- Compile equivalence classes in their sorted source order. -/
-def compileMutConstClasses :
-    List (List MutConst) → MutConstCompileState →
-      CompileM MutConstCompileState
-  | [], state => pure state
-  | constClass :: rest, state => do
-    let state ← compileMutConstClass constClass state
-    compileMutConstClasses rest state
-
-/-- Compile sorted equivalence classes of mutual constants.
+/-- Compile ordered mutual constants.
     Returns compiled constants, all root expressions, and metadata for each constant.
     No caller uses the roots (`buildBlockConstant` derives them from the payload
     with `constantInfoRootExprs`). -/
-def compileMutConsts (classes : List (List MutConst))
+def compileMutConsts (sources : List MutConst)
     : CompileM (Array Ixon.MutConst × Array Ixon.Expr × Array (Name × Ixon.ConstantMeta)) := do
-  let state ← compileMutConstClasses classes {}
+  let state ← compileMutConstMembers sources {}
   pure (state.payloads, state.roots, state.metas)
 
-/-- Preseed roots for one equivalence class in member order. -/
-def mutConstClassPreseedInputs :
+/-- Exact heterogeneous preseed inputs in mutual-member order. -/
+def mutualPreseedInputs :
     List MutConst → List (Expr × List Name)
   | [] => []
   | source :: rest =>
-    mutConstPreseedInputs source ++ mutConstClassPreseedInputs rest
+    mutConstPreseedInputs source ++ mutualPreseedInputs rest
 
-def mutConstClassPreseedExprs (sources : List MutConst) :
+def mutualPreseedExprs (sources : List MutConst) :
     Array (Expr × List Name) :=
-  (mutConstClassPreseedInputs sources).toArray
+  (mutualPreseedInputs sources).toArray
 
-/-- Exact heterogeneous preseed input used by a mutual block. -/
-def mutualPreseedInputs :
-    List (List MutConst) → List (Expr × List Name)
-  | [] => []
-  | constClass :: rest =>
-    mutConstClassPreseedInputs constClass ++ mutualPreseedInputs rest
-
-def mutualPreseedExprs (classes : List (List MutConst)) :
-    Array (Expr × List Name) :=
-  (mutualPreseedInputs classes).toArray
-
-/-- Standalone collapse used for a single definition or recursor
-representative. Inductives retain the mutual wrapper for their projection
+/-- Standalone collapse used for a single definition or recursor.
+Inductives retain the mutual wrapper for their projection
 scheme. -/
 def standaloneMutConstInfo? (payloads : Array Ixon.MutConst) :
     Option Ixon.ConstantInfo :=
@@ -2165,7 +2130,7 @@ def BlockResult.mk' (block : Ixon.Constant)
   ⟨block, blockBytes, blockAddr, blockMeta, projections, #[]⟩
 
 /-- Name-to-block registrations for a collapsed standalone representative. -/
-def buildStandaloneMutualProjections (classes : List (List MutConst))
+def buildStandaloneMutualProjections (sources : List MutConst)
     (block : Ixon.Constant)
     (metas : Array (Name × Ixon.ConstantMeta)) :
     Array (Name × Ixon.Constant × Ixon.ConstantMeta) := Id.run do
@@ -2174,16 +2139,15 @@ def buildStandaloneMutualProjections (classes : List (List MutConst))
       map.insert name constMeta
   let mut projections :
       Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
-  for constClass in classes do
-    for source in constClass do
-      let name := source.name
-      projections := projections.push
-        (name, block, metaMap.get? name |>.getD .empty)
+  for source in sources do
+    let name := source.name
+    projections := projections.push
+      (name, block, metaMap.get? name |>.getD .empty)
   return projections
 
 /-- Definition, inductive/constructor, and recursor projections for a mutual
 wrapper. -/
-def buildMutualProjections (classes : List (List MutConst))
+def buildMutualProjections (sources : List MutConst)
     (blockAddr : Address)
     (metas : Array (Name × Ixon.ConstantMeta)) :
     Array (Name × Ixon.Constant × Ixon.ConstantMeta) := Id.run do
@@ -2193,25 +2157,24 @@ def buildMutualProjections (classes : List (List MutConst))
   let mut projections :
       Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
   let mut idx : UInt64 := 0
-  for constClass in classes do
-    for source in constClass do
-      let projInfo : Ixon.ConstantInfo := match source with
-        | .defn _ => .dPrj ⟨idx, blockAddr⟩
-        | .indc _ => .iPrj ⟨idx, blockAddr⟩
-        | .recr _ => .rPrj ⟨idx, blockAddr⟩
-      let proj : Ixon.Constant := ⟨projInfo, #[], #[], #[]⟩
-      let sourceMeta := metaMap.get? source.name |>.getD .empty
-      projections := projections.push (source.name, proj, sourceMeta)
-      if let .indc inductiveData := source then
-        let mut cidx : UInt64 := 0
-        for ctor in inductiveData.ctors do
-          let ctorProjInfo : Ixon.ConstantInfo :=
-            .cPrj ⟨idx, cidx, blockAddr⟩
-          let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
-          let ctorMeta := metaMap.get? ctor.cnst.name |>.getD .empty
-          projections := projections.push
-            (ctor.cnst.name, ctorProj, ctorMeta)
-          cidx := cidx + 1
+  for source in sources do
+    let projInfo : Ixon.ConstantInfo := match source with
+      | .defn _ => .dPrj ⟨idx, blockAddr⟩
+      | .indc _ => .iPrj ⟨idx, blockAddr⟩
+      | .recr _ => .rPrj ⟨idx, blockAddr⟩
+    let proj : Ixon.Constant := ⟨projInfo, #[], #[], #[]⟩
+    let sourceMeta := metaMap.get? source.name |>.getD .empty
+    projections := projections.push (source.name, proj, sourceMeta)
+    if let .indc inductiveData := source then
+      let mut cidx : UInt64 := 0
+      for ctor in inductiveData.ctors do
+        let ctorProjInfo : Ixon.ConstantInfo :=
+          .cPrj ⟨idx, cidx, blockAddr⟩
+        let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
+        let ctorMeta := metaMap.get? ctor.cnst.name |>.getD .empty
+        projections := projections.push
+          (ctor.cnst.name, ctorProj, ctorMeta)
+        cidx := cidx + 1
     idx := idx + 1
   return projections
 
@@ -2220,17 +2183,17 @@ under `limits`; fails exactly when the construction does. Projection arrays do
 not affect the serialized main-block codec but remain part of the exact
 production result. -/
 def buildCompiledMutualBlock (limits : Ix.Sharing.Exact.Limits)
-    (classes : List (List MutConst)) (payloads : Array Ixon.MutConst)
+    (sources : List MutConst) (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta))
     (cache : BlockState) : Except CompileError BlockResult := do
   if let some info := standaloneMutConstInfo? payloads then
     let block ← buildConstantWithSharing limits info cache.refs cache.univs
     pure (BlockResult.mk' block .empty
-      (buildStandaloneMutualProjections classes block metas))
+      (buildStandaloneMutualProjections sources block metas))
   else
     let block ← buildConstantWithSharing limits (.muts payloads) cache.refs cache.univs
     pure (BlockResult.mk' block .empty
-      (buildMutualProjections classes (Address.admissionHash (Ixon.ser block)) metas))
+      (buildMutualProjections sources (Address.admissionHash (Ixon.ser block)) metas))
 
 /-- Check only the non-expression wire counts of a mutual member. Canonical
 sharing validates the rewritten expressions separately. -/
@@ -2251,32 +2214,31 @@ def checkMutualPayloadCounts (payloads : Array Ixon.MutConst) : CompileM Unit :=
 
 /-- Read the finished table state and assemble a compiled mutual payload with
 the compiler's canonical sharing (`CompileEnv.sharingLimits`). -/
-def finishMutualCompilation (classes : List (List MutConst))
+def finishMutualCompilation (sources : List MutConst)
     (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
   checkMutualPayloadCounts payloads
   let cache ← getBlockState
-  match buildCompiledMutualBlock (← read).1.sharingLimits classes payloads metas cache with
+  match buildCompiledMutualBlock (← read).1.sharingLimits sources payloads metas cache with
   | .ok result => pure result
   | .error e => throw e
 
-/-- Compile all mutual members and assemble their retained representatives. -/
-def compileMutualPayload (classes : List (List MutConst)) :
+/-- Compile all mutual members and assemble their payloads. -/
+def compileMutualPayload (sources : List MutConst) :
     CompileM BlockResult := do
-  let (payloads, _, metas) ← compileMutConsts classes
-  finishMutualCompilation classes payloads metas
+  let (payloads, _, metas) ← compileMutConsts sources
+  finishMutualCompilation sources payloads metas
 
 /-- Compile a mutual block and create projections for each constant.
     Returns the Muts block constant and projections for each name with metadata. -/
-def compileMutualBlock (classes : List (List MutConst))
+def compileMutualBlock (sources : List MutConst)
     : CompileM BlockResult := do
-  let mutCtx := MutConst.ctx classes
+  let mutCtx := MutConst.ctx sources
   withMutCtx mutCtx do
-    -- Preseed mirrors Rust compile_mutual (compile.rs:3763): collect over
-    -- every member (Rust iterates source order, we iterate sorted classes —
-    -- equivalent, since the tables are canonically re-sorted afterwards).
-    preseedExprTables (mutualPreseedExprs classes)
-    compileMutualPayload classes
+    -- Collect every member's roots before compiling; the tables are
+    -- canonically sorted by the shared preseed implementation.
+    preseedExprTables (mutualPreseedExprs sources)
+    compileMutualPayload sources
 
 /-! ## Main Compilation Entry Points -/
 
@@ -2556,11 +2518,11 @@ def collectMutConsts : List Name → Array MutConst →
       | none => acc
     collectMutConsts rest acc
 
-/-- Resolve, order (Lean's order, `sourceClasses`), and compile a non-singleton
+/-- Resolve, order (Lean's order, `sourceMembers`), and compile a non-singleton
 block. -/
 def compileMutualConstants (all : Set Name) : CompileM BlockResult := do
   let consts ← collectMutConsts all.toList #[]
-  compileMutualBlock (sourceClasses consts)
+  compileMutualBlock (sourceMembers consts)
 
 /-- Compile a constant by name (looks it up in the environment).
     Uses the block's `all` set from BlockEnv (populated from SCC analysis). -/

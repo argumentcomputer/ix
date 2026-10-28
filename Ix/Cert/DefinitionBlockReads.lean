@@ -313,23 +313,12 @@ section Ctx
 
 variable {defs : List Ix.Def}
 
-theorem flatten_singletons {α : Type} : ∀ l : List α, (l.map ([·])).flatten = l
-  | [] => rfl
-  | a :: l => by simp [flatten_singletons l]
-
-theorem defs_distinct (distinct : Ix.CompileCert.Canon.KeysDistinct (defs.map MutConst.defn)) :
-    Ix.CompileCert.Canon.KeysDistinct ((defs.map MutConst.defn).map ([·])).flatten := by
-  rw [flatten_singletons]
-  exact distinct
-
 theorem ctx_defs_val (distinct : Ix.CompileCert.Canon.KeysDistinct (defs.map MutConst.defn)) {n : Ix.Name}
-    {j : Nat} (h : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? = some j) :
+    {j : Nat} (h : (MutConst.ctx (defs.map MutConst.defn))[n]? = some j) :
     ∃ hj : j < defs.length, defs[j].name = n := by
-  obtain ⟨j', C, m, hC, hm, hcase⟩ := Ix.CompileCert.Canon.ctx_val (defs_distinct distinct) h
+  obtain ⟨j', m, hC, hcase⟩ := Ix.CompileCert.Canon.ctx_val distinct h
   simp only [List.getElem?_map, Option.map_eq_some_iff] at hC
-  obtain ⟨m0, ⟨d, hd, rfl⟩, rfl⟩ := hC
-  rw [List.mem_singleton] at hm
-  subst hm
+  obtain ⟨d, hd, rfl⟩ := hC
   have hj : j' < defs.length := (List.getElem?_eq_some_iff.mp hd).1
   have hdj : defs[j'] = d := (List.getElem?_eq_some_iff.mp hd).2
   rcases hcase with ⟨hname, rfl⟩ | ⟨k, c, hc, -, -⟩
@@ -338,9 +327,9 @@ theorem ctx_defs_val (distinct : Ix.CompileCert.Canon.KeysDistinct (defs.map Mut
 
 theorem ctx_defs_member (distinct : Ix.CompileCert.Canon.KeysDistinct (defs.map MutConst.defn)) {j : Nat}
     (hj : j < defs.length) :
-    (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[defs[j].name]? = some j :=
-  Ix.CompileCert.Canon.ctx_member (defs_distinct distinct) (C := [MutConst.defn defs[j]])
-    (m := MutConst.defn defs[j]) (by simp [hj]) (List.mem_singleton_self _)
+    (MutConst.ctx (defs.map MutConst.defn))[defs[j].name]? = some j :=
+  Ix.CompileCert.Canon.ctx_member distinct
+    (m := MutConst.defn defs[j]) (by simp [hj])
 
 end Ctx
 
@@ -356,7 +345,7 @@ open Ix.Cert.DefinitionDeps (ConstOcc)
 key, any other name as the compile environment's binding of it reads. -/
 def taggedNames (defs : List Ix.Def) (env : CompileEnv) (bindings : Bindings) (cx : Ctx .anon)
     (n : Ix.Name) (k : CName .anon) : Prop :=
-  match (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+  match (MutConst.ctx (defs.map MutConst.defn))[n]? with
   | some j => k = DefinitionOrder.freshKey cx j
   | none => ∃ a, lookupBinding env bindings n = some a ∧ cx.keyAt a = .ok k
 
@@ -365,7 +354,7 @@ variable {defs : List Ix.Def} {env : CompileEnv} {bindings : Bindings} {cx : Ctx
 theorem taggedNames_func : ∀ n k k', taggedNames defs env bindings cx n k →
     taggedNames defs env bindings cx n k' → k = k' := by
   intro n k k' h h'
-  cases hc : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+  cases hc : (MutConst.ctx (defs.map MutConst.defn))[n]? with
   | some j =>
     simp only [taggedNames, hc] at h h'
     rw [h, h']
@@ -384,7 +373,7 @@ theorem taggedNames_iff (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
     taggedNames defs env bindings cx n (DefinitionOrder.freshKey cx j) ↔ n = defs[j].name := by
   constructor
   · intro h
-    cases hc : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+    cases hc : (MutConst.ctx (defs.map MutConst.defn))[n]? with
     | some j' =>
       simp only [taggedNames, hc] at h
       have := DefinitionOrder.freshKey_inj cx _ _ h
@@ -529,7 +518,7 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before)
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before =
       (.ok output, after))
     (unresolved : ∀ d ∈ defs, bindings.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
@@ -590,11 +579,11 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     exact Option.some.inj ((Array.getElem?_eq_getElem (by omega)).symm.trans hmk)
   -- the compiled block, read in the closure's names
   have scopesA : ∀ m ∈ defs.map MutConst.defn, ∀ e ∈ BlockEmission.memberSources m,
-      ConstsSatisfy (SelfName (BlockEmission.mutContext ((defs.map MutConst.defn).map ([·])) context).2
+      ConstsSatisfy (SelfName (BlockEmission.mutContext (defs.map MutConst.defn) context).2
         (blockSelf cx owner defs.length) names) e := by
     intro _ _ e _
     refine constsSatisfy_of_forall (fun n index found => ?_) e
-    change (MutConst.ctx ((defs.map MutConst.defn).map ([·]))).get? n = some index at found
+    change (MutConst.ctx (defs.map MutConst.defn)).get? n = some index at found
     rw [Std.TreeMap.get?_eq_getElem?] at found
     obtain ⟨hj, hname⟩ := ctx_defs_val distinct found
     refine ⟨(Ix.LeanIngress.Key.subst ρ (ingressKey defs[index].name)).map f,
@@ -608,8 +597,8 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
   -- the compiled block, read with each member as a fresh key
   have externalT : BindingsCorrect context.1 bindings cx₁ (taggedNames defs context.1 bindings cx₁) := by
     intro n a hb
-    have hnone : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? = none := by
-      cases hc : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+    have hnone : (MutConst.ctx (defs.map MutConst.defn))[n]? = none := by
+      cases hc : (MutConst.ctx (defs.map MutConst.defn))[n]? with
       | none => rfl
       | some j =>
         exfalso
@@ -621,12 +610,12 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     obtain ⟨key, hk, -⟩ := external n a hb
     exact ⟨key, hk, by simp only [taggedNames, hnone]; exact ⟨a, hb, hk⟩⟩
   have scopesT : ∀ m ∈ defs.map MutConst.defn, ∀ e ∈ BlockEmission.memberSources m,
-      ConstsSatisfy (SelfName (BlockEmission.mutContext ((defs.map MutConst.defn).map ([·])) context).2
+      ConstsSatisfy (SelfName (BlockEmission.mutContext (defs.map MutConst.defn) context).2
         (DefinitionOrder.tagSelf defs.length (DefinitionOrder.freshKey cx₁))
         (taggedNames defs context.1 bindings cx₁)) e := by
     intro _ _ e _
     refine constsSatisfy_of_forall (fun n index found => ?_) e
-    change (MutConst.ctx ((defs.map MutConst.defn).map ([·]))).get? n = some index at found
+    change (MutConst.ctx (defs.map MutConst.defn)).get? n = some index at found
     rw [Std.TreeMap.get?_eq_getElem?] at found
     obtain ⟨hj, -⟩ := ctx_defs_val distinct found
     exact ⟨_, by simp only [DefinitionOrder.tagSelf, hj, ↓reduceIte]; rfl,

@@ -5,7 +5,7 @@ import Ix.CompileCert.RawRun
 
 `runBlock` compiles every block from Lean's own declarations. Its records are
 those of the block compile, a lone constant's `compileConstantInfo` or
-`compileMutualBlock` over the members in Lean's order (`sourceClasses`), run
+`compileMutualBlock` over the members in Lean's order (`sourceMembers`), run
 from the empty block state: the form the reading theorems take.
 
 * `runBlock_compiles`: a block's records are those of `compileBlock` run from
@@ -158,7 +158,7 @@ theorem mkIndc_preserves (val : InductiveVal) : Preserves id (MutConst.mkIndc va
 /-- **The block `compileBlock` returns is the block compile's**: a
 lone non-inductive constant's `compileConstantInfo`, or the mutual block
 `compileMutualBlock` compiled from the members in Lean's order
-(`sourceClasses`), up to the class order it records (the `Muts` entry is
+(`sourceMembers`), up to the class order it records (the `Muts` entry is
 registered after it and returns it as it is). -/
 theorem compileBlock_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
     {s s' : BlockState} {r : BlockResult}
@@ -173,7 +173,7 @@ theorem compileBlock_result {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all :
             | .thmInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromTheoremVal val)))
             | .recInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.recr val)))
             | _ => pure (ForInStep.yield acc)) ctx s₁ = (.ok cs, s₂) ∧
-          rawRun (compileMutualBlock (sourceClasses cs)) ctx s₂ = (.ok out, s₄) ∧
+          rawRun (compileMutualBlock (sourceMembers cs)) ctx s₂ = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
   unfold compileBlock at h
   obtain ⟨const, s₁, hc, h⟩ := bind_ok h
@@ -218,7 +218,7 @@ theorem compileBlock_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all 
     ∃ const, ctx.1.env.get? lo = some const ∧
       ((∃ s₂, rawRun (compileConstantInfo const) ctx s = (.ok r, s₂)) ∨
         ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s₄ : BlockState),
-          rawRun (compileMutualBlock (sourceClasses cs)) ctx s = (.ok out, s₄) ∧
+          rawRun (compileMutualBlock (sourceMembers cs)) ctx s = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
   obtain ⟨const, s₁, hc, rest⟩ := compileBlock_result h
   have h₁ : s₁ = s := by
@@ -240,7 +240,7 @@ theorem compileBlock_records {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all 
 /-- **A block publishes the block compile's records**: the records
 `runBlock` returns are those of the lone constant's
 `compileConstantInfo`, or of `compileMutualBlock` over the members in Lean's
-order (`sourceClasses`), each run from the empty block state in the block's
+order (`sourceMembers`), each run from the empty block state in the block's
 environment. -/
 theorem runBlock_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
     {r : BlockResult} {cache : BlockState}
@@ -250,7 +250,7 @@ theorem runBlock_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Nam
           (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok r', s₂) ∧
           recordsOf r = recordsOf r') ∨
         ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s₄ : BlockState),
-          rawRun (compileMutualBlock (sourceClasses cs))
+          rawRun (compileMutualBlock (sourceMembers cs))
             (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           recordsOf r = recordsOf out) := by
   obtain ⟨const, found, rest⟩ :=

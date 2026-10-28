@@ -6,7 +6,7 @@ import Ix.Cert.DefinitionBlocks
 `BlockEmission.mutualBlock_correct` reads a block whose members share their level parameters,
 as an inductive block's do. The members of a definition group need not: the compiler compiles
 each member under its own level parameters (`compileDefinitionData`), from the clean state the
-previous member leaves (its expression cache cleared). `classes_each` keeps each member's own
+previous member leaves (its expression cache cleared). `members_each` keeps each member's own
 relation (`relOf`), and `defsBlock_each` carries the members' roots through the block's sharing
 to the emitted record: the record is a block of definitions keeping their sources' headers, and
 its member reader reads each member's type and value as terms related to the member's, at the
@@ -86,30 +86,26 @@ abbrev relOf (σOf : MutConst → Ix.Name → LevelParam) (m : MutConst) : Ix.Ex
   rel param names (σOf m) (memberLps m)
 
 /-- **The members of a block, one per class, each in its own relation.** -/
-theorem classes_each (σOf : MutConst → Ix.Name → LevelParam) (context : CompileEnv × BlockEnv)
+theorem members_each (σOf : MutConst → Ix.Name → LevelParam) (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) :
     ∀ (ms : List MutConst) (acc : MutConstCompileState) {before after : BlockState}
       {state : MutConstCompileState},
       (∀ m ∈ ms, ∀ e ∈ memberSources m, ConstsSatisfy (SelfName context.2 self names) e) →
       (∀ m ∈ ms, Good cx param self (relOf param names σOf m) bindings before) →
-      rawRun (compileMutConstClasses (ms.map ([·])) acc) context before = (.ok state, after) →
+      rawRun (compileMutConstMembers ms acc) context before = (.ok state, after) →
       ExpressionRead.Extends (reader before).ecx (reader after).ecx ∧
         ∃ ps : List Ixon.MutConst, state.payloads = acc.payloads ++ ps.toArray ∧
           List.Forall₂ (fun m p => PayloadOf m p ∧ LvlsOf m p ∧
             SharingRoots.RootsRead (reader after) (relOf param names σOf m) (memberSources m)
               (mutConstRootExprs p)) ms ps
   | [], acc, before, after, state, _, _, ran => by
-    rw [List.map_nil, compileMutConstClasses, rawRun_pure] at ran
+    rw [compileMutConstMembers, rawRun_pure] at ran
     cases ran
     exact ⟨ExpressionRead.Extends.refl _, [], by simp, .nil⟩
   | m :: ms, acc, before, after, state, scopes, good, ran => by
-    rw [List.map_cons, compileMutConstClasses] at ran
-    obtain ⟨classState, middle, classRan, restRan⟩ := bind_ok ran
-    rw [compileMutConstClass] at classRan
-    obtain ⟨member, memberMiddle, memberRan, equivRan⟩ := bind_ok classRan
-    rw [compileEquivalentMutConsts, rawRun_pure] at equivRan
-    cases equivRan
+    rw [compileMutConstMembers] at ran
+    obtain ⟨member, middle, memberRan, restRan⟩ := bind_ok ran
     obtain ⟨clean₁, growth₁, payload₁, roots₁⟩ := BlockEmission.member_correct cx param self names (σOf m)
       bindings context aligned external m (scopes m List.mem_cons_self) (good m List.mem_cons_self)
       memberRan
@@ -120,12 +116,12 @@ theorem classes_each (σOf : MutConst → Ix.Name → LevelParam) (context : Com
       rw [hp] at hq
       cases hq
       exact Emission.definitionData_header d _ _ _ _ outRan
-    obtain ⟨growth₂, ps, hps, rest⟩ := classes_each σOf context aligned external ms _
+    obtain ⟨growth₂, ps, hps, rest⟩ := members_each σOf context aligned external ms _
       (fun m' hm => scopes m' (List.mem_cons_of_mem _ hm)) (fun _ _ => clean₁.good cx param self _) restRan
     refine ⟨extends_trans growth₁ growth₂, member.payload :: ps, ?_,
       .cons ⟨payload₁, lvls₁, SharingRoots.RootsRead.grow growth₂ roots₁⟩ rest⟩
     rw [hps]
-    simp [MutConstCompileState.addRepresentative]
+    simp [MutConstCompileState.addMember]
 
 end Blocks
 
@@ -197,9 +193,9 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (defs : List Ix.Def) (two : 2 ≤ defs.length)
     (scopes : ∀ m ∈ defs.map MutConst.defn, ∀ e ∈ memberSources m,
-      ConstsSatisfy (SelfName (mutContext ((defs.map MutConst.defn).map ([·])) context).2 self names) e)
+      ConstsSatisfy (SelfName (mutContext (defs.map MutConst.defn) context).2 self names) e)
     {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after)) :
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before = (.ok output, after)) :
     ∃ targets : List Ixon.Definition, output.block.info = .muts (targets.map Ixon.MutConst.defn).toArray ∧
       List.Forall₂ (fun d t => t = Emission.definitionPayload d t.typ t.value ∧ t.lvls.toNat = d.levelParams.size ∧
         (∃ type, (EmissionBlocks.recordReader cx param self after output.block).read t.typ = .ok type ∧
@@ -213,7 +209,7 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
   obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok ran
   have kept : ∀ m ∈ defs.map MutConst.defn, Good cx param self (relOf param names σOf m) bindings seededState :=
     fun m _ => (EmissionBlocks.preseed_then cx param self bindings (related := relOf param names σOf m)
-      (context := mutContext ((defs.map MutConst.defn).map ([·])) context) aligned
+      (context := mutContext (defs.map MutConst.defn) context) aligned
       (clean.good cx param self _) seeded).1
   unfold compileMutualPayload at compiled
   obtain ⟨payload, middle, payloadRan, finished⟩ := bind_ok compiled
@@ -221,8 +217,8 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
   obtain ⟨state, middle', classesRan, finish⟩ := bind_ok payloadRan
   rw [rawRun_pure] at finish
   cases finish
-  obtain ⟨_, ps, hps, each⟩ := classes_each cx param self names bindings σOf
-    (mutContext ((defs.map MutConst.defn).map ([·])) context) aligned external (defs.map MutConst.defn) {}
+  obtain ⟨_, ps, hps, each⟩ := members_each cx param self names bindings σOf
+    (mutContext (defs.map MutConst.defn) context) aligned external (defs.map MutConst.defn) {}
     scopes kept classesRan
   obtain ⟨same, _, built⟩ := ProjectionLayout.finish_mutual_ok _ _ _ _ finished
   subst same

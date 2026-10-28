@@ -24,7 +24,7 @@ accumulator's condition (`Triple.forIn_list`).
   term has one.
 * `build_has`: the canonical sharing keeps literals, and `literalKinds_has`: a record's literal
   is in its sharing table or its roots.
-* The payloads (`definitionData_lits` … `inductiveData_lits`, `member_lits`, `classes_lits`): a
+* The payloads (`definitionData_lits` … `inductiveData_lits`, `member_lits`, `members_lits`): a
   payload's roots are its source terms' compiled forms. The finishers return the compiled
   expressions they are given, and the preseed leaves the cache alone (`frame_preseed`).
 * `runBlock_lits`: a compiled block's record holds only literals of the terms its compile reads
@@ -1026,46 +1026,23 @@ theorem member_lits {T : Ix.Expr → Prop} (c : MutConst) (hc : MutLits T c) :
 abbrev PayloadsLits (T : Ix.Expr → Prop) (state : MutConstCompileState) : Prop :=
   ∀ p ∈ state.payloads.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e
 
-theorem equivalents_lits {T : Ix.Expr → Prop} (sources : List MutConst) (initial : MutConstCompileState)
+theorem members_lits {T : Ix.Expr → Prop} (sources : List MutConst) (initial : MutConstCompileState)
     (hc : ∀ c ∈ sources, MutLits T c) :
-    Triple LI (fun _ _ => PayloadsLits T initial) (compileEquivalentMutConsts sources initial)
+    Triple LI (fun _ _ => PayloadsLits T initial) (compileMutConstMembers sources initial)
       (fun _ _ r => PayloadsLits T r) := by
   induction sources generalizing initial with
   | nil => exact Triple.returns fun _ _ _ h => h
   | cons source rest ih =>
-    rw [compileEquivalentMutConsts]
-    refine Triple.of_imp fun hinit => ?_
-    refine Triple.andThen (member_lits source (hc source (by simp))) fun member _ => ?_
-    exact Triple.pre (ih _ fun c h => hc c (List.mem_cons_of_mem _ h)) fun _ _ _ _ => hinit
-
-theorem constClass_lits {T : Ix.Expr → Prop} (sources : List MutConst) (initial : MutConstCompileState)
-    (hc : ∀ c ∈ sources, MutLits T c) :
-    Triple LI (fun _ _ => PayloadsLits T initial) (compileMutConstClass sources initial)
-      (fun _ _ r => PayloadsLits T r) := by
-  cases sources with
-  | nil => exact Triple.returns fun _ _ _ h => h
-  | cons source rest =>
-    rw [compileMutConstClass]
+    rw [compileMutConstMembers]
     refine Triple.of_imp fun hinit => ?_
     refine Triple.andThen (member_lits source (hc source (by simp))) fun member hmember => ?_
-    refine Triple.pre (equivalents_lits rest _ fun c h => hc c (List.mem_cons_of_mem _ h)) fun _ _ _ _ => ?_
+    refine Triple.pre (ih _ fun c h => hc c (List.mem_cons_of_mem _ h)) fun _ _ _ _ => ?_
     intro p hp
-    simp only [MutConstCompileState.addRepresentative, Array.toList_push, List.mem_append,
+    simp only [MutConstCompileState.addMember, Array.toList_push, List.mem_append,
       List.mem_singleton] at hp
     rcases hp with hp | rfl
     · exact hinit p hp
     · exact hmember
-
-theorem classes_lits {T : Ix.Expr → Prop} (sources : List (List MutConst)) (initial : MutConstCompileState)
-    (hc : ∀ cls ∈ sources, ∀ c ∈ cls, MutLits T c) :
-    Triple LI (fun _ _ => PayloadsLits T initial) (compileMutConstClasses sources initial)
-      (fun _ _ r => PayloadsLits T r) := by
-  induction sources generalizing initial with
-  | nil => exact Triple.returns fun _ _ _ h => h
-  | cons source rest ih =>
-    rw [compileMutConstClasses]
-    exact Triple.bind (constClass_lits source initial (hc source (by simp))) fun state =>
-      ih state fun cls h => hc cls (List.mem_cons_of_mem _ h)
 
 /-! ## The block's record holds its payload's literals -/
 
@@ -1101,7 +1078,7 @@ theorem finishConstant_lits {T : Ix.Expr → Prop} (info : Ixon.ConstantInfo) (b
   cases done
   exact ⟨hI, built_lits (BlockLayout.buildBlockConstant_ok hb) roots⟩
 
-theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
+theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out)
     (roots : ∀ p ∈ payloads.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e) : BlockLits T out := by
@@ -1134,16 +1111,16 @@ theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {c
     obtain ⟨p, hp, he⟩ := he
     exact roots p hp e he
 
-theorem mutConsts_lits {T : Ix.Expr → Prop} (classes : List (List MutConst))
-    (hc : ∀ cls ∈ classes, ∀ c ∈ cls, MutLits T c) :
+theorem mutConsts_lits {T : Ix.Expr → Prop} (classes : List MutConst)
+    (hc : ∀ c ∈ classes, MutLits T c) :
     Triple LI (fun _ _ => True) (compileMutConsts classes)
       (fun _ _ out => ∀ p ∈ out.1.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e) := by
   unfold compileMutConsts
-  exact Triple.bind (Triple.pre (classes_lits classes {} hc) fun _ _ _ _ p hp => by simp at hp)
+  exact Triple.bind (Triple.pre (members_lits classes {} hc) fun _ _ _ _ p hp => by simp at hp)
     fun state => Triple.returns fun _ _ _ h => h
 
-theorem mutualPayload_lits {T : Ix.Expr → Prop} (classes : List (List MutConst))
-    (hc : ∀ cls ∈ classes, ∀ c ∈ cls, MutLits T c) :
+theorem mutualPayload_lits {T : Ix.Expr → Prop} (classes : List MutConst)
+    (hc : ∀ c ∈ classes, MutLits T c) :
     Triple LI (fun _ _ => True) (compileMutualPayload classes) (fun _ _ r => BlockLits T r) := by
   unfold compileMutualPayload
   refine Triple.andThen (mutConsts_lits classes hc) fun compiled hcompiled => ?_
@@ -1154,8 +1131,8 @@ theorem mutualPayload_lits {T : Ix.Expr → Prop} (classes : List (List MutConst
   subst same
   exact ⟨hI, mutual_lits built hcompiled⟩
 
-theorem mutualBlock_lits {T : Ix.Expr → Prop} (classes : List (List MutConst))
-    (hc : ∀ cls ∈ classes, ∀ c ∈ cls, MutLits T c) :
+theorem mutualBlock_lits {T : Ix.Expr → Prop} (classes : List MutConst)
+    (hc : ∀ c ∈ classes, MutLits T c) :
     Triple LI (fun _ _ => True) (compileMutualBlock classes) (fun _ _ r => BlockLits T r) := by
   unfold compileMutualBlock
   dsimp only
@@ -1323,8 +1300,8 @@ theorem compileBlock_lits {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : I
          · exact Preserves.bind (BlockRecords.mkIndc_preserves _) fun _ => Preserves.pure id _
          all_goals exact Preserves.pure id _
        subst h₂
-       obtain ⟨-, lits⟩ := mutualBlock_lits (sourceClasses cs)
-         (fun cls hcls c hc => members c (Claims.mem_sourceClasses hcls hc)) ctx {} out s₄ cacheLits_empty
+       obtain ⟨-, lits⟩ := mutualBlock_lits (sourceMembers cs)
+         (fun c hc => members c (Claims.mem_sourceMembers hc)) ctx {} out s₄ cacheLits_empty
          trivial hout
        intro k hk
        rw [block] at hk

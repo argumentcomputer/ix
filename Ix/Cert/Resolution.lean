@@ -1082,7 +1082,7 @@ theorem claimWrites_records {k : Ix.Name} {r r' : BlockResult}
 
 /-- **A block's claims are the block compile's**: the lone constant's
 `compileConstantInfo`, or `compileMutualBlock` over the members in Lean's order
-(`sourceClasses`), run from the empty block state
+(`sourceMembers`), run from the empty block state
 (`Ix.Cert.BlockRecords.runBlock_records`). -/
 theorem runBlock_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {r : BlockResult}
     {c : BlockState}
@@ -1092,7 +1092,7 @@ theorem runBlock_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {
           (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok r', s₂) ∧
           claimWrites k r = claimWrites k r') ∨
         ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s₄ : BlockState),
-          Ix.CompileCert.rawRun (compileMutualBlock (sourceClasses cs))
+          Ix.CompileCert.rawRun (compileMutualBlock (sourceMembers cs))
             (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           claimWrites k r = claimWrites k out) := by
   obtain ⟨const, found, rest⟩ := Ix.Cert.BlockRecords.runBlock_records h
@@ -1104,7 +1104,7 @@ theorem runBlock_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {
 /-- **`(n, a, b)` is a primary claim of the block compile** of the members
 `A` under the key `k`, run from the empty block state in `cenv`: the lone
 constant's `compileConstantInfo`, or `compileMutualBlock` over the members in
-Lean's order (`sourceClasses`), the form the reading theorems take. -/
+Lean's order (`sourceMembers`), the form the reading theorems take. -/
 def BlockCompiled (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k n : Ix.Name) (a : Address)
     (b : ByteArray) : Prop :=
   ∃ const, cenv.env.get? k = some const ∧
@@ -1112,7 +1112,7 @@ def BlockCompiled (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k n : Ix.Name) (a : 
         (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok r, s) ∧
         (n, a, b) ∈ claimWrites k r) ∨
       ∃ (cs : Array Ix.MutConst) (out : BlockResult) (s : BlockState),
-        Ix.CompileCert.rawRun (compileMutualBlock (sourceClasses cs))
+        Ix.CompileCert.rawRun (compileMutualBlock (sourceMembers cs))
           (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok out, s) ∧
         (n, a, b) ∈ claimWrites k out)
 

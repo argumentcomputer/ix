@@ -4,8 +4,8 @@ import Ix.CompileCert.Canon.QSortSorted
 
 /-! # Lean's order on a block's members
 
-The compiler lays a block out in Lean's order (`Ix.CompileM.sourceClasses`): its members sorted
-by `Ix.sourceOrderLt` on their keys (`classKey`: a position and a name), ties broken by their
+The compiler lays a block out in Lean's order (`Ix.CompileM.sourceMembers`): its members sorted
+by `Ix.sourceOrderLt` on their keys (`orderKey`: a position and a name), ties broken by their
 order in the input. Quotient Source orders a group of definitions by the same comparison. This
 module proves:
 
@@ -15,7 +15,7 @@ module proves:
 * so `Ix.sourceOrderLt` is a strict weak order: `lt_irrefl`, `lt_trans`, `lt_of_lt_of_le`,
   `lt_of_le_of_lt`, `le_trans`, and two keys neither of which is before the other tie
   (`tie_of_not_lt`);
-* `sourceClasses` lists, one per class, the sorted permutation of its input (`sourceClasses_eq`):
+* `sourceMembers` lists, one per class, the sorted permutation of its input (`sourceMembers_eq`):
   any permutation of the input that is sorted and has no two members that tie. -/
 
 namespace Ix.Cert.LeanOrder
@@ -210,15 +210,15 @@ theorem tie_of_not_lt {a b : Nat × Ix.Name} (h₁ : Ix.sourceOrderLt a b = fals
   rw [Ordering.then_eq_eq] at e
   exact ⟨Nat.compare_eq_eq.mp e.1, e.2⟩
 
-/-! ## `sourceClasses` sorts -/
+/-! ## `sourceMembers` sorts -/
 
-/-- A block member's key in Lean's order (`sourceClasses`'): its position, and its name. -/
-def classKey : MutConst → Nat × Ix.Name
+/-- A block member's key in Lean's order (`sourceMembers`'): its position, and its name. -/
+def orderKey : MutConst → Nat × Ix.Name
   | .indc i => (Ix.blockPosition i.all i.name, i.name)
   | .recr r => ((recursorFamilyPosition r).toNat, r.cnst.name)
   | .defn d => (Ix.blockPosition d.all d.name, d.name)
 
-/-- The comparison `sourceClasses` sorts by: Lean's order on the members' keys, ties broken by
+/-- The comparison `sourceMembers` sorts by: Lean's order on the members' keys, ties broken by
 their positions in the input. -/
 def zipBefore {α : Type} (key : α → Nat × Ix.Name) (a b : α × Nat) : Bool :=
   Ix.sourceOrderLt (key a.1) (key b.1) || (!Ix.sourceOrderLt (key b.1) (key a.1) && a.2 < b.2)
@@ -236,29 +236,27 @@ theorem zipBefore_trans {α : Type} (key : α → Nat × Ix.Name) (a b c : α ×
   · exact .inl (lt_of_le_of_lt h₁ h₂)
   · exact .inr ⟨le_trans h₁ h₂, Nat.lt_trans i₁ i₂⟩
 
-theorem sourceClasses_def (cs : Array MutConst) :
-    sourceClasses cs = ((cs.zipIdx.qsort (zipBefore classKey)).toList.map (·.1)).map ([·]) := by
-  rw [List.map_map]
+theorem sourceMembers_def (cs : Array MutConst) :
+    sourceMembers cs = (cs.zipIdx.qsort (zipBefore orderKey)).toList.map (·.1) := by
   rfl
 
-/-- **`sourceClasses` is the sorted permutation of its input**: one class per member, in the order
+/-- **`sourceMembers` is the sorted permutation of its input**: one class per member, in the order
 of any permutation of the input that Lean's order sorts and in which no two members tie. -/
-theorem sourceClasses_eq {cs : Array MutConst} {xs : List MutConst} (perm : cs.toList.Perm xs)
-    (sorted : xs.Pairwise fun a b => Ix.sourceOrderLt (classKey b) (classKey a) = false)
-    (noTie : ∀ a ∈ xs, ∀ b ∈ xs, Ix.sourceOrderLt (classKey a) (classKey b) = false →
-      Ix.sourceOrderLt (classKey b) (classKey a) = false → a = b) :
-    sourceClasses cs = xs.map ([·]) := by
-  rw [sourceClasses_def]
-  congr 1
-  have hperm : ((cs.zipIdx.qsort (zipBefore classKey)).toList.map (·.1)).Perm xs := by
+theorem sourceMembers_eq {cs : Array MutConst} {xs : List MutConst} (perm : cs.toList.Perm xs)
+    (sorted : xs.Pairwise fun a b => Ix.sourceOrderLt (orderKey b) (orderKey a) = false)
+    (noTie : ∀ a ∈ xs, ∀ b ∈ xs, Ix.sourceOrderLt (orderKey a) (orderKey b) = false →
+      Ix.sourceOrderLt (orderKey b) (orderKey a) = false → a = b) :
+    sourceMembers cs = xs := by
+  rw [sourceMembers_def]
+  have hperm : ((cs.zipIdx.qsort (zipBefore orderKey)).toList.map (·.1)).Perm xs := by
     refine List.Perm.trans ?_ perm
-    have p := ((Ix.CompileCert.Canon.qsort_perm cs.zipIdx (zipBefore classKey)).toList).map (·.1)
+    have p := ((Ix.CompileCert.Canon.qsort_perm cs.zipIdx (zipBefore orderKey)).toList).map (·.1)
     rw [Array.toList_zipIdx, List.zipIdx_map_fst] at p
     exact p
-  refine List.Perm.eq_of_pairwise (le := fun a b => Ix.sourceOrderLt (classKey b) (classKey a) = false)
+  refine List.Perm.eq_of_pairwise (le := fun a b => Ix.sourceOrderLt (orderKey b) (orderKey a) = false)
     (fun a b ha hb hab hba => noTie a (hperm.mem_iff.mp ha) b hb hba hab) ?_ sorted hperm
-  have hs := Ix.CompileCert.Canon.qsort_pairwise cs.zipIdx (zipBefore classKey) (zipBefore_irrefl classKey)
-    (zipBefore_trans classKey)
+  have hs := Ix.CompileCert.Canon.qsort_pairwise cs.zipIdx (zipBefore orderKey) (zipBefore_irrefl orderKey)
+    (zipBefore_trans orderKey)
   rw [List.pairwise_map]
   refine hs.imp fun {x y} h => ?_
   unfold zipBefore at h
@@ -267,9 +265,9 @@ theorem sourceClasses_eq {cs : Array MutConst} {xs : List MutConst} (perm : cs.t
 
 end Ix.Cert.LeanOrder
 
-/-- info: 'Ix.Cert.LeanOrder.sourceClasses_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Ix.Cert.LeanOrder.sourceMembers_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Ix.Cert.LeanOrder.sourceClasses_eq
+#print axioms Ix.Cert.LeanOrder.sourceMembers_eq
 
 /-- info: 'Ix.Cert.LeanOrder.ingressName_of_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

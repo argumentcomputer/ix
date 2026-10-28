@@ -2480,7 +2480,7 @@ fun {α} action post =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionWire.Safe.expression
 
-/-- info: Ix.CompileCert.EmissionWire.Safe.mutConsts : ∀ (sources : List (List Ix.MutConst)),
+/-- info: Ix.CompileCert.EmissionWire.Safe.mutConsts : ∀ (sources : List Ix.MutConst),
   Ix.CompileCert.EmissionWire.Safe (Ix.CompileM.compileMutConsts sources) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionWire.Safe.mutConsts
@@ -2792,7 +2792,7 @@ block that decodes exactly. Every lemma behind them is audited in
 #check @Ix.CompileCert.EmissionDispatch.constant_codec
 
 /-- info: Ix.CompileCert.EmissionDispatch.mutualBlock_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
-  (classes : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  (classes : List Ix.MutConst) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
   Ix.Sharing.Verify.BlockWireTablesWF before →
     Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
       Ix.Sharing.Verify.BlockResultCodecWF output -/
@@ -3051,10 +3051,10 @@ constructors (`inductive_projection_resolves`,
 `constructor_projection_resolves`). Every lemma behind them is audited in
 `Ix.CompileCert.ReadingAudit`. -/
 
-/-- info: Ix.CompileCert.ProjectionLayout.mutual_block_shape : ∀ (sources : List (List Ix.MutConst)),
+/-- info: Ix.CompileCert.ProjectionLayout.mutual_block_shape : ∀ (sources : List Ix.MutConst),
   Ix.CompileCert.Emission.Yields (Ix.CompileM.compileMutualBlock sources) fun output =>
     Ix.CompileCert.ProjectionLayout.blockShape output.block.info =
-      some (List.map Ix.CompileCert.ProjectionLayout.sourceShape (List.filterMap List.head? sources)) -/
+      some (List.map Ix.CompileCert.ProjectionLayout.sourceShape sources) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.ProjectionLayout.mutual_block_shape
 
@@ -3107,25 +3107,11 @@ agree in shape (`MutualProjections.ClassesAgree`, discharged from the class
 sort in R9b, below) and source constructors declaring their positions. Every lemma
 behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
 
-/-- info: def Ix.CompileCert.MutualProjections.ClassesAgree : List (List Ix.MutConst) → Prop :=
-fun sources =>
-  ∀ (members : List Ix.MutConst),
-    members ∈ sources →
-      ∀ (left : Ix.MutConst),
-        left ∈ members →
-          ∀ (right : Ix.MutConst),
-            right ∈ members →
-              Ix.CompileCert.ProjectionLayout.sourceShape left = Ix.CompileCert.ProjectionLayout.sourceShape right -/
-#guard_msgs (whitespace := lax) in
-#print Ix.CompileCert.MutualProjections.ClassesAgree
-
 /-- info: Ix.CompileCert.MutualArtifact.mutual_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
-  (sources : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  (sources : List Ix.MutConst) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
   Ix.Sharing.Verify.BlockWireTablesWF before →
-    (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
-      Ix.CompileCert.MutualProjections.ClassesAgree sources →
-        (∀ (source : Ix.MutConst),
-            source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
+    (∀ (source : Ix.MutConst),
+        source ∈ sources → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
           Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before = (Except.ok output, after) →
             Ix.Sharing.Verify.BlockResultCodecWF output ∧
               Ix.CompileCert.MutualProjections.ProjectionWire output ∧

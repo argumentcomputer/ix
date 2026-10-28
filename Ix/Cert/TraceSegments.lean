@@ -167,7 +167,7 @@ the closure's context the one quotient Source lowers it at. -/
 structure BlockCompiled (t : RoleTable) (preA : Prelude .anon) (order : List Address)
     (hints : CName .source → Option ReducibilityHint) (defs : List Ix.Def) (cenv : CompileEnv) (benv : BlockEnv)
     (output : BlockResult) (after : BlockState) : Prop where
-  ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) (cenv, benv) {} = (.ok output, after)
+  ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) (cenv, benv) {} = (.ok output, after)
   fresh : ∀ d ∈ defs, cenv.nameToAddr.get? d.name = none
   claimed : Claimed ixe sub output
   bound : BoundResolve ixe cenv
@@ -200,7 +200,7 @@ structure InductiveCompiled (t : RoleTable) (preA : Prelude .anon) (order : List
     (first : Ix.InductiveVal) (hcsize : ctors.size = types.size)
     (cenv₁ : CompileEnv) (benv₁ : BlockEnv) (out₁ : BlockResult) (after₁ : BlockState)
     (cenv₂ : CompileEnv) (benv₂ : BlockEnv) (out₂ : BlockResult) (after₂ : BlockState) : Prop where
-  ran₁ : rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·]))) (cenv₁, benv₁) {} =
+  ran₁ : rawRun (compileMutualBlock ((indsOf types ctors).map MutConst.indc)) (cenv₁, benv₁) {} =
     (.ok out₁, after₁)
   claimed₁ : Claimed ixe sub out₁
   bound₁ : BoundResolve ixe cenv₁
@@ -210,7 +210,7 @@ structure InductiveCompiled (t : RoleTable) (preA : Prelude .anon) (order : List
   family : ∃ (cenvR₂ : CompileEnv) (all₂ : Ix.Set Ix.Name) (key₂ : Ix.Name) (r₂ : BlockResult) (cache₂ : BlockState),
     runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂) ∧ BlockPublication.Published ixe sub key₂ r₂ ∧
       BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out₂ ∧
-      (rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) (cenv₂, benv₂) {} =
+      (rawRun (compileMutualBlock (recs.toList.map MutConst.recr)) (cenv₂, benv₂) {} =
           (.ok out₂, after₂) ∨
         ∃ r, recs.toList = [r] ∧ key₂ = r.cnst.name ∧
           rawRun (compileConstantInfo (.recInfo r)) (cenv₂, benv₂) {} = (.ok out₂, after₂))
