@@ -15,13 +15,13 @@ public section
 namespace IxVM
 
 def roleSpec := ⟦
-  -- specVersion 2, specification digest 52049b9d09530c92cd2b02115a00ef79f64d99e8b279ee14c42b8b3dc9a94b3f.
+  -- specVersion 3, specification digest f09825902503729718c7ab437405b9f87efb97024085f8f2ea10e1e3ca378ba3.
   fn spec_version() -> G {
-    2
+    3
   }
 
   fn spec_digest() -> Addr {
-    store([0x52u8, 0x04u8, 0x9bu8, 0x9du8, 0x09u8, 0x53u8, 0x0cu8, 0x92u8, 0xcdu8, 0x2bu8, 0x02u8, 0x11u8, 0x5au8, 0x00u8, 0xefu8, 0x79u8, 0xf6u8, 0x4du8, 0x99u8, 0xe8u8, 0xb2u8, 0x79u8, 0xeeu8, 0x14u8, 0xc4u8, 0x2bu8, 0x8bu8, 0x3du8, 0xc9u8, 0xa9u8, 0x4bu8, 0x3fu8])
+    store([0xf0u8, 0x98u8, 0x25u8, 0x90u8, 0x25u8, 0x03u8, 0x72u8, 0x97u8, 0x18u8, 0xc7u8, 0xabu8, 0x43u8, 0x74u8, 0x05u8, 0xb9u8, 0xf8u8, 0x7eu8, 0xfbu8, 0x97u8, 0x02u8, 0x40u8, 0x85u8, 0xf8u8, 0xf2u8, 0xeau8, 0x10u8, 0xe1u8, 0xe3u8, 0xcau8, 0x37u8, 0x8bu8, 0xa3u8])
   }
 
   fn role_count() -> G {
@@ -404,7 +404,7 @@ def roleSpec := ⟦
       22 => store(ListNode.Nil),
       23 => store(ListNode.Cons(23, store(ListNode.Cons(8, store(ListNode.Nil))))),
       24 => store(ListNode.Cons(26, store(ListNode.Nil))),
-      25 => store(ListNode.Nil),
+      25 => store(ListNode.Cons(4, store(ListNode.Nil))),
       26 => store(ListNode.Cons(0, store(ListNode.Cons(41, store(ListNode.Cons(43, store(ListNode.Cons(47, store(ListNode.Cons(4, store(ListNode.Cons(8, store(ListNode.Nil))))))))))))),
       27 => store(ListNode.Cons(0, store(ListNode.Cons(41, store(ListNode.Cons(43, store(ListNode.Cons(47, store(ListNode.Cons(4, store(ListNode.Cons(8, store(ListNode.Nil))))))))))))),
       28 => store(ListNode.Cons(0, store(ListNode.Cons(47, store(ListNode.Cons(49, store(ListNode.Cons(4, store(ListNode.Cons(8, store(ListNode.Nil))))))))))),
@@ -442,12 +442,12 @@ def roleSpec := ⟦
       20 => 1,
       21 => 1,
       22 => 1,
-      23 => 1,
-      24 => 1,
-      25 => 1,
-      26 => 1,
-      27 => 1,
-      28 => 1,
+      23 => 0,
+      24 => 0,
+      25 => 0,
+      26 => 0,
+      27 => 0,
+      28 => 0,
       29 => 1,
       30 => 1,
       31 => 1,
@@ -573,11 +573,11 @@ def roleSpec := ⟦
       21 => 0,
       22 => 0,
       23 => 0,
-      24 => 0,
-      25 => 0,
+      24 => 1,
+      25 => 2,
       26 => 0,
-      27 => 0,
-      28 => 0,
+      27 => 1,
+      28 => 2,
       29 => 0,
       30 => 0,
       31 => 0,
@@ -638,10 +638,10 @@ def roleSpec := ⟦
       21 => (0, 0, 0, 0),
       22 => (0, 0, 0, 0),
       23 => (0, 0, 0, 0),
-      24 => (0, 0, 0, 0),
+      24 => (23, 0, 2, 2),
       25 => (0, 0, 0, 0),
       26 => (0, 0, 0, 0),
-      27 => (0, 0, 0, 0),
+      27 => (26, 0, 1, 1),
       28 => (0, 0, 0, 0),
       29 => (0, 0, 0, 0),
       30 => (0, 0, 0, 0),
@@ -702,10 +702,10 @@ def roleSpec := ⟦
       20 => 0,
       21 => 0,
       22 => 0,
-      23 => 0,
+      23 => 1,
       24 => 0,
       25 => 0,
-      26 => 0,
+      26 => 1,
       27 => 0,
       28 => 0,
       29 => 0,
@@ -802,7 +802,7 @@ def roleSpec := ⟦
       55 => store(KExprNode.Forall(store(KExprNode.Const(role_bound_addr(tbl, 0), store(ListNode.Nil))), store(KExprNode.Forall(store(KExprNode.Const(role_bound_addr(tbl, 0), store(ListNode.Nil))), store(KExprNode.Const(role_bound_addr(tbl, 0), store(ListNode.Nil))))))),
       56 => store(KExprNode.Forall(store(KExprNode.Srt(store(KLevelNode.Zero))), store(KExprNode.Forall(store(KExprNode.Srt(store(KLevelNode.Zero))), store(KExprNode.Forall(store(KExprNode.App(store(KExprNode.App(store(KExprNode.Const(role_bound_addr(tbl, 23), store(ListNode.Nil))), store(KExprNode.BVar(1)))), store(KExprNode.BVar(0)))), store(KExprNode.App(store(KExprNode.App(store(KExprNode.App(store(KExprNode.Const(role_bound_addr(tbl, 8), store(ListNode.Cons(store(KLevelNode.Succ(store(KLevelNode.Zero))), store(ListNode.Nil))))), store(KExprNode.Srt(store(KLevelNode.Zero))))), store(KExprNode.BVar(2)))), store(KExprNode.BVar(1)))))))))),
       57 => store(KExprNode.Forall(store(KExprNode.Srt(store(KLevelNode.Param(0)))), store(KExprNode.Forall(store(KExprNode.App(store(KExprNode.Const(role_bound_addr(tbl, 26), store(ListNode.Cons(store(KLevelNode.Param(0)), store(ListNode.Nil))))), store(KExprNode.BVar(0)))), store(KExprNode.BVar(1)))))),
-      58 => store(KExprNode.Srt(store(KLevelNode.Zero))),
+      58 => store(KExprNode.Forall(store(KExprNode.Srt(store(KLevelNode.Param(0)))), store(KExprNode.Forall(store(KExprNode.Const(role_bound_addr(tbl, 4), store(ListNode.Nil))), store(KExprNode.BVar(1)))))),
       _ => store(KExprNode.Srt(store(KLevelNode.Zero))),
     }
   }
