@@ -188,11 +188,32 @@ An explicit device request to a CPU-only Rust host fails.
 
 The current trace writer populates stage-one matrices on the CPU. CUDA
 accelerates multi-stark's prover phases; this does not add GPU trace codegen.
-The CUDA CI job checks and links both separate hosts. On a GPU machine, run
-`IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh` to prove an IxVM claim and a
-recursive proof on CUDA, then verify both with the CPU hosts. Both hosts also
-compile and link locally in the CUDA 13.3.1 development container. This host
-has no NVIDIA device or driver, so GPU execution remains hardware-unvalidated.
+The CUDA CI job checks and links both separate hosts. On a machine with an
+NVIDIA driver and CUDA toolkit, run this from the repository root:
+
+```sh
+IX_TEST_CUDA=1 IX_TEST_OUTPUT_DIR=.lake/cuda-validation \
+  bash tools/ixvm/check-formal.sh
+```
+
+Set `MULTI_STARK_CUDA_DEVICE` to select a device (zero by default). The gate
+builds CPU and CUDA hosts separately, then compares complete proof and key
+bytes for three grouped applications: the `Nat.add_comm` frontier claim,
+recursive verification, and aggregation wrapping. Each application must use
+multiple trace shards. It checks CPU retain/regenerate, CUDA retain/regenerate
+with host lookup buffers, and CUDA regeneration with graph-derived lookups.
+Every proof is independently verified by the CPU host. Wrong public inputs and
+explicit GPU requests to CPU-only hosts must fail.
+
+Logs, proofs, artifact/binary hashes, and a JSON report are saved under
+`.lake/cuda-validation/cuda-check-*/`, including on failure. Without
+`IX_TEST_OUTPUT_DIR`, GPU runs retain a directory under `.lake/formal-cuda-check.*`.
+Ordinary CPU CI runs the same gate's CPU controls; its report explicitly sets
+`hardware_validated: false`. Successful CUDA builds alone do not validate GPU
+execution. Both hosts compile and link locally in the CUDA 13.3.1 development
+container (SM 80), and all three CPU controls pass with identical proofs and
+keys between retain and regenerate. This host has no NVIDIA device or driver;
+the hardware run remains pending.
 
 `AIUR_TRACE_ONLY_LOOKUPS=1` lets CUDA derive lookup messages from the committed
 stage-one rows using multi-stark's graph evaluator. It avoids host lookup
@@ -200,6 +221,10 @@ buffers and selects regeneration at the batch barrier. Full host buffers remain
 the default because they support multi-stark's memory-pressure CPU fallback;
 shape-only buffers fail explicitly if a CPU fallback tries to consume them.
 The hardware integration gate exercises both modes and CPU-verifies the proofs.
+CPU verification and key export ignore this prover-only setting, so leaving it
+exported after GPU proving does not break those commands. CPU proving still
+rejects a request for graph-derived device lookups. This separation changes no
+circuit constraints, Lean proofs, verifying keys, or proof formats.
 
 `tools/ixvm/adapt.py --check` checks reproducibility against the pinned source
 revision. `tools/ixvm/recursion.py --check` and `--aggregate --check` do the same

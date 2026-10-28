@@ -124,7 +124,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let out = Path::new(cli.get(3).ok_or("missing output directory")?);
     std::fs::create_dir_all(out)?;
     let plan = TracePlan::new(&program, package.trace)?;
-    let backend = Backend::for_batch(&plan, Parameters::default())?;
+    let backend =
+      Backend::for_batch_verification(&plan, Parameters::default())?;
     let entry = &program.program().entries[0].name;
     let claim = backend.claim(entry, &[Val::ZERO; 16], &[])?;
     use multi_stark::p3_field::PrimeField64;
@@ -153,7 +154,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   if mode == "verify" {
     use aiur::trace::stark::BatchProof;
     let plan = TracePlan::new(&program, package.trace)?;
-    let backend = Backend::for_batch(&plan, Parameters::default())?;
+    let backend =
+      Backend::for_batch_verification(&plan, Parameters::default())?;
     let bytes = std::fs::read(cli.get(4).ok_or("missing proof")?)?;
     let proof = BatchProof::from_bytes(&bytes)?;
     if proof.to_bytes()? != bytes {

@@ -50,7 +50,8 @@ fn main() -> Result<(), Box<dyn Error>> {
       &program,
       package.trace.ok_or("artifact has no circuits")?,
     )?;
-    let backend = Backend::for_batch(&plan, Parameters::default())?;
+    let backend =
+      Backend::for_batch_verification(&plan, Parameters::default())?;
     let key = backend.verifying_key_bytes()?;
     let claim = backend.claim(
       "IxVM::verify_claim",
@@ -113,8 +114,11 @@ fn main() -> Result<(), Box<dyn Error>> {
   let before_setup = aiur::trace::stark::planning::resident_memory();
   let plan =
     TracePlan::new(&program, package.trace.ok_or("artifact has no circuits")?)?;
-  let backend =
-    Backend::for_batch_on_device(&plan, Parameters::default(), options.device)?;
+  let backend = if mode == "verify" {
+    Backend::for_batch_verification(&plan, Parameters::default())?
+  } else {
+    Backend::for_batch_on_device(&plan, Parameters::default(), options.device)?
+  };
   if mode == "verify" {
     let bytes = std::fs::read(path)?;
     let bytes = bytes.strip_prefix(MAGIC).ok_or("not a formal Aiur proof")?;

@@ -6,6 +6,14 @@ which does not run on a GPU. Future GPU benchmarks should explicitly request
 `spot=false`. RunsOn may fall back to on-demand capacity when Spot is
 unavailable or when provisioning an automatic recovery attempt.
 
+Formal Aiur's CPU integration job exercises the CPU controls of
+`tools/ixvm/check-cuda.py`. Actual CPU/CUDA proof and key parity, including
+sharded IxVM, recursion, and aggregation, requires a GPU host running
+`IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh`. The
+[migration guide](formal-aiur-migration.md#legacy-support-and-native-builds)
+documents the retained logs and report; the CUDA compilation job does not
+provide hardware validation.
+
 CI jobs request the `r7i+r8i+r7a+r8a` families and let RunsOn pick the size
 from `cpu=`, so a Spot request can draw from several pools; exact r8i types
 alone had no Spot capacity. Their Rust builds use the `portable` codegen mode

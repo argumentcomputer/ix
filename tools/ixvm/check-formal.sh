@@ -3,8 +3,19 @@
 # be supplied through the three IX_*_ARTIFACT variables to reuse compilation.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-formal_tmp=$(mktemp -d)
-trap 'rm -rf "$formal_tmp"' EXIT
+if [[ -n ${IX_TEST_OUTPUT_DIR:-} ]]; then
+  mkdir -p "$IX_TEST_OUTPUT_DIR"
+  formal_tmp=$(realpath "$IX_TEST_OUTPUT_DIR")
+elif [[ ${IX_TEST_CUDA:-0} == 1 ]]; then
+  mkdir -p .lake
+  formal_tmp=$(mktemp -d "$PWD/.lake/formal-cuda-check.XXXXXX")
+else
+  formal_tmp=$(mktemp -d)
+  trap 'rm -rf "$formal_tmp"' EXIT
+fi
+# Proving environment settings must not switch the baseline CLI to CUDA or
+# poison its CPU-only witness generation. The hardware gate scopes them itself.
+export IX_CUDA=0 AIUR_TRACE_ONLY_LOOKUPS=0
 
 python3 tools/ixvm/adapt.py --check
 python3 tools/ixvm/recursion.py --check
@@ -36,6 +47,7 @@ target/release/ixvm-proof test "$IX_AIUR_ARTIFACT" "$formal_tmp/claims.json"
 cat "$formal_tmp/prove.log"
 formal_proof=$(tail -n 1 "$formal_tmp/prove.log")
 .lake/build/bin/ix verify "$formal_proof"
+AIUR_TRACE_ONLY_LOOKUPS=1 .lake/build/bin/ix verify "$formal_proof"
 
 # Backend selection is explicit and the retained bytecode path still works.
 if .lake/build/bin/ix check --formal --legacy Nat.add_comm > "$formal_tmp/conflict.log" 2>&1; then
@@ -57,6 +69,7 @@ PYTEST
 target/release/stark-verifier test "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json"
 target/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json" "$formal_tmp/outer"
 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.json" "$formal_tmp/outer/proof.bin"
+AIUR_TRACE_ONLY_LOOKUPS=1 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.json" "$formal_tmp/outer/proof.bin"
 .lake/build/bin/formal-aggregate-tests "$formal_tmp/aggregation.json"
 target/release/stark-verifier cases "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.json"
 target/release/stark-verifier prove "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.json.wrap.json" "$formal_tmp/aggregate"
@@ -64,27 +77,14 @@ target/release/stark-verifier verify "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregate/
 
 # Optional hardware gate: prove with CUDA and independently verify with CPU
 # binaries. The separate target directory is the same one the CLI selects.
+cuda_check_args=()
 if [[ ${IX_TEST_CUDA:-0} == 1 ]]; then
   cargo build --release --locked --target-dir target/formal-cuda \
     -p ixvm -p stark-verifier --features parallel,cuda --bin ixvm-proof --bin stark-verifier
-  python3 - "$formal_tmp" <<'PYCUDA'
-import json, os, pathlib, sys
-p = pathlib.Path(sys.argv[1])
-case = json.loads((p / "claims.json").read_text())[0]["invocation"]
-(p / "cuda-claim.json").write_text(json.dumps(case))
-(p / "cuda-options.json").write_text(json.dumps({"device": int(os.getenv("MULTI_STARK_CUDA_DEVICE", "0")), "max_rows": 65536}))
-PYCUDA
-  target/formal-cuda/release/ixvm-proof prove "$IX_AIUR_ARTIFACT" "$formal_tmp/cuda-claim.json" \
-    "$formal_tmp/cuda-proof" 65536 auto "$formal_tmp/cuda-options.json"
-  target/release/ixvm-proof verify "$IX_AIUR_ARTIFACT" "$formal_tmp/cuda-claim.json" "$formal_tmp/cuda-proof"
-  target/formal-cuda/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json" \
-    "$formal_tmp/cuda-outer" 65536 auto "$formal_tmp/cuda-options.json"
-  target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/cuda-outer/public.json" "$formal_tmp/cuda-outer/proof.bin"
-  # Exercise graph-derived lookups as well as the default host-buffer fallback.
-  AIUR_TRACE_ONLY_LOOKUPS=1 target/formal-cuda/release/ixvm-proof prove "$IX_AIUR_ARTIFACT" "$formal_tmp/cuda-claim.json" \
-    "$formal_tmp/cuda-graph-proof" 65536 regenerate "$formal_tmp/cuda-options.json"
-  target/release/ixvm-proof verify "$IX_AIUR_ARTIFACT" "$formal_tmp/cuda-claim.json" "$formal_tmp/cuda-graph-proof"
-  AIUR_TRACE_ONLY_LOOKUPS=1 target/formal-cuda/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json" \
-    "$formal_tmp/cuda-graph-outer" 65536 regenerate "$formal_tmp/cuda-options.json"
-  target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/cuda-graph-outer/public.json" "$formal_tmp/cuda-graph-outer/proof.bin"
+else
+  cuda_check_args+=(--cpu-only)
 fi
+python3 tools/ixvm/check-cuda.py "$formal_tmp" \
+  --ixvm-artifact "$IX_AIUR_ARTIFACT" \
+  --recursion-artifact "$IX_RECURSION_ARTIFACT" \
+  --aggregate-artifact "$IX_AGGR_ARTIFACT" "${cuda_check_args[@]}"

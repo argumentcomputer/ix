@@ -1,5 +1,10 @@
 # Proving on GPUs: lanes, generated traces, and how to benchmark them
 
+This guide describes the retained **legacy** backend. Select it with `--legacy`
+when running the commands below. The default formal Aiur backend has separate
+CUDA hosts and CPU trace generation; see its
+[CUDA integration and validation instructions](formal-aiur-migration.md#legacy-support-and-native-builds).
+
 Everything in this document builds on prover-level trace sharding
 ([aiur-trace-sharding.md](aiur-trace-sharding.md)): one execution of a
 claim is proven as a batch of trace shards that each fit a device, and the

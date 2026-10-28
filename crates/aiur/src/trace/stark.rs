@@ -145,6 +145,16 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Self::with_memory_policy(plan, parameters, true)
   }
 
+  /// Reconstruct the trusted batch system for verification or key export.
+  /// Prover-only lookup settings must not affect these operations. Use the CPU
+  /// host binary when verification must not initialize the CUDA backend.
+  pub fn for_batch_verification(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+  ) -> Result<Self, String> {
+    Self::build_with_lookup_policy(plan, parameters, true, None, false)
+  }
+
   /// Explicit CUDA placement. CPU builds reject a requested device instead of
   /// silently running a different backend. Device placement does not change keys.
   pub fn for_batch_on_device(
@@ -171,6 +181,22 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   ) -> Result<Self, String> {
     let gpu_lookup_only =
       std::env::var("AIUR_TRACE_ONLY_LOOKUPS").as_deref() == Ok("1");
+    Self::build_with_lookup_policy(
+      plan,
+      parameters,
+      segmented_memory,
+      device,
+      gpu_lookup_only,
+    )
+  }
+
+  fn build_with_lookup_policy(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    segmented_memory: bool,
+    device: Option<i32>,
+    gpu_lookup_only: bool,
+  ) -> Result<Self, String> {
     if gpu_lookup_only && !cfg!(feature = "cuda") {
       return Err("AIUR_TRACE_ONLY_LOOKUPS=1 requires a CUDA build".into());
     }

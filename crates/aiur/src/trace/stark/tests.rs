@@ -26,6 +26,55 @@ fn parameters() -> Parameters {
   Parameters { log_blowup: 1, num_queries: 32 }
 }
 
+#[cfg(not(feature = "cuda"))]
+#[test]
+fn cpu_verification_ignores_gpu_prover_environment() {
+  // Exercise the real environment path in an isolated process. Mutating the
+  // parent environment would race the other tests and is unsafe in Rust 2024.
+  if std::env::var("AIUR_TEST_GPU_ENV_CHILD").as_deref() != Ok("1") {
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+      .args([
+        "--exact",
+        "trace::stark::tests::cpu_verification_ignores_gpu_prover_environment",
+        "--nocapture",
+      ])
+      .env("AIUR_TEST_GPU_ENV_CHILD", "1")
+      .env("AIUR_TRACE_ONLY_LOOKUPS", "1")
+      .output()
+      .unwrap();
+    assert!(
+      child.status.success(),
+      "{}",
+      String::from_utf8_lossy(&child.stderr)
+    );
+    return;
+  }
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  // A CPU prover must still reject a request for device-derived lookups.
+  assert!(Backend::for_batch(&plan, parameters()).is_err());
+  let backend = Backend::for_batch_verification(&plan, parameters()).unwrap();
+  assert!(!backend.gpu_lookup_only);
+  let record = program.execute("root", vec![3]).unwrap();
+  let witness = backend.generate(&record, "root", &[3]).unwrap();
+  let proof = backend
+    .prove_batch(
+      "root",
+      &[3],
+      &[9],
+      witness,
+      1,
+      multi_stark::batch::Retention::Regenerate,
+    )
+    .unwrap();
+  let key =
+    VerifyingKey::from_bytes(&backend.verifying_key_bytes().unwrap()).unwrap();
+  key.verify(&[backend.claim("root", &[3], &[9]).unwrap()], &proof).unwrap();
+  assert!(
+    key.verify(&[backend.claim("root", &[3], &[8]).unwrap()], &proof).is_err()
+  );
+}
+
 #[test]
 fn batch_memory_partition_and_persisted_key() {
   use multi_stark::batch::Retention;

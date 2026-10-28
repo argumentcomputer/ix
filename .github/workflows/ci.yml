@@ -157,8 +157,9 @@ jobs:
         with:
           rust-version: ${{ env.RUST_VERSION }}
 
-  # Compile and link the opt-in backend without requiring a GPU. Runtime and
-  # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
+  # Compile and link the opt-in backend without requiring a GPU. Application
+  # runtime/proof parity uses IX_TEST_CUDA=1 tools/ixvm/check-formal.sh on a
+  # GPU host; the CPU job also exercises that gate's CPU controls.
   cuda-compile:
     runs-on: runs-on=${{ github.run_id }}-cuda-compile-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     container:
