@@ -145,7 +145,7 @@ private def catAsm : Address := Address.blake3 "assumptions".toUTF8
 
 /-- Must equal the Rust pin in `proof.rs::catalog_claim_wire_bytes_pinned`. -/
 private def catalogDigestPin : String :=
-  "5f6f427ffe393beabc12bf64df64c32657d79d0dd925ec7a3e2ea9180fa85e03"
+  "72eadc8676a4b86a6c829087b2aaf7c56674e0dec42a356cf70c47c654c37066"
 
 def catalogClaimTests : TestSeq :=
   let someBytes := Claim.ser (.catalog ctx catMembers catContent (some catAsm))

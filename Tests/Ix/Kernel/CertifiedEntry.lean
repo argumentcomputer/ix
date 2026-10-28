@@ -267,6 +267,27 @@ def andElsewhere : Except String Ix.Kernel.RoleTable := do
 #guard (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)).isOk
 
 
+/-! ## `sorryAx` has its type
+
+The inert `sorryAx` installs nothing and every use of it declines, but a
+table that binds it to another axiom must not make that axiom the tolerated
+declaration: `axiom evil : False` is refused under the default table, as a
+non-standard axiom, and under the default table with `sorryAx` bound to it,
+whose type is not `sorryAx`'s. An axiom of `sorryAx`'s type bound there is
+tolerated. -/
+
+/-- `axiom evil : False`. -/
+def evilFalse : Ixon.Constant := ⟨.axio ⟨false, 0, .ref 0 #[]⟩, #[], #[bound .false], #[]⟩
+
+/-- `axiom sorryAx.{u} (α : Sort u) (synthetic : Bool) : α`. -/
+def sorryAxRecord : Ixon.Constant :=
+  ⟨.axio ⟨false, 1, .leanAll (.sort 0) (.leanAll (.ref 0 #[]) (.var 1))⟩, #[], #[bound .bool],
+   #[.var 0]⟩
+
+#guard !accepts [(address 60, evilFalse)]
+#guard !accepts [(address 60, evilFalse)] [] (rebind [(.sorryAx, address 60)])
+#guard accepts [(address 61, sorryAxRecord)] [] (rebind [(.sorryAx, address 61)])
+
 /-! The committed fallback has singleton recursors. This check is separate
 from declaration role shape and leaves explicit readPrelude inputs flexible. -/
 
