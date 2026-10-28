@@ -902,11 +902,22 @@ structure BlockRead (md : Mode) where
   ctorNames : Array (List (CName md))
   recs : Array (CVal md × RecCounts × List (Ix.Kernel.RecRule md))
 
-/-- An inductive block's declarations: one `indDecl`, preceded by the
-modeller's records for a nested or mutual block (`ExportC.validateIndD` and
-`installIndD`). The record-agnostic half of `readInductive`, which every
-front end lowers through. -/
-def lowerInductive (st : State md) (rb : BlockRead md) : ReadM (Read md) := do
+/-- One step of `firstRepeatedKey`: the repeat found so far, if any, and the
+keys seen before it. -/
+def firstRepeatedKeyStep (acc : Option (CName md) × Std.HashSet (CName md)) (k : CName md) :
+    Option (CName md) × Std.HashSet (CName md) :=
+  match acc.1 with
+  | some _ => acc
+  | none => if acc.2.contains k then (some k, acc.2) else (none, acc.2.insert k)
+
+/-- The first key that `ks` lists a second time, if any. -/
+def firstRepeatedKey (ks : List (CName md)) : Option (CName md) :=
+  (ks.foldl firstRepeatedKeyStep (none, {})).1
+
+/-- An inductive block's declarations, before their names are compared
+(`lowerInductive`): one `indDecl`, preceded by the modeller's records for a
+nested or mutual block (`ExportC.validateIndD` and `installIndD`). -/
+def lowerInductiveDecls (st : State md) (rb : BlockRead md) : ReadM (Read md) := do
   let ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
   -- the stream's own consistency checks (`validateIndD`)
   let nTypes := types.size
@@ -981,6 +992,19 @@ def lowerInductive (st : State md) (rb : BlockRead md) : ReadM (Read md) := do
     | .ok gen => pure { decls := gen.toArray.push decl, generated := gen.length, owners, blocks }
   else
     pure { decls := #[decl], owners, blocks }
+
+/-- **An inductive block's declarations** (`lowerInductiveDecls`), declined
+when they declare a name twice, within one declaration or across two. No
+well-formed block repeats a name, and the checker refuses one that does; but
+quotient Source's collapse (`Ix.LeanIngress.collapseRead`) keeps or drops
+each declaration by the names it declares, and would drop a repeated
+declaration silently, so the read refuses it first. The record-agnostic half
+of `readInductive`, which every front end lowers through. -/
+def lowerInductive (st : State md) (rb : BlockRead md) : ReadM (Read md) := do
+  let r ← lowerInductiveDecls st rb
+  if let some k := firstRepeatedKey (r.decls.toList.flatMap (·.names)) then
+    declined s!"inductive block {(rb.types[0]?.map (toString ·.1.name)).getD "[anonymous]"} declares {k} twice"
+  pure r
 
 /-- An inductive block with its recursors, read from its records and lowered
 by `lowerInductive`. -/

@@ -615,6 +615,38 @@ def shapeUnits : TestSeq :=
   test "a literal needs its support"
     (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (.app (sconst "T") (.lit (.natVal 0)))])
 
+/-! ## Repeated names in a lowered block
+
+`lowerInductive` on synthetic blocks of one type `T` with no recursor: a block whose
+declarations declare a name twice is declined before any collapse could drop the repeat; the
+same block with distinct names lowers to its one `indDecl`. -/
+
+/-- The block of `T : Sort _` with constructors named `ctors`, each of type `T`. -/
+def blockWith (ctors : List String) : Ix.Kernel.Reader.BlockRead .source :=
+  { numParams := 0, types := #[(scv "T" sty, 0, 0)],
+    ctors := (ctors.map fun c => (scv c (sconst "T"), 0, 0)).toArray,
+    ctorNames := #[ctors.map skey], recs := #[] }
+
+/-- `lowerInductive` declines `rb`, naming `k` as the repeated name. -/
+def declinesRepeat (rb : Ix.Kernel.Reader.BlockRead .source) (k : String) : Bool :=
+  match Ix.Kernel.Reader.lowerInductive {} rb with
+  | .error (.declined msg) => (msg.splitOn s!"declares {skey k} twice").length > 1
+  | _ => false
+
+/-- `lowerInductive` lowers `rb` to one declaration, of the names `ks`. -/
+def lowersTo (rb : Ix.Kernel.Reader.BlockRead .source) (ks : List String) : Bool :=
+  match Ix.Kernel.Reader.lowerInductive {} rb with
+  | .ok r => r.decls.size == 1 && r.decls.toList.flatMap (·.names) == ks.map skey
+  | .error _ => false
+
+def repeatedNames : TestSeq :=
+  test "a block with distinct names lowers to its declaration"
+    (lowersTo (blockWith ["T.a", "T.b"]) ["T", "T.a", "T.b"]) $
+  test "a block declaring a constructor name twice is declined"
+    (declinesRepeat (blockWith ["T.a", "T.b", "T.a"]) "T.a") $
+  test "a block naming a constructor as its type is declined"
+    (declinesRepeat (blockWith ["T"]) "T")
+
 /-- The lowered declarations with `Args.cons`'s declared type naming `Tm.var`. -/
 def withCtorNamingCtor (ds : Array (Ix.Kernel.Declaration .source)) :
     Array (Ix.Kernel.Declaration .source) :=
@@ -658,6 +690,6 @@ def shapeGuard : TestSeq :=
     return (errors.isEmpty, 2, 0, msg)) .done
 
 def suite : List TestSeq := [refusals, erasure, contractFrames, numbering, canonical, sharing, fixtures,
-  quotient, shapeUnits, shapeGuard]
+  quotient, shapeUnits, repeatedNames, shapeGuard]
 
 end Tests.Ix.Kernel.SourceIngress

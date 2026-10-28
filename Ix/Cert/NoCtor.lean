@@ -1,6 +1,7 @@
 import Ix.Cert.Admits
 import Ix.CompileCert.MutualInductiveReading
 import IxC.Kernel.Semantics.Bridge.DeclRun
+import Ix.Cert.LowerDistinct
 
 /-! # No constructor of a Source-accepted family occurs in its types (N-READS, N4 (b))
 
@@ -413,7 +414,8 @@ theorem lowerInductive_decl {md : Ix.Kernel.Mode} {st : Ix.Kernel.Reader.State m
     (h : Ix.Kernel.Reader.lowerInductive st rb = .ok r) :
     Ix.Kernel.Declaration.indDecl (blockOf rb (recInfosOf rb)) rb.numParams ∈ r.decls := by
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
-  unfold Ix.Kernel.Reader.lowerInductive at h
+  replace h := LowerDistinct.lowerInductiveDecls_of_ok h
+  unfold Ix.Kernel.Reader.lowerInductiveDecls at h
   dsimp only at h
   generalize Ix.Kernel.Frontend.InModel.generate _ _ = gen at h
   generalize Ix.Kernel.Frontend.InModel.wants _ = wants at h

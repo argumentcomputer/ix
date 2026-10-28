@@ -14,8 +14,12 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- Keeping the fallback's recursors off the input's blocks (`fallbackIndexed`, `indexedRecords`,
 -- through `contextOf`) adds four compiled functions. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
+-- `lowerInductiveDecls`) adds 11 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 6418 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+ Ix.HostAdmission.verifyAddressed]: 6429 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

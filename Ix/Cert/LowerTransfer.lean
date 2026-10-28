@@ -1,16 +1,18 @@
 import Ix.Cert.CtxAgreeOwners
 import IxC.Kernel.Verify.Rename.Decl5
 import Ix.Cert.StreamUnits
+import Ix.Cert.SourceOriginRead
 
 /-! # Lowering a renamed block
 
-`lowerInductive` checks a block's recursors (`Checks`: skipped for a nested block) and then
-lowers it (`Body`: the modeller's records, then the block's declaration). `lowerInductive_iff`
-states it. The checks read counts, the block's sort and the types' telescope lengths, which a
-renaming keeps (`checks_mapKeys`), and lowering never reads a recursor's motive
-(`body_motives`). So a block quotient Source lowers, renamed, lowers at a related state
-(`lowerInductive_transfer`), also with its recursors' motives replaced in a nested block,
-whose motives are not checked. -/
+`lowerInductive` checks a block's recursors (`Checks`: skipped for a nested block), lowers it
+(`Body`: the modeller's records, then the block's declaration) and declines a read whose
+declarations declare a name twice. `lowerInductive_iff` states it. The checks read counts, the
+block's sort and the types' telescope lengths, which a renaming keeps (`checks_mapKeys`);
+lowering never reads a recursor's motive (`body_motives`); and a renaming injective on the
+block's names keeps the declared names distinct (`lowerInductive_names_good`). So a block
+quotient Source lowers, renamed, lowers at a related state (`lowerInductive_transfer`), also
+with its recursors' motives replaced in a nested block, whose motives are not checked. -/
 
 namespace Ix.Cert.LowerTransfer
 
@@ -98,8 +100,8 @@ def lowerBody (st : State md) (rb : BlockRead md) : ReadM (Read md) :=
              blocks := CtxAgree.blocksOf rb }
   else pure { decls := #[indDeclOf rb], owners := ownersOf rb, blocks := CtxAgree.blocksOf rb }
 
-theorem lowerInductive_eq (st : State md) (rb : BlockRead md) :
-    lowerInductive st rb = if (numNestedOf rb != 0) = true then lowerBody st rb
+theorem lowerInductiveDecls_eq (st : State md) (rb : BlockRead md) :
+    lowerInductiveDecls st rb = if (numNestedOf rb != 0) = true then lowerBody st rb
       else (forIn rb.recs PUnit.unit (checkStep rb) >>= fun _ => lowerBody st rb) := by
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
   rfl
@@ -142,13 +144,13 @@ theorem lowerBody_iff {st : State md} {rb : BlockRead md} {r : Read md} :
   · simp only [Bool.not_eq_true] at hw
     simp [hw, pure, Except.pure, eq_comm]
 
-/-- **What `lowerInductive` accepts and returns**: a block passing its checks, lowered. -/
-theorem lowerInductive_iff {st : State md} {rb : BlockRead md} {r : Read md} :
-    lowerInductive st rb = .ok r ↔ Checks rb ∧ Body st rb r := by
+/-- **What `lowerInductiveDecls` accepts and returns**: a block passing its checks, lowered. -/
+theorem lowerInductiveDecls_iff {st : State md} {rb : BlockRead md} {r : Read md} :
+    lowerInductiveDecls st rb = .ok r ↔ Checks rb ∧ Body st rb r := by
   have loop : forIn rb.recs PUnit.unit (checkStep rb) = .ok () ↔ ∀ x ∈ rb.recs.toList, RecChecks rb x.2.1 := by
     rw [← Array.forIn_toList]
     exact forIn_unit_ok_iff _ _ (checkStep_iff rb) (checkStep_yields rb) _
-  rw [lowerInductive_eq]
+  rw [lowerInductiveDecls_eq]
   unfold Checks
   by_cases hn : numNestedOf rb = 0
   · have hb : (numNestedOf rb != 0) = false := by simp [hn]
@@ -167,11 +169,65 @@ theorem lowerInductive_iff {st : State md} {rb : BlockRead md} {r : Read md} :
     rw [lowerBody_iff]
     exact ⟨fun h => ⟨.inl hn, h⟩, fun h => h.2⟩
 
+/-- **What `lowerInductive` accepts and returns**: a block passing its checks, lowered, whose
+declarations declare pairwise distinct names. -/
+theorem lowerInductive_iff {st : State md} {rb : BlockRead md} {r : Read md} :
+    lowerInductive st rb = .ok r ↔
+      Checks rb ∧ Body st rb r ∧ (r.decls.toList.flatMap Declaration.names).Nodup := by
+  rw [LowerDistinct.lowerInductive_ok_iff, lowerInductiveDecls_iff, and_assoc]
+
 /-! ## Renaming -/
 
 section Rename
 
 variable {f : md.Id → md'.Id} {P : KeyScope md}
+
+theorem good_of_base : ∀ {k : Key md}, k.base.Good P → k.Good P
+  | .aux k _, h => good_of_base (k := k) h
+  | .id _, h => h
+  | .role _, h => h
+
+/-- **A lowered good block's declarations declare good names**: the block's own, and the
+modeller's records' auxiliary names over them. -/
+theorem lowerInductive_names_good {st : State md} {rb : BlockRead md} {r : Read md} (hg : rb.Good P)
+    (h : lowerInductive st rb = .ok r) : ∀ k ∈ r.decls.toList.flatMap Declaration.names, k.Good P := by
+  have named : ∀ k ∈ CtxAgree.blockNames rb, k.Good P := by
+    intro k hk
+    rw [SourceOriginRead.blockNames_eq] at hk
+    rcases List.mem_append.mp hk with hk | hk
+    · rcases List.mem_append.mp hk with hk | hk
+      · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hk
+        exact (hg.1 x hx).1
+      · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hk
+        exact (hg.2.1 x hx).1
+    · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hk
+      exact (hg.2.2.2 x hx).1.1
+  obtain ⟨gens, hd, hgen, -, -⟩ := CtxAgree.lowerInductive_ok h
+  intro k hk
+  obtain ⟨d, hd', hk⟩ := List.mem_flatMap.mp hk
+  -- a declaration's names are its noted entries' names
+  have entry : ∃ e ∈ CtxAgree.noteEntries d, e.1 = k := by
+    have hne : d.names ≠ [] := List.ne_nil_of_mem hk
+    have eq : (CtxAgree.noteEntries d).map Prod.fst = d.names := by
+      cases d with
+      | basisDecl => exact (hne rfl).elim
+      | indDecl block n => simp only [CtxAgree.noteEntries, Declaration.names, List.map_map]; rfl
+      | _ => rfl
+    rw [← eq] at hk
+    exact List.mem_map.mp hk
+  have hd'' : d ∈ gens ∨ d = CtxAgree.indDeclOf rb := by
+    rw [hd] at hd'
+    simpa using hd'
+  rcases hd'' with hd'' | rfl
+  · -- a generated declaration: its names are auxiliary names over the block's
+    obtain ⟨e, he, rfl⟩ := entry
+    have hgenE : e ∈ CtxAgree.genEntries r := by
+      simp only [CtxAgree.genEntries, hd, hgen, Array.toList_push, List.take_left]
+      exact List.mem_flatMap.mpr ⟨d, hd'', he⟩
+    obtain ⟨k, hk, hbase⟩ := List.mem_map.mp (SourceOriginRead.lowerInductive_bases h e hgenE)
+    exact good_of_base (hbase ▸ CtxAgree.Key.good_base (named k hk))
+  · obtain ⟨e, he, rfl⟩ := entry
+    exact named _ (List.mem_map_of_mem he)
 
 theorem kExpectedOf_mapKeys (rb : BlockRead md) : kExpectedOf (rb.mapKeys f) = kExpectedOf rb := by
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
@@ -222,10 +278,10 @@ theorem lowerInductive_transfer (hP : P.Pre) (hf : InjOn f P) {stS : State md} {
     (hst : StateAgree f P stS stA) {rb : BlockRead md} (hg : rb.Good P) {rS : Read md}
     (hS : lowerInductive stS rb = .ok rS) :
     ∃ rA, lowerInductive stA (rb.mapKeys f) = .ok rA ∧ StreamUnits.ReadRen f rS rA := by
-  obtain ⟨checks, body⟩ := lowerInductive_iff.mp hS
+  obtain ⟨checks, body, distinct⟩ := lowerInductive_iff.mp hS
   have hw : wants (blockRecOf (rb.mapKeys f)) = wants (blockRecOf rb) := by
     rw [blockRecOf_mapKeys hf hg, wants_mapKeys]
-  have exists_ok : ∃ rA, lowerInductive stA (rb.mapKeys f) = .ok rA := by
+  have exists_ok : ∃ rA, lowerInductiveDecls stA (rb.mapKeys f) = .ok rA := by
     have checksA := (checks_mapKeys (f := f) rb).mpr checks
     rcases body with ⟨hwS, gens, hgen, -⟩ | ⟨hwS, -⟩
     · have hgen' := generate_toOption_mapKeys hP hf (ctxAgree_genCtx hf hst hg) (blockRecOf_good hg)
@@ -233,9 +289,18 @@ theorem lowerInductive_transfer (hP : P.Pre) (hf : InjOn f P) {stS : State md} {
       rw [← blockRecOf_mapKeys hf hg] at hgen'
       cases hA : generate (genCtx stA (rb.mapKeys f)) (blockRecOf (rb.mapKeys f)) with
       | error e => rw [hA] at hgen'; cases hgen'
-      | ok gensA => exact ⟨_, lowerInductive_iff.mpr ⟨checksA, .inl ⟨hw.trans hwS, gensA, hA, rfl⟩⟩⟩
-    · exact ⟨_, lowerInductive_iff.mpr ⟨checksA, .inr ⟨hw.trans hwS, rfl⟩⟩⟩
-  obtain ⟨rA, hA⟩ := exists_ok
+      | ok gensA => exact ⟨_, lowerInductiveDecls_iff.mpr ⟨checksA, .inl ⟨hw.trans hwS, gensA, hA, rfl⟩⟩⟩
+    · exact ⟨_, lowerInductiveDecls_iff.mpr ⟨checksA, .inr ⟨hw.trans hwS, rfl⟩⟩⟩
+  obtain ⟨rA, hAd⟩ := exists_ok
+  -- the renamed read's names are the Source read's, renamed injectively
+  have hdecls := (lowerInductiveDecls_mapKeys hP hf hst hg (LowerDistinct.lowerInductiveDecls_of_ok hS) hAd).1
+  have good := lowerInductive_names_good hg hS
+  have distinctA : (rA.decls.toList.flatMap Declaration.names).Nodup := by
+    rw [hdecls, Array.toList_map, List.flatMap_map]
+    simp only [PrepareRename.names_mapKeys, ← List.map_flatMap]
+    rw [List.Nodup, List.pairwise_map]
+    exact distinct.imp_of_mem fun hx hy hne he => hne (Key.map_inj hf (good _ hx) (good _ hy) he)
+  have hA : lowerInductive stA (rb.mapKeys f) = .ok rA := LowerDistinct.lowerInductive_ok_iff.mpr ⟨hAd, distinctA⟩
   exact ⟨rA, hA, lowerInductive_mapKeys hP hf hst hg hS hA, lowerInductive_owners_mapKeys hf hg hS hA⟩
 
 end Rename

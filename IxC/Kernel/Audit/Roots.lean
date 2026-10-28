@@ -607,18 +607,29 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- Keeping the fallback's recursors off the input's blocks (`fallbackIndexed`, `indexedRecords`)
 -- adds four compiled functions to each closure that reaches `contextOf`. Measured before
 -- refreezing; externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
+-- `lowerInductiveDecls`) adds 15: the guard (`lowerInductive` and three closed terms of its
+-- message), `firstRepeatedKey`, its step, a closed term, the fold and the hash set's
+-- `contains` and `insertIfNew` specialised at them, `flatMapTR.go` at `lowerInductive`, and
+-- `Declaration.names` with `ConstantInfo.name` (each with an arity-reduced form; the entry's
+-- checker already reaches them). Measured against a walk that stops at the guard; externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2215 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
+ Ix.Kernel.Admission.readStream]: 2230 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 -- The committed fallback recursor guard (2026-10-22) adds seven compiled
 -- functions to each entry closure. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Declining an inductive read whose declarations repeat a name adds 11: the reader's 15 but
+-- for `Declaration.names` and `ConstantInfo.name` (with their arity-reduced forms), which the
+-- checker reaches already. Measured against a walk that stops at the guard; externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5989 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstants]: 6000 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -660,8 +671,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- `wordC`, now public (an exposed body may not name a private declaration),
 -- is the same 4 functions under its public name. Externs 113,
 -- implemented_by 0, unsafe 26 and csimp 7 are unchanged.
+-- Declining an inductive read whose declarations repeat a name moved it from 6099 by the
+-- entry's change (11 in, the same functions; measured against a walk that stops at the guard).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6099 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6110 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
