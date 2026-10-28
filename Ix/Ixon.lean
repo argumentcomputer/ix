@@ -342,6 +342,11 @@ structure Comm where
   payload : Address
   deriving BEq, Repr, Inhabited
 
+/-- The aggregate expanded universe-node limit for one loaded record. This is
+    shared by eager loading, lazy windows, and the compiler's emitted records.
+    It matches host admission and the Rust decoder. -/
+def loadMaxUnivNodes : Nat := 1 <<< 26
+
 /-- Parse the `Constant` serialized exactly in the window `buf[off, off + len)`,
     WITHOUT copying the window out. The window must lie inside `buf`, and the
     decode must end exactly at `off + len`. The decoder only reads forward, so
@@ -349,10 +354,12 @@ structure Comm where
     depends on the window's bytes alone. A window holding a truncated record
     (whose decode would run on into the bytes after it), or a record followed
     by other bytes, is refused. Zero-copy apart from the small interior
-    string/nat reads `getConstant` performs regardless. -/
-def deConstantAt (buf : ByteArray) (off len : Nat) : Except String Constant :=
+    string/nat reads the decoder performs regardless. Universe expansion is
+    bounded across the whole record before constructing successor chains. -/
+def deConstantAt (buf : ByteArray) (off len : Nat)
+    (maxUnivNodes : Nat := loadMaxUnivNodes) : Except String Constant :=
   if off + len ≤ buf.size then
-    match getConstant.run { idx := off, bytes := buf } with
+    match (Bounded.getConstant maxUnivNodes).run { idx := off, bytes := buf } with
     | .ok a s =>
       if s.idx = off + len then .ok a
       else .error s!"constant window: the record is {s.idx - off} bytes, the window {len}"
@@ -1752,7 +1759,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
     (`artifactLimits.maxRecordUnivNodes` in `Ix/Cli/CheckLeanCmd.lean`) and the
     Rust decoder's (`MAX_UNIV_NODES`). A successor run is stored as one count,
     so the production decoder would expand a few bytes to billions of nodes. -/
-def loadMaxUnivNodes : Nat := 1 <<< 26
+abbrev loadMaxUnivNodes : Nat := Ixon.loadMaxUnivNodes
 
 /-- A §2 record for the loaders below: exactly its bytes, decoded under
     `loadMaxUnivNodes` (`Ixon.Bounded.deConstant`). -/

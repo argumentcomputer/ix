@@ -1,4 +1,5 @@
 import Ix.Cert.Compile
+import IxC.Ixon.Verify.BoundedConstant
 
 /-! # A cheap definition-projection reader, equal on every input
 
@@ -82,14 +83,15 @@ theorem header_of_projection {buf : ByteArray} {off len : Nat} {c : Constant} {p
     definitionProjectionHeader buf off = true := by
   unfold deConstantAt at h
   split at h
-  · cases hc : getConstant.run { idx := off, bytes := buf } with
+  · cases hc : (Bounded.getConstant loadMaxUnivNodes).run { idx := off, bytes := buf } with
     | error e state => simp [hc] at h
     | ok value state =>
       simp only [hc] at h
       split at h
       · simp only [Except.ok.injEq] at h
         subst value
-        obtain ⟨mid, hi⟩ := constant_info hc
+        obtain ⟨mid, hi⟩ := constant_info
+          (Ixon.Verify.BoundedConstant.getConstant_spec _ _ _ _ hc).1
         rw [hp] at hi
         obtain ⟨tag, _, ht, hf, hv⟩ := info_header hi
         simp [definitionProjectionHeader, EStateM.run, ht, hf, hv]

@@ -1,17 +1,17 @@
 import Ix.Cert.Compile
 import IxC.Ixon.Verify.BoundedConstant
 
-/-! # The refs-only reader reads what the decoder reads (Route A, B4)
+/-! # The refs-only reader reads what the bounded decoder reads
 
 The reference check (`Ix.Cert.referenceCycle`) reads each stored record's
 `refs` table and projection block with `Ix.Cert.RecordRefs.getRefs`, which
-walks the record by `Ixon.getConstant`'s grammar without keeping its
+walks the record by `Ixon.Bounded.getConstant`'s grammar without keeping its
 expressions or universes. This file proves that the two agree: each `skip…`
 reader is its `Ixon.get…` reader with the value forgotten (`skipExpr_eq`,
 `skipUniv_eq`, `skipInfo_eq`, …), as an equation of `Ixon.GetM` programs, so
 they succeed and fail together, at the same position. Hence:
 
-* `getRefs_eq`: `getRefs` is `getConstant` followed by the record's `refs`
+* `getRefs_eq`: `getRefs` is the bounded decoder followed by the record's `refs`
   and projection block;
 * `lazyRefs_eq`: a stored record's references and owner, read without its
   expressions, are those of the decoded record (`LazyConstant.get?`);
@@ -144,30 +144,48 @@ theorem skipExpr_eq : skipExpr = (fun _ => ()) <$> getExpr := by
 
 /-! ## Universes -/
 
-theorem skipUnivFromTag_eq (recur : GetM Univ) (tag : TagN) :
-    skipUnivFromTag ((fun _ => ()) <$> recur) tag = (fun _ => ()) <$> getUnivFromTag recur tag := by
-  unfold skipUnivFromTag getUnivFromTag
-  split
-  next h =>
-    simp only [h]
+theorem skipUnivFromTag_eq (recur : Nat → GetM (Univ × Nat)) (budget : Nat) (tag : TagN) :
+    skipUnivFromTag (fun n => Prod.snd <$> recur n) budget tag =
+      Prod.snd <$> Bounded.getUnivFromTag recur budget tag := by
+  unfold skipUnivFromTag Bounded.getUnivFromTag
+  dsimp only
+  by_cases fits : Bounded.univTagCharge tag ≤ budget
+  · simp only [fits, ↓reduceIte]
     split
-    next => simp only [map_pure]
-    next => simp only [bind_pure_comp, Functor.map_map]
-  next h => simp only [h, map_bind, bind_map_left, bind_pure_comp, Functor.map_map]
-  next h => simp only [h, map_bind, bind_map_left, bind_pure_comp, Functor.map_map]
-  next h => simp only [h, map_pure]
-  next => split <;> first | rfl | (exfalso; simp_all)
+    next h =>
+      simp only [h]
+      split
+      next => simp only [map_pure]
+      next => simp only [bind_pure_comp, Functor.map_map]
+    next h => simp only [h, map_bind, bind_map_left, bind_pure_comp, Functor.map_map]
+    next h => simp only [h, map_bind, bind_map_left, bind_pure_comp, Functor.map_map]
+    next h => simp only [h, map_pure]
+    next => split <;> first | rfl | (exfalso; simp_all)
+  · simp only [fits, ↓reduceIte, map_throw]
 
-theorem skipUnivFuel_eq (n : Nat) : skipUnivFuel n = (fun _ => ()) <$> getUnivFuel n := by
-  induction n with
+theorem skipUnivFuel_eq (n budget : Nat) :
+    skipUnivFuel n budget = Prod.snd <$> Bounded.getUnivFuel n budget := by
+  induction n generalizing budget with
   | zero => rfl
   | succ n ih =>
-    simp only [skipUnivFuel, getUnivFuel, map_bind, ih]
-    congr 1; funext tag; exact skipUnivFromTag_eq _ tag
+    have same : skipUnivFuel n = fun budget => Prod.snd <$> Bounded.getUnivFuel n budget :=
+      funext ih
+    simp only [skipUnivFuel, Bounded.getUnivFuel, map_bind, same]
+    congr 1; funext tag; exact skipUnivFromTag_eq _ budget tag
 
-/-- **`skipUniv` is `getUniv` with the universe forgotten.** -/
-theorem skipUniv_eq : skipUniv = (fun _ => ()) <$> getUniv := by
-  simp only [skipUniv, getUniv, map_bind, skipUnivFuel_eq]
+/-- The skipping decoder keeps exactly the bounded reader's unspent budget. -/
+theorem skipUniv_eq (budget : Nat) : skipUniv budget = Prod.snd <$> Bounded.getUniv budget := by
+  simp only [skipUniv, Bounded.getUniv, map_bind, skipUnivFuel_eq]
+
+theorem skipUnivArray_eq (count budget : Nat) (acc : Array Univ) :
+    skipUnivArray count budget = Prod.snd <$> Bounded.getUnivArrayLoop count budget acc := by
+  induction count generalizing budget acc with
+  | zero => rfl
+  | succ count ih =>
+    simp only [skipUnivArray, Bounded.getUnivArrayLoop, skipUniv_eq, map_bind, bind_map_left]
+    congr 1
+    funext value
+    exact ih value.2 (acc.push value.1)
 
 /-! ## Tables and loops -/
 
@@ -273,20 +291,22 @@ theorem skipInfo_eq : skipInfo = infoBlock <$> getConstantInfo := by
       all_goals rename_i h; simp only [h, Functor.map_map, infoBlock]
     next => rfl
 
-/-- **`getRefs` is `getConstant` followed by the record's `refs` and
+/-- **`getRefs` is the bounded decoder followed by the record's `refs` and
 projection block.** -/
-theorem getRefs_eq : getRefs = (fun c => (c.refs, infoBlock c.info)) <$> getConstant := by
-  unfold getRefs getConstant getConstantWithUnivs
-  simp only [skipInfo_eq, skipExpr_eq, skipUniv_eq, skipMany_eq, map_bind, bind_map_left,
+theorem getRefs_eq (budget : Nat) :
+    getRefs budget = (fun c => (c.refs, infoBlock c.info)) <$> Bounded.getConstant budget := by
+  unfold getRefs Bounded.getConstant getConstantWithUnivs Bounded.getUnivArray
+  simp only [skipInfo_eq, skipExpr_eq, skipUnivArray_eq _ _ #[], skipMany_eq, map_bind, bind_map_left,
     bind_pure_comp, Functor.map_map]
 
-theorem refsAt_eq (buf : ByteArray) (off len : Nat) :
-    refsAt buf off len = (deConstantAt buf off len).toOption.map fun c => (c.refs, infoBlock c.info) := by
+theorem refsAt_eq (buf : ByteArray) (off len : Nat) (budget : Nat := loadMaxUnivNodes) :
+    refsAt buf off len budget =
+      (deConstantAt buf off len budget).toOption.map fun c => (c.refs, infoBlock c.info) := by
   unfold refsAt deConstantAt
   split
   · rw [getRefs_eq]
     simp only [Functor.map, EStateM.map, EStateM.run]
-    cases getConstant { idx := off, bytes := buf } with
+    cases Bounded.getConstant budget { idx := off, bytes := buf } with
     | ok a s => by_cases h : s.idx = off + len <;> simp [h, Except.toOption]
     | error e s => rfl
   · rfl

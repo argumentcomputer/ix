@@ -932,6 +932,8 @@ fun ixe =>
 -- result is unchanged.
 -- Re-frozen: `RecordRefs.lazyRefs` and `RecordRefs.refsAt` read exactly a lazy record's
 -- window (its length too), as `Ixon.LazyConstant.get?` now decodes it (`RefsRead.lazyRefs_eq`).
+-- The same readers now share the loader's aggregate universe budget; the
+-- refs-only loop tracks its remainder without constructing universe trees.
 /-- info: def Ix.Cert.storedRecord : Ixon.Env → Address → Option Ixon.Constant :=
 fun ixe a => (ixe.consts.get? a).bind fun x => x.get? -/
 #guard_msgs (whitespace := lax) in
@@ -966,18 +968,19 @@ fun a lc =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RecordRefs.lazyRefs
 
-/-- info: def Ix.Cert.RecordRefs.refsAt : ByteArray → Nat → Nat → Option (Array Address × Option Address) :=
-fun buf off len =>
+/-- info: def Ix.Cert.RecordRefs.refsAt : ByteArray →
+  Nat → Nat → optParam Nat Ixon.loadMaxUnivNodes → Option (Array Address × Option Address) :=
+fun buf off len maxUnivNodes =>
   if off + len ≤ buf.size then
-    match EStateM.run Ix.Cert.RecordRefs.getRefs { idx := off, bytes := buf } with
+    match EStateM.run (Ix.Cert.RecordRefs.getRefs maxUnivNodes) { idx := off, bytes := buf } with
     | EStateM.Result.ok r s => if s.idx = off + len then some r else none
     | EStateM.Result.error a a_1 => none
   else none -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RecordRefs.refsAt
 
-/-- info: def Ix.Cert.RecordRefs.getRefs : Ixon.GetM (Array Address × Option Address) :=
-do
+/-- info: def Ix.Cert.RecordRefs.getRefs : optParam Nat Ixon.loadMaxUnivNodes → Ixon.GetM (Array Address × Option Address) :=
+fun maxUnivNodes => do
   let block ← Ix.Cert.RecordRefs.skipInfo
   let __do_lift ← Ixon.getTagN 0
   have numSharing : Nat := __do_lift.value.toNat
@@ -987,7 +990,7 @@ do
   let refs ← Ixon.getArray Ixon.Serialize.get numRefs
   let __do_lift ← Ixon.getTagN 0
   have numUnivs : Nat := __do_lift.value.toNat
-  Ix.Cert.RecordRefs.skipMany Ix.Cert.RecordRefs.skipUniv numUnivs
+  let _ ← Ix.Cert.RecordRefs.skipUnivArray numUnivs maxUnivNodes
   pure (refs, block) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RecordRefs.getRefs
@@ -3734,20 +3737,22 @@ ordered records give every seed set's compiled closure a `ClosureOrder`
 (`closureOrder_of_ordered`), so one exists for every artifact `compile`
 returns (`closureOrder_exists`). The check reads each record's `refs` table and
 projection block without its expressions (`Ix.Cert.RecordRefs.getRefs`);
-`Ix.Cert.RefsRead` proves that reader is `Ixon.getConstant` with the rest
+`Ix.Cert.RefsRead` proves that reader is `Ixon.Bounded.getConstant` with the rest
 forgotten, as an equation of reader programs, so the graph is the decoded
 records' (`storedRefs_eq`). -/
 
-/-- info: [cert-audit] refs read: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+-- The additional root checks the shared budget across the whole universe table.
+/-- info: [cert-audit] refs read: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "refs read"
-    (#[`skipExpr_eq, `skipUniv_eq, `skipInfo_eq, `getRefs_eq, `refsAt_eq, `lazyRefs_eq,
+    (#[`skipExpr_eq, `skipUniv_eq, `skipUnivArray_eq, `skipInfo_eq, `getRefs_eq, `refsAt_eq, `lazyRefs_eq,
       `storedRefs_eq].map (`Ix.Cert.RefsRead ++ ·))
 
-/-- info: Ix.Cert.RefsRead.getRefs_eq : Ix.Cert.RecordRefs.getRefs =
-  (fun c => (c.refs, Ix.Cert.RefsRead.infoBlock c.info)) <$> Ixon.getConstant -/
+/-- info: Ix.Cert.RefsRead.getRefs_eq : ∀ (budget : Nat),
+  Ix.Cert.RecordRefs.getRefs budget =
+    (fun c => (c.refs, Ix.Cert.RefsRead.infoBlock c.info)) <$> Ixon.Bounded.getConstant budget -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.RefsRead.getRefs_eq
 
@@ -5019,12 +5024,14 @@ the block compile's unreferenced-hook lemma; `runBlock_compiles` states the run
 without them. 10 roots → 7. The block compile returns no auxiliary layout
 (`compileBlock`, `runBlock`), and the roots are renamed with it. -/
 
-/-- info: [cert-audit] block records: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+-- The two additional roots connect the compiler's output guard to the
+-- unchanged compilation result and the loader's record budget.
+/-- info: [cert-audit] block records: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "block records"
-    (#[`runBlock_compiles, `findConst_preserves, `mkIndc_preserves, `forIn_set_state,
+    (#[`runBlock_checked, `runBlock_bounded, `runBlock_compiles, `findConst_preserves, `mkIndc_preserves, `forIn_set_state,
       `compileBlock_result, `compileBlock_records, `runBlock_records].map
       (`Ix.Cert.BlockRecords ++ ·))
 

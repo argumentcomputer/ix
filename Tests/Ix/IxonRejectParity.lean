@@ -4,6 +4,7 @@ public import Ix.AssumptionTree
 public import Ix.Claim
 public import Ix.Shard.Manifest
 public import IxC.Ixon.Canonical
+public import Ix.Cert.Compile
 public import LSpec
 
 /-! # Malformed inputs Lean's readers refuse, as Rust's do
@@ -88,7 +89,8 @@ def readers (kind : String) (bytes : ByteArray) : Option (List (String × Bool))
   match kind with
   | "record" => some [canonical,
       ("deConstantLoaded", (Ixon.Env.deConstantLoaded bytes).isOk),
-      ("deConstantAt", (Ixon.deConstantAt bytes 0 bytes.size).isOk)]
+      ("deConstantAt", (Ixon.deConstantAt bytes 0 bytes.size).isOk),
+      ("refsAt", (Ix.Cert.RecordRefs.refsAt bytes 0 bytes.size).isSome)]
   | "noncanonical" => some [canonical]
   | "env" => some [("deEnv", (Ixon.deEnv bytes).isOk),
       ("deEnvVerifiedLazy", (Ixon.deEnvVerifiedLazy bytes).isOk)]
@@ -97,11 +99,42 @@ def readers (kind : String) (bytes : ByteArray) : Option (List (String × Bool))
   | "claim" => some [("Claim.de", (Ix.Claim.de bytes).isOk)]
   | _ => none
 
+/-- The same small table at its exact aggregate budget and one node below.
+The offset control also exercises a record embedded between unrelated bytes. -/
+def budgetTests : TestSeq := Id.run do
+  let c : Ixon.Constant := {
+    info := .axio { isUnsafe := false, lvls := 0, typ := .sort 0 }
+    sharing := #[], refs := #[], univs := #[.succ .zero, .zero] }
+  let bytes := Ixon.serConstant c
+  let window := ByteArray.mk #[255] ++ bytes ++ ByteArray.mk #[255]
+  let noUnivs := { c with univs := #[] }
+  let noUnivBytes := Ixon.serConstant noUnivs
+  let block : Ix.CompileM.BlockResult := {
+    block := c, blockBytes := bytes, blockAddr := default }
+  let projected : Ix.CompileM.BlockResult :=
+    { block with block := noUnivs, projections := #[(Ix.Name.anonymous default, c, .empty)] }
+  return test "lazy window accepts the exact aggregate universe budget"
+      ((Ixon.deConstantAt window 1 bytes.size 3).toOption == some c) ++
+    test "lazy window refuses a universe table one node over budget"
+      (!(Ixon.deConstantAt window 1 bytes.size 2).isOk) ++
+    test "refs-only reader accepts the exact aggregate universe budget"
+      (Ix.Cert.RecordRefs.refsAt window 1 bytes.size 3 == some (#[], none)) ++
+    test "refs-only reader shares the budget across universe entries"
+      ((Ix.Cert.RecordRefs.refsAt window 1 bytes.size 2).isNone) ++
+    test "empty universe tables accept a zero budget"
+      ((Ixon.deConstantAt noUnivBytes 0 noUnivBytes.size 0).toOption == some noUnivs) ++
+    test "compiler accepts a block at the loader budget"
+      (Ix.CompileM.blockUnivsFit block 3) ++
+    test "compiler refuses a block above the loader budget"
+      (!Ix.CompileM.blockUnivsFit block 2) ++
+    test "compiler checks projection records against the loader budget"
+      (!Ix.CompileM.blockUnivsFit projected 2)
+
 /-- Every case of the fixture, every reader of its kind: a control accepted,
 any other case refused. -/
 def suite : IO (List TestSeq) := do
   let cases ← IO.ofExcept (parseCases (← IO.FS.readFile fixturePath))
-  let mut tests : TestSeq := .done
+  let mut tests : TestSeq := budgetTests
   for case in cases do
     let (kind, accepted) := match case.kind.dropSuffix? "-accept" with
       | some kind => (kind.toString, true)

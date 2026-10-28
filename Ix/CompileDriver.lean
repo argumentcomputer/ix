@@ -119,13 +119,24 @@ def compileBlock (lo : Name) (all : Set Name) : CompileM BlockResult := do
   registerMutsEntry sortedClasses blockResult.blockAddr
   return blockResult
 
+/-- Every emitted record fits the aggregate universe-expansion budget used
+    by the loaders. Projection records are checked independently. -/
+def blockUnivsFit (result : BlockResult) (maxUnivNodes : Nat := Ixon.loadMaxUnivNodes) : Bool :=
+  decide (Ixon.Bounded.univNodes result.block.univs ≤ maxUnivNodes) &&
+    result.projections.all fun p => decide (Ixon.Bounded.univNodes p.2.1.univs ≤ maxUnivNodes)
+
 /-- Compile one block (`compileBlock`) purely, from the empty block state,
-    returning its result and the final block state. -/
+    returning its result and the final block state. Refuse records the
+    production loaders would reject for universe expansion. -/
 def runBlock (cenv : CompileEnv) (all : Set Name) (lo : Name)
     : Except CompileError (BlockResult × BlockState) := do
   let blockEnv : BlockEnv :=
     { all, current := lo, mutCtx := default, univCtx := [] }
-  CompileM.run cenv blockEnv {} (compileBlock lo all)
+  let result ← CompileM.run cenv blockEnv {} (compileBlock lo all)
+  if blockUnivsFit result.1 then
+    return result
+  else
+    throw (.resourceLimit "record universe expansion exceeds the loader's node budget")
 
 /-! ## Driver state and merges -/
 

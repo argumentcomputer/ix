@@ -142,6 +142,7 @@ theorem mergeInv_insert {W : List (Address × ByteArray)}
     {store : Std.HashMap Address ByteArray} (own : ∀ k v v', (k, v) ∈ W → (k, v') ∈ W → v = v')
     (hI : Owned store) (cons : ∀ k v, (k, v) ∈ W → ∀ v₀, store.get? k = some v₀ → v₀ = v)
     {k : Address} {c : Ixon.Constant} (hk : (k, Ixon.ser c) ∈ W) (wire : c.wireWF)
+    (fits : Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes)
     (proj : ∀ p, c.info = .dPrj p → ∃ m ms, storeOf (store.insert k (Ixon.ser c)) p.block = some m ∧
       m.info = .muts ms) :
     Owned (store.insert k (Ixon.ser c)) ∧
@@ -152,7 +153,7 @@ theorem mergeInv_insert {W : List (Address × ByteArray)}
     · subst e
       have hser : (store.insert a (Ixon.ser c)).get? a = some (Ixon.ser c) := by
         rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert_self]
-      rw [storeOf_ser wire hser] at ha
+      rw [storeOf_ser wire fits hser] at ha
       cases ha
       exact proj p hp
     · have ha' : storeOf store a = some c' := by
@@ -182,12 +183,13 @@ theorem merge_owned {acc : DriverAcc} {lo : Ix.Name} {cenv : CompileEnv} {all : 
   have ag := checkAnonymousWrites_agrees hchk
   have shape := BlockLayout.runBlock_shape hr
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
+  have fits := BlockRecords.runBlock_bounded hr
   have rows := runBlock_rows hr
   have hbW : (r.blockAddr, Ixon.ser r.block) ∈ blockRecordWrites r := by
     rw [← shape.bytes]; exact write_block
   refine (StepsEncode.mergeCompiledBlock_constants (MergeInv (blockRecordWrites r) r.blockAddr r.blockBytes)
     ?_ ?_).1
-  · have step := mergeInv_insert ag.own hI ag.old hbW wire fun p hp =>
+  · have step := mergeInv_insert ag.own hI ag.old hbW wire fits.1 fun p hp =>
       (built_not_dPrj shape.built hp).elim
     rw [← shape.bytes] at step
     refine ⟨step.1, step.2, ?_⟩
@@ -199,7 +201,7 @@ theorem merge_owned {acc : DriverAcc} {lo : Ix.Name} {cenv : CompileEnv} {all : 
       · rw [same]; exact wire
       · exact pw
     have grows := insert_grows (cons _ _ hpW)
-    have step := mergeInv_insert ag.own hI' cons hpW pwire fun q hq => by
+    have step := mergeInv_insert ag.own hI' cons hpW pwire (fits.2 p hp) fun q hq => by
       rcases shape.rows p hp with same | ⟨-, -, owner⟩
       · rw [same] at hq
         exact (built_not_dPrj shape.built hq).elim
@@ -213,7 +215,7 @@ theorem merge_owned {acc : DriverAcc} {lo : Ix.Name} {cenv : CompileEnv} {all : 
         · obtain ⟨ms, hms⟩ := muts
           refine ⟨r.block, ms, ?_, hms⟩
           rw [hqb]
-          exact storeOf_ser wire (by rw [← shape.bytes]; exact grows _ _ hB)
+          exact storeOf_ser wire fits.1 (by rw [← shape.bytes]; exact grows _ _ hB)
     exact ⟨step.1, step.2, grows _ _ hB⟩
 
 /-- **Every state the fold reaches keeps every stored definition projection's block a block
