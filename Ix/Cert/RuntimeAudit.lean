@@ -32,8 +32,12 @@ of the flags check is `Ix.IndFlags`'s.
 executable imports it: the runtime audit's controls declare an `@[extern]`
 symbol that no library defines, so a binary that links them fails. -/
 
+-- The audit finds a substitution at its implementation too (2026-10-28): `compile` calls
+-- `Address.blake3`, which implements `Address.admissionHash`, so the list names that substitution
+-- beside the BLAKE3 primitives it reaches. Nothing else changes.
 /-- error: project-level execution replacements reached from [Ix.Cert.compile]:
-[Ix.groundExpr,
+[Address.admissionHash,
+ Ix.groundExpr,
  Ix.groundLevel,
  Ixon.getTagN,
  Blake3.Rust.hasherFinalize,
@@ -51,3 +55,4 @@ symbol that no library defines, so a binary that links them fails. -/
  _private.Ix.Environment.0.Ix.Expr.hashSyntax] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { csimpModules := #[`Ix] }
+
