@@ -44,7 +44,7 @@ the entry runs:
 | `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, sharding, catalog and commit I/O, the primitives, and the IxVM suite |
 | `ci:landing-compilers` | a merge-tests partition | the Lean compiler's output independent of its schedule, on the fixture corpus; the Rust compiler's compile, serialize and decompile roundtrip over the test environment |
 | `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std: the certified compile with its report checks against the pipeline and the Rust compiler, in process and through `ix compile-lean`, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which the Rust kernel must check with every role of the default table admitted; `ix validate-lean` fidelity; role binding and evidence; a reading premise on every inductive; and the admission hash |
-| `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics, and the entries that assert the former canonical rewriting (runnable by name until the code they test is removed); each states its reason |
+| `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
 `lake test -- --tier <tier>` runs one tier; `--tier landing` runs the two
 landing partitions. The registry's primary self-test, `ixtests-registry`,

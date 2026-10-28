@@ -63,7 +63,6 @@ import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
 import Tests.Ix.Kernel.PreludeFidelity
-import Tests.Ix.Kernel.CollapseFidelity
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.BundleEvidence
@@ -120,15 +119,6 @@ import Ix.Common
 import Ix.Meta
 import Ix.IxVM
 
-/-- The tier of an entry that asserts the compiler's canonical rewriting of
-Lean's declarations (class sorting and collapse, regenerated auxiliaries,
-caller rewrites, clique transport, original-form data), which the compile no
-longer does: it compiles Lean's declarations as given. The entry stays
-runnable by name until the code it tests is removed, and is removed with
-it. -/
-def expectedToRetire (why : String) : Tests.Registry.Tier :=
-  .manual s!"expected to retire: {why}"
-
 open Tests.Registry in
 /-- Every `IxTests` entry with its tier (`Tests/Registry.lean`): primary
 entries run with no arguments; the others are named, or selected by tier
@@ -140,10 +130,6 @@ def registry : List Entry := [
   .suite "catalog" .primary Tests.Ix.Catalog.suite,
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
   .suite "lean-export" .primary Tests.Ix.LeanExport.suite,
-  .suite "import-ixe-collapsed"
-    (expectedToRetire "the alpha-equivalent mutual pair no longer collapses to one class, \
-      and its recursors are no longer `_ix` support")
-    Tests.Ix.ImportIxe.collapsedSuite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
   .suite "ixon" .primary (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite),
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
@@ -195,10 +181,6 @@ def registry : List Entry := [
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
   .suite "kernel-fidelity-access" .primary Tests.Ix.Kernel.FidelityAccess.suite,
   .suite "kernel-prelude-fidelity" .primary Tests.Ix.Kernel.PreludeFidelity.suite,
-  .suite "kernel-collapse-fidelity"
-    (expectedToRetire "it reads a block whose alpha-equivalent members the compile \
-      merged into one class")
-    Tests.Ix.Kernel.CollapseFidelity.suite,
   .suite "validate-lean-reader-cli" .primary Tests.Ix.Kernel.ValidateReaderCli.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
