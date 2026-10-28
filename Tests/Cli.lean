@@ -50,7 +50,9 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     let version ← IO.ofExcept (json.getObjValAs? Nat "ixeFormatVersion")
     unless schema == 2 && version == 5 do
       throw <| IO.userError "compile report did not identify its emitted bound v5 envelope under schema2"
-    let leanArgs := #["compile-lean", source.toString, "--consts", "noBuildProof",
+    -- Both declarations are in the proof's dependency closure, so the
+    -- local selector asks both CLI commands to compile the same input.
+    let leanArgs := #["compile-lean", source.toString, "--local",
       "--out", leanOutput.toString]
     let leanBuilt ← IO.Process.output { cmd := ix.toString, args := leanArgs.push "--no-build" }
     unless leanBuilt.exitCode == 0 do
