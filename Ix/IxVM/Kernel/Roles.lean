@@ -115,21 +115,32 @@ def roles := ⟦
     assert_eq!(to_field(version), spec_version(),
       "role table: made for another specification version");
     let (n, s) = read_byte(s);
-    let (by_role, by_addr, s) =
-      read_role_bindings(s, to_field(n), 0, RBTreeMap.Nil, RBTreeMap.Nil);
+    let (by_role, by_addr, _next, s) =
+      read_role_bindings(s, to_field(n), 0, RBTreeMap.Nil);
     let (m, s) = read_byte(s);
-    let (evidence, s) = read_role_evidence(s, to_field(m), 0, RBTreeMap.Nil);
+    let (evidence, _next, s) = read_role_evidence(s, to_field(m), 0);
     assert_eq!(load(s), ListNode.Nil, "role table: trailing bytes");
     store(RoleTableNode.Mk(binding, by_role, by_addr, evidence))
   }
 
-  -- `count` bindings, each role index at least `next`.
-  fn read_role_bindings(s: ByteStream, count: G, next: G,
-      by_role: RBTreeMap‹Addr›, by_addr: RBTreeMap‹G›)
-      -> (RBTreeMap‹Addr›, RBTreeMap‹G›, ByteStream) {
+  -- The two maps keyed by role are read straight into balanced trees: the
+  -- entries arrive in strictly increasing role order, so the first half of
+  -- a run is the left subtree, the next entry the root and the rest the
+  -- right subtree, and no insertion or rebalancing is needed. Lookups ignore
+  -- colours, and nothing inserts into a table once it is read. The index by
+  -- address is keyed by interned pointers, in no particular order, so it is
+  -- built by insertion.
+
+  -- `count` bindings, in order, each role index at least `next`: the tree
+  -- by role, the index by address extended, and the least role index the
+  -- next binding may have.
+  fn read_role_bindings(s: ByteStream, count: G, next: G, by_addr: RBTreeMap‹G›)
+      -> (RBTreeMap‹Addr›, RBTreeMap‹G›, G, ByteStream) {
     match count {
-      0 => (by_role, by_addr, s),
+      0 => (RBTreeMap.Nil, by_addr, next, s),
       _ =>
+        let half = to_field(u8_shift_right(u8_from_field_unsafe(count)));
+        let (left, by_addr, next, s) = read_role_bindings(s, half, next, by_addr);
         let (rb, s) = read_byte(s);
         let r = to_field(rb);
         assert_eq!(u32_less_than(r, role_count()), 1, "role table: unknown role");
@@ -137,26 +148,30 @@ def roles := ⟦
         let (a, s) = get_address(s);
         assert_eq!(rbtree_map_lookup_or_default(ptr_val(a), by_addr, 0), 0,
           "role table: an address is bound to two roles");
-        read_role_bindings(s, count - 1, r + 1,
-          rbtree_map_insert(r, a, by_role),
-          rbtree_map_insert(ptr_val(a), r + 1, by_addr)),
+        let by_addr = rbtree_map_insert(ptr_val(a), r + 1, by_addr);
+        let (right, by_addr, next, s) =
+          read_role_bindings(s, count - (half + 1), r + 1, by_addr);
+        (RBTreeMap.Node(1, r, a, store(left), store(right)), by_addr, next, s),
     }
   }
 
-  fn read_role_evidence(s: ByteStream, count: G, next: G,
-      evidence: RBTreeMap‹List‹RoleEvidence››)
-      -> (RBTreeMap‹List‹RoleEvidence››, ByteStream) {
+  -- `count` evidence entries, in order, each role index at least `next`:
+  -- the tree by role and the least role index the next entry may have.
+  fn read_role_evidence(s: ByteStream, count: G, next: G)
+      -> (RBTreeMap‹List‹RoleEvidence››, G, ByteStream) {
     match count {
-      0 => (evidence, s),
+      0 => (RBTreeMap.Nil, next, s),
       _ =>
+        let half = to_field(u8_shift_right(u8_from_field_unsafe(count)));
+        let (left, next, s) = read_role_evidence(s, half, next);
         let (rb, s) = read_byte(s);
         let r = to_field(rb);
         assert_eq!(u32_less_than(r, role_count()), 1, "role table: unknown role");
         assert_eq!(u32_less_than(r, next), 0, "role table: evidence out of order");
         let (kb, s) = read_byte(s);
         let (entries, s) = read_evidence_entries(s, to_field(kb));
-        read_role_evidence(s, count - 1, r + 1,
-          rbtree_map_insert(r, entries, evidence)),
+        let (right, next, s) = read_role_evidence(s, count - (half + 1), r + 1);
+        (RBTreeMap.Node(1, r, entries, store(left), store(right)), next, s),
     }
   }
 
