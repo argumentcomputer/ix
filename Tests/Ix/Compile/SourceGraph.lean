@@ -1,7 +1,8 @@
 import Ix.Meta
 import Ix.EnvScope
 import Ix.CompileDriver
-import Ix.Cert.SourcePrepass
+import Ix.Compile.SourceGraph.Prepass
+import Ix.Cert.Compile
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.Compile.SourceAccounting
 import Lean.Elab.Command

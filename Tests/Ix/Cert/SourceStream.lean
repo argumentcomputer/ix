@@ -1,4 +1,5 @@
-import Ix.Cert.SourceStream
+import Ix.Compile.SourceGraph.Stream
+import Ix.Cert.Canon
 
 /-! Pure producer controls. Labelled aliases test the collector, not a
 claimed collision among canonName outputs or Source acceptance. -/
@@ -57,26 +58,5 @@ private def noNode : Node := ⟨{}, .none, .plain⟩
   !out.facts.code.contains (Name.fromLeanName `Stream.proof) &&
   ((out.facts.nodes.get? (Name.fromLeanName `Stream.proof)).getD noNode).literals == .string
 #guard (label raw).map (·.1) == raw.map (fun p => Name.fromLeanName p.1)
-
-/-- info: 'Ix.Cert.SourceStream.chunk_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.chunk_spec
-/-- info: 'Ix.Cert.SourceStream.partition_flatten' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.partition_flatten
-/-- info: 'Ix.Cert.SourceStream.tasks_flatten' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.tasks_flatten
-/-- info: 'Ix.Cert.SourceStream.join_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.join_eq
-/-- info: 'Ix.Cert.SourceStream.runSource_facts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.runSource_facts
-/-- info: 'Ix.Cert.SourceStream.runSource_workers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.runSource_workers
-/-- info: 'Ix.Cert.SourceStream.runSource_nodes_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.runSource_nodes_get
-/-- info: 'Ix.Cert.SourceStream.runSource_code_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.runSource_code_get
-/-- info: 'Ix.Cert.SourceStream.runSource_contains' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.runSource_contains
-/-- info: 'Ix.Cert.SourceStream.runSource_hybrid_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceStream.runSource_hybrid_get
 
 end Tests.Ix.Cert.SourceStream

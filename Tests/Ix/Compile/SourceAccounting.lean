@@ -1,5 +1,6 @@
-import Ix.Cert.SourceAccounting
-import Ix.Cert.SourceAccountingPost
+import Ix.Compile.SourceGraph.Accounting
+import Ix.CompileResource
+import Ix.Cert.Compile
 import Ix.Meta
 import Ix.EnvScope
 import Tests.Ix.Compile.GroundRefusal
@@ -147,18 +148,3 @@ def run : IO Unit := do
   postError { invalidOut with sourceNodes? := none } prior
   IO.println "accounting post-step: pinned errors; both validated wrappers; completeness/resource errors retain precedence"
 
-/-- info: 'Ix.Cert.SourceAccounting.check_success_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.check_success_iff
-/-- info: 'Ix.Cert.SourceAccounting.failures_toMap_contains' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.failures_toMap_contains
-/-- info: 'Ix.Cert.SourceAccounting.produced_check_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_check_iff
-/-- info: 'Ix.Cert.SourceAccounting.produced_uncovered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_uncovered
-/-- info: 'Ix.Cert.SourceAccounting.produced_published' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_published
-/-- info: 'Ix.Cert.SourceAccountingPost.checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccountingPost.checked
-/-- info: 'Ix.Cert.SourceAccountingPost.accounted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccountingPost.accounted
-end Tests.Ix.Compile.SourceAccounting

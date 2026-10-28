@@ -5,13 +5,10 @@ import Ix.CompileCert.PreseedValidation
 import Ix.CompileCert.WireTables
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionCorrectness
-import Ix.CompileCert.RecordSourceShape
-import Ix.CompileCert.SemanticFrames
-import Ix.CompileCert.SemanticPresence
+import Ix.Compile.SourceContract.SemanticPresence
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
-import Ix.CompileCert.PreseedInsertion
 import Ix.CompileCert.EmissionWire
 import Ix.CompileCert.SharingRoots
 import Ix.CompileCert.Emission
@@ -44,8 +41,8 @@ and its value (`Ix.CompileCert.UniverseMeaning`), the universe pipeline
 (`Ix.CompileCert.UniversePipeline`), the ordinary expression compiler's
 core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
 `ExpressionCorrectness`, `ExpressionIngress`), the preseed
-(`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`,
-`PreseedCoverage`, `PreseedInsertion`), the emitters' wire validity
+(`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`),
+the emitters' wire validity
 (`Ix.CompileCert.EmissionWire`), the sharing builder's root reading
 (`Ix.CompileCert.SharingRoots`), the payload emitters (`Ix.CompileCert.Emission`),
 the singleton blocks and public dispatch (`Ix.CompileCert.EmissionBlocks`,
@@ -217,25 +214,6 @@ def preseedStateRoots : Array Lean.Name :=
     `preseed_binding].map (`Ix.CompileCert.PreseedWire ++ ·)) ++
   (#[`internMetaUniv_univs, `finishSpelling_univs, `internCanonical_no_growth,
     `compile_no_growth].map (`Ix.CompileCert.FinalUniverses ++ ·))
-
-/-- The preseed's universe coverage: the collector covers every level of its
-roots, and the insertion gives each canonical form a slot, so every level
-of every root is preseeded. -/
-def coverageRoots : Array Lean.Name :=
-  (#[`insert_other, `insert_retains, `CoveredBelow.empty, `CoveredBelow.mono, `CoveredBelow.restrict,
-    `CoveredBelow.insert, `CoveredBelow.insert_above, `CoveredBelow.lookup, `collect_hit,
-    `root_run].map (`Ix.CompileCert.PreseedKeys ++ ·)) ++
-  (#[`CacheSafe.pure, `CacheSafe.throw, `CacheSafe.bind, `CacheSafe.compileUniv, `CacheSafe.lookup,
-    `CacheSafe.blob, `CacheSafe.levels, `CacheSafe.structural, `LevelsSatisfy.imp, `Present.mono,
-    `Present.value, `Covered.mono, `levels_correct, `Added.refl, `Added.mono, `Added.trans,
-    `Added.close_parent, `Added.ready, `Result.cached, `Result.insert, `prepare_child, `cached_run,
-    `cache_after, `binary, `unary, `ternary, `Correct.of_miss, `collect_correct, `Complete.empty,
-    `Complete.ready, `Complete.after, `root_correct, `roots_correct,
-    `roots_initial].map (`Ix.CompileCert.PreseedUniverses ++ ·)) ++
-  (#[`bytes_beq_iff, `MapExtends.refl, `MapExtends.trans, `MapExtends.insert_fresh, `internUniv_index,
-    `discard_ok, `univ_key_injective, `univs_inserted, `sortedUnivs_valid, `sortedUnivs_member,
-    `univs_sorted, `canonicalize, `refs_frame,
-    `preseed_preseeded].map (`Ix.CompileCert.PreseedInsertion ++ ·))
 
 
 /-- Successful compilation keeps the primary tables on the wire (CT-14's
@@ -599,7 +577,6 @@ run_cmd do
   checkRoots (tag := "reading-audit") "universe pipeline" Ix.CompileCert.ReadingAudit.pipelineRoots
   checkRoots (tag := "reading-audit") "expression core" Ix.CompileCert.ReadingAudit.expressionRoots
   checkRoots (tag := "reading-audit") "preseed state" Ix.CompileCert.ReadingAudit.preseedStateRoots
-  checkRoots (tag := "reading-audit") "preseed coverage" Ix.CompileCert.ReadingAudit.coverageRoots
   checkRoots (tag := "reading-audit") "emission wire" Ix.CompileCert.ReadingAudit.emissionWireRoots
   checkRoots (tag := "reading-audit") "sharing roots" Ix.CompileCert.ReadingAudit.sharingRootRoots
   checkRoots (tag := "reading-audit") "emitters" Ix.CompileCert.ReadingAudit.emissionRoots
@@ -672,44 +649,13 @@ run_cmd do
   checkRoots (tag := "reading-audit") "driver inductives" Ix.CompileCert.ReadingAudit.driverInductiveRoots
   checkRuntime (tag := "reading-audit") "driver inductives" Ix.CompileCert.ReadingAudit.driverInductiveRuntime
 
-/-- info: [reading-audit] decorated contract arity: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+-- Re-frozen when the proof modules that no statement reaches were deleted: the five
+-- source-presence lemmas of `Ix.CompileCert.SemanticPresence` go with that module (8 roots
+-- → 3); the presence walk's own specification lemmas stay.
+/-- info: [reading-audit] semantic source presence: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
-  checkRoots (tag := "reading-audit") "decorated contract arity"
-    #[`Ix.CompileCert.RecordSourceShape.decorateExpr_canonical]
-
-/-- info: [reading-audit] source contract arity: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "source contract arity"
-    #[`Ix.CompileCert.RecordSourceShape.decorate_constant, `Ix.CompileCert.RecordSourceShape.ingress,
-      `Ix.CompileCert.RecordSourceShape.canonical_ingress]
-
-/-- info: [reading-audit] semantic inspection traversal: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "semantic inspection traversal"
-    (#[`frames_iff, `children_weight, `inspect_eq, `scan_eq, `step_fresh, `covered_frames,
-      `covered_seen, `covered_next, `initial, `next_decreases].map
-      (`Ix.CompileCert.SemanticFrames ++ ·))
-
-/-- info: [reading-audit] semantic inspection validity: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "semantic inspection validity"
-    #[`Ix.CompileCert.SemanticFrames.inspect_frames_iff]
-
-/-- info: [reading-audit] semantic source presence and acceptance: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "semantic source presence and acceptance"
-    (#[`Ix.Compile.SemanticPresence.go_result, `Ix.Compile.SemanticPresence.runWith_eq_spec,
-      `Ix.Compile.SemanticPresence.run_eq_spec] ++
-      (#[`spec_false_canonical, `production_absent, `source_absent, `guard_frames, `prepared_member_frames].map
-        (`Ix.CompileCert.SemanticPresence ++ ·)))
-
+  checkRoots (tag := "reading-audit") "semantic source presence"
+    #[`Ix.Compile.SemanticPresence.go_result, `Ix.Compile.SemanticPresence.runWith_eq_spec,
+      `Ix.Compile.SemanticPresence.run_eq_spec]

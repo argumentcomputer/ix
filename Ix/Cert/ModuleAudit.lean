@@ -1,18 +1,8 @@
 import IxC.Kernel.Audit.Axioms
 import Ix.Cert.Closure
-import Ix.Cert.PrefixCore
-import Ix.Cert.RecursorSupport
-import Ix.Cert.SourceContext.Check
-import Ix.Cert.SourceContext.Maps
-import Ix.Cert.SourceContext.Observations
-import Ix.Cert.SourceContext.Rows
-import Ix.Cert.SourceContext.Stores
-import Ix.Cert.SourceInput
-import Ix.Cert.SourceInput.Prepared
-import Ix.Cert.SourceMetadata
-import Ix.Cert.SourceOrder
-import Ix.Cert.SourceOwnership
-import Ix.Cert.SourceUses
+import Ix.Cert.ConversionValues
+import Ix.Cert.Hybrid
+import Ix.Cert.ReaderClosureKeys
 import Ix.Compile.SourceInput.Metadata
 import Ix.Compile.SourceInput.Ownership
 import Ix.Compile.SourceInput.Uses
@@ -26,13 +16,8 @@ import Ix.RoleBinding.ArtifactTieredTheorems
 `Ix/Cert/Audit.lean` fixes the axioms of the certification statements, and so
 bounds every declaration they reach. The modules named here are reached by
 none of them, or only in part:
-* the Source-side grouping, ownership, metadata and use facts
-  (`Ix.Compile.SourceInput.*`, `Ix.Cert.Source*`);
-* recursor-family support (`Ix.Cert.RecursorSupport`);
-* the computed closure (`Ix.Cert.Closure`), the Source order's enumeration
-  (`Ix.Cert.SourceOrder`), and the stored prefix's readings at a final
-  interpretation (`Ix.Cert.PrefixCore`, with the reference fronts, conversion
-  values and value rows it imports);
+* the Source-side ownership, metadata and use facts (`Ix.Compile.SourceInput.*`);
+* the computed closure (`Ix.Cert.Closure`);
 * the theorems of the artifact and host admission entries
   (`Ix.RoleBinding.Artifact*Theorems`, `Ix.HostAdmission.Theorems`).
 
@@ -41,24 +26,14 @@ none of them, or only in part:
 Every safe declaration of each named module, and of every `Ix.Cert` and
 `Ix.CompileCert` module this module imports, depends on no axiom beyond
 `propext`, `Classical.choice` and `Quot.sound` (`#guard_module_axioms`,
-`IxC/Kernel/Audit/Axioms.lean`). A named module fails if it is no longer
-imported or declares nothing. -/
+`IxC/Kernel/Audit/Axioms.lean`). Importing the IO pipeline's agreement
+(`Ix.Cert.Hybrid`), the checked conversion values (`Ix.Cert.ConversionValues`)
+and the reader's closure keys (`Ix.Cert.ReaderClosureKeys`) keeps the
+expression, emission, preseed and universe proofs they import under that
+bound. A named module fails if it is no longer imported or declares nothing. -/
 
 #guard_module_axioms
   Ix.Cert.Closure
-  Ix.Cert.PrefixCore
-  Ix.Cert.RecursorSupport
-  Ix.Cert.SourceContext.Check
-  Ix.Cert.SourceContext.Maps
-  Ix.Cert.SourceContext.Observations
-  Ix.Cert.SourceContext.Rows
-  Ix.Cert.SourceContext.Stores
-  Ix.Cert.SourceInput
-  Ix.Cert.SourceInput.Prepared
-  Ix.Cert.SourceMetadata
-  Ix.Cert.SourceOrder
-  Ix.Cert.SourceOwnership
-  Ix.Cert.SourceUses
   Ix.Compile.SourceInput.Metadata
   Ix.Compile.SourceInput.Ownership
   Ix.Compile.SourceInput.Uses

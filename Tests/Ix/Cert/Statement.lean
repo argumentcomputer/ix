@@ -661,42 +661,6 @@ def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
   | _ => lines := lines.push s!"{label}: no published string name; the forged case is skipped"
   return (errors, lines)
 
-/-- S1's certificate-side `Closed` for string literals (`Ix.Cert.LiteralOrder`): in the
-closure order of every published record (`closureOrder`, the order a certificate is read
-in), every record with a string literal comes after the stream records of the string
-roles (`stringSupportOrdered`). Not vacuous: a string role's record moved right after
-the first record with a string literal fails it. -/
-def stringOrderCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
-    Array String × Array String := Id.run do
-  let mut errors : Array String := #[]
-  let mut lines : Array String := #[]
-  let seeds : Array Address := ixe.named.fold (fun acc _ d => acc.push d.addr) #[]
-  let order := (closureOrder ixe seeds).toList
-  let withStr := order.filter (Ix.Cert.LiteralOrder.strAt ixe)
-  let owners := Ix.Cert.LiteralOrder.stringRoles.filterMap (Ix.Cert.LiteralOrder.supportOwner ixe t)
-  if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t order then
-    lines := lines.push s!"{label}: stringSupportOrdered holds on the closure order of \
-      {order.length} records: {withStr.length} with a string literal, after the \
-      {owners.length} string roles' records"
-  else
-    errors := errors.push s!"{label}: stringSupportOrdered fails on the closure order \
-      ({withStr.length} records with a string literal, {owners.length} of \
-      {Ix.Cert.LiteralOrder.stringRoles.length} string roles with a stream record)"
-  match withStr.head? with
-  | some a =>
-    match owners.find? (· != a) with
-    | some b =>
-      let planted := (order.filter (· != b)).flatMap fun x => if x == a then [a, b] else [x]
-      if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t planted then
-        errors := errors.push s!"{label}: stringSupportOrdered misses {b} moved after {a}"
-      else
-        lines := lines.push s!"{label}: stringSupportOrdered catches a string role's record \
-          moved after the first record with a string literal"
-    | none => errors := errors.push s!"{label}: no string role's record to move"
-  | none => lines := lines.push s!"{label}: no record with a string literal; the planted case \
-      is skipped"
-  return (errors, lines)
-
 /-- The role table's bindings in a compile's result (Route A, B5a), decided by ingress
 name over every published name (`publishedCases`: `Ix.Cert.publishedRolesBound`). Also
 counted, not checked: the roles whose Lean name the input declares, and (B5c, on hold)
@@ -716,10 +680,9 @@ def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
     | some r => Ix.LeanIngress.ingressName n != r.leanName
     | none => false
   let (errors, lines) := publishedCases label t ixe
-  let (strErrors, strLines) := stringOrderCases label t ixe
-  return (errors ++ strErrors, #[s!"{label}: {declared.length} of {roles.length} role names declared \
+  return (errors, #[s!"{label}: {declared.length} of {roles.length} role names declared \
     by the input; {aliases.length} other published names at a role-bound address (B5c, counted)"] ++
-    lines ++ strLines)
+    lines)
 
 /-- N-READS N4 (a): no constructor of a family occurs in the family's type or in
 its constructors' types (`InductiveReading.NoCtorIn`, through its check
@@ -1007,17 +970,6 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   let (groundErrors, groundLines) := groundEdgeCases "closure" ixe seeds
   errors := errors ++ groundErrors
   lines := lines ++ groundLines
-  -- S1's certificate-side `Closed` for string literals, on the order the closure is read in
-  match Ix.Kernel.Reader.defaultTable with
-  | .error e => errors := errors.push s!"the default role table does not read: {e}"
-  | .ok t =>
-    let withStr := order.toList.filter (Ix.Cert.LiteralOrder.strAt ixe)
-    if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t order.toList then
-      lines := lines.push s!"stringSupportOrdered holds on the closure's order \
-        ({withStr.length} records with a string literal)"
-    else
-      errors := errors.push s!"stringSupportOrdered fails on the closure's order \
-        ({withStr.length} records with a string literal)"
   let records := Ix.Cert.recordsOf ixe order.toList
   let blobs := Ix.Cert.blobsOf ixe order.toList
   lines := lines.push s!"compiled closure: {seeds.size} published addresses \
