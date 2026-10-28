@@ -27,7 +27,7 @@ def runVerifyHostCmd (p : Cli.Parsed) : IO UInt32 := do
       | .error message => IO.eprintln s!"[verify-host] {message}"; return 3
     let job := IO.lazyPure fun _ =>
       Ix.HostAdmission.verifyAddressed address bytes parts.env CheckLeanCmd.artifactLimits
-    Ix.Tc.setLeanThreadStackSize (USize.ofNat ({} : CheckLeanCmd.CheckCfg).stackBytes)
+    Ix.Runtime.setLeanThreadStackSize (USize.ofNat ({} : CheckLeanCmd.CheckCfg).stackBytes)
     let result ← IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) job))
     match result with
     | .error error => IO.eprintln s!"[verify-host] {error}"; return 3

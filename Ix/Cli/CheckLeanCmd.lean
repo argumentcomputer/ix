@@ -310,7 +310,7 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
           bound := p.bound, artifactAdmission := admission.map (·.1)
           hostStatement := admission.map (·.2), artifactMs := elapsed
           prepareMs := report.prepareMs - elapsed }
-    if cfg.stackBytes != 0 then Ix.Tc.setLeanThreadStackSize (USize.ofNat cfg.stackBytes)
+    if cfg.stackBytes != 0 then Ix.Runtime.setLeanThreadStackSize (USize.ofNat cfg.stackBytes)
     IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) job))
   catch e => return .error (.infrastructure e.toString)
 

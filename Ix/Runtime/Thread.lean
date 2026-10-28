@@ -4,7 +4,7 @@ public import Init
 
 public section
 
-namespace Ix.Tc
+namespace Ix.Runtime
 
 /-- Set the stack size, in bytes, for subsequently spawned Lean runtime
     threads (`.dedicated` task threads and not-yet-spawned pool workers) —
@@ -14,4 +14,4 @@ namespace Ix.Tc
 @[extern "rs_lean_set_thread_stack_size"]
 opaque setLeanThreadStackSize : USize → BaseIO Unit
 
-end Ix.Tc
+end Ix.Runtime
