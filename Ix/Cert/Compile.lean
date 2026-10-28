@@ -1,6 +1,7 @@
 module
 
 public import Ix.CompileDriver
+public import Ix.Compile.Parallel
 public import IxC.Kernel.Ixon.Reader
 public import IxC.Kernel.Ixon.Prelude
 public import Ix.LeanIngress
@@ -477,11 +478,7 @@ of `xs` (`Task.spawn`, the task pool); the tasks see only `xs` and `f`. The
 value is `xs.map f`: `(Task.spawn g).get = g ()` by definition, and the
 chunks, flattened, are `xs` (`Ix.Cert.Order.parMap_eq`). -/
 @[expose] def parMap {α β : Type} (f : α → β) (xs : Array α) : Array β :=
-  let n := xs.size
-  let size := (n + recordTasks - 1) / recordTasks
-  let chunks := if size == 0 then 0 else (n + size - 1) / size
-  (((Array.range chunks).map fun c => Task.spawn fun _ =>
-    (xs.extract (c * size) ((c + 1) * size)).map f).map Task.get).flatten
+  Ix.Compile.Parallel.map recordTasks f xs
 
 /-- The references and owner of each record of `recs` (an address and what is
 stored there), in order, read without the records' expressions
