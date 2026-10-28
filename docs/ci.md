@@ -43,10 +43,20 @@ the entry runs:
 | `ci:compile`, `ci:decompile` | one merge-tests partition each | the whole test environment through the compiler, and back |
 | `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, sharding, catalog and commit I/O, the primitives, and the IxVM suite |
 | `ci:landing-compilers` | a merge-tests partition | the Lean compiler's output independent of its schedule, on the fixture corpus; the Rust compiler's compile, serialize and decompile roundtrip over the test environment |
-| `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std: the certified compile with its report checks against the pipeline and the Rust compiler, in process and through `ix compile-lean`, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which the Rust kernel must check with every role of the default table admitted; `ix validate-lean` fidelity; role binding and evidence; a reading premise on every inductive; and the admission hash |
+| `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std, in process: the certified compile with its report checks against the pipeline and the Rust compiler, role binding and evidence, a reading premise on every inductive, and the admission hash |
+| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and the Rust comparison, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which the Rust kernel must check with every role of the default table admitted; and `ix validate-lean` fidelity |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
-`lake test -- --tier <tier>` runs one tier; `--tier landing` runs the two
+The manual runners that prove through the production `ix_aggr` circuit,
+`aggregate-proof` and `aggregate-binding-reuse`, take minutes of recursion and
+about 190 GB, three quarters of a 32-CPU merge-tests runner's memory, so they
+stay manual. `binding-proof-cli` (`ci:cli`) runs
+`aggregate-binding-reuse`'s flow without its two aggregates: the binding proof,
+the shard proofs that assume it, their composition with it, and the refusals
+without it; the aggregation circuit's handling of the binding is tested in
+`ix-aggr` (primary).
+
+`lake test -- --tier <tier>` runs one tier; `--tier landing` runs the three
 landing partitions. The registry's primary self-test, `ixtests-registry`,
 fails when a CI tier has no entry, when no workflow runs a CI tier (comments
 do not count), or when a workflow names a tier the registry does not define.

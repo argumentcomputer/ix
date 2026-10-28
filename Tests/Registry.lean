@@ -8,7 +8,7 @@
   self-test (`ixtests-registry`) checks the registry against the workflows
   that name those jobs (comments removed), and checks that every required
   entry is registered once, in its tier, and that the required list names an
-  entry in every tier that runs in CI. The two landing jobs
+  entry in every tier that runs in CI. The three landing jobs
   hold the end-to-end checks of the compiler and of the certification, which
   are too slow for every pull request and run in the merge queue.
 
@@ -17,7 +17,7 @@
   - `<name>…`: exactly the named entries, whatever their tier (names match
     exactly; an unknown name is an error);
   - `--tier <tier>` (repeatable): every entry of that tier, where `<tier>`
-    is `primary`, `manual`, `ci:<job>`, or `landing` for the two landing jobs;
+    is `primary`, `manual`, `ci:<job>`, or `landing` for the three landing jobs;
   - `--ignored`: with no name and no `--tier`, every entry that is not
     primary; with a name or a `--tier`, nothing more (kept so that
     `--ignored <name>…` works as before);
@@ -50,22 +50,25 @@ inductive CiJob where
   not depend on its schedule, and the Rust compiler's compile, serialize and
   decompile roundtrip over the test environment. -/
   | landingCompilers
-  /-- End-to-end checks on Init+Std: the certified compile with its report
-  checks against the pipeline and the Rust compiler, in process and through
-  `ix compile-lean` (whose artifact must match the reference digest, and
-  which the Rust kernel checks with every bound role admitted),
-  `ix validate-lean` fidelity, role binding and evidence, a reading premise
-  on every inductive, and the admission hash. -/
+  /-- End-to-end checks on Init+Std, in process: the certified compile with
+  its report checks against the pipeline and the Rust compiler, role binding
+  and evidence, a reading premise on every inductive, and the admission hash. -/
   | landingInitStd
+  /-- Init+Std through the `ix` binary: `ix compile-lean` with its report
+  checks and the Rust comparison, whose artifact must match the reference
+  digest and which the Rust kernel checks with every bound role admitted, and
+  `ix validate-lean` fidelity. A job of its own, so that neither Init+Std
+  job approaches the merge queue's timeout. -/
+  | landingInitStdCli
   deriving DecidableEq, Repr
 
 def CiJob.all : List CiJob :=
   [.cli, .compilePipeline, .compilerClosures, .compile, .decompile, .misc,
-   .landingCompilers, .landingInitStd]
+   .landingCompilers, .landingInitStd, .landingInitStdCli]
 
 /-- The jobs that `--tier landing` selects together. -/
 def CiJob.isLanding : CiJob → Bool
-  | .landingCompilers | .landingInitStd => true
+  | .landingCompilers | .landingInitStd | .landingInitStdCli => true
   | _ => false
 
 /-- The job's name on the command line (`--tier ci:<key>`) and in the workflows. -/
@@ -78,6 +81,7 @@ def CiJob.key : CiJob → String
   | .misc => "misc"
   | .landingCompilers => "landing-compilers"
   | .landingInitStd => "landing-initstd"
+  | .landingInitStdCli => "landing-initstd-cli"
 
 /-- Where an entry runs. -/
 inductive Tier where
@@ -162,12 +166,16 @@ def problems (entries : List Entry) (workflows : List (String × String)) : List
       out := out ++ [s!"entry name '{e.name}' is not a plain word"]
     if let .manual reason := e.tier then
       if reason.trimAscii.isEmpty then out := out ++ [s!"manual entry {e.name} has no reason"]
+  -- the job keys the workflows name after `--tier ci:`, whole: one key is not
+  -- run by a mention of a longer key it is a prefix of
+  let named : List String := workflows.flatMap fun (_, text) =>
+    ((text.splitOn "--tier ci:").drop 1).map fun chunk =>
+      (chunk.takeWhile (fun c => c.isAlphanum || c == '-')).toString
   for job in CiJob.all do
     unless entries.any (fun e => match e.tier with | .ci j => j == job | _ => false) do
       out := out ++ [s!"CI job ci:{job.key} has no entry"]
-    let mention := s!"--tier ci:{job.key}"
-    unless workflows.any (fun (_, text) => (text.splitOn mention).length > 1) do
-      out := out ++ [s!"no workflow runs '{mention}'"]
+    unless named.contains job.key do
+      out := out ++ [s!"no workflow runs '--tier ci:{job.key}'"]
   -- every `--tier ci:<key>` a workflow names is a job of the registry
   for (file, text) in workflows do
     for chunk in (text.splitOn "--tier ci:").drop 1 do
@@ -394,5 +402,8 @@ private def picks (args : List String) : List String :=
 #guard stripComment "echo a#b" == "echo a#b"
 #guard (problems demo [("w", "#--tier ci:compile\n  # --tier ci:landing-compilers")]).length ==
   CiJob.all.length - 2 + CiJob.all.length
+-- a longer key that a job's key is a prefix of does not run that job
+#guard (problems demo [("w", "--tier ci:compile-pipeline")]).contains
+  "no workflow runs '--tier ci:compile'"
 
 end Tests.Registry

@@ -146,6 +146,9 @@ jobs:
           - name: Lake ignored tests (landing, Init+Std)
             kind: lake
             test_args: --tier ci:landing-initstd
+          - name: Lake ignored tests (landing, Init+Std through ix)
+            kind: lake
+            test_args: --tier ci:landing-initstd-cli
           - name: Certified kernel
             kind: kernel
     # On-demand rather than Spot: a reclaimed partition restarts from scratch

@@ -317,10 +317,10 @@ def registry : List Entry := [
   -- `ix compile-lean` on Init+Std: its report checks, the Rust compiler byte for
   -- byte, the reference digest (Tests/Fixtures/initstd-reference.txt), and the
   -- Rust kernel on the artifact with every bound role admitted
-  .runner "initstd-reference" (.ci .landingInitStd) Tests.Ix.InitStd.reference,
+  .runner "initstd-reference" (.ci .landingInitStdCli) Tests.Ix.InitStd.reference,
   -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
   -- decompile fidelity
-  .runner "fidelity-initstd" (.ci .landingInitStd) Tests.Ix.InitStd.fidelity,
+  .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
   .suite "cert-roles-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.rolesInitStdSuite,
   .suite "cert-evidence-agreement" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceSuite,
   .suite "cert-evidence-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceInitStdSuite,
@@ -501,8 +501,8 @@ def required : List (String × String) := [
   ("compile-schedule-identity", "ci:landing-compilers"),
   ("rust-compile", "ci:landing-compilers"),
   ("cert-compile-parity-initstd", "ci:landing-initstd"),
-  ("initstd-reference", "ci:landing-initstd"),
-  ("fidelity-initstd", "ci:landing-initstd"),
+  ("initstd-reference", "ci:landing-initstd-cli"),
+  ("fidelity-initstd", "ci:landing-initstd-cli"),
   ("cert-roles-initstd", "ci:landing-initstd"),
   ("cert-evidence-initstd", "ci:landing-initstd"),
   ("cert-noctor-initstd", "ci:landing-initstd"),
