@@ -29,7 +29,13 @@ compile-report check), so a ground edge starts at a group name's own published r
 the key by a definition (`OpsDeclared`), and the definition's install guard found every ground
 role installed (`op_deps_installed`). The fold installs only names its stream declares besides
 the prelude's (`installed_over`), the stream declares a role key only for a closure name with
-that key (`stream_role`), and that name is published at the role's address (`role_published`). -/
+that key (`stream_role`), and that name is published at the role's address (`role_published`).
+
+**Kinds.** A closure name published at a standalone definition record of kind `defn` is an
+input definition (`claimed_definition`), since a lone constant's compile makes such a block only
+of a definition (`lone_defn`) and a mutual block only of a single member its members' loop made
+of an input definition (`compileMutualBlock_defn`, `members_defn`). A name with `sorryAx`'s key
+sits at the role's axiom record (`not_sorryAx`). -/
 
 namespace Ix.Cert.LayoutExtra
 
@@ -879,6 +885,536 @@ theorem ground_extra {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Env
     have same : s = r' := by simpa [Ix.Kernel.Key.base] using hbase
     subst same
     exact absurd hr' hnotPre
+
+/-! ## Compile kinds: a standalone definition record is an input definition's -/
+
+section Kinds
+
+open Ix.CompileM Ix.CompileCert
+open Ix.CompileCert.Emission (Yields)
+
+/-- **A definition-like payload keeps its source's kind.** -/
+theorem definitionData_kind (d : Ix.Def) :
+    Yields (compileDefinitionData d) (fun o => o.1.kind = d.kind) := by
+  unfold compileDefinitionData
+  refine Yields.withCurrent _ (Yields.withUnivCtx _ (Yields.bindAny _ fun _ => Yields.bindAny _ fun typed => ?_))
+  obtain ⟨typeExpr, typeRoot⟩ := typed
+  dsimp only
+  refine Yields.bindAny _ fun valued => ?_
+  obtain ⟨valueExpr, valueRoot⟩ := valued
+  dsimp only
+  unfold finishDefinitionDataCompilation
+  repeat' first
+    | exact Yields.pure rfl
+    | refine Yields.bindAny _ (fun _ => ?_)
+
+/-- The canonical sharing keeps a constant's payload up to its roots. -/
+theorem finishConstant_erase (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
+    Yields (finishConstantInfoWithSharing info blockMeta)
+      (fun r => SharingRoots.erase r.block.info = SharingRoots.erase info ∧ r.projections = #[]) := by
+  intro ctx s x s' ran
+  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
+  obtain ⟨cache, mid, -, ran⟩ := bind_ok ran
+  obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
+  rw [rawRun_pure] at ran
+  cases ran
+  exact ⟨(SharingRoots.build_roots (md := .anon) _ _ _ _ _ (BlockLayout.buildBlockConstant_ok hb)).1, rfl⟩
+
+theorem erase_defn_kind {info : Ixon.ConstantInfo} {d₀ : Ixon.Definition}
+    (h : SharingRoots.erase info = SharingRoots.erase (.defn d₀)) {d : Ixon.Definition} (hd : info = .defn d) :
+    d.kind = d₀.kind := by
+  subst hd
+  have inner : Ixon.ConstantInfo.defn { d with typ := .sort 0, value := .sort 0 } =
+      .defn { d₀ with typ := .sort 0, value := .sort 0 } := h
+  have fields := congrArg Ixon.Definition.kind (Ixon.ConstantInfo.defn.inj inner)
+  exact fields
+
+theorem erase_not_defn {info src : Ixon.ConstantInfo} (h : SharingRoots.erase info = SharingRoots.erase src)
+    (hs : ∀ d, src ≠ .defn d) {d : Ixon.Definition} (hd : info = .defn d) : False := by
+  subst hd
+  cases src with
+  | defn d' => exact hs d' rfl
+  | _ => cases h
+
+/-- What a lone constant's compile says when its block is a standalone definition of kind
+`defn`: the constant is a definition and the block has no projection rows. -/
+def DefnOut (const : Ix.ConstantInfo) (r : BlockResult) : Prop :=
+  ∀ d, r.block.info = .defn d → d.kind = .defn → (∃ v, const = .defnInfo v) ∧ r.projections = #[]
+
+theorem finishConstant_defn {const : Ix.ConstantInfo} {info : Ixon.ConstantInfo} (blockMeta : Ixon.ConstantMeta)
+    (hinfo : ∀ d, info = .defn d → d.kind = .defn → ∃ v, const = .defnInfo v) :
+    Yields (finishConstantInfoWithSharing info blockMeta) (DefnOut const) := by
+  intro ctx s x s' ran
+  obtain ⟨erased, proj⟩ := finishConstant_erase info blockMeta ctx s x s' ran
+  intro d hd hk
+  refine ⟨?_, proj⟩
+  cases info with
+  | defn d₀ => exact hinfo d₀ rfl (by rw [← erase_defn_kind erased hd]; exact hk)
+  | _ => exact (erase_not_defn erased (fun _ h => by cases h) hd).elim
+
+theorem finishInductive_defn {const : Ix.ConstantInfo} (i : Ix.InductiveVal) (ind : Ixon.Inductive)
+    (indMeta : Ixon.ConstantMeta) (pairs : Array (Ix.Name × Ixon.ConstantMeta)) :
+    Yields (finishInductiveFamilyBlock i ind indMeta pairs) (DefnOut const) := by
+  intro ctx s x s' ran
+  unfold finishInductiveFamilyBlock at ran
+  obtain ⟨_, _, -, ran⟩ := bind_ok ran
+  obtain ⟨_, _, -, ran⟩ := bind_ok ran
+  obtain ⟨cache, mid, -, ran⟩ := bind_ok ran
+  obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
+  rw [rawRun_pure] at ran
+  cases ran
+  intro d hd _
+  obtain ⟨targets, h, -⟩ :=
+    ProjectionLayout.sharing_mutual_shape _ _ _ _ _ (BlockLayout.buildBlockConstant_ok hb)
+  exact absurd (h.symm.trans hd) (by intro e; cases e)
+
+theorem inductiveInfo_defn {const : Ix.ConstantInfo} (v : Ix.InductiveVal) :
+    Yields (compileInductiveInfo v) (DefnOut const) := by
+  unfold compileInductiveInfo
+  refine Yields.bindAny _ fun _ => Yields.withBlockEnv _ ?_
+  unfold compileInductiveFamilyInfo compileInductiveFamilyBlock
+  exact Yields.bindAny _ fun _ => Yields.bindAny _ fun _ => finishInductive_defn _ _ _ _
+
+/-- **A lone constant whose block is a standalone definition of kind `defn` is a definition**,
+and its block has no projection rows. -/
+theorem lone_defn (const : Ix.ConstantInfo) : Yields (compileConstantInfo const) (DefnOut const) := by
+  cases const with
+  | defnInfo v =>
+    unfold compileConstantInfo compileDefinitionConstantInfo withMutCtx
+    refine Yields.withBlockEnv _ ?_
+    unfold compileDefinitionInfo compileDefinitionBlock
+    refine Yields.bindAny _ fun _ => Yields.bindAny _ fun x => ?_
+    obtain ⟨defn, cmeta, t, val⟩ := x
+    exact finishConstant_defn _ fun _ _ _ => ⟨v, rfl⟩
+  | thmInfo v =>
+    unfold compileConstantInfo compileTheoremConstantInfo withMutCtx
+    refine Yields.withBlockEnv _ ?_
+    unfold compileTheoremInfo compileDefinitionDataInfo compileDefinitionDataBlock
+    refine Yields.bindAny _ fun _ => Yields.bind (definitionData_kind _) fun x hk => ?_
+    obtain ⟨defn, cmeta, t, val⟩ := x
+    refine finishConstant_defn _ fun d hd hkd => ?_
+    cases hd
+    simp only [theoremValData] at hk
+    rw [hk] at hkd
+    cases hkd
+  | opaqueInfo v =>
+    unfold compileConstantInfo compileOpaqueConstantInfo withMutCtx
+    refine Yields.withBlockEnv _ ?_
+    unfold compileOpaqueInfo compileDefinitionDataInfo compileDefinitionDataBlock
+    refine Yields.bindAny _ fun _ => Yields.bind (definitionData_kind _) fun x hk => ?_
+    obtain ⟨defn, cmeta, t, val⟩ := x
+    refine finishConstant_defn _ fun d hd hkd => ?_
+    cases hd
+    simp only [opaqueValData] at hk
+    rw [hk] at hkd
+    cases hkd
+  | quotInfo v =>
+    unfold compileConstantInfo compileQuotientConstantInfo withMutCtx
+    refine Yields.withBlockEnv _ ?_
+    unfold compileQuotientInfo compileQuotientBlock
+    refine Yields.bindAny _ fun _ => Yields.bindAny _ fun x => ?_
+    obtain ⟨q, cmeta, t⟩ := x
+    exact finishConstant_defn _ fun d hd => by cases hd
+  | recInfo v =>
+    unfold compileConstantInfo compileRecursorConstantInfo withMutCtx
+    refine Yields.withBlockEnv _ ?_
+    unfold compileRecursorInfo compileRecursorBlock
+    refine Yields.bindAny _ fun _ => Yields.bindAny _ fun x => ?_
+    obtain ⟨q, cmeta, t⟩ := x
+    exact finishConstant_defn _ fun d hd => by cases hd
+  | inductInfo v =>
+    unfold compileConstantInfo compileInductiveConstantInfo withMutCtx
+    exact Yields.withBlockEnv _ (inductiveInfo_defn v)
+  | ctorInfo v =>
+    unfold compileConstantInfo compileConstructorConstantInfo withMutCtx
+    refine Yields.withBlockEnv _ ?_
+    unfold compileConstructorInfo
+    refine Yields.bindAny _ fun c => ?_
+    split
+    · exact inductiveInfo_defn _
+    · intro ctx s x s' ran
+      cases ran
+  | axiomInfo v =>
+    unfold compileConstantInfo compileConstantInfoCore withMutCtx
+    refine Yields.withBlockEnv _ ?_
+    unfold compileAxiomInfo compileAxiomBlock
+    refine Yields.bindAny _ fun _ => Yields.bindAny _ fun x => ?_
+    obtain ⟨q, cmeta, t⟩ := x
+    exact finishConstant_defn _ fun d hd => by cases hd
+
+
+/-- A mutual member's definition kind, if it is a definition. -/
+def srcKind : MutConst → Option Ix.DefKind
+  | .defn d => some d.kind
+  | _ => none
+
+/-- A compiled mutual payload's definition kind, if it is a definition. -/
+def payloadKind : Ixon.MutConst → Option Ix.DefKind
+  | .defn d => some d.kind
+  | _ => none
+
+theorem member_kind (source : MutConst) : Yields (compileMutConstMember source)
+    (fun output => payloadKind output.payload = srcKind source) := by
+  cases source with
+  | defn value =>
+    exact Yields.bind (Yields.withCurrent value.name (definitionData_kind value)) fun x hk =>
+      Yields.pure (congrArg some hk)
+  | recr value =>
+    exact Yields.bindAny _ fun _ => Yields.pure rfl
+  | indc value =>
+    exact Yields.bindAny _ fun _ => Yields.pure rfl
+
+theorem class_kinds (sources : List MutConst) (initial : MutConstCompileState) :
+    Yields (compileMutConstClass sources initial) (fun output =>
+      output.payloads.toList.map payloadKind = initial.payloads.toList.map payloadKind ++
+        sources.head?.toList.map srcKind) := by
+  cases sources with
+  | nil => exact Yields.pure (by simp)
+  | cons source rest =>
+    rw [compileMutConstClass]
+    exact Yields.bind (member_kind source) fun member kind =>
+      fun context before output after ran => by
+        have same := ProjectionLayout.equivalents_payloads rest (initial.addRepresentative member) context
+          before output after ran
+        simp [same, MutConstCompileState.addRepresentative, kind]
+
+theorem classes_kinds (sources : List (List MutConst)) (initial : MutConstCompileState) :
+    Yields (compileMutConstClasses sources initial) (fun output =>
+      output.payloads.toList.map payloadKind = initial.payloads.toList.map payloadKind ++
+        (sources.filterMap List.head?).map srcKind) := by
+  induction sources generalizing initial with
+  | nil => exact Yields.pure (by simp)
+  | cons source rest ih =>
+    intro context before output after ran
+    rw [compileMutConstClasses] at ran
+    obtain ⟨middle, state, firstRun, lastRun⟩ := bind_ok ran
+    have first := class_kinds source initial context before middle state firstRun
+    have last := ih middle context state output after lastRun
+    cases source <;> simpa [first, List.append_assoc, List.filterMap] using last
+
+/-- **The retained payloads have the representatives' definition kinds**, one per non-empty
+class, in class order. -/
+theorem payload_kinds (sources : List (List MutConst)) : Yields (compileMutConsts sources)
+    (fun output => output.1.toList.map payloadKind = (sources.filterMap List.head?).map srcKind) := by
+  unfold compileMutConsts
+  exact Yields.bind (classes_kinds sources {}) fun compiled kinds =>
+    Yields.pure (by simpa using kinds)
+
+/-- What a mutual block's compile says when its block is a standalone definition of kind
+`defn`: one class, its representative a definition of kind `defn`, and rows named after the
+classes' members, at least one. -/
+def MutDefnOut (classes : List (List MutConst)) (out : BlockResult) : Prop :=
+  ∀ d, out.block.info = .defn d → d.kind = .defn →
+    ∃ x, classes.filterMap List.head? = [x] ∧ srcKind x = some .defn ∧
+      out.projections ≠ #[] ∧ ∀ p ∈ out.projections, p.1 ∈ classes.flatten.map MutConst.name
+
+theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
+    {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
+    {out : BlockResult}
+    (kinds : payloads.toList.map payloadKind = (classes.filterMap List.head?).map srcKind)
+    (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) : MutDefnOut classes out := by
+  unfold buildCompiledMutualBlock at ran
+  cases hs : standaloneMutConstInfo? payloads with
+  | some info =>
+    rw [hs] at ran
+    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    cases Except.ok.inj returned
+    intro d hd hk
+    have erased := (SharingRoots.build_roots (md := .anon) _ _ _ _ _ hb).1
+    have rows : ∀ p ∈ buildStandaloneMutualProjections classes block metas,
+        (p.1, p.2.1) ∈ classes.flatten.map (fun source => (source.name, block)) := by
+      intro p hp
+      rw [← MutualProjections.standalone_rows]
+      exact List.mem_map.mpr ⟨p, Array.mem_toList_iff.mpr hp, rfl⟩
+    rcases payloads with ⟨l⟩
+    rcases l with _ | ⟨m, _ | ⟨m₂, rest⟩⟩
+    · cases hs
+    rotate_left
+    · cases hs
+    cases m with
+    | indc i => cases hs
+    | recr r =>
+      cases hs
+      exact (erase_not_defn erased (fun _ h => by cases h) hd).elim
+    | defn definition =>
+      cases hs
+      have hkd := erase_defn_kind erased hd
+      rw [hk] at hkd
+      change [some definition.kind] = _ at kinds
+      generalize hL : classes.filterMap List.head? = L at kinds
+      rcases L with _ | ⟨x, _ | ⟨y, L⟩⟩
+      · simp at kinds
+      · simp only [List.map_cons, List.map_nil, List.cons.injEq, and_true] at kinds
+        have hx : x ∈ classes.flatten := by
+          obtain ⟨cl, hcl, hh⟩ := List.mem_filterMap.mp (hL ▸ List.mem_singleton_self x)
+          exact List.mem_flatten.mpr ⟨cl, hcl, List.mem_of_mem_head? hh⟩
+        refine ⟨x, rfl, by rw [← kinds, ← hkd], ?_, ?_⟩
+        · intro he
+          have hm : (x.name, block) ∈ (buildStandaloneMutualProjections classes block metas).toList.map
+              (fun p => (p.1, p.2.1)) := by
+            rw [← MutualProjections.logicalRows, MutualProjections.standalone_rows]
+            exact List.mem_map.mpr ⟨x, hx, rfl⟩
+          simp only [BlockResult.mk'] at he
+          rw [he] at hm
+          simp at hm
+        · intro p hp
+          obtain ⟨y, hy, e⟩ := List.mem_map.mp (rows p hp)
+          exact List.mem_map.mpr ⟨y, hy, (Prod.mk.inj e).1⟩
+      · simp at kinds
+  | none =>
+    rw [hs] at ran
+    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    cases Except.ok.inj returned
+    intro d hd _
+    obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb
+    exact absurd (h.symm.trans hd) (by intro e; cases e)
+
+theorem compileMutualBlock_defn (classes : List (List MutConst)) :
+    Yields (compileMutualBlock classes) (MutDefnOut classes) := by
+  intro ctx s x s' ran
+  unfold compileMutualBlock at ran
+  dsimp only at ran
+  unfold withMutCtx at ran
+  rw [rawRun_withBlockEnv] at ran
+  obtain ⟨_, _, -, compiled⟩ := bind_ok ran
+  unfold compileMutualPayload at compiled
+  obtain ⟨⟨payloads, roots, metas⟩, mid, hp, finished⟩ := bind_ok compiled
+  have kinds := payload_kinds classes _ _ _ _ hp
+  exact buildMutual_defn kinds (ProjectionLayout.finish_mutual_ok _ _ _ _ finished).2.2
+
+/-- Lean's order puts each member in a class of its own. -/
+theorem sourceClasses_flat (cs : Array MutConst) :
+    (sourceClasses cs).filterMap List.head? = (sourceClasses cs).flatten ∧
+      ∀ y ∈ (sourceClasses cs).flatten, y ∈ cs := by
+  unfold sourceClasses
+  dsimp only
+  generalize hL : (cs.zipIdx.qsort _).toList = L
+  have mem : ∀ e ∈ L, e.1 ∈ cs := by
+    intro e he
+    rw [← hL] at he
+    have := Ix.CompileCert.Canon.mem_qsort.mp (Array.mem_toList_iff.mp he)
+    exact Array.mem_of_getElem? (Array.mem_zipIdx_iff_getElem?.mp this)
+  clear hL
+  induction L with
+  | nil => exact ⟨rfl, fun y hy => by simp at hy⟩
+  | cons e L ih =>
+    obtain ⟨ih₁, ih₂⟩ := ih fun e' he' => mem e' (List.mem_cons_of_mem _ he')
+    refine ⟨?_, fun y hy => ?_⟩
+    · simp only [List.map_cons, List.filterMap_cons, List.head?_cons, List.flatten_cons]
+      rw [ih₁]
+      rfl
+    · simp only [List.map_cons, List.flatten_cons, List.mem_append, List.mem_singleton] at hy
+      rcases hy with rfl | hy
+      · exact mem e List.mem_cons_self
+      · exact ih₂ y hy
+
+/-- An invariant a loop's steps keep holds of its result. -/
+theorem forIn_rawRun_inv {α σ : Type} (I : σ → Prop) {body : α → σ → CompileM (ForInStep σ)}
+    {ctx : CompileEnv × BlockEnv}
+    (step : ∀ x s₀ acc acc' s₁, I acc → rawRun (body x acc) ctx s₀ = (.ok acc', s₁) → I acc'.value) :
+    ∀ (l : List α) (init : σ) (s s' : BlockState) (out : σ), I init →
+      rawRun (forIn l init body) ctx s = (.ok out, s') → I out
+  | [], init, s, s', out, hi, h => by
+    rw [List.forIn_nil, rawRun_pure] at h
+    cases h
+    exact hi
+  | x :: l, init, s, s', out, hi, h => by
+    rw [List.forIn_cons] at h
+    obtain ⟨st, mid, hb, h⟩ := bind_ok h
+    have hst := step x s init st mid hi hb
+    cases st with
+    | done b =>
+      rw [rawRun_pure] at h
+      cases h
+      exact hst
+    | yield b => exact forIn_rawRun_inv I step l b mid s' out hst h
+
+/-- **A block's members' loop makes a definition of kind `defn` only of an input definition.** -/
+theorem members_defn {ctx : CompileEnv × BlockEnv} {all : Ix.Set Ix.Name} {s s' : BlockState}
+    {cs : Array Ix.MutConst}
+    (h : rawRun (forIn all #[] fun n (acc : Array Ix.MutConst) => do
+            match ← findConst n with
+            | .inductInfo val => pure (ForInStep.yield (acc.push (← MutConst.mkIndc val)))
+            | .defnInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromDefinitionVal val)))
+            | .opaqueInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromOpaqueVal val)))
+            | .thmInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromTheoremVal val)))
+            | .recInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.recr val)))
+            | _ => pure (ForInStep.yield acc)) ctx s = (.ok cs, s')) :
+    ∀ x ∈ cs, srcKind x = some .defn →
+      ∃ m val, ctx.1.env.get? m = some (.defnInfo val) ∧ x = Ix.MutConst.fromDefinitionVal val := by
+  rw [Std.HashSet.forIn_eq_forIn_toList] at h
+  refine forIn_rawRun_inv (fun (acc : Array Ix.MutConst) => ∀ x ∈ acc, srcKind x = some .defn →
+      ∃ m val, ctx.1.env.get? m = some (.defnInfo val) ∧ x = Ix.MutConst.fromDefinitionVal val)
+    ?_ all.toList #[] s s' cs (fun x hx => by simp at hx) h
+  intro n s₀ acc acc' s₁ hacc ran
+  obtain ⟨c, mid, hfind, ran⟩ := bind_ok ran
+  have hc := BlockRecords.findConst_ok hfind
+  have push : ∀ y, (srcKind y = some .defn → ∃ m val, ctx.1.env.get? m = some (.defnInfo val) ∧
+      y = Ix.MutConst.fromDefinitionVal val) →
+      ∀ x ∈ acc.push y, srcKind x = some .defn →
+        ∃ m val, ctx.1.env.get? m = some (.defnInfo val) ∧ x = Ix.MutConst.fromDefinitionVal val := by
+    intro y hy x hx
+    rcases Array.mem_push.mp hx with hx | rfl
+    · exact hacc x hx
+    · exact hy
+  cases c with
+  | inductInfo val =>
+    obtain ⟨y, mid', hy, ran⟩ := bind_ok ran
+    rw [rawRun_pure] at ran
+    cases ran
+    refine push y fun hk => ?_
+    unfold MutConst.mkIndc at hy
+    obtain ⟨_, _, -, hy⟩ := bind_ok hy
+    rw [rawRun_pure] at hy
+    cases hy
+    cases hk
+  | defnInfo val =>
+    rw [rawRun_pure] at ran
+    cases ran
+    exact push _ fun _ => ⟨n, val, hc, rfl⟩
+  | opaqueInfo val =>
+    rw [rawRun_pure] at ran
+    cases ran
+    exact push _ fun hk => by cases hk
+  | thmInfo val =>
+    rw [rawRun_pure] at ran
+    cases ran
+    exact push _ fun hk => by cases hk
+  | recInfo val =>
+    rw [rawRun_pure] at ran
+    cases ran
+    exact push _ fun hk => by cases hk
+  | _ =>
+    rw [rawRun_pure] at ran
+    cases ran
+    exact hacc
+
+/-- **A group name's published record is a primary claim of its block's compile**, run in a
+compile environment that reads the input's constants: `BlockLayout.ClaimedAt` with the
+environment the fold's states keep. -/
+def ClaimedIn (env : Ix.Environment) (ixe : Ixon.Env) (n : Ix.Name) (a : Address) : Prop :=
+  ∃ (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult) (c : BlockState)
+    (layout : Option Ixon.AuxLayout) (b : ByteArray),
+    (∀ x, cenv.env.get? x = env.consts.get? x) ∧
+    runBlock cenv A k = .ok (r, c, layout) ∧ (n, a, b) ∈ Resolution.claimWrites k r ∧
+    ixe.consts.get? a = some { buf := b, len := b.size } ∧
+    ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size }
+
+theorem ClaimedIn.claimedAt {env : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name} {a : Address}
+    (h : ClaimedIn env ixe n a) : BlockLayout.ClaimedAt ixe n a := by
+  obtain ⟨cenv, A, k, r, c, layout, b, -, rest⟩ := h
+  exact ⟨cenv, A, k, r, c, layout, b, rest⟩
+
+/-- A definition record is its own owner, so it projects into no block. -/
+theorem defn_not_projects {c : Ixon.Constant} {d : Ixon.Definition} (hd : c.info = .defn d) (owner : Address) :
+    ¬ BlockLayout.ProjectsTo owner c := by
+  rintro ⟨-, -, powner⟩
+  have h₁ : (⟨ByteArray.empty⟩ : Address) = owner := by
+    have := powner ⟨ByteArray.empty⟩
+    unfold ownerOf at this
+    rw [hd] at this
+    exact this
+  have h₂ : (⟨⟨#[0]⟩⟩ : Address) = owner := by
+    have := powner ⟨⟨#[0]⟩⟩
+    unfold ownerOf at this
+    rw [hd] at this
+    exact this
+  have same := congrArg (fun a : Address => a.hash.size) (h₁.trans h₂.symm)
+  exact absurd same (by decide)
+
+/-- **A closure name published at a standalone definition record of kind `defn` is an input
+definition.** The record is the claim's block itself: a lone constant's compile makes one only
+of a definition (`lone_defn`), a mutual block's only of a single member that the block's members'
+loop made of an input definition (`compileMutualBlock_defn`, `members_defn`). -/
+theorem claimed_definition {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (compiled : compileReport env = .ok (ixe, failures)) {n : Ix.Name} {A : Address}
+    (claimed : ClaimedIn env ixe n A) {c : Ixon.Constant} (hc : recordAt ixe A = some c)
+    {d : Ixon.Definition} (hd : c.info = .defn d) (hk : d.kind = .defn) :
+    ∃ v, env.consts.get? n = some (.defnInfo v) := by
+  obtain ⟨cenv, all, k, res, cst, layout, bytes, henv, hr, hclaim, hstored, hblock⟩ := claimed
+  have shape := BlockLayout.runBlock_shape hr
+  have wire := BlockWire.blocksWire _ _ _ _ _ _ hr
+  have blockRec : recordAt ixe res.blockAddr = some res.block := by
+    rw [shape.bytes] at hblock
+    exact BlockLayout.recordAt_ser wire hblock
+  -- the claim is the block record, as the block's key or as one of its rows
+  have claimBlock : res.block.info = .defn d ∧
+      ((res.projections = #[] ∧ n = k) ∨ ∃ q ∈ res.projections, n = q.1) := by
+    unfold Resolution.claimWrites at hclaim
+    split at hclaim
+    · rename_i hempty
+      simp only [List.mem_toArray, List.mem_singleton, Prod.mk.injEq] at hclaim
+      obtain ⟨rfl, rfl, rfl⟩ := hclaim
+      rw [blockRec] at hc
+      cases hc
+      exact ⟨hd, .inl ⟨Array.isEmpty_iff.mp hempty, rfl⟩⟩
+    · obtain ⟨q, hq, e⟩ := Array.mem_map.mp hclaim
+      simp only [Prod.mk.injEq] at e
+      obtain ⟨rfl, rfl, rfl⟩ := e
+      rcases shape.rows q hq with same | proj
+      · rw [same, ← shape.bytes, ← shape.addr, blockRec] at hc
+        cases hc
+        exact ⟨hd, .inr ⟨q, hq, rfl⟩⟩
+      · have prec := BlockLayout.recordAt_ser proj.1 hstored
+        rw [prec] at hc
+        cases hc
+        exact (defn_not_projects hd _ proj).elim
+  obtain ⟨hinfo, hname⟩ := claimBlock
+  obtain ⟨const, s₁, hfind, rest⟩ := BlockRecords.compileBlockWithAux_result
+    (Ix.CompileCert.run_success (BlockRecords.runBlockWithAux_compiles hr))
+  have hconst := BlockRecords.findConst_ok hfind
+  rcases rest with ⟨s₂, lone⟩ | ⟨cs, s₂, out, s₄, loop, hmut, same⟩
+  · obtain ⟨⟨v, rfl⟩, hempty⟩ := lone_defn const _ _ _ _ lone d hinfo hk
+    rcases hname with ⟨-, rfl⟩ | ⟨q, hq, -⟩
+    · exact ⟨v, (henv _).symm.trans hconst⟩
+    · rw [hempty] at hq
+      exact absurd hq (Array.not_mem_empty _)
+  · simp only [BlockRecords.recordsOf, Prod.mk.injEq] at same
+    obtain ⟨hblock', -, -, hrows⟩ := same
+    obtain ⟨x, hx, hxk, hne, hrowsName⟩ :=
+      compileMutualBlock_defn _ _ _ _ _ hmut d (hblock' ▸ hinfo) hk
+    obtain ⟨flat, inCs⟩ := sourceClasses_flat cs
+    have hxcs : x ∈ cs := inCs x (by rw [← flat, hx]; exact List.mem_singleton_self x)
+    obtain ⟨m, val, hm, rfl⟩ := members_defn loop x hxcs hxk
+    have hn : n = val.cnst.name := by
+      rcases hname with ⟨hempty, -⟩ | ⟨q, hq, rfl⟩
+      · exfalso
+        apply hne
+        have : out.projections.map (fun p => (p.1, p.2.1)) = #[] := by rw [← hrows, hempty, Array.map_empty]
+        exact Array.map_eq_empty_iff.mp this
+      · have hm' : (q.1, q.2.1) ∈ out.projections.map (fun p => (p.1, p.2.1)) := by
+          rw [← hrows]
+          exact Array.mem_map.mpr ⟨q, hq, rfl⟩
+        obtain ⟨q', hq', e⟩ := Array.mem_map.mp hm'
+        have hq1 : q'.1 = q.1 := (Prod.mk.inj e).1
+        have hnm := hrowsName q' hq'
+        rw [hq1, ← flat, hx] at hnm
+        simpa [Ix.MutConst.fromDefinitionVal, Ix.MutConst.name] using hnm
+    rw [henv] at hm
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hm
+    obtain ⟨k', -, hk'⟩ := hm
+    have hname' := inputsNamed compiled k' _ hk'
+    refine ⟨val, ?_⟩
+    rw [hn, show val.cnst.name = k' from hname']
+    exact SourceStoredNames.stored_get hk'
+end Kinds
+
+/-! ## `sorryAx`'s key -/
+
+/-- **A published name whose record is no axiom record does not have `sorryAx`'s key**: a name
+with that key sits at the address the table binds `sorryAx` to (`role_published`), where the
+record is an axiom (`RoleRecordKinds`). A member of a block of several definitions is
+published at its `dPrj` row (`BlockPublication.member_published`), so this is `sameKey`'s
+`notSorry` for the members of `exactNames`. -/
+theorem not_sorryAx {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} (htable : Ix.Kernel.Reader.defaultTable = .ok t)
+    (bound : PublishedRolesBound t ixe) (agree : PublishedAgree ixe) (kinds : RoleRecordKinds ixe)
+    {m : Ix.Name} {named : Ixon.Named} (hm : (m, named) ∈ ixe.named.toList) {c : Ixon.Constant}
+    (hc : recordAt ixe named.addr = some c) (notAxiom : ∀ ax, c.info ≠ .axio ax) :
+    quotientKey ixe t m ≠ Ix.Kernel.sorryAxName := by
+  intro hkey
+  have hs := role_published (defaultTable_check htable) bound agree hm hkey
+  obtain ⟨ax, hax⟩ := (kinds t htable .sorryAx _ _ hs hc).2 rfl
+  exact notAxiom ax hax
 end Ix.Cert.LayoutExtra
 
 /--
@@ -892,3 +1428,15 @@ info: 'Ix.Cert.LayoutExtra.ground_extra' depends on axioms: [propext, Classical.
 -/
 #guard_msgs in
 #print axioms Ix.Cert.LayoutExtra.ground_extra
+
+/--
+info: 'Ix.Cert.LayoutExtra.claimed_definition' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LayoutExtra.claimed_definition
+
+/--
+info: 'Ix.Cert.LayoutExtra.not_sorryAx' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LayoutExtra.not_sorryAx
