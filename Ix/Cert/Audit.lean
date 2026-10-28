@@ -3466,11 +3466,19 @@ task's value is its function's, so the split (`width`) and the trace
 (`dbg`) change nothing (`compileEnvFold_width`); the IO pipeline's
 `IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Blocks of one wave
 being independent (the reference schedule) stays a test
-(`compile-schedule-identity`, `cert-compile-parity-init`). -/
+(`compile-schedule-identity`, `cert-compile-parity-init`).
 
-/-- info: [cert-audit] schedule: 13 roots; axioms used: [propext, Classical.choice, Quot.sound]
+The runtime projects each worker snapshot before spawning its tasks. The
+exact block read frame and task equality add two proof roots. The original
+task constructor retains a separate safety check with its exact reviewed
+replacement; the projected constructor and projection join the other safe
+definitions, increasing that group from five to six. -/
+
+/-- info: [cert-audit] schedule: 15 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] schedule: 5 safe definitions, no runtime substitution -/
+info: [cert-audit] schedule: 6 safe definitions, no runtime substitution
+---
+info: [cert-audit] schedule: exact worker projection substitution, safe source -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
@@ -3479,10 +3487,24 @@ run_cmd do
       (`Ix.Compile.Parallel ++ ·)) ++
     (#[`waveTasks_flatten, `applyTasks_eq,
       `foldWave_eq_with, `foldWave_eq, `foldWaves_eq, `compileEnvFold_eq_seq, `compileEnvFold_width,
-      `lazyPure_eq].map (`Ix.Cert.Schedule ++ ·)))
+      `lazyPure_eq].map (`Ix.Cert.Schedule ++ ·)) ++
+    #[``Ix.CompileM.WorkerSnapshot.runBlock_same, ``Ix.CompileM.waveTasks_eq_projected])
   checkRuntime (tag := "cert-audit") "schedule"
-    #[``Ix.Compile.Parallel.map, ``Ix.CompileM.waveTasks, ``Ix.CompileM.foldWave,
+    #[``Ix.Compile.Parallel.map, ``Ix.Compile.WorkerContext.project,
+      ``Ix.CompileM.waveTasksProjected, ``Ix.CompileM.foldWave,
       ``Ix.CompileM.foldWaves, ``Ix.CompileM.compileEnvFold]
+  let env ← Lean.getEnv
+  let some entry := (Lean.Compiler.CSimp.ext.getState env).map.find? ``Ix.CompileM.waveTasks
+    | throwError "schedule: missing worker projection replacement"
+  unless entry.toDeclName == ``Ix.CompileM.waveTasksProjected &&
+      entry.thmName == ``Ix.CompileM.waveTasks_eq_projected &&
+      (Lean.Compiler.getImplementedBy? env ``Ix.CompileM.waveTasks).isNone do
+    throwError "schedule: worker projection replacement changed"
+  let some (.defnInfo definition) := env.find? ``Ix.CompileM.waveTasks
+    | throwError "schedule: task constructor is not a definition"
+  unless definition.safety == .safe do
+    throwError "schedule: task constructor is not safe"
+  Lean.logInfo "[cert-audit] schedule: exact worker projection substitution, safe source"
 
 /-- info: def Ix.Cert.Schedule.applySeq : Ix.CompileM.CompileEnv →
   Array (Ix.Name × Ix.Name × Ix.Set Ix.Name) → Ix.CompileM.DriverAcc → Ix.CompileM.DriverAcc :=
