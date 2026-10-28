@@ -285,6 +285,10 @@ def registry : List Entry := [
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
   .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
+  -- `ix prove-binding`, shard proofs that assume the binding, and their
+  -- composition with the binding proof file and refusals without it, through
+  -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates)
+  .env "binding-proof-cli" (.ci .cli) Tests.Aggr.BindingReuse.cli,
 
   -- expensive suites and runners (these require significant RAM)
   .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,
@@ -336,7 +340,7 @@ def registry : List Entry := [
   .suite "cert-evidence-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceInitStdSuite,
   .suite "cert-noctor-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.noCtorInitStdSuite,
   .runner "aggregate-proof" (.manual "a proof round trip through the production ix_aggr circuit; minutes of proving") Tests.Aggr.proofRoundTrip,
-  .env "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of proving, needs `lake build ix`") Tests.Aggr.BindingReuse.run,
+  .env "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of recursion and about 190 GB, needs `lake build ix`; `binding-proof-cli` runs it without the aggregates") Tests.Aggr.BindingReuse.run,
   .runner "kernel-dependencies" (.manual "the IxVM definition-dependency checks alone; `ixvm` runs them too") (do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
     | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
@@ -489,6 +493,7 @@ def required : List (String × String) := [
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),
+  ("binding-proof-cli", "ci:cli"),
   ("rust-serialize", "ci:compile-pipeline"),
   ("decompile-diff", "ci:compile-pipeline"),
   ("compile-ind-flags", "ci:compile-pipeline"),
