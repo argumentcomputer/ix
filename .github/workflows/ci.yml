@@ -122,7 +122,7 @@ jobs:
       - name: Get Rust version
         if: github.event_name != 'push'
         run: |
-          echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
+          echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a "$GITHUB_ENV"
       # A Docker action: the job's RUSTC_WRAPPER reaches its container, where
       # sccache is not installed, and cargo fails before deny runs. Deny only
       # reads metadata, and cargo treats an empty wrapper as none.
