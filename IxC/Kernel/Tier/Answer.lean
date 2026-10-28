@@ -8,8 +8,8 @@ public section
 /-!
 # The typing tier: the answer view (M7 Q1; answers only)
 
-AuxGen's questions about an unsafe block, or about a family before its
-recursors exist, must be answered **as Lean's kernel answers them**: Lean
+The records the certified entry declines (an unsafe block, and the records
+that depend on it) must be typed **as Lean's kernel types them**: Lean
 unfolds a tier definition (`partial` or not safe) and fires the recursor of
 an unsafe block.
 The tier's checks refuse those reductions (`Ix.Kernel.Tier`, `indC`'s check
@@ -30,10 +30,10 @@ tier constants carry their δ and ι forms.
 
 **The fence.** An `AnswerView` is built only here and keeps its index
 private: what leaves it is the cached checker's functions over it (`knot`)
-and lookups, never an index a check could run at. No checking or certified
-path imports this module (`Tests/Ix/Kernel/Layering.lean`, the answers
-fence): its only consumer is the Source service's answering scopes, whose
-answers are generation inputs and record no verdict.
+and lookups, never an index a check could run at. No certified path imports
+this module (`Tests/Ix/Kernel/Layering.lean`, the answers fence): its only
+consumer is resource typing's uncertified part (`Ix.Resource.Typing`), which
+no certified verdict covers.
 -/
 
 namespace Ix.Kernel.Tier

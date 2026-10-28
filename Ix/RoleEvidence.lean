@@ -431,9 +431,9 @@ def committedBundle (_ : Unit) : Except String Bundle :=
 /-- **Source mode's evidence, independent of the input**: the committed
 bundle's (`committedBundle`), with the reason each well-founded operation
 without evidence has none. It is what an input without the certificate
-theorems (the compiler's, AuxGen's Source service) checks with, through
-`Ix.LeanIngress.checkSourceWith` or the service's `evidence`. Computed on each
-call (from the committed rows), so a caller asks once. -/
+theorems (the compiler's) checks with, through
+`Ix.LeanIngress.checkSourceWith`. Computed on each call (from the committed
+rows), so a caller asks once. -/
 def bundleEvidenceReport (_ : Unit) : Ix.Kernel.Evidences .source × List String :=
   match committedBundle () with
   | .ok b => b.evidenceReport

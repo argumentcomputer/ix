@@ -36,7 +36,7 @@ with `safety := .partial`), and, staged after them as Lean's lattice
 requires, unsafe opaques (checked in Lean's safe mode), unsafe definition
 blocks and unsafe axioms. Unsafe inductives stay declined: the front ends
 never route them here (`Ix.Kernel.Tier.indC`, `Tier/Ind.lean`, checks them typing
-only, for AuxGen's answers, with no verdict).
+only, with no verdict, for resource typing's uncertified part).
 See `docs/kernel.md`, "The typing tier".
 -/
 

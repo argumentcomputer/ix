@@ -46,7 +46,7 @@ the field's own block-free binders (a nested or non-positive
 occurrence), a `Prop` block with a large eliminator (the auxiliary
 family has ≥ 2 constructors, so it eliminates into `Prop` only).
 
-**Recursive fields are Lean's** (AuxGen M3, aux-cert's `SurgAlias`): Lean's
+**Recursive fields are Lean's**: Lean's
 kernel tests positivity after whnf, so a field whose member occurrence a
 reducible alias hides (`Id' B` with `Id' α := α`) is recursive and its
 minor premise carries a hypothesis. The rung reads such fields off the

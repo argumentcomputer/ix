@@ -1523,13 +1523,14 @@ def convertTier : Group → Except ReadError (TierDecl .source)
     return .defs s ms.toList
   | _ => throw (.declined "tier: not a tier group")
 
-/-! ### Inductive blocks for the tier's answers (M7 Q1)
+/-! ### Inductive blocks for the typing tier
 
 An unsafe inductive group stays logical in the tiered check above, where it
-declines. The Source service installs it typing only instead
-(`Ix.Kernel.Tier.indC`), to answer AuxGen's questions about it; so does a
-regenerated family before its recursors exist (a group with no recursor).
-Neither is a verdict. -/
+declines. These helpers read such a group as the typing-only tier takes it
+(`Ix.Kernel.Tier.indC`). The tier's tests use them
+(`Tests/Ix/Kernel/TierInd.lean`); resource typing reads Ixon blocks with its
+own copy (`Ix.Resource.tierIndOf`, in `Ix/Resource/Typing.lean`). Nothing
+here is a verdict. -/
 
 /-- **An unsafe inductive group**: a member, a constructor or a recursor is
 unsafe. -/

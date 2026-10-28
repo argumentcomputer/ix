@@ -8,11 +8,11 @@ public import IxC.Kernel.Inductives.StructParts
 /-!
 # The typing tier: an inductive block, typing only (M7 Q1)
 
-An unsafe inductive block has no model, and the front ends decline it. AuxGen
-still asks questions about such a block (its `.below` levels, its recursors'
-`whnf`, the elimination decision), and about the Prop-level `.below` family
-of any block before that family has recursors. `indC` checks such a block
-**typing only**, at the index `fe` of the environment it is installed over:
+An unsafe inductive block has no model, and the front ends decline it.
+Resource typing still types such a block as Lean's kernel would, outside any
+theorem (`Ix.Resource.Typing`, its uncertified part). `indC` checks such a
+block **typing only**, at the index `fe` of the environment it is installed
+over:
 
 1. **the shape** (`indShape`): a type former first; distinct keys, every one
    an input key; one list of universe parameters for the formers and the
@@ -42,18 +42,15 @@ of any block before that family has recursors. `indC` checks such a block
    former at the recursor's parameters is a nested auxiliary's, read at the
    instantiations of the recursor's major premise (`nestedPins`).
 
-The records are **given**, not generated: an unsafe block's are the input's,
-a regenerated family's are AuxGen's. IxC generates recursors for one family
-only (`structRecTyR`), and the shadow comparison of every answer with Lean's
-checks the records' use.
+The records are **given**, not generated: they are the input's. IxC
+generates recursors for one family only (`structRecTyR`).
 
 **No theorem and no verdict.** Nothing here is a statement: what passes is
-installed only where AuxGen's questions are answered (the Source service,
-`Ix.AuxGen`), never in the logical environment, and the result is never
-reported as accepted. The check view it returns has the block's constants
-**opaque** (no capability, no ι rule): only the projection tables'
-structural rule fires there. The δ and ι forms the answers need are
-`Ix.Kernel.Tier.Answer`'s, which no checking path imports
+installed only for resource typing's uncertified part, never in the logical
+environment, and no certified verdict covers it. The check view it returns
+has the block's constants **opaque** (no capability, no ι rule): only the
+projection tables' structural rule fires there. The δ and ι forms that typing
+needs are `Ix.Kernel.Tier.Answer`'s, which no certified path imports
 (`Tests/Ix/Kernel/Layering.lean`, the answers fence).
 -/
 

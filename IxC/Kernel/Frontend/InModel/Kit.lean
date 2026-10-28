@@ -433,9 +433,8 @@ def betaHeadE (e : Expr md) : Except String (Expr md) :=
   | none => .error inferFuelMsg
 
 /-- Head β-reduction at `inferFuel`, the term itself where the fuel runs
-out.  The modeller reads `betaHeadE`, whose fuel-out is a failure; this
-reading is the AuxGen agreement test's (`Tests/Ix/Compile/NestedAgreement.lean`),
-which only real streams reach. -/
+out.  The modeller reads `betaHeadE`, whose fuel-out is a failure; no
+checking path reads this one. -/
 def betaHead (e : Expr md) : Expr md :=
   (betaHeadF inferFuel e).getD e
 

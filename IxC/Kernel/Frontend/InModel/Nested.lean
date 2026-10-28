@@ -520,9 +520,8 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   -- motive order among equals.  The kernel's nested→mutual reduction
   -- discovers a nested container's head before the instances its family
   -- adds, so in a lean4export stream a group's first mimic is its head.
-  -- Ix's compiler orders the auxiliary motives canonically
-  -- (`Ix/AuxGen/Nested.lean`), and `Array (PersistentArrayNode InfoTree)`
-  -- can come before `PersistentArrayNode InfoTree`: in motive order it
+  -- An input need not follow that order: with the auxiliary motives in
+  -- another order, `Array (PersistentArrayNode InfoTree)` can come before `PersistentArrayNode InfoTree`: in motive order it
   -- formed `Array`'s singleton group and `PersistentArrayNode`'s family
   -- then claimed it again, so `pack_j` and its companions were emitted
   -- twice.  A family that contains another is strictly larger, so the
