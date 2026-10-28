@@ -3448,7 +3448,7 @@ task's value is its function's, so the split (`width`) and the trace
 (`dbg`) change nothing (`compileEnvFold_width`); the IO pipeline's
 `IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Blocks of one wave
 being independent (the reference schedule) stays a test
-(`compile-schedule-identity`, `cert-compile-parity-init`). -/
+(`compile-schedule-identity`, `cert-compile-parity-initstd`). -/
 
 /-- info: [cert-audit] schedule: 12 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -3813,8 +3813,8 @@ when every published name whose ingress name is a role's Lean name sits at the
 role table's address for that role (`Ix.Cert.PublishedRolesBound`, decided by
 `publishedRolesBound`; the reading of a role's constant is then at the table's
 address, `Ix.Cert.publishedAddress_role`); `cert-statement`,
-`cert-compile-parity-init` and `cert-roles-initstd` run it on the fixtures, `Init`
-and Init+Std. Re-frozen (push 77's follow-up): B5a's `RolesBound` and
+`cert-compile-parity-initstd` and `cert-roles-initstd` run it on the fixtures and
+on Init+Std. Re-frozen (push 77's follow-up): B5a's `RolesBound` and
 `RolesBound.of_closure` are removed; `RolesBound` trusts stored name hashes and is
 superseded by `PublishedRolesBound` (push 77). -/
 

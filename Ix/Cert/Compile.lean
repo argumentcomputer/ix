@@ -64,8 +64,8 @@ statements' coverage and authenticity (`CompileCovers`, `CompileAuthentic`)
 therefore hold by construction, without an invariant of the driver's loop.
 
 `Tests.Ix.Cert.Statement` compares the serialized output of the two on the
-Source-mode fixtures (`cert-statement`) and on `Init`
-(`cert-compile-parity-init`, ignored by default). -/
+Source-mode fixtures (`cert-statement`) and on Init+Std
+(`cert-compile-parity-initstd`, in the merge queue). -/
 
 public section
 

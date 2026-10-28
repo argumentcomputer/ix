@@ -31,7 +31,7 @@ then the outcomes are applied in key order. That this equals compiling each
 block against the live state in some dependency order (the reference
 schedule `Tests.Ix.Compile.ScheduleReference`) is a
 property of the blocks' independence within a wave, tested by
-`compile-schedule-identity` and `cert-compile-parity-init`, not proved
+`compile-schedule-identity` and `cert-compile-parity-initstd`, not proved
 here.
 
 The driver is restated with its apply step as a parameter
