@@ -6,7 +6,8 @@ use super::{
   prepare::PreparedShard,
   protocol::{
     ChildKind, RANGE_JOIN_SHAPE, RANGE_LEAF_SHAPE, RANGE_ROOT_SHAPE,
-    inner_claim, packed_digest, serialize_claims, shape_code,
+    discharge_shape_code, inner_claim, packed_digest, serialize_claims,
+    shape_code,
   },
   statement::{CanonicalTree, Statement, merge_optional_sets},
   store::{load_cached, persist_cached, wrapper_address},
@@ -20,7 +21,9 @@ use aiur::{
   synthesis::{AiurProof, AiurSystem, GatedProve, PreparedProve},
 };
 use ix_common::address::Address;
-use ixon::{Proof as IxonProof, merkle::MerklePath};
+use ixon::{
+  ClaimContext, Proof as IxonProof, merkle::MerklePath, proof::Claim,
+};
 use ixvm_codegen::aiur_ix_aggr_runner::{
   AggrAdvice, AggrPath, AggrPreimage, AggrTree, aggr_io_buffer, execute_ix_aggr,
 };
@@ -70,6 +73,10 @@ pub(super) struct ProveContext<'a> {
   pub(super) range_width: usize,
   /// How many range-tree nodes prove at once, each under `wrap_budget`.
   pub(super) range_jobs: usize,
+  /// An IxVM proof of the `Binding` claim for the run's context. When
+  /// present, the run's claims assume their binding and the root discharges
+  /// that condition once ([`discharge_root`]).
+  pub(super) binding_proof: Option<&'a IxonProof>,
 }
 
 pub(super) struct OwnedTreeAdvice {
@@ -872,6 +879,106 @@ pub(super) fn wrap_root(
     proof.preamble.headers.len()
   );
   Ok(proof)
+}
+
+/// Discharges the binding condition of `root`'s claim, a `CheckEnv` claim
+/// that assumes its binding: one more `ix_aggr` proof (shape 13 or 14)
+/// verifies `proof` and `binding`, an IxVM proof of the `Binding` claim for
+/// the root's specification digest and binding hash, and states the root's
+/// claim validating its binding. Returns that proof and its claim's bytes.
+pub(super) fn discharge_root(
+  ctx: ProveContext<'_>,
+  root: &Slot,
+  proof: &AiurProof,
+  binding: &IxonProof,
+) -> Result<(AiurProof, Vec<u8>), String> {
+  let started = Instant::now();
+  let output_bytes =
+    discharged_claim_bytes(&root.statement.claim_bytes, &binding.claim)?;
+  let mut binding_bytes = Vec::new();
+  binding.claim.put(&mut binding_bytes);
+  let binding_inner = inner_claim(ctx.verify_idx, &binding_bytes);
+  let binding_proof = AiurProof::from_bytes(&binding.proof)
+    .map_err(|error| format!("binding proof does not decode: {error}"))?;
+  ctx.ixvm_system.verify(&binding_inner, &binding_proof).map_err(|error| {
+    format!("binding proof fails native verification: {error:?}")
+  })?;
+  let binding_advice = ctx
+    .ixvm_system
+    .proof_to_advice_bytes(&binding_inner, &binding_proof)
+    .map_err(|error| format!("binding proof advice failed: {error:?}"))?;
+  let root_system = match root.kind {
+    ChildKind::Ixvm => ctx.ixvm_system,
+    ChildKind::Aggr => ctx.aggr_system,
+  };
+  let root_advice = root_system
+    .proof_to_advice_bytes(&root.outer_claim, proof)
+    .map_err(|error| format!("root proof advice failed: {error:?}"))?;
+  let binding_claims = serialize_claims(&[&binding_inner]);
+  let preimages = [
+    AggrPreimage {
+      digest: *blake3::hash(&root.statement.claim_bytes).as_bytes(),
+      bytes: &root.statement.claim_bytes,
+    },
+    AggrPreimage {
+      digest: *blake3::hash(&binding_bytes).as_bytes(),
+      bytes: &binding_bytes,
+    },
+  ];
+  let mut io = aggr_io_buffer(&AggrAdvice {
+    shape: discharge_shape_code(root.kind),
+    proof_advice: [&root_advice, &binding_advice],
+    ixvm_vk: ctx.ixvm_vk,
+    self_vk: ctx.aggr_vk,
+    child_claims: [&root.claims_bytes, &binding_claims],
+    output_claim: &output_bytes,
+    allowed: ctx.allowed,
+    preimages: &preimages,
+    trees: &[],
+    paths: &[],
+  });
+  let mut public_input = packed_digest(ctx.allowed);
+  public_input.extend(packed_digest(&output_bytes));
+  let (_outer_claim, proof, peak) =
+    prove_aggr_io(ctx, &mut io, &public_input, "binding discharge")?;
+  eprintln!(
+    "[aggregate] binding discharge proven in {:.1}s (query-record peak {} GiB)",
+    started.elapsed().as_secs_f64(),
+    format_gib(peak),
+  );
+  Ok((proof, output_bytes))
+}
+
+/// The bytes of the `CheckEnv` claim `claim_bytes`, which assumes its
+/// binding, validating it instead, after checking that `binding` is the
+/// `Binding` claim for its specification digest and binding hash.
+pub(super) fn discharged_claim_bytes(
+  claim_bytes: &[u8],
+  binding: &Claim,
+) -> Result<Vec<u8>, String> {
+  let claim = Claim::from_bytes(claim_bytes)?;
+  let Claim::CheckEnv { ctx, root, assumptions } = claim else {
+    return Err("only a CheckEnv claim's binding can be discharged".into());
+  };
+  if !ctx.binding_assumed {
+    return Err("the aggregate's claim already validates its binding".into());
+  }
+  let Claim::Binding { spec, binding: bound } = binding else {
+    return Err("the binding proof is not a proof of a Binding claim".into());
+  };
+  if *spec != ctx.spec || *bound != ctx.binding {
+    return Err(
+      "the binding proof is for another specification digest or binding".into(),
+    );
+  }
+  let discharged = Claim::CheckEnv {
+    ctx: ClaimContext { binding_assumed: false, ..ctx },
+    root,
+    assumptions,
+  };
+  let mut bytes = Vec::new();
+  discharged.put(&mut bytes);
+  Ok(bytes)
 }
 
 /// Verifies raw shard `shard` of slot `slot_index` natively and returns it

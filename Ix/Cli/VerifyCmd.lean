@@ -73,7 +73,12 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
   let aiurClaim := Aiur.buildClaim funIdx input #[]
   match aiurSystem.verify aiurClaim proof with
   | .ok () =>
-    IO.println s!"ok: proof {proofAddr} verifies claim {claimDigest}"
+    IO.println s!"ok: proof {proofAddr} verifies claim {claimDigest}: {wrapper.claim}"
+    -- A claim that assumes its binding is conditional: it holds if the
+    -- binding claim for its context does (`ix prove-binding`).
+    if (Ix.Claim.context? wrapper.claim).any (·.bindingAssumed) then
+      IO.println "note: the claim assumes its role binding meets the specifications; \
+        it holds if the binding claim for that binding does"
     return 0
   | .error e =>
     IO.eprintln s!"error: verification failed: {e}"
@@ -140,7 +145,8 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
       shard, and every shard covered by a valid proof. -/
 def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat)
     (proofs : List String) (record : Bool := false)
-    (recursionParameters : Aggr.RecursionParameters := Aggr.defaultRecursionParameters) :
+    (recursionParameters : Aggr.RecursionParameters := Aggr.defaultRecursionParameters)
+    (bindingProof : String := "") :
     IO UInt32 := do
   let (ixonEnv, shards) ← match (← Ix.Shard.loadEnvAndShards manifestPath ixePath) with
     | .error e => IO.eprintln e; return 1
@@ -155,7 +161,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
   let digestOf (k : Nat) : IO (Option Address) := do
     match shards[k]? with
     | none => IO.eprintln s!"shard {k} out of range ({shards.size} shards)"; pure none
-    | some blocks => match Ix.Shard.shardClaimDigest ixonEnv blocks with
+    | some blocks => match Ix.Shard.shardClaimDigest ixonEnv blocks (!bindingProof.isEmpty) with
       | .error e => IO.eprintln s!"reconstruct shard {k} claim failed: {e}"; pure none
       | .ok d => pure (some d)
   let claimDigestOfProof (hex : String) : IO (Address × Address) := do
@@ -204,6 +210,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       ixvmSystem.aggregateStage2 backend.system envHandle manifestPath proofHexes
         verifyIdx backend.aggrIdx 0 0 Aggr.defaultStructuralAbove 0
         true false recursionParameters.cacheFriBytes false false false 0 false 1 true 0
+        bindingProof
     match verdict with
     | .error e => IO.eprintln s!"[verify] FAIL: {e}"; return 1
     | .ok _ => pure ()
@@ -287,6 +294,7 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
   | some ixe, some manifest =>
     verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
       (p.hasFlag "record") recursionParameters
+      (((p.flag? "binding-proof").map (·.as! String)).getD "")
   | _, _ =>
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
@@ -313,6 +321,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
   FLAGS:
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
+    "binding-proof" : String; "With --ixes: the shard proofs assume the env's role binding (`ix prove --ixes --assume-binding`); this proof of the binding claim (`ix prove-binding`) is verified with them, so the composed verdict holds unconditionally."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
     "aggregate";      "Interpret proofs as single-entrypoint aggregate roots. With --ixe, audit every environment constant and bind the canonical claim; add --ixes for the exact manifest-relative hybrid root."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."

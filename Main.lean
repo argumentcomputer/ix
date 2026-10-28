@@ -19,6 +19,7 @@ import Ix.Cli.NameOfCmd
 import Ix.Cli.PackCmd
 import Ix.Cli.ProfileCmd
 import Ix.Cli.ProveCmd
+import Ix.Cli.ProveBindingCmd
 import Ix.Cli.ShardCmd
 import Ix.Cli.TreeCmd
 import Ix.Cli.ValidateCmd
@@ -53,6 +54,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     treeCmd;
     profileCmd;
     proveCmd;
+    proveBindingCmd;
     shardCmd;
     codegenCmd;
     verifyCmd;

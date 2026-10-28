@@ -539,7 +539,61 @@ def smokeSuite : IO UInt32 := do
     (Aggr.pubInput longAllowed leftClaimBytes)
     (mkIO longAllowed (Aggr.shapeCode (.ixvm, none)) ixvmVk aggrVk
       #[leftIxvm])
-  let invalidShape := run 13 #[leftIxvm] leftClaimBytes
+  -- 15 is the first shape hint past the binding-discharge shapes (13–14).
+  let invalidShape := run 15 #[leftIxvm] leftClaimBytes
+
+  -- ── binding discharge (shapes 13–14) ────────────────────────────────────
+  -- Children that assume their binding (validator 4) and one stand-in proof
+  -- of the binding claim for their context, written to a file and read back:
+  -- the same proof file discharges two different claim sets, each to its
+  -- claim validating the binding (the validator-3 bytes above).
+  let assumedCtx := { testCtx with bindingAssumed := true }
+  let assumedLeftBytes := Ix.Claim.ser { leftStatement with ctx := assumedCtx }.claim
+  let assumedRightBytes := Ix.Claim.ser { rightStatement with ctx := assumedCtx }.claim
+  let bindingClaim : Ix.Claim := .binding testCtx.spec testCtx.binding
+  let bindingBytes := Ix.Claim.ser bindingClaim
+  let bindingFile ← IO.FS.createTempFile
+  let (_, bindingProof, _) ← IO.ofExcept <|
+    ixvmSystem.prove fakeVerifyIdx (MultiStark.digestGs bindingBytes) default
+  IO.FS.writeBinFile bindingFile.2
+    (Ixon.Proof.ser { claim := bindingClaim, proof := bindingProof.toBytes })
+  let readBinding : IO ChildSlot := do
+    let wrapper ← IO.ofExcept (Ixon.Proof.de (← IO.FS.readBinFile bindingFile.2))
+    let proof ← IO.ofExcept (Aiur.Proof.ofBytesChecked wrapper.proof)
+    let claim := Aiur.buildClaim fakeVerifyIdx
+      (MultiStark.digestGs (Ix.Claim.ser wrapper.claim)) #[]
+    let advice ← IO.ofExcept (ixvmSystem.proofToAdviceBytes claim proof)
+    pure ⟨advice, MultiStark.serializeClaims #[claim]⟩
+  let bindingSlot ← readBinding
+  let otherBindingBytes := Ix.Claim.ser
+    (Ix.Claim.binding testCtx.spec (Address.blake3 "another binding".toUTF8))
+  let otherBindingSlot ← IO.ofExcept (mkIxvmChild otherBindingBytes)
+  let assumedLeftIxvm ← IO.ofExcept (mkIxvmChild assumedLeftBytes)
+  let assumedRightIxvm ← IO.ofExcept (mkIxvmChild assumedRightBytes)
+  let assumedLeftSelf ← IO.ofExcept (mkSelfChild allowed assumedLeftBytes)
+  let runDischarge (kind : Aggr.ChildKind) (child binding : ChildSlot)
+      (childBytes bindingClaimBytes outBytes : ByteArray) :=
+    run (Aggr.dischargeShapeCode kind) #[child, binding] outBytes
+      (outClaim? := some outBytes) (preimages := #[childBytes, bindingClaimBytes])
+  let dischargeLeft := runDischarge .ixvm assumedLeftIxvm bindingSlot
+    assumedLeftBytes bindingBytes leftClaimBytes
+  let dischargeRight := runDischarge .ixvm assumedRightIxvm bindingSlot
+    assumedRightBytes bindingBytes rightClaimBytes
+  let dischargeSelf := runDischarge .aggr assumedLeftSelf bindingSlot
+    assumedLeftBytes bindingBytes leftClaimBytes
+  let dischargeValidating := runDischarge .ixvm leftIxvm bindingSlot
+    leftClaimBytes bindingBytes leftClaimBytes
+  let dischargeOtherBinding := runDischarge .ixvm assumedLeftIxvm otherBindingSlot
+    assumedLeftBytes otherBindingBytes leftClaimBytes
+  let dischargeKeepsAssumed := runDischarge .ixvm assumedLeftIxvm bindingSlot
+    assumedLeftBytes bindingBytes assumedLeftBytes
+  let dischargeOtherSubjects := runDischarge .ixvm assumedLeftIxvm bindingSlot
+    assumedLeftBytes bindingBytes rightClaimBytes
+  -- A fold never mixes a claim that assumes its binding with one that
+  -- validates it.
+  let pairMixedValidators := run (pairShape .ixvm .ixvm) #[leftIxvm, assumedRightIxvm]
+    outputClaimBytes (outClaim? := some outputClaimBytes)
+    (preimages := #[leftClaimBytes, assumedRightBytes]) (trees := adviceTrees)
 
   -- ── range-sum recursion (shapes 10–12) over one IxVM batch ─────────────
   -- `prove` yields a one-shard batch, so its ranges are `[0, 0)` and
@@ -664,6 +718,19 @@ def smokeSuite : IO UInt32 := do
     expectErr "ix_aggr rejects a shortened identity blob" shortIdentity,
     expectErr "ix_aggr rejects the retired 96-byte identity layout" longIdentity,
     expectErr "ix_aggr rejects an out-of-range shape hint" invalidShape,
+    expectOk "binding discharge of an IxVM child accepts" dischargeLeft,
+    expectOk "the same binding proof file discharges another claim set" dischargeRight,
+    expectOk "binding discharge of a self child accepts" dischargeSelf,
+    expectErr "binding discharge rejects a child that validates its binding"
+      dischargeValidating,
+    expectErr "binding discharge rejects a binding claim for another binding"
+      dischargeOtherBinding,
+    expectErr "binding discharge rejects an output that still assumes the binding"
+      dischargeKeepsAssumed,
+    expectErr "binding discharge rejects an output for other subjects"
+      dischargeOtherSubjects,
+    expectErr "a fold rejects children that differ in assuming their binding"
+      pairMixedValidators,
     expectErr "structural pair rejects a path to the wrong root" wrongRootPath,
     expectErr "structural pair rejects a tampered path sibling" tamperedPath,
     expectErr "structural pair rejects a missing path choice" droppedPath,

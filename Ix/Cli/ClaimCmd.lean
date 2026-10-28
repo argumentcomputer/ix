@@ -5,7 +5,8 @@
   stdout — that hex IS the public input the kernel's `verify_claim`
   entrypoint will compare against.
 
-  Wired variants: `check`, `check-env`, `contains`, `eval`.
+  Wired variants: `check`, `check-env`, `contains`, `eval`, `catalog`,
+  `binding`.
 
   TODO(reveal): wire `ix claim reveal <comm-hex> --info <json-file>`
   once a JSON schema for `Ix.RevealConstantInfo` is settled. The
@@ -53,6 +54,12 @@ private def contextOf (p : Cli.Parsed) : IO Ix.ClaimContext := do
     IO.ofExcept (Ix.ClaimContext.ofBinding binding)
   | none => IO.ofExcept Ix.ClaimContext.ofDefaultTable
 
+/-- `contextOf`, assuming the binding meets the specifications when
+    `--assume-binding` is set (`check` and `check-env` only). -/
+private def assumableContextOf (p : Cli.Parsed) : IO Ix.ClaimContext := do
+  let ctx ← contextOf p
+  return { ctx with bindingAssumed := p.hasFlag "assume-binding" }
+
 /-! ## `ix claim check` -/
 
 def runClaimCheck (p : Cli.Parsed) : IO UInt32 := do
@@ -64,7 +71,7 @@ def runClaimCheck (p : Cli.Parsed) : IO UInt32 := do
     | some flag => do
       let root ← addrOfHex! "asm" (flag.as! String)
       pure (some root)
-  let claim := Ix.Claim.check (← contextOf p) const asm
+  let claim := Ix.Claim.check (← assumableContextOf p) const asm
   let digest ← persistClaim claim
   IO.println (toString digest)
   return 0
@@ -76,6 +83,7 @@ def claimCheckCmd : Cli.Cmd := `[Cli|
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root. The tree must already live in `~/.ix/store/` (build it with `ix tree canonical`). When set, the claim asserts well-typedness modulo the assumed leaves."
     binding : String; "32-byte hex binding hash of the role table the claim reads primitives through (default: the default role table of the compiled Init)."
+    "assume-binding"; "Assume the role binding meets the specifications instead of validating its roles in this claim's proof (validator erased-lean-v2-assumed). The claim then holds if the `binding` claim for its binding does, which aggregation discharges once."
 
   ARGS:
     addr : String; "32-byte hex address of the constant being claimed well-typed."
@@ -92,7 +100,7 @@ def runClaimCheckEnv (p : Cli.Parsed) : IO UInt32 := do
     | some flag => do
       let r ← addrOfHex! "asm" (flag.as! String)
       pure (some r)
-  let claim := Ix.Claim.checkEnv (← contextOf p) root asm
+  let claim := Ix.Claim.checkEnv (← assumableContextOf p) root asm
   let digest ← persistClaim claim
   IO.println (toString digest)
   return 0
@@ -104,6 +112,7 @@ def claimCheckEnvCmd : Cli.Cmd := `[Cli|
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root (typically the env's axiom leaves). The tree must already live in `~/.ix/store/`."
     binding : String; "32-byte hex binding hash of the role table the claim reads primitives through (default: the default role table of the compiled Init)."
+    "assume-binding"; "Assume the role binding meets the specifications instead of validating its roles in this claim's proof (validator erased-lean-v2-assumed). The claim then holds if the `binding` claim for its binding does, which aggregation discharges once."
 
   ARGS:
     root : String; "32-byte hex address of the env's canonical merkle root (build with `ix tree env <ixe>`)."
@@ -211,6 +220,22 @@ def claimCatalogCmd : Cli.Cmd := `[Cli|
     ixc : String; "Path to the .ixc directory whose roots the claim binds."
 ]
 
+/-! ## `ix claim binding` -/
+
+def runClaimBinding (p : Cli.Parsed) : IO UInt32 := do
+  let ctx ← contextOf p
+  let digest ← persistClaim (Ix.Claim.binding ctx.spec ctx.binding)
+  IO.println (toString digest)
+  return 0
+
+def claimBindingCmd : Cli.Cmd := `[Cli|
+  binding VIA runClaimBinding;
+  "Build and persist a `Binding` claim: the role table binds every role and each bound constant meets its specification in this specification set. Prove it once (`ix prove-binding <ixe>`) to discharge the claims that assume their binding (`--assume-binding`; `ix aggregate --binding-proof`, `ix prove --lanes --binding-proof`)."
+
+  FLAGS:
+    binding : String; "32-byte hex binding hash of the role table (default: the default role table of the compiled Init)."
+]
+
 /-! ## Top-level `ix claim` -/
 
 def runClaim (p : Cli.Parsed) : IO UInt32 := do
@@ -229,7 +254,8 @@ def claimCmd : Cli.Cmd := `[Cli|
     claimCheckEnvCmd;
     claimContainsCmd;
     claimEvalCmd;
-    claimCatalogCmd
+    claimCatalogCmd;
+    claimBindingCmd
 ]
 
 end

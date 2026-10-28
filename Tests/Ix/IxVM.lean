@@ -411,19 +411,24 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
     Blake3 binding is preserved end-to-end: every closure member
     reaches the kernel via `get_ci(addr)` which reads bytes from
     ch 2 and asserts blake3(bytes) == addr before returning. -/
-public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
-    IO AiurTestCase := do
+public def kernelCheck (name : Lean.Name) (env : Lean.Environment)
+    (assumeBinding : Bool := true) : IO AiurTestCase := do
   let ixonEnv ← loadIxonEnv name env
   let target ← lookupAddr ixonEnv name
   -- Claim.Check with transitive semantics: run_check_transitive walks the
   -- block-level ref DAG lazily. No AssumptionTree needed — Aiur
   -- memoization ensures every reachable const/block gets checked exactly
   -- once, and the FFT cost stays pure typecheck cost with no tree
-  -- hash-verify overhead folded in.
+  -- hash-verify overhead folded in. By default the claim assumes its
+  -- binding (validator 4), as the claims of an aggregate do, whose binding
+  -- claim is proven once; `assumeBinding := false` validates the roles the
+  -- claim uses in its own proof (validator 3).
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)
-  let claim := Ix.Claim.check ctx target none
+  let claim := Ix.Claim.check { ctx with bindingAssumed := assumeBinding } target none
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv claim {}
-  pure { functionName := witness.funcName, label := s!"Kernel check {name}"
+  let label := if assumeBinding then s!"Kernel check {name}"
+    else s!"Kernel check validating its binding {name}"
+  pure { functionName := witness.funcName, label
          input := witness.input, inputIOBuffer := witness.inputIOBuffer
          expectedIOBuffer := witness.inputIOBuffer
          interpret := false, withProof := false }
@@ -526,13 +531,46 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("IxVMPerf.mul_wide",                                          244_131_655),
 ]
 
+/-- Claims that validate their binding in their own proof (validator 3),
+    one per cost class: no operation or one structural group, structural
+    operations, `div`/`mod`/shifts, and `gcd`/`land`/`lor`/`xor`. They keep
+    the lazy in-circuit role validation measured; `kernelCheckEntries`
+    measure the same kind of claims assuming the binding. -/
+private def validatingCheckEntries : List (String × Nat) := [
+  ("IxVMPrim.nat_succ_lit", 0),
+  ("IxVMPrim.nat_mul_lit", 0),
+  ("IxVMPrim.nat_div_lit", 0),
+  ("IxVMPrim.nat_land_lit", 0),
+]
+
+/-- The binding claim for the default table: every group validated once,
+    the proof aggregates reuse. -/
+private def bindingCheckEntry : Nat := 0
+
+/-- The binding claim for the default table, over the test environment
+    with the table's support records. -/
+public def bindingCheck (env : Lean.Environment) : IO AiurTestCase := do
+  let ixonEnv ← loadSharedIxonEnv #[] env
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)
+  let claim := Ix.Claim.binding ctx.spec ctx.binding
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv claim {}
+  pure { functionName := witness.funcName, label := "Binding claim for the default table"
+         input := witness.input, inputIOBuffer := witness.inputIOBuffer
+         expectedIOBuffer := witness.inputIOBuffer
+         interpret := false, withProof := false }
+
 /-- Variant of `kernelChecks`, pinned to the baseline
     (`kernelCheckEntries`). Any kernel change that shifts the kernel FFT
     cost fails the suite and forces a manual pin bump. -/
-public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
-  kernelCheckEntries.mapM fun (name, expected) => do
+public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) := do
+  let assumed ← kernelCheckEntries.mapM fun (name, expected) => do
     let tc ← kernelCheck (nameOfString name) env
     pure { tc with expectedFftCost := some expected }
+  let validating ← validatingCheckEntries.mapM fun (name, expected) => do
+    let tc ← kernelCheck (nameOfString name) env (assumeBinding := false)
+    pure { tc with expectedFftCost := some expected }
+  let binding ← bindingCheck env
+  return assumed ++ validating ++ [{ binding with expectedFftCost := some bindingCheckEntry }]
 
 /-! ## Codegen ↔ bytecode parity
 

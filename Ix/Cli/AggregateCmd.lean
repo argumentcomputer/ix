@@ -120,6 +120,7 @@ private def runAggregateCmdNativeWith
       (!(p.hasFlag "no-write")) (p.hasFlag "trace-shards")
       (((p.flag? "range").map (·.as! Nat)).getD 0) (p.hasFlag "wrap-root")
       (((p.flag? "exec-ahead").map (·.as! Nat)).getD 1) false subtreeCode
+      (((p.flag? "binding-proof").map (·.as! String)).getD "")
   match nativeResult with
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok address =>
@@ -163,6 +164,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
     "exec-ahead" : Nat; "Slots executing ahead of the provers (default 1): a ready join executes and plans while the previous one proves, so one GPU prover never waits for an execution; each slot ahead holds its execution record. 0: each slot executes and proves on one worker, --jobs at a time."
     "wrap-root";     "Wrap the root proof, each wrap a proof that verifies the previous one, until the final proof is a single trace shard."
+    "binding-proof" : String; "A proof of the `binding` claim for the env's role binding (`ix prove-binding`). The shard claims (proven with `--assume-binding`) assume their binding, and the root discharges that condition once, after any wrap; the final claim is the one an aggregate of claims that validate their binding states."
     "subtree" : Nat; "Prove only the plan subtree rooted at slot N (slot numbers as --plan-only prints them) from the proofs of the leaves under it, and print that slot's proof address; root validation and --wrap-root do not apply. The proof is published through the aggregate cache, where a later full run over every shard proof finds it and proves only what is above it. With --plan-only, print `subtree N shards: <ids>`, the --shards argument for `ix prove` over those leaves."
     "range" : Nat;   "Wrap a shard proof of more than N trace shards as a range-sum tree — leaves verifying at most N shards each (--jobs at a time), joins, and a root with the wrap's statement — instead of one proof verifying every shard. 0 (default): with --trace-shards, two leaves per node slot (2 × --jobs), so each slot executes its next leaf while proving one; without, wrap whole."
 
