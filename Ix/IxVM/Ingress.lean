@@ -41,7 +41,7 @@ def ingress := ⟦
   fn load_verified_constant(addr: Addr) -> Constant {
     let raw = load(addr);
     let (idx, len) = io_get_info(2, raw);
-    let bytes = read_finite_byte_stream(2, idx, len);
+    let bytes = read_checked_byte_stream(2, idx, len);
     verify_bytes_against(bytes, raw);
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil,
@@ -64,10 +64,16 @@ def ingress := ⟦
 
   -- Load reducibility hint G for a Defn at `addr` (ch 3).
   -- Encoding: 0 = Opaque, 1+h = Regular(h), 0xFFFFFFFF = Abbrev.
+  --
+  -- The one IO read that skips `read_checked_byte_stream`, and it is safe:
+  -- the hint is advisory. It only selects a reduction heuristic, def-eq is
+  -- sound under any value, and the read runs unconstrained (`#`), so no
+  -- content of the cell, byte or not, can change what a claim proves.
+  -- `Tests/Ix/IOIngress.lean` allows exactly this caller.
   fn load_constant_hint(addr: Addr) -> G {
     let raw = load(addr);
     let (idx, len) = io_get_info(3, raw);
-    let bytes = #read_byte_stream(3, idx, len);
+    let bytes = #read_byte_stream_unchecked(3, idx, len);
     match load(bytes) {
       ListNode.Cons(b, _) => to_field(b),
     }
@@ -77,7 +83,7 @@ def ingress := ⟦
   fn load_verified_blob(addr: Addr) -> ByteStream {
     let raw = load(addr);
     let (idx, len) = io_get_info(4, raw);
-    let bytes = read_finite_byte_stream(4, idx, len);
+    let bytes = read_checked_byte_stream(4, idx, len);
     verify_bytes_against(bytes, raw);
     bytes
   }

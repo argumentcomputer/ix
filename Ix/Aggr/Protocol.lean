@@ -164,7 +164,7 @@ These helpers place advice on the IO channels exactly as the circuit reads
 them, for the pure-Lean `Bytecode.Toplevel.execute` path. The native
 execute/prove FFI will consume byte blobs with the same channel layout. -/
 
-/-- One byte per Goldilocks element, the layout `#read_byte_stream` expects. -/
+/-- One byte per Goldilocks element, the layout `read_checked_byte_stream` expects. -/
 def byteGs (bytes : ByteArray) : Array Aiur.G :=
   bytes.data.map .ofUInt8
 

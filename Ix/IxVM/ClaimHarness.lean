@@ -297,7 +297,9 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
 
 This section is the normative description of the host↔kernel interface.
 The host seeds payloads on channels 0–6; the Aiur kernel consumes
-them via `io_get_info` + `#read_byte_stream`. Each channel carries one
+them via `io_get_info` + `read_checked_byte_stream`, which range-checks every
+byte and proves the list finite before anything hashes or parses it
+(channel 3, an advisory value, is read unchecked). Each channel carries one
 value shape and each key is the content address of the value it maps to
 — no overloading, no in-band discriminators.
 
@@ -358,7 +360,7 @@ therefore a POSITIVE property computed from hash-bound bytes, and every
 address lacking it is a constant that must be walked.
 
 Channel numbers MUST stay in sync with the inlined `io_get_info` /
-`#read_byte_stream` literals in `Ix/IxVM/Ingress.lean` and
+`read_checked_byte_stream` literals in `Ix/IxVM/Ingress.lean` and
 `Ix/IxVM/Kernel/Claim.lean`. Channel 0 is reused with a different key
 shape by the test and benchmark entrypoints (`blake3_test`,
 `ixon_serde_test`, …); those never run in the same execution as

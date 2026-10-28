@@ -10,23 +10,71 @@ def byteStream := ⟦
 
   type U64 = [U8; 8]
 
-  fn read_byte_stream(channel: G, idx: G, len: G) -> ByteStream {
+  -- Materialize `len` IO cells of `channel` from `idx` as a byte list. The
+  -- result is ADVICE: an IO read is a free column and
+  -- `u8_from_field_unsafe` mints a `U8` holding any field element, so the
+  -- "bytes" may be any field elements and the list may even be cyclic.
+  -- Call it unconstrained (`#`) and only through `read_checked_byte_stream`,
+  -- or for an advisory value whose every possible content is safe.
+  fn read_byte_stream_unchecked(channel: G, idx: G, len: G) -> ByteStream {
     match len {
       0 => store(ListNode.Nil),
       _ =>
-        let tail = read_byte_stream(channel, idx + 1, len - 1);
+        let tail = read_byte_stream_unchecked(channel, idx + 1, len - 1);
         let [byte] = io_read(channel, idx, 1);
         store(ListNode.Cons(u8_from_field_unsafe(byte), tail)),
     }
   }
 
-  -- Keep the IO materialization as advice, but prove that the exact returned
-  -- list is finite before any hashing or parsing can consume it. This wrapper
-  -- must be called CONSTRAINED: putting the check under `#` proves nothing.
-  -- `len` remains an IO locator, not a trusted termination bound.
-  fn read_finite_byte_stream(channel: G, idx: G, len: G) -> ByteStream {
-    let bytes = #read_byte_stream(channel, idx, len);
-    list_depth_checked(bytes);
+  -- Assert that `bytes` holds exactly `n` elements and that each is a byte
+  -- (< 256). Two elements per row share one `u8_range_check` lookup, so the
+  -- check costs one lookup per two bytes; an odd last element is paired
+  -- with itself.
+  --
+  -- `n` is the termination rank. The recursive arm runs only for `n` other
+  -- than 0 and 1, that is for `n >= 2` as an integer in [0, p), so `n - 2`
+  -- never wraps and the rank strictly decreases along every chain of rows.
+  -- No chain can return to a row, so every chain ends at an arm that
+  -- requires `Nil`: the list is finite even when its pointer is advice. `n`
+  -- may be advice too; a wrong count fails one of the `Nil` assertions or a
+  -- `Cons` pattern.
+  fn assert_byte_stream(bytes: ByteStream, n: G) {
+    match n {
+      0 =>
+        assert_eq!(load(bytes), ListNode.Nil,
+          "byte stream is longer than its length");
+        (),
+      1 =>
+        let ListNode.Cons(b, rest) = load(bytes);
+        let (_, _) = u8_range_check(to_field(b), to_field(b));
+        assert_eq!(load(rest), ListNode.Nil,
+          "byte stream is longer than its length");
+        (),
+      _ =>
+        let ListNode.Cons(b0, rest) = load(bytes);
+        let ListNode.Cons(b1, tail) = load(rest);
+        let (_, _) = u8_range_check(to_field(b0), to_field(b1));
+        assert_byte_stream(tail, n - 2),
+    }
+  }
+
+  -- Read the byte stream at (`channel`, `idx`, `len`) and prove, before
+  -- anything hashes or parses it, that it is finite and that every element
+  -- is a byte. Every byte stream a circuit reads from IO comes through here.
+  --
+  -- Hashing alone does not bind unchecked elements. BLAKE3 absorbs message
+  -- bytes only as packed 32-bit words, `b0 + 2^8 b1 + 2^16 b2 + 2^24 b3`, so
+  -- elements that are not bytes can keep every word's packed value while a
+  -- parser reads different fields out of them (`02 00 01 00` read as
+  -- `03 00 00 00`, with the difference moved into the word's first
+  -- element). Once every element is below 256 the packing is injective, so
+  -- the parsed fields are the hashed bytes.
+  --
+  -- Must be called CONSTRAINED: under `#` the checks prove nothing. `len`
+  -- stays an IO locator; `assert_byte_stream` checks it against the list.
+  fn read_checked_byte_stream(channel: G, idx: G, len: G) -> ByteStream {
+    let bytes = #read_byte_stream_unchecked(channel, idx, len);
+    assert_byte_stream(bytes, len);
     bytes
   }
 

@@ -341,7 +341,7 @@ def circuit := ⟦
   fn aggr_load_canonical_tree(root: Addr) -> List‹Addr› {
     let raw = load(root);
     let (idx, len) = io_get_info(5, raw);
-    let bytes = #read_byte_stream(5, idx, len);
+    let bytes = read_checked_byte_stream(5, idx, len);
     let (tag, body) = aggr_read_byte(bytes);
     assert_eq!(tag, 0xE2u8, "aggr: tree has the wrong Ixon tag");
     let (leaves, stop) = aggr_parse_tree_body(body);
@@ -487,7 +487,7 @@ def circuit := ⟦
   --   discharged: 1 || count:u8 || (side:u8 || sibling:32)*
   fn aggr_discharge_choice(candidate: Addr, root: Addr) -> G {
     let (idx, len) = io_get_info(6, load(candidate));
-    let bytes = #read_byte_stream(6, idx, len);
+    let bytes = read_checked_byte_stream(6, idx, len);
     let (choice, rest) = aggr_read_byte(bytes);
     assert_eq!(u8_less_than(choice, 2u8), 1,
       "aggr structural: discharge choice must be 0 or 1");
@@ -628,7 +628,7 @@ def circuit := ⟦
 
   fn aggr_load_preimage(digest: [G; 8]) -> ByteStream {
     let (idx, len) = io_get_info(4, digest);
-    let bytes = #read_byte_stream(4, idx, len);
+    let bytes = read_checked_byte_stream(4, idx, len);
     assert_eq!(@b3_pack(@blake3(bytes)), digest,
       "aggr: claim preimage digest mismatch");
     bytes
@@ -679,10 +679,11 @@ def circuit := ⟦
 
   fn aggr_load_sys(kind: G, ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8])
       -> Sys {
-    -- Constrained countdown decoding plus the final Nil check establishes
-    -- finite bytes; read_system also checks expression-graph acyclicity.
+    -- The checked reader proves the key bytes finite and below 256, so the
+    -- digest pins every field read_system parses from them; read_system
+    -- also checks expression-graph acyclicity.
     let (sidx, slen) = io_get_info(1, [kind]);
-    let sbytes = #read_byte_stream(1, sidx, slen);
+    let sbytes = read_checked_byte_stream(1, sidx, slen);
     let digest = @b3_pack(@blake3(sbytes));
     match kind {
       0 =>
@@ -703,7 +704,7 @@ def circuit := ⟦
   fn aggr_verify_child(sys: Sys, key: G) -> List‹List‹U64›› {
     let (idx, len) = io_get_info(0, [key]);
     let (cidx, clen) = io_get_info(2, [key]);
-    let cbytes = #read_byte_stream(2, cidx, clen);
+    let cbytes = read_checked_byte_stream(2, cidx, clen);
     let (claims, crest) = @read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
     assert_eq!(@verify_batch_at(sys, idx, len, claims), 1);
@@ -770,7 +771,7 @@ def circuit := ⟦
 
     -- Bind and decode this fold's output claim.
     let (oidx, olen) = io_get_info(2, [2]);
-    let output_bytes = #read_byte_stream(2, oidx, olen);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr: output claim digest mismatch");
     let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
@@ -807,7 +808,7 @@ def circuit := ⟦
       aggr_parse_check_env(aggr_load_preimage(right_digest));
 
     let (oidx, olen) = io_get_info(2, [2]);
-    let output_bytes = #read_byte_stream(2, oidx, olen);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr structural: output claim digest mismatch");
     let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
@@ -852,7 +853,7 @@ def circuit := ⟦
       "aggr discharge: the binding claim is for another binding");
 
     let (oidx, olen) = io_get_info(2, [2]);
-    let output_bytes = #read_byte_stream(2, oidx, olen);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr discharge: output claim digest mismatch");
     let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
@@ -977,7 +978,7 @@ def circuit := ⟦
   -- parsed from the hashed stream.
   fn aggr_load_preamble(key: G, d: Addr) -> (List‹ShardHeader›, List‹BatchMessage›) {
     let (idx, len) = io_get_info(0, [key]);
-    let bytes = #read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     assert_eq!(address_eq(bytes_to_addr(bytes), d), 1,
       "aggr range: preamble does not hash to the statement's batch digest");
     let (nh, s1) = @read_count(bytes);
@@ -1016,7 +1017,7 @@ def circuit := ⟦
   -- The output statement of a range node: channel 2 key 2, digest-bound.
   fn aggr_output_range(out_claim_digest: [G; 8]) -> (Addr, U64, U64, Ext) {
     let (oidx, olen) = io_get_info(2, [2]);
-    let output_bytes = #read_byte_stream(2, oidx, olen);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr range: output statement digest mismatch");
     aggr_parse_range(output_bytes)
@@ -1118,7 +1119,7 @@ def circuit := ⟦
     let (aidx, alen) = io_get_info(3, [0]);
     assert_eq!(alen, 80,
       "aggr: allowed blob must be exactly 80 bytes");
-    let allowed_bytes = #read_byte_stream(3, aidx, alen);
+    let allowed_bytes = read_checked_byte_stream(3, aidx, alen);
     assert_eq!(@b3_pack(@blake3(allowed_bytes)), allowed_digest,
       "aggr: allowed blob digest mismatch");
     let (ixvm_digest_addr, as1) = aggr_read_address(allowed_bytes);
@@ -1141,7 +1142,7 @@ def circuit := ⟦
     --   14 = binding discharge of a self child
     let (hidx, hlen) = io_get_info(6, [0]);
     assert_eq!(hlen, 1, "aggr: shape hint must be exactly one byte");
-    let hint = #read_byte_stream(6, hidx, hlen);
+    let hint = read_checked_byte_stream(6, hidx, hlen);
     let (shape, hstop) = aggr_read_byte(hint);
     assert_eq!(load(hstop), ListNode.Nil,
       "aggr: trailing bytes after shape hint");

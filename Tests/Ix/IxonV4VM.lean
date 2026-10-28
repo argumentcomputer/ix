@@ -12,21 +12,21 @@ namespace Tests.IxonV4
 def codecEntrypoints := ⟦
   pub fn ixon_expr_decode() {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let (_, rest) = get_expr(bytes);
     assert_eq!(load(rest), ListNode.Nil, "trailing expression bytes");
   }
 
   pub fn ixon_const_decode() {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let (_, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil, "trailing constant bytes");
   }
 
   pub fn ixon_expr_codec() {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let (expr, rest) = get_expr(bytes);
     assert_eq!(load(rest), ListNode.Nil, "trailing expression bytes");
     let encoded = put_expr(load(expr), store(ListNode.Nil));
@@ -35,7 +35,7 @@ def codecEntrypoints := ⟦
 
   pub fn ixon_const_codec() {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil, "trailing constant bytes");
     let encoded = put_constant(constant, store(ListNode.Nil));

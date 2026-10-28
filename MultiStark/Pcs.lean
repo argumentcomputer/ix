@@ -166,9 +166,11 @@ def pcs := ⟦
   -- directly to `blake3_compress` — no byte list is materialized, walked,
   -- accumulated, or re-loaded. Same flag schedule as the byte driver; the
   -- (cold, once-per-hash) ≤63-byte tail reuses `pad_block`/`bytes_to_block`.
-  -- Kept as a differential-tested indexed IO hashing helper. Digest-bound
-  -- inputs must not hash and deserialize through separate `io_read` calls;
-  -- the production verifying-key path materializes one shared `ByteStream`.
+  -- Kept as a differential-tested indexed IO hashing helper; no production
+  -- entrypoint reaches it. It does not range-check the IO cells, so its
+  -- digest binds only packed 32-bit words. Digest-bound inputs must not
+  -- hash and deserialize through separate `io_read` calls; the production
+  -- verifying-key path reads one shared `read_checked_byte_stream`.
   -- ==========================================================================
 
   -- Reverse-ordered tail accumulator (head = last byte), the shape

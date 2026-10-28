@@ -105,7 +105,7 @@ def roles := ⟦
   fn load_role_table(binding: Addr) -> RoleTable {
     let raw = load(binding);
     let (idx, len) = io_get_info(6, raw);
-    let bytes = read_finite_byte_stream(6, idx, len);
+    let bytes = read_checked_byte_stream(6, idx, len);
     verify_bytes_against(bytes, raw);
     let (t0, s) = read_byte(bytes);
     assert_eq!(t0, 0xE8u8, "role table: not a binding section");

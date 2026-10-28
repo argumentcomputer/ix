@@ -8,6 +8,7 @@ import Tests.Ix.IxVM.Eval
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.IxVM.DefinitionDependencies
 import Tests.Ix.IxVM.TagN
+import Tests.Ix.IOIngress
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -232,6 +233,9 @@ def registry : List Entry := [
   .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
   -- The circuit TagN codec against the host codec (about 16 s).
   .runner "ixvm-tagn" .primary Tests.Ix.IxVM.TagN.runSuite,
+  -- every IO byte stream of the IxVM, ix_aggr and multi-stark verifier
+  -- circuits goes through the range-checked reader
+  .suiteIO "io-ingress" .primary Tests.IOIngress.suite,
   .runner "aiur-prove" .primary (do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
