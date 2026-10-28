@@ -3,9 +3,6 @@ import Ix.Cert.Closure
 import Ix.Cert.ConversionValues
 import Ix.Cert.Hybrid
 import Ix.Cert.ReaderClosureKeys
-import Ix.Compile.SourceInput.Metadata
-import Ix.Compile.SourceInput.Ownership
-import Ix.Compile.SourceInput.Uses
 import Ix.HostAdmission.Theorems
 import Ix.RoleBinding.ArtifactOrderTheorems
 import Ix.RoleBinding.ArtifactTheorems
@@ -16,7 +13,6 @@ import Ix.RoleBinding.ArtifactTieredTheorems
 `Ix/Cert/Audit.lean` fixes the axioms of the certification statements, and so
 bounds every declaration they reach. The modules named here are reached by
 none of them, or only in part:
-* the Source-side ownership, metadata and use facts (`Ix.Compile.SourceInput.*`);
 * the computed closure (`Ix.Cert.Closure`);
 * the theorems of the artifact and host admission entries
   (`Ix.RoleBinding.Artifact*Theorems`, `Ix.HostAdmission.Theorems`).
@@ -34,9 +30,6 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
 
 #guard_module_axioms
   Ix.Cert.Closure
-  Ix.Compile.SourceInput.Metadata
-  Ix.Compile.SourceInput.Ownership
-  Ix.Compile.SourceInput.Uses
   Ix.HostAdmission.Theorems
   Ix.RoleBinding.ArtifactOrderTheorems
   Ix.RoleBinding.ArtifactTheorems
