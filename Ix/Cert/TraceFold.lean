@@ -29,7 +29,7 @@ variable {env sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures} {snap
 /-- **The snapshot's bindings resolve in the artifact** (`bound`, `bound₁`, `bound₂`), when the
 input's inductives list their constructors at their positions. -/
 theorem FoldBlock.bound (fb : FoldBlock env sub ixe failures snap rep all r c)
-    (idx : BindingsResolve.ConstructorIndices env) : BoundResolve ixe snap.cenv := by
+    (idx : ConstructorIndices env) : BoundResolve ixe snap.cenv := by
   obtain ⟨_, _, _, hu, hrun, hsnap, -⟩ := fb.fold
   exact BindingsResolve.boundResolve_onRun hu idx hrun hsnap
 
