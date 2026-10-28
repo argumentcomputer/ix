@@ -22,6 +22,7 @@ public import Ix.Aggr.Backend
 public import Ix.IxVM
 public import MultiStark
 public import Ix.Store
+public import Ix.Cli.CatalogAggregate
 
 public section
 
@@ -41,6 +42,18 @@ Rust; no Lean statement tree or scheduler task survives on this path. -/
 private def runAggregateCmdNativeWith
     (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
+  if let some ixc := (p.flag? "ixc").map (·.as! String) then
+    let maxRamGb? := (p.flag? "max-ram").map (·.as! Nat)
+    if maxRamGb? == some 0 then
+      IO.eprintln "error: --max-ram must be positive"
+      return 1
+    let ramBudgetBytes ← match maxRamGb? with
+      | some gib => pure (gib * aggregateGiB)
+      | none => defaultAggregateRamBudgetBytes
+    let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
+      defaultStructuralAbove
+    return ← Ix.Cli.CatalogAggregate.aggregateCatalog ixc (p.variableArgsAs! String)
+      ramBudgetBytes structuralAbove recursionParameters
   let some ixePath := (p.flag? "ixe").map (·.as! String) | do
     p.printError "error: aggregate requires --ixe <env.ixe>"
     return 1
@@ -152,6 +165,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
   FLAGS:
     "ixe" : String;  "Path to the serialized environment whose shards were proven. It must carry the role binding the shard claims are relative to."
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
+    "ixc" : String;  "A .ixc catalog directory: join the aggregate roots of its members, one per member (`ix aggregate --ixe <piece> --ixes <manifest> --binding-proof <proof>` on each piece), into one root. Members whose role bindings have one literal class are joined first, in manifest order (cross-binding pairs, under the class), then the classes into a Catalog claim. Each join is proven as trace shards within --max-ram. A member's statement is its piece's canonical claim, or the claim of `<label>.ixes` when the catalog directory holds that shard manifest beside the piece."
     "plan-only";     "Validate coverage and print the wrap/join slot plan without loading or proving shard proofs."
     "no-cache";      "Bypass aggregate cache reads and intermediate cache writes; the root wrapper is still persisted unless --no-write."
     "texray";        "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages of every slot) to stderr as each span closes."

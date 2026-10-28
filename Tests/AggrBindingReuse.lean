@@ -11,8 +11,10 @@ table is proven once (`ix prove-binding`), from an environment that carries
 the roles and their evidence. Two other environments with that binding, each
 a different claim set and carrying only the binding's section, are sharded
 (`ix shard`) and their shards proven assuming the binding (`ix prove
---assume-binding`). Each is then aggregated with the same proof file (`ix
-aggregate --binding-proof`), and its root verifies as the claim an aggregate
+--assume-binding`). The second set is proven as trace-shard batches
+(`--trace-shards`), whose proving ahead must assume the binding too. Each is
+then aggregated with the same proof file (`ix aggregate --binding-proof`),
+and its root verifies as the claim an aggregate
 that validates its binding states (`ix verify --aggregate --ixe --ixes`).
 The shard proofs alone compose only with the proof file (`ix verify --ixes
 --binding-proof`), and without it the aggregate refuses them.
@@ -65,11 +67,14 @@ private def ix (exe : String) (home : System.FilePath) (args : Array String) :
     IO.eprintln s!"{(out.stdout.takeEnd 1500).toString}\n{(out.stderr.takeEnd 1500).toString}"
   pure out
 
-/-- One claim set: shard it, prove its shards assuming the binding, check
-    their composition with and without the binding proof, aggregate them
-    with and without it, and verify the root against the environment. -/
+/-- One claim set: shard it, prove its shards assuming the binding (one
+    execution each, or with `traceShards` as trace-shard batches proven
+    ahead), check their composition with and without the binding proof,
+    aggregate them with and without it, and verify the root against the
+    environment. -/
 private def claimSet (exe : String) (home dir : System.FilePath) (label : String)
-    (env : Ixon.Env) (shards : Nat) (bindingProof : System.FilePath) :
+    (env : Ixon.Env) (shards : Nat) (bindingProof : System.FilePath)
+    (traceShards : Bool := false) :
     IO (Array (String × Bool)) := do
   let ixe := dir / s!"{label}.ixe"
   let ixes := dir / s!"{label}.ixes"
@@ -77,11 +82,13 @@ private def claimSet (exe : String) (home dir : System.FilePath) (label : String
   let sharded ← ix exe home #["shard", ixe.toString, "--shards", toString shards,
     "--out", ixes.toString]
   if sharded.exitCode != 0 then return #[(s!"{label}: ix shard", false)]
-  let proved ← ix exe home #["prove", "--ixe", ixe.toString, "--ixes", ixes.toString,
-    "--assume-binding"]
+  let proveFlags := if traceShards then #["--assume-binding", "--trace-shards"]
+    else #["--assume-binding"]
+  let proved ← ix exe home (#["prove", "--ixe", ixe.toString, "--ixes", ixes.toString]
+    ++ proveFlags)
   let proofs := (lines proved.stdout).filter isAddressHex
   if proved.exitCode != 0 || proofs.isEmpty then
-    return #[(s!"{label}: ix prove --assume-binding", false)]
+    return #[(s!"{label}: ix prove {" ".intercalate proveFlags.toList}", false)]
   let envArgs := #["--ixe", ixe.toString, "--ixes", ixes.toString]
   let composed ← ix exe home (#["verify"] ++ envArgs ++ proofs.toArray ++
     #["--binding-proof", bindingProof.toString])
@@ -93,8 +100,9 @@ private def claimSet (exe : String) (home dir : System.FilePath) (label : String
   let verified ← if aggregated.exitCode == 0 && isAddressHex root then
       (·.exitCode == 0) <$> ix exe home (#["verify", "--aggregate", root] ++ envArgs)
     else pure false
+  let proven := if traceShards then "proven as trace-shard batches " else ""
   return #[
-    (s!"{label}: {proofs.length} shard proofs that assume the binding compose with the binding proof",
+    (s!"{label}: {proofs.length} shard proofs {proven}that assume the binding compose with the binding proof",
       composed.exitCode == 0),
     (s!"{label}: without the binding proof they do not compose", unbound.exitCode != 0),
     (s!"{label}: without the binding proof the aggregate refuses them", refused.exitCode != 0),
@@ -129,7 +137,7 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     let left ← claimSet exe home dir "left" (← boundClosure leanEnv #[``id]) 1
       bindingProof
     let right ← claimSet exe home dir "right"
-      (← boundClosure leanEnv #[``Nat.add_zero]) 2 bindingProof
+      (← boundClosure leanEnv #[``Nat.add_zero]) 2 bindingProof (traceShards := true)
     LSpec.lspecIO (.ofList [("aggregate-binding-reuse",
       (left ++ right).toList.map fun (label, ok) => LSpec.test label ok)]) []
   finally

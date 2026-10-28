@@ -384,6 +384,7 @@ mod tests {
       binding: Address::hash(b"binding"),
       axioms: None,
       binding_assumed: false,
+      literal_class: false,
     };
     let (claim1, f1) =
       shard_check_env_claim(&ctx, &env, std::slice::from_ref(&a)).unwrap();
