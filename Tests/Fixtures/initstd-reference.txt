@@ -1,0 +1,12 @@
+# The Init+Std reference artifact, checked by the `initstd-reference` test
+# (`lake test -- initstd-reference`, merge queue tier `ci:landing-initstd`).
+#
+# `sha256` and `bytes` are the SHA-256 and the size of the file that
+# `ix compile-lean Benchmarks/Compile/CompileInitStd.lean --rust-check` writes:
+# the certified compile with its report checks and the default role binding,
+# byte-identical with the Rust compiler's output.
+#
+# A change that moves the compiler's bytes updates these lines in the same
+# commit and says why.
+sha256	eb059d46b0f8136c90d85cad5f8a6e8b779453e725ffd523d524815ff9e63d0f
+bytes	253648555

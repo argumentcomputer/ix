@@ -50,9 +50,11 @@ inductive CiJob where
   not depend on its schedule, and the Rust compiler's compile, serialize and
   decompile roundtrip over the test environment. -/
   | landingCompilers
-  /-- End-to-end checks on Init+Std: the certified compiler against the
-  pipeline and the Rust compiler, role binding and evidence, a reading
-  premise on every inductive, and the admission hash. -/
+  /-- End-to-end checks on Init+Std: the certified compile with its report
+  checks against the pipeline and the Rust compiler, in process and through
+  `ix compile-lean` (whose artifact must match the reference digest),
+  `ix validate-lean` fidelity, role binding and evidence, a reading premise
+  on every inductive, and the admission hash. -/
   | landingInitStd
   deriving DecidableEq, Repr
 

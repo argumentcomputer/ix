@@ -68,6 +68,7 @@ import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.BundleEvidence
 import Tests.Ix.Cert.Statement
+import Tests.Ix.InitStd
 import Tests.Ix.ResourceHints
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.Kernel.RecordCheck
@@ -320,8 +321,15 @@ def registry : List Entry := [
   .suite "auxiliary-closure" (.ci .compilePipeline) Tests.Ix.Compile.AuxiliaryClosure.suite,
   -- auxiliary addresses do not depend on the compile set (closure vs whole env)
   .suite "canon-closure-aux" (.ci .compilePipeline) Tests.Ix.Compile.AuxiliaryClosureCanon.suite,
-  -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
-  .suite "cert-compile-parity-init" (.ci .landingInitStd) Tests.Ix.Cert.Statement.initSuite,
+  -- `Ix.Cert.compile` with its report checks against the IO pipeline and the
+  -- Rust compiler on Init+Std
+  .suite "cert-compile-parity-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.initStdSuite,
+  -- `ix compile-lean` on Init+Std: its report checks, the Rust compiler byte for
+  -- byte, and the reference digest (Tests/Fixtures/initstd-reference.txt)
+  .runner "initstd-reference" (.ci .landingInitStd) Tests.Ix.InitStd.reference,
+  -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
+  -- decompile fidelity
+  .runner "fidelity-initstd" (.ci .landingInitStd) Tests.Ix.InitStd.fidelity,
   .suite "cert-roles-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.rolesInitStdSuite,
   .suite "cert-evidence-agreement" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceSuite,
   .suite "cert-evidence-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceInitStdSuite,
@@ -496,7 +504,9 @@ def required : List (String × String) := [
   ("kernel-tutorial", "ci:misc"),
   ("compile-schedule-identity", "ci:landing-compilers"),
   ("rust-compile", "ci:landing-compilers"),
-  ("cert-compile-parity-init", "ci:landing-initstd"),
+  ("cert-compile-parity-initstd", "ci:landing-initstd"),
+  ("initstd-reference", "ci:landing-initstd"),
+  ("fidelity-initstd", "ci:landing-initstd"),
   ("cert-roles-initstd", "ci:landing-initstd"),
   ("cert-evidence-initstd", "ci:landing-initstd"),
   ("cert-noctor-initstd", "ci:landing-initstd"),

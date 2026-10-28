@@ -22,7 +22,7 @@ import Ix.Ixon.CheckOrder
   reference check (`Ix.Cert.referenceCycle`, Route A, B4) must find four
   planted reference cycles (two decoded, two stored as bytes), and its
   refs-only reader must agree with the decoder on every record.
-  `cert-compile-parity-init` (ignored) does the same on `Init`.
+  `cert-compile-parity-initstd` (merge queue) does the same on Init+Std.
 * **The statements' hypotheses and conclusion, per root, on the accepted
   fixtures** (`Tests.Ix.Kernel.SourceIngress.acceptedSeeds` and the prelude's
   constants):
@@ -1701,11 +1701,11 @@ def evidenceSuite : List TestSeq := [
   report "the role table's evidence against quotient Source's, on the well-founded operations" (do
     evidenceAgreement (← getCompileEnv #[defsModule, ownModule])) 1]
 
-/-- `cert-compile-parity-init` (ignored): the parity on `Init`. -/
-def initSuite : List TestSeq := [
-  report "Ix.Cert.compile against the IO pipeline and the Rust compiler, on Init" (do
-    let leanEnv ← getCompileEnv #[`Init]
-    parity "Init" leanEnv.constants.toList 6) 1]
+/-- `cert-compile-parity-initstd` (merge queue): the parity on Init+Std. -/
+def initStdSuite : List TestSeq := [
+  report "Ix.Cert.compile against the IO pipeline and the Rust compiler, on Init+Std" (do
+    let leanEnv ← getCompileEnv #[`Init, `Std]
+    parity "Init+Std" leanEnv.constants.toList 16) 1]
 
 /-- `cert-roles-initstd` (ignored): the role table's bindings (Route A, B5a) on Init+Std,
 compiled in process by the Rust compiler (byte-identical to `Ix.Cert.compile`'s, the
