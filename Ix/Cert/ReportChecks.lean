@@ -1,5 +1,6 @@
 import Ix.Cert.ClosureLayout
 import Ix.CompileCert.ReaderIndex
+import Ix.RoleEvidence
 
 /-! # The meanings of `compileReport`'s artifact checks
 
@@ -394,5 +395,71 @@ theorem roleRecordKinds {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fail
     (h : compileReport env = .ok (ixe, failures)) : RoleRecordKinds ixe := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
   exact roleRecordKind_none (checkReport_ok hc).roles
+
+
+/-! ## Literal-support roles are named -/
+
+/-- The input name `literalSupport` gives a literal-support role (`supportNames`'s spelling). -/
+def literalRoleName (s : Ix.Kernel.Role) : Ix.Name :=
+  Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName (Ix.Kernel.Key.role s : Ix.Kernel.Key .source))
+
+/-- The check's written-out names are `literalRoleName`'s, on the literal-support roles. -/
+theorem literalRoleName_eq {s : Ix.Kernel.Role} (hs : s ∈ literalSupportRoles) :
+    literalRoleName s = literalRoleIxName s := by
+  simp only [literalSupportRoles, List.mem_cons, List.not_mem_nil, or_false] at hs
+  unfold literalRoleName literalRoleIxName
+  congr 1
+  rcases hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+/-- **A stored literal-support role's record is its name's**, under the default role
+table: when the artifact stores a record at the address of a role a literal is
+checked against (the `Nat` basis and the string support,
+`Ix.Kernel.Reader.strLitSupportNames`), that role's name is an input constant
+published at that address. Every other address, and every unbound role, is
+unconstrained. -/
+def LiteralRolesNamed (env : Ix.Environment) (ixe : Ixon.Env) : Prop :=
+  ∀ t, Ix.Kernel.Reader.defaultTable = .ok t →
+    ∀ s ∈ keyRoles (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon)), ∀ b,
+      t.addressOf? s = some b → ixe.consts.contains b = true →
+        env.consts.contains (literalRoleName s) = true ∧ addrOf ixe (literalRoleName s) = some b
+
+/-- The check's roles are the literal-support roles of `strLitSupportNames`. -/
+theorem keyRoles_strLitSupportNames :
+    keyRoles (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon)) = literalSupportRoles :=
+  rfl
+
+/-- What `literalRoleUnnamed = none` says: every stored literal-support role's
+record is published under the role's name. -/
+theorem literalRoleUnnamed_none {env : Ix.Environment} {ixe : Ixon.Env}
+    (h : literalRoleUnnamed env ixe = none) : LiteralRolesNamed env ixe := by
+  intro t ht s hs b hb hc
+  have hmem : (s, b) ∈ roleTableBound.toList := by
+    rw [roleTableBound_eq ht]
+    exact bound_of_addressOf hb
+  rw [keyRoles_strLitSupportNames] at hs
+  have hrole : literalSupportRoles.contains s = true := List.elem_iff.mpr hs
+  rw [literalRoleName_eq hs]
+  simp only [literalRoleUnnamed, List.findSome?_eq_none_iff] at h
+  have found : (if (literalSupportRoles.contains s && ixe.consts.contains b &&
+      !(env.consts.contains (literalRoleIxName s) &&
+        (ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b)) = true
+      then some (s, b) else none) = none := h (s, b) hmem
+  rw [hrole, hc] at found
+  by_cases hx : env.consts.contains (literalRoleIxName s) = true
+  · by_cases hy : ((ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b) = true
+    · exact ⟨hx, beq_iff_eq.mp hy⟩
+    · rw [hx, Bool.eq_false_iff.mpr hy] at found
+      simp at found
+  · rw [Bool.eq_false_iff.mpr hx] at found
+    simp at found
+
+/-- **Literal-support roles are named**: when `compileReport` returns, under the
+default role table every literal-support role whose address the artifact stores a
+record at is an input constant published at that address (`checkReport`'s
+seventeenth check). -/
+theorem literalRolesNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) : LiteralRolesNamed env ixe := by
+  obtain ⟨cenv, -, hc⟩ := compileReport_ok h
+  exact literalRoleUnnamed_none (checkReport_ok hc).literals
 
 end Ix.Cert
