@@ -407,10 +407,13 @@ def registry : List Entry := [
       -- parallel closure walk) and run on the native kernel. Pinned FFT
       -- is the regression signal.
       let shardSeq ← match (← shardCheckEnvCase env) with
-        -- Only reachable when the target constant is absent from this
-        -- toolchain; a fixture that no longer selects any owned
-        -- constants throws instead of skipping.
-        | none => pure (LSpec.test "shard pipeline: SKIP (target absent)" true)
+        -- The target constant is absent from this toolchain: a failure, as
+        -- an absent pinned constant is in `kernelChecks`, so that a
+        -- toolchain bump that renames it cannot turn the pin into a pass.
+        -- A fixture that no longer selects any owned constants throws.
+        | none => pure (LSpec.test
+            "shard pipeline: the target ByteArray.utf8DecodeChar?_utf8EncodeChar_append is in the environment"
+            false)
         | some (handle, ownedBlob) =>
           let funIdx := vmEnv.compiled.getFuncIdx `verify_claim |>.get!
           match vmEnv.compiled.bytecode.shardCheckWithEnv

@@ -173,7 +173,8 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   | some (e, i, h) => errors := errors.push s!"{label}: mutsMismatch finds {e.pretty}'s class {i} \
       lists {h}, not published at that member's projection, in the compile's result"
   match entries.head? with
-  | none => lines := lines.push s!"{label}: no Muts entry to tamper with"
+  | none => errors := errors.push s!"{label}: no Muts entry to tamper with, so the Muts \
+      check is not shown to refuse one"
   | some (entry, nd) =>
     match nd.constMeta.info with
     | .muts all layout =>
@@ -354,7 +355,8 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           projection check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a second projection record of a \
         definition member"
-  | none => lines := lines.push s!"{label}: no definition projection record to plant a second of"
+  | none => errors := errors.push s!"{label}: no definition projection record to plant a \
+      second of, so the projection check is not shown to refuse one"
   -- the readability check (every published input name at a stored record that
   -- is not a block), timed alone on the compile's result, then refusing, by its
   -- own message, a published input name moved, with its resolution, to a block's
@@ -646,7 +648,8 @@ def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
       else
         lines := lines.push s!"{label}: publishedRolesBound catches {m} planted at {repr s}'s address"
     | none => errors := errors.push s!"{label}: no other role's address to plant {m} at"
-  | [] => lines := lines.push s!"{label}: no published role name; the planted role case is skipped"
+  | [] => errors := errors.push s!"{label}: no published role name, so \
+      publishedRolesBound is not shown to refuse a planted one"
   match ixe.named.toList.find? (fun (m, _) => m matches .str ..) with
   | some (m@(.str p s _), d) =>
     match ixe.named.toList.find? fun (_, e) => e.addr != d.addr with
@@ -657,8 +660,10 @@ def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
         errors := errors.push s!"{label}: publishedAgree misses a forged copy of {m}"
       else
         lines := lines.push s!"{label}: publishedAgree catches a forged copy of {m} at another address"
-    | none => lines := lines.push s!"{label}: one published address; the forged case is skipped"
-  | _ => lines := lines.push s!"{label}: no published string name; the forged case is skipped"
+    | none => errors := errors.push s!"{label}: one published address, so \
+      publishedAgree is not shown to refuse a forged name"
+  | _ => errors := errors.push s!"{label}: no published string name, so \
+      publishedAgree is not shown to refuse a forged name"
   return (errors, lines)
 
 /-- The role table's bindings in a compile's result (Route A, B5a), decided by ingress
