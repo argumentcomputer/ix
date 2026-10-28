@@ -4,6 +4,7 @@ import Ix.Cert.Audit
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.SourceContract.SyntaxFixture
 import Ix.Ixon.CheckOrder
+import Tests.Ix.Cert.ExecutedChecks
 
 /-! # The certification statements on the Source-mode fixtures (`lake test -- cert-statement`)
 
@@ -1666,6 +1667,8 @@ def suite : List TestSeq := [
     sorryAliasCase (← getCompileEnv #[defsModule, ownModule])) 1,
   report "the statements' hypotheses and conclusion, per root, on the accepted fixtures" (do
     perRoot (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "CompileCorrect.checked's premises hold on the closures of Nat.add and List.length" (do
+    Tests.Ix.Cert.ExecutedChecks.checkedCase (← getCompileEnv #[defsModule, ownModule])) 1,
   report "binder contracts on both sides, on the resolved source-contract syntax fixtures" (do
     contractAgreement (← getCompileEnv #[syntaxModule])) 1,
   report "the shipped role table's certificates check on their pinned closure (Route A, B6b)"
