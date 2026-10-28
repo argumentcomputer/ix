@@ -26,6 +26,8 @@ use serde::Serialize;
 mod batch;
 mod grouping;
 pub mod planning;
+#[cfg(feature = "trace-profile")]
+mod profile;
 mod rom;
 mod tables;
 #[cfg(test)]

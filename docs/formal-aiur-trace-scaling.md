@@ -8,6 +8,10 @@ threads. It was not a scaling comparison.
 the real recursive verifier.** Legacy remains faster in absolute trace time
 on both workloads at every measured thread count.
 
+The [phase-profile follow-up](formal-aiur-trace-profile.md) also measures the
+small `Nat.add_comm` frontier claim, where new Aiur is faster on multiple cores,
+and identifies substantial ROM preparation costs in the recursive trace.
+
 ## Measurements
 
 All times include main trace generation and host lookup buffers. Each value is
@@ -58,7 +62,7 @@ Legacy's iterator items are individual rows; Rayon also splits and batches
 those items internally. Parallel row population is not unique to new Aiur.
 
 New Aiur still has serial preparation work, including the ROM payload index,
-auxiliary count accumulation and ROM partitioning. Query validation runs in
+memory multiplicity copying and ROM partitioning. Query validation runs in
 parallel across functions but scans each function's rows sequentially. ROM
 main rows are populated sequentially within each width, whereas legacy also
 parallelizes those rows. These are possible scaling limits visible in the

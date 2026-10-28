@@ -1,0 +1,246 @@
+{
+  "legacy-1": {
+    "thp_disabled": true,
+    "setup_seconds": 0.120975996,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.012478271,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.012028038,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.011956103,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.01217488,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.011935519,
+        "execute_seconds": null
+      }
+    ],
+    "reused_execution": true,
+    "proof": null,
+    "initial_execute_seconds": 0.014163194,
+    "backend": "legacy-bytecode"
+  },
+  "legacy-32": {
+    "thp_disabled": true,
+    "setup_seconds": 0.070487177,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.014779181,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.014267297,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.01339321,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.013107607,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.013102537,
+        "execute_seconds": null
+      }
+    ],
+    "reused_execution": true,
+    "proof": null,
+    "initial_execute_seconds": 0.014142136,
+    "backend": "legacy-bytecode"
+  },
+  "legacy-64": {
+    "thp_disabled": true,
+    "setup_seconds": 0.07812747,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.015566075,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.015574868,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.015219073,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.015564552,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.014942384,
+        "execute_seconds": null
+      }
+    ],
+    "reused_execution": true,
+    "proof": null,
+    "initial_execute_seconds": 0.013910478,
+    "backend": "legacy-bytecode"
+  },
+  "legacy-8": {
+    "thp_disabled": true,
+    "setup_seconds": 0.07516096,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.01256787,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.012339572,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.014384268,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.009214589,
+        "execute_seconds": null
+      },
+      {
+        "trace_with_lookups_seconds": 0.011877105,
+        "execute_seconds": null
+      }
+    ],
+    "reused_execution": true,
+    "proof": null,
+    "initial_execute_seconds": 0.014071228,
+    "backend": "legacy-bytecode"
+  },
+  "new-1": {
+    "backend": "new-bytecode",
+    "initial_execute_seconds": 0.006142283,
+    "prepare_seconds": 0.123633447,
+    "proof": null,
+    "reused_execution": true,
+    "samples": [
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.020932274
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.019830428
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.019796538
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.019672556
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.019737968
+      }
+    ],
+    "setup_seconds": 0.353909596,
+    "thp_disabled": true
+  },
+  "new-32": {
+    "backend": "new-bytecode",
+    "initial_execute_seconds": 0.005722324,
+    "prepare_seconds": 0.128970265,
+    "proof": null,
+    "reused_execution": true,
+    "samples": [
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.004883333
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.005035318
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.004258492
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.004430207
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.004429382
+      }
+    ],
+    "setup_seconds": 0.302645966,
+    "thp_disabled": true
+  },
+  "new-64": {
+    "backend": "new-bytecode",
+    "initial_execute_seconds": 0.005869321,
+    "prepare_seconds": 0.129300466,
+    "proof": null,
+    "reused_execution": true,
+    "samples": [
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.005457398
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.005455055
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.005070982
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.004546933
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.005195302
+      }
+    ],
+    "setup_seconds": 0.307874953,
+    "thp_disabled": true
+  },
+  "new-8": {
+    "backend": "new-bytecode",
+    "initial_execute_seconds": 0.005795452,
+    "prepare_seconds": 0.126303895,
+    "proof": null,
+    "reused_execution": true,
+    "samples": [
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.005281514
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.0052951
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.004992366
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.004420117
+      },
+      {
+        "execute_seconds": null,
+        "trace_with_lookups_seconds": 0.004661302
+      }
+    ],
+    "setup_seconds": 0.299281124,
+    "thp_disabled": true
+  }
+}

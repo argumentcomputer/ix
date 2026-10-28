@@ -282,17 +282,29 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     entry: &str,
     args: &[B::Element],
   ) -> Result<SystemWitness<Val>, String> {
+    #[cfg(feature = "trace-profile")]
+    let mut profile = super::profile::Phases::new();
     self.plan.validate_record(record)?;
     self.plan.root(record, entry, args)?;
+    #[cfg(feature = "trace-profile")]
+    profile.mark("validate_and_root");
     let memory: FxHashMap<_, _> =
       record.memory.iter().map(|m| (m.cell.value, m.address)).collect();
     if memory.len() != record.memory.len() {
       return Err("duplicate interned ROM payload".into());
     }
+    #[cfg(feature = "trace-profile")]
+    profile.mark("rom_index");
     let (table_counts, memory_counts) = self.auxiliary_counts(record)?;
+    #[cfg(feature = "trace-profile")]
+    profile.mark("auxiliary_counts");
     let memory_rows = self.rom.partition(record, &memory_counts)?;
+    #[cfg(feature = "trace-profile")]
+    profile.mark("rom_partition");
     let generate = |ci: usize| {
-      if ci < self.members.len() {
+      #[cfg(feature = "trace-profile")]
+      let start = std::time::Instant::now();
+      let result = if ci < self.members.len() {
         self.function_witness::<LOOKUPS>(ci, record, &memory)
       } else {
         let table = ci - self.members.len();
@@ -307,7 +319,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           LookupValues::builder(0, &self.lookup_plans[ci].widths).finish()
         };
         Ok((trace, lookups))
-      }
+      };
+      #[cfg(feature = "trace-profile")]
+      profile.circuit(ci, start.elapsed());
+      result
     };
     #[cfg(feature = "parallel")]
     let results = (0..self.system.circuits.len())
@@ -319,8 +334,17 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       .map(generate)
       .collect::<Result<Vec<_>, String>>()?;
     let (traces, lookups): (Vec<_>, Vec<_>) = results.into_iter().unzip();
+    #[cfg(feature = "trace-profile")]
+    profile.mark("populate_circuits");
     let (active, degrees) = self.trace_shape(&traces)?;
     self.check_shape(&active, &degrees)?;
+    #[cfg(feature = "trace-profile")]
+    {
+      profile.mark("check_shape");
+      drop((memory_rows, memory_counts, table_counts, memory));
+      profile.mark("cleanup");
+      profile.finish(&self.names, LOOKUPS);
+    }
     Ok(SystemWitness { traces, lookups })
   }
 
