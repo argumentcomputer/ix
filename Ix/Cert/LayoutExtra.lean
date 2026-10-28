@@ -52,7 +52,12 @@ are closure names (`ClaimedIn`'s `MembersIn`), or of a constructor an inductive 
 That constant depends on the literal's support names (`literalSupport`), so they are reached
 (`literal_reaches`), and a support role's stored record is its name's (`LiteralRolesNamed`, a
 compile-report check), so the edge's target is a closure name's record (`literal_extra`). The
-three cases together are `layout_extra`. -/
+three cases together are `layout_extra`.
+
+**Claims.** Every closure name's published record is a primary claim of its block's compile in
+the fold, whose key and members are closure names (`claimedIn_of`, from
+`compileReport_owned_block`), so `Layout.extra` follows from the compile and Source acceptance
+given the literal-roles check (`layout_extra_of`). -/
 
 namespace Ix.Cert.LayoutExtra
 
@@ -1303,10 +1308,10 @@ theorem members_defn {ctx : CompileEnv × BlockEnv} {all : Ix.Set Ix.Name} {s s'
     cases ran
     exact hacc
 
-/-- **A block's member names are closure names**: every name of the compiled block's member set
-is a key of the closure. -/
+/-- **A block's member names are closure names**: the closure holds every name of the compiled
+block's member set. -/
 def MembersIn (sub : Ix.Environment) (A : Ix.Set Ix.Name) : Prop :=
-  ∀ x, A.contains x = true → ∃ ci, (x, ci) ∈ sub.consts.toList
+  ∀ x, A.contains x = true → (sub.consts.get? x).isSome = true
 
 /-- **A group name's published record is a primary claim of its block's compile**, run in a
 compile environment that reads the input's constants: `BlockLayout.ClaimedAt` with the
@@ -2153,10 +2158,7 @@ theorem literal_reaches {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
       rcases hx with hx | rfl
       · exact hx
       · exact hk
-    obtain ⟨ci₀, hci₀⟩ := hmembers x hxa
-    unfold ClosureClaims.InSub
-    rw [SourceStoredNames.stored_get hci₀]
-    rfl
+    exact hmembers x hxa
   have hrx := ClosureClaims.reaches_of_sub hcl hxsub
   rw [henv] at hci
   rcases hterm with hterm | ⟨iv, c, cv, rfl, hc, hcv, rfl⟩
@@ -2237,6 +2239,97 @@ theorem layout_extra {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Env
 
 end Literals
 
+
+/-! ## Every closure name's claim -/
+
+section Claims
+
+open Ix.CompileM Ix.Cert.Resolution Ix.Cert.Schedule
+
+/-- A key a resolution map contains has an entry. -/
+theorem get_of_contains {t : Std.HashMap Ix.Compile.ExactKey.ExactName Address}
+    {m : Ix.Compile.ExactKey.ExactName} (h : t.contains m = true) : ∃ a, t.get? m = some a := by
+  rw [Std.HashMap.contains_eq_isSome_getElem?] at h
+  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp h
+  exact ⟨a, by rw [Std.HashMap.get?_eq_getElem?]; exact ha⟩
+
+/-- **A published closure name is resolved at its published address** in the compile's final
+state: published input names are resolved (`publishedResolved`), and resolved names are
+published where they resolve (`resolvedPublished`). -/
+theorem published_resolved {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    {cenv : CompileEnv} (h : compileReport env = .ok (ixe, failures))
+    (hu : compileUnchecked env = .ok (ixe, failures, cenv)) {m : Ix.Name} {named : Ixon.Named}
+    (hm : (m, named) ∈ ixe.named.toList) (hget : ixe.named.get? m = some named)
+    (hin : env.consts.contains m = true) :
+    cenv.nameToAddr.get? m = some named.addr := by
+  obtain ⟨cenv₁, hu₁, resolved⟩ := Ix.Cert.publishedResolved h
+  obtain ⟨cenv₂, hu₂, published⟩ := Ix.Cert.resolvedPublished h
+  have e₁ : cenv₁ = cenv := by
+    rw [hu] at hu₁
+    cases hu₁
+    rfl
+  have e₂ : cenv₂ = cenv := by
+    rw [hu] at hu₂
+    cases hu₂
+    rfl
+  subst e₁ e₂
+  obtain ⟨a', ha⟩ := get_of_contains (resolved m named hm hin)
+  have hp := published m a' ha
+  rw [hget] at hp
+  simp only [Option.map_some, Option.some.injEq] at hp
+  rw [ha, hp]
+
+/-- **Every closure name's published record is a primary claim of its block's compile**
+(`ClaimedIn`), from the fold: the claiming block's run (`compileReport_owned_block`) is in a state
+that reads the input's constants, its key is one of its members (`blockKey_mem`), and its
+members are closure names. -/
+theorem claimedIn_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) :
+    ∀ m ci, (m, ci) ∈ sub.consts.toList → ∀ a, addrOf ixe m = some a → ClaimedIn env sub ixe m a := by
+  intro m ci hci a ha
+  have hcl : IsClosure env roots sub := P.source.1
+  obtain ⟨cenv, blocks, cenv₀, sched, hu, hblocks, hrun, -, owned⟩ :=
+    Ix.Cert.compileReport_owned_block P.compiled hcl P.none
+  obtain ⟨named, hmem, hget⟩ := SourceStoredNames.stored_published P hci
+  have haddr : a = named.addr := by
+    unfold addrOf at ha
+    rw [hget] at ha
+    exact (Option.some.inj ha).symm
+  subst haddr
+  have hin : env.consts.contains m = true := by
+    rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?,
+      SourceStoredNames.stored_get (SourceStoredNames.stored_input P hci)]
+    rfl
+  have hn := published_resolved P.compiled hu hmem hget hin
+  have hs : (sub.consts.get? m).isSome = true := by
+    rw [SourceStoredNames.stored_get hci]
+    rfl
+  obtain ⟨-, snap, rep, all, r, c, b, hsnap, hall, -, hsub, hr, hclaim, hb, -, -, hblock, -⟩ :=
+    owned m named.addr hn hs
+  obtain ⟨-, -, henv, -⟩ := hrun
+  have hE : ∀ x, snap.cenv.env.get? x = env.consts.get? x := fun x => by
+    rw [reach_env (onRun_reach hsnap), henv, ClosureClaims.view_get, ClosureClaims.input_get]
+  subst hblocks
+  exact ⟨snap.cenv, all, blockKey rep all, r, c, b, hE, blockKey_mem (Condense.condense_nonempty hall),
+    hsub, hr, hclaim, hb, hblock⟩
+
+/-- **`Layout.extra` from the compile and Source acceptance**, given the literal-roles report
+check: the claims are the fold's (`claimedIn_of`), and the role-record and recursor checks are
+the compile report's (`roleRecordKinds`, `recursorsOwned`). -/
+theorem layout_extra_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) (named : LiteralRolesNamed env ixe)
+    (hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint) :
+    ∀ (i : Nat) (gr : Group), (quotientGraph ixe t hints sub).groups[i]? = some gr → ∀ n ∈ gr.names,
+      ∀ a ∈ nameRecords ixe n, ∀ b, (GroundEdge ixe a b ∨ RecursorEdge ixe a b) →
+        ∃ (j : Nat) (gr' : Group), (quotientGraph ixe t hints sub).groups[j]? = some gr' ∧
+          ∃ m ∈ gr'.names, b ∈ nameRecords ixe m :=
+  layout_extra P (Ix.Cert.roleRecordKinds P.compiled) (Ix.Cert.recursorsOwned P.compiled) named
+    (claimedIn_of P) hints
+
+end Claims
+
 end Ix.Cert.LayoutExtra
 
 /--
@@ -2286,3 +2379,15 @@ info: 'Ix.Cert.LayoutExtra.layout_extra' depends on axioms: [propext, Classical.
 -/
 #guard_msgs in
 #print axioms Ix.Cert.LayoutExtra.layout_extra
+
+/--
+info: 'Ix.Cert.LayoutExtra.claimedIn_of' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LayoutExtra.claimedIn_of
+
+/--
+info: 'Ix.Cert.LayoutExtra.layout_extra_of' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LayoutExtra.layout_extra_of
