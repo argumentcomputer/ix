@@ -1,8 +1,9 @@
 /-
   `ix addr-of <Lean.Name> [--ixe <path>]`: resolve a Lean.Name to its
   32-byte content address. Without `--ixe`, the lookup compiles the
-  name's transitive closure from the compiled-in Lean env (via
-  `IxVM.ClaimHarness.loadIxonEnv` → `lookupAddr`). With `--ixe`, the
+  name's transitive closure from the compiled-in Lean env with the
+  certified Lean pipeline (`Ix.Check.loadNamedIxonEnv`; `--rust` uses the
+  Rust compiler) and reads its address. With `--ixe`, the
   lookup reads the env from disk and dispatches `Ixon.Env.getAddr?`.
 
   Prints the resulting address hex on stdout (one line, no prefix), so
@@ -17,6 +18,7 @@ public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Cli.NameResolve
+public import Ix.Check
 
 public section
 
@@ -48,7 +50,7 @@ def runAddrOfCmd (p : Cli.Parsed) : IO UInt32 := do
     if !env.constants.contains name then
       IO.eprintln s!"error: {name} not found in compiled-in Lean env"
       return 1
-    let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
+    let ixonEnv ← Ix.Check.loadNamedIxonEnv name env (rust := p.hasFlag "rust")
     let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
     IO.println (toString addr)
     return 0
@@ -61,7 +63,8 @@ def addrOfCmd : Cli.Cmd := `[Cli|
   "Resolve a Lean.Name to its content address (in a `.ixe` or in the compiled-in env)"
 
   FLAGS:
-    "ixe" : String; "Path to a serialized `.ixe` env to resolve the name in. Without this, the name is looked up in the compiled-in Lean env (via `loadIxonEnv` → `lookupAddr`)."
+    "ixe" : String; "Path to a serialized `.ixe` env to resolve the name in. Without this, the name's closure in the compiled-in Lean env is compiled with the certified Lean pipeline and the name looked up there."
+    "rust";         "Without --ixe: compile the closure with the Rust compiler instead (uncertified: it runs none of the compile's checks)."
 
   ARGS:
     name : String; "Fully-qualified Lean.Name to resolve (e.g. `Nat.add_comm` or `Tests.Ix.Kernel.TutorialDefs.basicDef`)."

@@ -8,6 +8,7 @@ public import Ix.TracingTexray
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
+public import Ix.Cli.DriverOptions
 import Std.Internal.UV.System
 
 public section
@@ -61,6 +62,20 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   if let some e ← applySharingLimitsFlag p then
     p.printError s!"error: {e}"
     return 1
+  -- The certified compiler is the default; `--rust` selects the uncertified
+  -- Rust compiler. The Lean pipeline's options: the sharing limits
+  -- (`--sharing-limits` / `IX_SHARING_LIMITS`) and, with `--verbose`, its
+  -- phase timings.
+  let useRust := p.hasFlag "rust"
+  let workers := match p.flag? "workers" with
+    | some f => max 1 (f.as! Nat)
+    | none => 32
+  let opts ← if useRust then pure {} else
+    match ← Ix.Cli.driverOptionsFromEnv (dbg := p.hasFlag "verbose") with
+    | .ok opts => pure opts
+    | .error e =>
+      p.printError s!"error: {e}"
+      return 1
 
   let some path := p.positionalArg? "path"
     | p.printError "error: must specify <path> to a Lean source file"
@@ -195,38 +210,60 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     TracingTexray.startSampler
     TracingTexray.resetPeakTreeRss
 
-  -- Keep the raw Rust stream private until its actual support, evidence and
+  -- Keep the raw compile private until its actual support, evidence and
   -- binding are generated. Publication is atomic after final serialization.
   let allowPartial := p.hasFlag "allow-partial"
   let strictAnon := p.hasFlag "anon"
   let start ← IO.monoMsNow
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv leanEnv constList).mapError toString)
-  let constList ← IO.ofExcept input.prepare
-  if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
-    IO.eprintln s!"[compile] source contract preparation: {((← IO.monoMsNow) - start).formatMs}"
-  let status ← IO.FS.withTempDir fun dir => do
-    let rawPath := dir / "original.ixe"
-    let status ← Ix.CompileM.rsCompileEnvBytesFFI constList rawPath.toString allowPartial
-    if !allowPartial && !status.ungrounded.isEmpty then return status
-    let original ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile rawPath))
-    let artifact ← Ix.RoleBinding.Compile.finalize Ix.RoleBinding.Compile.rustBackend
-      leanEnv Ix.RoleBinding.Compile.nativeCertSource input original Ix.Resource.typingLimits
+  let rootOf (env : Ixon.Env) : String :=
+    toString ((Ix.Merkle.merkleRootCanonical (env.consts.toArray.map (·.1))).getD Ix.Merkle.zeroAddress)
+  -- Finalize (support, certificates, binding; the finalized artifact is checked
+  -- again), strip names under `--anon`, serialize, publish atomically.
+  let publish (backend : Ix.RoleBinding.Compile.Backend) (original : Ixon.Env)
+      (status : Ix.CompileM.CompileEnvStatus) (postStep : Ixon.Env → Except String Unit) :
+      IO Ix.CompileM.CompileEnvStatus := do
+    let artifact ← Ix.RoleBinding.Compile.finalize backend leanEnv
+      Ix.RoleBinding.Compile.nativeCertSource input original Ix.Resource.typingLimits
+    IO.ofExcept (postStep artifact)
     let artifact := if strictAnon then { artifact with
       named := {}, names := {}, comms := {}, addrToName := {} } else artifact
     let bytes ← IO.ofExcept (Ixon.serEnv artifact)
     Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
-    let addresses := artifact.consts.toArray.map (·.1)
-    let root := (Ix.Merkle.merkleRootCanonical addresses).getD Ix.Merkle.zeroAddress
     return { status with
       bytes := bytes.size.toUInt64
       named := artifact.named.size.toUInt64
       uniqueAnon := artifact.consts.size.toUInt64
-      root := toString root }
+      root := rootOf artifact }
+  let status ← if useRust then
+    let constList ← IO.ofExcept input.prepare
+    if (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome then
+      IO.eprintln s!"[compile] source contract preparation: {((← IO.monoMsNow) - start).formatMs}"
+    IO.FS.withTempDir fun dir => do
+      let rawPath := dir / "original.ixe"
+      let status ← Ix.CompileM.rsCompileEnvBytesFFI constList rawPath.toString allowPartial
+      if !allowPartial && !status.ungrounded.isEmpty then return status
+      let original ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile rawPath))
+      publish Ix.RoleBinding.Compile.rustBackend original status fun _ => pure ()
+  else
+    -- The certified compiler: the Lean pipeline with its report checks
+    -- (`compileLeanInputValidated`), as `ix compile-lean` runs it.
+    let out ← match ← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers) (opts := opts) with
+      | .ok out => pure out
+      | .error e => throw (IO.userError s!"compile refused: {e}")
+    let ungrounded := (out.cenv.ungrounded.toArray.map fun (n, r) => (n.pretty, r)).qsort
+      (fun a b => a.1 < b.1)
+    let status : Ix.CompileM.CompileEnvStatus :=
+      { root := rootOf out.env, ungrounded, nonCanonical := #[], bytes := 0, named := 0, uniqueAnon := 0 }
+    if !allowPartial && !ungrounded.isEmpty then pure status
+    else
+      publish (Ix.RoleBinding.Compile.leanBackend workers opts) out.env status fun artifact =>
+        Ix.CompileM.resourcePostStep { out with env := artifact }
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 
   let ungroundedCount := status.ungrounded.size
-  -- Fail-closed default: the FFI wrote nothing when `!allowPartial` and
+  -- Fail-closed default: the compile wrote nothing when `!allowPartial` and
   -- anything requested is ungrounded (the final path was never created).
   let failClosed := !allowPartial && ungroundedCount > 0
 
@@ -301,10 +338,12 @@ serialized the grounded subset ({status.named} named, \
 
 def compileCmd : Cli.Cmd := `[Cli|
   compile VIA runCompileCmd;
-  "Compile Lean file to Ixon"
+  "Compile a Lean file to Ixon with the certified compiler (the checked Lean pipeline, as `ix compile-lean`); `--rust` selects the uncertified Rust compiler"
 
   FLAGS:
     v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."
+    rust;                     "Compile with the Rust compiler instead of the certified Lean pipeline. UNCERTIFIED: the Rust compiler runs none of the certified compiler's checks, and its output is not covered by the compiler's correctness theorem (its bytes match the Lean compiler's on the reference corpora, checked by `ix compile-lean --rust-check`). Faster, especially at Mathlib scale."
+    workers        : Nat;    "Worker count for the certified compiler's parallel phases (default 32). Ignored with --rust."
     "no-build";               "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."

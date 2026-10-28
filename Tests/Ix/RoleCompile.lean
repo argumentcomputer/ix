@@ -69,7 +69,7 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
         "the original partial companion was removed to make logical-only checking pass"
       for anon in [false, true] do
         let rustPath := dir / (if anon then "rust-anon.ixe" else "rust-named.ixe")
-        let args := #["compile", source, "--local", "--no-build", "--out", rustPath.toString]
+        let args := #["compile", source, "--local", "--no-build", "--rust", "--out", rustPath.toString]
         let result ← IO.Process.output {
           cmd := executable.toString
           args := if anon then args.push "--anon" else args
