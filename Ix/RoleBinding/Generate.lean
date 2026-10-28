@@ -103,6 +103,11 @@ structure Generated where
   prelude : Array (Address × Ixon.Constant)
   evidence : Array (Address × Ixon.Constant)
   blobs : Array (Address × ByteArray)
+  /-- Ordinary certificate dependencies retained for definition equations.
+  Consumers check these declarations before using their theorem evidence. -/
+  support : Array (Address × Ixon.Constant) := #[]
+  supportBlobs : Array (Address × ByteArray) := #[]
+  supportHints : Array (Address × Lean.ReducibilityHints) := #[]
   /-- Retained for independent reader roundtrip verification by the caller. -/
   closed : Std.HashMap Address (CExpr .anon)
 
@@ -182,15 +187,17 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     let operation := Ix.Kernel.roleKey (md := .anon) role
     let some operationValue := Ix.RoleEvidence.valueOf declarations operation
       | throw s!"role generation: {repr role} is not a definition here"
-    let keep : CName .anon → Bool := if Ix.RoleEvidence.certTheorems.any (·.1 == role) then
-        (Ix.RoleEvidence.allowedFor (lookup[·]?) operation operationValue).contains
-      else Ix.RoleEvidence.keptInDefinitionProof values
-        (Ix.RoleEvidence.allowedForDefinition (lookup[·]?) role operationValue)
+    let isOperation := Ix.RoleEvidence.certTheorems.any (·.1 == role)
+    let allowed := Ix.RoleEvidence.allowedFor (lookup[·]?) operation operationValue
+    -- Capture the computed set: a function-valued conditional causes closure
+    -- conversion to repeat the graph walk for every visited proof node.
+    let keep : CName .anon → Bool := allowed.contains
     let proofs ← theorems.mapM fun name => do
       let some key := keys[name]? | throw s!"role generation: missing certificate key for {name}"
       let some value := Ix.RoleEvidence.theoremOf declarations key
         | throw s!"role generation: {name} is not a theorem here"
-      let proof ← (Ix.RoleEvidence.closeProof values keep value).mapError
+      let proof ← (if isOperation then Ix.RoleEvidence.closeProof values keep value
+        else .ok value).mapError
         fun e => s!"role generation: {name}: {e}"
       pure (key, proof)
     let mut entries : Array (Ix.Kernel.Evidence Address) := #[]
@@ -220,7 +227,13 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     ⟨Address.admissionHash bytes, bytes⟩).mapError fun e => toString (Ix.Kernel.Admission.Error.binding e)
   unless decoded.toBytes == bytes do throw "role generation: binding does not roundtrip"
   let finalPrelude : Prelude .anon ← readPrelude table preRecords records blobs.toList
-  let final := setup store (env.blobs[·]?) table finalPrelude (Hints.ofStore store env.anonHints).lookup
+  let retained := selected.any fun (role, _) => !Ix.RoleEvidence.certTheorems.any (·.1 == role)
+  let support := if retained then certRecords.toArray else #[]
+  let supportBlobs := if retained then certificates.blobs.toArray else #[]
+  let supportHints := if retained then certificates.anonHints.toArray else #[]
+  let finalStore := if retained then certStore else store
+  let final := setup finalStore (fun a => env.blobs[a]? <|> certificates.blobs[a]?) table finalPrelude
+    (Hints.ofStore finalStore env.anonHints).lookup
   for (role, expected) in table.evidence do
     let actual := ((final.evidence.find? (·.1 == role)).map (·.2)).getD []
     unless actual.length == expected.size do
@@ -232,7 +245,8 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
         unless closed[address]? == some value do
           throw s!"role generation: proof at {address} does not read back as its closed value"
       | _, _ => throw s!"role generation: evidence kind changed for {repr role}"
-  return { publication := published, table, prelude := preRecords, evidence := records, blobs, closed }
+  return { publication := published, table, prelude := preRecords, evidence := records, blobs, closed,
+    support, supportBlobs, supportHints }
 
 /-- Insert generated proof records, literal blobs and the exact binding.
 This explicitly regenerates a binding: any previous binding is replaced only
@@ -252,7 +266,7 @@ def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
   unless actual.bound == generated.table.bound do
     throw "role emission: binding differs from this artifact's published roles"
   let mut out := env
-  for (address, record) in generated.evidence do
+  for (address, record) in generated.support ++ generated.evidence do
     let bytes := Ixon.serConstant record
     unless Address.admissionHash bytes == address do throw s!"role emission: bad record address {address}"
     let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
@@ -260,12 +274,18 @@ def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
     if let some old := out.consts[address]? then
       unless old.rawBytes == bytes do throw s!"role emission: conflicting record at {address}"
     else out := { out with consts := out.consts.insert address (Ixon.LazyConstant.ofConstant record) }
-  for (address, bytes) in generated.blobs do
+  for (address, bytes) in generated.supportBlobs ++ generated.blobs do
     unless Address.admissionHash bytes == address do throw s!"role emission: bad blob address {address}"
     if let some old := out.blobs[address]? then
       unless old == bytes do throw s!"role emission: conflicting blob at {address}"
     else out := { out with blobs := out.blobs.insert address bytes }
-  for (address, record) in generated.evidence do
+  for (address, hint) in generated.supportHints do
+    match out.anonHints[address]? with
+    | some old =>
+      unless Ixon.mergeHints old hint == old do
+        throw s!"role emission: certificate support would change the original hint at {address}"
+    | none => out := { out with anonHints := out.anonHints.insert address hint }
+  for (address, record) in generated.support ++ generated.evidence do
     for dependency in record.refs do
       unless out.consts.contains dependency || out.blobs.contains dependency do
         throw s!"role emission: evidence {address} needs unavailable support {dependency}"

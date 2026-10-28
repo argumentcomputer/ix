@@ -184,24 +184,6 @@ def allowedFor (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (op : CN
   (Ix.Kernel.refClosureGo look Ix.Kernel.walkFuel
     (opValue.constKeyList ++ Ix.Kernel.evidenceDepKeys op) {}).insert op
 
-/-- **What a proof of the definition `r` may mention** (`eqnsEvidence`): the
-dependency closure of its value, of its dependencies' roles and of the basis
-roles (`Ix.Kernel.preludeShape`), with their blocks, and `r` itself. Nothing
-checks this locality: IxVM checks a definition's certificate with its own
-dependencies. Closing a proof over it keeps the certificate small and
-self-contained in the artifact that publishes the definition. -/
-def allowedForDefinition (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (r : Ix.Kernel.Role)
-    (value : CExpr md) : Std.HashSet (CName md) :=
-  let roots := (r.deps ++ Ix.Kernel.preludeShape.flatten).flatMap Ix.Kernel.Role.block
-  (Ix.Kernel.refClosureGo look Ix.Kernel.walkFuel
-    (value.constKeyList ++ roots.map Ix.Kernel.roleKey) {}).insert (Ix.Kernel.roleKey r)
-
-/-- **What may stay a reference in a definition's certificate** (`eqnsEvidence`):
-`allowedForDefinition`'s constants, and every constant without a value (an
-inductive, a constructor, a recursor, an axiom), which closing cannot inline. -/
-def keptInDefinitionProof (u : Universe md) (allowed : Std.HashSet (CName md)) (n : CName md) : Bool :=
-  allowed.contains n || !u.values.contains n
-
 /-! ## Expression surgery (memoized over the DAG) -/
 
 abbrev Memo (md : Ix.Kernel.Mode) := Std.HashMap (CExpr md) (CExpr md)
@@ -367,21 +349,27 @@ def theoremOf (decls : Array (CDecl md)) (name : CName md) : Option (CExpr md) :
     | .thmDecl cv v => if cv.name == name then some v else none
     | _ => none
 
-/-- **One well-founded operation's proof evidence, from declarations**: its
-certificate theorems (`certTheorems`, under `key`'s naming), each closed over
-the operation's dependency closure. -/
+/-- A role's proof evidence, from declarations. Well-founded operations'
+certificates are closed over the operation's dependency closure. Definition
+equations retain their ordinary theorem dependencies for the consumer to
+check, avoiding expansion of shared library proofs. -/
 def closedProofs (decls : Array (CDecl md)) (uni : Universe md)
     (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (key : Lean.Name → CName md)
     (r : Ix.Kernel.Role) : Except String (List (CName md × CExpr md)) := do
   let op := Ix.Kernel.roleKey r
   let some opValue := valueOf decls op | throw s!"{op} is not a definition here"
-  let keep : CName md → Bool := if certTheorems.any (·.1 == r) then (allowedFor look op opValue).contains
-    else keptInDefinitionProof uni (allowedForDefinition look r opValue)
+  let isOperation := certTheorems.any (·.1 == r)
+  let allowed := allowedFor look op opValue
+  -- Keep the computed dependency set outside the per-node predicate.
+  let keep : CName md → Bool := allowed.contains
   let thms := ((allCertTheorems.find? (·.1 == r)).map (·.2)).getD []
   thms.mapM fun t => do
     let k := key t
     let some v := theoremOf decls k | throw s!"{k} is not a theorem here"
-    let p ← (closeProof uni keep v).mapError (s!"{k}: " ++ ·)
+    -- Only the well-founded operations require local, inlined evidence.
+    -- Definition equations retain ordinary theorem dependencies, which the
+    -- artifact carries and the consumer must check before the evidence.
+    let p ← (if isOperation then closeProof uni keep v else .ok v).mapError (s!"{k}: " ++ ·)
     pure (k, p)
 
 /-! ## Source evidence from the committed bundle

@@ -1,6 +1,6 @@
 module
 
-public import IxC.Kernel.Cached.CheckerC
+public import IxC.Kernel.CheckerBase
 
 @[expose] public section
 
@@ -48,7 +48,8 @@ def checkRoleEquation (ops : CheckerOps md m) (env : Env md) (levels : Nat)
   let statement := equation.statement
   checkRoleTerm env parameters statement
   let statement ← ops.annotate env 0 statement
-  let _ ← ops.ensureSort env 0 statement
+  let statementType ← ops.inferType env 0 statement
+  let _ ← ops.ensureSort env 0 statementType
   match evidence with
   | .defeq =>
     unless equation.hyps.isEmpty do

@@ -2,6 +2,7 @@ import Benchmarks.Kernel.CheckIxeStep
 import Ix.RoleEvidence
 import Ix.RoleBinding.Publication
 import Ix.RoleBinding.Evidence
+import Ix.RoleBinding.Generate
 import Ix.Address.Admission
 import Ix.Meta
 import Ix.CanonM
@@ -449,12 +450,9 @@ def run (args : List String) : IO UInt32 := do
       fail s!"{repr r} is not read as its role"
   -- 3: the evidence
   let (certEnv, certRecords) ← loadStore certInput
-  let mut certStore := s0.store
-  let mut added := 0
-  for (a, c) in certRecords.toList do
-    unless certStore.contains a do
-      certStore := certStore.insert a c
-      added := added + 1
+  IO.ofExcept (Ix.RoleBinding.checkCertificateContent env certEnv)
+  let certStore ← IO.ofExcept (Ix.RoleBinding.mergeRecords s0.store certRecords)
+  let added := certStore.size - s0.store.size
   for (r, _) in Ix.RoleEvidence.allCertTheorems do
     let lean := Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .anon) r))
     let some named := certEnv.named[lean]? | fail s!"{certInput} has no {repr r}"
@@ -537,7 +535,21 @@ def run (args : List String) : IO UInt32 := do
   -- 4: verification: the evidence reads back, and the fold accepts every
   -- bound constant's closure under the table
   let pre ← IO.ofExcept (readPrelude table preRecords evRecords evBlobs.toList)
-  let s := setup store (env.blobs[·]?) table pre hints.lookup
+  -- Equation certificates retain ordinary theorem dependencies. Include
+  -- their records in the checking store, and explicitly check each evidence
+  -- theorem before comparing its statement with the role specification.
+  let validationStore ← IO.ofExcept (Ix.RoleBinding.mergeRecords certStore
+    (evRecords.foldl (fun out (address, record) => out.insert address record) {}))
+  let mut validationHints := env.anonHints
+  for (address, hint) in certEnv.anonHints.toList do
+    match validationHints[address]? with
+    | some old =>
+      unless Ixon.mergeHints old hint == old do
+        fail s!"certificate support would change the original hint at {address}"
+    | none => validationHints := validationHints.insert address hint
+  let validationBlobs := fun address => env.blobs[address]? <|> certEnv.blobs[address]?
+  let s := setup validationStore validationBlobs table pre
+    (Hints.ofStore validationStore validationHints).lookup
   for (r, es) in s.evidence do
     for e in es do
       match e with
@@ -553,7 +565,11 @@ def run (args : List String) : IO UInt32 := do
   for (r, _) in evRoles do
     unless (s.evidence.find? (·.1 == r)).any (fun (_, es) => !es.isEmpty) do
       fail s!"{repr r}: its evidence does not resolve"
-  let checkRoots := (preRecords.map (·.1)) ++ (bound.filterMap fun (r, _) =>
+  let equationRoots := table.evidence.foldl (init := #[]) fun roots (role, entries) =>
+    if role.spec (md := .anon) matches .eqns .. then
+      roots ++ entries.filterMap (fun | .proof address => some address | .defeq => none)
+    else roots
+  let checkRoots := equationRoots ++ (preRecords.map (·.1)) ++ (bound.filterMap fun (r, _) =>
     (refOfRole[r]?).map (·.block))
   let ordered := closure s.store s.extra checkRoots
   IO.eprintln s!"pin-gen: checking the closure, {ordered.size} records"
@@ -599,8 +615,6 @@ def run (args : List String) : IO UInt32 := do
   -- reference and its definitions' hints), and checked as that statement
   -- reads it: the Ixon entry's reading behind the prelude, the verified fold
   let preludeSet : Std.HashSet Address := preRecords.foldl (fun m (a, _) => m.insert a) {}
-  let wfRoots : Array Address := Ix.RoleEvidence.certTheorems.toArray.filterMap fun (r, _) =>
-    (refOfRole[r]?).map (·.block)
   -- the reader needs every block's projection records (the entry reconstructs
   -- none) and every inductive block's recursors (their records, closed over in
   -- turn): `closure` keeps owners only, so both are added to a fixpoint
@@ -608,7 +622,7 @@ def run (args : List String) : IO UInt32 := do
   for (a, c) in s.store.toList do
     let o := owner a c
     if o != a then projectionsOf := projectionsOf.insert o ((projectionsOf.getD o #[]).push a)
-  let mut closureRoots := wfRoots
+  let mut closureRoots := checkRoots
   let mut closureOrder : Array Address := #[]
   repeat
     closureOrder := closure s.store s.extra closureRoots
@@ -632,10 +646,10 @@ def run (args : List String) : IO UInt32 := do
   let mut closureBlobs : Array (Address × ByteArray) := #[]
   for (_, c) in closureRecords do
     for x in c.refs do
-      if let some b := env.blobs[x]? then
+      if let some b := validationBlobs x then
         unless closureBlobs.any (·.1 == x) do closureBlobs := closureBlobs.push (x, b)
   let closureHints : Array (Address × Ix.Kernel.ReducibilityHint) := closureRecords.filterMap fun (a, _) =>
-    (env.anonHints[a]?).map fun
+    (validationHints[a]?).map fun
       | .opaque => (a, .opaque)
       | .abbrev => (a, .abbrev)
       | .regular h => (a, .regular h.toNat)
