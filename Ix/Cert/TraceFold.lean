@@ -41,7 +41,7 @@ variable {env sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures} {snap
 /-- **The snapshot's bindings resolve in the artifact** (`bound`, `bound₁`, `bound₂`), when the
 input's inductives list their constructors at their positions. -/
 theorem _root_.Ix.Cert.GroupRuns.FoldBlock.bound (fb : FoldBlock env sub ixe failures snap rep all r c)
-    (idx : BindingsResolve.ConstructorIndices env) : BoundResolve ixe snap.cenv := by
+    (idx : ConstructorIndices env) : BoundResolve ixe snap.cenv := by
   obtain ⟨_, _, _, hu, hrun, hsnap, -⟩ := fb.fold
   exact BindingsResolve.boundResolve_onRun hu idx hrun hsnap
 
@@ -766,7 +766,7 @@ bindings resolving (`FoldBlock.bound`) and its mentions published (`FoldBlock.me
 theorem lone_compiled (P : Premises env roots sub ixe failures t envQ)
     (scheduled : ∀ x ∈ (Ix.LeanIngress.scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList,
       ∃ conv, x.1.2 = .ok conv)
-    (idx : BindingsResolve.ConstructorIndices env)
+    (idx : ConstructorIndices env)
     {ig : Nat} {gr : Group} (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some gr)
     (hc : GroupBlocks.Component gr) {ci : Ix.ConstantInfo} (hsingle : gr.names = #[ci.getCnst.name])
     (hst : (ci.getCnst.name, ci) ∈ sub.consts.toList) (hi : ∀ v, ci ≠ .inductInfo v) (hct : ∀ v, ci ≠ .ctorInfo v)

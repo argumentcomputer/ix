@@ -8,14 +8,11 @@ import Ix.CompileCert.Canon.QSortSorted
 
 `Ix.Kernel.Reader.buildIndex` files every recursor member of its records under the block and
 motive its analysis gives (`analyseRecursor`), keeps the first per motive, and sorts each block's
-recursors by motive. This module states what the closure's index needs of it, over any store:
+recursors by motive. This module states what the closure's index needs of it, over any store,
+beside the compile report's checks that pin an input family's recursors to their names
+(`Ix.Cert.ReportChecks`: `RecursorSlotsUnique`, `RecursorShapes`, `FamilyNamesStored`,
+`FamilyLevelParams`):
 
-* **The report checks' meanings** that pin an input family's recursors to their names
-  (`Checks`): every stored recursor member is analysed, at a slot of its own
-  (`RecursorSlotsUnique`); every published input family recursor is filed at its family's block
-  and the motive its name gives it (`RecursorShapes`); the names a family lists are input names
-  (`FamilyNamesStored`); a family's recursors have its level-parameter count or one more
-  (`FamilyLevelParams`).
 * **The analysis reads the store only through references** (`analyseWith_mono`,
   `recursorAnalysis_spec`): a store that resolves every reference the analysis consults alike
   gives the same analysis.
@@ -28,142 +25,12 @@ recursors by motive. This module states what the closure's index needs of it, ov
   level-parameter count and counts (`block_headers`), and so does a lone recursor
   (`lone_header`). -/
 
-namespace Ix.Cert.RecursorIndex.Checks
-
-open Ix.Cert.ClosureLayout (blockAt)
-
-/-! ## The report checks' meanings
-
-These are the meanings of `compileReport`'s inductive-input checks, stated here until
-`Ix.Cert.ReportChecks` carries them. -/
-
-/-- The inductive members of a block, with their positions
-(`Ix.CompileCert.ReaderIndex.inductives`). -/
-def inductiveMembers (members : Array Ixon.MutConst) : Array (Nat × Ixon.Inductive) :=
-  members.zipIdx.filterMap fun | (.indc ind, index) => some (index, ind) | _ => none
-
-/-- The positions of `owner`'s members among the first `count` carriers
-(`Ix.CompileCert.ReaderIndex.orderFor`). -/
-def motiveOrder (carriers : Array (Ix.Kernel.ConstRef Address)) (owner : Address) (count : Nat) :
-    Array Nat :=
-  (carriers.extract 0 count).filterMap fun
-    | .member block index => if block == owner then some index else none
-    | .ctor .. => none
-
-/-- Whether `order` orders the block's inductive members, starting at `firstIndex`
-(`Ix.CompileCert.ReaderIndex.orderValid`). -/
-def motiveOrderValid (firstIndex : Nat) (indcs : Array (Nat × Ixon.Inductive)) (order : Array Nat) :
-    Bool :=
-  order.size == indcs.size && order[0]? == some firstIndex &&
-    order.all (fun index => indcs.any (·.1 == index)) && order.toList.eraseDups.length == indcs.size
-
-/-- **The analysis the recursor index files a recursor member by**, when it files it
-(`Ix.CompileCert.ReaderIndex.candidate`, before its one-recursor-per-motive test): its block
-and motive, its motives' carriers, its major premise's carrier. -/
-def recursorAnalysis? (store : Ix.Kernel.Reader.Store) (owner : Address) (c : Ixon.Constant)
-    (r : Ixon.Recursor) :
-    Option (Address × Nat × Array (Ix.Kernel.ConstRef Address) × Ix.Kernel.ConstRef Address) := do
-  let (motive, carriers, major) ← Ix.Kernel.Reader.analyseRecursor store owner c r
-  let .member block firstIndex ← carriers[0]? | none
-  let blockRecord ← store block
-  let .muts members := blockRecord.info | none
-  let indcs := inductiveMembers members
-  let _ ← indcs[0]?
-  guard (motiveOrderValid firstIndex indcs (motiveOrder carriers block indcs.size))
-  pure (block, motive, carriers, major)
-
-/-- The slot a recursor member is filed at: its block and motive. -/
-def recursorSlot? (store : Ix.Kernel.Reader.Store) (owner : Address) (c : Ixon.Constant)
-    (r : Ixon.Recursor) : Option (Address × Nat) :=
-  (recursorAnalysis? store owner c r).map fun (b, m, _, _) => (b, m)
-
-/-- The motive an input recursor's name gives it in its family's block, in
-`Ix.LeanIngress.blockRecursors`' order: `T.rec` for the `i`-th member `T` of `first.all`;
-`first.rec_{j+1}` for `j < first.numNested` at `first.all.size + j`. -/
-def namedMotive? (first : Ix.InductiveVal) (n : Ix.Name) : Option Nat :=
-  (first.all.toList.findIdx? fun T => Ix.LeanIngress.isStrName T "rec" n).orElse fun _ =>
-    ((List.range first.numNested).find? fun j =>
-      Ix.LeanIngress.isStrName first.cnst.name s!"rec_{j + 1}" n).map (first.all.size + ·)
-
-/-- The record member a published name sits at: a recursor projection's block member, or a
-lone recursor's member 0. -/
-def publishedRecursor? (ixe : Ixon.Env) (n : Ix.Name) : Option (Address × Nat) := do
-  let named ← ixe.named.get? n
-  let c ← storedRecord ixe named.addr
-  match c.info with
-  | .rPrj q => pure (q.block, q.idx.toNat)
-  | .recr _ => pure (named.addr, 0)
-  | _ => none
-
-/-- **Every stored recursor member is filed by its analysis, at a slot of its own.** -/
-def RecursorSlotsUnique (ixe : Ixon.Env) : Prop :=
-  (∀ o c, recordAt ixe o = some c → ∀ j r, (j, r) ∈ Ix.Kernel.Reader.recursorMembers c →
-      (recursorSlot? (recordAt ixe) o c r).isSome = true) ∧
-  ∀ (o₁ o₂ : Address) (c₁ c₂ : Ixon.Constant) (j₁ j₂ : Nat) (r₁ r₂ : Ixon.Recursor) (slot : Address × Nat),
-    recordAt ixe o₁ = some c₁ → recordAt ixe o₂ = some c₂ →
-    (j₁, r₁) ∈ Ix.Kernel.Reader.recursorMembers c₁ → (j₂, r₂) ∈ Ix.Kernel.Reader.recursorMembers c₂ →
-    recursorSlot? (recordAt ixe) o₁ c₁ r₁ = some slot → recursorSlot? (recordAt ixe) o₂ c₂ r₂ = some slot →
-    o₁ = o₂ ∧ j₁ = j₂
-
-/-- **Every published input family recursor is filed by its name**: at its family's block and
-the motive its name gives it, its first carriers the block's members in order, its major
-premise an inductive whose constructors, in order, are where its rules' constructors are
-published (the block's own, or a nested family's container's). -/
-def RecursorShapes (env : Ix.Environment) (ixe : Ixon.Env) : Prop :=
-  ∀ (n : Ix.Name) (rv : Ix.RecursorVal) (named : Ixon.Named),
-    (n, .recInfo rv) ∈ env.consts.toList → ixe.named.get? n = some named →
-    ∃ (first : Ix.Name) (fv : Ix.InductiveVal) (m : Nat) (fnamed : Ixon.Named) (owner : Address) (j : Nat)
-      (c : Ixon.Constant) (r : Ixon.Recursor) (carriers : Array (Ix.Kernel.ConstRef Address)) (mb : Address)
-      (mi : Nat) (ind : Ixon.Inductive),
-      rv.all[0]? = some first ∧ env.consts.get? first = some (.inductInfo fv) ∧ namedMotive? fv n = some m ∧
-      ixe.named.get? first = some fnamed ∧ publishedRecursor? ixe n = some (owner, j) ∧
-      recordAt ixe owner = some c ∧ (j, r) ∈ Ix.Kernel.Reader.recursorMembers c ∧
-      recursorAnalysis? (recordAt ixe) owner c r = some (blockAt ixe fnamed.addr, m, carriers, .member mb mi) ∧
-      (∀ i < fv.all.size, carriers[i]? = some (.member (blockAt ixe fnamed.addr) i)) ∧
-      Ix.Kernel.Reader.inductiveAt (recordAt ixe) (.member mb mi) = some ind ∧ ind.ctors.size = rv.rules.size ∧
-      ∀ k (hk : k < rv.rules.size), ∃ cn, ixe.named.get? rv.rules[k].ctor = some cn ∧
-        Ix.Kernel.Reader.resolve (recordAt ixe) cn.addr = some (.ctor mb mi k)
-
-/-- The names an input constant lists as members of its family: an inductive's `all` and
-constructors, a constructor's inductive, a recursor's `all` and its rules' constructors. -/
-def familyNamesOf : Ix.ConstantInfo → List Ix.Name
-  | .inductInfo v => v.all.toList ++ v.ctors.toList
-  | .ctorInfo c => [c.induct]
-  | .recInfo r => r.all.toList ++ r.rules.toList.map (·.ctor)
-  | _ => []
-
-/-- **Every name an input family lists is an input constant's own name.** -/
-def FamilyNamesStored (env : Ix.Environment) : Prop :=
-  ∀ n ci, (n, ci) ∈ env.consts.toList → ∀ a ∈ familyNamesOf ci, ∃ ci', (a, ci') ∈ env.consts.toList
-
-/-- **A family shares its level-parameter names**: every member an input inductive lists and
-every constructor it lists have its names; recursors of one family (one `all[0]`) have one
-list, of the family's length or one more. -/
-def FamilyLevelParams (env : Ix.Environment) : Prop :=
-  (∀ n iv, env.consts.get? n = some (.inductInfo iv) →
-    (∀ m ∈ iv.all, ∀ iv', env.consts.get? m = some (.inductInfo iv') →
-      iv'.cnst.levelParams = iv.cnst.levelParams) ∧
-    (∀ c ∈ iv.ctors, ∀ cv, env.consts.get? c = some (.ctorInfo cv) →
-      cv.cnst.levelParams = iv.cnst.levelParams)) ∧
-  (∀ x y rx ry first, env.consts.get? x = some (.recInfo rx) → env.consts.get? y = some (.recInfo ry) →
-    rx.all[0]? = some first → ry.all[0]? = some first → rx.cnst.levelParams = ry.cnst.levelParams) ∧
-  ∀ x rx first iv, env.consts.get? x = some (.recInfo rx) → rx.all[0]? = some first →
-    env.consts.get? first = some (.inductInfo iv) →
-    rx.cnst.levelParams.size = iv.cnst.levelParams.size ∨ rx.cnst.levelParams.size = iv.cnst.levelParams.size + 1
-
-theorem inductiveMembers_eq : inductiveMembers = Ix.CompileCert.ReaderIndex.inductives := rfl
-theorem motiveOrder_eq : motiveOrder = Ix.CompileCert.ReaderIndex.orderFor := rfl
-theorem motiveOrderValid_eq : motiveOrderValid = Ix.CompileCert.ReaderIndex.orderValid := rfl
-
-end Ix.Cert.RecursorIndex.Checks
-
 namespace Ix.Cert.RecursorIndex
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.Reader
 open Ix.CompileCert
 open Ix.CompileCert.ReaderIndex (inductives orderFor orderValid From Coherent)
-open Checks
 
 /-! ## The analysis reads the store through references -/
 

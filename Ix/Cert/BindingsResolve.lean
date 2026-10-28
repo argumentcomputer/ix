@@ -10,7 +10,8 @@ compile-side context (`SingletonReads.external`).
 The constructor positions a resolving constructor projection needs are not the compile's own
 fact for a name outside the closure (the compiler copies a constructor's declared index into its
 block and addresses the constructor by its position), so they are the named premise
-`ConstructorIndices env`, the meaning of the compile report's constructor index check. With it:
+`ConstructorIndices env`, the meaning of the compile report's constructor index check
+(`constructorIndices`). With it:
 * every binding of a state the fold reaches holds a record of the state's store that resolves
   in that store (`reach_boundOK`): a step keeps the old bindings (stores only grow, and a record
   resolves alike in a larger store), and a new binding is a primary claim of a checked merge,
@@ -28,13 +29,6 @@ open Ix.CompileM Ix.CompileCert Ix.Cert.Resolution Ix.Cert.Schedule
 open Ix.Compile.ExactKey (ExactName)
 open Ix.Cert.BlockContext (BoundResolve)
 open Ix.Cert.ClosureResolve (PositionsIn ClaimsResolve)
-
-/-- **Every input inductive's `j`-th constructor declares index `j`**: the meaning of the compile
-report's constructor index check. -/
-def ConstructorIndices (env : Ix.Environment) : Prop :=
-  ∀ (n : Ix.Name) (iv : Ix.InductiveVal), env.consts.get? n = some (.inductInfo iv) →
-    ∀ (j : Nat) (hj : j < iv.ctors.size) (cv : Ix.ConstructorVal),
-      env.consts.get? iv.ctors[j] = some (.ctorInfo cv) → cv.cidx = j
 
 theorem forall₂_get {α β : Type} {R : α → β → Prop} :
     ∀ {l : List α} {m : List β}, List.Forall₂ R l m → ∀ j (hj : j < m.length), ∃ hl : j < l.length, R l[j] m[j]

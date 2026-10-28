@@ -15,8 +15,8 @@ Source's reading of the group needs (`closure_recursor_index`). These are the in
 `InductiveSegments.closure_inductive_reads`.
 
 The report checks pin each input family recursor to the slot its name gives it
-(`Checks.RecursorShapes`), make the slots of stored recursor members distinct
-(`Checks.RecursorSlotsUnique`) and keep the index's recursors in their block's family
+(`RecursorShapes`), make the slots of stored recursor members distinct
+(`RecursorSlotsUnique`) and keep the index's recursors in their block's family
 (`RecursorsOwned`). The analysis that files a closure record reads only closure records
 (`analysis_closure`), so it files alike in the closure's context, where a prelude record never
 files under a block the closure supplies (`scanned_cases`). A recursor filed under the group's
@@ -31,7 +31,6 @@ open Ix.CompileM Ix.CompileCert
 open Ix.CompileCert.ReaderIndex (inductives orderFor orderValid From Coherent)
 open Ix.Cert.ClosureLayout (blockAt addrOf nameRecords)
 open Ix.LeanIngress (evAddr roleAtMap fiberAliasAt)
-open Checks
 
 variable {ixe : Ixon.Env} {order : List Address} {t : RoleTable} {preA : Prelude .anon}
 

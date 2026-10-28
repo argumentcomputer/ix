@@ -1186,18 +1186,6 @@ family's members, constructors and recursors share names; the compile can (a con
 under its inductive's list). A compile-report check makes them shared (`FamilyLevelParams`), and a
 lowered group's lists are then its first type's (`family_levels`). -/
 
-/-- **A family shares its level-parameter names**: every member an input inductive lists and
-every constructor it lists have its names; recursors of one family (one `all[0]`) have one
-list. (A compile-report check.) -/
-def FamilyLevelParams (env : Ix.Environment) : Prop :=
-  (∀ n iv, env.consts.get? n = some (.inductInfo iv) →
-    (∀ m ∈ iv.all, ∀ iv', env.consts.get? m = some (.inductInfo iv') →
-      iv'.cnst.levelParams = iv.cnst.levelParams) ∧
-    (∀ c ∈ iv.ctors, ∀ cv, env.consts.get? c = some (.ctorInfo cv) →
-      cv.cnst.levelParams = iv.cnst.levelParams)) ∧
-  ∀ x y rx ry first, env.consts.get? x = some (.recInfo rx) → env.consts.get? y = some (.recInfo ry) →
-    rx.all[0]? = some first → ry.all[0]? = some first → rx.cnst.levelParams = ry.cnst.levelParams
-
 /-- **A lowered inductive group shares its first type's level-parameter names**
 (`InductiveNeeds.lpsEq`, `ctorLps`), **and its recursors share one list** (`recLevels`' sharing),
 under the family check: the group's types are the inductives its head lists, its constructors
@@ -1226,7 +1214,7 @@ theorem family_levels {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
   · cases e
   cases e
   have hnE : env.consts.get? n = some (.inductInfo v) := hcl.mem_env (SourceStoredNames.stored_get hnv)
-  obtain ⟨famT, famR⟩ := flp
+  obtain ⟨famT, famR, -⟩ := flp
   -- every type is an inductive the head lists, stored
   have typeAt : ∀ w ∈ types.toList, ∃ m ∈ v.all, env.consts.get? m = some (.inductInfo w) := by
     intro w hw
