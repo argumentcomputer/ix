@@ -16,7 +16,7 @@ sides of `CompileCorrect` read the same `Ix.Environment`.
    the structural conversion, with the same smart constructors (so the same
    hash fields) and no cache. It is defined in `Ix.CanonM` (under this
    namespace), so that the memo's entries carry their proofs.
-2. **`CanonMCorrect`, C1: proved** (`canonMCorrect`, `canonChunkCorrect`).
+2. **`CanonMCorrect`: proved** (`canonMCorrect`, `canonChunkCorrect`).
    `canonName`, `canonLevel`, `canonExpr` and `canonConst` compute the
    specification from every state, and `canonChunk` maps it over its chunk
    (`CanonChunkCorrect`). `Ix.CanonM` keeps one pointer memo
@@ -56,7 +56,7 @@ the same smart constructors (so the same hash fields). They are defined
 beside the conversions, in the module `Ix.CanonM`, under this namespace, so
 that the memo's entries can carry their proofs. -/
 
-/-! ## 2. `CanonM` computes the specification (C1, proved)
+/-! ## 2. `CanonM` computes the specification (proved)
 
 `Ix.CanonM`'s memo entries carry the proof that their image is the
 specification's, and a hit is confirmed by identity (`withPtrEq`), whose
@@ -83,7 +83,7 @@ theorem canonConst_run (c : Lean.ConstantInfo) (s : CanonState) :
     (Id.run ((canonConst c).run s)).1 = constS c :=
   (Id.run ((canonConstS c).run s)).1.2
 
-/-- **The CanonM correspondence, computational half (C1, proved:
+/-- **The CanonM correspondence, computational half (proved:
 `canonMCorrect`).** From every state, the conversions return the
 specification. -/
 def CanonMCorrect : Prop :=
@@ -323,7 +323,7 @@ theorem ingressExpr_exprS (σ : Ix.Name → LevelParam) (e : Lean.Expr) :
       ingressKey_nameS, ih]
 
 /-- Source mode reads what `CanonM` produced, from every state, as Lean's own
-term (C1 and C2). -/
+term (by canonicalization and ingress correctness). -/
 theorem ingressExpr_canonExpr (s : Ix.CanonM.CanonState) (σ : Ix.Name → LevelParam)
     (e : Lean.Expr) :
     Ix.LeanIngress.ingressExpr σ (Id.run ((Ix.CanonM.canonExpr e).run s)).1 =

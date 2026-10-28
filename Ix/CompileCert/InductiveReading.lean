@@ -23,10 +23,10 @@ the inductive under its key with level parameters `0, …, n - 1` and a type
 `Related` to the source's, its constructors in source order under their
 keys with types related to the sources', and the recursors the reader's own
 loop reads from their records (`readRecursors`; their correspondence with
-the compiled recursors is R10b). The returned block decodes exactly.
+the compiled recursors is proved separately). The returned block decodes exactly.
 `inductive_reads_indexed` derives the index shape from the reader's own
 index (`ReaderIndex.compiled_order`). The reader runs over the block's blobs
-overlaid on the context's (publication is R13).
+overlaid on the context's.
 
 `InductiveReading`, re-derived against `readInductive` = `BlockRead`
 + `lowerInductive` (5b): the donor's family assembly checks are
@@ -547,7 +547,7 @@ theorem rootsRead_cons {reader : MemberReader md} {related : Ix.Expr → CExpr m
 The reader reads a standalone family's types with only the inductive as its
 self (`inductiveSelf`), so a constructor of the family occurring in them
 would not read. `NoCtorIn` says none occurs; with the family's own name
-related to its key (R13's half), it gives `inductive_reads`' self-reference
+related to its key, it gives `inductive_reads`' self-reference
 condition (`scope_of_noCtor`). -/
 
 /-- No constructor of the family occurs as a constant of `e`. -/
@@ -649,8 +649,7 @@ abbrev familyBlock (source : InductiveVal) (constructors : Array ConstructorVal)
   (EmissionDispatch.familyContext source constructors (EmissionDispatch.singletonContext source.cnst.name context)).2
 
 /-- **The self references are in scope** when no constructor of the family
-occurs (`NoCtorIn`) and the family's own name is related to its key (R13's
-half): the only other name the family's mutual context maps is the
+occurs (`NoCtorIn`) and the family's own name is related to its key: the only other name the family's mutual context maps is the
 inductive's, at the slot `inductiveSelf` reads as the key
 (`familyCtx_lookup`). -/
 theorem scope_of_noCtor (source : InductiveVal) (constructors : Array ConstructorVal)
@@ -672,7 +671,7 @@ recursors are what the reader's own loop reads from their records
 (`readRecursors`). Given: the constructors the dispatch resolves; the
 index shaping the block at member 0 (`inductive_reads_indexed` derives it
 from the reader's index); the keys reading; the self references: the
-family's own name related to its key (`selfKey`, R13's half) and no
+family's own name related to its key (`selfKey`) and no
 constructor of the family occurring in the types (`NoCtorIn`; proved
 from Source acceptance by `Ix.Cert.NoCtor.noCtor_of_checkSourceWith`); and a
 well-formed source (safe, constructors at their positions, each constructor's type a

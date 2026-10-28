@@ -253,7 +253,7 @@ theorem Preserves.of_ok {projection : BlockState → α} {action : CompileM β}
 `context` from a state satisfying `pre` returns a value and a state
 satisfying `post`. Failing runs are unconstrained. It is the generic shape
 of the per-proof "on success, the state keeps an invariant and the value
-means something" predicates (R07-03), with one set of combinators. -/
+means something" predicates, with one set of combinators. -/
 
 def Triple (context : CompileEnv × BlockEnv) (pre : BlockState → Prop) (action : CompileM α)
     (post : α → BlockState → Prop) : Prop :=
@@ -360,7 +360,7 @@ theorem Triple.forIn_array {context : CompileEnv × BlockEnv} (inv : β → Bloc
 `Keeps context inv action post`: every run of `action` under `context` from
 a state satisfying `inv` ends in a state satisfying `inv`, failing runs
 included, and a successful run returns a value satisfying `post`. It is the
-shape of the memo invariants, which must survive errors (R07-03's shape (a)),
+shape of the memo invariants, which must survive errors,
 with one set of combinators. -/
 
 def Keeps (context : CompileEnv × BlockEnv) (inv : BlockState → Prop) (action : CompileM α)

@@ -18,10 +18,8 @@ compiler's correctness (`ExpressionState.compileExpr_scoped`)
 applies after preseeding. A successful run leaves the primary universe
 table final (`preseed_final`).
 
-`GoodStep` is the one traversal: each primitive of the collector and the
-inserters keeps the invariant (`PreseedState`, `PreseedCanonical`
-and the binding and cache frames of `PreseedReferences`/
-`PreseedUniverses`, as one proof, R07-15). -/
+`GoodStep` covers the traversal: each collector and table insertion keeps
+the invariant, including the binding and expression-cache frames. -/
 
 namespace Ix.CompileCert.PreseedState
 

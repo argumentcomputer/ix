@@ -3,7 +3,7 @@ import Ix.CompileCert.SharingRoots
 
 /-! # The payload emitters read back as their sources
 
-Every declaration emitter of `Ix.CompileM` has one shape (R07-08): it enters
+Every declaration emitter of `Ix.CompileM` has one shape: it enters
 the declaration's context (`withCurrent`, and `withUnivCtx` with its level
 parameters, which clears the raw universe memo), resets the arena, compiles
 its root expressions with `compileExpr`, and finishes: the finisher drains

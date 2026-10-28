@@ -37,7 +37,8 @@ def sourceFile (path : System.FilePath) : Bool :=
   ["lean", "rs", "md"].contains (path.extension.getD "")
 
 def files : IO (Array System.FilePath) := do
-  let mut result := #[]
+  let mut result : Array System.FilePath :=
+    #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean", "MultiStark.lean", "README.md", "lakefile.lean"]
   for root in ["Ix", "IxC", "IxSharingVerify", "Tests", "crates", "docs", "Benchmarks", "Apps", "MultiStark"] do
     for path in ← System.FilePath.walkDir root (fun p =>
         pure (!([".lake", "target", ".git"].contains (p.fileName.getD "")))) do

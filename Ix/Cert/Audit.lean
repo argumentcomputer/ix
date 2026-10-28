@@ -3209,9 +3209,9 @@ inductive under its key with the level parameters `0, …, n - 1` and a type
 `Related` to the source's, its constructors in source order under their
 keys with related types, and the recursors the reader reads from their own
 records (`readRecursors`, whose correspondence with the compiled recursors
-is R10b); given the index shaping the block at member 0 (derived from the
+is proved separately); given the index shaping the block at member 0 (derived from the
 reader's own index in `inductive_reads_indexed`), the keys reading, the
-self references (the family's name related to its key, R13's half, and no
+self references (the family's name related to its key, and no
 constructor of the family in its types, `NoCtorIn`, proved from
 Source acceptance by `Ix.Cert.NoCtor.inductive_reads_sourceAccepts`), and a
 well-formed source. Without a recursor in the input the block declines.
@@ -3344,7 +3344,7 @@ its environment (`collect_lookups`, `mkIndc_lookups`). So where the compile
 environment resolves a Source-admitted block's constructor names as
 Source's input does (`Ix.Cert.compile` compiles the environment Source mode
 checks), `InductiveReading.inductive_reads`' safety, position and telescope
-premises hold (`source_premises`, `inductive_reads_source`), and so do R9a's
+premises hold (`source_premises`, `inductive_reads_source`), and so do the
 `ConstructorPositions` for the compiler's mutual members
 (`mkIndc_positions`). The self references stay premises. Every
 lemma behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
@@ -3498,7 +3498,7 @@ they check (`Ix.Cert.Hybrid.groupOrder`). So two environments with the same
 lookups and the same group order compile alike under
 every schedule (`compileEnvFold_lookups`), and the IO pipeline's hybrid
 environment (`hybridEnv`), whose fallback computes the canonicalization's
-specification (`fallback_spec`, from C1), folds as `Ix.Cert.compile`'s
+specification (`fallback_spec`, from canonicalization correctness), folds as `Ix.Cert.compile`'s
 materialized environment does (`pipeline_fold`), given that the latter is
 the input's canonicalization and the code constants are its own and hold
 exactly its inductives; the validations' group order follows
@@ -3856,7 +3856,7 @@ fun t ixe =>
 
 /-! ## Source acceptance admits every inductive block
 
-R12 reads `inductive_reads`' Source premises and `ConstructorPositions`
+`SourceConstructorPositions` reads `inductive_reads`' Source premises and `ConstructorPositions`
 off `Admits` (the block's group converts). An accepted Source check admits
 every inductive block stored under its first member: the block's group is one
 of the ingress's groups, and every one of those converts
@@ -3959,7 +3959,7 @@ IxC checks every accepted `.indDecl`'s declared shape before its route
 constants to their keys, so no constructor of a Source-accepted family occurs
 in the family's types (`Ix.Cert.NoCtor.noCtor_of_checkSourceWith`), and
 `inductive_reads` holds of a Source-accepted closure with only the family's
-name related to its key (R13's half) left of its self references
+name related to its key left of its self references
 (`inductive_reads_sourceAccepts`). -/
 
 /-- info: Ix.Cert.NoCtor.noCtor_of_checkSourceWith : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
@@ -4960,7 +4960,7 @@ run_cmd do
   checkRuntime (tag := "cert-audit") "definition hints"
     #[``Ix.Cert.unhintedDefinition]
 
-/-! ## S1's units, (R1): each record's and each group's lowering
+/-! ## S1's units,: each record's and each group's lowering
 
 `Ix.Cert.ReaderUnits`: the stream the Ixon reader decodes is its records'
 lowerings concatenated, one per record (`readRecords_units`), and the Source

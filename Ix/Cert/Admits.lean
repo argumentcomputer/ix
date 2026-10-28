@@ -3,8 +3,8 @@ import Ix.CompileCert.SourceConstructorPositions
 
 /-! # Source acceptance admits every inductive block
 
-R12 (`Ix.CompileCert.SourceConstructorPositions`) reads the Source premises of
-`inductive_reads` (safety, constructor positions, telescope arity) and R9a's
+`Ix.CompileCert.SourceConstructorPositions` reads the Source premises of
+`inductive_reads` (safety, constructor positions, telescope arity) and the
 `ConstructorPositions` off `Admits env first`: the inductive block `first` heads
 converts. This file derives `Admits` from Source acceptance:
 
@@ -15,7 +15,7 @@ converts. This file derives `Admits` from Source acceptance:
   admits it, since every group of `groupsOf` converts
   (`Ix.LeanIngress.checkSource_converts`, through the structural `orderOf`);
 * `source_premises_of_sourceAccepts`, `mkIndc_positions_of_sourceAccepts`:
-  R12's outputs from Source acceptance.
+  the Source-conversion premises from Source acceptance.
 
 The first member is taken as stored under its own name
 (`(n, .inductInfo first) ∈ sub.consts.toList`): `Ix.Name`'s `==` compares
@@ -122,7 +122,7 @@ theorem admits_of_sourceAccepts {condense : Ix.Environment → Ix.CondensedBlock
   admits_of_checkSourceBundled accepted.2 stored head
 
 open Ix.CompileM in
-/-- **R12's Source premises of `inductive_reads`, from Source acceptance**:
+/-- **The Source premises of `inductive_reads`, from Source acceptance**:
 the member's safety, its constructors' safety and positions, and their
 telescopes' arity. -/
 theorem source_premises_of_sourceAccepts {condense : Ix.Environment → Ix.CondensedBlocks}

@@ -9,9 +9,9 @@ The driver (`Ix.CompileM.compileBlock`) compiles every inductive block,
 singletons included, through `compileMutualBlock` over `MutConst.mkIndc`
 members, not through `compileConstantInfo (.inductInfo …)` (the
 `compileInductiveFamilyBlock` emitter, which `InductiveReading.inductive_reads`
-covers). This module carries the family
-reading over to the mutual path, for a block of one inductive (stage A; a
-family of several, R10b proper, is stage B).
+covers). This module carries the family reading over to the mutual path for
+a block of one inductive. `Ix.Cert.InductiveCompile` handles families with
+several members.
 
 **A one-member inductive block** (`singletonBlock_correct`): `compileMutualBlock
 [.indc d]` runs the same member emitter as the family path
@@ -232,7 +232,7 @@ back as its source**: `InductiveReading.inductive_reads` for
 `compileMutualBlock [.indc (sourceData source constructors)]`, the block the
 driver compiles a one-inductive block as (`MutConst.mkIndc` of the source over
 its constructors). The premises are `inductive_reads`': the self references
-(the family's own name related to its key, `selfKey`, R13's half, and no
+(the family's own name related to its key, `selfKey`, and no
 constructor of the family in its types, `NoCtorIn`) serve the class's mutual
 context, which is the family's (`mutBlock_family`). -/
 theorem inductive_reads_mutual (context : CompileEnv × BlockEnv)

@@ -2,7 +2,7 @@ import Ix.Cert.Statement
 import Ix.CompileCert.Loop
 import Ix.Cert.LowerDistinct
 
-/-! # Each record's and each group's lowering (S1's units, (R1): reader and ingress)
+/-! # Each record's and each group's lowering (S1's units,: reader and ingress)
 
 The S1 union is stated over units: one record's lowering, the modeller's
 generated records then the record's own declaration, or a definition block's
@@ -305,7 +305,7 @@ theorem readInductive_lowering {cx : Ctx md} {st : State md} {owner : Address} {
 
 /-! ## Each record's lowering -/
 
-/-- **One lowering's shape (R1), over the keys `K` its unit may declare**: no
+/-- **One lowering's shape, over the keys `K` its unit may declare**: no
 generated records, and every declaration names only `K`-keys (a definition,
 axiom or quotient record's one declaration, a definition block's one per
 member, or nothing); or the modeller's records, as many as `generated` says,
@@ -314,7 +314,7 @@ def LoweringBy (K : CName md → Prop) (r : Read md) : Prop :=
   (r.generated = 0 ∧ ∀ d ∈ r.decls.toList, ∀ k ∈ d.names, K k) ∨
     ∃ gens d, r.decls.toList = gens ++ [d] ∧ r.generated = gens.length ∧ ∀ k ∈ d.names, K k
 
-/-- **One record's lowering (R1)**: its keys are the record's member keys. -/
+/-- **One record's lowering**: its keys are the record's member keys. -/
 abbrev Lowering (cx : Ctx md) (owner : Address) : Read md → Prop :=
   LoweringBy (MemberKeyOf cx owner)
 
@@ -330,7 +330,7 @@ theorem member_names {cx : Ctx md} {owner : Address} {i : Nat} {k : CName md} {d
   subst hk'
   exact ⟨_, .inl rfl, hk⟩
 
-/-- **Every record's lowering has its shape (R1)**, whatever the record. -/
+/-- **Every record's lowering has its shape**, whatever the record. -/
 theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c : Ixon.Constant}
     {r : Read md} (h : readRecord cx st owner c = .ok r) : Lowering cx owner r := by
   unfold readRecord at h
@@ -421,7 +421,7 @@ theorem forall₂_imp {α β : Type} {R S : α → β → Prop} (hRS : ∀ a b, 
   | _, _, .nil => .nil
   | _, _, .cons h t => .cons (hRS _ _ h) (forall₂_imp hRS t)
 
-/-- **(R1) over the stream**: the stream `readRecords` decodes is its records'
+/-- **The lowering shape over the stream**: the stream `readRecords` decodes is its records'
 lowerings concatenated, one per record, in order, each with `Lowering`'s
 shape at its record's address. -/
 theorem readRecords_units {cx : Ctx md} {st st' : State md} {records : Array (Address × Ixon.Constant)}
@@ -1008,7 +1008,7 @@ theorem graph_converted_ok {env : Ix.Environment} {blocks : Ix.CondensedBlocks} 
   | some gr => simp only [hg, Option.map_some] at h; exact ⟨gr, rfl, h⟩
 
 open Ix.LeanIngress in
-/-- **(R1) on the ingress side**: the Source ingress's declarations are its
+/-- **The lowering shape on the ingress side**: the Source ingress's declarations are its
 scheduled groups' lowerings concatenated, in schedule order, with canonical
 levels; each is the lowering of a group of the graph, with `LoweringBy`'s
 shape over that group's keys. -/

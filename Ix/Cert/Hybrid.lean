@@ -33,7 +33,7 @@ restatements, behaviour-identical). So:
   materialized environment's lookups where that environment is the input's
   canonicalization (`Ix.Cert.Canon.constS` under each name) and its
   materialized code constants are the materialized environment's. The
-  fallback's half is `Ix.Cert.Canon.canonChunkCorrect` (C1): a constant
+  fallback's half is `Ix.Cert.Canon.canonChunkCorrect`: a constant
   canonicalized on demand is the specification's (`fallback_spec`);
 * `pipeline_fold`: **the IO pipeline's fold equals `Ix.Cert.compile`'s**, on
   one condensation, under those premises.
@@ -188,7 +188,7 @@ def hybridEnv (codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
     fallback? := some fun n => (leanByIx.get? n).bind fun (ln, lci) =>
       ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2) }
 
-/-- **The fallback computes the specification** (C1): a constant
+/-- **The fallback computes the specification**: a constant
 canonicalized on demand is `constS` of its Lean constant. -/
 theorem fallback_spec (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)) (n : Ix.Name) :
     ((leanByIx.get? n).bind fun (ln, lci) => ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)) =

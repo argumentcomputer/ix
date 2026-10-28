@@ -18,13 +18,12 @@ wire's `UInt64` (`checkedTableIndex`).
   lowering: first-occurrence parameter lookup and the wire guard, defined
   independently of the compiler and of its success.
 * **One invariant**: every memo entry is the exact lowering of its key
-  (`UnivCacheExact`, the generic `CacheSound`, R07-13). The empty memo has
+  (`UnivCacheExact`, the generic `CacheSound`). The empty memo has
   it, and every run keeps it, failing runs included.
 * **The compiler computes the specification** from every such state
   (`compileUniv_exact`, `compileUniv_value`): a warm hit and a fresh compile
-  give the same universe (`compileUniv_same`). This merges the donor's
-  `UniverseMeaning` and `UniverseExact` (R07-12): the exact meaning
-  subsumes the representation relation, which admits any slot of a
+  give the same universe (`compileUniv_same`). The exact meaning subsumes
+  the representation relation, which admits any slot of a
   duplicated parameter, where `compileUniv` and the ingress take the first.
 * **Success**: a level whose parameters all occur in a wire-sized context
   compiles from every state (`compileUniv_returns`, `compileUniv_total`).

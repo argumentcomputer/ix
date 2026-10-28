@@ -23,7 +23,7 @@ sources' constants to their keys:
   constructor's has its key);
 * `noCtor_of_checkSourceWith`, `inductive_reads_sourceAccepts`: so `inductive_reads`
   holds of a Source-accepted closure with its `NoCtorIn` premises discharged;
-  the family's name related to its key (R13's half) stays. -/
+  the family's name related to its key stays. -/
 
 namespace Ix.Cert.NoCtor
 
@@ -605,10 +605,10 @@ variable {md : Mode} (cx : Ctx md) (names : Ix.Name → CName md → Prop) (σ :
 
 /-- **A compiled standalone inductive of a Source-accepted closure is read back
 as its source**: `inductive_reads` with its Source premises
-(safety, constructor positions, telescopes: R12, through N1's admission) and
+(safety, constructor positions, telescopes, through Source admission) and
 its "no constructor occurs" premises (`noCtor_of_checkSourceWith`) discharged by
 Source acceptance of `sub`. What stays: the family's own name related to its
-key (`selfKey`, R13's half), the reader's index and keys, the compile
+key (`selfKey`), the reader's index and keys, the compile
 context's agreement with `sub` on the constructor names, and the state the
 block starts from. -/
 theorem inductive_reads_sourceAccepts (V : Type w) [Ix.Kernel.SetTheory V]
