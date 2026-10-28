@@ -13,7 +13,19 @@ rest, in the forms the segment theorems take:
 * `GroupRuns.FoldBlock.blobsKept` (in `GroupRuns`): the blobs the run reads are the artifact's,
   since the block compile's tail after the members' compile only adds names (`GroupRuns.Grows`);
 * `cacheRefs`: every entry of a compiled block's reference table is a mentioned name's binding
-  or a blob of `runBlock`'s final state (`CompiledRefs.CacheRefs`). -/
+  or a blob of `runBlock`'s final state (`CompiledRefs.CacheRefs`);
+* `FoldBlock.bound_exact`: every name the snapshot binds is exactly a key the input stores a
+  constant under (a claim's name: a member's or constructor's own name, or a block's key, which
+  is an element of a block of the input's condensation, `blockKey_exact`);
+* `FoldBlock.mentionsPublished`: a name a closure constant's term mentions that the snapshot
+  binds is a closure constant published at its binding under that exact name, with each group
+  kind's mentions a closure constant's (`definitions_mentioned`, `definition_mentioned`,
+  `axiom_mentioned`, `quot_mentioned`, `types_mentioned`, `recursors_mentioned`);
+* `definitions_exactNames`, `definitions_distinct`: a block of definitions' members have distinct
+  names, and a name a member mentions with a member's ingress key is that member;
+* `singleton_compiled`, `lone_compiled`: a singleton group's constant compiles alone at its fold
+  block, published at its record;
+* `definitions_occ_input`: a name a block of definitions applies is an input constant. -/
 
 namespace Ix.Cert.TraceFold
 
@@ -248,7 +260,7 @@ theorem lookup_empty {cenv : CompileEnv} {m : Ix.Name} {a : Address} (h : lookup
   rw [show ((({} : Bindings)).get? m) = none from hnone, Option.orElse_none] at h
   exact h
 
-/-! ## C4: names the sources mention, published -/
+/-! ## Names the sources mention, published -/
 
 /-- **A name a term of a closure constant mentions.** -/
 def MentionedIn (env sub : Ix.Environment) (m : Ix.Name) : Prop :=
@@ -453,8 +465,380 @@ theorem recursors_mentioned (P : Premises env roots sub ixe failures t envQ) {ty
 
 end Kinds
 
+
+/-! ## A block of definitions names its members exactly -/
+
+section ExactNames
+
+open Ix.Cert.DefinitionDeps (ConstOcc)
+open Ix.Cert.ClosureLayout (addrOf quotientGraph)
+
+/-- A constant a term applies is one it mentions. -/
+theorem occ_refs {n : Ix.Name} : ∀ {e : Ix.Expr}, ConstOcc n e → GraphWalk.Refs n e
+  | _, .const => .const BEq.rfl
+  | _, .appF h => .appF (occ_refs h)
+  | _, .appA h => .appA (occ_refs h)
+  | _, .lamT h => .lamT (occ_refs h)
+  | _, .lamB h => .lamB (occ_refs h)
+  | _, .allT h => .allT (occ_refs h)
+  | _, .allB h => .allB (occ_refs h)
+  | _, .letT h => .letT (occ_refs h)
+  | _, .letV h => .letV (occ_refs h)
+  | _, .letB h => .letB (occ_refs h)
+  | _, .proj h => .projStruct (occ_refs h)
+  | _, .mdata h => .mdata (occ_refs h)
+
+/-- **`BlockRefs.exactNames_of`, for the names the block's sources mention**: its `published`
+and `sameKey` premises asked only at a mentioned name the block binds, and at its members. -/
+theorem exactNames_bound (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    {bindings : Bindings} {before after : BlockState} {output : BlockResult}
+    (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
+    (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
+    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
+      (.ok output, after))
+    (unresolved : ∀ d ∈ defs, bindings.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
+    {ixe : Ixon.Env} (acyclic : referenceCycle ixe = none) {B : Address}
+    (stored : recordAt ixe B = some output.block)
+    (owned : ∀ j (hj : j < defs.length), ∃ P c, addrOf ixe defs[j].name = some P ∧
+      recordAt ixe P = some c ∧ ownerOf P c = B)
+    (apart : ∀ j (hj : j < defs.length) k (hk : k < defs.length),
+      addrOf ixe defs[j].name = addrOf ixe defs[k].name → j = k)
+    (memberKey : ∀ k (hk : k < defs.length) j (hj : j < defs.length),
+      Ix.LeanIngress.ingressKey defs[k].name = Ix.LeanIngress.ingressKey defs[j].name →
+        addrOf ixe defs[k].name = addrOf ixe defs[j].name)
+    (bound : ∀ i (hi : i < defs.length) n a, (ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value) →
+      lookupBinding context.1 bindings n = some a → addrOf ixe n = some a ∧
+        ∀ j (hj : j < defs.length), Ix.LeanIngress.ingressKey n = Ix.LeanIngress.ingressKey defs[j].name →
+          addrOf ixe n = addrOf ixe defs[j].name) :
+    ∀ i (hi : i < defs.length) j (hj : j < defs.length) n,
+      (ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value) →
+        Ix.LeanIngress.ingressKey n = Ix.LeanIngress.ingressKey defs[j].name → n = defs[j].name := by
+  intro i hi j hj n hn hkey
+  cases hc : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+  | some k =>
+    -- another member: members are published apart
+    obtain ⟨hk, hname⟩ := DefinitionBlockReads.ctx_defs_val distinct hc
+    rw [← hname] at hkey
+    obtain rfl := apart k hk j hj (memberKey k hk j hj hkey)
+    exact hname.symm
+  | none =>
+    -- a non-member: the block would reference member `j`'s record
+    exfalso
+    obtain ⟨a, hb, hmem⟩ := BlockRefs.mentioned_binding_ref context free clean two distinct ran unresolved hi hn hc
+    obtain ⟨hpub, sameKey⟩ := bound i hi n a hn hb
+    have same := sameKey j hj hkey
+    obtain ⟨P, c, hP, hrec, hown⟩ := owned j hj
+    have ha : a = P := by
+      rw [hpub, hP] at same
+      exact Option.some.inj same
+    subst ha
+    exact BlockRefs.no_self_reference acyclic stored hmem hrec hown
+
+variable {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
+  {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+  {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+
+/-- **A mentioned name the snapshot binds is a closure constant's own name.** -/
+theorem _root_.Ix.Cert.GroupRuns.FoldBlock.mention_stored (P : Premises env roots sub ixe failures t envQ)
+    (fb : FoldBlock env sub ixe failures snap rep all r c) {m : Ix.Name} (hm : MentionedIn env sub m)
+    {a : Address} (hb : lookupBinding snap.cenv {} m = some a) : ∃ ci, (m, ci) ∈ sub.consts.toList := by
+  obtain ⟨cm, hcm⟩ := fb.bound_exact P.compiled (lookup_empty hb)
+  obtain ⟨_, _, _, hsub⟩ := fb.mention_published P hm hb
+  obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hsub
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hci
+  obtain ⟨k, hk, hmem⟩ := hci
+  have keyOf : ∀ {β : Type} {mp : Std.HashMap Ix.Name β} {a : Ix.Name} {b : β}, (a, b) ∈ mp.toList →
+      a ∈ mp.keys := fun h => by
+    rw [← Std.HashMap.map_fst_toList_eq_keys]
+    exact List.mem_map_of_mem (f := Prod.fst) h
+  have e : k = m := nameHashes_distinct P.compiled k
+    (List.mem_append_left _ (keyOf (SourceStoredNames.stored_input P hmem))) m
+    (List.mem_append_left _ (keyOf hcm)) (Ix.Cert.name_beq_iff.mp hk).symm
+  subst e
+  exact ⟨ci, hmem⟩
+
+/-- A definitions group's sources are all its members'. -/
+theorem defsOf_length {ig : Nat} {members : Array Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.definitions members)) :
+    (TraceSegments.defsOf members).length = members.size := by
+  obtain ⟨_, _, -, hcomp⟩ := GroupBlocks.component_of_groups sub (blocksOf sub) _ (Array.mem_of_getElem? hgr) trivial
+  obtain ⟨-, defsM⟩ := GroupRuns.componentGroup_sorted hcomp
+  unfold TraceSegments.defsOf
+  rw [GroupRuns.length_filterMap_of_isSome fun ci hci =>
+    GroupRuns.sourceData_isSome (defsM ci (Array.mem_toList_iff.mp hci)), Array.length_toList]
+
+/-- A definitions group's sources are closure constants' under their own names. -/
+theorem defs_stored (P : Premises env roots sub ixe failures t envQ) {ig : Nat} {members : Array Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.definitions members)) :
+    ∀ j (hj : j < (TraceSegments.defsOf members).length),
+      ∃ ci, ((TraceSegments.defsOf members)[j].name, ci) ∈ sub.consts.toList := by
+  intro j hj
+  have hmem : (TraceSegments.defsOf members)[j] ∈ members.toList.filterMap EmissionDispatch.sourceData :=
+    List.getElem_mem hj
+  obtain ⟨ci, hci, hd⟩ := List.mem_filterMap.mp hmem
+  refine ⟨ci, ?_⟩
+  rw [GroupRuns.sourceData_name hd]
+  exact members_stored P hgr ci (Array.mem_toList_iff.mp hci)
+
+/-- **`BlockNeeds.distinct`**: a definitions group's members have distinct names. -/
+theorem definitions_distinct (P : Premises env roots sub ixe failures t envQ) {ig : Nat}
+    {members : Array Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.definitions members)) :
+    Canon.KeysDistinct ((TraceSegments.defsOf members).map MutConst.defn) := by
+  have hcl : IsClosure env roots sub := P.source.1
+  obtain ⟨_, _, -, hcomp⟩ := GroupBlocks.component_of_groups sub (blocksOf sub) _ (Array.mem_of_getElem? hgr) trivial
+  have distinctM := DefinitionPremises.componentGroup_distinct
+    (fun k ci h => FamilyGroups.named_of_get P.compiled (hcl.mem_env h)) hcomp
+  unfold Canon.KeysDistinct
+  have flat : ((TraceSegments.defsOf members).map MutConst.defn).flatMap Canon.keysOf =
+      (TraceSegments.defsOf members).map Ix.Def.name := by
+    generalize TraceSegments.defsOf members = l
+    induction l with
+    | nil => rfl
+    | cons d l ih => simp only [List.map_cons, List.flatMap_cons, ih]; rfl
+  rw [flat]
+  unfold TraceSegments.defsOf
+  rw [List.map_filterMap]
+  have pw : (members.toList.map (·.getCnst.name)).Pairwise (· ≠ ·) :=
+    distinctM.imp fun {a b} h e => by
+      subst e
+      rw [RefTables.name_beq_self] at h
+      cases h
+  rw [List.pairwise_map] at pw
+  refine pw.filterMap _ fun a a' h d hd d' hd' e => ?_
+  simp only [Option.map_eq_some_iff] at hd hd'
+  obtain ⟨x, hx, rfl⟩ := hd
+  obtain ⟨x', hx', rfl⟩ := hd'
+  rw [GroupRuns.sourceData_name hx, GroupRuns.sourceData_name hx'] at e
+  exact h e
+
+/-- **`BlockNeeds.exactNames`**: a name a definition of a block of two or more mentions with a
+member's key is that member. The block's compile does not reference its own records
+(`BlockRefs.no_self_reference`), its members are published apart (`BlockPublication.apart`), and
+a mentioned name the block binds is a closure constant published at its binding
+(`FoldBlock.mention_published`), with one ingress key giving one address (`GroupRuns.addr_of_key`;
+no Source totality is needed). -/
+theorem definitions_exactNames (P : Premises env roots sub ixe failures t envQ)
+    (scheduled : ∀ x ∈ (Ix.LeanIngress.scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList,
+      ∃ conv, x.1.2 = .ok conv)
+    {ig : Nat} {members : Array Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.definitions members)) (two : 2 ≤ members.size) :
+    ∀ i (hi : i < (TraceSegments.defsOf members).length) j (hj : j < (TraceSegments.defsOf members).length) n,
+      (ConstOcc n (TraceSegments.defsOf members)[i].type ∨ ConstOcc n (TraceSegments.defsOf members)[i].value) →
+        Ix.LeanIngress.ingressKey n = Ix.LeanIngress.ingressKey (TraceSegments.defsOf members)[j].name →
+          n = (TraceSegments.defsOf members)[j].name := by
+  obtain ⟨snap, rep, all, r, c, fb, mem, out, after, ran, -, hrec⟩ := GroupRuns.definitions_run P scheduled hgr two
+  have two' : 2 ≤ (TraceSegments.defsOf members).length := by rw [defsOf_length hgr]; exact two
+  have dstored := defs_stored P hgr
+  have insub : ∀ j (hj : j < (TraceSegments.defsOf members).length),
+      (sub.consts.get? (TraceSegments.defsOf members)[j].name).isSome = true := fun j hj => by
+    obtain ⟨ci, hci⟩ := dstored j hj
+    rw [SourceStoredNames.stored_get hci]
+    rfl
+  have hblock : r.block = out.block := (Prod.mk.inj hrec).1
+  refine exactNames_bound (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) rfl
+    BlockStart.clean_empty two' (definitions_distinct P hgr) ran
+    (fun d hd => ⟨Std.HashMap.get?_eq_getElem?.trans Std.HashMap.getElem?_empty, fb.fresh d.name (mem d hd)⟩)
+    (compileReport_checks P.compiled).2.2.1 (hblock ▸ BlockPublication.stored fb.ran fb.published)
+    (BlockPublication.owned fb.ran fb.published two' ran hrec insub)
+    (BlockPublication.apart fb.ran fb.published two' ran hrec insub)
+    (fun k hk j hj key => GroupRuns.addr_of_key P (dstored k hk).choose_spec (dstored j hj).choose_spec key)
+    (fun i hi n a hn hb => ?_)
+  have hm : MentionedIn env sub n :=
+    definitions_mentioned P hgr ⟨i, hi, hn.imp occ_refs occ_refs⟩
+  obtain ⟨d, hmem, hda, -⟩ := fb.mention_published P hm hb
+  obtain ⟨cn, hcn⟩ := fb.mention_stored P hm hb
+  refine ⟨?_, fun j hj key => GroupRuns.addr_of_key P hcn (dstored j hj).choose_spec key⟩
+  unfold addrOf
+  rw [Std.HashMap.get?_eq_getElem?, (Std.HashMap.mem_toList_iff_getKey?_eq_some_and_getElem?_eq_some.mp hmem).2,
+    Option.map_some, hda]
+
+
+/-- **A name a definition of a block of two or more applies is an input constant's key**: a
+member, or a name the block's compile binds (`BlockRefs.mentioned_binding_ref`), which is a key
+the input stores a constant under (`FoldBlock.bound_exact`). -/
+theorem definitions_occ_input (P : Premises env roots sub ixe failures t envQ)
+    (scheduled : ∀ x ∈ (Ix.LeanIngress.scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList,
+      ∃ conv, x.1.2 = .ok conv)
+    {ig : Nat} {members : Array Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.definitions members)) (two : 2 ≤ members.size) :
+    ∀ i (hi : i < (TraceSegments.defsOf members).length) n,
+      (ConstOcc n (TraceSegments.defsOf members)[i].type ∨ ConstOcc n (TraceSegments.defsOf members)[i].value) →
+        ∃ ci, (n, ci) ∈ env.consts.toList := by
+  intro i hi n hn
+  obtain ⟨snap, rep, all, r, c, fb, mem, out, after, ran, -, -⟩ := GroupRuns.definitions_run P scheduled hgr two
+  have two' : 2 ≤ (TraceSegments.defsOf members).length := by rw [defsOf_length hgr]; exact two
+  have distinct := definitions_distinct P hgr
+  cases hc : (MutConst.ctx (((TraceSegments.defsOf members).map MutConst.defn).map ([·])))[n]? with
+  | some k =>
+    obtain ⟨hk, hname⟩ := DefinitionBlockReads.ctx_defs_val distinct hc
+    obtain ⟨ci, hci⟩ := defs_stored P hgr k hk
+    rw [← hname]
+    exact ⟨ci, SourceStoredNames.stored_input P hci⟩
+  | none =>
+    obtain ⟨a, hb, -⟩ := BlockRefs.mentioned_binding_ref
+      (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) rfl BlockStart.clean_empty
+      two' distinct ran
+      (fun d hd => ⟨Std.HashMap.get?_eq_getElem?.trans Std.HashMap.getElem?_empty, fb.fresh d.name (mem d hd)⟩)
+      hi hn hc
+    exact fb.bound_exact P.compiled (lookup_empty hb)
+
+end ExactNames
+
+
+/-! ## Singletons: a lone constant's compile -/
+
+section Lone
+
+open Ix.LeanIngress (Group)
+open Ix.Cert.ClosureLayout (addrOf quotientGraph)
+
+variable {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
+  {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+  {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+
+/-- A nonempty set whose members are all `==` one name has one member. -/
+theorem size_one {all : Ix.Set Ix.Name} {n : Ix.Name} (ne : all.isEmpty = false)
+    (single : ∀ x, all.contains x = true → (x == n) = true) : all.size = 1 := by
+  have hd := Std.HashSet.distinct_toList (m := all)
+  rw [← Std.HashSet.length_toList]
+  rcases h : all.toList with _ | ⟨x, _ | ⟨y, rest⟩⟩
+  · have hz : all.size = 0 := by rw [← Std.HashSet.length_toList, h]; rfl
+    rw [Std.HashSet.isEmpty_eq_size_eq_zero, hz] at ne
+    cases ne
+  · rfl
+  · have hx := single x (GroupRuns.contains_of_listed (by rw [h]; exact List.mem_cons_self))
+    have hy := single y (GroupRuns.contains_of_listed (by rw [h]; exact List.mem_cons_of_mem _ List.mem_cons_self))
+    rw [h] at hd
+    have hxy := (List.pairwise_cons.mp hd).1 y List.mem_cons_self
+    rw [BEq.trans hx (BEq.symm hy)] at hxy
+    cases hxy
+
+/-- **A singleton group's constant compiles alone, at its fold block** (`LoneCompiled.ran`,
+`.stored`, `.addr`, `.blobs`): its block is its name alone (`GroupBlocks.single_block`), so the
+block takes the lone path (`GroupRuns.runBlock_paths`), at `runBlock`'s final state, and its one
+claim is the block record, published under the constant's name. -/
+theorem singleton_compiled (P : Premises env roots sub ixe failures t envQ)
+    (scheduled : ∀ x ∈ (Ix.LeanIngress.scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList,
+      ∃ conv, x.1.2 = .ok conv)
+    {ig : Nat} {gr : Group} (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some gr)
+    (hc : GroupBlocks.Component gr) {ci : Ix.ConstantInfo} (hsingle : gr.names = #[ci.getCnst.name])
+    (hst : (ci.getCnst.name, ci) ∈ sub.consts.toList) (hi : ∀ v, ci ≠ .inductInfo v) (hct : ∀ v, ci ≠ .ctorInfo v) :
+    ∃ snap rep all r c, FoldBlock env sub ixe failures snap rep all r c ∧
+      rawRun (compileConstantInfo ci)
+          (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} = (.ok r, c) ∧
+      recordAt ixe r.blockAddr = some r.block ∧ addrOf ixe ci.getCnst.name = some r.blockAddr ∧
+      TraceSegments.BlobsKept ixe snap.cenv c := by
+  obtain ⟨snap, rep, all, r, c, fb, ⟨a, b, hclaim⟩, hmem⟩ := GroupRuns.foldBlock_of P hst
+  have hin := hmem fun cv e => hct cv e
+  have single := GroupBlocks.single_block P scheduled hgr hc hsingle fb.block hin
+  have hne := Condense.condense_nonempty fb.block
+  have hsize := size_one hne single
+  have hkey := single _ (blockKey_mem (lo := rep) hne)
+  obtain ⟨const, hconst, paths⟩ := GroupRuns.runBlock_paths fb.ran
+  have hci : env.consts.get? ci.getCnst.name = some ci :=
+    SourceStoredNames.stored_get (SourceStoredNames.stored_input P hst)
+  rw [fb.env, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_congr hkey, ← Std.HashMap.get?_eq_getElem?,
+    hci] at hconst
+  obtain rfl : const = ci := (Option.some.inj hconst).symm
+  have hnot : GroupRuns.isIndConst const = false := by
+    cases hci' : const with
+    | inductInfo v => exact absurd hci' (hi v)
+    | ctorInfo v => exact absurd hci' (hct v)
+    | _ => rfl
+  rcases paths with ⟨-, hs⟩ | ⟨hcond, -⟩
+  · obtain ⟨hproj, -⟩ := ClosureResolve.constantInfo_lone const (fun v e => hi v e) (fun v e => hct v e) _ _ _ _ hs
+    have hempty : r.projections.isEmpty = true := by rw [hproj]; rfl
+    have hsub : (sub.consts.get? const.getCnst.name).isSome = true := by
+      rw [SourceStoredNames.stored_get hst]; rfl
+    obtain ⟨haddr, -⟩ := fb.published.claims _ _ _ hclaim hsub
+    have hone : claimWrites (blockKey rep all) r = #[(blockKey rep all, r.blockAddr, r.blockBytes)] := by
+      simp [claimWrites, hempty]
+    rw [hone] at hclaim
+    simp only [List.mem_toArray, List.mem_singleton, Prod.mk.injEq] at hclaim
+    obtain ⟨-, rfl, -⟩ := hclaim
+    exact ⟨snap, rep, all, r, c, fb, hs, BlockPublication.stored fb.ran fb.published, haddr, fb.blobs⟩
+  · rw [hsize, hnot] at hcond
+    cases hcond
+
+/-- **`LoneCompiled` for a singleton group's constant**: `singleton_compiled`, with the snapshot's
+bindings resolving (`FoldBlock.bound`) and its mentions published (`FoldBlock.mentionsPublished`). -/
+theorem lone_compiled (P : Premises env roots sub ixe failures t envQ)
+    (scheduled : ∀ x ∈ (Ix.LeanIngress.scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList,
+      ∃ conv, x.1.2 = .ok conv)
+    (idx : BindingsResolve.ConstructorIndices env)
+    {ig : Nat} {gr : Group} (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some gr)
+    (hc : GroupBlocks.Component gr) {ci : Ix.ConstantInfo} (hsingle : gr.names = #[ci.getCnst.name])
+    (hst : (ci.getCnst.name, ci) ∈ sub.consts.toList) (hi : ∀ v, ci ≠ .inductInfo v) (hct : ∀ v, ci ≠ .ctorInfo v)
+    {mentions : Ix.Name → Prop} (covered : ∀ m, mentions m → MentionedIn env sub m) :
+    ∃ cenv benv output after, TraceSegments.LoneCompiled ixe sub ci mentions cenv benv output after := by
+  obtain ⟨snap, rep, all, r, c, fb, ran, stored, addr, blobs⟩ :=
+    singleton_compiled P scheduled hgr hc hsingle hst hi hct
+  exact ⟨snap.cenv, _, r, c, ran, stored, addr, fb.bound idx, blobs, fb.mentionsPublished P covered⟩
+
+/-- A singleton definition group's constant: stored under its name, and no inductive or
+constructor. -/
+theorem definition_single {ig : Nat} {ci : Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.definitions #[ci]))
+    (P : Premises env roots sub ixe failures t envQ) :
+    (Group.definitions #[ci]).names = #[ci.getCnst.name] ∧ (ci.getCnst.name, ci) ∈ sub.consts.toList ∧
+      (∀ v, ci ≠ .inductInfo v) ∧ ∀ v, ci ≠ .ctorInfo v := by
+  obtain ⟨_, _, -, hcomp⟩ := GroupBlocks.component_of_groups sub (blocksOf sub) _ (Array.mem_of_getElem? hgr) trivial
+  obtain ⟨-, defsM⟩ := GroupRuns.componentGroup_sorted hcomp
+  have hd := defsM ci (by simp)
+  refine ⟨by simp [Group.names], members_stored P hgr ci (by simp), fun v e => ?_, fun v e => ?_⟩ <;>
+    (subst e; simp [Ix.LeanIngress.isDefinition] at hd)
+
+/-- An axiom group's constant, stored under its name. -/
+theorem axiom_single {ig : Nat} {v : Ix.AxiomVal}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.axiom v))
+    (P : Premises env roots sub ixe failures t envQ) :
+    (Group.axiom v).names = #[(Ix.ConstantInfo.axiomInfo v).getCnst.name] ∧
+      ((Ix.ConstantInfo.axiomInfo v).getCnst.name, .axiomInfo v) ∈ sub.consts.toList := by
+  obtain ⟨k, ci, hk, hname, hkind⟩ := (component_kinded hgr trivial).1 v.cnst.name (by simp [Group.names])
+  have e : ci = .axiomInfo v := hkind
+  subst e
+  refine ⟨by simp [Group.names, Ix.ConstantInfo.getCnst], ?_⟩
+  rw [← inputsNamed P.compiled k _ (SourceStoredNames.stored_input P hk)] at hk
+  exact hk
+
+/-- A quotient group's constant, stored under its name. -/
+theorem quot_single {ig : Nat} {v : Ix.QuotVal}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.quot v))
+    (P : Premises env roots sub ixe failures t envQ) :
+    (Group.quot v).names = #[(Ix.ConstantInfo.quotInfo v).getCnst.name] ∧
+      ((Ix.ConstantInfo.quotInfo v).getCnst.name, .quotInfo v) ∈ sub.consts.toList := by
+  obtain ⟨k, ci, hk, hname, hkind⟩ := (component_kinded hgr trivial).1 v.cnst.name (by simp [Group.names])
+  have e : ci = .quotInfo v := hkind
+  subst e
+  refine ⟨by simp [Group.names, Ix.ConstantInfo.getCnst], ?_⟩
+  rw [← inputsNamed P.compiled k _ (SourceStoredNames.stored_input P hk)] at hk
+  exact hk
+
+end Lone
+
 end Ix.Cert.TraceFold
 
 /-- info: 'Ix.Cert.TraceFold.cacheRefs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Ix.Cert.TraceFold.cacheRefs
+
+/-- info: 'Ix.Cert.GroupRuns.FoldBlock.mention_published' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.GroupRuns.FoldBlock.mention_published
+
+/-- info: 'Ix.Cert.TraceFold.definitions_exactNames' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.TraceFold.definitions_exactNames
+
+/-- info: 'Ix.Cert.TraceFold.lone_compiled' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.TraceFold.lone_compiled
+
+/-- info: 'Ix.Cert.TraceFold.definitions_occ_input' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.TraceFold.definitions_occ_input
+
+/-- info: 'Ix.Cert.TraceFold.types_mentioned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.TraceFold.types_mentioned
