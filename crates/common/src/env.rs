@@ -457,9 +457,9 @@ impl Level {
   /// Smart `max x y` constructor mirroring the kernel's `KUniv::max`. Applies
   /// Lean-style level simplifications so substituted levels match the
   /// canonical form the kernel sees post-ingress: `max(a,a)=a`, zero
-  /// absorption, same-base offset, and `Max` absorption. Used by
-  /// canonical-aux sorting, where compile-side and kernel-side must agree
-  /// on `Sort` levels under partition refinement (see
+  /// absorption, same-base offset, and `Max` absorption. Used by the
+  /// compiler's inductive-flags check when it substitutes levels, so that
+  /// its `Sort` levels agree with the kernel's (see
   /// `kernel/level.rs:KUniv::max`).
   pub fn max_smart(x: Level, y: Level) -> Self {
     if let (Some((bx, ox)), Some((by, oy))) =

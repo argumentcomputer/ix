@@ -3065,21 +3065,19 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> Result<KEnv<Meta>, String> {
   // `Lean.Xml.Content.rec`, `Lean.Compiler.LCNF.Code.rec`, every
   // `Grind.Arith.*.*Cnstr*.rec`, etc.).
   //
-  // Declaration order is *not* the canonical structural order that
-  // `sort_consts` produces during compilation — that second order
-  // only shows up in a kenv ingressed from Ixon, not here. Iterating
-  // `lean_env` directly to push each constant's `self_kid` gave
+  // The compiler stores each block in this same declaration order.
+  // Iterating `lean_env` directly to push each constant's `self_kid` gave
   // random (FxHashMap iteration) order; we now seed each block with
   // its `all` list the first time any member is observed, then
   // append ctors and source-ordered recursors in a second pass. The
   // inductive and recursor subsequences must align positionally with the
   // flat block (original `.all` members, then source-walk nested auxes).
   //
-  // `ixon_ingress` builds an analogous list, but there the ordering
-  // comes from `sort_consts`' equivalence-class output (structural, not
-  // declarational). The two paths diverge on purpose: this kenv carries
-  // Lean's source-order recursor expectations, an Ixon-ingressed kenv
-  // the canonical-compile recursor expectations.
+  // `ixon_ingress` builds an analogous list from each block's stored
+  // `Muts` entry, in stored member order. The two kenvs differ in how
+  // recursor generation opens a nested occurrence of an external
+  // inductive (`RecursorAuxOrder`): this one opens the head alone, an
+  // Ixon-ingressed one the head's whole stored block.
   //
   // For singleton inductives, the block is keyed at `self_kid`; for
   // multi-member mutuals, at the representative (first name in `all`).

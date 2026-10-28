@@ -1028,13 +1028,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
       // A new occurrence `I As` opens I's whole mutual group, one auxiliary
       // per member `J`, in group order, each `J As` registered as seen
-      // (Lean's `elim_nested_inductive_fn`; the compilers' expansion). Over
-      // a compiled environment (`Canonical`) the group is I's stored block in
-      // its canonical order, which is what the compilers open on a
-      // canonical expansion (`docs/ix_canonicity.md` §6.2): the auxiliaries are then
-      // in discovery order, the canonical order the stored recursor block
-      // follows, with no sort (A2-order). In `Source` mode (Lean's own
-      // recursors) the group is the head alone, as before.
+      // (Lean's `elim_nested_inductive_fn`). Over a compiled environment
+      // (`Canonical`) the group is I's stored block in its stored member
+      // order, which is Lean's: the auxiliaries are then in discovery order,
+      // the order the stored recursor block follows, with no sort. In
+      // `Source` mode (Lean's own recursors read directly) the group is the
+      // head alone.
       let group: Vec<KId<M>> =
         if self.env.recursor_aux_order == RecursorAuxOrder::Canonical {
           match self.try_get_const(&head_id)? {
@@ -2088,9 +2087,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Rebuild at offset zero if discovery retracts the provisional large
     // eliminator; keeping the offset-one specializations would corrupt the
     // recursor's universe arguments. Provably nonzero sorts stay large. The
-    // retraction reads the discovered block, before the canonical aux order
-    // below (which can only merge auxiliaries, never members with the
-    // originals, so it cannot change whether the block is mutual).
+    // retraction reads the discovered block, which is the flat block the
+    // recursor is generated from.
     let mut flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
     if is_large && !result_level.is_never_zero() && flat.len() != 1 {
       is_large = false;
@@ -2107,13 +2105,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let n_originals = block_inds.len();
     self.dump_flat_aux_order("discovery", block_id, &flat, n_originals);
 
-    // The flat block is in discovery order, which is the canonical order the
-    // stored recursor block follows (A2-order): over a compiled environment
+    // The flat block is in discovery order, which is the order the stored
+    // recursor block follows: over a compiled environment
     // (`RecursorAuxOrder::Canonical`), `build_flat_block` walks the stored
-    // canonical members and opens each external group as its stored block,
-    // as the compilers' canonical expansion does, so no sort is needed.
-    // Lean's original recursors (`RecursorAuxOrder::Source`, `lean_ingress`)
-    // use the same walk with each external group reduced to its head.
+    // members and opens each external group as its stored block, in Lean's
+    // member order, so no sort is needed. Lean's original recursors
+    // (`RecursorAuxOrder::Source`, `lean_ingress`) use the same walk with
+    // each external group reduced to its head.
 
     // Convert flat block to ind_infos format for existing build_motive_type / build_rec_type.
     // For auxiliary members, we need their type from the environment.
@@ -3093,10 +3091,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ) -> Result<Option<Vec<KId<M>>>, TcError<M>> {
     // Position-by-position alignment.
     //
-    // `flat` is in canonical order (discovery order over the stored members,
-    // `build_flat_block`). The recursor block — when one is
-    // co-resident with the inductive block — is itself stored in canonical
-    // order. So `flat[fi]` aligns with `rec_ids[fi]` directly. We sanity-
+    // `flat` is in discovery order over the stored members
+    // (`build_flat_block`). The recursor block — when one is
+    // co-resident with the inductive block — is stored in the same order,
+    // Lean's. So `flat[fi]` aligns with `rec_ids[fi]` directly. We sanity-
     // check the alignment by comparing the major inductive address, and for
     // auxiliary entries by comparing the param-portion of the major args
     // against the member's `spec_params`.
@@ -3334,9 +3332,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     //
     // Both the kernel-side `flat` (discovery order over the stored members,
     // `build_flat_block`) and `rec_ids` (the recursor block
-    // members in their stored order) follow the same canonical order
-    // by construction (A2-order; `docs/ix_canonicity.md`
-    // §6.2). So generated peer
+    // members in their stored order) follow Lean's order, so generated peer
     // `gi` aligns with `rec_ids[gi]` directly: no search, no greedy match.
     //
     // Verify the alignment with every header field and the complete closed
@@ -4169,14 +4165,14 @@ flat[{gi}].id={}, rec_ids[{gi}]={}; complete recursor types differ",
         && g.minors == minors
     };
 
-    // Canonical block alignment was already checked position-by-position by
+    // Block alignment was already checked position-by-position by
     // `populate_recursor_rules_from_block`. Try that position first and stop
     // as soon as its complete type matches. Scanning every same-major
     // auxiliary before consulting the position is catastrophically expensive
     // for nested mutual blocks: their recursor types share a hundred-binder
     // prefix, so each *wrong* candidate consumes substantial def-eq fuel before
     // diverging near the tail. The positional candidate is hash-identical in
-    // canonical production environments, making the common path O(1).
+    // compiled environments, making the common path O(1).
     let mut type_matches: Vec<usize> = Vec::new();
     if let Some(p) = stored_pos
       && let Some(g) = generated.get(p)

@@ -579,12 +579,16 @@ pub struct GeneratedRecursor<M: KernelMode> {
   pub rules: Vec<RecRule<M>>,
 }
 
-/// Which nested-auxiliary order generated recursor validation should use.
+/// How generated recursor validation opens a nested occurrence `I As` of an
+/// external inductive `I`. Either way the auxiliaries come in the order a walk
+/// over the block's constructors discovers them.
 ///
-/// Lean's original environment emits nested auxiliary recursors in the
-/// source/queue order used by `elim_nested_inductive_fn`. Ix's compiled
-/// environment canonicalizes the aux portion with `sort_consts` partition
-/// refinement, so its stored recursors must be regenerated in canonical order.
+/// - `Canonical`, for an environment ingressed from Ixon: the occurrence opens
+///   `I`'s whole stored block, one auxiliary per member, in stored member
+///   order. The compiler stores each block in Lean's member order, so this is
+///   the order of the stored (Lean's) auxiliary recursors.
+/// - `Source`, for Lean's environment read directly (`lean_ingress`): the
+///   occurrence opens `I` alone.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecursorAuxOrder {
   Source,
