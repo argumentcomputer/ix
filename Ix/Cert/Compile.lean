@@ -5,6 +5,8 @@ public import Ix.Compile.FrontEnd
 public import IxC.Kernel.Ixon.Reader
 public import IxC.Kernel.Ixon.Prelude
 public import Ix.LeanIngress
+import all Ix.Ground
+import Init.Internal.Order.While
 
 /-! # The compiler as a pure function
 
@@ -90,6 +92,44 @@ reverse graph). -/
     if ungrounded.contains n then m
     else m.insert n (refs.fold (init := {}) fun s r =>
       if ungrounded.contains r then s else s.insert r), ungrounded)
+
+/-- With no immediate failures, propagation never reads the reverse graph. -/
+private theorem proliferate_empty (errors : Ix.Map Ix.Name Ix.GroundError)
+    (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) (h : errors.keysArray.isEmpty = true) :
+    Ix.proliferateUngrounded errors refs = errors := by
+  have keys : errors.keysArray = #[] := Array.empty_of_isEmpty h
+  simp only [Ix.proliferateUngrounded, keys, Id.run]
+  change (Lean.Loop.forIn (m := Id) {} (errors, #[]) _).1 = errors
+  rw [Lean.Loop.forIn_eq_of_monadTail]
+  rfl
+
+/-- Construct reverse references only when the immediate scan found failures.
+The failure branch retains the original propagation and filtering order. -/
+@[expose] def groundSplitLazy (env : Ix.Environment) :
+    Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.GroundError :=
+  let outRefs := Ix.GraphM.envSerial env
+  let immediate := Ix.Compile.FrontEnd.immediate env
+  let ungrounded := if immediate.keysArray.isEmpty then immediate else
+    let inRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := outRefs.fold (init := {}) fun m n refs =>
+      refs.fold (init := m) fun m r =>
+        m.alter r fun
+          | some s => some (s.insert n)
+          | none => some (({} : Ix.Set Ix.Name).insert n)
+    Ix.proliferateUngrounded immediate inRefs
+  if ungrounded.isEmpty then (outRefs, ungrounded)
+  else (outRefs.fold (init := {}) fun m n refs =>
+    if ungrounded.contains n then m
+    else m.insert n (refs.fold (init := {}) fun s r =>
+      if ungrounded.contains r then s else s.insert r), ungrounded)
+
+@[csimp] theorem groundSplit_eq_lazy : @groundSplit = @groundSplitLazy := by
+  funext env
+  by_cases h : (Ix.Compile.FrontEnd.immediate env).keysArray.isEmpty = true
+  · simp only [groundSplit, groundSplitLazy, Ix.Compile.FrontEnd.ground_eq,
+      Ix.Compile.FrontEnd.ground, h, ite_true, proliferate_empty _ _ h]
+  · simp only [groundSplit, groundSplitLazy, Ix.Compile.FrontEnd.ground_eq,
+      Ix.Compile.FrontEnd.ground, h]
+    rfl
 
 /-- The reference graph of `env` without its ungrounded constants, and
 without the edges into them. -/

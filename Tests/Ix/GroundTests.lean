@@ -3,6 +3,7 @@ module
 public import LSpec
 public import Ix.Ground
 public import Ix.Compile.FrontEnd
+public import Ix.Cert.Compile
 
 /-!
 Unit tests for `Ix.Ground` (the pure-Lean port of
@@ -340,8 +341,17 @@ def frontEndParity (env : Environment) : Bool := Id.run do
     refs.fold (init := out) fun out ref => out.alter ref fun
       | some names => some (names.insert name)
       | none => some (({} : Ix.Set Name).insert name)
-  return reprStr (serialGround env reverse).toList ==
-    reprStr (Ix.Compile.FrontEnd.ground env reverse).toList
+  let failures := serialGround env reverse
+  if reprStr failures.toList != reprStr (Ix.Compile.FrontEnd.ground env reverse).toList then
+    return false
+  let filtered := if failures.isEmpty then expected else
+    expected.fold (init := {}) fun out name refs =>
+      if failures.contains name then out
+      else out.insert name (refs.fold (init := {}) fun kept ref =>
+        if failures.contains ref then kept else kept.insert ref)
+  let split := Ix.Cert.groundSplit env
+  return reprStr filtered.toList == reprStr split.1.toList &&
+    reprStr failures.toList == reprStr split.2.toList
 
 def frontEndParityTests : TestSeq := Id.run do
   let missing := Expr.mkConst (nm "missing") #[]
