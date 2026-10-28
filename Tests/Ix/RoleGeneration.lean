@@ -92,7 +92,7 @@ private def checks (operation : Role) : Except String Unit := do
   need "emitted binding passes real canonical and structural admission"
     (admitted.toBytes == generated.table.toBytes)
   let bytes ← serEnv emitted
-  let store ← Ix.RoleBinding.recordStore limits env
+  let store ← Ix.RoleBinding.checkedStore limits env
   let cached ← Ix.RoleBinding.generate limits env certificates required Ix.Kernel.preludeShape
     (store? := some store)
   let cachedArtifact ← cached.emit limits env (store? := some store)
@@ -107,11 +107,12 @@ private def checks (operation : Role) : Except String Unit := do
     (!(Ix.RoleBinding.generate limits noRole certificates required Ix.Kernel.preludeShape).isOk)
   need "emission cannot reuse a binding after publication changes"
     (!(generated.emit limits noRole).isOk)
-  need "cached records do not bypass the generation publication check"
+  let changedStore ← Ix.RoleBinding.checkedStore limits noRole
+  need "checked records do not bypass the generation publication check"
     (!(Ix.RoleBinding.generate limits noRole certificates required Ix.Kernel.preludeShape
-      (store? := some store)).isOk)
-  need "cached records do not bypass the emission publication check"
-    (!(cached.emit limits noRole (store? := some store)).isOk)
+      (store? := some changedStore)).isOk)
+  need "checked records do not bypass the emission publication check"
+    (!(cached.emit limits noRole (store? := some changedStore)).isOk)
   let some zero := env.named[sourceName .natZero]? | throw "fixture has no Nat.zero"
   let otherRole := { certificates with named := certificates.named.insert (sourceName operation) zero }
   need "certificate/artifact operation mismatch refuses generation"
@@ -135,6 +136,26 @@ private def checks (operation : Role) : Except String Unit := do
   }
   let smallBytes := serConstant small
   let smallAddress := Address.admissionHash smallBytes
+  let larger := { env with consts := env.consts.insert smallAddress (LazyConstant.ofConstant small) }
+  let largerStore ← Ix.RoleBinding.checkedStore limits larger
+  let fullGenerated ← Ix.RoleBinding.generate limits larger certificates required Ix.Kernel.preludeShape
+    (store? := some largerStore)
+  let fullArtifact ← fullGenerated.emit limits larger (store? := some largerStore)
+  let closureArtifact ← generated.emit limits larger (store? := some largerStore)
+  need "generation over support retains the complete artifact's bytes"
+    ((← serEnv closureArtifact) == (← serEnv fullArtifact))
+  let malformedBytes := ByteArray.mk #[255]
+  let malformedAddress := Address.admissionHash malformedBytes
+  let malformed := { larger with consts := larger.consts.insert malformedAddress
+    { buf := malformedBytes, len := malformedBytes.size } }
+  need "whole-artifact validation refuses an authenticated malformed orphan"
+    (!(Ix.RoleBinding.checkedStore limits malformed).isOk)
+  let paddedBytes := smallBytes.push 0
+  let paddedAddress := Address.admissionHash paddedBytes
+  let noncanonical := { larger with consts := larger.consts.insert paddedAddress
+    { buf := paddedBytes, len := paddedBytes.size } }
+  need "whole-artifact validation refuses an authenticated noncanonical orphan"
+    (!(Ix.RoleBinding.checkedStore limits noncanonical).isOk)
   let separate : Ix.RoleBinding.Generated := {
     publication := { bound := #[], refs := {} }
     table := { version := Ix.Kernel.specVersion, bound := #[], evidence := #[] }
