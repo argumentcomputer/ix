@@ -767,9 +767,9 @@ theorem onRun_grows {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st₀ 
 theorem assembleEnv_blobs (acc : DriverAcc) {a : Address} (h : acc.cenv.blobs.contains a = true) :
     ((assembleEnv acc).1.blobs.get? a).isSome = true := by
   obtain ⟨X, hX⟩ : ∃ X : Std.HashMap Address ByteArray,
-      (assembleEnv acc).1.blobs = X.fold (fun m k v => m.insert k v) acc.cenv.blobs := ⟨_, rfl⟩
+      (assembleEnv acc).1.blobs = acc.cenv.blobs.fold (fun m k v => m.insert k v) X := ⟨_, rfl⟩
   rw [hX, Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]
-  exact StepKeeps.fold_insert_keep h
+  exact StepKeeps.fold_insert_add h
 
 /-- **A checked compiled application holds the block's blobs, with their bytes.** -/
 theorem applyCompiled_blobs (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
